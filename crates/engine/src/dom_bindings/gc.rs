@@ -78,6 +78,14 @@ thread_local! {
     /// getter 实例化。
     static DOMTOKENLIST_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
         const { RefCell::new(None) };
+    /// R3151 CSSStyleDeclaration（`element.style`）：owner element NodeId(ffi) → **Weak**<Object>，
+    /// 保 spec 身份（`el.style === el.style` 同对象）。R3134/R3145 同模式 weak 化——JS 丢 style 引用即可 GC。
+    static STYLE_OBJECTS: RefCell<HashMap<u64, v8::Weak<v8::Object>>> = RefCell::new(HashMap::new());
+    /// R3151 CSSStyleDeclaration ObjectTemplate（cssText(+setter)/length/item + getPropertyValue/
+    /// setProperty/removeProperty + named-property-handler 拦 camelCase 动态属性 + internal slot[0]
+    /// = owner element NodeId）。`install_dom_bindings` 建 + 缓存，`style` getter 实例化。
+    static STYLE_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
+        const { RefCell::new(None) };
     /// R3148 当前焦点元素（`document.activeElement` 对）：`element.focus()` 设、`element.blur()` 清。
     /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
     /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
@@ -115,6 +123,8 @@ pub(crate) fn reset() {
     ATTR_TEMPLATE.with(|c| *c.borrow_mut() = None);
     DOMTOKENLIST_OBJECTS.with(|c| c.borrow_mut().clear());
     DOMTOKENLIST_TEMPLATE.with(|c| *c.borrow_mut() = None);
+    STYLE_OBJECTS.with(|c| c.borrow_mut().clear());
+    STYLE_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
 }
 
@@ -168,6 +178,30 @@ pub(crate) fn cached_domtokenlist<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64
 /// insert-overwrite 清死 Weak（DTL 无辅助状态，无需终结器）。
 pub(crate) fn cache_domtokenlist(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
     DOMTOKENLIST_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
+    });
+}
+
+// ── R3151 CSSStyleDeclaration（element.style）状态 ────────────────────
+
+/// 缓存 CSSStyleDeclaration ObjectTemplate（`install_dom_bindings` 建 `style` 集合模板）。
+pub(crate) fn set_style_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    STYLE_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 CSSStyleDeclaration ObjectTemplate 的 Local（`style` getter 实例化用）。
+pub(crate) fn style_template_local<'s>(scope: &mut v8::PinScope<'s, '_>) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    STYLE_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 CSSStyleDeclaration 对象（同 owner element 返同对象，spec identity）；weak 死 → `None`。
+pub(crate) fn cached_style<'s>(scope: &mut v8::PinScope<'s, '_>, ffi: u64) -> Option<v8::Local<'s, v8::Object>> {
+    STYLE_OBJECTS.with(|c| c.borrow().get(&ffi).and_then(|w| w.to_local(scope)))
+}
+
+/// 缓存 CSSStyleDeclaration 对象（owner element ffi → **Weak**）。
+pub(crate) fn cache_style(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v8::Object>) {
+    STYLE_OBJECTS.with(|c| {
         c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
     });
 }

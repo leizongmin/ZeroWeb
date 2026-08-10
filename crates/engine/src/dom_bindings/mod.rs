@@ -13,6 +13,7 @@
 //! spec：`nodeType` https://dom.spec.whatwg.org/#dom-node-nodetype（Element=1）；
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
+mod css_style_declaration;
 mod dom_token_list;
 mod element;
 mod event;
@@ -124,6 +125,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     //（live，同元素返同对象——gc.rs DOMTOKENLIST_OBJECTS 缓存；internal slot[0] = owner element NodeId）。
     if let Some(k) = v8::String::new(scope, "classList") {
         tmpl.set_accessor(k.into(), dom_token_list::native_class_list_getter);
+    }
+    // R3151 `style` getter（spec `dom-element-style`）：返元素内联样式 CSSStyleDeclaration
+    //（live，同元素返同对象——gc.rs STYLE_OBJECTS 缓存；cssText/length/item/getPropertyValue/setProperty/
+    // removeProperty + named-property-handler 拦 camelCase 动态属性）。
+    if let Some(k) = v8::String::new(scope, "style") {
+        tmpl.set_accessor(k.into(), css_style_declaration::native_style_getter);
     }
     // `children` getter（spec `dom-parentnode-children`）：元素**子元素**（跳过文本/注释）
     // → V8 Array of native 对象（文档序）。
@@ -358,6 +365,9 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
 
     // R3145 DOMTokenList ObjectTemplate（element.classList 集合）——dom_token_list 子模块。
     dom_token_list::build_and_cache_template(scope);
+
+    // R3151 CSSStyleDeclaration ObjectTemplate（element.style）——css_style_declaration 子模块。
+    css_style_declaration::build_and_cache_template(scope);
 
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
     let global = ctx.global(scope);

@@ -1855,3 +1855,107 @@ fn native_has_attributes_attribute_names_r3150() {
         "true/new"
     );
 }
+
+/// R3151 element.style（CSSStyleDeclaration，spec `dom-cssstyledeclaration`）：named-property-handler 拦
+/// camelCase 动态属性（`el.style.color`/`backgroundColor`）+ cssText(+setter)/length/item +
+/// getPropertyValue/setProperty/removeProperty。live——经 owner `style` 属性 parse/serialize。
+#[test]
+fn native_element_style_r3151() {
+    let html = r#"<div id="a"></div>"#;
+    // 动态属性 set（camelCase→kebab）+ get + getAttribute live 写回。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.color='red';\
+             return el.style.color+'/'+el.getAttribute('style'); })()"
+        ),
+        "red/color: red"
+    );
+    // camelCase → kebab：backgroundColor → background-color。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.backgroundColor='blue';\
+             return el.getAttribute('style'); })()"
+        ),
+        "background-color: blue"
+    );
+    // 未设属性读 → 空串（spec：CSSStyleDeclaration 对未设属性返 ""）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').style.color)"), "");
+    // getPropertyValue（kebab）+ 多属性 + 未设空串。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('style','color: red; font-size: 12px');\
+             return el.style.getPropertyValue('color')+'/'+el.style.getPropertyValue('font-size')+'/'+el.style.getPropertyValue('nope'); })()"
+        ),
+        "red/12px/"
+    );
+    // setProperty（kebab）+ getPropertyValue 回读 + 写回 style 属性。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.setProperty('margin','5px');\
+             return el.style.getPropertyValue('margin')+'/'+el.getAttribute('style'); })()"
+        ),
+        "5px/margin: 5px"
+    );
+    // removeProperty 返旧值 + 移除后读空串。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.color='red';\
+             return el.style.removeProperty('color')+'/'+el.style.color; })()"
+        ),
+        "red/"
+    );
+    // cssText get（规范化序列化——多余空格 trim）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('style','color:red;  background:blue');\
+             return el.style.cssText; })()"
+        ),
+        "color: red; background: blue"
+    );
+    // cssText set（整体替换）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.style.cssText='display: none';\
+             return el.style.display+'/'+el.getAttribute('style'); })()"
+        ),
+        "none/display: none"
+    );
+    // length + item（kebab 属性名）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('style','color: red; margin: 5px');\
+             return el.style.length+'/'+el.style.item(0)+'/'+el.style.item(1); })()"
+        ),
+        "2/color/margin"
+    );
+    // 身份：同元素 .style 两次 → 同对象（spec `el.style === el.style`）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_element_for_id('a').style === __zw_native_element_for_id('a').style)"
+        ),
+        "true"
+    );
+    // live 反射：外部 setAttribute('style') → style 读反映。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); el.setAttribute('style','display: block');\
+             return el.style.display; })()"
+        ),
+        "block"
+    );
+    // 协议名 fallthrough：el.style.constructor 不被动态拦截器吞（typeof==='function'；若被吞返空串则 'string'）。
+    assert_eq!(
+        run_script(html, "(typeof __zw_native_element_for_id('a').style.constructor)"),
+        "function"
+    );
+}
