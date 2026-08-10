@@ -262,7 +262,7 @@ mod tests {
     use super::*;
     use crate::font::loader::FontLoader;
 
-    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
 
     /// 创建空的 TextShaper（无字体）。
     fn make_empty_shaper() -> TextShaper<'static> {

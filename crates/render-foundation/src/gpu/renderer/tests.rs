@@ -783,7 +783,7 @@ fn test_gpu_full_scene_fills() {
 #[serial]
 #[test]
 fn test_gpu_full_scene_indexed_glyph_matches_code_point() {
-    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
     let mut renderer = GpuRenderer::new_headless(40, 40).expect("headless renderer");
     let mut font_loader = FontLoader::new();
     let font_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");

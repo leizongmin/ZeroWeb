@@ -61,7 +61,7 @@ mod tests {
     fn shape_text_requires_context_and_uses_requested_face() {
         assert!(shape_text(0, "AV", 16.0).is_none());
 
-        const LATO_TTF: &[u8] = include_bytes!("../wpt-data/fonts/Lato-Medium.ttf");
+        const LATO_TTF: &[u8] = include_bytes!("../fonts/Lato-Medium.ttf");
         let mut loader = FontLoader::new();
         let font_id = loader.load_font(LATO_TTF).expect("load bundled Lato");
         let glyphs = with_measure_ctx(&loader, font_id, || {

@@ -22,7 +22,7 @@ fn glyph_top_left_converts_fontdue_y_up_metrics_to_screen_y_down() {
 
 #[test]
 fn indexed_glyph_renders_identically_to_unicode_code_point() {
-    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
     let mut font_loader = FontLoader::new();
     let font_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");
     let glyph_index = font_loader

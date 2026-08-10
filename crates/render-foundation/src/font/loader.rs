@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn test_rasterize_glyph_index_matches_code_point() {
-        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
         let mut loader = FontLoader::new();
         let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
         let glyph_index = loader
