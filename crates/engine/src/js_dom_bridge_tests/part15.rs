@@ -1411,3 +1411,93 @@ fn test_handle_outerhtml_production_r3201() {
         "handle outerHTML 属性 & 转义 → &amp;"
     );
 }
+
+// ── R3202：form.method / form.enctype latest-wins（闭合 R2839 stale snapshot）──
+//
+// R2839 已实现 form.method/enctype 枚举规范化（get/post/dialog、三 enctype 值、缺省/非法→default），但 sel 路径
+// 读**纯快照** `__zw_get_attr`（非 latest-wins）——同批 `f.method='POST'; f.method` 读 stale 快照返 default 'get'
+//（#m_def 无 method 属性 → ''→ 'get'），同 R3190/R3195 stale 模式。修复：sel 路径改走 `__zw_get_attr_lw` 反映同批
+// setAttribute/form.method=。表单提交/序列化库读 form.method 决定 GET/POST、读 form.enctype 决定编码高频。
+
+#[test]
+fn test_form_method_enctype_enumerated_production_r3202() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <form id='m_post' method='POST'></form>\
+           <form id='m_foo' method='foo'></form>\
+           <form id='m_def'></form>\
+           <form id='e_multi' enctype='multipart/form-data'></form>\
+           <form id='e_upper' enctype='MULTIPART/FORM-DATA'></form>\
+           <form id='e_foo' enctype='foo'></form>\
+           <form id='e_plain' enctype='text/plain'></form>\
+           <div id='notform' method='POST'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // method：POST→post（case 规范化）；foo→get（非法→default）；缺省→get。
+    let method = sandbox
+        .execute(
+            "document.querySelector('#m_post').method + '/' +\
+             document.querySelector('#m_foo').method + '/' +\
+             document.querySelector('#m_def').method",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        method, "post/get/get",
+        "form.method 枚举：POST→post，非法→get，缺省→get（旧返 POST/foo/空串）"
+    );
+
+    // enctype：关键字→规范值；大写 case-insensitive；非法→default；缺省→default。
+    let enctype = sandbox
+        .execute(
+            "document.querySelector('#e_multi').enctype + '|' +\
+             document.querySelector('#e_upper').enctype + '|' +\
+             document.querySelector('#e_foo').enctype + '|' +\
+             document.querySelector('#m_def').enctype + '|' +\
+             document.querySelector('#e_plain').enctype",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        enctype,
+        "multipart/form-data|multipart/form-data|application/x-www-form-urlencoded|application/x-www-form-urlencoded|text/plain",
+        "form.enctype 枚举：关键字→规范值，大写 ci，非法/缺省→urlencoded default（旧返原值/空串）"
+    );
+
+    // setter→getter round-trip：setter 写原值（POST），getter 规范化（post）。
+    let setget = sandbox
+        .execute(
+            "var f=document.querySelector('#m_def');\
+             f.method='POST';\
+             f.method+'/'+f.getAttribute('method')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        setget, "post/POST",
+        "form.method setter 写原值 POST，getter 规范化 post（round-trip）"
+    );
+
+    // 非 FORM（div.method）回落通用字符串反射——返原值 POST，不走枚举规范化。
+    let nonform = sandbox
+        .execute("document.querySelector('#notform').method")
+        .unwrap()
+        .value;
+    assert_eq!(
+        nonform, "POST",
+        "非 FORM 元素 method 回落通用字符串反射（原值），不走枚举"
+    );
+}

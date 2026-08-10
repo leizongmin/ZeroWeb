@@ -1687,9 +1687,13 @@
         // **method/enctype 有 spec 默认值 + 小写归一**（method: get/post/dialog，无效或空→'get'；
         // enctype: 三值，无效或空→'application/x-www-form-urlencoded'）。action/target 为纯串反射（无→''）。
         // setter 经 set-trap catch-al（setAttribute）近似工作（method/enctype 不小写归一，罕见 defer）。
+        // R3202：sel 路径改走 latest-wins（`__zw_get_attr_lw`）反映同批 `form.method=`/`setAttribute`（旧纯快照
+        // `__zw_get_attr` → `f.method='POST'; f.method` 读 stale 快照返 default 'get'，同 R3190/R3195 stale 模式）。
         if (_realTag(sel, handle) === 'FORM' &&
             (prop === 'action' || prop === 'method' || prop === 'enctype' || prop === 'target')) {
-          var fv = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+          var fv = handle
+            ? __zw_get_attr_handle(handle, prop)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
           fv = fv || '';
           if (prop === 'method') {
             fv = fv.toLowerCase();
