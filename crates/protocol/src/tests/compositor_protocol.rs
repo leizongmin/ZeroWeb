@@ -58,6 +58,9 @@ fn compositor_messages_serialize_identifiers() {
             height: 1,
             rgba: vec![1, 2, 3, 4],
             shm_name: None,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+            gpu_image: None,
         },
     ];
 

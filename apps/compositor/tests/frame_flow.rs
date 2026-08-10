@@ -112,6 +112,8 @@ struct FrameData {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
+    scroll_x: f32,
+    scroll_y: f32,
 }
 
 fn get_frame(
@@ -142,6 +144,9 @@ fn get_frame(
             height,
             rgba,
             shm_name,
+            scroll_x,
+            scroll_y,
+            gpu_image: _,
         } => {
             let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name)
                 .expect("resolve compositor frame rgba");
@@ -152,6 +157,8 @@ fn get_frame(
                 width,
                 height,
                 rgba,
+                scroll_x,
+                scroll_y,
             }
         }
         other => panic!("意外消息: {other:?}"),
@@ -304,4 +311,29 @@ fn compositor_isolates_surfaces_rejects_old_frames_resizes_and_releases() {
     let remaining = get_frame(&mut transport, 10, 22, 4, 7);
     assert_eq!((remaining.width, remaining.height), (3, 1));
     assert_eq!(&remaining.rgba[..4], &[0, 255, 0, 255]);
+}
+
+/// RFC 4.2：CompositorSetScroll 更新 surface 元数据并在 GetCompositorFrame 回读。
+#[test]
+fn compositor_scroll_metadata_round_trips() {
+    let (mut transport, _comp) = spawn_compositor();
+    let frame = make_frame(32, 24, [128, 64, 32, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 9, 1, 1, frame), (9, 1, 1));
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: 9,
+                scroll_x: 12.5,
+                scroll_y: 48.0,
+            },
+        })
+        .expect("set scroll");
+    let ack: IpcMessage = transport.recv().expect("scroll ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    let frame = get_frame(&mut transport, 3, 9, 1, 1);
+    assert!((frame.scroll_x - 12.5).abs() < f32::EPSILON);
+    assert!((frame.scroll_y - 48.0).abs() < f32::EPSILON);
 }

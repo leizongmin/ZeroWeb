@@ -86,6 +86,7 @@ fn publish_frame_emits_viewpainted_with_primitives() {
     let frame = sample_frame();
     publish_render_with_layout(
         &mut outbound,
+        None,
         &mut next_msg_id,
         &mut publish_state,
         &frame,
@@ -123,6 +124,7 @@ fn publish_frame_emits_compositor_sequence_with_full_paint_payload() {
     for epoch in [11, 12] {
         publish_render_with_layout(
             &mut outbound,
+            None,
             &mut next_msg_id,
             &mut publish_state,
             &frame,
@@ -167,6 +169,7 @@ fn publish_compositor_frame_carries_dirty_rects() {
 
     publish_render_with_layout(
         &mut outbound,
+        None,
         &mut next_msg_id,
         &mut publish_state,
         &frame,
@@ -201,6 +204,7 @@ fn publish_mode_switch_republishes_legacy_only() {
 
     publish_render_with_layout(
         &mut outbound,
+        None,
         &mut next_msg_id,
         &mut publish_state,
         &frame,
@@ -213,6 +217,7 @@ fn publish_mode_switch_republishes_legacy_only() {
     for _ in 0..2 {
         publish_render_with_layout(
             &mut outbound,
+            None,
             &mut next_msg_id,
             &mut publish_state,
             &frame,

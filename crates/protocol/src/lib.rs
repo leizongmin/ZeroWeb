@@ -9,6 +9,7 @@
 #![allow(clippy::useless_vec)]
 
 pub mod channel;
+pub mod compositor_types;
 pub mod frame_shm;
 pub mod message;
 pub mod paint_snapshot;
@@ -20,6 +21,7 @@ pub mod transport;
 pub mod job;
 
 pub use channel::*;
+pub use compositor_types::*;
 pub use frame_shm::*;
 pub use message::*;
 pub use paint_snapshot::*;

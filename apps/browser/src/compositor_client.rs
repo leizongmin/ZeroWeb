@@ -76,6 +76,12 @@ struct PendingFrame {
 enum WorkerCommand {
     Frame(Box<PendingFrame>),
     ReleaseSurface(u64),
+    SetScroll {
+        surface_id: u64,
+        scroll_x: f32,
+        scroll_y: f32,
+    },
+    RegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo),
 }
 
 impl WorkerCommand {
@@ -83,6 +89,8 @@ impl WorkerCommand {
         match self {
             Self::Frame(frame) => frame.surface_id,
             Self::ReleaseSurface(surface_id) => *surface_id,
+            Self::SetScroll { surface_id, .. } => *surface_id,
+            Self::RegisterUiSurface(info) => info.surface_id,
         }
     }
 }
@@ -134,6 +142,18 @@ impl CommandChannel {
 
     fn release_surface(&self, surface_id: u64) -> bool {
         self.send(WorkerCommand::ReleaseSurface(surface_id))
+    }
+
+    fn set_scroll(&self, surface_id: u64, scroll_x: f32, scroll_y: f32) -> bool {
+        self.send(WorkerCommand::SetScroll {
+            surface_id,
+            scroll_x,
+            scroll_y,
+        })
+    }
+
+    fn register_ui_surface(&self, info: zero_protocol::CompositorUiSurfaceInfo) -> bool {
+        self.send(WorkerCommand::RegisterUiSurface(info))
     }
 
     fn send(&self, command: WorkerCommand) -> bool {
@@ -189,6 +209,8 @@ struct CompletedFrame {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
+    scroll_x: f32,
+    scroll_y: f32,
 }
 
 /// Worker 到 UI 的有界事件缓存；每个 surface 只保留最新完整位图。
@@ -318,12 +340,24 @@ impl Client {
         }
     }
 
+    fn set_scroll(&self, surface_id: u64, scroll_x: f32, scroll_y: f32) {
+        if self.status.load() != CompositorStatus::Disconnected {
+            let _ = self.commands.set_scroll(surface_id, scroll_x, scroll_y);
+        }
+    }
+
+    fn register_ui_surface(&self, info: zero_protocol::CompositorUiSurfaceInfo) {
+        if self.status.load() != CompositorStatus::Disconnected {
+            let _ = self.commands.register_ui_surface(info);
+        }
+    }
+
     fn try_recv(
         &self,
         surface_id: u64,
         navigation_epoch: u64,
         frame_id: u64,
-    ) -> Option<(u64, u64, u64, u32, u32, Vec<u8>)> {
+    ) -> Option<(u64, u64, u64, u32, u32, Vec<u8>, f32, f32)> {
         let frame = self.completed.try_recv(surface_id, navigation_epoch, frame_id)?;
         Some((
             frame.key.surface_id,
@@ -332,6 +366,8 @@ impl Client {
             frame.width,
             frame.height,
             frame.rgba,
+            frame.scroll_x,
+            frame.scroll_y,
         ))
     }
 
@@ -474,6 +510,28 @@ fn process_batch(
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
             }
+            WorkerCommand::SetScroll {
+                surface_id,
+                scroll_x,
+                scroll_y,
+            } => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorSetScroll {
+                        surface_id,
+                        scroll_x,
+                        scroll_y,
+                    },
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
+            WorkerCommand::RegisterUiSurface(info) => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorRegisterUiSurface(info),
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+            }
         }
     }
 
@@ -521,6 +579,9 @@ fn process_batch(
                     height,
                     rgba,
                     shm_name,
+                    scroll_x,
+                    scroll_y,
+                    gpu_image: _,
                 },
             ) if expected
                 == (FrameKey {
@@ -546,6 +607,8 @@ fn process_batch(
                     width,
                     height,
                     rgba,
+                    scroll_x,
+                    scroll_y,
                 });
             }
             (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
@@ -618,8 +681,12 @@ pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, pain
 /// 非阻塞读取指定 surface 的最新完成位图。
 ///
 /// 仅返回相同 `navigation_epoch` 且帧序号不小于 `frame_id` 的缓存，结果格式为
-/// `(surface_id, navigation_epoch, frame_id, width, height, rgba)`。
-pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<(u64, u64, u64, u32, u32, Vec<u8>)> {
+/// `(surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)`。
+pub fn get_frame(
+    surface_id: u64,
+    navigation_epoch: u64,
+    frame_id: u64,
+) -> Option<(u64, u64, u64, u32, u32, Vec<u8>, f32, f32)> {
     if !enabled() {
         return None;
     }
@@ -629,6 +696,34 @@ pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Optio
         .as_ref()?
         .try_recv(surface_id, navigation_epoch, frame_id)
 }
+
+/// RFC 4.2：向 compositor 推送 surface 滚动偏移（`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 消费回读值）。
+pub fn set_scroll(surface_id: u64, scroll_x: f32, scroll_y: f32) {
+    if !enabled() {
+        return;
+    }
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .set_scroll(surface_id, scroll_x, scroll_y);
+}
+
+/// 是否启用 compositor 异步滚动（Browser 使用 compositor 回读 scroll 做位图变换）。
+pub fn async_scroll_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_ASYNC_SCROLL").is_ok_and(|v| v == "1")
+}
+
+/// RFC 4.4：向 compositor 注册 Chrome UI surface（元数据登记；present 为后续切片）。
+pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
+    if !enabled() {
+        return;
+    }
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client.get_or_insert_with(Client::start).register_ui_surface(info);
+}
+
+/// Browser Chrome UI 层 surface 标识（与页面 surface 命名空间独立）。
+pub const CHROME_UI_SURFACE_ID: u64 = u64::MAX;
 
 /// 非阻塞请求 compositor worker 释放指定页面 surface。
 pub fn release_surface(surface_id: u64) {
@@ -690,6 +785,9 @@ mod tests {
                 height: 1,
                 rgba: vec![pixel, 0, 0, 255],
                 shm_name: None,
+                scroll_x: 0.0,
+                scroll_y: 0.0,
+                gpu_image: None,
             },
         }
     }
@@ -779,6 +877,8 @@ mod tests {
                 width: 1,
                 height: 1,
                 rgba: vec![0; 4],
+                scroll_x: 0.0,
+                scroll_y: 0.0,
             });
         }
         assert_eq!(completed.len(), 2);
@@ -893,6 +993,8 @@ mod tests {
             width: 1,
             height: 1,
             rgba: vec![0; 4],
+            scroll_x: 0.0,
+            scroll_y: 0.0,
         });
         let status = Arc::new(SharedStatus::new(CompositorStatus::Starting));
         let worker_commands = Arc::clone(&commands);

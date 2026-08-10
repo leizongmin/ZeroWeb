@@ -296,6 +296,13 @@ impl BrowserApp {
             permissions: zero_security::permission::PermissionManager::new(),
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
+        if crate::compositor_client::enabled() {
+            crate::compositor_client::register_ui_surface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: crate::compositor_client::CHROME_UI_SURFACE_ID,
+                width: app.physical_size.0,
+                height: app.physical_size.1,
+            });
+        }
         app
     }
 
@@ -855,7 +862,7 @@ impl BrowserApp {
                 frame_id,
             };
             assert!(snap.record_compositor_submission(submission));
-            assert!(snap.commit_compositor_frame(submission, size.0, size.1, rgba));
+            assert!(snap.commit_compositor_frame(submission, size.0, size.1, rgba, 0.0, 0.0));
             snap.document_width = Some(size.0 as f32);
             snap.document_height = Some(size.1 as f32);
             snap.loading = false;

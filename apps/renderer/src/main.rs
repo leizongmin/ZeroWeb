@@ -4,6 +4,7 @@
 // 不需要控制台；不加此项 Windows 会为子进程分配一个控制台窗口。
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod compositor_publish_thread;
 mod error_page;
 mod ipc_fetch;
 mod js_worker;
@@ -176,6 +177,8 @@ struct RendererRuntime {
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
+    /// RFC 4.1：compositor 帧 IPC 异步发布线程（`ZW_RENDERER_COMPOSITOR_THREAD=1`）。
+    compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
     /// 当前页面 HTML（脚本执行后同步更新）。
     cached_html: String,
     /// 当前页面附加 CSS。
@@ -239,7 +242,17 @@ impl RendererRuntime {
         outbound: Box<dyn io::Write + Send>,
         inbound_rx: Receiver<IpcMessage>,
     ) -> Self {
-        let outbound = PipeTransport::new(io::empty(), outbound);
+        let (compositor_publish, outbound_writer) = if compositor_publish_thread::compositor_publish_threading_enabled()
+        {
+            let (shared, arc) = compositor_publish_thread::SharedWriter::new(outbound);
+            (
+                Some(compositor_publish_thread::CompositorPublishThread::spawn(arc)),
+                Box::new(shared) as Box<dyn io::Write + Send>,
+            )
+        } else {
+            (None, outbound)
+        };
+        let outbound = PipeTransport::new(io::empty(), outbound_writer);
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         let js_worker = RendererJsWorker::spawn(renderer_id);
@@ -276,6 +289,7 @@ impl RendererRuntime {
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
+            compositor_publish,
             cached_html: String::new(),
             cached_css: String::new(),
             js_worker,
@@ -451,6 +465,7 @@ impl RendererRuntime {
         };
         publish_render_with_layout(
             &mut self.outbound,
+            self.compositor_publish.as_ref(),
             &mut self.next_msg_id,
             &mut self.frame_publish,
             &frame,
@@ -1636,6 +1651,8 @@ impl RendererRuntime {
             | IpcMessageKind::CompositorFrameResult { .. }
             | IpcMessageKind::GetCompositorFrame { .. }
             | IpcMessageKind::ReleaseCompositorSurface { .. }
+            | IpcMessageKind::CompositorSetScroll { .. }
+            | IpcMessageKind::CompositorRegisterUiSurface(_)
             | IpcMessageKind::CompositorFrameData { .. }
             | IpcMessageKind::TitleChanged(_)
             | IpcMessageKind::UrlChanged(_)
@@ -1735,6 +1752,7 @@ impl RendererRuntime {
 /// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
+    compositor_publish: Option<&compositor_publish_thread::CompositorPublishThread>,
     next_msg_id: &mut u64,
     publish_state: &mut FramePublishState,
     frame: &zero_page_runtime::FrameModel,
@@ -1781,7 +1799,11 @@ fn publish_render_with_layout(
             },
         },
     };
-    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+    let compositor_async_sent = publish_state.mode == FramePublishMode::Compositor
+        && compositor_publish.is_some_and(|thread| thread.try_enqueue(msg.clone()));
+    if !compositor_async_sent {
+        outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+    }
     if let Some(title) = title {
         let msg = IpcMessage {
             id: {

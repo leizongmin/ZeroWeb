@@ -1,18 +1,28 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.4 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 S1 ✅ / 4.3 S1 ✅）**
+版本：v1.5 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 ✅ S1+S2 / 4.1–4.5 切片 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
 > - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
-> - **C3（GPU 隔离）⚠️ 切片 S1**：compositor 进程内 headless wgpu（`ZW_COMPOSITOR_GPU=1`）+
->   `gpu_raster.rs` 模块 + CPU 回退；renderer 无 GpuRenderer（隔离测试）。跨进程 GPU 纹理传输、
->   沙箱、Viz 式 surface 所有权仍为后续切片。
-> - **4.3（OS 共享资源）⚠️ 切片 S1**：Linux `ZW_COMPOSITOR_SHM=1` 时 `CompositorFrameData`
->   经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素，IPC 只带 `shm_name` 元数据；失败或未启用时
->   回退内联 `rgba`。GPU shared image / mailbox / fence 仍为后续切片。
+> - **C3（GPU 隔离）✅ 切片 S1+S2**：
+>   - S1：compositor 进程内 headless wgpu（`ZW_COMPOSITOR_GPU=1`）+ `gpu_raster.rs` + CPU 回退。
+>   - S2：GPU partial dirty 光栅（clip blit 到 back buffer）；与 CPU partial dirty 路径对齐。
+>   - 跨进程 GPU 纹理传输、Viz 式 surface 所有权仍为后续切片。
+> - **4.1（Renderer compositor 发布线程）✅ 切片**：`ZW_RENDERER_COMPOSITOR_THREAD=1` 时
+>   `CompositorPublishThread` 异步发送 `CompositorFrame`，队列满时回退同步 IPC。
+> - **4.2（异步滚动）✅ 切片**：`CompositorSetScroll` + `CompositorFrameData.scroll_x/y`；
+>   `ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 推送滚动并消费 compositor 回读偏移做位图变换。
+> - **4.3（OS 共享资源）✅ S1 / ⚠️ S2 协议预留**：
+>   - S1：Linux `ZW_COMPOSITOR_SHM=1` 时经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素。
+>   - S2：`GpuSharedImageDescriptor` + `CompositorFrameData.gpu_image` 协议字段（当前始终 `None`）。
+> - **4.4（Viz UI surface）✅ 切片**：`CompositorRegisterUiSurface` + Browser 启动时登记
+>   Chrome UI surface（`CHROME_UI_SURFACE_ID`）；最终 present 仍为后续。
+> - **4.5（沙箱）✅ 钩子**：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离
+>   `LD_PRELOAD` 等危险 env；seccomp 最小权限沙箱仍为后续。
 
-> 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路。Browser 仍拥有窗口最终场景和呈现。
+> 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路 + 上述协议/线程切片。
+> Browser 仍拥有窗口最终场景和呈现。
 
 ## 一、当前架构
 
@@ -21,20 +31,20 @@
 ```text
 renderer
   └─ CompositorFrame(surface_id, navigation_epoch, frame_id, PaintSnapshot)
-       ↓ renderer → Browser 管道
+       ↓ renderer → Browser 管道（可选 ZW_RENDERER_COMPOSITOR_THREAD 异步发布）
 Browser process_backend（broker）
   ├─ 校验帧标识
   ├─ 提取滚动、文档尺寸和命中测试元数据
   └─ 非阻塞提交到 compositor-client worker
        ↓ Browser → zero-compositor 管道
 zero-compositor
-  ├─ surface_id → SurfaceState
+  ├─ surface_id → SurfaceState（含 scroll_x/y 元数据）
   ├─ 拒绝旧 navigation epoch 和倒序 frame
-  ├─ 光栅页面图元
+  ├─ CPU 或 GPU（ZW_COMPOSITOR_GPU）光栅页面图元
   └─ per-surface back buffer → front buffer
-       ↓ 完成回执 + RGBA front bitmap
+       ↓ 完成回执 + RGBA front bitmap（或 shm_name / 未来 gpu_image）
 Browser compositor-client worker
-  └─ 每个 surface 只缓存最新完整位图
+  └─ 每个 surface 只缓存最新完整位图 + scroll 元数据
        ↓ 非阻塞轮询
 Browser TabSnapshot
   └─ page bitmap → ImagePrimitive → 页面视口 + Chrome UI → 窗口
@@ -44,25 +54,24 @@ Browser 是 renderer 与 compositor 之间的 broker。renderer 不直接连接 
 
 worker 独占阻塞式管道 IPC。Browser UI 线程只提交命令和轮询缓存。待提交帧按 surface 执行 latest-wins。命令队列和完成缓存都有界。
 
-`zero-compositor` 为每个 surface 保存独立导航世代、帧序号和双缓冲。Tab 关闭时释放对应 surface。Browser 退出时终止 compositor 子进程。
+`zero-compositor` 为每个 surface 保存独立导航世代、帧序号、滚动元数据和双缓冲。Tab 关闭时释放对应 surface。Browser 退出时终止 compositor 子进程。
 
 ### 1.2 页面与 Chrome UI 的职责
 
 compositor 健康时，Browser 不再光栅页面 `RenderPrimitives`。Browser 只接收 compositor 完成的页面 RGBA 位图。
 
-Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面滚动、缩放和视口裁剪。Browser 仍绘制标签栏、地址栏、菜单和窗口控件。Browser 最终合成页面位图与 Chrome UI，并提交窗口场景。
+Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面滚动、缩放和视口裁剪（滚动可来自 compositor 元数据，见 4.2）。Browser 仍绘制标签栏、地址栏、菜单和窗口控件。Browser 最终合成页面位图与 Chrome UI，并提交窗口场景。
 
-因此，当前是“页面位图主链路接通”。当前不是“最终显示 surface 由 compositor 拥有”。
+Chrome UI surface 已在 compositor 侧登记（4.4），但像素仍由 Browser 绘制。因此，当前是“页面位图主链路接通 + 协议切片”。当前不是“最终显示 surface 由 compositor 拥有”。
 
 ### 1.3 传输边界
 
 当前跨进程传输使用 `PipeTransport`。`PaintSnapshot` 和 RGBA 位图都在协议消息中传输。该路径存在序列化和像素复制。
 
-`SharedMemoryChannel` 不是 OS 跨进程共享内存。它基于 `Arc<Mutex<VecDeque<IpcMessage>>>`。它只用于测试和同进程多线程模拟。
-
 **4.3 S1（Linux）**：`ZW_COMPOSITOR_SHM=1` 时 compositor 将 front 像素写入 `/dev/shm/zeroweb-cmp-{name}`，
-`CompositorFrameData` 仅传输 `shm_name`；Browser worker 读取后删除文件。非 Linux 或未启用时仍内联 `rgba`。
-该路径减少 PipeTransport bincode 对大像素块的序列化，但不是 GPU 零拷贝纹理传输。
+`CompositorFrameData` 仅传输 `shm_name`；Browser worker 读取后删除文件。
+
+**4.3 S2（协议预留）**：`GpuSharedImageDescriptor` 已定义；mailbox/fence 接线与零拷贝 present 为后续。
 
 ## 二、故障回退
 
@@ -92,50 +101,44 @@ compositor 启动失败或 IPC 断开时：
 | renderer 发布 | compositor 模式发布 `CompositorFrame`；legacy 模式发布 `ViewPainted` |
 | Browser 显示 | compositor 位图是页面像素来源；Chrome UI 仍由 Browser 绘制 |
 | 生命周期 | 启动失败和断线回退；Tab 关闭释放 surface；退出终止子进程 |
-| C3 GPU 隔离 S1 | compositor `gpu_raster.rs` + `ZW_COMPOSITOR_GPU=1`；renderer 无 wgpu |
-| 4.3 POSIX shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux）；`CompositorFrameData.shm_name` |
+| C3 GPU S1+S2 | `gpu_raster.rs` + partial dirty GPU 路径；`ZW_COMPOSITOR_GPU=1` |
+| 4.3 shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux） |
+| 4.3 gpu_image S2 | 协议类型 + `CompositorFrameData.gpu_image` 字段 |
+| 4.1 发布线程 | `CompositorPublishThread` + `ZW_RENDERER_COMPOSITOR_THREAD=1` |
+| 4.2 滚动元数据 | `CompositorSetScroll` + async scroll env gate |
+| 4.4 UI surface | `CompositorRegisterUiSurface` + Browser 启动登记 |
+| 4.5 沙箱钩子 | `sandbox.rs` + `ZW_COMPOSITOR_SANDBOX=1` env 剥离 |
 
-## 四、下一阶段
+## 四、环境变量
 
-### 4.1 Renderer compositor thread
+| 变量 | 作用 |
+|---|---|
+| `ZW_COMPOSITOR_PROCESS=0` | legacy ViewPainted |
+| `ZW_COMPOSITOR_GPU=1` | compositor headless GPU 光栅 |
+| `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
+| `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
+| `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
+| `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
 
-在 renderer 内增加专用 compositor thread。主线程提交 display list、属性树和资源更新。compositor thread 管理帧调度、提交节流和可见区域。它不能阻塞 DOM、JS 和布局。
+## 五、下一阶段（完整对齐）
 
-### 4.2 异步滚动
+- GPU shared image / mailbox / fence 零拷贝纹理传输与 present
+- compositor 侧滚动变换（非仅元数据回读）
+- Viz 式最终 surface 所有权与 Chrome UI 像素提交
+- seccomp 最小权限 OS sandbox
+- 设备丢失、进程崩溃和恢复路径的全平台验证
 
-把滚动偏移、滚动树和输入驱动的变换迁到 compositor thread。滚动不得等待 renderer 主线程重绘。Browser 当前对整张页面位图做变换，只是过渡实现。
+## 六、Non-Goals（仍为后续）
 
-### 4.3 真正的跨进程共享资源
+- OOPIF、Site Isolation 或一 frame 一 renderer
+- Network Service 拆分
+- renderer OS sandbox
+- 完整 Chromium/Chrome compositor 或 Viz 架构对齐
 
-新增 OS shared memory transport。实现必须使用可跨进程映射的句柄或文件描述符。协议必须定义大小校验、只读/读写权限、句柄转移、生命周期和崩溃清理。
+## 七、验证与关系
 
-随后引入 GPU shared image。需要 mailbox 或等价资源标识、同步 fence、格式和色彩空间元数据，以及设备丢失恢复。不得用 `SharedMemoryChannel` 代替这些能力。
-
-### 4.4 Viz 式最终 surface 所有权
-
-最终由 compositor/display 侧拥有窗口呈现 surface。renderer 提交页面 surface。Browser 提交 Chrome UI surface。compositor 聚合 surface、执行最终合成并 present。
-
-达到该状态后，Browser 才不再拥有最终页面与 Chrome UI 场景。当前 C2 尚未达到该边界。
-
-### 4.5 GPU 隔离与沙箱
-
-完成 wgpu 设备、队列和 GPU 资源所有权迁移。移除 renderer 的直接 GPU 访问。为 compositor 配置最小权限 OS sandbox。用真实 GPU 后端验证设备丢失、进程崩溃和恢复路径。
-
-## 五、Non-Goals
-
-- 当前不实现 OOPIF、Site Isolation 或一 frame 一 renderer。
-- 当前不拆 Network Service。
-- 当前不实现 renderer OS sandbox。
-- 当前不实现 renderer compositor thread 或异步滚动。
-- 当前不实现 GPU shared image、mailbox、fence 或零拷贝纹理传输。
-- ~~当前不实现 OS shared memory~~ **4.3 S1 ✅**（Linux POSIX `/dev/shm` 帧像素；FD/mmap 零拷贝与 GPU 纹理仍为后续）。
-- 当前不把 Browser Chrome UI 移入 compositor。
-- 当前不把最终窗口 surface 所有权移入 compositor。
-- 当前不声称完整 Chromium/Chrome compositor 或 Viz 架构对齐。
-
-## 六、验证与关系
-
-- C2 定向测试覆盖协议往返、双 surface、stale frame、resize、释放、worker 非阻塞、缓存有界、发布模式、Browser 位图显示和故障回退。
+- C2/C3/4.x 定向测试：`frame_flow`（含 scroll/shm）、`compositor_protocol`、`compositor_client`、
+  `compositor_publish_thread`、GPU partial dirty 单测。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
 - 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。

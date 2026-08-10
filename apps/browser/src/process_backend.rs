@@ -332,7 +332,7 @@ impl ProcessTabBackend {
             let Some(submission) = snap.compositor_submission else {
                 continue;
             };
-            let Some((surface_id, navigation_epoch, frame_id, width, height, rgba)) =
+            let Some((surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)) =
                 crate::compositor_client::get_frame(
                     submission.surface_id,
                     submission.navigation_epoch,
@@ -346,7 +346,7 @@ impl ProcessTabBackend {
                 navigation_epoch,
                 frame_id,
             };
-            if !snap.commit_compositor_frame(completed, width, height, rgba) {
+            if !snap.commit_compositor_frame(completed, width, height, rgba, scroll_x, scroll_y) {
                 tracing::debug!(
                     "忽略 stale compositor result tab {} surface {} epoch {} frame {}",
                     tab_id.0,

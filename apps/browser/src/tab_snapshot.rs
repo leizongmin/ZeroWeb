@@ -66,6 +66,8 @@ pub struct TabSnapshot {
     pub compositor_submission: Option<CompositorSubmission>,
     /// compositor 已完成且可显示的最新页面位图。
     pub compositor_frame: Option<CompositorFrame>,
+    /// compositor 回读的滚动偏移（RFC 4.2；`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时用于显示）。
+    pub compositor_scroll: Option<(f32, f32)>,
 }
 
 impl TabSnapshot {
@@ -88,6 +90,7 @@ impl TabSnapshot {
             navigation_epoch: 0,
             compositor_submission: None,
             compositor_frame: None,
+            compositor_scroll: None,
         }
     }
 
@@ -104,6 +107,7 @@ impl TabSnapshot {
         self.last_render = None;
         self.compositor_submission = None;
         self.compositor_frame = None;
+        self.compositor_scroll = None;
         self.document_height = None;
         self.document_width = None;
         self.hit_test = None;
@@ -115,6 +119,7 @@ impl TabSnapshot {
     pub fn clear_compositor_state(&mut self) {
         self.compositor_submission = None;
         self.compositor_frame = None;
+        self.compositor_scroll = None;
         self.image_cache.clear();
     }
 
@@ -146,6 +151,8 @@ impl TabSnapshot {
         width: u32,
         height: u32,
         rgba: Vec<u8>,
+        scroll_x: f32,
+        scroll_y: f32,
     ) -> bool {
         if self.compositor_submission != Some(submission)
             || self.compositor_frame.as_ref().is_some_and(|current| {
@@ -169,6 +176,7 @@ impl TabSnapshot {
             height,
             image_key,
         });
+        self.compositor_scroll = Some((scroll_x, scroll_y));
         true
     }
 }
@@ -249,8 +257,8 @@ mod tests {
         let latest = CompositorSubmission { frame_id: 8, ..first };
         assert!(snap.record_compositor_submission(first));
         assert!(snap.record_compositor_submission(latest));
-        assert!(!snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255]));
-        assert!(snap.commit_compositor_frame(latest, 1, 1, vec![0, 0, 255, 255]));
+        assert!(!snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
+        assert!(snap.commit_compositor_frame(latest, 1, 1, vec![0, 0, 255, 255], 0.0, 0.0));
 
         let frame = snap.compositor_frame.as_ref().unwrap();
         assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
@@ -279,8 +287,8 @@ mod tests {
         };
         assert!(first.record_compositor_submission(first_key));
         assert!(second.record_compositor_submission(second_key));
-        assert!(first.commit_compositor_frame(first_key, 1, 1, vec![255, 0, 0, 255]));
-        assert!(second.commit_compositor_frame(second_key, 1, 1, vec![0, 255, 0, 255]));
+        assert!(first.commit_compositor_frame(first_key, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
+        assert!(second.commit_compositor_frame(second_key, 1, 1, vec![0, 255, 0, 255], 0.0, 0.0));
 
         assert_eq!(first.compositor_frame.as_ref().unwrap().surface_id, 10);
         assert_eq!(second.compositor_frame.as_ref().unwrap().surface_id, 20);
@@ -303,7 +311,7 @@ mod tests {
             frame_id: 2,
         };
         assert!(snap.record_compositor_submission(submission));
-        assert!(snap.commit_compositor_frame(submission, 1, 1, vec![1, 2, 3, 4]));
+        assert!(snap.commit_compositor_frame(submission, 1, 1, vec![1, 2, 3, 4], 0.0, 0.0));
 
         snap.clear_compositor_state();
 

@@ -116,6 +116,17 @@ pub enum IpcMessageKind {
         /// 待释放页面 surface 的稳定标识。
         surface_id: u64,
     },
+    /// Browser → compositor：更新 surface 滚动偏移（RFC 4.2 异步滚动切片）。
+    CompositorSetScroll {
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 水平滚动偏移（CSS 像素）。
+        scroll_x: f32,
+        /// 垂直滚动偏移（CSS 像素）。
+        scroll_y: f32,
+    },
+    /// Browser → compositor：注册 Chrome UI 层 surface 元数据（RFC 4.4 切片）。
+    CompositorRegisterUiSurface(crate::compositor_types::CompositorUiSurfaceInfo),
     /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
     ///
     /// 默认内联 `rgba`；Linux `ZW_COMPOSITOR_SHM=1` 时 `shm_name` 非空且 `rgba` 为空，
@@ -136,6 +147,15 @@ pub enum IpcMessageKind {
         /// POSIX shm buffer 名（不含 `zeroweb-cmp-` 前缀）；None = 内联 `rgba`。
         #[serde(default)]
         shm_name: Option<String>,
+        /// compositor 侧记录的水平滚动偏移（RFC 4.2；Browser 可选消费）。
+        #[serde(default)]
+        scroll_x: f32,
+        /// compositor 侧记录的垂直滚动偏移（RFC 4.2；Browser 可选消费）。
+        #[serde(default)]
+        scroll_y: f32,
+        /// GPU shared image 描述符（RFC 4.3-S2 预留；当前始终 None）。
+        #[serde(default)]
+        gpu_image: Option<crate::compositor_types::GpuSharedImageDescriptor>,
     },
 
     // ── 存储请求（渲染→浏览器→存储）──

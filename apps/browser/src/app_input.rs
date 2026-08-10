@@ -162,6 +162,17 @@ impl BrowserApp {
         entry.x = (entry.x + delta_x).clamp(0.0, layout.max_scroll_x);
         entry.y = (entry.y + delta_y).clamp(0.0, layout.max_scroll_y);
 
+        if crate::compositor_client::async_scroll_enabled() {
+            if let Some(submission) = self
+                .tabs
+                .snapshot(tab_id)
+                .and_then(|snap| snap.compositor_submission)
+            {
+                let scroll = self.tab_scroll_state(tab_id);
+                crate::compositor_client::set_scroll(submission.surface_id, scroll.x, scroll.y);
+            }
+        }
+
         self.needs_redraw = true;
     }
 
