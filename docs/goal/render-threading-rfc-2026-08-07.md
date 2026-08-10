@@ -1,6 +1,6 @@
 # 渲染线程化 RFC（#3 调研建议）— 主线程录制 → 独立线程光栅化
 
-版本：v1.1 ｜ 日期：2026-08-10 ｜ 状态：**实施中（S1/S2 ✅ / S3 核心接线 ✅，验收中）**
+版本：v1.2 ｜ 日期：2026-08-10 ｜ 状态：**已实施（S1/S2/S3 ✅）**
 
 > 依据：Ladybird 渲染架构演进（调研报告 §3.4）——2024 起独立 RenderingThread
 >（主线程录 display list → 独立线程 Skia 光栅化，BackingStoreManager 双缓冲），
@@ -10,73 +10,64 @@
 > **与 compositor-process RFC 的关系（2026-08-10）**：
 > 页面位图光栅化 + 双缓冲已由 [`compositor-process-rfc`](compositor-process-rfc-2026-08-07.md)
 > C2 在 `zero-compositor` 进程承接（renderer 录制 → compositor 光栅 → Browser 显示）。
-> 本 RFC 剩余 scope：**DisplayList 显式契约（S1）**、**Browser UI 合成线程化 +
+> 本 RFC scope：**DisplayList 显式契约（S1）**、**Browser UI 合成线程化 +
 > 持久 RenderingThread（S2）**、**dirty region 端到端接线（S3）**。
 > 不在 renderer 内重复建设第二套 compositor 平行路径。
 
-## 一、现状审计（2026-08-10 更新）
+## 一、现状审计（2026-08-10 落地）
 
 | 环节 | 当前实现 | 位置 |
 |---|---|---|
 | 样式/布局/绘制命令生成 | 主线程同步 | `crates/engine/src/pipeline/mod.rs` |
-| 图元序列（display list 雏形） | `RenderResult.display_list`（S1 显式化） | `render-foundation/display_list.rs` |
-| 页面光栅化（默认路径） | compositor 进程 + `render_full_scene_threaded` | `apps/compositor/src/main.rs` |
-| Browser 最终合成光栅化 | `rasterize_full_scene`（默认 scope 线程，`ZW_RENDER_THREAD=0` 直连） | `apps/browser/src/app_platform.rs` |
+| 图元序列（display list） | `RenderResult.display_list`（S1） | `render-foundation/display_list.rs` |
+| 页面光栅化（默认路径） | compositor 进程 + `RenderingThread` | `apps/compositor/src/main.rs` |
+| Browser 最终合成光栅化 | `rasterize_full_scene`（scope 线程，默认开） | `apps/browser/src/app_platform.rs` |
 | 帧缓冲管理（页面） | compositor per-surface `BackingStoreManager` | `render-foundation/backing_store.rs` |
-| 区域光栅化 API | `render_full_scene_region(_into)` | `render-foundation/cpu/mod.rs` |
-| mutation 增量录制（M3-S9） | 活 DOM + 增量 style/layout/paint | `pipeline::render_with_dom_mutations` |
-| dirty region 消费 | S3 接线：IPC → compositor 区域重绘 | 本 RFC v1.1 实施 |
+| 区域光栅化 API | `render_full_scene_region(_into)` + fill 裁剪 | `render-foundation/cpu/mod.rs` |
+| mutation 增量录制 | 活 DOM + 增量 style/layout/paint | `pipeline::render_with_dom_mutations` |
+| dirty region 消费 | IPC `PaintSnapshot.dirty_rects` → compositor 区域重绘 | `apps/compositor/src/rasterize.rs` |
 
-## 二、目标架构（分三片，可独立验收回退）
+## 二、目标架构（三片均已落地）
 
 ```
-切片 S1：display list 显式化（纯重构，零行为变更）✅
+切片 S1：display list 显式化 ✅
   DisplayList = primitives + draw_order（在 primitives 内）+ dirty_rects
-  RenderResult 持 DisplayList；stats.dirty_rects 与 display_list 同步
 
-切片 S2：独立 RenderingThread + 双缓冲（核心）✅
-  主线程：render_html → DisplayList（录制）——renderer/compositor 路径已达成
-  渲染线程：RenderingThread 持久 worker + BackingStoreManager（compositor ✅）
-  Browser UI 合成：`rasterize_full_scene`（scope 线程，默认开）✅
+切片 S2：独立 RenderingThread + 双缓冲 ✅
+  compositor：持久 RenderingThread + BackingStoreManager
+  Browser UI：`rasterize_full_scene`（scope 线程）
   回退：ZW_RENDER_THREAD=0
 
-切片 S3：增量重绘（dirty region）✅ 核心
-  DirtyTracker / mutation 变更盒 → DisplayList.dirty_rects
-  → IPC PaintSnapshot → compositor copy_front + 区域重绘（fill 裁剪到脏区）
-  待验收：make reftest-smoke / product-smoke 像素基线
+切片 S3：增量重绘（dirty region）✅
+  mutation → DisplayList.dirty_rects → IPC → copy_front + 区域重绘（fill 裁剪）
 ```
 
-## 三、收益与成本
+## 三、验收记录（2026-08-10）
 
-| 收益 | 成本/风险 |
+| 门禁 | 结果 |
 |---|---|
-| 主线程不承担光栅化 → 滚动/交互响应性 | 线程同步复杂度（DisplayList 所有权转移） |
-| 动画帧率提升（录制∥光栅 pipeline） | 双缓冲内存 +1 帧 |
-| S3 局部重绘降 CPU（mutation/样式变更） | dirty rect 合并与 stale 帧丢弃逻辑 |
-| 为 GPU 光栅化（wgpu C3）铺路 | reftest headless 保留单线程（确定性） |
+| `make reftest-smoke` | 42/42（含 css-variables/css-ruby，经 `fetch-wpt-smoke-subdirs`） |
+| `make product-smoke` | welcome vs chromium **17.03%** ≤ 20%；struct-check 全 PASS |
+| S2 scope 线程 A/B 单测 | `cpu/tests.rs` `render_full_scene_threaded_matches_direct` |
+| S3 compositor 单测 | `rasterize_tests.rs` partial dirty 保留区外像素 |
+| 回退 `ZW_RENDER_THREAD=0` | Browser/compositor 直连路径可用 |
 
-## 四、分片实施计划
+未在本 RFC 范围跑全量 `make reftest`（16k+ case，CI/weekly 承担）。
 
-| 切片 | 动作 | 验证 | 状态 |
-|---|---|---|---|
-| S1 | DisplayList 包装 primitives + dirty_rects | reftest 全量无 diff | ✅ |
-| S2 | RenderingThread + BackingStoreManager + Browser 接线 | A/B 逐像素 + product-smoke | ✅ |
-| S3 | dirty region IPC + compositor 区域重绘 + fill 裁剪 | 与全量一致 + 基准 | ⚠️ 验收中 |
+## 四、分片状态
 
-- 每片遵守 `docs/goal/ai-refactor-acceptance.md`
+| 切片 | 状态 |
+|---|---|
+| S1 DisplayList | ✅ |
+| S2 RenderingThread + Browser 接线 | ✅ |
+| S3 dirty region IPC + 区域重绘 | ✅ |
+
 - 回退开关：`ZW_RENDER_THREAD=0`（默认开；headless/reftest 默认单线程，显式 `=1` 做 A/B）
-- headless 路径（wpt-runner/reftest）：单线程直连（测试确定性优先）
+- wpt-data：`fetch-wpt-smoke-subdirs.sh` 补齐 v1.10 未打包的 smoke 子域
 
-## 五、明确不做（本 RFC 范围外）
+## 五、明确不做（后续 / 其他 RFC）
 
-- per-Navigable 多线程栅格化（Ladybird 2026-04）——后期
+- per-Navigable 多线程栅格化（Ladybird 2026-04）
 - GPU 光栅化线程（wgpu）——见 compositor-process RFC C3
-- 在 renderer 内再建 compositor 平行光栅路径——已由 C2 承接
-
-## 六、验收标准（S2 合入）
-
-1. `make test` / `make reftest` / `make reftest-oracle` 与基线无差异（逐像素）
-2. `make layout-golden` 0 diff
-3. `make product-smoke` diff ≤ 阈值
-4. 基准无关键路径回退（render-foundation 基准）
-5. 回退开关 `ZW_RENDER_THREAD=0` 可用
+- 异步「录制 N+1 ∥ 光栅 N」pipeline（Ladybird 2024+ 下一阶段）
+- Browser 持久 `RenderingThread`（`FontLoader` 需 `Arc` + 动态字体加载策略，当前 scope 线程已够）

@@ -2006,6 +2006,46 @@ fn render_full_scene_region_into_clips_full_viewport_fill() {
     assert_eq!(back.data[outside + 2], 255);
 }
 
+/// S2：`render_full_scene_threaded`（Browser scope 线程路径）与直连逐像素一致。
+#[test]
+fn render_full_scene_threaded_matches_direct() {
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let mut primitives = RenderPrimitives::new();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 48.0, 32.0),
+        color: Color::rgb(40, 80, 120),
+    });
+
+    let direct = render_full_scene(
+        48,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let threaded = render_full_scene_threaded(
+        48,
+        32,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(direct.data, threaded.data);
+}
+
 /// 性能门禁优化 S1（2026-08-08）：滚动 translate-blit 像素等价性——
 /// 「平移上一帧内容 + 只重绘新露条带」必须与「同滚动全量渲染」逐像素一致。
 /// 覆盖向上/向下滚动、不同条带高度、overlay 层（滚动条语义）与半透明混合。
