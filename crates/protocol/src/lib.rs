@@ -18,6 +18,9 @@ pub mod process;
 pub mod serialize;
 pub mod transport;
 
+#[cfg(target_os = "linux")]
+pub mod fd_socket_linux;
+
 #[cfg(windows)]
 pub mod job;
 

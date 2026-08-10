@@ -56,6 +56,19 @@ pub fn compositor_gpu_zero_copy_enabled() -> bool {
     }
 }
 
+/// 是否启用 GPU 纹理 dma-buf fd 导出（Linux + `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1`）。
+pub fn compositor_gpu_texture_export_enabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT").is_ok_and(|v| v == "1")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = std::env::var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT");
+        false
+    }
+}
+
 /// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；`ZW_COMPOSITOR_OWNED_PRESENT=1`）。
 pub fn compositor_owned_present_enabled() -> bool {
     std::env::var("ZW_COMPOSITOR_OWNED_PRESENT").is_ok_and(|v| v == "1")
@@ -233,15 +246,129 @@ fn validate_gpu_mailbox_header(
     Ok(())
 }
 
-/// compositor → Browser 帧像素交付方式（内联 / shm / gpu_image mailbox）。
+#[cfg(target_os = "linux")]
+fn consume_dma_buf_rgba(desc: &crate::GpuSharedImageDescriptor) -> Result<Vec<u8>, ProtocolError> {
+    use std::os::fd::AsRawFd;
+    use std::time::Duration;
+
+    if desc.drm_modifier != 0 {
+        return Err(ProtocolError::Channel(format!(
+            "dma-buf modifier {} 尚未支持",
+            desc.drm_modifier
+        )));
+    }
+    let name = if desc.fd_socket_name.is_empty() {
+        desc.mailbox_name.as_str()
+    } else {
+        desc.fd_socket_name.as_str()
+    };
+    if name.is_empty() {
+        return Err(ProtocolError::Channel("dma-buf fd socket 名为空".into()));
+    }
+    let fd = crate::fd_socket_linux::consume_fd(name, Duration::from_secs(2))?;
+    let expected = (desc.stride as usize).saturating_mul(desc.height as usize);
+    let ptr = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            expected,
+            libc::PROT_READ,
+            libc::MAP_SHARED,
+            fd.as_raw_fd(),
+            0,
+        )
+    };
+    if ptr == libc::MAP_FAILED {
+        return Err(ProtocolError::Channel(format!(
+            "dma-buf mmap 失败: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let rgba = unsafe { std::slice::from_raw_parts(ptr as *const u8, expected) }.to_vec();
+    unsafe {
+        libc::munmap(ptr, expected);
+    }
+    Ok(rgba)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn consume_dma_buf_rgba(_desc: &crate::GpuSharedImageDescriptor) -> Result<Vec<u8>, ProtocolError> {
+    Err(ProtocolError::Channel("dma-buf 仅 Linux 可用".into()))
+}
+
+/// compositor → Browser 帧像素交付方式（内联 / shm / gpu_image mailbox / dma-buf fd）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompositorFrameDelivery {
     /// 内联 RGBA（非空时优先于 shm/gpu_image）。
     pub rgba: Vec<u8>,
     /// POSIX shm 名（不含前缀）。
     pub shm_name: Option<String>,
-    /// GPU shared image 描述符（mailbox 复用 shm 后端）。
+    /// GPU shared image 描述符（mailbox 或 dma-buf fd）。
     pub gpu_image: Option<crate::GpuSharedImageDescriptor>,
+    /// dma-buf 导出待发布 fd（仅 compositor 内部；IPC 发出后须调用 [`publish_compositor_fd`]）。
+    #[cfg(target_os = "linux")]
+    pub pending_fd: Option<std::os::fd::RawFd>,
+}
+
+/// compositor 侧：构建 dma-buf fd 交付描述符（不含 shm 文件写入）。
+#[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
+pub fn build_compositor_dma_buf_delivery(
+    surface_id: u64,
+    frame_id: u64,
+    width: u32,
+    height: u32,
+    stride: u32,
+    drm_fourcc: u32,
+    drm_modifier: u64,
+    sync_token: u64,
+    fd: std::os::fd::RawFd,
+) -> CompositorFrameDelivery {
+    let fd_name = crate::fd_socket_linux::fd_socket_name(surface_id, frame_id);
+    CompositorFrameDelivery {
+        rgba: Vec::new(),
+        shm_name: None,
+        gpu_image: Some(crate::GpuSharedImageDescriptor {
+            mailbox_name: fd_name.clone(),
+            width,
+            height,
+            sync_token,
+            zero_copy: true,
+            transport: crate::GpuImageTransport::DmaBuf,
+            drm_fourcc,
+            stride,
+            drm_modifier,
+            fd_socket_name: fd_name,
+        }),
+        pending_fd: Some(fd),
+    }
+}
+
+/// compositor 侧：经 Unix socket SCM_RIGHTS 发送 pending fd。
+#[cfg(target_os = "linux")]
+pub fn publish_compositor_fd(delivery: &mut CompositorFrameDelivery) -> Result<(), ProtocolError> {
+    use std::time::Duration;
+
+    let Some(fd) = delivery.pending_fd.take() else {
+        return Ok(());
+    };
+    let Some(desc) = delivery.gpu_image.as_ref() else {
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(ProtocolError::Channel("dma-buf 交付缺少 gpu_image 描述符".into()));
+    };
+    let name = if desc.fd_socket_name.is_empty() {
+        desc.mailbox_name.as_str()
+    } else {
+        desc.fd_socket_name.as_str()
+    };
+    if let Err(error) = crate::fd_socket_linux::publish_fd(name, fd, Duration::from_secs(2)) {
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// 按 env 选择交付方式写入像素。
@@ -264,7 +391,14 @@ pub fn deliver_compositor_frame_pixels(
                 height,
                 sync_token: frame_id,
                 zero_copy,
+                transport: crate::GpuImageTransport::ShmRgba,
+                drm_fourcc: 0,
+                stride: 0,
+                drm_modifier: 0,
+                fd_socket_name: String::new(),
             }),
+            #[cfg(target_os = "linux")]
+            pending_fd: None,
         });
     }
     if compositor_shm_enabled() {
@@ -273,12 +407,16 @@ pub fn deliver_compositor_frame_pixels(
             rgba: Vec::new(),
             shm_name: Some(name),
             gpu_image: None,
+            #[cfg(target_os = "linux")]
+            pending_fd: None,
         });
     }
     Ok(CompositorFrameDelivery {
         rgba: pixels.to_vec(),
         shm_name: None,
         gpu_image: None,
+        #[cfg(target_os = "linux")]
+        pending_fd: None,
     })
 }
 
@@ -310,9 +448,6 @@ pub fn resolve_compositor_frame_rgba_fenced(
                 desc.width, desc.height
             )));
         }
-        if desc.mailbox_name.is_empty() {
-            return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
-        }
         if let Some(min) = min_sync_token
             && desc.sync_token < min
         {
@@ -320,6 +455,12 @@ pub fn resolve_compositor_frame_rgba_fenced(
                 "gpu fence stale: sync_token {} < 期望 {min}",
                 desc.sync_token
             )));
+        }
+        if desc.transport == crate::GpuImageTransport::DmaBuf {
+            return consume_dma_buf_rgba(&desc);
+        }
+        if desc.mailbox_name.is_empty() {
+            return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
         }
         return consume_gpu_mailbox_blob(&desc.mailbox_name, &desc, min_sync_token);
     }
@@ -386,6 +527,11 @@ mod tests {
             height: 1,
             sync_token: 3,
             zero_copy: false,
+            transport: crate::GpuImageTransport::ShmRgba,
+            drm_fourcc: 0,
+            stride: 0,
+            drm_modifier: 0,
+            fd_socket_name: String::new(),
         };
         let resolved =
             resolve_compositor_frame_rgba_fenced(1, 1, vec![0; 4], None, Some(desc), Some(3)).expect("resolve");
@@ -403,6 +549,11 @@ mod tests {
             height: 1,
             sync_token: 3,
             zero_copy: false,
+            transport: crate::GpuImageTransport::ShmRgba,
+            drm_fourcc: 0,
+            stride: 0,
+            drm_modifier: 0,
+            fd_socket_name: String::new(),
         };
         let err =
             resolve_compositor_frame_rgba_fenced(1, 1, vec![0; 4], None, Some(desc), Some(4)).expect_err("stale fence");

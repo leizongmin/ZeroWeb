@@ -347,6 +347,7 @@ fn main() {
             }
             // 显示消费方拉取最新已合成帧（front 缓冲像素）
             IpcMessageKind::GetCompositorFrame { surface_id, .. } => {
+                let mut fd_publish: Option<zero_protocol::CompositorFrameDelivery> = None;
                 let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y, gpu_image) =
                     match surfaces.get(&surface_id) {
                         Some(surface) => {
@@ -368,32 +369,79 @@ fn main() {
                             } else {
                                 front.data.clone()
                             };
-                            let delivery = zero_protocol::deliver_compositor_frame_pixels(
-                                surface_id,
-                                surface.frame_id,
-                                &pixel_data,
-                                front.width,
-                                front.height,
-                            )
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("compositor: 帧交付失败，回退内联 rgba: {e}");
-                                zero_protocol::CompositorFrameDelivery {
-                                    rgba: pixel_data,
-                                    shm_name: None,
-                                    gpu_image: None,
+
+                            #[cfg(target_os = "linux")]
+                            let dma_frame = {
+                                if zero_protocol::compositor_gpu_texture_export_enabled()
+                                    && zero_protocol::compositor_gpu_image_enabled()
+                                    && gpu_enabled
+                                    && let Some(gpu) = gpu_renderer.as_ref()
+                                    && let Ok(exported) = zero_render_foundation::gpu::try_export_headless(gpu)
+                                {
+                                    use std::os::fd::IntoRawFd;
+                                    let del = zero_protocol::build_compositor_dma_buf_delivery(
+                                        surface_id,
+                                        surface.frame_id,
+                                        exported.width,
+                                        exported.height,
+                                        exported.stride,
+                                        exported.drm_fourcc,
+                                        exported.drm_modifier,
+                                        surface.frame_id,
+                                        exported.fd.into_raw_fd(),
+                                    );
+                                    let frame_tuple = (
+                                        surface.navigation_epoch,
+                                        surface.frame_id,
+                                        front.width,
+                                        front.height,
+                                        del.rgba.clone(),
+                                        del.shm_name.clone(),
+                                        scroll_x,
+                                        scroll_y,
+                                        del.gpu_image.clone(),
+                                    );
+                                    fd_publish = Some(del);
+                                    Some(frame_tuple)
+                                } else {
+                                    None
                                 }
-                            });
-                            (
-                                surface.navigation_epoch,
-                                surface.frame_id,
-                                front.width,
-                                front.height,
-                                delivery.rgba,
-                                delivery.shm_name,
-                                scroll_x,
-                                scroll_y,
-                                delivery.gpu_image,
-                            )
+                            };
+                            #[cfg(not(target_os = "linux"))]
+                            let dma_frame: Option<(
+                                u64,
+                                u64,
+                                u32,
+                                u32,
+                                Vec<u8>,
+                                Option<String>,
+                                f32,
+                                f32,
+                                Option<zero_protocol::GpuSharedImageDescriptor>,
+                            )> = None;
+
+                            if let Some(frame_tuple) = dma_frame {
+                                frame_tuple
+                            } else {
+                                let delivery = deliver_pixels_or_inline(
+                                    surface_id,
+                                    surface.frame_id,
+                                    &pixel_data,
+                                    front.width,
+                                    front.height,
+                                );
+                                (
+                                    surface.navigation_epoch,
+                                    surface.frame_id,
+                                    front.width,
+                                    front.height,
+                                    delivery.rgba,
+                                    delivery.shm_name,
+                                    scroll_x,
+                                    scroll_y,
+                                    delivery.gpu_image,
+                                )
+                            }
                         }
                         None => (0, 0, 0, 0, Vec::new(), None, 0.0, 0.0, None),
                     };
@@ -416,6 +464,12 @@ fn main() {
                 if let Err(e) = transport.send(resp) {
                     tracing::warn!("compositor: 帧数据响应失败: {e}");
                     break;
+                }
+                #[cfg(target_os = "linux")]
+                if let Some(mut pending) = fd_publish
+                    && let Err(error) = zero_protocol::publish_compositor_fd(&mut pending)
+                {
+                    tracing::warn!("compositor: dma-buf fd 发布失败: {error}");
                 }
             }
             IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
@@ -545,6 +599,8 @@ fn main() {
                                 rgba: ui.rgba.clone(),
                                 shm_name: None,
                                 gpu_image: None,
+                                #[cfg(target_os = "linux")]
+                                pending_fd: None,
                             }
                         });
                         (
@@ -607,6 +663,8 @@ fn main() {
                                 rgba: composed,
                                 shm_name: None,
                                 gpu_image: None,
+                                #[cfg(target_os = "linux")]
+                                pending_fd: None,
                             }
                         });
                         (width, height, delivery.rgba, delivery.shm_name, delivery.gpu_image)
@@ -639,6 +697,27 @@ fn main() {
             }
         }
     }
+}
+
+fn deliver_pixels_or_inline(
+    surface_id: u64,
+    frame_id: u64,
+    pixel_data: &[u8],
+    width: u32,
+    height: u32,
+) -> zero_protocol::CompositorFrameDelivery {
+    zero_protocol::deliver_compositor_frame_pixels(surface_id, frame_id, pixel_data, width, height).unwrap_or_else(
+        |e| {
+            tracing::warn!("compositor: 帧交付失败，回退内联 rgba: {e}");
+            zero_protocol::CompositorFrameDelivery {
+                rgba: pixel_data.to_vec(),
+                shm_name: None,
+                gpu_image: None,
+                #[cfg(target_os = "linux")]
+                pending_fd: None,
+            }
+        },
+    )
 }
 
 #[cfg(test)]

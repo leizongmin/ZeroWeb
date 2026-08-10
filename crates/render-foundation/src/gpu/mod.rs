@@ -11,6 +11,10 @@ pub mod atlas;
 pub mod mesh;
 pub mod pipeline;
 pub mod renderer;
+#[cfg(target_os = "linux")]
+pub mod texture_export;
 
 pub use atlas::GlyphAtlas;
 pub use renderer::GpuRenderer;
+#[cfg(target_os = "linux")]
+pub use texture_export::{ExportedGpuFrame, gpu_texture_export_enabled, map_linear_rgba, try_export_headless};

@@ -765,3 +765,20 @@ fn compositor_window_surface_registers_and_present_is_authoritative() {
         other => panic!("unexpected {other:?}"),
     }
 }
+
+/// RFC 4.3-S5：GPU 纹理 dma-buf fd 导出（memfd 回退）round-trip。
+#[test]
+fn compositor_gpu_texture_export_dma_buf_round_trips() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[
+        ("ZW_COMPOSITOR_GPU", "1"),
+        ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
+        ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "1"),
+    ]);
+    let frame = make_frame(4, 4, [255, 128, 0, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 13, 1, 1, frame), (13, 1, 1));
+    let got = get_frame(&mut transport, 2, 13, 1, 1);
+    assert_eq!((got.width, got.height), (4, 4));
+    assert_eq!(got.rgba[0], 255, "R channel");
+    assert!(got.rgba[1] >= 100, "expected orange G, got {}", got.rgba[1]);
+    assert_eq!(got.rgba[3], 255, "alpha");
+}
