@@ -482,6 +482,34 @@ pub(super) fn native_string_reflected_setter(
     write_reflected_attr(scope, &args, &attr, value, null_as_empty);
 }
 
+/// `dir` 反射 getter（spec HTML https://html.spec.whatwg.org/multipage/dom.html#the-dir-attribute）。
+///
+/// `dir` 为 **enumerated** attribute（关键字 `ltr`/`rtl`/`auto`），区别于 title/lang/accessKey 的 plain
+/// DOMString 反射——getter 不可直读 content 属性：① ASCII case-insensitive 命中关键字 → 返规范小写（`<div
+/// dir="RTL">` → `"rtl"`）；② missing 或 invalid（`"null"`/`"foo"`/`""` 等，spec invalid value default 与
+/// missing value default 均为空串）→ 返 `""`。setter 复用 plain 字符串反射 setter（`dir` 非 LegacyNull，
+/// `el.dir=null` 写内容属性 `"null"`，getter 随后返空串 = invalid）。闭合 R3185 已知限制①。
+pub(super) fn native_dir_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let val = with_dom(|d| d.get_attribute(id, "dir"))
+        .flatten()
+        // ASCII case-insensitive 关键字匹配（spec enumerated attribute）：命中 → 规范小写，余丢弃（→ 空串）。
+        .filter(|s| matches!(s.to_ascii_lowercase().as_bytes(), b"ltr" | b"rtl" | b"auto"))
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    if let Some(s) = v8::String::new(scope, &val) {
+        rv.set(s.into());
+    }
+}
+
 /// accessor name（IDL 名）→ content 属性名（HTML content 属性小写约定，故 to_ascii_lowercase：
 /// accessKey→accesskey，title/lang/dir identity）。非 string 名 → 空串（不应发生）。
 fn name_to_content_attr(scope: &mut v8::PinScope, name: v8::Local<v8::Name>) -> String {

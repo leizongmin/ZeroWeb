@@ -162,10 +162,11 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
             element::native_spellcheck_setter,
         );
     }
-    // R3157 通用字符串反射属性（spec HTML title/lang/dir/accessKey）：IDL 名经 to_ascii_lowercase 映射
+    // R3157 通用字符串反射属性（spec HTML title/lang/accessKey）：IDL 名经 to_ascii_lowercase 映射
     // content 属性名（accessKey→accesskey，余 identity）。共用 [`element::native_string_reflected_getter`/
     // `_setter`]（经 accessor name 分派 + 复用 read/write_reflected_attr，零 per-attr 逻辑）。
-    for prop in ["title", "lang", "dir", "accessKey"] {
+    // `dir` 不在此列——其为 enumerated attribute，getter 需规范化 + invalid/missing→空串（见下专用注册）。
+    for prop in ["title", "lang", "accessKey"] {
         if let Some(k) = v8::String::new(scope, prop) {
             tmpl.set_accessor_with_setter(
                 k.into(),
@@ -173,6 +174,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
                 element::native_string_reflected_setter,
             );
         }
+    }
+    // `dir`（spec HTML enumerated attribute，关键字 ltr/rtl/auto）：getter 经 [`element::native_dir_getter`]
+    // 规范化（case-insensitive 命中→小写，invalid/missing→空串）；setter 复用 plain 字符串反射 setter
+    // （ToString；dir 非 LegacyNull）。闭合 R3185 已知限制①。spec `dom-dir`。
+    if let Some(k) = v8::String::new(scope, "dir") {
+        tmpl.set_accessor_with_setter(
+            k.into(),
+            element::native_dir_getter,
+            element::native_string_reflected_setter,
+        );
     }
     // R3157 `inert` getter/setter（spec HTML `inert`，content 反射 boolean）：modal 背景子树非交互高频——
     // getter 属性在 → true（无 until-found，区别 hidden），setter 经 ToBoolean 强转 set `""` / remove。

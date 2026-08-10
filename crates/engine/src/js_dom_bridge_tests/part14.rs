@@ -858,3 +858,45 @@ fn test_reflected_string_attrs_null_empty_production_r3185() {
         "id/title/lang/accessKey null→空串（LegacyNull）；class/dir null→\"null\"（非 LegacyNull）"
     );
 }
+
+// ── R3186：`dir` enumerated getter 生产路径（spec https://html.spec.whatwg.org/multipage/dom.html#the-dir-attribute）──
+//
+// dir 为 enumerated attribute（关键字 ltr/rtl/auto）。setter 缓存原值（case 保留，仍 String 化）；getter 须
+// 规范化——case-insensitive 命中→小写，invalid（含 "foo"/"null"）/missing→空串。验证 setter→getter 缓存往返：
+// 旧实现 getter 直读缓存返原值（"RTL"/"foo"/"null"），现 spec 合规。
+
+#[test]
+fn test_dir_enumerated_getter_production_r3186() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // setter→getter 缓存往返：'RTL'→'rtl'（case 规范化）；'foo'→''（invalid）；null→''（'null' invalid）；
+    // 'auto'→'auto'（合法）。旧实现返 "RTL|[foo]|[null]|auto"。
+    let out = sandbox
+        .execute(
+            "var e=document.querySelector('#t');\
+             e.dir='RTL'; var a=e.dir;\
+             e.dir='foo'; var b='['+e.dir+']';\
+             e.dir=null; var c='['+e.dir+']';\
+             e.dir='auto'; var d=e.dir;\
+             a+'|'+b+'|'+c+'|'+d",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "rtl|[]|[]|auto",
+        "dir enumerated getter：合法关键字→规范小写，invalid/missing→空串"
+    );
+}

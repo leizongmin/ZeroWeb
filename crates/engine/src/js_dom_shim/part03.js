@@ -1865,12 +1865,24 @@
         if (prop === 'id') {
           return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
         }
-        // reflected 字符串属性（title/lang/dir）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
+        // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
         // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。
-        if (prop === 'title' || prop === 'lang' || prop === 'dir') {
+        if (prop === 'title' || prop === 'lang') {
           var rc = _reflectedAttrs[key];
           if (rc && Object.prototype.hasOwnProperty.call(rc, prop)) return rc[prop];
           return (handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop)) || '';
+        }
+        // `el.dir`——spec enumerated attribute（https://html.spec.whatwg.org/multipage/dom.html#the-dir-attribute）：
+        // 关键字 ltr/rtl/auto（ASCII case-insensitive）→ 返规范小写；missing/invalid（含 "null"/"foo"/"" 等，
+        // spec missing & invalid value default 均空串）→ 空串。区别 title/lang 的 plain DOMString 反射（直读）。
+        // 同步 set→get 优先读缓存。闭合 R3185 已知限制①。
+        if (prop === 'dir') {
+          var drc = _reflectedAttrs[key];
+          var dval = (drc && Object.prototype.hasOwnProperty.call(drc, 'dir'))
+            ? drc['dir']
+            : ((handle ? __zw_get_attr_handle(handle, 'dir') : __zw_get_attr(sel, 'dir')) || '');
+          var dlo = String(dval).toLowerCase();
+          return (dlo === 'ltr' || dlo === 'rtl' || dlo === 'auto') ? dlo : '';
         }
         // `el.tabIndex`——反射 tabindex 属性为数值；无属性 → -1（spec：非 tab 序元素默认 -1；
         // natively focusable 默认 0 简化为 -1，常见用法足）。同步 set→get 优先读缓存。

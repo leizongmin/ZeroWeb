@@ -174,15 +174,99 @@ fn native_reflected_classname_null_is_string_r3185() {
     );
 }
 
-/// `el.dir = null` → "null"（enumerated，**非** LegacyNull；setter stringifies，getter 简化直读）。
+/// `el.dir = null` → setter 写内容属性 "null"（plain DOMString，**非** LegacyNull），但 dir 为 enumerated，
+/// getter 对 invalid 值返空串（spec missing & invalid value default 均空串）。故回读 `[]` 而非 "[null]"。
+/// 旧实现 getter 直读内容属性返 "[null]"（R3185 已知限制①，本轮 R3186 闭合）。
 #[test]
-fn native_reflected_dir_null_is_string_r3185() {
+fn native_reflected_dir_null_empty_invalid_r3186() {
     let html = r#"<div id="a"></div>"#;
     assert_eq!(
         run_script(
             html,
             "(()=>{ const e=__zw_native_element_for_id('a'); e.dir=null; return '['+e.dir+']'; })()"
         ),
-        "[null]"
+        "[]"
     );
+}
+
+// ── R3186 `dir` enumerated getter：spec https://html.spec.whatwg.org/multipage/dom.html#the-dir-attribute ──
+//
+// dir 为 enumerated attribute（关键字 ltr/rtl/auto，ASCII case-insensitive）。getter 须返规范小写关键字；
+// missing/invalid（含 "null"/"foo"/"" 等）→ 空串。区别 plain DOMString 反射的直读。内容属性原样保留（setter
+// 与 setAttribute 不改大小写），规范化仅发生在 getter。
+
+/// 合法关键字原样返：`el.dir = 'rtl'` → getter "rtl" + 内容属性 "rtl"。
+#[test]
+fn native_dir_getter_valid_keyword_r3186() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.dir='rtl';\
+             return e.dir+'/'+e.getAttribute('dir'); })()"
+        ),
+        "rtl/rtl"
+    );
+}
+
+/// case-insensitive：`el.dir = 'RTL'`（经 setter）→ 内容属性保留 "RTL"，getter 规范化 "rtl"。
+#[test]
+fn native_dir_getter_case_insensitive_r3186() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.dir='RTL';\
+             return e.dir+'/'+e.getAttribute('dir'); })()"
+        ),
+        "rtl/RTL"
+    );
+}
+
+/// `setAttribute('dir','AUTO')`（大写）→ getter 规范化 "auto"。
+#[test]
+fn native_dir_getter_auto_via_set_attribute_r3186() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.setAttribute('dir','AUTO');\
+             return e.dir+'/'+e.getAttribute('dir'); })()"
+        ),
+        "auto/AUTO"
+    );
+}
+
+/// invalid 值 → getter 空串：`el.dir = 'foo'` → 内容属性 "foo"，getter ""。
+#[test]
+fn native_dir_getter_invalid_empty_r3186() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.dir='foo';\
+             return '['+e.dir+']/'+e.getAttribute('dir'); })()"
+        ),
+        "[]/foo"
+    );
+}
+
+/// missing → getter 空串（无内容属性）。
+#[test]
+fn native_dir_getter_missing_empty_r3186() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); return '['+e.dir+']/'+e.hasAttribute('dir'); })()"
+        ),
+        "[]/false"
+    );
+}
+
+/// 解析期内容属性 `<div dir="rtl">` → getter 规范化 "rtl"（非 setter 写入）。
+#[test]
+fn native_dir_getter_parsed_attribute_r3186() {
+    let html = r#"<div id="a" dir="rtl"></div>"#;
+    assert_eq!(run_script(html, "(()=>__zw_native_element_for_id('a').dir)()"), "rtl");
 }
