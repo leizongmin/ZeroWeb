@@ -65,5 +65,5 @@ jobs:
         run: |
           cargo nextest run -p zero-browser --bin zero-browser \
             -E 'test(diag_tab_v)' \
-            --test-threads=1 \
+            --test-threads=1 --no-fail-fast \
             --target x86_64-pc-windows-msvc

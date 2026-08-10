@@ -403,6 +403,13 @@ fn js_worker_main(
             }
         }
     }
+    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
+    // 显式 drop sandbox + 打印，区分「函数内挂」与「线程退出挂」。
+    #[cfg(feature = "v8")]
+    {
+        drop(sandbox);
+        eprintln!("[TEMP-DIAG] js_worker_main: sandbox explicitly dropped, returning");
+    }
 }
 
 /// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::HttpClient::send` 发起真实 HTTP 请求，
