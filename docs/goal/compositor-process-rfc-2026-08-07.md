@@ -143,7 +143,7 @@ compositor 启动失败或 IPC 断开时：
 - 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。
 
-## 七、验收记录（2026-08-11，AI 重构验收规范落地）
+## 八、验收记录（2026-08-11，AI 重构验收规范落地）
 
 按 [`archive/ai-refactor-acceptance.md`](archive/ai-refactor-acceptance.md)（调研 P5）对 C1/C2/C3 S1/4.3 S1 切片执行验收：
 
