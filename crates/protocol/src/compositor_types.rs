@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// GPU shared image 描述符（4.3-S2 协议预留；mailbox/fence 接线为后续切片）。
+/// GPU shared image 描述符（4.3-S2+：mailbox 经 shm；S4 头含 sync_token fence）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GpuSharedImageDescriptor {
     /// Mailbox 或等价跨进程资源名。
@@ -11,9 +11,12 @@ pub struct GpuSharedImageDescriptor {
     pub width: u32,
     /// 高度（像素）。
     pub height: u32,
-    /// 同步代际（fence 占位；单调递增，Browser 可检测 stale 帧）。
+    /// 同步代际（fence；单调递增，Browser 须 ≥ 期望 frame_id）。
     #[serde(default)]
     pub sync_token: u64,
+    /// 是否经 mmap 零拷贝路径发布（`ZW_COMPOSITOR_GPU_ZERO_COPY=1`）。
+    #[serde(default)]
+    pub zero_copy: bool,
 }
 
 /// UI 层 surface 注册元数据（4.4 Viz 切片；最终 present 仍为后续）。

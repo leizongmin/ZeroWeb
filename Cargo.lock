@@ -6451,6 +6451,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "criterion",
+ "libc",
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.59.0",

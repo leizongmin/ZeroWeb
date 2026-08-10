@@ -718,7 +718,14 @@ fn process_batch(
                     frame_id,
                 }) =>
             {
-                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)?;
+                let rgba = zero_protocol::resolve_compositor_frame_rgba_fenced(
+                    width,
+                    height,
+                    rgba,
+                    shm_name,
+                    gpu_image,
+                    Some(expected.frame_id),
+                )?;
                 validate_frame_data(width, height, &rgba)?;
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(

@@ -11,6 +11,7 @@
 pub mod channel;
 pub mod compositor_types;
 pub mod frame_shm;
+pub mod gpu_mailbox;
 pub mod message;
 pub mod paint_snapshot;
 pub mod process;
@@ -23,6 +24,7 @@ pub mod job;
 pub use channel::*;
 pub use compositor_types::*;
 pub use frame_shm::*;
+pub use gpu_mailbox::*;
 pub use message::*;
 pub use paint_snapshot::*;
 pub use process::*;

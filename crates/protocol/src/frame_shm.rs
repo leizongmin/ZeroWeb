@@ -5,6 +5,7 @@
 //! 非 Linux 或未设置时由调用方回退内联 `rgba`。
 
 use crate::ProtocolError;
+use crate::gpu_mailbox::{GpuMailboxHeader, decode_gpu_mailbox, encode_gpu_mailbox};
 
 #[cfg(target_os = "linux")]
 const SHM_PREFIX: &str = "zeroweb-cmp-";
@@ -29,7 +30,7 @@ pub fn compositor_scroll_transform_enabled() -> bool {
 
 /// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux + `ZW_COMPOSITOR_GPU_IMAGE=1`）。
 ///
-/// mailbox 当前复用 POSIX shm 后端；真正 GPU 纹理/fence 为后续切片。
+/// mailbox 当前复用 POSIX shm 后端；S4 头含 sync_token fence；真 GPU 纹理为后续。
 pub fn compositor_gpu_image_enabled() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -40,6 +41,24 @@ pub fn compositor_gpu_image_enabled() -> bool {
         let _ = std::env::var("ZW_COMPOSITOR_GPU_IMAGE");
         false
     }
+}
+
+/// 是否启用 gpu_image mmap 零拷贝 consume（Linux + `ZW_COMPOSITOR_GPU_ZERO_COPY=1`）。
+pub fn compositor_gpu_zero_copy_enabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("ZW_COMPOSITOR_GPU_ZERO_COPY").is_ok_and(|v| v == "1")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = std::env::var("ZW_COMPOSITOR_GPU_ZERO_COPY");
+        false
+    }
+}
+
+/// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；`ZW_COMPOSITOR_OWNED_PRESENT=1`）。
+pub fn compositor_owned_present_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_OWNED_PRESENT").is_ok_and(|v| v == "1")
 }
 
 /// 是否启用 compositor Viz present（page+UI 合成；`ZW_COMPOSITOR_PRESENT=1`）。
@@ -54,6 +73,23 @@ pub fn expected_rgba_len(width: u32, height: u32) -> usize {
 
 /// compositor 侧：写入像素到 shm，返回不含前缀的 buffer 名。
 pub fn publish_compositor_frame(surface_id: u64, frame_id: u64, pixels: &[u8]) -> Result<String, ProtocolError> {
+    publish_compositor_blob(surface_id, frame_id, pixels)
+}
+
+/// compositor 侧：写入 gpu mailbox（头 + RGBA）。
+pub fn publish_compositor_gpu_mailbox(
+    surface_id: u64,
+    frame_id: u64,
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    sync_token: u64,
+) -> Result<String, ProtocolError> {
+    let blob = encode_gpu_mailbox(pixels, width, height, sync_token);
+    publish_compositor_blob(surface_id, frame_id, &blob)
+}
+
+fn publish_compositor_blob(surface_id: u64, frame_id: u64, blob: &[u8]) -> Result<String, ProtocolError> {
     #[cfg(target_os = "linux")]
     {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,36 +100,137 @@ pub fn publish_compositor_frame(surface_id: u64, frame_id: u64, pixels: &[u8]) -
             .unwrap_or(0);
         let name = format!("{surface_id}-{frame_id}-{nonce}");
         let path = shm_path(&name);
-        std::fs::write(&path, pixels).map_err(|e| ProtocolError::Channel(format!("compositor shm 写入失败: {e}")))?;
+        std::fs::write(&path, blob).map_err(|e| ProtocolError::Channel(format!("compositor shm 写入失败: {e}")))?;
         Ok(name)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (surface_id, frame_id, pixels);
+        let _ = (surface_id, frame_id, blob);
         Err(ProtocolError::Channel("compositor shm 仅 Linux 可用".into()))
     }
 }
 
-/// Browser 侧：从 shm 读取并删除文件。
+/// Browser 侧：从 shm 读取并删除文件（常规 read 路径）。
 pub fn consume_compositor_frame(name: &str, expected_len: usize) -> Result<Vec<u8>, ProtocolError> {
+    let data = read_compositor_blob(name)?;
+    if data.len() != expected_len {
+        return Err(ProtocolError::Channel(format!(
+            "compositor shm 大小不匹配: 期望 {expected_len}, 实际 {}",
+            data.len()
+        )));
+    }
+    Ok(data)
+}
+
+fn read_compositor_blob(name: &str) -> Result<Vec<u8>, ProtocolError> {
     #[cfg(target_os = "linux")]
     {
         let path = shm_path(name);
         let data = std::fs::read(&path).map_err(|e| ProtocolError::Channel(format!("compositor shm 读取失败: {e}")))?;
         let _ = std::fs::remove_file(&path);
-        if data.len() != expected_len {
-            return Err(ProtocolError::Channel(format!(
-                "compositor shm 大小不匹配: 期望 {expected_len}, 实际 {}",
-                data.len()
-            )));
-        }
         Ok(data)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (name, expected_len);
+        let _ = name;
         Err(ProtocolError::Channel("compositor shm 仅 Linux 可用".into()))
     }
+}
+
+#[cfg(target_os = "linux")]
+fn consume_compositor_blob_mmap(name: &str) -> Result<Vec<u8>, ProtocolError> {
+    use std::fs::File;
+    use std::os::unix::io::AsRawFd;
+
+    let path = shm_path(name);
+    let file = File::open(&path).map_err(|e| ProtocolError::Channel(format!("compositor shm 打开失败: {e}")))?;
+    let len = file
+        .metadata()
+        .map_err(|e| ProtocolError::Channel(format!("compositor shm stat 失败: {e}")))?
+        .len() as usize;
+    if len == 0 {
+        let _ = std::fs::remove_file(&path);
+        return Err(ProtocolError::Channel("compositor shm 为空".into()));
+    }
+    // SAFETY: MAP_PRIVATE 只读映射；随后 munmap。
+    let ptr = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            len,
+            libc::PROT_READ,
+            libc::MAP_PRIVATE,
+            file.as_raw_fd(),
+            0,
+        )
+    };
+    if ptr == libc::MAP_FAILED {
+        let _ = std::fs::remove_file(&path);
+        return Err(ProtocolError::Channel(format!(
+            "compositor shm mmap 失败: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let data = unsafe { std::slice::from_raw_parts(ptr as *const u8, len) }.to_vec();
+    unsafe {
+        libc::munmap(ptr, len);
+    }
+    let _ = std::fs::remove_file(&path);
+    Ok(data)
+}
+
+fn consume_gpu_mailbox_blob(
+    name: &str,
+    desc: &crate::GpuSharedImageDescriptor,
+    min_sync_token: Option<u64>,
+) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(target_os = "linux")]
+    let blob = if compositor_gpu_zero_copy_enabled() || desc.zero_copy {
+        consume_compositor_blob_mmap(name)?
+    } else {
+        read_compositor_blob(name)?
+    };
+    #[cfg(not(target_os = "linux"))]
+    let blob = read_compositor_blob(name)?;
+
+    let (header, payload_off) = decode_gpu_mailbox(&blob)?;
+    validate_gpu_mailbox_header(&header, desc, min_sync_token)?;
+    let end = payload_off.saturating_add(header.payload_len as usize);
+    Ok(blob[payload_off..end].to_vec())
+}
+
+fn validate_gpu_mailbox_header(
+    header: &GpuMailboxHeader,
+    desc: &crate::GpuSharedImageDescriptor,
+    min_sync_token: Option<u64>,
+) -> Result<(), ProtocolError> {
+    if header.width != desc.width || header.height != desc.height {
+        return Err(ProtocolError::Channel(format!(
+            "gpu mailbox 尺寸不匹配: 头 {}x{} 描述符 {}x{}",
+            header.width, header.height, desc.width, desc.height
+        )));
+    }
+    if header.sync_token != desc.sync_token {
+        return Err(ProtocolError::Channel(format!(
+            "gpu mailbox sync_token 不匹配: 头 {} 描述符 {}",
+            header.sync_token, desc.sync_token
+        )));
+    }
+    if let Some(min) = min_sync_token
+        && header.sync_token < min
+    {
+        return Err(ProtocolError::Channel(format!(
+            "gpu fence stale: sync_token {} < 期望 {min}",
+            header.sync_token
+        )));
+    }
+    let expected_pixels = expected_rgba_len(desc.width, desc.height);
+    if header.payload_len as usize != expected_pixels {
+        return Err(ProtocolError::Channel(format!(
+            "gpu mailbox payload 大小不匹配: 期望 {expected_pixels}, 头 {}",
+            header.payload_len
+        )));
+    }
+    Ok(())
 }
 
 /// compositor → Browser 帧像素交付方式（内联 / shm / gpu_image mailbox）。
@@ -116,7 +253,8 @@ pub fn deliver_compositor_frame_pixels(
     height: u32,
 ) -> Result<CompositorFrameDelivery, ProtocolError> {
     if compositor_gpu_image_enabled() {
-        let mailbox_name = publish_compositor_frame(surface_id, frame_id, pixels)?;
+        let zero_copy = compositor_gpu_zero_copy_enabled();
+        let mailbox_name = publish_compositor_gpu_mailbox(surface_id, frame_id, pixels, width, height, frame_id)?;
         return Ok(CompositorFrameDelivery {
             rgba: Vec::new(),
             shm_name: None,
@@ -125,6 +263,7 @@ pub fn deliver_compositor_frame_pixels(
                 width,
                 height,
                 sync_token: frame_id,
+                zero_copy,
             }),
         });
     }
@@ -151,6 +290,18 @@ pub fn resolve_compositor_frame_rgba(
     shm_name: Option<String>,
     gpu_image: Option<crate::GpuSharedImageDescriptor>,
 ) -> Result<Vec<u8>, ProtocolError> {
+    resolve_compositor_frame_rgba_fenced(width, height, rgba, shm_name, gpu_image, None)
+}
+
+/// 带 sync_token fence 校验的像素解析（`min_sync_token` 通常为期望 `frame_id`）。
+pub fn resolve_compositor_frame_rgba_fenced(
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    shm_name: Option<String>,
+    gpu_image: Option<crate::GpuSharedImageDescriptor>,
+    min_sync_token: Option<u64>,
+) -> Result<Vec<u8>, ProtocolError> {
     let expected = expected_rgba_len(width, height);
     if let Some(desc) = gpu_image {
         if desc.width != width || desc.height != height {
@@ -162,8 +313,17 @@ pub fn resolve_compositor_frame_rgba(
         if desc.mailbox_name.is_empty() {
             return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
         }
-        return consume_compositor_frame(&desc.mailbox_name, expected);
+        if let Some(min) = min_sync_token
+            && desc.sync_token < min
+        {
+            return Err(ProtocolError::Channel(format!(
+                "gpu fence stale: sync_token {} < 期望 {min}",
+                desc.sync_token
+            )));
+        }
+        return consume_gpu_mailbox_blob(&desc.mailbox_name, &desc, min_sync_token);
     }
+    let _ = min_sync_token;
     match shm_name {
         Some(name) if !name.is_empty() => consume_compositor_frame(&name, expected),
         Some(_) => Err(ProtocolError::Channel("compositor shm 名为空".into())),
@@ -219,14 +379,33 @@ mod tests {
     #[test]
     fn resolve_prefers_gpu_image_mailbox() {
         let pixels = vec![10u8, 20, 30, 40];
-        let name = publish_compositor_frame(2, 3, &pixels).expect("publish");
+        let name = publish_compositor_gpu_mailbox(2, 3, &pixels, 1, 1, 3).expect("publish");
         let desc = crate::GpuSharedImageDescriptor {
             mailbox_name: name,
             width: 1,
             height: 1,
             sync_token: 3,
+            zero_copy: false,
         };
-        let resolved = resolve_compositor_frame_rgba(1, 1, vec![0; 4], None, Some(desc)).expect("resolve");
+        let resolved =
+            resolve_compositor_frame_rgba_fenced(1, 1, vec![0; 4], None, Some(desc), Some(3)).expect("resolve");
         assert_eq!(resolved, pixels);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gpu_fence_rejects_stale_sync_token() {
+        let pixels = vec![10u8, 20, 30, 40];
+        let name = publish_compositor_gpu_mailbox(2, 3, &pixels, 1, 1, 3).expect("publish");
+        let desc = crate::GpuSharedImageDescriptor {
+            mailbox_name: name,
+            width: 1,
+            height: 1,
+            sync_token: 3,
+            zero_copy: false,
+        };
+        let err =
+            resolve_compositor_frame_rgba_fenced(1, 1, vec![0; 4], None, Some(desc), Some(4)).expect_err("stale fence");
+        assert!(err.to_string().contains("stale"));
     }
 }

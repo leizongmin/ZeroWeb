@@ -10,6 +10,9 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 bincode = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 # Windows：用 Job Object 绑定 renderer 子进程，browser 进程退出（含 Ctrl+C / abort / 强杀）
 # 时 OS 自动 kill 整个 Job，避免孤儿 renderer 锁住自身 exe。
 # 注意：`CreateJobObjectW` 签名引用 `SECURITY_ATTRIBUTES`，windows-sys 0.59 把它 cfg-gate
