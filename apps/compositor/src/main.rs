@@ -176,7 +176,7 @@ fn main() {
         .with_writer(io::stderr)
         .init();
 
-    sandbox::apply_if_enabled();
+    sandbox::apply_early_if_enabled();
 
     let mut transport = stdio_transport().unwrap_or_else(|e| panic!("compositor: stdio transport: {e}"));
 
@@ -185,6 +185,7 @@ fn main() {
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
     let font_loader = Arc::new(load_compositor_fonts());
+    sandbox::apply_landlock_after_init();
     let mut glyph_cache = GlyphCache::new(1024);
     let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
 

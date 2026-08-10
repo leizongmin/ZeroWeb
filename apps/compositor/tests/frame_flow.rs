@@ -651,6 +651,18 @@ fn compositor_seccomp_allows_frame_ipc() {
     assert_eq!(&got.rgba[..4], &[0, 128, 255, 255]);
 }
 
+/// RFC 4.5-S3：landlock 启用时 compositor 帧链路仍可用。
+#[test]
+fn compositor_landlock_allows_frame_ipc() {
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_SANDBOX", "1"), ("ZW_COMPOSITOR_LANDLOCK", "1")]);
+    let frame = make_frame(4, 4, [255, 0, 255, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 11, 1, 1, frame), (11, 1, 1));
+    let got = get_frame(&mut transport, 2, 11, 1, 1);
+    assert_eq!((got.width, got.height), (4, 4));
+    assert_eq!(&got.rgba[..4], &[255, 0, 255, 255]);
+}
+
 /// RFC 4.4-S4：窗口 surface 登记与 present 权威标记。
 #[test]
 fn compositor_window_surface_registers_and_present_is_authoritative() {
