@@ -36,6 +36,9 @@
         // _reflectedAttrs 缓存（setter 写解析值，同步 set→get 即时），无缓存则 host attr 解析。spec 默认：
         // autofocus/draggable/inert=false，spellcheck/translate=true，autocomplete="on"（missing-default）。
         // autofocus/inert 为 boolean attr（presence 判定，has_attr）；autocomplete 为 enumerated 串反射。
+        // R3204：sel 读源改 latest-wins（`__zw_get_attr_lw`/`__zw_has_attr_lw`）反映同批 `setAttribute`/`.attr()`
+        //（缓存仅覆盖 IDL setter→getter；setAttribute→IDL read 旧读纯快照 stale，如 `setAttribute('autocomplete','off')
+        // ; el.autocomplete` 返 'on'）。handle 路径不动（本就 latest-wins）。
         if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate' || prop === 'inert' || prop === 'autocomplete') {
           var rfc = _reflectedAttrs[key];
           if (rfc && Object.prototype.hasOwnProperty.call(rfc, prop)) return rfc[prop];
@@ -44,24 +47,26 @@
             if (handle) {
               try { return __zw_has_attr_handle(handle, prop) === '1'; } catch (_e) { return false; }
             }
-            return typeof __zw_has_attr === 'function' && __zw_has_attr(sel, prop) === '1';
+            return (typeof __zw_has_attr_lw === 'function'
+              ? __zw_has_attr_lw(sel, prop)
+              : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, prop) : '0')) === '1';
           }
           if (prop === 'autocomplete') {
             // enumerated 串反射：attr 值（缺省 → "on"，spec missing-default）。__zw_get_attr 缺省返 "" 故 "" 亦判缺省。
-            var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete') : __zw_get_attr(sel, 'autocomplete');
+            var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'autocomplete') : __zw_get_attr(sel, 'autocomplete'));
             return (acRaw == null || acRaw === '') ? 'on' : String(acRaw);
           }
           // R3188 draggable：enumerated（true/false，case-insensitive），缺省/非法 → auto 状态 → default-draggable
           //（spec/Chrome：img/audio/video/a[href] 默认可拖拽，余 false）。旧实现仅 `=== 'true'`（case-sensitive，
           // 且 auto 状态统一 false——缺省 `<img>` 误判不可拖拽）。
           if (prop === 'draggable') {
-            var dgRaw = handle ? __zw_get_attr_handle(handle, 'draggable') : __zw_get_attr(sel, 'draggable');
+            var dgRaw = handle ? __zw_get_attr_handle(handle, 'draggable') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'draggable') : __zw_get_attr(sel, 'draggable'));
             var dgLo = (dgRaw == null) ? '' : String(dgRaw).toLowerCase();
             if (dgLo === 'true') return true;
             if (dgLo === 'false') return false;
             return _defaultDraggable(sel, handle); // auto 状态（缺省/invalid/其它）
           }
-          var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+          var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
           rfRaw = (rfRaw == null) ? '' : String(rfRaw).toLowerCase();
           if (prop === 'spellcheck') return rfRaw !== 'false'; // "false"→false，余（含缺省）→true（spec 默认 true）
           return rfRaw !== 'no';                               // translate："no"→false，余→true（默认 true）
@@ -77,9 +82,10 @@
           }
           if ((rgTag === 'IMG' || rgTag === 'IFRAME') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。
+            // R3204：sel 读源 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute。
             var drc = _reflectedAttrs[key];
             if (drc && Object.prototype.hasOwnProperty.call(drc, prop)) return drc[prop];
-            var dRaw = handle ? __zw_get_attr_handle(handle, prop) : __zw_get_attr(sel, prop);
+            var dRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
             var dN = parseInt(dRaw, 10);
             return (isNaN(dN) || dN < 0) ? 0 : dN;
           }

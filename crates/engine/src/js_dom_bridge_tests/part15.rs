@@ -1571,3 +1571,96 @@ fn test_clone_node_sel_attr_latest_wins_production_r3203() {
         "cloneNode sel 源 removeAttribute 后克隆无该属性（名源 lw，未回归）"
     );
 }
+
+// ── R3204：全局 reflected 属性 sel 读源 latest-wins（`__zw_has_attr(sel)` stale 审计）──
+//
+// `__zw_has_attr(sel, ...)` 纯快照存在性审计发现 part04.js 全局 reflected 属性块（autofocus/inert presence +
+// autocomplete/draggable/spellcheck/translate/width/height 值）sel 读源纯快照——`_reflectedAttrs` 缓存仅覆盖 IDL
+// setter→getter，`setAttribute`/`.attr()`→IDL read 旧读 stale 快照：`setAttribute('autocomplete','off'); el.autocomplete`
+// 返 'on'（stale default）、`setAttribute('width','100'); img.width` 返 0（stale）。R3204：sel 读源改 latest-wins。
+// 审计收敛：余 has_attr(sel) 位（dataset/NamedNodeMap/defaultChecked/defaultSelected/checked/selected/toggleSnap/
+// popover/_mo_read_attr/hasAttribute）均已 lw+fallback，`_ce_attrValue`（CE 旧值，niche）为唯一余项。
+
+#[test]
+fn test_global_reflected_attrs_sel_lw_production_r3204() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i'/><img id='im'/></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // autocomplete：setAttribute('off')→IDL read 'off'（旧 stale 返 'on' default）。
+    let autocomplete = sandbox
+        .execute(
+            "var i=document.querySelector('#i');\
+             i.setAttribute('autocomplete','off');\
+             i.autocomplete",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        autocomplete, "off",
+        "setAttribute('autocomplete','off')→IDL read 'off'（旧 stale 'on' default）"
+    );
+
+    // draggable：setAttribute('true')→IDL read true（旧 stale，缺省 div→false）。
+    let draggable = sandbox
+        .execute(
+            "var i=document.querySelector('#i');\
+             i.setAttribute('draggable','true');\
+             String(i.draggable)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        draggable, "true",
+        "setAttribute('draggable','true')→IDL read true（旧 stale false）"
+    );
+
+    // width（IMG 反射 unsigned long）：setAttribute('100')→IDL read 100（旧 stale 0）。
+    let width = sandbox
+        .execute(
+            "var im=document.querySelector('#im');\
+             im.setAttribute('width','100');\
+             String(im.width)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        width, "100",
+        "img.setAttribute('width','100')→IDL read 100（旧 stale 0）"
+    );
+
+    // autofocus（boolean presence）：setAttribute('')→IDL read true（旧 stale false）。
+    let autofocus = sandbox
+        .execute(
+            "var i=document.querySelector('#i');\
+             i.setAttribute('autofocus','');\
+             String(i.autofocus)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        autofocus, "true",
+        "setAttribute('autofocus','')→IDL read true（旧 stale false）"
+    );
+
+    // 缺省 autocomplete → 'on'（missing-default，spec；验证 lw 不破坏 default）。
+    let default_input = sandbox
+        .execute(
+            "var i2=document.createElement('input');\
+             i2.autocomplete",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(default_input, "on", "input 缺省 autocomplete → 'on'（missing-default，lw 未破坏）");
+}
