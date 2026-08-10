@@ -428,11 +428,21 @@
         }
         if (prop === 'getAttribute') {
           return function(name) {
-            if (handle) return __zw_get_attr_handle(handle, name);
+            var n = String(name);
             // R2995：sel-based 走 latest-wins 变体（consult 变更列表，闭合 removeAttribute 后 stale 旧值）；
             // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_attr`。
-            if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
-            return __zw_get_attr(sel, name);
+            var v = handle
+              ? __zw_get_attr_handle(handle, n)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
+            // R3190：spec getAttribute——缺省（属性不存在）须返 null，present-empty 返 ""。host `__zw_get_attr*`
+            // 对缺省与空值均返 ""，仅当结果为 "" 时用 `__zw_has_attr*` 区分（常见非空值单次 host 调用，无额外
+            // 开销；同 R3187 contentEditable / R3188 default_draggable has_attr 模式）。附带修复 `_matchAttrOf`
+            // 的 `[attr]` 存在性选择器 over-match（旧 "" != null 恒真 → 缺省元素误匹配）。
+            if (v !== '') return v;
+            var present = (handle
+              ? __zw_has_attr_handle(handle, n)
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, n) : __zw_has_attr(sel, n))) === '1';
+            return present ? '' : null;
           };
         }
         if (prop === 'setAttribute') {

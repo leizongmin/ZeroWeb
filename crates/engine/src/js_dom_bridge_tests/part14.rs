@@ -1135,3 +1135,84 @@ fn test_input_button_type_enumerated_production_r3189() {
         "input.type setter 写原值，getter 规范化（case-insensitive）"
     );
 }
+
+// ── R3190：`getAttribute` / `getAttributeNS` spec null 语义 ──
+//
+// spec `dom-element-getattribute`：缺省（属性不存在）须返 **null**，present-empty 返 ""，present 返值。
+// 旧 polyfill proxy getAttribute 直返 host `__zw_get_attr*`（缺省/空均 ""）→ 缺省返 "" 而非 null，
+// 破坏 `el.getAttribute('x') === null` / `!= null` 检查（jQuery/React 高频）。附带修复 `[attr]` 存在性
+// 选择器 over-match（旧 `_matchAttrOf` `av != null` 恒真，缺省元素误匹配 `[attr]`）。
+
+#[test]
+fn test_get_attribute_null_semantics_production_r3190() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <div id='d' data-x='value' data-empty=''></div>\
+           <div id='plain'></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 缺省属性 → null（旧 ""）；present-value → "value"；present-empty → ""。
+    let gets = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             var a=String(d.getAttribute('missing'));\
+             var b=d.getAttribute('data-x');\
+             var c='['+d.getAttribute('data-empty')+']';\
+             a+'/'+b+'/'+c",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        gets, "null/value/[]",
+        "getAttribute：缺省→null，present-value→值，present-empty→''"
+    );
+
+    // removeAttribute 后 → null（latest-wins，闭合 stale 旧值）；setAttribute 后 present-empty → ""。
+    let setremove = sandbox
+        .execute(
+            "var d=document.querySelector('#d');\
+             d.removeAttribute('data-x'); var a=String(d.getAttribute('data-x'));\
+             d.setAttribute('data-new',''); var b='['+d.getAttribute('data-new')+']';\
+             a+'/'+b",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        setremove, "null/[]",
+        "removeAttribute 后 getAttribute→null；setAttribute 空串后 present-empty→''"
+    );
+
+    // getAttributeNS 缺省 → null（委托 getAttribute，spec 一致）。
+    let ns = sandbox
+        .execute("String(document.querySelector('#d').getAttributeNS(null, 'href'))")
+        .unwrap()
+        .value;
+    assert_eq!(ns, "null", "getAttributeNS 缺省→null（spec 一致）");
+
+    // 附带修复：`[attr]` 存在性选择器不再 over-match 缺省元素。`#plain` 无 data-x → `[data-x]` 不匹配；
+    // `#d` 有 data-x → 匹配。旧实现 `_matchAttrOf` `av != null` 恒真（缺省返 ""），两元素均误匹配。
+    let sel = sandbox
+        .execute(
+            "document.querySelectorAll('[data-x]').length + '/' +\
+             (document.querySelector('#plain[data-x]') === null)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        sel, "1/true",
+        "[data-x] 存在性选择器：仅匹配有该属性的元素（#d），缺省元素 #plain 不匹配"
+    );
+}

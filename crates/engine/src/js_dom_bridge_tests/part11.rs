@@ -1958,8 +1958,8 @@ fn test_handle_remove_attribute_true_removal_r2993() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__getAfterRemove").unwrap().value,
-        "",
-        "handle 元素 removeAttribute 后 getAttribute=空串（absent）"
+        "null",
+        "handle 元素 removeAttribute 后 getAttribute=null（absent，spec；R3190 missing→null）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__hasAfterReset").unwrap().value,
@@ -2188,12 +2188,13 @@ fn test_sel_based_attr_latest_wins_r2995() {
         "setAttribute 后 hasAttribute=true"
     );
 
-    // removeAttribute → hasAttribute false / getAttribute ''（旧实现 stale：true / 'changed'）。
+    // removeAttribute → hasAttribute false / getAttribute null（spec absent；旧实现 stale：true / 'changed'，
+    // 且旧 getAttribute 对 absent 返 "" 而非 null——R3190 修正）。
     sandbox
         .execute(
             "d.removeAttribute('data-x');\
              globalThis.__afterRemHas = String(d.hasAttribute('data-x'));\
-             globalThis.__afterRemGet = d.getAttribute('data-x');",
+             globalThis.__afterRemGet = String(d.getAttribute('data-x'));",
         )
         .unwrap();
     assert_eq!(
@@ -2203,8 +2204,8 @@ fn test_sel_based_attr_latest_wins_r2995() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__afterRemGet").unwrap().value,
-        "",
-        "removeAttribute 后 getAttribute=空串（absent）"
+        "null",
+        "removeAttribute 后 getAttribute=null（absent，spec；R3190 missing→null）"
     );
 
     // remove 后再 set → 恢复（latest-wins：最近 SetAttr 命中）。
