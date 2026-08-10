@@ -15,6 +15,7 @@
 
 mod css_style_declaration;
 mod dataset;
+mod document;
 mod dom_token_list;
 mod element;
 mod event;
@@ -490,6 +491,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     // R3152 DOMStringMap ObjectTemplate（element.dataset）——dataset 子模块。
     dataset::build_and_cache_template(scope);
 
+    // R3159 `document` ObjectTemplate——document 子模块（escape-hatch 铺路：把文档级 factories 绑为
+    // `document` 方法 + live Document 读为 getter）。`__zw_native_get_document()` 工厂实例化。
+    document::build_and_cache_template(scope);
+
     // 3. 全局工厂 __zw_native_element_for_id(idStr) → native element 对象。
     let global = ctx.global(scope);
     let factory = v8::FunctionTemplate::builder(factories::native_element_factory_invoke).build(scope);
@@ -607,6 +612,16 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     let gactive_fn = gactive.get_function(scope);
     let gactive_key = v8::String::new(scope, "__zw_native_get_active_element");
     if let (Some(f), Some(key)) = (gactive_fn, gactive_key) {
+        let _ = global.set(scope, key.into(), f.into());
+    }
+
+    // R3159 全局 `__zw_native_get_document()` → `document` 对象（单例身份缓存；方法复用 factories +
+    // getter 读 live Document）。escape-hatch 铺路：escape-hatch 路由 `document` 到本对象后，
+    // `document.getElementById(...)` / `document.body` 等经原生直读 live Document。
+    let gdoc = v8::FunctionTemplate::builder(document::native_get_document_invoke).build(scope);
+    let gdoc_fn = gdoc.get_function(scope);
+    let gdoc_key = v8::String::new(scope, "__zw_native_get_document");
+    if let (Some(f), Some(key)) = (gdoc_fn, gdoc_key) {
         let _ = global.set(scope, key.into(), f.into());
     }
 

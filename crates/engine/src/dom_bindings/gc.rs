@@ -97,6 +97,13 @@ thread_local! {
     /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
     /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
     static ACTIVE_ELEMENT: RefCell<Option<NodeId>> = const { RefCell::new(None) };
+    /// R3159 `document` 对象（单例，无 NodeId 键——synthetic 命名空间对象）：弱缓存保 spec 身份
+    ///（`__zw_native_get_document() === __zw_native_get_document()` 同对象）。JS 丢 `document` 引用即可 GC。
+    static DOCUMENT_OBJECT: RefCell<Option<v8::Weak<v8::Object>>> = const { RefCell::new(None) };
+    /// R3159 `document` ObjectTemplate（方法复用 factories 子模块 + getter 读 live Document +
+    /// title get/set）。`install_dom_bindings` 建 + 缓存，`__zw_native_get_document` 工厂实例化。
+    static DOCUMENT_TEMPLATE: RefCell<Option<v8::Global<v8::ObjectTemplate>>> =
+        const { RefCell::new(None) };
 }
 
 /// 注入 DOM 源 + Element 模板（`install_dom_bindings` 调用）。
@@ -135,6 +142,8 @@ pub(crate) fn reset() {
     DATASET_OBJECTS.with(|c| c.borrow_mut().clear());
     DATASET_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
+    DOCUMENT_OBJECT.with(|c| *c.borrow_mut() = None);
+    DOCUMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
 }
 
 /// 缓存 NamedNodeMap ObjectTemplate（`install_dom_bindings` 建 `attributes` 集合模板）。
@@ -239,6 +248,30 @@ pub(crate) fn cache_dataset(scope: &mut v8::PinScope, ffi: u64, obj: v8::Local<v
     DATASET_OBJECTS.with(|c| {
         c.borrow_mut().insert(ffi, v8::Weak::new(scope, obj));
     });
+}
+
+// ── R3159 `document` 对象（单例）状态 ────────────────────────────────
+
+/// 缓存 `document` ObjectTemplate（`install_dom_bindings` 建）。
+pub(crate) fn set_document_template(scope: &mut v8::PinScope, tmpl: v8::Local<v8::ObjectTemplate>) {
+    DOCUMENT_TEMPLATE.with(|c| *c.borrow_mut() = Some(v8::Global::new(scope, tmpl)));
+}
+
+/// 取 `document` ObjectTemplate 的 Local（`__zw_native_get_document` 工厂实例化用）。
+pub(crate) fn document_template_local<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+) -> Option<v8::Local<'s, v8::ObjectTemplate>> {
+    DOCUMENT_TEMPLATE.with(|c| c.borrow().as_ref().map(|g| v8::Local::new(scope, g)))
+}
+
+/// 取已缓存的 `document` 对象（单例 identity，spec `document === document`）；weak 死 → `None`。
+pub(crate) fn cached_document<'s>(scope: &mut v8::PinScope<'s, '_>) -> Option<v8::Local<'s, v8::Object>> {
+    DOCUMENT_OBJECT.with(|c| c.borrow().as_ref().and_then(|w| w.to_local(scope)))
+}
+
+/// 缓存 `document` 对象（单例 **Weak**——JS 丢引用即可 GC，下次取重建）。
+pub(crate) fn cache_document(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>) {
+    DOCUMENT_OBJECT.with(|c| *c.borrow_mut() = Some(v8::Weak::new(scope, obj)));
 }
 
 // ── R3122 Attr 节点状态 ───────────────────────────────────────────

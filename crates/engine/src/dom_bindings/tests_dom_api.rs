@@ -2071,3 +2071,67 @@ fn native_element_draggable_r3158() {
         "true"
     );
 }
+
+/// R3159 native `document` 对象（escape-hatch 铺路）：`__zw_native_get_document()` 返命名空间对象，
+/// 方法复用 factories（getElementById/querySelector/createElement 等）+ getter 读 live Document
+///（documentElement/body/head/activeElement）。spec 身份（`=== ` 同对象，gc.rs 单例 weak 缓存）。
+#[test]
+fn native_document_object_r3159() {
+    let html = r#"<html><head><title>t</title></head><body><div id="a"><span class="x">hi</span></div></body></html>"#;
+    // documentElement getter → <html>（tagName HTML）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().documentElement.tagName)"),
+        "HTML"
+    );
+    // body / head getter → <body>/<head>。
+    assert_eq!(run_script(html, "(__zw_native_get_document().body.tagName)"), "BODY");
+    assert_eq!(run_script(html, "(__zw_native_get_document().head.tagName)"), "HEAD");
+    // activeElement getter → 无焦点 null。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().activeElement === null)"),
+        "true"
+    );
+    // getElementById 方法（复用 factories）→ <div id=a>。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().getElementById('a').tagName)"),
+        "DIV"
+    );
+    // querySelector 方法 → <span class=x>。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().querySelector('span.x').tagName)"),
+        "SPAN"
+    );
+    // querySelectorAll 方法 → 长度。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().querySelectorAll('span').length)"),
+        "1"
+    );
+    // getElementsByTagName 方法 → body 数 1。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().getElementsByTagName('body').length)"),
+        "1"
+    );
+    // createElement 方法 → 未挂载新 <p>（nodeType 1，tagName P）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createElement('p').tagName)"),
+        "P"
+    );
+    // createTextNode 方法 → nodeType 3。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createTextNode('ok').nodeType)"),
+        "3"
+    );
+    // 身份：__zw_native_get_document() === __zw_native_get_document()（单例缓存）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document() === __zw_native_get_document())"),
+        "true"
+    );
+    // getElementById 结果与既有 element_for_id 工厂共享 NodeId↔对象映射（同对象）。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().getElementById('a') === __zw_native_element_for_id('a'))"
+        ),
+        "true"
+    );
+}
