@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="ZeroWeb is an experimental browser engine and embeddable WebView built in Rust." />
+    <meta name="theme-color" content="#f7fbff" />
+    <title>ZeroWeb — A browser engine in Rust</title>
+    <link rel="icon" href="app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="quickstart.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="ZeroWeb home">
+        <img src="app-icon.svg" alt="" width="38" height="38" />
+        <span>Zero<span>Web</span></span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#products" data-i18n="navProducts">Products</a>
+        <a href="#architecture" data-i18n="navArchitecture">Architecture</a>
+        <a href="#roadmap" data-i18n="navRoadmap">Roadmap</a>
+        <a href="#contribute" data-i18n="navContribute">Contribute</a>
+      </nav>
+      <div class="header-actions">
+        <div class="language-switcher" role="group" aria-label="Language">
+          <button type="button" data-language="en" aria-pressed="true">EN</button>
+          <button type="button" data-language="zh" aria-pressed="false">中文</button>
+        </div>
+        <a class="github-link" href="https://github.com/leizongmin/ZeroWeb" data-i18n="github">GitHub</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" data-screen-label="Hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="pulse"></span><span data-i18n="eyebrow">Experimental browser project</span></p>
+          <h1 data-i18n-html="heroTitle">Build for the web<br /><em>from the engine up.</em></h1>
+          <p class="hero-intro" data-i18n="heroIntro">ZeroWeb is an experimental, cross-platform browser project written in Rust—an embeddable WebView and a desktop browser, growing from the same core.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#products" data-i18n-html="explore">Explore ZeroWeb <span aria-hidden="true">→</span></a>
+            <a class="button button-secondary" href="https://github.com/leizongmin/ZeroWeb" data-i18n="source">View source</a>
+          </div>
+          <p class="hero-note" data-i18n="heroNote">Built in public · MIT licensed · Experimental by design</p>
+        </div>
+        <div class="hero-art" aria-label="ZeroWeb rendering pipeline illustration">
+          <div class="orb orb-one"></div><div class="orb orb-two"></div>
+          <div class="browser-window">
+            <div class="window-bar"><span></span><span></span><span></span><div class="url">zero://render</div></div>
+            <div class="window-content">
+              <div class="render-title">One page.<br /><strong>Every layer.</strong></div>
+              <div class="render-grid"><span></span><span></span><span></span><span></span></div>
+              <div class="render-ring"><img src="app-icon.svg" alt="" /></div>
+              <div class="render-lines"><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="chip chip-dom">DOM</div><div class="chip chip-css">CSS</div><div class="chip chip-paint">PAINT</div>
+        </div>
+      </section>
+
+      <section class="statement" data-screen-label="Project statement">
+        <p data-i18n="statement">The web deserves more than a black box. ZeroWeb makes the browser’s layers explicit: parsing, style, layout, paint, security, and the runtime boundaries between them.</p>
+      </section>
+
+      <section class="products section" id="products" data-screen-label="Products">
+        <div class="section-heading"><p class="section-kicker" data-i18n="productsKicker">Two ways to use it</p><h2 data-i18n="productsTitle">One core. Two products.</h2></div>
+        <div class="product-grid">
+          <article class="product-card blue-card">
+            <div class="product-number">01</div><div class="product-icon">◌</div>
+            <h3>ZeroBrowser</h3><p data-i18n="browserText">A desktop browser application for exploring a browser stack that is built in the open.</p>
+            <a href="https://github.com/leizongmin/ZeroWeb/tree/main/apps/browser" data-i18n-html="viewBrowser">View browser application <span aria-hidden="true">↗</span></a>
+          </article>
+          <article class="product-card aqua-card">
+            <div class="product-number">02</div><div class="product-icon">⌘</div>
+            <h3>ZeroWebView</h3><p data-i18n="webviewText">A reusable Rust WebView boundary for embedding page capabilities in other applications.</p>
+            <a href="https://github.com/leizongmin/ZeroWeb/tree/main/crates/webview" data-i18n-html="viewWebview">View WebView library <span aria-hidden="true">↗</span></a>
+          </article>
+        </div>
+      </section>
+
+      <section class="architecture section" id="architecture" data-screen-label="Architecture">
+        <div class="section-heading"><p class="section-kicker" data-i18n="architectureKicker">From request to pixel</p><h2 data-i18n="architectureTitle">The web, made legible.</h2><p data-i18n="architectureText">ZeroWeb separates the systems that turn a URL into a rendered page, with clear responsibilities at each boundary.</p></div>
+        <ol class="pipeline">
+          <li><span>01</span><strong data-i18n="pipeNetwork">Network</strong><small data-i18n="pipeNetworkSub">Resources & navigation</small></li>
+          <li><span>02</span><strong>DOM + CSS</strong><small data-i18n="pipeDomSub">Document & rules</small></li>
+          <li><span>03</span><strong data-i18n="pipeStyle">Style</strong><small data-i18n="pipeStyleSub">Cascade & computed values</small></li>
+          <li><span>04</span><strong data-i18n="pipeLayout">Layout</strong><small data-i18n="pipeLayoutSub">Geometry & flow</small></li>
+          <li><span>05</span><strong data-i18n="pipeRender">Render</strong><small data-i18n="pipeRenderSub">Paint & composite</small></li>
+        </ol>
+        <a class="text-link" href="https://github.com/leizongmin/ZeroWeb/blob/main/docs/architecture.md" data-i18n-html="readArchitecture">Read the architecture guide <span aria-hidden="true">→</span></a>
+      </section>
+
+      <section class="principles section" data-screen-label="Principles">
+        <div class="section-heading"><p class="section-kicker" data-i18n="principlesKicker">What guides the work</p><h2 data-i18n="principlesTitle">Made to be understood.</h2></div>
+        <div class="principle-grid">
+          <article><span>↗</span><h3 data-i18n="principle1Title">Rust throughout</h3><p data-i18n="principle1Text">Core systems and host layers are built in the Rust ecosystem.</p></article>
+          <article><span>◇</span><h3 data-i18n="principle2Title">Standards-driven</h3><p data-i18n="principle2Text">Web behavior is verified against WPT, CSSWG reftests, and browser comparisons.</p></article>
+          <article><span>⊹</span><h3 data-i18n="principle3Title">Boundaries matter</h3><p data-i18n="principle3Text">Security, process, and runtime responsibilities are deliberate—not accidental.</p></article>
+          <article><span>⌁</span><h3 data-i18n="principle4Title">AI, with review</h3><p data-i18n="principle4Text">AI can contribute, but every change still needs a clear boundary and verification.</p></article>
+        </div>
+      </section>
+
+      <section class="roadmap section" id="roadmap" data-screen-label="Roadmap">
+        <div class="roadmap-copy"><p class="section-kicker" data-i18n="roadmapKicker">In active development</p><h2 data-i18n="roadmapTitle">An engine is a long conversation with the web.</h2><p data-i18n="roadmapText">The project is experimental. The foundations are in place; browser product work, rendering compatibility, and complete web API behavior remain in progress.</p><a class="button button-secondary" href="https://github.com/leizongmin/ZeroWeb/blob/main/ROADMAP.md" data-i18n-html="seeRoadmap">See the roadmap <span aria-hidden="true">→</span></a></div>
+        <div class="roadmap-list">
+          <div><b data-i18n="complete">Foundation</b><span data-i18n="completeText">DOM, CSS, style, layout, rendering, network & security basics</span></div>
+          <div><b data-i18n="progress">In progress</b><span data-i18n="progressText">Browser shell, render compatibility, DOM & web API coverage</span></div>
+          <div><b data-i18n="planned">Ahead</b><span data-i18n="plannedText">WebGL / WebGPU, SVG documents, animation fidelity</span></div>
+        </div>
+      </section>
+
+      <section class="quickstart section" data-screen-label="Quick start">
+        <div class="section-heading"><p class="section-kicker" data-i18n="quickstartKicker">Start exploring</p><h2 data-i18n="quickstartTitle">Begin with a real window.</h2><p data-i18n="quickstartText">The repository includes both a browser application and a small WebView rendering demo. Choose the path you want to inspect first.</p></div>
+        <div class="command-grid">
+          <article class="command-card"><div class="command-heading"><span class="command-dot blue-dot"></span><div><h3>ZeroBrowser</h3><p data-i18n="browserCommandText">Launch the desktop browser entry point.</p></div></div><code><span>$</span> cargo run --bin zero-browser</code></article>
+          <article class="command-card"><div class="command-heading"><span class="command-dot aqua-dot"></span><div><h3>WebView demo</h3><p data-i18n="webviewCommandText">Run the smallest rendering pipeline demo.</p></div></div><code><span>$</span> cargo run --bin webview-demo</code></article>
+        </div>
+        <p class="quickstart-note" data-i18n="quickstartNote">See the README for platform prerequisites and build details.</p>
+      </section>
+
+      <section class="contribute" id="contribute" data-screen-label="Contribute">
+        <p class="section-kicker" data-i18n="contributeKicker">Build in the open</p><h2 data-i18n-html="contributeTitle">Follow the work.<br />Help shape the engine.</h2>
+        <p data-i18n="contributeText">Explore the code, read the docs, test a path, or contribute a carefully verified change.</p>
+        <div class="hero-actions"><a class="button button-primary" href="https://github.com/leizongmin/ZeroWeb" data-i18n-html="visitGithub">Visit GitHub <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/leizongmin/ZeroWeb/blob/main/CONTRIBUTING.md" data-i18n="readContributing">Read contributing guide</a></div>
+      </section>
+    </main>
+    <footer><a class="brand" href="#top"><img src="app-icon.svg" alt="" width="28" height="28" /><span>Zero<span>Web</span></span></a><p data-i18n="footer">An experimental browser project in Rust.</p><a href="https://github.com/leizongmin/ZeroWeb">GitHub ↗</a></footer>
+    <script src="script.js"></script>
+  </body>
+</html>
