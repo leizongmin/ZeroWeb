@@ -277,43 +277,48 @@ impl CookieStore {
         let mut max_age_seen: Option<i64> = None;
         let mut expires_raw: Option<String> = None;
 
-        // 解析属性
+        // 解析属性——RFC 6265 §5.2：属性名 ASCII-大小写不敏感；未知属性忽略。
+        // https://www.rfc-editor.org/rfc/rfc6265#section-5.2
         for part in parts.iter().skip(1) {
             let part = part.trim();
+            // 无 '=' 的裸布尔属性（Secure / HttpOnly）。
             if part.eq_ignore_ascii_case("secure") {
                 cookie.secure = true;
-            } else if part.eq_ignore_ascii_case("httponly") {
+                continue;
+            }
+            if part.eq_ignore_ascii_case("httponly") {
                 cookie.http_only = true;
-            } else if let Some(val) = part.strip_prefix("Path=") {
-                cookie.path = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("path=") {
-                cookie.path = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("Domain=") {
-                cookie.domain = Some(val.trim().to_string());
-                cookie.host_only = false;
-            } else if let Some(val) = part.strip_prefix("domain=") {
-                cookie.domain = Some(val.trim().to_string());
-                cookie.host_only = false;
-            } else if let Some(val) = part.strip_prefix("Max-Age=") {
-                max_age_seen = i64::from_str(val.trim()).ok();
-            } else if let Some(val) = part.strip_prefix("max-age=") {
-                max_age_seen = i64::from_str(val.trim()).ok();
-            } else if let Some(val) = part.strip_prefix("Expires=") {
-                expires_raw = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("expires=") {
-                expires_raw = Some(val.trim().to_string());
-            } else if let Some(val) = part.strip_prefix("SameSite=") {
-                cookie.same_site = match val.trim() {
-                    "Strict" => SameSite::Strict,
-                    "Lax" => SameSite::Lax,
-                    _ => SameSite::None,
-                };
-            } else if let Some(val) = part.strip_prefix("samesite=") {
-                cookie.same_site = match val.trim() {
-                    "strict" => SameSite::Strict,
-                    "lax" => SameSite::Lax,
-                    _ => SameSite::None,
-                };
+                continue;
+            }
+            // key=value 属性：按首个 '=' 切分，属性名小写归一（ASCII-大小写不敏感匹配）。
+            let Some(eq) = part.find('=') else {
+                continue; // 未知裸属性 → 忽略
+            };
+            let attr_name = part[..eq].trim().to_ascii_lowercase();
+            let attr_val = part[eq + 1..].trim();
+            match attr_name.as_str() {
+                "path" => cookie.path = Some(attr_val.to_string()),
+                "domain" => {
+                    cookie.domain = Some(attr_val.to_string());
+                    cookie.host_only = false;
+                }
+                "max-age" => max_age_seen = i64::from_str(attr_val).ok(),
+                "expires" => expires_raw = Some(attr_val.to_string()),
+                // RFC 6265bis §5.2 + §5.4：SameSite 值 ASCII-大小写不敏感（Strict/Lax/None）；
+                // 未识别值 → Default（同 Lax）。
+                // https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html
+                "samesite" => {
+                    cookie.same_site = if attr_val.eq_ignore_ascii_case("strict") {
+                        SameSite::Strict
+                    } else if attr_val.eq_ignore_ascii_case("lax") {
+                        SameSite::Lax
+                    } else if attr_val.eq_ignore_ascii_case("none") {
+                        SameSite::None
+                    } else {
+                        SameSite::Lax // 未识别 → Default = Lax
+                    };
+                }
+                _ => {} // 未知属性 → 忽略（RFC 6265 §5.2 step 6）
             }
         }
 
@@ -372,11 +377,16 @@ impl CookieStore {
     /// 从指定 URL 接收 cookie 并添加到存储。
     ///
     /// 如果 cookie 无显式 Domain 属性，使用 URL 的 host 作为 domain（host-only cookie），
-    /// 遵循 RFC 6265 §5.3。推荐使用此方法替代 [`add`](Self::add)。
+    /// 遵循 RFC 6265 §5.3；无显式 Path 属性时按 RFC 6265 §5.1.4 计算 default-path。
+    /// 推荐使用此方法替代 [`add`](Self::add)。
     pub fn add_from_url(&mut self, mut cookie: Cookie, url: &ParsedUrl) {
         if cookie.host_only {
             // 无显式 Domain 属性：使用来源 host，保持 host_only 标记
             cookie.domain = url.host.clone();
+        }
+        // RFC 6265 §5.1.4 + §5.3 step 6：无显式 Path 属性 → 用 request-uri 的 default-path。
+        if cookie.path.is_none() {
+            cookie.path = Some(default_path(&url.path));
         }
         self.add(cookie);
     }
@@ -500,6 +510,28 @@ fn cookie_matches_url(cookie: &Cookie, url: &ParsedUrl) -> bool {
     true
 }
 
+/// RFC 6265 §5.1.4 default-path——从 request-uri 的 path 计算默认 cookie 路径。
+///
+/// 算法（等价于规范）：
+/// 1. uri-path 为空或不以 `/` 开头 → `/`
+/// 2. uri-path 不超过一个 `/` → `/`
+/// 3. 否则 → 首字符到最右 `/`（不含）的子串
+///
+/// 例：`/a/b/c` → `/a/b`，`/a/b/` → `/a/b`，`/foo` → `/`，`""` → `/`。
+/// https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
+fn default_path(uri_path: &str) -> String {
+    // step 1：空或不以 '/' 开头 → "/"
+    if uri_path.is_empty() || !uri_path.starts_with('/') {
+        return "/".to_string();
+    }
+    // step 2/3：找最右 '/'——若为下标 0（仅首字符为 '/'）→ "/"，否则取其前缀。
+    match uri_path.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(idx) => uri_path[..idx].to_string(),
+        None => "/".to_string(), // 不可达（上面已保证 starts_with '/'），保守返 "/"
+    }
+}
+
 /// 检查域名是否匹配（支持子域名匹配）。
 fn domain_matches(cookie_domain: &str, host: &str) -> bool {
     if cookie_domain.is_empty() {
@@ -576,6 +608,81 @@ mod tests {
         let cookie3 = CookieStore::parse_set_cookie("test=1; SameSite=None; Secure").unwrap();
         assert_eq!(cookie3.same_site, SameSite::None);
         assert!(cookie3.secure);
+    }
+
+    /// R3218：属性名 ASCII-大小写不敏感（RFC 6265 §5.2）——任意大小写属性名 + SameSite 值。
+    #[test]
+    fn test_parse_cookie_attribute_case_insensitive() {
+        // 属性名任意大小写——`PATH`/`DOMAIN`/`MAX-AGE` 大写不再被静默忽略。
+        let c = CookieStore::parse_set_cookie("id=1; PATH=/app; DOMAIN=example.com").unwrap();
+        assert_eq!(c.path.as_deref(), Some("/app"), "PATH= 大写属性须解析");
+        assert_eq!(c.domain.as_deref(), Some("example.com"), "DOMAIN= 大写属性须解析");
+        assert!(!c.host_only, "DOMAIN 属性（任意大小写）须清 host_only");
+
+        // MAX-AGE 大写属性须生效
+        let c2 = CookieStore::parse_set_cookie("id=1; MAX-AGE=0").unwrap();
+        assert!(c2.is_expired(), "MAX-AGE=0 大写属性须立即过期");
+
+        // SECURE / HTTPONLY 大小写混合
+        let c3 = CookieStore::parse_set_cookie("id=1; SeCuRe; HTTPONLY").unwrap();
+        assert!(c3.secure, "大小写混合 Secure 须识别");
+        assert!(c3.http_only, "HttpOnly 须识别");
+
+        // SameSite 值任意大小写（RFC 6265bis §5.4 step 10）
+        let strict = CookieStore::parse_set_cookie("id=1; SameSite=STRICT").unwrap();
+        assert_eq!(strict.same_site, SameSite::Strict, "SameSite=STRICT 须 Strict");
+        let lax = CookieStore::parse_set_cookie("id=1; SAMESITE=LaX").unwrap();
+        assert_eq!(lax.same_site, SameSite::Lax, "SAMESITE=LaX 须 Lax");
+        let none = CookieStore::parse_set_cookie("id=1; samesite=NoNe; secure").unwrap();
+        assert_eq!(none.same_site, SameSite::None, "samesite=NoNe 须 None");
+        assert!(none.secure);
+
+        // 未识别 SameSite 值 → Default = Lax（不要求 Secure）
+        let unrecognized = CookieStore::parse_set_cookie("id=1; SameSite=Foo").unwrap();
+        assert_eq!(unrecognized.same_site, SameSite::Lax, "未识别 SameSite 须回落 Lax");
+    }
+
+    /// R3219：default_path 按 RFC 6265 §5.1.4 计算（直接测 helper）。
+    #[test]
+    fn test_default_path_rfc_6265_5_1_4() {
+        // 空或不以 '/' 开头 → "/"
+        assert_eq!(default_path(""), "/");
+        assert_eq!(default_path("foo"), "/");
+        // 仅一个 '/'（根或单段）→ "/"
+        assert_eq!(default_path("/"), "/");
+        assert_eq!(default_path("/foo"), "/");
+        // 多段路径 → 首字符到最右 '/'（不含）
+        assert_eq!(default_path("/a/b/c"), "/a/b");
+        assert_eq!(default_path("/a/b/"), "/a/b");
+        assert_eq!(default_path("/a/b"), "/a");
+    }
+
+    /// R3219：无显式 Path 的 cookie 经 add_from_url 按 default-path 存储，路径匹配遵循之。
+    #[test]
+    fn test_add_from_url_default_path() {
+        let mut store = CookieStore::new();
+        // 来自 /app/page.html 的 host-only cookie，无 Path 属性 → default-path=/app
+        let cookie = CookieStore::parse_set_cookie("sess=1").unwrap();
+        let request_url = parse_url("https://example.com/app/page.html").unwrap();
+        store.add_from_url(cookie, &request_url);
+
+        // /app/page（default-path 子路径）匹配
+        let m = parse_url("https://example.com/app/page").unwrap();
+        assert_eq!(store.get_for_url(&m).len(), 1, "/app/* 应匹配 default-path=/app");
+
+        // /application 不匹配（/app 不是边界前缀）——避免 default-path 缺失导致全路径放行
+        let sibling = parse_url("https://example.com/application").unwrap();
+        assert!(
+            store.get_for_url(&sibling).is_empty(),
+            "/application 不应匹配 default-path=/app"
+        );
+
+        // /other 不匹配
+        let other = parse_url("https://example.com/other").unwrap();
+        assert!(
+            store.get_for_url(&other).is_empty(),
+            "/other 不应匹配 default-path=/app"
+        );
     }
 
     #[test]

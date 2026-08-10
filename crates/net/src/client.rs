@@ -131,7 +131,7 @@ impl HttpClient {
                     return Err(NetError::TooManyRedirects);
                 }
 
-                // 获取 Location 头
+                // 获取 Location 头（httparse 已剥离前后 OWS，无需额外 trim）
                 let location = response
                     .headers()
                     .get(reqwest::header::LOCATION)

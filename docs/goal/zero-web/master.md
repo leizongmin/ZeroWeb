@@ -121,7 +121,51 @@
 
 ## 最近完成的改进
 
-### polyfill getAttributeNS/setAttributeNS ns-prefix 一致性（本轮 R3217，属性 NS spec 审计）
+### Cookie 属性名 + SameSite 值 ASCII-大小写不敏感（本轮 R3218，net crate spec 审计）
+
+承接 R3217（DOM/序列化/CSSOM/Range/attribute-NS 九项 R3206–R3217 收敛，剩余项耦合或受限），**转 net crate 规范合规扫描**（URL 解析 / fetch header / 状态码处理），第一刀取 **cookie 解析**。深审 `CookieStore::parse_set_cookie`（`crates/net/src/cookie.rs`）对照 RFC 6265 §5.2——发现真偏差：属性名匹配走 `strip_prefix("Path=")`/`strip_prefix("path=")` 两分支（每属性仅覆盖首字母大小写两种），**任意其它大小写被静默忽略**：
+
+- `Set-Cookie: id=1; PATH=/app; DOMAIN=example.com` → `PATH=`/`DOMAIN=` 不匹配两分支 → `cookie.path`/`cookie.domain` **留 None**（属性被丢）。RFC 6265 §5.2：属性名 ASCII-大小写不敏感。
+- `Set-Cookie: id=1; SameSite=STRICT` → 前缀 `SameSite=` 命中但值 `STRICT` 不匹配 `"Strict"` → `_ => SameSite::None` → 又无 Secure → **SEC-08 拒绝**（整 cookie 被丢）。RFC 6265bis §5.4：SameSite 值 ASCII-大小写不敏感。
+- SameSite 前缀本身也仅 `SameSite=`/`samesite=` 两分支——`SAMESITE=Strict` 整属性被丢。MAX-AGE=/EXPIRES= 同样仅两种。
+
+**修复**：重构解析循环为「按首个 `=` 切分属性名→`to_ascii_lowercase()` 归一→`match` 名」裸布尔（Secure/HttpOnly）保留 `eq_ignore_ascii_case`；SameSite 值改 `eq_ignore_ascii_case("strict"/"lax"/"none")`，**未识别值 → Default = Lax**（RFC 6265bis §5.4 step 10，旧实现 `_ => None` 要求 Secure 属偏差）。未知属性走 `_ => {}` 忽略（§5.2 step 6）。
+
+**为何净正向**：① **闭合属性名任意大小写**——`PATH=`/`DOMAIN=`/`SAMESITE=`/`MAX-AGE=` 大写不再被丢，真实服务器（尤其 legacy / 非 RFC 严守）发混合大小写属性不再静默降级；② **SameSite 值大小写**——`SameSite=STRICT` 不再被错判 None（无 Secure 时整 cookie 被丢）；③ **未识别 SameSite → Lax** 符合 6265bis（旧 None+要求 Secure 属过严偏差）；④ **零回归**——既有测（`Path=`/`Domain=`/`SameSite=Strict|Lax|None` 全首字母大小写）行为不变；SameSite=None-without-Secure 仍拒（None 仍走 SEC-08）；⑤ 低风险单点；⑥ net 属本流域（zero-web P1a/P1b）。
+
+| 文件 | 变更 |
+|------|------|
+| `net/src/cookie.rs` | 解析循环重构：属性名 `to_ascii_lowercase()` 归一 + `match`，SameSite 值 `eq_ignore_ascii_case`，未识别 → Lax；+1 测（属性名大小写 + SameSite 值大小写 + 未识别→Lax 断言）。 |
+
+验证：`cargo fmt -p zero-net -- --check` clean + `cargo clippy -p zero-net --all-targets -- -D warnings` 零警告 + **zero-net 380 passed**（+3 新测，零回归）。spec：https://www.rfc-editor.org/rfc/rfc6265#section-5.2 + https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html 。pre-commit guard 见提交。
+
+### Cookie default-path 计算（本轮 R3219，net crate spec 审计）
+
+承接 R3218（属性大小写），同 cookie.rs 续审——发现第二项真偏差：`add_from_url` 仅在无显式 Domain 时设 host-only domain，**未计算 default-path**（RFC 6265 §5.1.4 + §5.3 step 6）。无显式 `Path` 属性的 cookie `cookie.path` **留 None** → `cookie_matches_url` 的 `if let Some(ref cookie_path)` 跳过路径检查 → **该 cookie 匹配域内任意路径**。如 `Set-Cookie: sid=1` 来自 `https://example.com/app/page.html`（无 Path）→ 旧实现对 `/other`、`/admin` 全放行（应为 `/app`）。
+
+**修复**：加 `default_path(uri_path)` helper（§5.1.4 算法：空或不以 `/` 开头→`/`；仅一个 `/`→`/`；否则→首字符到最右 `/` 不含的子串，如 `/a/b/c`→`/a/b`、`/a/b/`→`/a/b`、`/foo`→`/`）；`add_from_url` 在 `cookie.path.is_none()` 时设之。
+
+**为何净正向**：① **闭合 §5.1.4 default-path**——无 Path 的 cookie 不再全路径放行（最小特权，安全增益：会话 cookie 不泄露到兄弟路径）；② **零回归**——`add()`（无 URL 上下文，doc 明示用 `add_from_url`）路径行为不变；既有测均显式 `Path=` 或经 `add()`（`path: None` 仍 skip 路径检查，兼容）；仅 `add_from_url` 路径补 default；③ helper 纯函数易测；④ 低风险单点；⑤ net 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `net/src/cookie.rs` | `default_path(uri_path)` 函数（§5.1.4，spec 链接 + 算法注释）；`add_from_url` 无 Path 时设 default-path；+2 测（helper 7 例 + add_from_url default-path 边界前缀不匹配断言）。 |
+
+验证：同 R3218（zero-net 380 passed，+2 新测）。
+
+### net crate spec 扫描结论（本轮调研，R3220 调查清零）
+
+R3218/R3219 之外，本轮对 net crate（URL/fetch header/状态码）并发三路深审（client.rs 重定向/状态码、request.rs+fetch_bridge 头处理、cookie.rs RFC 6265），结论：
+
+- **R3220 redirect Location 空白 trim**：**非真 bug，已调查清零**。深查 `httparse`（reqwest 头解析底层）`lib.rs:1172-1180`（colon 后吃前导 OWS）+ `lib.rs:1228-1239`（trim trailing OWS）——`response.headers().get(LOCATION)` 返值已无前后 OWS，net 层 `.trim()` 为 no-op。初版加的 trim 已回退（精准修改原则：不修非 bug）。客户端 301/302/303→GET、307/308 保持方法、重定向计数、相对 Location 解析（`base.join`）均已正确（实测）。
+- **跨域重定向剥离敏感头**（client.rs SEC-03）：审 `!same_origin(&current_url, &request.url)` 比较——`request.url` 为**原始**请求 URL，`active_headers.retain(...)` **永久剥离**敏感头，A→B→A 链 B 跳已剥且不重注，**无凭证泄露**（agent「leak」误读 `.retain()` 为临时）。`www-authenticate` 在 SENSITIVE_HEADERS 为响应头（无害，请求头列表不会含它）。判定：非 bug，不改。
+- **engine fetch_bridge 禁止头 / Set-Cookie 暴露**（fetch spec §3.4.3 / §3.4.4）：**真偏差但跨层（engine/app，非 net），本轮 defer 记为后续项**——JS Headers shim（`part02.js`）未过滤 forbidden request-header names（Host/Content-Length/Sec-*/Proxy-*），`Headers.get('set-cookie')` 返合并值而非 null（forbidden response-header）。修复需协调 shim（engine）+ 各 app fetch handler（剥离 Set-Cookie）多落点，独立成轮（fetch-bridge hardening），不在 net crate 范围。
+
+net crate（URL 经 `url` crate 薄封装、fetch 走 reqwest、cookie 解析）规范合规本扫描收敛：**2 真修复（R3218/R3219，cookie 解析）+ 1 调查清零（R3220）+ 1 跨层 defer（engine fetch 禁止头）**。
+
+**下一步**：续 net crate 二刀（cookie 存储侧 / `domain_matches` 空域返回 true + IP/public-suffix 校验，需 host 校验无 PSL 故受限；或转 storage crate / IndexedDB 事务 spec 审）；或 engine fetch forbidden-header + Set-Cookie 过滤（跨层 fetch-bridge hardening）；或继续 net request.rs 头注入校验（RFC 7230 token 校验）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3216（raw text 元素族），转**命名空间属性族 JS API 一致性**复核。深审 polyfill `setAttributeNS`/`getAttributeNS`/`hasAttributeNS`/`removeAttributeNS`（part04.js）——发现 R3024 既标的「已知限制」实为可修的真偏差：
 
