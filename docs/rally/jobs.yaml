@@ -21,6 +21,27 @@ defaults:
     RALLY_ENV: "cron"
 
 jobs:
+  # 每周在 Weekly Build / 趋势任务完成后维护官网进展；首次运行会建立最小静态更新区，
+  # 后续仅追加可追溯的中英双语周报，并提交到 main 触发 GitHub Pages 发布。
+  - id: "website-progress-weekly"
+    enabled: true
+    schedule: "30 10 * * 0"
+    command: "rally"
+    args:
+      - "query"
+      - "维护 ZeroWeb 官网的最新进展。先 git pull --rebase 同步 main；以本周新增提交、ROADMAP.md、docs/goal/*/master.md、docs/monthly/、WPT 与性能趋势为唯一事实来源。首次运行时，建立最小的网站更新区：首页显示最新 3 条、独立更新归档页，并使用可版本控制的数据文件承载内容；之后每周只追加一条中英双语周报。每条必须包含日期、摘要、已完成项、进行中项、来源链接；没有可验证事实时不要编造，改为输出 DONE。不得改 Rust 源码、Cargo 配置、路线图 Mission/Done Criteria 或 GitHub Actions；不要修改既有更新的事实内容。完成后按 docs/rally/run-rules.md 执行适用检查、lei-pre-commit-guard，提交并推送 main，触发 GitHub Pages 发布。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    timeout_seconds: 7200
+    query:
+      session_reuse: true
+      max_session_uses: 7
+
   # 每天早上维护 README 与仓库顶层/关键文档到最新仓库事实
   # 维护清单：README.md、ROADMAP.md、CHANGELOG.md、AGENTS.md、CLAUDE.md、
   # CONTRIBUTING.md、SECURITY.md、CODE_OF_CONDUCT.md、docs/architecture.md、
