@@ -46,6 +46,20 @@ thread_local! {
     static HOST_CALLBACKS: RefCell<Vec<HostCallback>> = RefCell::new(Vec::new());
 }
 
+/// 清空线程局部宿主回调注册表。
+///
+/// 2026-08-10 windows tab_js_worker 全量挂起修复（根因）：回调闭包捕获的资源
+/// 可能拥有后台线程（如 `__zw_compile_module` 捕获的 `HttpClient` = reqwest
+/// blocking Client，构造即 spawn dispatcher 线程）。若闭包留到**线程退出**才由
+/// Rust TLS 析构 drop——Windows 上 TLS 析构在 loader lock 下运行，闭包内资源的
+/// drop（join 后台线程）与后台线程自身退出（同样需要 loader lock）互锁死锁；
+/// Linux 无 loader lock 故不复现。调用方（`V8Sandbox::drop`）在正常线程上下文
+/// 提前清空，使闭包在无 loader lock 时 drop。清空后旧 idx 查询返 None（调用方
+/// `unwrap_or_default` 兜底），语义安全。
+pub fn clear_host_callbacks() {
+    HOST_CALLBACKS.with(|cbs| cbs.borrow_mut().clear());
+}
+
 /// V8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
 fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
     let idx = args.data().integer_value(scope).unwrap_or(-1);
@@ -136,10 +150,9 @@ enum WatchdogMsg {
 /// 持久超时看门狗线程主循环：阻塞等待直到（a）收到消息或（b）已装载的截止时刻
 /// 到期 → `terminate_execution`。无装载时无限等待（`recv_timeout(Duration::MAX)`）。
 ///
-/// 2026-08-10 重构：旧实现每次 execute spawn+join 一个 OS 线程，Windows 并行负载
-/// （nextest 全量并发 + wait_for_global 5ms 轮询）下线程 churn 经 loader lock
-/// 序列化致批量楔死（windows-x86_64 tab_js_worker ×4 120s 挂起 3/3 复现）。
-/// 每 sandbox 一个常驻线程 + seq 协议无 churn；timeout_ms 由 Arm 携带支持
+/// 2026-08-10 重构：旧实现每次 execute spawn+join 一个 OS 线程——高频执行
+/// （wait_for_global 5ms 轮询等）下线程 churn 可观（Windows 线程创建尤贵）；
+/// 改为每 sandbox 一个常驻线程 + seq 协议；timeout_ms 由 Arm 携带支持
 /// set_timeout_ms 动态变化。
 fn watchdog_main(rx: std::sync::mpsc::Receiver<WatchdogMsg>) {
     let mut armed: Option<(u64, std::time::Instant, v8::IsolateHandle)> = None;
@@ -242,20 +255,7 @@ impl V8Sandbox {
             create_params = create_params.heap_limits(initial, max);
         }
 
-        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
-        // 打印 isolate 创建耗时与调用线程信息。
-        #[cfg(feature = "v8")]
-        let t_diag = std::time::Instant::now();
-        #[cfg(feature = "v8")]
-        let t_diag_name = std::thread::current().name().unwrap_or("unnamed").to_string();
-
         let isolate = v8::Isolate::new(create_params);
-
-        #[cfg(feature = "v8")]
-        eprintln!(
-            "[TEMP-DIAG] with_config: isolate created on thread '{t_diag_name}' in {:?}",
-            t_diag.elapsed()
-        );
 
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
@@ -645,28 +645,21 @@ impl V8Sandbox {
 
 impl Drop for V8Sandbox {
     fn drop(&mut self) {
-        // 先停看门狗线程并 join（防其持 ThreadSafeHandle 对即将销毁的 isolate 调
-        // terminate_execution），再释放 isolate 与 context。
-        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-        #[cfg(feature = "v8")]
-        eprintln!("[TEMP-DIAG] V8Sandbox::drop: sending Stop");
+        // 2026-08-10 windows tab_js_worker 挂起修复：提前清空线程局部回调注册表
+        //（正常线程上下文 drop 闭包——含 reqwest HttpClient 等带后台线程的资源——
+        // 避免其留到线程退出时在 Windows loader lock 下 drop 死锁，见
+        // [`clear_host_callbacks`]）。随后停看门狗线程并 join（防其持
+        // IsolateHandle 对即将销毁的 isolate 调 terminate_execution），再释放
+        // isolate 与 context。
+        clear_host_callbacks();
         if let Some(tx) = &self.watchdog_tx {
             let _ = tx.send(WatchdogMsg::Stop);
         }
         if let Some(join) = self.watchdog_join.take() {
-            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-            #[cfg(feature = "v8")]
-            eprintln!("[TEMP-DIAG] V8Sandbox::drop: joining watchdog");
             let _ = join.join();
         }
-        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-        #[cfg(feature = "v8")]
-        eprintln!("[TEMP-DIAG] V8Sandbox::drop: watchdog joined, dropping isolate");
         self.cached_context = None;
         self.isolate = None;
-        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-        #[cfg(feature = "v8")]
-        eprintln!("[TEMP-DIAG] V8Sandbox::drop: isolate dropped, drop complete");
     }
 }
 
@@ -1812,137 +1805,6 @@ mod tests {
             let r = sandbox.execute(&code).unwrap();
             assert_eq!(r.value, i.to_string());
         }
-    }
-
-    // ===== TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）=====
-    // 变体矩阵：spawn 线程 + 不同 V8 操作 + drop + 线程退出，打印每步。Windows 上
-    // 定位「V8 sandbox 使用后线程退出挂起」的最小复现。
-
-    fn diag_run<F: FnOnce() + Send + 'static>(name: &'static str, f: F) {
-        let handle = std::thread::Builder::new()
-            .name(format!("diag-{name}"))
-            .spawn(move || {
-                eprintln!("[DIAG-{name}] thread started");
-                f();
-                eprintln!("[DIAG-{name}] thread body done");
-            })
-            .unwrap();
-        let _ = handle.join();
-        eprintln!("[DIAG-{name}] thread joined");
-    }
-
-    fn diag_sandbox_config() -> SandboxConfig {
-        SandboxConfig {
-            persistent_context: true,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn diag_v1_thread_no_sandbox() {
-        // 对照：纯线程创建+退出（无 V8）。
-        diag_run("v1", || {});
-    }
-
-    #[test]
-    fn diag_v2_isolate_create_drop_no_execute() {
-        // 创建 sandbox（isolate）→ 不执行 → drop。
-        diag_run("v2", || {
-            eprintln!("[DIAG-v2] creating sandbox");
-            let s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v2] sandbox created");
-            drop(s);
-            eprintln!("[DIAG-v2] sandbox dropped");
-        });
-    }
-
-    #[test]
-    fn diag_v3_isolate_execute_then_drop() {
-        // 创建 → 执行一次 → drop。
-        diag_run("v3", || {
-            eprintln!("[DIAG-v3] creating sandbox");
-            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v3] sandbox created");
-            let r = s.execute("1 + 1");
-            eprintln!("[DIAG-v3] executed: {:?}", r.map(|x| x.value));
-            drop(s);
-            eprintln!("[DIAG-v3] sandbox dropped");
-        });
-    }
-
-    #[test]
-    fn diag_v4_isolate_execute_ctx_then_drop() {
-        // 创建（persistent_context）→ 两次执行 → drop（最贴近 tab_js_worker 形态）。
-        diag_run("v4", || {
-            eprintln!("[DIAG-v4] creating sandbox");
-            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v4] sandbox created");
-            let r1 = s.execute("var a = 1; a");
-            eprintln!("[DIAG-v4] exec1: {:?}", r1.map(|x| x.value));
-            let r2 = s.execute("a + 1");
-            eprintln!("[DIAG-v4] exec2: {:?}", r2.map(|x| x.value));
-            drop(s);
-            eprintln!("[DIAG-v4] sandbox dropped");
-        });
-    }
-
-    #[test]
-    fn diag_v11_register_callbacks_then_exit() {
-        // 填充 HOST_CALLBACKS TLS（30 个回调，捕获 Arc<Mutex<String>> 等）→ 线程退出。
-        // 验证 HOST_CALLBACKS TLS 析构是否为挂点（tab_js_worker 路径的差异之一）。
-        diag_run("v11", || {
-            eprintln!("[DIAG-v11] creating sandbox");
-            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v11] sandbox created");
-            let shared = Arc::new(std::sync::Mutex::new(String::from("x")));
-            for i in 0..30 {
-                let c = Arc::clone(&shared);
-                s.register_callback(
-                    &format!("__zw_diag_cb_{i}"),
-                    Box::new(move |_args: &[String]| c.lock().unwrap().clone()),
-                );
-            }
-            eprintln!("[DIAG-v11] 30 callbacks registered");
-            let r = s.execute("1 + 1");
-            eprintln!("[DIAG-v11] executed: {:?}", r.map(|x| x.value));
-            drop(s);
-            eprintln!("[DIAG-v11] sandbox dropped");
-        });
-    }
-
-    #[test]
-    fn diag_v12_execute_big_script_then_drop() {
-        // 执行 ~600KB 大脚本（近似 shim 规模堆）→ drop → 线程退出。
-        // 验证「大堆后线程退出」是否为挂点（shim 647KB 是 tab_js_worker 的另一差异）。
-        diag_run("v12", || {
-            eprintln!("[DIAG-v12] creating sandbox");
-            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v12] sandbox created");
-            let mut big = String::from("var __diagAcc = 0;");
-            for i in 0..6000 {
-                big.push_str(&format!("function f{i}(x){{ return x * {i}; }} __diagAcc += f{i}({i});\n"));
-            }
-            eprintln!("[DIAG-v12] big script {} bytes, executing", big.len());
-            let r = s.execute(&big);
-            eprintln!("[DIAG-v12] executed: {:?}", r.map(|x| x.value.len()));
-            drop(s);
-            eprintln!("[DIAG-v12] sandbox dropped");
-        });
-    }
-
-    #[test]
-    fn diag_v5_isolate_execute_forget() {
-        // 创建 → 执行 → mem::forget（不 drop sandbox）→ 线程退出。区分：
-        // 挂点在 sandbox drop 的副作用（若有）还是线程退出本身。
-        diag_run("v5", || {
-            eprintln!("[DIAG-v5] creating sandbox");
-            let mut s = V8Sandbox::with_config(diag_sandbox_config()).unwrap();
-            eprintln!("[DIAG-v5] sandbox created");
-            let r = s.execute("1 + 1");
-            eprintln!("[DIAG-v5] executed: {:?}", r.map(|x| x.value));
-            std::mem::forget(s);
-            eprintln!("[DIAG-v5] sandbox forgotten");
-        });
     }
 
     #[test]

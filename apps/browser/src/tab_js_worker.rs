@@ -115,18 +115,11 @@ impl TabJsWorkerHandle {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
-                );
-                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
-                // 函数全量返回（含隐式 drop）后才到此处 → 区分函数内挂 vs 线程退出挂。
-                #[cfg(feature = "v8")]
-                eprintln!("[TEMP-DIAG] worker closure returned, thread exiting");
+                )
             })
             .expect("spawn tab js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str, timeout_ms: u64| {
-            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-            #[cfg(feature = "v8")]
-            eprintln!("[TEMP-DIAG] executor: sending Execute");
             let (reply_tx, reply_rx) = mpsc::channel();
             cmd_for_exec
                 .send(JsWorkerCommand::Execute {
@@ -135,13 +128,9 @@ impl TabJsWorkerHandle {
                     reply: reply_tx,
                 })
                 .map_err(|e| e.to_string())?;
-            let r = reply_rx
+            reply_rx
                 .recv_timeout(channel_timeout_for(timeout_ms))
-                .map_err(|e| e.to_string())?;
-            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-            #[cfg(feature = "v8")]
-            eprintln!("[TEMP-DIAG] executor: Execute reply received");
-            r
+                .map_err(|e| e.to_string())?
         });
 
         let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
@@ -245,18 +234,9 @@ impl TabJsWorkerHandle {
 
     /// 关闭 JS 线程。
     pub fn shutdown(&mut self) {
-        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-        #[cfg(feature = "v8")]
-        eprintln!("[TEMP-DIAG] shutdown: sending Shutdown");
         let _ = self.cmd_tx.send(JsWorkerCommand::Shutdown);
         if let Some(j) = self.join.take() {
-            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-            #[cfg(feature = "v8")]
-            eprintln!("[TEMP-DIAG] shutdown: joining worker thread");
             let _ = j.join();
-            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-            #[cfg(feature = "v8")]
-            eprintln!("[TEMP-DIAG] shutdown: worker joined");
         }
     }
 }
@@ -280,14 +260,9 @@ fn js_worker_main(
         timeout_ms: TAB_JS_EVENT_TIMEOUT_MS,
         ..Default::default()
     };
-    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-    #[cfg(feature = "v8")]
-    eprintln!("[TEMP-DIAG] js_worker_main: creating sandbox…");
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
-    #[cfg(feature = "v8")]
-    eprintln!("[TEMP-DIAG] js_worker_main: sandbox created");
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
@@ -335,9 +310,6 @@ fn js_worker_main(
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
     }
-    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-    #[cfg(feature = "v8")]
-    eprintln!("[TEMP-DIAG] js_worker_main: shim executed, entering cmd loop");
 
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
@@ -346,17 +318,11 @@ fn js_worker_main(
                 timeout_ms,
                 reply,
             } => {
-                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-                #[cfg(feature = "v8")]
-                eprintln!("[TEMP-DIAG] worker: executing cmd ({} bytes)", script.len());
                 sandbox.set_timeout_ms(timeout_ms);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
                 sandbox.set_timeout_ms(TAB_JS_EVENT_TIMEOUT_MS);
                 let _ = reply.send(result);
-                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-                #[cfg(feature = "v8")]
-                eprintln!("[TEMP-DIAG] worker: cmd executed, reply sent");
             }
             JsWorkerCommand::ExecuteModule {
                 source,
@@ -399,20 +365,8 @@ fn js_worker_main(
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
             }
-            JsWorkerCommand::Shutdown => {
-                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
-                #[cfg(feature = "v8")]
-                eprintln!("[TEMP-DIAG] worker: Shutdown received");
-                break;
-            }
+            JsWorkerCommand::Shutdown => break,
         }
-    }
-    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
-    // 显式 drop sandbox + 打印，区分「函数内挂」与「线程退出挂」。
-    #[cfg(feature = "v8")]
-    {
-        drop(sandbox);
-        eprintln!("[TEMP-DIAG] js_worker_main: sandbox explicitly dropped, returning");
     }
 }
 
@@ -603,53 +557,6 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
 mod tests {
     use super::*;
     use zero_browser_shell::TabId;
-
-    // ===== TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）=====
-    // browser 级变体：逐步逼近完整 js_worker_main 流程，二分挂点。
-
-    #[test]
-    fn diag_tab_v7_spawn_shutdown_no_scripts() {
-        // 仅 spawn + shutdown（无 set_dom_snapshot / 无 execute）。覆盖 shim 执行 +
-        // 回调注册 + bridges 构造 + teardown。
-        let mut worker = TabJsWorkerHandle::spawn(TabId(90));
-        eprintln!("[DIAG-v7] worker spawned, shutting down");
-        worker.shutdown();
-        eprintln!("[DIAG-v7] shutdown complete");
-    }
-
-    #[test]
-    fn diag_tab_v8_spawn_snapshot_shutdown() {
-        // spawn + set_dom_snapshot + shutdown（无 execute）。
-        let mut worker = TabJsWorkerHandle::spawn(TabId(91));
-        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        eprintln!("[DIAG-v8] snapshot set, shutting down");
-        worker.shutdown();
-        eprintln!("[DIAG-v8] shutdown complete");
-    }
-
-    #[test]
-    fn diag_tab_v9_spawn_execute_shutdown() {
-        // spawn + snapshot + 1 次 execute + shutdown。
-        let mut worker = TabJsWorkerHandle::spawn(TabId(92));
-        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        let r = worker.execute_script_direct("1 + 2");
-        eprintln!("[DIAG-v9] executed: {:?}", r);
-        worker.shutdown();
-        eprintln!("[DIAG-v9] shutdown complete");
-    }
-
-    #[test]
-    fn diag_tab_v10_spawn_resolver_shutdown() {
-        // spawn + async_resolver().resolve（跨命令 marshal）+ shutdown。
-        let mut worker = TabJsWorkerHandle::spawn(TabId(93));
-        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        let resolver = worker.async_resolver();
-        resolver.resolve("nope", "v");
-        let r = worker.execute_script_direct("1 + 2");
-        eprintln!("[DIAG-v10] executed: {:?}", r);
-        worker.shutdown();
-        eprintln!("[DIAG-v10] shutdown complete");
-    }
 
     /// P1b S3 incr-d：非阻塞 fetch 的 resolve 时机异步——轮询 `globalThis.{key}` 直到
     /// 非 undefined（或超时返当前值）。子线程抓取（synthetic ~ms / 本地 server ~ms）→
