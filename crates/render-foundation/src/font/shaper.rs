@@ -66,8 +66,6 @@ impl<'a> TextShaper<'a> {
         }
 
         // 回退：fontdue 逐字符映射
-
-        // 回退：fontdue 逐字符映射
         self.shape_fallback(text, font_size, font_id)
     }
 
@@ -86,36 +84,28 @@ impl<'a> TextShaper<'a> {
         let glyph_infos = glyph_buffer.glyph_infos();
         let glyph_positions = glyph_buffer.glyph_positions();
 
-        // fontdue 字体用于获取像素级 advance width（按 glyph 索引，ligature-correct）
         let fd_font = self.font_loader.get(font_id.0)?;
         // rustybuzz 的 glyph_position 字段为字体设计单位（UPM 刻度），
         // 转换为像素须乘 font_size / units_per_em。
         let upem = fd_font.units_per_em();
         let px_per_unit = if upem > 0.0 { font_size / upem } else { 0.0 };
 
-        // 建立 cluster → code_point 映射
-        let chars: Vec<char> = text.chars().collect();
-
+        // https://www.w3.org/TR/css-text-3/#text-shaping
+        // rustybuzz 的 cluster 是原始 UTF-8 字节偏移，不是 Unicode 标量索引。
         let mut glyphs = Vec::with_capacity(glyph_infos.len());
         for (i, (info, pos)) in glyph_infos.iter().zip(glyph_positions.iter()).enumerate() {
-            // 通过 cluster 索引回原始字符
-            let code_point = if (info.cluster as usize) < chars.len() {
-                chars[info.cluster as usize]
-            } else if i < chars.len() {
-                chars[i]
-            } else {
-                '\u{FFFD}'
-            };
+            let code_point = text
+                .get(info.cluster as usize..)
+                .and_then(|cluster| cluster.chars().next())
+                .or_else(|| text.chars().nth(i))
+                .unwrap_or('\u{FFFD}');
 
-            // advance width：用 fontdue 按 glyph 索引取像素 advance——对 ligature 合并
-            // 的 glyph 也正确（取该 glyph 的真实宽度），旧实现按首 cluster 字符宽度过窄。
-            // glyph_id == 0 表示 .notdef（字体缺字），回退估算宽。
+            // x_advance 已包含 kerning、GPOS 和连字调整；用 fontdue 的裸 glyph
+            // advance 覆盖它会撤销 shaping 结果。glyph_id=0 时保留原估算回退。
             let advance_x = if info.glyph_id == 0 {
                 font_size * 0.6
             } else {
-                fd_font
-                    .metrics_indexed(info.glyph_id.min(u16::MAX as u32) as u16, font_size)
-                    .advance_width
+                pos.x_advance as f32 * px_per_unit
             };
 
             glyphs.push(ShapedGlyph {
@@ -271,6 +261,8 @@ pub fn measure_text_width(shaper: &TextShaper, text: &str, font_size: f32) -> f3
 mod tests {
     use super::*;
     use crate::font::loader::FontLoader;
+
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
 
     /// 创建空的 TextShaper（无字体）。
     fn make_empty_shaper() -> TextShaper<'static> {
@@ -451,6 +443,48 @@ mod tests {
         // 总宽度应该合理（5 个字符大约 40-80px）
         let total: f32 = glyphs.iter().map(|g| g.advance_x).sum();
         assert!(total > 20.0 && total < 200.0, "总宽度应合理，实际 {}", total);
+    }
+
+    /// rustybuzz cluster 使用 UTF-8 字节偏移，多字节字符后仍须映射到正确码点。
+    #[test]
+    fn test_rustybuzz_cluster_uses_utf8_byte_offsets() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+
+        let code_points: Vec<char> = shaper
+            .shape_single_line("éAB", 16.0)
+            .into_iter()
+            .map(|glyph| glyph.code_point)
+            .collect();
+
+        assert_eq!(code_points, vec!['é', 'A', 'B']);
+    }
+
+    /// shaping advance 必须保留 rustybuzz 的 kerning/GPOS 结果。
+    #[test]
+    fn test_rustybuzz_position_is_authoritative_advance() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+        let font_data = loader
+            .get_font_data(font_id)
+            .expect("font bytes should remain available");
+        let face = rustybuzz::Face::from_slice(font_data, 0).expect("valid bundled Lato face");
+        let mut buffer = rustybuzz::UnicodeBuffer::new();
+        buffer.push_str("AV");
+        let expected = rustybuzz::shape(&face, &[], buffer)
+            .glyph_positions()
+            .iter()
+            .map(|position| position.x_advance as f32 * 16.0 / face.units_per_em() as f32)
+            .sum::<f32>();
+
+        let actual = measure_text_width(&shaper, "AV", 16.0);
+
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "actual={actual}, expected={expected}"
+        );
     }
 
     /// 测试使用真实字体的换行。
