@@ -2355,6 +2355,39 @@ fn native_element_tag_name_namespace_case_r3166() {
     assert_eq!(run_script(html2, "(__zw_native_element_for_id('d').nodeName)"), "DIV");
 }
 
+/// R3168 `document.compatMode` / `characterSet` / `contentType` / `readyState`（spec
+/// `dom-document-compatmode` 等）：文档元数据只读字符串（分析/框架高频读取）。
+#[test]
+fn native_document_metadata_r3168() {
+    // 标准 doctype → no-quirks → compatMode "CSS1Compat"。
+    let std_html = r#"<!DOCTYPE html><html><head></head><body></body></html>"#;
+    assert_eq!(
+        run_script(std_html, "(__zw_native_get_document().compatMode)"),
+        "CSS1Compat"
+    );
+    // 无 doctype → quirks → compatMode "BackCompat"。
+    let quirks_html = r#"<html><head></head><body></body></html>"#;
+    assert_eq!(
+        run_script(quirks_html, "(__zw_native_get_document().compatMode)"),
+        "BackCompat"
+    );
+    // characterSet 固定 UTF-8（html5ever HTML 解析默认）。
+    assert_eq!(
+        run_script(std_html, "(__zw_native_get_document().characterSet)"),
+        "UTF-8"
+    );
+    // contentType 固定 text/html（HTML 文档）。
+    assert_eq!(
+        run_script(std_html, "(__zw_native_get_document().contentType)"),
+        "text/html"
+    );
+    // readyState 固定 complete（headless 全解析后）。
+    assert_eq!(
+        run_script(std_html, "(__zw_native_get_document().readyState)"),
+        "complete"
+    );
+}
+
 /// R3167 `element.contentEditable`（枚举反射 + setter 非法值抛 SyntaxError）+ `isContentEditable`
 ///（继承走查）+ `spellcheck`（带继承 boolean）。spec HTML `dom-contenteditable` / `dom-iscontenteditable`
 /// / `dom-spellcheck`。

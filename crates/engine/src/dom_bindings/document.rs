@@ -73,6 +73,67 @@ pub(super) fn native_active_element_getter(
     native_or_null(scope, active_element(), &mut rv);
 }
 
+// ── R3168 文档元数据只读字符串 getter（spec `dom-document-compatmode` / characterSet / contentType /
+//    readyState——分析/框架高频读取）─────────────────────────────────────────────
+
+/// `document.compatMode` getter（spec `dom-document-compatmode`）：quirks mode → "BackCompat"，
+/// no-quirks / limited-quirks → "CSS1Compat"（经 live Document quirks_mode 求值，jQuery quirks 检测高频）。
+pub(super) fn native_compat_mode_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    // quirks_mode: Quirks → BackCompat；NoQuirks / LimitedQuirks → CSS1Compat。
+    let mode = with_dom(|d| d.quirks_mode());
+    let val = match mode {
+        Some(zero_dom::QuirksMode::Quirks) => "BackCompat",
+        _ => "CSS1Compat",
+    };
+    set_string_rv(scope, val, &mut rv);
+}
+
+/// `document.characterSet` getter（spec `dom-document-character-set`）：HTML 解析文档固定 "UTF-8"
+///（headless：html5ever 默认 UTF-8，无 HTTP charset 协商；分析/编码探测库高频）。
+pub(super) fn native_character_set_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    set_string_rv(scope, "UTF-8", &mut rv);
+}
+
+/// `document.contentType` getter（spec `dom-document-contenttype`）：HTML 解析文档固定 "text/html"
+///（headless：无 HTTP Content-Type 协商；XML mimeType 解析未实现，统一 text/html）。
+pub(super) fn native_content_type_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    set_string_rv(scope, "text/html", &mut rv);
+}
+
+/// `document.readyState` getter（spec `dom-document-readystate`）：headless 全解析后固定 "complete"
+///（简化：无 loading/interactive 加载生命周期追踪；run_script 模型脚本于全解析后执行，"complete" 准确。
+/// 框架 DOMContentLoaded/load 等待高频读取）。
+pub(super) fn native_ready_state_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    set_string_rv(scope, "complete", &mut rv);
+}
+
+/// 字符串返回值共用：设 `s` 为 ReturnValue（v8::String::new 失败 → 留默认 undefined）。
+fn set_string_rv(scope: &mut v8::PinScope, s: &str, rv: &mut v8::ReturnValue<v8::Value>) {
+    if let Some(v) = v8::String::new(scope, s) {
+        rv.set(v.into());
+    }
+}
+
 /// NodeId → native 元素（`get_or_create_native_element`）或 `null`（无 / stale）的共用 setter。
 fn native_or_null(scope: &mut v8::PinScope, id: Option<NodeId>, rv: &mut v8::ReturnValue<v8::Value>) {
     match id {
@@ -144,6 +205,21 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     // __zw_native_*_document_title 工厂共用）。
     if let Some(k) = v8::String::new(scope, "title") {
         tmpl.set_accessor_with_setter(k.into(), native_document_title_getter, native_document_title_setter);
+    }
+    // R3168 `document.compatMode` / `characterSet` / `contentType` / `readyState`（spec `dom-document-compatmode`
+    // 等）：文档元数据只读字符串（分析/框架高频读取）。compatMode 经 live Document quirks_mode 求值；
+    // characterSet/contentType/readyState 为 HTML 解析文档固定值（headless 简化）。
+    if let Some(k) = v8::String::new(scope, "compatMode") {
+        tmpl.set_accessor(k.into(), native_compat_mode_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "characterSet") {
+        tmpl.set_accessor(k.into(), native_character_set_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "contentType") {
+        tmpl.set_accessor(k.into(), native_content_type_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "readyState") {
+        tmpl.set_accessor(k.into(), native_ready_state_getter);
     }
 
     // 方法（复用 factories `*invoke`——忽略 `this`，查全局 live Document，与全局工厂语义一致）。
