@@ -515,3 +515,61 @@ fn test_prevent_default_on_non_cancelable_event_in_dispatch() {
     assert!(not_prevented, "不可取消事件的 dispatch 应返回 true");
     assert!(!event.default_prevented());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R3174 属性名 HTML 命名空间 case-insensitive（DOM spec setAttribute step 2 /
+// get-an-attribute-by-name step 1）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// HTML 元素属性名 ASCII case-insensitive：`set_attribute("Foo")` 后任意大小写 `get_attribute`
+/// 均命中，`attribute_names()` 返回小写存储名。DOM spec「get an attribute by name」step 1：
+/// HTML 文档 name ASCII 小写。
+#[test]
+fn test_html_attribute_name_case_insensitive_r3174() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    // 大写设置
+    doc.set_attribute(elem, "Data-Role", "button");
+    // 任意大小写读取均命中（case-insensitive lookup）
+    assert_eq!(doc.get_attribute(elem, "data-role"), Some("button".to_string()));
+    assert_eq!(doc.get_attribute(elem, "DATA-ROLE"), Some("button".to_string()));
+    assert_eq!(doc.get_attribute(elem, "Data-Role"), Some("button".to_string()));
+    // 存储名为小写（setAttribute step 2 小写 qualifiedName）
+    assert_eq!(doc.attribute_names(elem), vec!["data-role".to_string()]);
+    // has_attribute / remove_attribute 同样 case-insensitive
+    assert!(doc.has_attribute(elem, "DATA-ROLE"));
+    doc.remove_attribute(elem, "data-ROLE");
+    assert!(!doc.has_attribute(elem, "data-role"));
+}
+
+/// HTML 元素 `set_attribute("ID", ...)` 经 case-insensitive 小写后正确注册到 id_map，
+/// `get_element_by_id` 可命中（id_map 检测用 effective name，HTML "ID"/"Id" 均算 id 属性）。
+#[test]
+fn test_html_attribute_id_uppercase_registers_in_id_map_r3174() {
+    let mut doc = Document::new();
+    let elem = doc.create_element("div");
+    doc.append_child(doc.root(), elem).unwrap();
+    // 大写 "ID" 应被识别为 id 属性并注册 id_map
+    doc.set_attribute(elem, "ID", "main-btn");
+    assert_eq!(doc.get_element_by_id("main-btn"), Some(elem));
+    // 大写移除也应清理 id_map
+    doc.remove_attribute(elem, "ID");
+    assert_eq!(doc.get_element_by_id("main-btn"), None);
+}
+
+/// 非 HTML 命名空间（SVG）元素属性名**大小写敏感**：`set_attribute("viewBox")` 保留原样，
+/// `get_attribute("viewbox")`（小写）不命中。SVG 属性大小写敏感是 SVG 整合的关键
+///（`viewBox` vs `viewbox` 是不同属性）。
+#[test]
+fn test_svg_attribute_name_case_sensitive_r3174() {
+    let mut doc = Document::new();
+    let rect = doc.create_element_ns("http://www.w3.org/2000/svg", "rect");
+    doc.set_attribute(rect, "viewBox", "0 0 100 50");
+    // 精确大小写命中
+    assert_eq!(doc.get_attribute(rect, "viewBox"), Some("0 0 100 50".to_string()));
+    // 小写不命中（SVG 大小写敏感，未小写）
+    assert_eq!(doc.get_attribute(rect, "viewbox"), None);
+    assert!(!doc.has_attribute(rect, "VIEWBOX"));
+    // 存储名保留原大小写
+    assert_eq!(doc.attribute_names(rect), vec!["viewBox".to_string()]);
+}

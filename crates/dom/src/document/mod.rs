@@ -780,10 +780,13 @@ impl Document {
         let old_value = self.get_attribute(id, name);
 
         if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
+            // HTML 命名空间元素属性名 case-insensitive：effective name == "id" 即 id 属性
+            //（HTML "ID"/"Id" 均算；SVG/XML 大小写敏感，仅精确 "id" 算）。与 ElementData 内部一致。
+            let is_id_attr = elem.attr_name_effective(name) == "id";
             elem.set_attribute(name, value);
 
             // 更新 id 映射
-            if name == "id" {
+            if is_id_attr {
                 if let Some(old_id) = &old_value {
                     self.id_map.remove(old_id);
                 }
@@ -811,12 +814,12 @@ impl Document {
         let old_value = self.get_attribute(id, name);
 
         if let Some(NodeKind::Element(elem)) = self.nodes.get_mut(id).map(|n| &mut n.kind) {
+            // HTML 元素属性名 case-insensitive：effective name == "id" 即 id 属性（见 set_attribute）。
+            let is_id_attr = elem.attr_name_effective(name) == "id";
             elem.remove_attribute(name);
 
             // 更新 id 映射
-            if name == "id"
-                && let Some(old_id) = &old_value
-            {
+            if is_id_attr && let Some(old_id) = &old_value {
                 self.id_map.remove(old_id);
             }
         }

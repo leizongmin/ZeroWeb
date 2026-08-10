@@ -134,11 +134,25 @@ impl ElementData {
         }
     }
 
+    /// 属性有效名：HTML 命名空间元素 ASCII 小写（DOM spec 属性名 case-insensitive），
+    /// 非 HTML（SVG / MathML）原样保留（大小写敏感）。依据 DOM spec「get an attribute by name」
+    /// step 1（HTML 文档小写 name）与 `setAttribute` step 2（HTML 命名空间小写 qualifiedName）。
+    /// spec：https://dom.spec.whatwg.org/#concept-element-attributes-get-by-name
+    pub(crate) fn attr_name_effective<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
+        const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+        if self.namespace() == HTML_NS {
+            std::borrow::Cow::Owned(name.to_ascii_lowercase())
+        } else {
+            std::borrow::Cow::Borrowed(name)
+        }
+    }
+
     /// 获取指定属性值。
     pub fn get_attribute(&self, name: &str) -> Option<String> {
+        let name = self.attr_name_effective(name);
         self.attributes
             .iter()
-            .find(|a| local_name_eq(&a.name.local, name))
+            .find(|a| local_name_eq(&a.name.local, &name))
             .map(|a| a.value.to_string())
     }
 
@@ -147,16 +161,18 @@ impl ElementData {
         use markup5ever::{LocalName, Namespace, QualName};
         use tendril::StrTendril;
 
-        if let Some(attr) = self.attributes.iter_mut().find(|a| local_name_eq(&a.name.local, name)) {
+        let name = self.attr_name_effective(name);
+
+        if let Some(attr) = self.attributes.iter_mut().find(|a| local_name_eq(&a.name.local, &name)) {
             attr.value = StrTendril::from(value);
         } else {
             self.attributes.push(markup5ever::Attribute {
-                name: QualName::new(None, Namespace::from(""), LocalName::from(name)),
+                name: QualName::new(None, Namespace::from(""), LocalName::from(&*name)),
                 value: StrTendril::from(value),
             });
         }
 
-        // 更新缓存
+        // 更新缓存（用 effective name：HTML 已小写，SVG 原样——SVG/XML "id"/"class" 大小写敏感）
         if name == "id" {
             self.id = Some(value.to_string());
         } else if name == "class" {
@@ -166,10 +182,11 @@ impl ElementData {
 
     /// 移除指定属性。
     pub fn remove_attribute(&mut self, name: &str) -> Option<String> {
+        let name = self.attr_name_effective(name);
         let idx = self
             .attributes
             .iter()
-            .position(|a| local_name_eq(&a.name.local, name))?;
+            .position(|a| local_name_eq(&a.name.local, &name))?;
         let attr = self.attributes.remove(idx);
 
         // 更新缓存
@@ -184,7 +201,8 @@ impl ElementData {
 
     /// 检查是否有指定属性。
     pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes.iter().any(|a| local_name_eq(&a.name.local, name))
+        let name = self.attr_name_effective(name);
+        self.attributes.iter().any(|a| local_name_eq(&a.name.local, &name))
     }
 
     /// 获取所有属性名。
