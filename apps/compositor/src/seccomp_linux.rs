@@ -38,6 +38,8 @@ fn blocked_syscalls() -> Vec<i64> {
         libc::SYS_connect,
         libc::SYS_execve,
         libc::SYS_execveat,
+        // aarch64 无 SYS_fork/SYS_vfork（fork 由 clone 承担），仅 x86 系列定义
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         libc::SYS_fork,
         libc::SYS_getpeername,
         libc::SYS_getsockname,
@@ -53,6 +55,7 @@ fn blocked_syscalls() -> Vec<i64> {
         libc::SYS_setsockopt,
         libc::SYS_socket,
         libc::SYS_socketpair,
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         libc::SYS_vfork,
     ]
     .into_iter()
