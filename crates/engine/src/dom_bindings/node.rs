@@ -65,11 +65,12 @@ pub(super) fn native_node_name_getter(
     }
 }
 
-/// Rust 侧 nodeName 计算（spec `dom-node-nodename`）。
+/// Rust 侧 nodeName 计算（spec `dom-node-nodename`）。Element == tagName（HTML-uppercased
+/// local name，HTML 命名空间大写 / SVG·MathML 原样——见 [`zero_dom::node::ElementData::tag_name`]）。
 fn node_name(doc: &Document, id: NodeId) -> Option<String> {
     let n = doc.get(id)?;
     Some(match &n.kind {
-        NodeKind::Element(e) => e.local_name().to_ascii_uppercase(),
+        NodeKind::Element(e) => e.tag_name(),
         NodeKind::Text(_) => "#text".into(),
         NodeKind::Comment(_) => "#comment".into(),
         NodeKind::Document(_) => "#document".into(),

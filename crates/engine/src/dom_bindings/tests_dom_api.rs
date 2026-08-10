@@ -2279,31 +2279,32 @@ fn native_document_import_adopt_node_r3162() {
 #[test]
 fn native_document_create_element_ns_r3163() {
     let html = r#"<html><head></head><body></body></html>"#;
-    // createElementNS(svg, "svg") → SVG 元素（local "svg"，tagName getter 大写 → "SVG"）。
+    // createElementNS(svg, "svg") → SVG 元素（local "svg"；SVG 非 HTML 命名空间，tagName 原样小写 → "svg"，
+    // spec `dom-element-tagname` 大小写敏感——R3166 修正，此前误返 "SVG"）。
     assert_eq!(
         run_script(
             html,
             "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','svg').tagName)"
         ),
-        "SVG"
+        "svg"
     );
-    // createElementNS(svg, "rect") → rect（SVG 子元素）。
+    // createElementNS(svg, "rect") → rect（SVG 子元素，原样小写）。
     assert_eq!(
         run_script(
             html,
             "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','rect').tagName)"
         ),
-        "RECT"
+        "rect"
     );
-    // 带前缀 qualifiedName "svg:rect" → 解析 prefix=svg / local=rect（tagName 取 local）。
+    // 带前缀 qualifiedName "svg:rect" → 解析 prefix=svg / local=rect（tagName 取 local，原样小写）。
     assert_eq!(
         run_script(
             html,
             "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','svg:rect').tagName)"
         ),
-        "RECT"
+        "rect"
     );
-    // createElementNS(html, "div") → HTML div（XHTML 命名空间）。
+    // createElementNS(html, "div") → HTML div（XHTML 命名空间，tagName 大写 → "DIV"）。
     assert_eq!(
         run_script(
             html,
@@ -2319,6 +2320,39 @@ fn native_document_create_element_ns_r3163() {
         ),
         "1"
     );
+}
+
+/// R3166 `element.tagName` / `nodeName` 命名空间大小写敏感（spec `dom-element-tagname`：
+/// HTML-uppercased local name）。闭合 R3163 限制①——HTML 命名空间元素大写，SVG/MathML 等原样小写。
+#[test]
+fn native_element_tag_name_namespace_case_r3166() {
+    let html = r#"<html><head></head><body><svg id="s"><rect id="r"/></svg></body></html>"#;
+    // HTML 命名空间（createElement 默认 XHTML）→ ASCII 大写。
+    assert_eq!(run_script(html, "(__zw_native_create_element('div').tagName)"), "DIV");
+    // createElementNS(svg, "rect") → SVG 命名空间 → 原样小写。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/2000/svg','rect').tagName)"
+        ),
+        "rect"
+    );
+    // createElementNS(mathml, "mi") → MathML 命名空间 → 原样小写。
+    assert_eq!(
+        run_script(
+            html,
+            "(__zw_native_get_document().createElementNS('http://www.w3.org/1998/Math/MathML','mi').tagName)"
+        ),
+        "mi"
+    );
+    // 解析得到的 SVG 元素（html5ever 赋 SVG 命名空间）→ 原样小写。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('s').tagName)"), "svg");
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('r').tagName)"), "rect");
+    // nodeName == tagName（Element 上，spec `dom-node-nodename`），SVG 元素亦原样小写。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('s').nodeName)"), "svg");
+    // HTML 元素 nodeName == tagName == 大写。
+    let html2 = r#"<div id="d"></div>"#;
+    assert_eq!(run_script(html2, "(__zw_native_element_for_id('d').nodeName)"), "DIV");
 }
 
 /// R3165 `element.namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串，

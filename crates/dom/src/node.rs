@@ -119,6 +119,21 @@ impl ElementData {
         &self.name.ns
     }
 
+    /// 获取元素的 `tagName` / `nodeName`（spec DOM `dom-element-tagname`）。
+    ///
+    /// **HTML-uppercased local name**：HTML 命名空间元素（`http://www.w3.org/1999/xhtml`）
+    /// 返回 ASCII 大写 local_name（如 `<div>` → `"DIV"`）；SVG / MathML 等非 HTML 命名空间
+    /// 元素返回 local_name **原样**（大小写敏感，如 `<svg>` → `"svg"`、`<rect>` → `"rect"`）。
+    /// headless 简化：不含 prefix（qualified name 的 prefix 部分省略，仅 local）。
+    pub fn tag_name(&self) -> String {
+        const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+        if self.namespace() == HTML_NS {
+            self.local_name().to_ascii_uppercase()
+        } else {
+            self.local_name().to_string()
+        }
+    }
+
     /// 获取指定属性值。
     pub fn get_attribute(&self, name: &str) -> Option<String> {
         self.attributes

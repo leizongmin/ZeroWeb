@@ -21,10 +21,9 @@ use super::{get_or_create_native_element, local_value_to_string, read_node_id, s
 
 // ── accessor getter（ZST fn；状态经 gc.rs 线程局部）─────────────────
 
-/// `tagName` getter：读 internal slot[0] NodeId → Element `local_name` → 大写 → `v8::String`。
-///
-/// 仅 Element 有 tagName（HTML 大写，spec `dom-element-tagname`）；非 Element / stale →
-/// undefined。
+/// `tagName` getter（spec `dom-element-tagname`）：HTML-uppercased local name——HTML 命名空间
+/// 元素 ASCII 大写（`<div>`→`"DIV"`），SVG/MathML 等非 HTML 命名空间元素原样（`<svg>`→`"svg"`）。
+/// 非 Element / stale → undefined。
 pub(super) fn native_tag_name_getter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -37,7 +36,7 @@ pub(super) fn native_tag_name_getter(
     };
     let tag: Option<String> = with_dom(|d| {
         d.get(id).and_then(|n| match &n.kind {
-            NodeKind::Element(e) => Some(e.local_name().to_ascii_uppercase()),
+            NodeKind::Element(e) => Some(e.tag_name()),
             _ => None,
         })
     })
