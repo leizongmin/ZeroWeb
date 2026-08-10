@@ -21,12 +21,13 @@ pub struct NavigationHistory {
 impl NavigationHistory {
     /// 创建新的导航历史管理器。
     ///
-    /// `max_entries` 为最大历史条目数，超出时自动丢弃最早的条目。
+    /// `max_entries` 为最大历史条目数，超出时自动丢弃最早的条目。最小为 1（0 归一化为 1，
+    /// 否则 navigate 的驱逐循环会清空 entries 后留下悬空 current_index）。
     pub fn new(max_entries: usize) -> Self {
         Self {
             entries: Vec::new(),
             current_index: 0,
-            max_entries,
+            max_entries: max_entries.max(1),
         }
     }
 
@@ -63,32 +64,35 @@ impl NavigationHistory {
     }
 
     /// 前进一步。
+    ///
+    /// R3230：HTML session-history 语义——无下一项时为 no-op（返 None），**不 panic**。
+    /// 旧实现 `len() - 1` 在空历史下 usize 下溢（debug panic / release 经 wrap 致越界 panic）。
     pub fn go_forward(&mut self) -> Option<&HistoryEntry> {
-        if self.current_index < self.entries.len() - 1 {
-            self.current_index += 1;
-            Some(&self.entries[self.current_index])
-        } else {
-            None
-        }
+        let next = self.current_index.checked_add(1)?;
+        let entry = self.entries.get(next)?;
+        self.current_index = next;
+        Some(entry)
     }
 
     /// 后退 N 步。
+    ///
+    /// R3230：越界或空历史时 no-op（None），不 panic。旧实现 `entries[self.current_index]`
+    /// 在空历史 + n=0 时越界 panic。
     pub fn go_back_n(&mut self, n: usize) -> Option<&HistoryEntry> {
-        if n > self.current_index {
-            return None;
-        }
-        self.current_index -= n;
-        Some(&self.entries[self.current_index])
+        let target = self.current_index.checked_sub(n)?;
+        let entry = self.entries.get(target)?;
+        self.current_index = target;
+        Some(entry)
     }
 
     /// 前进 N 步。
+    ///
+    /// R3230：越界或空历史时 no-op（None），不 panic（统一 checked_add + get 模式）。
     pub fn go_forward_n(&mut self, n: usize) -> Option<&HistoryEntry> {
-        let target = self.current_index + n;
-        if target >= self.entries.len() {
-            return None;
-        }
+        let target = self.current_index.checked_add(n)?;
+        let entry = self.entries.get(target)?;
         self.current_index = target;
-        Some(&self.entries[self.current_index])
+        Some(entry)
     }
 
     /// 获取当前条目。
@@ -625,5 +629,58 @@ mod tests {
         let result = nav.go_back_n(0);
         assert!(result.is_some());
         assert_eq!(result.unwrap().url, "http://c.com");
+    }
+
+    /// R3230：空历史下 go_forward/go_back/go_back_n/go_forward_n 须 no-op（None），不 panic。
+    /// 旧实现 go_forward `len()-1` usize 下溢（debug panic / release 越界 panic）；
+    /// go_back_n(0) `entries[0]` 空历史越界 panic。
+    #[test]
+    fn test_navigation_empty_history_no_panic_r3230() {
+        let mut nav = NavigationHistory::new(10);
+        // 空历史——所有 go* 调用须返 None，不 panic。
+        assert!(
+            nav.go_forward().is_none(),
+            "go_forward() 空历史须 None（旧 usize 下溢 panic）"
+        );
+        assert!(nav.go_back().is_none());
+        assert!(
+            nav.go_back_n(0).is_none(),
+            "go_back_n(0) 空历史须 None（旧 entries[0] 越界 panic）"
+        );
+        assert!(nav.go_forward_n(0).is_none());
+        assert!(nav.go_back_n(5).is_none());
+        assert!(nav.go_forward_n(3).is_none());
+        assert!(nav.current().is_none());
+        assert!(!nav.can_go_back());
+        assert!(!nav.can_go_forward());
+    }
+
+    /// R3230：max_entries=0 归一化为 1（navigate 不再清空 entries 留悬空 current_index）。
+    #[test]
+    fn test_navigation_max_entries_zero_normalized_r3230() {
+        let mut nav = NavigationHistory::new(0);
+        nav.navigate("http://a.com", None);
+        assert_eq!(nav.len(), 1, "max_entries=0 归一化为 1，navigate 后 1 条目");
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
+        // 再 navigate（驱逐最旧，但归一化 max=1 → 保留最新）
+        nav.navigate("http://b.com", None);
+        assert_eq!(nav.len(), 1);
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
+    }
+
+    /// R3230：非空历史下 go_forward_n / go_back_n 正常路径回归（checked_add/checked_sub 改写后行为不变）。
+    #[test]
+    fn test_navigation_go_n_nonempty_r3230() {
+        let mut nav = NavigationHistory::new(10);
+        nav.navigate("http://a.com", None);
+        nav.navigate("http://b.com", None);
+        nav.navigate("http://c.com", None); // current=c (idx 2)
+        // go_back_n(2) → a (idx 0)
+        assert_eq!(nav.go_back_n(2).unwrap().url, "http://a.com");
+        // go_forward_n(1) → b (idx 1)
+        assert_eq!(nav.go_forward_n(1).unwrap().url, "http://b.com");
+        // 越界 → None
+        assert!(nav.go_forward_n(10).is_none());
+        assert!(nav.go_back_n(10).is_none());
     }
 }

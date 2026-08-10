@@ -814,22 +814,20 @@ mod tests {
         assert_eq!(store.get_for_url(&sub).len(), 1, "子域名也应匹配");
     }
 
-    /// 测试 NavigationHistory 在 max_entries=0 时的行为。
-    /// max_entries 为 0 表示无限容量（无淘汰），因为 while 条件 len > 0 永不成立。
-    /// 验证所有条目都被保留。
+    /// 测试 NavigationHistory 在 max_entries=0 时的行为（R3230：归一化为 1）。
+    /// 旧行为：max_entries=0 时 navigate 后 `while len > 0 { remove }` 把 entries 清空，
+    /// 留下悬空 current_index（current()=None 但 current_index=0）——退化 bug。R3230 归一化为 1。
     #[test]
-    fn test_navigation_max_entries_zero_means_unlimited() {
+    fn test_navigation_max_entries_zero_normalized() {
         let mut nav = NavigationHistory::new(0);
-        // max_entries=0 时 while self.entries.len() > 0 不成立（任何 len > 0 都不 > 0 是 false）
-        // 实际上 len > max_entries → len > 0 在 len >= 1 时为 true，会不断移除
-        // 所以 max_entries=0 时每次 navigate 后立即淘汰到 0 条
         nav.navigate("http://a.com", None);
-        // len = 1 > max_entries(0) → remove first → len = 0
-        assert_eq!(nav.len(), 0, "max_entries=0 时条目应立即被淘汰");
-        assert!(nav.current().is_none(), "无条目时 current 应为 None");
+        // R3230：max_entries=0 归一化为 1，navigate 后保留 1 条（旧实现清空到 0 + 悬空 index）。
+        assert_eq!(nav.len(), 1, "R3230: max_entries=0 归一化为 1，保留最新 1 条");
+        assert_eq!(nav.current().unwrap().url, "http://a.com");
 
         nav.navigate("http://b.com", None);
-        assert_eq!(nav.len(), 0, "每次 navigate 后都被淘汰");
+        assert_eq!(nav.len(), 1, "归一化 max=1 → 再 navigate 驱逐最旧，仍 1 条");
+        assert_eq!(nav.current().unwrap().url, "http://b.com");
     }
 
     /// 测试 HttpResponse::content_type_mime 对只有分号无参数的 Content-Type 正确提取。

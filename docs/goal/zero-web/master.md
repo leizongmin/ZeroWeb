@@ -130,7 +130,35 @@
 
 ## 最近完成的改进
 
-### IndexedDB auto-inc key generator 在 tx.abort 回滚（本轮 R3229，闭合 R3228 defer 项）
+### NavigationHistory 空/退化历史 panic 修复（本轮 R3230，net crate spec + robustness）
+
+承接 R3229（IndexedDB 三项闭合），原计划续 IndexedDB array keyPath（§3.1.10）——核实发现**IndexedDB 双实现**：JS 侧（`engine/src/js_dom_shim/part02.js` `_zwIDBDatabase`/`_zwIDBStore`）为纯 JS mock（JS Map，index.get 委派 store.get、openCursor 返 null，无真 key 提取），Rust `zero-storage` crate 的 IndexedDB 无 JS 消费者；且 `create_index(key_path:&str)` 有 418 调用者。故 Rust 侧 array keyPath 价值/摩擦比低，**defer**（待 JS bridge 路由到 Rust crate 或 JS mock 功能化时再做）。
+
+转 **navigation crate spec + robustness 审**（`net/src/navigation.rs`，HTML session-history）。深审对照 HTML §history（history.back/forward/go 为 no-op，不抛错/panic）——发现空/退化历史下的 panic 缺陷：
+
+- **R3230 `go_forward()` 空历史 panic**：`if current_index < entries.len() - 1`——空历史 `len()=0` → `0 - 1` usize 下溢（debug panic；release wrap 为 MAX → 条件真 → `entries[1]` 越界 panic）。HTML `history.forward()` 在无前进项时须 no-op，不 panic。
+- **`go_back_n(0)` 空历史 panic**：`if n > current_index`（0>0 false）→ `entries[0]` 空历史越界 panic。
+- **`max_entries=0` 退化 bug**：`new(0)` 后 navigate push 1 条 → `while len > 0 { remove(0) }` 清空 entries，留悬空 `current_index=0`（current()=None 但 index=0）。既有测试 `test_navigation_max_entries_zero_means_unlimited` 名（unlimited）与体（evicted-to-0）矛盾，文档此 buggy 行为。
+
+**修复**：
+- `go_forward`/`go_back_n`/`go_forward_n` 统一 `checked_add`/`checked_sub` + `entries.get()` 的 Option 模式——越界/空历史返 None，零 panic（HTML no-op 语义）。
+- `new(max_entries)` 归一化 `max_entries.max(1)`——max=0 → 1，navigate 保留最新 1 条（闭合悬空 index）。
+- 既有矛盾测试 `test_navigation_max_entries_zero_means_unlimited` → 改 `test_navigation_max_entries_zero_normalized`（断言归一化行为：navigate 保留 1 条）。
+
+**为何净正向**：① **闭合 panic 缺陷**——空历史/越界 go* 不再 panic（renderer 稳定性；HTML 语义 no-op）；② **闭合 max=0 退化**——navigate 不再清空留悬空 index；③ **零回归**——既有 navigation 测全过（go_back/go_forward/go_n happy path + 越界 + clear_forward + eviction），go_back 已守 `current_index>0`、can_go_forward 已 `is_empty` 守卫（未改）；④ checked_add/sub + get() 模式更清晰（消显式 len-1 / 索引算术）；⑤ 低风险单文件；⑥ net 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `net/src/navigation.rs` | `new` max_entries 归一化 ≥1；`go_forward`/`go_back_n`/`go_forward_n` checked_add/sub + get() Option 模式（零 panic）；+3 测（空历史 no-op / max=0 归一化 / go_n 非空回归）。 |
+| `net/src/lib.rs` | `test_navigation_max_entries_zero_means_unlimited`（矛盾 buggy 文档测）→ `test_navigation_max_entries_zero_normalized`（断言归一化行为）。 |
+
+验证：`cargo fmt -p zero-net -- --check` clean + `cargo clippy -p zero-net --all-targets -- -D warnings` 零警告 + **zero-net 386 passed**（+3，零回归）。spec：https://html.spec.whatwg.org/multipage/history.html （session history traversal 为 no-op，不抛错）。pre-commit guard 见提交。
+
+**已知限制（记）**：navigation 模型简化——无 document state 关联、无 scroll restoration、fragment-only 导航不 special-case（spec 谓同文档 fragment 导航复用 entry，本实现恒新增）——feature gap，非 bug。IndexedDB array keyPath / Date key / cursor unique 方向 defer（JS 双实现，价值待 JS bridge 路由后提升）。
+
+**下一步**：net navigation panic-safety 闭合（R3230）。续候选：① 续 net crate 其它模块 spec 审（websocket.rs W3C §6 close code/handshake / connect.rs）；② **net request.rs 头注入校验**（RFC 7230 §3.2.6 token，reqwest 底层已校验）；③ **public-suffix 集成**（cookie Domain=.com 拒绝，需 PSL）；④ IndexedDB feature gap（待 JS bridge 路由）；⑤ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3227/R3228（IndexedDB NaN key + add/put 原子性），本轮闭合 R3228 记的 **R3229 候选**（auto-inc key generator abort 不回滚，§5.10）。上轮已核实存在：`tx_add`/`tx_put` auto-inc 时**立即**推进 live `store.next_key`，Add/Put mutation 缓冲但 next_key 增量未缓冲；`abort()`（cursor.rs:167）清缓冲但 next_key 留在高位 → 下次 add 跳过被丢弃的 key（浪费 + spec 偏差；§5.10 谓 abort 须 revert all changes 含 key generator）。
 
