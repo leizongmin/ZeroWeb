@@ -121,7 +121,40 @@
 
 ## 最近完成的改进
 
-### Cookie 域存储侧校验（domain_matches 空域 + Domain 来源 host 校验）（本轮 R3224/R3225，net crate spec 审计）
+### Web Storage key(n) 插入序（本轮 R3226，storage crate spec 审计）
+
+承接 net crate cookie 线收敛（R3218–R3225，八项），**转 storage crate spec 合规扫描**（localStorage / sessionStorage / IndexedDB / Cache API）。并发两路深审（Web Storage + IndexedDB）对照 WHATWG Web Storage / W3C IndexedDB 3.0——Web Storage 路发现核心真偏差，本轮取此修复。
+
+**Web Storage 路核心发现**：`WebStorage.data: HashMap<String, String>` + `key(index) = self.data.keys().nth(index)`——**HashMap 不保留插入序**，`key(n)` 返回任意序。WHATWG Web Storage §4.1：`key(n)` 须返回第 n 个键**按插入序**。旧测试甚至 `keys.sort()` 后比对（开发者已知序不保证）。具体偏差：`setItem('z');setItem('a');setItem('m')` → `key(0..3)` 应 `[z,a,m]`（非字典序），旧实现任意序；`setItem` 既有键须**保留位置**（不移末尾）；`removeItem` 后剩余键序不变；删除后重加须**追加末尾**。
+
+**修复（R3226）**：`WebStorage.data` 由 `HashMap` 改 `indexmap::IndexMap`（保留插入序；`insert` 既有键保留位置、新键追加末尾——匹配 spec setItem 语义；`shift_remove` 保留剩余键序——匹配 spec removeItem 语义，旧 `swap_remove`/`remove` 会重排）。`indexmap` 已是工作区传递依赖（serde_json 经它保 JSON 键序），本轮提为 storage 直接依赖（workspace.dependencies 声明 `indexmap = "2"`，无新外部 crate，版本不变 2.14.0，Cargo.lock 仅增 zero-storage→indexmap 边）。`set`/`get`/`remove`/`clear`/`len`/`key`/`contains_key` 公开签名零变（外部调用方 lib.rs/process_backend.rs 零影响）。
+
+**为何净正向**：① **闭合 §4.1 插入序**——`key(n)` 现按插入序返回（核心枚举正确性，旧任意序致依赖 key 顺序的代码——序列化、UI 列表、quota 审计——行为不确定）；② **精确匹配 spec 三语义**——setItem 既有键保留位置 + 新键追加 + remove 后重加追加末尾（IndexMap insert/shift_remove 天然实现）；③ **零回归**——公开 API 签名零变；既有测全过（强化 3 旧测去 `sort()` 改断言精确序 + 新增 `test_storage_insertion_order_r3226` 4 语义断言）；④ `indexmap` 已在依赖树（serde_json），提为直接依赖无新外部 crate、版本不变；⑤ 低风险（单 struct 字段类型 + remove→shift_remove）；⑥ storage 属本流域（zero-web P1a/P1b）。
+
+| 文件 | 变更 |
+|------|------|
+| `Cargo.toml` | `[workspace.dependencies]` 增 `indexmap = "2"`。 |
+| `storage/Cargo.toml` | `[dependencies]` 增 `indexmap = { workspace = true }`。 |
+| `storage/src/local_storage.rs` | `WebStorage.data` `HashMap`→`IndexMap`；`remove` → `shift_remove`（保序）；强化 3 旧测（去 `keys.sort()` 改精确序断言）+ 新增 `test_storage_insertion_order_r3226`（插入序 + 更新保留位置 + remove 后剩余序 + 重加追加末尾）。 |
+
+验证：`cargo fmt -p zero-storage -- --check` clean + `cargo clippy -p zero-storage --all-targets -- -D warnings` 零警告 + **zero-storage lib 655 passed**（+1，零回归——既有 Web Storage 测全过）。spec：https://html.spec.whatwg.org/multipage/webstorage.html#dom-storage-key 。pre-commit guard 见提交。
+
+### storage crate spec 扫描结论（本轮调研，Web Storage 闭合 + IndexedDB 待核）
+
+R3226 之外，本轮 storage 审计（Web Storage + IndexedDB 两路）结论记录如下：
+
+**Web Storage 路剩余项**（低优先 / defer）：
+- **空串 key 拒绝**（§4.1）：`set("")` 返 `InvalidKey`（DOMString 理论允许空串，浏览器实测接受）；旧测试 `test_storage_invalid_key` 断言拒——刻意 guard，记限（改动需配套修测试，低价值 defer）。
+- **setItem/removeItem 返值**：Rust 层返 `Option<String>`（旧值，内部有用）；JS API 层应返 undefined——非 Rust 层 bug，JS 桥丢弃返值即可，记限。
+- **跨标签 storage 事件**（§4.2）：未实现——多进程事件广播 feature gap，较大后续项，defer。
+
+**IndexedDB 路发现**（agent 报告，**本轮未独立核实，defer 至后续轮**）：
+- ⚠️ **Binary key「非 spec」系误报**——IndexedDB 2.0+ 已增 binary（BufferSource）key，`IdbKey::Binary` **合法**（agent 引 IDB 1.0 规则）。
+- 待核真项（后续轮独立核实后定夺）：① **NaN 接受为 Number key**（§3.1.6 应 DataError）；② **auto-increment key generator 在 tx.abort 不回滚**（§5.10 应回滚）；③ **unique index 违例时 record 已被 mutate**（原子性：put 在 index 检查前改 value，违例后值已变）；④ 缺 **Date key 类型**（§3.1.6 合法类型）；⑤ 缺 **nextunique/prevunique cursor 方向**（§3.1.11）；⑥ 缺 **array keyPath 复合键**（§3.1.10）。六项均需独立核实代码 + 测试复现，独立成轮。
+
+**下一步**：storage Web Storage 插入序闭合（R3226）。续候选：① **IndexedDB 核实 + 修复**（NaN key 拒 / auto-inc abort 回滚 / unique index 原子性——三项 HIGH，需独立核实代码路径 + 写复现测试）；② IndexedDB Date key 类型 + nextunique/prevunique + array keyPath（feature gap）；③ **net request.rs 头注入校验**（RFC 7230 token）；④ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。注：lark-cli 环境不可用（多轮尝试），通知走 master.md 控制面；⚠️ compositor 跨流红灯待渲染流。
+
+
 
 承接 R3223（fetch-bridge hardening 三轮收敛），回到 net crate cookie 存储侧（R3218 审计记的两项「cookie 存储侧 / domain_matches 空域 + IP/public-suffix 校验」）。深审 `domain_matches` + `add_from_url` 对照 RFC 6265 §5.1.3/§5.2.3/§5.3 step 5-6——发现两项真偏差：
 

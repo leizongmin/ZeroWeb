@@ -1,6 +1,6 @@
 //! Web Storage 实现 — localStorage 和 sessionStorage。
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::StorageError;
 
@@ -18,8 +18,9 @@ pub enum StorageType {
 
 /// Web Storage 实现 — localStorage 和 sessionStorage。
 pub struct WebStorage {
-    /// 存储数据。
-    data: HashMap<String, String>,
+    /// 存储数据——IndexMap 保留插入序（WHATWG Web Storage §4.1：key(n) 须按插入序返回；
+    /// setItem 既有键**保留位置**，新键追加末尾；removeItem 后剩余键序不变，重加追加末尾）。
+    data: IndexMap<String, String>,
     /// 存储类型。
     storage_type: StorageType,
     /// 所属源。
@@ -39,7 +40,7 @@ impl WebStorage {
     /// 创建带自定义最大容量的 WebStorage 实例。
     pub fn new_with_max_size(storage_type: StorageType, origin: &str, max_size: usize) -> Self {
         Self {
-            data: HashMap::new(),
+            data: IndexMap::new(),
             storage_type,
             origin: origin.to_string(),
             max_size,
@@ -75,7 +76,8 @@ impl WebStorage {
 
     /// 移除项（返回旧值）。
     pub fn remove(&mut self, key: &str) -> Option<String> {
-        let old = self.data.remove(key)?;
+        // shift_remove 保留剩余键的插入序（swap_remove 会重排）；R3226 Web Storage §4.1 插入序。
+        let old = self.data.shift_remove(key)?;
         self.used_bytes = self.used_bytes.saturating_sub(key.len() + old.len());
         Some(old)
     }
@@ -204,11 +206,9 @@ mod tests {
         let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
         storage.set("alpha", "1").unwrap();
         storage.set("beta", "2").unwrap();
-        // key() returns by insertion-order index (HashMap iteration order)
+        // R3226：key(n) 按插入序返回（IndexMap 保留插入序，非 HashMap 任意序）。
         let keys: Vec<&str> = (0..storage.len()).filter_map(|i| storage.key(i)).collect();
-        assert_eq!(keys.len(), 2);
-        assert!(keys.contains(&"alpha"));
-        assert!(keys.contains(&"beta"));
+        assert_eq!(keys, vec!["alpha", "beta"]);
         assert_eq!(storage.key(99), None);
     }
 
@@ -264,9 +264,41 @@ mod tests {
         storage.set("x", "1").unwrap();
         storage.set("y", "2").unwrap();
         storage.set("z", "3").unwrap();
-        let mut keys: Vec<&str> = (0..storage.len()).filter_map(|i| storage.key(i)).collect();
-        keys.sort();
+        // R3226：插入序（旧 HashMap 须 sort 后比对，现 IndexMap 保留插入序）。
+        let keys: Vec<&str> = (0..storage.len()).filter_map(|i| storage.key(i)).collect();
         assert_eq!(keys, vec!["x", "y", "z"]);
+    }
+
+    /// R3226：Web Storage key(n) 插入序——WHATWG Web Storage §4.1。
+    /// setItem 既有键**保留位置**（不移到末尾）；removeItem 后剩余键序不变；删除后重加**追加末尾**。
+    #[test]
+    fn test_storage_insertion_order_r3226() {
+        fn keys_of(s: &WebStorage) -> Vec<&str> {
+            (0..s.len()).filter_map(|i| s.key(i)).collect()
+        }
+        let mut storage = WebStorage::new(StorageType::Local, "https://example.com");
+        // 初始插入序：z, a, m（非字典序）。
+        storage.set("z", "1").unwrap();
+        storage.set("a", "2").unwrap();
+        storage.set("m", "3").unwrap();
+        assert_eq!(keys_of(&storage), vec!["z", "a", "m"], "key(n) 须按插入序（非字典序）");
+
+        // setItem 既有键：保留位置，不移到末尾。
+        storage.set("z", "updated").unwrap();
+        assert_eq!(keys_of(&storage), vec!["z", "a", "m"], "更新既有键须保留位置");
+        assert_eq!(storage.get("z"), Some("updated"));
+
+        // removeItem 中间键：剩余键序不变。
+        storage.remove("a").unwrap();
+        assert_eq!(keys_of(&storage), vec!["z", "m"], "removeItem 后剩余键序不变");
+
+        // 删除后重加：追加末尾（spec 插入序语义）。
+        storage.set("a", "re-added").unwrap();
+        assert_eq!(keys_of(&storage), vec!["z", "m", "a"], "删除后重加须追加末尾");
+
+        // 新键始终追加末尾。
+        storage.set("new", "4").unwrap();
+        assert_eq!(keys_of(&storage), vec!["z", "m", "a", "new"]);
     }
 
     #[test]
@@ -602,11 +634,10 @@ mod tests {
         storage.remove("b");
         assert_eq!(storage.len(), 2);
 
-        // 遍历所有剩余键
-        let mut keys: Vec<String> = (0..storage.len())
+        // R3226：剩余键保留插入序（a, c），无需 sort。
+        let keys: Vec<String> = (0..storage.len())
             .filter_map(|i| storage.key(i).map(|s| s.to_string()))
             .collect();
-        keys.sort();
         assert_eq!(keys, vec!["a", "c"]);
     }
 

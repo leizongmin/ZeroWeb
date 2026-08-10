@@ -9,6 +9,7 @@ license.workspace = true
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+indexmap = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

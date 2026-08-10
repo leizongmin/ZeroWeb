@@ -6536,6 +6536,7 @@ name = "zero-storage"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "indexmap",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
