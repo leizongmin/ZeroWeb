@@ -141,14 +141,19 @@ fn get_frame(
             width,
             height,
             rgba,
-        } => FrameData {
-            surface_id,
-            navigation_epoch,
-            frame_id,
-            width,
-            height,
-            rgba,
-        },
+            shm_name,
+        } => {
+            let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name)
+                .expect("resolve compositor frame rgba");
+            FrameData {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+                width,
+                height,
+                rgba,
+            }
+        }
         other => panic!("意外消息: {other:?}"),
     }
 }
@@ -226,6 +231,20 @@ fn compositor_gpu_path_produces_expected_fill() {
     );
     let frame = get_frame(&mut transport, 2, 9, 1, 1);
     assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255]);
+}
+
+/// 4.3 S1：Linux `ZW_COMPOSITOR_SHM=1` 时帧像素经 POSIX shm 传输（非 Linux 跳过）。
+#[test]
+#[cfg(target_os = "linux")]
+fn compositor_shm_path_produces_expected_fill() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SHM", "1")]);
+    assert_eq!(
+        submit_frame(&mut transport, 1, 10, 1, 1, make_frame(32, 32, [0, 128, 255, 255]),),
+        (10, 1, 1)
+    );
+    let frame = get_frame(&mut transport, 2, 10, 1, 1);
+    assert_eq!((frame.width, frame.height), (32, 32));
+    assert_eq!(&frame.rgba[..4], &[0, 128, 255, 255]);
 }
 
 #[test]

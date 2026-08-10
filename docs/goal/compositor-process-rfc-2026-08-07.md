@@ -1,6 +1,6 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v1.3 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 切片 S1 ✅）**
+版本：v1.4 ｜ 日期：2026-08-11 ｜ 状态：**实施中（C1 ✅ / C2 ✅ / C3 S1 ✅ / 4.3 S1 ✅）**
 
 > 实施状态（2026-08-11 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
@@ -8,6 +8,9 @@
 > - **C3（GPU 隔离）⚠️ 切片 S1**：compositor 进程内 headless wgpu（`ZW_COMPOSITOR_GPU=1`）+
 >   `gpu_raster.rs` 模块 + CPU 回退；renderer 无 GpuRenderer（隔离测试）。跨进程 GPU 纹理传输、
 >   沙箱、Viz 式 surface 所有权仍为后续切片。
+> - **4.3（OS 共享资源）⚠️ 切片 S1**：Linux `ZW_COMPOSITOR_SHM=1` 时 `CompositorFrameData`
+>   经 `/dev/shm/zeroweb-cmp-*` 传递 front 像素，IPC 只带 `shm_name` 元数据；失败或未启用时
+>   回退内联 `rgba`。GPU shared image / mailbox / fence 仍为后续切片。
 
 > 本状态不代表完整 Chromium/Chrome compositor 对齐。当前完成的是页面位图主链路。Browser 仍拥有窗口最终场景和呈现。
 
@@ -55,7 +58,11 @@ Browser 仍把页面位图转换为 `ImagePrimitive`。Browser 仍应用页面�
 
 当前跨进程传输使用 `PipeTransport`。`PaintSnapshot` 和 RGBA 位图都在协议消息中传输。该路径存在序列化和像素复制。
 
-`SharedMemoryChannel` 不是 OS 跨进程共享内存。它基于 `Arc<Mutex<VecDeque<IpcMessage>>>`。它只用于测试和同进程多线程模拟。C2/C3 不得把它描述为共享内存 transport。
+`SharedMemoryChannel` 不是 OS 跨进程共享内存。它基于 `Arc<Mutex<VecDeque<IpcMessage>>>`。它只用于测试和同进程多线程模拟。
+
+**4.3 S1（Linux）**：`ZW_COMPOSITOR_SHM=1` 时 compositor 将 front 像素写入 `/dev/shm/zeroweb-cmp-{name}`，
+`CompositorFrameData` 仅传输 `shm_name`；Browser worker 读取后删除文件。非 Linux 或未启用时仍内联 `rgba`。
+该路径减少 PipeTransport bincode 对大像素块的序列化，但不是 GPU 零拷贝纹理传输。
 
 ## 二、故障回退
 
@@ -86,6 +93,7 @@ compositor 启动失败或 IPC 断开时：
 | Browser 显示 | compositor 位图是页面像素来源；Chrome UI 仍由 Browser 绘制 |
 | 生命周期 | 启动失败和断线回退；Tab 关闭释放 surface；退出终止子进程 |
 | C3 GPU 隔离 S1 | compositor `gpu_raster.rs` + `ZW_COMPOSITOR_GPU=1`；renderer 无 wgpu |
+| 4.3 POSIX shm S1 | `frame_shm.rs` + `ZW_COMPOSITOR_SHM=1`（Linux）；`CompositorFrameData.shm_name` |
 
 ## 四、下一阶段
 
@@ -119,7 +127,8 @@ compositor 启动失败或 IPC 断开时：
 - 当前不拆 Network Service。
 - 当前不实现 renderer OS sandbox。
 - 当前不实现 renderer compositor thread 或异步滚动。
-- 当前不实现 OS shared memory、GPU shared image、mailbox、fence 或零拷贝纹理传输。
+- 当前不实现 GPU shared image、mailbox、fence 或零拷贝纹理传输。
+- ~~当前不实现 OS shared memory~~ **4.3 S1 ✅**（Linux POSIX `/dev/shm` 帧像素；FD/mmap 零拷贝与 GPU 纹理仍为后续）。
 - 当前不把 Browser Chrome UI 移入 compositor。
 - 当前不把最终窗口 surface 所有权移入 compositor。
 - 当前不声称完整 Chromium/Chrome compositor 或 Viz 架构对齐。

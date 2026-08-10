@@ -314,18 +314,47 @@ fn main() {
             }
             // 显示消费方拉取最新已合成帧（front 缓冲像素）
             IpcMessageKind::GetCompositorFrame { surface_id, .. } => {
-                let (response_epoch, response_frame, width, height, rgba) = match surfaces.get(&surface_id) {
+                let (response_epoch, response_frame, width, height, rgba, shm_name) = match surfaces.get(&surface_id) {
                     Some(surface) => {
                         let front = surface.backing.front();
-                        (
-                            surface.navigation_epoch,
-                            surface.frame_id,
-                            front.width,
-                            front.height,
-                            front.data.clone(),
-                        )
+                        if zero_protocol::compositor_shm_enabled() {
+                            let name =
+                                zero_protocol::publish_compositor_frame(surface_id, surface.frame_id, &front.data)
+                                    .unwrap_or_else(|e| {
+                                        tracing::warn!("compositor: shm 发布失败，回退内联 rgba: {e}");
+                                        String::new()
+                                    });
+                            if name.is_empty() {
+                                (
+                                    surface.navigation_epoch,
+                                    surface.frame_id,
+                                    front.width,
+                                    front.height,
+                                    front.data.clone(),
+                                    None,
+                                )
+                            } else {
+                                (
+                                    surface.navigation_epoch,
+                                    surface.frame_id,
+                                    front.width,
+                                    front.height,
+                                    Vec::new(),
+                                    Some(name),
+                                )
+                            }
+                        } else {
+                            (
+                                surface.navigation_epoch,
+                                surface.frame_id,
+                                front.width,
+                                front.height,
+                                front.data.clone(),
+                                None,
+                            )
+                        }
                     }
-                    None => (0, 0, 0, 0, Vec::new()),
+                    None => (0, 0, 0, 0, Vec::new(), None),
                 };
                 let resp = IpcMessage {
                     id: msg.id,
@@ -336,6 +365,7 @@ fn main() {
                         width,
                         height,
                         rgba,
+                        shm_name,
                     },
                 };
                 if let Err(e) = transport.send(resp) {

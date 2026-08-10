@@ -520,6 +520,7 @@ fn process_batch(
                     width,
                     height,
                     rgba,
+                    shm_name,
                 },
             ) if expected
                 == (FrameKey {
@@ -528,6 +529,7 @@ fn process_batch(
                     frame_id,
                 }) =>
             {
+                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name)?;
                 validate_frame_data(width, height, &rgba)?;
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
@@ -687,6 +689,7 @@ mod tests {
                 width: 1,
                 height: 1,
                 rgba: vec![pixel, 0, 0, 255],
+                shm_name: None,
             },
         }
     }
