@@ -71,9 +71,9 @@ impl InlineFormattingContext {
             match item {
                 InlineItem::Text(run) => {
                     // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
-                    let visual_text = bidi_reorder(&run.text);
+                    let mut source_cursor = BidiFragmentCursor::new(&run.text);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
-                    let words = self.split_into_words(&visual_text, run.is_ahem_font);
+                    let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
                     // 空 inline 元素：文本为空但 line-height + padding + border 仍需贡献到行盒高度
                     if words.is_empty() && run.text.is_empty() {
@@ -95,6 +95,7 @@ impl InlineFormattingContext {
                             width: 0.0,
                             height: run.line_height,
                             text: String::new(),
+                            source: None,
                             node_id: run.node_id,
                             font_size: run.font_size,
                             vertical_align: run.vertical_align.clone(),
@@ -163,6 +164,7 @@ impl InlineFormattingContext {
                                 width: tab_advance,
                                 height: run.line_height,
                                 text: String::new(),
+                                source: None,
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
@@ -312,6 +314,8 @@ impl InlineFormattingContext {
                             for (ci, ch) in chars.iter().enumerate() {
                                 let ch_width = self.advance_of(*ch, run.font_id, run.font_size, run.is_ahem_font)
                                     + run.letter_spacing;
+                                let text = ch.to_string();
+                                let source = source_cursor.take_source(&text);
 
                                 let (_, avail) =
                                     self.effective_content_area(current_y, current_line.height.max(run.box_height()));
@@ -338,7 +342,8 @@ impl InlineFormattingContext {
                                     y: 0.0,
                                     width: ch_width,
                                     height: fragment_height,
-                                    text: ch.to_string(),
+                                    text,
+                                    source,
                                     node_id: run.node_id,
                                     font_size: run.font_size,
                                     vertical_align: run.vertical_align.clone(),
@@ -365,6 +370,7 @@ impl InlineFormattingContext {
                                 width: word_width,
                                 height: fragment_height,
                                 text: content_word.to_string(),
+                                source: source_cursor.take_source(content_word),
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
@@ -442,6 +448,7 @@ impl InlineFormattingContext {
                         width: box_width,
                         height: box_height,
                         text: String::new(),
+                        source: None,
                         node_id: box_info.node_id,
                         font_size: 0.0,
                         vertical_align: box_info.vertical_align.clone(),

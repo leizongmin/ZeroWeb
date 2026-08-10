@@ -1001,8 +1001,8 @@ impl InlineFormattingContext {
         for item in items {
             match item {
                 InlineItem::Text(run) => {
-                    let visual_text = bidi_reorder(&run.text);
-                    let words = self.split_into_words(&visual_text, run.is_ahem_font);
+                    let mut source_cursor = BidiFragmentCursor::new(&run.text);
+                    let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
                     // 空 inline 元素
                     if words.is_empty() && run.text.is_empty() {
@@ -1058,6 +1058,8 @@ impl InlineFormattingContext {
                             for (ci, ch) in chars.iter().enumerate() {
                                 let ch_height = self.advance_of(*ch, run.font_id, run.font_size, run.is_ahem_font)
                                     + run.letter_spacing;
+                                let text = ch.to_string();
+                                let source = source_cursor.take_source(&text);
 
                                 if partial_depth + ch_height > max_depth && ci > 0 {
                                     self.lines.push(current_column);
@@ -1077,7 +1079,8 @@ impl InlineFormattingContext {
                                     y: partial_depth,
                                     width: char_col_width,
                                     height: ch_height,
-                                    text: ch.to_string(),
+                                    text,
+                                    source,
                                     node_id: run.node_id,
                                     font_size: run.font_size,
                                     vertical_align: run.vertical_align.clone(),
@@ -1101,6 +1104,7 @@ impl InlineFormattingContext {
                                 width: col_width,
                                 height: word_height,
                                 text: word.clone(),
+                                source: source_cursor.take_source(word),
                                 node_id: run.node_id,
                                 font_size: run.font_size,
                                 vertical_align: run.vertical_align.clone(),
@@ -1145,6 +1149,7 @@ impl InlineFormattingContext {
                         width: box_col_width,
                         height: box_depth,
                         text: String::new(),
+                        source: None,
                         node_id: box_info.node_id,
                         font_size: 0.0,
                         vertical_align: box_info.vertical_align.clone(),
@@ -1603,6 +1608,7 @@ impl InlineFormattingContext {
                     width: run.width,
                     height: run.height,
                     text: run.text.clone(),
+                    source: run.source.clone(),
                     node_id: run.node_id,
                     font_size: run.font_size,
                     vertical_align: run.vertical_align.clone(),

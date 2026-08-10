@@ -6,11 +6,14 @@
 //! font-metrics 解析（resolve_font_metrics）、inline-block 尺寸解析、BiDi 重排序。
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use zero_css_parser::values::LengthValue;
 use zero_style_system::{ComputedStyle, TextAutospaceValue};
 // 经 `pub use text_metrics::*`（inline/mod.rs）再导出，供 inline/tests 子模块经 glob 访问。
 pub use zero_style_system::LineHeightValue;
+
+use super::inline_types::TextFragmentSource;
 
 /// 默认字体大小（px）。
 pub(crate) const DEFAULT_FONT_SIZE: f32 = 16.0;
@@ -475,9 +478,8 @@ fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
     }
 }
 
-/// 对文本进行 BiDi 重排序，并保留视觉字符到逻辑源码的映射。
-pub(crate) fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
-    use unicode_bidi::BidiInfo;
+fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> BidiReorderedText {
+    use unicode_bidi::{BidiClass, BidiInfo};
 
     // 快速检查：如果文本为空或全是 ASCII，不需要 BiDi 处理
     if text.is_empty() || text.is_ascii() {
@@ -509,29 +511,47 @@ pub(crate) fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
 
     // 运行 BiDi 算法（unicode_bidi 按段落算正确 paragraph level + 字符级 level + 控制码语义）
     let bidi_info = BidiInfo::new(text, None);
-    // 用实际段落信息（含正确 paragraph embedding level，由首强字符定）——R2019 修：
-    // 原硬编码 `Level::ltr()` 对 RTL-首段（首强字符为 RTL）致基向错。
-    let Some(para) = bidi_info.paragraphs.first() else {
-        return identity_bidi_mapping(text);
-    };
-
-    let (levels, runs) = bidi_info.visual_runs(para, para.range.clone());
-    let mut visual_text = String::with_capacity(para.range.len());
-    let mut visual_to_logical = Vec::with_capacity(text[para.range.clone()].chars().count());
-    for run in runs {
-        let mut chars = text[run.clone()]
+    let mut visual_text = String::with_capacity(text.len());
+    let mut visual_to_logical = Vec::with_capacity(text.chars().count());
+    let paragraph_limit = if preserve_all_paragraphs { usize::MAX } else { 1 };
+    for para in bidi_info.paragraphs.iter().take(paragraph_limit) {
+        // https://www.unicode.org/reports/tr9/#P1
+        // unicode-bidi 将段落分隔符留在前一段。布局分词必须继续看到分隔符位于段尾，
+        // 因此只重排正文，再按逻辑位置追加分隔符。
+        let separator_start = text[..para.range.end]
             .char_indices()
-            .map(|(offset, ch)| {
-                let start = run.start + offset;
-                (ch, start..start + ch.len_utf8())
-            })
-            .collect::<Vec<_>>();
-        if levels[run.start].is_rtl() {
-            chars.reverse();
+            .next_back()
+            .map(|(start, _)| start)
+            .filter(|start| bidi_info.original_classes[*start] == BidiClass::B);
+        let content_end = separator_start.unwrap_or(para.range.end);
+        if para.range.start < content_end {
+            let content_range = para.range.start..content_end;
+            let (levels, runs) = bidi_info.visual_runs(para, content_range);
+            for run in runs {
+                let mut chars = text[run.clone()]
+                    .char_indices()
+                    .map(|(offset, ch)| {
+                        let start = run.start + offset;
+                        (ch, start..start + ch.len_utf8())
+                    })
+                    .collect::<Vec<_>>();
+                if levels[run.start].is_rtl() {
+                    chars.reverse();
+                }
+                for (ch, logical_range) in chars {
+                    visual_text.push(ch);
+                    visual_to_logical.push(logical_range);
+                }
+            }
         }
-        for (ch, logical_range) in chars {
+
+        if let Some(start) = separator_start {
+            let ch = text[start..para.range.end]
+                .chars()
+                .next()
+                .expect("paragraph separator range is not empty");
             visual_text.push(ch);
-            visual_to_logical.push(logical_range);
+            visual_to_logical.push(start..start + ch.len_utf8());
         }
     }
     BidiReorderedText {
@@ -540,28 +560,99 @@ pub(crate) fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
     }
 }
 
-/// 对文本进行 BiDi 重排序，返回视觉顺序的字符串。
-pub(crate) fn bidi_reorder(text: &str) -> String {
-    bidi_reorder_with_mapping(text).visual_text
+/// 按视觉顺序为断词后的片段提取逻辑源码映射。
+pub(crate) struct BidiFragmentCursor {
+    source_text: Option<Arc<str>>,
+    reordered: BidiReorderedText,
+    visual_byte_offset: usize,
+    visual_char_offset: usize,
+}
+
+impl BidiFragmentCursor {
+    /// 为一个逻辑文本运行创建游标。
+    pub(crate) fn new(text: &str) -> Self {
+        let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
+        let reordered = bidi_reorder_with_mapping_mode(text, enabled);
+        let identity = reordered.visual_text == text
+            && reordered
+                .visual_to_logical
+                .iter()
+                .cloned()
+                .eq(text.char_indices().map(|(start, ch)| start..start + ch.len_utf8()));
+        Self {
+            source_text: (enabled && !identity).then(|| Arc::<str>::from(text)),
+            reordered,
+            visual_byte_offset: 0,
+            visual_char_offset: 0,
+        }
+    }
+
+    /// 返回供现有断词和布局逻辑使用的视觉文本。
+    pub(crate) fn visual_text(&self) -> &str {
+        &self.reordered.visual_text
+    }
+
+    /// 消费下一个视觉片段，并返回与片段字符对齐的逻辑源码范围。
+    pub(crate) fn take_source(&mut self, fragment: &str) -> Option<TextFragmentSource> {
+        let source_text = self.source_text.clone()?;
+        let remaining = &self.reordered.visual_text[self.visual_byte_offset..];
+        let core = fragment.trim_end_matches(' ');
+        let synthetic_count = fragment.chars().count() - core.chars().count();
+        let exact_start = remaining.find(fragment);
+        let core_start = (!core.is_empty()).then(|| remaining.find(core)).flatten();
+        let (matched, synthetic_count, relative_start) = match (exact_start, core_start) {
+            (Some(exact), Some(core_pos)) if exact <= core_pos => (fragment, 0, exact),
+            (_, Some(core_pos)) => (core, synthetic_count, core_pos),
+            (Some(exact), None) => (fragment, 0, exact),
+            (None, None) if core.is_empty() => (core, synthetic_count, 0),
+            (None, None) => return None,
+        };
+
+        let skipped_chars = remaining[..relative_start].chars().count();
+        let mapped_start = self.visual_char_offset + skipped_chars;
+        let mapped_end = mapped_start + matched.chars().count();
+        let mut visual_to_logical = self
+            .reordered
+            .visual_to_logical
+            .get(mapped_start..mapped_end)?
+            .iter()
+            .cloned()
+            .map(Some)
+            .collect::<Vec<_>>();
+        visual_to_logical.extend(std::iter::repeat_n(None, synthetic_count));
+
+        self.visual_byte_offset += relative_start + matched.len();
+        self.visual_char_offset = mapped_end;
+        Some(TextFragmentSource {
+            text: source_text,
+            visual_to_logical,
+        })
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
 #[cfg(test)]
 mod tests {
-    use super::{bidi_reorder, bidi_reorder_with_mapping};
+    use std::sync::Arc;
+
+    use super::{BidiFragmentCursor, BidiReorderedText, bidi_reorder_with_mapping_mode, identity_bidi_mapping};
+
+    fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
+        bidi_reorder_with_mapping_mode(text, true)
+    }
 
     /// R2019：纯 ASCII（无 RTL 脚本字符、无 bidi 控制码）须原样返回（早返 fast-path）。
     #[test]
     fn r2019_bidi_reorder_pure_ascii_unchanged() {
-        assert_eq!(bidi_reorder("hello world"), "hello world");
-        assert_eq!(bidi_reorder(""), "");
+        assert_eq!(bidi_reorder_with_mapping("hello world").visual_text, "hello world");
+        assert_eq!(bidi_reorder_with_mapping("").visual_text, "");
     }
 
     /// R2019：bidi 控制码（U+202E RLO）须触发重排序（修：原 `has_rtl` 漏控制码致早返原序）。
     /// logical `ab[RLO]cde` → RLO 反转后续 → 视觉序中 c/d/e 倒序（edc）。
     #[test]
     fn r2019_bidi_reorder_handles_rlo_control_code() {
-        let out = bidi_reorder("ab\u{202E}cde");
+        let out = bidi_reorder_with_mapping("ab\u{202E}cde").visual_text;
         // RLO 生效 → cde 视觉倒序（e 在 d 前，d 在 c 前）。
         let (pc, pd, pe) = (out.find('c').unwrap(), out.find('d').unwrap(), out.find('e').unwrap());
         assert!(pe < pd, "RLO must reverse cde (e before d): got {out:?}");
@@ -587,5 +678,31 @@ mod tests {
         let reordered = bidi_reorder_with_mapping("Aé");
         assert_eq!(reordered.visual_text, "Aé");
         assert_eq!(reordered.visual_to_logical, vec![0..1, 1..3]);
+    }
+
+    #[test]
+    fn bidi_reorder_preserves_all_paragraphs_and_separators() {
+        let reordered = bidi_reorder_with_mapping("אבג\nדה");
+        assert_eq!(reordered.visual_text, "גבא\nהד");
+        assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7, 9..11, 7..9]);
+    }
+
+    #[test]
+    fn bidi_reorder_rollback_mode_stops_after_first_paragraph() {
+        let reordered = bidi_reorder_with_mapping_mode("אבג\nדה", false);
+        assert_eq!(reordered.visual_text, "גבא\n");
+        assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7]);
+    }
+
+    #[test]
+    fn bidi_fragment_cursor_prefers_nearest_core_over_later_exact_match() {
+        let mut cursor = BidiFragmentCursor {
+            source_text: Some(Arc::<str>::from("fooXfoo ")),
+            reordered: identity_bidi_mapping("fooXfoo "),
+            visual_byte_offset: 0,
+            visual_char_offset: 0,
+        };
+        let source = cursor.take_source("foo ").expect("synthetic-space fragment maps");
+        assert_eq!(source.visual_to_logical, vec![Some(0..1), Some(1..2), Some(2..3), None]);
     }
 }

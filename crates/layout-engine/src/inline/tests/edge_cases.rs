@@ -629,6 +629,85 @@ fn make_run(text: &str) -> TextRun {
     }
 }
 
+fn assert_bidi_fragment_sources(ctx: &InlineFormattingContext, logical_text: &str, expected_mapped_text: &str) {
+    let fragments = ctx
+        .all_fragments()
+        .into_iter()
+        .filter(|fragment| !fragment.text.is_empty())
+        .collect::<Vec<_>>();
+    let first_source = fragments
+        .first()
+        .and_then(|fragment| fragment.source.as_ref())
+        .expect("reordered fragment must carry logical source");
+    assert_eq!(&*first_source.text, logical_text);
+
+    let mut ranges = Vec::new();
+    for fragment in fragments {
+        let source = fragment.source.as_ref().expect("all reordered fragments carry source");
+        assert!(std::sync::Arc::ptr_eq(&source.text, &first_source.text));
+        assert_eq!(
+            source.visual_to_logical.len(),
+            fragment.text.chars().count(),
+            "source map must align with visual fragment {:?}",
+            fragment.text
+        );
+        ranges.extend(source.visual_to_logical.iter().flatten().cloned());
+    }
+    ranges.sort_by_key(|range| (range.start, range.end));
+    ranges.dedup();
+    let mapped_text = ranges
+        .iter()
+        .map(|range| &logical_text[range.clone()])
+        .collect::<String>();
+    assert_eq!(mapped_text, expected_mapped_text);
+}
+
+/// https://www.w3.org/TR/css-writing-modes-3/#bidi-algo
+#[test]
+fn test_bidi_fragment_source_survives_normal_word_splitting() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.break_into_lines(vec![make_run("אבג")]);
+    assert_eq!(ctx.all_fragments()[0].text, "גבא");
+    assert_bidi_fragment_sources(&ctx, "אבג", "אבג");
+}
+
+/// https://www.w3.org/TR/css-text-3/#white-space-phase-1
+#[test]
+fn test_bidi_fragment_source_survives_pre_wrap_spaces() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("אב  גד")]);
+    assert_bidi_fragment_sources(&ctx, "אב  גד", "אב  גד");
+}
+
+/// https://www.w3.org/TR/css-text-3/#line-break-details
+#[test]
+fn test_bidi_fragment_source_survives_cjk_per_char_splitting() {
+    let mut ctx = InlineFormattingContext::new(800.0);
+    ctx.break_into_lines(vec![make_run("אב中ג")]);
+    assert!(
+        ctx.all_fragments().len() > 1,
+        "CJK must create a separate break fragment"
+    );
+    assert_bidi_fragment_sources(&ctx, "אב中ג", "אב中ג");
+}
+
+/// https://www.w3.org/TR/css-text-3/#white-space-phase-1
+#[test]
+fn test_bidi_fragment_source_skips_newline_marker_without_losing_later_ranges() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_preserve_whitespace(true);
+    ctx.break_into_lines(vec![make_run("אב\nגד")]);
+    assert_eq!(ctx.lines.len(), 2);
+    assert_bidi_fragment_sources(&ctx, "אב\nגד", "אבגד");
+}
+
+/// https://www.w3.org/TR/css-writing-modes-3/#vertical-modes
+#[test]
+fn test_bidi_fragment_source_survives_vertical_word_splitting() {
+    let mut ctx = InlineFormattingContext::new(800.0).with_vertical(true);
+    ctx.break_into_lines(vec![make_run("אב中ג")]);
+    assert_bidi_fragment_sources(&ctx, "אב中ג", "אב中ג");
+}
+
 /// 测试 white-space: normal — 默认行为，自动换行。
 #[test]
 fn test_white_space_normal_wraps() {

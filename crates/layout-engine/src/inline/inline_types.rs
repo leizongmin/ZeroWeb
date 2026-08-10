@@ -6,6 +6,9 @@
 //! 子模块拆分。通过 `mod.rs` 的 `pub use inline_types::*` 再导出，保持
 //! `crate::inline::TextRun` 等 API 路径不变（纯移动，零行为变化）。
 
+use std::ops::Range;
+use std::sync::Arc;
+
 use zero_css_parser::values::VerticalAlignValue;
 use zero_dom::NodeId;
 
@@ -177,6 +180,17 @@ pub struct LineBox {
     pub descent: f32,
 }
 
+/// BiDi 重排后的文本片段源码映射。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextFragmentSource {
+    /// BiDi 重排前的完整逻辑文本运行。
+    pub text: Arc<str>,
+    /// 与片段视觉字符一一对应的逻辑 UTF-8 byte range。
+    ///
+    /// `None` 表示断词阶段合成、源码中没有直接对应字符的内容。
+    pub visual_to_logical: Vec<Option<Range<usize>>>,
+}
+
 /// 文本片段 — 文本运行在行盒中的布局结果。
 #[derive(Debug, Clone)]
 pub struct TextFragment {
@@ -190,6 +204,10 @@ pub struct TextFragment {
     pub height: f32,
     /// 文本内容。
     pub text: String,
+    /// BiDi 重排后的视觉字符到逻辑源码映射。
+    ///
+    /// 仅非 identity 映射携带该字段；当前绘制路径尚不消费它。
+    pub source: Option<TextFragmentSource>,
     /// 对应的 DOM 节点。
     pub node_id: NodeId,
     /// 字体大小。

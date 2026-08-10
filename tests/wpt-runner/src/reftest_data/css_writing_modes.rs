@@ -189,6 +189,14 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"unicode-bidi:bidi-override;direction:rtl;\">Override RTL</div></body></html>",
         is_match: true,
     },
+    // https://www.unicode.org/reports/tr9/#P1
+    InlineReftestDef {
+        id: "css-writing-modes/bidi-multi-paragraph-rtl",
+        category: ReftestCategory::Text,
+        test_html: "<html><body style=\"margin:0\"><div style=\"white-space:pre;font-size:64px;line-height:80px\">אבגאבגאבגאבגאבג\nדהודהודהודהודהו</div></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><div style=\"font-size:64px;line-height:80px\">אבגאבגאבגאבגאבג</div><div style=\"font-size:64px;line-height:80px\">דהודהודהודהודהו</div></body></html>",
+        is_match: true,
+    },
     // ── 6. text-orientation: mixed, upright, sideways (5 cases) ──
     InlineReftestDef {
         id: "css-writing-modes/text-orientation-mixed",
