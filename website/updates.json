@@ -1,0 +1,25 @@
+[
+  {
+    "date": "2026-08-11",
+    "type": "weekly",
+    "title": {"en": "Compositor safety and presentation advance", "zh": "合成器安全与呈现链路推进"},
+    "summary": {
+      "en": "This week's work advanced the compositor toward a safer, more direct presentation path: shared GPU mailbox transport, owned window surfaces, and Linux sandboxing all moved forward together.",
+      "zh": "本周的工作围绕更安全、更直接的合成器呈现路径推进：共享 GPU mailbox 传输、独占窗口呈现 surface 与 Linux 沙箱同步落地。"
+    },
+    "completed": {
+      "en": ["Added GPU mailbox fencing and mmap-based zero-copy transport.", "Added an owned window presentation surface for the compositor.", "Added Linux seccomp and Landlock sandboxing for compositor isolation."],
+      "zh": ["补齐 GPU mailbox fence 与基于 mmap 的零拷贝传输。", "为合成器加入独占窗口呈现 surface。", "为合成器隔离加入 Linux seccomp 与 Landlock 沙箱。"]
+    },
+    "inProgress": {
+      "en": "Browser product integration, rendering compatibility, and complete DOM/Web API coverage continue as active work.",
+      "zh": "浏览器产品整合、渲染兼容性，以及完整 DOM/Web API 覆盖仍在持续推进。"
+    },
+    "sources": [
+      {"label": "Linux Landlock sandbox", "url": "https://github.com/leizongmin/ZeroWeb/commit/96b6fdb82"},
+      {"label": "Owned presentation surface", "url": "https://github.com/leizongmin/ZeroWeb/commit/02214ae75"},
+      {"label": "GPU mailbox zero-copy", "url": "https://github.com/leizongmin/ZeroWeb/commit/7bad7b05e"},
+      {"label": "Roadmap", "url": "https://github.com/leizongmin/ZeroWeb/blob/main/ROADMAP.md"}
+    ]
+  }
+]

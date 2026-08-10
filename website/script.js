@@ -8,10 +8,10 @@ const translations = {
 };
 
 Object.assign(translations.en, {
-  quickstartKicker: 'Start exploring', quickstartTitle: 'Begin with a real window.', quickstartText: 'The repository includes both a browser application and a small WebView rendering demo. Choose the path you want to inspect first.', browserCommandText: 'Launch the desktop browser entry point.', webviewCommandText: 'Run the smallest rendering pipeline demo.', quickstartNote: 'See the README for platform prerequisites and build details.'
+  navUpdates: 'Updates', quickstartKicker: 'Start exploring', quickstartTitle: 'Begin with a real window.', quickstartText: 'The repository includes both a browser application and a small WebView rendering demo. Choose the path you want to inspect first.', browserCommandText: 'Launch the desktop browser entry point.', webviewCommandText: 'Run the smallest rendering pipeline demo.', quickstartNote: 'See the README for platform prerequisites and build details.'
 });
 Object.assign(translations.zh, {
-  quickstartKicker: '开始探索', quickstartTitle: '从一个真实窗口开始。', quickstartText: '仓库同时提供浏览器应用和最小 WebView 渲染演示。选择一条路径开始查看。', browserCommandText: '启动桌面浏览器入口。', webviewCommandText: '运行最小的渲染管线演示。', quickstartNote: '平台前置条件和构建细节请参阅 README。'
+  navUpdates: '最新进展', quickstartKicker: '开始探索', quickstartTitle: '从一个真实窗口开始。', quickstartText: '仓库同时提供浏览器应用和最小 WebView 渲染演示。选择一条路径开始查看。', browserCommandText: '启动桌面浏览器入口。', webviewCommandText: '运行最小的渲染管线演示。', quickstartNote: '平台前置条件和构建细节请参阅 README。'
 });
 
 function setLanguage(language, persist = true) {
