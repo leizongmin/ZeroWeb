@@ -163,14 +163,20 @@ impl Document {
 
     // ── 节点创建 ────────────────────────────────────────────────
 
-    /// 创建一个新的元素节点。
+    /// 创建一个新的元素节点（HTML 命名空间）。
+    ///
+    /// spec `dom-document-createelement` step 2：HTML 文档须将 localName ASCII 小写后创建
+    ///（`createElement('DIV')` → local_name "div"）。本 crate 的 `Document` 恒为 HTML 文档，
+    /// 故此处无条件小写。HTML 序列化（serializer）原样输出 local_name，故小写职责在此处而非
+    /// serializer（spec §13.3 注："For HTML elements created by ... createElement(), tagname will
+    /// be lowercase"）。对照 [`create_element_ns`]——`createElementNS` 大小写敏感，**不**小写。
     pub fn create_element(&mut self, name: &str) -> NodeId {
         use markup5ever::{LocalName, Namespace, QualName};
 
         let qual_name = QualName::new(
             None,
             Namespace::from("http://www.w3.org/1999/xhtml"),
-            LocalName::from(name),
+            LocalName::from(name.to_ascii_lowercase()),
         );
         self.create_element_with_qname(qual_name, Vec::new())
     }

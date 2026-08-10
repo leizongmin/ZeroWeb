@@ -168,26 +168,26 @@ fn test_set_attribute_overwrite_returns_new() {
     );
 }
 
-/// 测试 create_element 名称大小写保留（DOM 层 local_name 保留），序列化层按 spec 小写。
+/// 测试 create_element 对 HTML 文档 ASCII 小写 tag 名（R3173）。
 ///
-/// 两层语义分离（R3172）：① **DOM 低层原语保留大小写**——`create_element("MyComponent")` 的
-/// `local_name` 存原值 "MyComponent"（不主动小写，低层原语语义）；② **HTML 序列化 spec 小写**——
-/// `outer_html` 经 serializer 对 HTML 命名空间元素 ASCII 小写 → "<mycomponent></mycomponent>"
-/// （HTML serialization 规范，与真实浏览器一致）；③ **tagName getter** HTML-uppercased → "MYCOMPONENT"。
+/// spec `dom-document-createelement` step 2：HTML 文档须将 localName ASCII 小写后创建。
+/// `create_element("MyComponent")` → `local_name` "mycomponent"（小写，与真实浏览器一致）；
+/// `tagName` getter HTML-uppercased → "MYCOMPONENT"；`outer_html` 原样输出 local_name →
+/// "<mycomponent></mycomponent>"（serializer 不主动小写，小写职责在 create_element）。
 #[test]
-fn test_create_element_case_preserved() {
+fn test_create_element_html_lowercased_r3173() {
     let mut doc = Document::new();
     let elem = doc.create_element("MyComponent");
-    // ① DOM 层 local_name 保留原始大小写（低层原语语义）。
+    // DOM 层 local_name 已小写（DOM spec createElement step 2）。
     if let Some(NodeKind::Element(e)) = doc.get(elem).map(|n| n.kind.clone()) {
-        assert_eq!(e.local_name(), "MyComponent", "DOM 层 local_name 应保留原始大小写");
+        assert_eq!(e.local_name(), "mycomponent", "local_name 应按 DOM spec 小写");
         assert_eq!(e.tag_name(), "MYCOMPONENT", "tagName getter 应 HTML-uppercased");
     }
-    // ② HTML 序列化层按 spec 小写（不保留原大小写）。
+    // serializer 原样输出 local_name（已小写），无需主动小写。
     assert_eq!(
         doc.outer_html(elem),
         "<mycomponent></mycomponent>",
-        "outer_html 应按 HTML 序列化 spec 小写 tag 名"
+        "outer_html 应输出已小写的 local_name"
     );
 }
 
