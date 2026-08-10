@@ -11,7 +11,7 @@ use zero_engine::PrefersColorSchemeValue;
 use zero_engine::set_char_measure_fn;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::config::RenderMode;
-use zero_render_foundation::cpu::render_full_scene;
+use zero_render_foundation::cpu::rasterize_full_scene;
 #[cfg(test)]
 use zero_render_foundation::cpu::render_scene_to_framebuffer;
 use zero_render_foundation::font::cache::GlyphCache;

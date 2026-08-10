@@ -48,6 +48,52 @@ fn scale_dimension(value: u32, scale: f32) -> u32 {
     ((value as f32 * scale).round() as u32).max(1)
 }
 
+/// 按 [`render_threading_enabled`] 选择直连或 scope 线程光栅化（Browser UI 合成路径）。
+#[allow(clippy::too_many_arguments)]
+pub fn rasterize_full_scene(
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: Option<&mut ImageCache>,
+    ui_glyphs: &[GlyphDraw],
+    overlay_fills: &[FillPrimitive],
+    overlay_glyphs: &[GlyphDraw],
+    overlay_rounded_rects: &[RoundedRectPrimitive],
+) -> FrameBuffer {
+    if crate::rendering_thread::render_threading_enabled() {
+        render_full_scene_threaded(
+            width,
+            height,
+            scale_factor,
+            primitives,
+            font_loader,
+            glyph_cache,
+            image_cache,
+            ui_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            overlay_rounded_rects,
+        )
+    } else {
+        render_full_scene(
+            width,
+            height,
+            scale_factor,
+            primitives,
+            font_loader,
+            glyph_cache,
+            image_cache,
+            ui_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            overlay_rounded_rects,
+        )
+    }
+}
+
 /// 在独立工作线程中执行 `render_full_scene`（#3 渲染线程化 RFC S2 基础设施）。
 ///
 /// 使用 `std::thread::scope` 安全借用 `&mut` 状态（scope 保证线程在借用
@@ -270,7 +316,7 @@ fn render_typed_buckets(
         if !in_region(fill.rect) {
             continue;
         }
-        fill_rect(fb, fill, scale);
+        fill_rect_for_region(fb, fill, scale, region);
     }
 
     // 3. 圆角矩形
@@ -402,7 +448,7 @@ fn render_draw_order(
                 if let Some(p) = primitives.fills.get(*i)
                     && in_region(p.rect)
                 {
-                    fill_rect(fb, p, scale);
+                    fill_rect_for_region(fb, p, scale, region);
                 }
             }
             DrawOp::RoundedRect(i) => {
@@ -531,6 +577,25 @@ pub fn render_scene_to_framebuffer(
 }
 
 // ─── 基础图元渲染 ───
+
+/// S3：有 `region` 时将 fill 裁剪到脏区再绘制，避免全视口背景污染区外像素。
+fn fill_rect_for_region(fb: &mut FrameBuffer, fill: &FillPrimitive, scale: f32, region: Option<Rect>) {
+    let rect = match region {
+        Some(r) => match fill.rect.intersection(&r) {
+            Some(inter) => inter,
+            None => return,
+        },
+        None => fill.rect,
+    };
+    fill_rect(
+        fb,
+        &FillPrimitive {
+            rect,
+            color: fill.color,
+        },
+        scale,
+    );
+}
 
 fn fill_rect(fb: &mut FrameBuffer, fill: &FillPrimitive, scale: f32) {
     let left = (fill.rect.left() * scale).floor().max(0.0) as u32;

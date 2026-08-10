@@ -411,7 +411,7 @@ impl BrowserApp {
             }
             fb
         } else {
-            let fb = render_full_scene(
+            let fb = rasterize_full_scene(
                 width,
                 height,
                 1.0,
@@ -461,7 +461,7 @@ impl BrowserApp {
             None => None,
         };
 
-        render_full_scene(
+        rasterize_full_scene(
             width,
             height,
             1.0,

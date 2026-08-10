@@ -23,6 +23,9 @@ use zero_render_foundation::rendering_thread::{RenderingThread, render_threading
 mod convert;
 mod rasterize;
 
+#[cfg(test)]
+mod rasterize_tests;
+
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;

@@ -21,7 +21,7 @@
 | 样式/布局/绘制命令生成 | 主线程同步 | `crates/engine/src/pipeline/mod.rs` |
 | 图元序列（display list 雏形） | `RenderResult.display_list`（S1 显式化） | `render-foundation/display_list.rs` |
 | 页面光栅化（默认路径） | compositor 进程 + `render_full_scene_threaded` | `apps/compositor/src/main.rs` |
-| Browser 最终合成光栅化 | UI 线程同步 `render_full_scene` | `apps/browser/src/app_platform.rs` |
+| Browser 最终合成光栅化 | `rasterize_full_scene`（默认 scope 线程，`ZW_RENDER_THREAD=0` 直连） | `apps/browser/src/app_platform.rs` |
 | 帧缓冲管理（页面） | compositor per-surface `BackingStoreManager` | `render-foundation/backing_store.rs` |
 | 区域光栅化 API | `render_full_scene_region(_into)` | `render-foundation/cpu/mod.rs` |
 | mutation 增量录制（M3-S9） | 活 DOM + 增量 style/layout/paint | `pipeline::render_with_dom_mutations` |
@@ -37,7 +37,7 @@
 切片 S2：独立 RenderingThread + 双缓冲（核心）⚠️ 部分
   主线程：render_html → DisplayList（录制）——renderer/compositor 路径已达成
   渲染线程：RenderingThread 持久 worker + BackingStoreManager（compositor ✅）
-  Browser UI 合成：RenderingThread 可选 offload（本 RFC v1.1）
+  Browser UI 合成：`rasterize_full_scene`（scope 线程，默认开）✅
   回退：ZW_RENDER_THREAD=0
 
 切片 S3：增量重绘（dirty region）⏳
