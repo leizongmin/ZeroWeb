@@ -60,10 +60,10 @@ jobs:
             "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs" >> $env:GITHUB_ENV
           }
 
-      - name: Run diag variant matrix (v1-v5) serial
+      - name: Run browser-level variant matrix (v7-v10) serial
         shell: bash
         run: |
-          cargo nextest run -p zero-script-sandbox --lib \
-            -E 'test(diag_v)' \
+          cargo nextest run -p zero-browser --bin zero-browser \
+            -E 'test(diag_tab_v)' \
             --test-threads=1 \
             --target x86_64-pc-windows-msvc

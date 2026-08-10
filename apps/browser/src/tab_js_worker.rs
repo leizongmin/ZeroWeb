@@ -593,6 +593,53 @@ mod tests {
     use super::*;
     use zero_browser_shell::TabId;
 
+    // ===== TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）=====
+    // browser 级变体：逐步逼近完整 js_worker_main 流程，二分挂点。
+
+    #[test]
+    fn diag_tab_v7_spawn_shutdown_no_scripts() {
+        // 仅 spawn + shutdown（无 set_dom_snapshot / 无 execute）。覆盖 shim 执行 +
+        // 回调注册 + bridges 构造 + teardown。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(90));
+        eprintln!("[DIAG-v7] worker spawned, shutting down");
+        worker.shutdown();
+        eprintln!("[DIAG-v7] shutdown complete");
+    }
+
+    #[test]
+    fn diag_tab_v8_spawn_snapshot_shutdown() {
+        // spawn + set_dom_snapshot + shutdown（无 execute）。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(91));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        eprintln!("[DIAG-v8] snapshot set, shutting down");
+        worker.shutdown();
+        eprintln!("[DIAG-v8] shutdown complete");
+    }
+
+    #[test]
+    fn diag_tab_v9_spawn_execute_shutdown() {
+        // spawn + snapshot + 1 次 execute + shutdown。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(92));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        let r = worker.execute_script_direct("1 + 2");
+        eprintln!("[DIAG-v9] executed: {:?}", r);
+        worker.shutdown();
+        eprintln!("[DIAG-v9] shutdown complete");
+    }
+
+    #[test]
+    fn diag_tab_v10_spawn_resolver_shutdown() {
+        // spawn + async_resolver().resolve（跨命令 marshal）+ shutdown。
+        let mut worker = TabJsWorkerHandle::spawn(TabId(93));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        let resolver = worker.async_resolver();
+        resolver.resolve("nope", "v");
+        let r = worker.execute_script_direct("1 + 2");
+        eprintln!("[DIAG-v10] executed: {:?}", r);
+        worker.shutdown();
+        eprintln!("[DIAG-v10] shutdown complete");
+    }
+
     /// P1b S3 incr-d：非阻塞 fetch 的 resolve 时机异步——轮询 `globalThis.{key}` 直到
     /// 非 undefined（或超时返当前值）。子线程抓取（synthetic ~ms / 本地 server ~ms）→
     /// generous 超时下可靠（非 flaky）。
