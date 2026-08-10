@@ -133,7 +133,7 @@ fn read_reflected_attr(
 }
 
 /// `id` setter（reflected，spec `dom-id`）：值 ToString 后 `set_attribute('id', val)`。
-/// 经 [`with_dom_mut`] 写真实 DOM（更新 id_map）。
+/// 经 [`with_dom_mut`] 写真实 DOM（更新 id_map）。**null → 空串**（spec `[LegacyNullToEmptyString]`）。
 pub(super) fn native_id_setter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -141,10 +141,11 @@ pub(super) fn native_id_setter(
     args: v8::PropertyCallbackArguments,
     _rv: v8::ReturnValue<()>,
 ) {
-    write_reflected_attr(scope, &args, "id", value);
+    write_reflected_attr(scope, &args, "id", value, true);
 }
 
 /// `className` setter（reflected，spec `dom-classname`）：值 ToString 后 `set_attribute('class', val)`。
+/// `className` **非** `[LegacyNullToEmptyString]`（spec：plain DOMString，null→"null"）。
 pub(super) fn native_class_name_setter(
     scope: &mut v8::PinScope,
     _name: v8::Local<v8::Name>,
@@ -152,21 +153,29 @@ pub(super) fn native_class_name_setter(
     args: v8::PropertyCallbackArguments,
     _rv: v8::ReturnValue<()>,
 ) {
-    write_reflected_attr(scope, &args, "class", value);
+    write_reflected_attr(scope, &args, "class", value, false);
 }
 
 /// 反射属性 setter 共用：读 internal slot NodeId → 值 ToString → `Document::set_attribute(name, val)`。
+///
+/// `null_as_empty`：spec `[LegacyNullToEmptyString]` 的属性（id/title/lang/accessKey）传 `true`——null→""；
+/// 非 LegacyNull 属性（className/dir/aria*/role）传 `false`——null 经 ToString→"null"（spec plain DOMString）。
 fn write_reflected_attr(
     scope: &mut v8::PinScope,
     args: &v8::PropertyCallbackArguments,
     attr: &str,
     value: v8::Local<v8::Value>,
+    null_as_empty: bool,
 ) {
     let holder = args.holder();
     let Some(id) = read_node_id(scope, &holder) else {
         return;
     };
-    let val = local_value_to_string(scope, value);
+    let val = if null_as_empty {
+        local_value_to_string_null_as_empty(scope, value)
+    } else {
+        local_value_to_string(scope, value)
+    };
     with_dom_mut(|d| d.set_attribute(id, attr, &val));
 }
 
@@ -459,6 +468,8 @@ pub(super) fn native_string_reflected_getter(
 }
 
 /// 字符串反射 setter：accessor name → 小写 content 名 → [`write_reflected_attr`]（值 ToString）。
+/// title/lang/accessKey 为 spec `[LegacyNullToEmptyString]`（null→""），`dir` 为 enumerated **非**
+/// LegacyNull（null→"null"）。按 content 名判定（dir 唯一非 LegacyNull）。
 pub(super) fn native_string_reflected_setter(
     scope: &mut v8::PinScope,
     name: v8::Local<v8::Name>,
@@ -467,7 +478,8 @@ pub(super) fn native_string_reflected_setter(
     _rv: v8::ReturnValue<()>,
 ) {
     let attr = name_to_content_attr(scope, name);
-    write_reflected_attr(scope, &args, &attr, value);
+    let null_as_empty = attr != "dir";
+    write_reflected_attr(scope, &args, &attr, value, null_as_empty);
 }
 
 /// accessor name（IDL 名）→ content 属性名（HTML content 属性小写约定，故 to_ascii_lowercase：
@@ -608,6 +620,7 @@ pub(super) fn native_aria_reflected_getter(
 }
 
 /// aria*/role 反射 setter：name 参即 IDL 名 → content 属性名 → [`write_reflected_attr`]（值 ToString）。
+/// aria*/role 为 spec plain DOMString **非** `[LegacyNullToEmptyString]`（null→"null"）。
 pub(super) fn native_aria_reflected_setter(
     scope: &mut v8::PinScope,
     name: v8::Local<v8::Name>,
@@ -616,7 +629,7 @@ pub(super) fn native_aria_reflected_setter(
     _rv: v8::ReturnValue<()>,
 ) {
     let attr = name_to_attr(scope, name);
-    write_reflected_attr(scope, &args, &attr, value);
+    write_reflected_attr(scope, &args, &attr, value, false);
 }
 
 /// accessor `name` 参 → IDL 名 → [`idl_to_attr`] content 属性名。非 string 名 → 原样（不应发生）。

@@ -1482,15 +1482,19 @@
           else __zw_set_attr(sel, 'class', String(value));
           moAttr = 'class';
         } else if (p === 'id') {
-          if (handle) __zw_set_attr_handle(handle, 'id', String(value));
-          else __zw_set_attr(sel, 'id', String(value));
+          // spec [LegacyNullToEmptyString]：null → 空串（非 "null"）。
+          var idv = value === null ? '' : String(value);
+          if (handle) __zw_set_attr_handle(handle, 'id', idv);
+          else __zw_set_attr(sel, 'id', idv);
           moAttr = 'id';
         } else if (p === 'title' || p === 'lang' || p === 'dir') {
           // reflected 字符串属性 set——写同名 attribute + 同步客户端缓存（set 后 get 读缓存）。
+          // spec [LegacyNullToEmptyString]：title/lang null→空串；dir 为 enumerated 非 LegacyNull（null→"null"）。
           var rcb = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
-          rcb[p] = String(value);
-          if (handle) __zw_set_attr_handle(handle, p, String(value));
-          else __zw_set_attr(sel, p, String(value));
+          var rcv = (p !== 'dir' && value === null) ? '' : String(value);
+          rcb[p] = rcv;
+          if (handle) __zw_set_attr_handle(handle, p, rcv);
+          else __zw_set_attr(sel, p, rcv);
           moAttr = p;
         } else if (p === 'tabIndex') {
           // tabIndex set——反射为 tabindex 属性（数值）；NaN 忽略（spec 抛，lenient 不抛）。同步缓存。
@@ -1511,11 +1515,12 @@
           else __zw_set_attr(sel, 'contenteditable', String(value));
           moAttr = 'contenteditable';
         } else if (p === 'accessKey') {
-          // accessKey set——反射 accesskey 属性（串）。同步缓存。
+          // accessKey set——反射 accesskey 属性（串）。spec [LegacyNullToEmptyString]：null→空串。同步缓存。
           var akc2 = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
-          akc2['accesskey'] = String(value);
-          if (handle) __zw_set_attr_handle(handle, 'accesskey', String(value));
-          else __zw_set_attr(sel, 'accesskey', String(value));
+          var akv = value === null ? '' : String(value);
+          akc2['accesskey'] = akv;
+          if (handle) __zw_set_attr_handle(handle, 'accesskey', akv);
+          else __zw_set_attr(sel, 'accesskey', akv);
           moAttr = 'accesskey';
         } else if (p === 'popover') {
           // R3071：popover enumerated setter。spec：null → removeAttribute（清 popover 元素身份）；余 → setAttribute

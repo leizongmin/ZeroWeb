@@ -102,3 +102,87 @@ fn native_outer_html_setter_undefined_is_string_r3184() {
         "undefined"
     );
 }
+
+// ── R3185 反射字符串属性 setter：spec `[LegacyNullToEmptyString]`（id/title/lang/accessKey）──
+//
+// spec HTML：id/title/lang/accessKey IDL 反射为 `[LegacyNullToEmptyString] attribute DOMString`——
+// 赋 null 视作空串（写 content 属性为 ""），非通用 ToString 的 "null"。className/dir/aria*/role 为
+// plain DOMString **非** LegacyNull（null→"null"）。用 `[`+val+`]` 包裹避免空串返值歧义。
+
+/// `el.id = null` → 空串（LegacyNull），非 "null"。回读 `el.id` === ""。
+#[test]
+fn native_reflected_id_null_empty_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.id=null; return '['+e.id+']'; })()"
+        ),
+        "[]"
+    );
+}
+
+/// `el.title = null` → 空串（LegacyNull）。
+#[test]
+fn native_reflected_title_null_empty_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.title=null; return '['+e.title+']'; })()"
+        ),
+        "[]"
+    );
+}
+
+/// `el.lang = null` → 空串（LegacyNull）。
+#[test]
+fn native_reflected_lang_null_empty_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.lang=null; return '['+e.lang+']'; })()"
+        ),
+        "[]"
+    );
+}
+
+/// `el.accessKey = null` → 空串（LegacyNull）。
+#[test]
+fn native_reflected_accesskey_null_empty_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.accessKey=null; return '['+e.accessKey+']'; })()"
+        ),
+        "[]"
+    );
+}
+
+/// `el.className = null` → "null"（plain DOMString，**非** LegacyNull）。锁定 LegacyNull 与非的区别。
+#[test]
+fn native_reflected_classname_null_is_string_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.className=null; return '['+e.className+']'; })()"
+        ),
+        "[null]"
+    );
+}
+
+/// `el.dir = null` → "null"（enumerated，**非** LegacyNull；setter stringifies，getter 简化直读）。
+#[test]
+fn native_reflected_dir_null_is_string_r3185() {
+    let html = r#"<div id="a"></div>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const e=__zw_native_element_for_id('a'); e.dir=null; return '['+e.dir+']'; })()"
+        ),
+        "[null]"
+    );
+}

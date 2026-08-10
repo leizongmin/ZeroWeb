@@ -803,3 +803,58 @@ fn test_outer_html_null_removes_production_r3184() {
         "outerHTML=null 应入队 SetOuterHtml{{html:\"\"}}（移除自身），非 \"null\""
     );
 }
+
+// ── R3185：反射字符串属性 setter 生产路径 spec `[LegacyNullToEmptyString]` ──
+//
+// 生产 always-on B-gen shim 路径（js_dom_shim/part04.js set trap）。id/title/lang/accessKey 为
+// spec `[LegacyNullToEmptyString]`（null→空串）；className/dir 非（null→"null"）。验证 JS 侧
+// `value === null ? '' : String(value)`（dir/className 仍 String）→ 入队 SetAttr 的 value 字段。
+
+#[test]
+fn test_reflected_string_attrs_null_empty_production_r3185() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var e=document.querySelector('#t');\
+             e.id=null; e.title=null; e.lang=null; e.accessKey=null;\
+             e.className=null; e.dir=null;",
+        )
+        .unwrap();
+    // 收集 (content-attr-name, value) 对（SetAttr sel-based）。
+    let pairs: Vec<(String, String)> = mutations
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::SetAttr { name, value, .. } => Some((name.clone(), value.clone())),
+            _ => None,
+        })
+        .collect();
+    // id/title/lang/accessKey（→accesskey）null→""；className(→class)/dir null→"null"。
+    assert_eq!(
+        pairs,
+        vec![
+            ("id".to_string(), "".to_string()),
+            ("title".to_string(), "".to_string()),
+            ("lang".to_string(), "".to_string()),
+            ("accesskey".to_string(), "".to_string()),
+            ("class".to_string(), "null".to_string()),
+            ("dir".to_string(), "null".to_string()),
+        ],
+        "id/title/lang/accessKey null→空串（LegacyNull）；class/dir null→\"null\"（非 LegacyNull）"
+    );
+}
