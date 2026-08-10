@@ -1185,10 +1185,12 @@
       } catch (_e) { return false; }
     };
     var dataKeys = function() {
-      // 仅 sel-based 支持枚举（无 attr-names-handle）；data-* → camelCase 键。
-      if (handle || typeof __zw_attr_names !== 'function') return [];
+      // data-* → camelCase 键。sel 用 `__zw_attr_names`（latest-wins），handle 用 `__zw_attr_names_handle`
+      //（R3196：闭合 R3195 限制①——旧 handle 路径无 attr-names 变体恒返 []）。无对应回调 → []。
       try {
-        var names = __zw_attr_names(sel);
+        var names = handle
+          ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
+          : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
         if (!names) return [];
         return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; })
                      .map(function(n) { return _kebabToCamel(n.slice(5)); });

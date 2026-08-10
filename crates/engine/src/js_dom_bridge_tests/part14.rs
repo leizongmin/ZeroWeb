@@ -1634,3 +1634,88 @@ fn test_dataset_handle_round_trip_production_r3195() {
         "handle dataset delete：真移除（旧 set-empty 残留），get→undefined，getAttribute→null"
     );
 }
+
+// ── R3196：handle dataset 枚举（ownKeys/ownEnumerable）──
+//
+// R3195 闭合 handle dataset get/has/delete 后，枚举仍返 []——`_datasetProxy.dataKeys()` handle 路径
+// 无 `__zw_attr_names_handle` 回调变体，恒返 []（R3195 已知限制①）。新增 host `attribute_names_from_mutations`
+//（正序 latest-wins，无快照基底）+ `__zw_attr_names_handle` 回调，dataKeys() handle 路径遍历真实 data-* 属性名。
+
+#[test]
+fn test_dataset_handle_enumeration_production_r3196() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // Object.keys(handle.dataset)：camelCase data-* 键（旧恒返 []）。非 data-* 属性（id）不混入。
+    let keys = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.id='nope';\
+             e.dataset.fooBar='1';\
+             e.dataset.baz='2';\
+             Object.keys(e.dataset).join(',')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        keys, "fooBar,baz",
+        "handle dataset Object.keys：camelCase data-* 键，非 data-*（id）排除（旧恒空）"
+    );
+
+    // JSON.stringify：序列化含 data 键（旧 '{}'）。
+    let json = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.dataset.alpha='x';\
+             e.dataset.betaBravo='y';\
+             JSON.stringify(e.dataset)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        json, "{\"alpha\":\"x\",\"betaBravo\":\"y\"}",
+        "handle dataset JSON.stringify：含 data 键（旧恒 {{}}）"
+    );
+
+    // delete 反映：枚举移除被删键 + 删后重设追加到末尾（DOM getAttributeNames 序）。
+    let after_del = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.dataset.first='a';\
+             e.dataset.second='b';\
+             delete e.dataset.first;\
+             e.dataset.first='c';\
+             Object.keys(e.dataset).join(',')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        after_del, "second,first",
+        "handle dataset 枚举：delete 移除 + 删后重设追加到末尾（正序 latest-wins，DOM 序）"
+    );
+
+    // 空句柄 dataset：Object.keys 返 []（无 data-* 属性）。
+    let empty = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             Object.keys(e.dataset).length+'/'+(Object.keys(e.dataset).length===0)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        empty, "0/true",
+        "handle dataset 空：Object.keys 返空数组"
+    );
+}

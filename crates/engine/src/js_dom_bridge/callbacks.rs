@@ -688,6 +688,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // create 句柄元素的全部属性名（`|` 分隔，变更序）——供 handle 元素 `el.dataset` 枚举（ownKeys）等
+    // 遍历属性名场景。句柄元素不在 HTML 快照，属性名仅来自 SetAttrOnHandle/RemoveAttrOnHandle
+    //（正序 latest-wins，无快照基底）。R3196：闭合 R3195 限制①（旧 handle dataset 枚举恒返 []）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_attr_names_handle",
+        Box::new(move |args| {
+            let handle = args.first().map(String::from).unwrap_or_default();
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            attribute_names_from_mutations(&list, &handle)
+        }),
+    );
+
     // create 句柄元素的属性**真移除**（`el.removeAttribute(name)` on handle 元素——区别于 `__zw_set_attr_handle`
     // 空值残留；布尔/存在性属性须移除才 unset；R2993 闭合 hasAttribute-after-remove + CE post-remove old=null）。
     // 记 [`DomMutation::RemoveAttrOnHandle`]；query/has 函数 latest-wins 据此判 absent。

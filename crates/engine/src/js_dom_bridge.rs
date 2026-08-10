@@ -2197,6 +2197,32 @@ pub fn query_tag_from_mutations(mutations: &[DomMutation], handle: &str) -> Stri
     String::new()
 }
 
+/// 从已记录变更中收集 create 句柄元素的属性本地名（`|` 分隔，变更序）。
+///
+/// 句柄元素（`createElement` 创建，未挂载 DOM）不在 HTML 快照，故属性名仅来自
+/// [`DomMutation::SetAttrOnHandle`] / [`DomMutation::RemoveAttrOnHandle`]（无快照基底）。正序应用：
+/// `SetAttrOnHandle` 加名（去重保序，首次出现位置）、`RemoveAttrOnHandle` 删名——与
+/// [`element_attribute_names_lw`] 同语义（setAttribute 不重排、removeAttribute 真删、删后重设追加到末尾，
+/// 符合 DOM `getAttributeNames`）。供 `__zw_attr_names_handle` 回调 → shim handle 元素 `el.dataset` 枚举
+///（ownKeys）等需要遍历属性名的场景（R3196，闭合 R3195 限制①：handle dataset 枚举旧恒返 []）。
+pub fn attribute_names_from_mutations(mutations: &[DomMutation], handle: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for m in mutations {
+        match m {
+            DomMutation::SetAttrOnHandle { handle: h, name, .. } if h == handle => {
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.clone());
+                }
+            }
+            DomMutation::RemoveAttrOnHandle { handle: h, name } if h == handle => {
+                names.retain(|n| n != name);
+            }
+            _ => {}
+        }
+    }
+    names.join("|")
+}
+
 /// WHATWG URL 解析为 JSON 串（供 JS shim `new URL(url, base)` 经 `__zw_parse_url` 回调消费）。
 ///
 /// 委托 `url` crate（spec-correct：base 解析 / percent-encoding / IDNA / 默认端口归一）。成功返
