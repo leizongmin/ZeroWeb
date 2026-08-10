@@ -268,6 +268,12 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "dispatchEvent") {
         tmpl.set(k.into(), disp_evt_tmpl.into());
     }
+    // R3147 element.click()（spec `dom-element-click`）：派发合成 click MouseEvent（bubbles+cancelable），
+    // 复用 dispatchEvent 三阶段派发核心（dispatch_event_impl）。程序化 click 高频（表单提交/下载链接/按钮激活）。
+    let click_tmpl = v8::FunctionTemplate::builder(event_target::native_element_click_invoke).build(scope);
+    if let Some(k) = v8::String::new(scope, "click") {
+        tmpl.set(k.into(), click_tmpl.into());
+    }
     // R3110 节点导航 getter（spec `dom-node-parent-node` 等 / `dom-node-has-child-nodes`）：
     // parentNode / firstChild / lastChild / nextSibling / previousSibling → native 节点或 null；
     // hasChildNodes() → bool。读 Document 树关系（`with_dom`），结果包 native 节点对象。

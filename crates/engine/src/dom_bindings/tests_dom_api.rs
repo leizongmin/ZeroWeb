@@ -1819,3 +1819,82 @@ fn native_insert_adjacent_text_r3146() {
         "threw"
     );
 }
+
+// ── R3147 element.click()（spec dom-element-click）+ dispatchEvent 重构无回归 ──
+
+/// `element.click()`：派发合成 click MouseEvent（bubbles + cancelable）到 this。触发本元素 click 监听器
+///（event.type==='click'、event.target===this）+ 冒泡到祖先 + 返 `!(cancelable && defaultPrevented)`
+///（preventDefault 时 false）。复用 dispatch_event_impl 三阶段派发核心（R3147 抽出）。
+#[test]
+fn native_element_click_r3147() {
+    let html = r#"<div id="p"><span id="c"></span></div><span id="a"></span>"#;
+    // 触发 click 监听器 + event.type / event.target 正确（target===被点元素）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a'); let got='';\
+             el.addEventListener('click', e=>{ got=e.type+'/'+(e.target===el); });\
+             el.click(); return got; })()"
+        ),
+        "click/true"
+    );
+    // 冒泡到祖先：child.click() 触发 parent click 监听器（click 事件 bubbles=true）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const p=__zw_native_element_for_id('p'); const c=__zw_native_element_for_id('c');\
+             let bubbled='no'; p.addEventListener('click', ()=>{ bubbled='yes'; });\
+             c.click(); return bubbled; })()"
+        ),
+        "yes"
+    );
+    // 返值 true（未 preventDefault）。
+    assert_eq!(run_script(html, "(__zw_native_element_for_id('a').click())"), "true");
+    // 返值 false（监听器 preventDefault——cancelable 事件被 preventDefault 则返 false，spec）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('a');\
+             el.addEventListener('click', e=>{ e.preventDefault(); });\
+             return el.click(); })()"
+        ),
+        "false"
+    );
+}
+
+/// dispatchEvent 重构（R3147 抽 dispatch_event_impl）无回归守卫：既有 dispatchEvent 行为
+///（触发监听器 + 冒泡 + stopPropagation）经重构后仍正确。
+#[test]
+fn native_dispatch_event_refactor_no_regress_r3147() {
+    let html = r#"<div id="p"><span id="c"></span></div>"#;
+    // dispatchEvent 仍触发监听器 + event.type 读自对象。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('c'); let got='';\
+             el.addEventListener('click', e=>{ got=e.type; });\
+             el.dispatchEvent({type:'click'}); return got; })()"
+        ),
+        "click"
+    );
+    // dispatchEvent 冒泡仍正确（bubbles:true 上溯祖先）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const p=__zw_native_element_for_id('p'); const c=__zw_native_element_for_id('c');\
+             let n=0; p.addEventListener('click', ()=>{ n++; });\
+             c.dispatchEvent({type:'click', bubbles:true}); return n; })()"
+        ),
+        "1"
+    );
+    // dispatchEvent 字符串参仍标准化为 {type:str}。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const el=__zw_native_element_for_id('c'); let got='';\
+             el.addEventListener('x', e=>{ got=e.type; });\
+             el.dispatchEvent('x'); return got; })()"
+        ),
+        "x"
+    );
+}

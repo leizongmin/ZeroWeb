@@ -320,7 +320,10 @@ fn native_keyboard_event_constructor_invoke(
 
 /// `event.preventDefault()` 原型方法（spec `dom-event-prevent-default`）：仅当 `cancelable` 时设
 /// `defaultPrevented=true`。headless 无浏览器默认行为，故仅记账（供 dispatchEvent 返值语义后续）。
-fn native_prevent_default_invoke(
+/// R3147：`pub(super)`——[`event_target::dispatch_event_impl`] 对 plain event 对象（如 `element.click()`
+/// 构造的合成事件，无 Event 原型）「缺失时注入」preventDefault，使监听器 `e.preventDefault()` 可用 +
+/// 派发返值正确反映 defaultPrevented（同 stopPropagation 注入 pattern）。
+pub(super) fn native_prevent_default_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
     _rv: v8::ReturnValue<v8::Value>,

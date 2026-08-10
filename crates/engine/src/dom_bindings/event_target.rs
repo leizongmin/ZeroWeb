@@ -108,60 +108,24 @@ pub(super) fn native_stop_immediate_invoke(
     }
 }
 
-/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
-/// 或直接 type 字符串（包成 `{type:str}` 对象）。**三阶段派发**（R3128）：① capture（祖先 root→parent
-/// 倒序，CAPTURING_PHASE=1，仅 capture 监听器）→ ② target（AT_TARGET=2，**全部监听器按注册序触发**，
-/// 不论 capture 标志——R3135 闭合 R3128 限制① spec 合规）→ ③ bubble（祖先 parent→root 正序，
-/// BUBBLING_PHASE=3，仅 bubble 监听器，仅当 `event.bubbles`）。每节点取监听器快照（复活 Local，释放
-/// borrow 避回调再入）按注册序遍历，按 phase 过滤（capture 阶段仅 capture、target 全部、bubble 仅 bubble）。
-/// `event.target` = 派发目标（固定）；`event.currentTarget` = 当前层元素（随传播变）；
-/// `event.eventPhase` 随阶段变。派发后 `currentTarget=null`、`eventPhase=0`（spec）。
+/// 三阶段派发核心（spec `dom-eventtarget-dispatch` 的派发算法），[`native_dispatch_event_invoke`]
+/// 与 [`native_element_click_invoke`]（R3147）共用。设 `event.target`（固定）+ 读 `bubbles` + 注入
+/// stop 方法（缺失时）+ 复位 stop flag（支持同 event 重派发）+ 三阶段 capture→target→bubble 派发
+/// ，派发后复位 `currentTarget`/`eventPhase`。返 `!(cancelable && defaultPrevented)`（spec dispatchEvent
+/// 返值语义；click() 同——未 preventDefault 时 true）。
 ///
-/// **stopPropagation / stopImmediatePropagation**（R3126）：注入两方法（缺失时）+ 派发前复位内部 flag
-///（支持同 event 对象重派发）。监听器调 stopPropagation → 当前节点监听器全尽后止后续节点；
-/// stopImmediatePropagation → 立即终止（当前节点剩余 + 后续）。两 flag 跨阶段生效（capture 阶段止则 target/bubble 不派发）。
-///
-/// **返值语义**（R3130）：返 `!(cancelable && defaultPrevented)`（spec：cancelable 事件被 preventDefault
-/// 则返 false，否则 true）。preventDefault 由 Event 原型方法（R3127/R3129）设 `defaultPrevented=true`（仅 cancelable）。
-pub(super) fn native_dispatch_event_invoke(
+/// event_obj 须已就绪（dispatchEvent 经入参标准化，click() 构造 `{type:'click',bubbles,cancelable}`）。
+fn dispatch_event_impl(
     scope: &mut v8::PinScope,
-    args: v8::FunctionCallbackArguments,
-    mut rv: v8::ReturnValue<v8::Value>,
-) {
-    let this = args.this();
-    let target_id = match read_node_id(scope, &this) {
-        Some(id) => id,
-        None => {
-            rv.set(v8::Boolean::new(scope, true).into());
-            return;
-        }
-    };
-    let event = args.get(0);
-    // event.type：字符串直接用；对象读 `.type` 属性。
-    let event_type = if event.is_string() {
-        event
-            .to_string(scope)
-            .map(|s| s.to_rust_string_lossy(scope))
-            .unwrap_or_default()
-    } else if let Ok(obj) = v8::Local::<v8::Object>::try_from(event) {
-        v8::String::new(scope, "type")
-            .and_then(|k| obj.get(scope, k.into()))
-            .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    // event 对象：对象原样用；字符串/其他包成 {type:str}（dispatchEvent 入参标准化）。
-    let event_obj = match v8::Local::<v8::Object>::try_from(event) {
-        Ok(obj) => obj,
-        Err(_) => {
-            let obj = v8::Object::new(scope);
-            if let Some(k) = v8::String::new(scope, "type") {
-                let _ = obj.set(scope, k.into(), event);
-            }
-            obj
-        }
-    };
+    target_id: NodeId,
+    this: v8::Local<v8::Object>,
+    event_obj: v8::Local<v8::Object>,
+) -> bool {
+    // event.type（listener 键）：从 event_obj.type 读。
+    let event_type = v8::String::new(scope, "type")
+        .and_then(|k| event_obj.get(scope, k.into()))
+        .and_then(|v| v.to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
+        .unwrap_or_default();
     // spec：event.target = 派发目标（固定不变）。
     if let Some(k) = v8::String::new(scope, "target") {
         let _ = event_obj.set(scope, k.into(), this.into());
@@ -195,6 +159,18 @@ pub(super) fn native_dispatch_event_invoke(
         let has = event_obj.get(scope, k.into()).is_some_and(|v| v.is_function());
         if !has {
             let tmpl = v8::FunctionTemplate::builder(native_stop_immediate_invoke).build(scope);
+            if let Some(f) = tmpl.get_function(scope) {
+                let _ = event_obj.set(scope, k.into(), f.into());
+            }
+        }
+    }
+    // R3147 preventDefault 注入（缺失时——同 stop 方法 pattern）：plain event 对象（如 element.click()
+    // 合成事件，无 Event 原型）经此获 preventDefault，使监听器 `e.preventDefault()` 可用 + 派发返值正确
+    // 反映 defaultPrevented。原生 Event 实例经原型链已有 → 「缺失时」守卫跳过（不覆盖）。
+    if let Some(k) = v8::String::new(scope, "preventDefault") {
+        let has = event_obj.get(scope, k.into()).is_some_and(|v| v.is_function());
+        if !has {
+            let tmpl = v8::FunctionTemplate::builder(super::event::native_prevent_default_invoke).build(scope);
             if let Some(f) = tmpl.get_function(scope) {
                 let _ = event_obj.set(scope, k.into(), f.into());
             }
@@ -292,13 +268,78 @@ pub(super) fn native_dispatch_event_invoke(
     if let Some(k) = &key_phase {
         let _ = event_obj.set(scope, (*k).into(), v8::Integer::new(scope, 0).into());
     }
-    // R3130 返值语义：dispatchEvent 返 `!(cancelable && defaultPrevented)`（spec `dom-eventtarget-dispatch-event`
-    // 返 false 当 cancelable 事件被 preventDefault；preventDefault 由 R3127/R3129 原型方法设 defaultPrevented）。
+    // R3130 返值语义：`!(cancelable && defaultPrevented)`（spec：cancelable 事件被 preventDefault 则 false）。
+    // preventDefault 由 R3127/R3129 原型方法设 defaultPrevented=true（仅 cancelable）。
     let cancelable = v8::String::new(scope, "cancelable")
         .and_then(|k| event_obj.get(scope, k.into()))
         .is_some_and(|v| v.is_true());
     let default_prevented = v8::String::new(scope, "defaultPrevented")
         .and_then(|k| event_obj.get(scope, k.into()))
         .is_some_and(|v| v.is_true());
-    rv.set(v8::Boolean::new(scope, !(cancelable && default_prevented)).into());
+    !(cancelable && default_prevented)
+}
+
+/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatch-event`）：event 为对象读 `.type`，
+/// 或直接 type 字符串（包成 `{type:str}` 对象）。三阶段派发核心抽到 [`dispatch_event_impl`]（R3147，
+/// 与 `element.click()` 共用）。返值 `!(cancelable && defaultPrevented)`。
+pub(super) fn native_dispatch_event_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = args.this();
+    let target_id = match read_node_id(scope, &this) {
+        Some(id) => id,
+        None => {
+            rv.set(v8::Boolean::new(scope, true).into());
+            return;
+        }
+    };
+    let event = args.get(0);
+    // event 对象：对象原样用；字符串/其他包成 {type:str}（dispatchEvent 入参标准化）。
+    let event_obj = match v8::Local::<v8::Object>::try_from(event) {
+        Ok(obj) => obj,
+        Err(_) => {
+            let obj = v8::Object::new(scope);
+            if let Some(k) = v8::String::new(scope, "type") {
+                let _ = obj.set(scope, k.into(), event);
+            }
+            obj
+        }
+    };
+    let result = dispatch_event_impl(scope, target_id, this, event_obj);
+    rv.set(v8::Boolean::new(scope, result).into());
+}
+
+/// `element.click()`（spec `dom-element-click`）：派发合成 `click` MouseEvent（bubbles + cancelable）
+/// 到 this，经 [`dispatch_event_impl`] 三阶段派发。返 `!(cancelable && defaultPrevented)`（spec：未
+/// preventDefault 时 true）。**已知限制**：① 无 activation behavior（表单提交 / 锚导航 / popover 触发
+/// —— polyfill click() 经 `_zwPopoverTargetActivate` 触发 popovertarget 声明式激活，native 此切片不移植，
+/// 默认行为 defer）；② 合成事件为 plain object（监听器读 `e.type==='click'` 正确；`instanceof MouseEvent`
+/// 保真为已知限制）。程序化 click 高频（表单提交 / 下载链接 / 按钮激活）。
+pub(super) fn native_element_click_invoke(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let this = _args.this();
+    let Some(target_id) = read_node_id(scope, &this) else {
+        return;
+    };
+    // 构造 click 事件对象（type/bubbles/cancelable）。plain object——监听器读 e.type==='click'（spec
+    // MouseEvent instanceof 保真为已知限制）。
+    let event_obj = v8::Object::new(scope);
+    if let Some(k) = v8::String::new(scope, "type")
+        && let Some(t) = v8::String::new(scope, "click")
+    {
+        let _ = event_obj.set(scope, k.into(), t.into());
+    }
+    if let Some(k) = v8::String::new(scope, "bubbles") {
+        let _ = event_obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+    if let Some(k) = v8::String::new(scope, "cancelable") {
+        let _ = event_obj.set(scope, k.into(), v8::Boolean::new(scope, true).into());
+    }
+    let not_prevented = dispatch_event_impl(scope, target_id, this, event_obj);
+    rv.set(v8::Boolean::new(scope, not_prevented).into());
 }
