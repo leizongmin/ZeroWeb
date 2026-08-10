@@ -80,10 +80,8 @@ pub fn append_webview_primitives(
     }
 
     for glyph in &primitives.glyphs {
-        let Some(ch) = char::from_u32(glyph.glyph_id) else {
-            continue;
-        };
-        if ch == '\0' {
+        let ch = glyph.code_point().unwrap_or('\0');
+        if ch == '\0' && glyph.font_glyph_index().is_none() {
             continue;
         }
         let x = glyph.x * s + x_offset;
@@ -106,6 +104,7 @@ pub fn append_webview_primitives(
         }
         glyphs.push(GlyphDraw {
             ch,
+            font_glyph_index: glyph.font_glyph_index(),
             x,
             baseline_y,
             color: glyph.color,
@@ -474,6 +473,7 @@ fn transform_webview_primitives_impl(
                 font_size,
                 color: glyph.color,
                 glyph_id: glyph.glyph_id,
+                font_glyph_index: None,
                 font_id: glyph.font_id,
                 bitmap_width: glyph.bitmap_width,
                 bitmap_height: glyph.bitmap_height,

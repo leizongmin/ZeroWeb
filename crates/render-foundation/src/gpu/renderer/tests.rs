@@ -145,6 +145,7 @@ fn test_gpu_renderer_rotated_glyph_swaps_dimensions() {
 
     let upright = vec![GlyphDraw {
         ch: 'I',
+        font_glyph_index: None,
         x: 8.0,
         baseline_y: 24.0,
         color: Color::BLACK,
@@ -159,6 +160,7 @@ fn test_gpu_renderer_rotated_glyph_swaps_dimensions() {
 
     let rotated = vec![GlyphDraw {
         ch: 'I',
+        font_glyph_index: None,
         x: 8.0,
         baseline_y: 24.0,
         color: Color::BLACK,
@@ -311,6 +313,7 @@ fn test_gpu_renderer_black_fill_readback() {
 fn test_glyph_draw_fields() {
     let gd = GlyphDraw {
         ch: 'A',
+        font_glyph_index: None,
         x: 10.0,
         baseline_y: 20.0,
         color: Color::RED,
@@ -366,6 +369,7 @@ fn test_gpu_renderer_zero_sized_glyph_does_not_enter_atlas() {
 fn test_glyph_draw_clone() {
     let gd = GlyphDraw {
         ch: 'Z',
+        font_glyph_index: None,
         x: 42.0,
         baseline_y: 88.0,
         color: Color::GREEN,
@@ -531,6 +535,7 @@ fn test_glyph_at_image_edge() {
     let mut glyph_cache = GlyphCache::new(64);
     let glyphs = vec![GlyphDraw {
         ch: 'A',
+        font_glyph_index: None,
         x: 15.0,
         baseline_y: 15.0,
         color: Color::BLACK,
@@ -552,6 +557,7 @@ fn test_glyph_alpha_zero() {
     let mut glyph_cache = GlyphCache::new(64);
     let glyphs = vec![GlyphDraw {
         ch: 'A',
+        font_glyph_index: None,
         x: 0.0,
         baseline_y: 8.0,
         color: Color::rgba(255, 255, 255, 0),
@@ -692,6 +698,7 @@ fn test_multiple_glyphs_same_font_char() {
     let glyphs = vec![
         GlyphDraw {
             ch: 'A',
+            font_glyph_index: None,
             x: 10.0,
             baseline_y: 30.0,
             color: Color::BLACK,
@@ -701,6 +708,7 @@ fn test_multiple_glyphs_same_font_char() {
         },
         GlyphDraw {
             ch: 'A',
+            font_glyph_index: None,
             x: 30.0,
             baseline_y: 30.0,
             color: Color::BLACK,
@@ -723,6 +731,7 @@ fn test_glyph_at_bottom_edge() {
     let mut glyph_cache = GlyphCache::new(64);
     let glyphs = vec![GlyphDraw {
         ch: 'A',
+        font_glyph_index: None,
         x: 0.0,
         baseline_y: 30.0,
         color: Color::BLACK,
@@ -768,6 +777,47 @@ fn test_gpu_full_scene_fills() {
     assert_eq!(pixels[0], 255, "R channel should be 255");
     assert_eq!(pixels[1], 0, "G channel should be 0");
     assert_eq!(pixels[2], 0, "B channel should be 0");
+}
+
+/// indexed glyph 与对应 Unicode 码点必须走同一字体 face 并产生相同 GPU 像素。
+#[serial]
+#[test]
+fn test_gpu_full_scene_indexed_glyph_matches_code_point() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+    let mut renderer = GpuRenderer::new_headless(40, 40).expect("headless renderer");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+    let glyph_index = font_loader
+        .get(font_id)
+        .expect("font should remain loaded")
+        .lookup_glyph_index('A');
+    let make_primitives = |font_glyph_index| {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_glyph(crate::primitive::GlyphPrimitive {
+            x: 8.0,
+            y: 28.0,
+            font_size: 20.0,
+            color: Color::BLACK,
+            glyph_id: 'A' as u32,
+            font_glyph_index,
+            font_id: crate::primitive::FontId(font_id),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        primitives
+    };
+    let unicode = make_primitives(None);
+    let indexed = make_primitives(Some(glyph_index));
+    let mut glyph_cache = GlyphCache::new(8);
+
+    renderer.render_full_scene_gpu(&unicode, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
+    let unicode_pixels = renderer.read_pixels().expect("unicode readback");
+    renderer.render_full_scene_gpu(&indexed, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
+    let indexed_pixels = renderer.read_pixels().expect("indexed readback");
+
+    assert_eq!(indexed_pixels, unicode_pixels);
 }
 
 /// 测试 render_full_scene_gpu 渲染圆角矩形

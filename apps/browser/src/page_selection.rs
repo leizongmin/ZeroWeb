@@ -135,6 +135,7 @@ mod tests {
             font_size: 16.0,
             color: Color::BLACK,
             glyph_id: ch as u32,
+            font_glyph_index: None,
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,

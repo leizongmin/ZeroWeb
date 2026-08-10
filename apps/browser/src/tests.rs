@@ -164,6 +164,7 @@ fn append_webview_primitives_translates_fills_and_glyphs() {
         font_size: 16.0,
         color: Color::rgb(0, 0, 0),
         glyph_id: 'A' as u32,
+        font_glyph_index: Some(42),
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -193,6 +194,7 @@ fn append_webview_primitives_translates_fills_and_glyphs() {
     assert_eq!(fills[0].rect.size.height, 20.0);
     assert_eq!(glyphs.len(), 1);
     assert_eq!(glyphs[0].ch, 'A');
+    assert_eq!(glyphs[0].font_glyph_index, Some(42));
     assert_eq!(glyphs[0].x, 13.0);
     assert_eq!(glyphs[0].baseline_y, layout::TOOLBAR_HEIGHT + 4.0);
     assert_eq!(glyphs[0].font_id, 7);
@@ -1706,6 +1708,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         font_size: 16.0,
         color: Color::rgb(0, 0, 0),
         glyph_id: 'A' as u32,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1838,6 +1841,7 @@ fn transform_webview_primitives_extra_skips_fills_glyphs_keeps_others() {
         font_size: 16.0,
         color: Color::rgb(0, 0, 0),
         glyph_id: 'A' as u32,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1931,6 +1935,7 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
         font_size: 16.0,
         color: Color::rgb(0, 0, 0),
         glyph_id: 'A' as u32,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1976,6 +1981,7 @@ fn transform_webview_primitives_preserves_glyph_order() {
             font_size: 16.0,
             color: Color::rgb(0, 0, 0),
             glyph_id: ch as u32,
+            font_glyph_index: None,
             font_id: FontId(fid),
             bitmap_width: None,
             bitmap_height: None,

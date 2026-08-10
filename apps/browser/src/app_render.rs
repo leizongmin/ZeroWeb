@@ -967,6 +967,7 @@ impl BrowserApp {
                 crate::tab_favicon::bookmark_favicon_glyph(&mut self.font_loader, bm_url, icon_size);
             glyphs.push(GlyphDraw {
                 ch: favicon_ch,
+                font_glyph_index: None,
                 x: icon_cx - icon_size * 0.5,
                 baseline_y: icon_cy + icon_size * 0.5,
                 color: self.chrome_palette.bookmarks_bar_icon,

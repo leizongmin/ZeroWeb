@@ -65,6 +65,9 @@ pub struct IpcGlyph {
     pub font_size: f32,
     /// glyph id。
     pub glyph_id: u32,
+    /// 当前字体内部的 OpenType glyph index；`None` 表示按 `glyph_id` 查字符。
+    #[serde(default)]
+    pub font_glyph_index: Option<u16>,
     /// 字体 id。
     pub font_id: u32,
     /// 颜色。
@@ -552,5 +555,35 @@ impl Default for PaintSnapshotParams {
             hit_test: None,
             navigation_epoch: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipc_glyph_roundtrip_preserves_source_and_font_index() {
+        let glyph = IpcGlyph {
+            x: 1.0,
+            y: 2.0,
+            font_size: 16.0,
+            glyph_id: 'A' as u32,
+            font_glyph_index: Some(42),
+            font_id: 7,
+            color: IpcColor {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+            },
+            rotation: 0.0,
+        };
+
+        let bytes = bincode::serialize(&glyph).expect("serialize IpcGlyph");
+        let decoded: IpcGlyph = bincode::deserialize(&bytes).expect("deserialize IpcGlyph");
+
+        assert_eq!(decoded.glyph_id, 'A' as u32);
+        assert_eq!(decoded.font_glyph_index, Some(42));
     }
 }

@@ -50,6 +50,8 @@ pub struct GlyphAtlasKey {
     pub font_id: u32,
     /// 字符码点
     pub codepoint: u32,
+    /// 当前字体内部 glyph index；与 Unicode 码点命名空间隔离。
+    pub font_glyph_index: Option<u16>,
     /// 字体大小（像素，取整）
     pub size_px: u16,
 }
@@ -60,6 +62,17 @@ impl GlyphAtlasKey {
         Self {
             font_id,
             codepoint,
+            font_glyph_index: None,
+            size_px: size_px.round() as u16,
+        }
+    }
+
+    /// 创建字体内部 glyph index 的 atlas 键。
+    pub fn new_indexed(font_id: u32, glyph_index: u16, size_px: f32) -> Self {
+        Self {
+            font_id,
+            codepoint: glyph_index as u32,
+            font_glyph_index: Some(glyph_index),
             size_px: size_px.round() as u16,
         }
     }
@@ -535,6 +548,14 @@ mod tests {
         assert_eq!(got.x_offset, -2);
         assert_eq!(got.y_offset, 3);
         assert!((got.advance - 12.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_unicode_and_indexed_atlas_keys_do_not_collide() {
+        let unicode = GlyphAtlasKey::new(5, 65, 20.0);
+        let indexed = GlyphAtlasKey::new_indexed(5, 65, 20.0);
+
+        assert_ne!(unicode, indexed);
     }
 
     /// 测试 atlas 放置 0 高度 glyph 仍然成功

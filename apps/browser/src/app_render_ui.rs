@@ -53,6 +53,7 @@ impl BrowserApp {
                 .unwrap_or(primary);
             glyphs.push(GlyphDraw {
                 ch,
+                font_glyph_index: None,
                 x,
                 baseline_y,
                 color,

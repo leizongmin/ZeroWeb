@@ -365,6 +365,7 @@ pub fn paint_snapshot_from_primitives(
                 y: g.y,
                 font_size: g.font_size,
                 glyph_id: g.glyph_id,
+                font_glyph_index: g.font_glyph_index,
                 font_id: g.font_id.0,
                 color: color_to_ipc(g.color),
                 rotation: g.rotation,

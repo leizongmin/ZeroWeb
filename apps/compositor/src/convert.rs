@@ -253,6 +253,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             font_size: glyph.font_size,
             color: ipc_color_to_color(glyph.color),
             glyph_id: glyph.glyph_id,
+            font_glyph_index: glyph.font_glyph_index,
             font_id: zero_render_foundation::primitive::FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,

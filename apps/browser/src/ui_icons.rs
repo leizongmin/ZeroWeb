@@ -155,6 +155,7 @@ pub fn render_icon(
 
     glyphs.push(GlyphDraw {
         ch: icon.as_char(),
+        font_glyph_index: None,
         x: cx - size * 0.5,
         baseline_y: cy + size * 0.5,
         color,

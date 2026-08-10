@@ -335,6 +335,7 @@ impl DemoState {
             for ch in text.chars() {
                 glyphs.push(GlyphDraw {
                     ch,
+                    font_glyph_index: None,
                     x,
                     baseline_y,
                     color: text_color,

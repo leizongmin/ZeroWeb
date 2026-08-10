@@ -114,6 +114,7 @@ pub fn render_tab_favicon(
     let ch = ensure_tab_favicon(font_loader, tab_id, page_url, html, size_px);
     glyphs.push(GlyphDraw {
         ch,
+        font_glyph_index: None,
         x: cx - size_px * 0.5,
         baseline_y: cy + size_px * 0.5,
         color,

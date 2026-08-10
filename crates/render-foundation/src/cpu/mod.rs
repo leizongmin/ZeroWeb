@@ -768,7 +768,10 @@ fn draw_glyph_primitive(
 ) {
     let physical_font_size = glyph.font_size * scale;
     let raw_font_id = glyph.font_id.0;
-    let key = GlyphKey::new(raw_font_id, glyph.glyph_id, physical_font_size);
+    let key = match glyph.font_glyph_index() {
+        Some(glyph_index) => GlyphKey::new_indexed(raw_font_id, glyph_index, physical_font_size),
+        None => GlyphKey::new(raw_font_id, glyph.glyph_id, physical_font_size),
+    };
 
     // 尝试从缓存获取（raw 键直查）
     if let Some(cached) = glyph_cache.get(&key) {
@@ -780,6 +783,21 @@ fn draw_glyph_primitive(
         }
         return;
     }
+
+    // 整形后的 glyph index 只在指定字体 face 内有效，不参与 Unicode 字体回退。
+    if let Some(glyph_index) = glyph.font_glyph_index() {
+        if let Ok(bitmap) = font_loader.rasterize_glyph_index(raw_font_id, glyph_index, physical_font_size)
+            && bitmap.width > 0
+            && bitmap.height > 0
+        {
+            let _ = glyph_cache.get_or_insert_with(key, || Ok(bitmap.clone()));
+            let x = glyph.x * scale;
+            let y = glyph.y * scale;
+            blit_glyph_bitmap(fb, &bitmap, x, y, glyph.color, glyph.rotation, glyph.synthetic_italic);
+        }
+        return;
+    }
+
     // fallback 已解析映射 → resolved 键命中（避免每帧重光栅化：raw 键与插入键
     // 不一致会永久 miss，见 GlyphCache::resolved 注释）
     if let Some(resolved_id) = glyph_cache.resolved_font_id(&key) {
@@ -796,10 +814,9 @@ fn draw_glyph_primitive(
     }
 
     // 通过 font_loader 渲染 glyph
-    let ch = char::from_u32(glyph.glyph_id).unwrap_or('\0');
-    if ch == '\0' {
+    let Some(ch) = glyph.code_point() else {
         return;
-    }
+    };
 
     if let Ok((resolved_id, bitmap)) = font_loader.rasterize_glyph_with_fallback(raw_font_id, ch, physical_font_size)
         && bitmap.width > 0
@@ -900,9 +917,21 @@ fn resolve_glyph_bitmap(
     glyph_cache: &mut GlyphCache,
 ) -> Option<std::sync::Arc<crate::font::GlyphBitmap>> {
     let physical_font_size = glyph.font_size * scale;
-    let primary_key = GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size);
+    let primary_key = match glyph.font_glyph_index {
+        Some(glyph_index) => GlyphKey::new_indexed(glyph.font_id, glyph_index, physical_font_size),
+        None => GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size),
+    };
     if let Some(cached) = glyph_cache.get_shared(&primary_key) {
         return Some(cached);
+    }
+    if let Some(glyph_index) = glyph.font_glyph_index {
+        let bitmap = font_loader
+            .rasterize_glyph_index(glyph.font_id, glyph_index, physical_font_size)
+            .ok()?;
+        glyph_cache
+            .get_or_insert_with(primary_key.clone(), || Ok(bitmap))
+            .ok()?;
+        return glyph_cache.get_shared(&primary_key);
     }
     // fallback 已解析映射 → resolved 键命中（同 draw_glyph_primitive）
     if let Some(resolved_id) = glyph_cache.resolved_font_id(&primary_key) {

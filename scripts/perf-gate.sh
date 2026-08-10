@@ -58,13 +58,17 @@ PLATFORM_CLASS=$(jq -r '.platform.platform_class' "$REPORT")
 
 echo "perf-gate: report=$(basename "$REPORT") platform=$PLATFORM_CLASS"
 
-if [ ! -f "$BASELINE" ]; then
-    echo "perf-gate: WARN — 无 $PLATFORM_CLASS 基线（$BASELINE）"
-    echo "perf-gate: 首次使用请 capture 基线："
-    echo "  bash scripts/record-bench-baseline.sh --justification \"初始基线\""
-    echo "perf-gate: 全部指标按 NEW/PASS 处理（门禁待基线就位后生效）"
-    exit 0
-fi
+HAS_BASELINE=0
+test -f "$BASELINE" || HAS_BASELINE=1
+case "$HAS_BASELINE" in
+    1)
+        echo "perf-gate: WARN — 无 $PLATFORM_CLASS 基线 ($BASELINE)"
+        echo "perf-gate: 首次使用请 capture 基线："
+        echo "  bash scripts/record-bench-baseline.sh --justification \"初始基线\""
+        echo "perf-gate: 全部指标按 NEW/PASS 处理（门禁待基线就位后生效）"
+        exit 0
+        ;;
+esac
 
 # schema / config_hash 一致性（防跨配置比较——改了场景/迭代数必须先重新 capture）
 REP_SV=$(jq -r '.schema_version' "$REPORT")

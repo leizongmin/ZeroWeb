@@ -6,9 +6,9 @@ use crate::geometry::Rect;
 use crate::gpu::renderer::GlyphDraw;
 use crate::image_cache::{ImageCache, ImageData, ImageKey};
 use crate::primitive::{
-    BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, GradientKind,
-    GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, FillPrimitive, FilterKind, FilterPrimitive, FontId, GlyphPrimitive,
+    GradientKind, GradientPrimitive, GradientStop, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
+    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 // ─── 旧版兼容测试 ───
@@ -18,6 +18,67 @@ fn glyph_top_left_converts_fontdue_y_up_metrics_to_screen_y_down() {
     let (x, y) = glyph_top_left(10.0, 50.0, 2, -4, 18);
     assert_eq!(x, 12.0);
     assert_eq!(y, 36.0);
+}
+
+#[test]
+fn indexed_glyph_renders_identically_to_unicode_code_point() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+    let glyph_index = font_loader
+        .get(font_id)
+        .expect("font should remain loaded")
+        .lookup_glyph_index('A');
+    let make_primitives = |font_glyph_index| {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_glyph(GlyphPrimitive {
+            x: 8.0,
+            y: 28.0,
+            font_size: 20.0,
+            color: Color::BLACK,
+            glyph_id: 'A' as u32,
+            font_glyph_index,
+            font_id: FontId(font_id),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        primitives
+    };
+    let unicode = make_primitives(None);
+    let indexed = make_primitives(Some(glyph_index));
+    let mut unicode_cache = GlyphCache::new(8);
+    let mut indexed_cache = GlyphCache::new(8);
+
+    let unicode_frame = render_full_scene(
+        40,
+        40,
+        1.0,
+        &unicode,
+        &font_loader,
+        &mut unicode_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let indexed_frame = render_full_scene(
+        40,
+        40,
+        1.0,
+        &indexed,
+        &font_loader,
+        &mut indexed_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    assert_eq!(indexed_frame.data, unicode_frame.data);
 }
 
 #[test]
@@ -1879,6 +1940,7 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
         for col in 0..10 {
             ui_glyphs.push(GlyphDraw {
                 ch: 'M',
+                font_glyph_index: None,
                 x: col as f32 * 10.0 + 2.0,
                 baseline_y: row as f32 * 12.0 + 14.0,
                 color: Color::BLACK,

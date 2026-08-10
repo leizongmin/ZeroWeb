@@ -6,6 +6,7 @@
 
 use crate::ProtocolError;
 
+#[cfg(target_os = "linux")]
 const SHM_PREFIX: &str = "zeroweb-cmp-";
 
 /// 是否启用 compositor POSIX shm 帧传输（Linux + `ZW_COMPOSITOR_SHM=1`）。

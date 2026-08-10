@@ -259,6 +259,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             font_size: glyph.font_size,
             color: ipc_color_to_color(glyph.color),
             glyph_id: glyph.glyph_id,
+            font_glyph_index: glyph.font_glyph_index,
             font_id: FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,

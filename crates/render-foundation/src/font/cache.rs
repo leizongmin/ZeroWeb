@@ -12,6 +12,8 @@ pub struct GlyphKey {
     pub font_id: u32,
     /// Glyph 索引（或 Unicode 码点）
     pub glyph_id: u32,
+    /// 当前字体内部 glyph index；与 Unicode 码点命名空间隔离。
+    pub font_glyph_index: Option<u16>,
     /// 字体大小（像素，取整）
     pub size_px: u16,
 }
@@ -22,6 +24,17 @@ impl GlyphKey {
         Self {
             font_id,
             glyph_id,
+            font_glyph_index: None,
+            size_px: size_px.round() as u16,
+        }
+    }
+
+    /// 创建字体内部 glyph index 的缓存键。
+    pub fn new_indexed(font_id: u32, glyph_index: u16, size_px: f32) -> Self {
+        Self {
+            font_id,
+            glyph_id: glyph_index as u32,
+            font_glyph_index: Some(glyph_index),
             size_px: size_px.round() as u16,
         }
     }
@@ -348,6 +361,14 @@ mod tests {
         let k3 = GlyphKey::new(2, 65, 16.0);
         assert_eq!(k1, k2);
         assert_ne!(k1, k3);
+    }
+
+    #[test]
+    fn test_unicode_and_indexed_glyph_keys_do_not_collide() {
+        let unicode = GlyphKey::new(1, 65, 16.0);
+        let indexed = GlyphKey::new_indexed(1, 65, 16.0);
+
+        assert_ne!(unicode, indexed);
     }
 
     #[test]

@@ -20,6 +20,11 @@ mod freetype_raster {
     use std::cell::{OnceCell, RefCell};
     use std::collections::HashMap;
 
+    enum GlyphSelector {
+        CodePoint(char),
+        GlyphIndex(u16),
+    }
+
     thread_local! {
         static FT_LIB: OnceCell<freetype::Library> = const { OnceCell::new() };
         // face 缓存（2026-08-07 CJK 优化）：Face<Rc<Vec<u8>>> 自含字体字节，
@@ -70,7 +75,7 @@ mod freetype_raster {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
         let _raster_t = std::time::Instant::now();
-        let result = rasterize_inner(font_bytes, code_point, size);
+        let result = rasterize_inner(font_bytes, GlyphSelector::CodePoint(code_point), size);
         // OnceLock 缓存 env 状态（避免每字一次 std::env::var——热路径）
         static RASTER_STAT_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let raster_stat_enabled = *RASTER_STAT_ENABLED.get_or_init(|| std::env::var("CJK_RASTER_STAT").is_ok());
@@ -92,7 +97,15 @@ mod freetype_raster {
         result
     }
 
-    fn rasterize_inner(font_bytes: &[u8], code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+    /// 用字体内部 glyph index 光栅化整形后的字形。
+    pub(crate) fn rasterize_indexed(font_bytes: &[u8], glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
+        if size <= 0.0 {
+            return Err(FontError::NotFound(format!("non-positive size {size}")));
+        }
+        rasterize_inner(font_bytes, GlyphSelector::GlyphIndex(glyph_index), size)
+    }
+
+    fn rasterize_inner(font_bytes: &[u8], selector: GlyphSelector, size: f32) -> Result<GlyphBitmap, FontError> {
         // thread_local with 不允许借用逃逸：cache borrow 与 face 使用都在闭包内
         FT_FACE_CACHE.with(|cache_cell| {
             let mut cache = cache_cell.borrow_mut();
@@ -111,9 +124,12 @@ mod freetype_raster {
                 let face = cache.get(&key).expect("face 已插入");
                 face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
                     .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
-                let idx = face
-                    .get_char_index(code_point as usize)
-                    .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
+                let idx = match selector {
+                    GlyphSelector::CodePoint(code_point) => face
+                        .get_char_index(code_point as usize)
+                        .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?,
+                    GlyphSelector::GlyphIndex(glyph_index) => glyph_index as u32,
+                };
                 // LoadFlag::DEFAULT（含 TARGET_NORMAL = full hinting）。R1069 A/B 实测（css-text
                 // Oracle 1650 案）：DEFAULT 381 pass > LIGHT(TARGET_LIGHT) 371 > NO_HINTING 357 ≈
                 // fontdue 基线。NOHINT==fontdue 证 fontdue tight-ink 即 unhinted，FreeType full
@@ -442,6 +458,34 @@ impl FontLoader {
 
         let (metrics, bitmap) = font.rasterize(code_point, size);
 
+        Ok(GlyphBitmap {
+            data: bitmap,
+            width: metrics.width as u16,
+            height: metrics.height as u16,
+            x_offset: metrics.xmin as i16,
+            y_offset: metrics.ymin as i16,
+            advance: metrics.advance_width,
+        })
+    }
+
+    /// 按字体内部 OpenType glyph index 光栅化整形后的字形。
+    ///
+    /// 本路径不做字体回退：glyph index 只在产生它的字体 face 内有意义，调用方
+    /// 必须同时携带对应的 `font_id`。
+    pub fn rasterize_glyph_index(&self, font_id: u32, glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
+        #[cfg(feature = "freetype-raster")]
+        if let Some(bytes) = self.font_data.get(&font_id)
+            && let Ok(bitmap) = freetype_raster::rasterize_indexed(bytes, glyph_index, size)
+        {
+            return Ok(bitmap);
+        }
+
+        let font = self
+            .fonts
+            .get(&font_id)
+            .map(|font| font.as_ref())
+            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+        let (metrics, bitmap) = font.rasterize_indexed(glyph_index, size);
         Ok(GlyphBitmap {
             data: bitmap,
             width: metrics.width as u16,
@@ -928,6 +972,29 @@ mod tests {
         let loader = FontLoader::new();
         let result = loader.rasterize_glyph(999, 'A', 16.0);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rasterize_glyph_index_matches_code_point() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/wpt-data/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let glyph_index = loader
+            .get(font_id)
+            .expect("font should remain loaded")
+            .lookup_glyph_index('A');
+
+        let by_code_point = loader.rasterize_glyph(font_id, 'A', 16.0).expect("code point raster");
+        let by_index = loader
+            .rasterize_glyph_index(font_id, glyph_index, 16.0)
+            .expect("indexed raster");
+
+        assert_eq!(by_index.data, by_code_point.data);
+        assert_eq!(by_index.width, by_code_point.width);
+        assert_eq!(by_index.height, by_code_point.height);
+        assert_eq!(by_index.x_offset, by_code_point.x_offset);
+        assert_eq!(by_index.y_offset, by_code_point.y_offset);
+        assert_eq!(by_index.advance, by_code_point.advance);
     }
 
     #[test]

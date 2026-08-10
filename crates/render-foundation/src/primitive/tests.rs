@@ -51,6 +51,7 @@ fn test_draw_order_records_insertion_order() {
         font_size: 16.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -315,6 +316,7 @@ fn test_glyph_primitive_creation() {
         font_size: 16.0,
         color: Color::BLACK,
         glyph_id: 42,
+        font_glyph_index: None,
         font_id: FontId(1),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
@@ -327,6 +329,33 @@ fn test_glyph_primitive_creation() {
 }
 
 #[test]
+fn test_source_code_point_and_font_glyph_index_coexist() {
+    let unicode = GlyphPrimitive {
+        x: 0.0,
+        y: 0.0,
+        font_size: 16.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        font_id: FontId(1),
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    };
+    let indexed = GlyphPrimitive {
+        font_glyph_index: Some('A' as u16),
+        ..unicode.clone()
+    };
+
+    assert_eq!(unicode.code_point(), Some('A'));
+    assert_eq!(unicode.font_glyph_index(), None);
+    assert_eq!(indexed.code_point(), Some('A'));
+    assert_eq!(indexed.font_glyph_index(), Some('A' as u16));
+    assert_eq!(unicode.glyph_id, indexed.glyph_id);
+}
+
+#[test]
 fn test_glyph_in_render_primitives() {
     let mut p = RenderPrimitives::new();
     p.add_glyph(GlyphPrimitive {
@@ -335,6 +364,7 @@ fn test_glyph_in_render_primitives() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -360,6 +390,7 @@ fn test_bounding_box_with_glyphs() {
         font_size: 16.0,
         color: Color::BLACK,
         glyph_id: 0,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -442,6 +473,7 @@ fn test_render_primitives_mixed_types_count() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 0,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -535,6 +567,7 @@ fn test_len_all_primitive_types() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 0,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -629,6 +662,7 @@ fn test_bounding_box_glyph_with_bitmap_dims() {
         font_size: 24.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
@@ -1036,6 +1070,7 @@ fn test_add_glyph_multiple() {
             font_size: 12.0,
             color: Color::BLACK,
             glyph_id: i,
+            font_glyph_index: None,
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,
@@ -1100,6 +1135,7 @@ fn test_stats_mixed_primitives() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1112,6 +1148,7 @@ fn test_stats_mixed_primitives() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 66,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1168,6 +1205,7 @@ fn test_batch_fills_preserves_other_primitives() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1220,6 +1258,7 @@ fn test_cull_invisible_keeps_clips_and_glyphs() {
         font_size: 12.0,
         color: Color::BLACK,
         glyph_id: 65,
+        font_glyph_index: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,

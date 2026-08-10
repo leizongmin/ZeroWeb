@@ -259,7 +259,7 @@ pub struct ImagePrimitive {
     pub clip: Option<Rect>,
 }
 
-/// Glyph 图元 — 单个字符的渲染指令
+/// Glyph 图元 — 单个字符或整形后字形的渲染指令
 #[derive(Debug, Clone)]
 pub struct GlyphPrimitive {
     /// 绘制位置 x
@@ -270,8 +270,10 @@ pub struct GlyphPrimitive {
     pub font_size: f32,
     /// 颜色
     pub color: Color,
-    /// Glyph ID
+    /// 源 Unicode 码点；整形后仍保留，用于选择、命中测试与文本恢复。
     pub glyph_id: u32,
+    /// 当前字体内部的 OpenType glyph index；`None` 表示按 `glyph_id` 查字符。
+    pub font_glyph_index: Option<u16>,
     /// 字体 ID
     pub font_id: FontId,
     /// 预缓存位图宽度（可选）
@@ -286,6 +288,18 @@ pub struct GlyphPrimitive {
     /// 由 painter 据 `font_style:italic/oblique && resolved face 非 italic` 置位，
     /// 避免 double-shear（真 italic face 已斜，不再合成）。
     pub synthetic_italic: bool,
+}
+
+impl GlyphPrimitive {
+    /// 返回字体内部 glyph index；普通 Unicode 图元返回 `None`。
+    pub const fn font_glyph_index(&self) -> Option<u16> {
+        self.font_glyph_index
+    }
+
+    /// 返回源 Unicode 码点；不可见标记返回 `None`。
+    pub fn code_point(&self) -> Option<char> {
+        char::from_u32(self.glyph_id).filter(|ch| *ch != '\0')
+    }
 }
 
 /// CSS filter 函数类型。

@@ -29,23 +29,23 @@ REPORT_TXT="$RESULTS_DIR/benchmark_${DATE}.txt"
 
 # 所有带 [[bench]] 的 crate 及其 bench 文件名（taffy-local 的 dummy bench 会 exit 1，
 # 必须走显式清单，不能裸跑 cargo bench --workspace）。
-declare -A BENCH_MAP=(
-    [zero-css-parser]="css_bench"
-    [zero-dom]="dom_bench"
-    [zero-style-system]="style_bench"
-    [zero-layout-engine]="layout_bench"
-    [zero-engine]="engine_bench"
-    [zero-canvas]="canvas_bench"
-    [zero-render-foundation]="render_bench"
-    [zero-host-runtime]="host_runtime_bench"
-    [zero-webview]="webview_bench"
-    [zero-net]="net_bench"
-    [zero-protocol]="protocol_bench"
-    [zero-security]="security_bench"
-    [zero-storage]="storage_bench"
-    [zero-wasm-sandbox]="wasm_bench"
-    [zero-browser-shell]="browser_shell_bench"
-    [zero-script-sandbox]="script_sandbox_bench"
+declare -a BENCH_SPECS=(
+    "zero-css-parser:css_bench"
+    "zero-dom:dom_bench"
+    "zero-style-system:style_bench"
+    "zero-layout-engine:layout_bench"
+    "zero-engine:engine_bench"
+    "zero-canvas:canvas_bench"
+    "zero-render-foundation:render_bench"
+    "zero-host-runtime:host_runtime_bench"
+    "zero-webview:webview_bench"
+    "zero-net:net_bench"
+    "zero-protocol:protocol_bench"
+    "zero-security:security_bench"
+    "zero-storage:storage_bench"
+    "zero-wasm-sandbox:wasm_bench"
+    "zero-browser-shell:browser_shell_bench"
+    "zero-script-sandbox:script_sandbox_bench"
 )
 
 # 页面级场景：id:fixture:base_dir（base_dir 恒传 morning 目录——welcome/medium 自包含不受影响，
@@ -94,7 +94,7 @@ fi
 OS_NAME=$(uname -s | tr 'A-Z' 'a-z')
 
 # 规范化 run_config → config_hash（sha256，不含 git_sha：配置 = 怎么测，不是测了什么）
-BENCH_LIST_SORTED=$(printf '%s\n' "${!BENCH_MAP[@]}" | sort | while read -r c; do echo "$c:${BENCH_MAP[$c]}"; done)
+BENCH_LIST_SORTED=$(printf '%s\n' "${BENCH_SPECS[@]}" | sort)
 SCENARIOS_SORTED=$(printf '%s\n' "${PAGE_SCENARIOS[@]}" | sed 's/:.*//' | sort | paste -sd, - | tr -d '\n')
 FIXTURES_SORTED=$(printf '%s\n' "${PAGE_SCENARIOS[@]}" | sed 's/^[^:]*:\([^:]*\):.*/\1/' | sort | paste -sd, - | tr -d '\n')
 # criterion 测量上限（2026-08-08：css_parse_by_size 5000 规则档 O(n²) 解析 ~14s/迭代，
@@ -111,7 +111,7 @@ echo "=== ZeroWeb Benchmarks ===" | tee "$REPORT_TXT"
 echo "Date: $(date)" | tee -a "$REPORT_TXT"
 echo "Commit: $GIT_SHA (dirty=$GIT_DIRTY)" | tee -a "$REPORT_TXT"
 echo "Platform: $PLATFORM_CLASS" | tee -a "$REPORT_TXT"
-echo "Crates: ${#BENCH_MAP[@]} | Pages: $(printf '%s\n' "${PAGE_SCENARIOS[@]}" | sed 's/:.*//' | paste -sd, -)" | tee -a "$REPORT_TXT"
+echo "Crates: ${#BENCH_SPECS[@]} | Pages: $(printf '%s\n' "${PAGE_SCENARIOS[@]}" | sed 's/:.*//' | paste -sd, -)" | tee -a "$REPORT_TXT"
 echo "Config hash: ${CONFIG_HASH:0:16}…" | tee -a "$REPORT_TXT"
 if [ "$QUICK_MODE" = "1" ]; then
     echo "Mode: quick compile check" | tee -a "$REPORT_TXT"
@@ -129,17 +129,19 @@ if [ -n "${ZERO_WEB_BENCH_CRATES:-}" ]; then
     CRATES_FILTER=",$ZERO_WEB_BENCH_CRATES,"
 fi
 BENCH_CRATES=()
-for crate in $(printf '%s\n' "${!BENCH_MAP[@]}" | sort); do
+for bench_spec in $(printf '%s\n' "${BENCH_SPECS[@]}" | sort); do
+    crate="${bench_spec%%:*}"
     if [ -z "$CRATES_FILTER" ] || [[ "$CRATES_FILTER" == *",$crate,"* ]]; then
-        BENCH_CRATES+=("$crate")
+        BENCH_CRATES+=("$bench_spec")
     fi
 done
 
 # ---------- 1. criterion 微基准 ----------
 if [ "$QUICK_MODE" = "1" ]; then
     # 编译检查：16 个 bench 全部 --no-run 通过才算过
-    for crate in "${BENCH_CRATES[@]}"; do
-        bench_name="${BENCH_MAP[$crate]}"
+    for bench_spec in "${BENCH_CRATES[@]}"; do
+        crate="${bench_spec%%:*}"
+        bench_name="${bench_spec#*:}"
         echo "--- $crate ($bench_name) --no-run ---" | tee -a "$REPORT_TXT"
         if cargo bench -p "$crate" --bench "$bench_name" --no-run > "$TMP_DIR/bench.log" 2>&1; then
             PASSED+=("$crate")
@@ -153,8 +155,9 @@ else
     # 真实测量：每次跑前快照 target/criterion 已有 sample.json，跑后 diff 出新文件
     #（同一 group 的旧数据在下一 crate 跑时会被 criterion 覆写，comm 只取本次新增）。
     rm -rf "$PROJECT_ROOT/target/criterion"
-    for crate in "${BENCH_CRATES[@]}"; do
-        bench_name="${BENCH_MAP[$crate]}"
+    for bench_spec in "${BENCH_CRATES[@]}"; do
+        crate="${bench_spec%%:*}"
+        bench_name="${bench_spec#*:}"
         echo "--- $crate ($bench_name) ---" | tee -a "$REPORT_TXT"
         # 只取 new/（当前运行）——criterion 默认 Baseline::Save 会把上次运行留在 base/
         before=$(find "$PROJECT_ROOT/target/criterion" -path '*/new/sample.json' 2>/dev/null | sort || true)
