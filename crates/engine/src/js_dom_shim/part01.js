@@ -276,6 +276,26 @@
     }
     return false;
   }
+  // R3189：input/button `type` enumerated reflection（spec「limited to only known values」）。区别于通用 type
+  // 字符串反射（link/script/style/embed 等）——`<input>.type` / `<button>.type` getter 须规范化：
+  // INPUT 已知关键字（见 `_INPUT_TYPE_KEYWORDS`，case-insensitive）→ 规范小写；缺省 / 非法 → "text"
+  //（spec missing & invalid value default 均 Text 状态）。BUTTON 关键字 submit/reset/button；缺省/非法 → "submit"。
+  // 非 INPUT/BUTTON → null（caller 回落通用字符串反射）。表单库 switch(input.type) 高频。
+  var _INPUT_TYPE_KEYWORDS = ' button checkbox color date datetime-local email file hidden image month number password radio range reset search submit tel text time url week ';
+  function _reflectedTypeEnum(sel, handle) {
+    var tag = _realTag(sel, handle);
+    if (tag !== 'INPUT' && tag !== 'BUTTON') return null;
+    var raw = handle
+      ? __zw_get_attr_handle(handle, 'type')
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
+    var lo = (raw == null || raw === '') ? '' : String(raw).toLowerCase();
+    if (tag === 'INPUT') {
+      if (lo === '') return 'text'; // 缺省 → Text 状态。
+      return _INPUT_TYPE_KEYWORDS.indexOf(' ' + lo + ' ') >= 0 ? lo : 'text'; // 非法 → Text 状态。
+    }
+    // BUTTON：submit/reset/button 关键字；缺省/非法 → "submit"（spec missing & invalid default）。
+    return (lo === 'submit' || lo === 'reset' || lo === 'button') ? lo : 'submit';
+  }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
   // = 不限制；cols/rows/start R3041——textarea cols default 20 / rows default 2，ol start default 1，无 min 故

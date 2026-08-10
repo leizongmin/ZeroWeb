@@ -1051,3 +1051,87 @@ fn test_draggable_enumerated_auto_state_production_r3188() {
         .value;
     assert_eq!(setget, "true/false", "draggable setter→getter 缓存往返");
 }
+
+// ── R3189：`input.type` / `button.type` enumerated reflection（spec「limited to only known values」）──
+//
+// input.type / button.type 为枚举属性（非通用 type 字符串反射）。getter 须规范化：INPUT 已知关键字
+// （case-insensitive）→ 规范小写，缺省/非法 → "text"；BUTTON submit/reset/button，缺省/非法 → "submit"。
+// 非 INPUT/BUTTON（link/script 等）回落通用字符串反射（原值）。旧实现经通用 _reflectedStringAttr('type')
+// 返原值（缺省 ""，"EMAIL"→"EMAIL"，"foo"→"foo"）——表单库 switch(input.type) 全失效。
+
+#[test]
+fn test_input_button_type_enumerated_production_r3189() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+           <input id='itext'/>\
+           <input id='iemail' type='email'/>\
+           <input id='iupper' type='NUMBER'/>\
+           <input id='igarb' type='foo'/>\
+           <button id='bdef'></button>\
+           <button id='breset' type='reset'></button>\
+           <button id='bgarb' type='foo'></button>\
+           <link id='lk' type='text/css'/>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // input.type：缺省→"text"；已知关键字原样 "email"；case-insensitive "NUMBER"→"number"；非法 "foo"→"text"。
+    let input_types = sandbox
+        .execute(
+            "document.querySelector('#itext').type + '/' +\
+             document.querySelector('#iemail').type + '/' +\
+             document.querySelector('#iupper').type + '/' +\
+             document.querySelector('#igarb').type",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        input_types, "text/email/number/text",
+        "input.type：缺省→text，已知→规范小写，case-insensitive→小写，非法→text"
+    );
+
+    // button.type：缺省→"submit"；"reset"→"reset"；非法 "foo"→"submit"。
+    let button_types = sandbox
+        .execute(
+            "document.querySelector('#bdef').type + '/' +\
+             document.querySelector('#breset').type + '/' +\
+             document.querySelector('#bgarb').type",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        button_types, "submit/reset/submit",
+        "button.type：缺省→submit，reset→reset，非法→submit"
+    );
+
+    // 非 INPUT/BUTTON 的 type（link）→ 通用字符串反射（原值 "text/css"，不走枚举）。
+    let link_type = sandbox
+        .execute("document.querySelector('#lk').type")
+        .unwrap()
+        .value;
+    assert_eq!(link_type, "text/css", "link.type 走通用字符串反射（原值），非枚举");
+
+    // setter→getter 往返：input.type='EMAIL' → 内容属性 "EMAIL"（setter 写原值），getter "email"（规范化）。
+    let setget = sandbox
+        .execute(
+            "var i=document.querySelector('#itext'); i.type='EMAIL';\
+             i.type+'/'+i.getAttribute('type')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        setget, "email/EMAIL",
+        "input.type setter 写原值，getter 规范化（case-insensitive）"
+    );
+}

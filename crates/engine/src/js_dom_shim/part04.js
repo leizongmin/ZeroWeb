@@ -1349,6 +1349,13 @@
           }
           // 非 style/link：fall through undefined（generic Element 无 .sheet）
         }
+        // R3189：`input.type` / `button.type` enumerated reflection（spec「limited to only known values」），
+        // 须先于通用 type 字符串反射（R3037）——INPUT/BUTTON 的 type 为枚举（缺省/非法→default，关键字→规范小写），
+        // 非 INPUT/BUTTON（link/script/style/embed 等）回落通用字符串反射。经 [`_reflectedTypeEnum`]（part01.js）。
+        if (prop === 'type') {
+          var _et = _reflectedTypeEnum(sel, handle);
+          if (_et !== null) return _et;
+        }
         // R3037：reflected string 内容属性读（type/name/placeholder/min/max/step/pattern/alt/src/rel/...）。
         // 旧 get trap 未拦 → 读返 undefined（写正常，set trap generic fallthrough → __zw_set_attr）。表单校验库
         // 读 input.min/max/pattern/type、analytics 读 src/name 等失效。命中 [`_reflectedStringAttr`] → 读内容属性
