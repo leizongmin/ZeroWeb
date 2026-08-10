@@ -191,6 +191,58 @@ pub struct TextFragmentSource {
     pub visual_to_logical: Vec<Option<Range<usize>>>,
 }
 
+impl TextFragmentSource {
+    /// 返回可由单个逻辑文本切片表示的源码范围。
+    ///
+    /// 仅接受全部 range 按视觉顺序严格相邻且方向一致的映射。混合 BiDi、
+    /// 合成字符或非法 UTF-8 range 返回 `None`，避免交给单方向 shaping 路径。
+    pub fn logical_range(&self) -> Option<Range<usize>> {
+        let mut ranges = self.visual_to_logical.iter();
+        let first = ranges.next()?.as_ref()?;
+        if !valid_source_range(&self.text, first) {
+            return None;
+        }
+
+        let mut start = first.start;
+        let mut end = first.end;
+        let mut previous = first;
+        let mut ascending = None;
+        for range in ranges {
+            let range = range.as_ref()?;
+            if !valid_source_range(&self.text, range) {
+                return None;
+            }
+            let next_ascending = if previous.end == range.start {
+                true
+            } else if range.end == previous.start {
+                false
+            } else {
+                return None;
+            };
+            if ascending.is_some_and(|direction| direction != next_ascending) {
+                return None;
+            }
+            ascending = Some(next_ascending);
+            start = start.min(range.start);
+            end = end.max(range.end);
+            previous = range;
+        }
+        Some(start..end)
+    }
+
+    /// 返回可由单个 shaping run 消费的逻辑文本切片。
+    pub fn logical_slice(&self) -> Option<&str> {
+        self.text.get(self.logical_range()?)
+    }
+}
+
+fn valid_source_range(text: &str, range: &Range<usize>) -> bool {
+    range.start < range.end
+        && range.end <= text.len()
+        && text.is_char_boundary(range.start)
+        && text.is_char_boundary(range.end)
+}
+
 /// 文本片段 — 文本运行在行盒中的布局结果。
 #[derive(Debug, Clone)]
 pub struct TextFragment {
@@ -327,5 +379,49 @@ mod tests {
         assert_eq!(collapse_whitespace("a  \u{00A0}  b"), "a \u{00A0} b");
         // 连续 nbsp 全保留（非折叠）。
         assert_eq!(collapse_whitespace("\u{00A0}\u{00A0}"), "\u{00A0}\u{00A0}");
+    }
+
+    #[test]
+    fn fragment_source_recovers_ltr_logical_slice() {
+        let source = TextFragmentSource {
+            text: Arc::<str>::from("Aé"),
+            visual_to_logical: vec![Some(0..1), Some(1..3)],
+        };
+        assert_eq!(source.logical_range(), Some(0..3));
+        assert_eq!(source.logical_slice(), Some("Aé"));
+    }
+
+    #[test]
+    fn fragment_source_recovers_rtl_logical_slice() {
+        let source = TextFragmentSource {
+            text: Arc::<str>::from("אבג"),
+            visual_to_logical: vec![Some(4..6), Some(2..4), Some(0..2)],
+        };
+        assert_eq!(source.logical_range(), Some(0..6));
+        assert_eq!(source.logical_slice(), Some("אבג"));
+    }
+
+    #[test]
+    fn fragment_source_rejects_discontiguous_or_mixed_order() {
+        let source = TextFragmentSource {
+            text: Arc::<str>::from("abcd"),
+            visual_to_logical: vec![Some(0..1), Some(3..4), Some(2..3)],
+        };
+        assert_eq!(source.logical_slice(), None);
+    }
+
+    #[test]
+    fn fragment_source_rejects_synthetic_or_invalid_ranges() {
+        let synthetic = TextFragmentSource {
+            text: Arc::<str>::from("abc"),
+            visual_to_logical: vec![Some(0..1), None],
+        };
+        assert_eq!(synthetic.logical_slice(), None);
+
+        let invalid_utf8 = TextFragmentSource {
+            text: Arc::<str>::from("אב"),
+            visual_to_logical: vec![Some(1..2)],
+        };
+        assert_eq!(invalid_utf8.logical_slice(), None);
     }
 }
