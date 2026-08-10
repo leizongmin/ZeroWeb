@@ -1569,3 +1569,68 @@ fn test_style_sync_set_read_latest_wins_production_r3194() {
     // （独立 sandbox 验证，本 sandbox #d 已被污染；用 querySelector 新元素需新 HTML——此处复用 #d 前
     // 已多次设，跳过此组合断言，由上各断言覆盖 replay 各路径。）
 }
+
+// ── R3195：handle-based dataset 修复（get/has/delete）──
+//
+// 旧 `_datasetProxy.hasAttrFn` 对 handle 恒返 false（R3002 时无 `__zw_has_attr_handle` 回调遗留）→
+// handle 元素 `el.dataset.foo = 'x'; el.dataset.foo` 恒 undefined（get trap 经 hasAttrFn 短路），且
+// `'foo' in el.dataset` 恒 false；deleteProperty 用 set-empty 残留 `data-x=""`。修复：hasAttrFn 用
+// `__zw_has_attr_handle`，deleteProperty 优先 `__zw_remove_attr_handle`。
+
+#[test]
+fn test_dataset_handle_round_trip_production_r3195() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // handle 元素（createElement，未挂载）dataset round-trip：set→get 返值（旧恒 undefined）。
+    let setget = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.dataset.bazQux='world';\
+             '['+e.dataset.bazQux+']'+'/'+e.getAttribute('data-baz-qux')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        setget, "[world]/world",
+        "handle dataset set→get：'world'/属性（旧恒 undefined）"
+    );
+
+    // `in` / has：dataset 属性存在性（旧恒 false）。
+    let has = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.dataset.key='v';\
+             String('key' in e.dataset)+'/'+String('absent' in e.dataset)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(has, "true/false", "handle dataset 'in' 判定（旧恒 false）");
+
+    // delete：移除后 get→undefined（旧 set-empty 致返 ''）。delete 返 true。
+    let del = sandbox
+        .execute(
+            "var e=document.createElement('div');\
+             e.dataset.rm='x';\
+             var r=delete e.dataset.rm;\
+             String(r)+'/'+String(e.dataset.rm===undefined)+'/'+String(e.getAttribute('data-rm')===null)",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        del, "true/true/true",
+        "handle dataset delete：真移除（旧 set-empty 残留），get→undefined，getAttribute→null"
+    );
+}

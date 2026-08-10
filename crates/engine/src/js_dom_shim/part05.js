@@ -1172,7 +1172,13 @@
     };
     var hasAttrFn = function(name) {
       try {
-        if (handle) return false;
+        // R3195：handle 经 `__zw_has_attr_handle`（latest-wins from mutations）判存在性——旧恒返 false
+        //（R3002 时无 has-attr-handle 回调遗留），致 handle 元素 `el.dataset.foo=` 后 `el.dataset.foo`
+        // 恒 undefined（get trap 经 hasAttrFn 短路）。
+        if (handle) {
+          if (typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, name) === '1';
+          return false;
+        }
         // R3002：sel 用 latest-wins 反映同批 SetAttr/RemoveAttr（旧 `__zw_has_attr` 纯快照 stale）。
         if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, name) === '1';
         return __zw_has_attr(sel, name) === '1';
@@ -1212,7 +1218,10 @@
       deleteProperty: function(_t, key) {
         if (typeof key !== 'string') return false;
         var name = attrOf(key);
-        if (handle) __zw_set_attr_handle(handle, name, '');
+        // R3195：handle 优先 `__zw_remove_attr_handle`（真移除，与 removeAttribute 一致）——旧用 set-empty
+        // 残留 `data-x=""` 致 hasAttr 仍 true（get 返 '' 而非 undefined）。无回调 → fallback set-empty。
+        if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
+        else if (handle) __zw_set_attr_handle(handle, name, '');
         else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, name);
         else __zw_set_attr(sel, name, '');
         _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
