@@ -120,6 +120,9 @@ impl TabJsWorkerHandle {
             .expect("spawn tab js worker");
 
         let executor: ScriptFn = Arc::new(move |script: &str, timeout_ms: u64| {
+            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+            #[cfg(feature = "v8")]
+            eprintln!("[TEMP-DIAG] executor: sending Execute");
             let (reply_tx, reply_rx) = mpsc::channel();
             cmd_for_exec
                 .send(JsWorkerCommand::Execute {
@@ -128,9 +131,13 @@ impl TabJsWorkerHandle {
                     reply: reply_tx,
                 })
                 .map_err(|e| e.to_string())?;
-            reply_rx
+            let r = reply_rx
                 .recv_timeout(channel_timeout_for(timeout_ms))
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+            #[cfg(feature = "v8")]
+            eprintln!("[TEMP-DIAG] executor: Execute reply received");
+            r
         });
 
         let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
@@ -234,9 +241,18 @@ impl TabJsWorkerHandle {
 
     /// 关闭 JS 线程。
     pub fn shutdown(&mut self) {
+        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+        #[cfg(feature = "v8")]
+        eprintln!("[TEMP-DIAG] shutdown: sending Shutdown");
         let _ = self.cmd_tx.send(JsWorkerCommand::Shutdown);
         if let Some(j) = self.join.take() {
+            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+            #[cfg(feature = "v8")]
+            eprintln!("[TEMP-DIAG] shutdown: joining worker thread");
             let _ = j.join();
+            // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+            #[cfg(feature = "v8")]
+            eprintln!("[TEMP-DIAG] shutdown: worker joined");
         }
     }
 }
@@ -260,9 +276,14 @@ fn js_worker_main(
         timeout_ms: TAB_JS_EVENT_TIMEOUT_MS,
         ..Default::default()
     };
+    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+    #[cfg(feature = "v8")]
+    eprintln!("[TEMP-DIAG] js_worker_main: creating sandbox…");
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
+    #[cfg(feature = "v8")]
+    eprintln!("[TEMP-DIAG] js_worker_main: sandbox created");
     #[cfg(feature = "quickjs")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
@@ -310,6 +331,9 @@ fn js_worker_main(
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
     }
+    // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+    #[cfg(feature = "v8")]
+    eprintln!("[TEMP-DIAG] js_worker_main: shim executed, entering cmd loop");
 
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
@@ -318,11 +342,17 @@ fn js_worker_main(
                 timeout_ms,
                 reply,
             } => {
+                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+                #[cfg(feature = "v8")]
+                eprintln!("[TEMP-DIAG] worker: executing cmd ({} bytes)", script.len());
                 sandbox.set_timeout_ms(timeout_ms);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
                 sandbox.set_timeout_ms(TAB_JS_EVENT_TIMEOUT_MS);
                 let _ = reply.send(result);
+                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+                #[cfg(feature = "v8")]
+                eprintln!("[TEMP-DIAG] worker: cmd executed, reply sent");
             }
             JsWorkerCommand::ExecuteModule {
                 source,
@@ -365,7 +395,12 @@ fn js_worker_main(
                 // P1b S3 incr-a：注入 fetch handler（tab_worker 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
             }
-            JsWorkerCommand::Shutdown => break,
+            JsWorkerCommand::Shutdown => {
+                // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）
+                #[cfg(feature = "v8")]
+                eprintln!("[TEMP-DIAG] worker: Shutdown received");
+                break;
+            }
         }
     }
 }

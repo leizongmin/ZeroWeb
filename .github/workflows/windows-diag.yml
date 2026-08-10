@@ -1,11 +1,9 @@
 name: Windows diag (tab_js_worker hang)
 
-# 临时诊断 workflow（2026-08-10）：定位 windows-x86_64 上 tab_js_worker ×4 120s
-# 挂起（3/3 复现，slots 131-134）。对照实验：
-#   A — 仅 36 个 tab_js_worker 测试（无其余 212 测试上下文）→ 挂否？
-#   B — 完整 app tests（同 CI）但 no-fail-fast + 30s 超时 → 哪些挂、零散否？
-#   C — 4 个挂起测试串行（--test-threads=1）→ 串行下能否复现？
-# 诊断完成后删除本 workflow。
+# 临时诊断 workflow（2026-08-10）：定位 windows-x86_64 上 tab_js_worker 全部挂起
+# 的确切代码位置。已确认：36 测试单独跑 35/36 超时（仅编译期测试过）→ worker 线程
+# V8 sandbox 创建/执行从第一个就挂。本 workflow 带 [TEMP-DIAG] eprintln 跑单个
+# 测试（串行），看停在哪一步。诊断完成后删除本 workflow + 删除 TEMP-DIAG 打印。
 on:
   workflow_dispatch:
 
@@ -45,7 +43,6 @@ jobs:
           "CFLAGS=-I$vcpkgInclude" >> $env:GITHUB_ENV
           "INCLUDE=$vcpkgInclude;$env:INCLUDE" >> $env:GITHUB_ENV
           "LIB=$vcpkgLib;$env:LIB" >> $env:GITHUB_ENV
-          Write-Host "vcpkg zlib installed"
 
       - name: Configure MSVC include paths for clang/bindgen (Windows)
         shell: pwsh
@@ -61,44 +58,13 @@ jobs:
             $sdkShared = "${env:ProgramFiles(x86)}\Windows Kits\10\Include\$($sdkVer.Name)\shared"
             $clangArgs = "-isystem`"$msvcInc`" -isystem`"$sdkUcrt`" -isystem`"$sdkUm`" -isystem`"$sdkShared`""
             "BINDGEN_EXTRA_CLANG_ARGS=$clangArgs" >> $env:GITHUB_ENV
-          } else {
-            Write-Host "WARNING: could not locate MSVC/SDK include paths"
           }
 
-      - name: Run A — tab_js_worker only (36 tests, no-fail-fast)
-        continue-on-error: true
+      - name: Run single test serial with TEMP-DIAG prints
         shell: bash
         run: |
           cargo nextest run -p zero-browser --bin zero-browser \
-            -E 'test(tab_js_worker)' \
-            --no-fail-fast \
-            --target x86_64-pc-windows-msvc
-
-      # Run A 已证：36 个 tab_js_worker 单独跑（4 worker 并行）→ PASS。
-      # B1：zero-browser 全 346 测试单独跑（无 renderer/webview-demo 并发）。
-      #   挂 → 进程内前序测试（headless/gui 等）累积导致；过 → 跨二进制并发导致。
-      - name: Run B1 — zero-browser full 346 tests alone, no-fail-fast
-        continue-on-error: true
-        shell: bash
-        run: |
-          cargo nextest run -p zero-browser \
-            --no-fail-fast \
-            --target x86_64-pc-windows-msvc
-
-      - name: Run C — 4 hang tests serial (--test-threads=1)
-        continue-on-error: true
-        shell: bash
-        run: |
-          cargo nextest run -p zero-browser --bin zero-browser \
-            -E 'test(tab_js_worker_async_resolver) or test(tab_js_worker_attach_shadow_r2926)' \
+            -E 'test(tab_js_worker_cleartimeout_cancels_callback)' \
             --test-threads=1 \
-            --target x86_64-pc-windows-msvc
-
-      - name: Run D — tab_js_worker 36 tests serial (--test-threads=1)
-        continue-on-error: true
-        shell: bash
-        run: |
-          cargo nextest run -p zero-browser --bin zero-browser \
-            -E 'test(tab_js_worker)' \
-            --test-threads=1 \
+            --show-output \
             --target x86_64-pc-windows-msvc

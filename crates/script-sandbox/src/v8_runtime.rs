@@ -242,7 +242,20 @@ impl V8Sandbox {
             create_params = create_params.heap_limits(initial, max);
         }
 
+        // TEMP-DIAG（2026-08-10 windows tab_js_worker 挂起定位，定位后删除）：
+        // 打印 isolate 创建耗时与调用线程信息。
+        #[cfg(feature = "v8")]
+        let t_diag = std::time::Instant::now();
+        #[cfg(feature = "v8")]
+        let t_diag_name = std::thread::current().name().unwrap_or("unnamed").to_string();
+
         let isolate = v8::Isolate::new(create_params);
+
+        #[cfg(feature = "v8")]
+        eprintln!(
+            "[TEMP-DIAG] with_config: isolate created on thread '{t_diag_name}' in {:?}",
+            t_diag.elapsed()
+        );
 
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
