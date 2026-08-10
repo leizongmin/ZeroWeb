@@ -1,6 +1,6 @@
 # 渲染线程化 RFC（#3 调研建议）— 主线程录制 → 独立线程光栅化
 
-版本：v1.1 ｜ 日期：2026-08-10 ｜ 状态：**实施中（S1/S2 基础设施 ✅ / S3 接线中）**
+版本：v1.1 ｜ 日期：2026-08-10 ｜ 状态：**实施中（S1/S2 ✅ / S3 核心接线 ✅，验收中）**
 
 > 依据：Ladybird 渲染架构演进（调研报告 §3.4）——2024 起独立 RenderingThread
 >（主线程录 display list → 独立线程 Skia 光栅化，BackingStoreManager 双缓冲），
@@ -34,16 +34,16 @@
   DisplayList = primitives + draw_order（在 primitives 内）+ dirty_rects
   RenderResult 持 DisplayList；stats.dirty_rects 与 display_list 同步
 
-切片 S2：独立 RenderingThread + 双缓冲（核心）⚠️ 部分
+切片 S2：独立 RenderingThread + 双缓冲（核心）✅
   主线程：render_html → DisplayList（录制）——renderer/compositor 路径已达成
   渲染线程：RenderingThread 持久 worker + BackingStoreManager（compositor ✅）
   Browser UI 合成：`rasterize_full_scene`（scope 线程，默认开）✅
   回退：ZW_RENDER_THREAD=0
 
-切片 S3：增量重绘（dirty region）⏳
+切片 S3：增量重绘（dirty region）✅ 核心
   DirtyTracker / mutation 变更盒 → DisplayList.dirty_rects
-  → IPC PaintSnapshot → compositor render_full_scene_region_into（保留 front 像素）
-  验证：与全量重绘逐像素一致 + 重绘面积基准
+  → IPC PaintSnapshot → compositor copy_front + 区域重绘（fill 裁剪到脏区）
+  待验收：make reftest-smoke / product-smoke 像素基线
 ```
 
 ## 三、收益与成本
@@ -60,8 +60,8 @@
 | 切片 | 动作 | 验证 | 状态 |
 |---|---|---|---|
 | S1 | DisplayList 包装 primitives + dirty_rects | reftest 全量无 diff | ✅ |
-| S2 | RenderingThread + BackingStoreManager + Browser 接线 | A/B 逐像素 + product-smoke | ⚠️ |
-| S3 | dirty region IPC + compositor 区域重绘 | 与全量一致 + 基准 | ⏳ |
+| S2 | RenderingThread + BackingStoreManager + Browser 接线 | A/B 逐像素 + product-smoke | ✅ |
+| S3 | dirty region IPC + compositor 区域重绘 + fill 裁剪 | 与全量一致 + 基准 | ⚠️ 验收中 |
 
 - 每片遵守 `docs/goal/ai-refactor-acceptance.md`
 - 回退开关：`ZW_RENDER_THREAD=0`（默认开；headless/reftest 默认单线程，显式 `=1` 做 A/B）

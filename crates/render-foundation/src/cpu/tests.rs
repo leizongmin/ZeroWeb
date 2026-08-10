@@ -1972,6 +1972,40 @@ fn render_full_scene_region_matches_full_within_region() {
     assert_eq!(right_pixel, &[255, 255, 255, 255], "region 外图元应被跳过");
 }
 
+/// S3：全视口 fill 与部分 region 相交时，只更新脏区内像素，保留区外已有内容。
+#[test]
+fn render_full_scene_region_into_clips_full_viewport_fill() {
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(256);
+    let mut back = FrameBuffer::new(20, 10);
+    back.clear(0, 0, 255, 255);
+
+    let mut primitives = RenderPrimitives::new();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 20.0, 10.0),
+        color: Color::rgba(255, 0, 0, 255),
+    });
+
+    render_full_scene_region_into(
+        &mut back,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
+        1.0,
+    );
+
+    assert_eq!(&back.data[..4], &[255, 0, 0, 255], "dirty 内应为红");
+    let outside = ((5 * 20 + 15) * 4) as usize;
+    assert_eq!(back.data[outside], 0, "dirty 外应保留蓝");
+    assert_eq!(back.data[outside + 2], 255);
+}
+
 /// 性能门禁优化 S1（2026-08-08）：滚动 translate-blit 像素等价性——
 /// 「平移上一帧内容 + 只重绘新露条带」必须与「同滚动全量渲染」逐像素一致。
 /// 覆盖向上/向下滚动、不同条带高度、overlay 层（滚动条语义）与半透明混合。
