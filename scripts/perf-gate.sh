@@ -4,7 +4,9 @@
 # 不包含任何测量逻辑（测量在 scripts/bench-report.sh，ZeroUI 同款纪律：measure 与 gate 分离）。
 # 三层门禁（公式见 docs/specs/performance-and-resource-budget.md）：
 #   Hard Gate:  page/*/total_ms p95 ≤ absolute_budget_ms（默认 2000ms，对齐「首屏 < 2s」）
-#   Budget Gate: mb/*  p95 ≤ baseline * 1.20（微基准噪声小，纯因子，对齐文档 120% 规则）
+#   Budget Gate: mb/*  p95 ≤ max(baseline * 1.35, baseline + 1.0ns)（基线 <10ns 时）
+#                      否则 p95 ≤ baseline * 1.35（2026-08-10 校准：github 共享 runner 类
+#                      实测方差 +27~31%，旧 1.20 因子余量不足；ns 级指标加绝对下限吸收抖动）
 #                page/* p95 ≤ baseline * 1.15 + 40ms（+40 常数吸收调度抖动）
 #                resource/peak_rss_mb ≤ baseline * 1.20 + 128MB
 #   无基线条目（新指标）→ NEW/PASS 并记录趋势；schema_version / config_hash 不匹配 → exit 2
@@ -88,10 +90,18 @@ RESULT=$(jq -n --slurpfile rep "$REPORT" --slurpfile base "$BASELINE" '
         else "other" end;
     def budget_for($b; $fam; $bud):
         if $b.tier == "hard" then ($b.absolute_budget_ms // $bud.hard_total_ms)
-        elif $fam == "mb" then $b.p95 * $bud.microbench_factor
+        # mb/*（2026-08-10 校准）：1.35 因子吸收共享 runner 类方差（两轮实测 3 指标
+        # +27~31% 且代码零改动）；基线 <10ns 的 ns 级指标绝对抖动主导，取
+        # max(因子预算, 基线 + microbench_floor_ns)（旧基线无 floor 键 → 仅因子）。
+        elif $fam == "mb" then
+            ($b.p95 * $bud.microbench_factor) as $f
+            | if $b.p95 < 10 then
+                (($b.p95 + ($bud.microbench_floor_ns // 0.0)) as $with_floor
+                 | if $f > $with_floor then $f else $with_floor end)
+              else $f end
         elif $fam == "page" then $b.p95 * $bud.page_factor + $bud.page_constant_ms
         elif $fam == "rss" then $b.p95 * $bud.rss_factor + $bud.rss_constant_mb
-        else $b.p95 * 1.20 end;
+        else $b.p95 * 1.35 end;
     ($rep[0]) as $r | ($base[0]) as $b0 |
     # 注意：`X as $r | BODY` 里隐式 `.` 仍指向原始输入（-n 下为 null），
     # 顶层字段必须显式 `$r.` 前缀（仅管道内的逐元素 `.` 才是当前元素）。

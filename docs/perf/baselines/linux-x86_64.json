@@ -13,12 +13,13 @@
   },
   "justification": "初始基线（性能门禁体系上线，2026-08-08）",
   "budgets": {
-    "microbench_factor": 1.20,
+    "microbench_factor": 1.35,
     "page_factor": 1.15,
     "page_constant_ms": 40.0,
-    "rss_factor": 1.20,
+    "rss_factor": 1.2,
     "rss_constant_mb": 128.0,
-    "hard_total_ms": 2000.0
+    "hard_total_ms": 2000.0,
+    "microbench_floor_ns": 1.0
   },
   "metrics": [
     {

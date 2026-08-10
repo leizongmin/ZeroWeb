@@ -93,8 +93,9 @@ jq -n \
       recorded_at: $recorded_at, git_sha: $git_sha,
       run_config: {config_hash: $rep[0].run_config.config_hash, profile: $rep[0].run_config.profile},
       justification: $justification,
-      budgets: {microbench_factor: 1.20, page_factor: 1.15, page_constant_ms: 40.0,
-                rss_factor: 1.20, rss_constant_mb: 128.0, hard_total_ms: 2000.0},
+      budgets: {microbench_factor: 1.35, microbench_floor_ns: 1.0, page_factor: 1.15,
+                page_constant_ms: 40.0, rss_factor: 1.20, rss_constant_mb: 128.0,
+                hard_total_ms: 2000.0},
       metrics: $metrics}' \
     > "$BASELINE"
 

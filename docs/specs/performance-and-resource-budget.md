@@ -19,7 +19,7 @@
 | 层 | 含义 | 示例 |
 |---|---|---|
 | **Hard Gate（硬门禁）** | 绝对预算，不随基线变化 | 页面首屏 `total_ms` p95 ≤ 2000ms |
-| **Budget Gate（预算门禁）** | 相对基线，基线×因子 + 常数 | 微基准 p95 ≤ 基线×1.20 |
+| **Budget Gate（预算门禁）** | 相对基线，基线×因子 + 常数 | 微基准 p95 ≤ max(基线×1.35, 基线+1.0ns)（2026-08-10 校准） |
 | **Trend Metric（趋势指标）** | 先记录、后晋升为预算 | startup_ms、各阶段耗时 |
 
 趋势指标先记录一段时间（确认稳定），再根据分布收紧为正式预算。
@@ -55,7 +55,7 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 | Tier | 指标 | 公式 |
 |---|---|---|
 | Hard | `page/*/total_ms` p95 | `≤ 2000.0` ms（绝对，对齐「首屏 < 2s」） |
-| Budget | `mb/*` p95（ns） | `≤ 基线 × 1.20`（微基准噪声小，纯因子，对齐文档 120% 规则） |
+| Budget | `mb/*` p95（ns） | 基线 ≥ 10ns：`≤ 基线 × 1.35`；基线 < 10ns：`≤ max(基线 × 1.35, 基线 + 1.0ns)`（2026-08-10 校准，见 §4） |
 | Budget | `page/*` 各阶段 p95（ms） | `≤ 基线 × 1.15 + 40`（+40 常数吸收调度抖动） |
 | Budget | `resource/peak_rss_mb` | `≤ 基线 × 1.20 + 128` MB |
 
@@ -85,6 +85,13 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
   3. 理由须解释为何不是回归 + 恢复计划（对齐 ZeroUI 纪律）。
 - **自动收紧**（weekly CI `record-bench-trend.sh --auto-tighten`）：实测 p95 低于基线 →
   就地收紧（仅收紧永远合法，无需 justification）。
+
+**2026-08-10 校准记录（放宽，用户批准）**：
+- **旧值**：`mb/*` 预算 = `基线 × 1.20`（纯因子）。
+- **新值**：`mb/*` 预算 = 基线 ≥10ns → `基线 × 1.35`；基线 <10ns → `max(基线 × 1.35, 基线 + 1.0ns)`（新增 `microbench_floor_ns` 预算键）。
+- **前后测量数据**：基线（08-08 weekly cron 62c27520 建立）后，08-10 两轮 dispatch CI 3 指标超旧线：`ipc_deserialize_10000` 858.6→1126.4 µs（+31.2%）、`ipc_serialize_10000` 404.5→513.7 µs（+27.0%）、`damage_all` 2.19→2.82 ns（+28.8%）；同基线 08-08 4 轮 dispatch gate 全过。
+- **理由（为何不是回归）**：三指标代码零改动（`protocol/src/ipc.rs`、`render-foundation/src/damage_tracker.rs` 最后提交均早于基线）——github 共享 runner 类测量方差系统性超出旧 1.20 因子；本地固定机器 damage_all 1.37ns 亦 ±10% run-to-run 波动，佐证 ns 级指标绝对抖动主导。新因子 1.35 为收紧优先下清除观察噪声带（+27~31%）的最紧可行值（1.30 仍会在 ipc_deserialize 1.312× 上红）。
+- **恢复计划**：weekly `--auto-tighten` 持续收紧；1.5× 级真回归仍会被拦截（因子语义保留）；若 runner 类长期稳定可回落因子。
 - **禁用逃生舱**：无 `--ignore-gate`、无环境变量跳过门禁、不许为通过门禁临时改测量
   配置（config_hash 会暴露）。违规修改视为门禁失效事故。
 
