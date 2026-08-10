@@ -68,6 +68,32 @@ pub(super) fn run_script_with_url(html: &str, url: &str, script: &str) -> String
     result
 }
 
+/// 同 [`run_script`]，但解析后注入 referrer（镜像 engine 导航层 `set_referrer`，referrer = 导航前
+/// 的页面 URL），验证 `document.referrer` native getter 经 live Document 读注入值（R3176）。
+pub(super) fn run_script_with_referrer(html: &str, referrer: &str, script: &str) -> String {
+    zero_script_sandbox::ensure_v8_initialized();
+    let mut doc = parse_html(html);
+    doc.set_referrer(Some(referrer.to_string()));
+    let dom = Rc::new(RefCell::new(doc));
+    let isolate = &mut v8::Isolate::new(Default::default());
+    let result;
+    {
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        let code = v8::String::new(scope, script).expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        let r = compiled.run(scope).expect("run");
+        result = r
+            .to_string(scope)
+            .map(|s| s.to_rust_string_lossy(scope))
+            .unwrap_or_default();
+    }
+    reset_for_test();
+    result
+}
+
 /// `nodeType` + `tagName` 原生 getter：经 internal slot NodeId 直读 Rust DOM，
 /// 返 `v8::Integer`/`v8::String`（不经 shim 字符串桥）。spec nodeType Element=1、tagName HTML 大写。
 #[test]

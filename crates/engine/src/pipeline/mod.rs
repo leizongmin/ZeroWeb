@@ -67,6 +67,8 @@ pub struct RenderPipeline {
     pub(crate) font_resolver: HashMap<String, u32>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
     pub(crate) document_url: Option<String>,
+    /// 文档 referrer（来源页 URL；`document.referrer` 读，导航层注入 = 导航前的页面 URL）。
+    pub(crate) referrer: Option<String>,
     /// 缓存的布局结果。
     pub(crate) cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。`Rc<RefCell<Document>>` 共享（P1b L1a，R3106）——
@@ -140,6 +142,7 @@ impl RenderPipeline {
             image_no_ratio: HashMap::new(),
             font_resolver: HashMap::new(),
             document_url: None,
+            referrer: None,
         }
     }
 
@@ -151,6 +154,16 @@ impl RenderPipeline {
     /// 当前文档 URL。
     pub fn document_url(&self) -> Option<&str> {
         self.document_url.as_deref()
+    }
+
+    /// 设置文档 referrer（导航时由 webview 传入 = 导航前的页面 URL，供 `document.referrer` 读）。
+    pub fn set_referrer(&mut self, referrer: Option<&str>) {
+        self.referrer = referrer.map(str::to_string);
+    }
+
+    /// 文档 referrer（来源页 URL）。
+    pub fn referrer(&self) -> Option<&str> {
+        self.referrer.as_deref()
     }
 
     /// 设置是否跳过属性指示器。

@@ -148,6 +148,8 @@ pub struct WebView {
     script_source_fetcher: Option<ScriptSourceFetcher>,
     /// 当前 URL。
     current_url: Option<String>,
+    /// 来源页 URL（导航前的 current_url；`document.referrer` 读，sync 到 pipeline）。
+    referrer: Option<String>,
     /// 页面标题。
     title: Option<String>,
     /// 是否正在加载。
@@ -228,6 +230,7 @@ impl WebView {
             external_script,
             script_source_fetcher,
             current_url: None,
+            referrer: None,
             title: None,
             loading: false,
             last_render: None,
@@ -290,6 +293,7 @@ impl WebView {
     /// 抓取外链 CSS 与 `<img>` 子资源，并设置 pipeline 文档 URL。
     fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
         self.pipeline.set_document_url(Some(page_url));
+        self.pipeline.set_referrer(self.referrer.as_deref());
         let external_css = self.resolve_external_css(html, page_url);
         // R1794：外链 CSS + inline `<style>` 块中的 `url()` 图片引用一并抓取。
         let mut combined_css = external_css.clone();
@@ -310,6 +314,7 @@ impl WebView {
     /// resize / render 前把文档 URL 与图片固有尺寸同步回 pipeline。
     fn sync_pipeline_page_state(&mut self) {
         self.pipeline.set_document_url(self.current_url.as_deref());
+        self.pipeline.set_referrer(self.referrer.as_deref());
         if !self.cached_image_sizes.is_empty() {
             self.pipeline.set_image_sizes(self.cached_image_sizes.clone());
         }
@@ -590,6 +595,8 @@ impl WebView {
 
         // 设置加载状态
         let old_url = self.current_url.clone();
+        // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
+        self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.loading = true;
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
@@ -763,6 +770,8 @@ impl WebView {
     /// 调用方应随后调用 `fetch_url` 或 `complete_load` 来完成加载。
     pub fn load_url(&mut self, url: &str) {
         let old_url = self.current_url.clone();
+        // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
+        self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.loading = true;
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
@@ -775,6 +784,8 @@ impl WebView {
     ///
     /// 供浏览器异步 HTTP fetch 路径使用，行为与 [`Self::fetch_url`] 的子资源处理一致。
     pub fn complete_fetched_page(&mut self, html: &str, page_url: &str) -> WebViewRenderResult {
+        // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
+        self.referrer = self.current_url.clone();
         self.current_url = Some(page_url.to_string());
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));

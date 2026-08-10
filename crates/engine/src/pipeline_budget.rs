@@ -108,6 +108,7 @@ impl RenderPipeline {
                     let mut doc = zero_dom::parse_html(&session.html);
                     // R3169 注入页面 URL（导航层 → Document），供 native document.URL/documentURI 读。
                     doc.set_url(self.document_url.clone());
+                    doc.set_referrer(self.referrer.clone());
                     session.doc = Some(doc);
                     session.timings.parse_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Style;
@@ -208,6 +209,8 @@ impl RenderPipeline {
         let mut doc = zero_dom::parse_html(html);
         // R3169 注入页面 URL（导航层 → Document），供 native document.URL/documentURI 读。
         doc.set_url(self.document_url.clone());
+        // R3176 注入 referrer（导航层 → Document = 导航前的页面 URL），供 native document.referrer 读。
+        doc.set_referrer(self.referrer.clone());
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         let stylesheets = collect_stylesheets(&doc, css);

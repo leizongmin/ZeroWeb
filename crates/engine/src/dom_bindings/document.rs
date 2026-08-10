@@ -140,6 +140,19 @@ pub(super) fn native_url_getter(
     set_string_rv(scope, &url, &mut rv);
 }
 
+/// `document.referrer` getter（spec `dom-document-referrer`）：经 live Document `referrer()` 读
+/// 导航层注入的来源页 URL（分析/框架高频读取，GA/Sentry 等必读）。未注入（run_script 测试模型或
+/// 直接打开页面无来源）→ 空串（headless 简化；真实浏览器路径经导航注入 = 导航前的页面 URL）。
+pub(super) fn native_referrer_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let referrer = with_dom(|d| d.referrer().unwrap_or("").to_string()).unwrap_or_default();
+    set_string_rv(scope, &referrer, &mut rv);
+}
+
 /// 字符串返回值共用：设 `s` 为 ReturnValue（v8::String::new 失败 → 留默认 undefined）。
 fn set_string_rv(scope: &mut v8::PinScope, s: &str, rv: &mut v8::ReturnValue<v8::Value>) {
     if let Some(v) = v8::String::new(scope, s) {
@@ -241,6 +254,11 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
     }
     if let Some(k) = v8::String::new(scope, "documentURI") {
         tmpl.set_accessor(k.into(), native_url_getter);
+    }
+    // R3176 `document.referrer`（spec `dom-document-referrer`）：来源页 URL，经 live Document
+    // `referrer()` 读导航层注入值（= 导航前的页面 URL）。
+    if let Some(k) = v8::String::new(scope, "referrer") {
+        tmpl.set_accessor(k.into(), native_referrer_getter);
     }
 
     // 方法（复用 factories `*invoke`——忽略 `this`，查全局 live Document，与全局工厂语义一致）。

@@ -117,6 +117,21 @@ fn test_document_url_set_get() {
     assert_eq!(doc.url(), None);
 }
 
+/// 测试 document referrer 注入/读取（R3176，导航层 → Document，`document.referrer` 读，
+/// 来源页 URL = 导航前的页面地址）。
+#[test]
+fn test_document_referrer_set_get() {
+    let mut doc = Document::new();
+    // 默认未注入 → None（直接打开页面无来源）。
+    assert_eq!(doc.referrer(), None);
+    // 注入来源页 URL → 读回。
+    doc.set_referrer(Some("https://ref.example.com/prev".to_string()));
+    assert_eq!(doc.referrer(), Some("https://ref.example.com/prev"));
+    // 清除。
+    doc.set_referrer(None);
+    assert_eq!(doc.referrer(), None);
+}
+
 /// 测试 remove_attribute 在非元素节点上不 panic。
 #[test]
 fn test_remove_attribute_on_text_node() {

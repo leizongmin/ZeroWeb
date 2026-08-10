@@ -64,6 +64,9 @@ pub struct Document {
     /// 文档 URL（页面地址，导航层注入；`document.URL`/`documentURI` 读）。
     /// 解析时不设（HTML 字节无 URL 信息），由 engine 在页面加载后 `set_url` 注入。
     url: Option<String>,
+    /// 文档 referrer（来源页 URL，导航层注入；`document.referrer` 读）。
+    /// 解析时不设，由 engine 在页面加载后 `set_referrer` 注入（referrer = 导航前的页面 URL）。
+    referrer: Option<String>,
     /// 已注册的 MutationObserver 列表。
     observers: Vec<MutationObserver>,
     /// 待处理的 mutation 记录。
@@ -90,6 +93,7 @@ impl Document {
             root,
             id_map: HashMap::new(),
             url: None,
+            referrer: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
@@ -107,13 +111,14 @@ impl Document {
             root,
             id_map: HashMap::new(),
             url: None,
+            referrer: None,
             observers: Vec::new(),
             pending_mutations: Vec::new(),
             event_listeners: HashMap::new(),
             shadow_roots: HashMap::new(),
             slot_assignments: HashMap::new(),
         };
-        // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现
+        // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
         let mut id_map: HashMap<String, NodeId> = HashMap::with_capacity(doc.nodes.len() / 4);
         for (id, node) in doc.nodes.iter() {
@@ -1088,6 +1093,17 @@ impl Document {
     /// 注入文档 URL（engine 在页面加载后调，来自导航层）。
     pub fn set_url(&mut self, url: Option<String>) {
         self.url = url;
+    }
+
+    /// 获取文档 referrer（`document.referrer` 读，spec `dom-document-referrer`）。
+    /// 来源页 URL（导航前的页面）；未注入 → `None`。
+    pub fn referrer(&self) -> Option<&str> {
+        self.referrer.as_deref()
+    }
+
+    /// 注入文档 referrer（engine 在页面加载后调，来自导航层 = 导航前的页面 URL）。
+    pub fn set_referrer(&mut self, referrer: Option<String>) {
+        self.referrer = referrer;
     }
 
     // ── content is XML / XHTML ──────────────────────────────────

@@ -14,7 +14,7 @@ use std::rc::Rc;
 use zero_dom::parse_html;
 
 use super::gc::test_helpers::{attr_cache_alive, dtl_cache_alive, listener_keys_for, nnm_cache_alive, reset_for_test};
-use super::tests::{run_script, run_script_with_url};
+use super::tests::{run_script, run_script_with_referrer, run_script_with_url};
 use super::{encode_node_id, install_dom_bindings};
 
 // ── R3136 文档级只读属性工厂（documentElement / body / head）──
@@ -2379,6 +2379,25 @@ fn native_document_url_r3169() {
     );
     // run_script 模型不注入 URL → document.URL 空串（headless 简化，真实浏览器路径经导航注入）。
     assert_eq!(run_script(std_html, "(__zw_native_get_document().URL)"), "");
+}
+
+/// R3176 `document.referrer`（spec `dom-document-referrer`）：经 live Document `referrer()` 读
+/// 导航层注入的来源页 URL（分析/框架高频，GA/Sentry 等必读）。未注入 → 空串。
+#[test]
+fn native_document_referrer_r3176() {
+    let std_html = r#"<!DOCTYPE html><html><head></head><body></body></html>"#;
+    // 注入来源页 URL → document.referrer 读回。
+    assert_eq!(
+        run_script_with_referrer(
+            std_html,
+            "https://ref.example.com/prev-page",
+            "(__zw_native_get_document().referrer)"
+        ),
+        "https://ref.example.com/prev-page"
+    );
+    // run_script 模型不注入 referrer → document.referrer 空串（headless 简化，真实浏览器路径
+    // 经导航注入 = 导航前的页面 URL；直接打开页面无来源亦为空串）。
+    assert_eq!(run_script(std_html, "(__zw_native_get_document().referrer)"), "");
 }
 
 /// R3168 `document.compatMode` / `characterSet` / `contentType` / `readyState`（spec
