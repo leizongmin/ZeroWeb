@@ -1,11 +1,14 @@
 //! 多进程 IPC 绘制快照 ↔ 浏览器 TabSnapshot 转换。
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use zero_engine::{
     HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64,
 };
 use zero_protocol::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
-    IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGradientColorSpace, IpcGradientInterpolation,
+    IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect,
+    PaintSnapshotParams,
 };
 // 仅测试用（构造 PaintSnapshotParams 断言）。
 #[cfg(test)]
@@ -15,9 +18,9 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
-    GlyphPrimitive, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop,
-    HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives,
-    RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive,
+    GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
+    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -29,6 +32,20 @@ fn ipc_rect_to_rect(r: IpcRect) -> Rect {
 
 fn ipc_color_to_color(c: IpcColor) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
+}
+
+fn glyph_source_from_ipc(source: IpcGlyphSource, text_runs: &mut HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
+    if source.run_id == 0 {
+        return None;
+    }
+    let text = match text_runs.entry(source.run_id) {
+        std::collections::hash_map::Entry::Vacant(entry) => entry.insert(source.text.into()).clone(),
+        std::collections::hash_map::Entry::Occupied(entry) if entry.get().as_ref() == source.text => {
+            entry.get().clone()
+        }
+        std::collections::hash_map::Entry::Occupied(_) => return None,
+    };
+    GlyphSource::new(text, source.start, source.end)
 }
 
 fn ipc_gradient_kind_to_kind(k: IpcGradientKind) -> GradientKind {
@@ -252,6 +269,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
+    let mut glyph_text_runs = HashMap::new();
     for glyph in params.glyphs {
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
@@ -260,6 +278,9 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             color: ipc_color_to_color(glyph.color),
             glyph_id: glyph.glyph_id,
             font_glyph_index: glyph.font_glyph_index,
+            source: glyph
+                .source
+                .and_then(|source| glyph_source_from_ipc(source, &mut glyph_text_runs)),
             font_id: FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,
@@ -381,7 +402,7 @@ fn ipc_layout_to_snapshot(node: &IpcHitTestLayoutNode) -> Option<HitTestLayoutSn
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_protocol::{IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta};
+    use zero_protocol::{IpcGlyph, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta};
 
     #[test]
     fn apply_paint_snapshot_restores_hit_test_cache() {
@@ -421,6 +442,46 @@ mod tests {
             snap.hit_test.is_some(),
             "browser should restore hit-test cache from IPC snapshot"
         );
+    }
+
+    #[test]
+    fn apply_paint_snapshot_restores_glyph_source_run_identity() {
+        let source = |run_id| IpcGlyphSource {
+            run_id,
+            text: "A\u{301}".to_string(),
+            start: 0,
+            end: 3,
+        };
+        let glyph = |run_id, glyph_id| IpcGlyph {
+            x: 0.0,
+            y: 16.0,
+            font_size: 16.0,
+            glyph_id,
+            font_glyph_index: Some(1),
+            source: Some(source(run_id)),
+            font_id: 1,
+            color: IpcColor {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            rotation: 0.0,
+        };
+        let params = PaintSnapshotParams {
+            glyphs: vec![glyph(7, 'A' as u32), glyph(7, '\u{301}' as u32), glyph(8, 'A' as u32)],
+            ..Default::default()
+        };
+        let mut snap = TabSnapshot::default();
+
+        apply_paint_snapshot(&mut snap, params);
+
+        let glyphs = &snap.last_render.as_ref().expect("render result").primitives().glyphs;
+        let first = glyphs[0].source.as_ref().expect("first source");
+        let second = glyphs[1].source.as_ref().expect("second source");
+        let independent = glyphs[2].source.as_ref().expect("independent source");
+        assert!(first.same_cluster(second));
+        assert!(!first.same_cluster(independent));
     }
 
     #[test]

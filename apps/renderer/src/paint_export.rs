@@ -1,18 +1,21 @@
 //! 渲染进程：RenderPrimitives → IPC 绘制快照。
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
     IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
-    IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind, IpcGradientStop, IpcHitTestCache,
-    IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle,
-    IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform, PaintSnapshotParams,
+    IpcGlyphSource, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind, IpcGradientStop,
+    IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap,
+    IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTransform,
+    PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{decode_data_uri, decode_image_bytes};
 use zero_render_foundation::primitive::{
-    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GradientColorSpace,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GlyphSource, GradientColorSpace,
     GradientKind, GradientPrimitive, HueMethod, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
     RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
@@ -33,6 +36,16 @@ fn color_to_ipc(c: Color) -> IpcColor {
         b: c.b,
         a: c.a,
     }
+}
+
+fn glyph_source_run_id(source: &GlyphSource, source_runs: &mut HashMap<usize, u64>) -> u64 {
+    let key = Arc::as_ptr(&source.text) as *const () as usize;
+    if let Some(run_id) = source_runs.get(&key) {
+        return *run_id;
+    }
+    let run_id = source_runs.len() as u64 + 1;
+    source_runs.insert(key, run_id);
+    run_id
 }
 
 fn gradient_kind_to_ipc(k: &GradientKind) -> IpcGradientKind {
@@ -207,6 +220,7 @@ pub fn paint_snapshot_from_primitives(
     hit_test: Option<HitTestCache>,
     navigation_epoch: u64,
 ) -> PaintSnapshotParams {
+    let mut glyph_source_runs = HashMap::new();
     PaintSnapshotParams {
         viewport_width,
         viewport_height,
@@ -366,6 +380,12 @@ pub fn paint_snapshot_from_primitives(
                 font_size: g.font_size,
                 glyph_id: g.glyph_id,
                 font_glyph_index: g.font_glyph_index,
+                source: g.source.as_ref().map(|source| IpcGlyphSource {
+                    run_id: glyph_source_run_id(source, &mut glyph_source_runs),
+                    text: source.text.to_string(),
+                    start: source.start,
+                    end: source.end,
+                }),
                 font_id: g.font_id.0,
                 color: color_to_ipc(g.color),
                 rotation: g.rotation,
@@ -422,5 +442,29 @@ fn hit_test_layout_to_ipc(node: &HitTestLayoutSnapshot) -> IpcHitTestLayoutNode 
         width: node.width,
         height: node.height,
         children: node.children.iter().map(hit_test_layout_to_ipc).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn glyph_source_run_id_tracks_shared_text_allocation() {
+        let text: Arc<str> = Arc::from("A\u{301}");
+        let first = GlyphSource::new(text.clone(), 0, 3).expect("first cluster");
+        let second = GlyphSource::new(text, 0, 3).expect("second cluster");
+        let independent = GlyphSource::new(Arc::from("A\u{301}"), 0, 3).expect("independent cluster");
+        let mut source_runs = HashMap::new();
+
+        assert_eq!(
+            glyph_source_run_id(&first, &mut source_runs),
+            glyph_source_run_id(&second, &mut source_runs)
+        );
+        assert_ne!(
+            glyph_source_run_id(&first, &mut source_runs),
+            glyph_source_run_id(&independent, &mut source_runs)
+        );
     }
 }

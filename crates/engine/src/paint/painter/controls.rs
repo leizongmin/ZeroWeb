@@ -165,6 +165,7 @@ impl super::Painter {
                 color,
                 glyph_id: ch as u32,
                 font_glyph_index: None,
+                source: None,
                 font_id: default_font_id,
                 bitmap_width: None,
                 bitmap_height: None,

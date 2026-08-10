@@ -800,6 +800,7 @@ fn test_gpu_full_scene_indexed_glyph_matches_code_point() {
             color: Color::BLACK,
             glyph_id: 'A' as u32,
             font_glyph_index,
+            source: None,
             font_id: crate::primitive::FontId(font_id),
             bitmap_width: None,
             bitmap_height: None,

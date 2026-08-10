@@ -14,4 +14,4 @@
 css/CSS2/text/text-align-white-space-001.xht css/CSS2/text/text-align-white-space-001-ref.xht == 2026-08-07 P1 落地验证
 css/css-fonts/font-feature-resolution-001.html css/css-fonts/font-feature-resolution-001-ref.html == 2026-08-11 R3209 shaped-text paint gate
 css/css-fonts/font-feature-resolution-002.html css/css-fonts/font-feature-resolution-002-ref.html == 2026-08-11 R3209 shaped-text paint gate
-css/css-text/text-autospace/text-autospace-combining-marks.html css/css-text/text-autospace/text-autospace-combining-marks-ref.html == 2026-08-11 R3215 LTR shared-cluster mark offsets
+css/css-text/text-autospace/text-autospace-combining-marks.html css/css-text/text-autospace/text-autospace-combining-marks-ref.html == 2026-08-11 R3215-F LTR shared-cluster mark offsets

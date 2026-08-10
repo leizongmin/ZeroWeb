@@ -5,6 +5,7 @@ mod ops;
 use crate::color::Color;
 use crate::geometry::Rect;
 use crate::image_cache::ImageKey;
+use std::sync::Arc;
 
 /// 填充图元 — 纯色矩形
 #[derive(Debug, Clone)]
@@ -259,6 +260,37 @@ pub struct ImagePrimitive {
     pub clip: Option<Rect>,
 }
 
+/// Glyph 对应的源文本 cluster。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlyphSource {
+    /// glyph 所属文本 fragment 的完整源文本。
+    pub text: Arc<str>,
+    /// cluster 在 `text` 中的 UTF-8 起始字节偏移。
+    pub start: u32,
+    /// cluster 在 `text` 中的 UTF-8 结束字节偏移（exclusive）。
+    pub end: u32,
+}
+
+impl GlyphSource {
+    /// 构造经过 UTF-8 边界校验的 source range。
+    pub fn new(text: Arc<str>, start: u32, end: u32) -> Option<Self> {
+        text.get(start as usize..end as usize)?;
+        Some(Self { text, start, end })
+    }
+
+    /// 判断两个 glyph 是否指向同一文本 run 的同一 cluster。
+    pub fn same_cluster(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.text, &other.text) && self.start == other.start && self.end == other.end
+    }
+
+    /// 返回该 glyph 对应的源文本 cluster。
+    pub fn as_str(&self) -> &str {
+        self.text
+            .get(self.start as usize..self.end as usize)
+            .expect("GlyphSource constructor validates UTF-8 range")
+    }
+}
+
 /// Glyph 图元 — 单个字符或整形后字形的渲染指令
 #[derive(Debug, Clone)]
 pub struct GlyphPrimitive {
@@ -274,6 +306,8 @@ pub struct GlyphPrimitive {
     pub glyph_id: u32,
     /// 当前字体内部的 OpenType glyph index；`None` 表示按 `glyph_id` 查字符。
     pub font_glyph_index: Option<u16>,
+    /// 可选源文本 cluster；复杂 shaping 时供 selection/hit-test 恢复源码。
+    pub source: Option<GlyphSource>,
     /// 字体 ID
     pub font_id: FontId,
     /// 预缓存位图宽度（可选）

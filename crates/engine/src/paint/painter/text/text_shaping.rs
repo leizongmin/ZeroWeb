@@ -1,6 +1,9 @@
 //! Paint 文本整形的受限接入与旧逐字符回退。
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use zero_render_foundation::font::ShapedGlyph;
+use zero_render_foundation::primitive::GlyphSource;
 
 fn shaped_text_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -31,6 +34,7 @@ fn shaped_offsets_enabled() -> bool {
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
     pub(super) font_glyph_index: Option<u16>,
+    pub(super) source: Option<GlyphSource>,
     pub(super) x_offset: f32,
     pub(super) y_offset: f32,
     pub(super) advance_x: Option<f32>,
@@ -40,6 +44,7 @@ pub(super) struct FragmentGlyph {
 pub(super) enum FragmentGlyphs<'a> {
     Shaped {
         glyphs: std::vec::IntoIter<ShapedGlyph>,
+        sources: std::vec::IntoIter<Option<GlyphSource>>,
         indexed: bool,
         advanced: bool,
         offset: bool,
@@ -54,6 +59,7 @@ impl Iterator for FragmentGlyphs<'_> {
         match self {
             Self::Shaped {
                 glyphs,
+                sources,
                 indexed,
                 advanced,
                 offset,
@@ -62,6 +68,7 @@ impl Iterator for FragmentGlyphs<'_> {
                 Some(FragmentGlyph {
                     code_point: glyph.code_point,
                     font_glyph_index: (*indexed).then(|| u16::try_from(glyph.glyph_id).ok()).flatten(),
+                    source: sources.next().flatten(),
                     x_offset: if *offset { glyph.x_offset } else { 0.0 },
                     y_offset: if *offset { glyph.y_offset } else { 0.0 },
                     advance_x: (*advanced).then_some(glyph.advance_x),
@@ -70,6 +77,7 @@ impl Iterator for FragmentGlyphs<'_> {
             Self::Legacy(chars) => Some(FragmentGlyph {
                 code_point: chars.next()?,
                 font_glyph_index: None,
+                source: None,
                 x_offset: 0.0,
                 y_offset: 0.0,
                 advance_x: None,
@@ -97,14 +105,42 @@ pub(super) fn fragment_glyphs<'a>(
         if crate::text_metrics::source_mapping_requires_offsets(text, &glyphs) && !offsets_enabled {
             return FragmentGlyphs::Legacy(text.chars());
         }
+        let sources = glyph_sources(text, &glyphs);
         return FragmentGlyphs::Shaped {
             glyphs: glyphs.into_iter(),
+            sources: sources.into_iter(),
             indexed: indexed_glyph_enabled(),
             advanced: shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
             offset: offsets_enabled,
         };
     }
     FragmentGlyphs::Legacy(text.chars())
+}
+
+fn glyph_sources(text: &str, glyphs: &[ShapedGlyph]) -> Vec<Option<GlyphSource>> {
+    if !crate::text_metrics::source_mapping_requires_offsets(text, glyphs) {
+        return vec![None; glyphs.len()];
+    }
+    let text: Arc<str> = Arc::from(text);
+    let mut starts: Vec<u32> = glyphs.iter().map(|glyph| glyph.cluster).collect();
+    starts.sort_unstable();
+    starts.dedup();
+    let mut cluster_counts = HashMap::new();
+    for glyph in glyphs {
+        *cluster_counts.entry(glyph.cluster).or_insert(0usize) += 1;
+    }
+    glyphs
+        .iter()
+        .map(|glyph| {
+            let end = starts
+                .iter()
+                .copied()
+                .find(|start| *start > glyph.cluster)
+                .unwrap_or(text.len() as u32);
+            GlyphSource::new(text.clone(), glyph.cluster, end)
+                .filter(|source| cluster_counts[&glyph.cluster] > 1 || source.as_str().chars().nth(1).is_some())
+        })
+        .collect()
 }
 
 /// 判断是否为须绘制占位框的非空白 Cc 控制字符。
@@ -141,6 +177,7 @@ mod tests {
     fn shaped_advance_and_offsets_are_independent() {
         let mut offsets_only = FragmentGlyphs::Shaped {
             glyphs: vec![glyph()].into_iter(),
+            sources: vec![None].into_iter(),
             indexed: true,
             advanced: false,
             offset: true,
@@ -151,6 +188,7 @@ mod tests {
 
         let mut advance_only = FragmentGlyphs::Shaped {
             glyphs: vec![glyph()].into_iter(),
+            sources: vec![None].into_iter(),
             indexed: true,
             advanced: true,
             offset: false,
@@ -158,5 +196,24 @@ mod tests {
         let advance = advance_only.next().expect("advance glyph");
         assert_eq!(advance.advance_x, Some(8.0));
         assert_eq!((advance.x_offset, advance.y_offset), (0.0, 0.0));
+    }
+
+    #[test]
+    fn glyph_sources_share_utf8_cluster_ranges_within_one_text_run() {
+        let mut base = glyph();
+        base.code_point = 'A';
+        let mut mark = glyph();
+        mark.code_point = '\u{301}';
+        let mut trailing = glyph();
+        trailing.code_point = 'B';
+        trailing.cluster = 3;
+
+        let sources = glyph_sources("A\u{301}B", &[base, mark, trailing]);
+        let base = sources[0].as_ref().expect("base source");
+        let mark = sources[1].as_ref().expect("mark source");
+
+        assert_eq!(base.as_str(), "A\u{301}");
+        assert!(base.same_cluster(mark));
+        assert!(sources[2].is_none());
     }
 }

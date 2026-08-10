@@ -54,6 +54,19 @@ pub struct IpcRoundedRect {
     pub bottom_left_radius: f32,
 }
 
+/// IPC glyph 的源文本 cluster。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpcGlyphSource {
+    /// 当前绘制快照内的文本 run 标识。
+    pub run_id: u64,
+    /// glyph 所属文本 fragment 的完整源文本。
+    pub text: String,
+    /// UTF-8 起始字节偏移。
+    pub start: u32,
+    /// UTF-8 结束字节偏移（exclusive）。
+    pub end: u32,
+}
+
 /// IPC 文本 glyph。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcGlyph {
@@ -68,6 +81,9 @@ pub struct IpcGlyph {
     /// 当前字体内部的 OpenType glyph index；`None` 表示按 `glyph_id` 查字符。
     #[serde(default)]
     pub font_glyph_index: Option<u16>,
+    /// 可选源文本 cluster。
+    #[serde(default)]
+    pub source: Option<IpcGlyphSource>,
     /// 字体 id。
     pub font_id: u32,
     /// 颜色。
@@ -570,6 +586,12 @@ mod tests {
             font_size: 16.0,
             glyph_id: 'A' as u32,
             font_glyph_index: Some(42),
+            source: Some(IpcGlyphSource {
+                run_id: 9,
+                text: "A\u{301}".to_string(),
+                start: 0,
+                end: 3,
+            }),
             font_id: 7,
             color: IpcColor {
                 r: 1,
@@ -585,5 +607,9 @@ mod tests {
 
         assert_eq!(decoded.glyph_id, 'A' as u32);
         assert_eq!(decoded.font_glyph_index, Some(42));
+        let source = decoded.source.expect("source cluster");
+        assert_eq!(source.run_id, 9);
+        assert_eq!(source.text, "A\u{301}");
+        assert_eq!((source.start, source.end), (0, 3));
     }
 }

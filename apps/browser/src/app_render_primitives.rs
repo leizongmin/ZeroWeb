@@ -474,6 +474,7 @@ fn transform_webview_primitives_impl(
                 color: glyph.color,
                 glyph_id: glyph.glyph_id,
                 font_glyph_index: None,
+                source: None,
                 font_id: glyph.font_id,
                 bitmap_width: glyph.bitmap_width,
                 bitmap_height: glyph.bitmap_height,

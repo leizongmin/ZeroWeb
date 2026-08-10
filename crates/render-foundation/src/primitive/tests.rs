@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::geometry::Point;
+use std::sync::Arc;
 
 #[test]
 fn test_primitives_empty() {
@@ -52,6 +53,7 @@ fn test_draw_order_records_insertion_order() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -317,6 +319,7 @@ fn test_glyph_primitive_creation() {
         color: Color::BLACK,
         glyph_id: 42,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(1),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
@@ -337,6 +340,7 @@ fn test_source_code_point_and_font_glyph_index_coexist() {
         color: Color::BLACK,
         glyph_id: 'A' as u32,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(1),
         bitmap_width: None,
         bitmap_height: None,
@@ -356,6 +360,20 @@ fn test_source_code_point_and_font_glyph_index_coexist() {
 }
 
 #[test]
+fn test_glyph_source_validates_utf8_range_and_cluster_identity() {
+    let text: Arc<str> = Arc::from("A\u{301}B");
+    let first = GlyphSource::new(text.clone(), 0, 3).expect("valid combining cluster");
+    let shared = GlyphSource::new(text, 0, 3).expect("shared combining cluster");
+    let independent = GlyphSource::new(Arc::from("A\u{301}B"), 0, 3).expect("independent text run");
+
+    assert_eq!(first.as_str(), "A\u{301}");
+    assert!(first.same_cluster(&shared));
+    assert!(!first.same_cluster(&independent));
+    assert!(GlyphSource::new(Arc::from("A\u{301}"), 2, 3).is_none());
+    assert!(GlyphSource::new(Arc::from("A"), 1, 0).is_none());
+}
+
+#[test]
 fn test_glyph_in_render_primitives() {
     let mut p = RenderPrimitives::new();
     p.add_glyph(GlyphPrimitive {
@@ -365,6 +383,7 @@ fn test_glyph_in_render_primitives() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -391,6 +410,7 @@ fn test_bounding_box_with_glyphs() {
         color: Color::BLACK,
         glyph_id: 0,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -474,6 +494,7 @@ fn test_render_primitives_mixed_types_count() {
         color: Color::BLACK,
         glyph_id: 0,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -568,6 +589,7 @@ fn test_len_all_primitive_types() {
         color: Color::BLACK,
         glyph_id: 0,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -663,6 +685,7 @@ fn test_bounding_box_glyph_with_bitmap_dims() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: Some(12),
         bitmap_height: Some(16),
@@ -1071,6 +1094,7 @@ fn test_add_glyph_multiple() {
             color: Color::BLACK,
             glyph_id: i,
             font_glyph_index: None,
+            source: None,
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,
@@ -1136,6 +1160,7 @@ fn test_stats_mixed_primitives() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1149,6 +1174,7 @@ fn test_stats_mixed_primitives() {
         color: Color::BLACK,
         glyph_id: 66,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1206,6 +1232,7 @@ fn test_batch_fills_preserves_other_primitives() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,
@@ -1259,6 +1286,7 @@ fn test_cull_invisible_keeps_clips_and_glyphs() {
         color: Color::BLACK,
         glyph_id: 65,
         font_glyph_index: None,
+        source: None,
         font_id: FontId(0),
         bitmap_width: None,
         bitmap_height: None,

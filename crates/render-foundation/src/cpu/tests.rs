@@ -38,6 +38,7 @@ fn indexed_glyph_renders_identically_to_unicode_code_point() {
             color: Color::BLACK,
             glyph_id: 'A' as u32,
             font_glyph_index,
+            source: None,
             font_id: FontId(font_id),
             bitmap_width: None,
             bitmap_height: None,

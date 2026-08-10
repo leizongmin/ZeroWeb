@@ -3,16 +3,18 @@
 //! 与 browser 的 paint_ipc::apply_paint_snapshot 保持同一映射（2026-08-07
 //! 对照实现）；compositor 在合成器进程内完成光栅化所需的转换。
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use zero_protocol::paint_snapshot::{
-    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
-    IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
+    IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGradientColorSpace, IpcGradientInterpolation,
+    IpcGradientKind, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, GlyphPrimitive,
-    GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
+    GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
     ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive,
     ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
@@ -23,6 +25,20 @@ fn ipc_rect_to_rect(r: IpcRect) -> Rect {
 
 fn ipc_color_to_color(c: IpcColor) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
+}
+
+fn glyph_source_from_ipc(source: &IpcGlyphSource, text_runs: &mut HashMap<u64, Arc<str>>) -> Option<GlyphSource> {
+    if source.run_id == 0 {
+        return None;
+    }
+    let text = match text_runs.entry(source.run_id) {
+        std::collections::hash_map::Entry::Vacant(entry) => entry.insert(source.text.clone().into()).clone(),
+        std::collections::hash_map::Entry::Occupied(entry) if entry.get().as_ref() == source.text => {
+            entry.get().clone()
+        }
+        std::collections::hash_map::Entry::Occupied(_) => return None,
+    };
+    GlyphSource::new(text, source.start, source.end)
 }
 
 fn ipc_gradient_kind_to_kind(k: IpcGradientKind) -> GradientKind {
@@ -246,6 +262,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
+    let mut glyph_text_runs = HashMap::new();
     for glyph in &params.glyphs {
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
@@ -254,6 +271,10 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             color: ipc_color_to_color(glyph.color),
             glyph_id: glyph.glyph_id,
             font_glyph_index: glyph.font_glyph_index,
+            source: glyph
+                .source
+                .as_ref()
+                .and_then(|source| glyph_source_from_ipc(source, &mut glyph_text_runs)),
             font_id: zero_render_foundation::primitive::FontId(glyph.font_id),
             bitmap_width: None,
             bitmap_height: None,
@@ -263,4 +284,29 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
     }
     primitives.draw_order = params.draw_order.iter().map(|op| ipc_draw_op_to_draw_op(*op)).collect();
     primitives
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glyph_source_decoder_interns_run_and_rejects_conflicting_text() {
+        let source = IpcGlyphSource {
+            run_id: 4,
+            text: "A\u{301}".to_string(),
+            start: 0,
+            end: 3,
+        };
+        let mut text_runs = HashMap::new();
+        let first = glyph_source_from_ipc(&source, &mut text_runs).expect("first source");
+        let second = glyph_source_from_ipc(&source, &mut text_runs).expect("second source");
+        assert!(first.same_cluster(&second));
+
+        let conflicting = IpcGlyphSource {
+            text: "different".to_string(),
+            ..source
+        };
+        assert!(glyph_source_from_ipc(&conflicting, &mut text_runs).is_none());
+    }
 }

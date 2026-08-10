@@ -1,6 +1,6 @@
 //! WebView 页面文本选区（基于渲染 glyph 图元）。
 
-use zero_render_foundation::primitive::GlyphPrimitive;
+use zero_render_foundation::primitive::{GlyphPrimitive, GlyphSource};
 
 /// 页面 glyph 索引选区。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,10 +38,22 @@ impl GlyphSelection {
             return String::new();
         }
         let end = end.min(glyphs.len().saturating_sub(1));
-        glyphs[start..=end]
-            .iter()
-            .filter_map(|g| char::from_u32(g.glyph_id))
-            .collect()
+        let mut text = String::new();
+        let mut previous_source = None;
+        for glyph in &glyphs[start..=end] {
+            if let Some(source) = &glyph.source {
+                if previous_source.is_none_or(|previous: &GlyphSource| !previous.same_cluster(source)) {
+                    text.push_str(source.as_str());
+                }
+                previous_source = Some(source);
+            } else {
+                if let Some(ch) = char::from_u32(glyph.glyph_id) {
+                    text.push(ch);
+                }
+                previous_source = None;
+            }
+        }
+        text
     }
 }
 
@@ -103,7 +115,12 @@ pub fn word_glyph_range(glyphs: &[GlyphPrimitive], index: usize) -> (usize, usiz
 
 #[allow(dead_code)]
 fn glyph_char(glyph: &GlyphPrimitive) -> char {
-    char::from_u32(glyph.glyph_id).unwrap_or('\0')
+    glyph
+        .source
+        .as_ref()
+        .and_then(|source| source.as_str().chars().next())
+        .or_else(|| char::from_u32(glyph.glyph_id))
+        .unwrap_or('\0')
 }
 
 #[allow(dead_code)]
@@ -124,9 +141,9 @@ fn glyph_advance_ratio(c: char) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use zero_render_foundation::color::Color;
     use zero_render_foundation::primitive::FontId;
-    use zero_render_foundation::primitive::GlyphPrimitive;
 
     fn sample_glyph(x: f32, ch: char) -> GlyphPrimitive {
         GlyphPrimitive {
@@ -136,6 +153,7 @@ mod tests {
             color: Color::BLACK,
             glyph_id: ch as u32,
             font_glyph_index: None,
+            source: None,
             font_id: FontId(0),
             bitmap_width: None,
             bitmap_height: None,
@@ -155,5 +173,35 @@ mod tests {
         let glyphs = vec![sample_glyph(0.0, 'a'), sample_glyph(10.0, 'b'), sample_glyph(20.0, 'c')];
         let sel = GlyphSelection { anchor: 0, focus: 2 };
         assert_eq!(GlyphSelection::selected_text(&glyphs, &sel), "abc");
+    }
+
+    #[test]
+    fn selected_text_restores_and_deduplicates_source_clusters() {
+        let mut ligature = sample_glyph(0.0, 'f');
+        ligature.source = GlyphSource::new(Arc::from("fi"), 0, 2);
+        let sel = GlyphSelection { anchor: 0, focus: 1 };
+        assert_eq!(GlyphSelection::selected_text(&[ligature], &sel), "fi");
+
+        let source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3).expect("valid source");
+        let mut base = sample_glyph(0.0, 'A');
+        base.source = Some(source.clone());
+        let mut mark = sample_glyph(10.0, '\u{301}');
+        mark.source = Some(source);
+        let sel = GlyphSelection { anchor: 0, focus: 1 };
+        assert_eq!(GlyphSelection::selected_text(&[base, mark], &sel), "A\u{301}");
+    }
+
+    #[test]
+    fn selected_text_keeps_adjacent_equal_clusters_from_independent_runs() {
+        let mut first = sample_glyph(0.0, 'A');
+        first.source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3);
+        let mut second = sample_glyph(10.0, 'A');
+        second.source = GlyphSource::new(Arc::from("A\u{301}"), 0, 3);
+
+        let sel = GlyphSelection { anchor: 0, focus: 1 };
+        assert_eq!(
+            GlyphSelection::selected_text(&[first, second], &sel),
+            "A\u{301}A\u{301}"
+        );
     }
 }
