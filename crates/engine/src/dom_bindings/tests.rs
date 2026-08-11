@@ -1683,3 +1683,56 @@ return (found ? found.textContent : 'null') + '/' + el.matches('my-el') + '/' + 
         "custom 实例 querySelector + matches + cloneNode（查询/匹配/克隆接口）"
     );
 }
+
+// ── P1b S5 性能（R3271）：attr change / lifecycle 桥接 fast-path——非 custom tag 跳过 JS 桥接 ──
+// custom element 名规范要求含连字符（[a-z]+-[a-z-]+）。无连字符的 tag（div/span/p 等原生 HTML 元素）必非
+// custom → Rust 侧 fast-path 直接跳过 JS 桥接（避免非 custom 元素 setAttribute/appendChild 的无谓 JS 调用
+// + native 实例构造 + 数组创建）。框架 reconciliation 高频操作普通元素受益。本测试锁定该优化行为（防回归）。
+
+/// R3271 fast-path：非 custom tag（div，无连字符）的 setAttribute 不触发 CE attr change 桥接。
+#[test]
+fn native_custom_element_fast_path_non_custom_attr_r3271() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _notifyCalls = 0;\
+globalThis.__zw_native_ce_notify_attr_change = function(){ _notifyCalls++; };\
+const div = __zw_native_create_element('div');\
+div.setAttribute('class', 'x');\
+div.setAttribute('data-foo', 'bar');\
+return _notifyCalls;\
+})()";
+    // div（无连字符）fast-path 跳过 → __zw_native_ce_notify_attr_change 未被调 → _notifyCalls=0。
+    assert_eq!(
+        run_script(html, script),
+        "0",
+        "fast-path：div（无连字符 tag）setAttribute 不触发 CE attr change JS 桥接"
+    );
+}
+
+/// R3271 fast-path：非 custom tag 的 appendChild 不触发 CE connect 桥接（子树 DFS 过滤无连字符 tag）。
+#[test]
+fn native_custom_element_fast_path_non_custom_connect_r3271() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _notifyCalls = 0;\
+globalThis.__zw_native_ce_notify_connect = function(){ _notifyCalls++; };\
+const body = __zw_native_get_body();\
+const div = __zw_native_create_element('div');\
+const span = __zw_native_create_element('span');\
+div.appendChild(span);\
+body.appendChild(div);\
+return _notifyCalls;\
+})()";
+    // div/span（无连字符）fast-path 跳过 → __zw_native_ce_notify_connect 未被调 → _notifyCalls=0。
+    assert_eq!(
+        run_script(html, script),
+        "0",
+        "fast-path：div/span（无连字符 tag）appendChild 不触发 CE connect JS 桥接"
+    );
+}

@@ -33,7 +33,12 @@ pub(super) fn notify_connect_after_insert(scope: &mut v8::PinScope, parent_id: N
     let parent_connected = is_connected_to_document(parent_id);
     let mut to_connect: Vec<NodeId> = Vec::new();
     let mut to_disconnect: Vec<NodeId> = Vec::new();
-    collect_custom_subtree(child_id, &mut |id, _tag| {
+    collect_custom_subtree(child_id, &mut |id, tag| {
+        // R3271 fast-path：无连字符的 tag 必非 custom element（CE 名规范要求含 `-`）→ 跳过（避无谓连接态
+        // 查询 + 后续 dispatch 构造 native 实例）。含连字符的 tag 才可能是 custom。
+        if !tag.contains('-') {
+            return;
+        }
         let ffi = encode_node_id(id);
         let was = is_custom_connected(ffi);
         if parent_connected && !was {
@@ -65,7 +70,11 @@ pub(super) fn notify_connect_after_insert(scope: &mut v8::PinScope, parent_id: N
 /// `child_id` 已从 parent 摘除（mutation 完成），故其 parent 链不再到 document root。
 pub(super) fn notify_disconnect_after_remove(scope: &mut v8::PinScope, child_id: NodeId) {
     let mut to_disconnect: Vec<NodeId> = Vec::new();
-    collect_custom_subtree(child_id, &mut |id, _tag| {
+    collect_custom_subtree(child_id, &mut |id, tag| {
+        // R3271 fast-path：无连字符的 tag 必非 custom → 跳过（同 notify_connect_after_insert）。
+        if !tag.contains('-') {
+            return;
+        }
         if is_custom_connected(encode_node_id(id)) {
             to_disconnect.push(id);
         }
@@ -184,6 +193,12 @@ pub(super) fn read_attr_change_context(id: NodeId, name: &str) -> (Option<String
 /// setAttribute/removeAttribute **后**调：桥接 JS 派发 attributeChangedCallback。
 /// `new_val`=None 表示移除（removeAttribute）；`tag`=None 表示非元素（不派发）。
 /// JS 函数缺失 / 派发失败 → 静默（不抛）。observedAttributes 检查 + 值真变判定在 JS `_ce_dispatchAttrChange`。
+///
+/// **R3271 fast-path**：custom element 名规范（HTML spec PotentialCustomElementName）要求含连字符
+/// `[a-z][a-z0-9.-]*-[a-z0-9.-]*`。无连字符的 tag（div/span/p 等所有原生 HTML 元素）**必非 custom** →
+/// 直接跳过 Rust→JS 桥接（避免非 custom 元素 setAttribute 的无谓 JS 调用 + native 实例构造 + 数组创建）。
+/// 框架 reconciliation 高频 setAttribute 普通元素场景受益。含连字符的 tag（可能 custom）仍走 JS 桥接
+///（JS 侧 registry 查询过滤未注册的，如 `my-unregistered`）。
 pub(super) fn notify_attribute_change(
     scope: &mut v8::PinScope,
     id: NodeId,
@@ -195,6 +210,10 @@ pub(super) fn notify_attribute_change(
     let Some(tag) = tag else {
         return; // 非元素 → 不派发
     };
+    // R3271 fast-path：无连字符的 tag 必非 custom element（CE 名规范要求含 `-`）→ 跳过 JS 桥接。
+    if !tag.contains('-') {
+        return;
+    }
     let context = scope.get_current_context();
     let global = context.global(scope);
     let Some(notify_key) = v8::String::new(scope, "__zw_native_ce_notify_attr_change") else {
