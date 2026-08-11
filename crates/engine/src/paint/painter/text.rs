@@ -397,13 +397,7 @@ impl super::Painter {
         let ahem_font_id = self
             .resolve_font_id(&["Ahem".to_string()], &style.font_weight, &style.font_style)
             .0;
-        // R1464：per-fragment font_id（key = 文本节点 NodeId）。Path B 空 styles 无
-        // per-fragment font-family，旧实现 glyph 全用 default_font_id（容器字体）→ 非-Ahem
-        // webfont/跨字体 inline 用错字体。据布局存的 text_node_font_families 解析每个文本
-        // 节点的 FontId；宏 frag_font_id 据此选字体（无则 default_font_id，零回归）。
-        // 放函数作用域（default_font_id 旁）供所有 render_fragment 调用可见。
-        // R2497：parallel text_node_font_italic 跟踪每节点 resolved face 是否 italic
-        // （供 macro 算 frag_synthetic_italic = want_italic && !resolved_italic，避 double-shear）。
+        // R1464/R2497：恢复 Path B 每节点 face/list 与 synthetic-italic 状态。
         let resolved_text_fonts = self.resolve_text_node_fonts(box_node, style);
         let text_node_font_ids = resolved_text_fonts.primary;
         let text_node_shaping_font_ids = resolved_text_fonts.shaping;
@@ -718,7 +712,14 @@ impl super::Painter {
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides);
-                ctx = with_shaped_layout(ctx, doc, styles, &text_node_font_ids, &self.generic_font_ids);
+                ctx = with_shaped_layout(
+                    ctx,
+                    doc,
+                    styles,
+                    &text_node_font_ids,
+                    &text_node_shaping_font_ids,
+                    &self.generic_font_ids,
+                );
                 // R109 §9.2.1.1：匿名块盒片段——若此盒是 inline 被 block 子元素拆分后的
                 // 匿名块片段，只收集该片段的 inline 内容（而非 inline 元素的全部子节点）。
                 if let Some(ref frag) = box_node.fragment_node_ids {

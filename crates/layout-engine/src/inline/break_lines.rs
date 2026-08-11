@@ -229,7 +229,7 @@ impl InlineFormattingContext {
                         // 词也加 ls，致 letter-spacing-200/201 test 比 no-ls ref 宽。
                         // 词间相邻字母（break-all/CJK 无空格相邻）的 ls 经下方 adjacent_ls 前导补回。
                         let word_width =
-                            self.advance_string_width(content_word, run.font_id, run.font_size, run.is_ahem_font)
+                            self.advance_run_width(content_word, &run)
                                 + run.letter_spacing * content_char_count.saturating_sub(1) as f32;
                         // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
                         // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）

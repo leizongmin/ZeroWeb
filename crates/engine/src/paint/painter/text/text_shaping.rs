@@ -117,13 +117,14 @@ pub(super) fn configure_paint_ifc_advance(
     doc: &Document,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
     text_node_font_ids: &HashMap<NodeId, FontId>,
+    text_node_shaping_font_ids: &HashMap<NodeId, Vec<u32>>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
     if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("0")
     {
         return context;
     }
-    let font_ids = text_node_font_ids
+    let primary_ids: HashMap<NodeId, u32> = text_node_font_ids
         .iter()
         .filter_map(|(&text_node, &font_id)| {
             let parent_id = doc.parent_node(text_node)?;
@@ -151,8 +152,17 @@ pub(super) fn configure_paint_ifc_advance(
             eligible.then_some((parent_id, font_id.0))
         })
         .collect();
+    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1") {
+        text_node_shaping_font_ids
+            .iter()
+            .filter_map(|(&text_node, ids)| doc.parent_node(text_node).map(|parent| (parent, ids.clone())))
+            .collect()
+    } else {
+        HashMap::new()
+    };
     context
-        .with_font_id_overrides(font_ids)
+        .with_font_id_overrides(primary_ids)
+        .with_font_ids_overrides(shaping_ids)
         .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource))
 }
 

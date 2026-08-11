@@ -1690,6 +1690,46 @@ fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
     );
 }
 
+#[test]
+fn ifc_advance_source_receives_ordered_font_ids() {
+    struct OrderedAdvance;
+    impl AdvanceSource for OrderedAdvance {
+        fn measure(&self, _ch: char, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+            10.0
+        }
+
+        fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], _font_size: f32, _is_ahem: bool) -> f32 {
+            assert_eq!(text, "xA");
+            assert_eq!(font_ids, &[7, 9]);
+            21.0
+        }
+    }
+
+    let node = NodeId::default();
+    let mut ctx = InlineFormattingContext::new(100.0)
+        .with_advance_source(Rc::new(OrderedAdvance))
+        .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]));
+    ctx.break_into_lines(vec![TextRun {
+        text: "xA".to_string(),
+        node_id: node,
+        font_size: 10.0,
+        line_height: 10.0,
+        vertical_align: VerticalAlignValue::Baseline,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        margin_left: 0.0,
+        margin_right: 0.0,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        border_top: 0.0,
+        border_bottom: 0.0,
+        is_ahem_font: false,
+        font_id: Some(7),
+    }]);
+
+    assert_eq!(ctx.lines[0].runs[0].width, 21.0);
+}
+
 // ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
 
 /// 构造单文本运行 IFC（line-height:1，即 line_height == font_size，half-leading=0），

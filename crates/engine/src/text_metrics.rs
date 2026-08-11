@@ -77,14 +77,21 @@ impl AdvanceSource for ShapedAdvanceSource {
     }
 
     fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
+        let Some(font_id) = font_id else {
+            return text.chars().map(|ch| estimate_char_width(ch, font_size, is_ahem)).sum();
+        };
+        self.measure_text_with_fonts(text, &[font_id], font_size, is_ahem)
+    }
+
+    fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
         let estimated: f32 = text.chars().map(|ch| estimate_char_width(ch, font_size, is_ahem)).sum();
         if is_ahem {
             return estimated;
         }
-        let Some(font_id) = font_id else {
+        if font_ids.is_empty() {
             return estimated;
-        };
-        let Some(shaped) = shape_text_for_paint(&[font_id], text, font_size, TextDirection::LeftToRight, &[])
+        }
+        let Some(shaped) = shape_text_for_paint(font_ids, text, font_size, TextDirection::LeftToRight, &[])
             .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs))
         else {
             return estimated;

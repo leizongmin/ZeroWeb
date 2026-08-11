@@ -145,6 +145,8 @@ pub struct InlineFormattingContext {
     pub font_size_overrides: HashMap<NodeId, f32>,
     /// paint IFC 的父元素/inline 元素到已解析字体 ID 映射。
     pub font_id_overrides: HashMap<NodeId, u32>,
+    /// 文本/inline owner 到有序 CSS face ID 列表的映射。
+    pub font_ids_overrides: HashMap<NodeId, Vec<u32>>,
     /// 逐文本节点的 Ahem 字体标志覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法检测 Ahem 字体，
@@ -267,6 +269,7 @@ impl InlineFormattingContext {
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: HashMap::new(),
             font_id_overrides: HashMap::new(),
+            font_ids_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
             line_height_overrides: HashMap::new(),
@@ -344,6 +347,12 @@ impl InlineFormattingContext {
     /// 注入 paint IFC 的逐元素字体 ID。
     pub fn with_font_id_overrides(mut self, overrides: HashMap<NodeId, u32>) -> Self {
         self.font_id_overrides = overrides;
+        self
+    }
+
+    /// 注入逐元素有序 CSS face ID 列表。
+    pub fn with_font_ids_overrides(mut self, overrides: HashMap<NodeId, Vec<u32>>) -> Self {
+        self.font_ids_overrides = overrides;
         self
     }
 
@@ -451,6 +460,20 @@ impl InlineFormattingContext {
         match &self.advance_source {
             Some(src) => src.measure_text(text, font_id, font_size, is_ahem),
             None => estimate_string_width(text, font_size, is_ahem),
+        }
+    }
+
+    fn advance_run_width(&self, text: &str, run: &TextRun) -> f32 {
+        let font_ids = self
+            .font_ids_overrides
+            .get(&run.node_id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        match &self.advance_source {
+            Some(source) if !font_ids.is_empty() => {
+                source.measure_text_with_fonts(text, font_ids, run.font_size, run.is_ahem_font)
+            }
+            _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font),
         }
     }
 
@@ -1038,8 +1061,7 @@ impl InlineFormattingContext {
                         let char_count = word.chars().count();
                         // 垂直模式下，单词的"高度" = 水平模式的宽度
                         let mut word_height =
-                            self.advance_string_width(word, run.font_id, run.font_size, run.is_ahem_font)
-                                + run.letter_spacing * char_count as f32;
+                            self.advance_run_width(word, &run) + run.letter_spacing * char_count as f32;
                         if word_idx > 0 {
                             word_height += run.word_spacing;
                         }

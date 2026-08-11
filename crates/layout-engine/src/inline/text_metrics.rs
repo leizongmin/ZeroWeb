@@ -106,6 +106,11 @@ pub trait AdvanceSource {
             .map(|ch| self.measure(ch, font_id, font_size, is_ahem))
             .sum()
     }
+
+    /// 使用有序 CSS face 列表测量整段文本。
+    fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
+        self.measure_text(text, font_ids.first().copied(), font_size, is_ahem)
+    }
 }
 
 /// 默认 advance 源：委托 `estimate_char_width` 启发式（保持当前行为，零回归）。
@@ -147,6 +152,11 @@ impl AdvanceSourceHandle {
     /// 经由内部源测量整段文本 advance。
     pub fn measure_text(&self, text: &str, font_id: Option<u32>, font_size: f32, is_ahem: bool) -> f32 {
         self.0.measure_text(text, font_id, font_size, is_ahem)
+    }
+
+    /// 经由内部源按有序 CSS face 列表测量整段文本。
+    pub fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
+        self.0.measure_text_with_fonts(text, font_ids, font_size, is_ahem)
     }
 }
 
