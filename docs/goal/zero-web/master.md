@@ -130,6 +130,28 @@
 
 ## 最近完成的改进
 
+### HTMLInputElement.setRangeText()（本轮 R3245，engine shim）—— pivot 出 canvas 续片 2
+
+承接 R3244（composedPath），续 pivot 出 canvas 的 engine/dom Web API gap 扫描。核 form/input API：`form.elements`/`form.length`/`setSelectionRange` 已就绪（R2844 等，cross-check 剔除上轮 master.md 误记的候选①），但 **`setRangeText` absent**（HTML §4.10.5.23，文本编辑库 auto-format / mask / undo 补全高频）。所有原语就绪（`_controlValue` 读 / `_selObj` 选区 / `_isTextControl` gate / `.value=` setter / `_clampSelOffset`），单切片可落地。
+
+**实现（R3245）**：HTML §4.10.5.23（https://html.spec.whatwg.org/multipage/input.html#dom-textarea/input-setrangetext）。`setRangeText(replacement [, start [, end [, selectionMode]]])`：
+- start/end 缺省取 `selectionStart`/`selectionEnd`；`start > end` 抛 `IndexSizeError`（边界校验先于 clamp）。
+- `cs/ce` clamp [0, len]；`this.value = value.slice(0,cs) + replacement + value.slice(ce)`（经 proxy value setter——textarea 走 text-content / input 走 attr + dirty 跟踪）。
+- selectionMode（缺省 `preserve`）重定选区：`select`（折叠到插入文本 cs..cs+len）/ `start`（折叠到 cs）/ `end`（折叠到 cs+len）/ `preserve`（选区在编辑区前不动、后按 delta 平移、跨则折叠到 cs）。
+
+**为何净正向**：① **闭合真实 Web API gap**——input/textarea 文本范围替换从 absent 到 spec 合规（含 4 selectionMode + IndexSizeError）；② **零回归**——zero-engine 1957 全绿（+1 测，零回归，既有 selectionStart/End/setSelectionRange 测全过）；③ 低风险（纯 shim get-trap 新分支，复用既有原语无新回调）；④ engine 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part03.js` | +`setRangeText` 方法（紧随 setSelectionRange，spec URL 注释；4 selectionMode + IndexSizeError + preserve delta 平移）。 |
+| `crates/engine/src/js_dom_bridge_tests/part14.rs` | +1 测 `test_input_set_range_text_r3245`：显式范围替换；'select'/'start'/'end' mode 选区；缺省取当前选区；IndexSizeError；textarea text-content 路径。 |
+
+验证：`cargo fmt -p zero-engine -- --check` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1957 全绿**（+1 测，零回归）。⚠️ 跨流 clippy（`apps/browser process_backend.rs`，归因 `16d6a42e` 渲染流 GPU 工作）+ compositor flake 仍待渲染/浏览器流（同 R3243/R3244 记录）。
+
+**下一步**：setRangeText 闭合（input 文本编辑 API 族——setSelectionRange + setRangeText——全就绪）。续候选（pivot 出 canvas，engine/dom gap 扫描）：① **`document.hasFocus()`**（absent，HTML §4.6，feature-detect 高频，小切片——查 activeElement/focus 模型）；② **`window.stop()`**（absent，HTML §4.5.6，headless no-op 近似，小切片）；③ **`clientTop`/`clientLeft`**（absent，CSSOM View §4.1，但需 border 数据，价值偏低）；④ **table 写入族延伸**（createTBody/createCaption/tHead setter，较低频）；⑤ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### Event.composedPath()（本轮 R3244，engine shim）—— pivot 出 canvas 续片
 
 承接 R3243（表格写入族），按上轮 CONTINUE 取 gap 扫描首选 **`Event.composedPath()`**（生产 shim absent，DOM §4.3，shadow DOM 事件委托 + 祖先匹配高频）。重扫确认仍 absent（无 `composedPath`/`_composedPath` 命中），且所有元素事件派发汇于 `_dispatchWithBubble`（capture/target/bubble 三阶段，已算祖先链）、所有事件对象出 `_makeEvent`（Event + MouseEvent/CustomEvent/... 子类全经此）——两汇聚点使单切片即可全覆盖。

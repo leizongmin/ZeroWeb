@@ -1618,6 +1618,46 @@
             return undefined;
           };
         }
+        // `el.setRangeText(replacement [, start [, end [, selectionMode]]])`（HTMLInputElement/textarea，
+        // R3245）——替换 value 中 [start,end) 子串为 replacement 并按 selectionMode 重定选区。
+        // https://html.spec.whatwg.org/multipage/input.html#dom-textarea/input-setrangetext（§4.10.5.23）。
+        // start/end 缺省取 selectionStart/End；start>end 抛 IndexSizeError；selectionMode ∈ select/start/end/preserve
+        //（缺省 preserve）。复用既有原语：`_controlValue` 读、`this.value=` setter 写（textarea 走 text-content、
+        // input 走 attr + dirty 跟踪）、`_selObj` 选区。文本编辑库（auto-format / mask / undo 补全）高频。
+        if (prop === 'setRangeText' && _isTextControl(sel, handle)) {
+          return function(replacement, start, end, selectionMode) {
+            var so = _selObj(key);
+            if (arguments.length < 2) start = so.start;
+            if (arguments.length < 3) end = so.end;
+            start = Number(start); end = Number(end);
+            if (isNaN(start)) start = 0;
+            if (isNaN(end)) end = 0;
+            // spec：start > end 抛 IndexSizeError（边界校验先于 clamp）。
+            if (start > end) _throwDom('IndexSizeError', 'setRangeText: start greater than end');
+            replacement = String(replacement == null ? '' : replacement);
+            if (selectionMode !== 'select' && selectionMode !== 'start' && selectionMode !== 'end') selectionMode = 'preserve';
+            var val = _controlValue(sel, handle, key);
+            var cs = _clampSelOffset(start, val.length);
+            var ce = _clampSelOffset(end, val.length);
+            var oldStart = so.start, oldEnd = so.end;
+            // 替换 [cs,ce) 子串；经 proxy value setter 持久化（区分 textarea/input + dirty 跟踪）。
+            this.value = val.slice(0, cs) + replacement + val.slice(ce);
+            // 按 selectionMode 重定选区（spec §4.10.5.23）。delta = 替换后净长度变化。
+            var delta = replacement.length - (ce - cs);
+            if (selectionMode === 'select') {
+              so.start = cs; so.end = cs + replacement.length;
+            } else if (selectionMode === 'start') {
+              so.start = cs; so.end = cs;
+            } else if (selectionMode === 'end') {
+              so.start = cs + replacement.length; so.end = cs + replacement.length;
+            } else {
+              // preserve：选区在编辑区之前不动；之后按 delta 平移；跨编辑区则折叠到 cs（近似，保 selection 合法）。
+              so.start = (oldStart <= cs) ? oldStart : (oldStart >= ce ? oldStart + delta : cs);
+              so.end = (oldEnd <= cs) ? oldEnd : (oldEnd >= ce ? oldEnd + delta : cs);
+            }
+            return undefined;
+          };
+        }
         // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
         // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
         if (prop === 'files' && _isTag(sel, 'INPUT')) {

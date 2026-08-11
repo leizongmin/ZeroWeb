@@ -733,3 +733,85 @@ fn test_event_composed_path_r3244() {
     sandbox.execute("globalThis.__fresh = (new Event('x')).composedPath().length;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__fresh").unwrap().value, "0", "未派发的 Event.composedPath() 返 []");
 }
+
+#[test]
+fn test_input_set_range_text_r3245() {
+    // R3245：HTMLInputElement/HTMLTextAreaElement.setRangeText()（HTML §4.10.5.23，
+    // https://html.spec.whatwg.org/multipage/input.html#dom-textarea/input-setrangetext）。
+    // 替换 value [start,end) 子串为 replacement，按 selectionMode 重定选区。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i' value='hello world'><textarea id='t'>abc</textarea></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 显式 start,end 替换：setRangeText('XYZ', 0, 5) → 'XYZ world'
+    sandbox.execute(
+        "var i = document.getElementById('i');\
+         i.setRangeText('XYZ', 0, 5);\
+         globalThis.__v1 = i.value;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v1").unwrap().value, "XYZ world", "setRangeText('XYZ',0,5) 替换前 5 字符");
+
+    // ② 'select' mode：选区折叠到插入文本（selectionStart=2, selectionEnd=2+1=3）
+    sandbox.execute(
+        "var i2 = document.getElementById('i');\
+         i2.value = 'hello world';\
+         i2.setRangeText('X', 2, 4, 'select');\
+         globalThis.__v2 = i2.value;\
+         globalThis.__ss = i2.selectionStart;\
+         globalThis.__se = i2.selectionEnd;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v2").unwrap().value, "heXo world", "setRangeText('X',2,4) 替换 [2,4)");
+    assert_eq!(sandbox.execute("globalThis.__ss").unwrap().value, "2", "'select' mode selectionStart=replace 起点");
+    assert_eq!(sandbox.execute("globalThis.__se").unwrap().value, "3", "'select' mode selectionEnd=起点+插入长度");
+
+    // ③ 缺省 start/end = 当前选区：setSelectionRange(0,5) 后 setRangeText('HI') → 替换 [0,5) 为 'HI'
+    sandbox.execute(
+        "var i3 = document.getElementById('i');\
+         i3.value = 'hello world';\
+         i3.setSelectionRange(0, 5);\
+         i3.setRangeText('HI');\
+         globalThis.__v3 = i3.value;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v3").unwrap().value, "HI world", "缺省 start/end 取当前选区替换");
+
+    // ④ 'start' mode：选区折叠到替换起点；'end' mode：折叠到替换终点
+    sandbox.execute(
+        "var i4 = document.getElementById('i');\
+         i4.value = 'abcdef';\
+         i4.setRangeText('XY', 1, 3, 'start');\
+         globalThis.__v4 = i4.value; globalThis.__ss4 = i4.selectionStart; globalThis.__se4 = i4.selectionEnd;\
+         var i5 = document.getElementById('i'); i5.value = 'abcdef';\
+         i5.setRangeText('XY', 1, 3, 'end');\
+         globalThis.__ss5 = i5.selectionStart; globalThis.__se5 = i5.selectionEnd;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v4").unwrap().value, "aXYdef", "'start' mode 替换 [1,3) 为 'XY'");
+    assert_eq!(sandbox.execute("globalThis.__ss4").unwrap().value, "1", "'start' mode selectionStart=替换起点");
+    assert_eq!(sandbox.execute("globalThis.__se4").unwrap().value, "1", "'start' mode selectionEnd=替换起点");
+    assert_eq!(sandbox.execute("globalThis.__ss5").unwrap().value, "3", "'end' mode selectionStart=起点+插入长度");
+    assert_eq!(sandbox.execute("globalThis.__se5").unwrap().value, "3", "'end' mode selectionEnd=起点+插入长度");
+
+    // ⑤ IndexSizeError：start > end 抛
+    sandbox.execute(
+        "globalThis.__err = (function(){\
+           try { document.getElementById('i').setRangeText('X', 5, 2); return 'no-throw'; }\
+           catch (e) { return (e && e.name) ? e.name : 'unknown'; }\
+         })();",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__err").unwrap().value, "IndexSizeError", "start>end 抛 IndexSizeError");
+
+    // ⑥ textarea 同样工作（text-content 路径）：setRangeText('XY', 0, 1) → 'XYbc'
+    sandbox.execute(
+        "var t = document.getElementById('t');\
+         t.setRangeText('XY', 0, 1);\
+         globalThis.__tv = t.value;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__tv").unwrap().value, "XYbc", "textarea setRangeText 替换 [0,1)");
+}
