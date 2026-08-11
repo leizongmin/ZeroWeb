@@ -356,6 +356,13 @@ impl BrowserApp {
             use crate::tab_manager::PendingTabAction;
             match action {
                 PendingTabAction::NavigateActiveTab(href) => {
+                    let href = resolve_clicked_link_url(
+                        &href,
+                        self.shell
+                            .tabs()
+                            .find(|tab| tab.id() == tab_id)
+                            .and_then(|tab| tab.url()),
+                    );
                     if self.shell.active_tab_id() == Some(tab_id) {
                         self.navigate_to(&href);
                     } else {
@@ -364,6 +371,13 @@ impl BrowserApp {
                     }
                 }
                 PendingTabAction::OpenBackgroundTab(href) => {
+                    let href = resolve_clicked_link_url(
+                        &href,
+                        self.shell
+                            .tabs()
+                            .find(|tab| tab.id() == tab_id)
+                            .and_then(|tab| tab.url()),
+                    );
                     self.new_tab_background(&href);
                 }
                 PendingTabAction::RequestRedraw => {

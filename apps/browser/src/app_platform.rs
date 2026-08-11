@@ -754,6 +754,18 @@ pub fn resolve_path_relative_url(input: &str, shell: &BrowserShell) -> String {
     zero_engine::resolve_document_url(base, input)
 }
 
+/// Resolve a link clicked within a document against that document's URL.
+///
+/// This deliberately differs from address-bar normalization: a relative value
+/// such as `guide/intro.html` is a document-relative link, not a host name.
+pub fn resolve_clicked_link_url(input: &str, document_url: Option<&str>) -> String {
+    let input = input.trim();
+    let Some(base) = document_url.filter(|url| !url.starts_with("zero://")) else {
+        return input.to_string();
+    };
+    zero_engine::resolve_document_url(base, input)
+}
+
 /// URL 规范化 — 支持 URL 和搜索引擎回退
 pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     if input.starts_with("http://") || input.starts_with("https://") {
@@ -983,6 +995,25 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use zero_render_foundation::font::loader::FontLoader;
+
+    #[test]
+    fn clicked_relative_link_resolves_against_file_document_url() {
+        assert_eq!(
+            resolve_clicked_link_url(
+                "docs/intro.html",
+                Some("file:///C:/site/website/index.html"),
+            ),
+            "file:///C:/site/website/docs/intro.html"
+        );
+    }
+
+    #[test]
+    fn clicked_relative_link_resolves_against_http_document_url() {
+        assert_eq!(
+            resolve_clicked_link_url("next.html", Some("https://example.com/guide/index.html")),
+            "https://example.com/guide/next.html"
+        );
+    }
 
     #[test]
     fn load_system_fonts_loads_primary() {

@@ -5,7 +5,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 
 use zero_browser_shell::TabId;
-use zero_net::{CacheLookup, FetchPriority, HttpCache, HttpResponse, PerOriginFetchScheduler};
+use zero_net::{
+    CacheLookup, FetchPriority, HttpCache, HttpResponse, PerOriginFetchScheduler, is_file_url, read_file_url,
+};
 use zero_protocol::message::FetchParams;
 use zero_security::{ResourceCheckResult, SecurityContext};
 
@@ -145,6 +147,19 @@ impl TabFetchProxy {
                     return;
                 }
             }
+        }
+
+        if is_file_url(&url) {
+            let (tx, rx) = channel();
+            let _ = tx.send(read_file_url(&url).map_err(|error| error.to_string()));
+            self.pending.push(PendingFetch {
+                tab_id,
+                request_id: params.request_id,
+                url,
+                request_headers,
+                rx,
+            });
+            return;
         }
 
         // 性能门禁优化 S6（2026-08-08）：失败 URL 负缓存——renderer 每次 publish 会
@@ -411,5 +426,23 @@ mod tests {
         }
         seen.sort_unstable();
         assert_eq!(seen, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn file_url_fetch_reads_local_file_without_http_scheduler() {
+        let file = std::env::temp_dir().join("zero_browser_fetch_proxy_file_url_test.html");
+        std::fs::write(&file, b"<html><body>local file</body></html>").unwrap();
+        let url = url::Url::from_file_path(&file).unwrap().to_string();
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.enqueue(TabId(1), &params(7, &url));
+        let completed = proxy.drain();
+
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].request_id, 7);
+        assert_eq!(completed[0].status, 200);
+        assert_eq!(completed[0].body, b"<html><body>local file</body></html>");
+
+        let _ = std::fs::remove_file(file);
     }
 }
