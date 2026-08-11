@@ -44,11 +44,12 @@ fn configure_inline_fonts(
         context = context.with_font_resolver(resolver.clone());
         if use_advance
             && inline_fonts.advance_source.is_some()
-            && std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1")
+            && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0")
         {
-            context = context.with_font_ids_overrides(crate::font_resolution::collect_font_ids_overrides(
-                doc, styles, root, resolver,
-            ));
+            let overrides = crate::font_resolution::collect_font_overrides(doc, styles, root, resolver);
+            context = context
+                .with_font_ids_overrides(overrides.ids)
+                .with_font_size_adjust_overrides(overrides.size_adjust);
         }
     }
     context
@@ -505,11 +506,14 @@ pub(crate) fn store_font_sizes_from_ifc(
             } else {
                 doc.parent_node(frag.node_id)
             };
-            let family = font_owner
-                .and_then(|oid| styles.get(&oid))
-                .map(|s| s.font_family.clone())
-                .unwrap_or_default();
+            let font_style = font_owner.and_then(|oid| styles.get(&oid));
+            let family = font_style.map(|s| s.font_family.clone()).unwrap_or_default();
             box_node.text_node_font_families.insert(frag.node_id, family);
+            if let Some(style) = font_style {
+                box_node
+                    .text_node_font_size_adjust
+                    .insert(frag.node_id, style.font_size_adjust.clone());
+            }
             box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
             box_node
                 .text_node_letter_spacing
@@ -1220,7 +1224,7 @@ pub(crate) fn measure_text_content(
                 })
                 .or_else(|| font_metric_provider.and_then(|provider| provider.font_id_of(&style.font_family)))
         });
-        let ordered_font_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1") {
+        let ordered_font_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
             parent_style
                 .zip(font_resolver)
                 .map(|(style, resolver)| {
@@ -1253,7 +1257,15 @@ pub(crate) fn measure_text_content(
             if ordered_font_ids.is_empty() {
                 source.measure_text(value, font_id, font_size, is_ahem)
             } else {
-                source.measure_text_with_fonts(value, &ordered_font_ids, font_size, is_ahem)
+                source.measure_text_with_font_context(
+                    value,
+                    &ordered_font_ids,
+                    font_size,
+                    is_ahem,
+                    parent_style
+                        .map(|style| &style.font_size_adjust)
+                        .unwrap_or(&zero_style_system::FontSizeAdjustValue::None),
+                )
             }
         };
         // R1750：respect available_space MinContent —— bare-text 匿名 flex/grid item 的

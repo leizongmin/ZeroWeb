@@ -174,9 +174,10 @@ pub fn parse_line_height(value: &str) -> Option<LineHeightValue> {
 
 /// 解析 CSS font-size-adjust 值（CSS Fonts 3 §3.6）。
 ///
-/// 支持形式（Slice 1 R1191）：
+/// 支持形式：
 /// - `none` → [`FontSizeAdjustValue::None`]（初始值）
 /// - `<number>`（无单位，如 `0.9`）→ [`FontSizeAdjustValue::Number`]；负值非法返回 None
+/// - `from-font` → [`FontSizeAdjustValue::FromFont`]
 ///
 /// **暂不支持** CSS Fonts 4 两值形式（`ex-height 0.5` / `cap-height 0.5` 等）——
 /// 当前 corpus driving case（font-size-adjust-001，`font-size-adjust: 0.9`）用 Fonts 3
@@ -185,6 +186,9 @@ pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
     let value = value.trim();
     if value.eq_ignore_ascii_case("none") {
         return Some(FontSizeAdjustValue::None);
+    }
+    if value.eq_ignore_ascii_case("from-font") {
+        return Some(FontSizeAdjustValue::FromFont);
     }
     // CSS Fonts 3 单 <number> 形式（无单位数字）
     if let Ok(num) = value.parse::<f64>() {
@@ -559,6 +563,8 @@ mod tests {
         assert_eq!(parse_font_size_adjust("none"), Some(FontSizeAdjustValue::None));
         // 大小写不敏感
         assert_eq!(parse_font_size_adjust("NONE"), Some(FontSizeAdjustValue::None));
+        assert_eq!(parse_font_size_adjust("from-font"), Some(FontSizeAdjustValue::FromFont));
+        assert_eq!(parse_font_size_adjust("FROM-FONT"), Some(FontSizeAdjustValue::FromFont));
     }
 
     #[test]

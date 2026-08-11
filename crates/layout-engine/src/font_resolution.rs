@@ -60,18 +60,23 @@ pub fn resolve_font_ids_for_style(
     ids
 }
 
-pub(crate) fn collect_font_ids_overrides(
+pub(crate) struct FontOverrides {
+    pub(crate) ids: HashMap<NodeId, Vec<u32>>,
+    pub(crate) size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+}
+
+pub(crate) fn collect_font_overrides(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     root: NodeId,
     resolver: &HashMap<String, u32>,
-) -> HashMap<NodeId, Vec<u32>> {
+) -> FontOverrides {
     fn visit(
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         node_id: NodeId,
         resolver: &HashMap<String, u32>,
-        overrides: &mut HashMap<NodeId, Vec<u32>>,
+        overrides: &mut FontOverrides,
     ) {
         let style_id = doc
             .get(node_id)
@@ -82,17 +87,21 @@ pub(crate) fn collect_font_ids_overrides(
             })
             .unwrap_or(node_id);
         if let Some(style) = styles.get(&style_id) {
-            overrides.insert(
+            overrides.ids.insert(
                 node_id,
                 resolve_font_ids_for_style(resolver, &style.font_family, &style.font_weight, &style.font_style),
             );
+            overrides.size_adjust.insert(node_id, style.font_size_adjust.clone());
         }
         for child in doc.child_nodes(node_id) {
             visit(doc, styles, child, resolver, overrides);
         }
     }
 
-    let mut overrides = HashMap::new();
+    let mut overrides = FontOverrides {
+        ids: HashMap::new(),
+        size_adjust: HashMap::new(),
+    };
     visit(doc, styles, root, resolver, &mut overrides);
     overrides
 }
@@ -157,8 +166,12 @@ mod tests {
         let styles = HashMap::from([(root, style)]);
         let resolver = HashMap::from([("Primary".to_string(), 7), ("Secondary".to_string(), 9)]);
 
-        let overrides = collect_font_ids_overrides(&doc, &styles, root, &resolver);
-        assert_eq!(overrides.get(&root), Some(&vec![7, 9]));
-        assert_eq!(overrides.get(&text), Some(&vec![7, 9]));
+        let overrides = collect_font_overrides(&doc, &styles, root, &resolver);
+        assert_eq!(overrides.ids.get(&root), Some(&vec![7, 9]));
+        assert_eq!(overrides.ids.get(&text), Some(&vec![7, 9]));
+        assert_eq!(
+            overrides.size_adjust.get(&text),
+            Some(&zero_style_system::FontSizeAdjustValue::None)
+        );
     }
 }

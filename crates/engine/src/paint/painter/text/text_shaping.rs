@@ -70,11 +70,27 @@ impl super::super::Painter {
             font_ids.retain(|font_id| *font_id != fragment_font_id.0);
             font_ids.insert(0, fragment_font_id.0);
         }
-        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("0") {
             font_ids.truncate(1);
         }
         font_ids
     }
+}
+
+pub(super) fn fragment_font_size_adjustment(
+    owner_style: Option<&ComputedStyle>,
+    stored: Option<&zero_style_system::FontSizeAdjustValue>,
+    fallback: &zero_style_system::FontSizeAdjustValue,
+) -> zero_render_foundation::font::FontSizeAdjustment {
+    if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("0") {
+        return zero_render_foundation::font::FontSizeAdjustment::None;
+    }
+    crate::text_metrics::font_size_adjustment(
+        owner_style
+            .map(|style| &style.font_size_adjust)
+            .or(stored)
+            .unwrap_or(fallback),
+    )
 }
 
 fn shaped_text_enabled() -> bool {
@@ -133,6 +149,7 @@ pub(super) fn configure_paint_ifc_advance(
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
     text_node_font_ids: &HashMap<NodeId, FontId>,
     text_node_shaping_font_ids: &HashMap<NodeId, Vec<u32>>,
+    text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
     if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("0")
@@ -167,17 +184,20 @@ pub(super) fn configure_paint_ifc_advance(
             eligible.then_some((parent_id, font_id.0))
         })
         .collect();
-    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1") {
-        text_node_shaping_font_ids
-            .iter()
-            .filter_map(|(&text_node, ids)| doc.parent_node(text_node).map(|parent| (parent, ids.clone())))
-            .collect()
+    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
+        text_node_shaping_font_ids.clone()
+    } else {
+        HashMap::new()
+    };
+    let size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
+        text_node_font_size_adjust.clone()
     } else {
         HashMap::new()
     };
     context
         .with_font_id_overrides(primary_ids)
         .with_font_ids_overrides(shaping_ids)
+        .with_font_size_adjust_overrides(size_adjust)
         .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource))
 }
 
@@ -187,6 +207,8 @@ pub(super) struct FragmentAdvanceTrace {
     pub(super) unshaped: f32,
     pub(super) shaped: f32,
     pub(super) resolved_font_ids: Vec<u32>,
+    pub(super) resolved_font_sizes: Vec<f32>,
+    pub(super) size_adjust: zero_render_foundation::font::FontSizeAdjustment,
 }
 
 pub(super) struct FragmentPaintWidths {
@@ -207,6 +229,8 @@ impl FragmentAdvanceTrace {
             unshaped = self.unshaped,
             shaped = self.shaped,
             resolved_font_ids = ?self.resolved_font_ids,
+            resolved_font_sizes = ?self.resolved_font_sizes,
+            size_adjust = ?self.size_adjust,
             fragment_width = paint.fragment,
             legacy_paint = paint.legacy,
             paint_consumed = paint.consumed,
@@ -219,6 +243,7 @@ impl FragmentAdvanceTrace {
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
     pub(super) font_id: Option<zero_render_foundation::primitive::FontId>,
+    pub(super) font_size: Option<f32>,
     pub(super) font_glyph_index: Option<u16>,
     pub(super) source: Option<GlyphSource>,
     pub(super) x_offset: f32,
@@ -362,6 +387,7 @@ impl Iterator for FragmentGlyphs<'_> {
                 Some(FragmentGlyph {
                     code_point: glyph.code_point,
                     font_id: Some(glyph.font_id),
+                    font_size: Some(glyph.font_size),
                     font_glyph_index: (*indexed).then(|| u16::try_from(glyph.glyph_id).ok()).flatten(),
                     source: sources.next().flatten(),
                     x_offset: if *offset { glyph.x_offset } else { 0.0 },
@@ -372,6 +398,7 @@ impl Iterator for FragmentGlyphs<'_> {
             Self::Legacy(chars) => Some(FragmentGlyph {
                 code_point: chars.next()?,
                 font_id: None,
+                font_size: None,
                 font_glyph_index: None,
                 source: None,
                 x_offset: 0.0,
@@ -394,6 +421,7 @@ pub(super) fn fragment_glyphs<'a>(
     advance_eligible: bool,
     logical_source: Option<LogicalFragmentSource<'a>>,
     features: &[OpenTypeFeature],
+    size_adjust: zero_render_foundation::font::FontSizeAdjustment,
 ) -> FragmentGlyphs<'a> {
     if font_ids.is_empty() {
         return FragmentGlyphs::Legacy(text.chars());
@@ -410,8 +438,14 @@ pub(super) fn fragment_glyphs<'a>(
     if eligible
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
-        && let Some(mut glyphs) =
-            crate::shape_text_for_paint(font_ids, shaping_text, font_size, shape_direction, features)
+        && let Some(mut glyphs) = crate::shape_text_for_paint(
+            font_ids,
+            shaping_text,
+            font_size,
+            shape_direction,
+            features,
+            size_adjust,
+        )
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
@@ -445,7 +479,7 @@ pub(super) fn fragment_glyphs<'a>(
         let generic_contextual = simple_mapping && !advance_eligible && shaped_generic_paint_enabled();
         if generic_contextual {
             for glyph in &mut glyphs {
-                let paint_base = crate::measure_char_for_paint(glyph.code_point, font_size, false);
+                let paint_base = crate::measure_char_for_paint(glyph.code_point, glyph.font_size, false);
                 glyph.advance_x = crate::text_metrics::paint_base_with_contextual_delta(
                     paint_base,
                     glyph.advance_x,
@@ -473,6 +507,7 @@ pub(super) fn fragment_advance_trace(
     direction: TextDirection,
     logical_source: Option<&LogicalFragmentSource<'_>>,
     features: &[OpenTypeFeature],
+    size_adjust: zero_render_foundation::font::FontSizeAdjustment,
 ) -> Option<FragmentAdvanceTrace> {
     if !shaped_advance_trace_enabled() {
         return None;
@@ -485,15 +520,31 @@ pub(super) fn fragment_advance_trace(
     );
     let shape_direction = effective_shape_direction(direction, complex_enabled);
     let shaping_text = logical_source.map_or(text, |source| source.text);
-    let glyphs = crate::shape_text_for_paint(font_ids, shaping_text, font_size, shape_direction, features)?;
-    Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs))
+    let glyphs = crate::shape_text_for_paint(
+        font_ids,
+        shaping_text,
+        font_size,
+        shape_direction,
+        features,
+        size_adjust,
+    )?;
+    Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs, size_adjust))
 }
 
-fn advance_trace_from_glyphs(text: &str, font_size: f32, glyphs: &[ShapedGlyph]) -> FragmentAdvanceTrace {
+fn advance_trace_from_glyphs(
+    text: &str,
+    font_size: f32,
+    glyphs: &[ShapedGlyph],
+    size_adjust: zero_render_foundation::font::FontSizeAdjustment,
+) -> FragmentAdvanceTrace {
     let mut resolved_font_ids = Vec::new();
+    let mut resolved_font_sizes = Vec::new();
     for glyph in glyphs {
         if !resolved_font_ids.contains(&glyph.font_id.0) {
             resolved_font_ids.push(glyph.font_id.0);
+        }
+        if !resolved_font_sizes.contains(&glyph.font_size) {
+            resolved_font_sizes.push(glyph.font_size);
         }
     }
     FragmentAdvanceTrace {
@@ -504,6 +555,8 @@ fn advance_trace_from_glyphs(text: &str, font_size: f32, glyphs: &[ShapedGlyph])
         unshaped: glyphs.iter().map(|glyph| glyph.unshaped_advance_x).sum(),
         shaped: glyphs.iter().map(|glyph| glyph.advance_x).sum(),
         resolved_font_ids,
+        resolved_font_sizes,
+        size_adjust,
     }
 }
 
@@ -678,7 +731,12 @@ mod tests {
         second.code_point = 'V';
         second.advance_x = 8.0;
 
-        let trace = advance_trace_from_glyphs("AV", 16.0, &[first, second]);
+        let trace = advance_trace_from_glyphs(
+            "AV",
+            16.0,
+            &[first, second],
+            zero_render_foundation::font::FontSizeAdjustment::None,
+        );
 
         assert_eq!(trace.layout_estimate, 17.6);
         assert_eq!(trace.unshaped, 18.0);

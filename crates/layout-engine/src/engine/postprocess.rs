@@ -512,6 +512,7 @@ fn store_abspos_child_font_metrics(
             child.text_node_letter_spacing.insert(tn, fragment.letter_spacing);
             if let Some(cs) = styles.get(&child_node_id) {
                 child.text_node_font_families.insert(tn, cs.font_family.clone());
+                child.text_node_font_size_adjust.insert(tn, cs.font_size_adjust.clone());
             }
         }
     }

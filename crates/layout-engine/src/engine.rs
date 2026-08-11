@@ -1491,6 +1491,7 @@ impl LayoutEngine {
             text_node_line_heights: HashMap::new(),
             text_node_text_transform: HashMap::new(),
             text_node_font_families: HashMap::new(),
+            text_node_font_size_adjust: HashMap::new(),
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,

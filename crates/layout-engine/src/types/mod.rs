@@ -318,6 +318,8 @@ pub struct LayoutBox {
     /// 导致非-Ahem webfont/跨字体 inline 全回落容器字体（R1464 root cause）。layout 期
     /// 存父元素 font_family，paint 据此解析 per-fragment FontId。
     pub text_node_font_families: HashMap<NodeId, Vec<String>>,
+    /// 文本/inline run 的 `font-size-adjust` 计算值，供 paint Path B 恢复。
+    pub text_node_font_size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     /// 内联元素的 (font_size, line_height) 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// 与 text_node_font_sizes/line_heights 不同，此映射以元素自身的 NodeId 为键，
@@ -482,6 +484,7 @@ impl Default for LayoutBox {
             text_node_line_heights: HashMap::new(),
             text_node_text_transform: HashMap::new(),
             text_node_font_families: HashMap::new(),
+            text_node_font_size_adjust: HashMap::new(),
             inline_element_metrics: HashMap::new(),
             inline_element_margins: HashMap::new(),
             taffy_baseline: None,

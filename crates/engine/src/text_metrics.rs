@@ -6,11 +6,12 @@
 use std::sync::OnceLock;
 
 use zero_layout_engine::inline::{AdvanceSource, estimate_char_width};
-use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
+use zero_render_foundation::font::{FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, TextDirection};
 
 static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
 /// 宿主提供的文本整形回调签名。
-pub type TextShapeFn = fn(&[u32], &str, f32, TextDirection, &[OpenTypeFeature]) -> Option<Vec<ShapedGlyph>>;
+pub type TextShapeFn =
+    fn(&[u32], &str, f32, TextDirection, &[OpenTypeFeature], FontSizeAdjustment) -> Option<Vec<ShapedGlyph>>;
 static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
@@ -47,10 +48,19 @@ pub fn shape_text_for_paint(
     font_size: f32,
     direction: TextDirection,
     features: &[OpenTypeFeature],
+    adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
     TEXT_SHAPE
         .get()
-        .and_then(|shape| shape(font_ids, text, font_size, direction, features))
+        .and_then(|shape| shape(font_ids, text, font_size, direction, features, adjustment))
+}
+
+pub(crate) fn font_size_adjustment(value: &zero_style_system::FontSizeAdjustValue) -> FontSizeAdjustment {
+    match value {
+        zero_style_system::FontSizeAdjustValue::None => FontSizeAdjustment::None,
+        zero_style_system::FontSizeAdjustValue::Number(value) => FontSizeAdjustment::ExHeight(*value as f32),
+        zero_style_system::FontSizeAdjustValue::FromFont => FontSizeAdjustment::FromFont,
+    }
 }
 
 /// 判断 shaping 输出是否与源 Unicode 标量一一对应。
@@ -84,6 +94,23 @@ impl AdvanceSource for ShapedAdvanceSource {
     }
 
     fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
+        self.measure_text_with_font_context(
+            text,
+            font_ids,
+            font_size,
+            is_ahem,
+            &zero_style_system::FontSizeAdjustValue::None,
+        )
+    }
+
+    fn measure_text_with_font_context(
+        &self,
+        text: &str,
+        font_ids: &[u32],
+        font_size: f32,
+        is_ahem: bool,
+        size_adjust: &zero_style_system::FontSizeAdjustValue,
+    ) -> f32 {
         let estimated: f32 = text.chars().map(|ch| estimate_char_width(ch, font_size, is_ahem)).sum();
         if is_ahem {
             return estimated;
@@ -91,12 +118,21 @@ impl AdvanceSource for ShapedAdvanceSource {
         if font_ids.is_empty() {
             return estimated;
         }
-        let Some(shaped) = shape_text_for_paint(font_ids, text, font_size, TextDirection::LeftToRight, &[])
-            .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs))
-        else {
+        let Some(shaped) = shape_text_for_paint(
+            font_ids,
+            text,
+            font_size,
+            TextDirection::LeftToRight,
+            &[],
+            font_size_adjustment(size_adjust),
+        )
+        .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs)) else {
             return estimated;
         };
         let contextual: f32 = shaped.iter().map(|glyph| glyph.advance_x).sum();
+        if !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None) {
+            return contextual;
+        }
         let unshaped: f32 = shaped.iter().map(|glyph| glyph.unshaped_advance_x).sum();
         let paint_base: f32 = text
             .chars()

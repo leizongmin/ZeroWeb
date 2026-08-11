@@ -111,6 +111,18 @@ pub trait AdvanceSource {
     fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
         self.measure_text(text, font_ids.first().copied(), font_size, is_ahem)
     }
+
+    /// 使用有序 face 列表和 `font-size-adjust` 上下文测量文本。
+    fn measure_text_with_font_context(
+        &self,
+        text: &str,
+        font_ids: &[u32],
+        font_size: f32,
+        is_ahem: bool,
+        _size_adjust: &zero_style_system::FontSizeAdjustValue,
+    ) -> f32 {
+        self.measure_text_with_fonts(text, font_ids, font_size, is_ahem)
+    }
 }
 
 /// 默认 advance 源：委托 `estimate_char_width` 启发式（保持当前行为，零回归）。
@@ -157,6 +169,19 @@ impl AdvanceSourceHandle {
     /// 经由内部源按有序 CSS face 列表测量整段文本。
     pub fn measure_text_with_fonts(&self, text: &str, font_ids: &[u32], font_size: f32, is_ahem: bool) -> f32 {
         self.0.measure_text_with_fonts(text, font_ids, font_size, is_ahem)
+    }
+
+    /// 经由内部源按有序 face 列表和 `font-size-adjust` 上下文测量文本。
+    pub fn measure_text_with_font_context(
+        &self,
+        text: &str,
+        font_ids: &[u32],
+        font_size: f32,
+        is_ahem: bool,
+        size_adjust: &zero_style_system::FontSizeAdjustValue,
+    ) -> f32 {
+        self.0
+            .measure_text_with_font_context(text, font_ids, font_size, is_ahem, size_adjust)
     }
 }
 

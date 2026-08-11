@@ -1,7 +1,9 @@
 use std::cell::Cell;
 
 use zero_engine::layout_estimate_char_width;
-use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection, loader::FontLoader};
+use zero_render_foundation::font::{
+    FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, TextDirection, loader::FontLoader,
+};
 
 thread_local! {
     static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
@@ -27,13 +29,15 @@ pub fn shape_text(
     font_size: f32,
     direction: TextDirection,
     features: &[OpenTypeFeature],
+    adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
         let (loader, _) = cell.get()?;
         font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx_opt` 闭包执行期间有效。
         let loader = unsafe { &*loader };
-        loader.shape_text_cached_with_font_ids(font_ids, text, font_size, direction, features)
+        loader
+            .shape_text_cached_with_font_ids_and_adjustment(font_ids, text, font_size, direction, features, adjustment)
     })
 }
 

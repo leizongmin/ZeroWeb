@@ -35,7 +35,8 @@ use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
 use text_shaping::{
     FragmentPaintWidths, ahem_uses_embox_position, configure_paint_ifc_advance as with_shaped_layout,
-    fragment_advance_trace, fragment_glyphs, is_cc_control_char, logical_fragment_source, style_open_type_features,
+    fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, is_cc_control_char,
+    logical_fragment_source, style_open_type_features,
 };
 
 impl super::Painter {
@@ -718,6 +719,7 @@ impl super::Painter {
                     styles,
                     &text_node_font_ids,
                     &text_node_shaping_font_ids,
+                    &box_node.text_node_font_size_adjust,
                     &self.generic_font_ids,
                 );
                 // R109 §9.2.1.1：匿名块盒片段——若此盒是 inline 被 block 子元素拆分后的
@@ -1062,14 +1064,8 @@ impl super::Painter {
                                 .filter(|s| s.text_emphasis_color != ColorValue::CurrentColor)
                                 .map(|s| color_value_to_render(&s.text_emphasis_color))
                                 .unwrap_or(frag_color);
-                            // R1224：按片段 owner（父元素）font_family 选 font_id——inline 元素
-                            // 字体≠容器时（如 span Ahem in default div）字形位图用 owner 字体
-                            // 而非容器 default_font_id。owner_style_opt 缺省（Path B 空 styles）
-                            // 回退 default_font_id（零回归）。
-                            // R1464：Path B 空 styles 时 owner_style_opt=None，旧实现非-Ahem 片段
-                            // 全回落 default_font_id（容器字体）→ 非-Ahem webfont/跨字体 inline 用错
-                            // 字体。改为查 text_node_font_ids（layout 存的 per-fragment font_family
-                            // 解析结果），无则 default_font_id（零回归）。
+                            // R1224/R1464：Path A 按 owner style 选 face；Path B 用 layout
+                            // 保存的 per-run face，缺失时回退容器 face。
                             let is_ahem_frag = owner_style_opt.is_some_and(|s| {
                                 s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"))
                             });
@@ -1081,11 +1077,8 @@ impl super::Painter {
                                     .copied()
                                     .unwrap_or(default_font_id)
                             };
-                            // R2497：per-fragment synthetic italic——want_italic 取 owner
-                            // font_style（per-fragment，缺省回落 container_want_italic）；
-                            // resolved_italic 取该节点 face 是否 italic（text_node_font_italic，
-                            // 缺省 default_resolved_italic）；Ahem 片段恒不合成（测试字体保直立）。
-                            // synthetic = want_italic && !resolved_italic（避 double-shear）。
+                            // R2497：owner 请求 italic 且 resolved face 非 italic 时合成；
+                            // Ahem 恒不合成，避免测试字体倾斜。
                             let frag_synthetic_italic = if is_ahem_frag {
                                 false
                             } else {
@@ -1321,16 +1314,20 @@ impl super::Painter {
                                 frag_font_id,
                             );
                             let open_type_features = style_open_type_features(shaping_style);
-                            let advance_trace = (generic_font && shaped_text_eligible).then(|| {
-                                fragment_advance_trace(
-                                    &shaping_font_ids,
-                                    &transformed,
-                                    $frag_fs,
-                                    text_direction,
-                                    logical_source.as_ref(),
-                                    &open_type_features,
-                                )
-                            }).flatten();
+                            let size_adjust = fragment_font_size_adjustment(
+                                owner_style_opt,
+                                box_node.text_node_font_size_adjust.get(&$frag_nid),
+                                &style.font_size_adjust,
+                            );
+                            let advance_trace = fragment_advance_trace(
+                                &shaping_font_ids,
+                                &transformed,
+                                $frag_fs,
+                                text_direction,
+                                logical_source.as_ref(),
+                                &open_type_features,
+                                size_adjust,
+                            );
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
                                 &transformed,
@@ -1340,9 +1337,11 @@ impl super::Painter {
                                 !generic_font,
                                 logical_source,
                                 &open_type_features,
+                                size_adjust,
                             ) {
                                 let ch = glyph.code_point;
                                 let glyph_font_id = glyph.font_id.unwrap_or(frag_font_id);
+                                let glyph_font_size = glyph.font_size.unwrap_or($frag_fs);
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
                                 } else {
@@ -1353,7 +1352,7 @@ impl super::Painter {
                                     self.primitives.add_glyph(GlyphPrimitive {
                                         x: glyph_x + shadow_ox,
                                         y: glyph_y + shadow_oy,
-                                        font_size: $frag_fs,
+                                        font_size: glyph_font_size,
                                         color: shadow_color,
                                         glyph_id: ch as u32,
                                         font_glyph_index: None,
@@ -1369,7 +1368,7 @@ impl super::Painter {
                                 self.primitives.add_glyph(GlyphPrimitive {
                                     x: glyph_x,
                                     y: glyph_y,
-                                    font_size: $frag_fs,
+                                    font_size: glyph_font_size,
                                     color: frag_color,
                                     glyph_id: ch as u32,
                                     font_glyph_index: glyph.font_glyph_index,
@@ -1387,7 +1386,12 @@ impl super::Painter {
                                 // 在 4em=64px 下 ~0.85% diff，超阈值）。
                                 if is_cc_control_char(ch) {
                                     self.primitives.add_fill(
-                                        Rect::new(glyph_x, glyph_y - $frag_fs, $frag_fs, $frag_fs),
+                                        Rect::new(
+                                            glyph_x,
+                                            glyph_y - glyph_font_size,
+                                            glyph_font_size,
+                                            glyph_font_size,
+                                        ),
                                         frag_color,
                                     );
                                 }
@@ -1986,15 +1990,9 @@ pub(super) fn compute_object_fit_rect(
     }
 }
 
-/// R841：line-height ≈ font-size（half-leading≈0）启用 em-box 位（修 ifc-008/line-height-121）。
-/// R2535：迁出至 `text/r841_tests.rs` 子模块（text.rs 减负，续 text_multicol/text_ruby 谱）。
-#[cfg(test)]
-mod r841_tests;
-
-/// R2303：object-position 在 compute_object_fit_rect 中的定位（CSS Images §3）。
-/// R2535：迁出至 `text/r2303_object_position_tests.rs` 子模块（text.rs 减负）。
+/// R2303 object-position 定位测试。
 #[cfg(test)]
 mod r2303_object_position_tests;
-
-// R1694：r1424 multicol target_height 单测 + r1689 ruby segment 单测已随 helper 迁移到
-// `text/text_multicol.rs` 与 `text/text_ruby.rs` 子模块（text.rs 减负）。
+/// R841 em-box 定位测试。
+#[cfg(test)]
+mod r841_tests;

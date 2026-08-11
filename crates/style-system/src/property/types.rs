@@ -77,17 +77,17 @@ pub enum LineHeightValue {
 
 /// CSS font-size-adjust 值（CSS Fonts 3 §3.6 / Fonts 4 §3.7）。
 ///
-/// `font-size-adjust: <number>` 调整 font-size 以保留字体的 aspect value
-/// （ex-height/em）。**Slice 1（R1191）= parse + store + inherit dormant 基础**：
-/// 仅识别 `<number>` 与 `none`（Fonts 3 形式，driving test font-size-adjust-001 用
-/// `0.9`）；**尚不 apply**（apply 须字体 x-height 派生 + layout 接入，= Slice 2 多会话，
-/// font-x-height 访问同 Phase A 字体度量架构 gap）。继承属性。
+/// `font-size-adjust` 调整 font-size 以保留字体的 aspect value（ex-height/em）。
+/// 支持 Fonts 3 `<number>`、`none` 与 Fonts 5 `from-font`；resolved face 的 OS/2
+/// x-height 缩放由 render-foundation shaping 契约应用。继承属性。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontSizeAdjustValue {
     /// none（初始值；不调整）。
     None,
     /// 无单位 aspect value（如 0.9）。
     Number(f64),
+    /// 从 primary face 的字体度量读取 aspect value。
+    FromFont,
 }
 
 /// CSS text-align 值。

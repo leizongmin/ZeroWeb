@@ -1703,12 +1703,30 @@ fn ifc_advance_source_receives_ordered_font_ids() {
             assert_eq!(font_ids, &[7, 9]);
             21.0
         }
+
+        fn measure_text_with_font_context(
+            &self,
+            text: &str,
+            font_ids: &[u32],
+            _font_size: f32,
+            _is_ahem: bool,
+            size_adjust: &zero_style_system::FontSizeAdjustValue,
+        ) -> f32 {
+            assert_eq!(text, "xA");
+            assert_eq!(font_ids, &[7, 9]);
+            assert_eq!(size_adjust, &zero_style_system::FontSizeAdjustValue::Number(0.5));
+            22.0
+        }
     }
 
     let node = NodeId::default();
     let mut ctx = InlineFormattingContext::new(100.0)
         .with_advance_source(Rc::new(OrderedAdvance))
-        .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]));
+        .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]))
+        .with_font_size_adjust_overrides(HashMap::from([(
+            node,
+            zero_style_system::FontSizeAdjustValue::Number(0.5),
+        )]));
     let run = TextRun {
         text: "xA".to_string(),
         node_id: node,
@@ -1728,7 +1746,7 @@ fn ifc_advance_source_receives_ordered_font_ids() {
     };
     ctx.break_into_lines(vec![run.clone()]);
 
-    assert_eq!(ctx.lines[0].runs[0].width, 21.0);
+    assert_eq!(ctx.lines[0].runs[0].width, 22.0);
     ctx.font_ids_overrides.insert(node, vec![9, 7]);
     ctx.break_into_lines(vec![run]);
     assert_eq!(ctx.lines[0].runs[0].width, 20.0);

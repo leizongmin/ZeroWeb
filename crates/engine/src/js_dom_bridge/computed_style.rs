@@ -842,6 +842,7 @@ fn font_size_adjust_to_css(f: &FontSizeAdjustValue) -> String {
     match f {
         FontSizeAdjustValue::None => "none".to_string(),
         FontSizeAdjustValue::Number(n) => format_num(*n, ""),
+        FontSizeAdjustValue::FromFont => "from-font".to_string(),
     }
 }
 
