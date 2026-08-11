@@ -207,10 +207,72 @@
         (_ce_pending[name] = _ce_pending[name] || []).push(resolve);
       });
     },
-    // upgrade(root)：升级 root 子树 custom elements。**defer**（element 创建未接 ctor——proxy 非 ctor 实例，
-    // upgrade 深项后续 slice）。spec 返 undefined，本 stub no-op 不抛（避免中断脚本）。
-    upgrade: function (_root) {},
+    // upgrade(root)（R3269）：spec `custom-elements-upgrade`——遍历 root 子树（含 root 自身），对每个 tag
+    // 命中已注册 custom element 名的元素，`Object.setPrototypeOf(el, ctor.prototype)` 升级为 custom 实例
+    //（保留 NodeId + 子树 + 属性，**不重建元素**——R3269 PoC 验证 setPrototypeOf 对 native 元素可行：instanceof
+    // registeredCtor 成立 + slot[0]=NodeId 保留 + nodeType accessor 仍可读）。升级后若元素已连入 document，
+    // 触发 connectedCallback（经 ctor.prototype.connectedCallback，this=el）。
+    // **native_dom 模式**：parser 建的 `<my-el>`（define 前已存在）是普通 native 元素，define 后 upgrade 升级。
+    // **polyfill 模式**：元素为 generic Proxy，setPrototypeOf 改 Proxy 的 prototype（非 spec 严格语义，但
+    // best-effort 让 instanceof 成立 + prototype 方法可达）。spec 返 undefined。
+    upgrade: function (root) {
+      if (!root) return;
+      try {
+        _ceUpgradeSubtree(root);
+      } catch (_e) {}
+    },
   };
+
+  // R3269 upgrade 子树遍历：DFS（firstChild → nextSibling），对每个 Element 节点，tag 命中 registry 则
+  // setPrototypeOf 升级 + 已连入 document 触发 connectedCallback。Text/Comment 跳过（无 tag）。
+  function _ceUpgradeNode(el) {
+    var tag = _elTagName(el);
+    if (tag) {
+      var entry = _ce_registry[tag.toLowerCase()];
+      if (entry && entry.ctor) {
+        try { Object.setPrototypeOf(el, entry.ctor.prototype); } catch (_e) {}
+        // 升级后若已连入 document，触发 connectedCallback（spec：upgrade 已 connected 的元素触发回调）。
+        if (_elConnected(el)) {
+          var ccb = entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
+          if (typeof ccb === 'function') { try { ccb.call(el); } catch (_e) {} }
+        }
+      }
+    }
+    // 递归子节点（firstChild → nextSibling 链）。
+    var child = el.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      _ceUpgradeNode(child);
+      child = next;
+    }
+  }
+  function _ceUpgradeSubtree(root) {
+    _ceUpgradeNode(root);
+  }
+  // 读元素 tagName（小写 local name）——native 元素经 tagName getter（R3268）；polyfill Proxy 经 _realTag。
+  function _elTagName(el) {
+    try {
+      var t = el.tagName;
+      return t ? String(t).toLowerCase() : '';
+    } catch (_e) { return ''; }
+  }
+  // 元素是否连入 document——parent 链中存在 nodeType===9（DOCUMENT_NODE）= connected（spec isConnected 近似）。
+  // native 元素经 parentNode getter（R3268）；detached 元素 parent 链无 document → false。
+  function _elConnected(el) {
+    var cur = el;
+    var guard = 0;
+    while (cur && guard < 10000) {
+      try {
+        if (cur.nodeType === 9) return true; // 到达 document 节点
+      } catch (_e) { return false; }
+      var p;
+      try { p = cur.parentNode; } catch (_e) { return false; }
+      if (p === null || p === undefined) return false; // detached 子树根（无 document 祖先）
+      cur = p;
+      guard++;
+    }
+    return false;
+  }
 
   // P1b S5b（R3265）：customElements registry 反查 hook——供 native_dom 路径 `document.createElement(tag)`
   //（Rust `native_create_element_invoke`）在 host 建元素后反查是否为已注册 custom element。命中返 ctor

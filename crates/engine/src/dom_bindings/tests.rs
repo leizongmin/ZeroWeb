@@ -1530,6 +1530,80 @@ return _log.join(',');
     );
 }
 
+// ── P1b S5 剩余后续（R3269）：customElements.upgrade PoC——setPrototypeOf 方案可行性验证 ──
+// upgrade 需把既有 native 元素（parser 建 / createElement 建未注册）变成 registered ctor 实例（保留 NodeId）。
+// PoC 验证 Object.setPrototypeOf(nativeEl, registeredCtor.prototype) 是否让 native 元素 instanceof registeredCtor
+// 且保留 slot[0]=NodeId（nodeType accessor 仍可读）。
+#[test]
+fn native_custom_element_upgrade_set_proto_poc_r3269() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+class MyEl extends HTMLElement { constructor(){ super(); } connectedCallback(){ this.__conn = true; } }\
+// define 前建元素（模拟 parser 建或 createElement 未注册）——此时未 upgrade，是普通 native 元素
+const el = __zw_native_create_element('my-el');\
+const beforeInstanceof = (el instanceof MyEl);\
+const beforeNodeType = el.nodeType;\
+// define 后 setPrototypeOf 升级
+customElements.define('my-el', MyEl);\
+Object.setPrototypeOf(el, MyEl.prototype);\
+const afterInstanceof = (el instanceof MyEl);\
+const afterNodeType = el.nodeType;\
+return beforeInstanceof + '/' + beforeNodeType + '/' + afterInstanceof + '/' + afterNodeType;\
+})()";
+    // setPrototypeOf 前：instanceof MyEl=false（普通 native 元素）+ nodeType=1
+    // setPrototypeOf 后：instanceof MyEl=true（prototype 切换）+ nodeType=1（slot[0]=NodeId 保留，accessor 仍可读）。
+    assert_eq!(
+        run_script(html, script),
+        "false/1/true/1",
+        "upgrade PoC：setPrototypeOf 把 native 元素升级为 registered ctor 实例，保留 slot NodeId"
+    );
+}
+
+/// S5 后续（R3269）：customElements.upgrade(root) 子树升级——既有元素 setPrototypeOf + connectedCallback。
+#[test]
+fn native_custom_element_upgrade_subtree_r3269() {
+    let html = r#"<html><body></body></html>"#;
+    // 内联模拟 polyfill upgrade（真实 shim 在 part03.js _ceUpgradeNode）：DFS setPrototypeOf + connectedCallback。
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _conn = 0;\
+class MyEl extends HTMLElement { constructor(){ super(); } connectedCallback(){ _conn++; this.__c = true; } }\
+// 建子树：container > my-el（未注册时建，普通 native 元素），挂 body（connected）
+const body = __zw_native_get_body();\
+const container = __zw_native_create_element('div');\
+const el = __zw_native_create_element('my-el');\
+container.appendChild(el);\
+body.appendChild(container);\
+// define 后 upgrade(container)——子树 DFS 应升级 my-el + 触发 connectedCallback（已连 body）
+customElements.define('my-el', MyEl);\
+function upgrade(node){\
+  var tag = node.tagName ? String(node.tagName).toLowerCase() : '';\
+  var entry = _ce[tag];\
+  if (entry && entry.ctor){\
+    Object.setPrototypeOf(node, entry.ctor.prototype);\
+    var ccb = entry.ctor.prototype.connectedCallback;\
+    if (typeof ccb === 'function'){ try { ccb.call(node); } catch(_e){} }\
+  }\
+  var c = node.firstChild;\
+  while (c){ var n = c.nextSibling; upgrade(c); c = n; }\
+}\
+upgrade(container);\
+return (el instanceof MyEl) + '/' + el.nodeType + '/' + _conn;\
+})()";
+    // upgrade(container) DFS：container（div，非 custom，跳过）→ my-el（setPrototypeOf 升级 + connectedCallback，
+    // 已连 body）→ instanceof MyEl=true + nodeType=1（slot 保留）+ _conn=1（connectedCallback 触发一次）。
+    assert_eq!(
+        run_script(html, script),
+        "true/1/1",
+        "upgrade(root) 子树 DFS：既有 native 元素 setPrototypeOf 升级 + connectedCallback（已连 document）"
+    );
+}
+
 // ── P1b S5 后续（R3268）：HTMLElement Element/Node 接口补全——custom 实例完整 Element API ──
 // 验证 native custom 实例（instanceof registered ctor）具备与 generic Element 模板等价的全套
 // Element/Node 接口（S5d 仅补 attr+tree-mutation 族，本轮补全查询/内容/导航/子元素/反射属性/复杂对象 getter）。
