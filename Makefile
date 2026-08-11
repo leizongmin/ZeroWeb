@@ -70,8 +70,14 @@ browser-compositor-real-site-smoke: target/test-guard
 # 或总时长>1800s 即杀掉整棵进程树（退出 124），防止内存型 bug（如无限循环
 # realloc、CSS parser 未闭合括号死循环）触发系统级 OOM 连累 tmux session /
 # rally 无人值守流程。源码 scripts/test-guard.rs，std-only，rustc 直接编译。
+ifeq ($(OS),Windows_NT)
+MKDIR_TARGET = if not exist target mkdir target
+else
+MKDIR_TARGET = mkdir -p target
+endif
+
 target/test-guard: scripts/test-guard.rs
-	@mkdir -p target
+	@$(MKDIR_TARGET)
 	rustc -O scripts/test-guard.rs -o target/test-guard
 
 # 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
@@ -80,6 +86,16 @@ target/test-guard: scripts/test-guard.rs
 # 本地提交门禁覆盖不到，编译/运行破坏 CI 才暴露；QuickJS_CRATES 为 CI quickjs 测试包列表）。
 QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
 QUICKJS_TEST_CRATES = zero-script-sandbox zero-webview zero-browser zero-renderer zero-webview-demo zero-integration-tests zero-wpt-runner
+QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_CRATES))
+ifeq ($(OS),Windows_NT)
+# Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
+test: target/test-guard
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER))
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
+else
 test: target/test-guard
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
@@ -99,6 +115,7 @@ test: target/test-guard
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
+endif
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard

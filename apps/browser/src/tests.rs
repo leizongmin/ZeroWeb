@@ -5,9 +5,28 @@
 
 use super::*;
 use app::append_webview_primitives;
+use zero_browser_shell::TabId;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
+
+fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, gpu_present: bool) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        if gpu_present {
+            app.poll_tab_fetch_with_gpu_present_for_test();
+        } else {
+            app.poll_tab_fetch();
+        }
+        if app.snapshot_seq_for_test(tab_id) > sequence {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
 
 #[test]
 fn smoke_capture_cli_requires_real_cpu_multiprocess_window() {
@@ -1022,6 +1041,215 @@ fn floating_link_status_shows_on_link_hover() {
         "floating status should show link URL, got: {}",
         text.chars().take(120).collect::<String>()
     );
+}
+
+#[test]
+fn clicking_page_content_unfocuses_address_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0"><input id="name" style="display:block;width:160px;height:32px"></body></html>"#,
+        None,
+    );
+    app.address_bar_focused = true;
+
+    let (content_x, content_y, _, _) = app.page_content_rect();
+    app.handle_mouse_click((content_x + 10.0) as f64, (content_y + 10.0) as f64, true, "Left");
+
+    assert!(
+        !app.address_bar_focused,
+        "clicking page content must move keyboard focus away from the address bar"
+    );
+}
+
+#[test]
+fn clicking_checkbox_without_page_text_publishes_updated_snapshot() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0"><input id="updates" type="checkbox" style="width:20px;height:20px"></body></html>"#,
+        None,
+    );
+    let initial_snapshot_seq = app.snapshot_seq_for_test(tab_id);
+
+    let (content_x, content_y, _, _) = app.page_content_rect();
+    let x = (content_x + 10.0) as f64;
+    let y = (content_y + 10.0) as f64;
+    app.handle_mouse_click(x, y, true, "Left");
+    app.handle_mouse_click(x, y, false, "Left");
+
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, initial_snapshot_seq, false),
+        "clicking a checkbox without page text must publish a new rendered page snapshot (initial sequence {initial_snapshot_seq}, current sequence {})",
+        app.snapshot_seq_for_test(tab_id)
+    );
+}
+
+#[test]
+fn typing_in_clicked_input_updates_page_html() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0"><input id="name" style="display:block;width:160px;height:32px"></body></html>"#,
+        None,
+    );
+    let initial_snapshot_seq = app.snapshot_seq_for_test(tab_id);
+
+    let (content_x, content_y, _, _) = app.page_content_rect();
+    let x = (content_x + 70.0) as f64;
+    let y = (content_y + 10.0) as f64;
+    app.handle_mouse_click(x, y, true, "Left");
+    app.handle_mouse_click(x, y, false, "Left");
+    app.handle_key("x", true, None);
+
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, initial_snapshot_seq, false),
+        "typing after clicking an input must publish a new rendered page snapshot (initial sequence {initial_snapshot_seq}, current sequence {})",
+        app.snapshot_seq_for_test(tab_id)
+    );
+}
+
+#[test]
+fn gpu_compositor_path_dispatches_input_events_to_form_controls() {
+    let mut app = BrowserApp::new(RenderMode::Gpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0"><input id="name" style="display:block;width:160px;height:32px"></body></html>"#,
+        None,
+    );
+
+    for _ in 0..300 {
+        app.poll_tab_fetch_with_gpu_present_for_test();
+        if app
+            .hit_test_page_element_for_test(tab_id, 10.0, 10.0)
+            .is_some_and(|hit| hit.tag_name.eq_ignore_ascii_case("input"))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        app.hit_test_page_element_for_test(tab_id, 10.0, 10.0)
+            .is_some_and(|hit| hit.tag_name.eq_ignore_ascii_case("input")),
+        "GPU/compositor page frame must expose the input to browser-side hit testing"
+    );
+
+    let initial_snapshot_seq = app.snapshot_seq_for_test(tab_id);
+    app.clear_page_hit_test_for_test(tab_id);
+    let (content_x, content_y, _, _) = app.page_content_rect();
+    let x = (content_x + 10.0) as f64;
+    let y = (content_y + 10.0) as f64;
+    app.handle_mouse_click(x, y, true, "Left");
+    app.handle_mouse_click(x, y, false, "Left");
+    app.handle_key("x", true, None);
+
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, initial_snapshot_seq, true),
+        "GPU/compositor form input did not publish an updated snapshot"
+    );
+}
+
+#[test]
+fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
+    let html = include_str!("../../../examples/forms/form-interaction-test.html");
+    let mut ime_verified = false;
+    for scale in [1.0_f32, 1.25, 1.5, 2.0] {
+        let mut app = BrowserApp::new(RenderMode::Gpu);
+        app.physical_size = (1600, 1800);
+        app.scale_factor = scale;
+        let tab_id = app.shell.active_tab_id().unwrap();
+        app.ensure_webview(tab_id);
+        app.sync_webview_viewport();
+        let initial_snapshot_seq = app.snapshot_seq_for_test(tab_id);
+        app.load_webview_html_without_wait_for_test(tab_id, html, None);
+
+        let mut observed_snapshot_seq = initial_snapshot_seq;
+        let mut page_ready = false;
+        for _ in 0..500 {
+            app.poll_tab_fetch_with_gpu_present_for_test();
+            let current_snapshot_seq = app.snapshot_seq_for_test(tab_id);
+            if current_snapshot_seq != observed_snapshot_seq {
+                observed_snapshot_seq = current_snapshot_seq;
+                let (logical_w, logical_h) = app.content_logical_size();
+                page_ready = (0..logical_h).step_by(8).any(|y| {
+                    (0..logical_w).step_by(8).any(|x| {
+                        app.hit_test_page_element_for_test(tab_id, x as f32, y as f32)
+                            .and_then(|hit| hit.id)
+                            .as_deref()
+                            == Some("name")
+                    })
+                });
+                if page_ready {
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(page_ready, "scale={scale}: 示例页命中快照未就绪");
+
+        for expected_id in ["name", "note", "click"] {
+            let (logical_w, logical_h) = app.content_logical_size();
+            let mut point = None;
+            'scan: for y in (0..logical_h).step_by(8) {
+                for x in (0..logical_w).step_by(8) {
+                    if app
+                        .hit_test_page_element_for_test(tab_id, x as f32, y as f32)
+                        .and_then(|hit| hit.id)
+                        .as_deref()
+                        == Some(expected_id)
+                    {
+                        point = Some((x as f32, y as f32));
+                        break 'scan;
+                    }
+                }
+            }
+            let (doc_x, doc_y) = point.unwrap_or_else(|| panic!("scale={scale}: 示例页控件 #{expected_id} 无法命中"));
+            let (content_x, content_y, _, _) = app.page_content_rect();
+            let physical_x = (content_x + doc_x * scale) as f64;
+            let physical_y = (content_y + doc_y * scale) as f64;
+            app.handle_mouse_move(physical_x, physical_y);
+            app.handle_mouse_click(physical_x, physical_y, true, "Left");
+            // 真实鼠标按下和释放之间通常会有亚像素/小幅抖动；小于拖动阈值仍须激活控件。
+            app.handle_mouse_move(physical_x + 1.0, physical_y + 1.0);
+            app.handle_mouse_click(physical_x + 1.0, physical_y + 1.0, false, "Left");
+
+            assert_eq!(
+                app.page_event_target_for_test(tab_id),
+                Some(match expected_id {
+                    "name" => "#name",
+                    "note" => "#note",
+                    _ => "#click",
+                }),
+                "scale={scale}: 物理坐标点击必须派发给 #{expected_id}"
+            );
+
+            // DPI 只影响坐标换算；IME 语义由同一事件路径处理，一次端到端提交即可。
+            if expected_id == "note" && !ime_verified {
+                let before_input = app.snapshot_seq_for_test(tab_id);
+                app.handle_ime(zero_host_runtime::event::ImeEvent::Commit("中文备注".to_string()));
+                let published = wait_for_snapshot_after(&mut app, tab_id, before_input, true);
+                assert!(published, "scale={scale}: textarea 的中文 IME commit 必须发布新帧");
+                ime_verified = true;
+            }
+        }
+    }
+    assert!(ime_verified, "示例页 textarea 的中文 IME commit 未执行");
 }
 
 /// 验证设置页面生成正确 HTML。

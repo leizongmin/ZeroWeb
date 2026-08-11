@@ -430,6 +430,7 @@ fn hit_test_cache_to_ipc(cache: HitTestCache) -> IpcHitTestCache {
                         tag_name: meta.tag_name,
                         id: meta.id,
                         class_name: meta.class_name,
+                        selector: meta.selector,
                         href: meta.href,
                         src: meta.src,
                     },

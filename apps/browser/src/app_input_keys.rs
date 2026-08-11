@@ -105,7 +105,14 @@ impl BrowserApp {
             }
         }
 
-        if !self.address_bar_focused && key.len() == 1 && !self.ctrl_pressed && !self.cmd_pressed {
+        // 页面获得输入焦点时，非浏览器快捷键的编辑键也应继续传给页面。此前仅转发
+        // 单字符，导致 Backspace、Tab 和 Enter 等表单默认行为永远不会到达渲染端。
+        if !self.address_bar_focused
+            && !self.shell.find_state().is_active()
+            && !self.context_menu.visible
+            && !self.ctrl_pressed
+            && !self.cmd_pressed
+        {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
                 self.tabs.dispatch_key_event(tab_id, event, key, key);

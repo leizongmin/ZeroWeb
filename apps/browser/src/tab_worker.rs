@@ -16,6 +16,11 @@ use crate::tab_scripts;
 use crate::tab_snapshot::TabSnapshot;
 use crate::text_metrics;
 
+fn is_printable_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(c) if !c.is_control()) && chars.next().is_none()
+}
+
 /// 每帧在 worker 内推进加载/渲染的时间预算（毫秒）。
 pub const TAB_WORKER_FRAME_BUDGET_MS: f64 = 8.0;
 
@@ -243,10 +248,30 @@ fn tab_worker_main(
                     code,
                 } => {
                     let html = wv.html_content().to_string();
+                    if event_type == "__zeroweb_insert_text" {
+                        let input_changed = tab_scripts::apply_text_input_default(
+                            &mut wv,
+                            javascript_enabled,
+                            _js_worker.as_ref(),
+                            &selector,
+                            key.as_deref().unwrap_or_default(),
+                            &html,
+                            false,
+                        );
+                        if input_changed {
+                            push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+                        }
+                        let _ = msg_tx.send(TabWorkerMessage::DispatchResult {
+                            dispatch_id,
+                            default_allowed: true,
+                            html_changed: input_changed,
+                        });
+                        continue;
+                    }
                     let detail = if key.is_some() || code.is_some() {
                         Some(zero_engine::DomEventDetail {
-                            key,
-                            code,
+                            key: key.clone(),
+                            code: code.clone(),
                             ..Default::default()
                         })
                     } else {
@@ -261,7 +286,22 @@ fn tab_worker_main(
                         &html,
                         detail.as_ref(),
                     );
-                    if result.html_changed {
+                    let input_changed = result.default_allowed
+                        && event_type == "keydown"
+                        && key
+                            .as_deref()
+                            .is_some_and(|key| is_printable_key(key) || key == "Backspace")
+                        && tab_scripts::apply_text_input_default(
+                            &mut wv,
+                            javascript_enabled,
+                            _js_worker.as_ref(),
+                            &selector,
+                            key.as_deref().unwrap_or_default(),
+                            &html,
+                            key.as_deref() == Some("Backspace"),
+                        );
+                    if result.html_changed || input_changed {
+                        // apply_recorded_mutations 已完成 live DOM 增量渲染。
                         push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
                     }
                     let _ = msg_tx.send(TabWorkerMessage::DispatchResult {

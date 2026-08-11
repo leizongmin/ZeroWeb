@@ -503,6 +503,23 @@ fn paint_input_value_text_renders_value_and_skips_non_text_types() {
 }
 
 #[test]
+fn paint_input_value_centers_text_in_content_box() {
+    let (doc, input) = first_input(r#"<body><input type="text" value="A"></body>"#);
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    let mut box_node = make_box(148.0, 24.0);
+    box_node.node_id = Some(input);
+    box_node.border_top = 1.0;
+    box_node.padding_top = 6.0;
+
+    painter.paint_input_value(&box_node, 10.0, 20.0, &style, &doc);
+
+    assert_eq!(painter.primitives().glyphs[0].x, 10.0);
+    assert_eq!(painter.primitives().glyphs[0].y, 20.0 + 1.0 + 6.0 + 4.0 + 16.0);
+}
+
+#[test]
 fn paint_input_value_non_input_element_skipped() {
     let doc = zero_dom::parse_html("<body><div type=\"submit\" value=\"Send\">x</div></body>");
     let div = doc.get_elements_by_tag_name("div")[0];

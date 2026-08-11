@@ -67,6 +67,32 @@ fn test_webview_load_html_with_css() {
 }
 
 #[test]
+fn form_interaction_fixture_controls_are_hit_testable() {
+    let html = include_str!("../../../../examples/forms/form-interaction-test.html");
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(html, None);
+
+    let mut input_found = false;
+    let mut button_selectors = std::collections::HashSet::new();
+    for y in (0..600).step_by(2) {
+        for x in (0..800).step_by(2) {
+            if let Some(hit) = wv.hit_test_element(x as f32, y as f32) {
+                input_found |= hit.id.as_deref() == Some("name");
+                if hit.tag_name == "button" {
+                    button_selectors.insert(zero_engine::selector_from_element_hit(&hit));
+                }
+            }
+        }
+    }
+    assert!(input_found, "示例页输入框 #name 必须能被坐标命中");
+    assert_eq!(
+        button_selectors.len(),
+        3,
+        "三个按钮必须各自拥有可命中的唯一事件选择器，实际为 {button_selectors:?}"
+    );
+}
+
+#[test]
 fn test_webview_load_html_empty() {
     let mut wv = WebView::new(WebViewConfig::default());
     let result = wv.load_html("", None);

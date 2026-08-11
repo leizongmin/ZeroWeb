@@ -1090,6 +1090,7 @@ mod tests {
         use zero_render_foundation::image_cache::ImageData;
 
         let mut app = BrowserApp::new(RenderMode::Cpu);
+        app.tabs.disable_multiprocess_for_test();
         app.new_tab(None);
         let tab_id = app.shell.active_tab_id().expect("active tab");
 

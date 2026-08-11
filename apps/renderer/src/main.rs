@@ -357,7 +357,7 @@ impl RendererRuntime {
             run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
         // window 'error' + img/link 元素级 load/error。与 browser tab_scripts::PageScriptRunner::finish 对齐，
@@ -528,7 +528,9 @@ impl RendererRuntime {
             page_scripts::tick_observers(&mut ctx)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            // `apply_dom_mutations_and_render` 已在 live DOM 上完成增量渲染；这里只发布
+            // 新快照。再次 reload_html_after_script 会把每个字符重复全量解析/布局一次。
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -550,7 +552,7 @@ impl RendererRuntime {
             page_scripts::apply_text_input(&mut ctx, selector, key)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -571,7 +573,7 @@ impl RendererRuntime {
             page_scripts::apply_text_delete(&mut ctx, selector)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -1174,7 +1176,8 @@ impl RendererRuntime {
             };
             let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {
-                let _ = self.rerender_publish_webview();
+                // 事件回调产生的 mutation 已由 WebView 增量渲染，只需发布新帧。
+                let _ = self.publish_webview(None, true);
             }
             result
         } else {
@@ -1499,6 +1502,19 @@ impl RendererRuntime {
     }
 
     fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
+        let event_type = params.event_type.clone();
+        let key = params.key.clone();
+        if event_type == "__zeroweb_insert_text" {
+            let target = params.selector.unwrap_or_else(|| self.event_target.clone());
+            if !target.is_empty() {
+                self.event_target = target.clone();
+                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
+            }
+            return self.send_with_id(
+                msg_id,
+                IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams { default_allowed: true }),
+            );
+        }
         let detail = if params.key.is_some() || params.code.is_some() {
             Some(DomEventDetail {
                 key: params.key,
@@ -1508,7 +1524,34 @@ impl RendererRuntime {
         } else {
             None
         };
-        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &params.event_type, detail);
+        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &event_type, detail);
+        // 浏览器主进程通过 DispatchDomEvent 转发输入。该路径也必须执行与
+        // KeyboardEvent/MouseEvent 相同的表单默认行为，否则多进程模式下
+        // 点击输入框后无法聚焦、按键也不会更新 value。
+        // https://html.spec.whatwg.org/multipage/input.html#the-input-element
+        if result.default_allowed && event_type == "keydown" {
+            let target = self.event_target.clone();
+            if key.as_deref().is_some_and(is_printable_key) {
+                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
+            } else if key.as_deref() == Some("Backspace") {
+                let _ = self.apply_text_delete_at(&target);
+            }
+        } else if result.default_allowed && event_type == "click" {
+            let target = self.event_target.clone();
+            if self.focus_target.as_deref() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_if_text_input(&target)?;
+            }
+            if zero_engine::is_submit_button(&self.cached_html, &target) {
+                let _ = self.submit_form_on_click_at(&target);
+            } else if zero_engine::is_checkbox(&self.cached_html, &target) {
+                let _ = self.toggle_checkbox_at(&target);
+            } else if zero_engine::is_radio(&self.cached_html, &target) {
+                let _ = self.toggle_radio_at(&target);
+            } else if zero_engine::is_reset_button(&self.cached_html, &target) {
+                let _ = self.reset_form_on_click_at(&target);
+            }
+        }
         self.send_with_id(
             msg_id,
             IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams {

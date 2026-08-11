@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
+use zero_protocol::message::DispatchDomEventParams;
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
@@ -92,6 +93,12 @@ impl TabManager {
     /// 是否使用多进程后端。
     pub fn is_multiprocess(&self) -> bool {
         self.process_backend.is_some()
+    }
+
+    /// 测试用：显式选择进程内 legacy 渲染路径，避免测试依赖全局环境变量。
+    #[cfg(test)]
+    pub fn disable_multiprocess_for_test(&mut self) {
+        self.process_backend = None;
     }
 
     /// 显式终止所有渲染子进程。
@@ -438,10 +445,14 @@ impl TabManager {
     ///
     /// `on_allowed` 在 `default_allowed = true` 时由后续 poll 触发；用于把链接导航等默认动作
     /// 延迟到事件回执确认之后。仿 Chrome：导航不会先于 click handler 的 `preventDefault`。
+    // 坐标、事件详情和默认动作分别属于不同边界，保持显式参数以避免为热路径分配临时对象。
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_dom_event_async(
         &mut self,
         tab_id: TabId,
-        selector: &str,
+        selector: Option<&str>,
+        x: f32,
+        y: f32,
         event_type: &str,
         detail: Option<DomEventDetail>,
         on_allowed: Option<PendingTabAction>,
@@ -459,9 +470,20 @@ impl TabManager {
         let code = detail.as_ref().and_then(|d| d.code.clone());
 
         let sent = if let Some(ref mut backend) = self.process_backend {
-            backend.dispatch_dom_event_fire_and_forget(tab_id, dispatch_id, Some(selector), event_type, key, code);
+            backend.dispatch_dom_event_fire_and_forget(
+                tab_id,
+                dispatch_id,
+                DispatchDomEventParams {
+                    selector: selector.map(str::to_string),
+                    x,
+                    y,
+                    event_type: event_type.to_string(),
+                    key,
+                    code,
+                },
+            );
             true
-        } else if let Some(worker) = self.workers.get(&tab_id) {
+        } else if let (Some(worker), Some(selector)) = (self.workers.get(&tab_id), selector) {
             worker.send(TabWorkerCommand::DispatchDomEvent {
                 dispatch_id,
                 selector: selector.to_string(),
@@ -482,29 +504,56 @@ impl TabManager {
             return;
         }
 
-        self.event_targets.insert(tab_id, selector.to_string());
+        if let Some(selector) = selector {
+            self.event_targets.insert(tab_id, selector.to_string());
+        }
         self.pending_dispatch
             .insert(dispatch_id, PendingDispatch { tab_id, on_allowed });
     }
 
     /// 向页面元素派发 DOM 事件（无默认动作）。
     pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) {
-        self.dispatch_dom_event_async(tab_id, selector, event_type, None, None);
+        self.dispatch_dom_event_async(tab_id, Some(selector), 0.0, 0.0, event_type, None, None);
     }
 
     /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
     pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str) {
-        let selector = self
-            .event_targets
-            .get(&tab_id)
-            .cloned()
-            .unwrap_or_else(|| "body".to_string());
         let detail = DomEventDetail {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
             ..Default::default()
         };
-        self.dispatch_dom_event_async(tab_id, &selector, event_type, Some(detail), None);
+        if let Some(selector) = self.event_targets.get(&tab_id).cloned() {
+            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, event_type, Some(detail), None);
+        } else if self.process_backend.is_some() {
+            // 指针事件曾因浏览器侧命中缓存缺失而由渲染进程命中时，保留渲染进程
+            // 已建立的事件目标，而不是用 body 覆盖它。
+            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), None);
+        } else {
+            self.dispatch_dom_event_async(tab_id, Some("body"), 0.0, 0.0, event_type, Some(detail), None);
+        }
+    }
+
+    /// 将输入法一次提交的文本批量写入当前页面文本控件。
+    pub fn dispatch_text_input(&mut self, tab_id: TabId, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let detail = DomEventDetail {
+            key: Some(text.to_string()),
+            code: Some("Process".to_string()),
+            ..Default::default()
+        };
+        let selector = self.event_targets.get(&tab_id).cloned();
+        self.dispatch_dom_event_async(
+            tab_id,
+            selector.as_deref(),
+            0.0,
+            0.0,
+            "__zeroweb_insert_text",
+            Some(detail),
+            None,
+        );
     }
 
     /// 处理页面点击释放：异步派发 mouseup + click。
@@ -514,13 +563,18 @@ impl TabManager {
     /// `background_tab` = Ctrl/Cmd+点击 → 后台新标签打开。
     pub fn dispatch_page_click(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32, background_tab: bool) {
         let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) else {
+            // https://w3c.github.io/uievents/#event-type-click
+            // 合成器帧的浏览器侧命中缓存尚未就绪时，仍须把实际坐标交给渲染进程，
+            // 否则原生控件会因缓存时序而完全不可点击。
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, None);
             return;
         };
         let selector = selector_from_element_hit(&hit);
         self.event_targets.insert(tab_id, selector.clone());
 
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
-        self.dispatch_dom_event_async(tab_id, &selector, "mouseup", None, None);
+        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, None);
 
         let on_allowed = self.hit_test_link(tab_id, doc_x, doc_y).map(|href| {
             if background_tab {
@@ -529,7 +583,7 @@ impl TabManager {
                 PendingTabAction::NavigateActiveTab(href)
             }
         });
-        self.dispatch_dom_event_async(tab_id, &selector, "click", None, on_allowed);
+        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "click", None, on_allowed);
     }
 
     /// 处理页面按下：异步派发 mousedown。
@@ -537,7 +591,11 @@ impl TabManager {
         if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
             let selector = selector_from_element_hit(&hit);
             self.event_targets.insert(tab_id, selector.clone());
-            self.dispatch_dom_event_async(tab_id, &selector, "mousedown", None, None);
+            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, None);
+        } else {
+            // https://w3c.github.io/uievents/#event-type-mousedown
+            // 与 click 一致：命中缓存缺失不能阻断真实的页面指针事件。
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, None);
         }
     }
 
@@ -555,6 +613,18 @@ impl TabManager {
     /// 滚动 blit 据此失效保留帧缓冲。
     pub fn snapshot_seq(&self, tab_id: TabId) -> u64 {
         self.snapshot_seq.get(&tab_id).copied().unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub fn clear_hit_test_for_test(&mut self, tab_id: TabId) {
+        if let Some(snapshot) = self.snapshots.get_mut(&tab_id) {
+            snapshot.hit_test = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn event_target_for_test(&self, tab_id: TabId) -> Option<&str> {
+        self.event_targets.get(&tab_id).map(String::as_str)
     }
 
     /// Tab 是否仍在加载。

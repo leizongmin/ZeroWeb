@@ -536,6 +536,9 @@ pub struct IpcHitTestNodeMeta {
     pub id: Option<String>,
     /// `class` 属性。
     pub class_name: Option<String>,
+    /// 在文档中唯一定位该元素的选择器。
+    #[serde(default)]
+    pub selector: String,
     /// 链接 `href`。
     pub href: Option<String>,
     /// 图片 `src`（仅 `img` 元素，绝对化后）。

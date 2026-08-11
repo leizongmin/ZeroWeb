@@ -965,6 +965,44 @@ impl BrowserApp {
         self.load_webview_html_unlocked(tab_id, html, css);
     }
 
+    #[cfg(test)]
+    pub fn load_webview_html_without_wait_for_test(&mut self, tab_id: TabId, html: &str, css: Option<&str>) {
+        self.tabs.ensure_tab(tab_id);
+        self.sync_webview_viewport();
+        self.tabs.load_html(tab_id, html, css, None);
+    }
+
+    /// 测试用：读取标签页最近一次渲染快照的序号。
+    #[cfg(test)]
+    pub fn snapshot_seq_for_test(&self, tab_id: TabId) -> u64 {
+        self.tabs.snapshot_seq(tab_id)
+    }
+
+    /// 测试用：以 GPU/合成器路径轮询渲染进程。
+    #[cfg(test)]
+    pub fn poll_tab_fetch_with_gpu_present_for_test(&mut self) {
+        if self.tabs.poll(self.shell.active_tab_id(), true) {
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 测试用：读取页面元素命中结果。
+    #[cfg(test)]
+    pub fn hit_test_page_element_for_test(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
+        self.tabs.hit_test_element(tab_id, x, y)
+    }
+
+    /// 测试用：模拟合成器帧到达前浏览器侧命中缓存缺失。
+    #[cfg(test)]
+    pub fn clear_page_hit_test_for_test(&mut self, tab_id: TabId) {
+        self.tabs.clear_hit_test_for_test(tab_id);
+    }
+
+    #[cfg(test)]
+    pub fn page_event_target_for_test(&self, tab_id: TabId) -> Option<&str> {
+        self.tabs.event_target_for_test(tab_id)
+    }
+
     /// 测试用：同步视口并等待 worker 快照更新。
     #[cfg(test)]
     pub fn sync_webview_viewport_and_poll(&mut self, tab_id: TabId) {

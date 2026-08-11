@@ -60,6 +60,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
                     tag_name: "body".into(),
                     id: None,
                     class_name: None,
+                    selector: "body".into(),
                     href: None,
                     src: None,
                 },

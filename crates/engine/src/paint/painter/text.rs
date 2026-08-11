@@ -220,7 +220,10 @@ impl super::Painter {
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
-        let baseline_y = content_y + font_size;
+        // CSS inline content uses the control's line box. Vertically center the
+        // font box inside that content box instead of pinning it to the top.
+        // https://drafts.csswg.org/css-inline-3/#line-height-property
+        let baseline_y = content_y + (box_node.content_height - font_size).max(0.0) / 2.0 + font_size;
 
         // 居中按钮标签：先测总宽再定起始 x。
         let total_w: f32 = label

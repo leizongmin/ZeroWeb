@@ -691,6 +691,95 @@ mod tests {
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
     }
 
+    #[test]
+    fn form_interaction_fixture_updates_input_value_and_result_text() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let mut worker = RendererJsWorker::spawn(144);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+        assert!(apply_text_input(&mut ctx, "#name", "A"));
+        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "A");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "输入事件：A");
+
+        assert!(apply_text_input(&mut ctx, "#name", "中文"));
+        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "A中文");
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "输入事件：A中文"
+        );
+
+        assert!(apply_text_input(&mut ctx, "#note", "第二个输入框"));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "第二个输入框");
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn form_interaction_fixture_runs_button_click_handler() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let mut worker = RendererJsWorker::spawn(145);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+        let result = dispatch_dom_event(&mut ctx, true, "#click", "click", None);
+        assert!(result.html_changed);
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "普通按钮 click 事件已触发。"
+        );
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn form_interaction_fixture_dispatches_idless_reset_and_submit_buttons() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let selectors = zero_engine::query_all_selector_list(html, "button")
+            .split('|')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert_eq!(selectors.len(), 3);
+        assert_ne!(selectors[1], selectors[2]);
+
+        let mut worker = RendererJsWorker::spawn(146);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        assert!(apply_reset_on_click(&mut ctx, &selectors[1]));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "表单已重置。");
+        let submit = apply_submit_on_click(&mut ctx, &selectors[2]);
+        assert!(submit.html_changed);
+        assert!(!submit.default_allowed);
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "提交事件已触发（已阻止导航）。"
+        );
+
+        worker.shutdown();
+    }
+
     /// R2941 mirror：finish_page_load 派发 DOMContentLoaded + load。inline 脚本注册 window listener，
     /// run_page_scripts 执行注册，finish_page_load 派发——listener 触发（analytics onload / jQuery ready）。
     #[test]
