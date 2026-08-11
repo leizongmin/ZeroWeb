@@ -1432,6 +1432,55 @@ fn render_with_dom_mutations_paint_only_keeps_layout() {
     let _ = result;
 }
 
+/// 表单当前值只影响控件内部绘制时，应复用已有样式与布局。
+#[test]
+fn render_with_dom_mutations_input_value_only_paints() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><input id="name" value="old"></body></html>"#;
+    let initial = pipeline.render_html(html, "");
+    assert_eq!(initial.timings.parse_count, 1);
+    assert_eq!(initial.timings.style_count, 1);
+    assert_eq!(initial.timings.layout_count, 1);
+    assert_eq!(initial.timings.paint_count, 1);
+
+    let mutation = crate::js_dom_bridge::DomMutation::SetAttr {
+        selector: "#name".to_string(),
+        name: "value".to_string(),
+        value: "new value".to_string(),
+    };
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("value mutation applied");
+
+    assert!(snapshot.contains("value=\"new value\""), "snapshot: {snapshot}");
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    assert_eq!(result.timings.paint_count, 1);
+}
+
+/// `[value]` 选择器会让当前值影响样式，必须保守退回样式与布局计算。
+#[test]
+fn render_with_dom_mutations_input_value_selector_falls_back() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><head><style>input[value="new"] { width: 240px; }</style></head><body><input id="name" value="old"></body></html>"#;
+    let _ = pipeline.render_html(html, "");
+
+    let mutation = crate::js_dom_bridge::DomMutation::SetAttr {
+        selector: "#name".to_string(),
+        name: "value".to_string(),
+        value: "new".to_string(),
+    };
+    let (result, _, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("value mutation applied");
+
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 1);
+    assert_eq!(result.timings.layout_count, 1);
+    assert_eq!(result.timings.paint_count, 1);
+}
+
 /// paint-only 白名单：布局属性（width）不在白名单 → 走全量布局（布局变化可见）。
 #[test]
 fn render_with_dom_mutations_layout_prop_recomputes_layout() {

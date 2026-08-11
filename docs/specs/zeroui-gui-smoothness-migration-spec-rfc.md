@@ -207,7 +207,8 @@ winit key/IME/pointer
 | 里程碑 | 状态 | 自动验证 |
 |---|---|---|
 | M0 | 门禁通过，待阶段提交 | 真实 renderer 多控件交互、IME Commit、1.0～2.0 DPI、CPU/GPU 快照、全工作区测试与 clippy |
-| M1～M5 | 待实施 | 按下列顺序推进 |
+| M1 | 进行中 | 已完成选区感知编辑、Unicode 退格、管线阶段计数与固定尺寸 input value-only 的 paint-only 路径；retained Rust 状态仍在接线 |
+| M2～M5 | 待实施 | 按下列顺序推进 |
 
 ### M0：交互正确性基线
 

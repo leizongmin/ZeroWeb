@@ -8,7 +8,7 @@ use std::time::Instant;
 use slotmap::Key;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
-use zero_dom::{Document, NodeId};
+use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::display_list::DisplayList;
@@ -189,6 +189,14 @@ pub struct PipelineTimings {
     pub paint_ms: f64,
     /// 总耗时（毫秒）。
     pub total_ms: f64,
+    /// 本次渲染执行 HTML 解析的次数。
+    pub parse_count: u32,
+    /// 本次渲染执行样式计算的次数。
+    pub style_count: u32,
+    /// 本次渲染执行布局计算的次数。
+    pub layout_count: u32,
+    /// 本次渲染执行绘制的次数。
+    pub paint_count: u32,
 }
 
 /// 渲染结果 — 包含 display list、布局、计时和统计信息。
@@ -686,6 +694,10 @@ impl RenderPipeline {
                 layout_ms,
                 paint_ms,
                 total_ms,
+                parse_count: 1,
+                style_count: 1,
+                layout_count: 1,
+                paint_count: 1,
             },
             stats,
         )
@@ -814,6 +826,7 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+        self.cached_styles = styles;
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
 
@@ -836,6 +849,10 @@ impl RenderPipeline {
                 layout_ms,
                 paint_ms,
                 total_ms,
+                parse_count: 1,
+                style_count: 1,
+                layout_count: 1,
+                paint_count: 1,
             },
             stats,
         )
@@ -964,6 +981,7 @@ impl RenderPipeline {
 
     /// 在已有 DOM 缓存上重绘整个视口（resize 等场景，走 `incremental_paint`）。
     pub fn repaint_cached_viewport(&mut self, css: &str) -> Option<RenderResult> {
+        let total_start = Instant::now();
         let doc_rc = self.cached_doc.take()?;
         let dirty = zero_render_foundation::geometry::Rect::new(0.0, 0.0, self.viewport_width, self.viewport_height);
         // CSS 解析缓存：外部 css 文本相同（cached_doc 未变——render_html 族替换时已置
@@ -994,7 +1012,13 @@ impl RenderPipeline {
             primitives,
             dirty_rects,
             layout,
-            PipelineTimings::default(),
+            PipelineTimings {
+                total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+                style_count: 1,
+                layout_count: 1,
+                paint_count: 1,
+                ..Default::default()
+            },
             RenderStats::default(),
         ))
     }
@@ -1029,6 +1053,11 @@ impl RenderPipeline {
         //    复用 cached_layout 只重 style + paint（省 100% 布局）
         // 3. 其他（布局属性/结构变更）→ 全量布局（taffy style 单节点更新为后续专项）
         let all_text_only = mutations.iter().all(Self::is_text_only_mutation);
+        let all_form_value_only = !all_text_only
+            && mutations
+                .iter()
+                .all(|mutation| Self::is_form_value_only_mutation(&doc_rc.borrow(), mutation))
+            && !Self::styles_depend_on_form_value(&html_snapshot, css);
         let all_paint_only = !all_text_only && mutations.iter().all(Self::is_paint_only_mutation);
         // 增量分支：borrow RefCell（&mut self 方法与 Ref borrow 不冲突——后者借堆 RefCell 非字段），
         // 工作后 drop borrow 再把 doc_rc 放回；repaint 分支：先放回 doc_rc 再 repaint（它 take 自字段）。
@@ -1036,6 +1065,13 @@ impl RenderPipeline {
             let r = {
                 let doc = doc_rc.borrow();
                 self.incremental_paint_after_text_mutations(&doc, mutations, css)
+            };
+            self.cached_doc = Some(doc_rc);
+            r
+        } else if all_form_value_only {
+            let r = {
+                let doc = doc_rc.borrow();
+                self.paint_form_value_mutations(&doc, mutations)
             };
             self.cached_doc = Some(doc_rc);
             r
@@ -1058,6 +1094,97 @@ impl RenderPipeline {
     /// 在 pipeline 侧定位节点，走全量）。
     fn is_text_only_mutation(m: &crate::js_dom_bridge::DomMutation) -> bool {
         matches!(m, crate::js_dom_bridge::DomMutation::SetText { .. })
+    }
+
+    /// 当前值不改变文本输入框的外部几何；没有依赖 `value` 的选择器时可只重绘。
+    fn is_form_value_only_mutation(doc: &Document, mutation: &crate::js_dom_bridge::DomMutation) -> bool {
+        let crate::js_dom_bridge::DomMutation::SetAttr { selector, name, .. } = mutation else {
+            return false;
+        };
+        if !name.eq_ignore_ascii_case("value") {
+            return false;
+        }
+        let Some(node_id) = doc.query_selector(doc.root(), selector.trim()) else {
+            return false;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return false;
+        };
+        let NodeKind::Element(element) = &node.kind else {
+            return false;
+        };
+        if !element.local_name().eq_ignore_ascii_case("input") {
+            return false;
+        }
+        matches!(
+            element
+                .get_attribute("type")
+                .as_deref()
+                .unwrap_or("")
+                .to_ascii_lowercase()
+                .as_str(),
+            "" | "text" | "search" | "url" | "tel" | "email" | "password"
+        )
+    }
+
+    fn styles_depend_on_form_value(html: &str, css: &str) -> bool {
+        let style_text = format!("{}\n{}", css, extract_html_style_text(html)).to_ascii_lowercase();
+        style_text.contains("[value")
+    }
+
+    fn paint_form_value_mutations(
+        &mut self,
+        doc: &Document,
+        mutations: &[crate::js_dom_bridge::DomMutation],
+    ) -> Option<RenderResult> {
+        let total_start = Instant::now();
+        if self.cached_styles.is_empty() {
+            return None;
+        }
+        let changed: Vec<NodeId> = mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                crate::js_dom_bridge::DomMutation::SetAttr { selector, .. } => {
+                    doc.query_selector(doc.root(), selector.trim())
+                }
+                _ => None,
+            })
+            .collect();
+        if changed.is_empty() {
+            return None;
+        }
+        let layout = self.cached_layout.as_ref()?;
+        let paint_start = Instant::now();
+        let mut painter = Painter::new();
+        painter.skip_indicators = self.skip_indicators;
+        painter.image_sizes.clone_from(&self.image_sizes);
+        painter.set_font_resolver(self.font_resolver.clone());
+        painter.set_document_url(self.document_url.as_deref());
+        painter.viewport_w = self.viewport_width;
+        painter.viewport_h = self.viewport_height;
+        painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
+        painter.paint(&layout.root, &self.cached_styles, Some(doc));
+        let primitives = painter.into_primitives();
+        let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
+        let dirty_rects =
+            layout_dirty_rects_for_nodes(&layout.root, &changed, self.viewport_width, self.viewport_height);
+        Some(make_render_result(
+            primitives,
+            dirty_rects,
+            LayoutResult {
+                root: layout.root.clone(),
+                viewport_width: layout.viewport_width,
+                viewport_height: layout.viewport_height,
+                paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
+            },
+            PipelineTimings {
+                paint_ms,
+                total_ms: total_start.elapsed().as_secs_f64() * 1000.0,
+                paint_count: 1,
+                ..Default::default()
+            },
+            RenderStats::default(),
+        ))
     }
 
     /// mutation 是否只改布局无关（paint-only）样式——布局不变，可复用 cached_layout。
@@ -1156,7 +1283,11 @@ impl RenderPipeline {
                 viewport_height: layout.viewport_height,
                 paint_skip_node_ids: layout.paint_skip_node_ids.clone(),
             },
-            PipelineTimings::default(),
+            PipelineTimings {
+                style_count: 1,
+                paint_count: 1,
+                ..Default::default()
+            },
             RenderStats::default(),
         ))
     }
@@ -1231,7 +1362,12 @@ impl RenderPipeline {
             primitives,
             dirty_rects,
             layout,
-            PipelineTimings::default(),
+            PipelineTimings {
+                style_count: 1,
+                layout_count: 1,
+                paint_count: 1,
+                ..Default::default()
+            },
             RenderStats::default(),
         ))
     }

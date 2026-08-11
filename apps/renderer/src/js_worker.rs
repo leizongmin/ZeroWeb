@@ -2752,6 +2752,57 @@ mod tests {
     }
 
     #[test]
+    fn renderer_js_worker_form_text_edit_respects_selection() {
+        let mut worker = RendererJsWorker::spawn(32);
+        worker.set_dom_snapshot("<html><body><input id='i' value='abcd'></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var el = document.querySelector('#i');\
+                 el.setSelectionRange(1, 3);\
+                 __zw_text_input('#i', '中');\
+                 globalThis.__edit = el.value + '|' + el.selectionStart + ':' + el.selectionEnd;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__edit)").unwrap(),
+            "a中d|2:2"
+        );
+
+        worker
+            .execute_script_direct(
+                "var el = document.querySelector('#i');\
+                 el.setSelectionRange(1, 1);\
+                 __zw_text_delete('#i');\
+                 globalThis.__delete = el.value + '|' + el.selectionStart + ':' + el.selectionEnd;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__delete)").unwrap(),
+            "中d|0:0"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_form_backspace_deletes_one_unicode_scalar() {
+        let mut worker = RendererJsWorker::spawn(33);
+        worker.set_dom_snapshot("<html><body><input id='i' value='A😀中'></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var el = document.querySelector('#i');\
+                 el.setSelectionRange(3, 3);\
+                 __zw_text_delete('#i');\
+                 globalThis.__unicode = el.value + '|' + el.selectionStart + ':' + el.selectionEnd;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__unicode)").unwrap(),
+            "A中|1:1"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
     fn renderer_js_worker_form_submit_dispatches_submit_event() {
         // P1a form submit：apply_submit_on_enter 经 script_dispatch_dom_event(form_sel,"submit")
         // → 即 `__zw_dispatch_event(form_sel, 'submit', null)`。本 driving test 验证 submit 事件
