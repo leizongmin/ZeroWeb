@@ -1083,3 +1083,72 @@ fn test_html_dialog_element_api_r3290() {
     assert_eq!(sandbox.execute("globalThis.__d2AfterShow").unwrap().value, "true", "show() 后 open 保持 true（切非模态）");
     assert_eq!(sandbox.execute("globalThis.__d2Closed").unwrap().value, "1", "切非模态后 close() 仍派 close 事件");
 }
+
+#[test]
+fn test_canvas_round_rect_and_hit_test_r3291() {
+    // R3291：Canvas 2D roundRect + isPointInPath + isPointInStroke JS 暴露。
+    // Rust 后端已存在（Path2D::round_rect + CanvasContext::is_point_in_path/is_point_in_stroke），但无 host op
+    // 派发 + 无 JS shim 暴露 → `ctx.roundRect(...)` / `ctx.isPointInPath(x,y)` 静默 no-op（_ => "ok"）。
+    // 本切片接通：CanvasContext::round_rect（变换点 + RoundRect 命令）+ host op（roundRect/isPointInPath/
+    // isPointInStroke）+ JS shim ctx.roundRect（radii number|array 归一）/ isPointInPath / isPointInStroke。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+    // headless：roundRect 角圆 flattener best-effort 退化矩形（rendering 已知简化），几何/命中测试仍正确。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='200' height='200'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① roundRect 不抛（方法存在 + 调用成功），radii 三形式（number / array / 缺省）均不抛。
+    sandbox.execute(
+        "var cv = document.getElementById('cv');\
+         var ctx = cv.getContext('2d');\
+         globalThis.__hasRoundRect = (typeof ctx.roundRect === 'function');\
+         ctx.beginPath();\
+         var threw = '';\
+         try {\
+           ctx.roundRect(10, 10, 100, 80, 5);\
+           ctx.roundRect(10, 10, 100, 80, [5, 10, 15, 20]);\
+           ctx.roundRect(10, 10, 100, 80);\
+           ctx.roundRect(10, 10, 100, 80, [5, 10]);\
+         } catch(e){ threw = e.name; }\
+         globalThis.__roundRectThrew = threw;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasRoundRect").unwrap().value, "true", "ctx.roundRect 为 function（此前缺失）");
+    assert_eq!(sandbox.execute("globalThis.__roundRectThrew").unwrap().value, "", "roundRect 三形式（number/array/缺省）均不抛");
+
+    // ② isPointInPath：rect(10,10,100,80) 路径内点 (50,50) → true；外点 (5,5) → false；无路径默认 false。
+    //    roundRect 退化矩形几何 = rect，命中测试仍正确（内/外判定）。
+    sandbox.execute(
+        "ctx.beginPath();\
+         ctx.roundRect(10, 10, 100, 80, 10);\
+         globalThis.__hasPip = (typeof ctx.isPointInPath === 'function');\
+         globalThis.__pipInside = String(ctx.isPointInPath(50, 50));\
+         globalThis.__pipOutside = String(ctx.isPointInPath(5, 5));\
+         ctx.beginPath();\
+         globalThis.__pipEmpty = String(ctx.isPointInPath(50, 50));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasPip").unwrap().value, "true", "ctx.isPointInPath 为 function（此前缺失）");
+    assert_eq!(sandbox.execute("globalThis.__pipInside").unwrap().value, "true", "isPointInPath(内点) → true（路径区内）");
+    assert_eq!(sandbox.execute("globalThis.__pipOutside").unwrap().value, "false", "isPointInPath(外点) → false（路径区外）");
+    assert_eq!(sandbox.execute("globalThis.__pipEmpty").unwrap().value, "false", "isPointInPath(空路径) → false");
+
+    // ③ isPointInStroke：rect 路径描边（lineWidth 8）半宽内点 → true；远离描边点 → false。
+    sandbox.execute(
+        "ctx.beginPath();\
+         ctx.roundRect(10, 10, 100, 80, 0);\
+         ctx.lineWidth = 8;\
+         globalThis.__hasPis = (typeof ctx.isPointInStroke === 'function');\
+         globalThis.__pisOnEdge = String(ctx.isPointInStroke(10, 10));\
+         globalThis.__pisFar = String(ctx.isPointInStroke(200, 200));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasPis").unwrap().value, "true", "ctx.isPointInStroke 为 function（此前缺失）");
+    assert_eq!(sandbox.execute("globalThis.__pisOnEdge").unwrap().value, "true", "isPointInStroke(描边上的点) → true（lineWidth 半宽内）");
+    assert_eq!(sandbox.execute("globalThis.__pisFar").unwrap().value, "false", "isPointInStroke(远离描边的点) → false");
+}

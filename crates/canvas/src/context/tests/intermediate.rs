@@ -1348,3 +1348,30 @@ fn test_is_point_in_stroke_thick_line() {
     // 点 (50, 65) 距线段 15 > 10
     assert!(!ctx.is_point_in_stroke(50.0, 65.0));
 }
+
+/// R3291：`CanvasContext::round_rect` 添加圆角矩形子路径（变换点 + RoundRect 命令）。
+/// headless flattener 退化矩形几何，故命中测试与 rect 等价（内点 true / 外点 false）。
+#[test]
+fn test_context_round_rect_hit_test_r3291() {
+    let mut ctx = CanvasContext::new(200, 200);
+    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![10.0]);
+    assert!(ctx.is_point_in_path(50.0, 50.0), "round_rect 内点在路径内");
+    assert!(!ctx.is_point_in_path(5.0, 5.0), "round_rect 外点不在路径内");
+}
+
+/// R3291：`round_rect` 应用当前变换矩阵（与 arc/rect 同语义）——translate(20,0) 后 round_rect(10,..)
+/// 矩形 x 范围 [30,130]，未变换则 [10,110]。验证变换经 transform_point 应用。
+#[test]
+fn test_context_round_rect_applies_transform_r3291() {
+    let mut ctx = CanvasContext::new(200, 200);
+    ctx.translate(20.0, 0.0);
+    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![5.0]);
+    assert!(
+        ctx.is_point_in_path(80.0, 50.0),
+        "translate(20,0) 后 round_rect 中心(80,50) 在路径内"
+    );
+    assert!(
+        !ctx.is_point_in_path(25.0, 50.0),
+        "变换后 x=25 在矩形外（矩形 [30,130]）"
+    );
+}

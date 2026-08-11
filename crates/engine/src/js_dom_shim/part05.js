@@ -930,6 +930,39 @@
     ctx.rect = function (x, y, w, hh) {
       __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
     };
+    // R3291：Canvas 2D roundRect（HTML Canvas `dom-context-2d-api` roundRect）。radii 可为 number 或
+    // array[number]（spec：单值/两值 [tl&br, tr&bl]/四值 [tl,tr,br,bl]），归一为逗号分隔串透传 host
+    //（canvas crate best-effort 退化矩形——角圆为 rendering 已知简化，几何/命中测试正确）。invalid radii
+    //（负值/NaN）spec 抛 RangeError，lenient 过滤（headless 简化，避免中断脚本）。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+    ctx.roundRect = function (x, y, w, hh, radii) {
+      var r;
+      if (radii == null) {
+        r = '0';
+      } else if (typeof radii === 'number') {
+        r = String(radii);
+      } else if (typeof radii === 'object' && radii !== null && typeof radii.length === 'number') {
+        var parts = [];
+        for (var i = 0; i < radii.length; i++) {
+          var v = +radii[i];
+          if (!isNaN(v) && v >= 0) parts.push(String(v));
+        }
+        r = parts.length ? parts.join(',') : '0';
+      } else {
+        r = '0';
+      }
+      __zw_canvas_op(h, 'roundRect', String(x), String(y), String(w), String(hh), r);
+    };
+    // R3291：Canvas 2D isPointInPath / isPointInStroke（hit-test 点在路径填充/描边区内）。返 bool。
+    // spec isPointInPath(x,y[,fillRule])，fillRule 透传但 canvas crate 现用奇偶规则。无 ctx → false。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
+    ctx.isPointInPath = function (x, y /*, fillRule */) {
+      return __zw_canvas_op(h, 'isPointInPath', String(x), String(y)) === '1';
+    };
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
+    ctx.isPointInStroke = function (x, y /*, fillRule */) {
+      return __zw_canvas_op(h, 'isPointInStroke', String(x), String(y)) === '1';
+    };
     ctx.clip = function () { __zw_canvas_op(h, 'clip'); };
     ctx.save = function () { __zw_canvas_op(h, 'save'); };
     ctx.restore = function () { __zw_canvas_op(h, 'restore'); };
