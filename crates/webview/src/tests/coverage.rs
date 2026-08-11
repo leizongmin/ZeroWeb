@@ -1279,3 +1279,81 @@ fn test_native_custom_element_e2e_interface_r3270() {
         "native_dom e2e: children.length（R3268 接口）"
     );
 }
+
+// ── R3274：upgrade 时对 observedAttributes 派发初始 attributeChangedCallback（spec custom-elements-upgrades）──
+// 元素升级前已设 observed 属性时，spec 要求升级时派发 attributeChangedCallback(name, null, currentValue)。
+// 旧 _ceUpgradeNode（R3269）仅 setPrototypeOf + connectedCallback，**不**派发初始 attr change → 组件无法响应
+// 升级前已设的属性（lit/stencil 等框架依赖此初始化路径）。R3274 在升级 setPrototypeOf 后、connectedCallback 前，
+// 对 ctor.observedAttributes 每项派发初始 attr change。本测验：native 元素 pre-set observed 属性 →
+// customElements.upgrade(el) → attributeChangedCallback('foo', null, 'bar') 触发。
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_upgrade_attr_change_r3274() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    // native 元素（__zw_native_create_element，未注册 tag → 普通 native 元素）pre-set observed 属性 'foo=bar'，
+    // define 后 upgrade(el) → spec 派发 attributeChangedCallback('foo', null, 'bar')。
+    wv.load_html(
+        "<html><body>\
+         <script>\
+           globalThis.__attrLog = [];\
+           class UpEl extends HTMLElement {\
+             constructor(){ super(); }\
+             static get observedAttributes(){ return ['foo']; }\
+             attributeChangedCallback(n, o, v){ globalThis.__attrLog.push(n+'/'+o+'/'+v); }\
+           }\
+           const el = __zw_native_create_element('up-el');\
+           el.setAttribute('foo', 'bar');\
+           customElements.define('up-el', UpEl);\
+           customElements.upgrade(el);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(
+        r.is_ok(),
+        "native_dom CE upgrade attr-change script 应无异常, got: {:?}",
+        r.err()
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__attrLog.join(','))").unwrap(),
+        "foo/null/bar",
+        "R3274: upgrade(el) 对 pre-set observed 属性 'foo' 派发初始 attributeChangedCallback('foo/null/bar')"
+    );
+}
+
+// R3274 配套：upgrade 时 observedAttributes 为多项 → 每项都派发初始 attr change（spec per-attribute enqueue）。
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_upgrade_attr_change_multi_r3274() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    // 单 pre-set 属性 'a=1'，observedAttributes=['a','b','c'] → upgrade 派发 3 次（a=1 / b=null 未设 / c=null 未设），
+    // 验证 observed 列表每项都派发（非仅 pre-set 项），未设项 value=null。
+    wv.load_html(
+        "<html><body>\
+         <script>\
+           globalThis.__log = [];\
+           class MEl extends HTMLElement {\
+             constructor(){ super(); }\
+             static get observedAttributes(){ return ['a', 'b', 'c']; }\
+             attributeChangedCallback(n, o, v){ globalThis.__log.push(n+'='+(v===null?'null':v)); }\
+           }\
+           const el = __zw_native_create_element('m-el');\
+           el.setAttribute('a', '1');\
+           customElements.define('m-el', MEl);\
+           customElements.upgrade(el);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(
+        r.is_ok(),
+        "native_dom CE multi-attr upgrade script 应无异常, got: {:?}",
+        r.err()
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__log.join(','))").unwrap(),
+        "a=1,b=null,c=null",
+        "R3274: upgrade 对 observedAttributes 每项派发初始 attr change（a=1 pre-set / b,c=null 未设）"
+    );
+}

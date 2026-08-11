@@ -241,6 +241,11 @@
       var entry = _ce_registry[tag.toLowerCase()];
       if (entry && entry.ctor) {
         try { Object.setPrototypeOf(el, entry.ctor.prototype); } catch (_e) {}
+        // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
+        // 元素升级前可能已设属性（parser 建 / createElement + setAttribute 未注册时），升级后组件须能响应
+        // 这些既有属性（lit/stencil 等框架依赖此初始化路径）。spec `custom-elements-upgrades`「upgrade a
+        // custom element」enqueue step。在 connectedCallback 前派发（spec：attr change 先于 connected）。
+        _ceFireInitialAttrChanges(el, entry.ctor);
         // 升级后若已连入 document，触发 connectedCallback（spec：upgrade 已 connected 的元素触发回调）。
         if (_elConnected(el)) {
           var ccb = entry.ctor.prototype && entry.ctor.prototype.connectedCallback;
@@ -258,6 +263,31 @@
   }
   function _ceUpgradeSubtree(root) {
     _ceUpgradeNode(root);
+  }
+  // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
+  // observedAttributes 缺失（ctor 无静态 getter）/ 空 → 无回调。getAttribute 经元素自身方法读（native
+  // getter R3268 或 polyfill Proxy trap）；属性不存在 → value=null（spec 仍 enqueue，best-effort 派发 null
+  // 让组件可初始化）。attributeChangedCallback 缺失 → 不派发（仅 observed 列表存在时）。
+  function _ceFireInitialAttrChanges(el, ctor) {
+    var observed;
+    try {
+      observed = ctor.observedAttributes;
+    } catch (_e) { return; }
+    if (!observed || typeof observed.length !== 'number' || observed.length === 0) return;
+    var proto = ctor.prototype;
+    var acb = proto && proto.attributeChangedCallback;
+    if (typeof acb !== 'function') return;
+    for (var i = 0; i < observed.length; i++) {
+      var name = String(observed[i]);
+      var value = null;
+      try {
+        if (typeof el.getAttribute === 'function') {
+          var v = el.getAttribute(name);
+          value = (v === null || v === undefined) ? null : String(v);
+        }
+      } catch (_e) { value = null; }
+      try { acb.call(el, name, null, value); } catch (_e) {}
+    }
   }
   // 读元素 tagName（小写 local name）——native 元素经 tagName getter（R3268）；polyfill Proxy 经 _realTag。
   function _elTagName(el) {
