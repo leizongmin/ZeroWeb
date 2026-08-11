@@ -292,9 +292,9 @@ impl CanvasContext {
         if vertices.is_empty() {
             return;
         }
-        // 绘制阴影（在形状之前）
+        // 绘制阴影（在形状之前）——R3241：用 stroke 足迹（thick rect + 连接点），非 centerline。
         if self.has_shadow() {
-            self.draw_shadow_path(&vertices);
+            self.draw_shadow_stroke(&vertices, self.line_width);
         }
         let closed = self
             .current_path
@@ -1089,6 +1089,69 @@ impl CanvasContext {
         let rh = (ry1 - ry0) as usize;
         let mut mask = vec![0u8; rw * rh];
         super::raster::rasterize_path_coverage(vertices, &mut mask, rw, rh, rx0, ry0);
+        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        self.composite_shadow_mask(
+            &mask,
+            rx0,
+            ry0,
+            rw,
+            rh,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+            self.shadow_color,
+            self.global_alpha,
+        );
+    }
+
+    /// R3241：为描边绘制阴影——region mask 由 stroke 足迹（每段 thick rect + 连接点方块）构成，
+    /// 非 centerline（旧 stroke() 传 centerline 致粗描边阴影过细）。box blur + composite 同 R3240。
+    fn draw_shadow_stroke(&mut self, vertices: &[f32], line_width: f32) {
+        if vertices.len() < 4 {
+            return;
+        }
+        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        if segments.is_empty() {
+            return;
+        }
+        let half_lw = line_width / 2.0;
+        let radius = if self.shadow_blur > 0.0 {
+            (self.shadow_blur.round() as usize).max(1)
+        } else {
+            0
+        };
+        let pad = radius as f32 + half_lw;
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for s in &segments {
+            min_x = min_x.min(s[0]).min(s[2]);
+            min_y = min_y.min(s[1]).min(s[3]);
+            max_x = max_x.max(s[0]).max(s[2]);
+            max_y = max_y.max(s[1]).max(s[3]);
+        }
+        let cw = self.width as i32;
+        let ch = self.height as i32;
+        let rx0 = ((min_x - pad).floor() as i32).max(0);
+        let ry0 = ((min_y - pad).floor() as i32).max(0);
+        let rx1 = ((max_x + pad).ceil() as i32).min(cw);
+        let ry1 = ((max_y + pad).ceil() as i32).min(ch);
+        if rx1 <= rx0 || ry1 <= ry0 {
+            return;
+        }
+        let rw = (rx1 - rx0) as usize;
+        let rh = (ry1 - ry0) as usize;
+        let mut mask = vec![0u8; rw * rh];
+        // 每段 thick rect（与 blit_stroke_to_pixels 同款 line_segment_rect）。
+        for s in &segments {
+            let r = self.line_segment_rect(s[0], s[1], s[2], s[3], line_width);
+            super::raster::fill_rect_into_mask(&mut mask, rw, rh, rx0, ry0, &r);
+        }
+        // 连接点方块（half_lw 偏移、line_width 边长，与 blit_stroke_to_pixels 一致）。
+        for s in segments.iter().take(segments.len().saturating_sub(1)) {
+            let r = Rect::new(s[2] - half_lw, s[3] - half_lw, line_width, line_width);
+            super::raster::fill_rect_into_mask(&mut mask, rw, rh, rx0, ry0, &r);
+        }
         super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
         self.composite_shadow_mask(
             &mask,

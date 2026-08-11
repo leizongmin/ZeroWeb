@@ -248,6 +248,39 @@ fn shadow_blur_softens_edge_r3240() {
     assert_eq!(shadow_alpha(0.0, false, 25, 15), 0, "blur=0 远处无阴影");
 }
 
+/// R3241：描边阴影须用 stroke 足迹（thick rect + 连接点），非 centerline——
+/// 旧 stroke() 传 centerline 致粗描边阴影过细（仅 centerline offset 的细线）。
+#[test]
+fn stroke_shadow_uses_footprint_r3241() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // 水平粗线 line_width=8 在 y=5（footprint y 1-9），阴影 offset (0,10)（band y 11-19），blur=0 硬边。
+    let mut ctx = CanvasContext::new(30, 30);
+    ctx.set_shadow_color(Color::rgba(0, 0, 0, 200));
+    ctx.set_shadow_offset_y(10.0);
+    ctx.set_shadow_blur(0.0);
+    ctx.set_line_width(8.0);
+    ctx.set_stroke_color(Color::RED);
+    ctx.begin_path();
+    ctx.move_to(5.0, 5.0);
+    ctx.line_to(25.0, 5.0);
+    ctx.stroke();
+
+    // (15,13)：shadow band（11-19）内，但非 centerline-offset 阴影（y=15）独占 → 旧 bug 无阴影。
+    let px = ctx.get_image_data(15, 13, 1, 1);
+    assert!(
+        px.data[3] > 0,
+        "R3241：粗描边阴影须覆盖 band 宽度（非 centerline 细线）——(15,13) 须有阴影"
+    );
+    // band 中心 (15,15)：须有阴影。
+    let center = ctx.get_image_data(15, 15, 1, 1);
+    assert!(center.data[3] > 0, "band 中心须有阴影");
+    // band 外 (15,20)：blur=0 硬边，无阴影。
+    let outside = ctx.get_image_data(15, 20, 1, 1);
+    assert_eq!(outside.data[3], 0, "blur=0 band 外无阴影（硬边）");
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {

@@ -217,6 +217,27 @@ pub(crate) fn box_blur_alpha(buf: &mut [u8], w: usize, h: usize, radius: usize) 
     }
 }
 
+/// R3241：把 canvas 坐标矩形 `rect` 填入 region 局部 mask（覆盖像素写 255）。供 stroke shadow
+/// 足迹（每段 thick rect + 连接点方块）构 mask 用。`ox/oy` 为 region 左上角 canvas 坐标。
+pub(crate) fn fill_rect_into_mask(mask: &mut [u8], rw: usize, rh: usize, ox: i32, oy: i32, rect: &Rect) {
+    let cx_start = rect.left().ceil() as i32;
+    let cy_start = rect.top().ceil() as i32;
+    let cx_end = (rect.right().ceil() as i32) + 1;
+    let cy_end = (rect.bottom().ceil() as i32) + 1;
+    for cy in cy_start..cy_end {
+        let ly = cy - oy;
+        if ly < 0 || (ly as usize) >= rh {
+            continue;
+        }
+        for cx in cx_start..cx_end {
+            let lx = cx - ox;
+            if lx >= 0 && (lx as usize) < rw {
+                mask[(ly as usize) * rw + (lx as usize)] = 255;
+            }
+        }
+    }
+}
+
 /// R3240：把路径顶点（canvas 坐标）扫描线光栅化为 alpha 覆盖 mask（region 局部）——
 /// 覆盖像素写 255，其余 0。`ox/oy` 为 region 左上角 canvas 坐标（mask-local = canvas - origin）。
 pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usize, rh: usize, ox: i32, oy: i32) {
