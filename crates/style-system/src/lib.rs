@@ -825,6 +825,14 @@ impl StyleSystem {
             };
             ua_decl_inputs.push(("display".to_string(), display_str.to_string(), false, (0, 0, 0), None));
         }
+        // R3290：HTMLDialogElement.open 显式覆盖——`<dialog>` 默认 display:none（ua_default_display），
+        // 但 `dialog[open]`（经 show/showModal 或 open 属性）应渲染（HTML UA 样式表 `dialog:not([open]){display:none}`
+        // → 反之 `[open]` 走默认渲染，real browser 实测为 block）。spec：
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-dialog-element-2
+        // 仅当 open 内容属性 present 时注入 display:block（UA 优先级 0,0,0，可被作者样式覆盖）。
+        if tag_name.as_deref() == Some("dialog") && doc.get_attribute(element, "open").is_some() {
+            ua_decl_inputs.push(("display".to_string(), "block".to_string(), false, (0, 0, 0), None));
+        }
 
         // UA 默认样式
         if let Some(ref tag) = tag_name {

@@ -93,6 +93,12 @@
   // DOM 元素 proxy 缺 → `document.getElementById('c').getContext` 抛 TypeError，~29 canvas WPT 用例不可执行）。
   // 导航经 __zw_reset_form_state 清空（per-page）。
   var _zwCanvasCtx = {};
+  // R3290：HTMLDialogElement 模态态追踪（per-element-key → true 即经 showModal 开为模态）。
+  // `_zwTopLayer[key]`（R3071 popover 同集）复用为 top-layer 成员集——dialog.showModal() 与 popover 共享 top-layer
+  // 概念。close() 据本集判是否需移 top-layer（非模态 show() 不入 top-layer，close 仅清 open 属性）。导航经
+  // __zw_reset_form_state 清空（per-page）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  var _zwDialogModal = {};
   // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
   // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
   // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
@@ -150,6 +156,57 @@
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', true))) return;
     delete _zwTopLayer[key];
     _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'open', 'closed', false));
+  }
+  // R3290：HTMLDialogElement.show()——非模态打开。spec「show the dialog」：先清模态态（已在 top-layer 则移除），
+  // 再设 open 内容属性。show/showModal 互斥（real browser：show 后 showModal 关前态，反之亦然）。headless 无真
+  // top-layer paint / ::backdrop / focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态（open 属性 +
+  // 模态态）。connected 校验 headless 无稳健判据 → lenient（real browser：detached 抛 InvalidStateError）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-show
+  function _zwDialogShow(key, sel, handle) {
+    if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
+    _zwSetAttr(key, sel, handle, 'open', '');
+  }
+  // R3290：HTMLDialogElement.showModal()——模态打开。spec「show a modal dialog」：已打开（open 属性 present）→
+  // 抛 InvalidStateError；否则设 open 属性 + 加 top-layer + 标模态态。headless 简化（无 backdrop / focus / inert）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
+  function _zwDialogShowModal(key, sel, handle) {
+    if (_zwDialogHasOpen(sel, handle)) throw new DOMException('showModal: dialog already open', 'InvalidStateError');
+    _zwSetAttr(key, sel, handle, 'open', '');
+    _zwTopLayer[key] = true;
+    _zwDialogModal[key] = true;
+  }
+  // R3290：HTMLDialogElement.close(returnValue)——关闭。spec「close the dialog」：未 open（无 open 属性且非模态态）
+  // → no-op（返 false，不抛）；否则移 open 属性 + 模态态移 top-layer + 清模态态；returnValue 非 undefined → 存；
+  // 排队 'close' 事件（headless 同步派发，spec task 近似——documented）。return true（已关）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+  function _zwDialogClose(key, sel, handle, returnValue) {
+    var wasOpen = _zwDialogHasOpen(sel, handle) || !!_zwDialogModal[key];
+    _zwRemoveAttr(key, sel, handle, 'open');
+    if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
+    if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
+    if (wasOpen) _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
+    return wasOpen;
+  }
+  // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
+  // pending set/remove（show/close 经 __zw_set_attr/__zw_remove_attr 异步入队，纯快照读 stale）。供 showModal
+  // 校验 + close wasOpen 判定共用。
+  function _zwDialogHasOpen(sel, handle) {
+    if (handle) {
+      try { return __zw_has_attr_handle(handle, 'open') === '1'; } catch (_e) { return false; }
+    }
+    return (typeof __zw_has_attr_lw === 'function'
+      ? __zw_has_attr_lw(sel, 'open')
+      : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'open') : '0')) === '1';
+  }
+  // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
+  // 写走常规 __zw_set_attr/__zw_remove_attr 入队）。dialog open 属性专用，与 popover setter 同模式。
+  function _zwSetAttr(key, sel, handle, name, value) {
+    if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, name, value);
+    else if (!handle) __zw_set_attr(sel, name, value);
+  }
+  function _zwRemoveAttr(key, sel, handle, name) {
+    if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
+    else if (!handle && typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, name);
   }
   // R3072：popovertarget 声明式触发——click 的 default action。click 派发后未 preventDefault → 找最近含
   // popovertarget 内容属性的祖先（含自身）→ 读 popovertarget(id) + popovertargetaction(toggle/show/hide) →
@@ -1361,7 +1418,7 @@
     return _wrapSelector(resolved);
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

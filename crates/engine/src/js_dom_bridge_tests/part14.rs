@@ -951,3 +951,135 @@ fn test_focus_blur_events_r3247() {
     ).unwrap();
     assert_eq!(sandbox.execute("globalThis.__bblur0").unwrap().value, "true", "非焦点元素 blur() no-op（不派 blur）");
 }
+
+#[test]
+fn test_html_dialog_element_api_r3290() {
+    // R3290：HTMLDialogElement API（show/showModal/close/returnValue/open）。
+    // WHATWG HTML §6.13 interactive-elements：dialog.show() 非模态打开（设 open 属性）；
+    // dialog.showModal() 模态打开（设 open + top-layer，已 open 抛 InvalidStateError）；
+    // dialog.close(returnValue) 移 open + 模态移 top-layer + 设 returnValue + 派 'close' 事件。
+    // open boolean 反射属性（details/dialog 共用，presence-based）。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+    // headless 无真 top-layer paint / ::backdrop / focus 陷阱 / inert backdrop（rendering 流域 defer），
+    // 本切片验证 JS-observable 状态（open 属性 + returnValue + 'close' 事件 + showModal 状态机）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <dialog id='d1'><p>d1</p></dialog>\
+         <dialog id='d2'>d2</dialog>\
+         <dialog id='d3' open>d3-preopen</dialog>\
+         <dialog id='d4'>d4</dialog>\
+         <dialog id='d5'>d5</dialog>\
+         <details id='det'><summary>s</summary>body</details>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 默认状态：dialog.open=false（无 open 属性），returnValue 默认 ''。
+    sandbox.execute(
+        "globalThis.__d1Open = String(document.getElementById('d1').open);\
+         globalThis.__d1Rv = JSON.stringify(document.getElementById('d1').returnValue);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__d1Open").unwrap().value, "false", "dialog 默认 open=false");
+    assert_eq!(sandbox.execute("globalThis.__d1Rv").unwrap().value, r#""""#, "dialog 默认 returnValue=''");
+
+    // ② show()（非模态）：设 open 属性 → open getter=true，hasAttribute('open')=true。
+    sandbox.execute(
+        "document.getElementById('d1').show();\
+         globalThis.__afterShow = String(document.getElementById('d1').open);\
+         globalThis.__afterShowAttr = String(document.getElementById('d1').hasAttribute('open'));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__afterShow").unwrap().value, "true", "show() → open=true");
+    assert_eq!(sandbox.execute("globalThis.__afterShowAttr").unwrap().value, "true", "show() → 设 open 内容属性");
+
+    // ③ showModal() 已 open → InvalidStateError（spec §dom-dialog-showmodal step 1）。
+    //    d2 未 open → showModal() 设 open + top-layer（headless 仅 JS 态）。
+    sandbox.execute(
+        "globalThis.__errShown = '';\
+         try { document.getElementById('d1').showModal(); } catch(e){ globalThis.__errShown = e.name; }\
+         document.getElementById('d2').showModal();\
+         globalThis.__d2Open = String(document.getElementById('d2').open);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__errShown").unwrap().value, "InvalidStateError", "已 open 的 dialog showModal → InvalidStateError");
+    assert_eq!(sandbox.execute("globalThis.__d2Open").unwrap().value, "true", "showModal() → open=true");
+
+    // ④ close(returnValue)：移 open 属性 + 设 returnValue + 派 'close' 事件。d2 模态关闭。
+    sandbox.execute(
+        "var d2 = document.getElementById('d2');\
+         var closed = 0;\
+         d2.addEventListener('close', function(){ closed++; });\
+         var ret = d2.close('confirmed');\
+         globalThis.__closeRet = String(ret);\
+         globalThis.__closed = String(closed);\
+         globalThis.__d2OpenAfter = String(d2.open);\
+         globalThis.__d2Rv = d2.returnValue;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__closeRet").unwrap().value, "true", "close() 返 true（was open）");
+    assert_eq!(sandbox.execute("globalThis.__closed").unwrap().value, "1", "close() 派发 'close' 事件一次");
+    assert_eq!(sandbox.execute("globalThis.__d2OpenAfter").unwrap().value, "false", "close() → open=false（移属性）");
+    assert_eq!(sandbox.execute("globalThis.__d2Rv").unwrap().value, "confirmed", "close('confirmed') → returnValue='confirmed'");
+
+    // ⑤ close() 未 open dialog → no-op（返 false，不派 close，不抛）。
+    sandbox.execute(
+        "var d4 = document.getElementById('d4');\
+         var d4Closed = 0;\
+         d4.addEventListener('close', function(){ d4Closed++; });\
+         var ret = d4.close();\
+         globalThis.__closedNoop = String(ret);\
+         globalThis.__d4Closed = String(d4Closed);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__closedNoop").unwrap().value, "false", "未 open 的 dialog close() 返 false（no-op）");
+    assert_eq!(sandbox.execute("globalThis.__d4Closed").unwrap().value, "0", "未 open 的 dialog close() 不派 close 事件");
+
+    // ⑥ open 反射 setter（details + dialog 共用）：truthy→setAttribute('open','')，falsy→removeAttribute。
+    //    d5.open=true → open getter=true；d3（preopen）.open=false → 移属性、getter=false。
+    sandbox.execute(
+        "document.getElementById('d5').open = true;\
+         globalThis.__d5Open = String(document.getElementById('d5').open);\
+         document.getElementById('d3').open = false;\
+         globalThis.__d3OpenAfter = String(document.getElementById('d3').open);\
+         globalThis.__detOpen = String(document.getElementById('det').open);\
+         document.getElementById('det').open = true;\
+         globalThis.__detOpenAfter = String(document.getElementById('det').open);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__d5Open").unwrap().value, "true", "dialog.open=true setter → open=true");
+    assert_eq!(sandbox.execute("globalThis.__d3OpenAfter").unwrap().value, "false", "dialog.open=false setter → 移 open 属性");
+    assert_eq!(sandbox.execute("globalThis.__detOpen").unwrap().value, "false", "details 默认 open=false（共用反射属性）");
+    assert_eq!(sandbox.execute("globalThis.__detOpenAfter").unwrap().value, "true", "details.open=true setter → open=true");
+
+    // ⑦ returnValue 直接 IDL setter（不反射内容属性）：null→''，串值存。
+    sandbox.execute(
+        "var d5 = document.getElementById('d5');\
+         d5.returnValue = 'xyz';\
+         globalThis.__rvXyz = d5.returnValue;\
+         d5.returnValue = null;\
+         globalThis.__rvNull = JSON.stringify(d5.returnValue);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__rvXyz").unwrap().value, "xyz", "returnValue setter 存串值");
+    assert_eq!(sandbox.execute("globalThis.__rvNull").unwrap().value, r#""""#, "returnValue=null setter → ''");
+
+    // ⑧ show → showModal 互斥：show 后 showModal 关前非模态态再开模态（不抛，因 show 后 d1 仍 open——
+    //    实际 spec：showModal 已 open 抛。验证 d1 经 ②show() 后 showModal 抛 InvalidStateError（同 ③）已隐含）。
+    //    反向：showModal 后 show() 切非模态（清模态态，open 属性保持）。
+    sandbox.execute(
+        "var d2 = document.getElementById('d2');\
+         d2.showModal();\
+         globalThis.__d2Modal1 = String(d2.open);\
+         d2.show();\
+         globalThis.__d2AfterShow = String(d2.open);\
+         var c2 = 0;\
+         d2.addEventListener('close', function(){ c2++; });\
+         d2.close();\
+         globalThis.__d2Closed = String(c2);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__d2Modal1").unwrap().value, "true", "showModal() → open=true");
+    assert_eq!(sandbox.execute("globalThis.__d2AfterShow").unwrap().value, "true", "show() 后 open 保持 true（切非模态）");
+    assert_eq!(sandbox.execute("globalThis.__d2Closed").unwrap().value, "1", "切非模态后 close() 仍派 close 事件");
+}
