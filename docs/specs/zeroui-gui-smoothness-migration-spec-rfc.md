@@ -208,8 +208,9 @@ winit key/IME/pointer
 |---|---|---|
 | M0 | 已完成并推送 | 真实 renderer 多控件交互、IME Commit、1.0～2.0 DPI、CPU/GPU 快照、全工作区测试与 clippy |
 | M1 | 已完成并推送 | retained input/textarea 值与选区、IDL/内容属性分离、Unicode 编辑、`0/0/0/1` paint-only、无整页序列化/图片重扫 |
-| M2 | 已完成，待阶段提交 | 单一 focus owner/pointer target、IME 全生命周期、候选窗锚点、单/多进程一致性、真实 renderer 自动回归 |
-| M3～M5 | 待实施 | 按下列顺序推进 |
+| M2 | 已完成并推送 | 单一 focus owner/pointer target、IME 全生命周期、候选窗锚点、单/多进程一致性、真实 renderer 自动回归 |
+| M3 | 已完成，待阶段提交 | 分级失效、输入事务单次发布、latest-wins 异步帧邮箱、浏览器端过期帧合并 |
+| M4～M5 | 待实施 | 按下列顺序推进 |
 
 ### M0：交互正确性基线
 
@@ -245,6 +246,14 @@ winit key/IME/pointer
 - 一次平台事件及其 JS 回调合并为一个渲染事务。
 - value/caret 局部 paint；布局相关 mutation 自动升级。
 - compositor/browser 合并过期页面帧和重复 redraw。
+
+完成记录：
+
+- `FrameInvalidation` 统一 style/layout/paint/composite/publish/hit-test 的只升级契约，layout 自动蕴含 paint、hit-test 和 publish。
+- Mouse/Keyboard/IME/显式 DOM event 在 renderer 中以一个外部消息为事务边界，同步 JS 回调和默认动作的多次发布请求在边界合并为一帧。
+- 导航会丢弃旧文档事务中尚未发布的工作，避免旧快照带上新 navigation epoch。
+- compositor 发布线程改为单槽 latest-wins 邮箱并默认启用；完整 IPC 帧在 flush 时原子写入，避免主线程控制消息与异步页面帧交错损坏。
+- browser 端复用既有 `defer_latest_paint` 和 `needs_redraw` 布尔合并，端到端表单回归在异步发布默认开启后通过。
 
 ### M4：GPU 缓存与批处理
 

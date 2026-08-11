@@ -16,7 +16,7 @@ mod sandbox;
 mod script_prefetch;
 mod text_metrics;
 
-use zero_page_runtime::{FormControlStateStore, PageInteractionState};
+use zero_page_runtime::{FormControlStateStore, FrameInvalidation, FrameTransaction, PageInteractionState};
 use zero_webview::AsyncPageLoad;
 
 use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
@@ -176,13 +176,19 @@ struct RendererRuntime {
     renderer_id: u64,
     /// 当前 renderer surface 的页面帧发布状态。
     frame_publish: FramePublishState,
+    /// 一个外部输入消息及其同步 JS 回调共享的帧事务。
+    frame_transaction: FrameTransaction,
+    /// 事务内最后一个非空标题；在事务边界与页面帧一起提交。
+    pending_frame_title: Option<String>,
+    /// 事务内发布是否允许补抓图片资源。
+    pending_frame_network_fetch: bool,
     /// 导航历史栈。
     history: Vec<String>,
     /// 当前历史索引。
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
-    /// RFC 4.1：compositor 帧 IPC 异步发布线程（`ZW_RENDERER_COMPOSITOR_THREAD=1`）。
+    /// RFC 4.1：compositor 帧 IPC 异步发布线程（默认启用，`=0` 可诊断性禁用）。
     compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
     /// 当前页面 HTML（脚本执行后同步更新）。
     cached_html: String,
@@ -291,6 +297,9 @@ impl RendererRuntime {
             next_fetch_id: 1,
             renderer_id,
             frame_publish: FramePublishState::new(renderer_id, frame_publish_mode),
+            frame_transaction: FrameTransaction::default(),
+            pending_frame_title: None,
+            pending_frame_network_fetch: false,
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
@@ -401,8 +410,51 @@ impl RendererRuntime {
         self.try_publish_progress(true)
     }
 
-    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
     fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_PAINT);
+            if title.is_some() {
+                self.pending_frame_title = title;
+            }
+            self.pending_frame_network_fetch |= allow_network_fetch;
+            return Ok(());
+        }
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 把任意 DOM/style 回调标成保守的 style→layout→paint→publish 升级。
+    fn invalidate_script_render(&mut self) {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_STYLE);
+        }
+    }
+
+    /// 在一个平台输入消息边界内合并所有同步渲染和发布请求。
+    fn run_frame_transaction(&mut self, handler: impl FnOnce(&mut Self) -> Result<(), String>) -> Result<(), String> {
+        self.frame_transaction.begin();
+        let result = handler(self);
+        let work = self.frame_transaction.finish();
+        if let Err(error) = result {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Err(error);
+        }
+        let Some(work) = work else {
+            return Ok(());
+        };
+        if !work.contains(FrameInvalidation::NEEDS_PUBLISH) {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Ok(());
+        }
+        let title = self.pending_frame_title.take();
+        let allow_network_fetch = std::mem::take(&mut self.pending_frame_network_fetch);
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    fn publish_webview_now(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
@@ -1239,6 +1291,7 @@ impl RendererRuntime {
 
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
     fn rerender_publish_webview(&mut self) -> Result<(), String> {
+        self.invalidate_script_render();
         let html = self.cached_html.clone();
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
@@ -1280,6 +1333,7 @@ impl RendererRuntime {
             let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {
                 // 事件回调产生的 mutation 已由 WebView 增量渲染，只需发布新帧。
+                self.invalidate_script_render();
                 let _ = self.publish_webview(None, true);
             }
             result
@@ -1401,6 +1455,11 @@ impl RendererRuntime {
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
         tracing::info!("导航到: {} ({})", params.url, method);
+        // A submit/click may have dirtied the old document earlier in the same
+        // input transaction. Never publish that stale snapshot under the new epoch.
+        self.frame_transaction.discard_pending();
+        self.pending_frame_title = None;
+        self.pending_frame_network_fetch = false;
         self.pending_load = None;
         self.pending_script_prefetch = None;
         self.inflight_fetches.clear();
@@ -1844,15 +1903,21 @@ impl RendererRuntime {
                 }
             }
             IpcMessageKind::Heartbeat => self.handle_heartbeat(),
-            IpcMessageKind::MouseEvent(params) => self.handle_mouse_event(params),
-            IpcMessageKind::KeyboardEvent(params) => self.handle_keyboard_event(params),
-            IpcMessageKind::ImeEvent(params) => self.handle_ime_event(params),
+            IpcMessageKind::MouseEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
+            }
+            IpcMessageKind::KeyboardEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
+            }
+            IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
             IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
             IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
-            IpcMessageKind::DispatchDomEvent(params) => self.handle_dispatch_dom_event(msg.id, params),
+            IpcMessageKind::DispatchDomEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_dispatch_dom_event(msg.id, params))
+            }
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
