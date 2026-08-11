@@ -1614,6 +1614,9 @@
     globalThis.innerWidth = w; globalThis.innerHeight = h;
     globalThis.outerWidth = w; globalThis.outerHeight = h;
     try { if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('resize')); } catch (_e) {}
+    // R3255：resize 后重评估 matchMedia MQL——matches 翻转的派 'change'（响应式断点 JS 依赖）。typeof 守卫
+    //（_zwFireMqlChanges 在 part05 定义，shim 完整加载后可见；运行时调用必已加载）。
+    if (typeof _zwFireMqlChanges === 'function') _zwFireMqlChanges();
   };
 
   // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /

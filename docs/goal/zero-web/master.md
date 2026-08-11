@@ -130,6 +130,29 @@
 
 ## 最近完成的改进
 
+### matchMedia change 事件派发（本轮 R3255，engine shim）—— 响应式断点 JS 闭环，R3254 resize 钩子驱动
+
+承接 R3254（resize 派发）后闭合 matchMedia 文档化限制：R2781 落地 `window.matchMedia`（MediaQueryList + addEventListener('change') + legacy addListener），但 part05.js:1716 明记「**change 事件需 host resize 跟踪派发（当前无，addListener 注册有效但不触发）**」→ 响应式断点 JS（`mql.addEventListener('change', ...)` / jQuery `mq.on('change')` / 框架断点检测）永不触发，resize 后断点切换无回调。R3254 的 `__zw_user_resize` 钩子天然是触发点。本轮在 shim 内补 MQL 注册表 + resize 重评估派 change，**响应式视口查询面闭环**（resize → innerWidth 跟踪 + resize 事件 + matchMedia change 三全）。
+
+**实现（R3255，CSSOM View §media-query-list，2 文件 shim + 1 测试）**：
+- `js_dom_shim/part05.js`：+`_zwMqlRegistry: []` 全局 + `matchMedia()` 创建 MQL 后 push 注册表（bounded：页面 matchMedia 调用有限）；+`_zwFireMqlChanges()`——遍历注册表，**仅对有 change listener 的 MQL** 经 `__zw_match_media(media, innerWidth, innerHeight)` 重评估；matches 翻转时先更新 `mql.matches=新值`（spec：change 派发时 matches 已是新值）再 `mql.dispatchEvent(_makeEvent('change') + media 属性)`（MediaQueryListEvent）。
+- `js_dom_shim/part01.js`：`__zw_user_resize`（R3254）派 resize 后调 `_zwFireMqlChanges()`（typeof 守卫——函数在 part05 定义，shim 完整加载后运行时可见）。
+- 测试：`js_dom_bridge_tests/part02.rs` +`test_match_media_change_event_r3255`（v8 feature，CI 跑）——验证 ① resize 跨断点 → change 派发 + media/matches（新值）；② 未跨断点不派；③ 回跨断点再派；④ legacy `addListener` 亦触发。
+
+**为何净正向**：① **闭合文档化限制**——matchMedia change 从「注册不触发」到 spec 合规派发（断点切换 JS 回调通），响应式视口查询面（resize + innerWidth + matchMedia change）三全闭环；② **零回归**——zero-engine --lib **1385 全绿**（quickjs，+1 v8-gated dispatch 测 CI 跑），engine clippy/fmt clean，全 workspace minus zero-compositor 全绿；③ 纯 shim 改动（零 Rust 逻辑变更，复用 R3254 resize 钩子 + R2781 `__zw_match_media` + R2779 EventTarget），低风险；④ engine shim 本流域。**已知限制**：① `_zwMqlRegistry` 存所有 matchMedia 创建的 MQL（不随 listener 移除而摘除）——bounded 增长（页面 matchMedia 调用有限），无 listener 的 MQL 在 `_zwFireMqlChanges` 跳过（免无意义重评估），documented；② real browser MQL 无 listener 时不评估，本片每 resize 评估所有注册 MQL（语义一致，仅多 N 次 `__zw_match_media` 调用，廉价）；③ change 事件仅含 `media`/`matches`/`type`（MediaQueryListEvent 核心字段），其余 inherits Event（spec 一致）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part05.js` | +`_zwMqlRegistry` + matchMedia 注册 + `_zwFireMqlChanges()`（resize 后重评估派 change）。 |
+| `crates/engine/src/js_dom_shim/part01.js` | `__zw_user_resize` 派 resize 后调 `_zwFireMqlChanges()`（typeof 守卫）。 |
+| `crates/engine/src/js_dom_bridge_tests/part02.rs` | +`test_match_media_change_event_r3255`（v8 feature，CI 跑）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1385 全绿**（quickjs，零回归）+ **全 workspace minus zero-compositor 全绿**。R3255 dispatch 测为 v8-gated（CI 跑）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：响应式视口查询面闭环（resize R3254 + innerWidth 跟踪 + matchMedia change R3255）。续候选（按价值/可行性排序）：① **用户滚动到可滚动子元素**——R3253 统一派 scroll 到 window，但用户滚动应命中**可滚动容器元素**派 element 'scroll'（需 renderer 据滚动位置/命中测试定位，中-大修）；② **wheel/mousewheel 事件**——用户滚动除 'scroll' 外 real browser 亦派 'wheel'（WheelEvent，cancelable，preDefault 阻滚动），但 IPC `ScrollEventParams` 仅 delta 无光标位置，需扩 IPC（中修）；③ **devicePixelRatio / orientationchange** 跟踪——R3254 更 inner/outer 但 devicePixelRatio 静态 1、orientation 静态 landscape（HiDPI/旋转 JS 依赖）；④ native DOM Range `range.rs` 内部 spec 审（internal，低 page 价值）；⑤ P1a microtask checkpoint 时序（中等风险，需独立评估）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### window resize 事件派发（本轮 R3254，engine shim + renderer）—— 视口尺寸变化通知页面 JS，镜像 R3253
 
 承接 R3253（用户滚动 scroll 派发）模式核实另一并行 gap：**视口尺寸变化不通知页面 JS**。renderer `handle_set_viewport`（收 browser IPC `SetViewportParams`——窗口/视口尺寸变化）仅更新 `self.viewport` + `webview.resize` + republish，**不派 'resize' 事件也不更 `innerWidth/innerHeight`**（shim 内 `innerWidth/innerHeight` 静态 1280/800，part01.js:1527）→ 响应式 JS（`window.addEventListener('resize')` / `innerWidth` watcher / matchMedia change）永不触发，resize 后页面读到旧尺寸。本轮闭合，镜像 R3253 host 注入模式。

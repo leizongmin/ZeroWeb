@@ -1713,8 +1713,10 @@
   // matchMedia——window.matchMedia(query) 响应式设计 / viewport 查询（modern 站点高频，shim 曾缺失）。
   // 委托 host `__zw_match_media(query, w, h)`（spec-correct via zero_css_parser::media_query）。返
   // MediaQueryList（extends EventTarget R2779）：media/matches + addEventListener('change') + legacy
-  // addListener/removeListener。**已知限制**：change 事件需 host resize 跟踪派发（当前无，addListener
-  // 注册有效但不触发；matches 为查询时刻快照，spec 一致）。
+  // addListener/removeListener。R3255：MQL 注册进 `_zwMqlRegistry`，`_zwFireMqlChanges()` 在 resize 时
+  //（`__zw_user_resize` 调，R3254）重评估 matches 翻转的 MQL → 派 'change'（MediaQueryListEvent：media +
+  // matches=新值）。addListener 注册有效且**触发**（R3255 闭合原限制）；matches 为查询时刻快照（spec 一致）。
+  var _zwMqlRegistry = [];
   function MediaQueryList(media, matches) {
     this._et_listeners = {}; // EventTarget 内部 listener map（EventTarget 构造器未自动调，手动初始化）
     this.media = media;
@@ -1733,9 +1735,34 @@
       var raw = __zw_match_media(q, globalThis.innerWidth || 0, globalThis.innerHeight || 0);
       try { var p = JSON.parse(raw); matches = !!p.matches; } catch (_) {}
     }
-    return new MediaQueryList(q, matches);
+    var mql = new MediaQueryList(q, matches);
+    _zwMqlRegistry.push(mql); // R3255：注册以便 resize 时重评估派 change（bounded：页面 matchMedia 调用有限）
+    return mql;
   }
   globalThis.matchMedia = globalThis.matchMedia || matchMedia;
+  // R3255（CSSOM View §media-query-list）：resize 后重评估所有注册 MQL——matches 翻转的派 'change'
+  //（MediaQueryListEvent）。仅对有 change listener 的 MQL 派（无 listener 派发无意义）；matches 在派发前
+  // 更新为新值（spec：change 事件携带新 matches）。由 `__zw_user_resize`（part01.js，R3254）调用。
+  function _zwFireMqlChanges() {
+    for (var i = 0; i < _zwMqlRegistry.length; i++) {
+      var mql = _zwMqlRegistry[i];
+      var ls = mql._et_listeners && mql._et_listeners['change'];
+      if (!ls || !ls.length) continue; // 无 change listener，跳过（免无意义重评估/派发）
+      var newMatches = mql.matches;
+      if (typeof __zw_match_media === 'function') {
+        try {
+          var raw = __zw_match_media(mql.media, globalThis.innerWidth || 0, globalThis.innerHeight || 0);
+          var p = JSON.parse(raw); newMatches = !!p.matches;
+        } catch (_) {}
+      }
+      if (newMatches !== mql.matches) {
+        mql.matches = newMatches; // 更新为新值（spec：change 派发时 matches 已是新值）
+        var ev = _makeEvent('change');
+        ev.media = mql.media; // MediaQueryListEvent.media
+        try { mql.dispatchEvent(ev); } catch (_) {}
+      }
+    }
+  }
 
   // MessageEvent——message 事件（Window.postMessage / MessagePort / BroadcastChannel 派发）。extends
   // Event（R2779），加 data/origin/source/ports。复用 _makeEvent 造数据对象 + 置 [[Prototype]]。

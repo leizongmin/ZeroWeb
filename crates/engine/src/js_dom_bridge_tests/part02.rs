@@ -247,6 +247,64 @@ fn test_match_media_r2781() {
 }
 
 #[test]
+fn test_match_media_change_event_r3255() {
+    // R3255（CSSOM View §media-query-list）：resize 后 matches 翻转的 MediaQueryList 派 'change' 事件。
+    // R2781 落地 matchMedia 但 change 不派发（documented 限制）；R3254 resize 钩子驱动 _zwFireMqlChanges。
+    // 验证：① resize 跨断点 → change listener 触发；② matches 更新为新值；③ 事件带 media + matches；
+    // ④ 未跨断点（matches 不变）不派 change；⑤ legacy addListener 亦触发。
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.register_callback(
+        "__zw_match_media",
+        Box::new(|args: &[String]| -> String {
+            let query = args.first().map(String::as_str).unwrap_or("");
+            let width = args.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            let height = args.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+            match_media_to_json(query, width, height)
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    // ① 初始 @1280：(min-width: 768px) matches=true。注册 change listener + 记录事件 media|matches。
+    sandbox
+        .execute(
+            "globalThis.__chg = 'none|none';\
+             var mql = matchMedia('(min-width: 768px)');\
+             mql.addEventListener('change', function(e){ globalThis.__chg = e.media + '|' + (mql.matches ? 'true' : 'false'); });\
+             globalThis.__mqlMatchesBefore = mql.matches;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__mqlMatchesBefore").unwrap().value, "true", "@1280 (min-width:768px) matches=true");
+
+    // ② __zw_user_resize(500, 400) → 跨断点（< 768）→ matches 翻转 false → 派 change。
+    sandbox.execute("__zw_user_resize(500, 400);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__chg").unwrap().value, "(min-width: 768px)|false", "resize 跨断点 → change 派发，media + matches（新值 false）");
+
+    // ③ 再次 resize(400, 300)（仍 < 768，matches 不变）→ 不派 change（__chg 保持上次值）。
+    sandbox.execute("__zw_user_resize(400, 300);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__chg").unwrap().value, "(min-width: 768px)|false", "未跨断点（matches 不变）不派 change");
+
+    // ④ resize(1024, 768)（回到 ≥ 768）→ matches 翻转 true → 再派 change。
+    sandbox.execute("__zw_user_resize(1024, 768);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__chg").unwrap().value, "(min-width: 768px)|true", "resize 回跨断点 → matches=true → change 派发");
+
+    // ⑤ legacy addListener（旧 API）亦触发 change——不同 MQL，注册后 resize 跨断点派发。
+    sandbox
+        .execute(
+            "globalThis.__legacy = 0;\
+             var m2 = matchMedia('(max-width: 600px)');\
+             m2.addListener(function(){ globalThis.__legacy++; });\
+             __zw_user_resize(300, 200);", // 600 以下 → (max-width:600px) matches 翻转 true → legacy change
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__legacy").unwrap().value, "1", "legacy addListener 亦触发 change（R3255）");
+}
+
+#[test]
 fn test_message_channel_r2782() {
     // R2782：MessageChannel + MessagePort + MessageEvent（postMessage 双端口，纯 JS）。MessagePort extends
     // EventTarget（R2779）；postMessage 经 structuredClone（R2773）深拷贝 + queueMicrotask（R2774）异步派发
