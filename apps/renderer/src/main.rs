@@ -439,8 +439,8 @@ impl RendererRuntime {
             if !tevents.is_empty() {
                 page_scripts::dispatch_transition_events(&self.js_worker, &tevents);
             }
-            // R3249（animationend）/R3250（animationiteration）：同模式派发动画事件（End = 有限动画完成；
-            // Iteration = 迭代边界，infinite 动画循环回调靠此——其永不 End）。
+            // R3249（animationend）/R3250（animationiteration）/R3251（animationstart）：同模式派发动画事件
+            // （Start = 首次进入活跃间隔；End = 有限动画完成；Iteration = 迭代边界，infinite 循环回调靠此）。
             let aevents = self
                 .webview
                 .as_mut()

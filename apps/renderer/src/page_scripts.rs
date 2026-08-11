@@ -188,11 +188,11 @@ pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[(Strin
     }
 }
 
-/// R3249（CSS Animations §animationend）+ R3250（§animationiteration）：派发动画事件进 shim。`events` =
-/// [`zero_engine::AnimationEvent`] 列表（由 pipeline `take_pending_animation_events` 产出，`kind` 区分 End/
-/// Iteration）。每个经 `script_dispatch_animation_event` 构造 `new AnimationEvent(kind.as_event_type(),
-/// {animationName, elapsedTime, bubbles})` 派发到唯一目标元素。best-effort（stale 选择器 / 构造器缺失 →
-/// 容错跳过）。infinite 动画循环回调靠 Iteration（永不 End）。
+/// R3249（CSS Animations §animationend）+ R3250（§animationiteration）+ R3251（§animationstart）：派发动画
+/// 事件进 shim。`events` = [`zero_engine::AnimationEvent`] 列表（由 pipeline `take_pending_animation_events`
+/// 产出，`kind` 区分 Start/End/Iteration）。每个经 `script_dispatch_animation_event` 构造
+/// `new AnimationEvent(kind.as_event_type(), {animationName, elapsedTime, bubbles})` 派发到唯一目标元素。
+/// best-effort（stale 选择器 / 构造器缺失 → 容错跳过）。infinite 动画循环回调靠 Iteration（永不 End）。
 pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[zero_engine::AnimationEvent]) {
     for ev in events {
         let ty = ev.kind.as_event_type();

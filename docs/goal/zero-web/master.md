@@ -130,6 +130,33 @@
 
 ## 最近完成的改进
 
+### animationstart 事件派发全管线（本轮 R3251，engine+webview+renderer）—— CSS Animations 事件族收官（start/iteration/end 全齐）
+
+承接 R3250（animationiteration）后的最后一片：**animationstart 不派发**——`AnimationClock.tick()` 无「首次进入活跃间隔」检测，动画启动（含 animation-delay 过期后的真正开播）无回调（动画启动副作用、单次首播 hook、状态机「playing」转换初始化缺触发点）。本轮闭合，CSS Animations 事件族（animationstart/animationiteration/animationend）全齐。mirror R3248/R3249/R3250 跨 engine→webview→renderer 全管线。
+
+**实现（R3251，CSS Animations §animationstart，6 文件，镜像 R3250）**：
+- `animation.rs`：+`StartedAnimation{element_key,name}`（无 elapsed——animationstart.elapsedTime 恒 0）+ `just_started: Vec` 字段；`AnimationState` +`started: bool`（去重标志，默认 false）；`tick()` 在 **delay 分支 continue 之后、finish 检查之前** 检测——`!anim.started` 时置 true 并推入（保证：① animationstart 先于 animationend/animationiteration 派发，即使同帧——瞬时动画先 start 再 end，spec 一致；② 每动画仅一次）；+`drain_just_started()` + 3 单测（无 delay 首帧 / delay 过期首帧 / 瞬时同帧 start+end 序）。
+- `pipeline/mod.rs`：`AnimationEventKind` +`Start` 变体（`as_event_type()` → "animationstart"）；`apply_animation_overrides` 在 End/Iteration 前 **置首** drain `just_started` → Start（elapsed=0.0），保证 Vec 内 start 先于 end/iteration。
+- `script_gen.rs`：doc 更新（`script_dispatch_animation_event` 已通用 event_type 参数，零代码改动——R3250 已参数化）。
+- `webview.rs` / `page_scripts.rs` / `renderer/main.rs`：doc/注释更新（零逻辑改动——kind-driven dispatch 已就绪）。
+
+**为何净正向**：① **闭合 CSS Animations 事件族**——animationstart 从「永不派发」到 spec 合规，启动 hook 通（单次首播副作用、状态机初始化）；start/iteration/end 三事件全齐，CSS Animations Level 1 事件面实质完成；② **零回归**——zero-engine --lib **1382 全绿**（+3 测 start drain/delay/instant，含既有 animation lifecycle 测全过），engine+webview/renderer clippy/fmt clean；③ 纯 additive（新 enum 变体 + 新 drain 方法，零既有签名改动）+ 镜像已验证模式，低风险；④ engine/webview/renderer 均本流域。**已知限制**：① animationstart 现以「首次进入活跃间隔」近似（animation-delay 过期后的首帧）——spec 的精确「scheduled to start」时机（含 0 duration / 负 delay 的 active-phase 修正）待后续细化，但常见场景（正 delay / 无 delay）已覆盖；② handler 改 DOM mutation 由后续 render 周期应用（同 R3248/R3249/R3250 documented）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/animation.rs` | +`StartedAnimation` 结构 + `just_started` 字段 + `AnimationState.started` 标志 + `tick()` 首活跃帧检测 + `drain_just_started()` + 3 单测。 |
+| `crates/engine/src/pipeline/mod.rs` | `AnimationEventKind` +`Start` 变体 + `apply_animation_overrides` drain just_started（置首）。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | doc 更新（零代码改动，event_type 参数已通用）。 |
+| `crates/webview/src/webview.rs` | doc 更新。 |
+| `apps/renderer/src/page_scripts.rs` | doc 更新。 |
+| `apps/renderer/src/main.rs` | 注释更新（+Start）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-webview -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1382 全绿**（+3 测 start，零回归）+ **全 workspace minus zero-compositor 全绿**（纯 additive 变更，零既有签名改动）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：CSS Animations 事件族（start/iteration/end）**实质收官**——管线全齐。**转方向**，续候选（按价值/可行性排序）：① **`scroll` 事件派发面**——element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（程序化滚动，real browser 派 scroll + 含可滚动容器，无限滚动/懒加载触发依赖）；② **change-on-blur**——input 失焦时若值变派 change（表单校验高频，renderer host 层）；③ native DOM Range `range.rs` 内部 spec 审（internal）；④ **CSS Transitions 事件族对齐**——transitionrun/transitionstart（R3248 仅 transitionend，首帧启动事件待 mirror R3251 模式）；⑤ **resize/scroll window 事件**（ResizeObserver/IntersectionObserver 已部分，window 派发面待核）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### animationiteration 事件派发全管线（本轮 R3250，engine+webview+renderer）—— animationend follow-up，infinite 循环回调
 
 承接 R3249（animationend 全管线）记的 follow-up：**animationiteration 不派发**——`AnimationClock.tick()` 仅更新 `anim.iteration = total_iterations.floor()`（animation.rs），不检测迭代边界跨越也不经 host 注入 → 有限多轮动画的中间迭代边界、以及 **infinite 动画的循环回调**（永不 finish → 永不派 animationend）完全不触发（spinner/loader 等循环动画回调链断）。本轮闭合该 gap，mirror R3248/R3249 跨 engine→webview→renderer 全管线。

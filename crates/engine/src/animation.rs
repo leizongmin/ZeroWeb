@@ -51,6 +51,9 @@ pub struct AnimationState {
     pub finished: bool,
     /// 当前迭代序号。
     pub iteration: u64,
+    /// 是否已进入活跃态（R3251，CSS Animations §animationstart）——首次跨过 animation-delay 进入活跃
+    /// 间隔的帧由 false→true，供 `tick()` 推入 `just_started` 派发 animationstart（elapsedTime=0）。
+    pub started: bool,
 }
 
 /// 动画启动配置。
@@ -88,6 +91,10 @@ pub struct AnimationClock {
     /// `drain_just_iterated()` 取出后派发 `animationiteration`（CSS Animations §animationiteration）。
     /// 关键：infinite 动画永不完成（不派 animationend），靠此事件驱动循环回调。
     just_iterated: Vec<IteratedAnimation>,
+    /// 「本轮新启动」的动画记录（R3251）——`tick()` 在 `started` 由 false→true（首次跨过 animation-delay
+    /// 进入活跃间隔）的帧推入，供宿主经 `drain_just_started()` 取出后派发 `animationstart`
+    /// （CSS Animations §animationstart，elapsedTime=0）。
+    just_started: Vec<StartedAnimation>,
 }
 
 /// 「本轮新完成」的动画记录（R3249）——`tick()` 在 `finished` 由 false→true 的帧推入 `just_finished`，
@@ -114,6 +121,18 @@ pub struct IteratedAnimation {
     pub name: String,
     /// 已完成迭代累计时长（秒，animationiteration.elapsedTime = completed_iterations × duration）。
     pub elapsed: f64,
+}
+
+/// 「本轮新启动」的动画记录（R3251）——`tick()` 在 `started` 由 false→true（首次进入活跃间隔，即
+/// animation-delay 已过）的帧推入 `just_started`，供宿主经 `drain_just_started()` 取出后派发
+/// `animationstart`（CSS Animations §animationstart）。elapsedTime 恒为 0（动画刚开始，未播放），
+/// 故结构不带 elapsed 字段——pipeline 侧硬编码 0.0。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StartedAnimation {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 动画名（animationstart.animationName）。
+    pub name: String,
 }
 
 // ── 时间函数求值 ──────────────────────────────────────────────────────
@@ -434,6 +453,7 @@ impl AnimationClock {
             keyframes,
             finished: false,
             iteration: 0,
+            started: false,
         };
 
         self.active_animations.entry(element_id).or_default().push(state);
@@ -539,6 +559,18 @@ impl AnimationClock {
             let iteration_progress = active_elapsed / anim.duration;
             let total_iterations = iteration_progress;
 
+            // R3251（CSS Animations §animationstart）：检测「首次进入活跃间隔」——动画跨过 animation-delay
+            // 后的首帧（`started` 由 false→true）派 animationstart。置于 finish 检查**之前**，使瞬时动画
+            // （start 与 end 同帧）先派 start 再派 end（spec：animationstart 先于 animationend，即使同时）。
+            // elapsedTime = 0（动画刚开始，未播放）。`started` 标志保证每动画只派一次。
+            if !anim.started {
+                anim.started = true;
+                self.just_started.push(StartedAnimation {
+                    element_key: element_id,
+                    name: anim.name.clone(),
+                });
+            }
+
             // 检查是否完成
             if let Some(max_iter) = anim.iteration_count
                 && total_iterations >= max_iter
@@ -627,6 +659,12 @@ impl AnimationClock {
     /// 宿主据此映射元素并派发 `animationiteration` 事件（infinite 动画循环回调靠此）。每次调用清空缓冲。
     pub fn drain_just_iterated(&mut self) -> Vec<IteratedAnimation> {
         std::mem::take(&mut self.just_iterated)
+    }
+
+    /// 取出「自上次 drain 后新启动」的动画（R3251，CSS Animations §animationstart）。宿主据此映射元素并
+    /// 派发 `animationstart` 事件（elapsedTime=0，每动画仅一次）。每次调用清空缓冲。
+    pub fn drain_just_started(&mut self) -> Vec<StartedAnimation> {
+        std::mem::take(&mut self.just_started)
     }
 
     /// 移除已完成动画。
@@ -1314,6 +1352,105 @@ mod tests {
         let _ = clock.tick(5, 1.0);
         assert_eq!(clock.drain_just_iterated().len(), 1, "infinite 第 2 轮派 iteration");
         assert!(clock.drain_just_finished().is_empty(), "infinite 永不 finish");
+    }
+
+    #[test]
+    fn test_animation_drain_just_started_r3251() {
+        // R3251（CSS Animations §animationstart）：动画首次进入活跃间隔（无 delay = 首帧）→ started 由
+        // false→true → 推入 just_started。每动画只派一次（started 标志去重）。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        // duration=1.0s，iteration_count=3.0，delay=0 → 首帧即活跃。
+        start_anim(
+            &mut clock,
+            8,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(3.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // t=0.0（首帧）→ 进入活跃态 → drain_just_started 含 1 条（element_key=8, name=fade）。
+        let _ = clock.tick(8, 0.0);
+        let started = clock.drain_just_started();
+        assert_eq!(started.len(), 1, "首帧派 animationstart");
+        assert_eq!(started[0].element_key, 8);
+        assert_eq!(started[0].name, "fade");
+
+        // t=1.0 → 已 started，不再派 animationstart（仅派 animationiteration，见 R3250）。
+        let _ = clock.tick(8, 1.0);
+        assert!(clock.drain_just_started().is_empty(), "已启动不重复派 animationstart");
+        assert_eq!(clock.drain_just_iterated().len(), 1, "第 1 轮迭代边界派 iteration");
+    }
+
+    #[test]
+    fn test_animation_start_with_delay_r3251() {
+        // R3251 关键：animation-delay 期间不派 animationstart；delay 过期后的首帧（进入活跃间隔）才派。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        // delay=1.0s：t<1.0 在 delay 期，t>=1.0 才活跃。
+        start_anim(
+            &mut clock,
+            3,
+            "fade",
+            1.0,
+            1.0,
+            TimingFunctionValue::Linear,
+            Some(1.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // t=0.5（delay 期）→ 不派 animationstart。
+        let _ = clock.tick(3, 0.5);
+        assert!(clock.drain_just_started().is_empty(), "delay 期不派 animationstart");
+
+        // t=1.0（delay 刚过期，进入活跃间隔）→ 派 animationstart（恰好未完成）。
+        let _ = clock.tick(3, 1.0);
+        assert_eq!(clock.drain_just_started().len(), 1, "delay 过期首帧派 animationstart");
+        assert!(clock.drain_just_finished().is_empty(), "此时未完成");
+    }
+
+    #[test]
+    fn test_animation_start_before_end_instant_r3251() {
+        // R3251 边界：瞬时动画（首帧即完成）应先派 animationstart 再派 animationend（spec：start 先于
+        // end，即使同帧）。tick() 的 started 检测置于 finish 检查之前，保证此序。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        // duration=1.0，iteration_count=1.0；首帧 t=2.0 已远超完成点 → 同帧既 start 又 end。
+        start_anim(
+            &mut clock,
+            4,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(1.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        let _ = clock.tick(4, 2.0);
+        assert_eq!(clock.drain_just_started().len(), 1, "瞬时动画首帧仍派 animationstart");
+        assert_eq!(clock.drain_just_finished().len(), 1, "瞬时动画同帧也派 animationend");
     }
 
     #[test]
