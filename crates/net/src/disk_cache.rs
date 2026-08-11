@@ -174,6 +174,22 @@ impl DiskHttpCache {
         if let Some(lm) = response.header("last-modified") {
             meta.last_modified = Some(lm.to_string());
         }
+        // R3232：RFC 9111 §4.3.4——304 的元数据字段须并入持久化的 meta.headers（同名替换，缺则追加；
+        // 与内存层 not_modified 一致）。旧实现仅更 etag/last_modified 便捷字段，meta.headers 保留旧
+        // Cache-Control/Expires/Date/Vary——磁盘读回的响应头为旧值。
+        for field in [
+            "cache-control",
+            "content-location",
+            "date",
+            "expires",
+            "vary",
+            "etag",
+            "last-modified",
+        ] {
+            if let Some(val) = response.header(field) {
+                merge_header(&mut meta.headers, field, val);
+            }
+        }
         meta.last_access = now;
         fs::write(&paths.meta, serde_json::to_string(&meta).unwrap_or_default()).is_ok()
     }
@@ -461,6 +477,18 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
+/// 用 304 响应的元数据字段更新 header 列表（RFC 9111 §4.3.4——同名替换，缺则追加；name 大小写不敏感）。
+/// 与 `http_cache::merge_header` 同语义（磁盘层独立副本，避免跨模块 pub）。
+fn merge_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
+    for (n, v) in headers.iter_mut() {
+        if n.eq_ignore_ascii_case(name) {
+            *v = value.to_string();
+            return;
+        }
+    }
+    headers.push((name.to_string(), value.to_string()));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,6 +633,86 @@ mod tests {
         let headers = cache.conditional_headers(url);
         assert!(headers.iter().any(|(k, v)| k == "If-None-Match" && v == "\"abc\""));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// R3232：磁盘层 304 Not Modified 须并入 304 的元数据 header（RFC 9111 §4.3.4）——
+    /// 旧 refresh_not_modified 仅更 etag/last_modified 便捷字段，meta.headers 保留旧
+    /// Cache-Control/Expires/Date/Vary，磁盘读回（DiskCacheHit.headers）+ 跨会话持久化的头为旧值。
+    /// 镜像 R3231 内存层 test_cache_304_merges_metadata_headers_r3231。
+    #[test]
+    fn test_disk_refresh_not_modified_merges_headers_r3232() {
+        let (mut cache, dir) = temp_cache();
+        let key = "https://example.com/r3232";
+        // 存 200：Cache-Control: max-age=60 + ETag "v1" + 旧 Expires。
+        let resp = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=60".into()),
+                ("ETag".into(), "\"v1\"".into()),
+                ("Expires".into(), "Wed, 21 Oct 2015 07:28:00 GMT".into()),
+            ],
+            body: b"hello".to_vec(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(key, &resp));
+
+        // 304 携新 Cache-Control: max-age=300 + ETag "v2" + 新 Vary（追加）。
+        let not_mod = HttpResponse {
+            status_code: 304,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=300".into()),
+                ("ETag".into(), "\"v2\"".into()),
+                ("Vary".into(), "Accept-Encoding".into()),
+            ],
+            body: Vec::new(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.refresh_not_modified(key, &not_mod), "304 须刷新磁盘缓存条目");
+
+        // 读回：headers 须反映 304 的元数据（旧 max-age=60 / "v1" 被替换；Vary 追加）。
+        let hit = cache.read(key).expect("disk 可读");
+        assert_eq!(
+            header_val(&hit, "cache-control"),
+            Some("max-age=300"),
+            "304 的 Cache-Control 须并入 meta.headers"
+        );
+        assert_eq!(
+            header_val(&hit, "etag"),
+            Some("\"v2\""),
+            "304 的 ETag 须并入 meta.headers"
+        );
+        assert_eq!(hit.etag, Some("\"v2\"".to_string()), "etag 便捷字段亦更新");
+        assert_eq!(
+            header_val(&hit, "vary"),
+            Some("Accept-Encoding"),
+            "304 新增的 Vary 须追加到 meta.headers"
+        );
+        // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
+        assert_eq!(hit.body, b"hello");
+        assert_eq!(hit.status_code, 200);
+
+        // 跨会话持久化：重新打开缓存，并入的头仍生效（磁盘层核心价值）。
+        let root = cache.root.clone();
+        drop(cache);
+        let mut reopened = DiskHttpCache::open(&root).unwrap();
+        let hit2 = reopened.read(key).expect("reopen 后仍可读");
+        assert_eq!(
+            header_val(&hit2, "cache-control"),
+            Some("max-age=300"),
+            "并入的头须持久化到 meta 文件"
+        );
+        assert_eq!(header_val(&hit2, "etag"), Some("\"v2\""));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// 大小写不敏感地从 `DiskCacheHit.headers` 取首个匹配值（R3232 测试用）。
+    fn header_val<'a>(hit: &'a DiskCacheHit, name: &str) -> Option<&'a str> {
+        hit.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 
     #[test]
