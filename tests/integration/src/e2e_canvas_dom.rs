@@ -145,6 +145,80 @@ fn test_dom_js_event_listener() {
     assert!(result.is_ok(), "DOM addEventListener should work with DOM polyfill");
 }
 
+// ── R3287：execute_script_with_dom（A 代 polyfill）querySelector 兄弟组合器 ──────
+// `execute_script_with_dom` 是公开稳定的 WebView 嵌入 API，注入 A 代 polyfill
+//（dom_bridge.rs::generate_dom_api_polyfill）。其 _matchesSingleSelector 历史仅支持后代/子代组合器，
+// `+`/`~` 静默不匹配——R3287 补全（延续 R3285 DOM crate + R3286 B 代 shim 的组合器一致化系列）。
+// A 代 polyfill 维护独立虚拟 DOM（_nodeMap，经 createElement/appendChild 填充，不接已 load_html 的树），
+// 故测试经 createElement 构建 sibling 子树后 querySelector。
+
+#[test]
+fn test_dom_js_polyfill_next_sibling_combinator_r3287() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root: h1, p#a, p#b, span#s, p#c（兄弟序）
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');  h1.id = 't';
+        var p1 = document.createElement('p');   p1.id = 'a';
+        var p2 = document.createElement('p');   p2.id = 'b';
+        var sp = document.createElement('span'); sp.id = 's';
+        var p3 = document.createElement('p');   p3.id = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var next = root.querySelector('h1 + p');
+        var spanP = root.querySelector('span + p');
+        var noMatch = root.querySelector('h1 + span');
+        JSON.stringify({next: next ? next.id : '.', spanP: spanP ? spanP.id : '.', noMatch: noMatch ? 'Y' : 'N'});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains("\"next\":\"a\""),
+        "`h1 + p` 应匹配紧邻 h1 的 p（a）: {result}"
+    );
+    assert!(
+        result.contains("\"spanP\":\"c\""),
+        "`span + p` 应匹配紧邻 span 的 p（c）: {result}"
+    );
+    assert!(
+        result.contains("\"noMatch\":\"N\""),
+        "`h1 + span` 无匹配（紧邻 h1 的是 p）: {result}"
+    );
+}
+
+#[test]
+fn test_dom_js_polyfill_subsequent_sibling_combinator_r3287() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');  h1.id = 't';
+        var p1 = document.createElement('p');   p1.id = 'a';
+        var p2 = document.createElement('p');   p2.id = 'b';
+        var sp = document.createElement('span'); sp.id = 's';
+        var p3 = document.createElement('p');   p3.id = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var all = root.querySelectorAll('h1 ~ p').length;
+        var spanP = root.querySelectorAll('span ~ p').length;
+        var mixed = root.querySelector('h1 + p ~ p');
+        JSON.stringify({all: all, spanP: spanP, mixed: mixed ? mixed.id : '.'});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains("\"all\":3"),
+        "`h1 ~ p` 应匹配 h1 之后全部 p（a/b/c = 3）: {result}"
+    );
+    assert!(
+        result.contains("\"spanP\":1"),
+        "`span ~ p` 应仅匹配 span 之后的 p（c = 1）: {result}"
+    );
+    assert!(
+        result.contains("\"mixed\":\"b\""),
+        "`h1 + p ~ p` 应匹配 b（h1+p=a，a 之后的 p 首个 = b，回溯正确）: {result}"
+    );
+}
+
 // ── 3. 安全功能端到端验证 ─────────────────────────────────────────
 
 #[test]

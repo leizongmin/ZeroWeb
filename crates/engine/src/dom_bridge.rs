@@ -653,29 +653,91 @@ pub fn generate_dom_api_polyfill() -> String {
     return false;
   }
 
+  // 扫描复合选择器链的组合器边界（` `/`>`/`+`/`~`，忽略 `[]`/引号内），返
+  // { segs: [compound-str...], combs: [comb...] }——`combs[i]` 连接 `segs[i]`↔`segs[i+1]`，
+  // 取值 `' '`/`'>'`/`'+'`/`'~'`。无组合器（单 compound）返 null（交回单选择器分支）。
+  // 显式符号（>`+`~`）覆盖空白触发的后代边界（`h1 + p` 中 `+` 前空白不误记为后代）。
+  // 与 R3285/R3286 四组合器一致化系列对齐（CSS Selectors L3 §14）。
+  function _splitCombinatorChain(text) {
+    var segs = [], combs = [];
+    var cur = '', depth = 0, quote = null;
+    var lastSegChar = false, pendingExplicit = null;
+    var flush = function (comb) {
+      if (cur) { segs.push(cur); combs.push(comb); cur = ''; }
+      lastSegChar = false;
+    };
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (quote) { cur += ch; if (ch === quote) quote = null; lastSegChar = true; continue; }
+      if (ch === '"' || ch === "'") { quote = ch; cur += ch; lastSegChar = true; continue; }
+      if (ch === '[') { depth++; cur += ch; lastSegChar = true; continue; }
+      if (ch === ']') { depth--; cur += ch; lastSegChar = true; continue; }
+      if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) {
+        if (!lastSegChar && combs.length > 0 && combs[combs.length - 1] === ' ') {
+          combs[combs.length - 1] = ch;
+        } else {
+          pendingExplicit = ch;
+        }
+        lastSegChar = false;
+        continue;
+      }
+      if (depth === 0 && /\s/.test(ch)) {
+        if (lastSegChar && pendingExplicit === null) { flush(' '); }
+        continue;
+      }
+      if (pendingExplicit !== null) { flush(pendingExplicit); pendingExplicit = null; }
+      cur += ch;
+      lastSegChar = true;
+    }
+    if (cur) segs.push(cur);
+    if (segs.length < 2) return null;
+    return { segs: segs, combs: combs.slice(0, segs.length - 1) };
+  }
+
+  // 从右起回溯求值复合链：节点 cur 须匹配 segs[idx]，再按 combs[idx-1] 回溯到 segs[idx-1] 候选。
+  // `' '`（后代）与 `'~'`（通用兄弟）须回溯——选定目标须能继续匹配左侧链（如 `h1 + p ~ p`）。
+  // `'>'`（子代）取 parentNode、`'+'`（相邻兄弟）取紧邻 previousSibling，均无回溯。
+  function _matchChainSeg(cur, segs, combs, idx) {
+    if (!cur || !_matchesSingleSelector(cur, segs[idx])) return false;
+    if (idx === 0) return true;
+    var comb = combs[idx - 1], left = idx - 1;
+    if (comb === ' ') {
+      // 后代：沿 parentNode 链找任一匹配祖先（回溯）。
+      var a = cur.parentNode;
+      while (a) {
+        if (_matchChainSeg(a, segs, combs, left)) return true;
+        a = a.parentNode;
+      }
+      return false;
+    } else if (comb === '>') {
+      var p = cur.parentNode;
+      return p && _matchChainSeg(p, segs, combs, left);
+    } else if (comb === '+') {
+      var ps = cur.previousSibling;
+      return ps && _matchChainSeg(ps, segs, combs, left);
+    } else if (comb === '~') {
+      // 通用兄弟：沿 previousSibling 链找任一匹配（回溯）。
+      var s = cur.previousSibling;
+      while (s) {
+        if (_matchChainSeg(s, segs, combs, left)) return true;
+        s = s.previousSibling;
+      }
+      return false;
+    }
+    return false;
+  }
+
   function _matchesSingleSelector(node, selector) {
     if (!selector || !node.attributes) return false;
 
-    // 后代选择器（简化：只检查父级匹配）
-    if (selector.indexOf(' ') >= 0) {
-      var tokens = selector.split(/\s+/);
-      var current = node;
-      for (var i = tokens.length - 1; i >= 0; i--) {
-        if (!current || !_matchesSingleSelector(current, tokens[i])) return false;
-        current = current.parentNode;
-      }
-      return true;
-    }
-
-    // 子代选择器
-    if (selector.indexOf('>') >= 0) {
-      var tokens = selector.split(/\s*>\s*/);
-      var current = node;
-      for (var i = tokens.length - 1; i >= 0; i--) {
-        if (!current || !_matchesSingleSelector(current, tokens[i])) return false;
-        current = current.parentNode;
-      }
-      return true;
+    // 复合选择器链（含组合器 ` `/`>`/`+`/`~`）。先扫描组合器边界（忽略 `[]`/引号内），按四组合器
+    // 从右起回溯求值——与 R3285（DOM crate）/ R3286（B 代 shim）四组合器一致化系列对齐。
+    // 旧实现按 `if indexOf(' ')` / `indexOf('>')` 顺序短路，致 `h1 + p`（含空格）误入后代分支、
+    // `a > b`（含空格）误入后代分支——组合器检测须先于空白后代判定。
+    var chain = _splitCombinatorChain(selector);
+    if (chain) {
+      var segs = chain.segs, combs = chain.combs;
+      return _matchChainSeg(node, segs, combs, segs.length - 1);
     }
 
     // ID 选择器

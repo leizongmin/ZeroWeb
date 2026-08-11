@@ -577,8 +577,10 @@ fn test_polyfill_length_reasonable() {
     // polyfill 应该足够大以包含所有必要的功能
     assert!(polyfill.len() > 5000, "Polyfill too small: {} bytes", polyfill.len());
 
-    // 但不应该过大
-    assert!(polyfill.len() < 50000, "Polyfill too large: {} bytes", polyfill.len());
+    // 但不应该过大（R3287：+/-/~ 兄弟组合器匹配器 + 组合器链切分/回溯使 polyfill 增长至 ~50.6KB，
+    // 上限 50000 → 55000 容纳四组合器一致化。此为合理性护栏，非硬预算——突破时评估是否该
+    // 收敛 A 代 polyfill 为 B 代 shim 的薄封装，而非单纯抬上限）。
+    assert!(polyfill.len() < 55000, "Polyfill too large: {} bytes", polyfill.len());
 }
 
 // ── Web Worker API 测试 ──
