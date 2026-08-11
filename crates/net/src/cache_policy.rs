@@ -76,12 +76,21 @@ pub(crate) fn compute_ttl_secs(cc: &CacheControl, response: &HttpResponse) -> Op
     if let Some(expires) = response.header("expires")
         && let Ok(expires_time) = parse_http_date(expires)
     {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        if expires_time > now {
-            return Some(expires_time - now);
+        // R3235：RFC 9111 §4.2.1——Expires 给出的新鲜期相对**响应生成时刻**（Date 头）而非客户端 now，
+        // 以消除 server/client 时钟偏差：server 钟快于 client 时，`expires - now` 会多给若干秒。
+        // 与 R3233 apparent_age（`max(0, response_time - date_value)`）配套：date_value 同时作为
+        // 新鲜期起点 + 年龄起点，二者对齐消除偏差。Date 缺失（§6.6.1 谓 origin 应发，缺失时无基准）回落 now。
+        let reference = response
+            .header("date")
+            .and_then(|d| parse_http_date(d).ok())
+            .unwrap_or_else(|| {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            });
+        if expires_time > reference {
+            return Some(expires_time - reference);
         }
         return Some(0);
     }
@@ -191,5 +200,32 @@ mod tests {
         // Date 在未来（时钟偏差/伪造）→ apparent_age saturating 为 0；回落 age_value。
         let future = resp(vec![("age", "30"), ("date", "Wed, 21 Oct 2099 07:28:00 GMT")]);
         assert_eq!(compute_initial_age(&future), 30);
+    }
+
+    /// R3235：RFC 9111 §4.2.1——Expires 新鲜期相对 Date（响应生成时刻）而非客户端 now。
+    /// Date/Expires 同在未来且相距 100s → 新鲜期 = 100（非 expires - wallclock now）。
+    #[test]
+    fn compute_ttl_expires_uses_date_not_now_r3235() {
+        // Date 07:28:00 + Expires 07:29:40 = 相距 100s（均在未来，排除 wallclock 干扰）。
+        let r = resp(vec![
+            ("date", "Wed, 21 Oct 2099 07:28:00 GMT"),
+            ("expires", "Wed, 21 Oct 2099 07:29:40 GMT"),
+        ]);
+        // storable_mode → Fresh(100)；旧实现 expires - now(2026) 会得巨大值（数十年）。
+        assert_eq!(storable_mode(&r), Some(CacheStoreMode::Fresh(100)));
+        // 直接验 compute_ttl_secs（经 cc 无 max-age/s_maxage → 落 Expires 分支）。
+        let cc = parse_cache_control(&r);
+        assert_eq!(compute_ttl_secs(&cc, &r), Some(100));
+
+        // Expires 早于 Date（生成即过期）→ ttl=0（不可作新鲜资源）。
+        let already_expired = resp(vec![
+            ("date", "Wed, 21 Oct 2099 07:28:00 GMT"),
+            ("expires", "Wed, 21 Oct 2099 07:27:00 GMT"),
+        ]);
+        assert_eq!(storable_mode(&already_expired), None);
+
+        // 无 Date 时回落 now（行为同旧）：Expires 在远过去 → ttl=0 → 不可新鲜存储。
+        let no_date_past = resp(vec![("expires", "Wed, 21 Oct 2015 07:28:00 GMT")]);
+        assert_eq!(storable_mode(&no_date_past), None);
     }
 }
