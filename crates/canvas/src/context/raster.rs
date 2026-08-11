@@ -639,7 +639,10 @@ impl CanvasContext {
             _ => (1.0, 1.0 - sa),
         };
 
-        let out_a = sa * fa + da * fb;
+        // R3237：out_a 须先 clamp 到 [0,1] 再作 un-premultiply 除数——Lighter（plus）下
+        // out_a = sa+da 可达 2.0，旧实现除以 2 致颜色减半（红+绿得 [128,128,0] 非 spec [255,255,0]）。
+        // Porter-Duff 模式 out_a ≤ 1，clamp 为 no-op；destination-out 全擦除 out_a=0 不受影响。
+        let out_a = (sa * fa + da * fb).clamp(0.0, 1.0);
         if out_a <= 0.0 {
             return (0, 0, 0, 0);
         }

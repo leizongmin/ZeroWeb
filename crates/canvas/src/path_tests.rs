@@ -47,6 +47,49 @@ fn fill_path_consumes_composite_operation_r3236() {
     assert_eq!(&over.data[..4], &[0, 255, 0, 255], "source-over path-fill 须覆盖为绿");
 }
 
+/// R3237：`composite_pixel` Lighter（plus）公式——`out_a` 须 clamp 到 [0,1] 再 un-premultiply。
+/// 旧实现除以未 clamp 的 `out_a=2` 致红+绿得 `[128,128,0]`（spec 加法应 `[255,255,0]`）。
+/// 覆盖 path-fill + rect-fill 两条经 composite_pixel 的路径（pre-existing bug 影响 rect-blit/stroke/path）。
+#[test]
+fn composite_lighter_additive_r3237() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // path-fill + lighter：红底 + 绿 path-fill = 黄。
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+    ctx.set_composite_operation(crate::CompositeOperation::Lighter);
+    ctx.set_fill_color(Color::GREEN);
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(10.0, 0.0);
+    ctx.line_to(10.0, 10.0);
+    ctx.line_to(0.0, 10.0);
+    ctx.close_path();
+    ctx.fill();
+    let added = ctx.get_image_data(5, 5, 1, 1);
+    assert_eq!(
+        &added.data[..4],
+        &[255, 255, 0, 255],
+        "R3237：lighter path-fill 须加法合成（红+绿=黄），旧 [128,128,0] bug"
+    );
+
+    // rect-fill + lighter（pre-existing 路径，亦须修）。
+    let mut ctx2 = CanvasContext::new(10, 10);
+    ctx2.set_fill_color(Color::RED);
+    ctx2.fill_rect(0.0, 0.0, 10.0, 10.0);
+    ctx2.set_composite_operation(crate::CompositeOperation::Lighter);
+    ctx2.set_fill_color(Color::GREEN);
+    ctx2.fill_rect(0.0, 0.0, 10.0, 10.0);
+    let added2 = ctx2.get_image_data(5, 5, 1, 1);
+    assert_eq!(
+        &added2.data[..4],
+        &[255, 255, 0, 255],
+        "R3237：lighter rect-fill 同须加法（红+绿=黄）"
+    );
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {
