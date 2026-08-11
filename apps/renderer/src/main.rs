@@ -1372,6 +1372,15 @@ impl RendererRuntime {
         if let Some(wv) = self.webview.as_mut() {
             wv.resize(params.width, params.height);
         }
+        // R3254（CSSOM View §resizing / UI Events §resize）：视口尺寸变化注入 `__zw_user_resize(w,h)` →
+        // 更新 innerWidth/innerHeight + 派 'resize' 到 window（响应式 JS / innerWidth watcher / matchMedia）。
+        // gate javascript_enabled + best-effort（先于 republish，使本帧派发）。
+        if self.javascript_enabled {
+            let script = zero_engine::script_user_resize(params.width as f64, params.height as f64);
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::warn!("dispatch user resize: {e}");
+            }
+        }
         self.try_republish_cached()
     }
 

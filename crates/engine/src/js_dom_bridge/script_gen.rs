@@ -108,6 +108,18 @@ pub fn script_user_scroll(delta_x: f64, delta_y: f64) -> String {
     format!("if(typeof __zw_user_scroll==='function')__zw_user_scroll({dx},{dy});")
 }
 
+/// 构造「视口尺寸变化」注入脚本（R3254，CSSOM View §resizing / UI Events §resize）。宿主（renderer
+/// `handle_set_viewport`）在收到 browser IPC `SetViewportParams { width, height }` 时执行：调内部钩子
+/// `__zw_user_resize(w, h)`（part01.js）——更新 `innerWidth/innerHeight`（+ outer，headless outer≈inner）
+/// 使响应式 JS 读到新尺寸 + 派 'resize' 事件到 window（`window.addEventListener('resize')` / innerWidth
+/// watcher / matchMedia 触发依赖）。typeof 守卫防 shim 未安装时 ReferenceError。w/h 有限数值；NaN/负经
+/// `__zw_user_resize` 内部归一。
+pub fn script_user_resize(width: f64, height: f64) -> String {
+    let w = if width.is_finite() { width } else { 0.0 };
+    let h = if height.is_finite() { height } else { 0.0 };
+    format!("if(typeof __zw_user_resize==='function')__zw_user_resize({w},{h});")
+}
+
 /// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121；event 对象丰富化 R3124）。
 /// 宿主在 `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
 /// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）

@@ -130,6 +130,31 @@
 
 ## 最近完成的改进
 
+### window resize 事件派发（本轮 R3254，engine shim + renderer）—— 视口尺寸变化通知页面 JS，镜像 R3253
+
+承接 R3253（用户滚动 scroll 派发）模式核实另一并行 gap：**视口尺寸变化不通知页面 JS**。renderer `handle_set_viewport`（收 browser IPC `SetViewportParams`——窗口/视口尺寸变化）仅更新 `self.viewport` + `webview.resize` + republish，**不派 'resize' 事件也不更 `innerWidth/innerHeight`**（shim 内 `innerWidth/innerHeight` 静态 1280/800，part01.js:1527）→ 响应式 JS（`window.addEventListener('resize')` / `innerWidth` watcher / matchMedia change）永不触发，resize 后页面读到旧尺寸。本轮闭合，镜像 R3253 host 注入模式。
+
+**实现（R3254，CSSOM View §resizing / UI Events §resize，3 文件，镜像 R3253）**：
+- `js_dom_shim/part01.js`：+`globalThis.__zw_user_resize(w,h)` 内部钩子——更新 `innerWidth/innerHeight`（+ `outerWidth/outerHeight`，headless outer≈inner）+ `globalThis.dispatchEvent(_makeEvent('resize'))`（spec：resize 不冒泡，派到 window）。NaN/负 → 0 归一。
+- `js_dom_bridge/script_gen.rs`：+`script_user_resize(w,h)` 生成器——`if(typeof __zw_user_resize==='function')__zw_user_resize(w,h);`（typeof 守卫 + NaN→0）。镜像 `script_user_scroll`。
+- `apps/renderer/src/main.rs`：`handle_set_viewport` republish 前注入 `script_user_resize`（gate `javascript_enabled`，best-effort）。
+- 测试：`js_dom_bridge_tests/part01.rs` +`test_user_resize_hook_r3254`（v8 feature，CI 跑）——验证 ① 初始 innerWidth=1280；② resize 后 window 'resize' listener 触发 + innerWidth/innerHeight/outerWidth 更新；③ 多次变化累积派发。
+
+**为何净正向**：① **闭合真行为 gap**——视口变化从「页面 JS 完全无感知」到 'resize' 派发 + innerWidth/innerHeight 跟踪（响应式布局 JS / matchMedia / 框架 resize-observer 高频依赖）；② **零回归**——zero-engine --lib **1385 全绿**（quickjs，+1 v8-gated dispatch 测 CI 跑），engine+renderer clippy/fmt clean，全 workspace minus zero-compositor 全绿；③ 镜像 R3253 刚验证模式，低风险；④ engine shim + renderer 均本流域。**已知限制**：① `outerWidth/outerHeight` 取 = inner（headless 无 browser chrome，real browser outer 含 chrome，documented 近似）；② real browser 异步派 resize，本片同步（IPC 到达即派，documented 近似）；③ `matchMedia` change 事件派发待后续（本片仅更尺寸 + 派 resize，matchMedia listener 读 `matchMedia('(max-width:...)').matches` 在下次求值时反映新尺寸，但 media-query change 事件本身未派——documented）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | +`globalThis.__zw_user_resize(w,h)` 内部钩子（更 innerWidth/Height/outer + 派 resize）。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | +`script_user_resize(w,h)` 生成器（typeof 守卫 + NaN→0）。 |
+| `apps/renderer/src/main.rs` | `handle_set_viewport` 注入 `script_user_resize`（gate `javascript_enabled`，best-effort）。 |
+| `crates/engine/src/js_dom_bridge_tests/part01.rs` | +`test_user_resize_hook_r3254`（v8 feature，CI 跑）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1385 全绿**（quickjs，零回归）+ **全 workspace minus zero-compositor 全绿**。R3254 dispatch 测为 v8-gated（CI 跑，本地 quickjs 覆盖）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：scroll（程序化 R3051 + 用户 R3253）+ resize（R3254）事件派发面就绪。续候选（按价值/可行性排序）：① **用户滚动到可滚动子元素**——R3253 统一派 scroll 到 window，但用户滚动应命中**可滚动容器元素**派 element 'scroll'（需 renderer 据滚动位置/命中测试定位，中-大修）；② **wheel/mousewheel 事件**——用户滚动除 'scroll' 外 real browser 亦派 'wheel'（WheelEvent），核实是否缺；③ **matchMedia change 事件**——R3254 更了尺寸但媒体查询变化未派 MediaQueryList 'change'（响应式断点 JS 依赖）；④ native DOM Range `range.rs` 内部 spec 审（internal）；⑤ P1a microtask checkpoint 时序（中等风险，需独立评估）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### 用户滚动 scroll 事件派发（本轮 R3253，engine shim + renderer）—— 上轮「scroll 候选」前提修正 + 真实 gap 闭合
 
 上轮 R3252「下一步」记 `scroll` 候选为「element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（程序化滚动）」。**本轮核实该前提 STALE**：R3051 已为程序化滚动（scrollTop/scrollLeft setter + scrollTo/scrollBy/scrollIntoView）落地 `_zwFireScroll` 派 'scroll'（part01.js:1584，bridge_tests `test_scroll_event_dispatch_r3051` 锁定）。**真实 gap = 用户滚动**：renderer `handle_scroll_event`（收 browser IPC `ScrollEventParams`——用户滚轮/触摸/键盘滚动）是**纯 no-op**（仅 `tracing::trace!`，不派 'scroll' 也不更 `_winScroll`）→ 用户滚动时页面 `window.scrollY` 不跟踪、`scroll` listener 永不触发（infinite scroll / lazy load / sticky nav / parallax 的**用户滚动**触发链断）。注：视觉滚动由 browser 侧 `TabScrollState`（`apply_page_scroll_delta`）独立处理，本 gap 仅「页面 JS 可观察」半边。本轮闭合。

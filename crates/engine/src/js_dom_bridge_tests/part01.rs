@@ -1295,6 +1295,46 @@ fn test_user_scroll_hook_r3253() {
 }
 
 #[test]
+fn test_user_resize_hook_r3254() {
+    // R3254：宿主「视口尺寸变化」钩子 `__zw_user_resize(w,h)`——renderer 收到 browser IPC SetViewportParams
+    // 时注入。验证：① 派 'resize' 到 window listener；② 更新 innerWidth/innerHeight（+ outer）到新值；
+    // ③ 多次变化累积派发（每次一事件）。响应式 JS（resize listener / innerWidth watcher / matchMedia）依赖。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 初始 innerWidth/innerHeight = 1280/800（part01.js:1527 默认）。
+    assert_eq!(sandbox.execute("globalThis.innerWidth").unwrap().value, "1280", "初始 innerWidth=1280（默认）");
+
+    // ① __zw_user_resize(1024, 768) → window 'resize' listener 触发 + innerWidth/innerHeight 更新。
+    sandbox
+        .execute(
+            "globalThis.__rsCount = 0; globalThis.__rsType = 'none';\
+             window.addEventListener('resize', function(e){ globalThis.__rsCount++; globalThis.__rsType = e.type; });\
+             __zw_user_resize(1024, 768);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__rsCount").unwrap().value, "1", "__zw_user_resize 派发 'resize'（window listener）");
+    assert_eq!(sandbox.execute("globalThis.__rsType").unwrap().value, "resize", "resize 事件 type=resize");
+    assert_eq!(sandbox.execute("globalThis.innerWidth").unwrap().value, "1024", "innerWidth 更新为新值");
+    assert_eq!(sandbox.execute("globalThis.innerHeight").unwrap().value, "768", "innerHeight 更新为新值");
+    assert_eq!(sandbox.execute("globalThis.outerWidth").unwrap().value, "1024", "outerWidth 跟随（headless outer≈inner）");
+
+    // ② 再次变化 → 累积 innerWidth=640，listener count=2。
+    sandbox.execute("__zw_user_resize(640, 480);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.innerWidth").unwrap().value, "640", "innerWidth 再次更新（1024→640）");
+    assert_eq!(sandbox.execute("globalThis.__rsCount").unwrap().value, "2", "第二次 resize 再派一事件");
+}
+
+#[test]
 fn test_form_reset_submit_methods_r3048() {
     // R3048：HTMLFormElement 方法 reset/requestSubmit/submit。旧缺（get trap 未拦 → form.reset() 抛 not-a-function）。
     // reset：dispatch cancelable 'reset' 事件 + 未取消则把控件恢复 defaultValue/defaultChecked/defaultSelected。

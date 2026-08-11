@@ -1604,6 +1604,17 @@
     _zwApplyScroll(_winScroll, Number(dx) || 0, Number(dy) || 0, true);
     _zwFireScroll(null, null, null);
   };
+  // R3254：宿主「视口尺寸变化」（renderer 收到 browser IPC SetViewportParams）注入钩子——更新
+  // `innerWidth/innerHeight`（+ outer，headless outer≈inner）使响应式 JS 读到新尺寸 + 派 'resize' 事件
+  // 到 window（window.addEventListener('resize') / innerWidth watcher / matchMedia 触发依赖）。spec：resize
+  // 不冒泡（bubbles=false），派到 window（globalThis.dispatchEvent）。host 经 `script_user_resize` 注入。
+  globalThis.__zw_user_resize = function (w, h) {
+    w = Number(w) || 0; h = Number(h) || 0;
+    if (w < 0) w = 0; if (h < 0) h = 0;
+    globalThis.innerWidth = w; globalThis.innerHeight = h;
+    globalThis.outerWidth = w; globalThis.outerHeight = h;
+    try { if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('resize')); } catch (_e) {}
+  };
 
   // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /
   // `alert(err)` / `prompt('Name')` / `window.open(url)` 抛 ReferenceError 中断后续脚本。headless 无 UI 用户
