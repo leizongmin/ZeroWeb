@@ -1,19 +1,25 @@
 //! C2 集成测试：spawn zero-compositor 进程，验证帧提交 → 双缓冲 → 确认回执。
 
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::Mutex;
 
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::paint_snapshot::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, ProcessRole, child_process_args};
 
-/// RAII 包装：所有退出路径（含断言 panic）都 kill + wait 子进程。
-struct CompositorProcess(std::process::Child);
+static COMPOSITOR_TEST_ENV: Mutex<()> = Mutex::new(());
+
+/// RAII 包装：所有退出路径（含断言 panic）都 kill + wait 子进程；并持有 env 锁避免并行竞态。
+struct CompositorProcess {
+    child: std::process::Child,
+    _env_lock: std::sync::MutexGuard<'static, ()>,
+}
 
 impl Drop for CompositorProcess {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -51,12 +57,50 @@ fn make_frame_with_dirty(
 }
 
 fn spawn_compositor() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
-    spawn_compositor_with_env(&[])
+    // 多数 IPC 用例经 get_frame CPU 读回；关闭 fd 导出避免与 inline/mailbox 路径竞态。
+    spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")])
+}
+
+/// 全默认 GPU 链路（含 dma-buf fd 导出）。
+fn spawn_compositor_gpu_dmabuf() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
+    // SAFETY: 测试进程启用 Browser dma-buf 导入解析。
+    unsafe {
+        std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "1");
+    }
+    spawn_compositor_with_env(&[
+        ("ZW_COMPOSITOR_GPU", "1"),
+        ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
+        ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "1"),
+        ("ZW_BROWSER_GPU_DMABUF_IMPORT", "1"),
+    ])
 }
 
 fn spawn_compositor_with_env(
     extra_env: &[(&str, &str)],
 ) -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
+    let env_lock = COMPOSITOR_TEST_ENV.lock().unwrap();
+
+    // get_frame 走 CPU RGBA 读回；测试进程禁用 Browser dma-buf 导入（除非 gpu_dmabuf 专用 helper 已设）。
+    if extra_env.iter().all(|(k, _)| *k != "ZW_BROWSER_GPU_DMABUF_IMPORT") {
+        // SAFETY: 测试进程 env（持锁期间无竞态）。
+        unsafe {
+            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
+        }
+    }
+
+    let mut env: Vec<(&str, &str)> = vec![
+        ("ZW_COMPOSITOR_GPU", "0"),
+        ("ZW_COMPOSITOR_GPU_IMAGE", "0"),
+        ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0"),
+    ];
+    for (key, value) in extra_env {
+        if let Some(slot) = env.iter_mut().find(|(k, _)| *k == *key) {
+            *slot = (key, value);
+        } else {
+            env.push((key, value));
+        }
+    }
+
     let bin = env!("CARGO_BIN_EXE_zero-compositor");
     #[allow(clippy::zombie_processes)]
     let mut cmd = Command::new(bin);
@@ -64,13 +108,19 @@ fn spawn_compositor_with_env(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    for (k, v) in extra_env {
+    for (k, v) in &env {
         cmd.env(k, v);
     }
     let mut child = cmd.spawn().expect("spawn compositor");
     let stdout = child.stdout.take().expect("stdout");
     let stdin = child.stdin.take().expect("stdin");
-    (PipeTransport::new(stdout, stdin), CompositorProcess(child))
+    (
+        PipeTransport::new(stdout, stdin),
+        CompositorProcess {
+            child,
+            _env_lock: env_lock,
+        },
+    )
 }
 
 fn submit_frame(
@@ -166,6 +216,51 @@ fn get_frame(
     }
 }
 
+/// Browser dma-buf 导入路径：经 `resolve_compositor_frame_delivery_fenced` 解析。
+#[cfg(target_os = "linux")]
+fn get_frame_delivery(
+    transport: &mut impl IpcChannel,
+    request_id: u64,
+    surface_id: u64,
+    navigation_epoch: u64,
+    frame_id: u64,
+) -> (u32, u32, zero_protocol::CompositorResolvedFrame) {
+    transport
+        .send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::GetCompositorFrame {
+                surface_id,
+                navigation_epoch,
+                frame_id,
+            },
+        })
+        .expect("send get frame");
+    let resp: IpcMessage = transport.recv().expect("recv frame data");
+    assert_eq!(resp.id, request_id, "帧数据 id 应与请求一致");
+    match resp.kind {
+        IpcMessageKind::CompositorFrameData {
+            width,
+            height,
+            rgba,
+            shm_name,
+            gpu_image,
+            ..
+        } => {
+            let resolved = zero_protocol::resolve_compositor_frame_delivery_fenced(
+                width,
+                height,
+                rgba,
+                shm_name,
+                gpu_image,
+                Some(frame_id),
+            )
+            .expect("resolve delivery");
+            (width, height, resolved)
+        }
+        other => panic!("意外消息: {other:?}"),
+    }
+}
+
 #[test]
 fn compositor_accepts_frames_and_confirms() {
     let (mut transport, _comp) = spawn_compositor();
@@ -232,7 +327,8 @@ fn compositor_partial_dirty_preserves_pixels_outside_region() {
 /// C3：`ZW_COMPOSITOR_GPU=1` 时 compositor 进程内 GPU 光栅化（不可用时与 CPU 同路径回退）。
 #[test]
 fn compositor_gpu_path_produces_expected_fill() {
-    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1")]);
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")]);
     assert_eq!(
         submit_frame(&mut transport, 1, 9, 1, 1, make_frame(64, 64, [255, 0, 0, 255]),),
         (9, 1, 1)
@@ -405,7 +501,8 @@ fn compositor_scroll_transform_bakes_pixels() {
 #[cfg(target_os = "linux")]
 #[test]
 fn compositor_gpu_image_mailbox_round_trips() {
-    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU_IMAGE", "1")]);
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU_IMAGE", "1"), ("ZW_COMPOSITOR_GPU", "0")]);
     let frame = make_frame(2, 2, [42, 84, 126, 255]);
     assert_eq!(submit_frame(&mut transport, 1, 5, 1, 1, frame), (5, 1, 1));
 
@@ -766,7 +863,59 @@ fn compositor_window_surface_registers_and_present_is_authoritative() {
     }
 }
 
-/// RFC 4.3-S5：GPU 纹理 dma-buf fd 导出（memfd 回退）round-trip。
+/// RFC 4.5-S2：seccomp + GPU 默认链路共存时 compositor 帧链路仍可用。
+#[test]
+fn compositor_gpu_seccomp_allows_frame_ipc() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[
+        ("ZW_COMPOSITOR_SANDBOX", "1"),
+        ("ZW_COMPOSITOR_SECCOMP", "1"),
+        ("ZW_COMPOSITOR_GPU", "1"),
+    ]);
+    let frame = make_frame(4, 4, [255, 64, 32, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 15, 1, 1, frame), (15, 1, 1));
+    let got = get_frame(&mut transport, 2, 15, 1, 1);
+    assert_eq!((got.width, got.height), (4, 4));
+    assert_eq!(got.rgba[0], 255);
+}
+
+/// RFC 4.3-S5 + P0：Linux 默认 GPU 链路经 dma-buf 交付（Browser 导入路径）。
+#[test]
+#[cfg(target_os = "linux")]
+fn compositor_gpu_dmabuf_browser_import_round_trips() {
+    let (mut transport, _comp) = spawn_compositor_gpu_dmabuf();
+    let frame = make_frame(4, 4, [255, 128, 0, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 14, 1, 1, frame), (14, 1, 1));
+    let (width, height, resolved) = get_frame_delivery(&mut transport, 2, 14, 1, 1);
+    assert_eq!((width, height), (4, 4));
+    match resolved {
+        zero_protocol::CompositorResolvedFrame::Dmabuf {
+            fd,
+            stride,
+            drm_modifier,
+            ..
+        } => {
+            use zero_render_foundation::gpu::{DRM_FORMAT_ABGR8888, ExportedGpuFrame, map_linear_rgba};
+            let export = ExportedGpuFrame {
+                fd,
+                width,
+                height,
+                stride,
+                drm_fourcc: DRM_FORMAT_ABGR8888,
+                drm_modifier,
+                sync_fd: None,
+            };
+            let rgba = map_linear_rgba(&export).expect("map rgba");
+            assert_eq!(rgba.len(), 64);
+            assert_eq!(rgba[0], 255, "R channel");
+            assert!(rgba[1] >= 100, "expected orange G, got {}", rgba[1]);
+        }
+        zero_protocol::CompositorResolvedFrame::Rgba(_) => {
+            panic!("expected dma-buf delivery when ZW_BROWSER_GPU_DMABUF_IMPORT=1");
+        }
+    }
+}
+
+/// RFC 4.3-S5：GPU 纹理 dma-buf fd 导出（memfd 回退）round-trip（CPU 读回路径）。
 #[test]
 fn compositor_gpu_texture_export_dma_buf_round_trips() {
     let (mut transport, _comp) = spawn_compositor_with_env(&[

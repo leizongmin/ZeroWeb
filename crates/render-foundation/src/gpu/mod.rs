@@ -19,6 +19,8 @@ pub mod texture_import;
 pub use atlas::GlyphAtlas;
 pub use renderer::GpuRenderer;
 #[cfg(target_os = "linux")]
-pub use texture_export::{ExportedGpuFrame, gpu_texture_export_enabled, map_linear_rgba, try_export_headless};
+pub use texture_export::{
+    DRM_FORMAT_ABGR8888, ExportedGpuFrame, gpu_texture_export_enabled, map_linear_rgba, try_export_headless,
+};
 #[cfg(target_os = "linux")]
 pub use texture_import::{browser_gpu_dmabuf_import_enabled, try_import_linear_dmabuf};

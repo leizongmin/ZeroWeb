@@ -421,4 +421,49 @@ mod tests {
         assert!(snap.compositor_frame.is_none());
         assert!(snap.last_render.is_some());
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn commit_compositor_dmabuf_accepts_latest_submission() {
+        use std::os::fd::{FromRawFd, IntoRawFd};
+
+        let mut snap = TabSnapshot {
+            navigation_epoch: 3,
+            ..Default::default()
+        };
+        let first = CompositorSubmission {
+            surface_id: 41,
+            navigation_epoch: 3,
+            frame_id: 7,
+        };
+        let latest = CompositorSubmission { frame_id: 8, ..first };
+        assert!(snap.record_compositor_submission(first));
+        assert!(snap.record_compositor_submission(latest));
+
+        let null_fd = std::fs::File::open("/dev/null").expect("open /dev/null");
+        let raw_fd = null_fd.into_raw_fd();
+        assert!(snap.commit_compositor_dmabuf(
+            latest,
+            2,
+            2,
+            0.0,
+            0.0,
+            CompositorDmabufPending {
+                fd: unsafe { std::os::fd::OwnedFd::from_raw_fd(raw_fd) },
+                width: 2,
+                height: 2,
+                stride: 8,
+                drm_fourcc: 0x3432_4241,
+                drm_modifier: 0,
+                dst_x: 0.0,
+                dst_y: 0.0,
+            },
+        ));
+
+        let frame = snap.compositor_frame.as_ref().unwrap();
+        assert!(frame.gpu_direct);
+        assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
+        assert!(snap.compositor_dmabuf.is_some());
+        assert!(snap.take_compositor_dmabuf().is_some());
+    }
 }

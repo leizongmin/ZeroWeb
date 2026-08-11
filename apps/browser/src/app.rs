@@ -347,7 +347,7 @@ impl BrowserApp {
         if self.favicon_fetch.poll_bookmarks(&mut self.font_loader) {
             self.needs_redraw = true;
         }
-        if self.tabs.poll(self.shell.active_tab_id()) {
+        if self.tabs.poll(self.shell.active_tab_id(), self.gpu_renderer_is_some()) {
             self.needs_redraw = true;
         }
         // 消费异步 DOM 事件派发产生的延迟动作（链接导航等）。
@@ -928,7 +928,7 @@ impl BrowserApp {
         // 测试用空/未就绪快照继续 → hover hit-test 返回 None → floating_link flake。
         // 早返（is_tab_content_ready 即 return）保证正常（<1s 完成）测试零额外开销。
         for _ in 0..3000 {
-            self.tabs.poll(Some(tab_id));
+            self.tabs.poll(Some(tab_id), self.gpu_renderer_is_some());
             if self.is_tab_content_ready(tab_id) {
                 return;
             }

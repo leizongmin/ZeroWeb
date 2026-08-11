@@ -131,11 +131,12 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 | 变量 | 作用 |
 |---|---|
 | `ZW_COMPOSITOR_PROCESS=0` | legacy ViewPainted |
-| `ZW_COMPOSITOR_GPU=1` | compositor headless GPU 光栅 |
+| `ZW_COMPOSITOR_GPU=0` | 禁用 compositor headless GPU 光栅（**Linux 默认开**） |
 | `ZW_COMPOSITOR_SHM=1` | Linux POSIX shm 帧像素 |
-| `ZW_COMPOSITOR_GPU_IMAGE=1` | gpu_image mailbox（shm 后端） |
+| `ZW_COMPOSITOR_GPU_IMAGE=0` | 禁用 gpu_image mailbox（**Linux 默认开**） |
 | `ZW_COMPOSITOR_GPU_ZERO_COPY=1` | gpu_image mailbox mmap 读 payload（Linux） |
-| `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1` | dma-buf fd 经 Unix socket 导出（Linux；memfd 回退） |
+| `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=0` | 禁用 dma-buf fd 导出（**Linux 默认开**） |
+| `ZW_BROWSER_GPU_DMABUF_IMPORT=0` | 禁用 Browser mmap→wgpu 导入（**Linux 默认开**；`--renderer=cpu` 时 Browser 自动设 0） |
 | `ZW_RENDERER_COMPOSITOR_THREAD=1` | renderer 异步 compositor IPC 发布 |
 | `ZW_COMPOSITOR_ASYNC_SCROLL=1` | compositor 滚动元数据 + Browser 消费 |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM=1` | compositor 侧 scroll 烘焙（回读 scroll=0） |
@@ -143,8 +144,8 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 | `ZW_COMPOSITOR_PRESENT=1` | compositor 合成 page+UI present 帧 |
 | `ZW_COMPOSITOR_OWNED_PRESENT=1` | compositor 权威 present；Browser 跳过本地合成 |
 | `ZW_COMPOSITOR_SANDBOX=1` | compositor 启动 env 剥离 |
-| `ZW_COMPOSITOR_SECCOMP=1` | Linux seccomp 阻断网络/exec（与 GPU 不兼容） |
-| `ZW_COMPOSITOR_LANDLOCK=1` | Linux landlock：`/dev/shm` RW + 字体 RO（与 GPU 不兼容） |
+| `ZW_COMPOSITOR_SECCOMP=1` | Linux seccomp 阻断网络/exec（可与 GPU 共存） |
+| `ZW_COMPOSITOR_LANDLOCK=1` | Linux landlock：`/dev/shm` RW + 字体 RO + GPU 路径（可与 GPU 共存） |
 | `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` | 模拟 GPU 设备丢失，强制 CPU 光栅（诊断/测试） |
 
 ## 五、下一阶段（完整对齐）

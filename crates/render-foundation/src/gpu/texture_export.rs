@@ -25,9 +25,9 @@ pub struct ExportedGpuFrame {
     pub sync_fd: Option<OwnedFd>,
 }
 
-/// 是否启用 compositor GPU 纹理导出（`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1`）。
+/// 是否启用 compositor GPU 纹理导出（Linux 默认开；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=0` 禁用）。
 pub fn gpu_texture_export_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT").is_ok_and(|v| v == "1")
+    zero_protocol::compositor_gpu_texture_export_enabled()
 }
 
 /// 尝试从无头渲染目标导出 fd；Vulkan 不可用时回退 memfd 线性缓冲。

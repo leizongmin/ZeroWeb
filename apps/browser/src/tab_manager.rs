@@ -264,13 +264,14 @@ impl TabManager {
     }
 
     /// 轮询 Tab 更新快照；`active_tab` 为当前前台标签（后台 Tab 降低轮询频率）。
-    pub fn poll(&mut self, active_tab: Option<TabId>) -> bool {
+    pub fn poll(&mut self, active_tab: Option<TabId>, browser_gpu_present: bool) -> bool {
         let tick = self.poll_tick;
         self.poll_tick = self.poll_tick.wrapping_add(1);
         let poll_background = tick.is_multiple_of(5);
 
         let mut changed = false;
         if let Some(ref mut backend) = self.process_backend {
+            backend.set_browser_gpu_present(browser_gpu_present);
             changed |= backend.poll(&mut self.snapshots, &mut self.snapshot_seq, active_tab, poll_background);
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
@@ -366,7 +367,7 @@ impl TabManager {
     #[cfg(test)]
     pub fn poll_until_idle(&mut self, max_rounds: usize) {
         for _ in 0..max_rounds {
-            self.poll(None);
+            self.poll(None, false);
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }

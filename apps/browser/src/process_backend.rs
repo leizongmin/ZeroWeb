@@ -130,6 +130,8 @@ pub struct ProcessTabBackend {
     pending_dispatch_results: Vec<(u64, bool)>,
     /// 上一次轮询观察到的 compositor client 状态，用于只处理一次断线边沿。
     compositor_status: crate::compositor_client::CompositorStatus,
+    /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
+    browser_gpu_present: bool,
 }
 
 #[cfg(test)]
@@ -191,7 +193,13 @@ impl ProcessTabBackend {
             fetch_proxy: TabFetchProxy::new(),
             pending_dispatch_results: Vec::new(),
             compositor_status: crate::compositor_client::status(),
+            browser_gpu_present: false,
         }
+    }
+
+    /// 更新 Browser GPU 呈现是否可用（影响 compositor dma-buf 导入 vs RGBA 回退）。
+    pub fn set_browser_gpu_present(&mut self, present: bool) {
+        self.browser_gpu_present = present;
     }
 
     fn enters_compositor_fallback(
@@ -340,6 +348,7 @@ impl ProcessTabBackend {
         snapshots: &mut HashMap<TabId, TabSnapshot>,
         snapshot_seq: &mut HashMap<TabId, u64>,
         pending_loaded: &mut Vec<(TabId, String, String)>,
+        browser_gpu_present: bool,
     ) -> bool {
         let mut changed = false;
         for (tab_id, snap) in snapshots {
@@ -360,23 +369,51 @@ impl ProcessTabBackend {
             };
             #[cfg(target_os = "linux")]
             let committed = if let Some(dmabuf) = frame.dmabuf {
-                snap.commit_compositor_dmabuf(
-                    completed,
-                    frame.width,
-                    frame.height,
-                    frame.scroll_x,
-                    frame.scroll_y,
-                    crate::tab_snapshot::CompositorDmabufPending {
+                let use_gpu_import = zero_protocol::browser_gpu_dmabuf_import_enabled() && browser_gpu_present;
+                if use_gpu_import {
+                    snap.commit_compositor_dmabuf(
+                        completed,
+                        frame.width,
+                        frame.height,
+                        frame.scroll_x,
+                        frame.scroll_y,
+                        crate::tab_snapshot::CompositorDmabufPending {
+                            fd: dmabuf.fd,
+                            width: frame.width,
+                            height: frame.height,
+                            stride: dmabuf.stride,
+                            drm_fourcc: dmabuf.drm_fourcc,
+                            drm_modifier: dmabuf.drm_modifier,
+                            dst_x: 0.0,
+                            dst_y: 0.0,
+                        },
+                    )
+                } else {
+                    use zero_render_foundation::gpu::{ExportedGpuFrame, map_linear_rgba};
+                    let export = ExportedGpuFrame {
                         fd: dmabuf.fd,
                         width: frame.width,
                         height: frame.height,
                         stride: dmabuf.stride,
                         drm_fourcc: dmabuf.drm_fourcc,
                         drm_modifier: dmabuf.drm_modifier,
-                        dst_x: 0.0,
-                        dst_y: 0.0,
-                    },
-                )
+                        sync_fd: None,
+                    };
+                    match map_linear_rgba(&export) {
+                        Ok(rgba) => snap.commit_compositor_frame(
+                            completed,
+                            frame.width,
+                            frame.height,
+                            rgba,
+                            frame.scroll_x,
+                            frame.scroll_y,
+                        ),
+                        Err(error) => {
+                            tracing::warn!("compositor dma-buf RGBA 回退失败: {error}");
+                            false
+                        }
+                    }
+                }
             } else {
                 snap.commit_compositor_frame(
                     completed,
@@ -407,6 +444,28 @@ impl ProcessTabBackend {
                 continue;
             }
             *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+            #[cfg(target_os = "linux")]
+            if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                let gpu_direct = snap.compositor_frame.as_ref().is_some_and(|f| f.gpu_direct);
+                if gpu_direct {
+                    tracing::info!(
+                        "SMOKE_EVENT component=browser event=compositor_dmabuf_adopted tab={} surface={} epoch={} frame={}",
+                        tab_id.0,
+                        frame.surface_id,
+                        frame.navigation_epoch,
+                        frame.frame_id
+                    );
+                } else {
+                    tracing::info!(
+                        "SMOKE_EVENT component=browser event=compositor_bitmap_adopted tab={} surface={} epoch={} frame={}",
+                        tab_id.0,
+                        frame.surface_id,
+                        frame.navigation_epoch,
+                        frame.frame_id
+                    );
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
             if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                 tracing::info!(
                     "SMOKE_EVENT component=browser event=compositor_bitmap_adopted tab={} surface={} epoch={} frame={}",
@@ -809,7 +868,12 @@ impl ProcessTabBackend {
         }
         changed |= self.observe_compositor_status(snapshots, snapshot_seq);
         if self.compositor_status == crate::compositor_client::CompositorStatus::Healthy {
-            changed |= Self::poll_compositor_frames(snapshots, snapshot_seq, &mut self.pending_loaded);
+            changed |= Self::poll_compositor_frames(
+                snapshots,
+                snapshot_seq,
+                &mut self.pending_loaded,
+                self.browser_gpu_present,
+            );
             changed |= Self::poll_compositor_present_frames(snapshots, snapshot_seq);
         }
         changed

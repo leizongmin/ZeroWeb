@@ -203,10 +203,10 @@ fn main() {
     let mut glyph_cache = GlyphCache::new(1024);
     let render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
 
-    // C3 GPU 光栅化（env ZW_COMPOSITOR_GPU=1）：headless wgpu 上下文在合成器
+    // C3 GPU 光栅化（Linux 默认开；`ZW_COMPOSITOR_GPU=0` 禁用）：headless wgpu 上下文在合成器
     // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
     // 现状：GPU 渲染器覆盖 fills/glyphs 图元子集（render_scene_ext）。
-    let gpu_enabled = std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1");
+    let gpu_enabled = zero_protocol::compositor_gpu_enabled();
     let mut gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer> = None;
 
     tracing::info!(

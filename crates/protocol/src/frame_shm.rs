@@ -10,6 +10,27 @@ use crate::gpu_mailbox::{GpuMailboxHeader, decode_gpu_mailbox, encode_gpu_mailbo
 #[cfg(target_os = "linux")]
 const SHM_PREFIX: &str = "zeroweb-cmp-";
 
+/// Linux 环境变量：未设置时默认开，`0`/`false` 禁用。
+fn env_linux_default_on(name: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        match std::env::var(name) {
+            Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
+            Err(_) => true,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = name;
+        false
+    }
+}
+
+/// 是否启用 compositor headless GPU 光栅（Linux 默认开；`ZW_COMPOSITOR_GPU=0` 禁用）。
+pub fn compositor_gpu_enabled() -> bool {
+    env_linux_default_on("ZW_COMPOSITOR_GPU")
+}
+
 /// 是否启用 compositor POSIX shm 帧传输（Linux + `ZW_COMPOSITOR_SHM=1`）。
 pub fn compositor_shm_enabled() -> bool {
     #[cfg(target_os = "linux")]
@@ -28,19 +49,11 @@ pub fn compositor_scroll_transform_enabled() -> bool {
     std::env::var("ZW_COMPOSITOR_SCROLL_TRANSFORM").is_ok_and(|v| v == "1")
 }
 
-/// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux + `ZW_COMPOSITOR_GPU_IMAGE=1`）。
+/// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux 默认开；`ZW_COMPOSITOR_GPU_IMAGE=0` 禁用）。
 ///
 /// mailbox 当前复用 POSIX shm 后端；S4 头含 sync_token fence；真 GPU 纹理为后续。
 pub fn compositor_gpu_image_enabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("ZW_COMPOSITOR_GPU_IMAGE").is_ok_and(|v| v == "1")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = std::env::var("ZW_COMPOSITOR_GPU_IMAGE");
-        false
-    }
+    env_linux_default_on("ZW_COMPOSITOR_GPU_IMAGE")
 }
 
 /// 是否启用 gpu_image mmap 零拷贝 consume（Linux + `ZW_COMPOSITOR_GPU_ZERO_COPY=1`）。
@@ -56,30 +69,14 @@ pub fn compositor_gpu_zero_copy_enabled() -> bool {
     }
 }
 
-/// 是否启用 GPU 纹理 dma-buf fd 导出（Linux + `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1`）。
+/// 是否启用 GPU 纹理 dma-buf fd 导出（Linux 默认开；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=0` 禁用）。
 pub fn compositor_gpu_texture_export_enabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT").is_ok_and(|v| v == "1")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = std::env::var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT");
-        false
-    }
+    env_linux_default_on("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT")
 }
 
-/// 是否启用 Browser GPU dma-buf 导入（Linux + `ZW_BROWSER_GPU_DMABUF_IMPORT=1`）。
+/// 是否启用 Browser GPU dma-buf 导入（Linux 默认开；`ZW_BROWSER_GPU_DMABUF_IMPORT=0` 禁用）。
 pub fn browser_gpu_dmabuf_import_enabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var("ZW_BROWSER_GPU_DMABUF_IMPORT").is_ok_and(|v| v == "1")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = std::env::var("ZW_BROWSER_GPU_DMABUF_IMPORT");
-        false
-    }
+    env_linux_default_on("ZW_BROWSER_GPU_DMABUF_IMPORT")
 }
 
 /// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；默认开，`0` 禁用）。
@@ -658,5 +655,152 @@ mod tests {
         let err =
             resolve_compositor_frame_rgba_fenced(1, 1, vec![0; 4], None, Some(desc), Some(4)).expect_err("stale fence");
         assert!(err.to_string().contains("stale"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[serial_test::serial]
+    fn compositor_gpu_flags_default_on_linux() {
+        // SAFETY: 测试专用 env 写入。
+        unsafe {
+            std::env::remove_var("ZW_COMPOSITOR_GPU");
+            std::env::remove_var("ZW_COMPOSITOR_GPU_IMAGE");
+            std::env::remove_var("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT");
+            std::env::remove_var("ZW_BROWSER_GPU_DMABUF_IMPORT");
+        }
+        assert!(compositor_gpu_enabled());
+        assert!(compositor_gpu_image_enabled());
+        assert!(compositor_gpu_texture_export_enabled());
+        assert!(browser_gpu_dmabuf_import_enabled());
+
+        // SAFETY: 测试专用 env 写入。
+        unsafe {
+            std::env::set_var("ZW_COMPOSITOR_GPU", "0");
+            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
+        }
+        assert!(!compositor_gpu_enabled());
+        assert!(!browser_gpu_dmabuf_import_enabled());
+        // SAFETY: 清理测试 env。
+        unsafe {
+            std::env::remove_var("ZW_COMPOSITOR_GPU");
+            std::env::remove_var("ZW_BROWSER_GPU_DMABUF_IMPORT");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[serial_test::serial]
+    fn resolve_delivery_fenced_returns_dmabuf_when_import_enabled() {
+        use std::os::fd::IntoRawFd;
+        use std::thread;
+
+        // SAFETY: 测试专用 env 写入。
+        unsafe {
+            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "1");
+        }
+
+        let memfd = unsafe { libc::memfd_create(c"zeroweb-test-dmabuf".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(memfd >= 0);
+        let width = 2u32;
+        let height = 2u32;
+        let stride = width * 4;
+        let expected = (stride as usize) * (height as usize);
+        assert_eq!(unsafe { libc::ftruncate(memfd, expected as libc::off_t) }, 0);
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                expected,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                memfd,
+                0,
+            )
+        };
+        assert_ne!(ptr, libc::MAP_FAILED);
+        let pixels = [255u8, 128, 64, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255];
+        unsafe {
+            std::ptr::copy_nonoverlapping(pixels.as_ptr(), ptr as *mut u8, expected);
+            libc::munmap(ptr, expected);
+        }
+
+        let mut delivery = build_compositor_dma_buf_delivery(99, 1, width, height, stride, 0x3432_4241, 0, 1, memfd);
+        let desc = delivery.gpu_image.clone().expect("gpu_image");
+        let handle = thread::spawn(move || publish_compositor_fd(&mut delivery).expect("publish fd"));
+
+        let resolved = resolve_compositor_frame_delivery_fenced(width, height, Vec::new(), None, Some(desc), Some(1))
+            .expect("resolve dmabuf");
+        handle.join().expect("publish join");
+
+        match resolved {
+            CompositorResolvedFrame::Dmabuf {
+                width: w,
+                height: h,
+                stride: s,
+                ..
+            } => {
+                assert_eq!((w, h, s), (width, height, stride));
+            }
+            CompositorResolvedFrame::Rgba(_) => panic!("expected Dmabuf variant"),
+        }
+
+        // SAFETY: 测试 env 清理。
+        unsafe {
+            std::env::remove_var("ZW_BROWSER_GPU_DMABUF_IMPORT");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[serial_test::serial]
+    fn resolve_delivery_fenced_returns_rgba_when_import_disabled() {
+        use std::os::fd::IntoRawFd;
+        use std::thread;
+
+        // SAFETY: 测试专用 env 写入。
+        unsafe {
+            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
+        }
+
+        let memfd = unsafe { libc::memfd_create(c"zeroweb-test-dmabuf-cpu".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(memfd >= 0);
+        let width = 1u32;
+        let height = 1u32;
+        let stride = 4u32;
+        let expected = 4usize;
+        assert_eq!(unsafe { libc::ftruncate(memfd, expected as libc::off_t) }, 0);
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                expected,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                memfd,
+                0,
+            )
+        };
+        assert_ne!(ptr, libc::MAP_FAILED);
+        unsafe {
+            std::ptr::copy_nonoverlapping([10u8, 20, 30, 40].as_ptr(), ptr as *mut u8, expected);
+            libc::munmap(ptr, expected);
+        }
+
+        let mut delivery = build_compositor_dma_buf_delivery(100, 2, width, height, stride, 0x3432_4241, 0, 2, memfd);
+        let desc = delivery.gpu_image.clone().expect("gpu_image");
+        let handle = thread::spawn(move || publish_compositor_fd(&mut delivery).expect("publish fd"));
+
+        let resolved = resolve_compositor_frame_delivery_fenced(width, height, Vec::new(), None, Some(desc), Some(2))
+            .expect("resolve rgba fallback");
+        handle.join().expect("publish join");
+
+        match resolved {
+            CompositorResolvedFrame::Rgba(bytes) => assert_eq!(bytes, vec![10, 20, 30, 40]),
+            #[cfg(target_os = "linux")]
+            CompositorResolvedFrame::Dmabuf { .. } => panic!("expected Rgba fallback"),
+        }
+
+        // SAFETY: 测试 env 清理。
+        unsafe {
+            std::env::remove_var("ZW_BROWSER_GPU_DMABUF_IMPORT");
+        }
     }
 }

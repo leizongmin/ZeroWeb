@@ -6283,6 +6283,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "serde_json",
+ "serial_test",
  "tracing",
  "tracing-subscriber",
  "zero-protocol",
@@ -6454,6 +6455,7 @@ dependencies = [
  "criterion",
  "libc",
  "serde",
+ "serial_test",
  "thiserror 2.0.18",
  "windows-sys 0.59.0",
 ]
@@ -6485,6 +6487,7 @@ dependencies = [
  "tracing",
  "wgpu",
  "winit",
+ "zero-protocol",
 ]
 
 [[package]]

@@ -33,7 +33,7 @@ pub fn apply_early_if_enabled() {
 }
 
 fn compositor_gpu_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1")
+    zero_protocol::compositor_gpu_enabled()
 }
 
 /// 字体加载完成后应用 Landlock（`ZW_COMPOSITOR_LANDLOCK=1`）。

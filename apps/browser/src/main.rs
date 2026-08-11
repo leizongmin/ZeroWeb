@@ -233,7 +233,12 @@ fn parse_args_from(
         if single_process {
             return Err("GUI smoke requires the multi-process renderer".to_string());
         }
-        if render_mode != RenderMode::Cpu || scale_override != Some(1.0) {
+        let gpu_dmabuf_smoke = std::env::var("ZERO_BROWSER_GPU_DMABUF_SMOKE").as_deref() == Ok("1");
+        if gpu_dmabuf_smoke {
+            if render_mode == RenderMode::Cpu || scale_override != Some(1.0) {
+                return Err("GPU dma-buf smoke requires --renderer=gpu|auto --scale=1".to_string());
+            }
+        } else if render_mode != RenderMode::Cpu || scale_override != Some(1.0) {
             return Err("GUI smoke requires --renderer=cpu --scale=1".to_string());
         }
     }
@@ -528,6 +533,14 @@ fn main() {
         tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
+    #[cfg(target_os = "linux")]
+    if cli.render_mode == RenderMode::Cpu {
+        // CPU 呈现无法消费 dma-buf；禁用 Browser 导入，compositor 帧经 RGBA 回退。
+        // SAFETY: 须在 compositor worker / 子进程启动前设置。
+        unsafe {
+            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
+        }
+    }
     if cli.smoke_capture.is_some() || cli.gui_smoke.is_some() {
         // SAFETY: 设置发生在任何 renderer/compositor 子进程和工作线程启动之前。
         unsafe {
@@ -676,7 +689,9 @@ fn main() {
                         presented_frame.as_ref(),
                         presented_source,
                     ) {
-                        let mode = if compositor_client::enabled() {
+                        let mode = if std::env::var("ZERO_BROWSER_GPU_DMABUF_SMOKE").as_deref() == Ok("1") {
+                            "gpu-dmabuf"
+                        } else if compositor_client::enabled() {
                             "compositor"
                         } else {
                             "legacy"

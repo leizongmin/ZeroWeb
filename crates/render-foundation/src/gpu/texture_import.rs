@@ -7,9 +7,9 @@ use wgpu::Device;
 
 use super::texture_export::{DRM_FORMAT_ABGR8888, ExportedGpuFrame};
 
-/// 是否启用 Browser GPU dma-buf 导入（`ZW_BROWSER_GPU_DMABUF_IMPORT=1`）。
+/// 是否启用 Browser GPU dma-buf 导入（Linux 默认开；`ZW_BROWSER_GPU_DMABUF_IMPORT=0` 禁用）。
 pub fn browser_gpu_dmabuf_import_enabled() -> bool {
-    std::env::var("ZW_BROWSER_GPU_DMABUF_IMPORT").is_ok_and(|v| v == "1")
+    zero_protocol::browser_gpu_dmabuf_import_enabled()
 }
 
 /// 从 compositor fd 创建 wgpu 纹理（mmap → queue.write_texture，无中间 Vec）。
@@ -77,4 +77,38 @@ pub fn try_import_linear_dmabuf(
         libc::munmap(ptr, expected);
     }
     Ok(texture)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color::Color;
+    use crate::font::{FontLoader, GlyphCache};
+    use crate::geometry::Rect;
+    use crate::gpu::renderer::GpuRenderer;
+    use crate::gpu::texture_export::{DRM_FORMAT_ABGR8888, export_via_memfd};
+    use crate::primitive::{FillPrimitive, RenderPrimitives};
+
+    #[test]
+    fn try_import_linear_dmabuf_round_trip() {
+        let mut gpu = match GpuRenderer::new_headless(4, 4) {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        gpu.configure_surface(4, 4);
+        let mut primitives = RenderPrimitives::new();
+        primitives.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+            color: Color::rgb(0, 0, 255),
+        });
+        let font_loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        gpu.render_scene_ext(&primitives.fills, &font_loader, &mut glyph_cache, &[], &[], &[]);
+
+        let exported = export_via_memfd(&gpu).expect("export");
+        let texture = try_import_linear_dmabuf(gpu.device(), gpu.queue(), &exported).expect("import");
+        assert_eq!(texture.size().width, 4);
+        assert_eq!(texture.format(), wgpu::TextureFormat::Bgra8Unorm);
+        assert_eq!(exported.drm_fourcc, DRM_FORMAT_ABGR8888);
+    }
 }

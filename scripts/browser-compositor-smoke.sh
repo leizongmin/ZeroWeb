@@ -81,6 +81,43 @@ if grep -q 'SMOKE_EVENT component=browser event=legacy_view_painted' "$OUT_DIR/c
     exit 1
 fi
 
+if test "$(uname -s)" = "Linux"; then
+    run_mode_gpu_dmabuf() {
+        mode=gpu-dmabuf
+        png="$OUT_DIR/$mode.png"
+        log="$OUT_DIR/$mode.log"
+        rm -f "$png" "$log"
+
+        echo "browser-compositor-smoke: running $mode"
+        unset ZW_COMPOSITOR_PROCESS
+        unset ZW_BROWSER_GPU_DMABUF_IMPORT
+        env \
+            RUST_LOG=info \
+            ZERO_BROWSER_PRODUCT_SMOKE=1 \
+            ZERO_BROWSER_GPU_DMABUF_SMOKE=1 \
+            ZW_COMPOSITOR_BIN="$COMPOSITOR_BIN" \
+            "$BIN" --renderer=gpu --scale=1 --smoke-capture="$png" >"$log" 2>&1
+
+        test -s "$png" || {
+            echo "browser-compositor-smoke: missing PNG for $mode" >&2
+            exit 1
+        }
+        file "$png" | grep -q 'PNG image data' || {
+            echo "browser-compositor-smoke: invalid PNG for $mode" >&2
+            exit 1
+        }
+        grep -q "SMOKE_CAPTURE mode=$mode fixture=zero://newtab" "$log"
+        grep -q 'SMOKE_EVENT component=compositor_client status=Healthy' "$log"
+        grep -q 'SMOKE_EVENT component=browser event=compositor_dmabuf_adopted' "$log"
+        grep -q 'SMOKE_EVENT component=browser event=frame_captured source=compositor_bitmap fallback=false' "$log"
+        if grep -qE 'SMOKE_FAILURE|Compositor disconnected; switched all renderers to legacy frame publishing|fallback=true|panicked at' "$log"; then
+            echo "browser-compositor-smoke: failure or fallback found in $mode log" >&2
+            exit 1
+        fi
+    }
+    run_mode_gpu_dmabuf
+fi
+
 legacy_signature=$(sed -n 's/.*SMOKE_REGION name=page .* signature=//p' "$OUT_DIR/legacy.log" | tail -1)
 compositor_signature=$(sed -n 's/.*SMOKE_REGION name=page .* signature=//p' "$OUT_DIR/compositor.log" | tail -1)
 legacy_dark=$(sed -n 's/.*SMOKE_REGION name=page .* dark_pixels=\([0-9][0-9]*\) dark_ratio=.*/\1/p' "$OUT_DIR/legacy.log" | tail -1)

@@ -20,3 +20,4 @@ libc = "0.2"
 
 [dev-dependencies]
 serde_json = { workspace = true }
+serial_test = { workspace = true }
