@@ -133,6 +133,70 @@ fn draw_image_consumes_composite_operation_r3238() {
     assert_eq!(&over.data[..4], &[0, 255, 0, 255], "source-over drawImage 须覆盖为绿");
 }
 
+/// R3239：blend 模式算术（W3C §9 separable + §10 non-separable）。旧 composite_pixel 对 blend
+/// 模式回落 source-over 因子（仅 Porter-Duff 真实合成）；R3239 计算 blended source Cs' 后再合成。
+/// 不透源 over 不透背景（da=sa=1）→ out = B(Cb,Cs)（blend 纯结果）。
+#[test]
+fn blend_modes_r3239() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+    let gray = Color {
+        r: 128,
+        g: 128,
+        b: 128,
+        a: 255,
+    };
+
+    // 灰背景 + 指定 composite 的红 fillRect → 读中心像素。
+    let blend = |op: crate::CompositeOperation| -> [u8; 4] {
+        let mut ctx = CanvasContext::new(10, 10);
+        ctx.set_fill_color(gray);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        ctx.set_composite_operation(op);
+        ctx.set_fill_color(Color::RED);
+        ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+        let px = ctx.get_image_data(5, 5, 1, 1);
+        [px.data[0], px.data[1], px.data[2], px.data[3]]
+    };
+
+    // separable（整数精确）：Cb=gray(128), Cs=red(255,0,0)。
+    // multiply: R=128*255/255=128, G=B=0。
+    assert_eq!(blend(crate::CompositeOperation::Multiply), [128, 0, 0, 255], "multiply");
+    // screen: R=255（cb+cs-cb·cs=1）, G=B=128。
+    assert_eq!(blend(crate::CompositeOperation::Screen), [255, 128, 128, 255], "screen");
+    // difference: R=|128-255|=127, G=B=|128-0|=128。
+    assert_eq!(
+        blend(crate::CompositeOperation::Difference),
+        [127, 128, 128, 255],
+        "difference"
+    );
+
+    // non-separable luminosity：取源亮度（Lum(red)=0.3）+ 背景 hue/sat → 纯灰（三通道相等），≠ 红。
+    let lum_px = blend(crate::CompositeOperation::Luminosity);
+    assert_eq!(lum_px[0], lum_px[1], "luminosity: 三通道相等（纯灰）");
+    assert_eq!(lum_px[1], lum_px[2], "luminosity: 三通道相等（纯灰）");
+    assert_ne!(&lum_px[..3], &[255, 0, 0][..], "luminosity 须 ≠ source-over 红");
+
+    // 对照 + blend≠source-over：确认 blend 算术生效（非旧 source-over 回落）。
+    let source_over = blend(crate::CompositeOperation::SourceOver);
+    assert_eq!(&source_over[..], &[255, 0, 0, 255], "source-over: 红覆盖灰");
+    assert_ne!(
+        blend(crate::CompositeOperation::Overlay),
+        source_over,
+        "overlay 须 ≠ source-over"
+    );
+    assert_ne!(
+        blend(crate::CompositeOperation::Exclusion),
+        source_over,
+        "exclusion 须 ≠ source-over"
+    );
+    assert_ne!(
+        blend(crate::CompositeOperation::Hue),
+        source_over,
+        "hue 须 ≠ source-over"
+    );
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {

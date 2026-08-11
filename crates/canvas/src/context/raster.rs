@@ -7,6 +7,182 @@ use crate::path::{Path2D, PathCommand};
 
 use super::types::*;
 
+// ── Blend mode helpers（W3C Compositing and Blending Level 1 §9 separable + §10 non-separable）──
+// R3239：blend 模式先把源色 Cs 与背景色 Cb 按 B(Cb,Cs) 混合得 blended source
+// `Cs' = (1 - αb)·Cs + αb·B(Cb,Cs)`，再以 source-over 合成因子与背景合成（§13）。
+// Porter-Duff 模式不 blend（Cs' = Cs）。
+
+/// §9 separable 基础公式（per-channel）。
+fn blend_multiply(cb: f32, cs: f32) -> f32 {
+    cb * cs
+}
+fn blend_screen(cb: f32, cs: f32) -> f32 {
+    cb + cs - cb * cs
+}
+fn blend_hard_light(cb: f32, cs: f32) -> f32 {
+    if cs <= 0.5 {
+        blend_multiply(cb, 2.0 * cs)
+    } else {
+        blend_screen(cb, 2.0 * cs - 1.0)
+    }
+}
+
+/// §9 separable per-channel B(Cb, Cs)。调用方保证 op 为 separable 模式。
+fn separable_blend(op: CompositeOperation, cb: f32, cs: f32) -> f32 {
+    match op {
+        CompositeOperation::Multiply => blend_multiply(cb, cs),
+        CompositeOperation::Screen => blend_screen(cb, cs),
+        // overlay(Cb,Cs) = hard_light(Cs,Cb)（spec 交换参数）。
+        CompositeOperation::Overlay => blend_hard_light(cs, cb),
+        CompositeOperation::Darken => cb.min(cs),
+        CompositeOperation::Lighten => cb.max(cs),
+        CompositeOperation::ColorDodge => {
+            if cb <= 0.0 {
+                0.0
+            } else if cs >= 1.0 {
+                1.0
+            } else {
+                (cb / (1.0 - cs)).min(1.0)
+            }
+        }
+        CompositeOperation::ColorBurn => {
+            if cb >= 1.0 {
+                1.0
+            } else if cs <= 0.0 {
+                0.0
+            } else {
+                1.0 - ((1.0 - cb) / cs).min(1.0)
+            }
+        }
+        CompositeOperation::HardLight => blend_hard_light(cb, cs),
+        CompositeOperation::SoftLight => {
+            if cs <= 0.5 {
+                cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
+            } else {
+                let d = if cb <= 0.25 {
+                    ((16.0 * cb - 12.0) * cb + 4.0) * cb
+                } else {
+                    cb.sqrt()
+                };
+                cb + (2.0 * cs - 1.0) * (d - cb)
+            }
+        }
+        CompositeOperation::Difference => (cb - cs).abs(),
+        CompositeOperation::Exclusion => cb + cs - 2.0 * cb * cs,
+        // 非 separable 不应达此（调用方分支保证）；保险返 cs。
+        _ => cs,
+    }
+}
+
+type Rgb = [f32; 3];
+
+/// §10.1 亮度（Rec. 601 系数）。
+fn lum(c: Rgb) -> f32 {
+    0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+}
+
+/// §10.2 ClipColor——裁剪到 [0,1]（保持亮度，min/max 取自原始 C，两 clip 序贯作用于 C）。
+fn clip_color(c: Rgb) -> Rgb {
+    let l = lum(c);
+    let mn = c[0].min(c[1]).min(c[2]);
+    let mx = c[0].max(c[1]).max(c[2]);
+    let mut out = c;
+    if mn < 0.0 {
+        let d = l - mn;
+        if d != 0.0 {
+            out = [
+                l + (out[0] - l) * l / d,
+                l + (out[1] - l) * l / d,
+                l + (out[2] - l) * l / d,
+            ];
+        }
+    }
+    if mx > 1.0 {
+        let d = mx - l;
+        if d != 0.0 {
+            out = [
+                l + (out[0] - l) * (1.0 - l) / d,
+                l + (out[1] - l) * (1.0 - l) / d,
+                l + (out[2] - l) * (1.0 - l) / d,
+            ];
+        }
+    }
+    out
+}
+
+/// §10.2 SetLum——设亮度为 l（加偏移后 ClipColor）。
+fn set_lum(c: Rgb, l: f32) -> Rgb {
+    let d = l - lum(c);
+    clip_color([c[0] + d, c[1] + d, c[2] + d])
+}
+
+/// §10.1 Sat——饱和度（max - min）。
+fn sat(c: Rgb) -> f32 {
+    c[0].max(c[1]).max(c[2]) - c[0].min(c[1]).min(c[2])
+}
+
+/// §10.3 SetSat——设饱和度为 s（保持各通道大小序，min→0/mid→插值/max→s）。
+fn set_sat(c: Rgb, s: f32) -> Rgb {
+    let mut idx = [0usize, 1, 2];
+    idx.sort_by(|&a, &b| c[a].partial_cmp(&c[b]).unwrap_or(std::cmp::Ordering::Equal));
+    let (imin, imid, imax) = (idx[0], idx[1], idx[2]);
+    let (cmin, cmid, cmax) = (c[imin], c[imid], c[imax]);
+    let mut out = c;
+    if cmax > cmin {
+        out[imid] = ((cmid - cmin) * s) / (cmax - cmin);
+        out[imax] = s;
+    } else {
+        out[imid] = 0.0;
+        out[imax] = 0.0;
+    }
+    out[imin] = 0.0;
+    out
+}
+
+/// §10 non-separable B(Cb, Cs)。调用方保证 op 为 non-separable 模式。
+fn nonseparable_blend(op: CompositeOperation, cb: Rgb, cs: Rgb) -> Rgb {
+    match op {
+        CompositeOperation::Hue => set_lum(set_sat(cs, sat(cb)), lum(cb)),
+        CompositeOperation::Saturation => set_lum(set_sat(cb, sat(cs)), lum(cb)),
+        CompositeOperation::Color => set_lum(cs, lum(cb)),
+        CompositeOperation::Luminosity => set_lum(cb, lum(cs)),
+        _ => cs,
+    }
+}
+
+/// 计算 composite_pixel 用的源色（blend 模式返回 Cs'，Porter-Duff 返回 Cs 原样）。
+fn blend_source_color(op: CompositeOperation, da: f32, src: Rgb, dst: Rgb) -> Rgb {
+    let b = match op {
+        CompositeOperation::Multiply
+        | CompositeOperation::Screen
+        | CompositeOperation::Overlay
+        | CompositeOperation::Darken
+        | CompositeOperation::Lighten
+        | CompositeOperation::ColorDodge
+        | CompositeOperation::ColorBurn
+        | CompositeOperation::HardLight
+        | CompositeOperation::SoftLight
+        | CompositeOperation::Difference
+        | CompositeOperation::Exclusion => [
+            separable_blend(op, dst[0], src[0]),
+            separable_blend(op, dst[1], src[1]),
+            separable_blend(op, dst[2], src[2]),
+        ],
+        CompositeOperation::Hue
+        | CompositeOperation::Saturation
+        | CompositeOperation::Color
+        | CompositeOperation::Luminosity => nonseparable_blend(op, dst, src),
+        // Porter-Duff：不 blend。
+        _ => return src,
+    };
+    // Cs' = (1 - αb)·Cs + αb·B(Cb,Cs)
+    [
+        (1.0 - da) * src[0] + da * b[0],
+        (1.0 - da) * src[1] + da * b[1],
+        (1.0 - da) * src[2] + da * b[2],
+    ]
+}
+
 impl CanvasContext {
     // ── Private helpers ──
 
@@ -646,9 +822,12 @@ impl CanvasContext {
         if out_a <= 0.0 {
             return (0, 0, 0, 0);
         }
-        let out_r = (sr * sa * fa + dr * da * fb) / out_a;
-        let out_g = (sg * sa * fa + dg * da * fb) / out_a;
-        let out_b = (sb * sa * fa + db * da * fb) / out_a;
+        // R3239：blend 模式（§9 separable + §10 non-separable）用 blended source Cs' 替代 Cs；
+        // Porter-Duff 模式 Cs' = Cs（blend_source_color 原样返回）。
+        let cs = blend_source_color(self.composite_operation, da, [sr, sg, sb], [dr, dg, db]);
+        let out_r = (cs[0] * sa * fa + dr * da * fb) / out_a;
+        let out_g = (cs[1] * sa * fa + dg * da * fb) / out_a;
+        let out_b = (cs[2] * sa * fa + db * da * fb) / out_a;
 
         (
             (out_r * 255.0).round().clamp(0.0, 255.0) as u8,
