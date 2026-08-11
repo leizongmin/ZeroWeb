@@ -130,6 +130,20 @@
 
 ## 最近完成的改进
 
+### 本轮核实：多个 gap 面已实质收敛（无代码变更，跨 session 排障）
+
+承接上轮「pivot 到 net/storage spec 审」指示，本轮对 zero-web 流可达的 gap 面做了**直接代码核实**（不依赖 agent 扫描——近期 agent 多轮误判：scroll setter「不派发」、Selection/Range「no-op」、本轮 net/storage 5 候选均不成立）。结论：**多个 gap 面已实质收敛，clean slice 稀缺**。核实记录如下，供后续轮次免重复扫描：
+
+1. **net/storage spec 审面已收敛**（R3220-R3235 全覆盖 RFC 9111 缓存 + local_storage 插入序 + IndexedDB NaN/原子性/autoinc）。本轮 agent 推荐 5 候选**全部核实不成立**：① `negative_cache.rs` 不适用 Retry-After——它缓存**fetch 失败**（图片解码/网络错，无 HTTP 响应），非 4xx/5xx；fixed 30s TTL 正确；② `charset.rs` UTF-16 BOM——`encoding_rs::decode` 已处理对应编码 BOM（仅 UTF-8 BOM 显式预剥作 belt-suspenders），非 gap；③ `cache_api.rs` Vary 不匹配——**核实非 JS-facing**（`caches` API 未接 JS，grep shim/callbacks 无 Cache 引用，内部 Rust 抽象），加 Vary 为推测性过度设计；④ `connect.rs` `origin_from_url`「invalid URL fallback」——**agent 捏造**（connect.rs 无此函数，实为 transport 层 IPv4 DNS + 代理 + 错误映射，无 spec 算法）；⑤ `websocket.rs` scheme 校验——tungstenite 已校验，minor。
+2. **present-API/event 面已收敛**（R3247-R3256 全覆盖 + Selection/Range 已核实非 gap）。
+3. **DOM 序列化面已收敛**（R3206/R3210/R3214/R3216 全覆盖 HTML §13 fragment 序列化 + 限定名 + raw text + round-trip，`serializer.rs` 无 gap 标记）。
+4. **native DOM `range.rs`**（zero-dom）缺方法（surroundContents/comparePoint/intersectsNode/isPointInRange/commonAncestorContainer）但属**未接线**的 native DOM binding（P1b/L2 gated），加方法为推测性（违「简单至上」），defer 至 P1b 接线时。
+5. **microtask checkpoint 时序**（P1a 剩余简化项）——`script-sandbox` 已有 `perform_microtask_checkpoint`（v8_runtime）+ worker 每 task 后 drain；主页面 execute 末 drain 的精确时序改造涉 Promise 解析时序（影响多测），**多轮 defer 的中等风险项**，需独立评估（非 clean slice）。
+
+**结论**：zero-web 流可达的「clean spec/API gap」面（present-API/event、net/storage、DOM 序列化）**已实质收敛**。下一高价值项均为**大件**：① 元素滚动命中 + wheel 事件（需 browser 端命中测试 + IPC `ScrollEventParams` 扩目标字段 + renderer 元素派发，涉滚动架构 mini-RFC）；② P1b V8 原生绑定（独立大项 RFC）；③ microtask checkpoint 时序（中等风险评估）；④ 战略项 user/hardware gated（L2 escape-hatch / GPU/Display）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### console API 桥接宿主日志（本轮 R3256，engine shim + callbacks）—— page console 输出从「全丢失」到可见
 
 承接 R3253-R3255（视口/滚动事件通知）后转另一文档化降级：**console 全 no-op**。shim `globalThis.console`（part02.js:2121）原为「全方法 `function(){}` 空实现 + `globalThis.console || {...}`」——`||` 守卫在 V8 默认上下文（自带 native console，`function log(){[native code]}`，不桥接宿主）下**保留 native 版**，使桥接永不生效；即便生效，旧方法亦全 no-op → page `console.log/warn/error` 输出完全丢失（排障盲、WPT console 断言不可见、page `console.error` 异常静默）。本轮将 console 桥接到宿主 `tracing` 日志。
