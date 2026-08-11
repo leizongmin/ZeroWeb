@@ -761,7 +761,10 @@ impl super::Painter {
             // 非真实点宽）。旧 measure_char_for_paint('.', fs, false) 硬编码 false → Ahem 容器
             // ellipsis 宽度过小 → 定位错（text-overflow-ellipsis-001）。driving: 同 container_is_ahem
             // 模式（text.rs:853）。
-            let container_is_ahem = style.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+            let container_is_ahem = style
+                .font_family
+                .iter()
+                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
 
             if has_content {
                 let glyphs_before_fragments = self.primitives.glyphs.len();
@@ -873,8 +876,10 @@ impl super::Painter {
                                 // 行盒顶部 = (line.y - col_start_y)；基线偏移 v_offset
                                 // （Ahem 完美方块顶部对齐 → 0；普通字体 = font_size ≈ ascent）。
                                 // is_ahem 用容器 font-family 判定（多列 IFC 的 fragment.is_ahem 不可靠）。
-                                let container_is_ahem =
-                                    style.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+                                let container_is_ahem = style
+                                    .font_family
+                                    .iter()
+                                    .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
                                 let v_offset = if container_is_ahem { 0.0 } else { fragment.font_size };
                                 let frag_base_y = content_y + (line.y - col_start_y) + v_offset + ty;
 
@@ -1804,7 +1809,10 @@ impl super::Painter {
         }
 
         // 渲染文本字符为 glyph primitives
-        let is_ahem = style.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+        let is_ahem = style
+            .font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
         let mut char_x = content_x;
         for ch in text.chars() {
             self.primitives.add_glyph(GlyphPrimitive {

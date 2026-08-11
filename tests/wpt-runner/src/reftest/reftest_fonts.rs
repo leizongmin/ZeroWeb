@@ -381,27 +381,28 @@ mod feature_tests {
         for (metric, aspect) in cases {
             let actual = loader.font_metric_aspect(font_id, metric).expect("font metric");
             assert!((actual - aspect).abs() < 0.001, "{metric:?}: {actual} != {aspect}");
-            assert!(
-                (loader.adjusted_font_size(
-                    font_id,
-                    font_id,
-                    56.0,
-                    FontSizeAdjustment::Adjust {
-                        metric,
-                        target: Some(aspect * 1.5),
-                    },
-                ) - 84.0)
-                    .abs()
-                    < 0.001
+            let adjusted = loader.adjusted_font_size(
+                font_id,
+                font_id,
+                56.0,
+                FontSizeAdjustment::Adjust {
+                    metric,
+                    target: Some(actual * 1.5),
+                },
             );
-            assert_eq!(
-                loader.adjusted_font_size(
-                    font_id,
-                    font_id,
-                    56.0,
-                    FontSizeAdjustment::Adjust { metric, target: None },
-                ),
-                56.0
+            assert!(
+                (adjusted - 84.0).abs() < 0.001,
+                "{metric:?}: adjusted size was {adjusted}"
+            );
+            let from_font = loader.adjusted_font_size(
+                font_id,
+                font_id,
+                56.0,
+                FontSizeAdjustment::Adjust { metric, target: None },
+            );
+            assert!(
+                (from_font - 56.0).abs() < 0.001,
+                "{metric:?}: from-font size was {from_font}"
             );
         }
     }

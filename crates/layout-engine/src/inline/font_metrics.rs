@@ -157,9 +157,12 @@ impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         let &(_id, a, d, g) = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
-            self.0
-                .get(bare)
-                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(bare)).map(|(_, v)| v))
+            self.0.get(bare).or_else(|| {
+                self.0
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(bare))
+                    .map(|(_, v)| v)
+            })
         })?;
         Some(LineMetrics {
             ascent: a * size,
@@ -173,7 +176,12 @@ impl FontMetricProvider for FontMetricMap {
             let bare = fam.trim_matches('"').trim_matches('\'');
             self.0
                 .get(bare)
-                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(bare)).map(|(_, v)| v))
+                .or_else(|| {
+                    self.0
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(bare))
+                        .map(|(_, v)| v)
+                })
                 .map(|(id, _, _, _)| *id)
         })
     }

@@ -816,13 +816,11 @@ pub(super) fn native_toggle_attribute_invoke(
             } else {
                 (true, None) // 已在，无变
             }
+        } else if has {
+            d.remove_attribute(id, &name);
+            (false, Some(None))
         } else {
-            if has {
-                d.remove_attribute(id, &name);
-                (false, Some(None))
-            } else {
-                (false, None) // 已不在，无变
-            }
+            (false, None) // 已不在，无变
         }
     })
     .unwrap_or((false, None));
