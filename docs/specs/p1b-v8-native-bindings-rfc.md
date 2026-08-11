@@ -140,6 +140,28 @@ crates/engine/src/dom_bindings/
 
 原生 `HTMLElement` 是 V8 真实 class（FunctionTemplate 构造）。`class MyEl extends HTMLElement` 经 `Reflect.construct` 产生继承 HTMLElement.prototype 的实例，internal slot 存 NodeId。`customElements.define` + createElement('my-el') 实例化自定义 ctor（ctor body 的 `this.appendChild` 操作原生 node）。lifecycle（connectedCallback）经原生 appendChild hook 触发。R2813 的 upgrade defer 解除。
 
+#### 3.5.1 S5 详细设计（TBD-1 验证后落地，R3262）
+
+**前提闭合**：TBD-1（S5 class 继承）已 R3262 PoC 验证可行——`class Sub extends NativeHTMLElement`（NativeHTMLElement = native FunctionTemplate 构造器，instance_template internal_field_count=1）的 `new Sub()` 实例经 `super()` **继承 native instance_template 的 internal field 布局**，native getter（instance_template accessor）读到 NodeId（详见 §6 TBD-1 + `script-sandbox/src/dom_bindings.rs::poc_native_ctor_subclass`）。故 S5 复用既有 internal-field NodeId 架构，无需替代存储。
+
+**既有 polyfill 基础设施（复用，非重写）**：customElements registry（`js_dom_shim/part03.js`，R2813）已实现 `define`/`get`/`getName`/`whenDefined`（+ `upgrade` stub）；lifecycle 派发（R2992/R2994）已实现 `attributeChangedCallback`（setAttribute/removeAttribute 命中 `observedAttributes`）+ `connectedCallback`/`disconnectedCallback`（经 `_ceApplyConn(proxy, connected)`，在 append/insert/remove 路径收集插入元素后传播）。**当前 defer 项**（part03.js 注释）：upgrade / ctor 实例化——因 element 实例为 generic Proxy（非 ctor 实例），无法 `new ctor()`。S5 即落地此 defer。
+
+**S5 集成方案**（native HTMLElement base + 既有 lifecycle）：
+1. **native HTMLElement 构造器**（engine `dom_bindings`）：FunctionTemplate 构造器，instance_template internal_field_count=1（slot[0] = NodeId 经 External），注册全局 `HTMLElement`。`class MyEl extends HTMLElement` 的 `super()` 调 native ctor 填 slot[0]（R3262 验证）。
+2. **createElement('my-el') upgrade**：`document.createElement` 路径（polyfill `__zw_create_element` 返 generic Proxy）在 native_dom 启用时，**检测 tag 命中 `_ce_registry`** → `Reflect.construct(registeredCtor, [])` 产 native 实例（slot[0]=新 NodeId，对应 host 建的 element）→ 返此 native 实例（替代 generic Proxy）。customElements.upgrade(root) 同路径遍历 root 子树未升级 custom element 节点。
+3. **lifecycle 派发接 native 实例**：既有 `_ceApplyConn(proxy, connected)` 已在 append/insert/remove 路径收集「插入的元素」并派发 connected/disconnectedCallback。native 实例经 appendChild（native `native_append_child_invoke` → `with_dom_mut` 改 live Document）插入后，polyfill mutation 回注（`apply_dom_mutations`）路径仍走 `_ceApplyConn`——**复用既有派发，无需改 native append_child**。native 实例的 `_ceEntryFor` 查 registry（按 tag）→ 命中则派发 ctor.prototype.connectedCallback（this = native 实例）。
+4. **attributeChangedCallback**：既有 R2992 setAttribute/removeAttribute 路径已派发；native 实例经 native set_attribute（`with_dom_mut`）后，同 polyfill 回注路径触发。`observedAttributes` 过滤不变。
+
+**TBD-4（lifecycle 触发点 vs 渲染管线增量更新）已解**：native appendChild 经 `with_dom_mut` 直改 live `cached_doc`（R3106 `Rc<RefCell<Document>>`），webview `sync_render_after_native_dom`（R3108）检测 native 写并重渲染。故 custom element 的 connectedCallback 在 appendChild 后派发 → native 写 → R3108 自动重渲染 → 渲染管线增量更新与 lifecycle 无冲突（lifecycle 不直接驱动渲染，渲染由 native 写经 R3108 触发）。**TBD-4 关闭**。
+
+**S5 切片 land 计划**（每片 kill-switch `ZW_NATIVE_DOM` + make test 零回归）：
+- **S5a native HTMLElement base**：engine `dom_bindings` 建 native HTMLElement FunctionTemplate（ctor 填 slot + instance_template nodeType accessor 示范）+ 全局注册。kill-switch 默认关。验证：`class X extends HTMLElement` + `new X()` instanceof + slot 可读（镜像 R3262 PoC，但接生产 DOM 源）。
+- **S5b createElement upgrade**：`document.createElement(tag)` 在 native_dom + tag 命中 registry 时 `Reflect.construct` 产 native 实例。验证：`customElements.define('my-el', X); document.createElement('my-el') instanceof X` + ctor body `this` 是 native 实例（appendChild 经 native 写）。
+- **S5c lifecycle 接通**：connectedCallback/disconnectedCallback 经既有 `_ceApplyConn` 派发到 native 实例（验证 append/remove 触发 ctor.prototype 回调，this=native 实例）。attributeChangedCallback 复用 R2992。
+- **S5d upgrade + whenDefined parity**：`customElements.upgrade(root)` 落地（遍历子树升级）+ whenDefined 已就绪（R2813）。验证既有 Web Components 用例（lit/stencil 基础模式）。
+
+**风险**：① Reflect.construct 产 native 实例的 NodeId 绑定——createElement 已 host 建元素 + NodeId，Reflect.construct 需把该 NodeId 注入 native ctor 的 slot[0]（super() 链中填，可能需 native HTMLElement ctor 读「当前正在升级的 NodeId」线程局部，类似 gc.rs ACTIVE_ELEMENT 模式）；② polyfill mutation 回注路径（`apply_dom_mutations`）与 native 写并存的时序——native_dom 启用时 polyfill 仍运行，需确保 native 实例的 append 既走 native 写（live doc）又触发 `_ceApplyConn`（polyfill 回注）。S5b/S5c 设计时细化。
+
 ### 3.6 高层 Web API 共存
 
 Fetch/Observer/FontFaceSet/事件循环 等高层 API 保留 shim（js_dom_shim.js），但：
@@ -200,7 +222,7 @@ native（A）读写既不反映 polyfill（B）也不反映 renderer（C）—�
 | **S2 写入 + 子树** | setAttribute/removeAttribute/appendChild/insertBefore/removeChild/childNodes/children 原生 + DomMutation 经原生路径 | 🟡 中（mutation 路径核心） | reftest（DOM 变更驱动重渲染）+ WPT | reconciliation 主体原生化 |
 | **S3 查询** | querySelector/querySelectorAll/getElementById 原生（消费 zero_dom 选择器引擎，复用既有） | 🟡 中 | WPT selectors + 既有查询测试 | 高频查询原生化 |
 | **S4 EventTarget** | addEventListener/removeEventListener/dispatchEvent 原生 + 事件 target 用原生 node | 🟡 中 | 既有事件测试 + 生命周期事件 | 事件派发去 selector 匹配 |
-| **S5 HTMLElement class + customElements upgrade** | 原生 HTMLElement class（可被 extends）+ customElements upgrade + connectedCallback | 🔴 高（class 实例模型） | 新 customElements 测试 + Web Components 兼容 | 解 P2（Web Components） |
+| **S5 HTMLElement class + customElements upgrade** | 原生 HTMLElement class（可被 extends）+ customElements upgrade + connectedCallback | 🟡 中（TBD-1 S5 class 继承已 R3262 验证可行；TBD-4 已解） | 新 customElements 测试 + Web Components 兼容 | 解 P2（Web Components）；设计见 §3.5.1，分 S5a–S5d 切片 |
 | **S6 高层 API 改写** | shim 的 Fetch/Observer/FontFaceSet 等改调原生 node 方法，shim 萎缩 | 🟡 中 | 既有 R2945–R2953 测试 + WPT | 高层 API 去 ser/deser |
 | **S7 收尾** | 移除 polyfill 桥死代码（`__zw_*` 无调用方）+ shim 删减 | 🟢 低（清理） | 全量回归 | 维护体量降（P4） |
 
@@ -250,7 +272,7 @@ native（A）读写既不反映 polyfill（B）也不反映 renderer（C）—�
 | TBD-1 | rusty_v8 150.x 的 ObjectTemplate internal-slot + inherited-prototype 具体 API（FunctionTemplate 继承链） | ✅ 基础 API 已验证（S0）；✅ **S5 class 继承已专项验证可行**（R3262 PoC） | **已验证**（S0 PoC）：`ObjectTemplate::set_internal_field_count` + `Object::set/get_internal_field` + `v8::External::new/value` + `.into()`(Local→Local\<Data\>) + `data.cast::<External>()` 均可用；PoC round-trip NodeId 经 External 存/取通过。**FunctionTemplate 继承链（S5 class）已专项验证（R3262 PoC，`script-sandbox/src/dom_bindings.rs::poc_native_ctor_subclass`）**：JS `class Sub extends NativeCtor`（NativeCtor = native FunctionTemplate 构造器，instance_template internal_field_count=1，ctor 填 slot[0]，instance_template `nodeType` accessor 读 slot[0]）子类实例 `new Sub()` 经 `super()` 调 native ctor 时**继承了 native instance_template 的 internal field 布局**——`set_internal_field(0,...)` 成功（返 true），native getter 读到 NodeId=42（subclass_node_type=42，与直接 `new NativeCtor()` 一致）+ instanceof 基类/子类均 true + 子类 ctor 执行。**结论：S5 customElements 可直接复用 internal-field NodeId 存储**（与既有 native 元素生产路径一致），无需 private symbol / WeakMap 替代。**关键技术点**：native NodeId getter 须挂 **instance_template** accessor（holder=实例有 slot），非 prototype_template（holder=原型无 slot，get_internal_field 返 None）。 | ✅ S5 class 继承已验证（R3262），S5 可按既有 internal-field 架构推进 |
 | TBD-2 | GC weak-persistent 在持久 Context 的具体行为（V8 GC 触发时机、weak callback） | ✅ 已验证（S0 GC 设计可推进） | **已验证**（S0 PoC）：`v8::Weak::new(scope, &global)` + `weak.is_empty()`；强引用释放 + `Isolate::low_memory_notification()`（host GC，无需 `--expose-gc`）后 weak 变 empty。`Weak::with_finalizer`/`with_guaranteed_finalizer` 签名已验证（best-effort / guaranteed 语义）；`request_garbage_collection_for_testing` 需 `--expose-gc`（生产避免，PoC 用 low_memory_notification）。 | S1 gc.rs 用 weak + getter 时 stale 校验 |
 | TBD-3 | NodeId ↔ selector 双向映射的性能（迁移期每次 node↔proxy 转换开销） | 重要 | 需 bench | S0/S1 bench 含映射开销 |
-| TBD-4 | customElements upgrade 的 lifecycle 触发点（原生 appendChild hook 是否影响渲染管线增量更新） | 重要（S5） | 需与渲染管线增量更新协调 | S5 设计子文档 |
+| TBD-4 | customElements upgrade 的 lifecycle 触发点（原生 appendChild hook 是否影响渲染管线增量更新） | ✅ 已解（S5 设计，R3262 轮） | native appendChild 经 `with_dom_mut` 改 live `cached_doc` → webview `sync_render_after_native_dom`（R3108）检测 native 写并重渲染。lifecycle 不直接驱动渲染（渲染由 native 写经 R3108 触发），故无冲突。详见 §3.5.1。 | ✅ 关闭 |
 | TBD-5 | 是否保留 QuickJS 路径的原生绑定（或仅 V8） | 可选 | QuickJS 是扩展沙箱非页面引擎，本 RFC 默认仅 V8 | 用户确认 |
 | TBD-6 | **Live Document 共享**——`cached_doc` 改 `Rc<RefCell<Document>>` 共享的 borrow/性能/替换交互（去 R3097 read-only 快照限制） | 🔴 高（战略） | **已设计**（§3.7，R3105）：webview owns pipeline → 可达 cached_doc；`Rc<RefCell>` 单线程顺序 borrow 安全；分 L1/L2/L3 阶段 | L1 切片（§3.7 末「L1 切片定义」）直接可执行 |
 
