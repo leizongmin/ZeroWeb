@@ -90,6 +90,49 @@ fn composite_lighter_additive_r3237() {
     );
 }
 
+/// R3238：`drawImage` 须消费 `globalCompositeOperation`——旧 `draw_image_sized` 固定 source-over
+/// 内联 alpha 混合，无视 composite_operation（destination-out 不擦除）。
+#[test]
+fn draw_image_consumes_composite_operation_r3238() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // 底层：fill_rect 铺不透明红。
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+
+    // 构造不透明白 ImageData（destination-out 仅看 src alpha，颜色无关）。
+    let mut img = ctx.create_image_data(10, 10);
+    for px in 0..100 {
+        let i = px * 4;
+        img.data[i] = 255;
+        img.data[i + 1] = 255;
+        img.data[i + 2] = 255;
+        img.data[i + 3] = 255;
+    }
+
+    // destination-out + drawImage → 须擦除（alpha→0）。旧固定 source-over 覆盖为白。
+    ctx.set_composite_operation(crate::CompositeOperation::DestinationOut);
+    ctx.draw_image(&img, 0.0, 0.0);
+    let erased = ctx.get_image_data(5, 5, 1, 1);
+    assert_eq!(erased.data[3], 0, "R3238：destination-out drawImage 须擦除（alpha→0）");
+
+    // 对照：source-over drawImage 覆盖（不擦除）——绿 ImageData 覆盖红底。
+    let mut ctx2 = CanvasContext::new(10, 10);
+    ctx2.set_fill_color(Color::RED);
+    ctx2.fill_rect(0.0, 0.0, 10.0, 10.0);
+    let mut green = ctx2.create_image_data(10, 10);
+    for px in 0..100 {
+        let i = px * 4;
+        green.data[i + 1] = 255;
+        green.data[i + 3] = 255;
+    }
+    ctx2.draw_image(&green, 0.0, 0.0);
+    let over = ctx2.get_image_data(5, 5, 1, 1);
+    assert_eq!(&over.data[..4], &[0, 255, 0, 255], "source-over drawImage 须覆盖为绿");
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {

@@ -943,6 +943,9 @@ impl CanvasContext {
 
         let x_scale = sw as f32 / dw;
         let y_scale = sh as f32 / dh;
+        // R3238：source-over + 全透源像素为 no-op（保 drawImage 热路径性能——跳逐像素 composite_pixel）；
+        // 非 source-over 透源有定义行为（source-in/destination-in/copy 须清除 dst），不跳。
+        let skip_transparent_src = self.composite_operation == CompositeOperation::SourceOver;
 
         // 应用变换后的目标矩形用于逐像素计算
         for py in 0..(dh as usize) {
@@ -972,34 +975,28 @@ impl CanvasContext {
                 }
 
                 let dst_idx = (dst_y * canvas_w + dst_x) * 4;
-                // 简单 alpha 混合
-                let src_alpha = (a as f32 * self.global_alpha) as u8;
-                if src_alpha == 0 {
+                // R3238：drawImage 消费 globalCompositeOperation（与 fill/fillRect/stroke 一致经 composite_pixel）。
+                // 旧实现固定 source-over 内联 alpha 混合，无视 composite_operation。
+                let src = Color {
+                    r,
+                    g,
+                    b,
+                    a: (a as f32 * self.global_alpha) as u8,
+                };
+                if skip_transparent_src && src.a == 0 {
                     continue;
                 }
-                if src_alpha == 255 {
-                    self.pixel_buffer[dst_idx] = r;
-                    self.pixel_buffer[dst_idx + 1] = g;
-                    self.pixel_buffer[dst_idx + 2] = b;
-                    self.pixel_buffer[dst_idx + 3] = src_alpha;
-                } else {
-                    let dst_a = self.pixel_buffer[dst_idx + 3] as f32 / 255.0;
-                    let src_a = src_alpha as f32 / 255.0;
-                    let out_a = src_a + dst_a * (1.0 - src_a);
-                    if out_a > 0.0 {
-                        let factor = 1.0 / out_a;
-                        self.pixel_buffer[dst_idx] = ((r as f32 * src_a
-                            + self.pixel_buffer[dst_idx] as f32 * dst_a * (1.0 - src_a))
-                            * factor) as u8;
-                        self.pixel_buffer[dst_idx + 1] = ((g as f32 * src_a
-                            + self.pixel_buffer[dst_idx + 1] as f32 * dst_a * (1.0 - src_a))
-                            * factor) as u8;
-                        self.pixel_buffer[dst_idx + 2] = ((b as f32 * src_a
-                            + self.pixel_buffer[dst_idx + 2] as f32 * dst_a * (1.0 - src_a))
-                            * factor) as u8;
-                        self.pixel_buffer[dst_idx + 3] = (out_a * 255.0) as u8;
-                    }
-                }
+                let (pr, pg, pb, pa) = self.composite_pixel(
+                    src,
+                    self.pixel_buffer[dst_idx],
+                    self.pixel_buffer[dst_idx + 1],
+                    self.pixel_buffer[dst_idx + 2],
+                    self.pixel_buffer[dst_idx + 3],
+                );
+                self.pixel_buffer[dst_idx] = pr;
+                self.pixel_buffer[dst_idx + 1] = pg;
+                self.pixel_buffer[dst_idx + 2] = pb;
+                self.pixel_buffer[dst_idx + 3] = pa;
             }
         }
     }
