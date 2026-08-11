@@ -161,8 +161,24 @@ fn spawn_test_page_server() -> (std::thread::JoinHandle<()>, u16) {
     (handle, port)
 }
 
+/// 连接 zero-webdriver，重试以桥接并发负载下子进程首次 accept 滞后于 TCP 握手就绪的窗口。
+///
+/// `spawn_driver` 的 readiness 仅检测 TCP 握手（OS backlog 接受即返），但子进程应用层 accept
+/// 可能稍后才就绪；全量 `cargo test --workspace` 并发下首条 `http_request` 偶发 Connection refused。
+/// 镜像 net client R3086 整请求重试的 deflake 模式（test-infra，非驱动行为变更）。
+fn connect_with_retry(port: u16) -> TcpStream {
+    for attempt in 0..30u32 {
+        match TcpStream::connect(("127.0.0.1", port)) {
+            Ok(s) => return s,
+            Err(_) if attempt < 29 => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => panic!("connect to zero-webdriver:{port} failed after retries: {e}"),
+        }
+    }
+    unreachable!()
+}
+
 fn http_request(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16, String) {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut stream = connect_with_retry(port);
     let body = body.unwrap_or("");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
