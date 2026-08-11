@@ -120,6 +120,12 @@
   // classic 脚本执行前后设/清；module 脚本不设（spec：module 执行期 currentScript 恒 null）。
   var _zwCurrentScriptIdx = -1;
 
+  // document.designMode（R3261）——文档级 contentEditable 开关，默认 'off'。getter 返 'on'/'off'，
+  // setter 接受 'on'/'off'/'inherit'（case-insensitive，'on'→'on'，其余→'off'，spec 文档级无真 'inherit'）。
+  // headless 不真启用编辑（无真文本编辑/光标/输入处理）→ setter 仅存储，documented 惰性；让富文本编辑器
+  //（TinyMCE/CKEditor 全屏模式）/笔记/测试工具读 `document.designMode === 'on'` 或设值不抛 TypeError。
+  var _zwDesignMode = 'off';
+
   // document.activeElement 焦点追踪。null = 无焦点（activeElement 回落 body）；非空 = 焦点元素 key
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
@@ -953,6 +959,14 @@
     queryCommandSupported: function (_commandId) { return true; },
     queryCommandEnabled: function (_commandId) { return true; },
     queryCommandValue: function (_commandId) { return ''; },
+    // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
+    // getter 返存储值（默认 'off'）；setter 'on'→'on'，'off'/'inherit'/其它→'off'（spec case-insensitive）。
+    // headless 不真启用编辑 → 惰性 setter（仅存储），documented。覆盖 execCommand 富文本编辑器 feature-detect。
+    get designMode() { return _zwDesignMode; },
+    set designMode(v) {
+      var s = String(v == null ? '' : v).toLowerCase();
+      _zwDesignMode = (s === 'on') ? 'on' : 'off';
+    },
     // `document.createTreeWalker(root, whatToShow, filter)` / `createNodeIterator(...)`——DOM 子树遍历器
     //（库 / sanitizer / a11y tree walker 高频）。whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP。
     // 经 `_makeNodeWalker`（eager pre-order via childNodes 递归）。两者共用工厂（接口同：nextNode/previousNode）。

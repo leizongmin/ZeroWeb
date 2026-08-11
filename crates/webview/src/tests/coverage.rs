@@ -392,6 +392,62 @@ fn test_element_inner_text_r3260() {
     );
 }
 
+// ── document.designMode（R3261，HTML §3.2.5）──
+// 文档级 contentEditable 开关，默认 'off'。headless 不真启用编辑 → 惰性 setter（仅存储）。
+// 覆盖：默认 off、'on'/'off' setter round-trip、case-insensitive、'inherit'/garbage → off。
+#[test]
+fn test_document_design_mode_r3261() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><body><script>\
+         globalThis.__dmDefault = String(document.designMode);\
+         document.designMode = 'on';\
+         globalThis.__dmOn = String(document.designMode);\
+         document.designMode = 'off';\
+         globalThis.__dmOff = String(document.designMode);\
+         document.designMode = 'ON';\
+         globalThis.__dmUpper = String(document.designMode);\
+         document.designMode = 'inherit';\
+         globalThis.__dmInherit = String(document.designMode);\
+         document.designMode = 'garbage';\
+         globalThis.__dmGarbage = String(document.designMode);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmDefault)").unwrap(),
+        "off",
+        "designMode 默认 'off'"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmOn)").unwrap(),
+        "on",
+        "set 'on' → getter 'on'"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmOff)").unwrap(),
+        "off",
+        "set 'off' → getter 'off'"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmUpper)").unwrap(),
+        "on",
+        "set 'ON' → 'on'（case-insensitive）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmInherit)").unwrap(),
+        "off",
+        "set 'inherit' → 'off'（文档级无真 inherit，headless 归 off）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__dmGarbage)").unwrap(),
+        "off",
+        "set 非法值 → 'off'"
+    );
+}
+
 // ── Storage 跨 load_html 持久化（R3088）──
 // WebView 沙箱复用（ensure_sandbox：js_sandbox.is_some() 早返）+ shim 幂等注入（js_shim_initialized
 // guard），故 globalThis.localStorage/sessionStorage（shim 的 _createStorage 对象）在同 WebView 多次
