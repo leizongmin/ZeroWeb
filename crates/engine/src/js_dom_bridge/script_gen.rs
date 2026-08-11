@@ -68,6 +68,23 @@ pub fn script_dispatch_transition_event(selector: &str, property: &str, elapsed:
     )
 }
 
+/// 构造「派发 animationend 事件」的脚本（R3249，CSS Animations §animationend）。
+/// 宿主在动画完成帧（`AnimationClock::drain_just_finished` → pipeline `take_pending_animation_events`）
+/// 执行：`querySelector(selector)` 取唯一目标元素，`new AnimationEvent('animationend', {animationName,
+/// elapsedTime, bubbles:true})` 派发。AnimationEvent 构造器在 shim part05:1383 注册。
+pub fn script_dispatch_animation_event(selector: &str, name: &str, elapsed: f64) -> String {
+    let sel = escape_js_string(selector);
+    let nm = escape_js_string(name);
+    let elapsed_str = if elapsed.is_finite() && elapsed >= 0.0 {
+        format!("{elapsed}")
+    } else {
+        "0".to_string()
+    };
+    format!(
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new AnimationEvent('animationend',{{animationName:'{nm}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+    )
+}
+
 /// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121；event 对象丰富化 R3124）。
 /// 宿主在 `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
 /// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）

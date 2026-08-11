@@ -49,6 +49,10 @@ pub struct RenderPipeline {
     /// 元素选择器、属性名（propertyName）、时长（elapsedTime）。过渡完成帧由 `tick()` 收集 +
     /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_transition_events()` 取出派发。
     pending_transition_events: Vec<(String, String, f64)>,
+    /// 「已派发待消费」的 animationend 事件（R3249，CSS Animations §animationend）——
+    /// 元素选择器、动画名（animationName）、活跃时长（elapsedTime）。动画完成帧由 `tick()` 收集 +
+    /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_animation_events()` 取出派发。
+    pending_animation_events: Vec<(String, String, f64)>,
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
@@ -199,6 +203,7 @@ impl RenderPipeline {
             animation_clock: AnimationClock::new(),
             transition_clock: TransitionClock::new(),
             pending_transition_events: Vec::new(),
+            pending_animation_events: Vec::new(),
             cached_styles: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
@@ -408,6 +413,13 @@ impl RenderPipeline {
         std::mem::take(&mut self.pending_transition_events)
     }
 
+    /// 取出「自上次 render 后新完成」的 animationend 事件（R3249，CSS Animations §animationend）。
+    /// 返回 `(元素 selector, animationName, elapsedTime)` 三元组列表；每次调用清空缓冲。
+    /// 宿主据此向 JS 派发 `new AnimationEvent('animationend', {animationName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_animation_events(&mut self) -> Vec<(String, String, f64)> {
+        std::mem::take(&mut self.pending_animation_events)
+    }
+
     /// 渲染 HTML 文档（带动画）。
     ///
     /// 与 `render_html` 相同管线，但在样式计算后注册 @keyframes、
@@ -458,7 +470,13 @@ impl RenderPipeline {
         }
 
         // 5. 启动动画并应用插值覆盖
-        apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time);
+        // R3249（CSS Animations §animationend）：apply_animation_overrides 返「本轮新完成」动画 →
+        // 映射 NodeId→unique_selector，存 pending_animation_events 待宿主派发 animationend。
+        for (nid, name, elapsed) in apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time) {
+            if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(&doc, nid) {
+                self.pending_animation_events.push((sel, name, elapsed));
+            }
+        }
 
         // 5b. 应用活跃的过渡插值
         let node_ids: Vec<NodeId> = styles.keys().copied().collect();
@@ -1388,11 +1406,15 @@ pub(crate) fn extract_print_page_geometry(stylesheets: &[Stylesheet]) -> (f32, f
 ///
 /// 遍历所有元素的样式，检查 animation-name 列表，
 /// 通过 AnimationClock 启动/推进动画，然后应用插值结果。
+///
+/// 返回「本轮新完成」的动画（R3249，CSS Animations §animationend）——`(NodeId, animationName, elapsedTime)`
+/// 三元组列表（animated_ids 持 elem_key↔NodeId 双键，故直接返 NodeId，调用方免往返）。调用方据此映射
+/// selector 后存 pending 待宿主派发 `animationend`。
 fn apply_animation_overrides(
     clock: &mut AnimationClock,
     styles: &mut HashMap<NodeId, ComputedStyle>,
     current_time: f64,
-) {
+) -> Vec<(NodeId, String, f64)> {
     // 收集有动画名称的元素 ID
     let animated_ids: Vec<(u64, NodeId)> = styles
         .iter()
@@ -1402,6 +1424,9 @@ fn apply_animation_overrides(
             (id.data().as_ffi(), *id)
         })
         .collect();
+
+    // elem_key(u64) → NodeId 索引（drain_just_finished 返 element_key:u64，须映射回 NodeId）。
+    let key_to_nid: HashMap<u64, NodeId> = animated_ids.iter().cloned().collect();
 
     for (elem_key, node_id) in animated_ids {
         let Some(style) = styles.get(&node_id) else {
@@ -1421,6 +1446,17 @@ fn apply_animation_overrides(
             }
         }
     }
+
+    // R3249：drain 本轮新完成动画 → 映射 element_key→NodeId，返 (NodeId, name, elapsedTime) 供调用方派发。
+    clock
+        .drain_just_finished()
+        .into_iter()
+        .filter_map(|fin| {
+            key_to_nid
+                .get(&fin.element_key)
+                .map(|nid| (*nid, fin.name, fin.duration))
+        })
+        .collect()
 }
 
 #[cfg(test)]

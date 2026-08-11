@@ -188,6 +188,19 @@ pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[(Strin
     }
 }
 
+/// R3249（CSS Animations §animationend）：派发动画完成事件进 shim。`events` = `(元素 selector,
+/// animationName, elapsedTime)` 三元组列表（由 pipeline `take_pending_animation_events` 产出）。
+/// 每个经 `script_dispatch_animation_event` 构造 `new AnimationEvent('animationend', {...})` 派发到
+/// 唯一目标元素。best-effort。注：infinite 动画永不完成（不派 animationend）——animationiteration 待 follow-up。
+pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[(String, String, f64)]) {
+    for (sel, name, elapsed) in events {
+        let script = zero_engine::script_dispatch_animation_event(sel, name, *elapsed);
+        if let Err(e) = js_worker.execute_script_direct(&script) {
+            warn!("dispatch animationend ({sel}): {e}");
+        }
+    }
+}
+
 /// R2940 mirror：未捕获脚本错误经 worker 报告进 shim——`window.onerror`（legacy 5-arg）+ window 'error' 事件，
 /// 使 Sentry / analytics / GA 等错误上报库 hook 触发。best-effort。
 fn report_uncaught_error(js_worker: &RendererJsWorker, source: &str, message: &str) {

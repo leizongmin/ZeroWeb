@@ -81,6 +81,22 @@ pub struct AnimationClock {
     keyframes_registry: HashMap<String, Vec<KeyframePoint>>,
     /// 活跃的动画（元素标识 → 动画列表）。
     active_animations: HashMap<u64, Vec<AnimationState>>,
+    /// 「本轮新完成」的动画（R3249）——`tick()` 在 `finished` 由 false→true 的帧推入，供宿主经
+    /// `drain_just_finished()` 取出后映射元素并派发 `animationend`（CSS Animations §animationend）。
+    just_finished: Vec<FinishedAnimation>,
+}
+
+/// 「本轮新完成」的动画记录（R3249）——`tick()` 在 `finished` 由 false→true 的帧推入 `just_finished`，
+/// 供宿主经 `drain_just_finished()` 取出后映射元素并派发 `animationend`（CSS Animations §animationend）。
+/// `duration` = 活跃时长（iteration_count * duration，即 animationend 事件的 `elapsedTime`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinishedAnimation {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 动画名（animationend.animationName）。
+    pub name: String,
+    /// 活跃时长（秒，animationend.elapsedTime = iteration_count * duration）。
+    pub duration: f64,
 }
 
 // ── 时间函数求值 ──────────────────────────────────────────────────────
@@ -512,6 +528,14 @@ impl AnimationClock {
             {
                 anim.finished = true;
                 anim.iteration = max_iter.ceil() as u64;
+                // R3249：记录「本轮新完成」——`finished` 由 false→true 的帧推入（`if anim.finished { continue }`
+                // 在循环顶保证每个动画仅推一次），供 `drain_just_finished()` 派发 animationend。
+                // elapsedTime = 活跃时长 = iteration_count * duration（CSS Animations §animationend）。
+                self.just_finished.push(FinishedAnimation {
+                    element_key: element_id,
+                    name: anim.name.clone(),
+                    duration: max_iter * anim.duration,
+                });
                 // 计算最终帧进度（考虑方向）
                 let final_progress = final_animation_progress(anim);
                 let props = interpolate_keyframes(&anim.keyframes, final_progress);
@@ -560,6 +584,12 @@ impl AnimationClock {
             .filter(|(_, anims)| anims.iter().any(|a| !a.finished))
             .map(|(&id, _)| id)
             .collect()
+    }
+
+    /// 取出「自上次 drain 后新完成」的动画（R3249，CSS Animations §animationend）。
+    /// 宿主据此映射元素并派发 `animationend` 事件。每次调用清空内部缓冲（每完成帧只派发一次）。
+    pub fn drain_just_finished(&mut self) -> Vec<FinishedAnimation> {
+        std::mem::take(&mut self.just_finished)
     }
 
     /// 移除已完成动画。
@@ -1113,6 +1143,49 @@ mod tests {
         let props = clock.tick(1, 1.0);
         let opacity = props.iter().find(|p| p.name == "opacity").unwrap();
         assert!((opacity.value.parse::<f64>().unwrap()).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_animation_drain_just_finished_r3249() {
+        // R3249（CSS Animations §animationend）：finished 由 false→true 的帧推入 just_finished，
+        // drain_just_finished 取出（含 element_key/name/duration=elapsedTime），每完成帧只派发一次。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        // duration=1.0s，iteration_count=2.0 → 活跃时长 2.0s（animationend.elapsedTime=2.0）
+        start_anim(
+            &mut clock,
+            9,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(2.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // t=1.0 → 第 1 次迭代结束，动画未完成（2 次迭代）→ drain 空
+        let _ = clock.tick(9, 1.0);
+        assert!(clock.drain_just_finished().is_empty(), "迭代中（未完成）drain 空");
+
+        // t=2.0 → 第 2 次迭代结束，动画完成 → drain 含该动画（element_key=9, name=fade, duration=2.0）
+        let _ = clock.tick(9, 2.0);
+        let finished = clock.drain_just_finished();
+        assert_eq!(finished.len(), 1, "完成帧 drain 恰好 1 条");
+        assert_eq!(finished[0].element_key, 9);
+        assert_eq!(finished[0].name, "fade");
+        assert!(
+            (finished[0].duration - 2.0).abs() < 1e-9,
+            "duration=iteration_count*duration=2.0（= elapsedTime）"
+        );
+
+        // 再次 drain → 空（每完成帧只派发一次）
+        assert!(clock.drain_just_finished().is_empty(), "二次 drain 空（不重复派发）");
     }
 
     #[test]

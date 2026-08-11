@@ -431,13 +431,22 @@ impl RendererRuntime {
         // 过渡跨多帧完成，故每帧 render 后检查（无过渡时 take 返空 Vec，零开销）。handler 改 DOM 的
         // mutation 由后续 render 周期应用（同 observer tick 之外的轻量路径）。
         if self.javascript_enabled {
-            let events = self
+            let tevents = self
                 .webview
                 .as_mut()
                 .map(|wv| wv.take_pending_transition_events())
                 .unwrap_or_default();
-            if !events.is_empty() {
-                page_scripts::dispatch_transition_events(&self.js_worker, &events);
+            if !tevents.is_empty() {
+                page_scripts::dispatch_transition_events(&self.js_worker, &tevents);
+            }
+            // R3249（CSS Animations §animationend）：同模式派发动画完成事件（infinite 动画永不完成）。
+            let aevents = self
+                .webview
+                .as_mut()
+                .map(|wv| wv.take_pending_animation_events())
+                .unwrap_or_default();
+            if !aevents.is_empty() {
+                page_scripts::dispatch_animation_events(&self.js_worker, &aevents);
             }
         }
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
