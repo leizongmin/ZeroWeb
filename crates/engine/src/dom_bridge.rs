@@ -740,52 +740,195 @@ pub fn generate_dom_api_polyfill() -> String {
       return _matchChainSeg(node, segs, combs, segs.length - 1);
     }
 
-    // ID 选择器
-    if (selector.startsWith('#')) {
-      return node.attributes.id === selector.substring(1);
-    }
-    // class 选择器
-    if (selector.startsWith('.')) {
-      var cls = selector.substring(1);
-      if (node.attributes['class']) {
-        return node.attributes['class'].split(/\s+/).indexOf(cls) >= 0;
+    // 单复合选择器（无组合器）：解析为 { tag, ids, classes, attrs, pseudos } 后逐部分求值。
+    // 旧实现按 `#`/`.`/`[`/`:`/tag 顺序短路，致复合选择器（如 `div.foo:first-child`、`input:checked`、
+    // `a:not(.x)`）无法工作——tag 分支先吞掉复合串。R3288 重构为真复合匹配，与 DOM crate
+    // parse_simple_selector + B 代 shim _parseCompoundOf 能力对齐（伪类面一致化）。
+    return _matchCompound(node, selector);
+
+  // 解析单复合选择器（无组合器）为 { tag, ids, classes, attrs, pseudos }。
+  // tag 为 null（`*` / 无）或大写 tag；ids/classes/attrs/pseudos 数组。遇非法段返 null（不匹配）。
+  function _parseCompound(text) {
+    var c = { tag: null, ids: [], classes: [], attrs: [], pseudos: [] };
+    var i = 0, n = text.length, seenTag = false;
+    while (i < n) {
+      var ch = text[i];
+      if (ch === '.') {
+        var j = i + 1;
+        while (j < n && !'.#[:'.includes(text[j])) j++;
+        if (j === i + 1) return null;
+        c.classes.push(text.substring(i + 1, j)); i = j;
+      } else if (ch === '#') {
+        var j2 = i + 1;
+        while (j2 < n && !'.#[:'.includes(text[j2])) j2++;
+        if (j2 === i + 1) return null;
+        c.ids.push(text.substring(i + 1, j2)); i = j2;
+      } else if (ch === '[') {
+        var end = text.indexOf(']', i);
+        if (end < 0) return null;
+        var inner = text.substring(i + 1, end);
+        var am = inner.match(/^([\w:-]+)\s*(?:([~|^$*]?=)\s*(.*?))?\s*$/);
+        if (!am) return null;
+        var val = am[3];
+        if (val != null) val = String(val).replace(/^['"]|['"]$/g, '');
+        c.attrs.push({ name: am[1], op: am[2] || null, val: val == null ? '' : val });
+        i = end + 1;
+      } else if (ch === ':') {
+        // 伪类名（含括号参数，括号内不切分）。`::` 伪元素视作伪类名前缀（保守不匹配）。
+        var j3 = i + 1;
+        var depthP = 0;
+        while (j3 < n) {
+          var cj = text[j3];
+          if (cj === '(') depthP++;
+          else if (cj === ')') depthP--;
+          else if (depthP === 0 && '.#[:'.includes(cj)) break;
+          j3++;
+        }
+        if (j3 === i + 1) return null;
+        c.pseudos.push(text.substring(i + 1, j3)); i = j3;
+      } else {
+        // 裸 token = tag（首个），后续裸 token 非法（复合选择器不可有两个 tag）。
+        var jt = i;
+        while (jt < n && !'.#[:'.includes(text[jt])) jt++;
+        var tg = text.substring(i, jt);
+        if (!tg) return null;
+        if (!seenTag) { c.tag = tg === '*' ? null : tg.toUpperCase(); seenTag = true; }
+        else return null;
+        i = jt;
       }
-      return false;
     }
-    // 属性选择器 [attr], [attr=val], [attr^=val], [attr$=val], [attr*=val]
-    var attrMatch = selector.match(/^([^\[]*)\[([^\]=~^$*]+)(?:([~^$*]?=)([\"']?)([^\]]*)\4)?\]$/);
-    if (attrMatch) {
-      var tag = attrMatch[1];
-      var attr = attrMatch[2];
-      var op = attrMatch[3];
-      var val = attrMatch[5];
-      // 如果有标签前缀，先检查标签
-      if (tag && node.tagName !== tag.toUpperCase()) return false;
-      if (!op) return attr in node.attributes;
-      var attrVal = node.attributes[attr] || '';
-      if (op === '=') return attrVal === val;
-      if (op === '^=') return attrVal.startsWith(val);
-      if (op === '$=') return attrVal.endsWith(val);
-      if (op === '*=') return attrVal.indexOf(val) >= 0;
-      return false;
+    return c;
+  }
+
+  // 单复合选择器匹配：节点须满足全部部分（tag/ids/classes/attrs/pseudos AND 语义）。
+  function _matchCompound(node, selector) {
+    var c = _parseCompound(selector);
+    if (!c) return false;
+    if (c.tag && node.tagName !== c.tag) return false;
+    // A-gen id 经 .id= 或 setAttribute('id',) 设置——两处不同步，id 选择器须兼容读取。
+    var idVal = node.attributes.id != null ? node.attributes.id
+      : (typeof node.id === 'string' ? node.id : '');
+    for (var k = 0; k < c.ids.length; k++) {
+      if (idVal !== c.ids[k]) return false;
     }
-    // 伪类 :first-child, :last-child, :nth-child(n)
-    if (selector.startsWith(':')) {
-      if (selector === ':first-child') {
-        return node.parentNode && node.parentNode.children[0] === node;
+    if (c.classes.length) {
+      // A-gen className 为普通属性，与 attributes['class'] 不同步（经 .className= 或 setAttribute('class',)
+      // 任一设置）；class 选择器须两处都查（与 getElementsByClassName 同源：仅读 attributes['class']，
+      // 但 .className= 高频路径无对应属性 → 兼容读取，避免 class 选择器对 .className= 元素恒不匹配）。
+      var raw = node.attributes['class'] != null ? node.attributes['class']
+        : (typeof node.className === 'string' ? node.className : '');
+      var cls = raw ? raw.split(/\s+/) : [];
+      for (var k2 = 0; k2 < c.classes.length; k2++) {
+        if (cls.indexOf(c.classes[k2]) < 0) return false;
       }
-      if (selector === ':last-child') {
-        return node.parentNode && node.parentNode.children[node.parentNode.children.length - 1] === node;
-      }
-      var nthMatch = selector.match(/^:nth-child\((\d+)\)$/);
-      if (nthMatch && node.parentNode) {
-        var idx = parseInt(nthMatch[1], 10);
-        return node.parentNode.children[idx - 1] === node;
-      }
-      return false;
     }
-    // 标签选择器
-    return node.tagName === selector.toUpperCase();
+    for (var k3 = 0; k3 < c.attrs.length; k3++) {
+      if (!_matchAttr(node, c.attrs[k3])) return false;
+    }
+    for (var k4 = 0; k4 < c.pseudos.length; k4++) {
+      if (!_matchPseudo(node, c.pseudos[k4])) return false;
+    }
+    return true;
+  }
+
+  // 属性选择器匹配（= / ~= / |= / ^= / $= / *= / 存在性）。
+  function _matchAttr(node, a) {
+    var av = node.attributes[a.name];
+    if (av == null) return a.op === null && false; // 缺属性 → 除存在性（也无）外均 false
+    if (a.op === null) return true;
+    var v = String(av);
+    switch (a.op) {
+      case '=': return v === a.val;
+      case '~=': return a.val !== '' && v.split(/\s+/).indexOf(a.val) >= 0;
+      case '|=': return v === a.val || v.indexOf(a.val + '-') === 0;
+      case '^=': return a.val !== '' && v.indexOf(a.val) === 0;
+      case '$=': return a.val !== '' && v.lastIndexOf(a.val) === v.length - a.val.length;
+      case '*=': return a.val !== '' && v.indexOf(a.val) >= 0;
+    }
+    return false;
+  }
+
+  // 静态可判定伪类匹配（与 DOM crate R3277-R3284 系列 + B 代 shim 对齐）。交互态伪类
+  //（`:hover`/`:focus`/`:active` 等）headless 无交互态 → 保守 false。`:visited` 隐私安全恒 false。
+  function _matchPseudo(node, name) {
+    var lc = name.toLowerCase();
+    if (lc === 'first-child') {
+      return !!node.parentNode && node.parentNode.children[0] === node;
+    }
+    if (lc === 'last-child') {
+      return !!node.parentNode && node.parentNode.children[node.parentNode.children.length - 1] === node;
+    }
+    if (lc === 'only-child') {
+      return !!node.parentNode && node.parentNode.children.length === 1 && node.parentNode.children[0] === node;
+    }
+    if (lc === 'empty') {
+      // 无元素子且无非空文本子（A-gen 节点 .children 含 appendChild 的节点；text/comment 经 createTextNode/
+      // createComment 产生但本 polyfill 不挂 .children，故 empty ≈ 无 .children 子）。spec：无子节点（含文本）。
+      return node.children.length === 0;
+    }
+    if (lc === 'root') {
+      // 文档根元素：无元素父（parentNode 为 document 或 null）。
+      return !node.parentNode || !node.parentNode.attributes;
+    }
+    if (lc === 'checked') {
+      // checkbox/radio checked 属性存在、option selected 属性存在（静态 HTML 语义）。
+      if ('checked' in node.attributes) return true;
+      return 'selected' in node.attributes;
+    }
+    if (lc === 'disabled') return 'disabled' in node.attributes;
+    if (lc === 'enabled') return !('disabled' in node.attributes);
+    if (lc === 'required') return 'required' in node.attributes;
+    if (lc === 'optional') return !('required' in node.attributes);
+    if (lc === 'readonly') return 'readonly' in node.attributes || 'disabled' in node.attributes;
+    if (lc === 'read-write') return !('readonly' in node.attributes) && !('disabled' in node.attributes);
+    if (lc === 'visited' || lc === 'hover' || lc === 'focus' || lc === 'active'
+        || lc === 'focus-within' || lc === 'focus-visible') {
+      return false; // 交互态 / 隐私 → 保守 false
+    }
+    var nth = lc.match(/^nth-child\((.+)\)$/);
+    if (nth && node.parentNode) {
+      var sibs = node.parentNode.children;
+      var pos = sibs.indexOf(node) + 1; // 1-based
+      return _matchNth(nth[1], pos);
+    }
+    var nthLast = lc.match(/^nth-last-child\((.+)\)$/);
+    if (nthLast && node.parentNode) {
+      var sibs2 = node.parentNode.children;
+      var pos2 = sibs2.length - sibs2.indexOf(node); // 从末尾 1-based
+      return _matchNth(nthLast[1], pos2);
+    }
+    // :not(simple)——否定（内嵌经 _matchesSingleSelector 递归，可含复合，不含组合器——组合器须外层链）。
+    var notM = lc.match(/^not\((.+)\)$/);
+    if (notM) {
+      // 内嵌不含逗号列表的简化（spec 允许选择器列表，此处单 simple）。
+      return !_matchesSingleSelector(node, notM[1].trim());
+    }
+    return false; // 未识别伪类 → 保守不匹配
+  }
+
+  // `:nth-child(an+b)` 求值：支持 odd/even/纯整数/n/an+b。pos 为 1-based 位置。
+  function _matchNth(expr, pos) {
+    var s = String(expr).trim().toLowerCase();
+    if (s === 'odd') return pos % 2 === 1;
+    if (s === 'even') return pos % 2 === 0;
+    var m = s.match(/^(?:(-?\d*)n)?\s*([+-]?\d+)?$/);
+    if (m) {
+      var a = m[1];
+      var aVal;
+      if (a === undefined || a === '') aVal = 0;
+      else if (a === '-' || a === '+') aVal = a === '-' ? -1 : 1;
+      else aVal = parseInt(a, 10);
+      var b = m[2] ? parseInt(m[2], 10) : 0;
+      // pos = aVal*k + b，k ≥ 0 整数 → (pos - b) / aVal ≥ 0 且整除（aVal=0 时 pos===b）。
+      if (aVal === 0) return pos === b;
+      var k = (pos - b) / aVal;
+      return k >= 0 && k === Math.floor(k);
+    }
+    // 纯整数
+    var pure = parseInt(s, 10);
+    if (!isNaN(pure)) return pos === pure;
+    return false;
+  }
   }
 
   // Mix in element methods to all created nodes

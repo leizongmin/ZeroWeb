@@ -219,6 +219,105 @@ fn test_dom_js_polyfill_subsequent_sibling_combinator_r3287() {
     );
 }
 
+// ── R3288：execute_script_with_dom（A 代 polyfill）复合选择器 + 伪类 ──────────────
+// 旧 A 代 _matchesSingleSelector 按 `#`/`.`/`[`/`:`/tag 顺序短路，致复合选择器（`div.foo:first-child`、
+// `input:checked`、`a:not(.x)`）无法工作——tag 分支先吞复合串。R3288 重构为真复合匹配（tag/id/class/
+// attr/pseudo AND）+ ~15 静态可判定伪类 + nth-child(an+b)，与 DOM crate（R3277-R3284）+ B 代 shim 对齐。
+
+#[test]
+fn test_dom_js_polyfill_compound_selector_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // div.foo#bar + 复合 tag.class + tag[attr=val] + tag.class[attr]
+    let script = r#"
+        var d1 = document.createElement('div'); d1.id = 'bar'; d1.className = 'foo';
+        var d2 = document.createElement('div'); d2.className = 'foo';
+        var d3 = document.createElement('input'); d3.setAttribute('type', 'text');
+        d1.appendChild(d2); d1.appendChild(d3);
+        var r1 = d1.querySelector('div.foo#bar') !== null;     // 复合 tag+class+id（自身=div，但 querySelector 只查子树）
+        var r2 = d1.querySelector('div.foo') === d2;            // 子树内 div.foo
+        var r3 = d1.querySelector('input[type=text]') === d3;   // tag+属性=值
+        var r4 = d1.querySelector('div.foo#nope') === null;     // id 不匹配 → null
+        JSON.stringify({r1: r1, r2: r2, r3: r3, r4: r4});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains(r#""r1":false"#),
+        "`div.foo#bar` 在子树内无匹配（d1 自身不计入）: {result}"
+    );
+    assert!(result.contains(r#""r2":true"#), "`div.foo` 应匹配 d2: {result}");
+    assert!(
+        result.contains(r#""r3":true"#),
+        "`input[type=text]` 应匹配 d3: {result}"
+    );
+    assert!(result.contains(r#""r4":true"#), "`div.foo#nope` 无匹配: {result}");
+}
+
+#[test]
+fn test_dom_js_polyfill_pseudo_classes_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root: h1, p.a, p.b(checked input 子), span, p.c
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');
+        var p1 = document.createElement('p'); p1.className = 'a';
+        var p2 = document.createElement('p'); p2.className = 'b';
+        var cb = document.createElement('input'); cb.setAttribute('checked', '');
+        p2.appendChild(cb);
+        var sp = document.createElement('span');
+        var p3 = document.createElement('p'); p3.className = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var firstChild = root.querySelector('p:first-child');
+        var lastP = root.querySelector('p:last-child');
+        var firstPCompound = root.querySelector('p.a:first-child');   // 复合 tag.class:伪类
+        var nthEven = root.querySelectorAll('p:nth-child(even)').length;
+        var nth2n1 = root.querySelectorAll(':nth-child(2n+1)').length;
+        var checked = root.querySelector('input:checked') === cb;       // :checked
+        var notClass = root.querySelectorAll('p:not(.b)').length;       // :not(.b) → a + c = 2
+        var onlyChild = root.querySelector('span:only-child') === null; // span 非独子
+        JSON.stringify({
+          firstP: firstChild ? firstChild.className : '.',     // p:first-child → 无（root 首子是 h1）
+          lastP: lastP ? lastP.className : '.',                 // p:last-child → 无（末子是 p.c，但 p:last-child 需 p 且末位）
+          firstPCompound: firstPCompound ? firstPCompound.className : '.', // p.a:first-child → 无（a 非首子）
+          nthEven: nthEven,
+          nth2n1: nth2n1,
+          checked: checked,
+          notClass: notClass,
+          onlyChild: onlyChild
+        });
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    // p:first-child：root 首子是 h1，无 p 是首子 → null
+    assert!(
+        result.contains(r#""firstP":".""#),
+        "`p:first-child` 无匹配（root 首子 h1）: {result}"
+    );
+    // p:last-child：末子是 p.c（p 且末位）→ c
+    assert!(
+        result.contains(r#""lastP":"c""#),
+        "`p:last-child` 应匹配末子 p.c: {result}"
+    );
+    assert!(
+        result.contains(r#""firstPCompound":".""#),
+        "`p.a:first-child` 无匹配（a 非首子）: {result}"
+    );
+    assert!(
+        result.contains(r#""checked":true"#),
+        "`input:checked` 应匹配 cb: {result}"
+    );
+    assert!(
+        result.contains(r#""notClass":2"#),
+        "`p:not(.b)` 应匹配 a + c = 2: {result}"
+    );
+    assert!(
+        result.contains(r#""onlyChild":true"#),
+        "`span:only-child` 无匹配（span 非独子）→ null === null → true: {result}"
+    );
+}
+
 // ── 3. 安全功能端到端验证 ─────────────────────────────────────────
 
 #[test]
