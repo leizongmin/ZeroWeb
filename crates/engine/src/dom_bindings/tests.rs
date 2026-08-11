@@ -1529,3 +1529,83 @@ return _log.join(',');
         "setAttribute + removeAttribute(observed)：两次 attributeChangedCallback，remove 时 old='1'/new=null"
     );
 }
+
+// ── P1b S5 后续（R3268）：HTMLElement Element/Node 接口补全——custom 实例完整 Element API ──
+// 验证 native custom 实例（instanceof registered ctor）具备与 generic Element 模板等价的全套
+// Element/Node 接口（S5d 仅补 attr+tree-mutation 族，本轮补全查询/内容/导航/子元素/反射属性/复杂对象 getter）。
+
+/// S5 接口补全：custom 实例的查询/内容/导航/子元素接口（innerHTML/textContent/querySelector/children/导航）。
+#[test]
+fn native_html_element_full_interface_query_content_r3268() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+class MyEl extends HTMLElement { constructor(){ super(); } }\
+customElements.define('my-el', MyEl);\
+const body = __zw_native_get_body();\
+const el = __zw_native_create_element('my-el');\
+el.innerHTML = '<b>hi</b><i>x</i>';\
+body.appendChild(el);\
+return el.innerHTML + '/' + el.textContent + '/' + el.children.length + '/' + el.firstChild.tagName + '/' + el.parentNode.tagName;\
+})()";
+    // innerHTML='<b>hi</b><i>x</i>'（序列化回读）+ textContent='hix'（两子文本拼接）
+    // + children.length=2（b+i）+ firstChild.tagName=B（首个元素子）+ parentNode.tagName=BODY（已挂 body）。
+    assert_eq!(
+        run_script(html, script),
+        "<b>hi</b><i>x</i>/hix/2/B/BODY",
+        "custom 实例 Element 接口：innerHTML setter/getter + textContent + children + firstChild + parentNode"
+    );
+}
+
+/// S5 接口补全：custom 实例的反射属性（id/className/tagName/tabIndex）+ ARIA + 复杂对象 getter（dataset）。
+#[test]
+fn native_html_element_full_interface_reflected_dataset_r3268() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+class MyEl extends HTMLElement { constructor(){ super(); } }\
+customElements.define('my-el', MyEl);\
+const el = __zw_native_create_element('my-el');\
+el.id = 'foo';\
+el.className = 'a b';\
+el.dataset.key = 'val';\
+el.ariaLabel = 'lbl';\
+return el.tagName + '/' + el.id + '/' + el.className + '/' + el.dataset.key + '/' + el.ariaLabel;\
+})()";
+    // tagName=MY-EL（custom tag 大写）+ id='foo'（反射 setter→getter）+ className='a b'
+    // + dataset.key='val'（data-key 反射）+ ariaLabel='lbl'（aria-label 反射）。
+    assert_eq!(
+        run_script(html, script),
+        "MY-EL/foo/a b/val/lbl",
+        "custom 实例反射属性 + dataset + ARIA：tagName/id/className/dataset.key/ariaLabel"
+    );
+}
+
+/// S5 接口补全：custom 实例 querySelector + cloneNode + matches（查询/克隆/匹配接口）。
+#[test]
+fn native_html_element_full_interface_query_clone_r3268() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+class MyEl extends HTMLElement { constructor(){ super(); } }\
+customElements.define('my-el', MyEl);\
+const el = __zw_native_create_element('my-el');\
+el.innerHTML = '<p class=x>1</p><p>2</p>';\
+const found = el.querySelector('.x');\
+const clone = el.cloneNode(false);\
+return (found ? found.textContent : 'null') + '/' + el.matches('my-el') + '/' + clone.children.length;\
+})()";
+    // querySelector('.x') 命中首个 p.textContent='1' + matches('my-el')=true（custom tag 匹配）
+    // + cloneNode(false) 浅克隆 children.length=0（无子）。
+    assert_eq!(
+        run_script(html, script),
+        "1/true/0",
+        "custom 实例 querySelector + matches + cloneNode（查询/匹配/克隆接口）"
+    );
+}
