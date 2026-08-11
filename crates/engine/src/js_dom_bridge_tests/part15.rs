@@ -1713,3 +1713,219 @@ fn test_parsed_ce_attr_changed_old_value_sel_lw_production_r3205() {
         "parsed-CE 同批连续 setAttribute：第 2 次 attributeChangedCallback old=第 1 次设值 'a'（旧 sel 纯快照 stale → null）"
     );
 }
+
+#[test]
+fn test_html_table_insert_row_r3243() {
+    // R3243：HTMLTableElement.insertRow（WHATWG HTML §4.9.1，
+    // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow）。
+    // 覆盖：省略 index / -1 追加、0 头插、n 中插、空表（无 tbody）自动建 tbody、返回值=新 tr。
+    // 读侧 rows 已就绪（R2843）；验证策略 = JS 驱动 → apply_mutations_to_html_with_handles 应用 → 断言结构。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    let apply = |initial: &str| -> String {
+        let ms = mutations.lock().unwrap().clone();
+        apply_mutations_to_html_with_handles(initial, &ms).unwrap().0
+    };
+
+    // ① insertRow() 省略 index → 追加到既有 tbody 末尾；返回新 tr（tagName=TR）
+    let s1 = "<html><body><table id='t'><tbody><tr><td id='a'>a</td></tr></tbody></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s1.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("globalThis.__r = document.getElementById('t').insertRow();").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__r.tagName").unwrap().value, "TR", "insertRow 返回新 tr 元素");
+    let out = apply(&s1);
+    assert!(out.contains("<tr></tr>"), "insertRow 创建空 tr\n{out}");
+    assert!(
+        out.find("<tr></tr>").unwrap() > out.find("id=\"a\"").unwrap(),
+        "insertRow() 默认追加到末尾（a 之后）\n{out}"
+    );
+
+    // ② insertRow(0) → 插到表头（a 之前）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t').insertRow(0);").unwrap();
+    let out = apply(&s1);
+    assert!(
+        out.find("<tr></tr>").unwrap() < out.find("id=\"a\"").unwrap(),
+        "insertRow(0) 插到表头（a 之前）\n{out}"
+    );
+
+    // ③ insertRow(-1) 显式 -1 → 追加末尾（同 ①）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t').insertRow(-1);").unwrap();
+    let out = apply(&s1);
+    assert!(
+        out.find("<tr></tr>").unwrap() > out.find("id=\"a\"").unwrap(),
+        "insertRow(-1) 追加末尾\n{out}"
+    );
+
+    // ④ 2 行表 insertRow(1) → 中位（r0 后、r1 前）
+    let s2 = "<html><body><table id='t2'><tbody><tr><td id='r0'>0</td></tr><tr><td id='r1'>1</td></tr></tbody></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s2.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t2').insertRow(1);").unwrap();
+    let out = apply(&s2);
+    let new_tr = out.find("<tr></tr>").unwrap();
+    let r0 = out.find("id=\"r0\"").unwrap();
+    let r1 = out.find("id=\"r1\"").unwrap();
+    assert!(r0 < new_tr && new_tr < r1, "insertRow(1) 插到中位（r0 后、r1 前）\n{out}");
+
+    // ⑤ 空表（无 tbody）insertRow() → 自动建 tbody 包裹新 tr（spec「no tr/tbody/thead/tfoot children」分支）
+    let s3 = "<html><body><table id='et'></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s3.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('et').insertRow();").unwrap();
+    let out = apply(&s3);
+    // 原空表无 tbody/tr；insertRow 后须出现 tbody（自动创建）+ tr
+    let tb = out.find("<tbody").expect("空表 insertRow 自动创建 tbody");
+    let tr = out.find("<tr").unwrap();
+    let tb_close = out[tb..].find("</tbody>").unwrap() + tb;
+    assert!(tb < tr && tr < tb_close, "新 tr 在自动创建的 tbody 内\n{out}");
+}
+
+#[test]
+fn test_html_table_delete_row_and_section_r3243() {
+    // R3243：HTMLTableElement.deleteRow + HTMLTableSectionElement.insertRow/deleteRow（thead/tbody/tfoot）。
+    // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deleterow / #dom-tbody-insertrow
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    let apply = |initial: &str| -> String {
+        let ms = mutations.lock().unwrap().clone();
+        apply_mutations_to_html_with_handles(initial, &ms).unwrap().0
+    };
+
+    // ① deleteRow(0) → 移除首行（r0），保留 r1
+    let s1 = "<html><body><table id='t'><tbody><tr><td id='r0'>0</td></tr><tr><td id='r1'>1</td></tr></tbody></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s1.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t').deleteRow(0);").unwrap();
+    let out = apply(&s1);
+    assert!(!out.contains("id=\"r0\""), "deleteRow(0) 移除 r0\n{out}");
+    assert!(out.contains("id=\"r1\""), "deleteRow(0) 保留 r1\n{out}");
+
+    // ② deleteRow(-1) → 移除末行（r1），保留 r0
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t').deleteRow(-1);").unwrap();
+    let out = apply(&s1);
+    assert!(out.contains("id=\"r0\""), "deleteRow(-1) 保留 r0\n{out}");
+    assert!(!out.contains("id=\"r1\""), "deleteRow(-1) 移除末行 r1\n{out}");
+
+    // ③ deleteRow() 省略 index → 等价 -1（移除末行）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('t').deleteRow();").unwrap();
+    let out = apply(&s1);
+    assert!(!out.contains("id=\"r1\""), "deleteRow() 省略 index 移除末行\n{out}");
+
+    // ④ tbody.insertRow() → 在 section 内追加（section-scoped）
+    let s2 = "<html><body><table><tbody id='tb'><tr><td id='x'>x</td></tr></tbody></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s2.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('tb').insertRow();").unwrap();
+    let out = apply(&s2);
+    assert!(out.contains("<tr></tr>"), "tbody.insertRow 创建新 tr\n{out}");
+    assert!(
+        out.find("<tr></tr>").unwrap() > out.find("id=\"x\"").unwrap(),
+        "tbody.insertRow() 在 section 内追加（x 之后）\n{out}"
+    );
+
+    // ⑤ thead.insertRow(0) → section 内头插
+    let s3 = "<html><body><table><thead id='th'><tr><td id='h'>h</td></tr></thead></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s3.clone();
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('th').insertRow(0);").unwrap();
+    let out = apply(&s3);
+    assert!(
+        out.find("<tr></tr>").unwrap() < out.find("id=\"h\"").unwrap(),
+        "thead.insertRow(0) section 内头插（h 之前）\n{out}"
+    );
+}
+
+#[test]
+fn test_html_tr_cells_mutation_and_index_error_r3243() {
+    // R3243：HTMLTableRowElement.insertCell/deleteCell + <tr>.cells 读 getter + IndexSizeError。
+    // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-insertcell / #dom-tr-deletecell
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    let apply = |initial: &str| -> String {
+        let ms = mutations.lock().unwrap().clone();
+        apply_mutations_to_html_with_handles(initial, &ms).unwrap().0
+    };
+
+    // ① <tr>.cells 读 getter：td+th 混计（document order）
+    let s1 = "<html><body><table><tbody><tr id='r'><td id='c0'>a</td><td id='c1'>b</td><th id='c2'>h</th></tr></tbody></table></body></html>".to_string();
+    *dom_html.lock().unwrap() = s1.clone();
+    sandbox.execute("globalThis.__cells = document.getElementById('r').cells.length;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__cells").unwrap().value, "3", "tr.cells 返 td+th 混合计数（3）");
+
+    // ② insertCell() 追加 td；返回新 td（tagName=TD）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("globalThis.__nc = document.getElementById('r').insertCell();").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nc.tagName").unwrap().value, "TD", "insertCell 返回新 td 元素");
+    let out = apply(&s1);
+    // 原 3 cell + 新空 td（末尾，c2 之后）
+    assert!(out.contains("<td></td>"), "insertCell 创建空 td\n{out}");
+    assert!(
+        out.find("<td></td>").unwrap() > out.find("id=\"c2\"").unwrap(),
+        "insertCell() 追加到行末尾（c2 之后）\n{out}"
+    );
+
+    // ③ insertCell(0) → 头插（c0 之前）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('r').insertCell(0);").unwrap();
+    let out = apply(&s1);
+    assert!(
+        out.find("<td></td>").unwrap() < out.find("id=\"c0\"").unwrap(),
+        "insertCell(0) 插到行头（c0 之前）\n{out}"
+    );
+
+    // ④ deleteCell(-1) → 移除末 cell（c2）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('r').deleteCell(-1);").unwrap();
+    let out = apply(&s1);
+    assert!(!out.contains("id=\"c2\""), "deleteCell(-1) 移除末 cell c2\n{out}");
+    assert!(out.contains("id=\"c0\""), "deleteCell(-1) 保留 c0\n{out}");
+
+    // ⑤ deleteCell(0) → 移除首 cell（c0）
+    mutations.lock().unwrap().clear();
+    sandbox.execute("document.getElementById('r').deleteCell(0);").unwrap();
+    let out = apply(&s1);
+    assert!(!out.contains("id=\"c0\""), "deleteCell(0) 移除首 cell c0\n{out}");
+
+    // ⑥ IndexSizeError：insertRow/deleteRow/insertCell 越界抛 IndexSizeError（Chromium oracle 一致）
+    *dom_html.lock().unwrap() = "<html><body><table id='t'><tbody><tr id='r'><td>a</td></tr></tbody></table></body></html>".to_string();
+    sandbox.execute(
+        "globalThis.__errs = {};\
+         function _trap(fn) { try { fn(); return 'no-throw'; } catch (e) { return (e && e.name) ? e.name : 'unknown'; } }\
+         globalThis.__errs.insertRow_neg = _trap(function(){ document.getElementById('t').insertRow(-2); });\
+         globalThis.__errs.deleteRow_oob = _trap(function(){ document.getElementById('t').deleteRow(99); });\
+         globalThis.__errs.insertCell_neg = _trap(function(){ document.getElementById('r').insertCell(-2); });\
+         globalThis.__errs.deleteCell_oob = _trap(function(){ document.getElementById('r').deleteCell(99); });",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__errs.insertRow_neg").unwrap().value, "IndexSizeError", "insertRow(-2) 抛 IndexSizeError");
+    assert_eq!(sandbox.execute("globalThis.__errs.deleteRow_oob").unwrap().value, "IndexSizeError", "deleteRow(99) 越界抛 IndexSizeError");
+    assert_eq!(sandbox.execute("globalThis.__errs.insertCell_neg").unwrap().value, "IndexSizeError", "insertCell(-2) 抛 IndexSizeError");
+    assert_eq!(sandbox.execute("globalThis.__errs.deleteCell_oob").unwrap().value, "IndexSizeError", "deleteCell(99) 越界抛 IndexSizeError");
+}

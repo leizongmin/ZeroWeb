@@ -130,6 +130,33 @@
 
 ## 最近完成的改进
 
+### HTMLTableElement 修改 API 族（本轮 R3243，engine shim）—— pivot 出 canvas 首片
+
+承接 R3242（canvas shadow 收官），按上轮裁决 **pivot 出 canvas**——canvas composite（R3236-R3239）+ shadow（R3240-R3242）已实质闭合，转 re-scan engine/dom 找真实可验证 Web API gap。本轮重扫生产 shim `js_dom_shim/part01..06.js`（非旧 polyfill `dom_bridge.rs`——该文件 gBCR/Observer stub 为死代码，已 cross-check 剔除），严格对照 R-record（R3160-R3242）剔除已闭合项，定位 **HTMLTableElement 修改 API 族全缺**：读侧（rows/tBodies/caption/tHead/tFoot/rowIndex/cellIndex/sectionRowIndex，R2842-R2849）已就绪，但写侧 `insertRow`/`deleteRow`/`insertCell`/`deleteCell` 全 absent（动态表格/数据面板/DataTable 高频，缺失则 `el.insertRow is not a function` 中断页面 JS）。
+
+**实现（R3243）**：在 `js_dom_shim/part03.js` get-trap 增 6 个方法 + 1 个读 getter，全部经既有 `createElement` + `appendChild`/`insertBefore`/`el.remove()` 原语（**无新 host 回调**）：
+- `HTMLTableElement.insertRow(index)` —— WHATWG HTML §4.9.1。省略/-1 末尾追加；0 头插；n 中插（第 n 行前）；**空表（无 tr 且无 section 子）自动建 tbody 挂新行**（spec「no tr/tbody/thead/tfoot children」分支）；index < -1 或越界抛 `IndexSizeError`。
+- `HTMLTableSectionElement.insertRow/deleteRow`（thead/tbody/tfoot，section-scoped）。
+- `HTMLTableRowElement.insertCell/deleteCell` + `.cells` 读 getter（td+th 混计，与 cellIndex 同源 `:is(td,th)`）。
+- 助函数 `_rowList`/`_cellList`（容错读 `proxy.rows`/`.cells`）。
+
+**踩坑（修 1 轮）**：deleteRow/deleteCell 初版用 `victim.parentNode.removeChild(victim)`——但 `removeChild` 要求 `child.__zwHandle`，而 `querySelectorAll` 返的 victim 为 **sel-based 无 handle** → no-op（行/单元格未移除，测试红）。改用 `victim.remove()`（self 级，sel-based 走 `__zw_remove` 记 `DomMutation::Remove{selector}` / handle 走 `__zw_remove_handle`），两种身份都正确。insertRow 首版即对（用 `appendChild`/`insertBefore` 经 `this` 代理，sel/handle 皆支持）。
+
+**为何净正向**：① **闭合真实 Web API gap**——动态表格写入族从 absent 到 spec 合规（含 IndexSizeError，Chromium oracle 一致）；② **零回归**——zero-engine 1955 全绿（+3 测，零回归），读侧 R2842-R2849 不受影响；③ 低风险（纯 shim get-trap 新分支，无 host/Rust 改动，无新回调）；④ engine 属本流域（zero-web 流）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part03.js` | +`.cells` 读 getter（TR）；+`insertRow`/`deleteRow`（table+section）/`insertCell`/`deleteCell`（tr）6 方法（get-trap 新分支，spec URL 注释）；+`_rowList`/`_cellList` 助函数。 |
+| `crates/engine/src/js_dom_bridge_tests/part15.rs` | +3 测（`test_html_table_insert_row_r3243` / `test_html_table_delete_row_and_section_r3243` / `test_html_tr_cells_mutation_and_index_error_r3243`）：insertRow 追加/头插/中插/空表建 tbody/返回值；deleteRow(0/-1/省略) + section.insertRow(thead/tbody)；insertCell/deleteCell + `.cells` getter + IndexSizeError 四例。验证策略 = JS 驱动 → `apply_mutations_to_html_with_handles` 应用初始 HTML → 断言结构（位置/数量）。 |
+
+验证：`cargo fmt -p zero-engine -- --check` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1955 全绿**（+3 测，零回归）。
+
+⚠️ **跨流 clippy 红灯（非本流，已归因）**：`cargo clippy --workspace --all-targets -- -D warnings` 在 `apps/browser/src/process_backend.rs:1449` 报 `field_reassign_with_default`（`TabSnapshot::default()` 后字段重赋值）。**已 git 归因到 commit `16d6a42e`「feat(compositor): P0–P3 GPU import」(2h ago，渲染/浏览器流 GPU dma-buf 工作)**——stash 本流改动后 clean HEAD 仍复现，**非 R3243 引入**。按 rule 9/10（并行归因纪律）不硬解（apps/browser 为渲染/浏览器流域且对方活跃编辑 process_backend.rs，硬修恐致对方 pull-rebase 冲突）；记录于此供渲染流修。同因（16d6a42e GPU 工作）的 compositor `frame_flow` 测试 flake 仍阻断 `make test`（R3241 已记，跨流域）。
+
+**下一步**：表格写入族闭合。续候选（pivot 出 canvas 后 engine/dom gap 再扫）：① **`Event.composedPath()`**（absent，DOM §4.3，shadow DOM 事件委托高频，小切片）；② **`clientTop`/`clientLeft`**（absent，CSSOM View §4.1 = border-width，小切片，但需 rect bridge 暴露 border 数据——现 clientWidth 近似 content-box 缺 border，价值偏低）；③ **`HTMLFormElement.elements`/`form[index]`** 收敛核实；④ **table 写入族延伸**（createTBody/createCaption/tHead setter——较低频）；⑤ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。⚠️ 跨流 clippy（process_backend.rs）+ compositor flake 待渲染/浏览器流。
+
+---
+
 ### Canvas shadow 3 遍 box blur ≈ gaussian（本轮 R3242，canvas crate）—— R3240 限制①收尾
 
 承接 R3241（stroke 阴影 footprint），取 R3240「已知限制 ① box blur 单遍（triangle-ish 衰减）非多遍高斯」执行。深审 shadow blur 衰减形态——单遍 box blur 边缘**线性（三角形）衰减**，3 遍 box blur 近似**高斯（钟形凸衰减）**（标准阴影软度模型）。

@@ -918,6 +918,16 @@
     return chain;
   }
 
+  // R3243：表格修改 API（insertRow/deleteRow/insertCell/deleteCell）内部用的行/单元格集合读取助函数。
+  // 经 proxy.rows/.cells 读取（table+section 有 .rows，tr 有 .cells），失败/空/非数组 → []。
+  // 与读侧 getter（part03 .rows/.cells）一致：detached handle-only 元素无 sel → []（无 DOM 可查）。
+  function _rowList(elProxy) {
+    try { var r = elProxy.rows; return (r && r.length) ? r : []; } catch (_e) { return []; }
+  }
+  function _cellList(elProxy) {
+    try { var c = elProxy.cells; return (c && c.length) ? c : []; } catch (_e) { return []; }
+  }
+
   // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
   // R3016 traversable）。
   // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
@@ -1863,6 +1873,13 @@
           if (!sel) return [];
           try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
         }
+        // `<tr>`.cells（HTMLTableRowElement，R3243）——行内全部 td+th 单元格（document order，混计）。
+        // 与 cellIndex（R2842）同源 :is(td, th) 查询，返真数组（length/索引/迭代）。表格修改库
+        // （insertCell/deleteCell 定位 + DataTables 等读列）高频。仅 TR。
+        if (prop === 'cells' && _realTag(sel, handle) === 'TR') {
+          if (!sel) return [];
+          try { return _wrapSelector(sel).querySelectorAll(':is(td, th)'); } catch (_e) { return []; }
+        }
         // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
         // caption / thead / tfoot 子元素（Chromium 150 oracle：querySelector 首匹配；无 → null）。表格分析 /
         // 序列化库读结构高频。仅 getter（setter 须 remove 既有 + insert 新建属 table 头部位置，复杂且罕见——
@@ -1871,6 +1888,118 @@
           if (!sel) return null;
           var cTag = prop === 'tHead' ? 'thead' : (prop === 'tFoot' ? 'tfoot' : 'caption');
           try { return _wrapSelector(sel).querySelector(cTag); } catch (_e) { return null; }
+        }
+        // ── HTMLTableElement / HTMLTableSectionElement / HTMLTableRowElement 修改 API（R3243）——
+        // WHATWG HTML §4.9.1 表格写侧族：insertRow/deleteRow（table + thead/tbody/tfoot section）、
+        // insertCell/deleteCell（tr）。读侧 rows/tBodies/caption/tHead/tFoot/rowIndex/cellIndex 已就绪
+        // （R2842-R2849），此片补写侧。全部经既有 createElement + appendChild/insertBefore/removeChild
+        // 原语（无新 host 回调）。index 语义：省略/-1 = 末尾追加；index < -1 或越界抛 IndexSizeError
+        // （Chromium oracle 一致，经 `_throwDom`）；table.insertRow 在无 tr 且无 section 子时自动建 tbody
+        // 挂载新行（spec「no tr/tbody/thead/tfoot children」分支）。
+        if (prop === 'insertRow') {
+          var _irTag = _realTag(sel, handle);
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow
+          if (_irTag === 'TABLE') {
+            return function(index) {
+              if (arguments.length === 0) index = -1;
+              else { index = Number(index); if (isNaN(index)) index = 0; }
+              if (index < -1) _throwDom('IndexSizeError', 'index is negative and not -1');
+              var tr = globalThis.document.createElement('tr');
+              var rowsArr = _rowList(this);
+              var firstTbody = null;
+              try { var _tbs = this.tBodies; firstTbody = (_tbs && _tbs.length) ? _tbs[0] : null; } catch (_e) {}
+              var hasSection = firstTbody || this.tHead || this.tFoot;
+              // 无 tr 且无 section → 建 tbody 挂新行（spec「no tr/tbody/thead/tfoot children」分支）
+              if (rowsArr.length === 0 && !hasSection) {
+                var tb = globalThis.document.createElement('tbody');
+                this.appendChild(tb);
+                tb.appendChild(tr);
+                return tr;
+              }
+              if (index === -1 || index === rowsArr.length) {
+                if (rowsArr.length === 0) {
+                  // section 已存在（非上分支）→ 入首个 tbody（无 tbody 则直挂 table）
+                  if (firstTbody) firstTbody.appendChild(tr); else this.appendChild(tr);
+                } else {
+                  rowsArr[rowsArr.length - 1].parentNode.appendChild(tr);
+                }
+              } else if (index >= 0 && index < rowsArr.length) {
+                var ref = rowsArr[index];
+                ref.parentNode.insertBefore(tr, ref);
+              } else {
+                _throwDom('IndexSizeError', 'index out of range');
+              }
+              return tr;
+            };
+          }
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-tbody-insertrow
+          if (_irTag === 'THEAD' || _irTag === 'TBODY' || _irTag === 'TFOOT') {
+            return function(index) {
+              if (arguments.length === 0) index = -1;
+              else { index = Number(index); if (isNaN(index)) index = 0; }
+              if (index < -1) _throwDom('IndexSizeError', 'index is negative and not -1');
+              var tr = globalThis.document.createElement('tr');
+              var rowsArr = _rowList(this);
+              if (index === -1 || index === rowsArr.length) {
+                this.appendChild(tr);
+              } else if (index >= 0 && index < rowsArr.length) {
+                this.insertBefore(tr, rowsArr[index]);
+              } else {
+                _throwDom('IndexSizeError', 'index out of range');
+              }
+              return tr;
+            };
+          }
+        }
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deleterow（table + section 共用）
+        if (prop === 'deleteRow') {
+          var _drTag = _realTag(sel, handle);
+          if (_drTag === 'TABLE' || _drTag === 'THEAD' || _drTag === 'TBODY' || _drTag === 'TFOOT') {
+            return function(index) {
+              if (arguments.length === 0) index = -1;
+              else { index = Number(index); if (isNaN(index)) index = 0; }
+              var rowsArr = _rowList(this);
+              if (index < -1 || index >= rowsArr.length) {
+                _throwDom('IndexSizeError', 'index out of range');
+              }
+              // 经 victim.remove()（self 级，sel-based 走 __zw_remove / handle 走 __zw_remove_handle），
+              // 非 parentNode.removeChild——后者要求 child.__zwHandle，而 querySelectorAll 返的 sel-based
+              // victim 无 handle（no-op）。remove() 对两种身份都正确记录 Remove mutation。
+              var victim = (index === -1) ? rowsArr[rowsArr.length - 1] : rowsArr[index];
+              if (victim && typeof victim.remove === 'function') victim.remove();
+            };
+          }
+        }
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-insertcell
+        if (prop === 'insertCell' && _realTag(sel, handle) === 'TR') {
+          return function(index) {
+            if (arguments.length === 0) index = -1;
+            else { index = Number(index); if (isNaN(index)) index = 0; }
+            if (index < -1) _throwDom('IndexSizeError', 'index is negative and not -1');
+            var td = globalThis.document.createElement('td');
+            var cellsArr = _cellList(this);
+            if (index === -1 || index === cellsArr.length) {
+              this.appendChild(td);
+            } else if (index >= 0 && index < cellsArr.length) {
+              this.insertBefore(td, cellsArr[index]);
+            } else {
+              _throwDom('IndexSizeError', 'index out of range');
+            }
+            return td;
+          };
+        }
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-deletecell
+        if (prop === 'deleteCell' && _realTag(sel, handle) === 'TR') {
+          return function(index) {
+            if (arguments.length === 0) index = -1;
+            else { index = Number(index); if (isNaN(index)) index = 0; }
+            var cellsArr = _cellList(this);
+            if (index < -1 || index >= cellsArr.length) {
+              _throwDom('IndexSizeError', 'index out of range');
+            }
+            var victim = (index === -1) ? cellsArr[cellsArr.length - 1] : cellsArr[index];
+            if (victim && typeof victim.remove === 'function') victim.remove();
+          };
         }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
