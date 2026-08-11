@@ -331,7 +331,7 @@ pub(super) fn fragment_glyphs<'a>(
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
         && let Some(mut glyphs) =
-            crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)
+            crate::shape_text_for_paint(&[font_id], shaping_text, font_size, shape_direction, features)
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
@@ -405,7 +405,7 @@ pub(super) fn fragment_advance_trace(
     );
     let shape_direction = effective_shape_direction(direction, complex_enabled);
     let shaping_text = logical_source.map_or(text, |source| source.text);
-    let glyphs = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)?;
+    let glyphs = crate::shape_text_for_paint(&[font_id], shaping_text, font_size, shape_direction, features)?;
     Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs))
 }
 

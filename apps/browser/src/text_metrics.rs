@@ -45,7 +45,7 @@ pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
 
 /// 在当前浏览器字体上下文中按指定 face 整形文本。
 pub fn shape_text(
-    font_id: u32,
+    font_ids: &[u32],
     text: &str,
     font_size: f32,
     direction: TextDirection,
@@ -53,6 +53,7 @@ pub fn shape_text(
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
         let (loader, _) = cell.get()?;
+        let &font_id = font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
         loader.shape_text_cached_with_features(font_id, text, font_size, direction, features)
