@@ -161,6 +161,8 @@ product-smoke-oracle: target/test-guard
 	./target/test-guard -- node $(PRODUCT_ORACLE_SCRIPT) --root apps/browser/assets --html welcome.html --out $(WELCOME_ORACLE) --width 800 --height 600
 
 product-smoke: target/test-guard
+	# 表单流畅度门禁：固定尺寸 value-only 输入不得重新 parse/style/layout，且每次最多发布一帧。
+	./target/test-guard --time-limit 900 -- bash scripts/run-form-input-perf.sh
 	@test -f $(WELCOME_ORACLE) || (echo "Error: missing $(WELCOME_ORACLE); run 'make product-smoke-oracle' and commit the generated oracle."; exit 2)
 	# DC-13 desktop（800px）：欢迎页 vs chromium Oracle diff≤20% + 结构门。--struct-check 含
 	# sibling-overlap + collapsed-container + **text-concatenation**（R109 inline-ownership 守，

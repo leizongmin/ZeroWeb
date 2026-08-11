@@ -53,6 +53,15 @@ if [ "$(jq -r '.suspect // false' "$REPORT")" = "true" ]; then
     exit 3
 fi
 
+# Retained form input has semantic count budgets in addition to timing budgets. Keep this
+# check independent from the generic baseline so new platforms are still protected.
+if [ "$(jq -r '.form_input != null' "$REPORT")" = "true" ]; then
+    FORM_INPUT_REPORT=$(mktemp)
+    trap 'rm -f "$FORM_INPUT_REPORT"' EXIT
+    jq '.form_input' "$REPORT" > "$FORM_INPUT_REPORT"
+    bash "$SCRIPT_DIR/form-input-perf-gate.sh" "$FORM_INPUT_REPORT"
+fi
+
 PLATFORM_CLASS=$(jq -r '.platform.platform_class' "$REPORT")
 [ -n "$BASELINE" ] || BASELINE="$BASELINE_DIR/$PLATFORM_CLASS.json"
 

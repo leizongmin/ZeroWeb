@@ -195,6 +195,7 @@ fi
 PAGES_JSON="null"
 RESOURCE_JSON="null"
 STARTUP_MS="null"
+FORM_INPUT_JSON="null"
 if [ "$QUICK_MODE" != "1" ]; then
     echo "--- page scenarios ---" | tee -a "$REPORT_TXT"
     perf_args=()
@@ -231,9 +232,21 @@ if [ "$QUICK_MODE" != "1" ]; then
         echo "  $(echo "$PAGES_JSON" | jq -r '[.scenarios[] | "\(.scenario): total p95 \(.stages.total_ms.p95)ms"] | join(", ")')" | tee -a "$REPORT_TXT"
         echo "  resource: peak_rss=$(echo "$RESOURCE_JSON" | jq -r '.peak_rss_mb')MB startup=$(echo "$STARTUP_MS")ms" | tee -a "$REPORT_TXT"
     fi
+
+    echo "--- retained form input ---" | tee -a "$REPORT_TXT"
+    if ! cargo run --release --quiet -p zero-integration-tests --bin form-input-perf \
+        > "$TMP_DIR/form-input.json" 2> "$TMP_DIR/form-input.log"; then
+        echo "[WARN] retained form-input benchmark failed" | tee -a "$REPORT_TXT"
+        tail -10 "$TMP_DIR/form-input.log" | tee -a "$REPORT_TXT"
+        FAILED+=("form-input")
+    else
+        FORM_INPUT_JSON=$(jq -c . "$TMP_DIR/form-input.json")
+        echo "  p95=$(echo "$FORM_INPUT_JSON" | jq -r '.input_to_publish_ms.p95')ms jank=$(echo "$FORM_INPUT_JSON" | jq -r '.jank_20ms_ratio')" | tee -a "$REPORT_TXT"
+    fi
 else
     CPU_MODEL="unknown"
     CPU_CORES="unknown"
+    cargo build --release -p zero-integration-tests --bin form-input-perf
 fi
 
 # 测量后负载校验（2026-08-08：共享机器上另一条流的 WPT 全量可能中途叠加——
@@ -267,13 +280,15 @@ jq -n \
     --argjson pages "$PAGES_JSON" \
     --argjson resource "$RESOURCE_JSON" \
     --argjson startup_ms "$STARTUP_MS" \
+    --argjson form_input "$FORM_INPUT_JSON" \
     --argjson suspect "$SUSPECT" \
     '{schema_version: $schema_version, kind: "bench-report", generated_at: $generated_at,
       git_sha: $git_sha, git_dirty: $git_dirty, suspect: $suspect,
       run_config: {config_hash: $config_hash, profile: "release", bench_list: $bench_list,
                    page_scenarios: $scenarios, viewport: [800, 600], iterations: $iterations},
       platform: {platform_class: $platform_class, cpu_model: $cpu_model, cpu_cores: $cpu_cores, os: $os},
-      microbenches: $microbenches, pages: $pages.scenarios, resource: $resource, startup_ms: $startup_ms}' \
+      microbenches: $microbenches, pages: $pages.scenarios, resource: $resource,
+      startup_ms: $startup_ms, form_input: $form_input}' \
     > "$REPORT_JSON"
 
 # ---------- 摘要 + 退出码 ----------

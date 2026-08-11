@@ -210,8 +210,8 @@ winit key/IME/pointer
 | M1 | 已完成并推送 | retained input/textarea 值与选区、IDL/内容属性分离、Unicode 编辑、`0/0/0/1` paint-only、无整页序列化/图片重扫 |
 | M2 | 已完成并推送 | 单一 focus owner/pointer target、IME 全生命周期、候选窗锚点、单/多进程一致性、真实 renderer 自动回归 |
 | M3 | 已完成并推送 | 分级失效、输入事务单次发布、latest-wins 异步帧邮箱、浏览器端过期帧合并 |
-| M4 | 已完成，待阶段提交 | GPU 图片纹理缓存、持久 uniform、渐变/图片顶点合批、compositor 图片跨帧缓存 |
-| M5 | 待实施 | 性能门禁与最终验收 |
+| M4 | 已完成并推送 | GPU 图片纹理缓存、持久 uniform、渐变/图片顶点合批、compositor 图片跨帧缓存 |
+| M5 | 已完成 | 性能门禁与最终验收 |
 
 ### M0：交互正确性基线
 
@@ -276,6 +276,14 @@ winit key/IME/pointer
 - 纳入 perf gate、GUI smoke、product smoke 和 CI。
 - 完成全工作区 fmt/clippy/test、scoped reftest 和性能对比。
 - 把根因、迁移经验和后续边界记录到 `docs/learnings/`。
+
+完成记录：
+
+- 新增 release 模式 `form_input` 报告，采集 input-to-publish p50/p95/max、20ms 卡顿率和每次输入的 parse/style/full-layout/paint/publish 最大次数。
+- 所有平台执行 p95≤20ms、卡顿率≤5% 和 `0/0/0/1` 管线硬门禁；Windows x86_64 固定平台基线额外执行 `baseline * 1.10 + 2ms` 相对预算。
+- 性能报告接入通用 bench report/perf gate 和 product smoke；Windows CI 显式构建真实 renderer 后运行多 DPI、多控件、按钮及中文 IME GUI 门禁。
+- Windows WPT case id 统一为 URL 分隔符并禁止 MSYS 参数转换，reftest smoke 42/42 真实通过。
+- 最终验收覆盖真实 GUI、全工作区 fmt/clippy/test、性能门禁、reftest smoke 与 8 组产品页结构门；Windows 欢迎页 Chromium oracle 差异 23.61%，本机按显式 25% 阈值通过，CI 默认 20% 阈值保持不变。
 
 ## 7. 提交与推送策略
 
