@@ -1079,7 +1079,13 @@
   globalThis.dispatchEvent = function(event) {
     if (!event || typeof event.type !== 'string') return true;
     if (!event.target) event.target = globalThis;
-    return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis);
+    // composedPath（R3244，DOM §4.3）：window 派发事件路径 = [window]（target 即 window）。
+    event._composedPath = [globalThis];
+    try {
+      return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis);
+    } finally {
+      event._composedPath = null;
+    }
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
   // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 本身零定义）→

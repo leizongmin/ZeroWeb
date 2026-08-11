@@ -710,34 +710,53 @@
     }
     var propagate = chain.length > 0;
 
-    // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
-    if (propagate && !globalThis.__zw_no_capture) {
-      for (var i = chain.length - 1; i >= 0; i--) {
-        var capKey = _elKey(chain[i], null);
-        _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
-        var capAnc = _wrapSelector(chain[i]);
-        _dispatchToListeners(capKey, event, 'capture', capAnc);
-        if (event._propagationStopped) return !event._defaultPrevented;
-      }
+    // composedPath（R3244，DOM §4.3）：dispatch 期事件路径 = [target, ...祖先链, (document, window 若连入文档)]。
+    // 祖先链经 _wrapSelector 转 proxy；连入文档（target 在 html 子树，__zw_contains 判）→ 追加 document + window
+    //（spec 路径末端；detached 元素链止于其 root，不追加）。dispatch 结束 finally 清空（spec：非 dispatch 返 []）。
+    var cpPath = [target];
+    for (var cpi = 0; cpi < chain.length; cpi++) cpPath.push(_wrapSelector(chain[cpi]));
+    var cpConnected = false;
+    if (targetSel && typeof __zw_contains === 'function') {
+      try { cpConnected = __zw_contains('html', targetSel) === '1'; } catch (_e) {}
     }
-
-    // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
-    event.currentTarget = target;
-    _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
-    _dispatchToListeners(targetKey, event, 'all', target);
-    if (event._propagationStopped) return !event._defaultPrevented;
-
-    // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
-    if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
-      for (var k = 0; k < chain.length; k++) {
-        var bKey = _elKey(chain[k], null);
-        _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
-        var bAnc = _wrapSelector(chain[k]);
-        _dispatchToListeners(bKey, event, 'bubble', bAnc);
-        if (event._propagationStopped) break;
-      }
+    if (cpConnected) {
+      if (globalThis.document) cpPath.push(globalThis.document);
+      if (globalThis.window) cpPath.push(globalThis.window);
     }
-    return !event._defaultPrevented;
+    event._composedPath = cpPath;
+
+    try {
+      // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
+      if (propagate && !globalThis.__zw_no_capture) {
+        for (var i = chain.length - 1; i >= 0; i--) {
+          var capKey = _elKey(chain[i], null);
+          _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
+          var capAnc = _wrapSelector(chain[i]);
+          _dispatchToListeners(capKey, event, 'capture', capAnc);
+          if (event._propagationStopped) return !event._defaultPrevented;
+        }
+      }
+
+      // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
+      event.currentTarget = target;
+      _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+      _dispatchToListeners(targetKey, event, 'all', target);
+      if (event._propagationStopped) return !event._defaultPrevented;
+
+      // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
+      if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
+        for (var k = 0; k < chain.length; k++) {
+          var bKey = _elKey(chain[k], null);
+          _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
+          var bAnc = _wrapSelector(chain[k]);
+          _dispatchToListeners(bKey, event, 'bubble', bAnc);
+          if (event._propagationStopped) break;
+        }
+      }
+      return !event._defaultPrevented;
+    } finally {
+      event._composedPath = null;
+    }
   }
 
   function _makeEvent(type, options) {
@@ -759,6 +778,14 @@
       _defaultPrevented: false,
       _propagationStopped: false,
       _immediateStopped: false,
+      // composedPath（R3244）：DOM §4.3——dispatch 期间返事件路径（target→祖先→document→window），
+      // 非 dispatch（前后）返 []。`_composedPath` 由 _dispatchWithBubble / globalThis.dispatchEvent 在派发期
+      // 填充、finally 清空（spec：dispatch flag unset 时返空）。事件委托（e.composedPath()[0] === target）
+      // + 祖先匹配（path.includes(ancestor)）高频。
+      _composedPath: null,
+      composedPath: function() {
+        return this._composedPath ? this._composedPath.slice() : [];
+      },
       preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
       stopPropagation: function() { this._propagationStopped = true; },
       stopImmediatePropagation: function() {

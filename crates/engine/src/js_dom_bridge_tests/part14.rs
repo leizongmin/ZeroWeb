@@ -652,3 +652,84 @@ fn test_document_dispatch_event_r3082() {
     assert_eq!(sandbox.execute("globalThis.__ret").unwrap().value, "true", "dispatchEvent 返 !defaultPrevented = true");
     assert_eq!(sandbox.execute("globalThis.__afterDispatch").unwrap().value, "ok", "dispatchEvent 后续执行不中断");
 }
+
+#[test]
+fn test_event_composed_path_r3244() {
+    // R3244：Event.composedPath()（DOM §4.3，https://dom.spec.whatwg.org/#dom-event-composedpath）。
+    // dispatch 期返事件路径（target→祖先→document→window）；非 dispatch（前后）返 []。
+    // 事件委托（e.composedPath()[0] === target）+ 祖先匹配（path.includes(ancestor)）高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='parent'><span id='child'>x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 连入文档的元素 dispatch：path = [child, parent, body, html, document, window]
+    //    composedPath()[0]===target；含祖先（parent/body/html）；末端 document + window
+    sandbox.execute(
+        "globalThis.__path = null;\
+         var child = document.getElementById('child');\
+         child.addEventListener('test', function(e) {\
+           globalThis.__path = e.composedPath();\
+           globalThis.__pathLen = globalThis.__path.length;\
+           globalThis.__targetIs0 = (e.composedPath()[0] === e.target);\
+         });\
+         var ev = new Event('test', { bubbles: true });\
+         globalThis.__before = ev.composedPath().length;\
+         child.dispatchEvent(ev);\
+         globalThis.__after = ev.composedPath().length;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__before").unwrap().value, "0", "dispatch 前 composedPath() 返 []");
+    assert_eq!(sandbox.execute("globalThis.__after").unwrap().value, "0", "dispatch 后 composedPath() 返 []（spec：dispatch flag unset）");
+    assert_eq!(sandbox.execute("globalThis.__targetIs0").unwrap().value, "true", "composedPath()[0] === event.target");
+    assert_eq!(sandbox.execute("globalThis.__pathLen").unwrap().value, "6", "连入文档元素 path 长度=6（child,parent,body,html,document,window）");
+    // 顺序：target → 祖先链 → document → window
+    assert_eq!(sandbox.execute("globalThis.__path[0].id").unwrap().value, "child", "path[0]=target (child)");
+    assert_eq!(sandbox.execute("globalThis.__path[1].id").unwrap().value, "parent", "path[1]=直接父 (parent)");
+    assert_eq!(sandbox.execute("globalThis.__path[2].tagName").unwrap().value, "BODY", "path[2]=body");
+    assert_eq!(sandbox.execute("globalThis.__path[3].tagName").unwrap().value, "HTML", "path[3]=html");
+    assert_eq!(sandbox.execute("globalThis.__path[4] === document").unwrap().value, "true", "path[4]=document");
+    assert_eq!(sandbox.execute("globalThis.__path[5] === window").unwrap().value, "true", "path[5]=window");
+
+    // ② 祖先匹配（事件委托高频用法）：composedPath().some(el => el.id === 'parent')
+    sandbox.execute(
+        "globalThis.__hasParent = document.getElementById('child')\
+           .dispatchEvent(Object.assign(new Event('t2', {bubbles:true}), {__p:null})) || true;\
+         document.getElementById('child').addEventListener('t2', function(e){\
+           globalThis.__hasParent = e.composedPath().some(function(el){ return el && el.id === 'parent'; });\
+           globalThis.__hasWindow = e.composedPath().indexOf(window) >= 0;\
+         });\
+         document.getElementById('child').dispatchEvent(new Event('t2', {bubbles:true}));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasParent").unwrap().value, "true", "composedPath 含祖先 parent（事件委托 .some 匹配）");
+    assert_eq!(sandbox.execute("globalThis.__hasWindow").unwrap().value, "true", "composedPath 含 window（末端）");
+
+    // ③ window 派发事件：path = [window]（target 即 window）
+    sandbox.execute(
+        "globalThis.__wpath = null;\
+         window.addEventListener('wev', function(e){ globalThis.__wpath = e.composedPath(); });\
+         window.dispatchEvent(new Event('wev'));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__wpath.length").unwrap().value, "1", "window 派发 path 长度=1");
+    assert_eq!(sandbox.execute("globalThis.__wpath[0] === window").unwrap().value, "true", "window 派发 path[0]=window");
+
+    // ④ 脱离文档元素（createElement 未挂载）：path = [target]（无祖先、无 document/window）
+    sandbox.execute(
+        "globalThis.__dpath = null;\
+         var d = document.createElement('div');\
+         d.addEventListener('dev', function(e){ globalThis.__dpath = e.composedPath(); });\
+         d.dispatchEvent(new Event('dev', { bubbles: true }));",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dpath.length").unwrap().value, "1", "脱离文档元素 path 长度=1（仅 target，无 document/window）");
+    assert_eq!(sandbox.execute("globalThis.__dpath[0] === globalThis.__dpath[0]").unwrap().value, "true", "脱离文档 path[0] 存在");
+
+    // ⑤ 非 dispatch 事件（new Event 未派发）composedPath() 恒 []
+    sandbox.execute("globalThis.__fresh = (new Event('x')).composedPath().length;").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__fresh").unwrap().value, "0", "未派发的 Event.composedPath() 返 []");
+}

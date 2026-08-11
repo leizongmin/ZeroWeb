@@ -130,6 +130,31 @@
 
 ## 最近完成的改进
 
+### Event.composedPath()（本轮 R3244，engine shim）—— pivot 出 canvas 续片
+
+承接 R3243（表格写入族），按上轮 CONTINUE 取 gap 扫描首选 **`Event.composedPath()`**（生产 shim absent，DOM §4.3，shadow DOM 事件委托 + 祖先匹配高频）。重扫确认仍 absent（无 `composedPath`/`_composedPath` 命中），且所有元素事件派发汇于 `_dispatchWithBubble`（capture/target/bubble 三阶段，已算祖先链）、所有事件对象出 `_makeEvent`（Event + MouseEvent/CustomEvent/... 子类全经此）——两汇聚点使单切片即可全覆盖。
+
+**实现（R3244）**：DOM §4.3（https://dom.spec.whatwg.org/#dom-event-composedpath）。
+- `_makeEvent`（part03.js）+`composedPath()` 方法（读 `_composedPath`，返 `.slice()` 副本或 `[]`）+`_composedPath: null` 字段。Event + 全部子类（经 `_makeEvent`）自动获得。
+- `_dispatchWithBubble`（part03.js）：派发前算路径 `cpPath = [target, ...祖先链 proxy]`；**连入文档**（`__zw_contains('html', sel)==='1'`）→ 追加 `document` + `window`（spec 路径末端）；detached 元素链止于其 root 不追加。派发体包 `try { ... } finally { event._composedPath = null; }`（spec：dispatch flag unset 时返 []，listener 抛错也清）。
+- `globalThis.dispatchEvent`（part06.js，window 派发）：路径 = `[window]`（target 即 window），同 try/finally 清空。
+
+**为何 try/finally 安全**：`_dispatchWithBubble` 三处早返（capture stop / target stop / 末尾）均在 try 内，finally 先于返回值归途执行（清 `_composedPath`），不改变返回值语义。**zero-engine 1956 全绿**（+1 测，零回归——含既有 30+ dispatchEvent/冒泡/捕获测全过）。
+
+**为何净正向**：① **闭合真实 Web API gap**——事件委托核心 API（`e.composedPath()[0]===target` 跨 shadow retargeting、`path.includes(ancestor)` 祖先匹配）从 absent 到 spec 合规；② **零回归**——派发热路径 try/finally 无返回值变化，1956 全绿；③ 低风险（纯 shim，无 host/Rust 改动）；④ engine 属本流域。**已知近似**：shadow DOM retargeting（composed 跨边界路径）未实现（shadow DOM 基础支持，事件不真跨 shadow 边界——与既有 dispatch 简化一致，documented）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part03.js` | `_makeEvent` +`composedPath()`/`_composedPath`；`_dispatchWithBubble` 算路径 + try/finally 清空（spec URL 注释）。 |
+| `crates/engine/src/js_dom_shim/part06.js` | `globalThis.dispatchEvent` 设 `[window]` 路径 + try/finally 清空。 |
+| `crates/engine/src/js_dom_bridge_tests/part14.rs` | +1 测 `test_event_composed_path_r3244`：连入文档元素 path=6（child/parent/body/html/document/window，顺序 + target===path[0]）；祖先 `.some` 匹配 + 含 window；window 派发 path=[window]；脱离文档 path=[target]；dispatch 前后返 []；未派发 Event 恒 []。 |
+
+验证：`cargo fmt -p zero-engine -- --check` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1956 全绿**（+1 测，零回归）。⚠️ 跨流 clippy（`apps/browser process_backend.rs`，归因 `16d6a42e` 渲染流 GPU 工作）+ compositor flake 仍待渲染/浏览器流（同 R3243 记录，不阻断本流域 scoped 验证）。
+
+**下一步**：composedPath 闭合。续候选（pivot 出 canvas，engine/dom Web API gap 扫描）：① **`HTMLFormElement.elements`/`form[index]`** 收敛核实（表单库高频，可能是 stub/缺失）；② **`clientTop`/`clientLeft`**（absent，CSSOM View §4.1，但需 border 数据——价值偏低）；③ **`Element.scrollIntoView`** 真实化核实（scrollLeft/Top setter 是否真滚动 + 派发 scroll）；④ **table 写入族延伸**（createTBody/createCaption/tHead setter——较低频）；⑤ 字体栈/GPU 战略项 user/hardware gated。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### HTMLTableElement 修改 API 族（本轮 R3243，engine shim）—— pivot 出 canvas 首片
 
 承接 R3242（canvas shadow 收官），按上轮裁决 **pivot 出 canvas**——canvas composite（R3236-R3239）+ shadow（R3240-R3242）已实质闭合，转 re-scan engine/dom 找真实可验证 Web API gap。本轮重扫生产 shim `js_dom_shim/part01..06.js`（非旧 polyfill `dom_bridge.rs`——该文件 gBCR/Observer stub 为死代码，已 cross-check 剔除），严格对照 R-record（R3160-R3242）剔除已闭合项，定位 **HTMLTableElement 修改 API 族全缺**：读侧（rows/tBodies/caption/tHead/tFoot/rowIndex/cellIndex/sectionRowIndex，R2842-R2849）已就绪，但写侧 `insertRow`/`deleteRow`/`insertCell`/`deleteCell` 全 absent（动态表格/数据面板/DataTable 高频，缺失则 `el.insertRow is not a function` 中断页面 JS）。
