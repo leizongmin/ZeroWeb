@@ -130,6 +130,30 @@
 
 ## 最近完成的改进
 
+### window.print() / window.stop()（本轮 R3246，engine shim）—— pivot 出 canvas 续片 3
+
+承接 R3245（setRangeText），续 pivot 出 canvas 的 engine/dom Web API gap 扫描。本轮重扫**严 cross-check 剔除 stale 命中**（上轮 master.md 候选 `document.hasFocus` 实测**已实现** part06:1012，R2824；`Element.scrollTo`/`window.scrollTo` grep 误报，实测**已实现** part01:1594 R3047；CharacterData appendData/deleteData/insertData/replaceData/substringData **已实现** part04:390-428；CSSStyleSheet insertRule/deleteRule/cssRules **已实现** part06 R2808-R2810）。剔除后定位 **`window.print()` + `window.stop()` 全缺**——`print` 此前仅 `beforeprint`/`afterprint` 事件名命中，方法本体 absent。
+
+**实现（R3246）**：HTML §4.5.6 / Window 接口（https://html.spec.whatwg.org/multipage/window-object.html#dom-print / #dom-stop）。紧随 alert/confirm/prompt/open（R2979）同址，guard `||` 幂等：
+- `window.print()`——提示打印页面（headless 无打印机 → no-op 不抛）。打印按钮 / 发票 / 收据页高频。
+- `window.stop()`——中止文档加载（headless JS 执行时文档已加载完毕 → 无进行中加载 → no-op 不抛）。慢加载中止 / 广告拦截 / abort 逻辑高频。
+- 两者此前全缺 → `window.print()`/`window.stop()` 抛 TypeError 中断后续脚本。
+
+**为何净正向**：① **闭合真实 Web API gap**——两个高频 window 方法的 TypeError-from-absence 消除；② **零回归**——zero-engine 1958 全绿（+1 测）；③ 极低风险（2 行 no-op + guard，同 R2979 既有模式）；④ engine 属本流域。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | +`globalThis.print`/`globalThis.stop` no-op（紧随 open，spec URL 注释，guard 幂等）。 |
+| `crates/engine/src/js_dom_bridge_tests/part14.rs` | +1 测 `test_window_print_and_stop_r3246`：typeof==='function'（feature-detect）；调用返 undefined 不抛；stop 后续脚本继续；window↔globalThis 别名一致。 |
+
+验证：`cargo fmt -p zero-engine -- --check` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1958 全绿**（+1 测，零回归）。
+
+⚠️ **本轮重扫结论：engine/dom 生产 shim 的高价值 absent Web API 已基本穷尽**。本轮 cross-check 剔除 6 处 stale 命中（hasFocus/scrollTo/scrollBy/CharacterData/CSSStyleSheet 均已实现），新增仅 print/stop 两个 no-op。pivot 出 canvas 后已闭合 4 片（R3243 表格写入 + R3244 composedPath + R3245 setRangeText + R3246 print/stop），shim 缺口面收敛到边际。后续方向建议转**其它子系统**或**中等架构项**（见「下一步」）。
+
+**下一步**：shim 缺口收敛，**转方向**。候选（按价值/可行性排序）：① **native DOM Rust crate（zero-dom）spec 审**——Range/TreeWalker/NodeIterator/serialization 在 Rust 侧的 spec 合规审计（前面 R3206-R3215 读侧序列化族曾在 native 侧修，续审 Node/CharacterData/Range 边界 spec 偏离，单切片可落地）；② **net crate 续 spec 审**——websocket/connect 模块 W3C §6 close code/handshake 合规（R3220 调查曾 defer）；③ **storage 续**——IndexedDB feature gap（Date key / nextunique/prevunique cursor / array keyPath，JS 双实现，value 待 JS bridge 路由后提升）；④ **P1a 事件循环 microtask checkpoint 时序**（spec 每 task checkpoint，现 execute 末 drain——中等风险，需独立评估）；⑤ shim 余 niche（clientTop/clientLeft 需 border 数据、namespace API lookupPrefix/isDefaultNamespace——低价值）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。⚠️ 跨流 clippy（process_backend.rs 归因 16d6a42e）+ compositor flake 仍待渲染/浏览器流。
+
+---
+
 ### HTMLInputElement.setRangeText()（本轮 R3245，engine shim）—— pivot 出 canvas 续片 2
 
 承接 R3244（composedPath），续 pivot 出 canvas 的 engine/dom Web API gap 扫描。核 form/input API：`form.elements`/`form.length`/`setSelectionRange` 已就绪（R2844 等，cross-check 剔除上轮 master.md 误记的候选①），但 **`setRangeText` absent**（HTML §4.10.5.23，文本编辑库 auto-format / mask / undo 补全高频）。所有原语就绪（`_controlValue` 读 / `_selObj` 选区 / `_isTextControl` gate / `.value=` setter / `_clampSelOffset`），单切片可落地。

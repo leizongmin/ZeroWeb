@@ -815,3 +815,42 @@ fn test_input_set_range_text_r3245() {
     ).unwrap();
     assert_eq!(sandbox.execute("globalThis.__tv").unwrap().value, "XYbc", "textarea setRangeText 替换 [0,1)");
 }
+
+#[test]
+fn test_window_print_and_stop_r3246() {
+    // R3246：window.print() / window.stop()（HTML §4.5.6 / Window 接口）。两者此前全缺，调用抛 TypeError
+    // 中断脚本（打印按钮 / 发票页 / 慢加载中止 / 广告拦截高频）。headless no-op（无打印机 / 无进行中加载）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① 存在性：typeof === 'function'（feature-detect 高频：`if (typeof window.print === 'function')`）
+    sandbox.execute(
+        "globalThis.__isPrint = (typeof window.print === 'function');\
+         globalThis.__isStop = (typeof window.stop === 'function');",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__isPrint").unwrap().value, "true", "window.print 为 function");
+    assert_eq!(sandbox.execute("globalThis.__isStop").unwrap().value, "true", "window.stop 为 function");
+
+    // ② 调用不抛、返 undefined（headless no-op）；包裹 try/catch 捕获任何中断
+    sandbox.execute(
+        "globalThis.__printRet = (function(){ try { return String(window.print()); } catch(e){ return 'THREW:'+e; } })();\
+         globalThis.__stopRet = (function(){ try { return String(window.stop()); } catch(e){ return 'THREW:'+e; } })();",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__printRet").unwrap().value, "undefined", "window.print() 返 undefined（no-op，不抛）");
+    assert_eq!(sandbox.execute("globalThis.__stopRet").unwrap().value, "undefined", "window.stop() 返 undefined（no-op，不抛）");
+
+    // ③ 后续脚本不中断（window.stop() 调用后代码继续执行——真实浏览器 stop 仅中止加载，不中止 JS）
+    sandbox.execute("window.stop(); globalThis.__afterStop = 'reached';").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__afterStop").unwrap().value, "reached", "window.stop() 后续脚本继续执行");
+
+    // ④ globalThis === window 别名一致（window.print === globalThis.print）
+    sandbox.execute("globalThis.__alias = (window.print === globalThis.print && window.stop === globalThis.stop);").unwrap();
+    assert_eq!(sandbox.execute("globalThis.__alias").unwrap().value, "true", "window.print/stop 与 globalThis 别名一致");
+}

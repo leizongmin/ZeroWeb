@@ -1605,6 +1605,14 @@
   globalThis.confirm = globalThis.confirm || function confirm(_message) { return false; };
   globalThis.prompt = globalThis.prompt || function prompt(_message, _defaultValue) { return null; };
   globalThis.open = globalThis.open || function open(_url, _target, _features) { return null; };
+  // window.print() / window.stop()（R3246）—— HTML §4.5.6 / Window 接口
+  //（https://html.spec.whatwg.org/multipage/window-object.html#dom-print / #dom-stop）。
+  // print：提示用户打印页面（headless 无打印机 → no-op；不抛）。stop：中止文档加载（headless JS 执行时
+  // 文档已加载完毕 → 无进行中加载可中止 → no-op；不抛）。两者此前全缺，`window.print()`（打印按钮 /
+  // 发票 / 收据页高频）/ `window.stop()`（慢加载中止 / 广告拦截 / abort 逻辑）抛 TypeError 中断后续脚本。
+  // 同 alert/confirm/prompt/open（R2979）的 headless dismiss/no-op 语义。guard `||` 幂等（不覆盖既有定义）。
+  globalThis.print = globalThis.print || function print() {};
+  globalThis.stop = globalThis.stop || function stop() {};
 
   // Performance API（R2768 now + R2821 mark/measure/entry buffer + PerformanceObserver）——
   // DOMHighResTimeStamp（ms，自 time origin 起单调）。host `__zw_performance_now` 返 elapsed ms（子毫秒）；
