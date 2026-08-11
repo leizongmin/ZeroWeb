@@ -988,6 +988,7 @@ fn test_apply_letter_spacing_px() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(&mut style, "letter-spacing", "3px"));
     assert_eq!(style.letter_spacing, LengthValue::Px(3.0));
+    assert!(!style.letter_spacing_normal);
 
     // 负值
     assert!(apply_property_value(&mut style, "letter-spacing", "-1.5px"));
@@ -998,15 +999,17 @@ fn test_apply_letter_spacing_px() {
 /// 测试 apply_property_value 对 letter-spacing: normal（解析为 0px）
 fn test_apply_letter_spacing_normal() {
     let mut style = ComputedStyle::default();
-    // letter-spacing 的 normal 在 CSS 中解析为 0px
-    // 当前实现通过 parse_length_or_math 解析，"normal" 不是有效长度
-    // 所以先设置为非零值，然后验证默认重置
+    // normal 与显式零长度的数值相同，但 feature precedence 必须区分。
     assert!(apply_property_value(&mut style, "letter-spacing", "2px"));
     assert_eq!(style.letter_spacing, LengthValue::Px(2.0));
-
-    // 默认值为 0px
-    let style = ComputedStyle::default();
+    assert!(!style.letter_spacing_normal);
+    assert!(apply_property_value(&mut style, "letter-spacing", "normal"));
     assert_eq!(style.letter_spacing, LengthValue::Px(0.0));
+    assert!(style.letter_spacing_normal);
+
+    assert!(apply_property_value(&mut style, "letter-spacing", "0px"));
+    assert_eq!(style.letter_spacing, LengthValue::Px(0.0));
+    assert!(!style.letter_spacing_normal);
 }
 
 #[test]
@@ -1014,6 +1017,7 @@ fn test_apply_letter_spacing_normal() {
 fn test_letter_spacing_inherited() {
     let mut parent = ComputedStyle::default();
     parent.letter_spacing = LengthValue::Px(3.0);
+    parent.letter_spacing_normal = false;
 
     let mut child = ComputedStyle::default();
     assert_eq!(child.letter_spacing, LengthValue::Px(0.0));
@@ -1021,6 +1025,7 @@ fn test_letter_spacing_inherited() {
     // letter-spacing 是继承属性
     assert!(inherit_property(&parent, &mut child, "letter-spacing"));
     assert_eq!(child.letter_spacing, LengthValue::Px(3.0));
+    assert!(!child.letter_spacing_normal);
 
     // 子元素显式设置后覆盖继承值
     assert!(apply_property_value(&mut child, "letter-spacing", "5px"));

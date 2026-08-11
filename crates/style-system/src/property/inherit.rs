@@ -57,6 +57,7 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "letter-spacing" => {
             child.letter_spacing = parent.letter_spacing.clone();
+            child.letter_spacing_normal = parent.letter_spacing_normal;
             true
         }
         "text-emphasis-style" => {
@@ -787,6 +788,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "letter-spacing" => {
             style.letter_spacing = default_style.letter_spacing;
+            style.letter_spacing_normal = default_style.letter_spacing_normal;
             true
         }
         "word-spacing" => {

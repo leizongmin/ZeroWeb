@@ -43,7 +43,9 @@ use text_list::{format_counter_alpha, format_counter_roman};
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
-use text_shaping::{ahem_uses_embox_position, fragment_glyphs, is_cc_control_char, logical_fragment_source};
+use text_shaping::{
+    ahem_uses_embox_position, fragment_glyphs, is_cc_control_char, logical_fragment_source, style_open_type_features,
+};
 
 impl super::Painter {
     /// 收集浮动子元素的排除区域（带样式映射版本）。
@@ -1334,6 +1336,7 @@ impl super::Painter {
                             );
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
+                            let open_type_features = style_open_type_features(owner_style_opt.unwrap_or(style));
                             for glyph in fragment_glyphs(
                                 frag_font_id.0,
                                 &transformed,
@@ -1342,6 +1345,7 @@ impl super::Painter {
                                 text_direction,
                                 !generic_font,
                                 logical_source,
+                                &open_type_features,
                             ) {
                                 let ch = glyph.code_point;
                                 let (glyph_x, glyph_y) = if char_advance_is_y {

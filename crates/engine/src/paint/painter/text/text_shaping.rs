@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use unicode_bidi::{BidiClass, bidi_class};
 use zero_layout_engine::TextFragmentSource;
-use zero_render_foundation::font::{ShapedGlyph, TextDirection};
+use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::GlyphSource;
 
 fn shaped_text_enabled() -> bool {
@@ -34,7 +34,7 @@ fn shaped_offsets_enabled() -> bool {
 
 fn shaped_complex_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_COMPLEX").as_deref() == Ok("1"))
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_COMPLEX").as_deref() != Ok("0"))
 }
 
 fn shaped_rtl_enabled() -> bool {
@@ -134,6 +134,49 @@ fn single_rtl_script(text: &str) -> bool {
     has_rtl
 }
 
+fn set_feature(features: &mut Vec<OpenTypeFeature>, tag: [u8; 4], value: u32) {
+    if let Some(feature) = features.iter_mut().find(|feature| feature.tag == tag) {
+        feature.value = value;
+    } else {
+        features.push(OpenTypeFeature::new(tag, value));
+    }
+}
+
+/// 按 CSS Fonts feature precedence 生成元素级 caller overrides。
+///
+/// Face defaults 由 FontLoader 在更低优先级合并；此处顺序为
+/// font-variant → letter-spacing → font-feature-settings。
+/// https://drafts.csswg.org/css-fonts-4/#feature-precedence
+pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle) -> Vec<OpenTypeFeature> {
+    let mut features = Vec::new();
+    let ligatures = style.font_variant_ligatures;
+    if let Some(enabled) = ligatures.common {
+        set_feature(&mut features, *b"liga", enabled as u32);
+        set_feature(&mut features, *b"clig", enabled as u32);
+    }
+    if let Some(enabled) = ligatures.discretionary {
+        set_feature(&mut features, *b"dlig", enabled as u32);
+    }
+    if let Some(enabled) = ligatures.historical {
+        set_feature(&mut features, *b"hlig", enabled as u32);
+    }
+    if let Some(enabled) = ligatures.contextual {
+        set_feature(&mut features, *b"calt", enabled as u32);
+    }
+
+    if !style.letter_spacing_normal {
+        set_feature(&mut features, *b"liga", 0);
+        set_feature(&mut features, *b"clig", 0);
+    }
+
+    if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
+        for setting in settings {
+            set_feature(&mut features, setting.tag, setting.value);
+        }
+    }
+    features
+}
+
 impl Iterator for FragmentGlyphs<'_> {
     type Item = FragmentGlyph;
 
@@ -179,6 +222,7 @@ pub(super) fn fragment_glyphs<'a>(
     direction: TextDirection,
     advance_eligible: bool,
     logical_source: Option<LogicalFragmentSource<'a>>,
+    features: &[OpenTypeFeature],
 ) -> FragmentGlyphs<'a> {
     let complex_enabled = complex_run_enabled(
         direction,
@@ -192,7 +236,7 @@ pub(super) fn fragment_glyphs<'a>(
     if eligible
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
-        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, &[])
+        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
@@ -421,6 +465,32 @@ mod tests {
         assert_eq!(
             fragment_shape_direction(Some(&mixed), TextDirection::LeftToRight, true),
             TextDirection::LeftToRight
+        );
+    }
+
+    #[test]
+    fn style_features_follow_variant_spacing_and_explicit_precedence() {
+        let mut style = zero_style_system::ComputedStyle::default();
+        style.font_variant_ligatures.common = Some(true);
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"liga", 1), OpenTypeFeature::new(*b"clig", 1),]
+        );
+
+        style.letter_spacing_normal = false;
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"liga", 0), OpenTypeFeature::new(*b"clig", 0),]
+        );
+
+        style.font_feature_settings =
+            zero_style_system::FontFeatureSettingsValue::Features(vec![zero_style_system::FontFeatureSetting {
+                tag: *b"liga",
+                value: 1,
+            }]);
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"liga", 1), OpenTypeFeature::new(*b"clig", 0),]
         );
     }
 

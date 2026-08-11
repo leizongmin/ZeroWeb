@@ -574,8 +574,14 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "letter-spacing" => {
+            if value.trim().eq_ignore_ascii_case("normal") {
+                style.letter_spacing = LengthValue::Px(0.0);
+                style.letter_spacing_normal = true;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 style.letter_spacing = v;
+                style.letter_spacing_normal = false;
                 return true;
             }
         }

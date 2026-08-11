@@ -112,6 +112,7 @@ impl Default for ComputedStyle {
             text_emphasis_color: ColorValue::CurrentColor,
             text_transform: TextTransformValue::None,
             letter_spacing: LengthValue::Px(0.0),
+            letter_spacing_normal: true,
             word_spacing: LengthValue::Px(0.0),
             white_space: WhiteSpaceValue::Normal,
             text_overflow: TextOverflowValue::Clip,

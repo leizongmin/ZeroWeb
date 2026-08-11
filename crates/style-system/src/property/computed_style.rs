@@ -165,6 +165,8 @@ pub struct ComputedStyle {
     pub text_transform: TextTransformValue,
     /// letter-spacing 属性。
     pub letter_spacing: LengthValue,
+    /// letter-spacing 的计算值是否为 `normal`（区别于显式零长度）。
+    pub letter_spacing_normal: bool,
     /// word-spacing 属性。
     pub word_spacing: LengthValue,
     /// white-space 属性。
