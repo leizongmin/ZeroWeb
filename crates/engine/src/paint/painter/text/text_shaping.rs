@@ -55,6 +55,11 @@ fn shaped_advance_trace_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1"))
 }
 
+fn shaped_generic_paint_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_GENERIC_PAINT").as_deref() != Ok("0"))
+}
+
 pub(super) fn configure_paint_ifc_advance(
     context: InlineFormattingContext,
     doc: &Document,
@@ -320,7 +325,8 @@ pub(super) fn fragment_glyphs<'a>(
     if eligible
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
-        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)
+        && let Some(mut glyphs) =
+            crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
@@ -351,11 +357,24 @@ pub(super) fn fragment_glyphs<'a>(
         let Some(sources) = sources else {
             return FragmentGlyphs::Legacy(text.chars());
         };
+        let generic_contextual = simple_mapping && !advance_eligible && shaped_generic_paint_enabled();
+        if generic_contextual {
+            for glyph in &mut glyphs {
+                let paint_base = crate::measure_char_for_paint(glyph.code_point, font_size, false);
+                glyph.advance_x = crate::text_metrics::paint_base_with_contextual_delta(
+                    paint_base,
+                    glyph.advance_x,
+                    glyph.unshaped_advance_x,
+                );
+            }
+        }
         return FragmentGlyphs::Shaped {
             glyphs: glyphs.into_iter(),
             sources: sources.into_iter(),
             indexed,
-            advanced: complex_mapping || shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
+            advanced: complex_mapping
+                || generic_contextual
+                || shaped_advance_enabled() && (advance_eligible || shaped_positioning_enabled()),
             offset: complex_mapping || offsets_enabled,
         };
     }
@@ -556,6 +575,26 @@ mod tests {
         assert_eq!(trace.layout_estimate, 17.6);
         assert_eq!(trace.unshaped, 18.0);
         assert_eq!(trace.shaped, 16.5);
+    }
+
+    #[test]
+    fn contextual_glyph_deltas_sum_to_the_contextual_fragment_width() {
+        let paint_bases = [10.0, 11.0];
+        let shaped = [9.5, 10.25];
+        let unshaped = [10.0, 10.5];
+        let glyph_width: f32 = paint_bases
+            .iter()
+            .zip(shaped)
+            .zip(unshaped)
+            .map(|((&base, shaped), unshaped)| {
+                crate::text_metrics::paint_base_with_contextual_delta(base, shaped, unshaped)
+            })
+            .sum();
+
+        assert_eq!(
+            glyph_width,
+            crate::text_metrics::paint_base_with_contextual_delta(21.0, 19.75, 20.5)
+        );
     }
 
     #[test]

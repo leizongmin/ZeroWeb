@@ -99,7 +99,7 @@ impl AdvanceSource for ShapedAdvanceSource {
     }
 }
 
-fn paint_base_with_contextual_delta(paint_base: f32, shaped: f32, unshaped: f32) -> f32 {
+pub(crate) fn paint_base_with_contextual_delta(paint_base: f32, shaped: f32, unshaped: f32) -> f32 {
     paint_base + shaped - unshaped
 }
 
