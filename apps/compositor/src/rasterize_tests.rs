@@ -4,6 +4,7 @@
 mod tests {
     use zero_protocol::paint_snapshot::{IpcRect, PaintSnapshotParams};
     use zero_render_foundation::font::{FontLoader, GlyphCache};
+    use zero_render_foundation::image_cache::ImageCache;
     use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
     use zero_render_foundation::surface::FrameBuffer;
 
@@ -41,6 +42,7 @@ mod tests {
         let loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
         let mut back = FrameBuffer::new(w, h);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
         back.clear(0, 0, 255, 255);
 
         let paint = red_fill_snapshot(
@@ -58,7 +60,16 @@ mod tests {
         unsafe {
             std::env::set_var("ZW_RENDER_THREAD", "0");
         }
-        rasterize::rasterize_into_back(&paint, &primitives, &loader, &mut glyph_cache, None, &mut back, true);
+        rasterize::rasterize_into_back(
+            &paint,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            true,
+        );
 
         assert_eq!(back.data[0], 255, "top-left in dirty should be red");
         assert_eq!(back.data[1], 0);
@@ -77,6 +88,7 @@ mod tests {
         let loader = FontLoader::new();
         let mut glyph_cache = GlyphCache::new(64);
         let mut back = FrameBuffer::new(w, h);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
         back.clear(0, 255, 0, 255);
 
         let paint = red_fill_snapshot(w, h, vec![]);
@@ -91,7 +103,16 @@ mod tests {
         unsafe {
             std::env::set_var("ZW_RENDER_THREAD", "0");
         }
-        rasterize::rasterize_into_back(&paint, &primitives, &loader, &mut glyph_cache, None, &mut back, false);
+        rasterize::rasterize_into_back(
+            &paint,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            false,
+        );
 
         assert_eq!(back.data[0], 255);
         assert_eq!(back.data[1], 0);

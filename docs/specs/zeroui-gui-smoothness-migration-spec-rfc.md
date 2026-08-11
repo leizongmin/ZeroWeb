@@ -209,8 +209,9 @@ winit key/IME/pointer
 | M0 | 已完成并推送 | 真实 renderer 多控件交互、IME Commit、1.0～2.0 DPI、CPU/GPU 快照、全工作区测试与 clippy |
 | M1 | 已完成并推送 | retained input/textarea 值与选区、IDL/内容属性分离、Unicode 编辑、`0/0/0/1` paint-only、无整页序列化/图片重扫 |
 | M2 | 已完成并推送 | 单一 focus owner/pointer target、IME 全生命周期、候选窗锚点、单/多进程一致性、真实 renderer 自动回归 |
-| M3 | 已完成，待阶段提交 | 分级失效、输入事务单次发布、latest-wins 异步帧邮箱、浏览器端过期帧合并 |
-| M4～M5 | 待实施 | 按下列顺序推进 |
+| M3 | 已完成并推送 | 分级失效、输入事务单次发布、latest-wins 异步帧邮箱、浏览器端过期帧合并 |
+| M4 | 已完成，待阶段提交 | GPU 图片纹理缓存、持久 uniform、渐变/图片顶点合批、compositor 图片跨帧缓存 |
+| M5 | 待实施 | 性能门禁与最终验收 |
 
 ### M0：交互正确性基线
 
@@ -260,6 +261,14 @@ winit key/IME/pointer
 - 回移并适配 ZeroUI 图片纹理缓存。
 - 回移持久 GPU 绑定资源和安全 vertex batching。
 - 保持 CPU/GPU 像素一致和图片内容变化正确失效。
+
+完成记录：
+
+- `GpuRenderer` 复用跨帧 image sampler、texture 和 bind group；缓存键包含 ImageKey、尺寸和像素内容摘要，同 key 内容变化不会复用旧纹理。
+- 全场景 GPU 路径持久复用 uniform buffer/bind group，每帧只更新尺寸数据。
+- 同一绘制阶段的渐变和图片顶点合并到单个 vertex buffer，再按原资源顺序切片绘制，保持 painter order。
+- compositor 为每个页面 surface 持有有界 `ImageCache`，接收首帧 `image_payloads` 后供 CPU/GPU 共用；后续省略像素 payload 的帧仍能正确显示图片。
+- GPU renderer 64 项回读测试、render-foundation 579 项单测、CPU/GPU compositor 图片跨帧进程测试均通过。
 
 ### M5：性能门禁与最终验收
 

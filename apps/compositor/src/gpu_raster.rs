@@ -7,10 +7,12 @@ use crate::recovery;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::gpu::renderer::GpuRenderer;
+use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_render_foundation::surface::FrameBuffer;
 
 /// 尝试 GPU 全量光栅化并写入 `back`；成功返回 true，失败返回 false（调用方走 CPU）。
+#[allow(clippy::too_many_arguments)] // renderer state + frame inputs + two persistent caches + output
 pub fn try_rasterize_fills_into_back(
     gpu_renderer: &mut Option<GpuRenderer>,
     width: u32,
@@ -18,6 +20,7 @@ pub fn try_rasterize_fills_into_back(
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
+    image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
 ) -> bool {
     rasterize_gpu(
@@ -27,6 +30,7 @@ pub fn try_rasterize_fills_into_back(
         primitives,
         font_loader,
         glyph_cache,
+        image_cache,
         back,
         None,
     )
@@ -41,6 +45,7 @@ pub fn try_rasterize_partial_into_back(
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
+    image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     dirty_rects: &[(f32, f32, f32, f32)],
 ) -> bool {
@@ -59,6 +64,7 @@ pub fn try_rasterize_partial_into_back(
             primitives,
             font_loader,
             glyph_cache,
+            image_cache,
             back,
             Some(region),
         ) {
@@ -76,6 +82,7 @@ fn rasterize_gpu(
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
+    image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     clip: Option<Rect>,
 ) -> bool {
@@ -90,9 +97,22 @@ fn rasterize_gpu(
     };
     gpu.configure_surface(width, height);
     if let Some(clip_rect) = clip {
+        if !primitives.images.is_empty() {
+            return false;
+        }
         gpu.render_scene_with_clip(&primitives.fills, font_loader, glyph_cache, &[], &[], Some(clip_rect));
     } else {
-        gpu.render_scene_ext(&primitives.fills, font_loader, glyph_cache, &[], &[], &[]);
+        gpu.render_full_scene_gpu(
+            primitives,
+            font_loader,
+            glyph_cache,
+            Some(image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+            1.0,
+        );
     }
     let Some(pixels) = gpu.read_pixels() else {
         return false;
@@ -143,6 +163,7 @@ mod tests {
         });
 
         let mut gpu_back = FrameBuffer::new(32, 32);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
         if !try_rasterize_fills_into_back(
             &mut gpu,
             32,
@@ -150,6 +171,7 @@ mod tests {
             &primitives,
             &font_loader,
             &mut glyph_cache,
+            &mut image_cache,
             &mut gpu_back,
         ) {
             return;
@@ -171,6 +193,7 @@ mod tests {
         });
 
         let mut back = FrameBuffer::new_filled(32, 32, 0, 0, 255, 255);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
         if !try_rasterize_partial_into_back(
             &mut gpu,
             32,
@@ -178,6 +201,7 @@ mod tests {
             &primitives,
             &font_loader,
             &mut glyph_cache,
+            &mut image_cache,
             &mut back,
             &[(0.0, 0.0, 16.0, 16.0)],
         ) {

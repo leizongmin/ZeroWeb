@@ -4,7 +4,7 @@ use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
-use zero_protocol::paint_snapshot::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
+use zero_protocol::paint_snapshot::{IpcColor, IpcFill, IpcImage, IpcImagePayload, IpcRect, PaintSnapshotParams};
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, ProcessRole, child_process_args};
 
@@ -292,6 +292,57 @@ fn compositor_accepts_frames_and_confirms() {
     assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255], "首像素应为纯红");
     let last = &frame.rgba[frame.rgba.len() - 4..];
     assert_eq!(last, &[255, 0, 0, 255], "末像素应为纯红");
+}
+
+#[test]
+fn compositor_retains_image_payload_across_frames() {
+    assert_compositor_retains_image_payload(&[]);
+}
+
+#[test]
+fn compositor_gpu_retains_image_payload_across_frames() {
+    assert_compositor_retains_image_payload(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")]);
+}
+
+fn assert_compositor_retains_image_payload(extra_env: &[(&str, &str)]) {
+    let (mut transport, _comp) = spawn_compositor_with_env(extra_env);
+    let image = IpcImage {
+        rect: IpcRect {
+            x: 0.0,
+            y: 0.0,
+            width: 8.0,
+            height: 8.0,
+        },
+        image_key: 44,
+        clip: None,
+    };
+    let first = PaintSnapshotParams {
+        viewport_width: 8,
+        viewport_height: 8,
+        document_height: 8.0,
+        images: vec![image.clone()],
+        image_payloads: vec![IpcImagePayload {
+            image_key: 44,
+            width: 1,
+            height: 1,
+            rgba: vec![255, 0, 0, 255],
+        }],
+        ..Default::default()
+    };
+    submit_frame(&mut transport, 1, 88, 1, 1, first);
+    let first_pixels = get_frame(&mut transport, 2, 88, 1, 1);
+    assert_eq!(&first_pixels.rgba[..4], &[255, 0, 0, 255]);
+
+    let second = PaintSnapshotParams {
+        viewport_width: 8,
+        viewport_height: 8,
+        document_height: 8.0,
+        images: vec![image],
+        ..Default::default()
+    };
+    submit_frame(&mut transport, 3, 88, 1, 2, second);
+    let second_pixels = get_frame(&mut transport, 4, 88, 1, 2);
+    assert_eq!(&second_pixels.rgba[..4], &[255, 0, 0, 255]);
 }
 
 /// S3：部分 dirty 帧经 compositor 进程 copy_front + 区域重绘，区外像素保留。
