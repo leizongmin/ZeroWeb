@@ -130,6 +130,31 @@
 
 ## 最近完成的改进
 
+### TreeWalker 层级方法（本轮 R3257，engine shim）—— parentNode/firstChild/lastChild/nextSibling/previousSibling
+
+承接上轮「present-API/event + net/storage + DOM 序列化 gap 面已实质收敛」结论后，转 DOM 遍历 API 核实：**shim TreeWalker（R2803）缺 5 个 spec 层级方法**——`_makeNodeWalker`（part06.js）仅落 nextNode/previousNode（与 NodeIterator 共用），但 DOM §4.2.6 TreeWalker 还需 `parentNode`/`firstChild`/`lastChild`/`nextSibling`/`previousSibling`（层级导航，jQuery/d3/sanitizer/a11y tree walker 依赖）。NodeIterator 正确无这些方法（spec §4.2.5）。本轮闭合（native `traversal.rs` 亦有缺但属未接线的 P1b/L2 native binding，本轮不动——仅补 JS-facing shim 版）。
+
+**实现（R3257，DOM §4.2.6 TreeWalker 层级方法，1 文件 shim + 1 测试）**：
+- `js_dom_shim/part06.js` `_makeNodeWalker`：① walk 增加 `ancestorIdx` 参数，建 `parentAcceptedIdx[]`（每 accepted 节点的「最近 ACCEPTED 祖先」在 accepted 中的 idx，根=-1）；② `createTreeWalker` 传 `isTreeWalker=true`、`createNodeIterator` 传 `false`；③ `isTreeWalker` 时附加 5 层级方法（基于 accepted[] pre-order + parentAcceptedIdx 纯数组运算）；④ **关键 `effPos()` 解 fresh-state**——shim walker 初始 `idx=-1`（currentNode=root），nextNode 首调落 root（R2803 语义不可改）；`effPos()` 把 fresh `idx=-1` 解析为「root 的逻辑位置」（root accepted 时=0，否则虚拟 -1），使层级方法从 fresh walker 正确工作（firstChild(DIV)→P，parentNode(root)→null），且不破坏 R2803 nextNode 语义。
+  - `parentNode`：最近 ACCEPTED 祖先 = accepted[parentAcceptedIdx[effPos()]]（无/null）。
+  - `firstChild`/`lastChild`：首/末个 `parentAcceptedIdx[i]===effPos()` 的 i。
+  - `nextSibling`/`previousSibling`：同 `parentAcceptedIdx` 的下一/上一 i。
+  - ACCEPTED 节点的祖先必非 REJECT（REJECT 剪子树）→ parentAcceptedIdx 给出 spec 定义的「最近 accepted 祖先」。层级方法移动后同步 `idx`，使 nextNode/previousNode 续接一致。
+- 测试：`js_dom_bridge_tests/part06.rs` +`test_tree_walker_hierarchical_methods_r3257`（v8）——覆盖层级导航序列、lastChild/firstChild、边界 null（叶 firstChild、首子 previousSibling、root parentNode）、previousSibling、层级移动后 nextNode 续接（idx 同步）、NodeIterator 不暴露层级方法。
+
+**为何净正向**：① **闭合真 spec gap**——TreeWalker 从「仅 next/previousNode」到 5 层级方法全齐（spec §4.2.6 完整），层级树导航通；② **零回归**——zero-engine --lib **v8 1979 全绿**（+1 测，含既有 R2803 nextNode/previousNode 测全过——effPos 保留 R2803 语义），全 workspace minus zero-compositor 全绿（v8 默认）；③ 纯数组运算 + effPos fresh-state 解析，无 lazy 重写（复用 eager 模型），低风险；④ engine shim 本流域。**已知限制**：① eager 模型不变（spec TreeWalker 惰性，但小树结果序一致，R2803 documented）；② currentNode setter 不重置游标（R2803 documented，未改）；③ 层级方法 O(n) 数组扫描（headless 小树无碍）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part06.js` | `_makeNodeWalker` +parentAcceptedIdx +effPos +5 层级方法（isTreeWalker gate）；createTreeWalker/CreateNodeIterator 传 flag。 |
+| `crates/engine/src/js_dom_bridge_tests/part06.rs` | +`test_tree_walker_hierarchical_methods_r3257`（v8）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告（v8 默认）+ **zero-engine --lib v8 1979 全绿**（+1 测，零回归）+ **全 workspace minus zero-compositor 全绿**（v8 默认，R3257 测实跑通过）。
+
+**下一步**：TreeWalker 层级方法闭合（DOM §4.2.6 完整）。续候选：① **用户滚动到可滚动子元素**——LARGE（browser 元素命中测试 + IPC `ScrollEventParams` 扩目标 + renderer 元素派发，涉滚动架构 mini-RFC）；② **P1b V8 原生绑定**（独立大项 RFC，native range.rs/traversal.rs 缺方法待此接线）；③ **microtask checkpoint 时序**（execute 末 drain vs spec 每 task，中等风险，V8 默认 kAuto policy + 每 execute/task 后 drain 已大体满足，需精确时序评估）；④ 战略项 user/hardware gated（L2 escape-hatch / GPU/Display）。**结论**：clean spec/API slice 仍稀缺（多 gap 面已收敛，本轮 TreeWalker 为又一可落地片），下一高价值项多为大件。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### 本轮核实：多个 gap 面已实质收敛（无代码变更，跨 session 排障）
 
 承接上轮「pivot 到 net/storage spec 审」指示，本轮对 zero-web 流可达的 gap 面做了**直接代码核实**（不依赖 agent 扫描——近期 agent 多轮误判：scroll setter「不派发」、Selection/Range「no-op」、本轮 net/storage 5 候选均不成立）。结论：**多个 gap 面已实质收敛，clean slice 稀缺**。核实记录如下，供后续轮次免重复扫描：

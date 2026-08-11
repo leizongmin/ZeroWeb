@@ -690,6 +690,113 @@ fn test_document_tree_walker_r2803() {
 }
 
 #[test]
+fn test_tree_walker_hierarchical_methods_r3257() {
+    // R3257（DOM §4.2.6）：TreeWalker 层级方法 parentNode/firstChild/lastChild/nextSibling/previousSibling。
+    // R2803 仅落 nextNode/previousNode（与 NodeIterator 共用）；本片补 TreeWalker 专属层级方法，并确认
+    // NodeIterator 不暴露这些方法（spec §4.2.5）。树：div#r > [P, SPAN, I > EM]（文本叶 "a"/"b"/"c"）。
+    // SHOW_ELEMENT 下 accepted pre-order = [DIV, P, SPAN, I, EM]，parentAcceptedIdx = [-1, 0, 0, 0, 3]。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=r><p>a</p><span>b</span><i><em>c</em></i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // 层级导航序列（每 walker 独立）：firstChild/nextSibling/parentNode/lastChild/previousSibling。
+    // ① DIV(firstChild)→P；P(nextSibling)→SPAN；SPAN(nextSibling)→I；I(firstChild)→EM；EM(parentNone? 否，parentNode)→I。
+    sandbox
+        .execute(
+            "var root = document.getElementById('r');\
+             var w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             globalThis.__p1 = [\
+               w.firstChild().tagName,       /* P（DIV 首子）*/\
+               w.nextSibling().tagName,      /* SPAN */\
+               w.nextSibling().tagName,      /* I */\
+               w.firstChild().tagName,       /* EM（I 子）*/\
+               w.parentNode().tagName        /* 回 I */\
+             ].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p1)").unwrap().value,
+        "P,SPAN,I,EM,I",
+        "firstChild/nextSibling/firstChild/parentNode 层级导航"
+    );
+
+    // ② lastChild(DIV)=I（P/SPAN/I 中末直接 filtered-子）；随后 firstChild(I)=EM。
+    sandbox
+        .execute(
+            "var w2 = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             globalThis.__p2 = [\
+               w2.lastChild().tagName,      /* I（DIV 末直接 filtered-子）*/\
+               w2.firstChild().tagName      /* EM（I 的首子，currentNode 已在 I）*/\
+             ].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p2)").unwrap().value,
+        "I,EM",
+        "lastChild(DIV)=I，随后 firstChild(I)=EM"
+    );
+
+    // ③ 边界 null：EM 是叶（firstChild=null）；I 无 nextSibling（末子）；P 无 previousSibling（首子）；DIV 无 parentNode（root）。
+    sandbox
+        .execute(
+            "var w3 = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             w3.firstChild();               /* P */\
+             globalThis.__p3 = [\
+               (w3.previousSibling() === null) ? 'null' : 'has',  /* P 首子无前兄 */\
+               w3.nextSibling().tagName,     /* SPAN（重新从 P 取 nextSibling）*/\
+               (document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT).parentNode() === null) ? 'null' : 'has'\
+                 /* fresh walker at DIV，parentNode=null（root 无 accepted 祖先）*/\
+             ].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__p3)").unwrap().value,
+        "null,SPAN,null",
+        "边界：P 无 previousSibling；fresh walker(DIV) parentNode=null"
+    );
+
+    // ④ previousSibling：从 SPAN 回到 P。
+    sandbox
+        .execute(
+            "var w4 = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             w4.firstChild();        /* P */\
+             w4.nextSibling();       /* SPAN */\
+             globalThis.__ps = w4.previousSibling().tagName;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ps)").unwrap().value, "P", "previousSibling SPAN→P");
+
+    // ⑤ nextNode 在层级移动后续接（idx 同步）：firstChild→P 后 nextNode→SPAN。
+    sandbox
+        .execute(
+            "var w5 = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);\
+             w5.firstChild();        /* P，idx=1 */\
+             globalThis.__nn = w5.nextNode().tagName;  /* idx=2 → SPAN */",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__nn)").unwrap().value, "SPAN", "层级移动后 nextNode 续接（idx 同步）");
+
+    // ⑥ NodeIterator 不暴露层级方法（spec §4.2.5）。
+    sandbox.execute("globalThis.__niHas = (typeof document.createNodeIterator(root, NodeFilter.SHOW_ELEMENT).parentNode === 'function');").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__niHas)").unwrap().value,
+        "false",
+        "NodeIterator 无 parentNode（层级方法仅 TreeWalker）"
+    );
+}
+
+#[test]
 fn test_selection_range_r2804() {
     // R2804：window.getSelection + Selection 单例 + document.createRange + Range（文本选择/编辑器/copy-paste）。
     // headless 无真选择——Selection 默认空（rangeCount=0/isCollapsed=true/toString=''/type='None'）。

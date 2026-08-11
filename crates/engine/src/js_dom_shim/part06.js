@@ -162,10 +162,12 @@
 
   // 内部：构造 TreeWalker/NodeIterator 共用的节点遍历器（R2803）。**eager pre-order** 经 `childNodes`
   // 递归收集子树（element 子为 selector-based proxy 可递归；文本/注释为静态叶节点），按 whatToShow 掩码 +
-  // acceptNode 过滤。nextNode/previousNode 在过滤后序列上游走。TreeWalker 与 NodeIterator 共用（接口同）。
+  // acceptNode 过滤。nextNode/previousNode 在过滤后序列上游走。TreeWalker 与 NodeIterator 共用基础接口；
+  // `isTreeWalker` 时附加 DOM §4.2.6 层级方法（parentNode/firstChild/lastChild/previousSibling/nextSibling，
+  // R3257）——NodeIterator 无这些方法（spec §4.2.5）。
   // **已知限制**：① eager（非 lazy，spec TreeWalker 惰性——小树无碍，结果序一致）；② currentNode setter
   // 不重置游标（spec 应从 currentNode 续遍历）；③ 无 live/detach（NodeIterator 移除节点 detach defer）。
-  function _makeNodeWalker(root, whatToShow, filter) {
+  function _makeNodeWalker(root, whatToShow, filter, isTreeWalker) {
     var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow | 0);
     var filterFn = null;
     if (typeof filter === 'function') filterFn = filter;
@@ -181,19 +183,33 @@
       try { return filterFn(node) | 0; } catch (_e) { return 1; }
     }
     var accepted = [];
-    // 深度优先 pre-order：ACCEPT/SKIP 入子树，REJECT 剪子树。
-    function walk(node) {
+    var parentAcceptedIdx = []; // R3257：每 accepted 节点的「最近 ACCEPTED 祖先」在 accepted 中的 idx（无=-1）
+    // 深度优先 pre-order：ACCEPT/SKIP 入子树，REJECT 剪子树。ancestorIdx = 当前子树的最近 ACCEPTED 祖先 idx。
+    function walk(node, ancestorIdx) {
       if (!node) return;
       var r = check(node);
-      if (r === 1) accepted.push(node);
+      var nextAncestor = ancestorIdx;
+      if (r === 1) {
+        var myIdx = accepted.length;
+        accepted.push(node);
+        parentAcceptedIdx.push(ancestorIdx);
+        nextAncestor = myIdx; // ACCEPT → 我成为子树的最近 ACCEPTED 祖先
+      } // SKIP(3) → 不入列，子树沿用 ancestorIdx；REJECT(2) → 不入列且剪子树（下方不递归）
       if (r !== 2 && node.childNodes) {
         var kids = node.childNodes;
-        for (var i = 0; i < kids.length; i++) walk(kids[i]);
+        for (var i = 0; i < kids.length; i++) walk(kids[i], nextAncestor);
       }
     }
-    walk(root);
-    var idx = -1;
-    return {
+    walk(root, -1);
+    var idx = -1; // -1 = 尚未定位（fresh，currentNode=root）；nextNode 首调落到 root（若 accepted）→ R2803 语义
+    // R3257：层级方法的「有效位置」。idx>=0 时为 idx；fresh（idx=-1，currentNode=root）时——若 root accepted
+    //（accepted[0]===root）逻辑位置=0，否则虚拟 -1（root 不在 accepted，其 filtered-子以 -1 为最近祖先）。
+    function effPos() {
+      if (idx >= 0) return idx;
+      return accepted.length > 0 && accepted[0] === root ? 0 : -1;
+    }
+    function moveTo(i) { idx = i; walker.currentNode = accepted[i]; return accepted[i]; }
+    var walker = {
       root: root,
       whatToShow: wts,
       filter: filter || null,
@@ -207,6 +223,53 @@
         return null;
       }
     };
+    if (isTreeWalker) {
+      // DOM §4.2.6 TreeWalker 层级方法（R3257）。基于 accepted[]（pre-order）+ parentAcceptedIdx：
+      // - parentNode(): 最近 ACCEPTED 祖先 = accepted[parentAcceptedIdx[effPos()]]（无则 null）。
+      // - firstChild()/lastChild(): 首个/末个 parentAcceptedIdx[i]===effPos() 的 i（直接 filtered-子）。
+      // - nextSibling()/previousSibling(): 同 parentAcceptedIdx（= parentAcceptedIdx[effPos()]）的下一/上一 i。
+      // ACCEPTED 节点的祖先必非 REJECT（REJECT 剪子树），故 parentAcceptedIdx 给出 spec 定义的「最近 accepted 祖先」。
+      walker.parentNode = function () {
+        var p = effPos();
+        if (p < 0) return null;
+        var pi = parentAcceptedIdx[p];
+        if (pi < 0) return null;
+        return moveTo(pi);
+      };
+      walker.firstChild = function () {
+        var p = effPos();
+        for (var i = p + 1; i < accepted.length; i++) {
+          if (parentAcceptedIdx[i] === p) return moveTo(i);
+        }
+        return null;
+      };
+      walker.lastChild = function () {
+        var p = effPos();
+        for (var i = accepted.length - 1; i > p; i--) {
+          if (parentAcceptedIdx[i] === p) return moveTo(i);
+        }
+        return null;
+      };
+      walker.nextSibling = function () {
+        var p = effPos();
+        if (p < 0) return null;
+        var par = parentAcceptedIdx[p];
+        for (var i = p + 1; i < accepted.length; i++) {
+          if (parentAcceptedIdx[i] === par) return moveTo(i);
+        }
+        return null;
+      };
+      walker.previousSibling = function () {
+        var p = effPos();
+        if (p < 0) return null;
+        var par = parentAcceptedIdx[p];
+        for (var i = p - 1; i >= 0; i--) {
+          if (parentAcceptedIdx[i] === par) return moveTo(i);
+        }
+        return null;
+      };
+    }
+    return walker;
   }
 
   // ── XPath（document.evaluate，R2981）─────────────────────────────────────
@@ -887,10 +950,10 @@
     //（库 / sanitizer / a11y tree walker 高频）。whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP。
     // 经 `_makeNodeWalker`（eager pre-order via childNodes 递归）。两者共用工厂（接口同：nextNode/previousNode）。
     createTreeWalker: function (root, whatToShow, filter) {
-      return _makeNodeWalker(root, whatToShow, filter);
+      return _makeNodeWalker(root, whatToShow, filter, true);
     },
     createNodeIterator: function (root, whatToShow, filter) {
-      return _makeNodeWalker(root, whatToShow, filter);
+      return _makeNodeWalker(root, whatToShow, filter, false);
     },
     // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
     createRange: function () {
