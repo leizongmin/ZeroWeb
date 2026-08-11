@@ -1512,6 +1512,118 @@ fn test_stylesheets_write_r2809() {
 }
 
 #[test]
+fn test_stylesheet_add_rule_remove_rule_r3276() {
+    // R3276：CSSStyleSheet IE legacy 别名 addRule/removeRule 真实化。
+    // 旧实现：addRule 恒返 -1 不插规则，removeRule no-op → 旧 CSS-in-JS 库 / legacy 样式注入走此路径
+    // 时样式静默丢失。spec（IE 扩展，Chrome/Firefox 保留兼容）：
+    //   addRule(selector, styleBlock, index?) → 组合 `selector{styleBlock}` 调 insertRule，恒返 -1。
+    //   removeRule(index) → 等价 deleteRule(index)。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { color: red; }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute("globalThis.__sheet = document.styleSheets[0];")
+        .unwrap();
+
+    // addRule('h1', 'color: blue', 0)：恒返 -1（IE 成功 marker）+ 规则真实插入（length 2 + [0]='h1'）。
+    sandbox
+        .execute(
+            "globalThis.__ret = globalThis.__sheet.addRule('h1', 'color: blue', 0);\
+             globalThis.__l1 = globalThis.__sheet.cssRules.length;\
+             globalThis.__s0 = globalThis.__sheet.cssRules[0].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ret)").unwrap().value,
+        "-1",
+        "addRule 恒返 -1（IE legacy 成功 marker）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l1)").unwrap().value,
+        "2",
+        "addRule 后 cssRules.length 须 2（规则真实插入）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s0)").unwrap().value,
+        "h1",
+        "addRule 插入首位须为 'h1'"
+    );
+    // 插入规则的声明块（styleBlock）真实写入 cssText。
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__sheet.cssRules[0].cssText.indexOf('color: blue') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "addRule 组合的 styleBlock 须写进 cssText"
+    );
+
+    // addRule 不带 index → 末尾追加（insertRule clamp），仍返 -1。
+    sandbox
+        .execute(
+            "globalThis.__ret2 = globalThis.__sheet.addRule('span', 'color: green');\
+             globalThis.__l2 = globalThis.__sheet.cssRules.length;\
+             globalThis.__sEnd = globalThis.__sheet.cssRules[2].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ret2)").unwrap().value,
+        "-1",
+        "addRule（末尾追加）仍返 -1"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l2)").unwrap().value,
+        "3",
+        "末尾 addRule 后 length 须 3"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sEnd)").unwrap().value,
+        "span",
+        "末尾规则须 'span'"
+    );
+
+    // removeRule(0)：等价 deleteRule(0)——移除 'h1' + length=2 + [0]='p'。
+    sandbox
+        .execute(
+            "globalThis.__sheet.removeRule(0);\
+             globalThis.__l3 = globalThis.__sheet.cssRules.length;\
+             globalThis.__s0b = globalThis.__sheet.cssRules[0].selectorText;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__l3)").unwrap().value,
+        "2",
+        "removeRule(0) 后 length 须 2（真实删除）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__s0b)").unwrap().value,
+        "p",
+        "removeRule(0) 后 [0] 须回 'p'"
+    );
+
+    // 写回 `<style>` 文本（flush）：addRule/removeRule 经 insertRule/deleteRule → __zw_set_text。
+    let muts = mutations.lock().unwrap();
+    let has_set_text = muts.iter().any(|m| matches!(m, DomMutation::SetText { .. }));
+    drop(muts);
+    assert!(
+        has_set_text,
+        "addRule/removeRule 须经 insertRule/deleteRule flush 写回 <style> 文本"
+    );
+}
+
+#[test]
 fn test_stylesheets_rule_style_r2810() {
     // R2810：CSSRule.style per-rule CSSStyleDeclaration——sheet.cssRules[0].style 单声明读/写。
     // backed by 规则声明块（从 cssText body 解析有序 declarations）+ mutation flush 写回 `<style>` 源

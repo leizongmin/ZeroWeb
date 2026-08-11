@@ -758,9 +758,24 @@
           flushToOwner();
         }
       },
-      // IE legacy 别名（addRule 返回 -1 = 失败 marker；CSS-in-JS 罕用，stub）。
-      addRule: function () { return -1; },
-      removeRule: function () {}
+      // IE legacy 别名（CSSOM 早期 IE 扩展，Chrome/Firefox 仍保留兼容）。spec 行为：
+      //   addRule(selector, styleBlock, index?) — selector 默认 ''，styleBlock（声明文本，不含大括号）
+      //     默认 ''，组合 `selector + '{' + styleBlock + '}'` 调 insertRule(combined, index)。
+      //     **返回值恒 -1**（IE 成功 marker，Chrome 同——非失败，非真实 index；遗留兼容固定值）。
+      //   removeRule(index) — 等价 deleteRule(index)。
+      // CSS-in-JS 罕用，但旧库（早期 jQuery .css、legacy stylesheet 注入）feature-detect + 走此路径，
+      // stub 时样式静默丢失 → R3276 落实真实组合 + 委托。
+      addRule: function (selector, styleBlock, index) {
+        var s = String(selector == null ? '' : selector);
+        var b = String(styleBlock == null ? '' : styleBlock);
+        // index 缺省 → insertRule 内 clamp 到末尾。
+        var combined = s + '{' + b + '}';
+        try { this.insertRule(combined, index); } catch (_e) { /* insertRule 失败 best-effort */ }
+        return -1;
+      },
+      removeRule: function (index) {
+        try { this.deleteRule(index); } catch (_e) { /* deleteRule 失败 best-effort */ }
+      }
     };
     return ss;
   }
