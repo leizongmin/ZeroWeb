@@ -38,11 +38,26 @@ pub struct TransitionState {
     pub finished: bool,
 }
 
+/// 「本轮新完成」的过渡记录（R3248）——`tick()` 在 `finished` 由 false→true 的帧推入 `just_finished`，
+/// 供宿主经 `drain_just_finished()` 取出后映射元素并派发 `transitionend` 事件（CSS Transitions §transitionend）。
+/// `duration` = 过渡时长（秒），即 transitionend 事件的 `elapsedTime`（spec：完成时 = duration，不含 delay）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinishedTransition {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 过渡属性名（transitionend.propertyName）。
+    pub property: String,
+    /// 过渡时长（秒，transitionend.elapsedTime）。
+    pub duration: f64,
+}
+
 /// Transition 时钟 — 管理所有活跃的过渡并按帧推进。
 #[derive(Debug, Clone, Default)]
 pub struct TransitionClock {
     /// 活跃的过渡（元素 ID → 过渡列表）。
     active_transitions: HashMap<u64, Vec<TransitionState>>,
+    /// 「本轮新完成」的过渡（R3248）——`tick()` 推入，`drain_just_finished()` 取出派发 transitionend。
+    just_finished: Vec<FinishedTransition>,
 }
 
 impl TransitionClock {
@@ -142,6 +157,13 @@ impl TransitionClock {
 
             if progress >= 1.0 {
                 transition.finished = true;
+                // R3248：记录「本轮新完成」——`finished` 由 false→true 的帧推入（`if transition.finished
+                // { continue; }` 在循环顶保证每个过渡仅推一次），供 `drain_just_finished()` 派发 transitionend。
+                self.just_finished.push(FinishedTransition {
+                    element_key,
+                    property: transition.property.clone(),
+                    duration: transition.duration,
+                });
                 // 过渡完成，使用目标值
                 props.push(InterpolatedProperty {
                     name: transition.property.clone(),
@@ -179,6 +201,12 @@ impl TransitionClock {
             .filter(|(_, ts)| ts.iter().any(|t| !t.finished))
             .map(|(&id, _)| id)
             .collect()
+    }
+
+    /// 取出「自上次 drain 后新完成」的过渡（R3248，CSS Transitions §transitionend）。
+    /// 宿主据此映射元素并派发 `transitionend` 事件。每次调用清空内部缓冲（每完成帧只派发一次）。
+    pub fn drain_just_finished(&mut self) -> Vec<FinishedTransition> {
+        std::mem::take(&mut self.just_finished)
     }
 
     /// 移除已完成的过渡。
@@ -356,6 +384,37 @@ mod tests {
         let props = clock.tick(1, 1.0);
         let opacity = props.iter().find(|p| p.name == "opacity").unwrap();
         assert!((opacity.value.parse::<f64>().unwrap()).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_transition_drain_just_finished_r3248() {
+        // R3248（CSS Transitions §transitionend）：finished 由 false→true 的帧推入 just_finished，
+        // drain_just_finished 取出（含 element_key/property/duration=elapsedTime），每完成帧只派发一次。
+        let mut clock = TransitionClock::new();
+        let old_style = ComputedStyle::default();
+        let mut new_style = ComputedStyle::default();
+        new_style.opacity = 0.0;
+        set_transition_property(&mut new_style, "opacity"); // duration = 1.0s
+
+        clock.start_transitions(7, &old_style, &new_style, 0.0);
+
+        // t=0.5 → 进行中，未完成 → drain 空
+        let _ = clock.tick(7, 0.5);
+        assert!(clock.drain_just_finished().is_empty(), "进行中 drain 空");
+
+        // t=1.0 → 完成 → drain 含该过渡（element_key=7, property=opacity, duration=1.0=elapsedTime）
+        let _ = clock.tick(7, 1.0);
+        let finished = clock.drain_just_finished();
+        assert_eq!(finished.len(), 1, "完成帧 drain 恰好 1 条");
+        assert_eq!(finished[0].element_key, 7);
+        assert_eq!(finished[0].property, "opacity");
+        assert!(
+            (finished[0].duration - 1.0).abs() < 1e-9,
+            "duration=1.0（= elapsedTime）"
+        );
+
+        // 再次 drain → 空（每完成帧只派发一次，不重复）
+        assert!(clock.drain_just_finished().is_empty(), "二次 drain 空（不重复派发）");
     }
 
     #[test]

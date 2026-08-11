@@ -427,6 +427,19 @@ impl RendererRuntime {
             // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
             *self.js_worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
         }
+        // R3248（CSS Transitions §transitionend）：render 后取出本轮新完成的过渡事件 → 派发进 shim。
+        // 过渡跨多帧完成，故每帧 render 后检查（无过渡时 take 返空 Vec，零开销）。handler 改 DOM 的
+        // mutation 由后续 render 周期应用（同 observer tick 之外的轻量路径）。
+        if self.javascript_enabled {
+            let events = self
+                .webview
+                .as_mut()
+                .map(|wv| wv.take_pending_transition_events())
+                .unwrap_or_default();
+            if !events.is_empty() {
+                page_scripts::dispatch_transition_events(&self.js_worker, &events);
+            }
+        }
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
         // fetch 闭包按字段捕获（2021 edition 最小捕获）——sent_image_keys 独立借用
         let payloads = if allow_network_fetch {

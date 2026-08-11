@@ -49,6 +49,25 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
+/// 构造「派发 transitionend 事件」的脚本（R3248，CSS Transitions §transitionend）。
+/// 宿主在过渡完成帧（`TransitionClock::drain_just_finished` → pipeline `take_pending_transition_events`）
+/// 执行：`querySelector(selector)` 取唯一目标元素（`unique_selector_for_node` 保证唯一；stale 已移除 → null
+/// guard），`new TransitionEvent('transitionend', {propertyName, elapsedTime, bubbles:true})` 派发。
+/// TransitionEvent 构造器在 shim part05:1380 注册。UI 编排回调（fade-out 后 transitionend 删元素）依赖。
+pub fn script_dispatch_transition_event(selector: &str, property: &str, elapsed: f64) -> String {
+    let sel = escape_js_string(selector);
+    let prop = escape_js_string(property);
+    // elapsed 为有限非负 f64（transition.duration）；直接内嵌数值（非字符串，免转义）。
+    let elapsed_str = if elapsed.is_finite() && elapsed >= 0.0 {
+        format!("{elapsed}")
+    } else {
+        "0".to_string()
+    };
+    format!(
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new TransitionEvent('transitionend',{{propertyName:'{prop}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+    )
+}
+
 /// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121；event 对象丰富化 R3124）。
 /// 宿主在 `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
 /// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）

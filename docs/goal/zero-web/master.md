@@ -130,6 +130,37 @@
 
 ## 最近完成的改进
 
+### transitionend 事件派发全管线（本轮 R3248，engine+webview+renderer）—— present-API 行为 gap 首片
+
+承接 R3247 战略（转「present-API 行为 gap」），取上轮已核实并记实现方案的真 gap：**`transitionend` 不派发**——`TransitionClock.tick()` 仅设 `finished` 标志（transition.rs），不收集也不经 host 注入 → UI 编排回调（fade-out 后 transitionend 删元素）永不触发。本轮按已记方案落地**跨 engine→webview→renderer 全管线**（mirror R2941/R2943/R2944 host 注入模式；browser 走 renderer 子进程，无需 mirror）。
+
+**实现（R3248，CSS Transitions §transitionend，7 文件）**：
+- `transition.rs`：+`FinishedTransition{element_key,property,duration}` + `just_finished: Vec` 字段；`tick()` 在 `finished` 由 false→true 帧推入（`if finished { continue }` 保证每过渡一次）；+`drain_just_finished()`。
+- `pipeline/mod.rs`：+`pending_transition_events: Vec<(selector,property,elapsed)>`；transition tick 循环后 `drain_just_finished` → 建 `key(u64)→NodeId` 索引 → `unique_selector_for_node(doc,nid)` 转 selector 收集（无需 NodeId 往返——pipeline tick 时持 nid）；+`take_pending_transition_events()`。
+- `js_dom_bridge.rs`：`unique_selector_for_node` 提 `pub`（原私有，pipeline 须调）。
+- `script_gen.rs`：+`script_dispatch_transition_event(sel,property,elapsed)` 构造 `new TransitionEvent('transitionend',{propertyName,elapsedTime,bubbles:true})` 派发脚本（querySelector 取唯一元素 + stale guard + escape_js_string）。
+- `webview.rs`：+`take_pending_transition_events()` 委派 pipeline。
+- `page_scripts.rs`：+`dispatch_transition_events(js_worker, events)` 循环注入脚本。
+- `renderer/main.rs`：`publish_webview` render 后 `take_pending_transition_events` + `dispatch_transition_events`（javascript_enabled gate；每帧检查，无过渡时 take 返空 Vec 零开销）。
+
+**为何净正向**：① **闭合真行为 gap**——transitionend 从「永不派发」到 spec 合规（含 propertyName/elapsedTime/bubbles），UI 编排回调链通；② **零回归**——zero-engine 1960 全绿（+1 测 transition drain，含既有 transition/animation lifecycle 测全过），engine+webview+renderer clippy/fmt clean；③ engine/webview/renderer 均本流域（zero-web 流 + apps/renderer 页面生命周期层，非渲染流 css/layout/render-foundation 域）；④ 复用既有 host 注入模式（R2941/R2943/R2944），无新 IPC。**已知限制**：① handler 改 DOM 的 mutation 由后续 render 周期应用（非同帧 rerender，轻量路径，documented）；② **animationend 未实现**（同模式 mirror——AnimationClock drain + animationName，follow-up）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/transition.rs` | +`FinishedTransition` 结构 + `just_finished` 字段 + `tick()` 推入 + `drain_just_finished()` + drain 单测。 |
+| `crates/engine/src/pipeline/mod.rs` | +`pending_transition_events` 字段 + 循环后收集（key→NodeId→selector）+ `take_pending_transition_events()`。 |
+| `crates/engine/src/js_dom_bridge.rs` | `unique_selector_for_node` 提 `pub`（pipeline 调）。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | +`script_dispatch_transition_event` 生成器（TransitionEvent 派发脚本）。 |
+| `crates/webview/src/webview.rs` | +`take_pending_transition_events()` 委派。 |
+| `apps/renderer/src/page_scripts.rs` | +`dispatch_transition_events` helper。 |
+| `apps/renderer/src/main.rs` | `publish_webview` render 后 take + dispatch（gate javascript_enabled）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-webview -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1960 全绿**（+1 测 transition drain，零回归）。踩坑 1 轮：① `node_ids` 移动借用 → 改 `for nid in &node_ids`；② `unique_selector_for_node` 私有（E0603）→ 提 pub；③ clippy `collapsible_if` → 嵌套 if let 合并 `&&`。⚠️ 跨流 clippy（process_backend.rs 归因 16d6a42e）+ compositor flake 仍待渲染/浏览器流（本片仅 engine/webview/renderer scoped 验证，未跑全量 `make test`——跨流 compositor flake 阻断）。
+
+**下一步**：transitionend 闭合。**animationend 同模式 follow-up**（mirror R3248）：`AnimationClock.tick()` 设 `finished` 时推 `just_finished`（element_key + animationName + duration=elapsedTime）→ pipeline 收集 → `script_dispatch_animation_event` 派发 `new AnimationEvent('animationend',{animationName,elapsedTime,bubbles:true})`；同样模式 `animationstart`/`animationiteration`（动画循环）。续候选：② **`scroll` 事件派发面**——element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（real browser 程序化滚动派 scroll，含可滚动容器）；③ **change-on-blur**——input 失焦时若值变派 change（表单校验高频，在 renderer host 层）；④ native DOM Range `range.rs` 内部 spec 审（internal，低 page 价值）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### el.focus()/blur() 派发焦点事件（本轮 R3247，engine shim）—— 转向「present-API 行为 gap」
 
 承接 R3246 战略结论（shim absent-API 面收敛），本轮**转方向**——从「找 absent 方法」转向「找 present API 的行为 gap」（价值更高：常见 API 已存在但行为缺关键语义）。先核 R3246 续候选：native DOM Range（range.rs）实测**internal-only**（shim 的 `_makeRange` 覆盖全 setStart/setEnd/setStartBefore/After/selectNode*/collapse/deleteContents/extractContents/cloneContents/insertNode/surroundContents R2804/R2929/R2930，不委派 native）；net websocket 实测**tungstenite 薄封装**（yield 低，R3220 已 defer）。native Rust 全流 `grep FIXME/TODO/unimplemented!`（excl tests）零实质命中——代码无 TODO 债。

@@ -45,6 +45,10 @@ pub struct RenderPipeline {
     animation_clock: AnimationClock,
     /// CSS 过渡时钟。
     transition_clock: TransitionClock,
+    /// 「已派发待消费」的 transitionend 事件（R3248，CSS Transitions §transitionend）——
+    /// 元素选择器、属性名（propertyName）、时长（elapsedTime）。过渡完成帧由 `tick()` 收集 +
+    /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_transition_events()` 取出派发。
+    pending_transition_events: Vec<(String, String, f64)>,
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
@@ -194,6 +198,7 @@ impl RenderPipeline {
             dirty_tracker: DirtyTracker::new(),
             animation_clock: AnimationClock::new(),
             transition_clock: TransitionClock::new(),
+            pending_transition_events: Vec::new(),
             cached_styles: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
@@ -396,6 +401,13 @@ impl RenderPipeline {
         &mut self.transition_clock
     }
 
+    /// 取出「自上次 render 后新完成」的 transitionend 事件（R3248，CSS Transends §transitionend）。
+    /// 返回 `(元素 selector, propertyName, elapsedTime)` 三元组列表；每次调用清空缓冲（每完成帧只派发一次）。
+    /// 宿主据此向 JS 派发 `new TransitionEvent('transitionend', {propertyName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_transition_events(&mut self) -> Vec<(String, String, f64)> {
+        std::mem::take(&mut self.pending_transition_events)
+    }
+
     /// 渲染 HTML 文档（带动画）。
     ///
     /// 与 `render_html` 相同管线，但在样式计算后注册 @keyframes、
@@ -450,13 +462,29 @@ impl RenderPipeline {
 
         // 5b. 应用活跃的过渡插值
         let node_ids: Vec<NodeId> = styles.keys().copied().collect();
-        for nid in node_ids {
+        for nid in &node_ids {
             let key = nid.data().as_ffi();
             let props = self.transition_clock.tick(key, current_time);
             if !props.is_empty()
-                && let Some(s) = styles.get_mut(&nid)
+                && let Some(s) = styles.get_mut(nid)
             {
                 TransitionClock::apply_to_computed_style(&props, s);
+            }
+        }
+        // R3248（CSS Transitions §transitionend）：收集「本轮新完成」过渡 → 映射元素（element_key=u64 →
+        // NodeId，经 node_ids 建 key→nid 索引）→ unique_selector_for_node 转 selector，存 pending 待宿主派发。
+        // cleanup_finished 在此之后移除已完成 transition（不触 just_finished——drain 已先取）。
+        {
+            let mut key_to_nid: HashMap<u64, NodeId> = HashMap::new();
+            for nid in &node_ids {
+                key_to_nid.insert(nid.data().as_ffi(), *nid);
+            }
+            for fin in self.transition_clock.drain_just_finished() {
+                if let Some(nid) = key_to_nid.get(&fin.element_key)
+                    && let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(&doc, *nid)
+                {
+                    self.pending_transition_events.push((sel, fin.property, fin.duration));
+                }
             }
         }
         self.transition_clock.cleanup_finished();

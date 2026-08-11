@@ -342,7 +342,7 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
 /// （`html > body > div:nth-child(2) > …`，按 sibling 位置唯一定位，`:nth-child` 经
 /// dom 选择器引擎解析+匹配）。两种形态都保证 `find_by_selector` 返回该节点本身——宁可结构路径
 /// 冗长不错值。文本节点无 tag → `None`。
-fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
     if let Some(sel) = stable_selector_for_node(doc, node) {
         let matches = doc.query_selector_all(doc.root(), sel.trim());
         if matches.len() == 1 {
