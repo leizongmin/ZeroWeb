@@ -130,6 +130,10 @@ pub struct ComputedStyle {
     pub line_height: LineHeightValue,
     /// font-size-adjust 属性（Slice 1 R1191：parse+store+inherit dormant，未 apply）。
     pub font_size_adjust: FontSizeAdjustValue,
+    /// font-feature-settings 属性。
+    pub font_feature_settings: FontFeatureSettingsValue,
+    /// font-variant-ligatures 属性。
+    pub font_variant_ligatures: FontVariantLigaturesValue,
 
     // ── 文本 ──
     /// text-align 属性。

@@ -77,6 +77,8 @@ impl PropertyRegistry {
             "font-style" => Some(FontStyle(FontStyleValue::Normal)),
             "line-height" => Some(LineHeight(LineHeightValue::Normal)),
             "font-size-adjust" => Some(FontSizeAdjust(FontSizeAdjustValue::None)),
+            "font-feature-settings" => Some(FontFeatureSettings(FontFeatureSettingsValue::Normal)),
+            "font-variant-ligatures" => Some(FontVariantLigatures(FontVariantLigaturesValue::default())),
 
             // 文本
             "text-align" => Some(TextAlign(TextAlignValue::Start)),
@@ -355,6 +357,8 @@ impl PropertyRegistry {
                 | "font-style"
                 | "line-height"
                 | "font-size-adjust"
+                | "font-feature-settings"
+                | "font-variant-ligatures"
                 | "text-align"
                 | "text-transform"
                 | "letter-spacing"
@@ -446,6 +450,8 @@ impl PropertyRegistry {
             "font-style",
             "line-height",
             "font-size-adjust",
+            "font-feature-settings",
+            "font-variant-ligatures",
             "text-align",
             "text-decoration",
             "text-decoration-line",

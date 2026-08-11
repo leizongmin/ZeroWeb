@@ -709,3 +709,112 @@ pub fn parse_font_variant_numeric(value: &str) -> Option<FontVariantNumericValue
         _ => None,
     }
 }
+
+/// CSS `font-feature-settings` 中的单个 OpenType feature。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FontFeatureSetting {
+    /// 四字节 OpenType tag。
+    pub tag: [u8; 4],
+    /// feature 值（`on` = 1，`off` = 0，也可为非负整数）。
+    pub value: u32,
+}
+
+/// CSS `font-feature-settings` 计算值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FontFeatureSettingsValue {
+    /// UA/字体默认设置。
+    Normal,
+    /// 显式 feature 列表，后出现的同 tag 项覆盖先出现项。
+    Features(Vec<FontFeatureSetting>),
+}
+
+/// 解析 CSS `font-feature-settings`。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-feature-settings-prop
+pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return Some(FontFeatureSettingsValue::Normal);
+    }
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut features = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        let quote = item.as_bytes().first().copied()?;
+        if quote != b'\'' && quote != b'"' {
+            return None;
+        }
+        let close = item[1..].find(quote as char)? + 1;
+        let tag_text = &item[1..close];
+        if tag_text.len() != 4 || !tag_text.is_ascii() {
+            return None;
+        }
+        let mut tag = [0; 4];
+        tag.copy_from_slice(tag_text.as_bytes());
+        let suffix = item[close + 1..].trim();
+        let setting = if suffix.is_empty() || suffix.eq_ignore_ascii_case("on") {
+            1
+        } else if suffix.eq_ignore_ascii_case("off") {
+            0
+        } else {
+            suffix.parse::<u32>().ok()?
+        };
+        features.push(FontFeatureSetting { tag, value: setting });
+    }
+    (!features.is_empty()).then_some(FontFeatureSettingsValue::Features(features))
+}
+
+/// CSS `font-variant-ligatures` 计算值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FontVariantLigaturesValue {
+    /// `liga` / `clig`；`None` 表示 normal。
+    pub common: Option<bool>,
+    /// `dlig`；`None` 表示 normal。
+    pub discretionary: Option<bool>,
+    /// `hlig`；`None` 表示 normal。
+    pub historical: Option<bool>,
+    /// `calt`；`None` 表示 normal。
+    pub contextual: Option<bool>,
+}
+
+/// 解析 CSS `font-variant-ligatures`。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-ligatures-prop
+pub fn parse_font_variant_ligatures(value: &str) -> Option<FontVariantLigaturesValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return Some(FontVariantLigaturesValue::default());
+    }
+    if value.eq_ignore_ascii_case("none") {
+        return Some(FontVariantLigaturesValue {
+            common: Some(false),
+            discretionary: Some(false),
+            historical: Some(false),
+            contextual: Some(false),
+        });
+    }
+
+    let mut result = FontVariantLigaturesValue::default();
+    let mut saw_keyword = false;
+    for keyword in value.split_ascii_whitespace() {
+        let (slot, enabled) = match keyword.to_ascii_lowercase().as_str() {
+            "common-ligatures" => (&mut result.common, true),
+            "no-common-ligatures" => (&mut result.common, false),
+            "discretionary-ligatures" => (&mut result.discretionary, true),
+            "no-discretionary-ligatures" => (&mut result.discretionary, false),
+            "historical-ligatures" => (&mut result.historical, true),
+            "no-historical-ligatures" => (&mut result.historical, false),
+            "contextual" => (&mut result.contextual, true),
+            "no-contextual" => (&mut result.contextual, false),
+            _ => return None,
+        };
+        if slot.replace(enabled).is_some() {
+            return None;
+        }
+        saw_keyword = true;
+    }
+    saw_keyword.then_some(result)
+}

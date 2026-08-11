@@ -39,6 +39,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_size_adjust = parent.font_size_adjust.clone();
             true
         }
+        "font-feature-settings" => {
+            child.font_feature_settings = parent.font_feature_settings.clone();
+            true
+        }
+        "font-variant-ligatures" => {
+            child.font_variant_ligatures = parent.font_variant_ligatures;
+            true
+        }
         "text-align" => {
             child.text_align = parent.text_align.clone();
             true
@@ -718,6 +726,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-size-adjust" => {
             style.font_size_adjust = default_style.font_size_adjust;
+            true
+        }
+        "font-feature-settings" => {
+            style.font_feature_settings = default_style.font_feature_settings;
+            true
+        }
+        "font-variant-ligatures" => {
+            style.font_variant_ligatures = default_style.font_variant_ligatures;
             true
         }
         // 文本

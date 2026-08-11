@@ -92,6 +92,8 @@ impl Default for ComputedStyle {
             font_style: FontStyleValue::Normal,
             line_height: LineHeightValue::Normal,
             font_size_adjust: FontSizeAdjustValue::None,
+            font_feature_settings: FontFeatureSettingsValue::Normal,
+            font_variant_ligatures: FontVariantLigaturesValue::default(),
 
             // 文本
             text_align: TextAlignValue::Start,

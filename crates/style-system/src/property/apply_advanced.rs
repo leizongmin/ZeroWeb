@@ -673,6 +673,19 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── CSS Fonts feature 属性 ──
+        "font-feature-settings" => {
+            if let Some(v) = values::parse_font_feature_settings(value) {
+                style.font_feature_settings = v;
+                return true;
+            }
+        }
+        "font-variant-ligatures" => {
+            if let Some(v) = values::parse_font_variant_ligatures(value) {
+                style.font_variant_ligatures = v;
+                return true;
+            }
+        }
         // ── FontVariantNumeric 属性 ──
         "font-variant-numeric" => {
             if let Some(v) = values::parse_font_variant_numeric(value) {

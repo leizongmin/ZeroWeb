@@ -455,6 +455,62 @@ fn test_font_variant_numeric_inherit() {
 }
 
 #[test]
+fn test_font_feature_settings_apply_initial_and_inherit() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "font-feature-settings",
+        "'liga' off, \"kern\" 2"
+    ));
+    assert_eq!(
+        style.font_feature_settings,
+        FontFeatureSettingsValue::Features(vec![
+            FontFeatureSetting {
+                tag: *b"liga",
+                value: 0,
+            },
+            FontFeatureSetting {
+                tag: *b"kern",
+                value: 2,
+            },
+        ])
+    );
+    assert!(PropertyRegistry::is_inherited("font-feature-settings"));
+
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&style, &mut child, "font-feature-settings"));
+    assert_eq!(child.font_feature_settings, style.font_feature_settings);
+    assert!(apply_initial_value(&mut child, "font-feature-settings"));
+    assert_eq!(child.font_feature_settings, FontFeatureSettingsValue::Normal);
+}
+
+#[test]
+fn test_font_variant_ligatures_apply_initial_and_inherit() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "font-variant-ligatures",
+        "common-ligatures no-discretionary-ligatures"
+    ));
+    assert_eq!(
+        style.font_variant_ligatures,
+        FontVariantLigaturesValue {
+            common: Some(true),
+            discretionary: Some(false),
+            historical: None,
+            contextual: None,
+        }
+    );
+    assert!(PropertyRegistry::is_inherited("font-variant-ligatures"));
+
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&style, &mut child, "font-variant-ligatures"));
+    assert_eq!(child.font_variant_ligatures, style.font_variant_ligatures);
+    assert!(apply_initial_value(&mut child, "font-variant-ligatures"));
+    assert_eq!(child.font_variant_ligatures, FontVariantLigaturesValue::default());
+}
+
+#[test]
 /// 测试新属性在 known_properties 中（overflow-wrap、text-align-last、font-variant-numeric）
 fn test_text_new_properties_in_known_properties() {
     let props = PropertyRegistry::known_properties();

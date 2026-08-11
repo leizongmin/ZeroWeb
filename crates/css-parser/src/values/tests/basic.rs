@@ -1426,6 +1426,64 @@ fn test_parse_font_variant_numeric_case_insensitive() {
     );
 }
 
+#[test]
+fn test_parse_font_feature_settings() {
+    assert_eq!(
+        parse_font_feature_settings("normal"),
+        Some(FontFeatureSettingsValue::Normal)
+    );
+    assert_eq!(
+        parse_font_feature_settings("'liga' off, \"kern\" 2"),
+        Some(FontFeatureSettingsValue::Features(vec![
+            FontFeatureSetting {
+                tag: *b"liga",
+                value: 0,
+            },
+            FontFeatureSetting {
+                tag: *b"kern",
+                value: 2,
+            },
+        ]))
+    );
+    assert_eq!(
+        parse_font_feature_settings("'liga'"),
+        Some(FontFeatureSettingsValue::Features(vec![FontFeatureSetting {
+            tag: *b"liga",
+            value: 1,
+        }]))
+    );
+    assert!(parse_font_feature_settings("liga on").is_none());
+    assert!(parse_font_feature_settings("'long-tag' on").is_none());
+}
+
+#[test]
+fn test_parse_font_variant_ligatures() {
+    assert_eq!(
+        parse_font_variant_ligatures("normal"),
+        Some(FontVariantLigaturesValue::default())
+    );
+    assert_eq!(
+        parse_font_variant_ligatures("none"),
+        Some(FontVariantLigaturesValue {
+            common: Some(false),
+            discretionary: Some(false),
+            historical: Some(false),
+            contextual: Some(false),
+        })
+    );
+    assert_eq!(
+        parse_font_variant_ligatures("common-ligatures no-discretionary-ligatures contextual"),
+        Some(FontVariantLigaturesValue {
+            common: Some(true),
+            discretionary: Some(false),
+            historical: None,
+            contextual: Some(true),
+        })
+    );
+    assert!(parse_font_variant_ligatures("common-ligatures no-common-ligatures").is_none());
+    assert!(parse_font_variant_ligatures("normal common-ligatures").is_none());
+}
+
 // ── Direction 测试 ──
 
 #[test]
