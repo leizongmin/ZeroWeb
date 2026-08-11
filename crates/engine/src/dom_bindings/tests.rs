@@ -1202,3 +1202,42 @@ return host.children[0].tagName+'/'+host.children[0].children[0].tagName+'/'+\
 host.children[0].children[0].textContent;})()";
     assert_eq!(run_script(html, script), "DIV/B/hi", "全 native 树构建：div > b > 'hi'");
 }
+
+// ── P1b S5a（R3264）：原生 HTMLElement 构造器 + JS class extends 子类化 ──────────────
+// 验证 `new HTMLElement()` + `class X extends HTMLElement`：ctor 建新元素 + 填 slot[0]=NodeId（生产
+// DOM 源，非 PoC fixed 42）+ nodeType accessor 经 slot 读 DOM（subclass 经 super() 继承 slot——R3262 验证）。
+
+/// S5a：`new HTMLElement()` 建新元素，instanceof HTMLElement + nodeType=1（ELEMENT_NODE，经 slot 读 DOM）。
+#[test]
+fn native_html_element_base_ctor_r3264() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+const el = new HTMLElement();\
+return (el instanceof HTMLElement) + '/' + el.nodeType;\
+})()";
+    // instanceof HTMLElement=true / nodeType=1（ELEMENT_NODE，slot[0] 经 ctor 填 + accessor 读 DOM）。
+    assert_eq!(
+        run_script(html, script),
+        "true/1",
+        "new HTMLElement() instanceof HTMLElement + nodeType=1（ELEMENT_NODE）"
+    );
+}
+
+/// S5a：`class X extends HTMLElement` 子类化——new X() instanceof X+HTMLElement + nodeType=1（slot 经 super() 继承）。
+/// 闭合 R3262 PoC 接生产 DOM 源：subclass 实例的 native nodeType accessor 经 instance_template holder=实例
+/// 读 slot[0]=NodeId（super() 调 native ctor 填）→ DOM node_type=1。
+#[test]
+fn native_html_element_subclass_r3264() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+class MyEl extends HTMLElement { constructor() { super(); this.__subRan = true; } }\
+const inst = new MyEl();\
+return (inst instanceof MyEl) + '/' + (inst instanceof HTMLElement) + '/' + inst.nodeType + '/' + inst.__subRan;\
+})()";
+    // instanceof MyEl=true / instanceof HTMLElement=true / nodeType=1 / __subRan=true（子类 ctor 执行）。
+    assert_eq!(
+        run_script(html, script),
+        "true/true/1/true",
+        "class X extends HTMLElement 子类化：instanceof 双 true + nodeType=1（slot 经 super() 继承）+ 子类 ctor 执行"
+    );
+}

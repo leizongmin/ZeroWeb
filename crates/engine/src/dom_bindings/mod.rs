@@ -22,6 +22,7 @@ mod event;
 mod event_target;
 mod factories;
 mod gc;
+mod html_element;
 mod namednodemap;
 mod node;
 
@@ -664,6 +665,9 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
     //    闭合 R3124 限制③ + R3126 限制③。详见 `event` 子模块。
     event::build_and_register(scope, global);
+    // P1b S5a（R3264）：原生 HTMLElement 构造器——`class X extends HTMLElement` 子类化基础。
+    // kill-switch：随 native_dom 安装（默认关 → 零回归）。
+    html_element::build_and_register(scope, global);
 }
 
 // ── 共享助手（slot 读写 / 字符串参 / 值转换）─────────────────────
