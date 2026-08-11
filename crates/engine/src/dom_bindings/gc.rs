@@ -97,12 +97,15 @@ thread_local! {
     /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
     /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
     static ACTIVE_ELEMENT: RefCell<Option<NodeId>> = const { RefCell::new(None) };
-    /// R3265 S5b custom element upgrade 注入槽：`document.createElement('my-el')` 命中 polyfill
+    /// R3265 S5b custom element upgrade 注入栈：`document.createElement('my-el')` 命中 polyfill
     /// `_ce_registry` 时，host 已先建元素得 NodeId（`native_create_element_invoke`），需把该 NodeId
     /// 注入到 custom ctor 的 `super()` → `native_html_element_ctor_invoke` 链中（否则 ctor 会建新
     /// detached div，与 host 建的元素脱节——两个 NodeId）。镜像 `ACTIVE_ELEMENT` 线程局部模式：
-    /// `native_create_element_invoke` 设 → JS ctor `new_instance`（super() 读此填 slot[0]）→ 清。
-    static UPGRADE_NODE_ID: RefCell<Option<NodeId>> = const { RefCell::new(None) };
+    /// `native_create_element_invoke` push → JS ctor `new_instance`（super() 读栈顶填 slot[0]）→ pop。
+    /// **R3272 栈化**：原单 `Option<NodeId>` 在嵌套 upgrade（ctor body 内 `createElement` 另一个 custom
+    /// 元素）时内层 set 覆盖外层 → 外层 super() 读到内层 NodeId 或 None（身份错乱）。改 `Vec<NodeId>` 栈：
+    /// 内层 push/pop 不影响外层（栈顶隔离），正确处理嵌套 upgrade。
+    static UPGRADE_NODE_ID: RefCell<Vec<NodeId>> = const { RefCell::new(Vec::new()) };
     /// R3266 S5c custom element 连接态追踪：已连入 document 的 custom 元素 NodeId(ffi) 集合。
     /// native_dom 路径 appendChild/insertBefore/removeChild 经 Rust 直接改 DOM，绕过 polyfill 的
     /// `_ceApplyConn`（基于 sel/handle），故连接态由 Rust 权威追踪。变更（未连→连 / 已连→断）时，
@@ -154,7 +157,7 @@ pub(crate) fn reset() {
     DATASET_OBJECTS.with(|c| c.borrow_mut().clear());
     DATASET_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
-    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
+    UPGRADE_NODE_ID.with(|c| c.borrow_mut().clear());
     CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
     DOCUMENT_OBJECT.with(|c| *c.borrow_mut() = None);
     DOCUMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
@@ -385,22 +388,33 @@ pub(crate) fn set_active_element(id: Option<NodeId>) {
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = id);
 }
 
-// ── R3265 S5b custom element upgrade 注入（createElement('my-el') → super() 链）──
+// ── R3265 S5b custom element upgrade 注入栈（createElement('my-el') → super() 链，R3272 栈化）──
 
-/// 取当前 upgrade 注入 NodeId（`native_create_element_invoke` 命中 registry 时设，
-/// `native_html_element_ctor_invoke` super() 读）。无 upgrade 在途 → `None`（S5a 直接 new 行为）。
+/// 取当前 upgrade 注入 NodeId（栈顶）。`native_create_element_invoke` 命中 registry 时 push，
+/// `native_html_element_ctor_invoke` super() 读栈顶。无 upgrade 在途 → `None`（S5a 直接 new 行为）。
 pub(crate) fn upgrade_node_id() -> Option<NodeId> {
-    UPGRADE_NODE_ID.with(|c| *c.borrow())
+    UPGRADE_NODE_ID.with(|c| c.borrow().last().copied())
 }
 
-/// 设 upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 前设，填 ctor super() 链）。
+/// push upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 前调，填 ctor super() 链）。
+/// R3272 栈语义：嵌套 upgrade（ctor 内建另一个 custom 元素）内层 push 不覆盖外层（栈顶隔离）。
+/// `id=None` 兼容旧调用（清空整个栈——实际无调用方传 None，保签名兼容）。
 pub(crate) fn set_upgrade_node_id(id: Option<NodeId>) {
-    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = id);
+    UPGRADE_NODE_ID.with(|c| {
+        if let Some(node_id) = id {
+            c.borrow_mut().push(node_id);
+        } else {
+            c.borrow_mut().clear();
+        }
+    });
 }
 
-/// 清 upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 后清，防泄漏到后续 new HTMLElement）。
+/// pop upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 后调，防泄漏到后续 new HTMLElement）。
+/// R3272 栈语义：pop 栈顶（嵌套 upgrade 内层 pop 不影响外层）。栈空则 no-op。
 pub(crate) fn clear_upgrade_node_id() {
-    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
+    UPGRADE_NODE_ID.with(|c| {
+        c.borrow_mut().pop();
+    });
 }
 
 // ── R3266 S5c custom element 连接态追踪（connectedCallback/disconnectedCallback 派发门控）──
@@ -533,10 +547,15 @@ pub(crate) fn remove_listener(
 /// R3133 节点包装器终结器：清本节点（ffi）**全部**监听器（所有事件类型 × capture/bubble 桶）。
 /// 包装器被 GC 时由 [`cache_native_element`] 注册的 guaranteed 终结器调用（isolate 线程，线程局部
 /// LISTENERS 可安全访问）。removeChild 不调本函数（保重新附加语义：detached 节点监听器跨 detach 保留）。
+///
+/// R3272：同时清 `CONNECTED_CUSTOM`——元素 GC 后 NodeId 可能被 slotmap 复用（新元素得同 ffi），若不清，
+/// 新元素 `is_custom_connected` 误判已连 → connectedCallback 不触发（状态污染）。包装器 GC = JS 丢引用 +
+/// 节点离场，连接态应随之清。
 pub(crate) fn remove_node_listeners(ffi: u64) {
     LISTENERS.with(|c| {
         c.borrow_mut().retain(|(f, _), _| *f != ffi);
     });
+    unmark_custom_connected(ffi);
 }
 
 #[cfg(test)]

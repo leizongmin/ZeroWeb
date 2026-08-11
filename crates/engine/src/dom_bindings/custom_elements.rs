@@ -130,8 +130,13 @@ fn dispatch_connect(scope: &mut v8::PinScope, ids: &[NodeId], connected: bool) {
     let _ = notify.call(scope, global.into(), &[inst_arr.into(), conn_v.into(), tag_arr.into()]);
 }
 
-/// DFS 收集 `root` 子树（含 root 自身）的所有元素节点，对每个调 `f(id, tag)`。pre-order（根优先）。
-/// 仅 Element 节点参与（custom 元素必为 Element）；Text/Comment 跳过。
+/// DFS 收集 `root` 子树（含 root 自身）的所有元素节点，对每个调 `f(id, tag)`。**pre-order tree order**
+///（根优先，子节点按文档序 left→right，spec connectedCallback 触发序）。仅 Element 节点参与（custom 元素
+/// 必为 Element）；Text/Comment 跳过（但遍历其兄弟——first_child→next_sibling 链含所有节点类型）。
+///
+/// R3272：修正 DFS 顺序——旧实现子节点正序压栈 + LIFO pop = **reverse tree order**（右孩子先），违反 spec。
+/// 改为子节点收集后**逆序压栈**（last child 先 push，first child 最后 push）→ pop 正序（first child 先出），
+/// 保 pre-order tree order（connectedCallback 触发序与浏览器一致，框架依赖顺序正确）。
 fn collect_custom_subtree(root: NodeId, f: &mut impl FnMut(NodeId, String)) {
     with_dom(|d| {
         let mut stack = vec![root];
@@ -141,11 +146,16 @@ fn collect_custom_subtree(root: NodeId, f: &mut impl FnMut(NodeId, String)) {
             };
             if let NodeKind::Element(e) = &node.kind {
                 f(id, e.tag_name());
-                // 子节点压栈（next_sibling 经 Document 查——NodeData 无该方法）。
+                // 子节点收集到临时 Vec（first_child→next_sibling 链，正序）。
+                let mut children: Vec<NodeId> = Vec::new();
                 let mut c = node.first_child();
                 while let Some(child) = c {
-                    stack.push(child);
+                    children.push(child);
                     c = d.next_sibling(child);
+                }
+                // 逆序压栈（last child 先 push）→ pop 正序（first child 先出），保 pre-order tree order。
+                for child in children.into_iter().rev() {
+                    stack.push(child);
                 }
             }
         }

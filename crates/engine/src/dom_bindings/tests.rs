@@ -1736,3 +1736,77 @@ return _notifyCalls;\
         "fast-path：div/span（无连字符 tag）appendChild 不触发 CE connect JS 桥接"
     );
 }
+
+// ── R3272：custom element lifecycle 派发顺序与嵌套 upgrade 安全性 ──
+
+/// R3272 pre-order tree order：appendChild 一个含多个 custom 元素的子树时，connectedCallback
+/// 必须按 **pre-order tree order**（根优先，子节点 left→right）触发——与浏览器 spec 一致。
+/// 旧实现 DFS 子节点正序压栈 + LIFO pop = reverse tree order（右孩子先），违反 spec；R3272 逆序压栈修正。
+/// 子树结构：root(parent-el) → child-a(child-el) + child-b(child-el)；parent 先连，再 a，再 b。
+#[test]
+fn native_custom_element_connect_preorder_tree_order_r3272() {
+    let html = r#"<html><body></body></html>"#;
+    // notify 收到的 instances 数组顺序 = collect_custom_subtree 的 DFS 访问序（= 连接态变化收集序，
+    // = connectedCallback 触发序）。每实例打 dataset.order，连接时 push 其 order，验 pre-order。
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _log = [];\
+globalThis.__zw_native_ce_notify_connect = function(instances, connected, tags){\
+  if (!connected) return;\
+  for (var i=0;i<instances.length;i++){ _log.push(instances[i].dataset.order); }\
+};\
+class PEl extends HTMLElement { constructor(){ super(); } }\
+class CEl extends HTMLElement { constructor(){ super(); } }\
+customElements.define('parent-el', PEl);\
+customElements.define('child-el', CEl);\
+const root = __zw_native_create_element('parent-el'); root.dataset.order='P';\
+const a = __zw_native_create_element('child-el'); a.dataset.order='A';\
+const b = __zw_native_create_element('child-el'); b.dataset.order='B';\
+root.appendChild(a);\
+root.appendChild(b);\
+const body = __zw_native_get_body();\
+body.appendChild(root);\
+return _log.join(',');\
+})()";
+    // pre-order tree order：root(P) → A → B（左到右）。旧 reverse-tree-order 会得 'P,B,A'。
+    assert_eq!(
+        run_script(html, script),
+        "P,A,B",
+        "R3272 pre-order tree order：connectedCallback 按根优先 + 子节点 left→right 触发"
+    );
+}
+
+/// R3272 嵌套 upgrade 栈隔离：custom ctor body 内再 `createElement` 另一个 custom 元素（嵌套 upgrade）时，
+/// 内层 push 的 upgrade NodeId **不得覆盖**外层（外层 super() 仍读外层 NodeId）。旧实现单 `Option<NodeId>`
+/// 被 set 覆盖 → 外层 super() 读到内层 NodeId（身份错乱）。栈化后内层 push/pop 隔离外层。
+/// Inner ctor 仅记自身 nodeType（不递归 createElement）；Outer ctor body 内 createElement('inner-el')
+/// 触发嵌套 upgrade（内层 push/pop upgrade slot），之后验证外层实例 NodeId 仍属自身。
+#[test]
+fn native_custom_element_nested_upgrade_stack_isolation_r3272() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+class Inner extends HTMLElement { constructor(){ super(); this.__innerId = this.nodeType; } }\
+customElements.define('inner-el', Inner);\
+class Outer extends HTMLElement {\
+  constructor(){\
+    super();\
+    this._inner = __zw_native_create_element('inner-el');\
+    this.__outerMarked = (this.nodeType === 1);\
+  }\
+}\
+customElements.define('outer-el', Outer);\
+const outer = __zw_native_create_element('outer-el');\
+return (outer.__outerMarked === true) + '/' + (outer._inner instanceof Inner) + '/' + (outer._inner.__innerId === 1);\
+})()";
+    // 外层实例 NodeId 正确（outerMarked=true）+ 内层实例 instanceof Inner + 内层自身 nodeType=1（各自独立 upgrade）。
+    assert_eq!(
+        run_script(html, script),
+        "true/true/true",
+        "R3272 嵌套 upgrade 栈隔离：外层 ctor body 内 createElement custom 不破坏外层 upgrade slot"
+    );
+}
