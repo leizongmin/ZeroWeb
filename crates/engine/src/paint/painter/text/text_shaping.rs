@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use unicode_bidi::{BidiClass, bidi_class};
 use zero_layout_engine::TextFragmentSource;
 use zero_render_foundation::font::{ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::GlyphSource;
@@ -81,11 +82,38 @@ pub(super) fn logical_fragment_source(
     }
     let source = source?;
     let range = source.logical_range()?;
+    let text = source.text.get(range.clone())?;
+    if !single_rtl_script(text) {
+        return None;
+    }
     Some(LogicalFragmentSource {
-        text: source.text.get(range.clone())?,
+        text,
         source_text: source.text.clone(),
         source_start: u32::try_from(range.start).ok()?,
     })
+}
+
+fn single_rtl_script(text: &str) -> bool {
+    let mut has_rtl = false;
+    for ch in text.chars() {
+        match bidi_class(ch) {
+            BidiClass::R | BidiClass::AL => has_rtl = true,
+            BidiClass::L
+            | BidiClass::EN
+            | BidiClass::AN
+            | BidiClass::LRE
+            | BidiClass::RLE
+            | BidiClass::LRO
+            | BidiClass::RLO
+            | BidiClass::LRI
+            | BidiClass::RLI
+            | BidiClass::FSI
+            | BidiClass::PDI
+            | BidiClass::PDF => return false,
+            _ => {}
+        }
+    }
+    has_rtl
 }
 
 impl Iterator for FragmentGlyphs<'_> {
@@ -386,6 +414,12 @@ mod tests {
             visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
         };
         assert!(logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).is_none());
+
+        let monotonic_mixed = TextFragmentSource {
+            text: Arc::<str>::from("aאב"),
+            visual_to_logical: vec![Some(3..5), Some(1..3), Some(0..1)],
+        };
+        assert!(logical_fragment_source(Some(&monotonic_mixed), TextDirection::RightToLeft, true).is_none());
     }
 
     #[test]

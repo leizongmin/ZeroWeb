@@ -6328,6 +6328,7 @@ dependencies = [
  "slotmap",
  "thiserror 2.0.18",
  "tracing",
+ "unicode-bidi",
  "url",
  "v8",
  "zero-canvas",

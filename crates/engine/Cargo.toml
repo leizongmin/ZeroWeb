@@ -31,6 +31,7 @@ aes-gcm = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
 flate2 = "1"
+unicode-bidi = { workspace = true }
 
 # P1b S1 原生 DOM 绑定（feature-gated v8）。与 script-sandbox 同版本同 feature 对齐，
 # Cargo 去重同一 v8 crate 实例。quickjs 模式下不启用（本 crate 原生绑定仅 V8）。
