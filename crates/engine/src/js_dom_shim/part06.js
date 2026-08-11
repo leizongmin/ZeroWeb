@@ -113,6 +113,13 @@
   // getter 首访读 document.querySelector('title').textContent（空白折叠）；setter 仅更新缓存。
   var _doc_title = null;
 
+  // document.currentScript 索引（R3258）。-1 = 不在 classic 脚本执行期（getter 返 null）；
+  // >=0 = 当前 classic 脚本在「全部 <script> 元素」（含非 JS 类型）中的序号，与
+  // document.getElementsByTagName('script') 文档序一一对应（host extract_page_scripts_indexed
+  // 在过滤前递增）。宿主经 __zw_set_current_script(idx) / __zw_clear_current_script() 在每个
+  // classic 脚本执行前后设/清；module 脚本不设（spec：module 执行期 currentScript 恒 null）。
+  var _zwCurrentScriptIdx = -1;
+
   // document.activeElement 焦点追踪。null = 无焦点（activeElement 回落 body）；非空 = 焦点元素 key
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
@@ -1073,6 +1080,20 @@
     webkitHidden: false,
     webkitVisibilityState: 'visible',
     hasFocus: function () { return true; },
+    // document.currentScript（R3258，HTML §4.11.3.1）——classic 脚本执行期间指向当前 <script> 元素；
+    // 非脚本执行期 / module 脚本执行期返 null（spec：module currentScript 恒 null）。宿主在每个 classic
+    // 脚本执行前经 __zw_set_current_script(idx) 设索引（idx = 该脚本在全部 <script> 元素中的文档序，
+    // 含非 JS 类型，与 getElementsByTagName('script') 对齐），执行后 __zw_clear_current_script() 清。
+    // 主用例：分析 SDK / 脚本加载器读 currentScript.src 定位自身来源（GA / requirejs / 广告 SDK）。
+    // **已知限制**：idx 对齐依赖执行期 DOM 与解析期 HTML 一致——若先前脚本动态插 <script>（document.write /
+    // appendChild）使 getElementsByTagName('script') 序偏移，则后续脚本 currentScript 可能指向错误元素
+    //（real browser 按解析器记录的「脚本元素」身份而非序号，无此问题；headless 序号近似，documented）。
+    get currentScript() {
+      if (_zwCurrentScriptIdx < 0) return null;
+      var scripts = globalThis.document.getElementsByTagName('script');
+      var el = scripts[_zwCurrentScriptIdx];
+      return el || null;
+    },
     // document.cookie——get 返 "n=v; n=v" 串（仅 name=value，无属性）；set 解析 "n=v; Path=...; Max-Age=..."
     // 取首个 name=value 存/覆盖。**已知限制**：in-JS 存储（不接真 cookie jar / 不随 fetch 发送 / 无 origin
     // 隔离 / 无 expiry 淘汰——网络/origin 集成属 host-layer defer）；set-then-read 常见模式 tractable。
@@ -1316,7 +1337,15 @@
       }
     } catch (_e) {}
   };
-  // R2949 FontFace——单字体面（CSS Font Loading API face 层，补全 R2947 set 层）。
+  // R3258 document.currentScript 宿主入口：classic 脚本执行前 __zw_set_current_script(idx) 设索引，
+  // 执行后 __zw_clear_current_script() 清。idx = 该脚本在「全部 <script> 元素」（含非 JS 类型）中的文档序，
+  // 与 document.getElementsByTagName('script') 对齐（见 document.currentScript getter 注释）。
+  // 调用方（renderer/browser/webview page-script 执行路径）仅在 classic 脚本（非 module）执行前后调用——
+  // module 脚本 currentScript 恒 null（spec），故不设。
+  globalThis.__zw_set_current_script = function (idx) {
+    _zwCurrentScriptIdx = (typeof idx === 'number' && idx >= 0) ? (idx | 0) : -1;
+  };
+  globalThis.__zw_clear_current_script = function () { _zwCurrentScriptIdx = -1; };
   // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
   // descriptors = {style, weight, stretch, unicodeRange, variant, featureSettings}（默认 normal/400）。.status =
   // 'unloaded'|'loading'|'loaded'|'error'。.load() 返 Promise<FontFace>——经 host `__zw_load_font(family, src, id,

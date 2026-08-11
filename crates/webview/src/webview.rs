@@ -7,8 +7,9 @@ use std::rc::Rc;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
     RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
-    extract_page_scripts, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key, register_dom_callbacks,
-    resolve_document_url, script_dispatch_dom_event,
+    extract_page_scripts_indexed, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
+    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
+    script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -1266,7 +1267,7 @@ impl WebView {
 
     fn run_page_scripts_impl(&mut self, strict: bool) -> Result<String, WebViewError> {
         let html = self.cached_html.clone();
-        let scripts = extract_page_scripts(&html);
+        let scripts = extract_page_scripts_indexed(&html);
         if scripts.is_empty() {
             return Ok(html);
         }
@@ -1341,7 +1342,7 @@ impl WebView {
             }
             self.js_shim_initialized = true;
         }
-        for script in scripts {
+        for (script, script_index) in scripts {
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -1418,7 +1419,13 @@ impl WebView {
                     }
                 }
             } else {
-                format!("__zw_begin_script && __zw_begin_script();\n{code}")
+                // classic 脚本：__zw_begin_script 前置（body onload 反射）+ R3258 设/清 document.currentScript
+                //（try-finally 保证即便抛错也清；spec classic 执行期 currentScript 指向自身元素）。
+                format!(
+                    "{set}\ntry{{__zw_begin_script&&__zw_begin_script();\n{code}\n}}finally{{{clear}}}",
+                    set = script_set_current_script(script_index),
+                    clear = script_clear_current_script(),
+                )
             };
             if let Err(e) = sandbox.execute(&full) {
                 if strict {

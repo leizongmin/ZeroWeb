@@ -69,9 +69,20 @@ fn script_is_module(type_attr: Option<&str>) -> bool {
 
 /// 按文档顺序提取 `<script>` 内联文本与 `src`。
 pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
+    extract_page_scripts_indexed(html).into_iter().map(|(s, _)| s).collect()
+}
+
+/// 与 [`extract_page_scripts`] 相同，但每个条目附带该 `<script>` 在**所有** `<script>` 元素中的序号
+///（含非 JS 类型脚本，如 `<script type="application/json">`）。
+///
+/// 该序号与 shim `document.getElementsByTagName('script')` 的返回序对齐——后者按文档序返回
+/// 全部 `<script>` 元素（不论 type），故宿主在执行 classic 脚本前后据此序号设/清
+/// `document.currentScript`（HTML §4.11.3.1：classic 脚本执行期间 currentScript 指向自身元素）。
+/// 序号在过滤**之前**递增（每遇一个 `<script>` 即 +1），确保与 `getElementsByTagName('script')` 一一对应。
+pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     let doc = zero_dom::parse_html(html);
     let mut scripts = Vec::new();
-    for script_id in doc.get_elements_by_tag_name("script") {
+    for (this_idx, script_id) in doc.get_elements_by_tag_name("script").into_iter().enumerate() {
         let type_attr = doc.get_attribute(script_id, "type");
         if !script_type_is_javascript(type_attr.as_deref()) {
             continue;
@@ -81,9 +92,9 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
             let src = src.trim();
             if !src.is_empty() {
                 if is_module {
-                    scripts.push(PageScript::ExternalModule(src.to_string()));
+                    scripts.push((PageScript::ExternalModule(src.to_string()), this_idx));
                 } else {
-                    scripts.push(PageScript::External(src.to_string()));
+                    scripts.push((PageScript::External(src.to_string()), this_idx));
                 }
                 continue;
             }
@@ -97,9 +108,9 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
             let code = strip_script_cdata(raw.trim()).trim();
             if !code.is_empty() {
                 if is_module {
-                    scripts.push(PageScript::InlineModule(code.to_string()));
+                    scripts.push((PageScript::InlineModule(code.to_string()), this_idx));
                 } else {
-                    scripts.push(PageScript::Inline(code.to_string()));
+                    scripts.push((PageScript::Inline(code.to_string()), this_idx));
                 }
             }
         }

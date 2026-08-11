@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target, apply_mutations_to_html,
-    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts, has_attribute, is_checkbox,
-    is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
-    script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
-    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_text_delete,
-    script_text_input, script_wrap_page_caught, toggle_radio_html,
+    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, has_attribute,
+    is_checkbox, is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html,
+    resolve_document_url, script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event,
+    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
+    script_run_classic_page, script_text_delete, script_text_input, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -59,7 +59,7 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
     let original_html = ctx.html.clone();
     let mut html = ctx.html.clone();
 
-    for script in extract_page_scripts(&html) {
+    for (script, script_index) in extract_page_scripts_indexed(&html) {
         let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
         let module_url = match &script {
             PageScript::ExternalModule(src) => resolve_document_url(&base, src),
@@ -91,7 +91,7 @@ pub fn run_page_scripts<F: Fn(&str) -> Result<String, String>>(
             }
         };
 
-        if let Err(e) = execute_chunk(ctx, &html, is_module, &module_url, &code, &fetch_text) {
+        if let Err(e) = execute_chunk(ctx, &html, is_module, &module_url, &code, &fetch_text, script_index) {
             warn!("page script error: {e}");
             // R2940 mirror：未捕获脚本错误 → window.onerror（legacy 5-arg）+ window 'error' ErrorEvent，
             // 使 Sentry / analytics / GA 等错误上报库 hook 触发（与 browser tab_scripts 对齐）。
@@ -562,6 +562,7 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     module_url: &str,
     code: &str,
     fetch_text: &F,
+    script_index: usize,
 ) -> Result<(), String> {
     ctx.js_worker.set_dom_snapshot(html, ctx.url);
     ctx.js_worker
@@ -575,17 +576,19 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
         let deps: Vec<(String, String)> = registry.into_iter().collect();
         ctx.js_worker.execute_module(code, module_url, &deps)?;
     } else {
-        // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效）。
-        run_page_script_caught(ctx.js_worker, code)?;
+        // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效）+
+        // 执行期设/清 document.currentScript（R3258，script_run_classic_page）。
+        run_page_script_caught(ctx.js_worker, code, script_index)?;
     }
     Ok(())
 }
 
-/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_wrap_page_caught`]）。
+/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_run_classic_page`]）+
+/// 执行期设/清 `document.currentScript`（R3258）。
 /// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror）。
 /// 包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute 在干净 Isolate 上可靠。
-fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str) -> Result<(), String> {
-    let _ = js_worker.execute_script_direct(&script_wrap_page_caught(code));
+fn run_page_script_caught(js_worker: &RendererJsWorker, code: &str, script_index: usize) -> Result<(), String> {
+    let _ = js_worker.execute_script_direct(&script_run_classic_page(code, script_index));
     match js_worker.execute_script_direct(&page_script_error_check()) {
         Ok(v) if v.is_empty() => Ok(()),
         Ok(msg) => Err(msg),

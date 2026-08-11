@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, PageScript, extract_page_scripts, page_script_error_check, resolve_document_url,
-    script_dispatch_dom_event, script_report_error, script_wrap_page_caught,
+    DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
+    script_dispatch_dom_event, script_report_error, script_run_classic_page,
 };
 use zero_webview::WebView;
 
@@ -22,7 +22,7 @@ pub struct DomDispatchResult {
 
 /// 分片执行页面脚本，避免在 tab worker 循环内一次性跑完所有 `<script>` 阻塞 UI。
 pub struct PageScriptRunner {
-    scripts: Vec<PageScript>,
+    scripts: Vec<(PageScript, usize)>,
     index: usize,
     base: String,
     html: String,
@@ -57,7 +57,7 @@ impl PageScriptRunner {
         if html.is_empty() || !should_run_scripts_for_url(wv.url()) {
             return None;
         }
-        let scripts = extract_page_scripts(&html);
+        let scripts = extract_page_scripts_indexed(&html);
         let base = wv.url().unwrap_or("about:blank").to_string();
         let original_html = html.clone();
         Some(Self {
@@ -107,7 +107,7 @@ impl PageScriptRunner {
             return PageScriptTickResult::Idle;
         }
 
-        let script = &self.scripts[self.index];
+        let (script, script_index) = &self.scripts[self.index];
         let label = page_script_label(script);
         let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
         let module_url = match script {
@@ -141,7 +141,16 @@ impl PageScriptRunner {
             }
         };
 
-        if let Err(e) = execute_script_chunk(wv, js_worker, &self.html, is_module, &module_url, &code, true) {
+        if let Err(e) = execute_script_chunk(
+            wv,
+            js_worker,
+            &self.html,
+            is_module,
+            &module_url,
+            &code,
+            true,
+            *script_index,
+        ) {
             warn!("page script error ({}): {e}", label);
             // R2940：报告未捕获脚本错误到 window.onerror / window 'error' 事件（Sentry/analytics hook）。
             report_uncaught_script_error(js_worker, &self.base, &e);
@@ -362,6 +371,7 @@ fn execute_script_chunk(
     module_url: &str,
     code: &str,
     page_script: bool,
+    script_index: usize,
 ) -> Result<(), String> {
     let page_url = wv.url().unwrap_or("about:blank");
     if let Some(worker) = js_worker {
@@ -378,8 +388,8 @@ fn execute_script_chunk(
     } else if let Some(worker) = js_worker {
         if page_script {
             // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效；
-            // 见 zero_engine::script_wrap_page_caught）。成功 Ok；抛错 Err(msg)。
-            run_page_script_caught(worker, code)?;
+            // 见 zero_engine::script_run_classic_page）+ 执行期设/清 document.currentScript（R3258）。
+            run_page_script_caught(worker, code, script_index)?;
         } else {
             worker.execute_script_direct(code).map_err(|e| e.to_string())?;
         }
@@ -389,12 +399,13 @@ fn execute_script_chunk(
     Ok(())
 }
 
-/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_wrap_page_caught`]）。
+/// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_run_classic_page`]）+
+/// 执行期设/清 `document.currentScript`（R3258）。
 /// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `PageScriptRunner::tick` 据此报
 /// window.onerror，R2940）。包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute
 /// 在干净 Isolate 上可靠。镜像 renderer `page_scripts::run_page_script_caught`。
-fn run_page_script_caught(worker: &TabJsWorkerHandle, code: &str) -> Result<(), String> {
-    let _ = worker.execute_page_script(&script_wrap_page_caught(code));
+fn run_page_script_caught(worker: &TabJsWorkerHandle, code: &str, script_index: usize) -> Result<(), String> {
+    let _ = worker.execute_page_script(&script_run_classic_page(code, script_index));
     match worker.execute_page_script(&page_script_error_check()) {
         Ok(v) if v.is_empty() => Ok(()),
         Ok(msg) => Err(msg),

@@ -225,7 +225,8 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 
 /// 将 classic 页面 `<script>` 体包进顶层 try-catch，使未捕获的 throw 被捕获进 sentinel 全局
-/// （[`PAGE_SCRIPT_ERROR_GLOBAL`]）而非污染持久 V8 Isolate。
+/// （[`PAGE_SCRIPT_ERROR_GLOBAL`]）而非污染持久 V8 Isolate；并在执行期设/清 `document.currentScript`
+///（HTML §4.11.3.1：classic 脚本执行期间 currentScript 指向自身元素）。
 ///
 /// **背景**：persistent_context 模式跨 execute 复用同一 Isolate。页面脚本抛出的未捕获异常若直达
 /// V8，embedder 侧 `TryCatch::reset()` 在当前 rusty_v8（150.2.0）下无法清掉跨 execute 的 pending
@@ -234,19 +235,43 @@ pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 /// 在页面脚本层包 try-catch：throw 被这里捕获→调用方读 sentinel 得 Err→`run_page_scripts` 据此
 /// 报 window.onerror，且 Isolate 保持干净。
 ///
+/// **currentScript**：执行前 `__zw_set_current_script(script_index)` 设索引（该脚本在全部 `<script>`
+/// 元素中的文档序，与 shim `getElementsByTagName('script')` 对齐），`finally` 块无条件 `__zw_clear_current_script()`
+/// 清（即便抛错也清，保证脚本执行期外 currentScript 恒 null）。module 脚本不经本函数（spec：module
+/// currentScript 恒 null），调用方仅在 classic 分支调用。`script_index` 由 [`extract_page_scripts_indexed`]
+///（zero_engine）提供。
+///
 /// **作用域**：`code` 内的 `var`/`function` 声明提升到脚本顶层作用域（try 块对它们透明），与未包装
 /// 行为一致；顶层 `let`/`const`/`class` 会变为 try 块作用域——classic 内联脚本罕见，module 走
 /// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为消息字符串，二者经
 /// [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便 `throw undefined` 也只产生
 /// 字符串 "undefined"，不与 undefined 值混淆）。
-pub fn script_wrap_page_caught(code: &str) -> String {
+pub fn script_run_classic_page(code: &str, script_index: usize) -> String {
     format!(
-        "globalThis.{g}=undefined;\ntry{{\n{code}\n}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{\n{code}\n}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )
 }
 
-/// 读取 [`script_wrap_page_caught`] 写入的 sentinel：返回空串表示成功（无抛错），非空串为错误消息。
+/// `document.currentScript` 设索引 shim 调用串（R3258）：`__zw_set_current_script(idx)`（typeof 守卫，
+/// shim 未安装时 no-op）。供不走 sentinel 包装的 classic 执行路径（webview/reftest 进程内路径）在
+/// 脚本体执行前调用。`idx` = 脚本在全部 `<script>` 元素中的文档序（[`extract_page_scripts_indexed`]）。
+pub fn script_set_current_script(script_index: usize) -> String {
+    format!(
+        "if(typeof __zw_set_current_script==='function')__zw_set_current_script({i});",
+        i = script_index
+    )
+}
+
+/// `document.currentScript` 清 shim 调用串（R3258）：`__zw_clear_current_script()`（typeof 守卫）。供
+/// classic 执行路径在脚本体执行后调用（与 [`script_set_current_script`] 配对）。建议置于 `finally` 块
+/// 保证即便抛错也清。
+pub fn script_clear_current_script() -> &'static str {
+    "if(typeof __zw_clear_current_script==='function')__zw_clear_current_script();"
+}
+
+/// 读取 [`script_run_classic_page`] 写入的 sentinel：返回空串表示成功（无抛错），非空串为错误消息。
 /// 调用方据此把抛错 surface 为 `Err`。作为独立 execute（包装器执行后 Isolate 干净，本次读取可靠）。
 pub fn page_script_error_check() -> String {
     format!(

@@ -236,6 +236,68 @@ fn test_module_script_executes_r3083() {
     assert_eq!(flag.unwrap(), "true", "module body 经转换后执行（__modBodyRan 设置）");
 }
 
+// ── document.currentScript（R3258，HTML §4.11.3.1）──
+// classic 脚本执行期间 currentScript 指向自身 <script> 元素；执行期外为 null；module 执行期恒 null。
+// 宿主经 __zw_set_current_script(idx) / __zw_clear_current_script() 在每个 classic 脚本执行前后设/清，
+// idx = 脚本在「全部 <script> 元素」（含非 JS 类型）中的文档序，与 getElementsByTagName('script') 对齐。
+// 主用例：分析 SDK / 脚本加载器读 currentScript.src 定位自身来源（GA / requirejs / 广告 SDK）。
+#[test]
+fn test_document_current_script_classic_r3258() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // 前置一个非 JS 类型 <script type="application/json"> 验证索引对齐：extract 过滤它（不入执行队列），
+    // 但 extract_page_scripts_indexed 计其入 global_idx，故其后 JS 脚本 idx=1（非 0）。
+    // getElementsByTagName('script')[1] 必须解析到该 JS 脚本元素（id=s1），证明 idx 对齐正确。
+    wv.load_html(
+        "<html><body>\
+         <script type=\"application/json\">{\"x\":1}</script>\
+         <script id=\"s1\">globalThis.__csTagName = document.currentScript ? document.currentScript.tagName : 'NULL';\
+            globalThis.__csId = document.currentScript ? (document.currentScript.id || 'NOID') : 'NULL';\
+            globalThis.__csNonNull = (document.currentScript !== null);</script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__csTagName)").unwrap(),
+        "SCRIPT",
+        "currentScript.tagName === 'SCRIPT'（classic 执行期指向 <script> 元素）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__csId)").unwrap(),
+        "s1",
+        "currentScript = 执行中的 <script id=s1>（idx 跨非 JS 脚本对齐：JSON=0, JS=1）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__csNonNull)").unwrap(),
+        "true",
+        "currentScript 非 null（classic 执行期）"
+    );
+    // 全部脚本执行完毕后 currentScript 应回到 null（finally 清）。
+    assert_eq!(
+        wv.execute_script("String(document.currentScript === null)").unwrap(),
+        "true",
+        "currentScript 为 null（脚本执行期外，finally 清）"
+    );
+}
+
+#[test]
+fn test_document_current_script_module_null_r3258() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // spec：module 脚本执行期 currentScript 恒 null（host 仅 classic 分支设 currentScript）。
+    wv.load_html(
+        "<html><body><script type=\"module\">globalThis.__modCsNull = (document.currentScript === null);</script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "module script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__modCsNull)").unwrap(),
+        "true",
+        "currentScript 为 null（module 执行期，spec）"
+    );
+}
+
 // ── Storage 跨 load_html 持久化（R3088）──
 // WebView 沙箱复用（ensure_sandbox：js_sandbox.is_some() 早返）+ shim 幂等注入（js_shim_initialized
 // guard），故 globalThis.localStorage/sessionStorage（shim 的 _createStorage 对象）在同 WebView 多次
