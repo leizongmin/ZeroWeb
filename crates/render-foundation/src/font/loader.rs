@@ -2,7 +2,10 @@
 
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::HashMap;
+use shaping::ShapeCache;
 use std::sync::Arc;
+
+mod shaping;
 
 /// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
 ///
@@ -212,15 +215,6 @@ mod freetype_raster {
     }
 }
 
-type ShapeCacheKey = (
-    Vec<u64>,
-    u32,
-    crate::font::TextDirection,
-    Vec<crate::font::OpenTypeFeature>,
-    String,
-);
-type ShapeCache = Arc<std::sync::Mutex<HashMap<ShapeCacheKey, Vec<crate::font::ShapedGlyph>>>>;
-
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
     /// 已加载的字体（fontdue 实例；Arc 共享使 `duplicate` 免深拷贝 19MB CJK 解析结果）
@@ -283,87 +277,6 @@ impl FontLoader {
             bitmap_glyphs: self.bitmap_glyphs.clone(),
             ahem_font_id: self.ahem_font_id,
             shape_cache: self.shape_cache.clone(),
-        }
-    }
-
-    /// 使用指定 face 整形文本，并缓存跨帧重复结果。
-    pub fn shape_text_cached(&self, font_id: u32, text: &str, font_size: f32) -> Option<Vec<crate::font::ShapedGlyph>> {
-        self.shape_text_cached_with_direction(font_id, text, font_size, crate::font::TextDirection::Auto)
-    }
-
-    /// 使用指定 face 与方向整形文本，并缓存跨帧重复结果。
-    pub fn shape_text_cached_with_direction(
-        &self,
-        font_id: u32,
-        text: &str,
-        font_size: f32,
-        direction: crate::font::TextDirection,
-    ) -> Option<Vec<crate::font::ShapedGlyph>> {
-        self.shape_text_cached_with_features(font_id, text, font_size, direction, &[])
-    }
-
-    /// 使用指定 face、方向与 OpenType feature 整形文本，并缓存跨帧重复结果。
-    pub fn shape_text_cached_with_features(
-        &self,
-        font_id: u32,
-        text: &str,
-        font_size: f32,
-        direction: crate::font::TextDirection,
-        features: &[crate::font::OpenTypeFeature],
-    ) -> Option<Vec<crate::font::ShapedGlyph>> {
-        self.shape_text_cached_with_font_ids(&[font_id], text, font_size, direction, features)
-    }
-
-    /// 使用有序 CSS face 列表整形文本，并缓存跨帧重复结果。
-    pub fn shape_text_cached_with_font_ids(
-        &self,
-        font_ids: &[u32],
-        text: &str,
-        font_size: f32,
-        direction: crate::font::TextDirection,
-        features: &[crate::font::OpenTypeFeature],
-    ) -> Option<Vec<crate::font::ShapedGlyph>> {
-        let &primary_id = font_ids.first()?;
-        let instance_ids = font_ids
-            .iter()
-            .map(|font_id| self.font_instance_ids.get(font_id).copied())
-            .collect::<Option<Vec<_>>>()?;
-        let mut resolved_features = self.font_features.get(&primary_id).cloned().unwrap_or_default();
-        for feature in features {
-            if let Some(existing) = resolved_features
-                .iter_mut()
-                .find(|existing| existing.tag == feature.tag)
-            {
-                *existing = *feature;
-            } else {
-                resolved_features.push(*feature);
-            }
-        }
-        let key = (
-            instance_ids,
-            font_size.to_bits(),
-            direction,
-            resolved_features.clone(),
-            text.to_string(),
-        );
-        if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {
-            return Some(glyphs.clone());
-        }
-
-        let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(primary_id)))
-            .shape_single_line_with_font_ids(font_ids, text, font_size, direction, &resolved_features);
-        let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
-        if cache.len() >= 4096 {
-            cache.clear();
-        }
-        cache.insert(key, glyphs.clone());
-        Some(glyphs)
-    }
-
-    /// 注册 face 级 OpenType feature 默认值。
-    pub fn register_font_features(&mut self, font_id: u32, features: Vec<crate::font::OpenTypeFeature>) {
-        if self.fonts.contains_key(&font_id) {
-            self.font_features.insert(font_id, features);
         }
     }
 
@@ -740,6 +653,44 @@ impl FontLoader {
         let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
         let metrics = font.horizontal_line_metrics(size)?;
         Some((metrics.ascent, metrics.descent, metrics.line_gap))
+    }
+
+    /// 返回字体 OS/2 `sxHeight / unitsPerEm`。
+    pub fn x_height_aspect(&self, font_id: u32) -> Option<f32> {
+        let data = self.font_data.get(&font_id)?;
+        let face = rustybuzz::ttf_parser::Face::parse(data, 0).ok()?;
+        let x_height = f32::from(face.x_height()?);
+        let units_per_em = f32::from(face.units_per_em());
+        (x_height > 0.0 && units_per_em > 0.0).then_some(x_height / units_per_em)
+    }
+
+    /// 按 primary target aspect 和 resolved face aspect 计算实际字号。
+    pub fn adjusted_font_size(
+        &self,
+        primary_font_id: u32,
+        resolved_font_id: u32,
+        font_size: f32,
+        adjustment: crate::font::FontSizeAdjustment,
+    ) -> f32 {
+        // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+        let target = match adjustment {
+            crate::font::FontSizeAdjustment::None => return font_size,
+            crate::font::FontSizeAdjustment::ExHeight(value) if value.is_finite() && value >= 0.0 => value,
+            crate::font::FontSizeAdjustment::ExHeight(_) => return font_size,
+            crate::font::FontSizeAdjustment::FromFont => match self.x_height_aspect(primary_font_id) {
+                Some(value) => value,
+                None => return font_size,
+            },
+        };
+        let Some(aspect) = self.x_height_aspect(resolved_font_id) else {
+            return font_size;
+        };
+        let adjusted = font_size * target / aspect;
+        if adjusted.is_finite() && adjusted >= 0.0 {
+            adjusted
+        } else {
+            font_size
+        }
     }
 
     /// 构建 per-family 行度量映射（U1b-wiring 激活 / per-font line-height A/B）。

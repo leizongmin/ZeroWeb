@@ -23,6 +23,27 @@ pub enum TextDirection {
     RightToLeft,
 }
 
+/// CSS `font-size-adjust` 对 shaping face 的字号调整。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontSizeAdjustment {
+    /// 不调整字号。
+    None,
+    /// 使用显式 ex-height aspect value。
+    ExHeight(f32),
+    /// 使用 primary face 自身的 ex-height aspect value。
+    FromFont,
+}
+
+impl FontSizeAdjustment {
+    pub(crate) fn cache_key(self) -> (u8, u32) {
+        match self {
+            Self::None => (0, 0),
+            Self::ExHeight(value) => (1, value.to_bits()),
+            Self::FromFont => (2, 0),
+        }
+    }
+}
+
 /// 应用于完整 shaping run 的 OpenType feature。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OpenTypeFeature {
@@ -46,6 +67,8 @@ pub struct ShapedGlyph {
     pub glyph_id: u32,
     /// 字体 ID
     pub font_id: FontId,
+    /// resolved face 应用 `font-size-adjust` 后的实际字号。
+    pub font_size: f32,
     /// 相对于行首的水平前进宽度（像素）
     pub advance_x: f32,
     /// 同一源码字符未应用 kerning/GPOS 时的裸 glyph advance（像素）。
@@ -127,27 +150,51 @@ impl<'a> TextShaper<'a> {
         direction: TextDirection,
         features: &[OpenTypeFeature],
     ) -> Vec<ShapedGlyph> {
+        self.shape_single_line_with_font_ids_and_adjustment(
+            font_ids,
+            text,
+            font_size,
+            direction,
+            features,
+            FontSizeAdjustment::None,
+        )
+    }
+
+    /// 使用有序 CSS face 列表和 per-face `font-size-adjust` 整形文本。
+    pub fn shape_single_line_with_font_ids_and_adjustment(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+        features: &[OpenTypeFeature],
+        adjustment: FontSizeAdjustment,
+    ) -> Vec<ShapedGlyph> {
         let primary_id = font_ids
             .first()
             .copied()
             .map(FontId)
             .or(self.default_font_id)
             .unwrap_or(FontId(0));
+        let primary_size = self
+            .font_loader
+            .adjusted_font_size(primary_id.0, primary_id.0, font_size, adjustment);
 
         // 尝试 rustybuzz shaping
         if !font_ids.is_empty() || self.default_font_id.is_some() {
             if (font_ids.len() > 1 || shaped_fallback_enabled())
-                && let Some(glyphs) = self.shape_with_fallback_runs(font_ids, text, font_size, direction, features)
+                && let Some(glyphs) =
+                    self.shape_with_fallback_runs(font_ids, text, font_size, direction, features, adjustment)
             {
                 return glyphs;
             }
-            if let Some(glyphs) = self.shape_with_rustybuzz(primary_id, text, font_size, direction, features) {
+            if let Some(glyphs) = self.shape_with_rustybuzz(primary_id, text, primary_size, direction, features) {
                 return glyphs;
             }
         }
 
         // 回退：fontdue 逐字符映射
-        let mut glyphs = self.shape_fallback(text, font_size, primary_id);
+        let mut glyphs = self.shape_fallback(text, primary_size, primary_id);
         if direction == TextDirection::RightToLeft {
             glyphs.reverse();
         }
@@ -164,6 +211,7 @@ impl<'a> TextShaper<'a> {
         font_size: f32,
         direction: TextDirection,
         features: &[OpenTypeFeature],
+        adjustment: FontSizeAdjustment,
     ) -> Option<Vec<ShapedGlyph>> {
         if text.is_empty() || direction != TextDirection::LeftToRight || !features.is_empty() {
             return None;
@@ -202,7 +250,10 @@ impl<'a> TextShaper<'a> {
         let mut result = Vec::new();
         for (start, end, font_id) in runs {
             let run_text = text.get(start..end)?;
-            let mut glyphs = self.shape_with_rustybuzz(font_id, run_text, font_size, direction, features)?;
+            let resolved_size = self
+                .font_loader
+                .adjusted_font_size(primary_id.0, font_id.0, font_size, adjustment);
+            let mut glyphs = self.shape_with_rustybuzz(font_id, run_text, resolved_size, direction, features)?;
             let cluster_base = u32::try_from(start).ok()?;
             for glyph in &mut glyphs {
                 glyph.cluster = glyph.cluster.checked_add(cluster_base)?;
@@ -281,6 +332,7 @@ impl<'a> TextShaper<'a> {
             glyphs.push(ShapedGlyph {
                 glyph_id: info.glyph_id,
                 font_id,
+                font_size,
                 advance_x,
                 unshaped_advance_x,
                 x_offset: pos.x_offset as f32 * px_per_unit,
@@ -310,6 +362,7 @@ impl<'a> TextShaper<'a> {
             glyphs.push(ShapedGlyph {
                 glyph_id,
                 font_id,
+                font_size,
                 advance_x,
                 unshaped_advance_x: advance_x,
                 x_offset: 0.0,
@@ -717,7 +770,8 @@ mod tests {
                     "f\u{200C}i",
                     16.0,
                     TextDirection::LeftToRight,
-                    &[]
+                    &[],
+                    FontSizeAdjustment::None,
                 )
                 .is_none(),
             "ZWNJ must remain in the primary grapheme run"
@@ -725,7 +779,14 @@ mod tests {
 
         let text = format!("A{ch}B");
         let glyphs = shaper
-            .shape_with_fallback_runs(&[primary, fallback], &text, 16.0, TextDirection::LeftToRight, &[])
+            .shape_with_fallback_runs(
+                &[primary, fallback],
+                &text,
+                16.0,
+                TextDirection::LeftToRight,
+                &[],
+                FontSizeAdjustment::None,
+            )
             .expect("fallback run");
 
         assert_eq!(glyphs.len(), 3);

@@ -235,7 +235,7 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
 #[cfg(test)]
 mod feature_tests {
     use super::*;
-    use zero_render_foundation::font::TextDirection;
+    use zero_render_foundation::font::{FontSizeAdjustment, TextDirection};
 
     #[test]
     fn font_face_feature_settings_register_on_loaded_face() {
@@ -276,6 +276,8 @@ mod feature_tests {
         let resolver = loader.build_font_resolver();
         let primary = *resolver.get("PrimaryAhem").expect("primary alias");
         let secondary = *resolver.get("SecondaryAhem").expect("secondary alias");
+        assert!((loader.x_height_aspect(primary).expect("primary x-height") - 0.5).abs() < 0.001);
+        assert!((loader.x_height_aspect(secondary).expect("secondary x-height") - 0.25).abs() < 0.001);
 
         let glyphs = loader
             .shape_text_cached_with_font_ids(&[primary, secondary], "xA", 100.0, TextDirection::LeftToRight, &[])
@@ -284,7 +286,42 @@ mod feature_tests {
         assert_eq!(glyphs.len(), 2);
         assert_eq!(glyphs[0].font_id.0, primary);
         assert_eq!(glyphs[1].font_id.0, secondary);
+        assert_eq!(
+            glyphs.iter().map(|glyph| glyph.font_size).collect::<Vec<_>>(),
+            vec![100.0, 100.0]
+        );
         assert_eq!(glyphs.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![0, 1]);
+
+        let adjusted = loader
+            .shape_text_cached_with_font_ids_and_adjustment(
+                &[primary, secondary],
+                "xA",
+                100.0,
+                TextDirection::LeftToRight,
+                &[],
+                FontSizeAdjustment::ExHeight(0.5),
+            )
+            .expect("shape adjusted fallback");
+        assert_eq!(
+            adjusted.iter().map(|glyph| glyph.font_size).collect::<Vec<_>>(),
+            vec![100.0, 200.0],
+            "each resolved face must preserve the requested 0.5 ex-height"
+        );
+
+        let from_font = loader
+            .shape_text_cached_with_font_ids_and_adjustment(
+                &[primary, secondary],
+                "xA",
+                100.0,
+                TextDirection::LeftToRight,
+                &[],
+                FontSizeAdjustment::FromFont,
+            )
+            .expect("shape from-font fallback");
+        assert_eq!(
+            from_font.iter().map(|glyph| glyph.font_size).collect::<Vec<_>>(),
+            vec![100.0, 200.0]
+        );
 
         let reversed = loader
             .shape_text_cached_with_font_ids(&[secondary, primary], "xA", 100.0, TextDirection::LeftToRight, &[])

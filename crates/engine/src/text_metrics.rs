@@ -140,6 +140,7 @@ mod tests {
         ShapedGlyph {
             glyph_id,
             font_id: FontId(1),
+            font_size: 16.0,
             advance_x: 8.0,
             unshaped_advance_x: 8.0,
             x_offset: 0.0,
