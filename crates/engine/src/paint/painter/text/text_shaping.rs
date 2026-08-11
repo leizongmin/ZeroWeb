@@ -381,7 +381,13 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
         set_feature(&mut features, *b"calt", enabled as u32);
     }
 
-    if !style.letter_spacing_normal {
+    // https://drafts.csswg.org/css-fonts-4/#feature-precedence
+    // Only non-zero letter-spacing suppresses ligatures; explicit `0em` does not.
+    let has_nonzero_spacing = match style.letter_spacing {
+        zero_style_system::LengthValue::Px(v) => v.abs() > f64::EPSILON,
+        _ => !style.letter_spacing_normal,
+    };
+    if has_nonzero_spacing {
         set_feature(&mut features, *b"liga", 0);
         set_feature(&mut features, *b"clig", 0);
     }
@@ -838,12 +844,22 @@ mod tests {
             vec![OpenTypeFeature::new(*b"liga", 1), OpenTypeFeature::new(*b"clig", 1),]
         );
 
+        // letter-spacing: 0em — explicit zero does NOT suppress ligatures
         style.letter_spacing_normal = false;
+        style.letter_spacing = zero_style_system::LengthValue::Px(0.0);
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"liga", 1), OpenTypeFeature::new(*b"clig", 1),]
+        );
+
+        // letter-spacing: 0.1em — non-zero DOES suppress ligatures
+        style.letter_spacing = zero_style_system::LengthValue::Px(3.2);
         assert_eq!(
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"liga", 0), OpenTypeFeature::new(*b"clig", 0),]
         );
 
+        // font-feature-settings: 'liga' on — highest priority, re-enables
         style.font_feature_settings =
             zero_style_system::FontFeatureSettingsValue::Features(vec![zero_style_system::FontFeatureSetting {
                 tag: *b"liga",
