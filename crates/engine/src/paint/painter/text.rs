@@ -114,8 +114,10 @@ impl super::Painter {
         let (default_font_id, resolved_italic) =
             self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
         // R2497：font-style:italic/oblique 且 resolved face 非 italic → synthetic italic shear。
-        let synthetic_italic =
-            matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_)) && !resolved_italic;
+        // R3248：font-synthesis:style 为 false 时禁止合成斜体。
+        let synthetic_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_))
+            && !resolved_italic
+            && style.font_synthesis.style;
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
 
@@ -1091,7 +1093,10 @@ impl super::Painter {
                                         matches!(s.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_))
                                     })
                                     || container_want_italic;
-                                want_it && !resolved_italic
+                                let synth_allowed = owner_style_opt
+                                    .map(|s| s.font_synthesis.style)
+                                    .unwrap_or(true);
+                                want_it && !resolved_italic && synth_allowed
                             };
                             let emphasis_mark: Option<char> =
                                 owner_style_opt.and_then(|s| match s.text_emphasis_style {

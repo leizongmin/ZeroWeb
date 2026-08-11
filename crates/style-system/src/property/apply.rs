@@ -511,6 +511,61 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis
+        "font-synthesis" => {
+            if let Some(v) = values::parse_font_synthesis(value) {
+                style.font_synthesis = v;
+                return true;
+            }
+        }
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis-weight
+        "font-synthesis-weight" => match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => {
+                style.font_synthesis.weight = true;
+                return true;
+            }
+            "none" => {
+                style.font_synthesis.weight = false;
+                return true;
+            }
+            _ => {}
+        },
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis-style
+        "font-synthesis-style" => match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => {
+                style.font_synthesis.style = true;
+                return true;
+            }
+            "none" => {
+                style.font_synthesis.style = false;
+                return true;
+            }
+            _ => {}
+        },
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis-small-caps
+        "font-synthesis-small-caps" => match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => {
+                style.font_synthesis.small_caps = true;
+                return true;
+            }
+            "none" => {
+                style.font_synthesis.small_caps = false;
+                return true;
+            }
+            _ => {}
+        },
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis-position
+        "font-synthesis-position" => match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => {
+                style.font_synthesis.position = true;
+                return true;
+            }
+            "none" => {
+                style.font_synthesis.position = false;
+                return true;
+            }
+            _ => {}
+        },
         "text-align" => {
             if let Some(v) = parse_text_align(value) {
                 style.text_align = v;

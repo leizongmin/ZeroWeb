@@ -7,7 +7,7 @@ pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, ContentVisibilityValue, CounterActionValue, DisplayValue, FilterValue,
     FlexDirectionValue, FlexWrapValue, FontFeatureSetting, FontFeatureSettingsValue, FontStyleValue,
-    FontVariantLigaturesValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowClipMarginBox,
+    FontSynthesisValue, FontVariantLigaturesValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowClipMarginBox,
     OverflowClipMarginValue, OverflowValue, PolygonFillRule, PositionValue, QuotesValue, ScrollSnapAlignValue,
     ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
     VerticalAlignValue, VisibilityValue,
@@ -1440,6 +1440,8 @@ pub enum PropertyValue {
     FontFeatureSettings(FontFeatureSettingsValue),
     /// font-variant-ligatures 值。
     FontVariantLigatures(FontVariantLigaturesValue),
+    /// font-synthesis 值。
+    FontSynthesis(FontSynthesisValue),
     /// direction 值。
     Direction(DirectionValue),
     /// unicode-bidi 值。

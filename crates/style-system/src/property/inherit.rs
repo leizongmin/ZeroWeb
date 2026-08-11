@@ -47,6 +47,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_variant_ligatures = parent.font_variant_ligatures;
             true
         }
+        "font-synthesis" => {
+            child.font_synthesis = parent.font_synthesis;
+            true
+        }
+        "font-synthesis-weight" | "font-synthesis-style" | "font-synthesis-small-caps" | "font-synthesis-position" => {
+            child.font_synthesis = parent.font_synthesis;
+            true
+        }
         "text-align" => {
             child.text_align = parent.text_align.clone();
             true
@@ -735,6 +743,26 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-ligatures" => {
             style.font_variant_ligatures = default_style.font_variant_ligatures;
+            true
+        }
+        "font-synthesis" => {
+            style.font_synthesis = default_style.font_synthesis;
+            true
+        }
+        "font-synthesis-weight" => {
+            style.font_synthesis.weight = true;
+            true
+        }
+        "font-synthesis-style" => {
+            style.font_synthesis.style = true;
+            true
+        }
+        "font-synthesis-small-caps" => {
+            style.font_synthesis.small_caps = true;
+            true
+        }
+        "font-synthesis-position" => {
+            style.font_synthesis.position = true;
             true
         }
         // 文本

@@ -79,6 +79,11 @@ impl PropertyRegistry {
             "font-size-adjust" => Some(FontSizeAdjust(FontSizeAdjustValue::None)),
             "font-feature-settings" => Some(FontFeatureSettings(FontFeatureSettingsValue::Normal)),
             "font-variant-ligatures" => Some(FontVariantLigatures(FontVariantLigaturesValue::default())),
+            "font-synthesis"
+            | "font-synthesis-weight"
+            | "font-synthesis-style"
+            | "font-synthesis-small-caps"
+            | "font-synthesis-position" => Some(FontSynthesis(FontSynthesisValue::default())),
 
             // 文本
             "text-align" => Some(TextAlign(TextAlignValue::Start)),
@@ -359,6 +364,11 @@ impl PropertyRegistry {
                 | "font-size-adjust"
                 | "font-feature-settings"
                 | "font-variant-ligatures"
+                | "font-synthesis"
+                | "font-synthesis-weight"
+                | "font-synthesis-style"
+                | "font-synthesis-small-caps"
+                | "font-synthesis-position"
                 | "text-align"
                 | "text-transform"
                 | "letter-spacing"
@@ -452,6 +462,11 @@ impl PropertyRegistry {
             "font-size-adjust",
             "font-feature-settings",
             "font-variant-ligatures",
+            "font-synthesis",
+            "font-synthesis-weight",
+            "font-synthesis-style",
+            "font-synthesis-small-caps",
+            "font-synthesis-position",
             "text-align",
             "text-decoration",
             "text-decoration-line",

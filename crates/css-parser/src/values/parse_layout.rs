@@ -818,3 +818,79 @@ pub fn parse_font_variant_ligatures(value: &str) -> Option<FontVariantLigaturesV
     }
     saw_keyword.then_some(result)
 }
+
+/// https://drafts.csswg.org/css-fonts-4/#font-synthesis
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FontSynthesisValue {
+    /// Synthesize bold weight.
+    pub weight: bool,
+    /// Synthesize italic style.
+    pub style: bool,
+    /// Synthesize small-caps.
+    pub small_caps: bool,
+    /// Synthesize sub/super position.
+    pub position: bool,
+}
+
+impl Default for FontSynthesisValue {
+    fn default() -> Self {
+        Self {
+            weight: true,
+            style: true,
+            small_caps: true,
+            position: true,
+        }
+    }
+}
+
+/// https://drafts.csswg.org/css-fonts-4/#font-synthesis
+pub fn parse_font_synthesis(value: &str) -> Option<FontSynthesisValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(FontSynthesisValue {
+            weight: false,
+            style: false,
+            small_caps: false,
+            position: false,
+        });
+    }
+
+    let mut result = FontSynthesisValue {
+        weight: false,
+        style: false,
+        small_caps: false,
+        position: false,
+    };
+    let mut saw_keyword = false;
+    for token in value.split_whitespace() {
+        match token.to_ascii_lowercase().as_str() {
+            "weight" => {
+                if result.weight {
+                    return None;
+                }
+                result.weight = true;
+            }
+            "style" => {
+                if result.style {
+                    return None;
+                }
+                result.style = true;
+            }
+            "small-caps" => {
+                if result.small_caps {
+                    return None;
+                }
+                result.small_caps = true;
+            }
+            "position" => {
+                if result.position {
+                    return None;
+                }
+                result.position = true;
+            }
+            _ => return None,
+        }
+        saw_keyword = true;
+    }
+    saw_keyword.then_some(result)
+}
