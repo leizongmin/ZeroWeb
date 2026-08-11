@@ -854,3 +854,100 @@ fn test_window_print_and_stop_r3246() {
     sandbox.execute("globalThis.__alias = (window.print === globalThis.print && window.stop === globalThis.stop);").unwrap();
     assert_eq!(sandbox.execute("globalThis.__alias").unwrap().value, "true", "window.print/stop 与 globalThis 别名一致");
 }
+
+#[test]
+fn test_focus_blur_events_r3247() {
+    // R3247：el.focus()/el.blur() 派发 focus/blur/focusin/focusout 事件（DOM §3.3 Focus + UI Events）。
+    // 此前仅记 _activeElKey 不派发事件（known limitation ②）。表单 blur 校验 / focus 样式 / analytics 高频。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='wrap'><input id='a'><input id='b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① focus() 派发 'focus'(非 bubble) + 'focusin'(bubble)；activeElement 更新
+    sandbox.execute(
+        "globalThis.__evts = [];\
+         var a = document.getElementById('a');\
+         a.addEventListener('focus', function(){ globalThis.__evts.push('a:focus'); });\
+         a.addEventListener('focusin', function(){ globalThis.__evts.push('a:focusin'); });\
+         a.focus();\
+         globalThis.__ae = (document.activeElement === a);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__evts.join(',')").unwrap().value, "a:focus,a:focusin", "focus() 派发 focus + focusin");
+    assert_eq!(sandbox.execute("globalThis.__ae").unwrap().value, "true", "focus() 后 activeElement===该元素");
+
+    // ② blur() 派发 'blur'(非 bubble) + 'focusout'(bubble)
+    sandbox.execute(
+        "globalThis.__evts2 = [];\
+         var a = document.getElementById('a');\
+         a.addEventListener('blur', function(){ globalThis.__evts2.push('a:blur'); });\
+         a.addEventListener('focusout', function(){ globalThis.__evts2.push('a:focusout'); });\
+         a.blur();",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__evts2.join(',')").unwrap().value, "a:focusout,a:blur", "blur() 派发 focusout + blur");
+
+    // ③ 焦点 A→B 移动：A 失焦（focusout+blur）、B 获焦（focus+focusin）
+    sandbox.execute(
+        "globalThis.__move = [];\
+         var a = document.getElementById('a'); var b = document.getElementById('b');\
+         a.addEventListener('focus', function(){ globalThis.__move.push('a:focus'); });\
+         a.addEventListener('blur', function(){ globalThis.__move.push('a:blur'); });\
+         a.addEventListener('focusout', function(){ globalThis.__move.push('a:focusout'); });\
+         b.addEventListener('focus', function(){ globalThis.__move.push('b:focus'); });\
+         b.addEventListener('focusin', function(){ globalThis.__move.push('b:focusin'); });\
+         a.focus();\
+         globalThis.__move.length = 0;\
+         b.focus();\
+         globalThis.__moveSeq = globalThis.__move.join(',');\
+         globalThis.__moveOrderOk = (globalThis.__move.indexOf('a:focusout') < globalThis.__move.indexOf('b:focus'));",
+    ).unwrap();
+    let move_seq = sandbox.execute("globalThis.__moveSeq").unwrap().value;
+    assert!(move_seq.contains("a:focusout") && move_seq.contains("a:blur"), "A→B：A 失焦派发 focusout+blur\n{move_seq}");
+    assert!(move_seq.contains("b:focus") && move_seq.contains("b:focusin"), "A→B：B 获焦派发 focus+focusin\n{move_seq}");
+    // 序：focusout(A) 在 focus(B) 前（spec 旧先失焦序）
+    assert_eq!(sandbox.execute("globalThis.__moveOrderOk").unwrap().value, "true", "A→B 序：focusout(A) 先于 focus(B)\n{move_seq}");
+
+    // ④ focusin/focusout 冒泡到父；focus/blur 不冒泡
+    sandbox.execute(
+        "globalThis.__bub = [];\
+         var wrap = document.getElementById('wrap');\
+         wrap.addEventListener('focus', function(){ globalThis.__bub.push('wrap:focus'); });\
+         wrap.addEventListener('focusin', function(){ globalThis.__bub.push('wrap:focusin'); });\
+         wrap.addEventListener('blur', function(){ globalThis.__bub.push('wrap:blur'); });\
+         wrap.addEventListener('focusout', function(){ globalThis.__bub.push('wrap:focusout'); });\
+         document.getElementById('a').focus();\
+         globalThis.__bubHasFocusin = globalThis.__bub.indexOf('wrap:focusin') >= 0;\
+         globalThis.__bubHasFocus = globalThis.__bub.indexOf('wrap:focus') >= 0;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__bubHasFocusin").unwrap().value, "true", "focusin 冒泡到父");
+    assert_eq!(sandbox.execute("globalThis.__bubHasFocus").unwrap().value, "false", "focus 不冒泡（父未收 focus）");
+
+    // ⑤ 已聚焦元素再 focus() no-op（不重派 focus）
+    sandbox.execute(
+        "globalThis.__refocus = 0;\
+         var a = document.getElementById('a');\
+         a.addEventListener('focus', function(){ globalThis.__refocus++; });\
+         a.focus();\
+         var before = globalThis.__refocus;\
+         a.focus();\
+         globalThis.__noop = (globalThis.__refocus === before);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__noop").unwrap().value, "true", "已聚焦元素再 focus() 不重派（spec no-op）");
+
+    // ⑥ 非当前焦点元素 blur() no-op
+    sandbox.execute(
+        "globalThis.__bblur = 0;\
+         var b = document.getElementById('b');\
+         b.addEventListener('blur', function(){ globalThis.__bblur++; });\
+         b.blur();\
+         globalThis.__bblur0 = (globalThis.__bblur === 0);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__bblur0").unwrap().value, "true", "非焦点元素 blur() no-op（不派 blur）");
+}

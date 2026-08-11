@@ -130,6 +130,27 @@
 
 ## 最近完成的改进
 
+### el.focus()/blur() 派发焦点事件（本轮 R3247，engine shim）—— 转向「present-API 行为 gap」
+
+承接 R3246 战略结论（shim absent-API 面收敛），本轮**转方向**——从「找 absent 方法」转向「找 present API 的行为 gap」（价值更高：常见 API 已存在但行为缺关键语义）。先核 R3246 续候选：native DOM Range（range.rs）实测**internal-only**（shim 的 `_makeRange` 覆盖全 setStart/setEnd/setStartBefore/After/selectNode*/collapse/deleteContents/extractContents/cloneContents/insertNode/surroundContents R2804/R2929/R2930，不委派 native）；net websocket 实测**tungstenite 薄封装**（yield 低，R3220 已 defer）。native Rust 全流 `grep FIXME/TODO/unimplemented!`（excl tests）零实质命中——代码无 TODO 债。
+
+**定位真行为 gap**：`el.focus()`/`el.blur()` 此前**仅记 `_activeElKey` 状态，不派发 focus/blur/focusin/focusout 事件**（part04 旧实现 documented limitation ②）。表单 blur 校验 / focus 样式 / focus analytics / a11y 高频——事件不派发则监听器永不触发。
+
+**实现（R3247）**：DOM §3.3 Focus + UI Events（焦点事件序）。focus() 焦点 old→new：`focusout(旧,bubbles)` → `focus(新)` → `focusin(新,bubbles)` → `blur(旧)`；blur()：`focusout(bubbles)` → `blur`。均 `cancelable:false`。经既有 `_dispatchWithBubble`/`_makeEvent`（旧元素经 `_proxyCache[oldKey].dispatchEvent`，本元素经闭包 `_dispatchWithBubble(key,sel,handle,...)`）。**仅焦点真变时派发**：已聚焦元素再 `focus()` no-op（spec 不重派）；非焦点元素 `blur()` no-op。先更 `_activeElKey` 再派发防 handler 重入。
+
+**为何净正向**：① **闭合真行为 gap**——focus/blur/focusin/focusout 事件从「不派发」到 spec 合规（含冒泡语义：focusin/focusout 冒泡、focus/blur 不冒泡）；② **零回归**——zero-engine 1959 全绿（+1 测，dispatch 热路径 + 既有 focus/activeElement 测全过）；③ 低风险（focus()/blur() 方法体内加事件派发，复用既有 dispatch 原语）；④ engine 属本流域。已知保留限制：① 无真键盘焦点；③ 不校验可聚焦性；④ 无 tabindex 焦点序（均非本片范围）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part04.js` | `focus()`/`blur()` 加 focus/blur/focusin/focusout 事件派发（spec 序 + 仅真变派发 + 防重入，DOM §3.3 注释）。 |
+| `crates/engine/src/js_dom_bridge_tests/part14.rs` | +1 测 `test_focus_blur_events_r3247`：focus 派 focus+focusin + activeElement 更新；blur 派 focusout+blur；A→B 移动 A 失焦(focusout+blur) B 获焦(focus+focusin) + 序（focusout(A)先于focus(B)）；focusin 冒泡到父 / focus 不冒泡；已聚焦重 focus no-op；非焦点 blur no-op。 |
+
+验证：`cargo fmt -p zero-engine -- --check` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1959 全绿**（+1 测，零回归）。踩坑 1 轮：① Rust `String.indexOf`（JS 方法）误用→改 JS 端 indexOf 返布尔；② `bub.contains("wrap:focus")` 子串误匹配 `wrap:focusout`→改数组精确 membership。
+
+**下一步**：「present-API 行为 gap」方向比「absent 方法」价值高，续扫。候选：① **`el.click()` 真实化核实**——是否派发 click 事件 + mousedown/mouseup（现 `_makeEvent('click')` 派 click，但 mousedown/mouseup/up 配套是否齐？核实）；② **change/input 事件派发面核实**（设 value/checked/select 是否一致派发，表单库高频）；③ **`el.scrollIntoView` 派发 scroll 事件**（现 no-op，核实是否应派 scroll）；④ **submit 事件** 表单提交语义核实；⑤ native DOM Range `range.rs` 内部 spec 审（internal，低 page 价值）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。⚠️ 跨流 clippy（process_backend.rs 归因 16d6a42e）+ compositor flake 仍待渲染/浏览器流。
+
+---
+
 ### window.print() / window.stop()（本轮 R3246，engine shim）—— pivot 出 canvas 续片 3
 
 承接 R3245（setRangeText），续 pivot 出 canvas 的 engine/dom Web API gap 扫描。本轮重扫**严 cross-check 剔除 stale 命中**（上轮 master.md 候选 `document.hasFocus` 实测**已实现** part06:1012，R2824；`Element.scrollTo`/`window.scrollTo` grep 误报，实测**已实现** part01:1594 R3047；CharacterData appendData/deleteData/insertData/replaceData/substringData **已实现** part04:390-428；CSSStyleSheet insertRule/deleteRule/cssRules **已实现** part06 R2808-R2810）。剔除后定位 **`window.print()` + `window.stop()` 全缺**——`print` 此前仅 `beforeprint`/`afterprint` 事件名命中，方法本体 absent。

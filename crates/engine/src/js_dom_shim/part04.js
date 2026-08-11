@@ -556,14 +556,39 @@
         if (prop === 'removeAttributeNS') {
           return function(ns, localName) { return proxy.removeAttribute(_nsQualName(ns, localName)); };
         }
-        // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）。纯 in-JS 状态：
-        // focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；
-        // ② 不派发 focus/blur 事件；③ 不校验可聚焦性（非聚焦元素仍记焦点）；④ 无 tabindex 焦点序。
+        // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）+ 焦点事件派发（R3247）。
+        // 纯 in-JS 状态：focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；
+        // ③ 不校验可聚焦性（非聚焦元素仍记焦点）；④ 无 tabindex 焦点序。
+        // R3247：派发 focus/blur/focusin/focusout 事件（DOM §3.3 Focus + UI Events）。焦点 old→new 序：
+        // focusout(旧,bubbles) → focus(新) → focusin(新,bubbles) → blur(旧)。blur()：focusout(bubbles) → blur。
+        // 均不可取消（cancelable:false）。仅焦点真变时派发（已聚焦元素 focus() no-op，spec 不重派 focus）。
         if (prop === 'focus') {
-          return function() { _activeElKey = key; };
+          return function() {
+            var oldKey = _activeElKey;
+            if (oldKey === key) return; // 已聚焦 → no-op（spec：不重派 focus）
+            var oldProxy = (oldKey && _proxyCache[oldKey]) ? _proxyCache[oldKey] : null;
+            _activeElKey = key; // 先更状态防 handler 重入（focus handler 再 focus 其它元素时序自洽）
+            if (oldProxy) {
+              try { oldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e) {}
+            }
+            try {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('focus', { bubbles: false, cancelable: false }));
+              _dispatchWithBubble(key, sel, handle, _makeEvent('focusin', { bubbles: true, cancelable: false }));
+            } catch (_e) {}
+            if (oldProxy) {
+              try { oldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e) {}
+            }
+          };
         }
         if (prop === 'blur') {
-          return function() { if (_activeElKey === key) _activeElKey = null; };
+          return function() {
+            if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
+            _activeElKey = null;
+            try {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('focusout', { bubbles: true, cancelable: false }));
+              _dispatchWithBubble(key, sel, handle, _makeEvent('blur', { bubbles: false, cancelable: false }));
+            } catch (_e) {}
+          };
         }
         // R2938 `el.requestFullscreen()`——全屏请求（spec 返 Promise，headless 无真 OS 全屏）。grant/deny 二分：
         // fullscreenEnabled=true（默认）→ 设 fullscreenElement + 派 fullscreenchange + resolve；=false →
