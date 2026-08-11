@@ -5,6 +5,7 @@ use hashbrown::HashMap;
 use shaping::ShapeCache;
 use std::sync::Arc;
 
+mod metrics;
 mod shaping;
 
 /// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
@@ -653,44 +654,6 @@ impl FontLoader {
         let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
         let metrics = font.horizontal_line_metrics(size)?;
         Some((metrics.ascent, metrics.descent, metrics.line_gap))
-    }
-
-    /// 返回字体 OS/2 `sxHeight / unitsPerEm`。
-    pub fn x_height_aspect(&self, font_id: u32) -> Option<f32> {
-        let data = self.font_data.get(&font_id)?;
-        let face = rustybuzz::ttf_parser::Face::parse(data, 0).ok()?;
-        let x_height = f32::from(face.x_height()?);
-        let units_per_em = f32::from(face.units_per_em());
-        (x_height > 0.0 && units_per_em > 0.0).then_some(x_height / units_per_em)
-    }
-
-    /// 按 primary target aspect 和 resolved face aspect 计算实际字号。
-    pub fn adjusted_font_size(
-        &self,
-        primary_font_id: u32,
-        resolved_font_id: u32,
-        font_size: f32,
-        adjustment: crate::font::FontSizeAdjustment,
-    ) -> f32 {
-        // https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
-        let target = match adjustment {
-            crate::font::FontSizeAdjustment::None => return font_size,
-            crate::font::FontSizeAdjustment::ExHeight(value) if value.is_finite() && value >= 0.0 => value,
-            crate::font::FontSizeAdjustment::ExHeight(_) => return font_size,
-            crate::font::FontSizeAdjustment::FromFont => match self.x_height_aspect(primary_font_id) {
-                Some(value) => value,
-                None => return font_size,
-            },
-        };
-        let Some(aspect) = self.x_height_aspect(resolved_font_id) else {
-            return font_size;
-        };
-        let adjusted = font_size * target / aspect;
-        if adjusted.is_finite() && adjusted >= 0.0 {
-            adjusted
-        } else {
-            font_size
-        }
     }
 
     /// 构建 per-family 行度量映射（U1b-wiring 激活 / per-font line-height A/B）。

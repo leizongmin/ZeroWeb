@@ -1276,6 +1276,11 @@ impl super::Painter {
                                 }
                             }
 
+                            let size_adjust = fragment_font_size_adjustment(
+                                owner_style_opt,
+                                box_node.text_node_font_size_adjust.get(&$frag_nid),
+                                &style.font_size_adjust,
+                            );
                             let shaped_text_eligible = !char_advance_is_y
                                 && !$is_ahem
                                 && letter_spacing == 0.0
@@ -1287,7 +1292,8 @@ impl super::Painter {
                                 && !style.text_decoration_line.has_any()
                                 && owner_style_opt.is_none_or(|owner| {
                                     !owner.text_decoration_line.has_any()
-                                        && owner.background_color == ColorValue::Transparent
+                                        && (owner.background_color == ColorValue::Transparent
+                                            || text_shaping::font_size_adjustment_active(size_adjust))
                                 })
                                 && rotation.abs() < f32::EPSILON
                                 && transformed.chars().all(|ch| !is_cc_control_char(ch));
@@ -1314,11 +1320,6 @@ impl super::Painter {
                                 frag_font_id,
                             );
                             let open_type_features = style_open_type_features(shaping_style);
-                            let size_adjust = fragment_font_size_adjustment(
-                                owner_style_opt,
-                                box_node.text_node_font_size_adjust.get(&$frag_nid),
-                                &style.font_size_adjust,
-                            );
                             let advance_trace = fragment_advance_trace(
                                 &shaping_font_ids,
                                 &transformed,

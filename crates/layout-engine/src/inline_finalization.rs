@@ -512,7 +512,7 @@ pub(crate) fn store_font_sizes_from_ifc(
             if let Some(style) = font_style {
                 box_node
                     .text_node_font_size_adjust
-                    .insert(frag.node_id, style.font_size_adjust.clone());
+                    .insert(frag.node_id, style.font_size_adjust);
             }
             box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
             box_node

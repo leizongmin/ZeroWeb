@@ -487,7 +487,23 @@ impl InlineFormattingContext {
                     .font_size_adjust_overrides
                     .get(&run.node_id)
                     .unwrap_or(&zero_style_system::FontSizeAdjustValue::None);
-                source.measure_text_with_font_context(text, font_ids, run.font_size, run.is_ahem_font, size_adjust)
+                let width =
+                    source.measure_text_with_font_context(text, font_ids, run.font_size, run.is_ahem_font, size_adjust);
+                if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1")
+                    && !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None)
+                {
+                    tracing::info!(
+                        target: "zero_layout_engine::shaped_advance",
+                        node_id = ?run.node_id,
+                        font_id = ?run.font_id,
+                        ?font_ids,
+                        ?size_adjust,
+                        width,
+                        text,
+                        "ZW_LAYOUT_SHAPED_ADVANCE_TRACE"
+                    );
+                }
+                width
             }
             _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font),
         }

@@ -588,7 +588,13 @@ impl LayoutEngine {
         // 5a. 先标记孤立 table-internal 元素为匿名 table 根（建立 BFC），供 adjust_float_positions 识别
         mark_anonymous_table_roots(&mut root_box, styles, false);
         // 5a.1 纯文本 float shrink-to-fit（须在 adjust_float_positions 之前，使定位用收缩后宽度）
-        shrink_pure_text_floats(&mut root_box, doc, styles);
+        shrink_pure_text_floats(
+            &mut root_box,
+            doc,
+            styles,
+            self.advance_source.as_ref(),
+            self.font_resolver.as_ref(),
+        );
         adjust_float_positions(&mut root_box);
 
         // 5.2 后处理（R699 CSS §10.5.1）：非 BFC 块级元素 height:auto 时高度只计 in-flow

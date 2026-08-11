@@ -23,23 +23,52 @@ pub enum TextDirection {
     RightToLeft,
 }
 
+/// CSS `font-size-adjust` 使用的字体 metric。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontSizeAdjustMetric {
+    /// x-height / em。
+    ExHeight,
+    /// cap-height / em。
+    CapHeight,
+    /// "0" glyph horizontal advance / em。
+    ChWidth,
+    /// U+6C34 horizontal advance / em。
+    IcWidth,
+    /// U+6C34 vertical advance / em。
+    IcHeight,
+}
+
 /// CSS `font-size-adjust` 对 shaping face 的字号调整。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FontSizeAdjustment {
     /// 不调整字号。
     None,
-    /// 使用显式 ex-height aspect value。
-    ExHeight(f32),
-    /// 使用 primary face 自身的 ex-height aspect value。
-    FromFont,
+    /// 使用指定 metric；`target=None` 表示从 primary face 读取。
+    Adjust {
+        /// 调整依据。
+        metric: FontSizeAdjustMetric,
+        /// 显式 aspect value，或 `None`（`from-font`）。
+        target: Option<f32>,
+    },
 }
 
 impl FontSizeAdjustment {
     pub(crate) fn cache_key(self) -> (u8, u32) {
         match self {
             Self::None => (0, 0),
-            Self::ExHeight(value) => (1, value.to_bits()),
-            Self::FromFont => (2, 0),
+            Self::Adjust { metric, target } => {
+                let metric = match metric {
+                    FontSizeAdjustMetric::ExHeight => 0,
+                    FontSizeAdjustMetric::CapHeight => 1,
+                    FontSizeAdjustMetric::ChWidth => 2,
+                    FontSizeAdjustMetric::IcWidth => 3,
+                    FontSizeAdjustMetric::IcHeight => 4,
+                };
+                (
+                    1 + metric * 2 + u8::from(target.is_none()),
+                    target.map_or(0, f32::to_bits),
+                )
+            }
         }
     }
 }

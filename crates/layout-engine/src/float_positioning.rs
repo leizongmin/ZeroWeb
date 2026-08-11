@@ -145,10 +145,12 @@ pub(crate) fn shrink_pure_text_floats(
     box_node: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    advance_source: Option<&crate::inline::AdvanceSourceHandle>,
+    font_resolver: Option<&std::rc::Rc<HashMap<String, u32>>>,
 ) {
     // 先递归子树（深度优先），使嵌套容器内的 float 也被处理。
     for child in &mut box_node.children {
-        shrink_pure_text_floats(child, doc, styles);
+        shrink_pure_text_floats(child, doc, styles, advance_source, font_resolver);
     }
     // 仅处理 width:auto 的 float（非替换）。非 auto 宽度 / 非 float / replaced 由别处处理。
     if !box_node.declared_width_auto || matches!(box_node.float, FloatValue::None) || box_node.is_replaced {
@@ -173,14 +175,54 @@ pub(crate) fn shrink_pure_text_floats(
     let Some(dom_id) = box_node.node_id else {
         return;
     };
-    let text_max_w = crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles);
+    let adjusted_text_max_w = styles
+        .get(&dom_id)
+        .filter(|style| !matches!(style.font_size_adjust, zero_style_system::FontSizeAdjustValue::None))
+        .and_then(|_| adjusted_text_max_width(dom_id, doc, styles, advance_source?, font_resolver?));
+    let text_max_w =
+        adjusted_text_max_w.unwrap_or_else(|| crate::intrinsic_sizing::text_content_max_width(dom_id, doc, styles));
     let shrink_border_box =
         text_max_w + box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
     // 仅当内容确实更窄时才收缩（对内容更宽或显式宽度为 no-op）。
-    if shrink_border_box < box_node.width {
+    let expanded_adjusted_text = adjusted_text_max_w.is_some() && shrink_border_box > box_node.width;
+    if adjusted_text_max_w.is_some() || shrink_border_box < box_node.width {
         box_node.width = shrink_border_box;
         box_node.content_width = text_max_w;
     }
+    if expanded_adjusted_text {
+        let (_, line_height) = crate::inline::resolve_font_metrics(styles.get(&dom_id));
+        let frame = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+        box_node.content_height = line_height;
+        box_node.height = line_height + frame;
+    }
+}
+
+fn adjusted_text_max_width(
+    node_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    advance_source: &crate::inline::AdvanceSourceHandle,
+    font_resolver: &std::rc::Rc<HashMap<String, u32>>,
+) -> Option<f32> {
+    if doc.child_nodes(node_id).iter().any(|child_id| {
+        doc.get(*child_id)
+            .is_some_and(|node| matches!(node.kind, zero_dom::NodeKind::Element(_)))
+    }) {
+        return None;
+    }
+    let style = styles.get(&node_id)?;
+    let font_ids = crate::font_resolution::resolve_font_ids_for_style(
+        font_resolver,
+        &style.font_family,
+        &style.font_weight,
+        &style.font_style,
+    );
+    let text = crate::inline::collapse_whitespace(&doc.text_content(node_id)?);
+    let font_size = match &style.font_size {
+        zero_css_parser::values::LengthValue::Px(value) => *value as f32,
+        _ => crate::inline::DEFAULT_FONT_SIZE,
+    };
+    Some(advance_source.measure_text_with_font_context(&text, &font_ids, font_size, false, &style.font_size_adjust))
 }
 
 /// 垂直书写模式下 width:auto 块级元素收缩到内容（CSS §10.3.3 + CSS Writing Modes §7.1）。

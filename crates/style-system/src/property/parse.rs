@@ -172,37 +172,43 @@ pub fn parse_line_height(value: &str) -> Option<LineHeightValue> {
     None
 }
 
-/// 解析 CSS font-size-adjust 值（CSS Fonts 3 §3.6）。
+/// 解析 CSS `font-size-adjust` 值。
 ///
-/// 支持形式：
-/// - `none` → [`FontSizeAdjustValue::None`]（初始值）
-/// - `<number>`（无单位，如 `0.9`）→ [`FontSizeAdjustValue::Number`]；负值非法返回 None
-/// - `from-font` → [`FontSizeAdjustValue::FromFont`]
-///
-/// **暂不支持** CSS Fonts 4 两值形式（`ex-height 0.5` / `cap-height 0.5` 等）——
-/// 当前 corpus driving case（font-size-adjust-001，`font-size-adjust: 0.9`）用 Fonts 3
-/// 单 `<number>` 形式。两值形式留 Slice 2+。
+/// https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
 pub fn parse_font_size_adjust(value: &str) -> Option<FontSizeAdjustValue> {
-    let value = value.trim();
-    if value.eq_ignore_ascii_case("none") {
+    let value = value.trim().to_ascii_lowercase();
+    if value == "none" {
         return Some(FontSizeAdjustValue::None);
     }
-    if value.eq_ignore_ascii_case("from-font") {
-        return Some(FontSizeAdjustValue::FromFont);
-    }
-    // CSS Fonts 3 单 <number> 形式（无单位数字）
-    if let Ok(num) = value.parse::<f64>() {
-        // font-size-adjust <number> 不可为负（CSS 规范）；非数字后缀（px/em 等）不接受
-        if num >= 0.0
-            && !value.contains("px")
-            && !value.contains("em")
-            && !value.contains("rem")
-            && !value.contains("%")
-        {
-            return Some(FontSizeAdjustValue::Number(num));
+
+    let mut parts = value.splitn(2, char::is_whitespace);
+    let first = parts.next()?;
+    let metric = match first {
+        "ex-height" => Some(FontSizeAdjustMetric::ExHeight),
+        "cap-height" => Some(FontSizeAdjustMetric::CapHeight),
+        "ch-width" => Some(FontSizeAdjustMetric::ChWidth),
+        "ic-width" => Some(FontSizeAdjustMetric::IcWidth),
+        "ic-height" => Some(FontSizeAdjustMetric::IcHeight),
+        _ => None,
+    };
+    let basis_text = if metric.is_some() {
+        parts.next()?.trim()
+    } else {
+        value.as_str()
+    };
+    let basis = if basis_text == "from-font" {
+        FontSizeAdjustBasis::FromFont
+    } else {
+        let number = basis_text
+            .parse::<f64>()
+            .ok()
+            .or_else(|| values::parse_math_function(basis_text).and_then(|expr| values::eval_calc(&expr, None)))?;
+        if !number.is_finite() || number < 0.0 {
+            return None;
         }
-    }
-    None
+        FontSizeAdjustBasis::Number(number)
+    };
+    Some(FontSizeAdjustValue::Adjust { metric, basis })
 }
 
 /// 解析 CSS text-align 值。
@@ -558,22 +564,44 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn adjust(metric: Option<FontSizeAdjustMetric>, basis: FontSizeAdjustBasis) -> FontSizeAdjustValue {
+        FontSizeAdjustValue::Adjust { metric, basis }
+    }
+
     #[test]
     fn parse_font_size_adjust_none() {
         assert_eq!(parse_font_size_adjust("none"), Some(FontSizeAdjustValue::None));
         // 大小写不敏感
         assert_eq!(parse_font_size_adjust("NONE"), Some(FontSizeAdjustValue::None));
-        assert_eq!(parse_font_size_adjust("from-font"), Some(FontSizeAdjustValue::FromFont));
-        assert_eq!(parse_font_size_adjust("FROM-FONT"), Some(FontSizeAdjustValue::FromFont));
+        assert_eq!(
+            parse_font_size_adjust("from-font"),
+            Some(adjust(None, FontSizeAdjustBasis::FromFont))
+        );
+        assert_eq!(
+            parse_font_size_adjust("FROM-FONT"),
+            Some(adjust(None, FontSizeAdjustBasis::FromFont))
+        );
     }
 
     #[test]
     fn parse_font_size_adjust_number() {
         // CSS Fonts 3 单 <number> 形式（driving test font-size-adjust-001 用 0.9）
-        assert_eq!(parse_font_size_adjust("0.9"), Some(FontSizeAdjustValue::Number(0.9)));
-        assert_eq!(parse_font_size_adjust("0.5"), Some(FontSizeAdjustValue::Number(0.5)));
-        assert_eq!(parse_font_size_adjust("1.0"), Some(FontSizeAdjustValue::Number(1.0)));
-        assert_eq!(parse_font_size_adjust("0"), Some(FontSizeAdjustValue::Number(0.0)));
+        assert_eq!(
+            parse_font_size_adjust("0.9"),
+            Some(adjust(None, FontSizeAdjustBasis::Number(0.9)))
+        );
+        assert_eq!(
+            parse_font_size_adjust("0.5"),
+            Some(adjust(None, FontSizeAdjustBasis::Number(0.5)))
+        );
+        assert_eq!(
+            parse_font_size_adjust("1.0"),
+            Some(adjust(None, FontSizeAdjustBasis::Number(1.0)))
+        );
+        assert_eq!(
+            parse_font_size_adjust("0"),
+            Some(adjust(None, FontSizeAdjustBasis::Number(0.0)))
+        );
     }
 
     #[test]
@@ -590,9 +618,39 @@ mod tests {
     }
 
     #[test]
-    fn parse_font_size_adjust_fonts4_two_value_unsupported() {
-        // CSS Fonts 4 两值形式（ex-height 0.5）Slice 1 暂不支持 → None（不误判）
-        assert_eq!(parse_font_size_adjust("ex-height 0.5"), None);
+    fn parse_font_size_adjust_fonts4_two_value_metrics() {
+        assert_eq!(
+            parse_font_size_adjust("ex-height 0.5"),
+            Some(adjust(
+                Some(FontSizeAdjustMetric::ExHeight),
+                FontSizeAdjustBasis::Number(0.5)
+            ))
+        );
+        assert_eq!(
+            parse_font_size_adjust("cap-height calc(1462 / 2048)"),
+            Some(adjust(
+                Some(FontSizeAdjustMetric::CapHeight),
+                FontSizeAdjustBasis::Number(1462.0 / 2048.0)
+            ))
+        );
+        assert_eq!(
+            parse_font_size_adjust("ch-width calc(1.5 * 1128 / 2048)"),
+            Some(adjust(
+                Some(FontSizeAdjustMetric::ChWidth),
+                FontSizeAdjustBasis::Number(1.5 * 1128.0 / 2048.0)
+            ))
+        );
+        for (name, metric) in [
+            ("ic-width", FontSizeAdjustMetric::IcWidth),
+            ("ic-height", FontSizeAdjustMetric::IcHeight),
+        ] {
+            assert_eq!(
+                parse_font_size_adjust(&format!("{name} from-font")),
+                Some(adjust(Some(metric), FontSizeAdjustBasis::FromFont))
+            );
+        }
+        assert_eq!(parse_font_size_adjust("cap-height"), None);
+        assert_eq!(parse_font_size_adjust("unknown 0.5"), None);
     }
 
     #[test]
@@ -602,14 +660,14 @@ mod tests {
         // apply：property 写入 ComputedStyle
         let mut style = crate::property::ComputedStyle::default();
         assert!(apply_property_value(&mut style, "font-size-adjust", "0.9"));
-        assert_eq!(style.font_size_adjust, FontSizeAdjustValue::Number(0.9));
+        assert_eq!(style.font_size_adjust, adjust(None, FontSizeAdjustBasis::Number(0.9)));
         // 默认 = None
         let style2 = crate::property::ComputedStyle::default();
         assert_eq!(style2.font_size_adjust, FontSizeAdjustValue::None);
         // 继承：子元素继承父值
         let mut child = crate::property::ComputedStyle::default();
         assert!(inherit_property(&style, &mut child, "font-size-adjust"));
-        assert_eq!(child.font_size_adjust, FontSizeAdjustValue::Number(0.9));
+        assert_eq!(child.font_size_adjust, adjust(None, FontSizeAdjustBasis::Number(0.9)));
         // is_inherited 标记
         assert!(crate::property::PropertyRegistry::is_inherited("font-size-adjust"));
     }

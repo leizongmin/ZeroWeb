@@ -93,6 +93,10 @@ pub(super) fn fragment_font_size_adjustment(
     )
 }
 
+pub(super) fn font_size_adjustment_active(adjustment: zero_render_foundation::font::FontSizeAdjustment) -> bool {
+    !matches!(adjustment, zero_render_foundation::font::FontSizeAdjustment::None)
+}
+
 fn shaped_text_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0"))
@@ -156,7 +160,7 @@ pub(super) fn configure_paint_ifc_advance(
     {
         return context;
     }
-    let primary_ids: HashMap<NodeId, u32> = text_node_font_ids
+    let mut primary_ids: HashMap<NodeId, u32> = text_node_font_ids
         .iter()
         .filter_map(|(&text_node, &font_id)| {
             let parent_id = doc.parent_node(text_node)?;
@@ -184,6 +188,25 @@ pub(super) fn configure_paint_ifc_advance(
             eligible.then_some((parent_id, font_id.0))
         })
         .collect();
+    for (&node_id, size_adjust) in text_node_font_size_adjust {
+        if matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None) {
+            continue;
+        }
+        let Some(&font_id) = text_node_font_ids.get(&node_id) else {
+            continue;
+        };
+        let owner_id = if doc
+            .get(node_id)
+            .is_some_and(|node| matches!(node.kind, NodeKind::Element(_)))
+        {
+            node_id
+        } else if let Some(parent_id) = doc.parent_node(node_id) {
+            parent_id
+        } else {
+            continue;
+        };
+        primary_ids.entry(owner_id).or_insert(font_id.0);
+    }
     let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
         text_node_shaping_font_ids.clone()
     } else {

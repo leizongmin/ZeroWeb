@@ -235,7 +235,7 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
 #[cfg(test)]
 mod feature_tests {
     use super::*;
-    use zero_render_foundation::font::{FontSizeAdjustment, TextDirection};
+    use zero_render_foundation::font::{FontSizeAdjustMetric, FontSizeAdjustment, TextDirection};
 
     #[test]
     fn font_face_feature_settings_register_on_loaded_face() {
@@ -299,7 +299,10 @@ mod feature_tests {
                 100.0,
                 TextDirection::LeftToRight,
                 &[],
-                FontSizeAdjustment::ExHeight(0.5),
+                FontSizeAdjustment::Adjust {
+                    metric: FontSizeAdjustMetric::ExHeight,
+                    target: Some(0.5),
+                },
             )
             .expect("shape adjusted fallback");
         assert_eq!(
@@ -315,7 +318,10 @@ mod feature_tests {
                 100.0,
                 TextDirection::LeftToRight,
                 &[],
-                FontSizeAdjustment::FromFont,
+                FontSizeAdjustment::Adjust {
+                    metric: FontSizeAdjustMetric::ExHeight,
+                    target: None,
+                },
             )
             .expect("shape from-font fallback");
         assert_eq!(
@@ -327,5 +333,47 @@ mod feature_tests {
             .shape_text_cached_with_font_ids(&[secondary, primary], "xA", 100.0, TextDirection::LeftToRight, &[])
             .expect("shape reversed fallback");
         assert_eq!(reversed[0].font_id.0, secondary, "ordered cache keys must not collide");
+    }
+
+    #[test]
+    fn noto_font_size_adjust_metrics_match_wpt_contract() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/fonts/noto/noto-sans-v8-latin-regular.woff");
+        let woff = std::fs::read(path).expect("read Noto WOFF");
+        let sfnt = zero_render_foundation::font::decode_woff(&woff).expect("decode Noto WOFF");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(&sfnt).expect("load Noto font");
+
+        let cases = [
+            (FontSizeAdjustMetric::CapHeight, 1462.0 / 2048.0),
+            (FontSizeAdjustMetric::ChWidth, 1128.0 / 2048.0),
+            (FontSizeAdjustMetric::IcWidth, 1.0),
+            (FontSizeAdjustMetric::IcHeight, 1.0),
+        ];
+        for (metric, aspect) in cases {
+            let actual = loader.font_metric_aspect(font_id, metric).expect("font metric");
+            assert!((actual - aspect).abs() < 0.001, "{metric:?}: {actual} != {aspect}");
+            assert!(
+                (loader.adjusted_font_size(
+                    font_id,
+                    font_id,
+                    56.0,
+                    FontSizeAdjustment::Adjust {
+                        metric,
+                        target: Some(aspect * 1.5),
+                    },
+                ) - 84.0)
+                    .abs()
+                    < 0.001
+            );
+            assert_eq!(
+                loader.adjusted_font_size(
+                    font_id,
+                    font_id,
+                    56.0,
+                    FontSizeAdjustment::Adjust { metric, target: None },
+                ),
+                56.0
+            );
+        }
     }
 }

@@ -360,7 +360,10 @@ mod tests {
         s.font_family = vec!["Ahem".to_string()];
         s.font_size = LengthValue::Px(40.0);
         s.line_height = zero_style_system::LineHeightValue::Normal;
-        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.9);
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(0.9),
+        };
         let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
         assert!(
             (fs - 45.0).abs() < 1e-3,
@@ -378,7 +381,10 @@ mod tests {
         s.font_family = vec!["Ahem".to_string()];
         s.font_size = LengthValue::Px(40.0);
         s.line_height = zero_style_system::LineHeightValue::Normal;
-        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.2);
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(0.2),
+        };
         let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
         assert!(
             (fs - 10.0).abs() < 1e-3,
@@ -395,7 +401,10 @@ mod tests {
         s.font_family = vec!["DejaVu".to_string()];
         s.font_size = LengthValue::Px(40.0);
         s.line_height = zero_style_system::LineHeightValue::Normal;
-        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Number(0.9);
+        s.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(0.9),
+        };
         let (fs, _lh) = super::super::resolve_font_metrics_with_provider(Some(&s), None);
         assert!(
             (fs - 40.0).abs() < 1e-3,

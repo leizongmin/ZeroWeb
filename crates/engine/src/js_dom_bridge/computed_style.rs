@@ -27,16 +27,17 @@ use zero_style_system::{
     CaretColorComputedValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue,
     ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle,
     ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
-    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustValue,
-    FontVariantNumericValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
-    MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
-    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
-    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontSizeAdjustBasis,
+    FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantNumericValue, GridAutoFlowValue, GridLineValue,
+    HyphensComputedValue, ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue,
+    LineHeightValue, ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue,
+    ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue,
+    ScrollPadding, ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue,
+    TableLayoutValue, TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
+    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
+    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -837,12 +838,24 @@ fn list_style_image_to_css(i: &ListStyleImageComputedValue) -> String {
     }
 }
 
-/// font-size-adjust：CSS Fonts 字号调整。None→none；Number(n)→无单位数（对齐 Chromium）。
+/// `font-size-adjust` 的 computed serialization。
 fn font_size_adjust_to_css(f: &FontSizeAdjustValue) -> String {
     match f {
         FontSizeAdjustValue::None => "none".to_string(),
-        FontSizeAdjustValue::Number(n) => format_num(*n, ""),
-        FontSizeAdjustValue::FromFont => "from-font".to_string(),
+        FontSizeAdjustValue::Adjust { metric, basis } => {
+            let metric = metric.map(|metric| match metric {
+                FontSizeAdjustMetric::ExHeight => "ex-height ",
+                FontSizeAdjustMetric::CapHeight => "cap-height ",
+                FontSizeAdjustMetric::ChWidth => "ch-width ",
+                FontSizeAdjustMetric::IcWidth => "ic-width ",
+                FontSizeAdjustMetric::IcHeight => "ic-height ",
+            });
+            let basis = match basis {
+                FontSizeAdjustBasis::Number(value) => format_num(*value, ""),
+                FontSizeAdjustBasis::FromFont => "from-font".to_string(),
+            };
+            format!("{}{basis}", metric.unwrap_or_default())
+        }
     }
 }
 

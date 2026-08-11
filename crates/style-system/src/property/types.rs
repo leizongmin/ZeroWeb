@@ -75,19 +75,54 @@ pub enum LineHeightValue {
     Length(LengthValue),
 }
 
-/// CSS font-size-adjust 值（CSS Fonts 3 §3.6 / Fonts 4 §3.7）。
+/// CSS `font-size-adjust` metric（CSS Fonts 4）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontSizeAdjustMetric {
+    /// x-height / em。
+    ExHeight,
+    /// cap-height / em。
+    CapHeight,
+    /// "0" glyph advance / em。
+    ChWidth,
+    /// U+6C34 horizontal advance / em。
+    IcWidth,
+    /// U+6C34 vertical advance / em。
+    IcHeight,
+}
+
+/// CSS `font-size-adjust` target source。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontSizeAdjustBasis {
+    /// 显式 aspect value。
+    Number(f64),
+    /// 从 primary face 的对应 metric 读取 aspect value。
+    FromFont,
+}
+
+/// CSS font-size-adjust 值（CSS Fonts 4 §3.6）。
 ///
-/// `font-size-adjust` 调整 font-size 以保留字体的 aspect value（ex-height/em）。
-/// 支持 Fonts 3 `<number>`、`none` 与 Fonts 5 `from-font`；resolved face 的 OS/2
-/// x-height 缩放由 render-foundation shaping 契约应用。继承属性。
-#[derive(Debug, Clone, PartialEq)]
+/// https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FontSizeAdjustValue {
     /// none（初始值；不调整）。
     None,
-    /// 无单位 aspect value（如 0.9）。
-    Number(f64),
-    /// 从 primary face 的字体度量读取 aspect value。
-    FromFont,
+    /// 可选 metric 与 target source；省略 metric 时使用 ex-height。
+    Adjust {
+        /// `None` 保留省略 metric 的序列化形式。
+        metric: Option<FontSizeAdjustMetric>,
+        /// 显式数值或 primary face metric。
+        basis: FontSizeAdjustBasis,
+    },
+}
+
+impl FontSizeAdjustValue {
+    /// 返回实际使用的 metric；省略时默认为 ex-height。
+    pub fn metric(self) -> Option<FontSizeAdjustMetric> {
+        match self {
+            Self::None => None,
+            Self::Adjust { metric, .. } => Some(metric.unwrap_or(FontSizeAdjustMetric::ExHeight)),
+        }
+    }
 }
 
 /// CSS text-align 值。

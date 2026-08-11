@@ -91,7 +91,7 @@ pub(crate) fn collect_font_overrides(
                 node_id,
                 resolve_font_ids_for_style(resolver, &style.font_family, &style.font_weight, &style.font_style),
             );
-            overrides.size_adjust.insert(node_id, style.font_size_adjust.clone());
+            overrides.size_adjust.insert(node_id, style.font_size_adjust);
         }
         for child in doc.child_nodes(node_id) {
             visit(doc, styles, child, resolver, overrides);

@@ -58,8 +58,30 @@ pub fn shape_text_for_paint(
 pub(crate) fn font_size_adjustment(value: &zero_style_system::FontSizeAdjustValue) -> FontSizeAdjustment {
     match value {
         zero_style_system::FontSizeAdjustValue::None => FontSizeAdjustment::None,
-        zero_style_system::FontSizeAdjustValue::Number(value) => FontSizeAdjustment::ExHeight(*value as f32),
-        zero_style_system::FontSizeAdjustValue::FromFont => FontSizeAdjustment::FromFont,
+        zero_style_system::FontSizeAdjustValue::Adjust { metric, basis } => {
+            let metric = match metric.unwrap_or(zero_style_system::FontSizeAdjustMetric::ExHeight) {
+                zero_style_system::FontSizeAdjustMetric::ExHeight => {
+                    zero_render_foundation::font::FontSizeAdjustMetric::ExHeight
+                }
+                zero_style_system::FontSizeAdjustMetric::CapHeight => {
+                    zero_render_foundation::font::FontSizeAdjustMetric::CapHeight
+                }
+                zero_style_system::FontSizeAdjustMetric::ChWidth => {
+                    zero_render_foundation::font::FontSizeAdjustMetric::ChWidth
+                }
+                zero_style_system::FontSizeAdjustMetric::IcWidth => {
+                    zero_render_foundation::font::FontSizeAdjustMetric::IcWidth
+                }
+                zero_style_system::FontSizeAdjustMetric::IcHeight => {
+                    zero_render_foundation::font::FontSizeAdjustMetric::IcHeight
+                }
+            };
+            let target = match basis {
+                zero_style_system::FontSizeAdjustBasis::Number(value) => Some(*value as f32),
+                zero_style_system::FontSizeAdjustBasis::FromFont => None,
+            };
+            FontSizeAdjustment::Adjust { metric, target }
+        }
     }
 }
 

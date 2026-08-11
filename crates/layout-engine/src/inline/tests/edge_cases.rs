@@ -1714,7 +1714,13 @@ fn ifc_advance_source_receives_ordered_font_ids() {
         ) -> f32 {
             assert_eq!(text, "xA");
             assert_eq!(font_ids, &[7, 9]);
-            assert_eq!(size_adjust, &zero_style_system::FontSizeAdjustValue::Number(0.5));
+            assert_eq!(
+                size_adjust,
+                &zero_style_system::FontSizeAdjustValue::Adjust {
+                    metric: None,
+                    basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
+                }
+            );
             22.0
         }
     }
@@ -1725,7 +1731,10 @@ fn ifc_advance_source_receives_ordered_font_ids() {
         .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]))
         .with_font_size_adjust_overrides(HashMap::from([(
             node,
-            zero_style_system::FontSizeAdjustValue::Number(0.5),
+            zero_style_system::FontSizeAdjustValue::Adjust {
+                metric: None,
+                basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
+            },
         )]));
     let run = TextRun {
         text: "xA".to_string(),

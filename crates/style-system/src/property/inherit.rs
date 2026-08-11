@@ -36,7 +36,7 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             true
         }
         "font-size-adjust" => {
-            child.font_size_adjust = parent.font_size_adjust.clone();
+            child.font_size_adjust = parent.font_size_adjust;
             true
         }
         "font-feature-settings" => {

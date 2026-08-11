@@ -7,9 +7,12 @@
 //! 预补 pass 用 `text_content_max_width` 测量并收缩。
 
 use crate::engine::LayoutEngine;
+use crate::inline::AdvanceSource;
 use crate::types::LayoutBox;
+use std::collections::HashMap;
+use std::rc::Rc;
 use zero_css_parser::values::FloatValue;
-use zero_style_system::StyleSystem;
+use zero_style_system::{FontSizeAdjustBasis, FontSizeAdjustValue, StyleSystem};
 
 /// 深度优先找到第一个 `float:left` 的 LayoutBox。
 fn find_float_left(root: &LayoutBox) -> Option<&LayoutBox> {
@@ -68,5 +71,55 @@ fn test_pure_text_float_ahem_shrinks_to_text_width() {
         float_div.width > 50.0,
         "Ahem pure-text float should be ~64px (4 chars x 16px), got {}",
         float_div.width
+    );
+}
+
+struct AdjustedAdvance;
+
+impl AdvanceSource for AdjustedAdvance {
+    fn measure(&self, _ch: char, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+        10.0
+    }
+
+    fn measure_text_with_font_context(
+        &self,
+        text: &str,
+        _font_ids: &[u32],
+        _font_size: f32,
+        _is_ahem: bool,
+        size_adjust: &FontSizeAdjustValue,
+    ) -> f32 {
+        let scale = match size_adjust {
+            FontSizeAdjustValue::Adjust {
+                basis: FontSizeAdjustBasis::Number(value),
+                ..
+            } => *value as f32,
+            _ => 1.0,
+        };
+        text.chars().count() as f32 * 10.0 * scale
+    }
+}
+
+#[test]
+fn adjusted_pure_text_float_uses_resolved_max_content_width() {
+    let html = r#"<html><body style="margin:0"><div style="float:left;font:16px/20px test;font-size-adjust:cap-height 1.5">XX XX</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    engine.set_advance_source(Rc::new(AdjustedAdvance));
+    engine.set_font_resolver(HashMap::from([("test".to_string(), 7)]));
+    let result = engine.compute(&doc, &styles);
+
+    let float_div = find_float_left(&result.root).expect("should find adjusted float");
+    assert!(
+        (float_div.width - 75.0).abs() < 0.01,
+        "adjusted max-content width: {}",
+        float_div.width
+    );
+    assert!(
+        (float_div.height - 20.0).abs() < 0.01,
+        "expanded text must return to one line"
     );
 }

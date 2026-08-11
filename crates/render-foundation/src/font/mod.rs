@@ -8,7 +8,8 @@ pub mod woff;
 pub use cache::GlyphCache;
 pub use loader::FontLoader;
 pub use shaper::{
-    FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, ShapedLine, TextDirection, TextShaper, measure_text_width,
+    FontSizeAdjustMetric, FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, ShapedLine, TextDirection, TextShaper,
+    measure_text_width,
 };
 pub use woff::{decode_woff, is_woff};
 

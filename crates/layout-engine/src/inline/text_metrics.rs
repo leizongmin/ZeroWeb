@@ -423,7 +423,12 @@ pub fn resolve_font_metrics_with_provider(
     // （Slice 3+）。adjusted font_size 经 line-height + advance + paint 全链路传播（resolve 返回值
     // 被 TextRun.font_size / frag.height / store_font_sizes 消费）。
     if let Some(s) = style
-        && let zero_style_system::FontSizeAdjustValue::Number(adj) = s.font_size_adjust
+        && let zero_style_system::FontSizeAdjustValue::Adjust {
+            metric,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(adj),
+        } = s.font_size_adjust
+        && metric.unwrap_or(zero_style_system::FontSizeAdjustMetric::ExHeight)
+            == zero_style_system::FontSizeAdjustMetric::ExHeight
     {
         let is_ahem = s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
         if is_ahem && AHEM_FONT_SIZE_ADJUST_ASPECT > 0.0 {
