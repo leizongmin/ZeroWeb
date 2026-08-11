@@ -1309,3 +1309,102 @@ return div.nodeType + '/' + div.tagName;\
         "lookup 缺失 graceful 回退：generic Element，nodeType=1 + tagName=SECTION（不抛）"
     );
 }
+
+// ── P1b S5c（R3266）：custom element lifecycle——connectedCallback/disconnectedCallback ──
+// 验证 native_dom 路径 appendChild/removeChild 经 Rust custom_elements 模块桥接 polyfill
+// `__zw_native_ce_notify_connect` 派发 connectedCallback/disconnectedCallback（this=native 实例）。
+// 内联模拟 polyfill registry + lookup + notify_connect（真实 shim 在 part03.js 注册）。
+
+/// S5c：appendChild(customEl) 到已连接容器（document root）→ connectedCallback 触发，this 是 native 实例。
+#[test]
+fn native_custom_element_connected_callback_r3266() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _log = [];\
+globalThis.__zw_native_ce_notify_connect = function(instances, connected, tags){\
+  for (var i=0;i<instances.length;i++){\
+    var entry = _ce[tags[i]];\
+    if (!entry) continue;\
+    var proto = entry.ctor.prototype;\
+    var cb = connected ? proto.connectedCallback : proto.disconnectedCallback;\
+    if (typeof cb === 'function') { try { cb.call(instances[i]); } catch(_e){} }\
+  }\
+};\
+class MyEl extends HTMLElement { constructor(){ super(); } connectedCallback(){ this.__conn = true; _log.push('conn:'+this.nodeType); } }\
+customElements.define('my-el', MyEl);\
+const body = __zw_native_get_body();\
+const el = __zw_native_create_element('my-el');\
+body.appendChild(el);\
+return _log.join(',') + '/' + (el.__conn === true);\
+})()";
+    // connectedCallback 触发：_log='conn:1'（this=native 实例 nodeType=1）+ el.__conn=true（this 写到 native 实例）。
+    assert_eq!(
+        run_script(html, script),
+        "conn:1/true",
+        "appendChild(customEl) 到已连接容器：connectedCallback 触发，this=native 实例（nodeType=1 + 可写属性）"
+    );
+}
+
+/// S5c：appendChild 到 detached 容器（createElement 后未挂 document）→ 不触发 connectedCallback。
+#[test]
+fn native_custom_element_no_connect_detached_r3266() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var connCount = 0;\
+globalThis.__zw_native_ce_notify_connect = function(instances, connected, tags){\
+  for (var i=0;i<instances.length;i++){ if (connected && _ce[tags[i]]) connCount++; }\
+};\
+class Detached extends HTMLElement { constructor(){ super(); } connectedCallback(){ connCount++; } }\
+customElements.define('det-el', Detached);\
+const container = __zw_native_create_element('div');\
+const el = __zw_native_create_element('det-el');\
+container.appendChild(el);\
+return connCount;\
+})()";
+    // detached 容器（container 未挂 document）→ el 连接态未变 → connectedCallback 不触发 → connCount=0。
+    assert_eq!(
+        run_script(html, script),
+        "0",
+        "appendChild 到 detached 容器不触发 connectedCallback（parent 链未到 document root）"
+    );
+}
+
+/// S5c：removeChild(customEl) 从已连接容器 → disconnectedCallback 触发。
+#[test]
+fn native_custom_element_disconnected_callback_r3266() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _log = [];\
+globalThis.__zw_native_ce_notify_connect = function(instances, connected, tags){\
+  for (var i=0;i<instances.length;i++){\
+    var entry = _ce[tags[i]];\
+    if (!entry) continue;\
+    var proto = entry.ctor.prototype;\
+    var cb = connected ? proto.connectedCallback : proto.disconnectedCallback;\
+    if (typeof cb === 'function') { try { cb.call(instances[i]); } catch(_e){} }\
+  }\
+};\
+class Rem extends HTMLElement { constructor(){ super(); } connectedCallback(){ _log.push('c'); } disconnectedCallback(){ _log.push('d'); } }\
+customElements.define('rem-el', Rem);\
+const body = __zw_native_get_body();\
+const el = __zw_native_create_element('rem-el');\
+body.appendChild(el);\
+body.removeChild(el);\
+return _log.join('');
+})()";
+    // body.appendChild → connectedCallback('c') → body.removeChild → disconnectedCallback('d') → _log='cd'。
+    assert_eq!(
+        run_script(html, script),
+        "cd",
+        "removeChild 从已连接 body 触发 disconnectedCallback（先 connected 后 disconnected = 'cd'）"
+    );
+}

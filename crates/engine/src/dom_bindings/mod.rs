@@ -14,6 +14,7 @@
 //! `tagName` https://dom.spec.whatwg.org/#dom-element-tagname（HTML 大写）。
 
 mod css_style_declaration;
+mod custom_elements;
 mod dataset;
 mod document;
 mod dom_token_list;

@@ -15,7 +15,7 @@
 //! 镜像 `script-sandbox::v8_runtime::HOST_CALLBACKS` 模式（ZST 回调 + 线程局部状态）。
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use slotmap::{Key, KeyData};
@@ -103,6 +103,12 @@ thread_local! {
     /// detached div，与 host 建的元素脱节——两个 NodeId）。镜像 `ACTIVE_ELEMENT` 线程局部模式：
     /// `native_create_element_invoke` 设 → JS ctor `new_instance`（super() 读此填 slot[0]）→ 清。
     static UPGRADE_NODE_ID: RefCell<Option<NodeId>> = const { RefCell::new(None) };
+    /// R3266 S5c custom element 连接态追踪：已连入 document 的 custom 元素 NodeId(ffi) 集合。
+    /// native_dom 路径 appendChild/insertBefore/removeChild 经 Rust 直接改 DOM，绕过 polyfill 的
+    /// `_ceApplyConn`（基于 sel/handle），故连接态由 Rust 权威追踪。变更（未连→连 / 已连→断）时，
+    /// [`custom_elements::notify_connect_change`] 桥接 JS 派发 connectedCallback/disconnectedCallback
+    ///（以 native 实例作 `this`，复用 polyfill `_ce_registry` + ctor.prototype）。
+    static CONNECTED_CUSTOM: RefCell<HashSet<u64>> = RefCell::new(HashSet::new());
     /// R3159 `document` 对象（单例，无 NodeId 键——synthetic 命名空间对象）：弱缓存保 spec 身份
     ///（`__zw_native_get_document() === __zw_native_get_document()` 同对象）。JS 丢 `document` 引用即可 GC。
     static DOCUMENT_OBJECT: RefCell<Option<v8::Weak<v8::Object>>> = const { RefCell::new(None) };
@@ -149,6 +155,7 @@ pub(crate) fn reset() {
     DATASET_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
     UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
+    CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
     DOCUMENT_OBJECT.with(|c| *c.borrow_mut() = None);
     DOCUMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
 }
@@ -394,6 +401,23 @@ pub(crate) fn set_upgrade_node_id(id: Option<NodeId>) {
 /// 清 upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 后清，防泄漏到后续 new HTMLElement）。
 pub(crate) fn clear_upgrade_node_id() {
     UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
+}
+
+// ── R3266 S5c custom element 连接态追踪（connectedCallback/disconnectedCallback 派发门控）──
+
+/// custom 元素 NodeId(ffi) 是否已连入 document（在 `CONNECTED_CUSTOM` 集合中）。
+pub(crate) fn is_custom_connected(ffi: u64) -> bool {
+    CONNECTED_CUSTOM.with(|c| c.borrow().contains(&ffi))
+}
+
+/// 标记 custom 元素已连入 document（返 true = 状态真转 未连→连，应派 connectedCallback）。
+pub(crate) fn mark_custom_connected(ffi: u64) -> bool {
+    CONNECTED_CUSTOM.with(|c| c.borrow_mut().insert(ffi))
+}
+
+/// 标记 custom 元素已断开 document（返 true = 状态真转 已连→断，应派 disconnectedCallback）。
+pub(crate) fn unmark_custom_connected(ffi: u64) -> bool {
+    CONNECTED_CUSTOM.with(|c| c.borrow_mut().remove(&ffi))
 }
 
 // ── NodeId ↔ V8 对象身份映射 ──────────────────────────────────────

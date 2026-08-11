@@ -241,6 +241,8 @@ pub(super) fn native_append_child_invoke(
         .map(|r| r.is_ok())
         .unwrap_or(false);
     if ok {
+        // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发 connectedCallback/disconnectedCallback。
+        super::custom_elements::notify_connect_after_insert(scope, parent, child);
         set_native_element(scope, child, &mut rv);
     }
 }
@@ -267,6 +269,8 @@ pub(super) fn native_insert_before_invoke(
         .map(|r| r.is_ok())
         .unwrap_or(false);
     if ok {
+        // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发（同 appendChild）。
+        super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
         set_native_element(scope, new_child, &mut rv);
     }
 }
@@ -289,6 +293,8 @@ pub(super) fn native_remove_child_invoke(
         .map(|r| r.is_ok())
         .unwrap_or(false);
     if ok {
+        // R3266 S5c：custom 元素断开 document → 桥接 JS 派发 disconnectedCallback（子树 DFS）。
+        super::custom_elements::notify_disconnect_after_remove(scope, child);
         set_native_element(scope, child, &mut rv);
     }
 }
@@ -314,6 +320,9 @@ pub(super) fn native_replace_child_invoke(
         .map(|r| r.is_ok())
         .unwrap_or(false);
     if ok {
+        // R3266 S5c：newChild 连入（connect）+ oldChild 断开（disconnect）→ 桥接派发。
+        super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
+        super::custom_elements::notify_disconnect_after_remove(scope, old_child);
         // spec：返被替换的 oldChild。
         set_native_element(scope, old_child, &mut rv);
     }
@@ -331,12 +340,19 @@ pub(super) fn native_element_remove_invoke(
     let Some(id) = read_node_id(scope, &this) else {
         return;
     };
-    with_dom_mut(|d| {
+    // R3266 S5c：自移除需在 remove 后触发 disconnect（custom 子树），故取 parent + remove 拆出闭包。
+    let removed = with_dom_mut(|d| {
         // 找自身 parent，有则 remove_child(parent, self)；无 parent（detached）no-op（spec）。
         if let Some(parent) = d.parent_node(id) {
-            let _ = d.remove_child(parent, id);
+            d.remove_child(parent, id).is_ok()
+        } else {
+            false
         }
-    });
+    })
+    .unwrap_or(false);
+    if removed {
+        super::custom_elements::notify_disconnect_after_remove(scope, id);
+    }
 }
 
 // ── R3143 现代 ChildNode/ParentNode 插入族（prepend/append/before/after/replaceWith）──
@@ -382,13 +398,16 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
             None => items.push(InsertItem::Text(local_value_to_string(scope, arg))),
         }
     }
-    // Pass 2：DOM mutation——算 (parent, ref_node, remove_self) 后逐 item 插入。
-    with_dom_mut(|d| {
+    // Pass 2：DOM mutation——算 (parent, ref_node, remove_self) 后逐 item 插入。返
+    // (parent, inserted_node_ids, removed_self?) 供 R3266 S5c lifecycle 桥接（闭包外触发）。
+    // detached（before/after/replaceWith 无 parent）→ outer None（no-op，不派发 lifecycle）。
+    let outcome = with_dom_mut(|d| {
         let (parent, ref_node, remove_self) = match pos {
             InsertPos::Append => (self_id, None, false),
             InsertPos::Prepend => (self_id, d.first_child(self_id), false),
             InsertPos::Before | InsertPos::ReplaceWith => {
-                let parent = d.parent_node(self_id)?; // 无 parent → no-op
+                // 无 parent → no-op（`?` 返 None，外层 and_then 拍平双层 Option）。
+                let parent = d.parent_node(self_id)?;
                 (parent, Some(self_id), pos == InsertPos::ReplaceWith)
             }
             InsertPos::After => {
@@ -396,6 +415,7 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
                 (parent, d.next_sibling(self_id), false)
             }
         };
+        let mut inserted: Vec<NodeId> = Vec::with_capacity(items.len());
         for item in &items {
             let node_id = match item {
                 InsertItem::Node(id) => *id,
@@ -403,13 +423,27 @@ fn insert_variadic(scope: &mut v8::PinScope, args: v8::FunctionCallbackArguments
             };
             // R3144：DocumentFragment 参 → flatten（子节点移到 parent、fragment 清空，spec）；
             // 非 fragment 直接 insert_before/append_child（与 flatten 内非 fragment 分支等价）。
-            let _ = insert_with_fragment_flatten(d, parent, node_id, ref_node);
+            if insert_with_fragment_flatten(d, parent, node_id, ref_node).is_ok() {
+                inserted.push(node_id);
+            }
         }
-        if remove_self {
-            let _ = d.remove_child(parent, self_id);
-        }
-        Some(())
+        let removed_self = if remove_self && d.remove_child(parent, self_id).is_ok() {
+            Some(self_id)
+        } else {
+            None
+        };
+        Some((parent, inserted, removed_self))
     });
+    // R3266 S5c：插入的节点子树 connect（经 parent 链）+ 移除的 self disconnect。
+    // with_dom_mut 返 Option<Option<...>>（外层=有无 DOM 源，内层= detached no-op），and_then 拍平。
+    if let Some((parent, inserted, removed_self)) = outcome.and_then(|inner| inner) {
+        for id in inserted {
+            super::custom_elements::notify_connect_after_insert(scope, parent, id);
+        }
+        if let Some(removed) = removed_self {
+            super::custom_elements::notify_disconnect_after_remove(scope, removed);
+        }
+    }
 }
 
 /// `element.prepend(...items)`：spec `dom-parentnode-prepend`——items 插到 self（作 parent）首子前。
@@ -549,14 +583,18 @@ pub(super) fn native_element_insert_adjacent_element_invoke(
     };
     // 解析 position（读 &Document）+ 插入（&mut Document）合一：closure 返 Result<NodeId, AdjacentError>，
     // with_dom_mut 包 Option（None = 无 DOM → 早退）。throw 须在 scope（closure 外）发生。
-    let outcome: Option<Result<NodeId, AdjacentError>> = with_dom_mut(|d| {
+    let outcome: Option<Result<(NodeId, NodeId), AdjacentError>> = with_dom_mut(|d| {
         let (parent, ref_node) = parse_adjacent_position(d, target, &position)?;
         let _ = insert_with_fragment_flatten(d, parent, node, ref_node);
-        Ok(node)
+        Ok((parent, node))
     });
     match outcome {
         None => (), // 无 DOM
-        Some(Ok(id)) => set_native_element(scope, id, &mut rv),
+        Some(Ok((parent, id))) => {
+            // R3266 S5c：插入元素 connect（custom 子树）。
+            super::custom_elements::notify_connect_after_insert(scope, parent, id);
+            set_native_element(scope, id, &mut rv);
+        }
         Some(Err(e)) => throw_adjacent_error(scope, e, &position),
     }
 }

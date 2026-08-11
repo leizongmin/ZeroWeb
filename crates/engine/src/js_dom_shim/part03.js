@@ -222,6 +222,30 @@
     return entry ? entry.ctor : null;
   };
 
+  // P1b S5c（R3266）：custom element 连接态 lifecycle 派发 hook——native_dom 路径 appendChild/
+  // insertBefore/removeChild（Rust 直接改 DOM）绕过本 polyfill 的 `_ceApplyConn`（基于 sel/handle），
+  // 故 connectedCallback/disconnectedCallback 不触发。Rust `custom_elements` 模块追踪连接态（树逻辑），
+  // 状态真转时调本 hook：对每个 native 实例按 tag 查 `_ce_registry` + 调 ctor.prototype 回调（this=native
+  // 实例）。JS 负责「调 ctor.prototype 回调」（有 ctor/prototype），Rust 负责「什么变了、连没连」（有 DOM 树）。
+  // instances[i] / tags[i] 并列配对；tags 为小写 tag 名（registry 键）。回调异常 try/catch 吞（不中断脚本）。
+  // native_dom 关闭时此函数定义但无人调用（零开销）。S5c 切片：连接态 callback；attributeChangedCallback
+  // 经 setAttribute polyfill trap 已就绪（native_dom 下 setAttribute 走 Rust，attr 派发为后续）。
+  globalThis.__zw_native_ce_notify_connect =
+    globalThis.__zw_native_ce_notify_connect ||
+    function (instances, connected, tags) {
+      if (!instances || !tags || instances.length !== tags.length) return;
+      for (var i = 0; i < instances.length; i++) {
+        var entry = _ce_registry[tags[i]];
+        if (!entry || !entry.ctor) continue;
+        var proto = entry.ctor.prototype;
+        if (!proto) continue;
+        var cb = connected ? proto.connectedCallback : proto.disconnectedCallback;
+        if (typeof cb === 'function') {
+          try { cb.call(instances[i]); } catch (_e) {}
+        }
+      }
+    };
+
   // ── custom element lifecycle slice（R2992）：attributeChangedCallback 分派 ──────────
   // element 实例为 generic Proxy 非 ctor 实例（upgrade/ctor 调用 defer），故本 slice 仅落地「属性变更」回调——
   // 这是 CE 最常用的可观察行为（lit/@property / 各 CE 库 react-to-attr 模式）。setAttribute/removeAttribute
