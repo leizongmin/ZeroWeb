@@ -405,6 +405,10 @@
       if (ch === '"' || ch === "'") { quote = ch; cur += ch; lastSegmentChar = true; continue; }
       if (ch === '[') { depth++; cur += ch; lastSegmentChar = true; continue; }
       if (ch === ']') { depth--; cur += ch; lastSegmentChar = true; continue; }
+      // 括号 `(``)` 亦计入深度——`:nth-child(2n+1)` / `:not(.a)` / `:is(a, b)` 内的 `+`/` `/`,`
+      // 非组合器边界（R3288 修复：旧仅计 `[]` 致 nth 公式 an+b 的 `+` 误判为相邻兄弟组合器）。
+      if (ch === '(') { depth++; cur += ch; lastSegmentChar = true; continue; }
+      if (ch === ')') { depth--; cur += ch; lastSegmentChar = true; continue; }
       if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) {
         // 显式符号覆盖：若紧前的边界是空白触发的后代且其间无段字符（符号紧随空白），
         // 改写最后一个组合器为该显式符号。

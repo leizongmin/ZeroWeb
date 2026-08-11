@@ -318,6 +318,82 @@ fn test_dom_js_polyfill_pseudo_classes_r3288() {
     );
 }
 
+// ── R3288 follow-up：A 代 polyfill nth-child(an+b) 公式 + :not() 嵌套正确性验证 ──
+// R3288 新增 `_matchNth`（An+B 公式：odd/even/纯整数/n/an+b）与 `:not(simple)`（递归）为新代码，
+// 须验证多边缘情况正确（`2n+1`/`2n`/`n`/负 a/纯整数 + `:not()` 含复合内嵌）。
+
+#[test]
+fn test_dom_js_polyfill_nth_an_b_formula_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root 6 个 li 子（位置 1-6）
+    let script = r#"
+        var root = document.createElement('ul');
+        for (var i = 0; i < 6; i++) {
+          var li = document.createElement('li'); li.id = 'n' + (i + 1);
+          root.appendChild(li);
+        }
+        // :nth-child(2n+1) → 位置 1,3,5 → n1,n3,n5
+        var odd2n1 = root.querySelectorAll(':nth-child(2n+1)').length;
+        // :nth-child(2n) → 位置 2,4,6 → 3
+        var even2n = root.querySelectorAll(':nth-child(2n)').length;
+        // :nth-child(3) → 仅位置 3 → 1
+        var third = root.querySelectorAll(':nth-child(3)').length;
+        // :nth-child(n) → 全部 6
+        var allN = root.querySelectorAll(':nth-child(n)').length;
+        // :nth-last-child(1) → 末子位置 1（n6）→ 1
+        var lastOne = root.querySelectorAll(':nth-last-child(1)').length;
+        // :nth-last-child(2n+1) → 从末尾计 1,3,5 → n6,n4,n2 → 3
+        var lastOdd = root.querySelectorAll(':nth-last-child(2n+1)').length;
+        JSON.stringify({odd2n1: odd2n1, even2n: even2n, third: third, allN: allN, lastOne: lastOne, lastOdd: lastOdd});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains(r#""odd2n1":3"#),
+        ":nth-child(2n+1) → 3 (位置 1/3/5): {result}"
+    );
+    assert!(
+        result.contains(r#""even2n":3"#),
+        ":nth-child(2n) → 3 (位置 2/4/6): {result}"
+    );
+    assert!(result.contains(r#""third":1"#), ":nth-child(3) → 1: {result}");
+    assert!(result.contains(r#""allN":6"#), ":nth-child(n) → 6 (全部): {result}");
+    assert!(
+        result.contains(r#""lastOne":1"#),
+        ":nth-last-child(1) → 1 (末子): {result}"
+    );
+    assert!(
+        result.contains(r#""lastOdd":3"#),
+        ":nth-last-child(2n+1) → 3 (从末尾 1/3/5 = n6/n4/n2): {result}"
+    );
+}
+
+#[test]
+fn test_dom_js_polyfill_not_pseudo_nested_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    let script = r#"
+        var root = document.createElement('div');
+        var a = document.createElement('a'); a.className = 'x';
+        var b = document.createElement('a'); b.className = 'y';
+        var c = document.createElement('a');           // 无 class
+        root.appendChild(a); root.appendChild(b); root.appendChild(c);
+        // :not(.x) → b + c = 2
+        var notX = root.querySelectorAll(':not(.x)').length;
+        // a:not(.x) → b + c（均为 a 标签）= 2
+        var aNotX = root.querySelectorAll('a:not(.x)').length;
+        // :not(.x):not(.y) → 仅 c = 1（多 :not() AND）
+        var notXY = root.querySelectorAll(':not(.x):not(.y)').length;
+        JSON.stringify({notX: notX, aNotX: aNotX, notXY: notXY});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(result.contains(r#""notX":2"#), ":not(.x) → b + c = 2: {result}");
+    assert!(result.contains(r#""aNotX":2"#), "a:not(.x) → 2: {result}");
+    assert!(result.contains(r#""notXY":1"#), ":not(.x):not(.y) → c = 1: {result}");
+}
+
 // ── 3. 安全功能端到端验证 ─────────────────────────────────────────
 
 #[test]

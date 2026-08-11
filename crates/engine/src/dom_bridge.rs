@@ -672,6 +672,10 @@ pub fn generate_dom_api_polyfill() -> String {
       if (ch === '"' || ch === "'") { quote = ch; cur += ch; lastSegChar = true; continue; }
       if (ch === '[') { depth++; cur += ch; lastSegChar = true; continue; }
       if (ch === ']') { depth--; cur += ch; lastSegChar = true; continue; }
+      // 括号 `(``)` 亦计入深度——`:nth-child(2n+1)` / `:not(.a)` / `:is(a, b)` 内的 `+`/`,`/` `
+      // 非组合器边界（R3288 修复：旧仅计 `[]` 致 nth 公式 an+b 的 `+` 误判为相邻兄弟组合器）。
+      if (ch === '(') { depth++; cur += ch; lastSegChar = true; continue; }
+      if (ch === ')') { depth--; cur += ch; lastSegChar = true; continue; }
       if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) {
         if (!lastSegChar && combs.length > 0 && combs[combs.length - 1] === ' ') {
           combs[combs.length - 1] = ch;
@@ -915,9 +919,16 @@ pub fn generate_dom_api_polyfill() -> String {
     if (m) {
       var a = m[1];
       var aVal;
-      if (a === undefined || a === '') aVal = 0;
-      else if (a === '-' || a === '+') aVal = a === '-' ? -1 : 1;
-      else aVal = parseInt(a, 10);
+      if (a === undefined) {
+        // 无 `n`（纯整数 b，如 "3"）—— a=0，匹配 pos===b。
+        aVal = 0;
+      } else if (a === '' || a === '+') {
+        aVal = 1; // 裸 `n` / `+n` → a=1
+      } else if (a === '-') {
+        aVal = -1; // `-n` → a=-1
+      } else {
+        aVal = parseInt(a, 10); // `2n` / `-3n` → a=系数
+      }
       var b = m[2] ? parseInt(m[2], 10) : 0;
       // pos = aVal*k + b，k ≥ 0 整数 → (pos - b) / aVal ≥ 0 且整除（aVal=0 时 pos===b）。
       if (aVal === 0) return pos === b;
