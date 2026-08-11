@@ -1129,3 +1129,153 @@ fn test_load_html_then_fail() {
     wv.fail_load("late error");
     assert!(!wv.is_loading());
 }
+
+// ── P1b S5 端到端集成测试（R3270）：native_dom + polyfill 共存——custom element 全链路 ──
+// 验证 S5a-S5d + 接口 + upgrade 在 webview 生产路径（native_dom=true，polyfill shim + native bindings 共存）
+// 端到端工作。区别于 dom_bindings 隔离测试（run_script 不加载 shim），本测试加载真实 polyfill shim，
+// 验证 customElements.define（polyfill）+ __zw_native_create_element upgrade（native）+ lifecycle 桥接（S5c/d）
+// + Element 接口（R3268）的跨层协作。
+//
+// **已知架构 gap（documented）**：native_dom 模式下 `globalThis.document` 仍为 polyfill 对象（part06.js），
+// 故页面 script 的 `document.createElement` 走 polyfill（generic Proxy）。native custom 实例仅经 native 工厂
+//（`__zw_native_create_element` / native document）产生。L2 escape-hatch（R3178 设计）将闭合此 gap，使
+// `document.createElement` 也走 native。本测试用 native 工厂验证 native 路径端到端。
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_e2e_upgrade_r3270() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"host\"></div>\
+         <script>\
+           class MyEl extends HTMLElement { constructor(){ super(); this.__ctorRan = true; } }\
+           customElements.define('my-el', MyEl);\
+           const el = __zw_native_create_element('my-el');\
+           globalThis.__instanceof = (el instanceof MyEl);\
+           globalThis.__nodeType = el.nodeType;\
+           globalThis.__ctorRan = (el.__ctorRan === true);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom CE upgrade script 应无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__instanceof)").unwrap(),
+        "true",
+        "native_dom e2e: createElement('my-el') upgrade → instanceof registered ctor"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__nodeType)").unwrap(),
+        "1",
+        "native_dom e2e: nodeType=1（slot[0]=NodeId 保留，accessor 经 DOM 读）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ctorRan)").unwrap(),
+        "true",
+        "native_dom e2e: registered ctor body 执行（this=native 实例）"
+    );
+}
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_e2e_lifecycle_r3270() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body>\
+         <script>\
+           globalThis.__connLog = [];\
+           class LcEl extends HTMLElement {\
+             constructor(){ super(); }\
+             connectedCallback(){ globalThis.__connLog.push('c'); this.__conn = true; }\
+             disconnectedCallback(){ globalThis.__connLog.push('d'); }\
+           }\
+           customElements.define('lc-el', LcEl);\
+           const body = __zw_native_get_body();\
+           const el = __zw_native_create_element('lc-el');\
+           body.appendChild(el);\
+           body.removeChild(el);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom CE lifecycle script 应无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__connLog.join(''))").unwrap(),
+        "cd",
+        "native_dom e2e: appendChild→connectedCallback('c') + removeChild→disconnectedCallback('d')"
+    );
+}
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_e2e_attr_change_r3270() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body>\
+         <script>\
+           globalThis.__attrLog = [];\
+           class AttrEl extends HTMLElement {\
+             constructor(){ super(); }\
+             static get observedAttributes(){ return ['foo']; }\
+             attributeChangedCallback(n, o, v){ globalThis.__attrLog.push(n+'/'+o+'/'+v); }\
+           }\
+           customElements.define('attr-el', AttrEl);\
+           const el = __zw_native_create_element('attr-el');\
+           el.setAttribute('foo', 'bar');\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(
+        r.is_ok(),
+        "native_dom CE attr change script 应无异常, got: {:?}",
+        r.err()
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__attrLog.join(','))").unwrap(),
+        "foo/null/bar",
+        "native_dom e2e: setAttribute('foo','bar') foo∈observed → attributeChangedCallback('foo/null/bar')"
+    );
+}
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_custom_element_e2e_interface_r3270() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body>\
+         <script>\
+           class IfEl extends HTMLElement { constructor(){ super(); } }\
+           customElements.define('if-el', IfEl);\
+           const el = __zw_native_create_element('if-el');\
+           el.innerHTML = '<b>hi</b>';\
+           globalThis.__tag = el.tagName;\
+           globalThis.__html = el.innerHTML;\
+           globalThis.__text = el.textContent;\
+           globalThis.__kids = el.children.length;\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom CE interface script 应无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tag)").unwrap(),
+        "IF-EL",
+        "native_dom e2e: custom 实例 tagName=IF-EL（反射）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__html)").unwrap(),
+        "<b>hi</b>",
+        "native_dom e2e: innerHTML setter/getter（R3268 接口）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__text)").unwrap(),
+        "hi",
+        "native_dom e2e: textContent（R3268 接口）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__kids)").unwrap(),
+        "1",
+        "native_dom e2e: children.length（R3268 接口）"
+    );
+}

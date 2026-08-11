@@ -72,12 +72,22 @@
     });
   }
 
-  globalThis.Node = function Node() {};
-  globalThis.Element = function Element() {};
-  globalThis.HTMLElement = function HTMLElement() {};
-  globalThis.Node.prototype = {};
-  globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
-  globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+  // R3270：Node/Element/HTMLElement 用 `||` 守卫——native_dom 模式下 native bindings（S5a R3264）已注册
+  // 真实 native HTMLElement（FunctionTemplate + 完整 Element/Node 接口 R3268），polyfill 不得覆盖（否则
+  // `class X extends HTMLElement` 继承 polyfill stub 无 native slot，upgrade 坏）。native_dom 关闭时
+  //（polyfill-only 路径）三者未定义 → polyfill 定义 stub + 建原型链（Node→Element→HTMLElement）供 polyfill
+  // 元素 proxy 的 instanceof 校验。HTMLFormElement 等子类经 `Object.create(HTMLElement.prototype)` 继承——
+  // native_dom 下继承 native HTMLElement.prototype（含 R3268 接口），polyfill-only 下继承 polyfill stub prototype。
+  var _zwBuiltNodeChain = !globalThis.HTMLElement; // polyfill 是否自建三者（native 已注册则 false）
+  if (!globalThis.Node) globalThis.Node = function Node() {};
+  if (!globalThis.Element) globalThis.Element = function Element() {};
+  if (!globalThis.HTMLElement) globalThis.HTMLElement = function HTMLElement() {};
+  // prototype 链仅当 polyfill 自建三者时设（native 已注册则不重设——避免破坏 native prototype）。
+  if (_zwBuiltNodeChain) {
+    globalThis.Node.prototype = {};
+    globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
+    globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+  }
   // R3019：DOM 接口构造器占位——库（DOMPurify 等）常做 `x instanceof HTMLFormElement` /
   // `el.attributes instanceof NamedNodeMap` / `node.content instanceof DocumentFragment` 校验。
   // 这些构造器须以 function 存在（否则 `instanceof undefined` 抛 TypeError 中断 sanitize）。本桥接的
