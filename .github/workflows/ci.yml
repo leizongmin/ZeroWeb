@@ -131,6 +131,11 @@ jobs:
         shell: bash
         run: RUSTY_V8_TARGET=${{ matrix.target }} bash scripts/download-rusty-v8.sh
 
+      - name: Fetch wpt-data
+        # zero-wpt-runner reftest 字体测试（reftest_fonts.rs）依赖 wpt-data 真实字体；
+        # 与 smoke/reftest job 一致，跑 zero-wpt-runner 前必须拉取（R3232-F/R3239-F 起）
+        run: make fetch-wpt-data
+
       - name: Configure rusty_v8 archive on Windows
         if: runner.os == 'Windows' && matrix.v8_runtime != false
         shell: bash
