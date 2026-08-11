@@ -1612,6 +1612,10 @@ impl Document {
             crate::query::PseudoClass::Scope => self.is_scope_element(node),
             crate::query::PseudoClass::Lang(ranges) => self.matches_lang(node, ranges),
             crate::query::PseudoClass::Dir(dir) => self.matches_dir(node, dir),
+            // `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)` 须仅计匹配 S 的兄弟，
+            // 延后至此经 matches_nth_child_of/_last_child_of 复评。
+            crate::query::PseudoClass::NthChildOf(nth, of) => self.matches_nth_child_of(node, nth, of, false),
+            crate::query::PseudoClass::NthLastChildOf(nth, of) => self.matches_nth_child_of(node, nth, of, true),
             _ => true,
         })
     }
@@ -1641,6 +1645,55 @@ impl Document {
             // :has(inner)——后代匹配（query_selector_all 在 node 子树求值，含组合器链）。
             !self.query_selector_all(node, inner).is_empty()
         }
+    }
+
+    /// `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)` 权威求值（Selectors L4 §16）。
+    ///
+    /// 元素须匹配 `of_selectors` 列表中任一选择器，且在父元素的**仅计匹配 S 的元素兄弟**中
+    /// 的位置（`last=false` 正序 / `last=true` 倒序）满足 `an+b`。`of_selectors` 为简单选择器
+    /// 字符串列表（`,` 分隔），每个经 `parse_simple_selector` 解析为 compound 后用
+    /// `element_matches_selector` 评估（复用 `:nth-child`/`:scope` 等共享的复合选择器路径）。
+    ///
+    /// 供 DOM `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)` 选择器（`element_matches_selector`
+    /// 延后复评）；style-system `:nth-child(an+b of S)` CSS 匹配为独立实现（matcher::matches_nth_child_of）。
+    fn matches_nth_child_of(&self, node: NodeId, nth: &crate::query::Nth, of_selectors: &[String], last: bool) -> bool {
+        // 元素自身须匹配 of S（否则不参与计数）。
+        let of_compiled: Vec<crate::query::SimpleSelector> = of_selectors
+            .iter()
+            .filter_map(|s| crate::query::parse_simple_selector(s))
+            .collect();
+        if of_compiled.is_empty() {
+            return false; // of S 全非法 → 无元素可计数。
+        }
+        let self_matches = of_compiled.iter().any(|sel| self.element_matches_selector(node, sel));
+        if !self_matches {
+            return false;
+        }
+        let Some(parent) = self.parent_element_node(node) else {
+            // 根元素：唯一元素兄弟，匹配 S 时位置=1。
+            return nth.matches(1);
+        };
+        let siblings: Vec<NodeId> = self.nodes.get(parent).map(|p| p.children.to_vec()).unwrap_or_default();
+        // 仅计元素兄弟中匹配 S 的。
+        let mut matched: Vec<NodeId> = Vec::new();
+        for sib in &siblings {
+            if self
+                .nodes
+                .get(*sib)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                && of_compiled.iter().any(|sel| self.element_matches_selector(*sib, sel))
+            {
+                matched.push(*sib);
+            }
+        }
+        let target = if last {
+            // 倒序：从末尾数的位置。
+            matched.iter().rev().position(|&c| c == node).map(|i| (i + 1) as i32)
+        } else {
+            // 正序：1-based 序号。
+            matched.iter().position(|&c| c == node).map(|i| (i + 1) as i32)
+        };
+        target.is_some_and(|pos| nth.matches(pos))
     }
 
     /// 计算元素的 sibling 位置上下文（伪类评估用）。

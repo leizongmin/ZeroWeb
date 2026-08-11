@@ -1268,6 +1268,105 @@ fn test_query_selector_anylink_scope_lang_dir_r3281() {
 }
 
 #[test]
+fn test_query_selector_nth_child_of_s_r3282() {
+    // R3282：DOM `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)`——Selectors L4 §16。
+    // 此前 DOM `parse_nth` 忽略 `of` 子句 → `querySelectorAll(":nth-child(even of .item)")` 返空。
+    // 语义：仅计匹配 S 的元素兄弟中的位置满足 an+b（与 style-system matcher 同源语义）。
+    // 父 ul 含 5 个 li，仅 .item 标记的参与计数：c1(.item)=序1, c3(.item)=序2, c5(.item)=序3。
+    // 非 .item 的 c2/c4 在 of-S 计数中不存在。
+    let doc = parse_html(
+        "<html><body>\
+         <ul id='ul1'>\
+           <li id='c1' class='item'>1</li>\
+           <li id='c2'>2</li>\
+           <li id='c3' class='item'>3</li>\
+           <li id='c4'>4</li>\
+           <li id='c5' class='item'>5</li>\
+         </ul>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+
+    // :nth-child(odd of .item) → .item 序 1(c1)/3(c5) 奇 → c1/c5；c3 序 2 偶不匹配。
+    let odd_of = ids_of(&doc.query_selector_all(root, "li:nth-child(odd of .item)"));
+    assert!(
+        odd_of.contains(&"c1".to_string()),
+        ":nth-child(odd of .item) 应匹配 c1（.item 序 1）"
+    );
+    assert!(
+        odd_of.contains(&"c5".to_string()),
+        ":nth-child(odd of .item) 应匹配 c5（.item 序 3）"
+    );
+    assert!(
+        !odd_of.contains(&"c3".to_string()),
+        ":nth-child(odd of .item) 不应匹配 c3（.item 序 2 偶）"
+    );
+    assert!(!odd_of.contains(&"c2".to_string()), "非 .item 不应匹配 of .item");
+    assert!(!odd_of.contains(&"c4".to_string()), "非 .item 不应匹配 of .item");
+
+    // :nth-child(even of .item) → .item 序 2(c3) 偶 → 仅 c3。
+    let even_of = ids_of(&doc.query_selector_all(root, "li:nth-child(even of .item)"));
+    assert_eq!(
+        even_of,
+        vec!["c3".to_string()],
+        ":nth-child(even of .item) 应仅匹配 c3（.item 序 2）"
+    );
+
+    // :nth-child(1 of .item) → .item 序首个 = c1。
+    let first_of = doc.query_selector(root, "li:nth-child(1 of .item)");
+    assert_eq!(
+        first_of.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c1".to_string()),
+        ":nth-child(1 of .item) 应为 c1"
+    );
+
+    // :nth-last-child(1 of .item) → .item 序末个 = c5。
+    let last_of = doc.query_selector(root, "li:nth-last-child(1 of .item)");
+    assert_eq!(
+        last_of.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c5".to_string()),
+        ":nth-last-child(1 of .item) 应为 c5"
+    );
+
+    // :nth-last-child(odd of .item) → 倒序 .item 序：c5=1,c3=2,c1=3 → 奇序 c5/c1。
+    let last_odd_of = ids_of(&doc.query_selector_all(root, "li:nth-last-child(odd of .item)"));
+    assert!(
+        last_odd_of.contains(&"c1".to_string()),
+        ":nth-last-child(odd of .item) 应匹配 c1（倒序序 3）"
+    );
+    assert!(
+        last_odd_of.contains(&"c5".to_string()),
+        ":nth-last-child(odd of .item) 应匹配 c5（倒序序 1）"
+    );
+    assert!(
+        !last_odd_of.contains(&"c3".to_string()),
+        ":nth-last-child(odd of .item) 不应匹配 c3（倒序序 2 偶）"
+    );
+
+    // 无 `of` 的纯 :nth-child(2) 仍正常（c2，回归保护）。
+    let nth2 = doc.query_selector(root, "li:nth-child(2)");
+    assert_eq!(
+        nth2.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c2".to_string()),
+        ":nth-child(2) 回归应匹配 c2"
+    );
+
+    // `of` 选择器列表（逗号分隔）：:nth-child(1 of .item, #c4) → 计 .item ∪ #c4 的首个 = c1。
+    let first_of_list = doc.query_selector(root, "li:nth-child(1 of .item, #c4)");
+    assert_eq!(
+        first_of_list.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c1".to_string()),
+        ":nth-child(1 of .item, #c4) 应为 c1（c1 是 .item∪#c4 序首）"
+    );
+
+    // `of` 后无选择器（非法）→ 不匹配（返空），不 panic。
+    let malformed = doc.query_selector_all(root, "li:nth-child(2 of )");
+    assert!(malformed.is_empty(), "非法 `of` 空列表应返空");
+}
+
+#[test]
 fn test_query_selector_attribute_operators() {
     let doc = parse_html(
         "<html><body>\

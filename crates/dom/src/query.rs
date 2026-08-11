@@ -35,6 +35,14 @@ pub enum PseudoClass {
     NthLastChild(Nth),
     /// `:nth-last-of-type(an+b)`——在同 tag 元素兄弟中倒数第 n 个。
     NthLastOfType(Nth),
+    /// `:nth-child(an+b of S)`（Selectors L4 §16）：元素须匹配 `of` 列表 S 中任一选择器，且
+    /// 在父元素**仅计匹配 S 的元素兄弟**中的位置满足 `an+b`。`of_selectors` 为简单选择器字符串
+    /// 列表（`,` 分隔，每个由 `parse_simple_selector` 解析），需兄弟枚举 + S 过滤，由
+    /// `Document::matches_nth_child_of` 求值（`matches_full` 延后返 true）。
+    NthChildOf(Nth, Vec<String>),
+    /// `:nth-last-child(an+b of S)`（Selectors L4）：从末尾仅计匹配 S 的兄弟。同 [`NthChildOf`]
+    /// 由 `Document::matches_nth_last_child_of` 求值。
+    NthLastChildOf(Nth, Vec<String>),
     /// `:first-child`——首个元素兄弟。
     FirstChild,
     /// `:last-child`——末个元素兄弟。
@@ -287,6 +295,10 @@ impl SimpleSelector {
             // 倒序位置：nth-last-child 从末尾数（child_count - child_index + 1）。
             PseudoClass::NthLastChild(nth) => nth.matches((pos.child_count - pos.child_index + 1) as i32),
             PseudoClass::NthLastOfType(nth) => nth.matches((pos.type_count - pos.type_index + 1) as i32),
+            // `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)`——须仅计匹配 S 的兄弟，
+            // matches_full 无 Document 访问无法枚举兄弟，延后返 true，由
+            // Document::element_matches_selector 经 matches_nth_child_of/_last_child_of 复评。
+            PseudoClass::NthChildOf(_, _) | PseudoClass::NthLastChildOf(_, _) => true,
             PseudoClass::FirstChild => pos.child_index == 1,
             PseudoClass::LastChild => pos.child_index == pos.child_count,
             PseudoClass::OnlyChild => pos.child_count == 1,
@@ -478,6 +490,46 @@ pub fn parse_nth(arg: &str) -> Option<Nth> {
     }
 }
 
+/// 解析 `:nth-child(...)` / `:nth-last-child(...)` 参数——支持 Selectors L4 `an+b of S` 语法。
+///
+/// `arg` 形如 `even`、`2n+1`、`even of .item`、`-n+3 of .a, .b`。`of` 关键字（大小写不敏感，
+/// 两侧须有空格——CSS tokenization：`of` 为独立 ident，前后空白分隔）切分 `an+b` 与 `of S`
+/// 选择器列表。无 `of` → 纯 [`PseudoClass::NthChild`]/[`PseudoClass::NthLastChild`]；有 `of`
+/// → [`PseudoClass::NthChildOf`]/[`PseudoClass::NthLastChildOf`]（`of_selectors` 为 `,` 分隔
+/// 的简单选择器字符串列表，延后至 `Document` 求值）。`last` 控制变体方向。
+fn parse_nth_or_nth_of(arg: &str, last: bool) -> Option<PseudoClass> {
+    // ` of ` 分隔符大小写不敏感查找（CSS tokenization：`of` 为独立 ident，前后须有空格）。
+    let lower = arg.to_ascii_lowercase();
+    let of_idx = lower.find(" of ");
+    let Some(of_idx) = of_idx else {
+        // 无 `of` → 纯 nth-*。
+        let nth = parse_nth(arg)?;
+        return Some(if last {
+            PseudoClass::NthLastChild(nth)
+        } else {
+            PseudoClass::NthChild(nth)
+        });
+    };
+    let nth_part = &arg[..of_idx];
+    let of_part = &arg[of_idx + 4..]; // 跳过 " of "
+    let nth = parse_nth(nth_part)?;
+    // `of S`：逗号分隔简单选择器列表（与 `:is()` 同 parse_simple_selector）。
+    let of_selectors: Vec<String> = of_part
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if of_selectors.is_empty() {
+        // `of ` 后无选择器（如 `even of`）→ 非法，视为不匹配。
+        return None;
+    }
+    Some(if last {
+        PseudoClass::NthLastChildOf(nth, of_selectors)
+    } else {
+        PseudoClass::NthChildOf(nth, of_selectors)
+    })
+}
+
 // 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
 // `args` 为括号内原始字符串（`nth-*` 用），无括号时为 `None`。
 // 注：`:disabled`/`:enabled` 的元素级判定（含 `<fieldset disabled>` / `<select disabled>` /
@@ -575,9 +627,9 @@ fn strip_attr_quotes(s: &str) -> String {
 
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
-        "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
+        "nth-child" => parse_nth_or_nth_of(args?, false),
         "nth-of-type" => Some(PseudoClass::NthOfType(parse_nth(args?)?)),
-        "nth-last-child" => Some(PseudoClass::NthLastChild(parse_nth(args?)?)),
+        "nth-last-child" => parse_nth_or_nth_of(args?, true),
         "nth-last-of-type" => Some(PseudoClass::NthLastOfType(parse_nth(args?)?)),
         "first-child" => Some(PseudoClass::FirstChild),
         "last-child" => Some(PseudoClass::LastChild),
