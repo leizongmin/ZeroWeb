@@ -179,6 +179,18 @@ pub fn script_text_delete(selector: &str) -> String {
     format!("__zw_text_delete('{esc_sel}')")
 }
 
+/// 读取文本控件当前 value 与 DOM 选区，返回 JSON 数组字符串。
+///
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+pub fn script_text_control_snapshot(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var el=document.querySelector('{esc_sel}');\
+if(!el)return '';\
+return JSON.stringify([String(el.value||''),Number(el.selectionStart||0),Number(el.selectionEnd||0)]);}})()"
+    )
+}
+
 /// 构造「报告未捕获脚本错误」的 shim 脚本（R2940 onerror host 集成）。宿主在页面 `<script>` 执行
 /// 出错（ScriptError）时执行：shim `__zw_report_error(msg, src, line, col)` 调 legacy window.onerror
 ///（5-arg 签名）+ 派发 ErrorEvent 'error' 到 window（addEventListener('error') listener），使 Sentry /

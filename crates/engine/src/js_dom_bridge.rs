@@ -48,6 +48,15 @@ pub use css_wire::*;
 /// 一条 DOM 变更记录（由 JS shim 经 `__zw_*` 回调产生）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DomMutation {
+    /// 文本表单控件的当前值（IDL `value`），不修改 HTML `value` 内容属性。
+    ///
+    /// https://html.spec.whatwg.org/multipage/input.html#dom-input-value
+    SetFormValue {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// 当前编辑值。
+        value: String,
+    },
     /// `element.setAttribute` / 属性 setter（`src`、`class` 等）。
     SetAttr {
         /// CSS 选择器句柄。
@@ -419,6 +428,9 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
 
     for mutation in mutations {
         match mutation {
+            DomMutation::SetFormValue { .. } => {
+                // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
+            }
             DomMutation::SetAttr { selector, name, value } => {
                 let node =
                     find_by_selector(doc, selector).ok_or_else(|| format!("set_attr: no match for {selector}"))?;

@@ -16,6 +16,7 @@ mod sandbox;
 mod script_prefetch;
 mod text_metrics;
 
+use zero_page_runtime::FormControlStateStore;
 use zero_webview::AsyncPageLoad;
 
 use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
@@ -209,10 +210,8 @@ struct RendererRuntime {
     /// 若改 DOM → rerender → 再次 `publish_webview`；depth>0 时跳过 tick，防 tick→rerender→tick
     /// 链（observer 仅在 cross/size-change 时派发，本身收敛；此守卫为兜底，单次外部触发最多 2 次 publish）。
     observer_tick_depth: u32,
-    /// P1a change-on-blur：当前焦点文本输入的 stable selector（失焦时据此派发 blur+change）。
-    focus_target: Option<String>,
-    /// P1a change-on-blur：焦点元素获焦时的 value（失焦时与当前 value 比，变化才派发 change）。
-    focus_value: Option<String>,
+    /// 页面级 retained 文本表单控件状态（值、选区、焦点和 change 基线）。
+    form_controls: FormControlStateStore,
     /// R2942 mirror：子资源 fetch/decode 失败 `(kind, url)`（stylesheet/image）。load 完成时从
     /// `AsyncPageLoad.take_failed_resources` drain 并 stash，脚本阶段经 `finish_page_load` 派 window 'error'。
     pending_resource_errors: Vec<(String, String)>,
@@ -309,8 +308,7 @@ impl RendererRuntime {
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
             observer_tick_depth: 0,
-            focus_target: None,
-            focus_value: None,
+            form_controls: FormControlStateStore::new(),
             pending_resource_errors: Vec::new(),
             pending_img_events: Vec::new(),
             pending_link_events: Vec::new(),
@@ -542,7 +540,7 @@ impl RendererRuntime {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -551,7 +549,15 @@ impl RendererRuntime {
             };
             page_scripts::apply_text_input(&mut ctx, selector, key)
         };
-        if changed {
+        if let Some(snapshot) = outcome.snapshot {
+            self.form_controls.update(
+                selector,
+                snapshot.value,
+                snapshot.selection_start,
+                snapshot.selection_end,
+            );
+        }
+        if outcome.html_changed {
             self.publish_webview(None, true)?;
         }
         Ok(())
@@ -563,7 +569,7 @@ impl RendererRuntime {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -572,7 +578,15 @@ impl RendererRuntime {
             };
             page_scripts::apply_text_delete(&mut ctx, selector)
         };
-        if changed {
+        if let Some(snapshot) = outcome.snapshot {
+            self.form_controls.update(
+                selector,
+                snapshot.value,
+                snapshot.selection_start,
+                snapshot.selection_end,
+            );
+        }
+        if outcome.html_changed {
             self.publish_webview(None, true)?;
         }
         Ok(())
@@ -772,19 +786,19 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a change-on-blur：失焦——若 `focus_target` 是文本输入，派发 'blur'；若 value 自获焦以来
+    /// P1a change-on-blur：失焦——若 retained 状态中有文本输入焦点，派发 'blur'；若 value 自获焦以来
     /// 变化，再派发 'change'。清空 focus 状态。回调改 DOM 则单次 rerender。
     fn blur_focused(&mut self) -> Result<(), String> {
-        let Some(old) = self.focus_target.clone() else {
+        let Some(old) = self.form_controls.focused_selector().map(str::to_string) else {
             return Ok(());
         };
-        let old_val = self.focus_value.clone().unwrap_or_default();
-        self.focus_target = None;
-        self.focus_value = None;
+        let value_changed = self
+            .form_controls
+            .blur_focused()
+            .is_some_and(|control| control.value_changed);
         if !self.javascript_enabled {
             return Ok(());
         }
-        let cur_val = read_input_value_for_change(&self.cached_html, &old);
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut changed = false;
         {
@@ -796,7 +810,7 @@ impl RendererRuntime {
             };
             changed |=
                 page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
-            if cur_val != old_val {
+            if value_changed {
                 changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None)
                     .html_changed;
             }
@@ -807,14 +821,18 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a change-on-blur：获焦——若 `selector` 是文本输入，记 focus_target/value + 派发 'focus'。
+    /// P1a change-on-blur：获焦——若 `selector` 是文本输入，建立 retained 值基线并派发 'focus'。
     fn focus_if_text_input(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled || !zero_engine::is_text_input(&self.cached_html, selector) {
             return Ok(());
         }
-        let val = read_input_value_for_change(&self.cached_html, selector);
-        self.focus_target = Some(selector.to_string());
-        self.focus_value = Some(val);
+        let val = self
+            .form_controls
+            .get(selector)
+            .map(|state| state.value.clone())
+            .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
+        let end = val.encode_utf16().count();
+        self.form_controls.focus(selector, val, end, end);
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -849,8 +867,13 @@ impl RendererRuntime {
             page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
         };
         if zero_engine::is_text_input(&self.cached_html, selector) {
-            self.focus_target = Some(selector.to_string());
-            self.focus_value = Some(read_input_value_for_change(&self.cached_html, selector));
+            let value = self
+                .form_controls
+                .get(selector)
+                .map(|state| state.value.clone())
+                .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
+            let end = value.encode_utf16().count();
+            self.form_controls.focus(selector, value, end, end);
         }
         if changed {
             self.rerender_publish_webview()?;
@@ -1309,8 +1332,7 @@ impl RendererRuntime {
         // S8：新页面图片 key 空间不同——清空已发送记录，确保新页图片像素被传输
         self.sent_image_keys.clear();
         // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
-        self.focus_target = None;
-        self.focus_value = None;
+        self.form_controls.clear();
 
         self.navigation_epoch = params.navigation_epoch;
         let page_url = params.url.clone();
@@ -1345,8 +1367,7 @@ impl RendererRuntime {
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
         // P1a change-on-blur：加载新 HTML 清焦点状态。
-        self.focus_target = None;
-        self.focus_value = None;
+        self.form_controls.clear();
         let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
         tracing::info!("加载内联 HTML: {page_url}");
         self.cached_css = params.css.clone().unwrap_or_default();
@@ -1538,7 +1559,7 @@ impl RendererRuntime {
             }
         } else if result.default_allowed && event_type == "click" {
             let target = self.event_target.clone();
-            if self.focus_target.as_deref() != Some(target.as_str()) {
+            if self.form_controls.focused_selector() != Some(target.as_str()) {
                 self.blur_focused()?;
                 self.focus_if_text_input(&target)?;
             }
@@ -1583,7 +1604,7 @@ impl RendererRuntime {
             let target = self.event_target.clone();
             // P1a change-on-blur：focus 变化优先（mousedown→focus→click 近似）——旧焦点失焦
             // （blur + change 若 value 变），新焦点获焦（focus 若 text input）。
-            if self.focus_target.as_deref() != Some(target.as_str()) {
+            if self.form_controls.focused_selector() != Some(target.as_str()) {
                 self.blur_focused()?;
                 self.focus_if_text_input(&target)?;
             }
@@ -1651,11 +1672,12 @@ impl RendererRuntime {
                 // P1a Tab 焦点导航：经 FocusManager 算下一/上一可聚焦元素，blur 旧焦点 + focus 新。
                 let forward = !params.shift;
                 let current = self
-                    .focus_target
-                    .clone()
+                    .form_controls
+                    .focused_selector()
+                    .map(str::to_string)
                     .or_else(|| (self.event_target != "body").then(|| self.event_target.clone()));
                 if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
-                    && self.focus_target.as_deref() != Some(next.as_str())
+                    && self.form_controls.focused_selector() != Some(next.as_str())
                     && self.event_target != next
                 {
                     let _ = self.blur_focused();
@@ -2132,7 +2154,7 @@ mod runtime_smoke {
     #[test]
     fn read_input_value_for_change_textarea_uses_content() {
         // R2703：change-on-blur 值比对——textarea 取文本内容（非 value 属性，R2702 value↔内容），
-        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → focus_value/cur_val
+        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → 获焦基线/当前值
         // 均 '' → textarea change-on-blur 永不触发。
         let ta = "<html><body><textarea id=\"t\">hello</textarea></body></html>";
         assert_eq!(

@@ -776,6 +776,22 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_set_form_value",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SetFormValue {
+                        selector: args[0].clone(),
+                        value: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     // `element.removeAttribute(name)` / `delete el.dataset.x` —— 真移除属性（区别于 SetAttr 空值；
     // 布尔/存在性属性须移除才 unset）。记 `DomMutation::RemoveAttr`。
     let m = Arc::clone(mutations);

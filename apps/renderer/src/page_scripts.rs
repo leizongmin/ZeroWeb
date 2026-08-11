@@ -9,7 +9,7 @@ use zero_engine::{
     is_checkbox, is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html,
     resolve_document_url, script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event,
     script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
-    script_run_classic_page, script_text_delete, script_text_input, toggle_radio_html,
+    script_run_classic_page, script_text_control_snapshot, script_text_delete, script_text_input, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -31,6 +31,26 @@ pub struct SubmitOutcome {
     pub html_changed: bool,
     /// submit 事件未被 `preventDefault()`（→ GET 表单应导航）。无 enclosing form / 派发失败 → false。
     pub default_allowed: bool,
+}
+
+/// 一次文本编辑后从 JS retained 状态读取的最终快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextControlSnapshot {
+    /// 事件监听器执行完毕后的当前值。
+    pub value: String,
+    /// DOM UTF-16 选区起点。
+    pub selection_start: usize,
+    /// DOM UTF-16 选区终点。
+    pub selection_end: usize,
+}
+
+/// 宿主文本编辑结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEditOutcome {
+    /// DOM mutation 是否改变页面快照。
+    pub html_changed: bool,
+    /// 编辑完成后的 retained 控件快照。
+    pub snapshot: Option<TextControlSnapshot>,
 }
 
 /// 页面脚本执行上下文。
@@ -341,30 +361,64 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
 /// 镜像 `dispatch_dom_event` 的 set_snapshot→clear→execute→apply 流程，script = `__zw_text_input`。
 /// 非 input/textarea 目标 shim 内 no-op。返回 value 属性是否变更（调用方据此单次 rerender）。
 /// 调用方须先判定 `key` 为单字符可打印键（见 `main::is_printable_key`）。
-pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> bool {
+pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let _ = ctx.js_worker.execute_script_direct(&script_text_input(selector, key));
+    let script = format!(
+        "{};{}",
+        script_text_input(selector, key),
+        script_text_control_snapshot(selector)
+    );
+    let snapshot = ctx
+        .js_worker
+        .execute_script_direct(&script)
+        .ok()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(&value).ok())
+        .map(|(value, selection_start, selection_end)| TextControlSnapshot {
+            value,
+            selection_start,
+            selection_end,
+        });
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    TextEditOutcome {
+        html_changed: apply_recorded_mutations(ctx, &html_snap).is_some(),
+        snapshot,
+    }
 }
 
 /// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
 /// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
-pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let _ = ctx.js_worker.execute_script_direct(&script_text_delete(selector));
+    let script = format!(
+        "{};{}",
+        script_text_delete(selector),
+        script_text_control_snapshot(selector)
+    );
+    let snapshot = ctx
+        .js_worker
+        .execute_script_direct(&script)
+        .ok()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(&value).ok())
+        .map(|(value, selection_start, selection_end)| TextControlSnapshot {
+            value,
+            selection_start,
+            selection_end,
+        });
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    TextEditOutcome {
+        html_changed: apply_recorded_mutations(ctx, &html_snap).is_some(),
+        snapshot,
+    }
 }
 
 /// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
@@ -705,19 +759,26 @@ mod tests {
             js_worker: &worker,
             webview: None,
         };
-        assert!(apply_text_input(&mut ctx, "#name", "A"));
-        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "A");
+        let first = apply_text_input(&mut ctx, "#name", "A");
+        assert!(first.html_changed);
+        assert_eq!(first.snapshot.expect("first snapshot").value, "A");
+        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "");
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "输入事件：A");
 
-        assert!(apply_text_input(&mut ctx, "#name", "中文"));
-        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "A中文");
+        let second = apply_text_input(&mut ctx, "#name", "中文");
+        assert!(second.html_changed);
+        let second_snapshot = second.snapshot.expect("second snapshot");
+        assert_eq!(second_snapshot.selection_start, 3);
+        assert_eq!(second_snapshot.value, "A中文");
         assert_eq!(
             zero_engine::query_text_from_html(ctx.html, "#result"),
             "输入事件：A中文"
         );
 
-        assert!(apply_text_input(&mut ctx, "#note", "第二个输入框"));
-        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "第二个输入框");
+        let note = apply_text_input(&mut ctx, "#note", "第二个输入框");
+        assert!(note.html_changed);
+        assert_eq!(note.snapshot.expect("note snapshot").value, "第二个输入框");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "");
 
         worker.shutdown();
     }

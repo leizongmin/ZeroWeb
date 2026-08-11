@@ -173,33 +173,47 @@ impl super::Painter {
             None => return,
         };
         let elem = match &node.kind {
-            NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input") => e,
+            NodeKind::Element(e)
+                if e.local_name().eq_ignore_ascii_case("input") || e.local_name().eq_ignore_ascii_case("textarea") =>
+            {
+                e
+            }
             _ => return,
         };
 
         let itype = elem.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+        let retained_value = self.form_control_values.get(&node_id).cloned();
         // 决定渲染标签 + 是否水平居中。
-        let (label, center): (String, bool) = match itype.as_str() {
-            "submit" => (
-                elem.get_attribute("value").unwrap_or_else(|| "Submit".to_string()),
-                true,
-            ),
-            "reset" => (elem.get_attribute("value").unwrap_or_else(|| "Reset".to_string()), true),
-            "button" => (elem.get_attribute("value").unwrap_or_default(), true),
-            "password" => (
-                elem.get_attribute("value")
-                    .unwrap_or_default()
-                    .chars()
-                    .map(|_| '\u{2022}')
-                    .collect(),
-                false,
-            ),
-            // 文本类（默认无 type 当 text）。
-            "" | "text" | "search" | "email" | "url" | "tel" | "number" => {
-                (elem.get_attribute("value").unwrap_or_default(), false)
+        let (label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
+            let Some(value) = retained_value else { return };
+            (value, false)
+        } else {
+            match itype.as_str() {
+                "submit" => (
+                    elem.get_attribute("value").unwrap_or_else(|| "Submit".to_string()),
+                    true,
+                ),
+                "reset" => (elem.get_attribute("value").unwrap_or_else(|| "Reset".to_string()), true),
+                "button" => (elem.get_attribute("value").unwrap_or_default(), true),
+                "password" => (
+                    retained_value
+                        .or_else(|| elem.get_attribute("value"))
+                        .unwrap_or_default()
+                        .chars()
+                        .map(|_| '\u{2022}')
+                        .collect(),
+                    false,
+                ),
+                // 文本类（默认无 type 当 text）。
+                "" | "text" | "search" | "email" | "url" | "tel" | "number" => (
+                    retained_value
+                        .or_else(|| elem.get_attribute("value"))
+                        .unwrap_or_default(),
+                    false,
+                ),
+                // checkbox/radio/hidden/range/file/image/color/date/... 不渲染 value 文本。
+                _ => return,
             }
-            // checkbox/radio/hidden/range/file/image/color/date/... 不渲染 value 文本。
-            _ => return,
         };
         if label.is_empty() {
             return;
@@ -350,6 +364,14 @@ impl super::Painter {
         doc: Option<&Document>,
         styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
+        if let (Some(node_id), Some(doc)) = (box_node.node_id, doc)
+            && self.form_control_values.contains_key(&node_id)
+            && doc.get(node_id).is_some_and(
+                |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name().eq_ignore_ascii_case("textarea")),
+            )
+        {
+            return;
+        }
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,

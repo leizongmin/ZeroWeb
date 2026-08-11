@@ -399,16 +399,17 @@ impl WebView {
         &mut self,
         mutations: &[DomMutation],
     ) -> Result<(WebViewRenderResult, String, HashMap<String, String>), String> {
-        let (result, mutated, handle_selectors) =
+        let (result, html_snapshot, handle_selectors) =
             self.pipeline.render_with_dom_mutations(mutations, &self.cached_css)?;
-        // R1794：脚本改 DOM 后刷新图片子资源（对齐 reload_html_after_script）。
-        if let Some(page_url) = self.current_url.clone() {
+        // R1794：只有内容 DOM 改变才刷新图片子资源。文本控件当前值由 retained 状态持有，
+        // 不改变 HTML 快照，也不应让每个字符重扫整页图片。
+        if let (Some(mutated), Some(page_url)) = (html_snapshot.as_deref(), self.current_url.clone()) {
             let mut combined_css = self.cached_css.clone();
             combined_css.push('\n');
-            combined_css.push_str(&extract_html_style_text(&mutated));
+            combined_css.push_str(&extract_html_style_text(mutated));
             let css_image_urls = extract_css_image_urls(&combined_css);
             let (image_sizes, image_ratios, image_no_ratio) =
-                self.fetch_image_subresources(&mutated, &page_url, &css_image_urls);
+                self.fetch_image_subresources(mutated, &page_url, &css_image_urls);
             self.cached_image_sizes = image_sizes.clone();
             self.cached_image_ratios = image_ratios.clone();
             self.cached_image_no_ratio = image_no_ratio.clone();
@@ -416,10 +417,12 @@ impl WebView {
             self.pipeline.set_image_ratios(image_ratios);
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
-        self.cached_html = mutated.clone();
+        if let Some(mutated) = html_snapshot {
+            self.cached_html = mutated;
+        }
         let render_result = render_result_to_webview(&result);
         self.last_render = Some(render_result.clone());
-        Ok((render_result, mutated, handle_selectors))
+        Ok((render_result, self.cached_html.clone(), handle_selectors))
     }
 
     /// 从 URL 中提取 origin（scheme + host + port）。
@@ -1445,15 +1448,15 @@ impl WebView {
         // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
         //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
         // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
-        let (result, mutated, _handle_selectors) = self
+        let (result, html_snapshot, _handle_selectors) = self
             .pipeline
             .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
-        if mutated != html {
-            self.cached_html = mutated.clone();
-            self.last_render = Some(render_result_to_webview(&result));
+        if let Some(mutated) = html_snapshot {
+            self.cached_html = mutated;
         }
-        Ok(mutated)
+        self.last_render = Some(render_result_to_webview(&result));
+        Ok(self.cached_html.clone())
     }
 
     /// 向页面元素派发 DOM 事件（M2：如 click/submit），触发页面注册的
@@ -1509,14 +1512,14 @@ impl WebView {
             return Ok(());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
-        let (result, mutated, _handle_selectors) = self
+        let (result, html_snapshot, _handle_selectors) = self
             .pipeline
             .render_with_dom_mutations(&recorded, &self.cached_css)
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
-        if mutated != self.cached_html {
+        if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
-            self.last_render = Some(render_result_to_webview(&result));
         }
+        self.last_render = Some(render_result_to_webview(&result));
         Ok(())
     }
 

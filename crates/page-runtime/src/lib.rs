@@ -13,6 +13,8 @@ use std::sync::mpsc::{Receiver, channel};
 
 pub mod fetch_meta;
 pub use fetch_meta::ResourceFetchMeta;
+pub mod form_control;
+pub use form_control::{BlurredFormControl, FormControlState, FormControlStateStore};
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;
