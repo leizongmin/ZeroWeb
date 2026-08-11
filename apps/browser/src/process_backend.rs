@@ -350,6 +350,9 @@ impl ProcessTabBackend {
         pending_loaded: &mut Vec<(TabId, String, String)>,
         browser_gpu_present: bool,
     ) -> bool {
+        #[cfg(not(target_os = "linux"))]
+        let _ = browser_gpu_present;
+
         let mut changed = false;
         for (tab_id, snap) in snapshots {
             let Some(submission) = snap.compositor_submission else {

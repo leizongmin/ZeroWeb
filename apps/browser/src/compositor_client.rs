@@ -774,14 +774,16 @@ fn process_batch(
                     frame_id,
                 }) =>
             {
-                let (rgba, dmabuf) = match zero_protocol::resolve_compositor_frame_delivery_fenced(
+                let resolved_frame = zero_protocol::resolve_compositor_frame_delivery_fenced(
                     width,
                     height,
                     rgba,
                     shm_name,
                     gpu_image,
                     Some(expected.frame_id),
-                )? {
+                )?;
+                #[cfg(target_os = "linux")]
+                let (rgba, dmabuf) = match resolved_frame {
                     zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
                         validate_frame_data(width, height, &bytes)?;
                         (bytes, None)
@@ -802,6 +804,13 @@ fn process_batch(
                             drm_modifier,
                         }),
                     ),
+                };
+                #[cfg(not(target_os = "linux"))]
+                let rgba = match resolved_frame {
+                    zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
+                        validate_frame_data(width, height, &bytes)?;
+                        bytes
+                    }
                 };
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
