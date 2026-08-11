@@ -951,6 +951,120 @@ fn test_query_selector_fieldset_disabled_propagation_r3277() {
 }
 
 #[test]
+fn test_query_selector_form_state_required_readonly_r3278() {
+    // R3278：DOM `:required`/`:optional`/`:read-only`/`:read-write` 选择器（此前仅 style-system CSS 支持，
+    // querySelector/querySelectorAll 不识别）。语义与 style-system 同源（HTML spec）：
+    //   :required/:optional——可约束表单控件（input/select/textarea）带/不带 `required`；
+    //   :read-write——文本可编辑 type 的 input 或 textarea，无 readonly/disabled；
+    //   :read-only——非 :read-write（含所有非表单元素）。
+    let doc = parse_html(
+        "<html><body>\
+         <input id='req-in' type='text' required>\
+         <input id='opt-in' type='text'>\
+         <input id='ro-in' type='text' readonly>\
+         <input id='cb' type='checkbox' required>\
+         <select id='sel' required><option>x</option></select>\
+         <textarea id='ta'></textarea>\
+         <input id='btn-in' type='button'>\
+         <p id='p'>text</p>\
+         <fieldset disabled><input id='fs-in' type='text'></fieldset>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+
+    // :required → 可约束控件带 required：req-in（text+required）、cb（checkbox+required）、sel（select+required）。
+    let required = ids_of(&doc.query_selector_all(root, ":required"));
+    assert!(
+        required.contains(&"req-in".to_string()),
+        "required text input 应匹配 :required"
+    );
+    assert!(
+        required.contains(&"cb".to_string()),
+        "required checkbox 应匹配 :required"
+    );
+    assert!(
+        required.contains(&"sel".to_string()),
+        "required select 应匹配 :required"
+    );
+    assert!(
+        !required.contains(&"opt-in".to_string()),
+        "无 required 的 input 不应匹配 :required"
+    );
+    assert!(
+        !required.contains(&"btn-in".to_string()),
+        "type=button 不可约束，即使有 required 也不应匹配 :required"
+    );
+
+    // :optional → 可约束控件无 required：opt-in、ta（textarea 可约束无 required）。
+    let optional = ids_of(&doc.query_selector_all(root, ":optional"));
+    assert!(
+        optional.contains(&"opt-in".to_string()),
+        "无 required input 应匹配 :optional"
+    );
+    assert!(
+        optional.contains(&"ta".to_string()),
+        "无 required textarea 应匹配 :optional"
+    );
+    assert!(
+        !optional.contains(&"req-in".to_string()),
+        "required input 不应匹配 :optional"
+    );
+
+    // :read-write → 文本可编辑 input/textarea 无 readonly/disabled：opt-in、ta、req-in（required 仍可编辑）。
+    let read_write = ids_of(&doc.query_selector_all(root, ":read-write"));
+    assert!(
+        read_write.contains(&"opt-in".to_string()),
+        "普通 text input 应匹配 :read-write"
+    );
+    assert!(read_write.contains(&"ta".to_string()), "textarea 应匹配 :read-write");
+    assert!(
+        read_write.contains(&"req-in".to_string()),
+        "required text input 仍可编辑，应匹配 :read-write"
+    );
+    assert!(
+        !read_write.contains(&"ro-in".to_string()),
+        "readonly input 不应匹配 :read-write"
+    );
+    assert!(
+        !read_write.contains(&"btn-in".to_string()),
+        "type=button 非文本可编辑，不应匹配 :read-write"
+    );
+    // fieldset 传播禁用：fs-in 自身无 disabled，但位于禁用 fieldset 内 → 经传播禁用 → 只读。
+    assert!(
+        !read_write.contains(&"fs-in".to_string()),
+        "禁用 fieldset 内 input 经传播禁用应为只读，不应匹配 :read-write"
+    );
+
+    // :read-only → 非 :read-write：ro-in（readonly）、btn-in（非文本）、cb（checkbox）、p（非表单）。
+    let read_only = ids_of(&doc.query_selector_all(root, ":read-only"));
+    assert!(
+        read_only.contains(&"ro-in".to_string()),
+        "readonly input 应匹配 :read-only"
+    );
+    assert!(read_only.contains(&"p".to_string()), "非表单 <p> 应匹配 :read-only");
+    assert!(read_only.contains(&"cb".to_string()), "checkbox 应匹配 :read-only");
+    assert!(
+        read_only.contains(&"fs-in".to_string()),
+        "禁用 fieldset 内 input 经传播禁用应匹配 :read-only"
+    );
+    assert!(
+        !read_only.contains(&"opt-in".to_string()),
+        "可编辑 text input 不应匹配 :read-only"
+    );
+
+    // 组合：input:required 与 input:optional 互补（验证多伪类 AND）。
+    let req_text = ids_of(&doc.query_selector_all(root, "input:required"));
+    assert!(req_text.contains(&"req-in".to_string()));
+    assert!(req_text.contains(&"cb".to_string()));
+    assert!(
+        !req_text.contains(&"opt-in".to_string()),
+        "input:required 不应含 optional input"
+    );
+}
+
+#[test]
 fn test_query_selector_attribute_operators() {
     let doc = parse_html(
         "<html><body>\

@@ -77,6 +77,15 @@ pub enum PseudoClass {
     Disabled,
     /// `:enabled`——启用态表单控件（表单控件且非 [`PseudoClass::Disabled`]）。
     Enabled,
+    /// `:required`——可约束表单控件（input/select/textarea）带 `required` 属性。纯元素属性求值。
+    Required,
+    /// `:optional`——可约束表单控件无 `required` 属性（`:required` 在可约束元素上的补集）。
+    Optional,
+    /// `:read-write`——可编辑文本控件（文本可编辑 type 的 input 或 textarea），无 `readonly`/`disabled`。
+    /// 纯元素属性求值（注：`contenteditable` 未实现）。
+    ReadWrite,
+    /// `:read-only`——非 `:read-write`（所有不可编辑元素，含 `<p>`/`<div>` 等非表单元素）。
+    ReadOnly,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -269,6 +278,13 @@ impl SimpleSelector {
             PseudoClass::Has { .. } => true,
             // 表单状态伪类——纯元素 tag+属性求值（无 Document/position 依赖）。
             PseudoClass::Checked => is_checked(elem),
+            PseudoClass::Required => is_required(elem),
+            PseudoClass::Optional => is_optional(elem),
+            // `:read-write`/`:read-only` 须含 disabled 态判定（spec：禁用控件只读）——
+            // `<fieldset disabled>` 传播禁用须祖先链求值（matches_full 无 Document 访问），
+            // 故延后返 true，由 Document::element_matches_selector 经
+            // `is_effectively_read_write` 复评（镜像 :has()/:disabled 两阶段模式）。
+            PseudoClass::ReadWrite | PseudoClass::ReadOnly => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -446,6 +462,24 @@ fn is_checked(elem: &ElementData) -> bool {
     }
 }
 
+/// 可设 `required` 的元素（HTML spec `:required`/`:optional` 仅限可约束表单控件）。
+fn is_requireable_tag(tag: &str) -> bool {
+    matches!(tag, "input" | "select" | "textarea")
+}
+
+/// `:required`——可约束元素带 `required` 属性。
+fn is_required(elem: &ElementData) -> bool {
+    is_requireable_tag(elem.local_name()) && elem.has_attribute("required")
+}
+
+/// `:optional`——可约束元素无 `required` 属性。
+fn is_optional(elem: &ElementData) -> bool {
+    is_requireable_tag(elem.local_name()) && !elem.has_attribute("required")
+}
+
+// `:read-write`/`:read-only` 含 disabled 态判定（含 `<fieldset disabled>` 祖先传播），
+// 须 Document 上下文，由 `Document::is_effectively_read_write` 负责。
+
 /// 属性选择器运算符（CSS3 属性选择器全部 6 种）。
 #[derive(Clone, Copy)]
 enum AttrOp {
@@ -540,10 +574,14 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
                 Some(PseudoClass::Has { inner, child_scope })
             }
         }
-        // :checked / :disabled / :enabled——表单状态伪类（无参，纯元素属性求值）。
+        // 表单状态伪类（无参，纯元素属性求值）。与 style-system CSS 匹配同源。
         "checked" => Some(PseudoClass::Checked),
         "disabled" => Some(PseudoClass::Disabled),
         "enabled" => Some(PseudoClass::Enabled),
+        "required" => Some(PseudoClass::Required),
+        "optional" => Some(PseudoClass::Optional),
+        "read-write" => Some(PseudoClass::ReadWrite),
+        "read-only" => Some(PseudoClass::ReadOnly),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }

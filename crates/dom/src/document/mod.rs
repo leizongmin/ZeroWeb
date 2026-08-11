@@ -1627,6 +1627,42 @@ impl Document {
         false
     }
 
+    /// `:read-write` 权威判定（CSS Basic UI + HTML spec「mutable」）——可编辑文本控件：
+    /// `<textarea>` 或文本可编辑 type 的 `<input>`，且**非禁用**（含 `<fieldset disabled>`
+    /// 祖先传播，经 [`Self::is_effectively_disabled`]）且无 `readonly`。与 style-system CSS
+    /// `:read-write` 同源（保证 DOM 选择器与 CSS 一致）。注：`contenteditable` 未实现。
+    pub fn is_effectively_read_write(&self, node: NodeId) -> bool {
+        let (tag, has_readonly, has_disabled_attr, input_type) =
+            match self.nodes.get(node).and_then(|n| match &n.kind {
+                NodeKind::Element(e) => Some((
+                    e.local_name().to_string(),
+                    e.has_attribute("readonly"),
+                    e.has_attribute("disabled"),
+                    e.get_attribute("type").unwrap_or_default().to_ascii_lowercase(),
+                )),
+                _ => None,
+            }) {
+                Some(t) => t,
+                None => return false,
+            };
+        if has_readonly {
+            return false;
+        }
+        let is_text_editable = match tag.as_str() {
+            "textarea" => true,
+            "input" => is_text_editable_input_type(&input_type),
+            _ => false,
+        };
+        if !is_text_editable {
+            return false;
+        }
+        // 禁用控件只读（含 fieldset 传播禁用）。
+        if has_disabled_attr || self.is_effectively_disabled(node) {
+            return false;
+        }
+        true
+    }
+
     /// `node` 是否为 `fieldset` 的首个 `<legend>` 元素后代（HTML spec：fieldset 的首个 legend
     /// 子元素，其内控件不随 fieldset disabled 禁用）。legend 须为 fieldset 的**直接元素子**且
     /// 为首个 legend 类型元素子。
@@ -1685,6 +1721,10 @@ impl Document {
             crate::query::PseudoClass::Enabled => {
                 is_disableable_tag_of_node(self, node) && !self.is_effectively_disabled(node)
             }
+            // `:read-write`/`:read-only` 含 disabled 态（含 fieldset 传播），延后至此经
+            // is_effectively_read_write 复评。
+            crate::query::PseudoClass::ReadWrite => self.is_effectively_read_write(node),
+            crate::query::PseudoClass::ReadOnly => !self.is_effectively_read_write(node),
             _ => true,
         })
     }
@@ -1989,6 +2029,25 @@ fn is_disableable_tag_of_node(doc: &Document, node: NodeId) -> bool {
             _ => None,
         })
         .unwrap_or(false)
+}
+
+/// 文本可编辑 input type（HTML spec「mutable」文本输入集；与 style-system / query.rs 同源）。
+fn is_text_editable_input_type(ty: &str) -> bool {
+    matches!(
+        ty,
+        "" | "text"
+            | "search"
+            | "url"
+            | "tel"
+            | "email"
+            | "password"
+            | "date"
+            | "month"
+            | "week"
+            | "time"
+            | "datetime-local"
+            | "number"
+    )
 }
 
 // ── DomError ────────────────────────────────────────────────────────

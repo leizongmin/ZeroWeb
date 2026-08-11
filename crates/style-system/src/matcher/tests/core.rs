@@ -764,6 +764,45 @@ fn test_matches_read_only_read_write() {
 }
 
 #[test]
+fn test_matches_read_write_fieldset_disabled_propagation_r3278() {
+    // R3278：`:read-write` 经 Document::is_effectively_read_write——含 `<fieldset disabled>`
+    // 祖先传播禁用判定（与 DOM 选择器同源）。fieldset 内文本 input 自身无 disabled，
+    // 但经传播禁用 → 只读；首个 legend 内豁免。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    let fs = doc.create_element("fieldset");
+    doc.set_attribute(fs, "disabled", "");
+    doc.append_child(body, fs).unwrap();
+
+    let legend = doc.create_element("legend");
+    doc.append_child(fs, legend).unwrap();
+    let legend_in = doc.create_element("input");
+    doc.append_child(legend, legend_in).unwrap();
+
+    let fs_in = doc.create_element("input");
+    doc.append_child(fs, fs_in).unwrap();
+
+    // fieldset body 内 input 经传播禁用 → 只读。
+    assert!(
+        !matches_selector(&doc, fs_in, &simple_pseudo("read-write")),
+        "禁用 fieldset body 内 input 经传播禁用应为只读"
+    );
+    assert!(
+        matches_selector(&doc, fs_in, &simple_pseudo("read-only")),
+        "禁用 fieldset body 内 input 经传播禁用应匹配 :read-only"
+    );
+    // 首个 legend 内 input 豁免（未禁用）→ 可编辑。
+    assert!(
+        matches_selector(&doc, legend_in, &simple_pseudo("read-write")),
+        "首个 legend 内 input 豁免传播，应匹配 :read-write"
+    );
+    assert!(
+        !matches_selector(&doc, legend_in, &simple_pseudo("read-only")),
+        "首个 legend 内 input 豁免传播，不应匹配 :read-only"
+    );
+}
+
+#[test]
 fn test_matches_placeholder_shown() {
     let (mut doc, _html, body, _div, _p) = make_test_dom();
 
