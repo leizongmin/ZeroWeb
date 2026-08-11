@@ -62,6 +62,7 @@ fn spawn_compositor() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProc
 }
 
 /// 全默认 GPU 链路（含 dma-buf fd 导出）。
+#[cfg(target_os = "linux")]
 fn spawn_compositor_gpu_dmabuf() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
     // SAFETY: 测试进程启用 Browser dma-buf 导入解析。
     unsafe {

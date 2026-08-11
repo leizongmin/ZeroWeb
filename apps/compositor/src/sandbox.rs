@@ -32,6 +32,7 @@ pub fn apply_early_if_enabled() {
     apply_seccomp_if_enabled();
 }
 
+#[cfg(target_os = "linux")]
 fn compositor_gpu_enabled() -> bool {
     zero_protocol::compositor_gpu_enabled()
 }

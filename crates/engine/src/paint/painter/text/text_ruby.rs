@@ -61,9 +61,8 @@ mod r1689_ruby_segment_tests {
     use super::ruby_annotation_segments;
 
     fn first_ruby_owner(html: &str) -> zero_dom::Document {
-        let doc = zero_dom::parse_html(html);
         // 返回 doc（caller 用 get_elements_by_tag_name 取 ruby）；为简化直接重建。
-        doc
+        zero_dom::parse_html(html)
     }
 
     /// R1689：per-kanji ruby → 每个 rt 配对其前 base 段。

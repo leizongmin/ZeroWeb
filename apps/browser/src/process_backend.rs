@@ -1449,23 +1449,25 @@ mod compositor_fallback_tests {
         }
 
         let tab_id = TabId(1);
-        let mut snap = TabSnapshot::default();
-        snap.navigation_epoch = 1;
-        snap.compositor_submission = Some(CompositorSubmission {
-            surface_id: 99,
+        let mut snap = TabSnapshot {
             navigation_epoch: 1,
-            frame_id: 1,
-        });
-        snap.compositor_frame = Some(CompositorFrame {
-            surface_id: 99,
-            navigation_epoch: 1,
-            frame_id: 1,
-            width: 64,
-            height: 64,
-            image_key: zero_render_foundation::image_cache::ImageKey::new(1),
-            #[cfg(target_os = "linux")]
-            gpu_direct: false,
-        });
+            compositor_submission: Some(CompositorSubmission {
+                surface_id: 99,
+                navigation_epoch: 1,
+                frame_id: 1,
+            }),
+            compositor_frame: Some(CompositorFrame {
+                surface_id: 99,
+                navigation_epoch: 1,
+                frame_id: 1,
+                width: 64,
+                height: 64,
+                image_key: zero_render_foundation::image_cache::ImageKey::new(1),
+                #[cfg(target_os = "linux")]
+                gpu_direct: false,
+            }),
+            ..Default::default()
+        };
 
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
