@@ -1171,6 +1171,103 @@ fn test_query_selector_placeholder_default_indeterminate_r3279() {
 }
 
 #[test]
+fn test_query_selector_anylink_scope_lang_dir_r3281() {
+    // R3281：DOM `:any-link`/`:link`/`:visited`/`:scope`/`:lang()`/`:dir()` 选择器（此前仅 CSS 侧
+    // 实现）→ querySelector 走 DOM 路径不识别。语义与 style-system 同源（CSS Selectors L4），
+    // 共享 Document 权威方法（lang/dir/scope 提升至 document/lang_dir.rs）。
+    let doc = parse_html(
+        "<html lang='en' dir='ltr'><body>\
+         <a id='link-a' href='https://example.com'>A</a>\
+         <a id='link-nohref'>no href</a>\
+         <area id='link-area' href='/x'>\
+         <link id='link-elem' href='styles.css'>\
+         <p id='en-p'>english</p>\
+         <p id='en-us-p' lang='en-US'>american</p>\
+         <p id='fr-p' lang='fr'>français</p>\
+         <p id='rtl-p' dir='rtl'>مرحبا</p>\
+         <p id='rtl-inherit' dir='rtl'><span id='rtl-child'>kid</span></p>\
+         <div id='rtl-auto' dir='auto'>مرحبا ABC</div>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+
+    // :any-link / :link → a/area/link 带 href：link-a、link-area、link-elem；link-nohref 无 href 不匹配。
+    for sel in [":any-link", ":link"] {
+        let links = ids_of(&doc.query_selector_all(root, sel));
+        assert!(links.contains(&"link-a".to_string()), "{sel} 应匹配带 href 的 <a>");
+        assert!(
+            links.contains(&"link-area".to_string()),
+            "{sel} 应匹配带 href 的 <area>"
+        );
+        assert!(
+            links.contains(&"link-elem".to_string()),
+            "{sel} 应匹配带 href 的 <link>"
+        );
+        assert!(
+            !links.contains(&"link-nohref".to_string()),
+            "{sel} 不应匹配无 href 的 <a>"
+        );
+    }
+
+    // :visited → 静态永不匹配（隐私安全，防历史探测）。
+    let visited = ids_of(&doc.query_selector_all(root, ":visited"));
+    assert!(
+        visited.is_empty(),
+        ":visited 静态应永不匹配（隐私安全），实际 {visited:?}"
+    );
+
+    // :scope → 文档根元素（<html>，等价 :root）。body 内元素不匹配。
+    let scope = doc.query_selector_all(root, ":scope");
+    assert_eq!(scope.len(), 1, ":scope 应仅匹配文档根元素 <html>，实际匹配 {scope:?}");
+
+    // :lang(en) → 自身或祖先 lang 属性匹配：en-p（lang=en 继承）、en-us-p（lang=en-US，en 前缀匹配）；
+    // fr-p（lang=fr）不匹配。:lang(en-US) → 仅 en-us-p（en 不匹配 en-US 范围，前缀语义）。
+    let lang_en = ids_of(&doc.query_selector_all(root, ":lang(en)"));
+    assert!(lang_en.contains(&"en-p".to_string()), ":lang(en) 应匹配 lang=en 的元素");
+    assert!(
+        lang_en.contains(&"en-us-p".to_string()),
+        ":lang(en) 应匹配 lang=en-US（前缀语义）"
+    );
+    assert!(!lang_en.contains(&"fr-p".to_string()), ":lang(en) 不应匹配 lang=fr");
+    let lang_en_us = ids_of(&doc.query_selector_all(root, ":lang(en-US)"));
+    assert!(
+        lang_en_us.contains(&"en-us-p".to_string()),
+        ":lang(en-US) 应匹配 lang=en-US"
+    );
+    assert!(
+        !lang_en_us.contains(&"en-p".to_string()),
+        ":lang(en-US) 不应匹配 lang=en（范围子标签数 > 语言子标签数）"
+    );
+
+    // :dir(rtl) → dir 属性沿祖先继承：rtl-p（dir=rtl）、rtl-child（祖先 dir=rtl）匹配；
+    // rtl-auto（dir=auto，子树首个强字符为阿拉伯文 RTL）匹配。
+    let dir_rtl = ids_of(&doc.query_selector_all(root, ":dir(rtl)"));
+    assert!(dir_rtl.contains(&"rtl-p".to_string()), ":dir(rtl) 应匹配 dir=rtl 元素");
+    assert!(
+        dir_rtl.contains(&"rtl-child".to_string()),
+        ":dir(rtl) 应沿祖先继承匹配 dir=rtl 的后代"
+    );
+    assert!(
+        dir_rtl.contains(&"rtl-auto".to_string()),
+        ":dir(rtl) 应匹配 dir=auto 且子树首字符为 RTL 的元素"
+    );
+    assert!(
+        !dir_rtl.contains(&"en-p".to_string()),
+        ":dir(rtl) 不应匹配 LTR 元素（html dir=ltr 继承）"
+    );
+
+    // :dir(ltr) → en-p（html dir=ltr 继承）匹配；rtl-p 不匹配。
+    let dir_ltr = ids_of(&doc.query_selector_all(root, ":dir(ltr)"));
+    assert!(dir_ltr.contains(&"en-p".to_string()), ":dir(ltr) 应匹配 LTR 元素");
+    assert!(
+        !dir_ltr.contains(&"rtl-p".to_string()),
+        ":dir(ltr) 不应匹配 dir=rtl 元素"
+    );
+}
+
+#[test]
 fn test_query_selector_attribute_operators() {
     let doc = parse_html(
         "<html><body>\

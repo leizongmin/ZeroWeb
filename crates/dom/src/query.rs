@@ -95,6 +95,23 @@ pub enum PseudoClass {
     /// `:default`——默认表单元素：`<option selected>` / checkbox/radio 带 `checked` / form 内首个 submit 按钮。
     /// 需 form owner 子树扫描，延后至 `Document::is_default_form_element` 复评。
     Default,
+    /// `:any-link` / `:link`——超链接元素（`<a>`/`<area>`/`<link>` 带 `href` 属性，CSS Selectors L4 §18）。
+    /// 纯元素属性求值（`matches_full` 内）。`:link` 静态下等价（全当未访问，隐私安全）。
+    AnyLink,
+    /// `:visited`——已访问超链接。出于隐私安全（CSS Selectors L4 §18：`:visited` 在样式表外
+    /// 恒不匹配），本引擎静态永不匹配（`matches_full` 内返 false）。
+    Visited,
+    /// `:scope`——文档样式表作用域根（`<html>`，等价 `:root`，镜像 style-system 语义）。
+    /// 需 Document 知道元素是否文档根，延后至 `Document::is_scope_element` 复评。
+    Scope,
+    /// `:lang(ranges)`——元素语言匹配（CSS Selectors L4 §14）：自身或最近祖先 `xml:lang`/`lang`
+    /// 属性，逗号分隔 BCP 47 语言范围列表 OR 匹配。需祖先链 + BCP 47 匹配，延后至
+    /// `Document::matches_lang` 复评。
+    Lang(Vec<String>),
+    /// `:dir(ltr|rtl)`——元素方向性匹配（CSS Selectors L4 §14）：`dir` 属性沿祖先继承
+    /// （ltr/rtl/auto），`auto` 按子树首个强方向字符。需祖先链 + 子树扫描，延后至
+    /// `Document::matches_dir` 复评。
+    Dir(String),
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -297,6 +314,13 @@ impl SimpleSelector {
             // `:placeholder-shown`/`:indeterminate`/`:default` 须 Document 子树/属性上下文，
             // 延后返 true，由 Document::element_matches_selector 复评。
             PseudoClass::PlaceholderShown | PseudoClass::Indeterminate | PseudoClass::Default => true,
+            // `:any-link`/`:link`——纯元素属性求值（a/area/link 带 href）。
+            PseudoClass::AnyLink => is_any_link(elem),
+            // `:visited`——静态永不匹配（隐私安全，防历史探测）。
+            PseudoClass::Visited => false,
+            // `:scope`/`:lang()`/`:dir()` 需 Document 祖先链/根上下文，延后返 true，
+            // 由 Document::element_matches_selector 复评（镜像 :disabled 两阶段模式）。
+            PseudoClass::Scope | PseudoClass::Lang(_) | PseudoClass::Dir(_) => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -489,6 +513,12 @@ fn is_optional(elem: &ElementData) -> bool {
     is_requireable_tag(elem.local_name()) && !elem.has_attribute("required")
 }
 
+/// `:any-link` / `:link`（CSS Selectors L4 §18）——超链接元素：`<a>`/`<area>`/`<link>` 带 `href`
+/// 属性。`:link` 静态下等价（全当未访问，隐私安全）。纯元素 tag+属性求值。
+fn is_any_link(elem: &ElementData) -> bool {
+    matches!(elem.local_name(), "a" | "area" | "link") && elem.has_attribute("href")
+}
+
 // `:read-write`/`:read-only` 含 disabled 态判定（含 `<fieldset disabled>` 祖先传播），
 // 须 Document 上下文，由 `Document::is_effectively_read_write` 负责。
 
@@ -597,6 +627,28 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "placeholder-shown" => Some(PseudoClass::PlaceholderShown),
         "indeterminate" => Some(PseudoClass::Indeterminate),
         "default" => Some(PseudoClass::Default),
+        // 超链接伪类（CSS Selectors L4 §18）：`:any-link`/`:link` 静态等价（全当未访问，隐私安全），
+        // `:visited` 永不匹配（样式表外恒 false，防历史探测）。
+        "any-link" | "link" => Some(PseudoClass::AnyLink),
+        "visited" => Some(PseudoClass::Visited),
+        // `:scope`——文档样式表等价 `:root`，延后至 Document 复评。
+        "scope" => Some(PseudoClass::Scope),
+        // `:lang(ranges)`——逗号分隔 BCP 47 语言范围列表（如 `en, fr`/`*-CA`），延后至 Document 复评。
+        "lang" => {
+            let a = args?;
+            let list: Vec<String> = a
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if list.is_empty() {
+                None
+            } else {
+                Some(PseudoClass::Lang(list))
+            }
+        }
+        // `:dir(ltr|rtl)`——方向性，参数归一化小写；非 ltr/rtl 延后求值时自然不匹配。
+        "dir" => Some(PseudoClass::Dir(args.unwrap_or("").trim().to_ascii_lowercase())),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }

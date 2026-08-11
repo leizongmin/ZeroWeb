@@ -7,6 +7,7 @@ use hashbrown::HashMap;
 use slotmap::SlotMap;
 
 mod form_state;
+mod lang_dir;
 mod shadow;
 
 // ── DocumentPosition ─────────────────────────────────────────────────
@@ -1607,6 +1608,10 @@ impl Document {
             crate::query::PseudoClass::PlaceholderShown => self.is_placeholder_shown(node),
             crate::query::PseudoClass::Indeterminate => self.is_indeterminate(node),
             crate::query::PseudoClass::Default => self.is_default_form_element(node),
+            // `:scope`/`:lang()`/`:dir()` 须祖先链/根上下文，延后至此经 lang_dir 子模块复评。
+            crate::query::PseudoClass::Scope => self.is_scope_element(node),
+            crate::query::PseudoClass::Lang(ranges) => self.matches_lang(node, ranges),
+            crate::query::PseudoClass::Dir(dir) => self.matches_dir(node, dir),
             _ => true,
         })
     }
