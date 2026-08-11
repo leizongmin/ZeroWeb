@@ -274,6 +274,7 @@ pub(crate) fn store_inline_layout_results(
                             is_ahem,
                             is_ahem_font: frag.is_ahem,
                             text: frag.text.clone(),
+                            source: frag.source.clone(),
                             node_id: Some(frag.node_id),
                             // R816 Phase 1：片段基线 = 行基线（baseline 对齐片段）。
                             baseline_y: line.baseline_y,
@@ -400,6 +401,7 @@ fn store_inline_multicol_columns(
                         is_ahem: is_ahem_container,
                         is_ahem_font: frag.is_ahem,
                         text: frag.text.clone(),
+                        source: frag.source.clone(),
                         node_id: Some(frag.node_id),
                         baseline_y: line.baseline_y,
                     })
@@ -1012,6 +1014,7 @@ pub(crate) fn compute_final_inline_layouts(
                         is_ahem: frag.is_ahem,
                         is_ahem_font: frag.is_ahem,
                         text: frag.text.clone(),
+                        source: frag.source.clone(),
                         node_id: Some(frag.node_id),
                         baseline_y: frag_baseline_y,
                     }

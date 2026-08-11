@@ -385,6 +385,7 @@ mod r1424_tests {
                     is_ahem: true,
                     is_ahem_font: true,
                     text: "Abcd".into(),
+                    source: None,
                     node_id: None,
                     baseline_y: 20.0,
                 }],

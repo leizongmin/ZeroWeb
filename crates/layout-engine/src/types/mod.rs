@@ -540,6 +540,8 @@ pub struct InlineLayoutFragment {
     pub is_ahem_font: bool,
     /// 文本内容。
     pub text: String,
+    /// BiDi 重排后的视觉字符到逻辑源码映射。
+    pub source: Option<crate::inline::TextFragmentSource>,
     /// 对应 DOM 节点 ID（用于去重）。
     pub node_id: Option<NodeId>,
     /// 片段基线相对行顶的 y（baseline 对齐时 = line.baseline_y + vertical_align_offset）。

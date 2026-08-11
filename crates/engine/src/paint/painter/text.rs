@@ -43,7 +43,7 @@ use text_list::{format_counter_alpha, format_counter_roman};
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
-use text_shaping::{ahem_uses_embox_position, fragment_glyphs, is_cc_control_char};
+use text_shaping::{ahem_uses_embox_position, fragment_glyphs, is_cc_control_char, logical_fragment_source};
 
 impl super::Painter {
     /// 收集浮动子元素的排除区域（带样式映射版本）。
@@ -589,6 +589,7 @@ impl super::Painter {
                 is_ahem: bool,
                 is_ahem_font: bool,
                 text: String,
+                source: Option<zero_layout_engine::TextFragmentSource>,
                 node_id: NodeId,
             }
 
@@ -624,6 +625,7 @@ impl super::Painter {
                                 is_ahem: f.is_ahem,
                                 is_ahem_font: f.is_ahem_font,
                                 text: f.text.clone(),
+                                source: f.source.clone(),
                                 node_id: nid,
                             })
                         })
@@ -1028,7 +1030,7 @@ impl super::Painter {
                     // 非多列布局：统一处理存储片段和 IFC 片段
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $frag_source:expr) => {{
                             render_fragment!(
                                 $frag_x,
                                 $frag_y,
@@ -1036,10 +1038,11 @@ impl super::Painter {
                                 $frag_fs,
                                 $frag_text,
                                 $frag_nid,
-                                false
+                                false,
+                                $frag_source
                             )
                         }};
-                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
 
                             // R358：per-fragment color（带 abs-pos guard）。
@@ -1319,6 +1322,11 @@ impl super::Painter {
                                 zero_style_system::DirectionValue::Ltr => TextDirection::LeftToRight,
                                 zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
                             };
+                            let logical_source = logical_fragment_source(
+                                $frag_source,
+                                text_direction,
+                                matches!(style.text_transform, TextTransformValue::None),
+                            );
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             for glyph in fragment_glyphs(
@@ -1328,6 +1336,7 @@ impl super::Painter {
                                 shaped_text_eligible,
                                 text_direction,
                                 !generic_font,
+                                logical_source,
                             ) {
                                 let ch = glyph.code_point;
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
@@ -1464,7 +1473,8 @@ impl super::Painter {
                                 frag.font_size,
                                 frag.text,
                                 frag.node_id,
-                                frag.is_ahem
+                                frag.is_ahem,
+                                frag.source.as_ref()
                             );
                         }
                     } else {
@@ -1498,7 +1508,8 @@ impl super::Painter {
                                 stored_fs.unwrap_or(fragment.font_size),
                                 fragment.text,
                                 fragment.node_id,
-                                fragment.is_ahem
+                                fragment.is_ahem,
+                                fragment.source.as_ref()
                             );
                         }
                     }

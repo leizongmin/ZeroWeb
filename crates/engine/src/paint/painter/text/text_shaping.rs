@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use zero_layout_engine::TextFragmentSource;
 use zero_render_foundation::font::{ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::GlyphSource;
 
@@ -35,6 +36,11 @@ fn shaped_complex_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_COMPLEX").as_deref() == Ok("1"))
 }
 
+fn shaped_rtl_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_RTL").as_deref() != Ok("0"))
+}
+
 /// Paint 循环消费的单个字形。
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
@@ -55,6 +61,31 @@ pub(super) enum FragmentGlyphs<'a> {
         offset: bool,
     },
     Legacy(std::str::Chars<'a>),
+}
+
+/// 可安全交给单方向 shaper 的逻辑文本片段。
+pub(super) struct LogicalFragmentSource<'a> {
+    text: &'a str,
+    source_text: Arc<str>,
+    source_start: u32,
+}
+
+/// 从布局片段恢复 RTL logical shaping 输入。
+pub(super) fn logical_fragment_source(
+    source: Option<&TextFragmentSource>,
+    direction: TextDirection,
+    text_transform_none: bool,
+) -> Option<LogicalFragmentSource<'_>> {
+    if direction != TextDirection::RightToLeft || !text_transform_none {
+        return None;
+    }
+    let source = source?;
+    let range = source.logical_range()?;
+    Some(LogicalFragmentSource {
+        text: source.text.get(range.clone())?,
+        source_text: source.text.clone(),
+        source_start: u32::try_from(range.start).ok()?,
+    })
 }
 
 impl Iterator for FragmentGlyphs<'_> {
@@ -101,15 +132,23 @@ pub(super) fn fragment_glyphs<'a>(
     eligible: bool,
     direction: TextDirection,
     advance_eligible: bool,
+    logical_source: Option<LogicalFragmentSource<'a>>,
 ) -> FragmentGlyphs<'a> {
-    let complex_enabled = shaped_complex_enabled();
+    let complex_enabled = complex_run_enabled(
+        direction,
+        logical_source.is_some(),
+        shaped_complex_enabled(),
+        shaped_rtl_enabled(),
+    );
     let shape_direction = effective_shape_direction(direction, complex_enabled);
+    let logical_source = logical_source.filter(|_| complex_enabled && direction == TextDirection::RightToLeft);
+    let shaping_text = logical_source.as_ref().map_or(text, |source| source.text);
     if eligible
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
-        && let Some(glyphs) = crate::shape_text_for_paint(font_id, text, font_size, shape_direction)
+        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction)
     {
-        let Some(complex_mapping) = mapping_mode(text, &glyphs, complex_enabled) else {
+        let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
         };
         let simple_mapping = !complex_mapping;
@@ -118,10 +157,24 @@ pub(super) fn fragment_glyphs<'a>(
             return FragmentGlyphs::Legacy(text.chars());
         }
         let offsets_enabled = shaped_offsets_enabled();
-        if simple_mapping && crate::text_metrics::source_mapping_requires_offsets(text, &glyphs) && !offsets_enabled {
+        if simple_mapping
+            && crate::text_metrics::source_mapping_requires_offsets(shaping_text, &glyphs)
+            && !offsets_enabled
+        {
             return FragmentGlyphs::Legacy(text.chars());
         }
-        let Some(sources) = glyph_sources(text, &glyphs, complex_mapping) else {
+        let sources = if let Some(source) = logical_source {
+            glyph_sources_in_run(
+                shaping_text,
+                &glyphs,
+                complex_mapping,
+                source.source_text,
+                source.source_start,
+            )
+        } else {
+            glyph_sources(shaping_text, &glyphs, complex_mapping)
+        };
+        let Some(sources) = sources else {
             return FragmentGlyphs::Legacy(text.chars());
         };
         return FragmentGlyphs::Shaped {
@@ -133,6 +186,15 @@ pub(super) fn fragment_glyphs<'a>(
         };
     }
     FragmentGlyphs::Legacy(text.chars())
+}
+
+fn complex_run_enabled(
+    direction: TextDirection,
+    has_logical_source: bool,
+    complex_enabled: bool,
+    rtl_enabled: bool,
+) -> bool {
+    complex_enabled || rtl_enabled && has_logical_source && direction == TextDirection::RightToLeft
 }
 
 fn effective_shape_direction(direction: TextDirection, complex_enabled: bool) -> TextDirection {
@@ -168,14 +230,27 @@ fn source_clusters_valid(text: &str, glyphs: &[ShapedGlyph]) -> bool {
 }
 
 fn glyph_sources(text: &str, glyphs: &[ShapedGlyph], all_clusters: bool) -> Option<Vec<Option<GlyphSource>>> {
+    glyph_sources_in_run(text, glyphs, all_clusters, Arc::from(text), 0)
+}
+
+fn glyph_sources_in_run(
+    text: &str,
+    glyphs: &[ShapedGlyph],
+    all_clusters: bool,
+    source_text: Arc<str>,
+    source_start: u32,
+) -> Option<Vec<Option<GlyphSource>>> {
     if !all_clusters && !crate::text_metrics::source_mapping_requires_offsets(text, glyphs) {
         return Some(vec![None; glyphs.len()]);
     }
     if !source_clusters_valid(text, glyphs) {
         return None;
     }
-    let text: Arc<str> = Arc::from(text);
     let text_len = u32::try_from(text.len()).ok()?;
+    let source_end = source_start.checked_add(text_len)?;
+    if source_text.get(source_start as usize..source_end as usize) != Some(text) {
+        return None;
+    }
     let mut starts: Vec<u32> = glyphs.iter().map(|glyph| glyph.cluster).collect();
     starts.sort_unstable();
     starts.dedup();
@@ -192,7 +267,12 @@ fn glyph_sources(text: &str, glyphs: &[ShapedGlyph], all_clusters: bool) -> Opti
                     .copied()
                     .find(|start| *start > glyph.cluster)
                     .unwrap_or(text_len);
-                GlyphSource::new(text.clone(), glyph.cluster, end).filter(|source| {
+                GlyphSource::new(
+                    source_text.clone(),
+                    source_start.checked_add(glyph.cluster)?,
+                    source_start.checked_add(end)?,
+                )
+                .filter(|source| {
                     all_clusters || cluster_counts[&glyph.cluster] > 1 || source.as_str().chars().nth(1).is_some()
                 })
             })
@@ -256,6 +336,15 @@ mod tests {
     }
 
     #[test]
+    fn rtl_gate_only_enables_runs_with_logical_source() {
+        assert!(!complex_run_enabled(TextDirection::RightToLeft, true, false, false));
+        assert!(complex_run_enabled(TextDirection::RightToLeft, true, false, true));
+        assert!(!complex_run_enabled(TextDirection::RightToLeft, false, false, true));
+        assert!(!complex_run_enabled(TextDirection::LeftToRight, true, false, true));
+        assert!(complex_run_enabled(TextDirection::LeftToRight, false, true, false));
+    }
+
+    #[test]
     fn glyph_sources_share_utf8_cluster_ranges_within_one_text_run() {
         let mut base = glyph();
         base.code_point = 'A';
@@ -272,6 +361,31 @@ mod tests {
         assert_eq!(base.as_str(), "A\u{301}");
         assert!(base.same_cluster(mark));
         assert!(sources[2].is_none());
+    }
+
+    #[test]
+    fn logical_fragment_source_requires_rtl_without_text_transform() {
+        let text = Arc::<str>::from("xאבגy");
+        let source = TextFragmentSource {
+            text: text.clone(),
+            visual_to_logical: vec![Some(5..7), Some(3..5), Some(1..3)],
+        };
+        let logical =
+            logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).expect("contiguous RTL source");
+        assert_eq!(logical.text, "אבג");
+        assert_eq!(logical.source_start, 1);
+        assert!(Arc::ptr_eq(&logical.source_text, &text));
+        assert!(logical_fragment_source(Some(&source), TextDirection::LeftToRight, true).is_none());
+        assert!(logical_fragment_source(Some(&source), TextDirection::RightToLeft, false).is_none());
+    }
+
+    #[test]
+    fn logical_fragment_source_rejects_mixed_mapping() {
+        let source = TextFragmentSource {
+            text: Arc::<str>::from("aאב"),
+            visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
+        };
+        assert!(logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).is_none());
     }
 
     #[test]
@@ -306,6 +420,14 @@ mod tests {
         assert_eq!(sources[0].as_ref().expect("gimel source").as_str(), "ג");
         assert_eq!(sources[1].as_ref().expect("bet source").as_str(), "ב");
         assert_eq!(sources[2].as_ref().expect("alef source").as_str(), "א");
+
+        let full_run = Arc::<str>::from("xאבגy");
+        let sources = glyph_sources_in_run("אבג", &rtl, true, full_run.clone(), 1).expect("full-run RTL sources");
+        let gimel = sources[0].as_ref().expect("gimel full-run source");
+        assert_eq!((gimel.start, gimel.end), (5, 7));
+        assert!(Arc::ptr_eq(&gimel.text, &full_run));
+        assert!(sources.iter().flatten().all(|source| source.same_text_run(gimel)));
+        assert!(glyph_sources_in_run("אבג", &rtl, true, full_run, 0).is_none());
     }
 
     #[test]
