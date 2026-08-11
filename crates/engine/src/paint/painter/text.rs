@@ -1,6 +1,4 @@
-//! 文本绘制主流程。
-//!
-//! 列表、multicol、ruby 与 shaping 辅助位于 `text/` 子模块。
+//! 文本绘制主流程；列表、multicol、ruby 与 shaping 辅助位于 `text/` 子模块。
 
 use std::collections::HashMap;
 
@@ -406,15 +404,10 @@ impl super::Painter {
         // 放函数作用域（default_font_id 旁）供所有 render_fragment 调用可见。
         // R2497：parallel text_node_font_italic 跟踪每节点 resolved face 是否 italic
         // （供 macro 算 frag_synthetic_italic = want_italic && !resolved_italic，避 double-shear）。
-        let mut text_node_font_ids: HashMap<zero_dom::NodeId, zero_render_foundation::primitive::FontId> =
-            HashMap::with_capacity(box_node.text_node_font_families.len());
-        let mut text_node_font_italic: HashMap<zero_dom::NodeId, bool> =
-            HashMap::with_capacity(box_node.text_node_font_families.len());
-        for (&tn, fam) in box_node.text_node_font_families.iter() {
-            let (fid, resolved_italic) = self.resolve_font_id(fam, &style.font_weight, &style.font_style);
-            text_node_font_ids.insert(tn, fid);
-            text_node_font_italic.insert(tn, resolved_italic);
-        }
+        let resolved_text_fonts = self.resolve_text_node_fonts(box_node, style);
+        let text_node_font_ids = resolved_text_fonts.primary;
+        let text_node_shaping_font_ids = resolved_text_fonts.shaping;
+        let text_node_font_italic = resolved_text_fonts.italic;
 
         if let (Some(doc), Some(node_id)) = (doc, box_node.node_id) {
             // R109 §9.2.1.1：被 in-flow block 子元素拆分的 inline 父盒自身不渲染文本——
@@ -1320,10 +1313,16 @@ impl super::Painter {
                             );
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
-                            let open_type_features = style_open_type_features(owner_style_opt.unwrap_or(style));
+                            let shaping_style = owner_style_opt.unwrap_or(style);
+                            let shaping_font_ids = self.fragment_shaping_font_ids(
+                                owner_style_opt,
+                                text_node_shaping_font_ids.get(&$frag_nid).map(Vec::as_slice),
+                                frag_font_id,
+                            );
+                            let open_type_features = style_open_type_features(shaping_style);
                             let advance_trace = (generic_font && shaped_text_eligible).then(|| {
                                 fragment_advance_trace(
-                                    frag_font_id.0,
+                                    &shaping_font_ids,
                                     &transformed,
                                     $frag_fs,
                                     text_direction,
@@ -1332,7 +1331,7 @@ impl super::Painter {
                                 )
                             }).flatten();
                             for glyph in fragment_glyphs(
-                                frag_font_id.0,
+                                &shaping_font_ids,
                                 &transformed,
                                 $frag_fs,
                                 shaped_text_eligible,

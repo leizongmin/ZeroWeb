@@ -263,4 +263,32 @@ mod feature_tests {
             .expect("shape with face defaults");
         assert_eq!(glyphs.len(), 2, "face-level liga=off must suppress fi ligature");
     }
+
+    #[test]
+    fn ordered_font_ids_shape_missing_glyph_with_secondary_face() {
+        let fonts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-fonts/resources");
+        let css = r#"
+            @font-face { font-family: PrimaryAhem; src: url(ahem-ex-500.otf); }
+            @font-face { font-family: SecondaryAhem; src: url(ahem-ex-250.otf); }
+        "#;
+        let mut loader = FontLoader::new();
+        load_font_faces_into(&mut loader, Some(&fonts_dir), css);
+        let resolver = loader.build_font_resolver();
+        let primary = *resolver.get("PrimaryAhem").expect("primary alias");
+        let secondary = *resolver.get("SecondaryAhem").expect("secondary alias");
+
+        let glyphs = loader
+            .shape_text_cached_with_font_ids(&[primary, secondary], "xA", 100.0, TextDirection::LeftToRight, &[])
+            .expect("shape ordered fallback");
+
+        assert_eq!(glyphs.len(), 2);
+        assert_eq!(glyphs[0].font_id.0, primary);
+        assert_eq!(glyphs[1].font_id.0, secondary);
+        assert_eq!(glyphs.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![0, 1]);
+
+        let reversed = loader
+            .shape_text_cached_with_font_ids(&[secondary, primary], "xA", 100.0, TextDirection::LeftToRight, &[])
+            .expect("shape reversed fallback");
+        assert_eq!(reversed[0].font_id.0, secondary, "ordered cache keys must not collide");
+    }
 }

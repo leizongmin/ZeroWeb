@@ -41,10 +41,10 @@ pub fn shape_text(
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
         let (loader, _) = cell.get()?;
-        let &font_id = font_ids.first()?;
+        font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
-        loader.shape_text_cached_with_features(font_id, text, font_size, direction, features)
+        loader.shape_text_cached_with_font_ids(font_ids, text, font_size, direction, features)
     })
 }
 

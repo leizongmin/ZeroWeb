@@ -114,22 +114,40 @@ impl<'a> TextShaper<'a> {
         direction: TextDirection,
         features: &[OpenTypeFeature],
     ) -> Vec<ShapedGlyph> {
-        let font_id = self.default_font_id.unwrap_or(FontId(0));
+        let font_ids = self.default_font_id.map_or_else(Vec::new, |font_id| vec![font_id.0]);
+        self.shape_single_line_with_font_ids(&font_ids, text, font_size, direction, features)
+    }
+
+    /// 使用有序 CSS face 列表整形文本。
+    pub fn shape_single_line_with_font_ids(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+        features: &[OpenTypeFeature],
+    ) -> Vec<ShapedGlyph> {
+        let primary_id = font_ids
+            .first()
+            .copied()
+            .map(FontId)
+            .or(self.default_font_id)
+            .unwrap_or(FontId(0));
 
         // 尝试 rustybuzz shaping
-        if let Some(fid) = self.default_font_id {
-            if shaped_fallback_enabled()
-                && let Some(glyphs) = self.shape_with_fallback_runs(fid, text, font_size, direction, features)
+        if !font_ids.is_empty() || self.default_font_id.is_some() {
+            if (font_ids.len() > 1 || shaped_fallback_enabled())
+                && let Some(glyphs) = self.shape_with_fallback_runs(font_ids, text, font_size, direction, features)
             {
                 return glyphs;
             }
-            if let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction, features) {
+            if let Some(glyphs) = self.shape_with_rustybuzz(primary_id, text, font_size, direction, features) {
                 return glyphs;
             }
         }
 
         // 回退：fontdue 逐字符映射
-        let mut glyphs = self.shape_fallback(text, font_size, font_id);
+        let mut glyphs = self.shape_fallback(text, font_size, primary_id);
         if direction == TextDirection::RightToLeft {
             glyphs.reverse();
         }
@@ -141,7 +159,7 @@ impl<'a> TextShaper<'a> {
     /// https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
     fn shape_with_fallback_runs(
         &self,
-        primary_id: FontId,
+        font_ids: &[u32],
         text: &str,
         font_size: f32,
         direction: TextDirection,
@@ -150,6 +168,7 @@ impl<'a> TextShaper<'a> {
         if text.is_empty() || direction != TextDirection::LeftToRight || !features.is_empty() {
             return None;
         }
+        let primary_id = FontId(*font_ids.first()?);
 
         let mut runs: Vec<(usize, usize, FontId)> = Vec::new();
         let mut used_fallback = false;
@@ -158,7 +177,7 @@ impl<'a> TextShaper<'a> {
                 .chars()
                 .find(|ch| !is_face_ignorable(*ch))
                 .or_else(|| grapheme.chars().next())?;
-            let font_id = FontId(self.font_loader.resolve_font_for_code_point(primary_id.0, selector)?);
+            let font_id = FontId(self.font_loader.resolve_font_for_code_point_in(font_ids, selector)?);
             let end = start + grapheme.len();
             used_fallback |= font_id != primary_id;
             if let Some((_, run_end, run_font_id)) = runs.last_mut()
@@ -169,16 +188,17 @@ impl<'a> TextShaper<'a> {
                 runs.push((start, end, font_id));
             }
         }
-        if !used_fallback {
-            return None;
-        }
-
         tracing::debug!(
             target: "zero_render_foundation::shaped_fallback",
             text,
+            font_ids = ?font_ids,
+            used_fallback,
             runs = ?runs,
             "ZW_SHAPED_FALLBACK"
         );
+        if !used_fallback {
+            return None;
+        }
         let mut result = Vec::new();
         for (start, end, font_id) in runs {
             let run_text = text.get(start..end)?;
@@ -692,14 +712,20 @@ mod tests {
         let shaper = TextShaper::new(&loader, Some(FontId(primary)));
         assert!(
             shaper
-                .shape_with_fallback_runs(FontId(primary), "f\u{200C}i", 16.0, TextDirection::LeftToRight, &[],)
+                .shape_with_fallback_runs(
+                    &[primary, fallback],
+                    "f\u{200C}i",
+                    16.0,
+                    TextDirection::LeftToRight,
+                    &[]
+                )
                 .is_none(),
             "ZWNJ must remain in the primary grapheme run"
         );
 
         let text = format!("A{ch}B");
         let glyphs = shaper
-            .shape_with_fallback_runs(FontId(primary), &text, 16.0, TextDirection::LeftToRight, &[])
+            .shape_with_fallback_runs(&[primary, fallback], &text, 16.0, TextDirection::LeftToRight, &[])
             .expect("fallback run");
 
         assert_eq!(glyphs.len(), 3);

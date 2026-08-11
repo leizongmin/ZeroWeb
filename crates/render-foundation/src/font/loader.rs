@@ -213,7 +213,7 @@ mod freetype_raster {
 }
 
 type ShapeCacheKey = (
-    u64,
+    Vec<u64>,
     u32,
     crate::font::TextDirection,
     Vec<crate::font::OpenTypeFeature>,
@@ -311,9 +311,24 @@ impl FontLoader {
         direction: crate::font::TextDirection,
         features: &[crate::font::OpenTypeFeature],
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
-        self.get(font_id)?;
-        let instance_id = *self.font_instance_ids.get(&font_id)?;
-        let mut resolved_features = self.font_features.get(&font_id).cloned().unwrap_or_default();
+        self.shape_text_cached_with_font_ids(&[font_id], text, font_size, direction, features)
+    }
+
+    /// 使用有序 CSS face 列表整形文本，并缓存跨帧重复结果。
+    pub fn shape_text_cached_with_font_ids(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        font_size: f32,
+        direction: crate::font::TextDirection,
+        features: &[crate::font::OpenTypeFeature],
+    ) -> Option<Vec<crate::font::ShapedGlyph>> {
+        let &primary_id = font_ids.first()?;
+        let instance_ids = font_ids
+            .iter()
+            .map(|font_id| self.font_instance_ids.get(font_id).copied())
+            .collect::<Option<Vec<_>>>()?;
+        let mut resolved_features = self.font_features.get(&primary_id).cloned().unwrap_or_default();
         for feature in features {
             if let Some(existing) = resolved_features
                 .iter_mut()
@@ -325,7 +340,7 @@ impl FontLoader {
             }
         }
         let key = (
-            instance_id,
+            instance_ids,
             font_size.to_bits(),
             direction,
             resolved_features.clone(),
@@ -335,8 +350,8 @@ impl FontLoader {
             return Some(glyphs.clone());
         }
 
-        let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(font_id)))
-            .shape_single_line_with_features(text, font_size, direction, &resolved_features);
+        let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(primary_id)))
+            .shape_single_line_with_font_ids(font_ids, text, font_size, direction, &resolved_features);
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
         if cache.len() >= 4096 {
             cache.clear();
@@ -650,9 +665,15 @@ impl FontLoader {
         chain
     }
 
-    /// 解析字符实际使用的字体 ID，不触发光栅化。
-    pub(crate) fn resolve_font_for_code_point(&self, primary_id: u32, code_point: char) -> Option<u32> {
-        self.lookup_chain(primary_id).into_iter().find(|font_id| {
+    /// 按有序 CSS face 列表与系统回退链解析字符字体，不触发光栅化。
+    pub(crate) fn resolve_font_for_code_point_in(&self, font_ids: &[u32], code_point: char) -> Option<u32> {
+        let mut chain = Vec::with_capacity(font_ids.len() + self.fallback_chain.len());
+        for &font_id in font_ids.iter().chain(&self.fallback_chain) {
+            if !chain.contains(&font_id) {
+                chain.push(font_id);
+            }
+        }
+        chain.into_iter().find(|font_id| {
             self.fonts
                 .get(font_id)
                 .is_some_and(|font| code_point.is_whitespace() || font.has_glyph(code_point))

@@ -10,6 +10,58 @@ use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::{FontId, GlyphSource};
 use zero_style_system::ComputedStyle;
 
+pub(super) struct ResolvedTextNodeFonts {
+    pub(super) primary: HashMap<NodeId, zero_render_foundation::primitive::FontId>,
+    pub(super) shaping: HashMap<NodeId, Vec<u32>>,
+    pub(super) italic: HashMap<NodeId, bool>,
+}
+
+impl super::super::Painter {
+    pub(super) fn resolve_text_node_fonts(
+        &self,
+        box_node: &zero_layout_engine::LayoutBox,
+        style: &ComputedStyle,
+    ) -> ResolvedTextNodeFonts {
+        let mut primary = HashMap::with_capacity(box_node.text_node_font_families.len());
+        let mut shaping = HashMap::with_capacity(box_node.text_node_font_families.len());
+        let mut italic = HashMap::with_capacity(box_node.text_node_font_families.len());
+        for (&node_id, families) in &box_node.text_node_font_families {
+            let (font_id, resolved_italic) = self.resolve_font_id(families, &style.font_weight, &style.font_style);
+            primary.insert(node_id, font_id);
+            shaping.insert(
+                node_id,
+                self.resolve_font_ids(families, &style.font_weight, &style.font_style),
+            );
+            italic.insert(node_id, resolved_italic);
+        }
+        ResolvedTextNodeFonts {
+            primary,
+            shaping,
+            italic,
+        }
+    }
+
+    pub(super) fn fragment_shaping_font_ids(
+        &self,
+        owner_style: Option<&ComputedStyle>,
+        stored_font_ids: Option<&[u32]>,
+        fragment_font_id: zero_render_foundation::primitive::FontId,
+    ) -> Vec<u32> {
+        let mut font_ids = owner_style.map_or_else(
+            || stored_font_ids.map_or_else(|| vec![fragment_font_id.0], <[u32]>::to_vec),
+            |owner| self.resolve_font_ids(&owner.font_family, &owner.font_weight, &owner.font_style),
+        );
+        if font_ids.first() != Some(&fragment_font_id.0) {
+            font_ids.retain(|font_id| *font_id != fragment_font_id.0);
+            font_ids.insert(0, fragment_font_id.0);
+        }
+        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+            font_ids.truncate(1);
+        }
+        font_ids
+    }
+}
+
 fn shaped_text_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0"))
@@ -309,7 +361,7 @@ impl Iterator for FragmentGlyphs<'_> {
 ///
 /// https://www.w3.org/TR/css-text-3/#text-shaping
 pub(super) fn fragment_glyphs<'a>(
-    font_id: u32,
+    font_ids: &[u32],
     text: &'a str,
     font_size: f32,
     eligible: bool,
@@ -318,6 +370,9 @@ pub(super) fn fragment_glyphs<'a>(
     logical_source: Option<LogicalFragmentSource<'a>>,
     features: &[OpenTypeFeature],
 ) -> FragmentGlyphs<'a> {
+    if font_ids.is_empty() {
+        return FragmentGlyphs::Legacy(text.chars());
+    }
     let complex_enabled = complex_run_enabled(
         direction,
         logical_source.is_some(),
@@ -331,7 +386,7 @@ pub(super) fn fragment_glyphs<'a>(
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
         && let Some(mut glyphs) =
-            crate::shape_text_for_paint(&[font_id], shaping_text, font_size, shape_direction, features)
+            crate::shape_text_for_paint(font_ids, shaping_text, font_size, shape_direction, features)
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());
@@ -387,7 +442,7 @@ pub(super) fn fragment_glyphs<'a>(
 }
 
 pub(super) fn fragment_advance_trace(
-    font_id: u32,
+    font_ids: &[u32],
     text: &str,
     font_size: f32,
     direction: TextDirection,
@@ -405,7 +460,7 @@ pub(super) fn fragment_advance_trace(
     );
     let shape_direction = effective_shape_direction(direction, complex_enabled);
     let shaping_text = logical_source.map_or(text, |source| source.text);
-    let glyphs = crate::shape_text_for_paint(&[font_id], shaping_text, font_size, shape_direction, features)?;
+    let glyphs = crate::shape_text_for_paint(font_ids, shaping_text, font_size, shape_direction, features)?;
     Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs))
 }
 

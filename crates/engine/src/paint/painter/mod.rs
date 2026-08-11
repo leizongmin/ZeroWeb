@@ -439,6 +439,48 @@ impl Painter {
         (FontId(0), false)
     }
 
+    /// 按 CSS `font-family` 顺序解析可用 face ID，供 shaping fallback 使用。
+    pub(crate) fn resolve_font_ids(
+        &self,
+        font_family: &[String],
+        font_weight: &zero_css_parser::values::FontWeightValue,
+        font_style: &zero_css_parser::values::types::FontStyleValue,
+    ) -> Vec<u32> {
+        use zero_css_parser::values::FontWeightValue;
+        use zero_css_parser::values::types::FontStyleValue;
+
+        let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(font_weight, FontWeightValue::Absolute(w) if *w >= 600);
+        let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+        let suffixes: &[&str] = match (want_bold, want_italic) {
+            (true, true) => &[":700:italic", ":700", ":italic", ""],
+            (true, false) => &[":700", ""],
+            (false, true) => &[":italic", ""],
+            (false, false) => &[""],
+        };
+
+        let mut ids = Vec::new();
+        for family in font_family {
+            let name = family.trim_matches('"').trim_matches('\'');
+            let id = suffixes.iter().find_map(|suffix| {
+                let key = format!("{name}{suffix}");
+                self.font_resolver
+                    .get(&key)
+                    .copied()
+                    .or_else(|| self.font_resolver_lower.get(&key.to_ascii_lowercase()).copied())
+            });
+            if let Some(id) = id
+                && !ids.contains(&id)
+            {
+                ids.push(id);
+            }
+        }
+        if ids.is_empty() {
+            ids.push(self.resolve_font_id(font_family, font_weight, font_style).0.0);
+        }
+        ids
+    }
+
     /// 绘制整个布局树。
     ///
     /// 遍历 LayoutBox 树，为每个有样式的节点生成背景和边框填充图元。
@@ -1906,6 +1948,14 @@ mod tests {
         assert!(painter.generic_font_ids.contains(&1));
         assert!(painter.generic_font_ids.contains(&2));
         assert!(!painter.generic_font_ids.contains(&3));
+        assert_eq!(
+            painter.resolve_font_ids(
+                &["Custom".to_string(), "sans-serif".to_string()],
+                &zero_css_parser::values::FontWeightValue::Normal,
+                &zero_css_parser::values::types::FontStyleValue::Normal,
+            ),
+            vec![3, 1]
+        );
     }
 
     /// R2241：paint containment 裁剪判定——has_paint()（Paint/Strict/Content/Custom 含
