@@ -417,9 +417,19 @@ impl Painter {
 
         // https://drafts.csswg.org/css-fonts-4/#family-name-value
         const GENERIC_FAMILIES: &[&str] = &[
-            "serif", "sans-serif", "monospace", "cursive", "fantasy",
-            "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
-            "emoji", "math", "fangsong",
+            "serif",
+            "sans-serif",
+            "monospace",
+            "cursive",
+            "fantasy",
+            "system-ui",
+            "ui-serif",
+            "ui-sans-serif",
+            "ui-monospace",
+            "ui-rounded",
+            "emoji",
+            "math",
+            "fangsong",
         ];
         for family in font_family {
             let is_quoted = family.starts_with('"') || family.starts_with('\'');
