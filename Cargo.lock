@@ -6628,6 +6628,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "tracing-subscriber",
  "zero-css-parser",
  "zero-dom",
  "zero-engine",

@@ -143,6 +143,8 @@ pub struct InlineFormattingContext {
     /// 当 styles 中找不到父元素样式且此映射有对应条目时，使用映射中的
     /// font_size 而非 16px 默认值，使字符宽度计算更准确。
     pub font_size_overrides: HashMap<NodeId, f32>,
+    /// paint IFC 的父元素/inline 元素到已解析字体 ID 映射。
+    pub font_id_overrides: HashMap<NodeId, u32>,
     /// 逐文本节点的 Ahem 字体标志覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法检测 Ahem 字体，
@@ -264,6 +266,7 @@ impl InlineFormattingContext {
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: HashMap::new(),
+            font_id_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
             line_height_overrides: HashMap::new(),
@@ -335,6 +338,12 @@ impl InlineFormattingContext {
     /// 硬编码的 16px/19.2px。主要用于 paint 系统的 IFC。
     pub fn with_default_font_metrics(mut self, font_size: f32, line_height: f32) -> Self {
         self.default_font_metrics = Some((font_size, line_height));
+        self
+    }
+
+    /// 注入 paint IFC 的逐元素字体 ID。
+    pub fn with_font_id_overrides(mut self, overrides: HashMap<NodeId, u32>) -> Self {
+        self.font_id_overrides = overrides;
         self
     }
 
@@ -410,6 +419,7 @@ impl InlineFormattingContext {
     /// 返回允许受限 shaping 的 run 字体 ID；不满足边界时保留旧 estimate 路径。
     fn shaping_font_id_for_style(
         &self,
+        override_node: Option<NodeId>,
         style: Option<&zero_style_system::ComputedStyle>,
         is_ahem: bool,
         letter_spacing: f32,
@@ -420,11 +430,15 @@ impl InlineFormattingContext {
             || letter_spacing != 0.0
             || word_spacing != 0.0
             || is_ruby
-            || !style.is_some_and(|style| matches!(style.direction, zero_style_system::DirectionValue::Ltr))
+            || !style.map_or_else(
+                || override_node.is_some_and(|node| self.font_id_overrides.contains_key(&node)),
+                |style| matches!(style.direction, zero_style_system::DirectionValue::Ltr),
+            )
         {
             return None;
         }
         self.font_id_for_style(style)
+            .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
     }
 
     /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。

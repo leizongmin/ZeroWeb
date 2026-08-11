@@ -1,9 +1,6 @@
-//! 文本绘制 — paint_text（主文本渲染巨函数）+ paint_anonymous_text_item + paint_content /
-//! paint_input_value / paint_img_element / collect_float_exclusions。
+//! 文本绘制主流程。
 //!
-//! R1694：列表标记（paint_list_marker）、multicol 列分隔线（paint_column_rules）、ruby 注音、
-//! multicol 列参数 / balance 已抽到 `text/` 子模块（text_list / text_multicol / text_ruby），
-//! 本文件从 ~2547 行减到 <2000（CLAUDE.md §5 文件大小 guideline）。
+//! 列表、multicol、ruby 与 shaping 辅助位于 `text/` 子模块。
 
 use std::collections::HashMap;
 
@@ -29,22 +26,18 @@ use super::super::color::{color_value_to_render, resolve_color_current};
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
 
-// R1694：text.rs 减负拆分 —— 独立纯 helper + 专属单测抽到 painter/text/ 子模块（text.rs 超
-// 2000 行 guideline）。paint_text 巨函数（~1260 行）保持原样（宏/循环重构高风险，defer）。
-// text_multicol = multicol 列参数 + balance + column-rule 绘制；
-// text_ruby = ruby per-segment annotation；
-// text_list = 列表标记渲染（paint_list_marker）+ 计数器格式化（Roman/Latin）。
+// 专属 helper 与单测按职责拆入 painter/text/ 子模块。
 pub(crate) mod text_list;
 mod text_multicol;
 mod text_ruby;
 mod text_shaping;
 
-use text_list::{format_counter_alpha, format_counter_roman};
 use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
 use text_shaping::{
-    ahem_uses_embox_position, fragment_glyphs, is_cc_control_char, logical_fragment_source, style_open_type_features,
+    FragmentPaintWidths, ahem_uses_embox_position, configure_paint_ifc_advance as with_shaped_layout,
+    fragment_advance_trace, fragment_glyphs, is_cc_control_char, logical_fragment_source, style_open_type_features,
 };
 
 impl super::Painter {
@@ -586,6 +579,7 @@ impl super::Painter {
                 // R817 Phase 2：片段基线绝对 y（container-rel = line.y + line.baseline_y）。
                 // 供 is_ahem glyph 定位用（见 stored 渲染循环），paint 非存储路径不读。
                 baseline_y_abs: f32,
+                width: f32,
                 height: f32,
                 font_size: f32,
                 is_ahem: bool,
@@ -622,6 +616,7 @@ impl super::Painter {
                                 } else {
                                     line_y + f.baseline_y
                                 },
+                                width: f.width,
                                 height: f.height,
                                 font_size: f.font_size,
                                 is_ahem: f.is_ahem,
@@ -730,6 +725,7 @@ impl super::Painter {
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides);
+                ctx = with_shaped_layout(ctx, doc, styles, &text_node_font_ids, &self.generic_font_ids);
                 // R109 §9.2.1.1：匿名块盒片段——若此盒是 inline 被 block 子元素拆分后的
                 // 匿名块片段，只收集该片段的 inline 内容（而非 inline 元素的全部子节点）。
                 if let Some(ref frag) = box_node.fragment_node_ids {
@@ -1032,19 +1028,7 @@ impl super::Painter {
                     // 非多列布局：统一处理存储片段和 IFC 片段
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $frag_source:expr) => {{
-                            render_fragment!(
-                                $frag_x,
-                                $frag_y,
-                                $baseline_offset,
-                                $frag_fs,
-                                $frag_text,
-                                $frag_nid,
-                                false,
-                                $frag_source
-                            )
-                        }};
-                        ($frag_x:expr, $frag_y:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
                             self.painted_inline_nodes.insert($frag_nid);
 
                             // R358：per-fragment color（带 abs-pos guard）。
@@ -1337,6 +1321,16 @@ impl super::Painter {
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             let open_type_features = style_open_type_features(owner_style_opt.unwrap_or(style));
+                            let advance_trace = (generic_font && shaped_text_eligible).then(|| {
+                                fragment_advance_trace(
+                                    frag_font_id.0,
+                                    &transformed,
+                                    $frag_fs,
+                                    text_direction,
+                                    logical_source.as_ref(),
+                                    &open_type_features,
+                                )
+                            }).flatten();
                             for glyph in fragment_glyphs(
                                 frag_font_id.0,
                                 &transformed,
@@ -1438,6 +1432,20 @@ impl super::Painter {
                                 // segment-centered 块（R1688）—— 整 rt 注音居中于 base segment。
                             }
 
+                            if let Some(trace) = advance_trace {
+                                trace.emit(
+                                    if use_stored { "stored" } else { "paint-ifc" },
+                                    frag_font_id.0,
+                                    $frag_fs,
+                                    &transformed,
+                                    FragmentPaintWidths {
+                                        fragment: $frag_width,
+                                        legacy: text_width,
+                                        consumed: char_pos - frag_base_x,
+                                    },
+                                );
+                            }
+
                             self.paint_text_decoration_from_style(
                                 frag_base_x,
                                 frag_base_y,
@@ -1478,6 +1486,7 @@ impl super::Painter {
                             render_fragment!(
                                 frag.x,
                                 frag.y,
+                                frag.width,
                                 v_offset,
                                 frag.font_size,
                                 frag.text,
@@ -1513,6 +1522,7 @@ impl super::Painter {
                             render_fragment!(
                                 fragment.x,
                                 fragment.y,
+                                fragment.width,
                                 baseline_offset,
                                 stored_fs.unwrap_or(fragment.font_size),
                                 fragment.text,
@@ -1874,20 +1884,6 @@ pub(super) fn has_direct_paintable_text(
 }
 
 /// 获取 `<img>` 元素的固有尺寸。
-/// 按计数器样式格式化整数值为 content 文本。
-///
-/// 支持 decimal（默认）/ lower|upper-alpha(latin) / lower|upper-roman。
-/// 单 `content: counter(...)` 与混合 `content: "x" counter(...) "y"` 共用此格式化。
-fn format_counter_text(value: i64, style: &Option<String>) -> String {
-    match style.as_deref() {
-        Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
-        Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
-        Some("lower-roman") => format_counter_roman(value, false),
-        Some("upper-roman") => format_counter_roman(value, true),
-        _ => value.to_string(), // decimal (default)
-    }
-}
-
 ///
 /// 优先使用解码后的真实尺寸；若图片尚未解码，再回退到 HTML `width`/`height` 属性，
 /// 最后使用调用方提供的回退尺寸。

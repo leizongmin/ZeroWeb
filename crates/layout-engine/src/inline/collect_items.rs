@@ -119,6 +119,7 @@ impl InlineFormattingContext {
                                 border_bottom: 0.0,
                                 is_ahem_font,
                                 font_id: self.shaping_font_id_for_style(
+                                    parent_id,
                                     style,
                                     is_ahem_font,
                                     letter_spacing,
@@ -456,6 +457,7 @@ impl InlineFormattingContext {
                                 border_bottom,
                                 is_ahem_font,
                                 font_id: self.shaping_font_id_for_style(
+                                    Some(child_id),
                                     style,
                                     is_ahem_font,
                                     letter_spacing,

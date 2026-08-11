@@ -91,8 +91,16 @@ impl AdvanceSource for ShapedAdvanceSource {
         };
         let contextual: f32 = shaped.iter().map(|glyph| glyph.advance_x).sum();
         let unshaped: f32 = shaped.iter().map(|glyph| glyph.unshaped_advance_x).sum();
-        estimated + contextual - unshaped
+        let paint_base: f32 = text
+            .chars()
+            .map(|ch| measure_char_for_paint(ch, font_size, false))
+            .sum();
+        paint_base_with_contextual_delta(paint_base, contextual, unshaped)
     }
+}
+
+fn paint_base_with_contextual_delta(paint_base: f32, shaped: f32, unshaped: f32) -> f32 {
+    paint_base + shaped - unshaped
 }
 
 #[cfg(test)]
@@ -153,5 +161,10 @@ mod tests {
         let mut next = glyph('V', 9);
         next.cluster = 1;
         assert!(!source_mapping_requires_offsets("AV", &[base, next]));
+    }
+
+    #[test]
+    fn contextual_layout_advance_keeps_the_paint_base() {
+        assert_eq!(paint_base_with_contextual_delta(20.0, 18.5, 19.0), 19.5);
     }
 }

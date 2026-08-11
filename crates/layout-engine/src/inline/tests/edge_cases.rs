@@ -1675,6 +1675,21 @@ fn ifc_advance_source_uses_contextual_text_measurement() {
     assert_eq!(ctx.lines[0].runs[0].width, 15.0);
 }
 
+#[test]
+fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
+    let node = NodeId::default();
+    let ctx = InlineFormattingContext::new(100.0).with_font_id_overrides(HashMap::from([(node, 7)]));
+
+    assert_eq!(
+        ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
+        Some(7)
+    );
+    assert_eq!(
+        ctx.shaping_font_id_for_style(Some(node), None, false, 1.0, 0.0, false),
+        None
+    );
+}
+
 // ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
 
 /// 构造单文本运行 IFC（line-height:1，即 line_height == font_size，half-leading=0），

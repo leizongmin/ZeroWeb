@@ -1,11 +1,14 @@
 //! Paint 文本整形的受限接入与旧逐字符回退。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use unicode_bidi::{BidiClass, bidi_class};
-use zero_layout_engine::TextFragmentSource;
+use zero_css_parser::values::LengthValue;
+use zero_dom::{Document, NodeId, NodeKind};
+use zero_layout_engine::{InlineFormattingContext, TextFragmentSource};
 use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
-use zero_render_foundation::primitive::GlyphSource;
+use zero_render_foundation::primitive::{FontId, GlyphSource};
+use zero_style_system::ComputedStyle;
 
 fn shaped_text_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -45,6 +48,87 @@ fn shaped_rtl_enabled() -> bool {
 pub(super) fn shaped_uba_rtl_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_UBA_RTL").as_deref() != Ok("0"))
+}
+
+fn shaped_advance_trace_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1"))
+}
+
+pub(super) fn configure_paint_ifc_advance(
+    context: InlineFormattingContext,
+    doc: &Document,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+    text_node_font_ids: &HashMap<NodeId, FontId>,
+    generic_font_ids: &HashSet<u32>,
+) -> InlineFormattingContext {
+    if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("0")
+    {
+        return context;
+    }
+    let font_ids = text_node_font_ids
+        .iter()
+        .filter_map(|(&text_node, &font_id)| {
+            let parent_id = doc.parent_node(text_node)?;
+            let owner = styles?.get(&parent_id)?;
+            const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
+            let no_spacing = matches!(owner.letter_spacing, LengthValue::Px(v) if v == 0.0)
+                && matches!(owner.word_spacing, LengthValue::Px(v) if v == 0.0);
+            let declared_generic = owner.font_family.iter().any(|family| {
+                GENERIC_FAMILIES
+                    .iter()
+                    .any(|generic| family.eq_ignore_ascii_case(generic))
+            });
+            let eligible = matches!(owner.direction, zero_style_system::DirectionValue::Ltr)
+                && matches!(owner.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+                && no_spacing
+                && declared_generic
+                && generic_font_ids.contains(&font_id.0)
+                && !owner
+                    .font_family
+                    .iter()
+                    .any(|family| family.eq_ignore_ascii_case("Ahem"))
+                && !doc.get(parent_id).is_some_and(
+                    |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "ruby"),
+                );
+            eligible.then_some((parent_id, font_id.0))
+        })
+        .collect();
+    context
+        .with_font_id_overrides(font_ids)
+        .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource))
+}
+
+/// 同一 shaping 输入的三种 advance，用于与 fragment/paint 宽度对账。
+pub(super) struct FragmentAdvanceTrace {
+    pub(super) layout_estimate: f32,
+    pub(super) unshaped: f32,
+    pub(super) shaped: f32,
+}
+
+pub(super) struct FragmentPaintWidths {
+    pub(super) fragment: f32,
+    pub(super) legacy: f32,
+    pub(super) consumed: f32,
+}
+
+impl FragmentAdvanceTrace {
+    pub(super) fn emit(self, path: &'static str, font_id: u32, font_size: f32, text: &str, paint: FragmentPaintWidths) {
+        tracing::info!(
+            target: "zero_engine::shaped_advance",
+            path,
+            font_id,
+            font_size,
+            text = ?text,
+            layout_estimate = self.layout_estimate,
+            unshaped = self.unshaped,
+            shaped = self.shaped,
+            fragment_width = paint.fragment,
+            legacy_paint = paint.legacy,
+            paint_consumed = paint.consumed,
+            "ZW_SHAPED_ADVANCE_TRACE"
+        );
+    }
 }
 
 /// Paint 循环消费的单个字形。
@@ -278,6 +362,40 @@ pub(super) fn fragment_glyphs<'a>(
     FragmentGlyphs::Legacy(text.chars())
 }
 
+pub(super) fn fragment_advance_trace(
+    font_id: u32,
+    text: &str,
+    font_size: f32,
+    direction: TextDirection,
+    logical_source: Option<&LogicalFragmentSource<'_>>,
+    features: &[OpenTypeFeature],
+) -> Option<FragmentAdvanceTrace> {
+    if !shaped_advance_trace_enabled() {
+        return None;
+    }
+    let complex_enabled = complex_run_enabled(
+        direction,
+        logical_source.is_some(),
+        shaped_complex_enabled(),
+        shaped_rtl_enabled(),
+    );
+    let shape_direction = effective_shape_direction(direction, complex_enabled);
+    let shaping_text = logical_source.map_or(text, |source| source.text);
+    let glyphs = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, features)?;
+    Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs))
+}
+
+fn advance_trace_from_glyphs(text: &str, font_size: f32, glyphs: &[ShapedGlyph]) -> FragmentAdvanceTrace {
+    FragmentAdvanceTrace {
+        layout_estimate: text
+            .chars()
+            .map(|ch| crate::text_metrics::layout_estimate_char_width(ch, font_size, false))
+            .sum(),
+        unshaped: glyphs.iter().map(|glyph| glyph.unshaped_advance_x).sum(),
+        shaped: glyphs.iter().map(|glyph| glyph.advance_x).sum(),
+    }
+}
+
 fn complex_run_enabled(
     direction: TextDirection,
     has_logical_source: bool,
@@ -423,6 +541,21 @@ mod tests {
         let advance = advance_only.next().expect("advance glyph");
         assert_eq!(advance.advance_x, Some(8.0));
         assert_eq!((advance.x_offset, advance.y_offset), (0.0, 0.0));
+    }
+
+    #[test]
+    fn advance_trace_compares_estimated_unshaped_and_shaped_widths() {
+        let mut first = glyph();
+        first.advance_x = 8.5;
+        let mut second = glyph();
+        second.code_point = 'V';
+        second.advance_x = 8.0;
+
+        let trace = advance_trace_from_glyphs("AV", 16.0, &[first, second]);
+
+        assert_eq!(trace.layout_estimate, 17.6);
+        assert_eq!(trace.unshaped, 18.0);
+        assert_eq!(trace.shaped, 16.5);
     }
 
     #[test]

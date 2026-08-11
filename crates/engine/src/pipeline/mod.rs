@@ -348,7 +348,7 @@ impl RenderPipeline {
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
         self.layout_engine.set_font_resolver(resolver.clone());
         if std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0")
-            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1")
+            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("0")
         {
             self.layout_engine
                 .set_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource));

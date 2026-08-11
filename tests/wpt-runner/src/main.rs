@@ -93,6 +93,10 @@ enum OutputFormat {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
+    if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1") {
+        tracing_subscriber::fmt().with_target(false).without_time().init();
+    }
+
     // R1765：注册 fontdue 真实 advance 测量回调（镜像 browser app.rs:204）。
     // 此前 runner 未注册 → paint 回退 estimate_char_width（0.55×fs）→ reftest/product-smoke
     // 测量用 estimate paint（'m'=0.584×fs）vs chromium 0.797×fs，font-wall 部分是测量 artifact。

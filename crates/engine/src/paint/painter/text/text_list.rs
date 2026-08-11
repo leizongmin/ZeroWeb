@@ -13,7 +13,6 @@ use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, RoundedRectPrimitive};
 use zero_style_system::{ComputedStyle, ContentComputedValue};
 
-use super::format_counter_text;
 use crate::paint::color::color_value_to_render;
 use crate::paint::helpers::image_resource_key;
 
@@ -395,6 +394,17 @@ pub(super) fn format_counter_alpha(value: i64, upper: bool) -> String {
 pub(super) fn format_counter_roman(value: i64, upper: bool) -> String {
     let s = to_roman(value.max(0) as usize);
     if upper { s } else { s.to_lowercase() }
+}
+
+/// 按计数器样式格式化整数值为 content 文本。
+fn format_counter_text(value: i64, style: &Option<String>) -> String {
+    match style.as_deref() {
+        Some("lower-alpha") | Some("lower-latin") => format_counter_alpha(value, false),
+        Some("upper-alpha") | Some("upper-latin") => format_counter_alpha(value, true),
+        Some("lower-roman") => format_counter_roman(value, false),
+        Some("upper-roman") => format_counter_roman(value, true),
+        _ => value.to_string(),
+    }
 }
 
 impl super::super::Painter {
