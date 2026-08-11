@@ -42,6 +42,25 @@ pub fn register_dom_callbacks(
         Box::new(move |_args| format!("{}", perf_origin.elapsed().as_secs_f64() * 1000.0)),
     );
 
+    // `console.*` 桥接（R3256，Console Standard）——page console.log/info/warn/error/debug/trace/dir/dirxml/table
+    // 经 shim `_zwConsoleEmit` 序列化 args 后调本回调，转发到宿主 `tracing` 日志（便于排障 + WPT console 断言
+    // 可见）。level→tracing 宏映射：error→error / warn→warn / (info,log,table)→info / 其余→debug。返空串
+    //（shim 不读返值）。失败不 panic（best-effort，console 不应阻断页面）。
+    sandbox.register_callback(
+        "__zw_console_log",
+        Box::new(|args: &[String]| -> String {
+            let level = args.first().map(String::as_str).unwrap_or("log");
+            let msg = args.get(1).map(String::as_str).unwrap_or("");
+            match level {
+                "error" => tracing::error!("[console] {msg}"),
+                "warn" => tracing::warn!("[console] {msg}"),
+                "info" | "log" | "table" => tracing::info!("[console] {msg}"),
+                _ => tracing::debug!("[console.{level}] {msg}"),
+            }
+            String::new()
+        }),
+    );
+
     // `new URL(url, base)`——WHATWG URL 解析（protocol/host/hostname/port/pathname/search/hash/origin/
     // href）。location.href 操纵 / fetch 相对 URL / 链接解析高频。委托 [`parse_url_to_json`]（spec-correct
     // via `url` crate）；解析失败返空串（shim 抛 TypeError，spec 一致）。

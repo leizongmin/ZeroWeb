@@ -130,6 +130,29 @@
 
 ## 最近完成的改进
 
+### console API 桥接宿主日志（本轮 R3256，engine shim + callbacks）—— page console 输出从「全丢失」到可见
+
+承接 R3253-R3255（视口/滚动事件通知）后转另一文档化降级：**console 全 no-op**。shim `globalThis.console`（part02.js:2121）原为「全方法 `function(){}` 空实现 + `globalThis.console || {...}`」——`||` 守卫在 V8 默认上下文（自带 native console，`function log(){[native code]}`，不桥接宿主）下**保留 native 版**，使桥接永不生效；即便生效，旧方法亦全 no-op → page `console.log/warn/error` 输出完全丢失（排障盲、WPT console 断言不可见、page `console.error` 异常静默）。本轮将 console 桥接到宿主 `tracing` 日志。
+
+**实现（R3256，Console Standard，2 文件 + 1 测试）**：
+- `js_dom_shim/part02.js`：① **无条件覆盖** `globalThis.console = {...}`（去掉 `||`——V8 native console 不桥接，`||` 会保留它致桥接失效；typeof 守卫保证无回调时与 native 同效皆 vanishing，documented）；② +`_zwSerializeConsoleArg`（string 直传 / 其余 `JSON.stringify` / 失败回退 `String()`）+ `_zwConsoleEmit(level, args)`（typeof `__zw_console_log` 守卫 → 序列化拼接 → 调回调）；③ 输出类方法（log/info/warn/error/debug/trace/dir/dirxml/table）桥接，非输出类（clear/count/group/time/assert）保持 no-op。
+- `js_dom_bridge/callbacks.rs`：`register_dom_callbacks` +`__zw_console_log(level,msg)` 回调 → 按 level 映射 `tracing::{error,warn,info,debug}!`（`[console]` 前缀），返空串，best-effort。
+- 测试：`js_dom_bridge_tests/part02.rs` +`test_console_host_bridge_r3256`（v8）——验证 ① level 传递（log/warn/error）；② 多参空格拼接 + 序列化（`'hello', 42, {a:1}` → `hello 42 {"a":1}`）；③ count/group/time 非输出类不触回调。
+
+**为何净正向**：① **闭合真降级**——console 从「输出全丢」到宿主日志可见（排障、page `console.error` 异常可见、WPT console 断言基础）；② **零回归**——zero-engine --lib **v8 1978 全绿**（+1 测 console bridge，含既有 console 相关测全过——无条件覆盖未破坏 console.* 调用语义），quickjs clippy/fmt clean，全 workspace minus zero-compositor 全绿（v8 默认，R3256 测实跑通过）；③ 复用既有 `__zw_*` 回调模式（mirror `__zw_match_media`），低风险；④ engine shim + callbacks 本流域。**已知限制**：① 序列化用 JSON.stringify 近似（real browser devtools 可检视对象/循环引用；headless 字符串近似，function/circular 回退 String，documented）；② count/group/time 等仍 no-op（非输出类，real browser 亦仅 devtools 可见，host 日志价值低，documented）；③ 多参 `%s/%d` 格式占位符未展开（直接拼接，real browser 展开；documented 近似）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part02.js` | console 无条件覆盖为桥接版 + `_zwSerializeConsoleArg`/`_zwConsoleEmit`（输出类桥接，非输出类 no-op）。 |
+| `crates/engine/src/js_dom_bridge/callbacks.rs` | +`__zw_console_log` 回调注册 → `tracing` 日志（level 映射）。 |
+| `crates/engine/src/js_dom_bridge_tests/part02.rs` | +`test_console_host_bridge_r3256`（v8）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine --all-targets -- -D warnings` 零警告（v8 默认）+ **zero-engine --lib v8 1978 全绿**（+1 测，零回归）+ **全 workspace minus zero-compositor 全绿**（v8 默认，R3256 测实跑通过——本轮 rusty_v8 本地可用，v8 dispatch 测本轮实测）。⚠️ compositor flake 仍待渲染流 env-gate/ignore。
+
+**下一步**：console 桥接闭合（page 输出可见）。续候选（按价值/可行性排序）：① **用户滚动到可滚动子元素**——LARGE（需 browser 元素滚动命中测试 + IPC 形状扩 `ScrollEventParams` 加目标 + 元素滚动状态跟踪，涉共享 protocol crate，defer 至滚动架构 RFC）；② **wheel/mousewheel 事件**——同需 IPC 扩（光标位置），defer；③ **devicePixelRatio/orientationchange** 跟踪——R3254 更 inner/outer 但 DPR 静态 1、orientation 静态 landscape（需 host 钩子，核实是否可清洁接入）；④ **Selection/Range 补全**——`Selection.modify()`/`removeAllRanges()` 现 no-op（编辑器框架 Quill/Slate 依赖，纯 JS 可落地，中价值）；⑤ native DOM Range `range.rs` 内部 spec 审（internal，低 page 价值）；⑥ P1a microtask checkpoint 时序（中等风险）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### matchMedia change 事件派发（本轮 R3255，engine shim）—— 响应式断点 JS 闭环，R3254 resize 钩子驱动
 
 承接 R3254（resize 派发）后闭合 matchMedia 文档化限制：R2781 落地 `window.matchMedia`（MediaQueryList + addEventListener('change') + legacy addListener），但 part05.js:1716 明记「**change 事件需 host resize 跟踪派发（当前无，addListener 注册有效但不触发）**」→ 响应式断点 JS（`mql.addEventListener('change', ...)` / jQuery `mq.on('change')` / 框架断点检测）永不触发，resize 后断点切换无回调。R3254 的 `__zw_user_resize` 钩子天然是触发点。本轮在 shim 内补 MQL 注册表 + resize 重评估派 change，**响应式视口查询面闭环**（resize → innerWidth 跟踪 + resize 事件 + matchMedia change 三全）。

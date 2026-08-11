@@ -2118,22 +2118,41 @@
     }
   };
 
-  globalThis.console = globalThis.console || {
-    log: function() {},
-    info: function() {},
-    warn: function() {},
-    error: function() {},
-    debug: function() {},
-    trace: function() {},
-    dir: function() {},
-    dirxml: function() {},
+  // R3256：console 桥接宿主——page console.log/warn/error 等经 `__zw_console_log(level,msg)` 回调转发到宿主日志
+  //（tracing）。旧实现全 no-op（page console 输出完全丢失，排障/WPT console 断言不可见）。序列化：string 直传，
+  // 其余 JSON.stringify（对象/数组可读），JSON 失败（function/circular）回退 String()。`typeof` 守卫：回调未注册
+  //（shim 未配 host）时 no-op，**向后兼容**（不抛 ReferenceError）。count/group/time 等非输出类保持 no-op。
+  // **无条件覆盖**（非 `||`）：V8 默认上下文自带 native console（`function log(){[native code]}`，不桥接宿主，
+  // 输出丢失），`||` 会保留它 → 桥接失效。故强制覆盖为桥接版；typeof 守卫保证无回调时与 native 同效（皆 vanishing）。
+  function _zwSerializeConsoleArg(a) {
+    if (typeof a === 'string') return a;
+    if (a === null) return 'null';
+    if (a === undefined) return 'undefined';
+    try { return JSON.stringify(a); } catch (_) {}
+    try { return String(a); } catch (_) { return '[unknown]'; }
+  }
+  function _zwConsoleEmit(level, args) {
+    if (typeof __zw_console_log !== 'function') return; // 宿主未注册 → no-op（向后兼容）
+    var parts = [];
+    for (var i = 0; i < args.length; i++) parts.push(_zwSerializeConsoleArg(args[i]));
+    try { __zw_console_log(level, parts.join(' ')); } catch (_) {}
+  }
+  globalThis.console = {
+    log: function() { _zwConsoleEmit('log', arguments); },
+    info: function() { _zwConsoleEmit('info', arguments); },
+    warn: function() { _zwConsoleEmit('warn', arguments); },
+    error: function() { _zwConsoleEmit('error', arguments); },
+    debug: function() { _zwConsoleEmit('debug', arguments); },
+    trace: function() { _zwConsoleEmit('trace', arguments); },
+    dir: function() { _zwConsoleEmit('dir', arguments); },
+    dirxml: function() { _zwConsoleEmit('dirxml', arguments); },
+    table: function() { _zwConsoleEmit('table', arguments); },
     clear: function() {},
     count: function() {},
     countReset: function() {},
     group: function() {},
     groupCollapsed: function() {},
     groupEnd: function() {},
-    table: function() {},
     time: function() {},
     timeLog: function() {},
     timeEnd: function() {},
