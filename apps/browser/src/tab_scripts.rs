@@ -363,6 +363,7 @@ pub fn dispatch_dom_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 8 参 classic 执行 helper（含 R3258 script_index）；与 app_render_geometry/tab_favicon 同惯例
 fn execute_script_chunk(
     wv: &mut WebView,
     js_worker: Option<&TabJsWorkerHandle>,
