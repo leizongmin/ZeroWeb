@@ -68,12 +68,16 @@ pub fn script_dispatch_transition_event(selector: &str, property: &str, elapsed:
     )
 }
 
-/// 构造「派发 animationend 事件」的脚本（R3249，CSS Animations §animationend）。
-/// 宿主在动画完成帧（`AnimationClock::drain_just_finished` → pipeline `take_pending_animation_events`）
-/// 执行：`querySelector(selector)` 取唯一目标元素，`new AnimationEvent('animationend', {animationName,
-/// elapsedTime, bubbles:true})` 派发。AnimationEvent 构造器在 shim part05:1383 注册。
-pub fn script_dispatch_animation_event(selector: &str, name: &str, elapsed: f64) -> String {
+/// 构造「派发动画事件」的脚本（R3249 animationend + R3250 animationiteration，CSS Animations）。
+/// 宿主在动画完成/迭代边界帧（`AnimationClock::drain_just_finished` / `drain_just_iterated` → pipeline
+/// `take_pending_animation_events`）执行：`querySelector(selector)` 取唯一目标元素，
+/// `new AnimationEvent(event_type, {animationName, elapsedTime, bubbles:true})` 派发。
+/// `event_type` = `'animationend'`（有限动画完成）或 `'animationiteration'`（迭代边界，infinite 循环回调）；
+/// 二者 init dict 完全相同（CSS Animations §animationend / §animationiteration），仅事件名不同。
+/// AnimationEvent 构造器在 shim part05:1383 注册。
+pub fn script_dispatch_animation_event(selector: &str, event_type: &str, name: &str, elapsed: f64) -> String {
     let sel = escape_js_string(selector);
+    let ty = escape_js_string(event_type);
     let nm = escape_js_string(name);
     let elapsed_str = if elapsed.is_finite() && elapsed >= 0.0 {
         format!("{elapsed}")
@@ -81,7 +85,7 @@ pub fn script_dispatch_animation_event(selector: &str, name: &str, elapsed: f64)
         "0".to_string()
     };
     format!(
-        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new AnimationEvent('animationend',{{animationName:'{nm}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new AnimationEvent('{ty}',{{animationName:'{nm}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
     )
 }
 

@@ -188,15 +188,17 @@ pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[(Strin
     }
 }
 
-/// R3249（CSS Animations §animationend）：派发动画完成事件进 shim。`events` = `(元素 selector,
-/// animationName, elapsedTime)` 三元组列表（由 pipeline `take_pending_animation_events` 产出）。
-/// 每个经 `script_dispatch_animation_event` 构造 `new AnimationEvent('animationend', {...})` 派发到
-/// 唯一目标元素。best-effort。注：infinite 动画永不完成（不派 animationend）——animationiteration 待 follow-up。
-pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[(String, String, f64)]) {
-    for (sel, name, elapsed) in events {
-        let script = zero_engine::script_dispatch_animation_event(sel, name, *elapsed);
+/// R3249（CSS Animations §animationend）+ R3250（§animationiteration）：派发动画事件进 shim。`events` =
+/// [`zero_engine::AnimationEvent`] 列表（由 pipeline `take_pending_animation_events` 产出，`kind` 区分 End/
+/// Iteration）。每个经 `script_dispatch_animation_event` 构造 `new AnimationEvent(kind.as_event_type(),
+/// {animationName, elapsedTime, bubbles})` 派发到唯一目标元素。best-effort（stale 选择器 / 构造器缺失 →
+/// 容错跳过）。infinite 动画循环回调靠 Iteration（永不 End）。
+pub fn dispatch_animation_events(js_worker: &RendererJsWorker, events: &[zero_engine::AnimationEvent]) {
+    for ev in events {
+        let ty = ev.kind.as_event_type();
+        let script = zero_engine::script_dispatch_animation_event(&ev.selector, ty, &ev.name, ev.elapsed);
         if let Err(e) = js_worker.execute_script_direct(&script) {
-            warn!("dispatch animationend ({sel}): {e}");
+            warn!("dispatch {ty} ({}): {e}", ev.selector);
         }
     }
 }

@@ -130,6 +130,35 @@
 
 ## 最近完成的改进
 
+### animationiteration 事件派发全管线（本轮 R3250，engine+webview+renderer）—— animationend follow-up，infinite 循环回调
+
+承接 R3249（animationend 全管线）记的 follow-up：**animationiteration 不派发**——`AnimationClock.tick()` 仅更新 `anim.iteration = total_iterations.floor()`（animation.rs），不检测迭代边界跨越也不经 host 注入 → 有限多轮动画的中间迭代边界、以及 **infinite 动画的循环回调**（永不 finish → 永不派 animationend）完全不触发（spinner/loader 等循环动画回调链断）。本轮闭合该 gap，mirror R3248/R3249 跨 engine→webview→renderer 全管线。
+
+**实现（R3250，CSS Animations §animationiteration，6 文件，镜像 R3249）**：
+- `animation.rs`：+`IteratedAnimation{element_key,name,elapsed}` + `just_iterated: Vec` 字段；`tick()` 在 finish 分支（`continue`）**之后**检测迭代边界——`new_iter = total_iterations.floor()` > `prev_iter`（旧 `anim.iteration`）时推入（`elapsed = new_iter × duration` = completed_iterations × duration = elapsedTime）；finish 分支已 `continue` 故**末轮边界不派 iteration**（派 animationend，spec 一致）；+`drain_just_iterated()` + 2 单测（多轮边界 + infinite 循环）。
+- `pipeline/mod.rs`：+`AnimationEventKind{End,Iteration}` enum（+`as_event_type()` → "animationend"/"animationiteration"）+ `AnimationEvent{kind,selector,name,elapsed}` 结构；`pending_animation_events: Vec<AnimationEvent>`（从三元组升级）；`apply_animation_overrides` 返 `Vec<(NodeId,kind,name,elapsed)>`（drain `just_finished`→End + drain `just_iterated`→Iteration 合并）；render 法 §5 收集 → 存 `AnimationEvent`；`take_pending_animation_events()` → 返 `Vec<AnimationEvent>`。
+- `script_gen.rs`：`script_dispatch_animation_event(sel,event_type,name,elapsed)`——加 `event_type` 参数（animationend/animationiteration 的 AnimationEvent init dict 完全相同 {animationName,elapsedTime,bubbles}，仅事件名不同，单一函数参数化）。
+- `webview.rs`：`take_pending_animation_events()` 返 `Vec<zero_engine::AnimationEvent>`。
+- `page_scripts.rs`：`dispatch_animation_events(js_worker, &[AnimationEvent])`——按 `ev.kind.as_event_type()` 派发。
+- `renderer/main.rs`：`publish_webview` 注释更新（End + Iteration）。
+
+**为何净正向**：① **闭合真行为 gap**——animationiteration 从「永不派发」到 spec 合规，**infinite 动画循环回调通**（spinner/loader 计数器、循环动画状态机依赖）；② **零回归**——zero-engine --lib **1379 全绿**（+2 测 iteration drain/infinite，含既有 50 animation lifecycle 测全过），engine+webview+renderer clippy/fmt clean；③ 镜像 R3248/R3249 已验证模式，低风险；④ engine/webview/renderer 均本流域。**已知限制**：① frame 间隔内跨多轮迭代 → 合并一事件（elapsedTime 取最新完成轮累计，近似 rAF 单帧单事件，documented）；② animationstart（动画首次激活派发）待 follow-up；③ handler 改 DOM mutation 由后续 render 周期应用（同 R3248/R3249 documented）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/animation.rs` | +`IteratedAnimation` 结构 + `just_iterated` 字段 + `tick()` 边界检测 + `drain_just_iterated()` + 2 单测。 |
+| `crates/engine/src/pipeline/mod.rs` | +`AnimationEventKind`/`AnimationEvent` 结构 + `apply_animation_overrides` 双 drain + render 收集 + `take_pending_animation_events()` 返 `Vec<AnimationEvent>`。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | `script_dispatch_animation_event` 加 `event_type` 参数（animationend/animationiteration 通用）。 |
+| `crates/webview/src/webview.rs` | `take_pending_animation_events()` 返类型升级。 |
+| `apps/renderer/src/page_scripts.rs` | `dispatch_animation_events` 接 `&[AnimationEvent]`，按 kind 派发。 |
+| `apps/renderer/src/main.rs` | `publish_webview` 注释更新（End + Iteration）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-webview -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1379 全绿**（+2 测 iteration，零回归）+ **全 workspace minus zero-compositor 全绿**（compositor `frame_flow.rs:81` PoisonError = 已知跨流 wgpu headless flake，归因渲染流，非本片）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：CSS 动画事件族 **animationstart** follow-up（动画首次激活派发——`tick()` 检测 anim 首次进入活跃态/首次应用插值时派 animationstart，mirror 同模式，elapsedTime=0）。animationstart 后 CSS Animations 事件族（start/iteration/end）全齐。续候选：② **`scroll` 事件**——element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（程序化滚动，real browser 派 scroll）；③ **change-on-blur**——input 失焦值变派 change（表单校验，renderer host 层）；④ native DOM Range `range.rs` 内部 spec 审（internal）。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### animationend 事件派发全管线（本轮 R3249，engine+webview+renderer）—— transitionend 镜像
 
 承接 R3248（transitionend 全管线），按上轮记的 follow-up 取同模式镜像片 **animationend**——`AnimationClock.tick()` 仅设 `finished` 标志（animation.rs），不收集也不经 host 注入 → 有限动画完成时 animationend 不派发（UI 编排 / 动画结束回调链断；注：infinite 动画永不完成，依赖 animationiteration，待后续）。mirror R3248 跨 engine→webview→renderer 全管线。

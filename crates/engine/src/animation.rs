@@ -84,6 +84,10 @@ pub struct AnimationClock {
     /// 「本轮新完成」的动画（R3249）——`tick()` 在 `finished` 由 false→true 的帧推入，供宿主经
     /// `drain_just_finished()` 取出后映射元素并派发 `animationend`（CSS Animations §animationend）。
     just_finished: Vec<FinishedAnimation>,
+    /// 「本轮跨越的迭代边界」记录（R3250）——`tick()` 在 `iteration` 递增（非完成帧）时推入，供宿主经
+    /// `drain_just_iterated()` 取出后派发 `animationiteration`（CSS Animations §animationiteration）。
+    /// 关键：infinite 动画永不完成（不派 animationend），靠此事件驱动循环回调。
+    just_iterated: Vec<IteratedAnimation>,
 }
 
 /// 「本轮新完成」的动画记录（R3249）——`tick()` 在 `finished` 由 false→true 的帧推入 `just_finished`，
@@ -97,6 +101,19 @@ pub struct FinishedAnimation {
     pub name: String,
     /// 活跃时长（秒，animationend.elapsedTime = iteration_count * duration）。
     pub duration: f64,
+}
+
+/// 「本轮跨越的迭代边界」记录（R3250）——`tick()` 在 `iteration` 递增（非完成帧）时推入 `just_iterated`，
+/// 供宿主经 `drain_just_iterated()` 取出后派发 `animationiteration`（CSS Animations §animationiteration）。
+/// `elapsed` = 已完成迭代数 × duration（animationiteration.elapsedTime）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct IteratedAnimation {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 动画名（animationiteration.animationName）。
+    pub name: String,
+    /// 已完成迭代累计时长（秒，animationiteration.elapsedTime = completed_iterations × duration）。
+    pub elapsed: f64,
 }
 
 // ── 时间函数求值 ──────────────────────────────────────────────────────
@@ -543,7 +560,21 @@ impl AnimationClock {
                 continue;
             }
 
-            anim.iteration = total_iterations.floor() as u64;
+            // R3250（CSS Animations §animationiteration）：检测迭代边界跨越——新 floor(iteration) >
+            // 旧 anim.iteration 表示完成了一整轮迭代。非完成帧（finish 分支已 continue），故此处置
+            // animationiteration（finish 分支的末轮边界派 animationend 而非 iteration，spec）。infinite
+            // 动画靠此事件驱动循环回调（永不 finish）。frame 间隔内跨多轮 → 合并一事件（elapsedTime 取
+            // 最新完成轮累计时长，近似 rAF 单帧单事件）。
+            let prev_iter = anim.iteration;
+            let new_iter = total_iterations.floor() as u64;
+            if new_iter > prev_iter {
+                self.just_iterated.push(IteratedAnimation {
+                    element_key: element_id,
+                    name: anim.name.clone(),
+                    elapsed: new_iter as f64 * anim.duration,
+                });
+            }
+            anim.iteration = new_iter;
 
             // 单次迭代内的进度 [0,1)
             let iter_progress = iteration_progress.fract();
@@ -590,6 +621,12 @@ impl AnimationClock {
     /// 宿主据此映射元素并派发 `animationend` 事件。每次调用清空内部缓冲（每完成帧只派发一次）。
     pub fn drain_just_finished(&mut self) -> Vec<FinishedAnimation> {
         std::mem::take(&mut self.just_finished)
+    }
+
+    /// 取出「自上次 drain 后跨越的迭代边界」（R3250，CSS Animations §animationiteration）。
+    /// 宿主据此映射元素并派发 `animationiteration` 事件（infinite 动画循环回调靠此）。每次调用清空缓冲。
+    pub fn drain_just_iterated(&mut self) -> Vec<IteratedAnimation> {
+        std::mem::take(&mut self.just_iterated)
     }
 
     /// 移除已完成动画。
@@ -1186,6 +1223,97 @@ mod tests {
 
         // 再次 drain → 空（每完成帧只派发一次）
         assert!(clock.drain_just_finished().is_empty(), "二次 drain 空（不重复派发）");
+    }
+
+    #[test]
+    fn test_animation_drain_just_iterated_r3250() {
+        // R3250（CSS Animations §animationiteration）：iteration 递增（非完成帧）→ 推入 just_iterated，
+        // drain_just_iterated 取出（element_key/name/elapsed=completed_iterations*duration）。
+        // 关键：完成帧（finish 分支）不派 iteration（末轮边界派 animationend），故此处 drain 空。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        // duration=1.0s，iteration_count=3.0 → 活跃时长 3.0s；第 1、2 次迭代结束派 iteration，第 3 次（完成）派 end。
+        start_anim(
+            &mut clock,
+            7,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(3.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // t=1.0 → 第 1 次迭代结束（未完成）→ drain_just_iterated 含 1 条（elapsed=1.0），drain_finished 空。
+        let _ = clock.tick(7, 1.0);
+        let iterated = clock.drain_just_iterated();
+        assert_eq!(iterated.len(), 1, "第 1 次迭代边界 drain 恰好 1 条");
+        assert_eq!(iterated[0].element_key, 7);
+        assert_eq!(iterated[0].name, "fade");
+        assert!(
+            (iterated[0].elapsed - 1.0).abs() < 1e-9,
+            "elapsed=completed_iterations*duration=1.0"
+        );
+        assert!(clock.drain_just_finished().is_empty(), "迭代中不派 animationend");
+
+        // t=2.0 → 第 2 次迭代结束（未完成）→ drain_just_iterated 含 1 条（elapsed=2.0）。
+        let _ = clock.tick(7, 2.0);
+        let iterated = clock.drain_just_iterated();
+        assert_eq!(iterated.len(), 1, "第 2 次迭代边界 drain 恰好 1 条");
+        assert!(
+            (iterated[0].elapsed - 2.0).abs() < 1e-9,
+            "elapsed=completed_iterations*duration=2.0"
+        );
+
+        // t=3.0 → 第 3 次（末轮）迭代结束 = 动画完成 → drain_just_finished 含 1 条，drain_just_iterated 空
+        //（末轮边界派 animationend 而非 animationiteration，CSS Animations §animationend）。
+        let _ = clock.tick(7, 3.0);
+        assert!(
+            clock.drain_just_iterated().is_empty(),
+            "完成帧（末轮边界）不派 animationiteration"
+        );
+        let finished = clock.drain_just_finished();
+        assert_eq!(finished.len(), 1, "完成帧派 animationend");
+    }
+
+    #[test]
+    fn test_animation_infinite_iteration_r3250() {
+        // R3250 关键用例：infinite 动画永不完成（不派 animationend），靠 animationiteration 驱动循环回调。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "spin",
+            vec![
+                (0.0, vec![("transform", "rotate(0deg)")]),
+                (100.0, vec![("transform", "rotate(360deg)")]),
+            ],
+        );
+        clock.register_keyframes(&rule);
+        start_anim(
+            &mut clock,
+            5,
+            "spin",
+            0.5,
+            0.0,
+            TimingFunctionValue::Linear,
+            None, // None = infinite
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // t=0.5 → 第 1 轮结束 → iteration；t=1.0 → 第 2 轮 → iteration；永无 animationend。
+        let _ = clock.tick(5, 0.5);
+        assert_eq!(clock.drain_just_iterated().len(), 1, "infinite 第 1 轮派 iteration");
+        assert!(clock.drain_just_finished().is_empty(), "infinite 永不 finish");
+        let _ = clock.tick(5, 1.0);
+        assert_eq!(clock.drain_just_iterated().len(), 1, "infinite 第 2 轮派 iteration");
+        assert!(clock.drain_just_finished().is_empty(), "infinite 永不 finish");
     }
 
     #[test]

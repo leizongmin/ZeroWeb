@@ -1083,10 +1083,10 @@ impl WebView {
         self.pipeline.take_pending_transition_events()
     }
 
-    /// 取出「自上次 render 后新完成」的 animationend 事件（R3249，CSS Animations §animationend）。
-    /// 返回 `(元素 selector, animationName, elapsedTime)` 三元组列表；每次调用清空缓冲。
-    /// 宿主据此向 JS 派发 `new AnimationEvent('animationend', {animationName, elapsedTime, bubbles:true})`。
-    pub fn take_pending_animation_events(&mut self) -> Vec<(String, String, f64)> {
+    /// 取出「自上次 render 后新产生」的动画事件（R3249 animationend + R3250 animationiteration）。
+    /// 返回 [`zero_engine::AnimationEvent`] 列表（`kind` 区分 End/Iteration）；每次调用清空缓冲。宿主据此向
+    /// JS 派发 `new AnimationEvent(kind.as_event_type(), {animationName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_animation_events(&mut self) -> Vec<zero_engine::AnimationEvent> {
         self.pipeline.take_pending_animation_events()
     }
 

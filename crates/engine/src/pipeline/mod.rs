@@ -26,6 +26,40 @@ use crate::transition::TransitionClock;
 mod extract;
 pub use extract::*;
 
+/// 动画事件类型（R3249/R3250）——区分 animationend（动画完成）与 animationiteration（迭代边界）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimationEventKind {
+    /// animationend（CSS Animations §animationend）——有限动画完成时派发。
+    End,
+    /// animationiteration（CSS Animations §animationiteration）——迭代边界派发（infinite 动画循环回调）。
+    Iteration,
+}
+
+impl AnimationEventKind {
+    /// 映射到 `AnimationEvent` 构造器的事件类型字符串（`new AnimationEvent(as_event_type(), {...})`）。
+    /// animationend 与 animationiteration 的 init dict 完全相同（{animationName, elapsedTime, bubbles}），
+    /// 仅事件名不同（CSS Animations §animationend / §animationiteration）。
+    pub fn as_event_type(self) -> &'static str {
+        match self {
+            AnimationEventKind::End => "animationend",
+            AnimationEventKind::Iteration => "animationiteration",
+        }
+    }
+}
+
+/// 「已派发待消费」的动画事件（R3249/R3250）——宿主据此向 JS 派发 `AnimationEvent`。
+#[derive(Debug, Clone)]
+pub struct AnimationEvent {
+    /// 事件类型（End → animationend / Iteration → animationiteration）。
+    pub kind: AnimationEventKind,
+    /// 元素选择器（unique_selector_for_node 产出）。
+    pub selector: String,
+    /// 动画名（animationName）。
+    pub name: String,
+    /// 时长（elapsedTime，秒）。
+    pub elapsed: f64,
+}
+
 /// 渲染管线 — 编排 HTML→CSS→Layout→Paint 全流程。
 ///
 /// 整合 DOM 解析、CSS 解析、样式计算、布局计算和绘制命令生成，
@@ -49,10 +83,11 @@ pub struct RenderPipeline {
     /// 元素选择器、属性名（propertyName）、时长（elapsedTime）。过渡完成帧由 `tick()` 收集 +
     /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_transition_events()` 取出派发。
     pending_transition_events: Vec<(String, String, f64)>,
-    /// 「已派发待消费」的 animationend 事件（R3249，CSS Animations §animationend）——
-    /// 元素选择器、动画名（animationName）、活跃时长（elapsedTime）。动画完成帧由 `tick()` 收集 +
-    /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_animation_events()` 取出派发。
-    pending_animation_events: Vec<(String, String, f64)>,
+    /// 「已派发待消费」的动画事件（R3249 animationend + R3250 animationiteration）——元素选择器、
+    /// 事件类型（End/Iteration）、动画名（animationName）、时长（elapsedTime）。动画完成/迭代边界帧由
+    /// `tick()` 收集 + `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_animation_events()`
+    /// 取出派发。统一 enum 避免并行 channel 重复管线（transition 见 `pending_transition_events`）。
+    pending_animation_events: Vec<AnimationEvent>,
     /// 缓存的基础样式（用于过渡检测，存储覆盖前的原始计算样式）。
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
@@ -413,10 +448,10 @@ impl RenderPipeline {
         std::mem::take(&mut self.pending_transition_events)
     }
 
-    /// 取出「自上次 render 后新完成」的 animationend 事件（R3249，CSS Animations §animationend）。
-    /// 返回 `(元素 selector, animationName, elapsedTime)` 三元组列表；每次调用清空缓冲。
-    /// 宿主据此向 JS 派发 `new AnimationEvent('animationend', {animationName, elapsedTime, bubbles:true})`。
-    pub fn take_pending_animation_events(&mut self) -> Vec<(String, String, f64)> {
+    /// 取出「自上次 render 后新产生」的动画事件（R3249 animationend + R3250 animationiteration）。
+    /// 返回 [`AnimationEvent`] 列表（`kind` 区分 End/Iteration）；每次调用清空缓冲。宿主据此向 JS 派发
+    /// `new AnimationEvent(kind.as_event_type(), {animationName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_animation_events(&mut self) -> Vec<AnimationEvent> {
         std::mem::take(&mut self.pending_animation_events)
     }
 
@@ -470,11 +505,19 @@ impl RenderPipeline {
         }
 
         // 5. 启动动画并应用插值覆盖
-        // R3249（CSS Animations §animationend）：apply_animation_overrides 返「本轮新完成」动画 →
-        // 映射 NodeId→unique_selector，存 pending_animation_events 待宿主派发 animationend。
-        for (nid, name, elapsed) in apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time) {
+        // R3249（animationend）/R3250（animationiteration）：apply_animation_overrides 返「本轮新产生」动画
+        // 事件 → 映射 NodeId→unique_selector，存 pending_animation_events 待宿主派发（End→animationend /
+        // Iteration→animationiteration，infinite 动画循环回调靠 Iteration）。
+        for (nid, kind, name, elapsed) in
+            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time)
+        {
             if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(&doc, nid) {
-                self.pending_animation_events.push((sel, name, elapsed));
+                self.pending_animation_events.push(AnimationEvent {
+                    kind,
+                    selector: sel,
+                    name,
+                    elapsed,
+                });
             }
         }
 
@@ -1407,14 +1450,14 @@ pub(crate) fn extract_print_page_geometry(stylesheets: &[Stylesheet]) -> (f32, f
 /// 遍历所有元素的样式，检查 animation-name 列表，
 /// 通过 AnimationClock 启动/推进动画，然后应用插值结果。
 ///
-/// 返回「本轮新完成」的动画（R3249，CSS Animations §animationend）——`(NodeId, animationName, elapsedTime)`
-/// 三元组列表（animated_ids 持 elem_key↔NodeId 双键，故直接返 NodeId，调用方免往返）。调用方据此映射
-/// selector 后存 pending 待宿主派发 `animationend`。
+/// 返回「本轮新产生」的动画事件（R3249 animationend + R3250 animationiteration）——
+/// `(NodeId, kind, animationName, elapsedTime)` 列表（animated_ids 持 elem_key↔NodeId 双键，故直接返 NodeId，
+/// 调用方免往返）。调用方据此映射 selector 后存 pending 待宿主派发。
 fn apply_animation_overrides(
     clock: &mut AnimationClock,
     styles: &mut HashMap<NodeId, ComputedStyle>,
     current_time: f64,
-) -> Vec<(NodeId, String, f64)> {
+) -> Vec<(NodeId, AnimationEventKind, String, f64)> {
     // 收集有动画名称的元素 ID
     let animated_ids: Vec<(u64, NodeId)> = styles
         .iter()
@@ -1447,16 +1490,24 @@ fn apply_animation_overrides(
         }
     }
 
-    // R3249：drain 本轮新完成动画 → 映射 element_key→NodeId，返 (NodeId, name, elapsedTime) 供调用方派发。
-    clock
+    // R3249：drain 本轮新完成动画 → 映射 element_key→NodeId，返 (NodeId, End, name, elapsedTime) 供调用方派发。
+    let mut events: Vec<(NodeId, AnimationEventKind, String, f64)> = clock
         .drain_just_finished()
         .into_iter()
         .filter_map(|fin| {
             key_to_nid
                 .get(&fin.element_key)
-                .map(|nid| (*nid, fin.name, fin.duration))
+                .map(|nid| (*nid, AnimationEventKind::End, fin.name, fin.duration))
         })
-        .collect()
+        .collect();
+    // R3250（CSS Animations §animationiteration）：drain 本轮跨越的迭代边界 → 映射 element_key→NodeId，
+    // 返 (NodeId, Iteration, name, elapsedTime)。infinite 动画永不 finish（无 animationend），靠此驱动循环回调。
+    events.extend(clock.drain_just_iterated().into_iter().filter_map(|it| {
+        key_to_nid
+            .get(&it.element_key)
+            .map(|nid| (*nid, AnimationEventKind::Iteration, it.name, it.elapsed))
+    }));
+    events
 }
 
 #[cfg(test)]
