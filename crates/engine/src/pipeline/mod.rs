@@ -136,6 +136,8 @@ pub struct RenderPipeline {
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 文本表单控件的页面级当前值，独立于 HTML 内容属性。
     form_control_values: HashMap<NodeId, String>,
+    /// 文本表单控件尚未提交的 IME preedit。
+    pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
@@ -295,6 +297,7 @@ impl RenderPipeline {
             pending_animation_events: Vec::new(),
             cached_styles: HashMap::new(),
             form_control_values: HashMap::new(),
+            form_control_compositions: HashMap::new(),
             cached_layout: None,
             cached_doc: None,
             cached_css_text: None,
@@ -653,6 +656,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.register_counter_styles(&stylesheets);
@@ -677,6 +681,7 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.form_control_values.clear();
+        self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
@@ -800,6 +805,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.register_counter_styles(&stylesheets);
@@ -832,6 +838,7 @@ impl RenderPipeline {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
 
         self.form_control_values.clear();
+        self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         self.cached_styles = styles;
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
@@ -978,6 +985,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1059,6 +1067,21 @@ impl RenderPipeline {
                     && let Some(node_id) = doc.query_selector(doc.root(), selector.trim())
                 {
                     self.form_control_values.insert(node_id, value.clone());
+                    self.form_control_compositions.remove(&node_id);
+                } else if let crate::js_dom_bridge::DomMutation::SetFormComposition {
+                    selector,
+                    text,
+                    selection_start,
+                    selection_end,
+                } = mutation
+                    && let Some(node_id) = doc.query_selector(doc.root(), selector.trim())
+                {
+                    if text.is_empty() {
+                        self.form_control_compositions.remove(&node_id);
+                    } else {
+                        self.form_control_compositions
+                            .insert(node_id, (text.clone(), *selection_start, *selection_end));
+                    }
                 }
             }
         }
@@ -1118,8 +1141,10 @@ impl RenderPipeline {
 
     /// 当前值不改变文本输入框的外部几何；没有依赖 `value` 的选择器时可只重绘。
     fn is_form_value_only_mutation(doc: &Document, mutation: &crate::js_dom_bridge::DomMutation) -> bool {
-        let crate::js_dom_bridge::DomMutation::SetFormValue { selector, .. } = mutation else {
-            return false;
+        let selector = match mutation {
+            crate::js_dom_bridge::DomMutation::SetFormValue { selector, .. }
+            | crate::js_dom_bridge::DomMutation::SetFormComposition { selector, .. } => selector,
+            _ => return false,
         };
         let Some(node_id) = doc.query_selector(doc.root(), selector.trim()) else {
             return false;
@@ -1159,7 +1184,8 @@ impl RenderPipeline {
         let changed: Vec<NodeId> = mutations
             .iter()
             .filter_map(|mutation| match mutation {
-                crate::js_dom_bridge::DomMutation::SetFormValue { selector, .. } => {
+                crate::js_dom_bridge::DomMutation::SetFormValue { selector, .. }
+                | crate::js_dom_bridge::DomMutation::SetFormComposition { selector, .. } => {
                     doc.query_selector(doc.root(), selector.trim())
                 }
                 _ => None,
@@ -1174,6 +1200,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1283,6 +1310,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1353,6 +1381,7 @@ impl RenderPipeline {
         painter.skip_indicators = self.skip_indicators;
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
+        painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;

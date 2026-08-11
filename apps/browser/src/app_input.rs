@@ -1078,10 +1078,22 @@ impl BrowserApp {
         let in_address_bar = self.address_bar_focused;
         let in_find_bar = self.shell.find_state().is_active();
         match event {
-            zero_host_runtime::event::ImeEvent::Preedit { text, .. } => {
+            zero_host_runtime::event::ImeEvent::Preedit { text, cursor } => {
                 if in_address_bar {
                     self.address_bar_ime_preedit = text;
                     self.needs_redraw = true;
+                } else if !in_find_bar
+                    && let Some(tab_id) = self.shell.active_tab_id()
+                {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Preedit,
+                            text,
+                            cursor_start: cursor.map(|range| range.0),
+                            cursor_end: cursor.map(|range| range.1),
+                        },
+                    );
                 }
             }
             zero_host_runtime::event::ImeEvent::Commit(text) => {
@@ -1097,12 +1109,44 @@ impl BrowserApp {
                         self.shell.find_start(&self.find_input);
                     } else if let Some(tab_id) = self.shell.active_tab_id() {
                         // https://w3c.github.io/uievents/#events-composition-input-events
-                        // IME commit 必须作为一个批次交给已聚焦页面控件，避免按 Unicode
-                        // 标量逐字触发完整布局；preedit 的页内可视化留给后续 composition UI。
-                        self.tabs.dispatch_text_input(tab_id, &text);
+                        self.tabs.dispatch_ime_event(
+                            tab_id,
+                            zero_protocol::message::ImeEventParams {
+                                event_type: zero_protocol::message::ImeEventType::Commit,
+                                text,
+                                cursor_start: None,
+                                cursor_end: None,
+                            },
+                        );
                     }
                 }
                 self.needs_redraw = true;
+            }
+            zero_host_runtime::event::ImeEvent::Enabled if !in_address_bar && !in_find_bar => {
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Enabled,
+                            text: String::new(),
+                            cursor_start: None,
+                            cursor_end: None,
+                        },
+                    );
+                }
+            }
+            zero_host_runtime::event::ImeEvent::Disabled if !in_address_bar && !in_find_bar => {
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Disabled,
+                            text: String::new(),
+                            cursor_start: None,
+                            cursor_end: None,
+                        },
+                    );
+                }
             }
             zero_host_runtime::event::ImeEvent::Enabled | zero_host_runtime::event::ImeEvent::Disabled => {}
         }

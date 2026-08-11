@@ -1,5 +1,6 @@
 //! 标签页渲染 worker — 每个 Tab 独立 OS 线程，持有 WebView 与异步加载状态。
 
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -7,6 +8,7 @@ use std::time::Duration;
 use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::{set_char_measure_fn, set_text_shape_fn};
+use zero_protocol::message::{ImeEventParams, ImeEventType};
 use zero_render_foundation::font::loader::FontLoader;
 use zero_webview::{AsyncPageLoad, InProcessFetchHost, PageLoadStage, WebView, WebViewBuilder, WebViewConfig};
 
@@ -49,6 +51,11 @@ pub enum TabWorkerCommand {
         event_type: String,
         key: Option<String>,
         code: Option<String>,
+    },
+    /// 平台 IME 生命周期事件。
+    ImeEvent {
+        selector: Option<String>,
+        params: ImeEventParams,
     },
     /// 更新是否允许执行 JavaScript。
     SetJavascriptEnabled(bool),
@@ -175,6 +182,7 @@ fn tab_worker_main(
     let mut pending_sync_html: Option<(String, Option<String>, Option<String>)> = None;
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
+    let mut composing_controls = HashSet::new();
 
     let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>, js_worker: Option<&TabJsWorkerHandle>| {
         let snapshot = TabSnapshot::from_webview(wv);
@@ -309,6 +317,118 @@ fn tab_worker_main(
                         default_allowed: result.default_allowed,
                         html_changed: result.html_changed,
                     });
+                }
+                TabWorkerCommand::ImeEvent { selector, params } => {
+                    let Some(selector) = selector else { continue };
+                    let html = wv.html_content().to_string();
+                    let changed = match params.event_type {
+                        ImeEventType::Enabled => false,
+                        ImeEventType::Preedit => {
+                            let was_composing = composing_controls.contains(&selector);
+                            let events = if params.text.is_empty() && was_composing {
+                                vec![("compositionupdate", ""), ("compositionend", "")]
+                            } else if !params.text.is_empty() && !was_composing {
+                                vec![
+                                    ("compositionstart", params.text.as_str()),
+                                    ("compositionupdate", params.text.as_str()),
+                                ]
+                            } else {
+                                vec![("compositionupdate", params.text.as_str())]
+                            };
+                            let event_changed = events.into_iter().fold(false, |changed, (event_type, data)| {
+                                changed
+                                    | tab_scripts::dispatch_dom_event(
+                                        &mut wv,
+                                        javascript_enabled,
+                                        _js_worker.as_ref(),
+                                        &selector,
+                                        event_type,
+                                        &html,
+                                        Some(&zero_engine::DomEventDetail {
+                                            data: Some(data.to_string()),
+                                            ..Default::default()
+                                        }),
+                                    )
+                                    .html_changed
+                            });
+                            if params.text.is_empty() {
+                                composing_controls.remove(&selector);
+                            } else {
+                                composing_controls.insert(selector.clone());
+                            }
+                            event_changed
+                                | tab_scripts::apply_ime_preedit_default(
+                                    &mut wv,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    &params.text,
+                                    &html,
+                                )
+                        }
+                        ImeEventType::Commit => {
+                            let event_changed = composing_controls.remove(&selector)
+                                && tab_scripts::dispatch_dom_event(
+                                    &mut wv,
+                                    javascript_enabled,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    "compositionend",
+                                    &html,
+                                    Some(&zero_engine::DomEventDetail {
+                                        data: Some(params.text.clone()),
+                                        ..Default::default()
+                                    }),
+                                )
+                                .html_changed;
+                            event_changed
+                                | if params.text.is_empty() {
+                                    tab_scripts::apply_ime_preedit_default(
+                                        &mut wv,
+                                        _js_worker.as_ref(),
+                                        &selector,
+                                        "",
+                                        &html,
+                                    )
+                                } else {
+                                    tab_scripts::apply_text_input_default(
+                                        &mut wv,
+                                        javascript_enabled,
+                                        _js_worker.as_ref(),
+                                        &selector,
+                                        &params.text,
+                                        &html,
+                                        false,
+                                    )
+                                }
+                        }
+                        ImeEventType::Disabled => {
+                            let event_changed = composing_controls.remove(&selector)
+                                && tab_scripts::dispatch_dom_event(
+                                    &mut wv,
+                                    javascript_enabled,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    "compositionend",
+                                    &html,
+                                    Some(&zero_engine::DomEventDetail {
+                                        data: Some(String::new()),
+                                        ..Default::default()
+                                    }),
+                                )
+                                .html_changed;
+                            event_changed
+                                | tab_scripts::apply_ime_preedit_default(
+                                    &mut wv,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    "",
+                                    &html,
+                                )
+                        }
+                    };
+                    if changed {
+                        push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+                    }
                 }
                 TabWorkerCommand::SetJavascriptEnabled(enabled) => {
                     javascript_enabled = enabled;

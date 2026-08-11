@@ -82,7 +82,14 @@ impl BrowserApp {
     pub fn sync_ime_state(&self, window: &winit::window::Window) {
         use winit::dpi::{LogicalPosition, LogicalSize};
 
-        let needs_ime = self.window_focused && (self.address_bar_focused || self.shell.find_state().is_active());
+        // ZeroUI winit adapter 的 CJK 前提：未调用 set_ime_allowed(true) 时平台不会产生
+        // WindowEvent::Ime。页面 renderer 自行决定非文本焦点是否消费事件。
+        let needs_ime = needs_ime_enabled(
+            self.window_focused,
+            self.address_bar_focused,
+            self.shell.find_state().is_active(),
+            self.shell.active_tab_id().is_some(),
+        );
         window.set_ime_allowed(needs_ime);
 
         if !needs_ime {
@@ -106,6 +113,18 @@ impl BrowserApp {
             window.set_ime_cursor_area(
                 LogicalPosition::new(bar_x / s, bar_y / s),
                 LogicalSize::new(bar_w / s, bar_h / s),
+            );
+        } else {
+            // 页面 caret 精确矩形将在 renderer focus 回执接入；在此之前至少把候选窗约束在页面区，
+            // 避免沿用地址栏的陈旧位置。
+            let tab_id = self.shell.active_tab_id().expect("page IME requires an active tab");
+            let scroll = self.tab_scroll_state(tab_id);
+            let (content_x, content_y, _, _) = self.page_content_rect();
+            let s = self.scale_factor;
+            let (x, y, width, height) = self.tabs.page_ime_rect(tab_id).unwrap_or((0.0, 0.0, 1.0, 20.0));
+            window.set_ime_cursor_area(
+                LogicalPosition::new(content_x / s + x - scroll.x / s, content_y / s + y - scroll.y / s),
+                LogicalSize::new(width, height),
             );
         }
     }
@@ -655,6 +674,22 @@ impl BrowserApp {
             &overlay_glyphs,
             &overlay_rounded_rects,
         )
+    }
+}
+
+fn needs_ime_enabled(window_focused: bool, address_bar: bool, find_bar: bool, page_active: bool) -> bool {
+    window_focused && (address_bar || find_bar || page_active)
+}
+
+#[cfg(test)]
+mod ime_tests {
+    use super::needs_ime_enabled;
+
+    #[test]
+    fn active_page_enables_platform_ime() {
+        assert!(needs_ime_enabled(true, false, false, true));
+        assert!(!needs_ime_enabled(false, false, false, true));
+        assert!(!needs_ime_enabled(true, false, false, false));
     }
 }
 

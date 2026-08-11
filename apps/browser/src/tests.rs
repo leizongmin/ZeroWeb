@@ -1241,6 +1241,15 @@ fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
 
             // DPI 只影响坐标换算；IME 语义由同一事件路径处理，一次端到端提交即可。
             if expected_id == "note" && !ime_verified {
+                let before_preedit = app.snapshot_seq_for_test(tab_id);
+                app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+                    text: "zhongwen".to_string(),
+                    cursor: Some((8, 8)),
+                });
+                assert!(
+                    wait_for_snapshot_after(&mut app, tab_id, before_preedit, true),
+                    "scale={scale}: textarea 的 IME preedit 必须发布临时绘制帧"
+                );
                 let before_input = app.snapshot_seq_for_test(tab_id);
                 app.handle_ime(zero_host_runtime::event::ImeEvent::Commit("中文备注".to_string()));
                 let published = wait_for_snapshot_after(&mut app, tab_id, before_input, true);

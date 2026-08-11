@@ -390,6 +390,44 @@ pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &s
     }
 }
 
+/// 在一个 JS/mutation 批次内派发 IME composition 事件，避免 start+update 各自重渲染。
+pub fn dispatch_composition_events(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    selector: &str,
+    events: &[(&str, &str)],
+) -> bool {
+    if !javascript_enabled || should_skip_scripts(ctx.url) || events.is_empty() {
+        return false;
+    }
+    let script = events
+        .iter()
+        .map(|(event_type, data)| {
+            script_dispatch_dom_event(
+                selector,
+                event_type,
+                Some(&DomEventDetail {
+                    data: Some((*data).to_string()),
+                    ..Default::default()
+                }),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    if let Err(error) = ctx.js_worker.execute_script_direct(&script) {
+        warn!("dispatch composition events on {selector}: {error}");
+        return false;
+    }
+    let html_snapshot = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snapshot).is_some()
+}
+
 /// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
 /// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
 pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
@@ -780,6 +818,95 @@ mod tests {
         assert_eq!(note.snapshot.expect("note snapshot").value, "第二个输入框");
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "");
 
+        worker.shutdown();
+    }
+
+    #[test]
+    fn composition_events_preserve_order_and_data() {
+        let html = r#"<html><body><input id="name"><script>
+            globalThis.__compositionEvents = [];
+            var input = document.querySelector('#name');
+            ['compositionstart','compositionupdate','compositionend'].forEach(function(type) {
+                input.addEventListener(type, function(event) {
+                    globalThis.__compositionEvents.push(type + ':' + event.data);
+                });
+            });
+        </script></body></html>"#;
+        let mut worker = RendererJsWorker::spawn(145);
+        worker.set_dom_snapshot(html, "file:///composition.html");
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///composition.html",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#name",
+            &[("compositionstart", "拼"), ("compositionupdate", "拼音")],
+        ));
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#name",
+            &[("compositionend", "中文")],
+        ));
+        assert_eq!(
+            worker
+                .execute_script_direct("globalThis.__compositionEvents.join('|')")
+                .expect("event log"),
+            "compositionstart:拼|compositionupdate:拼音|compositionend:中文"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn ime_commit_after_preedit_updates_live_webview() {
+        let html = r#"<html><body><textarea id="note"></textarea></body></html>"#;
+        let mut worker = RendererJsWorker::spawn(146);
+        worker.set_dom_snapshot(html, "file:///ime-commit.html");
+        let mut webview = zero_webview::WebViewBuilder::new().width(640).height(480).build();
+        webview.prepare_document_state("file:///ime-commit.html");
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///ime-commit.html",
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#note",
+            &[("compositionstart", "zhongwen"), ("compositionupdate", "zhongwen")],
+        ));
+        let preedit = zero_engine::DomMutation::SetFormComposition {
+            selector: "#note".to_string(),
+            text: "zhongwen".to_string(),
+            selection_start: 0,
+            selection_end: 0,
+        };
+        ctx.webview
+            .as_deref_mut()
+            .expect("webview")
+            .apply_dom_mutations_and_render(std::slice::from_ref(&preedit))
+            .expect("paint preedit");
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#note",
+            &[("compositionend", "中文备注")],
+        ));
+
+        let commit = apply_text_input(&mut ctx, "#note", "中文备注");
+        assert!(commit.html_changed, "IME commit must apply a retained value mutation");
+        assert_eq!(commit.snapshot.expect("committed snapshot").value, "中文备注");
         worker.shutdown();
     }
 

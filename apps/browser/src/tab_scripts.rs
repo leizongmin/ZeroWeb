@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
-    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_delete, script_text_input,
+    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_control_snapshot,
+    script_text_delete, script_text_input,
 };
 use zero_webview::WebView;
 
@@ -394,6 +395,40 @@ pub fn apply_text_input_default(
         return false;
     }
     apply_recorded_mutations(wv, js_worker, html).is_some()
+}
+
+/// Paint an IME preedit string at the text control's live selection without
+/// committing it to `value` or the serialized HTML snapshot.
+// https://w3c.github.io/uievents/#events-compositionevents
+pub fn apply_ime_preedit_default(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    text: &str,
+    html: &str,
+) -> bool {
+    let script = script_text_control_snapshot(selector);
+    let snapshot = if let Some(worker) = js_worker {
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
+        worker.execute_script_direct(&script).ok()
+    } else {
+        wv.execute_script(&script).ok()
+    };
+    let Some((_, selection_start, selection_end)) = snapshot
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(value).ok())
+    else {
+        return false;
+    };
+    let mutation = zero_engine::DomMutation::SetFormComposition {
+        selector: selector.to_string(),
+        text: text.to_string(),
+        selection_start,
+        selection_end,
+    };
+    wv.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))
+        .is_ok()
 }
 
 #[allow(clippy::too_many_arguments)] // 8 参 classic 执行 helper（含 R3258 script_index）；与 app_render_geometry/tab_favicon 同惯例

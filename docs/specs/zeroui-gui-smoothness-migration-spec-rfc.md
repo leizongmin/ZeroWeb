@@ -207,8 +207,8 @@ winit key/IME/pointer
 | 里程碑 | 状态 | 自动验证 |
 |---|---|---|
 | M0 | 已完成并推送 | 真实 renderer 多控件交互、IME Commit、1.0～2.0 DPI、CPU/GPU 快照、全工作区测试与 clippy |
-| M1 | 已完成，待阶段提交 | retained input/textarea 值与选区、IDL/内容属性分离、Unicode 编辑、`0/0/0/1` paint-only、无整页序列化/图片重扫 |
-| M2 | 进行中 | 按下列顺序推进统一 focus/pointer/IME |
+| M1 | 已完成并推送 | retained input/textarea 值与选区、IDL/内容属性分离、Unicode 编辑、`0/0/0/1` paint-only、无整页序列化/图片重扫 |
+| M2 | 已完成，待阶段提交 | 单一 focus owner/pointer target、IME 全生命周期、候选窗锚点、单/多进程一致性、真实 renderer 自动回归 |
 | M3～M5 | 待实施 | 按下列顺序推进 |
 
 ### M0：交互正确性基线
@@ -230,6 +230,14 @@ winit key/IME/pointer
 - browser 只负责平台事件和坐标归一化，不推测表单默认行为。
 - 完成 preedit/commit/cancel、composition 事件和 IME caret rect。
 - 覆盖 Tab、blur/change、selection 和多控件连续交互。
+
+完成记录：
+
+- `PageInteractionState` 统一 keyboard/IME focus owner 与最新 pointer target，按钮焦点不再被文本控件状态覆盖。
+- browser/renderer 协议显式传递 Enabled/Preedit/Commit/Disabled；临时 preedit 仅 paint，不写入 `value`。
+- winit 页面态启用 IME，并根据文本控件点击位置、滚动和 DPI 设置候选窗锚点。
+- 单进程 worker 与多进程 renderer 共用 composition 生命周期语义。
+- `scripts/test-form-interaction.ps1` 先构建真实 renderer，再自动验证 1.0/1.25/1.5/2.0 DPI 下两个文本控件、按钮、preedit 与中文 Commit。
 
 ### M3：分级失效与帧合并
 

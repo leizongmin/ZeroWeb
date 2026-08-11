@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
-use zero_protocol::message::DispatchDomEventParams;
+use zero_protocol::message::{DispatchDomEventParams, ImeEventParams};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
@@ -50,6 +50,8 @@ pub struct TabManager {
     javascript_enabled: bool,
     /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
     event_targets: HashMap<TabId, String>,
+    /// Last focused page text-control insertion area in document CSS pixels.
+    ime_target_rects: HashMap<TabId, (f32, f32, f32, f32)>,
     /// dispatch_id → PendingDispatch。
     pending_dispatch: HashMap<u64, PendingDispatch>,
     /// 已 resolved、等待主事件循环消费的延迟动作。
@@ -78,6 +80,7 @@ impl TabManager {
             poll_tick: 0,
             javascript_enabled: true,
             event_targets: HashMap::new(),
+            ime_target_rects: HashMap::new(),
             pending_dispatch: HashMap::new(),
             pending_actions: VecDeque::new(),
             next_dispatch_id: 1,
@@ -198,6 +201,8 @@ impl TabManager {
             worker.shutdown();
         }
         self.snapshots.remove(&tab_id);
+        self.event_targets.remove(&tab_id);
+        self.ime_target_rects.remove(&tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
         }
@@ -216,6 +221,8 @@ impl TabManager {
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.ensure_tab(tab_id);
+        self.event_targets.remove(&tab_id);
+        self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.clone());
         }
@@ -242,6 +249,8 @@ impl TabManager {
     /// 同步加载 HTML（测试与 zero:// 页面）。
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
         self.ensure_tab(tab_id);
+        self.event_targets.remove(&tab_id);
+        self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.unwrap_or("about:blank").to_string());
         }
@@ -556,6 +565,20 @@ impl TabManager {
         );
     }
 
+    /// 转发完整 IME 生命周期；Preedit 只更新临时合成态，Commit 才写入 value。
+    pub fn dispatch_ime_event(&mut self, tab_id: TabId, params: ImeEventParams) {
+        let message_id = self.next_dispatch_id;
+        self.next_dispatch_id += 1;
+        if let Some(ref mut backend) = self.process_backend {
+            backend.dispatch_ime_event(tab_id, message_id, params);
+        } else if let Some(worker) = self.workers.get(&tab_id) {
+            worker.send(TabWorkerCommand::ImeEvent {
+                selector: self.event_targets.get(&tab_id).cloned(),
+                params,
+            });
+        }
+    }
+
     /// 处理页面点击释放：异步派发 mouseup + click。
     ///
     /// 若鼠标命中链接，会把“导航 / 后台新标签”作为 `on_allowed` 注册到 click 的回执上，
@@ -572,6 +595,7 @@ impl TabManager {
         };
         let selector = selector_from_element_hit(&hit);
         self.event_targets.insert(tab_id, selector.clone());
+        self.update_ime_target_rect(tab_id, doc_x, &hit);
 
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
         self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, None);
@@ -591,6 +615,7 @@ impl TabManager {
         if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
             let selector = selector_from_element_hit(&hit);
             self.event_targets.insert(tab_id, selector.clone());
+            self.update_ime_target_rect(tab_id, doc_x, &hit);
             self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, None);
         } else {
             // https://w3c.github.io/uievents/#event-type-mousedown
@@ -600,6 +625,21 @@ impl TabManager {
     }
 
     /// 文档高度。
+    /// Remember or clear the candidate-window anchor after pointer focus changes.
+    fn update_ime_target_rect(&mut self, tab_id: TabId, insertion_x: f32, hit: &zero_engine::ElementHit) {
+        if let Some(rect) = ime_target_rect_for_hit(insertion_x, hit) {
+            self.ime_target_rects.insert(tab_id, rect);
+        } else {
+            self.ime_target_rects.remove(&tab_id);
+        }
+    }
+
+    /// IME candidate-window anchor in document CSS pixels.
+    pub fn page_ime_rect(&self, tab_id: TabId) -> Option<(f32, f32, f32, f32)> {
+        self.ime_target_rects.get(&tab_id).copied()
+    }
+
+    /// Document height in CSS pixels.
     pub fn document_height(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_height
     }
@@ -667,5 +707,35 @@ impl TabManager {
     #[cfg(test)]
     pub fn logical_viewport(&self) -> (u32, u32) {
         self.viewport
+    }
+}
+
+fn ime_target_rect_for_hit(insertion_x: f32, hit: &zero_engine::ElementHit) -> Option<(f32, f32, f32, f32)> {
+    matches!(hit.tag_name.as_str(), "input" | "textarea").then_some((insertion_x, hit.y, 1.0, hit.height.max(1.0)))
+}
+
+#[cfg(test)]
+mod ime_tests {
+    use super::*;
+
+    #[test]
+    fn text_control_hit_anchors_candidate_window_at_pointer() {
+        let hit = zero_engine::ElementHit {
+            tag_name: "textarea".to_string(),
+            id: Some("notes".to_string()),
+            class_name: None,
+            selector: "#notes".to_string(),
+            x: 10.0,
+            y: 25.0,
+            width: 240.0,
+            height: 80.0,
+        };
+        assert_eq!(ime_target_rect_for_hit(73.0, &hit), Some((73.0, 25.0, 1.0, 80.0)));
+
+        let button = zero_engine::ElementHit {
+            tag_name: "button".to_string(),
+            ..hit
+        };
+        assert_eq!(ime_target_rect_for_hit(73.0, &button), None);
     }
 }

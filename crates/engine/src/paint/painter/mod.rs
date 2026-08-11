@@ -63,6 +63,8 @@ pub struct Painter {
     pub image_sizes: HashMap<u64, (f32, f32)>,
     /// 文本表单控件的 retained 当前值；内容属性仍保留默认值语义。
     pub(crate) form_control_values: HashMap<NodeId, String>,
+    /// 文本控件的临时 IME preedit 与其替换选区。
+    pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     ///
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
@@ -348,6 +350,7 @@ impl Painter {
             skip_indicators: false,
             image_sizes: HashMap::new(),
             form_control_values: HashMap::new(),
+            form_control_compositions: HashMap::new(),
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
             generic_font_ids: HashSet::new(),
@@ -368,6 +371,11 @@ impl Painter {
     /// 设置本帧文本表单控件的 retained 当前值。
     pub fn set_form_control_values(&mut self, values: HashMap<NodeId, String>) {
         self.form_control_values = values;
+    }
+
+    /// 设置本帧文本控件的临时 IME preedit。
+    pub fn set_form_control_compositions(&mut self, values: HashMap<NodeId, (String, usize, usize)>) {
+        self.form_control_compositions = values;
     }
 
     /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。

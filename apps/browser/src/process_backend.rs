@@ -11,9 +11,9 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, FramePublishMode, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    LoadHtmlParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
-    StorageType,
+    DispatchDomEventParams, FetchParams, FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage,
+    IpcMessageKind, LoadHtmlParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -926,6 +926,20 @@ impl ProcessTabBackend {
         {
             self.pending_dispatch_results.push((dispatch_id, true));
         }
+    }
+
+    /// 把平台 IME 生命周期事件直接转发给 renderer 的页面输入状态机。
+    pub fn dispatch_ime_event(&mut self, tab_id: TabId, message_id: u64, params: ImeEventParams) {
+        let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            return;
+        };
+        let _ = renderer.send(IpcMessage {
+            id: message_id,
+            kind: IpcMessageKind::ImeEvent(params),
+        });
     }
 }
 

@@ -2,6 +2,56 @@
 
 use std::collections::HashMap;
 
+/// 页面输入路由的单一焦点所有者与最新指针目标。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageInteractionState {
+    focus_owner: Option<String>,
+    pointer_target: String,
+}
+
+impl Default for PageInteractionState {
+    fn default() -> Self {
+        Self {
+            focus_owner: None,
+            pointer_target: "body".to_string(),
+        }
+    }
+}
+
+impl PageInteractionState {
+    /// 创建空焦点、body 指针目标的页面状态。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 最新命中的指针目标。
+    pub fn pointer_target(&self) -> &str {
+        &self.pointer_target
+    }
+
+    /// 更新指针目标，不隐式改变键盘焦点。
+    pub fn set_pointer_target(&mut self, selector: String) {
+        self.pointer_target = selector;
+    }
+
+    /// 当前键盘/IME 焦点所有者。
+    pub fn focus_owner(&self) -> Option<&str> {
+        self.focus_owner.as_deref()
+    }
+
+    /// 更新唯一焦点所有者，返回此前所有者。
+    pub fn set_focus_owner(&mut self, selector: Option<String>) -> Option<String> {
+        std::mem::replace(&mut self.focus_owner, selector)
+    }
+
+    /// 导航时清空页面交互状态。
+    pub fn clear(&mut self) {
+        self.focus_owner = None;
+        self.pointer_target.clear();
+        self.pointer_target.push_str("body");
+    }
+}
+
 /// 单个文本表单控件的 retained 编辑状态。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormControlState {
@@ -48,6 +98,10 @@ impl FormControlState {
         self.selection_start = selection_start;
         self.selection_end = selection_end;
         self.dirty_value = self.value != self.value_at_focus;
+        if changed {
+            self.composition_text = None;
+            self.composition_range = None;
+        }
         if changed {
             self.revision = self.revision.saturating_add(1);
         }
@@ -111,6 +165,8 @@ impl FormControlStateStore {
         let selector = self.focused.take()?;
         let state = self.controls.get_mut(&selector)?;
         state.focused = false;
+        state.composition_text = None;
+        state.composition_range = None;
         Some(BlurredFormControl {
             selector,
             value_changed: state.dirty_value,
@@ -125,6 +181,30 @@ impl FormControlStateStore {
     /// 返回指定控件状态。
     pub fn get(&self, selector: &str) -> Option<&FormControlState> {
         self.controls.get(selector)
+    }
+
+    /// 更新焦点控件的 IME preedit；空文本表示取消合成。
+    pub fn update_focused_composition(&mut self, text: String) -> bool {
+        let Some(selector) = self.focused.as_deref() else {
+            return false;
+        };
+        let Some(state) = self.controls.get_mut(selector) else {
+            return false;
+        };
+        let next_text = (!text.is_empty()).then_some(text);
+        let next_range = next_text.as_ref().map(|_| (state.selection_start, state.selection_end));
+        let changed = state.composition_text != next_text || state.composition_range != next_range;
+        state.composition_text = next_text;
+        state.composition_range = next_range;
+        if changed {
+            state.revision = state.revision.saturating_add(1);
+        }
+        changed
+    }
+
+    /// 取消焦点控件尚未提交的 IME preedit。
+    pub fn clear_focused_composition(&mut self) -> bool {
+        self.update_focused_composition(String::new())
     }
 
     /// 清除整页状态；导航或替换文档时调用。
@@ -193,5 +273,46 @@ mod tests {
         let state = store.get("#name").expect("state");
         assert_eq!(state.revision, 1);
         assert!(!state.dirty_value);
+    }
+
+    #[test]
+    fn composition_is_temporary_and_cleared_on_blur() {
+        let mut store = FormControlStateStore::new();
+        store.focus("#name", "base".to_string(), 2, 2);
+        assert!(store.update_focused_composition("拼音".to_string()));
+        let state = store.get("#name").expect("state");
+        assert_eq!(state.value, "base");
+        assert_eq!(state.composition_text.as_deref(), Some("拼音"));
+        assert_eq!(state.composition_range, Some((2, 2)));
+
+        let _ = store.blur_focused();
+        assert!(store.get("#name").expect("state").composition_text.is_none());
+    }
+
+    #[test]
+    fn disabled_composition_does_not_commit_text() {
+        let mut store = FormControlStateStore::new();
+        store.focus("#name", "base".to_string(), 4, 4);
+        assert!(store.update_focused_composition("未提交".to_string()));
+        assert!(store.clear_focused_composition());
+
+        let state = store.get("#name").expect("state");
+        assert_eq!(state.value, "base");
+        assert!(state.composition_text.is_none());
+        assert!(!state.dirty_value);
+    }
+
+    #[test]
+    fn pointer_target_does_not_steal_keyboard_focus() {
+        let mut state = PageInteractionState::new();
+        state.set_focus_owner(Some("#name".to_string()));
+        state.set_pointer_target("#button".to_string());
+
+        assert_eq!(state.focus_owner(), Some("#name"));
+        assert_eq!(state.pointer_target(), "#button");
+        assert_eq!(
+            state.set_focus_owner(Some("#note".to_string())),
+            Some("#name".to_string())
+        );
     }
 }

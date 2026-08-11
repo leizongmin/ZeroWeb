@@ -202,6 +202,8 @@ pub enum IpcMessageKind {
     MouseEvent(MouseEventParams),
     /// 键盘事件。
     KeyboardEvent(KeyboardEventParams),
+    /// 输入法合成事件。
+    ImeEvent(ImeEventParams),
     /// 滚动事件。
     ScrollEvent(ScrollEventParams),
 
@@ -445,6 +447,32 @@ pub enum KeyboardEventType {
     Up,
     /// 输入。
     Press,
+}
+
+/// 输入法事件参数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImeEventParams {
+    /// 输入法生命周期阶段。
+    pub event_type: ImeEventType,
+    /// Preedit 或 Commit 文本；Enabled/Disabled 为空。
+    pub text: String,
+    /// Preedit 光标/选区起点（UTF-8 字节偏移，沿用 winit 契约）。
+    pub cursor_start: Option<usize>,
+    /// Preedit 光标/选区终点（UTF-8 字节偏移，沿用 winit 契约）。
+    pub cursor_end: Option<usize>,
+}
+
+/// 输入法生命周期阶段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImeEventType {
+    /// 平台输入法已启用。
+    Enabled,
+    /// 合成文本更新，尚未写入控件值。
+    Preedit,
+    /// 合成文本提交为一次编辑批次。
+    Commit,
+    /// 输入法已禁用；未提交合成文本必须取消。
+    Disabled,
 }
 
 /// 滚动事件参数。

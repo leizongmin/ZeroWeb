@@ -12,6 +12,12 @@ pub struct DomEventDetail {
     pub key: Option<String>,
     /// `KeyboardEvent.code`
     pub code: Option<String>,
+    /// `CompositionEvent.data` / `InputEvent.data`。
+    pub data: Option<String>,
+    /// `InputEvent.inputType`。
+    pub input_type: Option<String>,
+    /// `InputEvent.isComposing`。
+    pub is_composing: bool,
     /// `SubmitEvent.submitter`——触发 submit 的按钮唯一选择器（R2984）。click submit button → 该按钮；
     /// Enter 隐式提交 → None（spec：表单默认提交按钮或 null）。
     pub submitter: Option<String>,
@@ -43,7 +49,20 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .as_deref()
                 .map(|s| format!("'{}'", escape_js_string(s)))
                 .unwrap_or_else(|| "null".to_string());
-            format!("{{key:{key},code:{code},submitter:{submitter}}}")
+            let data = d
+                .data
+                .as_deref()
+                .map(|value| format!("'{}'", escape_js_string(value)))
+                .unwrap_or_else(|| "null".to_string());
+            let input_type = d
+                .input_type
+                .as_deref()
+                .map(|value| format!("'{}'", escape_js_string(value)))
+                .unwrap_or_else(|| "null".to_string());
+            let is_composing = d.is_composing;
+            format!(
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing}}}"
+            )
         }
     };
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")

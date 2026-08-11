@@ -1501,6 +1501,33 @@ fn render_with_dom_mutations_textarea_value_only_paints_without_snapshot() {
     assert_eq!(result.timings.paint_count, 1);
 }
 
+#[test]
+fn render_with_dom_mutations_ime_preedit_is_temporary_paint_only() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(r#"<html><body><input id="name" value="base"></body></html>"#, "");
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormComposition {
+        selector: "#name".to_string(),
+        text: "中文".to_string(),
+        selection_start: 4,
+        selection_end: 4,
+    };
+
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("preedit mutation applied");
+
+    assert!(snapshot.is_none());
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    let doc = pipeline.cached_doc.as_ref().expect("doc").borrow();
+    let node = doc.query_selector(doc.root(), "#name").expect("input");
+    assert_eq!(doc.get_attribute(node, "value").as_deref(), Some("base"));
+    assert_eq!(
+        pipeline.form_control_compositions.get(&node),
+        Some(&("中文".to_string(), 4, 4))
+    );
+}
+
 /// paint-only 白名单：布局属性（width）不在白名单 → 走全量布局（布局变化可见）。
 #[test]
 fn render_with_dom_mutations_layout_prop_recomputes_layout() {

@@ -57,6 +57,17 @@ pub enum DomMutation {
         /// 当前编辑值。
         value: String,
     },
+    /// 文本表单控件的临时 IME preedit；不提交到当前值。
+    SetFormComposition {
+        /// CSS 选择器句柄。
+        selector: String,
+        /// 临时合成文本；空字符串表示取消。
+        text: String,
+        /// 被 preedit 临时替换的 UTF-16 选区起点。
+        selection_start: usize,
+        /// 被 preedit 临时替换的 UTF-16 选区终点。
+        selection_end: usize,
+    },
     /// `element.setAttribute` / 属性 setter（`src`、`class` 等）。
     SetAttr {
         /// CSS 选择器句柄。
@@ -428,7 +439,7 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
 
     for mutation in mutations {
         match mutation {
-            DomMutation::SetFormValue { .. } => {
+            DomMutation::SetFormValue { .. } | DomMutation::SetFormComposition { .. } => {
                 // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
             }
             DomMutation::SetAttr { selector, name, value } => {
@@ -2042,6 +2053,14 @@ pub fn next_focus_selector(html: &str, current_sel: Option<&str>, forward: bool)
     }
     let next = if forward { fm.focus_next() } else { fm.focus_previous() }?;
     stable_selector_for_node(&doc, next)
+}
+
+/// 判断选择器目标是否可由页面焦点管理器聚焦。
+pub fn is_focusable_selector(html: &str, selector: &str) -> bool {
+    let doc = parse_html(html);
+    let mut focus = FocusManager::new();
+    focus.scan(&doc);
+    find_by_selector(&doc, selector).is_some_and(|node| focus.is_tab_focusable(node))
 }
 
 /// 从当前 HTML 快照查询 innerHTML。
