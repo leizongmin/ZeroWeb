@@ -79,9 +79,14 @@ fn parse_line_cap(s: &str) -> zero_canvas::LineCap {
 }
 
 /// canvas `globalCompositeOperation` 串 → CompositeOperation（spec canonical 名；未知回落 SourceOver = 默认）。
-/// **已知限制（记录）**：composite 仅经 `composite_pixel` 在 `blit_rect_to_pixels`（rect-fill 便捷法 + stroke 路径）
-/// 生效；path-based `fill()`（`blit_path_to_pixels`）**不消费** composite——故 shim `fillRect`（path 实现）
-/// 不受 composite 影响。getter/setter 状态往返真实（host 持 state，save/restore 含）。
+/// composite 经 `composite_pixel` 在 rect-blit / rect-gradient / stroke / path-fill（`blit_path_to_pixels`
+/// + `blit_path_gradient`，R3236 起）路径生效——故 shim 的 `fillRect`/`fill()`（path 实现）均受 composite 影响。
+///
+/// **剩余限制（记）**：
+/// - `drawImage` 固定 source-over（不消费 composite）；
+/// - blend 模式（multiply/screen/overlay/hue/color/luminosity 等）`composite_pixel` 用 source-over 因子——仅 Porter-Duff 模式真实合成。
+///
+/// getter/setter 状态往返真实（host 持 state，save/restore 含）。
 fn parse_composite_operation(s: &str) -> zero_canvas::CompositeOperation {
     use zero_canvas::CompositeOperation as C;
     match s.trim().to_ascii_lowercase().as_str() {

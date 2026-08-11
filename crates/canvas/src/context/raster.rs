@@ -753,18 +753,27 @@ impl CanvasContext {
                 for scan_x in ix_start..ix_end {
                     let idx = ((scan_y * canvas_w + scan_x) * 4) as usize;
                     if idx + 3 < self.pixel_buffer.len() {
-                        self.pixel_buffer[idx] = color.r;
-                        self.pixel_buffer[idx + 1] = color.g;
-                        self.pixel_buffer[idx + 2] = color.b;
-                        self.pixel_buffer[idx + 3] = color.a;
+                        // R3236：路径填充消费 globalCompositeOperation（与 blit_rect_to_pixels 一致）——
+                        // 旧实现覆盖写，致 destination-out/lighter/copy 等经 fill() 的路径填充失效。
+                        let (r, g, b, a) = self.composite_pixel(
+                            color,
+                            self.pixel_buffer[idx],
+                            self.pixel_buffer[idx + 1],
+                            self.pixel_buffer[idx + 2],
+                            self.pixel_buffer[idx + 3],
+                        );
+                        self.pixel_buffer[idx] = r;
+                        self.pixel_buffer[idx + 1] = g;
+                        self.pixel_buffer[idx + 2] = b;
+                        self.pixel_buffer[idx + 3] = a;
                     }
                 }
             }
         }
     }
 
-    /// 路径渐变填充：扫描线光栅化，覆盖写入每像素按设备坐标采样的样式颜色（与 `blit_path_to_pixels`
-    /// 同语义——覆盖写、不消费合成操作——仅替换固定色为逐像素渐变采样）。供渐变样式的 `fill` 路径使用。
+    /// 路径渐变填充：扫描线光栅化，每像素按设备坐标采样样式颜色，应用 global_alpha + 当前合成操作
+    ///（与 `blit_path_to_pixels` 同语义——R3236 起消费合成操作）。供渐变样式的 `fill` 路径使用。
     pub(crate) fn blit_path_gradient(&mut self, vertices: &[f32], style: &CanvasStyle) {
         if vertices.len() < 4 {
             return;
@@ -805,10 +814,18 @@ impl CanvasContext {
                     let idx = ((scan_y * canvas_w + scan_x) * 4) as usize;
                     if idx + 3 < self.pixel_buffer.len() {
                         let color = self.apply_alpha(style.sample_at(scan_x as f32, sy));
-                        self.pixel_buffer[idx] = color.r;
-                        self.pixel_buffer[idx + 1] = color.g;
-                        self.pixel_buffer[idx + 2] = color.b;
-                        self.pixel_buffer[idx + 3] = color.a;
+                        // R3236：路径渐变填充消费合成操作（与 blit_path_to_pixels / blit_rect_gradient 一致）。
+                        let (r, g, b, a) = self.composite_pixel(
+                            color,
+                            self.pixel_buffer[idx],
+                            self.pixel_buffer[idx + 1],
+                            self.pixel_buffer[idx + 2],
+                            self.pixel_buffer[idx + 3],
+                        );
+                        self.pixel_buffer[idx] = r;
+                        self.pixel_buffer[idx + 1] = g;
+                        self.pixel_buffer[idx + 2] = b;
+                        self.pixel_buffer[idx + 3] = a;
                     }
                 }
             }

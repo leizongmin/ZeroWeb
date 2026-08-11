@@ -4,6 +4,49 @@
 
 use crate::path::{Path2D, PathCommand};
 
+/// R3236：path-based `fill()` 须消费 `globalCompositeOperation`——旧 `blit_path_to_pixels` 覆盖写，
+/// 致 destination-out/lighter/copy 等经 fill() 的路径填充失效（仅 rect-blit/stroke 经 composite_pixel）。
+#[test]
+fn fill_path_consumes_composite_operation_r3236() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // 底层：fill_rect 铺不透明红（blit_rect_to_pixels，已消费 composite——source-over 覆盖透明底）。
+    let mut ctx = CanvasContext::new(10, 10);
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
+    let base = ctx.get_image_data(5, 5, 1, 1);
+    assert_eq!(&base.data[..4], &[255, 0, 0, 255], "底层须为不透明红");
+
+    // destination-out 经**路径 fill** → 须擦除（alpha→0）。旧覆盖写 bug 留 alpha=255。
+    ctx.set_composite_operation(crate::CompositeOperation::DestinationOut);
+    ctx.set_fill_color(Color::WHITE); // destination-out 仅看 src alpha，颜色无关
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(10.0, 0.0);
+    ctx.line_to(10.0, 10.0);
+    ctx.line_to(0.0, 10.0);
+    ctx.close_path();
+    ctx.fill();
+    let erased = ctx.get_image_data(5, 5, 1, 1);
+    assert_eq!(erased.data[3], 0, "R3236：destination-out path-fill 须擦除（alpha→0）");
+
+    // 对照：source-over 路径 fill 仍覆盖（不擦除）——防回归到「path-fill 完全不改 dst」。
+    let mut ctx2 = CanvasContext::new(10, 10);
+    ctx2.set_fill_color(Color::RED);
+    ctx2.fill_rect(0.0, 0.0, 10.0, 10.0);
+    ctx2.set_fill_color(Color::GREEN);
+    ctx2.begin_path();
+    ctx2.move_to(0.0, 0.0);
+    ctx2.line_to(10.0, 0.0);
+    ctx2.line_to(10.0, 10.0);
+    ctx2.line_to(0.0, 10.0);
+    ctx2.close_path();
+    ctx2.fill();
+    let over = ctx2.get_image_data(5, 5, 1, 1);
+    assert_eq!(&over.data[..4], &[0, 255, 0, 255], "source-over path-fill 须覆盖为绿");
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {
