@@ -725,8 +725,11 @@ fn font_element_presentational_hints() {
             .any(|(p, v)| p == "font-family" && v.contains("Arial") && v.contains("\"Times New Roman\"")),
         "font face (quoted multi-word): {hints:?}"
     );
-    // SIZE 暂未启用（见 html_font_size_to_em 注释 + master.md R808）。
-    assert!(!hints.iter().any(|(p, _)| p == "font-size"), "size disabled: {hints:?}");
+    // SIZE 映射为 em 倍数（HTML5 §10.4 七级字号，size 5 = 1.5em）。
+    assert!(
+        hints.iter().any(|(p, v)| p == "font-size" && v == "1.5em"),
+        "font size mapping: {hints:?}"
+    );
 }
 
 #[test]

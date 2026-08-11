@@ -1484,8 +1484,12 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     hints.push(("font-family".to_string(), fam));
                 }
             }
-            // 注：`<font size>` 暂未映射——1.5em 等刻度实测使 testpage-020 单元格增高
-            //（行高叠加），净负向。待 cell-height spacing gap 先解再启用（见 master.md R808）。
+            // HTML 七级字号映射（HTML5 §10.4）。
+            if let Some(size_attr) = elem_attr(elem, "size") {
+                if let Some(em) = html_font_size_to_em(&size_attr) {
+                    hints.push(("font-size".to_string(), format!("{em}em")));
+                }
+            }
         }
         // HTML <center>：等价 text-align:center（继承到块子元素的内联内容）。
         "center" => {
@@ -1568,7 +1572,6 @@ fn font_family_from_face(face: &str) -> String {
 
 /// 将 `<font size>` 属性（HTML 七级字号 1-7，或相对 ±N）转为 em 倍数。
 /// 绝对值映射自 HTML5 §10.4 的非线性刻度（基准 size 3 = 1.0em）；相对值从基准 3 解析。
-#[allow(dead_code)]
 fn html_font_size_to_em(size: &str) -> Option<f32> {
     let v = size.trim();
     let (sign, n_str) = if let Some(rest) = v.strip_prefix('+') {

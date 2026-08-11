@@ -4,6 +4,24 @@ use super::parse::*;
 use super::types::*;
 use zero_css_parser::values;
 
+/// https://drafts.csswg.org/css-fonts-4/#absolute-size-mapping
+fn parse_font_size_keyword(value: &str) -> Option<LengthValue> {
+    let v = value.trim();
+    match v.to_ascii_lowercase().as_str() {
+        "xx-small" => Some(LengthValue::Px(9.0)),
+        "x-small" => Some(LengthValue::Px(10.0)),
+        "small" => Some(LengthValue::Px(13.0)),
+        "medium" => Some(LengthValue::Px(16.0)),
+        "large" => Some(LengthValue::Px(18.0)),
+        "x-large" => Some(LengthValue::Px(24.0)),
+        "xx-large" => Some(LengthValue::Px(32.0)),
+        "xxx-large" => Some(LengthValue::Px(48.0)),
+        "smaller" => Some(LengthValue::Em(0.8333)),
+        "larger" => Some(LengthValue::Em(1.2)),
+        _ => None,
+    }
+}
+
 /// 尝试解析 CSS 长度值，支持简单值和数学函数（calc/min/max/clamp）。
 ///
 /// 先尝试简单解析（parse_length），失败时尝试数学函数（parse_math_function）。
@@ -459,6 +477,11 @@ pub fn apply_property_value_with_quirks(
             return true;
         }
         "font-size" => {
+            // https://drafts.csswg.org/css-fonts-4/#absolute-size-mapping
+            if let Some(v) = parse_font_size_keyword(value) {
+                style.font_size = v;
+                return true;
+            }
             if let Some(v) = parse_length_fn(value) {
                 style.font_size = v;
                 return true;
