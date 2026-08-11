@@ -415,12 +415,21 @@ impl Painter {
             (false, false) => &[""],
         };
 
+        // https://drafts.csswg.org/css-fonts-4/#family-name-value
+        const GENERIC_FAMILIES: &[&str] = &[
+            "serif", "sans-serif", "monospace", "cursive", "fantasy",
+            "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
+            "emoji", "math", "fangsong",
+        ];
         for family in font_family {
+            let is_quoted = family.starts_with('"') || family.starts_with('\'');
             let name = family.trim_matches('"').trim_matches('\'');
+            // R3249：quoted generic names（如 `"fantasy"`）是自定义字体名，不匹配 generic resolver。
+            if is_quoted && GENERIC_FAMILIES.iter().any(|g| g.eq_ignore_ascii_case(name)) {
+                continue;
+            }
             for &suffix in suffixes {
                 let key = format!("{name}{suffix}");
-                // R2497：返回 resolved_italic = 命中后缀是否含 "italic"（供 caller 判定
-                // synthetic italic——want_italic 且 resolved face 非 italic 时须合成 shear）。
                 let resolved_italic = suffix.contains("italic");
                 if let Some(&id) = self.font_resolver.get(&key) {
                     return (FontId(id), resolved_italic);

@@ -112,10 +112,11 @@ impl FontMetricProvider for FontLoader {
         // 按优先级解析首个已加载字体：先精确匹配，再大小写不敏感回退（与 IFC
         // `is_ahem` 检测的 `eq_ignore_ascii_case` 一致）。
         let font_id = font_family.iter().find_map(|fam| {
-            resolver.get(fam).copied().or_else(|| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
+            resolver.get(bare).copied().or_else(|| {
                 resolver
                     .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case(fam))
+                    .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                     .map(|(_, v)| *v)
             })
         })?;
@@ -132,10 +133,11 @@ impl FontMetricProvider for FontLoader {
     fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
         let resolver = self.build_font_resolver();
         font_family.iter().find_map(|fam| {
-            resolver.get(fam).copied().or_else(|| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
+            resolver.get(bare).copied().or_else(|| {
                 resolver
                     .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case(fam))
+                    .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                     .map(|(_, v)| *v)
             })
         })
@@ -154,9 +156,10 @@ pub struct FontMetricMap(pub std::collections::HashMap<String, (u32, f32, f32, f
 impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
         let &(_id, a, d, g) = font_family.iter().find_map(|fam| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
             self.0
-                .get(fam)
-                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(fam)).map(|(_, v)| v))
+                .get(bare)
+                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(bare)).map(|(_, v)| v))
         })?;
         Some(LineMetrics {
             ascent: a * size,
@@ -167,9 +170,10 @@ impl FontMetricProvider for FontMetricMap {
 
     fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
         font_family.iter().find_map(|fam| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
             self.0
-                .get(fam)
-                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(fam)).map(|(_, v)| v))
+                .get(bare)
+                .or_else(|| self.0.iter().find(|(k, _)| k.eq_ignore_ascii_case(bare)).map(|(_, v)| v))
                 .map(|(id, _, _, _)| *id)
         })
     }

@@ -430,7 +430,7 @@ pub fn resolve_font_metrics_with_provider(
         && metric.unwrap_or(zero_style_system::FontSizeAdjustMetric::ExHeight)
             == zero_style_system::FontSizeAdjustMetric::ExHeight
     {
-        let is_ahem = s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+        let is_ahem = s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
         if is_ahem && AHEM_FONT_SIZE_ADJUST_ASPECT > 0.0 {
             font_size = font_size * (adj as f32) / AHEM_FONT_SIZE_ADJUST_ASPECT;
         }
@@ -440,7 +440,7 @@ pub fn resolve_font_metrics_with_provider(
     // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。provider 缺省或
     // 无法解析字体时用此值。无样式（None）时无法判定字体，回退 1.164。
     let normal_ratio = match style {
-        Some(s) if s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")) => AHEM_LINE_HEIGHT_RATIO,
+        Some(s) if s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")) => AHEM_LINE_HEIGHT_RATIO,
         _ => NORMAL_LINE_HEIGHT_RATIO,
     };
 

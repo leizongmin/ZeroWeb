@@ -421,11 +421,12 @@ impl InlineFormattingContext {
         s.font_family
             .iter()
             .find_map(|family| {
+                let bare = family.trim_matches('"').trim_matches('\'');
                 self.font_resolver.as_ref().and_then(|resolver| {
-                    resolver.get(family).copied().or_else(|| {
+                    resolver.get(bare).copied().or_else(|| {
                         resolver
                             .iter()
-                            .find(|(name, _)| name.eq_ignore_ascii_case(family))
+                            .find(|(name, _)| name.eq_ignore_ascii_case(bare))
                             .map(|(_, id)| *id)
                     })
                 })

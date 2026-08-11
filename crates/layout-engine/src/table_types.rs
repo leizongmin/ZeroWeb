@@ -478,7 +478,7 @@ pub(crate) fn compute_col_min_content(
                         zero_css_parser::values::LengthValue::Px(v) => *v as f32,
                         _ => 16.0,
                     };
-                    (fs, s.font_family.iter().any(|f| f.contains("Ahem")))
+                    (fs, s.font_family.iter().any(|f| f.trim_matches('"').contains("Ahem")))
                 })
                 .unwrap_or((16.0, false));
             let cw = if ahem { fs } else { fs * 0.6 };

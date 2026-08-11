@@ -181,7 +181,7 @@ pub(super) fn configure_paint_ifc_advance(
                 && !owner
                     .font_family
                     .iter()
-                    .any(|family| family.eq_ignore_ascii_case("Ahem"))
+                    .any(|family| family.trim_matches('"').eq_ignore_ascii_case("Ahem"))
                 && !doc.get(parent_id).is_some_and(
                     |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "ruby"),
                 );

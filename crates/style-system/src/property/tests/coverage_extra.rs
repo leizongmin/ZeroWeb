@@ -297,12 +297,12 @@ fn test_parse_font_family_multiple() {
 #[test]
 fn test_parse_font_family_quoted() {
     let families = parse_font_family("\"Times New Roman\", serif");
-    assert_eq!(families[0], "Times New Roman");
+    assert_eq!(families[0], "\"Times New Roman\"");
     assert_eq!(families[1], "serif");
 }
 
 #[test]
 fn test_parse_font_family_single_quotes() {
     let families = parse_font_family("'Courier New', monospace");
-    assert_eq!(families[0], "Courier New");
+    assert_eq!(families[0], "\"Courier New\"");
 }

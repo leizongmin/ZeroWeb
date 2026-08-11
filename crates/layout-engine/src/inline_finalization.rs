@@ -415,7 +415,7 @@ fn store_inline_multicol_columns(
     }
     // 重定位存储：line.y = y_in_column（各列均从容器内容顶 0 起）；
     // 每个 fragment.x += col_idx × (col_width + gap)（横向偏移到对应列）。
-    let is_ahem_container = style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+    let is_ahem_container = style.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     let stored: Vec<crate::types::InlineLayoutLine> = assignments
         .iter()
         .map(|a| {
@@ -991,7 +991,7 @@ pub(crate) fn compute_final_inline_layouts(
     // 见 backfill_phasea_orphan_boxes 文档。须在 store-gate return 之前跑（对所有文本容器，
     // 非 stored-path 独占）——IFC 已在 line 916 跑完，inline_ctx.lines 普遍可用。
     backfill_phasea_orphan_boxes(root, doc, styles, node_id, &inline_ctx, paint_skip);
-    let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].eq_ignore_ascii_case("Ahem");
+    let is_pure_ahem = style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
     // R1280：含 float 子的容器（[inline 内容 + float] 模式，如 floats-006 的 div1）须存 IFC，
     // 让 paint 走 Path A（真实 styles → 折叠 inline 子用其真实字体度量 + is_ahem_font=true →
@@ -1206,18 +1206,19 @@ pub(crate) fn measure_text_content(
         let (font_size, line_height) =
             crate::inline::resolve_font_metrics_with_provider(parent_style, font_metric_provider);
         let is_ahem = parent_style
-            .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+            .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
             .unwrap_or(false);
         let font_id = parent_style.and_then(|style| {
             style
                 .font_family
                 .iter()
                 .find_map(|family| {
+                    let bare = family.trim_matches('"').trim_matches('\'');
                     font_resolver.and_then(|resolver| {
-                        resolver.get(family).copied().or_else(|| {
+                        resolver.get(bare).copied().or_else(|| {
                             resolver
                                 .iter()
-                                .find(|(name, _)| name.eq_ignore_ascii_case(family))
+                                .find(|(name, _)| name.eq_ignore_ascii_case(bare))
                                 .map(|(_, id)| *id)
                         })
                     })

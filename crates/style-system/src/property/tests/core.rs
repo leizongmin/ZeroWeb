@@ -164,7 +164,7 @@ fn test_parse_font_family() {
     assert_eq!(families, vec!["Arial", "sans-serif"]);
 
     let families = parse_font_family("\"Times New Roman\", serif");
-    assert_eq!(families, vec!["Times New Roman", "serif"]);
+    assert_eq!(families, vec!["\"Times New Roman\"", "serif"]);
 }
 
 #[test]
@@ -605,11 +605,11 @@ fn test_property_is_inherited_various() {
 /// 测试 parse_font_family 带引号
 fn test_parse_font_family_with_quotes() {
     let families = parse_font_family("'Helvetica Neue', Arial, sans-serif");
-    assert_eq!(families, vec!["Helvetica Neue", "Arial", "sans-serif"]);
+    assert_eq!(families, vec!["\"Helvetica Neue\"", "Arial", "sans-serif"]);
 
     // 双引号
     let families = parse_font_family("\"Times New Roman\", serif");
-    assert_eq!(families, vec!["Times New Roman", "serif"]);
+    assert_eq!(families, vec!["\"Times New Roman\"", "serif"]);
 
     // 空字符串和空白处理
     let families = parse_font_family("  Arial  ,  sans-serif  ");

@@ -1063,7 +1063,7 @@ fn test_parse_font_family() {
 
     // 带引号
     let families = parse_font_family("\"Times New Roman\", serif");
-    assert_eq!(families[0], "Times New Roman");
+    assert_eq!(families[0], "\"Times New Roman\"");
 
     // 空值过滤
     let families = parse_font_family(",");

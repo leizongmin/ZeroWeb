@@ -96,7 +96,7 @@ impl InlineFormattingContext {
                             });
                             let text = text_transform.apply(&text);
                             let is_ahem_font = style
-                                .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+                                .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
                                 .unwrap_or_else(|| {
                                     // paint IFC（空 styles）：使用覆盖映射检测 Ahem 字体
                                     parent_id
@@ -435,7 +435,7 @@ impl InlineFormattingContext {
                             })
                             .unwrap_or_else(|| self.margin_overrides.get(&child_id).map(|(_, mr)| *mr).unwrap_or(0.0));
                         let is_ahem_font = style
-                            .map(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")))
+                            .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
                             .unwrap_or_else(|| self.is_ahem_overrides.get(&child_id).copied().unwrap_or(false));
                         // CSS 2.1: inline 元素的 padding 和 border 参与行盒高度计算
                         let (padding_top, padding_bottom, border_top, border_bottom) =

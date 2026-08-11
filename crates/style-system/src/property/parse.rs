@@ -533,7 +533,11 @@ pub fn parse_container_type_computed(value: &str) -> Option<ContainerType> {
 
 /// 解析 font-family 值。
 ///
-/// 简单实现：按逗号分割，去除引号和空格。
+/// 按逗号分割 font-family 值，保留 quoted 名的引号以区分 generic family。
+///
+/// https://drafts.csswg.org/css-fonts-4/#family-name-value
+/// CSS 规范：quoted generic names（如 `"serif"`）应作为自定义字体名而非 generic family。
+/// 保留引号供下游 `resolve_font_id()` 判断是否跳过 generic 匹配。
 pub fn parse_font_family(value: &str) -> Vec<String> {
     let mut result = Vec::new();
     for part in value.split(',') {
@@ -541,9 +545,10 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
         if s.is_empty() {
             continue;
         }
-        // 带引号的名称直接使用
+        // 带引号的名称：保留引号（用双引号统一标记 quoted）
         if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
-            result.push(s[1..s.len() - 1].to_string());
+            let inner = &s[1..s.len() - 1];
+            result.push(format!("\"{inner}\""));
             continue;
         }
         // 未引号的名称必须仅包含 CSS 标识符字符（字母、数字、连字符、下划线、空格）
@@ -558,6 +563,12 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
         }
     }
     result
+}
+
+/// 从可能带引号的 font-family 条目中提取裸名。
+pub fn font_family_unquote(entry: &str) -> &str {
+    let s = entry.trim_matches('"');
+    s.trim_matches('\'')
 }
 
 #[cfg(test)]

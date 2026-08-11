@@ -1599,7 +1599,10 @@ fn outline_style_str(s: &OutlineStyleValue) -> String {
 fn font_family_to_css(families: &[String]) -> String {
     families
         .iter()
-        .map(|f| quote_font_family(f))
+        .map(|f| {
+            let bare = f.trim_matches('"').trim_matches('\'');
+            quote_font_family(bare)
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }

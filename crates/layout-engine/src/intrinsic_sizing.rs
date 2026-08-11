@@ -301,7 +301,7 @@ pub(crate) fn block_max_content_width(
 pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
     let style = styles.get(&node_id);
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
-    let is_ahem = style.is_some_and(|s| s.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem")));
+    let is_ahem = style.is_some_and(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")));
     // R1747：`<br>` 是强制换行（CSS css-sizing-3：forced break 产生独立 line，max-content
     // 取最宽 line 而非全文本累加）。旧实现用 `doc.text_content`（递归扁平化，br 折成空）把
     // "short<br>much longer line<br>mid" 测成单行 201.6px（应 max-line 131.2px），致 inline-block
@@ -355,7 +355,7 @@ pub(crate) fn fragment_inline_max_width(
     doc: &Document,
 ) -> f32 {
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(inline_style));
-    let is_ahem = inline_style.font_family.iter().any(|f| f.eq_ignore_ascii_case("Ahem"));
+    let is_ahem = inline_style.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
     // R1748：br-aware —— fragment_node_ids 共享一组 segments（同片段 inline 级内容按序累入
     // 当前段，遇 br 切段），取最宽段。无 br 时单段 = 全文本累加（行为同旧 total）。
     let mut segments: Vec<f32> = vec![0.0];
