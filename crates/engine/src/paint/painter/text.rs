@@ -1342,6 +1342,7 @@ impl super::Painter {
                                 &open_type_features,
                             ) {
                                 let ch = glyph.code_point;
+                                let glyph_font_id = glyph.font_id.unwrap_or(frag_font_id);
                                 let (glyph_x, glyph_y) = if char_advance_is_y {
                                     (frag_base_x, char_pos)
                                 } else {
@@ -1357,7 +1358,7 @@ impl super::Painter {
                                         glyph_id: ch as u32,
                                         font_glyph_index: None,
                                         source: None,
-                                        font_id: frag_font_id,
+                                        font_id: glyph_font_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1373,7 +1374,7 @@ impl super::Painter {
                                     glyph_id: ch as u32,
                                     font_glyph_index: glyph.font_glyph_index,
                                     source: glyph.source.clone(),
-                                    font_id: frag_font_id,
+                                    font_id: glyph_font_id,
                                     bitmap_width: None,
                                     bitmap_height: None,
                                     rotation,

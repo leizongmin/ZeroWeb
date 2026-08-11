@@ -371,6 +371,7 @@ impl FontLoader {
     /// 设置回退字体链（按优先级排序）
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;
+        self.shape_cache.lock().expect("shape cache poisoned").clear();
     }
 
     /// 获取回退字体链
@@ -647,6 +648,15 @@ impl FontLoader {
             }
         }
         chain
+    }
+
+    /// 解析字符实际使用的字体 ID，不触发光栅化。
+    pub(crate) fn resolve_font_for_code_point(&self, primary_id: u32, code_point: char) -> Option<u32> {
+        self.lookup_chain(primary_id).into_iter().find(|font_id| {
+            self.fonts
+                .get(font_id)
+                .is_some_and(|font| code_point.is_whitespace() || font.has_glyph(code_point))
+        })
     }
 
     /// 在主字体及回退链中渲染 glyph，返回实际使用的字体 ID

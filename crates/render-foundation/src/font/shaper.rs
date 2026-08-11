@@ -5,6 +5,12 @@
 
 use crate::font::loader::FontLoader;
 use crate::primitive::FontId;
+use unicode_segmentation::UnicodeSegmentation;
+
+fn shaped_fallback_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"))
+}
 
 /// 文本 shaping 方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -111,10 +117,15 @@ impl<'a> TextShaper<'a> {
         let font_id = self.default_font_id.unwrap_or(FontId(0));
 
         // 尝试 rustybuzz shaping
-        if let Some(fid) = self.default_font_id
-            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction, features)
-        {
-            return glyphs;
+        if let Some(fid) = self.default_font_id {
+            if shaped_fallback_enabled()
+                && let Some(glyphs) = self.shape_with_fallback_runs(fid, text, font_size, direction, features)
+            {
+                return glyphs;
+            }
+            if let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction, features) {
+                return glyphs;
+            }
         }
 
         // 回退：fontdue 逐字符映射
@@ -123,6 +134,62 @@ impl<'a> TextShaper<'a> {
             glyphs.reverse();
         }
         glyphs
+    }
+
+    /// 按 grapheme 覆盖范围切分连续同 face run，再分别 shaping。
+    ///
+    /// https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
+    fn shape_with_fallback_runs(
+        &self,
+        primary_id: FontId,
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+        features: &[OpenTypeFeature],
+    ) -> Option<Vec<ShapedGlyph>> {
+        if text.is_empty() || direction != TextDirection::LeftToRight || !features.is_empty() {
+            return None;
+        }
+
+        let mut runs: Vec<(usize, usize, FontId)> = Vec::new();
+        let mut used_fallback = false;
+        for (start, grapheme) in text.grapheme_indices(true) {
+            let selector = grapheme
+                .chars()
+                .find(|ch| !is_face_ignorable(*ch))
+                .or_else(|| grapheme.chars().next())?;
+            let font_id = FontId(self.font_loader.resolve_font_for_code_point(primary_id.0, selector)?);
+            let end = start + grapheme.len();
+            used_fallback |= font_id != primary_id;
+            if let Some((_, run_end, run_font_id)) = runs.last_mut()
+                && *run_font_id == font_id
+            {
+                *run_end = end;
+            } else {
+                runs.push((start, end, font_id));
+            }
+        }
+        if !used_fallback {
+            return None;
+        }
+
+        tracing::debug!(
+            target: "zero_render_foundation::shaped_fallback",
+            text,
+            runs = ?runs,
+            "ZW_SHAPED_FALLBACK"
+        );
+        let mut result = Vec::new();
+        for (start, end, font_id) in runs {
+            let run_text = text.get(start..end)?;
+            let mut glyphs = self.shape_with_rustybuzz(font_id, run_text, font_size, direction, features)?;
+            let cluster_base = u32::try_from(start).ok()?;
+            for glyph in &mut glyphs {
+                glyph.cluster = glyph.cluster.checked_add(cluster_base)?;
+            }
+            result.extend(glyphs);
+        }
+        Some(result)
     }
 
     /// 使用 rustybuzz 进行 OpenType shaping。
@@ -331,6 +398,11 @@ impl<'a> TextShaper<'a> {
         let glyph_index = font.lookup_glyph_index(code_point) as u32;
         Some((glyph_index, metrics.advance_width))
     }
+}
+
+fn is_face_ignorable(ch: char) -> bool {
+    matches!(ch, '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}')
+        || matches!(ch as u32, 0xFE00..=0xFE0F | 0xE0100..=0xE01EF)
 }
 
 /// 计算文本在指定字体大小下单行渲染所需的总宽度（像素）。
@@ -596,6 +668,50 @@ mod tests {
 
         assert_eq!(enabled.len(), 1, "liga=1 should form the bundled Lato fi ligature");
         assert_eq!(disabled.len(), 2, "liga=0 should retain separate f and i glyphs");
+    }
+
+    #[test]
+    fn fallback_runs_preserve_resolved_face_and_absolute_clusters() {
+        let Some(fallback_data) = load_system_font_data() else {
+            eprintln!("skipping: no system fallback font found");
+            return;
+        };
+        let mut loader = FontLoader::new();
+        let primary = loader.load_font(LATO_TTF).expect("load bundled Lato");
+        let fallback = loader.load_font(&fallback_data).expect("load system fallback");
+        let primary_font = loader.get(primary).expect("primary face");
+        let fallback_font = loader.get(fallback).expect("fallback face");
+        let Some(ch) = ['א', 'ش', '☃', '⌘']
+            .into_iter()
+            .find(|ch| !primary_font.has_glyph(*ch) && fallback_font.has_glyph(*ch))
+        else {
+            eprintln!("skipping: no coverage difference between test faces");
+            return;
+        };
+        loader.set_fallback_chain(vec![fallback]);
+        let shaper = TextShaper::new(&loader, Some(FontId(primary)));
+        assert!(
+            shaper
+                .shape_with_fallback_runs(FontId(primary), "f\u{200C}i", 16.0, TextDirection::LeftToRight, &[],)
+                .is_none(),
+            "ZWNJ must remain in the primary grapheme run"
+        );
+
+        let text = format!("A{ch}B");
+        let glyphs = shaper
+            .shape_with_fallback_runs(FontId(primary), &text, 16.0, TextDirection::LeftToRight, &[])
+            .expect("fallback run");
+
+        assert_eq!(glyphs.len(), 3);
+        assert_eq!(
+            glyphs.iter().map(|glyph| glyph.font_id).collect::<Vec<_>>(),
+            vec![FontId(primary), FontId(fallback), FontId(primary)]
+        );
+        assert_eq!(
+            glyphs.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(),
+            vec![0, 1, 1 + ch.len_utf8() as u32]
+        );
+        assert!(glyphs.iter().all(|glyph| glyph.glyph_id > 0 && glyph.advance_x > 0.0));
     }
 
     /// shaping advance 必须保留 rustybuzz 的 kerning/GPOS 结果。

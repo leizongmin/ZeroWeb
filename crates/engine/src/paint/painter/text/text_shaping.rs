@@ -109,6 +109,7 @@ pub(super) struct FragmentAdvanceTrace {
     pub(super) layout_estimate: f32,
     pub(super) unshaped: f32,
     pub(super) shaped: f32,
+    pub(super) resolved_font_ids: Vec<u32>,
 }
 
 pub(super) struct FragmentPaintWidths {
@@ -128,6 +129,7 @@ impl FragmentAdvanceTrace {
             layout_estimate = self.layout_estimate,
             unshaped = self.unshaped,
             shaped = self.shaped,
+            resolved_font_ids = ?self.resolved_font_ids,
             fragment_width = paint.fragment,
             legacy_paint = paint.legacy,
             paint_consumed = paint.consumed,
@@ -139,6 +141,7 @@ impl FragmentAdvanceTrace {
 /// Paint 循环消费的单个字形。
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
+    pub(super) font_id: Option<zero_render_foundation::primitive::FontId>,
     pub(super) font_glyph_index: Option<u16>,
     pub(super) source: Option<GlyphSource>,
     pub(super) x_offset: f32,
@@ -281,6 +284,7 @@ impl Iterator for FragmentGlyphs<'_> {
                 let glyph = glyphs.next()?;
                 Some(FragmentGlyph {
                     code_point: glyph.code_point,
+                    font_id: Some(glyph.font_id),
                     font_glyph_index: (*indexed).then(|| u16::try_from(glyph.glyph_id).ok()).flatten(),
                     source: sources.next().flatten(),
                     x_offset: if *offset { glyph.x_offset } else { 0.0 },
@@ -290,6 +294,7 @@ impl Iterator for FragmentGlyphs<'_> {
             }
             Self::Legacy(chars) => Some(FragmentGlyph {
                 code_point: chars.next()?,
+                font_id: None,
                 font_glyph_index: None,
                 source: None,
                 x_offset: 0.0,
@@ -405,6 +410,12 @@ pub(super) fn fragment_advance_trace(
 }
 
 fn advance_trace_from_glyphs(text: &str, font_size: f32, glyphs: &[ShapedGlyph]) -> FragmentAdvanceTrace {
+    let mut resolved_font_ids = Vec::new();
+    for glyph in glyphs {
+        if !resolved_font_ids.contains(&glyph.font_id.0) {
+            resolved_font_ids.push(glyph.font_id.0);
+        }
+    }
     FragmentAdvanceTrace {
         layout_estimate: text
             .chars()
@@ -412,6 +423,7 @@ fn advance_trace_from_glyphs(text: &str, font_size: f32, glyphs: &[ShapedGlyph])
             .sum(),
         unshaped: glyphs.iter().map(|glyph| glyph.unshaped_advance_x).sum(),
         shaped: glyphs.iter().map(|glyph| glyph.advance_x).sum(),
+        resolved_font_ids,
     }
 }
 
@@ -560,6 +572,21 @@ mod tests {
         let advance = advance_only.next().expect("advance glyph");
         assert_eq!(advance.advance_x, Some(8.0));
         assert_eq!((advance.x_offset, advance.y_offset), (0.0, 0.0));
+    }
+
+    #[test]
+    fn shaped_fragment_preserves_resolved_font_id() {
+        let mut resolved = glyph();
+        resolved.font_id = FontId(9);
+        let mut glyphs = FragmentGlyphs::Shaped {
+            glyphs: vec![resolved].into_iter(),
+            sources: vec![None].into_iter(),
+            indexed: true,
+            advanced: false,
+            offset: false,
+        };
+
+        assert_eq!(glyphs.next().expect("resolved glyph").font_id, Some(FontId(9)));
     }
 
     #[test]

@@ -84,7 +84,7 @@ impl AdvanceSource for ShapedAdvanceSource {
         let Some(font_id) = font_id else {
             return estimated;
         };
-        let Some(shaped) = shape_text_for_paint(font_id, text, font_size, TextDirection::Auto, &[])
+        let Some(shaped) = shape_text_for_paint(font_id, text, font_size, TextDirection::LeftToRight, &[])
             .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs))
         else {
             return estimated;

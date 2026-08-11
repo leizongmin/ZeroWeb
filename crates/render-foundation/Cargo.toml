@@ -22,6 +22,7 @@ hashbrown = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
+unicode-segmentation = { workspace = true }
 parking_lot = { workspace = true }
 pollster = { workspace = true }
 winit = { workspace = true }
