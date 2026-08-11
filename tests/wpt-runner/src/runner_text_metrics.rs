@@ -9,7 +9,7 @@
 use std::cell::Cell;
 
 use zero_engine::layout_estimate_char_width;
-use zero_render_foundation::font::{ShapedGlyph, TextDirection, loader::FontLoader};
+use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection, loader::FontLoader};
 
 thread_local! {
     static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
@@ -32,12 +32,18 @@ pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
 }
 
 /// 在当前 WPT 字体上下文中按指定 face 整形文本。
-pub fn shape_text(font_id: u32, text: &str, font_size: f32, direction: TextDirection) -> Option<Vec<ShapedGlyph>> {
+pub fn shape_text(
+    font_id: u32,
+    text: &str,
+    font_size: f32,
+    direction: TextDirection,
+    features: &[OpenTypeFeature],
+) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
         let (loader, _) = cell.get()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
-        loader.shape_text_cached_with_direction(font_id, text, font_size, direction)
+        loader.shape_text_cached_with_features(font_id, text, font_size, direction, features)
     })
 }
 
@@ -57,13 +63,13 @@ mod tests {
 
     #[test]
     fn shape_text_requires_context_and_uses_requested_face() {
-        assert!(shape_text(0, "AV", 16.0, TextDirection::LeftToRight).is_none());
+        assert!(shape_text(0, "AV", 16.0, TextDirection::LeftToRight, &[]).is_none());
 
         const LATO_TTF: &[u8] = include_bytes!("../fonts/Lato-Medium.ttf");
         let mut loader = FontLoader::new();
         let font_id = loader.load_font(LATO_TTF).expect("load bundled Lato");
         let glyphs = with_measure_ctx(&loader, font_id, || {
-            shape_text(font_id, "AV", 16.0, TextDirection::LeftToRight).expect("shape in active font context")
+            shape_text(font_id, "AV", 16.0, TextDirection::LeftToRight, &[]).expect("shape in active font context")
         });
 
         assert_eq!(glyphs.len(), 2);
@@ -71,8 +77,30 @@ mod tests {
         assert!(glyphs.iter().all(|glyph| glyph.advance_x > 0.0));
 
         let rtl = with_measure_ctx(&loader, font_id, || {
-            shape_text(font_id, "ABC", 16.0, TextDirection::RightToLeft).expect("RTL shape")
+            shape_text(font_id, "ABC", 16.0, TextDirection::RightToLeft, &[]).expect("RTL shape")
         });
         assert_eq!(rtl.iter().map(|glyph| glyph.cluster).collect::<Vec<_>>(), vec![2, 1, 0]);
+
+        let ligatures = with_measure_ctx(&loader, font_id, || {
+            let enabled = shape_text(
+                font_id,
+                "fi",
+                16.0,
+                TextDirection::LeftToRight,
+                &[OpenTypeFeature::new(*b"liga", 1)],
+            )
+            .expect("liga enabled shape");
+            let disabled = shape_text(
+                font_id,
+                "fi",
+                16.0,
+                TextDirection::LeftToRight,
+                &[OpenTypeFeature::new(*b"liga", 0)],
+            )
+            .expect("liga disabled shape");
+            (enabled, disabled)
+        });
+        assert_eq!(ligatures.0.len(), 1);
+        assert_eq!(ligatures.1.len(), 2);
     }
 }

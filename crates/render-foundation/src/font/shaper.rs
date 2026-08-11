@@ -17,6 +17,22 @@ pub enum TextDirection {
     RightToLeft,
 }
 
+/// 应用于完整 shaping run 的 OpenType feature。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OpenTypeFeature {
+    /// 四字节 OpenType feature tag（如 `liga`）。
+    pub tag: [u8; 4],
+    /// feature 值；`0` 表示关闭，`1` 表示开启，其余值供索引型 feature 使用。
+    pub value: u32,
+}
+
+impl OpenTypeFeature {
+    /// 创建一个作用于完整 shaping run 的 feature。
+    pub const fn new(tag: [u8; 4], value: u32) -> Self {
+        Self { tag, value }
+    }
+}
+
 /// 单个整形后的 Glyph 信息
 #[derive(Debug, Clone)]
 pub struct ShapedGlyph {
@@ -81,11 +97,22 @@ impl<'a> TextShaper<'a> {
         font_size: f32,
         direction: TextDirection,
     ) -> Vec<ShapedGlyph> {
+        self.shape_single_line_with_features(text, font_size, direction, &[])
+    }
+
+    /// 使用显式方向与 OpenType feature 将文本整形为 glyph 序列。
+    pub fn shape_single_line_with_features(
+        &self,
+        text: &str,
+        font_size: f32,
+        direction: TextDirection,
+        features: &[OpenTypeFeature],
+    ) -> Vec<ShapedGlyph> {
         let font_id = self.default_font_id.unwrap_or(FontId(0));
 
         // 尝试 rustybuzz shaping
         if let Some(fid) = self.default_font_id
-            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction)
+            && let Some(glyphs) = self.shape_with_rustybuzz(fid, text, font_size, direction, features)
         {
             return glyphs;
         }
@@ -105,6 +132,7 @@ impl<'a> TextShaper<'a> {
         text: &str,
         font_size: f32,
         direction: TextDirection,
+        features: &[OpenTypeFeature],
     ) -> Option<Vec<ShapedGlyph>> {
         let font_data = self.font_loader.get_font_data(font_id.0)?;
 
@@ -118,7 +146,13 @@ impl<'a> TextShaper<'a> {
             TextDirection::RightToLeft => buffer.set_direction(rustybuzz::Direction::RightToLeft),
         }
 
-        let features: Vec<rustybuzz::Feature> = Vec::new();
+        // https://drafts.csswg.org/css-fonts-4/#feature-precedence
+        let features = features
+            .iter()
+            .map(|feature| {
+                rustybuzz::Feature::new(rustybuzz::ttf_parser::Tag::from_bytes(&feature.tag), feature.value, ..)
+            })
+            .collect::<Vec<_>>();
         let glyph_buffer = rustybuzz::shape(&face, &features, buffer);
 
         let glyph_infos = glyph_buffer.glyph_infos();
@@ -539,6 +573,29 @@ mod tests {
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].cluster, 0);
         assert_eq!(glyphs[0].code_point, 'f');
+    }
+
+    #[test]
+    fn test_ligature_feature_can_be_disabled_per_run() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+
+        let enabled = shaper.shape_single_line_with_features(
+            "fi",
+            16.0,
+            TextDirection::LeftToRight,
+            &[OpenTypeFeature::new(*b"liga", 1)],
+        );
+        let disabled = shaper.shape_single_line_with_features(
+            "fi",
+            16.0,
+            TextDirection::LeftToRight,
+            &[OpenTypeFeature::new(*b"liga", 0)],
+        );
+
+        assert_eq!(enabled.len(), 1, "liga=1 should form the bundled Lato fi ligature");
+        assert_eq!(disabled.len(), 2, "liga=0 should retain separate f and i glyphs");
     }
 
     /// shaping advance 必须保留 rustybuzz 的 kerning/GPOS 结果。

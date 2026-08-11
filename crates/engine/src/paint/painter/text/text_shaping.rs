@@ -192,7 +192,7 @@ pub(super) fn fragment_glyphs<'a>(
     if eligible
         && shaped_text_enabled()
         && (direction != TextDirection::RightToLeft || complex_enabled)
-        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction)
+        && let Some(glyphs) = crate::shape_text_for_paint(font_id, shaping_text, font_size, shape_direction, &[])
     {
         let Some(complex_mapping) = mapping_mode(shaping_text, &glyphs, complex_enabled) else {
             return FragmentGlyphs::Legacy(text.chars());

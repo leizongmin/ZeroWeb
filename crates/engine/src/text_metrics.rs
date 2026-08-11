@@ -6,11 +6,11 @@
 use std::sync::OnceLock;
 
 use zero_layout_engine::inline::{AdvanceSource, estimate_char_width};
-use zero_render_foundation::font::{ShapedGlyph, TextDirection};
+use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
 
 static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
 /// 宿主提供的文本整形回调签名。
-pub type TextShapeFn = fn(u32, &str, f32, TextDirection) -> Option<Vec<ShapedGlyph>>;
+pub type TextShapeFn = fn(u32, &str, f32, TextDirection, &[OpenTypeFeature]) -> Option<Vec<ShapedGlyph>>;
 static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
@@ -46,10 +46,11 @@ pub fn shape_text_for_paint(
     text: &str,
     font_size: f32,
     direction: TextDirection,
+    features: &[OpenTypeFeature],
 ) -> Option<Vec<ShapedGlyph>> {
     TEXT_SHAPE
         .get()
-        .and_then(|shape| shape(font_id, text, font_size, direction))
+        .and_then(|shape| shape(font_id, text, font_size, direction, features))
 }
 
 /// 判断 shaping 输出是否与源 Unicode 标量一一对应。
@@ -83,7 +84,7 @@ impl AdvanceSource for ShapedAdvanceSource {
         let Some(font_id) = font_id else {
             return estimated;
         };
-        let Some(shaped) = shape_text_for_paint(font_id, text, font_size, TextDirection::Auto)
+        let Some(shaped) = shape_text_for_paint(font_id, text, font_size, TextDirection::Auto, &[])
             .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs))
         else {
             return estimated;
