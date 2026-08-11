@@ -651,6 +651,12 @@ fn assert_bidi_fragment_sources(ctx: &InlineFormattingContext, logical_text: &st
             "source map must align with visual fragment {:?}",
             fragment.text
         );
+        assert_eq!(
+            source.visual_is_rtl.len(),
+            fragment.text.chars().count(),
+            "resolved direction must align with visual fragment {:?}",
+            fragment.text
+        );
         ranges.extend(source.visual_to_logical.iter().flatten().cloned());
     }
     ranges.sort_by_key(|range| (range.start, range.end));
@@ -668,6 +674,13 @@ fn test_bidi_fragment_source_survives_normal_word_splitting() {
     let mut ctx = InlineFormattingContext::new(800.0);
     ctx.break_into_lines(vec![make_run("אבג")]);
     assert_eq!(ctx.all_fragments()[0].text, "גבא");
+    assert_eq!(
+        ctx.all_fragments()[0]
+            .source
+            .as_ref()
+            .and_then(TextFragmentSource::uniform_resolved_rtl),
+        Some(true)
+    );
     assert_bidi_fragment_sources(&ctx, "אבג", "אבג");
 }
 

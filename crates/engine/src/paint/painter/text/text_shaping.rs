@@ -397,6 +397,7 @@ mod tests {
         let source = TextFragmentSource {
             text: text.clone(),
             visual_to_logical: vec![Some(5..7), Some(3..5), Some(1..3)],
+            visual_is_rtl: vec![true, true, true],
         };
         let logical =
             logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).expect("contiguous RTL source");
@@ -412,12 +413,14 @@ mod tests {
         let source = TextFragmentSource {
             text: Arc::<str>::from("aאב"),
             visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
+            visual_is_rtl: vec![false, true, true],
         };
         assert!(logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).is_none());
 
         let monotonic_mixed = TextFragmentSource {
             text: Arc::<str>::from("aאב"),
             visual_to_logical: vec![Some(3..5), Some(1..3), Some(0..1)],
+            visual_is_rtl: vec![true, true, true],
         };
         assert!(logical_fragment_source(Some(&monotonic_mixed), TextDirection::RightToLeft, true).is_none());
     }

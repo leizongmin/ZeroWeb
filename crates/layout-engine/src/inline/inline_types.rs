@@ -189,9 +189,20 @@ pub struct TextFragmentSource {
     ///
     /// `None` 表示断词阶段合成、源码中没有直接对应字符的内容。
     pub visual_to_logical: Vec<Option<Range<usize>>>,
+    /// 与视觉字符一一对应的 UBA resolved level 奇偶方向。
+    pub visual_is_rtl: Vec<bool>,
 }
 
 impl TextFragmentSource {
+    /// 返回片段全部视觉字符一致的 UBA resolved direction。
+    pub fn uniform_resolved_rtl(&self) -> Option<bool> {
+        if self.visual_is_rtl.len() != self.visual_to_logical.len() {
+            return None;
+        }
+        let first = *self.visual_is_rtl.first()?;
+        self.visual_is_rtl.iter().all(|rtl| *rtl == first).then_some(first)
+    }
+
     /// 返回可由单个逻辑文本切片表示的源码范围。
     ///
     /// 仅接受全部 range 按视觉顺序严格相邻且方向一致的映射。混合 BiDi、
@@ -386,7 +397,9 @@ mod tests {
         let source = TextFragmentSource {
             text: Arc::<str>::from("Aé"),
             visual_to_logical: vec![Some(0..1), Some(1..3)],
+            visual_is_rtl: vec![false, false],
         };
+        assert_eq!(source.uniform_resolved_rtl(), Some(false));
         assert_eq!(source.logical_range(), Some(0..3));
         assert_eq!(source.logical_slice(), Some("Aé"));
     }
@@ -396,7 +409,9 @@ mod tests {
         let source = TextFragmentSource {
             text: Arc::<str>::from("אבג"),
             visual_to_logical: vec![Some(4..6), Some(2..4), Some(0..2)],
+            visual_is_rtl: vec![true, true, true],
         };
+        assert_eq!(source.uniform_resolved_rtl(), Some(true));
         assert_eq!(source.logical_range(), Some(0..6));
         assert_eq!(source.logical_slice(), Some("אבג"));
     }
@@ -406,7 +421,9 @@ mod tests {
         let source = TextFragmentSource {
             text: Arc::<str>::from("abcd"),
             visual_to_logical: vec![Some(0..1), Some(3..4), Some(2..3)],
+            visual_is_rtl: vec![false, true, true],
         };
+        assert_eq!(source.uniform_resolved_rtl(), None);
         assert_eq!(source.logical_slice(), None);
     }
 
@@ -415,12 +432,21 @@ mod tests {
         let synthetic = TextFragmentSource {
             text: Arc::<str>::from("abc"),
             visual_to_logical: vec![Some(0..1), None],
+            visual_is_rtl: vec![false, false],
         };
         assert_eq!(synthetic.logical_slice(), None);
+
+        let mismatched_direction = TextFragmentSource {
+            text: Arc::<str>::from("ab"),
+            visual_to_logical: vec![Some(0..1), Some(1..2)],
+            visual_is_rtl: vec![false],
+        };
+        assert_eq!(mismatched_direction.uniform_resolved_rtl(), None);
 
         let invalid_utf8 = TextFragmentSource {
             text: Arc::<str>::from("אב"),
             visual_to_logical: vec![Some(1..2)],
+            visual_is_rtl: vec![true],
         };
         assert_eq!(invalid_utf8.logical_slice(), None);
     }

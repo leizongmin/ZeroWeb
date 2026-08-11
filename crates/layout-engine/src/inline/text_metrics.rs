@@ -466,15 +466,19 @@ pub(crate) struct BidiReorderedText {
     pub visual_text: String,
     /// 与 `visual_text.chars()` 一一对应的逻辑源码 byte range。
     pub visual_to_logical: Vec<std::ops::Range<usize>>,
+    /// 与 `visual_text.chars()` 一一对应的 UBA resolved level 奇偶方向。
+    pub visual_is_rtl: Vec<bool>,
 }
 
 fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
+    let char_count = text.chars().count();
     BidiReorderedText {
         visual_text: text.to_string(),
         visual_to_logical: text
             .char_indices()
             .map(|(start, ch)| start..start + ch.len_utf8())
             .collect(),
+        visual_is_rtl: vec![false; char_count],
     }
 }
 
@@ -513,6 +517,7 @@ fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> 
     let bidi_info = BidiInfo::new(text, None);
     let mut visual_text = String::with_capacity(text.len());
     let mut visual_to_logical = Vec::with_capacity(text.chars().count());
+    let mut visual_is_rtl = Vec::with_capacity(text.chars().count());
     let paragraph_limit = if preserve_all_paragraphs { usize::MAX } else { 1 };
     for para in bidi_info.paragraphs.iter().take(paragraph_limit) {
         // https://www.unicode.org/reports/tr9/#P1
@@ -528,6 +533,7 @@ fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> 
             let content_range = para.range.start..content_end;
             let (levels, runs) = bidi_info.visual_runs(para, content_range);
             for run in runs {
+                let run_is_rtl = levels[run.start].is_rtl();
                 let mut chars = text[run.clone()]
                     .char_indices()
                     .map(|(offset, ch)| {
@@ -535,12 +541,13 @@ fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> 
                         (ch, start..start + ch.len_utf8())
                     })
                     .collect::<Vec<_>>();
-                if levels[run.start].is_rtl() {
+                if run_is_rtl {
                     chars.reverse();
                 }
                 for (ch, logical_range) in chars {
                     visual_text.push(ch);
                     visual_to_logical.push(logical_range);
+                    visual_is_rtl.push(run_is_rtl);
                 }
             }
         }
@@ -552,11 +559,13 @@ fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> 
                 .expect("paragraph separator range is not empty");
             visual_text.push(ch);
             visual_to_logical.push(start..start + ch.len_utf8());
+            visual_is_rtl.push(para.level.is_rtl());
         }
     }
     BidiReorderedText {
         visual_text,
         visual_to_logical,
+        visual_is_rtl,
     }
 }
 
@@ -620,12 +629,16 @@ impl BidiFragmentCursor {
             .map(Some)
             .collect::<Vec<_>>();
         visual_to_logical.extend(std::iter::repeat_n(None, synthetic_count));
+        let mut visual_is_rtl = self.reordered.visual_is_rtl.get(mapped_start..mapped_end)?.to_vec();
+        let synthetic_is_rtl = visual_is_rtl.last().copied().unwrap_or(false);
+        visual_is_rtl.extend(std::iter::repeat_n(synthetic_is_rtl, synthetic_count));
 
         self.visual_byte_offset += relative_start + matched.len();
         self.visual_char_offset = mapped_end;
         Some(TextFragmentSource {
             text: source_text,
             visual_to_logical,
+            visual_is_rtl,
         })
     }
 }
@@ -664,6 +677,7 @@ mod tests {
         let reordered = bidi_reorder_with_mapping("אבג");
         assert_eq!(reordered.visual_text, "גבא");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2]);
+        assert_eq!(reordered.visual_is_rtl, vec![true, true, true]);
         let logical = reordered
             .visual_to_logical
             .iter()
@@ -678,6 +692,7 @@ mod tests {
         let reordered = bidi_reorder_with_mapping("Aé");
         assert_eq!(reordered.visual_text, "Aé");
         assert_eq!(reordered.visual_to_logical, vec![0..1, 1..3]);
+        assert_eq!(reordered.visual_is_rtl, vec![false, false]);
     }
 
     #[test]
@@ -685,6 +700,7 @@ mod tests {
         let reordered = bidi_reorder_with_mapping("אבג\nדה");
         assert_eq!(reordered.visual_text, "גבא\nהד");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7, 9..11, 7..9]);
+        assert_eq!(reordered.visual_is_rtl, vec![true; 6]);
     }
 
     #[test]
@@ -692,6 +708,15 @@ mod tests {
         let reordered = bidi_reorder_with_mapping_mode("אבג\nדה", false);
         assert_eq!(reordered.visual_text, "גבא\n");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7]);
+        assert_eq!(reordered.visual_is_rtl, vec![true; 4]);
+    }
+
+    #[test]
+    fn bidi_reorder_preserves_mixed_visual_run_directions() {
+        let reordered = bidi_reorder_with_mapping("aאב");
+        assert_eq!(reordered.visual_text.chars().count(), reordered.visual_is_rtl.len());
+        assert!(reordered.visual_is_rtl.contains(&false));
+        assert!(reordered.visual_is_rtl.contains(&true));
     }
 
     #[test]
@@ -704,5 +729,6 @@ mod tests {
         };
         let source = cursor.take_source("foo ").expect("synthetic-space fragment maps");
         assert_eq!(source.visual_to_logical, vec![Some(0..1), Some(1..2), Some(2..3), None]);
+        assert_eq!(source.visual_is_rtl, vec![false; 4]);
     }
 }
