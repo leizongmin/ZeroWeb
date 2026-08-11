@@ -2120,3 +2120,75 @@ fn test_query_selector_all_multiple() {
     let results = doc.query_selector_all(root, "div");
     assert_eq!(results.len(), 3);
 }
+
+#[test]
+fn test_query_selector_target_r3283() {
+    // R3283：DOM `:target` 选择器（CSS Selectors L3 §6.6.2：当前文档 URL fragment 指向的唯一元素）。
+    // 此前 CSS 解析器识别 `:target` 但 DOM `query.rs` 与 style-system matcher 双双走 `_ => false`
+    // → querySelectorAll(":target") 恒空，而同选择器 CSS 侧不匹配——DOM/CSS 不一致。补全为 DOM/CSS
+    // 同源（Document::is_target_element 读 url fragment，百分号解码，getElementById 查唯一元素）。
+    let mut doc = parse_html(
+        "<html><body>\
+         <h1 id='top'>Title</h1>\
+         <p id='note-1'>first</p>\
+         <p id='sec2'>section 2</p>\
+         <p>No id here</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    // 自由函数而非闭包——闭包会捕获 `&doc` 延长不可变借用到 set_url（&mut）调用点，致借用冲突。
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // 无 URL → 无 fragment → 无 :target。
+    let none = doc.query_selector_all(root, ":target");
+    assert!(none.is_empty(), "无 URL 时 :target 应无匹配，实际 {none:?}");
+
+    // URL 无 fragment → 无 :target。
+    doc.set_url(Some("https://example.com/page".to_string()));
+    let none = doc.query_selector_all(root, ":target");
+    assert!(none.is_empty(), "URL 无 fragment 时 :target 应无匹配，实际 {none:?}");
+
+    // URL fragment=#top → 仅匹配 id=top 的元素。
+    doc.set_url(Some("https://example.com/page#top".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(target, vec!["top".to_string()], "#top fragment 应仅命中 id=top");
+
+    // URL fragment=#sec2 → 切换到 id=sec2。
+    doc.set_url(Some("https://example.com/page#sec2".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(target, vec!["sec2".to_string()], "#sec2 fragment 应仅命中 id=sec2");
+
+    // fragment 指向不存在的 id → 无 :target。
+    doc.set_url(Some("https://example.com/page#missing".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert!(target.is_empty(), "不存在的 fragment 应无 :target 匹配");
+
+    // 百分号编码 fragment：#note-1 编码为 #note-%31（%31 = '1'），解码后 = "note-1" 命中。
+    doc.set_url(Some("https://example.com/page#note-%31".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(
+        target,
+        vec!["note-1".to_string()],
+        "百分号编码 fragment #note-%31 应解码为 note-1 命中"
+    );
+
+    // 空 fragment（page#）→ 无 :target。
+    doc.set_url(Some("https://example.com/page#".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert!(target.is_empty(), "空 fragment 应无 :target 匹配");
+
+    // 直接调权威方法（DOM/CSS 共享，style-system matcher 同此源）。
+    doc.set_url(Some("https://example.com/page#top".to_string()));
+    let top = doc.get_element_by_id("top").unwrap();
+    assert!(
+        doc.is_target_element(top),
+        "is_target_element 对 #top 指向的元素应返 true"
+    );
+    let note1 = doc.get_element_by_id("note-1").unwrap();
+    assert!(
+        !doc.is_target_element(note1),
+        "is_target_element 对非目标元素应返 false"
+    );
+}

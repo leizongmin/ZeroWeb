@@ -120,6 +120,9 @@ pub enum PseudoClass {
     /// （ltr/rtl/auto），`auto` 按子树首个强方向字符。需祖先链 + 子树扫描，延后至
     /// `Document::matches_dir` 复评。
     Dir(String),
+    /// `:target`——当前文档 URL fragment（百分号解码）指向的唯一元素（CSS Selectors L3 §6.6.2）。
+    /// 需读文档 URL，延后至 `Document::is_target_element` 复评。
+    Target,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -330,9 +333,9 @@ impl SimpleSelector {
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
-            // `:scope`/`:lang()`/`:dir()` 需 Document 祖先链/根上下文，延后返 true，
+            // `:scope`/`:lang()`/`:dir()`/`:target` 需 Document 祖先链/根/URL 上下文，延后返 true，
             // 由 Document::element_matches_selector 复评（镜像 :disabled 两阶段模式）。
-            PseudoClass::Scope | PseudoClass::Lang(_) | PseudoClass::Dir(_) => true,
+            PseudoClass::Scope | PseudoClass::Lang(_) | PseudoClass::Dir(_) | PseudoClass::Target => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -685,6 +688,8 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "visited" => Some(PseudoClass::Visited),
         // `:scope`——文档样式表等价 `:root`，延后至 Document 复评。
         "scope" => Some(PseudoClass::Scope),
+        // `:target`——当前文档 URL fragment 指向的唯一元素，延后至 Document 复评。
+        "target" => Some(PseudoClass::Target),
         // `:lang(ranges)`——逗号分隔 BCP 47 语言范围列表（如 `en, fr`/`*-CA`），延后至 Document 复评。
         "lang" => {
             let a = args?;

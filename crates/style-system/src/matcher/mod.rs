@@ -294,6 +294,9 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "link" => is_any_link(doc, element),
             // :scope：文档样式表中等价 :root（匹配文档根元素）。
             "scope" => is_root_element(doc, element),
+            // :target：当前文档 URL fragment 指向的唯一元素（CSS Selectors L3 §6.6.2）。
+            // 委派 Document 权威方法（R3283 与 DOM 选择器同源，逻辑在 dom/document/target.rs）。
+            "target" => doc.is_target_element(element),
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {

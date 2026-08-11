@@ -1254,6 +1254,45 @@ fn test_matches_scope_pseudo_class() {
     assert!(!matches_selector(&doc, p, &sel), "p 非文档根，不应匹配 :scope");
 }
 
+#[test]
+fn test_matches_target_pseudo_class_r3283() {
+    // R3283：:target（CSS Selectors L3 §6.6.2）——当前文档 URL fragment 指向的唯一元素。
+    // 此前 CSS 解析器识别但 style-system matcher 走 `_ => false` → CSS `:target` 恒不匹配，
+    // 与 DOM querySelector 不一致。补全为委派 Document::is_target_element（dom/document/target.rs）。
+    // make_test_dom：div id="main"（div 变量），p 无 id。
+    let (mut doc, _html, _body, div, p) = make_test_dom();
+    let sel = simple_pseudo("target");
+
+    // 无 URL → 无 :target。
+    assert!(!matches_selector(&doc, div, &sel), "无 URL 时 :target 不应匹配任何元素");
+
+    // URL 无 fragment → 无 :target。
+    doc.set_url(Some("https://example.com/page".to_string()));
+    assert!(
+        !matches_selector(&doc, div, &sel),
+        "URL 无 fragment 时 :target 不应匹配"
+    );
+
+    // URL fragment=#main → div（id=main）成为 :target；p（无 id）不匹配。
+    doc.set_url(Some("https://example.com/page#main".to_string()));
+    assert!(
+        matches_selector(&doc, div, &sel),
+        "#main fragment 应使 id=main 的 div 匹配 :target"
+    );
+    assert!(!matches_selector(&doc, p, &sel), "无 id 的 p 不应匹配 :target");
+
+    // fragment 指向不存在的 id → 无 :target。
+    doc.set_url(Some("https://example.com/page#missing".to_string()));
+    assert!(!matches_selector(&doc, div, &sel), "不存在的 fragment 不应匹配 :target");
+
+    // 百分号编码 fragment：#m%61%69n（%6D=... 实测 #main 的 'a'=%61）解码为 main 命中。
+    doc.set_url(Some("https://example.com/page#m%61in".to_string()));
+    assert!(
+        matches_selector(&doc, div, &sel),
+        "百分号编码 #m%61in 解码为 main 应使 div 匹配 :target"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {
