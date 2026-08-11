@@ -37,6 +37,9 @@ struct CacheEntry {
     resource_base: String,
     stored_at: Instant,
     ttl_secs: Option<u64>,
+    /// RFC 9111 §4.2.3——响应接收时的「初始年龄」（秒），freshness 检查 `resident_time + initial_age <= ttl`。
+    /// 新鲜 put 时从响应的 Age/Date 头算出；磁盘→内存提升时为 0（年龄已并入 `ttl_secs`=剩余新鲜期）。
+    initial_age_secs: u64,
     revalidate_only: bool,
     vary: Option<String>,
     etag: Option<String>,
@@ -192,6 +195,8 @@ impl HttpCache {
                         e.revalidate_only = true;
                     }
                 }
+                // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age（与 R3231/R3232 头并入一致）。
+                e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
                 if let Some(etag) = response.header("etag") {
                     e.etag = Some(etag.to_string());
                     cached.etag = e.etag.clone();
@@ -263,9 +268,10 @@ impl HttpCache {
             self.remove(key);
             return None;
         }
-        let fresh = entry
-            .ttl_secs
-            .is_some_and(|ttl| entry.stored_at.elapsed() <= Duration::from_secs(ttl));
+        let fresh = entry.ttl_secs.is_some_and(|ttl| {
+            // R3233：RFC 9111 §4.2.4——`current_age = initial_age + resident_time`，新鲜 ⇔ `current_age < lifetime`。
+            entry.stored_at.elapsed() + Duration::from_secs(entry.initial_age_secs) <= Duration::from_secs(ttl)
+        });
         if fresh {
             self.promote(key);
             return Some(CacheLookup::Hit(cached));
@@ -310,6 +316,8 @@ impl HttpCache {
                 } else {
                     Some(disk.fresh_for_secs)
                 },
+                // R3233：磁盘→内存提升时年龄已并入 ttl_secs（= fresh_for_secs 剩余新鲜期），故 initial_age=0。
+                initial_age_secs: 0,
                 revalidate_only: disk.revalidate_only,
                 vary: disk.vary.clone(),
                 etag: cached.etag.clone(),
@@ -326,7 +334,8 @@ impl HttpCache {
         if let Some(entry) = self.entries.get(url)
             && let Some(ttl) = entry.ttl_secs
         {
-            return entry.stored_at.elapsed() <= Duration::from_secs(ttl);
+            // R3233：与 lookup_memory 同——freshness 计入 initial_age（Age/Date 头）。
+            return entry.stored_at.elapsed() + Duration::from_secs(entry.initial_age_secs) <= Duration::from_secs(ttl);
         }
         false
     }
@@ -378,6 +387,8 @@ impl HttpCache {
                     resource_base: resource_base.clone(),
                     stored_at: Instant::now(),
                     ttl_secs,
+                    // R3233：新鲜 put 从响应的 Age/Date 头算 initial_age（§4.2.3）。
+                    initial_age_secs: crate::cache_policy::compute_initial_age(response),
                     revalidate_only,
                     vary: vary.clone(),
                     etag: etag.clone(),
@@ -805,6 +816,56 @@ mod tests {
         // body + status 仍为缓存的 200（304 仅 revalidate，不替换 body）。
         assert_eq!(cached.body, b"hello");
         assert_eq!(cached.status_code, 200);
+    }
+
+    /// R3233：RFC 9111 §4.2.3——响应的 `Age` 头（CDN/共享缓存上报）须计入新鲜度：
+    /// `current_age = initial_age + resident_time`，`fresh ⇔ current_age < lifetime`。
+    /// 旧实现忽略 Age，把 CDN 已存活 N 秒的响应当全新鲜 → 可能服务过期内容。
+    #[test]
+    fn test_cache_age_header_reduces_freshness_r3233() {
+        let mut cache = HttpCache::new();
+        // Age(150) > max-age(100) → 接收时 current_age=150 已过期 → 须 Revalidate（有 ETag）。
+        let aged = make_response(
+            200,
+            b"cdn",
+            vec![("cache-control", "max-age=100"), ("age", "150"), ("etag", "\"v1\"")],
+        );
+        assert!(cache.put("https://example.com/aged", &aged));
+        match cache.lookup("https://example.com/aged", &[]) {
+            CacheLookup::Revalidate { .. } => {}
+            other => panic!("Age>max-age 须判过期→Revalidate，got {other:?}"),
+        }
+        // 对照：无 Age，max-age=100 → 立即查为 Hit（resident_time≈0 < 100）。
+        let fresh = make_response(
+            200,
+            b"fresh",
+            vec![("cache-control", "max-age=100"), ("etag", "\"v1\"")],
+        );
+        assert!(cache.put("https://example.com/fresh", &fresh));
+        match cache.lookup("https://example.com/fresh", &[]) {
+            CacheLookup::Hit(_) => {}
+            other => panic!("无 Age 的 max-age=100 须 Hit，got {other:?}"),
+        }
+    }
+
+    /// R3233：RFC 9111 §4.2.3 apparent_age——`Date` 头在远过去表明响应早已在源站生成（过期）。
+    #[test]
+    fn test_cache_date_apparent_age_r3233() {
+        let mut cache = HttpCache::new();
+        let stale = make_response(
+            200,
+            b"old",
+            vec![
+                ("cache-control", "max-age=100"),
+                ("date", "Wed, 21 Oct 2015 07:28:00 GMT"),
+                ("etag", "\"v1\""),
+            ],
+        );
+        assert!(cache.put("https://example.com/date-stale", &stale));
+        match cache.lookup("https://example.com/date-stale", &[]) {
+            CacheLookup::Revalidate { .. } => {}
+            other => panic!("远过去 Date 的 apparent_age 须判过期→Revalidate，got {other:?}"),
+        }
     }
 
     #[test]

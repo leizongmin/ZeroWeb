@@ -31,6 +31,10 @@ struct DiskEntryMeta {
     last_modified: Option<String>,
     /// 绝对过期时间（Unix 秒）；`revalidate_only` 条目设为存储时刻。
     expires_at: u64,
+    /// RFC 9111 §4.2.3 响应接收时的初始年龄（秒）。`#[serde(default)]` 兼容旧 meta 文件（缺失→0）。
+    /// `expires_at` 已据此提前（`expires_at = put_now + ttl - initial_age`）；此字段供 304 refresh 重算。
+    #[serde(default)]
+    initial_age_secs: u64,
     /// 最近访问时间（Unix 秒），用于 LRU 淘汰。
     last_access: u64,
     body_len: u64,
@@ -155,10 +159,13 @@ impl DiskHttpCache {
             return false;
         }
         let now = unix_now();
+        // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age，并在 expires_at 中抵扣。
+        let initial_age = crate::cache_policy::compute_initial_age(response);
+        meta.initial_age_secs = initial_age;
         match storable_mode(response) {
             Some(CacheStoreMode::Fresh(ttl)) => {
                 meta.revalidate_only = false;
-                meta.expires_at = now.saturating_add(ttl);
+                meta.expires_at = now.saturating_add(ttl.saturating_sub(initial_age));
             }
             Some(CacheStoreMode::RevalidateOnly) => {
                 meta.revalidate_only = true;
@@ -223,8 +230,11 @@ impl DiskHttpCache {
             None => return false,
         };
         let now = unix_now();
+        // R3233：RFC 9111 §4.2.3——初始年龄（Age/Date 头）提前抵扣新鲜期：
+        // `expires_at = put_now + (ttl - initial_age)`，使 read() 的 fresh_for_secs 自然反映剩余新鲜期。
+        let initial_age = crate::cache_policy::compute_initial_age(response);
         let (expires_at, revalidate_only) = match mode {
-            CacheStoreMode::Fresh(ttl) => (now.saturating_add(ttl), false),
+            CacheStoreMode::Fresh(ttl) => (now.saturating_add(ttl.saturating_sub(initial_age)), false),
             CacheStoreMode::RevalidateOnly => (now, true),
         };
         let resource_url = response.url.clone();
@@ -240,6 +250,7 @@ impl DiskHttpCache {
             etag: response.header("etag").map(str::to_string),
             last_modified: response.header("last-modified").map(str::to_string),
             expires_at,
+            initial_age_secs: initial_age,
             last_access: now,
             body_len: response.body.len() as u64,
         };
@@ -586,6 +597,7 @@ mod tests {
             etag: Some("\"x\"".to_string()),
             last_modified: None,
             expires_at: 1,
+            initial_age_secs: 0,
             last_access: 1,
             body_len: 3,
         };
@@ -704,6 +716,56 @@ mod tests {
             "并入的头须持久化到 meta 文件"
         );
         assert_eq!(header_val(&hit2, "etag"), Some("\"v2\""));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// R3233：磁盘层 Age 头（RFC 9111 §4.2.3）——`Age > max-age` 时 put 抵扣后 expires_at ≤ now → 不新鲜。
+    /// 旧实现忽略 Age，把 CDN 已存活 N 秒的响应当全新鲜写入磁盘（expires_at = now + ttl）。
+    #[test]
+    fn test_disk_age_header_reduces_freshness_r3233() {
+        let (mut cache, dir) = temp_cache();
+        let key = "https://example.com/disk-aged";
+        // Age(150) > max-age(100) → expires_at = now + (100 - 150) saturating → now → 不新鲜。
+        let aged = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=100".into()),
+                ("Age".into(), "150".into()),
+                ("ETag".into(), "\"v1\"".into()),
+            ],
+            body: b"cdn".to_vec(),
+            url: key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(key, &aged));
+        // get() 仅返新鲜条目；Age 抵扣后已过期 → None。
+        assert!(cache.get(key).is_none(), "Age>max-age 须判过期，get() 返 None");
+        // read() 仍返 stale 条目（含 ETag 供条件再验证）。
+        let hit = cache.read(key).expect("stale 可读");
+        assert_eq!(hit.fresh_for_secs, 0);
+        assert_eq!(hit.body, b"cdn");
+
+        // 对照：无 Age，max-age=100 → get() 返 Some（新鲜）。
+        let fresh_key = "https://example.com/disk-fresh";
+        let fresh = HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Cache-Control".into(), "max-age=100".into()),
+                ("ETag".into(), "\"v1\"".into()),
+            ],
+            body: b"fresh".to_vec(),
+            url: fresh_key.to_string(),
+            redirect_count: 0,
+        };
+        assert!(cache.put(fresh_key, &fresh));
+        assert!(cache.get(fresh_key).is_some(), "无 Age 的 max-age=100 须新鲜");
+
+        // 跨会话 reopen：Age 抵扣仍持久（initial_age 烘入 expires_at 的 meta 文件）。
+        let root = cache.root.clone();
+        drop(cache);
+        let mut reopened = DiskHttpCache::open(&root).unwrap();
+        assert!(reopened.get(key).is_none(), "reopen 后 Age>max-age 仍判过期");
+        assert!(reopened.get(fresh_key).is_some(), "reopen 后无 Age 条目仍新鲜");
         let _ = fs::remove_dir_all(dir);
     }
 

@@ -92,6 +92,37 @@ fn has_validators(response: &HttpResponse) -> bool {
     response.header("etag").is_some() || response.header("last-modified").is_some()
 }
 
+/// RFC 9111 §4.2.3——计算响应被缓存接收时的「初始年龄」（秒），即 `corrected_initial_age`。
+///
+/// `corrected_initial_age = max(apparent_age, age_value)`：
+/// - `age_value`：`Age` 头（delta-seconds），缺失/非法 → 0。CDN/共享缓存用它表明响应在其处已存活的秒数。
+/// - `apparent_age`：`Date` 头隐含的年龄 = `max(0, response_time - date_value)`。**`Date` 缺失 → 0**
+///   （非 spec 字面 `date_value=0` 外推——那会令 `apparent_age=response_time` 致瞬时过期，病态；
+///   此处取与主流浏览器一致的「无 `Date` 不据此判龄」）。
+///
+/// 注：`request_time`/`response_delay` 未跟踪（`HttpResponse` API 不携带 `request_time`），
+/// 故 `corrected_age_value` 退化为 `age_value`（`response_delay` 通常亚秒级，主导项为 `Age`）。
+/// 返回值用于新鲜度检查：`fresh ⇔ resident_time + initial_age <= freshness_lifetime`。
+pub(crate) fn compute_initial_age(response: &HttpResponse) -> u64 {
+    // https://www.rfc-editor.org/rfc/rfc9111#section-4.2.3
+    let age_value = response
+        .header("age")
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    let apparent_age = response
+        .header("date")
+        .and_then(|d| parse_http_date(d).ok())
+        .map(|date_value| {
+            let response_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            response_time.saturating_sub(date_value)
+        })
+        .unwrap_or(0);
+    apparent_age.max(age_value)
+}
+
 /// 响应是否应写入缓存及其模式。
 pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     let cc = parse_cache_control(response);
@@ -135,5 +166,30 @@ mod tests {
     fn no_cache_not_storable_without_validators() {
         let r = resp(vec![("cache-control", "no-cache")]);
         assert_eq!(storable_mode(&r), None);
+    }
+
+    /// R3233：compute_initial_age 对照 RFC 9111 §4.2.3——`corrected_initial_age = max(apparent_age, age_value)`。
+    #[test]
+    fn compute_initial_age_r3233() {
+        // 无 Age / Date → 0（不据此判龄，避免病态瞬时过期）。
+        assert_eq!(compute_initial_age(&resp(vec![("cache-control", "max-age=60")])), 0);
+        // Age 头 → age_value。
+        assert_eq!(compute_initial_age(&resp(vec![("age", "90")])), 90);
+        // 非法 Age → 0（不解析为数字）。
+        assert_eq!(compute_initial_age(&resp(vec![("age", "not-a-number")])), 0);
+        // 带空白的 Age 头 → trim 后解析。
+        assert_eq!(compute_initial_age(&resp(vec![("age", "  42  ")])), 42);
+        // Date 头在远过去 → apparent_age 巨大（响应早已过期生成）；无 Age 时取 apparent_age。
+        let far_past = resp(vec![("date", "Wed, 21 Oct 2015 07:28:00 GMT")]);
+        assert!(
+            compute_initial_age(&far_past) > 1_000_000,
+            "远过去 Date 须算出大 apparent_age"
+        );
+        // Age + 远过去 Date → 取 max（此处 apparent_age 主导）。
+        let both = resp(vec![("age", "10"), ("date", "Wed, 21 Oct 2015 07:28:00 GMT")]);
+        assert!(compute_initial_age(&both) > 1_000_000);
+        // Date 在未来（时钟偏差/伪造）→ apparent_age saturating 为 0；回落 age_value。
+        let future = resp(vec![("age", "30"), ("date", "Wed, 21 Oct 2099 07:28:00 GMT")]);
+        assert_eq!(compute_initial_age(&future), 30);
     }
 }
