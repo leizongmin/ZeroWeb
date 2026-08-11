@@ -29,17 +29,52 @@ use super::node::native_node_type_getter;
 /// ctor 回调 [`native_html_element_ctor_invoke`] 建新 detached 元素 + 填 slot[0] + 缓存 wrapper。
 /// instance_template `nodeType` accessor 复用 [`node::native_node_type_getter`]（holder=实例，经 slot
 /// NodeId 读 DOM node_type；subclass 实例经 super() 继承 slot，accessor 透明可达——R3262 验证）。
+///
+/// **S5d（R3267）**：instance_template 挂 attribute 变更族（setAttribute/removeAttribute/toggleAttribute/
+/// hasAttribute/getAttribute）+ appendChild/removeChild，使 custom 实例（instanceof registered ctor +
+/// 继承 HTMLElement instance 布局）有 Element 接口可达（holder=实例有 slot，`read_node_id` 可读）。
+/// 复用 element.rs / node.rs 的 invoke（共享一套，slot 读写同款）。全套 Element 方法（querySelector 等）
+/// 留后续切片；本片仅 attr 变更族 + 树 mutation 族，闭合 S5d attributeChangedCallback 端到端可测。
 pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8::Object>) {
     let tmpl = v8::FunctionTemplate::builder(native_html_element_ctor_invoke).build(scope);
-    tmpl.instance_template(scope).set_internal_field_count(1);
+    let inst = tmpl.instance_template(scope);
+    inst.set_internal_field_count(1);
     // nodeType accessor 挂 instance_template（holder=实例，有 slot）；prototype_template 的 holder=原型无 slot
     //（R3262 PoC 调试结论）。
     if let Some(k) = v8::String::new(scope, "nodeType") {
-        tmpl.instance_template(scope)
-            .set_accessor(k.into(), native_node_type_getter);
+        inst.set_accessor(k.into(), native_node_type_getter);
     }
+    // S5d：attr 变更族 + 树 mutation 族挂 instance_template（复用 element.rs / node.rs invoke；holder=实例
+    // 有 slot，args.this() 经 read_node_id 取 NodeId）。FunctionTemplate::builder 须传 ZST fn 项（非函数指针）。
+    use super::element::{
+        native_get_attribute_invoke, native_has_attribute_invoke, native_remove_attribute_invoke,
+        native_set_attribute_invoke, native_toggle_attribute_invoke,
+    };
+    use super::node::{native_append_child_invoke, native_insert_before_invoke, native_remove_child_invoke};
+    set_method_on_tmpl(scope, inst, "setAttribute", native_set_attribute_invoke);
+    set_method_on_tmpl(scope, inst, "removeAttribute", native_remove_attribute_invoke);
+    set_method_on_tmpl(scope, inst, "toggleAttribute", native_toggle_attribute_invoke);
+    set_method_on_tmpl(scope, inst, "getAttribute", native_get_attribute_invoke);
+    set_method_on_tmpl(scope, inst, "hasAttribute", native_has_attribute_invoke);
+    set_method_on_tmpl(scope, inst, "appendChild", native_append_child_invoke);
+    set_method_on_tmpl(scope, inst, "insertBefore", native_insert_before_invoke);
+    set_method_on_tmpl(scope, inst, "removeChild", native_remove_child_invoke);
     if let (Some(f), Some(key)) = (tmpl.get_function(scope), v8::String::new(scope, "HTMLElement")) {
         let _ = global.set(scope, key.into(), f.into());
+    }
+}
+
+/// 在 ObjectTemplate（HTMLElement instance_template）上注册方法（FunctionTemplate wrapper，ZST fn 项）。
+/// ObjectTemplate::set 须传 **FunctionTemplate**（非 Function 实例，否则 V8 fatal "must be a Template"）。
+fn set_method_on_tmpl(
+    scope: &mut v8::PinScope,
+    tmpl: v8::Local<v8::ObjectTemplate>,
+    name: &str,
+    callback: impl v8::MapFnTo<v8::FunctionCallback>,
+) {
+    let ft = v8::FunctionTemplate::builder(callback).build(scope);
+    if let Some(k) = v8::String::new(scope, name) {
+        tmpl.set(k.into(), ft.into());
     }
 }
 

@@ -1408,3 +1408,124 @@ return _log.join('');
         "removeChild 从已连接 body 触发 disconnectedCallback（先 connected 后 disconnected = 'cd'）"
     );
 }
+
+// ── P1b S5d（R3267）：attributeChangedCallback——native setAttribute/removeAttribute 桥接派发 ──
+// 验证 native_dom 路径 setAttribute/removeAttribute 经 Rust custom_elements 模块桥接 polyfill
+// `__zw_native_ce_notify_attr_change` → `_ce_dispatchAttrChange`（observedAttributes 过滤 + 值真变 + 调
+// ctor.prototype.attributeChangedCallback，this=native 实例）。内联模拟 polyfill registry + dispatch。
+
+/// S5d：setAttribute(observed attr) → attributeChangedCallback 触发，收 (name, old=null, new=value)，this=native 实例。
+#[test]
+fn native_custom_element_attr_change_r3267() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _log = [];\
+function _dispatch(entry, inst, name, oldV, newV){\
+  var obs = entry.ctor.observedAttributes;\
+  if (!obs) return;\
+  var matched = false;\
+  for (var i=0;i<obs.length;i++){ if (String(obs[i]).toLowerCase()===String(name).toLowerCase()){ matched=true; break; } }\
+  if (!matched) return;\
+  var o = oldV==null?'':String(oldV); var n = newV==null?'':String(newV);\
+  if (o===n) return;\
+  var cb = entry.ctor.prototype.attributeChangedCallback;\
+  if (typeof cb==='function'){ try{ cb.call(inst, String(name), oldV, newV); }catch(_e){} }\
+}\
+globalThis.__zw_native_ce_notify_attr_change = function(inst, name, oldV, newV, tag){\
+  var entry = _ce[String(tag).toLowerCase()]; if (!entry) return; _dispatch(entry, inst, name, oldV, newV);\
+};\
+class AttrEl extends HTMLElement {\
+  static get observedAttributes(){ return ['foo']; }\
+  constructor(){ super(); }\
+  attributeChangedCallback(n, o, v){ _log.push(n+'/'+o+'/'+v+'/'+this.nodeType); }\
+}\
+customElements.define('attr-el', AttrEl);\
+const el = __zw_native_create_element('attr-el');\
+el.setAttribute('foo', 'bar');\
+return _log.join(',');
+})()";
+    // setAttribute('foo','bar')：foo ∈ observedAttributes，old=null（首次）→ attributeChangedCallback('foo/null/bar/1')。
+    assert_eq!(
+        run_script(html, script),
+        "foo/null/bar/1",
+        "setAttribute(observed attr) 触发 attributeChangedCallback：name=foo / old=null / new=bar / this=nodeType 1"
+    );
+}
+
+/// S5d：setAttribute(未 observed 的 attr) → 不触发 attributeChangedCallback（observedAttributes 过滤）。
+#[test]
+fn native_custom_element_attr_change_unobserved_r3267() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var calls = 0;\
+function _dispatch(entry, inst, name, oldV, newV){\
+  var obs = entry.ctor.observedAttributes; if (!obs) return;\
+  for (var i=0;i<obs.length;i++){ if (String(obs[i]).toLowerCase()===String(name).toLowerCase()){ calls++; return; } }\
+}\
+globalThis.__zw_native_ce_notify_attr_change = function(inst, name, oldV, newV, tag){\
+  var entry = _ce[String(tag).toLowerCase()]; if (entry) _dispatch(entry, inst, name, oldV, newV);\
+};\
+class U extends HTMLElement {\
+  static get observedAttributes(){ return ['foo']; }\
+  constructor(){ super(); }\
+  attributeChangedCallback(){ calls++; }\
+}\
+customElements.define('u-el', U);\
+const el = __zw_native_create_element('u-el');\
+el.setAttribute('baz', 'qux');\
+return calls;\
+})()";
+    // 'baz' ∉ observedAttributes(['foo']) → 过滤 → 不触发 → calls=0。
+    assert_eq!(
+        run_script(html, script),
+        "0",
+        "setAttribute(未 observed attr) 不触发 attributeChangedCallback（observedAttributes 过滤）"
+    );
+}
+
+/// S5d：removeAttribute(observed attr) → attributeChangedCallback 触发，newVal=null。
+#[test]
+fn native_custom_element_attr_change_remove_r3267() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]={ctor:c}; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] ? _ce[t].ctor : null; };\
+var _log = [];\
+function _dispatch(entry, inst, name, oldV, newV){\
+  var obs = entry.ctor.observedAttributes; if (!obs) return;\
+  var matched = false;\
+  for (var i=0;i<obs.length;i++){ if (String(obs[i]).toLowerCase()===String(name).toLowerCase()){ matched=true; break; } }\
+  if (!matched) return;\
+  var o = oldV==null?'':String(oldV); var n = newV==null?'':String(newV);\
+  if (o===n) return;\
+  var cb = entry.ctor.prototype.attributeChangedCallback;\
+  if (typeof cb==='function'){ try{ cb.call(inst, String(name), oldV, newV); }catch(_e){} }\
+}\
+globalThis.__zw_native_ce_notify_attr_change = function(inst, name, oldV, newV, tag){\
+  var entry = _ce[String(tag).toLowerCase()]; if (!entry) return; _dispatch(entry, inst, name, oldV, newV);\
+};\
+class R extends HTMLElement {\
+  static get observedAttributes(){ return ['foo']; }\
+  constructor(){ super(); }\
+  attributeChangedCallback(n, o, v){ _log.push(n+'/'+o+'/'+v); }\
+}\
+customElements.define('r-el', R);\
+const el = __zw_native_create_element('r-el');\
+el.setAttribute('foo', '1');\
+el.removeAttribute('foo');\
+return _log.join(',');
+})()";
+    // setAttribute('foo','1') → ('foo/null/1')；removeAttribute('foo') → ('foo/1/null')。
+    assert_eq!(
+        run_script(html, script),
+        "foo/null/1,foo/1/null",
+        "setAttribute + removeAttribute(observed)：两次 attributeChangedCallback，remove 时 old='1'/new=null"
+    );
+}

@@ -743,6 +743,11 @@ pub(super) fn native_has_attribute_invoke(
 /// `setAttribute(name, value)`：读 internal slot NodeId → 两参 ToString →
 /// `Document::set_attribute`（更新 id_map 当 name=='id'）。spec `dom-element-setattribute`
 /// 返 `undefined`（留 ReturnValue 默认）。非 native element `this` → no-op。
+///
+/// R3267 S5d：custom 元素的 attributeChangedCallback 派发——mutation 前读 oldVal + tag，
+/// mutation 后桥接 JS（`__zw_native_ce_notify_attr_change`，复用 polyfill `_ce_dispatchAttrChange`
+/// 查 observedAttributes + 值真变判定，this=native 实例）。native_dom 路径绕过 polyfill setAttribute
+/// trap，故需此桥接（同 S5c connect 模式）。
 pub(super) fn native_set_attribute_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -754,11 +759,16 @@ pub(super) fn native_set_attribute_invoke(
     };
     let name = string_arg(scope, &args, 0);
     let value = string_arg(scope, &args, 1);
+    // S5d：mutation 前读 oldVal + tag（custom 元素才需派发；非 custom tag 仍读但 JS 侧 registry 查询过滤）。
+    let (old_val, tag) = super::custom_elements::read_attr_change_context(id, &name);
     with_dom_mut(|d| d.set_attribute(id, &name, &value));
+    super::custom_elements::notify_attribute_change(scope, id, &name, old_val.as_deref(), Some(&value), tag.as_deref());
 }
 
 /// `removeAttribute(name)`：读 internal slot NodeId → `Document::remove_attribute`（name=='id'
 /// 时清 id_map）。spec `dom-element-removeattribute` 返 `undefined`。
+///
+/// R3267 S5d：custom 元素 attributeChangedCallback 派发（newVal=null），同 [`native_set_attribute_invoke`]。
 pub(super) fn native_remove_attribute_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -769,7 +779,10 @@ pub(super) fn native_remove_attribute_invoke(
         return;
     };
     let name = string_arg(scope, &args, 0);
+    // S5d：mutation 前读 oldVal + tag（remove newVal=null）。
+    let (old_val, tag) = super::custom_elements::read_attr_change_context(id, &name);
     with_dom_mut(|d| d.remove_attribute(id, &name));
+    super::custom_elements::notify_attribute_change(scope, id, &name, old_val.as_deref(), None, tag.as_deref());
 }
 
 /// `toggleAttribute(name, force?)`：spec `dom-element-toggleattribute`——切换属性存在性，返切换后是否在。
@@ -789,23 +802,34 @@ pub(super) fn native_toggle_attribute_invoke(
     let name = string_arg(scope, &args, 0);
     let force_defined = !args.get(1).is_undefined();
     let force = force_defined && args.get(1).boolean_value(scope);
-    let now_present = with_dom_mut(|d| {
+    // S5d：mutation 前读 oldVal + tag（custom 元素 attr change 派发用）。
+    let (old_val, tag) = super::custom_elements::read_attr_change_context(id, &name);
+    // mutation 返 (now_present, changed_to: Option<Option<&str>>——Some(Some(v))=set v, Some(None)=removed, None=未变)。
+    let (now_present, changed_to) = with_dom_mut(|d| {
         let has = d.has_attribute(id, &name);
         // force 缺省 → toggle（want = !has）；force 给定 → want = force（ensure present/absent）。
         let want = if force_defined { force } else { !has };
         if want {
             if !has {
                 d.set_attribute(id, &name, ""); // 添加时值为空串（spec）
+                (true, Some(Some("")))
+            } else {
+                (true, None) // 已在，无变
             }
-            true
         } else {
             if has {
                 d.remove_attribute(id, &name);
+                (false, Some(None))
+            } else {
+                (false, None) // 已不在，无变
             }
-            false
         }
     })
-    .unwrap_or(false);
+    .unwrap_or((false, None));
+    // S5d：attr 真变才派发（同 setAttribute/removeAttribute 桥接）。
+    if let Some(new_val) = changed_to {
+        super::custom_elements::notify_attribute_change(scope, id, &name, old_val.as_deref(), new_val, tag.as_deref());
+    }
     rv.set(v8::Boolean::new(scope, now_present).into());
 }
 

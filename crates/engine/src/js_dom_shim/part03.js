@@ -246,6 +246,22 @@
       }
     };
 
+  // P1b S5d（R3267）：custom element attributeChangedCallback 派发 hook——native_dom 路径
+  // setAttribute/removeAttribute/toggleAttribute（Rust 直接改 DOM）绕过本 polyfill 的 setAttribute trap
+  //（含 `_ce_dispatchAttrChange`），故 attributeChangedCallback 不触发。Rust `custom_elements` 模块在
+  // mutation 前读 oldVal + tag，mutation 后调本 hook：按 tag 查 `_ce_registry` 取 entry → 调既有
+  // `_ce_dispatchAttrChange`（observedAttributes 过滤 + 值真变判定 + 调 ctor.prototype.attributeChangedCallback，
+  // this=native 实例）。Rust 负责「读 old/new、判 tag」，JS 负责「observedAttributes 过滤 + 调回调」（复用
+  // `_ce_dispatchAttrChange`）。native_dom 关闭时此函数定义但无人调用（零开销）。
+  globalThis.__zw_native_ce_notify_attr_change =
+    globalThis.__zw_native_ce_notify_attr_change ||
+    function (instance, name, oldVal, newVal, tag) {
+      if (!instance || !tag) return;
+      var entry = _ce_registry[String(tag).toLowerCase()];
+      if (!entry) return; // 非 custom 元素
+      _ce_dispatchAttrChange(entry, instance, name, oldVal, newVal);
+    };
+
   // ── custom element lifecycle slice（R2992）：attributeChangedCallback 分派 ──────────
   // element 实例为 generic Proxy 非 ctor 实例（upgrade/ctor 调用 defer），故本 slice 仅落地「属性变更」回调——
   // 这是 CE 最常用的可观察行为（lit/@property / 各 CE 库 react-to-attr 模式）。setAttribute/removeAttribute

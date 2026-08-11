@@ -172,3 +172,72 @@ fn element_tag(id: NodeId) -> Option<String> {
     })
     .flatten()
 }
+
+// ── R3267 S5d attributeChangedCallback 桥接（setAttribute/removeAttribute 经 native 路径派发）──
+
+/// setAttribute/removeAttribute **前**调：读 oldVal（当前属性值）+ tag（custom 元素才需派发）。
+/// 必须在 mutation 前读 old（否则读到新值）。oldVal=None 表示属性原本不存在。
+pub(super) fn read_attr_change_context(id: NodeId, name: &str) -> (Option<String>, Option<String>) {
+    with_dom(|d| (d.get_attribute(id, name), element_tag_inner(d, id))).unwrap_or((None, None))
+}
+
+/// setAttribute/removeAttribute **后**调：桥接 JS 派发 attributeChangedCallback。
+/// `new_val`=None 表示移除（removeAttribute）；`tag`=None 表示非元素（不派发）。
+/// JS 函数缺失 / 派发失败 → 静默（不抛）。observedAttributes 检查 + 值真变判定在 JS `_ce_dispatchAttrChange`。
+pub(super) fn notify_attribute_change(
+    scope: &mut v8::PinScope,
+    id: NodeId,
+    name: &str,
+    old_val: Option<&str>,
+    new_val: Option<&str>,
+    tag: Option<&str>,
+) {
+    let Some(tag) = tag else {
+        return; // 非元素 → 不派发
+    };
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let Some(notify_key) = v8::String::new(scope, "__zw_native_ce_notify_attr_change") else {
+        return;
+    };
+    let Some(notify_val) = global.get(scope, notify_key.into()) else {
+        return; // polyfill 未注册（native_dom 关闭 shim 等）→ 无派发，静默。
+    };
+    let Ok(notify) = v8::Local::<v8::Function>::try_from(notify_val) else {
+        return;
+    };
+    let Some(instance) = get_or_create_native_element(scope, id) else {
+        return;
+    };
+    let Some(name_v) = v8::String::new(scope, name) else {
+        return;
+    };
+    let old_v = match old_val {
+        Some(v) => v8::String::new(scope, v)
+            .map(|s| s.into())
+            .unwrap_or_else(|| v8::null(scope).into()),
+        None => v8::null(scope).into(),
+    };
+    let new_v = match new_val {
+        Some(v) => v8::String::new(scope, v)
+            .map(|s| s.into())
+            .unwrap_or_else(|| v8::null(scope).into()),
+        None => v8::null(scope).into(),
+    };
+    let Some(tag_v) = v8::String::new(scope, tag) else {
+        return;
+    };
+    let _ = notify.call(
+        scope,
+        global.into(),
+        &[instance.into(), name_v.into(), old_v, new_v, tag_v.into()],
+    );
+}
+
+/// 读元素 tag_name（接收 `&Document`，供 [`read_attr_change_context`] 内联用，避免二次 with_dom）。
+fn element_tag_inner(d: &zero_dom::Document, id: NodeId) -> Option<String> {
+    d.get(id).and_then(|n| match &n.kind {
+        NodeKind::Element(e) => Some(e.tag_name()),
+        _ => None,
+    })
+}
