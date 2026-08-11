@@ -1,8 +1,8 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v2.2 ｜ 日期：2026-08-11 ｜ 状态：**P0–P3 一次推进 ✅（Vulkan 真零拷贝仍为 wgpu 30+ 后续）**
+版本：v2.3 ｜ 日期：2026-08-11 ｜ 状态：**已实施归档（P0–P3 ✅；§六 Non-Goals / Vulkan 真零拷贝为后续）**
 
-> 实施状态（2026-08-11 v2.2 更新）：
+> 实施状态（2026-08-11 v2.3 归档）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
 > - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
 > - **C3（GPU 隔离）✅ 切片 S1+S2**：
@@ -28,9 +28,10 @@
 >   - S2/S3：seccomp/landlock **不再因 `ZW_COMPOSITOR_GPU=1` 跳过**；GPU 模式追加 `/dev/dri`、Vulkan 驱动目录与缓存路径。
 > - **§五 P1 E2E ✅**：`compositor_crash_triggers_legacy_fallback_messages` + `compositor_crash_legacy_viewpainted_restores_tab_render`；`zero-protocol::renderer_kill_child_for_test`。
 > - **§六 P3 占位 ✅**：`ZW_RENDERER_SECCOMP=1` renderer 沙箱钩子；`ProcessManager::spawn_network_service` Network Service 占位。
+> - **P0 默认 GPU 链路 ✅（2026-08-11 收尾）**：Linux 默认开 `ZW_COMPOSITOR_GPU` / `GPU_IMAGE` / `GPU_TEXTURE_EXPORT` / `ZW_BROWSER_GPU_DMABUF_IMPORT`（`=0` 禁用）；`frame_flow` **17/17** + `gpu-dmabuf` product smoke；CPU renderer 自动 RGBA 回退。
 
-> 本状态不代表完整 Chromium/Chrome compositor 对齐。§五规划切片已落地；**Vulkan 真纹理 dma-buf 导出**（跳过 read_pixels）与 Browser 侧 wgpu import 直接合成仍为后续。
-> `ZW_COMPOSITOR_OWNED_PRESENT=1` 时 Browser 可跳过本地合成；默认仍由 Browser 拥有窗口最终场景。
+> **归档说明（2026-08-11）**：本 RFC 规划切片（C1–C3、4.1–4.5、§五 E2E、P0–P3）已全部落地。未纳入 scope 的后续：§六 Non-Goals、Vulkan OPAQUE_FD 真零拷贝（wgpu 30+）、完整 Chromium/Viz 对齐——改由 ROADMAP / 新 RFC 跟踪。
+> `ZW_COMPOSITOR_OWNED_PRESENT=1` 时 Browser 可跳过本地合成；owned present 默认开。
 
 ## 一、当前架构
 
@@ -165,18 +166,18 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 
 ## 七、验证与关系
 
-- C2/C3/4.x 定向测试：`frame_flow`（**15** 案，含 scroll/shm/gpu_image/ui/present/seccomp/landlock/gpu_loss/window_surface/gpu_texture_export）、`compositor_protocol`、
+- C2/C3/4.x 定向测试：`frame_flow`（**17** 案，含 scroll/shm/gpu_image/ui/present/seccomp/landlock/gpu_loss/window_surface/gpu_texture_export/**gpu_dmabuf_browser_import**）、`compositor_protocol`、
   `compositor_client`、`compositor_publish_thread`、GPU partial dirty 单测。
 - **2026-08-11 v2.1 增量**：`cargo test -p zero-compositor` **15/15** PASS（含 4.3-S5 dma-buf fd）；`cargo test -p zero-browser compositor_crash` E2E PASS。
 - **2026-08-11 v2.0 增量**：`cargo test -p zero-compositor` **14/14** PASS（含 4.5-S3 landlock、§五 GPU 模拟丢失）。
 - **2026-08-11 增量验收**：`make test` PASS；`make browser-compositor-smoke` PASS（legacy/compositor 双模式）。
 - 全量质量、reftest 和产品 smoke 由后续验收任务执行。
-- 渲染线程前置见 [`archive/render-threading-rfc-2026-08-07.md`](archive/render-threading-rfc-2026-08-07.md)（已实施归档）。
+- 渲染线程前置见 [`render-threading-rfc-2026-08-07.md`](./render-threading-rfc-2026-08-07.md)（已实施归档）。
 - ImageDecoder 的请求/响应协议是 compositor 消息路由的先例。
 
 ## 八、验收记录（2026-08-11，AI 重构验收规范落地）
 
-按 [`archive/ai-refactor-acceptance.md`](archive/ai-refactor-acceptance.md)（调研 P5）对 C1/C2/C3 S1/4.3 S1 切片执行验收：
+按 [`ai-refactor-acceptance.md`](./ai-refactor-acceptance.md)（调研 P5）对 C1/C2/C3 S1/4.3 S1 切片执行验收：
 
 | 门禁 | 结果 |
 |---|---|
@@ -191,6 +192,6 @@ GPU 设备丢失（或 `ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 诊断模拟）时 co
 | `make bench-gate`（vs 08-08 迁移前基线） | 关键路径 page/*（parse/style/layout/paint/total/首屏，welcome/medium/morning）**两轮全 PASS 且 ≤ 基线**；微基准两轮超限 21→11，失败集不相交、集中于重构未触及 crate（dom/wasm/webview/storage/script-sandbox 等），08-09 启用后报告同指标均处基线水平 → **归因共享机器测量噪声，非重构回归**；恢复计划：CI bench-trend（github-ubuntu-latest 基线）为权威趋势 |
 | 回退环境变量 | `ZW_COMPOSITOR_PROCESS=0` legacy 路径代码验证（browser compositor_client.rs / renderer main.rs）+ 双模式实测 ✓；`ZW_COMPOSITOR_SHM=1` / `ZW_COMPOSITOR_GPU=1` 开关在位 |
 | v2.0 切片（2026-08-11） | `cargo test -p zero-compositor` **14/14**；4.3-S4 fence/mmap、4.4-S4 owned present、4.5-S3 landlock、§五 GPU simulate lost 已提交 `main` |
-| v2.1 切片（2026-08-11） | 4.3-S5 dma-buf fd + `compositor_crash_triggers_legacy_fallback_messages` E2E；frame_flow **15/15** |
+| v2.3 收尾（2026-08-11） | Linux 默认 GPU dma-buf 链路 + `compositor_gpu_dmabuf_browser_import_round_trips`；frame_flow **17/17**；`browser-compositor-smoke` gpu-dmabuf 模式 |
 
 覆盖范围与例外：本机（linux-x86_64，16 核）执行；oracle 与 CI 专用门禁未本地跑，由 CI/weekly 承担。对照差异全部归因（corpus 增量、layout-dump 格式缺陷、基准噪声），无未解释差异。

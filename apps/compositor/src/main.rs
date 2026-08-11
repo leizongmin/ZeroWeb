@@ -7,10 +7,7 @@
 //!   - BackingStoreManager 双缓冲：写 back → swap → 保留 front（供显示消费方读取）
 //!   - 回复 `CompositorFrameResult`（帧已合成确认）
 //!
-//! 后续切片（RFC compositor-process-rfc C2/C3）：
-//!   - renderer 帧传输接线（当前 renderer 仍直发 browser）
-//!   - GPU 光栅化上下文迁移（C3：wgpu 在合成器进程内）
-//!   - seccomp 沙箱
+//! 详见 `docs/goal/archive/compositor-process-rfc-2026-08-07.md`（已实施归档）。
 
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::stdio_transport;

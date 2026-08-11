@@ -3,7 +3,7 @@
 版本：v1.0 ｜ 日期：2026-08-07 ｜ 状态：已落地（2026-08-11 归档）
 
 > 首次落地：compositor 独立进程重构切片（C1/C2/C3 S1/4.3 S1）验收完成，
-> 验收记录见 [`../compositor-process-rfc-2026-08-07.md`](../compositor-process-rfc-2026-08-07.md) 第七节。
+> 验收记录见 [`compositor-process-rfc-2026-08-07.md`](./compositor-process-rfc-2026-08-07.md) 第八节。
 > 规范本身仍适用于后续所有大规模重构/移植任务。
 
 > 依据：Ladybird 2026-02 C++→Rust 移植实践（LibJS 前端管线 ~2.5 万行/2 周，
