@@ -11,6 +11,7 @@ WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 fetch-wpt-data:
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 	@bash scripts/fetch-wpt-smoke-subdirs.sh
+	@bash tests/wpt-runner/scripts/sync-imported-resources.sh
 
 # 升级 wpt-data 套件到新 tag（A2：套件随上游滚动，否则通过率无法对比）。
 # 用法: make update-wpt-data REF=v2.0        升级到指定 tag
@@ -180,8 +181,9 @@ product-smoke: target/test-guard
 # manifest 重新生成。每次渲染兼容性修复都应附带导入对应用例（见
 # docs/goal/rendering-compat.md DC-7「测试资产化」）。
 # 用法: make import-wpt TEST=css/CSS2/text/text-align-001.xht REF=css/CSS2/text/text-align-001-ref.xht NOTE="R21xx 修复"
+#       make import-wpt ... EXTRA="--resource css/path/font.ttf"
 import-wpt: fetch-wpt-data
-	bash tests/wpt-runner/scripts/import-wpt-reftests.sh --add $(TEST) $(REF) $(if $(NOTE),--note "$(NOTE)")
+	bash tests/wpt-runner/scripts/import-wpt-reftests.sh --add $(TEST) $(REF) $(if $(NOTE),--note "$(NOTE)") $(EXTRA)
 
 # WPT 趋势基线（P2）：跑上游 reftest 全量，把绝对数追加到
 # docs/goal/rendering-compat/evidence/wpt-trends/trend.csv（test-guard 包裹）。

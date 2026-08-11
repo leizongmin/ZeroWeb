@@ -28,7 +28,9 @@ ADD_TEST=""
 ADD_REF=""
 ADD_RELATION="=="
 ADD_NOTE=""
+declare -a ADD_RESOURCES=()
 LEDGER="${SCRIPT_DIR}/../imported-tests.txt"  # 常驻断言集账本（测试资产化）
+RESOURCE_LEDGER="${SCRIPT_DIR}/../imported-resources.txt"
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --add) ADD_MODE=true; ADD_TEST="$2"; ADD_REF="$3"; shift 3 ;;
     --relation) ADD_RELATION="$2"; shift 2 ;;
     --note) ADD_NOTE="$2"; shift 2 ;;
+    --resource) ADD_RESOURCES+=("$2"); shift 2 ;;
     --help)
       echo "Usage: $0 [--count N] [--category CATEGORY]"
       echo "       $0 --add <test_path> <ref_path> [--relation ==|!=] [--note \"备注\"]"
@@ -45,6 +48,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --category DIR  WPT directory prefix (default: css/CSS2)"
       echo "  --add P1 P2     单条导入（测试资产化）：下载 test+ref 到 wpt-data/，"
       echo "                  追加到 imported-tests.txt 账本并重新生成 manifest"
+      echo "  --resource PATH 随单条用例导入的上游资源；可重复指定"
       exit 0
       ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
@@ -115,6 +119,32 @@ import_reftest_pair() {
 
   echo "  OK: ${test_path} -> ${ref_path}"
   return 0
+}
+
+import_resource() {
+  local resource_path="$1"
+  local resource_file="${DATA_DIR}/${resource_path}"
+  [[ -f "$resource_file" ]] && return 0
+  mkdir -p "$(dirname "$resource_file")"
+  if ! curl -sSf -o "$resource_file" "${WPT_BASE}/${resource_path}" 2>/dev/null; then
+    echo "  SKIP: ${resource_path} (resource download failed)"
+    rm -f "$resource_file"
+    return 1
+  fi
+  echo "  OK resource: ${resource_path}"
+}
+
+append_resource_ledger() {
+  local resource_path="$1"
+  if [[ ! -f "$RESOURCE_LEDGER" ]]; then
+    cat > "$RESOURCE_LEDGER" <<'RESOURCE_LEDGER_HEADER'
+# WPT 导入资源账本 — 每行一个相对 web-platform-tests 根目录的资源路径
+RESOURCE_LEDGER_HEADER
+  fi
+  if ! grep -qxF "$resource_path" "$RESOURCE_LEDGER"; then
+    echo "$resource_path" >> "$RESOURCE_LEDGER"
+    echo "  RESOURCE LEDGER: ${resource_path}"
+  fi
 }
 
 # 硬编码的 CSS 2.1 核心 reftest 列表
@@ -229,6 +259,12 @@ if [[ "$ADD_MODE" == "true" ]]; then
   if ! import_reftest_pair "$ADD_TEST" "$ADD_REF"; then
     echo "Error: import failed for ${ADD_TEST}"; exit 1
   fi
+  for resource_path in "${ADD_RESOURCES[@]}"; do
+    if ! import_resource "$resource_path"; then
+      echo "Error: resource import failed for ${resource_path}"; exit 1
+    fi
+    append_resource_ledger "$resource_path"
+  done
   if grep -q "^${ADD_TEST} " "$LEDGER" 2>/dev/null; then
     echo "  LEDGER: ${ADD_TEST} 已在账本中，跳过追加"
   else
