@@ -217,6 +217,17 @@ pub(crate) fn box_blur_alpha(buf: &mut [u8], w: usize, h: usize, radius: usize) 
     }
 }
 
+/// R3242：shadowBlur 几何参数——返回 `(radius_per_pass, pad, passes)`。
+/// 3 遍 box blur（半径 `round(blur/2)`）≈ gaussian（W3C 阴影软度标准近似），比 R3240 单遍 triangle
+/// 衰减更平滑。`pad = 3·radius` 覆盖 3 遍总扩散。`blur<=0` 返 `(0,0,0)`（硬边，no-op）。
+pub(crate) fn shadow_blur_geom(blur: f32) -> (usize, i32, u32) {
+    if blur <= 0.0 {
+        return (0, 0, 0);
+    }
+    let r = ((blur / 2.0).round() as i32).max(1) as usize;
+    (r, (3 * r) as i32, 3)
+}
+
 /// R3241：把 canvas 坐标矩形 `rect` 填入 region 局部 mask（覆盖像素写 255）。供 stroke shadow
 /// 足迹（每段 thick rect + 连接点方块）构 mask 用。`ox/oy` 为 region 左上角 canvas 坐标。
 pub(crate) fn fill_rect_into_mask(mask: &mut [u8], rw: usize, rh: usize, ox: i32, oy: i32, rect: &Rect) {

@@ -281,6 +281,39 @@ fn stroke_shadow_uses_footprint_r3241() {
     assert_eq!(outside.data[3], 0, "blur=0 band 外无阴影（硬边）");
 }
 
+/// R3242：shadowBlur 3 遍 box blur ≈ gaussian——边缘衰减**凸**（near-edge 差 > far-edge 差），
+/// 区别于单遍 box 的线性衰减（差值恒定）。验证阴影软度质量提升（R3240 限制①收尾）。
+#[test]
+fn shadow_blur_multipass_convex_falloff_r3242() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // 不透明黑阴影（a=255 → 像素 alpha = coverage×255 直接读），blur=8（radius 4，3 遍），offset (0,0)。
+    // 红矩形 (10,10)-(20,20)，阴影 silhouette 即矩形，blur 向外扩散。
+    let mut ctx = CanvasContext::new(40, 40);
+    ctx.set_shadow_color(Color::rgba(0, 0, 0, 255));
+    ctx.set_shadow_blur(8.0);
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(10.0, 10.0, 10.0, 10.0);
+
+    // 读右边沿外 d=1,2,3,4 的阴影 alpha（y=15 矩形内部，x=21..24）。
+    let alpha_at = |x: u32| ctx.get_image_data(x, 15, 1, 1).data[3] as i32;
+    let a1 = alpha_at(21);
+    let a2 = alpha_at(22);
+    let a3 = alpha_at(23);
+    let a4 = alpha_at(24);
+    // 近边有阴影、随距离递减。
+    assert!(a1 > a2, "随距离递减：a21({a1}) > a22({a2})");
+    assert!(a2 > a4, "随距离递减：a22({a2}) > a24({a4})");
+    // 凸衰减（gaussian 特征）：近边差 > 远边差。单遍 box 线性衰减则差值相等 → 本断言区分。
+    let near_diff = a1 - a2;
+    let far_diff = a3 - a4;
+    assert!(
+        near_diff > far_diff,
+        "R3242：3 遍 gaussian 衰减须凸（near diff {near_diff} > far diff {far_diff}），单遍线性则相等"
+    );
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {

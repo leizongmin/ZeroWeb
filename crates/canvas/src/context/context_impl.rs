@@ -1013,12 +1013,7 @@ impl CanvasContext {
     /// composite_shadow_mask 合成（消费 globalCompositeOperation，与 fill/stroke 一致）。
     /// 旧实现仅画偏移硬边矩形、alpha 按 `1/(1+blur·0.1)` 衰减（无 blur）。
     fn draw_shadow_rect(&mut self, rect: &Rect) {
-        let radius = if self.shadow_blur > 0.0 {
-            (self.shadow_blur.round() as usize).max(1)
-        } else {
-            0
-        };
-        let pad = radius as i32;
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
         let cw = self.width as i32;
         let ch = self.height as i32;
         let rx0 = (rect.left().floor() as i32 - pad).max(0);
@@ -1041,7 +1036,10 @@ impl CanvasContext {
                 }
             }
         }
-        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
+        for _ in 0..passes {
+            super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        }
         self.composite_shadow_mask(
             &mask,
             rx0,
@@ -1060,12 +1058,7 @@ impl CanvasContext {
         if vertices.len() < 4 {
             return;
         }
-        let radius = if self.shadow_blur > 0.0 {
-            (self.shadow_blur.round() as usize).max(1)
-        } else {
-            0
-        };
-        let pad = radius as i32;
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -1089,7 +1082,10 @@ impl CanvasContext {
         let rh = (ry1 - ry0) as usize;
         let mut mask = vec![0u8; rw * rh];
         super::raster::rasterize_path_coverage(vertices, &mut mask, rw, rh, rx0, ry0);
-        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
+        for _ in 0..passes {
+            super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        }
         self.composite_shadow_mask(
             &mask,
             rx0,
@@ -1114,12 +1110,8 @@ impl CanvasContext {
             return;
         }
         let half_lw = line_width / 2.0;
-        let radius = if self.shadow_blur > 0.0 {
-            (self.shadow_blur.round() as usize).max(1)
-        } else {
-            0
-        };
-        let pad = radius as f32 + half_lw;
+        let (radius, blur_pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        let pad = blur_pad as f32 + half_lw;
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -1152,7 +1144,10 @@ impl CanvasContext {
             let r = Rect::new(s[2] - half_lw, s[3] - half_lw, line_width, line_width);
             super::raster::fill_rect_into_mask(&mut mask, rw, rh, rx0, ry0, &r);
         }
-        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
+        for _ in 0..passes {
+            super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        }
         self.composite_shadow_mask(
             &mask,
             rx0,
