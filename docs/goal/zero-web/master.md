@@ -160,7 +160,15 @@
 
 **为何净正向**：① **三个 spec 正确性 bug 修复**（tree-order 派发 + 嵌套 upgrade 栈隔离 + GC 状态清理），均真实框架使用模式触发（多 CE 子树 append / 组件组合 / 节点 GC 回收）；② **零回归**——engine lib 1998→2000（+2 测）+ 73/73 dom_bindings 全绿，所有既有 S5 测试（connected/disconnected/attrChange/upgrade/e2e）全过；③ 低风险（DFS 顺序修正 + 单值→栈 + GC 多清一项，行为仅在原 bug 场景改善）。
 
-**下一步**：R3272 三正确性修复 land。续候选（master.md S5 收尾后续不变）：① **P1b L2 escape-hatch**（路由 `globalThis.document` 到 native，使页面 script `document.createElement` 产 native custom 实例——R3178 设计文档就绪，gated 切片序列，闭合 native_dom 端到端最后 gap）；② **P1b S6 高层 API 改写**（shim Fetch/Observer 改调原生，去 ser/deser，M3 里程碑）；③ S5 registry 缓存优化（Rust 侧缓存 custom tag 集，含连字符未注册 tag 也跳过 JS）；④ adoptedCallback（S5 spec 补全，罕见）。
+**下一步**：R3272 三正确性修复 land（commit `666c6c10`）。**S5 核心实质完成**（base+upgrade+lifecycle+attrChange+upgrade(root)+完整 Element 接口+正确性加固全闭合）。本轮（R3273 调查，无代码 land）核实 S5 余下候选均**不可自主 land**：
+
+- **R3273 调查：`customElements.define` 自动升级 parser 建的既有元素**（spec custom-elements-upgrades 步骤 7）——**L2 escape-hatch gated**。实测：`getElementsByTagName(tag)` 返 polyfill wrapper，`setPrototypeOf(el, ctor.prototype)` 后 instanceof 成立，但 `_elConnected`（parentNode 链到 document）对 selector-based wrapper **失效** → connectedCallback 不触发。根因同 R3270「native_dom 模式 `globalThis.document` 仍 polyfill 对象」限制——parser 建元素经 polyfill 访问是 selector wrapper（非 native 元素带 slot），setPrototypeOf 破坏 polyfill 导航访问器。**结论：parser-built auto-upgrade 是又一 L2-gated gap**（待 L2 让 document 成 native 后 parser 建元素才作为 native CE 实例可见），**不强行半修**（实验已 revert）。
+- ③ **S5 registry 缓存优化**：评估后判**增量过低**——R3271 fast-path（无连字符 tag 跳过 JS）已覆盖常见情况；缓存仅对「含连字符但未注册」tag（如 `my-undefined`）省一次 JS lookup，真实页面罕见；registered custom 元素（真工作）不可跳。Rust↔JS 状态同步复杂度不值。**defer**。
+- ④ **adoptedCallback**：`document.adoptNode` 单文档沙箱 identity no-op（part06.js:994），**跨文档 adopt 从不发生** → adoptedCallback **不可触达**，加它是死代码。**不做**。
+- ② **P1b S6 高层 API 改写**：依赖 native_dom 普遍开启（= L2 后），亦 gated。
+- ① **P1b L2 escape-hatch**（R3178 设计就绪）：**唯一真实下一步，但 rule 11 深结构门禁——需用户点名**。非本流可自主 land。
+
+**S5 流域自主推进面已穷尽**。后续：① 等用户点名启动 **L2 escape-hatch**（rule 11，深结构）；② 或转其它 goal / 用户点名方向（WPT 兼容性 / 深结构 rendering-compat）。本流 S5 守成（kill-switch 默认关，零回归，make test 跨流红灯已归因）。
 
 ### P1b S5 性能（R3271）：attr change / lifecycle 桥接 fast-path——非 custom tag 跳过 JS 桥接
 
