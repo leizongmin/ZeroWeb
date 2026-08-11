@@ -1514,6 +1514,12 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             v == "auto" || v == "normal" || v == "none"
         }
         "font-variant-numeric" | "font-feature-settings" | "font-variation-settings" => true,
+        // https://drafts.csswg.org/css-fonts-4/#font-synthesis
+        "font-synthesis" => parse_font_synthesis(trimmed).is_some(),
+        "font-synthesis-weight" | "font-synthesis-style" | "font-synthesis-small-caps" | "font-synthesis-position" => {
+            let v = trimmed.to_ascii_lowercase();
+            v == "auto" || v == "none"
+        }
         // font 简写：复用 expand_font 严格校验（须含 font-size + font-family 或系统字体关键字）。
         // driving: WPT css-supports-024 `(font: 16px serif)`。
         "font" => crate::shorthand::font_shorthand_supported(trimmed),
