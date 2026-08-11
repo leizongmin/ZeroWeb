@@ -1318,10 +1318,15 @@ impl super::Painter {
                                 })
                                 && rotation.abs() < f32::EPSILON
                                 && transformed.chars().all(|ch| !is_cc_control_char(ch));
-                            let text_direction = match style.direction {
+                            let style_direction = match style.direction {
                                 zero_style_system::DirectionValue::Ltr => TextDirection::LeftToRight,
                                 zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
                             };
+                            let text_direction = text_shaping::fragment_shape_direction(
+                                $frag_source,
+                                style_direction,
+                                text_shaping::shaped_uba_rtl_enabled(),
+                            );
                             let logical_source = logical_fragment_source(
                                 $frag_source,
                                 text_direction,

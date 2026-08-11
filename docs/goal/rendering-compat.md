@@ -19,6 +19,8 @@
 >
 > **▶ 字体栈实施裁决（2026-08-09 用户决策）**：用户批准 font-stack coherence rebuild（`fontdue-replacement-scoping.md` v0.2.3 / `unified-font-stack-design.md`）——**接受 HarfBuzz C 依赖**（FreeType 已 default-on），本 goal 由降频守成**恢复主动实施**。执行形态：拆分为独立可验证切片（度量统一 → 光栅统一 → 塑形 HarfBuzz → 字体回退逻辑），每片 kill-switch + 结构签名 gate + 全量 oracle A/B，net≥0 才落地；第一刀选最小可度量收益切片。与父目标 P1a（engine DOM 桥）工作面不重叠，可并行。深结构清单其余项（vertical-mode R1043 / taffy R2174 / Phase A IFC / srcset）仍等用户点名。
 >
+> **▶ 字体栈当前进展（R3229-F·2026-08-11）**：indexed glyph、custom-face shaped advance、LTR shared-cluster offset、纯 RTL logical shaping 与 UBA fragment resolved-direction 覆盖均已 default-on；回滚开关分别为 `ZW_SHAPED_TEXT=0`、`ZW_SHAPED_ADVANCE=0`、`ZW_SHAPED_OFFSETS=0`、`ZW_SHAPED_RTL=0`、`ZW_SHAPED_UBA_RTL=0`。最新切片只在 fragment resolved level 全 RTL、logical range 连续、单 RTL script、无 text-transform 时覆盖容器方向。Chrome 127 Oracle 81 案 A/B：4 改善、2 微退、76 持平，rounded diff sum `129.61→129.59`；welcome `15.96%` 精确持平，故按 net≥0 门禁启用。broad ligature/complex shaping 仍因既有 Oracle `+0.05pp` 保持 `ZW_SHAPED_COMPLEX` default-off；generic advance 仍等待默认 face / layout fragment width / paint advance 同源后再议。详细执行态见 [`rendering-compat/master.md`](rendering-compat/master.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

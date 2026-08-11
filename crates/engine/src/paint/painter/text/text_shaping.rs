@@ -42,6 +42,11 @@ fn shaped_rtl_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_RTL").as_deref() != Ok("0"))
 }
 
+pub(super) fn shaped_uba_rtl_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_UBA_RTL").as_deref() != Ok("0"))
+}
+
 /// Paint 循环消费的单个字形。
 pub(super) struct FragmentGlyph {
     pub(super) code_point: char,
@@ -69,6 +74,19 @@ pub(super) struct LogicalFragmentSource<'a> {
     text: &'a str,
     source_text: Arc<str>,
     source_start: u32,
+}
+
+pub(super) fn fragment_shape_direction(
+    source: Option<&TextFragmentSource>,
+    style_direction: TextDirection,
+    uba_rtl_enabled: bool,
+) -> TextDirection {
+    // https://www.w3.org/TR/css-writing-modes-3/#bidi-algo
+    if uba_rtl_enabled && source.and_then(TextFragmentSource::uniform_resolved_rtl) == Some(true) {
+        TextDirection::RightToLeft
+    } else {
+        style_direction
+    }
 }
 
 /// 从布局片段恢复 RTL logical shaping 输入。
@@ -370,6 +388,40 @@ mod tests {
         assert!(!complex_run_enabled(TextDirection::RightToLeft, false, false, true));
         assert!(!complex_run_enabled(TextDirection::LeftToRight, true, false, true));
         assert!(complex_run_enabled(TextDirection::LeftToRight, false, true, false));
+    }
+
+    #[test]
+    fn uba_rtl_gate_overrides_ltr_style_only_for_uniform_rtl_fragment() {
+        let rtl = TextFragmentSource {
+            text: Arc::<str>::from("aאבb"),
+            visual_to_logical: vec![Some(3..5), Some(1..3)],
+            visual_is_rtl: vec![true, true],
+        };
+        assert_eq!(
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, false),
+            TextDirection::LeftToRight
+        );
+        assert_eq!(
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true),
+            TextDirection::RightToLeft
+        );
+        let logical = logical_fragment_source(
+            Some(&rtl),
+            fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, true),
+            true,
+        )
+        .expect("uniform RTL fragment in LTR container");
+        assert_eq!(logical.text, "אב");
+
+        let mixed = TextFragmentSource {
+            text: Arc::<str>::from("aאב"),
+            visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
+            visual_is_rtl: vec![false, true, true],
+        };
+        assert_eq!(
+            fragment_shape_direction(Some(&mixed), TextDirection::LeftToRight, true),
+            TextDirection::LeftToRight
+        );
     }
 
     #[test]
