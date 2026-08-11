@@ -1595,6 +1595,15 @@
   globalThis.scroll = globalThis.scrollTo;
   globalThis.scrollBy = function (a, b) { _zwApplyScroll(_winScroll, a, b, true); _zwFireScroll(null, null, null); };
   globalThis.scrollIntoView = function () {};
+  // R3253：宿主「用户滚动」（renderer 收到 browser IPC ScrollEventParams）注入钩子——更新 `_winScroll`
+  //（使 window.scrollY/scrollX 跟踪用户滚动）+ 派 'scroll' 事件（_zwFireScroll）。区别于 `scrollBy`：
+  // ① 走内部 `_zwApplyScroll`/`_zwFireScroll`，**绕过页面可能覆写的 `globalThis.scrollBy`**（real browser 的
+  // scroll 事件由实际滚动派发，不受页面 JS 影响）；② 两参数恒为数值（IPC delta），免 `_zwApplyScroll` 的
+  // 对象/Number 归一分支。host 经 `script_user_scroll` 注入，typeof 守卫防 shim 未安装时 ReferenceError。
+  globalThis.__zw_user_scroll = function (dx, dy) {
+    _zwApplyScroll(_winScroll, Number(dx) || 0, Number(dy) || 0, true);
+    _zwFireScroll(null, null, null);
+  };
 
   // window 弹窗 / 对话框 API（R2979）——alert/confirm/prompt/open 此前全缺，`if (confirm('Delete?'))` /
   // `alert(err)` / `prompt('Name')` / `window.open(url)` 抛 ReferenceError 中断后续脚本。headless 无 UI 用户

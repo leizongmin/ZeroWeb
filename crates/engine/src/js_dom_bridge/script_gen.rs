@@ -94,6 +94,20 @@ pub fn script_dispatch_animation_event(selector: &str, event_type: &str, name: &
     )
 }
 
+/// 构造「用户滚动」注入脚本（R3253，UI Events §scroll via user input）。宿主（renderer `handle_scroll_event`）
+/// 在收到 browser IPC `ScrollEventParams { delta_x, delta_y }`（用户滚轮/触摸/键盘滚动）时执行：调内部钩子
+/// `__zw_user_scroll(dx, dy)`（part01.js）——更新 `_winScroll`（使 `window.scrollY/scrollX` 跟踪用户滚动）+
+/// 派 'scroll' 事件（infinite scroll / lazy load / sticky nav / parallax 的**用户滚动**触发依赖）。
+///
+/// 走内部钩子而非 `globalThis.scrollBy`：绕过页面可能覆写的 `scrollBy`（real browser 的 scroll 事件由实际
+/// 滚动派发，不受页面 JS 影响）。`typeof` 守卫防 shim 未安装（无页面 / JS 未启）时 ReferenceError 中断。
+/// delta 有限数值；NaN/负经 `__zw_user_scroll` 内部 `Number(dx)||0` 与 `_zwApplyScroll` 的 `<0` clamp 归一。
+pub fn script_user_scroll(delta_x: f64, delta_y: f64) -> String {
+    let dx = if delta_x.is_finite() { delta_x } else { 0.0 };
+    let dy = if delta_y.is_finite() { delta_y } else { 0.0 };
+    format!("if(typeof __zw_user_scroll==='function')__zw_user_scroll({dx},{dy});")
+}
+
 /// 构造「经原生绑定派发 DOM 事件」的脚本（P1b host→page native 派发，R3121；event 对象丰富化 R3124）。
 /// 宿主在 `native_dom` 开启时于 polyfill 派发（[`script_dispatch_dom_event`]）**之外额外**执行：
 /// 经 `__zw_native_query_selector(sel)` 解析目标节点（返 native 元素对象，internal slot 存 NodeId）

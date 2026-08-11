@@ -1628,6 +1628,16 @@ impl RendererRuntime {
 
     fn handle_scroll_event(&mut self, params: ScrollEventParams) -> Result<(), String> {
         tracing::trace!("滚动事件: ({}, {})", params.delta_x, params.delta_y);
+        // R3253（UI Events §scroll via user input）：用户滚动（browser IPC ScrollEventParams）注入
+        // `__zw_user_scroll(dx,dy)` → 更新 `_winScroll`（window.scrollY 跟踪）+ 派 'scroll' 事件。
+        // 视觉滚动由 browser 侧 `TabScrollState` 独立处理；本处只补「页面 JS 可观察」半边（程序化滚动
+        // 经 R3051 `_zwFireScroll` 已派发，用户滚动此前被吞）。gate javascript_enabled + best-effort。
+        if self.javascript_enabled {
+            let script = zero_engine::script_user_scroll(params.delta_x as f64, params.delta_y as f64);
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::warn!("dispatch user scroll: {e}");
+            }
+        }
         Ok(())
     }
 

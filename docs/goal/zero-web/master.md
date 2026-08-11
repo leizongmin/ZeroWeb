@@ -130,6 +130,31 @@
 
 ## 最近完成的改进
 
+### 用户滚动 scroll 事件派发（本轮 R3253，engine shim + renderer）—— 上轮「scroll 候选」前提修正 + 真实 gap 闭合
+
+上轮 R3252「下一步」记 `scroll` 候选为「element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（程序化滚动）」。**本轮核实该前提 STALE**：R3051 已为程序化滚动（scrollTop/scrollLeft setter + scrollTo/scrollBy/scrollIntoView）落地 `_zwFireScroll` 派 'scroll'（part01.js:1584，bridge_tests `test_scroll_event_dispatch_r3051` 锁定）。**真实 gap = 用户滚动**：renderer `handle_scroll_event`（收 browser IPC `ScrollEventParams`——用户滚轮/触摸/键盘滚动）是**纯 no-op**（仅 `tracing::trace!`，不派 'scroll' 也不更 `_winScroll`）→ 用户滚动时页面 `window.scrollY` 不跟踪、`scroll` listener 永不触发（infinite scroll / lazy load / sticky nav / parallax 的**用户滚动**触发链断）。注：视觉滚动由 browser 侧 `TabScrollState`（`apply_page_scroll_delta`）独立处理，本 gap 仅「页面 JS 可观察」半边。本轮闭合。
+
+**实现（R3253，UI Events §scroll via user input，3 文件）**：
+- `js_dom_shim/part01.js`：+`globalThis.__zw_user_scroll(dx,dy)` 内部钩子——复用 `_zwApplyScroll(_winScroll,...,isBy=true)` 更新滚动状态 + `_zwFireScroll(null,...)` 派 'scroll'。**区别于 `globalThis.scrollBy`**：① 走内部函数**绕过页面可能覆写的 `scrollBy`**（real browser 的 scroll 事件由实际滚动派发，不受页面 JS 影响）；② 两参恒数值（IPC delta），免对象/Number 归一分支。
+- `js_dom_bridge/script_gen.rs`：+`script_user_scroll(dx,dy)` 生成器——`if(typeof __zw_user_scroll==='function')__zw_user_scroll(dx,dy);`（typeof 守卫防 shim 未安装时 ReferenceError；NaN→0 归一）。镜像 R3248-R3252 host 注入脚本生成器模式。
+- `apps/renderer/src/main.rs`：`handle_scroll_event` 收 IPC 后，`javascript_enabled` gate + best-effort 调 `script_user_scroll` 注入（`execute_script_direct`，失败仅 `warn!`）。
+- 测试：`js_dom_bridge_tests/part01.rs` +`test_user_scroll_hook_r3253`（v8 feature，CI 跑）——验证 ① window 'scroll' listener 触发；② `window.scrollY` 累积跟踪（50→80→100）；③ **页面覆写 `globalThis.scrollBy` 为 no-op 后 `__zw_user_scroll` 仍派 scroll 仍更 scrollY**（绕过覆写，real browser 语义）。
+
+**为何净正向**：① **闭合真行为 gap**——用户滚动从「页面 JS 完全无感知」到 'scroll' 派发 + scrollY 跟踪（程序化滚动 R3051 已覆盖，本片补用户滚动半边，**scroll 事件触发面双全**）；② **修正上轮 STALE 前提**（避免后续轮次基于「程序化滚动不派 scroll」错误结论重复劳动）；③ **零回归**——zero-engine --lib **1385 全绿**（quickjs，+1 v8-gated dispatch 测 CI 跑），engine+renderer clippy/fmt clean，全 workspace minus zero-compositor 全绿；④ 复用 R3051 已验证 `_zwFireScroll` 机制 + R3248-R3252 host 注入模式，低风险；⑤ engine shim + renderer 均本流域。**已知限制**：① `window.scrollY` 不 clamp 到 max-scroll（renderer 无 browser 的 `max_scroll_x/y`，仅 >= 0 clamp；与视觉滚动可能小幅发散，documented）；② real browser 异步 + 同帧 coalesce 多次滚动为一事件，本片每 IPC delta 派一事件（headless 同步近似，同 R3051 documented）；③ 用户滚动到「可滚动子元素」（非 window）的命中目标判定待后续（本片统一派到 window，documented 近似）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part01.js` | +`globalThis.__zw_user_scroll(dx,dy)` 内部钩子（复用 `_zwApplyScroll`/`_zwFireScroll`，绕过页面 scrollBy 覆写）。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | +`script_user_scroll(dx,dy)` 生成器（typeof 守卫 + NaN→0）。 |
+| `apps/renderer/src/main.rs` | `handle_scroll_event` 注入 `script_user_scroll`（gate `javascript_enabled`，best-effort）。 |
+| `crates/engine/src/js_dom_bridge_tests/part01.rs` | +`test_user_scroll_hook_r3253`（v8 feature，CI 跑）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1385 全绿**（quickjs，零回归）+ **全 workspace minus zero-compositor 全绿**。R3253 dispatch 测为 v8-gated（`#[cfg(feature = "v8")]`，CI 跑，本仓 CI 用 v8 默认 feature；本地缺 rusty_v8 跑 quickjs 覆盖）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：scroll 事件触发面双全（程序化 R3051 + 用户滚动 R3253）。**转方向**，续候选（按价值/可行性排序，本轮核实更新）：① **用户滚动到可滚动子元素**——R3253 统一派 scroll 到 window，但用户滚动应命中**可滚动容器元素**派 element 'scroll'（需 renderer 据滚动位置/命中测试定位可滚动元素，中-大修）；② **`resize` 事件派发面**——viewport 尺寸变化（SetViewport IPC）时 real browser 派 window 'resize'（响应式 JS / `window.innerWidth` watcher / 媒体查询 JS 依赖），核实是否已派发；③ native DOM Range `range.rs` 内部 spec 审（internal，低 page 价值）；④ **P1a microtask checkpoint 时序**（execute 末 drain 非 spec 每 task checkpoint，中等风险，需独立评估）；⑤ **wheel/mousewheel 事件**——用户滚动除 'scroll' 外 real browser 亦派 'wheel'（WheelEvent），核实是否缺。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### transitionrun/transitionstart 事件派发全管线（本轮 R3252，engine+webview+renderer）—— CSS Transitions 事件族收官（run/start/end 全齐），CSS 动画/过渡事件族双收官
 
 承接 R3251 后对 CSS Transitions 事件族做对称补齐——R3248 仅 transitionend（工作面覆盖 ~99% 用例），但 **transitionrun/transitionstart 从不派发**：`TransitionClock` 无「过渡创建」与「首活跃帧」检测，过渡启动（含 transition-delay 过后真正开播）无回调（状态机「running」转换初始化、单次首播 hook 缺触发点）。本轮闭合，**CSS 动画/过渡事件族双收官**（animation start/iteration/end + transition run/start/end 全齐）。mirror R3250+R3251（animation 侧刚验证的模式）跨 engine→webview→renderer 全管线。

@@ -1250,6 +1250,51 @@ fn test_scroll_event_dispatch_r3051() {
 }
 
 #[test]
+fn test_user_scroll_hook_r3253() {
+    // R3253：宿主「用户滚动」钩子 `__zw_user_scroll(dx,dy)`——renderer 收到 browser IPC ScrollEventParams 时
+    // 注入。验证：① 派 'scroll' 到 window listener；② 累积更新 window.scrollY（跟踪用户滚动）；③ **绕过页面
+    // 覆写的 `globalThis.scrollBy`**（real browser 的 scroll 事件由实际滚动派发，不受页面 JS 影响——区别于
+    // 直接调 scrollBy，页面覆写 scrollBy 不应阻断用户滚动通知）。复用 R3051 _zwFireScroll 派发路径。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'>x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // ① __zw_user_scroll(0, 50) → window 'scroll' listener 触发 + window.scrollY 累积为 50。
+    sandbox
+        .execute(
+            "globalThis.__winCount = 0;\
+             window.addEventListener('scroll', function(){ globalThis.__winCount++; });\
+             __zw_user_scroll(0, 50);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__winCount").unwrap().value, "1", "__zw_user_scroll 派发 'scroll'（window listener）");
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "50", "__zw_user_scroll 更新 window.scrollY（跟踪用户滚动）");
+
+    // ② 再次 __zw_user_scroll(0, 30) → 累积 scrollY=80，listener count=2（每次用户滚动一事件）。
+    sandbox.execute("__zw_user_scroll(0, 30);").unwrap();
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "80", "scrollY 累积（50+30=80）");
+    assert_eq!(sandbox.execute("globalThis.__winCount").unwrap().value, "2", "第二次用户滚动再派一事件");
+
+    // ③ **绕过页面覆写的 scrollBy**——页面覆写 globalThis.scrollBy 为 no-op 后，__zw_user_scroll 仍派 scroll。
+    sandbox
+        .execute(
+            "globalThis.scrollBy = function(){ /* 页面覆写：吞掉 */ };\
+             __zw_user_scroll(0, 20);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__winCount").unwrap().value, "3", "页面覆写 scrollBy 后，__zw_user_scroll 仍派 'scroll'（绕过覆写，real browser 语义）");
+    assert_eq!(sandbox.execute("window.scrollY").unwrap().value, "100", "覆写 scrollBy 后 scrollY 仍更新（80+20=100）");
+}
+
+#[test]
 fn test_form_reset_submit_methods_r3048() {
     // R3048：HTMLFormElement 方法 reset/requestSubmit/submit。旧缺（get trap 未拦 → form.reset() 抛 not-a-function）。
     // reset：dispatch cancelable 'reset' 事件 + 未取消则把控件恢复 defaultValue/defaultChecked/defaultSelected。
