@@ -341,6 +341,57 @@ fn test_document_scrolling_element_r3259() {
     );
 }
 
+// ── element.innerText（R3260）──
+// innerText 此前完全缺失（0 命中）→ `el.innerText` 读元素渲染文本返 undefined。real innerText 是
+// layout/CSS-aware（排除 hidden、<br>/block→换行）；headless 无 layout 透出，作 textContent 近似（documented）。
+// 覆盖：handle（createElement）+ sel（parsed body）两路径的 get/set。
+#[test]
+fn test_element_inner_text_r3260() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><head></head><body><div id=\"d\">hello world</div>\
+         <script>\
+         var d = document.getElementById('d');\
+         globalThis.__itRead = String(d.innerText);\
+         globalThis.__itEqTC = String(d.innerText === d.textContent);\
+         d.innerText = 'changed';\
+         globalThis.__itAfter = String(d.textContent);\
+         var el = document.createElement('section');\
+         el.innerText = 'fresh';\
+         globalThis.__itHandle = String(el.innerText);\
+         globalThis.__itHandleTC = String(el.textContent);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__itRead)").unwrap(),
+        "hello world",
+        "innerText getter 读取元素文本（sel-based，≈textContent 近似）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__itEqTC)").unwrap(),
+        "true",
+        "innerText === textContent（headless 近似）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__itAfter)").unwrap(),
+        "changed",
+        "innerText setter 替换子为文本（readback 经 textContent）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__itHandle)").unwrap(),
+        "fresh",
+        "innerText get/set 在 handle-based（createElement）元素上工作"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__itHandleTC)").unwrap(),
+        "fresh",
+        "handle-based innerText setter 经 textContent readback 一致"
+    );
+}
+
 // ── Storage 跨 load_html 持久化（R3088）──
 // WebView 沙箱复用（ensure_sandbox：js_sandbox.is_some() 早返）+ shim 幂等注入（js_shim_initialized
 // guard），故 globalThis.localStorage/sessionStorage（shim 的 _createStorage 对象）在同 WebView 多次

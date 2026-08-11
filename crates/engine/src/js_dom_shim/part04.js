@@ -147,7 +147,10 @@
         if (prop === 'attachShadow') {
           return function (init) { return _attachShadow(sel, handle, init); };
         }
-        if (prop === 'textContent') {
+        if (prop === 'textContent' || prop === 'innerText') {
+          // `innerText`（R3260）≈ textContent 近似——real innerText 是 layout/CSS-aware（排除 hidden 元素、
+          // `<br>`/block →换行、white-space 处理）；headless 无 layout 透出到 JS，best-effort 返 textContent。
+          // 高频读元素渲染文本（`el.innerText` 此前返 undefined）；setter 同 textContent（替换全部子为文本节点）。
           // R3028：sel-based 走 latest-wins（consult 变更列表，闭合 `textContent=` 后 getter stale 旧值）；
           // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_text`。
           if (handle) return __zw_get_text_handle(handle);
@@ -1541,7 +1544,7 @@
           }
           return true;
         }
-        if (p === 'textContent' || p === 'innerHTML') {
+        if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
           if (p === 'innerHTML') {
             // R3029：innerHTML = 整体替换子树（childList 类）。emit childList 记录，闭合「innerHTML 不 emit
             // childList」gap（R3028 已知限制④）。removedNodes = 替换前旧子（snapshot 读，_childNodeList 对
