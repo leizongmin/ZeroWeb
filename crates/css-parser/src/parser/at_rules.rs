@@ -115,6 +115,7 @@ impl<'a> Parser<'a> {
         let mut sources: Vec<String> = Vec::new();
         let mut weight: Option<u16> = None;
         let mut style: Option<FontStyleValue> = None;
+        let mut feature_settings = crate::values::FontFeatureSettingsValue::Normal;
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
                 family = strip_css_quotes(decl.value.trim());
@@ -126,6 +127,10 @@ impl<'a> Parser<'a> {
                 weight = Self::parse_font_face_weight(&decl.value);
             } else if decl.property.eq_ignore_ascii_case("font-style") {
                 style = Self::parse_font_face_style(&decl.value);
+            } else if decl.property.eq_ignore_ascii_case("font-feature-settings")
+                && let Some(parsed) = crate::values::parse_font_feature_settings(&decl.value)
+            {
+                feature_settings = parsed;
             }
         }
 
@@ -138,6 +143,7 @@ impl<'a> Parser<'a> {
             sources,
             weight,
             style,
+            feature_settings,
         })
     }
 

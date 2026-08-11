@@ -182,7 +182,17 @@ pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
 ///
 /// `data:` / `local()` 的过滤由抓取层（`AsyncPageLoad::begin_font_fetch`）处理，本函数仅做
 /// 透传解析。解析失败或无 @font-face 规则返回空 Vec。
-pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>, bool)> {
+/// 解析后的 `@font-face` `(family, sources, weight, italic, feature settings)`。
+pub type ExtractedFontFace = (
+    String,
+    Vec<String>,
+    Option<u16>,
+    bool,
+    zero_css_parser::values::FontFeatureSettingsValue,
+);
+
+/// 从 CSS 文本提取所有有效的 `@font-face` 规则。
+pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
     use zero_css_parser::ast::Rule as CssRule;
     use zero_css_parser::values::types::FontStyleValue;
     zero_css_parser::Parser::parse_stylesheet(css)
@@ -194,11 +204,30 @@ pub fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>, b
                     ff.style,
                     Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
                 );
-                Some((ff.family.clone(), ff.sources.clone(), ff.weight, is_italic))
+                Some((
+                    ff.family.clone(),
+                    ff.sources.clone(),
+                    ff.weight,
+                    is_italic,
+                    ff.feature_settings.clone(),
+                ))
             }
             _ => None,
         })
         .collect()
+}
+
+/// 将 CSS feature settings 转为字体整形层输入。
+pub fn font_feature_settings_to_opentype(
+    settings: &zero_css_parser::values::FontFeatureSettingsValue,
+) -> Vec<zero_render_foundation::font::OpenTypeFeature> {
+    match settings {
+        zero_css_parser::values::FontFeatureSettingsValue::Normal => Vec::new(),
+        zero_css_parser::values::FontFeatureSettingsValue::Features(features) => features
+            .iter()
+            .map(|feature| zero_render_foundation::font::OpenTypeFeature::new(feature.tag, feature.value))
+            .collect(),
+    }
 }
 
 /// 从 CSS 文本提取所有 `@import` 规则的 URL（按出现顺序，已去引号/`url()` 包裹）。

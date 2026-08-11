@@ -320,9 +320,10 @@ fn tab_worker_main(
                 let loaded = load.drain_loaded_fonts();
                 if !loaded.is_empty() {
                     let mut updated = false;
-                    for (family, weight, is_italic, bytes) in loaded {
+                    for (family, weight, is_italic, features, bytes) in loaded {
                         match font_loader.load_font(&bytes) {
                             Ok(id) => {
+                                font_loader.register_font_features(id, features);
                                 // R2417/R2493：按 (weight, style) 构注册键——bold+italic →
                                 // `{family}:700:italic`、bold → `{family}:700`、italic →
                                 // `{family}:italic`、regular → plain。bold/italic face 不注册

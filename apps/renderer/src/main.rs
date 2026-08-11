@@ -936,7 +936,7 @@ impl RendererRuntime {
                     continue;
                 }
             };
-            match self.register_loaded_font(&req.family, req.weight, req.is_italic, &bytes) {
+            match self.register_loaded_font(&req.family, req.weight, req.is_italic, None, &bytes) {
                 true => {
                     updated = true;
                     resolver.resolve(&req.resolve_id, "ok");
@@ -983,11 +983,21 @@ impl RendererRuntime {
 
     /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
     /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
-    fn register_loaded_font(&mut self, family: &str, weight: Option<u16>, is_italic: bool, bytes: &[u8]) -> bool {
+    fn register_loaded_font(
+        &mut self,
+        family: &str,
+        weight: Option<u16>,
+        is_italic: bool,
+        features: Option<&[zero_render_foundation::font::OpenTypeFeature]>,
+        bytes: &[u8],
+    ) -> bool {
         let Ok(id) = self.font_loader.load_font(bytes) else {
             tracing::warn!(family = %family, "font load_font failed");
             return false;
         };
+        if let Some(features) = features {
+            self.font_loader.register_font_features(id, features.to_vec());
+        }
         let want_bold = weight.is_some_and(|w| w >= 600);
         let key = match (want_bold, is_italic) {
             (true, true) => format!("{family}:700:italic"),
@@ -1040,11 +1050,11 @@ impl RendererRuntime {
             let loaded = pending.load.drain_loaded_fonts();
             if !loaded.is_empty() {
                 let mut updated = false;
-                for (family, weight, is_italic, bytes) in loaded {
+                for (family, weight, is_italic, features, bytes) in loaded {
                     // R2417/R2493（weight, style）注册键规则抽入 register_loaded_font，
                     // 与 FontFace.load()（tick_font_face_loads）共用——bold/italic face 不注册到 plain family
                     //（否则 build_font_resolver 的「second face=bold」启发式顺序依赖错配，R2417）。
-                    if self.register_loaded_font(&family, weight, is_italic, &bytes) {
+                    if self.register_loaded_font(&family, weight, is_italic, Some(&features), &bytes) {
                         updated = true;
                     } else {
                         tracing::warn!(family = %family, "live @font-face load failed");

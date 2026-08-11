@@ -114,11 +114,19 @@ mod macos_tests {
     }
 }
 
-/// 从 CSS 文本中提取所有 `@font-face` 规则的 `(family, sources, weight, is_italic)` 列表。
+type FontFaceSpec = (
+    String,
+    Vec<String>,
+    Option<u16>,
+    bool,
+    zero_css_parser::values::FontFeatureSettingsValue,
+);
+
+/// 从 CSS 文本中提取所有 `@font-face` 规则的 face 列表。
 ///
 /// 用 `zero_css_parser` 解析样式表，收集 `Rule::FontFace`（含 R2417 `weight` + R2493 `is_italic`）。
 /// 解析失败或无规则时返回空。
-pub(super) fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<u16>, bool)> {
+pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
     use zero_css_parser::values::types::FontStyleValue;
     let stylesheet = CssParser::parse_stylesheet(css);
     stylesheet
@@ -130,7 +138,13 @@ pub(super) fn extract_font_faces(css: &str) -> Vec<(String, Vec<String>, Option<
                     ff.style,
                     Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
                 );
-                Some((ff.family.clone(), ff.sources.clone(), ff.weight, is_italic))
+                Some((
+                    ff.family.clone(),
+                    ff.sources.clone(),
+                    ff.weight,
+                    is_italic,
+                    ff.feature_settings.clone(),
+                ))
             }
             _ => None,
         })
@@ -186,7 +200,7 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
 /// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
 /// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources, weight, is_italic) in extract_font_faces(css) {
+    for (family, sources, weight, is_italic, feature_settings) in extract_font_faces(css) {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
             continue;
@@ -198,6 +212,7 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
             if let Ok(data) = std::fs::read(&path)
                 && let Ok(id) = loader.load_font(&data)
             {
+                loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
                 // R2417/R2493（镜像生产 drain）：按 (weight, style) 构注册键——bold+italic →
                 // `{family}:700:italic`、bold → `{family}:700`、italic → `{family}:italic`、
                 // regular → plain。bold/italic face 不注册 plain family（避 build_font_resolver
@@ -214,5 +229,38 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod feature_tests {
+    use super::*;
+    use zero_render_foundation::font::TextDirection;
+
+    #[test]
+    fn font_face_feature_settings_register_on_loaded_face() {
+        let fonts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/fonts");
+        let css = r#"@font-face {
+            font-family: FeatureLato;
+            src: url(Lato-Medium-Liga.ttf);
+            font-feature-settings: "liga" off;
+        }"#;
+        let faces = extract_font_faces(css);
+        assert_eq!(faces.len(), 1, "descriptor must remain in parsed font face");
+        assert!(
+            resolve_font_src(&faces[0].1[0], Some(&fonts_dir))
+                .as_deref()
+                .is_some_and(Path::exists),
+            "font source must resolve"
+        );
+        let mut loader = FontLoader::new();
+        load_font_faces_into(&mut loader, Some(&fonts_dir), css);
+        let resolver = loader.build_font_resolver();
+        let font_id = *resolver.get("FeatureLato").expect("feature face alias");
+
+        let glyphs = loader
+            .shape_text_cached_with_features(font_id, "fi", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape with face defaults");
+        assert_eq!(glyphs.len(), 2, "face-level liga=off must suppress fi ligature");
     }
 }

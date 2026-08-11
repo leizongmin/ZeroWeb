@@ -2,7 +2,7 @@
 //!
 //! 定义 CSS 样式表的抽象语法树结构。
 
-use crate::values::types::FontStyleValue;
+use crate::values::{FontFeatureSettingsValue, types::FontStyleValue};
 
 /// CSS 样式表 AST。
 #[derive(Debug, Clone)]
@@ -97,6 +97,8 @@ pub struct FontFaceRule {
     /// 原值；缺失 → `None`（视为 normal/upright）。供生产注册按 style 构
     /// `{family}:italic`（italic/oblique）键，painter `resolve_font_id` 选用。
     pub style: Option<FontStyleValue>,
+    /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
+    pub feature_settings: FontFeatureSettingsValue,
 }
 
 /// CSS @page 规则（Paged Media）。

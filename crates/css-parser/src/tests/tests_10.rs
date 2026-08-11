@@ -3,6 +3,7 @@
 use crate::ast::*;
 use crate::parser::Parser;
 use crate::tokenizer::{Token, Tokenizer};
+use crate::values::{FontFeatureSetting, FontFeatureSettingsValue};
 
 // ═══════════════════════════════════════════════════════════════════════
 // parser.rs — nth 表达式解析（通过 :nth-child 等伪类测试）
@@ -374,6 +375,32 @@ fn test_font_face_unquoted_family_and_bare_url() {
             assert_eq!(ff.sources, vec!["MyFont.ttf".to_string()]);
         }
         other => panic!("expected Rule::FontFace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_font_face_feature_settings_descriptor() {
+    let css = r#"@font-face {
+        font-family: FeatureFont;
+        src: url(feature.ttf);
+        font-feature-settings: "liga" off, "kern" 2;
+    }"#;
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => assert_eq!(
+            ff.feature_settings,
+            FontFeatureSettingsValue::Features(vec![
+                FontFeatureSetting {
+                    tag: *b"liga",
+                    value: 0,
+                },
+                FontFeatureSetting {
+                    tag: *b"kern",
+                    value: 2,
+                },
+            ])
+        ),
+        other => panic!("expected FontFace, got {other:?}"),
     }
 }
 

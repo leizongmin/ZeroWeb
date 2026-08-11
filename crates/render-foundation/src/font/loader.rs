@@ -231,6 +231,8 @@ pub struct FontLoader {
     next_id: u32,
     /// 字体 ID 对应的进程唯一实例 ID；duplicate 保留，后续新字体重新分配。
     font_instance_ids: HashMap<u32, u64>,
+    /// `@font-face font-feature-settings` 提供的 face 级默认 feature。
+    font_features: HashMap<u32, Vec<crate::font::OpenTypeFeature>>,
     /// 字体族到 ID 的映射
     family_map: HashMap<String, Vec<u32>>,
     /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
@@ -254,6 +256,7 @@ impl FontLoader {
             font_data: HashMap::new(),
             next_id: 0,
             font_instance_ids: HashMap::new(),
+            font_features: HashMap::new(),
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
@@ -274,6 +277,7 @@ impl FontLoader {
             font_data: self.font_data.clone(),
             next_id: self.next_id,
             font_instance_ids: self.font_instance_ids.clone(),
+            font_features: self.font_features.clone(),
             family_map: self.family_map.clone(),
             fallback_chain: self.fallback_chain.clone(),
             bitmap_glyphs: self.bitmap_glyphs.clone(),
@@ -309,11 +313,22 @@ impl FontLoader {
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
         self.get(font_id)?;
         let instance_id = *self.font_instance_ids.get(&font_id)?;
+        let mut resolved_features = self.font_features.get(&font_id).cloned().unwrap_or_default();
+        for feature in features {
+            if let Some(existing) = resolved_features
+                .iter_mut()
+                .find(|existing| existing.tag == feature.tag)
+            {
+                *existing = *feature;
+            } else {
+                resolved_features.push(*feature);
+            }
+        }
         let key = (
             instance_id,
             font_size.to_bits(),
             direction,
-            features.to_vec(),
+            resolved_features.clone(),
             text.to_string(),
         );
         if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {
@@ -321,13 +336,20 @@ impl FontLoader {
         }
 
         let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(font_id)))
-            .shape_single_line_with_features(text, font_size, direction, features);
+            .shape_single_line_with_features(text, font_size, direction, &resolved_features);
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
         if cache.len() >= 4096 {
             cache.clear();
         }
         cache.insert(key, glyphs.clone());
         Some(glyphs)
+    }
+
+    /// 注册 face 级 OpenType feature 默认值。
+    pub fn register_font_features(&mut self, font_id: u32, features: Vec<crate::font::OpenTypeFeature>) {
+        if self.fonts.contains_key(&font_id) {
+            self.font_features.insert(font_id, features);
+        }
     }
 
     /// 注册预光栅化的位图 glyph（如图标 atlas），按 `(font_id, glyph_id, size_px)` 查找。
@@ -1151,6 +1173,30 @@ mod tests {
         assert_eq!(enabled.len(), 1);
         assert_eq!(disabled.len(), 2);
         assert_eq!(loader.shape_cache.lock().expect("shape cache").len(), 2);
+    }
+
+    #[test]
+    fn caller_features_override_font_face_defaults() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+        loader.register_font_features(font_id, vec![crate::font::OpenTypeFeature::new(*b"liga", 0)]);
+
+        let face_default = loader
+            .shape_text_cached_with_features(font_id, "fi", 16.0, crate::font::TextDirection::LeftToRight, &[])
+            .expect("face default shape");
+        let caller_override = loader
+            .shape_text_cached_with_features(
+                font_id,
+                "fi",
+                16.0,
+                crate::font::TextDirection::LeftToRight,
+                &[crate::font::OpenTypeFeature::new(*b"liga", 1)],
+            )
+            .expect("caller override shape");
+
+        assert_eq!(face_default.len(), 2);
+        assert_eq!(caller_override.len(), 1);
     }
 
     #[test]

@@ -1856,9 +1856,16 @@ mod font_face_extract_tests {
                     "JetBrains Mono".to_string(),
                     vec!["jb.woff2".to_string(), "jb.ttf".to_string()],
                     None,
-                    false
+                    false,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
                 ),
-                ("Title".to_string(), vec!["t.woff".to_string()], None, false),
+                (
+                    "Title".to_string(),
+                    vec!["t.woff".to_string()],
+                    None,
+                    false,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                ),
             ],
             "family dequoted; sources ordered; format() ignored; non-font-face rules skipped"
         );
@@ -1877,10 +1884,34 @@ mod font_face_extract_tests {
         assert_eq!(
             faces,
             vec![
-                ("Bold".to_string(), vec!["b.woff".to_string()], Some(700), false),
-                ("Reg".to_string(), vec!["r.woff".to_string()], None, false),
-                ("Italic".to_string(), vec!["i.woff".to_string()], None, true),
-                ("Oblique".to_string(), vec!["o.woff".to_string()], None, true),
+                (
+                    "Bold".to_string(),
+                    vec!["b.woff".to_string()],
+                    Some(700),
+                    false,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                ),
+                (
+                    "Reg".to_string(),
+                    vec!["r.woff".to_string()],
+                    None,
+                    false,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                ),
+                (
+                    "Italic".to_string(),
+                    vec!["i.woff".to_string()],
+                    None,
+                    true,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                ),
+                (
+                    "Oblique".to_string(),
+                    vec!["o.woff".to_string()],
+                    None,
+                    true,
+                    zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                ),
             ]
         );
     }
@@ -1899,7 +1930,7 @@ mod font_face_extract_tests {
         use zero_css_parser::ast::Rule as CssRule;
         use zero_css_parser::values::types::FontStyleValue;
         let css = r#"@font-face { font-family: X; src: url(a.woff) format("woff"), url(b.ttf); }"#;
-        let direct: Vec<(String, Vec<String>, Option<u16>, bool)> = zero_css_parser::Parser::parse_stylesheet(css)
+        let direct = zero_css_parser::Parser::parse_stylesheet(css)
             .rules
             .iter()
             .filter_map(|r| match r {
@@ -1908,11 +1939,17 @@ mod font_face_extract_tests {
                         ff.style,
                         Some(FontStyleValue::Italic) | Some(FontStyleValue::Oblique(_))
                     );
-                    Some((ff.family.clone(), ff.sources.clone(), ff.weight, is_italic))
+                    Some((
+                        ff.family.clone(),
+                        ff.sources.clone(),
+                        ff.weight,
+                        is_italic,
+                        ff.feature_settings.clone(),
+                    ))
                 }
                 _ => None,
             })
-            .collect();
+            .collect::<Vec<_>>();
         assert_eq!(extract_font_faces(css), direct);
     }
 

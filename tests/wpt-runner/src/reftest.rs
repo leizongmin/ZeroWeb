@@ -639,7 +639,7 @@ fn render_with_layout_inner(
     // 直接复用 BASE_FONT_LOADER，免 ~480ms 创建成本。
     let needs_custom_faces = faces
         .iter()
-        .any(|(family, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
+        .any(|(family, _, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
     let _zw_t4c = std::time::Instant::now();
     // U1b-wiring per-font line-height（env-gated，默认关 = 零回归）。
     let perfont_lineheight = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
@@ -665,7 +665,7 @@ fn render_with_layout_inner(
                 "{:?}",
                 faces
                     .iter()
-                    .map(|(family, sources, weight, is_italic)| (
+                    .map(|(family, sources, weight, is_italic, feature_settings)| (
                         family,
                         sources
                             .iter()
@@ -673,6 +673,7 @@ fn render_with_layout_inner(
                             .collect::<Vec<_>>(),
                         weight,
                         is_italic,
+                        feature_settings,
                     ))
                     .collect::<Vec<_>>()
             );
