@@ -1065,6 +1065,112 @@ fn test_query_selector_form_state_required_readonly_r3278() {
 }
 
 #[test]
+fn test_query_selector_placeholder_default_indeterminate_r3279() {
+    // R3279：DOM `:placeholder-shown`/`:default`/`:indeterminate` 选择器（此前仅 CSS 侧实现）。
+    // 语义与 style-system 同源（HTML spec），共享 Document 权威方法：
+    //   :placeholder-shown——input/textarea 有 placeholder 且当前无值；
+    //   :default——option selected / checkbox|radio checked / form 内首个 submit 按钮；
+    //   :indeterminate——progress 无 value / radio 组（同 name+同 form）内无 checked 成员。
+    let doc = parse_html(
+        "<html><body>\
+         <form id='form1'>\
+           <input id='ph-empty' type='text' placeholder='hint'>\
+           <input id='ph-filled' type='text' placeholder='hint' value='x'>\
+           <textarea id='ph-ta-empty' placeholder='hint'></textarea>\
+           <textarea id='ph-ta-filled' placeholder='hint'>text</textarea>\
+           <input id='def-cb' type='checkbox' checked>\
+           <input id='def-radio-a' type='radio' name='g' checked>\
+           <input id='def-radio-b' type='radio' name='g'>\
+           <option id='def-opt' selected>x</option>\
+           <button id='def-submit' type='submit'>go</button>\
+           <button id='def-btn-type' type='button'>no</button>\
+         </form>\
+         <input id='ind-radio1' type='radio' name='r'>\
+         <input id='ind-radio2' type='radio' name='r'>\
+         <input id='ind-radio-checked-grp' type='radio' name='c' checked>\
+         <input id='ind-radio-other' type='radio' name='c'>\
+         <progress id='ind-prog'></progress>\
+         <progress id='det-prog' value='50'></progress>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+
+    // :placeholder-shown → 有 placeholder 且无值：ph-empty（input value 空）、ph-ta-empty（textarea 空）。
+    let ph_shown = ids_of(&doc.query_selector_all(root, ":placeholder-shown"));
+    assert!(
+        ph_shown.contains(&"ph-empty".to_string()),
+        "有 placeholder 且无值的 input 应匹配 :placeholder-shown"
+    );
+    assert!(
+        ph_shown.contains(&"ph-ta-empty".to_string()),
+        "有 placeholder 且无内容的 textarea 应匹配 :placeholder-shown"
+    );
+    assert!(
+        !ph_shown.contains(&"ph-filled".to_string()),
+        "有 value 的 input 不应匹配 :placeholder-shown"
+    );
+    assert!(
+        !ph_shown.contains(&"ph-ta-filled".to_string()),
+        "有内容的 textarea 不应匹配 :placeholder-shown"
+    );
+
+    // :default → def-cb（checkbox checked）、def-radio-a（radio checked）、def-opt（option selected）、
+    // def-submit（form 内首个 submit 按钮）；def-btn-type（type=button）非 submit 候选不匹配；
+    // def-radio-b（未 checked）不匹配。
+    let default = ids_of(&doc.query_selector_all(root, ":default"));
+    assert!(
+        default.contains(&"def-cb".to_string()),
+        "checked checkbox 应匹配 :default"
+    );
+    assert!(
+        default.contains(&"def-radio-a".to_string()),
+        "checked radio 应匹配 :default"
+    );
+    assert!(
+        default.contains(&"def-opt".to_string()),
+        "selected option 应匹配 :default"
+    );
+    assert!(
+        default.contains(&"def-submit".to_string()),
+        "form 内首个 submit 按钮应匹配 :default"
+    );
+    assert!(
+        !default.contains(&"def-btn-type".to_string()),
+        "type=button 非 submit 候选，不应匹配 :default"
+    );
+    assert!(
+        !default.contains(&"def-radio-b".to_string()),
+        "未 checked radio 不应匹配 :default"
+    );
+
+    // :indeterminate → ind-prog（progress 无 value）、ind-radio1/ind-radio2（组 r 无 checked）；
+    // ind-radio-other（组 c 有 checked 成员 ind-radio-checked-grp）不匹配；det-prog（有 value）不匹配。
+    let indeterminate = ids_of(&doc.query_selector_all(root, ":indeterminate"));
+    assert!(
+        indeterminate.contains(&"ind-prog".to_string()),
+        "无 value 的 progress 应匹配 :indeterminate"
+    );
+    assert!(
+        indeterminate.contains(&"ind-radio1".to_string()),
+        "组内无 checked 的 radio 应匹配 :indeterminate"
+    );
+    assert!(
+        indeterminate.contains(&"ind-radio2".to_string()),
+        "组内无 checked 的 radio 应匹配 :indeterminate"
+    );
+    assert!(
+        !indeterminate.contains(&"ind-radio-other".to_string()),
+        "组内有 checked 成员时 radio 不应匹配 :indeterminate"
+    );
+    assert!(
+        !indeterminate.contains(&"det-prog".to_string()),
+        "有 value 的 progress 不应匹配 :indeterminate"
+    );
+}
+
+#[test]
 fn test_query_selector_attribute_operators() {
     let doc = parse_html(
         "<html><body>\

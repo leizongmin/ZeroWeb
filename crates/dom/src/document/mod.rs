@@ -1663,6 +1663,188 @@ impl Document {
         true
     }
 
+    /// 元素 local_name（小写原始 tag）；非元素返 None。多处表单状态伪类求值共用。
+    fn element_local_name(&self, node: NodeId) -> Option<&str> {
+        self.nodes.get(node).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.local_name()),
+            _ => None,
+        })
+    }
+
+    /// `:placeholder-shown`（CSS UI）：input/textarea 正在显示 placeholder。
+    /// = 有 `placeholder` 属性 且 当前无值：`<input>` 的 `value` 属性为空/缺省；
+    /// `<textarea>` 的文本内容为空/纯空白。供 DOM `:placeholder-shown` 选择器与 CSS 同源。
+    pub fn is_placeholder_shown(&self, node: NodeId) -> bool {
+        let tag = match self.element_local_name(node) {
+            Some(t) => t,
+            None => return false,
+        };
+        if self.get_attribute(node, "placeholder").is_none() {
+            return false;
+        }
+        match tag {
+            "input" => self.get_attribute(node, "value").is_none_or(|v| v.is_empty()),
+            "textarea" => !self.element_has_text_content(node),
+            _ => false,
+        }
+    }
+
+    /// 元素直接子文本节点是否有非空（非纯空白）内容。
+    fn element_has_text_content(&self, node: NodeId) -> bool {
+        for &child in &self.child_nodes(node) {
+            if let Some(n) = self.nodes.get(child)
+                && let NodeKind::Text(data) = &n.kind
+                && !data.content.trim().is_empty()
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `:indeterminate`（HTML §4.15）静态可判定子集——
+    /// - `<progress>` 无 `value` 属性（不确定进度条）；
+    /// - `<input type="radio">` 其组（同 name + 同 form 宿主）内无任何 checked 成员。
+    ///   checkbox 的 indeterminate 为动态 IDL 状态（无内容属性），静态不可知，不匹配。
+    pub fn is_indeterminate(&self, node: NodeId) -> bool {
+        let tag = match self.element_local_name(node) {
+            Some(t) => t,
+            None => return false,
+        };
+        match tag {
+            "progress" => self.get_attribute(node, "value").is_none(),
+            "input" => {
+                let ty = self
+                    .get_attribute(node, "type")
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                if ty != "radio" {
+                    return false;
+                }
+                let name = self.get_attribute(node, "name").unwrap_or_default();
+                let owner = self.form_owner(node);
+                let scope = owner.unwrap_or_else(|| self.root());
+                !self.radio_group_has_checked(scope, &name, owner)
+            }
+            _ => false,
+        }
+    }
+
+    /// 表单宿主：最近的 `<form>` 祖先元素。注：`form` 属性跨树关联未实现。
+    fn form_owner(&self, node: NodeId) -> Option<NodeId> {
+        let mut cur = self.parent_node(node);
+        while let Some(p) = cur {
+            if self.element_local_name(p) == Some("form") {
+                return Some(p);
+            }
+            cur = self.parent_node(p);
+        }
+        None
+    }
+
+    /// `<input type="radio">` 且属于组（同 name + 同 form 宿主）。
+    fn is_radio_in_group(&self, node: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
+        if self.element_local_name(node) != Some("input") {
+            return false;
+        }
+        let ty = self
+            .get_attribute(node, "type")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        ty == "radio"
+            && self.get_attribute(node, "name").unwrap_or_default() == name
+            && self.form_owner(node) == group_owner
+    }
+
+    /// 树序扫描子树，组内是否有 checked 成员。
+    fn radio_group_has_checked(&self, root: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
+        if self.is_radio_in_group(root, name, group_owner) && self.get_attribute(root, "checked").is_some() {
+            return true;
+        }
+        for &child in &self.child_nodes(root) {
+            if self
+                .nodes
+                .get(child)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                && self.radio_group_has_checked(child, name, group_owner)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `:default`（HTML §4.15）：默认表单元素——
+    /// `<option selected>` / `<input type=checkbox|radio>` 带 `checked` / form 内首个 submit 按钮。
+    /// 供 DOM `:default` 选择器与 CSS 同源。
+    pub fn is_default_form_element(&self, node: NodeId) -> bool {
+        let tag = match self.element_local_name(node) {
+            Some(t) => t,
+            None => return false,
+        };
+        match tag {
+            "option" => self.get_attribute(node, "selected").is_some(),
+            "input" => {
+                let ty = self
+                    .get_attribute(node, "type")
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                match ty.as_str() {
+                    "checkbox" | "radio" => self.get_attribute(node, "checked").is_some(),
+                    _ => self.is_default_submit_button(node),
+                }
+            }
+            "button" => self.is_default_submit_button(node),
+            _ => false,
+        }
+    }
+
+    /// submit 默认按钮判定：submit 候选（`<button>` 非 button/reset/menu，或 `<input type=submit|image>`）
+    /// + 有 form 宿主 + 为该 form 内树序首个 submit 候选。
+    fn is_default_submit_button(&self, node: NodeId) -> bool {
+        if !self.is_submit_button_candidate(node) {
+            return false;
+        }
+        match self.form_owner(node) {
+            Some(form) => self.first_submit_button_in(form) == Some(node),
+            None => false,
+        }
+    }
+
+    /// submit 按钮候选（HTML §4.10.22）。
+    fn is_submit_button_candidate(&self, node: NodeId) -> bool {
+        let Some(tag) = self.element_local_name(node) else {
+            return false;
+        };
+        let ty = self
+            .get_attribute(node, "type")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match tag {
+            "button" => !matches!(ty.as_str(), "button" | "reset" | "menu"),
+            "input" => matches!(ty.as_str(), "submit" | "image"),
+            _ => false,
+        }
+    }
+
+    /// 树序扫描 form 子树，首个 submit 按钮候选（document order）。
+    fn first_submit_button_in(&self, form: NodeId) -> Option<NodeId> {
+        if self.is_submit_button_candidate(form) {
+            return Some(form);
+        }
+        for &child in &self.child_nodes(form) {
+            if self
+                .nodes
+                .get(child)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                && let Some(found) = self.first_submit_button_in(child)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     /// `node` 是否为 `fieldset` 的首个 `<legend>` 元素后代（HTML spec：fieldset 的首个 legend
     /// 子元素，其内控件不随 fieldset disabled 禁用）。legend 须为 fieldset 的**直接元素子**且
     /// 为首个 legend 类型元素子。
@@ -1725,6 +1907,10 @@ impl Document {
             // is_effectively_read_write 复评。
             crate::query::PseudoClass::ReadWrite => self.is_effectively_read_write(node),
             crate::query::PseudoClass::ReadOnly => !self.is_effectively_read_write(node),
+            // `:placeholder-shown`/`:indeterminate`/`:default` 须子树/form-owner 上下文，延后至此复评。
+            crate::query::PseudoClass::PlaceholderShown => self.is_placeholder_shown(node),
+            crate::query::PseudoClass::Indeterminate => self.is_indeterminate(node),
+            crate::query::PseudoClass::Default => self.is_default_form_element(node),
             _ => true,
         })
     }

@@ -86,6 +86,15 @@ pub enum PseudoClass {
     ReadWrite,
     /// `:read-only`——非 `:read-write`（所有不可编辑元素，含 `<p>`/`<div>` 等非表单元素）。
     ReadOnly,
+    /// `:placeholder-shown`——input/textarea 正在显示 placeholder（有 `placeholder` 且当前无值）。
+    /// 需读子文本节点（textarea），延后至 `Document::is_placeholder_shown` 复评。
+    PlaceholderShown,
+    /// `:indeterminate`——`<progress>` 无 `value`，或 `<input type=radio>` 其组内无 checked 成员。
+    /// 需子树扫描（radio 组），延后至 `Document::is_indeterminate` 复评。
+    Indeterminate,
+    /// `:default`——默认表单元素：`<option selected>` / checkbox/radio 带 `checked` / form 内首个 submit 按钮。
+    /// 需 form owner 子树扫描，延后至 `Document::is_default_form_element` 复评。
+    Default,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -285,6 +294,9 @@ impl SimpleSelector {
             // 故延后返 true，由 Document::element_matches_selector 经
             // `is_effectively_read_write` 复评（镜像 :has()/:disabled 两阶段模式）。
             PseudoClass::ReadWrite | PseudoClass::ReadOnly => true,
+            // `:placeholder-shown`/`:indeterminate`/`:default` 须 Document 子树/属性上下文，
+            // 延后返 true，由 Document::element_matches_selector 复评。
+            PseudoClass::PlaceholderShown | PseudoClass::Indeterminate | PseudoClass::Default => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -582,6 +594,9 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "optional" => Some(PseudoClass::Optional),
         "read-write" => Some(PseudoClass::ReadWrite),
         "read-only" => Some(PseudoClass::ReadOnly),
+        "placeholder-shown" => Some(PseudoClass::PlaceholderShown),
+        "indeterminate" => Some(PseudoClass::Indeterminate),
+        "default" => Some(PseudoClass::Default),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }

@@ -739,171 +739,22 @@ fn is_read_only(doc: &Document, element: NodeId) -> bool {
     !is_read_write(doc, element)
 }
 
-/// 元素直接子文本节点是否有非空（非纯空白）内容。
-fn element_has_text_content(doc: &Document, element: NodeId) -> bool {
-    for &child in &doc.child_nodes(element) {
-        if let Some(node) = doc.get(child)
-            && let NodeKind::Text(data) = &node.kind
-            && !data.content.trim().is_empty()
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// `:placeholder-shown` 匹配（CSS UI）：input/textarea 正在显示 placeholder。
-/// = 有 `placeholder` 属性 且 当前无值：`<input>` 的 `value` 属性为空/缺省；
-/// `<textarea>` 的文本内容为空/纯空白。
+/// `:placeholder-shown` 匹配（CSS UI）——委派 [`Document::is_placeholder_shown`]
+///（与 DOM `:placeholder-shown` 选择器同源）。
 fn is_placeholder_shown(doc: &Document, element: NodeId) -> bool {
-    let tag = match element_tag_name(doc, element) {
-        Some(t) => t,
-        None => return false,
-    };
-    if doc.get_attribute(element, "placeholder").is_none() {
-        return false;
-    }
-    match tag.as_str() {
-        "input" => doc.get_attribute(element, "value").is_none_or(|v| v.is_empty()),
-        "textarea" => !element_has_text_content(doc, element),
-        _ => false,
-    }
+    doc.is_placeholder_shown(element)
 }
 
-/// 表单宿主：最近的 `<form>` 祖先元素。
-/// 注：`form` 属性的跨树关联未实现（静态罕见，后续按需补）。
-fn form_owner(doc: &Document, element: NodeId) -> Option<NodeId> {
-    let mut node = doc.parent_node(element);
-    while let Some(n) = node {
-        if element_tag_name(doc, n).as_deref() == Some("form") {
-            return Some(n);
-        }
-        node = doc.parent_node(n);
-    }
-    None
-}
-
-/// submit 按钮候选（HTML §4.10.22）：`<button>`（type 非 button/reset/menu，缺省即 submit）
-/// 或 `<input type="submit"|"image">`。
-fn is_submit_button_candidate(doc: &Document, element: NodeId) -> bool {
-    let Some(tag) = element_tag_name(doc, element) else {
-        return false;
-    };
-    let ty = doc
-        .get_attribute(element, "type")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match tag.as_str() {
-        "button" => !matches!(ty.as_str(), "button" | "reset" | "menu"),
-        "input" => matches!(ty.as_str(), "submit" | "image"),
-        _ => false,
-    }
-}
-
-/// 树序前序遍历子树元素，返回首个 submit 按钮候选。
-fn first_submit_button_in(doc: &Document, root: NodeId) -> Option<NodeId> {
-    if is_submit_button_candidate(doc, root) {
-        return Some(root);
-    }
-    for &child in &doc.child_nodes(root) {
-        if is_element(doc, child)
-            && let Some(found) = first_submit_button_in(doc, child)
-        {
-            return Some(found);
-        }
-    }
-    None
-}
-
-/// `:default` 匹配（HTML §4.15）：静态默认项——
-/// - `<option selected>`（selected 内容属性存在）；
-/// - 默认选中的 checkbox/radio（有 `checked` 内容属性，与 `:checked` 静态语义一致）；
-/// - 表单的默认 submit 按钮：submit 候选 + 有 form 宿主 + 为该 form 内树序首个 submit 候选。
-///   无 form 宿主的 submit 不匹配（默认按钮仅按 form 定义）。
+/// `:default` 匹配（HTML §4.15）——委派 [`Document::is_default_form_element`]
+///（与 DOM `:default` 选择器同源）。
 fn is_default(doc: &Document, element: NodeId) -> bool {
-    let Some(tag) = element_tag_name(doc, element) else {
-        return false;
-    };
-    match tag.as_str() {
-        "option" => doc.get_attribute(element, "selected").is_some(),
-        "input" => {
-            let ty = doc
-                .get_attribute(element, "type")
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            match ty.as_str() {
-                "checkbox" | "radio" => doc.get_attribute(element, "checked").is_some(),
-                _ => is_default_submit_button(doc, element),
-            }
-        }
-        "button" => is_default_submit_button(doc, element),
-        _ => false,
-    }
+    doc.is_default_form_element(element)
 }
 
-/// submit 默认按钮判定：submit 候选 + 有 form 宿主 + 为该 form 内树序首个 submit 候选。
-fn is_default_submit_button(doc: &Document, element: NodeId) -> bool {
-    if !is_submit_button_candidate(doc, element) {
-        return false;
-    }
-    match form_owner(doc, element) {
-        Some(form) => first_submit_button_in(doc, form) == Some(element),
-        None => false,
-    }
-}
-
-/// `<input type="radio">` 且其所属组（同 name + 同 form 宿主）内有成员匹配。
-fn is_radio_in_group(doc: &Document, element: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
-    if element_tag_name(doc, element).as_deref() != Some("input") {
-        return false;
-    }
-    let ty = doc
-        .get_attribute(element, "type")
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    ty == "radio"
-        && doc.get_attribute(element, "name").unwrap_or_default() == name
-        && form_owner(doc, element) == group_owner
-}
-
-/// 树序扫描子树，组（同 name + 同 form 宿主）内是否有 checked 成员。
-fn radio_group_has_checked(doc: &Document, root: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
-    if is_radio_in_group(doc, root, name, group_owner) && is_checked(doc, root) {
-        return true;
-    }
-    for &child in &doc.child_nodes(root) {
-        if is_element(doc, child) && radio_group_has_checked(doc, child, name, group_owner) {
-            return true;
-        }
-    }
-    false
-}
-
-/// `:indeterminate` 匹配（HTML §4.15）：静态可判定子集——
-/// - `<progress>` 无 `value` 属性（不确定进度条）；
-/// - `<input type="radio">` 其组（同 name + 同 form 宿主）内无任何 checked 成员。
-///   checkbox 的 indeterminate 为动态 IDL 状态（无内容属性），静态不可知，不匹配。
+/// `:indeterminate` 匹配（HTML §4.15 静态可判定子集）——委派 [`Document::is_indeterminate`]
+///（与 DOM `:indeterminate` 选择器同源）。
 fn is_indeterminate(doc: &Document, element: NodeId) -> bool {
-    let Some(tag) = element_tag_name(doc, element) else {
-        return false;
-    };
-    match tag.as_str() {
-        "progress" => doc.get_attribute(element, "value").is_none(),
-        "input" => {
-            let ty = doc
-                .get_attribute(element, "type")
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            if ty != "radio" {
-                return false;
-            }
-            let name = doc.get_attribute(element, "name").unwrap_or_default();
-            let owner = form_owner(doc, element);
-            let scope = owner.unwrap_or_else(|| doc.root());
-            !radio_group_has_checked(doc, scope, &name, owner)
-        }
-        _ => false,
-    }
+    doc.is_indeterminate(element)
 }
 
 /// `:any-link` / `:link` 匹配（CSS Selectors L4 §18）：超链接元素——`<a>`/`<area>`/`<link>`
