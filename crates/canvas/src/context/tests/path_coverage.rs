@@ -175,9 +175,12 @@ fn test_path2d_is_point_in_path_concave() {
     p.line_to(0.0, 100.0);
     p.close_path();
 
-    // Point inside the U (should be outside)
+    // (25,75) 在凹形左臂实体内（与 test_point_in_polygon_concave 同 L 形几何，(25,75) 判定为内部）。
     let inside = p.is_point_in_path(25.0, 75.0);
-    assert!(!inside, "Point should be outside U-shape");
+    assert!(inside, "Point (25,75) in left arm of concave shape should be inside");
+    // (75,75) 在凹角缺口内（U 形凹陷处），应在外部。
+    let in_niche = p.is_point_in_path(75.0, 75.0);
+    assert!(!in_niche, "Point (75,75) in concave niche should be outside");
 }
 
 #[test]
@@ -259,11 +262,13 @@ fn test_path2d_commands_mut_clear() {
     p.move_to(0.0, 0.0);
     p.line_to(10.0, 10.0);
 
-    let mut commands = p.commands_mut();
-    commands.clear();
-
+    {
+        let commands = p.commands_mut();
+        commands.clear();
+        assert_eq!(commands.len(), 0);
+    }
+    // 可变借用释放后再读 p（NLL 作用域隔离，避免 E0502）。
     assert!(p.is_empty());
-    assert_eq!(commands.len(), 0);
 }
 
 #[test]
@@ -273,7 +278,7 @@ fn test_path2d_commands_mut_remove() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.remove(0); // Remove move_to
 
     assert_eq!(commands.len(), 2);
@@ -286,7 +291,7 @@ fn test_path2d_commands_mut_insert() {
     p.move_to(0.0, 0.0);
     p.line_to(10.0, 10.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.insert(1, PathCommand::MoveTo(5.0, 5.0));
 
     assert_eq!(commands.len(), 3);
@@ -300,7 +305,7 @@ fn test_path2d_commands_mut_pop() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     let _ = commands.pop();
 
     assert_eq!(commands.len(), 2);
@@ -314,7 +319,7 @@ fn test_path2d_commands_mut_truncate() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.truncate(1);
 
     assert_eq!(commands.len(), 1);
@@ -328,7 +333,7 @@ fn test_path2d_commands_mut_swap() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.swap(0, 1);
 
     assert_eq!(commands.len(), 3);
@@ -344,7 +349,7 @@ fn test_path2d_commands_mut_retain() {
     p.line_to(20.0, 20.0);
     p.close_path();
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.retain(|cmd| matches!(cmd, PathCommand::LineTo(_, _)));
 
     assert_eq!(commands.len(), 2);
@@ -359,7 +364,7 @@ fn test_path2d_commands_mut_drain() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     let drained: Vec<_> = commands.drain(1..2).collect();
 
     assert_eq!(commands.len(), 2);
@@ -374,7 +379,7 @@ fn test_path2d_commands_mut_split_off() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     let split = commands.split_off(1);
 
     assert_eq!(commands.len(), 1);
@@ -389,7 +394,7 @@ fn test_path2d_commands_mut_resize() {
     p.move_to(0.0, 0.0);
     p.line_to(10.0, 10.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.resize(5, PathCommand::MoveTo(0.0, 0.0));
 
     assert_eq!(commands.len(), 5);
@@ -403,13 +408,14 @@ fn test_path2d_commands_mut_insert_many() {
     p.move_to(0.0, 0.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     let new_commands = vec![
         PathCommand::MoveTo(5.0, 5.0),
         PathCommand::LineTo(10.0, 10.0),
         PathCommand::LineTo(15.0, 15.0),
     ];
-    commands.insert_many(1, new_commands);
+    // splice 替代 nightly-only Vec::insert_many（在 index 1 处插入 new_commands 全部元素）。
+    commands.splice(1..1, new_commands);
 
     assert_eq!(commands.len(), 5);
     assert!(matches!(commands[1], PathCommand::MoveTo(5.0, 5.0)));
@@ -424,16 +430,14 @@ fn test_path2d_commands_mut_append() {
     p.move_to(0.0, 0.0);
     p.line_to(10.0, 10.0);
 
-    let mut commands = p.commands_mut();
-    let new_commands = vec![
-        PathCommand::LineTo(20.0, 20.0),
-        PathCommand::LineTo(30.0, 30.0),
-    ];
+    let commands = p.commands_mut();
+    let new_commands = vec![PathCommand::LineTo(20.0, 20.0), PathCommand::LineTo(30.0, 30.0)];
     commands.append(&mut new_commands.clone());
 
-    assert_eq!(commands.len(), 3);
-    assert!(matches!(commands[1], PathCommand::LineTo(20.0, 20.0)));
-    assert!(matches!(commands[2], PathCommand::LineTo(30.0, 30.0)));
+    // 原 2 个（move_to[0], line_to(10)[1]）+ append 2 个（line_to(20)[2], line_to(30)[3]）= 4。
+    assert_eq!(commands.len(), 4);
+    assert!(matches!(commands[2], PathCommand::LineTo(20.0, 20.0)));
+    assert!(matches!(commands[3], PathCommand::LineTo(30.0, 30.0)));
 }
 
 #[test]
@@ -442,16 +446,14 @@ fn test_path2d_commands_mut_extend() {
     p.move_to(0.0, 0.0);
     p.line_to(10.0, 10.0);
 
-    let mut commands = p.commands_mut();
-    let new_commands = vec![
-        PathCommand::LineTo(20.0, 20.0),
-        PathCommand::LineTo(30.0, 30.0),
-    ];
+    let commands = p.commands_mut();
+    let new_commands = vec![PathCommand::LineTo(20.0, 20.0), PathCommand::LineTo(30.0, 30.0)];
     commands.extend(new_commands);
 
-    assert_eq!(commands.len(), 3);
-    assert!(matches!(commands[1], PathCommand::LineTo(20.0, 20.0)));
-    assert!(matches!(commands[2], PathCommand::LineTo(30.0, 30.0)));
+    // 原 2 个 + extend 2 个 = 4（extend 项追加到末尾）。
+    assert_eq!(commands.len(), 4);
+    assert!(matches!(commands[2], PathCommand::LineTo(20.0, 20.0)));
+    assert!(matches!(commands[3], PathCommand::LineTo(30.0, 30.0)));
 }
 
 #[test]
@@ -461,8 +463,15 @@ fn test_path2d_commands_mut_remove_item() {
     p.line_to(10.0, 10.0);
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
-    let removed = commands.remove_item(&PathCommand::LineTo(10.0, 10.0));
+    let commands = p.commands_mut();
+    // position + remove 替代 nightly-only Vec::remove_item（移除首个匹配元素）。
+    let removed = match commands.iter().position(|c| *c == PathCommand::LineTo(10.0, 10.0)) {
+        Some(idx) => {
+            commands.remove(idx);
+            true
+        }
+        None => false,
+    };
 
     assert!(removed);
     assert_eq!(commands.len(), 2);
@@ -478,7 +487,7 @@ fn test_path2d_commands_mut_dedup() {
     p.line_to(10.0, 10.0); // Duplicate
     p.line_to(20.0, 20.0);
 
-    let mut commands = p.commands_mut();
+    let commands = p.commands_mut();
     commands.dedup();
 
     assert_eq!(commands.len(), 3);

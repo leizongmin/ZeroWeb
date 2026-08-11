@@ -944,6 +944,11 @@ impl CanvasContext {
 
         let sx = sx.max(0.0) as usize;
         let sy = sy.max(0.0) as usize;
+        // R3292：源矩形起点越出图像边界（sx>=img_w / sy>=img_h）时无像素可取，提前返回。
+        // 修复 unsigned 下溢：旧 `img_w - sx` 在 sx>img_w 时 debug panic（release 静默回绕致错绘）。
+        if sx >= img_w || sy >= img_h {
+            return;
+        }
         let sw = sw.min((img_w - sx) as f32) as usize;
         let sh = sh.min((img_h - sy) as f32) as usize;
         if sw == 0 || sh == 0 {
