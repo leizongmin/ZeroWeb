@@ -298,6 +298,49 @@ fn test_document_current_script_module_null_r3258() {
     );
 }
 
+// ── document.scrollingElement（R3259，HTML §3.1.1）──
+// 返回文档视口滚动元素：standards 模式（compatMode==='CSS1Compat'）→ documentElement；quirks → body。
+// headless 恒 CSS1Compat（无 quirks 跟踪）→ documentElement。scroll 库/框架读视口滚动容器高频 API
+//（locomotive-scroll / smoothscroll / lazy-load）——此前缺 → `document.scrollingElement.scrollTop` 抛 TypeError。
+#[test]
+fn test_document_scrolling_element_r3259() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    // classic 脚本执行期（shim document 已初始化）记录 scrollingElement 信息——execute_script
+    // 直读 document 会 ReferenceError（shim 仅 run_page_scripts 路径注入）。
+    wv.load_html(
+        "<html><head><title>t</title></head><body><div>hi</div>\
+         <script>\
+         globalThis.__seNonNull = (document.scrollingElement !== null && document.scrollingElement !== undefined);\
+         globalThis.__seTag = String(document.scrollingElement.tagName);\
+         globalThis.__seEq = (document.scrollingElement === document.documentElement);\
+         globalThis.__cm = String(document.compatMode);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seNonNull)").unwrap(),
+        "true",
+        "document.scrollingElement 非 null/undefined"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seTag)").unwrap(),
+        "HTML",
+        "scrollingElement.tagName === 'HTML'（standards 模式 → documentElement）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seEq)").unwrap(),
+        "true",
+        "scrollingElement === document.documentElement（standards 模式，identity）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__cm)").unwrap(),
+        "CSS1Compat",
+        "compatMode === 'CSS1Compat'（standards，scrollingElement 走 documentElement 分支的依据）"
+    );
+}
+
 // ── Storage 跨 load_html 持久化（R3088）──
 // WebView 沙箱复用（ensure_sandbox：js_sandbox.is_some() 早返）+ shim 幂等注入（js_shim_initialized
 // guard），故 globalThis.localStorage/sessionStorage（shim 的 _createStorage 对象）在同 WebView 多次

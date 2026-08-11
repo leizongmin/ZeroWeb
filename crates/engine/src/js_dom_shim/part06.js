@@ -993,6 +993,12 @@
       createDocumentType: function() { return null; },
     },
     documentElement: _wrapSelector('html'),
+    // `document.scrollingElement`（HTML §3.1.1）——返回文档视口滚动元素。standards 模式
+    //（compatMode==='CSS1Compat'）→ documentElement；quirks 模式（'BackCompat'）→ body；无则 null。
+    // headless 恒 CSS1Compat（无 quirks 跟踪）→ documentElement。scroll 库/框架读视口滚动容器的高频 API
+    //（locomotive-scroll / smoothscroll / lazy-load / 视口滚动监听）——此前缺 → 返 undefined 致
+    // `document.scrollingElement.scrollTop` 抛 TypeError。
+    get scrollingElement() { return globalThis.document.documentElement || null; },
     body: _wrapSelector('body'),
     head: _wrapSelector('head'),
     // node-level 身份与连入态（Document 节点恒 connected + 恒有 documentElement 子）。`document.nodeType`
