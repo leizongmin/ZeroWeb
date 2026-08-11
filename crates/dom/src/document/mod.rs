@@ -10,6 +10,7 @@ mod form_state;
 mod lang_dir;
 mod shadow;
 mod target;
+mod validation;
 
 // ── DocumentPosition ─────────────────────────────────────────────────
 
@@ -1615,6 +1616,12 @@ impl Document {
             crate::query::PseudoClass::Dir(dir) => self.matches_dir(node, dir),
             // `:target` 须读文档 URL fragment，延后至此经 target 子模块复评（CSS Selectors L3 §6.6.2）。
             crate::query::PseudoClass::Target => self.is_target_element(node),
+            // `:valid`/`:invalid`/`:in-range`/`:out-of-range` 须约束属性上下文，延后至此经
+            // validation 子模块复评（HTML §4.10.20 + CSS Selectors L4）。
+            crate::query::PseudoClass::Valid => self.is_valid_element(node),
+            crate::query::PseudoClass::Invalid => self.is_invalid_element(node),
+            crate::query::PseudoClass::InRange => self.is_in_range_element(node),
+            crate::query::PseudoClass::OutOfRange => self.is_out_of_range_element(node),
             // `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)` 须仅计匹配 S 的兄弟，
             // 延后至此经 matches_nth_child_of/_last_child_of 复评。
             crate::query::PseudoClass::NthChildOf(nth, of) => self.matches_nth_child_of(node, nth, of, false),

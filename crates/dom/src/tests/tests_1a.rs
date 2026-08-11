@@ -2192,3 +2192,144 @@ fn test_query_selector_target_r3283() {
         "is_target_element 对非目标元素应返 false"
     );
 }
+
+#[test]
+fn test_query_selector_validation_pseudo_classes_r3284() {
+    // R3284：DOM `:valid`/`:invalid`/`:in-range`/`:out-of-range` 选择器（HTML §4.10.20 约束校验 +
+    // CSS Selectors L4）。CSS 解析器识别但 DOM query.rs 与 style-system matcher 双双走 `_ => false`
+    // → querySelectorAll(":invalid") 等恒空，DOM/CSS 不一致。补全为静态可判定子集（按内容属性求值）。
+    let doc = parse_html(
+        "<html><body>\
+         <input id='req-empty' required>\
+         <input id='req-filled' required value='x'>\
+         <input id='opt-empty'>\
+         <input id='num-in' type='number' min='1' max='10' value='5'>\
+         <input id='num-lo' type='number' min='1' max='10' value='0'>\
+         <input id='num-hi' type='number' min='1' max='10' value='11'>\
+         <input id='num-norange' type='number' value='5'>\
+         <input id='num-empty' type='number' min='1' max='10'>\
+         <input id='date-in' type='date' min='2026-01-01' max='2026-12-31' value='2026-06-15'>\
+         <input id='date-lo' type='date' min='2026-01-01' max='2026-12-31' value='2025-01-01'>\
+         <input id='disabled-req' required disabled>\
+         <input id='readonly-req' required readonly>\
+         <textarea id='req-textarea-empty' required></textarea>\
+         <select id='req-select-missing' required><option value='a'>A</option></select>\
+         <select id='req-select-picked' required><option selected>A</option></select>\
+         <p id='para'>not a form control</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // :invalid → 候选校验元素 + 约束失败：req-empty（required 空值）、num-lo（越下界）、num-hi（越上界）、
+    // date-lo（越下界）、req-textarea-empty（required 空）、req-select-missing（required 无 selected）。
+    let invalid = ids_of(&doc, &doc.query_selector_all(root, ":invalid"));
+    assert!(
+        invalid.contains(&"req-empty".to_string()),
+        ":invalid 应含 required 空 input"
+    );
+    assert!(invalid.contains(&"num-lo".to_string()), ":invalid 应含越下界 number");
+    assert!(invalid.contains(&"num-hi".to_string()), ":invalid 应含越上界 number");
+    assert!(invalid.contains(&"date-lo".to_string()), ":invalid 应含越下界 date");
+    assert!(
+        invalid.contains(&"req-textarea-empty".to_string()),
+        ":invalid 应含 required 空 textarea"
+    );
+    assert!(
+        invalid.contains(&"req-select-missing".to_string()),
+        ":invalid 应含 required 无 selected 的 select"
+    );
+    assert!(
+        !invalid.contains(&"req-filled".to_string()),
+        ":invalid 不应含 required 已填值 input"
+    );
+    assert!(
+        !invalid.contains(&"disabled-req".to_string()),
+        ":invalid 不应含 disabled 元素（barred from validation）"
+    );
+    assert!(
+        !invalid.contains(&"readonly-req".to_string()),
+        ":invalid 不应含 readonly input（barred）"
+    );
+    assert!(
+        !invalid.contains(&"para".to_string()),
+        ":invalid 不应含非表单控件 p（既不 valid 也不 invalid）"
+    );
+
+    // :valid → 候选校验元素无约束失败：opt-empty（无约束）、num-in（在范围内）、date-in、
+    // req-filled、num-norange、req-select-picked。
+    let valid = ids_of(&doc, &doc.query_selector_all(root, ":valid"));
+    assert!(valid.contains(&"opt-empty".to_string()), ":valid 应含无约束 input");
+    assert!(valid.contains(&"num-in".to_string()), ":valid 应含在范围内 number");
+    assert!(valid.contains(&"date-in".to_string()), ":valid 应含在范围内 date");
+    assert!(valid.contains(&"req-filled".to_string()), ":valid 应含 required 已填值");
+    assert!(valid.contains(&"num-norange".to_string()), ":valid 应含无边界 number");
+    assert!(
+        valid.contains(&"req-select-picked".to_string()),
+        ":valid 应含有 selected 的 required select"
+    );
+    // valid 与 invalid 互斥。
+    assert!(!valid.contains(&"req-empty".to_string()), ":valid 不应含 invalid 元素");
+    assert!(
+        !valid.iter().any(|v| invalid.contains(v)),
+        ":valid 与 :invalid 不应重叠：valid={valid:?} invalid={invalid:?}"
+    );
+
+    // :in-range → range-applicable input 有 value 落 [min,max]：num-in、date-in。
+    let in_range = ids_of(&doc, &doc.query_selector_all(root, ":in-range"));
+    assert!(in_range.contains(&"num-in".to_string()), ":in-range 应含区间内 number");
+    assert!(in_range.contains(&"date-in".to_string()), ":in-range 应含区间内 date");
+    assert!(
+        !in_range.contains(&"num-empty".to_string()),
+        ":in-range 不应含空 value number"
+    );
+    assert!(
+        !in_range.contains(&"num-norange".to_string()),
+        ":in-range 不应含无边界 number"
+    );
+
+    // :out-of-range → 越界：num-lo、num-hi、date-lo。
+    let out_of_range = ids_of(&doc, &doc.query_selector_all(root, ":out-of-range"));
+    assert!(
+        out_of_range.contains(&"num-lo".to_string()),
+        ":out-of-range 应含越下界 number"
+    );
+    assert!(
+        out_of_range.contains(&"num-hi".to_string()),
+        ":out-of-range 应含越上界 number"
+    );
+    assert!(
+        out_of_range.contains(&"date-lo".to_string()),
+        ":out-of-range 应含越下界 date"
+    );
+    assert!(
+        !out_of_range.contains(&"num-empty".to_string()),
+        ":out-of-range 不应含空 value number"
+    );
+
+    // 直接调权威方法（DOM/CSS 共享，style-system matcher 同此源）。
+    let num_lo = doc.get_element_by_id("num-lo").unwrap();
+    assert!(
+        doc.is_invalid_element(num_lo),
+        "is_invalid_element 对越下界 number 应 true"
+    );
+    assert!(
+        doc.is_out_of_range_element(num_lo),
+        "is_out_of_range_element 对越下界应 true"
+    );
+    assert!(!doc.is_in_range_element(num_lo), "is_in_range_element 对越界应 false");
+    let num_in = doc.get_element_by_id("num-in").unwrap();
+    assert!(doc.is_valid_element(num_in), "is_valid_element 对区间内 number 应 true");
+    assert!(doc.is_in_range_element(num_in), "is_in_range_element 对区间内应 true");
+    let para = doc.get_element_by_id("para").unwrap();
+    assert!(
+        !doc.is_valid_element(para),
+        "is_valid_element 对非表单控件应 false（barred）"
+    );
+    assert!(
+        !doc.is_invalid_element(para),
+        "is_invalid_element 对非表单控件应 false（barred）"
+    );
+}

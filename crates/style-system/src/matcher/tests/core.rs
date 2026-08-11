@@ -1293,6 +1293,150 @@ fn test_matches_target_pseudo_class_r3283() {
     );
 }
 
+#[test]
+fn test_matches_validation_pseudo_classes_r3284() {
+    // R3284：:valid/:invalid/:in-range/:out-of-range（HTML §4.10.20 + CSS Selectors L4）。
+    // 此前 CSS 解析器识别但 style-system matcher 走 `_ => false` → CSS 这四个伪类恒不匹配，
+    // 与 DOM querySelector 不一致。补全为委派 Document 权威方法（dom/document/validation.rs）。
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+
+    // required 空 input → :invalid（valueMissing）。
+    let req_empty = doc.create_element("input");
+    doc.set_attribute(req_empty, "id", "req-empty");
+    doc.set_attribute(req_empty, "required", "");
+    doc.append_child(root, req_empty).unwrap();
+
+    // required 已填值 input → :valid。
+    let req_filled = doc.create_element("input");
+    doc.set_attribute(req_filled, "id", "req-filled");
+    doc.set_attribute(req_filled, "required", "");
+    doc.set_attribute(req_filled, "value", "x");
+    doc.append_child(root, req_filled).unwrap();
+
+    // number input 在范围内 → :valid + :in-range。
+    let num_in = doc.create_element("input");
+    doc.set_attribute(num_in, "id", "num-in");
+    doc.set_attribute(num_in, "type", "number");
+    doc.set_attribute(num_in, "min", "1");
+    doc.set_attribute(num_in, "max", "10");
+    doc.set_attribute(num_in, "value", "5");
+    doc.append_child(root, num_in).unwrap();
+
+    // number input 越下界 → :invalid + :out-of-range。
+    let num_lo = doc.create_element("input");
+    doc.set_attribute(num_lo, "id", "num-lo");
+    doc.set_attribute(num_lo, "type", "number");
+    doc.set_attribute(num_lo, "min", "1");
+    doc.set_attribute(num_lo, "max", "10");
+    doc.set_attribute(num_lo, "value", "0");
+    doc.append_child(root, num_lo).unwrap();
+
+    // number input 越上界 → :invalid + :out-of-range。
+    let num_hi = doc.create_element("input");
+    doc.set_attribute(num_hi, "id", "num-hi");
+    doc.set_attribute(num_hi, "type", "number");
+    doc.set_attribute(num_hi, "min", "1");
+    doc.set_attribute(num_hi, "max", "10");
+    doc.set_attribute(num_hi, "value", "11");
+    doc.append_child(root, num_hi).unwrap();
+
+    // 无约束无边界 input → :valid，非 :in-range。
+    let opt_empty = doc.create_element("input");
+    doc.set_attribute(opt_empty, "id", "opt-empty");
+    doc.append_child(root, opt_empty).unwrap();
+
+    // disabled required input → barred（既不 :valid 也不 :invalid）。
+    let disabled_req = doc.create_element("input");
+    doc.set_attribute(disabled_req, "id", "disabled-req");
+    doc.set_attribute(disabled_req, "required", "");
+    doc.set_attribute(disabled_req, "disabled", "");
+    doc.append_child(root, disabled_req).unwrap();
+
+    // 非表单控件 p → barred。
+    let para = doc.create_element("p");
+    doc.set_attribute(para, "id", "para");
+    doc.append_child(root, para).unwrap();
+
+    let sel = |name: &str| simple_pseudo(name);
+
+    // :invalid。
+    assert!(
+        matches_selector(&doc, req_empty, &sel("invalid")),
+        "required 空应匹配 :invalid"
+    );
+    assert!(
+        matches_selector(&doc, num_lo, &sel("invalid")),
+        "越下界 number 应匹配 :invalid"
+    );
+    assert!(
+        matches_selector(&doc, num_hi, &sel("invalid")),
+        "越上界 number 应匹配 :invalid"
+    );
+    assert!(
+        !matches_selector(&doc, req_filled, &sel("invalid")),
+        "required 已填值不应匹配 :invalid"
+    );
+    assert!(
+        !matches_selector(&doc, disabled_req, &sel("invalid")),
+        "disabled 不应匹配 :invalid（barred）"
+    );
+    assert!(
+        !matches_selector(&doc, para, &sel("invalid")),
+        "p 不应匹配 :invalid（barred）"
+    );
+
+    // :valid。
+    assert!(
+        matches_selector(&doc, req_filled, &sel("valid")),
+        "required 已填值应匹配 :valid"
+    );
+    assert!(
+        matches_selector(&doc, num_in, &sel("valid")),
+        "在范围内 number 应匹配 :valid"
+    );
+    assert!(
+        matches_selector(&doc, opt_empty, &sel("valid")),
+        "无约束 input 应匹配 :valid"
+    );
+    assert!(
+        !matches_selector(&doc, req_empty, &sel("valid")),
+        "required 空不应匹配 :valid"
+    );
+    assert!(
+        !matches_selector(&doc, para, &sel("valid")),
+        "p 不应匹配 :valid（barred）"
+    );
+
+    // :in-range。
+    assert!(
+        matches_selector(&doc, num_in, &sel("in-range")),
+        "区间内 number 应匹配 :in-range"
+    );
+    assert!(
+        !matches_selector(&doc, num_lo, &sel("in-range")),
+        "越界 number 不应匹配 :in-range"
+    );
+    assert!(
+        !matches_selector(&doc, opt_empty, &sel("in-range")),
+        "无边界 number 不应匹配 :in-range"
+    );
+
+    // :out-of-range。
+    assert!(
+        matches_selector(&doc, num_lo, &sel("out-of-range")),
+        "越下界应匹配 :out-of-range"
+    );
+    assert!(
+        matches_selector(&doc, num_hi, &sel("out-of-range")),
+        "越上界应匹配 :out-of-range"
+    );
+    assert!(
+        !matches_selector(&doc, num_in, &sel("out-of-range")),
+        "区间内 number 不应匹配 :out-of-range"
+    );
+}
+
 /// DashMatch (`|=`) 在 XML 模式下也应大小写敏感（WPT attribute-value-selector-009）。
 #[test]
 fn test_matches_attribute_dashmatch_case_sensitivity_xml() {

@@ -123,6 +123,20 @@ pub enum PseudoClass {
     /// `:target`——当前文档 URL fragment（百分号解码）指向的唯一元素（CSS Selectors L3 §6.6.2）。
     /// 需读文档 URL，延后至 `Document::is_target_element` 复评。
     Target,
+    /// `:valid`——候选校验元素（input/select/textarea，非 disabled/readonly）无约束失败
+    /// （HTML §4.10.20）。静态子集：valueMissing + range 越界；patternMismatch/typeMismatch 不
+    /// 在静态范围（permissive valid，与 engine shim ValidityState 同哲学）。延后至
+    /// `Document::is_valid_element` 复评。
+    Valid,
+    /// `:invalid`——候选校验元素存在任一静态约束失败（`:valid` 补集）。延后至
+    /// `Document::is_invalid_element` 复评。
+    Invalid,
+    /// `:in-range`——range-applicable input（number/range/date 等）有 value 且落在 [min,max]。
+    /// 延后至 `Document::is_in_range_element` 复评。
+    InRange,
+    /// `:out-of-range`——range-applicable input 有 value 但 <min 或 >max。延后至
+    /// `Document::is_out_of_range_element` 复评。
+    OutOfRange,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -333,9 +347,17 @@ impl SimpleSelector {
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
-            // `:scope`/`:lang()`/`:dir()`/`:target` 需 Document 祖先链/根/URL 上下文，延后返 true，
-            // 由 Document::element_matches_selector 复评（镜像 :disabled 两阶段模式）。
-            PseudoClass::Scope | PseudoClass::Lang(_) | PseudoClass::Dir(_) | PseudoClass::Target => true,
+            // `:scope`/`:lang()`/`:dir()`/`:target`/`:valid`/`:invalid`/`:in-range`/`:out-of-range`
+            // 需 Document 祖先链/根/URL/约束属性上下文，延后返 true，由 Document::element_matches_selector
+            // 复评（镜像 :disabled 两阶段模式）。
+            PseudoClass::Scope
+            | PseudoClass::Lang(_)
+            | PseudoClass::Dir(_)
+            | PseudoClass::Target
+            | PseudoClass::Valid
+            | PseudoClass::Invalid
+            | PseudoClass::InRange
+            | PseudoClass::OutOfRange => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -690,6 +712,11 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "scope" => Some(PseudoClass::Scope),
         // `:target`——当前文档 URL fragment 指向的唯一元素，延后至 Document 复评。
         "target" => Some(PseudoClass::Target),
+        // 约束校验伪类（HTML §4.10.20，无参）：候选校验元素的约束状态，延后至 Document 复评。
+        "valid" => Some(PseudoClass::Valid),
+        "invalid" => Some(PseudoClass::Invalid),
+        "in-range" => Some(PseudoClass::InRange),
+        "out-of-range" => Some(PseudoClass::OutOfRange),
         // `:lang(ranges)`——逗号分隔 BCP 47 语言范围列表（如 `en, fr`/`*-CA`），延后至 Document 复评。
         "lang" => {
             let a = args?;
