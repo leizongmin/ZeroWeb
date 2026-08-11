@@ -1556,6 +1556,19 @@ impl Document {
                         None => return false,
                     }
                 }
+                // `+` 相邻兄弟：取紧邻的前一个**元素**兄弟（CSS Selectors L3 §14.3）。
+                // 跳过 Text/Comment 等非元素节点——兄弟组合器只计元素兄弟。
+                crate::query::Combinator::NextSibling => match self.previous_element_sibling_node(current) {
+                    Some(p) => p,
+                    None => return false,
+                },
+                // `~` 通用兄弟：任一在先的**元素**兄弟（CSS Selectors L3 §14.4）。
+                crate::query::Combinator::SubsequentSibling => {
+                    match self.find_preceding_sibling_matching_selector(current, &parts[idx]) {
+                        Some(p) => p,
+                        None => return false,
+                    }
+                }
             };
             if !self.element_matches_selector(current, &parts[idx]) {
                 return false;
@@ -1786,6 +1799,45 @@ impl Document {
                 return Some(pid);
             }
             current = self.parent_node(pid);
+        }
+        None
+    }
+
+    /// 紧邻的前一个**元素**兄弟（CSS 兄弟组合器只计元素兄弟，跳过 Text/Comment 等）。
+    /// 镜像 [`Self::parent_element_node`] 的元素过滤模式（R3285 `+`/`~` 组合器）。
+    fn previous_element_sibling_node(&self, node: NodeId) -> Option<NodeId> {
+        let mut current = self.previous_sibling(node);
+        while let Some(sid) = current {
+            if self
+                .nodes
+                .get(sid)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+            {
+                return Some(sid);
+            }
+            current = self.previous_sibling(sid);
+        }
+        None
+    }
+
+    /// 在先的任一匹配选择器的**元素**兄弟（`~` 通用兄弟组合器，CSS Selectors L3 §14.4）。
+    /// 沿 `previous_sibling` 链回溯，跳过非元素节点，返回首个匹配的元素兄弟。
+    fn find_preceding_sibling_matching_selector(
+        &self,
+        node: NodeId,
+        selector: &crate::query::SimpleSelector,
+    ) -> Option<NodeId> {
+        let mut current = self.previous_sibling(node);
+        while let Some(sid) = current {
+            if self
+                .nodes
+                .get(sid)
+                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                && self.element_matches_selector(sid, selector)
+            {
+                return Some(sid);
+            }
+            current = self.previous_sibling(sid);
         }
         None
     }

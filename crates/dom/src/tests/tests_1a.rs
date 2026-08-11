@@ -2333,3 +2333,106 @@ fn test_query_selector_validation_pseudo_classes_r3284() {
         "is_invalid_element 对非表单控件应 false（barred）"
     );
 }
+
+// R3285：DOM querySelector 兄弟组合器（`+` 相邻兄弟 / `~` 通用兄弟，CSS Selectors L3 §14.3/§14.4）。
+// CSS 解析器 + style-system matcher 支持全部四种组合器（Descendant/Child/NextSibling/SubsequentSibling），
+// 但 DOM query.rs SelectorChain 旧仅支持 Descendant/Child——`querySelectorAll("h1 + p")` / `"h1 ~ p"`
+// 在 DOM 路径静默失败，而同选择器在 CSS 生效，DOM/CSS 不一致（延续 R3277-R3284 一致化系列）。
+#[test]
+fn test_query_sibling_combinators_r3285() {
+    let doc = parse_html(
+        "<html><body>\
+         <div id='wrap'>\
+         <h1 id='title'>Title</h1>\
+         <p id='first-para'>First</p>\
+         <p id='second-para'>Second</p>\
+         <span id='span1'>S1</span>\
+         <p id='third-para'>Third</p>\
+         </div>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // `h1 + p`——紧邻 h1 的**下一个元素**兄弟 p → 仅 first-para。
+    let next = ids_of(&doc, &doc.query_selector_all(root, "h1 + p"));
+    assert!(
+        next == vec!["first-para".to_string()],
+        "h1 + p 应仅匹配紧邻的 first-para，实际：{next:?}"
+    );
+
+    // `h1 + p`——若紧邻兄弟非 p 则不匹配（second-para 紧邻 first-para，不紧邻 h1）。
+    assert!(
+        !next.contains(&"second-para".to_string()),
+        "h1 + p 不应匹配非紧邻的 second-para"
+    );
+
+    // `p + p`——两两相邻的 p 对：first-para（紧邻 h1，非 p→ 不计入「作为 p+p 的右操作数」？
+    // 实际：first-para 的前一个元素兄弟是 h1（非 p），不匹配；second-para 前是 first-para（p）→ 匹配。
+    let pp = ids_of(&doc, &doc.query_selector_all(root, "p + p"));
+    assert!(
+        pp.contains(&"second-para".to_string()),
+        "p + p 应匹配 second-para（前一个元素兄弟 first-para 是 p）"
+    );
+    assert!(
+        !pp.contains(&"first-para".to_string()),
+        "p + p 不应匹配 first-para（前一个元素兄弟是 h1，非 p）"
+    );
+    assert!(
+        !pp.contains(&"third-para".to_string()),
+        "p + p 不应匹配 third-para（前一个元素兄弟 span1，非 p）"
+    );
+
+    // `h1 ~ p`——h1 之后**任一**元素兄弟 p → first/second/third-para 全部（均在 h1 之后且同为 wrap 子）。
+    let subs = ids_of(&doc, &doc.query_selector_all(root, "h1 ~ p"));
+    assert!(subs.contains(&"first-para".to_string()), "h1 ~ p 应含 first-para");
+    assert!(subs.contains(&"second-para".to_string()), "h1 ~ p 应含 second-para");
+    assert!(subs.contains(&"third-para".to_string()), "h1 ~ p 应含 third-para");
+    assert!(!subs.contains(&"title".to_string()), "h1 ~ p 不应含 h1 自身（title）");
+    assert!(!subs.contains(&"span1".to_string()), "h1 ~ p 不应含 span1（非 p）");
+
+    // `span1 ~ p`——span1 之后的 p 仅 third-para。
+    let span_p = ids_of(&doc, &doc.query_selector_all(root, "span#span1 ~ p"));
+    assert!(
+        span_p == vec!["third-para".to_string()],
+        "span#span1 ~ p 应仅匹配 third-para，实际：{span_p:?}"
+    );
+
+    // `p ~ span`——任一 p 之后的 span → 仅 span1（second-para 之后）。
+    let p_span = ids_of(&doc, &doc.query_selector_all(root, "p ~ span"));
+    assert!(
+        p_span == vec!["span1".to_string()],
+        "p ~ span 应仅匹配 span1，实际：{p_span:?}"
+    );
+
+    // 混合组合器：`div > h1 + p`——div 的子 h1 的相邻 p → first-para。
+    let mixed = ids_of(&doc, &doc.query_selector_all(root, "div > h1 + p"));
+    assert!(
+        mixed == vec!["first-para".to_string()],
+        "div > h1 + p 应仅匹配 first-para，实际：{mixed:?}"
+    );
+}
+
+#[test]
+fn test_query_sibling_combinator_skips_text_nodes_r3285() {
+    // CSS 兄弟组合器只计元素兄弟——中间的 Text 节点（含可忽略空白/换行）不影响 `+`/`~`。
+    // html5ever 解析时 inline 标记间会生成 Text 节点，须确认组合器跳过它们。
+    let doc = parse_html("<html><body><h1 id='t'>T</h1>\n  <p id='a'>A</p>\n  <p id='b'>B</p></body></html>");
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+    let next = ids_of(&doc, &doc.query_selector_all(root, "h1 + p"));
+    assert!(
+        next == vec!["a".to_string()],
+        "h1 + p 应跳过 Text 节点匹配紧邻元素 a，实际：{next:?}"
+    );
+    let both = ids_of(&doc, &doc.query_selector_all(root, "h1 ~ p"));
+    assert_eq!(
+        both,
+        vec!["a".to_string(), "b".to_string()],
+        "h1 ~ p 应含两个 p（跳过 Text 节点）"
+    );
+}
