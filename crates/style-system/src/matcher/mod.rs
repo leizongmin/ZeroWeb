@@ -661,6 +661,7 @@ fn is_checked(doc: &Document, element: NodeId) -> bool {
 }
 
 /// 可禁用元素（HTML spec `:disabled`/`:enabled` 适用集）。
+/// 含 `fieldset`——其自身带 disabled 时匹配 `:disabled`（用于禁用态样式）。
 fn is_disableable_tag(tag: &str) -> bool {
     matches!(
         tag,
@@ -668,23 +669,39 @@ fn is_disableable_tag(tag: &str) -> bool {
     )
 }
 
-/// `:disabled` 匹配：可禁用元素且带 `disabled` 属性。
-/// 注：`<fieldset disabled>` 向后代表单控件的禁用传播未实现（静态罕见场景，后续按需补）。
+/// 是否为表单控件（`<fieldset disabled>` 禁用传播的目标；不含 fieldset 自身）。
+fn is_form_control_tag(tag: &str) -> bool {
+    matches!(tag, "input" | "button" | "select" | "textarea" | "optgroup" | "option")
+}
+
+/// `:disabled` 匹配（HTML spec §4.10.18）。
+/// - 表单控件：经 [`Document::is_effectively_disabled`]——含 `<fieldset disabled>` 祖先传播
+///   （首个 `<legend>` 内除外），与 DOM `:disabled` 选择器一致；
+/// - `<fieldset>` 自身：带 `disabled` 属性即匹配（用于禁用态样式，非传播）。
 fn is_disabled(doc: &Document, element: NodeId) -> bool {
     let tag = match element_tag_name(doc, element) {
         Some(t) => t,
         None => return false,
     };
-    is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_some()
+    if is_form_control_tag(&tag) {
+        doc.is_effectively_disabled(element)
+    } else {
+        // fieldset 自身：按 disabled 属性直判。
+        is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_some()
+    }
 }
 
-/// `:enabled` 匹配：可禁用元素且无 `disabled` 属性（`:disabled` 在可禁用元素上的补集）。
+/// `:enabled` 匹配：可禁用元素且非 `:disabled`。
 fn is_enabled(doc: &Document, element: NodeId) -> bool {
     let tag = match element_tag_name(doc, element) {
         Some(t) => t,
         None => return false,
     };
-    is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_none()
+    if is_form_control_tag(&tag) {
+        !doc.is_effectively_disabled(element)
+    } else {
+        is_disableable_tag(&tag) && doc.get_attribute(element, "disabled").is_none()
+    }
 }
 
 /// 可设 `required` 的元素（HTML spec `:required`/`:optional` 仅限可约束表单控件）。

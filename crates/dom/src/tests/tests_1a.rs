@@ -828,12 +828,20 @@ fn test_query_selector_form_state_pseudo() {
         !checked.contains(&"txt".to_string()),
         "type=text 带 checked 属性不应匹配 :checked"
     );
-    // :disabled → txt-dis、btn-dis、sel（带 disabled 的表单控件）。opt-a/opt-b 自身无 disabled → 不匹配
-    // （注：fieldset 传播禁用未实现，select 禁用自身匹配但 option 传播禁用为 follow-up）。
+    // :disabled → txt-dis、btn-dis、sel（带 disabled 的表单控件）。opt-a/opt-b 位于禁用 <select>
+    // 内 → HTML spec §4.10.10 传播禁用（R3277 select→option 禁用传播）。
     let disabled = ids_of(&doc.query_selector_all(root, ":disabled"));
     assert!(disabled.contains(&"txt-dis".to_string()));
     assert!(disabled.contains(&"btn-dis".to_string()));
     assert!(disabled.contains(&"sel".to_string()));
+    assert!(
+        disabled.contains(&"opt-a".to_string()),
+        "禁用 <select> 内的 <option> 经传播应匹配 :disabled"
+    );
+    assert!(
+        disabled.contains(&"opt-b".to_string()),
+        "禁用 <select> 内的 <option> 经传播应匹配 :disabled"
+    );
     assert!(!disabled.contains(&"btn".to_string()), "启用 button 不应匹配 :disabled");
     // :enabled → 表单控件且非禁用：cb-on/cb-off/rd-on/txt/btn。
     let enabled = ids_of(&doc.query_selector_all(root, ":enabled"));
@@ -860,6 +868,85 @@ fn test_query_selector_form_state_pseudo() {
             .iter()
             .any(|id| doc.get_attribute(*id, "id") == Some("txt-dis".to_string())),
         "禁用 text 不应在 input:enabled 中"
+    );
+}
+
+#[test]
+fn test_query_selector_fieldset_disabled_propagation_r3277() {
+    // R3277：HTML spec §4.10.18 禁用传播。
+    // <fieldset disabled> 内的后代表单控件经传播匹配 :disabled，**首个 <legend> 内除外**；
+    // <select disabled> 内的 <option> 同样传播（§4.10.10）；<optgroup disabled> 内 option 传播。
+    let doc = parse_html(
+        "<html><body>\
+         <fieldset id='fs' disabled>\
+           <legend><input id='legend-in' type='text'></legend>\
+           <input id='body-in' type='text'>\
+           <select id='inner-sel'>\
+             <option id='inner-opt'>x</option>\
+           </select>\
+           <button id='body-btn'>b</button>\
+         </fieldset>\
+         <fieldset id='fs2'>\
+           <input id='outside' type='text'>\
+         </fieldset>\
+         <select id='sel-dis' disabled>\
+           <optgroup id='og-dis' disabled><option id='og-opt'>y</option></optgroup>\
+           <option id='sel-opt'>z</option>\
+         </select>\
+         <button id='free-btn'>f</button>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+    let disabled = ids_of(&doc.query_selector_all(root, ":disabled"));
+    let enabled = ids_of(&doc.query_selector_all(root, ":enabled"));
+
+    // fieldset 自身 disabled（样式按属性直判；:disabled 选择器对 fieldset 不匹配——
+    // fieldset 不在 is_disableable_tag，本测用控件断言传播）。
+    // legend 内控件豁免：legend-in 启用。
+    assert!(
+        !disabled.contains(&"legend-in".to_string()),
+        "首个 legend 内控件应豁免 fieldset disabled 传播"
+    );
+    assert!(
+        enabled.contains(&"legend-in".to_string()),
+        "首个 legend 内控件应匹配 :enabled"
+    );
+    // fieldset body 内控件传播禁用。
+    assert!(
+        disabled.contains(&"body-in".to_string()),
+        "禁用 fieldset body 内 input 应传播匹配 :disabled"
+    );
+    assert!(
+        disabled.contains(&"body-btn".to_string()),
+        "禁用 fieldset body 内 button 应传播匹配 :disabled"
+    );
+    // fieldset 内 select（未自身 disabled）的 option 亦经 fieldset 传播禁用。
+    assert!(
+        disabled.contains(&"inner-opt".to_string()),
+        "禁用 fieldset 内 select 的 option 应传播匹配 :disabled"
+    );
+    // 未禁用 fieldset 内控件正常启用。
+    assert!(
+        enabled.contains(&"outside".to_string()),
+        "未禁用 fieldset 内控件应匹配 :enabled"
+    );
+    // select disabled → 其 option 传播禁用（§4.10.10）。
+    assert!(
+        disabled.contains(&"sel-opt".to_string()),
+        "禁用 select 内 option 应传播匹配 :disabled"
+    );
+    // optgroup disabled → 其 option 传播禁用（即便 select 亦禁用，option 仍禁用）。
+    assert!(
+        disabled.contains(&"og-opt".to_string()),
+        "禁用 optgroup 内 option 应传播匹配 :disabled"
+    );
+    // 自由控件启用。
+    assert!(enabled.contains(&"free-btn".to_string()), "无关 button 应匹配 :enabled");
+    assert!(
+        !disabled.contains(&"free-btn".to_string()),
+        "无关 button 不应匹配 :disabled"
     );
 }
 

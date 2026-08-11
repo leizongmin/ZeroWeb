@@ -1560,6 +1560,98 @@ impl Document {
         true
     }
 
+    /// `:disabled` 的权威判定（HTML spec §4.10.18「禁用」概念）。
+    ///
+    /// 表单控件（button/input/select/textarea/option/optgroup）在以下任一情形被视为禁用：
+    /// ① 自身带 `disabled` 布尔属性；② 位于带 `disabled` 属性的「禁用源」祖先元素后代——
+    /// 禁用源含 `<fieldset>`（spec：首个 `<legend>` 内元素豁免）、`<select>`（其 option
+    /// 随之禁用，§4.10.10）、`<optgroup disabled>`（其 option 禁用）。沿祖先链求值（须
+    /// Document 上下文，故 [`crate::query`] `matches_full` 延后返 true，由本方法复评）。
+    ///
+    /// 供 DOM `:disabled`/`:enabled` 选择器（[`Self::element_matches_selector`]）与
+    /// style-system `:disabled` CSS 匹配共享，保证选择器与样式一致。
+    pub fn is_effectively_disabled(&self, node: NodeId) -> bool {
+        let tag = match self.nodes.get(node).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.local_name().to_string()),
+            _ => None,
+        }) {
+            Some(t) => t,
+            None => return false,
+        };
+        // 仅表单控件适用 `:disabled`（fieldset 自身的禁用态由样式系统按 disabled 属性直判）。
+        if !is_disableable_tag(&tag) {
+            return false;
+        }
+        // ① 自身 disabled 属性。
+        if self.get_attribute(node, "disabled").is_some() {
+            return true;
+        }
+        // ② 祖先链找禁用源（fieldset/select/optgroup 带 disabled），记录是否位于
+        // 禁用 fieldset 的首个 <legend> 内（spec 豁免）。
+        let mut in_first_legend_of_disabled_fieldset = false;
+        let mut current = node;
+        while let Some(parent) = self.parent_element_node(current) {
+            let parent_tag = self
+                .nodes
+                .get(parent)
+                .and_then(|n| match &n.kind {
+                    NodeKind::Element(e) => Some(e.local_name()),
+                    _ => None,
+                })
+                .unwrap_or("");
+            if parent_tag == "legend" {
+                // 是否为最近 fieldset 祖先的首个 legend 后代（spec 豁免条件）。
+                // 标记，由后续 fieldset 祖先决定是否豁免。
+                if let Some(fs) = self.parent_element_node(parent) {
+                    let is_fs = self
+                        .nodes
+                        .get(fs)
+                        .and_then(|n| match &n.kind {
+                            NodeKind::Element(e) => Some(e.local_name() == "fieldset"),
+                            _ => None,
+                        })
+                        .unwrap_or(false);
+                    if is_fs && self.is_first_legend_of(fs, parent) {
+                        in_first_legend_of_disabled_fieldset = true;
+                    }
+                }
+            }
+            let is_disabled_source = matches!(parent_tag, "fieldset" | "select" | "optgroup")
+                && self.get_attribute(parent, "disabled").is_some();
+            if is_disabled_source {
+                // fieldset：首个 legend 内元素豁免；select/optgroup：无豁免，后代 option 全禁用。
+                return !(parent_tag == "fieldset" && in_first_legend_of_disabled_fieldset);
+            }
+            current = parent;
+        }
+        false
+    }
+
+    /// `node` 是否为 `fieldset` 的首个 `<legend>` 元素后代（HTML spec：fieldset 的首个 legend
+    /// 子元素，其内控件不随 fieldset disabled 禁用）。legend 须为 fieldset 的**直接元素子**且
+    /// 为首个 legend 类型元素子。
+    fn is_first_legend_of(&self, fieldset: NodeId, legend: NodeId) -> bool {
+        let children = self
+            .nodes
+            .get(fieldset)
+            .map(|n| n.children.to_vec())
+            .unwrap_or_default();
+        for c in children {
+            let is_legend = self
+                .nodes
+                .get(c)
+                .and_then(|n| match &n.kind {
+                    NodeKind::Element(e) => Some(e.local_name() == "legend"),
+                    _ => None,
+                })
+                .unwrap_or(false);
+            if is_legend {
+                return c == legend;
+            }
+        }
+        false
+    }
+
     fn element_matches_selector(&self, node: NodeId, selector: &crate::query::SimpleSelector) -> bool {
         let matched = self
             .nodes
@@ -1583,10 +1675,15 @@ impl Document {
             return false;
         }
         // :has() 需 Document 子树求值（matches_full 延后返 true），此处额外评估。
-        // 其他伪类已由 matches_full 评估，故非 Has 一律 true。
+        // :disabled/:enabled 需祖先链传播（matches_full 延后返 true），此处经
+        // is_effectively_disabled 复评。其余伪类已由 matches_full 评估，一律 true。
         selector.pseudos.iter().all(|p| match p {
             crate::query::PseudoClass::Has { inner, child_scope } => {
                 self.element_has_matching(node, inner, *child_scope)
+            }
+            crate::query::PseudoClass::Disabled => self.is_effectively_disabled(node),
+            crate::query::PseudoClass::Enabled => {
+                is_disableable_tag_of_node(self, node) && !self.is_effectively_disabled(node)
             }
             _ => true,
         })
@@ -1873,6 +1970,25 @@ impl Default for Document {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// HTML spec 可禁用元素 tag 集（`:enabled`/`:disabled` 适用范围；HTML §4.10.18）。
+/// 注：spec「禁用」概念对 button/input/select/textarea/option/optgroup 适用；`<fieldset>`
+/// 自身虽可带 disabled，但属「禁用源」而非「被禁用控件」，故 `:disabled` 选择器对 fieldset
+/// 的匹配由样式系统按属性直判（此处不含 fieldset）。
+fn is_disableable_tag(tag: &str) -> bool {
+    matches!(tag, "button" | "input" | "select" | "textarea" | "option" | "optgroup")
+}
+
+/// `:enabled` 用——node 是否为可禁用元素（NodeId 版）。
+fn is_disableable_tag_of_node(doc: &Document, node: NodeId) -> bool {
+    doc.nodes
+        .get(node)
+        .and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(is_disableable_tag(e.local_name())),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 // ── DomError ────────────────────────────────────────────────────────

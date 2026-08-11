@@ -615,6 +615,61 @@ fn test_matches_disabled_enabled_required_optional() {
 }
 
 #[test]
+fn test_matches_disabled_fieldset_select_propagation_r3277() {
+    // R3277：HTML spec §4.10.18 禁用传播——CSS :disabled 与 DOM 选择器一致。
+    // <fieldset disabled> body 内控件传播禁用，首个 <legend> 内除外；
+    // <select disabled> 内 <option> 传播（§4.10.10）；<fieldset disabled> 自身匹配 :disabled。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+
+    let fs = doc.create_element("fieldset");
+    doc.set_attribute(fs, "disabled", "");
+    doc.append_child(body, fs).unwrap();
+
+    let legend = doc.create_element("legend");
+    doc.append_child(fs, legend).unwrap();
+    let legend_in = doc.create_element("input");
+    doc.append_child(legend, legend_in).unwrap();
+
+    let body_in = doc.create_element("input");
+    doc.append_child(fs, body_in).unwrap();
+
+    let sel_dis = doc.create_element("select");
+    doc.set_attribute(sel_dis, "disabled", "");
+    doc.append_child(body, sel_dis).unwrap();
+    let sel_opt = doc.create_element("option");
+    doc.append_child(sel_dis, sel_opt).unwrap();
+
+    // fieldset 自身（可禁用元素 + disabled 属性）匹配 :disabled。
+    assert!(
+        matches_selector(&doc, fs, &simple_pseudo("disabled")),
+        "fieldset[disabled] 自身应匹配 :disabled"
+    );
+    // body 内控件传播禁用。
+    assert!(
+        matches_selector(&doc, body_in, &simple_pseudo("disabled")),
+        "禁用 fieldset body 内 input 应传播匹配 :disabled"
+    );
+    assert!(
+        !matches_selector(&doc, body_in, &simple_pseudo("enabled")),
+        "禁用 fieldset body 内 input 不应匹配 :enabled"
+    );
+    // 首个 legend 内控件豁免。
+    assert!(
+        !matches_selector(&doc, legend_in, &simple_pseudo("disabled")),
+        "首个 legend 内控件应豁免 fieldset disabled 传播"
+    );
+    assert!(
+        matches_selector(&doc, legend_in, &simple_pseudo("enabled")),
+        "首个 legend 内控件应匹配 :enabled"
+    );
+    // select disabled → option 传播。
+    assert!(
+        matches_selector(&doc, sel_opt, &simple_pseudo("disabled")),
+        "禁用 select 内 option 应传播匹配 :disabled"
+    );
+}
+
+#[test]
 fn test_matches_read_only_read_write() {
     let (mut doc, _html, body, _div, _p) = make_test_dom();
 

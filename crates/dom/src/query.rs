@@ -71,7 +71,9 @@ pub enum PseudoClass {
     /// `<option>` 带 `selected` 属性）。纯元素属性求值（`matches_full` 内）。
     Checked,
     /// `:disabled`——禁用态表单控件（button/input/select/textarea/option/optgroup 带
-    /// `disabled` 属性）。注：`<fieldset disabled>` 向后代传播禁用态未实现（follow-up）。
+    /// `disabled` 属性，或位于带 `disabled` 的 `<fieldset>` 后代——HTML spec §4.10.18 禁用
+    /// 传播，首个 `<legend>` 内除外）。祖先链传播由
+    /// [`crate::Document::is_effectively_disabled`] 求值（matches_full 延后返 true）。
     Disabled,
     /// `:enabled`——启用态表单控件（表单控件且非 [`PseudoClass::Disabled`]）。
     Enabled,
@@ -267,8 +269,11 @@ impl SimpleSelector {
             PseudoClass::Has { .. } => true,
             // 表单状态伪类——纯元素 tag+属性求值（无 Document/position 依赖）。
             PseudoClass::Checked => is_checked(elem),
-            PseudoClass::Disabled => is_disabled(elem),
-            PseudoClass::Enabled => is_form_control(elem) && !is_disabled(elem),
+            // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
+            // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
+            // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
+            // （镜像 :has() 的两阶段评估模式）。
+            PseudoClass::Disabled | PseudoClass::Enabled => true,
         })
     }
 }
@@ -421,20 +426,11 @@ pub fn parse_nth(arg: &str) -> Option<Nth> {
     }
 }
 
-/// 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
-/// `args` 为括号内原始字符串（`nth-*` 用），无括号时为 `None`。
-/// 表单控件元素（`:enabled`/`:disabled` 适用范围）：button/input/select/textarea/option/optgroup。
-fn is_form_control(elem: &ElementData) -> bool {
-    matches!(
-        elem.local_name(),
-        "button" | "input" | "select" | "textarea" | "option" | "optgroup"
-    )
-}
-
-/// `:disabled`——表单控件且带 `disabled` 布尔属性。
-fn is_disabled(elem: &ElementData) -> bool {
-    is_form_control(elem) && elem.has_attribute("disabled")
-}
+// 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
+// `args` 为括号内原始字符串（`nth-*` 用），无括号时为 `None`。
+// 注：`:disabled`/`:enabled` 的元素级判定（含 `<fieldset disabled>` / `<select disabled>` /
+// `<optgroup disabled>` 祖先传播）由 `Document::is_effectively_disabled` 负责（需祖先链
+// 上下文），`matches_full` 对二者延后返 true，由 `Document::element_matches_selector` 复评。
 
 /// `:checked`——checkbox/radio（带 `checked` 属性）或 option（带 `selected` 属性）。
 /// `type` 属性值按 HTML ASCII 大小写不敏感比较。
