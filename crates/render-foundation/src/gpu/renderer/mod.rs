@@ -140,6 +140,20 @@ pub struct GpuRenderer {
     headless_texture_b: Option<wgpu::Texture>,
     /// 是否暂停向窗口 surface present（Wayland 失焦时使用）
     present_suspended: bool,
+    /// Linux：compositor 导入纹理（P0 GPU 零拷贝 blit）。
+    #[cfg(target_os = "linux")]
+    compositor_import: Option<CompositorImport>,
+}
+
+/// compositor 导入帧（Browser 侧 wgpu 外部纹理）。
+#[cfg(target_os = "linux")]
+struct CompositorImport {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    width: u32,
+    height: u32,
+    dst_x: f32,
+    dst_y: f32,
 }
 
 enum RenderTarget {
@@ -322,6 +336,8 @@ impl GpuRenderer {
             headless_texture,
             headless_texture_b: None,
             present_suspended: false,
+            #[cfg(target_os = "linux")]
+            compositor_import: None,
         })
     }
 
@@ -834,6 +850,9 @@ impl GpuRenderer {
             self.draw_rounded_rect_pass(&mut pass, &uniform_bg, &device, &rr_verts);
             // 4. Gradients
             self.draw_gradient_pass(&mut pass, &uniform_bg, &device, &grad_resources);
+            // 4b. Compositor GPU 导入 blit（P0）
+            #[cfg(target_os = "linux")]
+            self.draw_compositor_import_pass(&mut pass, &uniform_bg, &device);
             // 5. Images
             self.draw_image_pass(&mut pass, &uniform_bg, &device, &img_resources);
             // 6-8. Strokes + PathFills + PathStrokes
@@ -944,6 +963,57 @@ impl GpuRenderer {
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.draw(0..6, 0..1);
         }
+    }
+
+    /// 内部：在 render pass 中绘制 compositor 导入纹理
+    #[cfg(target_os = "linux")]
+    fn draw_compositor_import_pass(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        uniform_bg: &wgpu::BindGroup,
+        device: &wgpu::Device,
+    ) {
+        let Some(import) = self.compositor_import.as_ref() else {
+            return;
+        };
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Compositor Import Sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Compositor Import BG"),
+            layout: &self.image_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&import.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let l = import.dst_x;
+        let t = import.dst_y;
+        let r = l + import.width as f32;
+        let b = t + import.height as f32;
+        let verts = vec![
+            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, t, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        pass.set_pipeline(&self.image_pipeline);
+        pass.set_bind_group(0, uniform_bg, &[]);
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Compositor Import VB"),
+            contents: bytemuck::cast_slice(&verts),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        pass.set_bind_group(1, &bg, &[]);
+        pass.set_vertex_buffer(0, vb.slice(..));
+        pass.draw(0..6, 0..1);
     }
 
     /// 内部：在 render pass 中绘制图片
@@ -1713,6 +1783,36 @@ impl GpuRenderer {
     /// 获取已缓存 glyph 数量
     pub fn atlas_glyph_count(&self) -> usize {
         self.atlas.glyph_count()
+    }
+
+    /// 获取 wgpu 设备引用（Linux dma-buf 导入等）。
+    pub fn device(&self) -> &Arc<wgpu::Device> {
+        &self.device
+    }
+
+    /// 获取 wgpu 队列引用。
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
+        &self.queue
+    }
+
+    /// Linux：设置 compositor 导入纹理并在页面区 blit。
+    #[cfg(target_os = "linux")]
+    pub fn set_compositor_import(&mut self, texture: wgpu::Texture, width: u32, height: u32, dst_x: f32, dst_y: f32) {
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.compositor_import = Some(CompositorImport {
+            _texture: texture,
+            view,
+            width,
+            height,
+            dst_x,
+            dst_y,
+        });
+    }
+
+    /// Linux：清除 compositor 导入纹理。
+    #[cfg(target_os = "linux")]
+    pub fn clear_compositor_import(&mut self) {
+        self.compositor_import = None;
     }
 }
 

@@ -1,8 +1,8 @@
 # 合成器独立进程 + GPU 隔离 RFC（#4 调研建议，D 组多进程演进）
 
-版本：v2.1 ｜ 日期：2026-08-11 ｜ 状态：**4.3-S5 dma-buf fd 通道 + compositor crash E2E ✅；Vulkan 真纹理导出仍为后续**
+版本：v2.2 ｜ 日期：2026-08-11 ｜ 状态：**P0–P3 一次推进 ✅（Vulkan 真零拷贝仍为 wgpu 30+ 后续）**
 
-> 实施状态（2026-08-11 v2.1 更新）：
+> 实施状态（2026-08-11 v2.2 更新）：
 > - **C1（合成执行层显式化）✅**：`BackingStoreManager` 双缓冲已落地。
 > - **C2（合成器独立进程）✅**：surface 级页面主显示链路已接通。
 > - **C3（GPU 隔离）✅ 切片 S1+S2**：
@@ -21,23 +21,13 @@
 >   - S2：`ZW_COMPOSITOR_GPU_IMAGE=1` 时 `gpu_image.mailbox_name` 经 shm 后端传递像素。
 >   - S3：`GpuSharedImageDescriptor.sync_token` 占位（fence 序号 = frame_id）。
 >   - S4：`gpu_mailbox.rs` 28 字节头 + `sync_token` fence 校验；`ZW_COMPOSITOR_GPU_ZERO_COPY=1` 时 mmap 读 payload（仍为 shm 后端，非 GPU 纹理）。
->   - S5：`GpuImageTransport::DmaBuf` + Unix socket SCM_RIGHTS（`fd_socket_linux.rs`）；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1` 时 compositor 导出 memfd 线性缓冲（Vulkan dma-buf 导出 FIXME）；Browser mmap 消费。
-> - **4.4（Viz UI surface）✅ 切片 + S2–S4**：
->   - 元数据：`CompositorRegisterUiSurface` + Browser 启动登记 `CHROME_UI_SURFACE_ID`。
->   - S2：`CompositorUiFrame` / `GetCompositorUiFrame`；`ZW_COMPOSITOR_UI_FRAMES=1` 时 Browser 提交 UI 位图握手。
->   - S3：`GetCompositorPresentFrame` + `ZW_COMPOSITOR_PRESENT=1` 时 compositor 合成 page+UI，
->     Browser 直接 blit present 帧（跳过本地 chrome+page 合成）。
->   - S4：`CompositorRegisterWindowSurface` + `present_authoritative`；`ZW_COMPOSITOR_OWNED_PRESENT=1` 时
->     Browser 跳过本地 chrome+page 合成，仅 blit compositor 权威 present 或白底占位。
-> - **4.5（沙箱）✅ S1–S3**：
->   - S1：`ZW_COMPOSITOR_SANDBOX=1` 时 compositor 启动剥离 `LD_PRELOAD` 等危险 env。
->   - S2：`ZW_COMPOSITOR_SECCOMP=1` 时 Linux seccomp-bpf 阻断网络 socket 与 exec/fork
->     （与 `ZW_COMPOSITOR_GPU=1` 不兼容）。
->   - S3：`ZW_COMPOSITOR_LANDLOCK=1` 时字体加载后 Landlock：`/dev/shm` RW + 字体目录 RO
->     （与 `ZW_COMPOSITOR_GPU=1` 不兼容）。
-> - **§五 GPU 恢复（切片）✅**：`ZW_COMPOSITOR_GPU_SIMULATE_LOST=1` 模拟设备丢失，丢弃 GPU 上下文并回退 CPU；
->   compositor IPC 断线 → legacy 回退逻辑已在 `compositor_client` 实现。
-> - **§五 compositor crash E2E ✅**：`process_backend::compositor_crash_triggers_legacy_fallback_messages` kill 真实子进程 → `Disconnected` → `SetFramePublishMode(Legacy)` + `RequestFrame` + snapshot 清理。
+>   - S5：`GpuImageTransport::DmaBuf` + Unix socket SCM_RIGHTS；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1` compositor 导出 memfd；`ZW_BROWSER_GPU_DMABUF_IMPORT=1` Browser mmap→write_texture 跳过 Vec/ImageCache（P0）；Vulkan OPAQUE_FD 真零拷贝待 wgpu 30+。
+> - **4.4（Viz UI surface）✅ 切片 + S2–S4 + P2 默认**：
+>   - S4：`CompositorRegisterWindowSurface` + `present_authoritative`；**owned present / present 默认开**（`ZW_*=0` 禁用）。
+> - **4.5（沙箱）✅ S1–S3 + P2 GPU 共存**：
+>   - S2/S3：seccomp/landlock **不再因 `ZW_COMPOSITOR_GPU=1` 跳过**；GPU 模式追加 `/dev/dri`、Vulkan 驱动目录与缓存路径。
+> - **§五 P1 E2E ✅**：`compositor_crash_triggers_legacy_fallback_messages` + `compositor_crash_legacy_viewpainted_restores_tab_render`；`zero-protocol::renderer_kill_child_for_test`。
+> - **§六 P3 占位 ✅**：`ZW_RENDERER_SECCOMP=1` renderer 沙箱钩子；`ProcessManager::spawn_network_service` Network Service 占位。
 
 > 本状态不代表完整 Chromium/Chrome compositor 对齐。§五规划切片已落地；**Vulkan 真纹理 dma-buf 导出**（跳过 read_pixels）与 Browser 侧 wgpu import 直接合成仍为后续。
 > `ZW_COMPOSITOR_OWNED_PRESENT=1` 时 Browser 可跳过本地合成；默认仍由 Browser 拥有窗口最终场景。

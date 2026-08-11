@@ -328,6 +328,23 @@ impl RendererHandle {
         self.state = RendererState::Closed;
         Ok(())
     }
+
+    /// 测试专用：强制终止 renderer 子进程（不发送 shutdown IPC）。
+    #[cfg(test)]
+    pub fn kill_child_for_test(&mut self) -> bool {
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+            self.child = None;
+            self.send_transport = None;
+            if let Some(handle) = self.reader_thread.take() {
+                let _ = handle.join();
+            }
+            self.state = RendererState::Crashed("test kill".into());
+            return true;
+        }
+        false
+    }
 }
 
 impl Drop for RendererHandle {
@@ -371,6 +388,15 @@ impl ProcessManager {
         let id = handle.id;
         self.renderers.push(handle);
         Ok(id)
+    }
+
+    /// P3 占位：Network Service 独立进程 spawn（尚未接线 IPC）。
+    pub fn spawn_network_service(&mut self, network_bin: &str) -> Result<u64, ProtocolError> {
+        if !std::path::Path::new(network_bin).is_file() {
+            return Err(ProtocolError::Process(format!("network 二进制不存在: {network_bin}")));
+        }
+        let _ = network_bin;
+        Ok(0)
     }
 
     /// 获取指定渲染进程的句柄。
@@ -440,6 +466,7 @@ mod tests {
     use super::*;
     use crate::message::{FetchParams, StorageOpParams};
     use crate::transport::shared_channel_pair;
+    use std::path::PathBuf;
 
     /// 测试 RendererState 比较和转换。
     #[test]
@@ -499,6 +526,33 @@ mod tests {
         let mut pm = ProcessManager::new("/usr/bin/zero-renderer");
         let crashed = pm.check_crashes();
         assert!(crashed.is_empty());
+    }
+
+    /// kill_child_for_test + check_crashes 清理崩溃 renderer。
+    #[test]
+    fn renderer_kill_child_for_test() {
+        let bin = std::env::var("CARGO_BIN_EXE_zero-renderer").unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target/debug/zero-renderer")
+                .to_string_lossy()
+                .into_owned()
+        });
+        if !PathBuf::from(&bin).is_file() {
+            return;
+        }
+        let mut pm = ProcessManager::new(&bin);
+        let id = pm.spawn_renderer().expect("spawn");
+        assert!(pm.get_renderer(id).unwrap().kill_child_for_test());
+        let crashed = pm.check_crashes();
+        assert!(crashed.iter().any(|(rid, _)| *rid == id));
+        assert!(pm.get_renderer(id).is_none());
+    }
+
+    /// Network Service spawn 占位：二进制不存在时返回 Err。
+    #[test]
+    fn spawn_network_service_missing_bin() {
+        let mut pm = ProcessManager::new("/nonexistent/zero-renderer");
+        assert!(pm.spawn_network_service("/nonexistent/zero-network").is_err());
     }
 
     /// 测试 NEXT_RENDERER_ID 递增。

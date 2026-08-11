@@ -83,7 +83,33 @@ fn build_filter(blocked: &[i64]) -> Vec<libc::sock_filter> {
 
 /// 安装网络/exec 阻断 seccomp 过滤器；须在任何子线程 spawn 之前调用。
 pub fn install_network_exec_filter() -> Result<(), String> {
-    let blocked = blocked_syscalls();
+    install_filter(blocked_syscalls())
+}
+
+/// GPU 模式：在阻断网络/exec 的同时允许 wgpu/Vulkan 常用 syscall。
+pub fn install_network_exec_filter_gpu_aware() -> Result<(), String> {
+    install_filter(gpu_allowed_syscalls())
+}
+
+fn gpu_allowed_syscalls() -> Vec<i64> {
+    let mut blocked = blocked_syscalls();
+    let allow = [
+        libc::SYS_ioctl,
+        libc::SYS_madvise,
+        libc::SYS_eventfd2,
+        libc::SYS_memfd_create,
+        libc::SYS_getrandom,
+        libc::SYS_sched_yield,
+        libc::SYS_prctl,
+        libc::SYS_clone,
+        libc::SYS_clone3,
+        libc::SYS_mprotect,
+    ];
+    blocked.retain(|nr| !allow.contains(nr));
+    blocked
+}
+
+fn install_filter(blocked: Vec<i64>) -> Result<(), String> {
     if blocked.is_empty() {
         return Err("当前架构无可用 seccomp syscall 列表".into());
     }

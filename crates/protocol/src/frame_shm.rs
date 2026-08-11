@@ -69,14 +69,33 @@ pub fn compositor_gpu_texture_export_enabled() -> bool {
     }
 }
 
-/// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；`ZW_COMPOSITOR_OWNED_PRESENT=1`）。
-pub fn compositor_owned_present_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_OWNED_PRESENT").is_ok_and(|v| v == "1")
+/// 是否启用 Browser GPU dma-buf 导入（Linux + `ZW_BROWSER_GPU_DMABUF_IMPORT=1`）。
+pub fn browser_gpu_dmabuf_import_enabled() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("ZW_BROWSER_GPU_DMABUF_IMPORT").is_ok_and(|v| v == "1")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = std::env::var("ZW_BROWSER_GPU_DMABUF_IMPORT");
+        false
+    }
 }
 
-/// 是否启用 compositor Viz present（page+UI 合成；`ZW_COMPOSITOR_PRESENT=1`）。
+/// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；默认开，`0` 禁用）。
+pub fn compositor_owned_present_enabled() -> bool {
+    !matches!(
+        std::env::var("ZW_COMPOSITOR_OWNED_PRESENT"),
+        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false")
+    )
+}
+
+/// 是否启用 compositor Viz present（page+UI 合成；默认开，`0` 禁用）。
 pub fn compositor_present_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_PRESENT").is_ok_and(|v| v == "1")
+    !matches!(
+        std::env::var("ZW_COMPOSITOR_PRESENT"),
+        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false")
+    )
 }
 
 /// 期望 RGBA 字节数；`width`/`height` 为 0 时允许 0。
@@ -244,6 +263,121 @@ fn validate_gpu_mailbox_header(
         )));
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn consume_dma_buf_fd(desc: &crate::GpuSharedImageDescriptor) -> Result<std::os::fd::OwnedFd, ProtocolError> {
+    use std::time::Duration;
+
+    if desc.drm_modifier != 0 {
+        return Err(ProtocolError::Channel(format!(
+            "dma-buf modifier {} 尚未支持",
+            desc.drm_modifier
+        )));
+    }
+    let name = if desc.fd_socket_name.is_empty() {
+        desc.mailbox_name.as_str()
+    } else {
+        desc.fd_socket_name.as_str()
+    };
+    if name.is_empty() {
+        return Err(ProtocolError::Channel("dma-buf fd socket 名为空".into()));
+    }
+    crate::fd_socket_linux::consume_fd(name, Duration::from_secs(2))
+}
+
+/// Browser 解析 compositor 帧：RGBA 或 dma-buf fd（P0 GPU 导入）。
+#[derive(Debug)]
+pub enum CompositorResolvedFrame {
+    /// CPU RGBA 像素。
+    Rgba(Vec<u8>),
+    /// Linux dma-buf / memfd fd（`ZW_BROWSER_GPU_DMABUF_IMPORT=1`）。
+    #[cfg(target_os = "linux")]
+    Dmabuf {
+        /// 导入用 fd（SCM_RIGHTS 接收）。
+        fd: std::os::fd::OwnedFd,
+        /// 宽度（像素）。
+        width: u32,
+        /// 高度（像素）。
+        height: u32,
+        /// 行 stride（字节）。
+        stride: u32,
+        /// DRM fourcc。
+        drm_fourcc: u32,
+        /// DRM modifier（线性为 0）。
+        drm_modifier: u64,
+    },
+}
+
+/// 带 fence 校验的帧解析；dma-buf 导入时不拷贝 RGBA。
+pub fn resolve_compositor_frame_delivery_fenced(
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    shm_name: Option<String>,
+    gpu_image: Option<crate::GpuSharedImageDescriptor>,
+    min_sync_token: Option<u64>,
+) -> Result<CompositorResolvedFrame, ProtocolError> {
+    let expected = expected_rgba_len(width, height);
+    if let Some(desc) = gpu_image {
+        if desc.width != width || desc.height != height {
+            return Err(ProtocolError::Channel(format!(
+                "gpu_image 尺寸不匹配: 期望 {width}x{height}, 描述符 {}x{}",
+                desc.width, desc.height
+            )));
+        }
+        if let Some(min) = min_sync_token
+            && desc.sync_token < min
+        {
+            return Err(ProtocolError::Channel(format!(
+                "gpu fence stale: sync_token {} < 期望 {min}",
+                desc.sync_token
+            )));
+        }
+        if desc.transport == crate::GpuImageTransport::DmaBuf && browser_gpu_dmabuf_import_enabled() {
+            #[cfg(target_os = "linux")]
+            {
+                let fd = consume_dma_buf_fd(&desc)?;
+                return Ok(CompositorResolvedFrame::Dmabuf {
+                    fd,
+                    width: desc.width,
+                    height: desc.height,
+                    stride: desc.stride,
+                    drm_fourcc: desc.drm_fourcc,
+                    drm_modifier: desc.drm_modifier,
+                });
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = desc;
+                return Err(ProtocolError::Channel("dma-buf 导入仅 Linux 可用".into()));
+            }
+        }
+        if desc.transport == crate::GpuImageTransport::DmaBuf {
+            return consume_dma_buf_rgba(&desc).map(CompositorResolvedFrame::Rgba);
+        }
+        if desc.mailbox_name.is_empty() {
+            return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
+        }
+        return consume_gpu_mailbox_blob(&desc.mailbox_name, &desc, min_sync_token).map(CompositorResolvedFrame::Rgba);
+    }
+    let _ = min_sync_token;
+    match shm_name {
+        Some(name) if !name.is_empty() => consume_compositor_frame(&name, expected).map(CompositorResolvedFrame::Rgba),
+        Some(_) => Err(ProtocolError::Channel("compositor shm 名为空".into())),
+        None => {
+            if width == 0 && height == 0 && rgba.is_empty() {
+                return Ok(CompositorResolvedFrame::Rgba(rgba));
+            }
+            if rgba.len() != expected {
+                return Err(ProtocolError::Channel(format!(
+                    "compositor 帧像素大小不匹配: 期望 {expected}, 实际 {}",
+                    rgba.len()
+                )));
+            }
+            Ok(CompositorResolvedFrame::Rgba(rgba))
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -440,46 +574,12 @@ pub fn resolve_compositor_frame_rgba_fenced(
     gpu_image: Option<crate::GpuSharedImageDescriptor>,
     min_sync_token: Option<u64>,
 ) -> Result<Vec<u8>, ProtocolError> {
-    let expected = expected_rgba_len(width, height);
-    if let Some(desc) = gpu_image {
-        if desc.width != width || desc.height != height {
-            return Err(ProtocolError::Channel(format!(
-                "gpu_image 尺寸不匹配: 期望 {width}x{height}, 描述符 {}x{}",
-                desc.width, desc.height
-            )));
-        }
-        if let Some(min) = min_sync_token
-            && desc.sync_token < min
-        {
-            return Err(ProtocolError::Channel(format!(
-                "gpu fence stale: sync_token {} < 期望 {min}",
-                desc.sync_token
-            )));
-        }
-        if desc.transport == crate::GpuImageTransport::DmaBuf {
-            return consume_dma_buf_rgba(&desc);
-        }
-        if desc.mailbox_name.is_empty() {
-            return Err(ProtocolError::Channel("gpu_image mailbox 名为空".into()));
-        }
-        return consume_gpu_mailbox_blob(&desc.mailbox_name, &desc, min_sync_token);
-    }
-    let _ = min_sync_token;
-    match shm_name {
-        Some(name) if !name.is_empty() => consume_compositor_frame(&name, expected),
-        Some(_) => Err(ProtocolError::Channel("compositor shm 名为空".into())),
-        None => {
-            if width == 0 && height == 0 && rgba.is_empty() {
-                return Ok(rgba);
-            }
-            if rgba.len() != expected {
-                return Err(ProtocolError::Channel(format!(
-                    "compositor 帧像素大小不匹配: 期望 {expected}, 实际 {}",
-                    rgba.len()
-                )));
-            }
-            Ok(rgba)
-        }
+    match resolve_compositor_frame_delivery_fenced(width, height, rgba, shm_name, gpu_image, min_sync_token)? {
+        CompositorResolvedFrame::Rgba(bytes) => Ok(bytes),
+        #[cfg(target_os = "linux")]
+        CompositorResolvedFrame::Dmabuf { .. } => Err(ProtocolError::Channel(
+            "dma-buf 导入路径：请使用 resolve_compositor_frame_delivery_fenced".into(),
+        )),
     }
 }
 

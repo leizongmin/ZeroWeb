@@ -1,6 +1,4 @@
-//! Linux GPU 纹理导出（RFC 4.3-S5：dma-buf fd 跨进程共享）。
-//!
-//! 优先尝试 Vulkan 导出；不可用时回退 memfd 线性缓冲（仍跳过 shm 文件路径）。
+//! Linux GPU 纹理导出（RFC 4.3-S5 / P0：memfd + Vulkan OPAQUE_FD 尝试）。
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
@@ -23,6 +21,8 @@ pub struct ExportedGpuFrame {
     pub drm_fourcc: u32,
     /// DRM modifier（线性 = 0）。
     pub drm_modifier: u64,
+    /// 可选 GPU fence sync_fd（Vulkan 导出路径；当前多为 None）。
+    pub sync_fd: Option<OwnedFd>,
 }
 
 /// 是否启用 compositor GPU 纹理导出（`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=1`）。
@@ -38,12 +38,14 @@ pub fn try_export_headless(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String
     })
 }
 
-fn try_export_vulkan_dma_buf(_gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
-    // FIXME: wgpu 24 hal 需 exportable 分配 + VK_EXT_external_memory_dma_buf；wgpu 30+ 有 texture_from_dmabuf_fd。
-    Err("vulkan dma-buf 导出尚未接线（需 exportable 纹理分配）".into())
+fn try_export_vulkan_dma_buf(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
+    // Vulkan OPAQUE_FD 导出需 wgpu-hal Instance 私有句柄；当前经 memfd 回退。
+    // Browser 侧 `ZW_BROWSER_GPU_DMABUF_IMPORT=1` 走 mmap→write_texture 跳过 Vec/ImageCache。
+    let _ = gpu;
+    Err("vulkan OPAQUE_FD 导出待 wgpu-hal Instance 句柄公开或 wgpu 30+ dma-buf API".into())
 }
 
-fn export_via_memfd(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
+pub(crate) fn export_via_memfd(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
     let pixels = gpu.read_pixels().ok_or("read_pixels 失败")?;
     let (width, height) = gpu.surface_size();
     if width == 0 || height == 0 {
@@ -87,7 +89,6 @@ fn export_via_memfd(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
         libc::munmap(ptr, expected);
     }
 
-    // SAFETY: fd 已填充，所有权移入 OwnedFd。
     Ok(ExportedGpuFrame {
         fd: unsafe { OwnedFd::from_raw_fd(fd) },
         width,
@@ -95,10 +96,11 @@ fn export_via_memfd(gpu: &GpuRenderer) -> Result<ExportedGpuFrame, String> {
         stride,
         drm_fourcc: DRM_FORMAT_ABGR8888,
         drm_modifier: 0,
+        sync_fd: None,
     })
 }
 
-/// Browser 侧：mmap 线性 dma-buf/memfd 并拷贝 RGBA（modifier=0）。
+/// Browser 侧：mmap 线性 dma-buf/memfd 并拷贝 RGBA（modifier=0；legacy 路径）。
 pub fn map_linear_rgba(export: &ExportedGpuFrame) -> Result<Vec<u8>, String> {
     if export.drm_modifier != 0 {
         return Err(format!("非线性 modifier {} 尚未支持", export.drm_modifier));

@@ -130,11 +130,60 @@ impl BrowserApp {
         }
     }
 
+    fn skip_local_composite_for_owned_present(&self) -> bool {
+        crate::compositor_client::owned_present_enabled()
+            && crate::compositor_client::present_enabled()
+            && self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy
+    }
+
+    /// Linux：将 tab 上 pending dma-buf 导入 GPU 纹理。
+    #[cfg(target_os = "linux")]
+    fn apply_compositor_dmabuf_import(&mut self, _width: u32, _height: u32) {
+        use zero_render_foundation::gpu::{ExportedGpuFrame, try_import_linear_dmabuf};
+
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        let Some(dmabuf) = self.tabs.snapshot_mut(tab_id).and_then(|s| s.take_compositor_dmabuf()) else {
+            return;
+        };
+        let Some(gpu) = self.gpu_renderer_as_mut() else {
+            return;
+        };
+        let export = ExportedGpuFrame {
+            fd: dmabuf.fd,
+            width: dmabuf.width,
+            height: dmabuf.height,
+            stride: dmabuf.stride,
+            drm_fourcc: dmabuf.drm_fourcc,
+            drm_modifier: dmabuf.drm_modifier,
+            sync_fd: None,
+        };
+        match try_import_linear_dmabuf(gpu.device(), gpu.queue(), &export) {
+            Ok(texture) => {
+                gpu.set_compositor_import(texture, dmabuf.width, dmabuf.height, dmabuf.dst_x, dmabuf.dst_y);
+            }
+            Err(error) => {
+                tracing::warn!("compositor dma-buf 导入失败，回退 RGBA: {error}");
+                gpu.clear_compositor_import();
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn apply_compositor_dmabuf_import(&mut self, _width: u32, _height: u32) {}
+
     /// GPU 渲染一帧（使用全量 13 种图元管线）
     pub fn render_frame(&mut self, width: u32, height: u32, present: bool) {
         if !present || !self.window_focused {
             return;
         }
+        if self.skip_local_composite_for_owned_present() {
+            self.forward_compositor_chrome_ui(width, height);
+            self.maybe_request_compositor_present(width, height);
+            return;
+        }
+        self.apply_compositor_dmabuf_import(width, height);
         let mut gpu = self.gpu_renderer.take();
         if let Some(ref mut renderer) = gpu {
             if renderer.is_present_suspended() {
@@ -197,10 +246,7 @@ impl BrowserApp {
             return Some(fb);
         }
 
-        if crate::compositor_client::owned_present_enabled()
-            && crate::compositor_client::present_enabled()
-            && self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy
-        {
+        if self.skip_local_composite_for_owned_present() {
             self.forward_compositor_chrome_ui(width, height);
             self.maybe_request_compositor_present(width, height);
             let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);

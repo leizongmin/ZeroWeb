@@ -17,8 +17,27 @@ use zero_protocol::{IpcChannel, ProcessRole, ProtocolError, child_process_args};
 const MAX_PENDING_SURFACES: usize = 64;
 const MAX_COMPLETED_SURFACES: usize = 64;
 
-/// Compositor 完成帧：surface/epoch/frame、尺寸、RGBA 与滚动偏移。
-pub type CompositorFramePixels = (u64, u64, u64, u32, u32, Vec<u8>, f32, f32);
+/// Compositor 完成帧（含可选 dma-buf GPU 导入）。
+pub struct CompositorFrameResult {
+    pub surface_id: u64,
+    pub navigation_epoch: u64,
+    pub frame_id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    #[cfg(target_os = "linux")]
+    pub dmabuf: Option<CompositorDmabufResult>,
+}
+
+#[cfg(target_os = "linux")]
+pub struct CompositorDmabufResult {
+    pub fd: std::os::fd::OwnedFd,
+    pub stride: u32,
+    pub drm_fourcc: u32,
+    pub drm_modifier: u64,
+}
 
 /// Compositor client 当前连接状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -252,6 +271,16 @@ struct CompletedFrame {
     rgba: Vec<u8>,
     scroll_x: f32,
     scroll_y: f32,
+    #[cfg(target_os = "linux")]
+    dmabuf: Option<CompletedDmabufFrame>,
+}
+
+#[cfg(target_os = "linux")]
+struct CompletedDmabufFrame {
+    fd: std::os::fd::OwnedFd,
+    stride: u32,
+    drm_fourcc: u32,
+    drm_modifier: u64,
 }
 
 /// Worker 到 UI 的有界事件缓存；每个 surface 只保留最新完整位图。
@@ -457,18 +486,25 @@ impl Client {
         }
     }
 
-    fn try_recv(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFramePixels> {
+    fn try_recv(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFrameResult> {
         let frame = self.completed.try_recv(surface_id, navigation_epoch, frame_id)?;
-        Some((
-            frame.key.surface_id,
-            frame.key.navigation_epoch,
-            frame.key.frame_id,
-            frame.width,
-            frame.height,
-            frame.rgba,
-            frame.scroll_x,
-            frame.scroll_y,
-        ))
+        Some(CompositorFrameResult {
+            surface_id: frame.key.surface_id,
+            navigation_epoch: frame.key.navigation_epoch,
+            frame_id: frame.key.frame_id,
+            width: frame.width,
+            height: frame.height,
+            rgba: frame.rgba,
+            scroll_x: frame.scroll_x,
+            scroll_y: frame.scroll_y,
+            #[cfg(target_os = "linux")]
+            dmabuf: frame.dmabuf.map(|d| CompositorDmabufResult {
+                fd: d.fd,
+                stride: d.stride,
+                drm_fourcc: d.drm_fourcc,
+                drm_modifier: d.drm_modifier,
+            }),
+        })
     }
 
     fn shutdown(&mut self) {
@@ -738,15 +774,35 @@ fn process_batch(
                     frame_id,
                 }) =>
             {
-                let rgba = zero_protocol::resolve_compositor_frame_rgba_fenced(
+                let (rgba, dmabuf) = match zero_protocol::resolve_compositor_frame_delivery_fenced(
                     width,
                     height,
                     rgba,
                     shm_name,
                     gpu_image,
                     Some(expected.frame_id),
-                )?;
-                validate_frame_data(width, height, &rgba)?;
+                )? {
+                    zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
+                        validate_frame_data(width, height, &bytes)?;
+                        (bytes, None)
+                    }
+                    #[cfg(target_os = "linux")]
+                    zero_protocol::CompositorResolvedFrame::Dmabuf {
+                        fd,
+                        stride,
+                        drm_fourcc,
+                        drm_modifier,
+                        ..
+                    } => (
+                        Vec::new(),
+                        Some(CompletedDmabufFrame {
+                            fd,
+                            stride,
+                            drm_fourcc,
+                            drm_modifier,
+                        }),
+                    ),
+                };
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
                         "SMOKE_EVENT component=compositor_client event=frame_completed surface={} epoch={} frame={} width={} height={}",
@@ -764,6 +820,8 @@ fn process_batch(
                     rgba,
                     scroll_x,
                     scroll_y,
+                    #[cfg(target_os = "linux")]
+                    dmabuf,
                 });
             }
             (
@@ -857,7 +915,7 @@ pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, pain
 ///
 /// 仅返回相同 `navigation_epoch` 且帧序号不小于 `frame_id` 的缓存，结果格式为
 /// `(surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)`。
-pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFramePixels> {
+pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFrameResult> {
     if !enabled() {
         return None;
     }
@@ -1145,6 +1203,8 @@ mod tests {
                 rgba: vec![0; 4],
                 scroll_x: 0.0,
                 scroll_y: 0.0,
+                #[cfg(target_os = "linux")]
+                dmabuf: None,
             });
         }
         assert_eq!(completed.len(), 2);
@@ -1264,6 +1324,8 @@ mod tests {
             rgba: vec![0; 4],
             scroll_x: 0.0,
             scroll_y: 0.0,
+            #[cfg(target_os = "linux")]
+            dmabuf: None,
         });
         let status = Arc::new(SharedStatus::new(CompositorStatus::Starting));
         let worker_commands = Arc::clone(&commands);

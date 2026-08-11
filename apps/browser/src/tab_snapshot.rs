@@ -33,6 +33,22 @@ pub struct CompositorFrame {
     pub height: u32,
     /// RGBA 位图在当前 Tab 图片缓存中的键。
     pub image_key: ImageKey,
+    /// Linux：GPU 直接导入（跳过 image_cache CPU 上传）。
+    #[cfg(target_os = "linux")]
+    pub gpu_direct: bool,
+}
+
+/// Linux compositor dma-buf 待 GPU 导入。
+#[cfg(target_os = "linux")]
+pub struct CompositorDmabufPending {
+    pub fd: std::os::fd::OwnedFd,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub drm_fourcc: u32,
+    pub drm_modifier: u64,
+    pub dst_x: f32,
+    pub dst_y: f32,
 }
 
 /// 标签页在 UI 线程上的只读快照。
@@ -70,6 +86,9 @@ pub struct TabSnapshot {
     pub compositor_present: Option<CompositorFrame>,
     /// compositor 回读的滚动偏移（RFC 4.2；`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时用于显示）。
     pub compositor_scroll: Option<(f32, f32)>,
+    /// Linux：待 Browser GPU 导入的 compositor dma-buf。
+    #[cfg(target_os = "linux")]
+    pub compositor_dmabuf: Option<CompositorDmabufPending>,
 }
 
 impl TabSnapshot {
@@ -94,6 +113,8 @@ impl TabSnapshot {
             compositor_frame: None,
             compositor_present: None,
             compositor_scroll: None,
+            #[cfg(target_os = "linux")]
+            compositor_dmabuf: None,
         }
     }
 
@@ -181,9 +202,53 @@ impl TabSnapshot {
             width,
             height,
             image_key,
+            #[cfg(target_os = "linux")]
+            gpu_direct: false,
         });
         self.compositor_scroll = Some((scroll_x, scroll_y));
         true
+    }
+
+    /// Linux：接收 compositor dma-buf（GPU 导入路径，无 RGBA 拷贝）。
+    #[cfg(target_os = "linux")]
+    pub fn commit_compositor_dmabuf(
+        &mut self,
+        submission: CompositorSubmission,
+        width: u32,
+        height: u32,
+        scroll_x: f32,
+        scroll_y: f32,
+        dmabuf: CompositorDmabufPending,
+    ) -> bool {
+        if self.compositor_submission != Some(submission)
+            || self.compositor_frame.as_ref().is_some_and(|current| {
+                current.surface_id == submission.surface_id
+                    && (current.navigation_epoch, current.frame_id)
+                        >= (submission.navigation_epoch, submission.frame_id)
+            })
+        {
+            return false;
+        }
+        self.image_cache.clear();
+        self.compositor_present = None;
+        self.compositor_frame = Some(CompositorFrame {
+            surface_id: submission.surface_id,
+            navigation_epoch: submission.navigation_epoch,
+            frame_id: submission.frame_id,
+            width,
+            height,
+            image_key: ImageKey::new(0),
+            gpu_direct: true,
+        });
+        self.compositor_dmabuf = Some(dmabuf);
+        self.compositor_scroll = Some((scroll_x, scroll_y));
+        true
+    }
+
+    /// 取走待导入 dma-buf（每帧消费一次）。
+    #[cfg(target_os = "linux")]
+    pub fn take_compositor_dmabuf(&mut self) -> Option<CompositorDmabufPending> {
+        self.compositor_dmabuf.take()
     }
 
     /// 接收 compositor 全窗口 present 位图；须与当前 page surface 匹配。
@@ -211,6 +276,8 @@ impl TabSnapshot {
             width,
             height,
             image_key,
+            #[cfg(target_os = "linux")]
+            gpu_direct: false,
         });
         true
     }

@@ -32,19 +32,25 @@ pub fn apply_early_if_enabled() {
     apply_seccomp_if_enabled();
 }
 
+fn compositor_gpu_enabled() -> bool {
+    std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1")
+}
+
 /// 字体加载完成后应用 Landlock（`ZW_COMPOSITOR_LANDLOCK=1`）。
 pub fn apply_landlock_after_init() {
     if !compositor_landlock_enabled() {
         return;
     }
-    if std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1") {
-        tracing::warn!("compositor: landlock 与 ZW_COMPOSITOR_GPU=1 不兼容，已跳过");
-        return;
-    }
     #[cfg(target_os = "linux")]
     {
-        match landlock_linux::install_compositor_landlock() {
-            Ok(()) => tracing::info!("compositor: landlock 文件系统沙箱已启用"),
+        let gpu = compositor_gpu_enabled();
+        let result = if gpu {
+            landlock_linux::install_compositor_landlock_gpu_aware()
+        } else {
+            landlock_linux::install_compositor_landlock()
+        };
+        match result {
+            Ok(()) => tracing::info!("compositor: landlock 文件系统沙箱已启用 (gpu={gpu})"),
             Err(error) => tracing::warn!("compositor: landlock 安装失败（继续运行）: {error}"),
         }
     }
@@ -58,14 +64,16 @@ fn apply_seccomp_if_enabled() {
     if !compositor_seccomp_enabled() {
         return;
     }
-    if std::env::var("ZW_COMPOSITOR_GPU").is_ok_and(|v| v == "1") {
-        tracing::warn!("compositor: seccomp 与 ZW_COMPOSITOR_GPU=1 不兼容，已跳过");
-        return;
-    }
     #[cfg(target_os = "linux")]
     {
-        match seccomp_linux::install_network_exec_filter() {
-            Ok(()) => tracing::info!("compositor: seccomp 网络/exec 过滤已启用"),
+        let gpu = compositor_gpu_enabled();
+        let result = if gpu {
+            seccomp_linux::install_network_exec_filter_gpu_aware()
+        } else {
+            seccomp_linux::install_network_exec_filter()
+        };
+        match result {
+            Ok(()) => tracing::info!("compositor: seccomp 网络/exec 过滤已启用 (gpu={gpu})"),
             Err(error) => tracing::warn!("compositor: seccomp 安装失败（继续运行）: {error}"),
         }
     }

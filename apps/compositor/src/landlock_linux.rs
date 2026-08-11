@@ -1,6 +1,4 @@
-//! Linux Landlock 文件系统沙箱（RFC 4.5-S3）。
-//!
-//! 字体加载完成后限制后续文件访问：允许 `/dev/shm` 读写，只读开放字体目录。
+//! Linux Landlock 文件系统沙箱（RFC 4.5-S3 / P2 GPU 共存）。
 
 use std::ffi::CString;
 use std::io;
@@ -39,6 +37,16 @@ fn font_read_dirs() -> &'static [&'static str] {
             vec!["/usr/share/fonts", "/usr/local/share/fonts", "/etc/fonts"]
         }
     })
+}
+
+fn gpu_extra_read_dirs() -> &'static [&'static str] {
+    &[
+        "/usr/share/vulkan",
+        "/usr/share/dri",
+        "/usr/lib",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+    ]
 }
 
 fn syscall_landlock_create_ruleset(attr: &LandlockRulesetAttr) -> Result<i32, io::Error> {
@@ -112,8 +120,33 @@ fn add_path_rule(ruleset_fd: i32, path: &Path, access: u64) -> Result<(), io::Er
     result
 }
 
+fn add_optional_rw_rules(ruleset_fd: i32, paths: &[&str]) {
+    for path in paths {
+        let _ = add_path_rule(
+            ruleset_fd,
+            Path::new(path),
+            LANDLOCK_ACCESS_FS_READ | LANDLOCK_ACCESS_FS_WRITE,
+        );
+    }
+}
+
+fn add_optional_ro_rules(ruleset_fd: i32, paths: &[&str]) {
+    for path in paths {
+        let _ = add_path_rule(ruleset_fd, Path::new(path), LANDLOCK_ACCESS_FS_READ);
+    }
+}
+
 /// 安装 Landlock：允许 `/dev/shm` 读写 + 字体目录只读。
 pub fn install_compositor_landlock() -> Result<(), String> {
+    install_compositor_landlock_inner(false)
+}
+
+/// GPU 模式：追加 `/dev/dri`、Vulkan/驱动目录与缓存路径。
+pub fn install_compositor_landlock_gpu_aware() -> Result<(), String> {
+    install_compositor_landlock_inner(true)
+}
+
+fn install_compositor_landlock_inner(gpu: bool) -> Result<(), String> {
     let attr = LandlockRulesetAttr {
         handled_access_fs: LANDLOCK_ACCESS_FS_READ | LANDLOCK_ACCESS_FS_WRITE,
     };
@@ -129,6 +162,20 @@ pub fn install_compositor_landlock() -> Result<(), String> {
 
     for dir in font_read_dirs() {
         let _ = add_path_rule(ruleset_fd, Path::new(dir), LANDLOCK_ACCESS_FS_READ);
+    }
+
+    if gpu {
+        let _ = add_path_rule(
+            ruleset_fd,
+            Path::new("/dev/dri"),
+            LANDLOCK_ACCESS_FS_READ | LANDLOCK_ACCESS_FS_WRITE,
+        );
+        add_optional_ro_rules(ruleset_fd, gpu_extra_read_dirs());
+        if let Some(cache) = std::env::var_os("XDG_CACHE_HOME") {
+            add_optional_rw_rules(ruleset_fd, &[cache.to_string_lossy().as_ref()]);
+        } else if Path::new("/tmp").exists() {
+            add_optional_rw_rules(ruleset_fd, &["/tmp"]);
+        }
     }
 
     syscall_landlock_restrict_self(ruleset_fd).map_err(|e| format!("landlock_restrict_self 失败: {e}"))?;

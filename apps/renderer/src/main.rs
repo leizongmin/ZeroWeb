@@ -12,6 +12,7 @@ mod js_worker;
 mod macos_app;
 mod page_scripts;
 mod paint_export;
+mod sandbox;
 mod script_prefetch;
 mod text_metrics;
 
@@ -2007,6 +2008,7 @@ fn main() {
         std::process::exit(2);
     }
     tracing::info!("ZeroWeb 渲染进程启动 (type=renderer, instance-id={renderer_id})");
+    sandbox::apply_early_if_enabled();
 
     #[cfg(target_os = "macos")]
     let result = if macos_app::is_bundled_app_executable() {

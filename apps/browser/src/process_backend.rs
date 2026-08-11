@@ -346,27 +346,63 @@ impl ProcessTabBackend {
             let Some(submission) = snap.compositor_submission else {
                 continue;
             };
-            let Some((surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)) =
-                crate::compositor_client::get_frame(
-                    submission.surface_id,
-                    submission.navigation_epoch,
-                    submission.frame_id,
-                )
-            else {
+            let Some(frame) = crate::compositor_client::get_frame(
+                submission.surface_id,
+                submission.navigation_epoch,
+                submission.frame_id,
+            ) else {
                 continue;
             };
             let completed = CompositorSubmission {
-                surface_id,
-                navigation_epoch,
-                frame_id,
+                surface_id: frame.surface_id,
+                navigation_epoch: frame.navigation_epoch,
+                frame_id: frame.frame_id,
             };
-            if !snap.commit_compositor_frame(completed, width, height, rgba, scroll_x, scroll_y) {
+            #[cfg(target_os = "linux")]
+            let committed = if let Some(dmabuf) = frame.dmabuf {
+                snap.commit_compositor_dmabuf(
+                    completed,
+                    frame.width,
+                    frame.height,
+                    frame.scroll_x,
+                    frame.scroll_y,
+                    crate::tab_snapshot::CompositorDmabufPending {
+                        fd: dmabuf.fd,
+                        width: frame.width,
+                        height: frame.height,
+                        stride: dmabuf.stride,
+                        drm_fourcc: dmabuf.drm_fourcc,
+                        drm_modifier: dmabuf.drm_modifier,
+                        dst_x: 0.0,
+                        dst_y: 0.0,
+                    },
+                )
+            } else {
+                snap.commit_compositor_frame(
+                    completed,
+                    frame.width,
+                    frame.height,
+                    frame.rgba,
+                    frame.scroll_x,
+                    frame.scroll_y,
+                )
+            };
+            #[cfg(not(target_os = "linux"))]
+            let committed = snap.commit_compositor_frame(
+                completed,
+                frame.width,
+                frame.height,
+                frame.rgba,
+                frame.scroll_x,
+                frame.scroll_y,
+            );
+            if !committed {
                 tracing::debug!(
                     "忽略 stale compositor result tab {} surface {} epoch {} frame {}",
                     tab_id.0,
-                    surface_id,
-                    navigation_epoch,
-                    frame_id
+                    frame.surface_id,
+                    frame.navigation_epoch,
+                    frame.frame_id
                 );
                 continue;
             }
@@ -375,9 +411,9 @@ impl ProcessTabBackend {
                 tracing::info!(
                     "SMOKE_EVENT component=browser event=compositor_bitmap_adopted tab={} surface={} epoch={} frame={}",
                     tab_id.0,
-                    surface_id,
-                    navigation_epoch,
-                    frame_id
+                    frame.surface_id,
+                    frame.navigation_epoch,
+                    frame.frame_id
                 );
             }
             changed = true;
@@ -1185,10 +1221,11 @@ mod navigation_contract_tests {
 mod compositor_fallback_tests {
     use super::{ProcessTabBackend, take_test_renderer_outbound};
     use crate::compositor_client::CompositorStatus;
-    use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
+    use crate::tab_snapshot::{CompositorFrame, CompositorSubmission, TabSnapshot};
     use std::path::PathBuf;
     use zero_browser_shell::TabId;
     use zero_protocol::message::{FramePublishMode, IpcMessageKind};
+    use zero_protocol::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
 
     #[test]
     fn startup_failure_enters_fallback_once() {
@@ -1319,5 +1356,63 @@ mod compositor_fallback_tests {
             std::env::remove_var("ZW_COMPOSITOR_BIN");
             std::env::remove_var("ZW_COMPOSITOR_PROCESS");
         }
+    }
+
+    #[test]
+    fn compositor_crash_legacy_viewpainted_restores_tab_render() {
+        fn red_paint(epoch: u64) -> PaintSnapshotParams {
+            PaintSnapshotParams {
+                navigation_epoch: epoch,
+                fills: vec![IpcFill {
+                    rect: IpcRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 64.0,
+                        height: 64.0,
+                    },
+                    color: IpcColor {
+                        r: 255,
+                        g: 0,
+                        b: 0,
+                        a: 255,
+                    },
+                }],
+                ..Default::default()
+            }
+        }
+
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.navigation_epoch = 1;
+        snap.compositor_submission = Some(CompositorSubmission {
+            surface_id: 99,
+            navigation_epoch: 1,
+            frame_id: 1,
+        });
+        snap.compositor_frame = Some(CompositorFrame {
+            surface_id: 99,
+            navigation_epoch: 1,
+            frame_id: 1,
+            width: 64,
+            height: 64,
+            image_key: zero_render_foundation::image_cache::ImageKey::new(1),
+            #[cfg(target_os = "linux")]
+            gpu_direct: false,
+        });
+
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+        let mut snapshot_seq = std::collections::HashMap::new();
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            IpcMessageKind::ViewPainted(Box::new(red_paint(1))),
+            &mut snapshot_seq,
+            &mut pending_loaded,
+            &mut pending_errors,
+        );
+
+        assert!(snap.last_render.is_some(), "Legacy ViewPainted 应恢复页面渲染");
+        assert!(snap.compositor_submission.is_none() || snap.should_composite_paint());
     }
 }

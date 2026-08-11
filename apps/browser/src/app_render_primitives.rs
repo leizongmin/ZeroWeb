@@ -17,6 +17,10 @@ pub(crate) fn compositor_frame_primitives(
     scale: f32,
     clip_viewport: ViewportClip,
 ) -> RenderPrimitives {
+    #[cfg(target_os = "linux")]
+    if frame.gpu_direct {
+        return RenderPrimitives::new();
+    }
     let mut source = RenderPrimitives::new();
     source.images.push(ImagePrimitive {
         rect: Rect::new(0.0, 0.0, frame.width as f32, frame.height as f32),
@@ -566,6 +570,8 @@ mod compositor_frame_tests {
             width: 100,
             height: 80,
             image_key: ImageKey::new(3),
+            #[cfg(target_os = "linux")]
+            gpu_direct: false,
         };
         let viewport = ViewportClip::new(25.0, 30.0, 100.0, 90.0);
 
