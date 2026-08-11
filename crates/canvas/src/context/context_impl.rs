@@ -1009,51 +1009,98 @@ impl CanvasContext {
             && (self.shadow_blur > 0.0 || self.shadow_offset_x != 0.0 || self.shadow_offset_y != 0.0)
     }
 
-    /// 为矩形绘制阴影。简化实现：绘制一个偏移的矩形，alpha 根据 shadow_blur 降低。
+    /// R3240：为矩形绘制阴影——region alpha mask（矩形覆盖）+ box blur（shadowBlur）+ 经
+    /// composite_shadow_mask 合成（消费 globalCompositeOperation，与 fill/stroke 一致）。
+    /// 旧实现仅画偏移硬边矩形、alpha 按 `1/(1+blur·0.1)` 衰减（无 blur）。
     fn draw_shadow_rect(&mut self, rect: &Rect) {
-        let blur_factor = if self.shadow_blur > 0.0 {
-            (1.0 / (1.0 + self.shadow_blur * 0.1)).min(1.0)
+        let radius = if self.shadow_blur > 0.0 {
+            (self.shadow_blur.round() as usize).max(1)
         } else {
-            1.0
+            0
         };
-        let shadow_alpha =
-            ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
-        let color = Color::rgba(
-            self.shadow_color.r,
-            self.shadow_color.g,
-            self.shadow_color.b,
-            shadow_alpha,
+        let pad = radius as i32;
+        let cw = self.width as i32;
+        let ch = self.height as i32;
+        let rx0 = (rect.left().floor() as i32 - pad).max(0);
+        let ry0 = (rect.top().floor() as i32 - pad).max(0);
+        let rx1 = (rect.right().ceil() as i32 + pad).min(cw);
+        let ry1 = (rect.bottom().ceil() as i32 + pad).min(ch);
+        if rx1 <= rx0 || ry1 <= ry0 {
+            return;
+        }
+        let rw = (rx1 - rx0) as usize;
+        let rh = (ry1 - ry0) as usize;
+        let mut mask = vec![0u8; rw * rh];
+        let (rl, rt, rr, rb) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+        for ly in 0..rh as i32 {
+            let wy = ry0 + ly;
+            for lx in 0..rw as i32 {
+                let wx = rx0 + lx;
+                if (wx as f32) >= rl && (wx as f32) < rr && (wy as f32) >= rt && (wy as f32) < rb {
+                    mask[(ly as usize) * rw + (lx as usize)] = 255;
+                }
+            }
+        }
+        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        self.composite_shadow_mask(
+            &mask,
+            rx0,
+            ry0,
+            rw,
+            rh,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+            self.shadow_color,
+            self.global_alpha,
         );
-        let shadow_rect = Rect::new(
-            rect.left() + self.shadow_offset_x,
-            rect.top() + self.shadow_offset_y,
-            rect.size.width,
-            rect.size.height,
-        );
-        self.blit_rect_to_pixels(&shadow_rect, color);
     }
 
-    /// 为路径绘制阴影。简化实现：绘制一个偏移的路径包围盒，alpha 根据 shadow_blur 降低。
+    /// R3240：为路径绘制阴影——region alpha mask（扫描线覆盖）+ box blur + composite_shadow_mask。
     fn draw_shadow_path(&mut self, vertices: &[f32]) {
-        let blur_factor = if self.shadow_blur > 0.0 {
-            (1.0 / (1.0 + self.shadow_blur * 0.1)).min(1.0)
+        if vertices.len() < 4 {
+            return;
+        }
+        let radius = if self.shadow_blur > 0.0 {
+            (self.shadow_blur.round() as usize).max(1)
         } else {
-            1.0
+            0
         };
-        let shadow_alpha =
-            ((self.shadow_color.a as f32 * self.global_alpha * blur_factor) as u8).min(self.shadow_color.a);
-        let color = Color::rgba(
-            self.shadow_color.r,
-            self.shadow_color.g,
-            self.shadow_color.b,
-            shadow_alpha,
+        let pad = radius as i32;
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for c in vertices.chunks_exact(2) {
+            min_x = min_x.min(c[0]);
+            min_y = min_y.min(c[1]);
+            max_x = max_x.max(c[0]);
+            max_y = max_y.max(c[1]);
+        }
+        let cw = self.width as i32;
+        let ch = self.height as i32;
+        let rx0 = (min_x.floor() as i32 - pad).max(0);
+        let ry0 = (min_y.floor() as i32 - pad).max(0);
+        let rx1 = (max_x.ceil() as i32 + pad).min(cw);
+        let ry1 = (max_y.ceil() as i32 + pad).min(ch);
+        if rx1 <= rx0 || ry1 <= ry0 {
+            return;
+        }
+        let rw = (rx1 - rx0) as usize;
+        let rh = (ry1 - ry0) as usize;
+        let mut mask = vec![0u8; rw * rh];
+        super::raster::rasterize_path_coverage(vertices, &mut mask, rw, rh, rx0, ry0);
+        super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        self.composite_shadow_mask(
+            &mask,
+            rx0,
+            ry0,
+            rw,
+            rh,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+            self.shadow_color,
+            self.global_alpha,
         );
-        // 将路径的每个顶点偏移 shadow_offset
-        let offset_vertices: Vec<f32> = vertices
-            .chunks_exact(2)
-            .flat_map(|c| [c[0] + self.shadow_offset_x, c[1] + self.shadow_offset_y])
-            .collect();
-        self.blit_path_to_pixels(&offset_vertices, color);
     }
 
     /// 消费上下文，返回渲染图元列表。

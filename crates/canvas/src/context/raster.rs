@@ -183,6 +183,80 @@ fn blend_source_color(op: CompositeOperation, da: f32, src: Rgb, dst: Rgb) -> Rg
     ]
 }
 
+/// R3240：单遍可分离 box blur（边缘 clamp）作用于 alpha mask。半径 0 / 空 mask 为 no-op。
+/// 窗口样本数恒为 `2r+1`（边缘重复采样），故除数固定 `2r+1`。
+pub(crate) fn box_blur_alpha(buf: &mut [u8], w: usize, h: usize, radius: usize) {
+    if radius == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let r = radius as isize;
+    let win = (2 * radius + 1) as u32;
+    // 水平 pass：buf → tmp
+    let mut tmp = vec![0u8; w * h];
+    for y in 0..h {
+        let row = &buf[y * w..(y + 1) * w];
+        for x in 0..w {
+            let mut sum: u32 = 0;
+            for dx in -r..=r {
+                let xx = (x as isize + dx).clamp(0, w as isize - 1) as usize;
+                sum += row[xx] as u32;
+            }
+            tmp[y * w + x] = (sum / win) as u8;
+        }
+    }
+    // 垂直 pass：tmp → buf
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum: u32 = 0;
+            for dy in -r..=r {
+                let yy = (y as isize + dy).clamp(0, h as isize - 1) as usize;
+                sum += tmp[yy * w + x] as u32;
+            }
+            buf[y * w + x] = (sum / win) as u8;
+        }
+    }
+}
+
+/// R3240：把路径顶点（canvas 坐标）扫描线光栅化为 alpha 覆盖 mask（region 局部）——
+/// 覆盖像素写 255，其余 0。`ox/oy` 为 region 左上角 canvas 坐标（mask-local = canvas - origin）。
+pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usize, rh: usize, ox: i32, oy: i32) {
+    if vertices.len() < 4 || rw == 0 || rh == 0 {
+        return;
+    }
+    let points: Vec<(f32, f32)> = vertices.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let mut min_y = f32::MAX;
+    let mut max_y = f32::MIN;
+    for &(_, y) in &points {
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    // 逐 mask 行扫描：sy（canvas 坐标）在路径 y 范围内时求交、填充覆盖。
+    let rwi = rw as i32;
+    for ly in 0..rh as i32 {
+        let sy = (oy + ly) as f32 + 0.5;
+        if sy < min_y || sy > max_y {
+            continue;
+        }
+        let mut xs: Vec<f32> = Vec::new();
+        for i in 0..points.len() {
+            let (x1, y1) = points[i];
+            let (x2, y2) = points[(i + 1) % points.len()];
+            if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
+                let t = (sy - y1) / (y2 - y1);
+                xs.push(x1 + t * (x2 - x1));
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        for pair in xs.chunks_exact(2) {
+            let ix_start = ((pair[0] - ox as f32).max(0.0) as i32).max(0);
+            let ix_end = ((pair[1] - ox as f32).min(rw as f32) as i32).min(rwi);
+            for lx in ix_start..ix_end {
+                mask[(ly as usize) * rw + (lx as usize)] = 255;
+            }
+        }
+    }
+}
+
 impl CanvasContext {
     // ── Private helpers ──
 
@@ -835,6 +909,59 @@ impl CanvasContext {
             (out_b * 255.0).round().clamp(0.0, 255.0) as u8,
             (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
         )
+    }
+
+    /// R3240：把（已 blur 的）shadow alpha mask 经当前 composite_operation 合成到 pixel_buffer。
+    /// mask 为 region `(rx,ry,rw,rh)`（canvas 坐标）局部；`(off_x,off_y)` 整体偏移阴影；
+    /// 每像素源色 alpha = `shadow_color.a · coverage · global_alpha`。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn composite_shadow_mask(
+        &mut self,
+        mask: &[u8],
+        rx: i32,
+        ry: i32,
+        rw: usize,
+        rh: usize,
+        off_x: f32,
+        off_y: f32,
+        color: Color,
+        global_alpha: f32,
+    ) {
+        let cw = self.width as i32;
+        let ch = self.height as i32;
+        let dox = off_x.round() as i32;
+        let doy = off_y.round() as i32;
+        let base_a = color.a as f32 / 255.0;
+        for ly in 0..rh as i32 {
+            for lx in 0..rw as i32 {
+                let coverage = mask[(ly as usize) * rw + (lx as usize)] as f32 / 255.0;
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let cx = rx + lx + dox;
+                let cy = ry + ly + doy;
+                if cx < 0 || cy < 0 || cx >= cw || cy >= ch {
+                    continue;
+                }
+                let alpha = (base_a * coverage * global_alpha).clamp(0.0, 1.0);
+                if alpha <= 0.0 {
+                    continue;
+                }
+                let src = Color::rgba(color.r, color.g, color.b, (alpha * 255.0).round() as u8);
+                let idx = ((cy as usize) * (self.width as usize) + (cx as usize)) * 4;
+                let (pr, pg, pb, pa) = self.composite_pixel(
+                    src,
+                    self.pixel_buffer[idx],
+                    self.pixel_buffer[idx + 1],
+                    self.pixel_buffer[idx + 2],
+                    self.pixel_buffer[idx + 3],
+                );
+                self.pixel_buffer[idx] = pr;
+                self.pixel_buffer[idx + 1] = pg;
+                self.pixel_buffer[idx + 2] = pb;
+                self.pixel_buffer[idx + 3] = pa;
+            }
+        }
     }
 
     /// 将矩形区域的颜色写入像素缓冲区（光栅化填充），应用当前合成操作模式。

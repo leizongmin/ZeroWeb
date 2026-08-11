@@ -197,6 +197,57 @@ fn blend_modes_r3239() {
     );
 }
 
+/// R3240：`shadowBlur` 经 region alpha mask + box blur 真实模糊阴影边缘。
+/// 旧实现仅画偏移硬边矩形、alpha 衰减（无 blur）——blur>0 与 blur=0 边缘同为硬切。
+/// 区分断言：silhouette 外 1px 的像素，blur=0 须无阴影（硬边），blur=4 须有阴影（软扩散）。
+#[test]
+fn shadow_blur_softens_edge_r3240() {
+    use crate::context::CanvasContext;
+    use zero_render_foundation::color::Color;
+
+    // 红矩形 (5,5)-(15,15) + 黑阴影（offset 5,5 → silhouette (10,10)-(20,20)），读 alpha。
+    let shadow_alpha = |blur: f32, use_path: bool, px: u32, py: u32| -> u8 {
+        let mut ctx = CanvasContext::new(30, 30);
+        ctx.set_shadow_color(Color::rgba(0, 0, 0, 200));
+        ctx.set_shadow_offset_x(5.0);
+        ctx.set_shadow_offset_y(5.0);
+        ctx.set_shadow_blur(blur);
+        ctx.set_fill_color(Color::RED);
+        if use_path {
+            ctx.begin_path();
+            ctx.move_to(5.0, 5.0);
+            ctx.line_to(15.0, 5.0);
+            ctx.line_to(15.0, 15.0);
+            ctx.line_to(5.0, 15.0);
+            ctx.close_path();
+            ctx.fill();
+        } else {
+            ctx.fill_rect(5.0, 5.0, 10.0, 10.0);
+        }
+        ctx.get_image_data(px, py, 1, 1).data[3]
+    };
+
+    // (21,15)：silhouette 右边沿（20）外 1px，不被红矩形覆盖（到 15）。
+    // blur=0 硬边 → alpha 0；blur=4 软扩散 → alpha > 0。rect + path 两条路径同测。
+    assert_eq!(shadow_alpha(0.0, false, 21, 15), 0, "rect blur=0：(21,15) 硬边无阴影");
+    assert!(
+        shadow_alpha(4.0, false, 21, 15) > 0,
+        "R3240 rect blur=4：(21,15) 软扩散有阴影"
+    );
+    assert_eq!(shadow_alpha(0.0, true, 21, 15), 0, "path blur=0：(21,15) 硬边无阴影");
+    assert!(
+        shadow_alpha(4.0, true, 21, 15) > 0,
+        "R3240 path blur=4：(21,15) 软扩散有阴影"
+    );
+
+    // silhouette 内部 (18,18)：两种 blur 均有阴影。
+    assert!(shadow_alpha(0.0, false, 18, 18) > 0, "rect silhouette 内部须有阴影");
+    assert!(shadow_alpha(4.0, false, 18, 18) > 0, "rect silhouette 内部须有阴影");
+
+    // blur=0 远处 (25,15) 无阴影（防回归）。
+    assert_eq!(shadow_alpha(0.0, false, 25, 15), 0, "blur=0 远处无阴影");
+}
+
 /// 测试 arc_to 函数的各种角度和半径组合
 #[test]
 fn test_arc_to_various_angles_and_radii() {
