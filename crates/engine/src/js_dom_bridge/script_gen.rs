@@ -49,13 +49,17 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
-/// 构造「派发 transitionend 事件」的脚本（R3248，CSS Transitions §transitionend）。
-/// 宿主在过渡完成帧（`TransitionClock::drain_just_finished` → pipeline `take_pending_transition_events`）
-/// 执行：`querySelector(selector)` 取唯一目标元素（`unique_selector_for_node` 保证唯一；stale 已移除 → null
-/// guard），`new TransitionEvent('transitionend', {propertyName, elapsedTime, bubbles:true})` 派发。
-/// TransitionEvent 构造器在 shim part05:1380 注册。UI 编排回调（fade-out 后 transitionend 删元素）依赖。
-pub fn script_dispatch_transition_event(selector: &str, property: &str, elapsed: f64) -> String {
+/// 构造「派发过渡事件」的脚本（R3248 transitionend + R3252 transitionrun/transitionstart，CSS Transitions）。
+/// 宿主在过渡创建/启动/完成帧（`TransitionClock::drain_just_run` / `drain_just_started` /
+/// `drain_just_finished` → pipeline `take_pending_transition_events`）执行：`querySelector(selector)` 取唯一
+/// 目标元素（`unique_selector_for_node` 保证唯一；stale 已移除 → null guard），
+/// `new TransitionEvent(event_type, {propertyName, elapsedTime, bubbles:true})` 派发。
+/// `event_type` = `'transitionrun'`（创建，可能 delay 期）/ `'transitionstart'`（delay 过后活跃）/ `'transitionend'`
+/// （完成）；三者 init dict 完全相同（CSS Transitions §transitionrun / §transitionstart / §transitionend），
+/// 仅事件名不同。TransitionEvent 构造器在 shim part05:1380 注册。UI 编排回调（fade-out 后删元素）依赖。
+pub fn script_dispatch_transition_event(selector: &str, event_type: &str, property: &str, elapsed: f64) -> String {
     let sel = escape_js_string(selector);
+    let ty = escape_js_string(event_type);
     let prop = escape_js_string(property);
     // elapsed 为有限非负 f64（transition.duration）；直接内嵌数值（非字符串，免转义）。
     let elapsed_str = if elapsed.is_finite() && elapsed >= 0.0 {
@@ -64,7 +68,7 @@ pub fn script_dispatch_transition_event(selector: &str, property: &str, elapsed:
         "0".to_string()
     };
     format!(
-        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new TransitionEvent('transitionend',{{propertyName:'{prop}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
+        "(function(){{var _e=document.querySelector('{sel}');if(_e){{try{{_e.dispatchEvent(new TransitionEvent('{ty}',{{propertyName:'{prop}',elapsedTime:{elapsed_str},bubbles:true}}));}}catch(_x){{}}}}}})();"
     )
 }
 

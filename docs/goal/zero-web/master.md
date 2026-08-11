@@ -130,6 +130,35 @@
 
 ## 最近完成的改进
 
+### transitionrun/transitionstart 事件派发全管线（本轮 R3252，engine+webview+renderer）—— CSS Transitions 事件族收官（run/start/end 全齐），CSS 动画/过渡事件族双收官
+
+承接 R3251 后对 CSS Transitions 事件族做对称补齐——R3248 仅 transitionend（工作面覆盖 ~99% 用例），但 **transitionrun/transitionstart 从不派发**：`TransitionClock` 无「过渡创建」与「首活跃帧」检测，过渡启动（含 transition-delay 过后真正开播）无回调（状态机「running」转换初始化、单次首播 hook 缺触发点）。本轮闭合，**CSS 动画/过渡事件族双收官**（animation start/iteration/end + transition run/start/end 全齐）。mirror R3250+R3251（animation 侧刚验证的模式）跨 engine→webview→renderer 全管线。
+
+**实现（R3252，CSS Transitions §transitionrun/§transitionstart，6 文件，镜像 R3251）**：
+- `transition.rs`：+`RunTransition{element_key,property}`（创建即派，elapsedTime=0）+ `StartedTransition{element_key,property}`（首活跃帧派，elapsedTime=0）+ `just_run`/`just_started` 两缓冲；`TransitionState` +`started: bool`（去重标志）；`start_transitions()` 创建 TransitionState 时推 `just_run`（transitionrun 在创建即派，可能在 delay 期——区别于 transitionstart）；`tick()` 在 **delay 分支 continue 之后、finish 检查之前** 检测 `!started` → 推 `just_started`（保证：① transitionstart 先于 transitionend，即使同帧——瞬时过渡先 start 再 end，spec 一致；② 每过渡仅一次）；+`drain_just_run()` + `drain_just_started()` + 3 单测（无 delay run+start 同帧 / 正 delay run 先于 start / 瞬时同帧 start+end 序）。
+- `pipeline/mod.rs`：+`TransitionEventKind{Run,Start,End}` enum（+`as_event_type()` → "transitionrun"/"transitionstart"/"transitionend"）+ `TransitionEvent{kind,selector,property,elapsed}` 结构；`pending_transition_events: Vec<TransitionEvent>`（从三元组升级）；收集块 drain 顺序 **Run → Start → End**（spec 派发序；just_run 由 §4b start_transitions 填充，just_started/just_finished 由 §5b tick 填充，同一收集块 drain）；`take_pending_transition_events()` → 返 `Vec<TransitionEvent>`。
+- `script_gen.rs`：`script_dispatch_transition_event(sel,event_type,property,elapsed)`——加 `event_type` 参数（transitionrun/transitionstart/transitionend 的 TransitionEvent init dict 完全相同 {propertyName,elapsedTime,bubbles}，仅事件名不同，单一函数参数化）。
+- `webview.rs`：`take_pending_transition_events()` 返 `Vec<zero_engine::TransitionEvent>`。
+- `page_scripts.rs`：`dispatch_transition_events(js_worker, &[TransitionEvent])`——按 `ev.kind.as_event_type()` 派发。
+- `renderer/main.rs`：注释更新（+Run/Start）。
+
+**为何净正向**：① **CSS 动画/过渡事件族双收官**——transitionrun/transitionstart 从「永不派发」到 spec 合规，CSS Transitions Level 1 事件面（run/start/end）与 CSS Animations（start/iteration/end）对齐全完成；② **零回归**——zero-engine --lib **1385 全绿**（+3 测 run+start drain/delay/instant，含既有 transition lifecycle 测全过），engine+webview+renderer clippy/fmt clean；③ 镜像 R3250+R3251 刚验证模式（animation 侧），低风险；④ engine/webview/renderer 均本流域。**已知限制**：① transitionrun/transitionstart 在真实页面使用率低（transitionend 是工作面，本片为 spec 对齐）；② handler 改 DOM mutation 由后续 render 周期应用（同 R3248 documented）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/transition.rs` | +`RunTransition`/`StartedTransition` 结构 + `just_run`/`just_started` 字段 + `TransitionState.started` 标志 + `start_transitions` 推 run + `tick()` 首活跃帧推 start + `drain_just_run`/`drain_just_started` + 3 单测。 |
+| `crates/engine/src/pipeline/mod.rs` | +`TransitionEventKind`/`TransitionEvent` 结构 + 收集块 Run→Start→End drain + `take_pending_transition_events()` 返 `Vec<TransitionEvent>`。 |
+| `crates/engine/src/js_dom_bridge/script_gen.rs` | `script_dispatch_transition_event` 加 `event_type` 参数。 |
+| `crates/webview/src/webview.rs` | `take_pending_transition_events()` 返类型升级。 |
+| `apps/renderer/src/page_scripts.rs` | `dispatch_transition_events` 接 `&[TransitionEvent]`，按 kind 派发。 |
+| `apps/renderer/src/main.rs` | 注释更新（+Run/Start）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine -p zero-webview -p zero-renderer --all-targets -- -D warnings` 零警告 + **zero-engine --lib 1385 全绿**（+3 测 transition run/start，零回归）+ **全 workspace minus zero-compositor 全绿**（纯 additive 变更，零既有签名改动）。⚠️ compositor flake 仍待渲染流 env-gate/ignore（本片 scoped 验证全绿）。
+
+**下一步**：**CSS 动画/过渡事件族双收官**——CSS Transitions Level 1 + CSS Animations Level 1 事件面（6 类事件）管线全齐。**转方向**，续候选（按价值/可行性排序，本轮核实更新）：① **`scroll` 事件派发面**——element.scrollTop/scrollLeft setter 现仅更 `_scrollOffsets` 不派 scroll（程序化滚动，real browser 派 scroll + 含可滚动容器，无限滚动/懒加载触发依赖）——**最高价值待办**；② **change-on-blur**——**已核实：text input 的 change-on-blur 已实现**（renderer main.rs `blur_focused` 对比 focus_value/cur_val 派 change，R3247 期落地），**候选移除**（仅程序化 el.blur() 不触 host change 的边缘 gap 待后续）；③ native DOM Range `range.rs` 内部 spec 审（internal）；④ **resize/scroll window 事件**（ResizeObserver/IntersectionObserver 已部分，window 派发面待核）；⑤ P1a microtask checkpoint 时序。**战略决策点不变**：L2 escape-hatch（rule 11 gated）+ GPU/Display（硬件 gated）。
+
+---
+
 ### animationstart 事件派发全管线（本轮 R3251，engine+webview+renderer）—— CSS Animations 事件族收官（start/iteration/end 全齐）
 
 承接 R3250（animationiteration）后的最后一片：**animationstart 不派发**——`AnimationClock.tick()` 无「首次进入活跃间隔」检测，动画启动（含 animation-delay 过期后的真正开播）无回调（动画启动副作用、单次首播 hook、状态机「playing」转换初始化缺触发点）。本轮闭合，CSS Animations 事件族（animationstart/animationiteration/animationend）全齐。mirror R3248/R3249/R3250 跨 engine→webview→renderer 全管线。

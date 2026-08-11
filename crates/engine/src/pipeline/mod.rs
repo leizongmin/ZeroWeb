@@ -51,6 +51,44 @@ impl AnimationEventKind {
     }
 }
 
+/// 过渡事件类型（R3248 end + R3252 run/start，CSS Transitions 事件族）——区分 transitionrun（创建）/
+/// transitionstart（delay 过后活跃）/ transitionend（完成）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionEventKind {
+    /// transitionrun（CSS Transitions §transitionrun）——过渡被创建即派发（可能在 delay 期）。
+    Run,
+    /// transitionstart（CSS Transitions §transitionstart）——delay 过后首次进入活跃间隔派发（elapsedTime=0）。
+    Start,
+    /// transitionend（CSS Transitions §transitionend）——过渡完成派发（elapsedTime=duration）。
+    End,
+}
+
+impl TransitionEventKind {
+    /// 映射到 `TransitionEvent` 构造器的事件类型字符串（`new TransitionEvent(as_event_type(), {...})`）。
+    /// 三类过渡事件的 init dict 完全相同（{propertyName, elapsedTime, bubbles}），仅事件名不同
+    /// （CSS Transitions §transitionrun / §transitionstart / §transitionend）。
+    pub fn as_event_type(self) -> &'static str {
+        match self {
+            TransitionEventKind::Run => "transitionrun",
+            TransitionEventKind::Start => "transitionstart",
+            TransitionEventKind::End => "transitionend",
+        }
+    }
+}
+
+/// 「已派发待消费」的过渡事件（R3248 end + R3252 run/start）——宿主据此向 JS 派发 `TransitionEvent`。
+#[derive(Debug, Clone)]
+pub struct TransitionEvent {
+    /// 事件类型（Run → transitionrun / Start → transitionstart / End → transitionend）。
+    pub kind: TransitionEventKind,
+    /// 元素选择器（unique_selector_for_node 产出）。
+    pub selector: String,
+    /// 属性名（propertyName）。
+    pub property: String,
+    /// 时长（elapsedTime，秒；run/start=0，end=duration）。
+    pub elapsed: f64,
+}
+
 /// 「已派发待消费」的动画事件（R3249/R3250）——宿主据此向 JS 派发 `AnimationEvent`。
 #[derive(Debug, Clone)]
 pub struct AnimationEvent {
@@ -83,10 +121,11 @@ pub struct RenderPipeline {
     animation_clock: AnimationClock,
     /// CSS 过渡时钟。
     transition_clock: TransitionClock,
-    /// 「已派发待消费」的 transitionend 事件（R3248，CSS Transitions §transitionend）——
-    /// 元素选择器、属性名（propertyName）、时长（elapsedTime）。过渡完成帧由 `tick()` 收集 +
-    /// `unique_selector_for_node` 映射元素后存此；宿主经 `take_pending_transition_events()` 取出派发。
-    pending_transition_events: Vec<(String, String, f64)>,
+    /// 「已派发待消费」的过渡事件（R3248 transitionend + R3252 transitionrun/transitionstart）——元素选择器、
+    /// 事件类型（Run/Start/End）、属性名（propertyName）、时长（elapsedTime）。过渡创建/启动/完成帧由
+    /// `start_transitions` + `tick()` 收集 + `unique_selector_for_node` 映射元素后存此；宿主经
+    /// `take_pending_transition_events()` 取出派发。
+    pending_transition_events: Vec<TransitionEvent>,
     /// 「已派发待消费」的动画事件（R3249 animationend + R3250 animationiteration + R3251 animationstart）——
     /// 元素选择器、事件类型（Start/End/Iteration）、动画名（animationName）、时长（elapsedTime）。动画
     /// 启动/完成/迭代边界帧由 `tick()` 收集 + `unique_selector_for_node` 映射元素后存此；宿主经
@@ -446,10 +485,10 @@ impl RenderPipeline {
         &mut self.transition_clock
     }
 
-    /// 取出「自上次 render 后新完成」的 transitionend 事件（R3248，CSS Transends §transitionend）。
-    /// 返回 `(元素 selector, propertyName, elapsedTime)` 三元组列表；每次调用清空缓冲（每完成帧只派发一次）。
-    /// 宿主据此向 JS 派发 `new TransitionEvent('transitionend', {propertyName, elapsedTime, bubbles:true})`。
-    pub fn take_pending_transition_events(&mut self) -> Vec<(String, String, f64)> {
+    /// 取出「自上次 render 后新产生」的过渡事件（R3248 transitionend + R3252 transitionrun/transitionstart）。
+    /// 返回 [`TransitionEvent`] 列表（`kind` 区分 Run/Start/End）；每次调用清空缓冲。宿主据此向 JS 派发
+    /// `new TransitionEvent(kind.as_event_type(), {propertyName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_transition_events(&mut self) -> Vec<TransitionEvent> {
         std::mem::take(&mut self.pending_transition_events)
     }
 
@@ -537,19 +576,53 @@ impl RenderPipeline {
                 TransitionClock::apply_to_computed_style(&props, s);
             }
         }
-        // R3248（CSS Transitions §transitionend）：收集「本轮新完成」过渡 → 映射元素（element_key=u64 →
-        // NodeId，经 node_ids 建 key→nid 索引）→ unique_selector_for_node 转 selector，存 pending 待宿主派发。
-        // cleanup_finished 在此之后移除已完成 transition（不触 just_finished——drain 已先取）。
+        // R3248（§transitionend）/R3252（§transitionrun/§transitionstart）：收集「本轮新产生」过渡事件 →
+        // 映射元素（element_key=u64 → NodeId，经 node_ids 建 key→nid 索引）→ unique_selector_for_node 转
+        // selector，存 pending 待宿主派发。drain 顺序 Run → Start → End（spec 派发序：transitionrun 先于
+        // transitionstart 先于 transitionend）。cleanup_finished 在此之后移除已完成 transition（不触
+        // just_finished——drain 已先取）。just_run 由 §4b start_transitions 填充；just_started/just_finished
+        // 由本节 tick 填充，故三者在同一收集块 drain。
         {
             let mut key_to_nid: HashMap<u64, NodeId> = HashMap::new();
             for nid in &node_ids {
                 key_to_nid.insert(nid.data().as_ffi(), *nid);
             }
+            let map_sel = |ek: &u64| -> Option<(NodeId, String)> {
+                let nid = key_to_nid.get(ek)?;
+                let sel = crate::js_dom_bridge::unique_selector_for_node(&doc, *nid)?;
+                Some((*nid, sel))
+            };
+            // transitionrun（创建）——elapsedTime=0。
+            for r in self.transition_clock.drain_just_run() {
+                if let Some((_, sel)) = map_sel(&r.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::Run,
+                        selector: sel,
+                        property: r.property,
+                        elapsed: 0.0,
+                    });
+                }
+            }
+            // transitionstart（delay 过后活跃）——elapsedTime=0。
+            for s in self.transition_clock.drain_just_started() {
+                if let Some((_, sel)) = map_sel(&s.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::Start,
+                        selector: sel,
+                        property: s.property,
+                        elapsed: 0.0,
+                    });
+                }
+            }
+            // transitionend（完成）——elapsedTime=duration。
             for fin in self.transition_clock.drain_just_finished() {
-                if let Some(nid) = key_to_nid.get(&fin.element_key)
-                    && let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(&doc, *nid)
-                {
-                    self.pending_transition_events.push((sel, fin.property, fin.duration));
+                if let Some((_, sel)) = map_sel(&fin.element_key) {
+                    self.pending_transition_events.push(TransitionEvent {
+                        kind: TransitionEventKind::End,
+                        selector: sel,
+                        property: fin.property,
+                        elapsed: fin.duration,
+                    });
                 }
             }
         }

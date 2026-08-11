@@ -175,15 +175,17 @@ fn dispatch_page_lifecycle(js_worker: &RendererJsWorker) {
     }
 }
 
-/// R3248（CSS Transitions §transitionend）：派发过渡完成事件进 shim。`events` = `(元素 selector,
-/// propertyName, elapsedTime)` 三元组列表（由 pipeline `take_pending_transition_events` 产出）。
-/// 每个经 `script_dispatch_transition_event` 构造 `new TransitionEvent('transitionend', {...})` 派发到
-/// 唯一目标元素。best-effort（stale 选择器 / 构造器缺失 → 容错跳过）。UI 编排回调（fade-out 后删元素）依赖。
-pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[(String, String, f64)]) {
-    for (sel, prop, elapsed) in events {
-        let script = zero_engine::script_dispatch_transition_event(sel, prop, *elapsed);
+/// R3248（§transitionend）+ R3252（§transitionrun/§transitionstart）：派发过渡事件进 shim。`events` =
+/// [`zero_engine::TransitionEvent`] 列表（由 pipeline `take_pending_transition_events` 产出，`kind` 区分
+/// Run/Start/End）。每个经 `script_dispatch_transition_event` 构造
+/// `new TransitionEvent(kind.as_event_type(), {propertyName, elapsedTime, bubbles})` 派发到唯一目标元素。
+/// best-effort（stale 选择器 / 构造器缺失 → 容错跳过）。UI 编排回调（fade-out 后删元素）依赖。
+pub fn dispatch_transition_events(js_worker: &RendererJsWorker, events: &[zero_engine::TransitionEvent]) {
+    for ev in events {
+        let ty = ev.kind.as_event_type();
+        let script = zero_engine::script_dispatch_transition_event(&ev.selector, ty, &ev.property, ev.elapsed);
         if let Err(e) = js_worker.execute_script_direct(&script) {
-            warn!("dispatch transitionend ({sel}): {e}");
+            warn!("dispatch {ty} ({}): {e}", ev.selector);
         }
     }
 }

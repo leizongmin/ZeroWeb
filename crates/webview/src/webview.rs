@@ -1076,10 +1076,10 @@ impl WebView {
         self.pipeline.document_height()
     }
 
-    /// 取出「自上次 render 后新完成」的 transitionend 事件（R3248，CSS Transitions §transitionend）。
-    /// 返回 `(元素 selector, propertyName, elapsedTime)` 三元组列表；每次调用清空缓冲。
-    /// 宿主据此向 JS 派发 `new TransitionEvent('transitionend', {propertyName, elapsedTime, bubbles:true})`。
-    pub fn take_pending_transition_events(&mut self) -> Vec<(String, String, f64)> {
+    /// 取出「自上次 render 后新产生」的过渡事件（R3248 transitionend + R3252 transitionrun/transitionstart）。
+    /// 返回 [`zero_engine::TransitionEvent`] 列表（`kind` 区分 Run/Start/End）；每次调用清空缓冲。宿主据此向
+    /// JS 派发 `new TransitionEvent(kind.as_event_type(), {propertyName, elapsedTime, bubbles:true})`。
+    pub fn take_pending_transition_events(&mut self) -> Vec<zero_engine::TransitionEvent> {
         self.pipeline.take_pending_transition_events()
     }
 

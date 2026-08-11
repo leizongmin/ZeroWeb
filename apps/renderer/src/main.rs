@@ -427,9 +427,9 @@ impl RendererRuntime {
             // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
             *self.js_worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
         }
-        // R3248（CSS Transitions §transitionend）：render 后取出本轮新完成的过渡事件 → 派发进 shim。
-        // 过渡跨多帧完成，故每帧 render 后检查（无过渡时 take 返空 Vec，零开销）。handler 改 DOM 的
-        // mutation 由后续 render 周期应用（同 observer tick 之外的轻量路径）。
+        // R3248（§transitionend）/R3252（§transitionrun/§transitionstart）：render 后取出本轮新产生的过渡
+        // 事件 → 派发进 shim。过渡跨多帧（run 创建帧 → start delay 过后 → end 完成），故每帧 render 后检查
+        // （无过渡时 take 返空 Vec，零开销）。handler 改 DOM 的 mutation 由后续 render 周期应用。
         if self.javascript_enabled {
             let tevents = self
                 .webview

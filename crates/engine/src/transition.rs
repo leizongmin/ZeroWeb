@@ -36,6 +36,9 @@ pub struct TransitionState {
     pub start_time: f64,
     /// 是否已完成。
     pub finished: bool,
+    /// 是否已进入活跃态（R3252，CSS Transitions §transitionstart）——首次跨过 transition-delay 进入活跃
+    /// 间隔的帧由 false→true，供 `tick()` 推入 `just_started` 派发 transitionstart（elapsedTime=0）。
+    pub started: bool,
 }
 
 /// 「本轮新完成」的过渡记录（R3248）——`tick()` 在 `finished` 由 false→true 的帧推入 `just_finished`，
@@ -51,6 +54,28 @@ pub struct FinishedTransition {
     pub duration: f64,
 }
 
+/// 「本轮新创建」的过渡记录（R3252）——`start_transitions()` 创建 TransitionState 时推入 `just_run`，供宿主经
+/// `drain_just_run()` 取出后派发 `transitionrun`（CSS Transitions §transitionrun——过渡被创建即派发，可能在
+/// delay 期）。elapsedTime 恒为 0，故结构不带 elapsed 字段。
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunTransition {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 过渡属性名（transitionrun.propertyName）。
+    pub property: String,
+}
+
+/// 「本轮新启动」的过渡记录（R3252）——`tick()` 在 `started` 由 false→true（首次跨过 transition-delay 进入
+/// 活跃间隔）的帧推入 `just_started`，供宿主经 `drain_just_started()` 取出后派发 `transitionstart`
+/// （CSS Transitions §transitionstart）。elapsedTime 恒为 0，故结构不带 elapsed 字段。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StartedTransition {
+    /// 元素 key（= NodeId::as_ffi()，调用方据此映射回 NodeId）。
+    pub element_key: u64,
+    /// 过渡属性名（transitionstart.propertyName）。
+    pub property: String,
+}
+
 /// Transition 时钟 — 管理所有活跃的过渡并按帧推进。
 #[derive(Debug, Clone, Default)]
 pub struct TransitionClock {
@@ -58,6 +83,10 @@ pub struct TransitionClock {
     active_transitions: HashMap<u64, Vec<TransitionState>>,
     /// 「本轮新完成」的过渡（R3248）——`tick()` 推入，`drain_just_finished()` 取出派发 transitionend。
     just_finished: Vec<FinishedTransition>,
+    /// 「本轮新创建」的过渡（R3252）——`start_transitions()` 创建时推入，`drain_just_run()` 取出派发 transitionrun。
+    just_run: Vec<RunTransition>,
+    /// 「本轮新启动」的过渡（R3252）——`tick()` 首活跃帧推入，`drain_just_started()` 取出派发 transitionstart。
+    just_started: Vec<StartedTransition>,
 }
 
 impl TransitionClock {
@@ -121,7 +150,15 @@ impl TransitionClock {
                 timing_function: timing,
                 start_time: current_time,
                 finished: false,
+                started: false,
             };
+
+            // R3252（CSS Transitions §transitionrun）：过渡被创建即派 transitionrun（可能在 delay 期，尚未
+            // 真正播放）。与 transitionstart 的区别：start 在 delay 过后活跃帧派；无 delay 时 run 与 start 同帧。
+            self.just_run.push(RunTransition {
+                element_key,
+                property: property.clone(),
+            });
 
             self.active_transitions.entry(element_key).or_default().push(state);
         }
@@ -154,6 +191,18 @@ impl TransitionClock {
             }
 
             let progress = (active_elapsed / transition.duration).clamp(0.0, 1.0);
+
+            // R3252（CSS Transitions §transitionstart）：检测「首次进入活跃间隔」——delay 过后的首帧
+            // （`started` 由 false→true）派 transitionstart。置于 finish 检查**之前**，使瞬时过渡（首帧即完成）
+            // 先派 start 再派 end（spec：transitionstart 先于 transitionend，即使同帧）。elapsedTime=0。
+            // `started` 标志保证每过渡只派一次。
+            if !transition.started {
+                transition.started = true;
+                self.just_started.push(StartedTransition {
+                    element_key,
+                    property: transition.property.clone(),
+                });
+            }
 
             if progress >= 1.0 {
                 transition.finished = true;
@@ -207,6 +256,18 @@ impl TransitionClock {
     /// 宿主据此映射元素并派发 `transitionend` 事件。每次调用清空内部缓冲（每完成帧只派发一次）。
     pub fn drain_just_finished(&mut self) -> Vec<FinishedTransition> {
         std::mem::take(&mut self.just_finished)
+    }
+
+    /// 取出「自上次 drain 后新创建」的过渡（R3252，CSS Transitions §transitionrun）。宿主据此映射元素并派发
+    /// `transitionrun` 事件（过渡被创建即派发，可能在 delay 期）。每次调用清空缓冲。
+    pub fn drain_just_run(&mut self) -> Vec<RunTransition> {
+        std::mem::take(&mut self.just_run)
+    }
+
+    /// 取出「自上次 drain 后新启动」的过渡（R3252，CSS Transitions §transitionstart）。宿主据此映射元素并
+    /// 派发 `transitionstart` 事件（delay 过后活跃帧派，每过渡仅一次）。每次调用清空缓冲。
+    pub fn drain_just_started(&mut self) -> Vec<StartedTransition> {
+        std::mem::take(&mut self.just_started)
     }
 
     /// 移除已完成的过渡。
@@ -415,6 +476,83 @@ mod tests {
 
         // 再次 drain → 空（每完成帧只派发一次，不重复）
         assert!(clock.drain_just_finished().is_empty(), "二次 drain 空（不重复派发）");
+    }
+
+    #[test]
+    fn test_transition_drain_just_run_and_started_r3252() {
+        // R3252（CSS Transitions §transitionrun/§transitionstart）：transitionrun 在 start_transitions 创建
+        // 时派发（无 delay 时 run 与 start 同帧）；transitionstart 在 delay 过后首活跃帧派发。每过渡各一次。
+        let mut clock = TransitionClock::new();
+        let old_style = ComputedStyle::default();
+        let mut new_style = ComputedStyle::default();
+        new_style.opacity = 0.0;
+        set_transition_property(&mut new_style, "opacity"); // delay=0，duration=1.0
+
+        // start_transitions 创建过渡 → 立即派 transitionrun（无需 tick）。
+        clock.start_transitions(7, &old_style, &new_style, 0.0);
+        let run = clock.drain_just_run();
+        assert_eq!(run.len(), 1, "创建即派 transitionrun");
+        assert_eq!(run[0].element_key, 7);
+        assert_eq!(run[0].property, "opacity");
+        assert!(
+            clock.drain_just_started().is_empty(),
+            "start_transitions 不派 transitionstart（须等 tick 首活跃帧）"
+        );
+
+        // 首帧 tick（delay=0 → 立即活跃）→ 派 transitionstart（started false→true）。
+        let _ = clock.tick(7, 0.0);
+        let started = clock.drain_just_started();
+        assert_eq!(started.len(), 1, "首活跃帧派 transitionstart");
+        assert_eq!(started[0].element_key, 7);
+        assert_eq!(started[0].property, "opacity");
+
+        // 后续帧不再派 transitionstart（去重），进行中也未派 transitionend。
+        let _ = clock.tick(7, 0.5);
+        assert!(clock.drain_just_started().is_empty(), "已启动不重复派 transitionstart");
+        assert!(clock.drain_just_run().is_empty(), "不重复派 transitionrun");
+        assert!(clock.drain_just_finished().is_empty(), "进行中未完成");
+    }
+
+    #[test]
+    fn test_transition_run_before_start_with_delay_r3252() {
+        // R3252 关键：正 transition-delay 时，transitionrun 在创建即派，transitionstart 延后到 delay 过后。
+        let mut clock = TransitionClock::new();
+        let old_style = ComputedStyle::default();
+        let mut new_style = ComputedStyle::default();
+        new_style.opacity = 0.0;
+        set_transition_property(&mut new_style, "opacity");
+        new_style.transition_delay = vec![1.0]; // 1.0s 延迟
+
+        // 创建 → 派 transitionrun（delay 期也派）。
+        clock.start_transitions(3, &old_style, &new_style, 0.0);
+        assert_eq!(clock.drain_just_run().len(), 1, "delay 期仍派 transitionrun");
+
+        // t=0.5（delay 中）→ 不派 transitionstart。
+        let _ = clock.tick(3, 0.5);
+        assert!(clock.drain_just_started().is_empty(), "delay 期不派 transitionstart");
+
+        // t=1.0（delay 刚过，进入活跃）→ 派 transitionstart。
+        let _ = clock.tick(3, 1.0);
+        assert_eq!(clock.drain_just_started().len(), 1, "delay 过后首帧派 transitionstart");
+    }
+
+    #[test]
+    fn test_transition_start_before_end_instant_r3252() {
+        // R3252 边界：瞬时过渡（首帧即完成）应先派 transitionstart 再派 transitionend（spec：start 先于
+        // end，即使同帧）。tick() 的 started 检测置于 finish 检查之前，保证此序。
+        let mut clock = TransitionClock::new();
+        let old_style = ComputedStyle::default();
+        let mut new_style = ComputedStyle::default();
+        new_style.opacity = 0.0;
+        set_transition_property(&mut new_style, "opacity"); // delay=0，duration=1.0
+
+        clock.start_transitions(4, &old_style, &new_style, 0.0);
+        let _ = clock.drain_just_run(); // 清 run
+
+        // 首帧 t=2.0 已远超 duration → 同帧既 start 又 end。
+        let _ = clock.tick(4, 2.0);
+        assert_eq!(clock.drain_just_started().len(), 1, "瞬时过渡首帧仍派 transitionstart");
+        assert_eq!(clock.drain_just_finished().len(), 1, "瞬时过渡同帧也派 transitionend");
     }
 
     #[test]
