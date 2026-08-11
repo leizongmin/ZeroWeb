@@ -64,10 +64,11 @@ fn spawn_compositor() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProc
 /// 全默认 GPU 链路（含 dma-buf fd 导出）。
 #[cfg(target_os = "linux")]
 fn spawn_compositor_gpu_dmabuf() -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
-    // SAFETY: 测试进程启用 Browser dma-buf 导入解析。
-    unsafe {
-        std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "1");
-    }
+    // `ZW_BROWSER_GPU_DMABUF_IMPORT` 经 `spawn_compositor_with_env` 在持锁内设为 "1"——
+    // 该 env 同时驱动**测试进程**内 `resolve_compositor_frame_delivery_fenced` 的 Dmabuf
+    // vs Rgba 分支（frame_shm.rs `browser_gpu_dmabuf_import_enabled()`），故须在
+    // `COMPOSITOR_TEST_ENV` 锁内改进程 env，避免与本 crate 其它并行测 / frame_shm 测竞态
+    // （曾因此 PoisonError 级联致 8 测级联失败——见 R3275 调查）。
     spawn_compositor_with_env(&[
         ("ZW_COMPOSITOR_GPU", "1"),
         ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
@@ -81,18 +82,13 @@ fn spawn_compositor_with_env(
 ) -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
     let env_lock = COMPOSITOR_TEST_ENV.lock().unwrap();
 
-    // get_frame 走 CPU RGBA 读回；测试进程禁用 Browser dma-buf 导入（除非 gpu_dmabuf 专用 helper 已设）。
-    if extra_env.iter().all(|(k, _)| *k != "ZW_BROWSER_GPU_DMABUF_IMPORT") {
-        // SAFETY: 测试进程 env（持锁期间无竞态）。
-        unsafe {
-            std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
-        }
-    }
-
     let mut env: Vec<(&str, &str)> = vec![
         ("ZW_COMPOSITOR_GPU", "0"),
         ("ZW_COMPOSITOR_GPU_IMAGE", "0"),
         ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0"),
+        // get_frame 默认走 CPU RGBA 读回——测试进程（Browser 侧）禁用 dma-buf 导入解析，
+        // 除非 gpu_dmabuf 专用 helper 经 extra_env 显式覆盖为 "1"。
+        ("ZW_BROWSER_GPU_DMABUF_IMPORT", "0"),
     ];
     for (key, value) in extra_env {
         if let Some(slot) = env.iter_mut().find(|(k, _)| *k == *key) {
@@ -100,6 +96,20 @@ fn spawn_compositor_with_env(
         } else {
             env.push((key, value));
         }
+    }
+
+    // `ZW_BROWSER_GPU_DMABUF_IMPORT` 同时驱动**测试进程**（非 compositor 子进程）内
+    // `resolve_compositor_frame_delivery_fenced` 的 Dmabuf vs Rgba 分支——它在锁内
+    // 同步改进程 env，使子进程 spawn 与后续 get_frame_delivery 解析读到一致值
+    // （避免与本 crate 其它并行测 / frame_shm.rs 的 serial 测竞态级联 PoisonError）。
+    let import_value = env
+        .iter()
+        .find(|(k, _)| *k == "ZW_BROWSER_GPU_DMABUF_IMPORT")
+        .map(|(_, v)| *v)
+        .unwrap_or("0");
+    // SAFETY: 测试进程 env，持 `COMPOSITOR_TEST_ENV` 锁期间无竞态。
+    unsafe {
+        std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", import_value);
     }
 
     let bin = env!("CARGO_BIN_EXE_zero-compositor");
@@ -880,8 +890,13 @@ fn compositor_gpu_seccomp_allows_frame_ipc() {
 }
 
 /// RFC 4.3-S5 + P0：Linux 默认 GPU 链路经 dma-buf 交付（Browser 导入路径）。
+///
+/// `#[serial]` 与 `zero-protocol::frame_shm` 测共享 serial 组——本测改进程全局
+/// `ZW_BROWSER_GPU_DMABUF_IMPORT`（驱动本进程 `resolve_compositor_frame_delivery_fenced`），
+/// 须与 frame_shm.rs 中改同一 env 的 serial 测互斥，避免跨 binary 并行竞态。
 #[test]
 #[cfg(target_os = "linux")]
+#[serial_test::serial]
 fn compositor_gpu_dmabuf_browser_import_round_trips() {
     let (mut transport, _comp) = spawn_compositor_gpu_dmabuf();
     let frame = make_frame(4, 4, [255, 128, 0, 255]);
