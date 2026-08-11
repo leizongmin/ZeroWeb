@@ -6,17 +6,21 @@
 //! 存 NodeId 进 instance internal slot[0]（生产模式，非 PoC fixed 42），缓存 wrapper（身份映射 + GC weak）。
 //! instance_template `nodeType` accessor 复用 [`node::native_node_type_getter`]（经 slot NodeId 读 DOM）。
 //!
-//! **不在 S5a**（后续切片）：customElements registry 集成（S5b createElement('my-el') upgrade 经
-//! `Reflect.construct(registeredCtor)`）、connectedCallback/disconnectedCallback（S5c，复用 `_ceApplyConn`）、
+//! **不在 S5a**（后续切片）：connectedCallback/disconnectedCallback（S5c，复用 `_ceApplyConn`）、
 //! upgrade/whenDefined parity（S5d）。S5a 的 `new HTMLElement()` 建 detached div 是基类构造的最小语义
 //!（real browser `new HTMLElement()` 抛 Illegal constructor，但 headless 作基类供 extends，禁直接 new 留 S5b）。
+//!
+//! **S5b（R3265）**：ctor 优先读 [`gc::upgrade_node_id`]——`native_create_element_invoke` 命中 polyfill
+//! `_ce_registry` 时设该槽（host 已建元素 NodeId），再调 registered ctor 的 `new_instance`（super() 走本
+//! ctor 复用该 NodeId 填 slot[0]），使 `document.createElement('my-el')` 返 native custom 实例（instanceof
+//! registered ctor + nodeType=1）。registry 反查经 polyfill 全局 `__zw_native_ce_lookup(tag)`。
 //!
 //! spec/设计：`docs/specs/p1b-v8-native-bindings-rfc.md` §3.5.1（S5a 切片）；TBD-1 验证见
 //! `script-sandbox/src/dom_bindings.rs::poc_native_ctor_subclass`（R3262）。
 
 use v8;
 
-use super::gc::{cache_native_element, encode_node_id, with_dom_mut};
+use super::gc::{cache_native_element, encode_node_id, upgrade_node_id, with_dom_mut};
 use super::node::native_node_type_getter;
 
 /// 构建并注册全局 `HTMLElement` 构造器（`install_dom_bindings` 调）。
@@ -42,6 +46,10 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
 /// `new HTMLElement()` / `class X extends HTMLElement` 的 `super()` 构造器回调：建新 detached 元素
 ///（`Document::create_element('div')`，基类抽象无具体 tag）→ NodeId 进 `this` slot[0]（External ptr 值）
 /// → 缓存 wrapper（身份映射，与既有 native 元素一致）。subclass 实例经 super() 调此 ctor，slot 继承（R3262）。
+///
+/// **S5b upgrade 分支**（R3265）：custom element upgrade 经 `native_create_element_invoke` 在调
+/// registered ctor 前设 [`gc::upgrade_node_id`]（host 已建元素得 NodeId，tag=`my-el`），ctor `super()`
+/// 调此 ctor 时优先用该 NodeId（**不建新 div**），使 custom 实例与 host 建的元素同 NodeId。
 fn native_html_element_ctor_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -51,9 +59,11 @@ fn native_html_element_ctor_invoke(
     let Some(obj) = this.to_object(scope) else {
         return;
     };
-    // 建新 detached 元素（tag='div'，spec 基类抽象）。S5a 直接 new 的语义；customElements upgrade
-    //（createElement('my-el') 注入已有 NodeId）为 S5b。
-    let Some(id) = with_dom_mut(|d| d.create_element("div")) else {
+    // S5b upgrade：customElements upgrade 在途（`native_create_element_invoke` 设）→ 复用 host 建的
+    // NodeId（同 tag='my-el' 元素），避免建新 detached div 与 host 元素脱节。无 upgrade 在途 → S5a
+    // 直接 new 语义（建新 detached div）。
+    let id = upgrade_node_id().or_else(|| with_dom_mut(|d| d.create_element("div")));
+    let Some(id) = id else {
         return;
     };
     let ffi = encode_node_id(id);

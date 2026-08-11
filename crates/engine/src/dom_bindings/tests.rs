@@ -1241,3 +1241,71 @@ return (inst instanceof MyEl) + '/' + (inst instanceof HTMLElement) + '/' + inst
         "class X extends HTMLElement 子类化：instanceof 双 true + nodeType=1（slot 经 super() 继承）+ 子类 ctor 执行"
     );
 }
+
+// ── P1b S5b（R3265）：customElements upgrade——document.createElement('my-el') → native custom 实例 ──
+// 验证 native_dom 路径 createElement 命中 registry 时 Reflect.construct registered ctor，super() 经
+// thread-local upgrade_node_id 复用 host NodeId 填 slot[0]，产出 instanceof registeredCtor + nodeType=1 的
+// native 实例。registry 反查经 polyfill 全局 __zw_native_ce_lookup(tag)（测试内联模拟 polyfill 行为）。
+
+/// S5b：`document.createElement('my-el')` 命中 registry → upgrade native 实例。
+/// instanceof registered ctor + nodeType=1（super() 复用 host NodeId 经 slot 读 DOM）+ 子类 ctor 执行。
+#[test]
+fn native_custom_element_upgrade_r3265() {
+    let html = r#"<html><body></body></html>"#;
+    // 内联模拟 polyfill customElements registry + __zw_native_ce_lookup（真实 shim 在 part03.js 注册）。
+    // native_dom 路径 document.createElement / __zw_native_create_element 经 Rust
+    // native_create_element_invoke 反查此 lookup；命中则 Reflect.construct registered ctor（super() 复用
+    // thread-local host NodeId）。直接测 __zw_native_create_element（S5b 改动入口，绕过 document 对象创建）。
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]=c; }, get: function(n){ return _ce[n]; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] || null; };\
+class MyEl extends HTMLElement { constructor() { super(); this.__upgraded = true; } }\
+customElements.define('my-el', MyEl);\
+const e = __zw_native_create_element('my-el');\
+return (e instanceof MyEl) + '/' + (e instanceof HTMLElement) + '/' + e.nodeType + '/' + e.__upgraded;\
+})()";
+    // instanceof MyEl=true / instanceof HTMLElement=true / nodeType=1（slot 经 super() 复用 host NodeId）
+    // / __upgraded=true（registered ctor 执行，this 是 native 实例）。
+    assert_eq!(
+        run_script(html, script),
+        "true/true/1/true",
+        "createElement('my-el') upgrade：instanceof registered ctor + HTMLElement + nodeType=1 + ctor 执行"
+    );
+}
+
+/// S5b：未注册 tag（普通元素）走 generic Element 路径，不被误 upgrade；registry lookup 缺失 graceful 回退。
+#[test]
+fn native_custom_element_no_upgrade_unregistered_r3265() {
+    let html = r#"<html><body></body></html>"#;
+    let script = "(()=>{\
+var _ce = {};\
+globalThis.customElements = { define: function(n,c){ _ce[n]=c; } };\
+globalThis.__zw_native_ce_lookup = function(t){ return _ce[t] || null; };\
+const div = __zw_native_create_element('div');\
+return (div instanceof HTMLElement) + '/' + div.nodeType + '/' + div.tagName;\
+})()";
+    // 普通 div：instanceof HTMLElement=false（generic Element 模板，非 HTMLElement 子类）/ nodeType=1 / tag DIV。
+    // 未命中 registry → 不 upgrade，回退 generic 路径。
+    assert_eq!(
+        run_script(html, script),
+        "false/1/DIV",
+        "未注册 tag 不 upgrade：generic Element 路径，nodeType=1 + tagName=DIV"
+    );
+}
+
+/// S5b：registry lookup 缺失（polyfill 未加载 / native_dom 关闭 shim）graceful 回退，不抛。
+#[test]
+fn native_custom_element_no_lookup_graceful_r3265() {
+    let html = r#"<html><body></body></html>"#;
+    // 不注册 __zw_native_ce_lookup（模拟 shim 未加载）→ native_create_element_invoke 反查失败 → 回退 generic。
+    let script = "(()=>{\
+const div = __zw_native_create_element('section');\
+return div.nodeType + '/' + div.tagName;\
+})()";
+    assert_eq!(
+        run_script(html, script),
+        "1/SECTION",
+        "lookup 缺失 graceful 回退：generic Element，nodeType=1 + tagName=SECTION（不抛）"
+    );
+}

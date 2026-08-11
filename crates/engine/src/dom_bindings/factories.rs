@@ -30,7 +30,7 @@ use v8;
 
 use zero_dom::{Document, NodeId};
 
-use super::gc::{active_element, with_dom, with_dom_mut};
+use super::gc::{active_element, clear_upgrade_node_id, set_upgrade_node_id, with_dom, with_dom_mut};
 use super::{get_or_create_native_element, string_arg};
 
 /// 工厂回调：`__zw_native_element_for_id(idStr)` → 解析 `get_element_by_id` →
@@ -99,6 +99,13 @@ pub(super) fn native_query_selector_all_invoke(
 /// `__zw_native_create_element(tag)`：spec `dom-document-createelement`——
 /// `Document::create_element(tag)` 造新 Element NodeId → native 对象（**未挂载**，需 appendChild）。
 /// 空/缺省 tag → `div`（与 polyfill create_element 一致，spec 实际应抛，本切片 best-effort）。
+///
+/// **S5b upgrade 分支**（R3265）：tag 命中 polyfill customElements registry（经全局 JS
+/// `__zw_native_ce_lookup(tag)` 反查，返 registered ctor 或 null）→ 设 [`gc::upgrade_node_id`]（host
+/// 已建元素 NodeId）→ 调 registered ctor `new_instance`（super() → [`native_html_element_ctor_invoke`]
+/// 读 thread-local NodeId 填 slot[0]）→ 清 thread-local → 返 native custom 实例。未命中 registry → 既有
+/// generic Element 模板路径。registry 反查失败 / ctor 不可调用 / `new_instance` 失败 → 回退 generic 路径
+///（不抛，best-effort 保 createElement 永不失败）。
 pub(super) fn native_create_element_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -108,13 +115,51 @@ pub(super) fn native_create_element_invoke(
     if tag.trim().is_empty() {
         tag = "div".to_string();
     }
-    // create（borrow_mut 释放后）→ 包 native 对象（get_or_create_native_element 内含 stale 校验）。
-    let Some(id) = with_dom_mut(|d| d.create_element(tag.trim())) else {
+    let tag_trim = tag.trim().to_string();
+    // create（borrow_mut 释放后）。host 先建元素得 NodeId（custom 元素的 tag = 'my-el' 原样保留）。
+    let Some(id) = with_dom_mut(|d| d.create_element(&tag_trim)) else {
         return;
     };
+    // S5b：tag 命中 customElements registry → upgrade（Reflect.construct registered ctor 经 super() 复用
+    // 本 NodeId）。registry 反查 / ctor 调用任何失败 → 回退 generic Element 路径（best-effort 不抛）。
+    if let Some(custom) = try_upgrade_custom_element(scope, id, &tag_trim) {
+        rv.set(custom.into());
+        return;
+    }
+    // 包 native 对象（get_or_create_native_element 内含 stale 校验）。
     if let Some(obj) = get_or_create_native_element(scope, id) {
         rv.set(obj.into());
     }
+}
+
+/// S5b（R3265）custom element upgrade：反查 polyfill `_ce_registry` 命中则调 registered ctor
+/// `new_instance`，super() 经 [`html_element::native_html_element_ctor_invoke`] 读 thread-local
+/// [`gc::upgrade_node_id`] 复用 host NodeId。失败返 `None`（调用方回退 generic Element 路径）。
+fn try_upgrade_custom_element<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    id: NodeId,
+    tag: &str,
+) -> Option<v8::Local<'s, v8::Object>> {
+    // 反查 polyfill registry：全局 __zw_native_ce_lookup(tag) → ctor 或 null。
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let lookup_key = v8::String::new(scope, "__zw_native_ce_lookup")?;
+    let lookup_val = global.get(scope, lookup_key.into())?;
+    let Ok(lookup) = v8::Local::<v8::Function>::try_from(lookup_val) else {
+        return None; // polyfill 未注册 lookup（native_dom 模式 shim 未加载等）→ 无 upgrade。
+    };
+    let tag_str = v8::String::new(scope, tag)?;
+    let ctor_val = lookup.call(scope, global.into(), &[tag_str.into()]);
+    // null/undefined/缺失 → 未注册（普通元素）。
+    let ctor_val = ctor_val.filter(|v| !v.is_null_or_undefined())?;
+    let Ok(ctor) = v8::Local::<v8::Function>::try_from(ctor_val) else {
+        return None;
+    };
+    // 设 upgrade 注入槽 → super() 复用本 NodeId。失败必须清（防泄漏到后续 new HTMLElement）。
+    set_upgrade_node_id(Some(id));
+    let instance = ctor.new_instance(scope, &[]);
+    clear_upgrade_node_id();
+    instance
 }
 
 /// `document.createElementNS(ns, qualifiedName)`（spec `dom-document-createelementns`）：造带命名空间

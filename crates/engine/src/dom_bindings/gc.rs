@@ -97,6 +97,12 @@ thread_local! {
     /// 线程局部 NodeId（无 ffi 包装——focus 仅 Rust 侧读写，不经 V8 句柄）。polyfill 旧 `_activeElKey`
     /// 纯 JS 状态（不派发 focus/blur 事件）；native 经此追踪 + 真实派发 focus/blur（闭合 polyfill 限制②）。
     static ACTIVE_ELEMENT: RefCell<Option<NodeId>> = const { RefCell::new(None) };
+    /// R3265 S5b custom element upgrade 注入槽：`document.createElement('my-el')` 命中 polyfill
+    /// `_ce_registry` 时，host 已先建元素得 NodeId（`native_create_element_invoke`），需把该 NodeId
+    /// 注入到 custom ctor 的 `super()` → `native_html_element_ctor_invoke` 链中（否则 ctor 会建新
+    /// detached div，与 host 建的元素脱节——两个 NodeId）。镜像 `ACTIVE_ELEMENT` 线程局部模式：
+    /// `native_create_element_invoke` 设 → JS ctor `new_instance`（super() 读此填 slot[0]）→ 清。
+    static UPGRADE_NODE_ID: RefCell<Option<NodeId>> = const { RefCell::new(None) };
     /// R3159 `document` 对象（单例，无 NodeId 键——synthetic 命名空间对象）：弱缓存保 spec 身份
     ///（`__zw_native_get_document() === __zw_native_get_document()` 同对象）。JS 丢 `document` 引用即可 GC。
     static DOCUMENT_OBJECT: RefCell<Option<v8::Weak<v8::Object>>> = const { RefCell::new(None) };
@@ -142,6 +148,7 @@ pub(crate) fn reset() {
     DATASET_OBJECTS.with(|c| c.borrow_mut().clear());
     DATASET_TEMPLATE.with(|c| *c.borrow_mut() = None);
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = None);
+    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
     DOCUMENT_OBJECT.with(|c| *c.borrow_mut() = None);
     DOCUMENT_TEMPLATE.with(|c| *c.borrow_mut() = None);
 }
@@ -369,6 +376,24 @@ pub(crate) fn active_element() -> Option<NodeId> {
 /// 设当前焦点元素（`element.focus()` 设 Some、`element.blur()` 设 None）。
 pub(crate) fn set_active_element(id: Option<NodeId>) {
     ACTIVE_ELEMENT.with(|c| *c.borrow_mut() = id);
+}
+
+// ── R3265 S5b custom element upgrade 注入（createElement('my-el') → super() 链）──
+
+/// 取当前 upgrade 注入 NodeId（`native_create_element_invoke` 命中 registry 时设，
+/// `native_html_element_ctor_invoke` super() 读）。无 upgrade 在途 → `None`（S5a 直接 new 行为）。
+pub(crate) fn upgrade_node_id() -> Option<NodeId> {
+    UPGRADE_NODE_ID.with(|c| *c.borrow())
+}
+
+/// 设 upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 前设，填 ctor super() 链）。
+pub(crate) fn set_upgrade_node_id(id: Option<NodeId>) {
+    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = id);
+}
+
+/// 清 upgrade 注入 NodeId（`native_create_element_invoke` 调 JS ctor 后清，防泄漏到后续 new HTMLElement）。
+pub(crate) fn clear_upgrade_node_id() {
+    UPGRADE_NODE_ID.with(|c| *c.borrow_mut() = None);
 }
 
 // ── NodeId ↔ V8 对象身份映射 ──────────────────────────────────────

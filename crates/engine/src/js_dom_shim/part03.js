@@ -212,6 +212,16 @@
     upgrade: function (_root) {},
   };
 
+  // P1b S5b（R3265）：customElements registry 反查 hook——供 native_dom 路径 `document.createElement(tag)`
+  //（Rust `native_create_element_invoke`）在 host 建元素后反查是否为已注册 custom element。命中返 ctor
+  //（Rust 侧 `new_instance` 触发 super() → native HTMLElement ctor 复用 host NodeId 填 slot[0]，产出 native
+  // custom 实例），未命中返 null。native_dom 关闭时此函数定义但无人调用（零开销）。registry 在 polyfill 闭包
+  // 内，故经本全局函数暴露只读查询（不暴露内部 Map/对象引用）。
+  globalThis.__zw_native_ce_lookup = globalThis.__zw_native_ce_lookup || function (tag) {
+    var entry = _ce_registry[tag];
+    return entry ? entry.ctor : null;
+  };
+
   // ── custom element lifecycle slice（R2992）：attributeChangedCallback 分派 ──────────
   // element 实例为 generic Proxy 非 ctor 实例（upgrade/ctor 调用 defer），故本 slice 仅落地「属性变更」回调——
   // 这是 CE 最常用的可观察行为（lit/@property / 各 CE 库 react-to-attr 模式）。setAttribute/removeAttribute
