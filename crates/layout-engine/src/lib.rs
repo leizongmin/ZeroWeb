@@ -20,6 +20,7 @@ pub mod converter;
 pub mod dirty;
 pub mod engine;
 pub mod float_positioning;
+pub mod font_resolution;
 pub mod inline;
 pub mod inline_block_split;
 pub mod inline_finalization;

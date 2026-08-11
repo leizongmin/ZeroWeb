@@ -17,6 +17,21 @@ pub(super) struct ResolvedTextNodeFonts {
 }
 
 impl super::super::Painter {
+    /// 按 CSS `font-family` 顺序解析可用 face ID，供 shaping fallback 使用。
+    pub(crate) fn resolve_font_ids(
+        &self,
+        font_family: &[String],
+        font_weight: &zero_css_parser::values::FontWeightValue,
+        font_style: &zero_css_parser::values::types::FontStyleValue,
+    ) -> Vec<u32> {
+        zero_layout_engine::font_resolution::resolve_font_ids_for_style(
+            &self.font_resolver,
+            font_family,
+            font_weight,
+            font_style,
+        )
+    }
+
     pub(super) fn resolve_text_node_fonts(
         &self,
         box_node: &zero_layout_engine::LayoutBox,

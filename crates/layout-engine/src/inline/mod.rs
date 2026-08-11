@@ -470,7 +470,7 @@ impl InlineFormattingContext {
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         match &self.advance_source {
-            Some(source) if !font_ids.is_empty() => {
+            Some(source) if !font_ids.is_empty() && font_ids.first().copied() == run.font_id => {
                 source.measure_text_with_fonts(text, font_ids, run.font_size, run.is_ahem_font)
             }
             _ => self.advance_string_width(text, run.font_id, run.font_size, run.is_ahem_font),

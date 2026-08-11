@@ -1709,7 +1709,7 @@ fn ifc_advance_source_receives_ordered_font_ids() {
     let mut ctx = InlineFormattingContext::new(100.0)
         .with_advance_source(Rc::new(OrderedAdvance))
         .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]));
-    ctx.break_into_lines(vec![TextRun {
+    let run = TextRun {
         text: "xA".to_string(),
         node_id: node,
         font_size: 10.0,
@@ -1725,9 +1725,13 @@ fn ifc_advance_source_receives_ordered_font_ids() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: Some(7),
-    }]);
+    };
+    ctx.break_into_lines(vec![run.clone()]);
 
     assert_eq!(ctx.lines[0].runs[0].width, 21.0);
+    ctx.font_ids_overrides.insert(node, vec![9, 7]);
+    ctx.break_into_lines(vec![run]);
+    assert_eq!(ctx.lines[0].runs[0].width, 20.0);
 }
 
 // ── R990：apply_vertical_alignment 的 ascent ratio 按 is_ahem 区分 ──
