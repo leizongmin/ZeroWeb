@@ -1,8 +1,8 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3350：deep-review zero-dom 发现并修复两项真 bug——`insert_before` + `replace_child` **同父移动 stale-index**：两者均「先算 ref_idx/old_idx，再 `detach(new_node)`」，当 `new_node`/`new_child` 本身已是 `parent` 的子节点时，detach 把它从 `parent.children` 移除使列表左移，先前算出的索引**指向错误位置**。**`insert_before(parent, A, D)`（A 已是子）应得 `[B,C,A,D]` 实得 `[B,C,D,A]`（静默错误位置，中危）**；**`replace_child(parent, A, C)`（A 在 C 之前）→ `children[old_idx]` 越界 panic（len 收缩，高危——可致渲染进程崩溃）**。所有既有测试用 detached 新节点，从未覆盖同父移动。**根因修复**：把 `detach` 提前到索引计算之前，detach 后**重新查找** ref_node/old_child 的真实位置；补 `new==ref`/`new==old` 的 spec no-op 早返（Chrome/Firefox 一致）。7 测复现+修复（insert 前移/后移/到首/no-op + replace no-panic/前移/no-op），dom 825→832 全绿，fmt+clippy 零警告。R3349 后第十二项真 bug 修复——dom 为本流 zero-web 自主域。）
+**最后更新**: 2026-08-13（R3351：deep-review zero-webview `async_load.rs` 发现并修复一项真 bug——`extract_document_title` **HTML 注释内 title 误取 + 属性 `>` 截断**：旧实现 `lower.find("<title")` + 首 `>` 截断，是主文档抓取完成后**解析前**快速设置 tab 标题的唯一路径（`tick` → `webview.set_title`）。**注释内 title 误取（中危，真实页面高频）**：`<!-- <title>old</title> --><title>new</title>`（SSR 模板 / CMS 元数据注释 / hydration 脚手架常见）旧返回 `"old"` 而非 `"new"`——静默错误 tab 标题 / 历史记录 / 书签。**属性 `>` 截断（低危）**：`<title data-x="a>b">Real</title>` 旧把属性内 `>` 当标签闭合，截断为 `"b\">Real"`。另 `<titlebar>` 等自定义串可能误匹配。**根因修复**：重写为轻量扫描器——跳过 `<!-- ... -->` 注释块（未闭合→None）→ 大小写不敏感定位首个 `<title` 起始标签（词边界检查拒 `<titlebar`）→ 引号感知扫描起始标签闭合 `>` → 取内容到 `</title>`（大小写不敏感）。8 测复现+修复（注释跳过 / 注释后真实 / 属性双单引号 `>` / 词边界 / 大写闭合 / 边界 None / 首个胜出 / 端到端文档抓取路径），webview lib 585→593 全绿，fmt+clippy 零警告。R3350 后第十三项真 bug 修复——webview async_load 为本流 zero-web 自主域零碰撞子域（html-compat 流改 user_actions/coordinator，未碰 async_load/net_pool）。）
 
-> **R3349（上一轮）**：deep-review zero-script-sandbox 修复 `extract_dynamic_import_specifiers` 动态 import() 标识符提取恒空（中危）——es_module.rs 的 `extract_dynamic_import_specifiers` 找到 `import(` 后把剩余（如 `'./x.js')`）喂入 `extract_string_literal`，后者要求字符串以闭合引号**结尾**（`ends_with(close)`），但动态 import 引号后有 `)`（及可选 `;`）→ `ends_with` 恒 false → 恒报 unclosed → 标识符全丢。**所有动态 import 形式皆失效**（`import('./x.js')`/`;`/`await import(...)`/`import( "..." )` 全提取为 `[]`）。**生产影响**：`extract_module_import_specifiers`（调 dynamic 版）被 renderer `js_worker.rs:564` + browser `tab_js_worker.rs:542` 用于**预取/预注册**模块依赖——动态 import 漏提致对应模块未预取/预注册。**根因修复**：重写 `extract_string_literal` 扫描到**匹配闭合引号**即止、忽略其后字符，向后兼容静态 import。10 测复现+修复，script-sandbox 64+10 全绿，fmt+clippy 零警告。R3348 health-review 后重启真 bug 线：R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346+R3347+R3349 = 第十一项真 bug 修复。
+> **R3350（上一轮）**：deep-review zero-dom 发现并修复两项真 bug——`insert_before` + `replace_child` **同父移动 stale-index**：两者均「先算 ref_idx/old_idx，再 `detach(new_node)`」，当 `new_node`/`new_child` 本身已是 `parent` 的子节点时，detach 把它从 `parent.children` 移除使列表左移，先前算出的索引**指向错误位置**。**`insert_before(parent, A, D)`（A 已是子）应得 `[B,C,A,D]` 实得 `[B,C,D,A]`（静默错误位置，中危）**；**`replace_child(parent, A, C)`（A 在 C 之前）→ `children[old_idx]` 越界 panic（len 收缩，高危——可致渲染进程崩溃）**。所有既有测试用 detached 新节点，从未覆盖同父移动。**根因修复**：把 `detach` 提前到索引计算之前，detach 后**重新查找** ref_node/old_child 的真实位置；补 `new==ref`/`new==old` 的 spec no-op 早返。7 测复现+修复，dom 825→832 全绿。R3349 后第十二项真 bug 修复——dom 为本流 zero-web 自主域。
 
 > **R3348（上一轮）**：deep-review health-review 轮——连续审 host-runtime + browser-shell + page-runtime 三 crate 均确认健壮无真 bug（host-runtime winit 薄封装 / browser-shell 状态机防御充分 agent 6 候选全误报 / page-runtime 编辑契约严谨 + 对抗探针全过）；发现 `window_new.rs` 孤儿死代码（提及不删）。无代码变更（健康确认轮）。
 
@@ -191,6 +191,29 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-webview async_load 修复 extract_document_title 注释内 title 误取 + 属性 > 截断（本轮 R3351，webview async_load.rs——真 bug 修复，中危）
+
+承接 R3350（zero-dom insert_before/replace_child stale-index 修复）。本轮 deep-review 推进至 **`zero-webview`**（15.6k LOC，稳定嵌入边界）——R3350 下游判断给出候选「webview 非活跃子域」。**并行避让**：html-compat 流近 30d 87 commits 高频活跃于 `webview/user_actions.rs` + coordinator（option/form/caret 语义），故本轮只审**零碰撞纯网络域**子文件：`async_load.rs`（1473，资源异步加载/URL 解析/缓存键/超时）+ `net_pool.rs`（273，连接池）。逐行审确认多数面健壮（CSS @import 防环 css_seen / img+CSS url 共享去重 HashSet / 负缓存 + HTTP 缓存 Revalidate 304 / lazy image 阶段机），定位一项静默正确性 bug：
+
+#### R3351：extract_document_title 注释内 title 误取 + 属性 > 截断（中危，async_load.rs:840-853）
+
+- **根因**：`extract_document_title(html)` 旧实现 `lower.find("<title")` 定位首个 `<title` 出现，然后 `html[tag_start..].find('>')` 取其后第一个 `>` 作为标签闭合。两步均无 HTML 注释感知 / 引号感知。
+- **复现（确定性）**：
+  - **注释内 title 误取（真实页面高频）**：`<!-- <title>old</title> --><title>new</title>` 旧返回 `"old"`（注释内的 title 被当首个 title 元素）。SSR 模板（`<!-- generated: <title>stale</title> -->`）、CMS 元数据注释、hydration 脚手架常见此类——静默错误 tab 标题 / 历史记录 / 书签。
+  - **属性 `>` 截断**：`<title data-x="a>b">Real</title>` 旧把属性值内 `>` 当标签闭合，`content_start` 指向 `b` 后，title 截断为 `"b\">Real"`。
+  - **`<titlebar>` 误匹配**：`<titlebar>X</titlebar><title>Real</title>` 旧命中 `<titlebar` 的 `<title` 前缀。
+- **生产影响**：`extract_document_title` 是主文档抓取完成后**解析前**快速设置 tab 标题的唯一路径（`tick` document_rx 就绪分支 → `webview.set_title`）。注释内 title 误取是**静默错误**——页面标题错误但无报错，影响 tab 标题栏、历史记录、收藏书签的显示名称。真用户可见 bug。
+- **根因修复**：重写为轻量手写扫描器——
+  1. **跳过 `<!-- ... -->` 注释块**（`bytes[i..].starts_with(b"<!--")` → 找匹配 `-->` 跳过；未闭合 → `?` 返 None，注释吞噬到末尾视为无标题）。
+  2. **大小写不敏感定位首个 `<title` 起始标签**（`bytes.get(i..i+6).eq_ignore_ascii_case(b"<title")`），**词边界检查**（`<title` 后须跟空白/`>`/`/`）拒 `<titlebar` 等自定义串。
+  3. **引号感知扫描起始标签闭合 `>`**（跟踪 `"`/`'` 配对，属性值内 `>` 不计）——正确处理 `<title data-x="a>b">`。
+  4. **取内容到 `</title>`**（大小写不敏感，沿用旧 `lower_rest.find` 已正确逻辑）。
+  仅做首帧快速路径，不替代完整解析后的权威标题（DOM `<title>` 元素）。
+- **复现 + 回归测（8 测，async_load.rs tests）**：`extract_title_skips_html_comment_r3351`（注释内 title 跳过，**修复前返 "old"**）、`_comment_then_real_`（多行注释 + 真实 title）、`_attr_gt_in_quote_`（双引号 + 单引号属性 `>`）、`_word_boundary_`（`<titlebar` 不误匹配）、`_uppercase_close_tag_`（`<TITLE>`/`</TITLE>` 大小写）、`_edge_none_`（无闭合/空标题/无 title/未闭合注释 → None）、`_first_wins_`（首个 title 元素胜出）、`async_load_title_skips_comment_end_to_end_`（经 `start` + 文档抓取 host 端到端验证 `wv.title()` 取真实标题）。**确定性复现**：修复前 2 测失败（注释误取 + 大写起始标签），修复后 8 测全过。
+- **为何净正向且零回归**：纯字符串扫描逻辑修复，无公共 API 签名变更；既有 webview 测试（593 含 `extract_document_title` 基础 `wv.title()` 路径）全保持过——它们用无注释的简单 HTML（不走 bug 分支），向后兼容。**验证**：zero-webview lib **593 passed / 0 failed**（585+8，test-guard 包裹）+ 集成 17 全绿；`cargo fmt` clean + clippy `-D warnings` 零警告（`question_mark` + `sliced_string_as_bytes` lint 经重构满足）。
+
+**下游判断**：R3351 = deep-review **第十一刀**（zero-webview），**第十三项真 bug 修复**（R3334 起真 bug 线续）。**webview async_load/net_pool 纯网络子域经审确认健壮**（CSS @import 防环 / img+CSS url 去重 / 负缓存 + 304 Revalidate / lazy 阶段机均正确），唯 title 提取注释感知漏网。**zero-web 流自主域审查覆盖**：engine(dom_bindings) R3338 / net R3339+R3346 / script-sandbox R3349 / dom R3350 / webview(async_load+net_pool) R3351 / security R3342-43 / storage R3341 / protocol R3340 / css-parser R3344 / style-system R3345 / wasm-sandbox R3347 / host-runtime+browser-shell+page-runtime R3348(health)。**剩余 zero-web 流自主可审域**：① webview 其余非活跃子域（webview.rs 2364 行——超 rule-5 2000 上限，是 webview 主协调器，但与 html-compat 流 user_actions 高耦合，须谨慎选子模块）；② canvas 二轮复扫（R3254-C* 已审增量）；③ 已审 crate 二轮复扫增量。下轮续 deep-review 倾向 webview.rs 非用户动作子模块（如 WASM bridge / worker 管理 / render session，与 html-compat 流零碰撞）。
 
 ### deep-review zero-dom 修复 insert_before / replace_child 同父移动 stale-index（本轮 R3350，dom document/mod.rs——真 bug 修复，含高危 panic）
 
