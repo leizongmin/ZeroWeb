@@ -1,0 +1,196 @@
+:root {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e7f0fb;
+    --muted: #9bb0c9;
+    --blue: #6d9dff;
+    --blue-dark: #8ab0ff;
+    --aqua: #55d9d4;
+    --line: #263d5c;
+    --pale: #0d213b;
+    --paper: #08182e;
+  }
+
+  body {
+    background-color: var(--paper);
+    background-image: linear-gradient(#b9d7ff0a 1px, transparent 1px), linear-gradient(90deg, #b9d7ff0a 1px, transparent 1px);
+  }
+
+  .site-header,
+  footer {
+    background: #08182ee8;
+  }
+
+  .brand > span > span,
+  nav a:hover,
+  .text-link:hover,
+  footer > a:last-child {
+    color: var(--blue);
+  }
+
+  nav a,
+  footer {
+    color: #9fb4cc;
+  }
+
+  .language-switcher {
+    background: #122944;
+  }
+
+  .language-switcher button {
+    color: #91a8c2;
+  }
+
+  .language-switcher button[aria-pressed="true"] {
+    color: #dfeaff;
+    background: #234363;
+    box-shadow: 0 1px 3px #0006;
+  }
+
+  .github-link,
+  .button-secondary {
+    color: #d7e5f5;
+    border-color: #395675;
+    background: #0d213b;
+  }
+
+  .github-link:hover,
+  .button-secondary:hover {
+    border-color: #6786a8;
+  }
+
+  .hero {
+    background:
+      radial-gradient(circle at 78% 16%, #17b9b521 0, transparent 25%),
+      radial-gradient(circle at 18% 80%, #4b78d126 0, transparent 23%),
+      linear-gradient(180deg, #0b203a 0%, #08182e 92%);
+    border-top-color: #1d3552;
+  }
+
+  .eyebrow {
+    color: #8fb2ff;
+    border-color: #355676;
+    background: #0d213bd9;
+  }
+
+  .hero h1,
+  .section-heading h2,
+  .contribute h2 {
+    color: #eef5ff;
+  }
+
+  .hero-intro,
+  .hero-note,
+  .section-heading > p:not(.section-kicker),
+  .contribute > p:not(.section-kicker) {
+    color: var(--muted);
+  }
+
+  .experiment,
+  .products {
+    background: #08182e;
+  }
+
+  .experiment-grid article {
+    border-color: var(--line);
+    background: linear-gradient(145deg, #0d213b 45%, #102945);
+    box-shadow: 0 12px 30px #0003;
+  }
+
+  .experiment-grid article::after {
+    border-color: #31587f;
+    box-shadow: 0 0 0 13px #102b49;
+  }
+
+  .experiment-grid h3,
+  .command-card h3,
+  .principle-grid h3 {
+    color: #e8f1fc;
+  }
+
+  .experiment-grid p,
+  .principle-grid p,
+  .command-card p,
+  .quickstart-note {
+    color: var(--muted);
+  }
+
+  .architecture {
+    background: #0b2038;
+  }
+
+  .pipeline {
+    border-color: #345170;
+  }
+
+  .pipeline li,
+  .pipeline li:first-child {
+    border-color: #345170;
+  }
+
+  .pipeline span,
+  .pipeline small {
+    color: #8fa9c4;
+  }
+
+  .pipeline strong {
+    color: #e8f1fc;
+  }
+
+  .architecture .pipeline li::after {
+    box-shadow: 0 0 0 4px #173f50;
+  }
+
+  .principle-grid span {
+    color: #8fb2ff;
+    border-color: #355676;
+    background: #102844;
+  }
+
+  .command-card {
+    border-color: var(--line);
+    background: #0d213b;
+    box-shadow: 0 7px 20px #0003;
+  }
+
+  .command-card code {
+    color: #c7dbf0;
+    background: #07162a;
+  }
+
+  .updates-page h1,
+  .update-card h2 {
+    color: #eef5ff;
+  }
+
+  .updates-page .intro,
+  .update-card > p {
+    color: var(--muted);
+  }
+
+  .update-meta {
+    color: #8fa9c4;
+  }
+
+  .update-type {
+    color: #7ce5df;
+    background: #103d43;
+  }
+
+  .update-detail {
+    background: #0d213b;
+  }
+
+  .update-detail h3,
+  .source-links a {
+    color: #8fb2ff;
+  }
+
+  .update-detail ul,
+  .update-detail p {
+    color: #b3c5d9;
+  }
+}
