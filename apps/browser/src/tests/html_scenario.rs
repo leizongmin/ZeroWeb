@@ -337,9 +337,9 @@ impl<'a> BrowserScenarioHost<'a> {
 
     fn point_for_id(&mut self, expected_id: &str) -> Result<(f32, f32), String> {
         // 首次点击前命中缓存可能仍是 about:blank 首帧（wait_for_snapshot_after 在
-        // 首帧即过）——10s 内重试重扫，直到目标元素帧到达（macos-aarch64 首帧渲染慢时
-        // 曾固定 step1 失败；与场景 assertion_timeout 同量级，R2414 同族时序）。
-        let deadline = Instant::now() + Duration::from_secs(10);
+        // 首帧即过）——20s 内重试重扫，直到目标元素帧到达（macos-aarch64 慢 runner
+        // 首帧渲染可 >10s，曾固定 step1 失败；R2414 同族时序）。
+        let deadline = Instant::now() + Duration::from_secs(20);
         loop {
             if self.hit_centers.is_empty() {
                 self.scan_hit_centers();
