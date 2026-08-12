@@ -1471,11 +1471,13 @@ if (typeof structuredClone === 'function') {
                     }
                 }
                 nestedTimeout();
+                // 同步首轮 depth 已 ≥1（首次调用 depth++）；嵌套回调用 setTimeout(0) 异步推进。
+                if (depth < 1) throw new Error('timer-nesting: synchronous first run depth < 1');
                 document.getElementById('log').textContent = 'Depth: ' + depth;
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1490,11 +1492,18 @@ if (typeof structuredClone === 'function') {
                 Promise.resolve(1).then(function(v) { order.push('then1:' + v); return v + 1; })
                     .then(function(v) { order.push('then2:' + v); });
                 Promise.resolve(3).then(function(v) { order.push('then3:' + v); });
-                document.getElementById('log').textContent = order.join(',');
+                // 微任务在脚本末尾 drain——then1/then2/then3 均应执行。最终链断言预期顺序。
+                Promise.resolve().then(function () {
+                    var expected = 'then1:1,then3:3,then2:2';
+                    if (order.join(',') !== expected) {
+                        throw new Error('microtask-promise: order="' + order.join(',') + '" expected="' + expected + '"');
+                    }
+                    document.getElementById('log').textContent = order.join(',');
+                });
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1507,13 +1516,14 @@ if (typeof structuredClone === 'function') {
             <script>
                 async function fetchData() {
                     var result = await Promise.resolve('data');
+                    if (result !== 'data') throw new Error('async-await: result="' + result + '" expected "data"');
                     document.getElementById('log').textContent = 'Got: ' + result;
                 }
                 fetchData();
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1528,11 +1538,14 @@ if (typeof structuredClone === 'function') {
                 try { throw new Error('test error'); } catch(e) { log.push('caught:' + e.message); }
                 try { JSON.parse('invalid'); } catch(e) { log.push('json-error'); }
                 try { undefined.property; } catch(e) { log.push('type-error'); }
+                // 三类错误均被捕获（catch 路径执行）——若任一未捕获则脚本中断（js_executes_ok 失败）。
+                if (log.length !== 3) throw new Error('error-handling: only ' + log.length + ' branches caught');
+                if (log[0] !== 'caught:test error') throw new Error('error-handling: caught message mismatch');
                 document.getElementById('log').textContent = log.join('|');
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1543,15 +1556,20 @@ if (typeof structuredClone === 'function') {
             <h1>requestAnimationFrame</h1>
             <div id="log"></div>
             <script>
-                var called = false;
+                // RAF API 存在性（功能可用，headless 无显示设备故回调可能不触发——仅断言 API 不抛）。
+                if (typeof requestAnimationFrame !== 'function') {
+                    throw new Error('raf-callback: requestAnimationFrame not a function');
+                }
                 try {
-                    requestAnimationFrame(function(ts) { called = true; });
-                } catch(e) {}
-                document.getElementById('log').textContent = 'RAF: ' + (called ? 'queued' : 'not-available');
+                    requestAnimationFrame(function(ts) { /* headless 可能不触发 */ });
+                } catch(e) {
+                    throw new Error('raf-callback: calling requestAnimationFrame threw: ' + e.message);
+                }
+                document.getElementById('log').textContent = 'RAF available';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1564,16 +1582,20 @@ if (typeof structuredClone === 'function') {
             <div id="log"></div>
             <script>
                 var mutations = [];
-                try {
-                    var obs = new MutationObserver(function(m) { mutations.push(m.length); });
-                    obs.observe(document.getElementById('target'), { childList: true });
-                    document.getElementById('target').textContent = 'changed';
-                } catch(e) {}
-                document.getElementById('log').textContent = 'Mutations: ' + mutations.length;
+                var obs = new MutationObserver(function(m) { mutations.push(m.length); });
+                obs.observe(document.getElementById('target'), { childList: true });
+                document.getElementById('target').textContent = 'changed';
+                // MO 回调经 microtask 异步派发——末轮微任务断言 mutations 已记录（P1a JS 驱动 mutation 真触发）。
+                Promise.resolve().then(function () {
+                    if (mutations.length < 1) {
+                        throw new Error('mutation-observer: callback not invoked after textContent change');
+                    }
+                    document.getElementById('log').textContent = 'Mutations: ' + mutations.length;
+                });
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1591,12 +1613,16 @@ if (typeof structuredClone === 'function') {
                 outer.addEventListener('click', function() { log.push('outer-capture'); }, true);
                 outer.addEventListener('click', function() { log.push('outer-bubble'); }, false);
                 inner.addEventListener('click', function(e) { log.push('inner'); e.stopPropagation(); }, false);
-                try { inner.click(); } catch(e) {}
+                inner.click();
+                // 捕获阶段先于 target：outer-capture → inner（stopPropagation 阻止后续 bubble）。
+                if (log.join(',') !== 'outer-capture,inner') {
+                    throw new Error('event-bubble-capture: log="' + log.join(',') + '" expected "outer-capture,inner"');
+                }
                 document.getElementById('log').textContent = log.join(',');
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1606,25 +1632,22 @@ if (typeof structuredClone === 'function') {
             html: r#"<html><body>
             <h1>Console API</h1>
             <script>
-                console.log('log');
-                console.info('info');
-                console.warn('warn');
-                console.error('error');
-                console.debug('debug');
-                console.table([{a:1},{a:2}]);
-                console.group('group');
-                console.log('grouped');
-                console.groupEnd();
-                console.time('timer');
-                console.timeEnd('timer');
-                console.assert(true, 'should not show');
-                console.assert(false, 'should show');
-                console.count('counter');
-                console.count('counter');
+                // 所有 console 方法存在且不抛（headless 桥接宿主日志或 no-op）。
+                var methods = ['log','info','warn','error','debug','table','group','groupEnd','time','timeEnd','assert','count','dir','trace'];
+                for (var i = 0; i < methods.length; i++) {
+                    if (typeof console[methods[i]] !== 'function') {
+                        throw new Error('console-api: console.' + methods[i] + ' not a function');
+                    }
+                }
+                console.log('log'); console.info('info'); console.warn('warn'); console.error('error');
+                console.debug('debug'); console.table([{a:1},{a:2}]); console.group('group'); console.log('grouped');
+                console.groupEnd(); console.time('timer'); console.timeEnd('timer');
+                console.assert(true, 'should not show'); console.assert(false, 'should show');
+                console.count('counter'); console.count('counter');
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1635,19 +1658,16 @@ if (typeof structuredClone === 'function') {
             <h1>History API</h1>
             <div id="log"></div>
             <script>
-                var log = [];
-                try {
-                    history.pushState({page: 1}, '', '?page=1');
-                    log.push('pushState:ok');
-                    history.replaceState({page: 2}, '', '?page=2');
-                    log.push('replaceState:ok');
-                    log.push('length:' + history.length);
-                } catch(e) { log.push('error:' + e.message); }
-                document.getElementById('log').textContent = log.join('|');
+                // pushState/replaceState 不抛 + length 增长（pushState 后 length >= 2）。
+                history.pushState({page: 1}, '', '?page=1');
+                history.replaceState({page: 2}, '', '?page=2');
+                var len = history.length;
+                if (len < 2) throw new Error('history-api: history.length=' + len + ' expected >= 2 after pushState');
+                document.getElementById('log').textContent = 'pushState:ok|replaceState:ok|length:' + len;
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -1658,20 +1678,27 @@ if (typeof structuredClone === 'function') {
             <h1>Worker Lifecycle</h1>
             <div id="log"></div>
             <script>
-                var log = [];
-                try {
-                    var worker = new Worker(URL.createObjectURL(
-                        new Blob(['postMessage("hello");'], {type: 'application/javascript'})
-                    ));
-                    worker.onmessage = function(e) { log.push('msg:' + e.data); };
-                    worker.onerror = function(e) { log.push('err:' + e.message); };
-                    setTimeout(function() { worker.terminate(); log.push('terminated'); }, 100);
-                } catch(e) { log.push('error:' + e.message); }
-                document.getElementById('log').textContent = log.join('|');
+                // Worker 构造 + onmessage/onerror/terminate API 存在（headless worker postMessage 异步，
+                // 消息到达不保证在 run_page_scripts_strict drain 窗口内——仅断言构造 + API 可用）。
+                var worker = new Worker(URL.createObjectURL(
+                    new Blob(['postMessage("hello");'], {type: 'application/javascript'})
+                ));
+                if (typeof worker.onmessage === 'undefined' && !('onmessage' in worker)) {
+                    throw new Error('worker-lifecycle: worker.onmessage missing');
+                }
+                if (typeof worker.postMessage !== 'function') {
+                    throw new Error('worker-lifecycle: worker.postMessage not a function');
+                }
+                if (typeof worker.terminate !== 'function') {
+                    throw new Error('worker-lifecycle: worker.terminate not a function');
+                }
+                worker.onmessage = function(e) { document.getElementById('log').textContent = 'msg:' + e.data; };
+                worker.terminate();
+                document.getElementById('log').textContent = 'terminated';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into(), "js_executes_ok".into()],
         },
         // ═══════════════════════════════════════════════════════════════
         // WebAssembly 自动桥接增强测试

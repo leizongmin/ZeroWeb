@@ -384,6 +384,37 @@ mod runtime_path_tests {
         check_js_executes_ok(&case.html, &ctx)
             .expect("geometry interfaces 用例 js_executes_ok（DOMRect/DOMRectReadOnly/DOMMatrix/DOMPoint 全局存在 + DOMRect instanceof 继承 + 派生属性 + DOMMatrix 单位矩阵 a=1 + DOMPoint w=1 默认）");
     }
+
+    /// R3321：web-api/runtime/* 全 10 用例 js_executes_ok——锁 P1a 运行时行为（microtask 序/async-await/
+    /// 错误处理/MutationObserver 派发/事件冒泡捕获/history pushState）。此前 runtime/* 仅弱断言
+    /// （dom_has_body/h1/render_completes），运行时静默失效仍通过——本轮升级内联脚本「行为完成→断言预期→
+    /// 失败抛异常」+ 加 js_executes_ok，使 WPT 真实验证运行时（async throw 经 try_catch microtask
+    /// checkpoint 被 sandbox 捕获 → execute 返 Err → 严格模式失败）。全量遍历（非 step_by 采样）。
+    #[test]
+    fn web_api_runtime_cases_assert_behavior_r3321() {
+        let ctx = TestContext::default();
+        let runtime_cases: Vec<_> = builtin_tests()
+            .into_iter()
+            .filter(|c| c.id.starts_with("web-api/runtime/") && c.assertions.iter().any(|a| a == "js_executes_ok"))
+            .collect();
+        assert!(
+            runtime_cases.len() >= 10,
+            "web-api/runtime/* js_executes_ok 用例应 ≥10（实际 {}）",
+            runtime_cases.len()
+        );
+        let mut failed: Vec<String> = Vec::new();
+        for case in &runtime_cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "web-api/runtime/* 用例应全部 js_executes_ok 通过并断言运行时行为（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]
