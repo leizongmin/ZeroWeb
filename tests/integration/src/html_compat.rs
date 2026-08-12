@@ -260,7 +260,7 @@ document.getElementById('limited').setSelectionRange(1,1);
     let html = format!(
         r#"<html><body>
         <input id="readonly" value="fixed" readonly>
-        <input id="limited" value="A" maxlength="3">
+        <input id="limited" value="A" maxlength="3" minlength="4">
         <script>{SCRIPT}</script>
         </body></html>"#
     );
@@ -268,7 +268,7 @@ document.getElementById('limited').setSelectionRange(1,1);
     fn run(
         html: &str,
         executor: Option<&dyn JsExecutor>,
-    ) -> (String, String, Vec<Option<zero_page_runtime::ActionNoopReason>>) {
+    ) -> (String, String, String, Vec<Option<zero_page_runtime::ActionNoopReason>>) {
         let url = "https://zero.test/text-constraints";
         let mut webview = WebView::new(WebViewConfig::default());
         webview.prepare_document_state(url);
@@ -310,6 +310,19 @@ document.getElementById('limited').setSelectionRange(1,1);
                 .map_err(|error| error.to_string()),
         }
         .expect("constraint event log");
+        let validity = match executor {
+            Some(executor) => executor.execute_script_direct(
+                "[String(document.getElementById('limited').validity.tooShort),\
+                  String(document.getElementById('limited').checkValidity())].join(',')",
+            ),
+            None => webview
+                .execute_script(
+                    "[String(document.getElementById('limited').validity.tooShort),\
+                      String(document.getElementById('limited').checkValidity())].join(',')",
+                )
+                .map_err(|error| error.to_string()),
+        }
+        .expect("constraint validity");
         (
             webview
                 .form_control_value_overrides()
@@ -317,6 +330,7 @@ document.getElementById('limited').setSelectionRange(1,1);
                 .cloned()
                 .unwrap_or_default(),
             events,
+            validity,
             results.into_iter().map(|result| result.noop_reason).collect(),
         )
     }
@@ -332,8 +346,9 @@ document.getElementById('limited').setSelectionRange(1,1);
     assert_eq!(renderer, webview);
     assert_eq!(renderer.0, "A😀");
     assert_eq!(renderer.1, "limited:beforeinput:😀|limited:input:😀");
+    assert_eq!(renderer.2, "true,false");
     assert_eq!(
-        renderer.2,
+        renderer.3,
         [
             Some(zero_page_runtime::ActionNoopReason::ReadOnlyTarget),
             None,

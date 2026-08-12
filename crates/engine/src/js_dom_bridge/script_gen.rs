@@ -191,6 +191,7 @@ else if(t==='INPUT'){{var k=c.type;\
 if(k==='checkbox'||k==='radio')c.checked=c.defaultChecked;\
 else if(k!=='submit'&&k!=='reset'&&k!=='button'&&k!=='image'&&k!=='file')c.value=c.defaultValue;\
 }}else if(t==='SELECT'){{var os=c.options;for(var j=0;os&&j<os.length;j++)os[j].selected=os[j].defaultSelected;}}\
+if(typeof __zw_clear_user_edited==='function')__zw_clear_user_edited(c);\
 }}\
 }})()"
     )
@@ -306,6 +307,7 @@ pub fn script_set_text_control_state(
 if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
 e.value='{esc_value}';\
 if(typeof e.setSelectionRange==='function')e.setSelectionRange({selection_start},{selection_end});\
+if(typeof __zw_mark_user_edited==='function')__zw_mark_user_edited('{esc_sel}');\
 }})()"
     )
 }

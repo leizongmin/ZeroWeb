@@ -36,6 +36,9 @@
   // （required/pattern/type 等）headless 不强制（permissive valid）。同 _inputValues/_classCache 经
   // `__zw_reset_form_state` 清空防跨页 stale。
   var _customValidity = {};
+  // 用户编辑标记：minlength/maxlength 的 tooShort/tooLong 只适用于用户提供的值，脚本 `.value=`
+  // 不触发。宿主 user-action helper 在提交 SetText 后标记；reset/navigation 清空。
+  var _userEdited = {};
   // HTMLInputElement.files 空 FileList（R2830）：headless 无真文件 → 共享空 FileList（length 0 +
   // item→null + 可迭代）。上传表单读 `input.files.length` 不抛（无文件 → 0，跳过上传逻辑）。
   var _emptyFileList = {
@@ -1540,7 +1543,13 @@
     return { element: _wrapSelector(resolved), key: _elKey(resolved, null) };
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
+  globalThis.__zw_mark_user_edited = function(sel) { _userEdited[_elKey(String(sel), null)] = true; };
+  globalThis.__zw_clear_user_edited = function(el) {
+    for (var key in _proxyCache) {
+      if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
+    }
+  };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

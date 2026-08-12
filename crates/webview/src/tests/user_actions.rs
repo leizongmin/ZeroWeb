@@ -242,3 +242,49 @@ fn text_actions_enforce_readonly_and_maxlength() {
         "limited:beforeinput:😀|limited:input:😀"
     );
 }
+
+#[test]
+fn minlength_validation_only_applies_to_user_edits() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#suffering-from-being-too-short
+    let html = r#"<html><body>
+        <form id="form">
+          <input id="user" minlength="3">
+          <input id="scripted" minlength="3">
+        </form>
+        <script>
+          globalThis.__invalid=0;
+          document.getElementById('user').addEventListener('invalid',function(){
+            globalThis.__invalid++;
+          });
+        </script>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/minlength");
+    webview.load_html(html, None);
+    let user = webview.page_node_ref_for_selector("#user").expect("user ref");
+
+    webview
+        .dispatch_user_action(request(user, HtmlUserAction::InsertText { text: "A".to_string() }))
+        .expect("user edit");
+    assert_eq!(
+        webview
+            .execute_script(
+                "var user=document.getElementById('user');\
+                 var scripted=document.getElementById('scripted');\
+                 scripted.value='A';\
+                 [user.validity.tooShort,user.checkValidity(),user.validationMessage!=='',\
+                  scripted.validity.tooShort,scripted.checkValidity(),globalThis.__invalid].join(',');"
+            )
+            .expect("validity state"),
+        "true,false,true,false,true,1"
+    );
+    assert_eq!(
+        webview
+            .execute_script(
+                "document.getElementById('form').reset();\
+                 [user.value,user.validity.tooShort,user.checkValidity()].join(',');"
+            )
+            .expect("reset validity state"),
+        ",false,true"
+    );
+}

@@ -969,7 +969,7 @@
         // 事件（cancelable，非 bubble，经 _dispatchWithBubble）。
         if (prop === 'checkValidity' || prop === 'reportValidity') {
           return function() {
-            var v = _validityState(key);
+            var v = _validityState(key, sel, handle);
             if (!v.valid) {
               _dispatchWithBubble(key, sel, handle, _makeEvent('invalid', { cancelable: true, bubbles: false }));
             }
@@ -982,8 +982,14 @@
             return undefined;
           };
         }
-        if (prop === 'validity') return _validityState(key);
-        if (prop === 'validationMessage') return _customValidity[key] != null ? _customValidity[key] : '';
+        if (prop === 'validity') return _validityState(key, sel, handle);
+        if (prop === 'validationMessage') {
+          var validity = _validityState(key, sel, handle);
+          if (validity.customError) return _customValidity[key];
+          if (validity.tooShort) return 'Please lengthen this text.';
+          if (validity.tooLong) return 'Please shorten this text.';
+          return '';
+        }
         if (prop === 'willValidate') return true;
         // `el.select()`（HTMLInputElement/TextArea，R2826/R2844）——选中文本（legacy copy 模式
         // `el.select(); document.execCommand('copy')` 配对，及自动全选场景）。headless 无真文本选择渲染，
@@ -1441,6 +1447,7 @@
                       var _opts = c.options;
                       for (var j = 0; _opts && j < _opts.length; j++) _opts[j].selected = _opts[j].defaultSelected;
                     }
+                    if (typeof __zw_clear_user_edited === 'function') __zw_clear_user_edited(c);
                   } catch (_e) {}
                 }
               }

@@ -493,16 +493,35 @@
     }
   }
 
-  // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪（非空消息→invalid）；
-  // 原生约束（valueMissing/typeMismatch/patternMismatch/tooLong/tooShort/rangeUnderflow/rangeOverflow/
-  // stepMismatch/badInput）headless 不强制，恒 false（permissive valid——表单校验库 checkValidity 走 valid 路径）。
-  function _validityState(key) {
+  // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪；tooLong/tooShort
+  // 仅对宿主标记的用户编辑值计算，脚本 `.value=` 不触发。其余原生约束仍为 permissive false。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-constraint-validation-api
+  function _validityState(key, sel, handle) {
     var hasCustom = _customValidity[key] != null && _customValidity[key] !== '';
+    var tooLong = false, tooShort = false;
+    if (_userEdited[key] && _isTextControl(sel, handle)) {
+      var value = _controlValue(sel, handle, key);
+      var readLength = function(name) {
+        var raw = '';
+        try {
+          raw = handle
+            ? __zw_get_attr_handle(handle, name)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+        } catch (_e) {}
+        if (raw == null || raw === '') return null;
+        var parsed = Number(raw);
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+      };
+      var maxLength = readLength('maxlength');
+      var minLength = readLength('minlength');
+      tooLong = maxLength !== null && value.length > maxLength;
+      tooShort = value.length > 0 && minLength !== null && value.length < minLength;
+    }
     return {
       valueMissing: false, typeMismatch: false, patternMismatch: false,
-      tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+      tooLong: tooLong, tooShort: tooShort, rangeUnderflow: false, rangeOverflow: false,
       stepMismatch: false, badInput: false, customError: hasCustom,
-      valid: !hasCustom,
+      valid: !hasCustom && !tooLong && !tooShort,
     };
   }
 
