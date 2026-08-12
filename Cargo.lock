@@ -6420,6 +6420,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "wat",
+ "zero-browser",
  "zero-browser-shell",
  "zero-canvas",
  "zero-css-parser",
@@ -6430,6 +6431,7 @@ dependencies = [
  "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-renderer",
  "zero-script-sandbox",
  "zero-security",
  "zero-storage",

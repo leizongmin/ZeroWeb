@@ -22,12 +22,14 @@ zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true, default-features = false }
 zero-browser-shell = { workspace = true }
+zero-browser = { path = "../../apps/browser", default-features = false }
+zero-renderer = { path = "../../apps/renderer", default-features = false }
 serde_json = { workspace = true }
 
 [features]
 default = ["v8"]
-v8 = ["zero-engine/v8", "zero-webview/v8", "zero-script-sandbox/v8", "zero-page-runtime/v8", "zero-browser-shell/v8"]
-quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs"]
+v8 = ["zero-engine/v8", "zero-webview/v8", "zero-script-sandbox/v8", "zero-page-runtime/v8", "zero-browser-shell/v8", "zero-browser/v8", "zero-renderer/v8"]
+quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs", "zero-browser/quickjs", "zero-renderer/quickjs"]
 
 [dev-dependencies]
 wat = "1"

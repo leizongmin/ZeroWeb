@@ -9,6 +9,10 @@ license.workspace = true
 name = "zero-browser"
 path = "src/main.rs"
 
+[lib]
+name = "zero_browser"
+path = "src/lib.rs"
+
 [features]
 default = ["windows-console", "v8"]
 windows-console = []

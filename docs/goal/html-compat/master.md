@@ -53,8 +53,10 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] TabWorker checkedness 与 reset/submit adapter 使用 shared plan/effect
 - [x] 单进程 POST form navigation transport
 - [x] ZeroWebView identity-based user-action adapter
-- [ ] 三宿主 conformance 与取消一致性
+- [x] 三执行器默认动作与取消 conformance
+- [x] 20 轮确定性短序列重放
+- [ ] renderer / TabWorker 委托共享 WebView coordinator 并删除重复 action 逻辑
 
 ## 下一步
 
-补三宿主 conformance、取消一致性与短序列重放。
+切换 renderer / TabWorker 到共享 WebView coordinator，完成 M2。

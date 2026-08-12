@@ -1,7 +1,246 @@
 //! HTML 行为兼容性的跨 crate 契约测试。
 
 use zero_engine::{DomMutation, form_get_submission_url_with_values};
+use zero_page_runtime::{HtmlActionRequest, HtmlUserAction, JsExecutor, PageEffect, PageNodeRef};
 use zero_webview::{WebView, WebViewConfig};
+
+const CONFORMANCE_SCRIPT: &str = r#"
+globalThis.__events=[];
+var name=document.querySelector('#name');
+var check=document.querySelector('#check');
+var form=document.querySelector('#form');
+name.addEventListener('beforeinput',function(event){
+  globalThis.__events.push('beforeinput:'+event.data);
+  if(globalThis.__prevented)event.preventDefault();
+});
+name.addEventListener('input',function(event){
+  globalThis.__events.push('input:'+event.data);
+});
+check.addEventListener('click',function(event){
+  globalThis.__events.push('click:'+check.checked);
+  if(globalThis.__prevented)event.preventDefault();
+});
+check.addEventListener('input',function(){
+  globalThis.__events.push('input-check:'+check.checked);
+});
+check.addEventListener('change',function(){
+  globalThis.__events.push('change:'+check.checked);
+});
+form.addEventListener('reset',function(event){
+  globalThis.__events.push('reset');
+  if(globalThis.__prevented)event.preventDefault();
+});
+form.addEventListener('submit',function(event){
+  globalThis.__events.push('submit');
+  if(globalThis.__prevented)event.preventDefault();
+});
+"#;
+
+fn conformance_html(prevented: bool) -> String {
+    format!(
+        r#"<html><body>
+        <form id="form" action="https://zero.test/submitted" method="get">
+          <input id="name" name="name">
+          <input id="next">
+          <input id="check" name="subscribe" value="yes" type="checkbox">
+          <button id="reset" type="reset">Reset</button>
+          <button id="submit" type="submit" name="go" value="1">Submit</button>
+        </form>
+        <script>globalThis.__prevented={prevented};{CONFORMANCE_SCRIPT}</script>
+        </body></html>"#
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActionObservable {
+    value: String,
+    checked: bool,
+    focus: Option<String>,
+    events: Vec<String>,
+    navigation: Option<(String, String, Option<String>)>,
+}
+
+fn action_request(target: PageNodeRef, action: HtmlUserAction) -> HtmlActionRequest {
+    HtmlActionRequest {
+        target,
+        action,
+        shift: false,
+    }
+}
+
+fn dispatch(
+    webview: &mut WebView,
+    executor: Option<&dyn JsExecutor>,
+    target: PageNodeRef,
+    action: HtmlUserAction,
+) -> zero_webview::WebViewUserActionResult {
+    match executor {
+        Some(executor) => webview.dispatch_external_user_action(executor, action_request(target, action)),
+        None => webview.dispatch_user_action(action_request(target, action)),
+    }
+    .expect("dispatch user action")
+}
+
+fn run_conformance_host(executor: Option<&dyn JsExecutor>, prevented: bool) -> ActionObservable {
+    let html = conformance_html(prevented);
+    let url = "https://zero.test/form";
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state(url);
+    webview.load_html(&html, None);
+    if let Some(executor) = executor {
+        executor.set_dom_snapshot(&html, url);
+        executor
+            .execute_script_direct(&format!("globalThis.__prevented={prevented};{CONFORMANCE_SCRIPT}"))
+            .expect("register external listeners");
+    }
+    let name = webview.page_node_ref_for_selector("#name").expect("name");
+    let check = webview.page_node_ref_for_selector("#check").expect("check");
+    let reset = webview.page_node_ref_for_selector("#reset").expect("reset");
+    let submit = webview.page_node_ref_for_selector("#submit").expect("submit");
+
+    let mut navigation = None;
+    let actions = [
+        (name, HtmlUserAction::InsertText { text: "A".to_string() }),
+        (check, HtmlUserAction::Activate),
+        (name, HtmlUserAction::MoveFocus { forward: true }),
+        (reset, HtmlUserAction::Reset),
+        (name, HtmlUserAction::InsertText { text: "B".to_string() }),
+        (check, HtmlUserAction::Activate),
+        (submit, HtmlUserAction::Submit),
+    ];
+    for (target, action) in actions {
+        let result = dispatch(&mut webview, executor, target, action);
+        for effect in result.effects {
+            if let PageEffect::Navigate(intent) = effect {
+                navigation = Some((intent.url, intent.method, intent.body));
+            }
+        }
+    }
+    let events = match executor {
+        Some(executor) => executor.execute_script_direct("globalThis.__events.join('|')"),
+        None => webview
+            .execute_script("globalThis.__events.join('|')")
+            .map_err(|error| error.to_string()),
+    }
+    .expect("read event log")
+    .split('|')
+    .filter(|event| !event.is_empty())
+    .map(str::to_string)
+    .collect();
+    let focus = webview
+        .user_action_focus_owner()
+        .and_then(|node| webview.selector_for_page_node_handle(node.node().get()));
+    ActionObservable {
+        value: webview
+            .form_control_value_overrides()
+            .get("#name")
+            .cloned()
+            .unwrap_or_default(),
+        checked: zero_engine::has_attribute(webview.html_content(), "#check", "checked"),
+        focus,
+        events,
+        navigation,
+    }
+}
+
+fn run_renderer_host(prevented: bool) -> ActionObservable {
+    let mut worker = zero_renderer::js_worker::RendererJsWorker::spawn(91);
+    let observable = run_conformance_host(Some(&worker), prevented);
+    worker.shutdown();
+    observable
+}
+
+fn run_tab_worker_host(prevented: bool) -> ActionObservable {
+    let mut worker = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(92));
+    let observable = run_conformance_host(Some(&worker), prevented);
+    worker.shutdown();
+    observable
+}
+
+fn run_webview_host(prevented: bool) -> ActionObservable {
+    run_conformance_host(None, prevented)
+}
+
+#[test]
+fn default_action_conformance_across_hosts() {
+    let renderer = run_renderer_host(false);
+    let tab_worker = run_tab_worker_host(false);
+    let webview = run_webview_host(false);
+    assert_eq!(renderer, tab_worker);
+    assert_eq!(renderer, webview);
+    assert_eq!(renderer.value, "B");
+    assert!(renderer.checked);
+    assert_eq!(renderer.focus.as_deref(), Some("#next"));
+    assert_eq!(
+        renderer.navigation,
+        Some((
+            "https://zero.test/submitted?name=B&subscribe=yes&go=1".to_string(),
+            "GET".to_string(),
+            None,
+        ))
+    );
+}
+
+#[test]
+fn prevented_action_conformance_across_hosts() {
+    let renderer = run_renderer_host(true);
+    let tab_worker = run_tab_worker_host(true);
+    let webview = run_webview_host(true);
+    assert_eq!(renderer, tab_worker);
+    assert_eq!(renderer, webview);
+    assert_eq!(renderer.value, "");
+    assert!(!renderer.checked);
+    assert_eq!(renderer.focus.as_deref(), Some("#next"));
+    assert!(renderer.navigation.is_none());
+}
+
+#[test]
+fn deterministic_short_action_replay_across_hosts() {
+    fn replay(executor: Option<&dyn JsExecutor>) -> (String, bool) {
+        let html = conformance_html(false);
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state("https://zero.test/replay");
+        webview.load_html(&html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(&html, "https://zero.test/replay");
+            executor
+                .execute_script_direct(&format!("globalThis.__prevented=false;{CONFORMANCE_SCRIPT}"))
+                .expect("register replay listeners");
+        }
+        let name = webview.page_node_ref_for_selector("#name").expect("name");
+        let check = webview.page_node_ref_for_selector("#check").expect("check");
+        for _ in 0..20 {
+            let _ = dispatch(
+                &mut webview,
+                executor,
+                name,
+                HtmlUserAction::InsertText { text: "x".to_string() },
+            );
+            let _ = dispatch(&mut webview, executor, name, HtmlUserAction::DeleteBackward);
+            let _ = dispatch(&mut webview, executor, check, HtmlUserAction::Activate);
+            let _ = dispatch(&mut webview, executor, check, HtmlUserAction::Activate);
+        }
+        (
+            webview
+                .form_control_value_overrides()
+                .get("#name")
+                .cloned()
+                .unwrap_or_default(),
+            zero_engine::has_attribute(webview.html_content(), "#check", "checked"),
+        )
+    }
+
+    let mut renderer_worker = zero_renderer::js_worker::RendererJsWorker::spawn(93);
+    let mut tab_worker = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(94));
+    let renderer = replay(Some(&renderer_worker));
+    let tab = replay(Some(&tab_worker));
+    let webview = replay(None);
+    renderer_worker.shutdown();
+    tab_worker.shutdown();
+    assert_eq!(renderer, tab);
+    assert_eq!(renderer, webview);
+    assert_eq!(renderer, (String::new(), false));
+}
 
 #[test]
 fn default_actions_work_without_javascript() {

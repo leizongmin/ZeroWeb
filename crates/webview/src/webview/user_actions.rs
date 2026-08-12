@@ -8,8 +8,8 @@ use zero_engine::{
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
-    InvalidationKind, PageEffect, PageNodeHandle, PageNodeRef, PlannedEvent, PlannedMutation, RadioActionState,
-    TextActionState, plan_html_action, resolve_html_action,
+    InvalidationKind, JsExecutor, PageEffect, PageNodeHandle, PageNodeRef, PlannedEvent, PlannedMutation,
+    RadioActionState, TextActionState, plan_html_action, resolve_html_action,
 };
 
 use super::{WebView, WebViewError, render_result_to_webview};
@@ -71,7 +71,27 @@ impl WebView {
         &mut self,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.run_page_scripts()?;
+        self.dispatch_user_action_impl(None, request)
+    }
+
+    /// 通过外部页面 JS executor 执行 shared HTML user action。
+    #[doc(hidden)]
+    pub fn dispatch_external_user_action(
+        &mut self,
+        executor: &dyn JsExecutor,
+        request: HtmlActionRequest,
+    ) -> Result<WebViewUserActionResult, WebViewError> {
+        self.dispatch_user_action_impl(Some(executor), request)
+    }
+
+    fn dispatch_user_action_impl(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        request: HtmlActionRequest,
+    ) -> Result<WebViewUserActionResult, WebViewError> {
+        if executor.is_none() {
+            self.run_page_scripts()?;
+        }
         if !request
             .target
             .is_current(self.navigation_epoch, self.document_generation)
@@ -87,7 +107,7 @@ impl WebView {
         }
         let state = match &request.action {
             HtmlUserAction::InsertText { .. } | HtmlUserAction::DeleteBackward => {
-                let snapshot = self.execute_dom_script(&script_text_control_snapshot(&selector))?;
+                let snapshot = self.execute_dom_script(executor, &script_text_control_snapshot(&selector))?;
                 let Some((value, selection_start, selection_end)) =
                     serde_json::from_str::<(String, usize, usize)>(&snapshot.value).ok()
                 else {
@@ -140,12 +160,14 @@ impl WebView {
             Err(reason) => return Ok(WebViewUserActionResult::noop(reason)),
         };
         let is_reset = matches!(request.action, HtmlUserAction::Reset);
-        let mut changed = self.apply_planned_mutations(&plan.prepare)?;
+        let mut changed = self.apply_planned_mutations(executor, &plan.prepare)?;
         if is_reset {
-            changed |= self.execute_dom_script("__zw_begin_host_action_transaction()")?.changed;
+            changed |= self
+                .execute_dom_script(executor, "__zw_begin_host_action_transaction()")?
+                .changed;
         }
         let dispatch = if let Some(event) = plan.cancelable_event.as_ref() {
-            self.dispatch_planned_event(event)?
+            self.dispatch_planned_event(executor, event)?
         } else {
             (true, false)
         };
@@ -157,12 +179,14 @@ impl WebView {
             },
         );
         changed |= outcome.html_changed;
-        changed |= self.apply_planned_mutations(&outcome.mutations)?;
+        changed |= self.apply_planned_mutations(executor, &outcome.mutations)?;
         if is_reset {
-            changed |= self.execute_dom_script("__zw_end_host_action_transaction()")?.changed;
+            changed |= self
+                .execute_dom_script(executor, "__zw_end_host_action_transaction()")?
+                .changed;
         }
         for event in &outcome.followup_events {
-            changed |= self.dispatch_planned_event(event)?.1;
+            changed |= self.dispatch_planned_event(executor, event)?.1;
         }
         let mut effects = Vec::new();
         for effect in outcome.effects {
@@ -188,7 +212,11 @@ impl WebView {
         })
     }
 
-    fn dispatch_planned_event(&mut self, event: &PlannedEvent) -> Result<(bool, bool), WebViewError> {
+    fn dispatch_planned_event(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        event: &PlannedEvent,
+    ) -> Result<(bool, bool), WebViewError> {
         let Some(selector) = self.selector_for_page_node_handle(event.target.node().get()) else {
             return Ok((false, false));
         };
@@ -198,16 +226,21 @@ impl WebView {
             ..Default::default()
         });
         let script = script_dispatch_dom_event(&selector, &event.event_type, detail.as_ref());
-        let result = self.execute_dom_script(&script)?;
+        let result = self.execute_dom_script(executor, &script)?;
         #[cfg(feature = "v8")]
-        if self.config.native_dom {
-            let native = self.execute_dom_script(&script_dispatch_native_event(&selector, &event.event_type))?;
+        if executor.is_none() && self.config.native_dom {
+            let native =
+                self.execute_dom_script(executor, &script_dispatch_native_event(&selector, &event.event_type))?;
             return Ok((result.value.trim() != "prevented", result.changed || native.changed));
         }
         Ok((result.value.trim() != "prevented", result.changed))
     }
 
-    fn apply_planned_mutations(&mut self, mutations: &[PlannedMutation]) -> Result<bool, WebViewError> {
+    fn apply_planned_mutations(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        mutations: &[PlannedMutation],
+    ) -> Result<bool, WebViewError> {
         let mut changed = false;
         for mutation in mutations {
             let script = match mutation {
@@ -235,7 +268,7 @@ impl WebView {
                     script_reset_form_controls(&selector)
                 }
             };
-            changed |= self.execute_dom_script(&script)?.changed;
+            changed |= self.execute_dom_script(executor, &script)?.changed;
         }
         Ok(changed)
     }
@@ -266,7 +299,19 @@ impl WebView {
             })
     }
 
-    fn execute_dom_script(&mut self, script: &str) -> Result<DomScriptResult, WebViewError> {
+    fn execute_dom_script(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        script: &str,
+    ) -> Result<DomScriptResult, WebViewError> {
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
+            let mutations = executor.mutations();
+            mutations.lock().unwrap_or_else(|error| error.into_inner()).clear();
+            let value = executor.execute_script_direct(script).map_err(WebViewError::Script)?;
+            let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
+            return self.apply_dom_script_result(value, recorded);
+        }
         self.ensure_sandbox()?;
         #[cfg(feature = "v8")]
         self.install_native_dom_bindings();
@@ -289,6 +334,14 @@ impl WebView {
             .map_err(|error| WebViewError::Script(error.to_string()))?
             .value;
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
+        self.apply_dom_script_result(value, recorded)
+    }
+
+    fn apply_dom_script_result(
+        &mut self,
+        value: String,
+        recorded: Vec<DomMutation>,
+    ) -> Result<DomScriptResult, WebViewError> {
         if recorded.is_empty() {
             #[cfg(feature = "v8")]
             self.sync_render_after_native_dom();

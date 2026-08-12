@@ -577,10 +577,10 @@ mod tests {
         let start = std::time::Instant::now();
         let probe = format!("String(globalThis.{key})");
         loop {
-            if let Ok(v) = worker.execute_script_direct(&probe) {
-                if v != "undefined" {
-                    return v;
-                }
+            if let Ok(v) = worker.execute_script_direct(&probe)
+                && v != "undefined"
+            {
+                return v;
             }
             if start.elapsed().as_millis() >= timeout_ms as u128 {
                 return worker.execute_script_direct(&probe).unwrap_or_default();
