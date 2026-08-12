@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
-    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_control_snapshot,
-    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
+    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_set_text_control_state,
+    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
+    script_text_input_without_event,
 };
 use zero_webview::WebView;
 
@@ -388,6 +389,48 @@ pub fn apply_text_input_default(
     } else {
         script_text_input_without_event(selector, key)
     };
+    if let Some(worker) = js_worker {
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
+        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        if worker.execute_script_direct(&script).is_err() {
+            return false;
+        }
+    } else if wv.execute_script(&script).is_err() {
+        return false;
+    }
+    apply_recorded_mutations(wv, js_worker, html).is_some()
+}
+
+/// 读取文本控件的 live value 与 UTF-16 selection。
+pub fn text_control_snapshot(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    html: &str,
+) -> Option<(String, usize, usize)> {
+    let script = script_text_control_snapshot(selector);
+    let value = if let Some(worker) = js_worker {
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
+        worker.execute_script_direct(&script).ok()
+    } else {
+        wv.execute_script(&script).ok()
+    }?;
+    serde_json::from_str(&value).ok()
+}
+
+/// 按 shared action plan 设置文本控件 live state，不派发页面事件。
+pub fn apply_text_state_without_events(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    value: &str,
+    selection_start: usize,
+    selection_end: usize,
+    html: &str,
+) -> bool {
+    let script = script_set_text_control_state(selector, value, selection_start, selection_end);
     if let Some(worker) = js_worker {
         let page_url = wv.url().unwrap_or("about:blank");
         worker.set_dom_snapshot(html, page_url);

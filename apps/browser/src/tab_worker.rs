@@ -23,6 +23,177 @@ fn is_printable_key(key: &str) -> bool {
     matches!(chars.next(), Some(c) if !c.is_control()) && chars.next().is_none()
 }
 
+#[derive(Default)]
+struct TabDocumentScope {
+    navigation_epoch: u64,
+    document_generation: u64,
+}
+
+impl TabDocumentScope {
+    fn replace_document(&mut self) {
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.document_generation = self.document_generation.wrapping_add(1);
+    }
+
+    fn node_ref(&self, wv: &WebView, selector: &str) -> Option<zero_page_runtime::PageNodeRef> {
+        let handle = wv.page_node_handle_for_selector(selector)?;
+        Some(zero_page_runtime::PageNodeRef::new(
+            self.navigation_epoch,
+            self.document_generation,
+            zero_page_runtime::PageNodeHandle::new(handle),
+        ))
+    }
+
+    fn selector(&self, wv: &WebView, node: zero_page_runtime::PageNodeRef) -> Option<String> {
+        if !node.is_current(self.navigation_epoch, self.document_generation) {
+            return None;
+        }
+        wv.selector_for_page_node_handle(node.node().get())
+    }
+}
+
+fn execute_text_action(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    javascript_enabled: bool,
+    scope: &TabDocumentScope,
+    selector: &str,
+    action: zero_page_runtime::HtmlUserAction,
+) -> bool {
+    let Some(target) = scope.node_ref(wv, selector) else {
+        return false;
+    };
+    let html = wv.html_content().to_string();
+    let Some((value, selection_start, selection_end)) =
+        tab_scripts::text_control_snapshot(wv, js_worker, selector, &html)
+    else {
+        return false;
+    };
+    let Ok(plan) = zero_page_runtime::plan_html_action(
+        &zero_page_runtime::HtmlActionRequest {
+            target,
+            action,
+            shift: false,
+        },
+        scope.navigation_epoch,
+        scope.document_generation,
+        &zero_page_runtime::ActionTargetState::Text(zero_page_runtime::TextActionState {
+            value,
+            selection_start,
+            selection_end,
+        }),
+    ) else {
+        return false;
+    };
+    let dispatch = if let Some(event) = plan.cancelable_event.as_ref() {
+        dispatch_action_event(wv, js_worker, javascript_enabled, scope, event)
+    } else {
+        tab_scripts::DomDispatchResult {
+            default_allowed: true,
+            html_changed: false,
+        }
+    };
+    let outcome = zero_page_runtime::resolve_html_action(
+        plan,
+        zero_page_runtime::EventDispatchResult {
+            default_allowed: dispatch.default_allowed,
+            html_changed: dispatch.html_changed,
+        },
+    );
+    let mut changed = outcome.html_changed;
+    for mutation in &outcome.mutations {
+        let zero_page_runtime::PlannedMutation::SetText {
+            target,
+            value,
+            selection_start,
+            selection_end,
+        } = mutation
+        else {
+            continue;
+        };
+        let Some(target_selector) = scope.selector(wv, *target) else {
+            continue;
+        };
+        let html = wv.html_content().to_string();
+        changed |= tab_scripts::apply_text_state_without_events(
+            wv,
+            js_worker,
+            &target_selector,
+            value,
+            *selection_start,
+            *selection_end,
+            &html,
+        );
+    }
+    for event in &outcome.followup_events {
+        changed |= dispatch_action_event(wv, js_worker, javascript_enabled, scope, event).html_changed;
+    }
+    changed
+}
+
+fn dispatch_action_event(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    javascript_enabled: bool,
+    scope: &TabDocumentScope,
+    event: &zero_page_runtime::PlannedEvent,
+) -> tab_scripts::DomDispatchResult {
+    let Some(selector) = scope.selector(wv, event.target) else {
+        return tab_scripts::DomDispatchResult {
+            default_allowed: false,
+            html_changed: false,
+        };
+    };
+    let detail = event.input_type.as_ref().map(|input_type| zero_engine::DomEventDetail {
+        data: event.data.clone(),
+        input_type: Some(input_type.clone()),
+        ..Default::default()
+    });
+    let html = wv.html_content().to_string();
+    tab_scripts::dispatch_dom_event(
+        wv,
+        javascript_enabled,
+        js_worker,
+        &selector,
+        &event.event_type,
+        &html,
+        detail.as_ref(),
+    )
+}
+
+fn resolve_focus_action(
+    wv: &WebView,
+    scope: &TabDocumentScope,
+    selector: &str,
+    next: &str,
+    forward: bool,
+) -> Option<String> {
+    let target = scope.node_ref(wv, selector)?;
+    let next = scope.node_ref(wv, next)?;
+    let plan = zero_page_runtime::plan_html_action(
+        &zero_page_runtime::HtmlActionRequest {
+            target,
+            action: zero_page_runtime::HtmlUserAction::MoveFocus { forward },
+            shift: !forward,
+        },
+        scope.navigation_epoch,
+        scope.document_generation,
+        &zero_page_runtime::ActionTargetState::Focus { next: Some(next) },
+    )
+    .ok()?;
+    let outcome = zero_page_runtime::resolve_html_action(
+        plan,
+        zero_page_runtime::EventDispatchResult {
+            default_allowed: true,
+            html_changed: false,
+        },
+    );
+    outcome.effects.into_iter().find_map(|effect| match effect {
+        zero_page_runtime::PageEffect::Focus(Some(node)) => scope.selector(wv, node),
+        _ => None,
+    })
+}
+
 /// 每帧在 worker 内推进加载/渲染的时间预算（毫秒）。
 pub const TAB_WORKER_FRAME_BUDGET_MS: f64 = 8.0;
 
@@ -208,6 +379,7 @@ fn tab_worker_main(
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
     let mut composing_controls = HashSet::new();
+    let mut document_scope = TabDocumentScope::default();
 
     let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>, js_worker: Option<&TabJsWorkerHandle>| {
         let snapshot = TabSnapshot::from_webview(wv);
@@ -230,12 +402,14 @@ fn tab_worker_main(
             match cmd {
                 TabWorkerCommand::Navigate(url) => {
                     tracing::info!("Tab {} navigate: {url}", tab_id.0);
+                    document_scope.replace_document();
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start(url));
                     pending_sync_html = None;
                     page_script_runner = None;
                 }
                 TabWorkerCommand::LoadHtml { html, css, url } => {
+                    document_scope.replace_document();
                     pending_sync_html = Some((html, css, url));
                     async_load = None;
                     page_script_runner = None;
@@ -310,39 +484,39 @@ fn tab_worker_main(
                     if result.default_allowed && event_type == "keydown" {
                         if key.as_deref() == Some("Tab") {
                             if let Some(next) = zero_engine::next_focus_selector(&html, Some(&selector), !shift) {
-                                focus_change = Some(Some(next));
+                                focus_change =
+                                    resolve_focus_action(&wv, &document_scope, &selector, &next, !shift).map(Some);
                             }
                         } else if key.as_deref().is_some_and(is_printable_key) {
-                            input_changed = tab_scripts::apply_text_input_default(
+                            input_changed = execute_text_action(
                                 &mut wv,
-                                javascript_enabled,
                                 _js_worker.as_ref(),
+                                javascript_enabled,
+                                &document_scope,
                                 &selector,
-                                key.as_deref().unwrap_or_default(),
-                                &html,
-                                false,
+                                zero_page_runtime::HtmlUserAction::InsertText {
+                                    text: key.clone().unwrap_or_default(),
+                                },
                             );
                         } else if key.as_deref() == Some("Backspace") {
-                            input_changed = tab_scripts::apply_text_input_default(
+                            input_changed = execute_text_action(
                                 &mut wv,
-                                javascript_enabled,
                                 _js_worker.as_ref(),
+                                javascript_enabled,
+                                &document_scope,
                                 &selector,
-                                "",
-                                &html,
-                                true,
+                                zero_page_runtime::HtmlUserAction::DeleteBackward,
                             );
                         } else if key.as_deref() == Some("Enter") {
                             if zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("textarea") {
                                 // textarea 的 Enter 是换行（不提交）。
-                                input_changed = tab_scripts::apply_text_input_default(
+                                input_changed = execute_text_action(
                                     &mut wv,
-                                    javascript_enabled,
                                     _js_worker.as_ref(),
+                                    javascript_enabled,
+                                    &document_scope,
                                     &selector,
-                                    "\n",
-                                    &html,
-                                    false,
+                                    zero_page_runtime::HtmlUserAction::InsertText { text: "\n".to_string() },
                                 );
                             } else if let Some(form_sel) = zero_engine::enclosing_form_selector(&html, &selector) {
                                 // Enter 隐式提交（submitter=None）：派发 cancelable 'submit'；
@@ -715,4 +889,69 @@ fn page_title_from_webview(wv: &WebView) -> String {
         .map(str::to_string)
         .or_else(|| pages::extract_html_title(wv.html_content()))
         .unwrap_or_else(|| wv.url().unwrap_or("页面").to_string())
+}
+
+#[cfg(test)]
+mod action_adapter_tests {
+    use super::*;
+
+    #[test]
+    fn shared_text_action_honors_beforeinput_and_emits_input() {
+        let html = r#"<html><body><input id="name"><input id="next"></body></html>"#;
+        let url = "https://zero.test/tab-worker-actions";
+        let mut worker = TabJsWorkerHandle::spawn(TabId(901));
+        worker.set_dom_snapshot(html, url);
+        worker
+            .execute_script_direct(
+                "globalThis.__events=[];\
+                 var input=document.querySelector('#name');\
+                 input.addEventListener('beforeinput',function(event){\
+                   globalThis.__events.push('beforeinput:'+event.data);\
+                   if(event.data==='X')event.preventDefault();\
+                 });\
+                 input.addEventListener('input',function(event){\
+                   globalThis.__events.push('input:'+event.data);\
+                 });",
+            )
+            .expect("register input listeners");
+
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state(url);
+        wv.load_html(html, None);
+        let mut scope = TabDocumentScope::default();
+        scope.replace_document();
+
+        assert!(execute_text_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            &scope,
+            "#name",
+            zero_page_runtime::HtmlUserAction::InsertText { text: "A".to_string() },
+        ));
+        assert!(!execute_text_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            &scope,
+            "#name",
+            zero_page_runtime::HtmlUserAction::InsertText { text: "X".to_string() },
+        ));
+        assert_eq!(
+            wv.form_control_value_overrides().get("#name").map(String::as_str),
+            Some("A")
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("globalThis.__events.join(',')")
+                .expect("event log"),
+            "beforeinput:A,input:A,beforeinput:X"
+        );
+        assert_eq!(
+            resolve_focus_action(&wv, &scope, "#name", "#next", true).as_deref(),
+            Some("#next")
+        );
+
+        worker.shutdown();
+    }
 }
