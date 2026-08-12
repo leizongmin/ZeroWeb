@@ -414,28 +414,37 @@ pub fn resolve_font_metrics_with_provider(
         None => DEFAULT_FONT_SIZE,
     };
 
-    // R1192 font-size-adjust apply（is_ahem-gated narrow slice）：
-    // CSS Fonts 3 §3.6：adjusted_size = font_size × adjust_value / aspect，aspect = x-height/em。
-    // chromium 用 OS/2 sxHeight 作 aspect 源（Ahem = 0.8，见 AHEM_FONT_SIZE_ADJUST_ASPECT）。
-    // fontdue 不暴露 OS/2 sxHeight，且 'x' glyph ink 对 Ahem=1.0（≠ chromium 0.8），故仅对
-    // Ahem apply（known aspect 常数，R990/R1175 is_ahem-gated 谱系）。非 Ahem 字体 aspect 未知
-    // （须 OS/2 sxHeight 派生 + font 接入 layout，同 Phase A 字体度量架构 gap）→ 暂不 apply
-    // （Slice 3+）。adjusted font_size 经 line-height + advance + paint 全链路传播（resolve 返回值
-    // 被 TextRun.font_size / frag.height / store_font_sizes 消费）。
+    let is_ahem = style.is_some_and(|s| {
+        s.font_family
+            .iter()
+            .any(|family| family.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+    });
+    let mut normal_font_size = font_size;
+
+    // Ahem keeps its historical direct size adjustment because its synthetic paint
+    // path does not consume per-glyph shaped sizes.
     if let Some(s) = style
         && let zero_style_system::FontSizeAdjustValue::Adjust {
             metric,
             basis: zero_style_system::FontSizeAdjustBasis::Number(adj),
         } = s.font_size_adjust
-        && metric.unwrap_or(zero_style_system::FontSizeAdjustMetric::ExHeight)
-            == zero_style_system::FontSizeAdjustMetric::ExHeight
+        && adj.is_finite()
+        && adj >= 0.0
     {
-        let is_ahem = s
-            .font_family
-            .iter()
-            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
-        if is_ahem && AHEM_FONT_SIZE_ADJUST_ASPECT > 0.0 {
+        let metric = metric.unwrap_or(zero_style_system::FontSizeAdjustMetric::ExHeight);
+        if is_ahem && metric == zero_style_system::FontSizeAdjustMetric::ExHeight && AHEM_FONT_SIZE_ADJUST_ASPECT > 0.0
+        {
             font_size = font_size * (adj as f32) / AHEM_FONT_SIZE_ADJUST_ASPECT;
+            normal_font_size = font_size;
+        } else if std::env::var("ZW_FONT_SIZE_ADJUST_NORMAL_LINE").as_deref() != Ok("0")
+            && let Some(aspect) = provider.and_then(|p| p.font_metric_aspect(&s.font_family, metric))
+            && aspect.is_finite()
+            && aspect > 0.0
+        {
+            // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
+            // Keep TextRun.font_size specified (shaping applies per-face adjustment),
+            // but derive line-height:normal from the adjusted used primary size.
+            normal_font_size = font_size * (adj as f32) / aspect;
         }
     }
 
@@ -443,19 +452,12 @@ pub fn resolve_font_metrics_with_provider(
     // （DejaVu hhea = chromium 真值，见 NORMAL_LINE_HEIGHT_RATIO 注释）。provider 缺省或
     // 无法解析字体时用此值。无样式（None）时无法判定字体，回退 1.164。
     let normal_ratio = match style {
-        Some(s)
-            if s.font_family
-                .iter()
-                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")) =>
-        {
-            AHEM_LINE_HEIGHT_RATIO
-        }
+        Some(_) if is_ahem => AHEM_LINE_HEIGHT_RATIO,
         _ => NORMAL_LINE_HEIGHT_RATIO,
     };
-
     let line_height = match style {
         Some(s) => match &s.line_height {
-            LineHeightValue::Normal => resolve_normal_line_height(s, font_size, normal_ratio, provider),
+            LineHeightValue::Normal => resolve_normal_line_height(s, normal_font_size, normal_ratio, provider),
             LineHeightValue::Number(n) => font_size * (*n as f32),
             LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
             // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，

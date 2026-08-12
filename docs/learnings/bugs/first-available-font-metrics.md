@@ -23,3 +23,14 @@ metric 的 family，再用 used font scale 解析 `ex/ch`。`ZW_FIRST_AVAILABLE_
 可回退旧常量路径。
 
 验证必须使用 Chromium Oracle；self-source 仅用于确认 test/ref 内部一致。
+
+## 后续：缺失 sxHeight 与 normal 行盒
+
+部分旧字体 OS/2 表没有 `sxHeight`。若 shaping 在这种情况下放弃 `font-size-adjust`，而
+style-system 已用 fallback aspect 放大 `ch`，会出现盒宽正确、glyph 仍为 specified size
+的分裂。可从 `x` glyph bbox 的 `yMax / unitsPerEm` 推导 x-height fallback。
+
+glyph 使用 adjusted size 后，`line-height: normal` 也必须基于 used primary size，否则
+放大的 glyph 会在仍按 specified size 生成的行盒中重叠。此处只调整活跃
+`font-size-adjust` 的 normal 行高；普通页面继续保持历史常数路径，不能借机全局启用
+per-font ascent/descent/gap。

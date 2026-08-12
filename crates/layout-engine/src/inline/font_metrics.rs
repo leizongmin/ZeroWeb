@@ -69,6 +69,15 @@ pub trait FontMetricProvider {
     fn font_id_of(&self, _font_family: &[String]) -> Option<u32> {
         None
     }
+
+    /// 返回 first available font 的字体相对 metric aspect。
+    fn font_metric_aspect(
+        &self,
+        _font_family: &[String],
+        _metric: zero_style_system::FontSizeAdjustMetric,
+    ) -> Option<f32> {
+        None
+    }
 }
 
 /// 持有 `FontMetricProvider` 的 trait 对象句柄。
@@ -99,6 +108,15 @@ impl FontMetricProviderHandle {
     /// 经由内部 provider 解析 family → font_id（C3 advance，R223 gap）。
     pub fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
         self.0.font_id_of(font_family)
+    }
+
+    /// 查询字体相对 metric aspect。
+    pub fn font_metric_aspect(
+        &self,
+        font_family: &[String],
+        metric: zero_style_system::FontSizeAdjustMetric,
+    ) -> Option<f32> {
+        self.0.font_metric_aspect(font_family, metric)
     }
 }
 
@@ -142,23 +160,60 @@ impl FontMetricProvider for FontLoader {
             })
         })
     }
+
+    fn font_metric_aspect(
+        &self,
+        font_family: &[String],
+        metric: zero_style_system::FontSizeAdjustMetric,
+    ) -> Option<f32> {
+        let font_id = <Self as FontMetricProvider>::font_id_of(self, font_family)?;
+        let metric = match metric {
+            zero_style_system::FontSizeAdjustMetric::ExHeight => {
+                zero_render_foundation::font::FontSizeAdjustMetric::ExHeight
+            }
+            zero_style_system::FontSizeAdjustMetric::ChWidth => {
+                zero_render_foundation::font::FontSizeAdjustMetric::ChWidth
+            }
+            _ => return None,
+        };
+        zero_render_foundation::font::FontLoader::font_metric_aspect(self, font_id, metric)
+    }
 }
 
-/// HashMap-backed provider（U1b-wiring 激活 / per-font line-height A/B）。
+/// HashMap-backed provider（字体相对 metric + 可选 per-font line-height）。
 ///
 /// 持有 app/runner 启动期从 `FontLoader::build_line_metric_map()` 构建的 per-family
 /// per-em 度量（拥有所有权，无生命周期/Rc-share 问题——runner 不能 Rc-share FontLoader
 /// 因 painter &mut 占用）。`line_metrics` 按 family 匹配 + 按 `size` 缩放 per-em 比率
 /// （fontdue 线性，等价 `FontLoader::line_metrics_full(id, size)`）；`font_id_of` 返回
 /// family→id（启用 C3 font_id population）。family 匹配：精确 + 大小写不敏感（同 FontLoader impl）。
-pub struct FontMetricMap(pub std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>);
+pub struct FontMetricMap {
+    map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
+    line_metrics_enabled: bool,
+}
+
+impl FontMetricMap {
+    /// 创建 metric map；`line_metrics_enabled=false` 时仅暴露 font ID 与 aspect。
+    pub fn new(
+        map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
+        line_metrics_enabled: bool,
+    ) -> Self {
+        Self {
+            map,
+            line_metrics_enabled,
+        }
+    }
+}
 
 impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        if !self.line_metrics_enabled {
+            return None;
+        }
         let &(_id, a, d, g, _, _) = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
-            self.0.get(bare).or_else(|| {
-                self.0
+            self.map.get(bare).or_else(|| {
+                self.map
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                     .map(|(_, v)| v)
@@ -174,16 +229,37 @@ impl FontMetricProvider for FontMetricMap {
     fn font_id_of(&self, font_family: &[String]) -> Option<u32> {
         font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
-            self.0
+            self.map
                 .get(bare)
                 .or_else(|| {
-                    self.0
+                    self.map
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                         .map(|(_, v)| v)
                 })
                 .map(|(id, _, _, _, _, _)| *id)
         })
+    }
+
+    fn font_metric_aspect(
+        &self,
+        font_family: &[String],
+        metric: zero_style_system::FontSizeAdjustMetric,
+    ) -> Option<f32> {
+        let &(_, _, _, _, ex_height, ch_width) = font_family.iter().find_map(|fam| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
+            self.map.get(bare).or_else(|| {
+                self.map
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(bare))
+                    .map(|(_, value)| value)
+            })
+        })?;
+        match metric {
+            zero_style_system::FontSizeAdjustMetric::ExHeight => Some(ex_height),
+            zero_style_system::FontSizeAdjustMetric::ChWidth => Some(ch_width),
+            _ => None,
+        }
     }
 }
 
@@ -333,6 +409,7 @@ mod tests {
         descent_per_em: f32,
         line_gap_per_em: f32,
         resolve: bool,
+        aspect: Option<f32>,
     }
 
     impl FontMetricProvider for MockMetricProvider {
@@ -345,6 +422,14 @@ mod tests {
                 descent: self.descent_per_em * size,
                 line_gap: self.line_gap_per_em * size,
             })
+        }
+
+        fn font_metric_aspect(
+            &self,
+            _font_family: &[String],
+            _metric: zero_style_system::FontSizeAdjustMetric,
+        ) -> Option<f32> {
+            self.aspect
         }
     }
 
@@ -424,6 +509,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn font_size_adjust_scales_normal_line_height_without_changing_run_size() {
+        let mut style = normal_style("MetricFont", 20.0);
+        style.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(1.0),
+        };
+        let provider = MockMetricProvider {
+            ascent_per_em: 0.0,
+            descent_per_em: 0.0,
+            line_gap_per_em: 0.0,
+            resolve: false,
+            aspect: Some(0.5),
+        };
+        let handle = FontMetricProviderHandle(Rc::new(provider));
+        let (font_size, line_height) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
+        assert_eq!(font_size, 20.0, "shaping must receive the specified size");
+        assert!(
+            (line_height - 40.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            "normal line-height must use the adjusted 40px primary size, got {line_height}"
+        );
+    }
+
+    #[test]
+    fn font_metric_map_exposes_aspect_without_enabling_line_metrics() {
+        let entries = std::collections::HashMap::from([("MetricFont".to_string(), (7, 0.8, -0.2, 0.1, 0.5, 0.6))]);
+        let dormant = FontMetricMap::new(entries.clone(), false);
+        let family = ["metricfont".to_string()];
+        assert_eq!(dormant.font_id_of(&family), Some(7));
+        assert_eq!(
+            dormant.font_metric_aspect(&family, zero_style_system::FontSizeAdjustMetric::ExHeight),
+            Some(0.5)
+        );
+        assert!(dormant.line_metrics(&family, 20.0).is_none());
+
+        let enabled = FontMetricMap::new(entries, true);
+        assert_eq!(
+            enabled.line_metrics(&family, 20.0),
+            Some(LineMetrics {
+                ascent: 16.0,
+                descent: -4.0,
+                line_gap: 2.0,
+            })
+        );
+    }
+
     /// font-size-adjust: None（默认）→ 不调整，font_size 不变。
     #[test]
     fn resolve_font_metrics_font_size_adjust_none_no_change() {
@@ -445,6 +576,7 @@ mod tests {
             descent_per_em: -0.2,
             line_gap_per_em: 0.1,
             resolve: true,
+            aspect: None,
         };
         let handle = FontMetricProviderHandle(Rc::new(provider));
         let (fs, lh) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
@@ -486,6 +618,7 @@ mod tests {
             descent_per_em: -0.2,
             line_gap_per_em: 0.1,
             resolve: false, // 模拟字体未加载
+            aspect: None,
         };
         let handle = FontMetricProviderHandle(Rc::new(provider));
         let (fs, lh) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
@@ -513,6 +646,7 @@ mod tests {
             descent_per_em: -0.2,
             line_gap_per_em: 0.0,
             resolve: true,
+            aspect: None,
         };
         let handle = FontMetricProviderHandle(Rc::new(provider));
         let (_, lh) = super::super::resolve_font_metrics_with_provider(Some(&s), Some(&handle));

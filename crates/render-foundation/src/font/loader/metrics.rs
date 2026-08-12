@@ -1,5 +1,11 @@
 use super::FontLoader;
 
+fn ex_height_units(os2_x_height: Option<i16>, glyph_y_max: Option<i16>) -> Option<f32> {
+    os2_x_height
+        .or_else(|| glyph_y_max.filter(|value| *value > 0))
+        .map(f32::from)
+}
+
 impl FontLoader {
     /// 返回字体 OS/2 `sxHeight / unitsPerEm`。
     pub fn x_height_aspect(&self, font_id: u32) -> Option<f32> {
@@ -16,7 +22,19 @@ impl FontLoader {
             return None;
         }
         let units = match metric {
-            crate::font::FontSizeAdjustMetric::ExHeight => f32::from(face.x_height()?),
+            crate::font::FontSizeAdjustMetric::ExHeight => {
+                let glyph_y_max = if std::env::var("ZW_FONT_METRIC_GLYPH_FALLBACK").as_deref() == Ok("0") {
+                    None
+                } else {
+                    // https://drafts.csswg.org/css-values-4/#ex
+                    // Older OS/2 tables may omit sxHeight. Use the actual `x` glyph top
+                    // instead of abandoning font-size-adjust and diverging from ex/ch geometry.
+                    face.glyph_index('x')
+                        .and_then(|glyph_id| face.glyph_bounding_box(glyph_id))
+                        .map(|bounds| bounds.y_max)
+                };
+                ex_height_units(face.x_height(), glyph_y_max)?
+            }
             crate::font::FontSizeAdjustMetric::CapHeight => f32::from(face.capital_height()?),
             crate::font::FontSizeAdjustMetric::ChWidth => f32::from(face.glyph_hor_advance(face.glyph_index('0')?)?),
             crate::font::FontSizeAdjustMetric::IcWidth => face
@@ -103,6 +121,14 @@ impl FontLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ex_height_falls_back_to_x_glyph_when_os2_metric_is_missing() {
+        assert_eq!(ex_height_units(Some(700), Some(500)), Some(700.0));
+        assert_eq!(ex_height_units(None, Some(500)), Some(500.0));
+        assert_eq!(ex_height_units(None, Some(0)), None);
+        assert_eq!(ex_height_units(None, None), None);
+    }
 
     #[test]
     fn metric_map_uses_first_face_matching_space() {

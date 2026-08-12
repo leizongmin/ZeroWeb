@@ -475,11 +475,10 @@ impl RenderPipeline {
     /// `ZW_PERFONT_LINEHEIGHT=1` 激活，默认保持常数度量。
     pub fn set_font_metric_map(&mut self, map: HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
         self.style_system.set_font_metric_map(&map);
-        if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
-            let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
-                std::rc::Rc::new(zero_layout_engine::FontMetricMap(map));
-            self.layout_engine.set_font_metric_provider(provider);
-        }
+        let line_metrics_enabled = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
+        let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
+            std::rc::Rc::new(zero_layout_engine::FontMetricMap::new(map, line_metrics_enabled));
+        self.layout_engine.set_font_metric_provider(provider);
     }
 
     /// 设置用户颜色方案偏好。
