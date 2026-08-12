@@ -275,3 +275,199 @@ fn test_opfs_writable_seek_truncate_r3315() {
     );
 }
 
+// ── R3317：HTMLInputElement.valueAsDate（date/month/week/time）+ stepUp/stepDown（number/range）──
+//
+// 生产 always-on B-gen shim 路径（part03.js valueAsDate getter / stepUp·stepDown 方法 + part04.js
+// valueAsDate setter）。spec https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasdate 。
+// valueAsDate：date/month/week/time 输入 value 串↔Date（UTC），其他 type→null；stepUp/stepDown：number/range
+// 按 step 增减并 clamp [min,max]。同步 API（无 Promise），直读 Date 字段断言（toISOString/getTime/getFullYear）。
+
+#[test]
+fn test_input_value_as_date_r3317() {
+    // valueAsDate getter+setter——date/month/week/time 四类型 ↔ Date（UTC），其他 type/null，空→null。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='d' type='date' value='2020-03-15'>\
+         <input id='m' type='month' value='2021-06'>\
+         <input id='t' type='time' value='13:45:30'>\
+         <input id='w' type='week' value='2021-W01'>\
+         <input id='de' type='date' value=''>\
+         <input id='n' type='number' value='5'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // getter：date/month/time/week → Date（UTC）；空 date → null；number type → null。
+    sandbox
+        .execute(
+            "globalThis.__dISO = document.querySelector('#d').valueAsDate.toISOString();\
+             globalThis.__mISO = document.querySelector('#m').valueAsDate.toISOString();\
+             globalThis.__tISO = document.querySelector('#t').valueAsDate.toISOString();\
+             globalThis.__wISO = document.querySelector('#w').valueAsDate.toISOString();\
+             globalThis.__deNull = String(document.querySelector('#de').valueAsDate === null);\
+             globalThis.__nNull = String(document.querySelector('#n').valueAsDate === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dISO").unwrap().value,
+        "2020-03-15T00:00:00.000Z",
+        "date 2020-03-15 → Date 当日 00:00:00 UTC"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__mISO").unwrap().value,
+        "2021-06-01T00:00:00.000Z",
+        "month 2021-06 → Date 当月 1 日 00:00:00 UTC"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tISO").unwrap().value,
+        "1970-01-01T13:45:30.000Z",
+        "time 13:45:30 → Date 1970-01-01 当日 UTC"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__wISO").unwrap().value,
+        "2021-01-04T00:00:00.000Z",
+        "week 2021-W01 → Date 该年 ISO 第 1 周一（2021-01-04）UTC"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__deNull").unwrap().value,
+        "true",
+        "空 date value → valueAsDate=null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__nNull").unwrap().value,
+        "true",
+        "number type → valueAsDate=null（非 date/time）"
+    );
+
+    // setter：date input 设 Date → value 串格式化；month input 设 Date → YYYY-MM。
+    sandbox
+        .execute(
+            "var el = document.querySelector('#d');\
+             el.valueAsDate = new Date(Date.UTC(1999, 11, 31));\
+             globalThis.__setD = el.value;\
+             var em = document.querySelector('#m');\
+             em.valueAsDate = new Date(Date.UTC(2022, 2, 1));\
+             globalThis.__setM = em.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__setD").unwrap().value,
+        "1999-12-31",
+        "valueAsDate=Date(1999-12-31) → date value='1999-12-31'"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__setM").unwrap().value,
+        "2022-03",
+        "valueAsDate=Date(2022-03-01) → month value='2022-03'"
+    );
+
+    // setter 经 retained 当前值 mutation；内容属性保持默认值不变。
+    let ms = mutations.lock().unwrap().clone();
+    assert!(
+        ms.iter().any(|mutation| matches!(mutation, DomMutation::SetFormValue { selector, value } if selector == "#d" && value == "1999-12-31")),
+        "valueAsDate=Date records retained current value '1999-12-31'"
+    );
+    let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
+    assert!(
+        out.contains("<input id=\"d\" type=\"date\" value=\"2020-03-15\">"),
+        "valueAsDate setter must not change default value content attribute\n{out}"
+    );
+}
+
+#[test]
+fn test_input_step_up_down_r3317() {
+    // stepUp(n)/stepDown(n)——number/range 按 step 增减并 clamp [min,max]；非 number/range→undefined no-op。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='a' type='number' value='10'>\
+         <input id='b' type='number' value='10' step='5'>\
+         <input id='c' type='range' value='5' min='0' max='10' step='2'>\
+         <input id='d' type='text' value='10'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // stepUp 默认 n=1（step 缺省 1）；stepUp(3) step=5；stepDown(2) step=2 clamp max。
+    sandbox
+        .execute(
+            "var a = document.querySelector('#a');\
+             a.stepUp();\
+             globalThis.__a = a.value;\
+             var b = document.querySelector('#b');\
+             b.stepUp(3);\
+             globalThis.__b = b.value;\
+             var c = document.querySelector('#c');\
+             c.stepUp(2);\
+             globalThis.__c = c.value;\
+             c.stepDown(10);\
+             globalThis.__c2 = c.value;\
+             /* 非 number/range：stepUp 为 undefined（type gate 提前 return），调用抛 TypeError（real-browser 亦不暴露该方法）*/\
+             var d = document.querySelector('#d');\
+             globalThis.__dRet = String(typeof d.stepUp);\
+             try { d.stepUp(); globalThis.__dThrow = 'no'; } catch (e) { globalThis.__dThrow = 'yes'; }\
+             globalThis.__dVal = d.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__a").unwrap().value,
+        "11",
+        "number value=10 stepUp()（step 缺省 1）→ 11"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__b").unwrap().value,
+        "25",
+        "number value=10 step=5 stepUp(3) → 10 + 3*5 = 25"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c").unwrap().value,
+        "9",
+        "range value=5 min=0 max=10 step=2 stepUp(2) → 5 + 2*2 = 9"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c2").unwrap().value,
+        "0",
+        "range stepDown(10) 从 9 超 max 退到 min=0（clamp）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dRet").unwrap().value,
+        "undefined",
+        "text input 无 stepUp（非 number/range）→ typeof undefined"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dThrow").unwrap().value,
+        "yes",
+        "text input 调 stepUp() 抛 TypeError（undefined 非 callable，real-browser 同行为）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dVal").unwrap().value,
+        "10",
+        "text input 未调成功，value 保持 10"
+    );
+}
+

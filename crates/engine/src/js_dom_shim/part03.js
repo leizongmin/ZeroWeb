@@ -994,6 +994,74 @@
     try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
     return Object.prototype.hasOwnProperty.call(_TEXT_SEL_TYPES, (ty || '').toLowerCase());
   }
+  // R3317 HTML 日期/时间 value 串解析 → UTC Date 对象（valueAsDate getter 用）。
+  // 按 HTML §4.10.5.18：date(YYYY-MM-DD)→当日 00:00:00 UTC；time(HH:MM[:SS[.fff]][,秒小数] 可带 'Z'/±HH:MM)
+  // →1970-01-01 当日 UTC；month(YYYY-MM)→当月 1 日 00:00:00 UTC；week(YYYY-Www)→该年 ISO 周一 00:00:00 UTC。
+  // 无效/不匹配→null（spec：valueAsDate 对无效 value 返 null）。所有分量 Date.UTC（UTC，规避本地时区）。
+  function _parseHtmlDateValue(v, type) {
+    v = String(v).trim();
+    if (type === 'date') {
+      // spec 严格 YYYY-MM-DD（月/日补零，范围校验：月 1-12、日 1-31）。
+      var m = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
+      if (!m) return null;
+      var y = +m[1], mo = +m[2], d = +m[3];
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      return new Date(Date.UTC(y, mo - 1, d));
+    }
+    if (type === 'month') {
+      var mm = v.match(/^(\d{4,})-(\d{2})$/);
+      if (!mm) return null;
+      var my = +mm[1], mmo = +mm[2];
+      if (mmo < 1 || mmo > 12) return null;
+      return new Date(Date.UTC(my, mmo - 1, 1));
+    }
+    if (type === 'time') {
+      // HH:MM[:SS[.fff]]，可选时区后缀（'Z' 或 ±HH:MM）。解析为 1970-01-01 当日（UTC 基准）。
+      var tm = v.match(/^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?$/);
+      if (!tm) return null;
+      var H = +tm[1], M = +tm[2], S = tm[3] ? +tm[3] : 0, ms = tm[4] ? +tm[4].padEnd(3, '0') : 0;
+      if (H > 23 || M > 59 || S > 59) return null;
+      var base = Date.UTC(1970, 0, 1, H, M, S, ms);
+      if (tm[5] && tm[5] !== 'Z') {
+        var sm = tm[5].match(/^([+-])(\d{2}):(\d{2})$/);
+        if (sm) {
+          var off = (+sm[2]) * 3600000 + (+sm[3]) * 60000;
+          base += (sm[1] === '-') ? off : -off; // 本地时间→UTC：东区减、西区加
+        }
+      }
+      return new Date(base);
+    }
+    if (type === 'week') {
+      // YYYY-Www：该年第 ww 个 ISO 周（周一为首日）的周一 00:00:00 UTC。ISO 8601 周日期。
+      var wm = v.match(/^(\d{4,})-W(\d{2})$/);
+      if (!wm) return null;
+      var wy = +wm[1], w = +wm[2];
+      if (w < 1 || w > 53) return null;
+      // ISO 周：该年 1 月 4 日必在第 1 周内；第 1 周一 = 1 月 4 日 - ((day-1) 天)，day: 周日=0..周六=6。
+      var jan4 = Date.UTC(wy, 0, 4);
+      var jan4Day = new Date(jan4).getUTCDay(); // 0=Sun..6=Sat
+      var week1Mon = jan4 - (jan4Day === 0 ? 6 : jan4Day - 1) * 86400000;
+      return new Date(week1Mon + (w - 1) * 7 * 86400000);
+    }
+    return null;
+  }
+  // R3317 Date → HTML 日期/时间 value 串（valueAsDate setter 用）。无效/非 Date→''（setter 后续判 '' 视为清空）。
+  function _formatHtmlDateValue(d, type) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    var Y = d.getUTCFullYear(), Mo = d.getUTCMonth() + 1, D = d.getUTCDate();
+    var H = d.getUTCHours(), Mi = d.getUTCMinutes(), S = d.getUTCSeconds();
+    var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    var p4 = function (n) { return (n < 0 ? '-' : '') + (Math.abs(n) < 1000 ? String(Math.abs(n)).padStart(4, '0') : String(Math.abs(n))); };
+    if (type === 'date') return p4(Y) + '-' + p2(Mo) + '-' + p2(D);
+    if (type === 'month') return p4(Y) + '-' + p2(Mo);
+    if (type === 'time') {
+      // time 仅取时分秒（1970-01-01 当日），忽略毫秒若为 0
+      var t = p2(H) + ':' + p2(Mi);
+      if (S > 0 || d.getUTCMilliseconds() > 0) t += ':' + p2(S);
+      return t;
+    }
+    return '';
+  }
   // text control 当前 value 串（mirror value getter 的 lazy-init 逻辑，仅读不改缓存——选区 clamp 须 length）。
   function _controlValue(sel, handle, key) {
     if (_inputValues[key] != null) return String(_inputValues[key]);
@@ -1744,6 +1812,22 @@
             return isNaN(vasN) ? NaN : vasN;
           } catch (_e) { return NaN; }
         }
+        // `input.valueAsDate`（HTMLInputElement，R3317）——date/month/week/time 输入值↔Date 转换（日期选择器
+        // 读 Date 算星期/比较/计算、表单库读 null 判空）。type=date/month/week/time：按 HTML §4.10.5.18 解析
+        // value 串为 UTC Date（date=当日 00:00:00 UTC、time=1970-01-01 当日 UTC、month=当月 1 日 UTC、
+        // week=该年 ISO 周一 00:00:00 UTC）；空/无效 value→null；非 date/time type→null。仅 INPUT。
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasdate
+        if (prop === 'valueAsDate' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var vadT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            vadT = vadT.toLowerCase();
+            if (vadT !== 'date' && vadT !== 'month' && vadT !== 'week' && vadT !== 'time') return null;
+            var vadV = _inputValues[key];
+            if (vadV == null) vadV = (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
+            if (vadV === '') return null;
+            return _parseHtmlDateValue(vadV, vadT); // null = 无效 / Date 对象 = 有效
+          } catch (_e) { return null; }
+        }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
         // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text control 落 undefined（Chrome 返 null，
@@ -1807,6 +1891,34 @@
               so.start = (oldStart <= cs) ? oldStart : (oldStart >= ce ? oldStart + delta : cs);
               so.end = (oldEnd <= cs) ? oldEnd : (oldEnd >= ce ? oldEnd + delta : cs);
             }
+            return undefined;
+          };
+        }
+        // `input.stepUp(n)` / `input.stepDown(n)`（HTMLInputElement，R3317）——number/range 按步进增减
+        // （数量调节器、范围滑块步进 UI 高频）。n 缺省 1。按 step 属性（缺省 1）×n 改 value，clamp [min,max]
+        //（spec：超界抛 InvalidStateError；headless 近似 clamp 不抛——保守合法化）。空/无效 value→按 min（缺 0）起算。
+        // 仅 type=number/range 暴露（与 valueAsNumber 同域）；非 number/range 的 INPUT 该方法 typeof=undefined（调用抛
+        // TypeError，real-browser 亦不暴露）。复用 value setter 持久化路径。
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-stepup
+        if ((prop === 'stepUp' || prop === 'stepDown') && _realTag(sel, handle) === 'INPUT') {
+          var suT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+          if (suT.toLowerCase() !== 'number' && suT.toLowerCase() !== 'range') return undefined;
+          return function(n) {
+            n = (n === undefined) ? 1 : Number(n);
+            if (isNaN(n)) n = 1;
+            var step = parseFloat(handle ? __zw_get_attr_handle(handle, 'step') : __zw_get_attr(sel, 'step'));
+            if (isNaN(step) || step <= 0) step = 1; // 'any'/缺省/无效 → 1（spec 'any' 抛，近似 1）
+            var min = parseFloat(handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'));
+            if (isNaN(min)) min = 0;
+            var max = parseFloat(handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max'));
+            var hasMax = !isNaN(max);
+            var cur = parseFloat(_controlValue(sel, handle, key));
+            if (isNaN(cur)) cur = min; // 空/无效 → 从 min 起
+            var delta = (prop === 'stepUp' ? 1 : -1) * step * n;
+            var next = cur + delta;
+            if (hasMax && next > max) next = max;
+            if (next < min) next = min;
+            this.value = String(next);
             return undefined;
           };
         }

@@ -1825,6 +1825,22 @@
               else __zw_set_form_value(sel, vsS);
             }
           }
+        } else if (p === 'valueAsDate') {
+          // `input.valueAsDate = date`（HTMLInputElement，R3317）——date/month/week/time 输入 Date→串。
+          // spec：仅 date/month/week/time type 接受（其他 type setter no-op）；有效 Date→格式化串设 value；
+          // 无效值（非 Date / Invalid Date）→抛 InvalidStateError（这里近似：非 Date 静默 no-op，Invalid Date 清空）。
+          // 复用 value 同步路径（_inputValues + _captureInputDefault + attr/form-value 双路径）。仅 INPUT。
+          if (_realTag(sel, handle) === 'INPUT') {
+            var vadTs = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            vadTs = vadTs.toLowerCase();
+            if (vadTs === 'date' || vadTs === 'month' || vadTs === 'week' || vadTs === 'time') {
+              var vadStr = _formatHtmlDateValue(value, vadTs);
+              _inputValues[key] = vadStr;
+              _captureInputDefault(key, sel, handle);
+              if (handle) __zw_set_attr_handle(handle, 'value', vadStr);
+              else __zw_set_form_value(sel, vadStr);
+            }
+          }
         } else if (p === 'indeterminate') {
           // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
           _indeterminate[key] = !!value;
