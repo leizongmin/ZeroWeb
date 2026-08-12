@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use zero_css_parser::values::FontWeightValue;
 use zero_css_parser::values::types::FontStyleValue;
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_render_foundation::font::resolve_font_face;
+use zero_render_foundation::font::{resolve_font_face, resolve_font_faces};
 use zero_style_system::ComputedStyle;
 
 /// Resolves one available face per CSS family while preserving declaration order.
@@ -47,10 +47,12 @@ pub fn resolve_font_ids_for_style(
         if is_quoted && GENERIC_FAMILIES.iter().any(|g| g.eq_ignore_ascii_case(name)) {
             continue;
         }
-        if let Some((id, _)) = resolve_font_face(resolver, name, want_bold, want_italic, font_stretch)
-            && !ids.contains(&id)
-        {
-            ids.push(id);
+        if let Some((faces, _)) = resolve_font_faces(resolver, name, want_bold, want_italic, font_stretch) {
+            for id in faces {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
         }
     }
     if ids.is_empty() {
@@ -130,6 +132,25 @@ mod tests {
                 &["primary".to_string(), "Secondary".to_string()],
                 &FontWeightValue::Bold,
                 &FontStyleValue::Italic,
+                100.0,
+            ),
+            vec![7, 9]
+        );
+    }
+
+    #[test]
+    fn preserves_all_faces_for_one_matched_family_variant() {
+        let resolver = HashMap::from([
+            ("Split:stretch=1000".to_string(), 7),
+            ("Split:stretch=1000:face=0".to_string(), 7),
+            ("Split:stretch=1000:face=1".to_string(), 9),
+        ]);
+        assert_eq!(
+            resolve_font_ids_for_style(
+                &resolver,
+                &["split".to_string()],
+                &FontWeightValue::Normal,
+                &FontStyleValue::Normal,
                 100.0,
             ),
             vec![7, 9]

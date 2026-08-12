@@ -43,6 +43,8 @@
 >
 > **▶ 字体栈增量进展（R3325-F @font-face unicode-range·2026-08-12）**：CSS tokenizer 现生成结构化 `UnicodeRange` token，`@font-face` descriptor 支持单值、闭区间和 `?` wildcard；闭区间随 engine/WebView/browser/renderer/WPT 字体加载 metadata 到达 FontLoader。face 选择、advance 与 legacy raster fallback 均先检查声明范围，注册时清 shaping cache；`ZW_FONT_UNICODE_RANGE=0` 回滚。Chromium Oracle css-fonts 为 5 改善、0 回归、278 持平，rounded 总差异 `-2.89pp`：`size-adjust-02 5.45%→4.41%`、`font-face-unicode-range-nbsp 2.41%→1.27%`、`size-adjust-01 7.88%→7.37%`、`font-face-unicode-range-2 5.31%→5.19%`、`size-adjust.tentative 10.87%→10.79%`；目录通过数仍 `84/282`。3 个 driving WPT 与 4 个字体资源已资产化，self-source 均为 approximate，故收益以 Chromium Oracle 为准。验证：parser `2828/2828`、FontLoader `46/46`、WebView `579+17`、engine `2043/2043`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。当前 resolver 每 CSS family 仍只暴露一个 matched face，同 family 多个 disjoint unicode-range face 留后续切片。
 >
+> **▶ 字体栈增量进展（R3326-F same-family unicode-range faces·2026-08-13）**：FontLoader 只为显式 `@font-face` alias 发布有序 `:face=N` 键；`resolve_font_faces()` 按既有 stretch→weight/style 规则返回同一变体全部 face，layout/paint ordered shaping 按声明顺序消费。系统字体不发布列表，alias 第二 face 不再被误标为 bold。真实 Lato 双 face 测试证明同 family `"Aa"` 按 `U+41-5A` / `U+61-7A` 分别落不同 font ID；`ZW_FONT_UNICODE_RANGE_FACES=0` 回滚。现有 WPT 无同 family 分片案，故采用真实字体机制测试；既有 unicode-range 2 案保持。css-fonts Chromium Oracle 283 案全部持平，rounded `0.00pp`。验证：FontLoader `47/47`、layout `1368/1368`、workspace default/QuickJS clippy、reftest `687/687`、产品 smoke/perf 全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

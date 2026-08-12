@@ -38,13 +38,25 @@ pub fn font_face_aliases(family: &str, weight: Option<u16>, italic: bool, stretc
     aliases
 }
 
-fn lookup_face(resolver: &HashMap<String, u32>, key: &str) -> Option<u32> {
-    resolver.get(key).copied().or_else(|| {
-        resolver
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(key))
-            .map(|(_, id)| *id)
-    })
+fn lookup_faces(resolver: &HashMap<String, u32>, key: &str) -> Vec<u32> {
+    let Some((matched_key, &base_id)) = resolver.iter().find(|(name, _)| name.eq_ignore_ascii_case(key)) else {
+        return Vec::new();
+    };
+    let prefix = format!("{matched_key}:face=").to_ascii_lowercase();
+    let mut indexed = resolver
+        .iter()
+        .filter_map(|(name, &id)| {
+            name.to_ascii_lowercase()
+                .strip_prefix(&prefix)
+                .and_then(|index| index.parse::<usize>().ok())
+                .map(|index| (index, id))
+        })
+        .collect::<Vec<_>>();
+    if indexed.is_empty() {
+        return vec![base_id];
+    }
+    indexed.sort_unstable_by_key(|&(index, _)| index);
+    indexed.into_iter().map(|(_, id)| id).collect()
 }
 
 fn available_widths(resolver: &HashMap<String, u32>, family: &str) -> Vec<u16> {
@@ -103,6 +115,18 @@ pub fn resolve_font_face(
     want_italic: bool,
     desired_stretch: f32,
 ) -> Option<(u32, bool)> {
+    resolve_font_faces(resolver, family, want_bold, want_italic, desired_stretch)
+        .and_then(|(ids, italic)| ids.first().copied().map(|id| (id, italic)))
+}
+
+/// Resolves all `@font-face` entries for the matched width/weight/style variant.
+pub fn resolve_font_faces(
+    resolver: &HashMap<String, u32>,
+    family: &str,
+    want_bold: bool,
+    want_italic: bool,
+    desired_stretch: f32,
+) -> Option<(Vec<u32>, bool)> {
     let style_suffixes: &[&str] = match (want_bold, want_italic) {
         (true, true) => &[":700:italic", ":700", ":italic", ""],
         (true, false) => &[":700", ""],
@@ -112,13 +136,15 @@ pub fn resolve_font_face(
     let normal_basis = stretch_basis(NORMAL_FONT_STRETCH);
     for basis in width_preference(available_widths(resolver, family), stretch_basis(desired_stretch)) {
         for suffix in style_suffixes {
-            if let Some(id) = lookup_face(resolver, &width_key(family, basis, suffix)) {
-                return Some((id, suffix.contains("italic")));
+            let ids = lookup_faces(resolver, &width_key(family, basis, suffix));
+            if !ids.is_empty() {
+                return Some((ids, suffix.contains("italic")));
             }
-            if basis == normal_basis
-                && let Some(id) = lookup_face(resolver, &format!("{family}{suffix}"))
-            {
-                return Some((id, suffix.contains("italic")));
+            if basis == normal_basis {
+                let ids = lookup_faces(resolver, &format!("{family}{suffix}"));
+                if !ids.is_empty() {
+                    return Some((ids, suffix.contains("italic")));
+                }
             }
         }
     }

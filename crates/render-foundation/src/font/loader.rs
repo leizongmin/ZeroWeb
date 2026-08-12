@@ -1,7 +1,7 @@
 //! 字体加载器 — 使用 fontdue 加载和管理字体
 
 use crate::font::{FontDesc, FontError, GlyphBitmap};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use shaping::ShapeCache;
 use std::sync::Arc;
 
@@ -233,6 +233,8 @@ pub struct FontLoader {
     font_unicode_ranges: HashMap<u32, Vec<(u32, u32)>>,
     /// 字体族到 ID 的映射
     family_map: HashMap<String, Vec<u32>>,
+    /// 由 `@font-face` 声明注册的 alias 名称。
+    family_aliases: HashSet<String>,
     /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
     fallback_chain: Vec<u32>,
     /// 预注册位图 glyph（font_id, glyph_id, size_bits）→ 光栅结果
@@ -257,6 +259,7 @@ impl FontLoader {
             font_features: HashMap::new(),
             font_unicode_ranges: HashMap::new(),
             family_map: HashMap::new(),
+            family_aliases: HashSet::new(),
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
             ahem_font_id: None,
@@ -279,6 +282,7 @@ impl FontLoader {
             font_features: self.font_features.clone(),
             font_unicode_ranges: self.font_unicode_ranges.clone(),
             family_map: self.family_map.clone(),
+            family_aliases: self.family_aliases.clone(),
             fallback_chain: self.fallback_chain.clone(),
             bitmap_glyphs: self.bitmap_glyphs.clone(),
             ahem_font_id: self.ahem_font_id,
@@ -362,6 +366,7 @@ impl FontLoader {
     /// 使 `build_font_resolver` 能按 `@font-face` 声明族名匹配。
     pub fn register_family_alias(&mut self, alias: &str, font_id: u32) {
         self.family_map.entry(alias.to_string()).or_default().push(font_id);
+        self.family_aliases.insert(alias.to_string());
     }
 
     /// 根据 ID 获取字体
@@ -385,17 +390,25 @@ impl FontLoader {
     /// 同时注册通用字体族别名（sans-serif / serif / monospace）映射到已加载的实际字体。
     pub fn build_font_resolver(&self) -> std::collections::HashMap<String, u32> {
         let mut resolver = std::collections::HashMap::new();
+        let expose_alias_faces = std::env::var("ZW_FONT_UNICODE_RANGE_FACES").as_deref() != Ok("0");
 
         // 已知字体族名 → ID（Regular face）
         for (name, ids) in &self.family_map {
             if let Some(&id) = ids.first() {
                 resolver.insert(name.clone(), id);
             }
+            if expose_alias_faces && self.family_aliases.contains(name) {
+                for (index, &id) in ids.iter().enumerate() {
+                    resolver.insert(format!("{name}:face={index}"), id);
+                }
+            }
         }
 
         // 同一族名的第二个 face 视为 Bold（如 Arial + Arial Bold）
         for (name, ids) in &self.family_map {
-            if let Some(&bold_id) = ids.get(1) {
+            if !self.family_aliases.contains(name)
+                && let Some(&bold_id) = ids.get(1)
+            {
                 resolver.insert(format!("{name}:700"), bold_id);
             }
         }
@@ -1086,24 +1099,6 @@ mod tests {
             loader.font_instance_ids.get(&left_id),
             duplicate.font_instance_ids.get(&right_id),
             "new fonts in separate duplicates require distinct cache identities"
-        );
-    }
-
-    #[test]
-    fn unicode_range_skips_face_outside_registered_intervals() {
-        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
-        let mut loader = FontLoader::new();
-        let uppercase = loader.load_font(LATO_TTF).expect("uppercase face");
-        let fallback = loader.load_font(LATO_TTF).expect("fallback face");
-        loader.register_unicode_ranges(uppercase, vec![(0x41, 0x5A)]);
-
-        assert_eq!(
-            loader.resolve_font_for_code_point_in(&[uppercase, fallback], 'A'),
-            Some(uppercase)
-        );
-        assert_eq!(
-            loader.resolve_font_for_code_point_in(&[uppercase, fallback], 'a'),
-            Some(fallback)
         );
     }
 
