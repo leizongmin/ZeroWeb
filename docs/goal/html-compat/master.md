@@ -50,10 +50,11 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] renderer focus adapter 使用 shared effect
 - [x] renderer reset/submit adapter 使用 shared plan/effect
 - [x] TabWorker 文本与 focus adapter 使用 shared plan/effect
-- [ ] TabWorker checkedness 与 reset/submit adapter
+- [x] TabWorker checkedness 与 reset/submit adapter 使用 shared plan/effect
+- [ ] 单进程 POST form navigation transport
 - [ ] ZeroWebView user-action adapter
 - [ ] 三宿主 conformance 与取消一致性
 
 ## 下一步
 
-提交 M2-D renderer reset/submit adapter，继续迁移 TabWorker 与 ZeroWebView。
+闭合单进程 POST form navigation transport，继续迁移 ZeroWebView。
