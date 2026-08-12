@@ -75,9 +75,9 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 
 - [x] successful controls 文档序与显式 form owner
 - [x] disabled fieldset 交互/提交传播与首个 legend 例外
-- [ ] select/option 用户激活事务与三宿主一致性
+- [x] select/option 用户激活事务与三宿主一致性
 - [ ] output/defaultValue reset 与 form owner 集成
 
 ## 下一步
 
-实施 select/option 用户激活事务，复用 shared action core 并验证 renderer、TabWorker、WebView 一致性。
+闭合 output/defaultValue reset 与 form owner 集成，完成 M3b。

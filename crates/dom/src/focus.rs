@@ -237,12 +237,21 @@ pub fn is_effectively_disabled(doc: &Document, node: NodeId) -> bool {
     if element.get_attribute("disabled").is_some() {
         return true;
     }
-    if !matches!(element.local_name(), "button" | "input" | "select" | "textarea") {
+    if !matches!(
+        element.local_name(),
+        "button" | "input" | "option" | "optgroup" | "select" | "textarea"
+    ) {
         return false;
     }
 
     let mut current = doc.parent_node(node);
     while let Some(ancestor) = current {
+        if element.local_name() == "option"
+            && doc.get_attribute(ancestor, "disabled").is_some()
+            && matches!(doc.get(ancestor).map(|node| &node.kind), Some(crate::NodeKind::Element(owner)) if matches!(owner.local_name(), "optgroup" | "select"))
+        {
+            return true;
+        }
         if doc.get_attribute(ancestor, "disabled").is_some()
             && doc.get(ancestor).is_some_and(
                 |node| matches!(&node.kind, crate::NodeKind::Element(element) if element.local_name() == "fieldset"),

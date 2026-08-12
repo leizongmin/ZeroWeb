@@ -60,6 +60,19 @@ pub struct RadioActionState {
     pub previous_checked: Option<PageNodeRef>,
 }
 
+/// option 激活规划所需的 select 状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionActionState {
+    /// owning select。
+    pub select: PageNodeRef,
+    /// 目标 option 当前是否选中。
+    pub selected: bool,
+    /// owning select 是否为 multiple。
+    pub multiple: bool,
+    /// 单选 select 激活前选中的 option。
+    pub previous_selected: Option<PageNodeRef>,
+}
+
 /// GET/POST 表单导航意图。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormNavigationIntent {
@@ -85,6 +98,8 @@ pub enum ActionTargetState {
     },
     /// radio 组 checkedness。
     Radio(RadioActionState),
+    /// option 与 owning select 状态。
+    Option(OptionActionState),
     /// 顺序焦点移动的计算结果。
     Focus {
         /// 下一个 focus owner；`None` 表示清除焦点。
@@ -124,6 +139,17 @@ pub enum PlannedMutation {
         target: PageNodeRef,
         /// 新 checkedness。
         checked: bool,
+    },
+    /// 设置 option selectedness，并可清除同 select 其他 option。
+    SetOptionSelected {
+        /// 目标 option。
+        target: PageNodeRef,
+        /// owning select。
+        select: PageNodeRef,
+        /// 新 selectedness。
+        selected: bool,
+        /// 是否先清除 owning select 的其他 option。
+        clear_others: bool,
     },
     /// 恢复 form 内所有 resettable controls 的默认状态。
     ResetForm {
@@ -289,6 +315,7 @@ pub fn plan_html_action(
             Ok(plan_checkbox(request.target, *checked))
         }
         (HtmlUserAction::Activate, ActionTargetState::Radio(state)) => plan_radio(request.target, state),
+        (HtmlUserAction::Activate, ActionTargetState::Option(state)) => plan_option(request.target, state),
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
         (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
         (HtmlUserAction::Submit, ActionTargetState::Submit { form, submitter }) => {
@@ -363,6 +390,50 @@ fn plan_radio(target: PageNodeRef, state: &RadioActionState) -> Result<HtmlActio
         rollback,
         commit: vec![],
         followup_events: checkedness_events(target),
+        effects: vec![],
+        invalidation: InvalidationKind::Paint,
+    })
+}
+
+fn plan_option(target: PageNodeRef, state: &OptionActionState) -> Result<HtmlActionPlan, ActionNoopReason> {
+    if !state.multiple && state.selected {
+        return Err(ActionNoopReason::AlreadySelected);
+    }
+    let selected = if state.multiple { !state.selected } else { true };
+    let rollback = if state.multiple {
+        vec![PlannedMutation::SetOptionSelected {
+            target,
+            select: state.select,
+            selected: state.selected,
+            clear_others: false,
+        }]
+    } else if let Some(previous) = state.previous_selected {
+        vec![PlannedMutation::SetOptionSelected {
+            target: previous,
+            select: state.select,
+            selected: true,
+            clear_others: true,
+        }]
+    } else {
+        vec![PlannedMutation::SetOptionSelected {
+            target,
+            select: state.select,
+            selected: false,
+            clear_others: true,
+        }]
+    };
+    Ok(HtmlActionPlan {
+        target,
+        prepare: vec![PlannedMutation::SetOptionSelected {
+            target,
+            select: state.select,
+            selected,
+            clear_others: !state.multiple,
+        }],
+        cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
+        rollback,
+        commit: vec![],
+        followup_events: checkedness_events(state.select),
         effects: vec![],
         invalidation: InvalidationKind::Paint,
     })
@@ -810,6 +881,70 @@ mod tests {
                 submitter: Some(node(1))
             }]
         );
+    }
+
+    #[test]
+    fn option_activation_rolls_back_single_and_multiple_selection() {
+        let single = plan_html_action(
+            &request(node(2), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Option(OptionActionState {
+                select: node(10),
+                selected: false,
+                multiple: false,
+                previous_selected: Some(node(1)),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            single.prepare,
+            [PlannedMutation::SetOptionSelected {
+                target: node(2),
+                select: node(10),
+                selected: true,
+                clear_others: true,
+            }]
+        );
+        assert_eq!(
+            resolve_html_action(
+                single,
+                EventDispatchResult {
+                    default_allowed: false,
+                    html_changed: false,
+                },
+            )
+            .mutations,
+            [PlannedMutation::SetOptionSelected {
+                target: node(1),
+                select: node(10),
+                selected: true,
+                clear_others: true,
+            }]
+        );
+
+        let multiple = plan_html_action(
+            &request(node(3), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Option(OptionActionState {
+                select: node(11),
+                selected: true,
+                multiple: true,
+                previous_selected: None,
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            multiple.prepare,
+            [PlannedMutation::SetOptionSelected {
+                target: node(3),
+                select: node(11),
+                selected: false,
+                clear_others: false,
+            }]
+        );
+        assert_eq!(multiple.followup_events[0].target, node(11));
     }
 
     #[test]

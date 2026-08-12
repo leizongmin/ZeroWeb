@@ -231,6 +231,29 @@ pub fn script_set_control_checked(selector: &str, checked: bool) -> String {
     format!("(function(){{var e=document.querySelector('{esc}');if(e)e.checked={checked};}})()")
 }
 
+/// 构造 option selectedness 更新脚本，不派发事件。
+///
+/// `clear_others` 用于 select-one，按节点身份清除兄弟，避免重复 value 选错 option。
+/// https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-selectedness
+pub fn script_set_option_selected(
+    option_selector: &str,
+    select_selector: &str,
+    selected: bool,
+    clear_others: bool,
+) -> String {
+    let option = escape_js_string(option_selector);
+    let select = escape_js_string(select_selector);
+    let selected = if selected { "true" } else { "false" };
+    let clear_others = if clear_others { "true" } else { "false" };
+    format!(
+        "(function(){{\
+var o=document.querySelector('{option}'),s=document.querySelector('{select}');if(!o||!s)return;\
+if({clear_others}){{var os=s.options;for(var i=0;i<os.length;i++)os[i].selected={selected}&&os[i]===o;}}\
+else o.selected={selected};\
+}})()"
+    )
+}
+
 /// 构造「设置 location.hash」的 shim 脚本（P1a 导航，R3053）。宿主在 `<a href="#...">` 被 click 时执行：
 /// 调 shim `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange 事件 + 触 onhashchange）。
 /// headless 无 viewport → 不滚动到锚。hash 经 `escape_js_string` 安全嵌入。

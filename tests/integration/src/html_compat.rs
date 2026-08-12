@@ -518,6 +518,93 @@ fn disabled_fieldset_blocks_interaction_and_submission() {
 }
 
 #[test]
+fn option_activation_conformance_across_hosts() {
+    // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-selectedness
+    const SCRIPT: &str = r#"
+globalThis.__optionEvents=[];
+globalThis.__preventOption=false;
+['a','b','m2'].forEach(function(id){
+  document.getElementById(id).addEventListener('click',function(event){
+    globalThis.__optionEvents.push('click:'+id+':'+String(this.selected));
+    if(id==='a'&&globalThis.__preventOption)event.preventDefault();
+  });
+});
+['s','m'].forEach(function(id){
+  var select=document.getElementById(id);
+  select.addEventListener('input',function(){globalThis.__optionEvents.push('input:'+id+':'+select.value);});
+  select.addEventListener('change',function(){globalThis.__optionEvents.push('change:'+id+':'+select.value);});
+});
+"#;
+    let html = format!(
+        r#"<html><body>
+        <select id="s"><option id="a" selected>A</option><option id="b">B</option></select>
+        <select id="m" multiple><option id="m1" selected>M1</option><option id="m2">M2</option></select>
+        <script>{SCRIPT}</script>
+        </body></html>"#
+    );
+
+    fn run(html: &str, executor: Option<&dyn JsExecutor>) -> (String, Vec<bool>) {
+        let url = "https://zero.test/options";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor
+                .execute_script_direct(SCRIPT)
+                .expect("register option listeners");
+        }
+        let b = webview.page_node_ref_for_selector("#b").expect("option b");
+        let m2 = webview.page_node_ref_for_selector("#m2").expect("option m2");
+        let a = webview.page_node_ref_for_selector("#a").expect("option a");
+        let first = dispatch(&mut webview, executor, b, HtmlUserAction::Activate);
+        assert!(!zero_engine::has_attribute(webview.html_content(), "#a", "selected"));
+        assert!(zero_engine::has_attribute(webview.html_content(), "#b", "selected"));
+        let second = dispatch(&mut webview, executor, m2, HtmlUserAction::Activate);
+        assert_eq!(
+            zero_engine::option_activation_snapshot(webview.html_content(), "#a")
+                .and_then(|state| state.previous_selected_selector),
+            Some("#b".to_string())
+        );
+        match executor {
+            Some(executor) => executor
+                .execute_script_direct("globalThis.__preventOption=true")
+                .expect("enable cancellation"),
+            None => webview
+                .execute_script("globalThis.__preventOption=true")
+                .expect("enable cancellation"),
+        };
+        let canceled = dispatch(&mut webview, executor, a, HtmlUserAction::Activate);
+        assert!(!zero_engine::has_attribute(webview.html_content(), "#a", "selected"));
+        assert!(zero_engine::has_attribute(webview.html_content(), "#b", "selected"));
+        let script = "var s=document.getElementById('s'),m1=document.getElementById('m1'),m2=document.getElementById('m2');\
+                      [s.value,String(m1.selected),String(m2.selected),globalThis.__optionEvents.join(',')].join('|')";
+        let observed = match executor {
+            Some(executor) => executor.execute_script_direct(script),
+            None => webview.execute_script(script).map_err(|error| error.to_string()),
+        }
+        .expect("option observable");
+        (observed, vec![first.canceled, second.canceled, canceled.canceled])
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(98);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(99));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(renderer_result.1, [false, false, true]);
+    assert_eq!(
+        renderer_result.0,
+        "B|true|true|click:b:true,input:s:B,change:s:B,click:m2:true,input:m:M1,change:m:M1,click:a:true"
+    );
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());

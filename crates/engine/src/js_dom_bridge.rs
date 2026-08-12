@@ -1886,6 +1886,50 @@ pub fn is_select(html: &str, selector: &str) -> bool {
     query_tag_from_html(html, selector).eq_ignore_ascii_case("select")
 }
 
+/// option 用户激活所需的 owning select 与 selectedness 快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionActivationSnapshot {
+    /// owning select 的唯一选择器。
+    pub select_selector: String,
+    /// 目标 option 当前是否选中。
+    pub selected: bool,
+    /// owning select 是否为 multiple。
+    pub multiple: bool,
+    /// 单选 select 当前选中 option 的唯一选择器。
+    pub previous_selected_selector: Option<String>,
+}
+
+/// 解析 option 的用户激活状态。
+/// https://html.spec.whatwg.org/multipage/form-elements.html#the-option-element
+pub fn option_activation_snapshot(html: &str, selector: &str) -> Option<OptionActivationSnapshot> {
+    let doc = parse_html(html);
+    let option = find_by_selector(&doc, selector)?;
+    if element_local_name(&doc, option) != "option" {
+        return None;
+    }
+    let mut current = doc.parent_node(option);
+    let select = loop {
+        let ancestor = current?;
+        if element_local_name(&doc, ancestor) == "select" {
+            break ancestor;
+        }
+        current = doc.parent_node(ancestor);
+    };
+    let multiple = doc.get_attribute(select, "multiple").is_some();
+    let previous = selected_option(&doc, select).map(|(option, _)| option);
+    let selected = if multiple {
+        doc.get_attribute(option, "selected").is_some()
+    } else {
+        previous == Some(option)
+    };
+    Some(OptionActivationSnapshot {
+        select_selector: unique_selector_for_node(&doc, select)?,
+        selected,
+        multiple,
+        previous_selected_selector: previous.and_then(|option| unique_selector_for_node(&doc, option)),
+    })
+}
+
 /// P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义）。
 ///
 /// 选中 option = 首个（树序）带 `selected` 属性的 `<option>`；无则首个 option（默认选中）。

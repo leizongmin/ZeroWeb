@@ -4,12 +4,13 @@ use std::sync::{Arc, Mutex};
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_dispatch_dom_event, script_reset_form_controls,
-    script_set_control_checked, script_set_text_control_state, script_text_control_snapshot,
+    script_set_control_checked, script_set_option_selected, script_set_text_control_state,
+    script_text_control_snapshot,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
-    InvalidationKind, JsExecutor, PageEffect, PageNodeHandle, PageNodeRef, PlannedEvent, PlannedMutation,
-    RadioActionState, TextActionState, plan_html_action, resolve_html_action,
+    InvalidationKind, JsExecutor, OptionActionState, PageEffect, PageNodeHandle, PageNodeRef, PlannedEvent,
+    PlannedMutation, RadioActionState, TextActionState, plan_html_action, resolve_html_action,
 };
 
 use super::{WebView, WebViewError, render_result_to_webview};
@@ -198,6 +199,22 @@ impl WebView {
                         .and_then(|previous| self.page_node_ref_for_selector(&previous)),
                 })
             }
+            HtmlUserAction::Activate => {
+                let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) else {
+                    return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                };
+                let Some(select) = self.page_node_ref_for_selector(&option.select_selector) else {
+                    return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                };
+                ActionTargetState::Option(OptionActionState {
+                    select,
+                    selected: option.selected,
+                    multiple: option.multiple,
+                    previous_selected: option
+                        .previous_selected_selector
+                        .and_then(|previous| self.page_node_ref_for_selector(&previous)),
+                })
+            }
             HtmlUserAction::MoveFocus { forward } => {
                 let next = zero_engine::next_focus_selector(&html, Some(&selector), *forward)
                     .and_then(|next| self.page_node_ref_for_selector(&next));
@@ -222,7 +239,6 @@ impl WebView {
                     submitter: zero_engine::is_submit_button(&html, &selector).then_some(request.target),
                 }
             }
-            _ => return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable)),
         };
         let plan = match plan_html_action(&request, self.navigation_epoch, self.document_generation, &state) {
             Ok(plan) => plan,
@@ -336,6 +352,20 @@ impl WebView {
                     };
                     script_set_control_checked(&selector, *checked)
                 }
+                PlannedMutation::SetOptionSelected {
+                    target,
+                    select,
+                    selected,
+                    clear_others,
+                } => {
+                    let Some(option_selector) = self.selector_for_page_node_handle(target.node().get()) else {
+                        continue;
+                    };
+                    let Some(select_selector) = self.selector_for_page_node_handle(select.node().get()) else {
+                        continue;
+                    };
+                    script_set_option_selected(&option_selector, &select_selector, *selected, *clear_others)
+                }
                 PlannedMutation::ResetForm { form } => {
                     let Some(selector) = self.selector_for_page_node_handle(form.node().get()) else {
                         continue;
@@ -385,7 +415,9 @@ impl WebView {
             mutations.lock().unwrap_or_else(|error| error.into_inner()).clear();
             let value = executor.execute_script_direct(script).map_err(WebViewError::Script)?;
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
-            return self.apply_dom_script_result(value, recorded);
+            let result = self.apply_dom_script_result(value, recorded)?;
+            executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
+            return Ok(result);
         }
         self.ensure_sandbox()?;
         #[cfg(feature = "v8")]
@@ -409,7 +441,9 @@ impl WebView {
             .map_err(|error| WebViewError::Script(error.to_string()))?
             .value;
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
-        self.apply_dom_script_result(value, recorded)
+        let result = self.apply_dom_script_result(value, recorded)?;
+        *dom_html.lock().unwrap_or_else(|error| error.into_inner()) = self.cached_html.clone();
+        Ok(result)
     }
 
     fn apply_dom_script_result(
