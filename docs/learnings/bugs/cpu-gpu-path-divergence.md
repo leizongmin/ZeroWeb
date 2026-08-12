@@ -102,12 +102,16 @@
 - **GPU 阴影模糊（R3287）**：离屏画 + 区域 blur + alpha 混合——box-shadow blur
   主流特性不再回退（CPU 3-pass box vs GPU 三角窗为视觉近似，对照测试宽容差）
 
-## 最终回退面（2026-08-12）
+## 最终回退面（2026-08-12，R3289-R3291 后）
 
-`scene_supported` 仅剩 3 个边缘场景回退 CPU（均与 CPU 语义无法精确对齐，
-影响面窄）：blend + 分桶路径（draw_order 空）、inset 阴影、repeating 渐变
-首色标 offset≠0。主流特性（半透明/clip/blend/滤镜/变换/阴影模糊/draw_order/
-凹多边形/渐变）全部 GPU 直渲且与 CPU 逐像素一致（parity 对照测试）。
+`scene_supported` **仅剩 1 个场景回退 CPU**：blend + 分桶路径（draw_order 空——
+blend 双 pass 需顺序语义，分桶无法实现；影响面≈0，painter 默认产 draw_order）。
+inset 阴影（R3290）、repeating 渐变首色标≠0（R3289）已 GPU 实现。
+**全部特性 GPU 直渲**：
+- 逐像素一致（parity 容差 0-8）：半透明/clip/blend/滤镜/变换/draw_order/渐变/
+  repeating 渐变/outset 阴影模糊（R3291 3 遍 2D box blur，r=floor(d) 对齐 CPU）
+- 视觉近似（容差 90/35%，主体一致）：inset 阴影洞边界（CPU box_blur 蒙版边界
+  vs GPU ClampToEdge；ClampToBorder 需 ADDRESS_MODE_CLAMP_TO_BORDER feature）
 - **#12 device-lost**：真实恢复循环（wgpu 24 无 DeviceLostCallback；现「失败→CPU
   回退」已覆盖正确性，缺 GPU 设备重建）
 - **#13 atlas 2048**：已是 WebGL2 下限兼容值（所有设备支持），rebuild 机制兜底——
