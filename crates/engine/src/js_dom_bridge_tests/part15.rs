@@ -1983,3 +1983,8 @@ fn test_html_tr_cells_mutation_and_index_error_r3243() {
     assert_eq!(sandbox.execute("globalThis.__errs.insertCell_neg").unwrap().value, "IndexSizeError", "insertCell(-2) 抛 IndexSizeError");
     assert_eq!(sandbox.execute("globalThis.__errs.deleteCell_oob").unwrap().value, "IndexSizeError", "deleteCell(99) 越界抛 IndexSizeError");
 }
+
+#[test]
+fn text_insert_dispatches_beforeinput_then_input() {
+    assert_text_insert_dispatches_beforeinput_then_input();
+}

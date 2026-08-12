@@ -707,6 +707,32 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
+    // https://w3c.github.io/uievents/#event-type-keydown
+    fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool) -> Result<(), String> {
+        if key == "Tab" {
+            let current = self.interaction.focus_owner().map(str::to_string);
+            if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), !shift)
+                && self.interaction.focus_owner() != Some(next.as_str())
+            {
+                self.blur_focused()?;
+                self.focus_via_tab(&next)?;
+            }
+        } else if is_printable_key(key) && !self.is_composing_at(target) {
+            // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
+            self.apply_text_input_at(target, key)?;
+        } else if key == "Backspace" {
+            self.apply_text_delete_at(target)?;
+        } else if key == "Enter" {
+            if zero_engine::query_tag_from_html(&self.cached_html, target).eq_ignore_ascii_case("textarea") {
+                self.apply_text_input_at(target, "\n")?;
+            } else {
+                self.submit_form_on_enter_at(target)?;
+            }
+        }
+        Ok(())
+    }
+
     /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
     /// 而非注入控件——防平台同一次击键同时投递 KeyboardInput 与 Ime::Commit 的双写）。
     fn is_composing_at(&self, selector: &str) -> bool {
@@ -1899,27 +1925,7 @@ impl RendererRuntime {
                 .focus_owner()
                 .unwrap_or_else(|| self.interaction.pointer_target())
                 .to_string();
-            if key.as_deref() == Some("Tab") {
-                let forward = !params.shift;
-                let current = self.interaction.focus_owner().map(str::to_string);
-                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
-                    && self.interaction.focus_owner() != Some(next.as_str())
-                {
-                    let _ = self.blur_focused();
-                    let _ = self.focus_via_tab(&next);
-                }
-            } else if key.as_deref().is_some_and(is_printable_key) && !self.is_composing_at(&target) {
-                // R3254-L5：IME 合成期间跳过 keydown 可打印字符默认动作（防与 Commit 双写）。
-                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
-            } else if key.as_deref() == Some("Backspace") {
-                let _ = self.apply_text_delete_at(&target);
-            } else if key.as_deref() == Some("Enter") {
-                if zero_engine::query_tag_from_html(&self.cached_html, &target).eq_ignore_ascii_case("textarea") {
-                    let _ = self.apply_text_input_at(&target, "\n");
-                } else {
-                    let _ = self.submit_form_on_enter_at(&target);
-                }
-            }
+            self.apply_keydown_default(&target, key.as_deref().unwrap_or_default(), params.shift)?;
         } else if result.default_allowed && event_type == "mousedown" {
             // R3254-M8：焦点切换在 mousedown（UI Events：focus 是 mousedown 默认动作，与
             // Chrome/Firefox 一致——mousedown preventDefault 阻止聚焦）。blur/change/focus
@@ -2051,36 +2057,9 @@ impl RendererRuntime {
             .focus_owner()
             .unwrap_or_else(|| self.interaction.pointer_target())
             .to_string();
-        self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
-        // P1a form input：keydown 默认行为近似——可打印字符 → 注入字符；Backspace → 删末字符
-        // （均更新 value + 派发 'input' 事件）；Enter → 单行 input 提交 enclosing form（submit 事件）。
-        // 未尊重 keydown preventDefault（follow-up）；无 caret/selection。
-        if matches!(params.event_type, KeyboardEventType::Down) {
-            if params.key == "Tab" {
-                // P1a Tab 焦点导航：经 FocusManager 算下一/上一可聚焦元素，blur 旧焦点 + focus 新。
-                let forward = !params.shift;
-                let current = self.interaction.focus_owner().map(str::to_string);
-                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
-                    && self.interaction.focus_owner() != Some(next.as_str())
-                {
-                    let _ = self.blur_focused();
-                    let _ = self.focus_via_tab(&next);
-                }
-            } else if is_printable_key(&params.key) && !self.is_composing_at(&target) {
-                // R3254-L5：IME 合成期间跳过 keydown 可打印字符默认动作——部分平台对同一次
-                // 击键同时投递 KeyboardInput 与 Ime::Commit，双写 value。
-                let _ = self.apply_text_input_at(&target, &params.key);
-            } else if params.key == "Backspace" {
-                let _ = self.apply_text_delete_at(&target);
-            } else if params.key == "Enter" {
-                // textarea Enter → 插入换行（不提交，real browser 语义；input Enter → submit）。
-                // 否则 textarea 多行输入断裂（apply_text_input 的 '\n' append 经 _resolveInputEl 认 TEXTAREA）。
-                if zero_engine::query_tag_from_html(&self.cached_html, &target).eq_ignore_ascii_case("textarea") {
-                    let _ = self.apply_text_input_at(&target, "\n");
-                } else {
-                    let _ = self.submit_form_on_enter_at(&target);
-                }
-            }
+        let result = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
+        if matches!(params.event_type, KeyboardEventType::Down) && result.default_allowed {
+            self.apply_keydown_default(&target, &params.key, params.shift)?;
         }
         Ok(())
     }
@@ -2585,6 +2564,8 @@ fn main() {
 #[cfg(test)]
 mod compositor_publish_tests;
 mod gpu_isolation_tests;
+#[cfg(test)]
+mod keyboard_input_tests;
 
 #[cfg(test)]
 mod runtime_smoke {

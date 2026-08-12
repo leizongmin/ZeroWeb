@@ -1432,9 +1432,9 @@
     }
   };
 
-  // P1a form input：host 在 keydown 可打印字符时调本函数——对焦点 input/textarea 把字符 append
-  // 到 value（经 `.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。
-  // 非 input/textarea 目标 → no-op。限制（follow-up）：仅 append（无 backspace/delete/caret/selection）。
+  // https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
+  // host 在 keydown 默认动作阶段调用：先派 cancelable beforeinput；未取消才更新 value/selection，
+  // 再派不可取消 input。非 input/textarea 目标 → no-op。
   globalThis.__zw_text_input = function(sel, ch) {
     var target = _resolveInputTarget(sel);
     if (!target) return;
@@ -1444,13 +1444,20 @@
     var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
     var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
     var inserted = String(ch);
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: inserted, inputType: 'insertText', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
     el.value = cur.slice(0, start) + inserted + cur.slice(end);
     var caret = start + inserted.length;
     _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
-    el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
+    var input = new InputEvent('input', {
+      bubbles: true, cancelable: false, data: inserted, inputType: 'insertText', isComposing: false
+    });
+    el.dispatchEvent(input);
   };
-  // P1a form input：Backspace → 删末字符 + 派发 'input'（仅当 value 非空）。无 caret/selection
-  // （删末字符近似——真实浏览器按 caret 删，follow-up）。
+  // Backspace：起点 no-op；否则 beforeinput(deleteContentBackward) → mutation →
+  // input(deleteContentBackward, cancelable=false)。
   globalThis.__zw_text_delete = function(sel) {
     var target = _resolveInputTarget(sel);
     if (!target) return;
@@ -1469,9 +1476,16 @@
         if (previous >= 0xD800 && previous <= 0xDBFF) start--;
       }
     }
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return;
     el.value = cur.slice(0, start) + cur.slice(end);
     _textSelection[target.key] = { start: start, end: start, direction: 'none' };
-    el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
+    var input = new InputEvent('input', {
+      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
+    });
+    el.dispatchEvent(input);
   };
   // 解析 selector → canonical stable selector（`__zw_query_match`，与 querySelector 同 identity）+
   // 真实 tag（`__zw_get_tag`，非 `_tagFromSel` 启发式）判 INPUT/TEXTAREA → 返元素 proxy（否则 null）。

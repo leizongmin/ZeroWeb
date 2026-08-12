@@ -249,6 +249,35 @@ impl FormControlStateStore {
         state.update(value, selection_start, selection_end);
     }
 
+    /// 对指定文本控件执行一次 backward delete。
+    ///
+    /// 非空选区删除选区；折叠选区删除前一个 Unicode scalar；UTF-16 起点为 no-op。
+    /// https://w3c.github.io/input-events/#interface-InputEvent-Attributes
+    pub fn delete_backward(&mut self, selector: &str) -> bool {
+        let Some(state) = self.controls.get_mut(selector) else {
+            return false;
+        };
+        let value_len = state.value.encode_utf16().count();
+        let start = state.selection_start.min(value_len);
+        let end = state.selection_end.min(value_len).max(start);
+        if start == end && start == 0 {
+            return false;
+        }
+        let delete_start = if start == end {
+            let byte_start = byte_index_at_utf16(&state.value, start);
+            let previous = state.value[..byte_start].chars().next_back().expect("start > 0");
+            start.saturating_sub(previous.len_utf16())
+        } else {
+            start
+        };
+        let byte_start = byte_index_at_utf16(&state.value, delete_start);
+        let byte_end = byte_index_at_utf16(&state.value, end);
+        let mut value = state.value.clone();
+        value.replace_range(byte_start..byte_end, "");
+        state.update(value, delete_start, delete_start);
+        true
+    }
+
     /// 结束当前焦点会话，返回 change 判断所需结果。
     ///
     /// R3254-L10：失焦后移除控件状态（change 已报告、基线已无用途）——`controls` 不再
@@ -311,6 +340,17 @@ impl FormControlStateStore {
 
 fn normalized_selection(start: usize, end: usize) -> (usize, usize) {
     (start.min(end), end.max(start))
+}
+
+fn byte_index_at_utf16(value: &str, offset: usize) -> usize {
+    let mut utf16 = 0;
+    for (byte, ch) in value.char_indices() {
+        if utf16 >= offset {
+            return byte;
+        }
+        utf16 += ch.len_utf16();
+    }
+    value.len()
 }
 
 #[cfg(test)]
@@ -387,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn disabled_composition_does_not_commit_text() {
+    fn cancelled_composition_does_not_commit() {
         let mut store = FormControlStateStore::new();
         store.focus("#name", "base".to_string(), 4, 4);
         assert!(store.update_focused_composition("未提交".to_string()));
@@ -397,6 +437,34 @@ mod tests {
         assert_eq!(state.value, "base");
         assert!(state.composition_text.is_none());
         assert!(!state.dirty_value);
+    }
+
+    #[test]
+    fn delete_backward_at_start_is_noop() {
+        let mut store = FormControlStateStore::new();
+        store.focus("#name", "A".to_string(), 0, 0);
+
+        assert!(!store.delete_backward("#name"));
+        let state = store.get("#name").expect("state");
+        assert_eq!(state.value, "A");
+        assert_eq!((state.selection_start, state.selection_end), (0, 0));
+        assert_eq!(state.revision, 0);
+    }
+
+    #[test]
+    fn delete_backward_removes_previous_scalar_or_selection() {
+        let mut store = FormControlStateStore::new();
+        store.focus("#name", "A😀B".to_string(), 3, 3);
+        assert!(store.delete_backward("#name"));
+        let state = store.get("#name").expect("state");
+        assert_eq!(state.value, "AB");
+        assert_eq!((state.selection_start, state.selection_end), (1, 1));
+
+        store.update("#name", "ABCD".to_string(), 1, 3);
+        assert!(store.delete_backward("#name"));
+        let state = store.get("#name").expect("state");
+        assert_eq!(state.value, "AD");
+        assert_eq!((state.selection_start, state.selection_end), (1, 1));
     }
 
     #[test]

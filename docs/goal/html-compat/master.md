@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 阶段：M1
-- 状态：A/B/C 完成，D 实施中
+- 状态：A/B/C/D 完成，E 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -37,9 +37,9 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] hit-test opaque node handle
 - [x] press/release 稳定目标与 stale generation 取消
 - [x] JavaScript 禁用时 UA 默认动作
-- [ ] beforeinput/input 与键盘入口统一
+- [x] beforeinput/input 与键盘入口统一
 - [ ] focus/label/activation/forms 完整验收
 
 ## 下一步
 
-提交 M1-C 阶段进展，继续实现 beforeinput/input 与键盘入口统一。
+提交 M1-D 阶段进展，继续完成 focus/label/activation/forms 验收。

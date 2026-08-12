@@ -1047,6 +1047,45 @@ mod tests {
     }
 
     #[test]
+    fn prevented_beforeinput_does_not_mutate_value() {
+        let html = r#"<html><body>
+            <input id="name" value="base">
+            <script>
+              globalThis.__inputCount = 0;
+              var name = document.querySelector('#name');
+              name.setSelectionRange(4, 4);
+              name.addEventListener('beforeinput', function(event) {
+                if (event.inputType === 'insertText') event.preventDefault();
+              });
+              name.addEventListener('input', function() { globalThis.__inputCount++; });
+            </script>
+        </body></html>"#;
+        let page_url = "https://example.com/page";
+        let mut worker = RendererJsWorker::spawn(149);
+        worker.set_dom_snapshot(html, page_url);
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: None,
+        };
+
+        let outcome = apply_text_input(&mut ctx, "#name", "A");
+        let snapshot = outcome.snapshot.expect("text snapshot");
+        assert_eq!(snapshot.value, "base");
+        assert_eq!((snapshot.selection_start, snapshot.selection_end), (4, 4));
+        assert!(!outcome.html_changed);
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__inputCount)").unwrap(),
+            "0"
+        );
+
+        worker.shutdown();
+    }
+
+    #[test]
     fn composition_events_preserve_order_and_data() {
         let html = r#"<html><body><input id="name"><script>
             globalThis.__compositionEvents = [];
