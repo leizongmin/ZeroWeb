@@ -435,34 +435,54 @@ fn render_draw_order(
     // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）
     let in_region = |rect: Rect| region.is_none_or(|r| r.intersects(&rect));
 
+    // P2-7 mix-blend-mode：painter 在元素图元之前 push DrawOp::BlendMode 标记，
+    // 标记之后的图元画到独立源缓冲（元素层），循环结束后按 blend rect 与
+    // 主帧（背景层）逐区域合成（effects::composite_blend）。嵌套/兄弟 blend 共享
+    // 同一源缓冲、各自 rect 分别合成（rect 不重叠时正确；嵌套近似二次合成）。
+    let mut blend_src: Option<FrameBuffer> = None;
+    let mut blend_list: Vec<crate::primitive::BlendModePrimitive> = Vec::new();
+
     for op in &primitives.draw_order {
+        if let DrawOp::BlendMode(i) = op {
+            if let Some(p) = primitives.blend_modes.get(*i) {
+                if blend_src.is_none() {
+                    blend_src = Some(FrameBuffer::new(fb.width, fb.height));
+                }
+                blend_list.push(p.clone());
+            }
+            continue;
+        }
+        let target: &mut FrameBuffer = match blend_src.as_mut() {
+            Some(src) => src,
+            None => fb,
+        };
         match op {
             DrawOp::Shadow(i) => {
                 if let Some(p) = primitives.shadows.get(*i)
                     && in_region(p.rect)
                 {
-                    shadow::render_shadow(fb, p, scale);
+                    shadow::render_shadow(target, p, scale);
                 }
             }
             DrawOp::Fill(i) => {
                 if let Some(p) = primitives.fills.get(*i)
                     && in_region(p.rect)
                 {
-                    fill_rect_for_region(fb, p, scale, region);
+                    fill_rect_for_region(target, p, scale, region);
                 }
             }
             DrawOp::RoundedRect(i) => {
                 if let Some(p) = primitives.rounded_rects.get(*i)
                     && in_region(p.rect)
                 {
-                    fill_rounded_rect(fb, p, scale);
+                    fill_rounded_rect(target, p, scale);
                 }
             }
             DrawOp::Gradient(i) => {
                 if let Some(p) = primitives.gradients.get(*i)
                     && in_region(p.rect)
                 {
-                    gradient::render_gradient(fb, p, scale);
+                    gradient::render_gradient(target, p, scale);
                 }
             }
             DrawOp::Image(i) => {
@@ -470,7 +490,7 @@ fn render_draw_order(
                     && let Some(ref mut cache) = image_cache
                     && in_region(p.rect)
                 {
-                    render_image(fb, p, scale, cache);
+                    render_image(target, p, scale, cache);
                 }
             }
             DrawOp::Stroke(i) => {
@@ -482,46 +502,49 @@ fn render_draw_order(
                         (p.y1 - p.y2).abs(),
                     ))
                 {
-                    stroke::render_stroke(fb, p, scale);
+                    stroke::render_stroke(target, p, scale);
                 }
             }
             DrawOp::PathFill(i) => {
                 if let Some(p) = primitives.path_fills.get(*i)
                     && in_region(path_vertices_rect(&p.vertices))
                 {
-                    stroke::render_path_fill(fb, p, scale);
+                    stroke::render_path_fill(target, p, scale);
                 }
             }
             DrawOp::PathStroke(i) => {
                 if let Some(p) = primitives.path_strokes.get(*i) {
-                    stroke::render_path_stroke(fb, p, scale);
+                    stroke::render_path_stroke(target, p, scale);
                 }
             }
             DrawOp::Glyph(i) => {
                 if let Some(p) = primitives.glyphs.get(*i) {
-                    draw_glyph_primitive(fb, p, scale, font_loader, glyph_cache);
+                    draw_glyph_primitive(target, p, scale, font_loader, glyph_cache);
                 }
             }
             DrawOp::Filter(i) => {
                 if let Some(p) = primitives.filters.get(*i) {
-                    effects::apply_filter(fb, p, scale);
+                    effects::apply_filter(target, p, scale);
                 }
             }
-            DrawOp::BlendMode(i) => {
-                if let Some(p) = primitives.blend_modes.get(*i) {
-                    effects::apply_blend_mode(fb, p, scale);
-                }
-            }
+            DrawOp::BlendMode(_) => unreachable!("BlendMode 已在循环头处理"),
             DrawOp::Transform(i) => {
                 if let Some(p) = primitives.transforms.get(*i) {
-                    apply_transform_post(fb, p, scale);
+                    apply_transform_post(target, p, scale);
                 }
             }
             DrawOp::Clip(i) => {
                 if let Some(p) = primitives.clips.get(*i) {
-                    apply_clip(fb, p, scale);
+                    apply_clip(target, p, scale);
                 }
             }
+        }
+    }
+
+    // 源层与背景层合成（P2-7）
+    if let Some(src) = blend_src {
+        for blend in blend_list {
+            effects::composite_blend(fb, &src, &blend, scale);
         }
     }
 }

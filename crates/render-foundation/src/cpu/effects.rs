@@ -1,6 +1,6 @@
 //! 渲染滤镜和混合模式图元 — FilterPrimitive、BlendModePrimitive。
 
-use crate::primitive::{BlendModePrimitive, FilterKind, FilterPrimitive};
+use crate::primitive::{BlendMode, BlendModePrimitive, FilterKind, FilterPrimitive};
 use crate::surface::FrameBuffer;
 
 /// 应用 CSS 滤镜效果。
@@ -324,11 +324,14 @@ fn hue_rotate(r: u8, g: u8, _b: u8, cos_a: f32, sin_a: f32) -> [u8; 3] {
     ]
 }
 
-/// 应用混合模式。
+/// 应用混合模式：源层（`src`，元素及子元素图元）与目标层（`fb`，背景）在
+/// blend 区域内按 CSS Compositing-1 §5 公式合成（P2-7）。
 ///
-/// 在 CPU 渲染器中，混合模式通过「保存源 → 清除 → 重新混合」实现。
-/// 简化处理：对区域内每个像素，读取当前颜色作为目标，然后使用混合模式公式重新计算。
-pub fn apply_blend_mode(fb: &mut FrameBuffer, blend: &BlendModePrimitive, scale: f32) {
+/// 由 render_draw_order 提供源层：painter 在元素图元之前 push DrawOp::BlendMode
+/// 标记，渲染循环把标记之后的图元画到独立源缓冲，循环结束后逐区域合成。
+/// 嵌套/兄弟 blend：同一源缓冲、各自 rect 分别合成（rect 不重叠时正确；
+/// 嵌套时内层在父区域内二次合成，近似）。
+pub fn composite_blend(fb: &mut FrameBuffer, src: &FrameBuffer, blend: &BlendModePrimitive, scale: f32) {
     let left = (blend.rect.left() * scale).floor().max(0.0) as u32;
     let top = (blend.rect.top() * scale).floor().max(0.0) as u32;
     let right = (blend.rect.right() * scale).ceil().min(fb.width as f32) as u32;
@@ -338,10 +341,179 @@ pub fn apply_blend_mode(fb: &mut FrameBuffer, blend: &BlendModePrimitive, scale:
         return; // 空区域，跳过
     }
 
-    // CPU 渲染器中混合模式的简化实现：
-    // Normal 模式不需要做任何事情
-    // 其他混合模式在 CPU 渲染器中效果有限（完整实现需要「源」和「目标」两个图层）
-    let _ = (left, top, right, bottom); // 避免未使用变量警告
+    for y in top..bottom {
+        for x in left..right {
+            let si = (y * fb.width + x) as usize * 4;
+            let s = [src.data[si], src.data[si + 1], src.data[si + 2], src.data[si + 3]];
+            let d = [fb.data[si], fb.data[si + 1], fb.data[si + 2], fb.data[si + 3]];
+            let out = blend_rgba(s, d, blend.mode);
+            fb.data[si..si + 4].copy_from_slice(&out);
+        }
+    }
+}
+
+/// 单个像素的 CSS 混合（RGB 通道按模式公式，alpha 走 src-over 合成；
+/// CSS Compositing-1 §5.1 B(Cb,Cs) + §5.2 simple alpha compositing）。
+pub fn blend_rgba(src: [u8; 4], dst: [u8; 4], mode: BlendMode) -> [u8; 4] {
+    if matches!(mode, BlendMode::Normal) {
+        return src;
+    }
+    let cs = [src[0] as f32 / 255.0, src[1] as f32 / 255.0, src[2] as f32 / 255.0];
+    let cb = [dst[0] as f32 / 255.0, dst[1] as f32 / 255.0, dst[2] as f32 / 255.0];
+    let mixed: [f32; 3] = blend_channels(cb, cs, mode);
+    let out: [u8; 3] = [
+        (mixed[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (mixed[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (mixed[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+    ];
+    // alpha：src-over（CSS §5.2）——混合后的 alpha 由合成贡献
+    let sa = src[3] as f32 / 255.0;
+    let da = dst[3] as f32 / 255.0;
+    let out_a = (sa + da * (1.0 - sa)).clamp(0.0, 1.0);
+    [out[0], out[1], out[2], (out_a * 255.0).round() as u8]
+}
+
+/// 16 种混合模式公式（CSS Compositing-1 §5.1）。B(Cb, Cs)：Cb=背景（目标），
+/// Cs=源（元素）。Hue/Saturation/Color/Luminosity 经 HSL 中间空间（§5.1.13-16）。
+fn blend_channels(cb: [f32; 3], cs: [f32; 3], mode: BlendMode) -> [f32; 3] {
+    let b = |c1: f32, c2: f32| -> f32 { c1 * c2 }; // multiply
+    let s = |c1: f32, c2: f32| -> f32 { 1.0 - (1.0 - c1) * (1.0 - c2) }; // screen
+    match mode {
+        BlendMode::Normal => cs,
+        BlendMode::Multiply => [b(cb[0], cs[0]), b(cb[1], cs[1]), b(cb[2], cs[2])],
+        BlendMode::Screen => [s(cb[0], cs[0]), s(cb[1], cs[1]), s(cb[2], cs[2])],
+        BlendMode::Overlay => hard_light(cs, cb),
+        BlendMode::HardLight => hard_light(cb, cs),
+        BlendMode::Darken => [cb[0].min(cs[0]), cb[1].min(cs[1]), cb[2].min(cs[2])],
+        BlendMode::Lighten => [cb[0].max(cs[0]), cb[1].max(cs[1]), cb[2].max(cs[2])],
+        BlendMode::ColorDodge => [
+            color_dodge(cb[0], cs[0]),
+            color_dodge(cb[1], cs[1]),
+            color_dodge(cb[2], cs[2]),
+        ],
+        BlendMode::ColorBurn => [
+            color_burn(cb[0], cs[0]),
+            color_burn(cb[1], cs[1]),
+            color_burn(cb[2], cs[2]),
+        ],
+        BlendMode::SoftLight => [
+            soft_light(cb[0], cs[0]),
+            soft_light(cb[1], cs[1]),
+            soft_light(cb[2], cs[2]),
+        ],
+        BlendMode::Difference => [(cb[0] - cs[0]).abs(), (cb[1] - cs[1]).abs(), (cb[2] - cs[2]).abs()],
+        BlendMode::Exclusion => [
+            cb[0] + cs[0] - 2.0 * cb[0] * cs[0],
+            cb[1] + cs[1] - 2.0 * cb[1] * cs[1],
+            cb[2] + cs[2] - 2.0 * cb[2] * cs[2],
+        ],
+        BlendMode::Hue => set_lum(set_sat(cb, sat(cs)), lum(cb)),
+        BlendMode::Saturation => set_lum(set_sat(cs, sat(cb)), lum(cb)),
+        BlendMode::Color => set_lum(cs, lum(cb)),
+        BlendMode::Luminosity => set_lum(cb, lum(cs)),
+    }
+}
+
+fn hard_light(cb: [f32; 3], cs: [f32; 3]) -> [f32; 3] {
+    let mut out = [0.0f32; 3];
+    for i in 0..3 {
+        out[i] = if cs[i] <= 0.5 {
+            cb[i] * cs[i] * 2.0
+        } else {
+            1.0 - 2.0 * (1.0 - cb[i]) * (1.0 - cs[i])
+        };
+    }
+    out
+}
+
+fn color_dodge(cb: f32, cs: f32) -> f32 {
+    if cs >= 1.0 {
+        1.0
+    } else {
+        (cb / (1.0 - cs)).clamp(0.0, 1.0)
+    }
+}
+
+fn color_burn(cb: f32, cs: f32) -> f32 {
+    if cs <= 0.0 {
+        0.0
+    } else {
+        (1.0 - (1.0 - cb) / cs).clamp(0.0, 1.0)
+    }
+}
+
+fn soft_light(cb: f32, cs: f32) -> f32 {
+    // CSS Compositing-1 §5.1.10
+    if cs <= 0.5 {
+        cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
+    } else {
+        let d = if cb <= 0.25 {
+            ((16.0 * cb - 12.0) * cb + 4.0) * cb
+        } else {
+            cb.sqrt()
+        };
+        cb + (2.0 * cs - 1.0) * (d - cb)
+    }
+}
+
+fn lum(c: [f32; 3]) -> f32 {
+    0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+}
+
+fn sat(c: [f32; 3]) -> f32 {
+    c.iter().cloned().fold(f32::NEG_INFINITY, f32::max) - c.iter().cloned().fold(f32::INFINITY, f32::min)
+}
+
+fn set_sat(c: [f32; 3], s: f32) -> [f32; 3] {
+    let min = c.iter().cloned().fold(f32::INFINITY, f32::min);
+    let max = c.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    if max > min {
+        let mid = c.iter().find(|&&v| v != min && v != max).copied().unwrap_or(min);
+        let mid = (mid - min) * s / (max - min);
+        [
+            if c[0] == min {
+                0.0
+            } else if c[0] == max {
+                s
+            } else {
+                mid
+            },
+            if c[1] == min {
+                0.0
+            } else if c[1] == max {
+                s
+            } else {
+                mid
+            },
+            if c[2] == min {
+                0.0
+            } else if c[2] == max {
+                s
+            } else {
+                mid
+            },
+        ]
+    } else {
+        c
+    }
+}
+
+fn set_lum(c: [f32; 3], l: f32) -> [f32; 3] {
+    let d = l - lum(c);
+    let mut out = [c[0] + d, c[1] + d, c[2] + d];
+    // 钳制后重新调整亮度（CSS 规范 §5.1 的 clip 步骤简化：直接 clamp）
+    for v in out.iter_mut() {
+        *v = v.clamp(0.0, 1.0);
+    }
+    out
+}
+
+/// 应用混合模式（旧后处理入口，保留签名兼容；真实实现见 [`composite_blend`]）。
+pub fn apply_blend_mode(fb: &mut FrameBuffer, blend: &BlendModePrimitive, scale: f32) {
+    // P2-7：render_typed_buckets（逃生舱）无 draw_order 顺序信息、无法定位源层，
+    // 保持跳过（与 GPU 路径一致——blend 由 scene_supported 拒绝回退 CPU 的
+    // render_draw_order 路径处理）。
+    let _ = (fb, blend, scale);
 }
 
 #[cfg(test)]
@@ -408,5 +580,75 @@ mod tests {
 
         let p = fb.get_pixel(5, 5);
         assert_eq!(p[0], 200, "brightness(2.0) should double the value");
+    }
+
+    /// P2-7：混合公式已知值（CSS Compositing-1 §5.1）。
+    #[test]
+    fn blend_formulas_known_values() {
+        use crate::primitive::BlendMode;
+        // multiply：cs=128(0.502)、cb=64(0.251) → 0.126 → 32
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::Multiply);
+        assert_eq!(out[0], 32, "multiply(128, 64) 应 ≈32，got {}", out[0]);
+        // screen：cs=128 → 1-(1-0.502)(1-0.251) = 1-0.498×0.749 = 0.627 → 160
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::Screen);
+        assert_eq!(out[0], 160, "screen(128, 64) 应 ≈160，got {}", out[0]);
+        // difference：|128-64| = 64
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::Difference);
+        assert_eq!(out[0], 64);
+        // darken / lighten
+        assert_eq!(
+            blend_rgba([128, 0, 0, 255], [64, 64, 64, 255], BlendMode::Darken)[0],
+            64
+        );
+        assert_eq!(
+            blend_rgba([128, 0, 0, 255], [64, 64, 64, 255], BlendMode::Lighten)[0],
+            128
+        );
+        // normal：直接返回源
+        assert_eq!(
+            blend_rgba([10, 20, 30, 255], [200, 200, 200, 255], BlendMode::Normal),
+            [10, 20, 30, 255]
+        );
+        // exclusion：cs+cb-2×cs×cb = 0.502+0.251-2×0.126 = 0.501 → 128
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::Exclusion);
+        assert_eq!(out[0], 128, "exclusion 应 ≈128，got {}", out[0]);
+        // color-dodge：cb/(1-cs) = 0.251/0.498 = 0.504 → 128.5 → 129
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::ColorDodge);
+        assert_eq!(out[0], 129, "color-dodge 应 ≈129（0.504×255 舍入），got {}", out[0]);
+        // color-burn：1-(1-cb)/cs = 1-0.749/0.502 = 1-1.492 → clamp 0
+        let out = blend_rgba([128, 128, 128, 255], [64, 64, 64, 255], BlendMode::ColorBurn);
+        assert_eq!(out[0], 0, "color-burn 应 ≈0（clamp），got {}", out[0]);
+        // hue = SetLum(SetSat(Cb, Sat(Cs)), Lum(Cb))：保持**背景**色相与亮度、
+        // 取**源**饱和度（CSS Compositing-1 §5.1.13）。背景绿、源红 → 结果保持绿色系。
+        let out = blend_rgba([255, 0, 0, 255], [0, 128, 0, 255], BlendMode::Hue);
+        assert!(out[1] > out[0], "hue 应保持背景绿色相（G>R），got {out:?}");
+        // 灰背景（sat=0）下 SetSat 无中生有（max==min 直接返回）→ 规范行为保持灰
+        let out = blend_rgba([255, 0, 0, 255], [128, 128, 128, 255], BlendMode::Hue);
+        assert_eq!(out[0], 128, "灰背景 hue 应保持灰（规范 SetSat max==min），got {out:?}");
+    }
+
+    /// P2-7：composite_blend 区域合成（源层与背景层）。
+    #[test]
+    fn composite_blend_region_multiply() {
+        use crate::primitive::BlendMode;
+        // 背景（fb）全灰 128；源层（src）左侧红、右侧透明
+        let mut fb = FrameBuffer::new_filled(8, 8, 128, 128, 128, 255);
+        let mut src = FrameBuffer::new_filled(8, 8, 0, 0, 0, 0);
+        for y in 0..8 {
+            for x in 0..4 {
+                src.set_pixel(x, y, [255, 0, 0, 255]);
+            }
+        }
+        let blend = BlendModePrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            mode: BlendMode::Multiply,
+        };
+        composite_blend(&mut fb, &src, &blend, 1.0);
+        // 红×灰128：R=255×0.502=128；G=0（红×灰=0）；左半红色区
+        let p = fb.get_pixel(2, 4);
+        assert_eq!(p, [128, 0, 0, 255], "multiply(红, 灰) 应 (128,0,0)，got {p:?}");
+        // 右半（源透明 0,0,0,0）：multiply(0, 128) = 0 → 黑
+        let p = fb.get_pixel(6, 4);
+        assert_eq!(p, [0, 0, 0, 255], "multiply(透明源=0, 灰) 应黑，got {p:?}");
     }
 }
