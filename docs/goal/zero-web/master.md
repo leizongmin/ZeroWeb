@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3336：native-dom 全量 parity 验收门——js-dom+dom-api+web-api 87 例经 native 路径须 100% 对等，实测全过；此为 P1b native 默认开的验收门。重新导航安全已 probe 确认。前轮 R3335：多 WebView sweep。
+**最后更新**: 2026-08-13（R3336 后状态固化：P1b native-dom 路径自主面全面穷尽——全量 parity 门 87/87 + R3334 多 WebView/重新导航安全 + R3096 perf bench 已覆盖 + shim+native 分层确认 S6/S7 真 rule-11 门禁。native 默认开技术验收已实证通过，剩 rule 11 行为变更决策 + S6/S7。zero-web 流无更多可自主 land 工作面。）
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
