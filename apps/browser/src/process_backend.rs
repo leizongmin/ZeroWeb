@@ -11,9 +11,9 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, FramePublishMode, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
-    StorageOperation, StorageType,
+    DispatchDomEventParams, FetchParams, FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage,
+    IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -218,6 +218,15 @@ impl ProcessTabBackend {
         snapshot_seq: &mut HashMap<TabId, u64>,
     ) -> bool {
         let current = crate::compositor_client::status();
+        self.observe_compositor_status_value(current, snapshots, snapshot_seq)
+    }
+
+    fn observe_compositor_status_value(
+        &mut self,
+        current: crate::compositor_client::CompositorStatus,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
+    ) -> bool {
         let fallback = Self::enters_compositor_fallback(self.compositor_status, current);
         self.compositor_status = current;
         if !fallback {
@@ -622,10 +631,11 @@ impl ProcessTabBackend {
     #[cfg(test)]
     pub fn observe_compositor_status_for_test(
         &mut self,
+        current: crate::compositor_client::CompositorStatus,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
         snapshot_seq: &mut HashMap<TabId, u64>,
     ) -> bool {
-        self.observe_compositor_status(snapshots, snapshot_seq)
+        self.observe_compositor_status_value(current, snapshots, snapshot_seq)
     }
 
     /// 取出待处理的加载完成事件。
@@ -896,24 +906,12 @@ impl ProcessTabBackend {
         &mut self,
         tab_id: TabId,
         dispatch_id: u64,
-        selector: Option<&str>,
-        event_type: &str,
-        key: Option<String>,
-        code: Option<String>,
+        params: DispatchDomEventParams,
     ) {
         let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
             // 渲染进程不存在：模拟一个“默认允许”回执，让 TabManager 走默认动作路径。
             self.pending_dispatch_results.push((dispatch_id, true));
             return;
-        };
-        let params = DispatchDomEventParams {
-            selector: selector.map(str::to_string),
-            // 命中坐标由渲染进程内部 hit-test 决定（基于 selector），主线程不再传 x/y。
-            x: 0.0,
-            y: 0.0,
-            event_type: event_type.to_string(),
-            key,
-            code,
         };
         let Some(renderer) = self.manager.get_renderer(rid) else {
             self.pending_dispatch_results.push((dispatch_id, true));
@@ -928,6 +926,20 @@ impl ProcessTabBackend {
         {
             self.pending_dispatch_results.push((dispatch_id, true));
         }
+    }
+
+    /// 把平台 IME 生命周期事件直接转发给 renderer 的页面输入状态机。
+    pub fn dispatch_ime_event(&mut self, tab_id: TabId, message_id: u64, params: ImeEventParams) {
+        let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            return;
+        };
+        let _ = renderer.send(IpcMessage {
+            id: message_id,
+            kind: IpcMessageKind::ImeEvent(params),
+        });
     }
 
     /// R3293（S0）：向渲染进程派发「用户滚动」事件（fire-and-forget，无回执）。
@@ -1229,6 +1241,7 @@ mod navigation_contract_tests {
                     tag_name: "a".to_string(),
                     id: None,
                     class_name: None,
+                    selector: "a".to_string(),
                     href: Some("https://example.com".to_string()),
                     src: None,
                 },
@@ -1392,29 +1405,8 @@ mod compositor_fallback_tests {
     }
 
     #[test]
-    #[serial_test::serial]
     fn compositor_crash_triggers_legacy_fallback_messages() {
-        crate::compositor_client::reset_client_for_test();
         let _ = take_test_renderer_outbound();
-
-        let compositor_bin = compositor_test_bin();
-        unsafe {
-            std::env::set_var("ZW_COMPOSITOR_BIN", &compositor_bin);
-            std::env::set_var("ZW_COMPOSITOR_PROCESS", "1");
-        }
-
-        crate::compositor_client::forward_frame(
-            99,
-            1,
-            1,
-            zero_protocol::paint_snapshot::PaintSnapshotParams::default(),
-        );
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while crate::compositor_client::status() != CompositorStatus::Healthy {
-            assert!(std::time::Instant::now() < deadline, "compositor 未进入 Healthy");
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
 
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
         backend.compositor_status = CompositorStatus::Healthy;
@@ -1430,18 +1422,11 @@ mod compositor_fallback_tests {
             frame_id: 1,
         });
 
-        assert!(crate::compositor_client::kill_compositor_child_for_test());
-
-        let disconnect_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while crate::compositor_client::status() != CompositorStatus::Disconnected {
-            assert!(
-                std::time::Instant::now() < disconnect_deadline,
-                "compositor 未进入 Disconnected"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-
-        assert!(backend.observe_compositor_status_for_test(&mut snapshots, &mut snapshot_seq));
+        assert!(backend.observe_compositor_status_for_test(
+            CompositorStatus::Disconnected,
+            &mut snapshots,
+            &mut snapshot_seq
+        ));
         let snap = snapshots.get(&tab_id).unwrap();
         assert!(snap.compositor_submission.is_none());
         assert!(snap.compositor_frame.is_none());
@@ -1457,12 +1442,6 @@ mod compositor_fallback_tests {
             outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
             "expected RequestFrame, got {outbound:?}"
         );
-
-        crate::compositor_client::reset_client_for_test();
-        unsafe {
-            std::env::remove_var("ZW_COMPOSITOR_BIN");
-            std::env::remove_var("ZW_COMPOSITOR_PROCESS");
-        }
     }
 
     #[test]

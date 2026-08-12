@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
-    script_dispatch_dom_event, script_report_error, script_run_classic_page,
+    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_control_snapshot,
+    script_text_delete, script_text_input,
 };
 use zero_webview::WebView;
 
@@ -361,6 +362,73 @@ pub fn dispatch_dom_event(
         default_allowed,
         html_changed,
     }
+}
+
+/// 对已获焦的文本控件执行键盘默认行为。事件监听器先执行；只有未调用
+/// `preventDefault()` 时才更新 `value` 并派发 `input`。
+// https://html.spec.whatwg.org/multipage/input.html#the-input-element
+pub fn apply_text_input_default(
+    wv: &mut WebView,
+    javascript_enabled: bool,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    key: &str,
+    html: &str,
+    delete: bool,
+) -> bool {
+    if !javascript_enabled || !should_run_scripts_for_url(wv.url()) {
+        return false;
+    }
+    let script = if delete {
+        script_text_delete(selector)
+    } else {
+        script_text_input(selector, key)
+    };
+    if let Some(worker) = js_worker {
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
+        worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        if worker.execute_script_direct(&script).is_err() {
+            return false;
+        }
+    } else if wv.execute_script(&script).is_err() {
+        return false;
+    }
+    apply_recorded_mutations(wv, js_worker, html).is_some()
+}
+
+/// Paint an IME preedit string at the text control's live selection without
+/// committing it to `value` or the serialized HTML snapshot.
+// https://w3c.github.io/uievents/#events-compositionevents
+pub fn apply_ime_preedit_default(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    text: &str,
+    html: &str,
+) -> bool {
+    let script = script_text_control_snapshot(selector);
+    let snapshot = if let Some(worker) = js_worker {
+        let page_url = wv.url().unwrap_or("about:blank");
+        worker.set_dom_snapshot(html, page_url);
+        worker.execute_script_direct(&script).ok()
+    } else {
+        wv.execute_script(&script).ok()
+    };
+    let Some((_, selection_start, selection_end)) = snapshot
+        .as_deref()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(value).ok())
+    else {
+        return false;
+    };
+    let mutation = zero_engine::DomMutation::SetFormComposition {
+        selector: selector.to_string(),
+        text: text.to_string(),
+        selection_start,
+        selection_end,
+    };
+    wv.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))
+        .is_ok()
 }
 
 #[allow(clippy::too_many_arguments)] // 8 参 classic 执行 helper（含 R3258 script_index）；与 app_render_geometry/tab_favicon 同惯例

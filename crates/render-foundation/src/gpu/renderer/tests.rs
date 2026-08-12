@@ -1042,6 +1042,80 @@ fn test_gpu_full_scene_image() {
     );
 }
 
+/// Repeated frames reuse GPU image/uniform resources, while changed pixels under
+/// the same ImageKey allocate a new texture and become visible immediately.
+#[serial]
+#[test]
+fn test_gpu_full_scene_reuses_resources_and_invalidates_changed_image_content() {
+    let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+    let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
+    let key = crate::image_cache::ImageKey::new(77);
+    image_cache.insert_with_key(
+        key.clone(),
+        crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).unwrap(),
+    );
+    let mut primitives = RenderPrimitives::default();
+    primitives.images.push(crate::primitive::ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+        image_key: key.clone(),
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(16);
+
+    renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    let uniform_address = renderer.uniform_buffer.as_ref().unwrap() as *const wgpu::Buffer;
+    assert_eq!(renderer.image_texture_cache.len(), 1);
+
+    renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert_eq!(renderer.image_texture_cache.len(), 1);
+    assert_eq!(
+        renderer.uniform_buffer.as_ref().unwrap() as *const wgpu::Buffer,
+        uniform_address
+    );
+
+    image_cache.insert_with_key(
+        key,
+        crate::image_cache::ImageData::from_rgba(vec![0, 0, 255, 255], 1, 1).unwrap(),
+    );
+    renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert_eq!(renderer.image_texture_cache.len(), 2);
+    let pixels = renderer.read_pixels().expect("read pixels");
+    let center = (4 * 8 + 4) * 4;
+    assert!(pixels[center] <= 5);
+    assert!(pixels[center + 2] >= 250);
+}
+
 /// DC-9 GPU PathFillPrimitive — 渲染矩形多边形填充（黑），断言中心黑、外部白。
 ///
 /// R661 gap：PathFill 此前仅 mesh 顶点测试（gpu/mesh.rs），无 framebuffer readback。

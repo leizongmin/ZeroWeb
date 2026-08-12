@@ -370,12 +370,16 @@ fn test_input_value_as_number_r2836() {
         "valueAsNumber=NaN → value=''"
     );
 
-    // setter 经 host value 属性 mutation（apply 后 value 属性更新）。
+    // setter 经 retained 当前值 mutation；内容属性保持默认值不变。
     let ms = mutations.lock().unwrap().clone();
+    assert!(
+        ms.iter().any(|mutation| matches!(mutation, DomMutation::SetFormValue { selector, value } if selector == "#n" && value.is_empty())),
+        "valueAsNumber=NaN records retained empty current value"
+    );
     let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
     assert!(
-        out.contains("<input id=\"n\" type=\"number\" value=\"\">"),
-        "valueAsNumber=NaN setter 经 value 属性 mutation（apply 后 value=''）\n{out}"
+        out.contains("<input id=\"n\" type=\"number\" value=\"42\">"),
+        "valueAsNumber setter must not change default value content attribute\n{out}"
     );
 }
 

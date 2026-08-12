@@ -32,7 +32,9 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
 
             // 检查 skip list
             let relative = test_path.strip_prefix(wpt_data_dir).unwrap_or(&test_path);
-            let relative_str = relative.to_string_lossy().to_string();
+            // WPT ids are URL-like stable identifiers, not host filesystem paths. Keep
+            // smoke lists and reports identical on Windows and Unix.
+            let relative_str = stable_case_id(relative);
             if should_skip(&relative_str, &skip_list) {
                 continue;
             }
@@ -114,6 +116,10 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
 
     cases.sort_by(|a, b| a.id.cmp(&b.id));
     cases
+}
+
+fn stable_case_id(relative: &Path) -> String {
+    relative.to_string_lossy().replace('\\', "/")
 }
 
 /// 文件加载的上游 reftest case。
@@ -231,4 +237,18 @@ fn should_skip(relative_path: &str, skip_list: &[String]) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stable_case_id;
+    use std::path::Path;
+
+    #[test]
+    fn case_ids_use_url_separators_on_every_platform() {
+        assert_eq!(
+            stable_case_id(Path::new(r"css\CSS2\abspos\case.xht")),
+            "css/CSS2/abspos/case.xht"
+        );
+    }
 }

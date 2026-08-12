@@ -173,33 +173,47 @@ impl super::Painter {
             None => return,
         };
         let elem = match &node.kind {
-            NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input") => e,
+            NodeKind::Element(e)
+                if e.local_name().eq_ignore_ascii_case("input") || e.local_name().eq_ignore_ascii_case("textarea") =>
+            {
+                e
+            }
             _ => return,
         };
 
         let itype = elem.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+        let retained_value = self.form_control_values.get(&node_id).cloned();
+        let default_value = if elem.local_name().eq_ignore_ascii_case("textarea") {
+            doc.text_content(node_id).unwrap_or_default()
+        } else {
+            elem.get_attribute("value").unwrap_or_default()
+        };
+        let mut current_value = retained_value.unwrap_or(default_value);
+        if let Some((text, start, end)) = self.form_control_compositions.get(&node_id) {
+            current_value = replace_utf16_range(&current_value, *start, *end, text);
+        }
         // 决定渲染标签 + 是否水平居中。
-        let (label, center): (String, bool) = match itype.as_str() {
-            "submit" => (
-                elem.get_attribute("value").unwrap_or_else(|| "Submit".to_string()),
-                true,
-            ),
-            "reset" => (elem.get_attribute("value").unwrap_or_else(|| "Reset".to_string()), true),
-            "button" => (elem.get_attribute("value").unwrap_or_default(), true),
-            "password" => (
-                elem.get_attribute("value")
-                    .unwrap_or_default()
-                    .chars()
-                    .map(|_| '\u{2022}')
-                    .collect(),
-                false,
-            ),
-            // 文本类（默认无 type 当 text）。
-            "" | "text" | "search" | "email" | "url" | "tel" | "number" => {
-                (elem.get_attribute("value").unwrap_or_default(), false)
+        let (label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
+            if !self.form_control_values.contains_key(&node_id)
+                && !self.form_control_compositions.contains_key(&node_id)
+            {
+                return;
             }
-            // checkbox/radio/hidden/range/file/image/color/date/... 不渲染 value 文本。
-            _ => return,
+            (current_value, false)
+        } else {
+            match itype.as_str() {
+                "submit" => (
+                    elem.get_attribute("value").unwrap_or_else(|| "Submit".to_string()),
+                    true,
+                ),
+                "reset" => (elem.get_attribute("value").unwrap_or_else(|| "Reset".to_string()), true),
+                "button" => (elem.get_attribute("value").unwrap_or_default(), true),
+                "password" => (current_value.chars().map(|_| '\u{2022}').collect(), false),
+                // 文本类（默认无 type 当 text）。
+                "" | "text" | "search" | "email" | "url" | "tel" | "number" => (current_value, false),
+                // checkbox/radio/hidden/range/file/image/color/date/... 不渲染 value 文本。
+                _ => return,
+            }
         };
         if label.is_empty() {
             return;
@@ -220,7 +234,10 @@ impl super::Painter {
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
-        let baseline_y = content_y + font_size;
+        // CSS inline content uses the control's line box. Vertically center the
+        // font box inside that content box instead of pinning it to the top.
+        // https://drafts.csswg.org/css-inline-3/#line-height-property
+        let baseline_y = content_y + (box_node.content_height - font_size).max(0.0) / 2.0 + font_size;
 
         // 居中按钮标签：先测总宽再定起始 x。
         let total_w: f32 = label
@@ -347,6 +364,15 @@ impl super::Painter {
         doc: Option<&Document>,
         styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
+        if let (Some(node_id), Some(doc)) = (box_node.node_id, doc)
+            && (self.form_control_values.contains_key(&node_id)
+                || self.form_control_compositions.contains_key(&node_id))
+            && doc.get(node_id).is_some_and(
+                |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name().eq_ignore_ascii_case("textarea")),
+            )
+        {
+            return;
+        }
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,
@@ -2002,6 +2028,25 @@ pub(super) fn compute_object_fit_rect(
             }
         }
     }
+}
+
+fn replace_utf16_range(value: &str, start: usize, end: usize, replacement: &str) -> String {
+    fn byte_offset(value: &str, utf16_offset: usize) -> usize {
+        let mut units = 0;
+        for (byte, ch) in value.char_indices() {
+            if units >= utf16_offset {
+                return byte;
+            }
+            units += ch.len_utf16();
+        }
+        value.len()
+    }
+
+    let range_start = start.min(end);
+    let range_end = start.max(end);
+    let start_byte = byte_offset(value, range_start);
+    let end_byte = byte_offset(value, range_end);
+    format!("{}{}{}", &value[..start_byte], replacement, &value[end_byte..])
 }
 
 /// R2303 object-position 定位测试。

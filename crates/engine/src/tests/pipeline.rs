@@ -1390,6 +1390,7 @@ fn render_with_dom_mutations_text_uses_incremental_layout() {
     let (result, snapshot, _handles) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
+    let snapshot = snapshot.expect("text mutation changes HTML");
     // 活 DOM + HTML 快照一致（免 parse 路径）
     assert!(snapshot.contains("much longer text now"), "snapshot: {snapshot}");
     // 布局盒反映新文本（增量布局已重算 #a 及祖先的几何）
@@ -1417,6 +1418,7 @@ fn render_with_dom_mutations_paint_only_keeps_layout() {
     let (result, snapshot, _) = pipeline
         .render_with_dom_mutations(std::slice::from_ref(&m), "")
         .expect("mutations applied");
+    let snapshot = snapshot.expect("style mutation changes HTML");
     assert!(
         snapshot.contains("background-color: blue")
             || snapshot.contains("background:blue")
@@ -1430,6 +1432,100 @@ fn render_with_dom_mutations_paint_only_keeps_layout() {
         "paint-only mutation must reuse cached layout"
     );
     let _ = result;
+}
+
+/// 表单当前值只影响控件内部绘制时，应复用已有样式与布局。
+#[test]
+fn render_with_dom_mutations_input_value_only_paints() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><input id="name" value="old"></body></html>"#;
+    let initial = pipeline.render_html(html, "");
+    assert_eq!(initial.timings.parse_count, 1);
+    assert_eq!(initial.timings.style_count, 1);
+    assert_eq!(initial.timings.layout_count, 1);
+    assert_eq!(initial.timings.paint_count, 1);
+
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormValue {
+        selector: "#name".to_string(),
+        value: "new value".to_string(),
+    };
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("value mutation applied");
+
+    assert!(snapshot.is_none(), "IDL value edit must not serialize or modify HTML");
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    assert_eq!(result.timings.paint_count, 1);
+}
+
+/// IDL 当前值不改变 `[value]` 内容属性选择器，仍走 paint-only。
+#[test]
+fn render_with_dom_mutations_input_value_does_not_affect_attribute_selector() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><head><style>input[value="new"] { width: 240px; }</style></head><body><input id="name" value="old"></body></html>"#;
+    let _ = pipeline.render_html(html, "");
+
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormValue {
+        selector: "#name".to_string(),
+        value: "new".to_string(),
+    };
+    let (result, _, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("value mutation applied");
+
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    assert_eq!(result.timings.paint_count, 1);
+}
+
+#[test]
+fn render_with_dom_mutations_textarea_value_only_paints_without_snapshot() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(r#"<html><body><textarea id="note">old</textarea></body></html>"#, "");
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormValue {
+        selector: "#note".to_string(),
+        value: "中文内容".to_string(),
+    };
+
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("textarea value mutation applied");
+
+    assert!(snapshot.is_none());
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.style_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    assert_eq!(result.timings.paint_count, 1);
+}
+
+#[test]
+fn render_with_dom_mutations_ime_preedit_is_temporary_paint_only() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(r#"<html><body><input id="name" value="base"></body></html>"#, "");
+    let mutation = crate::js_dom_bridge::DomMutation::SetFormComposition {
+        selector: "#name".to_string(),
+        text: "中文".to_string(),
+        selection_start: 4,
+        selection_end: 4,
+    };
+
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(std::slice::from_ref(&mutation), "")
+        .expect("preedit mutation applied");
+
+    assert!(snapshot.is_none());
+    assert_eq!(result.timings.parse_count, 0);
+    assert_eq!(result.timings.layout_count, 0);
+    let doc = pipeline.cached_doc.as_ref().expect("doc").borrow();
+    let node = doc.query_selector(doc.root(), "#name").expect("input");
+    assert_eq!(doc.get_attribute(node, "value").as_deref(), Some("base"));
+    assert_eq!(
+        pipeline.form_control_compositions.get(&node),
+        Some(&("中文".to_string(), 4, 4))
+    );
 }
 
 /// paint-only 白名单：布局属性（width）不在白名单 → 走全量布局（布局变化可见）。

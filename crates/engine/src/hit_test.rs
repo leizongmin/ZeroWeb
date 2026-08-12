@@ -20,6 +20,7 @@ struct HitTestNodeMeta {
     tag_name: String,
     id: Option<String>,
     class_name: Option<String>,
+    selector: String,
     href: Option<String>,
     /// 图片 `src`（仅 `img` 元素，绝对化后存储）。
     src: Option<String>,
@@ -99,6 +100,7 @@ impl HitTestCache {
                             tag_name: meta.tag_name.clone(),
                             id: meta.id.clone(),
                             class_name: meta.class_name.clone(),
+                            selector: meta.selector.clone(),
                             href: meta.href.clone(),
                             src: meta.src.clone(),
                         },
@@ -124,6 +126,7 @@ impl HitTestCache {
                             tag_name: meta.tag_name,
                             id: meta.id,
                             class_name: meta.class_name,
+                            selector: meta.selector,
                             href: meta.href,
                             src: meta.src,
                         },
@@ -184,6 +187,8 @@ pub struct HitTestNodeSnapshot {
     pub id: Option<String>,
     /// `class` 属性。
     pub class_name: Option<String>,
+    /// 在文档中唯一定位该元素的选择器。
+    pub selector: String,
     /// 链接 `href`（仅 `a` 元素）。
     pub href: Option<String>,
     /// 图片 `src`（仅 `img` 元素）。
@@ -263,6 +268,8 @@ fn collect_hit_test_nodes(
                     tag_name: tag,
                     id: doc.get_attribute(node_id, "id"),
                     class_name: doc.get_attribute(node_id, "class"),
+                    selector: crate::unique_selector_for_node(doc, node_id)
+                        .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
                     href,
                     src,
                 },
@@ -345,6 +352,7 @@ fn element_hit_from_cache(
         tag_name: meta.tag_name.clone(),
         id: meta.id.clone(),
         class_name: meta.class_name.clone(),
+        selector: meta.selector.clone(),
         x,
         y,
         width,
@@ -449,6 +457,8 @@ pub struct ElementHit {
     pub id: Option<String>,
     /// `class` 属性。
     pub class_name: Option<String>,
+    /// 在文档中唯一定位该元素的选择器。
+    pub selector: String,
     /// 布局盒左上角 X（CSS 逻辑像素）。
     pub x: f32,
     /// 布局盒左上角 Y。
@@ -461,6 +471,9 @@ pub struct ElementHit {
 
 /// 从命中测试结果构造用于 JS 事件派发的稳定选择器。
 pub fn selector_from_element_hit(hit: &ElementHit) -> String {
+    if !hit.selector.is_empty() {
+        return hit.selector.clone();
+    }
     if let Some(id) = &hit.id {
         let id = id.trim();
         if !id.is_empty() {
@@ -516,6 +529,8 @@ fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Op
         tag_name: elem.local_name().to_ascii_lowercase(),
         id: doc.get_attribute(element, "id"),
         class_name: doc.get_attribute(element, "class"),
+        selector: crate::unique_selector_for_node(doc, element)
+            .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
         x,
         y,
         width,
@@ -776,6 +791,17 @@ mod tests {
         assert_eq!(hit.tag_name, "div");
         assert_eq!(hit.id.as_deref(), Some("main"));
         assert_eq!(hit.class_name.as_deref(), Some("box"));
+    }
+
+    /// Form controls must remain their own hit-test targets even when wrapped by a label.
+    /// https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+    #[test]
+    fn hit_test_element_returns_wrapped_text_input() {
+        let html = r#"<html><body style="margin:0"><label>Name <input id="name" style="display:block;width:160px;height:32px"></label></body></html>"#;
+        let (doc, layout) = render(html, "");
+        let hit = hit_test_element(&doc, &layout.root, 10.0, 25.0).expect("input element");
+        assert_eq!(hit.tag_name, "input");
+        assert_eq!(hit.id.as_deref(), Some("name"));
     }
 
     #[test]

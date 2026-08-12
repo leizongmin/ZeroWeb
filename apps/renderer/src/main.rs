@@ -16,6 +16,7 @@ mod sandbox;
 mod script_prefetch;
 mod text_metrics;
 
+use zero_page_runtime::{FormControlStateStore, FrameInvalidation, FrameTransaction, PageInteractionState};
 use zero_webview::AsyncPageLoad;
 
 use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
@@ -37,9 +38,9 @@ use zero_engine::{
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FramePublishMode,
-    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams, ImeEventType,
+    IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams,
+    NavigateParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -63,7 +64,7 @@ fn is_printable_key(key: &str) -> bool {
 
 /// P1a change-on-blur：读表单元素的「当前值」用于失焦 change 比对。textarea 的 value 是其
 /// **文本内容**（R2702 value↔内容映射，非 value 属性）；input 取 value 属性。select 不走此路径
-/// （change 在 click 派发）。host 侧 blur_focused/focus_if_text_input/focus_via_tab 共用。
+/// （change 在 click 派发）。host 侧 blur_focused/focus_target/focus_via_tab 共用。
 fn read_input_value_for_change(html: &str, selector: &str) -> String {
     if zero_engine::query_tag_from_html(html, selector).eq_ignore_ascii_case("textarea") {
         zero_engine::query_text_from_html(html, selector)
@@ -175,13 +176,19 @@ struct RendererRuntime {
     renderer_id: u64,
     /// 当前 renderer surface 的页面帧发布状态。
     frame_publish: FramePublishState,
+    /// 一个外部输入消息及其同步 JS 回调共享的帧事务。
+    frame_transaction: FrameTransaction,
+    /// 事务内最后一个非空标题；在事务边界与页面帧一起提交。
+    pending_frame_title: Option<String>,
+    /// 事务内发布是否允许补抓图片资源。
+    pending_frame_network_fetch: bool,
     /// 导航历史栈。
     history: Vec<String>,
     /// 当前历史索引。
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
-    /// RFC 4.1：compositor 帧 IPC 异步发布线程（`ZW_RENDERER_COMPOSITOR_THREAD=1`）。
+    /// RFC 4.1：compositor 帧 IPC 异步发布线程（默认启用，`=0` 可诊断性禁用）。
     compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
     /// 当前页面 HTML（脚本执行后同步更新）。
     cached_html: String,
@@ -192,7 +199,8 @@ struct RendererRuntime {
     /// 是否允许执行 JavaScript。
     javascript_enabled: bool,
     /// 最近一次交互目标选择器（键盘事件）。
-    event_target: String,
+    /// 页面指针与键盘/IME 焦点的统一路由状态。
+    interaction: PageInteractionState,
     /// 与浏览器 TabSnapshot 对齐的导航世代。
     navigation_epoch: u64,
     /// 已发送图片 key（S8）：browser 端 ImageCache 已存则不再重传像素；navigation 重置。
@@ -209,10 +217,8 @@ struct RendererRuntime {
     /// 若改 DOM → rerender → 再次 `publish_webview`；depth>0 时跳过 tick，防 tick→rerender→tick
     /// 链（observer 仅在 cross/size-change 时派发，本身收敛；此守卫为兜底，单次外部触发最多 2 次 publish）。
     observer_tick_depth: u32,
-    /// P1a change-on-blur：当前焦点文本输入的 stable selector（失焦时据此派发 blur+change）。
-    focus_target: Option<String>,
-    /// P1a change-on-blur：焦点元素获焦时的 value（失焦时与当前 value 比，变化才派发 change）。
-    focus_value: Option<String>,
+    /// 页面级 retained 文本表单控件状态（值、选区、焦点和 change 基线）。
+    form_controls: FormControlStateStore,
     /// R2942 mirror：子资源 fetch/decode 失败 `(kind, url)`（stylesheet/image）。load 完成时从
     /// `AsyncPageLoad.take_failed_resources` drain 并 stash，脚本阶段经 `finish_page_load` 派 window 'error'。
     pending_resource_errors: Vec<(String, String)>,
@@ -291,6 +297,9 @@ impl RendererRuntime {
             next_fetch_id: 1,
             renderer_id,
             frame_publish: FramePublishState::new(renderer_id, frame_publish_mode),
+            frame_transaction: FrameTransaction::default(),
+            pending_frame_title: None,
+            pending_frame_network_fetch: false,
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
@@ -299,7 +308,7 @@ impl RendererRuntime {
             cached_css: String::new(),
             js_worker,
             javascript_enabled: true,
-            event_target: "body".to_string(),
+            interaction: PageInteractionState::new(),
             navigation_epoch: 0,
             // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
             // 已存则不再重传像素（DOM 变更 publish 的 ViewPainted 体积大头）。navigation 重置。
@@ -309,8 +318,7 @@ impl RendererRuntime {
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
             observer_tick_depth: 0,
-            focus_target: None,
-            focus_value: None,
+            form_controls: FormControlStateStore::new(),
             pending_resource_errors: Vec::new(),
             pending_img_events: Vec::new(),
             pending_link_events: Vec::new(),
@@ -357,7 +365,7 @@ impl RendererRuntime {
             run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
         // window 'error' + img/link 元素级 load/error。与 browser tab_scripts::PageScriptRunner::finish 对齐，
@@ -402,8 +410,51 @@ impl RendererRuntime {
         self.try_publish_progress(true)
     }
 
-    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
     fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_PAINT);
+            if title.is_some() {
+                self.pending_frame_title = title;
+            }
+            self.pending_frame_network_fetch |= allow_network_fetch;
+            return Ok(());
+        }
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 把任意 DOM/style 回调标成保守的 style→layout→paint→publish 升级。
+    fn invalidate_script_render(&mut self) {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_STYLE);
+        }
+    }
+
+    /// 在一个平台输入消息边界内合并所有同步渲染和发布请求。
+    fn run_frame_transaction(&mut self, handler: impl FnOnce(&mut Self) -> Result<(), String>) -> Result<(), String> {
+        self.frame_transaction.begin();
+        let result = handler(self);
+        let work = self.frame_transaction.finish();
+        if let Err(error) = result {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Err(error);
+        }
+        let Some(work) = work else {
+            return Ok(());
+        };
+        if !work.contains(FrameInvalidation::NEEDS_PUBLISH) {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Ok(());
+        }
+        let title = self.pending_frame_title.take();
+        let allow_network_fetch = std::mem::take(&mut self.pending_frame_network_fetch);
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    fn publish_webview_now(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
@@ -528,7 +579,9 @@ impl RendererRuntime {
             page_scripts::tick_observers(&mut ctx)
         };
         if changed {
-            self.rerender_publish_webview()?;
+            // `apply_dom_mutations_and_render` 已在 live DOM 上完成增量渲染；这里只发布
+            // 新快照。再次 reload_html_after_script 会把每个字符重复全量解析/布局一次。
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -540,7 +593,7 @@ impl RendererRuntime {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -549,8 +602,16 @@ impl RendererRuntime {
             };
             page_scripts::apply_text_input(&mut ctx, selector, key)
         };
-        if changed {
-            self.rerender_publish_webview()?;
+        if let Some(snapshot) = outcome.snapshot {
+            self.form_controls.update(
+                selector,
+                snapshot.value,
+                snapshot.selection_start,
+                snapshot.selection_end,
+            );
+        }
+        if outcome.html_changed {
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -561,7 +622,7 @@ impl RendererRuntime {
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
+        let outcome = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
@@ -570,10 +631,116 @@ impl RendererRuntime {
             };
             page_scripts::apply_text_delete(&mut ctx, selector)
         };
-        if changed {
-            self.rerender_publish_webview()?;
+        if let Some(snapshot) = outcome.snapshot {
+            self.form_controls.update(
+                selector,
+                snapshot.value,
+                snapshot.selection_start,
+                snapshot.selection_end,
+            );
+        }
+        if outcome.html_changed {
+            self.publish_webview(None, true)?;
         }
         Ok(())
+    }
+
+    /// 更新焦点文本控件的临时 IME preedit；不写入 value，只触发 paint/publish。
+    fn apply_ime_preedit_at(&mut self, selector: &str, text: String) -> Result<bool, String> {
+        let Some(state) = self.form_controls.get(selector) else {
+            return Ok(false);
+        };
+        let selection_start = state.selection_start;
+        let selection_end = state.selection_end;
+        if !self.form_controls.update_focused_composition(text.clone()) {
+            return Ok(false);
+        }
+        let mutation = zero_engine::DomMutation::SetFormComposition {
+            selector: selector.to_string(),
+            text,
+            selection_start,
+            selection_end,
+        };
+        let Some(webview) = self.webview.as_mut() else {
+            return Ok(false);
+        };
+        let _ = webview.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))?;
+        Ok(true)
+    }
+
+    fn dispatch_composition_events_at(&mut self, selector: &str, events: &[(&str, &str)]) -> bool {
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut self.cached_html,
+            url: &url,
+            js_worker: &self.js_worker,
+            webview: self.webview.as_mut(),
+        };
+        page_scripts::dispatch_composition_events(&mut ctx, self.javascript_enabled, selector, events)
+    }
+
+    fn handle_ime_event(&mut self, params: ImeEventParams) -> Result<(), String> {
+        let Some(target) = self.interaction.focus_owner().map(str::to_string) else {
+            return Ok(());
+        };
+        if self.form_controls.get(&target).is_none() {
+            return Ok(());
+        }
+        match params.event_type {
+            ImeEventType::Enabled => Ok(()),
+            ImeEventType::Preedit => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let events = if params.text.is_empty() && was_composing {
+                    vec![("compositionupdate", ""), ("compositionend", "")]
+                } else if !params.text.is_empty() && !was_composing {
+                    vec![
+                        ("compositionstart", params.text.as_str()),
+                        ("compositionupdate", params.text.as_str()),
+                    ]
+                } else {
+                    vec![("compositionupdate", params.text.as_str())]
+                };
+                let event_changed = self.dispatch_composition_events_at(&target, &events);
+                let paint_changed = self.apply_ime_preedit_at(&target, params.text)?;
+                if event_changed || paint_changed {
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
+            ImeEventType::Commit => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let event_changed = was_composing
+                    && self.dispatch_composition_events_at(&target, &[("compositionend", params.text.as_str())]);
+                if params.text.is_empty() {
+                    let paint_changed = self.apply_ime_preedit_at(&target, String::new())?;
+                    if event_changed || paint_changed {
+                        self.publish_webview(None, true)?;
+                    }
+                    Ok(())
+                } else {
+                    self.apply_text_input_at(&target, &params.text)
+                }
+            }
+            ImeEventType::Disabled => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let event_changed =
+                    was_composing && self.dispatch_composition_events_at(&target, &[("compositionend", "")]);
+                let paint_changed = self.apply_ime_preedit_at(&target, String::new())?;
+                if event_changed || paint_changed {
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
@@ -770,19 +937,22 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a change-on-blur：失焦——若 `focus_target` 是文本输入，派发 'blur'；若 value 自获焦以来
+    /// P1a change-on-blur：失焦——若 retained 状态中有文本输入焦点，派发 'blur'；若 value 自获焦以来
     /// 变化，再派发 'change'。清空 focus 状态。回调改 DOM 则单次 rerender。
     fn blur_focused(&mut self) -> Result<(), String> {
-        let Some(old) = self.focus_target.clone() else {
+        let Some(old) = self.interaction.set_focus_owner(None) else {
             return Ok(());
         };
-        let old_val = self.focus_value.clone().unwrap_or_default();
-        self.focus_target = None;
-        self.focus_value = None;
+        let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
+            self.form_controls
+                .blur_focused()
+                .is_some_and(|control| control.value_changed)
+        } else {
+            false
+        };
         if !self.javascript_enabled {
             return Ok(());
         }
-        let cur_val = read_input_value_for_change(&self.cached_html, &old);
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut changed = false;
         {
@@ -794,7 +964,7 @@ impl RendererRuntime {
             };
             changed |=
                 page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
-            if cur_val != old_val {
+            if value_changed {
                 changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None)
                     .html_changed;
             }
@@ -805,14 +975,21 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a change-on-blur：获焦——若 `selector` 是文本输入，记 focus_target/value + 派发 'focus'。
-    fn focus_if_text_input(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled || !zero_engine::is_text_input(&self.cached_html, selector) {
+    /// P1a change-on-blur：获焦——若 `selector` 是文本输入，建立 retained 值基线并派发 'focus'。
+    fn focus_target(&mut self, selector: &str) -> Result<(), String> {
+        if !zero_engine::is_focusable_selector(&self.cached_html, selector) {
             return Ok(());
         }
-        let val = read_input_value_for_change(&self.cached_html, selector);
-        self.focus_target = Some(selector.to_string());
-        self.focus_value = Some(val);
+        self.interaction.set_focus_owner(Some(selector.to_string()));
+        if zero_engine::is_text_input(&self.cached_html, selector) {
+            let val = self
+                .form_controls
+                .get(selector)
+                .map(|state| state.value.clone())
+                .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
+            let end = val.encode_utf16().count();
+            self.form_controls.focus(selector, val, end, end);
+        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -829,31 +1006,9 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a Tab 焦点导航：设 event_target 到 `selector`，派发 'focus'；若为文本输入则记 focus 跟踪
-    /// （供后续 change-on-blur），否则不记（blur_focused 已清旧焦点跟踪）。
+    /// P1a Tab 焦点导航：更新唯一 focus owner 并派发 'focus'。
     fn focus_via_tab(&mut self, selector: &str) -> Result<(), String> {
-        self.event_target = selector.to_string();
-        if !self.javascript_enabled {
-            return Ok(());
-        }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
-        };
-        if zero_engine::is_text_input(&self.cached_html, selector) {
-            self.focus_target = Some(selector.to_string());
-            self.focus_value = Some(read_input_value_for_change(&self.cached_html, selector));
-        }
-        if changed {
-            self.rerender_publish_webview()?;
-        }
-        Ok(())
+        self.focus_target(selector)
     }
 
     fn sync_cached_html_from_webview(&mut self) {
@@ -1136,6 +1291,7 @@ impl RendererRuntime {
 
     /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
     fn rerender_publish_webview(&mut self) -> Result<(), String> {
+        self.invalidate_script_render();
         let html = self.cached_html.clone();
         let font_loader = &self.font_loader;
         let font_id = self.font_id;
@@ -1157,13 +1313,25 @@ impl RendererRuntime {
         detail: Option<DomEventDetail>,
     ) -> DomDispatchResult {
         let selector = selector.or_else(|| {
-            self.webview
-                .as_ref()
-                .and_then(|wv| wv.hit_test_element(x, y))
-                .map(|hit| selector_from_element_hit(&hit))
+            if matches!(event_type, "keydown" | "keyup" | "keypress") {
+                self.interaction
+                    .focus_owner()
+                    .or_else(|| {
+                        let target = self.interaction.pointer_target();
+                        if target.is_empty() { None } else { Some(target) }
+                    })
+                    .map(str::to_string)
+            } else {
+                self.webview
+                    .as_ref()
+                    .and_then(|wv| wv.hit_test_element(x, y))
+                    .map(|hit| selector_from_element_hit(&hit))
+            }
         });
         if let Some(sel) = selector {
-            self.event_target = sel.clone();
+            if matches!(event_type, "mousedown" | "mouseup" | "mousemove" | "click" | "dblclick") {
+                self.interaction.set_pointer_target(sel.clone());
+            }
             let js_enabled = self.javascript_enabled;
             let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
             let mut ctx = PageScriptContext {
@@ -1174,7 +1342,9 @@ impl RendererRuntime {
             };
             let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
             if result.html_changed {
-                let _ = self.rerender_publish_webview();
+                // 事件回调产生的 mutation 已由 WebView 增量渲染，只需发布新帧。
+                self.invalidate_script_render();
+                let _ = self.publish_webview(None, true);
             }
             result
         } else {
@@ -1295,6 +1465,11 @@ impl RendererRuntime {
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
         tracing::info!("导航到: {} ({})", params.url, method);
+        // A submit/click may have dirtied the old document earlier in the same
+        // input transaction. Never publish that stale snapshot under the new epoch.
+        self.frame_transaction.discard_pending();
+        self.pending_frame_title = None;
+        self.pending_frame_network_fetch = false;
         self.pending_load = None;
         self.pending_script_prefetch = None;
         self.inflight_fetches.clear();
@@ -1306,8 +1481,8 @@ impl RendererRuntime {
         // S8：新页面图片 key 空间不同——清空已发送记录，确保新页图片像素被传输
         self.sent_image_keys.clear();
         // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
-        self.focus_target = None;
-        self.focus_value = None;
+        self.form_controls.clear();
+        self.interaction.clear();
 
         self.navigation_epoch = params.navigation_epoch;
         let page_url = params.url.clone();
@@ -1342,8 +1517,8 @@ impl RendererRuntime {
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
         // P1a change-on-blur：加载新 HTML 清焦点状态。
-        self.focus_target = None;
-        self.focus_value = None;
+        self.form_controls.clear();
+        self.interaction.clear();
         let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
         tracing::info!("加载内联 HTML: {page_url}");
         self.cached_css = params.css.clone().unwrap_or_default();
@@ -1499,6 +1674,21 @@ impl RendererRuntime {
     }
 
     fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
+        let event_type = params.event_type.clone();
+        let key = params.key.clone();
+        if event_type == "__zeroweb_insert_text" {
+            let target = params
+                .selector
+                .or_else(|| self.interaction.focus_owner().map(str::to_string))
+                .unwrap_or_else(|| self.interaction.pointer_target().to_string());
+            if !target.is_empty() {
+                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
+            }
+            return self.send_with_id(
+                msg_id,
+                IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams { default_allowed: true }),
+            );
+        }
         let detail = if params.key.is_some() || params.code.is_some() {
             Some(DomEventDetail {
                 key: params.key,
@@ -1508,7 +1698,53 @@ impl RendererRuntime {
         } else {
             None
         };
-        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &params.event_type, detail);
+        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &event_type, detail);
+        // 浏览器主进程通过 DispatchDomEvent 转发输入。该路径也必须执行与
+        // KeyboardEvent/MouseEvent 相同的表单默认行为，否则多进程模式下
+        // 点击输入框后无法聚焦、按键也不会更新 value。
+        // https://html.spec.whatwg.org/multipage/input.html#the-input-element
+        if result.default_allowed && event_type == "keydown" {
+            let target = self
+                .interaction
+                .focus_owner()
+                .unwrap_or_else(|| self.interaction.pointer_target())
+                .to_string();
+            if key.as_deref() == Some("Tab") {
+                let forward = !params.shift;
+                let current = self.interaction.focus_owner().map(str::to_string);
+                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
+                    && self.interaction.focus_owner() != Some(next.as_str())
+                {
+                    let _ = self.blur_focused();
+                    let _ = self.focus_via_tab(&next);
+                }
+            } else if key.as_deref().is_some_and(is_printable_key) {
+                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
+            } else if key.as_deref() == Some("Backspace") {
+                let _ = self.apply_text_delete_at(&target);
+            } else if key.as_deref() == Some("Enter") {
+                if zero_engine::query_tag_from_html(&self.cached_html, &target).eq_ignore_ascii_case("textarea") {
+                    let _ = self.apply_text_input_at(&target, "\n");
+                } else {
+                    let _ = self.submit_form_on_enter_at(&target);
+                }
+            }
+        } else if result.default_allowed && event_type == "click" {
+            let target = self.interaction.pointer_target().to_string();
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+            if zero_engine::is_submit_button(&self.cached_html, &target) {
+                let _ = self.submit_form_on_click_at(&target);
+            } else if zero_engine::is_checkbox(&self.cached_html, &target) {
+                let _ = self.toggle_checkbox_at(&target);
+            } else if zero_engine::is_radio(&self.cached_html, &target) {
+                let _ = self.toggle_radio_at(&target);
+            } else if zero_engine::is_reset_button(&self.cached_html, &target) {
+                let _ = self.reset_form_on_click_at(&target);
+            }
+        }
         self.send_with_id(
             msg_id,
             IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams {
@@ -1535,14 +1771,14 @@ impl RendererRuntime {
         };
         // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
         // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
-        // dispatch_dom_at 已据命中点解析 event_target。
+        // dispatch_dom_at 已据命中点更新 pointer target。
         if event_type == "click" {
-            let target = self.event_target.clone();
+            let target = self.interaction.pointer_target().to_string();
             // P1a change-on-blur：focus 变化优先（mousedown→focus→click 近似）——旧焦点失焦
             // （blur + change 若 value 变），新焦点获焦（focus 若 text input）。
-            if self.focus_target.as_deref() != Some(target.as_str()) {
+            if self.interaction.focus_owner() != Some(target.as_str()) {
                 self.blur_focused()?;
-                self.focus_if_text_input(&target)?;
+                self.focus_target(&target)?;
             }
             // P1a form submit/checkbox/radio/reset：click 命中对应控件。
             if zero_engine::is_submit_button(&self.cached_html, &target) {
@@ -1598,7 +1834,11 @@ impl RendererRuntime {
             code: Some(params.code.clone()),
             ..Default::default()
         };
-        let target = self.event_target.clone();
+        let target = self
+            .interaction
+            .focus_owner()
+            .unwrap_or_else(|| self.interaction.pointer_target())
+            .to_string();
         self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
         // P1a form input：keydown 默认行为近似——可打印字符 → 注入字符；Backspace → 删末字符
         // （均更新 value + 派发 'input' 事件）；Enter → 单行 input 提交 enclosing form（submit 事件）。
@@ -1607,13 +1847,9 @@ impl RendererRuntime {
             if params.key == "Tab" {
                 // P1a Tab 焦点导航：经 FocusManager 算下一/上一可聚焦元素，blur 旧焦点 + focus 新。
                 let forward = !params.shift;
-                let current = self
-                    .focus_target
-                    .clone()
-                    .or_else(|| (self.event_target != "body").then(|| self.event_target.clone()));
+                let current = self.interaction.focus_owner().map(str::to_string);
                 if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
-                    && self.focus_target.as_deref() != Some(next.as_str())
-                    && self.event_target != next
+                    && self.interaction.focus_owner() != Some(next.as_str())
                 {
                     let _ = self.blur_focused();
                     let _ = self.focus_via_tab(&next);
@@ -1692,14 +1928,21 @@ impl RendererRuntime {
                 }
             }
             IpcMessageKind::Heartbeat => self.handle_heartbeat(),
-            IpcMessageKind::MouseEvent(params) => self.handle_mouse_event(params),
-            IpcMessageKind::KeyboardEvent(params) => self.handle_keyboard_event(params),
+            IpcMessageKind::MouseEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
+            }
+            IpcMessageKind::KeyboardEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
+            }
+            IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
             IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
             IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
-            IpcMessageKind::DispatchDomEvent(params) => self.handle_dispatch_dom_event(msg.id, params),
+            IpcMessageKind::DispatchDomEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_dispatch_dom_event(msg.id, params))
+            }
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
@@ -2089,7 +2332,7 @@ mod runtime_smoke {
     #[test]
     fn read_input_value_for_change_textarea_uses_content() {
         // R2703：change-on-blur 值比对——textarea 取文本内容（非 value 属性，R2702 value↔内容），
-        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → focus_value/cur_val
+        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → 获焦基线/当前值
         // 均 '' → textarea change-on-blur 永不触发。
         let ta = "<html><body><textarea id=\"t\">hello</textarea></body></html>";
         assert_eq!(

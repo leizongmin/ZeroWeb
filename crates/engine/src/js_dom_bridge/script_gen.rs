@@ -12,6 +12,12 @@ pub struct DomEventDetail {
     pub key: Option<String>,
     /// `KeyboardEvent.code`
     pub code: Option<String>,
+    /// `CompositionEvent.data` / `InputEvent.data`。
+    pub data: Option<String>,
+    /// `InputEvent.inputType`。
+    pub input_type: Option<String>,
+    /// `InputEvent.isComposing`。
+    pub is_composing: bool,
     /// `SubmitEvent.submitter`——触发 submit 的按钮唯一选择器（R2984）。click submit button → 该按钮；
     /// Enter 隐式提交 → None（spec：表单默认提交按钮或 null）。
     pub submitter: Option<String>,
@@ -43,7 +49,20 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .as_deref()
                 .map(|s| format!("'{}'", escape_js_string(s)))
                 .unwrap_or_else(|| "null".to_string());
-            format!("{{key:{key},code:{code},submitter:{submitter}}}")
+            let data = d
+                .data
+                .as_deref()
+                .map(|value| format!("'{}'", escape_js_string(value)))
+                .unwrap_or_else(|| "null".to_string());
+            let input_type = d
+                .input_type
+                .as_deref()
+                .map(|value| format!("'{}'", escape_js_string(value)))
+                .unwrap_or_else(|| "null".to_string());
+            let is_composing = d.is_composing;
+            format!(
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing}}}"
+            )
         }
     };
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
@@ -177,6 +196,18 @@ pub fn script_text_input(selector: &str, key: &str) -> String {
 pub fn script_text_delete(selector: &str) -> String {
     let esc_sel = escape_js_string(selector);
     format!("__zw_text_delete('{esc_sel}')")
+}
+
+/// 读取文本控件当前 value 与 DOM 选区，返回 JSON 数组字符串。
+///
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+pub fn script_text_control_snapshot(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var el=document.querySelector('{esc_sel}');\
+if(!el)return '';\
+return JSON.stringify([String(el.value||''),Number(el.selectionStart||0),Number(el.selectionEnd||0)]);}})()"
+    )
 }
 
 /// 构造「报告未捕获脚本错误」的 shim 脚本（R2940 onerror host 集成）。宿主在页面 `<script>` 执行

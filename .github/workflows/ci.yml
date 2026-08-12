@@ -295,6 +295,15 @@ jobs:
             -p zero-webview-demo \
             --target ${{ matrix.target }}
 
+      # Browser tests otherwise may start a stale child executable from target/debug.
+      # This explicit Windows gate builds the renderer first, then verifies physical
+      # clicks, both text controls, button actions, scale factors, and Chinese IME.
+      - name: Run real form interaction GUI gate (Windows x86_64)
+        if: matrix.name == 'windows-x86_64'
+        timeout-minutes: 25
+        shell: pwsh
+        run: ./scripts/test-form-interaction.ps1
+
       - name: Run integration and WPT runner tests
         if: matrix.v8_runtime != false
         timeout-minutes: 20

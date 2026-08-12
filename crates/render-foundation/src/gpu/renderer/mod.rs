@@ -12,10 +12,10 @@ use crate::geometry::Rect;
 use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
 use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh};
 use crate::gpu::pipeline::{
-    FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX, create_atlas_bind_group_layout,
-    create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline, create_image_pipeline,
-    create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout, create_transform_pipeline,
-    create_transform_uniform_bgl, create_uniform_bind_group_layout,
+    FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, IMAGE_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX,
+    create_atlas_bind_group_layout, create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline,
+    create_image_pipeline, create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
+    create_transform_pipeline, create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
 use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
@@ -115,6 +115,10 @@ pub struct GpuRenderer {
     gradient_bgl: wgpu::BindGroupLayout,
     /// Image 纹理绑定组布局
     image_bgl: wgpu::BindGroupLayout,
+    /// Image 纹理采样器（所有 image primitive 共用）。
+    image_sampler: wgpu::Sampler,
+    /// 已上传图片纹理缓存，避免同一内容每帧重复创建 GPU 资源。
+    image_texture_cache: std::collections::HashMap<GpuImageCacheKey, CachedImageResource>,
     /// Blur 源纹理绑定组布局
     #[allow(dead_code)]
     blur_bgl: wgpu::BindGroupLayout,
@@ -143,6 +147,19 @@ pub struct GpuRenderer {
     /// Linux：compositor 导入纹理（P0 GPU 零拷贝 blit）。
     #[cfg(target_os = "linux")]
     compositor_import: Option<CompositorImport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct GpuImageCacheKey {
+    image_key: crate::image_cache::ImageKey,
+    width: u32,
+    height: u32,
+    content_hash: u64,
+}
+
+struct CachedImageResource {
+    _texture: wgpu::Texture,
+    bind_group: Arc<wgpu::BindGroup>,
 }
 
 /// compositor 导入帧（Browser 侧 wgpu 外部纹理）。
@@ -286,6 +303,14 @@ impl GpuRenderer {
         let gradient_bgl = create_texture_bind_group_layout(&device, "Gradient BGL");
         let image_bgl = create_texture_bind_group_layout(&device, "Image BGL");
         let blur_bgl = create_texture_bind_group_layout(&device, "Blur BGL");
+        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Image Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         let pipeline = create_render_pipeline(&device, format, &uniform_bgl, &atlas_bgl);
         let rounded_rect_pipeline = create_rounded_rect_pipeline(&device, format, &uniform_bgl);
@@ -324,6 +349,8 @@ impl GpuRenderer {
             atlas_bgl,
             gradient_bgl,
             image_bgl,
+            image_sampler,
+            image_texture_cache: std::collections::HashMap::new(),
             blur_bgl,
             atlas,
             atlas_texture,
@@ -796,30 +823,40 @@ impl GpuRenderer {
         let overlay_glyph_verts = self.collect_overlay_glyphs_data(overlay_glyphs, font_loader, glyph_cache, scale);
 
         // ── Phase 2: 提交 GPU 命令 ──
-        let device = self.device.clone();
-        let queue = self.queue.clone();
-
-        // Uniform
+        // Uniform buffer/bind group persist across frames; only dimensions are updated.
         let uniform_data: [f32; 4] = [width as f32, height as f32, 0.0, 0.0];
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&uniform_data),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Uniform BG"),
-            layout: &self.uniform_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
+        if self.uniform_buffer.is_none() {
+            self.uniform_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&uniform_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }));
+        }
+        let uniform_buffer = self.uniform_buffer.as_ref().expect("uniform buffer initialized");
+        self.queue
+            .write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&uniform_data));
+        if self.uniform_bind_group.is_none() {
+            self.uniform_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Uniform BG"),
+                layout: &self.uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            }));
+        }
 
         // 获取渲染目标
         let target = match self.acquire_render_target(width, height) {
             Some(target) => target,
             None => return,
         };
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        let uniform_bg = self
+            .uniform_bind_group
+            .as_ref()
+            .expect("uniform bind group initialized");
         let view = target.view();
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -843,32 +880,32 @@ impl GpuRenderer {
             });
 
             // 1. Shadows
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &shadow_verts, "Shadow");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &shadow_verts, "Shadow");
             // 2. Fills
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &fill_verts, "Fill");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &fill_verts, "Fill");
             // 3. RoundedRects
-            self.draw_rounded_rect_pass(&mut pass, &uniform_bg, &device, &rr_verts);
+            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts);
             // 4. Gradients
-            self.draw_gradient_pass(&mut pass, &uniform_bg, &device, &grad_resources);
+            self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources);
             // 4b. Compositor GPU 导入 blit（P0）
             #[cfg(target_os = "linux")]
-            self.draw_compositor_import_pass(&mut pass, &uniform_bg, &device);
+            self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
             // 5. Images
-            self.draw_image_pass(&mut pass, &uniform_bg, &device, &img_resources);
+            self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources);
             // 6-8. Strokes + PathFills + PathStrokes
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &stroke_verts, "Stroke");
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &path_fill_verts, "PathFill");
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &path_stroke_verts, "PathStroke");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts, "Stroke");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts, "PathFill");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_stroke_verts, "PathStroke");
             // 9. Glyphs
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &glyph_verts, "Glyph");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts, "Glyph");
             // 10. Chrome / WebView 文字
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
             // 11. Overlay fills
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
             // 11b. Overlay rounded rects（滚动条 thumb 等）
-            self.draw_rounded_rect_pass(&mut pass, &uniform_bg, &device, &overlay_rr_verts);
+            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts);
             // 12. Overlay glyphs
-            self.draw_fill_pass(&mut pass, &uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
         }
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -953,15 +990,25 @@ impl GpuRenderer {
     ) {
         pass.set_pipeline(&self.gradient_pipeline);
         pass.set_bind_group(0, uniform_bg, &[]);
+        let flat_vertices: Vec<f32> = resources
+            .iter()
+            .flat_map(|(_, vertices)| vertices.iter().copied())
+            .collect();
+        if flat_vertices.is_empty() {
+            return;
+        }
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gradient VB"),
+            contents: bytemuck::cast_slice(&flat_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let mut byte_offset = 0u64;
         for (bg, verts) in resources {
-            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Gradient VB"),
-                contents: bytemuck::cast_slice(verts),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let byte_len = (verts.len() * std::mem::size_of::<f32>()) as u64;
             pass.set_bind_group(1, bg, &[]);
-            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.set_vertex_buffer(0, vb.slice(byte_offset..byte_offset + byte_len));
             pass.draw(0..6, 0..1);
+            byte_offset += byte_len;
         }
     }
 
@@ -1022,19 +1069,29 @@ impl GpuRenderer {
         pass: &mut wgpu::RenderPass<'_>,
         uniform_bg: &wgpu::BindGroup,
         device: &wgpu::Device,
-        resources: &[(wgpu::BindGroup, Vec<f32>)],
+        resources: &[(Arc<wgpu::BindGroup>, Vec<f32>)],
     ) {
         pass.set_pipeline(&self.image_pipeline);
         pass.set_bind_group(0, uniform_bg, &[]);
+        let flat_vertices: Vec<f32> = resources
+            .iter()
+            .flat_map(|(_, vertices)| vertices.iter().copied())
+            .collect();
+        if flat_vertices.is_empty() {
+            return;
+        }
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Image VB"),
+            contents: bytemuck::cast_slice(&flat_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let mut byte_offset = 0u64;
         for (bg, verts) in resources {
-            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Image VB"),
-                contents: bytemuck::cast_slice(verts),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            pass.set_bind_group(1, bg, &[]);
-            pass.set_vertex_buffer(0, vb.slice(..));
-            pass.draw(0..6, 0..1);
+            let byte_len = (verts.len() * std::mem::size_of::<f32>()) as u64;
+            pass.set_bind_group(1, bg.as_ref(), &[]);
+            pass.set_vertex_buffer(0, vb.slice(byte_offset..byte_offset + byte_len));
+            pass.draw(0..(verts.len() as u32 / IMAGE_FLOATS_PER_VERTEX as u32), 0..1);
+            byte_offset += byte_len;
         }
     }
 
@@ -1211,11 +1268,11 @@ impl GpuRenderer {
     }
 
     fn prepare_image_resources(
-        &self,
+        &mut self,
         images: &[crate::primitive::ImagePrimitive],
         image_cache: Option<&mut ImageCache>,
         scale: f32,
-    ) -> Vec<(wgpu::BindGroup, Vec<f32>)> {
+    ) -> Vec<(Arc<wgpu::BindGroup>, Vec<f32>)> {
         let ic = match image_cache {
             Some(c) => c,
             None => return Vec::new(),
@@ -1232,62 +1289,7 @@ impl GpuRenderer {
                 continue;
             }
 
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Image Texture"),
-                size: wgpu::Extent3d {
-                    width: iw,
-                    height: ih,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &image_data.pixels,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(iw * 4),
-                    rows_per_image: None,
-                },
-                wgpu::Extent3d {
-                    width: iw,
-                    height: ih,
-                    depth_or_array_layers: 1,
-                },
-            );
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-                label: Some("Image Sampler"),
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
-            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Image BG"),
-                layout: &self.image_bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
+            let bg = self.cached_image_bind_group(&img.image_key, image_data);
 
             // crop 语义（R294）：source 始终映射到完整 img.rect（保持原始分辨率）。
             // 绘制区域 = rect ∩ clip（None 时 = rect）；UV 取 clip 窗口在 rect 内的归一化
@@ -1333,6 +1335,93 @@ impl GpuRenderer {
             ic.release(&img.image_key);
         }
         resources
+    }
+
+    fn cached_image_bind_group(
+        &mut self,
+        image_key: &crate::image_cache::ImageKey,
+        image_data: &crate::image_cache::ImageData,
+    ) -> Arc<wgpu::BindGroup> {
+        let cache_key = GpuImageCacheKey {
+            image_key: image_key.clone(),
+            width: image_data.width,
+            height: image_data.height,
+            content_hash: Self::hash_image_pixels(&image_data.pixels),
+        };
+        if !self.image_texture_cache.contains_key(&cache_key) {
+            if self.image_texture_cache.len() >= 8192 {
+                self.image_texture_cache.clear();
+            }
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Image Texture"),
+                size: wgpu::Extent3d {
+                    width: image_data.width,
+                    height: image_data.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                // ImageData stores already-colored byte-space pixels. Sampling
+                // as sRGB would decode them again and darken translucent images.
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &image_data.pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(image_data.width * 4),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: image_data.width,
+                    height: image_data.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = Arc::new(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Image BG"),
+                layout: &self.image_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                    },
+                ],
+            }));
+            self.image_texture_cache.insert(
+                cache_key.clone(),
+                CachedImageResource {
+                    _texture: texture,
+                    bind_group,
+                },
+            );
+        }
+        self.image_texture_cache
+            .get(&cache_key)
+            .expect("cached image resource inserted")
+            .bind_group
+            .clone()
+    }
+
+    fn hash_image_pixels(pixels: &[u8]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        pixels.hash(&mut hasher);
+        hasher.finish()
     }
 
     fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<f32> {

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "form-input-perf-baseline",
+  "platform_class": "windows-x86_64",
+  "profile": "release",
+  "recorded_at": "2026-08-12",
+  "scenario": "retained_fixed_size_input_value",
+  "iterations": 200,
+  "input_to_publish_ms": {
+    "p50": 0.0121,
+    "p95": 0.0125,
+    "max": 0.0356
+  },
+  "jank_20ms_ratio": 0.0,
+  "max_counts_per_input": {
+    "parse": 0,
+    "style": 0,
+    "full_layout": 0,
+    "paint": 1,
+    "publish": 1
+  }
+}

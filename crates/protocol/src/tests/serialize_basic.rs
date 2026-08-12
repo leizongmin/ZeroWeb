@@ -3,6 +3,27 @@
 use super::*;
 
 #[test]
+fn ime_event_roundtrip_preserves_preedit_cursor_range() {
+    let msg = IpcMessage {
+        id: 901,
+        kind: IpcMessageKind::ImeEvent(ImeEventParams {
+            event_type: ImeEventType::Preedit,
+            text: "中文".to_string(),
+            cursor_start: Some(0),
+            cursor_end: Some(6),
+        }),
+    };
+
+    let out = roundtrip(msg);
+    let IpcMessageKind::ImeEvent(params) = out.kind else {
+        panic!("expected IME event");
+    };
+    assert_eq!(params.event_type, ImeEventType::Preedit);
+    assert_eq!(params.text, "中文");
+    assert_eq!((params.cursor_start, params.cursor_end), (Some(0), Some(6)));
+}
+
+#[test]
 fn test_serialize_deserialize_navigate() {
     let msg = IpcMessage {
         id: 1,

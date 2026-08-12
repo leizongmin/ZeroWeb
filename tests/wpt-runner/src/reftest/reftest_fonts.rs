@@ -3,7 +3,7 @@
 //! reftest 截图的可信度依赖字体栈与真实浏览器一致：系统 sans（DejaVu/Liberation）+
 //! CJK 回退（Noto Sans CJK）+ WPT 标准 Ahem 字体 + 文档声明的 `@font-face`。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use zero_css_parser::ast::Rule as CssRule;
 use zero_css_parser::parser::Parser as CssParser;
@@ -27,6 +27,7 @@ pub(super) fn create_font_loader() -> FontLoader {
 fn build_base_font_loader() -> FontLoader {
     let mut loader = FontLoader::new();
     let mut fallback_ids: Vec<u32> = Vec::new();
+    let windows_fonts = std::env::var_os("WINDIR").map(|root| PathBuf::from(root).join("Fonts"));
 
     // R1259：先加载 Liberation Serif 作为 FontId(0)（initial font-family 的解析目标）。
     // 原因：chromium 的 initial font-family 为 "Times New Roman"，经 fontconfig 在本环境
@@ -37,10 +38,13 @@ fn build_base_font_loader() -> FontLoader {
     // 4.85% diff 全在此 <p> 文本，非布局 bug）。R1257 试 NotoSansCJK（sans，错方向）net -1pp；
     // Liberation Serif（serif，CHR 真实默认）是正确匹配。Ahem 测试元素显式 font-family:Ahem
     // 不受影响；sans-serif/serif 显式声明经 build_font_resolver 仍各自映射，不受影响。
-    let primary_serif_paths = [
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+    let mut primary_serif_paths = vec![
+        PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"),
+        PathBuf::from("/System/Library/Fonts/Supplemental/Times New Roman.ttf"),
     ];
+    if let Some(fonts) = windows_fonts.as_ref() {
+        primary_serif_paths.push(fonts.join("times.ttf"));
+    }
     for path in &primary_serif_paths {
         if let Ok(data) = std::fs::read(path) {
             let _ = loader.load_font(&data);
@@ -49,15 +53,20 @@ fn build_base_font_loader() -> FontLoader {
     }
 
     // 系统字体路径（Linux / macOS）作回退
-    let system_font_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    let mut system_font_paths = vec![
+        PathBuf::from("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        PathBuf::from("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"),
+        PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        PathBuf::from("/usr/share/fonts/TTF/DejaVuSans.ttf"),
+        PathBuf::from("/usr/share/fonts/dejavu/DejaVuSans.ttf"),
+        PathBuf::from("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        PathBuf::from("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
     ];
+    if let Some(fonts) = windows_fonts.as_ref() {
+        system_font_paths.push(fonts.join("arial.ttf"));
+        system_font_paths.push(fonts.join("arialbd.ttf"));
+        system_font_paths.push(fonts.join("consola.ttf"));
+    }
 
     for path in &system_font_paths {
         if let Ok(data) = std::fs::read(path)
@@ -71,12 +80,16 @@ fn build_base_font_loader() -> FontLoader {
 
     // 加载 CJK 字体（Noto Sans CJK）并加入回退链——主字体缺 CJK 字形时回退到此，
     // 使中文/日文/韩文字符可渲染（DC-13 welcome.html 等含 CJK 文本的真实页面）。
-    let cjk_font_paths = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    let mut cjk_font_paths = vec![
+        PathBuf::from("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        PathBuf::from("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        PathBuf::from("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
+        PathBuf::from("/System/Library/Fonts/Hiragino Sans GB.ttc"),
     ];
+    if let Some(fonts) = windows_fonts.as_ref() {
+        cjk_font_paths.push(fonts.join("msyh.ttc"));
+        cjk_font_paths.push(fonts.join("simhei.ttf"));
+    }
     for path in &cjk_font_paths {
         if let Ok(data) = std::fs::read(path) {
             if let Ok(id) = loader.load_font(&data) {
@@ -97,6 +110,22 @@ fn build_base_font_loader() -> FontLoader {
     }
 
     loader
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn default_loader_includes_windows_regular_and_bold_sans_faces() {
+        let loader = create_font_loader();
+        let resolver = loader.build_font_resolver();
+
+        let regular = resolver.get("sans-serif").copied().expect("sans-serif face");
+        let bold = resolver.get("sans-serif:700").copied().expect("bold sans-serif face");
+        assert_ne!(regular, bold, "Windows product pages need the real Arial bold face");
+        assert_eq!(resolver.get("Arial"), Some(&regular));
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]
@@ -352,27 +381,28 @@ mod feature_tests {
         for (metric, aspect) in cases {
             let actual = loader.font_metric_aspect(font_id, metric).expect("font metric");
             assert!((actual - aspect).abs() < 0.001, "{metric:?}: {actual} != {aspect}");
-            assert!(
-                (loader.adjusted_font_size(
-                    font_id,
-                    font_id,
-                    56.0,
-                    FontSizeAdjustment::Adjust {
-                        metric,
-                        target: Some(aspect * 1.5),
-                    },
-                ) - 84.0)
-                    .abs()
-                    < 0.001
+            let adjusted = loader.adjusted_font_size(
+                font_id,
+                font_id,
+                56.0,
+                FontSizeAdjustment::Adjust {
+                    metric,
+                    target: Some(actual * 1.5),
+                },
             );
-            assert_eq!(
-                loader.adjusted_font_size(
-                    font_id,
-                    font_id,
-                    56.0,
-                    FontSizeAdjustment::Adjust { metric, target: None },
-                ),
-                56.0
+            assert!(
+                (adjusted - 84.0).abs() < 0.001,
+                "{metric:?}: adjusted size was {adjusted}"
+            );
+            let from_font = loader.adjusted_font_size(
+                font_id,
+                font_id,
+                56.0,
+                FontSizeAdjustment::Adjust { metric, target: None },
+            );
+            assert!(
+                (from_font - 56.0).abs() < 0.001,
+                "{metric:?}: from-font size was {from_font}"
             );
         }
     }

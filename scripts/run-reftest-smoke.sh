@@ -15,6 +15,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SMOKE_LIST="${REPO_ROOT}/tests/wpt-runner/reftest-smoke.txt"
 RUNNER="${REPO_ROOT}/target/release/zero-wpt-runner"
+# MSYS may resolve an extensionless Windows executable through a different working-directory
+# boundary. Prefer the concrete PE path when Cargo produced one.
+if [[ -x "${RUNNER}.exe" ]]; then
+  RUNNER="${RUNNER}.exe"
+  # Case ids contain forward slashes but are filters, not filesystem arguments. Without
+  # this, MSYS rewrites `css/CSS2/...` to a Git installation path before launching the PE.
+  export MSYS2_ARG_CONV_EXCL="*"
+fi
 
 if [[ ! -f "$SMOKE_LIST" ]]; then
   echo "Error: smoke 清单不存在: ${SMOKE_LIST}"

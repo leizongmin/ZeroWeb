@@ -1392,30 +1392,52 @@
   // 到 value（经 `.value` set 更新缓存 + 记 value 属性 mutation）并派发 'input' 事件。
   // 非 input/textarea 目标 → no-op。限制（follow-up）：仅 append（无 backspace/delete/caret/selection）。
   globalThis.__zw_text_input = function(sel, ch) {
-    var el = _resolveInputEl(sel);
-    if (!el) return;
-    el.value = (el.value || '') + ch;
+    var target = _resolveInputTarget(sel);
+    if (!target) return;
+    var el = target.element;
+    var cur = el.value || '';
+    var state = _textSelection[target.key];
+    var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
+    var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
+    var inserted = String(ch);
+    el.value = cur.slice(0, start) + inserted + cur.slice(end);
+    var caret = start + inserted.length;
+    _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
     el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
   };
   // P1a form input：Backspace → 删末字符 + 派发 'input'（仅当 value 非空）。无 caret/selection
   // （删末字符近似——真实浏览器按 caret 删，follow-up）。
   globalThis.__zw_text_delete = function(sel) {
-    var el = _resolveInputEl(sel);
-    if (!el) return;
+    var target = _resolveInputTarget(sel);
+    if (!target) return;
+    var el = target.element;
     var cur = el.value || '';
+    var state = _textSelection[target.key];
+    var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
+    var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
     if (cur.length === 0) return; // 空值 backspace 无变化，不派发（同 real browser）。
-    el.value = cur.slice(0, -1);
+    if (start === end) {
+      if (start === 0) return;
+      start--;
+      var last = cur.charCodeAt(start);
+      if (last >= 0xDC00 && last <= 0xDFFF && start > 0) {
+        var previous = cur.charCodeAt(start - 1);
+        if (previous >= 0xD800 && previous <= 0xDBFF) start--;
+      }
+    }
+    el.value = cur.slice(0, start) + cur.slice(end);
+    _textSelection[target.key] = { start: start, end: start, direction: 'none' };
     el.dispatchEvent(_makeEvent('input', { bubbles: true, cancelable: true }));
   };
   // 解析 selector → canonical stable selector（`__zw_query_match`，与 querySelector 同 identity）+
   // 真实 tag（`__zw_get_tag`，非 `_tagFromSel` 启发式）判 INPUT/TEXTAREA → 返元素 proxy（否则 null）。
   // __zw_text_input / __zw_text_delete 共用。
-  function _resolveInputEl(sel) {
+  function _resolveInputTarget(sel) {
     var resolved = typeof __zw_query_match === 'function' ? __zw_query_match(sel) : sel;
     if (!resolved) return null;
     var tag = (typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '').toUpperCase();
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
-    return _wrapSelector(resolved);
+    return { element: _wrapSelector(resolved), key: _elKey(resolved, null) };
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
   globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };

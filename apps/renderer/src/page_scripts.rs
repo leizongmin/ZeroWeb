@@ -9,7 +9,7 @@ use zero_engine::{
     is_checkbox, is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html,
     resolve_document_url, script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event,
     script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
-    script_run_classic_page, script_text_delete, script_text_input, toggle_radio_html,
+    script_run_classic_page, script_text_control_snapshot, script_text_delete, script_text_input, toggle_radio_html,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -31,6 +31,26 @@ pub struct SubmitOutcome {
     pub html_changed: bool,
     /// submit 事件未被 `preventDefault()`（→ GET 表单应导航）。无 enclosing form / 派发失败 → false。
     pub default_allowed: bool,
+}
+
+/// 一次文本编辑后从 JS retained 状态读取的最终快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextControlSnapshot {
+    /// 事件监听器执行完毕后的当前值。
+    pub value: String,
+    /// DOM UTF-16 选区起点。
+    pub selection_start: usize,
+    /// DOM UTF-16 选区终点。
+    pub selection_end: usize,
+}
+
+/// 宿主文本编辑结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEditOutcome {
+    /// DOM mutation 是否改变页面快照。
+    pub html_changed: bool,
+    /// 编辑完成后的 retained 控件快照。
+    pub snapshot: Option<TextControlSnapshot>,
 }
 
 /// 页面脚本执行上下文。
@@ -341,30 +361,102 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
 /// 镜像 `dispatch_dom_event` 的 set_snapshot→clear→execute→apply 流程，script = `__zw_text_input`。
 /// 非 input/textarea 目标 shim 内 no-op。返回 value 属性是否变更（调用方据此单次 rerender）。
 /// 调用方须先判定 `key` 为单字符可打印键（见 `main::is_printable_key`）。
-pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> bool {
+pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let _ = ctx.js_worker.execute_script_direct(&script_text_input(selector, key));
+    let script = format!(
+        "{};{}",
+        script_text_input(selector, key),
+        script_text_control_snapshot(selector)
+    );
+    let snapshot = ctx
+        .js_worker
+        .execute_script_direct(&script)
+        .ok()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(&value).ok())
+        .map(|(value, selection_start, selection_end)| TextControlSnapshot {
+            value,
+            selection_start,
+            selection_end,
+        });
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    TextEditOutcome {
+        html_changed: apply_recorded_mutations(ctx, &html_snap).is_some(),
+        snapshot,
+    }
+}
+
+/// 在一个 JS/mutation 批次内派发 IME composition 事件，避免 start+update 各自重渲染。
+pub fn dispatch_composition_events(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    selector: &str,
+    events: &[(&str, &str)],
+) -> bool {
+    if !javascript_enabled || should_skip_scripts(ctx.url) || events.is_empty() {
+        return false;
+    }
+    let script = events
+        .iter()
+        .map(|(event_type, data)| {
+            script_dispatch_dom_event(
+                selector,
+                event_type,
+                Some(&DomEventDetail {
+                    data: Some((*data).to_string()),
+                    ..Default::default()
+                }),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    if let Err(error) = ctx.js_worker.execute_script_direct(&script) {
+        warn!("dispatch composition events on {selector}: {error}");
+        return false;
+    }
+    let html_snapshot = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
 
 /// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
 /// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
-pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let _ = ctx.js_worker.execute_script_direct(&script_text_delete(selector));
+    let script = format!(
+        "{};{}",
+        script_text_delete(selector),
+        script_text_control_snapshot(selector)
+    );
+    let snapshot = ctx
+        .js_worker
+        .execute_script_direct(&script)
+        .ok()
+        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(&value).ok())
+        .map(|(value, selection_start, selection_end)| TextControlSnapshot {
+            value,
+            selection_start,
+            selection_end,
+        });
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    TextEditOutcome {
+        html_changed: apply_recorded_mutations(ctx, &html_snap).is_some(),
+        snapshot,
+    }
 }
 
 /// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
@@ -689,6 +781,191 @@ mod tests {
             webview: None,
         };
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
+    }
+
+    #[test]
+    fn form_interaction_fixture_updates_input_value_and_result_text() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let mut worker = RendererJsWorker::spawn(144);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+        let first = apply_text_input(&mut ctx, "#name", "A");
+        assert!(first.html_changed);
+        assert_eq!(first.snapshot.expect("first snapshot").value, "A");
+        assert_eq!(zero_engine::query_attr_from_html(ctx.html, "#name", "value"), "");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "输入事件：A");
+
+        let second = apply_text_input(&mut ctx, "#name", "中文");
+        assert!(second.html_changed);
+        let second_snapshot = second.snapshot.expect("second snapshot");
+        assert_eq!(second_snapshot.selection_start, 3);
+        assert_eq!(second_snapshot.value, "A中文");
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "输入事件：A中文"
+        );
+
+        let note = apply_text_input(&mut ctx, "#note", "第二个输入框");
+        assert!(note.html_changed);
+        assert_eq!(note.snapshot.expect("note snapshot").value, "第二个输入框");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "");
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn composition_events_preserve_order_and_data() {
+        let html = r#"<html><body><input id="name"><script>
+            globalThis.__compositionEvents = [];
+            var input = document.querySelector('#name');
+            ['compositionstart','compositionupdate','compositionend'].forEach(function(type) {
+                input.addEventListener(type, function(event) {
+                    globalThis.__compositionEvents.push(type + ':' + event.data);
+                });
+            });
+        </script></body></html>"#;
+        let mut worker = RendererJsWorker::spawn(145);
+        worker.set_dom_snapshot(html, "file:///composition.html");
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///composition.html",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#name",
+            &[("compositionstart", "拼"), ("compositionupdate", "拼音")],
+        ));
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#name",
+            &[("compositionend", "中文")],
+        ));
+        assert_eq!(
+            worker
+                .execute_script_direct("globalThis.__compositionEvents.join('|')")
+                .expect("event log"),
+            "compositionstart:拼|compositionupdate:拼音|compositionend:中文"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn ime_commit_after_preedit_updates_live_webview() {
+        let html = r#"<html><body><textarea id="note"></textarea></body></html>"#;
+        let mut worker = RendererJsWorker::spawn(146);
+        worker.set_dom_snapshot(html, "file:///ime-commit.html");
+        let mut webview = zero_webview::WebViewBuilder::new().width(640).height(480).build();
+        webview.prepare_document_state("file:///ime-commit.html");
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///ime-commit.html",
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#note",
+            &[("compositionstart", "zhongwen"), ("compositionupdate", "zhongwen")],
+        ));
+        let preedit = zero_engine::DomMutation::SetFormComposition {
+            selector: "#note".to_string(),
+            text: "zhongwen".to_string(),
+            selection_start: 0,
+            selection_end: 0,
+        };
+        ctx.webview
+            .as_deref_mut()
+            .expect("webview")
+            .apply_dom_mutations_and_render(std::slice::from_ref(&preedit))
+            .expect("paint preedit");
+        assert!(!dispatch_composition_events(
+            &mut ctx,
+            true,
+            "#note",
+            &[("compositionend", "中文备注")],
+        ));
+
+        let commit = apply_text_input(&mut ctx, "#note", "中文备注");
+        assert!(commit.html_changed, "IME commit must apply a retained value mutation");
+        assert_eq!(commit.snapshot.expect("committed snapshot").value, "中文备注");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn form_interaction_fixture_runs_button_click_handler() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let mut worker = RendererJsWorker::spawn(145);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+        let result = dispatch_dom_event(&mut ctx, true, "#click", "click", None);
+        assert!(result.html_changed);
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "普通按钮 click 事件已触发。"
+        );
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn form_interaction_fixture_dispatches_idless_reset_and_submit_buttons() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let selectors = zero_engine::query_all_selector_list(html, "button")
+            .split('|')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert_eq!(selectors.len(), 3);
+        assert_ne!(selectors[1], selectors[2]);
+
+        let mut worker = RendererJsWorker::spawn(146);
+        worker.set_dom_snapshot(html, "file:///examples/forms/form-interaction-test.html");
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "file:///examples/forms/form-interaction-test.html",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        assert!(apply_reset_on_click(&mut ctx, &selectors[1]));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "表单已重置。");
+        let submit = apply_submit_on_click(&mut ctx, &selectors[2]);
+        assert!(submit.html_changed);
+        assert!(!submit.default_allowed);
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "提交事件已触发（已阻止导航）。"
+        );
+
+        worker.shutdown();
     }
 
     /// R2941 mirror：finish_page_load 派发 DOMContentLoaded + load。inline 脚本注册 window listener，

@@ -60,6 +60,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
                     tag_name: "body".into(),
                     id: None,
                     class_name: None,
+                    selector: "body".into(),
                     href: None,
                     src: None,
                 },
@@ -238,4 +239,33 @@ fn publish_mode_switch_republishes_legacy_only() {
             .iter()
             .all(|message| matches!(message.kind, IpcMessageKind::ViewPainted(_)))
     );
+}
+
+#[test]
+fn one_input_transaction_publishes_at_most_one_page_frame() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let (_inbound_tx, inbound_rx) = std::sync::mpsc::channel();
+    let mut runtime = RendererRuntime::with_io(101, FramePublishMode::Legacy, Box::new(buf.clone()), inbound_rx);
+    runtime.stub_network = true;
+    runtime.cached_html = "<input id='name' value='a'>".into();
+    runtime
+        .webview
+        .as_mut()
+        .expect("webview")
+        .load_html(&runtime.cached_html, None);
+
+    runtime
+        .run_frame_transaction(|runtime| {
+            runtime.publish_webview(None, false)?;
+            runtime.invalidate_script_render();
+            runtime.publish_webview(None, false)
+        })
+        .expect("coalesced publish");
+
+    let messages = drain_messages(&buf.0.lock().unwrap());
+    let frame_count = messages
+        .iter()
+        .filter(|message| matches!(message.kind, IpcMessageKind::ViewPainted(_)))
+        .count();
+    assert_eq!(frame_count, 1);
 }

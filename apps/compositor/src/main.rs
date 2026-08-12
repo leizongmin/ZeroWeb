@@ -51,6 +51,7 @@ struct SurfaceState {
     backing: BackingStoreManager,
     scroll_x: f32,
     scroll_y: f32,
+    image_cache: zero_render_foundation::image_cache::ImageCache,
 }
 
 struct UiSurfaceState {
@@ -275,7 +276,25 @@ fn main() {
                     backing: BackingStoreManager::new(w, h),
                     scroll_x: 0.0,
                     scroll_y: 0.0,
+                    image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
                 });
+                if surface.navigation_epoch != navigation_epoch {
+                    surface.image_cache.clear();
+                }
+                for image in &paint.image_payloads {
+                    let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(
+                        image.rgba.clone(),
+                        image.width,
+                        image.height,
+                    ) else {
+                        tracing::warn!("compositor: image payload {} is invalid", image.image_key);
+                        continue;
+                    };
+                    surface.image_cache.insert_with_key(
+                        zero_render_foundation::image_cache::ImageKey::new(image.image_key),
+                        data,
+                    );
+                }
                 surface.backing.resize(w, h);
 
                 if is_partial {
@@ -291,6 +310,7 @@ fn main() {
                             &primitives,
                             &font_loader,
                             &mut glyph_cache,
+                            &mut surface.image_cache,
                             surface.backing.back_mut(),
                             &dirty_rects,
                         )
@@ -302,6 +322,7 @@ fn main() {
                             &primitives,
                             &font_loader,
                             &mut glyph_cache,
+                            &mut surface.image_cache,
                             surface.backing.back_mut(),
                         )
                     };
@@ -312,6 +333,7 @@ fn main() {
                             &font_loader,
                             &mut glyph_cache,
                             render_thread.as_ref(),
+                            &mut surface.image_cache,
                             surface.backing.back_mut(),
                             is_partial,
                         );
@@ -323,6 +345,7 @@ fn main() {
                         &font_loader,
                         &mut glyph_cache,
                         render_thread.as_ref(),
+                        &mut surface.image_cache,
                         surface.backing.back_mut(),
                         is_partial,
                     );

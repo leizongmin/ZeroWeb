@@ -276,6 +276,10 @@ impl RenderPipeline {
                 layout_ms,
                 paint_ms,
                 total_ms,
+                parse_count: 1,
+                style_count: 1,
+                layout_count: 1,
+                paint_count: 1,
             },
             zero_render_foundation::primitive::RenderStats::default(),
         )

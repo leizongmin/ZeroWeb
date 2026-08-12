@@ -1744,19 +1744,18 @@
             _outputValue[key] = String(value);
           } else {
             _inputValues[key] = String(value);
-            // textarea 的 value ↔ **文本内容**（非 value 属性，HTML spec）——写 content 而非属性。
-            // input 走 value 属性 mutation（供 render）。R2996：INPUT 先捕获 defaultValue（spec .value= 不改默认值）。
-            // R3049：textarea 首次 value= 前捕获 defaultValue（初值 textContent），供 defaultValue getter + form.reset。
+            // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
+            // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
+            // R2996/R3049：首次写前仍捕获 defaultValue，供 getter + form.reset。
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
               if (_textareaDefault[key] == null) _textareaDefault[key] = __zw_get_text(sel) || '';
-              __zw_set_text(sel, String(value));
+              __zw_set_form_value(sel, String(value));
             } else {
               if (_realTag(sel, handle) === 'INPUT') _captureInputDefault(key, sel, handle);
               if (handle) {
                 __zw_set_attr_handle(handle, 'value', String(value));
               } else {
-                __zw_set_attr(sel, 'value', String(value));
-                moAttr = 'value';
+                __zw_set_form_value(sel, String(value));
               }
             }
           }
@@ -1771,7 +1770,7 @@
               _inputValues[key] = vsS;
               _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
               if (handle) __zw_set_attr_handle(handle, 'value', vsS);
-              else { __zw_set_attr(sel, 'value', vsS); moAttr = 'value'; }
+              else __zw_set_form_value(sel, vsS);
             }
           }
         } else if (p === 'indeterminate') {

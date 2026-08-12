@@ -5,6 +5,7 @@ use zero_render_foundation::cpu::render_full_scene_region_into;
 use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::geometry::Rect;
+use zero_render_foundation::image_cache::ImageCache;
 use zero_render_foundation::primitive::RenderPrimitives;
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 use zero_render_foundation::surface::FrameBuffer;
@@ -21,6 +22,7 @@ pub fn rasterize_into_back(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     render_thread: Option<&RenderingThread>,
+    image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     copy_front: bool,
 ) {
@@ -32,7 +34,7 @@ pub fn rasterize_into_back(
     let vh = h as f32;
 
     if display_list.is_full_viewport(vw, vh) {
-        *back = rasterize_full(w, h, primitives, font_loader, glyph_cache, render_thread);
+        *back = rasterize_full(w, h, primitives, font_loader, glyph_cache, render_thread, image_cache);
         return;
     }
 
@@ -47,7 +49,8 @@ pub fn rasterize_into_back(
             continue;
         }
         let region = Rect::new(*x, *y, *rw, *rh);
-        if render_threading_enabled()
+        if primitives.images.is_empty()
+            && render_threading_enabled()
             && let Some(rt) = render_thread
         {
             let patch = rt.rasterize_sync(w, h, 1.0, primitives, &[], &[], &[], &[], Some(region));
@@ -59,7 +62,7 @@ pub fn rasterize_into_back(
             primitives,
             font_loader,
             glyph_cache,
-            None,
+            Some(image_cache),
             &[],
             &[],
             &[],
@@ -77,8 +80,10 @@ fn rasterize_full(
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
     render_thread: Option<&RenderingThread>,
+    image_cache: &mut ImageCache,
 ) -> FrameBuffer {
-    if render_threading_enabled()
+    if primitives.images.is_empty()
+        && render_threading_enabled()
         && let Some(rt) = render_thread
     {
         return rt.rasterize_sync(w, h, 1.0, primitives, &[], &[], &[], &[], None);
@@ -90,7 +95,7 @@ fn rasterize_full(
         primitives,
         font_loader,
         glyph_cache,
-        None,
+        Some(image_cache),
         &[],
         &[],
         &[],

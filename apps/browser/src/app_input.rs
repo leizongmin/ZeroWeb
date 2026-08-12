@@ -611,8 +611,13 @@ impl BrowserApp {
                 }
                 let was_scrollbar_drag = self.scrollbar_drag.is_some();
                 self.scrollbar_drag = None;
-                let was_scroll_drag = self.content_pointer_drag.as_ref().is_some_and(|d| d.scrolling);
-                self.content_pointer_drag = None;
+                let pointer_drag = self.content_pointer_drag.take();
+                let was_scroll_drag = pointer_drag.as_ref().is_some_and(|d| d.scrolling);
+                let moved_beyond_click_threshold = pointer_drag.as_ref().is_some_and(|d| {
+                    let dx = x - d.start_x;
+                    let dy = y - d.start_y;
+                    dx.hypot(dy) >= self.content_scroll_drag_threshold()
+                });
                 self.tab_bar_drag_press = None;
                 self.address_bar_drag = false;
                 // 标签拖拽释放：若已激活，按鼠标 x 计算目标 index 重排序。
@@ -645,8 +650,10 @@ impl BrowserApp {
                         return;
                     }
                     if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
-                        let collapsed = self.page_selection.get(&tab_id).is_none_or(|s| s.is_collapsed());
-                        if collapsed {
+                        if !moved_beyond_click_threshold {
+                            // https://w3c.github.io/uievents/#event-type-click
+                            // click 由同一次按下/释放及移动阈值决定；文字选区是否折叠不能作为
+                            // 激活条件，否则输入框内一次轻微抖动就会吞掉 textarea/button click。
                             // 异步派发 click；若页面未 preventDefault，链接导航会通过
                             // `take_pending_actions` 在下一帧 poll 后执行（仿 Chrome 延迟导航）。
                             self.tabs
@@ -973,9 +980,7 @@ impl BrowserApp {
                     self.start_scrollbar_interaction(tab_id, hit, x_f, y_f);
                     return;
                 }
-                if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
-                    && let Some(glyphs) = self.page_glyphs(tab_id)
-                {
+                if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f) {
                     self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
                     self.content_pointer_drag = Some(ContentPointerDrag {
                         start_x: x,
@@ -983,7 +988,10 @@ impl BrowserApp {
                         last_y: y,
                         scrolling: false,
                     });
-                    let idx = hit_test_caret(&glyphs, doc_x, doc_y).unwrap_or(0);
+                    let idx = self
+                        .page_glyphs(tab_id)
+                        .and_then(|glyphs| hit_test_caret(&glyphs, doc_x, doc_y))
+                        .unwrap_or(0);
                     if self.shift_pressed {
                         if let Some(sel) = self.page_selection.get_mut(&tab_id) {
                             sel.focus = idx;
@@ -1077,14 +1085,23 @@ impl BrowserApp {
     pub fn handle_ime(&mut self, event: zero_host_runtime::event::ImeEvent) {
         let in_address_bar = self.address_bar_focused;
         let in_find_bar = self.shell.find_state().is_active();
-        if !in_address_bar && !in_find_bar {
-            return;
-        }
         match event {
-            zero_host_runtime::event::ImeEvent::Preedit { text, .. } => {
+            zero_host_runtime::event::ImeEvent::Preedit { text, cursor } => {
                 if in_address_bar {
                     self.address_bar_ime_preedit = text;
                     self.needs_redraw = true;
+                } else if !in_find_bar
+                    && let Some(tab_id) = self.shell.active_tab_id()
+                {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Preedit,
+                            text,
+                            cursor_start: cursor.map(|range| range.0),
+                            cursor_end: cursor.map(|range| range.1),
+                        },
+                    );
                 }
             }
             zero_host_runtime::event::ImeEvent::Commit(text) => {
@@ -1095,12 +1112,49 @@ impl BrowserApp {
                     if in_address_bar {
                         self.address_bar.insert_str(&text);
                         self.update_autocomplete();
-                    } else {
+                    } else if in_find_bar {
                         self.find_input.push_str(&text);
                         self.shell.find_start(&self.find_input);
+                    } else if let Some(tab_id) = self.shell.active_tab_id() {
+                        // https://w3c.github.io/uievents/#events-composition-input-events
+                        self.tabs.dispatch_ime_event(
+                            tab_id,
+                            zero_protocol::message::ImeEventParams {
+                                event_type: zero_protocol::message::ImeEventType::Commit,
+                                text,
+                                cursor_start: None,
+                                cursor_end: None,
+                            },
+                        );
                     }
                 }
                 self.needs_redraw = true;
+            }
+            zero_host_runtime::event::ImeEvent::Enabled if !in_address_bar && !in_find_bar => {
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Enabled,
+                            text: String::new(),
+                            cursor_start: None,
+                            cursor_end: None,
+                        },
+                    );
+                }
+            }
+            zero_host_runtime::event::ImeEvent::Disabled if !in_address_bar && !in_find_bar => {
+                if let Some(tab_id) = self.shell.active_tab_id() {
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Disabled,
+                            text: String::new(),
+                            cursor_start: None,
+                            cursor_end: None,
+                        },
+                    );
+                }
             }
             zero_host_runtime::event::ImeEvent::Enabled | zero_host_runtime::event::ImeEvent::Disabled => {}
         }
@@ -1144,7 +1198,7 @@ impl BrowserApp {
         let scroll = self.tab_scroll_state(tab_id);
         Some((
             tab_id,
-            (x_f - content_x) / s + scroll.x,
+            (x_f - content_x) / s + scroll.x / s,
             (y_f - page_top + scroll.y) / s,
         ))
     }

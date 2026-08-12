@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>ZeroWeb 表单交互测试</title>
+  <style>
+    body { max-width: 680px; margin: 40px auto; font: 16px sans-serif; line-height: 1.5; }
+    fieldset { margin: 18px 0; padding: 16px; }
+    label { display: block; margin: 10px 0; }
+    input, textarea, button { font: inherit; padding: 6px; }
+    textarea { width: 100%; min-height: 80px; box-sizing: border-box; }
+    button { margin-right: 8px; }
+    output { display: block; min-height: 1.5em; margin-top: 16px; color: #075985; }
+  </style>
+</head>
+<body>
+  <h1>表单交互测试</h1>
+  <p>依次测试：点击输入框并输入文字、退格、按 Tab 切换焦点，再点击各按钮。</p>
+
+  <form id="form">
+    <fieldset>
+      <legend>文本控件</legend>
+      <label>姓名 <input id="name" name="name" type="text" placeholder="点击后输入文字"></label>
+      <label>备注 <textarea id="note" name="note" placeholder="可输入多行文本"></textarea></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>选择控件</legend>
+      <label><input id="subscribe" name="subscribe" type="checkbox"> 订阅更新</label>
+      <label><input name="plan" type="radio" value="basic" checked> 基础版</label>
+      <label><input name="plan" type="radio" value="pro"> 专业版</label>
+    </fieldset>
+
+    <button id="click" type="button">普通点击按钮</button>
+    <button type="reset">重置表单</button>
+    <button type="submit">提交表单</button>
+  </form>
+
+  <output id="result" aria-live="polite">等待交互</output>
+
+  <script>
+    const result = document.getElementById('result');
+    document.getElementById('click').addEventListener('click', () => {
+      result.textContent = '普通按钮 click 事件已触发。';
+    });
+    document.getElementById('name').addEventListener('input', event => {
+      result.textContent = `输入事件：${event.target.value}`;
+    });
+    document.getElementById('subscribe').addEventListener('change', event => {
+      result.textContent = `复选框：${event.target.checked ? '已选中' : '未选中'}`;
+    });
+    document.getElementById('form').addEventListener('reset', () => {
+      result.textContent = '表单已重置。';
+    });
+    document.getElementById('form').addEventListener('submit', event => {
+      event.preventDefault();
+      result.textContent = '提交事件已触发（已阻止导航）。';
+    });
+  </script>
+</body>
+</html>

@@ -1794,6 +1794,20 @@
       // R2984 SubmitEvent：submitter = 按钮 proxy（detail.submitter 经 _wrapSelector）；缺省 null（Enter 隐式提交）。
       var sub = (detail && detail.submitter) ? _wrapSelector(detail.submitter) : null;
       ev = new SubmitEvent(type, { bubbles: true, cancelable: true, submitter: sub });
+    } else if (type === 'compositionstart' || type === 'compositionupdate' || type === 'compositionend') {
+      ev = new CompositionEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        data: (detail && detail.data) || ''
+      });
+    } else if ((type === 'beforeinput' || type === 'input') && detail && detail.inputType) {
+      ev = new InputEvent(type, {
+        bubbles: true,
+        cancelable: type === 'beforeinput',
+        data: detail.data,
+        inputType: detail.inputType,
+        isComposing: !!detail.isComposing
+      });
     } else if (detail && (detail.key || detail.code)) {
       ev = new KeyboardEvent(type, {
         bubbles: true,

@@ -105,13 +105,20 @@ fn test_fetch_url_sw_cached_invalid_utf8() {
 
 #[test]
 fn test_fetch_url_timeout_error() {
-    // 2s 超时：黑洞地址（RFC 5737）connect 挂起，默认 30s 会让测试实等 30s
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let _connection = listener.accept().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    });
+
     let mut wv = WebView::new(WebViewConfig {
-        http_timeout_secs: Some(2),
+        http_timeout_secs: Some(1),
         ..Default::default()
     });
 
-    let result = wv.fetch_url("http://192.0.2.1:80/test"); // RFC 5737 test net - should timeout
+    let result = wv.fetch_url(&format!("http://{address}/test"));
+    server.join().unwrap();
 
     assert!(result.is_err());
     assert!(!wv.is_loading());

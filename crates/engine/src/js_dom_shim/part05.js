@@ -1541,6 +1541,10 @@
     ['data', 'data', null], ['isComposing', 'isComposing', false],
     ['inputType', 'inputType', ''], ['dataTransfer', 'dataTransfer', null],
   ]);
+  // CompositionEvent（UI Events）：IME compositionstart/update/end 的 data。
+  _defineEventSubclass('CompositionEvent', 'UIEvent', [
+    ['data', 'data', ''], ['locale', 'locale', ''],
+  ]);
   // Event 子类簇 #2（R2812）——均 extends Event：HashChangeEvent（SPA hash 路由）/ PopStateEvent（history
   // 路由）/ StorageEvent（跨标签页 storage 同步）/ ProgressEvent（XHR/资源加载进度）/ TransitionEvent·
   // AnimationEvent（CSS 过渡/动画回调）。feature-detection + `new X(type, init)` 合成派发高频。复用

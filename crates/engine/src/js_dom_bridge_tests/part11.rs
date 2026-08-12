@@ -2374,11 +2374,12 @@ fn test_input_value_defaultvalue_independence_r2996() {
         "setAttribute 后 .value='dirty again'"
     );
 
-    // .value= 后 getAttribute('value') 仍反映 dirty 写入的属性（render 车辆不变）。
+    // .value= 后 getAttribute('value') 仍是 default value 内容属性。
+    // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
     assert_eq!(
         sandbox.execute("i.getAttribute('value')").unwrap().value,
-        "dirty again",
-        ".value= 后 getAttribute('value')=dirty 写入值（属性仍供 render，latest-wins）"
+        "reset",
+        ".value= 不改 HTML value 内容属性"
     );
 
     // defaultValue= 显式设默认值（重同步），不联动已被 dirty 的 .value。
