@@ -1313,10 +1313,20 @@ impl RendererRuntime {
         detail: Option<DomEventDetail>,
     ) -> DomDispatchResult {
         let selector = selector.or_else(|| {
-            self.webview
-                .as_ref()
-                .and_then(|wv| wv.hit_test_element(x, y))
-                .map(|hit| selector_from_element_hit(&hit))
+            if matches!(event_type, "keydown" | "keyup" | "keypress") {
+                self.interaction
+                    .focus_owner()
+                    .or_else(|| {
+                        let target = self.interaction.pointer_target();
+                        if target.is_empty() { None } else { Some(target) }
+                    })
+                    .map(str::to_string)
+            } else {
+                self.webview
+                    .as_ref()
+                    .and_then(|wv| wv.hit_test_element(x, y))
+                    .map(|hit| selector_from_element_hit(&hit))
+            }
         });
         if let Some(sel) = selector {
             if matches!(event_type, "mousedown" | "mouseup" | "mousemove" | "click" | "dblclick") {
@@ -1699,10 +1709,24 @@ impl RendererRuntime {
                 .focus_owner()
                 .unwrap_or_else(|| self.interaction.pointer_target())
                 .to_string();
-            if key.as_deref().is_some_and(is_printable_key) {
+            if key.as_deref() == Some("Tab") {
+                let current = self.interaction.focus_owner().map(str::to_string);
+                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), true)
+                    && self.interaction.focus_owner() != Some(next.as_str())
+                {
+                    let _ = self.blur_focused();
+                    let _ = self.focus_via_tab(&next);
+                }
+            } else if key.as_deref().is_some_and(is_printable_key) {
                 let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
             } else if key.as_deref() == Some("Backspace") {
                 let _ = self.apply_text_delete_at(&target);
+            } else if key.as_deref() == Some("Enter") {
+                if zero_engine::query_tag_from_html(&self.cached_html, &target).eq_ignore_ascii_case("textarea") {
+                    let _ = self.apply_text_input_at(&target, "\n");
+                } else {
+                    let _ = self.submit_form_on_enter_at(&target);
+                }
             }
         } else if result.default_allowed && event_type == "click" {
             let target = self.interaction.pointer_target().to_string();
