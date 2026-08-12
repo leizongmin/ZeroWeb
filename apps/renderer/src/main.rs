@@ -2394,7 +2394,10 @@ impl RendererRuntime {
                 }
                 Ok(None) => {}
                 Err(e) if browser_ipc_disconnected(&e) => {
-                    tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                    tracing::info!(
+                        "Browser IPC disconnected, renderer {} exiting (err={e})",
+                        self.renderer_id
+                    );
                     return Ok(());
                 }
                 Err(e) => return Err(e),
