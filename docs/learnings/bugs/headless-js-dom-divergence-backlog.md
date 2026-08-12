@@ -8,6 +8,8 @@
 
 R3323 升级 js-dom/* WPT 用例为「行为完成→断言预期→失败抛」时，首版按 spec 全行为断言，**5 个用例失败暴露 headless shim 与真浏览器的真实行为差异**。这些差异在生产页面路径（`run_page_scripts` → `generate_js_dom_shim` + callbacks，wpt-runner/reftest 同机制）下可观察，是 P1b escape-hatch 收敛（native DOM 直改）需逐项闭合的目标清单。**记录此 backlog 供 P1b 用户点名后逐项消化**，避免下游重复探测。
 
+> **更新（R3330，2026-08-13）**：差异 **#4（MO takeRecords 合并）经探针核实已闭合**——R3025-R3028 MO observe-options 收尾后 setAttribute×2 产 2 条独立 records 不合并，`js-dom/mutation-observer` 断言已升级到 spec 严格锁。剩余 **#1/#2/#3 经复测仍存在**，均触生产 mutation 应用 / parsed 树路径（rule 11 深结构），待 P1b。
+
 注：[`headless-handle-childnodes-limit.md`](./headless-handle-childnodes-limit.md) 记录的是「handle 子挂普通父的 childNodes 读取限制」（R3316，单一根因）；本文件记录的是 R3323 新发现的 4 项**不同根因**差异，与之互补。
 
 ## 差异清单
@@ -69,12 +71,15 @@ obs.takeRecords().length;  // 1，非 2（spec 应 ≥2）
 - **真实页面兼容性**：依赖「set 后立即读」（React state→render 同步读、Vue/lit 模板更新后立即查 DOM）的框架在 headless 生产路径下可能行为偏差；但多数框架经 microtask 批量更新（mutations 在下一 checkpoint 已应用），故实际影响有限。
 - **P1b 收敛价值**：4 差异是 escape-hatch 收敛的**具体可量化目标**——P1b native DOM 直改后，读写同源（读写都走 live Document，不经 mutation 队列），差异 #1/#2/#3 自然消除；#4 需独立核实。
 
-## 解决方案（当前：记录，未修）
+## 解决方案（当前：#4 已闭合，#1/#2/#3 记录待 P1b）
 
-当前结论：4 差异均记此 backlog，**不作为自主切片 land**——差异 #1/#2 触生产 mutation 应用路径（rule 11 风险），#3/#4 相对独立但依赖 #2 且价值需评估。等 P1b escape-hatch 用户点名（rule 11）后，作为 native DOM 直改的具体验收项逐项闭合。
+当前结论：差异 #4 经 R3330 核查**已闭合**（非 P1b），差异 #1/#2/#3 仍记 backlog 待 P1b。
+
+- **差异 #4（MO 合并）= ✅ 已闭合（R3330，2026-08-13）**：R3323 backlog 记此为「shim 内可闭合，需核实 trap 触发时序」。R3330 探针核实（经 WebView 生产路径 `run_page_scripts_strict`）：**setAttribute×2 各产独立 attributes 记录（takeRecords=2），不合并**——经 R3025-R3028 MO observe-options 收尾（attributeFilter/oldValue/subtree/characterData）后，MO 记录生成已是逐 mutation 独立。`js-dom/mutation-observer` WPT 用例断言随之从宽松 `≥1` 升级到 spec 严格锁（2 条独立 records + 各带正确 attributeName）。**注**：textContent 在无 characterData 观测时不产记录（headless 已知限制，属差异 #1「写后读 stale」域的 textContent-setter 不走 childList trap，非 #4 合并问题）。
+- **差异 #1/#2/#3 仍待 P1b**：R3330 探针复测确认三者**仍存在**——#1 innerHTML 写后读 stale（读 `<p>Original</p>`）、#2 fragment 子挂父后 `parent.querySelectorAll('li')=0`（且 fragment 自身 childNodes=0，spec：append 后 fragment 清空属正确，但父未反映子）、#3 shadow `querySelectorAll('p')=0`。三者触生产 mutation 应用 / parsed 树路径（rule 11 深结构风险），#3 相对独立但依赖 #2 且 shadow 多为 handle-only。等 P1b escape-hatch 用户点名（rule 11）后，作为 native DOM 直改的具体验收项逐项闭合。
 
 ## 如何避免
 
-- 写 js-dom/* WPT 行为断言前，先核查目标 API 是否触上述差异（set→read 回写 / handle 子查询 / shadow 查询 / MO 记录计数）。若触，断言调准到 headless 真行为（容器侧计数 / 读侧验证 / 身份验证），不强断言 spec 全行为，避免假 fail。
+- 写 js-dom/* WPT 行为断言前，先核查目标 API 是否触上述差异（set→read 回写 / handle 子查询 / shadow 查询）。若触，断言调准到 headless 真行为（容器侧计数 / 读侧验证 / 身份验证），不强断言 spec 全行为，避免假 fail。**MO 记录计数不再需放宽**（#4 已闭合，可断言逐条不合并）。
 - 实现「set 后同脚本读」类 API 时，确认 mutation 应用模型（队列式 vs 同步），README/doc 注明 headless stale-read 限制。
-- 评估 P1b escape-hatch 收敛时，本文件 4 差异作具体验收清单（逐项写 js-dom 行为断言升级到 spec 全行为，全过 = 该差异闭合）。
+- 评估 P1b escape-hatch 收敛时，本文件 #1/#2/#3 差异作具体验收清单（逐项写 js-dom 行为断言升级到 spec 全行为，全过 = 该差异闭合）。

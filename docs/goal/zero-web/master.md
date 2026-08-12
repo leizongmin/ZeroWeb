@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3329：security/* WPT js_executes_ok 覆盖门 + 行为锁——独立审计 R3324「security 含脚本用例 API 价值低」结论**纠偏**：security/* 22 个含脚本用例大量做 capability-detection（fetch/document.cookie/location/isSecureContext/eval/WebAssembly/navigator.geolocation|permissions），全弱断言静默通过，补 js_executes_ok 全量覆盖门 + 6 用例行为锁。前轮 R3324：headless JS-DOM 差异 backlog。
+**最后更新**: 2026-08-13（R3330：headless JS-DOM 差异 #4（MO takeRecords 合并）经探针核实**已闭合**——setAttribute×2 产 2 条独立 records 不合并（R3025-R3028 MO observe-options 收尾后逐条独立），`js-dom/mutation-observer` WPT 断言从宽松 ≥1 升级到 spec 严格锁（2 条独立 records + 各带 attributeName），差异 backlog #4 标记闭合；#1/#2/#3 复测仍存在（rule 11 P1b）。前轮 R3329：security/* 行为锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,28 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### headless JS-DOM 差异 #4（MO 记录合并）闭合 + WPT spec 锁（本轮 R3330，wpt-runner + learnings）—— P1b 验收清单缩窄
+
+承接 R3324（4 项 headless JS-DOM 差异固化为 P1b 验收清单）+ R3329（security 行为锁）。本轮**核查 R3324 backlog 中 4 项差异是否真需 P1b**——逐项探针（经 WebView 生产路径 `run_page_scripts_strict`）复测：
+
+| 差异 | 复测结果 | 处理 |
+|------|----------|------|
+| #1 innerHTML 写后读 stale | 仍 stale（读 `<p>Original</p>`） | 确认 rule 11 P1b（触生产 mutation 应用路径） |
+| #2 fragment 子挂父后 querySelectorAll=0 | 仍 0（fragment childNodes=0 spec 正确，但父未反映子） | 确认 rule 11 P1b |
+| #3 shadow querySelectorAll=0 | 仍 0 | 确认 rule 11 P1b（相对独立但依赖 #2） |
+| **#4 MO takeRecords 合并** | **✅ 已闭合**——setAttribute×2 产 2 条独立 records 不合并 | **本轮升级断言 + 标记闭合** |
+
+**#4 闭合价值**：R3025-R3028 MO observe-options 收尾（attributeFilter/attributeOldValue/subtree/characterData）后，MO 记录生成已是逐 mutation 独立。`js-dom/mutation-observer` WPT 用例断言随之从宽松 `≥1` 升级到 **spec 严格锁**（setAttribute×2 → takeRecords=2，各 type=attributes + attributeName 正确 `{data-x,data-y}`）。P1b escape-hatch 验收清单从 4 项**缩窄到 3 项**（#4 不再阻塞 native DOM 收敛）。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_js_dom.rs` | `js-dom/mutation-observer` 用例：textContent+setAttribute 改为 setAttribute×2，断言从 `records.length<1` 升级到 `!==2` + type/attributeName 严格校验（实测调准到 headless 真行为：textContent 在无 characterData 观测时不产记录，记 backlog #1 域） |
+| `docs/learnings/bugs/headless-js-dom-divergence-backlog.md` | 差异 #4 标记 ✅ 闭合（R3330 核实 + 机制说明）；#1/#2/#3 复测仍存在，待 P1b |
+
+**为何净正向且零回归**：纯测试增强（无生产代码改动）；断言调准到 headless 真行为后全过。**验证**：`runtime_path_tests` **14 passed / 0 failed**（含 js-dom 行为锁升级，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告。
+
+**下游判断（固化）**：R3330 证实 R3324 backlog 4 项差异中 **#4 实际已被 R3025-R3028 闭合**（backlog 过时）——独立探针复测的价值再次验证（同 R3329 纠偏 R3324 饱和误判）。剩余 #1/#2/#3 经复测确认仍为 rule 11 P1b（非过时）。zero-web 流自主面仍收敛：① 剩余 security/* 含脚本用例多为描述性静态文本（capability-detection 类 R3329 已锁 6 例）；② navigation/* 脚本多依赖网络级时序/纯静态文档；③ headless 差异 #1/#2/#3 待 P1b 用户点名。战略方向（P1b escape-hatch、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。
 
 ### security/* WPT js_executes_ok 覆盖门 + 行为锁（本轮 R3329，wpt-runner）—— 纠偏 R3324「security API 价值低」饱和误判
 

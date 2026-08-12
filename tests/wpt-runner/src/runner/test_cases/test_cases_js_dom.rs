@@ -1197,17 +1197,18 @@ var observer = new MutationObserver(function(muts) {
 });
 var target = document.getElementById('observed');
 observer.observe(target, { childList: true, attributes: true });
-target.textContent = 'Changed';
 target.setAttribute('data-x', '1');
+target.setAttribute('data-y', '2');
 var records = observer.takeRecords();
 observer.disconnect();
-// textContent + setAttribute 经 Proxy trap 同步记录——takeRecords 应捕获变更（至少 1 条记录）。
-// headless 可能将多次 mutation 合并/部分捕获，故仅断言「至少 1 条记录 + 存在 attributes 或 childList 类型」。
-if (records.length < 1) throw new Error('mutation-observer: takeRecords returned 0 records, expected >= 1');
-var types = records.map(function (r) { return r.type; });
-var hasAttr = types.indexOf('attributes') >= 0;
-var hasChild = types.indexOf('childList') >= 0;
-if (!hasAttr && !hasChild) throw new Error('mutation-observer: no attributes/childList record (types=' + types.join(',') + ')');
+// R3330：spec 合规——setAttribute 各产独立 attributes 记录，不合并（差异 #4「takeRecords 合并」
+// 经 R3025-R3028 MO observe-options 收尾后已闭合：实测 setAttribute×2 = 2 条独立记录，各带正确 attributeName）。
+// 注：textContent 在无 characterData 观测时不产记录（headless 已知限制，记 headless-js-dom-divergence backlog #1 域），
+// 故本用例以 setAttribute 双写为「逐条不合并」的可验证信号。
+if (records.length !== 2) throw new Error('mutation-observer: setAttribute×2 takeRecords=' + records.length + ', expected 2 (逐条不合并)');
+if (records[0].type !== 'attributes' || records[1].type !== 'attributes') throw new Error('mutation-observer: record type 非 attributes (got ' + records[0].type + ',' + records[1].type + ')');
+var names = records.map(function (r) { return r.attributeName; }).sort().join(',');
+if (names !== 'data-x,data-y') throw new Error('mutation-observer: attributeName 错 (got ' + names + ')');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
