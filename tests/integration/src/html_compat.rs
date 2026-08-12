@@ -605,6 +605,66 @@ globalThis.__preventOption=false;
 }
 
 #[test]
+fn output_reset_and_form_owner_conformance_across_hosts() {
+    // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
+    const SCRIPT: &str = r#"
+document.getElementById('nested').value='dirty-nested';
+document.getElementById('external').value='dirty-external';
+document.getElementById('foreign').value='dirty-foreign';
+"#;
+    let html = format!(
+        r#"<html><body>
+        <form id="form">
+          <output id="nested">nested-default</output>
+          <output id="foreign" form="other">foreign-default</output>
+          <button id="reset" type="reset">Reset</button>
+        </form>
+        <output id="external" form="form">external-default</output>
+        <form id="other"></form>
+        <script>{SCRIPT}</script>
+        </body></html>"#
+    );
+
+    fn run(html: &str, executor: Option<&dyn JsExecutor>) -> String {
+        let url = "https://zero.test/output-reset";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor.execute_script_direct(SCRIPT).expect("set dirty output values");
+        }
+        let reset = webview.page_node_ref_for_selector("#reset").expect("reset button");
+        let result = dispatch(&mut webview, executor, reset, HtmlUserAction::Reset);
+        assert!(!result.canceled);
+        let script = "var f=document.getElementById('form'),n=document.getElementById('nested'),\
+                      e=document.getElementById('external'),x=document.getElementById('foreign');\
+                      [n.value,n.defaultValue,e.value,e.defaultValue,x.value,n.form.id,e.form.id,x.form.id,\
+                       Array.prototype.map.call(f.elements,function(c){return c.id;}).join(',')].join('|')";
+        match executor {
+            Some(executor) => executor.execute_script_direct(script),
+            None => webview.execute_script(script).map_err(|error| error.to_string()),
+        }
+        .expect("output reset observable")
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(100);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(101));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(
+        renderer_result,
+        "nested-default|nested-default|external-default|external-default|dirty-foreign|form|form|other|nested,reset,external"
+    );
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());

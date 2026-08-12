@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 阶段：M3b
+- 阶段：M3c
 - 状态：M0-M2 完成，M3 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
@@ -76,8 +76,8 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] successful controls 文档序与显式 form owner
 - [x] disabled fieldset 交互/提交传播与首个 legend 例外
 - [x] select/option 用户激活事务与三宿主一致性
-- [ ] output/defaultValue reset 与 form owner 集成
+- [x] output/defaultValue reset 与 form owner 集成
 
 ## 下一步
 
-闭合 output/defaultValue reset 与 form owner 集成，完成 M3b。
+实施 M3c 导航与交互元素族，先闭合 FR-008 的 anchor/area 激活与取消语义。

@@ -321,6 +321,17 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // Form-associated listed controls，按 form owner 过滤并保持文档序。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_form_controls",
+        Box::new(move |args| {
+            let form = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            form_control_selectors(&snap, &form).join("|")
+        }),
+    );
+
     // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);

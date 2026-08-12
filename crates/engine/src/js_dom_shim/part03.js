@@ -2125,14 +2125,14 @@
           }
           return false;
         }
-        // `.form`（form-associated 控件 INPUT/SELECT/TEXTAREA/BUTTON，R2841）——返所属 <form> 元素
+        // `.form`（form-associated 控件 INPUT/SELECT/TEXTAREA/BUTTON/OUTPUT，R2841）——返所属 <form> 元素
         // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
         // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
         // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
         // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
         if (prop === 'form') {
           var fcTag = _realTag(sel, handle);
-          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON') {
+          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT') {
             try {
               var hasFormAttr = false;
               if (handle && typeof __zw_has_attr_handle === 'function') {

@@ -1680,13 +1680,19 @@
     return null;
   }
 
-  // form.elements 表单控件集合（R2829）：form 后代中 input/button/select/textarea，**tree order**。
-  // host `__zw_query_all_sub` 不支持逗号列表 / '*' 通用选择器 → 经 `childNodes` 递归下降遍历子树
-  //（tree order 天然）客户端按 tag 过滤。供 form.elements（+ namedItem）+ form.length 共用。
-  var _formControlTags = { INPUT: 1, BUTTON: 1, SELECT: 1, TEXTAREA: 1 };
+  // form.elements 表单控件集合（R2829）：优先由 host 按 form owner 收集 listed controls，覆盖外部
+  // `form=id` 与后代显式改归属；无 host 时回退子树遍历。
+  // https://html.spec.whatwg.org/multipage/forms.html#category-listed
+  var _formControlTags = { INPUT: 1, BUTTON: 1, FIELDSET: 1, OBJECT: 1, OUTPUT: 1, SELECT: 1, TEXTAREA: 1 };
   function _formControls(sel) {
     var controls = [];
     if (!sel) return controls;
+    if (typeof __zw_form_controls === 'function') {
+      try {
+        var listed = __zw_form_controls(sel);
+        if (listed) return listed.split('|').filter(Boolean).map(_wrapSelector);
+      } catch (_e) {}
+    }
     // 递归下降：childNodes 遍历子树（element 子递归，text/comment 跳过），tag 命中收集。
     function walk(parentProxy) {
       var kids = (parentProxy && parentProxy.childNodes) || [];
