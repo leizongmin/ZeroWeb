@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3339：deep-review zero-net 发现并修复真 bug——POST→GET 重定向（301/302/303）清 body 时未同步剥 Content-Type/Content-Length 头，重定向 GET 残留 POST content-type（malformed，真浏览器会剥）；复现测试 + 修复 + 全量 394 测零回归。转向未触生产 crate deep-review 找真 bug 的第一刀。）
+**最后更新**: 2026-08-13（R3340：deep-review zero-protocol 发现并修复第三项真 bug——`fd_socket_linux::publish_fd` 取得 `RawFd` 所有权但 SCM_RIGHTS 后从不关闭发送方本地 fd 副本（内核只为接收方复制，不关发送方），每帧 dma-buf 发布泄漏一个 fd → compositor 每帧泄漏直至 fd 耗尽崩溃；`OwnedFd` RAII 包裹成功+全部错误路径关闭，同步更新唯一调用方 `publish_compositor_fd` 所有权契约（避免 double-close）；确定性 `/proc/self/fd` 计数 delta 测试在修复前复现（success +12 / error +6）修复后过。zero-protocol 278→281 全绿，下游 compositor/integration 零回归。R3334+R3339+R3340 = 第三项真 bug 修复，deep-review 未触生产 crate 找真 bug 方向持续产出。）
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -159,6 +159,18 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-protocol 修复 publish_fd SCM_RIGHTS 发送方 fd 泄漏（本轮 R3340，protocol fd_socket_linux.rs——真 bug 修复）
+
+承接 R3339（zero-net 重定向头泄漏）。本轮 deep-review 推进至 **`zero-protocol`**（10.8k LOC，多进程 IPC），逐文件审全部生产代码（transport/message/process/frame_shm/fd_socket_linux/gpu_mailbox/job/channel/serialize/paint_snapshot/compositor_types）。发现并修复一项**真 bug**：
+
+- **根因**：`crates/protocol/src/fd_socket_linux.rs::publish_fd(name, fd, accept_timeout)` 取得 `fd: RawFd` 的所有权（调用方 `publish_compositor_fd` 把 `pending_fd` take 出传入，文档「IPC 发出后须调用」），但函数体内**从不关闭 fd**。`SCM_RIGHTS` 经 `sendmsg` 在内核中为接收方**复制**一份新 fd，但**发送方的本地 fd 不会被内核关闭**——必须由发送方显式 close。原实现成功路径（`send_fd` 后直接 `Ok(()))`）与所有错误路径（bind 失败 / accept 超时 / accept 错误 / sendmsg 失败）均不关 fd → **泄漏一个 fd / 次调用**。
+- **生产影响**：compositor 进程（`apps/compositor/src/main.rs:425-503`）每帧 GPU dma-buf 导出调 `build_compositor_dma_buf_delivery`（`IntoRawFd`）→ `publish_compositor_fd` → `publish_fd`；每帧泄漏一个 dma-buf fd，长会话累积直至 fd 耗尽（compositor 崩溃 / 打不开文件）。真 bug，非 GPU 域逻辑（纯 IPC fd 传递所有权正确性，修在 zero-protocol crate 内，不触 render-foundation GPU 代码）。
+- **修复**：`publish_fd` 入口 `OwnedFd::from_raw_fd(fd)` RAII 包裹，确保**成功路径 + 全部错误路径**关闭发送方本地副本（`send_fd(&stream, owned.as_raw_fd())` 后函数返回 `owned` drop 即关）。同步更新唯一调用方 `publish_compositor_fd`（frame_shm.rs）：原 `if let Err { libc::close(fd); }` 会在 `publish_fd` 已关闭 fd 后 double-close（可能误关回收复用的 fd），改为 `publish_fd(...)? `——仅保留「缺 `gpu_image` 描述符」分支（尚未调用 `publish_fd`）的自行 close。补所有权契约文档注释。
+- **复现+回归测**：两测 `fd_socket_publish_closes_sender_fd_on_success`（成功路径 12 次往返）/ `_on_error`（accept 超时 6 次）用 `/proc/self/fd` 打开 fd 总数 delta 判定泄漏（比 `fcntl(F_GETFD)` 稳健——fd 编号回收复用致假阳性）；`#[serial_test::serial]` 避免与并行 fd 测互相干扰计数。**确定性复现**：修复前 success 净增 +12 / error +6 fd（每轮 +1，线性），修复后阈值 ≤4/≤3 全过。原 `fd_socket_round_trip_memfd` 测试自行 `libc::close(memfd)` 掩盖泄漏（违反所有权契约），改为让 `publish_fd` 持有生命周期。
+- **为何净正向且零回归**：真 fd 泄漏修复（生产 compositor 每帧泄漏）；测试用 memfd（非真 GPU 硬件）纯 IPC 路径，无环境依赖。**验证**：zero-protocol **278→281 passed / 0 failed**（+3 测，test-guard，8 轮 stress 稳定）；下游 zero-compositor 23/0、integration headless_protocol 16/0 零回归；`cargo fmt -p zero-protocol` clean + clippy `-D warnings` 零警告。compositor/buffer 全编译。
+
+**下游判断（固化）**：R3340 = deep-review 未触生产 crate 的**第二刀**（zero-protocol），第三项真 bug 修复（R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏），证实该方向（非 native 线、非渲染线）**可持续产出真 bug**。**剩余未审生产 crate**：storage(14.7k，IndexedDB/OPFS 持久化，事务原子性/数据完整性/资源泄漏维度)/security(7.9k，CORS/CSP 同源策略)/navigation/cache 等——下轮续 deep-review（storage 优先——LOC 最大 + 持久化数据完整性最易藏真 bug），延续找真 bug 模式。
 
 ### deep-review zero-net 修复 POST→GET 重定向头泄漏（本轮 R3339，net client.rs——真 bug 修复）
 
