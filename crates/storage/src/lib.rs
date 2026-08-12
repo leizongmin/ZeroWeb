@@ -1806,4 +1806,86 @@ mod tests {
         let all = db.get_all_from_index("docs", "tags_idx").unwrap();
         assert_eq!(all.len(), 1, "只有非空 tags 的记录应出现在索引中");
     }
+
+    /// R3341：auto-increment key generator 在提供大于当前生成器值的显式数值 key 时须推进
+    /// （W3C IndexedDB §1.8.2「Object store key generator」：提供数值 key ≥ 生成器当前值时，
+    /// 生成器推进到 providedKey + 1）。非事务路径 `add`/`put` 的真 bug 修复回归测。
+    #[test]
+    fn test_idb_auto_increment_advances_on_explicit_large_number_key_r3341() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("seq", None, true).unwrap(); // auto_increment = true
+
+        // 提供一个远大于生成器当前值（1）的显式数值 key。
+        db.add("seq", serde_json::json!("explicit"), Some(IdbKey::Number(100.0)))
+            .unwrap();
+
+        // 下一次自动分配的 key 应推进到 101（§1.8.2），而非仍为 1（修复前行为）。
+        let k = db.add("seq", serde_json::json!("auto"), None).unwrap();
+        assert!(
+            matches!(k, IdbKey::Number(n) if n == 101.0),
+            "显式数值 key 100 后，自动 key 应推进到 101（W3C §1.8.2），实际 {k:?}"
+        );
+
+        // `put` 路径同理：显式数值 key 大于生成器值时推进。
+        db.put("seq", serde_json::json!("explicit2"), Some(IdbKey::Number(500.0)))
+            .unwrap();
+        let k2 = db.add("seq", serde_json::json!("auto2"), None).unwrap();
+        assert!(
+            matches!(k2, IdbKey::Number(n) if n == 501.0),
+            "put 显式数值 key 500 后，自动 key 应推进到 501，实际 {k2:?}"
+        );
+    }
+
+    /// R3341：事务路径 `tx_add`/`tx_put` 同样须在显式数值 key ≥ 生成器当前值时推进
+    /// （§1.8.2）。原 `tx_add` 仅在 `key == effective_next` 时推进（窄匹配，漏掉 key > 的情形）。
+    #[test]
+    fn test_idb_tx_auto_increment_advances_on_explicit_large_number_key_r3341() {
+        use crate::indexed_db::IdbDatabase;
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("seq", None, true).unwrap();
+
+        let mut tx = db
+            .transaction(&["seq"], crate::indexed_db::IdbTransactionMode::ReadWrite)
+            .unwrap();
+        // 显式大数值 key（100 >> 生成器当前值 1）。
+        db.tx_add(&tx, "seq", serde_json::json!("explicit"), Some(IdbKey::Number(100.0)))
+            .unwrap();
+        // 事务内下一次自动分配应推进到 101。
+        let k = db.tx_add(&tx, "seq", serde_json::json!("auto"), None).unwrap();
+        assert!(
+            matches!(k, IdbKey::Number(n) if n == 101.0),
+            "tx_add 显式 key 100 后，tx 内自动 key 应推进到 101，实际 {k:?}"
+        );
+        db.commit_tx(&mut tx).unwrap();
+
+        // commit 后 live store.next_key 写回推进结果：tx 内先显式 key=100（gen→101）再 auto key=101（gen→102），
+        // 故 live next_key=102。新事务的自动 key 应从 102 起（写回推进生效）。
+        let mut tx2 = db
+            .transaction(&["seq"], crate::indexed_db::IdbTransactionMode::ReadWrite)
+            .unwrap();
+        let k2 = db.tx_add(&tx2, "seq", serde_json::json!("auto3"), None).unwrap();
+        assert!(
+            matches!(k2, IdbKey::Number(n) if n == 102.0),
+            "commit 后新事务自动 key 应为 102（tx 内两次推进写回），实际 {k2:?}"
+        );
+    }
+
+    /// R3341：显式数值 key **小于** 当前生成器值时不应回退生成器（取 max 语义）。
+    #[test]
+    fn test_idb_auto_increment_no_regression_on_small_explicit_key_r3341() {
+        let mut db = IdbDatabase::new("test", 1);
+        db.create_object_store("seq", None, true).unwrap();
+
+        // 先用自动分配到 key=1，生成器推进到 2。
+        db.add("seq", serde_json::json!("auto1"), None).unwrap();
+        // 提供一个小于生成器值（2）的显式 key —— 生成器不应回退到 1.5+1。
+        db.add("seq", serde_json::json!("explicit"), Some(IdbKey::Number(1.5_f64)))
+            .unwrap();
+        // 下一次自动分配应仍为 2（取 max(2, ceil(1.5)+1=2)）。
+        let k = db.add("seq", serde_json::json!("auto2"), None).unwrap();
+        assert!(
+            matches!(k, IdbKey::Number(n) if n == 2.0),
+            "显式 key 1.5 < 生成器值 2 时，自动 key 应保持 2（取 max），实际 {k:?}"
+        );
+    }
 }

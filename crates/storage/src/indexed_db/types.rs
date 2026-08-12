@@ -411,6 +411,28 @@ pub enum IdbTransactionMode {
     ReadWrite,
 }
 
+/// R3341：auto-increment key generator 的「显式数值 key 推进」规则（W3C IndexedDB §1.8.2）。
+///
+/// 当向使用 key generator 的 store 提供一个**数值** key 时，若该值 ≥ 生成器当前值，
+/// 生成器推进到 `providedKey + 1`（取整后 +1，因生成器只产整数键）。返回推进后的新值；
+/// 显式 key 小于当前值或非数值时不推进（取 max 语义，避免回退）。
+///
+/// - `current`：生成器当前值（store.next_key 或 tx-local tx_next）。
+/// - `explicit`：调用方提供的显式 key。
+fn advance_generator_for_explicit_key(current: u64, explicit: &IdbKey) -> u64 {
+    if let IdbKey::Number(n) = explicit
+        && n.is_finite()
+    {
+        // 生成器只产整数键；floor(n) + 1 为「providedKey 之后下一个整数」。
+        // n 为负或 < current 时 max 保持 current（不回退）。
+        let candidate = (n.floor() as i128).saturating_add(1);
+        if candidate > current as i128 {
+            return candidate.clamp(1, u64::MAX as i128) as u64;
+        }
+    }
+    current
+}
+
 /// IndexedDB 数据库。
 pub struct IdbDatabase {
     /// 数据库名称。
@@ -515,6 +537,10 @@ impl IdbDatabase {
                         "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
                     ));
                 }
+                // R3341：显式数值 key ≥ 生成器当前值时推进（W3C §1.8.2）；非数值或更小不推进。
+                if store.auto_increment {
+                    store.next_key = advance_generator_for_explicit_key(store.next_key, &k);
+                }
                 k
             }
             None if store.auto_increment => {
@@ -574,6 +600,10 @@ impl IdbDatabase {
                     return Err(StorageError::Database(
                         "Invalid key (NaN is not a valid IndexedDB key)".to_string(),
                     ));
+                }
+                // R3341：显式数值 key ≥ 生成器当前值时推进（W3C §1.8.2）。
+                if store.auto_increment {
+                    store.next_key = advance_generator_for_explicit_key(store.next_key, &k);
                 }
                 k
             }
@@ -1031,9 +1061,12 @@ impl IdbDatabase {
                 ));
             }
         };
-        // auto-inc 推进：auto 分配的 key 或显式 key == effective_next（§5.10 显式推进）→ 推进 tx-local generator
-        if auto_inc && matches!(key, IdbKey::Number(n) if n == effective_next as f64) {
-            *tx_next = effective_next + 1;
+        // auto-inc 推进：auto 分配的 key 推进 +1；显式数值 key ≥ 当前值时推进到 providedKey+1（R3341 W3C §1.8.2 max 语义）。
+        // 旧实现仅匹配 key == effective_next（窄匹配），显式 key > 当前值时不推进（漏 §1.8.2）。
+        if auto_inc {
+            *tx_next = advance_generator_for_explicit_key(effective_next, &key);
+            // auto 分配（key == effective_next 的 Number）时 advance 已给出 effective_next+1，等价旧 +1 推进；
+            // 显式 key 时按 §1.8.2 max 推进。
         }
         drop(key_gens);
         // 检查 store 中是否已存在相同主键
@@ -1096,17 +1129,17 @@ impl IdbDatabase {
                 }
                 k
             }
-            None if auto_inc => {
-                let k = IdbKey::Number(effective_next as f64);
-                *tx_next = effective_next + 1;
-                k
-            }
+            None if auto_inc => IdbKey::Number(effective_next as f64),
             None => {
                 return Err(StorageError::Database(
                     "No key provided and auto_increment is false".to_string(),
                 ));
             }
         };
+        // R3341：auto-inc 推进（auto 分配 +1；显式数值 key ≥ 当前值时按 §1.8.2 max 推进），同 tx_add。
+        if auto_inc {
+            *tx_next = advance_generator_for_explicit_key(effective_next, &key);
+        }
         drop(key_gens);
         tx.mutations.borrow_mut().push(TxMutation::Put {
             store: store_name.to_string(),
