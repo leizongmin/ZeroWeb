@@ -158,6 +158,21 @@ fn parse_image_data_wire(s: &str) -> zero_canvas::ImageData {
     }
 }
 
+/// RGBA 像素 → canvas ImageData 线串 `"w:h;r,g,b,a,..."`（getImageData 对偶格式，R3309 createImageBitmap）。
+/// 供 drawImage 系列（经 `parse_image_data_wire` 反向解析）消费。与 getImageData 输出端编码逻辑一致。
+fn encode_image_wire(pixels: &[u8], width: u32, height: u32) -> String {
+    let mut out = format!("{}:{};", width, height);
+    let mut first = true;
+    for b in pixels {
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        out.push_str(&b.to_string());
+    }
+    out
+}
+
 /// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasRegistry`
 ///（`Arc<Mutex<CanvasRegistry>>`，上下文表 + 渐变表），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写
@@ -190,6 +205,18 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 ctx.resize(w, h);
             }
             "ok".into()
+        }
+        // R3309：createImageBitmap（HTML spec ImageBitmap）——解码图片字节为 wire 串供 drawImage 消费。
+        // args[0] = data URI（`data:image/png;base64,...`）。复用 render-foundation::decode_data_uri
+        //（PNG/JPEG/WebP/SVG 统一解码），输出 wire 串 `"w:h;r,g,b,a,..."`（getImageData 对偶格式，
+        // drawImage 经 parse_image_data_wire 消费）。解码失败返 `"0:0;"`（JS 侧据尺寸 0 判失败 reject）。
+        // 无 ctx 依赖（纯解码），handle 忽略。
+        "decodeImageBitmap" => {
+            let src = arg(0);
+            match zero_render_foundation::image_cache::decode_data_uri(src) {
+                Ok(img) => encode_image_wire(&img.pixels, img.width, img.height),
+                Err(_) => "0:0;".into(),
+            }
         }
         "setFillStyle" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {

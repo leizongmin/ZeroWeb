@@ -702,6 +702,133 @@ fn test_canvas_resize_clears_bitmap_r3308() {
 }
 
 #[test]
+fn test_canvas_create_image_bitmap_r3309() {
+    // R3309：createImageBitmap（HTML spec ImageBitmap）——Blob source 异步解码为可绘制位图。
+    // 承接 canvas Tier 3 续候选②（R3296 留）。createImageBitmap 此前全缺 → fetch 图片 → drawImage 链路断。
+    // 本测断言：① createImageBitmap 存在 + 返 Promise；② Blob source（1×1 红 PNG）解码成 ImageBitmap
+    //（width/height = 1，持 _zwBitmapWire）；③ drawImage(bitmap) 真栅格到目标 ctx（getImageData 回读红色）；
+    // ④ 非 Blob source（如 null/数字）reject；⑤ 损坏 Blob（非图片字节）reject。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 1×1 红色 PNG（与 image_decoder.rs 测试同源，host decode_data_uri 可解码）。
+    sandbox
+        .execute(
+            "globalThis.__hasFn = String(typeof createImageBitmap === 'function');\
+             var RED_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';\
+             /* base64 → bytes → Blob（PNG 二进制）*/\
+             var bin = atob(RED_PNG_B64);\
+             var bytes = new Uint8Array(bin.length);\
+             for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);\
+             var blob = new Blob([bytes], { type: 'image/png' });\
+             globalThis.__blobSize = String(blob.size);\
+             /* createImageBitmap(blob) → Promise<ImageBitmap> */\
+             createImageBitmap(blob).then(function (bm) {\
+               globalThis.__bmWidth = String(bm.width);\
+               globalThis.__bmHeight = String(bm.height);\
+               globalThis.__hasWire = String(typeof bm._zwBitmapWire === 'string' && bm._zwBitmapWire.length > 0);\
+               /* drawImage(bitmap, dx, dy) 真栅格到目标 ctx */\
+               var cv = document.getElementById('cv');\
+               var ctx = cv.getContext('2d');\
+               ctx.drawImage(bm, 0, 0);\
+               var px = ctx.getImageData(0, 0, 1, 1).data;\
+               globalThis.__drawRed = String(px[0] + ',' + px[1] + ',' + px[2]);\
+               globalThis.__resolved = 'ok';\
+             }, function (err) {\
+               globalThis.__resolved = 'reject:' + String(err && err.message ? err.message : err);\
+             });",
+        )
+        .unwrap();
+    // drain microtask（createImageBitmap 的 Promise.resolve.then 链 + 回调）。
+    sandbox.execute("globalThis.__noop = 1;").unwrap(); // 触发 microtask drain（execute 末 perform checkpoint）
+    // Promise.resolve(source).then 链需 1-2 轮 drain（host 解码 + drawImage 均同步）。
+    sandbox.execute("globalThis.__noop = 2;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__hasFn").unwrap().value,
+        "true",
+        "createImageBitmap 全局函数存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__blobSize").unwrap().value,
+        "70",
+        "Blob 构造含 PNG 字节（1×1 红 PNG = 70 字节）"
+    );
+    let resolved = sandbox.execute("globalThis.__resolved").unwrap().value;
+    assert!(
+        resolved.starts_with("ok") || resolved.starts_with("reject:"),
+        "createImageBitmap Promise 应 settle，got: {resolved}"
+    );
+    assert_eq!(
+        resolved, "ok",
+        "createImageBitmap(blob) 应 resolve（host decode_data_uri 解码 1×1 红 PNG 成功）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bmWidth").unwrap().value,
+        "1",
+        "ImageBitmap.width = 1（1×1 PNG）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bmHeight").unwrap().value,
+        "1",
+        "ImageBitmap.height = 1（1×1 PNG）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasWire").unwrap().value,
+        "true",
+        "ImageBitmap 持 _zwBitmapWire（drawImage 源标记）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__drawRed").unwrap().value,
+        "255,0,0",
+        "drawImage(bitmap) 真栅格——目标 ctx 像素为红色（PNG 解码 + source-over 混合）"
+    );
+
+    // 非 Blob source reject + 损坏 Blob reject。
+    sandbox
+        .execute(
+            "createImageBitmap(null).then(function () {\
+               globalThis.__nullOk = 'ok';\
+             }, function (e) {\
+               globalThis.__nullOk = 'reject';\
+             });\
+             var bad = new Blob([new Uint8Array([0,1,2,3])], { type: 'image/png' });\
+             createImageBitmap(bad).then(function () {\
+               globalThis.__badOk = 'ok';\
+             }, function (e) {\
+               globalThis.__badOk = 'reject';\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__noop = 3;").unwrap(); // pump microtask（reject Promise 链）
+    sandbox.execute("globalThis.__noop = 4;").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__nullOk").unwrap().value,
+        "reject",
+        "createImageBitmap(null) 应 reject（非 Blob source）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__badOk").unwrap().value,
+        "reject",
+        "createImageBitmap(损坏 Blob) 应 reject（非图片字节解码失败）"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

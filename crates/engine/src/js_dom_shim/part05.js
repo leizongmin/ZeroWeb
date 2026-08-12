@@ -886,6 +886,52 @@
       for (var k in proto) { if (k !== '_zwPath') this[k] = proto[k]; }
     };
   }
+  // R3309：ImageBitmap + createImageBitmap（HTML spec）——异步解码图片源为可绘制位图。
+  // source = Blob（最高频：fetch 图片 → createImageBitmap → drawImage）。实现：Blob 字节 → base64 data URI
+  // → host decodeImageBitmap（render-foundation::decode_data_uri，PNG/JPEG/WebP/SVG）→ wire 串 `"w:h;rgba,..."`
+  // 包成 ImageBitmap 对象（持 _zwBitmapWire，drawImage 检测该标记复用既有 drawImage host wire 路径，零 host 改动）。
+  // spec 返 Promise（异步）；headless 近似 microtask（Promise.resolve.then）。失败（尺寸 0 / 无 host）→ reject。
+  // **诚实范围**：① 仅 Blob source（ImageData/HTMLCanvasElement/HTMLImageElement source defer——后者需 img decode 基建）；
+  // ② 无 options（sx/sy/sw/sh/dw/dh 裁剪 + imageOrientation/premultiplyAlpha，spec 罕见，defer）；
+  // ③ width/height 从 wire 解析（spec ImageBitmap 只读 width/height）。
+  // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-createimagebitmap
+  function _zwMakeImageBitmap(wire) {
+    // wire "w:h;..." 解析 width/height（失败 → 0×0，调用方 reject）。
+    var dim = String(wire).split(';')[0] || '';
+    var parts = dim.split(':');
+    var bw = parseInt(parts[0], 10) || 0;
+    var bh = parseInt(parts[1], 10) || 0;
+    return { _zwBitmapWire: String(wire), width: bw, height: bh, _closed: false };
+  }
+  if (!globalThis.createImageBitmap) {
+    globalThis.createImageBitmap = function createImageBitmap(source) {
+      return Promise.resolve(source).then(function (src) {
+        if (typeof __zw_canvas_op !== 'function') {
+          return Promise.reject(new TypeError('canvas host unavailable'));
+        }
+        // source 须为 Blob（有 _parts / instanceof Blob）。非 Blob source defer（见诚实范围）。
+        var isBlob = src && (src instanceof Blob || (src._parts !== undefined && typeof src.size === 'number'));
+        if (!isBlob) {
+          return Promise.reject(new TypeError('createImageBitmap: 仅支持 Blob source'));
+        }
+        var bytes = _zw_blobBytes(src);
+        if (!bytes || bytes.length === 0) {
+          return Promise.reject(new TypeError('createImageBitmap: 空 Blob'));
+        }
+        // 字节 → base64 → data URI（host decode_data_uri 接受 base64 payload）。
+        var bin = '';
+        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        var mime = (src.type && src.type.indexOf('image/') === 0) ? src.type : 'image/png';
+        var uri = 'data:' + mime + ';base64,' + btoa(bin);
+        var wire = String(__zw_canvas_op('0', 'decodeImageBitmap', uri));
+        var bm = _zwMakeImageBitmap(wire);
+        if (bm.width <= 0 || bm.height <= 0) {
+          return Promise.reject(new TypeError('createImageBitmap: 解码失败（不支持格式或损坏）'));
+        }
+        return bm;
+      });
+    };
+  }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
     // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。
@@ -1239,9 +1285,28 @@
     //   drawImage(image, dx, dy) / drawImage(image, dx, dy, dw, dh) /
     //   drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)。
     // **源限 canvas 元素**（canvas-to-canvas）：经源 canvas 既有 getImageData 取全 RGBA wire 串作源传 host；
+    // R3309：ImageBitmap 源（持 _zwBitmapWire）直接用其 wire 串，跳过 canvas 源 getImageData。
     // HTMLImageElement/`<img>` decode defer。host draw_image* 真栅格（source-over alpha 混合）。
     ctx.drawImage = function (image) {
       if (typeof __zw_canvas_op !== 'function') return;
+      var a = arguments;
+      // ImageBitmap 源（R3309 createImageBitmap 产物）：直接用其 wire 串调 drawImage host op。
+      if (image && image._zwBitmapWire && !image._closed) {
+        var bmw = image.width | 0;
+        var bmh = image.height | 0;
+        if (bmw <= 0 || bmh <= 0) return;
+        if (a.length === 3) {
+          __zw_canvas_op(h, 'drawImage', image._zwBitmapWire, String(a[1]), String(a[2]));
+        } else if (a.length === 5) {
+          __zw_canvas_op(h, 'drawImageScaled', image._zwBitmapWire,
+            String(a[1]), String(a[2]), String(a[3]), String(a[4]));
+        } else if (a.length === 9) {
+          __zw_canvas_op(h, 'drawImageSliced', image._zwBitmapWire,
+            String(a[1]), String(a[2]), String(a[3]), String(a[4]),
+            String(a[5]), String(a[6]), String(a[7]), String(a[8]));
+        }
+        return;
+      }
       // 源须为 canvas 元素（有 _ctx._handle + width/height）。未 getContext 则惰性建。
       if (!image || typeof image.getContext !== 'function') return;
       if (!image._ctx) image.getContext('2d');
@@ -1251,7 +1316,6 @@
       var sh = image.height | 0;
       if (sw <= 0 || sh <= 0) return;
       var wire = String(__zw_canvas_op(srcHandle, 'getImageData', '0', '0', String(sw), String(sh)));
-      var a = arguments;
       if (a.length === 3) {
         __zw_canvas_op(h, 'drawImage', wire, String(a[1]), String(a[2]));
       } else if (a.length === 5) {
