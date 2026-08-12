@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3318：navigator.serviceWorker 从 A-gen 死代码 dom_bridge.rs 移植到 B-gen 生产 shim js_dom_shim/part02.js——Tier 2 Service Worker 注册面闭合，参照 R2821 Performance API 迁移模式。**此前 navigator.serviceWorker 仅在 A-gen polyfill（无页面交互生产调用方），生产页面路径（run_page_scripts→generate_js_dom_shim）缺失 → undefined → PWA 注册全抛 TypeError**）。承接 R3317（valueAsDate + stepUp/stepDown）继续在饱和的 DOM/Web API 面挖真实可机械闭合 gap：本轮发现 A-gen→B-gen 死代码迁移类 gap（API 在 A-gen 存在但 B-gen 缺）。前轮 R3317：input.valueAsDate + stepUp/stepDown（表单转换 API）。
+**最后更新**: 2026-08-12（R3319：DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化——Geometry Interfaces 面闭合，A-gen→B-gen 死代码迁移第 2 片。承接 R3318（navigator.serviceWorker 迁移）系统 diff 两份 polyfill 全局暴露面后定位：B-gen 缺 DOMRect/DOMRectReadOnly（gBCR/IO/RO/Range rect 全返无原型 plain object → 库 instanceof 恒 false），本轮补构造器 + 统一 4 处 rect 工厂到共享原型。**A-gen→B-gen 迁移审计穷尽结论**：A-gen 独有仅 DOMRectReadOnly（闭合）+ WebAssembly（分层注入）+ 内部 helper，该 gap 类已清）。前轮 R3318：navigator.serviceWorker 移植。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,28 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化（本轮 R3319，engine JS shim）—— Geometry Interfaces 面闭合（A-gen 死代码 → B-gen 生产路径迁移第 2 片）
+
+承接 R3318（navigator.serviceWorker 迁移）继续 **A-gen→B-gen 死代码迁移审计**：系统 diff 两份 polyfill 全局暴露面（A-gen `generate_dom_api_polyfill` 31 globals vs B-gen `js_dom_shim` 172 globals），A-gen 独有 = `DOMRectReadOnly` / `WebAssembly` / 内部 helper。**`DOMRectReadOnly` 确认 B-gen 缺**（gBCR / getClientRects / IO·RO entry / Range rect 全返无原型 plain object → 库 `rect instanceof DOMRectReadOnly`/`instanceof DOMRect` 恒 false，popper.js/floating-ui identity 检查失败）。`WebAssembly` 为有意分层注入（webview.rs 页面运行时桥接，非 always-on shim，本轮不动）。本切片补 `DOMRect`/`DOMRectReadOnly` 全局 + rect 工厂原型化。
+
+| 构造器/工厂 | spec | 实现 |
+|-------------|------|------|
+| `DOMRectReadOnly(x,y,w,h)` | Geometry §3.2 基类 | part01：prototype getter 派生 top/left/right/bottom（与 x/y/width/height 同步）+ toJSON |
+| `DOMRect(x,y,w,h)` | Geometry §3.3，is-a DOMRectReadOnly | part01：`Object.create(DOMRectReadOnly.prototype)` 继承 + 修正 constructor（gBCR 返回类型） |
+| `_makeDomRect(x,y,w,h)` | 共享工厂 | 返 `new DOMRect(...)`（共享原型 → instanceof 成立） |
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim/part01.js` | +`_zwDomRectProto`/`DOMRectReadOnly`/`DOMRect`/`_makeDomRect` 构造器与工厂；`_io_domRect` 委托 `_makeDomRect`。 |
+| `engine/src/js_dom_shim/part04.js` | gBCR 零 rect fallback 改 `_makeDomRect(0,0,0,0)`（detached createElement rect 亦 instanceof DOMRect）。 |
+| `engine/src/js_dom_shim/part05.js` | `_domRectFromId` 改 `_makeDomRect`（gBCR/getClientRects/offset 几何 rect 原型化）。 |
+| `engine/src/js_dom_shim/part06.js` | `Range.getBoundingClientRect` 零 rect 改 `_makeDomRect`。 |
+| `engine/src/js_dom_bridge_tests/part16.rs` | +2 e2e 测试 `test_dom_rect_constructors_r3319`（构造器存在 + 字段 + 派生 top/left/right/bottom + instanceof 继承 DOMRect is-a DOMRectReadOnly + 子类不反向 + toJSON 全 8 键）+ `test_get_bounding_client_rect_returns_domrect_r3319`（真实 rect selector 命中 + detached handle 零 fallback 均 instanceof DOMRect/DOMRectReadOnly）。 |
+
+**为何净正向且零回归**：rect 原型化对派生属性语义等价（getter 计算结果同原 plain-object 静态字段——top=y/left=x/right=x+w/bottom=y+h）；4 处 rect 工厂统一后 `instanceof` 从 false→true（纯增强，不改字段值/计算）。**验证**：`cargo fmt` clean + `cargo clippy -p zero-engine --all-targets -D warnings` 零警告 + engine lib **2038 passed / 0 failed**（2036→2038，+2 新测，0 回归，test-guard 包裹）。纯 JS 几何原型化无 CSS/layout/render 影响（rect 数值来源 `__zw_getBoundingClientRect` 不变），product-smoke/reftest 不适用。
+
+**A-gen→B-gen 迁移审计结论（本轮，固化）**：系统 diff 后 A-gen 独有仅 `DOMRectReadOnly`（本轮闭合）+ `WebAssembly`（分层注入，非 shim 范畴）+ 内部 `__wasm_*`/`__fetchDataUrlSync` helper（非公开 API）。**该迁移类 gap 已穷尽**（A-gen 31 globals 全部已在 B-gen 有等价或本轮闭合）。下游判断：zero-web 流自主面（DOM/Web API + Canvas + 几何原型）饱和确认，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖；下一轮可转向其他维度（如 wpt-runner 真实通过率提升、产品 fixture 兼容性）或继续等用户点名战略方向。
 
 ### navigator.serviceWorker 移植到 B-gen 生产 shim（本轮 R3318，engine JS shim）—— Tier 2 Service Worker 注册面闭合（A-gen 死代码 → B-gen 生产路径）
 
