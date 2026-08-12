@@ -531,39 +531,47 @@ fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
     }
 }
 
-fn bidi_reorder_with_mapping_mode(text: &str, preserve_all_paragraphs: bool) -> BidiReorderedText {
-    use unicode_bidi::{BidiClass, BidiInfo};
+/// BiDi reorder with CSS `direction` context.
+/// When `is_rtl` is true and the text needs BiDi processing, sets paragraph level to RTL (level 1).
+fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl: bool) -> BidiReorderedText {
+    use unicode_bidi::{BidiInfo, Level};
 
-    // 快速检查：如果文本为空或全是 ASCII，不需要 BiDi 处理
-    if text.is_empty() || text.is_ascii() {
+    // 快速检查：如果文本为空或全是 ASCII 且 LTR，不需要 BiDi 处理
+    if text.is_empty() || (text.is_ascii() && !is_rtl) {
         return identity_bidi_mapping(text);
     }
 
-    // 检查是否需要 BiDi 处理：含 RTL 脚本字符 **或** bidi 控制码（R2019）。
-    // 原 `has_rtl` 仅查 RTL 脚本（Hebrew/Arabic），漏 bidi 控制码（U+202A-202E LRE/RLE/PDF/LRO/RLO
-    // + U+2066-2069 LRI/RLI/FSI/PDI）——含控制码的纯 Latin 文本（如 bidi-008a `a[U+202E]l[U+202D]...`）
-    // 误判无需重排序 → 早返原序 → 视觉顺序错（RLO 未生效）。
-    let needs_bidi = text.chars().any(|ch| {
-        let cp = ch as u32;
-        // Hebrew: 0x0590–0x05FF, Arabic: 0x0600–0x06FF, Syriac: 0x0700–0x074F
-        // Arabic Extended: 0x08A0–0x08FF, Arabic Presentation Forms: 0xFB50–0xFDFF, 0xFE70–0xFEFF
-        (0x0590..=0x05FF).contains(&cp)
-            || (0x0600..=0x06FF).contains(&cp)
-            || (0x0700..=0x074F).contains(&cp)
-            || (0x08A0..=0x08FF).contains(&cp)
-            || (0xFB50..=0xFDFF).contains(&cp)
-            || (0xFE70..=0xFEFF).contains(&cp)
-            // bidi 控制码（UAX #9 §2-3）：embedding/override + isolate
-            || (0x202A..=0x202E).contains(&cp)
-            || (0x2066..=0x2069).contains(&cp)
-    });
+    // 检查是否需要 BiDi 处理：含 RTL 脚本字符 **或** bidi 控制码（R2019）**或** CSS direction:rtl。
+    let needs_bidi = is_rtl
+        || text.chars().any(|ch| {
+            let cp = ch as u32;
+            (0x0590..=0x05FF).contains(&cp)
+                || (0x0600..=0x06FF).contains(&cp)
+                || (0x0700..=0x074F).contains(&cp)
+                || (0x08A0..=0x08FF).contains(&cp)
+                || (0xFB50..=0xFDFF).contains(&cp)
+                || (0xFE70..=0xFEFF).contains(&cp)
+                || (0x202A..=0x202E).contains(&cp)
+                || (0x2066..=0x2069).contains(&cp)
+        });
 
     if !needs_bidi {
         return identity_bidi_mapping(text);
     }
 
-    // 运行 BiDi 算法（unicode_bidi 按段落算正确 paragraph level + 字符级 level + 控制码语义）
-    let bidi_info = BidiInfo::new(text, None);
+    // UBA paragraph level: None = auto-detect, Some(Level::rtl()) = RTL, Some(Level::ltr()) = LTR.
+    // CSS `direction: rtl` sets paragraph base direction to RTL (UAX #9 HL1).
+    let para_level = if is_rtl { Some(Level::rtl()) } else { None };
+    let bidi_info = BidiInfo::new(text, para_level);
+    bidi_reorder_paragraphs(&bidi_info, text, preserve_all_paragraphs)
+}
+
+fn bidi_reorder_paragraphs(
+    bidi_info: &unicode_bidi::BidiInfo,
+    text: &str,
+    preserve_all_paragraphs: bool,
+) -> BidiReorderedText {
+    use unicode_bidi::BidiClass;
     let mut visual_text = String::with_capacity(text.len());
     let mut visual_to_logical = Vec::with_capacity(text.chars().count());
     let mut visual_is_rtl = Vec::with_capacity(text.chars().count());
@@ -627,10 +635,13 @@ pub(crate) struct BidiFragmentCursor {
 }
 
 impl BidiFragmentCursor {
-    /// 为一个逻辑文本运行创建游标。
-    pub(crate) fn new(text: &str) -> Self {
+    /// 为一个逻辑文本运行创建游标，带 CSS direction 参数。
+    ///
+    /// UAX #9 HL1: `is_rtl = true` → paragraph base level = 1 (RTL),
+    /// 使 BiDi 算法按 RTL 基方向重排序视觉文本。
+    pub(crate) fn with_direction(text: &str, is_rtl: bool) -> Self {
         let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
-        let reordered = bidi_reorder_with_mapping_mode(text, enabled);
+        let reordered = bidi_reorder_with_direction(text, enabled, is_rtl);
         let identity = reordered.visual_text == text
             && reordered
                 .visual_to_logical
@@ -697,10 +708,10 @@ impl BidiFragmentCursor {
 mod tests {
     use std::sync::Arc;
 
-    use super::{BidiFragmentCursor, BidiReorderedText, bidi_reorder_with_mapping_mode, identity_bidi_mapping};
+    use super::{BidiFragmentCursor, BidiReorderedText, bidi_reorder_with_direction, identity_bidi_mapping};
 
     fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
-        bidi_reorder_with_mapping_mode(text, true)
+        bidi_reorder_with_direction(text, true, false)
     }
 
     /// R2019：纯 ASCII（无 RTL 脚本字符、无 bidi 控制码）须原样返回（早返 fast-path）。
@@ -754,7 +765,7 @@ mod tests {
 
     #[test]
     fn bidi_reorder_rollback_mode_stops_after_first_paragraph() {
-        let reordered = bidi_reorder_with_mapping_mode("אבג\nדה", false);
+        let reordered = bidi_reorder_with_direction("אבג\nדה", false, false);
         assert_eq!(reordered.visual_text, "גבא\n");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7]);
         assert_eq!(reordered.visual_is_rtl, vec![true; 4]);

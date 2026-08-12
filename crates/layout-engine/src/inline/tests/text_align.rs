@@ -37,6 +37,7 @@ fn test_text_align_center() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -73,6 +74,7 @@ fn test_text_align_right() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -107,6 +109,7 @@ fn test_text_align_left_no_offset() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -140,6 +143,7 @@ fn test_text_align_justify_distributes_space() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -180,6 +184,7 @@ fn test_text_align_justify_last_line_not_stretched() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -216,6 +221,7 @@ fn test_text_align_center_multiline() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -256,6 +262,7 @@ fn test_text_align_right_multiline() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
 
@@ -293,6 +300,7 @@ fn test_text_align_justify_single_fragment_line() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
     ctx.break_into_lines(runs);
     // 不应 panic
@@ -319,6 +327,7 @@ fn test_text_align_does_not_affect_total_height() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);
@@ -358,6 +367,7 @@ fn test_text_align_does_not_change_line_count() {
         border_bottom: 0.0,
         is_ahem_font: false,
         font_id: None,
+        is_rtl: false,
     }];
 
     let mut ctx_left = InlineFormattingContext::new(100.0).with_text_align(TextAlign::Left);

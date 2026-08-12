@@ -68,6 +68,9 @@ pub struct TextRun {
     /// `EstimateAdvance` 忽略本字段回退启发式 = 零回归；`FontLoader`-backed 实现启用后
     /// 按本字段查 hmtx 真实 advance。见 `advance-width-plumbing-design.md` R2-R3。
     pub font_id: Option<u32>,
+    /// CSS `direction` 属性：true = rtl, false = ltr（默认）。
+    /// 用于 BiDi 段落基方向（UBA paragraph level）。
+    pub is_rtl: bool,
 }
 
 impl TextRun {
@@ -97,6 +100,7 @@ impl TextRun {
             border_bottom: 0.0,
             is_ahem_font: false,
             font_id: None,
+            is_rtl: false,
         }
     }
 

@@ -1071,7 +1071,7 @@ impl InlineFormattingContext {
         for item in items {
             match item {
                 InlineItem::Text(run) => {
-                    let mut source_cursor = BidiFragmentCursor::new(&run.text);
+                    let mut source_cursor = BidiFragmentCursor::with_direction(&run.text, run.is_rtl);
                     let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
                     // 空 inline 元素

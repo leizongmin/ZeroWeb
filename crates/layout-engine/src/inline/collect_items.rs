@@ -126,6 +126,9 @@ impl InlineFormattingContext {
                                     word_spacing,
                                     false,
                                 ),
+                                is_rtl: style.is_some_and(|s| {
+                                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                                }),
                             }));
                         }
                     }
@@ -464,6 +467,9 @@ impl InlineFormattingContext {
                                     word_spacing,
                                     elem_data.local_name() == "ruby",
                                 ),
+                                is_rtl: style.is_some_and(|s| {
+                                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                                }),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -484,6 +490,9 @@ impl InlineFormattingContext {
                                 border_bottom,
                                 is_ahem_font,
                                 font_id: None,
+                                is_rtl: style.is_some_and(|s| {
+                                    matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                                }),
                             }));
                         }
                     }
