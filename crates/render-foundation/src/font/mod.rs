@@ -15,6 +15,28 @@ pub use shaper::{
 };
 pub use woff::{decode_woff, is_woff};
 
+/// 一个 CSS family 的 first-available face 度量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FontFamilyMetrics {
+    /// 字体 ID。
+    pub font_id: u32,
+    /// 每 em ascent。
+    pub ascent: f32,
+    /// 每 em descent（负值）。
+    pub descent: f32,
+    /// 每 em line gap。
+    pub line_gap: f32,
+    /// x-height / em。
+    pub ex_height: f32,
+    /// `0` glyph advance / em。
+    pub ch_width: f32,
+    /// `@font-face size-adjust` 缩放因子。
+    pub size_adjust: f32,
+}
+
+/// CSS family 到 first-available face 度量的映射。
+pub type FontFamilyMetricMap = std::collections::HashMap<String, FontFamilyMetrics>;
+
 /// 字体描述
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDesc {

@@ -457,7 +457,19 @@ pub fn resolve_font_metrics_with_provider(
     };
     let line_height = match style {
         Some(s) => match &s.line_height {
-            LineHeightValue::Normal => resolve_normal_line_height(s, normal_font_size, normal_ratio, provider),
+            LineHeightValue::Normal => {
+                let descriptor_metrics = if std::env::var("ZW_FONT_FACE_SIZE_ADJUST_NORMAL_LINE").as_deref() != Ok("0")
+                    && matches!(s.font_size_adjust, zero_style_system::FontSizeAdjustValue::None)
+                {
+                    provider.and_then(|p| p.size_adjusted_line_metrics(&s.font_family, font_size))
+                } else {
+                    None
+                };
+                descriptor_metrics.map_or_else(
+                    || resolve_normal_line_height(s, normal_font_size, normal_ratio, provider),
+                    |metrics| metrics.ascent - metrics.descent + metrics.line_gap,
+                )
+            }
             LineHeightValue::Number(n) => font_size * (*n as f32),
             LineHeightValue::Length(LengthValue::Px(v)) => *v as f32,
             // 其他长度类型（em/rem 等）在 resolve 阶段应已转换为 Px，

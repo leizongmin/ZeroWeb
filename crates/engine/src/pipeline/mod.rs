@@ -473,8 +473,20 @@ impl RenderPipeline {
     /// 经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC，使
     /// `ex`/`ch` 始终供 style-system 解析字体相对单位；line-height provider 仍由
     /// `ZW_PERFONT_LINEHEIGHT=1` 激活，默认保持常数度量。
-    pub fn set_font_metric_map(&mut self, map: HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
-        self.style_system.set_font_metric_map(&map);
+    pub fn set_font_metric_map(&mut self, map: zero_render_foundation::font::FontFamilyMetricMap) {
+        let relative_metrics = map
+            .iter()
+            .map(|(family, metrics)| {
+                (
+                    family.clone(),
+                    zero_style_system::FontRelativeMetrics {
+                        ex_height: f64::from(metrics.ex_height),
+                        ch_width: f64::from(metrics.ch_width),
+                    },
+                )
+            })
+            .collect();
+        self.style_system.set_font_metric_map(&relative_metrics);
         let line_metrics_enabled = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
         let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
             std::rc::Rc::new(zero_layout_engine::FontMetricMap::new(map, line_metrics_enabled));

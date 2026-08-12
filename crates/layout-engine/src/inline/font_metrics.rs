@@ -18,7 +18,7 @@
 
 use std::rc::Rc;
 
-use zero_render_foundation::font::FontLoader;
+use zero_render_foundation::font::{FontFamilyMetricMap, FontLoader};
 
 /// 真实字体行度量（来自 fontdue OS/2 / hhea），按字号缩放后的 px 值。
 ///
@@ -78,6 +78,14 @@ pub trait FontMetricProvider {
     ) -> Option<f32> {
         None
     }
+
+    /// 返回 first available face 经 `@font-face size-adjust` 缩放后的行度量。
+    ///
+    /// 未声明 descriptor 或 scale=100% 时返回 `None`，保持普通字体的全局
+    /// `ZW_PERFONT_LINEHEIGHT` 策略不变。
+    fn size_adjusted_line_metrics(&self, _font_family: &[String], _size: f32) -> Option<LineMetrics> {
+        None
+    }
 }
 
 /// 持有 `FontMetricProvider` 的 trait 对象句柄。
@@ -117,6 +125,11 @@ impl FontMetricProviderHandle {
         metric: zero_style_system::FontSizeAdjustMetric,
     ) -> Option<f32> {
         self.0.font_metric_aspect(font_family, metric)
+    }
+
+    /// 查询 first available face 经 `@font-face size-adjust` 缩放后的行度量。
+    pub fn size_adjusted_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        self.0.size_adjusted_line_metrics(font_family, size)
     }
 }
 
@@ -178,6 +191,20 @@ impl FontMetricProvider for FontLoader {
         };
         zero_render_foundation::font::FontLoader::font_metric_aspect(self, font_id, metric)
     }
+
+    fn size_adjusted_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        let font_id = <Self as FontMetricProvider>::font_id_of(self, font_family)?;
+        let scale = zero_render_foundation::font::FontLoader::font_size_scale(self, font_id);
+        if (scale - 1.0).abs() <= f32::EPSILON {
+            return None;
+        }
+        let (ascent, descent, line_gap) = self.line_metrics_full(font_id, size * scale)?;
+        Some(LineMetrics {
+            ascent,
+            descent,
+            line_gap,
+        })
+    }
 }
 
 /// HashMap-backed provider（字体相对 metric + 可选 per-font line-height）。
@@ -188,16 +215,13 @@ impl FontMetricProvider for FontLoader {
 /// （fontdue 线性，等价 `FontLoader::line_metrics_full(id, size)`）；`font_id_of` 返回
 /// family→id（启用 C3 font_id population）。family 匹配：精确 + 大小写不敏感（同 FontLoader impl）。
 pub struct FontMetricMap {
-    map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
+    map: FontFamilyMetricMap,
     line_metrics_enabled: bool,
 }
 
 impl FontMetricMap {
     /// 创建 metric map；`line_metrics_enabled=false` 时仅暴露 font ID 与 aspect。
-    pub fn new(
-        map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
-        line_metrics_enabled: bool,
-    ) -> Self {
+    pub fn new(map: FontFamilyMetricMap, line_metrics_enabled: bool) -> Self {
         Self {
             map,
             line_metrics_enabled,
@@ -210,7 +234,7 @@ impl FontMetricProvider for FontMetricMap {
         if !self.line_metrics_enabled {
             return None;
         }
-        let &(_id, a, d, g, _, _) = font_family.iter().find_map(|fam| {
+        let metrics = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
             self.map.get(bare).or_else(|| {
                 self.map
@@ -220,9 +244,9 @@ impl FontMetricProvider for FontMetricMap {
             })
         })?;
         Some(LineMetrics {
-            ascent: a * size,
-            descent: d * size,
-            line_gap: g * size,
+            ascent: metrics.ascent * size,
+            descent: metrics.descent * size,
+            line_gap: metrics.line_gap * size,
         })
     }
 
@@ -237,7 +261,7 @@ impl FontMetricProvider for FontMetricMap {
                         .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                         .map(|(_, v)| v)
                 })
-                .map(|(id, _, _, _, _, _)| *id)
+                .map(|metrics| metrics.font_id)
         })
     }
 
@@ -246,7 +270,7 @@ impl FontMetricProvider for FontMetricMap {
         font_family: &[String],
         metric: zero_style_system::FontSizeAdjustMetric,
     ) -> Option<f32> {
-        let &(_, _, _, _, ex_height, ch_width) = font_family.iter().find_map(|fam| {
+        let metrics = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
             self.map.get(bare).or_else(|| {
                 self.map
@@ -256,10 +280,30 @@ impl FontMetricProvider for FontMetricMap {
             })
         })?;
         match metric {
-            zero_style_system::FontSizeAdjustMetric::ExHeight => Some(ex_height),
-            zero_style_system::FontSizeAdjustMetric::ChWidth => Some(ch_width),
+            zero_style_system::FontSizeAdjustMetric::ExHeight => Some(metrics.ex_height),
+            zero_style_system::FontSizeAdjustMetric::ChWidth => Some(metrics.ch_width),
             _ => None,
         }
+    }
+
+    fn size_adjusted_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
+        let metrics = font_family.iter().find_map(|fam| {
+            let bare = fam.trim_matches('"').trim_matches('\'');
+            self.map.get(bare).or_else(|| {
+                self.map
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(bare))
+                    .map(|(_, v)| v)
+            })
+        })?;
+        if (metrics.size_adjust - 1.0).abs() <= f32::EPSILON {
+            return None;
+        }
+        Some(LineMetrics {
+            ascent: metrics.ascent * size * metrics.size_adjust,
+            descent: metrics.descent * size * metrics.size_adjust,
+            line_gap: metrics.line_gap * size * metrics.size_adjust,
+        })
     }
 }
 
@@ -267,6 +311,18 @@ impl FontMetricProvider for FontMetricMap {
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    fn family_metrics(size_adjust: f32) -> zero_render_foundation::font::FontFamilyMetrics {
+        zero_render_foundation::font::FontFamilyMetrics {
+            font_id: 7,
+            ascent: 0.8,
+            descent: -0.2,
+            line_gap: 0.1,
+            ex_height: 0.5,
+            ch_width: 0.6,
+            size_adjust,
+        }
+    }
 
     /// Ahem.ttf 位于 workspace 根的 `tests/wpt-runner/fonts/`（WPT 标准正方形字体）。
     /// 本文件在 `crates/layout-engine/src/inline/`，故 4 级 `..` 回到 workspace 根。
@@ -534,7 +590,7 @@ mod tests {
 
     #[test]
     fn font_metric_map_exposes_aspect_without_enabling_line_metrics() {
-        let entries = std::collections::HashMap::from([("MetricFont".to_string(), (7, 0.8, -0.2, 0.1, 0.5, 0.6))]);
+        let entries = std::collections::HashMap::from([("MetricFont".to_string(), family_metrics(1.0))]);
         let dormant = FontMetricMap::new(entries.clone(), false);
         let family = ["metricfont".to_string()];
         assert_eq!(dormant.font_id_of(&family), Some(7));
@@ -552,6 +608,41 @@ mod tests {
                 descent: -4.0,
                 line_gap: 2.0,
             })
+        );
+    }
+
+    #[test]
+    fn size_adjust_descriptor_scales_normal_line_without_enabling_all_line_metrics() {
+        let mut metrics = family_metrics(0.5);
+        metrics.line_gap = 0.0;
+        let entries = std::collections::HashMap::from([("AdjustedFont".to_string(), metrics)]);
+        let provider = FontMetricProviderHandle(Rc::new(FontMetricMap::new(entries, false)));
+        let style = normal_style("AdjustedFont", 20.0);
+
+        let (font_size, line_height) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&provider));
+        assert_eq!(font_size, 20.0, "computed font-size must remain unchanged");
+        assert_eq!(
+            line_height, 10.0,
+            "normal line metrics must use the descriptor-adjusted 10px size"
+        );
+    }
+
+    #[test]
+    fn font_size_adjust_property_preempts_descriptor_normal_line_scale() {
+        let mut metrics = family_metrics(0.5);
+        metrics.line_gap = 0.0;
+        let entries = std::collections::HashMap::from([("AdjustedFont".to_string(), metrics)]);
+        let provider = FontMetricProviderHandle(Rc::new(FontMetricMap::new(entries, false)));
+        let mut style = normal_style("AdjustedFont", 20.0);
+        style.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
+        };
+
+        let (_, line_height) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&provider));
+        assert!(
+            (line_height - 20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            "property must preempt the descriptor scale, got {line_height}"
         );
     }
 

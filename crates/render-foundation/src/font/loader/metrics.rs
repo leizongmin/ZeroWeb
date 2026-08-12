@@ -7,6 +7,11 @@ fn ex_height_units(os2_x_height: Option<i16>, glyph_y_max: Option<i16>) -> Optio
 }
 
 impl FontLoader {
+    /// 返回 face 的 `@font-face size-adjust` 缩放因子；未声明时为 1。
+    pub fn font_size_scale(&self, font_id: u32) -> f32 {
+        self.font_size_adjustments.get(&font_id).copied().unwrap_or(1.0)
+    }
+
     /// 返回字体 OS/2 `sxHeight / unitsPerEm`。
     pub fn x_height_aspect(&self, font_id: u32) -> Option<f32> {
         self.font_metric_aspect(font_id, crate::font::FontSizeAdjustMetric::ExHeight)
@@ -100,7 +105,7 @@ impl FontLoader {
     ///
     /// 显式 `@font-face` family 只发布首个可匹配 U+0020 的 face；若整个 family
     /// 都不能匹配空格，则不发布，让调用方继续检查 CSS family 列表中的下一项。
-    pub fn build_line_metric_map(&self) -> std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)> {
+    pub fn build_line_metric_map(&self) -> crate::font::FontFamilyMetricMap {
         self.build_font_resolver()
             .into_iter()
             .filter_map(|(family, base_id)| {
@@ -123,7 +128,19 @@ impl FontLoader {
                 let ch_width = self
                     .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ChWidth)
                     .unwrap_or(0.5);
-                Some((family, (id, ascent, descent, line_gap, ex_height, ch_width)))
+                let size_adjust = self.font_size_scale(id);
+                Some((
+                    family,
+                    crate::font::FontFamilyMetrics {
+                        font_id: id,
+                        ascent,
+                        descent,
+                        line_gap,
+                        ex_height,
+                        ch_width,
+                        size_adjust,
+                    },
+                ))
             })
             .collect()
     }
@@ -177,6 +194,18 @@ mod tests {
         loader.register_family_alias("SplitMetrics", with_space);
 
         let metrics = loader.build_line_metric_map();
-        assert_eq!(metrics.get("SplitMetrics").map(|entry| entry.0), Some(with_space));
+        assert_eq!(metrics.get("SplitMetrics").map(|entry| entry.font_id), Some(with_space));
+    }
+
+    #[test]
+    fn metric_map_exposes_first_available_face_size_adjust() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("font");
+        loader.register_family_alias("AdjustedMetrics", font_id);
+        loader.register_font_size_adjust(font_id, 0.5);
+
+        let metrics = loader.build_line_metric_map();
+        assert_eq!(metrics.get("AdjustedMetrics").map(|entry| entry.size_adjust), Some(0.5));
     }
 }

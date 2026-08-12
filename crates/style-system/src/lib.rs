@@ -303,23 +303,12 @@ impl StyleSystem {
     }
 
     /// 设置 first available font 的字体相对单位度量。
-    pub fn set_font_metric_map(&mut self, map: &HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
+    pub fn set_font_metric_map(&mut self, map: &HashMap<String, computed::FontRelativeMetrics>) {
         if std::env::var("ZW_FIRST_AVAILABLE_FONT_METRICS").as_deref() == Ok("0") {
             self.font_relative_metrics.clear();
             return;
         }
-        self.font_relative_metrics = map
-            .iter()
-            .map(|(family, &(_, _, _, _, ex_height, ch_width))| {
-                (
-                    family.clone(),
-                    computed::FontRelativeMetrics {
-                        ex_height: f64::from(ex_height),
-                        ch_width: f64::from(ch_width),
-                    },
-                )
-            })
-            .collect();
+        self.font_relative_metrics.clone_from(map);
     }
 
     fn font_relative_metrics_for(&self, families: &[String]) -> Option<computed::FontRelativeMetrics> {

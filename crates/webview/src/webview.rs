@@ -227,7 +227,7 @@ pub struct WebView {
     font_resolver: std::collections::HashMap<String, u32>,
     /// per-family 行度量与 `ex`/`ch` aspect 映射。字体相对单位默认启用；
     /// line-height 仍由 `ZW_PERFONT_LINEHEIGHT=1` 激活。
-    font_metric_map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
+    font_metric_map: zero_render_foundation::font::FontFamilyMetricMap,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 渲染媒体类型（DC-12 @media print/screen；R1992）。默认 `Screen` = 零行为变更。
@@ -1052,7 +1052,7 @@ impl WebView {
     ///
     /// 由宿主从 `FontLoader::build_line_metric_map()` 构建并传入。`ex`/`ch` 默认下推；
     /// `ZW_PERFONT_LINEHEIGHT=1` 仅控制 line-height:normal 的真实度量 provider。
-    pub fn set_font_metric_map(&mut self, map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
+    pub fn set_font_metric_map(&mut self, map: zero_render_foundation::font::FontFamilyMetricMap) {
         self.font_metric_map = map.clone();
         self.pipeline.set_font_metric_map(map);
     }
