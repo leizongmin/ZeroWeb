@@ -146,6 +146,22 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
         (days * 86400) + (h as u64 * 3600) + (min as u64 * 60) + s as u64
     }
 
+    /// 校验日期时间字段范围（RFC 7231 §7.1.1.1）。
+    ///
+    /// R3346 deep-review：旧实现把 day/hour/minute/second 直接喂入 `to_unix_secs` 无范围
+    /// 校验——day=0 致 `(d-1)` u32 下溢 **panic**（debug 构建崩溃）；day=32/hour=99/分秒=99
+    /// 静默返回错误时间戳。此处统一拦截非法字段返回 None（spec：无效日期丢弃）。
+    /// day 上界按所在月实际天数（days_in_month）精确判（30 天月的 31 日、2 月的 30/31 日须拒）。
+    fn validate_date_fields(y: u32, m: u32, d: u32, h: u32, min: u32, s: u32) -> Option<()> {
+        if d == 0 || d > days_in_month(y, m) {
+            return None;
+        }
+        if h > 23 || min > 59 || s > 59 {
+            return None;
+        }
+        Some(())
+    }
+
     let raw = raw.trim();
 
     // ANSI C asctime 格式: "Wed Jun 09 10:18:14 2021"
@@ -172,6 +188,7 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
         let hour: u32 = u32::from_str(time_parts[0]).ok()?;
         let minute: u32 = u32::from_str(time_parts[1]).ok()?;
         let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        validate_date_fields(year, month, day, hour, minute, second)?;
         return Some(to_unix_secs(year, month, day, hour, minute, second));
     }
 
@@ -192,6 +209,7 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
         let hour: u32 = u32::from_str(time_parts[0]).ok()?;
         let minute: u32 = u32::from_str(time_parts[1]).ok()?;
         let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        validate_date_fields(year, month, day, hour, minute, second)?;
         return Some(to_unix_secs(year, month, day, hour, minute, second));
     }
 
@@ -208,6 +226,7 @@ pub fn parse_expires_date(raw: &str) -> Option<u64> {
         let hour: u32 = u32::from_str(time_parts[0]).ok()?;
         let minute: u32 = u32::from_str(time_parts[1]).ok()?;
         let second: u32 = u32::from_str(time_parts[2]).ok()?;
+        validate_date_fields(year, month, day, hour, minute, second)?;
         return Some(to_unix_secs(year, month, day, hour, minute, second));
     }
 
