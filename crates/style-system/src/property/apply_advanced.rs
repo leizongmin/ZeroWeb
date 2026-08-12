@@ -686,6 +686,16 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+        "font-kerning" => {
+            style.font_kerning = match value.trim().to_ascii_lowercase().as_str() {
+                "auto" => FontKerningValue::Auto,
+                "normal" => FontKerningValue::Normal,
+                "none" => FontKerningValue::None,
+                _ => return false,
+            };
+            return true;
+        }
         // ── FontVariantNumeric 属性 ──
         "font-variant-numeric" => {
             if let Some(v) = values::parse_font_variant_numeric(value) {

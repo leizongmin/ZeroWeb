@@ -576,6 +576,16 @@ fn test_font_shorthand_supported_invalid() {
     );
 }
 
+#[test]
+fn test_font_shorthand_resets_font_kerning() {
+    let result = expand_one("font", "16px serif", false, (0, 0, 1));
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "font-kerning" && value == "auto")
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // border-image 复杂情况测试
 // ═══════════════════════════════════════════════════════════════════

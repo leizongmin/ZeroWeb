@@ -1687,6 +1687,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 "font-variant-position",
                 "font-variant-alternates",
                 "font-stretch",
+                "font-kerning",
             ],
             important,
             specificity,
@@ -1783,6 +1784,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 mk("font-variant-position", "normal"),
                 mk("font-variant-alternates", "normal"),
                 mk("font-stretch", "normal"),
+                mk("font-kerning", "auto"),
             ];
         }
         // 无效的 font 简写声明
@@ -1802,7 +1804,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-size", &size),
         mk("line-height", &line_height),
         mk("font-family", &family),
-        // CSS Fonts 4 §4: font shorthand resets font-variant and font-stretch to initial
+        // CSS Fonts 4 §4: font shorthand resets font-variant, font-stretch, and font-kerning.
         mk("font-variant-ligatures", "normal"),
         mk("font-variant-caps", "normal"),
         mk("font-variant-numeric", "normal"),
@@ -1810,6 +1812,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-variant-position", "normal"),
         mk("font-variant-alternates", "normal"),
         mk("font-stretch", "normal"),
+        mk("font-kerning", "auto"),
     ]
 }
 

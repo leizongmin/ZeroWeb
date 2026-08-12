@@ -437,6 +437,24 @@ fn set_feature(features: &mut Vec<OpenTypeFeature>, tag: [u8; 4], value: u32) {
 /// https://drafts.csswg.org/css-fonts-4/#feature-precedence
 pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle) -> Vec<OpenTypeFeature> {
     let mut features = Vec::new();
+    // https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+    use zero_style_system::FontKerningValue;
+    match style.font_kerning {
+        FontKerningValue::Auto => {}
+        FontKerningValue::Normal => {
+            let tag = if style.writing_mode.is_vertical_block_flow() {
+                *b"vkrn"
+            } else {
+                *b"kern"
+            };
+            set_feature(&mut features, tag, 1);
+        }
+        FontKerningValue::None => {
+            set_feature(&mut features, *b"kern", 0);
+            set_feature(&mut features, *b"vkrn", 0);
+        }
+    }
+
     let ligatures = style.font_variant_ligatures;
     if let Some(enabled) = ligatures.common {
         set_feature(&mut features, *b"liga", enabled as u32);
@@ -1009,6 +1027,35 @@ mod tests {
         assert_eq!(
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"hist", 1)]
+        );
+    }
+
+    #[test]
+    fn style_features_map_font_kerning_by_writing_mode_and_allow_explicit_override() {
+        let mut style = zero_style_system::ComputedStyle {
+            font_kerning: zero_style_system::FontKerningValue::Normal,
+            ..Default::default()
+        };
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"kern", 1)]
+        );
+
+        style.writing_mode = zero_style_system::WritingModeValue::VerticalRl;
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"vkrn", 1)]
+        );
+
+        style.font_kerning = zero_style_system::FontKerningValue::None;
+        style.font_feature_settings =
+            zero_style_system::FontFeatureSettingsValue::Features(vec![zero_style_system::FontFeatureSetting {
+                tag: *b"vkrn",
+                value: 1,
+            }]);
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"kern", 0), OpenTypeFeature::new(*b"vkrn", 1),]
         );
     }
 

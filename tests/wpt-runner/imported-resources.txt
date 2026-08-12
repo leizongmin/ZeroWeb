@@ -1,3 +1,4 @@
 # WPT 导入资源账本 — 每行一个相对 web-platform-tests 根目录的资源路径
 css/css-fonts/resources/ahem-ex-500.otf
 css/css-fonts/resources/ahem-ex-250.otf
+css/css-fonts/support/fonts/FontWithFancyFeatures.otf

@@ -134,6 +134,8 @@ pub struct ComputedStyle {
     pub font_feature_settings: FontFeatureSettingsValue,
     /// font-variant-ligatures 属性。
     pub font_variant_ligatures: FontVariantLigaturesValue,
+    /// font-kerning 属性。
+    pub font_kerning: FontKerningValue,
     /// font-synthesis 属性（CSS Fonts 4 §6.7）。
     pub font_synthesis: FontSynthesisValue,
 

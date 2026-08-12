@@ -79,6 +79,7 @@ impl PropertyRegistry {
             "font-size-adjust" => Some(FontSizeAdjust(FontSizeAdjustValue::None)),
             "font-feature-settings" => Some(FontFeatureSettings(FontFeatureSettingsValue::Normal)),
             "font-variant-ligatures" => Some(FontVariantLigatures(FontVariantLigaturesValue::default())),
+            "font-kerning" => Some(FontKerning(FontKerningValue::Auto)),
             "font-synthesis"
             | "font-synthesis-weight"
             | "font-synthesis-style"
@@ -369,6 +370,7 @@ impl PropertyRegistry {
                 | "font-size-adjust"
                 | "font-feature-settings"
                 | "font-variant-ligatures"
+                | "font-kerning"
                 | "font-synthesis"
                 | "font-synthesis-weight"
                 | "font-synthesis-style"
@@ -472,6 +474,7 @@ impl PropertyRegistry {
             "font-size-adjust",
             "font-feature-settings",
             "font-variant-ligatures",
+            "font-kerning",
             "font-synthesis",
             "font-synthesis-weight",
             "font-synthesis-style",

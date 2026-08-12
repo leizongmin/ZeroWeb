@@ -27,6 +27,8 @@
 >
 > **▶ 字体栈增量进展（R3256-F historical-forms·2026-08-12）**：CSS `font-variant-alternates: historical-forms` 已完成 parse/computed/default/inherit/initial/known-property/CSSOM 全生命周期，并在 shaping feature precedence 中注入 OpenType `hist=1`；`font` 与 `font-variant` shorthand 均重置/展开 alternates，函数式 alternates 继续等待 `@font-feature-values` 独立切片。上游 `font-variant-alternates-02` 可信 strict `0.00%` 且已写入 `imported-tests.txt`；Chromium Oracle paired A/B `6.23%→6.20%`（改善 `0.03pp`），全 css-fonts 保持 `84/282`、无扩散回归；reftest `687/687`、workspace clippy、产品 smoke 全绿。同期 `src:local()` 的 Linux `Arial→Liberation Sans` 替代实验使目标页 `7.38%→7.84%`，已完整回退并沉淀平台经验。
 >
+> **▶ 字体栈增量进展（R3265-F font-kerning·2026-08-12）**：补齐 CSS `font-kerning: auto | normal | none` 的 computed/default/inherit/initial/registry、`font` shorthand 重置与 CSSOM 序列化；shaping 按 writing mode 注入横排 `kern` / 竖排 `vkrn`，`none` 同时禁用两者，显式 `font-feature-settings` 继续保持最高优先级。上游 `font-kerning-04` 与 `FontWithFancyFeatures.otf` 已资产化；目标 5 案 self-source 可信 strict `2/5→3/5`，04 从 `0.07%→0.00%`，Chromium Oracle 仍 `1/5`，全 css-fonts 保持 `84/282`、credible `74`、strict `54`，无目录级回归。reftest `687/687`、workspace default/QuickJS clippy、产品 smoke 全绿；`make test` 并发态仅既有 real HTTP fetch 时序失败（隔离及 browser 串行全绿），workspace 串行态仅本机无 wgpu adapter 的 compositor recovery 测试阻断。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

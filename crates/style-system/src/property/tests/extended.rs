@@ -484,6 +484,26 @@ fn test_font_variant_alternates_apply_initial_and_inherit() {
 }
 
 #[test]
+fn test_font_kerning_apply_initial_and_inherit() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "font-kerning", "none"));
+    assert_eq!(style.font_kerning, FontKerningValue::None);
+    assert!(!apply_property_value(&mut style, "font-kerning", "enabled"));
+    assert!(PropertyRegistry::is_inherited("font-kerning"));
+    assert!(PropertyRegistry::known_properties().contains(&"font-kerning"));
+
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&style, &mut child, "font-kerning"));
+    assert_eq!(child.font_kerning, FontKerningValue::None);
+    assert!(apply_initial_value(&mut child, "font-kerning"));
+    assert_eq!(child.font_kerning, FontKerningValue::Auto);
+    assert_eq!(
+        PropertyRegistry::initial_value("font-kerning"),
+        Some(PropertyValue::FontKerning(FontKerningValue::Auto))
+    );
+}
+
+#[test]
 fn test_font_feature_settings_apply_initial_and_inherit() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(

@@ -47,6 +47,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_variant_ligatures = parent.font_variant_ligatures;
             true
         }
+        "font-kerning" => {
+            child.font_kerning = parent.font_kerning;
+            true
+        }
         "font-synthesis" => {
             child.font_synthesis = parent.font_synthesis;
             true
@@ -763,6 +767,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-ligatures" => {
             style.font_variant_ligatures = default_style.font_variant_ligatures;
+            true
+        }
+        "font-kerning" => {
+            style.font_kerning = default_style.font_kerning;
             true
         }
         "font-synthesis" => {

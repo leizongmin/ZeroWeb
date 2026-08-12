@@ -903,6 +903,19 @@ pub enum TextAlignLastValue {
     Justify,
 }
 
+/// CSS font-kerning 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-kerning-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontKerningValue {
+    /// auto（默认值）— 由 UA 决定是否启用字距调整。
+    #[default]
+    Auto,
+    /// normal — 启用字距调整。
+    Normal,
+    /// none — 禁用字距调整。
+    None,
+}
+
 /// CSS font-variant-numeric 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontVariantNumericValue {
@@ -1506,6 +1519,8 @@ pub enum PropertyValue {
     OverflowWrap(OverflowWrapValue),
     /// text-align-last 值。
     TextAlignLast(TextAlignLastValue),
+    /// font-kerning 值。
+    FontKerning(FontKerningValue),
     /// font-variant-numeric 值。
     FontVariantNumeric(FontVariantNumericValue),
     /// font-variant-caps 值。
