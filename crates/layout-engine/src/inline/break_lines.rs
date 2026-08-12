@@ -84,7 +84,9 @@ impl InlineFormattingContext {
                     // plaintext 必须先按逻辑内容断行，再逐行应用段落方向；整段预重排会把
                     // 后续 Latin 词搬到 RTL 段首，改变软换行结果。
                     let logical_plaintext = plaintext_enabled && run.is_plaintext_bidi;
-                    let mut source_cursor = if logical_plaintext {
+                    let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
+                        BidiFragmentCursor::with_override(&run.text, is_rtl)
+                    } else if logical_plaintext {
                         BidiFragmentCursor::logical(&run.text)
                     } else {
                         BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)

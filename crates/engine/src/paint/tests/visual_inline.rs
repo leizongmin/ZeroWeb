@@ -1190,6 +1190,23 @@ fn test_writing_mode_horizontal_no_rotation() {
     }
 }
 
+#[test]
+fn bidi_mirroring_reaches_paint_glyphs() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(300.0, 100.0);
+    let result = pipeline.render_html(
+        "<html><body><div dir='rtl'>.(d c) b a</div></body></html>",
+        "div { unicode-bidi: bidi-override; color: black; font-size: 16px; }",
+    );
+    let mut glyphs = result.primitives().glyphs.iter().collect::<Vec<_>>();
+    glyphs.sort_by(|left, right| left.x.total_cmp(&right.x));
+    let visual = glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id))
+        .collect::<String>();
+    assert_eq!(visual, "ab(cd).");
+}
+
 /// 测试 writing-mode: vertical-rl 字形旋转 90°。
 #[test]
 fn test_writing_mode_vertical_rl_rotated() {

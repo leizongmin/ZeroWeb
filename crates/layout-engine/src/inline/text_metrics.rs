@@ -531,6 +531,33 @@ fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
     }
 }
 
+fn bidi_override_mapping(text: &str, is_rtl: bool, mirror_glyphs: bool) -> BidiReorderedText {
+    let mut chars = text
+        .char_indices()
+        .map(|(start, ch)| (ch, start..start + ch.len_utf8()))
+        .collect::<Vec<_>>();
+    if is_rtl {
+        chars.reverse();
+    }
+    let mut visual_text = String::with_capacity(text.len());
+    let mut visual_to_logical = Vec::with_capacity(chars.len());
+    for (ch, range) in chars {
+        let visual_ch = if is_rtl && mirror_glyphs {
+            unicode_bidi_mirroring::get_mirrored(ch).unwrap_or(ch)
+        } else {
+            ch
+        };
+        visual_text.push(visual_ch);
+        visual_to_logical.push(range);
+    }
+    let char_count = visual_to_logical.len();
+    BidiReorderedText {
+        visual_text,
+        visual_to_logical,
+        visual_is_rtl: vec![is_rtl; char_count],
+    }
+}
+
 /// BiDi reorder with CSS `direction` context.
 /// When `is_rtl` is true and the text needs BiDi processing, sets paragraph level to RTL (level 1).
 fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl: bool) -> BidiReorderedText {
@@ -682,6 +709,25 @@ impl BidiFragmentCursor {
         }
     }
 
+    /// 为 CSS `unicode-bidi:bidi-override` 创建指定方向的视觉游标。
+    pub(crate) fn with_override(text: &str, is_rtl: bool) -> Self {
+        let source_enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
+        let mirror_glyphs = std::env::var("ZW_BIDI_MIRRORING").as_deref() != Ok("0");
+        let reordered = bidi_override_mapping(text, is_rtl, mirror_glyphs);
+        let identity = reordered.visual_text == text
+            && reordered
+                .visual_to_logical
+                .iter()
+                .cloned()
+                .eq(text.char_indices().map(|(start, ch)| start..start + ch.len_utf8()));
+        Self {
+            source_text: (source_enabled && !identity).then(|| Arc::<str>::from(text)),
+            reordered,
+            visual_byte_offset: 0,
+            visual_char_offset: 0,
+        }
+    }
+
     /// 返回供现有断词和布局逻辑使用的视觉文本。
     pub(crate) fn visual_text(&self) -> &str {
         &self.reordered.visual_text
@@ -803,6 +849,15 @@ mod tests {
         assert_eq!(reordered.visual_text.chars().count(), reordered.visual_is_rtl.len());
         assert!(reordered.visual_is_rtl.contains(&false));
         assert!(reordered.visual_is_rtl.contains(&true));
+    }
+
+    #[test]
+    fn bidi_override_reverses_and_mirrors_rtl_text() {
+        let mirrored = super::bidi_override_mapping(".(d c) b a", true, true);
+        let legacy = super::bidi_override_mapping(".(d c) b a", true, false);
+        assert_eq!(mirrored.visual_text, "a b (c d).");
+        assert_eq!(legacy.visual_text, "a b )c d(.");
+        assert_eq!(mirrored.visual_to_logical, legacy.visual_to_logical);
     }
 
     #[test]

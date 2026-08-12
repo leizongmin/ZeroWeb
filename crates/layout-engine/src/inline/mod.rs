@@ -55,6 +55,8 @@ pub struct InlineFormattingContext {
     pub text_align: TextAlign,
     /// `unicode-bidi: plaintext` + `text-align:start` 时按段落基方向解析 start 边。
     pub plaintext_auto_align: bool,
+    /// 容器级 `unicode-bidi: bidi-override` 的指定方向。
+    pub bidi_override_direction: Option<bool>,
     /// paint IFC 无 style map 时使用的容器级 `unicode-bidi: plaintext` 覆盖。
     pub plaintext_bidi_override: bool,
     /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
@@ -256,6 +258,7 @@ impl InlineFormattingContext {
             container_width,
             text_align: TextAlign::default(),
             plaintext_auto_align: false,
+            bidi_override_direction: None,
             plaintext_bidi_override: false,
             plaintext_bidi_overrides: HashSet::new(),
             text_align_last: None,
@@ -316,6 +319,12 @@ impl InlineFormattingContext {
     pub fn with_plaintext_bidi(mut self, enabled: bool, auto_align: bool) -> Self {
         self.plaintext_bidi_override = enabled;
         self.plaintext_auto_align = enabled && auto_align;
+        self
+    }
+
+    /// 注入 paint Path B 的容器级 BiDi override 方向。
+    pub fn with_bidi_override_direction(mut self, direction: Option<bool>) -> Self {
+        self.bidi_override_direction = direction;
         self
     }
 
@@ -773,6 +782,7 @@ impl InlineFormattingContext {
                     style.text_align,
                     zero_style_system::property::types::TextAlignValue::Start
                 );
+            self.bidi_override_direction = bidi_override_direction(style);
         }
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
@@ -1149,8 +1159,11 @@ impl InlineFormattingContext {
         for item in items {
             match item {
                 InlineItem::Text(run) => {
-                    let mut source_cursor =
-                        BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi);
+                    let mut source_cursor = if let Some(is_rtl) = self.bidi_override_direction {
+                        BidiFragmentCursor::with_override(&run.text, is_rtl)
+                    } else {
+                        BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)
+                    };
                     let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
                     // 空 inline 元素
@@ -1798,6 +1811,17 @@ fn plaintext_logical_text(runs: &[TextFragment]) -> String {
         Some(text)
     })();
     from_source.unwrap_or_else(|| runs.iter().map(|run| run.text.as_str()).collect())
+}
+
+/// 返回容器级 CSS BiDi override 的指定方向；`ZW_BIDI_OVERRIDE=0` 回退旧行为。
+pub fn bidi_override_direction(style: &zero_style_system::ComputedStyle) -> Option<bool> {
+    // https://drafts.csswg.org/css-writing-modes-3/#valdef-unicode-bidi-bidi-override
+    if std::env::var("ZW_BIDI_OVERRIDE").as_deref() == Ok("0")
+        || !matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride)
+    {
+        return None;
+    }
+    Some(matches!(style.direction, zero_style_system::DirectionValue::Rtl))
 }
 
 /// `ascent_ratio_for` 的自由函数内核（供 `apply_vertical_alignment` 在 `&mut self.lines`

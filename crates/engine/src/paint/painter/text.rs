@@ -709,6 +709,7 @@ impl super::Painter {
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
+                    .with_bidi_override_direction(zero_layout_engine::bidi_override_direction(style))
                     .with_plaintext_bidi(
                         matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext),
                         matches!(

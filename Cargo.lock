@@ -6449,6 +6449,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "unicode-bidi",
+ "unicode-bidi-mirroring",
  "zero-css-parser",
  "zero-dom",
  "zero-render-foundation",

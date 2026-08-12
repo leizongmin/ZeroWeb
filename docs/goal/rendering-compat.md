@@ -39,6 +39,8 @@
 >
 > **▶ 文字排版增量进展（R3289-F plaintext inline owner·2026-08-12）**：layout IFC 现将 `unicode-bidi:plaintext` inline owner 持久化到 `LayoutBox`，paint Path B 空 styles 重跑时按 owner 恢复；同 owner 的连续 plaintext fragments 在最终行内先按 identity source range 恢复折叠后的词间空格、合并逻辑文本，再执行一次 UBA，避免逐词独立重排或吞掉空白。`ZW_PLAINTEXT_LINE_DIRECTION=0` 同时回滚。相对 R3288，`bidi-plaintext-001/005/011` 各改善 `0.01pp`，增量净 `-0.03pp`；相对 gate 全关闭，writing-modes 81 案为 4 改善、0 恶化、77 持平，总 `-0.14pp`。上游 plaintext 12 案 self-source `12/12` 通过但均为 approximate；001–011 已登记常驻资产。验证：layout `1366/1366`、engine `2027/2027`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。跨不同 style owner 的整行 UBA 与 L4 glyph mirroring 仍待后续切片。
 >
+> **▶ 文字排版增量进展（R3319-F bidi override mirroring·2026-08-12）**：容器级 `unicode-bidi:bidi-override` 现从 computed style 进入 layout IFC，并在 paint Path B 空 style map 重跑时恢复；RTL override 按指定方向直接生成视觉序，UAX #9 L4 镜像使用 `unicode-bidi-mirroring`，`visual_to_logical` 仍指向原始源码。`ZW_BIDI_OVERRIDE=0` 回滚 override，`ZW_BIDI_MIRRORING=0` 单独关闭 L4。专用 WPT `bidi-glyph-mirroring-001` self-source `0.07%→0.06%`，002 保持 `0.10%`，两案均 approximate；writing-modes Chromium Oracle 81 案全持平、rounded `0.00pp`。全局恢复 RTL Path B 实验为 2 改善/15 回归/65 持平、`+0.16pp`，normal UBA 同开 L4 的收窄实验仍为 `+0.04pp`，均已撤回；`isolate-override` 因 isolation boundary 尚未建模不在本切片宣称范围。验证：layout `1367/1367`、engine `2033/2033`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
