@@ -1761,5 +1761,37 @@ if (typeof structuredClone === 'function') {
             css: String::new(),
             assertions: vec!["dom_has_body".into(), "dom_has_element:h1".into(), "render_completes".into()],
         },
+        // ── R3320：Geometry Interfaces（DOMRect/DOMRectReadOnly/DOMMatrix/DOMPoint）──
+        // js_executes_ok 断言：脚本抛异常（API 缺失/instanceof 失败）即 fail。锁 R3319（DOMRect +
+        // DOMRectReadOnly 全局构造器）+ R2985（DOMMatrix/DOMPoint）。库 identity 检查
+        // （popper.js/floating-ui `rect instanceof DOMRectReadOnly`）依赖此面。
+        TestCase {
+            id: "web-api/geometry/interfaces".into(),
+            description: "Geometry Interfaces 构造器存在 + DOMRect instanceof 继承".into(),
+            category: "web-api".into(),
+            html: r#"<html><body>
+            <div id="g">geometry</div>
+            <script>
+                // 四个构造器存在（DOMRect/DOMRectReadOnly R3319，DOMMatrix/DOMPoint R2985）。
+                var ctors = [DOMRect, DOMRectReadOnly, DOMMatrix, DOMPoint];
+                var allFn = ctors.every(function (c) { return typeof c === 'function'; });
+                // DOMRect 继承 DOMRectReadOnly（is-a，prototype 链）。
+                var r = new DOMRect(10, 20, 100, 50);
+                var isDR = r instanceof DOMRect;
+                var isDRO = r instanceof DOMRectReadOnly;
+                // 派生属性同步（top=y, right=x+width）。
+                var derived = (r.top === 20 && r.right === 110 && r.bottom === 70);
+                // DOMMatrix/DOMPoint 基本可用。
+                var m = new DOMMatrix();
+                var p = new DOMPoint(1, 2);
+                var mtxOk = typeof m.multiply === 'function' && m.a === 1;
+                var ptOk = p.x === 1 && p.w === 1;
+                document.getElementById('g').textContent =
+                    (allFn && isDR && isDRO && derived && mtxOk && ptOk) ? 'geometry ok' : 'geometry fail';
+            </script>
+            </body></html>"#.into(),
+            css: String::new(),
+            assertions: vec!["dom_has_body".into(), "no_panic".into(), "js_executes_ok".into()],
+        },
     ]
 }

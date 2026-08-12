@@ -369,6 +369,21 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3320：Geometry Interfaces（DOMRect/DOMRectReadOnly/DOMMatrix/DOMPoint）WPT 用例 js_executes_ok。
+    /// 锁 R3319（DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化）+ R2985（DOMMatrix/DOMPoint）。
+    /// 用例内联脚本做 instanceof 继承 + 派生属性 + 构造器默认值检测，脚本抛异常（API 缺失/instanceof 失败）
+    /// 即 check_js_executes_ok 失败。按 id 精确匹配新用例，避免依赖采样序号。
+    #[test]
+    fn geometry_interfaces_case_executes_scripts_r3320() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "web-api/geometry/interfaces")
+            .expect("web-api/geometry/interfaces 用例存在");
+        check_js_executes_ok(&case.html, &ctx)
+            .expect("geometry interfaces 用例 js_executes_ok（DOMRect/DOMRectReadOnly/DOMMatrix/DOMPoint 全局存在 + DOMRect instanceof 继承 + 派生属性 + DOMMatrix 单位矩阵 a=1 + DOMPoint w=1 默认）");
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]
