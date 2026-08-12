@@ -720,8 +720,7 @@ impl RendererRuntime {
             if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), !shift)
                 && self.interaction.focus_owner() != Some(next.as_str())
             {
-                self.blur_focused()?;
-                self.focus_via_tab(&next)?;
+                self.execute_focus_action(target, &next, !shift)?;
             }
         } else if is_printable_key(key) && !self.is_composing_at(target) {
             // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
@@ -736,6 +735,35 @@ impl RendererRuntime {
             }
         }
         Ok(())
+    }
+
+    fn execute_focus_action(&mut self, target: &str, next: &str, forward: bool) -> Result<(), String> {
+        let Some(target_ref) = self.node_ref_for_selector(target) else {
+            return Ok(());
+        };
+        let Some(next_ref) = self.node_ref_for_selector(next) else {
+            return Ok(());
+        };
+        let Ok(plan) = zero_page_runtime::plan_html_action(
+            &zero_page_runtime::HtmlActionRequest {
+                target: target_ref,
+                action: zero_page_runtime::HtmlUserAction::MoveFocus { forward },
+                shift: !forward,
+            },
+            self.navigation_epoch,
+            self.document_generation,
+            &zero_page_runtime::ActionTargetState::Focus { next: Some(next_ref) },
+        ) else {
+            return Ok(());
+        };
+        let outcome = zero_page_runtime::resolve_html_action(
+            plan,
+            zero_page_runtime::EventDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            },
+        );
+        self.apply_planned_effects(&outcome.effects)
     }
 
     /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
@@ -1171,6 +1199,22 @@ impl RendererRuntime {
             changed |= self.dispatch_planned_event(event).html_changed;
         }
         changed
+    }
+
+    fn apply_planned_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<(), String> {
+        for effect in effects {
+            match effect {
+                zero_page_runtime::PageEffect::Focus(next) => {
+                    let next = next.and_then(|node| self.selector_for_node_ref(node));
+                    self.blur_focused()?;
+                    if let Some(next) = next {
+                        self.focus_via_tab(&next)?;
+                    }
+                }
+                zero_page_runtime::PageEffect::Navigate(_) => {}
+            }
+        }
+        Ok(())
     }
 
     fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
