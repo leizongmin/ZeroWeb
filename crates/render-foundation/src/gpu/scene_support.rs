@@ -20,9 +20,10 @@ use crate::primitive::RenderPrimitives;
 /// 不受影响、无需回退：半透明颜色（P2-8 后顶点携带 alpha，shader 输出
 /// `color.a × 覆盖率`）、渐变（纹理 RGBA）、图片、硬边不透明阴影。
 pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
-    // C（R3278）：draw_order 路径支持 clip（GPU 白 rect 擦白）与 blend（双 pass 源层
-    // 混合）——与 CPU 语义一致。分桶路径（draw_order 空）无顺序语义 → 仍拒绝回退。
-    if (!primitives.clips.is_empty() || !primitives.blend_modes.is_empty()) && primitives.draw_order.is_empty() {
+    // C（R3278）+ R3284：clip 全路径支持（draw_order 白 rect 原位 / 分桶末尾擦白，
+    // 均对齐 CPU 语义）；blend 需 draw_order 顺序（双 pass 分段）——分桶路径无顺序
+    // 语义 → 仍拒绝回退（blend 分桶影响面≈0：painter 默认产 draw_order）。
+    if !primitives.blend_modes.is_empty() && primitives.draw_order.is_empty() {
         return false;
     }
     // 阴影：GPU 仅硬边矩形（collect_shadow_vertices），

@@ -1302,6 +1302,21 @@ impl GpuRenderer {
                 self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts.concat());
                 // 12. Overlay glyphs
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+                // R3284：分桶路径（draw_order 空）的 clip——末尾擦白（对齐 CPU
+                // typed 分桶的 apply_clip 位置：blend 后最后处理）
+                for clip in &primitives.clips {
+                    let (fw, fh) = (width as f32, height as f32);
+                    let l = (clip.rect.left() * scale).max(0.0);
+                    let t = (clip.rect.top() * scale).max(0.0);
+                    let r = (clip.rect.right() * scale).min(fw);
+                    let b = (clip.rect.bottom() * scale).min(fh);
+                    let mut verts = Vec::new();
+                    push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
+                    push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
+                    push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
+                    push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
+                    self.draw_fill_pass(&mut pass, uniform_bg, &device, &verts, "Clip");
+                }
             }
         }
 

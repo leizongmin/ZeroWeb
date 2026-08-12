@@ -177,12 +177,12 @@ fn parity_basic_scene_matches() {
 fn parity_scene_supported_rejects_unimplemented() {
     let (p, _) = build_basic_scene();
 
-    // clips 非空
+    // R3284：clip 全路径支持（draw_order 原位 / 分桶末尾擦白）→ 接受
     let mut with_clip = p.clone();
     with_clip.clips.push(crate::primitive::ClipPrimitive {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
     });
-    assert!(!crate::gpu::scene_support::scene_supported(&with_clip));
+    assert!(crate::gpu::scene_support::scene_supported(&with_clip));
 
     // blend_modes 非空
     let mut with_blend = p.clone();
@@ -485,4 +485,28 @@ fn parity_blend_draw_order_matches_cpu() {
     // CPU/GPU 全帧一致（容差 0）
     let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 0);
     assert_eq!(over, 0, "blend 场景 CPU/GPU 应逐像素一致，diff={over} max={max_diff}");
+}
+
+/// R3284：分桶路径（draw_order 空）的 clip——末尾擦白，与 CPU typed 分桶一致。
+#[serial]
+#[test]
+fn parity_clip_bucket_path_matches_cpu() {
+    use crate::primitive::ClipPrimitive;
+    let mut p = RenderPrimitives::default();
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 255, 255),
+    });
+    p.clips.push(ClipPrimitive {
+        rect: Rect::new(2.0, 2.0, 12.0, 12.0),
+    });
+    // draw_order 空 → 分桶路径
+    assert!(p.draw_order.is_empty());
+    let cpu_fb = render_cpu(16, 16, &p, None);
+    let gpu_px = render_gpu(16, 16, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 0);
+    assert_eq!(
+        over, 0,
+        "分桶 clip 场景 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
+    );
 }
