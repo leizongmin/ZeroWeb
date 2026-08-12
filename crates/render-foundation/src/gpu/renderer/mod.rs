@@ -1743,7 +1743,12 @@ impl GpuRenderer {
                 let first = grad.stops.first().map(|s| s.offset).unwrap_or(0.0);
                 let last = grad.stops.last().map(|s| s.offset).unwrap_or(1.0);
                 let period = last - first;
-                if period > 1e-6 && first.abs() > 1e-6 {
+                // R3254-G1：shader 恒按 fract((t-first)/period) 采样（纹理即一个周期，
+                // 内容映射到 [0,1]）——色标**必须始终**重映射为 [0,1]，包括 first==0
+                // （此前条件 `first.abs() > 1e-6` 漏掉 first==0：`red 0px, blue 10px`
+                // 周期 [0,10] 未重映射 → 采样位置与纹理内容错位，整条渐变压缩）。
+                // first=0 且 period=1 时重映射为恒等（offset' = offset），无害。
+                if period > 1e-6 {
                     let remapped: Vec<crate::primitive::GradientStop> = grad
                         .stops
                         .iter()

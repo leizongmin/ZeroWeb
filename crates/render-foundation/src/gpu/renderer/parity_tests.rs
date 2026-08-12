@@ -599,6 +599,84 @@ fn parity_repeating_gradient_first_offset_matches_cpu() {
     );
 }
 
+/// R3254-G1：repeating 渐变**首色标 offset==0**（px 色标 `red 0px, blue 10px` 常见语法）——
+/// 此前重映射条件漏掉 first==0，GPU 整条渐变压缩（回归）；重映射后与 CPU 折叠逐像素一致。
+#[serial]
+#[test]
+fn parity_repeating_gradient_first_zero_offset_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    // 周期 [0, 10]（first==0，px 色标形态）：黑→白 折叠，视口只覆盖 0.1 个周期。
+    p.gradients.push(GradientPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 16.0),
+        kind: GradientKind::Linear {
+            x0: 0.0,
+            y0: 8.0,
+            x1: 32.0,
+            y1: 8.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::rgba(0, 0, 0, 255),
+            },
+            GradientStop {
+                offset: 10.0,
+                color: Color::rgba(255, 255, 255, 255),
+            },
+        ],
+        repeating: true,
+        interpolation: crate::primitive::GradientInterpolation {
+            space: crate::primitive::GradientColorSpace::Srgb,
+            hue: crate::primitive::HueMethod::Shorter,
+        },
+    });
+    let cpu_fb = render_cpu(32, 16, &p, None);
+    let gpu_px = render_gpu(32, 16, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    assert_eq!(
+        over, 0,
+        "repeating 渐变 first==0 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
+    );
+}
+
+/// R3254-G1：百分比色标 first==0（`red 0%, blue 25%`，周期 [0, 0.25]）。
+#[serial]
+#[test]
+fn parity_repeating_gradient_percent_first_zero_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.gradients.push(GradientPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 16.0),
+        kind: GradientKind::Linear {
+            x0: 0.0,
+            y0: 8.0,
+            x1: 32.0,
+            y1: 8.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::rgba(0, 0, 0, 255),
+            },
+            GradientStop {
+                offset: 0.25,
+                color: Color::rgba(255, 255, 255, 255),
+            },
+        ],
+        repeating: true,
+        interpolation: crate::primitive::GradientInterpolation {
+            space: crate::primitive::GradientColorSpace::Srgb,
+            hue: crate::primitive::HueMethod::Shorter,
+        },
+    });
+    let cpu_fb = render_cpu(32, 16, &p, None);
+    let gpu_px = render_gpu(32, 16, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    assert_eq!(
+        over, 0,
+        "repeating 渐变百分比 first==0 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
+    );
+}
+
 /// R3290：inset 阴影 GPU（盒内 frame 蒙版 + 洞 blur）与 CPU 视觉对照
 ///（blur 核差异为视觉近似，宽容差；洞边界应为渐变而非硬边）。
 #[serial]
