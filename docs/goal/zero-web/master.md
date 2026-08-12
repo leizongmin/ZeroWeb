@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3336 后状态固化：P1b native-dom 路径自主面全面穷尽——全量 parity 门 87/87 + R3334 多 WebView/重新导航安全 + R3096 perf bench 已覆盖 + shim+native 分层确认 S6/S7 真 rule-11 门禁。native 默认开技术验收已实证通过，剩 rule 11 行为变更决策 + S6/S7。zero-web 流无更多可自主 land 工作面。）
+**最后更新**: 2026-08-13（R3338：deep-review native dom_bindings 生产代码 ~7600 行——核查 GC 生命周期/stale NodeId/borrow_mut 重入/slotmap ABA/错误吞没四高风险域，结论无真 bug（代码经 R3133-R3272/R3334 多轮棘手边界打磨，设计健壮）；唯一发现 ATTR_NAMES 已记录的 append-only 微泄漏（bounded、S6/S7 defer）。前轮 R3337：饱和结论固化。）
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -159,6 +159,21 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review native dom_bindings 生产代码——无真 bug，确认健壮（本轮 R3338，engine 审查）
+
+承接 R3337（饱和结论固化）。本轮对 `crates/engine/src/dom_bindings/` 14 个生产文件（~7600 行，非测试）做**专项 deep-review**（lei-deep-review），核查四高风险域：
+
+| 风险域 | 审查结论 |
+|--------|----------|
+| **GC 生命周期 + stale NodeId** | ✅ `cache_native_element` 用 `v8::Weak::with_guaranteed_finalizer`（R3133），包装器 GC 时终结器清 LISTENERS（闭合 R3109）；`get_or_create_native_element` 缓存命中前 `node_exists` 校验（mod.rs:757-758），detached 节点仍 arena 可达（spec 重新附加语义，R3133 注释）；**slotmap NodeId 自带 version 防 ABA**（remove+re-insert 涨 version → 旧 ffi `node_exists`=false）。设计正确。 |
+| **borrow_mut 重入 panic 风险** | ✅ 核查关键点：JS 回调（connectedCallback/attributeChangedCallback）派发**全部在 `with_dom_mut` 闭包外**——`native_append_child_invoke`（node.rs:240→245）、`native_set_attribute_invoke`（element.rs:764→765）、`native_remove_child_invoke`：mutation 在 `with_dom_mut(|d| ...)` 内（纯 Rust），`notify_connect_after_insert`/`notify_attribute_change` 在闭包外（borrow 已释放）。回调内再入 setAttribute/appendChild 安全。`with_dom_mut` doc 称「闭包内不触发 JS 再入」**经验证准确**。 |
+| **错误吞没（V8 回调 panic 风险）** | ✅ 全回调用 `unwrap_or_default()`/`let _ =`/`.ok()?`（非 `.unwrap()`/`panic!`）——V8 回调须降级不 panic（panic 会崩 isolate），防御模式正确。`let _ = d.append_child()` 忽略 mutation 失败可接受（stale 节点 → DOM 不变，spec best-effort）。 |
+| **NodeId↔External ptr 往返** | ✅ `encode_node_id`（`KeyData::as_ffi`）→ `v8::External`（ptr 值，不解引用）→ `read_node_id`（`ext.value() as usize as u64`）：64 位 usize 往返不变，raw ptr 不 deref（安全借用 v8 传整数）。 |
+
+**唯一发现**：`ATTR_NAMES`（gc.rs:61）**append-only 微泄漏**——attr 名 arena 仅 reset 清空（无 free-list/generation 回收），残余 attr 名字符串按 distinct attr 数 bounded。**已在 gc.rs:59 注释明确记录为 deliberate trade-off + S6/S7 defer**（CLAUDE.md「精准修改」——已记录的已知死代码/技术债不擅自删）。非 bug，非 default-on 阻塞。
+
+**结论**：native dom_bindings 生产代码经 R3133-R3272 + R3334 多轮棘手边界（weak/finalizer、嵌套 upgrade 栈化、listener 全局注册序、多 WebView isolate 泄漏修复）打磨，**deep-review 确认无真 bug，设计健壮**。本次 review 价值：防未来重审浪费 + 给用户 default-on 决策提供「生产代码已审、无已知隐患」的额外信心。
 
 ### native-dom 全量 parity 验收门 + 重新导航安全确认（本轮 R3336，wpt-runner）
 
