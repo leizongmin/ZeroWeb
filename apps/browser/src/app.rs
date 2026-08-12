@@ -68,6 +68,8 @@ pub struct BrowserApp {
     tabs: TabManager,
     /// GPU 渲染器
     gpu_renderer: Option<GpuRenderer>,
+    /// 上次渲染时活跃标签页（R3254-M4：标签切换时清 GPU 图片纹理缓存，防跨标签滞留）。
+    last_rendered_tab: Option<TabId>,
     /// 渲染模式
     render_mode: RenderMode,
     /// 字体加载器
@@ -234,6 +236,7 @@ impl BrowserApp {
             shell,
             tabs: TabManager::new((800, 600), color_scheme),
             gpu_renderer: None,
+            last_rendered_tab: None,
             render_mode,
             font_loader,
             glyph_cache: GlyphCache::new(8192),
@@ -382,6 +385,19 @@ impl BrowserApp {
                 }
                 PendingTabAction::RequestRedraw => {
                     self.needs_redraw = true;
+                }
+                // R3254-M9：页面 keydown 未 preventDefault 时执行滚动（焦点在文本控件的
+                // Tab 已在 take_pending_actions 被守卫过滤）。
+                PendingTabAction::ScrollViewport { delta } => {
+                    self.scroll_active_page_by_px(delta);
+                }
+            }
+        }
+        // R3254-M10：单进程表单提交导航（worker 回执；GET）。
+        for (tab_id, url, method, body) in self.tabs.take_pending_navigations() {
+            if method == "GET" && body.is_none() {
+                if self.shell.active_tab_id() == Some(tab_id) {
+                    self.navigate_to(&url);
                 }
             }
         }

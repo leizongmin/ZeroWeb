@@ -234,37 +234,44 @@ impl super::Painter {
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
-        // CSS inline content uses the control's line box. Vertically center the
-        // font box inside that content box instead of pinning it to the top.
+        // R3254-M11：textarea 值可含 '\n'——按行拆分绘制（此前把 '\n' 当普通 glyph 画成
+        // 单行粘连）。line-height 简化为 1.2em；整个文本块在 content box 内垂直居中
+        //（单行 input 行为与原实现一致）。font box 垂直居中于行盒：
         // https://drafts.csswg.org/css-inline-3/#line-height-property
-        let baseline_y = content_y + (box_node.content_height - font_size).max(0.0) / 2.0 + font_size;
-
-        // 居中按钮标签：先测总宽再定起始 x。
-        let total_w: f32 = label
-            .chars()
-            .map(|ch| self.measure_char_cached(ch, font_size, false))
-            .sum();
-        let mut char_x = if center {
-            content_x + (box_node.content_width - total_w).max(0.0) / 2.0
-        } else {
-            content_x
-        };
-        for ch in label.chars() {
-            self.primitives.add_glyph(GlyphPrimitive {
-                x: char_x,
-                y: baseline_y,
-                font_size,
-                color,
-                glyph_id: ch as u32,
-                font_glyph_index: None,
-                source: None,
-                font_id: default_font_id,
-                bitmap_width: None,
-                bitmap_height: None,
-                rotation: 0.0,
-                synthetic_italic: false,
-            });
-            char_x += self.measure_char_cached(ch, font_size, false);
+        let line_height = font_size * 1.2;
+        let lines: Vec<&str> = label.split('\n').collect();
+        let block_height = lines.len() as f32 * line_height;
+        let block_top = content_y + (box_node.content_height - block_height).max(0.0) / 2.0;
+        for (line_index, line) in lines.iter().enumerate() {
+            let line_top = block_top + line_index as f32 * line_height;
+            let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size;
+            // 居中按钮标签：先测总宽再定起始 x。
+            let total_w: f32 = line
+                .chars()
+                .map(|ch| self.measure_char_cached(ch, font_size, false))
+                .sum();
+            let mut char_x = if center {
+                content_x + (box_node.content_width - total_w).max(0.0) / 2.0
+            } else {
+                content_x
+            };
+            for ch in line.chars() {
+                self.primitives.add_glyph(GlyphPrimitive {
+                    x: char_x,
+                    y: baseline_y,
+                    font_size,
+                    color,
+                    glyph_id: ch as u32,
+                    font_glyph_index: None,
+                    source: None,
+                    font_id: default_font_id,
+                    bitmap_width: None,
+                    bitmap_height: None,
+                    rotation: 0.0,
+                    synthetic_italic: false,
+                });
+                char_x += self.measure_char_cached(ch, font_size, false);
+            }
         }
     }
 

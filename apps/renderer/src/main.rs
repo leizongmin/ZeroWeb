@@ -37,10 +37,11 @@ use zero_engine::{
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FramePublishMode,
-    HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams, ImeEventType,
-    IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams,
-    NavigateParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
+    FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
+    ImeEventType, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams,
+    MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -345,6 +346,44 @@ impl RendererRuntime {
         self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
     }
 
+    /// R3254-L1：regular 消息（Title/Url/LoadComplete/DispatchResult/FocusOwnerChanged）与帧
+    /// 共享发布线程 FIFO（保序）；无发布线程或 worker 死亡时回退同步发送。
+    fn send_regular(&mut self, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage {
+            id: self.alloc_msg_id(),
+            kind,
+        };
+        self.send_regular_msg(msg)
+    }
+
+    /// 同 [`Self::send_regular`]，但复用既有消息 id（DispatchDomEventResult 响应 dispatch）。
+    fn send_regular_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage { id, kind };
+        self.send_regular_msg(msg)
+    }
+
+    fn send_regular_msg(&mut self, msg: IpcMessage) -> Result<(), String> {
+        if let Some(thread) = &self.compositor_publish
+            && thread.enqueue_regular(msg.clone())
+        {
+            return Ok(());
+        }
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+    }
+
+    /// R3254-H1：焦点回执——browser 同步 `event_targets`（键盘事件路由）与文本控件守卫
+    /// （滚动默认动作豁免）。`selector=None` 表示失焦。经 `send_regular` 与键盘派发结果
+    /// 保持 FIFO（焦点迁移与 keydown 回执的相对顺序对 browser 路由正确性敏感）。
+    fn send_focus_change(&mut self, selector: Option<String>) -> Result<(), String> {
+        let text_input = selector
+            .as_deref()
+            .is_some_and(|sel| zero_engine::is_text_input(&self.cached_html, sel));
+        self.send_regular(IpcMessageKind::FocusOwnerChanged(FocusChangeInfo {
+            selector,
+            text_input,
+        }))
+    }
+
     fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -455,6 +494,11 @@ impl RendererRuntime {
 
     /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
     fn publish_webview_now(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        // R3254-M1：发布线程确认已写出的帧，其图片像素已在线上 → 标记 sent（不再重传）。
+        // 被 latest-wins 替换、从未写出的帧不标记——下帧重传像素（保守，正确）。
+        if let Some(thread) = &self.compositor_publish {
+            self.sent_image_keys.extend(thread.drain_sent_image_keys());
+        }
         let html = self.cached_html.clone();
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
@@ -523,7 +567,7 @@ impl RendererRuntime {
                 &url,
                 &mut image_cache,
                 &mut fetch,
-                &mut self.sent_image_keys,
+                &self.sent_image_keys,
             )
         } else {
             let mut no_fetch = |_u: &str| None;
@@ -532,7 +576,7 @@ impl RendererRuntime {
                 &url,
                 &mut image_cache,
                 &mut no_fetch,
-                &mut self.sent_image_keys,
+                &self.sent_image_keys,
             )
         };
         let frame = zero_page_runtime::FrameModel {
@@ -542,7 +586,7 @@ impl RendererRuntime {
             dirty_rects,
             hit_test,
         };
-        publish_render_with_layout(
+        let sent_now = publish_render_with_layout(
             &mut self.outbound,
             self.compositor_publish.as_ref(),
             &mut self.next_msg_id,
@@ -552,6 +596,8 @@ impl RendererRuntime {
             payloads,
             self.navigation_epoch,
         )?;
+        // R3254-M1：legacy 同步路径写出的帧在此标记 sent（compositor 路径由发布线程回传）。
+        self.sent_image_keys.extend(sent_now);
         // P1a Slice 2b：render 填完 rect snapshot 后触发 observer 重算——IO `_crossed`（threshold
         // 越界）/ RO size-diff 仅在变化时派发，故 observe() 之后的真实 layout 变化能触发 observer 回调
         // （observe 仅派发 initial）。depth 守卫防 tick→rerender→publish→tick 反馈环（observer 本身
@@ -645,13 +691,38 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
+    /// 而非注入控件——防平台同一次击键同时投递 KeyboardInput 与 Ime::Commit 的双写）。
+    fn is_composing_at(&self, selector: &str) -> bool {
+        self.form_controls
+            .get(selector)
+            .is_some_and(|state| state.composition_text.is_some())
+    }
+
     /// 更新焦点文本控件的临时 IME preedit；不写入 value，只触发 paint/publish。
-    fn apply_ime_preedit_at(&mut self, selector: &str, text: String) -> Result<bool, String> {
+    ///
+    /// R3254-L3：消费平台 preedit 光标/选区（winit UTF-8 字节偏移）——组合内移动/选择
+    /// 映射到 value 的替换区间（preedit 起点 = retained selection_start + preedit 内偏移）；
+    /// 无 cursor 或单点光标时用 retained selection（与旧行为一致）。
+    fn apply_ime_preedit_at(
+        &mut self,
+        selector: &str,
+        text: String,
+        cursor: Option<(usize, usize)>,
+    ) -> Result<bool, String> {
         let Some(state) = self.form_controls.get(selector) else {
             return Ok(false);
         };
-        let selection_start = state.selection_start;
-        let selection_end = state.selection_end;
+        let (selection_start, selection_end) = match cursor {
+            Some((start, end)) if start != end => {
+                let base = state.selection_start;
+                (
+                    base + zero_engine::utf8_byte_to_utf16_offset(&text, start.min(end)),
+                    base + zero_engine::utf8_byte_to_utf16_offset(&text, start.max(end)),
+                )
+            }
+            _ => (state.selection_start, state.selection_end),
+        };
         if !self.form_controls.update_focused_composition(text.clone()) {
             return Ok(false);
         }
@@ -704,7 +775,12 @@ impl RendererRuntime {
                     vec![("compositionupdate", params.text.as_str())]
                 };
                 let event_changed = self.dispatch_composition_events_at(&target, &events);
-                let paint_changed = self.apply_ime_preedit_at(&target, params.text)?;
+                // R3254-L3：传平台光标/选区（组合内移动/选择反映到替换区间）。
+                let paint_changed = self.apply_ime_preedit_at(
+                    &target,
+                    params.text,
+                    Some((params.cursor_start.unwrap_or(0), params.cursor_end.unwrap_or(0))),
+                )?;
                 if event_changed || paint_changed {
                     self.publish_webview(None, true)?;
                 }
@@ -718,7 +794,7 @@ impl RendererRuntime {
                 let event_changed = was_composing
                     && self.dispatch_composition_events_at(&target, &[("compositionend", params.text.as_str())]);
                 if params.text.is_empty() {
-                    let paint_changed = self.apply_ime_preedit_at(&target, String::new())?;
+                    let paint_changed = self.apply_ime_preedit_at(&target, String::new(), None)?;
                     if event_changed || paint_changed {
                         self.publish_webview(None, true)?;
                     }
@@ -734,7 +810,7 @@ impl RendererRuntime {
                     .is_some_and(|state| state.composition_text.is_some());
                 let event_changed =
                     was_composing && self.dispatch_composition_events_at(&target, &[("compositionend", "")]);
-                let paint_changed = self.apply_ime_preedit_at(&target, String::new())?;
+                let paint_changed = self.apply_ime_preedit_at(&target, String::new(), None)?;
                 if event_changed || paint_changed {
                     self.publish_webview(None, true)?;
                 }
@@ -943,6 +1019,8 @@ impl RendererRuntime {
         let Some(old) = self.interaction.set_focus_owner(None) else {
             return Ok(());
         };
+        // R3254-H1：焦点回执（仅实际失焦时）。
+        self.send_focus_change(None)?;
         let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
             self.form_controls
                 .blur_focused()
@@ -980,7 +1058,11 @@ impl RendererRuntime {
         if !zero_engine::is_focusable_selector(&self.cached_html, selector) {
             return Ok(());
         }
-        self.interaction.set_focus_owner(Some(selector.to_string()));
+        let old = self.interaction.set_focus_owner(Some(selector.to_string()));
+        if old.as_deref() != Some(selector) {
+            // R3254-H1：焦点回执（仅焦点所有者实际变化时，避免重复聚焦刷屏）。
+            self.send_focus_change(Some(selector.to_string()))?;
+        }
         if zero_engine::is_text_input(&self.cached_html, selector) {
             let val = self
                 .form_controls
@@ -1004,6 +1086,75 @@ impl RendererRuntime {
             self.rerender_publish_webview()?;
         }
         Ok(())
+    }
+
+    /// R3254-M7'：drain 页面 JS `focus()`/`blur()` 变更并同步 retained 焦点状态。
+    ///
+    /// shim（part04.js）已在 V8 内派发过 focus/blur 事件，这里**只**更新
+    /// `PageInteractionState` + `FormControlStateStore` 基线 + 焦点回执，不重复派发。
+    /// 采纳前过 `is_focusable_selector` 校验（shim 明言不校验可聚焦性）——不可聚焦的
+    /// JS focus 忽略（保持当前焦点，与 host 驱动路径的 focus_target 行为一致）。
+    fn sync_focus_from_js(&mut self) {
+        let changes = {
+            let queue = self.js_worker.focus_changes();
+            let mut queue = queue.lock().unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut *queue)
+        };
+        for change in changes {
+            let Some(selector) = change else {
+                self.sync_js_blur();
+                continue;
+            };
+            if !zero_engine::is_focusable_selector(&self.cached_html, &selector) {
+                continue;
+            }
+            let old = self.interaction.set_focus_owner(Some(selector.clone()));
+            if old.as_deref() == Some(selector.as_str()) {
+                continue;
+            }
+            // 同步 form_controls 基线（同 focus_target；JS 已派发 focus 事件，无 DOM 派发）。
+            if zero_engine::is_text_input(&self.cached_html, &selector) {
+                let val = self
+                    .form_controls
+                    .get(&selector)
+                    .map(|state| state.value.clone())
+                    .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, &selector));
+                let end = val.encode_utf16().count();
+                self.form_controls.focus(&selector, val, end, end);
+            }
+            if let Err(e) = self.send_focus_change(Some(selector)) {
+                tracing::warn!("send focus change: {e}");
+            }
+        }
+    }
+
+    /// JS `blur()` 的宿主侧同步：清焦点 + change-on-blur（blur 事件 shim 已派发，只补 change）。
+    fn sync_js_blur(&mut self) {
+        let Some(old) = self.interaction.set_focus_owner(None) else {
+            return;
+        };
+        let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
+            self.form_controls
+                .blur_focused()
+                .is_some_and(|control| control.value_changed)
+        } else {
+            false
+        };
+        if value_changed && self.javascript_enabled {
+            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            if page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None).html_changed {
+                let _ = self.rerender_publish_webview();
+            }
+        }
+        if let Err(e) = self.send_focus_change(None) {
+            tracing::warn!("send focus change: {e}");
+        }
     }
 
     /// P1a Tab 焦点导航：更新唯一 focus owner 并派发 'focus'。
@@ -1264,7 +1415,7 @@ impl RendererRuntime {
         self.sync_cached_html_from_webview();
         self.try_publish_progress(true)?;
         if emit_complete {
-            self.send(IpcMessageKind::LoadComplete)?;
+            self.send_regular(IpcMessageKind::LoadComplete)?;
             tracing::info!("页面渲染完成: {page_url}");
         }
         if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
@@ -1412,7 +1563,7 @@ impl RendererRuntime {
         if push_history {
             self.push_history(&page_url);
         }
-        self.send(IpcMessageKind::UrlChanged(page_url.clone()))?;
+        self.send_regular(IpcMessageKind::UrlChanged(page_url.clone()))?;
         self.current_url = Some(page_url.clone());
         self.cached_html = html.clone();
         self.cached_css = String::new();
@@ -1436,7 +1587,7 @@ impl RendererRuntime {
         self.send(IpcMessageKind::LoadFailed(error.to_string()))?;
         let html = error_page::generate_error_page(page_url, error);
         let error_url = format!("error://{page_url}");
-        self.send(IpcMessageKind::UrlChanged(error_url.clone()))?;
+        self.send_regular(IpcMessageKind::UrlChanged(error_url.clone()))?;
         self.current_url = Some(error_url.clone());
         self.cached_html = html.clone();
         self.cached_css.clear();
@@ -1474,7 +1625,7 @@ impl RendererRuntime {
         self.pending_script_prefetch = None;
         self.inflight_fetches.clear();
         self.push_history(&params.url);
-        self.send(IpcMessageKind::UrlChanged(params.url.clone()))?;
+        self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());
         self.cached_html.clear();
         self.cached_css.clear();
@@ -1676,19 +1827,6 @@ impl RendererRuntime {
     fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
         let event_type = params.event_type.clone();
         let key = params.key.clone();
-        if event_type == "__zeroweb_insert_text" {
-            let target = params
-                .selector
-                .or_else(|| self.interaction.focus_owner().map(str::to_string))
-                .unwrap_or_else(|| self.interaction.pointer_target().to_string());
-            if !target.is_empty() {
-                let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
-            }
-            return self.send_with_id(
-                msg_id,
-                IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams { default_allowed: true }),
-            );
-        }
         let detail = if params.key.is_some() || params.code.is_some() {
             Some(DomEventDetail {
                 key: params.key,
@@ -1718,7 +1856,8 @@ impl RendererRuntime {
                     let _ = self.blur_focused();
                     let _ = self.focus_via_tab(&next);
                 }
-            } else if key.as_deref().is_some_and(is_printable_key) {
+            } else if key.as_deref().is_some_and(is_printable_key) && !self.is_composing_at(&target) {
+                // R3254-L5：IME 合成期间跳过 keydown 可打印字符默认动作（防与 Commit 双写）。
                 let _ = self.apply_text_input_at(&target, key.as_deref().unwrap_or_default());
             } else if key.as_deref() == Some("Backspace") {
                 let _ = self.apply_text_delete_at(&target);
@@ -1729,8 +1868,19 @@ impl RendererRuntime {
                     let _ = self.submit_form_on_enter_at(&target);
                 }
             }
+        } else if result.default_allowed && event_type == "mousedown" {
+            // R3254-M8：焦点切换在 mousedown（UI Events：focus 是 mousedown 默认动作，与
+            // Chrome/Firefox 一致——mousedown preventDefault 阻止聚焦）。blur/change/focus
+            // 先于 click 执行且不受 click 的 preventDefault 影响（此前在 click 切换会被
+            // 目标 click handler 的 preventDefault 吞掉）。click 分支保留作键盘触发点击兜底。
+            let target = self.interaction.pointer_target().to_string();
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
         } else if result.default_allowed && event_type == "click" {
             let target = self.interaction.pointer_target().to_string();
+            // 幂等兜底：键盘触发的 click、mousedown 未命中（selector=None 路径）时仍切焦点。
             if self.interaction.focus_owner() != Some(target.as_str()) {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
@@ -1745,7 +1895,7 @@ impl RendererRuntime {
                 let _ = self.reset_form_on_click_at(&target);
             }
         }
-        self.send_with_id(
+        self.send_regular_with_id(
             msg_id,
             IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams {
                 default_allowed: result.default_allowed,
@@ -1772,10 +1922,20 @@ impl RendererRuntime {
         // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
         // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
         // dispatch_dom_at 已据命中点更新 pointer target。
+        if event_type == "mousedown" && click_default_allowed {
+            // R3254-M8：焦点切换在 mousedown（与 DispatchDomEvent 主路径对称；mousedown
+            // preventDefault 阻止聚焦，Chrome 语义）。
+            let target = self.interaction.pointer_target().to_string();
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+        }
         if event_type == "click" {
             let target = self.interaction.pointer_target().to_string();
             // P1a change-on-blur：focus 变化优先（mousedown→focus→click 近似）——旧焦点失焦
-            // （blur + change 若 value 变），新焦点获焦（focus 若 text input）。
+            // （blur + change 若 value 变），新焦点获焦（focus 若 text input）。幂等兜底：
+            // mousedown 已切换时此处跳过；键盘触发 click / mousedown 未命中时仍生效。
             if self.interaction.focus_owner() != Some(target.as_str()) {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
@@ -1854,7 +2014,9 @@ impl RendererRuntime {
                     let _ = self.blur_focused();
                     let _ = self.focus_via_tab(&next);
                 }
-            } else if is_printable_key(&params.key) {
+            } else if is_printable_key(&params.key) && !self.is_composing_at(&target) {
+                // R3254-L5：IME 合成期间跳过 keydown 可打印字符默认动作——部分平台对同一次
+                // 击键同时投递 KeyboardInput 与 Ime::Commit，双写 value。
                 let _ = self.apply_text_input_at(&target, &params.key);
             } else if params.key == "Backspace" {
                 let _ = self.apply_text_delete_at(&target);
@@ -1978,6 +2140,7 @@ impl RendererRuntime {
             | IpcMessageKind::HitTestElementResult(_)
             | IpcMessageKind::HitTestImageResult(_)
             | IpcMessageKind::DispatchDomEventResult(_)
+            | IpcMessageKind::FocusOwnerChanged(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())
@@ -2034,6 +2197,9 @@ impl RendererRuntime {
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
             self.tick_pending_navigation()?;
 
+            // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
+            self.sync_focus_from_js();
+
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(msg)) => {
                     if self.inflight_fetches.try_complete(&msg) {
@@ -2065,6 +2231,9 @@ impl RendererRuntime {
 }
 
 /// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。
+///
+/// R3254-M1：返回「本次**同步写出**的帧携带的图片 key 列表」——调用方据此标记 sent。
+/// compositor 异步路径（发布线程写出）不在此返回，由 `drain_sent_image_keys` 回传。
 #[allow(clippy::too_many_arguments)]
 fn publish_render_with_layout(
     outbound: &mut IpcOutbound,
@@ -2075,7 +2244,12 @@ fn publish_render_with_layout(
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
     navigation_epoch: u64,
-) -> Result<(), String> {
+) -> Result<Vec<u64>, String> {
+    // R3254-M1：同步写出成功后才标记这些 key（sent 标记 = 实际在线上）。
+    let sync_sent_keys = image_payloads
+        .iter()
+        .map(|payload| payload.image_key)
+        .collect::<Vec<u64>>();
     let paint = paint_export::paint_snapshot_from_primitives(
         frame.viewport.0,
         frame.viewport.1,
@@ -2118,8 +2292,23 @@ fn publish_render_with_layout(
     let compositor_async_sent = publish_state.mode == FramePublishMode::Compositor
         && compositor_publish.is_some_and(|thread| thread.try_enqueue(msg.clone()));
     if !compositor_async_sent {
+        // R3254-M1：同步写出成功后才标记该帧图片 key（sent 标记 = 实际在线上）。
         outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        let sent_now = sync_sent_keys;
+        if let Some(title) = title {
+            let msg = IpcMessage {
+                id: {
+                    let id = *next_msg_id;
+                    *next_msg_id += 1;
+                    id
+                },
+                kind: IpcMessageKind::TitleChanged(title),
+            };
+            outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        }
+        return Ok(sent_now);
     }
+    // R3254-L1：Title 与帧共享发布线程 FIFO（保序），不再主线程直发。
     if let Some(title) = title {
         let msg = IpcMessage {
             id: {
@@ -2129,9 +2318,13 @@ fn publish_render_with_layout(
             },
             kind: IpcMessageKind::TitleChanged(title),
         };
-        outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        if let Some(thread) = compositor_publish
+            && !thread.enqueue_regular(msg.clone())
+        {
+            outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        }
     }
-    Ok(())
+    Ok(Vec::new())
 }
 
 fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {

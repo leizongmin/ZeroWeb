@@ -879,6 +879,39 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
+/// R3254-L7：扫描到第一个**未转义**分隔符的位置（反斜杠后的字符跳过——CSS 转义序列，与生成端 `stable_selector_for_node` 成对）。
+fn find_unescaped_delim(s: &str, delims: &[char]) -> Option<usize> {
+    let mut chars = s.char_indices();
+    while let Some((index, ch)) = chars.next() {
+        if ch == '\\' {
+            chars.next(); // 跳过被转义字符
+        } else if delims.contains(&ch) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+/// R3254-L7：去掉 CSS 转义前缀（`\x` → `x`）——与生成端 `escape_css_ident` 成对。
+pub(crate) fn unescape_css_ident(s: &str) -> String {
+    if !s.contains('\\') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// 解析单个简单选择器。
 ///
 /// 支持格式：
 /// - `"div"` — 标签名
@@ -919,20 +952,20 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
     // 解析后续的选择器部分
     while !rest.is_empty() {
         if let Some(r) = rest.strip_prefix('#') {
-            // ID 选择器
-            let end = r.find(['.', '[', ':']).unwrap_or(r.len());
+            // ID 选择器（R3254-L7：段边界跳过转义序列，段内容 unescape）
+            let end = find_unescaped_delim(r, &['.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
                 return None; // 空的 ID 选择器
             }
-            result.id = Some(r[..end].to_string());
+            result.id = Some(unescape_css_ident(&r[..end]));
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix('.') {
-            // 类选择器
-            let end = r.find(['#', '.', '[', ':']).unwrap_or(r.len());
+            // 类选择器（R3254-L7：同上）
+            let end = find_unescaped_delim(r, &['#', '.', '[', ':']).unwrap_or(r.len());
             if end == 0 {
                 return None; // 空的类选择器
             }
-            result.classes.push(r[..end].to_string());
+            result.classes.push(unescape_css_ident(&r[..end]));
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix(':') {
             // 伪类：名字直到 `(` 或下一个分隔符；`:nth-child(...)` 含括号参数。
@@ -1015,6 +1048,28 @@ mod tests {
         let sel = parse_simple_selector(".myclass").unwrap();
         assert!(sel.tag.is_none());
         assert_eq!(sel.classes, vec!["myclass"]);
+    }
+
+    /// R3254-L7：转义 round-trip——`id="a.b"` 生成 `#a\.b`，解析回 `a.b` 且不被
+    /// `.` 截断成 id=a + class=b。
+    #[test]
+    fn test_parse_escaped_id_and_class() {
+        let sel = parse_simple_selector(r#"#a\.b"#).unwrap();
+        assert_eq!(sel.id.as_deref(), Some("a.b"));
+        assert!(sel.classes.is_empty());
+
+        let sel = parse_simple_selector(r#"div.x\:y"#).unwrap();
+        assert_eq!(sel.tag.as_deref(), Some("div"));
+        assert_eq!(sel.classes, vec!["x:y"]);
+
+        let sel = parse_simple_selector(r#"#a\ b"#).unwrap();
+        assert_eq!(sel.id.as_deref(), Some("a b"));
+
+        // 转义不破坏普通选择器。
+        let sel = parse_simple_selector("#plain").unwrap();
+        assert_eq!(sel.id.as_deref(), Some("plain"));
+        assert_eq!(unescape_css_ident("plain"), "plain");
+        assert_eq!(unescape_css_ident(r#"a\.b"#), "a.b");
     }
 
     #[test]

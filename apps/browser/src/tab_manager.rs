@@ -1,6 +1,6 @@
 //! 标签页运行时管理 — 统一 in-process worker 与可选多进程后端。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
@@ -23,6 +23,12 @@ pub enum PendingTabAction {
     OpenBackgroundTab(String),
     /// 请求主线程重绘。
     RequestRedraw,
+    /// R3254-M9：滚动页面视口（keydown 回执 default_allowed 后才执行——页面 keydown
+    /// handler 的 preventDefault 可阻止浏览器滚动；守卫见 `take_pending_actions` 消费处）。
+    ScrollViewport {
+        /// 滚动方向与幅度（正 = 向下）。
+        delta: f32,
+    },
 }
 
 /// 一笔在途的异步派发：哪个 Tab、回执允许默认动作时要做什么。
@@ -50,12 +56,17 @@ pub struct TabManager {
     javascript_enabled: bool,
     /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
     event_targets: HashMap<TabId, String>,
+    /// 焦点位于可编辑文本控件（input 文本类 / textarea）的 Tab（R3254-H1 回执维护；
+    /// 滚动默认动作守卫，覆盖 Tab 导航/JS auto-focus 等无 ime_rect 的场景）。
+    focused_text_input: HashSet<TabId>,
     /// Last focused page text-control insertion area in document CSS pixels.
     ime_target_rects: HashMap<TabId, (f32, f32, f32, f32)>,
     /// dispatch_id → PendingDispatch。
     pending_dispatch: HashMap<u64, PendingDispatch>,
     /// 已 resolved、等待主事件循环消费的延迟动作。
     pending_actions: VecDeque<(TabId, PendingTabAction)>,
+    /// R3254-M10：单进程 worker 表单提交导航请求（(TabId, url, method, body)）。
+    pending_navigations: Vec<(TabId, String, String, Option<String>)>,
     /// 下一个 dispatch_id。
     next_dispatch_id: u64,
 }
@@ -80,9 +91,11 @@ impl TabManager {
             poll_tick: 0,
             javascript_enabled: true,
             event_targets: HashMap::new(),
+            focused_text_input: HashSet::new(),
             ime_target_rects: HashMap::new(),
             pending_dispatch: HashMap::new(),
             pending_actions: VecDeque::new(),
+            pending_navigations: Vec::new(),
             next_dispatch_id: 1,
         };
         if use_multiprocess_backend() && manager.process_backend.is_none() {
@@ -202,6 +215,7 @@ impl TabManager {
         }
         self.snapshots.remove(&tab_id);
         self.event_targets.remove(&tab_id);
+        self.focused_text_input.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
@@ -222,6 +236,7 @@ impl TabManager {
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.ensure_tab(tab_id);
         self.event_targets.remove(&tab_id);
+        self.focused_text_input.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.clone());
@@ -250,6 +265,7 @@ impl TabManager {
     pub fn load_html(&mut self, tab_id: TabId, html: &str, css: Option<&str>, url: Option<&str>) {
         self.ensure_tab(tab_id);
         self.event_targets.remove(&tab_id);
+        self.focused_text_input.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.unwrap_or("about:blank").to_string());
@@ -298,6 +314,23 @@ impl TabManager {
                     dispatch_id,
                     default_allowed,
                 );
+            }
+            // R3254-H1：焦点回执同步键盘路由目标与文本控件守卫。
+            // selector=None（失焦）移除条目——dispatch_key_event 有 None→body 回退。
+            for (tab_id, info) in backend.take_focus_changes() {
+                match info.selector {
+                    Some(sel) => {
+                        self.event_targets.insert(tab_id, sel);
+                    }
+                    None => {
+                        self.event_targets.remove(&tab_id);
+                    }
+                }
+                if info.text_input {
+                    self.focused_text_input.insert(tab_id);
+                } else {
+                    self.focused_text_input.remove(&tab_id);
+                }
             }
         }
         for (tab_id, worker) in &self.workers {
@@ -352,6 +385,20 @@ impl TabManager {
                             default_allowed,
                         );
                     }
+                    // R3254-M10：worker 侧焦点变更（Tab 默认动作 / JS focus 镜像）——同步
+                    // event_targets 与文本控件守卫（与多进程 FocusOwnerChanged 同语义）。
+                    TabWorkerMessage::FocusChanged(focus) => match focus {
+                        Some(sel) => {
+                            self.event_targets.insert(*tab_id, sel);
+                        }
+                        None => {
+                            self.event_targets.remove(tab_id);
+                        }
+                    },
+                    // R3254-M10：worker 侧表单提交导航请求（Enter 默认动作）。
+                    TabWorkerMessage::SubmitNavigation { url, method, body } => {
+                        self.pending_navigations.push((*tab_id, url, method, body));
+                    }
                 }
             }
         }
@@ -376,7 +423,14 @@ impl TabManager {
 
     /// 取出已 resolved 的延迟动作（由主事件循环消费）。
     pub fn take_pending_actions(&mut self) -> VecDeque<(TabId, PendingTabAction)> {
-        std::mem::take(&mut self.pending_actions)
+        let mut actions = std::mem::take(&mut self.pending_actions);
+        // R3254-M9：滚动默认动作守卫——页面焦点在文本控件时不滚（Tab 聚焦 / JS
+        // auto-focus 场景无 ime_rect，靠 H1 焦点回执维护的 focused_text_input 判定；
+        // 消费时用最新焦点状态，比注册时更准）。
+        actions.retain(|(tab_id, action)| {
+            !matches!(action, PendingTabAction::ScrollViewport { .. }) || !self.focused_text_input.contains(tab_id)
+        });
+        actions
     }
 
     /// 测试用：阻塞直到所有 worker 队列清空（近似 idle）。
@@ -501,6 +555,8 @@ impl TabManager {
                 event_type: event_type.to_string(),
                 key,
                 code,
+                // R3254-M10：Shift 修饰键（Shift+Tab 反向焦点导航）。
+                shift,
             });
             true
         } else {
@@ -528,44 +584,47 @@ impl TabManager {
     }
 
     /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
-    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str, shift: bool) {
+    pub fn dispatch_key_event(
+        &mut self,
+        tab_id: TabId,
+        event_type: &str,
+        key: &str,
+        code: &str,
+        shift: bool,
+        on_allowed: Option<PendingTabAction>,
+    ) {
         let detail = DomEventDetail {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
             ..Default::default()
         };
         if let Some(selector) = self.event_targets.get(&tab_id).cloned() {
-            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, event_type, Some(detail), shift, None);
+            self.dispatch_dom_event_async(
+                tab_id,
+                Some(&selector),
+                0.0,
+                0.0,
+                event_type,
+                Some(detail),
+                shift,
+                on_allowed,
+            );
         } else if self.process_backend.is_some() {
             // 指针事件曾因浏览器侧命中缓存缺失而由渲染进程命中时，保留渲染进程
             // 已建立的事件目标，而不是用 body 覆盖它。
-            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), shift, None);
+            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), shift, on_allowed);
         } else {
-            self.dispatch_dom_event_async(tab_id, Some("body"), 0.0, 0.0, event_type, Some(detail), shift, None);
+            self.dispatch_dom_event_async(
+                tab_id,
+                Some("body"),
+                0.0,
+                0.0,
+                event_type,
+                Some(detail),
+                shift,
+                on_allowed,
+            );
         }
-    }
-
-    /// 将输入法一次提交的文本批量写入当前页面文本控件。
-    pub fn dispatch_text_input(&mut self, tab_id: TabId, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        let detail = DomEventDetail {
-            key: Some(text.to_string()),
-            code: Some("Process".to_string()),
-            ..Default::default()
-        };
-        let selector = self.event_targets.get(&tab_id).cloned();
-        self.dispatch_dom_event_async(
-            tab_id,
-            selector.as_deref(),
-            0.0,
-            0.0,
-            "__zeroweb_insert_text",
-            Some(detail),
-            false,
-            None,
-        );
     }
 
     /// 转发完整 IME 生命周期；Preedit 只更新临时合成态，Commit 才写入 value。
@@ -664,6 +723,11 @@ impl TabManager {
         self.ime_target_rects.get(&tab_id).copied()
     }
 
+    /// 页面焦点是否在可编辑文本控件（R3254-H1 回执维护；滚动默认动作守卫用）。
+    pub fn page_focus_in_text_input(&self, tab_id: TabId) -> bool {
+        self.focused_text_input.contains(&tab_id)
+    }
+
     /// Document height in CSS pixels.
     pub fn document_height(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_height
@@ -710,6 +774,11 @@ impl TabManager {
     /// 取出待处理的页面加载失败事件。
     pub fn take_page_error_events(&mut self) -> Vec<(TabId, String)> {
         std::mem::take(&mut self.pending_errors)
+    }
+
+    /// R3254-M10：取出单进程表单提交导航请求（(TabId, url, method, body)）。
+    pub fn take_pending_navigations(&mut self) -> Vec<(TabId, String, String, Option<String>)> {
+        std::mem::take(&mut self.pending_navigations)
     }
 
     /// Tab 是否已注册。

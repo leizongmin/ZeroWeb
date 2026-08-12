@@ -361,6 +361,29 @@ impl BrowserApp {
         self.scroll_active_page_by_px(ch * ratio);
     }
 
+    /// R3254-M9：滚动键的延迟滚动幅度（CSS 像素，正 = 向下）；非滚动键返回 None。
+    /// 与 keydown 派发同时注册（挂回执），替代原先的立即滚动。
+    fn scroll_delta_for_key(&self, key: &str) -> Option<f32> {
+        match key {
+            " " | "Space" => {
+                let ratio = if self.shift_pressed { -0.85 } else { 0.85 };
+                let (_, _, _, ch) = self.page_content_rect();
+                Some(ch * ratio)
+            }
+            "PageDown" => {
+                let (_, _, _, ch) = self.page_content_rect();
+                Some(ch * 0.85)
+            }
+            "PageUp" => {
+                let (_, _, _, ch) = self.page_content_rect();
+                Some(-ch * 0.85)
+            }
+            "ArrowDown" => Some(40.0 * self.scale_factor),
+            "ArrowUp" => Some(-40.0 * self.scale_factor),
+            _ => None,
+        }
+    }
+
     /// 滚动活动标签页到页面顶部（Home 键）。
     fn scroll_active_page_to_top(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
@@ -1121,25 +1144,29 @@ impl BrowserApp {
                 if in_address_bar {
                     self.address_bar_ime_preedit.clear();
                 }
-                if !text.is_empty() {
-                    if in_address_bar {
+                // R3254-L4：空文本 Commit 也转发页面（部分 Linux IM 以空 Commit 表示取消合成）——
+                // renderer/worker 的空 Commit 分支（compositionend + 清 preedit）此前不可达。
+                if in_address_bar {
+                    if !text.is_empty() {
                         self.address_bar.insert_str(&text);
                         self.update_autocomplete();
-                    } else if in_find_bar {
+                    }
+                } else if in_find_bar {
+                    if !text.is_empty() {
                         self.find_input.push_str(&text);
                         self.shell.find_start(&self.find_input);
-                    } else if let Some(tab_id) = self.shell.active_tab_id() {
-                        // https://w3c.github.io/uievents/#events-composition-input-events
-                        self.tabs.dispatch_ime_event(
-                            tab_id,
-                            zero_protocol::message::ImeEventParams {
-                                event_type: zero_protocol::message::ImeEventType::Commit,
-                                text,
-                                cursor_start: None,
-                                cursor_end: None,
-                            },
-                        );
                     }
+                } else if let Some(tab_id) = self.shell.active_tab_id() {
+                    // https://w3c.github.io/uievents/#events-composition-input-events
+                    self.tabs.dispatch_ime_event(
+                        tab_id,
+                        zero_protocol::message::ImeEventParams {
+                            event_type: zero_protocol::message::ImeEventType::Commit,
+                            text,
+                            cursor_start: None,
+                            cursor_end: None,
+                        },
+                    );
                 }
                 self.needs_redraw = true;
             }

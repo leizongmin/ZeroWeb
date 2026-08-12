@@ -698,6 +698,27 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
     if recorded.is_empty() {
         return None;
     }
+    // R3254-M7'：JS focus()/blur() 是宿主状态变更（不写 DOM、不经渲染管线）——分离到
+    // worker 的 focus 队列，renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
+    let focus_changes: Vec<Option<String>> = recorded
+        .iter()
+        .filter_map(|m| match m {
+            DomMutation::FocusChanged { selector } => Some(selector.clone()),
+            _ => None,
+        })
+        .collect();
+    if !focus_changes.is_empty()
+        && let Ok(mut queue) = ctx.js_worker.focus_changes().lock()
+    {
+        queue.extend(focus_changes);
+    }
+    let recorded: Vec<DomMutation> = recorded
+        .into_iter()
+        .filter(|m| !matches!(m, DomMutation::FocusChanged { .. }))
+        .collect();
+    if recorded.is_empty() {
+        return None;
+    }
     // M3-S9：webview 在场时 DOM 变更直接应用活 DOM（pipeline.cached_doc，免 HTML
     // 往返重 parse——与 browser tab_scripts 同机制）；无 webview（测试）回退 HTML 回写。
     if let Some(wv) = ctx.webview.as_deref_mut() {

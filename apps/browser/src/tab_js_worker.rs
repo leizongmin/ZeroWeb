@@ -87,6 +87,8 @@ pub struct TabJsWorkerHandle {
     /// P1a elementFromPoint：共享 hit-test 缓存槽——tab_worker render 后 swap 最新
     /// `Arc<HitTestCache>`，js_worker 的 `ElementFromPointBridge` 读它求 `(x,y)` 命中元素。
     element_from_point_cache: ElementFromPointCache,
+    /// R3254-M10：页面 JS focus()/blur() 变更队列（TabManager 消费同步 event_targets）。
+    focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
 }
 
 impl TabJsWorkerHandle {
@@ -96,6 +98,7 @@ impl TabJsWorkerHandle {
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
         let element_from_point_cache = new_element_from_point_cache();
+        let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -157,6 +160,7 @@ impl TabJsWorkerHandle {
             rect_snapshot,
             handle_selector_map,
             element_from_point_cache,
+            focus_changes,
         }
     }
 
@@ -192,6 +196,12 @@ impl TabJsWorkerHandle {
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
     pub fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>> {
         Arc::clone(&self.mutations)
+    }
+
+    /// R3254-M10：页面 JS focus()/blur() 变更队列句柄——tab_worker drain 后经
+    /// `TabWorkerMessage::FocusChanged` 同步 TabManager 的 event_targets。
+    pub fn focus_changes(&self) -> Arc<std::sync::Mutex<Vec<Option<String>>>> {
+        Arc::clone(&self.focus_changes)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——tab_worker render 后经

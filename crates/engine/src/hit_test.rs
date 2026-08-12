@@ -268,6 +268,9 @@ fn collect_hit_test_nodes(
                     tag_name: tag,
                     id: doc.get_attribute(node_id, "id"),
                     class_name: doc.get_attribute(node_id, "class"),
+                    // FIXME(R3254-L8)：每节点唯一选择器随每帧 PaintSnapshot 全量传输——
+                    // 深 DOM 结构路径显著膨胀 IPC 负载且构建为 O(N²)（每节点一次全文档
+                    // query_selector_all）。已评估按需生成/截断方案收益风险比低，deferred。
                     selector: crate::unique_selector_for_node(doc, node_id)
                         .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
                     href,

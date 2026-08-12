@@ -115,7 +115,17 @@ impl BrowserApp {
         {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
-                self.tabs.dispatch_key_event(tab_id, event, key, key, self.shift_pressed);
+                // R3254-M9：滚动键的浏览器默认动作挂到 keydown 回执（页面 keydown handler
+                // 的 preventDefault 可阻止滚动，与 Chrome 一致）；文本控件聚焦时由
+                // `take_pending_actions` 的 focused_text_input 守卫过滤（Tab/JS focus 场景）。
+                let scroll_action = if pressed {
+                    self.scroll_delta_for_key(key).map(|delta| {
+                        crate::tab_manager::PendingTabAction::ScrollViewport { delta }
+                    })
+                } else {
+                    None
+                };
+                self.tabs.dispatch_key_event(tab_id, event, key, key, self.shift_pressed, scroll_action);
                 if pressed && self.tabs.page_ime_rect(tab_id).is_some() {
                     return;
                 }
@@ -576,37 +586,10 @@ impl BrowserApp {
             return;
         }
 
-        // 键盘页面滚动（Chrome 行为），无修饰键且非地址栏/查找栏聚焦时生效：
-        // - Space / PageDown → 向下滚动约一个视口（Shift+Space 反向）
-        // - PageUp → 向上滚动
-        // - ArrowDown/Up → 小步滚动（约 40px）
-        let scroll_handled = match key {
-            " " | "Space" => {
-                let ratio = if self.shift_pressed { -0.85 } else { 0.85 };
-                self.scroll_active_page_by_viewport_ratio(ratio);
-                true
-            }
-            "PageDown" => {
-                self.scroll_active_page_by_viewport_ratio(0.85);
-                true
-            }
-            "PageUp" => {
-                self.scroll_active_page_by_viewport_ratio(-0.85);
-                true
-            }
-            "ArrowDown" => {
-                self.scroll_active_page_by_px(40.0 * self.scale_factor);
-                true
-            }
-            "ArrowUp" => {
-                self.scroll_active_page_by_px(-40.0 * self.scale_factor);
-                true
-            }
-            _ => false,
-        };
-        if scroll_handled {
-            return;
-        }
+        // R3254-M9：键盘页面滚动已改为「keydown 回执驱动」——滚动键的 delta 在
+        // keydown 派发时注册为 `PendingTabAction::ScrollViewport`，页面 preventDefault
+        // 则回执 default_allowed=false、不滚；焦点在文本控件时由 focused_text_input 守卫过滤。
+        // 因此这里不再有滚动块（原 Space/PageDown/Arrow 立即滚动逻辑已删除）。
 
         // 无修饰键的全局快捷键（保留兼容无 Ctrl 的单键模式）
         match key {

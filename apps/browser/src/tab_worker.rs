@@ -51,6 +51,8 @@ pub enum TabWorkerCommand {
         event_type: String,
         key: Option<String>,
         code: Option<String>,
+        /// Shift 修饰键（R3254-M10：Shift+Tab 反向焦点导航）。
+        shift: bool,
     },
     /// 平台 IME 生命周期事件。
     ImeEvent {
@@ -90,6 +92,18 @@ pub enum TabWorkerMessage {
         dispatch_id: u64,
         default_allowed: bool,
         html_changed: bool,
+    },
+    /// R3254-M10：页面焦点所有者变更（Tab 默认动作 / JS focus() 镜像——TabManager 同步
+    /// `event_targets`，与多进程 `FocusOwnerChanged` 回执同语义）。None 表示失焦。
+    FocusChanged(Option<String>),
+    /// R3254-M10：表单提交导航请求（Enter 默认动作——TabManager 转发导航）。
+    SubmitNavigation {
+        /// 提交目标 URL（GET 含序列化 query；POST 为 action URL）。
+        url: String,
+        /// HTTP 方法（"GET" / "POST"）。
+        method: String,
+        /// POST body。
+        body: Option<String>,
     },
 }
 
@@ -265,28 +279,9 @@ fn tab_worker_main(
                     event_type,
                     key,
                     code,
+                    shift,
                 } => {
                     let html = wv.html_content().to_string();
-                    if event_type == "__zeroweb_insert_text" {
-                        let input_changed = tab_scripts::apply_text_input_default(
-                            &mut wv,
-                            javascript_enabled,
-                            _js_worker.as_ref(),
-                            &selector,
-                            key.as_deref().unwrap_or_default(),
-                            &html,
-                            false,
-                        );
-                        if input_changed {
-                            push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
-                        }
-                        let _ = msg_tx.send(TabWorkerMessage::DispatchResult {
-                            dispatch_id,
-                            default_allowed: true,
-                            html_changed: input_changed,
-                        });
-                        continue;
-                    }
                     let detail = if key.is_some() || code.is_some() {
                         Some(zero_engine::DomEventDetail {
                             key: key.clone(),
@@ -305,23 +300,90 @@ fn tab_worker_main(
                         &html,
                         detail.as_ref(),
                     );
-                    let input_changed = result.default_allowed
-                        && event_type == "keydown"
-                        && key
-                            .as_deref()
-                            .is_some_and(|key| is_printable_key(key) || key == "Backspace")
-                        && tab_scripts::apply_text_input_default(
-                            &mut wv,
-                            javascript_enabled,
-                            _js_worker.as_ref(),
-                            &selector,
-                            key.as_deref().unwrap_or_default(),
-                            &html,
-                            key.as_deref() == Some("Backspace"),
-                        );
+                    // R3254-M10：keydown 默认动作镜像 renderer（Tab/Shift+Tab 焦点导航、
+                    // printable 插入、Backspace 删除、Enter 换行/提交）。焦点切换只回传
+                    // FocusChanged 让 TabManager 同步 event_targets（worker 无焦点状态机；
+                    // click 焦点切换/blur/change 生命周期为已知单进程限制，见 TODO）。
+                    let mut focus_change: Option<Option<String>> = None;
+                    let mut navigation: Option<(String, String, Option<String>)> = None;
+                    let mut input_changed = false;
+                    if result.default_allowed && event_type == "keydown" {
+                        if key.as_deref() == Some("Tab") {
+                            if let Some(next) = zero_engine::next_focus_selector(&html, Some(&selector), !shift) {
+                                focus_change = Some(Some(next));
+                            }
+                        } else if key.as_deref().is_some_and(is_printable_key) {
+                            input_changed = tab_scripts::apply_text_input_default(
+                                &mut wv,
+                                javascript_enabled,
+                                _js_worker.as_ref(),
+                                &selector,
+                                key.as_deref().unwrap_or_default(),
+                                &html,
+                                false,
+                            );
+                        } else if key.as_deref() == Some("Backspace") {
+                            input_changed = tab_scripts::apply_text_input_default(
+                                &mut wv,
+                                javascript_enabled,
+                                _js_worker.as_ref(),
+                                &selector,
+                                "",
+                                &html,
+                                true,
+                            );
+                        } else if key.as_deref() == Some("Enter") {
+                            if zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("textarea") {
+                                // textarea 的 Enter 是换行（不提交）。
+                                input_changed = tab_scripts::apply_text_input_default(
+                                    &mut wv,
+                                    javascript_enabled,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    "\n",
+                                    &html,
+                                    false,
+                                );
+                            } else if let Some(form_sel) = zero_engine::enclosing_form_selector(&html, &selector) {
+                                // Enter 隐式提交（submitter=None）：派发 cancelable 'submit'；
+                                // 未 preventDefault 时按 method 构造导航（engine 纯函数）。
+                                let submit_result = tab_scripts::dispatch_dom_event(
+                                    &mut wv,
+                                    javascript_enabled,
+                                    _js_worker.as_ref(),
+                                    &form_sel,
+                                    "submit",
+                                    &html,
+                                    None,
+                                );
+                                if submit_result.default_allowed {
+                                    let base = wv.url().unwrap_or("about:blank").to_string();
+                                    if let Some(url) =
+                                        zero_engine::form_get_submission_url(&html, &form_sel, None, &base)
+                                    {
+                                        navigation = Some((url, "GET".to_string(), None));
+                                    } else if zero_engine::form_post_submission(&html, &form_sel, None, &base).is_some()
+                                    {
+                                        // 单进程路径不支持 POST 导航（browser 无 POST 提交链路；
+                                        // 多进程 renderer 经 navigate_with 支持）。submit 事件已
+                                        // 派发，页面 handler 可自行处理（fetch 等）。
+                                        tracing::debug!(
+                                            "single-process form POST submit not navigated (selector={selector})"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if result.html_changed || input_changed {
                         // apply_recorded_mutations 已完成 live DOM 增量渲染。
                         push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+                    }
+                    if let Some(focus) = focus_change {
+                        let _ = msg_tx.send(TabWorkerMessage::FocusChanged(focus));
+                    }
+                    if let Some((url, method, body)) = navigation {
+                        let _ = msg_tx.send(TabWorkerMessage::SubmitNavigation { url, method, body });
                     }
                     let _ = msg_tx.send(TabWorkerMessage::DispatchResult {
                         dispatch_id,
@@ -374,6 +436,8 @@ fn tab_worker_main(
                                     &selector,
                                     &params.text,
                                     &html,
+                                    // R3254-L3：传平台光标/选区（组合内移动/选择）。
+                                    Some((params.cursor_start.unwrap_or(0), params.cursor_end.unwrap_or(0))),
                                 )
                         }
                         ImeEventType::Commit => {
@@ -399,6 +463,7 @@ fn tab_worker_main(
                                         &selector,
                                         "",
                                         &html,
+                                        None,
                                     )
                                 } else {
                                     tab_scripts::apply_text_input_default(
@@ -434,6 +499,7 @@ fn tab_worker_main(
                                     &selector,
                                     "",
                                     &html,
+                                    None,
                                 )
                         }
                     };
@@ -479,6 +545,26 @@ fn tab_worker_main(
                     tracing::debug!("Tab worker {} shutting down", tab_id.0);
                     return;
                 }
+            }
+        }
+
+        // R3254-M10：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生）→ 回传
+        // TabManager 同步 event_targets（与多进程 FocusOwnerChanged 回执同语义）。
+        // 采纳前过 is_focusable_selector 校验（shim 不校验可聚焦性——不可聚焦元素的
+        // JS focus 忽略，与多进程 sync_focus_from_js 行为一致）。
+        if let Some(js_worker) = _js_worker.as_ref() {
+            let changes = {
+                let queue = js_worker.focus_changes();
+                let mut queue = queue.lock().unwrap_or_else(|e| e.into_inner());
+                std::mem::take(&mut *queue)
+            };
+            for change in changes {
+                if let Some(sel) = change.as_deref()
+                    && !zero_engine::is_focusable_selector(wv.html_content(), sel)
+                {
+                    continue;
+                }
+                let _ = msg_tx.send(TabWorkerMessage::FocusChanged(change));
             }
         }
 

@@ -132,10 +132,15 @@ impl FormControlStateStore {
 
     /// 把指定控件设为焦点控件并建立新的焦点会话基线。
     pub fn focus(&mut self, selector: &str, value: String, selection_start: usize, selection_end: usize) {
-        if let Some(previous) = self.focused.take()
-            && let Some(state) = self.controls.get_mut(&previous)
-        {
-            state.focused = false;
+        if let Some(previous) = self.focused.take() {
+            if let Some(state) = self.controls.get_mut(&previous) {
+                state.focused = false;
+            }
+            // R3254-L10：隐式 blur（焦点直接切换，如页面 JS focus() 到另一控件）——
+            // previous 状态一并移除（change 由调用方按需报告；重聚焦重建基线）。
+            if previous != selector {
+                self.controls.remove(&previous);
+            }
         }
         if let Some(state) = self.controls.get_mut(selector) {
             let revision = state.revision;
@@ -161,15 +166,21 @@ impl FormControlStateStore {
     }
 
     /// 结束当前焦点会话，返回 change 判断所需结果。
+    ///
+    /// R3254-L10：失焦后移除控件状态（change 已报告、基线已无用途）——`controls` 不再
+    /// 随页面生命周期内不断获焦的新控件无限增长。重聚焦时 `focus()` 重建基线（revision
+    /// 从 0 开始；paint 失效判断只看 revision 变化，跨 blur 保留无必要）。
     pub fn blur_focused(&mut self) -> Option<BlurredFormControl> {
         let selector = self.focused.take()?;
         let state = self.controls.get_mut(&selector)?;
         state.focused = false;
         state.composition_text = None;
         state.composition_range = None;
+        let value_changed = state.dirty_value;
+        self.controls.remove(&selector);
         Some(BlurredFormControl {
             selector,
-            value_changed: state.dirty_value,
+            value_changed,
         })
     }
 
@@ -245,7 +256,8 @@ mod tests {
         let blurred = store.blur_focused().expect("focused control");
         assert_eq!(blurred.selector, "#first");
         assert!(blurred.value_changed);
-        assert!(!store.get("#first").expect("state").focused);
+        // R3254-L10：失焦后状态移除（change 已报告，基线无用途）。
+        assert!(store.get("#first").is_none());
         assert_eq!(store.focused_selector(), None);
     }
 
@@ -257,21 +269,21 @@ mod tests {
         store.focus("#second", "two".to_string(), 0, 3);
 
         assert_eq!(store.focused_selector(), Some("#second"));
-        assert!(!store.get("#first").expect("first").focused);
-        assert!(store.get("#first").expect("first").dirty_value);
+        // R3254-L10：焦点切换时前控件已 blur（change 报告后状态移除）。
+        assert!(store.get("#first").is_none());
         assert!(store.get("#second").expect("second").focused);
     }
 
     #[test]
-    fn refocus_preserves_control_revision() {
+    fn refocus_rebuilds_baseline_after_blur() {
         let mut store = FormControlStateStore::new();
         store.focus("#name", "a".to_string(), 1, 1);
         store.update("#name", "ab".to_string(), 2, 2);
         let _ = store.blur_focused();
+        // R3254-L10：blur 已移除状态——重聚焦重建基线（新基线 = 当前值，不 dirty）。
         store.focus("#name", "ab".to_string(), 2, 2);
 
         let state = store.get("#name").expect("state");
-        assert_eq!(state.revision, 1);
         assert!(!state.dirty_value);
     }
 
@@ -286,7 +298,8 @@ mod tests {
         assert_eq!(state.composition_range, Some((2, 2)));
 
         let _ = store.blur_focused();
-        assert!(store.get("#name").expect("state").composition_text.is_none());
+        // R3254-L10：blur 已移除状态（composition 随状态清除）。
+        assert!(store.get("#name").is_none());
     }
 
     #[test]

@@ -528,6 +528,65 @@ fn test_element_focus_active_element_r2801() {
     );
 }
 
+/// R3254-M7'：页面 JS focus()/blur() 必须产生 `FocusChanged` mutation（宿主同步
+/// retained 焦点状态 + 焦点回执——shim 已派发 DOM 事件，宿主不再重复派发）。
+#[test]
+fn test_js_focus_emits_focus_changed_mutation() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id='i'><button id='b'>ok</button></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__i = document.getElementById('i');\
+             globalThis.__i.focus();",
+        )
+        .unwrap();
+    let recorded = mutations.lock().unwrap().clone();
+    assert_eq!(
+        recorded,
+        vec![DomMutation::FocusChanged {
+            selector: Some("#i".to_string())
+        }],
+        "JS focus() 必须产生 FocusChanged mutation"
+    );
+
+    mutations.lock().unwrap().clear();
+    sandbox.execute("globalThis.__i.blur();").unwrap();
+    let recorded = mutations.lock().unwrap().clone();
+    assert_eq!(
+        recorded,
+        vec![DomMutation::FocusChanged { selector: None }],
+        "JS blur() 必须产生 FocusChanged(None) mutation"
+    );
+
+    // blur 后重新 focus 是焦点真变（1 个 mutation）；已聚焦元素重复 focus() 是 no-op
+    //（spec：不重派 focus）——不额外产生 mutation。
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "globalThis.__i.focus();\
+             globalThis.__i.focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        mutations.lock().unwrap().len(),
+        1,
+        "已聚焦元素重复 focus() 不得重复产生 FocusChanged"
+    );
+}
+
 #[test]
 fn test_document_create_event_r2802() {
     // R2802：document.createEvent + initCustomEvent（legacy 合成事件工厂）。createEvent 映射 type→现有构造器

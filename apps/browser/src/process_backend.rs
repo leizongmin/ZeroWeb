@@ -11,9 +11,9 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
-    StorageOpParams, StorageOperation, StorageType,
+    DispatchDomEventParams, FetchParams, FocusChangeInfo, FramePublishMode, ImeEventParams, IpcColorScheme,
+    IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams,
+    SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -128,6 +128,8 @@ pub struct ProcessTabBackend {
     fetch_proxy: TabFetchProxy,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
     pending_dispatch_results: Vec<(u64, bool)>,
+    /// 页面焦点所有者变更（R3254-H1，由 TabManager 消费同步 event_targets）。
+    pending_focus_changes: Vec<(TabId, FocusChangeInfo)>,
     /// 上一次轮询观察到的 compositor client 状态，用于只处理一次断线边沿。
     compositor_status: crate::compositor_client::CompositorStatus,
     /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
@@ -192,6 +194,7 @@ impl ProcessTabBackend {
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             pending_dispatch_results: Vec::new(),
+            pending_focus_changes: Vec::new(),
             compositor_status: crate::compositor_client::status(),
             browser_gpu_present: false,
         }
@@ -847,6 +850,9 @@ impl ProcessTabBackend {
                     IpcMessageKind::DispatchDomEventResult(result) => {
                         self.pending_dispatch_results.push((msg.id, result.default_allowed));
                     }
+                    IpcMessageKind::FocusOwnerChanged(info) => {
+                        self.pending_focus_changes.push((tab_id, info));
+                    }
                     kind => {
                         let snap = snapshots.entry(tab_id).or_default();
                         Self::apply_inbound_message(
@@ -895,6 +901,11 @@ impl ProcessTabBackend {
     /// 取出异步 DOM 事件派发的回执（dispatch id, default_allowed）。
     pub fn take_dispatch_results(&mut self) -> Vec<(u64, bool)> {
         std::mem::take(&mut self.pending_dispatch_results)
+    }
+
+    /// 取出页面焦点变更回执（R3254-H1）。
+    pub fn take_focus_changes(&mut self) -> Vec<(TabId, FocusChangeInfo)> {
+        std::mem::take(&mut self.pending_focus_changes)
     }
 
     /// 异步派发 DOM 事件（fire-and-forget）。

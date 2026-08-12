@@ -1063,25 +1063,35 @@ impl RenderPipeline {
         {
             let doc = doc_rc.borrow();
             for mutation in mutations {
-                if let crate::js_dom_bridge::DomMutation::SetFormValue { selector, value } = mutation
-                    && let Some(node_id) = doc.query_selector(doc.root(), selector.trim())
-                {
-                    self.form_control_values.insert(node_id, value.clone());
-                    self.form_control_compositions.remove(&node_id);
-                } else if let crate::js_dom_bridge::DomMutation::SetFormComposition {
-                    selector,
-                    text,
-                    selection_start,
-                    selection_end,
-                } = mutation
-                    && let Some(node_id) = doc.query_selector(doc.root(), selector.trim())
-                {
-                    if text.is_empty() {
-                        self.form_control_compositions.remove(&node_id);
-                    } else {
-                        self.form_control_compositions
-                            .insert(node_id, (text.clone(), *selection_start, *selection_end));
+                match mutation {
+                    crate::js_dom_bridge::DomMutation::SetFormValue { selector, value } => {
+                        if let Some(node_id) = doc.query_selector(doc.root(), selector.trim()) {
+                            self.form_control_values.insert(node_id, value.clone());
+                            self.form_control_compositions.remove(&node_id);
+                        } else {
+                            // R3254-L12：selector 失配（页面 JS 重排 DOM 后）——输入无法落到
+                            // 活 DOM，静默丢弃会表现为「打字无效果」。记 warn 而非静默。
+                            tracing::warn!("SetFormValue: selector 失配，输入丢弃: {selector}");
+                        }
                     }
+                    crate::js_dom_bridge::DomMutation::SetFormComposition {
+                        selector,
+                        text,
+                        selection_start,
+                        selection_end,
+                    } => {
+                        if let Some(node_id) = doc.query_selector(doc.root(), selector.trim()) {
+                            if text.is_empty() {
+                                self.form_control_compositions.remove(&node_id);
+                            } else {
+                                self.form_control_compositions
+                                    .insert(node_id, (text.clone(), *selection_start, *selection_end));
+                            }
+                        } else {
+                            tracing::warn!("SetFormComposition: selector 失配: {selector}");
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

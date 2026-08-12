@@ -218,6 +218,21 @@ pub enum IpcMessageKind {
     Ok,
     /// 错误响应。
     Error(String),
+
+    // ── 焦点生命周期（渲染→浏览器）──
+    // 纪律：bincode 1 按变体声明位置编码判别值，新变体只能 append 在本枚举**末尾**，
+    // 严禁插入中间（否则跨版本 peer 静默错位，见审查 R3254-L6）。
+    /// 页面焦点所有者变更（R3254-H1：同步 browser 的 event_targets / 文本控件守卫）。
+    FocusOwnerChanged(FocusChangeInfo),
+}
+
+/// 焦点变更信息（渲染→浏览器）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FocusChangeInfo {
+    /// 新焦点所有者稳定选择器；None 表示失焦（blur）。
+    pub selector: Option<String>,
+    /// 焦点是否在可编辑文本控件（input 文本类 / textarea）——browser 侧滚动守卫用。
+    pub text_input: bool,
 }
 
 /// 导航参数。

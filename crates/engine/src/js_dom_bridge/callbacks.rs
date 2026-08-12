@@ -792,6 +792,20 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R3254-M7'：页面 `element.focus()`/`blur()` —— shim 已在 V8 内派发 focus 事件，
+    // 宿主仅同步 retained 焦点状态（不写 DOM）。selector 为空串表示 blur。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_focus_changed",
+        Box::new(move |args| {
+            let selector = args.first().map(String::from).filter(|s| !s.is_empty());
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::FocusChanged { selector });
+            "ok".into()
+        }),
+    );
+
     // `element.removeAttribute(name)` / `delete el.dataset.x` —— 真移除属性（区别于 SetAttr 空值；
     // 布尔/存在性属性须移除才 unset）。记 `DomMutation::RemoveAttr`。
     let m = Arc::clone(mutations);

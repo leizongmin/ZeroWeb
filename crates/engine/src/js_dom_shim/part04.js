@@ -606,6 +606,9 @@
             if (oldProxy) {
               try { oldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e) {}
             }
+            // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
+            //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
+            if (sel && typeof __zw_focus_changed === 'function') __zw_focus_changed(sel);
           };
         }
         if (prop === 'blur') {
@@ -616,6 +619,8 @@
               _dispatchWithBubble(key, sel, handle, _makeEvent('focusout', { bubbles: true, cancelable: false }));
               _dispatchWithBubble(key, sel, handle, _makeEvent('blur', { bubbles: false, cancelable: false }));
             } catch (_e) {}
+            // R3254-M7'：通知宿主失焦（空串表示 blur）。
+            if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
           };
         }
         // R2938 `el.requestFullscreen()`——全屏请求（spec 返 Promise，headless 无真 OS 全屏）。grant/deny 二分：

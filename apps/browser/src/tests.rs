@@ -2370,16 +2370,17 @@ fn keyboard_space_and_pagedown_scroll_page() {
     app.load_webview_html(tab_id, tall_html, None);
     app.sync_webview_viewport_and_poll(tab_id);
 
+    // R3254-M9：滚动默认动作挂 keydown 回执（异步）——用轮询等待回执驱动生效。
     let before = app.scroll_offset_for_tab(tab_id);
     app.handle_key("PageDown", true, None);
-    let after_pagedown = app.scroll_offset_for_tab(tab_id);
+    let after_pagedown = wait_for_scroll_change(&mut app, tab_id, before);
     assert!(
         after_pagedown > before,
         "PageDown should scroll down (before={before}, after={after_pagedown})"
     );
 
     app.handle_key("PageUp", true, None);
-    let after_pageup = app.scroll_offset_for_tab(tab_id);
+    let after_pageup = wait_for_scroll_change(&mut app, tab_id, after_pagedown);
     assert!(
         after_pageup < after_pagedown,
         "PageUp should scroll up (after_pagedown={after_pagedown}, after_pageup={after_pageup})"
@@ -2388,7 +2389,21 @@ fn keyboard_space_and_pagedown_scroll_page() {
     // Space 向下
     let mid = app.scroll_offset_for_tab(tab_id);
     app.handle_key("Space", true, None);
-    assert!(app.scroll_offset_for_tab(tab_id) > mid, "Space should scroll down");
+    let after_space = wait_for_scroll_change(&mut app, tab_id, mid);
+    assert!(after_space > mid, "Space should scroll down");
+}
+
+/// R3254-M9：轮询等待滚动默认动作经 keydown 回执生效（滚动偏移变化），最多 10s。
+fn wait_for_scroll_change(app: &mut BrowserApp, tab_id: TabId, previous: f32) -> f32 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        app.poll_tab_fetch();
+        let current = app.scroll_offset_for_tab(tab_id);
+        if current != previous || std::time::Instant::now() >= deadline {
+            return current;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 /// Home 滚动到页顶，End 滚动到页底。
@@ -2407,14 +2422,18 @@ fn home_end_scroll_to_top_and_bottom() {
     app.load_webview_html(tab_id, tall_html, None);
     app.sync_webview_viewport_and_poll(tab_id);
 
-    // 先滚到中间
+    // 先滚到中间（R3254-M9：滚动经 keydown 回执，轮询等待）
     app.handle_key("PageDown", true, None);
-    let mid = app.scroll_offset_for_tab(tab_id);
+    let mid = wait_for_scroll_change(&mut app, tab_id, 0.0);
     assert!(mid > 0.0, "should have scrolled down first");
 
     // Home 回到顶部
     app.handle_key("Home", true, None);
-    assert_eq!(app.scroll_offset_for_tab(tab_id), 0.0, "Home should scroll to top");
+    assert_eq!(
+        wait_for_scroll_change(&mut app, tab_id, mid),
+        0.0,
+        "Home should scroll to top"
+    );
 
     // End 到底部
     app.handle_key("End", true, None);

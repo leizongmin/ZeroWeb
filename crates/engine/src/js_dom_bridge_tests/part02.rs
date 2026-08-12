@@ -1743,6 +1743,28 @@ fn test_next_focus_selector() {
     );
 }
 
+/// R3254-H2：无 id/class 的同 tag 可聚焦元素——Tab 导航必须返回**唯一**选择器
+///（此前返回歧义 `"input"` 命中文档第一个 input，纯键盘操作全部落到第一个元素）。
+#[test]
+fn test_next_focus_selector_returns_unique_for_same_tag_inputs() {
+    let html = "<html><body><input><input><button>x</button></body></html>";
+    let first = next_focus_selector(html, None, true).expect("first input");
+    let second = next_focus_selector(html, Some(&first), true).expect("second input");
+    let third = next_focus_selector(html, Some(&second), true).expect("button");
+    assert_ne!(first, "input", "首元素选择器必须唯一，不能是歧义裸 tag");
+    assert_ne!(second, "input", "第二元素选择器必须唯一，不能是歧义裸 tag");
+    assert_ne!(first, second, "两个 input 的选择器必须不同");
+    assert_eq!(third, "button");
+    // 两个选择器各自命中且互不相同。
+    let doc = parse_html(html);
+    let n1 = find_by_selector(&doc, &first).expect("first resolves");
+    let n2 = find_by_selector(&doc, &second).expect("second resolves");
+    assert_ne!(n1, n2, "选择器必须指向不同节点");
+    // 反向导航同样唯一。
+    let back = next_focus_selector(html, Some(&second), false).expect("back");
+    assert_eq!(back, first);
+}
+
 #[test]
 fn test_insert_adjacent_html_e2e() {
     // 端到端：注入生产 shim + register_dom_callbacks，验证 insertAdjacentHTML JS 契约——

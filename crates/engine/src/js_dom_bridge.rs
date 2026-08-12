@@ -317,6 +317,24 @@ pub enum DomMutation {
         /// 参考节点选择器。
         ref_selector: String,
     },
+    /// 页面 `element.focus()`/`blur()`（R3254-M7'）——shim 已在 V8 内派发过 focus 事件，
+    /// 宿主只同步 retained 焦点状态（`PageInteractionState` + 焦点回执），不写 DOM、不重复派发。
+    FocusChanged {
+        /// 新焦点元素稳定选择器；None 表示 blur（聚焦到 body）。
+        selector: Option<String>,
+    },
+}
+
+/// R3254-L3：UTF-8 字节偏移 → UTF-16 code unit 偏移（selection/composition 契约）。
+/// 偏移落在多字节字符内部时截断到该字符起点；超长取末尾。
+pub fn utf8_byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
+    if byte_offset >= text.len() {
+        return text.encode_utf16().count();
+    }
+    text.char_indices()
+        .take_while(|(byte, _)| *byte < byte_offset)
+        .map(|(_, ch)| ch.len_utf16())
+        .sum()
 }
 
 /// 在文档根下按简单选择器查找第一个匹配元素。
@@ -334,12 +352,27 @@ pub fn find_all_selectors(doc: &Document, selector: &str) -> Vec<String> {
         .collect()
 }
 
+/// R3254-L7：CSS 标识符转义（id/class 进入选择器前）——非 `[a-zA-Z0-9_-]` 字符加 `\` 前缀，
+/// 与解析端 `zero_dom::query::unescape_css_ident` 成对（否则 `id="a.b"` 会命中 `#a.b` = id a + class b）。
+pub fn escape_css_ident(ident: &str) -> String {
+    let mut out = String::with_capacity(ident.len());
+    for ch in ident.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            out.push(ch);
+        } else {
+            out.push('\\');
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// 为节点生成用于后续变更的稳定选择器（优先 `#id`）。
 pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
     if let Some(id) = doc.get_attribute(node, "id") {
         let id = id.trim();
         if !id.is_empty() {
-            return Some(format!("#{}", id));
+            return Some(format!("#{}", escape_css_ident(id)));
         }
     }
     let tag = doc.get(node).and_then(|n| match &n.kind {
@@ -349,7 +382,7 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
     if let Some(class) = doc.get_attribute(node, "class") {
         let first = class.split_whitespace().find(|c| !c.is_empty());
         if let Some(c) = first {
-            return Some(format!("{}.{}", tag, c));
+            return Some(format!("{}.{}", tag, escape_css_ident(c)));
         }
     }
     Some(tag)
@@ -441,6 +474,9 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
         match mutation {
             DomMutation::SetFormValue { .. } | DomMutation::SetFormComposition { .. } => {
                 // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
+            }
+            DomMutation::FocusChanged { .. } => {
+                // 焦点状态由宿主（renderer）消费，不写 DOM。
             }
             DomMutation::SetAttr { selector, name, value } => {
                 let node =
@@ -2041,7 +2077,11 @@ pub fn is_text_input(html: &str, selector: &str) -> bool {
 }
 
 /// P1a Tab 焦点导航：经 dom `FocusManager`（tabindex 排序：正值升序在前，0/默认在文档序在后）
-/// 算下一/上一可聚焦元素的 stable selector。`current_sel` 为当前焦点（None → 首/末）。无 focusable → None。
+/// 算下一/上一可聚焦元素的唯一选择器。`current_sel` 为当前焦点（None → 首/末）。无 focusable → None。
+///
+/// 必须返回 [`unique_selector_for_node`] 而非 `stable_selector_for_node`：后者对无 id/class 的
+/// 同 tag 元素（如两个裸 `<input>`）返回歧义选择器 `"input"`，会命中文档第一个匹配元素——
+/// Tab 导航到第二个 input 后事件与默认动作全部落到第一个（审查 R3254-H2）。
 pub fn next_focus_selector(html: &str, current_sel: Option<&str>, forward: bool) -> Option<String> {
     let doc = parse_html(html);
     let mut fm = FocusManager::new();
@@ -2052,7 +2092,7 @@ pub fn next_focus_selector(html: &str, current_sel: Option<&str>, forward: bool)
         fm.set_focus(Some(n));
     }
     let next = if forward { fm.focus_next() } else { fm.focus_previous() }?;
-    stable_selector_for_node(&doc, next)
+    unique_selector_for_node(&doc, next)
 }
 
 /// 判断选择器目标是否可由页面焦点管理器聚焦。

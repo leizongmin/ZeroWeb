@@ -406,6 +406,7 @@ pub fn apply_ime_preedit_default(
     selector: &str,
     text: &str,
     html: &str,
+    cursor: Option<(usize, usize)>,
 ) -> bool {
     let script = script_text_control_snapshot(selector);
     let snapshot = if let Some(worker) = js_worker {
@@ -420,6 +421,15 @@ pub fn apply_ime_preedit_default(
         .and_then(|value| serde_json::from_str::<(String, usize, usize)>(value).ok())
     else {
         return false;
+    };
+    // R3254-L3：消费平台 preedit 光标/选区（winit UTF-8 字节偏移 → UTF-16）——组合内
+    // 移动/选择映射到 value 替换区间；无 cursor / 单点光标时用快照 selection。
+    let (selection_start, selection_end) = match cursor {
+        Some((start, end)) if start != end => (
+            selection_start + zero_engine::utf8_byte_to_utf16_offset(text, start.min(end)),
+            selection_start + zero_engine::utf8_byte_to_utf16_offset(text, start.max(end)),
+        ),
+        _ => (selection_start, selection_end),
     };
     let mutation = zero_engine::DomMutation::SetFormComposition {
         selector: selector.to_string(),
@@ -497,6 +507,28 @@ fn apply_recorded_mutations(wv: &mut WebView, js_worker: Option<&TabJsWorkerHand
     let recorded = js_worker
         .map(|w| w.mutations().lock().unwrap_or_else(|e| e.into_inner()).clone())
         .unwrap_or_default();
+    if recorded.is_empty() {
+        return None;
+    }
+    // R3254-M10：JS focus()/blur() 变更（shim 已派发 DOM 事件）——分离到 TabJsWorker 的
+    // focus 队列，TabManager 消费同步 event_targets（与多进程 FocusOwnerChanged 同语义）。
+    let focus_changes: Vec<Option<String>> = recorded
+        .iter()
+        .filter_map(|m| match m {
+            zero_engine::DomMutation::FocusChanged { selector } => Some(selector.clone()),
+            _ => None,
+        })
+        .collect();
+    if !focus_changes.is_empty()
+        && let Some(w) = js_worker
+        && let Ok(mut queue) = w.focus_changes().lock()
+    {
+        queue.extend(focus_changes);
+    }
+    let recorded: Vec<zero_engine::DomMutation> = recorded
+        .into_iter()
+        .filter(|m| !matches!(m, zero_engine::DomMutation::FocusChanged { .. }))
+        .collect();
     if recorded.is_empty() {
         return None;
     }

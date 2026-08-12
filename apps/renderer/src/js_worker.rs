@@ -89,6 +89,9 @@ pub struct RendererJsWorker {
     /// R3058 JS 发起跨文档导航请求队列——`__zw_request_navigate` 回调（worker 线程）push，renderer
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。location.href=/assign/replace 跨文档触发。
     navigations: Arc<std::sync::Mutex<Vec<String>>>,
+    /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列——`apply_recorded_mutations` 从 mutations
+    /// 分离后 push（主线程），renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
+    focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
 }
 
 impl RendererJsWorker {
@@ -104,6 +107,7 @@ impl RendererJsWorker {
         // R3058 JS 跨文档导航桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_navigate。
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
+        let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -168,6 +172,7 @@ impl RendererJsWorker {
             element_from_point_cache,
             font_loads,
             navigations,
+            focus_changes,
         }
     }
 
@@ -210,6 +215,11 @@ impl RendererJsWorker {
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。
     pub fn pending_navigations(&self) -> Arc<std::sync::Mutex<Vec<String>>> {
         Arc::clone(&self.navigations)
+    }
+
+    /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列句柄——主线程 drain 后同步焦点状态。
+    pub fn focus_changes(&self) -> Arc<std::sync::Mutex<Vec<Option<String>>>> {
+        Arc::clone(&self.focus_changes)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——renderer 主循环 render 后经
