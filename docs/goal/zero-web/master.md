@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3320：Geometry Interfaces WPT 合规覆盖锁——`web-api/geometry/interfaces` 用例 + 永久 `check_js_executes_ok` 测试，锁 R3319 DOMRect/DOMRectReadOnly + R2985 DOMMatrix/DOMPoint 工作不被静默回退。承接 R3319 结论（DOM/Web API + Canvas + Geometry 面饱和）转向**用 WPT 覆盖锁住已实现面**）。前轮 R3319：DOMRect + DOMRectReadOnly 全局构造器。
+**最后更新**: 2026-08-12（R3321：web-api/runtime/* 10 用例升级锁 P1a 运行时行为——闭合「弱断言静默通过」真覆盖缺口：runtime/* 用例此前全用 dom_has_body/h1/render_completes 弱断言，内联脚本写 #log 不校验，运行时静默失效仍 100% 通过。本轮内联脚本加行为断言（失败抛）+ 加 js_executes_ok，使 WPT 真实验证微任务序/async-await/MO 派发/事件冒泡捕获/history。承接 R3320（Geometry 锁）继续锁饱和面）。前轮 R3320：Geometry Interfaces WPT 覆盖锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,34 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### web-api/runtime/* WPT 用例升级锁 P1a 运行时行为（本轮 R3321，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口
+
+承接 R3320（Geometry 锁覆盖）。**核查发现真覆盖缺口**：`web-api/runtime/*` 10 个用例（timer-nesting / microtask-promise / async-await-sequence / error-handling / raf-callback / mutation-observer / event-bubble-capture / console-api / history-api / worker-lifecycle）**全用弱断言**（dom_has_body / dom_has_element:h1 / render_completes）——内联脚本虽把行为结果写 `#log`，但**从不校验**，故运行时静默失效（微任务序错、MutationObserver 不派发、事件冒泡/捕获序错、history pushState 失败）仍 100% 通过。这是 P1a 核心工作（事件循环 / 微任务 / Observer / 事件传播 / history）在 WPT 层**零行为验证**的真缺口。
+
+| 用例 | 升级（断言 + 失败抛） |
+|------|----------------------|
+| timer-nesting | 首轮同步 depth≥1（setTimeout 注册不抛） |
+| microtask-promise | 末轮 `.then` 断言 order='then1:1,then3:3,then2:2'（微任务序 + 链式） |
+| async-await-sequence | `await` 后断言 result==='data' |
+| error-handling | 三类错误全 catch（length=3 + caught:test error） |
+| raf-callback | requestAnimationFrame typeof function + 调用不抛（headless 无显示，回调触发不保证） |
+| mutation-observer | 末轮 `.then` 断言 mutations.length≥1（MO 派发 P1a 真触发） |
+| event-bubble-capture | 断言 log='outer-capture,inner'（捕获先于 target + stopPropagation 阻 bubble） |
+| console-api | 14 个 console 方法 typeof function（API 全存在） |
+| history-api | pushState/replaceState 不抛 + length≥2 |
+| worker-lifecycle | Worker 构造 + onmessage/postMessage/terminate API 存在（消息到达不保证，headless） |
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_web_api.rs` | 10 个 runtime/* 用例：内联脚本加行为断言（失败抛）+ assertions 加 `js_executes_ok`。 |
+| `tests/wpt-runner/src/runner/mod.rs` | +`web_api_runtime_cases_assert_behavior_r3321` 永久测试：全量遍历 web-api/runtime/* js_executes_ok 用例（非 step_by 采样），`check_js_executes_ok` 逐个验证行为。 |
+
+**关键技术验证（非凭空假设）**：async 用例（microtask-promise/async-await/mutation-observer）的断言在末轮 `.then()` 微任务内抛异常——经核实 `script-sandbox/src/v8_runtime.rs:422` `try_catch.perform_microtask_checkpoint()` 在 `execute()` 末尾 drain 微任务，`:423` `if try_catch.has_caught()` 捕获微任务抛出的异常 → `execute()` 返 `Err(RuntimeError)` → `run_page_scripts_strict` 严格模式失败。故 async throw 真被 js_executes_ok 捕获（非 no-op），断言有效。
+
+**为何净正向且零回归**：纯测试增强（无生产代码改动）；既有 `dom_has_*`/`render_completes` 断言保留（仅追加 js_executes_ok + 内联断言）；行为正确时断言不抛，仅「行为静默失效」时才 fail（正是要捕获的回归）。**验证**：`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告 + `runtime_path_tests` **11 passed / 0 failed**（10→11，+1 新测 R3321，0 回归，test-guard 包裹）。`web_api_cases_pass_with_js_executes_ok_r3076` 采样器亦通过（升级后采样到的用例 js_executes_ok 仍绿）。
+
+**下游判断（固化）**：R3320（Geometry 锁）+ R3321（runtime 行为锁）闭合「饱和面无强 WPT 断言 → 静默回退」类覆盖缺口。剩余可挖：其他 category（dom/storage/css 等）的弱断言用例是否同样需升级；战略方向（escape-hatch P1b、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。
 
 ### Geometry Interfaces WPT 用例 + R3320 锁覆盖（本轮 R3320，wpt-runner）—— R3319/R2985 工作锁合规覆盖
 
