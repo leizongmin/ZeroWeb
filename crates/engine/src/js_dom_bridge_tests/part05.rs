@@ -1891,3 +1891,116 @@ fn test_form_disabled_legend_exemption_r3066() {
         "POST：legend 内控件启用（leg=1），legend 外禁用（skip 跳过）"
     );
 }
+
+#[test]
+fn test_image_data_constructor_r3297() {
+    // R3297：全局 `new ImageData(...)` 构造器（HTML ImageData spec）。此前缺 → 抛 TypeError。
+    // 两形式：`new ImageData(w,h)` 透明黑全零；`new ImageData(dataArray, w[, h])` 包裹既有数据。
+    // 产物 {width,height,data:Uint8ClampedArray,colorSpace:'srgb'}，与 ctx.createImageData 同构。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // new ImageData(10, 10)：width/height + 透明黑全零 + data.length = 10*10*4。
+    sandbox
+        .execute(
+            "var img = new ImageData(10, 10);\
+             globalThis.__w = img.width; globalThis.__h = img.height;\
+             globalThis.__len = img.data.length; globalThis.__first = img.data[0];\
+             globalThis.__cs = img.colorSpace; globalThis.__ctor = (img instanceof ImageData);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__w)").unwrap().value, "10", "width=10");
+    assert_eq!(sandbox.execute("String(globalThis.__h)").unwrap().value, "10", "height=10");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__len)").unwrap().value,
+        "400",
+        "data.length = 10*10*4 = 400"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__first)").unwrap().value,
+        "0",
+        "默认透明黑全零（data[0]=0）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cs)").unwrap().value,
+        "srgb",
+        "colorSpace='srgb'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ctor)").unwrap().value,
+        "true",
+        "instanceof ImageData"
+    );
+    // data 须为 Uint8ClampedArray（spec）。
+    assert_eq!(
+        sandbox
+            .execute("String(new ImageData(2,2).data instanceof Uint8ClampedArray)")
+            .unwrap()
+            .value,
+        "true",
+        "data 须为 Uint8ClampedArray"
+    );
+
+    // new ImageData(dataArray, width)：包裹既有数据，高度由 length/(width*4) 推导。
+    sandbox
+        .execute(
+            "var data = new Uint8ClampedArray(2*3*4);\
+             for (var i = 0; i < data.length; i++) data[i] = (i % 256);\
+             var img2 = new ImageData(data, 2);\
+             globalThis.__w2 = img2.width; globalThis.__h2 = img2.height;\
+             globalThis.__sameData = (img2.data === data); globalThis.__v = img2.data[5];",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__w2)").unwrap().value, "2", "width=2");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h2)").unwrap().value,
+        "3",
+        "height=3（24 字节 / (2*4) = 3）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sameData)").unwrap().value,
+        "true",
+        "data 引用同一数组（包裹非拷贝）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v)").unwrap().value,
+        "5",
+        "data[5]=5（数据保真）"
+    );
+
+    // new ImageData(dataArray, width, height)：显式高度。
+    sandbox
+        .execute("var img3 = new ImageData(new Uint8ClampedArray(16), 2, 2); globalThis.__h3 = img3.height;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h3)").unwrap().value,
+        "2",
+        "显式 height 参数生效"
+    );
+
+    // 互操作：new ImageData(2,2) 经 putImageData 写入 canvas，再 getImageData 回读（同构消费）。
+    sandbox
+        .execute(
+            "var c = document.createElement('canvas'); c.width=2; c.height=2;\
+             var cx = c.getContext('2d');\
+             var src = new ImageData(2,2); src.data[0]=255;\
+             cx.putImageData(src, 0, 0);\
+             globalThis.__back = cx.getImageData(0,0,2,2).data[0];",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__back)").unwrap().value,
+        "255",
+        "new ImageData 经 putImageData 写入 + getImageData 回读保真"
+    );
+}

@@ -143,6 +143,25 @@
 
 ## 最近完成的改进
 
+### 全局 `ImageData` 构造器 JS 暴露（本轮 R3297，engine shim）—— canvas 像素数据构造面闭合
+
+承接 R3296（toBlob）。直接代码核实 canvas 类型面：`ctx.createImageData`（R2796）已返 `{width,height,data,colorSpace}` plain object，但 **全局 `new ImageData(...)` 构造器全缺**——`new ImageData(10,10)` / `new ImageData(dataArray, w)` 抛 TypeError。像素处理库（jimp/canvas Worker 内图像处理）+ putImageData/getImageData 显式构造（手构像素数组后写入 canvas）依赖此构造器。
+
+**变更（R3297，engine shim）**：
+- **`js_dom_shim/part05.js`**：新 `ImageData` 全局构造器（DOMPoint global 后，canvas 几何类型族内）。两形式：① `new ImageData(width, height)` → 透明黑全零 `Uint8ClampedArray(w*h*4)`；② `new ImageData(Uint8ClampedArray, width[, height])` → 包裹既有数据（引用非拷贝），高度由 `length/(width*4)` 推导或显式。产物 `{width,height,data:Uint8ClampedArray,colorSpace:'srgb'}`——与 `ctx.createImageData` 输出**同构**（putImageData/getImageData 直消费）。
+- **spec 合规**：data 须 Uint8ClampedArray（lenient 接受类数组转换）；colorSpace 仅 'srgb'（'display-p3' defer）；非法尺寸 lenient 返全零（headless 不中断脚本，与 btoa/roundRect lenient 哲学一致）；`instanceof ImageData` 为真。
+
+**为何净正向**：① **闭合 canvas 像素数据构造面**——`new ImageData(...)` 此前 TypeError，现 jimp/Worker 图像处理 + 显式像素构造可用；② **零新 Rust**——纯 JS 构造器（复用 Uint8ClampedArray + 既有 plain-object 形状，putImageData 已消费此形状）；③ **零回归**——engine lib 2004→2005（+1 测 `test_image_data_constructor_r3297`：两形式构造 + width/height/data.length/colorSpace/instanceof + Uint8ClampedArray 类型 + 数据引用保真 + 显式 height + **putImageData↔getImageData 互操作保真**），make test 全工作区 16740→16741 零失败，fmt+clippy clean，**纯 Canvas JS 类型无 CSS/layout 渲染影响**（reftest/product-smoke 不受影响）；④ **诚实核实**——首轮构造测加 instanceof + Uint8ClampedArray 类型断言 + 互操作回读（非仅形状断言）。
+
+| 文件 | 变更 |
+|------|------|
+| `crates/engine/src/js_dom_shim/part05.js` | 新 `ImageData` 全局构造器（两形式 + 同构 ctx.createImageData 输出）。 |
+| `crates/engine/src/js_dom_bridge_tests/part05.rs` | +1 测 `test_image_data_constructor_r3297`（两形式 + 类型 + 数据保真 + putImageData 互操作）。 |
+
+验证：`cargo fmt` clean + `cargo clippy -p zero-engine --features v8 --all-targets -- -D warnings` 零警告 + **engine lib 2005 全绿**（+1）+ **全工作区 `make test`（release + test-guard 包裹）零失败**（16741 测试，零回归）。**另发现（非本片修）**：canvas **`Path2D` 全局构造器 + ctx.fill/stroke/clip/isPointInPath 的 path 参数形式全缺**——Rust 后端 `crates/canvas/src/path.rs:28` Path2D（arc/round_rect/etc）+ host op 注释「无 Path2D 参数形式」；canvas 库（Konva/D3/PixiJS）`new Path2D()` + `ctx.fill(path)` 高频，为续 canvas Tier 3 切片（比 ImageData 大，涉 ctx 4 方法 path 参数 + Path2D 方法族 host 桥接）。续候选：① canvas `Path2D` 构造器 + fill/stroke/clip/isPointInPath path 参数（Tier 3，中切片）；② `createImageBitmap`（Tier 3，涉 image decode 后端 wiring）；③ RFC 元素滚动 S1-S7（渲染流域协调）。
+
+---
+
 ### Canvas 2D `toBlob` JS 暴露（本轮 R3296，engine shim）—— canvas 异步 Blob 导出面闭合
 
 承接 R3295（webview execute_script shim 修复）。直接代码核实 canvas 导出面：`toDataURL`（R2797，同步 PNG data URL）已全实现，但 **`toBlob` 全缺**——`canvas.toBlob(callback, type?, quality?)`（异步 Blob 导出，HTMLCanvasElement）此前为 undefined 调用抛 TypeError。canvas 导出库（html2canvas/fabric.js/Chart.js「Save as Image」）+ FormData 上传 + createObjectURL 预览依赖此 API。

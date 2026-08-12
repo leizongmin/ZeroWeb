@@ -719,6 +719,38 @@
   DOMPoint.fromPoint = function (p) { return new DOMPoint(p && p.x, p && p.y, p && p.z, p && p.w); };
   globalThis.DOMPoint = globalThis.DOMPoint || DOMPoint;
 
+  // ImageData（R3297）——全局构造器（HTML ImageData spec）。两形式：
+  //   `new ImageData(width, height)` → 透明黑（全零 RGBA）像素数组。
+  //   `new ImageData(Uint8ClampedArray, width[, height])` → 包裹既有数据（高度由 数组长度/(width*4) 推导或显式）。
+  // 产物 `{width, height, data: Uint8ClampedArray, colorSpace: 'srgb'}`——与 `ctx.createImageData` 输出同构
+  //（putImageData/getImageData/Worker 内像素处理直消费此形状）。此前缺 → `new ImageData(...)` 抛 TypeError。
+  // spec 校验：data 须为 Uint8ClampedArray；width*4 须整除 data.length；非法 → lenient 返全零（headless 不中断脚本，
+  // real browser 抛 IndexSizeError，与 btoa/roundRect lenient 哲学一致）。colorSpace 仅 'srgb'（'display-p3' defer）。
+  // https://html.spec.whatwg.org/multipage/canvas.html#imagedata
+  function ImageData(a, b, c) {
+    if (a != null && typeof a === 'object' && typeof a.length === 'number') {
+      // new ImageData(dataArray, width[, height])——dataArray 须 Uint8ClampedArray（real browser），lenient 接受类数组。
+      var data = (a instanceof Uint8ClampedArray) ? a : new Uint8ClampedArray(a);
+      var w = Math.abs(+b || 0) | 0;
+      if (w <= 0) w = 1; // 防 0 除
+      var h = (c != null) ? (Math.abs(+c || 0) | 0) : ((data.length / 4) / w) | 0;
+      this.width = w;
+      this.height = h;
+      this.data = data;
+      this.colorSpace = 'srgb';
+    } else {
+      // new ImageData(width, height)——透明黑全零。
+      var w2 = Math.abs(+a || 0) | 0;
+      var h2 = Math.abs(+b || 0) | 0;
+      this.width = w2;
+      this.height = h2;
+      this.data = new Uint8ClampedArray(w2 * h2 * 4);
+      this.colorSpace = 'srgb';
+    }
+  }
+  globalThis.ImageData = globalThis.ImageData || ImageData;
+
+
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
   // `__zw_canvas_op(handle, op, ...args)` 串参派发。`getContext('2d')` 首次调时创建 host 上下文（返 id），
   // 后续返回同一 proxy。host 未注册 → getContext 返 null（no-throw 回落）。width/height 默认 300×150（spec）。
