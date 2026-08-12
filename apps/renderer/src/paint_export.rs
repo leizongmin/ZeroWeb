@@ -164,12 +164,18 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
 /// 已存的 key 不再重传像素——DOM 变更后每次 publish 全量 clone 图片像素是
 /// ViewPainted IPC 体积的大头。仅「成功取到数据」的 key 标记 sent（fetch 失败
 /// 的不标，下次仍重试——负缓存由 fetch 层处理）。
+///
+/// R3254-M1：本函数**只读** `sent_keys`（判断是否重传），不再在构造时插入——
+/// sent 标记移到**实际写出之后**：compositor 异步路径由发布线程写出成功回传
+/// （`CompositorPublishThread::drain_sent_image_keys`），legacy 同步路径由
+/// `publish_render_with_layout` 同步发送成功后返回。否则 latest-wins 邮箱丢弃
+/// 的帧（携带某图片首个 payload 且从未发出）会留下「已发送」假象，图片永久缺失。
 pub fn fetch_image_payloads_with_cache<F>(
     html: &str,
     page_url: &str,
     cache: &mut zero_render_foundation::image_cache::ImageCache,
     fetch: &mut F,
-    sent_keys: &mut std::collections::HashSet<u64>,
+    sent_keys: &std::collections::HashSet<u64>,
 ) -> Vec<IpcImagePayload>
 where
     F: FnMut(&str) -> Option<Vec<u8>>,
@@ -205,7 +211,6 @@ where
             // S8：browser 端 ImageCache 已有该 key 像素，不重传
             continue;
         }
-        sent_keys.insert(key);
         out.push(IpcImagePayload {
             image_key: key,
             width: data.width,

@@ -119,6 +119,10 @@ pub struct GpuRenderer {
     image_sampler: wgpu::Sampler,
     /// 已上传图片纹理缓存，避免同一内容每帧重复创建 GPU 资源。
     image_texture_cache: std::collections::HashMap<GpuImageCacheKey, CachedImageResource>,
+    /// 图片纹理缓存显存预算（R3254-M3：超过时按 last_used 逐出；条目数上限 8192 仍兜底）。
+    image_texture_budget_bytes: usize,
+    /// 图片纹理缓存访问代数（R3254-M3：命中刷新 last_used 用）。
+    image_texture_tick: u64,
     /// Blur 源纹理绑定组布局
     #[allow(dead_code)]
     blur_bgl: wgpu::BindGroupLayout,
@@ -160,6 +164,10 @@ struct GpuImageCacheKey {
 struct CachedImageResource {
     _texture: wgpu::Texture,
     bind_group: Arc<wgpu::BindGroup>,
+    /// 最近访问代数（R3254-M3：预算逐出排序依据）。
+    last_used: u64,
+    /// 纹理显存字节数（R3254-M3：预算核算）。
+    byte_size: usize,
 }
 
 /// compositor 导入帧（Browser 侧 wgpu 外部纹理）。
@@ -351,6 +359,9 @@ impl GpuRenderer {
             image_bgl,
             image_sampler,
             image_texture_cache: std::collections::HashMap::new(),
+            // R3254-M3：256MB 显存预算（默认；条目上限 8192 兜底）。
+            image_texture_budget_bytes: 256 * 1024 * 1024,
+            image_texture_tick: 0,
             blur_bgl,
             atlas,
             atlas_texture,
@@ -1346,11 +1357,33 @@ impl GpuRenderer {
             image_key: image_key.clone(),
             width: image_data.width,
             height: image_data.height,
-            content_hash: Self::hash_image_pixels(&image_data.pixels),
+            // R3254-M2：读插入时预存的像素摘要（每帧全量哈希是主线程 CPU 大头）。
+            content_hash: image_data.content_hash,
         };
         if !self.image_texture_cache.contains_key(&cache_key) {
+            // R3254-M3：条目数硬上限兜底（全清会引发一次整帧回传抖动——仅极端场景触发）。
             if self.image_texture_cache.len() >= 8192 {
                 self.image_texture_cache.clear();
+            }
+            let byte_size = (image_data.width as usize) * (image_data.height as usize) * 4;
+            // R3254-M3：显存字节预算——超预算按 last_used 逐出（wgpu Texture drop 即释放）。
+            if !self.image_texture_cache.is_empty() {
+                let budget = self.image_texture_budget_bytes;
+                let used: usize = self.image_texture_cache.values().map(|r| r.byte_size).sum();
+                if used + byte_size > budget {
+                    let mut candidates: Vec<(u64, GpuImageCacheKey)> = self
+                        .image_texture_cache
+                        .iter()
+                        .map(|(k, r)| (r.last_used, k.clone()))
+                        .collect();
+                    candidates.sort_by_key(|(last_used, _)| *last_used);
+                    for (_, key) in candidates {
+                        if self.image_texture_cache.values().map(|r| r.byte_size).sum::<usize>() + byte_size <= budget {
+                            break;
+                        }
+                        self.image_texture_cache.remove(&key);
+                    }
+                }
             }
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Image Texture"),
@@ -1402,13 +1435,21 @@ impl GpuRenderer {
                     },
                 ],
             }));
+            self.image_texture_tick = self.image_texture_tick.saturating_add(1);
             self.image_texture_cache.insert(
                 cache_key.clone(),
                 CachedImageResource {
                     _texture: texture,
                     bind_group,
+                    last_used: self.image_texture_tick,
+                    byte_size,
                 },
             );
+        }
+        // R3254-M3：命中刷新 last_used（LRU 逐出排序依据）。
+        if let Some(resource) = self.image_texture_cache.get_mut(&cache_key) {
+            self.image_texture_tick = self.image_texture_tick.saturating_add(1);
+            resource.last_used = self.image_texture_tick;
         }
         self.image_texture_cache
             .get(&cache_key)
@@ -1417,11 +1458,10 @@ impl GpuRenderer {
             .clone()
     }
 
-    fn hash_image_pixels(pixels: &[u8]) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        pixels.hash(&mut hasher);
-        hasher.finish()
+    /// R3254-M4：清空图片纹理缓存（导航 epoch 变化 / 标签切换时调用——旧页纹理滞留
+    /// 会累积显存；清空后同内容图片下帧重建纹理，仅重传开销，无害）。
+    pub fn clear_image_texture_cache(&mut self) {
+        self.image_texture_cache.clear();
     }
 
     fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<f32> {

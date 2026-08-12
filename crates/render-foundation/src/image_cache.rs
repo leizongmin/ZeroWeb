@@ -28,6 +28,9 @@ pub struct ImageData {
     pub width: u32,
     /// 高度（像素）
     pub height: u32,
+    /// 像素内容摘要（R3254-M2：插入时计算一次，GPU 纹理缓存键复用——像素在插入
+    /// ImageCache 后不可变，避免每帧对每张图全量哈希）。
+    pub content_hash: u64,
     /// 纯色检测结果 — 当所有像素相同时缓存该颜色，用于优化渲染
     solid_color: Option<[u8; 4]>,
     /// 仅含宽高比、无确定固有尺寸的信号（CSS §10.3.2）。
@@ -49,6 +52,16 @@ pub struct ImageData {
     /// usvg 对缺失维用原始 viewBox 值（pixmap bogus），须按 abs 维 × ratio 计算。`Some((w,h))`
     /// 覆盖 pixmap 用于 image_sizes（aspect_ratio 由 w/h 推导）。仅该类 SVG 出现；其余为 `None`。
     computed_intrinsic: Option<(f32, f32)>,
+}
+
+/// RGBA 像素内容摘要（R3254-M2 共享实现——ImageData 插入时预存一次，GPU 纹理缓存
+/// 键复用同一算法，保证「同像素同 hash」）。
+pub fn hash_pixels(pixels: &[u8]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    pixels.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl ImageData {
@@ -74,10 +87,12 @@ impl ImageData {
         } else {
             None
         };
+        let content_hash = hash_pixels(&pixels);
         Ok(Self {
             pixels,
             width,
             height,
+            content_hash,
             solid_color,
             intrinsic_ratio: None,
             no_ratio: None,
@@ -88,10 +103,12 @@ impl ImageData {
     /// 创建指定尺寸的空（全透明）图片
     pub fn new_empty(width: u32, height: u32) -> Self {
         let pixels = vec![0u8; (width as usize) * (height as usize) * 4];
+        let content_hash = hash_pixels(&pixels);
         Self {
             pixels,
             width,
             height,
+            content_hash,
             solid_color: Some([0, 0, 0, 0]),
             intrinsic_ratio: None,
             no_ratio: None,
@@ -1300,6 +1317,7 @@ mod tests {
             pixels: vec![255; 8],
             width: 2,
             height: 2,
+            content_hash: 0,
             solid_color: None,
             intrinsic_ratio: None,
             no_ratio: None,

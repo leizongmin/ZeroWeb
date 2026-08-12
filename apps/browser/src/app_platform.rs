@@ -197,6 +197,14 @@ impl BrowserApp {
         if !present || !self.window_focused {
             return;
         }
+        // R3254-M4：标签切换时清 GPU 图片纹理缓存（旧标签纹理滞留会累积显存）。
+        let active_tab = self.shell.active_tab_id();
+        if active_tab != self.last_rendered_tab
+            && let Some(renderer) = self.gpu_renderer.as_mut()
+        {
+            renderer.clear_image_texture_cache();
+        }
+        self.last_rendered_tab = active_tab;
         if self.skip_local_composite_for_owned_present() {
             self.forward_compositor_chrome_ui(width, height);
             self.maybe_request_compositor_present(width, height);
@@ -241,6 +249,13 @@ impl BrowserApp {
                 &overlay_rounded_rects,
                 1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
             );
+            // R3254-M5：GPU 光栅化路径同样每帧回收零引用图片（此前 GPU 路径从不 gc，
+            // ImageCache 的 2048 条目/256MB 上限形同虚设）。
+            if let Some(id) = active_tab
+                && let Some(cache) = self.tabs.image_cache_mut(id)
+            {
+                cache.gc();
+            }
         }
         self.gpu_renderer = gpu;
     }

@@ -1116,6 +1116,89 @@ fn test_gpu_full_scene_reuses_resources_and_invalidates_changed_image_content() 
     assert!(pixels[center + 2] >= 250);
 }
 
+/// R3254-M3：显存字节预算——超过时按 last_used 逐出（不再无界增长到 8192 全清）。
+#[serial]
+#[test]
+fn test_gpu_image_texture_cache_evicts_by_byte_budget() {
+    let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+    // 预算 = 2 张 1x1 纹理（每张 4 字节）。
+    renderer.image_texture_budget_bytes = 8;
+    let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(16);
+
+    for (id, color) in [
+        (11u64, [255u8, 0, 0, 255]),
+        (12, [0, 255, 0, 255]),
+        (13, [0, 0, 255, 255]),
+    ] {
+        let key = crate::image_cache::ImageKey::new(id);
+        image_cache.insert_with_key(
+            key.clone(),
+            crate::image_cache::ImageData::from_rgba(color.to_vec(), 1, 1).unwrap(),
+        );
+        let mut primitives = RenderPrimitives::default();
+        primitives.images.push(crate::primitive::ImagePrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            image_key: key,
+            clip: None,
+        });
+        renderer.render_full_scene_gpu(
+            &primitives,
+            &font_loader,
+            &mut glyph_cache,
+            Some(&mut image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+            1.0,
+        );
+    }
+    // 预算 8 字节：第 3 张图触发逐出，缓存 ≤ 2 张。
+    assert!(
+        renderer.image_texture_cache.len() <= 2,
+        "byte budget must evict oldest entries (len={})",
+        renderer.image_texture_cache.len()
+    );
+    assert!(renderer.image_texture_cache.len() >= 1);
+}
+
+/// R3254-M4：clear_image_texture_cache 清空 GPU 纹理缓存（导航 epoch / 标签切换）。
+#[serial]
+#[test]
+fn test_gpu_clear_image_texture_cache() {
+    let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+    let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
+    let key = crate::image_cache::ImageKey::new(99);
+    image_cache.insert_with_key(
+        key.clone(),
+        crate::image_cache::ImageData::from_rgba(vec![1, 2, 3, 4], 1, 1).unwrap(),
+    );
+    let mut primitives = RenderPrimitives::default();
+    primitives.images.push(crate::primitive::ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+        image_key: key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(16);
+    renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert_eq!(renderer.image_texture_cache.len(), 1);
+    renderer.clear_image_texture_cache();
+    assert_eq!(renderer.image_texture_cache.len(), 0);
+}
+
 /// DC-9 GPU PathFillPrimitive — 渲染矩形多边形填充（黑），断言中心黑、外部白。
 ///
 /// R661 gap：PathFill 此前仅 mesh 顶点测试（gpu/mesh.rs），无 framebuffer readback。

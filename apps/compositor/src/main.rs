@@ -280,6 +280,11 @@ fn main() {
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
+                    // R3254-M4：GPU 纹理缓存同样按导航 epoch 清理（进程级共享 renderer——
+                    // clear 会误伤其他 surface 的纹理缓存，仅重传开销，无害）。
+                    if let Some(renderer) = gpu_renderer.as_mut() {
+                        renderer.clear_image_texture_cache();
+                    }
                 }
                 for image in &paint.image_payloads {
                     let Ok(data) = zero_render_foundation::image_cache::ImageData::from_rgba(
@@ -352,6 +357,9 @@ fn main() {
                 }
 
                 surface.backing.swap();
+                // R3254-M5：GPU/CPU 光栅化路径统一回收零引用图片（此前 GPU 路径从不 gc，
+                // 2048 条目 / 256MB 上限形同虚设，长滚动懒加载页会无限累积解码位图）。
+                surface.image_cache.gc();
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
                 tracing::info!(
