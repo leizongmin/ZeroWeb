@@ -89,6 +89,10 @@ fn rasterize_gpu(
     if recovery::take_simulated_device_lost(gpu_renderer) {
         return false;
     }
+    // R3281（#3）：真实设备丢失（wgpu 回调置位）→ 丢弃上下文，本帧 CPU 回退、下帧重建
+    if recovery::take_real_device_lost(gpu_renderer) {
+        return false;
+    }
     if gpu_renderer.is_none() {
         *gpu_renderer = GpuRenderer::new_headless(width, height).ok();
     }

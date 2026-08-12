@@ -119,6 +119,9 @@ pub struct GpuRenderer {
     blend_backdrop_texture: Option<wgpu::Texture>,
     /// D/R3279：窗口模式滤镜/变换后处理的离屏主帧拷贝纹理
     offscreen_texture: Option<wgpu::Texture>,
+    /// #3（R3281）：设备丢失标志——set_device_lost_callback 置位，
+    /// 调用方检查后丢弃 renderer（下帧重建），本帧回退 CPU。
+    device_lost: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -333,6 +336,14 @@ impl GpuRenderer {
         headless_texture: Option<wgpu::Texture>,
         surface: Option<wgpu::Surface<'static>>,
     ) -> Result<Self, String> {
+        let device_lost = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // #3：真实设备丢失（驱动重置/超时等）经回调置位——调用方据此丢弃并重建
+        {
+            let flag = device_lost.clone();
+            device.set_device_lost_callback(move |_reason, _msg| {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            });
+        }
         let uniform_bgl = create_uniform_bind_group_layout(&device);
         let atlas_bgl = create_atlas_bind_group_layout(&device);
         let gradient_bgl = create_texture_bind_group_layout(&device, "Gradient BGL");
@@ -387,6 +398,7 @@ impl GpuRenderer {
             blend_source_texture: None,
             blend_backdrop_texture: None,
             offscreen_texture: None,
+            device_lost,
             uniform_bgl,
             transform_uniform_bgl,
             atlas_bgl,
@@ -2849,5 +2861,18 @@ impl GpuRenderer {
             pass.draw(0..6, 0..1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
+    }
+}
+
+/// #3（R3281）：设备丢失状态——真实丢失（set_device_lost_callback）或测试注入。
+impl GpuRenderer {
+    /// 设备是否已丢失（调用方应丢弃本 renderer，下帧重建）。
+    pub fn is_device_lost(&self) -> bool {
+        self.device_lost.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 测试/模拟：注入设备丢失（recovery 路径验证）。
+    pub fn simulate_device_lost(&self) {
+        self.device_lost.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
