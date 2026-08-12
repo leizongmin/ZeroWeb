@@ -716,3 +716,129 @@ fn parity_inset_shadow_matches_cpu() {
         "inset 阴影 CPU/GPU 差异比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
     );
 }
+
+/// R3254-G2：多个 blur 阴影——此前 ping-pong 从上一阴影残留继续 + pass copy 覆盖
+/// 前序结果，前 N-1 个阴影只 blur 2 遍（σ 降约 18%）；重构后每阴影独立重置 +
+/// 逐阴影合成，CPU/GPU 逐像素一致。
+#[serial]
+#[test]
+fn parity_multiple_outset_shadows_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(4.0, 4.0, 10.0, 10.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur_radius: 4.0,
+        spread_radius: 0.0,
+        inset: false,
+    });
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(18.0, 4.0, 10.0, 10.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur_radius: 4.0,
+        spread_radius: 0.0,
+        inset: false,
+    });
+    // 二分：只画第一个阴影
+    let mut only_first = p.clone();
+    only_first.draw_order = vec![DrawOp::Shadow(0)];
+    let g1 = render_gpu(32, 32, &only_first, None);
+    let i1 = (11 * 32 + 11) * 4;
+    eprintln!("DBG only-first GPU={}", g1[i1]);
+    // 二分：只画第二个阴影
+    let mut only_second = p.clone();
+    only_second.draw_order = vec![DrawOp::Shadow(1)];
+    let g2 = render_gpu(32, 32, &only_second, None);
+    let i2 = (11 * 32 + 25) * 4;
+    let i2b = (11 * 32 + 11) * 4;
+    eprintln!("DBG only-second GPU={} outside={}", g2[i2], g2[i2b]);
+    p.draw_order = vec![DrawOp::Shadow(0), DrawOp::Shadow(1)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 90);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.35,
+        "多阴影 CPU/GPU 差异比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+    // 两个阴影的模糊中心（阴影矩形中心 (11,11)/(25,11)）都应有明显阴影——前 N-1 个
+    // 只 blur 2 遍会明显更淡（σ 降 18% 且扩散不足）。
+    let first_center = ((11 * 32 + 11) * 4) as usize;
+    let second_center = ((11 * 32 + 25) * 4) as usize;
+    eprintln!(
+        "DBG first=({},{}) second=({},{})",
+        cpu_fb.data[first_center], gpu_px[first_center], cpu_fb.data[second_center], gpu_px[second_center]
+    );
+    assert!(
+        gpu_px[first_center] < 180,
+        "第一个阴影中心应暗，CPU={} GPU={}",
+        cpu_fb.data[first_center],
+        gpu_px[first_center]
+    );
+}
+
+/// R3254-G3：inset 阴影盒外零泄漏——此前 blur scissor 延伸到盒外且合成无 scissor，
+/// 盒外（≤3×blur 距离）出现非零 alpha 软晕；修复后盒外保持白底。
+#[serial]
+#[test]
+fn inset_shadow_no_leak_outside_box() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(8.0, 8.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 3.0,
+        offset_y: 3.0,
+        blur_radius: 4.0,
+        spread_radius: 0.0,
+        inset: true,
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let _cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    // 盒外邻近点（盒边外 2px）：修复前软晕（灰值 ≈100-128）；修复后应为白底。
+    for (x, y) in [(4usize, 16usize), (28, 16), (16, 4), (16, 28), (4, 4)] {
+        let idx = (y * 32 + x) * 4;
+        assert!(gpu_px[idx] > 200, "盒外 ({x},{y}) 不应有阴影泄漏，got {}", gpu_px[idx]);
+    }
+    // 盒内 frame 区域应有阴影。
+    let frame = (10 * 32 + 10) * 4;
+    assert!(gpu_px[frame] < 200, "盒内 frame 应有阴影，got {}", gpu_px[frame]);
+}
+
+/// R3254-G4：inset blur_radius==0（描边/焦点环）——CPU 硬边，GPU 此前 max(1.0)
+/// 羽化 1.5px；修复后硬边对齐。
+#[serial]
+#[test]
+fn inset_shadow_zero_blur_is_hard_edge() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(8.0, 8.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 0.0,
+        spread_radius: 0.0,
+        inset: true,
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 90);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.35,
+        "inset blur=0 CPU/GPU 差异比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+    // 洞边界硬边：洞内（14,14）白、frame（10,10）暗——中间无过渡带（羽化会在
+    // 洞内边缘 1-2px 产生灰色过渡）。
+    let hole_edge = (14 * 32 + 14) * 4;
+    assert!(
+        cpu_fb.data[hole_edge] > 250 && gpu_px[hole_edge] > 250,
+        "硬边洞内应纯白，CPU={} GPU={}",
+        cpu_fb.data[hole_edge],
+        gpu_px[hole_edge]
+    );
+}
