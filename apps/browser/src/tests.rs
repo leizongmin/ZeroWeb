@@ -1198,7 +1198,10 @@ fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
 
         let mut observed_snapshot_seq = initial_snapshot_seq;
         let mut page_ready = false;
-        for _ in 0..500 {
+        // 轮询上限 1200（每次 10ms ≈ 12s）。曾为 500（5s），并发 `make test`（多二进制 + GPU compositor
+        // 子进程争抢 CPU）下 renderer 启动 + 首帧可能 > 5s 致 scale=1 page_ready 超时 flaky（隔离运行通过）。
+        // 12s 覆盖并发负载峰值，保多 scale 因子稳定（R3316 归因：资源争抢超时非真实回归）。
+        for _ in 0..1200 {
             app.poll_tab_fetch_with_gpu_present_for_test();
             let current_snapshot_seq = app.snapshot_seq_for_test(tab_id);
             if current_snapshot_seq != observed_snapshot_seq {
