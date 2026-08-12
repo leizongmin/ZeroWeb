@@ -449,6 +449,36 @@ mod runtime_path_tests {
         );
     }
 
+    /// R3331：multiprocess/* 含脚本用例 js_executes_ok——锁 localStorage 同步 round-trip 行为。
+    /// 承接 R3329（security 行为锁）+ R3330（MO 差异闭合）。multiprocess/storage-isolation 原用
+    /// `try{...}catch(e){}` 吞错且从不校验返回值（getItem 读回 / removeItem 后 null），存储静默失效
+    /// 仍通过——典型「弱断言静默通过」覆盖缺口，同 R3320-R3323、R3329 类。本轮升级内联脚本断言 +
+    /// 加 js_executes_ok，并建 multiprocess 覆盖门（全量遍历含 `<script>` 用例，含 large-dom DOM 构建）。
+    #[test]
+    fn multiprocess_cases_execute_scripts_r3331() {
+        let ctx = TestContext::default();
+        let cases: Vec<_> = builtin_tests()
+            .into_iter()
+            .filter(|c| c.id.starts_with("multiprocess/") && c.html.contains("<script>"))
+            .collect();
+        assert!(
+            !cases.is_empty(),
+            "multiprocess/* 含 <script> 用例应非空（本轮审计确认 ≥1）"
+        );
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "multiprocess/* 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
+
     /// R3322：storage/* 同步用例 js_executes_ok——锁 Web Storage API 行为（localStorage/sessionStorage
     /// CRUD + length + clear + key 迭代 + 批量写入）。此前 storage/* 全用弱断言（render_completes），
     /// 内联脚本写结果不校验，存储静默失效（getItem 返 undefined / length 不变）仍通过。本轮升级内联脚本

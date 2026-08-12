@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3330：headless JS-DOM 差异 #4（MO takeRecords 合并）经探针核实**已闭合**——setAttribute×2 产 2 条独立 records 不合并（R3025-R3028 MO observe-options 收尾后逐条独立），`js-dom/mutation-observer` WPT 断言从宽松 ≥1 升级到 spec 严格锁（2 条独立 records + 各带 attributeName），差异 backlog #4 标记闭合；#1/#2/#3 复测仍存在（rule 11 P1b）。前轮 R3329：security/* 行为锁。
+**最后更新**: 2026-08-13（R3331：去重 security/csp/wasm-unsafe-eval id（policy vs capability 双块）+ multiprocess/storage-isolation localStorage 同步 round-trip 行为锁（原 try/catch 吞错静默通过）+ multiprocess js_executes_ok 覆盖门；navigation/* 审计确认纯结构性（R3324 正确）。前轮 R3330：MO 差异 #4 闭合。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,26 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### multiprocess 行为锁 + 重复 id 去重 + navigation 审计确认（本轮 R3331，wpt-runner）
+
+承接 R3329（security 行为锁）+ R3330（MO 差异 #4 闭合）。本轮**收尾 R3329 发现的数据问题 + 扩展行为锁面到 multiprocess**，并**独立审计 navigation/* 确认 R3324 结论正确**：
+
+**① 重复 id 去重**：R3329 审计发现 `security/csp/wasm-unsafe-eval` id 在 vec 中出现两次（line ~725 无脚本策略展示版 + line ~1305 有脚本 capability 检测版）。本轮把无脚本展示版改 id 为 `security/csp/wasm-unsafe-eval-policy`，消除 id 歧义（run_single 按首匹配，重复 id 语义模糊）。R3329 覆盖门（按 `html.contains("<script>")` 过滤）不受影响。
+
+**② multiprocess/storage-isolation 行为锁**：原用例 `try{ localStorage.setItem/getItem/removeItem }catch(e){}` **吞错且从不校验返回值**——localStorage 静默失效（getItem 返 undefined / removeItem 不清空）仍通过，典型「弱断言静默通过」缺口，同 R3320-R3323、R3329。本轮升级内联脚本：`setItem('zw-iso','value')` → `getItem` 断言==='value' → `removeItem` → `getItem` 断言===null（探针先确认 headless 真行为），+ 加 `js_executes_ok`。
+
+**③ navigation/* 审计结论（独立核实 R3324）**：逐用例核查 navigation.rs 63 用例——`navigation/*` 多为纯结构性（link/img/meta/nav DOM 断言）或描述性静态文档（ETag/cookie/HSTS/CORS/SW 文本展示）；`navigation/hash-fragments` 的 hashchange 监听器在 headless about:blank 不触发（无同步可断言结果）。**R3324「navigation 含脚本用例 API 价值低」结论正确**（probe 验证：keyboard event-handler 同理——监听器注册但 about:blank 无按键事件触发，不可锁）。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +`multiprocess_cases_execute_scripts_r3331` 永久覆盖门（全量遍历 multiprocess/* 含 `<script>` 用例 js_executes_ok）|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_multiprocess.rs` | `multiprocess/storage-isolation` 升级行为锁（getItem==='value' + removeItem 后 null）+ js_executes_ok |
+| `tests/wpt-runner/src/runner/test_cases/test_cases_security.rs` | 重复 id 去重：无脚本版 → `security/csp/wasm-unsafe-eval-policy` |
+
+**为何净正向且零回归**：纯测试增强 + 数据修正（无生产代码改动）。**验证**：`runtime_path_tests` **15 passed / 0 failed**（+1 multiprocess 覆盖门，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告；security 覆盖门 R3329 复测通过。
+
+**下游判断（固化）**：R3320-R3323 + R3329 + R3330 + R3331 连续 7 轮闭合「弱断言静默通过」覆盖缺口，类别覆盖门现含 web-api/canvas/web-workers/storage/runtime/interactive/es-modules/**security/multiprocess**（geometry/runtime/storage/js-dom 行为锁）。**自主面饱和确认收敛**：剩余真无价值类别经独立审计核实——navigation/*（纯结构/网络级，本轮 probe 验证）、web-platform/*（CSS 渲染）、platform-input/multiprocess 剩余用例（事件不触发/DOM 构建，本轮 probe 验证）。zero-web 流自主面（DOM/Web API + Canvas + WPT 行为锁）**实质饱和**，剩余战略方向全部需用户点名（P1b escape-hatch、渲染深结构）或环境依赖（GPU/Display）。
 
 ### headless JS-DOM 差异 #4（MO 记录合并）闭合 + WPT spec 锁（本轮 R3330，wpt-runner + learnings）—— P1b 验收清单缩窄
 

@@ -722,8 +722,8 @@ pub fn security_tests() -> Vec<TestCase> {
             ],
         },
         TestCase {
-            id: "security/csp/wasm-unsafe-eval".into(),
-            description: "CSP wasm-unsafe-eval 单独允许 WASM".into(),
+            id: "security/csp/wasm-unsafe-eval-policy".into(),
+            description: "CSP wasm-unsafe-eval 单独允许 WASM（策略 meta 展示）".into(),
             category: "security".into(),
             html: r#"<html><head>
             <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'">

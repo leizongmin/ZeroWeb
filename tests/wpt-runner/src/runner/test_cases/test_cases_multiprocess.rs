@@ -312,16 +312,25 @@ pub fn multiprocess_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <div id="storage-test">Storage test</div>
             <script>
-                try {
-                    localStorage.setItem('test', 'value');
-                    localStorage.getItem('test');
-                    localStorage.removeItem('test');
-                } catch(e) {}
+                // R3331 行为锁：localStorage 同步 round-trip 须真实工作（getItem 读回 setItem 值 +
+                // removeItem 后回 null）。原用例 try/catch 吞错且从不校验返回值——存储静默失效仍通过。
+                localStorage.setItem('zw-iso', 'value');
+                var got = localStorage.getItem('zw-iso');
+                localStorage.removeItem('zw-iso');
+                var after = localStorage.getItem('zw-iso');
+                if (got !== 'value') throw new Error('storage-isolation: getItem="' + got + '" expected "value"');
+                if (after !== null) throw new Error('storage-isolation: removeItem 后 getItem="' + after + '" expected null');
+                document.getElementById('storage-test').textContent = 'Storage round-trip ok';
             </script>
             </body></html>"#
                 .into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "no_panic".into(),
+                // R3331：localStorage 同步 round-trip 真实工作——setItem/getItem/removeItem 失效即 fail。
+                "js_executes_ok".into(),
+            ],
         },
         // ═══════════════════════════════════════════════════════════════
         // 渲染管线健壮性
