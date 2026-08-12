@@ -1406,6 +1406,175 @@ pub fn create_blend_pipeline(
         multiview_mask: None,
     })
 }
+/// WGSL — 2D box blur（R3291：阴影模糊对齐 CPU 3 遍 box blur）。
+/// 均匀核 (2r+1)² 采样平均；与 blur_pipeline 的三角窗不同——box 是 CPU
+/// shadow.rs 的语义（三遍等半径 box 合成 σ=blur/2）。
+pub const BOX_BLUR_SHADER: &str = r#"
+struct Uniforms {
+    screen_width: f32,
+    screen_height: f32,
+    blur_radius: f32,
+    _pad: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(1) @binding(0) var src_texture: texture_2d<f32>;
+@group(1) @binding(1) var src_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_fullscreen(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var pos = array<vec2f, 3>(
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0),
+    );
+    var uv = array<vec2f, 3>(
+        vec2f(0.0, 1.0),
+        vec2f(2.0, 1.0),
+        vec2f(0.0, -1.0),
+    );
+    var out: VertexOutput;
+    out.position = vec4f(pos[vertex_index], 0.0, 1.0);
+    out.uv = uv[vertex_index];
+    return out;
+}
+
+@fragment
+fn fs_box(in: VertexOutput) -> @location(0) vec4f {
+    let r = i32(max(uniforms.blur_radius, 1.0));
+    var color = vec4f(0.0);
+    var count: f32 = 0.0;
+    for (var dy: i32 = -r; dy <= r; dy++) {
+        for (var dx: i32 = -r; dx <= r; dx++) {
+            let offset = vec2f(f32(dx) / uniforms.screen_width, f32(dy) / uniforms.screen_height);
+            color += textureSample(src_texture, src_sampler, in.uv + offset);
+            count += 1.0;
+        }
+    }
+    return color / count;
+}
+"#;
+
+/// 创建 2D box blur 管线（复用 blur 的 uniform/纹理 bgl 布局）。
+pub fn create_box_blur_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    blur_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Box Blur Shader"),
+        source: wgpu::ShaderSource::Wgsl(BOX_BLUR_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Box Blur Pipeline Layout"),
+        bind_group_layouts: &[Some(uniform_bgl), Some(blur_bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Box Blur Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_fullscreen"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_box"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        cache: None,
+        multiview_mask: None,
+    })
+}
+/// 创建 Fill 管线的 REPLACE 变体（R3290：inset 阴影离屏挖洞——洞区域以透明覆盖）。
+/// 顶点/着色器与 fill 完全一致，仅 blend 为 REPLACE（输出直接覆盖目标）。
+pub fn create_fill_pipeline_replace(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    atlas_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Fill Replace Shader"),
+        source: wgpu::ShaderSource::Wgsl(FILL_GLYPH_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Fill Replace Pipeline Layout"),
+        bind_group_layouts: &[Some(uniform_bgl), Some(atlas_bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Fill Replace Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[Some(fill_vertex_buffer_layout())],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        cache: None,
+        multiview_mask: None,
+    })
+}
 #[cfg(test)]
 mod tests {
     use super::*;

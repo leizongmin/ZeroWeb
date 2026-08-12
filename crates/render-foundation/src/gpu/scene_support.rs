@@ -26,11 +26,7 @@ pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
     if !primitives.blend_modes.is_empty() && primitives.draw_order.is_empty() {
         return false;
     }
-    // R3287：阴影模糊 GPU 已支持（离屏画 + 区域 blur + alpha 混合）；spread 走
-    // collect_shadow_vertices 的矩形外扩；inset 阴影仍回退（GPU 无内阴影实现）。
-    if primitives.shadows.iter().any(|s| s.inset) {
-        return false;
-    }
+    // R3287 + R3290：阴影模糊/inset 均 GPU 支持（离屏蒙版 + 区域 blur + alpha 混合）。
     // R3289：repeating 渐变色标重映射（周期 [first,last] → [0,1]）——GPU fract(t)
     // 与 CPU 折叠等效，不再回退。
     // D/R3279：filter/transform 后处理已支持窗口模式（离屏纹理 ping-pong + blit 回

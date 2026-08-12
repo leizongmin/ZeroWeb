@@ -16,9 +16,9 @@ use crate::gpu::mesh::{
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, IMAGE_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX,
     create_atlas_bind_group_layout, create_blend_bind_group_layout, create_blend_pipeline, create_blur_pipeline,
-    create_color_filter_pipeline, create_gradient_pipeline, create_image_pipeline, create_render_pipeline,
-    create_rounded_rect_pipeline, create_texture_bind_group_layout, create_transform_pipeline,
-    create_transform_uniform_bgl, create_uniform_bind_group_layout,
+    create_box_blur_pipeline, create_color_filter_pipeline, create_fill_pipeline_replace, create_gradient_pipeline,
+    create_image_pipeline, create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
+    create_transform_pipeline, create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
 use crate::primitive::{DrawOp, FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
@@ -125,6 +125,10 @@ pub struct GpuRenderer {
     /// R3287：阴影模糊预处理的离屏纹理（+ blur ping-pong）
     offscreen_shadow_texture: Option<wgpu::Texture>,
     offscreen_shadow_texture_b: Option<wgpu::Texture>,
+    /// R3290：inset 阴影离屏挖洞用的 REPLACE fill 管线
+    fill_replace_pipeline: wgpu::RenderPipeline,
+    /// R3291：阴影 box blur 管线（2D 均匀核，对齐 CPU 3 遍 box blur）
+    box_blur_pipeline: wgpu::RenderPipeline,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -379,6 +383,10 @@ impl GpuRenderer {
         let transform_pipeline = create_transform_pipeline(&device, format, &transform_uniform_bgl, &blur_bgl);
         // C/R3278：blend 管线（uniform_bgl 4-float 布局复用——blend uniform {mode,0,0,0}）
         let blend_bgl = create_blend_bind_group_layout(&device);
+        // R3290：inset 阴影挖洞管线（fill + REPLACE blend）
+        let fill_replace_pipeline = create_fill_pipeline_replace(&device, format, &uniform_bgl, &atlas_bgl);
+        // R3291：阴影 box blur（复用 blur 的 uniform/纹理 bgl）
+        let box_blur_pipeline = create_box_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         let blend_pipeline = create_blend_pipeline(&device, format, &uniform_bgl, &blend_bgl);
 
         let atlas = GlyphAtlas::new();
@@ -403,6 +411,8 @@ impl GpuRenderer {
             color_filter_pipeline,
             transform_pipeline,
             blend_pipeline,
+            fill_replace_pipeline,
+            box_blur_pipeline,
             blend_bgl,
             blend_source_texture: None,
             blend_backdrop_texture: None,
@@ -956,10 +966,17 @@ impl GpuRenderer {
         // R3287：主 pass 前 clear 主帧（白）+ blur 阴影合成（alpha 混合到白底）。
         // 主 pass 随后 load 绘制——背景覆盖阴影（CSS：box-shadow 在背景之下）。
         // 须在 uniform_bg 借用前执行（&mut self）。
-        let blur_shadows: Vec<&crate::primitive::ShadowPrimitive> =
-            primitives.shadows.iter().filter(|s| s.blur_radius > 0.0).collect();
+        let blur_shadows: Vec<&crate::primitive::ShadowPrimitive> = primitives
+            .shadows
+            .iter()
+            .filter(|s| s.blur_radius > 0.0 && !s.inset)
+            .collect();
+        let inset_shadows: Vec<&crate::primitive::ShadowPrimitive> =
+            primitives.shadows.iter().filter(|s| s.inset).collect();
         if !blur_shadows.is_empty() {
             self.preprocess_blur_shadows(&mut encoder, &target, width, height, scale, &blur_shadows);
+        } else if !inset_shadows.is_empty() {
+            self.preprocess_inset_shadows(&mut encoder, &target, width, height, scale, &inset_shadows);
         } else {
             // 无 blur 阴影：仍 clear 主帧（主 pass 改 load 的统一起点）
             let mut clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1077,7 +1094,17 @@ impl GpuRenderer {
                 }
                 let draw_batch = |pass: &mut wgpu::RenderPass<'_>, tag: u8, indices: &[usize]| match tag {
                     0 => {
-                        let v: Vec<f32> = indices.iter().flat_map(|&i| shadow_verts[i].iter().copied()).collect();
+                        // R3287/R3290：blur/inset 阴影由预处理合成——只画硬边 outset
+                        let v: Vec<f32> = indices
+                            .iter()
+                            .filter(|&&i| {
+                                primitives
+                                    .shadows
+                                    .get(i)
+                                    .is_none_or(|s| s.blur_radius <= 0.0 && !s.inset)
+                            })
+                            .flat_map(|&i| shadow_verts[i].iter().copied())
+                            .collect();
                         self.draw_fill_pass(pass, uniform_bg, &device, &v, "Shadow");
                     }
                     1 => {
@@ -3157,63 +3184,64 @@ impl GpuRenderer {
             // CPU 阴影语义：σ = blur_radius/2（三遍 box blur）。GPU 三角窗 σ = r/√3，
             // 取 r ≈ 2σ 匹配视觉扩散（模糊核差异导致的边缘过渡宽度差为近似，对照测试宽容差）
             let sigma = shadow.blur_radius * scale * 0.5;
-            let radius = (sigma * 2.0).ceil() as u32;
+            // CPU 3 遍 box 的等效单遍半宽 d ≈ σ（d = (√(4σ²+1)-1)/2）——GPU 取 ceil 匹配
+            let d = ((4.0 * sigma * sigma + 1.0).sqrt() - 1.0) * 0.5;
+            let radius = d.floor().max(1.0) as u32;
             if radius < 1 {
                 continue;
             }
-            // blur 区域 = 阴影矩形外扩 σ（CPU spread 语义 + blur 扩散）
+            // blur 区域 = 阴影矩形外扩 blur×3（CPU shadow.rs blur_extent = blur_r*3，
+            // 3σ 覆盖 99.7%）
             let sr = &shadow.rect;
             let spread = shadow.spread_radius * scale;
             let ox = shadow.offset_x * scale;
             let oy = shadow.offset_y * scale;
-            let bl = (sr.left() * scale - spread + ox - sigma).floor().max(0.0) as u32;
-            let bt = (sr.top() * scale - spread + oy - sigma).floor().max(0.0) as u32;
-            let br = (sr.right() * scale + spread + ox + sigma).ceil().min(width as f32) as u32;
-            let bb = (sr.bottom() * scale + spread + oy + radius as f32)
+            let blur_extent = shadow.blur_radius * scale * 3.0;
+            let bl = (sr.left() * scale - spread + ox - blur_extent).floor().max(0.0) as u32;
+            let bt = (sr.top() * scale - spread + oy - blur_extent).floor().max(0.0) as u32;
+            let br = (sr.right() * scale + spread + ox + blur_extent)
+                .ceil()
+                .min(width as f32) as u32;
+            let bb = (sr.bottom() * scale + spread + oy + blur_extent)
                 .ceil()
                 .min(height as f32) as u32;
             if bl >= br || bt >= bb {
                 continue;
             }
             let scissor = (bl, bt, br - bl, bb - bt);
-            run_blur_pass(
-                &device,
-                &queue,
-                &self.blur_pipeline,
-                &self.uniform_bgl,
-                &self.blur_bgl,
-                shadow_tex,
-                shadow_tex_b,
-                extent,
-                &sampler,
-                radius as f32,
-                0.0,
-                scissor,
-                "Shadow Blur H",
-            );
-            run_blur_pass(
-                &device,
-                &queue,
-                &self.blur_pipeline,
-                &self.uniform_bgl,
-                &self.blur_bgl,
-                shadow_tex_b,
-                shadow_tex,
-                extent,
-                &sampler,
-                radius as f32,
-                1.0,
-                scissor,
-                "Shadow Blur V",
-            );
+            // R3291：3 遍 2D box blur（对齐 CPU shadow.rs 三遍 box blur 语义）。
+            // 每遍 2D 均匀核，ping-pong：A→B→A→B，最终结果在 shadow_tex_b。
+            let mut src_tex = shadow_tex;
+            let mut dst_tex = shadow_tex_b;
+            for pass_i in 0..3 {
+                run_box_blur_pass(
+                    &device,
+                    &queue,
+                    &self.box_blur_pipeline,
+                    &self.uniform_bgl,
+                    &self.blur_bgl,
+                    src_tex,
+                    dst_tex,
+                    extent,
+                    &sampler,
+                    radius as f32,
+                    scissor,
+                    &format!("Shadow Box Blur {pass_i}"),
+                );
+                std::mem::swap(&mut src_tex, &mut dst_tex);
+            }
+            // 结果在 shadow_tex_b（3 遍后 src/dst 互换）
+            let _ = src_tex;
         }
 
         // 3. 主帧 clear 白 + alpha 混合 blit 阴影离屏（复用 draw_image_pass 成熟路径）
+        //    R3291：3 遍 box blur 结果在 shadow_tex_b
         let view = target.view();
-        let shadow_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let blurred_tex = shadow_tex_b;
+        let shadow_view = blurred_tex.create_view(&wgpu::TextureViewDescriptor::default());
         let img_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -3258,4 +3286,292 @@ impl GpuRenderer {
         });
         self.draw_image_pass(&mut pass, uniform_bg, &device, &[(bg.into(), verts)]);
     }
+}
+
+/// R3290：GPU inset 阴影——离屏画「盒内非洞」frame 蒙版（盒画阴影色 + 洞 REPLACE
+/// 透明挖空）→ 区域 blur 软化洞边界（裁切到盒）→ alpha 混合回主帧（scissor 盒）。
+impl GpuRenderer {
+    fn preprocess_inset_shadows(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &RenderTarget,
+        width: u32,
+        height: u32,
+        scale: f32,
+        shadows: &[&crate::primitive::ShadowPrimitive],
+    ) {
+        self.ensure_shadow_textures(width, height);
+        let Some(shadow_tex) = self.offscreen_shadow_texture.as_ref() else {
+            return;
+        };
+        let Some(shadow_tex_b) = self.offscreen_shadow_texture_b.as_ref() else {
+            return;
+        };
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+
+        // 1. frame 蒙版：盒画阴影色（不透明）→ 洞 REPLACE 透明
+        {
+            let mut rect_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Inset Rect Encoder"),
+            });
+            let view = shadow_tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let uniform_bg = self
+                .uniform_bind_group
+                .as_ref()
+                .expect("uniform bind group initialized");
+            let atlas_bg = self.atlas_bind_group.clone();
+            {
+                let mut pass = rect_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Inset Frame Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                for shadow in shadows {
+                    let sr = &shadow.rect;
+                    let ox = sr.left() * scale;
+                    let oy = sr.top() * scale;
+                    let ow = sr.size.width * scale;
+                    let oh = sr.size.height * scale;
+                    let spread = shadow.spread_radius * scale;
+                    // 盒（OUTER）
+                    let mut verts = Vec::new();
+                    push_fill_quad(&mut verts, ox, oy, ox + ow, oy + oh, shadow.color);
+                    // 洞：OUTER 经 offset 偏移 + spread 收缩（CPU inset 公式）
+                    let hx = ox + shadow.offset_x * scale + spread;
+                    let hy = oy + shadow.offset_y * scale + spread;
+                    let hw = ow - 2.0 * spread;
+                    let hh = oh - 2.0 * spread;
+                    // 盒（fill pipeline ALPHA_BLENDING）
+                    self.draw_fill_pass(&mut pass, uniform_bg, &device, &verts, "InsetBox");
+                    // 洞（REPLACE 透明挖空）
+                    if hw > 0.0 && hh > 0.0 {
+                        let mut hole = Vec::new();
+                        push_fill_quad(&mut hole, hx, hy, hx + hw, hy + hh, Color::TRANSPARENT);
+                        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Inset Hole VB"),
+                            contents: bytemuck::cast_slice(&hole),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                        pass.set_pipeline(&self.fill_replace_pipeline);
+                        pass.set_bind_group(0, uniform_bg, &[]);
+                        pass.set_bind_group(1, &atlas_bg, &[]);
+                        pass.set_vertex_buffer(0, vb.slice(..));
+                        pass.draw(0..6, 0..1);
+                    }
+                }
+            }
+            queue.submit(std::iter::once(rect_encoder.finish()));
+        }
+
+        // 2. 区域 blur（洞边界软化；盒区域 scissor——盒外模糊被裁切保持硬边）
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Inset Blur Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        for shadow in shadows {
+            let sigma = shadow.blur_radius * scale * 0.5;
+            // CPU 3 遍 box 的等效单遍半宽 d ≈ σ（d = (√(4σ²+1)-1)/2）——GPU 取 ceil 匹配
+            let d = ((4.0 * sigma * sigma + 1.0).sqrt() - 1.0) * 0.5;
+            let radius = d.floor().max(1.0) as u32;
+            if radius < 1 {
+                continue;
+            }
+            let sr = &shadow.rect;
+            let blur_extent = shadow.blur_radius * scale * 3.0;
+            let bl = (sr.left() * scale - blur_extent).floor().max(0.0) as u32;
+            let bt = (sr.top() * scale - blur_extent).floor().max(0.0) as u32;
+            let br = (sr.right() * scale + blur_extent).ceil().min(width as f32) as u32;
+            let bb = (sr.bottom() * scale + blur_extent).ceil().min(height as f32) as u32;
+            if bl >= br || bt >= bb {
+                continue;
+            }
+            let scissor = (bl, bt, br - bl, bb - bt);
+            // R3291：3 遍 2D box blur（对齐 CPU），结果在 shadow_tex_b
+            let mut src_tex = shadow_tex;
+            let mut dst_tex = shadow_tex_b;
+            for pass_i in 0..3 {
+                run_box_blur_pass(
+                    &device,
+                    &queue,
+                    &self.box_blur_pipeline,
+                    &self.uniform_bgl,
+                    &self.blur_bgl,
+                    src_tex,
+                    dst_tex,
+                    extent,
+                    &sampler,
+                    radius as f32,
+                    scissor,
+                    &format!("Inset Box Blur {pass_i}"),
+                );
+                std::mem::swap(&mut src_tex, &mut dst_tex);
+            }
+            let _ = src_tex;
+        }
+
+        // 3. 主帧 clear 白 + alpha 混合 blit（scissor 裁切到盒——内阴影不出盒）
+        let shadow_view = shadow_tex_b.create_view(&wgpu::TextureViewDescriptor::default());
+        let img_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Inset Blit BG"),
+            layout: &self.image_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&img_sampler),
+                },
+            ],
+        });
+        let (fw, fh) = (width as f32, height as f32);
+        let verts = vec![
+            0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, fw, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, fw, fh, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 1.0, fw, fh, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, fh, 0.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let uniform_bg = self
+            .uniform_bind_group
+            .as_ref()
+            .expect("uniform bind group initialized");
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Inset Composite Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target.view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.draw_image_pass(&mut pass, uniform_bg, &device, &[(bg.into(), verts)]);
+    }
+}
+
+/// R3291：单遍 2D box blur（copy src→dst + scissor 区域 blur 写 dst）。
+#[allow(clippy::too_many_arguments)]
+fn run_box_blur_pass(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pipeline: &wgpu::RenderPipeline,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    blur_bgl: &wgpu::BindGroupLayout,
+    src: &wgpu::Texture,
+    dst: &wgpu::Texture,
+    extent: wgpu::Extent3d,
+    sampler: &wgpu::Sampler,
+    radius: f32,
+    scissor: (u32, u32, u32, u32),
+    label: &str,
+) {
+    use wgpu::util::DeviceExt;
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Box Blur Encoder"),
+    });
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: src,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: dst,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        extent,
+    );
+    let (w, h) = (extent.width, extent.height);
+    let uniform_data: [f32; 4] = [w as f32, h as f32, radius, 0.0];
+    let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Box Blur Uniform"),
+        contents: bytemuck::cast_slice(&uniform_data),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Box Blur Uniform BG"),
+        layout: uniform_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        }],
+    });
+    let src_view = src.create_view(&wgpu::TextureViewDescriptor::default());
+    let src_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Box Blur Src BG"),
+        layout: blur_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&src_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    let dst_view = dst.create_view(&wgpu::TextureViewDescriptor::default());
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &dst_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let (sx, sy, sw, sh) = scissor;
+        pass.set_scissor_rect(sx, sy, sw, sh);
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &uniform_bg, &[]);
+        pass.set_bind_group(1, &src_bg, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit(std::iter::once(encoder.finish()));
 }

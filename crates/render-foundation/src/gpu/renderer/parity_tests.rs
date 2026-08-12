@@ -548,18 +548,16 @@ fn parity_blur_shadow_matches_cpu() {
         cpu_fb.data[center]
     );
     assert!(gpu_px[center] < 200, "GPU 阴影中心应暗，got {}", gpu_px[center]);
-    // 全帧对照（容差 90：CPU 3-pass box vs GPU 三角窗的模糊核差异是视觉近似，
-    // 渐变形状不可能逐像素一致；断言差异比例受控且渐变存在而非硬边）
-    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 90);
-    let total = cpu_fb.data.len() / 4;
-    let over_ratio = over as f64 / total as f64;
-    assert!(
-        over_ratio < 0.35,
-        "blur 阴影 CPU/GPU 差异通道比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
-    );
+    // R3291：GPU 3 遍 2D box blur（CPU 同公式 r = floor(d)）——与 CPU 逐像素一致
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    assert_eq!(over, 0, "blur 阴影 CPU/GPU 应逐像素一致，diff={over} max={max_diff}");
     // 渐变存在断言：矩形边缘外（x=4）GPU 应非纯白（blur 扩散生效）
     let edge = (10 * 32 + 4) * 4;
     assert!(gpu_px[edge] < 250, "GPU 阴影边缘应有 blur 渐变，got {}", gpu_px[edge]);
+    {
+        let row: Vec<u8> = (0..32).map(|px| gpu_px[(10 * 32 + px) * 4]).collect();
+        eprintln!("SHADROW gpu x=0..32: {row:?}");
+    }
 }
 
 /// R3289：repeating 渐变首色标 offset≠0——GPU 色标重映射后与 CPU 折叠等效（逐像素一致）。
@@ -598,5 +596,45 @@ fn parity_repeating_gradient_first_offset_matches_cpu() {
     assert_eq!(
         over, 0,
         "repeating 渐变 first≠0 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
+    );
+}
+
+/// R3290：inset 阴影 GPU（盒内 frame 蒙版 + 洞 blur）与 CPU 视觉对照
+///（blur 核差异为视觉近似，宽容差；洞边界应为渐变而非硬边）。
+#[serial]
+#[test]
+fn parity_inset_shadow_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(4.0, 4.0, 20.0, 20.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 3.0,
+        offset_y: 3.0,
+        blur_radius: 3.0,
+        spread_radius: 0.0,
+        inset: true,
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    // 盒内非洞区域应有阴影（暗于白底）；洞中心（16,16）应保持白（挖空）
+    let hole = (16 * 32 + 16) * 4;
+    assert!(cpu_fb.data[hole] > 200, "CPU 洞中心应白，got {}", cpu_fb.data[hole]);
+    assert!(gpu_px[hole] > 200, "GPU 洞中心应白，got {}", gpu_px[hole]);
+    // 盒内边缘（洞边界附近）应有阴影
+    let edge = (6 * 32 + 6) * 4;
+    assert!(
+        cpu_fb.data[edge] < 200,
+        "CPU 盒内边缘应有阴影，got {}",
+        cpu_fb.data[edge]
+    );
+    assert!(gpu_px[edge] < 200, "GPU 盒内边缘应有阴影，got {}", gpu_px[edge]);
+    // R3291：3 遍 2D box blur 对齐——主体一致；洞边界 blur 边缘语义（CPU box_blur
+    // 边界 vs GPU ClampToEdge）有细微差异，视觉近似容差
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 90);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.35,
+        "inset 阴影 CPU/GPU 差异比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
     );
 }
