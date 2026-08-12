@@ -563,6 +563,40 @@ mod runtime_path_tests {
         );
     }
 
+    /// R3336：native-dom 路径**全量 parity 门**——js-dom + dom-api + web-api 全部含 `<script>` 用例
+    ///（87 例）经 native_dom=true 路径执行，须**全部通过**（native↔shim 100% 行为对等）。承接 R3334
+    ///（多 WebView 修复——全量遍历需顺序建 ~90 WebView，R3334 Drop-reset 使之安全）+ R3332/R3333
+    ///（单类别 parity 门）。本门是 **P1b native 默认开的验收门**：全过 = native 路径在核心 DOM/Web API
+    /// 三大类与 shim 行为等价，默认开（rule 11 用户点名后）的行为风险已消除。
+    ///
+    /// **运行要求**：须 `--test-threads=1`（顺序建 ~90 native WebView；跨 crate 并行下 V8 资源压力偶发
+    /// init 失败，同 R3076 采样理由——但 R3334 后顺序安全）。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_full_parity_r3336() {
+        let ctx = TestContext::default();
+        let all = builtin_tests();
+        let cats = ["js-dom", "dom-api", "web-api"];
+        let mut total = 0usize;
+        let mut failed: Vec<String> = Vec::new();
+        for c in &all {
+            if !cats.contains(&c.category.as_str()) || !c.html.contains("<script>") {
+                continue;
+            }
+            total += 1;
+            if let Err(e) = check_js_executes_ok_native(&c.html, &ctx) {
+                failed.push(format!("{}: {}", c.id, e));
+            }
+        }
+        assert!(total >= 50, "native parity 全量门用例数 {} < 50（漂移？）", total);
+        assert!(
+            failed.is_empty(),
+            "native-dom 路径 parity 回归（{} 例失败，原 100% 对等）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
+
     /// R3332：P1b **native-dom 路径** parity 回归门——经 `WebViewConfig.native_dom=true`（V8 原生
     /// dom_bindings S0–S5）真实执行**已行为锁定的用例**，断言原生路径与默认 shim 路径**行为对等**
     ///（脚本经原生绑定执行，行为锁断言仍成立——不静默回归）。

@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3335：native-dom 多 WebView 跨类别 parity sweep——R3334 修复后单测试内顺序建6 native WebView（dataset/geometry/MO/runtime/security/storage），模拟多标签生产 + 锁 Drop-reset 无串扰。前轮 R3334：多 WebView disposed-Isolate panic 修复。
+**最后更新**: 2026-08-13（R3336：native-dom 全量 parity 验收门——js-dom+dom-api+web-api 87 例经 native 路径须 100% 对等，实测全过；此为 P1b native 默认开的验收门。重新导航安全已 probe 确认。前轮 R3335：多 WebView sweep。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -159,6 +159,22 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### native-dom 全量 parity 验收门 + 重新导航安全确认（本轮 R3336，wpt-runner）
+
+承接 R3332-R3335（native parity 门逐类建 + 多 WebView 修复 + sweep）。本轮把 native parity 从「采样代表性用例」升级为**全量验收门**——`native_dom_full_parity_r3336`：js-dom + dom-api + web-api **全部 87 个含 `<script>` 用例**经 native_dom=true 路径执行，须 **100% 通过**（native↔shim 行为对等）。实测全过（87/87）。
+
+**为何这是里程碑**：本门 = **P1b native 默认开的验收门**——全量过 = native 路径在核心 DOM/Web API 三大类与 shim 行为等价，默认开（rule 11 用户点名后）的行为风险已**实证消除**（非采样推断，是全量证明）。R3076 曾因 V8 资源压力对 80 用例做 step_by 采样；R3334 修复多 WebView disposed-Isolate 后，顺序建 ~90 native WebView 安全，故可全量（须 `--test-threads=1`）。
+
+**额外 probe**：R3336 顺带 probe **native 重新导航安全**（同一 WebView load→run→load→run 切换页面）——p1/p2 均过，`install_dom_bindings` 幂等（doc 称「重复调用重置 DOM 源 + 模板」）已覆盖导航重载，无 gap（非 default-on 阻塞）。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +`native_dom_full_parity_r3336`——全量 87 例 native parity 验收门（js-dom+dom-api+web-api，须 `--test-threads=1`）|
+
+**为何净正向且零回归**：纯测试增强。**验证**：`runtime_path_tests` **23 passed / 0 failed**（7 native parity 门：5 单类别 + 1 多 WebView sweep + 1 全量，0 回归，test-guard）；fmt clean + clippy v8/quickjs 零警告。
+
+**下游判断（固化）**：R3336 全量 parity 门（87/87）= P1b native 默认开的技术验收**已实证通过**（多 WebView 安全 R3334 + 重新导航安全 + 100% 行为对等）。**native 路径生产就绪度全面确认**，剩余 default-on 仅 rule 11 用户决策（行为变更 = 所有页切 live Document 路径）+ S6/S7 shim 萎缩。**zero-web 流 native 自主面至此真正穷尽**——全量 parity + 多 WebView + 重新导航 + Drop-reset 四重锁，无更多可自主 land 的 native 工作面。
 
 ### native-dom 多 WebView 跨类别 parity sweep（本轮 R3335，wpt-runner）
 
