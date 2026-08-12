@@ -1,8 +1,10 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3344：deep-review zero-css-parser 一轮发现并修复三项真 bug——① **panic（高危）** `eval_calc`/`eval_calc_with_context` 对 `clamp(MIN,VAL,MAX)` 调 `f64::clamp(min,max)`，std 在 `min>max` 或含 NaN 时 panic；calc 长度走 style-system 计算样式热路径（computed.rs:83）+ engine paint helpers，任意页面作者/攻击者 CSS `calc(clamp(100px,50px,10px))` 即渲染进程 panic（崩溃/DoS）；改 spec 退化公式 `val.min(max).max(min)`。② **数据丢失（中危）** tokenizer `consume_number` 科学计数法分支仅在 `e` 后跟 `digit|+|-` 即吞 `e`，符号后无 digit（`1e+`/`1e-`/`1e`）时 `num_str="1e+".parse()` 失败 → `unwrap_or(0.0)` 把整段数字静默吞成 0；改前置校验符号后真有 digit（CSS Syntax §4.3.12）。③ **解析不一致（中危）** `parse_hex_color` 3/4 位 hex 用 `hex_char_to_byte`（`unwrap_or(0)`）吞非法 hex 字符为 0，而 6/8 位用 `.ok()?` 拒绝——`#G00`（3 位）误返回黑色、`#GGGGGG`（6 位）正确拒绝；改 `hex_char_to_byte` 返回 `Option<u8>`。13 测确定性复现+修复过，zero-css-parser 2842 全绿，fmt+clippy 零警告，workspace-minus-browser 零回归。R3334+R3339+R3340+R3341+R3342+R3343+R3344 = 第七项真 bug 修复（本轮三项）。）
+**最后更新**: 2026-08-13（R3345：deep-review zero-style-system 非字体面发现并修复一项真 bug——**flex-grow/flex-shrink longhand 接受 Infinity**：apply.rs 的 longhand 路径 `value.parse::<f64>()` 仅检 `v >= 0.0`，而 `Infinity >= 0.0` 为真 → `flex-grow: Infinity`/`1e999`（溢出为 inf）存储无穷大值，经 `style.flex_grow as f32` 喂入 layout-engine Taffy flex 算法（converter/mod.rs:323），非有限 grow factor 可致 flex 分配计算异常/NaN 传播；**不一致证据** `flex` 简写（shorthand/mod.rs:1123）用 `is_finite()` 严格拒绝 Infinity/NaN 而 longhand 无此检查（简写严、longhand 松）；改 longhand 路径加 `v.is_finite()` 前置（CSS Flexbox §7.3.1/§7.3.2 要求有限非负 `<number>`）。**避渲染流活跃面**：本轮只审 style-system 非字体代码（property/shorthand/apply），刻意避开 rendering-compat 流正在改的 computed.rs font-metric 路径（R3341-F/R3337-F size-adjust/ex/ch，env-gated kill-switch），run-rules §9 工作面不重叠。7 测确定性复现+修复过，style-system 2164→2171 全绿，layout-engine 1372 全绿，workspace-minus-browser 零回归，fmt+clippy 零警告。R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345 = 第八项真 bug 修复。）
 
-> **R3342+R3343（上一轮）**：deep-review zero-security 一轮双 bug——CSP `check_source_list` 非 wildcard 源表达式 `url.starts_with(value)` 前缀匹配绕过（改 `origin_expr_matches` host 精确匹配）+ `mixed_content` scheme 大小写敏感绕过（HTTPS 页加载 `HTTP://` 大写阻塞型混合内容放行，改 scheme 大小写不敏感 RFC 3986 §3.1）。zero-security 384→386 全绿。
+> **R3344（上一轮）**：deep-review zero-css-parser 一轮三项真 bug——① 高危 panic `eval_calc` 的 `clamp(MIN,VAL,MAX)` 调 `f64::clamp(min,max)`，MIN>MAX 时 std panic（渲染进程崩溃）；改 `val.min(max).max(min)`。② 中危 tokenizer `consume_number` 科学计数法 `e` 后无 digit（`1e+`/`1e`）`unwrap_or(0.0)` 静默吞成 0；改前置校验。③ 中危 `parse_hex_color` 3/4 位 hex 非法字符 `unwrap_or(0)` 误返回黑色（6/8 位用 `.ok()?` 拒绝，不一致）；改 `hex_char_to_byte` 返回 `Option<u8>`。13 测复现+修复，css-parser 2842 全绿。
+
+> **R3342+R3343**：deep-review zero-security 一轮双 bug——CSP `check_source_list` 非 wildcard 源表达式 `url.starts_with(value)` 前缀匹配绕过（改 `origin_expr_matches` host 精确匹配）+ `mixed_content` scheme 大小写敏感绕过（HTTPS 页加载 `HTTP://` 大写阻塞型混合内容放行，改 scheme 大小写不敏感 RFC 3986 §3.1）。zero-security 384→386 全绿。
 
 > **R3341**：zero-storage IndexedDB auto-inc 生成器显式数值 key 不推进（W3C §1.8.2）。max 语义 helper 应用到 add/put/tx_add/tx_put。3 测复现+回归过。
 
@@ -163,6 +165,22 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-style-system 非字体面修复 flex-grow/flex-shrink 接受 Infinity（本轮 R3345，style-system property/apply.rs——真 bug 修复）
+
+承接 R3344（zero-css-parser）。本轮 deep-review 推进至 **`zero-style-system`**（master.md「下一步」点名的下一目标——自主可审的非流流域渲染相关 crate）。**遵守 run-rules §9 工作面不重叠**：先核查发现 rendering-compat 流正在活跃改 style-system 的 **computed.rs font-metric 路径**（R3341-F/R3337-F 的 size-adjust/ex/ch/line-height:normal metrics，env-gated kill-switch ZW_FONT_FACE_SIZE_ADJUST_*），故本轮刻意**只审非字体代码**（cascade.rs / matcher / property/apply.rs / shorthand / inherit），避开渲染流活跃面。逐文件审 cascade.rs（级联/specificity/@layer/revert-layer，覆盖极充分）+ 委派 deep-review agent 审 property/shorthand 域。**对 agent 上报逐条核实**后定位一项真 bug：
+
+#### R3345：flex-grow/flex-shrink longhand 接受 Infinity（中危，property/apply.rs:803-818）
+
+- **根因**：`flex-grow`/`flex-shrink` longhand 路径 `value.parse::<f64>()` 仅检 `v >= 0.0`。Rust f64 parse 接受 `Infinity`/`1e999`（溢出为 inf）——`Infinity >= 0.0` 为真 → 无穷大值被存储。NaN 因 `NaN >= 0.0` 为假本已不赋值，但 Infinity 漏网。
+- **生产影响**：`flex_grow` 经 `style.flex_grow as f32`（converter/mod.rs:323）喂入 layout-engine 的 Taffy flex 算法。非有限 grow factor 在 flex 分配计算中可致除零/NaN 传播/分配异常（flex-grow 是 grow factor 求和的分母项）。CSS Flexbox §7.3.1/§7.3.2 要求 flex-grow/shrink 为 `<number>`（**有限**非负）。任意页面作者/JS `el.style.flexGrow = "Infinity"` 即可注入。真 spec 合规 + 数值健壮性 bug。
+- **不一致证据（根因确认）**：`flex` **简写**（shorthand/mod.rs:1123 `is_number`）用 `s.parse::<f64>().map(|n| n.is_finite())` 严格拒绝 Infinity/NaN，但 longhand 路径无此检查——**同属性简写严、longhand 松**，证明是疏漏非刻意。
+- **修复**：longhand 两路径 f64 parse 加 `&& v.is_finite()` 前置，Infinity/NaN 落入 fall-through（非法声明，cascade 丢弃，apply 不赋值，保持初值 flex-grow=0/flex-shrink=1），与简写一致。
+- **复现+回归测**：7 测（`tests/review_r3345.rs`）——`test_flex_grow_rejects_infinity_r3345`（`flex-grow: Infinity` 不存无穷，修复前 RED：存 inf）、`_scientific_overflow_`（`1e999` 溢出为 inf 同拒）、`_flex_shrink_rejects_infinity_`、`_nan_`（NaN 守护）、`_normal_values_unchanged_`（`2`/`0.5`/`0` 合法值回归）、`_negative_still_rejected_`（负值回归）、`_shrink_normal_values_unchanged_`。**确定性复现**：修复前 Infinity/1e999/shrink 三测失败（存 inf），修复后全过。
+- **误报排除（agent 上报 5 候选，逐条核实）**：① overflow 简写 3+ 值「未拒绝」——经 cascade `is_invalid_enum_value`（`parse_overflow("auto hidden visible")`→None）二次过滤，非法值仍被丢，非真功能 bug（severity 低，defer）；② border-width 负 em/rem「apply 不拒」——cascade 层 `is_invalid_negative_length` 已覆盖所有单位拒负（NEGATIVE_ILLEGAL_PROPS 含 border-*-width），apply.rs Px-only 检查是冗余二道防线，正常样式表路径已保护（severity 低）；③ font-size-adjust 百分比——属渲染流活跃字体面，按 §9 不触；④ flex 简写 is_number NaN——简写已有 `is_finite()`，无 bug（agent 误读）。
+- **为何净正向且零回归**：纯 style-system longhand 数值校验加严，无公共 API 变更（apply_property_value 签名不变），既有 flex 属性测试全保持过。**验证**：zero-style-system **2164→2171 passed / 0 failed**（+7 review_r3345 测，test-guard）；下游 zero-layout-engine **1372/0**（flex_grow 消费方）零回归；workspace-minus-browser 全绿 0 失败；`cargo fmt` clean + clippy `-D warnings` 零警告（style-system + layout-engine）。**未触字体面**（font-size-adjust/ex/ch/size-adjust/line-height-normal 全未碰），与 rendering-compat 流零冲突。
+
+**下游判断（固化）**：R3345 = deep-review 未触生产 crate 的**第六刀**（zero-style-system 非字体面），**第八项真 bug 修复**（R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏 + R3341 auto-inc 生成器 + R3342 CSP 前缀绕过 + R3343 mixed-content scheme 绕过 + R3344 三项 + R3345），证实 deep-review「找真 bug」模式**连续 6 crate 产出真 bug**。zero-style-system 非字体面（cascade/matcher/property-apply/shorthand/inherit）经本轮逐文件 + agent 复核确认主面健壮（cascade 覆盖极充分：specificity/@layer/revert-layer tier 回退/`all` 展开/vendor 别名 canonical 全测）。**剩余可自主审域**：① style-system 字体面（font-metric/font-size-adjust/ex/ch/size-adjust/line-height）= rendering-compat 流活跃面，**碰头信号，不触**（§9）；② layout-engine（布局算法边界条件，taffy 集成）；③ render-foundation（渲染流域，§9 不触）。下轮续 deep-review 优先 **layout-engine**（自主可审的非流流域布局算法 crate，边界条件易藏 bug）或 net 已审后的二轮复扫，延续找真 bug 模式。
 
 ### deep-review zero-css-parser 一轮修复三项真 bug（本轮 R3344 clamp inverted-range panic + 科学计数法数据丢失 + 3/4 位 hex 非法字符，css-parser types.rs + tokenizer.rs + color.rs——真 bug 修复）
 
