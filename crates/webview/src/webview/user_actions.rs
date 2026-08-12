@@ -65,6 +65,49 @@ impl WebView {
         self.focus_owner
     }
 
+    /// 更新内部 executor 的文本控件 selection，不派发页面事件。
+    #[doc(hidden)]
+    pub fn set_text_control_selection(
+        &mut self,
+        target: PageNodeRef,
+        selection_start: usize,
+        selection_end: usize,
+    ) -> Result<(), WebViewError> {
+        self.set_text_control_selection_impl(None, target, selection_start, selection_end)
+    }
+
+    /// 更新外部 executor 的文本控件 selection，不派发页面事件。
+    #[doc(hidden)]
+    pub fn set_external_text_control_selection(
+        &mut self,
+        executor: &dyn JsExecutor,
+        target: PageNodeRef,
+        selection_start: usize,
+        selection_end: usize,
+    ) -> Result<(), WebViewError> {
+        self.set_text_control_selection_impl(Some(executor), target, selection_start, selection_end)
+    }
+
+    fn set_text_control_selection_impl(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        target: PageNodeRef,
+        selection_start: usize,
+        selection_end: usize,
+    ) -> Result<(), WebViewError> {
+        if !target.is_current(self.navigation_epoch, self.document_generation) {
+            return Ok(());
+        }
+        let Some(selector) = self.selector_for_page_node_handle(target.node().get()) else {
+            return Ok(());
+        };
+        self.execute_dom_script(
+            executor,
+            &zero_engine::script_set_text_control_selection(&selector, selection_start, selection_end),
+        )?;
+        Ok(())
+    }
+
     /// 通过 shared action core 执行 identity-based HTML user action。
     #[doc(hidden)]
     pub fn dispatch_user_action(

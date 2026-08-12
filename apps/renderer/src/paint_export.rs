@@ -9,7 +9,7 @@ use zero_protocol::{
     IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
     IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage,
     IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
-    IpcStroke, IpcTransform, PaintSnapshotParams,
+    IpcStroke, IpcTextControlBoundary, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -420,6 +420,17 @@ pub fn paint_snapshot_from_primitives(
             })
             .collect(),
         hit_test: hit_test.map(hit_test_cache_to_ipc),
+        text_control_boundaries: primitives
+            .text_control_boundaries
+            .iter()
+            .map(|boundary| IpcTextControlBoundary {
+                node_handle: boundary.node_handle,
+                utf16_offset: boundary.utf16_offset,
+                x: boundary.x,
+                y: boundary.y,
+                height: boundary.height,
+            })
+            .collect(),
     }
 }
 

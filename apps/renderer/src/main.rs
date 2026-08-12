@@ -719,6 +719,22 @@ impl RendererRuntime {
             .update(selector, value, selection_start, selection_end);
     }
 
+    fn set_pointer_text_selection(&mut self, selector: &str, start: u32, end: u32) {
+        let Some(target) = self
+            .webview
+            .as_ref()
+            .and_then(|webview| webview.page_node_ref_for_selector(selector))
+        else {
+            return;
+        };
+        let _ = self
+            .webview
+            .as_mut()
+            .expect("webview")
+            .set_external_text_control_selection(&self.js_worker, target, start as usize, end as usize);
+        self.sync_text_control_state_from_worker(selector);
+    }
+
     fn text_control_state_from_worker(&self, selector: &str) -> Option<(String, usize, usize)> {
         self.js_worker
             .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
@@ -1918,6 +1934,9 @@ impl RendererRuntime {
             if self.interaction.focus_owner() != Some(target.as_str()) {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
+            }
+            if let (Some(start), Some(end)) = (params.selection_start, params.selection_end) {
+                self.set_pointer_text_selection(&target, start, end);
             }
         } else if result.default_allowed && event_type == "click" {
             let target = self.interaction.pointer_target().to_string();

@@ -589,6 +589,7 @@ impl TabManager {
         event_type: &str,
         detail: Option<DomEventDetail>,
         shift: bool,
+        selection: Option<(u32, u32)>,
         on_allowed: Option<PendingTabAction>,
     ) {
         let dispatch_id = self.next_dispatch_id;
@@ -608,6 +609,8 @@ impl TabManager {
                     key,
                     code,
                     shift,
+                    selection_start: selection.map(|range| range.0),
+                    selection_end: selection.map(|range| range.1),
                 },
             );
             true
@@ -620,6 +623,7 @@ impl TabManager {
                 code,
                 // R3254-M10：Shift 修饰键（Shift+Tab 反向焦点导航）。
                 shift,
+                selection,
             });
             true
         } else {
@@ -643,7 +647,7 @@ impl TabManager {
 
     /// 向页面元素派发 DOM 事件（无默认动作）。
     pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) {
-        self.dispatch_dom_event_async(tab_id, Some(selector), 0.0, 0.0, event_type, None, false, None);
+        self.dispatch_dom_event_async(tab_id, Some(selector), 0.0, 0.0, event_type, None, false, None, None);
     }
 
     /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
@@ -670,12 +674,23 @@ impl TabManager {
                 event_type,
                 Some(detail),
                 shift,
+                None,
                 on_allowed,
             );
         } else if self.process_backend.is_some() {
             // 指针事件曾因浏览器侧命中缓存缺失而由渲染进程命中时，保留渲染进程
             // 已建立的事件目标，而不是用 body 覆盖它。
-            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), shift, on_allowed);
+            self.dispatch_dom_event_async(
+                tab_id,
+                None,
+                0.0,
+                0.0,
+                event_type,
+                Some(detail),
+                shift,
+                None,
+                on_allowed,
+            );
         } else {
             self.dispatch_dom_event_async(
                 tab_id,
@@ -685,6 +700,7 @@ impl TabManager {
                 event_type,
                 Some(detail),
                 shift,
+                None,
                 on_allowed,
             );
         }
@@ -743,17 +759,17 @@ impl TabManager {
             // https://w3c.github.io/uievents/#event-type-click
             // 合成器帧的浏览器侧命中缓存尚未就绪时，仍须把实际坐标交给渲染进程，
             // 否则原生控件会因缓存时序而完全不可点击。
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, false, None);
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, false, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, false, None, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, false, None, None);
             return;
         }
         self.event_targets.insert(tab_id, selector.clone());
         if let Some(hit) = current_hit.as_ref() {
-            self.update_ime_target_rect(tab_id, doc_x, hit);
+            self.update_ime_target_rect(tab_id, doc_x, doc_y, hit);
         }
 
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
-        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, false, None);
+        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, false, None, None);
 
         let on_allowed = self.hit_test_link(tab_id, doc_x, doc_y).map(|href| {
             if background_tab {
@@ -762,7 +778,17 @@ impl TabManager {
                 PendingTabAction::NavigateActiveTab(href)
             }
         });
-        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "click", None, false, on_allowed);
+        self.dispatch_dom_event_async(
+            tab_id,
+            Some(&selector),
+            0.0,
+            0.0,
+            "click",
+            None,
+            false,
+            None,
+            on_allowed,
+        );
     }
 
     /// 处理页面按下：异步派发 mousedown。
@@ -775,24 +801,58 @@ impl TabManager {
                 self.pressed_targets.remove(&tab_id);
             }
             self.event_targets.insert(tab_id, selector.clone());
-            self.update_ime_target_rect(tab_id, doc_x, &hit);
-            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, false, None);
+            let selection = self.update_ime_target_rect(tab_id, doc_x, doc_y, &hit);
+            self.dispatch_dom_event_async(
+                tab_id,
+                Some(&selector),
+                0.0,
+                0.0,
+                "mousedown",
+                None,
+                false,
+                selection.map(|offset| (offset, offset)),
+                None,
+            );
         } else {
             self.pressed_targets.remove(&tab_id);
             // https://w3c.github.io/uievents/#event-type-mousedown
             // 与 click 一致：命中缓存缺失不能阻断真实的页面指针事件。
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, false, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, false, None, None);
         }
     }
 
     /// 文档高度。
     /// Remember or clear the candidate-window anchor after pointer focus changes.
-    fn update_ime_target_rect(&mut self, tab_id: TabId, insertion_x: f32, hit: &zero_engine::ElementHit) {
+    fn update_ime_target_rect(
+        &mut self,
+        tab_id: TabId,
+        insertion_x: f32,
+        insertion_y: f32,
+        hit: &zero_engine::ElementHit,
+    ) -> Option<u32> {
+        if !matches!(hit.tag_name.as_str(), "input" | "textarea") {
+            self.ime_target_rects.remove(&tab_id);
+            return None;
+        }
+        let boundary = self.snapshots.get(&tab_id).and_then(|snapshot| {
+            crate::page_selection::hit_test_text_control_boundary(
+                &snapshot.text_control_boundaries,
+                hit.node_handle,
+                insertion_x,
+                insertion_y,
+            )
+        });
+        if let Some(boundary) = boundary {
+            self.ime_target_rects
+                .insert(tab_id, (boundary.x, boundary.y, 1.0, boundary.height.max(1.0)));
+            return Some(boundary.utf16_offset);
+        }
         if let Some(rect) = ime_target_rect_for_hit(insertion_x, hit) {
             self.ime_target_rects.insert(tab_id, rect);
         } else {
             self.ime_target_rects.remove(&tab_id);
         }
+        None
     }
 
     /// IME candidate-window anchor in document CSS pixels.
@@ -915,7 +975,34 @@ mod ime_tests {
     use super::*;
 
     #[test]
-    fn text_control_hit_anchors_candidate_window_at_pointer() {
+    fn text_control_hit_caret_and_ime_share_boundaries() {
+        use zero_render_foundation::primitive::TextControlBoundary;
+
+        let tab_id = TabId(1);
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        let text_control_boundaries = vec![
+            TextControlBoundary {
+                node_handle: 1,
+                utf16_offset: 0,
+                x: 14.0,
+                y: 27.0,
+                height: 18.0,
+            },
+            TextControlBoundary {
+                node_handle: 1,
+                utf16_offset: 3,
+                x: 31.5,
+                y: 27.0,
+                height: 18.0,
+            },
+        ];
+        manager.snapshots.insert(
+            tab_id,
+            TabSnapshot {
+                text_control_boundaries,
+                ..Default::default()
+            },
+        );
         let hit = zero_engine::ElementHit {
             node_handle: 1,
             tag_name: "textarea".to_string(),
@@ -927,13 +1014,14 @@ mod ime_tests {
             width: 240.0,
             height: 80.0,
         };
-        assert_eq!(ime_target_rect_for_hit(73.0, &hit), Some((73.0, 25.0, 1.0, 80.0)));
-
+        assert_eq!(manager.update_ime_target_rect(tab_id, 30.0, 30.0, &hit), Some(3));
+        assert_eq!(manager.page_ime_rect(tab_id), Some((31.5, 27.0, 1.0, 18.0)));
         let button = zero_engine::ElementHit {
             tag_name: "button".to_string(),
             ..hit
         };
-        assert_eq!(ime_target_rect_for_hit(73.0, &button), None);
+        assert_eq!(manager.update_ime_target_rect(tab_id, 73.0, 30.0, &button), None);
+        assert_eq!(manager.page_ime_rect(tab_id), None);
     }
 
     #[test]

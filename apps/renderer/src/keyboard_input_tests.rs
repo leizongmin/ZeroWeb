@@ -83,6 +83,8 @@ fn keyboard_entry_points_share_prevented_default_action() {
                 key: Some("A".to_string()),
                 code: Some("KeyA".to_string()),
                 shift: false,
+                selection_start: None,
+                selection_end: None,
             },
         )
         .unwrap();
@@ -217,5 +219,56 @@ fn keyboard_defaults_enforce_readonly_and_maxlength() {
             )
             .unwrap(),
         "fixed,A😀,limited:beforeinput:😀|limited:input:😀"
+    );
+}
+
+#[test]
+fn pointer_selection_uses_utf16_paint_boundary() {
+    let html = r#"<html><body>
+        <input id="name" value="i中😀W">
+        <script>globalThis.__ready=true;</script>
+    </body></html>"#;
+    let url = "https://zero.test/pointer-selection";
+    let mut runtime = RendererRuntime::new(915);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+
+    runtime
+        .handle_dispatch_dom_event(
+            1,
+            DispatchDomEventParams {
+                selector: Some("#name".to_string()),
+                x: 0.0,
+                y: 0.0,
+                event_type: "mousedown".to_string(),
+                key: None,
+                code: None,
+                shift: false,
+                selection_start: Some(2),
+                selection_end: Some(2),
+            },
+        )
+        .unwrap();
+    runtime.apply_keydown_default("#name", "X", false).unwrap();
+
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("document.getElementById('name').value")
+            .unwrap(),
+        "i中X😀W"
     );
 }

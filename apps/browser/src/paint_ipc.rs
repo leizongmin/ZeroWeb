@@ -20,7 +20,7 @@ use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
     GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive,
     GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TextControlBoundary, TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -294,6 +294,17 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             synthetic_italic: glyph.synthetic_italic,
         });
     }
+    primitives.text_control_boundaries = params
+        .text_control_boundaries
+        .into_iter()
+        .map(|boundary| TextControlBoundary {
+            node_handle: boundary.node_handle,
+            utf16_offset: boundary.utf16_offset,
+            x: boundary.x,
+            y: boundary.y,
+            height: boundary.height,
+        })
+        .collect();
     primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();
 
     for payload in params.image_payloads {
@@ -303,6 +314,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     }
 
     let document_width = crate::page_scroll::primitives_content_width(&primitives);
+    snap.text_control_boundaries = primitives.text_control_boundaries.clone();
     snap.last_render = Some(WebViewRenderResult {
         primitives,
         // S3：保留本帧脏区域（IpcRect → (x,y,w,h)），与 engine→webview 的 render_result_to_webview
@@ -354,6 +366,17 @@ pub(crate) fn apply_compositor_paint_metadata(snap: &mut TabSnapshot, params: &m
     snap.document_generation = params.document_generation;
     snap.document_width = Some(fill_max.max(glyph_max).max(image_max));
     snap.hit_test = params.hit_test.take().and_then(hit_test_cache_from_ipc);
+    snap.text_control_boundaries = params
+        .text_control_boundaries
+        .iter()
+        .map(|boundary| TextControlBoundary {
+            node_handle: boundary.node_handle,
+            utf16_offset: boundary.utf16_offset,
+            x: boundary.x,
+            y: boundary.y,
+            height: boundary.height,
+        })
+        .collect();
 }
 
 /// 从 IPC 命中测试快照还原成 engine 主线程可消费的 `HitTestCache`。
@@ -411,7 +434,7 @@ fn ipc_layout_to_snapshot(node: &IpcHitTestLayoutNode) -> Option<HitTestLayoutSn
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zero_protocol::{IpcGlyph, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta};
+    use zero_protocol::{IpcGlyph, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcTextControlBoundary};
 
     #[test]
     fn apply_paint_snapshot_restores_hit_test_cache() {
@@ -501,6 +524,13 @@ mod tests {
                 },
             ],
             glyphs: vec![glyph(7, 'A' as u32), glyph(7, '\u{301}' as u32), glyph(8, 'A' as u32)],
+            text_control_boundaries: vec![IpcTextControlBoundary {
+                node_handle: 4,
+                utf16_offset: 2,
+                x: 12.5,
+                y: 8.0,
+                height: 18.0,
+            }],
             ..Default::default()
         };
         let mut snap = TabSnapshot::default();
@@ -514,6 +544,15 @@ mod tests {
         assert!(glyphs[0].synthetic_italic);
         assert!(first.same_cluster(second));
         assert!(!first.same_cluster(independent));
+        assert_eq!(
+            snap.last_render
+                .as_ref()
+                .expect("render result")
+                .primitives()
+                .text_control_boundaries[0]
+                .utf16_offset,
+            2
+        );
     }
 
     #[test]
@@ -552,6 +591,13 @@ mod tests {
         let mut snap = TabSnapshot::default();
         let mut params = PaintSnapshotParams {
             document_height: 900.0,
+            text_control_boundaries: vec![IpcTextControlBoundary {
+                node_handle: 3,
+                utf16_offset: 2,
+                x: 44.0,
+                y: 12.0,
+                height: 18.0,
+            }],
             fills: vec![zero_protocol::IpcFill {
                 rect: IpcRect {
                     x: 5.0,
@@ -574,5 +620,6 @@ mod tests {
         assert_eq!(snap.document_height, Some(900.0));
         assert_eq!(snap.document_width, Some(125.0));
         assert!(snap.last_render.is_none());
+        assert_eq!(snap.text_control_boundaries[0].utf16_offset, 2);
     }
 }

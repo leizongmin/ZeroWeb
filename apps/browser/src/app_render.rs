@@ -1273,7 +1273,7 @@ impl BrowserApp {
             }
         }
 
-        append_webview_primitives(
+        let rendered = append_webview_primitives(
             page_primitives,
             fills,
             glyphs,
@@ -1283,7 +1283,19 @@ impl BrowserApp {
             self.scale_factor,
             Some((clip_top, clip_bottom)),
             clip_rounded,
-        )
+        );
+        if self.tabs.page_focus_in_text_input(tab_id)
+            && let Some((x, y, _width, height)) = self.tabs.page_ime_rect(tab_id)
+        {
+            fills.push(rect_fill(
+                content_x_draw + x,
+                content_y_draw + y,
+                1.0,
+                height.max(1.0),
+                self.chrome_palette.address_bar_text,
+            ));
+        }
+        rendered
     }
 
     /// 渲染浮动查找栏

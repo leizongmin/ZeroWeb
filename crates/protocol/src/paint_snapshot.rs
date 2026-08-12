@@ -102,6 +102,21 @@ pub struct IpcGlyph {
     pub synthetic_italic: bool,
 }
 
+/// 文本控件 caret/selection 边界（非绘制元数据）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct IpcTextControlBoundary {
+    /// 对应 DOM 节点句柄。
+    pub node_handle: u64,
+    /// UTF-16 code unit offset。
+    pub utf16_offset: u32,
+    /// 文档坐标 caret x。
+    pub x: f32,
+    /// 文档坐标行顶。
+    pub y: f32,
+    /// 行高。
+    pub height: f32,
+}
+
 /// IPC 图片图元（不含像素，像素见 [`IpcImagePayload`]）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcImage {
@@ -514,6 +529,9 @@ pub struct PaintSnapshotParams {
     /// 当前导航内的 Document 世代；每次创建新 Document 递增。
     #[serde(default)]
     pub document_generation: u64,
+    /// 文本控件 caret 边界缓存。
+    #[serde(default)]
+    pub text_control_boundaries: Vec<IpcTextControlBoundary>,
 }
 
 /// IPC 命中测试布局节点（仅几何 + node id）。
@@ -591,6 +609,7 @@ impl Default for PaintSnapshotParams {
             hit_test: None,
             navigation_epoch: 0,
             document_generation: 0,
+            text_control_boundaries: Vec::new(),
         }
     }
 }
@@ -628,6 +647,13 @@ mod tests {
                 text: "A\u{301}".to_string(),
             }],
             glyphs: vec![glyph],
+            text_control_boundaries: vec![IpcTextControlBoundary {
+                node_handle: 5,
+                utf16_offset: 3,
+                x: 18.5,
+                y: 4.0,
+                height: 20.0,
+            }],
             ..Default::default()
         };
 
@@ -643,5 +669,7 @@ mod tests {
         assert_eq!((source.start, source.end), (0, 3));
         assert_eq!(decoded.glyph_text_runs[0].run_id, 9);
         assert_eq!(decoded.glyph_text_runs[0].text, "A\u{301}");
+        assert_eq!(decoded.text_control_boundaries[0].utf16_offset, 3);
+        assert_eq!(decoded.text_control_boundaries[0].x, 18.5);
     }
 }

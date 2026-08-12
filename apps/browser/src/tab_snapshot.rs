@@ -2,6 +2,7 @@
 
 use zero_engine::HitTestCache;
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
+use zero_render_foundation::primitive::TextControlBoundary;
 use zero_webview::WebViewRenderResult;
 
 /// Browser 已接收并提交给 compositor 的最新页面帧标识。
@@ -56,6 +57,8 @@ pub struct CompositorDmabufPending {
 pub struct TabSnapshot {
     /// 最近一次渲染图元。
     pub last_render: Option<WebViewRenderResult>,
+    /// 文本控件 caret 边界交互元数据（compositor 模式也保留）。
+    pub text_control_boundaries: Vec<TextControlBoundary>,
     /// 图片子资源缓存（绘制 `<img>` 时消费）。
     pub image_cache: ImageCache,
     /// 文档布局高度（CSS 逻辑像素）。
@@ -98,11 +101,16 @@ impl TabSnapshot {
     pub fn from_webview(wv: &zero_webview::WebView) -> Self {
         let html = wv.html_content();
         let last_render = wv.last_render().cloned();
+        let text_control_boundaries = last_render
+            .as_ref()
+            .map(|render| render.primitives.text_control_boundaries.clone())
+            .unwrap_or_default();
         Self {
             document_width: last_render
                 .as_ref()
                 .map(|r| crate::page_scroll::primitives_content_width(&r.primitives)),
             last_render,
+            text_control_boundaries,
             image_cache: wv.snapshot_image_cache(),
             document_height: wv.document_height(),
             loading: wv.is_loading(),
@@ -133,6 +141,7 @@ impl TabSnapshot {
     /// 清除 paint 与命中数据（保留 url/title/loading 由调用方设置）。
     pub fn clear_paint(&mut self) {
         self.last_render = None;
+        self.text_control_boundaries.clear();
         self.compositor_submission = None;
         self.compositor_frame = None;
         self.compositor_present = None;

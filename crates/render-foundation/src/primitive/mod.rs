@@ -341,6 +341,21 @@ impl GlyphPrimitive {
     }
 }
 
+/// 文本控件的可点击 caret 边界；由实际 paint advance 生成，不参与光栅化。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextControlBoundary {
+    /// 对应 DOM 节点的稳定句柄。
+    pub node_handle: u64,
+    /// DOM selection 使用的 UTF-16 code unit offset。
+    pub utf16_offset: u32,
+    /// 文档坐标下的 caret x。
+    pub x: f32,
+    /// 文档坐标下的行顶。
+    pub y: f32,
+    /// caret/IME 候选窗使用的行高。
+    pub height: f32,
+}
+
 /// CSS filter 函数类型。
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterKind {
@@ -529,6 +544,8 @@ pub struct RenderPrimitives {
     pub images: Vec<ImagePrimitive>,
     /// Glyph 列表
     pub glyphs: Vec<GlyphPrimitive>,
+    /// 文本控件 caret 边界缓存（非绘制元数据）。
+    pub text_control_boundaries: Vec<TextControlBoundary>,
     /// Filter 列表
     pub filters: Vec<FilterPrimitive>,
     /// Blend mode 列表（混合模式应用区域）
@@ -582,6 +599,11 @@ impl RenderPrimitives {
     /// 创建空的图元列表
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 记录文本控件 caret 边界；不写入绘制顺序。
+    pub fn add_text_control_boundary(&mut self, boundary: TextControlBoundary) {
+        self.text_control_boundaries.push(boundary);
     }
 
     /// 添加一个填充矩形

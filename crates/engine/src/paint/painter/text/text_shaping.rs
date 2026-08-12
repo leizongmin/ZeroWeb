@@ -798,7 +798,11 @@ fn source_clusters_valid(text: &str, glyphs: &[ShapedGlyph]) -> bool {
         })
 }
 
-fn glyph_sources(text: &str, glyphs: &[ShapedGlyph], all_clusters: bool) -> Option<Vec<Option<GlyphSource>>> {
+pub(super) fn glyph_sources(
+    text: &str,
+    glyphs: &[ShapedGlyph],
+    all_clusters: bool,
+) -> Option<Vec<Option<GlyphSource>>> {
     glyph_sources_in_run(text, glyphs, all_clusters, Arc::from(text), 0)
 }
 

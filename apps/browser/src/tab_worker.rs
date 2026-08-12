@@ -46,6 +46,26 @@ fn execute_shared_action(
     }
 }
 
+fn set_shared_text_selection(
+    wv: &mut WebView,
+    js_worker: Option<&TabJsWorkerHandle>,
+    selector: &str,
+    selection: Option<(u32, u32)>,
+) {
+    let Some((start, end)) = selection else { return };
+    let Some(target) = wv.page_node_ref_for_selector(selector) else {
+        return;
+    };
+    match js_worker {
+        Some(worker) => {
+            let _ = wv.set_external_text_control_selection(worker, target, start as usize, end as usize);
+        }
+        None => {
+            let _ = wv.set_text_control_selection(target, start as usize, end as usize);
+        }
+    }
+}
+
 fn action_focus_selector(wv: &WebView, result: &zero_webview::WebViewUserActionResult) -> Option<Option<String>> {
     result.effects.iter().find_map(|effect| match effect {
         zero_page_runtime::PageEffect::Focus(node) => {
@@ -103,6 +123,8 @@ pub enum TabWorkerCommand {
         code: Option<String>,
         /// Shift 修饰键（R3254-M10：Shift+Tab 反向焦点导航）。
         shift: bool,
+        /// 指针定位得到的 UTF-16 selection。
+        selection: Option<(u32, u32)>,
     },
     /// 平台 IME 生命周期事件。
     ImeEvent {
@@ -337,8 +359,12 @@ fn tab_worker_main(
                     key,
                     code,
                     shift,
+                    selection,
                 } => {
                     let html = wv.html_content().to_string();
+                    if event_type == "mousedown" {
+                        set_shared_text_selection(&mut wv, _js_worker.as_ref(), &selector, selection);
+                    }
                     let detail = if key.is_some() || code.is_some() {
                         Some(zero_engine::DomEventDetail {
                             key: key.clone(),
@@ -1219,6 +1245,38 @@ mod action_adapter_tests {
                 "GET".to_string(),
                 None,
             ))
+        );
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn pointer_selection_uses_utf16_paint_boundary() {
+        let html = r#"<html><body><input id="name" value="i中😀W"></body></html>"#;
+        let url = "https://zero.test/pointer-selection";
+        let mut worker = TabJsWorkerHandle::spawn(TabId(904));
+        worker.set_dom_snapshot(html, url);
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state(url);
+        wv.load_html(html, None);
+
+        set_shared_text_selection(&mut wv, Some(&worker), "#name", Some((2, 2)));
+        assert!(
+            execute_shared_action(
+                &mut wv,
+                Some(&worker),
+                true,
+                "#name",
+                zero_page_runtime::HtmlUserAction::InsertText { text: "X".to_string() },
+            )
+            .expect("insert")
+            .changed
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("document.getElementById('name').value")
+                .expect("value"),
+            "i中X😀W"
         );
 
         worker.shutdown();

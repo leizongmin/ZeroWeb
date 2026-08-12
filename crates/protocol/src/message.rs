@@ -574,6 +574,12 @@ pub struct DispatchDomEventParams {
     /// Shift 键是否按下（Tab 反向焦点导航等默认行为）。
     #[serde(default)]
     pub shift: bool,
+    /// 指针定位得到的文本控件 UTF-16 selection 起点。
+    #[serde(default)]
+    pub selection_start: Option<u32>,
+    /// 指针定位得到的文本控件 UTF-16 selection 终点。
+    #[serde(default)]
+    pub selection_end: Option<u32>,
 }
 
 /// DOM 事件派发结果（渲染→浏览器）。

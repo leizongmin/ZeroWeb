@@ -485,6 +485,55 @@ fn non_text_selection_api_matches_input_state() {
 }
 
 #[test]
+fn text_control_hit_caret_and_ime_share_boundaries() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+    let html = r#"<html><body><input id="name" value="i中😀W"></body></html>"#;
+    let mut pipeline = zero_engine::RenderPipeline::new(800.0, 600.0);
+    let rendered = pipeline.render_html(html, "input { width: 240px; font-size: 20px; }");
+    let boundaries = &rendered.primitives().text_control_boundaries;
+    let expected = boundaries
+        .iter()
+        .find(|boundary| boundary.utf16_offset == 4)
+        .expect("boundary after surrogate pair");
+    let hit = zero_browser::page_selection::hit_test_text_control_boundary(
+        boundaries,
+        expected.node_handle,
+        expected.x + 0.1,
+        expected.y + expected.height / 2.0,
+    )
+    .expect("text-control boundary hit");
+    assert_eq!(hit.utf16_offset, 4);
+    assert_eq!((hit.x, hit.y, hit.height), (expected.x, expected.y, expected.height));
+
+    let url = "https://zero.test/pointer-selection";
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state(url);
+    webview.load_html(html, None);
+    let target = webview.page_node_ref_for_selector("#name").expect("input target");
+    let mut worker = zero_renderer::js_worker::RendererJsWorker::spawn(97);
+    worker.set_dom_snapshot(html, url);
+    webview
+        .set_external_text_control_selection(&worker, target, hit.utf16_offset as usize, hit.utf16_offset as usize)
+        .expect("set pointer selection");
+    assert!(
+        dispatch(
+            &mut webview,
+            Some(&worker),
+            target,
+            HtmlUserAction::InsertText { text: "X".to_string() },
+        )
+        .changed
+    );
+    assert_eq!(
+        worker
+            .execute_script_direct("document.getElementById('name').value")
+            .expect("input value"),
+        "i中😀XW"
+    );
+    worker.shutdown();
+}
+
+#[test]
 fn label_click_activates_associated_control_once() {
     let html = r#"<html><body>
         <label id="explicit" for="check">Explicit</label>

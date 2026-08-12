@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 阶段：M3a
+- 阶段：M3b
 - 状态：M0-M2 完成，M3 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
@@ -69,8 +69,8 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] 非文本 input selection getter/方法适用性
 - [x] readonly 与 maxlength 用户编辑约束
 - [x] minlength 用户值约束校验与 reset 清理
-- [ ] caret、点击 hit-test 与 IME rect 共用 shaping 边界
+- [x] caret、点击 hit-test 与 IME rect 共用 paint 边界
 
 ## 下一步
 
-实施 M3a 文本控件元素族，先审计 FR-006 的 live/default value、selection、change-on-blur、IME 与约束属性矩阵。
+实施 M3b 选择控件与表单元素族，审计 FR-007 的 select/option、fieldset/legend disabled、output 与 form ownership。

@@ -1,6 +1,53 @@
 //! WebView 页面文本选区（基于渲染 glyph 图元）。
 
-use zero_render_foundation::primitive::{GlyphPrimitive, GlyphSource};
+use zero_render_foundation::primitive::{GlyphPrimitive, GlyphSource, TextControlBoundary};
+
+/// 文本控件内一次 caret 边界命中。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextControlCaretHit {
+    pub utf16_offset: u32,
+    pub x: f32,
+    pub y: f32,
+    pub height: f32,
+}
+
+/// 从 paint 生成的真实边界缓存中选择同控件、同一行且最接近指针的 caret。
+pub fn hit_test_text_control_boundary(
+    boundaries: &[TextControlBoundary],
+    node_handle: u64,
+    x: f32,
+    y: f32,
+) -> Option<TextControlCaretHit> {
+    let line = boundaries
+        .iter()
+        .filter(|boundary| boundary.node_handle == node_handle)
+        .min_by(|left, right| {
+            let distance = |boundary: &&TextControlBoundary| {
+                if y < boundary.y {
+                    boundary.y - y
+                } else if y > boundary.y + boundary.height {
+                    y - (boundary.y + boundary.height)
+                } else {
+                    0.0
+                }
+            };
+            distance(left).total_cmp(&distance(right))
+        })?;
+    boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary.node_handle == node_handle
+                && boundary.y.to_bits() == line.y.to_bits()
+                && boundary.height.to_bits() == line.height.to_bits()
+        })
+        .min_by(|left, right| (left.x - x).abs().total_cmp(&(right.x - x).abs()))
+        .map(|boundary| TextControlCaretHit {
+            utf16_offset: boundary.utf16_offset,
+            x: boundary.x,
+            y: boundary.y,
+            height: boundary.height,
+        })
+}
 
 fn append_source_run(text: &mut String, sources: &mut Vec<&GlyphSource>) {
     sources.sort_unstable_by_key(|source| (source.start, source.end));
@@ -286,5 +333,50 @@ mod tests {
 
         assert_eq!(hit_test_caret(&glyphs, 8.0, 20.0), Some(2));
         assert_eq!(hit_test_caret(&glyphs, 10.1, 20.0), Some(0));
+    }
+
+    #[test]
+    fn text_control_hit_uses_cached_utf16_boundaries() {
+        let boundaries = [
+            TextControlBoundary {
+                node_handle: 7,
+                utf16_offset: 0,
+                x: 10.0,
+                y: 20.0,
+                height: 18.0,
+            },
+            TextControlBoundary {
+                node_handle: 7,
+                utf16_offset: 1,
+                x: 14.0,
+                y: 20.0,
+                height: 18.0,
+            },
+            TextControlBoundary {
+                node_handle: 7,
+                utf16_offset: 3,
+                x: 31.5,
+                y: 20.0,
+                height: 18.0,
+            },
+            TextControlBoundary {
+                node_handle: 7,
+                utf16_offset: 4,
+                x: 47.0,
+                y: 20.0,
+                height: 18.0,
+            },
+        ];
+
+        assert_eq!(
+            hit_test_text_control_boundary(&boundaries, 7, 30.0, 25.0),
+            Some(TextControlCaretHit {
+                utf16_offset: 3,
+                x: 31.5,
+                y: 20.0,
+                height: 18.0,
+            })
+        );
+        assert!(hit_test_text_control_boundary(&boundaries, 8, 30.0, 25.0).is_none());
     }
 }

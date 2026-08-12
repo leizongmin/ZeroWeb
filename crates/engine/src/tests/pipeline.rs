@@ -1550,3 +1550,29 @@ fn render_with_dom_mutations_layout_prop_recomputes_layout() {
         "layout-affecting mutation must recompute layout"
     );
 }
+
+#[test]
+fn text_control_paint_emits_utf16_caret_boundaries() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let result = pipeline.render_html(
+        r#"<html><body><input id="name" value="i中😀W"></body></html>"#,
+        "input { width: 240px; font-size: 20px; }",
+    );
+    let boundaries = &result.primitives().text_control_boundaries;
+
+    assert_eq!(
+        boundaries
+            .iter()
+            .map(|boundary| boundary.utf16_offset)
+            .collect::<Vec<_>>(),
+        [0, 1, 2, 4, 5]
+    );
+    assert!(boundaries.windows(2).all(|pair| pair[0].x < pair[1].x));
+    assert!(boundaries.iter().all(|boundary| boundary.height > 0.0));
+    assert!(
+        boundaries
+            .iter()
+            .all(|boundary| boundary.node_handle == boundaries[0].node_handle)
+    );
+}

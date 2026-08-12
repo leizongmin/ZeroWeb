@@ -1137,6 +1137,7 @@ mod navigation_contract_tests {
             draw_order: vec![],
             dirty_rects: vec![],
             hit_test: None,
+            text_control_boundaries: vec![],
         }
     }
 

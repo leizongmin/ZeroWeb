@@ -14,7 +14,7 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::font::TextDirection;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
-use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
+use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, TextControlBoundary};
 use zero_style_system::{
     ComputedStyle, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
     TextTransformValue, WhiteSpaceValue,
@@ -36,7 +36,7 @@ use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
 use text_shaping::{
     FragmentPaintWidths, ahem_uses_embox_position, configure_paint_ifc_advance as with_shaped_layout,
-    fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, is_cc_control_char,
+    fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, glyph_sources, is_cc_control_char,
     logical_fragment_source, style_open_type_features,
 };
 
@@ -192,6 +192,7 @@ impl super::Painter {
         if let Some((text, start, end)) = self.form_control_compositions.get(&node_id) {
             current_value = replace_utf16_range(&current_value, *start, *end, text);
         }
+        let boundary_value = current_value.clone();
         // 决定渲染标签 + 是否水平居中。
         let (label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
             if !self.form_control_values.contains_key(&node_id)
@@ -215,7 +216,9 @@ impl super::Painter {
                 _ => return,
             }
         };
-        if label.is_empty() {
+        let has_text_boundaries = elem.local_name().eq_ignore_ascii_case("textarea")
+            || matches!(itype.as_str(), "" | "text" | "search" | "url" | "tel" | "password");
+        if label.is_empty() && !has_text_boundaries {
             return;
         }
 
@@ -228,7 +231,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
+        let (default_font_id, synthetic_italic) = self.resolve_style_font_id(&style.font_family, style);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -238,37 +241,135 @@ impl super::Painter {
         // https://drafts.csswg.org/css-inline-3/#line-height-property
         let line_height = font_size * 1.2;
         let lines: Vec<&str> = label.split('\n').collect();
+        let boundary_lines: Vec<&str> = boundary_value.split('\n').collect();
+        let node_handle = crate::hit_test::node_id_to_u64(node_id);
+        let text_direction = match style.direction {
+            zero_style_system::DirectionValue::Ltr => TextDirection::LeftToRight,
+            zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
+        };
+        let shape_features = style_open_type_features(style);
+        let shape_adjustment = crate::text_metrics::font_size_adjustment(&style.font_size_adjust);
+        let mut line_utf16_start = 0usize;
         let block_height = lines.len() as f32 * line_height;
         let block_top = content_y + (box_node.content_height - block_height).max(0.0) / 2.0;
         for (line_index, line) in lines.iter().enumerate() {
             let line_top = block_top + line_index as f32 * line_height;
             let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size;
+            let shaped =
+                (has_text_boundaries && itype != "password" && matches!(text_direction, TextDirection::LeftToRight))
+                    .then(|| {
+                        crate::shape_text_for_paint(
+                            &[default_font_id.0],
+                            line,
+                            font_size,
+                            text_direction,
+                            &shape_features,
+                            shape_adjustment,
+                        )
+                    })
+                    .flatten();
             // 居中按钮标签：先测总宽再定起始 x。
-            let total_w: f32 = line
-                .chars()
-                .map(|ch| self.measure_char_cached(ch, font_size, false))
-                .sum();
+            let total_w: f32 = shaped
+                .as_ref()
+                .map(|glyphs| glyphs.iter().map(|glyph| glyph.advance_x).sum())
+                .unwrap_or_else(|| {
+                    line.chars()
+                        .map(|ch| self.measure_char_cached(ch, font_size, false))
+                        .sum()
+                });
             let mut char_x = if center {
                 content_x + (box_node.content_width - total_w).max(0.0) / 2.0
             } else {
                 content_x
             };
-            for ch in line.chars() {
-                self.primitives.add_glyph(GlyphPrimitive {
+            let boundary_line = boundary_lines.get(line_index).copied().unwrap_or_default();
+            let mut utf16_offset = line_utf16_start;
+            if has_text_boundaries {
+                self.primitives.add_text_control_boundary(TextControlBoundary {
+                    node_handle,
+                    utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
                     x: char_x,
-                    y: baseline_y,
-                    font_size,
-                    color,
-                    glyph_id: ch as u32,
-                    font_glyph_index: None,
-                    source: None,
-                    font_id: default_font_id,
-                    bitmap_width: None,
-                    bitmap_height: None,
-                    rotation: 0.0,
-                    synthetic_italic: false,
+                    y: line_top,
+                    height: line_height,
                 });
-                char_x += self.measure_char_cached(ch, font_size, false);
+            }
+            if let Some(shaped) = shaped {
+                let sources = glyph_sources(line, &shaped, true).unwrap_or_else(|| vec![None; shaped.len()]);
+                let mut cluster = None;
+                for (glyph, source) in shaped.iter().zip(sources) {
+                    if cluster != source.as_ref().map(|source| (source.start, source.end))
+                        && let Some((_, previous_end)) = cluster
+                    {
+                        utf16_offset = line_utf16_start + line[..previous_end as usize].encode_utf16().count();
+                        self.primitives.add_text_control_boundary(TextControlBoundary {
+                            node_handle,
+                            utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
+                            x: char_x,
+                            y: line_top,
+                            height: line_height,
+                        });
+                    }
+                    cluster = source.as_ref().map(|source| (source.start, source.end));
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x + glyph.x_offset,
+                        y: baseline_y - glyph.y_offset,
+                        font_size: glyph.font_size,
+                        color,
+                        glyph_id: glyph.code_point as u32,
+                        font_glyph_index: u16::try_from(glyph.glyph_id).ok(),
+                        source,
+                        font_id: glyph.font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                        synthetic_italic,
+                    });
+                    char_x += glyph.advance_x;
+                }
+                if let Some((_, end)) = cluster {
+                    utf16_offset = line_utf16_start + line[..end as usize].encode_utf16().count();
+                    self.primitives.add_text_control_boundary(TextControlBoundary {
+                        node_handle,
+                        utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
+                        x: char_x,
+                        y: line_top,
+                        height: line_height,
+                    });
+                }
+            } else {
+                let mut source_chars = boundary_line.chars();
+                for ch in line.chars() {
+                    let advance = self.measure_char_cached(ch, font_size, false);
+                    self.primitives.add_glyph(GlyphPrimitive {
+                        x: char_x,
+                        y: baseline_y,
+                        font_size,
+                        color,
+                        glyph_id: ch as u32,
+                        font_glyph_index: None,
+                        source: None,
+                        font_id: default_font_id,
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                        synthetic_italic,
+                    });
+                    char_x += advance;
+                    utf16_offset += source_chars.next().map(char::len_utf16).unwrap_or(1);
+                    if has_text_boundaries {
+                        self.primitives.add_text_control_boundary(TextControlBoundary {
+                            node_handle,
+                            utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
+                            x: char_x,
+                            y: line_top,
+                            height: line_height,
+                        });
+                    }
+                }
+            }
+            line_utf16_start += boundary_line.encode_utf16().count();
+            if line_index + 1 < boundary_lines.len() {
+                line_utf16_start += 1;
             }
         }
     }
