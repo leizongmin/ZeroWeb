@@ -2079,6 +2079,117 @@
         write: function (_data) { return Promise.resolve(undefined); },
       };
     })(),
+    // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项
+    //（zero-web.md 行 80「IndexedDB + Cache API + OPFS」，OPFS 此前全缺）。estimate（配额查询，analytics 高频）+
+    // getDirectory（OPFS root）。headless 无真 OS 文件系统 → **进程内虚拟 FS 树**（内存近似，参照 clipboard
+    // IIFE store 模式）：目录节点 {kind:'dir', children:{name→node}}，文件节点 {kind:'file', data:Uint8Array}。
+    // spec https://fs.spec.whatwg.org/ + https://web.dev/file-system-access/。**诚实范围**：① 仅 OPFS
+    //（navigator.storage.getDirectory），无 showOpenFilePicker/showSaveFilePicker（用户可见文件选择器，headless 无）；
+    // ② 内存后端（非持久，跨页/进程丢）；③ 无 createSyncAccessHandle（worker 同步句柄，headless worker 无真线程）；
+    // ④ 无 permission/move/transferable。
+    storage: (function () {
+      // 根目录节点（OPFS 唯一根）。
+      var root = { kind: 'dir', children: {} };
+      // 构造 FileSystemDirectoryHandle（绑定某目录节点）。
+      function dirHandle(node, name) {
+        return {
+          kind: 'directory',
+          name: name || '',
+          // getFileHandle(name, {create}) → 文件句柄（create=true 不存在则建空文件）。失败 reject。
+          getFileHandle: function (n, opts) {
+            return Promise.resolve().then(function () {
+              var child = node.children[n];
+              if (child && child.kind !== 'file') return Promise.reject(new TypeError(n + ' 是目录'));
+              if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
+              if (!child) { child = { kind: 'file', data: new Uint8Array(0) }; node.children[n] = child; }
+              return fileHandle(child, n);
+            });
+          },
+          // getDirectoryHandle(name, {create}) → 子目录句柄。
+          getDirectoryHandle: function (n, opts) {
+            return Promise.resolve().then(function () {
+              var child = node.children[n];
+              if (child && child.kind !== 'dir') return Promise.reject(new TypeError(n + ' 是文件'));
+              if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
+              if (!child) { child = { kind: 'dir', children: {} }; node.children[n] = child; }
+              return dirHandle(child, n);
+            });
+          },
+          // removeEntry(name) → 删文件或目录（目录须空，spec 近似——非空目录递归删 pragmatic）。
+          removeEntry: function (n) {
+            return Promise.resolve().then(function () {
+              if (!node.children[n]) return Promise.reject(new TypeError(n + ' 不存在'));
+              delete node.children[n];
+              return undefined;
+            });
+          },
+          // keys() → 子项名迭代器（spec async iterable）。返数组（近似 [Symbol.asyncIterator]）。
+          keys: function () { return Promise.resolve(Object.keys(node.children)); },
+          entries: function () {
+            return Promise.resolve(Object.keys(node.children).map(function (k) {
+              var c = node.children[k];
+              return [k, c.kind === 'dir' ? dirHandle(c, k) : fileHandle(c, k)];
+            }));
+          },
+          values: function () {
+            return this.entries().then(function (es) { return es.map(function (e) { return e[1]; }); });
+          },
+          isSameEntry: function (other) { return this === other; },
+        };
+      }
+      // 构造 FileSystemFileHandle（绑定某文件节点）。
+      function fileHandle(node, name) {
+        return {
+          kind: 'file',
+          name: name,
+          // getFile() → Blob（读当前内容快照）。
+          getFile: function () {
+            return Promise.resolve().then(function () {
+              return new Blob([node.data.slice()], { type: 'application/octet-stream' });
+            });
+          },
+          // createWritable() → FileSystemWritableFileStream（write(data) + close()）。write 接 string/Blob/TypedArray/BufferSource。
+          createWritable: function () {
+            var chunks = [];
+            return Promise.resolve({
+              write: function (data) {
+                if (data == null) return Promise.resolve();
+                var bytes;
+                if (typeof data === 'string') {
+                  bytes = new Uint8Array(data.length);
+                  for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
+                } else if (data instanceof Uint8Array) {
+                  bytes = new Uint8Array(data);
+                } else if (data instanceof Blob) {
+                  // Blob 写入需同步取字节——headless Blob 经 arrayBuffer() 异步，但 createWritable.write 同步语义。
+                  // pragmatic：Blob 经 _zw_blobBytes 同步取（part02 闭包可见）。
+                  bytes = _zw_blobBytes(data).slice();
+                } else if (data.byteLength != null) {
+                  bytes = new Uint8Array(data.byteLength != null ? new Uint8Array(data.buffer ? data.buffer : data) : []);
+                } else {
+                  bytes = new Uint8Array(0);
+                }
+                for (var j = 0; j < bytes.length; j++) chunks.push(bytes[j]);
+                return Promise.resolve();
+              },
+              close: function () { node.data = new Uint8Array(chunks); return Promise.resolve(); },
+              abort: function () { return Promise.resolve(); },
+            });
+          },
+          isSameEntry: function (other) { return this === other; },
+        };
+      }
+      return {
+        // estimate() → 配额查询（analytics/存储压力检测高频）。headless 静态近似（usage 按虚拟 FS 字节数估）。
+        estimate: function () {
+          var bytes = 0;
+          (function count(n) { if (n.kind === 'file') bytes += n.data.length; else for (var k in n.children) count(n.children[k]); })(root);
+          return Promise.resolve({ usage: bytes, quota: 1024 * 1024 * 100 });
+        },
+        // getDirectory() → OPFS root 句柄（spec 返 Promise<FileSystemDirectoryHandle>）。
+        getDirectory: function () { return Promise.resolve(dirHandle(root, '')); },
+      };
+    })(),
     // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
     // unload 时上报）。headless 无真网络发送（避免无人值守测试依赖外部网络）→ accept-and-return-true
     //（spec：返 true = 成功入队 best-effort；data 类型不限，忽略）。url 缺省（null/undefined）→ false。
