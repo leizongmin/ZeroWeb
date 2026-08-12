@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use zero_css_parser::values::FontWeightValue;
 use zero_dom::QuirksMode;
 
 use crate::property::{
@@ -130,6 +131,11 @@ pub fn compute_inherited_style_with_quirks(
         }
     }
 
+    // https://drafts.csswg.org/css-fonts-4/#font-weight-prop
+    // `bolder`/`lighter` 的 computed value 依赖父元素，须在继承完成后解析为绝对字重，
+    // 使 layout、paint 与 getComputedStyle 消费同一结果。
+    style.font_weight = resolve_relative_font_weight(&style.font_weight, parent_style);
+
     // CSS Text 3 §6.1：`match-parent` 在 compute 阶段按父元素定型——继承父元素 text-align，
     // 但父值为 start/end 时按**父 direction** 解析为 left/right（区别于普通 inherit：inherit
     // 保留 start/end 由子元素自身 direction 在 layout 解析）。根元素无父 → initial (start)。
@@ -142,6 +148,38 @@ pub fn compute_inherited_style_with_quirks(
     }
 
     style
+}
+
+fn resolve_relative_font_weight(weight: &FontWeightValue, parent_style: Option<&ComputedStyle>) -> FontWeightValue {
+    let parent_weight = parent_style
+        .map(|parent| font_weight_absolute(&parent.font_weight))
+        .unwrap_or(400);
+    match weight {
+        FontWeightValue::Bolder => FontWeightValue::Absolute(if parent_weight < 400 {
+            400
+        } else if parent_weight < 600 {
+            700
+        } else {
+            900
+        }),
+        FontWeightValue::Lighter => FontWeightValue::Absolute(if parent_weight < 600 {
+            100
+        } else if parent_weight < 800 {
+            400
+        } else {
+            700
+        }),
+        _ => weight.clone(),
+    }
+}
+
+fn font_weight_absolute(weight: &FontWeightValue) -> u16 {
+    match weight {
+        FontWeightValue::Absolute(value) => *value,
+        FontWeightValue::Normal => 400,
+        FontWeightValue::Bold => 700,
+        FontWeightValue::Bolder | FontWeightValue::Lighter => 400,
+    }
 }
 
 /// 把 `match-parent` 解析为具体 text-align 值：继承 origin，但 start/end 按父 direction
@@ -468,6 +506,68 @@ mod tests {
         assert_eq!(style.font_weight, zero_css_parser::values::FontWeightValue::Bold);
         assert_eq!(style.font_style, zero_css_parser::values::FontStyleValue::Italic);
         assert_eq!(style.line_height, crate::property::LineHeightValue::Number(1.5));
+    }
+
+    #[test]
+    fn test_relative_font_weight_mapping() {
+        let cases = [
+            (100, 400, 100),
+            (300, 400, 100),
+            (400, 700, 100),
+            (500, 700, 100),
+            (600, 900, 400),
+            (700, 900, 400),
+            (800, 900, 700),
+            (900, 900, 700),
+        ];
+        for (parent_weight, expected_bolder, expected_lighter) in cases {
+            let mut parent = ComputedStyle::default();
+            parent.font_weight = FontWeightValue::Absolute(parent_weight);
+
+            let mut bolder = HashMap::new();
+            bolder.insert("font-weight".to_string(), "bolder".to_string());
+            assert_eq!(
+                compute_inherited_style(Some(&parent), &bolder).font_weight,
+                FontWeightValue::Absolute(expected_bolder)
+            );
+
+            let mut lighter = HashMap::new();
+            lighter.insert("font-weight".to_string(), "lighter".to_string());
+            assert_eq!(
+                compute_inherited_style(Some(&parent), &lighter).font_weight,
+                FontWeightValue::Absolute(expected_lighter)
+            );
+        }
+    }
+
+    #[test]
+    fn test_relative_font_weight_resolves_through_parent_chain() {
+        let mut grandparent = ComputedStyle::default();
+        grandparent.font_weight = FontWeightValue::Absolute(300);
+
+        let mut cascaded = HashMap::new();
+        cascaded.insert("font-weight".to_string(), "bolder".to_string());
+        let parent = compute_inherited_style(Some(&grandparent), &cascaded);
+        let child = compute_inherited_style(Some(&parent), &cascaded);
+
+        assert_eq!(parent.font_weight, FontWeightValue::Absolute(400));
+        assert_eq!(child.font_weight, FontWeightValue::Absolute(700));
+    }
+
+    #[test]
+    fn test_root_relative_font_weight_uses_normal_parent() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("font-weight".to_string(), "bolder".to_string());
+        assert_eq!(
+            compute_inherited_style(None, &cascaded).font_weight,
+            FontWeightValue::Absolute(700)
+        );
+
+        cascaded.insert("font-weight".to_string(), "lighter".to_string());
+        assert_eq!(
+            compute_inherited_style(None, &cascaded).font_weight,
+            FontWeightValue::Absolute(100)
+        );
     }
 
     #[test]
