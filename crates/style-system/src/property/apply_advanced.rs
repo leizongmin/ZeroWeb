@@ -730,6 +730,43 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── FontVariantEastAsian 属性 ──
+        "font-variant-east-asian" => {
+            if let Some(v) = values::parse_font_variant_east_asian(value) {
+                style.font_variant_east_asian = match v {
+                    zero_css_parser::values::FontVariantEastAsianValue::Normal => FontVariantEastAsianValue::Normal,
+                    zero_css_parser::values::FontVariantEastAsianValue::Jis78 => FontVariantEastAsianValue::Jis78,
+                    zero_css_parser::values::FontVariantEastAsianValue::Jis83 => FontVariantEastAsianValue::Jis83,
+                    zero_css_parser::values::FontVariantEastAsianValue::Jis90 => FontVariantEastAsianValue::Jis90,
+                    zero_css_parser::values::FontVariantEastAsianValue::Jis04 => FontVariantEastAsianValue::Jis04,
+                    zero_css_parser::values::FontVariantEastAsianValue::Simplified => {
+                        FontVariantEastAsianValue::Simplified
+                    }
+                    zero_css_parser::values::FontVariantEastAsianValue::Traditional => {
+                        FontVariantEastAsianValue::Traditional
+                    }
+                    zero_css_parser::values::FontVariantEastAsianValue::FullWidth => {
+                        FontVariantEastAsianValue::FullWidth
+                    }
+                    zero_css_parser::values::FontVariantEastAsianValue::ProportionalWidth => {
+                        FontVariantEastAsianValue::ProportionalWidth
+                    }
+                    zero_css_parser::values::FontVariantEastAsianValue::Ruby => FontVariantEastAsianValue::Ruby,
+                };
+                return true;
+            }
+        }
+        // ── FontVariantPosition 属性 ──
+        "font-variant-position" => {
+            if let Some(v) = values::parse_font_variant_position(value) {
+                style.font_variant_position = match v {
+                    zero_css_parser::values::FontVariantPositionValue::Normal => FontVariantPositionValue::Normal,
+                    zero_css_parser::values::FontVariantPositionValue::Sub => FontVariantPositionValue::Sub,
+                    zero_css_parser::values::FontVariantPositionValue::Super => FontVariantPositionValue::Super,
+                };
+                return true;
+            }
+        }
         // ── Direction 属性 ──
         "direction" => {
             if let Some(v) = values::parse_direction(value) {

@@ -255,6 +255,8 @@ impl PropertyRegistry {
             "text-align-last" => Some(TextAlignLast(TextAlignLastValue::Auto)),
             "font-variant-numeric" => Some(FontVariantNumeric(FontVariantNumericValue::Normal)),
             "font-variant-caps" => Some(FontVariantCaps(FontVariantCapsValue::Normal)),
+            "font-variant-east-asian" => Some(FontVariantEastAsian(FontVariantEastAsianValue::Normal)),
+            "font-variant-position" => Some(FontVariantPosition(FontVariantPositionValue::Normal)),
 
             // Writing Direction / Tab
             "direction" => Some(Direction(DirectionValue::Ltr)),
@@ -388,6 +390,8 @@ impl PropertyRegistry {
                 | "text-align-last"
                 | "font-variant-numeric"
                 | "font-variant-caps"
+                | "font-variant-east-asian"
+                | "font-variant-position"
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
@@ -592,6 +596,8 @@ impl PropertyRegistry {
             "text-align-last",
             "font-variant-numeric",
             "font-variant-caps",
+            "font-variant-east-asian",
+            "font-variant-position",
             "direction",
             "unicode-bidi",
             "tab-size",

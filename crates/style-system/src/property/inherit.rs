@@ -150,6 +150,14 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_variant_caps = parent.font_variant_caps;
             true
         }
+        "font-variant-east-asian" => {
+            child.font_variant_east_asian = parent.font_variant_east_asian;
+            true
+        }
+        "font-variant-position" => {
+            child.font_variant_position = parent.font_variant_position;
+            true
+        }
         "direction" => {
             child.direction = parent.direction.clone();
             true
@@ -1241,6 +1249,14 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-caps" => {
             style.font_variant_caps = default_style.font_variant_caps;
+            true
+        }
+        "font-variant-east-asian" => {
+            style.font_variant_east_asian = default_style.font_variant_east_asian;
+            true
+        }
+        "font-variant-position" => {
+            style.font_variant_position = default_style.font_variant_position;
             true
         }
         "user-select" => {

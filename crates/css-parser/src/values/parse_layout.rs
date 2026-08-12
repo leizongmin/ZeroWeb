@@ -744,6 +744,71 @@ pub fn parse_font_variant_caps(value: &str) -> Option<FontVariantCapsValue> {
     }
 }
 
+/// CSS font-variant-east-asian 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-east-asian-prop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontVariantEastAsianValue {
+    /// normal。
+    Normal,
+    /// jis78。
+    Jis78,
+    /// jis83。
+    Jis83,
+    /// jis90。
+    Jis90,
+    /// jis04。
+    Jis04,
+    /// simplified。
+    Simplified,
+    /// traditional。
+    Traditional,
+    /// full-width。
+    FullWidth,
+    /// proportional-width。
+    ProportionalWidth,
+    /// ruby。
+    Ruby,
+}
+
+/// 解析 CSS font-variant-east-asian 属性值。
+pub fn parse_font_variant_east_asian(value: &str) -> Option<FontVariantEastAsianValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(FontVariantEastAsianValue::Normal),
+        "jis78" => Some(FontVariantEastAsianValue::Jis78),
+        "jis83" => Some(FontVariantEastAsianValue::Jis83),
+        "jis90" => Some(FontVariantEastAsianValue::Jis90),
+        "jis04" => Some(FontVariantEastAsianValue::Jis04),
+        "simplified" => Some(FontVariantEastAsianValue::Simplified),
+        "traditional" => Some(FontVariantEastAsianValue::Traditional),
+        "full-width" => Some(FontVariantEastAsianValue::FullWidth),
+        "proportional-width" => Some(FontVariantEastAsianValue::ProportionalWidth),
+        "ruby" => Some(FontVariantEastAsianValue::Ruby),
+        _ => None,
+    }
+}
+
+/// CSS font-variant-position 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-position-prop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontVariantPositionValue {
+    /// normal。
+    Normal,
+    /// sub。
+    Sub,
+    /// super。
+    Super,
+}
+
+/// 解析 CSS font-variant-position 属性值。
+pub fn parse_font_variant_position(value: &str) -> Option<FontVariantPositionValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(FontVariantPositionValue::Normal),
+        "sub" => Some(FontVariantPositionValue::Sub),
+        "super" => Some(FontVariantPositionValue::Super),
+        _ => None,
+    }
+}
+
 /// CSS `font-feature-settings` 中的单个 OpenType feature。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontFeatureSetting {

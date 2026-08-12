@@ -947,6 +947,46 @@ pub enum FontVariantCapsValue {
     TitlingCaps,
 }
 
+/// CSS font-variant-east-asian 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-east-asian-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontVariantEastAsianValue {
+    /// normal（默认值）。
+    #[default]
+    Normal,
+    /// jis78 → OT `jp78`。
+    Jis78,
+    /// jis83 → OT `jp83`。
+    Jis83,
+    /// jis90 → OT `jp90`。
+    Jis90,
+    /// jis04 → OT `jp04`。
+    Jis04,
+    /// simplified → OT `smpl`。
+    Simplified,
+    /// traditional → OT `trad`。
+    Traditional,
+    /// full-width → OT `fwid`。
+    FullWidth,
+    /// proportional-width → OT `pwid`。
+    ProportionalWidth,
+    /// ruby → OT `ruby`。
+    Ruby,
+}
+
+/// CSS font-variant-position 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-position-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontVariantPositionValue {
+    /// normal（默认值）。
+    #[default]
+    Normal,
+    /// sub → OT `subs`。
+    Sub,
+    /// super → OT `sups`。
+    Super,
+}
+
 /// CSS direction 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectionValue {
@@ -1459,6 +1499,10 @@ pub enum PropertyValue {
     FontVariantNumeric(FontVariantNumericValue),
     /// font-variant-caps 值。
     FontVariantCaps(FontVariantCapsValue),
+    /// font-variant-east-asian 值。
+    FontVariantEastAsian(FontVariantEastAsianValue),
+    /// font-variant-position 值。
+    FontVariantPosition(FontVariantPositionValue),
     /// font-feature-settings 值。
     FontFeatureSettings(FontFeatureSettingsValue),
     /// font-variant-ligatures 值。

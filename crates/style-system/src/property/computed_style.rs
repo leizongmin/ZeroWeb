@@ -448,6 +448,10 @@ pub struct ComputedStyle {
     pub font_variant_numeric: FontVariantNumericValue,
     /// font-variant-caps 属性。
     pub font_variant_caps: FontVariantCapsValue,
+    /// font-variant-east-asian 属性。
+    pub font_variant_east_asian: FontVariantEastAsianValue,
+    /// font-variant-position 属性。
+    pub font_variant_position: FontVariantPositionValue,
 
     // ── Writing Direction / Tab ──
     /// direction 属性。

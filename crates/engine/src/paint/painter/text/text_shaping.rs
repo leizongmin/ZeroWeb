@@ -424,6 +424,29 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
         FontVariantCapsValue::TitlingCaps => set_feature(&mut features, *b"titl", 1),
     }
 
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-east-asian-prop
+    use zero_style_system::FontVariantEastAsianValue;
+    match style.font_variant_east_asian {
+        FontVariantEastAsianValue::Normal => {}
+        FontVariantEastAsianValue::Jis78 => set_feature(&mut features, *b"jp78", 1),
+        FontVariantEastAsianValue::Jis83 => set_feature(&mut features, *b"jp83", 1),
+        FontVariantEastAsianValue::Jis90 => set_feature(&mut features, *b"jp90", 1),
+        FontVariantEastAsianValue::Jis04 => set_feature(&mut features, *b"jp04", 1),
+        FontVariantEastAsianValue::Simplified => set_feature(&mut features, *b"smpl", 1),
+        FontVariantEastAsianValue::Traditional => set_feature(&mut features, *b"trad", 1),
+        FontVariantEastAsianValue::FullWidth => set_feature(&mut features, *b"fwid", 1),
+        FontVariantEastAsianValue::ProportionalWidth => set_feature(&mut features, *b"pwid", 1),
+        FontVariantEastAsianValue::Ruby => set_feature(&mut features, *b"ruby", 1),
+    }
+
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-position-prop
+    use zero_style_system::FontVariantPositionValue;
+    match style.font_variant_position {
+        FontVariantPositionValue::Normal => {}
+        FontVariantPositionValue::Sub => set_feature(&mut features, *b"subs", 1),
+        FontVariantPositionValue::Super => set_feature(&mut features, *b"sups", 1),
+    }
+
     if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
         for setting in settings {
             set_feature(&mut features, setting.tag, setting.value);

@@ -281,6 +281,8 @@ impl Default for ComputedStyle {
             text_align_last: TextAlignLastValue::Auto,
             font_variant_numeric: FontVariantNumericValue::Normal,
             font_variant_caps: FontVariantCapsValue::Normal,
+            font_variant_east_asian: FontVariantEastAsianValue::Normal,
+            font_variant_position: FontVariantPositionValue::Normal,
 
             // Writing Direction / Tab
             direction: DirectionValue::Ltr,
