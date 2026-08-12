@@ -961,6 +961,16 @@ impl WebView {
         self.pipeline.form_control_value_overrides()
     }
 
+    /// 从当前 live Document 查询 selector 对应的 opaque node handle。
+    pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
+        self.pipeline.page_node_handle_for_selector(selector)
+    }
+
+    /// 将当前 live Document 的 opaque node handle 解析为唯一选择器。
+    pub fn selector_for_page_node_handle(&self, handle: u64) -> Option<String> {
+        self.pipeline.selector_for_page_node_handle(handle)
+    }
+
     /// 获取配置。
     pub fn config(&self) -> &WebViewConfig {
         &self.config

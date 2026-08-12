@@ -20,6 +20,12 @@ pub use form_control::{
     BlurredFormControl, FormControlState, FormControlStateStore, PageInteractionState, PageNodeHandle, PageNodeRef,
     PageTarget, radio_activation_changes_checkedness,
 };
+pub mod html_actions;
+pub use html_actions::{
+    ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionOutcome, HtmlActionPlan,
+    HtmlActionRequest, HtmlUserAction, InvalidationKind, PageEffect, PlannedEvent, PlannedMutation, RadioActionState,
+    TextActionState, plan_html_action, resolve_html_action,
+};
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
 use zero_render_foundation::primitive::RenderPrimitives;

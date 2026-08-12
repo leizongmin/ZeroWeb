@@ -773,6 +773,21 @@ impl RenderPipeline {
         self.cached_doc.clone()
     }
 
+    /// 从当前 live Document 查询 selector 对应的 opaque NodeId handle。
+    pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
+        let doc = self.cached_doc.as_ref()?.borrow();
+        doc.query_selector(doc.root(), selector)
+            .map(crate::hit_test::node_id_to_u64)
+    }
+
+    /// 将当前 live Document 的 opaque node handle 解析为唯一选择器。
+    pub fn selector_for_page_node_handle(&self, handle: u64) -> Option<String> {
+        let doc = self.cached_doc.as_ref()?.borrow();
+        let node = crate::hit_test::node_id_from_u64(handle);
+        doc.get(node)?;
+        crate::js_dom_bridge::unique_selector_for_node(&doc, node)
+    }
+
     /// 返回文本表单控件的 live value 覆盖表，键为当前文档中的唯一选择器。
     ///
     /// dirty value 不写回 HTML 内容属性；表单提交需消费该快照，而 reset 后的默认值

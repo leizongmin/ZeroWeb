@@ -5,13 +5,12 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
-    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, is_checkbox, is_radio,
-    is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
-    script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
-    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_reset_form_controls,
-    script_run_classic_page, script_select_radio_checked, script_set_control_checked, script_text_control_snapshot,
-    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
-    script_toggle_checkbox_checked,
+    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, is_reset_button,
+    is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url, script_call_form_reset,
+    script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
+    script_dispatch_script_event, script_report_error, script_reset_form_controls, script_run_classic_page,
+    script_set_control_checked, script_text_control_snapshot, script_text_delete, script_text_delete_without_event,
+    script_text_input, script_text_input_without_event,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -593,104 +592,9 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
     }
 }
 
-/// P1a checkbox：click `<input type=checkbox>` → 经 IDL `.checked=` setter 翻转 checkedness，
-/// 使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
-pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    apply_toggle_checkbox_with_events(ctx, selector, true)
-}
-
-/// 执行 JavaScript-disabled 路径的 checkbox 激活，不派发页面 listener。
-pub fn apply_toggle_checkbox_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    apply_toggle_checkbox_with_events(ctx, selector, false)
-}
-
-fn apply_toggle_checkbox_with_events(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) -> bool {
-    let snap = ctx.html.clone();
-    if !is_checkbox(&snap, selector) {
-        return false;
-    }
-    if !apply_checkedness_script(ctx, &script_toggle_checkbox_checked(selector)) {
-        return false;
-    }
-    if !dispatch_events {
-        return true;
-    }
-    // 派发 change（dom_html 已含翻转后 checked，listener 经 el.checked 读到新状态）。
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
-    let _ = ctx
-        .js_worker
-        .execute_script_direct(&script_dispatch_dom_event(selector, "change", None));
-    let html_snap = ctx.html.clone();
-    let _ = apply_recorded_mutations(ctx, &html_snap);
-    true
-}
-
-/// P1a radio：click `<input type=radio>` → 经 IDL `.checked=` setter 选择目标并清除同组
-/// 其他项，使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
-pub fn apply_toggle_radio(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    apply_toggle_radio_with_events(ctx, selector, true)
-}
-
-/// 执行 JavaScript-disabled 路径的 radio 激活，不派发页面 listener。
-pub fn apply_toggle_radio_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    apply_toggle_radio_with_events(ctx, selector, false)
-}
-
 /// 设置 checkbox/radio checkedness，不派发页面事件。
 pub fn apply_set_checked_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, checked: bool) -> bool {
     apply_checkedness_script(ctx, &script_set_control_checked(selector, checked))
-}
-
-fn apply_toggle_radio_with_events(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) -> bool {
-    let snap = ctx.html.clone();
-    if !is_radio(&snap, selector) {
-        return false;
-    }
-    if !apply_checkedness_script(ctx, &script_select_radio_checked(selector)) {
-        return false;
-    }
-    if !dispatch_events {
-        return true;
-    }
-    // 派发 change（dom_html 已含 target checked + 同组兄弟 unset）。
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
-    let _ = ctx
-        .js_worker
-        .execute_script_direct(&script_dispatch_dom_event(selector, "change", None));
-    let html_snap = ctx.html.clone();
-    let _ = apply_recorded_mutations(ctx, &html_snap);
-    true
-}
-
-/// checkedness 激活提交后按规范顺序派发不可取消的 input/change。
-pub fn dispatch_checkedness_input_change(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
-    let script = format!(
-        "{};{}",
-        script_dispatch_dom_event(selector, "input", None),
-        script_dispatch_dom_event(selector, "change", None)
-    );
-    if let Err(error) = ctx.js_worker.execute_script_direct(&script) {
-        warn!("dispatch checkedness events on {selector}: {error}");
-        return false;
-    }
-    let html_snapshot = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
 
 fn apply_checkedness_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
@@ -865,6 +769,19 @@ mod tests {
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
     }
 
+    fn set_checked_for_test(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) {
+        let previous = zero_engine::checked_radio_group_selector(ctx.html, selector);
+        assert!(apply_set_checked_without_events(ctx, selector, true));
+        if let Some(previous) = previous.filter(|previous| previous != selector) {
+            let _ = apply_set_checked_without_events(ctx, &previous, false);
+        }
+        if !dispatch_events {
+            return;
+        }
+        let _ = dispatch_dom_event(ctx, true, selector, "input", None);
+        let _ = dispatch_dom_event(ctx, true, selector, "change", None);
+    }
+
     #[test]
     fn form_interaction_fixture_updates_input_value_and_result_text() {
         let html = include_str!("../../../examples/forms/form-interaction-test.html");
@@ -944,11 +861,11 @@ mod tests {
             "备注输入：中文备注"
         );
 
-        assert!(apply_toggle_checkbox(&mut ctx, "#subscribe"));
+        set_checked_for_test(&mut ctx, "#subscribe", true);
         assert_eq!(state(ctx.html)["subscribe"], true);
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "复选框：已选中");
 
-        assert!(apply_toggle_radio(&mut ctx, "#plan-pro"));
+        set_checked_for_test(&mut ctx, "#plan-pro", true);
         assert_eq!(state(ctx.html)["plan"], "pro");
         assert!(!zero_engine::has_attribute(ctx.html, "#plan-basic", "checked"));
         assert!(zero_engine::has_attribute(ctx.html, "#plan-pro", "checked"));
@@ -1034,8 +951,8 @@ mod tests {
         let deleted = apply_text_delete_without_events(&mut ctx, "#name");
         assert_eq!(deleted.snapshot.expect("delete snapshot").value, "base");
         assert!(apply_text_input_without_events(&mut ctx, "#note", "x").html_changed);
-        assert!(apply_toggle_checkbox_without_events(&mut ctx, "#check"));
-        assert!(apply_toggle_radio_without_events(&mut ctx, "#pro"));
+        set_checked_for_test(&mut ctx, "#check", false);
+        set_checked_for_test(&mut ctx, "#pro", false);
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#out"), "unchanged");
         assert!(zero_engine::has_attribute(ctx.html, "#check", "checked"));
         assert!(!zero_engine::has_attribute(ctx.html, "#basic", "checked"));
@@ -1057,8 +974,8 @@ mod tests {
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#out"), "unchanged");
 
         assert!(apply_text_input_without_events(&mut ctx, "#name", "after").html_changed);
-        assert!(apply_toggle_checkbox_without_events(&mut ctx, "#check"));
-        assert!(apply_toggle_radio_without_events(&mut ctx, "#pro"));
+        set_checked_for_test(&mut ctx, "#check", false);
+        set_checked_for_test(&mut ctx, "#pro", false);
         assert_eq!(
             ctx.webview
                 .as_ref()

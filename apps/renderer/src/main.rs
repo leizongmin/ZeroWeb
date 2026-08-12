@@ -150,17 +150,6 @@ struct PendingLoad {
     emit_load_complete: bool,
 }
 
-enum CheckedActivationRollback {
-    Checkbox(bool),
-    Radio(Option<String>),
-}
-
-struct CheckedActivation {
-    target: String,
-    changed: bool,
-    rollback: CheckedActivationRollback,
-}
-
 /// 渲染进程运行时状态。
 struct RendererRuntime {
     /// 向浏览器写入 IPC（stdout）。
@@ -1044,148 +1033,122 @@ impl RendererRuntime {
         Ok(())
     }
 
-    /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
-    fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            if self.javascript_enabled {
-                page_scripts::apply_toggle_checkbox(&mut ctx, selector)
-            } else {
-                page_scripts::apply_toggle_checkbox_without_events(&mut ctx, selector)
-            }
-        };
-        if changed {
-            self.publish_webview(None, true)?;
-        }
-        Ok(())
+    fn node_ref_for_selector(&self, selector: &str) -> Option<zero_page_runtime::PageNodeRef> {
+        let handle = self.webview.as_ref()?.page_node_handle_for_selector(selector)?;
+        Some(zero_page_runtime::PageNodeRef::new(
+            self.navigation_epoch,
+            self.document_generation,
+            zero_page_runtime::PageNodeHandle::new(handle),
+        ))
     }
 
-    /// P1a radio：click 命中 radio → set checked + 同 name 组兄弟 unset + 派发 'change'。
-    fn toggle_radio_at(&mut self, selector: &str) -> Result<(), String> {
-        if !zero_page_runtime::radio_activation_changes_checkedness(zero_engine::has_attribute(
-            &self.cached_html,
-            selector,
-            "checked",
-        )) {
-            return Ok(());
+    fn selector_for_node_ref(&self, node: zero_page_runtime::PageNodeRef) -> Option<String> {
+        if !node.is_current(self.navigation_epoch, self.document_generation) {
+            return None;
         }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            if self.javascript_enabled {
-                page_scripts::apply_toggle_radio(&mut ctx, selector)
-            } else {
-                page_scripts::apply_toggle_radio_without_events(&mut ctx, selector)
-            }
-        };
-        if changed {
-            self.publish_webview(None, true)?;
-        }
-        Ok(())
+        self.webview.as_ref()?.selector_for_page_node_handle(node.node().get())
     }
 
-    fn prepare_checked_activation(&mut self, target: &str) -> Option<CheckedActivation> {
+    fn checked_action_plan(
+        &self,
+        target: &str,
+    ) -> Option<Result<zero_page_runtime::HtmlActionPlan, zero_page_runtime::ActionNoopReason>> {
+        let target_ref = self.node_ref_for_selector(target)?;
+        let state = if zero_engine::is_checkbox(&self.cached_html, target) {
+            zero_page_runtime::ActionTargetState::Checkbox {
+                checked: zero_engine::has_attribute(&self.cached_html, target, "checked"),
+            }
+        } else if zero_engine::is_radio(&self.cached_html, target) {
+            let previous_checked = zero_engine::checked_radio_group_selector(&self.cached_html, target)
+                .and_then(|selector| self.node_ref_for_selector(&selector));
+            zero_page_runtime::ActionTargetState::Radio(zero_page_runtime::RadioActionState {
+                checked: zero_engine::has_attribute(&self.cached_html, target, "checked"),
+                previous_checked,
+            })
+        } else {
+            return None;
+        };
+        Some(zero_page_runtime::plan_html_action(
+            &zero_page_runtime::HtmlActionRequest {
+                target: target_ref,
+                action: zero_page_runtime::HtmlUserAction::Activate,
+                shift: false,
+            },
+            self.navigation_epoch,
+            self.document_generation,
+            &state,
+        ))
+    }
+
+    fn apply_planned_mutations(&mut self, mutations: &[zero_page_runtime::PlannedMutation]) -> bool {
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        if zero_engine::is_checkbox(&self.cached_html, target) {
-            let original = zero_engine::has_attribute(&self.cached_html, target, "checked");
+        let mut changed = false;
+        for mutation in mutations {
+            let zero_page_runtime::PlannedMutation::SetChecked { target, checked } = mutation else {
+                continue;
+            };
+            let Some(selector) = self.selector_for_node_ref(*target) else {
+                continue;
+            };
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            let changed = page_scripts::apply_set_checked_without_events(&mut ctx, target, !original);
-            return Some(CheckedActivation {
-                target: target.to_string(),
-                changed,
-                rollback: CheckedActivationRollback::Checkbox(original),
+            changed |= page_scripts::apply_set_checked_without_events(&mut ctx, &selector, *checked);
+        }
+        changed
+    }
+
+    fn dispatch_planned_events(&mut self, events: &[zero_page_runtime::PlannedEvent]) -> bool {
+        if !self.javascript_enabled {
+            return false;
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let mut changed = false;
+        for event in events {
+            let Some(selector) = self.selector_for_node_ref(event.target) else {
+                continue;
+            };
+            let detail = event.input_type.as_ref().map(|input_type| DomEventDetail {
+                data: event.data.clone(),
+                input_type: Some(input_type.clone()),
+                ..Default::default()
             });
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &selector, &event.event_type, detail.as_ref())
+                .html_changed;
         }
-        if zero_engine::is_radio(&self.cached_html, target) {
-            let original = zero_engine::checked_radio_group_selector(&self.cached_html, target);
-            let changed = zero_page_runtime::radio_activation_changes_checkedness(original.as_deref() == Some(target));
-            if changed {
-                let mut ctx = PageScriptContext {
-                    html: &mut self.cached_html,
-                    url: &url,
-                    js_worker: &self.js_worker,
-                    webview: self.webview.as_mut(),
-                };
-                let _ = page_scripts::apply_toggle_radio_without_events(&mut ctx, target);
-            }
-            return Some(CheckedActivation {
-                target: target.to_string(),
-                changed,
-                rollback: CheckedActivationRollback::Radio(original),
-            });
-        }
-        None
-    }
-
-    fn finish_checked_activation(
-        &mut self,
-        activation: CheckedActivation,
-        click: DomDispatchResult,
-    ) -> Result<(), String> {
-        if !activation.changed {
-            return Ok(());
-        }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        if click.default_allowed {
-            if self.javascript_enabled {
-                let mut ctx = PageScriptContext {
-                    html: &mut self.cached_html,
-                    url: &url,
-                    js_worker: &self.js_worker,
-                    webview: self.webview.as_mut(),
-                };
-                let _ = page_scripts::dispatch_checkedness_input_change(&mut ctx, &activation.target);
-            }
-            self.publish_webview(None, true)?;
-            return Ok(());
-        }
-
-        let mut ctx = PageScriptContext {
-            html: &mut self.cached_html,
-            url: &url,
-            js_worker: &self.js_worker,
-            webview: self.webview.as_mut(),
-        };
-        match activation.rollback {
-            CheckedActivationRollback::Checkbox(original) => {
-                let _ = page_scripts::apply_set_checked_without_events(&mut ctx, &activation.target, original);
-            }
-            CheckedActivationRollback::Radio(Some(previous)) if previous != activation.target => {
-                let _ = page_scripts::apply_toggle_radio_without_events(&mut ctx, &previous);
-            }
-            CheckedActivationRollback::Radio(None) => {
-                let _ = page_scripts::apply_set_checked_without_events(&mut ctx, &activation.target, false);
-            }
-            CheckedActivationRollback::Radio(Some(_)) => {}
-        }
-        if click.html_changed {
-            self.publish_webview(None, true)?;
-        }
-        Ok(())
+        changed
     }
 
     fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
-        let activation = self.prepare_checked_activation(&target);
-        let handled = activation.is_some();
+        let Some(plan) = self.checked_action_plan(&target) else {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+        };
+        let handled = true;
+        let Ok(plan) = plan else {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), handled));
+        };
+        let prepared = self.apply_planned_mutations(&plan.prepare);
         let click = self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None);
-        if let Some(activation) = activation {
-            self.finish_checked_activation(activation, click)?;
+        let outcome = zero_page_runtime::resolve_html_action(
+            plan,
+            zero_page_runtime::EventDispatchResult {
+                default_allowed: click.default_allowed,
+                html_changed: click.html_changed,
+            },
+        );
+        let state_changed = self.apply_planned_mutations(&outcome.mutations);
+        let listener_changed = self.dispatch_planned_events(&outcome.followup_events);
+        if (!outcome.canceled && (prepared || state_changed)) || outcome.html_changed || listener_changed {
+            self.publish_webview(None, true)?;
         }
         Ok((click, handled))
     }
@@ -1193,10 +1156,6 @@ impl RendererRuntime {
     fn activate_form_control_at(&mut self, selector: &str) -> Result<bool, String> {
         if zero_engine::is_submit_button(&self.cached_html, selector) {
             self.submit_form_on_click_at(selector)?;
-        } else if zero_engine::is_checkbox(&self.cached_html, selector) {
-            self.toggle_checkbox_at(selector)?;
-        } else if zero_engine::is_radio(&self.cached_html, selector) {
-            self.toggle_radio_at(selector)?;
         } else if zero_engine::is_reset_button(&self.cached_html, selector) {
             self.reset_form_on_click_at(selector)?;
         } else {
