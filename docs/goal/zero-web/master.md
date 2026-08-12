@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3317：input.valueAsDate（date/month/week/time ↔ UTC Date）+ stepUp/stepDown（number/range），engine JS shim 纯 JS 表单转换 API 面补缺，承接 R3316「自主机械面饱和」结论后从 master.md 剩余窄候选中核实的真实未实现 gap——valueAsDate/stepUp/stepDown 探查确认 0 实现，而同列的 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 早已 land，故 master.md 该「剩余窄可选」列表部分过时）。
+**最后更新**: 2026-08-12（R3318：navigator.serviceWorker 从 A-gen 死代码 dom_bridge.rs 移植到 B-gen 生产 shim js_dom_shim/part02.js——Tier 2 Service Worker 注册面闭合，参照 R2821 Performance API 迁移模式。**此前 navigator.serviceWorker 仅在 A-gen polyfill（无页面交互生产调用方），生产页面路径（run_page_scripts→generate_js_dom_shim）缺失 → undefined → PWA 注册全抛 TypeError**）。承接 R3317（valueAsDate + stepUp/stepDown）继续在饱和的 DOM/Web API 面挖真实可机械闭合 gap：本轮发现 A-gen→B-gen 死代码迁移类 gap（API 在 A-gen 存在但 B-gen 缺）。前轮 R3317：input.valueAsDate + stepUp/stepDown（表单转换 API）。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,28 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### navigator.serviceWorker 移植到 B-gen 生产 shim（本轮 R3318，engine JS shim）—— Tier 2 Service Worker 注册面闭合（A-gen 死代码 → B-gen 生产路径）
+
+直接代码核实：`navigator.serviceWorker` **仅存在于 A-gen `dom_bridge.rs` 的 `generate_dom_api_polyfill`**（R2817 时代），而该 polyfill **无页面交互生产调用方**（生产页面路径 `run_page_scripts` → `generate_js_dom_shim` + callbacks，wpt-runner/reftest 同机制，见 R2821 Performance API 迁移说明 + part08.rs:707 注释）。故 **B-gen 生产 shim 缺 `navigator.serviceWorker`** → `navigator.serviceWorker` 为 undefined，PWA 注册脚本 `navigator.serviceWorker.register(...)` 全抛 TypeError。这是 Done Criteria §3 Tier 2 + zero-web.md M12 明确列项（Service Worker 注册）。参照 R2821 模式移植。
+
+| 方法/字段 | spec | 实现 |
+|-----------|------|------|
+| `register(scriptURL, options)` | SW §4.5.1 → Promise<registration> | scope 缺省 = scriptURL 所在目录；install→waiting→active 经 setTimeout(0) microtask 异步推进；installing 立即置；缺/非串 scriptURL reject TypeError |
+| `getRegistration(scope)` / `getRegistrations()` | 注册查询 | 进程内注册表匹配 scope |
+| `ready` / `controller` | getter | ready=Promise（首个 active 后 resolve）；controller=null→active SW（Object.defineProperty） |
+| `registration.unregister/update` | 方法 | unregister→Promise<true>（从注册表移除）；update no-op |
+
+| 文件 | 改动 |
+|------|------|
+| `engine/src/js_dom_shim/part02.js` | navigator 对象加 `serviceWorker` IIFE（进程内注册表 + 生命周期状态机 + 完整查询面），参照 A-gen + storage crate `ServiceWorkerRegistry`。 |
+| `engine/src/js_dom_bridge_tests/part16.rs` | +2 e2e 测试 `test_navigator_service_worker_register_r3318`（存在性 + register Promise + scope 派生 + controller/ready + 生命周期 active/waiting-cleared/installing-cleared）+ `test_navigator_service_worker_query_and_unregister_r3318`（2 注册 + getRegistrations 计数 + getRegistration 命中/未命中 + unregister + 缺 scriptURL reject TypeError）。 |
+
+**诚实范围**：① 进程内注册表近似（headless 无独立 SW worker 线程 / 真 fetch 拦截 / 真 install·activate 事件派发——需隔离 worker 执行环境，跨层大改）；② ready 首个 active 后 resolve（spec 首次 SW 控制）；③ 无真 fetch 事件拦截（storage crate `ServiceWorkerRegistry` 有 `match_cached` 后端，但 host 回调未接，defer）。
+
+**为何净正向且零回归**：navigator 对象加 IIFE 属性（additive，零改既有 navigator.* API）；纯 JS shim（无 host op、无 CSS/layout/render 影响）。**验证**：`cargo fmt` clean + `cargo clippy -p zero-engine --all-targets -D warnings` 零警告 + engine lib **2036 passed / 0 failed**（2034→2036，+2 新测，0 回归，test-guard 包裹）。
+
+**测试时序坑（记录）**：首版测 register `.then` 回调内读 `reg.installing.state` 断言 'installing' 失败得 'null'——根因：测试 host 未注册 `__zw_setTimeout`，setTimeout(0) fallback 到 `_defer`（microtask），而 register 内两个 setTimeout 生命周期回调在 `Promise.resolve(reg).then` 之前入队 → 回调内读到已是 active 态（installing 已清）。修正：生命周期断言改经 `getRegistration`（microtask 全 drain 后读，测 active/waiting-cleared/installing-cleared 稳态），`.then` 内仅测同步派生字段（scope/method 存在性）。**下游启示**：B-gen shim 的 setTimeout(0) 在无 host 下为 microtask 同序触发，测「同序多个 setTimeout + Promise.then」须注意入队序。
 
 ### input.valueAsDate + stepUp/stepDown（本轮 R3317，engine JS shim）—— 表单转换 API 面补缺（valueAsNumber R2836 同族）
 
