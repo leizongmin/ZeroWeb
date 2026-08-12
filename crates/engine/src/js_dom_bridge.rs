@@ -37,6 +37,10 @@ pub use selector_match::*;
 mod label;
 pub use label::*;
 
+// 表单控件激活事务所需的纯 DOM 查询。
+mod form_activation;
+pub use form_activation::*;
+
 // `register_dom_callbacks` —— 全部 `__zw_*` 回调注册（R2976 从本文件拆出，控制主文件行数）。最大单体函数。
 mod callbacks;
 pub use callbacks::*;

@@ -2,6 +2,14 @@
 
 use std::collections::HashMap;
 
+/// radio 用户激活是否需要改变 checkedness。
+///
+/// 已选 radio 重复激活为 no-op，不派发 input/change。
+/// https://html.spec.whatwg.org/multipage/input.html#radio-button-state-(type=radio)
+pub const fn radio_activation_changes_checkedness(checked: bool) -> bool {
+    !checked
+}
+
 /// 页面内 opaque DOM 节点句柄。
 ///
 /// 当前承载 engine `NodeId` 的 ffi 值；调用方不得解析或假设其分配顺序。
@@ -465,6 +473,12 @@ mod tests {
         let state = store.get("#name").expect("state");
         assert_eq!(state.value, "AD");
         assert_eq!((state.selection_start, state.selection_end), (1, 1));
+    }
+
+    #[test]
+    fn checked_radio_reactivation_is_noop() {
+        assert!(!radio_activation_changes_checkedness(true));
+        assert!(radio_activation_changes_checkedness(false));
     }
 
     #[test]

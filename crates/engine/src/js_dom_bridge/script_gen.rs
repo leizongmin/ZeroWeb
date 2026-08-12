@@ -223,6 +223,13 @@ t.checked=true;\
     )
 }
 
+/// 构造设置 checkbox/radio checkedness 的宿主脚本，不派发事件。
+pub fn script_set_control_checked(selector: &str, checked: bool) -> String {
+    let esc = escape_js_string(selector);
+    let checked = if checked { "true" } else { "false" };
+    format!("(function(){{var e=document.querySelector('{esc}');if(e)e.checked={checked};}})()")
+}
+
 /// 构造「设置 location.hash」的 shim 脚本（P1a 导航，R3053）。宿主在 `<a href="#...">` 被 click 时执行：
 /// 调 shim `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange 事件 + 触 onhashchange）。
 /// headless 无 viewport → 不滚动到锚。hash 经 `escape_js_string` 安全嵌入。

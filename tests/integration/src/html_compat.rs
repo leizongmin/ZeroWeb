@@ -124,3 +124,20 @@ fn label_click_activates_associated_control_once() {
         Some("#radio")
     );
 }
+
+#[test]
+fn release_uses_stable_pressed_target_across_reflow() {
+    let pressed = zero_page_runtime::PageTarget::new(
+        zero_page_runtime::PageNodeRef::new(7, 3, zero_page_runtime::PageNodeHandle::new(42)),
+        "#pressed".to_string(),
+    );
+    let current_hover = zero_page_runtime::PageTarget::new(
+        zero_page_runtime::PageNodeRef::new(7, 3, zero_page_runtime::PageNodeHandle::new(99)),
+        "#hover".to_string(),
+    );
+
+    assert!(pressed.node_ref().is_current(7, 3));
+    assert_eq!(pressed.selector(), "#pressed");
+    assert_ne!(pressed.node_ref(), current_hover.node_ref());
+    assert!(!pressed.node_ref().is_current(7, 4));
+}

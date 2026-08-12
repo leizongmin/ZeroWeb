@@ -9,8 +9,8 @@ use zero_engine::{
     is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
     script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
     script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_reset_form_controls,
-    script_run_classic_page, script_select_radio_checked, script_text_control_snapshot, script_text_delete,
-    script_text_delete_without_event, script_text_input, script_text_input_without_event,
+    script_run_classic_page, script_select_radio_checked, script_set_control_checked, script_text_control_snapshot,
+    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
     script_toggle_checkbox_checked,
 };
 
@@ -641,6 +641,11 @@ pub fn apply_toggle_radio_without_events(ctx: &mut PageScriptContext<'_>, select
     apply_toggle_radio_with_events(ctx, selector, false)
 }
 
+/// 设置 checkbox/radio checkedness，不派发页面事件。
+pub fn apply_set_checked_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, checked: bool) -> bool {
+    apply_checkedness_script(ctx, &script_set_control_checked(selector, checked))
+}
+
 fn apply_toggle_radio_with_events(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) -> bool {
     let snap = ctx.html.clone();
     if !is_radio(&snap, selector) {
@@ -665,6 +670,27 @@ fn apply_toggle_radio_with_events(ctx: &mut PageScriptContext<'_>, selector: &st
     let html_snap = ctx.html.clone();
     let _ = apply_recorded_mutations(ctx, &html_snap);
     true
+}
+
+/// checkedness 激活提交后按规范顺序派发不可取消的 input/change。
+pub fn dispatch_checkedness_input_change(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let script = format!(
+        "{};{}",
+        script_dispatch_dom_event(selector, "input", None),
+        script_dispatch_dom_event(selector, "change", None)
+    );
+    if let Err(error) = ctx.js_worker.execute_script_direct(&script) {
+        warn!("dispatch checkedness events on {selector}: {error}");
+        return false;
+    }
+    let html_snapshot = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
 
 fn apply_checkedness_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
@@ -1793,6 +1819,48 @@ mod tests {
             !outcome3.default_allowed && !outcome3.html_changed,
             "type=button 非 submit → 默认 outcome（不提交/不导航）"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn prevented_reset_and_submit_skip_default_actions() {
+        let html = r#"<html><body>
+            <form id="f" action="/submitted">
+              <input id="name" name="name" value="base">
+              <button id="reset" type="reset">Reset</button>
+              <button id="submit" type="submit">Submit</button>
+            </form>
+            <script>
+              var form = document.querySelector('#f');
+              form.addEventListener('reset', function(event) { event.preventDefault(); });
+              form.addEventListener('submit', function(event) { event.preventDefault(); });
+            </script>
+        </body></html>"#;
+        let mut worker = RendererJsWorker::spawn(150);
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "https://example.com/page",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        let edited = apply_text_input(&mut ctx, "#name", "x");
+        assert_eq!(edited.snapshot.expect("edited snapshot").value, "basex");
+        assert!(!apply_reset_on_click(&mut ctx, "#reset"));
+        let current = worker
+            .execute_script_direct(&script_text_control_snapshot("#name"))
+            .expect("current snapshot");
+        assert_eq!(
+            serde_json::from_str::<(String, usize, usize)>(&current).unwrap().0,
+            "basex"
+        );
+
+        let submit = apply_submit_on_click(&mut ctx, "#submit");
+        assert!(!submit.default_allowed);
+        assert!(!submit.html_changed);
         worker.shutdown();
     }
 

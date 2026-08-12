@@ -150,6 +150,17 @@ struct PendingLoad {
     emit_load_complete: bool,
 }
 
+enum CheckedActivationRollback {
+    Checkbox(bool),
+    Radio(Option<String>),
+}
+
+struct CheckedActivation {
+    target: String,
+    changed: bool,
+    rollback: CheckedActivationRollback,
+}
+
 /// 渲染进程运行时状态。
 struct RendererRuntime {
     /// 向浏览器写入 IPC（stdout）。
@@ -1057,6 +1068,13 @@ impl RendererRuntime {
 
     /// P1a radio：click 命中 radio → set checked + 同 name 组兄弟 unset + 派发 'change'。
     fn toggle_radio_at(&mut self, selector: &str) -> Result<(), String> {
+        if !zero_page_runtime::radio_activation_changes_checkedness(zero_engine::has_attribute(
+            &self.cached_html,
+            selector,
+            "checked",
+        )) {
+            return Ok(());
+        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -1075,6 +1093,101 @@ impl RendererRuntime {
             self.publish_webview(None, true)?;
         }
         Ok(())
+    }
+
+    fn prepare_checked_activation(&mut self, target: &str) -> Option<CheckedActivation> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        if zero_engine::is_checkbox(&self.cached_html, target) {
+            let original = zero_engine::has_attribute(&self.cached_html, target, "checked");
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            let changed = page_scripts::apply_set_checked_without_events(&mut ctx, target, !original);
+            return Some(CheckedActivation {
+                target: target.to_string(),
+                changed,
+                rollback: CheckedActivationRollback::Checkbox(original),
+            });
+        }
+        if zero_engine::is_radio(&self.cached_html, target) {
+            let original = zero_engine::checked_radio_group_selector(&self.cached_html, target);
+            let changed = zero_page_runtime::radio_activation_changes_checkedness(original.as_deref() == Some(target));
+            if changed {
+                let mut ctx = PageScriptContext {
+                    html: &mut self.cached_html,
+                    url: &url,
+                    js_worker: &self.js_worker,
+                    webview: self.webview.as_mut(),
+                };
+                let _ = page_scripts::apply_toggle_radio_without_events(&mut ctx, target);
+            }
+            return Some(CheckedActivation {
+                target: target.to_string(),
+                changed,
+                rollback: CheckedActivationRollback::Radio(original),
+            });
+        }
+        None
+    }
+
+    fn finish_checked_activation(
+        &mut self,
+        activation: CheckedActivation,
+        click: DomDispatchResult,
+    ) -> Result<(), String> {
+        if !activation.changed {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        if click.default_allowed {
+            if self.javascript_enabled {
+                let mut ctx = PageScriptContext {
+                    html: &mut self.cached_html,
+                    url: &url,
+                    js_worker: &self.js_worker,
+                    webview: self.webview.as_mut(),
+                };
+                let _ = page_scripts::dispatch_checkedness_input_change(&mut ctx, &activation.target);
+            }
+            self.publish_webview(None, true)?;
+            return Ok(());
+        }
+
+        let mut ctx = PageScriptContext {
+            html: &mut self.cached_html,
+            url: &url,
+            js_worker: &self.js_worker,
+            webview: self.webview.as_mut(),
+        };
+        match activation.rollback {
+            CheckedActivationRollback::Checkbox(original) => {
+                let _ = page_scripts::apply_set_checked_without_events(&mut ctx, &activation.target, original);
+            }
+            CheckedActivationRollback::Radio(Some(previous)) if previous != activation.target => {
+                let _ = page_scripts::apply_toggle_radio_without_events(&mut ctx, &previous);
+            }
+            CheckedActivationRollback::Radio(None) => {
+                let _ = page_scripts::apply_set_checked_without_events(&mut ctx, &activation.target, false);
+            }
+            CheckedActivationRollback::Radio(Some(_)) => {}
+        }
+        if click.html_changed {
+            self.publish_webview(None, true)?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
+        let activation = self.prepare_checked_activation(&target);
+        let handled = activation.is_some();
+        let click = self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None);
+        if let Some(activation) = activation {
+            self.finish_checked_activation(activation, click)?;
+        }
+        Ok((click, handled))
     }
 
     fn activate_form_control_at(&mut self, selector: &str) -> Result<bool, String> {
@@ -1102,8 +1215,8 @@ impl RendererRuntime {
             self.blur_focused()?;
             self.focus_target(&control)?;
         }
-        let click = self.dispatch_dom_at(Some(control.clone()), 0.0, 0.0, "click", None);
-        if click.default_allowed {
+        let (click, checked_handled) = self.dispatch_checked_click(control.clone())?;
+        if click.default_allowed && !checked_handled {
             self.activate_form_control_at(&control)?;
         }
         Ok(true)
@@ -1952,7 +2065,27 @@ impl RendererRuntime {
         } else {
             None
         };
-        let result = self.dispatch_dom_at(params.selector, params.x, params.y, &event_type, detail);
+        let (result, checked_handled) = if event_type == "click" {
+            let target = params.selector.clone().or_else(|| {
+                self.webview
+                    .as_ref()
+                    .and_then(|webview| webview.hit_test_element(params.x, params.y))
+                    .map(|hit| selector_from_element_hit(&hit))
+            });
+            if let Some(target) = target {
+                self.dispatch_checked_click(target)?
+            } else {
+                (
+                    self.dispatch_dom_at(None, params.x, params.y, &event_type, detail),
+                    false,
+                )
+            }
+        } else {
+            (
+                self.dispatch_dom_at(params.selector, params.x, params.y, &event_type, detail),
+                false,
+            )
+        };
         // 浏览器主进程通过 DispatchDomEvent 转发输入。该路径也必须执行与
         // KeyboardEvent/MouseEvent 相同的表单默认行为，否则多进程模式下
         // 点击输入框后无法聚焦、按键也不会更新 value。
@@ -1981,7 +2114,7 @@ impl RendererRuntime {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
             }
-            if !self.activate_form_control_at(&target)? {
+            if !checked_handled && !self.activate_form_control_at(&target)? {
                 self.activate_label_at(&target)?;
             }
         }
@@ -2002,13 +2135,29 @@ impl RendererRuntime {
             MouseEventType::Click => "click",
             MouseEventType::DblClick => "dblclick",
         };
-        // R3052：capture click 的 default_allowed（preventDefault 未调用）供 anchor 导航判定。
-        let click_default_allowed = if event_type != "mousemove" {
-            self.dispatch_dom_at(None, params.x, params.y, event_type, None)
-                .default_allowed
+        let (dispatch_result, checked_handled) = if event_type == "click" {
+            let target = self
+                .webview
+                .as_ref()
+                .and_then(|webview| webview.hit_test_element(params.x, params.y))
+                .map(|hit| selector_from_element_hit(&hit));
+            if let Some(target) = target {
+                self.dispatch_checked_click(target)?
+            } else {
+                (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
+            }
+        } else if event_type != "mousemove" {
+            (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
         } else {
-            true
+            (
+                DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                },
+                false,
+            )
         };
+        let click_default_allowed = dispatch_result.default_allowed;
         // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
         // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
         // dispatch_dom_at 已据命中点更新 pointer target。
@@ -2031,7 +2180,9 @@ impl RendererRuntime {
                 self.focus_target(&target)?;
             }
             // P1a form submit/checkbox/radio/reset/label：仅 click 未取消时执行默认动作。
-            if click_default_allowed && self.activate_form_control_at(&target)? {
+            if checked_handled {
+                // checkedness transaction already committed or rolled back.
+            } else if click_default_allowed && self.activate_form_control_at(&target)? {
                 // 已激活。
             } else if click_default_allowed && self.activate_label_at(&target)? {
                 // 已转发到关联控件。

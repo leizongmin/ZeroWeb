@@ -18,7 +18,7 @@ pub use frame_invalidation::{FrameInvalidation, FrameTransaction};
 pub mod form_control;
 pub use form_control::{
     BlurredFormControl, FormControlState, FormControlStateStore, PageInteractionState, PageNodeHandle, PageNodeRef,
-    PageTarget,
+    PageTarget, radio_activation_changes_checkedness,
 };
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};

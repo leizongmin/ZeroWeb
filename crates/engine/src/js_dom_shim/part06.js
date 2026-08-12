@@ -1808,6 +1808,14 @@
         inputType: detail.inputType,
         isComposing: !!detail.isComposing
       });
+    } else if (type === 'input') {
+      ev = new InputEvent(type, { bubbles: true, cancelable: false });
+    } else if (type === 'change' || type === 'focus' || type === 'blur' ||
+               type === 'focusin' || type === 'focusout') {
+      ev = _makeEvent(type, {
+        bubbles: type === 'change' || type === 'focusin' || type === 'focusout',
+        cancelable: false
+      });
     } else if (detail && (detail.key || detail.code)) {
       ev = new KeyboardEvent(type, {
         bubbles: true,

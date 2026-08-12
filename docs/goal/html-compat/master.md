@@ -2,8 +2,8 @@
 
 ## 当前状态
 
-- 阶段：M1
-- 状态：A/B/C/D 完成，E 实施中
+- 阶段：M2
+- 状态：M1 完成，M2 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -21,8 +21,8 @@
 
 | 里程碑 | 主题 | 状态 |
 |---|---|---|
-| M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | in_progress |
-| M2 | `page-runtime` 共享默认动作核心 | pending |
+| M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | completed |
+| M2 | `page-runtime` 共享默认动作核心 | in_progress |
 | M3 | 文本、选择/表单、导航/交互元素族 | pending |
 | M4 | live renderer WebDriver 与 WPT testdriver | pending |
 
@@ -39,9 +39,9 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] JavaScript 禁用时 UA 默认动作
 - [x] beforeinput/input 与键盘入口统一
 - [x] focusability、焦点事件与 label 激活
-- [ ] checkbox/radio activation rollback
-- [ ] reset/submit 取消语义完整验收
+- [x] checkbox/radio activation rollback
+- [x] reset/submit 取消语义完整验收
 
 ## 下一步
 
-提交 M1-E focus/label 切片，继续完成 activation rollback 与表单取消验收。
+提交 M1-E activation/forms 切片，进入 M2 `page-runtime` 共享默认动作核心。
