@@ -635,8 +635,8 @@ pub fn create_fill_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Fill Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl, atlas_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl), Some(atlas_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -646,7 +646,7 @@ pub fn create_fill_pipeline(
             module: &shader_module,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[fill_vertex_buffer_layout()],
+            buffers: &[Some(fill_vertex_buffer_layout())],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
@@ -673,8 +673,8 @@ pub fn create_fill_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -713,8 +713,8 @@ pub fn create_rounded_rect_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Rounded Rect Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -724,7 +724,7 @@ pub fn create_rounded_rect_pipeline(
             module: &shader_module,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[rounded_rect_vertex_buffer_layout()],
+            buffers: &[Some(rounded_rect_vertex_buffer_layout())],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
@@ -751,8 +751,8 @@ pub fn create_rounded_rect_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -790,8 +790,8 @@ pub fn create_gradient_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Gradient Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl, gradient_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl), Some(gradient_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -801,7 +801,7 @@ pub fn create_gradient_pipeline(
             module: &shader_module,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[gradient_vertex_buffer_layout()],
+            buffers: &[Some(gradient_vertex_buffer_layout())],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
@@ -828,8 +828,8 @@ pub fn create_gradient_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -849,8 +849,8 @@ pub fn create_image_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Image Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl, image_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl), Some(image_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -860,7 +860,7 @@ pub fn create_image_pipeline(
             module: &shader_module,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[image_vertex_buffer_layout()],
+            buffers: &[Some(image_vertex_buffer_layout())],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
@@ -887,8 +887,8 @@ pub fn create_image_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -908,8 +908,8 @@ pub fn create_blur_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Blur Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl, src_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl), Some(src_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -949,8 +949,8 @@ pub fn create_blur_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -972,8 +972,8 @@ pub fn create_color_filter_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Color Filter Pipeline Layout"),
-        bind_group_layouts: &[uniform_bgl, src_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_bgl), Some(src_bgl)],
+        immediate_size: 0,
     });
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1013,8 +1013,8 @@ pub fn create_color_filter_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 
@@ -1052,8 +1052,8 @@ pub fn create_transform_pipeline(
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Transform Pipeline Layout"),
-        bind_group_layouts: &[transform_uniform_bgl, src_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(transform_uniform_bgl), Some(src_bgl)],
+        immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Transform Pipeline"),
@@ -1092,8 +1092,8 @@ pub fn create_transform_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
         cache: None,
+        multiview_mask: None,
     })
 }
 

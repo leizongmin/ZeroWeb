@@ -65,7 +65,7 @@ impl super::GpuRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -140,6 +140,7 @@ impl super::GpuRenderer {
                     label: Some("Color Filter Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view_b,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -149,6 +150,7 @@ impl super::GpuRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_scissor_rect(sx, sy, sw, sh);
                 pass.set_pipeline(&self.color_filter_pipeline);
@@ -228,7 +230,7 @@ impl super::GpuRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -322,6 +324,7 @@ impl super::GpuRenderer {
                     label: Some("Transform Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view_b,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -331,6 +334,7 @@ impl super::GpuRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_scissor_rect(sx, sy, sw, sh);
                 pass.set_pipeline(&self.transform_pipeline);
@@ -404,7 +408,7 @@ impl super::GpuRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 

@@ -200,9 +200,9 @@ impl RenderTarget {
         }
     }
 
-    fn present(self, device: &wgpu::Device) {
+    fn present(self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if let Self::Surface { output, .. } = self {
-            output.present();
+            queue.present(output);
             GpuRenderer::poll_after_present(device);
         }
     }
@@ -212,9 +212,12 @@ impl GpuRenderer {
     /// 创建无头模式的 GPU 渲染器（用于测试和 CPU 回读）
     pub fn new_headless(width: u32, height: u32) -> Result<Self, String> {
         let _guard = GPU_CREATE_MUTEX.lock().unwrap();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            flags: wgpu::InstanceFlags::empty(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         // 优先请求软件 fallback adapter（Linux lavapipe/LLVMpipe，输出确定性利于测试）；
@@ -225,25 +228,28 @@ impl GpuRenderer {
             power_preference: wgpu::PowerPreference::default(),
             force_fallback_adapter: true,
             compatible_surface: None,
+            apply_limit_buckets: false,
         }))
+        .ok()
         .or_else(|| {
             pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                apply_limit_buckets: false,
             }))
+            .ok()
         })
         .ok_or("无法获取 wgpu 适配器（软件 fallback 与真实 GPU 均不可用）")?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("ZeroWeb GPU Device (headless)"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::Performance,
-            },
-            None,
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("ZeroWeb GPU Device (headless)"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::Performance,
+            experimental_features: Default::default(),
+            trace: Default::default(),
+        }))
         .map_err(|e| format!("设备请求失败: {e}"))?;
 
         let device = Arc::new(device);
@@ -263,9 +269,12 @@ impl GpuRenderer {
     /// 创建窗口模式的 GPU 渲染器
     pub fn new_for_window(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let _guard = GPU_CREATE_MUTEX.lock().unwrap();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            flags: wgpu::InstanceFlags::empty(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let surface = instance
@@ -276,18 +285,18 @@ impl GpuRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
+            apply_limit_buckets: false,
         }))
-        .ok_or("无法获取支持表面的 wgpu 适配器")?;
+        .map_err(|e| format!("无法获取支持表面的 wgpu 适配器: {e}"))?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("ZeroWeb GPU Device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::Performance,
-            },
-            None,
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("ZeroWeb GPU Device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::Performance,
+            experimental_features: Default::default(),
+            trace: Default::default(),
+        }))
         .map_err(|e| format!("设备请求失败: {e}"))?;
 
         // 选择表面格式
@@ -390,7 +399,7 @@ impl GpuRenderer {
     pub fn suspend_present(&mut self) {
         self.present_suspended = true;
         if self.surface.is_some() {
-            self.device.poll(wgpu::Maintain::Wait);
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         }
     }
 
@@ -427,6 +436,7 @@ impl GpuRenderer {
             let config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: self.surface_format,
+                color_space: wgpu::SurfaceColorSpace::Auto,
                 width: w,
                 height: h,
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -911,6 +921,7 @@ impl GpuRenderer {
                 label: Some("Full Scene Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
@@ -920,6 +931,7 @@ impl GpuRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             // 1. Shadows
@@ -973,7 +985,7 @@ impl GpuRenderer {
             self.apply_transform_filters_headless(width, height, &transforms, scale);
         }
 
-        target.present(&device);
+        target.present(&device, &queue);
         true
     }
 
@@ -1292,7 +1304,7 @@ impl GpuRenderer {
                 address_mode_w: wgpu::AddressMode::ClampToEdge,
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                 ..Default::default()
             });
             let grad_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1715,12 +1727,14 @@ impl GpuRenderer {
         match (&self.surface, &self.headless_texture) {
             (Some(surface), _) => {
                 let output = match surface.get_current_texture() {
-                    Ok(output) => output,
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    wgpu::CurrentSurfaceTexture::Success(output) | wgpu::CurrentSurfaceTexture::Suboptimal(output) => {
+                        output
+                    }
+                    wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                         self.configure_surface(width, height);
                         return None;
                     }
-                    Err(_) => return None,
+                    _ => return None,
                 };
                 let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
                 Some(RenderTarget::Surface { output, view })
@@ -1786,12 +1800,12 @@ impl GpuRenderer {
             (Some(surface), _) => {
                 // 窗口模式
                 let output = match surface.get_current_texture() {
-                    Ok(tex) => tex,
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    wgpu::CurrentSurfaceTexture::Success(tex) | wgpu::CurrentSurfaceTexture::Suboptimal(tex) => tex,
+                    wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                         self.configure_surface(width, height);
                         return;
                     }
-                    Err(_) => return,
+                    _ => return,
                 };
                 let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -1809,7 +1823,7 @@ impl GpuRenderer {
                 );
 
                 self.queue.submit(std::iter::once(encoder.finish()));
-                output.present();
+                self.queue.present(output);
                 Self::poll_after_present(&self.device);
             }
             (None, Some(tex)) => {
@@ -1843,11 +1857,11 @@ impl GpuRenderer {
                     .map(|v| v.eq_ignore_ascii_case("wayland"))
                     .unwrap_or(false);
             if on_wayland {
-                device.poll(wgpu::Maintain::Poll);
+                let _ = device.poll(wgpu::PollType::Poll);
                 return;
             }
         }
-        device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
 
     /// 从无头纹理回读像素数据（RGBA8）
@@ -1906,7 +1920,7 @@ impl GpuRenderer {
         // 映射缓冲区并读取数据
         let buffer_slice = output_buffer.slice(..);
         // poll device to ensure copy is complete
-        self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -1914,9 +1928,9 @@ impl GpuRenderer {
         });
 
         // 等待映射完成
-        self.device.poll(wgpu::Maintain::Wait);
-        rx.recv().ok().and_then(|r| r.ok()).map(|_| {
-            let data = buffer_slice.get_mapped_range();
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().ok().and_then(|r| r.ok()).and_then(|_| {
+            let data = buffer_slice.get_mapped_range().ok()?;
             // 去除每行填充字节
             let mut result = Vec::with_capacity((width * height * bytes_per_pixel) as usize);
             for row in data.chunks(padded_bytes_per_row as usize) {
@@ -1924,7 +1938,7 @@ impl GpuRenderer {
             }
             drop(data);
             output_buffer.unmap();
-            result
+            Some(result)
         })
     }
 
@@ -1942,6 +1956,7 @@ impl GpuRenderer {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
@@ -1951,6 +1966,7 @@ impl GpuRenderer {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         // 设置裁剪/剪刀区域
@@ -2199,6 +2215,7 @@ fn run_blur_pass(
             label: Some(label),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &dst_view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -2208,6 +2225,7 @@ fn run_blur_pass(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         let (sx, sy, sw, sh) = scissor;
         pass.set_scissor_rect(sx, sy, sw, sh);
@@ -2260,7 +2278,7 @@ fn create_atlas_resources(
         address_mode_w: wgpu::AddressMode::ClampToEdge,
         mag_filter: wgpu::FilterMode::Nearest,
         min_filter: wgpu::FilterMode::Nearest,
-        mipmap_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
 
