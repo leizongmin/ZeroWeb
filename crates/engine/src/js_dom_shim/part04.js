@@ -1468,7 +1468,7 @@
             // identity = selector（querySelector/getElementById 元素）或 handle（createElement
             // 元素，path A）。sel 空时用 handle，host RectBridge handler 查持久 handle→selector map
             // 解析；map 未命中/未注册 → 空串 → 零 rect（= 旧行为，零回归）。
-            return _domRectFromId(sel || handle) || { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: function() { return this; } };
+            return _domRectFromId(sel || handle) || _makeDomRect(0, 0, 0, 0);
           };
         }
         // `el.getClientRects()`（R2828）——DOMRectList（浮层定位库 popper.js/tether 取 [0] 测量）。

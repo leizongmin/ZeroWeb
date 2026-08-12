@@ -691,3 +691,189 @@ fn test_navigator_service_worker_query_and_unregister_r3318() {
     );
 }
 
+// ── R3319：DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化 ──
+//
+// 生产 always-on B-gen shim 路径（part01.js DOMRectReadOnly/DOMRect 构造器 + _makeDomRect 工厂；
+// part04 gBCR fallback / part05 _domRectFromId / part06 Range.getBoundingClientRect 迁移到 _makeDomRect）。
+// spec https://drafts.fxtf.org/geometry/#DOMRect。**此前 B-gen 缺 DOMRect/DOMRectReadOnly 全局**——
+// getBoundingClientRect / getClientRects / IO·RO entry / Range rect 全返无原型 plain object，
+// 库 `rect instanceof DOMRectReadOnly` / `instanceof DOMRect` 恒 false（popper.js / floating-ui identity 检查失败）。
+// DOMRect is-a DOMRectReadOnly（继承 prototype）。
+
+#[test]
+fn test_dom_rect_constructors_r3319() {
+    // DOMRect/DOMRectReadOnly 全局存在 + 字段 + 派生属性 + instanceof 继承 + toJSON。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 构造器存在 + 字段 + 派生属性（top/left/right/bottom 从 x/y/width/height 计算同步）。
+    sandbox
+        .execute(
+            "globalThis.__hasDRO = String(typeof DOMRectReadOnly === 'function');\
+             globalThis.__hasDR = String(typeof DOMRect === 'function');\
+             var r = new DOMRect(10, 20, 100, 50);\
+             globalThis.__rX = String(r.x);\
+             globalThis.__rW = String(r.width);\
+             globalThis.__rTop = String(r.top);\
+             globalThis.__rLeft = String(r.left);\
+             globalThis.__rRight = String(r.right);\
+             globalThis.__rBottom = String(r.bottom);\
+             /* instanceof 继承：DOMRect is-a DOMRectReadOnly */\
+             globalThis.__drIsDR = String(r instanceof DOMRect);\
+             globalThis.__drIsDRO = String(r instanceof DOMRectReadOnly);\
+             /* DOMRectReadOnly 实例非 DOMRect（子类不反向）*/\
+             var ro = new DOMRectReadOnly(1, 2, 3, 4);\
+             globalThis.__roIsDRO = String(ro instanceof DOMRectReadOnly);\
+             globalThis.__roIsDR = String(ro instanceof DOMRect);\
+             /* toJSON 含全 8 字段 */\
+             globalThis.__jsonKeys = Object.keys(r.toJSON()).sort().join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hasDRO").unwrap().value,
+        "true",
+        "DOMRectReadOnly 全局构造器存在（B-gen 补缺）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasDR").unwrap().value,
+        "true",
+        "DOMRect 全局构造器存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rX").unwrap().value,
+        "10",
+        "new DOMRect(10,...).x = 10"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rW").unwrap().value,
+        "100",
+        "new DOMRect(...,100,...).width = 100"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rTop").unwrap().value,
+        "20",
+        "派生 top = y = 20"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rLeft").unwrap().value,
+        "10",
+        "派生 left = x = 10"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rRight").unwrap().value,
+        "110",
+        "派生 right = x + width = 110"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__rBottom").unwrap().value,
+        "70",
+        "派生 bottom = y + height = 70"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__drIsDR").unwrap().value,
+        "true",
+        "new DOMRect() instanceof DOMRect"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__drIsDRO").unwrap().value,
+        "true",
+        "DOMRect is-a DOMRectReadOnly（继承 prototype）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__roIsDRO").unwrap().value,
+        "true",
+        "new DOMRectReadOnly() instanceof DOMRectReadOnly"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__roIsDR").unwrap().value,
+        "false",
+        "DOMRectReadOnly 实例非 DOMRect（子类不反向）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__jsonKeys").unwrap().value,
+        "bottom,height,left,right,top,width,x,y",
+        "toJSON 含全 8 字段（x/y/top/left/right/bottom/width/height）"
+    );
+}
+
+#[test]
+fn test_get_bounding_client_rect_returns_domrect_r3319() {
+    // getBoundingClientRect 返回值 instanceof DOMRect/DOMRectReadOnly（真实 rect 经 _domRectFromId +
+    // 零 fallback 均原型化）。注册 mock rect bridge。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id='d'>x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    // mock rect bridge：selector → 真实 rect "10,20,100,50"；handle（'__' 开头 detached）→ 空串（零 fallback）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| match args.first() {
+            Some(s) if s.starts_with("__") => String::new(),
+            _ => "10,20,100,50".to_string(),
+        }),
+    );
+
+    // 真实 rect 元素（#d，selector 命中）→ instanceof DOMRect/DOMRectReadOnly + 字段正确。
+    sandbox
+        .execute(
+            "var r = document.querySelector('#d').getBoundingClientRect();\
+             globalThis.__realIsDR = String(r instanceof DOMRect);\
+             globalThis.__realIsDRO = String(r instanceof DOMRectReadOnly);\
+             globalThis.__realRight = String(r.right);\
+             /* detached createElement（handle，mock 返空 → 零 fallback rect）仍 instanceof DOMRect */\
+             var e = document.createElement('div');\
+             var z = e.getBoundingClientRect();\
+             globalThis.__zeroIsDR = String(z instanceof DOMRect);\
+             globalThis.__zeroW = String(z.width);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__realIsDR").unwrap().value,
+        "true",
+        "getBoundingClientRect（真实 rect）返回 instanceof DOMRect"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__realIsDRO").unwrap().value,
+        "true",
+        "getBoundingClientRect 返回 instanceof DOMRectReadOnly"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__realRight").unwrap().value,
+        "110",
+        "真实 rect 派生 right = x + width = 110"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__zeroIsDR").unwrap().value,
+        "true",
+        "detached createElement getBoundingClientRect（零 fallback）仍 instanceof DOMRect"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__zeroW").unwrap().value,
+        "0",
+        "detached 元素 rect width = 0（零 fallback）"
+    );
+}
+

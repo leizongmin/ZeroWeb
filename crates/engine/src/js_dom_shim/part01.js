@@ -1083,8 +1083,52 @@
   //   变化触发的后续通知为 Slice 2b（须 host render-loop tick 或 __zwResolveCallback 重算钩子）；
   // ② handle-identity（createElement）元素 sel 为空 → 零 rect（同 gBCR 限制，path A follow-up）；
   // ③ rootMargin px/% 已支持（R2966，CSS margin 简写展开/收缩 root rect，% 按 root 维度）；④ root 为元素时取其 selector rect。
+  // R3319：DOMRectReadOnly + DOMRect 全局构造器（Geometry Interfaces spec §3）。
+  // **此前 B-gen shim 缺**——getBoundingClientRect / getClientRects / IO·RO entry 的 contentRect /
+  // boundingClientRect 全返**无原型 plain object**（无 DOMRect/DOMRectReadOnly 身份），库做鸭子类型
+  // `rect instanceof DOMRectReadOnly` / `instanceof DOMRect` 恒 false（popper.js / floating-ui /
+  // 测量库的 identity 检查失败）。参照 A-gen dom_bridge.rs DOMRectReadOnly stub，在 B-gen 补真实
+  // prototype 链：DOMRectReadOnly（基类，spec §3.2）+ DOMRect（可读写子类，spec §3.3，gBCR 返回类型）。
+  // 设计：prototype 上以 getter 派生 top/left/right/bottom（保持与 x/y/width/height 同步，spec 计算属性）；
+  // _makeDomRect(x,y,w,h) 工厂返 `new DOMRect(...)`（共享原型 → instanceof 成立）。三处 plain-object
+  // rect 工厂（_io_domRect / _domRectFromId / gBCR 零 fallback）迁移到 _makeDomRect。
+  // https://drafts.fxtf.org/geometry/#DOMRect
+  function _zwDomRectProto(ReadOnly) {
+    var p = {};
+    // 派生属性（getter，与 x/y/width/height 实例字段同步——spec §3.2 计算属性）。
+    Object.defineProperty(p, 'top', { get: function () { return this.y; }, enumerable: true });
+    Object.defineProperty(p, 'left', { get: function () { return this.x; }, enumerable: true });
+    Object.defineProperty(p, 'right', { get: function () { return this.x + this.width; }, enumerable: true });
+    Object.defineProperty(p, 'bottom', { get: function () { return this.y + this.height; }, enumerable: true });
+    p.toJSON = function () {
+      return { x: this.x, y: this.y, top: this.y, left: this.x,
+               right: this.x + this.width, bottom: this.y + this.height,
+               width: this.width, height: this.height };
+    };
+    return p;
+  }
+  // DOMRectReadOnly：spec §3.2，4 数值字段 + 4 派生 + toJSON。
+  function DOMRectReadOnly(x, y, width, height) {
+    this.x = +x || 0; this.y = +y || 0; this.width = +width || 0; this.height = +height || 0;
+  }
+  DOMRectReadOnly.prototype = _zwDomRectProto(true);
+  // DOMRect：spec §3.3，继承 DOMRectReadOnly（gBCR / getClientRects 返回类型，可读写）。
+  function DOMRect(x, y, width, height) {
+    this.x = +x || 0; this.y = +y || 0; this.width = +width || 0; this.height = +height || 0;
+  }
+  // DOMRect 继承 DOMRectReadOnly prototype（spec is-a 关系，`new DOMRect() instanceof DOMRectReadOnly` 成立）。
+  DOMRect.prototype = Object.create(DOMRectReadOnly.prototype);
+  // 保持 constructor 指向 DOMRect（Object.create 后修正）。
+  Object.defineProperty(DOMRect.prototype, 'constructor', { value: DOMRect, writable: true, configurable: true });
+  globalThis.DOMRectReadOnly = globalThis.DOMRectReadOnly || DOMRectReadOnly;
+  globalThis.DOMRect = globalThis.DOMRect || DOMRect;
+  // 共享 rect 工厂：返 `new DOMRect(...)`（共享原型 → instanceof DOMRect / DOMRectReadOnly 成立）。
+  function _makeDomRect(x, y, w, h) {
+    return new DOMRect(x, y, w, h);
+  }
+  // 兼容旧名（IO/RO 内部仍调 _io_domRect，现委托 _makeDomRect）。
   function _io_domRect(x, y, w, h) {
-    return { x: x, y: y, top: y, left: x, right: x + w, bottom: y + h, width: w, height: h, toJSON: function() { return this; } };
+    return _makeDomRect(x, y, w, h);
   }
   // 读 target/root 的 rect（复用 gBCR）；identity = selector 或 handle（path A）。
   // 空 / handler 未注册 / 未命中 → 零 rect。

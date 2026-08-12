@@ -1607,10 +1607,8 @@
         if (s && s.indexOf(',') >= 0) {
           var p = s.split(',');
           var x = +p[0], y = +p[1], w = +p[2], h = +p[3];
-          return {
-            x: x, y: y, top: y, left: x, right: x + w, bottom: y + h,
-            width: w, height: h, toJSON: function () { return this; },
-          };
+          // R3319：经 _makeDomRect 返 DOMRect（instanceof DOMRect/DOMRectReadOnly 成立）。
+          return _makeDomRect(x, y, w, h);
         }
       } catch (_e) {}
     }
