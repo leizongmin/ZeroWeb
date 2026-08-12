@@ -19,6 +19,8 @@ pub struct FontRelativeMetrics {
     pub ex_height: f64,
     /// U+0030 advance / em，用于 `ch`。
     pub ch_width: f64,
+    /// `@font-face size-adjust` 缩放因子。
+    pub size_adjust: f64,
 }
 
 /// 将相对长度转换为绝对像素值。
@@ -317,8 +319,10 @@ pub fn resolve_computed_style_with_font_metrics(
         LengthValue::Percentage(v) => v / 100.0 * font_size_context,
         other => resolve_length(other, font_size_context, viewport_width, viewport_height),
     };
+    // https://drafts.csswg.org/css-fonts-5/#descdef-font-face-size-adjust
     // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
     // `em` stays tied to computed font-size, while ex/ch use metrics from the adjusted used font.
+    // The property preempts the descriptor, so exactly one adjustment is applied.
     let font_metrics = font_metrics.map(|mut metrics| {
         let scale = match style.font_size_adjust {
             crate::property::types::FontSizeAdjustValue::Adjust {
@@ -332,7 +336,13 @@ pub fn resolve_computed_style_with_font_metrics(
                 };
                 aspect.filter(|value| *value > 0.0).map_or(1.0, |value| target / value)
             }
-            _ => 1.0,
+            crate::property::types::FontSizeAdjustValue::Adjust { .. } => 1.0,
+            crate::property::types::FontSizeAdjustValue::None
+                if std::env::var("ZW_FONT_FACE_SIZE_ADJUST_RELATIVE_UNITS").as_deref() != Ok("0") =>
+            {
+                metrics.size_adjust
+            }
+            crate::property::types::FontSizeAdjustValue::None => 1.0,
         };
         metrics.ex_height *= scale;
         metrics.ch_width *= scale;
@@ -826,6 +836,7 @@ mod tests {
             Some(FontRelativeMetrics {
                 ex_height: 0.6,
                 ch_width: 0.7,
+                size_adjust: 1.0,
             }),
         );
         assert_eq!(resolved.width, LengthValue::Px(120.0));
@@ -837,6 +848,7 @@ mod tests {
         let metrics = Some(FontRelativeMetrics {
             ex_height: 0.8,
             ch_width: 1.0,
+            size_adjust: 0.5,
         });
         let mut adjusted = ComputedStyle::default();
         adjusted.font_size = LengthValue::Px(100.0);
@@ -851,6 +863,25 @@ mod tests {
         let resolved = resolve_computed_style_with_font_metrics(&adjusted, &HashMap::new(), None, None, None, metrics);
         assert_eq!(resolved.width, LengthValue::Px(200.0));
         assert_eq!(resolved.height, LengthValue::Px(80.0));
+        assert_eq!(resolved.margin_left, LengthValue::Px(100.0));
+    }
+
+    #[test]
+    fn test_font_face_size_adjust_scales_ex_and_ch_but_not_em() {
+        let metrics = Some(FontRelativeMetrics {
+            ex_height: 0.8,
+            ch_width: 1.0,
+            size_adjust: 0.5,
+        });
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(100.0);
+        style.width = LengthValue::Ch(1.0);
+        style.height = LengthValue::Ex(1.0);
+        style.margin_left = LengthValue::Em(1.0);
+
+        let resolved = resolve_computed_style_with_font_metrics(&style, &HashMap::new(), None, None, None, metrics);
+        assert_eq!(resolved.width, LengthValue::Px(50.0));
+        assert_eq!(resolved.height, LengthValue::Px(40.0));
         assert_eq!(resolved.margin_left, LengthValue::Px(100.0));
     }
 

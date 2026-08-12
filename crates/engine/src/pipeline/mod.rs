@@ -482,6 +482,7 @@ impl RenderPipeline {
                     zero_style_system::FontRelativeMetrics {
                         ex_height: f64::from(metrics.ex_height),
                         ch_width: f64::from(metrics.ch_width),
+                        size_adjust: f64::from(metrics.size_adjust),
                     },
                 )
             })

@@ -20,3 +20,5 @@ generic/custom alias 可能仍命中 legacy contextual advance 分支。该分�
 任何改变 used font size 的功能都必须同时核对 shaping size、layout fragment width、paint consumed advance 和 raster size。先用 advance trace 验证四者闭合，再判断像素收益。
 
 `line-height: normal` 还需单独核对 face 的 ascent、descent 与 line-gap。不要为 descriptor 打开全局 per-font line-height gate；只对实际声明非 100% `size-adjust` 的 first available face读取并缩放真实行度量，避免普通页面重新进入已证净负的 hhea 路径。
+
+字体相对单位也必须携带 descriptor scale 到 computed 阶段：`ex/ch` 读取 adjusted face metrics，`em` 仍绑定 computed font-size；若 `font-size-adjust` property 活跃，则它覆盖 descriptor，只能应用一次缩放。
