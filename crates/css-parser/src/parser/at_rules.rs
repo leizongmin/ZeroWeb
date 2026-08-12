@@ -151,6 +151,116 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// 消耗 `@font-feature-values <family># { ... }`。
+    ///
+    /// 内层六类 at-rule 的 body 是 alias 声明块，不是样式规则列表，因此必须在此专门消费。
+    /// https://drafts.csswg.org/css-fonts-4/#font-feature-values
+    pub(super) fn consume_font_feature_values_rule(&mut self) -> Option<FontFeatureValuesRule> {
+        self.skip_whitespace();
+        let mut families = Vec::new();
+        let mut current_family = String::new();
+        let mut quoted_family = false;
+        loop {
+            match self.peek().clone() {
+                Token::Ident(name) if !quoted_family => {
+                    if !current_family.is_empty() {
+                        current_family.push(' ');
+                    }
+                    current_family.push_str(&name);
+                    self.advance();
+                }
+                Token::String(name) if current_family.is_empty() => {
+                    current_family = name;
+                    quoted_family = true;
+                    self.advance();
+                }
+                Token::Comma if !current_family.is_empty() => {
+                    families.push(std::mem::take(&mut current_family));
+                    quoted_family = false;
+                    self.advance();
+                }
+                Token::Whitespace | Token::Comment(_) => self.advance(),
+                Token::LBrace if !current_family.is_empty() => {
+                    families.push(current_family);
+                    self.advance();
+                    break;
+                }
+                _ => return None,
+            }
+        }
+
+        let mut definitions = Vec::new();
+        loop {
+            self.skip_whitespace();
+            match self.peek().clone() {
+                Token::RBrace => {
+                    self.advance();
+                    break;
+                }
+                Token::Eof => break,
+                Token::AtKeyword(name) => {
+                    self.advance();
+                    let Some(kind) = Self::font_feature_value_kind(&name) else {
+                        let _ = self.consume_at_rule(name);
+                        continue;
+                    };
+                    self.skip_whitespace();
+                    if !matches!(self.peek(), Token::LBrace) {
+                        return None;
+                    }
+                    self.advance();
+                    let declarations = self.consume_declaration_block();
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::RBrace) {
+                        self.advance();
+                    }
+                    for declaration in declarations {
+                        if let Some(values) = Self::parse_font_feature_value_numbers(kind, &declaration.value) {
+                            definitions.push(FontFeatureValueDefinition {
+                                kind,
+                                name: declaration.property,
+                                values,
+                            });
+                        }
+                    }
+                }
+                _ => self.advance(),
+            }
+        }
+
+        Some(FontFeatureValuesRule { families, definitions })
+    }
+
+    fn font_feature_value_kind(name: &str) -> Option<FontFeatureValueKind> {
+        match name.to_ascii_lowercase().as_str() {
+            "stylistic" => Some(FontFeatureValueKind::Stylistic),
+            "styleset" => Some(FontFeatureValueKind::Styleset),
+            "character-variant" => Some(FontFeatureValueKind::CharacterVariant),
+            "swash" => Some(FontFeatureValueKind::Swash),
+            "ornaments" => Some(FontFeatureValueKind::Ornaments),
+            "annotation" => Some(FontFeatureValueKind::Annotation),
+            _ => None,
+        }
+    }
+
+    fn parse_font_feature_value_numbers(kind: FontFeatureValueKind, value: &str) -> Option<Vec<u32>> {
+        let values: Vec<u32> = value
+            .split_whitespace()
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?;
+        let valid = match kind {
+            FontFeatureValueKind::Styleset => !values.is_empty() && values.iter().all(|value| (1..=99).contains(value)),
+            FontFeatureValueKind::CharacterVariant => {
+                (1..=2).contains(&values.len())
+                    && (1..=99).contains(&values[0])
+                    && values.get(1).is_none_or(|value| *value <= 99)
+            }
+            _ => values.len() == 1 && values[0] <= 99,
+        };
+        valid.then_some(values)
+    }
+
     /// 解析 `@font-face` 的 `font-weight` 描述符为绝对权重（R2417 font-weight matching）。
     ///
     /// `normal`→400、`bold`→700、数字（100-900）原值；`lighter`/`bolder`（相对，@font-face
@@ -488,8 +598,8 @@ impl<'a> Parser<'a> {
 
         self.skip_whitespace();
 
-        // 读取层名称（可选）
-        let name = match self.peek().clone() {
+        // 读取层名称（可选）；statement 允许逗号分隔的层顺序声明。
+        let first_name = match self.peek().clone() {
             Token::Ident(s) => {
                 let n = s.clone();
                 self.advance();
@@ -513,7 +623,23 @@ impl<'a> Parser<'a> {
             _ => return None,
         };
 
-        self.skip_whitespace();
+        let mut names = vec![first_name];
+        loop {
+            self.skip_whitespace();
+            if !matches!(self.peek(), Token::Comma) {
+                break;
+            }
+            self.advance();
+            self.skip_whitespace();
+            match self.peek().clone() {
+                Token::Ident(name) | Token::String(name) => {
+                    names.push(name);
+                    self.advance();
+                }
+                _ => return None,
+            }
+        }
+        let name = names.join(",");
 
         // 期望 { 或 ;
         match self.peek() {
@@ -523,6 +649,9 @@ impl<'a> Parser<'a> {
                 Some(LayerRule { name, rules: vec![] })
             }
             Token::LBrace => {
+                if names.len() != 1 {
+                    return None;
+                }
                 self.advance();
 
                 // 解析层内规则列表

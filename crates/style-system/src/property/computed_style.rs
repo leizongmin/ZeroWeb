@@ -456,6 +456,8 @@ pub struct ComputedStyle {
     pub font_variant_position: FontVariantPositionValue,
     /// font-variant-alternates 属性。
     pub font_variant_alternates: FontVariantAlternatesValue,
+    /// `@font-feature-values` 解析后的 OpenType feature；由 StyleSystem 按实际 family 填充。
+    pub font_variant_alternates_features: Vec<FontFeatureSetting>,
     /// font-stretch 属性（百分比，normal = 100.0）。
     pub font_stretch: f32,
 

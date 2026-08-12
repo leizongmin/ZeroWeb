@@ -389,6 +389,7 @@ fn test_get_computed_style_font_shorthand_r2761() {
         <div id=\"f6\" style=\"font-family: Arial; font-size: 14px; font-stretch: condensed;\"></div>\
         <div id=\"f7\" style=\"font-variant-alternates: historical-forms;\"></div>\
         <div id=\"f8\" style=\"font-kerning: none;\"></div>\
+        <div id=\"f9\" style=\"font-variant-alternates: styleset(one, two) stylistic(three);\"></div>\
         </body></html>";
     // 经 longhand 设置（family Arial + size 14px，style/weight/line-height 全初值省）→"14px Arial"。
     assert_eq!(computed_style_property(html, "#f5", "font"), "14px Arial");
@@ -399,6 +400,10 @@ fn test_get_computed_style_font_shorthand_r2761() {
         "historical-forms"
     );
     assert_eq!(computed_style_property(html, "#f8", "font-kerning"), "none");
+    assert_eq!(
+        computed_style_property(html, "#f9", "font-variant-alternates"),
+        "stylistic(three) styleset(one, two)"
+    );
     // italic + 700(bold) + 14px + line-height 1.5→21px(14×1.5 used px) + Arial。
     assert_eq!(
         computed_style_property(html, "#f1", "font"),

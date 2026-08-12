@@ -464,9 +464,12 @@ fn test_font_variant_alternates_apply_initial_and_inherit() {
     ));
     assert_eq!(
         style.font_variant_alternates,
-        FontVariantAlternatesValue::HistoricalForms
+        FontVariantAlternatesValue::Values(FontVariantAlternates {
+            historical_forms: true,
+            ..Default::default()
+        })
     );
-    assert!(!apply_property_value(
+    assert!(apply_property_value(
         &mut style,
         "font-variant-alternates",
         "stylistic(foo)"
@@ -477,7 +480,10 @@ fn test_font_variant_alternates_apply_initial_and_inherit() {
     assert!(inherit_property(&style, &mut child, "font-variant-alternates"));
     assert_eq!(
         child.font_variant_alternates,
-        FontVariantAlternatesValue::HistoricalForms
+        FontVariantAlternatesValue::Values(FontVariantAlternates {
+            stylistic: Some("foo".to_string()),
+            ..Default::default()
+        })
     );
     assert!(apply_initial_value(&mut child, "font-variant-alternates"));
     assert_eq!(child.font_variant_alternates, FontVariantAlternatesValue::Normal);

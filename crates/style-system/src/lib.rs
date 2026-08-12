@@ -25,6 +25,7 @@
 
 pub mod cascade;
 pub mod computed;
+mod font_feature_values;
 pub mod inheritance;
 pub mod matcher;
 pub mod property;
@@ -37,6 +38,7 @@ pub use matcher::*;
 pub use property::*;
 pub use shorthand::*;
 
+use font_feature_values::{FontFeatureValuesRegistry, collect_font_feature_values, resolve_font_variant_alternates};
 use std::collections::HashMap;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
@@ -264,6 +266,8 @@ pub struct StyleSystem {
     /// 样式表填充，在 `gather_custom_properties` 中为未显式声明的注册属性提供
     /// `initial-value` 兜底默认值（并按 `inherits` 控制继承）。
     registered_properties: HashMap<String, RegisteredProperty>,
+    /// `@font-feature-values` family-scoped alias 表。
+    font_feature_values: FontFeatureValuesRegistry,
     /// 视口宽度（px），用于 vh/vw 计算。
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
@@ -281,6 +285,7 @@ impl StyleSystem {
         Self {
             custom_properties: HashMap::new(),
             registered_properties: HashMap::new(),
+            font_feature_values: HashMap::new(),
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -328,6 +333,7 @@ impl StyleSystem {
         // 注册信息在 `gather_custom_properties` 中为未显式声明的注册属性提供 initial-value
         // 兜底默认值（CSS Properties and Values API）。
         self.registered_properties = collect_registered_properties(stylesheets);
+        self.font_feature_values = collect_font_feature_values(stylesheets);
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
@@ -390,6 +396,7 @@ impl StyleSystem {
             return;
         }
         self.registered_properties = collect_registered_properties(stylesheets);
+        self.font_feature_values = collect_font_feature_values(stylesheets);
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         let cache_safe = stylesheet_cache_safe(stylesheets);
@@ -665,6 +672,8 @@ impl StyleSystem {
         stylesheets: &[Stylesheet],
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
+        self.registered_properties = collect_registered_properties(stylesheets);
+        self.font_feature_values = collect_font_feature_values(stylesheets);
         let rule_index = matcher::build_stylesheet_index(stylesheets);
         self.compute_element_style_internal(
             doc,
@@ -1328,6 +1337,7 @@ impl StyleSystem {
             }
         }
 
+        resolve_font_variant_alternates(&mut resolved, &self.font_feature_values);
         resolved
     }
 }

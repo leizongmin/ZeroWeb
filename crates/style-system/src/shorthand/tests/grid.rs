@@ -678,7 +678,7 @@ fn test_shorthand_border_radius_two_values() {
 /// font 简写展开：bold 16px/1.5 sans-serif → font-weight, font-size, line-height, font-family
 fn test_shorthand_font_bold_size_line_family() {
     let result = expand_one("font", "bold 16px/1.5 sans-serif", false, (0, 0, 1));
-    assert_eq!(result.len(), 12);
+    assert_eq!(result.len(), 13);
     assert_eq!(result[0].0, "font-style");
     assert_eq!(result[0].1, "normal");
     assert_eq!(result[1].0, "font-weight");
@@ -689,6 +689,7 @@ fn test_shorthand_font_bold_size_line_family() {
     assert_eq!(result[3].1, "1.5");
     assert_eq!(result[4].0, "font-family");
     assert_eq!(result[4].1, "sans-serif");
+    assert!(result.iter().any(|item| item.0 == "font-kerning" && item.1 == "auto"));
 }
 
 #[test]

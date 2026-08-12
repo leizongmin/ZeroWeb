@@ -31,6 +31,8 @@
 >
 > **▶ 字体栈增量进展（R3267-F synthetic-italic-ipc·2026-08-12）**：R3264 已让 GPU 消费 `GlyphPrimitive.synthetic_italic`，但 renderer IPC 未序列化该字段，browser/compositor 接收端与单进程 WebView transform 又固定写 `false`，导致生产端判定的合成斜体在进程/宿主边界静默丢失。本轮给 `IpcGlyph` 增加向后默认的 `synthetic_italic`，贯通 renderer export、browser/compositor restore 与 WebView transform，并在五个边界各加回归断言；`font-synthesis-style` 上游 WPT 已资产化。同期 synthetic bold 完整实验因 `font-synthesis-08 4.08%→4.23%`、禁用类仅各改善约 `0.01pp`，全 css-fonts 另有 `font-face-local-not-family +0.01pp`，按净负门禁完整撤回。验证：workspace default/QuickJS clippy、reftest `687/687`、产品 smoke desktop/375/320 与表单性能全绿；`make test` 仍受既有 real HTTP fetch 与多进程表单快照时序阻断。
 >
+> **▶ 字体栈增量进展（R3273-F font-feature-values·2026-08-12）**：完整实现 `@font-feature-values` 专用 AST/parser 与 `@stylistic`、`@styleset`、`@character-variant`、`@swash`、`@ornaments`、`@annotation` 六类 alias；StyleSystem 按 computed family、layer 声明顺序和源序合并 alias，生成 `salt/ssNN/cvNN/swsh+cswh/ornm/nalt`，`font-variant-alternates` 支持规范组合值、继承、shorthand 与 CSSOM，显式 `font-feature-settings` 仍最终覆盖。`ZW_FONT_FEATURE_VALUES=0` 可回滚。上游 03–19 与 layers 共 18 案已资产化；目标 20 案 self-source 可信 strict `2/20→20/20`，Chromium Oracle 17 个函数式案均改善约 `0.03–0.06pp`（swash-14 `6.92%→6.86%`、layers `6.87%→6.81%`），全 css-fonts `alternates-order 9.05%→8.94%`，目录计数保持 `84/282`、credible `74`、strict `54`，无关键扩散回归。验证：parser `2827/2827`、style `2161/2161`、engine `2019/2019`、workspace default/QuickJS clippy、reftest `687/687`、产品 smoke 与表单性能全绿；`make test` 仍仅受既有 real HTTP fetch 与多进程表单快照时序阻断。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

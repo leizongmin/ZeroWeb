@@ -362,6 +362,8 @@ impl<'a> Parser<'a> {
                     self.consume_container_rule().map(Rule::Container)
                 } else if name.eq_ignore_ascii_case("font-face") {
                     self.consume_font_face_rule().map(Rule::FontFace)
+                } else if name.eq_ignore_ascii_case("font-feature-values") {
+                    self.consume_font_feature_values_rule().map(Rule::FontFeatureValues)
                 } else if name.eq_ignore_ascii_case("page") {
                     self.consume_page_rule().map(Rule::Page)
                 } else if name.eq_ignore_ascii_case("property") {

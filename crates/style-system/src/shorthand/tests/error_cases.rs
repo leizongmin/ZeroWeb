@@ -470,7 +470,7 @@ fn test_background_url_only() {
 /// font 仅 size
 fn test_font_size_only() {
     let result = expand_one("font", "16px", false, (0, 0, 1));
-    assert_eq!(result.len(), 12);
+    assert_eq!(result.len(), 13);
     assert_eq!(result[0].0, "font-style");
     assert_eq!(result[0].1, "normal");
     assert_eq!(result[1].0, "font-weight");
@@ -481,6 +481,7 @@ fn test_font_size_only() {
     assert_eq!(result[3].1, "normal");
     assert_eq!(result[4].0, "font-family");
     assert_eq!(result[4].1, "");
+    assert!(result.iter().any(|item| item.0 == "font-kerning" && item.1 == "auto"));
 }
 
 #[test]

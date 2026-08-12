@@ -809,25 +809,106 @@ pub fn parse_font_variant_position(value: &str) -> Option<FontVariantPositionVal
     }
 }
 
-/// CSS `font-variant-alternates` 的无参数值。
-///
-/// 函数式 alternate 依赖 `@font-feature-values`，由后续切片扩展。
+/// CSS `font-variant-alternates` 的组合值。
 /// https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum FontVariantAlternatesValue {
     /// normal。
+    #[default]
     Normal,
-    /// historical-forms → OpenType `hist`。
-    HistoricalForms,
+    /// 关键字/函数组合。
+    Values(FontVariantAlternates),
 }
 
-/// 解析 CSS `font-variant-alternates` 的无参数值。
+/// `font-variant-alternates` 各独立分量。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FontVariantAlternates {
+    /// historical-forms → OpenType `hist`。
+    pub historical_forms: bool,
+    /// stylistic(<feature-value-name>)。
+    pub stylistic: Option<String>,
+    /// styleset(<feature-value-name>#)。
+    pub styleset: Vec<String>,
+    /// character-variant(<feature-value-name>)。
+    pub character_variant: Option<String>,
+    /// swash(<feature-value-name>)。
+    pub swash: Option<String>,
+    /// ornaments(<feature-value-name>)。
+    pub ornaments: Option<String>,
+    /// annotation(<feature-value-name>)。
+    pub annotation: Option<String>,
+}
+
+/// 解析 CSS `font-variant-alternates` 的关键字/函数组合。
 pub fn parse_font_variant_alternates(value: &str) -> Option<FontVariantAlternatesValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "normal" => Some(FontVariantAlternatesValue::Normal),
-        "historical-forms" => Some(FontVariantAlternatesValue::HistoricalForms),
-        _ => None,
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return Some(FontVariantAlternatesValue::Normal);
     }
+
+    let mut result = FontVariantAlternates::default();
+    let mut rest = value;
+    while !rest.trim_start().is_empty() {
+        rest = rest.trim_start();
+        const HISTORICAL_FORMS: &str = "historical-forms";
+        if rest
+            .get(..HISTORICAL_FORMS.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(HISTORICAL_FORMS))
+        {
+            let tail = &rest[HISTORICAL_FORMS.len()..];
+            if result.historical_forms || tail.starts_with(|ch: char| !ch.is_whitespace()) {
+                return None;
+            }
+            result.historical_forms = true;
+            rest = tail;
+            continue;
+        }
+
+        let open = rest.find('(')?;
+        let function = rest[..open].trim().to_ascii_lowercase();
+        if function.is_empty() || rest[..open].chars().any(char::is_whitespace) {
+            return None;
+        }
+        let close = rest[open + 1..].find(')')? + open + 1;
+        let args: Vec<String> = rest[open + 1..close]
+            .split(',')
+            .map(str::trim)
+            .filter(|arg| !arg.is_empty())
+            .map(str::to_string)
+            .collect();
+        if args.is_empty() || args.iter().any(|arg| !valid_feature_value_name(arg)) {
+            return None;
+        }
+        match function.as_str() {
+            "stylistic" if args.len() == 1 && result.stylistic.is_none() => {
+                result.stylistic = args.into_iter().next();
+            }
+            "styleset" if result.styleset.is_empty() => result.styleset = args,
+            "character-variant" if args.len() == 1 && result.character_variant.is_none() => {
+                result.character_variant = args.into_iter().next();
+            }
+            "swash" if args.len() == 1 && result.swash.is_none() => {
+                result.swash = args.into_iter().next();
+            }
+            "ornaments" if args.len() == 1 && result.ornaments.is_none() => {
+                result.ornaments = args.into_iter().next();
+            }
+            "annotation" if args.len() == 1 && result.annotation.is_none() => {
+                result.annotation = args.into_iter().next();
+            }
+            _ => return None,
+        }
+        rest = &rest[close + 1..];
+    }
+    Some(FontVariantAlternatesValue::Values(result))
+}
+
+fn valid_feature_value_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars
+        .next()
+        .is_some_and(|first| first == '_' || first == '-' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch == '-' || ch.is_ascii_alphanumeric())
 }
 
 /// 解析 CSS `font-stretch` / `font-width` 值为百分比（`normal` = 100）。

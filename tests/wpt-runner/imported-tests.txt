@@ -22,3 +22,21 @@ css/css-fonts/quoted-generic-ignored.html css/css-fonts/quoted-generic-ignored-r
 css/css-fonts/font-variant-alternates-02.html css/css-fonts/font-variant-alternates-02-ref.html == 2026-08-12 R3256-F historical-forms OT hist
 css/css-fonts/font-kerning-04.html css/css-fonts/font-kerning-04-ref.html == 2026-08-12 R3265-F font-kerning
 css/css-fonts/font-synthesis-style.html css/css-fonts/font-synthesis-style-ref.html == 2026-08-12 R3267-F synthetic italic IPC
+css/css-fonts/font-variant-alternates-03.html css/css-fonts/font-variant-alternates-03-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-04.html css/css-fonts/font-variant-alternates-04-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-05.html css/css-fonts/font-variant-alternates-05-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-06.html css/css-fonts/font-variant-alternates-06-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-07.html css/css-fonts/font-variant-alternates-07-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-08.html css/css-fonts/font-variant-alternates-08-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-09.html css/css-fonts/font-variant-alternates-09-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-10.html css/css-fonts/font-variant-alternates-10-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-11.html css/css-fonts/font-variant-alternates-11-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-12.html css/css-fonts/font-variant-alternates-12-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-13.html css/css-fonts/font-variant-alternates-13-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-14.html css/css-fonts/font-variant-alternates-14-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-15.html css/css-fonts/font-variant-alternates-15-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-16.html css/css-fonts/font-variant-alternates-16-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-17.html css/css-fonts/font-variant-alternates-17-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-18.html css/css-fonts/font-variant-alternates-18-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-19.html css/css-fonts/font-variant-alternates-19-ref.html == 2026-08-12 R3273-F font-feature-values aliases
+css/css-fonts/font-variant-alternates-layers.html css/css-fonts/font-variant-alternates-layers-ref.html == 2026-08-12 R3273-F font-feature-values layer cascade

@@ -780,12 +780,8 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
         "font-variant-alternates" => {
             if let Some(value) = values::parse_font_variant_alternates(value) {
-                style.font_variant_alternates = match value {
-                    zero_css_parser::values::FontVariantAlternatesValue::Normal => FontVariantAlternatesValue::Normal,
-                    zero_css_parser::values::FontVariantAlternatesValue::HistoricalForms => {
-                        FontVariantAlternatesValue::HistoricalForms
-                    }
-                };
+                style.font_variant_alternates = value;
+                style.font_variant_alternates_features.clear();
                 return true;
             }
         }

@@ -7,10 +7,10 @@ pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, ContentVisibilityValue, CounterActionValue, DisplayValue, FilterValue,
     FlexDirectionValue, FlexWrapValue, FontFeatureSetting, FontFeatureSettingsValue, FontStyleValue,
-    FontSynthesisValue, FontVariantLigaturesValue, FontWeightValue, LengthValue, ObjectFitValue, OverflowClipMarginBox,
-    OverflowClipMarginValue, OverflowValue, PolygonFillRule, PositionValue, QuotesValue, ScrollSnapAlignValue,
-    ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
-    VerticalAlignValue, VisibilityValue,
+    FontSynthesisValue, FontVariantAlternates, FontVariantAlternatesValue, FontVariantLigaturesValue, FontWeightValue,
+    LengthValue, ObjectFitValue, OverflowClipMarginBox, OverflowClipMarginValue, OverflowValue, PolygonFillRule,
+    PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
+    TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -998,17 +998,6 @@ pub enum FontVariantPositionValue {
     Sub,
     /// super → OT `sups`。
     Super,
-}
-
-/// CSS font-variant-alternates 属性值。
-/// https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum FontVariantAlternatesValue {
-    /// normal（默认值）。
-    #[default]
-    Normal,
-    /// historical-forms → OT `hist`。
-    HistoricalForms,
 }
 
 /// CSS direction 属性值。

@@ -163,7 +163,8 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             true
         }
         "font-variant-alternates" => {
-            child.font_variant_alternates = parent.font_variant_alternates;
+            child.font_variant_alternates = parent.font_variant_alternates.clone();
+            child.font_variant_alternates_features = parent.font_variant_alternates_features.clone();
             true
         }
         "font-stretch" => {
@@ -1277,6 +1278,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-alternates" => {
             style.font_variant_alternates = default_style.font_variant_alternates;
+            style.font_variant_alternates_features.clear();
             true
         }
         "font-stretch" => {

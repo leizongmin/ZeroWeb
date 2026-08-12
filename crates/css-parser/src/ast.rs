@@ -30,6 +30,8 @@ pub enum Rule {
     Container(ContainerRule),
     /// @font-face 规则。
     FontFace(FontFaceRule),
+    /// @font-feature-values 规则。
+    FontFeatureValues(FontFeatureValuesRule),
     /// @page 规则（CSS Paged Media）。
     Page(PageRule),
     /// @property 规则（CSS Properties and Values API）。
@@ -100,6 +102,44 @@ pub struct FontFaceRule {
     pub stretch: Option<f32>,
     /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
     pub feature_settings: FontFeatureSettingsValue,
+}
+
+/// `@font-feature-values` 中的 alias 类型。
+/// https://drafts.csswg.org/css-fonts-4/#font-feature-values
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontFeatureValueKind {
+    /// `@stylistic` → OpenType `salt`。
+    Stylistic,
+    /// `@styleset` → OpenType `ssNN`。
+    Styleset,
+    /// `@character-variant` → OpenType `cvNN`。
+    CharacterVariant,
+    /// `@swash` → OpenType `swsh` / `cswh`。
+    Swash,
+    /// `@ornaments` → OpenType `ornm`。
+    Ornaments,
+    /// `@annotation` → OpenType `nalt`。
+    Annotation,
+}
+
+/// 单个 `@font-feature-values` alias 定义。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontFeatureValueDefinition {
+    /// alias 所属类型。
+    pub kind: FontFeatureValueKind,
+    /// CSS 自定义标识符。
+    pub name: String,
+    /// 非负整数值；不同类型允许 1 个或多个。
+    pub values: Vec<u32>,
+}
+
+/// CSS `@font-feature-values` 规则。
+#[derive(Debug, Clone)]
+pub struct FontFeatureValuesRule {
+    /// 适用的 font-family 名称（已去引号）。
+    pub families: Vec<String>,
+    /// 六类内部 at-rule 中解析出的 alias 定义。
+    pub definitions: Vec<FontFeatureValueDefinition>,
 }
 
 /// CSS @page 规则（Paged Media）。

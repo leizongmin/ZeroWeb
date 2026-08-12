@@ -1985,8 +1985,8 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
     let mut position: Option<String> = None;
     let mut alternates: Option<String> = None;
 
-    for token in lower.split_whitespace() {
-        match token {
+    for token in zero_css_parser::values::split_paren_aware_tokens(&lower) {
+        match token.as_str() {
             // font-variant-ligatures keywords
             "no-common-ligatures"
             | "common-ligatures"
@@ -2018,6 +2018,13 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             }
             "historical-forms" => {
                 alternates = Some(token.to_string());
+            }
+            _ if zero_css_parser::values::parse_font_variant_alternates(&token).is_some() => {
+                let value = alternates.get_or_insert_with(String::new);
+                if !value.is_empty() {
+                    value.push(' ');
+                }
+                value.push_str(&token);
             }
             _ => {}
         }

@@ -311,10 +311,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             FontKerningValue::Normal => "normal".to_string(),
             FontKerningValue::None => "none".to_string(),
         },
-        "font-variant-alternates" => match style.font_variant_alternates {
-            FontVariantAlternatesValue::Normal => "normal".to_string(),
-            FontVariantAlternatesValue::HistoricalForms => "historical-forms".to_string(),
-        },
+        "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
         "z-index" => z_index_str(&style.z_index),
         "cursor" => cursor_str(&style.cursor),
@@ -1156,6 +1153,35 @@ fn font_variant_numeric_str(v: &FontVariantNumericValue) -> String {
         FontVariantNumericValue::StackedFractions => "stacked-fractions",
     }
     .to_string()
+}
+
+fn font_variant_alternates_str(value: &FontVariantAlternatesValue) -> String {
+    let FontVariantAlternatesValue::Values(value) = value else {
+        return "normal".to_string();
+    };
+    let mut parts = Vec::new();
+    if value.historical_forms {
+        parts.push("historical-forms".to_string());
+    }
+    if let Some(name) = &value.stylistic {
+        parts.push(format!("stylistic({name})"));
+    }
+    if !value.styleset.is_empty() {
+        parts.push(format!("styleset({})", value.styleset.join(", ")));
+    }
+    if let Some(name) = &value.character_variant {
+        parts.push(format!("character-variant({name})"));
+    }
+    if let Some(name) = &value.swash {
+        parts.push(format!("swash({name})"));
+    }
+    if let Some(name) = &value.ornaments {
+        parts.push(format!("ornaments({name})"));
+    }
+    if let Some(name) = &value.annotation {
+        parts.push(format!("annotation({name})"));
+    }
+    parts.join(" ")
 }
 
 /// image-rendering：CSS Images 图像缩放算法（5 关键字，对齐 Chromium auto/pixelated/crisp-edges；

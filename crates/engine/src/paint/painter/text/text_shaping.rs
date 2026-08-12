@@ -537,8 +537,8 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
     }
 
     // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
-    if style.font_variant_alternates == zero_style_system::FontVariantAlternatesValue::HistoricalForms {
-        set_feature(&mut features, *b"hist", 1);
+    for setting in &style.font_variant_alternates_features {
+        set_feature(&mut features, setting.tag, setting.value);
     }
 
     if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
@@ -1023,7 +1023,10 @@ mod tests {
         style.font_variant_ligatures = zero_style_system::FontVariantLigaturesValue::default();
         style.letter_spacing_normal = true;
         style.letter_spacing = zero_style_system::LengthValue::Px(0.0);
-        style.font_variant_alternates = zero_style_system::FontVariantAlternatesValue::HistoricalForms;
+        style.font_variant_alternates_features = vec![zero_style_system::FontFeatureSetting {
+            tag: *b"hist",
+            value: 1,
+        }];
         assert_eq!(
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"hist", 1)]
@@ -1056,6 +1059,33 @@ mod tests {
         assert_eq!(
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"kern", 0), OpenTypeFeature::new(*b"vkrn", 1),]
+        );
+    }
+
+    #[test]
+    fn explicit_feature_settings_override_resolved_alternates() {
+        let style = zero_style_system::ComputedStyle {
+            font_variant_alternates_features: vec![
+                zero_style_system::FontFeatureSetting {
+                    tag: *b"salt",
+                    value: 2,
+                },
+                zero_style_system::FontFeatureSetting {
+                    tag: *b"ss03",
+                    value: 1,
+                },
+            ],
+            font_feature_settings: zero_style_system::FontFeatureSettingsValue::Features(vec![
+                zero_style_system::FontFeatureSetting {
+                    tag: *b"salt",
+                    value: 0,
+                },
+            ]),
+            ..Default::default()
+        };
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"salt", 0), OpenTypeFeature::new(*b"ss03", 1),]
         );
     }
 
