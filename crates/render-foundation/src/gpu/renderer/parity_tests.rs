@@ -176,14 +176,13 @@ fn parity_basic_scene_matches() {
 #[test]
 fn parity_scene_supported_rejects_unimplemented() {
     let (p, _) = build_basic_scene();
-    let headless = true;
 
     // clips 非空
     let mut with_clip = p.clone();
     with_clip.clips.push(crate::primitive::ClipPrimitive {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
     });
-    assert!(!crate::gpu::scene_support::scene_supported(&with_clip, headless));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_clip));
 
     // blend_modes 非空
     let mut with_blend = p.clone();
@@ -191,30 +190,29 @@ fn parity_scene_supported_rejects_unimplemented() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         mode: crate::primitive::BlendMode::Multiply,
     });
-    assert!(!crate::gpu::scene_support::scene_supported(&with_blend, headless));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_blend));
 
     // P2-8：半透明填充现已支持（顶点携带 alpha，shader 输出 color.a × 覆盖率）→ 接受
     let mut with_alpha = p.clone();
     with_alpha.fills[0].color = Color::rgba(255, 0, 0, 128);
-    assert!(crate::gpu::scene_support::scene_supported(&with_alpha, headless));
+    assert!(crate::gpu::scene_support::scene_supported(&with_alpha));
 
     // 带模糊阴影
     let mut with_shadow_blur = p.clone();
     with_shadow_blur.shadows[0].blur_radius = 4.0;
-    assert!(!crate::gpu::scene_support::scene_supported(&with_shadow_blur, headless));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_shadow_blur));
 
-    // 窗口模式（headless=false）+ filter
+    // D/R3279：filter 窗口模式与 headless 均支持（离屏后处理）→ 不拒绝
     let mut with_filter = p.clone();
     with_filter.filters.push(crate::primitive::FilterPrimitive {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         filters: vec![crate::primitive::FilterKind::Opacity(0.5)],
     });
-    assert!(!crate::gpu::scene_support::scene_supported(&with_filter, false));
-    // headless 下 filter 支持 → 不拒绝
-    assert!(crate::gpu::scene_support::scene_supported(&with_filter, true));
+    assert!(crate::gpu::scene_support::scene_supported(&with_filter));
+    assert!(crate::gpu::scene_support::scene_supported(&with_filter));
 
     // 支持子集 → 接受
-    assert!(crate::gpu::scene_support::scene_supported(&p, headless));
+    assert!(crate::gpu::scene_support::scene_supported(&p));
 }
 
 /// P2-6：超过 adapter max_texture_dimension_2d 的图片必须触发回退（返回 false），

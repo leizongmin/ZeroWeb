@@ -30,9 +30,11 @@ impl super::GpuRenderer {
     ) {
         use wgpu::util::DeviceExt;
 
-        let Some(tex_a) = self.headless_texture.as_ref() else {
-            return;
-        };
+        let tex_a = self
+            .headless_texture
+            .as_ref()
+            .or(self.offscreen_texture.as_ref())
+            .expect("后处理源纹理（headless 或离屏）");
         // 确保 ping-pong 纹理 B 存在且尺寸匹配
         let need_recreate = self
             .headless_texture_b
@@ -195,9 +197,11 @@ impl super::GpuRenderer {
     ) {
         use wgpu::util::DeviceExt;
 
-        let Some(tex_a) = self.headless_texture.as_ref() else {
-            return;
-        };
+        let tex_a = self
+            .headless_texture
+            .as_ref()
+            .or(self.offscreen_texture.as_ref())
+            .expect("后处理源纹理（headless 或离屏）");
         let need_recreate = self
             .headless_texture_b
             .as_ref()
@@ -372,9 +376,11 @@ impl super::GpuRenderer {
     /// uniform = `{screen_w, screen_h, blur_radius, direction}`（direction 0=H, 1=V，与
     /// BLUR_SHADER 对齐）。
     pub(super) fn apply_blur_filters_headless(&mut self, width: u32, height: u32, filters: &[(Rect, f32)], scale: f32) {
-        let Some(tex_a) = self.headless_texture.as_ref() else {
-            return;
-        };
+        let tex_a = self
+            .headless_texture
+            .as_ref()
+            .or(self.offscreen_texture.as_ref())
+            .expect("后处理源纹理（headless 或离屏）");
         let need_recreate = self
             .headless_texture_b
             .as_ref()

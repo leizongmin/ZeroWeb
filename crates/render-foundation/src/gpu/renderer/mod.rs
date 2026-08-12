@@ -117,6 +117,8 @@ pub struct GpuRenderer {
     blend_source_texture: Option<wgpu::Texture>,
     /// Blend backdrop（主帧拷贝）纹理
     blend_backdrop_texture: Option<wgpu::Texture>,
+    /// D/R3279：窗口模式滤镜/变换后处理的离屏主帧拷贝纹理
+    offscreen_texture: Option<wgpu::Texture>,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -384,6 +386,7 @@ impl GpuRenderer {
             blend_bgl,
             blend_source_texture: None,
             blend_backdrop_texture: None,
+            offscreen_texture: None,
             uniform_bgl,
             transform_uniform_bgl,
             atlas_bgl,
@@ -842,7 +845,7 @@ impl GpuRenderer {
         // P0-1：GPU 生产路径未实现的特性（clips/blend_modes/半透明颜色/带模糊阴影/
         // 窗口模式滤镜变换）静默画错——返回 false 由调用方回退 CPU 整帧重画（慢但对）。
         // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
-        if !crate::gpu::scene_support::scene_supported(primitives, self.headless_texture.is_some()) {
+        if !crate::gpu::scene_support::scene_supported(primitives) {
             return false;
         }
 
@@ -1233,25 +1236,64 @@ impl GpuRenderer {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        // DC-9 filter:opacity 后处理（仅 headless）。
+        // DC-9 filter/transform 后处理（D/R3279：窗口模式不再跳过——用离屏纹理做
+        // ping-pong 后处理再 blit 回 surface；headless 直接处理主帧纹理）。
         //
         // 无 filter 时不触发（零默认回归：438 CPU reftest 与无 filter 的 GPU case 全不受影响）。
         // 对每个单通道颜色滤镜（opacity/brightness/contrast）做 ping-pong 区域后处理
-        //（匹配 CPU apply_filter），结果写回 headless_texture(A) 供后续 read_pixels 读取。
+        //（匹配 CPU apply_filter），结果写回源纹理供 read_pixels 或 blit 回 surface。
         let color_filters = collect_color_filters(&primitives.filters);
-        if !color_filters.is_empty() && self.headless_texture.is_some() {
-            self.apply_color_filters_headless(width, height, &color_filters, scale);
-        }
-        // filter:blur（2-pass H+V 高斯，复用 blur_pipeline），同样 ping-pong 区域后处理。
         let blur_filters = collect_blur_filters(&primitives.filters);
-        if !blur_filters.is_empty() && self.headless_texture.is_some() {
-            self.apply_blur_filters_headless(width, height, &blur_filters, scale);
-        }
-        // CSS transform（2D 仿射逆矩阵重采样，匹配 CPU apply_transform_post）。
-        // 无 transform 时不触发（零默认回归；transform reftest footprint ≈0，仅满足 DC-9 覆盖）。
         let transforms = collect_transforms(&primitives.transforms);
-        if !transforms.is_empty() && self.headless_texture.is_some() {
-            self.apply_transform_filters_headless(width, height, &transforms, scale);
+        let has_post = !color_filters.is_empty() || !blur_filters.is_empty() || !transforms.is_empty();
+        if has_post {
+            let headless = self.headless_texture.is_some();
+            // 窗口模式：先把主帧拷到离屏纹理（后处理源；headless 直接用主帧纹理）
+            if !headless {
+                self.ensure_offscreen_texture(width, height);
+                let offscreen = self.offscreen_texture.as_ref().expect("offscreen texture");
+                let (src_tex, src_size) = match &target {
+                    RenderTarget::Surface { output, .. } => (&output.texture, (width, height)),
+                    RenderTarget::Headless { .. } => unreachable!("headless 分支已处理"),
+                };
+                let mut copy_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Post Copy Encoder"),
+                });
+                copy_encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: src_tex,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: offscreen,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: src_size.0,
+                        height: src_size.1,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                queue.submit(std::iter::once(copy_encoder.finish()));
+            }
+            if !color_filters.is_empty() {
+                self.apply_color_filters_headless(width, height, &color_filters, scale);
+            }
+            if !blur_filters.is_empty() {
+                self.apply_blur_filters_headless(width, height, &blur_filters, scale);
+            }
+            if !transforms.is_empty() {
+                self.apply_transform_filters_headless(width, height, &transforms, scale);
+            }
+            // 窗口模式：后处理结果（offscreen）blit 回 surface
+            if !headless {
+                let offscreen = self.offscreen_texture.as_ref().expect("offscreen texture");
+                self.blit_texture_to_target(&target, offscreen, width, height);
+            }
         }
 
         target.present(&device, &queue);
@@ -2717,5 +2759,95 @@ fn blend_mode_index(mode: &crate::primitive::BlendMode) -> usize {
         crate::primitive::BlendMode::Saturation => 13,
         crate::primitive::BlendMode::Color => 14,
         crate::primitive::BlendMode::Luminosity => 15,
+    }
+}
+
+/// D/R3279：按需创建窗口模式后处理的离屏主帧拷贝纹理（尺寸变化时重建）。
+impl GpuRenderer {
+    fn ensure_offscreen_texture(&mut self, width: u32, height: u32) {
+        let need = match &self.offscreen_texture {
+            Some(tex) => {
+                let size = tex.size();
+                size.width != width.max(1) || size.height != height.max(1)
+            }
+            None => true,
+        };
+        if need {
+            self.offscreen_texture = Some(create_headless_texture(
+                &self.device,
+                width,
+                height,
+                self.surface_format,
+            ));
+        }
+    }
+
+    /// D/R3279：把后处理结果纹理 blit 回渲染目标（窗口模式 surface）。
+    fn blit_texture_to_target(&self, target: &RenderTarget, tex: &wgpu::Texture, width: u32, height: u32) {
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Post Blit BG"),
+            layout: &self.image_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let l = 0.0f32;
+        let t = 0.0f32;
+        let r = width as f32;
+        let b = height as f32;
+        // image 管线 7-float 顶点（pos2 + uv2 + color3 白）
+        let verts = vec![
+            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, r, t, 1.0, 0.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, t, 0.0,
+            0.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post Blit Encoder"),
+        });
+        let vb = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Post Blit VB"),
+            contents: bytemuck::cast_slice(&verts),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let uniform_bg = self
+            .uniform_bind_group
+            .as_ref()
+            .expect("uniform bind group initialized");
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Post Blit Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target.view(),
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.image_pipeline);
+            pass.set_bind_group(0, uniform_bg, &[]);
+            pass.set_bind_group(1, &bg, &[]);
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.draw(0..6, 0..1);
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 }

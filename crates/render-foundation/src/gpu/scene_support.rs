@@ -15,11 +15,11 @@ use crate::primitive::RenderPrimitives;
 /// - 带模糊/spread/inset 的阴影：GPU 只画硬边矩形
 /// - 重复渐变且首色标 offset ≠ 0：GPU shader `fract(t)` 与 CPU `[first,last]`
 ///   折叠语义不同，GPU 无 first/last 传参通道
-/// - 窗口模式（`headless=false`）下的 filter/transform：后处理仅 headless 生效
+/// - 滤镜/变换已支持窗口模式（D/R3279：离屏纹理后处理 + blit 回 surface）
 ///
 /// 不受影响、无需回退：半透明颜色（P2-8 后顶点携带 alpha，shader 输出
 /// `color.a × 覆盖率`）、渐变（纹理 RGBA）、图片、硬边不透明阴影。
-pub fn scene_supported(primitives: &RenderPrimitives, headless: bool) -> bool {
+pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
     // C（R3278）：draw_order 路径支持 clip（GPU 白 rect 擦白）与 blend（双 pass 源层
     // 混合）——与 CPU 语义一致。分桶路径（draw_order 空）无顺序语义 → 仍拒绝回退。
     if (!primitives.clips.is_empty() || !primitives.blend_modes.is_empty()) && primitives.draw_order.is_empty() {
@@ -44,10 +44,7 @@ pub fn scene_supported(primitives: &RenderPrimitives, headless: bool) -> bool {
     {
         return false;
     }
-    // 窗口模式：filter/transform 后处理仅 headless 生效（render_full_scene_gpu 的
-    // headless_texture.is_some() 守卫），窗口模式下静默丢弃 → 回退。
-    if !headless && (!primitives.filters.is_empty() || !primitives.transforms.is_empty()) {
-        return false;
-    }
+    // D/R3279：filter/transform 后处理已支持窗口模式（离屏纹理 ping-pong + blit 回
+    // surface）——不再回退。
     true
 }

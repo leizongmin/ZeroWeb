@@ -113,10 +113,10 @@ fn window_mode_lifecycle_smoke() {
     drop(renderer);
 }
 
-/// 窗口模式 + filter → 必须返回 false（headless 后处理不生效，触发 CPU 回退）。
+/// 窗口模式 + filter → D/R3279 后应渲染成功（离屏纹理后处理 + blit 回 surface）。
 #[serial]
 #[test]
-fn window_mode_filters_return_false() {
+fn window_mode_filters_render_successfully() {
     let Some(window) = shared_window() else {
         eprintln!("window_mode_filters_return_false: 无显示服务器，跳过（CI 环境）");
         return;
@@ -149,5 +149,5 @@ fn window_mode_filters_return_false() {
         &[],
         1.0,
     );
-    assert!(!rendered, "窗口模式 + filter 应返回 false 触发 CPU 回退");
+    assert!(rendered, "窗口模式 + filter 应渲染成功（D/R3279 离屏后处理）");
 }
