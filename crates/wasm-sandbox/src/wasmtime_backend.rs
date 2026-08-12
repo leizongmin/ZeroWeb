@@ -236,10 +236,12 @@ impl WasmInstance {
         let mut store = self.store.borrow_mut();
         let memory = self.instance.get_memory(&mut *store, name)?;
         let data = memory.data(&*store);
-        if offset + len > data.len() {
+        // R3347 deep-review：checked_add 防 offset+len 溢出致 OOB 切片 panic（见 wasmi_backend 注释）。
+        let end = offset.checked_add(len)?;
+        if end > data.len() {
             return None;
         }
-        Some(data[offset..offset + len].to_vec())
+        Some(data[offset..end].to_vec())
     }
 
     /// 写入线性内存

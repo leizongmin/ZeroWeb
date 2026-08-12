@@ -195,10 +195,14 @@ impl WasmInstance {
     pub fn read_memory(&self, name: &str, offset: usize, len: usize) -> Option<Vec<u8>> {
         let memory = self.instance.get_memory(&self.store, name)?;
         let data = memory.data(&self.store);
-        if offset + len > data.len() {
+        // R3347 deep-review：用 checked_add 防 offset+len 溢出——裸 `offset + len` 在
+        // offset=usize::MAX, len>=2 时溢出回绕为小值，`> data.len()` 误判通过 →
+        // data[offset..offset+len] OOB 切片 panic。与 write_memory（已用 checked_add）一致。
+        let end = offset.checked_add(len)?;
+        if end > data.len() {
             return None;
         }
-        Some(data[offset..offset + len].to_vec())
+        Some(data[offset..end].to_vec())
     }
 
     /// 写入线性内存

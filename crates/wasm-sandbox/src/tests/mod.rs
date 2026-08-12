@@ -8,3 +8,5 @@ mod advanced;
 mod basic;
 #[cfg(feature = "wasmi")]
 mod module_instance;
+#[cfg(feature = "wasmi")]
+mod review_r3347;
