@@ -94,7 +94,11 @@
           if (handle) __zw_set_attr_handle(handle, p, String(wv));
           else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
           // CANVAS resize：取该元素的 context handle（_zwCanvasCtx[key] standalone 或 el._ctx），调 host resizeContext。
-          if (_realTag(sel, handle) === 'CANVAS' && typeof __zw_canvas_op === 'function') {
+          // R3254-C12：transferControlToOffscreen 后（_transferred）DOM canvas 尺寸 setter 不触达
+          // 共享 handle——offscreen 的 bitmap/状态不被 DOM canvas resize 波及（spec：control 已转交）。
+          if (_realTag(sel, handle) === 'CANVAS'
+              && !((_reflectedAttrs[key] || {})._transferred)
+              && typeof __zw_canvas_op === 'function') {
             var _cctx = (typeof _zwCanvasCtx !== 'undefined' && _zwCanvasCtx[key]) || null;
             var _ch = _cctx && _cctx._handle;
             if (_ch) {
@@ -1094,8 +1098,10 @@
     var wire = String(__zw_canvas_op(this._ctx._handle, 'getImageData', '0', '0', String(this.width), String(this.height)));
     var bm = _zwMakeImageBitmap(wire);
     if (bm.width <= 0 || bm.height <= 0) return null;
-    // spec transfer 语义：源 canvas bitmap 被清空（替换为透明黑）。resize 到同尺寸重置像素 + 状态。
-    __zw_canvas_op(this._ctx._handle, 'resizeContext', String(this.width), String(this.height));
+    // spec transfer 语义：源 canvas bitmap 被清空（替换为透明黑）。
+    // R3254-C8：clearBitmap 只清像素、保留绘图状态（此前 resizeContext 重置全状态——
+    // 连续 transfer 后 fillStyle/transform 等丢失）。
+    __zw_canvas_op(this._ctx._handle, 'clearBitmap');
     return bm;
   };
   if (!globalThis.OffscreenCanvas) {

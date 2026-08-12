@@ -969,7 +969,9 @@ impl BrowserApp {
         // compositor 发布模式下页面经 compositor 进程位图显示，浏览器侧不重建
         // primitives（last_render 恒 None，见 apply_compositor_paint_metadata）——
         // 以已提交的 compositor 帧作为内容就绪判据。
-        if self.tabs.compositor_frame(tab_id).is_some() {
+        // R3254-C11：叠加 document_height>0 门槛（legacy 判据同款）——渐进式 publish 的
+        // 过渡空白帧（加载中、脚本执行前）不应提前判就绪。
+        if self.tabs.compositor_frame(tab_id).is_some() && self.tabs.document_height(tab_id).is_some_and(|h| h > 0.0) {
             return true;
         }
         let has_primitives = self

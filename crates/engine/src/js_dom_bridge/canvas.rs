@@ -206,6 +206,14 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R3254-C8：transferToImageBitmap 的 bitmap 清空——只清像素（透明黑），保留绘图状态
+        //（spec；此前复用 resizeContext 会重置 fillStyle/transform 等全部状态）。
+        "clearBitmap" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.clear_bitmap();
+            }
+            "ok".into()
+        }
         // R3309：createImageBitmap（HTML spec ImageBitmap）——解码图片字节为 wire 串供 drawImage 消费。
         // args[0] = data URI（`data:image/png;base64,...`）。复用 render-foundation::decode_data_uri
         //（PNG/JPEG/WebP/SVG 统一解码），输出 wire 串 `"w:h;r,g,b,a,..."`（getImageData 对偶格式，

@@ -707,6 +707,12 @@ impl CanvasContext {
         *self = fresh;
     }
 
+    /// R3254-C8：仅清空 bitmap 像素（替换透明黑），**保留**绘图状态——transferToImageBitmap
+    /// 的 spec 语义（区别于 resize：重置全状态）。
+    pub fn clear_bitmap(&mut self) {
+        self.pixel_buffer.fill(0);
+    }
+
     // ── Shadow properties ──
 
     /// 设置阴影颜色。

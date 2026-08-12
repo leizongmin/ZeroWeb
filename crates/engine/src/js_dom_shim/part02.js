@@ -2091,13 +2091,18 @@
       // 根目录节点（OPFS 唯一根）。
       var root = { kind: 'dir', children: {} };
       // 构造 FileSystemDirectoryHandle（绑定某目录节点）。
+      // 构造 FileSystemDirectoryHandle（绑定某目录节点）。
+      // R3254-C9：节点级缓存——同一目录多次获取返回同一对象（isSameEntry 判 true）。
       function dirHandle(node, name) {
-        return {
+        if (node._dh) return node._dh;
+        var h = {
           kind: 'directory',
           name: name || '',
           // getFileHandle(name, {create}) → 文件句柄（create=true 不存在则建空文件）。失败 reject。
           getFileHandle: function (n, opts) {
             return Promise.resolve().then(function () {
+              // R3254-C14：名称校验（spec FS：空串、'.'、'..'、含 '/' → TypeError）。
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的文件名'));
               var child = node.children[n];
               if (child && child.kind !== 'file') return Promise.reject(new TypeError(n + ' 是目录'));
               if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
@@ -2108,6 +2113,8 @@
           // getDirectoryHandle(name, {create}) → 子目录句柄。
           getDirectoryHandle: function (n, opts) {
             return Promise.resolve().then(function () {
+              // R3254-C14：名称校验。
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的目录名'));
               var child = node.children[n];
               if (child && child.kind !== 'dir') return Promise.reject(new TypeError(n + ' 是文件'));
               if (!child && !(opts && opts.create)) return Promise.reject(new TypeError(n + ' 不存在'));
@@ -2115,10 +2122,17 @@
               return dirHandle(child, n);
             });
           },
-          // removeEntry(name) → 删文件或目录（目录须空，spec 近似——非空目录递归删 pragmatic）。
-          removeEntry: function (n) {
+          // removeEntry(name, {recursive}) → 删文件或目录（spec FS：非空目录须 recursive，
+          // 否则 InvalidModificationError——此前静默递归删除）。
+          removeEntry: function (n, opts) {
             return Promise.resolve().then(function () {
-              if (!node.children[n]) return Promise.reject(new TypeError(n + ' 不存在'));
+              // R3254-C14：名称校验。
+              if (!_zwFsValidName(n)) return Promise.reject(new TypeError('无效的名称'));
+              var child = node.children[n];
+              if (!child) return Promise.reject(new TypeError(n + ' 不存在'));
+              if (child.kind === 'dir' && !(opts && opts.recursive) && Object.keys(child.children).length > 0) {
+                return Promise.reject(_zwDomException('目录非空（需 recursive）', 'InvalidModificationError'));
+              }
               delete node.children[n];
               return undefined;
             });
@@ -2136,10 +2150,19 @@
           },
           isSameEntry: function (other) { return this === other; },
         };
+        node._dh = h;
+        return h;
+      }
+      // R3254-C14：OPFS 句柄名称校验（spec FS §7：空串、'.'、'..'、含 '/' → 无效）。
+      function _zwFsValidName(n) {
+        return typeof n === 'string' && n.length > 0 && n !== '.' && n !== '..' && n.indexOf('/') < 0;
       }
       // 构造 FileSystemFileHandle（绑定某文件节点）。
+      // R3254-C9：节点级句柄缓存——同一文件多次 getFileHandle 返回**同一对象**，
+      // isSameEntry 按对象同一性判 true（此前每次新建对象 → 恒 false）。
       function fileHandle(node, name) {
-        return {
+        if (node._fh) return node._fh;
+        var h = {
           kind: 'file',
           name: name,
           // getFile() → Blob（读当前内容快照）。
@@ -2256,6 +2279,8 @@
           },
           isSameEntry: function (other) { return this === other; },
         };
+        node._fh = h;
+        return h;
       }
       return {
         // estimate() → 配额查询（analytics/存储压力检测高频）。headless 静态近似（usage 按虚拟 FS 字节数估）。

@@ -613,8 +613,14 @@ impl<'a> SvgPathParser<'a> {
             return None;
         }
         let s = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
-        let v = s.parse::<f32>().ok()?;
-        if v.is_finite() { Some(v) } else { None }
+        // R3254-C13：f64 解析 + clamp 到 f32——f32 溢出（如 `1e40`）在浏览器（double）是合法数，
+        // 直接 parse::<f32> 溢出返回 inf 且 pos 已消费 → 整条命令静默丢失。
+        let v = s.parse::<f64>().ok()?;
+        if v.is_finite() {
+            Some(v.clamp(f64::from(f32::MIN), f64::from(f32::MAX)) as f32)
+        } else {
+            None
+        }
     }
 
     /// 解析一个点 (x, y)。相对坐标按 (cur_x, cur_y) 偏移（cur 由调用方传入，用于相对偏移）。
@@ -677,7 +683,10 @@ fn arc_to_center(
     y2: f32,
 ) -> Option<(f32, f32, f32, f32, f32, f32, f32)> {
     // 退化：端点重合或半径为 0。
-    if ((x1 - x2).abs() < 1e-6 && (y1 - y2).abs() < 1e-6) || rx.abs() < 1e-6 || ry.abs() < 1e-6 {
+    // R3254-C13：端点**精确相等**才判退化（SVG 2 F.6.6）——此前 1e-6 容差把「接近但不
+    // 相等」的端点也退化为 line_to（应画正常弧）；精确相等时 spec 为整段省略（调用方
+    // line_to 的差异仅圆头线帽场景多一个点，可接受）。
+    if (x1 == x2 && y1 == y2) || rx.abs() < 1e-6 || ry.abs() < 1e-6 {
         return None;
     }
     let rx = rx.abs();

@@ -131,8 +131,8 @@ fn test_opfs_directory_and_remove_r3314() {
                  return root.keys();\
                }).then(function (ks) {\
                  globalThis.__rootKeys = String(ks.join(','));\
-                 /* removeEntry 删子目录 */\
-                 return root.removeEntry('docs');\
+                 /* removeEntry 删子目录（非空须 recursive——R3254-C14 spec 语义）*/\
+                 return root.removeEntry('docs', { recursive: true });\
                }).then(function () {\
                  return root.keys();\
                }).then(function (ks2) {\

@@ -191,7 +191,8 @@
                 var wire = String(__zw_canvas_op(sharedHandle, 'getImageData', '0', '0', String(oc.width), String(oc.height)));
                 var bm = _zwMakeImageBitmap(wire);
                 if (bm.width <= 0 || bm.height <= 0) return null;
-                __zw_canvas_op(sharedHandle, 'resizeContext', String(oc.width), String(oc.height));
+                // R3254-C8：只清 bitmap、保留绘图状态（同 OffscreenCanvas.prototype）。
+                __zw_canvas_op(sharedHandle, 'clearBitmap');
                 return bm;
               };
               return oc;
