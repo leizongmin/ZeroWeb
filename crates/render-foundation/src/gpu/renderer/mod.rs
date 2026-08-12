@@ -1127,9 +1127,12 @@ impl GpuRenderer {
         let t = import.dst_y;
         let r = l + import.width as f32;
         let b = t + import.height as f32;
+        // #11 修复：image 管线布局为 7-float（pos2 + uv2 + color3，IMAGE_VERTEX_STRIDE=28）。
+        // 旧实现 8-float/顶点（color vec4f）与布局错位——布局按 7 float 解析导致
+        // pos/uv/color 逐顶点错位（颜色解析错乱被宽松断言掩盖）。
         let verts = vec![
-            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, t, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            l, t, 0.0, 0.0, 1.0, 1.0, 1.0, r, t, 1.0, 0.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, t, 0.0,
+            0.0, 1.0, 1.0, 1.0, r, b, 1.0, 1.0, 1.0, 1.0, 1.0, l, b, 0.0, 1.0, 1.0, 1.0, 1.0,
         ];
         pass.set_pipeline(&self.image_pipeline);
         pass.set_bind_group(0, uniform_bg, &[]);
