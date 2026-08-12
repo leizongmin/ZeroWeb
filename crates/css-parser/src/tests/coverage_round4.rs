@@ -45,8 +45,9 @@ fn test_color_hex_8_digit() {
 #[test]
 fn test_color_hex_invalid_chars() {
     let c = parse_color("#ggg");
-    // hex_char_to_byte uses unwrap_or(0), so #ggg = Rgba(0,0,0,255)
-    assert!(c.is_some());
+    // R3344：`g` 非 hex digit，非法 hex 颜色须拒绝（与 6/8 位路径一致）。旧实现
+    // hex_char_to_byte 用 unwrap_or(0) 把 #ggg 误转为黑色——已修正为 Option<u8>。
+    assert!(c.is_none());
 }
 
 #[test]

@@ -592,10 +592,17 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        // 科学计数法（e/E）
+        // 科学计数法（e/E）。CSS Syntax §4.3.12：`e`/`E` 后须跟 `[+-]? <digit>`
+        // 才属 numeric token。故必须前置确认「符号后真有 digit」——否则 `e` 不属数字
+        //（`1e+`/`1e-`/`1e` 的 `e` 留给调用方作独立 token）。
+        // R3344 deep-review：旧实现仅在 `e` 后跟 `digit|+|-` 即吞 `e`，符号后无 digit
+        // 时 `num_str="1e+".parse()` 失败 → `unwrap_or(0.0)` 把整段数字静默吞成 `0`
+        //（`1e+` → Number(0)，数据丢失）。
+        // https://drafts.csswg.org/css-syntax-3/#consume-numeric-token
         if let Some('e') | Some('E') = self.peek()
-            && let Some(next) = self.peek_at(1)
-            && (Self::is_digit(next) || next == '+' || next == '-')
+            && let Some(after_e) = self.peek_at(1)
+            && (Self::is_digit(after_e)
+                || ((after_e == '+' || after_e == '-') && self.peek_at(2).is_some_and(Self::is_digit)))
         {
             num_str.push(self.consume().unwrap()); // e/E
             if self.peek() == Some('+') || self.peek() == Some('-') {

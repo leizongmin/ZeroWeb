@@ -175,9 +175,9 @@ fn parse_hex_color(value: &str) -> Option<ColorValue> {
             let c0 = chars.next()?;
             let c1 = chars.next()?;
             let c2 = chars.next()?;
-            let r = hex_char_to_byte(c0, c0);
-            let g = hex_char_to_byte(c1, c1);
-            let b = hex_char_to_byte(c2, c2);
+            let r = hex_char_to_byte(c0, c0)?;
+            let g = hex_char_to_byte(c1, c1)?;
+            let b = hex_char_to_byte(c2, c2)?;
             Some(ColorValue::Rgba(r, g, b, 255))
         }
         4 => {
@@ -187,10 +187,10 @@ fn parse_hex_color(value: &str) -> Option<ColorValue> {
             let c1 = chars.next()?;
             let c2 = chars.next()?;
             let c3 = chars.next()?;
-            let r = hex_char_to_byte(c0, c0);
-            let g = hex_char_to_byte(c1, c1);
-            let b = hex_char_to_byte(c2, c2);
-            let a = hex_char_to_byte(c3, c3);
+            let r = hex_char_to_byte(c0, c0)?;
+            let g = hex_char_to_byte(c1, c1)?;
+            let b = hex_char_to_byte(c2, c2)?;
+            let a = hex_char_to_byte(c3, c3)?;
             Some(ColorValue::Rgba(r, g, b, a))
         }
         6 => {
@@ -211,9 +211,15 @@ fn parse_hex_color(value: &str) -> Option<ColorValue> {
 }
 
 /// 将两个十六进制字符合并为一个字节（重复单字符，如 'f' → 0xFF）。
-fn hex_char_to_byte(c1: char, c2: char) -> u8 {
+///
+/// 返回 `None` 表示存在非 hex digit（如 `G`）——调用方据此拒绝整个 hex 颜色，与
+/// 6/8 位路径（`u8::from_str_radix(...).ok()?`）保持一致。R3344 deep-review：旧实现
+/// `unwrap_or(0)` 把 `#G00`（3 位非法）静默转为黑色，而 `#GGGGGG`（6 位）被正确拒绝，
+/// 两路径不一致；CSS Color 规定 `#` 后须全为 hex digit，非法 hex 颜色应拒绝。
+/// // https://drafts.csswg.org/css-color-4/#hex-notation
+fn hex_char_to_byte(c1: char, c2: char) -> Option<u8> {
     let s = format!("{}{}", c1, c2);
-    u8::from_str_radix(&s, 16).unwrap_or(0)
+    u8::from_str_radix(&s, 16).ok()
 }
 
 /// 解析 rgb() / rgba() 函数。

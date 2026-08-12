@@ -1399,7 +1399,13 @@ pub fn eval_calc_with_context(expr: &CalcExpr, ctx: &CalcContext) -> Option<f64>
             let min_v = eval_calc_with_context(min, ctx)?;
             let val_v = eval_calc_with_context(val, ctx)?;
             let max_v = eval_calc_with_context(max, ctx)?;
-            Some(val_v.clamp(min_v, max_v))
+            // CSS Values §11：clamp 语义 = max(MIN, min(VAL, MAX))。
+            // 注意：不可用 `f64::clamp`——std 在 `min > max` 或含 NaN 时 **panic**
+            //（R3344 deep-review：`calc(clamp(100px,50px,10px))` MIN>MAX 致渲染进程
+            // panic，攻击者 CSS 可触发）。`min`/`max` 显式实现 min>max 退化（回退到
+            // MIN）且对 NaN 安全（NaN 比较恒 false，传播为 NaN 而非 panic）。
+            // https://www.w3.org/TR/css-values-3/#calc-range
+            Some(val_v.min(max_v).max(min_v))
         }
         // CSS Values L4 单参数数学函数（number → number）。sqrt(负)/log(≤0) → None（IACVT 无效）。
         CalcExpr::UnaryOp(op, inner) => {
