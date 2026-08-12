@@ -117,6 +117,15 @@ async function waitForImages(page, timeoutMs = 400) {
   }
 }
 
+// `networkidle0` 不保证 CSS Font Loading 已完成字体解码和 face swap。
+// bounded 等待 FontFaceSet.ready，坏字体或不支持该 API 时仍继续批量捕获。
+async function waitForFonts(page, timeoutMs = 2000) {
+  await Promise.race([
+    page.evaluate(() => document.fonts ? document.fonts.ready.then(() => true) : true),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]).catch(() => {});
+}
+
 async function main() {
   const opts = parseArgs();
   const manifest = JSON.parse(await readFile(MANIFEST, 'utf-8'));
@@ -158,6 +167,7 @@ async function main() {
       const url = `${server.url}/${e.test}`;
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 8000 });
       await waitForImages(page);
+      await waitForFonts(page);
       await new Promise(r => setTimeout(r, 80));
       await page.screenshot({ path: join(opts.out, safeId(e.test) + '.png'), type: 'png' });
       ok++;

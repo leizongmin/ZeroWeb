@@ -55,6 +55,15 @@ async function waitForImages(page, timeoutMs = 400) {
   }
 }
 
+// `networkidle0` 只保证网络连接空闲，不保证 CSS Font Loading 已完成字体解码和
+// face swap。等待 FontFaceSet.ready，避免截图偶发捕获 fallback 字体。
+async function waitForFonts(page, timeoutMs = 2000) {
+  await Promise.race([
+    page.evaluate(() => document.fonts ? document.fonts.ready.then(() => true) : true),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]).catch(() => {});
+}
+
 // 递归收集 category 目录下所有 test 文件（相对 category 的路径）。
 // css-text / CSS2 的 test 散落在子目录（white-space/、box/...），顶层 readdirSync 会漏掉。
 // 扁平目录（grid/flex/...）退化为仅文件名，行为不变。
@@ -116,6 +125,7 @@ for (const cat of categories) {
     try {
       await page.goto(`${base}/${cat}/${t}`, { waitUntil: 'networkidle0', timeout: 8000 });
       await waitForImages(page);
+      await waitForFonts(page);
       await new Promise(r => setTimeout(r, 80));
       await page.screenshot({ path: outPath, type: 'png' });
       ok++;
