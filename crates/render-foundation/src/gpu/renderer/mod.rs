@@ -2339,7 +2339,10 @@ impl GpuRenderer {
             None
         };
 
-        let vertex_count = vertices.len() as u32 / 7;
+        // R3277 顶点布局 7→8 float（color 3→4，加 alpha）后本除数漏改：clip 路径
+        // 40 fill（1920 floats）draw 274 超出 buffer 240 顶点 → wgpu 校验失败 → 合成器崩溃。
+        // https://drafts.csswg.org/css-color-4/#alpha
+        let vertex_count = vertices.len() as u32 / 8;
 
         // 渲染
         match (&self.surface, &self.headless_texture) {
