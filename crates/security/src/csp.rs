@@ -168,18 +168,83 @@ impl ContentSecurityPolicy {
             }
         }
 
-        // 检查通配符域名匹配和前缀匹配
+        // 检查通配符域名匹配和源表达式匹配。
+        // R3342：旧实现用 `url.starts_with(value)` 做纯字符串前缀匹配——攻击者注册
+        // `example.com.evil.com`，`script-src https://example.com` 下其脚本
+        // `https://example.com.evil.com/x.js` 因 starts_with 误判被允许（CSP 绕过）。
+        // 改为按源表达式（[scheme://]host[:port]）解析后按 host 精确匹配。
         for value in values {
             if let Some(domain) = value.strip_prefix("*.") {
                 if Self::wildcard_domain_matches(domain, url) {
                     return true;
                 }
-            } else if url.starts_with(value) {
+            } else if Self::origin_expr_matches(value, url) {
                 return true;
             }
         }
 
         false
+    }
+
+    /// R3342：CSP 源表达式匹配——解析 `[scheme://]host[:port]` 形式的源表达式，
+    /// 按主机名（及可选的 scheme/port）匹配资源 URL。
+    ///
+    /// 规范（CSP §8.3 source expression）：源表达式 host 部分须精确匹配资源 URL 的 host，
+    /// 绝不前缀匹配。`https://example.com` 只匹配 host 恰为 example.com 的资源；
+    /// scheme 缺省时任意 scheme 都接受（host 匹配即可）；port 缺省时任意 port 都接受。
+    /// 非 host 形式（如相对路径、含 `/` 的路径表达式）回退到精确整串匹配。
+    fn origin_expr_matches(expr: &str, url: &str) -> bool {
+        // 取 expr 的 authority 部分（去掉可选 scheme://）。
+        let (expr_scheme, authority) = match expr.find("://") {
+            Some(pos) => (Some(&expr[..pos]), &expr[pos + 3..]),
+            None => (None, expr),
+        };
+        // authority = host[:port]；若含路径分隔符则不是纯源表达式，回退精确匹配。
+        if authority.contains('/') || authority.contains('?') || authority.contains('#') {
+            return expr == url;
+        }
+        let (expr_host, expr_port) = match authority.rfind(':') {
+            Some(pos) => (&authority[..pos], Some(&authority[pos + 1..])),
+            None => (authority, None),
+        };
+        if expr_host.is_empty() {
+            return expr == url;
+        }
+        // 解析资源 URL 的 scheme/host/port。
+        let Some((url_scheme, url_host, url_port)) = Self::split_url_origin(url) else {
+            return expr == url;
+        };
+        // host 须精确相等（大小写不敏感，规范 host 不区分大小写）。
+        if !url_host.eq_ignore_ascii_case(expr_host) {
+            return false;
+        }
+        // scheme 约束（expr 显式给出时须匹配；缺省则任意 scheme 接受）。
+        if let Some(es) = expr_scheme
+            && !url_scheme.eq_ignore_ascii_case(es)
+        {
+            return false;
+        }
+        // port 约束（expr 显式给出时须匹配；缺省则任意 port 接受）。
+        if let Some(ep) = expr_port
+            && Some(ep) != url_port
+        {
+            return false;
+        }
+        true
+    }
+
+    /// 从 URL 提取 `(scheme, host, port)`；非 http/https URL 返回 None。
+    fn split_url_origin(url: &str) -> Option<(&str, &str, Option<&str>)> {
+        let after_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        let end = after_scheme.find(['/', '?', '#']).unwrap_or(after_scheme.len());
+        let authority = &after_scheme[..end];
+        let (host, port) = match authority.find(':') {
+            // 注意 IPv6 字面量 [::1]:8080 罕见于此 crate 语境，按首个 ':' 分 host/port。
+            Some(pos) => (&authority[..pos], Some(&authority[pos + 1..])),
+            None => (authority, None),
+        };
+        let scheme = if url.starts_with("https://") { "https" } else { "http" };
+        Some((scheme, host, port))
     }
 
     /// 判断 URL 是否匹配 'self'（同源）。

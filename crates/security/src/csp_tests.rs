@@ -75,6 +75,43 @@ fn test_is_resource_allowed_wildcard_domain() {
     assert!(!csp.is_resource_allowed("script", "https://notexample.com/script.js", None));
 }
 
+/// R3342：CSP 源表达式须按主机名精确/通配符匹配，禁止纯字符串前缀匹配。
+///
+/// 修复前 `check_source_list` 用 `url.starts_with(value)` 做前缀匹配——攻击者注册
+/// `example.com.evil.com` 域名，`script-src https://example.com` 策略下其脚本
+/// `https://example.com.evil.com/x.js` 因 `starts_with("https://example.com")` 为 true
+/// 被错误允许（CSP 绕过，可加载任意跨源脚本）。CSP 规范要求源表达式按 host 匹配，
+/// `https://example.com` 只匹配 host 恰为 example.com（或显式 `*.example.com` 子域）。
+#[test]
+fn test_is_resource_allowed_no_prefix_bypass_r3342() {
+    // 策略仅允许 https://example.com。
+    let csp = ContentSecurityPolicy::parse("script-src https://example.com");
+
+    // 合法：host 恰为 example.com。
+    assert!(csp.is_resource_allowed("script", "https://example.com/script.js", None));
+    // 绕过尝试 1：攻击者域 example.com.evil.com（修复前 starts_with 误匹配）。
+    assert!(
+        !csp.is_resource_allowed("script", "https://example.com.evil.com/x.js", None),
+        "CSP 源表达式不得前缀匹配，example.com.evil.com 不应被 example.com 策略允许"
+    );
+    // 绕过尝试 2：攻击者域 evilexample.com（前缀含 example.com 但 host 不同）。
+    assert!(
+        !csp.is_resource_allowed("script", "https://evilexample.com/x.js", None),
+        "evilexample.com 不应被 example.com 策略允许"
+    );
+    // 合法子路径仍允许（host 不变）。
+    assert!(csp.is_resource_allowed("script", "https://example.com/a/b/c.js", None));
+
+    // 裸主机名源表达式（无 scheme）：`script-src example.com`。
+    let csp2 = ContentSecurityPolicy::parse("script-src example.com");
+    assert!(csp2.is_resource_allowed("script", "https://example.com/s.js", None));
+    assert!(csp2.is_resource_allowed("script", "http://example.com/s.js", None));
+    assert!(
+        !csp2.is_resource_allowed("script", "https://example.com.evil.com/s.js", None),
+        "裸主机名源表达式同样不得前缀匹配"
+    );
+}
+
 // ---- 内联脚本/样式测试 ----
 
 #[test]

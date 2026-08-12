@@ -30,11 +30,15 @@ pub enum MixedContentStatus {
 ///
 /// `page_origin` 为页面源。
 /// `resource_url` 为资源 URL。
+///
+/// R3343：scheme 大小写不敏感（RFC 3986 §3.1）。生产链路（fetch_proxy）传入的 URL 未经
+/// 规范化，`HTTP://`/`HtTp://` 须等价于 `http://`，否则阻塞型混合内容绕过检测。
 pub fn is_mixed_content(page_origin: &Origin, resource_url: &str) -> bool {
     if !page_origin.is_secure() {
         return false;
     }
-    resource_url.starts_with("http://")
+    // 大小写不敏感匹配 `http://`：取前 7 字节比对（避免对长 URL 整串 to_lowercase 分配）。
+    resource_url.len() >= 7 && resource_url.as_bytes()[..7].eq_ignore_ascii_case(b"http://")
 }
 
 /// 检查混合内容状态。
@@ -55,9 +59,14 @@ pub fn check_mixed_content(page_origin: &Origin, resource_url: &str, resource_ty
 
 /// 将 HTTP URL 升级为 HTTPS（用于可升级混合内容）。
 ///
-/// `url` 必须以 `http://` 开头。
+/// `url` 必须以 `http://` 开头（scheme 大小写不敏感，R3343）。
 pub fn upgrade_to_https(url: &str) -> Option<String> {
-    url.strip_prefix("http://").map(|rest| format!("https://{rest}"))
+    // 大小写不敏感剥离 `http://` 前缀，输出规范化为小写 `https://`。
+    if url.len() >= 7 && url.as_bytes()[..7].eq_ignore_ascii_case(b"http://") {
+        Some(format!("https://{}", &url[7..]))
+    } else {
+        None
+    }
 }
 
 /// 根据资源类型分类混合内容。
@@ -325,5 +334,47 @@ mod tests {
             is_mixed_content(&page, "http://example.com/resource"),
             "http:// 应被检测为混合内容"
         );
+    }
+
+    /// R3343：混合内容检测须对 URL scheme 大小写不敏感（RFC 3986 §3.1）。
+    ///
+    /// 生产链路 `apps/browser/fetch_proxy.rs` 直接把 renderer 经 IPC 传来的**未规范化**
+    /// `params.url` 原样喂给 `check_resource_url` → `is_mixed_content`。旧实现对 `http://`
+    /// 做大小写敏感前缀匹配，HTTPS 页面加载 `HTTP://`（大写）资源绕过检测，阻塞型混合内容
+    /// （script/iframe）静默放行 → 中间人可注入明文脚本（mixed-content 安全策略绕过）。
+    #[test]
+    fn test_mixed_content_case_insensitive_scheme_r3343() {
+        let page = Origin::parse("https://example.com").unwrap();
+
+        // 小写（基线）。
+        assert!(is_mixed_content(&page, "http://evil.com/script.js"));
+        // 大写 scheme —— 修复前绕过（starts_with("http://") 大小写敏感）。
+        assert!(
+            is_mixed_content(&page, "HTTP://evil.com/script.js"),
+            "大写 HTTP:// 须被识别为混合内容（scheme 大小写不敏感）"
+        );
+        // 混合大小写 scheme。
+        assert!(
+            is_mixed_content(&page, "HtTp://evil.com/script.js"),
+            "混合大小写 HtTp:// 须被识别为混合内容"
+        );
+
+        // check_mixed_content 须把大写 HTTP script 归为 Blockable（修复前归 NotMixedContent → 放行）。
+        let status = check_mixed_content(&page, "HTTP://evil.com/script.js", "script");
+        assert_eq!(
+            status,
+            MixedContentStatus::Blockable,
+            "大写 HTTP:// 脚本须归为 Blockable，修复前为 NotMixedContent（绕过）"
+        );
+
+        // upgrade_to_https 须能升级大写 HTTP://（修复前对大写返回 None）。
+        assert_eq!(
+            upgrade_to_https("HTTP://evil.com/img.png"),
+            Some("https://evil.com/img.png".to_string()),
+            "upgrade_to_https 须大小写不敏感地识别 HTTP:// 前缀"
+        );
+
+        // HTTPS 大写不应被误判为混合内容。
+        assert!(!is_mixed_content(&page, "HTTPS://evil.com/script.js"));
     }
 }
