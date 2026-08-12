@@ -1013,6 +1013,13 @@ impl DomSnapshotStats {
 
 // ── 测试 ──
 
+/// R3254-F10：GPU 截图 env 开关测试（gpu_screenshot_tests）与 dc13 oracle（tests）互斥——
+/// `ZW_HEADLESS_GPU_SCREENSHOT` 是进程级 env，并行设置会污染其他截图测试（dc13 误走
+/// GPU 截图 → llvmpipe 崩溃）。两个测试模块共用（mod tests 与 mod gpu_screenshot_tests
+/// 同层，经 super:: 引用）。
+#[cfg(test)]
+static GPU_SCREENSHOT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1547,6 +1554,8 @@ mod tests {
     /// oracle（welcome-chromium.png）为 tracked 文件（CI 可用）。baseline diff ~17%（字体墙）。
     #[test]
     fn test_dc13_line315_welcome_headless_vs_chromium_oracle() {
+        // R3254-F10：与 GPU 截图 env 测试互斥（env 污染 → 误走 GPU 截图崩溃）。
+        let _gpu_lock = super::GPU_SCREENSHOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use base64::Engine;
 
         let welcome = std::fs::read_to_string("assets/welcome.html").expect("welcome.html tracked fixture");
@@ -1959,6 +1968,7 @@ mod gpu_screenshot_tests {
     /// GPU 支持子集逐像素一致——parity/reftest 已验证）。
     #[test]
     fn gpu_screenshot_matches_cpu_for_supported_scene() {
+        let _gpu_lock = super::GPU_SCREENSHOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let server = HeadlessServer::new(0, 64.0, 64.0);
         let mut session = HeadlessSession::new(64.0, 64.0);
         // 先渲染一帧（页面内容进入 webview）

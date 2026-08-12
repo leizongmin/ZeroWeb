@@ -627,6 +627,22 @@ impl ProcessTabBackend {
         }
         self.fetch_proxy.remove_tab(tab_id);
         let _ = self.manager.shutdown_renderer(rid);
+        // R3254-F10：renderer 意外退出自动重启（一次）并按快照 URL 重新导航——此前
+        // 页面永久失败（pending_errors + loading=false，无恢复路径）。正常关闭
+        //（remove_tab）不走本路径（poll 断开检测专用）。
+        if let Some(url) = snapshots.get(&tab_id).and_then(|s| s.url.clone()) {
+            let epoch = snapshots
+                .get(&tab_id)
+                .map(|s| s.navigation_epoch.wrapping_add(1))
+                .unwrap_or(0);
+            self.ensure_renderer(tab_id, self.viewport);
+            self.navigate(tab_id, &url, epoch);
+            tracing::info!(
+                "Renderer {rid} for tab {} lost ({reason}); respawned and navigating {url}",
+                tab_id.0
+            );
+            return;
+        }
         if !self.pending_errors.iter().any(|(t, _)| *t == tab_id) {
             self.pending_errors
                 .push((tab_id, format!("渲染进程连接已断开: {reason}")));

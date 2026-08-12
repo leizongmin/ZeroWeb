@@ -19,7 +19,9 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
 
 fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, gpu_present: bool) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    // R3254-F10：重负载（make test 全量并行）下 renderer spawn + 渲染可超 60s——
+    // 预算放宽到 120s（多进程 GUI 测试的等待容忍）。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     loop {
         if gpu_present {
             app.poll_tab_fetch_with_gpu_present_for_test();

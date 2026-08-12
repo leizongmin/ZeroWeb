@@ -398,6 +398,10 @@ struct Client {
     status: Arc<SharedStatus>,
     child: Arc<Mutex<Option<Child>>>,
     worker: Option<JoinHandle<()>>,
+    /// R3254-F10：帧响应看门狗——worker 最近一次成功收到 compositor 响应的时间。
+    last_response: Arc<std::sync::Mutex<std::time::Instant>>,
+    /// R3254-F10：最近一次帧提交时间（发送侧）。
+    last_frame_sent: Arc<std::sync::Mutex<std::time::Instant>>,
 }
 
 impl Client {
@@ -413,13 +417,22 @@ impl Client {
         let worker_present = Arc::clone(&present);
         let worker_status = Arc::clone(&status);
         let worker_child = Arc::clone(&child);
+        // R3254-F10：帧响应看门狗时间戳（worker 在每次成功响应后更新 last_response）。
+        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let worker_last_response = Arc::clone(&last_response);
+        let last_frame_sent = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
         let worker = thread::Builder::new()
             .name("compositor-client".to_string())
             .spawn(move || {
                 let connection_child = Arc::clone(&worker_child);
-                worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
-                    spawn_transport(connection_child)
-                });
+                worker_main(
+                    worker_commands,
+                    worker_completed,
+                    worker_present,
+                    worker_status,
+                    worker_last_response,
+                    || spawn_transport(connection_child),
+                );
                 reap_child(&worker_child);
             })
             .ok();
@@ -434,10 +447,30 @@ impl Client {
             status,
             child,
             worker,
+            last_response,
+            last_frame_sent,
+        }
+    }
+
+    /// R3254-F10：帧响应看门狗——有帧已发送但长时间（10s）无任何 compositor 响应 →
+    /// 视为断连（compositor 进程活着但不响应：光栅化挂起/重负载卡死）。此前 worker 在
+    /// process_batch 的阻塞 recv 上永久卡住，后续帧全部堆积、页面冻结且无回退信号。
+    fn check_stall(&self) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let sent = *self.last_frame_sent.lock().unwrap_or_else(|e| e.into_inner());
+        let responded = *self.last_response.lock().unwrap_or_else(|e| e.into_inner());
+        if sent > responded && now.duration_since(responded) > std::time::Duration::from_secs(10) {
+            tracing::warn!("compositor: 帧响应超时（10s 无响应），视为断连并回退 legacy");
+            self.status.store(CompositorStatus::Disconnected);
         }
     }
 
     fn send(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64, paint: PaintSnapshotParams) {
+        // R3254-F10：记录帧提交时间（看门狗判定「发送后无响应」）。
+        *self.last_frame_sent.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
         if self.status.load() == CompositorStatus::Disconnected {
             return;
         }
@@ -616,6 +649,7 @@ fn worker_main<F>(
     completed: Arc<CompletedFrameChannel>,
     present: Arc<PresentFrameChannel>,
     status: Arc<SharedStatus>,
+    last_response: Arc<std::sync::Mutex<std::time::Instant>>,
     connect: F,
 ) where
     F: FnOnce() -> Result<Box<dyn WorkerTransport>, String>,
@@ -638,7 +672,14 @@ fn worker_main<F>(
     let mut next_message_id = 1u64;
 
     while let Some(frames) = commands.recv() {
-        if let Err(error) = process_batch(transport.as_mut(), frames, &completed, &present, &mut next_message_id) {
+        if let Err(error) = process_batch(
+            transport.as_mut(),
+            frames,
+            &completed,
+            &present,
+            &mut next_message_id,
+            &last_response,
+        ) {
             tracing::warn!("Compositor IPC disconnected: {error}");
             status.store(CompositorStatus::Disconnected);
             completed.clear();
@@ -655,6 +696,7 @@ fn process_batch(
     completed: &CompletedFrameChannel,
     present: &PresentFrameChannel,
     next_message_id: &mut u64,
+    last_response: &Arc<std::sync::Mutex<std::time::Instant>>,
 ) -> Result<(), ProtocolError> {
     let mut outstanding = HashMap::new();
     for command in commands {
@@ -757,6 +799,8 @@ fn process_batch(
 
     while !outstanding.is_empty() {
         let response = transport.recv()?;
+        // R3254-F10：每次成功响应更新看门狗时间戳（卡在 recv 时无法更新 → 主线程判超时）。
+        *last_response.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
         let Some(expected) = outstanding.remove(&response.id) else {
             return Err(ProtocolError::Channel(format!(
                 "unexpected compositor response id {}",
@@ -939,9 +983,12 @@ pub fn status() -> CompositorStatus {
     if !enabled() {
         return CompositorStatus::Disabled;
     }
-    CLIENT
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
+    let guard = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    // R3254-F10：帧响应看门狗——有帧发送但 10s 无响应 → 断连（回退 legacy 的触发源）。
+    if let Some(client) = guard.as_ref() {
+        client.check_stall();
+    }
+    guard
         .as_ref()
         .map_or(CompositorStatus::Starting, |client| client.status.load())
 }
@@ -1222,7 +1269,16 @@ mod tests {
         let completed = CompletedFrameChannel::new(1);
         let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
-        process_batch(&mut transport, batch, &completed, &present, &mut next_message_id).unwrap();
+        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        process_batch(
+            &mut transport,
+            batch,
+            &completed,
+            &present,
+            &mut next_message_id,
+            &last_response,
+        )
+        .unwrap();
 
         let sent = sent.lock().unwrap();
         assert!(matches!(
@@ -1284,6 +1340,7 @@ mod tests {
         let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
 
+        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
         process_batch(
             &mut transport,
             vec![
@@ -1293,6 +1350,7 @@ mod tests {
             &completed,
             &present,
             &mut next_message_id,
+            &last_response,
         )
         .unwrap();
 
@@ -1332,12 +1390,20 @@ mod tests {
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
-                Ok(Box::new(BlockingTransport {
-                    entered: Some(entered_tx),
-                    release: release_rx,
-                }))
-            });
+            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+            worker_main(
+                worker_commands,
+                worker_completed,
+                worker_present,
+                worker_status,
+                last_response,
+                || {
+                    Ok(Box::new(BlockingTransport {
+                        entered: Some(entered_tx),
+                        release: release_rx,
+                    }))
+                },
+            );
         });
 
         assert!(commands.send_frame(pending(1, 1, 1)));
@@ -1379,12 +1445,20 @@ mod tests {
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
-                Ok(Box::new(ScriptedTransport {
-                    sent: Arc::new(Mutex::new(Vec::new())),
-                    responses: VecDeque::from([Err(ProtocolError::Channel("closed".to_string()))]),
-                }))
-            });
+            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+            worker_main(
+                worker_commands,
+                worker_completed,
+                worker_present,
+                worker_status,
+                last_response,
+                || {
+                    Ok(Box::new(ScriptedTransport {
+                        sent: Arc::new(Mutex::new(Vec::new())),
+                        responses: VecDeque::from([Err(ProtocolError::Channel("closed".to_string()))]),
+                    }))
+                },
+            );
         });
         assert!(commands.send_frame(pending(1, 1, 1)));
         worker.join().unwrap();
@@ -1404,18 +1478,28 @@ mod tests {
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            worker_main(worker_commands, worker_completed, worker_present, worker_status, || {
-                Ok(Box::new(ScriptedTransport {
-                    sent: Arc::new(Mutex::new(Vec::new())),
-                    responses: VecDeque::new(),
-                }))
-            });
+            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+            worker_main(
+                worker_commands,
+                worker_completed,
+                worker_present,
+                worker_status,
+                last_response,
+                || {
+                    Ok(Box::new(ScriptedTransport {
+                        sent: Arc::new(Mutex::new(Vec::new())),
+                        responses: VecDeque::new(),
+                    }))
+                },
+            );
         });
 
         while status.load() == CompositorStatus::Starting {
             thread::yield_now();
         }
         let mut client = Client {
+            last_response: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
+            last_frame_sent: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
             commands,
             completed,
             present: Arc::new(PresentFrameChannel::new()),
