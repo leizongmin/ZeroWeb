@@ -284,6 +284,16 @@ jobs:
           # target/debug/zero-compositor；compositor 无 features 定义
           cargo build -p zero-compositor --bin zero-compositor
 
+      - name: Build zero-renderer (bin required by browser multiprocess tests)
+        shell: bash
+        run: |
+          # 不带 --target：browser 多进程测试经 resolve_renderer_binary 硬编码
+          # target/debug/zero-renderer；`cargo nextest run -p zero-renderer` 只产
+          # 测试 harness 不产该 bin——缺失时 try_new() 静默回退 in-process worker，
+          # 而 click/checkbox 等默认动作是 renderer 专属实现（worker 仅镜像 keydown），
+          # 4 个 R3254 多进程 GUI 测试全挂（60s 超时）。与上方 compositor 同模式。
+          cargo build -p zero-renderer --bin zero-renderer
+
       - name: Run app tests
         if: matrix.v8_runtime != false
         timeout-minutes: 40
@@ -347,6 +357,14 @@ jobs:
           # 不带 --target/--features：browser 测试 fallback 路径硬编码
           # target/debug/zero-compositor；compositor 无 features 定义
           cargo build -p zero-compositor --bin zero-compositor
+
+      - name: Build zero-renderer (bin required by browser multiprocess tests)
+        if: matrix.v8_runtime == false
+        shell: bash
+        run: |
+          # 同 v8 job 说明：`cargo nextest run -p zero-renderer` 不产 bin，
+          # 缺失时多进程 GUI 测试静默回退 worker 全挂。
+          cargo build -p zero-renderer --bin zero-renderer
 
       - name: Run QuickJS-backed tests
         if: matrix.v8_runtime == false
