@@ -102,7 +102,9 @@ fn rasterize_gpu(
         }
         gpu.render_scene_with_clip(&primitives.fills, font_loader, glyph_cache, &[], &[], Some(clip_rect));
     } else {
-        gpu.render_full_scene_gpu(
+        // P0-1：GPU 生产路径未实现的特性（clips/blend/半透明/带模糊阴影）时
+        // render_full_scene_gpu 返回 false → 本函数返回 false → 调用方回退 CPU 栅格化。
+        if !gpu.render_full_scene_gpu(
             primitives,
             font_loader,
             glyph_cache,
@@ -112,7 +114,9 @@ fn rasterize_gpu(
             &[],
             &[],
             1.0,
-        );
+        ) {
+            return false;
+        }
     }
     let Some(pixels) = gpu.read_pixels() else {
         return false;

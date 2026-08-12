@@ -238,7 +238,7 @@ impl BrowserApp {
             };
 
             // 使用全量 GPU 渲染管线
-            renderer.render_full_scene_gpu(
+            if !renderer.render_full_scene_gpu(
                 &scene_primitives,
                 &self.font_loader,
                 &mut self.glyph_cache,
@@ -248,7 +248,35 @@ impl BrowserApp {
                 &overlay_glyphs,
                 &overlay_rounded_rects,
                 1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
-            );
+            ) {
+                // P0-1：GPU 不支持本帧特性（clips/blend_modes/半透明/带模糊阴影/
+                // 窗口模式滤镜变换）→ CPU 整帧渲染后上传 blit（慢但对，避免静默画错）。
+                // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
+                let fb = self.render_scene_cpu(
+                    width,
+                    height,
+                    &scene_primitives,
+                    &glyphs,
+                    &overlay_fills,
+                    &overlay_glyphs,
+                    &overlay_rounded_rects,
+                );
+                let texture = renderer.upload_frame(fb.width, fb.height, &fb.data);
+                renderer.set_compositor_import(texture, fb.width, fb.height, 0.0, 0.0);
+                let empty = zero_render_foundation::primitive::RenderPrimitives::default();
+                renderer.render_full_scene_gpu(
+                    &empty,
+                    &self.font_loader,
+                    &mut self.glyph_cache,
+                    None,
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                    1.0,
+                );
+                renderer.clear_compositor_import();
+            }
             // R3254-M5：GPU 光栅化路径同样每帧回收零引用图片（此前 GPU 路径从不 gc，
             // ImageCache 的 2048 条目/256MB 上限形同虚设）。
             if let Some(id) = active_tab

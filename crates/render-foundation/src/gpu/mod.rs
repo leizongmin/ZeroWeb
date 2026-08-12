@@ -11,6 +11,7 @@ pub mod atlas;
 pub mod mesh;
 pub mod pipeline;
 pub mod renderer;
+pub mod scene_support;
 #[cfg(target_os = "linux")]
 pub mod texture_export;
 #[cfg(target_os = "linux")]

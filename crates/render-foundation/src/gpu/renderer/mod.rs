@@ -797,12 +797,26 @@ impl GpuRenderer {
         overlay_glyphs: &[GlyphDraw],
         overlay_rounded_rects: &[RoundedRectPrimitive],
         scale_factor: f32,
-    ) {
+    ) -> bool {
         let scale = normalize_scale_factor(scale_factor);
         let (width, height) = self.surface_size;
 
         if self.present_suspended {
-            return;
+            return false;
+        }
+
+        // P0-1：GPU 生产路径未实现的特性（clips/blend_modes/半透明颜色/带模糊阴影/
+        // 窗口模式滤镜变换）静默画错——返回 false 由调用方回退 CPU 整帧重画（慢但对）。
+        // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
+        if !crate::gpu::scene_support::scene_supported(
+            primitives,
+            ui_glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            overlay_rounded_rects,
+            self.headless_texture.is_some(),
+        ) {
+            return false;
         }
 
         // ── Phase 1: 收集所有顶点数据（不持有 GPU 资源借用） ──
@@ -860,7 +874,7 @@ impl GpuRenderer {
         // 获取渲染目标
         let target = match self.acquire_render_target(width, height) {
             Some(target) => target,
-            None => return,
+            None => return false,
         };
         let device = self.device.clone();
         let queue = self.queue.clone();
@@ -898,8 +912,7 @@ impl GpuRenderer {
             self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts);
             // 4. Gradients
             self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources);
-            // 4b. Compositor GPU 导入 blit（P0）
-            #[cfg(target_os = "linux")]
+            // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
             self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
             // 5. Images
             self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources);
@@ -943,6 +956,45 @@ impl GpuRenderer {
         }
 
         target.present(&device);
+        true
+    }
+
+    /// 上传 CPU 渲染帧（RGBA 行优先）为 GPU 纹理，供 P0-1 回退路径 blit 呈现。
+    pub fn upload_frame(&self, width: u32, height: u32, rgba: &[u8]) -> wgpu::Texture {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("CPU Fallback Frame"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        texture
     }
 
     /// 内部：在 render pass 中使用 fill pipeline 绘制顶点
@@ -1023,8 +1075,7 @@ impl GpuRenderer {
         }
     }
 
-    /// 内部：在 render pass 中绘制 compositor 导入纹理
-    #[cfg(target_os = "linux")]
+    /// 内部：在 render pass 中绘制 compositor 导入纹理 / CPU 回退帧
     fn draw_compositor_import_pass(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
@@ -2255,3 +2306,6 @@ fn scale_rect(rect: Rect, scale: f32) -> Rect {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod parity_tests;
