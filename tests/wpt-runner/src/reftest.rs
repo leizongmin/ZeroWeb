@@ -518,7 +518,7 @@ pub fn render_to_framebuffer_with_layout_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> (FrameBuffer, zero_layout_engine::types::LayoutBox, String) {
-    let (fb, root, _paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir);
+    let (fb, root, _paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir, false);
     (fb, root, html)
 }
 
@@ -536,7 +536,7 @@ pub fn render_to_framebuffer_with_layout_and_paint_skip_with_base(
     std::collections::HashSet<zero_dom::NodeId>,
     String,
 ) {
-    let (fb, root, paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir);
+    let (fb, root, paint_skip, html, _timings) = render_with_layout_inner(html, css, config, base_dir, false);
     (fb, root, paint_skip, html)
 }
 
@@ -552,7 +552,7 @@ pub fn render_to_framebuffer_with_timings(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> (FrameBuffer, zero_engine::PipelineTimings) {
-    let (fb, _root, _paint_skip, _html, timings) = render_with_layout_inner(html, css, config, base_dir);
+    let (fb, _root, _paint_skip, _html, timings) = render_with_layout_inner(html, css, config, base_dir, false);
     (fb, timings)
 }
 
@@ -585,6 +585,7 @@ fn render_with_layout_inner(
     css: &str,
     config: &ReftestConfig,
     base_dir: Option<&Path>,
+    use_gpu: bool,
 ) -> (
     FrameBuffer,
     zero_layout_engine::types::LayoutBox,
@@ -798,10 +799,22 @@ fn render_with_layout_inner(
     };
 
     // 使用已构建的图像缓存（包含固有尺寸信息）
+    // R3270（#5）：--gpu 走真 GpuRenderer::new_headless 渲染（取代 CPU stub）。
+    // GPU 场景含未实现特性时返回 false → 回退 CPU（P0-1 语义，慢但对）。
     // S2 可选线程化（#3 渲染线程化 RFC）：ZW_RENDER_THREAD=1 时光栅化在
     // 独立线程执行（thread::scope），结果与单线程逐像素一致——默认关，
     // 测试确定性优先；env 用于验证线程路径正确性。
-    let fb = if render_threading_enabled_for_tests() {
+    let fb = if use_gpu {
+        render_full_scene_gpu_reftest(
+            config.viewport_width,
+            fb_height,
+            config.scale_factor,
+            &result.display_list.primitives,
+            font_loader,
+            &mut glyph_cache,
+            &mut image_cache,
+        )
+    } else if render_threading_enabled_for_tests() {
         std::thread::scope(|s| {
             s.spawn(|| {
                 render_full_scene(
@@ -1195,22 +1208,80 @@ pub fn render_to_framebuffer_gpu(html: &str, css: &str, config: &ReftestConfig) 
 
 /// 将 HTML 渲染到帧缓冲（GPU 无头模式，支持图片加载）。
 ///
-/// ⚠️ **当前为 CPU 回退 stub**：直接转调 `render_to_framebuffer_with_base`，并**不**
-/// 使用 `GpuRenderer`。原因：GPU 路径尚不支持全量图元（13 种）+ 图片加载。
-/// 因此 `--gpu` 在 reftest 下**不产生任何加速**（与 CPU 同样的软件光栅），历史上
-/// 还曾被 `effective_jobs` 强制成 jobs=1（~6× 慢，已于杠杆3 移除）。
-///
-/// 真正接入 GPU 需补齐：用 `GpuRenderer::new_headless` 渲染全图元、接入 ImageCache、
-/// 处理 glyph atlas，并按 `GPU_CREATE_MUTEX`（gpu/renderer/mod.rs）约束设计 device 复用/
-/// 并行度。落地后 reftest 方可获得 GPU 光栅加速（lavapipe/真实 GPU）。
+/// R3270（#5）：真 `GpuRenderer::new_headless` 渲染（取代 CPU stub）。全图元 +
+/// ImageCache + glyph atlas 已由 `render_full_scene_gpu` 支持；GPU 场景含未实现
+/// 特性（clip/blend/模糊阴影/滤镜）时返回 false → 回退 CPU（P0-1 语义，慢但对）。
+/// device 创建受 `GPU_CREATE_MUTEX` 序列化（并发 job 安全，创建后各 device 独立渲染）。
 pub fn render_to_framebuffer_gpu_with_base(
     html: &str,
     css: &str,
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    // GPU 渲染路径暂时回退到 CPU（GPU 路径不支持全量图元 + 图片加载）——见上方 doc。
-    render_to_framebuffer_with_base(html, css, config, base_dir)
+    render_with_layout_inner(html, css, config, base_dir, true).0
+}
+
+/// GPU 无头渲染（#5）：render_full_scene_gpu → read_pixels；不支持特性回退 CPU。
+#[allow(clippy::too_many_arguments)]
+fn render_full_scene_gpu_reftest(
+    width: u32,
+    height: u32,
+    scale_factor: f32,
+    primitives: &zero_render_foundation::primitive::RenderPrimitives,
+    font_loader: &FontLoader,
+    glyph_cache: &mut GlyphCache,
+    image_cache: &mut ImageCache,
+) -> FrameBuffer {
+    let mut renderer = match zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(width, height) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[reftest] GPU 渲染器初始化失败，回退 CPU: {e}");
+            return render_full_scene(
+                width,
+                height,
+                scale_factor,
+                primitives,
+                font_loader,
+                glyph_cache,
+                Some(image_cache),
+                &[],
+                &[],
+                &[],
+                &[],
+            );
+        }
+    };
+    let rendered = renderer.render_full_scene_gpu(
+        primitives,
+        font_loader,
+        glyph_cache,
+        Some(image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        scale_factor,
+    );
+    if !rendered {
+        // GPU 未实现特性 → CPU 回退（P0-1）
+        return render_full_scene(
+            width,
+            height,
+            scale_factor,
+            primitives,
+            font_loader,
+            glyph_cache,
+            Some(image_cache),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+    }
+    let pixels = renderer.read_pixels().expect("GPU read_pixels");
+    let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
+    fb.data.copy_from_slice(&pixels);
+    fb
 }
 
 #[cfg(all(test, feature = "v8"))]

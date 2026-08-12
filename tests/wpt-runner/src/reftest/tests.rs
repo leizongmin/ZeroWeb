@@ -161,6 +161,31 @@ fn test_media_type_print_applies_print_rules() {
     );
 }
 
+/// R3270（#5）：`--gpu` 路径真 GPU 渲染——红块页面 GPU framebuffer 中心应为红，
+/// 且与 CPU 渲染逐像素一致（GPU 支持子集：不透明无 clip/blend/滤镜）。
+#[test]
+fn test_gpu_render_matches_cpu_for_supported_scene() {
+    let html = concat!(
+        "<html><body style=\"margin:0\">",
+        "<div style=\"width:40px;height:40px;background:#f00;\"></div>",
+        "</body></html>"
+    );
+    let cfg = ReftestConfig::default();
+    let cpu_fb = render_to_framebuffer_with_base(html, "", &cfg, None);
+    let gpu_fb = render_to_framebuffer_gpu_with_base(html, "", &cfg, None);
+    // GPU framebuffer 尺寸一致
+    assert_eq!((gpu_fb.width, gpu_fb.height), (cpu_fb.width, cpu_fb.height));
+    // 红块中心 (20,20) 应为红
+    let b = (20 * cpu_fb.width as usize + 20) * 4;
+    assert_eq!(&gpu_fb.data[b..b + 3], &[255, 0, 0], "GPU 红块中心应为红");
+    // 与 CPU 全帧逐像素一致（容差 0——#2 修复后 headless 直通 byte）
+    let (diff_pixels, max_channel) = compare_pixels(&cpu_fb, &gpu_fb, 0);
+    assert_eq!(
+        diff_pixels, 0,
+        "GPU 与 CPU 渲染应逐像素一致（支持子集），diff={diff_pixels} max_channel={max_channel}"
+    );
+}
+
 /// 递归算 LayoutBox 树的最大 abs bottom（镜像 pipeline.rs `layout_extent_y`）。
 /// 供 R2000 端到端分页测试量 layout extent。
 fn r2000_max_abs_bottom(b: &zero_layout_engine::types::LayoutBox, parent_offset_y: f32) -> f32 {
