@@ -287,12 +287,12 @@ jobs:
       - name: Build zero-renderer (bin required by browser multiprocess tests)
         shell: bash
         run: |
-          # 不带 --target：browser 多进程测试经 resolve_renderer_binary 硬编码
-          # target/debug/zero-renderer；`cargo nextest run -p zero-renderer` 只产
-          # 测试 harness 不产该 bin——缺失时 try_new() 静默回退 in-process worker，
-          # 而 click/checkbox 等默认动作是 renderer 专属实现（worker 仅镜像 keydown），
-          # 4 个 R3254 多进程 GUI 测试全挂（60s 超时）。与上方 compositor 同模式。
-          cargo build -p zero-renderer --bin zero-renderer
+          # 带 --target：测试二进制位于 target/<triple>/debug/deps/，resolve_renderer_binary
+          # 上溯到 target/<triple>/debug/ 查找（与 compositor 的硬编码 target/debug 不同）。
+          # `cargo nextest run -p zero-renderer` 只产测试 harness 不产该 bin——缺失时
+          # try_new() 静默回退 in-process worker，而 click/checkbox 等默认动作是 renderer
+          # 专属实现（worker 仅镜像 keydown），4 个 R3254 多进程 GUI 测试全挂（60s 超时）。
+          cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer
 
       - name: Run app tests
         if: matrix.v8_runtime != false
@@ -362,9 +362,9 @@ jobs:
         if: matrix.v8_runtime == false
         shell: bash
         run: |
-          # 同 v8 job 说明：`cargo nextest run -p zero-renderer` 不产 bin，
-          # 缺失时多进程 GUI 测试静默回退 worker 全挂。
-          cargo build -p zero-renderer --bin zero-renderer
+          # 同 v8 job 说明：带 --target 输出到测试二进制上溯路径；quickjs 矩阵
+          # 需带 features（ARM64 Windows 无 v8 预编译库，default features 构建会失败）。
+          cargo build ${{ matrix.features }} --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer
 
       - name: Run QuickJS-backed tests
         if: matrix.v8_runtime == false
