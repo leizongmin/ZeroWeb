@@ -521,6 +521,48 @@ mod runtime_path_tests {
         }
     }
 
+    /// R3335：native-dom 多 WebView 跨类别 parity sweep——**单测试内顺序建 6 个 native_dom=true WebView**
+    ///（dataset/geometry/MO/runtime/security/storage），模拟多标签同进程生产场景。承接 R3334（多 WebView
+    /// disposed-Isolate panic 修复——本门在 R3334 前会 panic，现 Drop-reset 清线程局部使顺序多 WebView 安全）。
+    ///
+    /// **与 R3332/R3333 单 WebView 门互补**：R3332/R3333 各门建 1 WebView 锁单类别 parity（粒度细、定位准）；
+    /// 本门建 6 WebView 锁**多 WebView 顺序执行无串扰**（native 线程局部 Drop 后干净启动，验证 R3334 修复
+    /// 在更广 parity 范围成立 + 多标签生产路径稳）。任一用例 script 经 native 路径失败或 isolate 泄漏回归即 fail。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_multi_webview_sweep_r3335() {
+        let ctx = TestContext::default();
+        let all = builtin_tests();
+        let ids = [
+            "js-dom/dataset-api",
+            "web-api/geometry/interfaces",
+            "js-dom/mutation-observer",
+            "web-api/runtime/timer-nesting",
+            "security/csp/unsafe-eval",
+            "multiprocess/storage-isolation",
+        ];
+        let mut ran = 0;
+        let mut failed: Vec<String> = Vec::new();
+        for id in ids {
+            match all.iter().find(|c| c.id == id) {
+                Some(case) => {
+                    ran += 1;
+                    if let Err(e) = check_js_executes_ok_native(&case.html, &ctx) {
+                        failed.push(format!("{}: {}", id, e));
+                    }
+                }
+                None => failed.push(format!("{}: 用例未找到（采样漂移？）", id)),
+            }
+        }
+        assert!(ran >= 5, "应至少命中 5 用例（实际 {}）——采样漂移", ran);
+        assert!(
+            failed.is_empty(),
+            "native 多 WebView sweep 失败（{} 例回归/串扰/isolate 泄漏）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
+
     /// R3332：P1b **native-dom 路径** parity 回归门——经 `WebViewConfig.native_dom=true`（V8 原生
     /// dom_bindings S0–S5）真实执行**已行为锁定的用例**，断言原生路径与默认 shim 路径**行为对等**
     ///（脚本经原生绑定执行，行为锁断言仍成立——不静默回归）。

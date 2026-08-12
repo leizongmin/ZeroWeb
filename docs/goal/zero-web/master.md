@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3334：修复 R3332 发现的多 WebView disposed-Isolate panic——WebView Drop（native_dom=true 时）调 dom_bindings::reset_native_state 清线程局部 V8 Handle，同进程多 native WebView 不再 panic（多标签生产阻塞项消除，P1b 默认开前提之一闭合）；默认关路径不触 Drop-reset，零回归。前轮 R3333：native parity 门扩 5 类。
+**最后更新**: 2026-08-13（R3335：native-dom 多 WebView 跨类别 parity sweep——R3334 修复后单测试内顺序建6 native WebView（dataset/geometry/MO/runtime/security/storage），模拟多标签生产 + 锁 Drop-reset 无串扰。前轮 R3334：多 WebView disposed-Isolate panic 修复。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,18 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### native-dom 多 WebView 跨类别 parity sweep（本轮 R3335，wpt-runner）
+
+承接 R3334（多 WebView disposed-Isolate panic 修复——Drop-reset 清线程局部）。R3332/R3333 的 native parity 门因 R3332 panic 用「每测试单 WebView」粒度。R3334 修复后约束解除，本轮建**单测试内顺序 6 native WebView sweep**（dataset/geometry/MO/runtime/security/storage）——模拟多标签同进程生产场景，验证 Drop-reset 在更广 parity 范围成立 + 顺序多 WebView 无串扰。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +`native_dom_multi_webview_sweep_r3335`——单测试顺序建 6 native WebView（各 load_html+run_page_scripts_strict），任一 script 经 native 路径失败或 isolate 泄漏回归即 fail。与 R3332/R3333 单 WebView 门互补（细粒度定位 + 集成态多 WebView 顺序稳）|
+
+**为何净正向且零回归**：纯测试增强。**验证**：`runtime_path_tests` **22 passed / 0 failed**（6 native parity 门：5 单 WebView + 1 多 WebView sweep，0 回归，test-guard）；fmt clean + clippy v8/quickjs 零警告。
+
+**下游判断（固化）**：R3335 进一步固化 native 路径生产就绪度——多 WebView 顺序执行（多标签模拟）在 6 类 parity 全过。**native 路径自主测试覆盖现饱和**：单类别 parity（R3332/R3333）+ 多 WebView 顺序（R3334 回归门 + R3335 sweep）双重锁。剩余 native 推进仍需用户 rule 11 点名（默认开 = 行为变更 + S6/S7 shim 萎缩）。
 
 ### 修复多 WebView disposed-Isolate panic（R3332 发现 → R3334 闭合，engine + webview）
 
