@@ -62,13 +62,31 @@
    注意 `--test-threads=1` 必须：wgpu 多线程并发创建 Instance 会 SIGSEGV。
 3. 验证设备枚举：`vulkaninfo --summary`（vulkan-tools 包）。
 
+## 修复进展（2026-08-12，R3256-R3265 已落地）
+
+- **P0-1 回退机制**：`gpu::scene_support::scene_supported` 检测 GPU 未实现特性 →
+  `render_full_scene_gpu` 返回 false → 合成器/浏览器回退 CPU 整帧（慢但对）
+- **P0-2 对照测试**：`gpu/renderer/parity_tests.rs` CPU↔GPU 全帧逐像素对比
+  （headless sRGB target 编码语义：fill/图片中间色被编码、渐变 sRGB 纹理↔target
+  恒等链无损——场景用不动点色 + 渐变中间色）
+- **P1-3 窗口冒烟**：`window_smoke_tests.rs` 真实 winit 窗口全生命周期
+  （EventLoop 每进程一次 + any_thread；无显示环境跳过）
+- **P1-4 合成器进程验证**：frame_flow 新增回退/半透明渲染测试（真实子进程）
+- **P1-5 断言加固**：阴影/渐变/blur 从 1-2 像素采样改为区域与语义断言
+- **P2-6 图片超限**：> max_texture_dimension_2d 回退 CPU（device_limits 测试）
+- **P2-7 blend_modes**：CPU 16 模式（源层重渲染，render_draw_order Blend 标记 →
+  独立源缓冲 → composite_blend 区域合成；typed 逃生舱保持跳过）
+- **P2-8 视觉对齐**：半透明 alpha（顶点 7→8 float，image 管线独立布局）、
+  conic 角度约定、dash 2w:1w / dot 圆点、凹多边形耳切、synthetic italic shear、
+  HiDPI scale_factor、repeating first≠0 回退
+
+**仍待办**：真 Vulkan dma-buf（wgpu 30+ API，dependency-upgrade-backlog P1）、
+窗口模式滤镜/变换（headless 守卫）、clip GPU 实现、blend GPU 实现、
+headless 中间色 sRGB 编码对齐（窗口模式无此问题）。
+
 ## 如何复用 / 后续
 
-- **止血（P0）**：GPU 不支持的图元回退 CPU 重画（合成器已有先例：`gpu_raster.rs` 有图片即回退），
-  把「画错」降级为「慢但对」；加 CPU↔GPU 全帧像素对照测试（复用 reftest `compare_pixels_labeled`），
-  把缺口表变成可量化失败清单。
-- **补盲区（P1）**：Xvfb 上真实 `new_for_window` 冒烟（本机即可跑）；渲染进程→合成器→present
-  集成链路自动化；效果类断言改为区域统计或对照。
-- **真硬件（P2）**：一台有 Vulkan ICD 的机器跑 GPU 套件；图片上传补尺寸 clamp；真 dma-buf
-  （wgpu 30+ API）；blend_modes 先 CPU 实现（16 模式按 CSS 合成规范）。
+- 改 GPU 渲染代码时对照上文缺口表逐项核对，避免新增分叉。
+- GPU 新增功能后记得收窄 `scene_supported` 回退面（如 P2-8 alpha 移除半透明检测）。
+- 排查工具：`VK_ICD_FILENAMES` 单 ICD 验证真硬件；`--test-threads=1` 防 wgpu SIGSEGV。
 - 排查基线已文档化：改 GPU 渲染代码时对照上表逐项核对，避免新增分叉；每修一项在表中划掉。
