@@ -54,9 +54,11 @@ fn renderer_binary_filename() -> &'static str {
 /// **`zero-renderer` 与 `zero-browser` 同目录**。
 /// 查找顺序：
 /// 1. `ZERO_RENDERER_PATH` 环境变量
-/// 2. macOS `ZeroBrowser Helper (Renderer).app`
-/// 3. `std::env::current_exe()` 所在目录
-/// 4. `PATH`（系统级安装等兜底）
+/// 2. `CARGO_BIN_EXE_zero-renderer`（cargo test / cargo run 注入——测试环境 PATH 不含
+///    `target/debug`，此前多进程测试全部静默回退单进程 worker，见 R3254 修复）
+/// 3. macOS `ZeroBrowser Helper (Renderer).app`
+/// 4. `std::env::current_exe()` 所在目录（含测试二进制 `target/debug/deps/` 上溯 `target/debug/`）
+/// 5. `PATH`（系统级安装等兜底）
 fn resolve_renderer_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
         let candidate = PathBuf::from(path);
@@ -66,8 +68,26 @@ fn resolve_renderer_binary() -> Option<PathBuf> {
         tracing::warn!("ZERO_RENDERER_PATH 指向的文件不存在: {}", candidate.display());
     }
 
+    if let Ok(path) = std::env::var("CARGO_BIN_EXE_zero-renderer") {
+        let candidate = PathBuf::from(path);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
     if let Some(candidate) = renderer_binary_near_current_exe() {
         return Some(candidate);
+    }
+
+    // cargo test 测试二进制位于 `target/debug/deps/`——上溯到 `target/debug/`。
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+        && let Some(grandparent) = parent.parent()
+    {
+        let candidate = grandparent.join(renderer_binary_filename());
+        if candidate.is_file() {
+            return Some(candidate);
+        }
     }
 
     find_renderer_in_path()

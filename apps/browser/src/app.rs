@@ -659,6 +659,19 @@ impl BrowserApp {
         self.new_tab_button_x()
     }
 
+    /// 测试 helper：显式回退单进程 worker 路径（R3254——测试默认单进程，
+    /// 断言 worker 路径行为的测试可显式禁用）。
+    #[cfg(test)]
+    pub fn disable_multiprocess_for_test(&mut self) {
+        self.tabs.disable_multiprocess_for_test();
+    }
+
+    /// R3254 测试 helper：显式启用多进程 renderer 后端（断言真实多进程链路的 GUI 测试用）。
+    #[cfg(test)]
+    pub fn enable_multiprocess_for_test(&mut self) {
+        self.tabs.enable_multiprocess_for_test();
+    }
+
     fn window_controls_origin_x(&self, width: f32, s: f32) -> f32 {
         width - layout::WINDOW_CONTROLS_WIDTH * s
     }

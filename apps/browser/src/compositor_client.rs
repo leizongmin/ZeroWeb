@@ -4,6 +4,7 @@
 //! 有界命令队列提交最新帧，并从有界完成缓存非阻塞读取结果。
 
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -523,9 +524,45 @@ impl Drop for Client {
     }
 }
 
+/// R3254：compositor 二进制文件名（平台后缀）。
+fn compositor_binary_filename() -> &'static str {
+    #[cfg(windows)]
+    {
+        "zero-compositor.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "zero-compositor"
+    }
+}
+
 #[allow(clippy::zombie_processes)]
 fn spawn_transport(child_slot: Arc<Mutex<Option<Child>>>) -> Result<Box<dyn WorkerTransport>, String> {
-    let bin = std::env::var("ZW_COMPOSITOR_BIN").unwrap_or_else(|_| "zero-compositor".to_string());
+    // R3254：与 renderer 二进制解析同模式——cargo test / 开发环境 PATH 不含 target/debug，
+    // 此前 spawn 失败 → Disconnected → CompositorFrame 全被丢弃（测试与 CLI 直跑差异）。
+    // 查找顺序：ZW_COMPOSITOR_BIN → CARGO_BIN_EXE_zero-compositor → current_exe 同目录
+    // （测试二进制 target/debug/deps/ 上溯 target/debug/）→ PATH 兜底。
+    let bin = match std::env::var("ZW_COMPOSITOR_BIN") {
+        Ok(bin) => bin,
+        Err(_) => {
+            let mut candidate = std::env::var("CARGO_BIN_EXE_zero-compositor").ok().map(PathBuf::from);
+            if candidate.as_ref().is_none_or(|p| !p.is_file())
+                && let Ok(exe) = std::env::current_exe()
+                && let Some(parent) = exe.parent()
+            {
+                candidate = Some(parent.join(compositor_binary_filename()));
+                if !candidate.as_ref().is_some_and(|p| p.is_file())
+                    && let Some(grandparent) = parent.parent()
+                {
+                    candidate = Some(grandparent.join(compositor_binary_filename()));
+                }
+            }
+            candidate
+                .filter(|p| p.is_file())
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "zero-compositor".to_string())
+        }
+    };
     let mut command = Command::new(&bin);
     for argument in child_process_args(ProcessRole::Compositor, 0) {
         command.arg(argument);

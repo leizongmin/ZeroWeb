@@ -5,6 +5,11 @@
 
 use super::*;
 use app::append_webview_primitives;
+
+/// R3254：多进程 GUI 测试串行化——并行 spawn 多个 renderer 子进程（每个约 582MB 二进制
+/// 加字体加载）、叠加共享进程内 compositor client，会资源竞争导致快照轮询超时
+/// （form_fixture / typing 并行即挂）。多进程测试须先持锁。
+static MULTIPROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use zero_browser_shell::TabId;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -1068,7 +1073,10 @@ fn clicking_page_content_unfocuses_address_bar() {
 
 #[test]
 fn clicking_checkbox_without_page_text_publishes_updated_snapshot() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut app = BrowserApp::new(RenderMode::Cpu);
+    // R3254：断言真实多进程链路（click 默认动作经 renderer）——显式启用。
+    app.enable_multiprocess_for_test();
     app.physical_size = (800, 600);
     app.scale_factor = 1.0;
     let tab_id = app.shell.active_tab_id().unwrap();
@@ -1095,7 +1103,10 @@ fn clicking_checkbox_without_page_text_publishes_updated_snapshot() {
 
 #[test]
 fn typing_in_clicked_input_updates_page_html() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut app = BrowserApp::new(RenderMode::Cpu);
+    // R3254：断言真实多进程链路（输入焦点/默认动作经 renderer）——显式启用。
+    app.enable_multiprocess_for_test();
     app.physical_size = (800, 600);
     app.scale_factor = 1.0;
     let tab_id = app.shell.active_tab_id().unwrap();
@@ -1123,7 +1134,10 @@ fn typing_in_clicked_input_updates_page_html() {
 
 #[test]
 fn gpu_compositor_path_dispatches_input_events_to_form_controls() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut app = BrowserApp::new(RenderMode::Gpu);
+    // R3254：断言真实多进程链路（GPU/compositor 帧 + 输入路由）——显式启用。
+    app.enable_multiprocess_for_test();
     app.physical_size = (800, 600);
     app.scale_factor = 1.0;
     let tab_id = app.shell.active_tab_id().unwrap();
@@ -1167,10 +1181,13 @@ fn gpu_compositor_path_dispatches_input_events_to_form_controls() {
 
 #[test]
 fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let html = include_str!("../../../examples/forms/form-interaction-test.html");
     let mut ime_verified = false;
     for scale in [1.0_f32, 1.25, 1.5, 2.0] {
         let mut app = BrowserApp::new(RenderMode::Gpu);
+        // R3254：断言真实多进程链路（示例页表单交互经 renderer）——显式启用。
+        app.enable_multiprocess_for_test();
         app.physical_size = (1600, 1800);
         app.scale_factor = scale;
         let tab_id = app.shell.active_tab_id().unwrap();
@@ -1500,6 +1517,9 @@ fn handle_scroll_updates_offset_for_tall_page() {
 #[test]
 fn handle_scroll_dispatches_scroll_to_js_single_process_r3294() {
     let mut app = BrowserApp::new(RenderMode::Cpu);
+    // R3254：本测试断言的是**单进程 worker 路径**的 UserScroll 注入（经
+    // `test_execute_script` worker-only 回执读 JS 态）——多进程默认可用后须显式禁用。
+    app.disable_multiprocess_for_test();
     app.physical_size = (1280, 900);
     app.scale_factor = 1.0;
     let tab_id = app.shell.active_tab_id().unwrap();

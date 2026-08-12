@@ -78,7 +78,12 @@ impl TabManager {
             workers: HashMap::new(),
             snapshots: HashMap::new(),
             snapshot_seq: HashMap::new(),
-            process_backend: if use_multiprocess_backend() {
+            // R3254：测试环境默认单进程 worker——多进程 spawn 子进程（每个 renderer
+            // ~582MB 二进制 + 字体加载）在并行测试下既慢又互相竞争；断言真实多进程链路
+            // 的测试显式调 `enable_multiprocess_for_test`。
+            process_backend: if cfg!(test) {
+                None
+            } else if use_multiprocess_backend() {
                 ProcessTabBackend::try_new()
             } else {
                 None
@@ -115,6 +120,13 @@ impl TabManager {
     #[cfg(test)]
     pub fn disable_multiprocess_for_test(&mut self) {
         self.process_backend = None;
+    }
+
+    /// R3254 测试用：显式启用多进程 renderer 后端（断言真实多进程链路的 GUI 测试用；
+    /// 二进制不可用时回退 worker——`try_new` 返 None）。
+    #[cfg(test)]
+    pub fn enable_multiprocess_for_test(&mut self) {
+        self.process_backend = ProcessTabBackend::try_new();
     }
 
     /// 显式终止所有渲染子进程。
