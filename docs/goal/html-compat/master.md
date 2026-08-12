@@ -81,10 +81,10 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 ## M3c 工作包
 
 - [x] a/area 跨文档导航 intent 与 click 取消
-- [ ] 同文档 fragment/hash 激活
+- [x] 同文档 fragment/hash 激活
 - [ ] details/summary 激活与取消
 - [ ] dialog/popover 目标校验与 top-layer 状态
 
 ## 下一步
 
-闭合同文档 fragment/hash 激活，保持 navigation epoch 不变并更新 history。
+实现 details/summary 激活与 click 取消语义。

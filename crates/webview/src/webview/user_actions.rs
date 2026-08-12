@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
-    DomEventDetail, DomMutation, register_dom_callbacks, script_dispatch_dom_event, script_reset_form_controls,
-    script_set_control_checked, script_set_option_selected, script_set_text_control_state,
+    DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_dispatch_dom_event,
+    script_reset_form_controls, script_set_control_checked, script_set_option_selected, script_set_text_control_state,
     script_text_control_snapshot,
 };
 use zero_page_runtime::{
@@ -200,7 +200,9 @@ impl WebView {
                 })
             }
             HtmlUserAction::Activate => {
-                if let Some(url) = zero_engine::anchor_click_target(
+                if let Some(hash) = zero_engine::anchor_hash_target(&html, &selector) {
+                    ActionTargetState::Fragment { hash }
+                } else if let Some(url) = zero_engine::anchor_click_target(
                     &html,
                     &selector,
                     self.current_url.as_deref().unwrap_or("about:blank"),
@@ -303,6 +305,17 @@ impl WebView {
                 PageEffect::SubmitForm { form, submitter } => {
                     if let Some(intent) = self.form_navigation_intent(form, submitter) {
                         effects.push(PageEffect::Navigate(intent));
+                    }
+                }
+                PageEffect::SetFragment { hash } => {
+                    changed |= self
+                        .execute_dom_script(executor, &script_call_set_location_hash(&hash))?
+                        .changed;
+                    if let Some(current) = self.current_url.as_deref()
+                        && let Ok(mut url) = url::Url::parse(current)
+                    {
+                        url.set_fragment(Some(hash.trim_start_matches('#')));
+                        self.current_url = Some(url.to_string());
                     }
                 }
                 effect => effects.push(effect),

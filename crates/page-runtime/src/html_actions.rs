@@ -105,6 +105,11 @@ pub enum ActionTargetState {
         /// 未取消时产生的导航。
         intent: FormNavigationIntent,
     },
+    /// 同文档 fragment 导航。
+    Fragment {
+        /// 目标 hash（含 `#`）。
+        hash: String,
+    },
     /// 顺序焦点移动的计算结果。
     Focus {
         /// 下一个 focus owner；`None` 表示清除焦点。
@@ -207,6 +212,11 @@ pub enum PageEffect {
     Focus(Option<PageNodeRef>),
     /// 执行表单导航。
     Navigate(FormNavigationIntent),
+    /// 更新同文档 fragment，不创建新 Document。
+    SetFragment {
+        /// 目标 hash（含 `#`）。
+        hash: String,
+    },
     /// 在 submit listener 完成后构造 entry list 并导航。
     SubmitForm {
         /// form owner。
@@ -323,6 +333,9 @@ pub fn plan_html_action(
         (HtmlUserAction::Activate, ActionTargetState::Option(state)) => plan_option(request.target, state),
         (HtmlUserAction::Activate, ActionTargetState::Navigate { intent }) => {
             Ok(plan_navigation(request.target, intent.clone()))
+        }
+        (HtmlUserAction::Activate, ActionTargetState::Fragment { hash }) => {
+            Ok(plan_fragment(request.target, hash.clone()))
         }
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
         (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
@@ -457,6 +470,19 @@ fn plan_navigation(target: PageNodeRef, intent: FormNavigationIntent) -> HtmlAct
         followup_events: vec![],
         effects: vec![PageEffect::Navigate(intent)],
         invalidation: InvalidationKind::Navigation,
+    }
+}
+
+fn plan_fragment(target: PageNodeRef, hash: String) -> HtmlActionPlan {
+    HtmlActionPlan {
+        target,
+        prepare: vec![],
+        cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
+        rollback: vec![],
+        commit: vec![],
+        followup_events: vec![],
+        effects: vec![PageEffect::SetFragment { hash }],
+        invalidation: InvalidationKind::None,
     }
 }
 
@@ -940,6 +966,29 @@ mod tests {
             )
             .effects
             .is_empty()
+        );
+
+        let fragment = plan_html_action(
+            &request(node(1), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Fragment {
+                hash: "#section".to_string(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_html_action(
+                fragment,
+                EventDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                },
+            )
+            .effects,
+            [PageEffect::SetFragment {
+                hash: "#section".to_string()
+            }]
         );
     }
 

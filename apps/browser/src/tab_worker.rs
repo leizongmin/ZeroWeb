@@ -80,6 +80,7 @@ fn action_navigation(result: &zero_webview::WebViewUserActionResult) -> Option<(
         zero_page_runtime::PageEffect::Navigate(intent) => {
             Some((intent.url.clone(), intent.method.clone(), intent.body.clone()))
         }
+        zero_page_runtime::PageEffect::SetFragment { .. } => None,
         _ => None,
     })
 }

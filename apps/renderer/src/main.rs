@@ -769,6 +769,7 @@ impl RendererRuntime {
                     )?;
                     navigated = true;
                 }
+                zero_page_runtime::PageEffect::SetFragment { .. } => {}
                 zero_page_runtime::PageEffect::SubmitForm { .. } => {}
             }
         }

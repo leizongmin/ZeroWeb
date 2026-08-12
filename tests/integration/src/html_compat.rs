@@ -748,6 +748,59 @@ fn prevented_anchor_click_does_not_navigate() {
 }
 
 #[test]
+fn fragment_anchor_updates_history_without_new_document() {
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#scroll-to-fragid
+    const SCRIPT: &str =
+        "globalThis.__hashChanges=0;addEventListener('hashchange',function(){globalThis.__hashChanges++;});";
+    let html = format!(
+        r##"<html><body><map name="m"><area id="fragment" href="#sec"></map><div id="sec">Section</div><script>{SCRIPT}</script></body></html>"##
+    );
+
+    fn run(html: &str, executor: Option<&dyn JsExecutor>) -> (String, bool, bool, usize) {
+        let url = "https://zero.test/current";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor
+                .execute_script_direct(SCRIPT)
+                .expect("register hashchange listener");
+        }
+        let before = webview.page_node_ref_for_selector("#fragment").expect("area before");
+        let result = dispatch(&mut webview, executor, before, HtmlUserAction::Activate);
+        let after = webview.page_node_ref_for_selector("#fragment").expect("area after");
+        let script = "[location.hash,String(history.length),String(globalThis.__hashChanges)].join('|')";
+        let observed = match executor {
+            Some(executor) => executor.execute_script_direct(script),
+            None => webview.execute_script(script).map_err(|error| error.to_string()),
+        }
+        .expect("fragment observable");
+        (
+            observed,
+            before.navigation_epoch() == after.navigation_epoch(),
+            before.document_generation() == after.document_generation(),
+            result.effects.len(),
+        )
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(104);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(105));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(renderer_result.0, "#sec|2|1");
+    assert!(renderer_result.1);
+    assert!(renderer_result.2);
+    assert_eq!(renderer_result.3, 0);
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());
