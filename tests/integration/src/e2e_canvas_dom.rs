@@ -145,6 +145,255 @@ fn test_dom_js_event_listener() {
     assert!(result.is_ok(), "DOM addEventListener should work with DOM polyfill");
 }
 
+// ── R3287：execute_script_with_dom（A 代 polyfill）querySelector 兄弟组合器 ──────
+// `execute_script_with_dom` 是公开稳定的 WebView 嵌入 API，注入 A 代 polyfill
+//（dom_bridge.rs::generate_dom_api_polyfill）。其 _matchesSingleSelector 历史仅支持后代/子代组合器，
+// `+`/`~` 静默不匹配——R3287 补全（延续 R3285 DOM crate + R3286 B 代 shim 的组合器一致化系列）。
+// A 代 polyfill 维护独立虚拟 DOM（_nodeMap，经 createElement/appendChild 填充，不接已 load_html 的树），
+// 故测试经 createElement 构建 sibling 子树后 querySelector。
+
+#[test]
+fn test_dom_js_polyfill_next_sibling_combinator_r3287() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root: h1, p#a, p#b, span#s, p#c（兄弟序）
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');  h1.id = 't';
+        var p1 = document.createElement('p');   p1.id = 'a';
+        var p2 = document.createElement('p');   p2.id = 'b';
+        var sp = document.createElement('span'); sp.id = 's';
+        var p3 = document.createElement('p');   p3.id = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var next = root.querySelector('h1 + p');
+        var spanP = root.querySelector('span + p');
+        var noMatch = root.querySelector('h1 + span');
+        JSON.stringify({next: next ? next.id : '.', spanP: spanP ? spanP.id : '.', noMatch: noMatch ? 'Y' : 'N'});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains("\"next\":\"a\""),
+        "`h1 + p` 应匹配紧邻 h1 的 p（a）: {result}"
+    );
+    assert!(
+        result.contains("\"spanP\":\"c\""),
+        "`span + p` 应匹配紧邻 span 的 p（c）: {result}"
+    );
+    assert!(
+        result.contains("\"noMatch\":\"N\""),
+        "`h1 + span` 无匹配（紧邻 h1 的是 p）: {result}"
+    );
+}
+
+#[test]
+fn test_dom_js_polyfill_subsequent_sibling_combinator_r3287() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');  h1.id = 't';
+        var p1 = document.createElement('p');   p1.id = 'a';
+        var p2 = document.createElement('p');   p2.id = 'b';
+        var sp = document.createElement('span'); sp.id = 's';
+        var p3 = document.createElement('p');   p3.id = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var all = root.querySelectorAll('h1 ~ p').length;
+        var spanP = root.querySelectorAll('span ~ p').length;
+        var mixed = root.querySelector('h1 + p ~ p');
+        JSON.stringify({all: all, spanP: spanP, mixed: mixed ? mixed.id : '.'});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains("\"all\":3"),
+        "`h1 ~ p` 应匹配 h1 之后全部 p（a/b/c = 3）: {result}"
+    );
+    assert!(
+        result.contains("\"spanP\":1"),
+        "`span ~ p` 应仅匹配 span 之后的 p（c = 1）: {result}"
+    );
+    assert!(
+        result.contains("\"mixed\":\"b\""),
+        "`h1 + p ~ p` 应匹配 b（h1+p=a，a 之后的 p 首个 = b，回溯正确）: {result}"
+    );
+}
+
+// ── R3288：execute_script_with_dom（A 代 polyfill）复合选择器 + 伪类 ──────────────
+// 旧 A 代 _matchesSingleSelector 按 `#`/`.`/`[`/`:`/tag 顺序短路，致复合选择器（`div.foo:first-child`、
+// `input:checked`、`a:not(.x)`）无法工作——tag 分支先吞复合串。R3288 重构为真复合匹配（tag/id/class/
+// attr/pseudo AND）+ ~15 静态可判定伪类 + nth-child(an+b)，与 DOM crate（R3277-R3284）+ B 代 shim 对齐。
+
+#[test]
+fn test_dom_js_polyfill_compound_selector_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // div.foo#bar + 复合 tag.class + tag[attr=val] + tag.class[attr]
+    let script = r#"
+        var d1 = document.createElement('div'); d1.id = 'bar'; d1.className = 'foo';
+        var d2 = document.createElement('div'); d2.className = 'foo';
+        var d3 = document.createElement('input'); d3.setAttribute('type', 'text');
+        d1.appendChild(d2); d1.appendChild(d3);
+        var r1 = d1.querySelector('div.foo#bar') !== null;     // 复合 tag+class+id（自身=div，但 querySelector 只查子树）
+        var r2 = d1.querySelector('div.foo') === d2;            // 子树内 div.foo
+        var r3 = d1.querySelector('input[type=text]') === d3;   // tag+属性=值
+        var r4 = d1.querySelector('div.foo#nope') === null;     // id 不匹配 → null
+        JSON.stringify({r1: r1, r2: r2, r3: r3, r4: r4});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains(r#""r1":false"#),
+        "`div.foo#bar` 在子树内无匹配（d1 自身不计入）: {result}"
+    );
+    assert!(result.contains(r#""r2":true"#), "`div.foo` 应匹配 d2: {result}");
+    assert!(
+        result.contains(r#""r3":true"#),
+        "`input[type=text]` 应匹配 d3: {result}"
+    );
+    assert!(result.contains(r#""r4":true"#), "`div.foo#nope` 无匹配: {result}");
+}
+
+#[test]
+fn test_dom_js_polyfill_pseudo_classes_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root: h1, p.a, p.b(checked input 子), span, p.c
+    let script = r#"
+        var root = document.createElement('div');
+        var h1 = document.createElement('h1');
+        var p1 = document.createElement('p'); p1.className = 'a';
+        var p2 = document.createElement('p'); p2.className = 'b';
+        var cb = document.createElement('input'); cb.setAttribute('checked', '');
+        p2.appendChild(cb);
+        var sp = document.createElement('span');
+        var p3 = document.createElement('p'); p3.className = 'c';
+        root.appendChild(h1); root.appendChild(p1); root.appendChild(p2); root.appendChild(sp); root.appendChild(p3);
+        var firstChild = root.querySelector('p:first-child');
+        var lastP = root.querySelector('p:last-child');
+        var firstPCompound = root.querySelector('p.a:first-child');   // 复合 tag.class:伪类
+        var nthEven = root.querySelectorAll('p:nth-child(even)').length;
+        var nth2n1 = root.querySelectorAll(':nth-child(2n+1)').length;
+        var checked = root.querySelector('input:checked') === cb;       // :checked
+        var notClass = root.querySelectorAll('p:not(.b)').length;       // :not(.b) → a + c = 2
+        var onlyChild = root.querySelector('span:only-child') === null; // span 非独子
+        JSON.stringify({
+          firstP: firstChild ? firstChild.className : '.',     // p:first-child → 无（root 首子是 h1）
+          lastP: lastP ? lastP.className : '.',                 // p:last-child → 无（末子是 p.c，但 p:last-child 需 p 且末位）
+          firstPCompound: firstPCompound ? firstPCompound.className : '.', // p.a:first-child → 无（a 非首子）
+          nthEven: nthEven,
+          nth2n1: nth2n1,
+          checked: checked,
+          notClass: notClass,
+          onlyChild: onlyChild
+        });
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    // p:first-child：root 首子是 h1，无 p 是首子 → null
+    assert!(
+        result.contains(r#""firstP":".""#),
+        "`p:first-child` 无匹配（root 首子 h1）: {result}"
+    );
+    // p:last-child：末子是 p.c（p 且末位）→ c
+    assert!(
+        result.contains(r#""lastP":"c""#),
+        "`p:last-child` 应匹配末子 p.c: {result}"
+    );
+    assert!(
+        result.contains(r#""firstPCompound":".""#),
+        "`p.a:first-child` 无匹配（a 非首子）: {result}"
+    );
+    assert!(
+        result.contains(r#""checked":true"#),
+        "`input:checked` 应匹配 cb: {result}"
+    );
+    assert!(
+        result.contains(r#""notClass":2"#),
+        "`p:not(.b)` 应匹配 a + c = 2: {result}"
+    );
+    assert!(
+        result.contains(r#""onlyChild":true"#),
+        "`span:only-child` 无匹配（span 非独子）→ null === null → true: {result}"
+    );
+}
+
+// ── R3288 follow-up：A 代 polyfill nth-child(an+b) 公式 + :not() 嵌套正确性验证 ──
+// R3288 新增 `_matchNth`（An+B 公式：odd/even/纯整数/n/an+b）与 `:not(simple)`（递归）为新代码，
+// 须验证多边缘情况正确（`2n+1`/`2n`/`n`/负 a/纯整数 + `:not()` 含复合内嵌）。
+
+#[test]
+fn test_dom_js_polyfill_nth_an_b_formula_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    // root 6 个 li 子（位置 1-6）
+    let script = r#"
+        var root = document.createElement('ul');
+        for (var i = 0; i < 6; i++) {
+          var li = document.createElement('li'); li.id = 'n' + (i + 1);
+          root.appendChild(li);
+        }
+        // :nth-child(2n+1) → 位置 1,3,5 → n1,n3,n5
+        var odd2n1 = root.querySelectorAll(':nth-child(2n+1)').length;
+        // :nth-child(2n) → 位置 2,4,6 → 3
+        var even2n = root.querySelectorAll(':nth-child(2n)').length;
+        // :nth-child(3) → 仅位置 3 → 1
+        var third = root.querySelectorAll(':nth-child(3)').length;
+        // :nth-child(n) → 全部 6
+        var allN = root.querySelectorAll(':nth-child(n)').length;
+        // :nth-last-child(1) → 末子位置 1（n6）→ 1
+        var lastOne = root.querySelectorAll(':nth-last-child(1)').length;
+        // :nth-last-child(2n+1) → 从末尾计 1,3,5 → n6,n4,n2 → 3
+        var lastOdd = root.querySelectorAll(':nth-last-child(2n+1)').length;
+        JSON.stringify({odd2n1: odd2n1, even2n: even2n, third: third, allN: allN, lastOne: lastOne, lastOdd: lastOdd});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(
+        result.contains(r#""odd2n1":3"#),
+        ":nth-child(2n+1) → 3 (位置 1/3/5): {result}"
+    );
+    assert!(
+        result.contains(r#""even2n":3"#),
+        ":nth-child(2n) → 3 (位置 2/4/6): {result}"
+    );
+    assert!(result.contains(r#""third":1"#), ":nth-child(3) → 1: {result}");
+    assert!(result.contains(r#""allN":6"#), ":nth-child(n) → 6 (全部): {result}");
+    assert!(
+        result.contains(r#""lastOne":1"#),
+        ":nth-last-child(1) → 1 (末子): {result}"
+    );
+    assert!(
+        result.contains(r#""lastOdd":3"#),
+        ":nth-last-child(2n+1) → 3 (从末尾 1/3/5 = n6/n4/n2): {result}"
+    );
+}
+
+#[test]
+fn test_dom_js_polyfill_not_pseudo_nested_r3288() {
+    use zero_webview::{WebView, WebViewConfig};
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html("<html><body></body></html>", None);
+    let script = r#"
+        var root = document.createElement('div');
+        var a = document.createElement('a'); a.className = 'x';
+        var b = document.createElement('a'); b.className = 'y';
+        var c = document.createElement('a');           // 无 class
+        root.appendChild(a); root.appendChild(b); root.appendChild(c);
+        // :not(.x) → b + c = 2
+        var notX = root.querySelectorAll(':not(.x)').length;
+        // a:not(.x) → b + c（均为 a 标签）= 2
+        var aNotX = root.querySelectorAll('a:not(.x)').length;
+        // :not(.x):not(.y) → 仅 c = 1（多 :not() AND）
+        var notXY = root.querySelectorAll(':not(.x):not(.y)').length;
+        JSON.stringify({notX: notX, aNotX: aNotX, notXY: notXY});
+    "#;
+    let result = wv.execute_script_with_dom(script).unwrap();
+    assert!(result.contains(r#""notX":2"#), ":not(.x) → b + c = 2: {result}");
+    assert!(result.contains(r#""aNotX":2"#), "a:not(.x) → 2: {result}");
+    assert!(result.contains(r#""notXY":1"#), ":not(.x):not(.y) → c = 1: {result}");
+}
+
 // ── 3. 安全功能端到端验证 ─────────────────────────────────────────
 
 #[test]

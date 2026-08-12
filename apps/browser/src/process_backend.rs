@@ -12,8 +12,8 @@ use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     DispatchDomEventParams, FetchParams, FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, LoadHtmlParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
-    StorageOperation, StorageType,
+    IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -941,6 +941,19 @@ impl ProcessTabBackend {
             kind: IpcMessageKind::ImeEvent(params),
         });
     }
+
+    /// R3293（S0）：向渲染进程派发「用户滚动」事件（fire-and-forget，无回执）。
+    ///
+    /// 闭合 R3253 主路径不可达 gap：browser 用户滚动经此发 `ScrollEvent` IPC → renderer
+    /// `handle_scroll_event`（main.rs:1638）注入 `__zw_user_scroll` → 派 'scroll' + 更 window.scrollY。
+    /// 既有 R3253 renderer 路径此前无生产调用方（仅 `#[test]` harness 可达），本方法激活它。
+    /// 无回执（滚动不需 default-action 语义）；renderer 不存在时静默跳过（best-effort）。
+    pub fn send_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32) {
+        self.send_to_renderer(
+            tab_id,
+            IpcMessageKind::ScrollEvent(ScrollEventParams { delta_x, delta_y }),
+        );
+    }
 }
 
 impl ProcessTabBackend {
@@ -1352,6 +1365,43 @@ mod compositor_fallback_tests {
         backend.remove_renderer(tab_id);
 
         assert!(!backend.tab_to_renderer.contains_key(&tab_id));
+    }
+
+    /// R3293（S0）：`send_user_scroll` 向渲染进程发 `ScrollEvent` IPC（激活既有 R3253 renderer
+    /// `handle_scroll_event` 路径，闭合其主路径不可达 gap）。验证多进程派发路径发正确 IPC kind
+    /// + delta 透传。`send_to_renderer` 经 `TEST_RENDERER_OUTBOUND` 测试桩捕获出站 IPC。
+    #[test]
+    #[serial_test::serial]
+    fn send_user_scroll_emits_scroll_event_ipc_r3293() {
+        let _ = take_test_renderer_outbound(); // 清前序测试残留
+        let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+        let tab_id = TabId(23);
+        backend.tab_to_renderer.insert(tab_id, 7);
+
+        backend.send_user_scroll(tab_id, 0.0, 120.0);
+
+        let outbound = take_test_renderer_outbound();
+        let scroll_msgs: Vec<_> = outbound
+            .iter()
+            .filter_map(|k| match k {
+                IpcMessageKind::ScrollEvent(p) => Some((p.delta_x, p.delta_y)),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            scroll_msgs.iter().any(|(dx, dy)| *dx == 0.0 && *dy == 120.0),
+            "send_user_scroll 应发 ScrollEvent(0,120) IPC，实得出站 ScrollEvent: {scroll_msgs:?}"
+        );
+    }
+
+    fn compositor_test_bin() -> String {
+        if let Ok(bin) = std::env::var("CARGO_BIN_EXE_zero-compositor") {
+            return bin;
+        }
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/zero-compositor")
+            .to_string_lossy()
+            .into_owned()
     }
 
     #[test]

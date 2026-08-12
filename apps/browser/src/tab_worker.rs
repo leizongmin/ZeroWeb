@@ -59,6 +59,9 @@ pub enum TabWorkerCommand {
     },
     /// 更新是否允许执行 JavaScript。
     SetJavascriptEnabled(bool),
+    /// R3293（S0）：用户滚动 fire-and-forget 注入（单进程路径）——执行 `script_user_scroll`
+    /// 注入 `__zw_user_scroll` → 派 'scroll' + 更 window.scrollY。无回执（滚动不需 default-action）。
+    UserScroll { delta_x: f32, delta_y: f32 },
     /// 关闭 worker。
     Shutdown,
 }
@@ -432,6 +435,17 @@ fn tab_worker_main(
                 }
                 TabWorkerCommand::SetJavascriptEnabled(enabled) => {
                     javascript_enabled = enabled;
+                }
+                TabWorkerCommand::UserScroll { delta_x, delta_y } => {
+                    // R3293（S0）：用户滚动注入（单进程路径）。gate javascript_enabled + best-effort
+                    //（无 JS / shim 未装时 typeof 守卫静默）。fire-and-forget 无回执——滚动不需 default-action 语义，
+                    // 且主线程已在 apply_page_scroll_delta 完成视觉滚动，此处仅补「页面 JS 可观察」半边。
+                    if javascript_enabled {
+                        let script = zero_engine::script_user_scroll(delta_x as f64, delta_y as f64);
+                        if let Err(e) = wv.execute_script(&script) {
+                            tracing::warn!("dispatch user scroll (single-process): {e}");
+                        }
+                    }
                 }
                 TabWorkerCommand::Shutdown => {
                     tracing::debug!("Tab worker {} shutting down", tab_id.0);

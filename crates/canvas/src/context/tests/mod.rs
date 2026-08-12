@@ -1,7 +1,9 @@
 mod advanced;
 mod basic;
+mod context_impl_coverage;
 mod coverage;
 mod coverage_extra;
 mod edge;
 mod intermediate;
+mod path_coverage;
 mod raster;

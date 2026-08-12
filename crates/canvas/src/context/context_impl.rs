@@ -221,6 +221,15 @@ impl CanvasContext {
         self.current_path.arc(tx, ty, radius, start_angle, end_angle);
     }
 
+    /// 添加圆角矩形子路径（Canvas 2D `roundRect`，HTML Canvas §`dom-context-2d-api` roundRect）。
+    /// 起点角经当前变换矩阵映射（与 `arc`/`rect` 同语义）；`radii` 为角半径列表（spec：单值 / [tl,tr,br,bl]
+    /// / 其它长度按 [HTML §roundrect] 规则解析，本层透传 Path2D::round_rect，flattener 现 best-effort 退化
+    /// 为矩形——角圆为 rendering 流域已知简化，几何/命中测试仍正确）。
+    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<f32>) {
+        let (tx, ty) = self.transform.transform_point(x, y);
+        self.current_path.round_rect(tx, ty, w, h, radii);
+    }
+
     /// 画圆弧切线（arcTo）。通过当前点到 (x1,y1) 的线和 (x1,y1) 到 (x2,y2) 的线，
     /// 绘制一条与两条线都相切、半径为 radius 的圆弧。
     pub fn arc_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, radius: f32) {
@@ -935,6 +944,11 @@ impl CanvasContext {
 
         let sx = sx.max(0.0) as usize;
         let sy = sy.max(0.0) as usize;
+        // R3292：源矩形起点越出图像边界（sx>=img_w / sy>=img_h）时无像素可取，提前返回。
+        // 修复 unsigned 下溢：旧 `img_w - sx` 在 sx>img_w 时 debug panic（release 静默回绕致错绘）。
+        if sx >= img_w || sy >= img_h {
+            return;
+        }
         let sw = sw.min((img_w - sx) as f32) as usize;
         let sh = sh.min((img_h - sy) as f32) as usize;
         if sw == 0 || sh == 0 {

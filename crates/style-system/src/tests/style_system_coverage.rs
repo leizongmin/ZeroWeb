@@ -326,6 +326,52 @@ fn test_style_system_display_none() {
     assert!(matches!(styles.get(&div).unwrap().display, DisplayValue::None));
 }
 
+/// R3290：`<dialog>` 元素的 UA display 规则。
+/// HTML Living Standard UA 样式表：`dialog:not([open]) { display: none }`——
+/// 无 open 属性的 dialog 默认不渲染；`dialog[open]`（经 show/showModal 或 open 内容属性）应渲染。
+/// https://html.spec.whatwg.org/multipage/rendering.html#the-dialog-element-2
+#[test]
+fn test_dialog_display_open_attribute_r3290() {
+    // 无 open 属性 → display:none（ua_default_display 基础规则，未变）。
+    let (mut doc, body) = make_doc_with_body();
+    let dialog_closed = doc.create_element("dialog");
+    doc.append_child(body, dialog_closed).unwrap();
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    assert!(
+        matches!(styles.get(&dialog_closed).unwrap().display, DisplayValue::None),
+        "<dialog> 无 open 属性 → display:none"
+    );
+
+    // 有 open 属性 → display:block（R3290 显式 UA 覆盖，UA 优先级 0,0,0）。
+    let (mut doc2, body2) = make_doc_with_body();
+    let dialog_open = doc2.create_element("dialog");
+    doc2.set_attribute(dialog_open, "open", "");
+    doc2.append_child(body2, dialog_open).unwrap();
+    let mut sys2 = StyleSystem::new();
+    let styles2 = sys2.compute_styles(&doc2, &[]);
+    assert!(
+        matches!(styles2.get(&dialog_open).unwrap().display, DisplayValue::Block),
+        "<dialog open> → display:block（R3290 UA 覆盖）"
+    );
+
+    // 作者样式 display:flex 覆盖 UA（author 优先级 > UA 0,0,0）——验证 UA 覆盖可被作者样式盖过。
+    let (mut doc3, body3) = make_doc_with_body();
+    let dialog_author = doc3.create_element("dialog");
+    doc3.set_attribute(dialog_author, "open", "");
+    doc3.append_child(body3, dialog_author).unwrap();
+    let ss = make_stylesheet(vec![make_style_rule(
+        vec![make_tag_selector("dialog")],
+        vec![("display", "flex")],
+    )]);
+    let mut sys3 = StyleSystem::new();
+    let styles3 = sys3.compute_styles(&doc3, &[ss]);
+    assert!(
+        matches!(styles3.get(&dialog_author).unwrap().display, DisplayValue::Flex),
+        "作者 display:flex 覆盖 dialog[open] UA block（author > UA 优先级）"
+    );
+}
+
 #[test]
 fn test_style_system_display_flex() {
     let (mut doc, body) = make_doc_with_body();

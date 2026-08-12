@@ -1468,6 +1468,116 @@ mod tests {
     }
 
     #[test]
+    fn tab_js_worker_handle_subtree_query_sibling_combinators_r3286() {
+        // R3286 handle 子树 querySelector 的兄弟/子代组合器（`>`/`+`/`~`）——延续 R3285 DOM crate
+        // 选择器引擎四组合器一致化。part05.js 客户端选择器匹配器（覆盖 createElement 元素 / shadow root /
+        // fragment——无 sel，host `__zw_query_*_sub` 不可用）历史仅支持后代组合器，遇 `>`/`+`/`~` 整组静默
+        // 跳过。本轮补全四组合器。经 TabJsWorkerHandle（B 代 shim + host 回调）shadow root handle 子树验证。
+        //
+        // shadow 树结构：
+        //   sr (root)
+        //   ├─ h1#t
+        //   ├─ p.first#a
+        //   ├─ p.second#b
+        //   ├─ span.label#s
+        //   └─ p.third#c
+        let mut worker = TabJsWorkerHandle::spawn(TabId(17));
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "var host = document.createElement('div');\
+                 var sr = host.attachShadow({ mode: 'open' });\
+                 var h1 = document.createElement('h1'); h1.id = 't';\
+                 var p1 = document.createElement('p'); p1.id = 'a'; p1.className = 'first';\
+                 var p2 = document.createElement('p'); p2.id = 'b'; p2.className = 'second';\
+                 var sp = document.createElement('span'); sp.id = 's'; sp.className = 'label';\
+                 var p3 = document.createElement('p'); p3.id = 'c';\
+                 sr.appendChild(h1); sr.appendChild(p1); sr.appendChild(p2); sr.appendChild(sp); sr.appendChild(p3);\
+                 globalThis.__child = (sr.querySelector('h1 + p') === p1);\
+                 globalThis.__childNo = (sr.querySelector('h1 + span') === null);\
+                 globalThis.__childSpanP = (sr.querySelector('span + p') === p3);\
+                 globalThis.__childPSpan = (sr.querySelector('p + span') === sp);\
+                 globalThis.__subseqFirst = (sr.querySelector('h1 ~ p') === p1);\
+                 globalThis.__subseqAll = sr.querySelectorAll('h1 ~ p').length;\
+                 globalThis.__subseqSpanP = sr.querySelectorAll('span ~ p').length;\
+                 globalThis.__subseqPSpan = sr.querySelectorAll('p ~ span').length;\
+                 globalThis.__descScope = (sr.querySelector('h1 ~ p#c') === p3);\
+                 globalThis.__childCombinator = (sr.querySelector('#s + p') === p3);\
+                 globalThis.__mixed = (sr.querySelector('h1 + p ~ p') === p2);\
+                 globalThis.__mixedAll = sr.querySelectorAll('h1 + p ~ p').length;",
+            )
+            .unwrap();
+        let cases = [
+            ("__child", "true", "shadow querySelector('h1 + p') === p1（相邻兄弟）"),
+            (
+                "__childNo",
+                "true",
+                "shadow querySelector('h1 + span') === null（紧邻非 span）",
+            ),
+            (
+                "__childSpanP",
+                "true",
+                "shadow querySelector('span + p') === p3（span 后的 p）",
+            ),
+            (
+                "__childPSpan",
+                "true",
+                "shadow querySelector('p + span') === sp（p 后的 span）",
+            ),
+            (
+                "__subseqFirst",
+                "true",
+                "shadow querySelector('h1 ~ p') === p1（通用兄弟首匹配）",
+            ),
+            (
+                "__subseqAll",
+                "3",
+                "shadow querySelectorAll('h1 ~ p').length === 3（a/b/c）",
+            ),
+            (
+                "__subseqSpanP",
+                "1",
+                "shadow querySelectorAll('span ~ p').length === 1（仅 c）",
+            ),
+            (
+                "__subseqPSpan",
+                "1",
+                "shadow querySelectorAll('p ~ span').length === 1（仅 s）",
+            ),
+            (
+                "__descScope",
+                "true",
+                "shadow querySelector('h1 ~ p#c') === p3（通用兄弟 + id 复合）",
+            ),
+            (
+                "__childCombinator",
+                "true",
+                "shadow querySelector('#s + p') === p3（id 相邻兄弟）",
+            ),
+            (
+                "__mixed",
+                "true",
+                "shadow querySelector('h1 + p ~ p') === p2（混合组合器链）",
+            ),
+            (
+                "__mixedAll",
+                "2",
+                "shadow querySelectorAll('h1 + p ~ p').length === 2（p2/p3，前置 h1+p=p1）",
+            ),
+        ];
+        for (key, expect, msg) in cases {
+            assert_eq!(
+                worker
+                    .execute_script_direct(&format!("String(globalThis.{key})"))
+                    .unwrap(),
+                expect,
+                "{msg}"
+            );
+        }
+        worker.shutdown();
+    }
+
+    #[test]
     fn tab_js_worker_range_mutation_ops_r2929() {
         // R2929 Range 变更操作（镜像 renderer js_worker）：deleteContents/extractContents/insertNode/真实
         // cloneContents。经既有 mutation-emitting proxy 真实变更。验证 fragment 内容（同步）+ apply 后结构。

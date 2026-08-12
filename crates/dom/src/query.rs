@@ -35,6 +35,14 @@ pub enum PseudoClass {
     NthLastChild(Nth),
     /// `:nth-last-of-type(an+b)`——在同 tag 元素兄弟中倒数第 n 个。
     NthLastOfType(Nth),
+    /// `:nth-child(an+b of S)`（Selectors L4 §16）：元素须匹配 `of` 列表 S 中任一选择器，且
+    /// 在父元素**仅计匹配 S 的元素兄弟**中的位置满足 `an+b`。`of_selectors` 为简单选择器字符串
+    /// 列表（`,` 分隔，每个由 `parse_simple_selector` 解析），需兄弟枚举 + S 过滤，由
+    /// `Document::matches_nth_child_of` 求值（`matches_full` 延后返 true）。
+    NthChildOf(Nth, Vec<String>),
+    /// `:nth-last-child(an+b of S)`（Selectors L4）：从末尾仅计匹配 S 的兄弟。同 [`NthChildOf`]
+    /// 由 `Document::matches_nth_last_child_of` 求值。
+    NthLastChildOf(Nth, Vec<String>),
     /// `:first-child`——首个元素兄弟。
     FirstChild,
     /// `:last-child`——末个元素兄弟。
@@ -112,6 +120,23 @@ pub enum PseudoClass {
     /// （ltr/rtl/auto），`auto` 按子树首个强方向字符。需祖先链 + 子树扫描，延后至
     /// `Document::matches_dir` 复评。
     Dir(String),
+    /// `:target`——当前文档 URL fragment（百分号解码）指向的唯一元素（CSS Selectors L3 §6.6.2）。
+    /// 需读文档 URL，延后至 `Document::is_target_element` 复评。
+    Target,
+    /// `:valid`——候选校验元素（input/select/textarea，非 disabled/readonly）无约束失败
+    /// （HTML §4.10.20）。静态子集：valueMissing + range 越界；patternMismatch/typeMismatch 不
+    /// 在静态范围（permissive valid，与 engine shim ValidityState 同哲学）。延后至
+    /// `Document::is_valid_element` 复评。
+    Valid,
+    /// `:invalid`——候选校验元素存在任一静态约束失败（`:valid` 补集）。延后至
+    /// `Document::is_invalid_element` 复评。
+    Invalid,
+    /// `:in-range`——range-applicable input（number/range/date 等）有 value 且落在 [min,max]。
+    /// 延后至 `Document::is_in_range_element` 复评。
+    InRange,
+    /// `:out-of-range`——range-applicable input 有 value 但 <min 或 >max。延后至
+    /// `Document::is_out_of_range_element` 复评。
+    OutOfRange,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -287,6 +312,10 @@ impl SimpleSelector {
             // 倒序位置：nth-last-child 从末尾数（child_count - child_index + 1）。
             PseudoClass::NthLastChild(nth) => nth.matches((pos.child_count - pos.child_index + 1) as i32),
             PseudoClass::NthLastOfType(nth) => nth.matches((pos.type_count - pos.type_index + 1) as i32),
+            // `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)`——须仅计匹配 S 的兄弟，
+            // matches_full 无 Document 访问无法枚举兄弟，延后返 true，由
+            // Document::element_matches_selector 经 matches_nth_child_of/_last_child_of 复评。
+            PseudoClass::NthChildOf(_, _) | PseudoClass::NthLastChildOf(_, _) => true,
             PseudoClass::FirstChild => pos.child_index == 1,
             PseudoClass::LastChild => pos.child_index == pos.child_count,
             PseudoClass::OnlyChild => pos.child_count == 1,
@@ -318,9 +347,17 @@ impl SimpleSelector {
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
-            // `:scope`/`:lang()`/`:dir()` 需 Document 祖先链/根上下文，延后返 true，
-            // 由 Document::element_matches_selector 复评（镜像 :disabled 两阶段模式）。
-            PseudoClass::Scope | PseudoClass::Lang(_) | PseudoClass::Dir(_) => true,
+            // `:scope`/`:lang()`/`:dir()`/`:target`/`:valid`/`:invalid`/`:in-range`/`:out-of-range`
+            // 需 Document 祖先链/根/URL/约束属性上下文，延后返 true，由 Document::element_matches_selector
+            // 复评（镜像 :disabled 两阶段模式）。
+            PseudoClass::Scope
+            | PseudoClass::Lang(_)
+            | PseudoClass::Dir(_)
+            | PseudoClass::Target
+            | PseudoClass::Valid
+            | PseudoClass::Invalid
+            | PseudoClass::InRange
+            | PseudoClass::OutOfRange => true,
             // `:disabled`/`:enabled`——HTML spec `<fieldset disabled>` 向后代传播禁用态
             // 须沿祖先链求值（matches_full 无 Document 访问），故此处延后返 true，
             // 由 Document::element_matches_selector 经 `is_effectively_disabled` 复评
@@ -330,13 +367,19 @@ impl SimpleSelector {
     }
 }
 
-/// 选择器组合器（连接两个简单选择器）。
+/// 选择器组合器（连接两个简单选择器）。与 CSS Selectors L3 §14 对齐——style-system
+/// CSS matcher 同支持全部四种（zero_css_parser::ast::Combinator），DOM querySelector
+/// 选择器引擎须与之同源（R3285 闭合 `+`/`~` 缺口，延续 R3277-R3284 DOM/CSS 一致化系列）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Combinator {
     /// 后代选择器（空格）。
     Descendant,
     /// 子选择器（`>`）。
     Child,
+    /// 相邻兄弟选择器（`+`）——紧邻的前一个元素兄弟。
+    NextSibling,
+    /// 通用兄弟选择器（`~`）——任一在先的元素兄弟。
+    SubsequentSibling,
 }
 
 /// 由简单选择器与组合器构成的选择器链（如 `div > span.foo`）。
@@ -348,89 +391,30 @@ pub struct SelectorChain {
     pub combinators: Vec<Combinator>,
 }
 
-/// 按 `sep` 切分字符串，但忽略 `()`/`[]` 内的出现（如 `:is(a > b)` 内的 `>`、`[a=b]`）。
-fn split_outside_brackets(s: &str, sep: u8) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0usize;
-    for (i, &b) in s.as_bytes().iter().enumerate() {
-        match b {
-            b'(' | b'[' => depth += 1,
-            b')' | b']' => {
-                if depth > 0 {
-                    depth -= 1;
-                }
-            }
-            c if c == sep && depth == 0 => {
-                parts.push(&s[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    parts.push(&s[start..]);
-    parts
-}
-
-/// 按空白切分（后代组合器边界），忽略 `()`/`[]` 内的空白（如 `:is(.a, .b)` 逗号后空格）。
-/// 跳过空段。
-fn split_ws_outside_brackets(s: &str) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0usize;
-    let bytes = s.as_bytes();
-    for i in 0..bytes.len() {
-        match bytes[i] {
-            b'(' | b'[' => depth += 1,
-            b')' | b']' => {
-                if depth > 0 {
-                    depth -= 1;
-                }
-            }
-            b' ' | b'\t' | b'\n' | b'\r' if depth == 0 => {
-                if i > start {
-                    parts.push(&s[start..i]);
-                }
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    if start < s.len() {
-        parts.push(&s[start..]);
-    }
-    parts
-}
-
-/// 解析含后代/子选择器的选择器链；单段时退化为简单选择器。
+/// 解析含组合器的选择器链（` ` 后代 / `>` 子 / `+` 相邻兄弟 / `~` 通用兄弟）；单段时退化为简单选择器。
+///
+/// 与 CSS Selectors L3 §14 四组合器对齐——style-system CSS matcher 同源（R3285）。
+/// 忽略 `()`/`[]` 内的组合器边界（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值、
+/// `:nth-child(2n+1)` 参数内的 `+`、`:not(.a~.b)` 内嵌 `~`）。
 pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
     let trimmed = selector.trim();
     if trimmed.is_empty() {
         return None;
     }
-    // `>` 切分子选择器段——但须忽略 `()`/`[]` 内的 `>`（如 `:is(a > b)` 内嵌组合器、`[a>b]` 属性值）。
-    let segments: Vec<&str> = split_outside_brackets(trimmed, b'>')
-        .into_iter()
-        .map(str::trim)
-        .collect();
+    // 扫描出 (子选择器段文本, 指向**下一**段的组合器) 序列。组合器 `>`/`+`/`~` 与空白
+    // 均为边界，但忽略 `()`/`[]` 内的出现。多个连续边界（如 `a > b` 中 `>` 两侧空白、
+    // 或 `a   b` 多空白）压缩为单一组合器：显式符号（>`/`+`/`~）优先于隐式空白（后代）。
+    let tokens = tokenize_combinators(trimmed);
+    if tokens.is_empty() {
+        return None;
+    }
+
     let mut parts = Vec::new();
     let mut combinators = Vec::new();
-
-    for (seg_idx, segment) in segments.iter().enumerate() {
-        // 空白切分后代组合器——须忽略 `()`/`[]` 内的空白（如 `:is(.a, .b)` 逗号后空格）。
-        let subs: Vec<&str> = split_ws_outside_brackets(segment);
-        if subs.is_empty() {
-            return None;
-        }
-        for (sub_idx, sub) in subs.iter().enumerate() {
-            parts.push(parse_simple_selector(sub)?);
-            let is_last_in_segment = sub_idx + 1 == subs.len();
-            let is_last_segment = seg_idx + 1 == segments.len();
-            if !is_last_in_segment {
-                combinators.push(Combinator::Descendant);
-            } else if !is_last_segment {
-                combinators.push(Combinator::Child);
-            }
+    for (idx, (seg, comb)) in tokens.iter().enumerate() {
+        parts.push(parse_simple_selector(seg.trim())?);
+        if idx + 1 < tokens.len() {
+            combinators.push(*comb);
         }
     }
 
@@ -439,6 +423,103 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
     }
 
     Some(SelectorChain { parts, combinators })
+}
+
+/// 扫描选择器，按组合器边界（`>`/`+`/`~`/空白，忽略 `()`/`[]` 内）切分为
+/// `(段文本, 指向下一段的组合器)` 序列。末段的组合器无意义（填占位 `Descendant`，调用方不读）。
+/// 多个连续边界压缩为显式符号优先（`>`/`+`/`~` 优先于空白后代）。
+fn tokenize_combinators(s: &str) -> Vec<(&str, Combinator)> {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut depth = 0i32;
+    // 先收集所有顶层（depth==0）边界位置及类型。`pending_comb`：上一边界后待定的组合器，
+    // 显式符号（>`/`+`/`~`）覆盖隐式空白（后代）；连续空白不重复计。
+    // 边界 = (边界后的下一段起始字节 idx, 组合器)。
+    let mut boundaries: Vec<(usize, Combinator)> = Vec::new();
+    let mut i = 0usize;
+    // 跟踪「自上一非空白字符以来是否已有待定组合器」，用于空白边界仅在词际触发。
+    let mut last_was_segment_char = false; // 上一字节是否为段内普通字符（非边界、非边界后空白）
+    let mut pending_explicit: Option<Combinator> = None;
+
+    while i < len {
+        match bytes[i] {
+            b'(' | b'[' => {
+                depth += 1;
+                last_was_segment_char = true;
+            }
+            b')' | b']' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+                last_was_segment_char = true;
+            }
+            b'>' | b'+' | b'~' if depth == 0 => {
+                let comb = match bytes[i] {
+                    b'>' => Combinator::Child,
+                    b'+' => Combinator::NextSibling,
+                    b'~' => Combinator::SubsequentSibling,
+                    _ => unreachable!(),
+                };
+                // 若紧前的边界是「空白触发的后代」且其间无段字符（符号紧随空白），
+                // 显式符号覆盖该后代边界（如 `h1 + p` 中 `+` 前的空白误记为后代 → 改为相邻兄弟）。
+                let mut upgraded = false;
+                if !last_was_segment_char
+                    && let Some(last) = boundaries.last_mut()
+                    && last.1 == Combinator::Descendant
+                {
+                    last.1 = comb;
+                    upgraded = true;
+                }
+                if !upgraded {
+                    pending_explicit = Some(comb);
+                } else {
+                    pending_explicit = None;
+                }
+                last_was_segment_char = false;
+            }
+            b' ' | b'\t' | b'\n' | b'\r' if depth == 0 => {
+                // 空白边界：仅在「上一字节是段内字符」**且**「无待定显式符号」时构成后代边界。
+                // 若已有 pending_explicit（如 `h1 +` 中的 `+`），符号本身才是边界，空白仅被吸收。
+                if last_was_segment_char && pending_explicit.is_none() {
+                    boundaries.push((i, Combinator::Descendant));
+                    last_was_segment_char = false;
+                }
+                // 否则跳过连续空白（含显式符号前后的空白，pending_explicit 保留待覆盖）。
+            }
+            _ if depth == 0 => {
+                // 段内普通字符：若此前有 pending 显式符号（符号分隔了两段），在此记录边界
+                //（位置 = 当前 i，组合器 = pending 显式符号），随后开启新段。
+                if pending_explicit.is_some() {
+                    boundaries.push((i, pending_explicit.unwrap()));
+                    pending_explicit = None;
+                }
+                last_was_segment_char = true;
+            }
+            _ => {
+                // `()`/`[]` 内部字符：不计边界，但维持段字符状态以便括号闭合后正确处理。
+                last_was_segment_char = true;
+            }
+        }
+        i += 1;
+    }
+    // 丢弃尾部任何 pending（选择器不应以组合器结尾；若如此，下一段为空，调用方 parse 返回 None）。
+
+    // 按 boundaries 切分字符串为段序列，每段附「指向下一段的组合器」。
+    let mut out = Vec::new();
+    let mut seg_start = 0usize;
+    for (b_idx, comb) in &boundaries {
+        out.push((&s[seg_start..*b_idx], *comb));
+        seg_start = *b_idx;
+        // 跳过当前段与下一段之间的边界字符（空白/符号及其后空白），将 seg_start 推到下一段首个非边界字符。
+        while seg_start < len {
+            match bytes[seg_start] {
+                b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'+' | b'~' => seg_start += 1,
+                _ => break,
+            }
+        }
+    }
+    out.push((&s[seg_start..], Combinator::Descendant));
+    out
 }
 
 /// 解析 `:nth-child(an+b)` 的 `an+b` 参数 → `(a, b)`。
@@ -476,6 +557,46 @@ pub fn parse_nth(arg: &str) -> Option<Nth> {
             b: s.parse().ok()?,
         })
     }
+}
+
+/// 解析 `:nth-child(...)` / `:nth-last-child(...)` 参数——支持 Selectors L4 `an+b of S` 语法。
+///
+/// `arg` 形如 `even`、`2n+1`、`even of .item`、`-n+3 of .a, .b`。`of` 关键字（大小写不敏感，
+/// 两侧须有空格——CSS tokenization：`of` 为独立 ident，前后空白分隔）切分 `an+b` 与 `of S`
+/// 选择器列表。无 `of` → 纯 [`PseudoClass::NthChild`]/[`PseudoClass::NthLastChild`]；有 `of`
+/// → [`PseudoClass::NthChildOf`]/[`PseudoClass::NthLastChildOf`]（`of_selectors` 为 `,` 分隔
+/// 的简单选择器字符串列表，延后至 `Document` 求值）。`last` 控制变体方向。
+fn parse_nth_or_nth_of(arg: &str, last: bool) -> Option<PseudoClass> {
+    // ` of ` 分隔符大小写不敏感查找（CSS tokenization：`of` 为独立 ident，前后须有空格）。
+    let lower = arg.to_ascii_lowercase();
+    let of_idx = lower.find(" of ");
+    let Some(of_idx) = of_idx else {
+        // 无 `of` → 纯 nth-*。
+        let nth = parse_nth(arg)?;
+        return Some(if last {
+            PseudoClass::NthLastChild(nth)
+        } else {
+            PseudoClass::NthChild(nth)
+        });
+    };
+    let nth_part = &arg[..of_idx];
+    let of_part = &arg[of_idx + 4..]; // 跳过 " of "
+    let nth = parse_nth(nth_part)?;
+    // `of S`：逗号分隔简单选择器列表（与 `:is()` 同 parse_simple_selector）。
+    let of_selectors: Vec<String> = of_part
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if of_selectors.is_empty() {
+        // `of ` 后无选择器（如 `even of`）→ 非法，视为不匹配。
+        return None;
+    }
+    Some(if last {
+        PseudoClass::NthLastChildOf(nth, of_selectors)
+    } else {
+        PseudoClass::NthChildOf(nth, of_selectors)
+    })
 }
 
 // 解析伪类名（+可选括号参数）→ `PseudoClass`。`name` 为 `:` 之后、`(` 或下一个分隔符之前的部分。
@@ -575,9 +696,9 @@ fn strip_attr_quotes(s: &str) -> String {
 
 fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
     match name {
-        "nth-child" => Some(PseudoClass::NthChild(parse_nth(args?)?)),
+        "nth-child" => parse_nth_or_nth_of(args?, false),
         "nth-of-type" => Some(PseudoClass::NthOfType(parse_nth(args?)?)),
-        "nth-last-child" => Some(PseudoClass::NthLastChild(parse_nth(args?)?)),
+        "nth-last-child" => parse_nth_or_nth_of(args?, true),
         "nth-last-of-type" => Some(PseudoClass::NthLastOfType(parse_nth(args?)?)),
         "first-child" => Some(PseudoClass::FirstChild),
         "last-child" => Some(PseudoClass::LastChild),
@@ -633,6 +754,13 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "visited" => Some(PseudoClass::Visited),
         // `:scope`——文档样式表等价 `:root`，延后至 Document 复评。
         "scope" => Some(PseudoClass::Scope),
+        // `:target`——当前文档 URL fragment 指向的唯一元素，延后至 Document 复评。
+        "target" => Some(PseudoClass::Target),
+        // 约束校验伪类（HTML §4.10.20，无参）：候选校验元素的约束状态，延后至 Document 复评。
+        "valid" => Some(PseudoClass::Valid),
+        "invalid" => Some(PseudoClass::Invalid),
+        "in-range" => Some(PseudoClass::InRange),
+        "out-of-range" => Some(PseudoClass::OutOfRange),
         // `:lang(ranges)`——逗号分隔 BCP 47 语言范围列表（如 `en, fr`/`*-CA`），延后至 Document 复评。
         "lang" => {
             let a = args?;
@@ -912,5 +1040,78 @@ mod tests {
         let chain = parse_selector_chain("div > span").unwrap();
         assert_eq!(chain.parts.len(), 2);
         assert_eq!(chain.combinators, vec![Combinator::Child]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_next_sibling() {
+        // 相邻兄弟组合器 `+`（CSS Selectors L3 §14.3）。
+        let chain = parse_selector_chain("h1 + p").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::NextSibling]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_subsequent_sibling() {
+        // 通用兄弟组合器 `~`（CSS Selectors L3 §14.4）。
+        let chain = parse_selector_chain("h1 ~ p").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::SubsequentSibling]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_mixed_combinators() {
+        // 混合四种组合器：`div > h1 + p ~ span`。
+        let chain = parse_selector_chain("div > h1 + p ~ span").unwrap();
+        assert_eq!(chain.parts.len(), 4);
+        assert_eq!(
+            chain.combinators,
+            vec![
+                Combinator::Child,
+                Combinator::NextSibling,
+                Combinator::SubsequentSibling,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_selector_chain_sibling_no_spaces() {
+        // 无空格 `h1+p` 与 `h1~p` 须同样解析。
+        let chain = parse_selector_chain("h1+p").unwrap();
+        assert_eq!(chain.combinators, vec![Combinator::NextSibling]);
+        let chain = parse_selector_chain("h1~p").unwrap();
+        assert_eq!(chain.combinators, vec![Combinator::SubsequentSibling]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_plus_inside_pseudo_ignored() {
+        // `:nth-child(2n+1)` 内的 `+` 非组合器边界——须忽略 `()` 内出现。
+        let chain = parse_selector_chain("li:nth-child(2n+1) + p").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::NextSibling]);
+    }
+
+    #[test]
+    fn test_parse_selector_chain_tilde_inside_is_ignored() {
+        // `:is(.a ~ .b)` 内嵌的 `~` 非顶层组合器——须忽略 `()` 内出现。
+        let chain = parse_selector_chain("div :is(.a ~ .b)").unwrap();
+        assert_eq!(chain.parts.len(), 2);
+        assert_eq!(chain.combinators, vec![Combinator::Descendant]);
+    }
+
+    #[test]
+    fn test_tokenize_combinators_basic() {
+        let toks = tokenize_combinators("h1 + p");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].0.trim(), "h1");
+        assert_eq!(toks[0].1, Combinator::NextSibling);
+        assert_eq!(toks[1].0.trim(), "p");
+    }
+
+    #[test]
+    fn test_tokenize_combinators_descendant_collapses_whitespace() {
+        // 多空白压缩为单一后代组合器。
+        let toks = tokenize_combinators("a    b");
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].1, Combinator::Descendant);
     }
 }

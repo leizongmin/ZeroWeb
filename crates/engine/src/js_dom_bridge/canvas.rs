@@ -315,6 +315,45 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R3291：Canvas 2D roundRect（HTML Canvas `dom-context-2d-api` roundRect）。radii 串参格式：
+        // 单值 "r" / 四角 "tl,tr,br,bl" / 两值 "h v"（spec 两值 = [tl&tr&br&bl 按 [a,b] 规则]——本层透传
+        // canvas crate，flattener best-effort 退化矩形）。fillRule 参数（"nonzero"/"evenodd"）作为 args 末项
+        // 透传但当前 is_point_in_path 用奇偶规则（canvas crate 限制）。
+        "roundRect" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                let radii: Vec<f32> = arg(4)
+                    .split(',')
+                    .filter(|s| !s.trim().is_empty())
+                    .filter_map(|s| s.trim().parse::<f32>().ok())
+                    .collect();
+                ctx.round_rect(f(0), f(1), f(2), f(3), radii);
+            }
+            "ok".into()
+        }
+        // R3291：Canvas 2D isPointInPath（hit-test 点是否在当前路径填充区内）。返 "1"/"0"（JS 转 bool）。
+        // spec 三形式：isPointInPath(x,y) / isPointInPath(x,y,fillRule) / isPointInPath(path,x,y[,fillRule])。
+        // 当前实现无 Path2D 参数形式（host 串参无 path 引用），仅 ctx 当前路径形式（最高频）。
+        "isPointInPath" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return if ctx.is_point_in_path(f(0), f(1)) {
+                    "1".into()
+                } else {
+                    "0".into()
+                };
+            }
+            "0".into()
+        }
+        // R3291：Canvas 2D isPointInStroke（hit-test 点是否在当前路径描边区内，lineWidth 半宽内）。
+        "isPointInStroke" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return if ctx.is_point_in_stroke(f(0), f(1)) {
+                    "1".into()
+                } else {
+                    "0".into()
+                };
+            }
+            "0".into()
+        }
         // rect 路径命令：CanvasContext 无 rect() 方法，用 MoveTo+3 LineTo（匹配 Path2D::rect，不 auto-close）。
         "rect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {

@@ -286,9 +286,10 @@
   // `__zw_query_match_sub(sel, q)`（须 sel）。R2927 registry 记录 handle 父→子 proxy 列表，此处 DFS
   // 遍历 + 客户端 compound / 后代组合器 / 逗号列表 匹配。覆盖 shadow 构建模式自测（Lit `sr.querySelector('#x')`）。
   // 支持范围：tag / `*` / `#id` / `.class`（可多个） / `[attr]` + 6 运算符（= ~= |= ^= $= *=） / 复合 /
-  // 后代组合器（空白） / 逗号列表。不支持（该组静默跳过，不抛）：伪类（`:host`/`:hover`/...）、
-  // 子代/相邻/兄弟组合器（>`+`~`）、伪元素——遇之标记 unsupported，逗号列表中其余组仍可匹配；全部
-  // unsupported → 无匹配（返 null/[]）。所有 proxy 属性读经 try/catch（host 未注册 / 异常 → 安全回落）。
+  // **四种组合器**（后代 ` ` / 子代 `>` / 相邻兄弟 `+` / 通用兄弟 `~`，与 DOM crate query.rs 对齐 R3286）/
+  // 逗号列表。不支持（该组静默跳过，不抛）：伪类（`:host`/`:hover`/...）、伪元素——遇之标记
+  // unsupported，逗号列表中其余组仍可匹配；全部 unsupported → 无匹配（返 null/[]）。所有 proxy 属性读
+  // 经 try/catch（host 未注册 / 异常 → 安全回落）。
 
   // 从 proxy 安全读属性（host 未注册 / 异常 → dflt），不抛回用户脚本。
   function _hSafe(fn, dflt) { try { var v = fn(); return v == null ? dflt : v; } catch (_e) { return dflt; } }
@@ -383,32 +384,67 @@
     }
     return true;
   }
-  // 按后代组合器（空白）拆 complex，跳过 `[...]` / 引号内空白；遇 `>`/`+`/`~` → null（不支持）。
+  // 按**四种组合器**拆 complex，跳过 `[...]` / 引号内的组合器边界。
+  // 返 { compounds: [compound-str...], combinators: [comb...] }——`combinators[i]` 连接
+  // `compounds[i]` 与 `compounds[i+1]`，取值 `' '`（后代）/`'>'`（子代）/`'+'`（相邻兄弟）/
+  // `'~'`（通用兄弟），与 DOM crate query.rs::Combinator 四变体对齐（R3286）。
+  // 显式符号（>`+`~`）覆盖空白触发的后代边界（如 `a + b` 中 `+` 前空白不可先记为后代）。
   function _splitComplex(text) {
-    var parts = [], cur = '', depth = 0, quote = null;
+    var compounds = [], combinators = [];
+    var cur = '', depth = 0, quote = null;
+    // lastSegmentChar：上一字节是否为段内普通字符（非边界/非边界后空白）。
+    // pendingExplicit：上一显式符号（遇段字符时落边界），覆盖空白后代。
+    var lastSegmentChar = false, pendingExplicit = null;
+    var flush = function (comb) {
+      if (cur) { compounds.push(cur); combinators.push(comb); cur = ''; }
+      lastSegmentChar = false;
+    };
     for (var i = 0; i < text.length; i++) {
       var ch = text[i];
-      if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
-      if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
-      if (ch === '[') { depth++; cur += ch; continue; }
-      if (ch === ']') { depth--; cur += ch; continue; }
-      if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) return null;
-      if (depth === 0 && /\s/.test(ch)) { if (cur) { parts.push(cur); cur = ''; } continue; }
+      if (quote) { cur += ch; if (ch === quote) quote = null; lastSegmentChar = true; continue; }
+      if (ch === '"' || ch === "'") { quote = ch; cur += ch; lastSegmentChar = true; continue; }
+      if (ch === '[') { depth++; cur += ch; lastSegmentChar = true; continue; }
+      if (ch === ']') { depth--; cur += ch; lastSegmentChar = true; continue; }
+      // 括号 `(``)` 亦计入深度——`:nth-child(2n+1)` / `:not(.a)` / `:is(a, b)` 内的 `+`/` `/`,`
+      // 非组合器边界（R3288 修复：旧仅计 `[]` 致 nth 公式 an+b 的 `+` 误判为相邻兄弟组合器）。
+      if (ch === '(') { depth++; cur += ch; lastSegmentChar = true; continue; }
+      if (ch === ')') { depth--; cur += ch; lastSegmentChar = true; continue; }
+      if (depth === 0 && (ch === '>' || ch === '+' || ch === '~')) {
+        // 显式符号覆盖：若紧前的边界是空白触发的后代且其间无段字符（符号紧随空白），
+        // 改写最后一个组合器为该显式符号。
+        if (!lastSegmentChar && combinators.length > 0 && combinators[combinators.length - 1] === ' ') {
+          combinators[combinators.length - 1] = ch;
+        } else {
+          pendingExplicit = ch;
+        }
+        lastSegmentChar = false;
+        continue;
+      }
+      if (depth === 0 && /\s/.test(ch)) {
+        if (lastSegmentChar && pendingExplicit === null) { flush(' '); }
+        // 否则跳过连续空白 / 显式符号后的空白（pendingExplicit 保留待覆盖）。
+        continue;
+      }
+      // 段内普通字符：若有 pending 显式符号，落边界为该符号。
+      if (pendingExplicit !== null) { flush(pendingExplicit); pendingExplicit = null; }
       cur += ch;
+      lastSegmentChar = true;
     }
-    if (cur) parts.push(cur);
-    return parts;
+    // 末段冲刷（不附组合器——combinators 比 compounds 少一）。
+    if (cur) { compounds.push(cur); }
+    // 末尾 pending 显式符号 → 选择器以组合器结尾（非法），丢弃末空段不影响（无末 compound）。
+    return compounds.length ? { compounds: compounds, combinators: combinators.slice(0, compounds.length - 1) } : null;
   }
   function _parseComplexOf(text) {
     var parts = _splitComplex(text);
     if (!parts) return null;
     var out = [];
-    for (var i = 0; i < parts.length; i++) {
-      var c = _parseCompoundOf(parts[i]);
+    for (var i = 0; i < parts.compounds.length; i++) {
+      var c = _parseCompoundOf(parts.compounds[i]);
       if (c.unsupported) return null;
       out.push(c);
     }
-    return out.length ? out : null;
+    return out.length ? { compounds: out, combinators: parts.combinators } : null;
   }
   // 逗号列表拆分（跳过 `[...]` / 引号内逗号）。
   function _splitSelectorListOf(sel) {
@@ -435,44 +471,133 @@
     }
     return out;
   }
-  // 后代组合器匹配：rightmost compound 匹配 proxy；各前置 compound 匹配 ancestors（逆序，最近优先）。
-  // 纯后代组合器下「最近匹配祖先」贪心正确：远 B 的祖先必也是近 B 的祖先（传递性）。
-  function _matchComplexAgainst(p, compounds, ancestors) {
-    var last = compounds.length - 1;
-    if (!_matchCompoundOf(p, compounds[last])) return false;
-    var ai = ancestors.length - 1;
-    for (var ci = last - 1; ci >= 0; ci--) {
-      var matched = false;
-      while (ai >= 0) {
-        if (_matchCompoundOf(ancestors[ai], compounds[ci])) { matched = true; break; }
-        ai--;
-      }
-      if (!matched) return false;
-    }
-    return true;
+  // 四组合器匹配（` `/`>`/`+`/`~`，与 DOM crate query.rs 对齐 R3286）：从最右 compound
+  //（匹配候选 p）起，向左逐段求值。每段 combinator 决定如何从「当前节点」回溯到「左侧 compound
+  // 应匹配的节点」。` `（后代）与 `~`（通用兄弟）须**回溯**——选定的目标节点不仅自身匹配本段 compound，
+  // 还须能继续回溯左侧剩余链（否则换一个匹配候选再试，如 `h1 + p ~ p` 对 p3：`~` 可选 p2/p1，
+  // p2 的 `+` 前置非 h1 失败 → 回溯试 p1，p1 紧邻 h1 成功）。
+  //   `' '`（后代）：沿 parent 链逐祖先试。
+  //   `'>'`（子代）：直接元素父须匹配（无回溯）。
+  //   `'+'`（相邻兄弟）：紧邻前一元素兄弟须匹配（无回溯）。
+  //   `'~'`（通用兄弟）：沿在先元素兄弟链逐个试（近→远）。
+  // `nodeInfo` 由 _handleSubtreeNodes 预计算（含 ancestors / parent / prevSibling / prevSiblings）。
+  function _matchComplexAgainst(p, complex, nodeInfo) {
+    var compounds = complex.compounds, combs = complex.combinators;
+    return _matchChainFrom(compounds, combs, compounds.length - 1, p, nodeInfo);
   }
-  function _matchAnyGroup(p, groups, ancestors) {
-    for (var i = 0; i < groups.length; i++) {
-      if (_matchComplexAgainst(p, groups[i], ancestors)) return true;
+  // 从右往左匹配 compound[ci..0]：当前节点（info.proxy）须匹配 compound[ci]，再按 combs[ci-1]
+  // 回溯到 compound[ci-1] 的候选节点。ci < 0 表示全部匹配 → 成功。
+  function _matchChainFrom(compounds, combs, ci, _curProxy, info) {
+    if (!_matchCompoundOf(info.proxy, compounds[ci])) return false;
+    if (ci === 0) return true; // 已匹配到最左 compound
+    var comb = combs[ci - 1];
+    var left = ci - 1;
+    if (comb === ' ') {
+      // 后代：沿 parent/ancestor 链逐个试（回溯）。
+      for (var ai = info.ancestors.length - 1; ai >= 0; ai--) {
+        if (_matchCompoundOf(info.ancestors[ai].proxy, compounds[left])
+          && _matchChainFrom(compounds, combs, left, info.ancestors[ai].proxy, info.ancestors[ai])) {
+          return true;
+        }
+      }
+      return false;
+    } else if (comb === '>') {
+      // 子代：直接元素父须匹配 + 继续回溯。
+      if (info.parentInfo
+        && _matchCompoundOf(info.parentInfo.proxy, compounds[left])
+        && _matchChainFrom(compounds, combs, left, info.parentInfo.proxy, info.parentInfo)) {
+        return true;
+      }
+      return false;
+    } else if (comb === '+') {
+      // 相邻兄弟：紧邻前一元素兄弟须匹配 + 继续回溯。
+      if (info.prevSiblingInfo
+        && _matchCompoundOf(info.prevSiblingInfo.proxy, compounds[left])
+        && _matchChainFrom(compounds, combs, left, info.prevSiblingInfo.proxy, info.prevSiblingInfo)) {
+        return true;
+      }
+      return false;
+    } else if (comb === '~') {
+      // 通用兄弟：沿在先元素兄弟链逐个试（回溯，近→远）。
+      for (var si = info.prevSiblings.length - 1; si >= 0; si--) {
+        var ps = info.prevSiblings[si];
+        if (_matchCompoundOf(ps.proxy, compounds[left])
+          && _matchChainFrom(compounds, combs, left, ps.proxy, ps)) {
+          return true;
+        }
+      }
+      return false;
     }
     return false;
   }
-  // DFS 收集 rootHandle 子树全部**元素** proxy（document order）+ 各自祖先链（不含 root 自身）。
+  function _matchAnyGroup(p, groups, nodeInfo) {
+    for (var i = 0; i < groups.length; i++) {
+      if (_matchComplexAgainst(p, groups[i], nodeInfo)) return true;
+    }
+    return false;
+  }
+  // DFS 收集 rootHandle 子树全部**元素** proxy（document order）+ 各自节点信息（祖先链、
+  // 元素父、紧邻前一元素兄弟、在先元素兄弟链）。兄弟组合器（`+`/`~`）只计元素兄弟（R3286）。
+  // 每节点 nodeInfo = { proxy, parent, parentInfo, prevSibling, prevSiblingInfo,
+  //   prevSiblings: [sibling-nodeInfo...]（文档序，近→远需反转读取）, ancestors: [node-info...]（根→父） }。
   function _handleSubtreeNodes(rootHandle) {
     var result = [];
-    function visit(handle, ancestors) {
+    // 作用域根元素（el.querySelector 的 el）本身可作为后代/子代/兄弟组合器的匹配目标
+    //（如 `__root.querySelector('div > p')` 中 `div` 匹配 __root 自身），但它**不作为查询候选结果**
+    //（querySelector 仅返后代）。故建 rootInfo 作为顶层子的 parent/ancestor，但不入 result。
+    var rootProxy = _wrapHandle(rootHandle);
+    var rootInfo = {
+      proxy: rootProxy,
+      parent: null,
+      parentInfo: null,
+      prevSibling: null,
+      prevSiblingInfo: null,
+      prevSiblings: [],
+      ancestors: [],
+    };
+    // 代理 → 已计算 nodeInfo 映射（文档序先建后用，使兄弟/父目标重用完整上下文，
+    // 支持组合器链回溯如 `div > h1 + p` 的 `+` 后再 `>`）。
+    var infoByProxy = new Map();
+    function nodeInfoOf(px) { return infoByProxy.get(px) || null; }
+    function visit(handle, parentInfo, ancestors) {
       var kids = _handleChildren[handle];
       if (!kids) return;
+      // 先过滤出本层**元素**子（跳过 text/comment），保文档序——供兄弟上下文。
+      var elemKids = [];
       for (var i = 0; i < kids.length; i++) {
-        var p = kids[i];
-        if (!p) continue;
-        if (_hSafe(function () { return p.nodeType; }, 0) !== 1) continue; // 跳过 text/comment
-        result.push({ proxy: p, ancestors: ancestors });
+        var k = kids[i];
+        if (k && _hSafe(function () { return k.nodeType; }, 0) === 1) elemKids.push(k);
+      }
+      for (var j = 0; j < elemKids.length; j++) {
+        var p = elemKids[j];
+        // 紧邻前一元素兄弟 = elemKids[j-1]；在先元素兄弟 = elemKids[0..j-1]（文档序）。
+        var prevSib = j > 0 ? elemKids[j - 1] : null;
+        var info = {
+          proxy: p,
+          parent: parentInfo ? parentInfo.proxy : null,
+          parentInfo: parentInfo,
+          prevSibling: prevSib,
+          prevSiblingInfo: null,
+          prevSiblings: [],
+          ancestors: ancestors,
+        };
+        infoByProxy.set(p, info);
+        // 填充兄弟引用（此时左侧兄弟均已 visit 过，已登记）。
+        if (prevSib) info.prevSiblingInfo = nodeInfoOf(prevSib);
+        for (var pj = 0; pj < j; pj++) {
+          var ni = nodeInfoOf(elemKids[pj]);
+          if (ni) info.prevSiblings.push(ni);
+        }
+        result.push({ proxy: p, nodeInfo: info });
         var ph = _hSafe(function () { return p.__zwHandle; }, null);
-        if (ph) visit(ph, ancestors.concat([p]));
+        if (ph) {
+          // 递归：本节点成为子层的 parentInfo；ancestors 链含本节点（根→…→父）。
+          visit(ph, info, ancestors.concat([info]));
+        }
       }
     }
-    visit(rootHandle, []);
+    // 顶层：作用域根为 parentInfo + ancestors[0]，使 `div > p` 的 `div` 可匹配根自身。
+    visit(rootHandle, rootInfo, [rootInfo]);
     return result;
   }
   function _handleQueryFirst(rootHandle, q) {
@@ -480,7 +605,7 @@
     if (!groups.length) return null;
     var nodes = _handleSubtreeNodes(rootHandle);
     for (var i = 0; i < nodes.length; i++) {
-      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].ancestors)) return nodes[i].proxy;
+      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].nodeInfo)) return nodes[i].proxy;
     }
     return null;
   }
@@ -490,7 +615,7 @@
     var nodes = _handleSubtreeNodes(rootHandle);
     var out = [];
     for (var i = 0; i < nodes.length; i++) {
-      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].ancestors)) out.push(nodes[i].proxy);
+      if (_matchAnyGroup(nodes[i].proxy, groups, nodes[i].nodeInfo)) out.push(nodes[i].proxy);
     }
     return out;
   }
@@ -804,6 +929,39 @@
     };
     ctx.rect = function (x, y, w, hh) {
       __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
+    };
+    // R3291：Canvas 2D roundRect（HTML Canvas `dom-context-2d-api` roundRect）。radii 可为 number 或
+    // array[number]（spec：单值/两值 [tl&br, tr&bl]/四值 [tl,tr,br,bl]），归一为逗号分隔串透传 host
+    //（canvas crate best-effort 退化矩形——角圆为 rendering 已知简化，几何/命中测试正确）。invalid radii
+    //（负值/NaN）spec 抛 RangeError，lenient 过滤（headless 简化，避免中断脚本）。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+    ctx.roundRect = function (x, y, w, hh, radii) {
+      var r;
+      if (radii == null) {
+        r = '0';
+      } else if (typeof radii === 'number') {
+        r = String(radii);
+      } else if (typeof radii === 'object' && radii !== null && typeof radii.length === 'number') {
+        var parts = [];
+        for (var i = 0; i < radii.length; i++) {
+          var v = +radii[i];
+          if (!isNaN(v) && v >= 0) parts.push(String(v));
+        }
+        r = parts.length ? parts.join(',') : '0';
+      } else {
+        r = '0';
+      }
+      __zw_canvas_op(h, 'roundRect', String(x), String(y), String(w), String(hh), r);
+    };
+    // R3291：Canvas 2D isPointInPath / isPointInStroke（hit-test 点在路径填充/描边区内）。返 bool。
+    // spec isPointInPath(x,y[,fillRule])，fillRule 透传但 canvas crate 现用奇偶规则。无 ctx → false。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
+    ctx.isPointInPath = function (x, y /*, fillRule */) {
+      return __zw_canvas_op(h, 'isPointInPath', String(x), String(y)) === '1';
+    };
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
+    ctx.isPointInStroke = function (x, y /*, fillRule */) {
+      return __zw_canvas_op(h, 'isPointInStroke', String(x), String(y)) === '1';
     };
     ctx.clip = function () { __zw_canvas_op(h, 'clip'); };
     ctx.save = function () { __zw_canvas_op(h, 'save'); };

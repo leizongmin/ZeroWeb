@@ -1268,6 +1268,105 @@ fn test_query_selector_anylink_scope_lang_dir_r3281() {
 }
 
 #[test]
+fn test_query_selector_nth_child_of_s_r3282() {
+    // R3282：DOM `:nth-child(an+b of S)` / `:nth-last-child(an+b of S)`——Selectors L4 §16。
+    // 此前 DOM `parse_nth` 忽略 `of` 子句 → `querySelectorAll(":nth-child(even of .item)")` 返空。
+    // 语义：仅计匹配 S 的元素兄弟中的位置满足 an+b（与 style-system matcher 同源语义）。
+    // 父 ul 含 5 个 li，仅 .item 标记的参与计数：c1(.item)=序1, c3(.item)=序2, c5(.item)=序3。
+    // 非 .item 的 c2/c4 在 of-S 计数中不存在。
+    let doc = parse_html(
+        "<html><body>\
+         <ul id='ul1'>\
+           <li id='c1' class='item'>1</li>\
+           <li id='c2'>2</li>\
+           <li id='c3' class='item'>3</li>\
+           <li id='c4'>4</li>\
+           <li id='c5' class='item'>5</li>\
+         </ul>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+
+    // :nth-child(odd of .item) → .item 序 1(c1)/3(c5) 奇 → c1/c5；c3 序 2 偶不匹配。
+    let odd_of = ids_of(&doc.query_selector_all(root, "li:nth-child(odd of .item)"));
+    assert!(
+        odd_of.contains(&"c1".to_string()),
+        ":nth-child(odd of .item) 应匹配 c1（.item 序 1）"
+    );
+    assert!(
+        odd_of.contains(&"c5".to_string()),
+        ":nth-child(odd of .item) 应匹配 c5（.item 序 3）"
+    );
+    assert!(
+        !odd_of.contains(&"c3".to_string()),
+        ":nth-child(odd of .item) 不应匹配 c3（.item 序 2 偶）"
+    );
+    assert!(!odd_of.contains(&"c2".to_string()), "非 .item 不应匹配 of .item");
+    assert!(!odd_of.contains(&"c4".to_string()), "非 .item 不应匹配 of .item");
+
+    // :nth-child(even of .item) → .item 序 2(c3) 偶 → 仅 c3。
+    let even_of = ids_of(&doc.query_selector_all(root, "li:nth-child(even of .item)"));
+    assert_eq!(
+        even_of,
+        vec!["c3".to_string()],
+        ":nth-child(even of .item) 应仅匹配 c3（.item 序 2）"
+    );
+
+    // :nth-child(1 of .item) → .item 序首个 = c1。
+    let first_of = doc.query_selector(root, "li:nth-child(1 of .item)");
+    assert_eq!(
+        first_of.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c1".to_string()),
+        ":nth-child(1 of .item) 应为 c1"
+    );
+
+    // :nth-last-child(1 of .item) → .item 序末个 = c5。
+    let last_of = doc.query_selector(root, "li:nth-last-child(1 of .item)");
+    assert_eq!(
+        last_of.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c5".to_string()),
+        ":nth-last-child(1 of .item) 应为 c5"
+    );
+
+    // :nth-last-child(odd of .item) → 倒序 .item 序：c5=1,c3=2,c1=3 → 奇序 c5/c1。
+    let last_odd_of = ids_of(&doc.query_selector_all(root, "li:nth-last-child(odd of .item)"));
+    assert!(
+        last_odd_of.contains(&"c1".to_string()),
+        ":nth-last-child(odd of .item) 应匹配 c1（倒序序 3）"
+    );
+    assert!(
+        last_odd_of.contains(&"c5".to_string()),
+        ":nth-last-child(odd of .item) 应匹配 c5（倒序序 1）"
+    );
+    assert!(
+        !last_odd_of.contains(&"c3".to_string()),
+        ":nth-last-child(odd of .item) 不应匹配 c3（倒序序 2 偶）"
+    );
+
+    // 无 `of` 的纯 :nth-child(2) 仍正常（c2，回归保护）。
+    let nth2 = doc.query_selector(root, "li:nth-child(2)");
+    assert_eq!(
+        nth2.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c2".to_string()),
+        ":nth-child(2) 回归应匹配 c2"
+    );
+
+    // `of` 选择器列表（逗号分隔）：:nth-child(1 of .item, #c4) → 计 .item ∪ #c4 的首个 = c1。
+    let first_of_list = doc.query_selector(root, "li:nth-child(1 of .item, #c4)");
+    assert_eq!(
+        first_of_list.and_then(|id| doc.get_attribute(id, "id")),
+        Some("c1".to_string()),
+        ":nth-child(1 of .item, #c4) 应为 c1（c1 是 .item∪#c4 序首）"
+    );
+
+    // `of` 后无选择器（非法）→ 不匹配（返空），不 panic。
+    let malformed = doc.query_selector_all(root, "li:nth-child(2 of )");
+    assert!(malformed.is_empty(), "非法 `of` 空列表应返空");
+}
+
+#[test]
 fn test_query_selector_attribute_operators() {
     let doc = parse_html(
         "<html><body>\
@@ -2020,4 +2119,320 @@ fn test_query_selector_all_multiple() {
     let root = doc.root();
     let results = doc.query_selector_all(root, "div");
     assert_eq!(results.len(), 3);
+}
+
+#[test]
+fn test_query_selector_target_r3283() {
+    // R3283：DOM `:target` 选择器（CSS Selectors L3 §6.6.2：当前文档 URL fragment 指向的唯一元素）。
+    // 此前 CSS 解析器识别 `:target` 但 DOM `query.rs` 与 style-system matcher 双双走 `_ => false`
+    // → querySelectorAll(":target") 恒空，而同选择器 CSS 侧不匹配——DOM/CSS 不一致。补全为 DOM/CSS
+    // 同源（Document::is_target_element 读 url fragment，百分号解码，getElementById 查唯一元素）。
+    let mut doc = parse_html(
+        "<html><body>\
+         <h1 id='top'>Title</h1>\
+         <p id='note-1'>first</p>\
+         <p id='sec2'>section 2</p>\
+         <p>No id here</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    // 自由函数而非闭包——闭包会捕获 `&doc` 延长不可变借用到 set_url（&mut）调用点，致借用冲突。
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // 无 URL → 无 fragment → 无 :target。
+    let none = doc.query_selector_all(root, ":target");
+    assert!(none.is_empty(), "无 URL 时 :target 应无匹配，实际 {none:?}");
+
+    // URL 无 fragment → 无 :target。
+    doc.set_url(Some("https://example.com/page".to_string()));
+    let none = doc.query_selector_all(root, ":target");
+    assert!(none.is_empty(), "URL 无 fragment 时 :target 应无匹配，实际 {none:?}");
+
+    // URL fragment=#top → 仅匹配 id=top 的元素。
+    doc.set_url(Some("https://example.com/page#top".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(target, vec!["top".to_string()], "#top fragment 应仅命中 id=top");
+
+    // URL fragment=#sec2 → 切换到 id=sec2。
+    doc.set_url(Some("https://example.com/page#sec2".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(target, vec!["sec2".to_string()], "#sec2 fragment 应仅命中 id=sec2");
+
+    // fragment 指向不存在的 id → 无 :target。
+    doc.set_url(Some("https://example.com/page#missing".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert!(target.is_empty(), "不存在的 fragment 应无 :target 匹配");
+
+    // 百分号编码 fragment：#note-1 编码为 #note-%31（%31 = '1'），解码后 = "note-1" 命中。
+    doc.set_url(Some("https://example.com/page#note-%31".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert_eq!(
+        target,
+        vec!["note-1".to_string()],
+        "百分号编码 fragment #note-%31 应解码为 note-1 命中"
+    );
+
+    // 空 fragment（page#）→ 无 :target。
+    doc.set_url(Some("https://example.com/page#".to_string()));
+    let target = ids_of(&doc, &doc.query_selector_all(root, ":target"));
+    assert!(target.is_empty(), "空 fragment 应无 :target 匹配");
+
+    // 直接调权威方法（DOM/CSS 共享，style-system matcher 同此源）。
+    doc.set_url(Some("https://example.com/page#top".to_string()));
+    let top = doc.get_element_by_id("top").unwrap();
+    assert!(
+        doc.is_target_element(top),
+        "is_target_element 对 #top 指向的元素应返 true"
+    );
+    let note1 = doc.get_element_by_id("note-1").unwrap();
+    assert!(
+        !doc.is_target_element(note1),
+        "is_target_element 对非目标元素应返 false"
+    );
+}
+
+#[test]
+fn test_query_selector_validation_pseudo_classes_r3284() {
+    // R3284：DOM `:valid`/`:invalid`/`:in-range`/`:out-of-range` 选择器（HTML §4.10.20 约束校验 +
+    // CSS Selectors L4）。CSS 解析器识别但 DOM query.rs 与 style-system matcher 双双走 `_ => false`
+    // → querySelectorAll(":invalid") 等恒空，DOM/CSS 不一致。补全为静态可判定子集（按内容属性求值）。
+    let doc = parse_html(
+        "<html><body>\
+         <input id='req-empty' required>\
+         <input id='req-filled' required value='x'>\
+         <input id='opt-empty'>\
+         <input id='num-in' type='number' min='1' max='10' value='5'>\
+         <input id='num-lo' type='number' min='1' max='10' value='0'>\
+         <input id='num-hi' type='number' min='1' max='10' value='11'>\
+         <input id='num-norange' type='number' value='5'>\
+         <input id='num-empty' type='number' min='1' max='10'>\
+         <input id='date-in' type='date' min='2026-01-01' max='2026-12-31' value='2026-06-15'>\
+         <input id='date-lo' type='date' min='2026-01-01' max='2026-12-31' value='2025-01-01'>\
+         <input id='disabled-req' required disabled>\
+         <input id='readonly-req' required readonly>\
+         <textarea id='req-textarea-empty' required></textarea>\
+         <select id='req-select-missing' required><option value='a'>A</option></select>\
+         <select id='req-select-picked' required><option selected>A</option></select>\
+         <p id='para'>not a form control</p>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // :invalid → 候选校验元素 + 约束失败：req-empty（required 空值）、num-lo（越下界）、num-hi（越上界）、
+    // date-lo（越下界）、req-textarea-empty（required 空）、req-select-missing（required 无 selected）。
+    let invalid = ids_of(&doc, &doc.query_selector_all(root, ":invalid"));
+    assert!(
+        invalid.contains(&"req-empty".to_string()),
+        ":invalid 应含 required 空 input"
+    );
+    assert!(invalid.contains(&"num-lo".to_string()), ":invalid 应含越下界 number");
+    assert!(invalid.contains(&"num-hi".to_string()), ":invalid 应含越上界 number");
+    assert!(invalid.contains(&"date-lo".to_string()), ":invalid 应含越下界 date");
+    assert!(
+        invalid.contains(&"req-textarea-empty".to_string()),
+        ":invalid 应含 required 空 textarea"
+    );
+    assert!(
+        invalid.contains(&"req-select-missing".to_string()),
+        ":invalid 应含 required 无 selected 的 select"
+    );
+    assert!(
+        !invalid.contains(&"req-filled".to_string()),
+        ":invalid 不应含 required 已填值 input"
+    );
+    assert!(
+        !invalid.contains(&"disabled-req".to_string()),
+        ":invalid 不应含 disabled 元素（barred from validation）"
+    );
+    assert!(
+        !invalid.contains(&"readonly-req".to_string()),
+        ":invalid 不应含 readonly input（barred）"
+    );
+    assert!(
+        !invalid.contains(&"para".to_string()),
+        ":invalid 不应含非表单控件 p（既不 valid 也不 invalid）"
+    );
+
+    // :valid → 候选校验元素无约束失败：opt-empty（无约束）、num-in（在范围内）、date-in、
+    // req-filled、num-norange、req-select-picked。
+    let valid = ids_of(&doc, &doc.query_selector_all(root, ":valid"));
+    assert!(valid.contains(&"opt-empty".to_string()), ":valid 应含无约束 input");
+    assert!(valid.contains(&"num-in".to_string()), ":valid 应含在范围内 number");
+    assert!(valid.contains(&"date-in".to_string()), ":valid 应含在范围内 date");
+    assert!(valid.contains(&"req-filled".to_string()), ":valid 应含 required 已填值");
+    assert!(valid.contains(&"num-norange".to_string()), ":valid 应含无边界 number");
+    assert!(
+        valid.contains(&"req-select-picked".to_string()),
+        ":valid 应含有 selected 的 required select"
+    );
+    // valid 与 invalid 互斥。
+    assert!(!valid.contains(&"req-empty".to_string()), ":valid 不应含 invalid 元素");
+    assert!(
+        !valid.iter().any(|v| invalid.contains(v)),
+        ":valid 与 :invalid 不应重叠：valid={valid:?} invalid={invalid:?}"
+    );
+
+    // :in-range → range-applicable input 有 value 落 [min,max]：num-in、date-in。
+    let in_range = ids_of(&doc, &doc.query_selector_all(root, ":in-range"));
+    assert!(in_range.contains(&"num-in".to_string()), ":in-range 应含区间内 number");
+    assert!(in_range.contains(&"date-in".to_string()), ":in-range 应含区间内 date");
+    assert!(
+        !in_range.contains(&"num-empty".to_string()),
+        ":in-range 不应含空 value number"
+    );
+    assert!(
+        !in_range.contains(&"num-norange".to_string()),
+        ":in-range 不应含无边界 number"
+    );
+
+    // :out-of-range → 越界：num-lo、num-hi、date-lo。
+    let out_of_range = ids_of(&doc, &doc.query_selector_all(root, ":out-of-range"));
+    assert!(
+        out_of_range.contains(&"num-lo".to_string()),
+        ":out-of-range 应含越下界 number"
+    );
+    assert!(
+        out_of_range.contains(&"num-hi".to_string()),
+        ":out-of-range 应含越上界 number"
+    );
+    assert!(
+        out_of_range.contains(&"date-lo".to_string()),
+        ":out-of-range 应含越下界 date"
+    );
+    assert!(
+        !out_of_range.contains(&"num-empty".to_string()),
+        ":out-of-range 不应含空 value number"
+    );
+
+    // 直接调权威方法（DOM/CSS 共享，style-system matcher 同此源）。
+    let num_lo = doc.get_element_by_id("num-lo").unwrap();
+    assert!(
+        doc.is_invalid_element(num_lo),
+        "is_invalid_element 对越下界 number 应 true"
+    );
+    assert!(
+        doc.is_out_of_range_element(num_lo),
+        "is_out_of_range_element 对越下界应 true"
+    );
+    assert!(!doc.is_in_range_element(num_lo), "is_in_range_element 对越界应 false");
+    let num_in = doc.get_element_by_id("num-in").unwrap();
+    assert!(doc.is_valid_element(num_in), "is_valid_element 对区间内 number 应 true");
+    assert!(doc.is_in_range_element(num_in), "is_in_range_element 对区间内应 true");
+    let para = doc.get_element_by_id("para").unwrap();
+    assert!(
+        !doc.is_valid_element(para),
+        "is_valid_element 对非表单控件应 false（barred）"
+    );
+    assert!(
+        !doc.is_invalid_element(para),
+        "is_invalid_element 对非表单控件应 false（barred）"
+    );
+}
+
+// R3285：DOM querySelector 兄弟组合器（`+` 相邻兄弟 / `~` 通用兄弟，CSS Selectors L3 §14.3/§14.4）。
+// CSS 解析器 + style-system matcher 支持全部四种组合器（Descendant/Child/NextSibling/SubsequentSibling），
+// 但 DOM query.rs SelectorChain 旧仅支持 Descendant/Child——`querySelectorAll("h1 + p")` / `"h1 ~ p"`
+// 在 DOM 路径静默失败，而同选择器在 CSS 生效，DOM/CSS 不一致（延续 R3277-R3284 一致化系列）。
+#[test]
+fn test_query_sibling_combinators_r3285() {
+    let doc = parse_html(
+        "<html><body>\
+         <div id='wrap'>\
+         <h1 id='title'>Title</h1>\
+         <p id='first-para'>First</p>\
+         <p id='second-para'>Second</p>\
+         <span id='span1'>S1</span>\
+         <p id='third-para'>Third</p>\
+         </div>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // `h1 + p`——紧邻 h1 的**下一个元素**兄弟 p → 仅 first-para。
+    let next = ids_of(&doc, &doc.query_selector_all(root, "h1 + p"));
+    assert!(
+        next == vec!["first-para".to_string()],
+        "h1 + p 应仅匹配紧邻的 first-para，实际：{next:?}"
+    );
+
+    // `h1 + p`——若紧邻兄弟非 p 则不匹配（second-para 紧邻 first-para，不紧邻 h1）。
+    assert!(
+        !next.contains(&"second-para".to_string()),
+        "h1 + p 不应匹配非紧邻的 second-para"
+    );
+
+    // `p + p`——两两相邻的 p 对：first-para（紧邻 h1，非 p→ 不计入「作为 p+p 的右操作数」？
+    // 实际：first-para 的前一个元素兄弟是 h1（非 p），不匹配；second-para 前是 first-para（p）→ 匹配。
+    let pp = ids_of(&doc, &doc.query_selector_all(root, "p + p"));
+    assert!(
+        pp.contains(&"second-para".to_string()),
+        "p + p 应匹配 second-para（前一个元素兄弟 first-para 是 p）"
+    );
+    assert!(
+        !pp.contains(&"first-para".to_string()),
+        "p + p 不应匹配 first-para（前一个元素兄弟是 h1，非 p）"
+    );
+    assert!(
+        !pp.contains(&"third-para".to_string()),
+        "p + p 不应匹配 third-para（前一个元素兄弟 span1，非 p）"
+    );
+
+    // `h1 ~ p`——h1 之后**任一**元素兄弟 p → first/second/third-para 全部（均在 h1 之后且同为 wrap 子）。
+    let subs = ids_of(&doc, &doc.query_selector_all(root, "h1 ~ p"));
+    assert!(subs.contains(&"first-para".to_string()), "h1 ~ p 应含 first-para");
+    assert!(subs.contains(&"second-para".to_string()), "h1 ~ p 应含 second-para");
+    assert!(subs.contains(&"third-para".to_string()), "h1 ~ p 应含 third-para");
+    assert!(!subs.contains(&"title".to_string()), "h1 ~ p 不应含 h1 自身（title）");
+    assert!(!subs.contains(&"span1".to_string()), "h1 ~ p 不应含 span1（非 p）");
+
+    // `span1 ~ p`——span1 之后的 p 仅 third-para。
+    let span_p = ids_of(&doc, &doc.query_selector_all(root, "span#span1 ~ p"));
+    assert!(
+        span_p == vec!["third-para".to_string()],
+        "span#span1 ~ p 应仅匹配 third-para，实际：{span_p:?}"
+    );
+
+    // `p ~ span`——任一 p 之后的 span → 仅 span1（second-para 之后）。
+    let p_span = ids_of(&doc, &doc.query_selector_all(root, "p ~ span"));
+    assert!(
+        p_span == vec!["span1".to_string()],
+        "p ~ span 应仅匹配 span1，实际：{p_span:?}"
+    );
+
+    // 混合组合器：`div > h1 + p`——div 的子 h1 的相邻 p → first-para。
+    let mixed = ids_of(&doc, &doc.query_selector_all(root, "div > h1 + p"));
+    assert!(
+        mixed == vec!["first-para".to_string()],
+        "div > h1 + p 应仅匹配 first-para，实际：{mixed:?}"
+    );
+}
+
+#[test]
+fn test_query_sibling_combinator_skips_text_nodes_r3285() {
+    // CSS 兄弟组合器只计元素兄弟——中间的 Text 节点（含可忽略空白/换行）不影响 `+`/`~`。
+    // html5ever 解析时 inline 标记间会生成 Text 节点，须确认组合器跳过它们。
+    let doc = parse_html("<html><body><h1 id='t'>T</h1>\n  <p id='a'>A</p>\n  <p id='b'>B</p></body></html>");
+    let root = doc.root();
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+    let next = ids_of(&doc, &doc.query_selector_all(root, "h1 + p"));
+    assert!(
+        next == vec!["a".to_string()],
+        "h1 + p 应跳过 Text 节点匹配紧邻元素 a，实际：{next:?}"
+    );
+    let both = ids_of(&doc, &doc.query_selector_all(root, "h1 ~ p"));
+    assert_eq!(
+        both,
+        vec!["a".to_string(), "b".to_string()],
+        "h1 ~ p 应含两个 p（跳过 Text 节点）"
+    );
 }

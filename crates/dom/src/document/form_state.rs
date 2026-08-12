@@ -118,11 +118,26 @@ impl Document {
     }
 
     /// 元素 local_name（小写原始 tag）；非元素返 None。多处表单状态伪类求值共用。
-    fn element_local_name(&self, node: NodeId) -> Option<&str> {
+    /// `pub(super)`：R3284 validation.rs 子模块（同 document 模块后代）复用此 helper。
+    pub(super) fn element_local_name(&self, node: NodeId) -> Option<&str> {
         self.nodes.get(node).and_then(|n| match &n.kind {
             NodeKind::Element(e) => Some(e.local_name()),
             _ => None,
         })
+    }
+
+    /// 元素直接子文本节点是否有非空（非纯空白）内容。
+    /// `pub(super)`：R3284 validation.rs 子模块复用（textarea value_missing 求值）。
+    pub(super) fn element_has_text_content(&self, node: NodeId) -> bool {
+        for &child in &self.child_nodes(node) {
+            if let Some(n) = self.nodes.get(child)
+                && let NodeKind::Text(data) = &n.kind
+                && !data.content.trim().is_empty()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// `:placeholder-shown`（CSS UI）：input/textarea 正在显示 placeholder。
@@ -141,19 +156,6 @@ impl Document {
             "textarea" => !self.element_has_text_content(node),
             _ => false,
         }
-    }
-
-    /// 元素直接子文本节点是否有非空（非纯空白）内容。
-    fn element_has_text_content(&self, node: NodeId) -> bool {
-        for &child in &self.child_nodes(node) {
-            if let Some(n) = self.nodes.get(child)
-                && let NodeKind::Text(data) = &n.kind
-                && !data.content.trim().is_empty()
-            {
-                return true;
-            }
-        }
-        false
     }
 
     /// `:indeterminate`（HTML §4.15）静态可判定子集——
@@ -185,7 +187,8 @@ impl Document {
     }
 
     /// 表单宿主：最近的 `<form>` 祖先元素。注：`form` 属性跨树关联未实现。
-    fn form_owner(&self, node: NodeId) -> Option<NodeId> {
+    /// `pub(super)`：R3284 validation.rs 子模块复用（radio required 组求值）。
+    pub(super) fn form_owner(&self, node: NodeId) -> Option<NodeId> {
         let mut cur = self.parent_node(node);
         while let Some(p) = cur {
             if self.element_local_name(p) == Some("form") {
@@ -211,7 +214,8 @@ impl Document {
     }
 
     /// 树序扫描子树，组内是否有 checked 成员。
-    fn radio_group_has_checked(&self, root: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
+    /// `pub(super)`：R3284 validation.rs 子模块复用（radio required 组 valueMissing 求值）。
+    pub(super) fn radio_group_has_checked(&self, root: NodeId, name: &str, group_owner: Option<NodeId>) -> bool {
         if self.is_radio_in_group(root, name, group_owner) && self.get_attribute(root, "checked").is_some() {
             return true;
         }
