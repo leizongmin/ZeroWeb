@@ -746,6 +746,65 @@ fn test_stroke_with_path_and_shadow() {
     assert!(has_content, "stroke_with_path with shadow should produce pixels");
 }
 
+// R3356：stroke_with_path 的描边阴影须用 stroke 足迹（与 stroke() / stroke_path→stroke() 一致），
+// 非 centerline。旧实现误用 draw_shadow_path（centerline），致粗线 stroke_with_path 的阴影比
+// stroke() 细——同一描边几何经两条公共 API 产生不同阴影。本测以粗线 + 偏移阴影断言：
+// stroke_with_path 的阴影覆盖范围应与 stroke_path（→stroke()）一致（粗线足迹宽于 centerline）。
+#[test]
+fn test_stroke_with_path_shadow_uses_stroke_footprint_r3356() {
+    let shadow = Color::rgba(0, 0, 0, 255);
+    let stroke = Color::rgba(255, 0, 0, 255);
+    let mk = |via_with_path: bool| -> usize {
+        let mut ctx = CanvasContext::new(120, 60);
+        ctx.set_shadow_color(shadow);
+        ctx.set_shadow_offset_x(40.0); // 阴影右移，与主体分离便于计数
+        ctx.set_stroke_style(CanvasStyle::Color(stroke));
+        ctx.set_line_width(20.0); // 粗线——stroke 足迹 20px 宽，centerline 仅 1px
+        let mut path = Path2D::new();
+        path.move_to(10.0, 30.0);
+        path.line_to(60.0, 30.0);
+        if via_with_path {
+            ctx.stroke_with_path(&path);
+        } else {
+            ctx.stroke_path(&path); // → stroke()，用 draw_shadow_stroke（R3241 正确足迹）
+        }
+        // 计阴影区（x≈50..100，y 全）的不透明像素数。
+        let mut count = 0usize;
+        for y in 0..60 {
+            for x in 50..100 {
+                let idx = (y * 120 + x) * 4;
+                // 阴影色为黑（rgb 0,0,0），主体为红（r 255）——只数黑且不透明像素
+                if ctx.pixel_buffer[idx] == 0
+                    && ctx.pixel_buffer[idx + 1] == 0
+                    && ctx.pixel_buffer[idx + 2] == 0
+                    && ctx.pixel_buffer[idx + 3] == 255
+                {
+                    count += 1;
+                }
+            }
+        }
+        count
+    };
+    let via_with_path = mk(true);
+    let via_stroke = mk(false);
+    // stroke 足迹阴影（粗线 ~20px 宽 × ~50px 长 ≈ 1000px）远多于 centerline（~1px × 50 ≈ 50）。
+    // 修复前 via_with_path 用 centerline ≈ 50，via_stroke ≈ 1000（两者悬殊）；修复后两者相近。
+    assert!(
+        via_with_path > 500,
+        "stroke_with_path 阴影应为 stroke 足迹（粗线宽覆盖，得 {}），修复前 centerline 仅 ~50",
+        via_with_path
+    );
+    // 两条 API 同一几何阴影覆盖应同量级（允许光栅化抖动，5x 容差）。
+    let ratio = via_with_path as f64 / via_stroke.max(1) as f64;
+    assert!(
+        ratio > 0.2 && ratio < 5.0,
+        "stroke_with_path 与 stroke_path 阴影覆盖应一致（ratio={:.2}，with={} stroke={})",
+        ratio,
+        via_with_path,
+        via_stroke
+    );
+}
+
 /// 覆盖 is_point_in_stroke 非空路径分支（line 748 附近）
 #[test]
 fn test_is_point_in_stroke_with_line_segment() {

@@ -372,8 +372,11 @@ impl CanvasContext {
         if vertices.is_empty() {
             return;
         }
+        // R3356：描边阴影用 stroke 足迹（thick rect + 连接点），非 centerline——与 stroke()（R3241）
+        // 一致。旧实现误用 draw_shadow_path（centerline），致同一描边几何经 stroke_with_path 与
+        // stroke_path（→stroke()）产生不同阴影（粗线 stroke_with_path 阴影过细）。
         if self.has_shadow() {
-            self.draw_shadow_path(&vertices);
+            self.draw_shadow_stroke(&vertices, self.line_width);
         }
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
         if self.stroke_style.is_per_pixel_style() {
