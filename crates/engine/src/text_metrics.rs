@@ -100,6 +100,21 @@ pub(crate) fn source_mapping_requires_offsets(text: &str, glyphs: &[ShapedGlyph]
         .any(|((byte_offset, _), glyph)| glyph.cluster != byte_offset as u32)
 }
 
+/// 判断 shaping 是否将多个源码标量合并为较少的有效 glyph。
+pub(crate) fn many_to_one_source_mapping(text: &str, glyphs: &[ShapedGlyph]) -> bool {
+    let text_len = text.len();
+    !glyphs.is_empty()
+        && glyphs.len() < text.chars().count()
+        && glyphs.iter().any(|glyph| glyph.cluster == 0)
+        && glyphs.iter().all(|glyph| {
+            glyph.glyph_id > 0
+                && u16::try_from(glyph.glyph_id).is_ok()
+                && usize::try_from(glyph.cluster)
+                    .ok()
+                    .is_some_and(|cluster| cluster < text_len && text.is_char_boundary(cluster))
+        })
+}
+
 /// `ZW_SHAPED_TEXT` 使用的 layout advance source。
 pub(crate) struct ShapedAdvanceSource;
 
@@ -147,11 +162,19 @@ impl AdvanceSource for ShapedAdvanceSource {
             TextDirection::LeftToRight,
             &[],
             font_size_adjustment(size_adjust),
-        )
-        .filter(|glyphs| one_to_one_source_mapping(text, glyphs) && !source_mapping_requires_offsets(text, glyphs)) else {
+        ) else {
             return estimated;
         };
         let contextual: f32 = shaped.iter().map(|glyph| glyph.advance_x).sum();
+        // https://drafts.csswg.org/css-text-3/#line-breaking
+        // R3278-F：complex paint 直接消费 ligature/控制字符折叠后的 glyph run，
+        // layout intrinsic advance 也必须使用同一 run 的总 advance。
+        if many_to_one_source_mapping(text, &shaped) {
+            return contextual;
+        }
+        if !one_to_one_source_mapping(text, &shaped) || source_mapping_requires_offsets(text, &shaped) {
+            return estimated;
+        }
         if !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None) {
             return contextual;
         }
@@ -213,6 +236,20 @@ mod tests {
         assert!(one_to_one_source_mapping("AV", &[glyph('A', 3), glyph('V', 4)]));
         assert!(!one_to_one_source_mapping("fi", &[glyph('f', 7)]));
         assert!(!one_to_one_source_mapping("éA", &[glyph('é', 8), glyph('é', 9)]));
+    }
+
+    #[test]
+    fn many_to_one_mapping_accepts_ligature_and_ignorable_control() {
+        assert!(many_to_one_source_mapping("fi", &[glyph('f', 7)]));
+
+        let first = glyph('f', 7);
+        let mut second = glyph('i', 8);
+        second.cluster = 4;
+        assert!(many_to_one_source_mapping("f\u{200c}i", &[first, second]));
+        assert!(!many_to_one_source_mapping("fi", &[glyph('f', 0)]));
+        let mut invalid_cluster = glyph('f', 7);
+        invalid_cluster.cluster = 2;
+        assert!(!many_to_one_source_mapping("fi", &[invalid_cluster]));
     }
 
     #[test]

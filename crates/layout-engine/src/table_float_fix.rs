@@ -34,12 +34,17 @@ use crate::types::LayoutBox;
 
 /// table-among-floats scoped iterative fix 入口。post-order 遍历，对匹配结构的容器执行
 /// A+B+C+D。env `ZW_TABLE_FLOAT_ITER_V2=0` 关闭。
-pub(crate) fn fix_table_among_floats(root: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+pub(crate) fn fix_table_among_floats(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
     if std::env::var("ZW_TABLE_FLOAT_ITER_V2").as_deref() == Ok("0") {
         return;
     }
     let mut grown_cell_ids: Vec<NodeId> = Vec::new();
-    fix_inner(root, doc, styles, &mut grown_cell_ids);
+    fix_inner(root, doc, styles, &mut grown_cell_ids, inline_fonts);
     // R1723 eval：D 步扩高的 td（cell）需把增量传到外层 table 行高，否则下推的 table 溢出
     // 被后续块覆盖（floats-wrap-bfc-005）。曾尝试 height-only reflow（reflow_tables_with_grown_cells），
     // 但 bfc-004 是「假通过」案——test table 与 ref purple 经 R1612 line-advance 都落在 y=20，
@@ -77,10 +82,11 @@ fn fix_inner(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     grown_cell_ids: &mut Vec<NodeId>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     // post-order：先修子容器（嵌套结构）
     for child in &mut root.children {
-        fix_inner(child, doc, styles, grown_cell_ids);
+        fix_inner(child, doc, styles, grown_cell_ids, inline_fonts);
     }
     // 仅「同时含 float 子 + table 子」的容器介入（scoping 关键）
     let has_float = root.children.iter().any(is_float);
@@ -97,7 +103,7 @@ fn fix_inner(
     adjust_float_positions(&mut root.children[tidx]);
 
     // === B: 重算 table 高度（inner float 堆叠后 table h 增长，如 100→200）===
-    layout_table(&mut root.children[tidx], doc, styles);
+    layout_table(&mut root.children[tidx], doc, styles, inline_fonts);
 
     // 先用不可变读取计算 natural_y / avoidance_x / is_cleared（避免与下方可变借用冲突）
     let table_h = root.children[tidx].height;

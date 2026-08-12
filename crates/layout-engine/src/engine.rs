@@ -643,14 +643,14 @@ impl LayoutEngine {
         // 不需要额外后处理
 
         // 8. 后处理：对 display:table 容器执行 table grid 布局
-        crate::table::adjust_table_layout(&mut root_box, doc, styles);
+        crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, self.inline_font_context());
 
         // 8.5 后处理（R1518d V2）：table-among-floats scoped iterative fix。
         // step5 float 定位早于 step8 table layout，table shrink-to-fit 后不重跑 §9.5，
         // 致窄 table 堆在 float 下方扩容器。本 pass scoped（仅 float+table 同容器）：
         // A re-wrap 内层 float + B 重算 table 高 + C 手动 §9.5 push + D 重算容器高度。
         // env ZW_TABLE_FLOAT_ITER_V2=0 关闭（default-on）；ZW_TABLE_FLOAT_DBG 诊断。
-        crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles);
+        crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, self.inline_font_context());
 
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
@@ -967,7 +967,7 @@ impl LayoutEngine {
         );
         adjust_fixed_to_viewport(&mut root_box, 0.0, 0.0);
         // margin 折叠由 taffy 0.7 内置处理
-        crate::table::adjust_table_layout(&mut root_box, doc, styles);
+        crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
         sort_children_by_css_order(&mut root_box, styles);
         // taffy 已在 layout.location 中包含 position:relative 的 inset 偏移，无需额外后处理

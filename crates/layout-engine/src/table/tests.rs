@@ -5,6 +5,7 @@ use super::*;
 // R1718：collect_col_widths 同模块。
 use crate::table_grid::{collect_col_widths, count_col_elements};
 use std::collections::HashMap;
+use std::rc::Rc;
 use zero_css_parser::values::{DisplayValue, VisibilityValue};
 use zero_dom::Document;
 use zero_style_system::ComputedStyle;
@@ -531,7 +532,7 @@ fn test_auto_width_table_shrink_to_fit_uses_col_sum_not_container() {
         ..Default::default()
     };
 
-    layout_table(&mut table_box, &doc, &styles);
+    layout_table(&mut table_box, &doc, &styles, Default::default());
 
     // auto-width 表应 shrink-to-fit 到内容（~100），而非保持容器宽 784
     assert!(
@@ -592,7 +593,7 @@ fn test_separated_border_spacing_perimeter_and_empty_row_zero() {
         ..Default::default()
     };
 
-    layout_table(&mut table_box, &doc, &styles);
+    layout_table(&mut table_box, &doc, &styles, Default::default());
 
     // 周界 spacing：左 50 + cell 100 + 右 50 = 200（旧实现仅 100，漏周界）
     assert!(
@@ -833,7 +834,7 @@ fn test_fixed_layout_caps_columns_at_explicit_width_when_content_wider() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
 
     // 修复前：内容 200px 撑宽列到 ~200；修复后：fixed + width:100px 收缩列到 ~100
     let total: f32 = col_widths.iter().sum();
@@ -892,7 +893,7 @@ fn test_r364_explicit_width_column_frozen_during_expansion() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
     assert_eq!(col_widths.len(), 2, "应有 2 列");
     // 显式 20px 列冻结（不吸收剩余空间），保持 ~20 而非被比例撑大
     assert!(
@@ -944,7 +945,7 @@ fn test_r364b_explicit_width_floored_at_min_content() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc);
+    let col_widths = compute_column_widths(&table_box, &grid, &styles, &doc, Default::default());
     // 列宽应 floor 到 min-content（~9.6），远大于显式 3px（修复前会返回 3）
     assert!(
         col_widths[0] >= 8.0,
@@ -1001,13 +1002,56 @@ fn test_r702_cell_intrinsic_uses_max_content_not_whitespace_charcount() {
         ..Default::default()
     };
 
-    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc);
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default());
     // 修复前 char_count = 6 chars × char_width(30) = 180；修复后 box_content_max_width ≈ 「A」宽
     assert!(
         intrinsic < 80.0,
         "cell intrinsic 应用 box_content_max_content（~「A」宽），不应被空白 char_count 撑大，got {}",
         intrinsic
     );
+}
+
+#[test]
+fn table_cell_direct_text_intrinsic_uses_shaped_advance() {
+    struct FixedAdvance;
+
+    impl crate::inline::AdvanceSource for FixedAdvance {
+        fn measure(&self, _ch: char, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+            9.0
+        }
+    }
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let cell_id = doc.create_element("td");
+    let text_id = doc.create_text_node("fi");
+    let _ = doc.append_child(root, cell_id);
+    let _ = doc.append_child(cell_id, text_id);
+
+    let mut cell_style = ComputedStyle::default();
+    cell_style.display = DisplayValue::TableCell;
+    cell_style.font_family = vec!["Test".to_string()];
+    cell_style.font_size = zero_css_parser::values::LengthValue::Px(32.0);
+    let styles = HashMap::from([(cell_id, cell_style)]);
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 32.0,
+        content_width: 32.0,
+        padding_left: 3.0,
+        padding_right: 2.0,
+        border_left: 1.0,
+        ..Default::default()
+    };
+    let source = crate::inline::AdvanceSourceHandle(Rc::new(FixedAdvance));
+    let resolver = Rc::new(HashMap::from([("Test".to_string(), 7)]));
+    let inline_fonts = crate::inline_finalization::InlineFontContext {
+        advance_source: Some(&source),
+        resolver: Some(&resolver),
+        ..Default::default()
+    };
+
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, inline_fonts);
+    assert_eq!(intrinsic, 24.0);
 }
 
 /// R2050：`compute_cell_intrinsic_width` 对含显式宽子元素（如 `<td><div style="width:50px">`）
@@ -1054,7 +1098,7 @@ fn test_r2050_cell_intrinsic_explicit_child_includes_border() {
         ..Default::default()
     };
 
-    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc);
+    let intrinsic = compute_cell_intrinsic_width(&cell_box, &styles, &doc, Default::default());
     // 修复前 = 50 + 5(padding) = 55（漏 border）；修复后 = 50 + 5 + 4 = 59（border-box）。
     assert_eq!(
         intrinsic, 59.0,

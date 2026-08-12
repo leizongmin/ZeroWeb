@@ -51,7 +51,16 @@ use table_vertical::position_cells_vertical;
 /// `display: table-row`、`display: table-cell`），这些元素缺少
 /// 父级 table 容器，CSS 匿名盒修复会为它们生成匿名 table 包装。
 pub fn adjust_table_layout(root: &mut LayoutBox, doc: &zero_dom::Document, styles: &HashMap<NodeId, ComputedStyle>) {
-    adjust_table_layout_inner(root, doc, styles, false);
+    adjust_table_layout_with_fonts(root, doc, styles, Default::default());
+}
+
+pub(crate) fn adjust_table_layout_with_fonts(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    adjust_table_layout_inner(root, doc, styles, false, inline_fonts);
 }
 
 fn adjust_table_layout_inner(
@@ -59,21 +68,22 @@ fn adjust_table_layout_inner(
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     inside_table: bool,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     let display = get_display(root, styles);
 
     if display == Some(DisplayValue::Table) || display == Some(DisplayValue::InlineTable) {
-        layout_table(root, doc, styles);
+        layout_table(root, doc, styles, inline_fonts);
         // 递归处理子节点（标记为在 table 内部）
         for child in &mut root.children {
-            adjust_table_layout_inner(child, doc, styles, true);
+            adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
         }
     } else if !inside_table && display.as_ref().is_some_and(is_table_internal) {
         // 孤立的 table 内部元素（无父级 table）：
         // CSS 匿名盒修复应生成匿名 table 包装，这里直接对其执行 table 布局。
-        layout_table(root, doc, styles);
+        layout_table(root, doc, styles, inline_fonts);
         for child in &mut root.children {
-            adjust_table_layout_inner(child, doc, styles, true);
+            adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
         }
     } else {
         // R1382：子元素是否「在 table 结构内」取决于父元素（root）本身是否构成
@@ -106,32 +116,32 @@ fn adjust_table_layout_inner(
                 }
                 let run_len = idx - run_start;
                 if run_len >= 2 {
-                    let merged_idx = merge_orphan_table_run(root, run_start, run_len, doc, styles);
+                    let merged_idx = merge_orphan_table_run(root, run_start, run_len, doc, styles, inline_fonts);
                     for child in &mut root.children[merged_idx].children {
-                        adjust_table_layout_inner(child, doc, styles, true);
+                        adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
                     }
                 } else {
                     let old_height = root.children[run_start].height;
-                    layout_table(&mut root.children[run_start], doc, styles);
+                    layout_table(&mut root.children[run_start], doc, styles, inline_fonts);
                     reflow_siblings_after_table_height_change(root, run_start, old_height);
                     for child in &mut root.children[run_start].children {
-                        adjust_table_layout_inner(child, doc, styles, true);
+                        adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
                     }
                 }
             } else if child_is_real_table {
                 let old_height = root.children[idx].height;
-                layout_table(&mut root.children[idx], doc, styles);
+                layout_table(&mut root.children[idx], doc, styles, inline_fonts);
                 reflow_siblings_after_table_height_change(root, idx, old_height);
                 // R2061：abspos table 内容高确定后按 §10.3.7 重算垂直 auto-margin 居中
                 //（old_height = taffy stretch 高 = CB 可用）。在调用方调用覆盖 build_grid
                 // 空表早返路径与正常路径；非 abspos table 经 recenter 内部 gate no-op。
                 recenter_abspos_table_vertically(&mut root.children[idx], old_height, styles);
                 for child in &mut root.children[idx].children {
-                    adjust_table_layout_inner(child, doc, styles, true);
+                    adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
                 }
                 idx += 1;
             } else {
-                adjust_table_layout_inner(&mut root.children[idx], doc, styles, child_in_table);
+                adjust_table_layout_inner(&mut root.children[idx], doc, styles, child_in_table, inline_fonts);
                 idx += 1;
             }
         }
@@ -153,6 +163,7 @@ fn merge_orphan_table_run(
     run_len: usize,
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) -> usize {
     let run_end = run_start + run_len;
     // 1. run 原始垂直 footprint（max bottom − min top，正确反映重叠/堆叠）。
@@ -181,7 +192,7 @@ fn merge_orphan_table_run(
     root.children.insert(run_start, wrapper);
     // 4. layout_table 包装盒（build_grid 正常路径：多 row-group → 多行堆叠）。
     let widx = run_start;
-    layout_table(&mut root.children[widx], doc, styles);
+    layout_table(&mut root.children[widx], doc, styles, inline_fonts);
     // 5. 按 footprint 差异调整后续兄弟 + 父高度。
     let new_height = root.children[widx].height;
     let delta = new_height - old_footprint;
@@ -274,6 +285,7 @@ pub(crate) fn layout_table(
     table_box: &mut LayoutBox,
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     // 读取 border-spacing
     let (spacing_x, spacing_y) = table_box
@@ -295,7 +307,7 @@ pub(crate) fn layout_table(
     }
 
     // 2. 计算列宽
-    let col_widths = compute_column_widths(table_box, &grid, styles, doc);
+    let col_widths = compute_column_widths(table_box, &grid, styles, doc, inline_fonts);
 
     // 3. 定位单元格
     // α-4b-1：vertical-rl/lr 表走转置路径（行沿 x、cell 沿 y），
@@ -598,6 +610,7 @@ fn compute_column_widths(
     grid: &TableGrid,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) -> Vec<f32> {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
@@ -644,7 +657,7 @@ fn compute_column_widths(
             Some(zero_css_parser::values::LengthValue::Auto) => true,
             Some(_) => false,
         };
-        let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc);
+        let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc, inline_fonts);
         // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
         // taffy 把单元格当 block，cell_box.width = 行/表全宽，不能作为列宽下限
         //（否则每列都撑到全宽，列总和溢出表宽）。无论 table 本身 width 是否 auto，

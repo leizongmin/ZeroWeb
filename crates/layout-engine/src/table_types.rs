@@ -278,6 +278,7 @@ pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) -> f32 {
     let padding = cell_box.padding_left + cell_box.padding_right;
     let is_zero_width = cell_box.width < 2.0;
@@ -314,7 +315,7 @@ pub(crate) fn compute_cell_intrinsic_width(
     // twin：tall div block 子 + "Can you see this text?" 直接文本，cell 测 8px 应 ~211px）。
     // 仅测**直接**文本节点（非 text_content 全后代）——多 block cell 的文本在 block 后代内，
     // cell 直接文本=0，避免过计（margin-collapse-101 安全）。
-    let direct_text_w = cell_direct_text_width(cell_box, styles, doc);
+    let (direct_text_w, direct_text_is_shaped) = cell_direct_text_width(cell_box, styles, doc, inline_fonts);
 
     if has_explicit_child && content_width > 0.0 {
         // R2050：返回 cell 的 border-box 宽度（content + padding + border），与下方
@@ -356,7 +357,11 @@ pub(crate) fn compute_cell_intrinsic_width(
         // box_content_max_width 返回 border-box，即 cell 对列的宽度贡献。
         // R1001：与 cell 直接文本取 max（直接匿名 inline 内容）。
         let intrinsic = crate::intrinsic_sizing::box_content_max_width(cell_box, doc, styles);
-        let result = intrinsic.max(direct_text_w);
+        let result = if direct_text_is_shaped && cell_box.children.is_empty() {
+            direct_text_w + padding + cell_box.border_left + cell_box.border_right
+        } else {
+            intrinsic.max(direct_text_w)
+        };
         if result > 0.0 {
             return result;
         }
@@ -409,19 +414,68 @@ fn cell_direct_text_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
-) -> f32 {
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) -> (f32, bool) {
     use zero_dom::NodeKind;
-    let Some(id) = cell_box.node_id else { return 0.0 };
-    let Some(style) = styles.get(&id) else { return 0.0 };
+    let Some(id) = cell_box.node_id else {
+        return (0.0, false);
+    };
+    let Some(style) = styles.get(&id) else {
+        return (0.0, false);
+    };
     let text_children: Vec<NodeId> = doc
         .child_nodes(id)
         .into_iter()
         .filter(|&cid| doc.get(cid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
         .collect();
     if text_children.is_empty() {
-        return 0.0;
+        return (0.0, false);
     }
-    crate::intrinsic_sizing::fragment_inline_max_width(style, &text_children, doc)
+    if matches!(
+        (style.direction.clone(), style.writing_mode.clone()),
+        (
+            zero_style_system::DirectionValue::Ltr,
+            zero_style_system::WritingModeValue::HorizontalTb
+        )
+    ) && std::env::var("ZW_TABLE_SHAPED_INTRINSIC").as_deref() != Ok("0")
+        && let (Some(source), Some(resolver)) = (inline_fonts.advance_source, inline_fonts.resolver)
+    {
+        let text = text_children
+            .iter()
+            .filter_map(|child_id| match &doc.get(*child_id)?.kind {
+                NodeKind::Text(text) => Some(text.content.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        let text = crate::inline::collapse_whitespace(&text);
+        let font_ids = crate::font_resolution::resolve_font_ids_for_style(
+            resolver,
+            &style.font_family,
+            &style.font_weight,
+            &style.font_style,
+            style.font_stretch,
+        );
+        let (font_size, _) = crate::inline::resolve_font_metrics(Some(style));
+        let is_ahem = style
+            .font_family
+            .iter()
+            .any(|family| family.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+        let letter_spacing = match style.letter_spacing {
+            zero_style_system::property::types::LengthValue::Px(value) => value as f32,
+            _ => 0.0,
+        };
+        // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
+        // R3278-F：table cell 的 max-content 使用与 IFC 相同的真实字体 advance。
+        return (
+            source.measure_text_with_font_context(&text, &font_ids, font_size, is_ahem, &style.font_size_adjust)
+                + letter_spacing * text.chars().count() as f32,
+            true,
+        );
+    }
+    (
+        crate::intrinsic_sizing::fragment_inline_max_width(style, &text_children, doc),
+        false,
+    )
 }
 
 /// 递归收集 LayoutBox 子树中的文本字符数。
