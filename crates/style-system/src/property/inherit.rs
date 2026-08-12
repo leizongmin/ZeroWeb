@@ -158,6 +158,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_variant_position = parent.font_variant_position;
             true
         }
+        "font-stretch" => {
+            child.font_stretch = parent.font_stretch;
+            true
+        }
         "direction" => {
             child.direction = parent.direction.clone();
             true
@@ -1257,6 +1261,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-position" => {
             style.font_variant_position = default_style.font_variant_position;
+            true
+        }
+        "font-stretch" => {
+            style.font_stretch = default_style.font_stretch;
             true
         }
         "user-select" => {

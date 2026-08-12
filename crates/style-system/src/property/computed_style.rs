@@ -452,6 +452,8 @@ pub struct ComputedStyle {
     pub font_variant_east_asian: FontVariantEastAsianValue,
     /// font-variant-position 属性。
     pub font_variant_position: FontVariantPositionValue,
+    /// font-stretch 属性（百分比，normal = 100.0）。
+    pub font_stretch: f32,
 
     // ── Writing Direction / Tab ──
     /// direction 属性。

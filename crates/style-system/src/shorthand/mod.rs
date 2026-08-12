@@ -604,6 +604,9 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         // ── font 简写 ──
         "font" => expand_font(value, important, specificity),
 
+        // ── font-variant 简写（CSS Fonts 4 §6.10）──
+        "font-variant" => expand_font_variant(value, important, specificity),
+
         // ── text-decoration 简写 ──
         "text-decoration" => expand_text_decoration(value, important, specificity),
 
@@ -1904,6 +1907,91 @@ fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u3
         out.push(mk("text-emphasis-style", &style_parts.join(" ")));
     }
     out
+}
+
+// https://drafts.csswg.org/css-fonts-4/#font-variant-prop
+fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32)) -> Vec<MatchingDecl> {
+    let value = value.trim();
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+
+    if matches_css_wide_keyword(value) {
+        return vec![
+            mk("font-variant-ligatures", value),
+            mk("font-variant-caps", value),
+            mk("font-variant-numeric", value),
+            mk("font-variant-east-asian", value),
+            mk("font-variant-position", value),
+        ];
+    }
+
+    let lower = value.to_ascii_lowercase();
+    if lower == "normal" {
+        return vec![
+            mk("font-variant-ligatures", "normal"),
+            mk("font-variant-caps", "normal"),
+            mk("font-variant-numeric", "normal"),
+            mk("font-variant-east-asian", "normal"),
+            mk("font-variant-position", "normal"),
+        ];
+    }
+    if lower == "none" {
+        return vec![
+            mk("font-variant-ligatures", "none"),
+            mk("font-variant-caps", "normal"),
+            mk("font-variant-numeric", "normal"),
+            mk("font-variant-east-asian", "normal"),
+            mk("font-variant-position", "normal"),
+        ];
+    }
+
+    let mut ligatures: Option<String> = None;
+    let mut caps: Option<String> = None;
+    let mut numeric: Option<String> = None;
+    let mut east_asian: Option<String> = None;
+    let mut position: Option<String> = None;
+
+    for token in lower.split_whitespace() {
+        match token {
+            // font-variant-ligatures keywords
+            "no-common-ligatures"
+            | "common-ligatures"
+            | "no-discretionary-ligatures"
+            | "discretionary-ligatures"
+            | "no-historical-ligatures"
+            | "historical-ligatures"
+            | "no-contextual"
+            | "contextual" => {
+                ligatures = Some(token.to_string());
+            }
+            // font-variant-caps keywords
+            "small-caps" | "all-small-caps" | "petite-caps" | "all-petite-caps" | "unicase" | "titling-caps" => {
+                caps = Some(token.to_string());
+            }
+            // font-variant-numeric keywords
+            "lining-nums" | "oldstyle-nums" | "proportional-nums" | "tabular-nums" | "ordinal" | "slashed-zero"
+            | "diagonal-fractions" | "stacked-fractions" => {
+                numeric = Some(token.to_string());
+            }
+            // font-variant-east-asian keywords
+            "jis78" | "jis83" | "jis90" | "jis04" | "simplified" | "traditional" | "full-width"
+            | "proportional-width" | "ruby" => {
+                east_asian = Some(token.to_string());
+            }
+            // font-variant-position keywords
+            "sub" | "super" => {
+                position = Some(token.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    vec![
+        mk("font-variant-ligatures", ligatures.as_deref().unwrap_or("normal")),
+        mk("font-variant-caps", caps.as_deref().unwrap_or("normal")),
+        mk("font-variant-numeric", numeric.as_deref().unwrap_or("normal")),
+        mk("font-variant-east-asian", east_asian.as_deref().unwrap_or("normal")),
+        mk("font-variant-position", position.as_deref().unwrap_or("normal")),
+    ]
 }
 
 #[cfg(test)]

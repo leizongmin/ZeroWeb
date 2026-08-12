@@ -72,6 +72,29 @@ fn position_value_to_computed(
     })
 }
 
+// https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
+fn parse_font_stretch(value: &str) -> Option<f32> {
+    let v = value.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "normal" => Some(100.0),
+        "ultra-condensed" => Some(50.0),
+        "extra-condensed" => Some(62.5),
+        "condensed" => Some(75.0),
+        "semi-condensed" => Some(87.5),
+        "semi-expanded" => Some(112.5),
+        "expanded" => Some(125.0),
+        "extra-expanded" => Some(150.0),
+        "ultra-expanded" => Some(200.0),
+        _ => {
+            if v.ends_with('%') {
+                v.trim_end_matches('%').parse::<f32>().ok().filter(|&p| p > 0.0)
+            } else {
+                None
+            }
+        }
+    }
+}
+
 pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, value: &str) -> bool {
     let value = value.trim();
     match property {
@@ -764,6 +787,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                     zero_css_parser::values::FontVariantPositionValue::Sub => FontVariantPositionValue::Sub,
                     zero_css_parser::values::FontVariantPositionValue::Super => FontVariantPositionValue::Super,
                 };
+                return true;
+            }
+        }
+        // ── font-stretch（CSS Fonts 4 §3.5）──
+        // https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
+        "font-stretch" | "font-width" => {
+            if let Some(pct) = parse_font_stretch(value) {
+                style.font_stretch = pct;
                 return true;
             }
         }

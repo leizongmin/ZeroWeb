@@ -1219,6 +1219,8 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "font-variant-caps"
         | "font-variant-east-asian"
         | "font-variant-position"
+        | "font-variant"
+        | "font-stretch"
         | "font-feature-settings"
         | "font-variation-settings" => true,
         // https://drafts.csswg.org/css-fonts-4/#font-synthesis
