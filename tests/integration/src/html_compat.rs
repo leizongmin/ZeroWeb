@@ -462,6 +462,62 @@ fn default_actions_work_without_javascript() {
 }
 
 #[test]
+fn disabled_fieldset_blocks_interaction_and_submission() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-disabled
+    let html = r#"<html><body>
+        <form id="form" action="https://zero.test/submitted">
+          <fieldset disabled>
+            <legend><input id="legend" name="legend" value="allowed"></legend>
+            <input id="blocked" name="blocked" value="fixed">
+            <input id="check" name="check" value="yes" type="checkbox">
+          </fieldset>
+          <input id="after" name="after" value="outside">
+        </form>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.load_html(html, None);
+    let legend = webview.page_node_ref_for_selector("#legend").expect("legend control");
+    let blocked = webview.page_node_ref_for_selector("#blocked").expect("blocked control");
+    let check = webview.page_node_ref_for_selector("#check").expect("blocked checkbox");
+
+    let blocked_insert = dispatch(
+        &mut webview,
+        None,
+        blocked,
+        HtmlUserAction::InsertText { text: "x".to_string() },
+    );
+    let blocked_activate = dispatch(&mut webview, None, check, HtmlUserAction::Activate);
+    let moved = dispatch(&mut webview, None, legend, HtmlUserAction::MoveFocus { forward: true });
+
+    assert_eq!(
+        blocked_insert.noop_reason,
+        Some(zero_page_runtime::ActionNoopReason::DisabledTarget)
+    );
+    assert_eq!(
+        blocked_activate.noop_reason,
+        Some(zero_page_runtime::ActionNoopReason::DisabledTarget)
+    );
+    assert_eq!(
+        webview
+            .user_action_focus_owner()
+            .and_then(|node| webview.selector_for_page_node_handle(node.node().get()))
+            .as_deref(),
+        Some("#after")
+    );
+    assert_eq!(moved.noop_reason, None);
+    assert_eq!(
+        form_get_submission_url_with_values(
+            webview.html_content(),
+            "#form",
+            None,
+            "https://zero.test/form",
+            &webview.form_control_value_overrides(),
+        ),
+        Some("https://zero.test/submitted?legend=allowed&after=outside".to_string())
+    );
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());

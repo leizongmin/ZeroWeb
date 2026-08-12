@@ -167,7 +167,7 @@ impl WebView {
             return Ok(WebViewUserActionResult::noop(ActionNoopReason::MissingTarget));
         };
         let html = self.cached_html.clone();
-        if zero_engine::has_attribute(&html, &selector, "disabled") {
+        if zero_engine::is_effectively_disabled(&html, &selector) {
             return Ok(WebViewUserActionResult::noop(ActionNoopReason::DisabledTarget));
         }
         let state = match &request.action {

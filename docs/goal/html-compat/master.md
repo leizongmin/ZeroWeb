@@ -71,6 +71,13 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] minlength 用户值约束校验与 reset 清理
 - [x] caret、点击 hit-test 与 IME rect 共用 paint 边界
 
+## M3b 工作包
+
+- [x] successful controls 文档序与显式 form owner
+- [x] disabled fieldset 交互/提交传播与首个 legend 例外
+- [ ] select/option 用户激活事务与三宿主一致性
+- [ ] output/defaultValue reset 与 form owner 集成
+
 ## 下一步
 
-实施 M3b 选择控件与表单元素族，审计 FR-007 的 select/option、fieldset/legend disabled、output 与 form ownership。
+实施 select/option 用户激活事务，复用 shared action core 并验证 renderer、TabWorker、WebView 一致性。

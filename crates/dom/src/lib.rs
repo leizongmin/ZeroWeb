@@ -36,7 +36,7 @@ mod traversal;
 
 pub use document::*;
 pub use event::*;
-pub use focus::FocusManager;
+pub use focus::{FocusManager, is_effectively_disabled};
 pub use mutation::*;
 pub use node::ShadowRootMode;
 pub use node::SlotAssignment;

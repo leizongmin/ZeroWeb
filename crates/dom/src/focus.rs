@@ -225,13 +225,61 @@ fn parse_tabindex(value: Option<&str>) -> Option<i32> {
     }
 }
 
-/// 检查元素是否被禁用（disabled 属性）。
-fn is_disabled(elem: &crate::ElementData) -> bool {
-    elem.get_attribute("disabled").is_some()
+/// 判断元素是否因自身 `disabled` 或 disabled fieldset 祖先而被有效禁用。
+///
+/// disabled fieldset 的首个 legend 元素子树不受该 fieldset 禁用，但仍受更外层
+/// disabled fieldset 约束。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-disabled
+pub fn is_effectively_disabled(doc: &Document, node: NodeId) -> bool {
+    let Some(crate::NodeKind::Element(element)) = doc.get(node).map(|node| &node.kind) else {
+        return false;
+    };
+    if element.get_attribute("disabled").is_some() {
+        return true;
+    }
+    if !matches!(element.local_name(), "button" | "input" | "select" | "textarea") {
+        return false;
+    }
+
+    let mut current = doc.parent_node(node);
+    while let Some(ancestor) = current {
+        if doc.get_attribute(ancestor, "disabled").is_some()
+            && doc.get(ancestor).is_some_and(
+                |node| matches!(&node.kind, crate::NodeKind::Element(element) if element.local_name() == "fieldset"),
+            )
+            && !is_descendant_of_first_legend(doc, node, ancestor)
+        {
+            return true;
+        }
+        current = doc.parent_node(ancestor);
+    }
+    false
+}
+
+fn is_descendant_of_first_legend(doc: &Document, node: NodeId, fieldset: NodeId) -> bool {
+    let first_legend = doc.child_nodes(fieldset).iter().copied().find(|child| {
+        doc.get(*child).is_some_and(
+            |node| matches!(&node.kind, crate::NodeKind::Element(element) if element.local_name() == "legend"),
+        )
+    });
+    let Some(first_legend) = first_legend else {
+        return false;
+    };
+    let mut current = doc.parent_node(node);
+    while let Some(ancestor) = current {
+        if ancestor == first_legend {
+            return true;
+        }
+        if ancestor == fieldset {
+            return false;
+        }
+        current = doc.parent_node(ancestor);
+    }
+    false
 }
 
 fn is_sequentially_focusable(doc: &Document, node: NodeId, elem: &crate::ElementData) -> bool {
-    if is_disabled(elem)
+    if is_effectively_disabled(doc, node)
         || (elem.local_name().eq_ignore_ascii_case("input")
             && elem
                 .get_attribute("type")
@@ -459,6 +507,32 @@ mod tests {
             .collect();
         assert_eq!(ids, ["positive-one", "positive-two", "natural", "link"]);
         assert_eq!(focus.focusable_count(), 4);
+    }
+
+    #[test]
+    fn disabled_fieldset_skips_controls_except_first_legend_descendants() {
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-disabled
+        let doc = parse_html(
+            r#"<html><body>
+              <fieldset disabled>
+                <legend><input id="legend"></legend>
+                <input id="blocked">
+                <legend><button id="second">Second</button></legend>
+              </fieldset>
+              <input id="after">
+            </body></html>"#,
+        );
+        let mut focus = FocusManager::new();
+        focus.scan(&doc);
+
+        let ids: Vec<String> = (0..2)
+            .map(|_| {
+                let node = focus.focus_next().expect("focus target");
+                doc.get_attribute(node, "id").expect("id")
+            })
+            .collect();
+        assert_eq!(ids, ["legend", "after"]);
+        assert_eq!(focus.focusable_count(), 2);
     }
 
     #[test]

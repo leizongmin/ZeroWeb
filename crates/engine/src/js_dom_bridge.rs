@@ -1409,20 +1409,13 @@ pub fn query_tag_from_html_doc(doc: &Document, selector: &str) -> String {
         .unwrap_or_default()
 }
 
-/// P1a form submit：从元素 selector 沿 DOM 父链（`parent_node`）找 enclosing `<form>` 的
-/// stable selector（无 enclosing form → None）。供 Enter-in-input / submit-button 的 submit 派发。
+/// P1a form submit：解析元素的 form owner。显式 `form="id"` 优先，否则取最近祖先 form。
+/// 供 Enter-in-input / submit-button 的 submit 派发。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
 pub fn enclosing_form_selector(html: &str, elem_sel: &str) -> Option<String> {
     let doc = parse_html(html);
-    let mut node = find_by_selector(&doc, elem_sel)?;
-    loop {
-        if let Some(nd) = doc.get(node)
-            && let NodeKind::Element(e) = &nd.kind
-            && e.local_name().eq_ignore_ascii_case("form")
-        {
-            return stable_selector_for_node(&doc, node);
-        }
-        node = doc.parent_node(node)?;
-    }
+    let node = find_by_selector(&doc, elem_sel)?;
+    stable_selector_for_node(&doc, form_owner_node(&doc, node)?)
 }
 
 /// P1a form submit：判定元素是否为 submit button（点击会提交 enclosing form）。
@@ -1529,6 +1522,14 @@ pub fn has_attribute(html: &str, selector: &str, name: &str) -> bool {
     find_by_selector(&doc, selector)
         .map(|n| doc.get_attribute(n, name).is_some())
         .unwrap_or(false)
+}
+
+/// 判断表单控件是否因自身 `disabled` 或 disabled fieldset 祖先而被有效禁用。
+///
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-disabled
+pub fn is_effectively_disabled(html: &str, selector: &str) -> bool {
+    let doc = parse_html(html);
+    find_by_selector(&doc, selector).is_some_and(|node| zero_dom::is_effectively_disabled(&doc, node))
 }
 
 /// P1a 导航（R3054）：解析 `<form>` **GET** 提交的目标绝对 URL（闭合 click 默认动作族：reset/anchor/hash →
@@ -1671,9 +1672,18 @@ fn collect_form_data(
     // submitter 解析为节点身份（NodeId 比较，避免跨选择器生成路径的字符串不一致）。
     let submitter_node = submitter_sel.and_then(|s| find_by_selector(&doc, s));
 
-    // 收集成功控件（文档序，spec「constructing the form data set」实用子集）。
-    let mut controls: Vec<NodeId> = Vec::new();
-    collect_form_controls(&doc, form, &mut controls);
+    // 收集 owner 为当前 form 的成功控件。遍历整个文档才能包含 `form="id"` 外部控件，
+    // 同时排除位于 form 子树内、但显式归属其他 form 的控件。
+    let controls: Vec<NodeId> = doc
+        .collect_descendants(doc.root())
+        .into_iter()
+        .filter(|node| {
+            matches!(
+                element_local_name(&doc, *node),
+                "input" | "select" | "textarea" | "button"
+            ) && form_owner_node(&doc, *node) == Some(form)
+        })
+        .collect();
     let mut pairs: Vec<(String, String)> = Vec::new();
     for ctrl in controls {
         // 跳过无 name / disabled（spec：disabled 不参与提交；R3056 含 fieldset disabled 联动）。
@@ -1766,24 +1776,6 @@ fn collect_form_data(
     Some((action_abs, method, pairs))
 }
 
-/// 递归收集 `root` 子树（含嵌套 fieldset/div 等）内全部 input/select/textarea/button 元素，文档序。
-/// 供 [`form_get_submission_url`] 遍历表单成功控件（html5ever 不构造嵌套 form，无重复计风险）。
-fn collect_form_controls(doc: &Document, root: NodeId, out: &mut Vec<NodeId>) {
-    for child in doc.child_nodes(root) {
-        let is_elem = doc.get(child).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)));
-        if !is_elem {
-            continue;
-        }
-        if matches!(
-            element_local_name(doc, child),
-            "input" | "select" | "textarea" | "button"
-        ) {
-            out.push(child);
-        }
-        collect_form_controls(doc, child, out);
-    }
-}
-
 /// 递归收集 `root` 子树内全部指定 tag 元素，文档序。供 select 的 `<option>` 收集。
 fn collect_form_controls_tag(doc: &Document, root: NodeId, tag: &str, out: &mut Vec<NodeId>) {
     for child in doc.child_nodes(root) {
@@ -1808,56 +1800,32 @@ fn element_local_name(doc: &Document, node: NodeId) -> &str {
         .unwrap_or("")
 }
 
+/// 解析 form-associated 元素的 owner。存在 `form` 属性时只按其值关联，不回落祖先。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
+fn form_owner_node(doc: &Document, control: NodeId) -> Option<NodeId> {
+    if let Some(form_id) = doc.get_attribute(control, "form") {
+        return doc.collect_descendants(doc.root()).into_iter().find(|node| {
+            element_local_name(doc, *node) == "form"
+                && doc
+                    .get_attribute(*node, "id")
+                    .is_some_and(|candidate| candidate == form_id)
+        });
+    }
+    let mut current = doc.parent_node(control);
+    while let Some(ancestor) = current {
+        if element_local_name(doc, ancestor) == "form" {
+            return Some(ancestor);
+        }
+        current = doc.parent_node(ancestor);
+    }
+    None
+}
+
 /// 控件是否禁用（spec「disable 属性」barred-the-second-constraint）：自身 `disabled` 属性 OR 任一祖先
 /// `<fieldset>` 有 `disabled` 属性（fieldset disabled 联动禁用全部后代控件，R3056）。供 [`collect_form_data`]
 /// 跳过禁用控件。R3066 legend 豁免：disabled fieldset 首个 `<legend>` 子内控件不禁用（闭合 R3056 限制①）。
 fn is_control_disabled(doc: &Document, ctrl: NodeId) -> bool {
-    if doc.get_attribute(ctrl, "disabled").is_some() {
-        return true;
-    }
-    let mut cur = doc.parent_node(ctrl);
-    while let Some(p) = cur {
-        if element_local_name(doc, p).eq_ignore_ascii_case("fieldset") && doc.get_attribute(p, "disabled").is_some() {
-            // R3066：legend 豁免——控件若为该 disabled fieldset 首个 <legend> 子的后代，则此 fieldset 不禁用它
-            //（继续上行查其他 disabled fieldset 祖先，逐个判定）；否则禁用。
-            if !is_in_first_legend_of_fieldset(doc, ctrl, p) {
-                return true;
-            }
-        }
-        cur = doc.parent_node(p);
-    }
-    false
-}
-
-/// `ctrl` 是否为 `fieldset` 首个 `<legend>` 子元素的后代（含自身）。spec HTML §4.10.18「not a descendant of
-/// that fieldset's first legend element child」——disabled fieldset 的首个 legend 子内控件不禁用。供
-/// [`is_control_disabled`] 判定 legend 豁免。找 fieldset 首个 legend 元素子（文档序），再查 ctrl 祖先链
-/// （fieldset 边界内段）是否含该 legend。
-fn is_in_first_legend_of_fieldset(doc: &Document, ctrl: NodeId, fieldset: NodeId) -> bool {
-    // 找 fieldset 首个 <legend> 元素子节点（文档序）；无 → 无豁免。
-    let first_legend = doc
-        .child_nodes(fieldset)
-        .iter()
-        .find(|&c| {
-            doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
-                && element_local_name(doc, *c).eq_ignore_ascii_case("legend")
-        })
-        .copied();
-    let Some(legend) = first_legend else {
-        return false;
-    };
-    // ctrl 祖先链（fieldset 边界内段）含 legend → 是其后代。
-    let mut cur = doc.parent_node(ctrl);
-    while let Some(a) = cur {
-        if a == legend {
-            return true;
-        }
-        if a == fieldset {
-            break; // 越过 fieldset 边界，停止
-        }
-        cur = doc.parent_node(a);
-    }
-    false
+    zero_dom::is_effectively_disabled(doc, ctrl)
 }
 
 /// 元素的全部属性本地名（`|` 分隔，文档顺序）；无属性或元素不解析返空串。供 `__zw_attr_names`

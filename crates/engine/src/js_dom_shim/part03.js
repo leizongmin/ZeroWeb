@@ -2129,14 +2129,26 @@
         // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
         // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
         // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
         if (prop === 'form') {
           var fcTag = _realTag(sel, handle);
           if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON') {
             try {
+              var hasFormAttr = false;
+              if (handle && typeof __zw_has_attr_handle === 'function') {
+                hasFormAttr = __zw_has_attr_handle(handle, 'form') === '1';
+              } else if (sel && typeof __zw_has_attr_lw === 'function') {
+                hasFormAttr = __zw_has_attr_lw(sel, 'form') === '1';
+              } else if (sel && typeof __zw_has_attr === 'function') {
+                hasFormAttr = __zw_has_attr(sel, 'form') === '1';
+              }
               var formAttr = handle ? __zw_get_attr_handle(handle, 'form') : (sel ? __zw_get_attr(sel, 'form') : '');
-              if (formAttr && globalThis.document && globalThis.document.getElementById) {
-                var byId = globalThis.document.getElementById(formAttr);
-                if (byId) return byId;
+              if (hasFormAttr) {
+                if (formAttr && globalThis.document && globalThis.document.getElementById) {
+                  var byId = globalThis.document.getElementById(formAttr);
+                  if (byId && String(byId.tagName || '').toUpperCase() === 'FORM') return byId;
+                }
+                return null;
               }
               if (sel) {
                 var fchain = _ancestorChain(sel);
