@@ -23,368 +23,43 @@ fn is_printable_key(key: &str) -> bool {
     matches!(chars.next(), Some(c) if !c.is_control()) && chars.next().is_none()
 }
 
-#[derive(Default)]
-struct TabDocumentScope {
-    navigation_epoch: u64,
-    document_generation: u64,
-}
-
-impl TabDocumentScope {
-    fn replace_document(&mut self) {
-        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
-        self.document_generation = self.document_generation.wrapping_add(1);
-    }
-
-    fn node_ref(&self, wv: &WebView, selector: &str) -> Option<zero_page_runtime::PageNodeRef> {
-        let handle = wv.page_node_handle_for_selector(selector)?;
-        Some(zero_page_runtime::PageNodeRef::new(
-            self.navigation_epoch,
-            self.document_generation,
-            zero_page_runtime::PageNodeHandle::new(handle),
-        ))
-    }
-
-    fn selector(&self, wv: &WebView, node: zero_page_runtime::PageNodeRef) -> Option<String> {
-        if !node.is_current(self.navigation_epoch, self.document_generation) {
-            return None;
-        }
-        wv.selector_for_page_node_handle(node.node().get())
-    }
-}
-
-fn execute_text_action(
+fn execute_shared_action(
     wv: &mut WebView,
     js_worker: Option<&TabJsWorkerHandle>,
     javascript_enabled: bool,
-    scope: &TabDocumentScope,
     selector: &str,
     action: zero_page_runtime::HtmlUserAction,
-) -> bool {
-    let Some(target) = scope.node_ref(wv, selector) else {
-        return false;
+) -> Option<zero_webview::WebViewUserActionResult> {
+    let target = wv.page_node_ref_for_selector(selector)?;
+    let request = zero_page_runtime::HtmlActionRequest {
+        target,
+        action,
+        shift: false,
     };
-    let html = wv.html_content().to_string();
-    let Some((value, selection_start, selection_end)) =
-        tab_scripts::text_control_snapshot(wv, js_worker, selector, &html)
-    else {
-        return false;
-    };
-    let Ok(plan) = zero_page_runtime::plan_html_action(
-        &zero_page_runtime::HtmlActionRequest {
-            target,
-            action,
-            shift: false,
-        },
-        scope.navigation_epoch,
-        scope.document_generation,
-        &zero_page_runtime::ActionTargetState::Text(zero_page_runtime::TextActionState {
-            value,
-            selection_start,
-            selection_end,
-        }),
-    ) else {
-        return false;
-    };
-    let dispatch = if let Some(event) = plan.cancelable_event.as_ref() {
-        dispatch_action_event(wv, js_worker, javascript_enabled, scope, event)
-    } else {
-        tab_scripts::DomDispatchResult {
-            default_allowed: true,
-            html_changed: false,
-        }
-    };
-    let outcome = zero_page_runtime::resolve_html_action(
-        plan,
-        zero_page_runtime::EventDispatchResult {
-            default_allowed: dispatch.default_allowed,
-            html_changed: dispatch.html_changed,
-        },
-    );
-    let mut changed = outcome.html_changed;
-    changed |= apply_action_mutations(wv, js_worker, scope, &outcome.mutations);
-    for event in &outcome.followup_events {
-        changed |= dispatch_action_event(wv, js_worker, javascript_enabled, scope, event).html_changed;
+    match js_worker {
+        Some(worker) => wv
+            .dispatch_external_user_action_with_javascript(worker, javascript_enabled, request)
+            .ok(),
+        None => wv
+            .dispatch_user_action_with_javascript(javascript_enabled, request)
+            .ok(),
     }
-    changed
 }
 
-fn execute_checked_action(
-    wv: &mut WebView,
-    js_worker: Option<&TabJsWorkerHandle>,
-    javascript_enabled: bool,
-    scope: &TabDocumentScope,
-    selector: &str,
-) -> Option<tab_scripts::DomDispatchResult> {
-    let target = scope.node_ref(wv, selector)?;
-    let html = wv.html_content().to_string();
-    let is_checkbox = zero_engine::is_checkbox(&html, selector);
-    let is_radio = zero_engine::is_radio(&html, selector);
-    if !is_checkbox && !is_radio {
-        if zero_engine::has_attribute(&html, selector, "disabled")
-            && (zero_engine::is_reset_button(&html, selector) || zero_engine::is_submit_button(&html, selector))
-        {
-            return Some(tab_scripts::DomDispatchResult {
-                default_allowed: false,
-                html_changed: false,
-            });
+fn action_focus_selector(wv: &WebView, result: &zero_webview::WebViewUserActionResult) -> Option<Option<String>> {
+    result.effects.iter().find_map(|effect| match effect {
+        zero_page_runtime::PageEffect::Focus(node) => {
+            Some(node.and_then(|node| wv.selector_for_page_node_handle(node.node().get())))
         }
-        return None;
-    }
-    if zero_engine::has_attribute(&html, selector, "disabled") {
-        return Some(tab_scripts::DomDispatchResult {
-            default_allowed: false,
-            html_changed: false,
-        });
-    }
-    let state = if is_checkbox {
-        zero_page_runtime::ActionTargetState::Checkbox {
-            checked: zero_engine::has_attribute(&html, selector, "checked"),
-        }
-    } else if is_radio {
-        zero_page_runtime::ActionTargetState::Radio(zero_page_runtime::RadioActionState {
-            checked: zero_engine::has_attribute(&html, selector, "checked"),
-            previous_checked: zero_engine::checked_radio_group_selector(&html, selector)
-                .and_then(|previous| scope.node_ref(wv, &previous)),
-        })
-    } else {
-        unreachable!();
-    };
-    let plan = zero_page_runtime::plan_html_action(
-        &zero_page_runtime::HtmlActionRequest {
-            target,
-            action: zero_page_runtime::HtmlUserAction::Activate,
-            shift: false,
-        },
-        scope.navigation_epoch,
-        scope.document_generation,
-        &state,
-    )
-    .ok()?;
-    let mut changed = apply_action_mutations(wv, js_worker, scope, &plan.prepare);
-    let dispatch = plan
-        .cancelable_event
-        .as_ref()
-        .map(|event| dispatch_action_event(wv, js_worker, javascript_enabled, scope, event))
-        .unwrap_or(tab_scripts::DomDispatchResult {
-            default_allowed: true,
-            html_changed: false,
-        });
-    let outcome = zero_page_runtime::resolve_html_action(
-        plan,
-        zero_page_runtime::EventDispatchResult {
-            default_allowed: dispatch.default_allowed,
-            html_changed: dispatch.html_changed,
-        },
-    );
-    changed |= outcome.html_changed;
-    changed |= apply_action_mutations(wv, js_worker, scope, &outcome.mutations);
-    for event in &outcome.followup_events {
-        changed |= dispatch_action_event(wv, js_worker, javascript_enabled, scope, event).html_changed;
-    }
-    Some(tab_scripts::DomDispatchResult {
-        default_allowed: dispatch.default_allowed,
-        html_changed: changed,
+        _ => None,
     })
 }
 
-fn execute_form_action(
-    wv: &mut WebView,
-    js_worker: Option<&TabJsWorkerHandle>,
-    javascript_enabled: bool,
-    scope: &TabDocumentScope,
-    selector: &str,
-    submitter: Option<&str>,
-    action: zero_page_runtime::HtmlUserAction,
-) -> (bool, Option<(String, String, Option<String>)>) {
-    let Some(target) = scope.node_ref(wv, selector) else {
-        return (false, None);
-    };
-    let html = wv.html_content().to_string();
-    let Some(form_selector) = zero_engine::enclosing_form_selector(&html, selector) else {
-        return (false, None);
-    };
-    let Some(form) = scope.node_ref(wv, &form_selector) else {
-        return (false, None);
-    };
-    let is_reset = matches!(action, zero_page_runtime::HtmlUserAction::Reset);
-    let state = match &action {
-        zero_page_runtime::HtmlUserAction::Reset => zero_page_runtime::ActionTargetState::Reset { form },
-        zero_page_runtime::HtmlUserAction::Submit => zero_page_runtime::ActionTargetState::Submit {
-            form,
-            submitter: submitter.and_then(|submitter| scope.node_ref(wv, submitter)),
-        },
-        _ => return (false, None),
-    };
-    let Ok(plan) = zero_page_runtime::plan_html_action(
-        &zero_page_runtime::HtmlActionRequest {
-            target,
-            action,
-            shift: false,
-        },
-        scope.navigation_epoch,
-        scope.document_generation,
-        &state,
-    ) else {
-        return (false, None);
-    };
-    if is_reset && javascript_enabled {
-        tab_scripts::begin_host_action_transaction(wv, js_worker);
-    }
-    let dispatch = plan
-        .cancelable_event
-        .as_ref()
-        .map(|event| dispatch_action_event(wv, js_worker, javascript_enabled, scope, event))
-        .unwrap_or(tab_scripts::DomDispatchResult {
-            default_allowed: true,
-            html_changed: false,
-        });
-    let outcome = zero_page_runtime::resolve_html_action(
-        plan,
-        zero_page_runtime::EventDispatchResult {
-            default_allowed: dispatch.default_allowed,
-            html_changed: dispatch.html_changed,
-        },
-    );
-    let mut changed = outcome.html_changed | apply_action_mutations(wv, js_worker, scope, &outcome.mutations);
-    if is_reset && javascript_enabled {
-        changed |= tab_scripts::end_host_action_transaction(wv, js_worker);
-    }
-    let navigation = outcome.effects.iter().find_map(|effect| {
-        let zero_page_runtime::PageEffect::SubmitForm { form, submitter } = effect else {
-            return None;
-        };
-        form_navigation(wv, scope, *form, *submitter)
-    });
-    (changed, navigation)
-}
-
-fn apply_action_mutations(
-    wv: &mut WebView,
-    js_worker: Option<&TabJsWorkerHandle>,
-    scope: &TabDocumentScope,
-    mutations: &[zero_page_runtime::PlannedMutation],
-) -> bool {
-    let mut changed = false;
-    for mutation in mutations {
-        match mutation {
-            zero_page_runtime::PlannedMutation::SetText {
-                target,
-                value,
-                selection_start,
-                selection_end,
-            } => {
-                let Some(selector) = scope.selector(wv, *target) else {
-                    continue;
-                };
-                let html = wv.html_content().to_string();
-                changed |= tab_scripts::apply_text_state_without_events(
-                    wv,
-                    js_worker,
-                    &selector,
-                    value,
-                    *selection_start,
-                    *selection_end,
-                    &html,
-                );
-            }
-            zero_page_runtime::PlannedMutation::SetChecked { target, checked } => {
-                let Some(selector) = scope.selector(wv, *target) else {
-                    continue;
-                };
-                let html = wv.html_content().to_string();
-                changed |= tab_scripts::apply_set_checked_without_events(wv, js_worker, &selector, *checked, &html);
-            }
-            zero_page_runtime::PlannedMutation::ResetForm { form } => {
-                let Some(selector) = scope.selector(wv, *form) else {
-                    continue;
-                };
-                let html = wv.html_content().to_string();
-                changed |= tab_scripts::apply_form_reset_without_events(wv, js_worker, &selector, &html);
-            }
+fn action_navigation(result: &zero_webview::WebViewUserActionResult) -> Option<(String, String, Option<String>)> {
+    result.effects.iter().find_map(|effect| match effect {
+        zero_page_runtime::PageEffect::Navigate(intent) => {
+            Some((intent.url.clone(), intent.method.clone(), intent.body.clone()))
         }
-    }
-    changed
-}
-
-fn form_navigation(
-    wv: &WebView,
-    scope: &TabDocumentScope,
-    form: zero_page_runtime::PageNodeRef,
-    submitter: Option<zero_page_runtime::PageNodeRef>,
-) -> Option<(String, String, Option<String>)> {
-    let form = scope.selector(wv, form)?;
-    let submitter = submitter.and_then(|submitter| scope.selector(wv, submitter));
-    let html = wv.html_content();
-    let base = wv.url().unwrap_or("about:blank");
-    let live_values = wv.form_control_value_overrides();
-    if let Some((url, body)) =
-        zero_engine::form_post_submission_with_values(html, &form, submitter.as_deref(), base, &live_values)
-    {
-        return Some((url, "POST".to_string(), Some(body)));
-    }
-    zero_engine::form_get_submission_url_with_values(html, &form, submitter.as_deref(), base, &live_values)
-        .map(|url| (url, "GET".to_string(), None))
-}
-
-fn dispatch_action_event(
-    wv: &mut WebView,
-    js_worker: Option<&TabJsWorkerHandle>,
-    javascript_enabled: bool,
-    scope: &TabDocumentScope,
-    event: &zero_page_runtime::PlannedEvent,
-) -> tab_scripts::DomDispatchResult {
-    let Some(selector) = scope.selector(wv, event.target) else {
-        return tab_scripts::DomDispatchResult {
-            default_allowed: false,
-            html_changed: false,
-        };
-    };
-    let detail = event.input_type.as_ref().map(|input_type| zero_engine::DomEventDetail {
-        data: event.data.clone(),
-        input_type: Some(input_type.clone()),
-        ..Default::default()
-    });
-    let html = wv.html_content().to_string();
-    tab_scripts::dispatch_dom_event(
-        wv,
-        javascript_enabled,
-        js_worker,
-        &selector,
-        &event.event_type,
-        &html,
-        detail.as_ref(),
-    )
-}
-
-fn resolve_focus_action(
-    wv: &WebView,
-    scope: &TabDocumentScope,
-    selector: &str,
-    next: &str,
-    forward: bool,
-) -> Option<String> {
-    let target = scope.node_ref(wv, selector)?;
-    let next = scope.node_ref(wv, next)?;
-    let plan = zero_page_runtime::plan_html_action(
-        &zero_page_runtime::HtmlActionRequest {
-            target,
-            action: zero_page_runtime::HtmlUserAction::MoveFocus { forward },
-            shift: !forward,
-        },
-        scope.navigation_epoch,
-        scope.document_generation,
-        &zero_page_runtime::ActionTargetState::Focus { next: Some(next) },
-    )
-    .ok()?;
-    let outcome = zero_page_runtime::resolve_html_action(
-        plan,
-        zero_page_runtime::EventDispatchResult {
-            default_allowed: true,
-            html_changed: false,
-        },
-    );
-    outcome.effects.into_iter().find_map(|effect| match effect {
-        zero_page_runtime::PageEffect::Focus(Some(node)) => scope.selector(wv, node),
         _ => None,
     })
 }
@@ -583,7 +258,6 @@ fn tab_worker_main(
     let mut page_script_runner: Option<tab_scripts::PageScriptRunner> = None;
     let mut javascript_enabled = true;
     let mut composing_controls = HashSet::new();
-    let mut document_scope = TabDocumentScope::default();
 
     let push_snapshot = |wv: &WebView, msg_tx: &Sender<TabWorkerMessage>, js_worker: Option<&TabJsWorkerHandle>| {
         let snapshot = TabSnapshot::from_webview(wv);
@@ -606,7 +280,6 @@ fn tab_worker_main(
             match cmd {
                 TabWorkerCommand::Navigate(url) => {
                     tracing::info!("Tab {} navigate: {url}", tab_id.0);
-                    document_scope.replace_document();
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start(url));
                     pending_sync_html = None;
@@ -614,14 +287,12 @@ fn tab_worker_main(
                 }
                 TabWorkerCommand::NavigateRequest { url, method, body } => {
                     tracing::info!("Tab {} navigate: {method} {url}", tab_id.0);
-                    document_scope.replace_document();
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start_request(url, method, body.map(String::into_bytes)));
                     pending_sync_html = None;
                     page_script_runner = None;
                 }
                 TabWorkerCommand::LoadHtml { html, css, url } => {
-                    document_scope.replace_document();
                     pending_sync_html = Some((html, css, url));
                     async_load = None;
                     page_script_runner = None;
@@ -678,14 +349,39 @@ fn tab_worker_main(
                         None
                     };
                     let result = if event_type == "click" {
-                        execute_checked_action(
-                            &mut wv,
-                            _js_worker.as_ref(),
-                            javascript_enabled,
-                            &document_scope,
-                            &selector,
-                        )
-                        .unwrap_or_else(|| {
+                        let is_checked_control =
+                            zero_engine::is_checkbox(&html, &selector) || zero_engine::is_radio(&html, &selector);
+                        let is_disabled_button = zero_engine::has_attribute(&html, &selector, "disabled")
+                            && (zero_engine::is_reset_button(&html, &selector)
+                                || zero_engine::is_submit_button(&html, &selector));
+                        if is_checked_control || is_disabled_button {
+                            match execute_shared_action(
+                                &mut wv,
+                                _js_worker.as_ref(),
+                                javascript_enabled,
+                                &selector,
+                                zero_page_runtime::HtmlUserAction::Activate,
+                            ) {
+                                Some(action)
+                                    if action.noop_reason
+                                        != Some(zero_page_runtime::ActionNoopReason::AlreadySelected) =>
+                                {
+                                    tab_scripts::DomDispatchResult {
+                                        default_allowed: !action.canceled && action.noop_reason.is_none(),
+                                        html_changed: action.changed,
+                                    }
+                                }
+                                _ => tab_scripts::dispatch_dom_event(
+                                    &mut wv,
+                                    javascript_enabled,
+                                    _js_worker.as_ref(),
+                                    &selector,
+                                    &event_type,
+                                    &html,
+                                    detail.as_ref(),
+                                ),
+                            }
+                        } else {
                             tab_scripts::dispatch_dom_event(
                                 &mut wv,
                                 javascript_enabled,
@@ -695,7 +391,7 @@ fn tab_worker_main(
                                 &html,
                                 detail.as_ref(),
                             )
-                        })
+                        }
                     } else {
                         tab_scripts::dispatch_dom_event(
                             &mut wv,
@@ -716,81 +412,87 @@ fn tab_worker_main(
                     let mut input_changed = false;
                     if result.default_allowed && event_type == "keydown" {
                         if key.as_deref() == Some("Tab") {
-                            if let Some(next) = zero_engine::next_focus_selector(&html, Some(&selector), !shift) {
-                                focus_change =
-                                    resolve_focus_action(&wv, &document_scope, &selector, &next, !shift).map(Some);
-                            }
-                        } else if key.as_deref().is_some_and(is_printable_key) {
-                            input_changed = execute_text_action(
+                            if let Some(action) = execute_shared_action(
                                 &mut wv,
                                 _js_worker.as_ref(),
                                 javascript_enabled,
-                                &document_scope,
+                                &selector,
+                                zero_page_runtime::HtmlUserAction::MoveFocus { forward: !shift },
+                            ) {
+                                input_changed |= action.changed;
+                                focus_change = action_focus_selector(&wv, &action);
+                            }
+                        } else if key.as_deref().is_some_and(is_printable_key) {
+                            if let Some(action) = execute_shared_action(
+                                &mut wv,
+                                _js_worker.as_ref(),
+                                javascript_enabled,
                                 &selector,
                                 zero_page_runtime::HtmlUserAction::InsertText {
                                     text: key.clone().unwrap_or_default(),
                                 },
-                            );
+                            ) {
+                                input_changed |= action.changed;
+                            }
                         } else if key.as_deref() == Some("Backspace") {
-                            input_changed = execute_text_action(
+                            if let Some(action) = execute_shared_action(
                                 &mut wv,
                                 _js_worker.as_ref(),
                                 javascript_enabled,
-                                &document_scope,
                                 &selector,
                                 zero_page_runtime::HtmlUserAction::DeleteBackward,
-                            );
+                            ) {
+                                input_changed |= action.changed;
+                            }
                         } else if key.as_deref() == Some("Enter") {
                             if zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("textarea") {
                                 // textarea 的 Enter 是换行（不提交）。
-                                input_changed = execute_text_action(
+                                if let Some(action) = execute_shared_action(
                                     &mut wv,
                                     _js_worker.as_ref(),
                                     javascript_enabled,
-                                    &document_scope,
                                     &selector,
                                     zero_page_runtime::HtmlUserAction::InsertText { text: "\n".to_string() },
-                                );
+                                ) {
+                                    input_changed |= action.changed;
+                                }
                             } else {
-                                let (changed, next_navigation) = execute_form_action(
+                                if let Some(action) = execute_shared_action(
                                     &mut wv,
                                     _js_worker.as_ref(),
                                     javascript_enabled,
-                                    &document_scope,
                                     &selector,
-                                    None,
                                     zero_page_runtime::HtmlUserAction::Submit,
-                                );
-                                input_changed |= changed;
-                                navigation = next_navigation;
+                                ) {
+                                    input_changed |= action.changed;
+                                    navigation = action_navigation(&action);
+                                }
                             }
                         }
                     }
                     if result.default_allowed && event_type == "click" {
                         let current_html = wv.html_content().to_string();
                         if zero_engine::is_reset_button(&current_html, &selector) {
-                            let (changed, _) = execute_form_action(
+                            if let Some(action) = execute_shared_action(
                                 &mut wv,
                                 _js_worker.as_ref(),
                                 javascript_enabled,
-                                &document_scope,
                                 &selector,
-                                None,
                                 zero_page_runtime::HtmlUserAction::Reset,
-                            );
-                            input_changed |= changed;
+                            ) {
+                                input_changed |= action.changed;
+                            }
                         } else if zero_engine::is_submit_button(&current_html, &selector) {
-                            let (changed, next_navigation) = execute_form_action(
+                            if let Some(action) = execute_shared_action(
                                 &mut wv,
                                 _js_worker.as_ref(),
                                 javascript_enabled,
-                                &document_scope,
                                 &selector,
-                                Some(&selector),
                                 zero_page_runtime::HtmlUserAction::Submit,
-                            );
-                            input_changed |= changed;
-                            navigation = next_navigation;
+                            ) {
+                                input_changed |= action.changed;
+                                navigation = action_navigation(&action);
+                            }
                         }
                     }
                     if result.html_changed || input_changed {
@@ -1165,25 +867,24 @@ mod action_adapter_tests {
         let mut wv = WebView::new(WebViewConfig::default());
         wv.prepare_document_state(url);
         wv.load_html(html, None);
-        let mut scope = TabDocumentScope::default();
-        scope.replace_document();
-
-        assert!(execute_text_action(
+        let inserted = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
             "#name",
             zero_page_runtime::HtmlUserAction::InsertText { text: "A".to_string() },
-        ));
-        assert!(!execute_text_action(
+        )
+        .expect("insert");
+        assert!(inserted.changed);
+        let canceled = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
             "#name",
             zero_page_runtime::HtmlUserAction::InsertText { text: "X".to_string() },
-        ));
+        )
+        .expect("canceled insert");
+        assert!(canceled.canceled);
         assert_eq!(
             wv.form_control_value_overrides().get("#name").map(String::as_str),
             Some("A")
@@ -1194,10 +895,15 @@ mod action_adapter_tests {
                 .expect("event log"),
             "beforeinput:A,input:A,beforeinput:X"
         );
-        assert_eq!(
-            resolve_focus_action(&wv, &scope, "#name", "#next", true).as_deref(),
-            Some("#next")
-        );
+        let focused = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            "#name",
+            zero_page_runtime::HtmlUserAction::MoveFocus { forward: true },
+        )
+        .expect("focus");
+        assert_eq!(action_focus_selector(&wv, &focused), Some(Some("#next".to_string())));
 
         worker.shutdown();
     }
@@ -1246,11 +952,15 @@ mod action_adapter_tests {
         let mut wv = WebView::new(WebViewConfig::default());
         wv.prepare_document_state(url);
         wv.load_html(html, None);
-        let mut scope = TabDocumentScope::default();
-        scope.replace_document();
-
-        let checked = execute_checked_action(&mut wv, Some(&worker), true, &scope, "#check").expect("checkbox plan");
-        assert!(checked.default_allowed);
+        let checked = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            "#check",
+            zero_page_runtime::HtmlUserAction::Activate,
+        )
+        .expect("checkbox plan");
+        assert!(!checked.canceled);
         assert_eq!(
             worker
                 .execute_script_direct("String(document.querySelector('#check').checked)")
@@ -1267,8 +977,15 @@ mod action_adapter_tests {
         worker
             .execute_script_direct("globalThis.__cancelClick=true")
             .expect("cancel click");
-        let canceled = execute_checked_action(&mut wv, Some(&worker), true, &scope, "#check").expect("checkbox plan");
-        assert!(!canceled.default_allowed);
+        let canceled = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            "#check",
+            zero_page_runtime::HtmlUserAction::Activate,
+        )
+        .expect("checkbox plan");
+        assert!(canceled.canceled);
         assert_eq!(
             worker
                 .execute_script_direct("String(document.querySelector('#check').checked)")
@@ -1281,9 +998,18 @@ mod action_adapter_tests {
                 .expect("events"),
             "click:true,input:true,change:true,click:false"
         );
-        let disabled =
-            execute_checked_action(&mut wv, Some(&worker), true, &scope, "#disabled").expect("disabled checkbox");
-        assert!(!disabled.default_allowed);
+        let disabled = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            "#disabled",
+            zero_page_runtime::HtmlUserAction::Activate,
+        )
+        .expect("disabled checkbox");
+        assert_eq!(
+            disabled.noop_reason,
+            Some(zero_page_runtime::ActionNoopReason::DisabledTarget)
+        );
         assert_eq!(
             worker
                 .execute_script_direct("String(document.querySelector('#disabled').checked)")
@@ -1291,8 +1017,15 @@ mod action_adapter_tests {
             "false"
         );
 
-        let radio = execute_checked_action(&mut wv, Some(&worker), true, &scope, "#pro").expect("radio plan");
-        assert!(radio.default_allowed);
+        let radio = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
+            "#pro",
+            zero_page_runtime::HtmlUserAction::Activate,
+        )
+        .expect("radio plan");
+        assert!(!radio.canceled);
         assert_eq!(
             worker
                 .execute_script_direct(
@@ -1303,26 +1036,26 @@ mod action_adapter_tests {
             "false,true"
         );
 
-        let html = wv.html_content().to_string();
-        assert!(tab_scripts::apply_text_state_without_events(
-            &mut wv,
-            Some(&worker),
-            "#name",
-            "dirty",
-            5,
-            5,
-            &html,
-        ));
-        let (reset_changed, _) = execute_form_action(
+        let dirty = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
+            "#name",
+            zero_page_runtime::HtmlUserAction::InsertText {
+                text: "dirty".to_string(),
+            },
+        )
+        .expect("dirty input");
+        assert!(dirty.changed);
+        let reset_result = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
             "#reset",
-            None,
             zero_page_runtime::HtmlUserAction::Reset,
-        );
-        assert!(reset_changed);
+        )
+        .expect("reset");
+        assert!(reset_result.changed);
         assert_eq!(
             worker
                 .execute_script_direct("String(globalThis.__resetValue)")
@@ -1330,47 +1063,46 @@ mod action_adapter_tests {
             "base"
         );
 
-        let html = wv.html_content().to_string();
-        assert!(tab_scripts::apply_text_state_without_events(
-            &mut wv,
-            Some(&worker),
-            "#name",
-            "dirty",
-            5,
-            5,
-            &html,
-        ));
-        worker
-            .execute_script_direct("globalThis.__cancelReset=true")
-            .expect("cancel reset");
-        let (_, canceled_reset_navigation) = execute_form_action(
+        let dirty = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
+            "#name",
+            zero_page_runtime::HtmlUserAction::InsertText {
+                text: "dirty".to_string(),
+            },
+        )
+        .expect("dirty input again");
+        assert!(dirty.changed);
+        worker
+            .execute_script_direct("globalThis.__cancelReset=true")
+            .expect("cancel reset");
+        let canceled_reset = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            true,
             "#reset",
-            None,
             zero_page_runtime::HtmlUserAction::Reset,
-        );
-        assert!(canceled_reset_navigation.is_none());
+        )
+        .expect("canceled reset");
+        assert!(canceled_reset.canceled);
         assert_eq!(
             worker
                 .execute_script_direct("document.querySelector('#name').value")
                 .expect("dirty value"),
-            "dirty"
+            "basedirty"
         );
 
-        let (_, navigation) = execute_form_action(
+        let submitted = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
             "#submit",
-            Some("#submit"),
             zero_page_runtime::HtmlUserAction::Submit,
-        );
+        )
+        .expect("submit");
         assert_eq!(
-            navigation,
+            action_navigation(&submitted),
             Some((
                 "https://zero.test/submitted?name=listener&plan=basic&go=1".to_string(),
                 "GET".to_string(),
@@ -1380,16 +1112,114 @@ mod action_adapter_tests {
         worker
             .execute_script_direct("globalThis.__cancelSubmit=true")
             .expect("cancel submit");
-        let (_, canceled_navigation) = execute_form_action(
+        let canceled_submit = execute_shared_action(
             &mut wv,
             Some(&worker),
             true,
-            &scope,
             "#submit",
-            Some("#submit"),
             zero_page_runtime::HtmlUserAction::Submit,
+        )
+        .expect("canceled submit");
+        assert!(canceled_submit.canceled);
+        assert!(action_navigation(&canceled_submit).is_none());
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn shared_actions_keep_ua_defaults_when_javascript_is_disabled() {
+        let html = r#"<html><body>
+            <form id="form" action="https://zero.test/submitted">
+              <input id="name" name="name" value="base">
+              <input id="check" name="check" type="checkbox">
+              <button id="reset" type="reset">Reset</button>
+              <button id="submit" type="submit" name="go" value="1">Submit</button>
+            </form>
+        </body></html>"#;
+        let url = "https://zero.test/form";
+        let mut worker = TabJsWorkerHandle::spawn(TabId(903));
+        worker.set_dom_snapshot(html, url);
+        worker
+            .execute_script_direct(
+                "globalThis.__events=[];\
+                 document.querySelector('#name').addEventListener('beforeinput',function(event){\
+                   globalThis.__events.push('beforeinput');event.preventDefault();\
+                 });\
+                 document.querySelector('#check').addEventListener('click',function(event){\
+                   globalThis.__events.push('click');event.preventDefault();\
+                 });\
+                 document.querySelector('#form').addEventListener('reset',function(event){\
+                   globalThis.__events.push('reset');event.preventDefault();\
+                 });\
+                 document.querySelector('#form').addEventListener('submit',function(event){\
+                   globalThis.__events.push('submit');event.preventDefault();\
+                 });",
+            )
+            .expect("register listeners");
+
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state(url);
+        wv.load_html(html, None);
+        assert!(
+            execute_shared_action(
+                &mut wv,
+                Some(&worker),
+                false,
+                "#name",
+                zero_page_runtime::HtmlUserAction::InsertText { text: "X".to_string() },
+            )
+            .expect("insert")
+            .changed
         );
-        assert!(canceled_navigation.is_none());
+        assert!(
+            execute_shared_action(
+                &mut wv,
+                Some(&worker),
+                false,
+                "#check",
+                zero_page_runtime::HtmlUserAction::Activate,
+            )
+            .expect("activate")
+            .changed
+        );
+        assert!(
+            execute_shared_action(
+                &mut wv,
+                Some(&worker),
+                false,
+                "#reset",
+                zero_page_runtime::HtmlUserAction::Reset,
+            )
+            .expect("reset")
+            .changed
+        );
+        let submitted = execute_shared_action(
+            &mut wv,
+            Some(&worker),
+            false,
+            "#submit",
+            zero_page_runtime::HtmlUserAction::Submit,
+        )
+        .expect("submit");
+
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "[document.querySelector('#name').value,\
+                      document.querySelector('#check').checked,\
+                      globalThis.__events.join(',')].join('|')"
+                )
+                .expect("state"),
+            "base|false|"
+        );
+        assert_eq!(
+            action_navigation(&submitted),
+            Some((
+                "https://zero.test/submitted?name=base&go=1".to_string(),
+                "GET".to_string(),
+                None,
+            ))
+        );
 
         worker.shutdown();
     }

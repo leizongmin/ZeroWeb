@@ -55,8 +55,9 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] ZeroWebView identity-based user-action adapter
 - [x] 三执行器默认动作与取消 conformance
 - [x] 20 轮确定性短序列重放
-- [ ] renderer / TabWorker 委托共享 WebView coordinator 并删除重复 action 逻辑
+- [x] TabWorker 委托共享 WebView coordinator 并删除重复 action 逻辑
+- [ ] renderer 委托共享 WebView coordinator 并删除重复 action 逻辑
 
 ## 下一步
 
-切换 renderer / TabWorker 到共享 WebView coordinator，完成 M2。
+切换 renderer 到共享 WebView coordinator，完成 M2。

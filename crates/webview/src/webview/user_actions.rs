@@ -71,7 +71,17 @@ impl WebView {
         &mut self,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(None, request)
+        self.dispatch_user_action_impl(None, true, request)
+    }
+
+    /// 通过内部 executor 执行 action，并显式控制页面 JavaScript 事件派发。
+    #[doc(hidden)]
+    pub fn dispatch_user_action_with_javascript(
+        &mut self,
+        javascript_enabled: bool,
+        request: HtmlActionRequest,
+    ) -> Result<WebViewUserActionResult, WebViewError> {
+        self.dispatch_user_action_impl(None, javascript_enabled, request)
     }
 
     /// 通过外部页面 JS executor 执行 shared HTML user action。
@@ -81,15 +91,27 @@ impl WebView {
         executor: &dyn JsExecutor,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(Some(executor), request)
+        self.dispatch_user_action_impl(Some(executor), true, request)
+    }
+
+    /// 通过外部 executor 执行 action，并显式控制页面 JavaScript 事件派发。
+    #[doc(hidden)]
+    pub fn dispatch_external_user_action_with_javascript(
+        &mut self,
+        executor: &dyn JsExecutor,
+        javascript_enabled: bool,
+        request: HtmlActionRequest,
+    ) -> Result<WebViewUserActionResult, WebViewError> {
+        self.dispatch_user_action_impl(Some(executor), javascript_enabled, request)
     }
 
     fn dispatch_user_action_impl(
         &mut self,
         executor: Option<&dyn JsExecutor>,
+        javascript_enabled: bool,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        if executor.is_none() {
+        if executor.is_none() && javascript_enabled {
             self.run_page_scripts()?;
         }
         if !request
@@ -166,8 +188,12 @@ impl WebView {
                 .execute_dom_script(executor, "__zw_begin_host_action_transaction()")?
                 .changed;
         }
-        let dispatch = if let Some(event) = plan.cancelable_event.as_ref() {
-            self.dispatch_planned_event(executor, event)?
+        let dispatch = if javascript_enabled {
+            if let Some(event) = plan.cancelable_event.as_ref() {
+                self.dispatch_planned_event(executor, event)?
+            } else {
+                (true, false)
+            }
         } else {
             (true, false)
         };
@@ -185,8 +211,10 @@ impl WebView {
                 .execute_dom_script(executor, "__zw_end_host_action_transaction()")?
                 .changed;
         }
-        for event in &outcome.followup_events {
-            changed |= self.dispatch_planned_event(executor, event)?.1;
+        if javascript_enabled {
+            for event in &outcome.followup_events {
+                changed |= self.dispatch_planned_event(executor, event)?.1;
+            }
         }
         let mut effects = Vec::new();
         for effect in outcome.effects {
