@@ -181,6 +181,16 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             reg.contexts.insert(id, zero_canvas::CanvasContext::new(w, h));
             id.to_string()
         }
+        // R3308：canvas resize（spec 设 canvas.width/height 清空 bitmap + 重置绘图状态）。
+        // handle = context id，args[0]/[1] = 新 width/height。调 CanvasContext::resize（重置全状态）。
+        "resizeContext" => {
+            let w = arg(0).trim().parse::<u32>().unwrap_or(300);
+            let h = arg(1).trim().parse::<u32>().unwrap_or(150);
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.resize(w, h);
+            }
+            "ok".into()
+        }
         "setFillStyle" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_fill_color(parse_canvas_color(arg(0)));

@@ -641,6 +641,67 @@ fn test_canvas_path2d_svg_string_r3307() {
 }
 
 #[test]
+fn test_canvas_resize_clears_bitmap_r3308() {
+    // R3308：canvas resize（spec 设 canvas.width/height 清空 bitmap + 重置绘图状态，HTML §4.12.5.1）。
+    // R3077 留 defer 项：设 width/height 只写属性，host context 尺寸不变（绘制/getImageData 仍按旧尺寸）。
+    // 本切片闭合：CANVAS width/height setter 检测 context 已建 → 调 host resizeContext（CanvasContext::resize
+    // 重置全状态 + 清空 pixel_buffer）。断言：① 设 width 后 canvas.width 反射读回新值；② resize 后
+    // getImageData 像素清零（旧绘制内容被清空）；③ resize 后绘制按新尺寸工作（getImageData 不越界）。
+    // 绘图状态重置（transform/line_width/style）见 canvas crate test_resize_resets_drawing_state_r3308。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             /* 先绘制红色填满（10×10），确认像素写入 */\
+             ctx.fillStyle = 'rgb(255,0,0)';\
+             ctx.fillRect(0, 0, 10, 10);\
+             var before = ctx.getImageData(0, 0, 2, 2).data;\
+             globalThis.__beforeRed = String(before[0]);\
+             /* 设 canvas.width 触发 spec resize（清空 bitmap + 重置状态）*/\
+             cv.width = 20;\
+             globalThis.__newWidth = String(cv.width);\
+             /* resize 后像素应清零（旧红色绘制被清空）*/\
+             var after = ctx.getImageData(0, 0, 2, 2).data;\
+             globalThis.__afterCleared = String(after[0] + ',' + after[1] + ',' + after[2] + ',' + after[3]);\
+             /* resize 后按新尺寸绘制不抛（getImageData 不越界——新尺寸 20×20）*/\
+             ctx.fillStyle = 'rgb(0,0,255)';\
+             ctx.fillRect(0, 0, 20, 20);\
+             var redrawTop = ctx.getImageData(0, 0, 1, 1).data;\
+             globalThis.__redrawBlue = String(redrawTop[2]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__beforeRed").unwrap().value, "255", "resize 前红色已写入像素");
+    assert_eq!(sandbox.execute("globalThis.__newWidth").unwrap().value, "20", "canvas.width 反射读回新值");
+    assert_eq!(
+        sandbox.execute("globalThis.__afterCleared").unwrap().value,
+        "0,0,0,0",
+        "resize 后像素清零（旧绘制内容被清空）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__redrawBlue").unwrap().value,
+        "255",
+        "resize 后按新尺寸绘制工作（蓝色写入成功）"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

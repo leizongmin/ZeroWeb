@@ -698,13 +698,13 @@ impl CanvasContext {
         self.height
     }
 
-    /// 调整画布尺寸。会清空像素缓冲区并重新分配。
+    /// 调整画布尺寸。会清空像素缓冲区并**重置绘图状态到默认**（HTML spec §4.12.5.1「Reset the
+    /// rendering context to its default state」——设 canvas.width/height 时，bitmap 清空 + transform/
+    /// clip/state-stack/style/dash/shadow/text 状态全回默认，等同新建 context 仅尺寸不同）。
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.width = width;
-        self.height = height;
-        let buffer_size = (width as usize) * (height as usize) * 4;
-        self.pixel_buffer = vec![0u8; buffer_size];
-        self.primitives = RenderPrimitives::new();
+        // 复用 new() 的默认状态（单一权威来源），仅尺寸用入参。
+        let fresh = CanvasContext::new(width, height);
+        *self = fresh;
     }
 
     // ── Shadow properties ──

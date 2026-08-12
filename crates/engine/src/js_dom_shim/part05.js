@@ -84,14 +84,25 @@
           }
         } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS')) {
           // reflected unsigned-long 维度 setter（R2851）：parseInt 归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
-          // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS 加入（HTMLCanvasElement.width/height 反射，
-          // 保 set→get 一致；bitmap resize 清空 defer——spec 设 width/height 清空 bitmap，host 侧 follow-up）。
+          // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS width/height 反射（保 set→get 一致）。
+          // R3308：CANVAS 设 width/height 触发 bitmap resize（HTML spec §4.12.5.1——清空 bitmap + 重置绘图状态）。
+          // 已 getContext 的 canvas，调 host resizeContext 清空像素 + 重置 context 状态到默认。
           var wv = parseInt(value, 10);
           if (isNaN(wv) || wv < 0) wv = 0;
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           wrc[p] = wv;
           if (handle) __zw_set_attr_handle(handle, p, String(wv));
           else { __zw_set_attr(sel, p, String(wv)); moAttr = p; }
+          // CANVAS resize：取该元素的 context handle（_zwCanvasCtx[key] standalone 或 el._ctx），调 host resizeContext。
+          if (_realTag(sel, handle) === 'CANVAS' && typeof __zw_canvas_op === 'function') {
+            var _cctx = (typeof _zwCanvasCtx !== 'undefined' && _zwCanvasCtx[key]) || null;
+            var _ch = _cctx && _cctx._handle;
+            if (_ch) {
+              var _cw = (p === 'width') ? wv : (wrc.width || 300);
+              var _chh = (p === 'height') ? wv : (wrc.height || 150);
+              __zw_canvas_op(String(_ch), 'resizeContext', String(_cw), String(_chh));
+            }
+          }
         } else if (p === 'scrollTop' || p === 'scrollLeft') {
           // R3047：scrollTop/scrollLeft setter（headless 无真滚动 → JS-side 状态追踪）。Number 归一（NaN/负 → 0）→
           // 存 `_scrollOffsets[key]`（与 scrollTo/scrollBy/getter 自洽）。无 moAttr（非内容属性）。不写 attr（旧 generic

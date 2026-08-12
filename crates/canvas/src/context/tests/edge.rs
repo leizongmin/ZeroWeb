@@ -1382,3 +1382,36 @@ fn test_canvas_put_get_roundtrip() {
     assert_eq!(read.data[8..12], [0, 0, 255, 255], "像素 2 应一致");
     assert_eq!(read.data[12..16], [128, 128, 128, 255], "像素 3 应一致");
 }
+
+/// R3308：resize 重置绘图状态到默认（HTML spec §4.12.5.1「Reset the rendering context to its default
+/// state」）。设 canvas.width/height 不仅清空 bitmap，还应把 transform/line_width/fill_color 等绘图状态
+/// 全部回默认（等同新建 context 仅尺寸不同）。
+#[test]
+fn test_resize_resets_drawing_state_r3308() {
+    let mut ctx = CanvasContext::new(10, 10);
+    // 污染状态：transform 偏移 + 加粗线宽 + 填充色 + global_alpha。
+    ctx.transform(5.0, 0.0, 0.0, 5.0, 100.0, 100.0);
+    ctx.set_line_width(8.0);
+    ctx.set_fill_color(Color::RED);
+    ctx.set_global_alpha(0.3);
+    // resize（尺寸变化触发 spec 状态重置）。
+    ctx.resize(20, 20);
+    // 尺寸更新。
+    assert_eq!(ctx.width(), 20);
+    assert_eq!(ctx.height(), 20);
+    // 绘图状态全部回默认：transform 单位阵（a=d=1, b=c=e=f=0）。
+    let t = ctx.get_transform();
+    assert_eq!(t.a, 1.0, "resize 后 transform.a 应重置为 1");
+    assert_eq!(t.d, 1.0, "resize 后 transform.d 应重置为 1");
+    assert_eq!(t.e, 0.0, "resize 后 transform.e（平移）应重置为 0");
+    // line_width 回默认 1.0。
+    assert_eq!(ctx.line_width(), 1.0, "resize 后 line_width 应重置为默认 1.0");
+    // fill_color 回默认 black（CanvasStyle::default_black）。
+    assert_eq!(
+        ctx.fill_color(),
+        Color::BLACK,
+        "resize 后 fill_color 应重置为默认 black"
+    );
+    // global_alpha 回默认 1.0。
+    assert_eq!(ctx.global_alpha(), 1.0, "resize 后 global_alpha 应重置为默认 1.0");
+}
