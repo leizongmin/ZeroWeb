@@ -38,8 +38,10 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] press/release 稳定目标与 stale generation 取消
 - [x] JavaScript 禁用时 UA 默认动作
 - [x] beforeinput/input 与键盘入口统一
-- [ ] focus/label/activation/forms 完整验收
+- [x] focusability、焦点事件与 label 激活
+- [ ] checkbox/radio activation rollback
+- [ ] reset/submit 取消语义完整验收
 
 ## 下一步
 
-提交 M1-D 阶段进展，继续完成 focus/label/activation/forms 验收。
+提交 M1-E focus/label 切片，继续完成 activation rollback 与表单取消验收。

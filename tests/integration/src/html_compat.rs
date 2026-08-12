@@ -106,3 +106,21 @@ fn default_actions_work_without_javascript() {
         ""
     );
 }
+
+#[test]
+fn label_click_activates_associated_control_once() {
+    let html = r#"<html><body>
+        <label id="explicit" for="check">Explicit</label>
+        <input id="check" type="checkbox">
+        <label id="nested">Nested <input id="radio" type="radio"></label>
+    </body></html>"#;
+
+    assert_eq!(
+        zero_engine::associated_label_control_selector(html, "#explicit").as_deref(),
+        Some("#check")
+    );
+    assert_eq!(
+        zero_engine::associated_label_control_selector(html, "#nested").as_deref(),
+        Some("#radio")
+    );
+}

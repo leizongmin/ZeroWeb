@@ -1077,6 +1077,38 @@ impl RendererRuntime {
         Ok(())
     }
 
+    fn activate_form_control_at(&mut self, selector: &str) -> Result<bool, String> {
+        if zero_engine::is_submit_button(&self.cached_html, selector) {
+            self.submit_form_on_click_at(selector)?;
+        } else if zero_engine::is_checkbox(&self.cached_html, selector) {
+            self.toggle_checkbox_at(selector)?;
+        } else if zero_engine::is_radio(&self.cached_html, selector) {
+            self.toggle_radio_at(selector)?;
+        } else if zero_engine::is_reset_button(&self.cached_html, selector) {
+            self.reset_form_on_click_at(selector)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// 执行 label 的用户代理默认动作：向关联控件派发一次 click 并激活一次。
+    // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+    fn activate_label_at(&mut self, label: &str) -> Result<bool, String> {
+        let Some(control) = zero_engine::associated_label_control_selector(&self.cached_html, label) else {
+            return Ok(false);
+        };
+        if self.interaction.focus_owner() != Some(control.as_str()) {
+            self.blur_focused()?;
+            self.focus_target(&control)?;
+        }
+        let click = self.dispatch_dom_at(Some(control.clone()), 0.0, 0.0, "click", None);
+        if click.default_allowed {
+            self.activate_form_control_at(&control)?;
+        }
+        Ok(true)
+    }
+
     /// P1a change-on-blur：失焦——若 retained 状态中有文本输入焦点，派发 'blur'；若 value 自获焦以来
     /// 变化，再派发 'change'。清空 focus 状态。回调改 DOM 则单次 rerender。
     fn blur_focused(&mut self) -> Result<(), String> {
@@ -1104,6 +1136,8 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
+            // https://w3c.github.io/uievents/#events-focusevent-event-order
+            changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &old, "focusout", None).html_changed;
             changed |=
                 page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
             if value_changed {
@@ -1144,7 +1178,11 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None).html_changed
+            // https://w3c.github.io/uievents/#events-focusevent-event-order
+            let focus = page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None);
+            let focusin =
+                page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focusin", None);
+            focus.html_changed || focusin.html_changed
         };
         if changed {
             self.rerender_publish_webview()?;
@@ -1943,14 +1981,8 @@ impl RendererRuntime {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
             }
-            if zero_engine::is_submit_button(&self.cached_html, &target) {
-                let _ = self.submit_form_on_click_at(&target);
-            } else if zero_engine::is_checkbox(&self.cached_html, &target) {
-                let _ = self.toggle_checkbox_at(&target);
-            } else if zero_engine::is_radio(&self.cached_html, &target) {
-                let _ = self.toggle_radio_at(&target);
-            } else if zero_engine::is_reset_button(&self.cached_html, &target) {
-                let _ = self.reset_form_on_click_at(&target);
+            if !self.activate_form_control_at(&target)? {
+                self.activate_label_at(&target)?;
             }
         }
         self.send_regular_with_id(
@@ -1998,15 +2030,11 @@ impl RendererRuntime {
                 self.blur_focused()?;
                 self.focus_target(&target)?;
             }
-            // P1a form submit/checkbox/radio/reset：click 命中对应控件。
-            if zero_engine::is_submit_button(&self.cached_html, &target) {
-                let _ = self.submit_form_on_click_at(&target);
-            } else if zero_engine::is_checkbox(&self.cached_html, &target) {
-                let _ = self.toggle_checkbox_at(&target);
-            } else if zero_engine::is_radio(&self.cached_html, &target) {
-                let _ = self.toggle_radio_at(&target);
-            } else if zero_engine::is_reset_button(&self.cached_html, &target) {
-                let _ = self.reset_form_on_click_at(&target);
+            // P1a form submit/checkbox/radio/reset/label：仅 click 未取消时执行默认动作。
+            if click_default_allowed && self.activate_form_control_at(&target)? {
+                // 已激活。
+            } else if click_default_allowed && self.activate_label_at(&target)? {
+                // 已转发到关联控件。
             } else if let Some(url) = zero_engine::anchor_click_target(
                 &self.cached_html,
                 &target,
@@ -2561,6 +2589,8 @@ fn main() {
     }
 }
 
+#[cfg(test)]
+mod activation_tests;
 #[cfg(test)]
 mod compositor_publish_tests;
 mod gpu_isolation_tests;

@@ -33,6 +33,10 @@ pub use canvas::*;
 mod selector_match;
 pub use selector_match::*;
 
+// HTML label 与 labelable control 关联解析。
+mod label;
+pub use label::*;
+
 // `register_dom_callbacks` —— 全部 `__zw_*` 回调注册（R2976 从本文件拆出，控制主文件行数）。最大单体函数。
 mod callbacks;
 pub use callbacks::*;

@@ -69,20 +69,21 @@ impl FocusManager {
             // 检查 tabindex 属性
             let tabindex_attr = elem.get_attribute("tabindex");
             let tabindex = parse_tabindex(tabindex_attr.as_deref());
+            let eligible = is_sequentially_focusable(doc, node_id, elem);
 
             // 判断是否可聚焦：
             // - tabindex >= 0 → 可聚焦
             // - 无 tabindex 但属于默认可聚焦标签 → 可聚焦（tabindex = 0）
             // - tabindex = -1 → 仅可通过程序聚焦，不在 Tab 顺序中
             if let Some(tb) = tabindex {
-                if tb >= 0 {
+                if tb >= 0 && eligible {
                     self.focus_order.push(FocusableItem {
                         node: node_id,
                         tabindex: tb,
                     });
                 }
                 // tabindex = -1: 不加入 Tab 顺序
-            } else if FOCUSABLE_TAGS.contains(&tag) && !is_disabled(elem) {
+            } else if FOCUSABLE_TAGS.contains(&tag) && eligible && has_natural_focus_behavior(tag, elem) {
                 self.focus_order.push(FocusableItem {
                     node: node_id,
                     tabindex: 0,
@@ -227,6 +228,34 @@ fn parse_tabindex(value: Option<&str>) -> Option<i32> {
 /// 检查元素是否被禁用（disabled 属性）。
 fn is_disabled(elem: &crate::ElementData) -> bool {
     elem.get_attribute("disabled").is_some()
+}
+
+fn is_sequentially_focusable(doc: &Document, node: NodeId, elem: &crate::ElementData) -> bool {
+    if is_disabled(elem)
+        || (elem.local_name().eq_ignore_ascii_case("input")
+            && elem
+                .get_attribute("type")
+                .is_some_and(|value| value.eq_ignore_ascii_case("hidden")))
+    {
+        return false;
+    }
+    let mut current = Some(node);
+    while let Some(id) = current {
+        let Some(node) = doc.get(id) else {
+            return false;
+        };
+        if let crate::NodeKind::Element(element) = &node.kind
+            && (element.get_attribute("hidden").is_some() || element.get_attribute("inert").is_some())
+        {
+            return false;
+        }
+        current = doc.parent_node(id);
+    }
+    true
+}
+
+fn has_natural_focus_behavior(tag: &str, elem: &crate::ElementData) -> bool {
+    !tag.eq_ignore_ascii_case("a") || elem.get_attribute("href").is_some()
 }
 
 #[cfg(test)]
@@ -402,6 +431,34 @@ mod tests {
         fm.scan(&doc);
         // 只有 enabled button 和 enabled input
         assert_eq!(fm.focusable_count(), 2);
+    }
+
+    #[test]
+    fn sequential_focus_skips_non_focusable_controls() {
+        let doc = parse_html(
+            r#"<html><body>
+              <button id="natural">Natural</button>
+              <input id="positive-two" tabindex="2">
+              <input id="positive-one" tabindex="1">
+              <button id="disabled-positive" disabled tabindex="3">Disabled</button>
+              <input id="hidden-input" type="hidden">
+              <div hidden><button id="hidden-descendant">Hidden</button></div>
+              <div inert><button id="inert-descendant">Inert</button></div>
+              <a id="no-href">No href</a>
+              <a id="link" href="/next">Link</a>
+            </body></html>"#,
+        );
+        let mut focus = FocusManager::new();
+        focus.scan(&doc);
+
+        let ids: Vec<String> = (0..4)
+            .map(|_| {
+                let node = focus.focus_next().expect("focus target");
+                doc.get_attribute(node, "id").expect("id")
+            })
+            .collect();
+        assert_eq!(ids, ["positive-one", "positive-two", "natural", "link"]);
+        assert_eq!(focus.focusable_count(), 4);
     }
 
     #[test]

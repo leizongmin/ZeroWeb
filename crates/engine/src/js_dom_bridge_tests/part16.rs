@@ -1024,3 +1024,20 @@ fn text_delete_dispatches_beforeinput_then_input() {
             .any(|mutation| matches!(mutation, DomMutation::SetFormValue { selector, value } if selector == "#name" && value.is_empty()))
     );
 }
+
+#[test]
+fn label_control_resolution_supports_for_and_nested_controls() {
+    let html = r#"<html><body>
+        <label id="explicit" for="check">Explicit</label>
+        <input id="check" type="checkbox">
+        <label id="nested">Nested <input id="radio" type="radio"></label>
+        <label id="hidden-label" for="hidden-input">Hidden</label>
+        <input id="hidden-input" type="hidden">
+        <div id="not-label"><input id="other"></div>
+    </body></html>"#;
+
+    assert_eq!(associated_label_control_selector(html, "#explicit").as_deref(), Some("#check"));
+    assert_eq!(associated_label_control_selector(html, "#nested").as_deref(), Some("#radio"));
+    assert_eq!(associated_label_control_selector(html, "#hidden-label"), None);
+    assert_eq!(associated_label_control_selector(html, "#not-label"), None);
+}

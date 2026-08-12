@@ -3,6 +3,7 @@ use super::*;
 fn runtime_with_prevented_keydown(renderer_id: u64) -> RendererRuntime {
     let html = r#"<html><body>
         <input id="name" value="base">
+        <input id="other">
         <script>
           globalThis.__keys = [];
           document.querySelector('#name').addEventListener('keydown', function(event) {
@@ -85,4 +86,78 @@ fn keyboard_entry_points_share_prevented_default_action() {
         )
         .unwrap();
     assert_keydown_prevented(&dispatch);
+}
+
+#[test]
+fn prevented_tab_keeps_focus_owner() {
+    let mut runtime = runtime_with_prevented_keydown(912);
+    runtime
+        .handle_keyboard_event(KeyboardEventParams {
+            key: "Tab".to_string(),
+            code: "Tab".to_string(),
+            ctrl: false,
+            shift: false,
+            alt: false,
+            meta: false,
+            event_type: zero_protocol::message::KeyboardEventType::Down,
+        })
+        .unwrap();
+
+    assert_eq!(runtime.interaction.focus_owner(), Some("#name"));
+    assert!(
+        runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .form_control_value_overrides()
+            .is_empty()
+    );
+}
+
+#[test]
+fn host_focus_transition_dispatches_focus_event_order() {
+    let html = r#"<html><body>
+        <input id="a"><input id="b">
+        <script>
+          globalThis.__focusEvents = [];
+          ['a','b'].forEach(function(id) {
+            var el = document.querySelector('#' + id);
+            ['focusout','blur','focus','focusin'].forEach(function(type) {
+              el.addEventListener(type, function() { __focusEvents.push(id + ':' + type); });
+            });
+          });
+        </script>
+    </body></html>"#;
+    let url = "https://zero.test/focus-order";
+    let mut runtime = RendererRuntime::new(913);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+
+    runtime.focus_target("#a").unwrap();
+    runtime
+        .js_worker
+        .execute_script_direct("globalThis.__focusEvents.length=0")
+        .unwrap();
+    runtime.blur_focused().unwrap();
+    runtime.focus_target("#b").unwrap();
+
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("globalThis.__focusEvents.join(',')")
+            .unwrap(),
+        "a:focusout,a:blur,b:focus,b:focusin"
+    );
 }
