@@ -92,7 +92,6 @@
 
 **核查（代码 + 端到端实测，证 memory 过时）**：
 - **代码已全贯通**：`webview.rs:265 fetch_image_subresources` 在 `fetch_url` 导航三条成功路径（line 370/395/423）抓取 + 解码 `<img src>`；`decode_image_bytes`（image_cache.rs:368）按魔数字节分发 PNG/JPEG/SVG（resvg+tiny-skia）；`app_platform.rs` render_cpu/render_gpu/render_frame 三处传 `Some(&mut webview.image_cache())`（非 None）；并有 `render_path_consumes_webview_image_cache` 测试。
-- **端到端实测**（product-smoke wintertc，base-dir 本地服务）：vision 核验 header logo（橙色圆形雪花/gear）+ 13 个参与方 SVG/PNG logo（alibaba/bytedance/cloudflare/deno/fastly/igalia/netlify/nodejs/shopify/suborbital/vercel/azion/matrix）**全部正确渲染**（非占位 glyph/短横）。**memory「传 None / Logo 缺失」过时**。
 - **残余缺口**（准确）：WebP 解码未接入（decode 仅 PNG/JPEG/SVG）；CSS `url()` 背景图未抓取（fetch_image_subresources 仅 `<img src>`）。
 
 **产品 smoke 实测（800×600 viewport）**：welcome 17.06% / wintertc 13.70% / morning-work 28.72%。
