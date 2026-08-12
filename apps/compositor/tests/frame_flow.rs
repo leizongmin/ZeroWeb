@@ -399,6 +399,77 @@ fn compositor_gpu_path_produces_expected_fill() {
     assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255]);
 }
 
+/// P0-1（真实合成器进程）：GPU 光栅模式下半透明 fill 会被 `scene_supported` 拒绝
+/// （GPU shader 固定 alpha=1.0 会画错）→ 整帧回退 CPU → 像素为半透明混合结果。
+/// GPU 错误路径会输出 (255,0,0,255)，断言 R<200 && A<255 可区分。
+#[test]
+fn compositor_gpu_semitransparent_falls_back_to_cpu() {
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")]);
+    assert_eq!(
+        submit_frame(&mut transport, 1, 9, 2, 1, make_frame(64, 64, [128, 0, 0, 128]),),
+        (9, 2, 1)
+    );
+    let frame = get_frame(&mut transport, 2, 9, 2, 1);
+    let center = ((32 * 64 + 32) * 4) as usize;
+    assert!(
+        frame.rgba[center] < 200,
+        "半透明红 over 黑底应回退 CPU 混合（R<200），GPU 错画应为 255，got {}",
+        frame.rgba[center]
+    );
+}
+
+/// P0-1（真实合成器进程）：GPU 光栅模式下带模糊阴影被拒绝 → 回退 CPU →
+/// 灰 blur 阴影 over 白底（cpu::render_full_scene 的 framebuffer 为白底）：
+/// 中心应为灰（≈128），rect 边缘外有模糊渐变、颜色回归白底（> 中心）。
+#[test]
+fn compositor_gpu_blur_shadow_falls_back_to_cpu() {
+    let (mut transport, _comp) =
+        spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")]);
+    // 无背景 fill + 灰 blur=3 阴影（rect 8..24 × 8..24）
+    let mut snapshot = PaintSnapshotParams {
+        viewport_width: 64,
+        viewport_height: 64,
+        document_height: 64.0,
+        ..Default::default()
+    };
+    snapshot.shadows = vec![zero_protocol::paint_snapshot::IpcShadow {
+        rect: IpcRect {
+            x: 8.0,
+            y: 8.0,
+            width: 16.0,
+            height: 16.0,
+        },
+        color: IpcColor {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 255,
+        },
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 3.0,
+        spread_radius: 0.0,
+    }];
+    assert_eq!(submit_frame(&mut transport, 1, 9, 3, 1, snapshot), (9, 3, 1));
+    let frame = get_frame(&mut transport, 2, 9, 3, 1);
+    // 阴影中心 (16,16)：CPU blur 后灰（≈128 over 白底），完全没画则为白 255
+    let center = ((16 * 64 + 16) * 4) as usize;
+    assert!(
+        (frame.rgba[center] as i32 - 128).abs() <= 15,
+        "阴影中心应画灰（≈128），got {}",
+        frame.rgba[center]
+    );
+    // rect 边缘外 2px (26,16)：blur 渐变衰减 → alpha 低 → 颜色回归白底（> 中心）
+    let edge_out = ((16 * 64 + 26) * 4) as usize;
+    assert!(
+        frame.rgba[edge_out] > frame.rgba[center],
+        "阴影边缘外应渐变回归白底（模糊衰减），center={} edge={}",
+        frame.rgba[center],
+        frame.rgba[edge_out]
+    );
+}
+
 /// 4.3 S1：Linux `ZW_COMPOSITOR_SHM=1` 时帧像素经 POSIX shm 传输（非 Linux 跳过）。
 #[test]
 #[cfg(target_os = "linux")]

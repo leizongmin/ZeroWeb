@@ -43,9 +43,11 @@ fn compare_frames(cpu: &[u8], gpu: &[u8], tolerance: u8) -> (usize, u8) {
 /// 构造 GPU 生产路径支持子集的混合场景（全不透明、无 clip/blend/filter/transform）。
 fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
     let mut p = RenderPrimitives::default();
-    // 0. 全帧白底（GPU clear 为白、CPU framebuffer 初始为黑——必须铺满底色对齐）
+    // 0. 白底覆盖上半帧（GPU clear 为白、CPU framebuffer 初始为黑——底色须对齐；
+    //    高度 40 让下半帧留白给阴影区域，避免背景盖掉阴影——
+    //    CSS 语义 box-shadow 画在背景之下，背景覆盖阴影是正确行为）
     p.fills.push(FillPrimitive {
-        rect: Rect::new(0.0, 0.0, 56.0, 56.0),
+        rect: Rect::new(0.0, 0.0, 56.0, 40.0),
         color: Color::rgba(255, 255, 255, 255),
     });
     // 1. 纯色填充（红）
@@ -99,13 +101,14 @@ fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
         style: crate::primitive::LineStyle::Solid,
         cap: crate::primitive::LineCap::Butt,
     });
-    // 5. 无模糊阴影（黑，offset (2,3)，blur=0 spread=0 outset）——GPU/CPU 一致子集；
-    //    黑是 sRGB 不动点（中间色会被 headless sRGB target 编码，P2-8 对齐）
+    // 5. 无模糊阴影（黑，offset (2,0)，blur=0 spread=0 outset，位于白底覆盖区之外
+    //    y=44..54）——GPU/CPU 一致子集；黑是 sRGB 不动点（中间色会被 headless
+    //    sRGB target 编码，P2-8 对齐）
     p.shadows.push(ShadowPrimitive {
-        rect: Rect::new(4.0, 34.0, 16.0, 10.0),
+        rect: Rect::new(4.0, 44.0, 16.0, 10.0),
         color: Color::rgba(0, 0, 0, 255),
         offset_x: 2.0,
-        offset_y: 3.0,
+        offset_y: 0.0,
         blur_radius: 0.0,
         spread_radius: 0.0,
         inset: false,
@@ -157,6 +160,13 @@ fn parity_basic_scene_matches() {
     let (w, h) = (56, 56);
     let cpu_fb = render_cpu(w, h, &p, Some(&mut image_cache));
     let gpu_px = render_gpu(w, h, &p, Some(&mut image_cache));
+    // 阴影区域（rect 4..20×44..54 + offset(2,0) → 6..22×44..54）应画黑——确认
+    // 阴影渲染没有被背景覆盖而「两边一致地白」（CSS 语义下阴影在背景之下）。
+    for &(px, py) in &[(10usize, 48usize), (18, 50)] {
+        let b = (py * w as usize + px) * 4;
+        assert_eq!(&cpu_fb.data[b..b + 3], &[0, 0, 0], "CPU 阴影 ({px},{py}) 应为黑");
+        assert_eq!(&gpu_px[b..b + 3], &[0, 0, 0], "GPU 阴影 ({px},{py}) 应为黑");
+    }
     let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 5);
     assert_eq!(
         over, 0,
