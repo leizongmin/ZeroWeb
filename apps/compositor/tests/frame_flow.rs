@@ -1126,7 +1126,7 @@ fn compositor_gpu_scroll_transform_bakes_pixels() {
     // bake 后 scroll 归零
     assert_eq!(frame.scroll_y, 0.0, "bake 后 scroll_y 应归零");
     // 像素位移：内容上移 8px → (8,0) 处应为原 (0,0) 的内容色
-    let top = (0 * 32 + 8) * 4;
+    let top = 8 * 4;
     assert_eq!(&frame.rgba[top..top + 3], &[128, 64, 32], "滚动后顶部应显示下方内容");
     // 底部新露出的 8px 为黑（bake 黑底补，对齐 CPU 路径语义）
     let bottom = (23 * 32 + 16) * 4;
