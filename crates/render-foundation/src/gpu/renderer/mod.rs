@@ -1007,45 +1007,104 @@ impl GpuRenderer {
                 }
                 segments.insert(0, Seg::Main(current_main));
 
-                let draw_op = |pass: &mut wgpu::RenderPass<'_>, op: DrawOp| match op {
-                    DrawOp::Shadow(i) => self.draw_fill_pass(pass, uniform_bg, &device, &shadow_verts[i], "Shadow"),
-                    DrawOp::Fill(i) => self.draw_fill_pass(pass, uniform_bg, &device, &fill_verts[i], "Fill"),
-                    DrawOp::RoundedRect(i) => self.draw_rounded_rect_pass(pass, uniform_bg, &device, &rr_verts[i]),
-                    DrawOp::Gradient(i) => {
-                        self.draw_gradient_pass(pass, uniform_bg, &device, &grad_resources[i..i + 1])
+                // 合批：连续同类 DrawOp 合并为一次 draw（减少每图元缓冲创建开销；
+                // 顺序保持，正确性不变）。tag：0=Shadow 1=Fill 2=RoundedRect 3=Gradient
+                // 4=Image 5=Stroke 6=PathFill 7=PathStroke 8=Glyph 9=Clip
+                fn segment_batches(ops: &[DrawOp]) -> Vec<(u8, Vec<usize>)> {
+                    let mut batches: Vec<(u8, Vec<usize>)> = Vec::new();
+                    for op in ops {
+                        let (tag, idx) = match op {
+                            DrawOp::Shadow(i) => (0u8, *i),
+                            DrawOp::Fill(i) => (1, *i),
+                            DrawOp::RoundedRect(i) => (2, *i),
+                            DrawOp::Gradient(i) => (3, *i),
+                            DrawOp::Image(i) => (4, *i),
+                            DrawOp::Stroke(i) => (5, *i),
+                            DrawOp::PathFill(i) => (6, *i),
+                            DrawOp::PathStroke(i) => (7, *i),
+                            DrawOp::Glyph(i) => (8, *i),
+                            DrawOp::Clip(i) => (9, *i),
+                            DrawOp::Filter(_) | DrawOp::Transform(_) | DrawOp::BlendMode(_) => continue,
+                        };
+                        if let Some(last) = batches.last_mut()
+                            && last.0 == tag
+                        {
+                            last.1.push(idx);
+                            continue;
+                        }
+                        batches.push((tag, vec![idx]));
                     }
-                    DrawOp::Image(i) => self.draw_image_pass(pass, uniform_bg, &device, &img_resources[i..i + 1]),
-                    DrawOp::Stroke(i) => self.draw_fill_pass(pass, uniform_bg, &device, &stroke_verts[i], "Stroke"),
-                    DrawOp::PathFill(i) => {
-                        self.draw_fill_pass(pass, uniform_bg, &device, &path_fill_verts[i], "PathFill")
+                    batches
+                }
+                let draw_batch = |pass: &mut wgpu::RenderPass<'_>, tag: u8, indices: &[usize]| match tag {
+                    0 => {
+                        let v: Vec<f32> = indices.iter().flat_map(|&i| shadow_verts[i].iter().copied()).collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "Shadow");
                     }
-                    DrawOp::PathStroke(i) => {
-                        self.draw_fill_pass(pass, uniform_bg, &device, &path_stroke_verts[i], "PathStroke")
+                    1 => {
+                        let v: Vec<f32> = indices.iter().flat_map(|&i| fill_verts[i].iter().copied()).collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "Fill");
                     }
-                    DrawOp::Glyph(i) => self.draw_fill_pass(pass, uniform_bg, &device, &glyph_verts[i], "Glyph"),
-                    DrawOp::Clip(i) => {
-                        if let Some(c) = primitives.clips.get(i) {
-                            let (fw, fh) = (width as f32, height as f32);
-                            let l = (c.rect.left() * scale).max(0.0);
-                            let t = (c.rect.top() * scale).max(0.0);
-                            let r = (c.rect.right() * scale).min(fw);
-                            let b = (c.rect.bottom() * scale).min(fh);
-                            let mut verts = Vec::new();
-                            push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
-                            push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
-                            push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
-                            push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
-                            self.draw_fill_pass(pass, uniform_bg, &device, &verts, "Clip");
+                    2 => {
+                        let v: Vec<f32> = indices.iter().flat_map(|&i| rr_verts[i].iter().copied()).collect();
+                        self.draw_rounded_rect_pass(pass, uniform_bg, &device, &v);
+                    }
+                    3 => {
+                        for &i in indices {
+                            self.draw_gradient_pass(pass, uniform_bg, &device, &grad_resources[i..i + 1]);
                         }
                     }
-                    DrawOp::Filter(_) | DrawOp::Transform(_) => {}
-                    DrawOp::BlendMode(_) => {}
+                    4 => {
+                        for &i in indices {
+                            self.draw_image_pass(pass, uniform_bg, &device, &img_resources[i..i + 1]);
+                        }
+                    }
+                    5 => {
+                        let v: Vec<f32> = indices.iter().flat_map(|&i| stroke_verts[i].iter().copied()).collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "Stroke");
+                    }
+                    6 => {
+                        let v: Vec<f32> = indices
+                            .iter()
+                            .flat_map(|&i| path_fill_verts[i].iter().copied())
+                            .collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "PathFill");
+                    }
+                    7 => {
+                        let v: Vec<f32> = indices
+                            .iter()
+                            .flat_map(|&i| path_stroke_verts[i].iter().copied())
+                            .collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "PathStroke");
+                    }
+                    8 => {
+                        let v: Vec<f32> = indices.iter().flat_map(|&i| glyph_verts[i].iter().copied()).collect();
+                        self.draw_fill_pass(pass, uniform_bg, &device, &v, "Glyph");
+                    }
+                    9 => {
+                        for &i in indices {
+                            if let Some(c) = primitives.clips.get(i) {
+                                let (fw, fh) = (width as f32, height as f32);
+                                let l = (c.rect.left() * scale).max(0.0);
+                                let t = (c.rect.top() * scale).max(0.0);
+                                let r = (c.rect.right() * scale).min(fw);
+                                let b = (c.rect.bottom() * scale).min(fh);
+                                let mut verts = Vec::new();
+                                push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
+                                push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
+                                push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
+                                push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
+                                self.draw_fill_pass(pass, uniform_bg, &device, &verts, "Clip");
+                            }
+                        }
+                    }
+                    _ => {}
                 };
                 for seg in segments {
                     match seg {
                         Seg::Main(ops) => {
-                            for op in ops {
-                                draw_op(&mut pass, op);
+                            for (tag, indices) in segment_batches(&ops) {
+                                draw_batch(&mut pass, tag, &indices);
                             }
                         }
                         Seg::Blend(blend, ops) => {
@@ -1098,8 +1157,8 @@ impl GpuRenderer {
                                     occlusion_query_set: None,
                                     multiview_mask: None,
                                 });
-                                for op in ops {
-                                    draw_op(&mut spass, op);
+                                for (tag, indices) in segment_batches(&ops) {
+                                    draw_batch(&mut spass, tag, &indices);
                                 }
                             }
                             // 3. 混合 pass：scissor blend 区域 + blend shader（source × backdrop）
