@@ -324,6 +324,17 @@ jobs:
           RENDER_FEATURES="${RENDER_FEATURES//--features quickjs/}"
           cargo nextest run $RENDER_FEATURES -p zero-render-foundation --lib cpu:: --target ${{ matrix.target }}
 
+      # R3271（#7）：GPU 套件（headless 软件渲染，llvmpipe/lavapipe；此前 CI 只跑 cpu::）。
+      # window_smoke 无 DISPLAY 自动跳过；parity 对照 + gpu:: 全量在无 GPU 的 runner 上
+      # 经软件 fallback adapter 运行（mesa-vulkan-drivers 已装）。
+      - name: Run render GPU tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          RENDER_FEATURES="${{ matrix.features }}"
+          RENDER_FEATURES="${RENDER_FEATURES//--features quickjs/}"
+          cargo nextest run $RENDER_FEATURES -p zero-render-foundation --lib gpu:: --target ${{ matrix.target }}
+
       - name: Note unsupported V8 runtime tests
         if: matrix.v8_runtime == false
         run: |

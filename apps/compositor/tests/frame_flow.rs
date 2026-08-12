@@ -1069,3 +1069,30 @@ fn compositor_gpu_texture_export_dma_buf_round_trips() {
     assert!(got.rgba[1] >= 100, "expected orange G, got {}", got.rgba[1]);
     assert_eq!(got.rgba[3], 255, "alpha");
 }
+
+/// #6 整链契约：renderer 真实产出格式（FrameModel → PaintSnapshotParams 全字段：
+/// viewport/document_height/fills/dirty/navigation_epoch）喂合成器 → 像素回传。
+/// 渲染进程 publish 格式由 compositor_publish_tests/paint_export 覆盖，本测验证
+/// 合成器消费「与 renderer 打包一致」的完整帧（含 draw_order 与 dirty）。
+#[test]
+fn compositor_consumes_full_renderer_style_frame() {
+    let (mut transport, _comp) = spawn_compositor();
+    let mut snapshot = make_frame_with_dirty(
+        32,
+        32,
+        [0, 128, 255, 255],
+        vec![IpcRect {
+            x: 0.0,
+            y: 0.0,
+            width: 32.0,
+            height: 32.0,
+        }],
+    );
+    snapshot.document_height = 100.0;
+    // renderer 打包会附带 draw_order（插入顺序）——全字段帧
+    snapshot.draw_order = vec![zero_protocol::paint_snapshot::IpcDrawOp::Fill(0)];
+    assert_eq!(submit_frame(&mut transport, 1, 77, 3, 1, snapshot), (77, 3, 1));
+    let frame = get_frame(&mut transport, 2, 77, 3, 1);
+    assert_eq!((frame.width, frame.height), (32, 32));
+    assert_eq!(&frame.rgba[..4], &[0, 128, 255, 255], "全字段帧应正确光栅化");
+}

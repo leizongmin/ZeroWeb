@@ -313,3 +313,62 @@ fn parity_semitransparent_gpu_renders_correctly() {
         pixels[2]
     );
 }
+
+/// #8：P0-1 回退的「CPU 帧上传 → blit → present」链路视觉验证——headless 下
+/// upload_frame + set_compositor_import + 空场景渲染 → read_pixels 应还原 CPU 帧。
+#[serial]
+#[test]
+fn parity_cpu_fallback_upload_blit_roundtrip() {
+    let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+    // CPU 帧：左侧红、右侧蓝
+    let mut cpu_fb = FrameBuffer::new_filled(16, 16, 0, 0, 255, 255);
+    for y in 0..16u32 {
+        for x in 0..8u32 {
+            cpu_fb.set_pixel(x, y, [255, 0, 0, 255]);
+        }
+    }
+    let texture = renderer.upload_frame(cpu_fb.width, cpu_fb.height, &cpu_fb.data);
+    renderer.set_compositor_import(texture, cpu_fb.width, cpu_fb.height, 0.0, 0.0);
+    let empty = RenderPrimitives::default();
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let rendered =
+        renderer.render_full_scene_gpu(&empty, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0);
+    assert!(rendered, "空场景 + import blit 应渲染成功");
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // (4,8) 红、(12,8) 蓝——CPU 帧经上传+blit 还原
+    let left = (8 * 16 + 4) * 4;
+    assert_eq!(&pixels[left..left + 3], &[255, 0, 0], "左侧应还原红");
+    let right = (8 * 16 + 12) * 4;
+    assert_eq!(&pixels[right..right + 3], &[0, 0, 255], "右侧应还原蓝");
+    renderer.clear_compositor_import();
+}
+
+/// #9：多渲染器交替渲染（模拟多标签各自独立渲染器）——GPU_CREATE_MUTEX 序列化
+/// 创建后各 device 独立渲染，结果互不串扰。
+#[serial]
+#[test]
+fn parity_multiple_renderers_alternate_independently() {
+    let mut red = GpuRenderer::new_headless(8, 8).expect("red renderer");
+    let mut blue = GpuRenderer::new_headless(8, 8).expect("blue renderer");
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    for _ in 0..3 {
+        let mut rp = RenderPrimitives::default();
+        rp.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            color: Color::rgba(255, 0, 0, 255),
+        });
+        assert!(red.render_full_scene_gpu(&rp, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0));
+        let mut bp = RenderPrimitives::default();
+        bp.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            color: Color::rgba(0, 0, 255, 255),
+        });
+        assert!(blue.render_full_scene_gpu(&bp, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0));
+    }
+    let rp = red.read_pixels().expect("red pixels");
+    let bp = blue.read_pixels().expect("blue pixels");
+    assert_eq!(&rp[..3], &[255, 0, 0], "red 渲染器应保持红");
+    assert_eq!(&bp[..3], &[0, 0, 255], "blue 渲染器应保持蓝");
+}
