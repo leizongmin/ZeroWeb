@@ -15,9 +15,10 @@ use crate::gpu::mesh::{
 };
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, IMAGE_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX,
-    create_atlas_bind_group_layout, create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline,
-    create_image_pipeline, create_render_pipeline, create_rounded_rect_pipeline, create_texture_bind_group_layout,
-    create_transform_pipeline, create_transform_uniform_bgl, create_uniform_bind_group_layout,
+    create_atlas_bind_group_layout, create_blend_bind_group_layout, create_blend_pipeline, create_blur_pipeline,
+    create_color_filter_pipeline, create_gradient_pipeline, create_image_pipeline, create_render_pipeline,
+    create_rounded_rect_pipeline, create_texture_bind_group_layout, create_transform_pipeline,
+    create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
 use crate::primitive::{DrawOp, FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
@@ -108,6 +109,14 @@ pub struct GpuRenderer {
     transform_pipeline: wgpu::RenderPipeline,
     /// Transform uniform 绑定组布局（group 0，64 字节）
     transform_uniform_bgl: wgpu::BindGroupLayout,
+    /// Blend 合成管线（C/R3278：mix-blend-mode 双 pass）
+    blend_pipeline: wgpu::RenderPipeline,
+    /// Blend 绑定组布局（source + backdrop 纹理 + 采样器）
+    blend_bgl: wgpu::BindGroupLayout,
+    /// Blend 源层（元素层）离屏纹理
+    blend_source_texture: Option<wgpu::Texture>,
+    /// Blend backdrop（主帧拷贝）纹理
+    blend_backdrop_texture: Option<wgpu::Texture>,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -346,6 +355,9 @@ impl GpuRenderer {
         // DC-9 transform 后处理管线（独立 uniform bgl + 复用 blur_bgl 源纹理布局）
         let transform_uniform_bgl = create_transform_uniform_bgl(&device);
         let transform_pipeline = create_transform_pipeline(&device, format, &transform_uniform_bgl, &blur_bgl);
+        // C/R3278：blend 管线（uniform_bgl 4-float 布局复用——blend uniform {mode,0,0,0}）
+        let blend_bgl = create_blend_bind_group_layout(&device);
+        let blend_pipeline = create_blend_pipeline(&device, format, &uniform_bgl, &blend_bgl);
 
         let atlas = GlyphAtlas::new();
         let (atlas_texture, _atlas_view, _atlas_sampler, atlas_bind_group) =
@@ -368,6 +380,10 @@ impl GpuRenderer {
             blur_pipeline,
             color_filter_pipeline,
             transform_pipeline,
+            blend_pipeline,
+            blend_bgl,
+            blend_source_texture: None,
+            blend_backdrop_texture: None,
             uniform_bgl,
             transform_uniform_bgl,
             atlas_bgl,
@@ -434,7 +450,8 @@ impl GpuRenderer {
 
         if let Some(surface) = &self.surface {
             let config = wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                // RENDER_ATTACHMENT | COPY_SRC：blend 双 pass 需把主帧拷为 backdrop 纹理
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 format: self.surface_format,
                 color_space: wgpu::SurfaceColorSpace::Auto,
                 width: w,
@@ -938,36 +955,225 @@ impl GpuRenderer {
             // DC-10 类型分桶 z 序缺陷——父背景图被子元素背景色盖住）。每图元一个
             // draw call（收集器产出每图元独立顶点组）。draw_order 为空回退分桶。
             if !primitives.draw_order.is_empty() {
+                // C/R3278：blend 双 pass 纹理按需创建（&mut self——须在 uniform_bg
+                // 重新绑定前完成，避免与 926 行的不可变借用冲突）
+                self.ensure_blend_textures(width, height);
+                let uniform_bg = self
+                    .uniform_bind_group
+                    .as_ref()
+                    .expect("uniform bind group initialized");
+                // 按 BlendMode 分段：Main 段画主帧，Blend 段画到源层离屏纹理后与
+                // 主帧 backdrop 混合（CSS Compositing-1 §5.1 16 模式，与 CPU 源层重渲染一致）
+                enum Seg {
+                    Main(Vec<DrawOp>),
+                    Blend(crate::primitive::BlendModePrimitive, Vec<DrawOp>),
+                }
+                let mut segments: Vec<Seg> = Vec::new();
+                let mut current_main: Vec<DrawOp> = Vec::new();
+                let mut current_blend: Option<(crate::primitive::BlendModePrimitive, Vec<DrawOp>)> = None;
                 for op in &primitives.draw_order {
                     match op {
-                        DrawOp::Shadow(i) => {
-                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &shadow_verts[*i], "Shadow")
+                        DrawOp::BlendMode(i) => {
+                            if let Some(b) = primitives.blend_modes.get(*i) {
+                                if let Some(sec) = current_blend.take() {
+                                    segments.push(Seg::Blend(sec.0, sec.1));
+                                }
+                                current_blend = Some((b.clone(), Vec::new()));
+                            }
                         }
-                        DrawOp::Fill(i) => self.draw_fill_pass(&mut pass, uniform_bg, &device, &fill_verts[*i], "Fill"),
-                        DrawOp::RoundedRect(i) => {
-                            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts[*i])
+                        _ => match &mut current_blend {
+                            Some((_, ops)) => ops.push(*op),
+                            None => current_main.push(*op),
+                        },
+                    }
+                }
+                if let Some(sec) = current_blend {
+                    segments.push(Seg::Blend(sec.0, sec.1));
+                }
+                segments.insert(0, Seg::Main(current_main));
+
+                let draw_op = |pass: &mut wgpu::RenderPass<'_>, op: DrawOp| match op {
+                    DrawOp::Shadow(i) => self.draw_fill_pass(pass, uniform_bg, &device, &shadow_verts[i], "Shadow"),
+                    DrawOp::Fill(i) => self.draw_fill_pass(pass, uniform_bg, &device, &fill_verts[i], "Fill"),
+                    DrawOp::RoundedRect(i) => self.draw_rounded_rect_pass(pass, uniform_bg, &device, &rr_verts[i]),
+                    DrawOp::Gradient(i) => {
+                        self.draw_gradient_pass(pass, uniform_bg, &device, &grad_resources[i..i + 1])
+                    }
+                    DrawOp::Image(i) => self.draw_image_pass(pass, uniform_bg, &device, &img_resources[i..i + 1]),
+                    DrawOp::Stroke(i) => self.draw_fill_pass(pass, uniform_bg, &device, &stroke_verts[i], "Stroke"),
+                    DrawOp::PathFill(i) => {
+                        self.draw_fill_pass(pass, uniform_bg, &device, &path_fill_verts[i], "PathFill")
+                    }
+                    DrawOp::PathStroke(i) => {
+                        self.draw_fill_pass(pass, uniform_bg, &device, &path_stroke_verts[i], "PathStroke")
+                    }
+                    DrawOp::Glyph(i) => self.draw_fill_pass(pass, uniform_bg, &device, &glyph_verts[i], "Glyph"),
+                    DrawOp::Clip(i) => {
+                        if let Some(c) = primitives.clips.get(i) {
+                            let (fw, fh) = (width as f32, height as f32);
+                            let l = (c.rect.left() * scale).max(0.0);
+                            let t = (c.rect.top() * scale).max(0.0);
+                            let r = (c.rect.right() * scale).min(fw);
+                            let b = (c.rect.bottom() * scale).min(fh);
+                            let mut verts = Vec::new();
+                            push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
+                            push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
+                            push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
+                            push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
+                            self.draw_fill_pass(pass, uniform_bg, &device, &verts, "Clip");
                         }
-                        DrawOp::Gradient(i) => {
-                            self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources[*i..*i + 1])
+                    }
+                    DrawOp::Filter(_) | DrawOp::Transform(_) => {}
+                    DrawOp::BlendMode(_) => {}
+                };
+                for seg in segments {
+                    match seg {
+                        Seg::Main(ops) => {
+                            for op in ops {
+                                draw_op(&mut pass, op);
+                            }
                         }
-                        DrawOp::Image(i) => {
-                            self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources[*i..*i + 1])
+                        Seg::Blend(blend, ops) => {
+                            drop(pass);
+                            // 1. 主帧 → backdrop 纹理（blend 前内容 = 背景）
+                            let (src_tex, src_size) = match &target {
+                                RenderTarget::Surface { output, .. } => (&output.texture, (width, height)),
+                                RenderTarget::Headless { .. } => (
+                                    self.headless_texture.as_ref().expect("headless texture"),
+                                    (width, height),
+                                ),
+                            };
+                            let backdrop = self.blend_backdrop_texture.as_ref().expect("backdrop texture");
+                            encoder.copy_texture_to_texture(
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: src_tex,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: backdrop,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                wgpu::Extent3d {
+                                    width: src_size.0,
+                                    height: src_size.1,
+                                    depth_or_array_layers: 1,
+                                },
+                            );
+                            // 2. 源层 pass：blend 段图元画到 blend_source 纹理（透明底）
+                            let source_tex = self.blend_source_texture.as_ref().expect("blend source texture");
+                            let source_view = source_tex.create_view(&wgpu::TextureViewDescriptor::default());
+                            {
+                                let mut spass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("Blend Source Pass"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view: &source_view,
+                                        depth_slice: None,
+                                        resolve_target: None,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                            store: wgpu::StoreOp::Store,
+                                        },
+                                    })],
+                                    depth_stencil_attachment: None,
+                                    timestamp_writes: None,
+                                    occlusion_query_set: None,
+                                    multiview_mask: None,
+                                });
+                                for op in ops {
+                                    draw_op(&mut spass, op);
+                                }
+                            }
+                            // 3. 混合 pass：scissor blend 区域 + blend shader（source × backdrop）
+                            let (bl_l, bl_t, bl_r, bl_b) = (
+                                (blend.rect.left() * scale).max(0.0) as u32,
+                                (blend.rect.top() * scale).max(0.0) as u32,
+                                (blend.rect.right() * scale).min(width as f32) as u32,
+                                (blend.rect.bottom() * scale).min(height as f32) as u32,
+                            );
+                            if bl_l < bl_r && bl_t < bl_b {
+                                let backdrop_view = backdrop.create_view(&wgpu::TextureViewDescriptor::default());
+                                let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                                    mag_filter: wgpu::FilterMode::Nearest,
+                                    min_filter: wgpu::FilterMode::Nearest,
+                                    ..Default::default()
+                                });
+                                let blend_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                                    label: Some("Blend BG"),
+                                    layout: &self.blend_bgl,
+                                    entries: &[
+                                        wgpu::BindGroupEntry {
+                                            binding: 0,
+                                            resource: wgpu::BindingResource::TextureView(&source_view),
+                                        },
+                                        wgpu::BindGroupEntry {
+                                            binding: 1,
+                                            resource: wgpu::BindingResource::TextureView(&backdrop_view),
+                                        },
+                                        wgpu::BindGroupEntry {
+                                            binding: 2,
+                                            resource: wgpu::BindingResource::Sampler(&sampler),
+                                        },
+                                    ],
+                                });
+                                // blend uniform {mode, 0, 0, 0}——复用 uniform_bgl（4 float 布局）
+                                let mode = blend_mode_index(&blend.mode) as f32;
+                                let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: Some("Blend Uniform"),
+                                    contents: bytemuck::bytes_of(&[mode, width as f32, height as f32, 0.0f32]),
+                                    usage: wgpu::BufferUsages::UNIFORM,
+                                });
+                                let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                                    label: Some("Blend Uniform BG"),
+                                    layout: &self.uniform_bgl,
+                                    entries: &[wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: uniform.as_entire_binding(),
+                                    }],
+                                });
+                                let mut bpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("Blend Pass"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view: target.view(),
+                                        depth_slice: None,
+                                        resolve_target: None,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Load,
+                                            store: wgpu::StoreOp::Store,
+                                        },
+                                    })],
+                                    depth_stencil_attachment: None,
+                                    timestamp_writes: None,
+                                    occlusion_query_set: None,
+                                    multiview_mask: None,
+                                });
+                                bpass.set_scissor_rect(bl_l, bl_t, bl_r - bl_l, bl_b - bl_t);
+                                bpass.set_pipeline(&self.blend_pipeline);
+                                bpass.set_bind_group(0, &uniform_bg, &[]);
+                                bpass.set_bind_group(1, &blend_bg, &[]);
+                                bpass.draw(0..3, 0..1);
+                            }
+                            // 4. 恢复主帧 pass（后续 Main 段）
+                            pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("Full Scene Pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: target.view(),
+                                    depth_slice: None,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                                multiview_mask: None,
+                            });
                         }
-                        DrawOp::Stroke(i) => {
-                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts[*i], "Stroke")
-                        }
-                        DrawOp::PathFill(i) => {
-                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts[*i], "PathFill")
-                        }
-                        DrawOp::PathStroke(i) => {
-                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_stroke_verts[*i], "PathStroke")
-                        }
-                        DrawOp::Glyph(i) => {
-                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts[*i], "Glyph")
-                        }
-                        // Filter/Transform 为 pass 外后处理（下方）；Clip/Blend 由
-                        // scene_supported 拒绝回退 CPU（C 阶段实现）
-                        DrawOp::Filter(_) | DrawOp::Transform(_) | DrawOp::Clip(_) | DrawOp::BlendMode(_) => {}
                     }
                 }
                 // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
@@ -2457,3 +2663,59 @@ mod parity_tests;
 
 #[cfg(test)]
 mod window_smoke_tests;
+
+/// C/R3278：按需创建 blend 双 pass 的源层 / backdrop 纹理（尺寸变化时重建）。
+impl GpuRenderer {
+    fn ensure_blend_textures(&mut self, width: u32, height: u32) {
+        let need = |t: &Option<wgpu::Texture>| match t {
+            Some(tex) => {
+                let size = tex.size();
+                size.width != width.max(1) || size.height != height.max(1)
+            }
+            None => true,
+        };
+        if need(&self.blend_source_texture) || need(&self.blend_backdrop_texture) {
+            let desc = wgpu::TextureDescriptor {
+                label: Some("Blend Source/Backdrop"),
+                size: wgpu::Extent3d {
+                    width: width.max(1),
+                    height: height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            };
+            self.blend_source_texture = Some(self.device.create_texture(&desc));
+            self.blend_backdrop_texture = Some(self.device.create_texture(&desc));
+        }
+    }
+}
+
+/// BlendMode → shader 索引（与 BLEND_SHADER 的 m 值一致；枚举顺序即索引）。
+fn blend_mode_index(mode: &crate::primitive::BlendMode) -> usize {
+    match mode {
+        crate::primitive::BlendMode::Normal => 0,
+        crate::primitive::BlendMode::Multiply => 1,
+        crate::primitive::BlendMode::Screen => 2,
+        crate::primitive::BlendMode::Overlay => 3,
+        crate::primitive::BlendMode::Darken => 4,
+        crate::primitive::BlendMode::Lighten => 5,
+        crate::primitive::BlendMode::ColorDodge => 6,
+        crate::primitive::BlendMode::ColorBurn => 7,
+        crate::primitive::BlendMode::HardLight => 8,
+        crate::primitive::BlendMode::SoftLight => 9,
+        crate::primitive::BlendMode::Difference => 10,
+        crate::primitive::BlendMode::Exclusion => 11,
+        crate::primitive::BlendMode::Hue => 12,
+        crate::primitive::BlendMode::Saturation => 13,
+        crate::primitive::BlendMode::Color => 14,
+        crate::primitive::BlendMode::Luminosity => 15,
+    }
+}

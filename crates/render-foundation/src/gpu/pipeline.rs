@@ -1197,6 +1197,201 @@ pub fn create_render_pipeline(
     create_fill_pipeline(device, format, uniform_bind_group_layout, atlas_bind_group_layout)
 }
 
+// ─── Blend 管线（C/R3278：mix-blend-mode 双 pass 合成）──────────────────
+
+/// WGSL 着色器 — blend 合成（CSS Compositing-1 §5.1 16 模式）。
+/// 全屏 quad（scissor 限制 blend 区域），采样 source（元素层）与 backdrop（主帧拷贝），
+/// 按 uniform.mode 应用公式输出。B(Cb, Cs)：Cb=backdrop（背景），Cs=source（元素）。
+pub const BLEND_SHADER: &str = r#"
+struct BlendUniforms {
+    mode: f32,
+    screen_w: f32,
+    screen_h: f32,
+    _pad: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: BlendUniforms;
+@group(1) @binding(0) var source_tex: texture_2d<f32>;
+@group(1) @binding(1) var backdrop_tex: texture_2d<f32>;
+@group(1) @binding(2) var samp: sampler;
+
+@vertex
+fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+    var pos = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+    return vec4f(pos[vi], 0.0, 1.0);
+}
+
+fn lum(c: vec3f) -> f32 {
+    return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+}
+
+fn set_lum(c: vec3f, l: f32) -> vec3f {
+    let d = l - lum(c);
+    return clamp(c + vec3f(d), vec3f(0.0), vec3f(1.0));
+}
+
+fn sat(c: vec3f) -> f32 {
+    return max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
+}
+
+fn set_sat(c: vec3f, s: f32) -> vec3f {
+    let mn = min(min(c.r, c.g), c.b);
+    let mx = max(max(c.r, c.g), c.b);
+    if (mx > mn) {
+        let mid = c.r + c.g + c.b - mn - mx;
+        let mid2 = (mid - mn) * s / (mx - mn);
+        return vec3f(
+            select(mid2, 0.0, c.r == mn),
+            select(mid2, 0.0, c.g == mn),
+            select(mid2, 0.0, c.b == mn),
+        ) + vec3f(select(0.0, s, c.r == mx), select(0.0, s, c.g == mx), select(0.0, s, c.b == mx));
+    }
+    return c;
+}
+
+fn hard_light(cb: vec3f, cs: vec3f) -> vec3f {
+    return select(cb * cs * 2.0, 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs), cs > vec3f(0.5));
+}
+
+fn soft_light(cb: f32, cs: f32) -> f32 {
+    if (cs <= 0.5) {
+        return cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb);
+    }
+    let d = select(sqrt(cb), ((16.0 * cb - 12.0) * cb + 4.0) * cb, cb <= 0.25);
+    return cb + (2.0 * cs - 1.0) * (d - cb);
+}
+
+fn blend_channel(cb: f32, cs: f32, m: i32) -> f32 {
+    if (m == 1) { return cb * cs; }                        // multiply
+    if (m == 2) { return 1.0 - (1.0 - cb) * (1.0 - cs); }  // screen
+    if (m == 4) { return min(cb, cs); }                    // darken
+    if (m == 5) { return max(cb, cs); }                    // lighten
+    if (m == 6) { return select(1.0, cb / (1.0 - cs), cs < 1.0); }  // color-dodge
+    if (m == 7) { return select(0.0, 1.0 - (1.0 - cb) / cs, cs > 0.0); }  // color-burn
+    if (m == 10) { return abs(cb - cs); }                  // difference
+    if (m == 11) { return cb + cs - 2.0 * cb * cs; }       // exclusion
+    return cb; // 其余通道级模式由 blend() 处理
+}
+
+fn blend(cb: vec3f, cs: vec3f, m: i32) -> vec3f {
+    if (m == 0) { return cs; }                             // normal
+    if (m == 3) { return hard_light(cs, cb); }             // overlay
+    if (m == 8) { return hard_light(cb, cs); }             // hard-light
+    if (m == 9) {                                          // soft-light
+        return vec3f(soft_light(cb.r, cs.r), soft_light(cb.g, cs.g), soft_light(cb.b, cs.b));
+    }
+    if (m == 12) { return set_lum(set_sat(cb, sat(cs)), lum(cb)); }  // hue
+    if (m == 13) { return set_lum(set_sat(cs, sat(cb)), lum(cb)); }  // saturation
+    if (m == 14) { return set_lum(cs, lum(cb)); }          // color
+    if (m == 15) { return set_lum(cb, lum(cs)); }          // luminosity
+    return vec3f(blend_channel(cb.r, cs.r, m), blend_channel(cb.g, cs.g, m), blend_channel(cb.b, cs.b, m));
+}
+
+@fragment
+fn fs_blend(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let uv = vec2f(pos.x / uniforms.screen_w, pos.y / uniforms.screen_h);
+    let cs = textureSample(source_tex, samp, uv).rgb;
+    let cb = textureSample(backdrop_tex, samp, uv).rgb;
+    let mixed = blend(cb, cs, i32(uniforms.mode));
+    // alpha：src-over 合成（CSS §5.2）
+    let sa = textureSample(source_tex, samp, uv).a;
+    let da = textureSample(backdrop_tex, samp, uv).a;
+    return vec4f(mixed, sa + da * (1.0 - sa));
+}
+"#;
+
+/// Blend 管线绑定组布局（uniform + source/backdrop 纹理 + 采样器）。
+pub fn create_blend_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Blend BG Layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+/// 创建 Blend 合成管线（全屏 pass，无顶点缓冲）。
+pub fn create_blend_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    uniform_bgl: &wgpu::BindGroupLayout,
+    blend_bgl: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Blend Shader"),
+        source: wgpu::ShaderSource::Wgsl(BLEND_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Blend Pipeline Layout"),
+        bind_group_layouts: &[Some(uniform_bgl), Some(blend_bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Blend Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_fullscreen"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_blend"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE,
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        cache: None,
+        multiview_mask: None,
+    })
+}
 #[cfg(test)]
 mod tests {
     use super::*;

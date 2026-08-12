@@ -423,3 +423,68 @@ fn parity_draw_order_controls_z_order() {
     let outer = 0usize;
     assert_eq!(&pixels[outer..outer + 3], &[255, 0, 0], "父背景图应可见于子 fill 外");
 }
+
+/// C（R3278）：GPU clip（draw_order 白 rect 擦白）与 CPU apply_clip 语义一致——
+/// clip rect 外擦白、rect 内保留后续图元。
+#[serial]
+#[test]
+fn parity_clip_draw_order_matches_cpu() {
+    use crate::primitive::{ClipPrimitive, DrawOp};
+    let mut p = RenderPrimitives::default();
+    // 全帧蓝底
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 255, 255),
+    });
+    // clip rect (2,2,12,12)：rect 外擦白
+    p.clips.push(ClipPrimitive {
+        rect: Rect::new(2.0, 2.0, 12.0, 12.0),
+    });
+    p.draw_order = vec![DrawOp::Fill(0), DrawOp::Clip(0)];
+    // CPU 与 GPU 分别渲染对比
+    let cpu_fb = render_cpu(16, 16, &p, None);
+    let gpu_px = render_gpu(16, 16, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 0);
+    assert_eq!(over, 0, "clip 场景 CPU/GPU 应逐像素一致，diff={over} max={max_diff}");
+    // 语义抽查：clip 内 (4,4) 蓝、clip 外 (0,0) 白
+    let inner = (4 * 16 + 4) * 4;
+    assert_eq!(&gpu_px[inner..inner + 3], &[0, 0, 255], "clip 内应保留蓝");
+    let outer = 0usize;
+    assert_eq!(&gpu_px[outer..outer + 3], &[255, 255, 255], "clip 外应擦白");
+}
+
+/// C（R3278）：GPU blend 双 pass（源层 + backdrop 混合）与 CPU 源层重渲染一致。
+/// 背景灰 + multiply 元素层红 → 混合结果 = 红×灰（CPU/GPU 对照）。
+#[serial]
+#[test]
+fn parity_blend_draw_order_matches_cpu() {
+    use crate::primitive::{BlendMode, BlendModePrimitive, DrawOp};
+    let mut p = RenderPrimitives::default();
+    // 背景：全帧灰 128
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        color: Color::rgba(128, 128, 128, 255),
+    });
+    // blend 元素：红（multiply 与背景混合）
+    p.blend_modes.push(BlendModePrimitive {
+        rect: Rect::new(2.0, 2.0, 12.0, 12.0),
+        mode: BlendMode::Multiply,
+    });
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(2.0, 2.0, 12.0, 12.0),
+        color: Color::rgba(255, 0, 0, 255),
+    });
+    p.draw_order = vec![DrawOp::Fill(0), DrawOp::BlendMode(0), DrawOp::Fill(1)];
+
+    let cpu_fb = render_cpu(16, 16, &p, None);
+    let gpu_px = render_gpu(16, 16, &p, None);
+    // blend 区域 (2,2,12,12) 内 multiply：红×灰 = (128, 0, 0)
+    let inner = (4 * 16 + 4) * 4;
+    assert_eq!(&gpu_px[inner..inner + 3], &[128, 0, 0], "GPU blend 区应 multiply 红×灰");
+    // 区域外保持背景灰
+    let outer = 0usize;
+    assert_eq!(&gpu_px[outer..outer + 3], &[128, 128, 128], "blend 外应保持背景");
+    // CPU/GPU 全帧一致（容差 0）
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 0);
+    assert_eq!(over, 0, "blend 场景 CPU/GPU 应逐像素一致，diff={over} max={max_diff}");
+}
