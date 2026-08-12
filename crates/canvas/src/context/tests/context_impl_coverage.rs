@@ -297,6 +297,78 @@ fn test_context_create_image_data_overflow_saturates_r3354() {
     );
 }
 
+// R3355：shadowBlur 极大值不再触发 i32 溢出 panic + box_blur 挂起/u32 溢出。
+//
+// 旧实现三重故障：① shadow_blur_geom 的 `(blur/2).round() as i32` 饱和到 i32::MAX，
+// `pad = 3·i32::MAX as i32` 再饱和到 i32::MAX；② draw_shadow_* 的 `rect.floor() as i32 ± pad`
+// 在 i32 域加减法溢出（cargo debug overflow-checks=true → panic，修复前确定性复现于
+// context_impl.rs:1115 `attempt to add with overflow`）；③ box_blur_alpha `for dx in -r..=r`
+// 达 ~4.3e9 次迭代 + `sum: u32` 在 ~17M 次累加后溢出 panic。
+//
+// 修复：shadow_blur_geom 半径封顶 SHADOW_BLUR_MAX_RADIUS(8192)（pad=24576 远在 i32 内、
+// box_blur 窗口 sum 上限安全）+ draw_shadow_rect/path 的 region padding 改 saturating_add/sub。
+// shadowBlur 经 setShadowBlur op 从 JS 可控，故页面/攻击者可触发——确定性 panic = DoS。
+// 本组测覆盖三条 shadow 路径（fillRect→rect / fill→path / stroke→stroke footprint）均不 panic。
+#[test]
+fn test_shadow_rect_huge_blur_no_overflow_panic_r3355() {
+    let mut ctx = CanvasContext::new(50, 50);
+    ctx.set_shadow_color(Color::rgba(0, 0, 0, 255));
+    ctx.set_shadow_blur(1e30);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    // draw_shadow_rect 经 fillRect 触发：region rx0/rx1 i32 溢出（修复前 panic @ context_impl.rs:1115）。
+    ctx.fill_rect(0.0, 0.0, 20.0, 20.0);
+}
+
+#[test]
+fn test_shadow_path_huge_blur_no_overflow_panic_r3355() {
+    let mut ctx = CanvasContext::new(50, 50);
+    ctx.set_shadow_color(Color::rgba(0, 0, 0, 255));
+    ctx.set_shadow_blur(1e30);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.begin_path();
+    ctx.move_to(5.0, 5.0);
+    ctx.line_to(25.0, 5.0);
+    ctx.line_to(25.0, 25.0);
+    ctx.close_path();
+    // draw_shadow_path 经 fill 触发：region padding i32 溢出（修复前 panic）。
+    ctx.fill();
+}
+
+#[test]
+fn test_shadow_stroke_huge_blur_no_overflow_panic_r3355() {
+    let mut ctx = CanvasContext::new(50, 50);
+    ctx.set_shadow_color(Color::rgba(0, 0, 0, 255));
+    ctx.set_shadow_blur(1e30);
+    ctx.set_stroke_style(CanvasStyle::Color(Color::rgba(255, 0, 0, 255)));
+    ctx.set_line_width(4.0);
+    ctx.begin_path();
+    ctx.move_to(5.0, 25.0);
+    ctx.line_to(45.0, 25.0);
+    // draw_shadow_stroke 经 stroke 触发（pad 为 f32 域，本路径修复前不 panic，纳入回归锁防止
+    // 未来重构改回 i32 域时回退）。
+    ctx.stroke();
+}
+
+// R3355：shadow_blur_geom 半径封顶行为锁——shadowBlur 远超封顶值时，半径钳到 SHADOW_BLUR_MAX_RADIUS，
+// 阴影仍正常软化（非硬边 no-op），且 pad = 3·封顶值 合法 i32。
+#[test]
+fn test_shadow_blur_geom_caps_radius_r3355() {
+    use crate::context::raster::SHADOW_BLUR_MAX_RADIUS;
+    // 正常 blur：半径 = round(blur/2)。
+    let (r, pad, passes) = crate::context::raster::shadow_blur_geom(20.0);
+    assert_eq!(r, 10);
+    assert_eq!(pad, 30);
+    assert_eq!(passes, 3);
+    // 极大 blur：半径钳到封顶，pad = 3·封顶（合法 i32，远小于 i32::MAX）。
+    let (r_big, pad_big, _) = crate::context::raster::shadow_blur_geom(1e30);
+    assert_eq!(r_big, SHADOW_BLUR_MAX_RADIUS);
+    assert_eq!(pad_big, (3 * SHADOW_BLUR_MAX_RADIUS) as i32);
+    assert!(pad_big < i32::MAX, "封顶后 pad 须在 i32 范围内（避免下游 i32 溢出）");
+    // blur<=0：no-op。
+    assert_eq!(crate::context::raster::shadow_blur_geom(0.0), (0, 0, 0));
+    assert_eq!(crate::context::raster::shadow_blur_geom(-5.0), (0, 0, 0));
+}
+
 #[test]
 fn test_context_put_image_data_out_of_bounds() {
     let mut ctx = CanvasContext::new(10, 10);

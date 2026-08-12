@@ -220,11 +220,20 @@ pub(crate) fn box_blur_alpha(buf: &mut [u8], w: usize, h: usize, radius: usize) 
 /// R3242：shadowBlur 几何参数——返回 `(radius_per_pass, pad, passes)`。
 /// 3 遍 box blur（半径 `round(blur/2)`）≈ gaussian（W3C 阴影软度标准近似），比 R3240 单遍 triangle
 /// 衰减更平滑。`pad = 3·radius` 覆盖 3 遍总扩散。`blur<=0` 返 `(0,0,0)`（硬边，no-op）。
+///
+/// R3355：半径封顶 `MAX_RADIUS`（8192）。shadowBlur 极大值（如 1e30）经 `(blur/2).round() as i32`
+/// 饱和到 i32::MAX，致下游三重故障：① pad = 3·i32::MAX 经 `as i32` 饱和到 i32::MAX，region padding
+/// 的 i32 加减法溢出（draw_shadow_*，已另改 saturating_add/sub）；② box_blur_alpha 的 `for dx in -r..=r`
+/// 达 ~4.3e9 次迭代挂起；③ box_blur 的 `sum: u32` 在 ~17M 次累加后溢出 panic。封顶后 pad=24576 远在
+/// i32 内、box_blur 窗口 16385 窗样本 sum 上限 16385×255≈4.2M（u32 安全）、迭代量可控。封顶值远超
+/// 任何可见阴影软度（Chrome 实践上限同量级），spec 无强制上限，属合理实现限制。
+pub(crate) const SHADOW_BLUR_MAX_RADIUS: usize = 8192;
+
 pub(crate) fn shadow_blur_geom(blur: f32) -> (usize, i32, u32) {
     if blur <= 0.0 {
         return (0, 0, 0);
     }
-    let r = ((blur / 2.0).round() as i32).max(1) as usize;
+    let r = (((blur / 2.0).round() as i32).max(1) as usize).min(SHADOW_BLUR_MAX_RADIUS);
     (r, (3 * r) as i32, 3)
 }
 

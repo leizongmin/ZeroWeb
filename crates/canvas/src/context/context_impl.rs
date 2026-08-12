@@ -1110,10 +1110,14 @@ impl CanvasContext {
         let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
         let cw = self.width as i32;
         let ch = self.height as i32;
-        let rx0 = (rect.left().floor() as i32 - pad).max(0);
-        let ry0 = (rect.top().floor() as i32 - pad).max(0);
-        let rx1 = (rect.right().ceil() as i32 + pad).min(cw);
-        let ry1 = (rect.bottom().ceil() as i32 + pad).min(ch);
+        // R3355：shadowBlur 极大值经 shadow_blur_geom 使 pad 经 f32→i32 饱和到 i32::MAX，
+        // 此时 `rect.floor() as i32 ± pad` 的 i32 加减法溢出（cargo debug overflow-checks
+        // 致 panic，release 回绕致 region 错乱）。改 saturating_add/sub：pad 下溢钳到 0、
+        // 上溢钳到 i32::MAX，再经 .max(0)/.min(cw) 规整到画布内——region 仍合法。
+        let rx0 = (rect.left().floor() as i32).saturating_sub(pad).max(0);
+        let ry0 = (rect.top().floor() as i32).saturating_sub(pad).max(0);
+        let rx1 = (rect.right().ceil() as i32).saturating_add(pad).min(cw);
+        let ry1 = (rect.bottom().ceil() as i32).saturating_add(pad).min(ch);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
@@ -1165,10 +1169,11 @@ impl CanvasContext {
         }
         let cw = self.width as i32;
         let ch = self.height as i32;
-        let rx0 = (min_x.floor() as i32 - pad).max(0);
-        let ry0 = (min_y.floor() as i32 - pad).max(0);
-        let rx1 = (max_x.ceil() as i32 + pad).min(cw);
-        let ry1 = (max_y.ceil() as i32 + pad).min(ch);
+        // R3355：saturating_add/sub 避免 pad（极大 shadowBlur 时为 i32::MAX）致 i32 加减溢出。
+        let rx0 = (min_x.floor() as i32).saturating_sub(pad).max(0);
+        let ry0 = (min_y.floor() as i32).saturating_sub(pad).max(0);
+        let rx1 = (max_x.ceil() as i32).saturating_add(pad).min(cw);
+        let ry1 = (max_y.ceil() as i32).saturating_add(pad).min(ch);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
