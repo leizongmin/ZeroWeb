@@ -87,12 +87,12 @@
 - **#11 已修（R3269）**：compositor import blit 顶点格式对齐（7-float）
 - **#6/#7/#8/#9 已修（R3271）**：整链契约测试、CI GPU 套件（此前 CI 只跑 cpu::）、
   回退 blit 视觉验证、多渲染器交替
-- 真 Vulkan dma-buf（wgpu 24→30 升级，dependency-upgrade-backlog P1 独立工程）
-- 窗口模式滤镜/变换（headless 守卫；现回退 CPU 慢但对）、clip GPU 实现、
-  blend GPU 实现
-- **#14 GPU draw_order**：GPU 分桶绘制 vs CSS painting order（DC-10：父 bg-image
-  被子元素 bg-color 场景缺陷）——修复需绘制阶段按 draw_order 重构（每图元独立
-  顶点数组 + 单 draw call），独立任务
+- **wgpu 30 升级完成（R3275）** + 真 dma-buf 受 upstream 限制（导入 hal API 存在
+  但无公开包装、导出无 API，需 wgpu 31+）
+- **GPU draw_order 重构完成（R3277）**：按 draw_order 逐图元绘制，修复 DC-10 z 序
+- **GPU clip/blend 完成（R3278）**：clip 白 rect 擦白 + blend 双 pass 源层混合
+  （BLEND_SHADER 16 模式），与 CPU 逐像素一致
+- **窗口模式滤镜/变换完成（R3279）**：离屏纹理 ping-pong + blit 回 surface
 - **#12 device-lost**：真实恢复循环（wgpu 24 无 DeviceLostCallback；现「失败→CPU
   回退」已覆盖正确性，缺 GPU 设备重建）
 - **#13 atlas 2048**：已是 WebGL2 下限兼容值（所有设备支持），rebuild 机制兜底——
