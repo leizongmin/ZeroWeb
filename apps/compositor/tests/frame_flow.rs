@@ -1096,3 +1096,43 @@ fn compositor_consumes_full_renderer_style_frame() {
     assert_eq!((frame.width, frame.height), (32, 32));
     assert_eq!(&frame.rgba[..4], &[0, 128, 255, 255], "全字段帧应正确光栅化");
 }
+
+/// R3285：合成器 GPU 光栅路径的 scroll——readback 后 CPU bake 位移（GPU 光栅输出
+/// 与 CPU 同路径 bake），scroll 归零 + 像素位移正确。
+#[test]
+fn compositor_gpu_scroll_transform_bakes_pixels() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[
+        ("ZW_COMPOSITOR_GPU", "1"),
+        ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0"),
+        ("ZW_COMPOSITOR_SCROLL_TRANSFORM", "1"),
+    ]);
+    let frame = make_frame(32, 24, [128, 64, 32, 255]);
+    assert_eq!(submit_frame(&mut transport, 1, 9, 4, 1, frame), (9, 4, 1));
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: 9,
+                scroll_x: 0.0,
+                scroll_y: 8.0,
+            },
+        })
+        .expect("set scroll");
+    let ack: IpcMessage = transport.recv().expect("scroll ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    let frame = get_frame(&mut transport, 3, 9, 4, 1);
+    // bake 后 scroll 归零
+    assert_eq!(frame.scroll_y, 0.0, "bake 后 scroll_y 应归零");
+    // 像素位移：内容上移 8px → (8,0) 处应为原 (0,0) 的内容色
+    let top = (0 * 32 + 8) * 4;
+    assert_eq!(&frame.rgba[top..top + 3], &[128, 64, 32], "滚动后顶部应显示下方内容");
+    // 底部新露出的 8px 为黑（bake 黑底补，对齐 CPU 路径语义）
+    let bottom = (23 * 32 + 16) * 4;
+    assert_eq!(
+        &frame.rgba[bottom..bottom + 3],
+        &[0, 0, 0],
+        "底部露出应为黑（bake 黑底）"
+    );
+}
