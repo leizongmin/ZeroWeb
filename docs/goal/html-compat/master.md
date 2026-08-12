@@ -2,8 +2,8 @@
 
 ## 当前状态
 
-- 阶段：M0
-- 状态：功能完成，GPU 门禁待 CI
+- 阶段：M1
+- 状态：A/B 完成，C 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -21,7 +21,7 @@
 
 | 里程碑 | 主题 | 状态 |
 |---|---|---|
-| M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | pending |
+| M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | in_progress |
 | M2 | `page-runtime` 共享默认动作核心 | pending |
 | M3 | 文本、选择/表单、导航/交互元素族 | pending |
 | M4 | live renderer WebDriver 与 WPT testdriver | pending |
@@ -30,6 +30,16 @@
 
 CSS、布局或绘制根因只在本目标记录最小复现，移交对应开发线，不在本线旁路修补。
 
+## M1 工作包
+
+- [x] `PageNodeHandle/PageNodeRef/PageTarget` contract
+- [x] renderer → protocol → browser document generation
+- [x] hit-test opaque node handle
+- [x] press/release 稳定目标与 stale generation 取消
+- [ ] JavaScript 禁用时 UA 默认动作
+- [ ] beforeinput/input 与键盘入口统一
+- [ ] focus/label/activation/forms 完整验收
+
 ## 下一步
 
-提交 M0 阶段进展并进入 M1 `PageNodeRef` spike；同时观察 CI 的 GPU 门禁结果。
+提交 M1-A/B 阶段进展，继续实现 JavaScript-disabled 默认动作。

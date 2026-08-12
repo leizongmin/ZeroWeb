@@ -78,6 +78,8 @@ pub struct TabSnapshot {
     pub hit_test: Option<HitTestCache>,
     /// 导航世代：每次 `begin_navigation` 递增，用于丢弃 stale ViewPainted。
     pub navigation_epoch: u64,
+    /// 当前导航内的 Document 世代。
+    pub document_generation: u64,
     /// 已提交给 compositor 的最新页面帧。
     pub compositor_submission: Option<CompositorSubmission>,
     /// compositor 已完成且可显示的最新页面位图。
@@ -109,6 +111,7 @@ impl TabSnapshot {
             html_source: if html.is_empty() { None } else { Some(html.to_string()) },
             hit_test: wv.build_hit_test_cache(),
             navigation_epoch: 0,
+            document_generation: 1,
             compositor_submission: None,
             compositor_frame: None,
             compositor_present: None,
@@ -121,6 +124,7 @@ impl TabSnapshot {
     /// 导航开始：丢弃上一页绘制结果，避免 compositor 继续显示 stale 帧。
     pub fn begin_navigation(&mut self, url: String) {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.document_generation = 0;
         self.clear_paint();
         self.loading = true;
         self.url = Some(url);

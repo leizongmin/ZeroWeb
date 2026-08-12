@@ -232,6 +232,7 @@ pub fn paint_snapshot_from_primitives(
     image_payloads: Vec<IpcImagePayload>,
     hit_test: Option<HitTestCache>,
     navigation_epoch: u64,
+    document_generation: u64,
 ) -> PaintSnapshotParams {
     let mut glyph_source_ids = HashMap::new();
     let mut glyph_text_runs = Vec::new();
@@ -260,6 +261,7 @@ pub fn paint_snapshot_from_primitives(
         viewport_height,
         document_height,
         navigation_epoch,
+        document_generation,
         fills: primitives
             .fills
             .iter()
@@ -507,7 +509,8 @@ mod tests {
             synthetic_italic: true,
         });
 
-        let snapshot = paint_snapshot_from_primitives(10, 10, 10.0, &primitives, &[], vec![], None, 1);
+        let snapshot = paint_snapshot_from_primitives(10, 10, 10.0, &primitives, &[], vec![], None, 1, 2);
         assert!(snapshot.glyphs[0].synthetic_italic);
+        assert_eq!(snapshot.document_generation, 2);
     }
 }

@@ -206,6 +206,8 @@ struct RendererRuntime {
     interaction: PageInteractionState,
     /// 与浏览器 TabSnapshot 对齐的导航世代。
     navigation_epoch: u64,
+    /// 当前导航内的 Document 世代；新建 Document 时递增。
+    document_generation: u64,
     /// 已发送图片 key（S8）：browser 端 ImageCache 已存则不再重传像素；navigation 重置。
     sent_image_keys: std::collections::HashSet<u64>,
     /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
@@ -314,6 +316,7 @@ impl RendererRuntime {
             javascript_enabled: true,
             interaction: PageInteractionState::new(),
             navigation_epoch: 0,
+            document_generation: 0,
             // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
             // 已存则不再重传像素（DOM 变更 publish 的 ViewPainted 体积大头）。navigation 重置。
             sent_image_keys: std::collections::HashSet::new(),
@@ -605,6 +608,7 @@ impl RendererRuntime {
             title,
             payloads,
             self.navigation_epoch,
+            self.document_generation,
         )?;
         // R3254-M1：legacy 同步路径写出的帧在此标记 sent（compositor 路径由发布线程回传）。
         self.sent_image_keys.extend(sent_now);
@@ -1643,6 +1647,7 @@ impl RendererRuntime {
         self.interaction.clear();
 
         self.navigation_epoch = params.navigation_epoch;
+        self.document_generation = self.document_generation.wrapping_add(1).max(1);
         let page_url = params.url.clone();
         self.webview
             .as_mut()
@@ -1674,6 +1679,7 @@ impl RendererRuntime {
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
+        self.document_generation = self.document_generation.wrapping_add(1).max(1);
         self.last_published_title = None;
         // P1a change-on-blur：加载新 HTML 清焦点状态。
         self.form_controls.clear();
@@ -1809,6 +1815,9 @@ impl RendererRuntime {
             .map(|hit| {
                 let selector = selector_from_element_hit(&hit);
                 HitTestElementResultParams {
+                    navigation_epoch: self.navigation_epoch,
+                    document_generation: self.document_generation,
+                    node_handle: Some(hit.node_handle),
                     tag_name: Some(hit.tag_name),
                     id: hit.id,
                     class_name: hit.class_name,
@@ -1820,6 +1829,9 @@ impl RendererRuntime {
                 }
             })
             .unwrap_or(HitTestElementResultParams {
+                navigation_epoch: self.navigation_epoch,
+                document_generation: self.document_generation,
+                node_handle: None,
                 tag_name: None,
                 id: None,
                 class_name: None,
@@ -2252,6 +2264,7 @@ fn publish_render_with_layout(
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
     navigation_epoch: u64,
+    document_generation: u64,
 ) -> Result<Vec<u64>, String> {
     // R3254-M1：同步写出成功后才标记这些 key（sent 标记 = 实际在线上）。
     let sync_sent_keys = image_payloads
@@ -2267,6 +2280,7 @@ fn publish_render_with_layout(
         image_payloads,
         frame.hit_test.clone(),
         navigation_epoch,
+        document_generation,
     );
     let frame_id = publish_state.next_frame_id;
     publish_state.next_frame_id += 1;

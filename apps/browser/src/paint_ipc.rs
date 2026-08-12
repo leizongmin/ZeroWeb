@@ -315,6 +315,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
+    snap.document_generation = params.document_generation;
     // 性能门禁优化 S3（2026-08-08）：快照到达时缓存内容宽度（每快照一次 O(P) 扫描，
     // 替代旧实现的每 mousemove/wheel 扫描）
     snap.document_width = Some(document_width);
@@ -350,6 +351,7 @@ pub(crate) fn apply_compositor_paint_metadata(snap: &mut TabSnapshot, params: &m
         .fold(0.0f32, f32::max);
 
     snap.document_height = Some(params.document_height);
+    snap.document_generation = params.document_generation;
     snap.document_width = Some(fill_max.max(glyph_max).max(image_max));
     snap.hit_test = params.hit_test.take().and_then(hit_test_cache_from_ipc);
 }
@@ -416,6 +418,7 @@ mod tests {
         let mut snap = TabSnapshot::default();
         let params = PaintSnapshotParams {
             document_height: 42.0,
+            document_generation: 9,
             hit_test: Some(IpcHitTestCache {
                 doc_root: 1,
                 layout_root: IpcHitTestLayoutNode {
@@ -446,6 +449,16 @@ mod tests {
         apply_paint_snapshot(&mut snap, params);
 
         assert!(snap.last_render.is_some(), "frame data should still be applied");
+        assert_eq!(snap.document_generation, 9);
+        let hit = snap
+            .hit_test
+            .as_ref()
+            .and_then(|cache| cache.hit_test_element(1.0, 1.0))
+            .expect("hit");
+        assert_eq!(
+            hit.node_handle,
+            zero_engine::node_id_to_u64(zero_engine::node_id_from_u64(1))
+        );
         assert!(
             snap.hit_test.is_some(),
             "browser should restore hit-test cache from IPC snapshot"

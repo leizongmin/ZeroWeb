@@ -352,6 +352,7 @@ fn element_hit_from_cache(
     let meta = nodes.get(&element)?;
     let (x, y, width, height) = layout_box_for_node(layout, element, 0.0, 0.0)?;
     Some(ElementHit {
+        node_handle: node_id_to_u64(element),
         tag_name: meta.tag_name.clone(),
         id: meta.id.clone(),
         class_name: meta.class_name.clone(),
@@ -454,6 +455,8 @@ fn find_image_src(doc: &Document, mut node: NodeId) -> Option<String> {
 /// 元素命中测试结果（文档坐标系）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElementHit {
+    /// 当前 Document 内的 opaque DOM 节点句柄。
+    pub node_handle: u64,
     /// 元素标签名（小写）。
     pub tag_name: String,
     /// `id` 属性。
@@ -529,6 +532,7 @@ fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Op
     };
     let (x, y, width, height) = layout_box_for_node(layout, element, 0.0, 0.0)?;
     Some(ElementHit {
+        node_handle: node_id_to_u64(element),
         tag_name: elem.local_name().to_ascii_lowercase(),
         id: doc.get_attribute(element, "id"),
         class_name: doc.get_attribute(element, "class"),
@@ -794,6 +798,8 @@ mod tests {
         assert_eq!(hit.tag_name, "div");
         assert_eq!(hit.id.as_deref(), Some("main"));
         assert_eq!(hit.class_name.as_deref(), Some("box"));
+        let node = crate::find_by_selector(&doc, "#main").expect("node");
+        assert_eq!(hit.node_handle, node_id_to_u64(node));
     }
 
     /// Form controls must remain their own hit-test targets even when wrapped by a label.

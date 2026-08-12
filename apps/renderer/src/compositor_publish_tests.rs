@@ -94,6 +94,7 @@ fn publish_frame_emits_viewpainted_with_primitives() {
         Some("smoke".into()),
         Vec::new(),
         7,
+        3,
     )
     .expect("publish");
 
@@ -112,6 +113,7 @@ fn publish_frame_emits_viewpainted_with_primitives() {
         .expect("须产出 ViewPainted");
     assert!(!painted.fills.is_empty());
     assert_eq!(painted.navigation_epoch, 7);
+    assert_eq!(painted.document_generation, 3);
 }
 
 #[test]
@@ -132,6 +134,7 @@ fn publish_frame_emits_compositor_sequence_with_full_paint_payload() {
             None,
             Vec::new(),
             epoch,
+            1,
         )
         .expect("publish compositor frame");
     }
@@ -177,6 +180,7 @@ fn publish_compositor_frame_carries_dirty_rects() {
         None,
         Vec::new(),
         11,
+        1,
     )
     .expect("publish compositor frame");
 
@@ -212,6 +216,7 @@ fn publish_mode_switch_republishes_legacy_only() {
         None,
         Vec::new(),
         6,
+        1,
     )
     .expect("publish compositor frame");
     publish_state.set_mode(FramePublishMode::Legacy);
@@ -225,6 +230,7 @@ fn publish_mode_switch_republishes_legacy_only() {
             None,
             Vec::new(),
             6,
+            1,
         )
         .expect("publish legacy frame");
     }

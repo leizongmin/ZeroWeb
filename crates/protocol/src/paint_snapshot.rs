@@ -511,6 +511,9 @@ pub struct PaintSnapshotParams {
     /// 与浏览器 `TabSnapshot.navigation_epoch` 对齐；不匹配则丢弃 stale 帧。
     #[serde(default)]
     pub navigation_epoch: u64,
+    /// 当前导航内的 Document 世代；每次创建新 Document 递增。
+    #[serde(default)]
+    pub document_generation: u64,
 }
 
 /// IPC 命中测试布局节点（仅几何 + node id）。
@@ -587,6 +590,7 @@ impl Default for PaintSnapshotParams {
             dirty_rects: Vec::new(),
             hit_test: None,
             navigation_epoch: 0,
+            document_generation: 0,
         }
     }
 }

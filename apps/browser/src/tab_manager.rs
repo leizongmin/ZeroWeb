@@ -56,6 +56,8 @@ pub struct TabManager {
     javascript_enabled: bool,
     /// 各 Tab 最近一次交互目标（用于 keydown 等事件派发）。
     event_targets: HashMap<TabId, String>,
+    /// primary press 时捕获的稳定页面目标；release/click 不重新命中其他节点。
+    pressed_targets: HashMap<TabId, zero_page_runtime::PageTarget>,
     /// 焦点位于可编辑文本控件（input 文本类 / textarea）的 Tab（R3254-H1 回执维护；
     /// 滚动默认动作守卫，覆盖 Tab 导航/JS auto-focus 等无 ime_rect 的场景）。
     focused_text_input: HashSet<TabId>,
@@ -96,6 +98,7 @@ impl TabManager {
             poll_tick: 0,
             javascript_enabled: true,
             event_targets: HashMap::new(),
+            pressed_targets: HashMap::new(),
             focused_text_input: HashSet::new(),
             ime_target_rects: HashMap::new(),
             pending_dispatch: HashMap::new(),
@@ -521,6 +524,32 @@ impl TabManager {
         hit_test.hit_test_element(x, y)
     }
 
+    fn page_target_for_hit(
+        &self,
+        tab_id: TabId,
+        hit: &zero_engine::ElementHit,
+    ) -> Option<zero_page_runtime::PageTarget> {
+        let snapshot = self.snapshots.get(&tab_id)?;
+        (snapshot.document_generation != 0).then(|| {
+            zero_page_runtime::PageTarget::new(
+                zero_page_runtime::PageNodeRef::new(
+                    snapshot.navigation_epoch,
+                    snapshot.document_generation,
+                    zero_page_runtime::PageNodeHandle::new(hit.node_handle),
+                ),
+                selector_from_element_hit(hit),
+            )
+        })
+    }
+
+    fn target_is_current(&self, tab_id: TabId, target: &zero_page_runtime::PageTarget) -> bool {
+        self.snapshots.get(&tab_id).is_some_and(|snapshot| {
+            target
+                .node_ref()
+                .is_current(snapshot.navigation_epoch, snapshot.document_generation)
+        })
+    }
+
     /// 异步向页面元素派发 DOM 事件（fire-and-forget）。
     ///
     /// `on_allowed` 在 `default_allowed = true` 时由后续 poll 触发；用于把链接导航等默认动作
@@ -686,17 +715,25 @@ impl TabManager {
     /// 由 `take_pending_actions` 在主事件循环中执行（仿 Chrome 延迟导航）。
     /// `background_tab` = Ctrl/Cmd+点击 → 后台新标签打开。
     pub fn dispatch_page_click(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32, background_tab: bool) {
-        let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) else {
+        let current_hit = self.hit_test_element(tab_id, doc_x, doc_y);
+        let pressed = self.pressed_targets.remove(&tab_id);
+        let selector = match pressed {
+            Some(target) if self.target_is_current(tab_id, &target) => target.selector().to_string(),
+            Some(_) => return,
+            None => current_hit.as_ref().map(selector_from_element_hit).unwrap_or_default(),
+        };
+        if selector.is_empty() {
             // https://w3c.github.io/uievents/#event-type-click
             // 合成器帧的浏览器侧命中缓存尚未就绪时，仍须把实际坐标交给渲染进程，
             // 否则原生控件会因缓存时序而完全不可点击。
             self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, false, None);
             self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, false, None);
             return;
-        };
-        let selector = selector_from_element_hit(&hit);
+        }
         self.event_targets.insert(tab_id, selector.clone());
-        self.update_ime_target_rect(tab_id, doc_x, &hit);
+        if let Some(hit) = current_hit.as_ref() {
+            self.update_ime_target_rect(tab_id, doc_x, hit);
+        }
 
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
         self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, false, None);
@@ -715,10 +752,16 @@ impl TabManager {
     pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
         if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
             let selector = selector_from_element_hit(&hit);
+            if let Some(target) = self.page_target_for_hit(tab_id, &hit) {
+                self.pressed_targets.insert(tab_id, target);
+            } else {
+                self.pressed_targets.remove(&tab_id);
+            }
             self.event_targets.insert(tab_id, selector.clone());
             self.update_ime_target_rect(tab_id, doc_x, &hit);
             self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, false, None);
         } else {
+            self.pressed_targets.remove(&tab_id);
             // https://w3c.github.io/uievents/#event-type-mousedown
             // 与 click 一致：命中缓存缺失不能阻断真实的页面指针事件。
             self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, false, None);
@@ -857,6 +900,7 @@ mod ime_tests {
     #[test]
     fn text_control_hit_anchors_candidate_window_at_pointer() {
         let hit = zero_engine::ElementHit {
+            node_handle: 1,
             tag_name: "textarea".to_string(),
             id: Some("notes".to_string()),
             class_name: None,
@@ -873,5 +917,83 @@ mod ime_tests {
             ..hit
         };
         assert_eq!(ime_target_rect_for_hit(73.0, &button), None);
+    }
+
+    #[test]
+    fn page_target_is_scoped_to_snapshot_document_generation() {
+        let tab_id = TabId(7);
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        manager.snapshots.insert(
+            tab_id,
+            TabSnapshot {
+                navigation_epoch: 4,
+                document_generation: 2,
+                ..Default::default()
+            },
+        );
+        let hit = zero_engine::ElementHit {
+            node_handle: 99,
+            tag_name: "button".to_string(),
+            id: Some("save".to_string()),
+            class_name: None,
+            selector: "#save".to_string(),
+            x: 0.0,
+            y: 0.0,
+            width: 20.0,
+            height: 10.0,
+        };
+
+        let target = manager.page_target_for_hit(tab_id, &hit).expect("target");
+        assert_eq!(target.selector(), "#save");
+        assert_eq!(target.node_ref().node().get(), 99);
+        assert!(manager.target_is_current(tab_id, &target));
+
+        manager.snapshots.get_mut(&tab_id).unwrap().document_generation = 3;
+        assert!(!manager.target_is_current(tab_id, &target));
+    }
+
+    #[test]
+    fn pressed_target_pairs_release_and_cancels_when_document_changes() {
+        let tab_id = TabId(8);
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
+            width: 320,
+            height: 120,
+            ..Default::default()
+        });
+        webview.load_html(
+            "<html><body style='margin:0'><button id='a' style='width:100px;height:40px'>A</button><button id='b' style='width:100px;height:40px'>B</button></body></html>",
+            None,
+        );
+        let mut snapshot = TabSnapshot::from_webview(&webview);
+        snapshot.navigation_epoch = 5;
+        snapshot.document_generation = 2;
+
+        let mut manager = TabManager::new((320, 120), PrefersColorSchemeValue::Light);
+        manager.snapshots.insert(tab_id, snapshot);
+        let find = |manager: &mut TabManager, id: &str| {
+            (0..120)
+                .step_by(2)
+                .find_map(|y| {
+                    (0..320).step_by(2).find_map(|x| {
+                        manager
+                            .hit_test_element(tab_id, x as f32, y as f32)
+                            .filter(|hit| hit.id.as_deref() == Some(id))
+                            .map(|_| (x as f32, y as f32))
+                    })
+                })
+                .expect("hit point")
+        };
+        let a = find(&mut manager, "a");
+        let b = find(&mut manager, "b");
+
+        manager.dispatch_page_mousedown(tab_id, a.0, a.1);
+        manager.dispatch_page_click(tab_id, b.0, b.1, false);
+        assert_eq!(manager.event_targets.get(&tab_id).map(String::as_str), Some("#a"));
+
+        manager.dispatch_page_mousedown(tab_id, a.0, a.1);
+        manager.snapshots.get_mut(&tab_id).unwrap().document_generation = 3;
+        manager.dispatch_page_click(tab_id, b.0, b.1, false);
+        assert_eq!(manager.event_targets.get(&tab_id).map(String::as_str), Some("#a"));
+        assert!(!manager.pressed_targets.contains_key(&tab_id));
     }
 }

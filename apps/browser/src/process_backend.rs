@@ -1070,6 +1070,7 @@ mod navigation_contract_tests {
             viewport_height: 600,
             document_height: 400.0,
             navigation_epoch: epoch,
+            document_generation: 1,
             fills: vec![IpcFill {
                 rect: IpcRect {
                     x: 0.0,

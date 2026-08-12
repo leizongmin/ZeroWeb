@@ -527,6 +527,15 @@ pub struct HitTestLinkResultParams {
 /// 元素命中测试结果（渲染→浏览器）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HitTestElementResultParams {
+    /// 所属导航 epoch。
+    #[serde(default)]
+    pub navigation_epoch: u64,
+    /// 所属 Document 世代。
+    #[serde(default)]
+    pub document_generation: u64,
+    /// 当前 Document 内的 opaque DOM 节点句柄。
+    #[serde(default)]
+    pub node_handle: Option<u64>,
     /// 命中元素标签名（小写）。
     pub tag_name: Option<String>,
     /// `id` 属性。

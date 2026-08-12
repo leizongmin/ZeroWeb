@@ -14,6 +14,7 @@ struct BrowserPaintSnapshot {
     loading: bool,
     url: Option<String>,
     navigation_epoch: u64,
+    document_generation: u64,
 }
 
 impl BrowserPaintSnapshot {
@@ -22,6 +23,7 @@ impl BrowserPaintSnapshot {
         self.last_render = None;
         self.loading = true;
         self.url = Some(url);
+        self.document_generation = 0;
     }
 
     fn should_composite_paint(&self) -> bool {
@@ -32,6 +34,7 @@ impl BrowserPaintSnapshot {
         if params.navigation_epoch != self.navigation_epoch {
             return;
         }
+        self.document_generation = params.document_generation;
         let mut primitives = RenderPrimitives::new();
         for fill in params.fills {
             primitives.fills.push(FillPrimitive {
@@ -56,6 +59,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
         viewport_height: 600,
         document_height: 400.0,
         navigation_epoch: epoch,
+        document_generation: 1,
         fills: vec![IpcFill {
             rect: IpcRect {
                 x: 0.0,
@@ -112,14 +116,17 @@ fn navigation_replaces_stale_browser_paint_with_view_painted() {
         loading: false,
         url: Some("https://old.example".into()),
         navigation_epoch: 0,
+        document_generation: 7,
     };
     assert!(snap.should_composite_paint());
 
     snap.begin_navigation("https://new.example".into());
     assert!(!snap.should_composite_paint(), "loading 中不应合成旧帧");
+    assert_eq!(snap.document_generation, 0);
 
     snap.apply_view_painted(red_paint_snapshot(snap.navigation_epoch));
     assert!(snap.should_composite_paint());
+    assert_eq!(snap.document_generation, 1);
     let fill = &snap.last_render.as_ref().unwrap().primitives().fills[0];
     assert_eq!(fill.color.r, 255);
     assert_eq!(fill.color.g, 0);
@@ -147,6 +154,7 @@ fn stale_epoch_view_painted_is_ignored() {
         loading: true,
         url: Some("https://new.example".into()),
         navigation_epoch: 2,
+        document_generation: 0,
     };
     snap.apply_view_painted(red_paint_snapshot(1));
     assert!(snap.last_render.is_none());

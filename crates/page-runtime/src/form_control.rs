@@ -2,6 +2,90 @@
 
 use std::collections::HashMap;
 
+/// 页面内 opaque DOM 节点句柄。
+///
+/// 当前承载 engine `NodeId` 的 ffi 值；调用方不得解析或假设其分配顺序。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PageNodeHandle(u64);
+
+impl PageNodeHandle {
+    /// 从 engine 提供的 opaque 值构造。
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// 返回跨 IPC 传输使用的 opaque 值。
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// 带文档作用域的稳定页面节点引用。
+///
+/// `navigation_epoch` 隔离跨文档导航，`document_generation` 隔离同一导航内的
+/// document replacement，`node` 标识该 document 中的具体节点。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PageNodeRef {
+    navigation_epoch: u64,
+    document_generation: u64,
+    node: PageNodeHandle,
+}
+
+impl PageNodeRef {
+    /// 构造页面节点引用。
+    pub const fn new(navigation_epoch: u64, document_generation: u64, node: PageNodeHandle) -> Self {
+        Self {
+            navigation_epoch,
+            document_generation,
+            node,
+        }
+    }
+
+    /// 所属导航 epoch。
+    pub const fn navigation_epoch(self) -> u64 {
+        self.navigation_epoch
+    }
+
+    /// 所属 document generation。
+    pub const fn document_generation(self) -> u64 {
+        self.document_generation
+    }
+
+    /// opaque 节点句柄。
+    pub const fn node(self) -> PageNodeHandle {
+        self.node
+    }
+
+    /// 节点引用是否属于当前文档作用域。
+    pub const fn is_current(self, navigation_epoch: u64, document_generation: u64) -> bool {
+        self.navigation_epoch == navigation_epoch && self.document_generation == document_generation
+    }
+}
+
+/// 页面交互目标：稳定节点身份 + 当前脚本定位 selector。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageTarget {
+    node_ref: PageNodeRef,
+    selector: String,
+}
+
+impl PageTarget {
+    /// 构造页面交互目标。
+    pub fn new(node_ref: PageNodeRef, selector: String) -> Self {
+        Self { node_ref, selector }
+    }
+
+    /// 稳定节点引用。
+    pub const fn node_ref(&self) -> PageNodeRef {
+        self.node_ref
+    }
+
+    /// 当前 adapter 用于脚本派发的 selector。
+    pub fn selector(&self) -> &str {
+        &self.selector
+    }
+}
+
 /// 页面输入路由的单一焦点所有者与最新指针目标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageInteractionState {
@@ -327,5 +411,25 @@ mod tests {
             state.set_focus_owner(Some("#note".to_string())),
             Some("#name".to_string())
         );
+    }
+
+    #[test]
+    fn page_node_ref_rejects_navigation_and_document_replacement() {
+        let node = PageNodeRef::new(7, 3, PageNodeHandle::new(42));
+
+        assert!(node.is_current(7, 3));
+        assert!(!node.is_current(8, 3));
+        assert!(!node.is_current(7, 4));
+        assert_eq!(node.node().get(), 42);
+    }
+
+    #[test]
+    fn same_node_handle_is_distinct_across_document_scopes() {
+        let first = PageNodeRef::new(1, 1, PageNodeHandle::new(9));
+        let navigated = PageNodeRef::new(2, 1, PageNodeHandle::new(9));
+        let replaced = PageNodeRef::new(1, 2, PageNodeHandle::new(9));
+
+        assert_ne!(first, navigated);
+        assert_ne!(first, replaced);
     }
 }
