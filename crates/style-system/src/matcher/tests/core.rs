@@ -1620,3 +1620,53 @@ fn test_matches_defined_pseudo_class_r3299() {
         "无连字符 tag（mywidget）应匹配 :defined（非合法 CE 名）"
     );
 }
+
+#[test]
+fn test_matches_blank_pseudo_class_r3300() {
+    // R3300：:blank（CSS UI L4 / Selectors L4 §12）——值空或纯空白的文本输入控件。
+    // 此前 CSS 解析器识别但 style-system matcher 走 `_ => false` → CSS `:blank` 恒不匹配，
+    // 与 DOM querySelector 不一致。补全为委派 Document::is_blank_element（与 :placeholder-shown
+    // 空值检测同源，但不要求 placeholder 属性）。
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+
+    // 空 input（无 value）→ :blank。
+    let empty_in = doc.create_element("input");
+    doc.append_child(root, empty_in).unwrap();
+
+    // 有值 input → 非 :blank。
+    let filled_in = doc.create_element("input");
+    doc.set_attribute(filled_in, "value", "text");
+    doc.append_child(root, filled_in).unwrap();
+
+    // 空 textarea → :blank。
+    let empty_ta = doc.create_element("textarea");
+    doc.append_child(root, empty_ta).unwrap();
+
+    // 纯空白 textarea → :blank。
+    let ws_ta = doc.create_element("textarea");
+    let ws_text = doc.create_text_node("   \n\t  ");
+    doc.append_child(ws_ta, ws_text).unwrap();
+    doc.append_child(root, ws_ta).unwrap();
+
+    // 有内容 textarea → 非 :blank。
+    let filled_ta = doc.create_element("textarea");
+    let content = doc.create_text_node("content");
+    doc.append_child(filled_ta, content).unwrap();
+    doc.append_child(root, filled_ta).unwrap();
+
+    // 非表单元素 div → 非 :blank。
+    let div = doc.create_element("div");
+    doc.append_child(root, div).unwrap();
+
+    let sel = simple_pseudo("blank");
+    assert!(matches_selector(&doc, empty_in, &sel), "空 input 应匹配 :blank");
+    assert!(!matches_selector(&doc, filled_in, &sel), "有值 input 不应匹配 :blank");
+    assert!(matches_selector(&doc, empty_ta, &sel), "空 textarea 应匹配 :blank");
+    assert!(matches_selector(&doc, ws_ta, &sel), "纯空白 textarea 应匹配 :blank");
+    assert!(
+        !matches_selector(&doc, filled_ta, &sel),
+        "有内容 textarea 不应匹配 :blank"
+    );
+    assert!(!matches_selector(&doc, div, &sel), "非表单元素 div 不应匹配 :blank");
+}

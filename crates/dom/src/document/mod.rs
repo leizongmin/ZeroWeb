@@ -1623,6 +1623,9 @@ impl Document {
             crate::query::PseudoClass::PlaceholderShown => self.is_placeholder_shown(node),
             crate::query::PseudoClass::Indeterminate => self.is_indeterminate(node),
             crate::query::PseudoClass::Default => self.is_default_form_element(node),
+            // `:blank` 须读 textarea 子文本，延后至此经 `is_blank_element` 复评（R3300 与 :placeholder-shown
+            // 空值检测同源，但不要求 placeholder 属性）。
+            crate::query::PseudoClass::Blank => self.is_blank_element(node),
             // `:scope`/`:lang()`/`:dir()` 须祖先链/根上下文，延后至此经 lang_dir 子模块复评。
             crate::query::PseudoClass::Scope => self.is_scope_element(node),
             crate::query::PseudoClass::Lang(ranges) => self.matches_lang(node, ranges),

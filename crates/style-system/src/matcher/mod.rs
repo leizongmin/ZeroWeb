@@ -285,6 +285,10 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "read-only" => is_read_only(doc, element),
             "read-write" => is_read_write(doc, element),
             "placeholder-shown" => is_placeholder_shown(doc, element),
+            // `:blank`——值空或纯空白的文本输入控件（CSS UI L4 / Selectors L4 §12）。
+            // R3300 DOM/CSS 同源：委派 Document::is_blank_element（与 :placeholder-shown 空值检测同源，
+            // 但不要求 placeholder 属性）。
+            "blank" => doc.is_blank_element(element),
             // :default / :indeterminate：HTML 静态语义（无 JS 交互状态）
             "default" => is_default(doc, element),
             "indeterminate" => is_indeterminate(doc, element),

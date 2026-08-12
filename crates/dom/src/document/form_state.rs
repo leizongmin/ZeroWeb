@@ -158,6 +158,27 @@ impl Document {
         }
     }
 
+    /// `:blank`（CSS UI L4 / Selectors L4 §12）：值空或纯空白的文本输入控件。
+    /// `<input>` 的 `value` 属性空/缺省；`<textarea>` 的文本内容空/纯空白。与
+    /// [`Self::is_placeholder_shown`] 的空值检测同源，但**不要求** `placeholder` 属性
+    /// （`:blank` 为无条件空值匹配，`:placeholder-shown` 须 placeholder 存在）。
+    /// 供 DOM `:blank` 选择器与 CSS matcher 同源（R3300）。
+    ///
+    /// **语义范围**：当前仅文本输入控件（input/textarea）。Selectors L4 草案的 `:blank` 原始定义更宽
+    /// （任何空内容元素，与 `:empty` 相近但容忍纯空白），但现实浏览器实现聚焦空输入控件
+    /// （Firefox 仅 `:blank`/`:placeholder-shown` 在 input 上）。本实现取可静态判定且高频的子集。
+    pub fn is_blank_element(&self, node: NodeId) -> bool {
+        let tag = match self.element_local_name(node) {
+            Some(t) => t,
+            None => return false,
+        };
+        match tag {
+            "input" => self.get_attribute(node, "value").is_none_or(|v| v.is_empty()),
+            "textarea" => !self.element_has_text_content(node),
+            _ => false,
+        }
+    }
+
     /// `:indeterminate`（HTML §4.15）静态可判定子集——
     /// - `<progress>` 无 `value` 属性（不确定进度条）；
     /// - `<input type="radio">` 其组（同 name + 同 form 宿主）内无任何 checked 成员。

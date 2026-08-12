@@ -147,6 +147,11 @@ pub enum PseudoClass {
     /// → `:defined` 返 true。镜像 R3271 fast-path 的连字符启发式（更精确的 PotentialCustomElementName
     /// 见 [`is_valid_custom_element_name`]）。registry-aware 精确化（engine 注入已注册名集）为 follow-up。
     Defined,
+    /// `:blank`——值空或纯空白的文本输入控件（CSS UI L4 / Selectors L4 §12）：`<input>` 的 `value`
+    /// 属性空/缺省，或 `<textarea>` 的文本内容空/纯空白。与 [`PseudoClass::PlaceholderShown`] 的空值
+    /// 检测同源，但**不要求** `placeholder` 属性（无条件空值匹配）。延后至
+    /// [`crate::Document::is_blank_element`] 复评（须读 textarea 子文本，matches_full 无 Document 访问）。
+    Blank,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -353,6 +358,9 @@ impl SimpleSelector {
             // `:placeholder-shown`/`:indeterminate`/`:default` 须 Document 子树/属性上下文，
             // 延后返 true，由 Document::element_matches_selector 复评。
             PseudoClass::PlaceholderShown | PseudoClass::Indeterminate | PseudoClass::Default => true,
+            // `:blank` 须读 textarea 子文本（Document 上下文），延后返 true，由
+            // Document::element_matches_selector 经 `is_blank_element` 复评。
+            PseudoClass::Blank => true,
             // `:any-link`/`:link`——纯元素属性求值（a/area/link 带 href）。
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
@@ -824,6 +832,9 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         // `:defined`——HTML §3.1.3 元素已定义（内置或已升级 custom element）。无参，纯元素 tag 名求值
         //（matches_full 内经 [`is_valid_custom_element_name`] 静态近似：合法 CE 名 → 未升级 → 不匹配）。
         "defined" => Some(PseudoClass::Defined),
+        // `:blank`——值空或纯空白的文本输入控件（CSS UI L4 / Selectors L4 §12）。无参，延后至
+        // Document::is_blank_element 复评（须读 textarea 子文本）。
+        "blank" => Some(PseudoClass::Blank),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
@@ -1198,5 +1209,17 @@ mod tests {
         let comp = parse_simple_selector("my-widget:defined").expect("my-widget:defined 应解析成功");
         assert_eq!(comp.pseudos.len(), 1);
         assert_eq!(comp.tag.as_deref(), Some("my-widget"));
+    }
+
+    /// R3300：`:blank` parse_pseudo 识别（不再落 `_ => None` 致整选择器无效）。
+    #[test]
+    fn test_parse_pseudo_blank_r3300() {
+        let sel = parse_simple_selector(":blank").expect(":blank 应解析为合法伪类");
+        assert_eq!(sel.pseudos.len(), 1);
+        assert!(matches!(sel.pseudos[0], PseudoClass::Blank));
+        // 复合 `input:blank` 应整体有效（此前 :blank 落 None 致返 None）。
+        let comp = parse_simple_selector("input:blank").expect("input:blank 应解析成功");
+        assert_eq!(comp.pseudos.len(), 1);
+        assert_eq!(comp.tag.as_deref(), Some("input"));
     }
 }

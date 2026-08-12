@@ -2510,3 +2510,65 @@ fn test_query_selector_defined_r3299() {
         "query_selector('div:defined') 对内置 div 应命中"
     );
 }
+
+// R3300：DOM `:blank` 选择器（CSS UI L4 / Selectors L4 §12：值空或纯空白的文本输入控件）。
+// 此前 CSS 解析器识别 `:blank` 但 DOM `query.rs::parse_pseudo` 落 `_ => None` → 有效选择器
+// `input:blank` / `textarea:blank` 被当无效（静默返空），DOM/CSS 不一致。补全为 DOM/CSS 同源
+// （Document::is_blank_element：input value 空/缺省 或 textarea 文本空/纯空白，不要求 placeholder）。
+#[test]
+fn test_query_selector_blank_r3300() {
+    let html = "<html><body>\
+         <input id='empty-in' placeholder='ph'>\
+         <input id='filled-in' value='text'>\
+         <textarea id='empty-ta'></textarea>\
+         <textarea id='ws-ta'>   \n\t  </textarea>\
+         <textarea id='filled-ta'>content</textarea>\
+         <div id='not-form'>div</div>\
+         </body></html>";
+    let mut doc = parse_html(html);
+    let root = doc.root();
+
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // `:blank` 匹配空 input（无 value）+ 空 textarea + 纯空白 textarea。
+    // 不匹配有值 input、有内容 textarea、非表单元素（div）。
+    let blank = ids_of(&doc, &doc.query_selector_all(root, ":blank"));
+    assert_eq!(
+        blank,
+        vec!["empty-in".to_string(), "empty-ta".to_string(), "ws-ta".to_string()],
+        ":blank 应匹配空 input + 空/纯空白 textarea，实际 {blank:?}"
+    );
+
+    // 复合 `input:blank` 仅命中空 input（排除 textarea）。
+    let blank_input = ids_of(&doc, &doc.query_selector_all(root, "input:blank"));
+    assert_eq!(
+        blank_input,
+        vec!["empty-in".to_string()],
+        "input:blank 应仅命中空 input"
+    );
+
+    // 复合 `textarea:blank` 仅命中空/纯空白 textarea。
+    let blank_ta = ids_of(&doc, &doc.query_selector_all(root, "textarea:blank"));
+    assert_eq!(
+        blank_ta,
+        vec!["empty-ta".to_string(), "ws-ta".to_string()],
+        "textarea:blank 应命中空 + 纯空白 textarea，实际 {blank_ta:?}"
+    );
+
+    // 直接调权威方法（DOM/CSS 共享）。
+    let empty_in = doc.get_element_by_id("empty-in").unwrap();
+    assert!(doc.is_blank_element(empty_in), "空 input 应 is_blank_element=true");
+    let filled_in = doc.get_element_by_id("filled-in").unwrap();
+    assert!(!doc.is_blank_element(filled_in), "有值 input 应 is_blank_element=false");
+    let ws_ta = doc.get_element_by_id("ws-ta").unwrap();
+    assert!(doc.is_blank_element(ws_ta), "纯空白 textarea 应 is_blank_element=true");
+    let filled_ta = doc.get_element_by_id("filled-ta").unwrap();
+    assert!(
+        !doc.is_blank_element(filled_ta),
+        "有内容 textarea 应 is_blank_element=false"
+    );
+    let div = doc.get_element_by_id("not-form").unwrap();
+    assert!(!doc.is_blank_element(div), "非表单元素应 is_blank_element=false");
+}
