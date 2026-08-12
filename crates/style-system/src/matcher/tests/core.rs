@@ -1579,3 +1579,44 @@ fn test_matches_is_pseudo() {
     assert!(matches_selector(&doc, div, &sel));
     assert!(!matches_selector(&doc, p, &sel));
 }
+
+#[test]
+fn test_matches_defined_pseudo_class_r3299() {
+    // R3299：:defined（HTML §3.1.3 + CSS Selectors §10）——内置元素或已升级 custom element 匹配；
+    // 未升级（合法 CE 名）不匹配。此前 CSS 解析器识别但 style-system matcher 走 `_ => false` →
+    // CSS `:defined` 恒不匹配，与 DOM querySelector 不一致。补全为复用 dom `is_valid_custom_element_name`
+    // 静态近似（合法 CE 名 → 未升级 → 不匹配），与 DOM 选择器同源。
+    let mut doc = zero_dom::Document::new();
+    let root = doc.root();
+
+    // 内置 div（无连字符）→ :defined。
+    let div = doc.create_element("div");
+    doc.append_child(root, div).unwrap();
+
+    // 未升级 custom element（合法 CE 名 my-widget）→ 非 :defined。
+    let widget = doc.create_element("my-widget");
+    doc.append_child(root, widget).unwrap();
+
+    // 合法 CE 名（多连字符）x-foo-bar → 非 :defined。
+    let nested = doc.create_element("x-foo-bar");
+    doc.append_child(root, nested).unwrap();
+
+    // 无连字符（mywidget）→ 视内置/未知 → :defined。
+    let builtin_like = doc.create_element("mywidget");
+    doc.append_child(root, builtin_like).unwrap();
+
+    let sel = simple_pseudo("defined");
+    assert!(matches_selector(&doc, div, &sel), "内置 div 应匹配 :defined");
+    assert!(
+        !matches_selector(&doc, widget, &sel),
+        "未升级 custom element（my-widget）不应匹配 :defined"
+    );
+    assert!(
+        !matches_selector(&doc, nested, &sel),
+        "未升级 custom element（x-foo-bar）不应匹配 :defined"
+    );
+    assert!(
+        matches_selector(&doc, builtin_like, &sel),
+        "无连字符 tag（mywidget）应匹配 :defined（非合法 CE 名）"
+    );
+}

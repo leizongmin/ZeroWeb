@@ -2436,3 +2436,77 @@ fn test_query_sibling_combinator_skips_text_nodes_r3285() {
         "h1 ~ p 应含两个 p（跳过 Text 节点）"
     );
 }
+
+// R3299：DOM `:defined` 选择器（HTML §3.1.3 + CSS Selectors §10）。
+// 此前 CSS 解析器识别 `:defined` 但 DOM `query.rs::parse_pseudo` 落 `_ => None`
+// → `querySelectorAll(":defined")` / `"div:defined"` 等有效选择器被当无效（静默返空），
+// DOM/CSS 不一致。补全为 DOM/CSS 同源静态近似（合法 custom element 名 → parse 时未升级 → 不匹配）。
+#[test]
+fn test_query_selector_defined_r3299() {
+    let html = "<html><body>\
+         <my-widget>custom</my-widget>\
+         <div id='d1'>built-in div</div>\
+         <p id='p1'>built-in p</p>\
+         <x-foo-bar>nested-hyphen custom</x-foo-bar>\
+         <a.b>dot tag</a.b>\
+         <mywidget>nolower-hyphen</mywidget>\
+         </body></html>";
+    let mut doc = parse_html(html);
+    let root = doc.root();
+
+    // 收集匹配元素的 tag 名（按文档序）。
+    let tags_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter()
+            .filter_map(|id| {
+                doc.get(*id).and_then(|n| match &n.kind {
+                    NodeKind::Element(e) => Some(e.local_name().to_string()),
+                    _ => None,
+                })
+            })
+            .collect()
+    };
+
+    // `:defined` 匹配所有**非合法 custom element 名**元素：html/head/body（内置根/结构）+
+    // div / p / a.b（含句点非 PCEN_Char）/ mywidget（无连字符）。
+    // 不匹配合法 CE 名（未升级）：my-widget / x-foo-bar。
+    let defined = tags_of(&doc, &doc.query_selector_all(root, ":defined"));
+    assert_eq!(
+        defined,
+        vec![
+            "html".to_string(),
+            "head".to_string(),
+            "body".to_string(),
+            "div".to_string(),
+            "p".to_string(),
+            "a.b".to_string(),
+            "mywidget".to_string(),
+        ],
+        ":defined 应匹配内置/非合法-CE-名元素，排除未升级 custom element（my-widget/x-foo-bar），实际 {defined:?}"
+    );
+
+    // `:not(:defined)` 应精确补集——仅合法 CE 名（未升级 custom element）。
+    let undefined = tags_of(&doc, &doc.query_selector_all(root, ":not(:defined)"));
+    assert_eq!(
+        undefined,
+        vec!["my-widget".to_string(), "x-foo-bar".to_string()],
+        ":not(:defined) 应仅匹配合法 CE 名（未升级），实际 {undefined:?}"
+    );
+
+    // 复合选择器 `my-widget:defined` 此前因 :defined 落 None 整选择器无效返空；现应识别但无匹配（未升级）。
+    let none = doc.query_selector_all(root, "my-widget:defined");
+    assert!(none.is_empty(), "my-widget:defined 应无匹配（未升级），实际 {none:?}");
+
+    // 复合 `div:defined` 应匹配内置 div。
+    let div_defined = tags_of(&doc, &doc.query_selector_all(root, "div:defined"));
+    assert_eq!(div_defined, vec!["div".to_string()], "div:defined 应匹配内置 div");
+
+    // 直接调 query_selector（权威查询路径）验证未升级 custom element 不匹配 :defined。
+    assert!(
+        doc.query_selector(root, "my-widget:defined").is_none(),
+        "query_selector('my-widget:defined') 对未升级 CE 应返 None"
+    );
+    assert!(
+        doc.query_selector(root, "div:defined").is_some(),
+        "query_selector('div:defined') 对内置 div 应命中"
+    );
+}

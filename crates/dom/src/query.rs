@@ -137,6 +137,16 @@ pub enum PseudoClass {
     /// `:out-of-range`——range-applicable input 有 value 但 <min 或 >max。延后至
     /// `Document::is_out_of_range_element` 复评。
     OutOfRange,
+    /// `:defined`——元素已定义（HTML §3.1.3 + CSS Selectors §10）：内置元素或**已升级**的自定义元素
+    /// 匹配；**未升级**的自定义元素（标签为合法 custom element 名但尚未 `customElements.define`）
+    /// 不匹配。Web Components 高频特征检测（`:not(:defined)` 隐藏未升级组件、`:defined` 触发升级后逻辑）。
+    ///
+    /// **静态近似（dom crate 无 customElements registry）**：合法 custom element 名（含连字符、
+    /// 首字符小写 ASCII 字母、无大写）的元素在 parse 时视为**未升级**（registry 在 engine 层，
+    /// dom crate 不可见）→ `:defined` 返 false；其余（原生 HTML 元素、含大写或无连字符的 tag）
+    /// → `:defined` 返 true。镜像 R3271 fast-path 的连字符启发式（更精确的 PotentialCustomElementName
+    /// 见 [`is_valid_custom_element_name`]）。registry-aware 精确化（engine 注入已注册名集）为 follow-up。
+    Defined,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -347,6 +357,9 @@ impl SimpleSelector {
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
+            // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
+            // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。
+            PseudoClass::Defined => !is_valid_custom_element_name(elem.local_name()),
             // `:scope`/`:lang()`/`:dir()`/`:target`/`:valid`/`:invalid`/`:in-range`/`:out-of-range`
             // 需 Document 祖先链/根/URL/约束属性上下文，延后返 true，由 Document::element_matches_selector
             // 复评（镜像 :disabled 两阶段模式）。
@@ -640,6 +653,37 @@ fn is_any_link(elem: &ElementData) -> bool {
     matches!(elem.local_name(), "a" | "area" | "link") && elem.has_attribute("href")
 }
 
+/// 判定 tag 名是否为**合法 custom element 名**（HTML spec PotentialCustomElementName，
+/// https://html.spec.whatwg.org/multipage/custom-elements.html#prod-potentialcustomelementname）。
+///
+/// 用于 `:defined` 静态近似：合法 CE 名（首字符小写 ASCII 字母、含 ASCII 连字符、仅小写字母/数字/`-`/`.`）
+/// 在 dom crate parse 时视为未升级 custom element；非合法名（原生 HTML 元素、含大写或无连字符）视为已定义。
+///
+/// 镜像 engine `dom_bindings/custom_elements.rs` R3271 fast-path 的连字符启发式，并补精确字符集校验
+/// （排除含大写的 tag——HTML 解析器已小写化，故含大写者非 HTML 元素，按 SVG/MathML/未知处理为 defined）。
+/// spec 保留名（`annotation-xml`/`color-profile`/`font-face` 等无连字符或不符合本字符集）自然落 false。
+///
+/// `pub`：style-system matcher 的 `:defined` 求值复用（R3299 DOM/CSS 同源一致性）。
+pub fn is_valid_custom_element_name(tag: &str) -> bool {
+    // PCEN_Char 集合（ASCII 子集）：小写字母 a-z、数字 0-9、连字符 `-`、句点 `.`。
+    // 不含大写（HTML tag 已小写化；含大写 → 非本集 → 非合法 CE 名）。
+    fn is_pcen_char(c: char) -> bool {
+        matches!(c, 'a'..='z' | '0'..='9' | '-' | '.')
+    }
+    let mut chars = tag.chars();
+    // 首字符须为小写 ASCII 字母（spec: CustomElementProductionStartChar = lower-case ASCII letter）。
+    let Some(first) = chars.next() else {
+        return false; // 空串非合法名。
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    // 须含至少一个连字符（CE 名核心要求；`div`/`svg`/`a` 等无连字符 → 非合法 CE 名）。
+    // 其余字符须属 PCEN_Char 集。
+    let rest = chars.as_str();
+    rest.contains('-') && rest.chars().all(is_pcen_char)
+}
+
 // `:read-write`/`:read-only` 含 disabled 态判定（含 `<fieldset disabled>` 祖先传播），
 // 须 Document 上下文，由 `Document::is_effectively_read_write` 负责。
 
@@ -777,6 +821,9 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         }
         // `:dir(ltr|rtl)`——方向性，参数归一化小写；非 ltr/rtl 延后求值时自然不匹配。
         "dir" => Some(PseudoClass::Dir(args.unwrap_or("").trim().to_ascii_lowercase())),
+        // `:defined`——HTML §3.1.3 元素已定义（内置或已升级 custom element）。无参，纯元素 tag 名求值
+        //（matches_full 内经 [`is_valid_custom_element_name`] 静态近似：合法 CE 名 → 未升级 → 不匹配）。
+        "defined" => Some(PseudoClass::Defined),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
@@ -1113,5 +1160,43 @@ mod tests {
         let toks = tokenize_combinators("a    b");
         assert_eq!(toks.len(), 2);
         assert_eq!(toks[0].1, Combinator::Descendant);
+    }
+
+    /// R3299：`is_valid_custom_element_name` 字符集校验（HTML spec PotentialCustomElementName）。
+    #[test]
+    fn test_is_valid_custom_element_name_r3299() {
+        // 合法 CE 名（首字符小写字母 + 含连字符 + 仅 PCEN_Char）。
+        assert!(is_valid_custom_element_name("my-widget"));
+        assert!(is_valid_custom_element_name("x-foo-bar"));
+        assert!(is_valid_custom_element_name("a-")); // 单字母 + 尾连字符（spec 允许）。
+        assert!(is_valid_custom_element_name("a.b-c")); // 含句点（PCEN_Char 允许 `.`）。
+        assert!(is_valid_custom_element_name("my-widget2")); // 含数字。
+        // 非法：无连字符（原生 HTML 元素名）。
+        assert!(!is_valid_custom_element_name("div"));
+        assert!(!is_valid_custom_element_name("svg"));
+        assert!(!is_valid_custom_element_name("a"));
+        // 非法：首字符非小写 ASCII 字母。
+        assert!(!is_valid_custom_element_name("-foo"));
+        assert!(!is_valid_custom_element_name("1-foo"));
+        assert!(!is_valid_custom_element_name("A-foo"));
+        // 非法：含大写（HTML tag 已小写化；含大写 → 非 HTML 元素，按 defined 处理）。
+        assert!(!is_valid_custom_element_name("my-Widget"));
+        // 非法：含非 PCEN_Char（下划线、冒号等）。
+        assert!(!is_valid_custom_element_name("my_widget"));
+        assert!(!is_valid_custom_element_name("my:widget"));
+        // 非法：空串。
+        assert!(!is_valid_custom_element_name(""));
+    }
+
+    /// R3299：`:defined` parse_pseudo 识别（不再落 `_ => None` 致整选择器无效）。
+    #[test]
+    fn test_parse_pseudo_defined_r3299() {
+        let sel = parse_simple_selector(":defined").expect(":defined 应解析为合法伪类");
+        assert_eq!(sel.pseudos.len(), 1);
+        assert!(matches!(sel.pseudos[0], PseudoClass::Defined));
+        // 复合选择器含 :defined 应整体有效（此前 :defined 落 None 致 parse_simple_selector 返 None）。
+        let comp = parse_simple_selector("my-widget:defined").expect("my-widget:defined 应解析成功");
+        assert_eq!(comp.pseudos.len(), 1);
+        assert_eq!(comp.tag.as_deref(), Some("my-widget"));
     }
 }

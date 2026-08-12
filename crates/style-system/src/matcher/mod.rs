@@ -303,6 +303,12 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             "invalid" => doc.is_invalid_element(element),
             "in-range" => doc.is_in_range_element(element),
             "out-of-range" => doc.is_out_of_range_element(element),
+            // `:defined`——HTML §3.1.3：内置元素或已升级 custom element 匹配；未升级（合法 CE 名）不匹配。
+            // R3299 DOM/CSS 同源：复用 dom `is_valid_custom_element_name` 静态近似（合法 CE 名 → 未升级 → 不匹配）。
+            "defined" => match element_tag_name(doc, element) {
+                Some(tag) => !zero_dom::is_valid_custom_element_name(&tag),
+                None => false,
+            },
             _ => false, // 不支持的伪类
         },
         PseudoClassSelector::Not(selectors) => {

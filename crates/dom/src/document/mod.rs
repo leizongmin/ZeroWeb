@@ -1639,6 +1639,12 @@ impl Document {
             // 延后至此经 matches_nth_child_of/_last_child_of 复评。
             crate::query::PseudoClass::NthChildOf(nth, of) => self.matches_nth_child_of(node, nth, of, false),
             crate::query::PseudoClass::NthLastChildOf(nth, of) => self.matches_nth_child_of(node, nth, of, true),
+            // `:defined`——纯 tag 名静态求值（合法 custom element 名 → 未升级 → 不匹配；其余 → 匹配）。
+            // matches_full 已评估此值；此处复评保持一致（all() 对每个伪类重判，须显式处理非延后项，
+            // 否则落 `_ => true` 会错误覆盖 matches_full 的 false 判定）。
+            crate::query::PseudoClass::Defined => self
+                .element_local_name(node)
+                .is_some_and(|tag| !crate::query::is_valid_custom_element_name(tag)),
             _ => true,
         })
     }
