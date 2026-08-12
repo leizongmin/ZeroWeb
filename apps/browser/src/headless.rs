@@ -96,6 +96,9 @@ struct HeadlessSession {
     shell: BrowserShell,
     /// WebView（页面渲染）。
     webview: WebView,
+    /// R3282（#4）：可选 GPU 截图渲染器（`ZW_HEADLESS_GPU_SCREENSHOT=1` 启用；
+    /// 默认 CPU——oracle 像素对比基线稳定）。
+    gpu_renderer: Option<zero_render_foundation::gpu::renderer::GpuRenderer>,
 }
 
 impl HeadlessSession {
@@ -108,7 +111,11 @@ impl HeadlessSession {
             ..Default::default()
         };
         let webview = WebView::new(config);
-        Self { shell, webview }
+        Self {
+            shell,
+            webview,
+            gpu_renderer: None,
+        }
     }
 }
 
@@ -685,19 +692,69 @@ impl HeadlessServer {
         // filters/blend_modes 11 种）。headless 截图须反映真实 ZeroBrowser 渲染管线才能用于
         // DC-13 line 315（welcome headless 截图 vs chromium oracle）等像素对比；image_cache
         // 传入以渲染 `<img>` 子资源。
-        let fb = render_full_scene(
-            self.viewport_width as u32,
-            self.viewport_height as u32,
-            1.0,
-            &result.primitives,
-            &font_loader,
-            &mut glyph_cache,
-            Some(session.webview.image_cache()),
-            &[],
-            &[],
-            &[],
-            &[],
-        );
+        // R3282（#4）：`ZW_HEADLESS_GPU_SCREENSHOT=1` 时用 GPU 无头渲染（性能开关；
+        // 默认 CPU——DC-13 oracle 对比基线稳定）。GPU 支持子集与 CPU 逐像素一致
+        //（parity/reftest 验证），未实现特性返回 false 自动回退 CPU。
+        let fb = if std::env::var("ZW_HEADLESS_GPU_SCREENSHOT").as_deref() == Ok("1") {
+            let w = self.viewport_width as u32;
+            let h = self.viewport_height as u32;
+            if session.gpu_renderer.is_none() {
+                session.gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
+            }
+            let gpu_ok = session.gpu_renderer.as_mut().is_some_and(|g| {
+                !g.is_device_lost()
+                    && g.render_full_scene_gpu(
+                        &result.primitives,
+                        &font_loader,
+                        &mut glyph_cache,
+                        Some(session.webview.image_cache()),
+                        &[],
+                        &[],
+                        &[],
+                        &[],
+                        1.0,
+                    )
+            });
+            if gpu_ok {
+                let pixels = session
+                    .gpu_renderer
+                    .as_ref()
+                    .unwrap()
+                    .read_pixels()
+                    .expect("GPU read_pixels");
+                let mut fb = zero_render_foundation::surface::FrameBuffer::new(w, h);
+                fb.data.copy_from_slice(&pixels);
+                fb
+            } else {
+                render_full_scene(
+                    w,
+                    h,
+                    1.0,
+                    &result.primitives,
+                    &font_loader,
+                    &mut glyph_cache,
+                    Some(session.webview.image_cache()),
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                )
+            }
+        } else {
+            render_full_scene(
+                self.viewport_width as u32,
+                self.viewport_height as u32,
+                1.0,
+                &result.primitives,
+                &font_loader,
+                &mut glyph_cache,
+                Some(session.webview.image_cache()),
+                &[],
+                &[],
+                &[],
+                &[],
+            )
+        };
 
         // R1601：返回 base64 PNG 像素数据（旧版仅返回尺寸，headless 截图无法用于像素对比）。
         // 保留 width/height/pixelCount 供 HeadlessClient::parse_screenshot 向后兼容。
@@ -1886,5 +1943,44 @@ mod tests {
     fn test_server_binds_to_localhost_only() {
         let server = HeadlessServer::new(0, 800.0, 600.0);
         assert_eq!(server.addr.ip(), std::net::IpAddr::from([127, 0, 0, 1]));
+    }
+}
+
+#[cfg(test)]
+mod gpu_screenshot_tests {
+    use super::*;
+
+    /// R3282（#4）：GPU 截图开关下 PNG 输出与 CPU 截图一致（同 pipeline primitives，
+    /// GPU 支持子集逐像素一致——parity/reftest 已验证）。
+    #[test]
+    fn gpu_screenshot_matches_cpu_for_supported_scene() {
+        let server = HeadlessServer::new(0, 64.0, 64.0);
+        let mut session = HeadlessSession::new(64.0, 64.0);
+        // 先渲染一帧（页面内容进入 webview）
+        session.webview.load_html(
+            r#"<html><body style="margin:0"><div style="width:40px;height:40px;background:#f00;"></div></body></html>"#,
+            None,
+        );
+        // CPU 截图
+        let cpu_result = server
+            .dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null)
+            .unwrap();
+        let cpu_png = cpu_result["data"]["png"].as_str().unwrap().to_string();
+        // GPU 截图（env 开关）
+        unsafe {
+            std::env::set_var("ZW_HEADLESS_GPU_SCREENSHOT", "1");
+        }
+        let gpu_result = server
+            .dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null)
+            .unwrap();
+        unsafe {
+            std::env::remove_var("ZW_HEADLESS_GPU_SCREENSHOT");
+        }
+        let gpu_png = gpu_result["data"]["png"].as_str().unwrap().to_string();
+        // GPU 环境不可用（无适配器）时可能回退 CPU——两者仍应一致
+        assert_eq!(
+            cpu_png, gpu_png,
+            "GPU 截图应与 CPU 截图逐字节一致（支持子集；GPU 不可用自动回退）"
+        );
     }
 }
