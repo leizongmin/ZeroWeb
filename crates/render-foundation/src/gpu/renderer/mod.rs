@@ -1062,6 +1062,12 @@ impl GpuRenderer {
                     segments.push(Seg::Blend(sec.0, sec.1));
                 }
                 segments.insert(0, Seg::Main(current_main));
+                // R3254-F9：多 blend 段的源层语义——GPU 每段独立清源纹理重画（各段仅含
+                // 自身内容，更接近 CSS Compositing-1 §5.1 语义）；CPU（cpu/mod.rs blend 段）
+                // 所有段共享一个累积源缓冲、最后逐 rect 合成（rect 交叠时结果含其他段
+                // 内容——CPU 注释自述「嵌套近似二次合成」）。双路径差异仅影响「多 blend
+                // 元素且 rect 交叠」的页面，无测试覆盖——已知近似，documented，不做统一
+                //（统一需改 CPU 合成语义，风险大且当前引擎无 blend 生产路径）。
 
                 // 合批：连续同类 DrawOp 合并为一次 draw（减少每图元缓冲创建开销；
                 // 顺序保持，正确性不变）。tag：0=Shadow 1=Fill 2=RoundedRect 3=Gradient
@@ -1354,6 +1360,22 @@ impl GpuRenderer {
                 );
                 // 9. Glyphs
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts.concat(), "Glyph");
+                // R3284：分桶路径（draw_order 空）的 clip——擦白裁切（R3254-F8：移到
+                // UiGlyph/overlay **之前**，对齐 CPU 顺序（typed 分桶 clip 在 ui_glyphs
+                // 前）——此前在 overlay 之后会把 clip 区外的 chrome/overlay 一并擦白）。
+                for clip in &primitives.clips {
+                    let (fw, fh) = (width as f32, height as f32);
+                    let l = (clip.rect.left() * scale).max(0.0);
+                    let t = (clip.rect.top() * scale).max(0.0);
+                    let r = (clip.rect.right() * scale).min(fw);
+                    let b = (clip.rect.bottom() * scale).min(fh);
+                    let mut verts = Vec::new();
+                    push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
+                    push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
+                    push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
+                    push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
+                    self.draw_fill_pass(&mut pass, uniform_bg, &device, &verts, "Clip");
+                }
                 // 10. Chrome / WebView 文字
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
                 // 11. Overlay fills
@@ -1368,21 +1390,6 @@ impl GpuRenderer {
                 self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts.concat());
                 // 12. Overlay glyphs
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
-                // R3284：分桶路径（draw_order 空）的 clip——末尾擦白（对齐 CPU
-                // typed 分桶的 apply_clip 位置：blend 后最后处理）
-                for clip in &primitives.clips {
-                    let (fw, fh) = (width as f32, height as f32);
-                    let l = (clip.rect.left() * scale).max(0.0);
-                    let t = (clip.rect.top() * scale).max(0.0);
-                    let r = (clip.rect.right() * scale).min(fw);
-                    let b = (clip.rect.bottom() * scale).min(fh);
-                    let mut verts = Vec::new();
-                    push_fill_quad(&mut verts, 0.0, 0.0, fw, t, Color::WHITE);
-                    push_fill_quad(&mut verts, 0.0, b, fw, fh, Color::WHITE);
-                    push_fill_quad(&mut verts, 0.0, t, l, b, Color::WHITE);
-                    push_fill_quad(&mut verts, r, t, fw, b, Color::WHITE);
-                    self.draw_fill_pass(&mut pass, uniform_bg, &device, &verts, "Clip");
-                }
             }
         }
 

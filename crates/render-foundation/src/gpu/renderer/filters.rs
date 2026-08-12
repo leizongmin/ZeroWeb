@@ -419,6 +419,9 @@ impl super::GpuRenderer {
         });
 
         for &(rect, radius) in filters {
+            // R3254-F10：半径取 ceil 对齐 CPU（`(radius*scale).ceil()`）——亚像素半径
+            // （0 < radius*scale < 1）CPU 会执行 1px blur，此前 GPU 直接跳过 → 静默差异。
+            let radius = (radius * scale).ceil().max(1.0);
             if radius < 1.0 {
                 continue; // 零半径模糊 = no-op
             }
