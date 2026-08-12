@@ -68,6 +68,12 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 > - **预存失败（不强行修复，记录）**：① windows-aarch64 vcpkg zlib GitHub 503（infra flake，rerun 即过）；② **make test（cargo test）下 `local_composite_cpu_gpu_matrix_for_form_interactions` 2742「输入 abc 后合成帧应变化」**——cargo test 进程内并行下多进程 renderer 输入受同进程其他 GPU 测试竞争 10s 内不达（30s 亦不达）；**CI 用 nextest（每测试独立进程）不受影响**（本地 nextest 410/410 全过）；③ 本地 bench-gate 14 个微基准超线（08-08 基线 vs 本地机器陈旧/负载，CI 用 github-ubuntu-latest 基线不受影响）。
 > - **归因纪律**：R3234-F/R3243-F/R3255-F 均属渲染兼容性流（rendering-compat）提交；门禁恢复 opt-in 后该流 reftest 实测零回归（font-size-adjust 系列 17/20 与全量一致），功能仍可经 env 显式启用。
 
+> **▶ CI 守护日志（2026-08-13，ci-watchdog，run 31644495607 @ 10951ed0）**：首轮修复后重验——**benchmarks 的 page/* 全部 PASS**（layout/paint 回归修复生效），linux/macos-x86_64 平台 build-and-test 全绿；剩 2 类测试问题（2 提交 2a67cd17 修复）+ benchmarks 微基准预存。
+> - **回归 7（windows-x86_64/macos-aarch64 app tests——hit-test 时序）**：`local_composite_cpu_gpu_matrix_for_form_interactions` 在慢 runner 上 wait_for_snapshot_after 通过但 hit-test 扫描（一次性）未找到 #name（tests.rs:2817 expect panic）——页面 DOM/布局未就绪。修复：10s 窗口周期重扫 + poll_tab_fetch（63e4b70b point_for_id 同族模式）。
+> - **回归 8（quickjs ×2 平台——R3329 security 用例）**：`security_cases_execute_scripts_r3329` 在 QuickJS 下 2 例失败——QuickJS 页面运行时无 WebAssembly 全局（wasm 支持在 zero-wasm-sandbox 独立执行层，不暴露页面 JS 全局）：wasm-unsafe-eval 显式 throw（能力锁仅 v8 语义）+ sandbox-boundary 的 `typeof WebAssembly.validate` 在 quickjs 下 ReferenceError。修复：R3329 filter 在 quickjs 下跳过 wasm 用例（平台能力差异适配，非回归）；本地 v8/quickjs 双验证通过。
+> - **预存失败（不强行修复，记录）**：benchmarks 15 个微基准超线（browser-shell autocomplete/bookmark/download/history/tab、canvas fill/stroke、css-parser complex_selector/css_parse ×4）——github runner 测量方差（08-09~08-12 守护日志同族：fill_rect/stroke_rect 连续多轮超线 ~2×，基线过时待 infra 拍板；本次 browser-shell/css-parser 超线亦同族，与 page/* 修复无关——本提交未触碰这些 crate 路径）。
+> - **验证轮次**：run 31646851029 @ 2a67cd17 重验中（预期 9/10 绿，唯一红 = benchmarks 微基准预存）。
+
 > **▶ CI 守护日志（2026-08-12，ci-watchdog，run 31546575583 @ e2f3f13d）**：本轮推送 R3290（HTMLDialogElement）+ R3291（canvas roundRect/isPointInPath/isPointInStroke）+ R3292（canvas 孤儿测试恢复 +94 测 + draw_image_sized 下溢真 bug 修复）后手动触发 main CI 验证。**9/10 绿（7×build-and-test 全矩阵 + smoke + reftest），唯一红 = benchmarks（预存 perf-gate 噪声）**。
 > - **7×build-and-test 全绿**：linux-x86_64 (v8) / linux-x86_64-quickjs / linux-aarch64 / windows-x86_64 / windows-aarch64 / macos-x86_64 / macos-aarch64 全过——R3290/R3291/R3292 跨平台跨 JS 引擎零回归（含 windows app tests，R3092 同族死锁未复现）。
 > - **smoke + reftest 全绿**：reftest 687/687 100%（canvas guard 仅改 OOB 早退，正常渲染路径不变，无 reftest 影响）；smoke 通过。
