@@ -798,10 +798,16 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
-        // CSS Flexbox §7.3.1/§7.3.2：flex-grow/flex-shrink 负值非法，按未声明处理
-        // （回退到初始值：flex-grow=0、flex-shrink=1，见 default_impl）。
+        // CSS Flexbox §7.3.1/§7.3.2：flex-grow/flex-shrink 须为非负 <number>，负值/Infinity
+        // 非法，按未声明处理（回退到初始值：flex-grow=0、flex-shrink=1，见 default_impl）。
+        // R3345 deep-review：旧实现仅检 `v >= 0.0`——`Infinity >= 0.0` 为真 → 无穷大值被存储，
+        // 经 `style.flex_grow as f32` 喂入 Taffy flex 算法（converter/mod.rs）可致 flex 分配异常。
+        // 加 `is_finite()` 前置，与 `flex` 简写（shorthand/mod.rs is_number 用 is_finite）一致。
+        // https://www.w3.org/TR/css-flexbox-1/#flex-grow-property
         "flex-grow" => {
-            if let Ok(v) = value.parse::<f64>() {
+            if let Ok(v) = value.parse::<f64>()
+                && v.is_finite()
+            {
                 if v >= 0.0 {
                     style.flex_grow = v;
                 }
@@ -809,7 +815,9 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "flex-shrink" => {
-            if let Ok(v) = value.parse::<f64>() {
+            if let Ok(v) = value.parse::<f64>()
+                && v.is_finite()
+            {
                 if v >= 0.0 {
                     style.flex_shrink = v;
                 }
