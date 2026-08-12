@@ -56,6 +56,150 @@ fn test_insert_before_would_create_cycle() {
     assert!(matches!(result, Err(DomError::WouldCreateCycle)));
 }
 
+// ── R3350：same-parent move 回归（insert_before / replace_child stale-index bug） ──
+
+/// 辅助：读取元素子节点的 tag 名列表（按文档顺序）。
+fn child_tags(doc: &Document, parent: NodeId) -> Vec<String> {
+    doc.child_nodes(parent)
+        .iter()
+        .map(|n| {
+            doc.get(*n)
+                .map(|x| match &x.kind {
+                    crate::NodeKind::Element(e) => e.local_name().to_string(),
+                    _ => "?".to_string(),
+                })
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// R3350：insert_before 把**已是本父的子节点**前移到另一子节点之前——旧实现因
+/// 先算 ref_idx 再 detach(new_node) 致索引指向错误位置（A 被追加到末尾而非 D 之前）。
+/// 修复后正确得 [B, C, A, D]。
+#[test]
+fn r3350_insert_before_move_forward() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    let d = doc.create_element("d");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+    doc.append_child(parent, d).unwrap();
+    // 把 A（首子）移到 D（末子）之前
+    doc.insert_before(parent, a, d).unwrap();
+    assert_eq!(child_tags(&doc, parent), vec!["b", "c", "a", "d"]);
+}
+
+/// R3350：insert_before 后移——把 B（index 1）移到 D（index 3）之前，期望 [A, C, B, D]。
+#[test]
+fn r3350_insert_before_move_backward() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    let d = doc.create_element("d");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+    doc.append_child(parent, d).unwrap();
+    doc.insert_before(parent, b, d).unwrap();
+    assert_eq!(child_tags(&doc, parent), vec!["a", "c", "b", "d"]);
+}
+
+/// R3350：insert_before 同节点 no-op——insert_before(parent, A, A) 不应改动顺序、不报错。
+#[test]
+fn r3350_insert_before_self_noop() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.insert_before(parent, a, a).unwrap();
+    assert_eq!(child_tags(&doc, parent), vec!["a", "b"]);
+}
+
+/// R3350：insert_before 前移到首子之前——C 移到 A 之前，期望 [C, A, B]。
+#[test]
+fn r3350_insert_before_move_to_front() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+    doc.insert_before(parent, c, a).unwrap();
+    assert_eq!(child_tags(&doc, parent), vec!["c", "a", "b"]);
+}
+
+/// R3350：replace_child 用**已是本父的子节点**替换另一子节点——旧实现因
+/// 先算 old_idx 再 detach(new_child) 致 `children[old_idx]` 越界 panic（len 收缩）。
+/// 修复后正确得 [A, B, C]→replace(A,C)→[C, B]（A 替换 C 的位置，C 脱离）。
+#[test]
+fn r3350_replace_child_move_no_panic() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+    // A 替换 C（A 是 C 之前的兄弟）——旧实现 panic，修复后无 panic 且顺序正确。
+    let returned = doc.replace_child(parent, a, c).unwrap();
+    assert_eq!(returned, c, "应返回被替换的 old_child");
+    // A 占据 C 原位置（末位），B 仍居中：[B, A]。
+    assert_eq!(child_tags(&doc, parent), vec!["b", "a"]);
+    // C 脱离父节点。
+    assert_eq!(doc.parent_node(c), None);
+    assert_eq!(doc.parent_node(a), Some(parent));
+}
+
+/// R3350：replace_child 用靠后的子节点替换靠前的——B 替换 A，期望 [B, C]（B 原位置提升）。
+#[test]
+fn r3350_replace_child_move_earlier() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    let c = doc.create_element("c");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    doc.append_child(parent, c).unwrap();
+    doc.replace_child(parent, b, a).unwrap();
+    // B 替换 A 的位置（首位），C 保持末位：[B, C]。
+    assert_eq!(child_tags(&doc, parent), vec!["b", "c"]);
+    assert_eq!(doc.parent_node(a), None);
+    assert_eq!(doc.parent_node(b), Some(parent));
+}
+
+/// R3350：replace_child 同节点 no-op——replace(parent, A, A) 返回 A，顺序不变。
+#[test]
+fn r3350_replace_child_self_noop() {
+    let mut doc = Document::new();
+    let parent = doc.create_element("div");
+    doc.append_child(doc.root(), parent).unwrap();
+    let a = doc.create_element("a");
+    let b = doc.create_element("b");
+    doc.append_child(parent, a).unwrap();
+    doc.append_child(parent, b).unwrap();
+    let returned = doc.replace_child(parent, a, a).unwrap();
+    assert_eq!(returned, a);
+    assert_eq!(child_tags(&doc, parent), vec!["a", "b"]);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 2. replace_child 边界情况
 // ═══════════════════════════════════════════════════════════════════════

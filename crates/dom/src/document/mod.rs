@@ -389,7 +389,27 @@ impl Document {
             return Err(DomError::WouldCreateCycle);
         }
 
-        // 找到 ref_node 在 parent.children 中的位置
+        // 验证 ref_node 确实是 parent 的子节点（spec「pre-insert」ensure pre-insertion validity）。
+        if !self.nodes.get(parent).is_some_and(|p| p.children.contains(&ref_node)) {
+            return Err(DomError::NotAChild {
+                parent,
+                child: ref_node,
+            });
+        }
+
+        // R3350：new_node == ref_node 时为 no-op（spec：把节点插到「它自己之前」无效果，
+        // 节点保持原位且无 mutation 触发——与 Chrome/Firefox 行为一致）。须在 detach 前判。
+        if new_node == ref_node {
+            return Ok(());
+        }
+
+        // 如果 new_node 已有父节点，先从原父节点移除（spec pre-insert step：adopt 前先移除旧位置）。
+        // R3350：必须在**计算 ref_idx 之前** detach——当 new_node 本身就是 parent 的子节点时，
+        // detach 会把它从 parent.children 移除，使 ref_node 的索引左移；若先算 ref_idx 再 detach，
+        // 得到的索引指向错误位置（如 `insert_before(parent, A, D)` 在 [A,B,C,D] 上得 A 末尾而非 D 前）。
+        self.detach(new_node);
+
+        // detach 后重新查找 ref_node 的位置——此时 children 已反映移除 new_node 后的真实状态。
         let ref_idx = self
             .nodes
             .get(parent)
@@ -398,9 +418,6 @@ impl Document {
                 parent,
                 child: ref_node,
             })?;
-
-        // 如果 new_node 已有父节点，先从原父节点移除
-        self.detach(new_node);
 
         // 设置新父节点
         if let Some(node_data) = self.nodes.get_mut(new_node) {
@@ -443,6 +460,25 @@ impl Document {
             return Err(DomError::WouldCreateCycle);
         }
 
+        // 验证 old_child 确实是 parent 的子节点。
+        if !self.nodes.get(parent).is_some_and(|p| p.children.contains(&old_child)) {
+            return Err(DomError::NotAChild {
+                parent,
+                child: old_child,
+            });
+        }
+
+        // R3350：new_child == old_child 时为 no-op（用节点替换它自己），直接返回 old_child。
+        if new_child == old_child {
+            return Ok(old_child);
+        }
+
+        // 如果 new_child 已有父节点，先从原父节点移除。
+        // R3350：必须在**计算 old_idx 之前** detach——当 new_child 本身就是 parent 的子节点且位于
+        // old_child 之前时，detach 使列表左移，old_idx 越界（`children[old_idx]` panic）。
+        self.detach(new_child);
+
+        // detach 后重新查找 old_child 的位置——此时 children 已反映移除 new_child 后的真实状态。
         let old_idx = self
             .nodes
             .get(parent)
@@ -451,9 +487,6 @@ impl Document {
                 parent,
                 child: old_child,
             })?;
-
-        // 如果 new_child 已有父节点，先从原父节点移除
-        self.detach(new_child);
 
         // 记录 mutation（在替换前）
         self.record_mutation(MutationRecord {
