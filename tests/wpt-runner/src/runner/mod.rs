@@ -451,6 +451,15 @@ mod runtime_path_tests {
         let cases: Vec<_> = builtin_tests()
             .into_iter()
             .filter(|c| c.id.starts_with("security/") && c.html.contains("<script>"))
+            // QuickJS 页面运行时无 WebAssembly 全局（wasm 支持在 zero-wasm-sandbox
+            // 独立执行层，不暴露页面 JS 全局）：wasm 用例的能力锁仅对 v8 成立——
+            // quickjs 下跳过（平台能力差异，非回归；wasm-unsafe-eval 显式 throw 亦
+            // 仅 v8 语义，sandbox-boundary 的 typeof WebAssembly.validate 在 quickjs
+            // 下 ReferenceError）。R3329 平台适配。
+            .filter(|c| {
+                !cfg!(feature = "quickjs")
+                    || (!c.id.starts_with("security/csp/wasm-unsafe-eval") && !c.id.starts_with("security/wasm/"))
+            })
             .collect();
         assert!(
             !cases.is_empty(),

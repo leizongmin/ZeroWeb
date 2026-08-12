@@ -2801,17 +2801,30 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     assert!(parity0 < 0.15, "CPU/GPU 初始合成帧差异应 <15%（got {parity0:.3}）");
 
     // ② 点击聚焦 #name（多进程 renderer 完整焦点链路）+ 键盘输入 'abc'。
-    // 命中扫描找 #name 中心（表单布局位置不确定）。
+    // 命中扫描找 #name 中心（表单布局位置不确定）。R3254-F 时序适配：慢 runner
+    //（windows/macos）上 wait_for_snapshot_after 通过但 hit-test 的 DOM/布局未就绪——
+    // 10s 窗口内周期重扫 + poll_tab_fetch（63e4b70b point_for_id 同族模式）。
     let (content_x, content_y, logical_w, logical_h) = app.page_content_rect();
+    let scan_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let mut name_point: Option<(f32, f32)> = None;
-    'scan: for y in (0..logical_h as u32).step_by(4) {
-        for x in (0..logical_w as u32).step_by(4) {
-            if let Some(hit) = app.hit_test_page_element_for_test(tab_id, x as f32, y as f32)
-                && hit.id.as_deref() == Some("name")
-            {
-                name_point = Some((x as f32, y as f32));
-                break 'scan;
+    while name_point.is_none() {
+        'scan: for y in (0..logical_h as u32).step_by(4) {
+            for x in (0..logical_w as u32).step_by(4) {
+                if let Some(hit) = app.hit_test_page_element_for_test(tab_id, x as f32, y as f32)
+                    && hit.id.as_deref() == Some("name")
+                {
+                    name_point = Some((x as f32, y as f32));
+                    break 'scan;
+                }
             }
+        }
+        if name_point.is_none() {
+            app.poll_tab_fetch();
+            assert!(
+                std::time::Instant::now() < scan_deadline,
+                "hit-test 扫描应找到 #name（10s 重试窗口）"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
     let (doc_x, doc_y) = name_point.expect("hit-test 扫描应找到 #name");
