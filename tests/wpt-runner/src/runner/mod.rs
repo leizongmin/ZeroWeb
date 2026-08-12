@@ -416,6 +416,39 @@ mod runtime_path_tests {
         );
     }
 
+    /// R3329：security/* 含脚本用例 js_executes_ok——锁安全 API 表面（capability-detection：fetch/document.cookie/
+    /// location/isSecureContext/eval/WebAssembly 等存在且可调）。承接 R3320-R3323（geometry/runtime/storage/js-dom
+    /// 行为锁）——R3324 称「剩余 category 含脚本用例多为渲染/结构性，API 价值低」**经本轮独立审计纠偏**：security/*
+    /// 22 个含脚本用例大量做 capability-detection（typeof fetch==='function' / typeof document.cookie / typeof
+    /// location / window.isSecureContext / typeof WebAssembly + compile/instantiate / eval() 执行），此前全用弱断言
+    /// （dom_has_body/no_panic/render_completes），脚本静默失效（fetch/cookie/eval/WASM API 缺失或抛异常）仍通过——
+    /// 典型「弱断言静默通过」覆盖缺口，同 R3320-R3323 类。本切片覆盖门 + 行为锁：升级内联脚本断言到 capability
+    /// 真值 + 加 js_executes_ok（strict 执行：脚本抛异常即 fail）。全量遍历 security/* 含 `<script>` 用例。
+    #[test]
+    fn security_cases_execute_scripts_r3329() {
+        let ctx = TestContext::default();
+        let cases: Vec<_> = builtin_tests()
+            .into_iter()
+            .filter(|c| c.id.starts_with("security/") && c.html.contains("<script>"))
+            .collect();
+        assert!(
+            !cases.is_empty(),
+            "security/* 含 <script> 用例应非空（本轮审计确认 ≥1）"
+        );
+        let mut failed: Vec<String> = Vec::new();
+        for case in &cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "security/* 用例应全部 js_executes_ok 通过（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
+
     /// R3322：storage/* 同步用例 js_executes_ok——锁 Web Storage API 行为（localStorage/sessionStorage
     /// CRUD + length + clear + key 迭代 + 批量写入）。此前 storage/* 全用弱断言（render_completes），
     /// 内联脚本写结果不校验，存储静默失效（getItem 返 undefined / length 不变）仍通过。本轮升级内联脚本

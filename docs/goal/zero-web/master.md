@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3324：headless JS-DOM 行为差异 backlog 文档化——R3323 实测 4 项差异（innerHTML 写后读 stale / handle 子 querySelectorAll / shadow 查询 / MO 合并捕获）固化到 `docs/learnings/bugs/headless-js-dom-divergence-backlog.md` 作 P1b escape-hatch 验收清单。**自主面饱和再确认**：R3320-R3324 后 zero-web 流自主可 land 工作面实质饱和，剩余战略方向全部需用户点名或环境依赖）。前轮 R3323：js-dom/* 行为锁。
+**最后更新**: 2026-08-13（R3329：security/* WPT js_executes_ok 覆盖门 + 行为锁——独立审计 R3324「security 含脚本用例 API 价值低」结论**纠偏**：security/* 22 个含脚本用例大量做 capability-detection（fetch/document.cookie/location/isSecureContext/eval/WebAssembly/navigator.geolocation|permissions），全弱断言静默通过，补 js_executes_ok 全量覆盖门 + 6 用例行为锁。前轮 R3324：headless JS-DOM 差异 backlog。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,21 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### security/* WPT js_executes_ok 覆盖门 + 行为锁（本轮 R3329，wpt-runner）—— 纠偏 R3324「security API 价值低」饱和误判
+
+承接 R3320-R3324（geometry/runtime/storage/js-dom 行为锁 + 自主面饱和再确认）。本轮**独立审计 R3324 饱和结论**——R3324 称「剩余 category（navigation/security/interactive/...）含脚本用例多为渲染/结构性，API 价值低」。逐 category 核查发现 **security 类被低估**：22 个含 `<script>` 用例中大量做 **capability-detection**（`typeof fetch==='function'` / `typeof document.cookie` / `typeof location` / `window.isSecureContext` / `typeof WebAssembly`+`compile`/`instantiate` / `eval()` 执行 / `navigator.geolocation`|`permissions`），此前**全用弱断言**（`dom_has_body`/`no_panic`/`render_completes`）——脚本静默失效（API 缺失或抛异常）仍 100% 通过，典型「弱断言静默通过」覆盖缺口，同 R3320-R3323 类。
+
+**先 probe 后锁（避免过断）**：临时探针实测 headless 真值（`isSecureContext=true` / `WebAssembly=object` / `fetch=function` / `cookie=string` / `location=object` / `Notification=undefined`（未实现）/ `navigator.geolocation`+`permissions` 存在 / `location.href=about:blank` / `origin=null`），据此把断言调准到 headless 真行为——仅断言真实存在的能力，不对未实现项（Notification）过断。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +`security_cases_execute_scripts_r3329` 永久测试（全量遍历 security/* 含 `<script>` 用例 js_executes_ok，strict 执行脚本抛异常即 fail）|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_security.rs` | 6 用例升级行为锁（throw-in-script 模式）+ 加 `js_executes_ok` 断言：`composite/security-dashboard`（fetch/cookie/location 类型真值）、`mixed-content/security-context`（isSecureContext 为 boolean）、`csp/unsafe-eval`（eval 真执行并改写 DOM 文本）、`csp/wasm-unsafe-eval`（WebAssembly + compile + instantiate 函数存在）、`permissions/api-detection`（navigator.geolocation/permissions 存在）、`xss/innerHTML-sanitization`（innerHTML 解析出子节点 + 内联 onerror 不同步触发）|
+
+**为何净正向且零回归**：纯测试增强（无生产代码改动）；断言调准到 headless 真行为后全过，仅「API 静默失效」时 fail。**验证**：`runtime_path_tests` **14 passed / 0 failed**（含新测 R3329 + 6 升级用例，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告。
+
+**下游判断（固化）**：R3320-R3323 + 本轮 R3329（security 锁）连续 5 轮闭合「弱断言静默通过」覆盖缺口——**证实 R3324「自主面饱和」结论需修正**：饱和判断对 security 类有偏差（capability-detection 类脚本仍有可观锁价值）。剩余真饱和方向：① navigation/* 脚本确多依赖 hashchange/fetch/网络级时序（headless 未完整接通）或为纯描述性静态 HTML（ETag 文档展示），同步可断言行为少；② platform-input/multiprocess 含脚本仅 2-3 例且多为渲染/隔离结构性；③ web-platform/* 多为 CSS 渲染（非脚本行为）。战略方向（P1b escape-hatch 收敛、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。**已发现待修数据问题**：`security/csp/wasm-unsafe-eval` id 在 vec 中重复（约 line 715 无脚本版 + line 1285 有脚本版），下轮可去重（非阻塞，run_single 按首匹配）。
 
 ### headless JS-DOM 行为差异 backlog 文档化（本轮 R3324，docs/learnings）—— R3323 实测差异固化为 P1b 验收清单
 

@@ -494,13 +494,23 @@ pub fn security_tests() -> Vec<TestCase> {
             html: r#"<html><body>
             <div id="r">xss test</div>
             <script>
+                var fired = false;
+                window.__zw_xss_fired = false;
                 var el = document.getElementById('r');
-                el.innerHTML = '<img src=x onerror="alert(1)">';
+                el.innerHTML = '<img src=x onerror="window.__zw_xss_fired=true">';
+                // R3329 行为锁：innerHTML 写入须解析出 img 子元素（1 子节点），且内联 onerror 不在赋值期同步触发。
+                if (el.childNodes.length < 1) throw new Error('xss-innerHTML: innerHTML 未解析出子节点（length=' + el.childNodes.length + '）');
+                if (window.__zw_xss_fired) throw new Error('xss-innerHTML: 内联 onerror 在 innerHTML 赋值期同步触发（应延迟到资源加载失败）');
                 document.getElementById('r').textContent = 'innerHTML sanitized';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "no_panic".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "no_panic".into(),
+                // R3329：innerHTML 解析子节点 + onerror 不同步触发——回归即 fail。
+                "js_executes_ok".into(),
+            ],
         },
         TestCase {
             id: "security/xss/script-injection".into(),
@@ -543,9 +553,13 @@ pub fn security_tests() -> Vec<TestCase> {
             </div>
             <script>
                 document.getElementById('s-csp').textContent = 'CSP active';
-                document.getElementById('s-cors').textContent = typeof fetch === 'function' ? 'Fetch ok' : 'No Fetch';
-                document.getElementById('s-cookie').textContent = typeof document.cookie !== 'undefined' ? 'Cookie ok' : 'No Cookie';
-                document.getElementById('s-origin').textContent = typeof location !== 'undefined' ? 'Origin ok' : 'No Origin';
+                // R3329 行为锁：断言安全 API 表面真值（fetch 真函数 / cookie 字符串 / location 对象）。
+                if (typeof fetch !== 'function') throw new Error('security-dashboard: typeof fetch="' + typeof fetch + '" expected "function"');
+                if (typeof document.cookie !== 'string') throw new Error('security-dashboard: typeof cookie="' + typeof document.cookie + '" expected "string"');
+                if (typeof location !== 'object') throw new Error('security-dashboard: typeof location="' + typeof location + '" expected "object"');
+                document.getElementById('s-cors').textContent = 'Fetch ok';
+                document.getElementById('s-cookie').textContent = 'Cookie ok';
+                document.getElementById('s-origin').textContent = 'Origin ok';
             </script>
             </body></html>"#.into(),
             css: String::new(),
@@ -554,6 +568,8 @@ pub fn security_tests() -> Vec<TestCase> {
                 "dom_has_heading".into(),
                 "layout_has_children".into(),
                 "no_panic".into(),
+                // R3329：经 WebView 真实执行内联脚本——fetch/document.cookie/location 缺失或抛异常即 fail。
+                "js_executes_ok".into(),
             ],
         },
 
@@ -693,10 +709,17 @@ pub fn security_tests() -> Vec<TestCase> {
             <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval'">
             </head><body>
             <div id="result">unsafe-eval test</div>
-            <script>eval("document.getElementById('result').textContent = 'eval allowed';")</script>
+            <script>eval("document.getElementById('result').textContent = 'eval allowed';")
+            // R3329 行为锁：eval() 真实执行并写入 DOM（文本被改写）。eval 不可用或被 CSP 阻止即文本不变 → fail。
+            if (document.getElementById('result').textContent !== 'eval allowed') throw new Error('unsafe-eval: eval 未执行（result="' + document.getElementById('result').textContent + '"）');</script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                // R3329：eval() 真实执行——脚本抛异常（eval 被 CSP 阻止或不可用）即 fail。
+                "js_executes_ok".into(),
+            ],
         },
         TestCase {
             id: "security/csp/wasm-unsafe-eval".into(),
@@ -982,11 +1005,18 @@ pub fn security_tests() -> Vec<TestCase> {
             <div id="ctx">Security context test</div>
             <script>
             var isSecure = window.isSecureContext;
+            // R3329 行为锁：window.isSecureContext 须为布尔（headless about:blank 默认 true）。
+            if (typeof isSecure !== 'boolean') throw new Error('security-context: typeof isSecureContext="' + typeof isSecure + '" expected "boolean"');
             document.getElementById('ctx').textContent = 'isSecureContext: ' + isSecure;
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                // R3329：isSecureContext 为 undefined（属性缺失）即 fail。
+                "js_executes_ok".into(),
+            ],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -1036,13 +1066,23 @@ pub fn security_tests() -> Vec<TestCase> {
             <script>
             var results = [];
             results.push('Notification: ' + (typeof Notification !== 'undefined'));
-            results.push('Geolocation: ' + (typeof navigator !== 'undefined' && 'geolocation' in navigator));
-            results.push('Permissions: ' + (typeof navigator !== 'undefined' && 'permissions' in navigator));
+            var hasGeo = typeof navigator !== 'undefined' && ('geolocation' in navigator);
+            var hasPerms = typeof navigator !== 'undefined' && ('permissions' in navigator);
+            // R3329 行为锁：navigator.geolocation / navigator.permissions 表面须存在（headless 真值）。
+            if (!hasGeo) throw new Error('permissions: navigator.geolocation 缺失');
+            if (!hasPerms) throw new Error('permissions: navigator.permissions 缺失');
+            results.push('Geolocation: ' + hasGeo);
+            results.push('Permissions: ' + hasPerms);
             document.getElementById('perms').textContent = results.join(', ');
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec![
+                "dom_has_body".into(),
+                "render_completes".into(),
+                // R3329：navigator.geolocation/permissions 被移除即 fail。
+                "js_executes_ok".into(),
+            ],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -1272,9 +1312,11 @@ pub fn security_tests() -> Vec<TestCase> {
                 var hasWasm = typeof WebAssembly !== 'undefined';
                 var canCompile = hasWasm && typeof WebAssembly.compile === 'function';
                 var canInstantiate = hasWasm && typeof WebAssembly.instantiate === 'function';
-                var status = hasWasm ? 'wasm-available' : 'no-wasm';
-                status += canCompile ? '-compile-ok' : '-no-compile';
-                status += canInstantiate ? '-instantiate-ok' : '-no-instantiate';
+                // R3329 行为锁：WebAssembly 全局 + compile/instantiate 函数均须存在（headless 真值）。
+                if (!hasWasm) throw new Error('wasm-unsafe-eval: WebAssembly 未定义');
+                if (!canCompile) throw new Error('wasm-unsafe-eval: WebAssembly.compile 非 function');
+                if (!canInstantiate) throw new Error('wasm-unsafe-eval: WebAssembly.instantiate 非 function');
+                var status = 'wasm-available-compile-ok-instantiate-ok';
                 document.getElementById('r').textContent = status;
             </script>
             </body></html>"#.into(),
@@ -1283,6 +1325,8 @@ pub fn security_tests() -> Vec<TestCase> {
                 "dom_has_body".into(),
                 "dom_has_element:h1".into(),
                 "no_panic".into(),
+                // R3329：WebAssembly 表面被移除/降级即 fail。
+                "js_executes_ok".into(),
             ],
         },
         // WASM 沙箱边界测试
