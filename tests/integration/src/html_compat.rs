@@ -243,6 +243,106 @@ fn deterministic_short_action_replay_across_hosts() {
 }
 
 #[test]
+fn text_constraint_conformance_across_hosts() {
+    const SCRIPT: &str = r#"
+globalThis.__events=[];
+['readonly','limited'].forEach(function(id){
+  var input=document.getElementById(id);
+  input.addEventListener('beforeinput',function(event){
+    globalThis.__events.push(id+':beforeinput:'+event.data);
+  });
+  input.addEventListener('input',function(event){
+    globalThis.__events.push(id+':input:'+event.data);
+  });
+});
+document.getElementById('limited').setSelectionRange(1,1);
+"#;
+    let html = format!(
+        r#"<html><body>
+        <input id="readonly" value="fixed" readonly>
+        <input id="limited" value="A" maxlength="3">
+        <script>{SCRIPT}</script>
+        </body></html>"#
+    );
+
+    fn run(
+        html: &str,
+        executor: Option<&dyn JsExecutor>,
+    ) -> (String, String, Vec<Option<zero_page_runtime::ActionNoopReason>>) {
+        let url = "https://zero.test/text-constraints";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor
+                .execute_script_direct(SCRIPT)
+                .expect("register constraint listeners");
+        }
+        let readonly = webview.page_node_ref_for_selector("#readonly").expect("readonly");
+        let limited = webview.page_node_ref_for_selector("#limited").expect("limited");
+        let results = [
+            dispatch(
+                &mut webview,
+                executor,
+                readonly,
+                HtmlUserAction::InsertText { text: "x".to_string() },
+            ),
+            dispatch(
+                &mut webview,
+                executor,
+                limited,
+                HtmlUserAction::InsertText {
+                    text: "😀B".to_string(),
+                },
+            ),
+            dispatch(
+                &mut webview,
+                executor,
+                limited,
+                HtmlUserAction::InsertText { text: "x".to_string() },
+            ),
+        ];
+        let events = match executor {
+            Some(executor) => executor.execute_script_direct("globalThis.__events.join('|')"),
+            None => webview
+                .execute_script("globalThis.__events.join('|')")
+                .map_err(|error| error.to_string()),
+        }
+        .expect("constraint event log");
+        (
+            webview
+                .form_control_value_overrides()
+                .get("#limited")
+                .cloned()
+                .unwrap_or_default(),
+            events,
+            results.into_iter().map(|result| result.noop_reason).collect(),
+        )
+    }
+
+    let mut renderer_worker = zero_renderer::js_worker::RendererJsWorker::spawn(95);
+    let mut tab_worker = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(96));
+    let renderer = run(&html, Some(&renderer_worker));
+    let tab = run(&html, Some(&tab_worker));
+    let webview = run(&html, None);
+    renderer_worker.shutdown();
+    tab_worker.shutdown();
+    assert_eq!(renderer, tab);
+    assert_eq!(renderer, webview);
+    assert_eq!(renderer.0, "A😀");
+    assert_eq!(renderer.1, "limited:beforeinput:😀|limited:input:😀");
+    assert_eq!(
+        renderer.2,
+        [
+            Some(zero_page_runtime::ActionNoopReason::ReadOnlyTarget),
+            None,
+            Some(zero_page_runtime::ActionNoopReason::MaxLengthReached),
+        ]
+    );
+}
+
+#[test]
 fn default_actions_work_without_javascript() {
     let html = r#"<html><body>
         <form id="f" action="https://zero.test/submitted">

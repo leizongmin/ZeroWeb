@@ -181,3 +181,64 @@ fn checked_reset_and_submit_actions_preserve_transactions() {
     assert!(canceled_submit.canceled);
     assert!(canceled_submit.effects.is_empty());
 }
+
+#[test]
+fn text_actions_enforce_readonly_and_maxlength() {
+    // https://html.spec.whatwg.org/multipage/input.html#attr-input-readonly
+    // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
+    let html = r#"<html><body>
+        <input id="readonly" value="fixed" readonly>
+        <input id="limited" value="A" maxlength="3">
+        <script>
+          globalThis.__events=[];
+          ['readonly','limited'].forEach(function(id){
+            var input=document.getElementById(id);
+            input.addEventListener('beforeinput',function(event){
+              globalThis.__events.push(id+':beforeinput:'+event.data);
+            });
+            input.addEventListener('input',function(event){
+              globalThis.__events.push(id+':input:'+event.data);
+            });
+          });
+          document.getElementById('limited').setSelectionRange(1,1);
+        </script>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/text-constraints");
+    webview.load_html(html, None);
+    let readonly = webview.page_node_ref_for_selector("#readonly").expect("readonly ref");
+    let limited = webview.page_node_ref_for_selector("#limited").expect("limited ref");
+
+    let readonly_result = webview
+        .dispatch_user_action(request(readonly, HtmlUserAction::InsertText { text: "x".to_string() }))
+        .expect("readonly action");
+    assert_eq!(readonly_result.noop_reason, Some(ActionNoopReason::ReadOnlyTarget));
+
+    let limited_result = webview
+        .dispatch_user_action(request(
+            limited,
+            HtmlUserAction::InsertText {
+                text: "😀B".to_string(),
+            },
+        ))
+        .expect("maxlength action");
+    assert!(limited_result.changed);
+    assert_eq!(
+        webview
+            .form_control_value_overrides()
+            .get("#limited")
+            .map(String::as_str),
+        Some("A😀")
+    );
+
+    let full_result = webview
+        .dispatch_user_action(request(limited, HtmlUserAction::InsertText { text: "x".to_string() }))
+        .expect("full maxlength action");
+    assert_eq!(full_result.noop_reason, Some(ActionNoopReason::MaxLengthReached));
+    assert_eq!(
+        webview
+            .execute_script("globalThis.__events.join('|')")
+            .expect("event log"),
+        "limited:beforeinput:😀|limited:input:😀"
+    );
+}

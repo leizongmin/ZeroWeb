@@ -712,16 +712,18 @@ impl RendererRuntime {
     }
 
     fn sync_text_control_state_from_worker(&mut self, selector: &str) {
-        let Some((value, selection_start, selection_end)) = self
-            .js_worker
-            .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
-            .ok()
-            .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
-        else {
+        let Some((value, selection_start, selection_end)) = self.text_control_state_from_worker(selector) else {
             return;
         };
         self.form_controls
             .update(selector, value, selection_start, selection_end);
+    }
+
+    fn text_control_state_from_worker(&self, selector: &str) -> Option<(String, usize, usize)> {
+        self.js_worker
+            .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
+            .ok()
+            .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
     }
 
     fn apply_webview_action_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
@@ -1089,6 +1091,9 @@ impl RendererRuntime {
                 .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
             let end = val.encode_utf16().count();
             self.form_controls.focus(selector, val, end, end);
+            let _ = self
+                .js_worker
+                .execute_script_direct(&zero_engine::script_set_text_control_selection(selector, end, end));
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
@@ -1135,14 +1140,11 @@ impl RendererRuntime {
                 continue;
             }
             // 同步 form_controls 基线（同 focus_target；JS 已派发 focus 事件，无 DOM 派发）。
-            if zero_engine::is_text_input(&self.cached_html, &selector) {
-                let val = self
-                    .form_controls
-                    .get(&selector)
-                    .map(|state| state.value.clone())
-                    .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, &selector));
-                let end = val.encode_utf16().count();
-                self.form_controls.focus(&selector, val, end, end);
+            if zero_engine::is_text_input(&self.cached_html, &selector)
+                && let Some((value, selection_start, selection_end)) = self.text_control_state_from_worker(&selector)
+            {
+                self.form_controls
+                    .focus(&selector, value, selection_start, selection_end);
             }
             if let Err(e) = self.send_focus_change(Some(selector)) {
                 tracing::warn!("send focus change: {e}");

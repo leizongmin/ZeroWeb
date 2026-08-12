@@ -67,8 +67,9 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 
 - [x] input/textarea live value 与 default value 分离及 reset
 - [x] 非文本 input selection getter/方法适用性
+- [x] readonly 与 maxlength 用户编辑约束
 - [ ] caret、点击 hit-test 与 IME rect 共用 shaping 边界
-- [ ] readonly、maxlength、minlength 用户编辑约束
+- [ ] minlength 约束校验
 
 ## 下一步
 

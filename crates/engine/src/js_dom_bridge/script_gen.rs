@@ -310,6 +310,19 @@ if(typeof e.setSelectionRange==='function')e.setSelectionRange({selection_start}
     )
 }
 
+/// 构造只更新文本控件 UTF-16 selection 的宿主脚本，不修改 live value 或派发事件。
+///
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection
+pub fn script_set_text_control_selection(selector: &str, selection_start: usize, selection_end: usize) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
+if(typeof e.setSelectionRange==='function')e.setSelectionRange({selection_start},{selection_end});\
+}})()"
+    )
+}
+
 /// 读取文本控件当前 value 与 DOM 选区，返回 JSON 数组字符串。
 ///
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#textFieldSelection

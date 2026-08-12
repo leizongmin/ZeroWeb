@@ -45,6 +45,10 @@ pub struct TextActionState {
     pub selection_start: usize,
     /// UTF-16 选区终点。
     pub selection_end: usize,
+    /// 控件是否为 readonly。
+    pub read_only: bool,
+    /// 用户输入允许的最大 UTF-16 code unit 数；`None` 表示无限制。
+    pub max_length: Option<usize>,
 }
 
 /// radio 激活规划所需的组状态。
@@ -201,6 +205,10 @@ pub enum ActionNoopReason {
     StaleTarget,
     /// 目标或其 HTML owner 状态为 disabled。
     DisabledTarget,
+    /// 文本控件为 readonly。
+    ReadOnlyTarget,
+    /// 文本控件已无 maxlength 容量。
+    MaxLengthReached,
     /// 动作不适用于目标状态。
     NotApplicable,
     /// 已选 radio 重复激活。
@@ -372,7 +380,23 @@ fn plan_text_insert(
     state: &TextActionState,
     text: &str,
 ) -> Result<HtmlActionPlan, ActionNoopReason> {
+    if state.read_only {
+        return Err(ActionNoopReason::ReadOnlyTarget);
+    }
     let (start, end) = normalized_selection(state);
+    let text = if let Some(max_length) = state.max_length {
+        let retained_length = state
+            .value
+            .encode_utf16()
+            .count()
+            .saturating_sub(end.saturating_sub(start));
+        truncate_to_utf16(text, max_length.saturating_sub(retained_length))
+    } else {
+        text
+    };
+    if text.is_empty() {
+        return Err(ActionNoopReason::MaxLengthReached);
+    }
     let start_byte = byte_index_at_utf16(&state.value, start);
     let end_byte = byte_index_at_utf16(&state.value, end);
     let mut value = state.value.clone();
@@ -382,6 +406,9 @@ fn plan_text_insert(
 }
 
 fn plan_text_delete(target: PageNodeRef, state: &TextActionState) -> Result<HtmlActionPlan, ActionNoopReason> {
+    if state.read_only {
+        return Err(ActionNoopReason::ReadOnlyTarget);
+    }
     let (start, end) = normalized_selection(state);
     if start == end && start == 0 {
         return Err(ActionNoopReason::NothingToDelete);
@@ -489,6 +516,18 @@ fn byte_index_at_utf16(value: &str, offset: usize) -> usize {
         utf16 += ch.len_utf16();
     }
     value.len()
+}
+
+fn truncate_to_utf16(value: &str, max_length: usize) -> &str {
+    let mut utf16 = 0;
+    for (byte, ch) in value.char_indices() {
+        let next = utf16 + ch.len_utf16();
+        if next > max_length {
+            return &value[..byte];
+        }
+        utf16 = next;
+    }
+    value
 }
 
 #[cfg(test)]
@@ -609,6 +648,8 @@ mod tests {
                 value: "A😀B".to_string(),
                 selection_start: 1,
                 selection_end: 3,
+                read_only: false,
+                max_length: None,
             }),
         )
         .unwrap();
@@ -627,6 +668,78 @@ mod tests {
     }
 
     #[test]
+    fn readonly_text_actions_are_explicit_noops() {
+        let state = ActionTargetState::Text(TextActionState {
+            value: "value".to_string(),
+            selection_start: 5,
+            selection_end: 5,
+            read_only: true,
+            max_length: None,
+        });
+        assert_eq!(
+            plan_html_action(
+                &request(node(1), HtmlUserAction::InsertText { text: "x".to_string() },),
+                4,
+                9,
+                &state,
+            ),
+            Err(ActionNoopReason::ReadOnlyTarget)
+        );
+        assert_eq!(
+            plan_html_action(&request(node(1), HtmlUserAction::DeleteBackward), 4, 9, &state),
+            Err(ActionNoopReason::ReadOnlyTarget)
+        );
+    }
+
+    #[test]
+    fn maxlength_truncates_insert_at_utf16_boundaries() {
+        let plan = plan_html_action(
+            &request(
+                node(1),
+                HtmlUserAction::InsertText {
+                    text: "😀B".to_string(),
+                },
+            ),
+            4,
+            9,
+            &ActionTargetState::Text(TextActionState {
+                value: "Axx".to_string(),
+                selection_start: 1,
+                selection_end: 3,
+                read_only: false,
+                max_length: Some(3),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            plan.commit,
+            [PlannedMutation::SetText {
+                target: node(1),
+                value: "A😀".to_string(),
+                selection_start: 3,
+                selection_end: 3,
+            }]
+        );
+        assert_eq!(plan.cancelable_event.unwrap().data.as_deref(), Some("😀"));
+
+        assert_eq!(
+            plan_html_action(
+                &request(node(1), HtmlUserAction::InsertText { text: "x".to_string() },),
+                4,
+                9,
+                &ActionTargetState::Text(TextActionState {
+                    value: "full".to_string(),
+                    selection_start: 4,
+                    selection_end: 4,
+                    read_only: false,
+                    max_length: Some(4),
+                }),
+            ),
+            Err(ActionNoopReason::MaxLengthReached)
+        );
+    }
+
+    #[test]
     fn delete_at_start_and_stale_target_are_explicit() {
         assert_eq!(
             plan_html_action(
@@ -637,6 +750,8 @@ mod tests {
                     value: "A".to_string(),
                     selection_start: 0,
                     selection_end: 0,
+                    read_only: false,
+                    max_length: None,
                 }),
             ),
             Err(ActionNoopReason::NothingToDelete)

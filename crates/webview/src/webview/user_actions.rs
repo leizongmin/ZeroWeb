@@ -139,6 +139,10 @@ impl WebView {
                     value,
                     selection_start,
                     selection_end,
+                    read_only: zero_engine::has_attribute(&html, &selector, "readonly"),
+                    max_length: zero_engine::query_attr_from_html(&html, &selector, "maxlength")
+                        .parse()
+                        .ok(),
                 })
             }
             HtmlUserAction::Activate if zero_engine::is_checkbox(&html, &selector) => ActionTargetState::Checkbox {

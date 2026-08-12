@@ -18,6 +18,7 @@ fn runtime_with_prevented_keydown(renderer_id: u64) -> RendererRuntime {
     runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
     runtime.current_url = Some(url.to_string());
     runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
     runtime.webview.as_mut().unwrap().load_html(html, None);
     {
         let mut ctx = PageScriptContext {
@@ -134,6 +135,7 @@ fn host_focus_transition_dispatches_focus_event_order() {
     runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
     runtime.current_url = Some(url.to_string());
     runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
     runtime.webview.as_mut().unwrap().load_html(html, None);
     {
         let mut ctx = PageScriptContext {
@@ -159,5 +161,61 @@ fn host_focus_transition_dispatches_focus_event_order() {
             .execute_script_direct("globalThis.__focusEvents.join(',')")
             .unwrap(),
         "a:focusout,a:blur,b:focus,b:focusin"
+    );
+}
+
+#[test]
+fn keyboard_defaults_enforce_readonly_and_maxlength() {
+    let html = r#"<html><body>
+        <input id="readonly" value="fixed" readonly>
+        <input id="limited" value="A" maxlength="3">
+        <script>
+          globalThis.__events=[];
+          ['readonly','limited'].forEach(function(id){
+            var input=document.getElementById(id);
+            input.addEventListener('beforeinput',function(event){
+              globalThis.__events.push(id+':beforeinput:'+event.data);
+            });
+            input.addEventListener('input',function(event){
+              globalThis.__events.push(id+':input:'+event.data);
+            });
+          });
+        </script>
+    </body></html>"#;
+    let url = "https://zero.test/text-constraints";
+    let mut runtime = RendererRuntime::new(914);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    {
+        let mut ctx = PageScriptContext {
+            html: &mut runtime.cached_html,
+            url,
+            js_worker: &runtime.js_worker,
+            webview: runtime.webview.as_mut(),
+        };
+        page_scripts::run_page_scripts(&mut ctx, true, |_url| Err::<String, String>("no fetch".into()));
+    }
+
+    runtime.focus_target("#readonly").unwrap();
+    runtime.apply_keydown_default("#readonly", "x", false).unwrap();
+    runtime.blur_focused().unwrap();
+    runtime.focus_target("#limited").unwrap();
+    runtime.apply_keydown_default("#limited", "😀", false).unwrap();
+    runtime.apply_keydown_default("#limited", "B", false).unwrap();
+
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct(
+                "[document.getElementById('readonly').value,\
+                  document.getElementById('limited').value,\
+                  globalThis.__events.join('|')].join(',')"
+            )
+            .unwrap(),
+        "fixed,A😀,limited:beforeinput:😀|limited:input:😀"
     );
 }
