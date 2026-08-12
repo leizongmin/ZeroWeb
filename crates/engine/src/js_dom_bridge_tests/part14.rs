@@ -311,6 +311,60 @@ fn test_canvas_ctx2d_text_imagedata_r3078() {
 }
 
 #[test]
+fn test_canvas_measure_text_full_fields_r3303() {
+    // R3303：measureText 返 spec TextMetrics 全 11 字段（host 经 csv 串参返 JS 构完整对象）。
+    // canvas crate 无真实字体度量，字体度量字段为 font.size 比例启发式近似；本测断言字段集齐全 +
+    // 关键不变量（width 随字符数 / actualBoxRight ≈ width / alphabeticBaseline === 0 / hangingBaseline > 0 /
+    // ideographicBaseline < 0 / fontBoundingBox ≈ actualBoundingBox），防 host op 或 JS shim 字段漏 wire。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             var m = ctx.measureText('hello');\
+             var fields = ['width','actualBoundingBoxAscent','actualBoundingBoxDescent',\
+             'actualBoundingBoxLeft','actualBoundingBoxRight','fontBoundingBoxAscent',\
+             'fontBoundingBoxDescent','alphabeticBaseline','hangingBaseline','ideographicBaseline'];\
+             globalThis.__allNum = String(fields.every(function (k) { return typeof m[k] === 'number'; }));\
+             globalThis.__fieldCount = fields.length;\
+             globalThis.__keysPresent = String(fields.every(function (k) { return k in m; }));\
+             globalThis.__width = m.width;\
+             globalThis.__emptyWidth = ctx.measureText('').width;\
+             globalThis.__rightEqWidth = String(Math.abs(m.actualBoundingBoxRight - m.width) < 1e-6);\
+             globalThis.__alphaZero = String(m.alphabeticBaseline === 0);\
+             globalThis.__hangingPos = String(m.hangingBaseline > 0);\
+             globalThis.__ideoNeg = String(m.ideographicBaseline < 0);\
+             globalThis.__fontBoxEq = String(Math.abs(m.fontBoundingBoxAscent - m.actualBoundingBoxAscent) < 1e-6 && Math.abs(m.fontBoundingBoxDescent - m.actualBoundingBoxDescent) < 1e-6);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__keysPresent").unwrap().value, "true", "TextMetrics 全 11 字段均 present");
+    assert_eq!(sandbox.execute("globalThis.__allNum").unwrap().value, "true", "TextMetrics 全字段均为 number");
+    assert_eq!(sandbox.execute("globalThis.__fieldCount").unwrap().value, "10", "字段数 = 10（spec TextMetrics 全 10 属性）");
+    assert_eq!(sandbox.execute("globalThis.__emptyWidth").unwrap().value, "0", "measureText('').width === 0");
+    let width: f64 = sandbox.execute("globalThis.__width").unwrap().value.parse().unwrap();
+    assert!(width > 0.0, "measureText('hello').width > 0");
+    assert_eq!(sandbox.execute("globalThis.__rightEqWidth").unwrap().value, "true", "actualBoundingBoxRight ≈ width");
+    assert_eq!(sandbox.execute("globalThis.__alphaZero").unwrap().value, "true", "alphabeticBaseline === 0（默认基线）");
+    assert_eq!(sandbox.execute("globalThis.__hangingPos").unwrap().value, "true", "hangingBaseline > 0（≈ ascent）");
+    assert_eq!(sandbox.execute("globalThis.__ideoNeg").unwrap().value, "true", "ideographicBaseline < 0（≈ -descent）");
+    assert_eq!(sandbox.execute("globalThis.__fontBoxEq").unwrap().value, "true", "fontBoundingBox ≈ actualBoundingBox（启发式同源）");
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

@@ -232,7 +232,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             "ok".into()
         }
         // R3078：Canvas 2D 文本 API。fill_text 绘制（canvas crate fill_text 写 pixel_buffer）；measure_text 返
-        // TextMetrics（width + bounding box，csv 串参返 JS 构 {width,...}）。spec CanvasRenderingContext2D。
+        // TextMetrics（R3303 spec 全 10 字段，csv 串参返 JS 构 TextMetrics）。spec CanvasRenderingContext2D。
         "fillText" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.fill_text(arg(0), f(1), f(2));
@@ -248,13 +248,24 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "measureText" => {
             if let Some(ctx) = reg.contexts.get(&hid()) {
                 let m = ctx.measure_text(arg(0));
-                // width,ascent,descent csv（JS 构 TextMetrics {width, actualBoundingBoxAscent/Descent}）。
+                // R3303：spec TextMetrics 全 10 字段 csv（width, actualBoxAscent/Descent/Left/Right,
+                // fontBoxAscent/Descent, alphabetic/hanging/ideographicBaseline）。JS 构完整 TextMetrics。
                 format!(
-                    "{},{},{}",
-                    m.width, m.actual_bounding_box_ascent, m.actual_bounding_box_descent
+                    "{},{},{},{},{},{},{},{},{},{}",
+                    m.width,
+                    m.actual_bounding_box_ascent,
+                    m.actual_bounding_box_descent,
+                    m.actual_bounding_box_left,
+                    m.actual_bounding_box_right,
+                    m.font_bounding_box_ascent,
+                    m.font_bounding_box_descent,
+                    m.alphabetic_baseline,
+                    m.hanging_baseline,
+                    m.ideographic_baseline,
                 )
             } else {
-                "0,0,0".into()
+                // 无 ctx → 全 0（与既有 0 width 同语义）。
+                "0,0,0,0,0,0,0,0,0,0".into()
             }
         }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。

@@ -180,14 +180,32 @@ impl CanvasContext {
         }
     }
 
-    /// 测量文本宽度（简化版：按字符数 × 字体大小估算）。
+    /// 测量文本度量（HTML Canvas `TextMetrics`，
+    /// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-measuretext）。
+    ///
+    /// R3303：补全 spec 全字段。canvas crate 无真实字体度量后端（无字体表），故除 `width` 外均为字体度量
+    /// 启发式近似——按 `font.size` 比例估，与既有 R3078 ascent=0.8em/descent=0.2em 一致。真实字体度量（经
+    /// 字体表 hhea/OS/2）须接渲染流字体栈（render-stream 协调点），作后续 follow-up。即便近似，完整字段集
+    /// 使文本布局库（chart.js 轴尺寸 / 自定义换行 / 基线对齐）不因缺字段读 NaN/undefined。
     pub fn measure_text(&self, text: &str) -> TextMetrics {
         let char_count = text.chars().count() as f32;
-        let em_width = self.font.size * 0.6; // 简化：每个字符约 0.6em 宽
+        let size = self.font.size;
+        let em_width = size * 0.6; // 简化：每个字符约 0.6em 宽
+        let width = char_count * em_width;
+        // 字体度量启发式（em 比例，镜像既有 ascent=0.8em/descent=0.2em）。
+        let ascent = size * 0.8; // 字体 ascent（cap/x-height 上界近似）
+        let descent = size * 0.2; // 字体 descent（descender 下界近似）
         TextMetrics {
-            width: char_count * em_width,
-            actual_bounding_box_ascent: self.font.size * 0.8,
-            actual_bounding_box_descent: self.font.size * 0.2,
+            width,
+            actual_bounding_box_ascent: ascent,
+            actual_bounding_box_descent: descent,
+            actual_bounding_box_left: 0.0, // 原点到最左像素；无 advance 起点偏移（左伸字形如 italic 负值，拉丁默认 0）
+            actual_bounding_box_right: width, // 原点到最右像素 ≈ advance 宽
+            font_bounding_box_ascent: ascent, // 字体 ascent，由字体表给定；近似
+            font_bounding_box_descent: descent, // 字体 descent，由字体表给定；近似
+            alphabetic_baseline: 0.0,      // 默认基线即 alphabetic → 距自身 0
+            hanging_baseline: ascent,      // Latin 悬挂基线在大写字母顶附近 ≈ ascent
+            ideographic_baseline: -descent, // CJK 表意基线略低于 alphabetic ≈ -descent
         }
     }
 

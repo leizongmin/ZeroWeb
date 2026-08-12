@@ -703,15 +703,35 @@ pub struct CanvasContext {
     pub(crate) direction: TextDirection,
 }
 
-/// 文本度量。
+/// 文本度量（HTML Canvas `TextMetrics`，
+/// https://html.spec.whatwg.org/multipage/canvas.html#textmetrics）。
+///
+/// R3303：补全 spec 全字段。除 `width` 外均为字体度量启发式近似（canvas crate 无真实字体度量
+/// 后端——ascent/descent/baseline 按 `font.size` 比例估，与既有 R3078 ascent=0.8em/descent=0.2em
+/// 一致）。真实字体度量（经字体表 hhea/OS/2）为后续 follow-up（须接渲染流字体栈，render-stream
+/// 协调点）。即便近似，完整字段集使文本布局库（chart.js 轴尺寸 / 自定义换行）不因缺字段读 NaN。
 #[derive(Debug, Clone)]
 pub struct TextMetrics {
-    /// 文本宽度。
+    /// 文本宽度（advance 宽，原点起向右）。
     pub width: f32,
-    /// 实际边界框上方。
+    /// 实际边界框上方（基线到最上像素的距离）。
     pub actual_bounding_box_ascent: f32,
-    /// 实际边界框下方。
+    /// 实际边界框下方（基线到最下像素的距离）。
     pub actual_bounding_box_descent: f32,
+    /// 实际边界框左侧（原点到最左像素的距离；通常 0，左伸字形如 italic 负值）。
+    pub actual_bounding_box_left: f32,
+    /// 实际边界框右侧（原点到最右像素的距离；≈ width）。
+    pub actual_bounding_box_right: f32,
+    /// 字体边界框上方（字体 ascent，由字体表给定；近似 0.8em）。
+    pub font_bounding_box_ascent: f32,
+    /// 字体边界框下方（字体 descent，由字体表给定；近似 0.2em）。
+    pub font_bounding_box_descent: f32,
+    /// 字母基线距默认基线（alphabetic）的距离（默认基线即 alphabetic → 0）。
+    pub alphabetic_baseline: f32,
+    /// 悬挂基线距默认基线的距离（Latin 近似 0.8em，悬挂基线在大写字母顶附近）。
+    pub hanging_baseline: f32,
+    /// 表意基线距默认基线的距离（近似 -0.2em，CJK 字形基线略低于 alphabetic）。
+    pub ideographic_baseline: f32,
 }
 
 /// 图像数据。
@@ -1153,14 +1173,29 @@ mod tests {
 
     #[test]
     fn test_text_metrics_fields() {
+        // R3303：spec 全 10 字段均可读写。
         let metrics = TextMetrics {
             width: 120.5,
             actual_bounding_box_ascent: 10.0,
             actual_bounding_box_descent: 3.0,
+            actual_bounding_box_left: -1.0,
+            actual_bounding_box_right: 120.5,
+            font_bounding_box_ascent: 12.0,
+            font_bounding_box_descent: 3.5,
+            alphabetic_baseline: 0.0,
+            hanging_baseline: 10.0,
+            ideographic_baseline: -3.0,
         };
         assert!((metrics.width - 120.5).abs() < f32::EPSILON);
         assert_eq!(metrics.actual_bounding_box_ascent, 10.0);
         assert_eq!(metrics.actual_bounding_box_descent, 3.0);
+        assert_eq!(metrics.actual_bounding_box_left, -1.0);
+        assert_eq!(metrics.actual_bounding_box_right, 120.5);
+        assert_eq!(metrics.font_bounding_box_ascent, 12.0);
+        assert_eq!(metrics.font_bounding_box_descent, 3.5);
+        assert_eq!(metrics.alphabetic_baseline, 0.0);
+        assert_eq!(metrics.hanging_baseline, 10.0);
+        assert_eq!(metrics.ideographic_baseline, -3.0);
     }
 
     #[test]
@@ -1169,9 +1204,18 @@ mod tests {
             width: 50.0,
             actual_bounding_box_ascent: 8.0,
             actual_bounding_box_descent: 2.0,
+            actual_bounding_box_left: 0.0,
+            actual_bounding_box_right: 50.0,
+            font_bounding_box_ascent: 8.0,
+            font_bounding_box_descent: 2.0,
+            alphabetic_baseline: 0.0,
+            hanging_baseline: 8.0,
+            ideographic_baseline: -2.0,
         };
         let cloned = m.clone();
         assert_eq!(cloned.width, m.width);
+        assert_eq!(cloned.font_bounding_box_ascent, m.font_bounding_box_ascent);
+        assert_eq!(cloned.ideographic_baseline, m.ideographic_baseline);
     }
 
     // ── ImageData 测试 ────────────────────────────────────

@@ -59,6 +59,30 @@ fn test_canvas_measure_text() {
 }
 
 #[test]
+fn test_canvas_measure_text_full_fields_r3303() {
+    // R3303：spec TextMetrics 全 10 字段。canvas crate 无真实字体度量，字段为 font.size 比例启发式
+    // 近似（与既有 ascent=0.8em/descent=0.2em 一致）。断言字段集齐全 + 启发式一致性（防回归）。
+    let ctx = CanvasContext::new(200, 200);
+    let m = ctx.measure_text("hello");
+    let size = 10.0_f32; // CanvasContext::new 默认 font.size
+    // 与 measure_text 内同序计算（size*0.6 再乘字符数），避 f32 结合序差。
+    let width = (size * 0.6) * 5.0;
+    assert!((m.width - width).abs() < f32::EPSILON, "width = chars*em");
+    assert!((m.actual_bounding_box_ascent - size * 0.8).abs() < f32::EPSILON);
+    assert!((m.actual_bounding_box_descent - size * 0.2).abs() < f32::EPSILON);
+    assert_eq!(m.actual_bounding_box_left, 0.0, "拉丁默认无左伸");
+    assert!(
+        (m.actual_bounding_box_right - width).abs() < f32::EPSILON,
+        "right ≈ advance width"
+    );
+    assert!((m.font_bounding_box_ascent - size * 0.8).abs() < f32::EPSILON);
+    assert!((m.font_bounding_box_descent - size * 0.2).abs() < f32::EPSILON);
+    assert_eq!(m.alphabetic_baseline, 0.0, "默认基线即 alphabetic");
+    assert!((m.hanging_baseline - size * 0.8).abs() < f32::EPSILON);
+    assert!((m.ideographic_baseline - (-(size * 0.2))).abs() < f32::EPSILON);
+}
+
+#[test]
 fn test_canvas_save_restore() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.set_fill_color(Color::RED);

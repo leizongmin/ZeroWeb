@@ -904,12 +904,23 @@
       __zw_canvas_op(h, 'strokeText', String(text), String(+x || 0), String(+y || 0));
     };
     ctx.measureText = function (text) {
+      // R3303：spec TextMetrics 全 10 字段（host 返 width,actualBoxAsc/Desc/Left/Right,
+      // fontBoxAsc/Desc,alphabetic/hanging/ideographicBaseline csv）。canvas crate 无真实字体度量，
+      // 字体度量字段为 font.size 比例启发式近似（spec 合规字段集，值待字体栈接通后精确化）。
       var raw = String(__zw_canvas_op(h, 'measureText', String(text)));
       var p = raw.split(',');
+      var num = function (i) { return parseFloat(p[i]) || 0; };
       return {
-        width: parseFloat(p[0]) || 0,
-        actualBoundingBoxAscent: parseFloat(p[1]) || 0,
-        actualBoundingBoxDescent: parseFloat(p[2]) || 0,
+        width: num(0),
+        actualBoundingBoxAscent: num(1),
+        actualBoundingBoxDescent: num(2),
+        actualBoundingBoxLeft: num(3),
+        actualBoundingBoxRight: num(4),
+        fontBoundingBoxAscent: num(5),
+        fontBoundingBoxDescent: num(6),
+        alphabeticBaseline: num(7),
+        hangingBaseline: num(8),
+        ideographicBaseline: num(9),
       };
     };
     ctx.createImageData = function (a, b) {
