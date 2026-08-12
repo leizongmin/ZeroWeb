@@ -336,13 +336,24 @@ impl<'a> BrowserScenarioHost<'a> {
     }
 
     fn point_for_id(&mut self, expected_id: &str) -> Result<(f32, f32), String> {
-        if self.hit_centers.is_empty() {
-            self.scan_hit_centers();
+        // 首次点击前命中缓存可能仍是 about:blank 首帧（wait_for_snapshot_after 在
+        // 首帧即过）——10s 内重试重扫，直到目标元素帧到达（macos-aarch64 首帧渲染慢时
+        // 曾固定 step1 失败；与场景 assertion_timeout 同量级，R2414 同族时序）。
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if self.hit_centers.is_empty() {
+                self.scan_hit_centers();
+            }
+            if let Some(point) = self.hit_centers.get(expected_id).copied() {
+                return Ok(point);
+            }
+            if Instant::now() >= deadline {
+                return Err(format!("no hit-test point for #{expected_id}"));
+            }
+            self.hit_centers.clear();
+            self.poll();
+            std::thread::sleep(Duration::from_millis(20));
         }
-        self.hit_centers
-            .get(expected_id)
-            .copied()
-            .ok_or_else(|| format!("no hit-test point for #{expected_id}"))
     }
 
     fn scan_hit_centers(&mut self) {
