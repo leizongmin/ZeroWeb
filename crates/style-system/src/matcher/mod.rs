@@ -1230,9 +1230,9 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "font-variant-east-asian"
         | "font-variant-position"
         | "font-variant"
-        | "font-stretch"
         | "font-feature-settings"
         | "font-variation-settings" => true,
+        "font-stretch" | "font-width" => parse_font_stretch(trimmed).is_some(),
         // https://drafts.csswg.org/css-fonts-4/#font-synthesis
         "font-synthesis" => parse_font_synthesis(trimmed).is_some(),
         "font-synthesis-weight" | "font-synthesis-style" | "font-synthesis-small-caps" | "font-synthesis-position" => {

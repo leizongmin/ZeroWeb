@@ -1243,7 +1243,7 @@ impl RendererRuntime {
                     continue;
                 }
             };
-            match self.register_loaded_font(&req.family, req.weight, req.is_italic, None, &bytes) {
+            match self.register_loaded_font(&req.family, req.weight, req.is_italic, None, None, &bytes) {
                 true => {
                     updated = true;
                     resolver.resolve(&req.resolve_id, "ok");
@@ -1295,6 +1295,7 @@ impl RendererRuntime {
         family: &str,
         weight: Option<u16>,
         is_italic: bool,
+        stretch: Option<f32>,
         features: Option<&[zero_render_foundation::font::OpenTypeFeature]>,
         bytes: &[u8],
     ) -> bool {
@@ -1305,14 +1306,9 @@ impl RendererRuntime {
         if let Some(features) = features {
             self.font_loader.register_font_features(id, features.to_vec());
         }
-        let want_bold = weight.is_some_and(|w| w >= 600);
-        let key = match (want_bold, is_italic) {
-            (true, true) => format!("{family}:700:italic"),
-            (true, false) => format!("{family}:700"),
-            (false, true) => format!("{family}:italic"),
-            (false, false) => family.to_string(),
-        };
-        self.font_loader.register_family_alias(&key, id);
+        for alias in zero_render_foundation::font::font_face_aliases(family, weight, is_italic, stretch) {
+            self.font_loader.register_family_alias(&alias, id);
+        }
         true
     }
 
@@ -1357,11 +1353,11 @@ impl RendererRuntime {
             let loaded = pending.load.drain_loaded_fonts();
             if !loaded.is_empty() {
                 let mut updated = false;
-                for (family, weight, is_italic, features, bytes) in loaded {
+                for (family, weight, is_italic, stretch, features, bytes) in loaded {
                     // R2417/R2493（weight, style）注册键规则抽入 register_loaded_font，
                     // 与 FontFace.load()（tick_font_face_loads）共用——bold/italic face 不注册到 plain family
                     //（否则 build_font_resolver 的「second face=bold」启发式顺序依赖错配，R2417）。
-                    if self.register_loaded_font(&family, weight, is_italic, Some(&features), &bytes) {
+                    if self.register_loaded_font(&family, weight, is_italic, stretch, Some(&features), &bytes) {
                         updated = true;
                     } else {
                         tracing::warn!(family = %family, "live @font-face load failed");

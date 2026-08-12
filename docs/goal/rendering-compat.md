@@ -23,6 +23,8 @@
 >
 > **▶ 字体栈增量进展（R3254-F relative-font-weight·2026-08-12）**：**R3253-F** 补齐 CSS `font-variant` shorthand（展开并重置 ligatures/caps/numeric/east-asian/position）与 `font-stretch` keyword/percentage computed storage/inheritance，并让 `font` shorthand 按 CSS Fonts 4 §4 重置全部 variant 子属性和 stretch。**R3254-F** 将 `font-weight: bolder/lighter` 从 getComputedStyle 私有后处理前移到 style-system computed 阶段，按父元素绝对字重映射为 100/400/700/900；layout、paint、gCS 现消费同一结果，engine 删除重复父链 DFS。Oracle A/B：css-fonts 仍 `84/282`，目标页 `bolder 11.31%` / `lighter 10.91%` 持平；两页依赖本机未安装的 `CSSTest Weights` 字体，故当前 Oracle 无像素翻转但零退化。验证：相对字重映射表/根节点/多层父链与既有 gCS 测试通过，workspace clippy clean，reftest `687/687`；全量测试仍受既有 browser 表单快照时序、无 wgpu adapter 与 QuickJS 缺 `libclang` 环境门阻断。
 >
+> **▶ 字体栈增量进展（R3255-F font-stretch-face-matching·2026-08-12）**：`@font-face font-stretch` 描述符现按 keyword/percentage 解析并穿过 engine 提取、WebView async fetch/drain、browser/renderer/WPT 三宿主注册；render-foundation 新增统一 width-specific alias 与 CSS Fonts width-first matching，normal width 同时保留旧 alias，layout ordered faces、paint 主 face、控件/列表/效果文本全部消费 computed `font-stretch`。CSSOM 同步支持 `font-stretch` 百分比与 `font` shorthand stretch 序列化。上游 `font-stretch-01..18` 为可信 strict `18/18`、全部 `0.00%`；Chromium Oracle A/B：01..11 从 `2.41%→1.54%`，12..18 保持 `1.54%`，合计改善约 `9.57pp`、零回归，目录门仍 `84/282`（剩余 1.54% 光栅差异未跨 1% 阈值）。workspace clippy clean、reftest `687/687`、产品 smoke 全 viewport 通过。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

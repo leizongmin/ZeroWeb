@@ -476,6 +476,26 @@ fn test_font_face_weight_descriptor() {
 }
 
 #[test]
+fn test_font_face_stretch_descriptor() {
+    let cases = [
+        ("normal", Some(100.0)),
+        ("condensed", Some(75.0)),
+        ("semi-expanded", Some(112.5)),
+        ("ultra-expanded", Some(200.0)),
+        ("137.5%", Some(137.5)),
+        ("invalid", None),
+    ];
+    for (value, expected) in cases {
+        let css = format!("@font-face {{ font-family: A; src: url(a.woff); font-stretch: {value}; }}");
+        let stylesheet = Parser::parse_stylesheet(&css);
+        match &stylesheet.rules[0] {
+            Rule::FontFace(face) => assert_eq!(face.stretch, expected, "value: {value}"),
+            other => panic!("expected FontFace, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn test_font_face_missing_family_or_src_dropped() {
     // 缺 src → 规则被丢弃（返回 None），不进入样式表
     let css = r#"@font-face { font-family: "NoSrc"; }"#;

@@ -608,23 +608,15 @@ fn tab_worker_main(
                 let loaded = load.drain_loaded_fonts();
                 if !loaded.is_empty() {
                     let mut updated = false;
-                    for (family, weight, is_italic, features, bytes) in loaded {
+                    for (family, weight, is_italic, stretch, features, bytes) in loaded {
                         match font_loader.load_font(&bytes) {
                             Ok(id) => {
                                 font_loader.register_font_features(id, features);
-                                // R2417/R2493：按 (weight, style) 构注册键——bold+italic →
-                                // `{family}:700:italic`、bold → `{family}:700`、italic →
-                                // `{family}:italic`、regular → plain。bold/italic face 不注册
-                                // plain family（避 build_font_resolver「second face=bold」启发式
-                                // 顺序错配，R2417）。
-                                let want_bold = weight.is_some_and(|w| w >= 600);
-                                let key = match (want_bold, is_italic) {
-                                    (true, true) => format!("{family}:700:italic"),
-                                    (true, false) => format!("{family}:700"),
-                                    (false, true) => format!("{family}:italic"),
-                                    (false, false) => family.clone(),
-                                };
-                                font_loader.register_family_alias(&key, id);
+                                for alias in
+                                    zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch)
+                                {
+                                    font_loader.register_family_alias(&alias, id);
+                                }
                                 updated = true;
                             }
                             Err(e) => tracing::warn!(family = %family, err = %e, "live @font-face load failed"),

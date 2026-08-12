@@ -70,8 +70,7 @@ pub struct Painter {
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
     /// 用于将 CSS font-family 列表解析为具体的 FontId。
     font_resolver: HashMap<String, u32>,
-    /// 小写 key 索引（set_font_resolver 时构建一次）：resolve_font_id 的大小写
-    /// 不敏感回退免整表线性扫描（旧实现每 miss 一次 O(resolver 大小)）。
+    /// 小写 key 索引，供大小写不敏感的 face matching 使用。
     font_resolver_lower: HashMap<String, u32>,
     /// generic family（含粗体/斜体变体）解析到的字体 ID 集。
     generic_font_ids: HashSet<u32>,
@@ -398,80 +397,11 @@ impl Painter {
             })
             .map(|(_, &id)| id)
             .collect();
-        self.font_resolver_lower = resolver.iter().map(|(k, &v)| (k.to_ascii_lowercase(), v)).collect();
+        self.font_resolver_lower = resolver
+            .iter()
+            .map(|(key, &id)| (key.to_ascii_lowercase(), id))
+            .collect();
         self.font_resolver = resolver;
-    }
-
-    /// 根据 CSS font-family 与 font-weight 解析 FontId。
-    ///
-    /// 遍历 font-family 列表，返回第一个匹配的 FontId。
-    /// `font-weight >= 600` 时优先查找 `{family}:700` 粗体 face。
-    pub(crate) fn resolve_font_id(
-        &self,
-        font_family: &[String],
-        font_weight: &zero_css_parser::values::FontWeightValue,
-        font_style: &zero_css_parser::values::types::FontStyleValue,
-    ) -> (zero_render_foundation::primitive::FontId, bool) {
-        use zero_css_parser::values::FontWeightValue;
-        use zero_css_parser::values::types::FontStyleValue;
-        use zero_render_foundation::primitive::FontId;
-
-        let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
-            || matches!(font_weight, FontWeightValue::Absolute(w) if *w >= 600);
-        // R2493：italic/oblique → want_italic，查 `{family}:italic` 键。
-        let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
-
-        // 按 (want_bold, want_italic) 构候选键序列（逐级 fallback）：bold+italic →
-        // :700:italic → :700 → :italic → plain；bold → :700 → plain；italic → :italic → plain；
-        // regular → plain。缺 italic/bold face 时回落 plain = 现状行为（零回归下限）。
-        let suffixes: &[&str] = match (want_bold, want_italic) {
-            (true, true) => &[":700:italic", ":700", ":italic", ""],
-            (true, false) => &[":700", ""],
-            (false, true) => &[":italic", ""],
-            (false, false) => &[""],
-        };
-
-        // https://drafts.csswg.org/css-fonts-4/#family-name-value
-        const GENERIC_FAMILIES: &[&str] = &[
-            "serif",
-            "sans-serif",
-            "monospace",
-            "cursive",
-            "fantasy",
-            "system-ui",
-            "ui-serif",
-            "ui-sans-serif",
-            "ui-monospace",
-            "ui-rounded",
-            "emoji",
-            "math",
-            "fangsong",
-        ];
-        for family in font_family {
-            let is_quoted = family.starts_with('"') || family.starts_with('\'');
-            let name = family.trim_matches('"').trim_matches('\'');
-            // R3249：quoted generic names（如 `"fantasy"`）是自定义字体名，不匹配 generic resolver。
-            if is_quoted && GENERIC_FAMILIES.iter().any(|g| g.eq_ignore_ascii_case(name)) {
-                continue;
-            }
-            for &suffix in suffixes {
-                let key = format!("{name}{suffix}");
-                let resolved_italic = suffix.contains("italic");
-                if let Some(&id) = self.font_resolver.get(&key) {
-                    return (FontId(id), resolved_italic);
-                }
-                if let Some(&id) = self.font_resolver_lower.get(&key.to_ascii_lowercase()) {
-                    return (FontId(id), resolved_italic);
-                }
-            }
-        }
-        // bold fallback 到通用 sans-serif:700（既有行为）。R2495：恢复对所有 bold 文本
-        //（含 bold+italic）的 fallback——R2493 曾误窄化为 `!want_italic`，致 bold+italic 且
-        // 无匹配 face 的文本回落 FontId(0) 而非 bold sans（丢失 bold 权重）。
-        if want_bold && let Some(&id) = self.font_resolver.get("sans-serif:700") {
-            return (FontId(id), false);
-        }
-        (FontId(0), false)
     }
 
     /// 绘制整个布局树。
@@ -1946,6 +1876,7 @@ mod tests {
                 &["Custom".to_string(), "sans-serif".to_string()],
                 &zero_css_parser::values::FontWeightValue::Normal,
                 &zero_css_parser::values::types::FontStyleValue::Normal,
+                100.0,
             ),
             vec![3, 1]
         );

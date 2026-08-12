@@ -216,6 +216,7 @@ fn adjusted_text_max_width(
         &style.font_family,
         &style.font_weight,
         &style.font_style,
+        style.font_stretch,
     );
     let text = crate::inline::collapse_whitespace(&doc.text_content(node_id)?);
     let font_size = match &style.font_size {

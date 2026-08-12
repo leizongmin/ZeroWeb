@@ -81,8 +81,7 @@ pub enum AtRuleBody {
 /// CSS @font-face 规则。
 ///
 /// 格式：`@font-face { font-family: "X"; src: url("X.woff") format("woff"); }`
-/// 仅提取字体族名与 src 中的 URL 列表（权重/样式等描述符当前忽略，
-/// 由调用方按 family 注册到 FontLoader）。
+/// 提取字体族名、src URL 及 face matching/feature 描述符。
 #[derive(Debug, Clone)]
 pub struct FontFaceRule {
     /// 字体族名（`font-family` 描述符的值，已去引号）。
@@ -97,6 +96,8 @@ pub struct FontFaceRule {
     /// 原值；缺失 → `None`（视为 normal/upright）。供生产注册按 style 构
     /// `{family}:italic`（italic/oblique）键，painter `resolve_font_id` 选用。
     pub style: Option<FontStyleValue>,
+    /// `font-stretch` 描述符解析后的百分比（`normal` = 100）；缺失或非法为 `None`。
+    pub stretch: Option<f32>,
     /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
     pub feature_settings: FontFeatureSettingsValue,
 }

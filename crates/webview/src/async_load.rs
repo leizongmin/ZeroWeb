@@ -22,9 +22,17 @@ use crate::webview::WebView;
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
 type BytesFetchRx = Receiver<Result<Vec<u8>, String>>;
 type FontFeatures = Vec<OpenTypeFeature>;
-type PendingFont = (String, Option<u16>, bool, FontFeatures, String, BytesFetchRx);
-/// 已抓取字体 `(family, weight, italic, face features, bytes)`。
-pub type LoadedFont = (String, Option<u16>, bool, Vec<OpenTypeFeature>, Vec<u8>);
+type PendingFont = (
+    String,
+    Option<u16>,
+    bool,
+    Option<f32>,
+    FontFeatures,
+    String,
+    BytesFetchRx,
+);
+/// 已抓取字体 `(family, weight, italic, stretch, face features, bytes)`。
+pub type LoadedFont = (String, Option<u16>, bool, Option<f32>, Vec<OpenTypeFeature>, Vec<u8>);
 
 /// 页面加载阶段（供 UI 展示进度）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,7 +509,7 @@ impl AsyncPageLoad {
         }
         let faces = extract_font_faces(&css);
         let base = url::Url::parse(&self.url).ok();
-        for (family, sources, weight, is_italic, feature_settings) in faces {
+        for (family, sources, weight, is_italic, stretch, feature_settings) in faces {
             let features = zero_engine::font_feature_settings_to_opentype(&feature_settings);
             for src in &sources {
                 // data: 不走 fetch（与图片 data: 路径一致）；local() 已被 css-parser 排除。
@@ -518,6 +526,7 @@ impl AsyncPageLoad {
                     family.clone(),
                     weight,
                     is_italic,
+                    stretch,
                     features.clone(),
                     abs.clone(),
                     host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT),
@@ -531,7 +540,7 @@ impl AsyncPageLoad {
 
     fn poll_fonts(&mut self, changed: &mut bool) {
         self.font_pending
-            .retain(|(family, weight, is_italic, feature_settings, url, rx)| {
+            .retain(|(family, weight, is_italic, stretch, feature_settings, url, rx)| {
                 if let Ok(result) = rx.try_recv() {
                     match result {
                         Ok(bytes) => {
@@ -544,6 +553,7 @@ impl AsyncPageLoad {
                                 family.clone(),
                                 *weight,
                                 *is_italic,
+                                *stretch,
                                 feature_settings.clone(),
                                 bytes,
                             ));
@@ -1078,6 +1088,7 @@ mod tests {
             <style>@font-face {
                 font-family: "TestFont";
                 src: url(test.woff);
+                font-stretch: condensed;
                 font-feature-settings: "liga" off;
             }</style>
             </head><body></body></html>"#;
@@ -1101,10 +1112,11 @@ mod tests {
                 "TestFont".to_string(),
                 None,
                 false,
+                Some(75.0),
                 vec![OpenTypeFeature::new(*b"liga", 0)],
                 font_bytes,
             )],
-            "family + weight + is_italic + features + bytes 回传"
+            "family + weight + is_italic + stretch + features + bytes 回传"
         );
         assert!(load.drain_loaded_fonts().is_empty(), "drain 清空");
     }
@@ -1128,7 +1140,7 @@ mod tests {
         );
         assert_eq!(
             load.drain_loaded_fonts(),
-            vec![("InlineFont".to_string(), None, false, Vec::new(), vec![1, 2, 3],)],
+            vec![("InlineFont".to_string(), None, false, None, Vec::new(), vec![1, 2, 3],)],
             "inline family drained"
         );
     }
@@ -1192,7 +1204,7 @@ mod tests {
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
             if live_enabled {
-                for (family, _weight, _is_italic, _features, bytes) in load.drain_loaded_fonts() {
+                for (family, _weight, _is_italic, _stretch, _features, bytes) in load.drain_loaded_fonts() {
                     if let Ok(id) = loader.load_font(&bytes) {
                         loader.register_family_alias(&family, id);
                         wv.set_font_resolver(loader.build_font_resolver());
@@ -1250,12 +1262,10 @@ mod tests {
         let _decoy = loader.load_font(&ahem); // id 0：fallback 槽（镜像生产系统字体先载）
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
-            for (family, weight, _is_italic, _features, bytes) in load.drain_loaded_fonts() {
+            for (family, weight, _is_italic, stretch, _features, bytes) in load.drain_loaded_fonts() {
                 if let Ok(id) = loader.load_font(&bytes) {
-                    if weight.is_some_and(|w| w >= 600) {
-                        loader.register_family_alias(&format!("{family}:700"), id);
-                    } else {
-                        loader.register_family_alias(&family, id);
+                    for alias in zero_render_foundation::font::font_face_aliases(&family, weight, false, stretch) {
+                        loader.register_family_alias(&alias, id);
                     }
                     wv.set_font_resolver(loader.build_font_resolver());
                     load.request_rerender();
@@ -1297,16 +1307,11 @@ mod tests {
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
             // 镜像生产 drain：按 (weight, is_italic) 构注册键。
-            for (family, weight, is_italic, _features, bytes) in load.drain_loaded_fonts() {
+            for (family, weight, is_italic, stretch, _features, bytes) in load.drain_loaded_fonts() {
                 if let Ok(id) = loader.load_font(&bytes) {
-                    let want_bold = weight.is_some_and(|w| w >= 600);
-                    let key = match (want_bold, is_italic) {
-                        (true, true) => format!("{family}:700:italic"),
-                        (true, false) => format!("{family}:700"),
-                        (false, true) => format!("{family}:italic"),
-                        (false, false) => family.clone(),
-                    };
-                    loader.register_family_alias(&key, id);
+                    for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
+                        loader.register_family_alias(&alias, id);
+                    }
                     wv.set_font_resolver(loader.build_font_resolver());
                     load.request_rerender();
                 }

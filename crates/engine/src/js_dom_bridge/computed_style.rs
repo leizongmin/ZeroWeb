@@ -305,6 +305,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "white-space" => white_space_str(&style.white_space),
         "font-weight" => font_weight_str(&style.font_weight),
         "font-style" => font_style_str(&style.font_style),
+        "font-stretch" | "font-width" => format_num(style.font_stretch as f64, "%"),
         "line-height" => line_height_str(&style.line_height, font_size_px),
         "z-index" => z_index_str(&style.z_index),
         "cursor" => cursor_str(&style.cursor),
@@ -348,8 +349,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "outline-style" => outline_style_str(&style.outline_style),
         // ── 复合枚举/列表族（R2710）──
         "font-family" => font_family_to_css(&style.font_family),
-        // ── font 简写（R2761）── style/weight/size/line-height/family longhand 早覆；简写 CSSOM 重组
-        // （省初值；font-variant/stretch ZW 不支持恒省略）。含 line-height number→px 修复（line_height_str）。
+        // ── font 简写（R2761）── style/weight/stretch/size/line-height/family CSSOM 重组。
         "font" => font_shorthand_to_css(style, font_size_px),
         "flex-direction" => flex_direction_str(&style.flex_direction),
         "flex-wrap" => flex_wrap_str(&style.flex_wrap),
@@ -1604,18 +1604,18 @@ fn font_family_to_css(families: &[String]) -> String {
 /// `font` 简写：CSS Fonts。CSSOM 序列化 `<style> <variant> <weight> <stretch> <size>[/<line-height>]
 /// <family>`，省初值（style normal / weight 400 / line-height normal）。Chromium 150 oracle：
 /// `font:italic bold 14px/1.5 Arial`→`"italic 700 14px / 21px Arial"`、默认→`"16px \"Times New Roman\""`。
-/// **已知限制**：font-variant / font-stretch ZW 不支持（恒初值 normal/100%→恒省略），故含 `small-caps`/
-/// `condensed` 等的 font 简写 diverge（罕见，pre-existing 解析限制）。
 fn font_shorthand_to_css(style: &ComputedStyle, font_size_px: f64) -> String {
     let mut parts = Vec::new();
     let fs = font_style_str(&style.font_style);
     if fs != "normal" {
         parts.push(fs);
     }
-    // font-variant / font-stretch 恒初值（ZW 不支持子变体），省略。
     let fw = font_weight_str(&style.font_weight);
     if fw != "400" {
         parts.push(fw);
+    }
+    if (style.font_stretch - 100.0).abs() > f32::EPSILON {
+        parts.push(format_num(style.font_stretch as f64, "%"));
     }
     // size 恒显；line-height 非 normal 显作 "size / lh"。
     let size = length_to_css(&style.font_size, font_size_px);

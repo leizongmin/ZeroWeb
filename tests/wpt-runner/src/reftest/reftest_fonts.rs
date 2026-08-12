@@ -148,6 +148,7 @@ type FontFaceSpec = (
     Vec<String>,
     Option<u16>,
     bool,
+    Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
 );
 
@@ -172,6 +173,7 @@ pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
                     ff.sources.clone(),
                     ff.weight,
                     is_italic,
+                    ff.stretch,
                     ff.feature_settings.clone(),
                 ))
             }
@@ -229,7 +231,7 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
 /// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
 /// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources, weight, is_italic, feature_settings) in extract_font_faces(css) {
+    for (family, sources, weight, is_italic, stretch, feature_settings) in extract_font_faces(css) {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
             continue;
@@ -242,19 +244,9 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
                 && let Ok(id) = loader.load_font(&data)
             {
                 loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
-                // R2417/R2493（镜像生产 drain）：按 (weight, style) 构注册键——bold+italic →
-                // `{family}:700:italic`、bold → `{family}:700`、italic → `{family}:italic`、
-                // regular → plain。bold/italic face 不注册 plain family（避 build_font_resolver
-                // 「second face=bold」启发式顺序错配，R2417）。使 harness 多 weight/style 同族
-                // @font-face 匹配与生产一致、顺序无关。
-                let want_bold = weight.is_some_and(|w| w >= 600);
-                let key = match (want_bold, is_italic) {
-                    (true, true) => format!("{family}:700:italic"),
-                    (true, false) => format!("{family}:700"),
-                    (false, true) => format!("{family}:italic"),
-                    (false, false) => family.clone(),
-                };
-                loader.register_family_alias(&key, id);
+                for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
+                    loader.register_family_alias(&alias, id);
+                }
                 break;
             }
         }
@@ -291,6 +283,37 @@ mod feature_tests {
             .shape_text_cached_with_features(font_id, "fi", 16.0, TextDirection::LeftToRight, &[])
             .expect("shape with face defaults");
         assert_eq!(glyphs.len(), 2, "face-level liga=off must suppress fi ligature");
+    }
+
+    #[test]
+    fn font_face_stretch_registers_and_matches_distinct_faces() {
+        let fonts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/fonts");
+        let css = r#"
+            @font-face {
+                font-family: StretchLato;
+                src: url(Lato-Medium-Liga.ttf);
+                font-stretch: normal;
+            }
+            @font-face {
+                font-family: StretchLato;
+                src: url(Lato-Medium-Liga.ttf);
+                font-stretch: condensed;
+            }
+        "#;
+        let mut loader = FontLoader::new();
+        load_font_faces_into(&mut loader, Some(&fonts_dir), css);
+        let resolver = loader.build_font_resolver();
+
+        let normal = zero_render_foundation::font::resolve_font_face(&resolver, "StretchLato", false, false, 100.0)
+            .expect("normal face")
+            .0;
+        let condensed = zero_render_foundation::font::resolve_font_face(&resolver, "StretchLato", false, false, 75.0)
+            .expect("condensed face")
+            .0;
+
+        assert_ne!(normal, condensed);
+        assert_eq!(resolver.get("StretchLato"), Some(&normal));
+        assert_eq!(resolver.get("StretchLato:stretch=750"), Some(&condensed));
     }
 
     #[test]

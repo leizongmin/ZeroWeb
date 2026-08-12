@@ -5,16 +5,8 @@ use std::collections::HashMap;
 use zero_css_parser::values::FontWeightValue;
 use zero_css_parser::values::types::FontStyleValue;
 use zero_dom::{Document, NodeId, NodeKind};
+use zero_render_foundation::font::resolve_font_face;
 use zero_style_system::ComputedStyle;
-
-fn lookup_face(resolver: &HashMap<String, u32>, key: &str) -> Option<u32> {
-    resolver.get(key).copied().or_else(|| {
-        resolver
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(key))
-            .map(|(_, id)| *id)
-    })
-}
 
 /// Resolves one available face per CSS family while preserving declaration order.
 ///
@@ -26,17 +18,11 @@ pub fn resolve_font_ids_for_style(
     font_family: &[String],
     font_weight: &FontWeightValue,
     font_style: &FontStyleValue,
+    font_stretch: f32,
 ) -> Vec<u32> {
     let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
         || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
     let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
-    let suffixes: &[&str] = match (want_bold, want_italic) {
-        (true, true) => &[":700:italic", ":700", ":italic", ""],
-        (true, false) => &[":700", ""],
-        (false, true) => &[":italic", ""],
-        (false, false) => &[""],
-    };
-
     // https://drafts.csswg.org/css-fonts-4/#family-name-value
     const GENERIC_FAMILIES: &[&str] = &[
         "serif",
@@ -61,10 +47,7 @@ pub fn resolve_font_ids_for_style(
         if is_quoted && GENERIC_FAMILIES.iter().any(|g| g.eq_ignore_ascii_case(name)) {
             continue;
         }
-        let id = suffixes
-            .iter()
-            .find_map(|suffix| lookup_face(resolver, &format!("{name}{suffix}")));
-        if let Some(id) = id
+        if let Some((id, _)) = resolve_font_face(resolver, name, want_bold, want_italic, font_stretch)
             && !ids.contains(&id)
         {
             ids.push(id);
@@ -73,7 +56,7 @@ pub fn resolve_font_ids_for_style(
     if ids.is_empty() {
         ids.push(
             want_bold
-                .then(|| lookup_face(resolver, "sans-serif:700"))
+                .then(|| resolve_font_face(resolver, "sans-serif", true, false, font_stretch).map(|face| face.0))
                 .flatten()
                 .unwrap_or(0),
         );
@@ -110,7 +93,13 @@ pub(crate) fn collect_font_overrides(
         if let Some(style) = styles.get(&style_id) {
             overrides.ids.insert(
                 node_id,
-                resolve_font_ids_for_style(resolver, &style.font_family, &style.font_weight, &style.font_style),
+                resolve_font_ids_for_style(
+                    resolver,
+                    &style.font_family,
+                    &style.font_weight,
+                    &style.font_style,
+                    style.font_stretch,
+                ),
             );
             overrides.size_adjust.insert(node_id, style.font_size_adjust);
         }
@@ -141,6 +130,7 @@ mod tests {
                 &["primary".to_string(), "Secondary".to_string()],
                 &FontWeightValue::Bold,
                 &FontStyleValue::Italic,
+                100.0,
             ),
             vec![7, 9]
         );
@@ -160,6 +150,7 @@ mod tests {
                 &["First".to_string(), "Second".to_string()],
                 &FontWeightValue::Normal,
                 &FontStyleValue::Normal,
+                100.0,
             ),
             vec![3]
         );
@@ -169,6 +160,7 @@ mod tests {
                 &["Missing".to_string()],
                 &FontWeightValue::Bold,
                 &FontStyleValue::Normal,
+                100.0,
             ),
             vec![5]
         );

@@ -111,8 +111,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let (default_font_id, resolved_italic) =
-            self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
+        let (default_font_id, resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
         // R2497：font-style:italic/oblique 且 resolved face 非 italic → synthetic italic shear。
         // R3248：font-synthesis:style 为 false 时禁止合成斜体。
         let synthetic_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_))
@@ -228,9 +227,7 @@ impl super::Painter {
         }
 
         let color = super::super::color::color_value_to_render(&style.color);
-        let default_font_id = self
-            .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
-            .0;
+        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -422,17 +419,14 @@ impl super::Painter {
 
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
-        let (default_font_id, default_resolved_italic) =
-            self.resolve_font_id(&style.font_family, &style.font_weight, &style.font_style);
+        let (default_font_id, default_resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
         // R2497：容器 font-style:italic/oblique → container_want_italic（macro 据 owner
         // per-fragment font_style 覆盖，缺省回落此值）。
         let container_want_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
         // R1224：Ahem font_id 供 inline 元素字体≠容器时字形位图用（如 <span font:Ahem> 在
         // default div 内）。render_fragment macro 按 owner（片段父元素）font_family 选
         // frag_font_id——is_ahem 片段用 ahem_font_id 出 Ahem 方块，非 is_ahem 用 default。
-        let ahem_font_id = self
-            .resolve_font_id(&["Ahem".to_string()], &style.font_weight, &style.font_style)
-            .0;
+        let ahem_font_id = self.resolve_style_font_id(&["Ahem".to_string()], style).0;
         // R1464/R2497：恢复 Path B 每节点 face/list 与 synthetic-italic 状态。
         let resolved_text_fonts = self.resolve_text_node_fonts(box_node, style);
         let text_node_font_ids = resolved_text_fonts.primary;
@@ -1709,9 +1703,7 @@ impl super::Painter {
                         let ellipsis_char = '\u{2026}';
                         let ellipsis_width = self.measure_char_cached(ellipsis_char, font_size, container_is_ahem);
                         let content_right = content_x + container_width + tx;
-                        let default_font_id = self
-                            .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
-                            .0;
+                        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
 
                         // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
                         // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
@@ -1820,9 +1812,7 @@ impl super::Painter {
         }
 
         let color = color_value_to_render(&style.color);
-        let default_font_id = self
-            .resolve_font_id(&style.font_family, &style.font_weight, &style.font_style)
-            .0;
+        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
         let content_x = abs_x;
         let content_y = abs_y;
 

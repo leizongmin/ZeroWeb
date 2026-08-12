@@ -1242,6 +1242,7 @@ pub(crate) fn measure_text_content(
                         &style.font_family,
                         &style.font_weight,
                         &style.font_style,
+                        style.font_stretch,
                     )
                 })
                 .unwrap_or_default()

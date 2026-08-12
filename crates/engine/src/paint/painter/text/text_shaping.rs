@@ -17,19 +17,93 @@ pub(super) struct ResolvedTextNodeFonts {
 }
 
 impl super::super::Painter {
+    /// 根据 CSS family/weight/style/stretch 解析主 face。
+    pub(crate) fn resolve_font_id(
+        &self,
+        font_family: &[String],
+        font_weight: &zero_css_parser::values::FontWeightValue,
+        font_style: &zero_css_parser::values::types::FontStyleValue,
+        font_stretch: f32,
+    ) -> (FontId, bool) {
+        use zero_css_parser::values::FontWeightValue;
+        use zero_css_parser::values::types::FontStyleValue;
+
+        let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
+        let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+        const GENERIC_FAMILIES: &[&str] = &[
+            "serif",
+            "sans-serif",
+            "monospace",
+            "cursive",
+            "fantasy",
+            "system-ui",
+            "ui-serif",
+            "ui-sans-serif",
+            "ui-monospace",
+            "ui-rounded",
+            "emoji",
+            "math",
+            "fangsong",
+        ];
+        for family in font_family {
+            let is_quoted = family.starts_with('"') || family.starts_with('\'');
+            let name = family.trim_matches('"').trim_matches('\'');
+            // https://drafts.csswg.org/css-fonts-4/#family-name-value
+            if is_quoted
+                && GENERIC_FAMILIES
+                    .iter()
+                    .any(|generic| generic.eq_ignore_ascii_case(name))
+            {
+                continue;
+            }
+            if let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(
+                &self.font_resolver_lower,
+                &name.to_ascii_lowercase(),
+                want_bold,
+                want_italic,
+                font_stretch,
+            ) {
+                return (FontId(id), resolved_italic);
+            }
+        }
+        if want_bold
+            && let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(
+                &self.font_resolver_lower,
+                "sans-serif",
+                true,
+                want_italic,
+                font_stretch,
+            )
+        {
+            return (FontId(id), resolved_italic);
+        }
+        (FontId(0), false)
+    }
+
+    pub(crate) fn resolve_style_font_id(&self, font_family: &[String], style: &ComputedStyle) -> (FontId, bool) {
+        self.resolve_font_id(font_family, &style.font_weight, &style.font_style, style.font_stretch)
+    }
+
     /// 按 CSS `font-family` 顺序解析可用 face ID，供 shaping fallback 使用。
     pub(crate) fn resolve_font_ids(
         &self,
         font_family: &[String],
         font_weight: &zero_css_parser::values::FontWeightValue,
         font_style: &zero_css_parser::values::types::FontStyleValue,
+        font_stretch: f32,
     ) -> Vec<u32> {
         zero_layout_engine::font_resolution::resolve_font_ids_for_style(
             &self.font_resolver,
             font_family,
             font_weight,
             font_style,
+            font_stretch,
         )
+    }
+
+    pub(crate) fn resolve_style_font_ids(&self, font_family: &[String], style: &ComputedStyle) -> Vec<u32> {
+        self.resolve_font_ids(font_family, &style.font_weight, &style.font_style, style.font_stretch)
     }
 
     pub(super) fn resolve_text_node_fonts(
@@ -41,12 +115,9 @@ impl super::super::Painter {
         let mut shaping = HashMap::with_capacity(box_node.text_node_font_families.len());
         let mut italic = HashMap::with_capacity(box_node.text_node_font_families.len());
         for (&node_id, families) in &box_node.text_node_font_families {
-            let (font_id, resolved_italic) = self.resolve_font_id(families, &style.font_weight, &style.font_style);
+            let (font_id, resolved_italic) = self.resolve_style_font_id(families, style);
             primary.insert(node_id, font_id);
-            shaping.insert(
-                node_id,
-                self.resolve_font_ids(families, &style.font_weight, &style.font_style),
-            );
+            shaping.insert(node_id, self.resolve_style_font_ids(families, style));
             italic.insert(node_id, resolved_italic);
         }
         ResolvedTextNodeFonts {
@@ -64,7 +135,7 @@ impl super::super::Painter {
     ) -> Vec<u32> {
         let mut font_ids = owner_style.map_or_else(
             || stored_font_ids.map_or_else(|| vec![fragment_font_id.0], <[u32]>::to_vec),
-            |owner| self.resolve_font_ids(&owner.font_family, &owner.font_weight, &owner.font_style),
+            |owner| self.resolve_style_font_ids(&owner.font_family, owner),
         );
         if font_ids.first() != Some(&fragment_font_id.0) {
             font_ids.retain(|font_id| *font_id != fragment_font_id.0);

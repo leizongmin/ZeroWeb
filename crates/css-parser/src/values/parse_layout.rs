@@ -809,6 +809,28 @@ pub fn parse_font_variant_position(value: &str) -> Option<FontVariantPositionVal
     }
 }
 
+/// 解析 CSS `font-stretch` / `font-width` 值为百分比（`normal` = 100）。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-width-prop
+pub fn parse_font_stretch(value: &str) -> Option<f32> {
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "normal" => Some(100.0),
+        "ultra-condensed" => Some(50.0),
+        "extra-condensed" => Some(62.5),
+        "condensed" => Some(75.0),
+        "semi-condensed" => Some(87.5),
+        "semi-expanded" => Some(112.5),
+        "expanded" => Some(125.0),
+        "extra-expanded" => Some(150.0),
+        "ultra-expanded" => Some(200.0),
+        _ => value
+            .strip_suffix('%')
+            .and_then(|number| number.parse::<f32>().ok())
+            .filter(|percentage| percentage.is_finite() && *percentage > 0.0),
+    }
+}
+
 /// CSS `font-feature-settings` 中的单个 OpenType feature。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontFeatureSetting {

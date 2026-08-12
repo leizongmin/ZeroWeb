@@ -1,11 +1,13 @@
 //! 字体渲染 — 字体加载、Glyph 缓存、字体 fallback
 
 pub mod cache;
+mod face_match;
 pub mod loader;
 pub mod shaper;
 pub mod woff;
 
 pub use cache::GlyphCache;
+pub use face_match::{NORMAL_FONT_STRETCH, font_face_aliases, resolve_font_face};
 pub use loader::FontLoader;
 pub use shaper::{
     FontSizeAdjustMetric, FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, ShapedLine, TextDirection, TextShaper,
