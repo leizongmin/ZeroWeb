@@ -1190,7 +1190,7 @@ impl BrowserApp {
         let scroll = self.tab_scroll_state(tab_id);
         Some((
             tab_id,
-            (x_f - content_x) / s + scroll.x,
+            (x_f - content_x) / s + scroll.x / s,
             (y_f - page_top + scroll.y) / s,
         ))
     }

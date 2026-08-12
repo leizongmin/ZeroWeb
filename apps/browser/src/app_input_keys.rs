@@ -116,6 +116,9 @@ impl BrowserApp {
             if let Some(tab_id) = self.shell.active_tab_id() {
                 let event = if pressed { "keydown" } else { "keyup" };
                 self.tabs.dispatch_key_event(tab_id, event, key, key);
+                if pressed && self.tabs.page_ime_rect(tab_id).is_some() {
+                    return;
+                }
             }
         }
 
