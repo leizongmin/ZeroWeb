@@ -1253,6 +1253,82 @@ fn handle_scroll_updates_offset_for_tall_page() {
     let _ = fills_at_zero;
 }
 
+/// R3294（S0 单进程端到端）：用户滚动应派发 'scroll' 事件到页面 JS（闭合 R3253 主路径不可达 gap）。
+///
+/// 单进程完整链路：`handle_scroll` → `apply_page_scroll_delta`（视觉滚动 + `tabs.dispatch_user_scroll`）
+/// → `TabWorkerCommand::UserScroll` → worker 线程 `execute_script(script_user_scroll)` →
+/// `__zw_user_scroll` 派 'scroll' + 更 `window.scrollY`。本测经 `test_execute_script` 读回 worker
+/// WebView 的 JS 态，验证端到端 JS 可观察性（R3294 多进程 IPC 契约测 + R3253 hook 测的组合已证
+/// 链路通，本测补单进程 BrowserApp→worker→JS 端到端实证）。
+#[test]
+fn handle_scroll_dispatches_scroll_to_js_single_process_r3294() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+
+    let tall_html = r#"<!DOCTYPE html><html><head><style>
+          head, style, title { display: none; }
+          .spacer { height: 2400px; background: #eef; }
+        </style></head><body><div class="spacer">Tall</div>
+        <script>
+          globalThis.__scrollCount = 0;
+          globalThis.__scrollY = -1;
+          globalThis.__inlinedRan = 'YES';
+          window.addEventListener('scroll', function() {
+            globalThis.__scrollCount++;
+            globalThis.__scrollY = window.scrollY;
+          });
+        </script>
+        </body></html>"#;
+    app.load_webview_html(tab_id, tall_html, None);
+    app.sync_webview_viewport_and_poll(tab_id);
+
+    let (_, content_y, content_w, _) = app.page_content_rect();
+    let x = (content_w * 0.5) as f64;
+    let y = content_y as f64 + 100.0;
+    app.mouse_pos = (x, y);
+
+    // 滚轮向下（Linux 负 LineDelta）。
+    app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0), x, y);
+
+    // pump worker 处理 UserScroll 命令（worker 独立线程，1ms 循环 try_recv 排空）。
+    // sync_webview_viewport_and_poll 经 tabs.poll 排空 worker 消息触发命令循环。
+    // 读回 JS 态：scroll listener 触发则 __scrollCount > 0。
+    let mut count = 0u32;
+    let mut scroll_y = -1i64;
+    for _ in 0..300 {
+        app.sync_webview_viewport_and_poll(tab_id);
+        if let Ok(c) = app.test_execute_script(tab_id, "String(globalThis.__scrollCount)") {
+            count = c.parse::<u32>().unwrap_or(0);
+            if count > 0 {
+                if let Ok(sy) = app.test_execute_script(tab_id, "String(Math.round(globalThis.__scrollY))") {
+                    scroll_y = sy.parse::<i64>().unwrap_or(-1);
+                }
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        count > 0,
+        "R3294: 用户滚动应派 'scroll' 到页面 JS（scrollCount>0），实得 {count} | inline={} hook={} addEL={} scrollY={}",
+        app.test_execute_script(tab_id, "String(globalThis.__inlinedRan||'NO')")
+            .unwrap_or_default(),
+        app.test_execute_script(tab_id, "typeof __zw_user_scroll")
+            .unwrap_or_default(),
+        app.test_execute_script(tab_id, "typeof window.addEventListener")
+            .unwrap_or_default(),
+        app.test_execute_script(tab_id, "String(window.scrollY)")
+            .unwrap_or_default()
+    );
+    assert!(
+        scroll_y > 0,
+        "R3294: window.scrollY 应跟踪用户滚动（>0），实得 {scroll_y}"
+    );
+}
+
 /// 触摸屏在内容区拖拽应更新 scroll_offset。
 #[test]
 fn handle_touch_drag_updates_offset_for_tall_page() {

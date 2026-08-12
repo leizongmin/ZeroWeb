@@ -50,6 +50,14 @@ pub enum TabWorkerCommand {
     /// R3293（S0）：用户滚动 fire-and-forget 注入（单进程路径）——执行 `script_user_scroll`
     /// 注入 `__zw_user_scroll` → 派 'scroll' + 更 window.scrollY。无回执（滚动不需 default-action）。
     UserScroll { delta_x: f32, delta_y: f32 },
+    /// 测试用：在 worker 的 WebView 上执行 JS 并同步回执结果（经 reply channel）。
+    /// 供单进程 BrowserApp 级集成测试读回页面 JS 状态（如滚动 listener 触发计数）。
+    /// 非测试代码不应使用——同步回执会阻塞 worker 线程命令循环。
+    #[cfg(test)]
+    ExecuteScriptForTest {
+        script: String,
+        reply: std::sync::mpsc::Sender<Result<String, String>>,
+    },
     /// 关闭 worker。
     Shutdown,
 }
@@ -277,15 +285,39 @@ fn tab_worker_main(
                     javascript_enabled = enabled;
                 }
                 TabWorkerCommand::UserScroll { delta_x, delta_y } => {
-                    // R3293（S0）：用户滚动注入（单进程路径）。gate javascript_enabled + best-effort
-                    //（无 JS / shim 未装时 typeof 守卫静默）。fire-and-forget 无回执——滚动不需 default-action 语义，
-                    // 且主线程已在 apply_page_scroll_delta 完成视觉滚动，此处仅补「页面 JS 可观察」半边。
+                    // R3293（S0）：用户滚动注入（单进程路径）。注入到页面 JS 真实上下文：
+                    // 生产（`_js_worker = Some`）走 `js_worker.execute_script_direct`（TabJsWorkerHandle
+                    // 持久上下文 + shim）；测试（`_js_worker = None`）走 `wv.execute_script`（WebView
+                    // 内部沙箱，shim 内置）。gate javascript_enabled + best-effort（typeof 守卫防 shim
+                    // 未装静默）。fire-and-forget 无回执——主线程已在 apply_page_scroll_delta 完成视觉滚动。
                     if javascript_enabled {
                         let script = zero_engine::script_user_scroll(delta_x as f64, delta_y as f64);
-                        if let Err(e) = wv.execute_script(&script) {
+                        let res: Result<(), String> = if let Some(js_worker) = _js_worker.as_ref() {
+                            js_worker
+                                .execute_script_direct(&script)
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
+                        } else {
+                            wv.execute_script(&script)
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
+                        };
+                        if let Err(e) = res {
                             tracing::warn!("dispatch user scroll (single-process): {e}");
                         }
                     }
+                }
+                #[cfg(test)]
+                TabWorkerCommand::ExecuteScriptForTest { script, reply } => {
+                    // 读回页面 JS 状态：生产走 _js_worker，测试（无 js_worker）走 wv 内部沙箱。
+                    let result: Result<String, String> = if let Some(js_worker) = _js_worker.as_ref() {
+                        js_worker
+                            .execute_script_direct(&script)
+                            .map_err(|e| e.to_string())
+                    } else {
+                        wv.execute_script(&script).map_err(|e| e.to_string())
+                    };
+                    let _ = reply.send(result);
                 }
                 TabWorkerCommand::Shutdown => {
                     tracing::debug!("Tab worker {} shutting down", tab_id.0);

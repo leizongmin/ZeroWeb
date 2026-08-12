@@ -776,6 +776,14 @@ impl BrowserApp {
         Some(self.tabs.logical_viewport())
     }
 
+    /// 测试用：在 tab 的渲染 worker WebView 上执行 JS 并同步回读结果（单进程路径）。
+    /// 供集成测试读回页面 JS 状态（如 R3294 用户滚动 listener 触发计数）。委托
+    /// `TabManager::test_execute_script`（经 worker 线程 ExecuteScriptForTest 命令 + reply channel）。
+    #[cfg(test)]
+    pub fn test_execute_script(&self, tab_id: zero_browser_shell::TabId, script: &str) -> Result<String, String> {
+        self.tabs.test_execute_script(tab_id, script)
+    }
+
     /// 测试用：构建场景（暴露私有方法给测试模块）
     #[cfg(test)]
     pub fn build_scene_for_test(&mut self, width: u32, height: u32) -> ChromeScene {

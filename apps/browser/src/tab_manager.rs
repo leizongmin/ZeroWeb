@@ -615,4 +615,24 @@ impl TabManager {
     pub fn logical_viewport(&self) -> (u32, u32) {
         self.viewport
     }
+
+    /// 测试用：在 tab 的渲染 worker WebView 上执行 JS 并同步回读结果（单进程路径）。
+    /// 经 `TabWorkerCommand::ExecuteScriptForTest` + reply channel——worker 线程执行后回执。
+    /// 供 BrowserApp 级集成测试读回页面 JS 状态（如 R3294 滚动 listener 触发计数）。
+    /// 无 in-process worker / 多进程时返 Err。同步阻塞调用线程至 worker 处理完命令。
+    #[cfg(test)]
+    pub fn test_execute_script(&self, tab_id: TabId, script: &str) -> Result<String, String> {
+        use std::sync::mpsc::channel;
+        let worker = self.workers.get(&tab_id).ok_or("no in-process worker for tab")?;
+        let (reply_tx, reply_rx) = channel();
+        worker.send(crate::tab_worker::TabWorkerCommand::ExecuteScriptForTest {
+            script: script.to_string(),
+            reply: reply_tx,
+        });
+        // worker 线程异步处理命令；测试调用方需先经 `poll` 排空消息触发命令循环。
+        // 此处阻塞等待回执（worker 处理 ExecuteScriptForTest 时 reply.send）。
+        reply_rx
+            .recv()
+            .map_err(|e| format!("worker reply channel closed: {e}"))?
+    }
 }

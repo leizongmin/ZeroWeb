@@ -1116,6 +1116,13 @@ impl WebView {
         // 可用 `__zw_native_element_for_id` 且 DOM 源为当前 live Document。
         #[cfg(feature = "v8")]
         self.install_native_dom_bindings();
+        // R3295：确保 DOM shim（`window`/`document`/`addEventListener`/`__zw_user_scroll` 等）
+        // 已注入。此前仅 `run_page_scripts_impl` / `dispatch_event` 装 shim，**独立 `execute_script`
+        // 调用（外部 embedder 或 BrowserApp 单进程无 js_worker 时的内联脚本路径）shim 未初始化** →
+        // 脚本中 `window.addEventListener(...)` 抛 ReferenceError、`__zw_user_scroll` typeof='undefined'。
+        // 仿 `dispatch_event`（webview.rs:1486）既定幂等模式（`js_shim_initialized` 守卫，仅首次装一次）。
+        // 生产多进程 js_worker 路径经 `external_script` 早 return（:1110），不触此分支，零回归。
+        self.ensure_js_shim()?;
         match self.js_sandbox.as_mut().expect("js sandbox").execute(script) {
             Ok(result) => {
                 tracing::debug!("execute_script completed in {:.2}ms", result.execution_time_ms);
@@ -1192,6 +1199,29 @@ impl WebView {
             }
         }));
         tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
+    }
+
+    /// 幂等确保 DOM shim（[`generate_js_dom_shim`]）已注入进程内沙箱。
+    ///
+    /// shim 提供 `window`/`document`/`addEventListener`/`__zw_user_scroll` 等 web 全局，
+    /// 是页面脚本与独立 `execute_script` 调用的基础。重复注入会重置内部 `_nodeMap` 丢失监听器，
+    /// 故 `js_shim_initialized` 守卫仅装一次（与 `run_page_scripts_impl` 同款幂等语义）。
+    ///
+    /// 调用方须先 `ensure_sandbox`（保证 `js_sandbox = Some`）。生产多进程路径经 `external_script`
+    /// 早 return，不触此方法。R3295 引入以闭合「独立 `execute_script` 调用缺 shim」gap。
+    fn ensure_js_shim(&mut self) -> Result<(), WebViewError> {
+        if self.js_shim_initialized {
+            return Ok(());
+        }
+        let sandbox = self
+            .js_sandbox
+            .as_mut()
+            .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+        sandbox
+            .execute(generate_js_dom_shim())
+            .map_err(|e| WebViewError::Script(format!("DOM shim init: {e}")))?;
+        self.js_shim_initialized = true;
+        Ok(())
     }
 
     /// P1b L1b（R3108）：native 写触发重渲染，闭合 R3107 caveat ①（native 写「live 且渲染」）。
@@ -1484,12 +1514,14 @@ impl WebView {
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
-        if !self.js_shim_initialized {
-            sandbox
-                .execute(generate_js_dom_shim())
-                .map_err(|e| WebViewError::Script(format!("DOM shim init: {e}")))?;
-            self.js_shim_initialized = true;
-        }
+        // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
+        let sandbox = {
+            let _ = sandbox; // 结束上一段 js_sandbox 借用
+            self.ensure_js_shim()?;
+            self.js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?
+        };
 
         sandbox
             .execute(&script)
