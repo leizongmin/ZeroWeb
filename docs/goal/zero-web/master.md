@@ -1,8 +1,10 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3342+R3343：deep-review zero-security 一轮发现并修复两项真安全策略绕过——① CSP `check_source_list` 非 wildcard 源表达式用 `url.starts_with(value)` 纯字符串前缀匹配，攻击者注册 `example.com.evil.com` 域名，`script-src https://example.com` 下其脚本 `https://example.com.evil.com/x.js` 误判允许（CSP 绕过，可加载任意跨源脚本）；改 `origin_expr_matches` 按 `[scheme://]host[:port]` 解析后 host 精确匹配。② `mixed_content` `is_mixed_content`/`upgrade_to_https` 对 `http://` 大小写敏感匹配，生产 `fetch_proxy` 直接把 renderer 未规范化 IPC url 喂入，HTTPS 页面加载 `HTTP://`（大写）阻塞型混合内容（script/iframe）绕过检测被放行（mixed-content 安全策略绕过，MITM 可注入明文脚本）；改 scheme 大小写不敏感（RFC 3986 §3.1）。两测确定性复现+修复过，zero-security 384→386 全绿，browser fetch_proxy 消费方编译过。R3334+R3339+R3340+R3341+R3342+R3343 = 第六项真 bug 修复（连续两轮单轮双 bug）。）
+**最后更新**: 2026-08-13（R3344：deep-review zero-css-parser 一轮发现并修复三项真 bug——① **panic（高危）** `eval_calc`/`eval_calc_with_context` 对 `clamp(MIN,VAL,MAX)` 调 `f64::clamp(min,max)`，std 在 `min>max` 或含 NaN 时 panic；calc 长度走 style-system 计算样式热路径（computed.rs:83）+ engine paint helpers，任意页面作者/攻击者 CSS `calc(clamp(100px,50px,10px))` 即渲染进程 panic（崩溃/DoS）；改 spec 退化公式 `val.min(max).max(min)`。② **数据丢失（中危）** tokenizer `consume_number` 科学计数法分支仅在 `e` 后跟 `digit|+|-` 即吞 `e`，符号后无 digit（`1e+`/`1e-`/`1e`）时 `num_str="1e+".parse()` 失败 → `unwrap_or(0.0)` 把整段数字静默吞成 0；改前置校验符号后真有 digit（CSS Syntax §4.3.12）。③ **解析不一致（中危）** `parse_hex_color` 3/4 位 hex 用 `hex_char_to_byte`（`unwrap_or(0)`）吞非法 hex 字符为 0，而 6/8 位用 `.ok()?` 拒绝——`#G00`（3 位）误返回黑色、`#GGGGGG`（6 位）正确拒绝；改 `hex_char_to_byte` 返回 `Option<u8>`。13 测确定性复现+修复过，zero-css-parser 2842 全绿，fmt+clippy 零警告，workspace-minus-browser 零回归。R3334+R3339+R3340+R3341+R3342+R3343+R3344 = 第七项真 bug 修复（本轮三项）。）
 
-> **R3341（上一轮）**：zero-storage IndexedDB auto-inc 生成器显式数值 key 不推进（W3C §1.8.2）。max 语义 helper 应用到 add/put/tx_add/tx_put。3 测复现+回归过。
+> **R3342+R3343（上一轮）**：deep-review zero-security 一轮双 bug——CSP `check_source_list` 非 wildcard 源表达式 `url.starts_with(value)` 前缀匹配绕过（改 `origin_expr_matches` host 精确匹配）+ `mixed_content` scheme 大小写敏感绕过（HTTPS 页加载 `HTTP://` 大写阻塞型混合内容放行，改 scheme 大小写不敏感 RFC 3986 §3.1）。zero-security 384→386 全绿。
+
+> **R3341**：zero-storage IndexedDB auto-inc 生成器显式数值 key 不推进（W3C §1.8.2）。max 语义 helper 应用到 add/put/tx_add/tx_put。3 测复现+回归过。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -161,6 +163,37 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-css-parser 一轮修复三项真 bug（本轮 R3344 clamp inverted-range panic + 科学计数法数据丢失 + 3/4 位 hex 非法字符，css-parser types.rs + tokenizer.rs + color.rs——真 bug 修复）
+
+承接 R3342+R3343（zero-security）。本轮 deep-review 推进至 **`zero-css-parser`**（master.md「下一步」明确点名的下一 deep-review 目标——非渲染流流域能自主审的最近渲染相关 crate，解析器边界条件易藏 bug）。逐文件审全部生产代码（tokenizer/parser/selector/supports_condition/media_query/values/{color,color_math,parse_*,types}）+ 委派两个 deep-review agent 分审 values 与 at-rules/selectors。**对 agent 上报逐条核实，排除大量误报**（@supports「无限循环」实为有限 `for` 循环；negative %「溢出」实已 `.clamp(0,255)`；perspective(0)「误拒」实 spec 要求 >0；counter「负值」实 spec 允许）后，用对抗输入探针（wall-clock 包裹）锁定 parser 无挂起/panic，最终定位三项真 bug，**每项确定性复现 → 根因修复 → 测转绿**：
+
+#### R3344-A：calc clamp MIN>MAX panic（高危，types.rs:1398-1402）
+
+- **根因**：`eval_calc_with_context` 的 `CalcExpr::Clamp` 分支 `Some(val_v.clamp(min_v, max_v))`。std `f64::clamp` 文档明确：`min > max` 或任一为 NaN 时 **panic**（`min > max, or either was NaN`）。
+- **生产影响**：calc 长度走 **style-system 计算样式热路径**（`computed.rs:83` `eval_calc_with_context`，每个 Calc 长度都调）+ engine paint helpers（`helpers.rs:626/916`、`effects.rs:1161`）。任意页面作者/攻击者 CSS `width: calc(clamp(100px, 50px, 10px))`（MIN>MAX）→ 计算样式阶段 **渲染进程 panic**（崩溃/DoS）。真崩溃 bug，可被任意 CSS 触发，最高危。
+- **修复**：改 spec 退化公式 `val_v.min(max_v).max(min_v)`（CSS Values §11 clamp 语义 = max(MIN, min(VAL, MAX))）。MIN>MAX 时回退到 MIN（`min(50,10)=10`，`max(100,10)=100`），NaN 安全（NaN 比较恒 false，传播为 NaN 而非 panic）。无 panic 路径。
+- **复现测**：4 测——`test_calc_clamp_inverted_range_no_panic_r3344`（MIN=100>MAX=10 → 100，不得 panic，**修复前确定性 panic** at f64.rs:1545）、`test_calc_clamp_normal_range_r3344`（10/50/100 → 50 回归保护）、`test_calc_clamp_val_below_min_r3344`、`test_calc_clamp_val_above_max_r3344`。
+
+#### R3344-B：科学计数法 e 后无 digit 数据丢失（中危，tokenizer.rs:595-611）
+
+- **根因**：`consume_number` 科学计数法分支触发条件 `peek_at(1) ∈ {digit, +, -}` 即吞 `e`（+可选符号），符号后无 digit 时（`1e+`/`1e-`/`1e` EOF）`num_str="1e+".parse()` 失败 → `unwrap_or(0.0)` 把整段数字静默吞成 **0**。
+- **生产影响**：`1e+`/`1e-`/`1e`/`1.5e+`/`+1e+` 全产 `Number(0.0)` 而非保留数值 1（实测确认）。CSS Syntax §4.3.12 要求 `e` 后须跟 `[+-]? digit` 才属 numeric token，否则 `e` 不属数字。静默数据丢失（错误值 0），spec 合规 bug。
+- **修复**：触发条件改严格——`after_e` 为 digit **或** (`after_e` ∈ {+,-} **且** `peek_at(2)` 为 digit）才吞 `e`。符号后无 digit 时 `e` 不被消耗（保留为独立 token，CSS 中 `e` 仍合法 ident-start，故正常 token 化为 Dimension(1,"e")+Delim('+')，**数值保留为 1**，无数据丢失）。合法路径（`1e3`/`1.5e+2`/`2E-1`/`1e5x`）行为不变（回归测守护）。
+- **复现测**：5 测——`test_scientific_notation_e_without_digit_r3344`（`1e+` 数值保留 1，修复前=0）、`_e_minus_without_digit_`、`_bare_e_`、`_digit_after_e_preserved_`（`1e5x`=100000 回归）、`_valid_still_works_`（`1e3`/`1.5e+2`/`2E-1` 合法路径回归）。
+
+#### R3344-C：3/4 位 hex 非法字符解析不一致（中危，color.rs:169-217）
+
+- **根因**：`parse_hex_color` 3/4 位 hex 用 `hex_char_to_byte`（`u8::from_str_radix(...).unwrap_or(0)`）吞非法 hex 字符为 0，6/8 位用 `u8::from_str_radix(...).ok()?` 拒绝——两路径不一致。
+- **生产影响**：`#G00`（3 位，G 非 hex digit）误返回 `Rgba(0,0,0,255)` 黑色，`#GGGGGG`（6 位）正确拒绝。CSS Color §4 规定 `#` 后须全为 hex digit，非法 hex 颜色应拒绝（quirks 路径 `parse_color_quirks` 已正确用 `is_ascii_hexdigit()` 前置过滤，标准路径反漏）。spec 合规 + 不一致 bug。
+- **修复**：`hex_char_to_byte` 返回 `Option<u8>`（`u8::from_str_radix(...).ok()`），3/4 位路径 `hex_char_to_byte(...)?` 遇非法字符返回 `None`，与 6/8 位一致。**同时修正** `coverage_round4::test_color_hex_invalid_chars`（旧测断言 `#ggg` `is_some()` = 固化旧错误行为，其注释明写「unwrap_or(0) so #ggg = black」——本任务修复目标即此，更新为 `is_none()`）。
+- **复现测**：4 测——`test_hex_invalid_char_3digit_rejected_r3344`（`#G00`/`#00Z` → None，修复前=黑色）、`_4digit_rejected_`、`_6digit_invalid_consistency_`（回归保护）、`_valid_colors_still_work_`（合法 hex 回归）。
+
+#### 为何净正向且零回归
+
+三项真 bug 修复（calc clamp panic + 科学计数法数据丢失 + hex 不一致），纯 css-parser 内部逻辑，无公共 API 变更（`hex_char_to_byte` 私有、`eval_calc` 签名不变、`consume_number` 私有）；既有 CSS Color / calc / tokenizer 覆盖测全保持过（合法路径回归测守护）。**验证**：zero-css-parser **2842 passed / 0 failed**（+13 review_r3344 测，1 旧测更新）；下游 zero-style-system **2163/0**、zero-engine **2049/0**（calc/color 消费方）零回归；workspace-minus-browser 全绿 0 失败；`cargo fmt` clean + `cargo clippy --workspace --all-targets -D warnings` 零警告（含 browser）。**deep-review agent 上报 12 候选逐条核实，仅 3 真 bug 存活**（误报排除：@supports「无限循环」=有限 for；negative %「溢出」=已 clamp；perspective(0)「误拒」=spec >0；counter「负值」=spec 允许；calc 除零「应返 inf」=保守拒绝非 bug；媒体查询 NaN=infinity 解析被 `.parse()` 拒；container feature 未校验=defer 非生产接线）。**对抗输入探针**（22 路径：括号不匹配/nth 溢出/嵌套 @font-face/未闭合注释/NULL/url(\\ 等）wall-clock 全 <50µs 返回，parser **无挂起无 panic**。
+
+**下游判断（固化）**：R3344 = deep-review 未触生产 crate 的**第五刀**（zero-css-parser），**第七项真 bug 修复**（R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏 + R3341 auto-inc 生成器 + R3342 CSP 前缀绕过 + R3343 mixed-content scheme 绕过 + R3344 三项），证实 deep-review「找真 bug」模式在 css-parser **一轮三 bug**（含一项高危 panic）。css-parser 经本轮逐文件 + agent 复核 + 对抗探针确认主面健壮；**剩余未审生产 crate**：style-system/render-foundation（渲染流流域，run-rules §9 并行不重叠但本流可审——css-parser 已证明非流流域 crate 价值高）；navigation/cache（网络级，纯结构/请求路由）。下轮续 deep-review 优先 **style-system**（级联/specificity/计算值，数值边界与级联合规易藏 bug，且同为「自主可审的非流流域渲染相关 crate」）或转入零已审 crate 的二轮复扫，延续找真 bug 模式。
 
 ### deep-review zero-security 一轮修复两项真安全策略绕过（本轮 R3342 CSP 前缀匹配绕过 + R3343 mixed-content scheme 大小写绕过，security csp.rs + mixed_content.rs——真安全 bug 修复）
 
