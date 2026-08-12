@@ -84,6 +84,18 @@ pub fn install_dom_bindings_from_html(scope: &mut v8::PinScope, ctx: v8::Local<v
     install_dom_bindings(scope, ctx, dom);
 }
 
+/// R3334：清空原生 DOM 绑定的全部线程局部状态（DOM 源 + ObjectTemplate 缓存 + 对象身份映射）。
+///
+/// 供 [`zero_webview::WebView`] 在 `native_dom=true` 时于 Drop 调用——V8 `Isolate` 随 WebView 销毁，
+/// 但线程局部仍持指向**已销毁 Isolate** 的 `v8::Global`/`v8::Weak` Handle；同线程建第二个 native WebView
+/// 时 getter 经线程局部读到旧 Handle → `v8::handle.rs "Handle hosted by disposed Isolate"` panic
+///（R3332 实测定位，多标签生产 = 多 WebView 同进程）。本函数 Drop 时清空，使下一个 WebView 干净启动。
+///
+/// 默认关路径（`native_dom=false`）不调本函数——shim 无 Rust↔V8 Handle 生命周期耦合，零回归。
+pub fn reset_native_state() {
+    gc::reset();
+}
+
 /// 安装原生 DOM 绑定到指定 V8 上下文。
 ///
 /// - 注入 DOM 源（线程局部，供 getter 读）。

@@ -500,6 +500,27 @@ mod runtime_path_tests {
         );
     }
 
+    /// R3334：多 native WebView 同测试回归门——同线程顺序建多个 native_dom=true WebView
+    ///（多标签生产场景），验证 R3334 Drop-reset 修复（前此第二个 WebView 执行触
+    /// `v8::handle.rs "Handle hosted by disposed Isolate"` panic，R3332 实测定位）。
+    /// 经 `WebView::Drop` 调 `dom_bindings::reset_native_state` 清线程局部 → 第二 WebView 干净启动。
+    /// 注：native_dom=false 路径不触 Drop-reset（shim 无 Handle 耦合，零回归）。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_multi_webview_no_isolate_leak_r3334() {
+        let ctx = TestContext::default();
+        let all = builtin_tests();
+        let ids = ["js-dom/dataset-api", "storage/localstorage-basic"];
+        for id in ids {
+            let case = all
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap_or_else(|| panic!("用例 {} 存在", id));
+            check_js_executes_ok_native(&case.html, &ctx)
+                .unwrap_or_else(|e| panic!("native 多 WebView 路径 {} 失败（isolate 泄漏回归？）: {}", id, e));
+        }
+    }
+
     /// R3332：P1b **native-dom 路径** parity 回归门——经 `WebViewConfig.native_dom=true`（V8 原生
     /// dom_bindings S0–S5）真实执行**已行为锁定的用例**，断言原生路径与默认 shim 路径**行为对等**
     ///（脚本经原生绑定执行，行为锁断言仍成立——不静默回归）。

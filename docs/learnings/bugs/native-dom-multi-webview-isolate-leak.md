@@ -37,10 +37,18 @@ R3332 单 WebView parity 门（`native_dom_path_parity_*_r3332` 三个测试，�
 
 闭合需：gc.rs 线程局部缓存的**生命周期与 Isolate 绑定**——WebView drop 时清理线程局部 V8 Handle（或改为 per-Isolate 缓存，非 per-thread）。属 native bindings 内部（连接 shim→native 的生产路径，rule 11 深结构风险），非自主可 land 切片。
 
-**待 P1b S6/S7（shim 萎缩 / 默认开）用户点名时，本 bug 作默认开前的必修阻塞项**——届时 native 路径须支持多 WebView 同进程共存（多标签），否则默认开会 break 多标签。
+## ✅ 已修复（R3334，2026-08-13）
+
+**根因复核**：`gc.rs` 的 `reset()` 函数（清全部线程局部 V8 Handle）**本就存在**但**仅测试用**（`reset_for_test`），生产 native 路径从未在 WebView 销毁时调用 → 线程局部跨 Isolate 泄漏。
+
+**修复**（rule 11 安全：仅 `native_dom=true` 触，默认关零回归）：
+- `crates/engine/src/dom_bindings/mod.rs` 新 pub `reset_native_state()`（包 `gc::reset`）。
+- `crates/webview/src/webview.rs` 新 `impl Drop for WebView`（`#[cfg(feature="v8")]`）：`config.native_dom` 时 Drop 调 `reset_native_state()` 清线程局部 → 下一个 native WebView 干净启动。
+- 回归门 `native_dom_multi_webview_no_isolate_leak_r3334`（同测试建 2 native WebView，修复前 panic、修复后过）。
+
+**验证**：engine dom_bindings 186 / webview 579+17 / wpt-runner runtime_path 21 测全过。**P1b 默认开前提之一（多标签 = 多 WebView 同进程共存）闭合**——R3332 backlog 项消除，更新「待修」→「已修」。gc.rs per-Isolate 重构**非必需**（Drop-reset 已够清状态，多 WebView 顺序场景不再泄漏）。
 
 ## 如何避免
 
-- 写 native-dom 路径测试时，**每测试建 1 个 WebView**（勿在单测试内循环多 WebView），否则触本 panic（误判为 native 绑定 parity bug）。
-- 若需跨用例 native 覆盖，拆成多个 `#[test]`（每个 = 1 WebView），由 cargo 并行调度（各测试独立线程，不共享线程局部缓存）。
-- 评估 P1b 默认开前，先闭合本 bug（多 WebView 同进程），否则多标签生产 break。
+- ~~写 native-dom 路径测试时，每测试建 1 个 WebView~~（R3334 修复后，同测试可建多个 native WebView——Drop 自动清状态）。但跨用例 native 覆盖仍建议拆多 `#[test]`（cargo 并行，各独立线程）。
+- 评估 P1b 默认开：R3334 已闭合多 WebView 隔离——剩余默认开前提仅「rule 11 用户点名切默认」（行为变更）+ S6/S7 shim 萎缩。

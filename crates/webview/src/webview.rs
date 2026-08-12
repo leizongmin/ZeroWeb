@@ -2310,3 +2310,19 @@ fn escape_js_string(s: &str) -> String {
     }
     out
 }
+
+// R3334：native_dom=true 的 WebView Drop 时清空 engine dom_bindings 的线程局部状态。
+//
+// V8 Isolate 随 WebView 销毁，但线程局部（gc.rs：DOM 源 / ObjectTemplate 缓存 / 对象身份映射）
+// 仍持指向**已销毁 Isolate** 的 `v8::Global`/`v8::Weak` Handle；同线程建第二个 native WebView 时
+// getter 经线程局部读到旧 Handle → `v8::handle.rs "Handle hosted by disposed Isolate"` panic
+//（R3332 实测定位；多标签生产 = 多 WebView 同进程，故 native 默认开前必修）。Drop 时 reset 使下一
+// WebView 干净启动。默认关路径（native_dom=false）不触——shim 无 Handle 耦合，零回归。
+#[cfg(feature = "v8")]
+impl Drop for WebView {
+    fn drop(&mut self) {
+        if self.config.native_dom {
+            zero_engine::dom_bindings::reset_native_state();
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3333：扩展 native-dom 路径 parity 门至 5 类（+geometry/runtime），native path CI 覆盖从 0→5 单 WebView 门跨 dataset/MO/storage/geometry/runtime 全对等确认；platform-input 2 残余脚本用例经审计确认为事件驱动不可锁（R3331 同类），自主测试加固面穷尽）。前轮 R3332：native parity 门 + isolate-leak 发现。
+**最后更新**: 2026-08-13（R3334：修复 R3332 发现的多 WebView disposed-Isolate panic——WebView Drop（native_dom=true 时）调 dom_bindings::reset_native_state 清线程局部 V8 Handle，同进程多 native WebView 不再 panic（多标签生产阻塞项消除，P1b 默认开前提之一闭合）；默认关路径不触 Drop-reset，零回归。前轮 R3333：native parity 门扩 5 类。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,29 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### 修复多 WebView disposed-Isolate panic（R3332 发现 → R3334 闭合，engine + webview）
+
+承接 R3332（native parity 门实测发现「同线程顺序建多个 native WebView」触 `v8::handle.rs:628 "Handle hosted by disposed Isolate"` panic，记 learning 作 P1b 默认开前必修阻塞）。本轮**实测定位根因 + 修复 + 回归门**，**非 rule 11**（仅触 native_dom=true 非默认路径，默认关零回归）：
+
+**根因**：`crates/engine/src/dom_bindings/gc.rs` 用**线程局部**存 DOM 源（`Rc<RefCell<Document>>`）+ ObjectTemplate 缓存（`v8::Global`）+ 对象身份映射（`v8::Weak`）—— V8 Isolate 随 WebView 销毁，但线程局部仍持指向**已销毁 Isolate** 的 Handle；第二个 native WebView 建新 Isolate 后 getter 经线程局部读到旧 Handle → panic。`gc::reset()` 清全部线程局部的函数**已存在**但**仅测试用**（`reset_for_test`，生产从未接入——gc.rs doc「run_page_scripts 接线（下一切片）接入导航/重载重置」从未落地）。
+
+**修复**（rule 11 安全：仅 native_dom=true 触）：
+- `dom_bindings/mod.rs` 新 pub `reset_native_state()`（包 `gc::reset`）；`gc::reset` 去 `#[allow(dead_code)]`（现生产用）。
+- `webview.rs` 新 `impl Drop for WebView`（`#[cfg(feature="v8")]`）：`config.native_dom` 时调 `reset_native_state()`。默认关路径不触（shim 无 Handle 耦合）。
+
+**回归门**：`native_dom_multi_webview_no_isolate_leak_r3334`——同测试顺序建 2 个 native_dom WebView（dataset + storage），修复前 panic、修复后全过。**P1b 默认开前提之一（多标签 = 多 WebView 同进程）闭合**。
+
+| 文件 | 改动 |
+|------|------|
+| `crates/engine/src/dom_bindings/gc.rs` | `reset()` 去 dead-code allow + R3334 doc |
+| `crates/engine/src/dom_bindings/mod.rs` | +pub `reset_native_state()` 包 `gc::reset` |
+| `crates/webview/src/webview.rs` | +`impl Drop for WebView`（native_dom 时 reset） |
+| `tests/wpt-runner/src/runner/mod.rs` | +`native_dom_multi_webview_no_isolate_leak_r3334` 永久回归门 |
+
+**为何净正向且零回归**：修复仅触 `native_dom=true`（默认关，生产零影响）；既有 native-dom 接线测试（webview R3097/R3107）+ engine dom_bindings 186 测 + wpt-runner runtime_path 21 测全过。**验证**：engine dom_bindings **186 passed** / webview **579+17 passed** / wpt-runner runtime_path **21 passed**（+1 multi-WebView 门，0 回归，test-guard）；fmt clean + clippy（engine/webview/wpt-runner v8）零警告。
+
+**下游判断（固化）**：R3334 闭合 R3332 bug = **P1b 默认开前提之一（多 WebView 同进程共存）消除**。剩余默认开前提：① 仍需用户 rule 11 点名切默认（行为变更 = 所有页切 live Document 路径）；② S6/S7 shim 萎缩。**zero-web 流剩余自主面**进一步缩窄——R3332/R3334 后 native 路径已 CI 覆盖（5 parity 门 + 多 WebView 门）+ 多 WebView 隔离闭合，自主可 land 的 native 内部修复已穷尽（gc.rs per-Isolate 重构非必需，reset 已够）。
 
 ### native-dom parity 门扩展至 5 类 + 自主测试加固面穷尽确认（本轮 R3333，wpt-runner）
 

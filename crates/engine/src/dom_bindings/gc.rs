@@ -139,7 +139,9 @@ pub(crate) fn element_template_local<'s>(
 }
 
 /// 清空全部绑定状态（reset_context / 导航重建时调用；下一切片接线时接入）。
-#[allow(dead_code)] // 生产入口：本切片仅测试用；run_page_scripts 接线（下一切片）接入导航/重载重置
+///
+/// R3334：经 `dom_bindings::reset_native_state`（pub）供 webview Drop 调用（native_dom=true 时），
+/// 闭合 R3332 多 WebView 同线程 disposed-Isolate panic。
 pub(crate) fn reset() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
