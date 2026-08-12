@@ -866,9 +866,7 @@ fn extract_document_title(html: &str) -> Option<String> {
         }
         // 命中 `<title` 起始标签（大小写不敏感；后须跟空白 / `>` / `/`，避免误匹配
         // `<titlebar` 等自定义串）。HTML tag 名 ASCII 大小写不敏感（spec）。
-        let is_title_start = bytes
-            .get(i..i + 6)
-            .is_some_and(|t| t.eq_ignore_ascii_case(b"<title"))
+        let is_title_start = bytes.get(i..i + 6).is_some_and(|t| t.eq_ignore_ascii_case(b"<title"))
             && bytes
                 .get(i + 6)
                 .is_some_and(|c| c.is_ascii_whitespace() || *c == b'>' || *c == b'/');
