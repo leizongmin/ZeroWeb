@@ -279,6 +279,73 @@ fn test_wasm_bridge_validate() {
     assert_eq!(result, "true", "validate 应检测 WASM 魔术字节");
 }
 
+// ── R3352：WASM memory 真实字节大小（多页模块）──
+
+/// R3352：构造一个**带导出 memory（2 页 = 131072 字节）+ 导出函数 f**的最小 WASM 模块。
+/// `(module (memory (export "memory") 2) (func (export "f") (result i32) i32.const 42))`。
+/// 用于验证 JS 侧注入的 `memory.buffer.byteLength` 反映**真实**页数，而非旧实现恒为 65536（1 页）。
+fn wasm_module_with_memory_2pages() -> Vec<u8> {
+    vec![
+        0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, // magic + version
+        0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7F, // type: () -> i32 (count=1, func 0 params 1 result)
+        0x03, 0x02, 0x01, 0x00, // function: 1 func, type 0
+        0x05, 0x03, 0x01, 0x00, 0x02, // memory: 1 mem, min 2 pages
+        0x07, 0x0E, 0x02, // export: 2 exports
+        0x06, 0x6D, 0x65, 0x6D, 0x6F, 0x72, 0x79, 0x02, 0x00, // "memory" -> mem 0
+        0x01, 0x66, 0x00, 0x00, // "f" -> func 0
+        0x0A, 0x06, 0x01, 0x04, 0x00, 0x41, 0x2A, 0x0B, // code: f = i32.const 42
+    ]
+}
+
+/// R3352：带导出 memory 的多页 WASM 模块经桥接实例化后，JS 侧 `memory.buffer.byteLength`
+/// 必须等于**真实**字节数（2 页 = 131072）。旧实现从 256 字节探测推导页数恒得 1 页（65536），
+/// 致多页模块 JS memory.buffer 大小错误——JS 写偏移 >65536 越界、`grow()` 返回值基线也错。
+#[test]
+fn wasm_bridge_memory_byte_length_reflects_real_pages_r3352() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let wasm = wasm_module_with_memory_2pages();
+    let js_bytes: String = wasm.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",");
+
+    // 实例化（桥接编译 + 实例化 + 注入 JS memory 对象）。
+    let result = wv
+        .execute_script_with_dom(&format!(
+            r#"
+        var bytes = new Uint8Array([{js_bytes}]);
+        var result = WebAssembly.instantiate(bytes);
+        typeof result.then === 'function'
+        "#
+        ))
+        .unwrap();
+    assert_eq!(result, "true", "instantiate 含 memory 模块应成功");
+    // 诊断：若有编译/实例化错误，打印以便定位（memory 模块字节若有误会在此暴露）。
+    if let Ok(errs) =
+        wv.execute_script("(typeof __wasm_errors__ === 'object') ? JSON.stringify(__wasm_errors__) : 'no-errors'")
+    {
+        assert_eq!(errs, "no-errors", "WASM 模块不应有编译/实例化错误: {errs}");
+    }
+
+    // 读取注入的 memory.byteLength——须为 131072（2 页），非旧实现的 65536。
+    let byte_len = wv
+        .execute_script(
+            "(function(){{ var k = Object.keys(__wasm_results__)[0]; \
+             return __wasm_results__[k].exports.memory.byteLength; }})()",
+        )
+        .unwrap();
+    assert_eq!(
+        byte_len, "131072",
+        "2 页 memory 模块的 JS byteLength 须为 131072（旧实现错误得 65536）"
+    );
+
+    // grow 基线也须基于真实页数：grow(1) 返回 3（2 真实页 + 1），非旧实现的 2（1 + 1）。
+    let grow_ret = wv
+        .execute_script(
+            "(function(){{ var k = Object.keys(__wasm_results__)[0]; \
+             return __wasm_results__[k].exports.memory.grow(1); }})()",
+        )
+        .unwrap();
+    assert_eq!(grow_ret, "3", "grow(1) 须基于真实 2 页基线返 3（旧实现错误得 2）");
+}
+
 #[test]
 fn test_wasm_bridge_instantiate_streaming() {
     let mut wv = WebView::new(WebViewConfig::default());

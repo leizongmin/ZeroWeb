@@ -1781,12 +1781,12 @@ impl WebView {
             tracing::debug!("WASM bridge: _initialize error (may be expected)");
         }
 
-        // 读取 WASM 内存状态（如果有 memory 导出）
-        let memory_bytes = instance.read_memory("memory", 0, 256).unwrap_or_default();
+        // R3352：用实例的**真实内存字节数**计算 JS 侧 ArrayBuffer 大小。旧实现从 256 字节探测
+        //（`read_memory(.., 256)` 上限）推导页数——探测长度恒 ≤256 → `256/65536+1 = 1` 页，
+        // 致**任何**带 memory 导出的模块 JS memory.buffer 恒为 65536（1 页），与真实多页内存不符：
+        // JS 写偏移 >65536 越界，`grow()` 返回值基线也错。`memory_size` 直接问实例取字节大小。
         let memory_len = if export_names.iter().any(|n| n == "memory") {
-            // WASM 内存以页（65536 字节）为单位
-            let pages = 1.max(memory_bytes.len() / 65536 + 1);
-            pages * 65536
+            instance.memory_size("memory").filter(|&sz| sz > 0).unwrap_or(65536)
         } else {
             65536
         };
