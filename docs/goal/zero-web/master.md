@@ -1,8 +1,8 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3341：deep-review zero-storage 发现并修复第四项真 bug——IndexedDB auto-increment key generator 在提供显式数值 key 时未按 W3C §1.8.2 推进（仅在 None 自动分配路径推进；非事务 `add`/`put` 显式 Number key 完全不推进，事务 `tx_add`/`tx_put` 仅窄匹配 `key==effective_next` 推进）→ 新建 auto-inc store `add(v,Some(Number(100)))` 后生成器仍为 1，下次自动分配 key=1 而非 101（spec 违规 + 错键序列，seed 参考数据再插新行场景破坏）。新 `advance_generator_for_explicit_key`（max 语义 floor(n)+1，小 key 不回退）应用到 add/put/tx_add/tx_put 四路径；3 回归测修复前复现（auto key 留 1 应 101；tx 同；+ 无回归测小 key 不回退）修复后过。zero-storage 657→660 全绿，engine 2049 零回归。R3334+R3339+R3340+R3341 = 第四项真 bug 修复。）
+**最后更新**: 2026-08-13（R3342+R3343：deep-review zero-security 一轮发现并修复两项真安全策略绕过——① CSP `check_source_list` 非 wildcard 源表达式用 `url.starts_with(value)` 纯字符串前缀匹配，攻击者注册 `example.com.evil.com` 域名，`script-src https://example.com` 下其脚本 `https://example.com.evil.com/x.js` 误判允许（CSP 绕过，可加载任意跨源脚本）；改 `origin_expr_matches` 按 `[scheme://]host[:port]` 解析后 host 精确匹配。② `mixed_content` `is_mixed_content`/`upgrade_to_https` 对 `http://` 大小写敏感匹配，生产 `fetch_proxy` 直接把 renderer 未规范化 IPC url 喂入，HTTPS 页面加载 `HTTP://`（大写）阻塞型混合内容（script/iframe）绕过检测被放行（mixed-content 安全策略绕过，MITM 可注入明文脚本）；改 scheme 大小写不敏感（RFC 3986 §3.1）。两测确定性复现+修复过，zero-security 384→386 全绿，browser fetch_proxy 消费方编译过。R3334+R3339+R3340+R3341+R3342+R3343 = 第六项真 bug 修复（连续两轮单轮双 bug）。）
 
-> **R3340（上一轮）**：zero-protocol `fd_socket_linux::publish_fd` SCM_RIGHTS 发送方 fd 泄漏（compositor 每帧泄漏 fd）。OwnedFd RAII 修，确定性测试复现+回归过。
+> **R3341（上一轮）**：zero-storage IndexedDB auto-inc 生成器显式数值 key 不推进（W3C §1.8.2）。max 语义 helper 应用到 add/put/tx_add/tx_put。3 测复现+回归过。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -161,6 +161,30 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-security 一轮修复两项真安全策略绕过（本轮 R3342 CSP 前缀匹配绕过 + R3343 mixed-content scheme 大小写绕过，security csp.rs + mixed_content.rs——真安全 bug 修复）
+
+承接 R3341（zero-storage auto-inc 生成器）。本轮 deep-review 推进至 **`zero-security`**（7.9k LOC，CORS/CSP/同源/HSTS/mixed-content/sandbox/site-isolation——安全策略 crate）。逐文件审全部生产代码（cors/csp/origin/hsts/mixed_content/context/site_isolation/sandbox/permission/coop/coep）+ 委派 deep-review agent 复核 7 文件。**一轮发现并修复两项真安全策略绕过**：
+
+#### R3342：CSP 源表达式前缀匹配绕过（csp.rs）
+
+- **根因**：`ContentSecurityPolicy::check_source_list`（csp.rs:171-180）对非 wildcard 源表达式用 `else if url.starts_with(value)` **纯字符串前缀匹配**。CSP 规范（CSP §8.3）要求源表达式 host 须**精确匹配**资源 URL 的 host，绝不前缀匹配。
+- **生产影响**：策略 `script-src https://example.com`（仅允许 example.com）下，攻击者注册域名 `example.com.evil.com`，加载脚本 `https://example.com.evil.com/x.js`——`starts_with("https://example.com")` 为 true → **错误允许**（CSP 绕过），可加载任意跨源恶意脚本（XSS 载荷、凭据窃取）。真安全策略绕过 bug。
+- **修复**：新私有 `origin_expr_matches(expr, url)`——解析源表达式 `[scheme://]host[:port]` 形式，按 host **精确匹配**（大小写不敏感，规范 host 不区分大小写），scheme/port 仅在表达式显式给出时约束；含路径分隔符的表达式回退精确整串匹配。新 `split_url_origin` 提取 URL scheme/host/port。替换原前缀匹配分支。
+- **复现测**：`test_is_resource_allowed_no_prefix_bypass_r3342`——`script-src https://example.com` 下 `example.com.evil.com`/`evilexample.com` 须被拒，合法 host + 子路径 + 裸主机名（任意 scheme）仍允许。**确定性复现**：修复前 `example.com.evil.com` 误允许（panic），修复后拒。
+
+#### R3343：mixed-content scheme 大小写绕过（mixed_content.rs）
+
+- **根因**：`is_mixed_content`/`upgrade_to_https` 对 `http://` 做**大小写敏感**前缀匹配（`starts_with("http://")` / `strip_prefix("http://")`）。RFC 3986 §3.1 规定 URL scheme 大小写不敏感。
+- **生产影响**：生产链路 `apps/browser/src/fetch_proxy.rs:123-128` 直接把 renderer 经 IPC 传来的**未规范化** `params.url` 原样喂给 `SecurityContext::check_resource_url` → `is_mixed_content`。HTTPS 页面加载 `HTTP://evil.com/script.js`（大写 scheme）→ `starts_with("http://")` 为 false → **绕过检测被放行**（阻塞型混合内容 script/iframe 静默请求），MITM 可注入明文脚本（mixed-content 安全策略绕过）。真生产可利用安全 bug。
+- **修复**：两函数改 scheme **大小写不敏感**——取 URL 前 7 字节 `eq_ignore_ascii_case(b"http://")`（避免对长 URL 整串 to_lowercase 分配）；`upgrade_to_https` 输出规范化小写 `https://`。
+- **复现测**：`test_mixed_content_case_insensitive_scheme_r3343`——`HTTP://`/`HtTp://` 须被识别为混合内容（基线小写 `http://` 对照），`check_mixed_content` 归 `Blockable`，`upgrade_to_https` 升级；`HTTPS://` 不误判。**确定性复现**：修复前大写 `HTTP://` 绕过（panic），修复后检测。
+
+#### 为何净正向且零回归
+
+两项真安全策略绕过修复（CSP host 精确匹配 + mixed-content scheme 大小写不敏感），纯 security crate 内部逻辑，无公共 API 变更；既有 CSP 源匹配测（default-src/self/wildcard，合法 host 子路径）+ mixed-content 测全保持过。**验证**：zero-security **384→386 passed / 0 failed**（+2 测，test-guard）；`cargo fmt` clean + clippy `-D warnings` 零警告；下游 zero-browser（`fetch_proxy.rs` SecurityContext 消费方）编译过。**审 agent 复核 7 文件确认**：sandbox/permission/context/coop/coep/origin 无真 bug；site_isolation eTLD+1 为 PSL 潜在限制但无生产接线（按 code-guidelines §2/§3 不自主修未用功能）。
+
+**下游判断（固化）**：R3342+R3343 = deep-review 未触生产 crate 的**第四刀**（zero-security），**一轮双 bug**（第六+第七项真 bug 修复：R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏 + R3341 auto-inc 生成器 + R3342 CSP 前缀绕过 + R3343 mixed-content scheme 绕过），证实该方向（非 native 线、非渲染线）**持续产出真 bug 且 security crate 价值最高**（连续两轮单轮双 bug：R3342+R3343）。**剩余未审生产 crate**：navigation/cache（网络级，纯结构/请求路由，probe 验证多为时序/静态）；css-parser/style-system（渲染流流域，run-rules §9 不触）；render-foundation（渲染流域）——下轮续 deep-review 优先 **css-parser**（非渲染流流域能自主审的最近渲染相关 crate，解析器边界条件易藏 bug）或收尾确认 navigation 后转入零已审 crate 的二轮复扫，延续找真 bug 模式。
 
 ### deep-review zero-storage 修复 IndexedDB auto-increment 显式数值 key 不推进生成器（本轮 R3341，storage indexed_db/types.rs——真 bug 修复）
 
