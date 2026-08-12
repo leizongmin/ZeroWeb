@@ -98,8 +98,13 @@
             var _cctx = (typeof _zwCanvasCtx !== 'undefined' && _zwCanvasCtx[key]) || null;
             var _ch = _cctx && _cctx._handle;
             if (_ch) {
-              var _cw = (p === 'width') ? wv : (wrc.width || 300);
-              var _chh = (p === 'height') ? wv : (wrc.height || 150);
+              // R3254-C6：只设一维时另一维取**元素 HTML 属性**（`<canvas width="500">` 从未经
+              // JS 设置）——此前回退硬编码 300/150，host bitmap 与元素报告尺寸永久脱钩。
+              // wrc 用 `!= null` 判断（显式设 0 合法，`|| 300` 会把 0 误回退）。
+              var _attrW = handle ? __zw_get_attr_handle(handle, 'width') : __zw_get_attr(sel, 'width');
+              var _attrH = handle ? __zw_get_attr_handle(handle, 'height') : __zw_get_attr(sel, 'height');
+              var _cw = (p === 'width') ? wv : (wrc.width != null ? wrc.width : (parseInt(_attrW, 10) || 300));
+              var _chh = (p === 'height') ? wv : (wrc.height != null ? wrc.height : (parseInt(_attrH, 10) || 150));
               __zw_canvas_op(String(_ch), 'resizeContext', String(_cw), String(_chh));
             }
           }
@@ -214,6 +219,14 @@
     var e = new Error(msg);
     e.name = name;
     throw e;
+  }
+
+  // R3254-C1：构造 DOMException（无 DOMException 环境回落 Error + name）——reject 用。
+  function _zwDomException(msg, name) {
+    if (typeof DOMException === 'function') return new DOMException(msg, name);
+    var e = new Error(msg);
+    e.name = name;
+    return e;
   }
 
   // R2926 Shadow DOM：`element.attachShadow(init)` → ShadowRoot。host 元素专用（get trap 仅对元素
@@ -947,7 +960,10 @@
   }
   // R3311：wire 串子矩形裁剪（createImageBitmap options sx/sy/sw/sh）。解析源 wire 像素 → 取 [sx,sx+sw)×[sy,sy+sh)
   // 子矩形 → 重编码为 sw×sh wire。越界 clamp 到源边界（spec：超界范围不贡献像素，结果尺寸为有效交集——本实现
-  // 简化为 clamp sw/sh 到源内，spec 近似 documented）。源尺寸 0 或 sw/sh ≤ 0 → 返原 wire（调用方判零尺寸 reject）。
+  // 简化为 clamp sw/sh 到源内，spec 近似 documented）。
+  //
+  // R3254-C1：参数校验前移到调用方（显式 0 → RangeError、负值翻转矩形、非有限 → 拒绝），
+  // 本函数只处理**已校验为正**的 sw/sh；裁剪区完全超源 → 返回 '0:0;'（调用方判零尺寸拒绝）。
   function _zwCropWire(wire, sx, sy, sw, sh) {
     var s = String(wire);
     var semi = s.indexOf(';');
@@ -956,8 +972,6 @@
     var srcW = parseInt(dims[0], 10) || 0;
     var srcH = parseInt(dims[1], 10) || 0;
     if (srcW <= 0 || srcH <= 0) return s;
-    // options 缺省/无效 → 不裁剪。
-    if (sw == null || sh == null || !isFinite(sw) || !isFinite(sh) || sw <= 0 || sh <= 0) return s;
     sx = (sx == null || !isFinite(sx)) ? 0 : (sx | 0);
     sy = (sy == null || !isFinite(sy)) ? 0 : (sy | 0);
     sw = sw | 0;
@@ -993,8 +1007,23 @@
           return Promise.reject(new TypeError('createImageBitmap: 不支持的 source 或解码失败'));
         }
         // R3311：options 裁剪（sx/sy/sw/sh 子矩形）。4 数值参齐备时裁剪，否则不裁。
+        // R3254-C1：参数校验（WPT createImageBitmap-invalid-args）——显式 0 → RangeError；
+        // 非有限 → InvalidStateError；负 sw/sh 不拒绝，按 spec 翻转矩形（sx += sw; sw = -sw，
+        // WebKit 语义）；全部通过后才裁剪。
         if (sw != null || sh != null) {
+          if (sw === 0 || sh === 0) {
+            return Promise.reject(new RangeError('createImageBitmap: sw/sh 不能为 0'));
+          }
+          if (!isFinite(sw) || !isFinite(sh)) {
+            return Promise.reject(_zwDomException('createImageBitmap: sw/sh 必须为有限数', 'InvalidStateError'));
+          }
+          if (sw < 0) { sx = sx + sw; sw = -sw; }
+          if (sh < 0) { sy = sy + sh; sh = -sh; }
           wire = _zwCropWire(wire, sx, sy, sw, sh);
+          if (String(wire).indexOf('0:0;') === 0) {
+            // 裁剪区与源无交集（完全在源外）→ InvalidStateError（spec/WPT "oversized crop region"）。
+            return Promise.reject(_zwDomException('createImageBitmap: 裁剪区与源无交集', 'InvalidStateError'));
+          }
         }
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
@@ -1013,9 +1042,39 @@
   // https://html.spec.whatwg.org/multipage/canvas.html#the-offscreencanvas-interface
   function OffscreenCanvas(width, height) {
     if (!(this instanceof OffscreenCanvas)) return new OffscreenCanvas(width, height);
-    this.width = (typeof width === 'number' && width > 0) ? (width | 0) : 300;
-    this.height = (typeof height === 'number' && height > 0) ? (height | 0) : 150;
+    // R3254-C5：width/height 用 accessor——setter 在已 getContext 后调 host resizeContext
+    //（spec：与 canvas.width 同语义——重置 bitmap + 绘图状态）；此前是普通数据属性，
+    // `oc.width = 200` 只改 JS 数字、host bitmap 保持原尺寸（绘制被裁剪/尺寸错配）。
+    var _w = (typeof width === 'number' && width > 0) ? (width | 0) : 300;
+    var _h = (typeof height === 'number' && height > 0) ? (height | 0) : 150;
     this._ctx = null;
+    var self = this;
+    Object.defineProperty(this, 'width', {
+      get: function () { return _w; },
+      set: function (v) {
+        var nv = (typeof v === 'number' && v > 0) ? (v | 0) : 300;
+        if (nv === _w) return;
+        _w = nv;
+        if (self._ctx && typeof __zw_canvas_op === 'function') {
+          __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+        }
+      },
+      enumerable: true,
+      configurable: true
+    });
+    Object.defineProperty(this, 'height', {
+      get: function () { return _h; },
+      set: function (v) {
+        var nv = (typeof v === 'number' && v > 0) ? (v | 0) : 150;
+        if (nv === _h) return;
+        _h = nv;
+        if (self._ctx && typeof __zw_canvas_op === 'function') {
+          __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+        }
+      },
+      enumerable: true,
+      configurable: true
+    });
   }
   OffscreenCanvas.prototype.getContext = function (type) {
     if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer

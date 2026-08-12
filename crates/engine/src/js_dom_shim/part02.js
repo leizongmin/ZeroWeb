@@ -2158,18 +2158,21 @@
             var buf = (opts && opts.keepExistingData) ? new Uint8Array(node.data) : new Uint8Array(0);
             var pos = 0;
             var closed = false;
+            var aborted = false;
             function guard() { if (closed) return Promise.reject(new TypeError('stream 已关闭')); return null; }
             // 把 string/Blob/TypedArray/BufferSource 归一为 Uint8Array。
+            // R3254-C3：字符串按 UTF-8 编码（此前 `charCodeAt & 0xff` latin-1 截断，中文乱码）。
+            // R3254-C4：TypedArray/DataView 只取**视图范围**（byteOffset+byteLength）——此前
+            // `new Uint8Array(data.buffer)` 复制整个底层 ArrayBuffer，subarray 视图越界写入。
             function toBytes(data) {
               if (data == null) return new Uint8Array(0);
-              if (typeof data === 'string') {
-                var s = new Uint8Array(data.length);
-                for (var i = 0; i < data.length; i++) s[i] = data.charCodeAt(i) & 0xff;
-                return s;
-              }
+              if (typeof data === 'string') return _zw_utf8_encode(data);
               if (data instanceof Uint8Array) return new Uint8Array(data);
               if (data instanceof Blob) return _zw_blobBytes(data).slice(); // 同步取（headless 近似）
-              if (data.byteLength != null) return new Uint8Array(data.buffer ? data.buffer : data);
+              if (data instanceof ArrayBuffer) return new Uint8Array(data);
+              if (data.byteLength != null && data.buffer != null) {
+                return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
+              }
               return new Uint8Array(0);
             }
             // 在 pos 写入 bytes（自动扩展缓冲，不截断既有超出内容）。
@@ -2188,7 +2191,15 @@
                 var g = guard(); if (g) return g;
                 // 对象形式：write({type:'seek'|'truncate'|'write', position/size/data})。
                 if (data && typeof data === 'object' && typeof data.type === 'string') {
-                  if (data.type === 'seek') { pos = (data.position | 0); return Promise.resolve(); }
+                  if (data.type === 'seek') {
+                    // R3254-C2：负 position → TypeError（spec FS §8.5）；此前负值静默丢数据
+                    //（负索引写 Uint8Array 是 no-op）。
+                    if (typeof data.position === 'number' && data.position < 0) {
+                      return Promise.reject(new TypeError('seek: position 不能为负'));
+                    }
+                    pos = (data.position | 0);
+                    return Promise.resolve();
+                  }
                   if (data.type === 'truncate') {
                     var sz = data.size | 0;
                     if (sz < 0) sz = 0;
@@ -2199,6 +2210,10 @@
                     return Promise.resolve();
                   }
                   // type === 'write'
+                  // R3254-C2：显式 position 负 → TypeError（同 seek）。
+                  if (typeof data.position === 'number' && data.position < 0) {
+                    return Promise.reject(new TypeError('write: position 不能为负'));
+                  }
                   var wpos = (typeof data.position === 'number') ? (data.position | 0) : pos;
                   var wb = toBytes(data.data);
                   writeAt(wpos, wb);
@@ -2211,7 +2226,15 @@
                 pos += b.length;
                 return Promise.resolve();
               },
-              seek: function (offset) { var g = guard(); if (g) return g; pos = (offset | 0); return Promise.resolve(); },
+              seek: function (offset) {
+                var g = guard(); if (g) return g;
+                // R3254-C2：负 offset → TypeError。
+                if (typeof offset === 'number' && offset < 0) {
+                  return Promise.reject(new TypeError('seek: offset 不能为负'));
+                }
+                pos = (offset | 0);
+                return Promise.resolve();
+              },
               truncate: function (size) {
                 var g = guard(); if (g) return g;
                 var tz = (size | 0); if (tz < 0) tz = 0;
@@ -2221,8 +2244,14 @@
                 if (pos > tz) pos = tz;
                 return Promise.resolve();
               },
-              close: function () { closed = true; node.data = buf; return Promise.resolve(); },
-              abort: function () { closed = true; return Promise.resolve(); },
+              close: function () {
+                // R3254-C10：abort 后 close → InvalidStateError（spec：abort 放弃的缓冲不得提交）。
+                if (aborted) return Promise.reject(new TypeError('stream 已 abort'));
+                closed = true;
+                node.data = buf;
+                return Promise.resolve();
+              },
+              abort: function () { closed = true; aborted = true; return Promise.resolve(); },
             });
           },
           isSameEntry: function (other) { return this === other; },

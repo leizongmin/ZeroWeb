@@ -877,3 +877,63 @@ fn test_get_bounding_client_rect_returns_domrect_r3319() {
     );
 }
 
+
+/// R3254-C2/C3/C4：OPFS writable 数据完整性——负 position 拒绝、字符串 UTF-8 编码、
+/// TypedArray 视图范围写入、abort 后 close 拒绝。
+#[test]
+fn test_opfs_writable_data_integrity_c2c3c4() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "navigator.storage.getDirectory().then(function (root) {               return root.getFileHandle('c.txt', { create: true });             }).then(function (fh) {               globalThis.__fh = fh;               return fh.createWritable();             }).then(function (w) {               globalThis.__w1 = w;               return w.seek(-5).then(function () { globalThis.__negSeek = 'resolved'; },                 function (e) { globalThis.__negSeek = 'rejected:' + e.name; });             }).then(function () {               return globalThis.__w1.write({ type: 'write', position: -1, data: new Uint8Array([1]) })                 .then(function () { globalThis.__negWrite = 'resolved'; },                   function (e) { globalThis.__negWrite = 'rejected:' + e.name; });             }).then(function () {               /* C3：'你' 应 UTF-8 编码为 3 字节 */               return globalThis.__w1.write('你').then(function () { return globalThis.__w1.close(); });             }).then(function () { return globalThis.__fh.getFile(); })             .then(function (file) { return file.arrayBuffer(); })             .then(function (ab) {               globalThis.__utf8len = String(new Uint8Array(ab).length);               /* C4：Uint16Array(8).subarray(2,4) 视图应只写 4 字节 */               return navigator.storage.getDirectory();             }).then(function (root) {               return root.getFileHandle('v.txt', { create: true });             }).then(function (fh) {               return fh.createWritable();             }).then(function (w) {               var big = new Uint16Array(8);               return w.write(big.subarray(2, 4)).then(function () { return w.close(); });             }).then(function () {               return navigator.storage.getDirectory();             }).then(function (root) { return root.getFileHandle('v.txt'); })             .then(function (fh) { return fh.getFile(); })             .then(function (file) { return file.arrayBuffer(); })             .then(function (ab) {               globalThis.__viewLen = String(new Uint8Array(ab).length);               /* C10：abort 后 close 拒绝 */               return navigator.storage.getDirectory();             }).then(function (root) {               return root.getFileHandle('a.txt', { create: true });             }).then(function (fh) {               return fh.createWritable();             }).then(function (w) {               return w.write('x').then(function () { return w.abort(); }).then(function () {                 return w.close().then(function () { globalThis.__abortClose = 'resolved'; },                   function (e) { globalThis.__abortClose = 'rejected:' + e.name; });               });             }).then(function () { globalThis.__ok = 'done'; },               function (e) { globalThis.__ok = 'fail:' + String(e && e.message ? e.message : e); });",
+        )
+        .unwrap();
+    // pump microtask（Promise 链多轮 execute drain）。
+    for _ in 0..12 {
+        sandbox.execute("globalThis.__n = 1;").unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("globalThis.__ok").unwrap().value,
+        "done",
+        "OPFS 链应完成"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__negSeek").unwrap().value,
+        "rejected:TypeError",
+        "负 position seek 应拒绝 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__negWrite").unwrap().value,
+        "rejected:TypeError",
+        "负 position write 应拒绝 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__utf8len").unwrap().value,
+        "3",
+        "字符串 '你' 应 UTF-8 编码为 3 字节"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__viewLen").unwrap().value,
+        "4",
+        "subarray(2,4) 视图应只写 4 字节（非整块 16 字节）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__abortClose").unwrap().value,
+        "rejected:TypeError",
+        "abort 后 close 应拒绝"
+    );
+}

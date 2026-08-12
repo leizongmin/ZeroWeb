@@ -2081,3 +2081,172 @@ fn test_canvas_round_rect_and_hit_test_r3291() {
     assert_eq!(sandbox.execute("globalThis.__pisOnEdge").unwrap().value, "true", "isPointInStroke(描边上的点) → true（lineWidth 半宽内）");
     assert_eq!(sandbox.execute("globalThis.__pisFar").unwrap().value, "false", "isPointInStroke(远离描边的点) → false");
 }
+
+/// R3254-C1：createImageBitmap 参数校验（WPT createImageBitmap-invalid-args）——
+/// 显式 sw/sh=0 → RangeError；负 sw/sh → 翻转矩形（成功产出）；非有限 → InvalidStateError。
+/// 此前 sw/sh≤0 静默返回整图（不 reject）。
+#[test]
+fn test_create_image_bitmap_invalid_args_c1() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var R = [255,0,0,255], W = [255,255,255,255];\
+             var px = [];\
+             for (var y = 0; y < 2; y++) for (var x = 0; x < 2; x++) {\
+               var c = (x < 1) ? R : W;\
+               for (var k = 0; k < 4; k++) px.push(c[k]);\
+             }\
+             var imgData = new ImageData(new Uint8ClampedArray(px), 2, 2);\
+             /* ① sw=0 → RangeError */\
+             createImageBitmap(imgData, 0, 0, 0, 2).then(\
+               function () { globalThis.__c1 = 'resolved'; },\
+               function (e) { globalThis.__c1 = e.name + ':' + (e instanceof RangeError); });\
+             /* ② sh=0 → RangeError */\
+             createImageBitmap(imgData, 0, 0, 2, 0).then(\
+               function () { globalThis.__c2 = 'resolved'; },\
+               function (e) { globalThis.__c2 = e.name; });\
+             /* ③ 负 sw → 翻转矩形成功产出（WebKit 语义）：(2,0,-2,2) → sx=0, sw=2 → (0,0,2,2) 全图 */\
+             createImageBitmap(imgData, 2, 0, -2, 2).then(function (bm) {\
+               globalThis.__c3 = String(bm.width) + 'x' + String(bm.height);\
+             }, function (e) { globalThis.__c3 = 'reject:' + e.name; });\
+             /* ④ 非有限 sw → InvalidStateError */\
+             createImageBitmap(imgData, 0, 0, NaN, 2).then(\
+               function () { globalThis.__c4 = 'resolved'; },\
+               function (e) { globalThis.__c4 = e.name; });\
+             globalThis.__ok = 1;",
+        )
+        .unwrap();
+    for _ in 0..10 {
+        sandbox.execute("globalThis.__n = 1;").unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("globalThis.__c1").unwrap().value,
+        "RangeError:true",
+        "sw=0 应 reject RangeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c2").unwrap().value,
+        "RangeError",
+        "sh=0 应 reject RangeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c3").unwrap().value,
+        "2x2",
+        "负 sw 应翻转矩形并成功产出"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c4").unwrap().value,
+        "InvalidStateError",
+        "非有限 sw 应 reject InvalidStateError"
+    );
+}
+
+/// R3254-C6：canvas 只设一维时另一维取 HTML 属性——`<canvas width="500" height="150">`
+/// 设 `canvas.height = 200` → host bitmap 应 500×200（此前回退硬编码 300，bitmap 与
+/// 元素报告尺寸脱钩）。
+#[test]
+fn test_canvas_single_dim_resize_keeps_html_attr_c6() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='500' height='150'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             /* 只设 height——width 应保持 HTML 属性 500（此前回退 300）*/\
+             cv.height = 200;\
+             globalThis.__w = String(cv.width);\
+             globalThis.__h = String(cv.height);\
+             /* 在 x=450（>300）处绘制——若 host 是 300 宽则被裁剪不可见 */\
+             ctx.fillStyle = 'rgb(0,0,255)';\
+             ctx.fillRect(450, 100, 10, 10);\
+             var p = ctx.getImageData(450, 100, 1, 1).data;\
+             globalThis.__pixel = String(p[0] + ',' + p[1] + ',' + p[2]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__w").unwrap().value, "500", "width 保持 HTML 属性 500");
+    assert_eq!(sandbox.execute("globalThis.__h").unwrap().value, "200", "height 更新为 200");
+    assert_eq!(
+        sandbox.execute("globalThis.__pixel").unwrap().value,
+        "0,0,255",
+        "x=450 处绘制可见（host bitmap 宽为 500 而非 300）"
+    );
+}
+
+/// R3254-C5：OffscreenCanvas width/height setter 触达 host bitmap——getContext 后
+/// `oc.width = 200` → 后续绘制按新尺寸（此前 setter 只改 JS 数字，host bitmap 保持
+/// 原尺寸，绘制被裁剪/尺寸错配）。
+#[test]
+fn test_offscreen_canvas_resize_touches_host_c5() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var oc = new OffscreenCanvas(20, 20);\
+             var octx = oc.getContext('2d');\
+             /* getContext 后设 width → host resizeContext（重置 bitmap + 状态）*/\
+             oc.width = 40;\
+             globalThis.__ocw = String(oc.width);\
+             /* 新尺寸下绘制（x=30 > 旧 20 宽）并读回——host 已 resize 才可见 */\
+             octx.fillStyle = 'rgb(0,0,255)';\
+             octx.fillRect(30, 5, 5, 5);\
+             var p = octx.getImageData(30, 5, 1, 1).data;\
+             globalThis.__ocPixel = String(p[0] + ',' + p[1] + ',' + p[2]);\
+             /* transferToImageBitmap 按新尺寸（spec：bitmap = 当前 canvas 尺寸）*/\
+             var bm = oc.transferToImageBitmap();\
+             globalThis.__bm = String(bm.width) + 'x' + String(bm.height);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__ocw").unwrap().value, "40", "OffscreenCanvas.width 更新");
+    assert_eq!(
+        sandbox.execute("globalThis.__ocPixel").unwrap().value,
+        "0,0,255",
+        "新尺寸下 x=30 绘制可见（host bitmap 已 resize 到 40 宽）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bm").unwrap().value,
+        "40x20",
+        "transferToImageBitmap 按当前尺寸 40×20"
+    );
+}
