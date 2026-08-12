@@ -1614,12 +1614,28 @@ impl GpuRenderer {
             let (gx, gy) = (gx.round(), gy.round());
             let (gw, gh) = (placement.width as f32, placement.height as f32);
             let (r, g, b, a) = color_to_f32a(gp.color);
-            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b, a]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
-            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b, a]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
+            // R2497 synthetic italic（对齐 CPU blit_glyph_bitmap）：每行水平偏移
+            // shear = (row - height/2) × tan(14°)。quad 按 y 线性 shear（顶边/底边各
+            // 自偏移），保持平行四边形；90° 旋转分支（CPU is_rotated_90 优先）不 shear。
+            const ITALIC_SKEW: f32 = 0.249;
+            let anchor_y = gy + gh * 0.5;
+            let shear = |y: f32| {
+                if gp.synthetic_italic {
+                    (y - anchor_y) * ITALIC_SKEW
+                } else {
+                    0.0
+                }
+            };
+            let (tlx, tly) = (gx + shear(gy), gy);
+            let (trx, _try) = (gx + gw + shear(gy), gy);
+            let (blx, bly) = (gx + shear(gy + gh), gy + gh);
+            let (brx, bry) = (gx + gw + shear(gy + gh), gy + gh);
+            vertices.extend_from_slice(&[tlx, tly, u0, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[trx, tly, u1, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[blx, bly, u0, v1, r, g, b, a]);
+            vertices.extend_from_slice(&[trx, tly, u1, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[brx, bry, u1, v1, r, g, b, a]);
+            vertices.extend_from_slice(&[blx, bly, u0, v1, r, g, b, a]);
         }
         vertices
     }

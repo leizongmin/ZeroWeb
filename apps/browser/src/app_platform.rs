@@ -247,7 +247,10 @@ impl BrowserApp {
                 &overlay_fills,
                 &overlay_glyphs,
                 &overlay_rounded_rects,
-                1.0, // scale_factor: GPU 渲染器内部已通过 surface 尺寸处理
+                // P2-8 HiDPI：scene_primitives 为 CSS 逻辑坐标，GPU 顶点按
+                // scale_factor 缩放（与 CPU 路径 render_scene_cpu 一致）；
+                // 旧传 1.0 致高分屏下文字/图片按 1x 光栅。
+                self.scale_factor,
             ) {
                 // P0-1：GPU 不支持本帧特性（clips/blend_modes/半透明/带模糊阴影/
                 // 窗口模式滤镜变换）→ CPU 整帧渲染后上传 blit（慢但对，避免静默画错）。

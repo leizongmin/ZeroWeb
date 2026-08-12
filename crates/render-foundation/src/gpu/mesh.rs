@@ -383,8 +383,9 @@ fn push_dotted_line_mesh(vertices: &mut Vec<f32>, x1: f32, y1: f32, x2: f32, y2:
 
 /// 推入路径填充（PathFillPrimitive）的网格顶点
 ///
-/// 使用扇形三角化（fan triangulation）：第一个顶点为公共顶点，
-/// 依次连接后续顶点形成三角形扇。
+/// 使用耳切三角化（ear clipping）：简单多边形（含凹）三角化。
+/// 旧 fan 三角化仅凸多边形正确，凹多边形（CSS clip-path / canvas 任意形状）画错
+/// （P2-8 对齐 CPU even-odd 扫描线语义）。
 pub fn push_path_fill_mesh(vertices: &mut Vec<f32>, path: &PathFillPrimitive, scale: f32) {
     let coords = &path.vertices;
     if coords.len() < 6 {
@@ -394,22 +395,100 @@ pub fn push_path_fill_mesh(vertices: &mut Vec<f32>, path: &PathFillPrimitive, sc
     let (r, g, b, a) = color_to_f32a(path.color);
     let (u, v) = (-1.0f32, -1.0f32);
 
-    // 第一个顶点作为扇形中心
-    let cx = coords[0] * scale;
-    let cy = coords[1] * scale;
+    let count = coords.len() / 2;
+    let pts: Vec<(f32, f32)> = (0..count)
+        .map(|i| (coords[i * 2] * scale, coords[i * 2 + 1] * scale))
+        .collect();
 
-    // 扇形三角化
-    let vertex_count = coords.len() / 2;
-    for i in 1..vertex_count - 1 {
-        let x1 = coords[i * 2] * scale;
-        let y1 = coords[i * 2 + 1] * scale;
-        let x2 = coords[(i + 1) * 2] * scale;
-        let y2 = coords[(i + 1) * 2 + 1] * scale;
-
-        vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+    for (i0, i1, i2) in ear_clip(&pts) {
+        let (x0, y0) = pts[i0];
+        let (x1, y1) = pts[i1];
+        let (x2, y2) = pts[i2];
+        vertices.extend_from_slice(&[x0, y0, u, v, r, g, b, a]);
         vertices.extend_from_slice(&[x1, y1, u, v, r, g, b, a]);
         vertices.extend_from_slice(&[x2, y2, u, v, r, g, b, a]);
     }
+}
+
+/// 点是否在三角形内（重心坐标法，含边界）。
+fn point_in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
+    let v0 = (c.0 - a.0, c.1 - a.1);
+    let v1 = (b.0 - a.0, b.1 - a.1);
+    let v2 = (p.0 - a.0, p.1 - a.1);
+    let dot00 = v0.0 * v0.0 + v0.1 * v0.1;
+    let dot01 = v0.0 * v1.0 + v0.1 * v1.1;
+    let dot02 = v0.0 * v2.0 + v0.1 * v2.1;
+    let dot11 = v1.0 * v1.0 + v1.1 * v1.1;
+    let dot12 = v1.0 * v2.0 + v1.1 * v2.1;
+    let denom = dot00 * dot11 - dot01 * dot01;
+    if denom.abs() < 1e-12 {
+        return false;
+    }
+    let u = (dot11 * dot02 - dot01 * dot12) / denom;
+    let v = (dot00 * dot12 - dot01 * dot02) / denom;
+    u >= 0.0 && v >= 0.0 && u + v <= 1.0
+}
+
+/// 耳切三角化：重复寻找「凸耳」（凸顶点且三角形内无其他顶点）切下。
+/// 返回三角形顶点索引三元组。退化（自交/共线）时部分三角化并放弃。
+fn ear_clip(points: &[(f32, f32)]) -> Vec<(usize, usize, usize)> {
+    let n = points.len();
+    let mut indices: Vec<usize> = (0..n).collect();
+    // 定向为逆时针（shoelace 面积符号；负则反转）
+    let area2: f32 = (0..n)
+        .map(|i| {
+            let (ax, ay) = points[i];
+            let (bx, by) = points[(i + 1) % n];
+            ax * by - bx * ay
+        })
+        .sum();
+    if area2 < 0.0 {
+        indices.reverse();
+    }
+
+    let mut tris = Vec::new();
+    let mut guard = 0usize;
+    while indices.len() > 3 && guard < n * 4 {
+        guard += 1;
+        let m = indices.len();
+        let mut ear = None;
+        for i in 0..m {
+            let i0 = indices[(i + m - 1) % m];
+            let i1 = indices[i];
+            let i2 = indices[(i + 1) % m];
+            let (a, b, c) = (points[i0], points[i1], points[i2]);
+            // 凸性：逆时针叉积 > 0
+            let cross = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+            if cross <= 1e-9 {
+                continue;
+            }
+            // 耳测试：无其他顶点在该三角形内
+            let mut inside = false;
+            for &j in &indices {
+                if j == i0 || j == i1 || j == i2 {
+                    continue;
+                }
+                if point_in_triangle(points[j], a, b, c) {
+                    inside = true;
+                    break;
+                }
+            }
+            if !inside {
+                ear = Some(i);
+                break;
+            }
+        }
+        let Some(i) = ear else { break };
+        let i0 = indices[(i + m - 1) % m];
+        let i1 = indices[i];
+        let i2 = indices[(i + 1) % m];
+        tris.push((i0, i1, i2));
+        indices.remove(i);
+    }
+    if indices.len() == 3 {
+        tris.push((indices[0], indices[1], indices[2]));
+    }
+    tris
 }
 
 /// 推入路径描边（PathStrokePrimitive）的网格顶点
@@ -582,8 +661,28 @@ mod tests {
             color: Color::RED,
         };
         push_path_fill_mesh(&mut vertices, &path, 1.0);
-        // 1 triangle = 3 vertices × 7 floats = 21
+        // 1 triangle = 3 vertices × 8 floats = 24
         assert_eq!(vertices.len(), 24);
+    }
+
+    /// P2-8：凹多边形（L 形）应被耳切三角化——6 顶点凹多边形产生 4 个三角形
+    /// （fan 三角化会画出错误的凸包）。顶点数 n=6 → n-2=4 三角形 = 12 顶点 × 8 float。
+    #[test]
+    fn test_path_fill_mesh_concave_polygon() {
+        let mut vertices = Vec::new();
+        // L 形（逆时针）：(0,0) → (8,0) → (8,4) → (4,4) → (4,8) → (0,8)
+        let path = PathFillPrimitive {
+            vertices: vec![0.0, 0.0, 8.0, 0.0, 8.0, 4.0, 4.0, 4.0, 4.0, 8.0, 0.0, 8.0],
+            color: Color::BLUE,
+        };
+        push_path_fill_mesh(&mut vertices, &path, 1.0);
+        // n-2 = 4 三角形（耳切完整覆盖简单多边形）
+        assert_eq!(vertices.len(), 4 * 3 * 8, "凹多边形应产生 4 个三角形（n-2）");
+        // 顶点索引全部在合法范围（无越界坐标）
+        for chunk in vertices.chunks(8) {
+            assert!(chunk[0] >= 0.0 && chunk[0] <= 8.0, "x 越界: {}", chunk[0]);
+            assert!(chunk[1] >= 0.0 && chunk[1] <= 8.0, "y 越界: {}", chunk[1]);
+        }
     }
 
     #[test]
