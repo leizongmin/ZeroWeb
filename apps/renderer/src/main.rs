@@ -1710,8 +1710,9 @@ impl RendererRuntime {
                 .unwrap_or_else(|| self.interaction.pointer_target())
                 .to_string();
             if key.as_deref() == Some("Tab") {
+                let forward = !params.shift;
                 let current = self.interaction.focus_owner().map(str::to_string);
-                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), true)
+                if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), forward)
                     && self.interaction.focus_owner() != Some(next.as_str())
                 {
                     let _ = self.blur_focused();

@@ -536,6 +536,9 @@ pub struct DispatchDomEventParams {
     pub key: Option<String>,
     /// `KeyboardEvent.code`
     pub code: Option<String>,
+    /// Shift 键是否按下（Tab 反向焦点导航等默认行为）。
+    #[serde(default)]
+    pub shift: bool,
 }
 
 /// DOM 事件派发结果（渲染→浏览器）。

@@ -464,6 +464,7 @@ impl TabManager {
         y: f32,
         event_type: &str,
         detail: Option<DomEventDetail>,
+        shift: bool,
         on_allowed: Option<PendingTabAction>,
     ) {
         // JS 禁用：没有 handler 会 preventDefault，直接走默认动作。
@@ -489,6 +490,7 @@ impl TabManager {
                     event_type: event_type.to_string(),
                     key,
                     code,
+                    shift,
                 },
             );
             true
@@ -522,24 +524,24 @@ impl TabManager {
 
     /// 向页面元素派发 DOM 事件（无默认动作）。
     pub fn dispatch_dom_event(&mut self, tab_id: TabId, selector: &str, event_type: &str) {
-        self.dispatch_dom_event_async(tab_id, Some(selector), 0.0, 0.0, event_type, None, None);
+        self.dispatch_dom_event_async(tab_id, Some(selector), 0.0, 0.0, event_type, None, false, None);
     }
 
     /// 向当前交互目标派发键盘事件（无目标时发往 `body`）。
-    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str) {
+    pub fn dispatch_key_event(&mut self, tab_id: TabId, event_type: &str, key: &str, code: &str, shift: bool) {
         let detail = DomEventDetail {
             key: Some(key.to_string()),
             code: Some(code.to_string()),
             ..Default::default()
         };
         if let Some(selector) = self.event_targets.get(&tab_id).cloned() {
-            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, event_type, Some(detail), None);
+            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, event_type, Some(detail), shift, None);
         } else if self.process_backend.is_some() {
             // 指针事件曾因浏览器侧命中缓存缺失而由渲染进程命中时，保留渲染进程
             // 已建立的事件目标，而不是用 body 覆盖它。
-            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), None);
+            self.dispatch_dom_event_async(tab_id, None, 0.0, 0.0, event_type, Some(detail), shift, None);
         } else {
-            self.dispatch_dom_event_async(tab_id, Some("body"), 0.0, 0.0, event_type, Some(detail), None);
+            self.dispatch_dom_event_async(tab_id, Some("body"), 0.0, 0.0, event_type, Some(detail), shift, None);
         }
     }
 
@@ -561,6 +563,7 @@ impl TabManager {
             0.0,
             "__zeroweb_insert_text",
             Some(detail),
+            false,
             None,
         );
     }
@@ -606,8 +609,8 @@ impl TabManager {
             // https://w3c.github.io/uievents/#event-type-click
             // 合成器帧的浏览器侧命中缓存尚未就绪时，仍须把实际坐标交给渲染进程，
             // 否则原生控件会因缓存时序而完全不可点击。
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, None);
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mouseup", None, false, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "click", None, false, None);
             return;
         };
         let selector = selector_from_element_hit(&hit);
@@ -615,7 +618,7 @@ impl TabManager {
         self.update_ime_target_rect(tab_id, doc_x, &hit);
 
         // mouseup 不触发导航；click 才是浏览器选择链接导航的时机。
-        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, None);
+        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mouseup", None, false, None);
 
         let on_allowed = self.hit_test_link(tab_id, doc_x, doc_y).map(|href| {
             if background_tab {
@@ -624,7 +627,7 @@ impl TabManager {
                 PendingTabAction::NavigateActiveTab(href)
             }
         });
-        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "click", None, on_allowed);
+        self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "click", None, false, on_allowed);
     }
 
     /// 处理页面按下：异步派发 mousedown。
@@ -633,11 +636,11 @@ impl TabManager {
             let selector = selector_from_element_hit(&hit);
             self.event_targets.insert(tab_id, selector.clone());
             self.update_ime_target_rect(tab_id, doc_x, &hit);
-            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, None);
+            self.dispatch_dom_event_async(tab_id, Some(&selector), 0.0, 0.0, "mousedown", None, false, None);
         } else {
             // https://w3c.github.io/uievents/#event-type-mousedown
             // 与 click 一致：命中缓存缺失不能阻断真实的页面指针事件。
-            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, None);
+            self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, false, None);
         }
     }
 
