@@ -1138,7 +1138,10 @@ fn typing_in_clicked_input_updates_page_html() {
 #[test]
 fn gpu_compositor_path_dispatches_input_events_to_form_controls() {
     let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut app = BrowserApp::new(RenderMode::Gpu);
+    // R3254：断言真实多进程链路（renderer/compositor 帧 + 输入路由）——本地合成模式与
+    // 断言无关（快照/hit-test 来自 renderer），用 Cpu 避免无 GPU 环境（llvmpipe）的
+    // 软渲染并行崩溃（wgpu_core panic 曾致测试 flaky）。
+    let mut app = BrowserApp::new(RenderMode::Cpu);
     // R3254：断言真实多进程链路（GPU/compositor 帧 + 输入路由）——显式启用。
     app.enable_multiprocess_for_test();
     app.physical_size = (800, 600);
@@ -1188,7 +1191,9 @@ fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
     let html = include_str!("../../../examples/forms/form-interaction-test.html");
     let mut ime_verified = false;
     for scale in [1.0_f32, 1.25, 1.5, 2.0] {
-        let mut app = BrowserApp::new(RenderMode::Gpu);
+        // R3254：本地合成模式与断言无关（快照/hit-test 来自 renderer）——Cpu 避免
+        // llvmpipe 软渲染并行崩溃。
+        let mut app = BrowserApp::new(RenderMode::Cpu);
         // R3254：断言真实多进程链路（示例页表单交互经 renderer）——显式启用。
         app.enable_multiprocess_for_test();
         app.physical_size = (1600, 1800);
@@ -1287,7 +1292,10 @@ fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
 #[test]
 fn form_fixture_complete_multiprocess_semantics() {
     let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut app = BrowserApp::new(RenderMode::Gpu);
+    // R3254：本地合成模式与断言无关（页面状态经 renderer 快照/title 读回）——Cpu
+    // 避免无 GPU 环境（llvmpipe）软渲染并行崩溃（wgpu_core panic 曾致 step 4 断言
+    // 超时——崩溃使 GPU 渲染停摆、快照不再更新）。
+    let mut app = BrowserApp::new(RenderMode::Cpu);
     app.enable_multiprocess_for_test();
     app.physical_size = (1600, 1800);
     app.scale_factor = 1.0;
