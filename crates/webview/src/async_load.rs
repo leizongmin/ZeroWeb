@@ -16,7 +16,7 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
 
-use crate::net_pool::{fetch_bytes_async_meta, fetch_text_async_meta};
+use crate::net_pool::{fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta};
 use crate::webview::WebView;
 
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
@@ -66,6 +66,10 @@ pub enum PageLoadStage {
 pub struct InProcessFetchHost;
 
 impl AsyncFetchHost for InProcessFetchHost {
+    fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
+        fetch_document_async(url.to_string(), method, body)
+    }
+
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         fetch_text_async_meta(url.to_string(), meta)
     }
@@ -89,6 +93,8 @@ pub fn live_fontface_enabled() -> bool {
 /// 分阶段异步加载协调器。
 pub struct AsyncPageLoad {
     url: String,
+    document_method: String,
+    document_body: Option<Vec<u8>>,
     stage: PageLoadStage,
     html: Option<String>,
     css: String,
@@ -138,8 +144,15 @@ pub struct FailedResource {
 impl AsyncPageLoad {
     /// 开始加载 URL（主文档在首 tick 经 host 抓取，tabworker 默认 InProcessFetchHost）。
     pub fn start(url: impl Into<String>) -> Self {
+        Self::start_request(url, "GET", None)
+    }
+
+    /// 开始加载带方法和 body 的主文档请求。
+    pub fn start_request(url: impl Into<String>, method: impl Into<String>, body: Option<Vec<u8>>) -> Self {
         Self {
             url: url.into(),
+            document_method: method.into(),
+            document_body: body,
             stage: PageLoadStage::FetchingDocument,
             html: None,
             css: String::new(),
@@ -192,6 +205,8 @@ impl AsyncPageLoad {
     pub fn from_html(url: impl Into<String>, html: String) -> Self {
         Self {
             url: url.into(),
+            document_method: "GET".to_string(),
+            document_body: None,
             stage: PageLoadStage::FirstPaint,
             html: Some(html),
             css: String::new(),
@@ -273,7 +288,7 @@ impl AsyncPageLoad {
         if self.stage == PageLoadStage::FetchingDocument && self.document_rx.is_none() {
             let url = self.url.clone();
             tracing::info!(url = %url, "page load: fetch document");
-            self.document_rx = Some(host.fetch_text_meta(&url, ResourceFetchMeta::DOCUMENT));
+            self.document_rx = Some(host.fetch_document(&url, &self.document_method, self.document_body.as_deref()));
         }
 
         if let Some(rx) = self.document_rx.as_ref()
@@ -919,6 +934,51 @@ mod tests {
             self.senders.push(tx);
             rx
         }
+    }
+
+    struct DocumentRequestHost {
+        request: Option<(String, String, Option<Vec<u8>>)>,
+    }
+
+    impl AsyncFetchHost for DocumentRequestHost {
+        fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
+            self.request = Some((url.to_string(), method.to_string(), body.map(Vec::from)));
+            let (tx, rx) = channel();
+            let _ = tx.send(Ok(
+                "<html><head><title>posted</title></head><body></body></html>".to_string()
+            ));
+            rx
+        }
+
+        fn fetch_text_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+            let (_tx, rx) = channel();
+            rx
+        }
+
+        fn fetch_bytes_meta(&mut self, _: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+            let (_tx, rx) = channel();
+            rx
+        }
+    }
+
+    #[test]
+    fn document_request_forwards_method_and_body() {
+        let mut load =
+            AsyncPageLoad::start_request("https://example.com/submit", "POST", Some(b"name=zero&go=1".to_vec()));
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = DocumentRequestHost { request: None };
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(
+            host.request,
+            Some((
+                "https://example.com/submit".to_string(),
+                "POST".to_string(),
+                Some(b"name=zero&go=1".to_vec()),
+            ))
+        );
+        assert_eq!(wv.title(), Some("posted"));
     }
 
     #[test]

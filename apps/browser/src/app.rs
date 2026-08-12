@@ -396,12 +396,10 @@ impl BrowserApp {
                 }
             }
         }
-        // R3254-M10：单进程表单提交导航（worker 回执；GET）。
+        // R3254-M10：单进程表单提交导航（worker 回执；GET / POST）。
         for (tab_id, url, method, body) in self.tabs.take_pending_navigations() {
-            if method == "GET" && body.is_none() {
-                if self.shell.active_tab_id() == Some(tab_id) {
-                    self.navigate_to(&url);
-                }
+            if self.shell.active_tab_id() == Some(tab_id) {
+                self.navigate_to_request(&url, method, body);
             }
         }
         if let Some(id) = self.shell.active_tab_id() {
@@ -1444,6 +1442,10 @@ impl BrowserApp {
 
     /// 启动标签页加载（多进程下立即发 IPC，不等到下一帧 paint）。
     fn start_tab_load(&mut self, tab_id: TabId, url: String) {
+        self.start_tab_request(tab_id, url, "GET".to_string(), None);
+    }
+
+    fn start_tab_request(&mut self, tab_id: TabId, url: String, method: String, body: Option<String>) {
         if self.shell.active_tab_id() == Some(tab_id)
             && let Some(tab) = self.shell.active_tab_mut()
         {
@@ -1453,24 +1455,39 @@ impl BrowserApp {
         self.sync_webview_viewport();
 
         if url == "zero://settings" {
-            self.open_settings_page();
+            if method == "GET" && body.is_none() {
+                self.open_settings_page();
+            }
         } else if url.starts_with("http://") || url.starts_with("https://") {
-            tracing::info!("Tab {} navigate IPC: {url}", tab_id.0);
-            self.tabs.navigate(tab_id, url);
+            tracing::info!("Tab {} navigate IPC: {method} {url}", tab_id.0);
+            self.tabs.navigate_request(tab_id, url, method, body);
         } else {
-            self.load_local_tab_url(tab_id, &url);
+            if method == "GET" && body.is_none() {
+                self.load_local_tab_url(tab_id, &url);
+            }
         }
         self.needs_redraw = true;
     }
 
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
-        if self.try_apply_internal_url(url) {
+        self.navigate_to_request(url, "GET".to_string(), None);
+    }
+
+    fn navigate_to_request(&mut self, url: &str, method: String, body: Option<String>) {
+        if method == "GET" && body.is_none() && self.try_apply_internal_url(url) {
+            return;
+        }
+        if !matches!(method.as_str(), "GET" | "POST")
+            || (method == "GET" && body.is_some())
+            || (method == "POST" && body.is_none())
+        {
+            tracing::warn!("ignoring invalid document navigation request: {method} {url}");
             return;
         }
 
         let url = normalize_url(&resolve_path_relative_url(url, &self.shell), &self.shell);
-        tracing::info!("Navigating to: {url}");
+        tracing::info!("Navigating to: {method} {url}");
 
         self.shell.navigate(&url);
         self.address_bar.set_text(url.clone());
@@ -1487,7 +1504,7 @@ impl BrowserApp {
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
 
-        self.start_tab_load(tab_id, url);
+        self.start_tab_request(tab_id, url, method, body);
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {

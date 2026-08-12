@@ -396,6 +396,15 @@ pub const TAB_WORKER_FRAME_BUDGET_MS: f64 = 8.0;
 pub enum TabWorkerCommand {
     /// 导航到 URL（异步分阶段加载）。
     Navigate(String),
+    /// 导航主文档请求（表单 POST 等）。
+    NavigateRequest {
+        /// 请求 URL。
+        url: String,
+        /// HTTP 方法。
+        method: String,
+        /// 可选请求体。
+        body: Option<String>,
+    },
     /// 同步加载 HTML（测试 / zero:// 页面）。
     LoadHtml {
         html: String,
@@ -600,6 +609,14 @@ fn tab_worker_main(
                     document_scope.replace_document();
                     wv.prepare_document_state(&url);
                     async_load = Some(AsyncPageLoad::start(url));
+                    pending_sync_html = None;
+                    page_script_runner = None;
+                }
+                TabWorkerCommand::NavigateRequest { url, method, body } => {
+                    tracing::info!("Tab {} navigate: {method} {url}", tab_id.0);
+                    document_scope.replace_document();
+                    wv.prepare_document_state(&url);
+                    async_load = Some(AsyncPageLoad::start_request(url, method, body.map(String::into_bytes)));
                     pending_sync_html = None;
                     page_script_runner = None;
                 }

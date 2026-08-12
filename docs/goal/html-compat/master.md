@@ -51,10 +51,10 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] renderer reset/submit adapter 使用 shared plan/effect
 - [x] TabWorker 文本与 focus adapter 使用 shared plan/effect
 - [x] TabWorker checkedness 与 reset/submit adapter 使用 shared plan/effect
-- [ ] 单进程 POST form navigation transport
+- [x] 单进程 POST form navigation transport
 - [ ] ZeroWebView user-action adapter
 - [ ] 三宿主 conformance 与取消一致性
 
 ## 下一步
 
-闭合单进程 POST form navigation transport，继续迁移 ZeroWebView。
+迁移 ZeroWebView user-action adapter。

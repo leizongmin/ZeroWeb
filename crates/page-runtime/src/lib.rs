@@ -36,6 +36,15 @@ use zero_render_foundation::primitive::RenderPrimitives;
 /// 封装到独立线程后返回接收器。供 webview `AsyncPageLoad` 消除 `net_pool` 硬编码，
 /// 并为 renderer 复用同一加载器铺路（tick/轮询模型两端一致）。
 pub trait AsyncFetchHost {
+    /// 抓取主文档请求。默认宿主仅支持无 body GET；支持表单 POST 的宿主必须显式覆盖。
+    fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
+        if method.eq_ignore_ascii_case("GET") && body.is_none() {
+            return self.fetch_text_meta(url, ResourceFetchMeta::DOCUMENT);
+        }
+        let (tx, rx) = channel();
+        let _ = tx.send(Err(format!("unsupported document request method: {method}")));
+        rx
+    }
     /// 抓取文本资源（主文档 / 外链 CSS）。
     fn fetch_text(&mut self, url: &str) -> Receiver<Result<String, String>> {
         self.fetch_text_meta(url, ResourceFetchMeta::DOCUMENT)

@@ -3,7 +3,9 @@
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use zero_net::{CacheLookup, FetchJobResult, FetchPriority, HttpResponse, PerOriginFetchScheduler};
+use zero_net::{
+    CacheLookup, FetchJobResult, FetchPriority, HttpClient, HttpRequest, HttpResponse, PerOriginFetchScheduler,
+};
 use zero_page_runtime::ResourceFetchMeta;
 
 /// HTTP GET 任务结果（文本）。
@@ -141,6 +143,31 @@ pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) ->
     bridge_rx(rx, map_fetch_text)
 }
 
+/// 异步抓取主文档请求。GET 复用缓存调度器；POST 不缓存并在独立线程执行。
+pub(crate) fn fetch_document_async(
+    url: impl Into<String>,
+    method: &str,
+    body: Option<&[u8]>,
+) -> Receiver<HttpTextResult> {
+    let url = url.into();
+    if method.eq_ignore_ascii_case("GET") && body.is_none() {
+        return fetch_text_async_meta(url, ResourceFetchMeta::DOCUMENT);
+    }
+    let method = method.to_ascii_uppercase();
+    let body = body.map(Vec::from);
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = match (method.as_str(), body) {
+            ("POST", Some(body)) => HttpClient::new()
+                .send(HttpRequest::post(&url, body).header("Content-Type", "application/x-www-form-urlencoded"))
+                .map_err(|error| error.to_string()),
+            _ => Err(format!("unsupported document request method: {method}")),
+        };
+        let _ = tx.send(map_fetch_text(result));
+    });
+    rx
+}
+
 /// 在后台调度器中发起 HTTP GET 并返回原始字节。
 pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, String>> {
     fetch_bytes_async_meta(url, ResourceFetchMeta::IMAGE)
@@ -155,6 +182,8 @@ pub fn fetch_bytes_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
 
@@ -177,5 +206,68 @@ mod tests {
         let rx = fetch_bytes_async("http://127.0.0.1:1/unreachable");
         let result = rx.recv_timeout(Duration::from_secs(5)).expect("worker should respond");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn fetch_document_async_posts_urlencoded_body_without_cache() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let (request_tx, request_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            stream.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+            let mut request = Vec::new();
+            loop {
+                let mut chunk = [0u8; 1024];
+                let read = stream.read(&mut chunk).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+                let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or(0);
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+            let request_text = String::from_utf8(request).expect("request utf8");
+            request_tx.send(request_text).expect("request capture");
+            let response = "<html><head><title>posted</title></head><body>ok</body></html>";
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response.len(),
+                response
+            )
+            .expect("write response");
+        });
+
+        let url = format!("http://{addr}/submit");
+        let response = fetch_document_async(&url, "POST", Some(b"name=zero&go=1"))
+            .recv_timeout(Duration::from_secs(5))
+            .expect("POST response")
+            .expect("successful POST");
+        assert!(response.contains("<title>posted</title>"));
+        let request = request_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("captured request");
+        assert!(request.starts_with("POST /submit HTTP/1.1\r\n"));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("content-type: application/x-www-form-urlencoded")
+        );
+        assert!(request.ends_with("name=zero&go=1"));
     }
 }

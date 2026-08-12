@@ -265,7 +265,16 @@ impl TabManager {
 
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
+        self.navigate_request(tab_id, url, "GET".to_string(), None);
+    }
+
+    /// 导航到带 HTTP 方法和可选 body 的主文档请求。
+    pub fn navigate_request(&mut self, tab_id: TabId, url: String, method: String, body: Option<String>) {
         self.ensure_tab(tab_id);
+        if self.process_backend.is_some() && (method != "GET" || body.is_some()) {
+            tracing::warn!("browser-side non-GET navigation is unavailable for multiprocess tabs");
+            return;
+        }
         self.event_targets.remove(&tab_id);
         self.focused_text_input.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
@@ -278,7 +287,11 @@ impl TabManager {
             return;
         }
         if let Some(worker) = self.workers.get(&tab_id) {
-            worker.send(TabWorkerCommand::Navigate(url));
+            if method == "GET" && body.is_none() {
+                worker.send(TabWorkerCommand::Navigate(url));
+            } else {
+                worker.send(TabWorkerCommand::NavigateRequest { url, method, body });
+            }
         }
     }
 
