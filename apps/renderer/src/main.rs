@@ -1872,11 +1872,22 @@ impl RendererRuntime {
     }
 
     fn handle_scroll_event(&mut self, params: ScrollEventParams) -> Result<(), String> {
-        tracing::trace!("滚动事件: ({}, {})", params.delta_x, params.delta_y);
+        tracing::trace!(
+            "滚动事件: delta=({}, {}) cursor=({}, {})",
+            params.delta_x,
+            params.delta_y,
+            params.cursor_x,
+            params.cursor_y
+        );
         // R3253（UI Events §scroll via user input）：用户滚动（browser IPC ScrollEventParams）注入
         // `__zw_user_scroll(dx,dy)` → 更新 `_winScroll`（window.scrollY 跟踪）+ 派 'scroll' 事件。
         // 视觉滚动由 browser 侧 `TabScrollState` 独立处理；本处只补「页面 JS 可观察」半边（程序化滚动
         // 经 R3051 `_zwFireScroll` 已派发，用户滚动此前被吞）。gate javascript_enabled + best-effort。
+        //
+        // R3298（S1/S2，元素滚动 RFC）：`params.cursor_x`/`cursor_y`（滚轮视口坐标）现经 browser
+        // 多进程链路透传至此。本处记录坐标（S2 链路验证），不改变滚动行为——元素级滚动（命中可滚动
+        // 祖先容器 + 容器内偏移 + 派元素 'scroll'）依赖 S3 layout 几何暴露（渲染流域协调点，未实现），
+        // 故当前仍走文档级 `__zw_user_scroll` 路径。cursor 默认 0.0（旧发送端）退化为既有行为。
         if self.javascript_enabled {
             let script = zero_engine::script_user_scroll(params.delta_x as f64, params.delta_y as f64);
             if let Err(e) = self.js_worker.execute_script_direct(&script) {

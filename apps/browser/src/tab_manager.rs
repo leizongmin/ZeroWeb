@@ -582,18 +582,23 @@ impl TabManager {
         }
     }
 
-    /// R3293（S0）：向页面 JS 派发「用户滚动」事件（fire-and-forget，闭合 R3253 主路径不可达 gap）。
+    /// R3293（S0）/ R3298（S1）：向页面 JS 派发「用户滚动」事件（fire-and-forget，闭合 R3253 主路径不可达 gap）。
     ///
     /// 多路径：多进程经 `process_backend.send_user_scroll` 发 `ScrollEvent` IPC（激活既有 renderer
     /// `handle_scroll_event` R3253 路径）；单进程经 `TabWorkerCommand::UserScroll` worker 线程注入
     /// `__zw_user_scroll`。JS 禁用 / 无可用渲染端时 no-op（best-effort，不影响视觉滚动）。无回执。
     /// 调用方 `apply_page_scroll_delta` 已完成视觉滚动 + 重绘，本方法仅补「页面 JS 可观察 'scroll'」半边。
-    pub fn dispatch_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32) {
+    ///
+    /// R3298（S1）：`cursor_x`/`cursor_y` = 滚轮发生处的视口物理坐标（相对 WebView 内容区原点），
+    /// 供 renderer S2/S4 命中可滚动祖先容器；当前 renderer 仅记录坐标（S2 链路验证），元素级滚动视觉
+    /// 依赖 S3 layout 几何暴露（渲染流域协调点，未实现）。单进程路径（`UserScroll`）暂不消费光标
+    /// （程序化/文档级滚动无需光标），但 `ScrollEventParams` 需传齐字段以保持 wire-format 一致。
+    pub fn dispatch_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32, cursor_x: f32, cursor_y: f32) {
         if !self.javascript_enabled {
             return;
         }
         if let Some(ref mut backend) = self.process_backend {
-            backend.send_user_scroll(tab_id, delta_x, delta_y);
+            backend.send_user_scroll(tab_id, delta_x, delta_y, cursor_x, cursor_y);
         } else if let Some(worker) = self.workers.get(&tab_id) {
             worker.send(TabWorkerCommand::UserScroll { delta_x, delta_y });
         }

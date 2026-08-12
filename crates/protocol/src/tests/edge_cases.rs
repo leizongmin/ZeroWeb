@@ -122,6 +122,7 @@ fn test_float_negative_zero_preserved() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: -0.0,
             delta_y: -0.0,
+            ..Default::default()
         }),
     };
     let out2 = roundtrip(msg2);
@@ -332,6 +333,7 @@ fn test_ipc_channel_trait_object_stress_50_messages() {
                 7 => IpcMessageKind::ScrollEvent(ScrollEventParams {
                     delta_x: i as f32,
                     delta_y: -(i as f32),
+                    ..Default::default()
                 }),
                 8 => IpcMessageKind::Heartbeat,
                 _ => IpcMessageKind::Error(format!("错误 #{i}")),
@@ -1062,6 +1064,7 @@ fn test_scroll_event_negative_deltas_roundtrip() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: -50.5,
             delta_y: -100.0,
+            ..Default::default()
         }),
     };
     let rt = roundtrip(msg);
@@ -1337,6 +1340,7 @@ fn test_scroll_event_negative_values() {
     let params = ScrollEventParams {
         delta_x: -3.1416,
         delta_y: -159.265,
+        ..Default::default()
     };
     let bytes = bincode::serialize(&params).expect("serialize");
     let rt: ScrollEventParams = bincode::deserialize(&bytes).expect("deserialize");
@@ -1350,6 +1354,7 @@ fn test_scroll_event_zero_values() {
     let params = ScrollEventParams {
         delta_x: 0.0,
         delta_y: 0.0,
+        ..Default::default()
     };
     let bytes = bincode::serialize(&params).expect("serialize");
     let rt: ScrollEventParams = bincode::deserialize(&bytes).expect("deserialize");

@@ -942,16 +942,25 @@ impl ProcessTabBackend {
         });
     }
 
-    /// R3293（S0）：向渲染进程派发「用户滚动」事件（fire-and-forget，无回执）。
+    /// R3293（S0）/ R3298（S1）：向渲染进程派发「用户滚动」事件（fire-and-forget，无回执）。
     ///
     /// 闭合 R3253 主路径不可达 gap：browser 用户滚动经此发 `ScrollEvent` IPC → renderer
-    /// `handle_scroll_event`（main.rs:1638）注入 `__zw_user_scroll` → 派 'scroll' + 更 window.scrollY。
+    /// `handle_scroll_event` 注入 `__zw_user_scroll` → 派 'scroll' + 更 window.scrollY。
     /// 既有 R3253 renderer 路径此前无生产调用方（仅 `#[test]` harness 可达），本方法激活它。
     /// 无回执（滚动不需 default-action 语义）；renderer 不存在时静默跳过（best-effort）。
-    pub fn send_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32) {
+    ///
+    /// R3298（S1）：新增 `cursor_x`/`cursor_y`（滚轮发生处的视口物理坐标，相对 WebView 内容区），
+    /// 供 renderer S2/S4 命中可滚动祖先容器；当前 renderer 仅记录坐标（S2 链路验证），元素级滚动
+    /// 视觉依赖 S3 layout 几何暴露（渲染流域协调点，未实现）。
+    pub fn send_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32, cursor_x: f32, cursor_y: f32) {
         self.send_to_renderer(
             tab_id,
-            IpcMessageKind::ScrollEvent(ScrollEventParams { delta_x, delta_y }),
+            IpcMessageKind::ScrollEvent(ScrollEventParams {
+                delta_x,
+                delta_y,
+                cursor_x,
+                cursor_y,
+            }),
         );
     }
 }
@@ -1367,9 +1376,10 @@ mod compositor_fallback_tests {
         assert!(!backend.tab_to_renderer.contains_key(&tab_id));
     }
 
-    /// R3293（S0）：`send_user_scroll` 向渲染进程发 `ScrollEvent` IPC（激活既有 R3253 renderer
-    /// `handle_scroll_event` 路径，闭合其主路径不可达 gap）。验证多进程派发路径发正确 IPC kind
-    /// + delta 透传。`send_to_renderer` 经 `TEST_RENDERER_OUTBOUND` 测试桩捕获出站 IPC。
+    /// R3293（S0）/ R3298（S1）：`send_user_scroll` 向渲染进程发 `ScrollEvent` IPC（激活既有 R3253
+    /// renderer `handle_scroll_event` 路径，闭合其主路径不可达 gap）。验证多进程派发路径发正确 IPC
+    /// kind + delta + cursor 透传（R3298 S1 新增 cursor_x/y 字段）。`send_to_renderer` 经
+    /// `TEST_RENDERER_OUTBOUND` 测试桩捕获出站 IPC。
     #[test]
     #[serial_test::serial]
     fn send_user_scroll_emits_scroll_event_ipc_r3293() {
@@ -1378,19 +1388,21 @@ mod compositor_fallback_tests {
         let tab_id = TabId(23);
         backend.tab_to_renderer.insert(tab_id, 7);
 
-        backend.send_user_scroll(tab_id, 0.0, 120.0);
+        backend.send_user_scroll(tab_id, 0.0, 120.0, 320.0, 480.0);
 
         let outbound = take_test_renderer_outbound();
         let scroll_msgs: Vec<_> = outbound
             .iter()
             .filter_map(|k| match k {
-                IpcMessageKind::ScrollEvent(p) => Some((p.delta_x, p.delta_y)),
+                IpcMessageKind::ScrollEvent(p) => Some((p.delta_x, p.delta_y, p.cursor_x, p.cursor_y)),
                 _ => None,
             })
             .collect();
         assert!(
-            scroll_msgs.iter().any(|(dx, dy)| *dx == 0.0 && *dy == 120.0),
-            "send_user_scroll 应发 ScrollEvent(0,120) IPC，实得出站 ScrollEvent: {scroll_msgs:?}"
+            scroll_msgs
+                .iter()
+                .any(|(dx, dy, cx, cy)| *dx == 0.0 && *dy == 120.0 && *cx == 320.0 && *cy == 480.0),
+            "send_user_scroll 应发 ScrollEvent(delta=0,120, cursor=320,480) IPC，实得出站 ScrollEvent: {scroll_msgs:?}"
         );
     }
 

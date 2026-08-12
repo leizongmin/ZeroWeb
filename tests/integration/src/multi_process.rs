@@ -327,6 +327,7 @@ fn test_input_event_forwarding() {
             kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
                 delta_x: 0.0,
                 delta_y: 50.0,
+                ..Default::default()
             }),
         })
         .unwrap();
@@ -473,6 +474,7 @@ fn test_interleaved_messages() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 10.0,
             delta_y: 20.0,
+            ..Default::default()
         }),
     })
     .unwrap();

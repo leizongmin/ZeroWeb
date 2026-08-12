@@ -147,6 +147,7 @@ fn test_roundtrip_all_message_kinds() {
             kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
                 delta_x: 10.0,
                 delta_y: -5.0,
+                ..Default::default()
             }),
         },
         IpcMessage {

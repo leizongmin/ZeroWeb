@@ -476,12 +476,21 @@ pub enum ImeEventType {
 }
 
 /// 滚动事件参数。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScrollEventParams {
     /// 水平滚动量。
     pub delta_x: f32,
     /// 垂直滚动量。
     pub delta_y: f32,
+    /// 滚轮发生处的光标视口坐标 x（物理像素，相对 WebView 内容区）。
+    ///
+    /// R3298（元素滚动 RFC S1，非破坏性扩展）：默认 `0.0` 以向后兼容旧发送端。
+    /// renderer 侧 `handle_scroll_event` 用此 + `cursor_y` 命中可滚动祖先容器；
+    /// 缺省 `0.0` 时退化为既有文档级滚动路径（S0/R3294 行为不变）。
+    /// 元素级滚动视觉（命中可滚动容器 + 容器内偏移）依赖 S3 layout 几何暴露（渲染流域）。
+    pub cursor_x: f32,
+    /// 滚轮发生处的光标视口坐标 y（物理像素，相对 WebView 内容区）。见 `cursor_x`。
+    pub cursor_y: f32,
 }
 
 /// 链接命中测试参数（浏览器→渲染）。

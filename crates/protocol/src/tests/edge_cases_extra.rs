@@ -315,6 +315,7 @@ fn test_scroll_event_single_axis_scroll() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 120.0,
             delta_y: 0.0,
+            ..Default::default()
         }),
     };
     let out_h = roundtrip(msg_h);
@@ -331,6 +332,7 @@ fn test_scroll_event_single_axis_scroll() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 0.0,
             delta_y: -45.5,
+            ..Default::default()
         }),
     };
     let out_v = roundtrip(msg_v);
@@ -352,6 +354,7 @@ fn test_scroll_event_extreme_float_values() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: tiny,
             delta_y: -tiny,
+            ..Default::default()
         }),
     };
     let out_tiny = roundtrip(msg_tiny);
@@ -376,6 +379,7 @@ fn test_scroll_event_extreme_float_values() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: f32::MAX,
             delta_y: f32::MIN,
+            ..Default::default()
         }),
     };
     let out_max = roundtrip(msg_max);
@@ -396,6 +400,7 @@ fn test_scroll_event_positive_negative_deltas_distinct_bytes() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 100.0,
             delta_y: 200.0,
+            ..Default::default()
         }),
     };
     let msg_neg = IpcMessage {
@@ -403,11 +408,84 @@ fn test_scroll_event_positive_negative_deltas_distinct_bytes() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: -100.0,
             delta_y: -200.0,
+            ..Default::default()
         }),
     };
     let bytes_pos = serialize(&msg_pos).expect("serialize positive");
     let bytes_neg = serialize(&msg_neg).expect("serialize negative");
     assert_ne!(bytes_pos, bytes_neg, "正负 delta 的序列化字节应不同");
+}
+
+/// R3298（元素滚动 RFC S1）：`ScrollEventParams` 新增 `cursor_x`/`cursor_y`（滚轮视口坐标）
+/// 字段的往返 + 向后兼容性。
+///
+/// - 字段显式赋值时序列化→反序列化完整保留（4 字段全往返）。
+/// - 旧式构造（仅 delta_x/delta_y + `..Default::default()`）cursor 退化为 0.0（向后兼容旧发送端）。
+/// - 不同 cursor 坐标的序列化字节不同（保证 cursor 真入 wire-format，非被序列化器忽略）。
+#[test]
+fn test_scroll_event_cursor_fields_roundtrip_r3298() {
+    // 4 字段显式构造：delta + cursor 全往返
+    let msg = IpcMessage {
+        id: 1,
+        kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+            delta_x: 0.0,
+            delta_y: 120.0,
+            cursor_x: 320.0,
+            cursor_y: 480.0,
+        }),
+    };
+    let out = roundtrip(msg);
+    if let IpcMessageKind::ScrollEvent(p) = out.kind {
+        assert_eq!(0.0, p.delta_x);
+        assert_eq!(120.0, p.delta_y);
+        assert_eq!(320.0, p.cursor_x, "cursor_x 应完整往返");
+        assert_eq!(480.0, p.cursor_y, "cursor_y 应完整往返");
+    } else {
+        panic!("期望 ScrollEvent");
+    }
+
+    // 向后兼容：旧式构造 cursor 默认 0.0
+    let msg_legacy = IpcMessage {
+        id: 2,
+        kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+            delta_x: 0.0,
+            delta_y: 50.0,
+            ..Default::default()
+        }),
+    };
+    let out_legacy = roundtrip(msg_legacy);
+    if let IpcMessageKind::ScrollEvent(p) = out_legacy.kind {
+        assert_eq!(0.0, p.cursor_x, "旧式构造 cursor_x 应默认 0.0");
+        assert_eq!(0.0, p.cursor_y, "旧式构造 cursor_y 应默认 0.0");
+    } else {
+        panic!("期望 ScrollEvent");
+    }
+
+    // cursor 真入 wire-format：不同 cursor 的序列化字节不同
+    let msg_a = IpcMessage {
+        id: 3,
+        kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+            delta_x: 0.0,
+            delta_y: 50.0,
+            cursor_x: 10.0,
+            cursor_y: 20.0,
+        }),
+    };
+    let msg_b = IpcMessage {
+        id: 3,
+        kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
+            delta_x: 0.0,
+            delta_y: 50.0,
+            cursor_x: 999.0,
+            cursor_y: 888.0,
+        }),
+    };
+    let bytes_a = serialize(&msg_a).expect("serialize cursor A");
+    let bytes_b = serialize(&msg_b).expect("serialize cursor B");
+    assert_ne!(
+        bytes_a, bytes_b,
+        "不同 cursor 坐标的序列化字节应不同（cursor 真入 wire-format）"
+    );
 }
 
 // ══════════════════════════════════════════════════════════

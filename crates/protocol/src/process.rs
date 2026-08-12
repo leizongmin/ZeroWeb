@@ -795,6 +795,7 @@ mod tests {
                 kind: IpcMessageKind::ScrollEvent(crate::message::ScrollEventParams {
                     delta_x: 0.0,
                     delta_y: 100.0,
+                    ..Default::default()
                 }),
             })
             .unwrap();

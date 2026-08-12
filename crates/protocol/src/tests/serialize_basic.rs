@@ -287,6 +287,7 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 10.0,
             delta_y: -20.0,
+            ..Default::default()
         }),
         IpcMessageKind::HitTestLink(HitTestLinkParams { x: 12.0, y: 34.0 }),
         IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams {
@@ -484,6 +485,7 @@ fn test_scroll_event() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: -5.0,
             delta_y: 15.5,
+            ..Default::default()
         }),
     };
     let out = roundtrip(msg);
@@ -902,6 +904,7 @@ fn test_scroll_event_zero_deltas() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 0.0,
             delta_y: 0.0,
+            ..Default::default()
         }),
     };
     let out = roundtrip(msg);
@@ -1400,6 +1403,7 @@ fn test_layout_render_scroll_and_mouse() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: 100.0,
             delta_y: -50.0,
+            ..Default::default()
         }),
     };
     let mouse = IpcMessage {

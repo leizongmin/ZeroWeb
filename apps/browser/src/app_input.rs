@@ -166,8 +166,21 @@ impl BrowserApp {
         // 主线程已完成视觉滚动（entry.x/y 更新 + 重绘），本调用仅补「页面 JS 可观察」半边——
         // infinite scroll / lazy load / sticky nav / parallax 的用户滚动触发依赖。kill-switch
         // `ZW_USER_SCROLL_EVENT=0` 关闭（default-on）。fire-and-forget，无回执不阻塞 UI。
+        //
+        // R3298（S1）：附带滚轮发生处的视口光标坐标（相对 WebView 内容区原点），供 renderer S2/S4
+        // 命中可滚动祖先容器（元素级滚动视觉依赖 S3 layout 几何，渲染流域协调点，未实现）。
+        // 光标取 `self.mouse_pos`（各滚动入口——滚轮/触摸/平移/滚动条拖拽——均已更新），减去
+        // 内容区原点得内容相对视口坐标。
         if std::env::var("ZW_USER_SCROLL_EVENT").as_deref() != Ok("0") {
-            self.tabs.dispatch_user_scroll(tab_id, delta_x, delta_y);
+            let (content_x, content_y, _, _) = self.page_content_rect();
+            let (mx, my) = self.mouse_pos;
+            self.tabs.dispatch_user_scroll(
+                tab_id,
+                delta_x,
+                delta_y,
+                (mx as f32 - content_x).max(0.0),
+                (my as f32 - content_y).max(0.0),
+            );
         }
 
         if crate::compositor_client::async_scroll_enabled() {

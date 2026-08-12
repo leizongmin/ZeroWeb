@@ -79,6 +79,7 @@ fn test_scroll_event_boundary_values() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: f32::MAX,
             delta_y: f32::MIN,
+            ..Default::default()
         }),
     };
     let out1 = roundtrip(msg1);
@@ -94,6 +95,7 @@ fn test_scroll_event_boundary_values() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: -0.0,
             delta_y: 0.0,
+            ..Default::default()
         }),
     };
     let out2 = roundtrip(msg2);

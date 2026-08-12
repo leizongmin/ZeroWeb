@@ -1029,6 +1029,7 @@ fn test_ipc_message_with_all_field_types() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: f32::MAX,
             delta_y: f32::MIN,
+            ..Default::default()
         }),
     };
     let out5 = roundtrip(scroll_msg);
@@ -1321,6 +1322,7 @@ fn test_binary_round_trip_determinism() {
             kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
                 delta_x: -3.14,
                 delta_y: 2.718,
+                ..Default::default()
             }),
         },
     ];
@@ -1435,6 +1437,7 @@ fn test_ipc_enum_variants() {
             IpcMessageKind::ScrollEvent(ScrollEventParams {
                 delta_x: 1.0,
                 delta_y: -1.0,
+                ..Default::default()
             }),
         ),
         (16, IpcMessageKind::Heartbeat),
@@ -1645,6 +1648,7 @@ fn test_mouse_and_scroll_special_float_values() {
         kind: IpcMessageKind::ScrollEvent(ScrollEventParams {
             delta_x: f32::NEG_INFINITY,
             delta_y: f32::NAN,
+            ..Default::default()
         }),
     };
     let out2 = roundtrip(msg2);
