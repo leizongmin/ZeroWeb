@@ -34,3 +34,14 @@ glyph 使用 adjusted size 后，`line-height: normal` 也必须基于 used prim
 放大的 glyph 会在仍按 specified size 生成的行盒中重叠。此处只调整活跃
 `font-size-adjust` 的 normal 行高；普通页面继续保持历史常数路径，不能借机全局启用
 per-font ascent/descent/gap。
+
+## 后续：generic paint compatibility 分支
+
+generic family 的 paint compatibility 分支会以逐字符 paint width 替换 shaping advance。
+该策略只适用于 layout 仍使用 legacy estimate 的普通 generic 文本。若
+`font-size-adjust` 已让 layout 使用 adjusted shaped advance，paint 再替换一次会使
+fragment 总宽正确、内部 glyph 位置错误。
+
+排查时应同时对账 `fragment_width`、shaped advance 总和与 `paint_consumed`。三者不一致
+说明是 layout/paint 契约问题；三者已在浮点误差内一致后，剩余 Oracle 差异应归因于字体
+选择或 raster，不应继续调 fragment 空白。

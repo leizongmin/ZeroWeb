@@ -218,6 +218,21 @@ fn shaped_generic_paint_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_GENERIC_PAINT").as_deref() != Ok("0"))
 }
 
+fn shaped_advance_policy(generic_font: bool, size_adjusted: bool, adjusted_generic_enabled: bool) -> bool {
+    !generic_font || size_adjusted && adjusted_generic_enabled
+}
+
+pub(super) fn fragment_shaped_advance_eligible(
+    generic_font: bool,
+    size_adjust: zero_render_foundation::font::FontSizeAdjustment,
+) -> bool {
+    shaped_advance_policy(
+        generic_font,
+        font_size_adjustment_active(size_adjust),
+        std::env::var("ZW_SHAPED_ADJUSTED_GENERIC_ADVANCE").as_deref() != Ok("0"),
+    )
+}
+
 pub(super) fn configure_paint_ifc_advance(
     context: InlineFormattingContext,
     doc: &Document,
@@ -939,6 +954,14 @@ mod tests {
             glyph_width,
             crate::text_metrics::paint_base_with_contextual_delta(21.0, 19.75, 20.5)
         );
+    }
+
+    #[test]
+    fn adjusted_generic_font_uses_shaped_advance_policy() {
+        assert!(shaped_advance_policy(false, false, false));
+        assert!(!shaped_advance_policy(true, false, true));
+        assert!(!shaped_advance_policy(true, true, false));
+        assert!(shaped_advance_policy(true, true, true));
     }
 
     #[test]

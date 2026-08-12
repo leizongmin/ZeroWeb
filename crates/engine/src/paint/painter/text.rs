@@ -16,13 +16,14 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive};
 use zero_style_system::{
-    BackgroundPositionComputedValue, ComputedStyle, ObjectFitComputedValue, TabSizeValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    ComputedStyle, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
+    TextTransformValue, WhiteSpaceValue,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
 use super::super::helpers::PrimitiveCounts;
 use super::super::helpers::apply_text_transform;
+use super::text_image::{compute_object_fit_rect, get_img_intrinsic_size};
 
 // 专属 helper 与单测按职责拆入 painter/text/ 子模块。
 pub(crate) mod text_list;
@@ -1359,6 +1360,8 @@ impl super::Painter {
                             );
                             // https://drafts.csswg.org/css-fonts/#generic-font-families
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
+                            let shaped_advance_eligible =
+                                text_shaping::fragment_shaped_advance_eligible(generic_font, size_adjust);
                             let shaping_style = owner_style_opt.unwrap_or(style);
                             let shaping_font_ids = self.fragment_shaping_font_ids(
                                 owner_style_opt,
@@ -1381,7 +1384,7 @@ impl super::Painter {
                                 $frag_fs,
                                 shaped_text_eligible,
                                 text_direction,
-                                !generic_font,
+                                shaped_advance_eligible,
                                 logical_source,
                                 &open_type_features,
                                 size_adjust,
@@ -1931,108 +1934,6 @@ pub(super) fn has_direct_paintable_text(
         has_inline_elem && !has_block_elem && !inline_children_have_elem
     } else {
         false
-    }
-}
-
-/// 获取 `<img>` 元素的固有尺寸。
-///
-/// 优先使用解码后的真实尺寸；若图片尚未解码，再回退到 HTML `width`/`height` 属性，
-/// 最后使用调用方提供的回退尺寸。
-fn get_img_intrinsic_size(
-    node: &zero_dom::NodeData,
-    decoded_size: Option<(f32, f32)>,
-    fallback_w: f32,
-    fallback_h: f32,
-) -> (f32, f32) {
-    if let Some((w, h)) = decoded_size
-        && w > 0.0
-        && h > 0.0
-    {
-        return (w, h);
-    }
-
-    let elem = match &node.kind {
-        NodeKind::Element(e) => e,
-        _ => return (fallback_w, fallback_h),
-    };
-    let w = elem
-        .get_attribute("width")
-        .and_then(|v| v.parse::<f32>().ok())
-        .unwrap_or(fallback_w);
-    let h = elem
-        .get_attribute("height")
-        .and_then(|v| v.parse::<f32>().ok())
-        .unwrap_or(fallback_h);
-    (w.max(1.0), h.max(1.0))
-}
-
-/// 根据 `object-fit` + `object-position` 计算图片在容器内的绘制矩形。
-/// `position` 默认 Center（50% 50%）→ 退化为既有居中行为（零回归）。
-pub(super) fn compute_object_fit_rect(
-    fit: &ObjectFitComputedValue,
-    position: &BackgroundPositionComputedValue,
-    container_w: f32,
-    container_h: f32,
-    intrinsic_w: f32,
-    intrinsic_h: f32,
-    content_x: f32,
-    content_y: f32,
-) -> (f32, f32, f32, f32) {
-    match fit {
-        ObjectFitComputedValue::Fill => {
-            // 拉伸填满容器（position 不适用）
-            (content_x, content_y, container_w, container_h)
-        }
-        ObjectFitComputedValue::Contain => {
-            // 等比缩放，完整显示，按 object-position 定位
-            let scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
-            let w = intrinsic_w * scale;
-            let h = intrinsic_h * scale;
-            let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
-            (content_x + px, content_y + py, w, h)
-        }
-        ObjectFitComputedValue::Cover => {
-            // 等比缩放，完全覆盖，按 object-position 定位
-            let scale = (container_w / intrinsic_w).max(container_h / intrinsic_h);
-            let w = intrinsic_w * scale;
-            let h = intrinsic_h * scale;
-            let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
-            (content_x + px, content_y + py, w, h)
-        }
-        ObjectFitComputedValue::None => {
-            // 原始尺寸，按 object-position 定位
-            let (px, py) = super::effects::resolve_background_position(
-                position,
-                container_w,
-                container_h,
-                intrinsic_w,
-                intrinsic_h,
-            );
-            (content_x + px, content_y + py, intrinsic_w, intrinsic_h)
-        }
-        ObjectFitComputedValue::ScaleDown => {
-            // 取 none 和 contain 中较小的结果，按 object-position 定位
-            let none_w = intrinsic_w;
-            let contain_scale = (container_w / intrinsic_w).min(container_h / intrinsic_h);
-            let contain_w = intrinsic_w * contain_scale;
-            if none_w <= contain_w {
-                // none 更小，使用原始尺寸
-                let (px, py) = super::effects::resolve_background_position(
-                    position,
-                    container_w,
-                    container_h,
-                    intrinsic_w,
-                    intrinsic_h,
-                );
-                (content_x + px, content_y + py, intrinsic_w, intrinsic_h)
-            } else {
-                // contain 更小
-                let w = contain_w;
-                let h = intrinsic_h * contain_scale;
-                let (px, py) = super::effects::resolve_background_position(position, container_w, container_h, w, h);
-                (content_x + px, content_y + py, w, h)
-            }
-        }
     }
 }
 
