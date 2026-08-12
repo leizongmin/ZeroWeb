@@ -250,6 +250,8 @@ pub fn extract_dynamic_import_specifiers(source: &str) -> Vec<String> {
     while let Some(rel) = source[search_from..].find("import(") {
         let start = search_from + rel + "import(".len();
         let rest = source[start..].trim_start();
+        // extract_string_literal（R3349 已修为「在匹配闭合引号处停止，忽略其后的 `)`/`;`/剩余代码」）
+        // 提取引号内的模块标识符。
         if let Ok(spec) = extract_string_literal(rest) {
             push_unique_spec(&mut specs, spec);
         }
@@ -521,20 +523,42 @@ fn split_statements(source: &str) -> Vec<String> {
     stmts
 }
 
-/// 提取字符串字面量（在第一个分号处停止）。
+/// 提取字符串字面量（从首个引号起，到匹配的闭合引号止，忽略其后字符）。
+///
+/// R3349 deep-review：旧实现在首个 `;` 切分后要求整段以闭合引号**结尾**（`ends_with(close)`），
+/// 对动态 `import('./x.js')`（引号后紧跟 `)`）恒判 unclosed → 标识符全被丢弃。改为按字符扫描到
+/// 匹配的闭合引号即止，**忽略其后的 `)`/`;`/剩余代码**——既修动态 import，也保持静态 import
+///（`'./a.js'` 后无非空白字符时行为不变）向后兼容。反斜杠转义引号不计为闭合。
 fn extract_string_literal(s: &str) -> Result<String, ScriptError> {
-    let s = s.split(';').next().unwrap_or(s).trim();
-    if s.len() < 2 {
-        return Err(ScriptError::CompileError(format!("expected string literal, got: {s}")));
-    }
-    let close = match s.chars().next() {
+    let s = s.trim();
+    let mut chars = s.chars();
+    let close = match chars.next() {
         Some('\'') => '\'',
         Some('"') => '"',
         Some('`') => '`',
         _ => return Err(ScriptError::CompileError(format!("expected string literal, got: {s}"))),
     };
-    if s.ends_with(close) {
-        Ok(s[1..s.len() - 1].to_string())
+    let mut out = String::new();
+    let mut escaped = false;
+    let mut closed = false;
+    for c in chars {
+        if escaped {
+            out.push(c);
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == close {
+            closed = true;
+            break;
+        }
+        out.push(c);
+    }
+    if closed {
+        Ok(out)
     } else {
         Err(ScriptError::CompileError(format!("unclosed string literal: {s}")))
     }
