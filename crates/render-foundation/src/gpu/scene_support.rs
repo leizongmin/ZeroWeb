@@ -31,16 +31,8 @@ pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
     if primitives.shadows.iter().any(|s| s.inset) {
         return false;
     }
-    // 重复渐变且首色标 offset ≠ 0：GPU shader `fract(t)` 折叠回 [0,1)（归一化纹理），
-    // CPU 折叠回 [first,last]（原 offset 采样）——GPU 无 first/last 传参通道，回退。
-    // （首 offset = 0 时两种语义一致，无需回退。）
-    if primitives
-        .gradients
-        .iter()
-        .any(|g| g.repeating && g.stops.first().is_some_and(|s| s.offset.abs() > 1e-6))
-    {
-        return false;
-    }
+    // R3289：repeating 渐变色标重映射（周期 [first,last] → [0,1]）——GPU fract(t)
+    // 与 CPU 折叠等效，不再回退。
     // D/R3279：filter/transform 后处理已支持窗口模式（离屏纹理 ping-pong + blit 回
     // surface）——不再回退。
     true

@@ -363,13 +363,21 @@ impl GpuRenderer {
 
         let pipeline = create_render_pipeline(&device, format, &uniform_bgl, &atlas_bgl);
         let rounded_rect_pipeline = create_rounded_rect_pipeline(&device, format, &uniform_bgl);
-        let gradient_pipeline = create_gradient_pipeline(&device, format, &uniform_bgl, &gradient_bgl);
+        // R3289：渐变 uniform bgl 复用 transform_uniform_bgl（4-float 布局：first/period/pad/pad）
+        let transform_uniform_bgl_early = create_transform_uniform_bgl(&device);
+        let gradient_pipeline = create_gradient_pipeline(
+            &device,
+            format,
+            &uniform_bgl,
+            &gradient_bgl,
+            &transform_uniform_bgl_early,
+        );
         let image_pipeline = create_image_pipeline(&device, format, &uniform_bgl, &image_bgl);
         let blur_pipeline = create_blur_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         // DC-9 filter:opacity 后处理管线（复用 blur_bgl 源纹理布局）
         let color_filter_pipeline = create_color_filter_pipeline(&device, format, &uniform_bgl, &blur_bgl);
         // DC-9 transform 后处理管线（独立 uniform bgl + 复用 blur_bgl 源纹理布局）
-        let transform_uniform_bgl = create_transform_uniform_bgl(&device);
+        let transform_uniform_bgl = transform_uniform_bgl_early;
         let transform_pipeline = create_transform_pipeline(&device, format, &transform_uniform_bgl, &blur_bgl);
         // C/R3278：blend 管线（uniform_bgl 4-float 布局复用——blend uniform {mode,0,0,0}）
         let blend_bgl = create_blend_bind_group_layout(&device);
@@ -1510,13 +1518,13 @@ impl GpuRenderer {
         pass: &mut wgpu::RenderPass<'_>,
         uniform_bg: &wgpu::BindGroup,
         device: &wgpu::Device,
-        resources: &[(wgpu::BindGroup, Vec<f32>)],
+        resources: &[(wgpu::BindGroup, wgpu::BindGroup, Vec<f32>)],
     ) {
         pass.set_pipeline(&self.gradient_pipeline);
         pass.set_bind_group(0, uniform_bg, &[]);
         let flat_vertices: Vec<f32> = resources
             .iter()
-            .flat_map(|(_, vertices)| vertices.iter().copied())
+            .flat_map(|(_, _, vertices)| vertices.iter().copied())
             .collect();
         if flat_vertices.is_empty() {
             return;
@@ -1527,9 +1535,10 @@ impl GpuRenderer {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let mut byte_offset = 0u64;
-        for (bg, verts) in resources {
+        for (bg, uniform_bg_grad, verts) in resources {
             let byte_len = (verts.len() * std::mem::size_of::<f32>()) as u64;
             pass.set_bind_group(1, bg, &[]);
+            pass.set_bind_group(2, uniform_bg_grad, &[]);
             pass.set_vertex_buffer(0, vb.slice(byte_offset..byte_offset + byte_len));
             pass.draw(0..6, 0..1);
             byte_offset += byte_len;
@@ -1700,10 +1709,32 @@ impl GpuRenderer {
         &self,
         gradients: &[crate::primitive::GradientPrimitive],
         scale: f32,
-    ) -> Vec<(wgpu::BindGroup, Vec<f32>)> {
+    ) -> Vec<(wgpu::BindGroup, wgpu::BindGroup, Vec<f32>)> {
         let mut resources = Vec::new();
         for grad in gradients {
-            let tex_data = gradient_stops_to_texture(&grad.stops, grad.interpolation);
+            // R3289：repeating 渐变且首色标 offset≠0——CPU 折叠 [first,last] 周期采样；
+            // GPU fract(t) 采样归一化 [0,1]。把色标重映射为 [0,1]（周期内容平移缩放），
+            // 纹理即一个周期，fract 采样与 CPU 等效。
+            let tex_data = if grad.repeating {
+                let first = grad.stops.first().map(|s| s.offset).unwrap_or(0.0);
+                let last = grad.stops.last().map(|s| s.offset).unwrap_or(1.0);
+                let period = last - first;
+                if period > 1e-6 && first.abs() > 1e-6 {
+                    let remapped: Vec<crate::primitive::GradientStop> = grad
+                        .stops
+                        .iter()
+                        .map(|s| crate::primitive::GradientStop {
+                            offset: (s.offset - first) / period,
+                            color: s.color,
+                        })
+                        .collect();
+                    gradient_stops_to_texture(&remapped, grad.interpolation)
+                } else {
+                    gradient_stops_to_texture(&grad.stops, grad.interpolation)
+                }
+            } else {
+                gradient_stops_to_texture(&grad.stops, grad.interpolation)
+            };
             let grad_texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Gradient Texture"),
                 size: wgpu::Extent3d {
@@ -1798,7 +1829,33 @@ impl GpuRenderer {
                 make_gv(l, b),
             ]
             .concat();
-            resources.push((grad_bg, verts));
+            // R3289：per-渐变 uniform（first/period，repeating 折叠用；非 repeating 恒 0）
+            let (first, period) = if grad.repeating {
+                let f = grad.stops.first().map(|s| s.offset).unwrap_or(0.0);
+                let l = grad.stops.last().map(|s| s.offset).unwrap_or(1.0);
+                (f, (l - f).max(1e-6))
+            } else {
+                (0.0, 1.0)
+            };
+            let grad_uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Grad Uniform"),
+                // transform_uniform_bgl 布局要求 64 字节（transform 用）——前 4 float 用
+                // first/period，其余填充
+                contents: bytemuck::bytes_of(&[
+                    first, period, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32,
+                    0.0f32, 0.0f32, 0.0f32, 0.0f32,
+                ]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let grad_uniform_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Grad Uniform BG"),
+                layout: &self.transform_uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: grad_uniform.as_entire_binding(),
+                }],
+            });
+            resources.push((grad_bg, grad_uniform_bg, verts));
         }
         resources
     }

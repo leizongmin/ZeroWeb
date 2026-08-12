@@ -561,3 +561,42 @@ fn parity_blur_shadow_matches_cpu() {
     let edge = (10 * 32 + 4) * 4;
     assert!(gpu_px[edge] < 250, "GPU 阴影边缘应有 blur 渐变，got {}", gpu_px[edge]);
 }
+
+/// R3289：repeating 渐变首色标 offset≠0——GPU 色标重映射后与 CPU 折叠等效（逐像素一致）。
+#[serial]
+#[test]
+fn parity_repeating_gradient_first_offset_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    // 周期 [0.2, 0.6]（first≠0）：黑→白→黑 折叠
+    p.gradients.push(GradientPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 16.0),
+        kind: GradientKind::Linear {
+            x0: 0.0,
+            y0: 8.0,
+            x1: 32.0,
+            y1: 8.0,
+        },
+        stops: vec![
+            GradientStop {
+                offset: 0.2,
+                color: Color::rgba(0, 0, 0, 255),
+            },
+            GradientStop {
+                offset: 0.6,
+                color: Color::rgba(255, 255, 255, 255),
+            },
+        ],
+        repeating: true,
+        interpolation: crate::primitive::GradientInterpolation {
+            space: crate::primitive::GradientColorSpace::Srgb,
+            hue: crate::primitive::HueMethod::Shorter,
+        },
+    });
+    let cpu_fb = render_cpu(32, 16, &p, None);
+    let gpu_px = render_gpu(32, 16, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    assert_eq!(
+        over, 0,
+        "repeating 渐变 first≠0 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
+    );
+}

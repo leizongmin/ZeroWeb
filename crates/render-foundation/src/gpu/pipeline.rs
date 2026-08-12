@@ -193,6 +193,17 @@ struct Uniforms {
 @group(1) @binding(0) var grad_texture: texture_2d<f32>;
 @group(1) @binding(1) var grad_sampler: sampler;
 
+// R3289：repeating 渐变色标周期参数（first = 首色标 offset，period = last - first；
+// 非 repeating 时未使用）。纹理经色标重映射（周期铺满 [0,1]），repeating 折叠：
+// t_cycle = fract((t - first) / period) 归一化到 [0,1] 采样——与 CPU 折叠等效。
+struct GradUniforms {
+    first: f32,
+    period: f32,
+    _pad0: f32,
+    _pad1: f32,
+};
+@group(2) @binding(0) var<uniform> grad_uniforms: GradUniforms;
+
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) world_pos: vec2f,
@@ -266,7 +277,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if (!is_repeating) {
         t = clamp(t, 0.0, 1.0);
     } else {
-        t = fract(t);
+        // R3289：折叠到 [first, last] 周期并归一化到纹理 [0,1]（纹理已重映射为周期）
+        let period = max(grad_uniforms.period, 1e-6);
+        t = fract((t - grad_uniforms.first) / period);
     }
     return textureSample(grad_texture, grad_sampler, vec2f(t, 0.5));
 }
@@ -782,6 +795,7 @@ pub fn create_gradient_pipeline(
     format: wgpu::TextureFormat,
     uniform_bgl: &wgpu::BindGroupLayout,
     gradient_bgl: &wgpu::BindGroupLayout,
+    grad_uniform_bgl: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
     let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Gradient Shader"),
@@ -790,7 +804,7 @@ pub fn create_gradient_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Gradient Pipeline Layout"),
-        bind_group_layouts: &[Some(uniform_bgl), Some(gradient_bgl)],
+        bind_group_layouts: &[Some(uniform_bgl), Some(gradient_bgl), Some(grad_uniform_bgl)],
         immediate_size: 0,
     });
 
