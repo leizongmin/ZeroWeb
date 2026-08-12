@@ -770,6 +770,65 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "10".into()
         }
+        // R3305：lineDashOffset（虚线动画 marching-ants 基础）+ getLineDash（返展开后偶长数组，spec）+
+        // imageSmoothingEnabled / imageSmoothingQuality（drawImage 缩放重采样控制）。Rust 后端早全，仅缺
+        // host op 派发 + JS shim 暴露。getLineDash 从 host 读（权威——奇长输入被展开为偶长，客户端镜像
+        // 无法推断）。https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d
+        "setLineDashOffset" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_line_dash_offset(f(0));
+            }
+            "ok".into()
+        }
+        "getLineDashOffset" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return ctx.get_line_dash_offset().to_string();
+            }
+            "0".into()
+        }
+        "getLineDash" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                let dash = ctx.get_line_dash();
+                let mut s = String::with_capacity(dash.len() * 2);
+                for (i, v) in dash.iter().enumerate() {
+                    if i > 0 {
+                        s.push(',');
+                    }
+                    s.push_str(&v.to_string());
+                }
+                return s;
+            }
+            "".into()
+        }
+        "setImageSmoothingEnabled" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_image_smoothing_enabled(arg(0).trim() == "1" || arg(0).trim() == "true");
+            }
+            "ok".into()
+        }
+        "getImageSmoothingEnabled" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return if ctx.image_smoothing_enabled() { "1" } else { "0" }.into();
+            }
+            "1".into()
+        }
+        "setImageSmoothingQuality" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_image_smoothing_quality(parse_image_smoothing_quality(arg(0)));
+            }
+            "ok".into()
+        }
+        "getImageSmoothingQuality" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return match ctx.image_smoothing_quality() {
+                    zero_canvas::ImageSmoothingQuality::Low => "low",
+                    zero_canvas::ImageSmoothingQuality::Medium => "medium",
+                    zero_canvas::ImageSmoothingQuality::High => "high",
+                }
+                .into();
+            }
+            "high".into()
+        }
         _ => "ok".into(),
     }
 }
@@ -804,5 +863,15 @@ fn parse_text_direction(s: &str) -> zero_canvas::TextDirection {
         "ltr" => D::Ltr,
         "rtl" => D::Rtl,
         _ => D::Inherit, // inherit + 非法值 → Inherit
+    }
+}
+
+/// 解析 imageSmoothingQuality 字符串（low/medium/high，大小写不敏感，非法 → High 默认，R3305）。
+fn parse_image_smoothing_quality(s: &str) -> zero_canvas::ImageSmoothingQuality {
+    use zero_canvas::ImageSmoothingQuality as Q;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "low" => Q::Low,
+        "medium" => Q::Medium,
+        _ => Q::High, // high + 非法值 → High（headless 默认）
     }
 }

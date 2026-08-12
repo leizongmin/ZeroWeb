@@ -437,6 +437,61 @@ fn test_canvas_text_state_props_r3304() {
 }
 
 #[test]
+fn test_canvas_dash_image_smoothing_r3305() {
+    // R3305：lineDashOffset（虚线动画）+ getLineDash（展开后偶长数组）+ imageSmoothingEnabled /
+    // imageSmoothingQuality（drawImage 重采样）。Rust 后端早全，仅缺 host op + JS shim 暴露。本测断言：
+    // ① 默认值（lineDashOffset=0 / getLineDash=[] / imageSmoothingEnabled=true / imageSmoothingQuality='high'）；
+    // ② setLineDash 奇长 [5] → getLineDash 返展开 [5,5]（spec 偶长）；偶长 [2,3] → [2,3]；
+    // ③ lineDashOffset setter→getter 往返；④ imageSmoothingEnabled/Quality 往返。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             globalThis.__defLdo = ctx.lineDashOffset;\
+             globalThis.__defDash = JSON.stringify(ctx.getLineDash());\
+             globalThis.__defIse = ctx.imageSmoothingEnabled;\
+             globalThis.__defIsq = ctx.imageSmoothingQuality;\
+             ctx.setLineDash([5]); /* 奇长 → 展开 [5,5] */\
+             globalThis.__oddDash = JSON.stringify(ctx.getLineDash());\
+             ctx.setLineDash([2, 3]); /* 偶长原样 */\
+             globalThis.__evenDash = JSON.stringify(ctx.getLineDash());\
+             ctx.lineDashOffset = 4.5;\
+             globalThis.__setLdo = ctx.lineDashOffset;\
+             ctx.imageSmoothingEnabled = false;\
+             globalThis.__setIse = ctx.imageSmoothingEnabled;\
+             ctx.imageSmoothingQuality = 'medium';\
+             globalThis.__setIsq = ctx.imageSmoothingQuality;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__defLdo").unwrap().value, "0", "默认 lineDashOffset=0");
+    assert_eq!(sandbox.execute("globalThis.__defDash").unwrap().value, "[]", "默认 getLineDash=[]");
+    assert_eq!(sandbox.execute("globalThis.__defIse").unwrap().value, "true", "默认 imageSmoothingEnabled=true");
+    assert_eq!(sandbox.execute("globalThis.__defIsq").unwrap().value, "high", "默认 imageSmoothingQuality=high");
+    // 奇长 [5] → 展开为 [5,5]（spec 偶长）。
+    assert_eq!(sandbox.execute("globalThis.__oddDash").unwrap().value, "[5,5]", "奇长 setLineDash([5]) → getLineDash 展开 [5,5]");
+    // 偶长 [2,3] 原样。
+    assert_eq!(sandbox.execute("globalThis.__evenDash").unwrap().value, "[2,3]", "偶长 setLineDash([2,3]) → getLineDash [2,3]");
+    assert_eq!(sandbox.execute("globalThis.__setLdo").unwrap().value, "4.5", "lineDashOffset 往返");
+    assert_eq!(sandbox.execute("globalThis.__setIse").unwrap().value, "false", "imageSmoothingEnabled 往返");
+    assert_eq!(sandbox.execute("globalThis.__setIsq").unwrap().value, "medium", "imageSmoothingQuality 往返");
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

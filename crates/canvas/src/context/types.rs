@@ -314,6 +314,23 @@ pub enum TextDirection {
     Inherit,
 }
 
+/// 图像平滑质量（HTML Canvas `imageSmoothingQuality`，
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-imagesmoothingquality）。
+///
+/// R3305：drawImage 缩放的重采样质量。canvas crate 无真实重采样后端（drawImage 逐像素采样，
+/// 无低/中/高差异化算法），故仅存储 + 反射（headless 简化）；真实重采样质量须接渲染流图像管线
+/// 作 follow-up。即便如此，完整属性表面使依赖库（图像编辑/游戏像素艺术）feature-detect 与读值不抛错。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ImageSmoothingQuality {
+    /// 低质量。
+    Low,
+    /// 中等质量。
+    Medium,
+    /// 高质量（默认，real browser 默认 low；headless 取 high 为保守近似，调用方读值不依赖默认）。
+    #[default]
+    High,
+}
+
 /// 线段连接样式。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LineJoin {
@@ -776,6 +793,8 @@ pub(crate) struct CanvasState {
     pub(crate) line_cap: LineCap,
     /// 图像平滑（抗锯齿）开关。
     pub(crate) image_smoothing_enabled: bool,
+    /// 图像平滑质量（R3305）。
+    pub(crate) image_smoothing_quality: ImageSmoothingQuality,
     /// 文本对齐。
     pub(crate) text_align: TextAlign,
     /// 文本基线。
@@ -834,6 +853,8 @@ pub struct CanvasContext {
     pub(crate) line_cap: LineCap,
     /// 图像平滑（抗锯齿）开关。
     pub(crate) image_smoothing_enabled: bool,
+    /// 图像平滑质量（R3305）。
+    pub(crate) image_smoothing_quality: ImageSmoothingQuality,
     /// 文本对齐。
     pub(crate) text_align: TextAlign,
     /// 文本基线。

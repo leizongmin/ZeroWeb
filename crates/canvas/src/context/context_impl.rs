@@ -37,6 +37,7 @@ impl CanvasContext {
             line_join: LineJoin::default(),
             line_cap: LineCap::default(),
             image_smoothing_enabled: true,
+            image_smoothing_quality: ImageSmoothingQuality::default(),
             text_align: TextAlign::Start,
             text_baseline: TextBaseline::Alphabetic,
             miter_limit: 10.0,
@@ -458,6 +459,7 @@ impl CanvasContext {
             line_join: self.line_join,
             line_cap: self.line_cap,
             image_smoothing_enabled: self.image_smoothing_enabled,
+            image_smoothing_quality: self.image_smoothing_quality,
             text_align: self.text_align,
             text_baseline: self.text_baseline,
             miter_limit: self.miter_limit,
@@ -484,6 +486,7 @@ impl CanvasContext {
             self.line_join = state.line_join;
             self.line_cap = state.line_cap;
             self.image_smoothing_enabled = state.image_smoothing_enabled;
+            self.image_smoothing_quality = state.image_smoothing_quality;
             self.text_align = state.text_align;
             self.text_baseline = state.text_baseline;
             self.miter_limit = state.miter_limit;
@@ -623,6 +626,16 @@ impl CanvasContext {
     /// 返回当前图像平滑开关状态。
     pub fn image_smoothing_enabled(&self) -> bool {
         self.image_smoothing_enabled
+    }
+
+    /// 设置图像平滑质量（R3305）。
+    pub fn set_image_smoothing_quality(&mut self, quality: ImageSmoothingQuality) {
+        self.image_smoothing_quality = quality;
+    }
+
+    /// 返回当前图像平滑质量（R3305）。
+    pub fn image_smoothing_quality(&self) -> ImageSmoothingQuality {
+        self.image_smoothing_quality
     }
 
     /// 返回当前字体描述符。

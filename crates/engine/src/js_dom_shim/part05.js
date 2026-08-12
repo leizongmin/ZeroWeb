@@ -1061,6 +1061,30 @@
       var s = (segs && segs.length != null) ? Array.prototype.join.call(segs, ',') : String(segs);
       __zw_canvas_op(h, 'setLineDash', s);
     };
+    // R3305：getLineDash 返展开后偶长数组（spec：奇长输入被复制拼成偶长）。从 host 读（权威，
+    // 客户端镜像存原值无法推断展开）。空串 → 空数组。
+    ctx.getLineDash = function () {
+      var raw = String(__zw_canvas_op(h, 'getLineDash'));
+      if (!raw) return [];
+      return raw.split(',').map(function (x) { return parseFloat(x) || 0; });
+    };
+    // R3305：lineDashOffset（虚线动画 marching-ants 基础）。客户端镜像 + push host。
+    ctx._ldo = 0;
+    Object.defineProperty(ctx, 'lineDashOffset', {
+      set: function (v) { this._ldo = +v; __zw_canvas_op(h, 'setLineDashOffset', String(v)); },
+      get: function () { return this._ldo; }
+    });
+    // R3305：imageSmoothingEnabled / imageSmoothingQuality（drawImage 缩放重采样控制）。
+    ctx._ise = true;
+    Object.defineProperty(ctx, 'imageSmoothingEnabled', {
+      set: function (v) { this._ise = !!v; __zw_canvas_op(h, 'setImageSmoothingEnabled', this._ise ? '1' : '0'); },
+      get: function () { return this._ise; }
+    });
+    ctx._isq = 'high';
+    Object.defineProperty(ctx, 'imageSmoothingQuality', {
+      set: function (v) { this._isq = String(v); __zw_canvas_op(h, 'setImageSmoothingQuality', String(v)); },
+      get: function () { return this._isq; }
+    });
     ctx._lj = 'miter';
     Object.defineProperty(ctx, 'lineJoin', {
       set: function (v) { this._lj = String(v); __zw_canvas_op(h, 'setLineJoin', String(v)); },
