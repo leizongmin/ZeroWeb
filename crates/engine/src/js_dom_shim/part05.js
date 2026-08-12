@@ -1004,6 +1004,44 @@
       });
     };
   }
+  // R3312：OffscreenCanvas（HTML spec，Done Criteria §3 Tier 3）——主线程离屏 canvas。
+  // `new OffscreenCanvas(w, h)` 构造（非 DOM，镜像 standalone _zwMakeCanvas 模式）+ getContext('2d') +
+  // transferToImageBitmap()（取全 canvas 像素 wire 包 ImageBitmap，复用 _zwMakeImageBitmap）。
+  // **诚实范围**：① 仅主线程（worker 内 OffscreenCanvas defer——R3089 worker 影子上下文 wctx 无 __zw_canvas_op，
+  //   真 worker OffscreenCanvas 需 worker canvas host 桥接，跨层大改）；② 无 transferControlToOffscreen（canvas 元素
+  //   转 offscreen，需 DOM canvas ↔ offscreen 句柄共享，defer）；③ 仅 '2d' context（webgl defer）。
+  // https://html.spec.whatwg.org/multipage/canvas.html#the-offscreencanvas-interface
+  function OffscreenCanvas(width, height) {
+    if (!(this instanceof OffscreenCanvas)) return new OffscreenCanvas(width, height);
+    this.width = (typeof width === 'number' && width > 0) ? (width | 0) : 300;
+    this.height = (typeof height === 'number' && height > 0) ? (height | 0) : 150;
+    this._ctx = null;
+  }
+  OffscreenCanvas.prototype.getContext = function (type) {
+    if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
+    if (this._ctx) return this._ctx;
+    if (typeof __zw_canvas_op !== 'function') return null;
+    var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height));
+    if (!id || String(id).charAt(0) === '!') return null;
+    this._ctx = _zwMakeCtx2d(String(id));
+    return this._ctx;
+  };
+  // transferToImageBitmap()：取当前 canvas 全像素 wire 包成 ImageBitmap（spec 返新 ImageBitmap，canvas bitmap 清空）。
+  // 复用 _zwMakeImageBitmap（持 _zwBitmapWire，drawImage 可消费）。canvas bitmap 清空对齐 spec（transfer 语义）。
+  OffscreenCanvas.prototype.transferToImageBitmap = function () {
+    if (typeof __zw_canvas_op !== 'function') return null;
+    if (!this._ctx) this.getContext('2d');
+    if (!this._ctx) return null;
+    var wire = String(__zw_canvas_op(this._ctx._handle, 'getImageData', '0', '0', String(this.width), String(this.height)));
+    var bm = _zwMakeImageBitmap(wire);
+    if (bm.width <= 0 || bm.height <= 0) return null;
+    // spec transfer 语义：源 canvas bitmap 被清空（替换为透明黑）。resize 到同尺寸重置像素 + 状态。
+    __zw_canvas_op(this._ctx._handle, 'resizeContext', String(this.width), String(this.height));
+    return bm;
+  };
+  if (!globalThis.OffscreenCanvas) {
+    globalThis.OffscreenCanvas = OffscreenCanvas;
+  }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
     // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。

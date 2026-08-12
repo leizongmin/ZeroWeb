@@ -1046,6 +1046,90 @@ fn test_canvas_create_image_bitmap_crop_r3311() {
 }
 
 #[test]
+fn test_offscreen_canvas_main_thread_r3312() {
+    // R3312：OffscreenCanvas 主线程切片（Done Criteria §3 Tier 3）。`new OffscreenCanvas(w,h)` 此前全缺。
+    // 本测断言：① OffscreenCanvas 构造器存在 + 实例化（width/height）；② getContext('2d') 返真 2d context（可绘制）；
+    // ③ transferToImageBitmap() 返 ImageBitmap（drawImage 可消费，真栅格）；④ transfer 后源 canvas bitmap 清空（spec）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='dst' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "globalThis.__hasCtor = String(typeof OffscreenCanvas === 'function');\
+             /* ① 构造 + 尺寸 */\
+             var oc = new OffscreenCanvas(4, 4);\
+             globalThis.__w = String(oc.width);\
+             globalThis.__h = String(oc.height);\
+             /* ② getContext('2d') 返真 context，绘制红色 */\
+             var ctx = oc.getContext('2d');\
+             globalThis.__hasCtx = String(ctx !== null && typeof ctx.fillRect === 'function');\
+             ctx.fillStyle = 'rgb(255,0,0)';\
+             ctx.fillRect(0, 0, 4, 4);\
+             /* ③ transferToImageBitmap → ImageBitmap，drawImage 到目标 canvas 真栅格 */\
+             var bm = oc.transferToImageBitmap();\
+             globalThis.__hasBitmap = String(bm !== null && bm.width === 4 && bm.height === 4);\
+             var dst = document.getElementById('dst');\
+             var dctx = dst.getContext('2d');\
+             dctx.drawImage(bm, 0, 0);\
+             var px = dctx.getImageData(0, 0, 1, 1).data;\
+             globalThis.__redDrawn = String(px[0] + ',' + px[1] + ',' + px[2]);\
+             /* ④ transfer 后源 canvas bitmap 清空（再取像素应为透明黑 0,0,0,0）*/\
+             var after = ctx.getImageData(0, 0, 1, 1).data;\
+             globalThis.__clearedAfter = String(after[0] + ',' + after[1] + ',' + after[2] + ',' + after[3]);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hasCtor").unwrap().value,
+        "true",
+        "OffscreenCanvas 全局构造器存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w").unwrap().value,
+        "4",
+        "new OffscreenCanvas(4,4).width = 4"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h").unwrap().value,
+        "4",
+        "new OffscreenCanvas(4,4).height = 4"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasCtx").unwrap().value,
+        "true",
+        "getContext('2d') 返真 2d context（含 fillRect）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasBitmap").unwrap().value,
+        "true",
+        "transferToImageBitmap() 返 ImageBitmap（4×4）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__redDrawn").unwrap().value,
+        "255,0,0",
+        "drawImage(offscreen bitmap) 真栅格——红色像素"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__clearedAfter").unwrap().value,
+        "0,0,0,0",
+        "transfer 后源 canvas bitmap 清空（透明黑，spec transfer 语义）"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas
