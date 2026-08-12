@@ -64,9 +64,9 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 
 | 项 | 状态 |
 |----|------|
-| 仓库代码 | ✅ Cargo workspace + 17 个 crate + 3 个应用（全部有实质实现；与顶部 R3126 执行状态口径一致） |
+| 仓库代码 | ✅ Cargo workspace + 17 个 crate + 3 个应用（全部有实质实现；与顶部 R3342 执行状态口径一致） |
 | 编译状态 | ✅ `cargo build --workspace` 通过 |
-| 测试状态 | ✅ `cargo test --workspace` ~14,301 个测试全绿（R3284） |
+| 测试状态 | ✅ `cargo test --workspace` ~16,737 个测试全绿（R3342） |
 | Clippy | ✅ 零警告（全 workspace） |
 | 基准测试 | ✅ 16/16 crate 有 criterion 基准（78+ 个基准） |
 | CI | ✅ GitHub Actions（ubuntu/macos/windows）|

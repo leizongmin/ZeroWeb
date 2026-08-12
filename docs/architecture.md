@@ -73,7 +73,7 @@
 
 | Path | 作用 |
 |------|------|
-| `tests/integration` | 跨 crate 集成测试（DOM Bridge polyfill、多进程架构、安全管线、真实网站兼容性、产品层 smoke 等） |
+| `tests/integration` | 跨 crate 集成测试（DOM Bridge polyfill、多进程架构、安全管线、真实网站兼容性、产品层 smoke、HTML 行为兼容基线 `html_compat.rs` 等） |
 | `tests/wpt-runner` | Web Platform Tests / reftest / 兼容性基础设施（按分类通过率报告、Chromium Oracle 像素对比）；reftest harness 会执行测试页 setup 脚本（DOM 变更、`requestAnimationFrame` / `takeScreenshot` / `getBoundingClientRect` 等）后再截图对比，覆盖靠脚本构造内容的用例；`product-smoke --struct-check` 另提供结构性回归门（兄弟盒重叠检测 + `--expect-class` 元素计数 + `--expect-lines` 行数断言），与像素 diff 门互补 |
 | `tests/benchmarks` | benchmark 结果产物（不是 workspace member） |
 

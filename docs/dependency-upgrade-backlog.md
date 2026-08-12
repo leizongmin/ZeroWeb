@@ -2,37 +2,27 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-08-12
+> 最后检查日期：2026-08-13
 
 ## 概要
 
 | 依赖 | 当前 | 目标 | 破坏性 | 风险 | 优先级 |
 |------|------|------|--------|------|--------|
-| [wgpu](#1-wgpu) | `24` | `29` | Major 5 个版本 | 高 | P1 |
+| [wgpu](#1-wgpu) | ✅ 已完成（`24`→`30`，R3275） | — | — | — | — |
 | [winit](#2-winit) | `0.30` | `0.31` | pre-1.0 minor | 中 | P2 |
 | [html5ever](#3-html5ever) | `0.29` | `0.39` | pre-1.0 minor ×10 | 高 | P2 |
 | [reqwest](#4-reqwest) | `0.12` | `0.13` | pre-1.0 minor | 低 | P3 |
-| [rusty_v8](#5-rusty_v8) | `0.32` | 上游最新 | 受 Deno 发布制约 | 高 | P3 |
+| [v8](#5-v8原-rusty-v8已更名) | `150.2.0` | 上游最新 | 受 Deno 发布制约 | 高 | P3 |
 | [wasmi](#6-wasmi) | `0.40` | `1.1` | Major 1.x（0→1） | 高 | P2 |
 
 ---
 
-## 1. wgpu
+## 1. wgpu — ✅ 已完成（2026-08-12，R3275）
 
-- **当前**: `24`
-- **目标**: `29`
+- **当前**: `30`（从 `24` 一次性升级 6 个主版本，超越原目标 `29`）
 - **涉及 crate**: `render-foundation`, `host-runtime`, `canvas`, `engine`
-- **跳过原因**: 跨越 5 个主版本（24→29），wgpu 每个主版本都有渲染管线、资源绑定、surface 配置等 API 大改。
-- **预计影响**:
-  - `wgpu::SurfaceConfiguration` / `wgpu::Surface` 创建参数变化
-  - 资源绑定组 API（BindGroupLayout、BindGroup）签名调整
-  - 可能的着色器编译接口变更
-  - `wgpu-hal` 内部 API 变化（仅影响直接使用 hal 的代码）
-- **升级策略**:
-  1. 先读取 wgpu [changelog](https://github.com/gfx-rs/wgpu/releases) 逐版了解 breaking changes
-  2. 每次只升 1-2 个主版本，确保编译通过后再继续
-  3. 重点关注 `render-foundation` 中的 GPU 管线代码
-  4. 升级后跑渲染相关测试 + 手动验证浏览器窗口正常显示
+- **完成情况**: R3275「build(wgpu): 升级 wgpu 24→30（真 dma-buf 前置）」——为 compositor 真 dma-buf 纹理导出铺路；升级后全 workspace 编译/测试/clippy 通过。
+- **备注**: 升级跨度超出原 backlog 目标（24→29），一次到位到 30；后续 API 适配问题按新版本回归即可。
 
 ---
 
