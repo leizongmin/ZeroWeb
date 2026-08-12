@@ -475,6 +475,11 @@ pub fn build_compositor_dma_buf_delivery(
 }
 
 /// compositor 侧：经 Unix socket SCM_RIGHTS 发送 pending fd。
+///
+/// **所有权（R3340）**：`pending_fd` 转移给 [`crate::fd_socket_linux::publish_fd`]，
+/// 后者在成功路径（SCM_RIGHTS 后关闭发送方副本）与所有错误路径上都关闭 fd。
+/// 故 `publish_fd` 返回后本函数**不再** close（否则 double-close）。仅在「缺
+/// `gpu_image` 描述符」分支（尚未调用 `publish_fd`）自行 close。
 #[cfg(target_os = "linux")]
 pub fn publish_compositor_fd(delivery: &mut CompositorFrameDelivery) -> Result<(), ProtocolError> {
     use std::time::Duration;
@@ -493,12 +498,8 @@ pub fn publish_compositor_fd(delivery: &mut CompositorFrameDelivery) -> Result<(
     } else {
         desc.fd_socket_name.as_str()
     };
-    if let Err(error) = crate::fd_socket_linux::publish_fd(name, fd, Duration::from_secs(2)) {
-        unsafe {
-            libc::close(fd);
-        }
-        return Err(error);
-    }
+    // fd 所有权转入 publish_fd（成功与错误路径均关闭），此处不再 close。
+    crate::fd_socket_linux::publish_fd(name, fd, Duration::from_secs(2))?;
     Ok(())
 }
 

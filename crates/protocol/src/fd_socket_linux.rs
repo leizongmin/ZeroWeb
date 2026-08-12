@@ -17,7 +17,15 @@ pub fn fd_socket_path(name: &str) -> PathBuf {
 }
 
 /// compositor 侧：bind 并等待单次连接，经 SCM_RIGHTS 发送 `fd`。
+///
+/// **所有权契约（R3340）**：`fd` 的所有权转入本函数。`SCM_RIGHTS` 会在内核中
+/// 为接收方复制一份新 fd，但**发送方的本地 fd 不会被内核关闭**——必须由本函数显式关闭。
+/// 因此 `fd` 经 `OwnedFd` RAII 包裹，确保**成功路径与所有错误路径**都被关闭（否则
+/// 每帧 dma-buf 发布泄漏一个 fd，最终耗尽 compositor 进程 fd 上限）。详见
+/// `fd_socket_publish_closes_sender_fd_on_success` 测试。
 pub fn publish_fd(name: &str, fd: RawFd, accept_timeout: Duration) -> Result<(), ProtocolError> {
+    // SAFETY: 调用方把 fd 所有权转入本函数；OwnedFd 保证所有路径都关闭它。
+    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
     let path = fd_socket_path(name);
     if path.exists() {
         let _ = std::fs::remove_file(&path);
@@ -45,7 +53,8 @@ pub fn publish_fd(name: &str, fd: RawFd, accept_timeout: Duration) -> Result<(),
             }
         }
     };
-    send_fd(&stream, fd)?;
+    // SCM_RIGHTS 内核复制 fd 给接收方；发送方本地副本由 `owned` 在函数返回时关闭。
+    send_fd(&stream, owned.as_raw_fd())?;
     let _ = std::fs::remove_file(&path);
     Ok(())
 }
@@ -166,14 +175,82 @@ mod tests {
         assert!(memfd >= 0, "memfd_create: {}", std::io::Error::last_os_error());
 
         let name_clone = name.clone();
+        // memfd 所有权转入 publish_fd；R3340 起成功路径会关闭它，不再在此 close。
         let handle = thread::spawn(move || publish_fd(&name_clone, memfd, Duration::from_secs(2)));
 
         thread::sleep(Duration::from_millis(20));
         let received = consume_fd(&name, Duration::from_secs(2)).expect("consume fd");
         handle.join().expect("publish join").expect("publish fd");
         assert!(received.as_raw_fd() >= 0);
-        unsafe {
-            libc::close(memfd);
+    }
+
+    /// 统计本进程当前打开的 fd 数（`/proc/self/fd` 目录项数）。
+    ///
+    /// 用于确定性检测 fd 泄漏——比 `fcntl(F_GETFD)` 更稳健：fd 编号关闭后可能被
+    /// 回收复用，使 `fcntl` 假阳性（误判泄漏的 fd 仍有效）；而打开 fd 总数对
+    /// 「泄漏 vs 正常关闭」是单调可靠的判据。
+    fn count_open_fds() -> usize {
+        std::fs::read_dir("/proc/self/fd").map(|d| d.count()).unwrap_or(0)
+    }
+
+    /// R3340：成功 SCM_RIGHTS 后，发送方的本地 fd 副本必须被关闭（所有权契约）。
+    ///
+    /// `SCM_RIGHTS` 在内核中为接收方复制一份 fd，但**不**关闭发送方的副本——
+    /// 若 publish_fd 不关闭，每帧 dma-buf 发布都泄漏一个 fd，最终耗尽 compositor 的
+    /// fd 上限。本测反复往返 N 次，用打开 fd 总数单调性判定泄漏（修复前每轮 +1）。
+    /// serial：读进程全局 `/proc/self/fd`，避免与并行 fd 测互相干扰计数。
+    #[test]
+    #[serial_test::serial]
+    fn fd_socket_publish_closes_sender_fd_on_success() {
+        let baseline = count_open_fds();
+        let mut max_growth = 0isize;
+        for i in 0..12 {
+            let name = format!("r3340-{i}-{}", std::process::id());
+            let memfd = unsafe { libc::memfd_create(c"zeroweb-fd-r3340".as_ptr(), libc::MFD_CLOEXEC) };
+            assert!(memfd >= 0, "memfd_create: {}", std::io::Error::last_os_error());
+
+            let name_clone = name.clone();
+            let handle = thread::spawn(move || publish_fd(&name_clone, memfd, Duration::from_secs(2)));
+
+            thread::sleep(Duration::from_millis(15));
+            let received = consume_fd(&name, Duration::from_secs(2)).expect("consume fd");
+            handle.join().expect("publish join").expect("publish fd");
+            drop(received); // 接收方副本也释放 → 往返应净增 0 个 fd。
+
+            let growth = count_open_fds() as isize - baseline as isize;
+            max_growth = max_growth.max(growth);
         }
+        // 修复前：每轮泄漏 1 个发送方 fd → max_growth 随迭代线性增长到 ~12。
+        // 修复后：发送方 fd 关闭，残留仅测试框架瞬态 fd（偶发非确定性 ±几），给宽裕阈值 4。
+        assert!(
+            max_growth <= 4,
+            "成功路径泄漏 fd：迭代后打开 fd 较基线净增 {max_growth}（应稳定）"
+        );
+    }
+
+    /// R3340：错误路径（accept 超时——无消费者连接）也必须关闭发送方 fd。
+    /// serial：同上，避免与并行 fd 测互相干扰 `/proc/self/fd` 计数。
+    #[test]
+    #[serial_test::serial]
+    fn fd_socket_publish_closes_sender_fd_on_error() {
+        let baseline = count_open_fds();
+        let mut max_growth = 0isize;
+        for i in 0..6 {
+            let name = format!("r3340-err-{i}-{}", std::process::id());
+            let memfd = unsafe { libc::memfd_create(c"zeroweb-fd-r3340-err".as_ptr(), libc::MFD_CLOEXEC) };
+            assert!(memfd >= 0, "memfd_create: {}", std::io::Error::last_os_error());
+
+            // 不启动消费者线程 → publish_fd 的 accept 必然超时（150ms）。
+            let result = publish_fd(&name, memfd, Duration::from_millis(150));
+            assert!(result.is_err(), "无消费者时应 accept 超时");
+
+            let growth = count_open_fds() as isize - baseline as isize;
+            max_growth = max_growth.max(growth);
+        }
+        // 修复前：错误路径泄漏 1 个 fd/轮 → max_growth ~6。修复后：发送方 fd 关闭。
+        assert!(
+            max_growth <= 3,
+            "错误路径泄漏 fd：迭代后打开 fd 较基线净增 {max_growth}（应稳定）"
+        );
     }
 }
