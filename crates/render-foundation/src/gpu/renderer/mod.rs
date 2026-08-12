@@ -167,8 +167,7 @@ pub struct GpuRenderer {
     headless_texture_b: Option<wgpu::Texture>,
     /// 是否暂停向窗口 surface present（Wayland 失焦时使用）
     present_suspended: bool,
-    /// Linux：compositor 导入纹理（P0 GPU 零拷贝 blit）。
-    #[cfg(target_os = "linux")]
+    /// compositor 导入纹理（Linux P0 零拷贝 blit / 全平台 CPU 回退帧上传 blit）。
     compositor_import: Option<CompositorImport>,
 }
 
@@ -190,7 +189,6 @@ struct CachedImageResource {
 }
 
 /// compositor 导入帧（Browser 侧 wgpu 外部纹理）。
-#[cfg(target_os = "linux")]
 struct CompositorImport {
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -434,7 +432,6 @@ impl GpuRenderer {
             headless_texture,
             headless_texture_b: None,
             present_suspended: false,
-            #[cfg(target_os = "linux")]
             compositor_import: None,
         })
     }
@@ -2543,8 +2540,7 @@ impl GpuRenderer {
         &self.queue
     }
 
-    /// Linux：设置 compositor 导入纹理并在页面区 blit。
-    #[cfg(target_os = "linux")]
+    /// 设置 compositor 导入纹理并在页面区 blit。
     pub fn set_compositor_import(&mut self, texture: wgpu::Texture, width: u32, height: u32, dst_x: f32, dst_y: f32) {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.compositor_import = Some(CompositorImport {
@@ -2557,8 +2553,7 @@ impl GpuRenderer {
         });
     }
 
-    /// Linux：清除 compositor 导入纹理。
-    #[cfg(target_os = "linux")]
+    /// 清除 compositor 导入纹理。
     pub fn clear_compositor_import(&mut self) {
         self.compositor_import = None;
     }
