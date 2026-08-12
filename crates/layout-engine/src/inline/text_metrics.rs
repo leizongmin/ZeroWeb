@@ -649,8 +649,9 @@ pub(crate) fn plaintext_base_is_rtl(text: &str) -> bool {
 impl BidiFragmentCursor {
     /// 创建不做视觉重排的逻辑顺序游标。
     pub(crate) fn logical(text: &str) -> Self {
+        let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
         Self {
-            source_text: None,
+            source_text: enabled.then(|| Arc::<str>::from(text)),
             reordered: identity_bidi_mapping(text),
             visual_byte_offset: 0,
             visual_char_offset: 0,

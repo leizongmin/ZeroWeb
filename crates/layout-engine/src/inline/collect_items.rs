@@ -133,7 +133,10 @@ impl InlineFormattingContext {
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                                     })
-                                    .unwrap_or(self.plaintext_bidi_override),
+                                    .unwrap_or_else(|| {
+                                        self.plaintext_bidi_override
+                                            || parent_id.is_some_and(|id| self.plaintext_bidi_overrides.contains(&id))
+                                    }),
                             }));
                         }
                     }
@@ -479,7 +482,10 @@ impl InlineFormattingContext {
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                                     })
-                                    .unwrap_or(self.plaintext_bidi_override),
+                                    .unwrap_or_else(|| {
+                                        self.plaintext_bidi_override
+                                            || self.plaintext_bidi_overrides.contains(&child_id)
+                                    }),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -507,7 +513,10 @@ impl InlineFormattingContext {
                                     .map(|s| {
                                         matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                                     })
-                                    .unwrap_or(self.plaintext_bidi_override),
+                                    .unwrap_or_else(|| {
+                                        self.plaintext_bidi_override
+                                            || self.plaintext_bidi_overrides.contains(&child_id)
+                                    }),
                             }));
                         }
                     }

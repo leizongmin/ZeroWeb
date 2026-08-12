@@ -516,6 +516,11 @@ pub(crate) fn store_font_sizes_from_ifc(
                 box_node
                     .text_node_font_size_adjust
                     .insert(frag.node_id, style.font_size_adjust);
+                if matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                    && let Some(owner) = font_owner
+                {
+                    box_node.plaintext_bidi_nodes.insert(owner);
+                }
             }
             box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
             box_node

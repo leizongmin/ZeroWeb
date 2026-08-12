@@ -37,6 +37,8 @@
 >
 > **▶ 文字排版增量进展（R3288-F plaintext line direction·2026-08-12）**：`unicode-bidi: plaintext` 不再于断行前重排整个 DOM text run；现先按逻辑顺序软换行，再按 `<br>` 分隔段落的首个 strong 字符决定基方向、逐 fragment 恢复视觉字符顺序，并在 `text-align:start` 时解析段落 start 边。paint Path B 通过容器 override 保留 plaintext 语义，显式 left/right 仅关闭自动 start 对齐，不恢复错误预重排。`ZW_PLAINTEXT_LINE_DIRECTION=0` 可回滚。上游 `bidi-plaintext-br-001` self-source `0.93%→0.88%`，Chromium Oracle `2.15%→2.04%`；writing-modes 81 个 Oracle 案 A/B 为 1 改善、0 恶化、80 持平，总 `-0.11pp`。剩余差异主要是 Arial/`10ch` 字体度量墙；跨多个 mixed-direction fragment 的完整逐行 UBA 仍有 FIXME。验证：layout `1365/1365`、engine `2022/2022`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。
 >
+> **▶ 文字排版增量进展（R3289-F plaintext inline owner·2026-08-12）**：layout IFC 现将 `unicode-bidi:plaintext` inline owner 持久化到 `LayoutBox`，paint Path B 空 styles 重跑时按 owner 恢复；同 owner 的连续 plaintext fragments 在最终行内先按 identity source range 恢复折叠后的词间空格、合并逻辑文本，再执行一次 UBA，避免逐词独立重排或吞掉空白。`ZW_PLAINTEXT_LINE_DIRECTION=0` 同时回滚。相对 R3288，`bidi-plaintext-001/005/011` 各改善 `0.01pp`，增量净 `-0.03pp`；相对 gate 全关闭，writing-modes 81 案为 4 改善、0 恶化、77 持平，总 `-0.14pp`。上游 plaintext 12 案 self-source `12/12` 通过但均为 approximate；001–011 已登记常驻资产。验证：layout `1366/1366`、engine `2027/2027`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。跨不同 style owner 的整行 UBA 与 L4 glyph mirroring 仍待后续切片。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

@@ -1496,6 +1496,7 @@ impl LayoutEngine {
             text_node_letter_spacing: HashMap::new(),
             text_node_line_heights: HashMap::new(),
             text_node_text_transform: HashMap::new(),
+            plaintext_bidi_nodes: HashSet::new(),
             text_node_font_families: HashMap::new(),
             text_node_font_size_adjust: HashMap::new(),
             inline_element_metrics: HashMap::new(),

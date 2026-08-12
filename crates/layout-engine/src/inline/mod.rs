@@ -28,7 +28,7 @@ pub use column_fragmentation::*;
 mod column_fragmentation_flow;
 pub use column_fragmentation_flow::*;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, PositionValue, VerticalAlignValue};
@@ -57,6 +57,8 @@ pub struct InlineFormattingContext {
     pub plaintext_auto_align: bool,
     /// paint IFC 无 style map 时使用的容器级 `unicode-bidi: plaintext` 覆盖。
     pub plaintext_bidi_override: bool,
+    /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
+    pub plaintext_bidi_overrides: HashSet<NodeId>,
     /// 末行对齐方式（CSS text-align-last）。None 表示跟随 text-align。
     pub text_align_last: Option<TextAlign>,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
@@ -255,6 +257,7 @@ impl InlineFormattingContext {
             text_align: TextAlign::default(),
             plaintext_auto_align: false,
             plaintext_bidi_override: false,
+            plaintext_bidi_overrides: HashSet::new(),
             text_align_last: None,
             break_word: false,
             no_wrap: false,
@@ -313,6 +316,12 @@ impl InlineFormattingContext {
     pub fn with_plaintext_bidi(mut self, enabled: bool, auto_align: bool) -> Self {
         self.plaintext_bidi_override = enabled;
         self.plaintext_auto_align = enabled && auto_align;
+        self
+    }
+
+    /// 注入 paint Path B 的 per-inline plaintext owner。
+    pub fn with_plaintext_bidi_overrides(mut self, overrides: HashSet<NodeId>) -> Self {
+        self.plaintext_bidi_overrides = overrides;
         self
     }
 
@@ -1063,23 +1072,44 @@ impl InlineFormattingContext {
 
     /// 对 plaintext 最终行应用段落方向，并按需解析默认 start 对齐。
     fn apply_plaintext_direction(&mut self, directions: &HashMap<NodeId, bool>) {
+        // https://drafts.csswg.org/css-writing-modes-3/#valdef-unicode-bidi-plaintext
         let line_areas: Vec<(f32, f32)> = self
             .lines
             .iter()
             .map(|line| self.effective_content_area(line.y, line.height))
             .collect();
         for (line, (left, width)) in self.lines.iter_mut().zip(line_areas) {
-            let Some(first) = line.runs.first() else { continue };
-            if !directions.get(&first.node_id).copied().unwrap_or(false) {
-                continue;
-            }
-            for run in &mut line.runs {
-                let mut cursor = BidiFragmentCursor::with_direction(&run.text, true, false);
+            let mut index = 0;
+            while index < line.runs.len() {
+                let node_id = line.runs[index].node_id;
+                let Some(&rtl) = directions.get(&node_id) else {
+                    index += 1;
+                    continue;
+                };
+                let mut end = index + 1;
+                while end < line.runs.len() && line.runs[end].node_id == node_id {
+                    end += 1;
+                }
+                let logical_text = plaintext_logical_text(&line.runs[index..end]);
+                let mut cursor = BidiFragmentCursor::with_direction(&logical_text, rtl, true);
                 let visual = cursor.visual_text().to_string();
-                run.source = cursor.take_source(&visual);
-                run.text = visual;
+                let mut merged = line.runs[index].clone();
+                merged.width = line.runs[end - 1].x + line.runs[end - 1].width - line.runs[index].x;
+                merged.margin_right = line.runs[end - 1].margin_right;
+                merged.source = cursor.take_source(&visual);
+                merged.text = visual;
+                line.runs.splice(index..end, [merged]);
+                index += 1;
             }
-            if !self.plaintext_auto_align {
+
+            if !self.plaintext_auto_align
+                || !line
+                    .runs
+                    .first()
+                    .and_then(|run| directions.get(&run.node_id))
+                    .copied()
+                    .unwrap_or(false)
+            {
                 continue;
             }
             let right = line.runs.last().map_or(left, |run| run.x + run.width);
@@ -1087,7 +1117,7 @@ impl InlineFormattingContext {
             for run in &mut line.runs {
                 run.x += offset;
             }
-            // FIXME: reorder multiple mixed-direction fragments as one final UBA line.
+            // FIXME: reorder plaintext spanning multiple differently styled inline owners as one UBA line.
         }
     }
 
@@ -1740,6 +1770,34 @@ impl InlineFormattingContext {
             })
             .collect()
     }
+}
+
+fn plaintext_logical_text(runs: &[TextFragment]) -> String {
+    // https://drafts.csswg.org/css-text-3/#white-space-phase-1
+    let from_source = (|| {
+        let first_source = runs.first()?.source.as_ref()?;
+        let mut previous_end = None;
+        let mut text = String::new();
+        for run in runs {
+            let source = run.source.as_ref()?;
+            if !std::sync::Arc::ptr_eq(&first_source.text, &source.text) {
+                return None;
+            }
+            let range = source.logical_range()?;
+            if let Some(end) = previous_end {
+                if range.start < end {
+                    return None;
+                }
+                if source.text[end..range.start].chars().any(is_collapsible_ws) {
+                    text.push(' ');
+                }
+            }
+            text.push_str(source.text.get(range.clone())?);
+            previous_end = Some(range.end);
+        }
+        Some(text)
+    })();
+    from_source.unwrap_or_else(|| runs.iter().map(|run| run.text.as_str()).collect())
 }
 
 /// `ascent_ratio_for` 的自由函数内核（供 `apply_vertical_alignment` 在 `&mut self.lines`

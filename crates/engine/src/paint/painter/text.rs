@@ -716,6 +716,7 @@ impl super::Painter {
                             zero_style_system::property::types::TextAlignValue::Start
                         ),
                     )
+                    .with_plaintext_bidi_overrides(box_node.plaintext_bidi_nodes.clone())
                     .with_break_word(break_word)
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)
