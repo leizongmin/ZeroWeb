@@ -1,6 +1,8 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3349：deep-review zero-script-sandbox 发现并修复一项真 bug——**`extract_dynamic_import_specifiers` 动态 import() 标识符提取恒空（中危）**：es_module.rs 的 `extract_dynamic_import_specifiers` 找到 `import(` 后把剩余（如 `'./x.js')`）喂入 `extract_string_literal`，后者要求字符串以闭合引号**结尾**（`ends_with(close)`），但动态 import 引号后有 `)`（及可选 `;`）→ `ends_with` 恒 false → 恒报 unclosed → 标识符全丢。**所有动态 import 形式皆失效**（`import('./x.js')`/`;`/`await import(...)`/`import( "..." )` 全提取为 `[]`）。**生产影响**：`extract_module_import_specifiers`（调 dynamic 版）被 renderer `js_worker.rs:564` + browser `tab_js_worker.rs:542` 用于**预取/预注册**模块依赖——动态 import 漏提致对应模块未预取/预注册。**根因修复**：重写 `extract_string_literal` 扫描到**匹配闭合引号**即止、忽略其后字符（处理 `'./x.js')` 及多 import `./a.js'); import(...)` 的 split-`;` 残留 `)`；反斜杠转义不计闭合），向后兼容静态 import。**环境说明**：v8/rusty_v8 本地不可用（缺 RUSTY_V8_ARCHIVE），按质量门禁在 quickjs feature 下验证——纯 es_module 转换逻辑 feature-agnostic。10 测复现+修复（basic/分号/await/双引号/空格/多 import/去重 + 静态动态混合端到端 + 静态回归 + 无 false positive），script-sandbox 64+10 全绿，受影响 crate quickjs 全绿（webview 731+17/renderer 55/integration 120），fmt+clippy 零警告。R3348 health-review 后重启真 bug 线：R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346+R3347+R3349 = 第十一项真 bug 修复。）
+**最后更新**: 2026-08-13（R3350：deep-review zero-dom 发现并修复两项真 bug——`insert_before` + `replace_child` **同父移动 stale-index**：两者均「先算 ref_idx/old_idx，再 `detach(new_node)`」，当 `new_node`/`new_child` 本身已是 `parent` 的子节点时，detach 把它从 `parent.children` 移除使列表左移，先前算出的索引**指向错误位置**。**`insert_before(parent, A, D)`（A 已是子）应得 `[B,C,A,D]` 实得 `[B,C,D,A]`（静默错误位置，中危）**；**`replace_child(parent, A, C)`（A 在 C 之前）→ `children[old_idx]` 越界 panic（len 收缩，高危——可致渲染进程崩溃）**。所有既有测试用 detached 新节点，从未覆盖同父移动。**根因修复**：把 `detach` 提前到索引计算之前，detach 后**重新查找** ref_node/old_child 的真实位置；补 `new==ref`/`new==old` 的 spec no-op 早返（Chrome/Firefox 一致）。7 测复现+修复（insert 前移/后移/到首/no-op + replace no-panic/前移/no-op），dom 825→832 全绿，fmt+clippy 零警告。R3349 后第十二项真 bug 修复——dom 为本流 zero-web 自主域。）
+
+> **R3349（上一轮）**：deep-review zero-script-sandbox 修复 `extract_dynamic_import_specifiers` 动态 import() 标识符提取恒空（中危）——es_module.rs 的 `extract_dynamic_import_specifiers` 找到 `import(` 后把剩余（如 `'./x.js')`）喂入 `extract_string_literal`，后者要求字符串以闭合引号**结尾**（`ends_with(close)`），但动态 import 引号后有 `)`（及可选 `;`）→ `ends_with` 恒 false → 恒报 unclosed → 标识符全丢。**所有动态 import 形式皆失效**（`import('./x.js')`/`;`/`await import(...)`/`import( "..." )` 全提取为 `[]`）。**生产影响**：`extract_module_import_specifiers`（调 dynamic 版）被 renderer `js_worker.rs:564` + browser `tab_js_worker.rs:542` 用于**预取/预注册**模块依赖——动态 import 漏提致对应模块未预取/预注册。**根因修复**：重写 `extract_string_literal` 扫描到**匹配闭合引号**即止、忽略其后字符，向后兼容静态 import。10 测复现+修复，script-sandbox 64+10 全绿，fmt+clippy 零警告。R3348 health-review 后重启真 bug 线：R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346+R3347+R3349 = 第十一项真 bug 修复。
 
 > **R3348（上一轮）**：deep-review health-review 轮——连续审 host-runtime + browser-shell + page-runtime 三 crate 均确认健壮无真 bug（host-runtime winit 薄封装 / browser-shell 状态机防御充分 agent 6 候选全误报 / page-runtime 编辑契约严谨 + 对抗探针全过）；发现 `window_new.rs` 孤儿死代码（提及不删）。无代码变更（健康确认轮）。
 
@@ -103,7 +105,7 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 
 | Crate | 测试 | 基准 | 说明 |
 |-------|------|------|------|
-| dom | 743 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains**、**TreeWalker 深度优先遍历**、**get_elements_by_class_name/set_id/create_comment/insert_before/inner_text**、**NodeIterator 遍历**、**clone_node fragment/replace_child invalid/wildcard tag/nested text_content/insert_before invalid ref**、**HTML 解析器测试（实体/void 元素/错误恢复/Unicode/大文档）**、**MutationObserver 回调/记录验证**、**Event 传播/stopPropagation/stopImmediatePropagation/非冒泡事件**、**节点比较/文档工厂/DOMTokenList 边界/Range 空/序列化 DOCTYPE/TreeWalker 混合/Event 断连节点** |
+| dom | 832 | ✅ | DOM 树、html5ever 集成、查询 API、序列化、属性、MutationObserver、Range API、遍历/比较方法、Shadow DOM、slot、id_map 自动清理、**模块级单元测试**、**Range select_node/text_content/clone**、**normalize()**、**import_node()**、**slot 分配解析**、**get_elements_by_tag_name_ns**、**has_attribute/remove_attribute/split_text/class_list_replace/contains**、**TreeWalker 深度优先遍历**、**get_elements_by_class_name/set_id/create_comment/insert_before/inner_text**、**NodeIterator 遍历**、**clone_node fragment/replace_child invalid/wildcard tag/nested text_content/insert_before invalid ref**、**R3350 insert_before/replace_child 同父移动 stale-index 回归（前移/后移/到首/no-op + replace no-panic/前移/no-op，7 测）**、**HTML 解析器测试（实体/void 元素/错误恢复/Unicode/大文档）**、**MutationObserver 回调/记录验证**、**Event 传播/stopPropagation/stopImmediatePropagation/非冒泡事件**、**节点比较/文档工厂/DOMTokenList 边界/Range 空/序列化 DOCTYPE/TreeWalker 混合/Event 断连节点** |
 | css-parser | 2488 | ✅ | Tokenizer、Parser、选择器、值解析、@规则、:has()、@container、scroll-snap、calc() 嵌套、媒体查询 range syntax、Token 源位置追踪、min()/max()/clamp() 数学函数、**float/clear**、**vertical_align/list_style/viewport calc**、**parse_cursor(26 关键字)/parse_opacity**、**grid-area 解析**、**hwb color/3D transform/嵌套 var**、**148 种 CSS 命名颜色**、**fit-content() 函数**、**conic-gradient at 位置修复**、**min-content/max-content 关键字**、**word-break 属性**、**writing-mode 属性**、**text-decoration-line/text-transform/letter-spacing/word-spacing**、**3D transform 函数**、**媒体查询 only/逗号 OR/prefers-color-scheme/prefers-reduced-motion/pointer/resolution**、**text-overflow/text-indent/table-layout/caption-side/border-collapse/resize**、**counter-reset/counter-increment/content/quotes**、**page-break/box-decoration-break/image-rendering/isolation**、**overflow-wrap/text-align-last/font-variant-numeric**、**direction/unicode-bidi/tab-size**、**column-count/column-width/object-fit/filter**、**border-image-source/slice/width/repeat/outset**、**parse_stylesheet 全路径覆盖测试（40 测试覆盖所有 @规则、选择器、组合器、声明）**、**coverage round 7（145 测试：nth 表达式边界、container 条件、3D transform、conic gradient、calc/min/max/clamp、parse_length 全单位）** |
 | style-system | 1845 | ✅ | 级联、继承、计算值、DOM 集成、选择器匹配、简写展开、Grid、@media 评估、Transform、Transitions、Animations、逻辑属性、var() 解析集成、revert 关键字、grid-template-areas、calc/min/max/clamp 管线集成、**matcher 覆盖率测试（SubsequentSibling/PseudoElement/nth-last-child/nth-last-of-type/nth-of-type/:not/:is/:where/:lang/:has NextSibling+SubsequentSibling/container 范围/操作符/冒号语法/@supports AND/OR/NOT/@media+@container 集成/属性选择器 DashMatch/Prefix/Suffix/Substring）**、**apply_property_value 全分支覆盖测试（107 测试覆盖所有 CSS 属性）**、**apply_coverage_extra（77 测试覆盖 invalid fall-through、background-position TwoValue、border-image 非 Px、columns 简写、filter 函数）+ parse.rs 覆盖率（20 测试覆盖 border-style/outline-style/grid-line/cursor/scroll-snap/font-family/line-height 等）**、**matcher coverage round 3（168 测试：nth 负系数、length_to_px 非 px 单位、get_axis_size、ContainerContext、@layer/@supports/@container 集成、evaluate_supports_condition 逻辑运算符）** |
 | layout-engine | 710 | ✅ | taffy 集成（Block/Flex/Grid/Position）、Grid 轨道解析、Grid 项放置、auto-fill/minmax()、grid-template-areas、零尺寸容器、深层嵌套、aspect-ratio 布局、box-sizing:border-box 测试、**z_index/is_sticky 字段**、**fixed 视口坐标调整**、**text-align center/right/justify**、**vertical_align Sub/Super/TextTop/TextBottom**、**converter 全变体覆盖**、**混合字号/零容器/空白文本**、**overflow/z_index/content_clamp/深层嵌套**、**负 margin/嵌套 flex/absolute-in-relative/overflow hidden/grid auto/零高度块**、**grid 3x3 区域/auto-fill minmax/命名区域解析/百分比 gap**、**grid dense/span/min-max 约束**、**负 margin 合并/grid 行跨行/混合 CJK-Latin/absolute-in-relative/flex 不增长**、**grid 全跨/flex gap/大 padding/absolute 拉伸/inline-block 百分比**、**CJK 字符检测/字符串宽度估算/converter 私有函数/overflow 转换/fixed 视口调整/absolute_position 边界**、**letter-spacing + word-spacing 行内布局集成** |
@@ -189,6 +191,46 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-dom 修复 insert_before / replace_child 同父移动 stale-index（本轮 R3350，dom document/mod.rs——真 bug 修复，含高危 panic）
+
+承接 R3349（zero-script-sandbox 动态 import 提取修复）。本轮 deep-review **纠偏 R3349「zero-web 流非渲染 crate 全部已审」结论**——R3349 审的 `dom_bindings` 是 **engine** crate 的子模块（V8 原生绑定面），**`crates/dom`（纯 Rust DOM 树，743 测、自主域、无活跃面碰撞）从未完整审过**。本轮逐文件审 dom 生产代码（document/mod.rs query.rs parser.rs range.rs serializer.rs focus.rs node.rs mutation.rs traversal.rs document/{validation,form_state,shadow,lang_dir,target}.rs）。多数面（range 多字节拆分 / parser html5ever 薄封装 / serializer raw-text+nbsp 转义 / query 伪类族 / focus tabindex 排序 / validation base-128 时序）经多轮回归已健壮。定位树操作核心路径的一项结构性真 bug（双变体）：
+
+#### R3350-A：insert_before 同父移动位置错误（中危，document/mod.rs insert_before）
+
+- **根因**：`insert_before(parent, new_node, ref_node)` 旧实现**先**用 `parent.children.iter().position(|&id| id == ref_node)` 算出 `ref_idx`，**再** `self.detach(new_node)`。当 `new_node` 本身已是 `parent` 的子节点时，`detach` 把它从 `parent.children` 移除使列表左移——若 `new_node` 原在 `ref_node` 之前，`ref_idx` 现指向**错误位置**（指向 ref_node 之后的某节点，或列表末尾）。随后 `children.insert(ref_idx, new_node)` 插到错误位置。
+- **复现（确定性）**：`children = [A,B,C,D]`，`insert_before(parent, A, D)` 期望 `[B,C,A,D]`（A 移到 D 前），实得 `[B,C,D,A]`（A 被追加到末尾）——A 的 detach 使 `ref_idx(D)` 从 3 变成仍按 3 取，但列表已缩为 `[B,C,D]`（3 元素，index 3 = append）。
+- **生产影响**：JS `element.insertBefore(child, refChild)` 是**同父内重排节点**的标准 API（拖拽排序、列表移动、虚拟 DOM reconcile）。同父移动得错误位置是**静默正确性 bug**——页面顺序错乱但无报错。真 DOM 语义 bug。
+
+#### R3350-B：replace_child 同父移动越界 panic（高危，document/mod.rs replace_child）
+
+- **根因**：`replace_child(parent, new_child, old_child)` 同模式——先算 `old_idx`，再 `detach(new_child)`，随后 `parent_data.children[old_idx] = new_child`（**直接索引**）。当 `new_child` 是 `parent` 的子节点且原在 `old_child` 之前时，detach 使列表收缩，`old_idx` 越界 → **`index out of bounds: the len is N but the index is N` panic**。
+- **复现（确定性）**：`children = [A,B,C]`，`replace_child(parent, A, C)`（A 是 C 之前的兄弟）→ `detach(A)` 使 `[B,C]`（2 元素），`old_idx(C)=2` 但 `children[2]` 越界 → panic（mod.rs:471）。debug + release 均触发（Vec 直接索引无 bounds guard）。
+- **生产影响**：JS `element.replaceChild(newChild, oldChild)` 用同父内已有节点替换另一子节点时**渲染进程崩溃**（renderer panic → tab 崩溃恢复）。DoS 级高危。
+
+#### 根因修复（共用模式）
+
+两方法共用同一根因（detach 时序），故共用同一修复模式：**把 `detach(new_node)` 提前到索引计算之前**，detach 后**重新查找** ref_node/old_child 的真实位置（此时 `parent.children` 已反映移除 new_node 后的真实状态）。补两处 spec 早返：
+- `insert_before`：`new_node == ref_node` → no-op 直接返回 Ok（spec：把节点插到它自己之前无效果，Chrome/Firefox 不触发 mutation）。
+- `replace_child`：`new_child == old_child` → 直接返回 old_child（用节点替换它自己，无状态变化）。
+- 另把 ref_node/old_child 的 NotAChild 校验提前为独立 guard（与 append_child 一致风格，错误更早更准）。
+
+#### 复现 + 回归测（7 测，tests_10_document_coverage.rs）
+
+- `r3350_insert_before_move_forward`：`insert_before(parent, A, D)` → `[b,c,a,d]`（**修复前 `[b,c,d,a]`**）。
+- `r3350_insert_before_move_backward`：`insert_before(parent, B, D)` → `[a,c,b,d]`。
+- `r3350_insert_before_move_to_front`：`insert_before(parent, C, A)` → `[c,a,b]`。
+- `r3350_insert_before_self_noop`：`insert_before(parent, A, A)` → `[a,b]`（顺序不变）。
+- `r3350_replace_child_move_no_panic`：`replace_child(parent, A, C)` → 返回 C、`[b,a]`、C 脱离（**修复前 panic**）。
+- `r3350_replace_child_move_earlier`：`replace_child(parent, B, A)` → `[b,c]`。
+- `r3350_replace_child_self_noop`：`replace_child(parent, A, A)` → 返回 A、`[a,b]`。
+- **确定性复现**：修复前 2 测失败（1 静默错误位置 + 1 panic），修复后 7 测全过。
+
+#### 为何净正向且零回归
+
+纯树操作时序修复，无公共 API 签名变更；既有测试（825 含 insert_before/replace_child 基础路径）全保持过——它们用 detached 新节点（不走 stale-index 分支），故向后兼容。**所有既有测试无一覆盖同父移动**（grep 确认 tests_8/tests_10/tests_2 的 insert/replace 用例全是 detached 新节点），印证 bug 长期潜伏。**验证**：zero-dom **832 passed / 0 failed**（825+7，test-guard 包裹）；`cargo fmt` clean + clippy `-D warnings` 零警告（dom 纯 Rust 无 feature gate）。dom 为 zero-web 流自主域（无活跃面碰撞——engine/renderer 改的是各自 crate，dom 树 API 稳定）。
+
+**下游判断**：R3350 = deep-review **第十刀**（zero-dom），**第十二项真 bug 修复**（R3334 起真 bug 线续）。**纠偏**：R3349 称「非渲染 crate 全审」漏了 `crates/dom`（误把 engine 的 `dom_bindings` 当成 dom）——本轮补审 dom 产出高危+中危双 bug，证实 dom 树操作核心路径（insert/replace/clone/normalize）值得深审。dom 其余树操作（append_child/remove_child/clone_node/import_node/normalize/set_text_content）经本轮逐行审确认**健壮**（detach + 重新查找/快照遍历模式正确）。**剩余 zero-web 流自主可审域**：① webview（15k，87 commits/30d 高频活跃共享面，须避 html 流 coordinator/user_actions）；② canvas 二轮复扫（R3254-C* 已审增量）；③ dom 二轮复扫（本轮新增 7 测后的增量 + range/serializer 相邻逻辑）。下轮续 deep-review 倾向 webview 非活跃子域或已审 crate 二轮复扫。
 
 ### deep-review zero-script-sandbox 修复 extract_dynamic_import_specifiers 动态 import 提取恒空（本轮 R3349，script-sandbox es_module.rs——真 bug 修复）
 
