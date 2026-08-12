@@ -152,6 +152,17 @@ pub enum PseudoClass {
     /// 检测同源，但**不要求** `placeholder` 属性（无条件空值匹配）。延后至
     /// [`crate::Document::is_blank_element`] 复评（须读 textarea 子文本，matches_full 无 Document 访问）。
     Blank,
+    /// `:fullscreen`——处于全屏态的元素（Fullscreen API
+    /// https://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen）。全屏须 JS
+    /// `requestFullscreen()` 激活（运行时状态），静态解析的 DOM 不可知 → 静态永不匹配
+    /// （镜像 [`PseudoClass::Visited`] 永不匹配模式）。识别此伪类使复合选择器如 `div:not(:fullscreen)`
+    /// 不再被当无效（静默返空），与 CSS matcher（`_ => false`）一致。
+    Fullscreen,
+    /// `:modal`——以模态方式运行的 top-layer `<dialog>`（HTML §3.4.2，经 JS `showModal()` 激活）。
+    /// 模态须运行时 `showModal()` 调用（非 `<dialog open>`，后者经 `show()` 非模态），静态解析的 DOM
+    /// 不可知 → 静态永不匹配（镜像 [`PseudoClass::Visited`]）。识别此伪类使复合选择器如
+    /// `dialog:not(:modal)` 不再被当无效，与 CSS matcher 一致。
+    Modal,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -365,6 +376,9 @@ impl SimpleSelector {
             PseudoClass::AnyLink => is_any_link(elem),
             // `:visited`——静态永不匹配（隐私安全，防历史探测）。
             PseudoClass::Visited => false,
+            // `:fullscreen`/`:modal`——运行时 top-layer 状态（JS requestFullscreen/showModal），
+            // 静态解析的 DOM 不可知 → 永不匹配（matches_full=false，非延后——line 1604 早返）。
+            PseudoClass::Fullscreen | PseudoClass::Modal => false,
             // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
             // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。
             PseudoClass::Defined => !is_valid_custom_element_name(elem.local_name()),
@@ -835,6 +849,11 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         // `:blank`——值空或纯空白的文本输入控件（CSS UI L4 / Selectors L4 §12）。无参，延后至
         // Document::is_blank_element 复评（须读 textarea 子文本）。
         "blank" => Some(PseudoClass::Blank),
+        // `:fullscreen`/`:modal`——运行时 top-layer 状态（JS requestFullscreen/showModal 激活），
+        // 静态解析不可知 → 识别为合法伪类但静态永不匹配（matches_full 内 false，镜像 :visited）。
+        // 识别目的：使 `dialog:not(:modal)` 等复合选择器不被当无效（静默返空），与 CSS matcher 一致。
+        "fullscreen" => Some(PseudoClass::Fullscreen),
+        "modal" => Some(PseudoClass::Modal),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
@@ -1221,5 +1240,21 @@ mod tests {
         let comp = parse_simple_selector("input:blank").expect("input:blank 应解析成功");
         assert_eq!(comp.pseudos.len(), 1);
         assert_eq!(comp.tag.as_deref(), Some("input"));
+    }
+
+    /// R3301：`:fullscreen`/`:modal` parse_pseudo 识别（不再落 `_ => None` 致复合选择器无效）。
+    #[test]
+    fn test_parse_pseudo_fullscreen_modal_r3301() {
+        let fs = parse_simple_selector(":fullscreen").expect(":fullscreen 应解析为合法伪类");
+        assert_eq!(fs.pseudos.len(), 1);
+        assert!(matches!(fs.pseudos[0], PseudoClass::Fullscreen));
+        let modal = parse_simple_selector(":modal").expect(":modal 应解析为合法伪类");
+        assert_eq!(modal.pseudos.len(), 1);
+        assert!(matches!(modal.pseudos[0], PseudoClass::Modal));
+        // 复合 `dialog:not(:modal)` 应整体有效（此前 :modal 落 None 致整 :not() 解析失败）。
+        // :not 内嵌经 parse_simple_selector——:modal 识别后 :not(:modal) 应解析为合法 Not。
+        let not_modal = parse_simple_selector(":not(:modal)").expect(":not(:modal) 应解析成功");
+        assert_eq!(not_modal.pseudos.len(), 1);
+        assert!(matches!(&not_modal.pseudos[0], PseudoClass::Not(_)));
     }
 }

@@ -2572,3 +2572,59 @@ fn test_query_selector_blank_r3300() {
     let div = doc.get_element_by_id("not-form").unwrap();
     assert!(!doc.is_blank_element(div), "非表单元素应 is_blank_element=false");
 }
+
+// R3301：DOM `:fullscreen` / `:modal` 伪类识别（Fullscreen API + HTML §3.4.2 modal dialog）。
+// 此前 CSS 解析器识别两者但 DOM `query.rs::parse_pseudo` 落 `_ => None` → `dialog:not(:modal)` /
+// `div:not(:fullscreen)` 等**复合选择器被当无效**（静默返空）。:fullscreen/:modal 表运行时 top-layer
+// 状态（JS requestFullscreen / showModal 激活），静态解析的 DOM 不可知 → 静态永不匹配（镜像 :visited）。
+// 补全为识别伪类但 matches_full=false（复合选择器不再被当无效），与 CSS matcher（`_ => false`）一致。
+#[test]
+fn test_query_selector_fullscreen_modal_r3301() {
+    let html = "<html><body>\
+         <div id='d'>content</div>\
+         <dialog id='dl-open' open>non-modal open dialog</dialog>\
+         <dialog id='dl-closed'>closed dialog</dialog>\
+         </body></html>";
+    let doc = parse_html(html);
+    let root = doc.root();
+
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // :fullscreen / :modal 静态永不匹配（运行时 top-layer 状态，静态 DOM 不可知）。
+    assert!(
+        doc.query_selector_all(root, ":fullscreen").is_empty(),
+        ":fullscreen 静态应无匹配（全屏须 JS requestFullscreen）"
+    );
+    assert!(
+        doc.query_selector_all(root, ":modal").is_empty(),
+        ":modal 静态应无匹配（模态须 JS showModal，非 <dialog open>）"
+    );
+
+    // 关键：复合选择器不再被当无效——:not(:modal) 应匹配所有 dialog（静态下无 dialog 是 :modal）。
+    let not_modal = ids_of(&doc, &doc.query_selector_all(root, "dialog:not(:modal)"));
+    assert_eq!(
+        not_modal,
+        vec!["dl-open".to_string(), "dl-closed".to_string()],
+        "dialog:not(:modal) 应匹配所有 dialog（静态无 :modal 成员），此前 :modal 落 None 致整选择器无效，实际 {not_modal:?}"
+    );
+
+    // :not(:fullscreen) 应匹配所有 div。
+    let not_fs = ids_of(&doc, &doc.query_selector_all(root, "div:not(:fullscreen)"));
+    assert_eq!(
+        not_fs,
+        vec!["d".to_string()],
+        "div:not(:fullscreen) 应匹配所有 div，实际 {not_fs:?}"
+    );
+
+    // 直接 :fullscreen / :modal 复合（正向）应识别但无匹配。
+    assert!(
+        doc.query_selector_all(root, "dialog:modal").is_empty(),
+        "dialog:modal 静态应无匹配"
+    );
+    assert!(
+        doc.query_selector_all(root, "div:fullscreen").is_empty(),
+        "div:fullscreen 静态应无匹配"
+    );
+}
