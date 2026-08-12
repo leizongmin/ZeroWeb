@@ -466,17 +466,20 @@ impl RenderPipeline {
         self.font_resolver = resolver;
     }
 
-    /// U1b-wiring 激活（per-font line-height）：注入 per-family 行度量映射。
+    /// 注入 per-family 行度量与 `ex`/`ch` aspect 映射。
     ///
     /// 调用方从 `FontLoader::build_line_metric_map()` 构建并传入（拥有所有权，避
     /// FontLoader Rc-share 冲突）。包装为 `FontMetricMap` provider 注入 LayoutEngine，
     /// 经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC，使
-    /// line-height:normal 走 per-family hhea（+ populate TextRun.font_id，C3 前置）。
-    /// **dormant**：不调用 = provider None = 常数度量 = 零回归。
-    pub fn set_font_metric_map(&mut self, map: HashMap<String, (u32, f32, f32, f32)>) {
-        let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
-            std::rc::Rc::new(zero_layout_engine::FontMetricMap(map));
-        self.layout_engine.set_font_metric_provider(provider);
+    /// `ex`/`ch` 始终供 style-system 解析字体相对单位；line-height provider 仍由
+    /// `ZW_PERFONT_LINEHEIGHT=1` 激活，默认保持常数度量。
+    pub fn set_font_metric_map(&mut self, map: HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
+        self.style_system.set_font_metric_map(&map);
+        if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
+            let provider: std::rc::Rc<dyn zero_layout_engine::FontMetricProvider> =
+                std::rc::Rc::new(zero_layout_engine::FontMetricMap(map));
+            self.layout_engine.set_font_metric_provider(provider);
+        }
     }
 
     /// 设置用户颜色方案偏好。

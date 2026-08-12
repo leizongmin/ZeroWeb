@@ -56,6 +56,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     match unit {
         "px" => Some(LengthValue::Px(num)),
         "em" => Some(LengthValue::Em(num)),
+        "ex" => Some(LengthValue::Ex(num)),
         "rem" => Some(LengthValue::Rem(num)),
         "vh" => Some(LengthValue::Vh(num)),
         "vw" => Some(LengthValue::Vw(num)),

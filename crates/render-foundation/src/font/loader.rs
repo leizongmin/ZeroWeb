@@ -681,28 +681,6 @@ impl FontLoader {
         Some((metrics.ascent, metrics.descent, metrics.line_gap))
     }
 
-    /// 构建 per-family 行度量映射（U1b-wiring 激活 / per-font line-height A/B）。
-    ///
-    /// 返回 `family_name → (font_id, ascent_per_em, descent_per_em, line_gap_per_em)`，
-    /// 度量在 `size = 1.0` 取（fontdue 线性缩放，故 = per-em 比率）。供 layout-engine
-    /// `FontMetricMap`（拥有所有权的 HashMap-backed provider）注入，避免 runner 不能
-    /// Rc-share FontLoader（painter &mut 冲突）。`build_font_resolver` 的 family→id 解析
-    /// 结果 + `line_metrics_full(id, 1.0)` 度量组合。
-    pub fn build_line_metric_map(&self) -> std::collections::HashMap<String, (u32, f32, f32, f32)> {
-        let resolver = self.build_font_resolver();
-        resolver
-            .iter()
-            .filter_map(|(family, &id)| {
-                // 跳过 "name:700" bold 变体键（含冒号），仅正则 family。
-                if family.contains(':') {
-                    return None;
-                }
-                let (a, d, g) = self.line_metrics_full(id, 1.0)?;
-                Some((family.clone(), (id, a, d, g)))
-            })
-            .collect()
-    }
-
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
         if self.font_allows_code_point(primary_id, code_point)

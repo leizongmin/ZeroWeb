@@ -64,4 +64,57 @@ impl FontLoader {
             font_size
         }
     }
+
+    /// 构建 family 的行度量与字体相对单位 aspect 映射。
+    ///
+    /// https://drafts.csswg.org/css-fonts-4/#first-available-font
+    ///
+    /// 显式 `@font-face` family 只发布首个可匹配 U+0020 的 face；若整个 family
+    /// 都不能匹配空格，则不发布，让调用方继续检查 CSS family 列表中的下一项。
+    pub fn build_line_metric_map(&self) -> std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)> {
+        self.build_font_resolver()
+            .into_iter()
+            .filter_map(|(family, base_id)| {
+                // 跳过 weight/style/stretch 与内部 :face=N 变体键。
+                if family.contains(':') {
+                    return None;
+                }
+                let id = if self.family_aliases.contains(&family) {
+                    self.family_map.get(&family)?.iter().copied().find(|font_id| {
+                        self.font_allows_code_point(*font_id, ' ')
+                            && self.fonts.get(font_id).is_some_and(|font| font.has_glyph(' '))
+                    })?
+                } else {
+                    base_id
+                };
+                let (ascent, descent, line_gap) = self.line_metrics_full(id, 1.0)?;
+                let ex_height = self
+                    .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ExHeight)
+                    .unwrap_or(0.5);
+                let ch_width = self
+                    .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ChWidth)
+                    .unwrap_or(0.5);
+                Some((family, (id, ascent, descent, line_gap, ex_height, ch_width)))
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metric_map_uses_first_face_matching_space() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let no_space = loader.load_font(LATO_TTF).expect("no-space face");
+        let with_space = loader.load_font(LATO_TTF).expect("space face");
+        loader.register_unicode_ranges(no_space, vec![(0x41, 0x5A)]);
+        loader.register_family_alias("SplitMetrics", no_space);
+        loader.register_family_alias("SplitMetrics", with_space);
+
+        let metrics = loader.build_line_metric_map();
+        assert_eq!(metrics.get("SplitMetrics").map(|entry| entry.0), Some(with_space));
+    }
 }

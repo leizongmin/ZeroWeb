@@ -647,9 +647,6 @@ fn render_with_layout_inner(
         .iter()
         .any(|(family, _, _, _, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
     let _zw_t4c = std::time::Instant::now();
-    // U1b-wiring per-font line-height（env-gated，默认关 = 零回归）。
-    let perfont_lineheight = std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1");
-
     // 杠杆4：默认字体（系统 + CJK + Ahem + 回退链）跨 case 完全一致，而 fontdue
     // from_bytes 解析（尤以 ~16MB NotoSansCJK）占单案 ~85% 串行成本（实测每 render
     // ~0.4s，每 case 2 render ≈ 0.8s，而单案总成本仅 ~0.9s）。build_font_resolver /
@@ -710,9 +707,7 @@ fn render_with_layout_inner(
         .unwrap_or_else(|| BASE_FONT_LOADER.get_or_init(create_font_loader));
     let _zw_t4d = std::time::Instant::now();
     pipeline.set_font_resolver(font_loader.build_font_resolver());
-    if perfont_lineheight {
-        pipeline.set_font_metric_map(font_loader.build_line_metric_map());
-    }
+    pipeline.set_font_metric_map(font_loader.build_line_metric_map());
 
     let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));

@@ -151,11 +151,11 @@ impl FontMetricProvider for FontLoader {
 /// 因 painter &mut 占用）。`line_metrics` 按 family 匹配 + 按 `size` 缩放 per-em 比率
 /// （fontdue 线性，等价 `FontLoader::line_metrics_full(id, size)`）；`font_id_of` 返回
 /// family→id（启用 C3 font_id population）。family 匹配：精确 + 大小写不敏感（同 FontLoader impl）。
-pub struct FontMetricMap(pub std::collections::HashMap<String, (u32, f32, f32, f32)>);
+pub struct FontMetricMap(pub std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>);
 
 impl FontMetricProvider for FontMetricMap {
     fn line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
-        let &(_id, a, d, g) = font_family.iter().find_map(|fam| {
+        let &(_id, a, d, g, _, _) = font_family.iter().find_map(|fam| {
             let bare = fam.trim_matches('"').trim_matches('\'');
             self.0.get(bare).or_else(|| {
                 self.0
@@ -182,7 +182,7 @@ impl FontMetricProvider for FontMetricMap {
                         .find(|(k, _)| k.eq_ignore_ascii_case(bare))
                         .map(|(_, v)| v)
                 })
-                .map(|(id, _, _, _)| *id)
+                .map(|(id, _, _, _, _, _)| *id)
         })
     }
 }

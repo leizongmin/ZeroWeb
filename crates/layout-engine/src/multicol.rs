@@ -124,6 +124,7 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         LengthValue::Px(v) => *v as f32,
         LengthValue::Percentage(p) => *p as f32 / 100.0 * container_width,
         LengthValue::Em(v) => *v as f32 * font_size_px,
+        LengthValue::Ex(v) => *v as f32 * font_size_px * 0.8,
         LengthValue::Rem(v) => *v as f32 * 16.0,
         LengthValue::Vw(v) => *v as f32 * 8.0,
         LengthValue::Vh(v) => *v as f32 * 6.0,

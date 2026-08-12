@@ -10,6 +10,8 @@ pub enum LengthValue {
     Px(f64),
     /// em 单位。
     Em(f64),
+    /// ex 单位（当前字体的 x-height）。
+    Ex(f64),
     /// rem 单位。
     Rem(f64),
     /// vh 单位。
@@ -836,6 +838,8 @@ pub struct CalcContext {
     pub parent_length: Option<f64>,
     /// 当前字体大小（px），用于 em 单位转换。
     pub font_size: Option<f64>,
+    /// 当前字体 x-height（px），用于 ex 单位转换。
+    pub x_height: Option<f64>,
     /// 根元素字体大小（px），用于 rem 单位转换。
     pub root_font_size: Option<f64>,
     /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
@@ -1484,6 +1488,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Px(v) => Some(*v),
         LengthValue::Percentage(pct) => ctx.parent_length.map(|pl| pct / 100.0 * pl),
         LengthValue::Em(v) => ctx.font_size.map(|fs| v * fs),
+        LengthValue::Ex(v) => ctx.x_height.map(|xh| v * xh),
         LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
         LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
         LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
@@ -1592,10 +1597,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
     match unit.as_str() {
         "px" => Some(LengthValue::Px(num)),
         "em" => Some(LengthValue::Em(num)),
-        // CSS ex 单位 = 字体 x-height。ZeroWeb 未接入字体度量管线，按 Ahem（WPT 测试字体）
-        // 的实测 x-height 0.8em 取值（units-004/numbers-units-012 实证：12.5ex@20px=200px）。
-        // ex 相对元素自身 font-size（同 em），故解析时直接转 Em(num*0.8) 复用 em 解析路径。
-        "ex" => Some(LengthValue::Em(num * 0.8)),
+        "ex" => Some(LengthValue::Ex(num)),
         "rem" => Some(LengthValue::Rem(num)),
         "vh" => Some(LengthValue::Vh(num)),
         "vw" => Some(LengthValue::Vw(num)),

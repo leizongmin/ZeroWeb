@@ -214,9 +214,9 @@ pub struct WebView {
     cached_image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
-    /// per-family 行度量映射（U1b-wiring，R2202 生产接通）。env-gated
-    /// `ZW_PERFONT_LINEHEIGHT=1` 激活（复用 reftest.rs:568 同款 kill-switch）；默认空 = dormant = 零回归。
-    font_metric_map: std::collections::HashMap<String, (u32, f32, f32, f32)>,
+    /// per-family 行度量与 `ex`/`ch` aspect 映射。字体相对单位默认启用；
+    /// line-height 仍由 `ZW_PERFONT_LINEHEIGHT=1` 激活。
+    font_metric_map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>,
     /// 用户颜色方案偏好。
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 渲染媒体类型（DC-12 @media print/screen；R1992）。默认 `Screen` = 零行为变更。
@@ -998,9 +998,7 @@ impl WebView {
             self.pipeline.set_image_no_ratio(image_no_ratio);
         }
         self.pipeline.set_font_resolver(self.font_resolver.clone());
-        if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
-            self.pipeline.set_font_metric_map(self.font_metric_map.clone());
-        }
+        self.pipeline.set_font_metric_map(self.font_metric_map.clone());
     }
 
     /// 设置 CSS font-family 查找表（由宿主从 `FontLoader::build_font_resolver()` 构建）。
@@ -1009,17 +1007,13 @@ impl WebView {
         self.pipeline.set_font_resolver(self.font_resolver.clone());
     }
 
-    /// 设置 per-family 行度量映射（U1b-wiring 生产接通，R2202；镜像 `set_font_resolver`）。
+    /// 设置 per-family 行度量与字体相对单位映射。
     ///
-    /// 由宿主从 `FontLoader::build_line_metric_map()` 构建并传入。env-gated
-    /// `ZW_PERFONT_LINEHEIGHT=1` 时下推 pipeline（使 line-height:normal 走 per-font 真实
-    /// `ascent − descent + line_gap`）；默认关 = 常数度量 = 与接通前逐字节等价（零回归）。
-    /// 复用 `reftest.rs:553` 同款 kill-switch env，便于生产 vs runner A/B 对照。
-    pub fn set_font_metric_map(&mut self, map: std::collections::HashMap<String, (u32, f32, f32, f32)>) {
+    /// 由宿主从 `FontLoader::build_line_metric_map()` 构建并传入。`ex`/`ch` 默认下推；
+    /// `ZW_PERFONT_LINEHEIGHT=1` 仅控制 line-height:normal 的真实度量 provider。
+    pub fn set_font_metric_map(&mut self, map: std::collections::HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
         self.font_metric_map = map.clone();
-        if std::env::var("ZW_PERFONT_LINEHEIGHT").as_deref() == Ok("1") {
-            self.pipeline.set_font_metric_map(map);
-        }
+        self.pipeline.set_font_metric_map(map);
     }
 
     /// 设置用户颜色方案偏好（影响 `prefers-color-scheme` 媒体查询）。

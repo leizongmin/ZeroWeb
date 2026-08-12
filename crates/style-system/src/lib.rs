@@ -268,6 +268,8 @@ pub struct StyleSystem {
     registered_properties: HashMap<String, RegisteredProperty>,
     /// `@font-feature-values` family-scoped alias 表。
     font_feature_values: FontFeatureValuesRegistry,
+    /// 可作为 first available font 的 family → (`ex`, `ch`) aspect。
+    font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
     /// 视口宽度（px），用于 vh/vw 计算。
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
@@ -286,6 +288,7 @@ impl StyleSystem {
             custom_properties: HashMap::new(),
             registered_properties: HashMap::new(),
             font_feature_values: HashMap::new(),
+            font_relative_metrics: HashMap::new(),
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -297,6 +300,38 @@ impl StyleSystem {
     pub fn set_viewport(&mut self, width: f64, height: f64) {
         self.viewport_width = Some(width);
         self.viewport_height = Some(height);
+    }
+
+    /// 设置 first available font 的字体相对单位度量。
+    pub fn set_font_metric_map(&mut self, map: &HashMap<String, (u32, f32, f32, f32, f32, f32)>) {
+        if std::env::var("ZW_FIRST_AVAILABLE_FONT_METRICS").as_deref() == Ok("0") {
+            self.font_relative_metrics.clear();
+            return;
+        }
+        self.font_relative_metrics = map
+            .iter()
+            .map(|(family, &(_, _, _, _, ex_height, ch_width))| {
+                (
+                    family.clone(),
+                    computed::FontRelativeMetrics {
+                        ex_height: f64::from(ex_height),
+                        ch_width: f64::from(ch_width),
+                    },
+                )
+            })
+            .collect();
+    }
+
+    fn font_relative_metrics_for(&self, families: &[String]) -> Option<computed::FontRelativeMetrics> {
+        families.iter().find_map(|family| {
+            let bare = family.trim_matches('"').trim_matches('\'');
+            self.font_relative_metrics.get(bare).copied().or_else(|| {
+                self.font_relative_metrics
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(bare))
+                    .map(|(_, metrics)| *metrics)
+            })
+        })
     }
 
     /// 设置用户颜色方案偏好。
@@ -1299,12 +1334,14 @@ impl StyleSystem {
                 _ => computed::ROOT_FONT_SIZE,
             }
         });
-        let mut resolved = computed::resolve_computed_style(
+        let font_metrics = self.font_relative_metrics_for(&style.font_family);
+        let mut resolved = computed::resolve_computed_style_with_font_metrics(
             &style,
             &self.custom_properties,
             self.viewport_width,
             self.viewport_height,
             parent_fs,
+            font_metrics,
         );
 
         // 7. Quirks mode 调整（复用步骤 1.7 已提取的 tag_name）

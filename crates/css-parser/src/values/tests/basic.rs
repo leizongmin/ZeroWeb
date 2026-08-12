@@ -1578,13 +1578,11 @@ fn test_parse_length_quirks_standard_still_works() {
 }
 
 #[test]
-fn test_parse_length_ex_unit_to_em_ahem_xheight() {
-    // CSS ex 单位 = 字体 x-height。ZeroWeb 未接入字体度量管线，按 Ahem（WPT 测试字体）
-    // 实测 x-height 0.8em 取值（CSS2 values/units-004 实证：12.5ex@20px=200px=10em）。
-    // ex 相对元素自身 font-size（同 em），故解析为 Em(num*0.8) 复用 em 路径。
-    assert_eq!(parse_length("1ex"), Some(LengthValue::Em(0.8)));
-    assert_eq!(parse_length("6ex"), Some(LengthValue::Em(6.0 * 0.8)));
-    assert_eq!(parse_length("0ex"), Some(LengthValue::Em(0.0)));
+fn test_parse_length_ex_preserves_font_metric_unit() {
+    // `ex` must remain structured until the first available font is known.
+    assert_eq!(parse_length("1ex"), Some(LengthValue::Ex(1.0)));
+    assert_eq!(parse_length("6ex"), Some(LengthValue::Ex(6.0)));
+    assert_eq!(parse_length("0ex"), Some(LengthValue::Ex(0.0)));
 }
 
 #[test]

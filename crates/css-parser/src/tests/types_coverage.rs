@@ -120,6 +120,10 @@ fn test_parse_length_case_sensitive_units() {
         Some(LengthValue::Em(20.0))
     ));
     assert!(matches!(
+        crate::values::parse_length("12.5EX"),
+        Some(LengthValue::Ex(12.5))
+    ));
+    assert!(matches!(
         crate::values::parse_length("30REM"),
         Some(LengthValue::Rem(30.0))
     ));
@@ -254,6 +258,7 @@ fn test_eval_calc_with_context_relative_units() {
     let ctx = crate::values::CalcContext {
         parent_length: Some(200.0),    // 200px
         font_size: Some(16.0),         // 16px
+        x_height: Some(8.0),           // 8px
         root_font_size: Some(16.0),    // 16px
         viewport_height: Some(1000.0), // 1000px
         viewport_width: Some(800.0),   // 800px
@@ -269,6 +274,11 @@ fn test_eval_calc_with_context_relative_units() {
     let expr = crate::values::parse_calc("calc(2em)").unwrap();
     let result = crate::values::eval_calc_with_context(&expr, &ctx);
     assert_eq!(result, Some(32.0)); // 2 * 16px = 32px
+
+    // 测试 ex 单位
+    let expr = crate::values::parse_calc("calc(2ex)").unwrap();
+    let result = crate::values::eval_calc_with_context(&expr, &ctx);
+    assert_eq!(result, Some(16.0)); // 2 * 8px = 16px
 
     // 测试 rem 单位
     let expr = crate::values::parse_calc("calc(2rem)").unwrap();
@@ -385,6 +395,7 @@ fn test_length_value_all_variants() {
         ("0px", LengthValue::Px(0.0)),
         ("10px", LengthValue::Px(10.0)),
         ("2em", LengthValue::Em(2.0)),
+        ("2ex", LengthValue::Ex(2.0)),
         ("3rem", LengthValue::Rem(3.0)),
         ("5vh", LengthValue::Vh(5.0)),
         ("10vw", LengthValue::Vw(10.0)),
@@ -509,6 +520,7 @@ fn test_complex_calc_expression_chain() {
     let ctx = crate::values::CalcContext {
         parent_length: Some(800.0), // 800px
         font_size: Some(16.0),
+        x_height: Some(8.0),
         root_font_size: Some(16.0),
         viewport_height: Some(1000.0),
         viewport_width: Some(800.0),

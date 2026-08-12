@@ -12,6 +12,15 @@ use crate::property::types::{ColumnRuleWidthComputedValue, FlexBasisValue, LineH
 /// 默认根字体大小（px）。
 pub const ROOT_FONT_SIZE: f64 = 16.0;
 
+/// first available font 提供的字体相对单位度量（相对于 em）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FontRelativeMetrics {
+    /// x-height / em，用于 `ex`。
+    pub ex_height: f64,
+    /// U+0030 advance / em，用于 `ch`。
+    pub ch_width: f64,
+}
+
 /// 将相对长度转换为绝对像素值。
 ///
 /// 支持 em、rem、vh、vw 等相对单位的转换。
@@ -21,9 +30,21 @@ pub fn resolve_length(
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
 ) -> f64 {
+    resolve_length_with_font_metrics(length, font_size, viewport_width, viewport_height, None)
+}
+
+fn resolve_length_with_font_metrics(
+    length: &LengthValue,
+    font_size: f64,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    font_metrics: Option<FontRelativeMetrics>,
+) -> f64 {
     match length {
         LengthValue::Px(v) => *v,
         LengthValue::Em(v) => v * font_size,
+        // 无字体上下文时保持历史 Ahem-oriented 近似，避免改变独立 style-system 调用方。
+        LengthValue::Ex(v) => v * font_size * font_metrics.map_or(0.8, |metrics| metrics.ex_height),
         LengthValue::Rem(v) => v * ROOT_FONT_SIZE,
         LengthValue::Vh(v) => {
             let vh = viewport_height.unwrap_or(900.0);
@@ -43,15 +64,7 @@ pub fn resolve_length(
             let vh = viewport_height.unwrap_or(900.0);
             v * vw.max(vh) / 100.0
         }
-        LengthValue::Ch(v) => {
-            // 近似：1ch ≈ 0.5em（真实 1ch = '0' 字形 advance，须 font-stack C-dep；
-            // Ahem/monospace 真 ch=1.0em，0.5em 对 Ahem 偏小致 pre-wrap-align 等容器宽度偏窄，
-            // 但全局改 1.0em 净 −7 非-Ahem ch 案（R1338），font-aware（Ahem→1.0/余→0.5）亦
-            // css-text −16 已 revert——ch 与文本度量经 font-wall 耦合，单改 ch 致容器宽变但文本
-            // 度量仍错 → 包裹更发散。R1853 white-space 实测 ch=1.0em 21.3%→19.7%（−6）三证收敛。
-            // ch-0.5em 对 corpus 是 settled-correct，勿再以 ch 为 lever。
-            v * font_size * 0.5
-        }
+        LengthValue::Ch(v) => v * font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width),
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
@@ -60,15 +73,19 @@ pub fn resolve_length(
         LengthValue::Calc(expr) => {
             let ctx = zero_css_parser::values::CalcContext {
                 font_size: Some(font_size),
+                x_height: Some(font_size * font_metrics.map_or(0.8, |metrics| metrics.ex_height)),
                 root_font_size: Some(ROOT_FONT_SIZE),
                 viewport_width,
                 viewport_height,
+                ch_width: Some(font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width)),
                 ..Default::default()
             };
             zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
         }
         // fit-content() 递归解析内部值
-        LengthValue::FitContent(inner) => resolve_length(inner, font_size, viewport_width, viewport_height),
+        LengthValue::FitContent(inner) => {
+            resolve_length_with_font_metrics(inner, font_size, viewport_width, viewport_height, font_metrics)
+        }
         // min-content/max-content 需要内容信息，此处返回 0.0
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
     }
@@ -267,10 +284,29 @@ pub fn resolve_env_and_var(value: &str, custom_properties: &HashMap<String, Stri
 ///   为 None 时（根元素）使用 ROOT_FONT_SIZE。
 pub fn resolve_computed_style(
     style: &ComputedStyle,
+    custom_properties: &HashMap<String, String>,
+    viewport_width: Option<f64>,
+    viewport_height: Option<f64>,
+    parent_font_size: Option<f64>,
+) -> ComputedStyle {
+    resolve_computed_style_with_font_metrics(
+        style,
+        custom_properties,
+        viewport_width,
+        viewport_height,
+        parent_font_size,
+        None,
+    )
+}
+
+/// 解析计算样式，并用 first available font 的真实 `ex`/`ch` 度量解析字体相对单位。
+pub fn resolve_computed_style_with_font_metrics(
+    style: &ComputedStyle,
     _custom_properties: &HashMap<String, String>,
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
     parent_font_size: Option<f64>,
+    font_metrics: Option<FontRelativeMetrics>,
 ) -> ComputedStyle {
     // font-size 属性本身：em/百分比 都相对于父元素的 font-size。
     // 注意：font-size 的百分比语义特殊（= 父 font-size 的百分比，CSS §10.1），
@@ -281,6 +317,27 @@ pub fn resolve_computed_style(
         LengthValue::Percentage(v) => v / 100.0 * font_size_context,
         other => resolve_length(other, font_size_context, viewport_width, viewport_height),
     };
+    // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
+    // `em` stays tied to computed font-size, while ex/ch use metrics from the adjusted used font.
+    let font_metrics = font_metrics.map(|mut metrics| {
+        let scale = match style.font_size_adjust {
+            crate::property::types::FontSizeAdjustValue::Adjust {
+                metric,
+                basis: crate::property::types::FontSizeAdjustBasis::Number(target),
+            } if target.is_finite() && target >= 0.0 => {
+                let aspect = match metric.unwrap_or(crate::property::types::FontSizeAdjustMetric::ExHeight) {
+                    crate::property::types::FontSizeAdjustMetric::ExHeight => Some(metrics.ex_height),
+                    crate::property::types::FontSizeAdjustMetric::ChWidth => Some(metrics.ch_width),
+                    _ => None,
+                };
+                aspect.filter(|value| *value > 0.0).map_or(1.0, |value| target / value)
+            }
+            _ => 1.0,
+        };
+        metrics.ex_height *= scale;
+        metrics.ch_width *= scale;
+        metrics
+    });
 
     let mut resolved = style.clone();
 
@@ -298,83 +355,50 @@ pub fn resolve_computed_style(
                 let rem_px = viewport_width.map(|_| 16.0).unwrap_or(16.0);
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(v * rem_px));
             }
+            LengthValue::Ex(v) => {
+                let px = v * font_size_px * font_metrics.map_or(0.8, |metrics| metrics.ex_height);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
+            LengthValue::Ch(v) => {
+                let px = v * font_size_px * font_metrics.map_or(0.5, |metrics| metrics.ch_width);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
             _ => {}
         }
     }
 
+    let resolve_field = |field: &mut LengthValue| {
+        resolve_length_field(field, font_size_px, viewport_width, viewport_height, font_metrics);
+    };
+
     // 解析所有长度属性（使用元素自身的 font-size）
-    resolve_length_field(&mut resolved.width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.height, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.min_width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.min_height, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.max_width, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.max_height, font_size_px, viewport_width, viewport_height);
+    resolve_field(&mut resolved.width);
+    resolve_field(&mut resolved.height);
+    resolve_field(&mut resolved.min_width);
+    resolve_field(&mut resolved.min_height);
+    resolve_field(&mut resolved.max_width);
+    resolve_field(&mut resolved.max_height);
 
-    resolve_length_field(&mut resolved.margin_top, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(
-        &mut resolved.margin_right,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.margin_bottom,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(&mut resolved.margin_left, font_size_px, viewport_width, viewport_height);
+    resolve_field(&mut resolved.margin_top);
+    resolve_field(&mut resolved.margin_right);
+    resolve_field(&mut resolved.margin_bottom);
+    resolve_field(&mut resolved.margin_left);
 
-    resolve_length_field(&mut resolved.padding_top, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(
-        &mut resolved.padding_right,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.padding_bottom,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.padding_left,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_field(&mut resolved.padding_top);
+    resolve_field(&mut resolved.padding_right);
+    resolve_field(&mut resolved.padding_bottom);
+    resolve_field(&mut resolved.padding_left);
 
-    resolve_length_field(
-        &mut resolved.border_top_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_right_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_bottom_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_left_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_field(&mut resolved.border_top_width);
+    resolve_field(&mut resolved.border_right_width);
+    resolve_field(&mut resolved.border_bottom_width);
+    resolve_field(&mut resolved.border_left_width);
 
     // flex-basis 的 em/rem/ch 需解析为 Px（与 width/height 等同一 chokepoint）。
     // FlexBasisValue 包装 LengthValue，此前未入 resolve 列表 → `flex:0 0 4em` 的
     // flex-basis em 在 converter 当裸数字（4em→4px 而非 64），flex base size 错误。
     if let FlexBasisValue::Length(ref mut lv) = resolved.flex_basis {
-        resolve_length_field(lv, font_size_px, viewport_width, viewport_height);
+        resolve_field(lv);
     }
 
     // csswg #2768/#11494（覆盖 CSS2.1 §8.5.3 旧表述）：computed border-width **始终**
@@ -385,70 +409,35 @@ pub fn resolve_computed_style(
     // 故移除 computed zeroing 对渲染无副作用，只让 computed 值保留供 inherit。
     // （R769e 仅保留 hidden；R769f 扩展到 none —— 完整 csswg #2768/#11494。）
 
-    resolve_length_field(
-        &mut resolved.border_top_left_radius,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_top_right_radius,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_bottom_right_radius,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.border_bottom_left_radius,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_field(&mut resolved.border_top_left_radius);
+    resolve_field(&mut resolved.border_top_right_radius);
+    resolve_field(&mut resolved.border_bottom_right_radius);
+    resolve_field(&mut resolved.border_bottom_left_radius);
 
-    resolve_length_field(&mut resolved.top, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.right, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.bottom, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.left, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.gap, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.row_gap, font_size_px, viewport_width, viewport_height);
-    resolve_length_field(&mut resolved.column_gap, font_size_px, viewport_width, viewport_height);
+    resolve_field(&mut resolved.top);
+    resolve_field(&mut resolved.right);
+    resolve_field(&mut resolved.bottom);
+    resolve_field(&mut resolved.left);
+    resolve_field(&mut resolved.gap);
+    resolve_field(&mut resolved.row_gap);
+    resolve_field(&mut resolved.column_gap);
     // R907：column-rule-width 是 Medium/Thin/Thick/Length 枚举（非裸 LengthValue），
     // 不在上方 resolve_length_field 列表内。其 Length 内部值（如 1em）须解析为 Px，
     // 否则 paint（painter/text.rs::paint_column_rules rule_w match）仅匹配 Length(Px)，
     // em 案落入 `_ => 1.0` → column-rule-width:1em 渲染为 1px（应按 element font-size）。
     if let ColumnRuleWidthComputedValue::Length(lv) = &resolved.column_rule_width.clone() {
         let mut lv = lv.clone();
-        resolve_length_field(&mut lv, font_size_px, viewport_width, viewport_height);
+        resolve_field(&mut lv);
         resolved.column_rule_width = ColumnRuleWidthComputedValue::Length(lv);
     }
-    resolve_length_field(
-        &mut resolved.letter_spacing,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
-    resolve_length_field(
-        &mut resolved.word_spacing,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_field(&mut resolved.letter_spacing);
+    resolve_field(&mut resolved.word_spacing);
 
     // outline-width 的 em/rem/ch 须解析为 Px（R907 同模式：column-rule-width em 缺
     // resolve 致 paint 仅匹配 Px）。否则 paint_outline（painter/border.rs:590）经
     // length_to_f32（helpers.rs:635，Px-only）把 em 丢为 0.0 → outline 消失。
     // outline-offset 0 corpus 用量故不入列（code-guidelines 不做零价值）。
-    resolve_length_field(
-        &mut resolved.outline_width,
-        font_size_px,
-        viewport_width,
-        viewport_height,
-    );
+    resolve_field(&mut resolved.outline_width);
 
     resolved
 }
@@ -461,6 +450,7 @@ fn resolve_length_field(
     font_size: f64,
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
+    font_metrics: Option<FontRelativeMetrics>,
 ) {
     match field {
         LengthValue::Px(_) => { /* 已经是绝对值 */ }
@@ -473,7 +463,7 @@ fn resolve_length_field(
         // 包含百分比的 calc 表达式保留，由布局引擎处理
         LengthValue::Calc(expr) if calc_contains_percentage(expr) => {}
         _ => {
-            let px = resolve_length(field, font_size, viewport_width, viewport_height);
+            let px = resolve_length_with_font_metrics(field, font_size, viewport_width, viewport_height, font_metrics);
             *field = LengthValue::Px(px);
         }
     }
@@ -803,22 +793,65 @@ mod tests {
     #[test]
     fn test_resolve_length_field_preserves_percentage() {
         let mut field = LengthValue::Percentage(50.0);
-        resolve_length_field(&mut field, 16.0, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None);
         assert_eq!(field, LengthValue::Percentage(50.0));
     }
 
     #[test]
     fn test_resolve_length_field_preserves_auto() {
         let mut field = LengthValue::Auto;
-        resolve_length_field(&mut field, 16.0, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None);
         assert_eq!(field, LengthValue::Auto);
     }
 
     #[test]
     fn test_resolve_length_field_converts_em() {
         let mut field = LengthValue::Em(2.0);
-        resolve_length_field(&mut field, 16.0, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None);
         assert_eq!(field, LengthValue::Px(32.0));
+    }
+
+    #[test]
+    fn test_resolve_first_available_font_ex_and_ch_metrics() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(200.0);
+        style.width = LengthValue::Ex(1.0);
+        style.height = LengthValue::Ch(1.0);
+        let resolved = resolve_computed_style_with_font_metrics(
+            &style,
+            &HashMap::new(),
+            None,
+            None,
+            None,
+            Some(FontRelativeMetrics {
+                ex_height: 0.6,
+                ch_width: 0.7,
+            }),
+        );
+        assert_eq!(resolved.width, LengthValue::Px(120.0));
+        assert_eq!(resolved.height, LengthValue::Px(140.0));
+    }
+
+    #[test]
+    fn test_font_size_adjust_scales_ex_and_ch_but_not_em() {
+        let metrics = Some(FontRelativeMetrics {
+            ex_height: 0.8,
+            ch_width: 1.0,
+        });
+        let mut adjusted = ComputedStyle::default();
+        adjusted.font_size = LengthValue::Px(100.0);
+        adjusted.font_size_adjust = crate::property::types::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: crate::property::types::FontSizeAdjustBasis::Number(0.4),
+        };
+        adjusted.width = LengthValue::Ch(4.0);
+        adjusted.height = LengthValue::Ex(2.0);
+        adjusted.margin_left = LengthValue::Em(1.0);
+
+        let resolved = resolve_computed_style_with_font_metrics(&adjusted, &HashMap::new(), None, None, None, metrics);
+        assert_eq!(resolved.width, LengthValue::Px(200.0));
+        assert_eq!(resolved.height, LengthValue::Px(80.0));
+        assert_eq!(resolved.margin_left, LengthValue::Px(100.0));
     }
 
     #[test]
@@ -892,7 +925,7 @@ mod tests {
     fn test_explicit_zero_px_not_auto() {
         // 确保 0px 不被误认为 auto
         let mut field = LengthValue::Px(0.0);
-        resolve_length_field(&mut field, 16.0, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None);
         assert_eq!(field, LengthValue::Px(0.0));
         assert_ne!(field, LengthValue::Auto);
     }
