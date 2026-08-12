@@ -163,6 +163,18 @@ pub enum PseudoClass {
     /// 不可知 → 静态永不匹配（镜像 [`PseudoClass::Visited`]）。识别此伪类使复合选择器如
     /// `dialog:not(:modal)` 不再被当无效，与 CSS matcher 一致。
     Modal,
+    /// `:focus`——当前获得焦点的元素（CSS Selectors L3 §6.6.2 / DOM §3.3 Focus）。焦点须 JS `.focus()`
+    /// 或用户交互激活（运行时状态），静态解析的 DOM 不可知（焦点 NodeId 由 engine shim `_activeElKey`
+    /// 追踪，DOM re-parse 不携带）→ 静态永不匹配（镜像 [`PseudoClass::Visited`]/[`PseudoClass::Fullscreen`]）。
+    /// 识别此伪类使复合选择器如 `input:not(:focus)` 不再被当无效，与 CSS matcher 一致。
+    /// 真保真（`<input autofocus>` 静态匹配）须 engine-shim 共享面改动（run-rules §9），defer。
+    Focus,
+    /// `:focus-visible`——键盘导航获得焦点的元素（CSS Selectors L4 §14）。焦点启发式（键盘 vs 鼠标）
+    /// 须运行时交互信号，静态不可知 → 静态永不匹配（镜像 [`PseudoClass::Focus`]）。
+    FocusVisible,
+    /// `:focus-within`——自身或后代获得焦点的元素（CSS Selectors L4 §14）。焦点须运行时状态，
+    /// 静态不可知 → 静态永不匹配（镜像 [`PseudoClass::Focus`]）。
+    FocusWithin,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -379,6 +391,10 @@ impl SimpleSelector {
             // `:fullscreen`/`:modal`——运行时 top-layer 状态（JS requestFullscreen/showModal），
             // 静态解析的 DOM 不可知 → 永不匹配（matches_full=false，非延后——line 1604 早返）。
             PseudoClass::Fullscreen | PseudoClass::Modal => false,
+            // `:focus`/`:focus-visible`/`:focus-within`——运行时焦点状态（JS .focus()/用户交互），
+            // 静态解析的 DOM 不可知（焦点 NodeId 由 engine shim 追踪，re-parse 不携带）→ 永不匹配
+            //（matches_full=false，非延后——line 1604 早返）。真保真须 engine-shim 改动（defer）。
+            PseudoClass::Focus | PseudoClass::FocusVisible | PseudoClass::FocusWithin => false,
             // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
             // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。
             PseudoClass::Defined => !is_valid_custom_element_name(elem.local_name()),
@@ -854,6 +870,12 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         // 识别目的：使 `dialog:not(:modal)` 等复合选择器不被当无效（静默返空），与 CSS matcher 一致。
         "fullscreen" => Some(PseudoClass::Fullscreen),
         "modal" => Some(PseudoClass::Modal),
+        // `:focus`/`:focus-visible`/`:focus-within`——运行时焦点状态（JS .focus() / 用户交互激活），
+        // 静态解析不可知 → 识别为合法伪类但静态永不匹配（matches_full 内 false，镜像 :visited/:fullscreen）。
+        // 识别目的：使 `input:not(:focus)` 等复合选择器不被当无效（静默返空），与 CSS matcher 一致。
+        "focus" => Some(PseudoClass::Focus),
+        "focus-visible" => Some(PseudoClass::FocusVisible),
+        "focus-within" => Some(PseudoClass::FocusWithin),
         _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
     }
 }
@@ -1256,5 +1278,30 @@ mod tests {
         let not_modal = parse_simple_selector(":not(:modal)").expect(":not(:modal) 应解析成功");
         assert_eq!(not_modal.pseudos.len(), 1);
         assert!(matches!(&not_modal.pseudos[0], PseudoClass::Not(_)));
+    }
+
+    /// R3302：`:focus`/`:focus-visible`/`:focus-within` parse_pseudo 识别（不再落 `_ => None` 致复合选择器无效）。
+    #[test]
+    fn test_parse_pseudo_focus_family_r3302() {
+        for (sel_str, expect) in [
+            (":focus", "focus"),
+            (":focus-visible", "focus-visible"),
+            (":focus-within", "focus-within"),
+        ] {
+            let sel = parse_simple_selector(sel_str).unwrap_or_else(|| panic!("{sel_str} 应解析为合法伪类"));
+            assert_eq!(sel.pseudos.len(), 1, "{sel_str} 应含 1 伪类");
+            let ok = match expect {
+                "focus" => matches!(sel.pseudos[0], PseudoClass::Focus),
+                "focus-visible" => matches!(sel.pseudos[0], PseudoClass::FocusVisible),
+                "focus-within" => matches!(sel.pseudos[0], PseudoClass::FocusWithin),
+                _ => false,
+            };
+            assert!(ok, "{sel_str} 应解析为 {expect} 变体");
+        }
+        // 复合 `input:not(:focus)` 应整体有效（此前 :focus 落 None 致整 :not() 解析失败）。
+        let not_focus = parse_simple_selector("input:not(:focus)").expect("input:not(:focus) 应解析成功");
+        assert_eq!(not_focus.tag.as_deref(), Some("input"));
+        assert_eq!(not_focus.pseudos.len(), 1);
+        assert!(matches!(&not_focus.pseudos[0], PseudoClass::Not(_)));
     }
 }

@@ -2628,3 +2628,66 @@ fn test_query_selector_fullscreen_modal_r3301() {
         "div:fullscreen 静态应无匹配"
     );
 }
+
+// R3302：DOM `:focus`/`:focus-visible`/`:focus-within` 伪类识别（CSS Selectors L3 §6.6.2 + L4 §14）。
+// 此前 CSS 解析器识别三者但 DOM `query.rs::parse_pseudo` 落 `_ => None` → `input:not(:focus)` 等
+// 复合选择器被当无效。三者表运行时焦点状态（JS .focus() / 用户交互激活，焦点 NodeId 由 engine shim
+// `_activeElKey` 追踪，DOM re-parse 不携带）→ 静态永不匹配（镜像 :visited/:fullscreen）。补全为
+// 识别伪类但 matches_full=false（复合选择器不再失效），与 CSS matcher（`_ => false`）一致。
+#[test]
+fn test_query_selector_focus_family_r3302() {
+    let html = "<html><body>\
+         <input id='in1'>\
+         <input id='in2' autofocus>\
+         <button id='btn'>b</button>\
+         <div id='wrap'><input id='inner'></div>\
+         </body></html>";
+    let doc = parse_html(html);
+    let root = doc.root();
+
+    let ids_of = |doc: &Document, sels: &[NodeId]| -> Vec<String> {
+        sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect()
+    };
+
+    // :focus / :focus-visible / :focus-within 静态永不匹配（运行时焦点状态，DOM re-parse 不可知）。
+    for pseudo in [":focus", ":focus-visible", ":focus-within"] {
+        assert!(
+            doc.query_selector_all(root, pseudo).is_empty(),
+            "{pseudo} 静态应无匹配（焦点须 JS .focus()）"
+        );
+    }
+
+    // 关键：复合选择器不再被当无效——:not(:focus) 应匹配所有 input（静态下无 input 是 :focus）。
+    let not_focus = ids_of(&doc, &doc.query_selector_all(root, "input:not(:focus)"));
+    assert_eq!(
+        not_focus,
+        vec!["in1".to_string(), "in2".to_string(), "inner".to_string()],
+        "input:not(:focus) 应匹配所有 input（静态无 :focus 成员），此前 :focus 落 None 致整选择器无效，实际 {not_focus:?}"
+    );
+
+    // :not(:focus-visible) 匹配所有 button。
+    let not_fv = ids_of(&doc, &doc.query_selector_all(root, "button:not(:focus-visible)"));
+    assert_eq!(
+        not_fv,
+        vec!["btn".to_string()],
+        "button:not(:focus-visible) 应匹配所有 button"
+    );
+
+    // :not(:focus-within) 匹配所有 div（含 #wrap，静态无 focus 后代）。
+    let not_fw = ids_of(&doc, &doc.query_selector_all(root, "div:not(:focus-within)"));
+    assert_eq!(
+        not_fw,
+        vec!["wrap".to_string()],
+        "div:not(:focus-within) 应匹配所有 div"
+    );
+
+    // 正向复合（:focus 族）应识别但无匹配。
+    assert!(
+        doc.query_selector_all(root, "input:focus").is_empty(),
+        "input:focus 静态应无匹配"
+    );
+    assert!(
+        doc.query_selector_all(root, "div:focus-within").is_empty(),
+        "div:focus-within 静态应无匹配"
+    );
+}
