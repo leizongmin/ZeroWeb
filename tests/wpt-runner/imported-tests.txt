@@ -19,3 +19,4 @@ css/css-writing-modes/bidi-plaintext-br-001.html css/css-writing-modes/reference
 css/css-text/bidi/bidi-lines-002.html css/css-text/bidi/reference/bidi-lines-002-ref.html == 2026-08-11 R3226-F default-on RTL logical shaping
 css/css-fonts/font-size-adjust-012.html css/css-fonts/font-size-adjust-012-ref.html == 2026-08-11 R3236-F fallback shaping fixture
 css/css-fonts/quoted-generic-ignored.html css/css-fonts/quoted-generic-ignored-ref.html == 2026-08-11 R3249-F quoted generic family name distinction
+css/css-fonts/font-variant-alternates-02.html css/css-fonts/font-variant-alternates-02-ref.html == 2026-08-12 R3256-F historical-forms OT hist

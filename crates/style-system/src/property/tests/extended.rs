@@ -455,6 +455,35 @@ fn test_font_variant_numeric_inherit() {
 }
 
 #[test]
+fn test_font_variant_alternates_apply_initial_and_inherit() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "font-variant-alternates",
+        "historical-forms"
+    ));
+    assert_eq!(
+        style.font_variant_alternates,
+        FontVariantAlternatesValue::HistoricalForms
+    );
+    assert!(!apply_property_value(
+        &mut style,
+        "font-variant-alternates",
+        "stylistic(foo)"
+    ));
+    assert!(PropertyRegistry::is_inherited("font-variant-alternates"));
+
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&style, &mut child, "font-variant-alternates"));
+    assert_eq!(
+        child.font_variant_alternates,
+        FontVariantAlternatesValue::HistoricalForms
+    );
+    assert!(apply_initial_value(&mut child, "font-variant-alternates"));
+    assert_eq!(child.font_variant_alternates, FontVariantAlternatesValue::Normal);
+}
+
+#[test]
 fn test_font_feature_settings_apply_initial_and_inherit() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(

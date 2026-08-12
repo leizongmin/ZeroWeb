@@ -987,6 +987,17 @@ pub enum FontVariantPositionValue {
     Super,
 }
 
+/// CSS font-variant-alternates 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontVariantAlternatesValue {
+    /// normal（默认值）。
+    #[default]
+    Normal,
+    /// historical-forms → OT `hist`。
+    HistoricalForms,
+}
+
 /// CSS direction 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectionValue {
@@ -1503,6 +1514,8 @@ pub enum PropertyValue {
     FontVariantEastAsian(FontVariantEastAsianValue),
     /// font-variant-position 值。
     FontVariantPosition(FontVariantPositionValue),
+    /// font-variant-alternates 值。
+    FontVariantAlternates(FontVariantAlternatesValue),
     /// font-feature-settings 值。
     FontFeatureSettings(FontFeatureSettingsValue),
     /// font-variant-ligatures 值。

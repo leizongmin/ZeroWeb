@@ -809,6 +809,27 @@ pub fn parse_font_variant_position(value: &str) -> Option<FontVariantPositionVal
     }
 }
 
+/// CSS `font-variant-alternates` 的无参数值。
+///
+/// 函数式 alternate 依赖 `@font-feature-values`，由后续切片扩展。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontVariantAlternatesValue {
+    /// normal。
+    Normal,
+    /// historical-forms → OpenType `hist`。
+    HistoricalForms,
+}
+
+/// 解析 CSS `font-variant-alternates` 的无参数值。
+pub fn parse_font_variant_alternates(value: &str) -> Option<FontVariantAlternatesValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(FontVariantAlternatesValue::Normal),
+        "historical-forms" => Some(FontVariantAlternatesValue::HistoricalForms),
+        _ => None,
+    }
+}
+
 /// 解析 CSS `font-stretch` / `font-width` 值为百分比（`normal` = 100）。
 ///
 /// https://drafts.csswg.org/css-fonts-4/#font-width-prop

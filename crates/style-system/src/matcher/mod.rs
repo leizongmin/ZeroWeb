@@ -1232,6 +1232,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
         | "font-variant"
         | "font-feature-settings"
         | "font-variation-settings" => true,
+        "font-variant-alternates" => parse_font_variant_alternates(trimmed).is_some(),
         "font-stretch" | "font-width" => parse_font_stretch(trimmed).is_some(),
         // https://drafts.csswg.org/css-fonts-4/#font-synthesis
         "font-synthesis" => parse_font_synthesis(trimmed).is_some(),

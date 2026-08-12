@@ -283,6 +283,7 @@ impl Default for ComputedStyle {
             font_variant_caps: FontVariantCapsValue::Normal,
             font_variant_east_asian: FontVariantEastAsianValue::Normal,
             font_variant_position: FontVariantPositionValue::Normal,
+            font_variant_alternates: FontVariantAlternatesValue::Normal,
             font_stretch: 100.0,
 
             // Writing Direction / Tab

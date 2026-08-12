@@ -767,6 +767,18 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+        "font-variant-alternates" => {
+            if let Some(value) = values::parse_font_variant_alternates(value) {
+                style.font_variant_alternates = match value {
+                    zero_css_parser::values::FontVariantAlternatesValue::Normal => FontVariantAlternatesValue::Normal,
+                    zero_css_parser::values::FontVariantAlternatesValue::HistoricalForms => {
+                        FontVariantAlternatesValue::HistoricalForms
+                    }
+                };
+                return true;
+            }
+        }
         // ── font-stretch（CSS Fonts 4 §3.5）──
         // https://drafts.csswg.org/css-fonts-4/#font-stretch-prop
         "font-stretch" | "font-width" => {

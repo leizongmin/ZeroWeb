@@ -257,6 +257,7 @@ impl PropertyRegistry {
             "font-variant-caps" => Some(FontVariantCaps(FontVariantCapsValue::Normal)),
             "font-variant-east-asian" => Some(FontVariantEastAsian(FontVariantEastAsianValue::Normal)),
             "font-variant-position" => Some(FontVariantPosition(FontVariantPositionValue::Normal)),
+            "font-variant-alternates" => Some(FontVariantAlternates(FontVariantAlternatesValue::Normal)),
             "font-stretch" => Some(Length(LengthValue::Percentage(100.0))),
 
             // Writing Direction / Tab
@@ -393,6 +394,7 @@ impl PropertyRegistry {
                 | "font-variant-caps"
                 | "font-variant-east-asian"
                 | "font-variant-position"
+                | "font-variant-alternates"
                 | "font-stretch"
                 | "direction"
                 | "tab-size"
@@ -600,6 +602,7 @@ impl PropertyRegistry {
             "font-variant-caps",
             "font-variant-east-asian",
             "font-variant-position",
+            "font-variant-alternates",
             "font-stretch",
             "direction",
             "unicode-bidi",

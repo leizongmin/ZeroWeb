@@ -518,6 +518,11 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
         FontVariantPositionValue::Super => set_feature(&mut features, *b"sups", 1),
     }
 
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-alternates-prop
+    if style.font_variant_alternates == zero_style_system::FontVariantAlternatesValue::HistoricalForms {
+        set_feature(&mut features, *b"hist", 1);
+    }
+
     if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
         for setting in settings {
             set_feature(&mut features, setting.tag, setting.value);
@@ -994,6 +999,16 @@ mod tests {
         assert_eq!(
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"liga", 1), OpenTypeFeature::new(*b"clig", 0),]
+        );
+
+        style.font_feature_settings = zero_style_system::FontFeatureSettingsValue::Normal;
+        style.font_variant_ligatures = zero_style_system::FontVariantLigaturesValue::default();
+        style.letter_spacing_normal = true;
+        style.letter_spacing = zero_style_system::LengthValue::Px(0.0);
+        style.font_variant_alternates = zero_style_system::FontVariantAlternatesValue::HistoricalForms;
+        assert_eq!(
+            style_open_type_features(&style),
+            vec![OpenTypeFeature::new(*b"hist", 1)]
         );
     }
 

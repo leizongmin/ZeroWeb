@@ -1685,6 +1685,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 "font-variant-numeric",
                 "font-variant-east-asian",
                 "font-variant-position",
+                "font-variant-alternates",
                 "font-stretch",
             ],
             important,
@@ -1780,6 +1781,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 mk("font-variant-numeric", "normal"),
                 mk("font-variant-east-asian", "normal"),
                 mk("font-variant-position", "normal"),
+                mk("font-variant-alternates", "normal"),
                 mk("font-stretch", "normal"),
             ];
         }
@@ -1806,6 +1808,7 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-variant-numeric", "normal"),
         mk("font-variant-east-asian", "normal"),
         mk("font-variant-position", "normal"),
+        mk("font-variant-alternates", "normal"),
         mk("font-stretch", "normal"),
     ]
 }
@@ -1946,6 +1949,7 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             mk("font-variant-numeric", value),
             mk("font-variant-east-asian", value),
             mk("font-variant-position", value),
+            mk("font-variant-alternates", value),
         ];
     }
 
@@ -1957,6 +1961,7 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             mk("font-variant-numeric", "normal"),
             mk("font-variant-east-asian", "normal"),
             mk("font-variant-position", "normal"),
+            mk("font-variant-alternates", "normal"),
         ];
     }
     if lower == "none" {
@@ -1966,6 +1971,7 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             mk("font-variant-numeric", "normal"),
             mk("font-variant-east-asian", "normal"),
             mk("font-variant-position", "normal"),
+            mk("font-variant-alternates", "normal"),
         ];
     }
 
@@ -1974,6 +1980,7 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
     let mut numeric: Option<String> = None;
     let mut east_asian: Option<String> = None;
     let mut position: Option<String> = None;
+    let mut alternates: Option<String> = None;
 
     for token in lower.split_whitespace() {
         match token {
@@ -2006,6 +2013,9 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
             "sub" | "super" => {
                 position = Some(token.to_string());
             }
+            "historical-forms" => {
+                alternates = Some(token.to_string());
+            }
             _ => {}
         }
     }
@@ -2016,6 +2026,7 @@ fn expand_font_variant(value: &str, important: bool, specificity: (u32, u32, u32
         mk("font-variant-numeric", numeric.as_deref().unwrap_or("normal")),
         mk("font-variant-east-asian", east_asian.as_deref().unwrap_or("normal")),
         mk("font-variant-position", position.as_deref().unwrap_or("normal")),
+        mk("font-variant-alternates", alternates.as_deref().unwrap_or("normal")),
     ]
 }
 

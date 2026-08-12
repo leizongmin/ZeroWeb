@@ -25,6 +25,8 @@
 >
 > **▶ 字体栈增量进展（R3255-F font-stretch-face-matching·2026-08-12）**：`@font-face font-stretch` 描述符现按 keyword/percentage 解析并穿过 engine 提取、WebView async fetch/drain、browser/renderer/WPT 三宿主注册；render-foundation 新增统一 width-specific alias 与 CSS Fonts width-first matching，normal width 同时保留旧 alias，layout ordered faces、paint 主 face、控件/列表/效果文本全部消费 computed `font-stretch`。CSSOM 同步支持 `font-stretch` 百分比与 `font` shorthand stretch 序列化。上游 `font-stretch-01..18` 为可信 strict `18/18`、全部 `0.00%`；Chromium Oracle A/B：01..11 从 `2.41%→1.54%`，12..18 保持 `1.54%`，合计改善约 `9.57pp`、零回归，目录门仍 `84/282`（剩余 1.54% 光栅差异未跨 1% 阈值）。workspace clippy clean、reftest `687/687`、产品 smoke 全 viewport 通过。
 >
+> **▶ 字体栈增量进展（R3256-F historical-forms·2026-08-12）**：CSS `font-variant-alternates: historical-forms` 已完成 parse/computed/default/inherit/initial/known-property/CSSOM 全生命周期，并在 shaping feature precedence 中注入 OpenType `hist=1`；`font` 与 `font-variant` shorthand 均重置/展开 alternates，函数式 alternates 继续等待 `@font-feature-values` 独立切片。上游 `font-variant-alternates-02` 可信 strict `0.00%` 且已写入 `imported-tests.txt`；Chromium Oracle paired A/B `6.23%→6.20%`（改善 `0.03pp`），全 css-fonts 保持 `84/282`、无扩散回归；reftest `687/687`、workspace clippy、产品 smoke 全绿。同期 `src:local()` 的 Linux `Arial→Liberation Sans` 替代实验使目标页 `7.38%→7.84%`，已完整回退并沉淀平台经验。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
