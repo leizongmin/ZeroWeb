@@ -2309,3 +2309,6 @@ mod tests;
 
 #[cfg(test)]
 mod parity_tests;
+
+#[cfg(test)]
+mod window_smoke_tests;
