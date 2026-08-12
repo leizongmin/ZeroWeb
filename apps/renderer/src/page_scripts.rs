@@ -9,8 +9,12 @@ use zero_engine::{
     is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url, script_call_form_reset,
     script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_script_event, script_report_error, script_reset_form_controls, script_run_classic_page,
-    script_set_control_checked, script_text_control_snapshot, script_text_delete, script_text_delete_without_event,
-    script_text_input, script_text_input_without_event,
+    script_set_control_checked, script_set_text_control_state,
+};
+#[cfg(test)]
+use zero_engine::{
+    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
+    script_text_input_without_event,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -35,6 +39,7 @@ pub struct SubmitOutcome {
 }
 
 /// 一次文本编辑后从 JS retained 状态读取的最终快照。
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextControlSnapshot {
     /// 事件监听器执行完毕后的当前值。
@@ -46,6 +51,7 @@ pub struct TextControlSnapshot {
 }
 
 /// 宿主文本编辑结果。
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextEditOutcome {
     /// DOM mutation 是否改变页面快照。
@@ -362,15 +368,18 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
 /// 镜像 `dispatch_dom_event` 的 set_snapshot→clear→execute→apply 流程，script = `__zw_text_input`。
 /// 非 input/textarea 目标 shim 内 no-op。返回 value 属性是否变更（调用方据此单次 rerender）。
 /// 调用方须先判定 `key` 为单字符可打印键（见 `main::is_printable_key`）。
+#[cfg(test)]
 pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> TextEditOutcome {
     apply_text_edit(ctx, selector, &script_text_input(selector, key))
 }
 
 /// 执行 JavaScript-disabled 路径的 UA 文本插入，不派发页面 listener。
+#[cfg(test)]
 pub fn apply_text_input_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, text: &str) -> TextEditOutcome {
     apply_text_edit(ctx, selector, &script_text_input_without_event(selector, text))
 }
 
+#[cfg(test)]
 fn apply_text_edit(ctx: &mut PageScriptContext<'_>, selector: &str, edit_script: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
@@ -436,11 +445,13 @@ pub fn dispatch_composition_events(
 
 /// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
 /// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
+#[cfg(test)]
 pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
     apply_text_edit(ctx, selector, &script_text_delete(selector))
 }
 
 /// 执行 JavaScript-disabled 路径的 UA Backspace，不派发页面 listener。
+#[cfg(test)]
 pub fn apply_text_delete_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
     apply_text_edit(ctx, selector, &script_text_delete_without_event(selector))
 }
@@ -594,10 +605,24 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
 
 /// 设置 checkbox/radio checkedness，不派发页面事件。
 pub fn apply_set_checked_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, checked: bool) -> bool {
-    apply_checkedness_script(ctx, &script_set_control_checked(selector, checked))
+    apply_state_script(ctx, &script_set_control_checked(selector, checked))
 }
 
-fn apply_checkedness_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
+/// 设置文本控件 live value/selection，不派发页面事件。
+pub fn apply_text_state_without_events(
+    ctx: &mut PageScriptContext<'_>,
+    selector: &str,
+    value: &str,
+    selection_start: usize,
+    selection_end: usize,
+) -> bool {
+    apply_state_script(
+        ctx,
+        &script_set_text_control_state(selector, value, selection_start, selection_end),
+    )
+}
+
+fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
@@ -605,7 +630,7 @@ fn apply_checkedness_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bo
         .unwrap_or_else(|e| e.into_inner())
         .clear();
     if let Err(error) = ctx.js_worker.execute_script_direct(script) {
-        warn!("apply checkedness: {error}");
+        warn!("apply form control state: {error}");
         return false;
     }
     let html_snap = ctx.html.clone();

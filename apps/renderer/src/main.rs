@@ -649,59 +649,64 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let outcome = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            if self.javascript_enabled {
-                page_scripts::apply_text_input(&mut ctx, selector, key)
-            } else {
-                page_scripts::apply_text_input_without_events(&mut ctx, selector, key)
-            }
-        };
-        if let Some(snapshot) = outcome.snapshot {
-            self.form_controls.update(
-                selector,
-                snapshot.value,
-                snapshot.selection_start,
-                snapshot.selection_end,
-            );
-        }
-        if outcome.html_changed {
-            self.publish_webview(None, true)?;
-        }
-        Ok(())
+        self.execute_text_action(
+            selector,
+            zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
+        )
     }
 
     /// P1a form input：Backspace 删焦点 input/textarea 末字符（value + input 事件）；改 DOM 则单次 rerender。
     fn apply_text_delete_at(&mut self, selector: &str) -> Result<(), String> {
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let outcome = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            if self.javascript_enabled {
-                page_scripts::apply_text_delete(&mut ctx, selector)
-            } else {
-                page_scripts::apply_text_delete_without_events(&mut ctx, selector)
+        self.execute_text_action(selector, zero_page_runtime::HtmlUserAction::DeleteBackward)
+    }
+
+    fn execute_text_action(&mut self, selector: &str, action: zero_page_runtime::HtmlUserAction) -> Result<(), String> {
+        let Some(target) = self.node_ref_for_selector(selector) else {
+            return Ok(());
+        };
+        let Some(state) = self.form_controls.get(selector).cloned() else {
+            return Ok(());
+        };
+        let Ok(plan) = zero_page_runtime::plan_html_action(
+            &zero_page_runtime::HtmlActionRequest {
+                target,
+                action,
+                shift: false,
+            },
+            self.navigation_epoch,
+            self.document_generation,
+            &zero_page_runtime::ActionTargetState::Text(zero_page_runtime::TextActionState {
+                value: state.value,
+                selection_start: state.selection_start,
+                selection_end: state.selection_end,
+            }),
+        ) else {
+            return Ok(());
+        };
+        let dispatch = if self.javascript_enabled {
+            plan.cancelable_event
+                .as_ref()
+                .map(|event| self.dispatch_planned_event(event))
+                .unwrap_or(DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                })
+        } else {
+            DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
             }
         };
-        if let Some(snapshot) = outcome.snapshot {
-            self.form_controls.update(
-                selector,
-                snapshot.value,
-                snapshot.selection_start,
-                snapshot.selection_end,
-            );
-        }
-        if outcome.html_changed {
+        let outcome = zero_page_runtime::resolve_html_action(
+            plan,
+            zero_page_runtime::EventDispatchResult {
+                default_allowed: dispatch.default_allowed,
+                html_changed: dispatch.html_changed,
+            },
+        );
+        let state_changed = self.apply_planned_mutations(&outcome.mutations);
+        let listener_changed = self.dispatch_planned_events(&outcome.followup_events);
+        if state_changed || outcome.html_changed || listener_changed {
             self.publish_webview(None, true)?;
         }
         Ok(())
@@ -1084,46 +1089,86 @@ impl RendererRuntime {
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut changed = false;
         for mutation in mutations {
-            let zero_page_runtime::PlannedMutation::SetChecked { target, checked } = mutation else {
-                continue;
-            };
-            let Some(selector) = self.selector_for_node_ref(*target) else {
-                continue;
-            };
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            changed |= page_scripts::apply_set_checked_without_events(&mut ctx, &selector, *checked);
+            match mutation {
+                zero_page_runtime::PlannedMutation::SetChecked { target, checked } => {
+                    let Some(selector) = self.selector_for_node_ref(*target) else {
+                        continue;
+                    };
+                    let mut ctx = PageScriptContext {
+                        html: &mut self.cached_html,
+                        url: &url,
+                        js_worker: &self.js_worker,
+                        webview: self.webview.as_mut(),
+                    };
+                    changed |= page_scripts::apply_set_checked_without_events(&mut ctx, &selector, *checked);
+                }
+                zero_page_runtime::PlannedMutation::SetText {
+                    target,
+                    value,
+                    selection_start,
+                    selection_end,
+                } => {
+                    let Some(selector) = self.selector_for_node_ref(*target) else {
+                        continue;
+                    };
+                    let mut ctx = PageScriptContext {
+                        html: &mut self.cached_html,
+                        url: &url,
+                        js_worker: &self.js_worker,
+                        webview: self.webview.as_mut(),
+                    };
+                    if page_scripts::apply_text_state_without_events(
+                        &mut ctx,
+                        &selector,
+                        value,
+                        *selection_start,
+                        *selection_end,
+                    ) {
+                        self.form_controls
+                            .update(&selector, value.clone(), *selection_start, *selection_end);
+                        changed = true;
+                    }
+                }
+            }
         }
         changed
+    }
+
+    fn dispatch_planned_event(&mut self, event: &zero_page_runtime::PlannedEvent) -> DomDispatchResult {
+        if !self.javascript_enabled {
+            return DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            };
+        }
+        let Some(selector) = self.selector_for_node_ref(event.target) else {
+            return DomDispatchResult {
+                default_allowed: false,
+                html_changed: false,
+            };
+        };
+        let detail = event.input_type.as_ref().map(|input_type| DomEventDetail {
+            data: event.data.clone(),
+            input_type: Some(input_type.clone()),
+            ..Default::default()
+        });
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut self.cached_html,
+            url: &url,
+            js_worker: &self.js_worker,
+            webview: self.webview.as_mut(),
+        };
+        page_scripts::dispatch_dom_event(&mut ctx, true, &selector, &event.event_type, detail.as_ref())
     }
 
     fn dispatch_planned_events(&mut self, events: &[zero_page_runtime::PlannedEvent]) -> bool {
         if !self.javascript_enabled {
             return false;
         }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let mut changed = false;
         for event in events {
-            let Some(selector) = self.selector_for_node_ref(event.target) else {
-                continue;
-            };
-            let detail = event.input_type.as_ref().map(|input_type| DomEventDetail {
-                data: event.data.clone(),
-                input_type: Some(input_type.clone()),
-                ..Default::default()
-            });
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &selector, &event.event_type, detail.as_ref())
-                .html_changed;
+            changed |= self.dispatch_planned_event(event).html_changed;
         }
         changed
     }
