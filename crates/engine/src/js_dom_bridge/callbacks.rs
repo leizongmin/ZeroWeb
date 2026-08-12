@@ -24,6 +24,7 @@ pub fn register_dom_callbacks(
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
     dom_html: &Arc<std::sync::Mutex<String>>,
     page_url: &Arc<std::sync::Mutex<String>>,
+    canvas_registry: &Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>,
 ) {
     let counter = Arc::new(AtomicU64::new(0));
 
@@ -1421,8 +1422,9 @@ pub fn register_dom_callbacks(
     // `HTMLCanvasElement.getContext('2d')`（R2795，canvas slice 1）——host 持 CanvasRegistry（上下文表 + 渐变表），
     // `__zw_canvas_op(handle, op, ...args)` 串参派发（详见 [`canvas_context_op`]）。getContext2d 创建
     // 上下文返 id；getImageData 返 "w:h;r,g,b,a,..."；其余 op 返 "ok"。host 未注册 → shim no-throw 回落。
-    let canvas_reg: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
-        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    // R3268：registry 由调用方创建并传入——painter 需要同一 registry 把 canvas 内容
+    // 桥接为显示图元（canvas 显示链路）。
+    let canvas_reg = Arc::clone(canvas_registry);
     sandbox.register_callback(
         "__zw_canvas_op",
         Box::new(move |args: &[String]| -> String {

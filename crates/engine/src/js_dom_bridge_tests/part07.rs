@@ -14,7 +14,9 @@ fn test_event_subclasses2_r2812() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // feature-detection：6 构造器均为 function + instanceof Event。
     sandbox
@@ -199,7 +201,9 @@ fn test_custom_elements_r2813() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // feature-detection：typeof customElements === 'object'。
     assert_eq!(
@@ -371,7 +375,9 @@ fn test_history_pushstate_r2814() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 初始 length=1 / state=null；pushState 推进 length + state；replaceState 原地替换 state 不增 length。
     sandbox
@@ -537,7 +543,9 @@ fn test_history_go_out_of_range_noop_r3004() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 建 3 entry（init null + a + b），back 到中间（cursor 在 a，state.page=1）。
     sandbox
@@ -656,7 +664,9 @@ fn test_node_relation_implementation_r2815() {
         "<html><body><div id='parent'><div id='a'>A</div><div id='b'>B</div></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // document.implementation.hasFeature 恒 true + createHTMLDocument 返 hollow doc（body/title）。
     sandbox
@@ -804,7 +814,9 @@ fn test_create_comment_r2816() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // createComment 返节点：nodeType=8 / nodeName '#comment' / tagName undefined / nodeValue=data=textContent=文本。
     sandbox
@@ -909,7 +921,9 @@ fn test_modern_interaction_stubs_r2817() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // navigator.clipboard（R2817 stubs + R2964 真实化）：typeof object + writeText/readText 返 Promise +
     // writeText→readText 进程内 store 往返（writeText 同步写 store，readText 读之；execute 末 microtask 派发）。
@@ -1035,7 +1049,9 @@ fn test_clipboard_write_read_round_trip_r2964() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 新 sandbox readText 默认空。
     sandbox.execute("globalThis.__e='X'; navigator.clipboard.readText().then(function(t){globalThis.__e=t;});").unwrap();
@@ -1096,7 +1112,9 @@ fn test_fullscreen_api_r2938() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body><div id='d'></div></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // fullscreenEnabled 默认 true；fullscreenElement 初值 null。
     assert_eq!(
@@ -1267,7 +1285,9 @@ fn test_pointer_lock_api_r2939() {
         "<html><body><canvas id='c'></canvas></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // pointerLockElement 初值 null。
     assert_eq!(
@@ -1416,7 +1436,9 @@ fn test_window_onerror_report_r2940() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://test.local/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // ErrorEvent 构造器（字段 message/filename/lineno/colno/error）+ createEvent('ErrorEvent') 返 ErrorEvent 实例。
     sandbox
@@ -1547,7 +1569,9 @@ fn test_page_lifecycle_load_r2941() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // document.onDOMContentLoaded（R2941 新增 IDL handler）可读写（无值初 null）。
     assert_eq!(
@@ -1643,7 +1667,9 @@ fn test_img_element_events_r2943() {
             .to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // img#i1：addEventListener('load') + onload IDL + onerror；img b.png：onload。
     sandbox
@@ -1736,7 +1762,9 @@ fn test_link_script_element_events_r2944() {
             .to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // link.onload/onerror + script.onload/onerror 注册（querySelectorAll 取唯一 selector proxy）。
     sandbox
@@ -1830,7 +1858,9 @@ fn test_body_onload_reflection_r2946() {
             .to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 反射（__zw_begin_script 内调）+ 派 load → body onload 触发。
     sandbox
@@ -1884,7 +1914,9 @@ fn test_fontface_set_events_r2947() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // document.fonts 存在 + .ready 是 Promise + status 初始 'loaded'。
     assert_eq!(
@@ -1965,7 +1997,9 @@ fn test_location_reflects_pushstate_replacestate_r3005() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/start".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     sandbox
         .execute(

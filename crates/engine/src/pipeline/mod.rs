@@ -107,6 +107,8 @@ pub struct AnimationEvent {
 /// 整合 DOM 解析、CSS 解析、样式计算、布局计算和绘制命令生成，
 /// 提供完整的端到端渲染能力。
 pub struct RenderPipeline {
+    /// R3268 canvas 显示链路：CanvasRegistry（JS getContext 与 painter 共享）。
+    pub(crate) canvas_registry: Option<std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>>,
     /// 视口宽度。
     pub(crate) viewport_width: f32,
     /// 视口高度。
@@ -213,6 +215,9 @@ pub struct RenderResult {
     pub timings: PipelineTimings,
     /// 渲染统计信息（draw call 估算、图元数量、剔除数量）。
     pub stats: RenderStats,
+    /// R3268 canvas 显示链路：本帧 canvas 像素快照（ctx_id, w, h, rgba），
+    /// 调用方在渲染前注入 ImageCache（图元 image_key = ctx_id）。
+    pub canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
 }
 
 impl RenderResult {
@@ -229,6 +234,7 @@ pub(crate) fn make_render_result(
     layout: LayoutResult,
     timings: PipelineTimings,
     mut stats: RenderStats,
+    canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
 ) -> RenderResult {
     let display_list = DisplayList::new(primitives, dirty_rects.clone());
     display_list.apply_stats_dirty_rects(&mut stats);
@@ -237,6 +243,7 @@ pub(crate) fn make_render_result(
         layout,
         timings,
         stats,
+        canvas_images,
     }
 }
 
@@ -278,6 +285,15 @@ fn collect_node_dirty_rects(
 }
 
 impl RenderPipeline {
+    /// R3268：设置 CanvasRegistry（宿主创建，与 register_dom_callbacks 共享同一实例——
+    /// canvas 显示链路：JS getContext 写入的像素经 painter 桥接为图元）。
+    pub fn set_canvas_registry(
+        &mut self,
+        registry: Option<std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>>,
+    ) {
+        self.canvas_registry = registry;
+    }
+
     /// 创建新的渲染管线。
     ///
     /// # 参数
@@ -286,6 +302,7 @@ impl RenderPipeline {
     /// - `viewport_height` — 视口高度（像素）
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
+            canvas_registry: None,
             viewport_width,
             viewport_height,
             style_system: StyleSystem::new(),
@@ -659,11 +676,13 @@ impl RenderPipeline {
         painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
+        painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&stylesheets);
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
+        let canvas_images = painter.canvas_images.clone();
         let mut primitives = painter.into_primitives();
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
         // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
@@ -710,6 +729,7 @@ impl RenderPipeline {
                 paint_count: 1,
             },
             stats,
+            canvas_images,
         )
     }
 
@@ -808,11 +828,13 @@ impl RenderPipeline {
         painter.set_form_control_compositions(self.form_control_compositions.clone());
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
+        painter.set_canvas_registry(self.canvas_registry.clone());
         painter.register_counter_styles(&stylesheets);
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint(&layout_result.root, &styles, Some(&doc));
+        let canvas_images = painter.canvas_images.clone();
         let mut primitives = painter.into_primitives();
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
@@ -869,6 +891,7 @@ impl RenderPipeline {
                 paint_count: 1,
             },
             stats,
+            canvas_images,
         )
     }
 
@@ -960,7 +983,7 @@ impl RenderPipeline {
         doc: &Document,
         stylesheets: &[Stylesheet],
         dirty_rect: Rect,
-    ) -> Option<RenderPrimitives> {
+    ) -> Option<(RenderPrimitives, Vec<(u64, u32, u32, Vec<u8>)>)> {
         // 计算样式（全量——本路径无变更节点上下文；存 cached_styles 供 mutation
         // 增量路径作 base）
         self.style_system
@@ -992,7 +1015,8 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
-        Some(painter.into_primitives())
+        let canvas_images = painter.canvas_images.clone();
+        Some((painter.into_primitives(), canvas_images))
     }
 
     /// 在已有 DOM 缓存上重绘整个视口（resize 等场景，走 `incremental_paint`）。
@@ -1010,7 +1034,7 @@ impl RenderPipeline {
             let doc = doc_rc.borrow();
             collect_stylesheets(&doc, css)
         };
-        let primitives = {
+        let (primitives, canvas_images) = {
             let doc = doc_rc.borrow();
             self.incremental_paint(&doc, &stylesheets, dirty)?
         };
@@ -1036,6 +1060,7 @@ impl RenderPipeline {
                 ..Default::default()
             },
             RenderStats::default(),
+            canvas_images,
         ))
     }
 
@@ -1217,6 +1242,7 @@ impl RenderPipeline {
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
+        let canvas_images = painter.canvas_images.clone();
         let primitives = painter.into_primitives();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let dirty_rects =
@@ -1237,6 +1263,7 @@ impl RenderPipeline {
                 ..Default::default()
             },
             RenderStats::default(),
+            canvas_images,
         ))
     }
 
@@ -1326,6 +1353,7 @@ impl RenderPipeline {
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
+        let canvas_images = painter.canvas_images.clone();
         let primitives = painter.into_primitives();
         let dirty_rects =
             layout_dirty_rects_for_nodes(&layout.root, &changed, self.viewport_width, self.viewport_height);
@@ -1344,6 +1372,7 @@ impl RenderPipeline {
                 ..Default::default()
             },
             RenderStats::default(),
+            canvas_images,
         ))
     }
 
@@ -1397,6 +1426,7 @@ impl RenderPipeline {
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
+        let canvas_images = painter.canvas_images.clone();
         let primitives = painter.into_primitives();
         self.cached_layout = Some(LayoutResult {
             root: layout.root.clone(),
@@ -1426,6 +1456,7 @@ impl RenderPipeline {
                 ..Default::default()
             },
             RenderStats::default(),
+            canvas_images,
         ))
     }
 
@@ -2015,6 +2046,68 @@ mod dirty_region_tests {
         assert_eq!((x, y), (0.0, 0.0));
         assert_eq!(w, 800.0);
         assert_eq!(h, 600.0);
+    }
+}
+
+#[cfg(test)]
+mod canvas_display_tests {
+    use super::*;
+
+    /// R3268 canvas 显示链路：canvas 元素（带 data-zw-canvas-ctx 属性）+ registry
+    /// 预填 ctx → painter 产出 ImagePrimitive + canvas_images（像素快照）。
+    #[test]
+    fn canvas_element_bridges_to_image_primitive() {
+        let registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+        // 预填 ctx（模拟 JS getContext 后的状态）：2×2 画布，红像素
+        {
+            let mut reg = registry.lock().unwrap();
+            reg.contexts.insert(1, zero_canvas::CanvasContext::new(2, 2));
+            let ctx = reg.contexts.get_mut(&1).unwrap();
+            // fillRect 便捷法不写 pixel_buffer——按 shim 路径：beginPath+rect+fill
+            ctx.set_fill_color(zero_render_foundation::color::Color::rgba(255, 0, 0, 255));
+            ctx.begin_path();
+            ctx.move_to(0.0, 0.0);
+            ctx.line_to(2.0, 0.0);
+            ctx.line_to(2.0, 2.0);
+            ctx.line_to(0.0, 2.0);
+            ctx.close_path();
+            ctx.fill(); // path-based 写 pixel_buffer
+        }
+        let mut pipeline = RenderPipeline::new(100.0, 100.0);
+        pipeline.set_canvas_registry(Some(registry));
+        let html = r#"<html><body><canvas data-zw-canvas-ctx="1" width="2" height="2"></canvas></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        // ImagePrimitive：image_key = ctx_id = 1
+        let has_canvas_image = result
+            .display_list
+            .primitives
+            .images
+            .iter()
+            .any(|img| img.image_key.0 == 1);
+        assert!(has_canvas_image, "应产出 canvas ImagePrimitive（key=1）");
+        // canvas_images：像素快照
+        assert_eq!(result.canvas_images.len(), 1, "应产出 canvas 像素快照");
+        let (ctx_id, w, h, rgba) = &result.canvas_images[0];
+        assert_eq!((*ctx_id, *w, *h), (1, 2, 2));
+        assert_eq!(&rgba[..4], &[255, 0, 0, 255], "快照应含红像素");
+    }
+
+    /// 无内容画布（全透明）→ 不产出图元（snapshot_rgba None）。
+    #[test]
+    fn empty_canvas_produces_no_primitive() {
+        let registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+        registry
+            .lock()
+            .unwrap()
+            .contexts
+            .insert(1, zero_canvas::CanvasContext::new(2, 2));
+        let mut pipeline = RenderPipeline::new(100.0, 100.0);
+        pipeline.set_canvas_registry(Some(registry));
+        let html = r#"<html><body><canvas data-zw-canvas-ctx="1" width="2" height="2"></canvas></body></html>"#;
+        let result = pipeline.render_html(html, "");
+        assert!(result.canvas_images.is_empty(), "空白画布不应产出图元（无内容快照）");
     }
 }
 

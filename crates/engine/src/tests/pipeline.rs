@@ -743,7 +743,7 @@ fn test_pipeline_incremental_paint_zero_size_dirty_rect() {
     let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
 
     assert!(inc_primitives.is_some(), "incremental_paint 应返回 Some");
-    let inc = inc_primitives.unwrap();
+    let (inc, _canvas) = inc_primitives.unwrap();
     // 零尺寸脏矩形与任何节点都不相交，应产生零图元
     assert!(
         inc.fills.is_empty(),

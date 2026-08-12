@@ -295,7 +295,7 @@ fn test_pipeline_incremental_paint() {
     let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
 
     assert!(inc_primitives.is_some());
-    let inc_fills = inc_primitives.unwrap().fills.len();
+    let inc_fills = inc_primitives.unwrap().0.fills.len();
     assert!(inc_fills <= full_fills);
 }
 
@@ -314,7 +314,7 @@ fn test_full_vs_incremental_render_primitive_count() {
     let dirty_rect = Rect::new(700.0, 500.0, 50.0, 50.0);
     let inc_primitives = pipeline.incremental_paint(&doc, &stylesheets, dirty_rect);
 
-    let inc_count = inc_primitives.map(|p| p.len()).unwrap_or(0);
+    let inc_count = inc_primitives.map(|p| p.0.len()).unwrap_or(0);
     assert!(
         inc_count <= full_count,
         "incremental paint should produce <= primitives of full paint"

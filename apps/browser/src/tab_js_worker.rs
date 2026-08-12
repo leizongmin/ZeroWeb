@@ -278,7 +278,9 @@ fn js_worker_main(
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
-    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     register_module_compile_callback(&mut *sandbox);
     // P1a gBCR（镜像 renderer js_worker）：RectBridge 注 `__zw_getBoundingClientRect(identity)`
     // 同步回调。handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）

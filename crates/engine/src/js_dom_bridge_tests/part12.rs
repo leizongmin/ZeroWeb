@@ -13,7 +13,9 @@ fn test_location_hash_setter_hashchange_r3006() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/path".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 安装 hashchange listener 捕获 newURL/oldURL。
     sandbox
@@ -81,7 +83,9 @@ fn test_back_forward_hashchange_r3007() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/path".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 建 hash 序列：#foo → #bar（cursor 在 #bar）。装 hashchange + popstate listener。
     sandbox
@@ -137,7 +141,9 @@ fn test_location_part_setters_r3008() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/old?q=1".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // location.pathname = '/new'：pathname 替换，search/hash 保留。
     sandbox
@@ -198,7 +204,9 @@ fn test_location_assign_replace_reload_r3009() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/start".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 初始 location.href = page_url（_hist_current().url 为空 → 回落 __zw_get_page_url）。
     sandbox.execute("globalThis.__h0 = location.href;").unwrap();
@@ -263,7 +271,9 @@ fn test_streams_backpressure_r3010() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // ReadableStream controller.desiredSize：默认 hwm=1，enqueue 一 chunk 后 0（旧恒 1）。
     sandbox
@@ -357,7 +367,9 @@ fn test_blob_real_bytes_r3011() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // slice()：返真字节范围（旧返全内容）。new Blob(['ZeroWeb']).slice(1,4).text() === 'ero'。
     sandbox
@@ -420,7 +432,9 @@ fn test_text_decoder_streaming_r3012() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 单次 decode（valid）行为不变：'ZeroWeb 中文' round-trip 保真。
     assert_eq!(
@@ -490,7 +504,9 @@ fn test_detached_document_query_r3013() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 既有行为保留：body.tagName=BODY + title 透传（R2815 断言不破）。
     sandbox
@@ -553,7 +569,9 @@ fn test_form_data_multipart_r3014() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 值保真：append(File) 后 get 返 File 实例（旧返 String(file)）。字符串值不变（R2788 保留）。
     sandbox
@@ -674,7 +692,9 @@ fn test_fetch_body_types_r3015() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // mock __zw_fetch：每次调用 clear + 捕获全部 args（id/method/url/headersWire/body）。
     let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
@@ -769,7 +789,9 @@ fn test_detached_document_traversal_r3016() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 嵌套 HTML：div.a > (b>text + tail text) + 文本 + 注释。
     sandbox
@@ -851,7 +873,9 @@ fn test_detached_mutable_tree_r3017() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 建树：div > (span + p) + 文本。访问 body.childNodes 触发建 mutable tree。
     sandbox
@@ -952,7 +976,9 @@ fn test_detached_attribute_mutation_r3018() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // setAttribute（新增 + 更新）+ removeAttribute + id/class IDL 反射同步 + 序列化反映。
     sandbox
@@ -1049,7 +1075,9 @@ fn test_sanitize_dompurify_style_r3018() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 注入 DOMPurify 式 sanitize（复刻核心算法：移禁元素 + 去 on*/style 属性 + 递归子）。
     sandbox
@@ -1144,7 +1172,9 @@ fn test_sanitize_dompurify_real_r3019() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 加载真实 DOMPurify（fixture 保留原始许可证头）。加载失败 = shim 基础面不满足库加载 → panic。
     let dp = include_str!("../../tests/fixtures/dompurify.js");
@@ -1216,7 +1246,9 @@ fn test_fetch_binary_body_byte_wire_r3020() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // mock __zw_fetch 捕获 method（args[1]）+ body wire（args[4]）。
     let captured: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
@@ -1280,7 +1312,9 @@ fn test_fetch_response_binary_body_r3021() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // mock __zw_fetch 捕获 id（args[0]）供 Rust 侧异步 resolve 二进制 body wire。
     let captured_id: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
@@ -1375,7 +1409,9 @@ fn test_namednodemap_setnameditem_main_dom_r3022() {
         "<html><body><div id='d' class='c'></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // setNamedItem 新属性 → getAttribute / getNamedItem 反映；返旧 Attr=null（新属性）。
     sandbox
@@ -1437,7 +1473,9 @@ fn test_namednodemap_setnameditem_mutable_tree_r3022() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // detached document _zwMEl attrs：setNamedItem 新/改 + removeNamedItem + 序列化反映。
     sandbox
@@ -1491,7 +1529,9 @@ fn test_create_attribute_and_attr_instance_r3023() {
         "<html><body><div id='d' class='c'></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // document.createAttribute：nodeType=2 + 全字段（name/nodeName/value/nodeValue/localName/namespaceURI=
     // null/prefix=null/specified/ownerElement=null）。
@@ -1579,7 +1619,9 @@ fn test_attr_instanceof_and_namespace_attrs_r3024() {
         "<html><body><div id='d'></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // createAttribute + getNamedItem 返值 instanceof Attr（R3023 限制①）。
     sandbox
@@ -1674,7 +1716,9 @@ fn test_mutation_observer_attr_filter_and_old_value_r3025() {
         "<html><body><div id='d'></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // ① attributeFilter：仅观测列表内属性（data-x fire，class 被滤掉）。
     sandbox
@@ -1769,7 +1813,9 @@ fn test_mutation_observer_subtree_r3026() {
         "<html><body><div id='container'><div id='inner'><span id='leaf'></span></div></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // ① subtree childList：后代（leaf）appendChild → container observer 收记录（target=container）。
     sandbox
@@ -1872,7 +1918,9 @@ fn test_mutation_observer_character_data_r3027() {
         "<html><body><div id='a'></div><div id='container'><span id='leaf'></span></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // ① 直接观测：observe(a,{characterData,subtree}) + a.textContent → characterData 记录（target=a）。
     sandbox

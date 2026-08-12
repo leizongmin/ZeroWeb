@@ -149,11 +149,13 @@ impl RenderPipeline {
                     painter.image_sizes.clone_from(&self.image_sizes);
                     painter.set_font_resolver(self.font_resolver.clone());
                     painter.set_document_url(self.document_url.as_deref());
+                    painter.set_canvas_registry(self.canvas_registry.clone());
                     painter.register_counter_styles(&session.stylesheets);
                     painter.viewport_w = self.viewport_width;
                     painter.viewport_h = self.viewport_height;
                     painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
                     painter.paint(&layout.root, &session.styles, Some(doc));
+                    let canvas_images = painter.canvas_images.clone();
                     let mut primitives = painter.into_primitives();
                     let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout.root);
                     // S7b：cull_invisible 原位剔除
@@ -194,6 +196,7 @@ impl RenderPipeline {
                         layout_out,
                         session.timings.clone(),
                         stats,
+                        canvas_images,
                     ));
                     return BudgetAdvance::Complete;
                 }
@@ -241,10 +244,12 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
+        painter.set_canvas_registry(self.canvas_registry.clone());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         painter.paint_in_rect(&layout_result.root, &styles, &visible_rect, Some(&doc));
+        let canvas_images = painter.canvas_images.clone();
         let primitives = painter.into_primitives();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
@@ -282,6 +287,7 @@ impl RenderPipeline {
                 paint_count: 1,
             },
             zero_render_foundation::primitive::RenderStats::default(),
+            canvas_images,
         )
     }
 }

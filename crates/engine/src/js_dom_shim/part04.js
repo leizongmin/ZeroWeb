@@ -109,6 +109,10 @@
               var ctx = _zwMakeCtx2d(String(id));
               ctx.canvas = _makeProxy(sel, handle); // canvas back-ref → 元素 proxy（spec ctx.canvas）
               _zwCanvasCtx[key] = ctx;
+              // R3268 canvas 显示链路：把 ctx id 写入元素属性，painter 据此把 canvas
+              // 内容桥接为页面图元（data-zw-canvas-ctx 非标准属性，仅内部使用）。
+              if (handle) __zw_set_attr_handle(handle, 'data-zw-canvas-ctx', String(id));
+              else __zw_set_attr(sel, 'data-zw-canvas-ctx', String(id));
               return ctx;
             };
           }

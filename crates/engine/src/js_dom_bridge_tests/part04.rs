@@ -1251,7 +1251,9 @@ fn test_element_attributes_nodelist() {
         "<html><body><div id=\"d\" class=\"c\" title=\"t\"></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // length + 数值索引 + item。
     sandbox
@@ -1330,7 +1332,9 @@ fn test_set_remove_attr_syncs_cache() {
         let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
         let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
         let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-        register_dom_callbacks(&mut sb, &mutations, &dom_html, &page_url);
+        let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sb, &mutations, &dom_html, &page_url, &canvas_registry);
         (sb, mutations, dom_html)
     };
 
@@ -1829,7 +1833,9 @@ fn test_js_cross_document_navigation_r3058() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     let nav_bridge = crate::NavigationBridge::new();
     let nav_queue = nav_bridge.queue();
     nav_bridge.register(&mut sandbox);
@@ -1873,7 +1879,9 @@ fn test_history_reset_on_navigation_r3059() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://example.com/page".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // 初始：location.href = page_url，history.length = 1。
     assert_eq!(sandbox.execute("location.href").unwrap().value, "https://example.com/page", "初始 location.href = page_url");

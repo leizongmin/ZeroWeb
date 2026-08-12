@@ -968,7 +968,9 @@ fn test_clone_node_e2e() {
         "<html><body><div id='src' class='row' data-x='1'><span>child</span></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // deep clone → 记 CreateElement + 复制源全部属性 + SetInnerHtmlOnHandle。
     sandbox
@@ -1782,7 +1784,9 @@ fn test_insert_adjacent_html_e2e() {
         "<html><body><ul id='list'><li>x</li></ul></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // beforeend：追加列表项。
     sandbox
@@ -1834,7 +1838,9 @@ fn test_outer_html_e2e() {
         "<html><body><div id='t' class='c'>hi<span>x</span></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // getter：含自身 tag/属性 + 子树。
     sandbox
@@ -1872,7 +1878,9 @@ fn test_prepend_order_e2e() {
     let initial = "<html><body><div id='t'>existing</div></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     sandbox
         .execute(
             "var b = document.createElement('b');\
@@ -1904,7 +1912,9 @@ fn test_before_after_order_e2e() {
     let initial = "<html><body><div id='t'>x</div></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     sandbox
         .execute(
             "var x=document.createElement('x');var y=document.createElement('y');\
@@ -1941,7 +1951,9 @@ fn test_prepend_detached_noop_e2e() {
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     // detached div.prepend(...) 不抛、不入队 InsertAdjacent*。
     sandbox
         .execute("var d=document.createElement('div'); d.prepend('x'); globalThis.__ok='done';")
@@ -1971,7 +1983,9 @@ fn test_replace_child_e2e() {
     let initial = "<html><body><ul id='list'><li id='a'>A</li><li id='b'>B</li></ul></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     sandbox
         .execute(
             "var np = document.createElement('li'); np.id = 'new';\
@@ -2009,7 +2023,9 @@ fn test_replace_with_e2e() {
     let initial = "<html><body><div id='t'>x</div></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
     sandbox
         .execute(
             "var x=document.createElement('x');var y=document.createElement('y');\
@@ -2043,7 +2059,9 @@ fn test_node_level_traversal_e2e() {
         "<html><body><div id='t'>text1<span id='s'>x</span><!--c-->text2</div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // childNodes：4 个子（text/span/comment/text），nodeType 正确。
     sandbox
@@ -2109,7 +2127,9 @@ fn test_create_document_fragment_e2e() {
     let initial = "<html><body><ul id='list'></ul></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     sandbox
         .execute(
@@ -2158,7 +2178,9 @@ fn test_insert_before_fragment_flatten_e2e() {
     let initial = "<html><body><ul id='list'><li id='first'>F</li></ul></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     sandbox
         .execute(
@@ -2205,7 +2227,9 @@ fn test_fragment_flatten_all_insertion_paths_e2e() {
     let initial = "<html><body><div id='t'>X</div></body></html>".to_string();
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(initial.clone()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // prepend(fragment)：fragment 子成为 #t 首子（在 X 前）。
     sandbox
@@ -2292,7 +2316,9 @@ fn test_parent_node_nested_e2e() {
         "<html><body><div id='outer'><div id='inner'>x</div></div></body></html>".to_string(),
     ));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
-    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
     // inner.parentNode.id === 'outer'（旧 stub 错返 body → id ''）。
     sandbox

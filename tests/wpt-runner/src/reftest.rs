@@ -593,8 +593,12 @@ fn render_with_layout_inner(
     zero_engine::PipelineTimings,
 ) {
     let _zw_t0 = std::time::Instant::now();
+    // R3268 canvas 显示链路：registry 在 script 执行与渲染间共享（getContext 写入的
+    // canvas 像素经 painter 桥接为图元 + canvas_images 注入 image_cache）。
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
-    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref());
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let _zw_t1 = std::time::Instant::now();
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
@@ -619,6 +623,7 @@ fn render_with_layout_inner(
 
     let _zw_t4 = std::time::Instant::now();
     let mut pipeline = RenderPipeline::new(config.viewport_width as f32, config.viewport_height as f32);
+    pipeline.set_canvas_registry(Some(canvas_registry.clone()));
     let _zw_t4a = std::time::Instant::now();
     pipeline.set_skip_indicators(true);
     // R1991：@media print/screen 级联按渲染媒体类型过滤（DC-12）。默认 Screen = 零变更；
@@ -707,6 +712,12 @@ fn render_with_layout_inner(
 
     let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
+    // R3268：canvas 像素注入 ImageCache（图元 image_key = ctx_id）
+    for (ctx_id, cw, ch, rgba) in &result.canvas_images {
+        if let Ok(data) = ImageData::from_rgba(rgba.clone(), *cw, *ch) {
+            image_cache.insert_with_key(ImageKey::new(*ctx_id), data);
+        }
+    }
     let _zw_t6 = std::time::Instant::now();
 
     // PERF 诊断（env ZW_RENDER_STAGES=1）：打印各阶段耗时（parse/style/layout/paint/total）
@@ -857,7 +868,9 @@ pub fn render_via_webview_to_framebuffer_with_base(
     config: &ReftestConfig,
     base_dir: Option<&Path>,
 ) -> FrameBuffer {
-    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref());
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+    let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
         config.viewport_height as f64,

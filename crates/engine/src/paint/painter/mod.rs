@@ -12,7 +12,7 @@ mod text;
 use std::collections::{HashMap, HashSet};
 
 use zero_css_parser::values::{ColorValue, FloatValue, LengthValue, VisibilityValue};
-use zero_dom::{Document, NodeId};
+use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
@@ -85,6 +85,12 @@ pub struct Painter {
     /// 跳过该元素自身的图像绘制，避免其 padding-box 起始的图像与画布 (0,0) 起始的图像
     /// 相位错位 double-paint（R507：扩展 R491 的 color-only 传播到含 image）。
     pub(crate) canvas_propagated_node: Option<NodeId>,
+    /// R3268 canvas 显示链路：CanvasRegistry（JS 侧 getContext 写入的元素属性
+    /// data-zw-canvas-ctx 关联 ctx id）——painter 据此把 canvas 像素桥接为 ImagePrimitive。
+    pub(crate) canvas_registry: Option<std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>>,
+    /// R3268 canvas 显示链路：本帧产生的 canvas 像素快照（ctx_id, w, h, rgba），
+    /// paint 后由调用方注入渲染侧 ImageCache（ImagePrimitive.image_key = ctx_id）。
+    pub canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
     /// R639：NodeId → LayoutBox.height 索引（paint() 开头预扫描布局树填充）。
     /// render_fragment 宏处理某 inline 片段时，box_node 是 **IFC owner**（其文本所在
     /// 容器）而非 inline 本身；为使 per-fragment bg 门控与 paint_node 抑制（在 inline 自身
@@ -356,6 +362,8 @@ impl Painter {
             viewport_w: 0.0,
             viewport_h: 0.0,
             canvas_propagated_node: None,
+            canvas_registry: None,
+            canvas_images: Vec::new(),
             inline_heights: HashMap::new(),
             document_url: None,
             counter_styles: HashMap::new(),
@@ -363,6 +371,67 @@ impl Painter {
     }
 
     /// 设置当前文档 URL。
+    /// R3268 canvas 显示链路：<canvas> 元素内容桥接为 ImagePrimitive。
+    ///
+    /// shim 的 getContext 已把 ctx id 写入元素属性 data-zw-canvas-ctx；painter 从
+    /// CanvasRegistry 取该 ctx 的像素快照，生成 image_key=ctx_id 的图片图元，并把
+    /// 像素收集到 `canvas_images`——调用方（渲染线程/reftest）在渲染前注入 ImageCache。
+    pub(crate) fn paint_canvas_element(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, doc: &Document) {
+        let Some(node_id) = box_node.node_id else {
+            return;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return;
+        };
+        let NodeKind::Element(elem) = &node.kind else {
+            return;
+        };
+        if elem.local_name() != "canvas" {
+            return;
+        }
+        let Some(ctx_id) = elem
+            .get_attribute("data-zw-canvas-ctx")
+            .and_then(|v| v.trim().parse::<u64>().ok())
+        else {
+            return; // 未 getContext 或未绘制内容
+        };
+        let Some(reg) = &self.canvas_registry else {
+            return;
+        };
+        let Some((cw, ch, rgba)) = reg
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contexts
+            .get(&ctx_id)
+            .and_then(|c| c.snapshot_rgba())
+        else {
+            return;
+        };
+        let container_w = box_node.content_width;
+        let container_h = box_node.content_height;
+        if container_w <= 0.0 || container_h <= 0.0 {
+            return;
+        }
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        self.primitives
+            .add_image(zero_render_foundation::primitive::ImagePrimitive {
+                rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
+                image_key: zero_render_foundation::image_cache::ImageKey::new(ctx_id),
+                clip: None,
+            });
+        self.canvas_images.push((ctx_id, cw, ch, rgba));
+    }
+
+    /// R3268 canvas 显示链路：设置 CanvasRegistry（JS getContext 侧与 painter 共享）。
+    pub fn set_canvas_registry(
+        &mut self,
+        registry: Option<std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>>,
+    ) {
+        self.canvas_registry = registry;
+    }
+
+    /// 设置文档 URL（用于解析相对 URL 的资源键）。
     pub fn set_document_url(&mut self, url: Option<&str>) {
         self.document_url = url.map(str::to_string);
     }
@@ -878,6 +947,10 @@ impl Painter {
 
                     // 4b. <img> 元素绘制（含 object-fit）
                     self.paint_img_element(box_node, abs_x, abs_y, style, doc);
+
+                    // 4b0. <canvas> 元素绘制（R3268 canvas 显示链路——canvas 像素 →
+                    // ImagePrimitive → 渲染侧 ImageCache）
+                    self.paint_canvas_element(box_node, abs_x, abs_y, doc);
 
                     // 4b2. <input> value 文本绘制（submit/reset/button 标签 + text/password
                     // 预填值；R1660 form-control slice-2）。input 是 void 无文本子节点，value

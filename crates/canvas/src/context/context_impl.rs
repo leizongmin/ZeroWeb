@@ -892,6 +892,16 @@ impl CanvasContext {
         ImageData { width, height, data }
     }
 
+    /// 全画布 RGBA 快照（显示链路：canvas 元素内容 → ImagePrimitive）。
+    /// 画布有内容（任一像素非透明黑）时返回 Some((w, h, rgba))，否则 None（跳过绘制）。
+    pub fn snapshot_rgba(&self) -> Option<(u32, u32, Vec<u8>)> {
+        if self.pixel_buffer.iter().any(|&b| b != 0) {
+            Some((self.width, self.height, self.pixel_buffer.clone()))
+        } else {
+            None
+        }
+    }
+
     /// 创建指定尺寸的 ImageData，填充透明黑色（rgba 0,0,0,0）。
     pub fn create_image_data(&self, width: u32, height: u32) -> ImageData {
         let size = (width * height * 4) as usize;

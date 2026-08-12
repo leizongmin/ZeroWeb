@@ -11,7 +11,12 @@ use zero_engine::{
     DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
-pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>, wpt_root: Option<&Path>) -> String {
+pub(super) fn apply_scripted_dom_mutations(
+    html: &str,
+    base_dir: Option<&Path>,
+    wpt_root: Option<&Path>,
+    canvas_registry: &std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
+) -> String {
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
@@ -43,7 +48,7 @@ pub(super) fn apply_scripted_dom_mutations(html: &str, base_dir: Option<&Path>, 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
     let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
-    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url);
+    register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry);
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");

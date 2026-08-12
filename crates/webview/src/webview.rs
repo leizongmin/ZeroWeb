@@ -157,6 +157,8 @@ pub struct WebView {
     config: WebViewConfig,
     /// 渲染管线。
     pipeline: RenderPipeline,
+    /// R3268 canvas 显示链路：CanvasRegistry（JS getContext 与 painter 共享）。
+    canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
     /// HTTP 客户端。
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
@@ -227,6 +229,9 @@ impl WebView {
     /// 创建新的 WebView。
     pub fn new(config: WebViewConfig) -> Self {
         let mut pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
+        let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+        pipeline.set_canvas_registry(Some(canvas_registry.clone()));
         // R1996：调试属性指示器（border-collapse/border-spacing/break/overflow-wrap 等，
         // 绘制于元素边角的彩色标记）默认**跳过**——WebView 是生产嵌入 API，不应默认显示
         // 调试标记（与 reftest/product-smoke 的 skip_indicators=true 一致；旧默认 false 致
@@ -246,6 +251,7 @@ impl WebView {
         Self {
             config,
             pipeline,
+            canvas_registry,
             http_client,
             js_sandbox,
             js_shim_initialized: false,
@@ -1321,7 +1327,7 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
         let page_url: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
-        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
+        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
@@ -1514,7 +1520,7 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
         let page_url: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
-        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url);
+        register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
         // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
