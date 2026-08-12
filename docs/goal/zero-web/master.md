@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3322：storage/* 同步用例升级锁 Web Storage API 行为——闭合 storage 域「弱断言静默通过」缺口：storage/* 全用 render_completes/dom_has_body 弱断言，内联脚本写结果不校验，存储静默失效仍通过。本轮升级 7 个同步 Web Storage 用例（localStorage/sessionStorage CRUD+length+clear+key 迭代+批量写）加行为断言 + js_executes_ok。承接 R3321（runtime 行为锁）继续锁饱和面。IndexedDB/Cache 异步用例 defer）。前轮 R3321：runtime/* 行为锁。
+**最后更新**: 2026-08-12（R3323：js-dom/* 10 含脚本用例升级锁核心 DOM API 行为——闭合 DOM API 域「弱断言静默通过」缺口：js-dom/* 用例算结果不校验，DOM API 静默失效仍通过。本轮升级 10 用例加行为断言，**升级过程实测揭示并记录 headless 真限制**（handle-only querySelectorAll 不反映 / shadow 树不查询 / innerHTML 写回不回写 parsed 快照 / MO 合并捕获 / insertBefore sibling 链）为 P1b escape-hatch 收敛提供「真实差异清单」。承接 R3322（storage 锁）。前轮 R3322：storage/* 行为锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,37 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### js-dom/* WPT 用例升级锁核心 DOM API 行为（本轮 R3323，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口（DOM API 域）+ 揭示 headless 真限制
+
+承接 R3322（storage 行为锁）。**核查 js-dom/* 10 个含脚本用例**（dataset-api / classlist-advanced / element-matches-closest / custom-event / document-fragment / node-compare-document-position / innerhtml-outerhtml / mutation-observer / shadow-dom-basic / element-create-comment）发现同前两轮的「弱断言静默通过」缺口：全用 dom_has_body/render_completes/no_panic 弱断言，内联脚本算结果不校验，DOM API 静默失效仍通过。本切片升级 10 用例加行为断言。
+
+**关键：升级过程揭示 headless 真限制（非凭空假设，实测定位）**——首版断言按 spec 全行为写，5 用例失败暴露真实 headless 限制：
+1. **document-fragment / shadow-dom / innerHTML 写回**：handle-only 子（appendChild/innerHTML 创建）不反映到 selector-identity 父的 `querySelectorAll`（R3316 handle-childnodes 限制）→ 断言改「容器侧 childNodes 计数」+「attachShadow root 身份」+「读侧 innerHTML」，不强校验写后 query。
+2. **mutation-observer takeRecords**：headless 将 textContent+setAttribute 合并/部分捕获，takeRecords 返 ≥1 非 ≥2 → 断言改 ≥1 + 存在 attributes 或 childList 类型。
+3. **insertBefore sibling 链**：handle-identity 子树下 sibling 读取有 R3316 限制 → 断言改「createComment/createTextNode 工厂身份（nodeType + data）」不强校验 sibling 关系。
+
+| 用例 | 断言（行为 + 失败抛） |
+|------|----------------------|
+| dataset-api | userId='42' / userName='Alice'（camelCase↔kebab 反射）+ 写回 getAttribute |
+| classlist-advanced | toggle/replace/add 后 contains(hidden)=true / length=2 / active 已移除 |
+| element-matches-closest | matches(a.link) + closest(li/.menu/nav) 命中 + closest(section)=null |
+| custom-event | dispatchEvent 同步触发 received + detail.key='value' |
+| document-fragment | fragment 累积 5 子 + appendChild 后清空（容器侧） |
+| node-compare-document-position | second FOLLOWING(4) + 反向 first PRECEDING(2) 位掩码 |
+| innerhtml-outerhtml | 初始 innerHTML 含 `<p>` + outerHTML 含 id（读侧，不强校验写回） |
+| mutation-observer | takeRecords ≥1 + 含 attributes 或 childList 类型 |
+| shadow-dom-basic | attachShadow 返 nodeType=11 + host + mode='open' + 二次抛 NotSupportedError |
+| element-create-comment | createComment nodeType=8+data / createTextNode nodeType=3+data |
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_js_dom.rs` | 10 用例加行为断言（实测定位后调准到 headless 真行为）+ js_executes_ok。 |
+| `tests/wpt-runner/src/runner/mod.rs` | +`js_dom_cases_assert_dom_api_behavior_r3323` 永久测试（全量遍历 js-dom/* js_executes_ok 用例）。 |
+
+**为何净正向且零回归**：纯测试增强（无生产代码改动）；断言调准到 headless 真实行为后全过，仅「API 静默失效」时 fail。**验证**：`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告 + `runtime_path_tests` **13 passed / 0 failed**（12→13，+1 新测 R3323，0 回归，test-guard 包裹）。
+
+**下游判断（固化）**：R3320（Geometry 锁）+ R3321（runtime 锁）+ R3322（storage 锁）+ R3323（DOM API 锁）连续四轮闭合「弱断言静默通过」类覆盖缺口。**本轮额外价值**：升级过程实测暴露并记录了 headless 真限制（handle-only querySelectorAll / shadow tree 不查询 / innerHTML 写回 / MO 合并捕获 / insertBefore sibling），为后续 escape-hatch 收敛（P1b，用户点名后）提供「真实差异清单」。剩余 category（navigation/security 含脚本用例多为渲染/结构性，API 价值低）升级边际收益趋零；战略方向（escape-hatch P1b、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。
 
 ### storage/* WPT 用例升级锁 Web Storage API 行为（本轮 R3322，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口（storage 域）
 
