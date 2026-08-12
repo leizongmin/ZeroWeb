@@ -62,3 +62,4 @@ css/css-fonts/font-size-adjust-units-001.html css/css-fonts/font-size-adjust-uni
 css/css-fonts/font-size-adjust-order-001.html css/css-fonts/font-size-adjust-order-001-ref.html == 2026-08-13 R3328-F glyph-derived x-height and normal line height
 css/css-fonts/size-adjust-03.html css/css-fonts/size-adjust-03-ref.html == 2026-08-13 R3329/R3330-F adjusted generic and descriptor advances
 css/css-fonts/size-adjust.tentative.html css/css-fonts/size-adjust-tentative-ref.html == 2026-08-13 R3337/R3341-F descriptor line and relative metrics
+css/css-fonts/font-size-adjust-ic-height.html css/css-fonts/font-size-adjust-ic-height-ref.html == 2026-08-13 R3346-F ic-height fixed webfont asset

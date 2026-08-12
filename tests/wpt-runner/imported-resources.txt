@@ -8,3 +8,4 @@ css/css-fonts/support/fonts/Rochester.otf
 fonts/GentiumPlus-R.woff
 fonts/Revalia.woff
 fonts/AD.woff
+fonts/noto/cjk/NotoSansCJKjp-Regular-subset-chws.otf

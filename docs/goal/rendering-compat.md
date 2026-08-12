@@ -61,6 +61,8 @@
 
 > **🔬 候选裁决（R3345-F table text metadata / HTML UA defaults·2026-08-13）**：资源完整的 font-feature-resolution-001/002 图像显示 table cell 几何按继承的 32px 布局，但 cell 直接文本因 `text_node_font_sizes` 为空在 paint IFC 回退 16px；最小 style 测试确认 table→tbody→tr→td 继承正确，缺口位于 final IFC 的 TableCell eligibility。实验把 TableCell 加入 metadata 收集后语义转正，但 Chromium Oracle 反而 001 `9.83%→13.07%`、002 `12.32%→16.78%`，因放大 glyph 暴露 feature/raster 与 cell geometry 的既有偏差。继续补 HTML UA `table{border-spacing:2px}` 与 `td/th{padding:1px}` 后，css-fonts table 簇改善（UA-only：001 `9.83%→8.87%`、002 `12.32%→12.12%`，font-weight 三案亦各约 `-1.1pp`），但 css-tables self-source baseline `105/115`：padding-only `103/115`、spacing-only `104/115`、组合 `103/115`。三候选均跨目录净负，已全部回退，工作树零源码残留。结论：cell paint metadata、feature/raster 与 UA geometry 必须作为协同切片解决；禁止单独重开任一开关以追 css-fonts 排名。
 >
+> **▶ WPT 资产进展（R3346-F ic-height fixed webfont·2026-08-13）**：用 `ORACLE_DUMP_ALL=1` 展开 css-fonts 全候选后，排除了 Chromium 不支持 `font-synthesis-position` 的旧 shot、平台 `local()` family、待重抓 webfont、table 双路径及 generic raster 簇。`font-size-adjust-ic-height` 的 test/ref 已导入，却遗漏其固定 `NotoSansCJKjp-Regular-subset-chws.otf`，ZeroWeb 因 test/reference 分别落不同 fallback 路径形成 self-source 假绿。标准 importer 现将该字体写入 `imported-resources.txt` 并保留测试账本；Chromium Oracle 单案 `2.85%→2.44%`，完整 css-fonts 1 改善、0 回归、281 持平，pass/credible/strict 保持 `86/76/54`。self-source `2.60%→4.60%` 反向变差，进一步证明资源缺失时不得以 test-vs-ref 单独裁决。该切片零引擎源码变更。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
