@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3323：js-dom/* 10 含脚本用例升级锁核心 DOM API 行为——闭合 DOM API 域「弱断言静默通过」缺口：js-dom/* 用例算结果不校验，DOM API 静默失效仍通过。本轮升级 10 用例加行为断言，**升级过程实测揭示并记录 headless 真限制**（handle-only querySelectorAll 不反映 / shadow 树不查询 / innerHTML 写回不回写 parsed 快照 / MO 合并捕获 / insertBefore sibling 链）为 P1b escape-hatch 收敛提供「真实差异清单」。承接 R3322（storage 锁）。前轮 R3322：storage/* 行为锁。
+**最后更新**: 2026-08-12（R3324：headless JS-DOM 行为差异 backlog 文档化——R3323 实测 4 项差异（innerHTML 写后读 stale / handle 子 querySelectorAll / shadow 查询 / MO 合并捕获）固化到 `docs/learnings/bugs/headless-js-dom-divergence-backlog.md` 作 P1b escape-hatch 验收清单。**自主面饱和再确认**：R3320-R3324 后 zero-web 流自主可 land 工作面实质饱和，剩余战略方向全部需用户点名或环境依赖）。前轮 R3323：js-dom/* 行为锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,18 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### headless JS-DOM 行为差异 backlog 文档化（本轮 R3324，docs/learnings）—— R3323 实测差异固化为 P1b 验收清单
+
+承接 R3323（js-dom 行为锁实测暴露 headless 真限制）。本轮把 R3323 实测定位的 **4 项 headless↔真浏览器行为差异**固化到 `docs/learnings/bugs/headless-js-dom-divergence-backlog.md`，作为 P1b escape-hatch 收敛（native DOM 直改，需用户点名 rule 11）的**具体可量化验收清单**：
+1. **innerHTML 写后读不回写**（mutation-queue stale-read）—— set→read 同脚本读 stale 快照（`__zw_set_inner_html` 入队 vs `__zw_get_inner_html` 读快照，时序差）。
+2. **selector-identity 父的 querySelectorAll 不反映 handle 子**（同 R3316 handle-childnodes 限制）。
+3. **shadow root 内容不经宿主 querySelectorAll 查询**（shadow 子树不走 parsed 树查询）。
+4. **MutationObserver takeRecords 合并/部分捕获**（多次 mutation 合并单记录，非 spec 逐条）。
+
+**价值**：每项差异 = P1b 的一个验收检查（升级对应 js-dom WPT 断言到 spec 全行为，全过 = 该差异闭合），避免下游重复探测，给 escape-hatch 收敛提供「逐项可验证」清单而非模糊目标。
+
+**自主面饱和再确认**：R3320-R3324 连续 5 轮（Geometry/runtime/storage/js-dom 行为锁 + A-gen→B-gen 迁移 R3318-R3319 + 机械 API gap R3316-R3317）后，zero-web 流**自主可 land 工作面实质饱和**：① WPT 弱断言升级——剩余 category（navigation/security/interactive/web_platform/multiprocess/platform_input）含脚本用例多为渲染/结构性（无 API 行为可断言）；② A-gen→B-gen 迁移——已穷尽；③ 机械 API gap——已穷尽；④ headless 行为差异——4 项均需 P1b escape-hatch（native DOM 直改，rule 11 用户点名）。**剩余战略方向全部需用户点名或环境依赖**：P1b escape-hatch 收敛、渲染深结构（font-stack RFC 已批 R3316-era）、GPU/Display 验证（需真实硬件）。
 
 ### js-dom/* WPT 用例升级锁核心 DOM API 行为（本轮 R3323，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口（DOM API 域）+ 揭示 headless 真限制
 
