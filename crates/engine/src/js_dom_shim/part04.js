@@ -125,6 +125,31 @@
               return 'data:image/png;base64,' + btoa(s);
             };
           }
+          // toBlob（R3296）：异步 PNG Blob 导出（镜像 standalone part05.js 实现）。callback(blob|null)
+          // 在 microtask 异步派发；返 undefined。复用 toDataURL 的 PNG 编码 host op。无 ctx 惰性创建
+          //（与同路径 toDataURL 同语义——real browser 无 ctx canvas 仍产空白 PNG，仅编码失败/无 host → null）。
+          if (prop === 'toBlob') {
+            return function (callback, _type, _quality) {
+              var p = Promise.resolve().then(function () {
+                if (typeof __zw_canvas_op !== 'function') return null;
+                if (!_zwCanvasCtx[key] || !_zwCanvasCtx[key]._handle) {
+                  // 惰性建 ctx（镜像 toDataURL getContext 调用）——经 proxy getContext get-trap 建 + 缓存。
+                  var proxy = _makeProxy(sel, handle);
+                  if (typeof proxy.getContext === 'function') proxy.getContext('2d');
+                }
+                var ctx = _zwCanvasCtx[key];
+                if (!ctx || !ctx._handle) return null; // 建失败 → 无 bitmap
+                var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
+                if (!csv) return null;
+                var nums = csv.split(',');
+                var bytes = new Uint8Array(nums.length);
+                for (var i = 0; i < nums.length; i++) bytes[i] = +nums[i];
+                return new Blob([bytes], { type: 'image/png' });
+              });
+              if (typeof callback === 'function') p.then(function (blob) { callback(blob); });
+              return undefined;
+            };
+          }
           if (prop === 'width' || prop === 'height') {
             // sync set→get 优先读缓存（setter R3077 写数值）；无缓存则反射内容属性（default 300/150）。
             var cdc = _reflectedAttrs[key];

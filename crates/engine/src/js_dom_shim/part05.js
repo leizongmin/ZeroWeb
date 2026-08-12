@@ -760,6 +760,29 @@
       for (var i = 0; i < nums.length; i++) s += String.fromCharCode(+nums[i]);
       return 'data:image/png;base64,' + btoa(s);
     };
+    // toBlob（R3296，HTMLCanvasElement）：异步 PNG Blob 导出。镜像 toDataURL 的 host 编码路径
+    //（`__zw_canvas_op(handle,'toDataURL')` → PNG CSV 字节），但产物为 `Blob`（type 'image/png'）经
+    // **回调**异步派发（spec：返 undefined，callback(blob|null) 在 microtask 触发，失败/无 ctx→callback(null)）。
+    // 复用 toDataURL 的 PNG 编码（仅 image/png；type/quality 参数 best-effort 与 toDataURL 同），无 ctx 惰性创建。
+    // 用途：canvas 导出库（html2canvas/fabric.js/Chart.js「Save as Image」）+ FormData 上传 + createObjectURL 预览。
+    // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-canvas-toblob
+    el.toBlob = function (callback, _type, _quality) {
+      var cb = callback;
+      // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
+      var p = Promise.resolve().then(function () {
+        if (typeof __zw_canvas_op !== 'function') return null;
+        if (!el._ctx) el.getContext('2d');
+        if (!el._ctx || !el._ctx._handle) return null; // 无 ctx → 无 bitmap
+        var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
+        if (!csv) return null;
+        var nums = csv.split(',');
+        var bytes = new Uint8Array(nums.length);
+        for (var i = 0; i < nums.length; i++) bytes[i] = +nums[i];
+        return new Blob([bytes], { type: 'image/png' });
+      });
+      if (typeof cb === 'function') p.then(function (blob) { cb(blob); });
+      return undefined; // spec：toBlob 返 undefined（非 Promise）
+    };
     return el;
   }
   // R3077：HTMLCanvasElement width/height 反射读（spec default 300/150）。供 CANVAS get-trap getContext

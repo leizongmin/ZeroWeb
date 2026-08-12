@@ -72,6 +72,91 @@ fn test_canvas_to_data_url_r2797() {
 }
 
 #[test]
+fn test_canvas_to_blob_r3296() {
+    // R3296：canvas.toBlob——异步 PNG Blob 导出（HTMLCanvasElement proxy get-trap 路径）。
+    // 镜像 R2797 toDataURL 的 host PNG 编码，但产物为 Blob 经 callback 异步派发（spec：返 undefined，
+    // callback(blob|null) 在 microtask 触发）。复用 toDataURL 编码 → Uint8Array → Blob(type:'image/png')。
+    // sandbox 每 execute 末 drain microtask（perform_microtask_checkpoint）→ callback 在下一 execute 内触发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    // toBlob 返 undefined（spec 非 Promise）+ callback 经 microtask 异步派发 Blob。
+    let ret = sandbox
+        .execute(
+            "var c = document.createElement('canvas'); c.width=3; c.height=3;\
+             var cx = c.getContext('2d'); cx.fillStyle='red'; cx.fillRect(0,0,3,3);\
+             globalThis.__ret = c.toBlob(function(b){ globalThis.__blob = b; });",
+        )
+        .unwrap();
+    assert_eq!(ret.value, "undefined", "toBlob 须返 undefined（spec 非 Promise）");
+    // microtask 在本 execute 末 drain → callback 已触发，__blob 已设。
+    sandbox.execute("globalThis.__noop = 1;").unwrap(); // 触发 microtask drain（callback 注册在 Promise.resolve().then）
+    assert_eq!(
+        sandbox.execute("String(globalThis.__blob != null)").unwrap().value,
+        "true",
+        "toBlob callback 须派发非 null Blob"
+    );
+    // Blob.type='image/png' + size>0（PNG 非空）。
+    assert_eq!(
+        sandbox.execute("globalThis.__blob.type").unwrap().value,
+        "image/png",
+        "Blob.type 须为 'image/png'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__blob.size > 0)").unwrap().value,
+        "true",
+        "Blob.size 须 >0（PNG 非空）"
+    );
+    // arrayBuffer() 解码 → PNG 签名（\\x89 P N G \\r \\n \\x1a \\n）。
+    sandbox
+        .execute(
+            "globalThis.__sig = null;\
+             globalThis.__blob.arrayBuffer().then(function(buf){\
+               var u = new Uint8Array(buf);\
+               globalThis.__sig = u[0]+','+u[1]+','+u[2]+','+u[3]+','+u[4]+','+u[5]+','+u[6]+','+u[7];\
+             });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__noop2 = 1;").unwrap(); // drain arrayBuffer() Promise
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sig)").unwrap().value,
+        "137,80,78,71,13,10,26,10",
+        "arrayBuffer() 须解码为合法 PNG 签名（137,80,78,71,13,10,26,10）"
+    );
+    // 无 ctx（未 getContext）canvas → spec real-browser 行为：惰性建 ctx 产空白 PNG（callback 非 null），
+    // 与 toDataURL 在无 ctx canvas 上返有效 `data:image/png;base64,` 同语义。验证 callback 得 Blob + PNG 签名。
+    sandbox
+        .execute(
+            "globalThis.__blankBlob = 'pending';\
+             document.createElement('canvas').toBlob(function(b){ globalThis.__blankBlob = b; });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__noop3 = 1;").unwrap(); // drain microtask
+    assert_eq!(
+        sandbox.execute("String(globalThis.__blankBlob != null && globalThis.__blankBlob !== 'pending')")
+            .unwrap()
+            .value,
+        "true",
+        "无 ctx canvas → 惰性建 ctx 产 Blob（spec real-browser 行为，镜像 toDataURL）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__blankBlob.type").unwrap().value,
+        "image/png",
+        "惰性 ctx canvas Blob.type='image/png'"
+    );
+}
+
+#[test]
 fn test_canvas_slice4_r2798() {
     // R2798：canvas slice 4——off-DOM 2D 表面补全（putImageData / globalCompositeOperation / shadow）。
     // 经核验三项均真写 pixel_buffer（非仅记 primitives）：

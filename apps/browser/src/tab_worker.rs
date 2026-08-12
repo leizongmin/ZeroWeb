@@ -298,9 +298,7 @@ fn tab_worker_main(
                                 .map(|_| ())
                                 .map_err(|e| e.to_string())
                         } else {
-                            wv.execute_script(&script)
-                                .map(|_| ())
-                                .map_err(|e| e.to_string())
+                            wv.execute_script(&script).map(|_| ()).map_err(|e| e.to_string())
                         };
                         if let Err(e) = res {
                             tracing::warn!("dispatch user scroll (single-process): {e}");
@@ -311,9 +309,7 @@ fn tab_worker_main(
                 TabWorkerCommand::ExecuteScriptForTest { script, reply } => {
                     // 读回页面 JS 状态：生产走 _js_worker，测试（无 js_worker）走 wv 内部沙箱。
                     let result: Result<String, String> = if let Some(js_worker) = _js_worker.as_ref() {
-                        js_worker
-                            .execute_script_direct(&script)
-                            .map_err(|e| e.to_string())
+                        js_worker.execute_script_direct(&script).map_err(|e| e.to_string())
                     } else {
                         wv.execute_script(&script).map_err(|e| e.to_string())
                     };
