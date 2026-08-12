@@ -20,7 +20,7 @@ use crate::gpu::pipeline::{
     create_transform_pipeline, create_transform_uniform_bgl, create_uniform_bind_group_layout,
 };
 use crate::image_cache::ImageCache;
-use crate::primitive::{FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
+use crate::primitive::{DrawOp, FillPrimitive, FilterKind, GradientKind, RenderPrimitives, RoundedRectPrimitive};
 
 mod filters;
 
@@ -934,32 +934,95 @@ impl GpuRenderer {
                 multiview_mask: None,
             });
 
-            // 1. Shadows
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &shadow_verts, "Shadow");
-            // 2. Fills
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &fill_verts, "Fill");
-            // 3. RoundedRects
-            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts);
-            // 4. Gradients
-            self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources);
-            // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
-            self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
-            // 5. Images
-            self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources);
-            // 6-8. Strokes + PathFills + PathStrokes
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts, "Stroke");
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts, "PathFill");
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_stroke_verts, "PathStroke");
-            // 9. Glyphs
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts, "Glyph");
-            // 10. Chrome / WebView 文字
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
-            // 11. Overlay fills
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_fill_verts, "OverlayFill");
-            // 11b. Overlay rounded rects（滚动条 thumb 等）
-            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts);
-            // 12. Overlay glyphs
-            self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+            // B（R3277）：draw_order 非空时按 CSS painting order 逐图元绘制（修复
+            // DC-10 类型分桶 z 序缺陷——父背景图被子元素背景色盖住）。每图元一个
+            // draw call（收集器产出每图元独立顶点组）。draw_order 为空回退分桶。
+            if !primitives.draw_order.is_empty() {
+                for op in &primitives.draw_order {
+                    match op {
+                        DrawOp::Shadow(i) => {
+                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &shadow_verts[*i], "Shadow")
+                        }
+                        DrawOp::Fill(i) => self.draw_fill_pass(&mut pass, uniform_bg, &device, &fill_verts[*i], "Fill"),
+                        DrawOp::RoundedRect(i) => {
+                            self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts[*i])
+                        }
+                        DrawOp::Gradient(i) => {
+                            self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources[*i..*i + 1])
+                        }
+                        DrawOp::Image(i) => {
+                            self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources[*i..*i + 1])
+                        }
+                        DrawOp::Stroke(i) => {
+                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts[*i], "Stroke")
+                        }
+                        DrawOp::PathFill(i) => {
+                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts[*i], "PathFill")
+                        }
+                        DrawOp::PathStroke(i) => {
+                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_stroke_verts[*i], "PathStroke")
+                        }
+                        DrawOp::Glyph(i) => {
+                            self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts[*i], "Glyph")
+                        }
+                        // Filter/Transform 为 pass 外后处理（下方）；Clip/Blend 由
+                        // scene_supported 拒绝回退 CPU（C 阶段实现）
+                        DrawOp::Filter(_) | DrawOp::Transform(_) | DrawOp::Clip(_) | DrawOp::BlendMode(_) => {}
+                    }
+                }
+                // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
+                self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
+                // Chrome / WebView 层（始终最后，独立于页面 draw_order）
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
+                self.draw_fill_pass(
+                    &mut pass,
+                    uniform_bg,
+                    &device,
+                    &overlay_fill_verts.concat(),
+                    "OverlayFill",
+                );
+                self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts.concat());
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+            } else {
+                // 1. Shadows
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &shadow_verts.concat(), "Shadow");
+                // 2. Fills
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &fill_verts.concat(), "Fill");
+                // 3. RoundedRects
+                self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &rr_verts.concat());
+                // 4. Gradients
+                self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources);
+                // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
+                self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
+                // 5. Images
+                self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources);
+                // 6-8. Strokes + PathFills + PathStrokes
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts.concat(), "Stroke");
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts.concat(), "PathFill");
+                self.draw_fill_pass(
+                    &mut pass,
+                    uniform_bg,
+                    &device,
+                    &path_stroke_verts.concat(),
+                    "PathStroke",
+                );
+                // 9. Glyphs
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &glyph_verts.concat(), "Glyph");
+                // 10. Chrome / WebView 文字
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &ui_glyph_verts, "UiGlyph");
+                // 11. Overlay fills
+                self.draw_fill_pass(
+                    &mut pass,
+                    uniform_bg,
+                    &device,
+                    &overlay_fill_verts.concat(),
+                    "OverlayFill",
+                );
+                // 11b. Overlay rounded rects（滚动条 thumb 等）
+                self.draw_rounded_rect_pass(&mut pass, uniform_bg, &device, &overlay_rr_verts.concat());
+                // 12. Overlay glyphs
+                self.draw_fill_pass(&mut pass, uniform_bg, &device, &overlay_glyph_verts, "OverlayGlyph");
+            }
         }
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -1192,9 +1255,10 @@ impl GpuRenderer {
 
     // ── 顶点收集方法（纯数据操作，无 GPU 借用冲突） ──
 
-    fn collect_shadow_vertices(&self, shadows: &[crate::primitive::ShadowPrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_shadow_vertices(&self, shadows: &[crate::primitive::ShadowPrimitive], scale: f32) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for shadow in shadows {
+            let mut verts = Vec::new();
             let sr = &shadow.rect;
             let spread = shadow.spread_radius * scale;
             let ox = shadow.offset_x * scale;
@@ -1205,13 +1269,15 @@ impl GpuRenderer {
             let b = sr.bottom() * scale + spread + oy;
             let c = Color::rgba(shadow.color.r, shadow.color.g, shadow.color.b, shadow.color.a);
             push_fill_quad(&mut verts, l, t, r, b, c);
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
-    fn collect_fill_vertices(&self, fills: &[FillPrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_fill_vertices(&self, fills: &[FillPrimitive], scale: f32) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for fill in fills {
+            let mut verts = Vec::new();
             let r = &fill.rect;
             push_fill_quad(
                 &mut verts,
@@ -1221,13 +1287,19 @@ impl GpuRenderer {
                 r.bottom() * scale,
                 fill.color,
             );
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
-    fn collect_rounded_rect_vertices(&self, rects: &[crate::primitive::RoundedRectPrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_rounded_rect_vertices(
+        &self,
+        rects: &[crate::primitive::RoundedRectPrimitive],
+        scale: f32,
+    ) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for rr in rects {
+            let mut verts = Vec::new();
             let r = &rr.rect;
             let l = r.left() * scale;
             let t = r.top() * scale;
@@ -1251,8 +1323,9 @@ impl GpuRenderer {
             for v in [&v0, &v1, &v2, &v3, &v4, &v5] {
                 verts.extend_from_slice(v);
             }
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
     fn prepare_gradient_resources(
@@ -1548,28 +1621,38 @@ impl GpuRenderer {
         self.image_texture_cache.clear();
     }
 
-    fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_stroke_vertices(&self, strokes: &[crate::primitive::StrokePrimitive], scale: f32) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for stroke in strokes {
+            let mut verts = Vec::new();
             push_stroke_mesh(&mut verts, stroke, scale);
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
-    fn collect_path_fill_vertices(&self, paths: &[crate::primitive::PathFillPrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_path_fill_vertices(&self, paths: &[crate::primitive::PathFillPrimitive], scale: f32) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for pf in paths {
+            let mut verts = Vec::new();
             push_path_fill_mesh(&mut verts, pf, scale);
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
-    fn collect_path_stroke_vertices(&self, paths: &[crate::primitive::PathStrokePrimitive], scale: f32) -> Vec<f32> {
-        let mut verts = Vec::new();
+    fn collect_path_stroke_vertices(
+        &self,
+        paths: &[crate::primitive::PathStrokePrimitive],
+        scale: f32,
+    ) -> Vec<Vec<f32>> {
+        let mut batches = Vec::new();
         for ps in paths {
+            let mut verts = Vec::new();
             push_path_stroke_mesh(&mut verts, ps, scale);
+            batches.push(verts);
         }
-        verts
+        batches
     }
 
     fn collect_glyph_vertices_from_primitives(
@@ -1578,9 +1661,10 @@ impl GpuRenderer {
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         scale: f32,
-    ) -> Vec<f32> {
-        let mut vertices: Vec<f32> = Vec::new();
+    ) -> Vec<Vec<f32>> {
+        let mut batches: Vec<Vec<f32>> = Vec::new();
         for gp in glyphs {
+            let mut vertices: Vec<f32> = Vec::new();
             let physical_font_size = gp.font_size * scale;
             let font_id = gp.font_id.0;
             let (resolved_id, bitmap) = if let Some(glyph_index) = gp.font_glyph_index() {
@@ -1656,8 +1740,9 @@ impl GpuRenderer {
             vertices.extend_from_slice(&[trx, tly, u1, v0, r, g, b, a]);
             vertices.extend_from_slice(&[brx, bry, u1, v1, r, g, b, a]);
             vertices.extend_from_slice(&[blx, bly, u0, v1, r, g, b, a]);
+            batches.push(vertices);
         }
-        vertices
+        batches
     }
 
     fn collect_overlay_glyphs_data(

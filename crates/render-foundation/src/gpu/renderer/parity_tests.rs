@@ -372,3 +372,54 @@ fn parity_multiple_renderers_alternate_independently() {
     assert_eq!(&rp[..3], &[255, 0, 0], "red 渲染器应保持红");
     assert_eq!(&bp[..3], &[0, 0, 255], "blue 渲染器应保持蓝");
 }
+
+/// B（R3277）：draw_order 驱动的 GPU 绘制——父背景图（ImagePrimitive 先插入）
+/// 与子元素背景色（fill 后插入）：draw_order 按插入顺序 → 子 fill 盖父 image
+///（CSS painting order）；分桶路径会画反（image 桶全在 fill 桶后）。
+#[serial]
+#[test]
+fn parity_draw_order_controls_z_order() {
+    use crate::primitive::DrawOp;
+    let mut image_cache = ImageCache::new(16, 1 << 20);
+    let key = image_cache.insert(ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("red image"));
+    let mut p = RenderPrimitives::default();
+    // 父背景图（先插入，应被子内容盖住）
+    p.images.push(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        image_key: key,
+        clip: None,
+    });
+    // 子元素背景色（后插入，应盖住父背景图）
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(2.0, 2.0, 12.0, 12.0),
+        color: Color::rgba(0, 0, 255, 255),
+    });
+    p.draw_order = vec![DrawOp::Image(0), DrawOp::Fill(0)];
+
+    let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let rendered = renderer.render_full_scene_gpu(
+        &p,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert!(rendered, "draw_order 场景应被 GPU 支持");
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // (4,4) 在子 fill 内 → 蓝（子盖父）
+    let inner = (4 * 16 + 4) * 4;
+    assert_eq!(
+        &pixels[inner..inner + 3],
+        &[0, 0, 255],
+        "子 fill 应盖住父背景图（draw_order）"
+    );
+    // (0,0) 在父背景图内、子 fill 外 → 红（父背景图可见）
+    let outer = 0usize;
+    assert_eq!(&pixels[outer..outer + 3], &[255, 0, 0], "父背景图应可见于子 fill 外");
+}
