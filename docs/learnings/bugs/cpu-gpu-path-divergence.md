@@ -99,6 +99,15 @@
 - **分桶路径 clip（R3284）**：末尾擦白对齐 CPU typed 分桶（blend 分桶仍回退，
   影响面≈0——painter 默认产 draw_order）
 - **GPU scroll bake 测试（R3285）**：合成器 GPU 光栅 + scroll 位移
+- **GPU 阴影模糊（R3287）**：离屏画 + 区域 blur + alpha 混合——box-shadow blur
+  主流特性不再回退（CPU 3-pass box vs GPU 三角窗为视觉近似，对照测试宽容差）
+
+## 最终回退面（2026-08-12）
+
+`scene_supported` 仅剩 3 个边缘场景回退 CPU（均与 CPU 语义无法精确对齐，
+影响面窄）：blend + 分桶路径（draw_order 空）、inset 阴影、repeating 渐变
+首色标 offset≠0。主流特性（半透明/clip/blend/滤镜/变换/阴影模糊/draw_order/
+凹多边形/渐变）全部 GPU 直渲且与 CPU 逐像素一致（parity 对照测试）。
 - **#12 device-lost**：真实恢复循环（wgpu 24 无 DeviceLostCallback；现「失败→CPU
   回退」已覆盖正确性，缺 GPU 设备重建）
 - **#13 atlas 2048**：已是 WebGL2 下限兼容值（所有设备支持），rebuild 机制兜底——
