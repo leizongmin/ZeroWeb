@@ -1,8 +1,10 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3347：deep-review zero-wasm-sandbox 发现并修复一项真 bug——**`read_memory` offset+len 溢出致 OOB 切片 panic（高危）**：wasmi_backend 与 wasmtime_backend 的 `read_memory` 用裸 `offset + len > data.len()` 边界检查——`offset = usize::MAX, len >= 1` 时 `offset + len` 溢出回绕为小值（usize::MAX+1=0），`> data.len()` 误判通过 → `data[offset..offset+len]` 在巨大 offset 处切片 **panic**（OOB，宿主代码可触发，WASM 宿主崩溃）。**不一致证据**：同两文件 `write_memory` 已用 `checked_add` 防此溢出，`read_memory` 漏——疏漏非刻意。改两后端 `read_memory` 均 `offset.checked_add(len)?`。**选 crate 理由**：wasm-sandbox 近 30 天 **0 commits**（最干净的自主可审域，渲染流/html 流零触碰），规避 webview/dom/canvas 等高频共享活跃面（run-rules §9 碰头信号）。6 测确定性复现+修复过（含 3 个 usize::MAX offset panic 变体），wasm-sandbox 198→204 全绿，workspace-minus-browser 零回归，fmt+clippy 零警告。R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346+R3347 = 第十项真 bug 修复（连续 8 crate 产出真 bug，含 4 项高危 panic）。）
+**最后更新**: 2026-08-13（R3348：deep-review **health-review 轮**——连续审 **host-runtime + browser-shell + page-runtime 三 crate 均确认健壮，无真 bug**。host-runtime（1 commit/30d，winit 薄封装）逐文件审 event.rs/window.rs/window_new.rs/lib.rs：纯事件转换 + 指针跟踪，复杂度在成熟 winit 上游，**无 verifiable bug**；发现 `window_new.rs`（358 行）是 lib.rs 未引用的**孤儿死代码**（lib.rs 仅声明 app_icon/event/window 三个 mod，全仓 grep `window_new` 零引用），按 code-guidelines §3「无关死代码提及但不删」记此。browser-shell（2 commits/30d，浏览器 UI）逐文件审 autocomplete/download/history/bookmarks/tab/browser/session/context_menu/settings + 委派 agent 审 tab 管理与会话恢复：**agent 上报 6 候选逐条核实全为误报/代码质量**（move_tab「不能移到末位」实为 `to_index < len` 允许移到 len-1 即末位；close_other_tabs「忽略 keep_index」retain 仍正确；session-restore「private active 索引错」实为 active 在过滤循环内按 tabs.len() 正确计算 / private active 永不匹配返 None；history_index 越界仅 corrupt session 文件优雅降级非 panic）。page-runtime（11 commits/30d，编辑契约）审 form_control.rs + html_actions.rs（近期 feat enforce readonly and maxlength editing）：UTF-16/maxlength/readonly 边界逻辑**写得严谨且测试充分**（saturating_sub/byte_index_at_utf16/多字节 emoji 全处理），对抗探针（9 maxlength 组合 + 5 delete_backward 组合，含超界选区/max=0/emoji 边界）**全过无 panic 无 maxlength 越界**。**下游判断**：连续 8 crate 真 bug 后遇 3 健壮 crate 属正常收敛——host-runtime（薄封装）/ browser-shell（状态机防御充分）/ page-runtime（新写但测试严）均已达高质量；剩余可自主审域 script-sandbox（17 commits/30d，V8/QuickJS 桥）是最后一个未审的 zero-web 流非渲染 crate。host-runtime 232 / browser-shell 312 / page-runtime 全绿（test-guard 验证），本轮无代码变更（健康确认轮，probe 已清理）。）
 
-> **R3346（上一轮）**：deep-review zero-net 修复 cookie `parse_expires_date` day=0 panic + 日期字段无范围校验（day=0 `(d-1)` u32 下溢 debug 构建 panic，攻击者可经 Set-Cookie Expires 触发 DoS；day=32/hour=99 等静默错误时间戳）。新增 `validate_date_fields` 三分支前置。net 394+8 全绿。
+> **R3347（上一轮）**：deep-review zero-wasm-sandbox 修复 `read_memory` offset+len 溢出 OOB 切片 panic（usize::MAX+len 回绕致检查误通过→OOB panic；同文件 write_memory 已用 checked_add twin 证据）。改两后端 checked_add。wasm-sandbox 近 30d 0 commits（最干净自主域）。6 测复现+修复，wasm-sandbox 198→204 全绿。
+
+> **R3346**：deep-review zero-net 修复 cookie `parse_expires_date` day=0 panic + 日期字段无范围校验（day=0 `(d-1)` u32 下溢 debug 构建 panic，攻击者可经 Set-Cookie Expires 触发 DoS；day=32/hour=99 等静默错误时间戳）。新增 `validate_date_fields` 三分支前置。net 394+8 全绿。
 
 > **R3345**：deep-review zero-style-system 非字体面修复 flex-grow/flex-shrink longhand 接受 Infinity（apply.rs `v>=0.0` 漏 `is_finite()`，flex 简写严 longhand 松）；加 `is_finite()` 前置。避开渲染流 computed.rs font-metric 活跃面。7 测复现+修复，style-system 2164→2171 全绿。
 
@@ -169,6 +171,37 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review health-review 轮：host-runtime + browser-shell + page-runtime 三 crate 均确认健壮（本轮 R3348，无代码变更——健康确认轮）
+
+承接 R3347（zero-wasm-sandbox）。本轮为 deep-review **健康确认轮**——按 master.md「下一步剩余可自主审域」列表，连续审 **host-runtime（1 commit/30d）/ browser-shell（2 commits/30d）/ page-runtime（11 commits/30d）三个 crate**，**逐文件 + agent 复核 + 对抗探针三重核验后，三者均确认健壮、无可复现真 bug**：
+
+#### host-runtime：winit 薄封装，主面健壮（无真 bug）
+
+- **范围**：event.rs（234，事件类型 + winit 转换）/ window.rs（664，窗口配置 + 事件循环 + BasicApp/GpuApp）/ window_new.rs（358）/ lib.rs（HostError + 测试）/ app_icon.rs（33）。
+- **结论**：生产代码是 winit 的**薄封装**（事件转换、指针跟踪、DPI/尺寸委托 winit），复杂度在成熟 winit 上游。`PointerTracker`/`about_to_wait` 轮询逻辑正确（原子 load + set_control_flow）。仅 `create_window` 的 `.expect()`（窗口创建失败不可恢复，合理 panic）。**无 verifiable bug**。
+- **观察（非 bug，按 §3 不自主删）**：`window_new.rs`（358 行）是 **lib.rs 未声明的孤儿死代码**——lib.rs 仅 `pub mod app_icon/event/window`，全仓 `grep window_new` 零引用，该文件不被编译。疑似 window.rs 的旧版/重写遗留。提及但**不删除**（code-guidelines §3「发现无关死代码，提及它——但不要删除」）。
+
+#### browser-shell：状态机防御充分，agent 6 候选全误报（无真 bug）
+
+- **范围**：autocomplete（213）/ download（239）/ history（87）/ bookmarks（340）/ tab（496）/ browser（830）/ session（343）/ context_menu（481）/ settings（203）逐文件审 + 委派 agent 审 tab 管理与会话恢复。
+- **结论**：autocomplete（looks_like_url/host_has_dot_tld/score_match 合理）、download（状态机守卫 + AtomicU64 ID）、history/bookmarks（retain/ID 同步正确）、tab 管理均健壮。**委派 agent 上报 6 候选，逐条对照实际代码核实全为误报或代码质量**：
+  - ① move_tab「不能移到末位」（conf 1.0）——实际 `to_index >= len` 拒绝，`to_index = len-1 < len` 允许移到末位，agent 复现「4 tabs move_tab(id,3) 返 false」错误（3<4 允许）。误报。
+  - ② close_other_tabs「忽略 keep_index」（conf 1.0）——retain 仍正确保留目标、active=0，`let _ = keep_index` 仅冗余绑定。代码质量非 bug。
+  - ③ session-restore「private active 索引错」（conf 0.95）——active_tab_index 在**过滤循环内**按 `tabs.len()`（已过滤 vec）计算，private active 永不匹配 `Some(tab.id())` → 返 None（安全）。误报。
+  - ④ history_index 越界（conf 0.9）——仅 corrupt session 文件场景，`if i == history_index` 未命中则 URL 保持 create 的值，**优雅降级非 panic**。非生产 bug。
+  - ⑤ switch_to_index 零/一基歧义（conf 0.8）——文档级，非 bug。
+  - ⑥ reopen_last_closed 两步导航（conf 0.7）——效率，非 bug。
+- **验证**：browser-shell **312 passed / 0 failed**（test-guard）。
+
+#### page-runtime：编辑契约写得严谨且测试充分（无真 bug）
+
+- **范围**：form_control.rs（517，retained 表单编辑状态：UTF-16 选区/IME composition/delete_backward）+ html_actions.rs（842，含近期 `feat(html): enforce readonly and maxlength editing` commit 9de10203 的新逻辑 plan_text_insert/truncate_to_utf16/plan_text_delete）。
+- **结论**：UTF-16 / maxlength / readonly 边界逻辑**写得严谨**：选区偏移统一 UTF-16 code unit（与 DOM selectionStart 一致），`normalized_selection`/`byte_index_at_utf16`/`truncate_to_utf16` 用 saturating_sub 防下溢、char_indices 处理多字节、`.chars().next_back().expect("start>0")` 前提由 `start==0` 早返保证。maxlength 截断（retained_length = utf16_count - 选区，truncate 到剩余容量）边界全正确。
+- **对抗探针验证**（临时 tests/probe_r3348.rs，验后清理）：9 组 maxlength/insert 组合（多字节选区替换 / max=0 / 全选替换 + max 小 / 超界选区 100,200 / 巨大超出 / 空 emoji + max=1）+ 5 组 delete_backward 组合（emoji / 超界选区 / 空值 / 开头）经 `catch_unwind` 包裹——**全过无 panic 无 maxlength 越界**（`XXXXXX`+max=3+`ab`→`Xab` utf16=3 ✓，`X`+max=1 全选 `ab`→`X` utf16=1 ✓）。
+- **验证**：page-runtime 全绿（test-guard）。
+
+**下游判断（固化）**：R3348 = deep-review **健康确认轮**（无代码变更）——连续 8 crate 产出真 bug（security/storage/protocol/net/engine-dom_bindings/css-parser/style-system/net/wasm-sandbox）后，遇 host-runtime/browser-shell/page-runtime **3 个健壮 crate**，属正常的 deep-review 收敛（非每 crate 必有 bug；薄封装 / 状态机防御充分 / 新写但测试严 三类均已高质量）。**剩余可自主审域**：仅 **script-sandbox**（4.6k LOC，V8/QuickJS 扩展沙箱，17 commits/30d——zero-web 流最后一个未完整审的非渲染 crate；feature-gate + 宿主桥接 + 错误边界，边界条件多）。下轮续 deep-review **script-sandbox**，或转入已审 crate 二轮复扫（css-parser/style-system/net/wasm-sandbox 等有真 bug 史的 crate 复审增量），延续找真 bug 模式。
 
 ### deep-review zero-wasm-sandbox 修复 read_memory offset 溢出 OOB panic（本轮 R3347，wasm-sandbox wasmi_backend.rs + wasmtime_backend.rs——真 bug 修复，含高危 panic）
 
