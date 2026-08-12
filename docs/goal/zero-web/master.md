@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3319：DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化——Geometry Interfaces 面闭合，A-gen→B-gen 死代码迁移第 2 片。承接 R3318（navigator.serviceWorker 迁移）系统 diff 两份 polyfill 全局暴露面后定位：B-gen 缺 DOMRect/DOMRectReadOnly（gBCR/IO/RO/Range rect 全返无原型 plain object → 库 instanceof 恒 false），本轮补构造器 + 统一 4 处 rect 工厂到共享原型。**A-gen→B-gen 迁移审计穷尽结论**：A-gen 独有仅 DOMRectReadOnly（闭合）+ WebAssembly（分层注入）+ 内部 helper，该 gap 类已清）。前轮 R3318：navigator.serviceWorker 移植。
+**最后更新**: 2026-08-12（R3320：Geometry Interfaces WPT 合规覆盖锁——`web-api/geometry/interfaces` 用例 + 永久 `check_js_executes_ok` 测试，锁 R3319 DOMRect/DOMRectReadOnly + R2985 DOMMatrix/DOMPoint 工作不被静默回退。承接 R3319 结论（DOM/Web API + Canvas + Geometry 面饱和）转向**用 WPT 覆盖锁住已实现面**）。前轮 R3319：DOMRect + DOMRectReadOnly 全局构造器。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,19 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### Geometry Interfaces WPT 用例 + R3320 锁覆盖（本轮 R3320，wpt-runner）—— R3319/R2985 工作锁合规覆盖
+
+承接 R3319 结论（A-gen→B-gen 迁移穷尽，DOM/Web API + Canvas + Geometry 面饱和）。本轮**转向用 WPT 合规覆盖锁住饱和面**——既有 WPT web-api 用例集（fetch/websocket/observer/wasm 等）覆盖 Web API 存在性，但 **Geometry Interfaces 全无覆盖**：DOMRect/DOMRectReadOnly（R3319）/DOMMatrix/DOMPoint（R2985）四构造器存在性 + instanceof 继承此前无任何 WPT 断言，移除会静默通过既有弱 `dom_has_*` 断言。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_web_api.rs` | +`web-api/geometry/interfaces` 用例：内联脚本检测四构造器存在 + DOMRect instanceof DOMRect/DOMRectReadOnly（is-a 继承）+ 派生属性同步（top=y/right=x+width/bottom=y+h）+ DOMMatrix 单位矩阵 a=1 + DOMPoint w=1 默认。`js_executes_ok` 断言（脚本抛异常即 fail）。 |
+| `tests/wpt-runner/src/runner/mod.rs` | +`geometry_interfaces_case_executes_scripts_r3320` 永久测试：按 id 精确匹配新用例（非 step_by(6) 采样，避免序号漂移）+ `check_js_executes_ok`（建真 WebView + run_page_scripts_strict）。 |
+
+**为何净正向且零回归**：纯测试新增（无生产代码改动，无既有用例改动）。js_executes_ok 经真 WebView 验证 R3319/R2985 工作在生产页面路径（run_page_scripts）可观察——锁住 saturation 不被静默回退。**验证**：`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告 + `runtime_path_tests` **10 passed / 0 failed**（9→10，+1 新测，0 回归，test-guard 包裹）。
+
+**下游判断（固化）**：zero-web 流自主面饱和后，剩余价值在 **用 WPT 合规覆盖锁住已实现面**（防静默回退）+ **真实通过率提升**（按分类挖 unexpected-fail 用例）。战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。下轮可继续按 WPT 分类补锁覆盖，或转其他维度。
 
 ### DOMRect + DOMRectReadOnly 全局构造器 + rect 工厂原型化（本轮 R3319，engine JS shim）—— Geometry Interfaces 面闭合（A-gen 死代码 → B-gen 生产路径迁移第 2 片）
 
