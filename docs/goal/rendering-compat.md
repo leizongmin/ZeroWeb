@@ -35,6 +35,8 @@
 >
 > **▶ 字体栈增量进展（R3278-F table shaped intrinsic·2026-08-12）**：table auto layout 的直接文本 cell 现复用 IFC 字体 resolver 与 `AdvanceSource`，以真实 shaped max-content 取代逐字符启发式；many-to-one ligature 与 ZWNJ 等可忽略控制字符折叠 run 使用 paint 同源总 advance，复杂 offset mapping 仍 fail-closed。`ZW_TABLE_SHAPED_INTRINSIC=0` 可回滚。`font-feature-resolution-001/002` self-source `2.18%/2.81%→0.55%/1.36%`；Chromium Oracle `10.62%/12.91%→9.83%/12.32%`。全 css-fonts 282 案 A/B：2 改善、6 微退、274 持平，总 diff `-0.96pp`，目录 `84/282`、credible `74`、strict `54` 均保持。TableCell inherited 32px IFC 实验使 Oracle 恶化至 `13.07%/16.78%`，已完整撤回，后续须随 table paint ownership/line metrics 一并处理。验证：layout `1364/1364`、engine `2022/2022`、workspace default/QuickJS clippy、reftest `687/687`、产品 smoke 与表单性能门全绿；`make test` 两个并发时序失败均已隔离复现，real HTTP 串行通过，form fixture 重建独立 renderer 后通过。
 >
+> **▶ 文字排版增量进展（R3288-F plaintext line direction·2026-08-12）**：`unicode-bidi: plaintext` 不再于断行前重排整个 DOM text run；现先按逻辑顺序软换行，再按 `<br>` 分隔段落的首个 strong 字符决定基方向、逐 fragment 恢复视觉字符顺序，并在 `text-align:start` 时解析段落 start 边。paint Path B 通过容器 override 保留 plaintext 语义，显式 left/right 仅关闭自动 start 对齐，不恢复错误预重排。`ZW_PLAINTEXT_LINE_DIRECTION=0` 可回滚。上游 `bidi-plaintext-br-001` self-source `0.93%→0.88%`，Chromium Oracle `2.15%→2.04%`；writing-modes 81 个 Oracle 案 A/B 为 1 改善、0 恶化、80 持平，总 `-0.11pp`。剩余差异主要是 Arial/`10ch` 字体度量墙；跨多个 mixed-direction fragment 的完整逐行 UBA 仍有 FIXME。验证：layout `1365/1365`、engine `2022/2022`、workspace default/QuickJS clippy、reftest `687/687`、产品 desktop/375/320 smoke 与表单性能门全绿；`make test` 唯一 real HTTP 并发时序失败串行通过。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

@@ -709,6 +709,13 @@ impl super::Painter {
                 let mut ctx = InlineFormattingContext::new(ifc_width)
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
+                    .with_plaintext_bidi(
+                        matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext),
+                        matches!(
+                            style.text_align,
+                            zero_style_system::property::types::TextAlignValue::Start
+                        ),
+                    )
                     .with_break_word(break_word)
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)

@@ -634,7 +634,29 @@ pub(crate) struct BidiFragmentCursor {
     visual_char_offset: usize,
 }
 
+/// 返回 plaintext 段落首个 strong 字符的基方向。
+pub(crate) fn plaintext_base_is_rtl(text: &str) -> bool {
+    use unicode_bidi::{BidiClass, bidi_class};
+    text.chars()
+        .find_map(|ch| match bidi_class(ch) {
+            BidiClass::R | BidiClass::AL => Some(true),
+            BidiClass::L => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 impl BidiFragmentCursor {
+    /// 创建不做视觉重排的逻辑顺序游标。
+    pub(crate) fn logical(text: &str) -> Self {
+        Self {
+            source_text: None,
+            reordered: identity_bidi_mapping(text),
+            visual_byte_offset: 0,
+            visual_char_offset: 0,
+        }
+    }
+
     /// 为一个逻辑文本运行创建游标，带 CSS direction 和 unicode-bidi 参数。
     ///
     /// UAX #9 HL1: `is_rtl = true` → paragraph base level = 1 (RTL),

@@ -15,6 +15,15 @@ impl InlineFormattingContext {
     /// 和 `InlineItem::Br`（强制换行）。浮动排除区域会缩小每行的可用宽度。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
+        let plaintext_enabled = std::env::var("ZW_PLAINTEXT_LINE_DIRECTION").as_deref() != Ok("0")
+            && items
+                .iter()
+                .any(|item| matches!(item, InlineItem::Text(run) if run.is_plaintext_bidi));
+        let plaintext_directions = if plaintext_enabled {
+            plaintext_paragraph_directions(&items)
+        } else {
+            HashMap::new()
+        };
 
         // 诊断（R2027）：`ZW_DEBUG_IFC=1` 时对含 inline-block item 的容器 dump 条目构成 +
         // 各 inline-block 的 (w, h, baseline) + 最终行盒高度。Phase A IFC 调试用（line-box
@@ -71,7 +80,15 @@ impl InlineFormattingContext {
             match item {
                 InlineItem::Text(run) => {
                     // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
-                    let mut source_cursor = BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi);
+                    // https://drafts.csswg.org/css-writing-modes-3/#valdef-unicode-bidi-plaintext
+                    // plaintext 必须先按逻辑内容断行，再逐行应用段落方向；整段预重排会把
+                    // 后续 Latin 词搬到 RTL 段首，改变软换行结果。
+                    let logical_plaintext = plaintext_enabled && run.is_plaintext_bidi;
+                    let mut source_cursor = if logical_plaintext {
+                        BidiFragmentCursor::logical(&run.text)
+                    } else {
+                        BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)
+                    };
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
@@ -541,8 +558,37 @@ impl InlineFormattingContext {
 
         // 应用文本对齐
         self.apply_text_alignment();
+        if plaintext_enabled {
+            self.apply_plaintext_direction(&plaintext_directions);
+        }
 
         // 应用 vertical-align 对齐
         self.apply_vertical_alignment();
     }
+}
+
+fn plaintext_paragraph_directions(items: &[InlineItem]) -> HashMap<NodeId, bool> {
+    fn flush(text: &mut String, nodes: &mut Vec<NodeId>, directions: &mut HashMap<NodeId, bool>) {
+        let rtl = plaintext_base_is_rtl(text);
+        for node in nodes.drain(..) {
+            directions.insert(node, rtl);
+        }
+        text.clear();
+    }
+
+    let mut directions = HashMap::new();
+    let mut paragraph = String::new();
+    let mut nodes = Vec::new();
+    for item in items {
+        match item {
+            InlineItem::Text(run) if run.is_plaintext_bidi => {
+                paragraph.push_str(&run.text);
+                nodes.push(run.node_id);
+            }
+            InlineItem::Br => flush(&mut paragraph, &mut nodes, &mut directions),
+            _ => {}
+        }
+    }
+    flush(&mut paragraph, &mut nodes, &mut directions);
+    directions
 }

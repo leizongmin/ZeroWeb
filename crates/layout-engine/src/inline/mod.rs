@@ -53,6 +53,10 @@ pub struct InlineFormattingContext {
     pub container_width: f32,
     /// 文本对齐方式。
     pub text_align: TextAlign,
+    /// `unicode-bidi: plaintext` + `text-align:start` 时按段落基方向解析 start 边。
+    pub plaintext_auto_align: bool,
+    /// paint IFC 无 style map 时使用的容器级 `unicode-bidi: plaintext` 覆盖。
+    pub plaintext_bidi_override: bool,
     /// 末行对齐方式（CSS text-align-last）。None 表示跟随 text-align。
     pub text_align_last: Option<TextAlign>,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
@@ -249,6 +253,8 @@ impl InlineFormattingContext {
         Self {
             container_width,
             text_align: TextAlign::default(),
+            plaintext_auto_align: false,
+            plaintext_bidi_override: false,
             text_align_last: None,
             break_word: false,
             no_wrap: false,
@@ -300,6 +306,13 @@ impl InlineFormattingContext {
     /// 设置文本对齐方式。
     pub fn with_text_align(mut self, align: TextAlign) -> Self {
         self.text_align = align;
+        self
+    }
+
+    /// 设置 paint IFC 的 plaintext 语义与默认 start 对齐。
+    pub fn with_plaintext_bidi(mut self, enabled: bool, auto_align: bool) -> Self {
+        self.plaintext_bidi_override = enabled;
+        self.plaintext_auto_align = enabled && auto_align;
         self
     }
 
@@ -746,6 +759,11 @@ impl InlineFormattingContext {
                 LengthValue::Percentage(p) => *p as f32 * 16.0 / 100.0,
                 _ => DEFAULT_FONT_SIZE,
             };
+            self.plaintext_auto_align = matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                && matches!(
+                    style.text_align,
+                    zero_style_system::property::types::TextAlignValue::Start
+                );
         }
         let items = self.collect_inline_items(doc, container, styles);
         self.break_items_into_lines(items);
@@ -1040,6 +1058,36 @@ impl InlineFormattingContext {
                     }
                 }
             }
+        }
+    }
+
+    /// 对 plaintext 最终行应用段落方向，并按需解析默认 start 对齐。
+    fn apply_plaintext_direction(&mut self, directions: &HashMap<NodeId, bool>) {
+        let line_areas: Vec<(f32, f32)> = self
+            .lines
+            .iter()
+            .map(|line| self.effective_content_area(line.y, line.height))
+            .collect();
+        for (line, (left, width)) in self.lines.iter_mut().zip(line_areas) {
+            let Some(first) = line.runs.first() else { continue };
+            if !directions.get(&first.node_id).copied().unwrap_or(false) {
+                continue;
+            }
+            for run in &mut line.runs {
+                let mut cursor = BidiFragmentCursor::with_direction(&run.text, true, false);
+                let visual = cursor.visual_text().to_string();
+                run.source = cursor.take_source(&visual);
+                run.text = visual;
+            }
+            if !self.plaintext_auto_align {
+                continue;
+            }
+            let right = line.runs.last().map_or(left, |run| run.x + run.width);
+            let offset = left + width - right;
+            for run in &mut line.runs {
+                run.x += offset;
+            }
+            // FIXME: reorder multiple mixed-direction fragments as one final UBA line.
         }
     }
 

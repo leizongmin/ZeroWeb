@@ -129,9 +129,11 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
-                                is_plaintext_bidi: style.is_some_and(|s| {
-                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                                }),
+                                is_plaintext_bidi: style
+                                    .map(|s| {
+                                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                                    })
+                                    .unwrap_or(self.plaintext_bidi_override),
                             }));
                         }
                     }
@@ -473,9 +475,11 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
-                                is_plaintext_bidi: style.is_some_and(|s| {
-                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                                }),
+                                is_plaintext_bidi: style
+                                    .map(|s| {
+                                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                                    })
+                                    .unwrap_or(self.plaintext_bidi_override),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -499,9 +503,11 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
-                                is_plaintext_bidi: style.is_some_and(|s| {
-                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                                }),
+                                is_plaintext_bidi: style
+                                    .map(|s| {
+                                        matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                                    })
+                                    .unwrap_or(self.plaintext_bidi_override),
                             }));
                         }
                     }
