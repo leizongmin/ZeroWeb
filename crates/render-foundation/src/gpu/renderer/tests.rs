@@ -17,7 +17,7 @@ fn test_push_fill_quad() {
     let mut vertices = Vec::new();
     push_fill_quad(&mut vertices, 0.0, 0.0, 100.0, 50.0, Color::rgba(255, 0, 0, 255));
     // 6 个顶点 × 7 个 float = 42
-    assert_eq!(vertices.len(), 42);
+    assert_eq!(vertices.len(), 48);
     assert_eq!(vertices[2], -1.0); // u
     assert_eq!(vertices[3], -1.0); // v
 }
@@ -45,8 +45,8 @@ fn test_push_multiple_fills() {
             Color::BLACK,
         );
     }
-    // 5 × 6 × 7 = 210
-    assert_eq!(vertices.len(), 210);
+    // 5 × 6 × 8 = 240
+    assert_eq!(vertices.len(), 240);
 }
 
 #[serial]
@@ -981,7 +981,7 @@ fn test_gpu_full_scene_shadow_opaque() {
 /// 半透明阴影触发 CPU 回退（GPU 只画硬边不透明矩形，静默画错 → 返回 false）。
 #[serial]
 #[test]
-fn test_gpu_full_scene_shadow_semitransparent_returns_false() {
+fn test_gpu_full_scene_shadow_semitransparent() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
     let mut primitives = RenderPrimitives::default();
     primitives.shadows.push(crate::primitive::ShadowPrimitive {
@@ -995,6 +995,7 @@ fn test_gpu_full_scene_shadow_semitransparent_returns_false() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
+    // P2-8：半透明阴影现已支持（顶点 alpha 通道）——应渲染成功
     let rendered = renderer.render_full_scene_gpu(
         &primitives,
         &font_loader,
@@ -1006,7 +1007,18 @@ fn test_gpu_full_scene_shadow_semitransparent_returns_false() {
         &[],
         1.0,
     );
-    assert!(!rendered, "半透明阴影应返回 false 触发 CPU 回退");
+    assert!(rendered, "半透明无模糊阴影应被 GPU 支持（P2-8 alpha 通道）");
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // 阴影矩形 4..28 × 4..28 + offset(2,2) → 6..30 × 6..30；(10,10) 在半透明黑
+    // 阴影内 over 白底 → 混合灰（headless sRGB 编码：encode(0.5)≈187；R 通道 0.5×0+0.5×255
+    // = 0.5 线性 → encode ≈187）。半透明生效的判定：像素显著暗于纯白 255。
+    let b = (10 * 32 + 10) * 4;
+    assert!(pixels[b] < 230, "半透明阴影应使白底变暗（混合灰），got {}", pixels[b]);
+    assert!(
+        pixels[b] > 100,
+        "半透明阴影不应全黑（128 alpha 混合），got {}",
+        pixels[b]
+    );
 }
 
 /// 测试 render_full_scene_gpu 渲染线段

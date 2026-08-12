@@ -179,7 +179,6 @@ fn parity_basic_scene_matches() {
 #[test]
 fn parity_scene_supported_rejects_unimplemented() {
     let (p, _) = build_basic_scene();
-    let empty: &[GlyphDraw] = &[];
     let headless = true;
 
     // clips 非空
@@ -187,14 +186,7 @@ fn parity_scene_supported_rejects_unimplemented() {
     with_clip.clips.push(crate::primitive::ClipPrimitive {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
     });
-    assert!(!crate::gpu::scene_support::scene_supported(
-        &with_clip,
-        empty,
-        &[],
-        empty,
-        &[],
-        headless
-    ));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_clip, headless));
 
     // blend_modes 非空
     let mut with_blend = p.clone();
@@ -202,38 +194,17 @@ fn parity_scene_supported_rejects_unimplemented() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         mode: crate::primitive::BlendMode::Multiply,
     });
-    assert!(!crate::gpu::scene_support::scene_supported(
-        &with_blend,
-        empty,
-        &[],
-        empty,
-        &[],
-        headless
-    ));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_blend, headless));
 
-    // 半透明填充
+    // P2-8：半透明填充现已支持（顶点携带 alpha，shader 输出 color.a × 覆盖率）→ 接受
     let mut with_alpha = p.clone();
     with_alpha.fills[0].color = Color::rgba(255, 0, 0, 128);
-    assert!(!crate::gpu::scene_support::scene_supported(
-        &with_alpha,
-        empty,
-        &[],
-        empty,
-        &[],
-        headless
-    ));
+    assert!(crate::gpu::scene_support::scene_supported(&with_alpha, headless));
 
     // 带模糊阴影
     let mut with_shadow_blur = p.clone();
     with_shadow_blur.shadows[0].blur_radius = 4.0;
-    assert!(!crate::gpu::scene_support::scene_supported(
-        &with_shadow_blur,
-        empty,
-        &[],
-        empty,
-        &[],
-        headless
-    ));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_shadow_blur, headless));
 
     // 窗口模式（headless=false）+ filter
     let mut with_filter = p.clone();
@@ -241,33 +212,12 @@ fn parity_scene_supported_rejects_unimplemented() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         filters: vec![crate::primitive::FilterKind::Opacity(0.5)],
     });
-    assert!(!crate::gpu::scene_support::scene_supported(
-        &with_filter,
-        empty,
-        &[],
-        empty,
-        &[],
-        false
-    ));
+    assert!(!crate::gpu::scene_support::scene_supported(&with_filter, false));
     // headless 下 filter 支持 → 不拒绝
-    assert!(crate::gpu::scene_support::scene_supported(
-        &with_filter,
-        empty,
-        &[],
-        empty,
-        &[],
-        true
-    ));
+    assert!(crate::gpu::scene_support::scene_supported(&with_filter, true));
 
     // 支持子集 → 接受
-    assert!(crate::gpu::scene_support::scene_supported(
-        &p,
-        empty,
-        &[],
-        empty,
-        &[],
-        headless
-    ));
+    assert!(crate::gpu::scene_support::scene_supported(&p, headless));
 }
 
 /// P2-6：超过 adapter max_texture_dimension_2d 的图片必须触发回退（返回 false），
@@ -325,25 +275,45 @@ fn parity_oversize_image_gpu_returns_false() {
     assert!(rendered_ok, "正常尺寸图应正常渲染");
 }
 
-/// 半透明场景 GPU 渲染必须返回 false（触发回退），而非静默画错。
+/// P2-8：半透明填充现由 GPU 正确渲染（顶点 alpha × 覆盖率）——不再回退，
+/// 且像素为真实混合结果（128-alpha 红 over 白底 → 混合粉）。
 #[serial]
 #[test]
-fn parity_semitransparent_gpu_returns_false() {
-    let (mut p, mut image_cache) = build_basic_scene();
-    p.fills[0].color = Color::rgba(255, 0, 0, 128);
+fn parity_semitransparent_gpu_renders_correctly() {
+    // 128-alpha 红 fill 覆盖全帧（clear 白底）
+    let mut primitives = RenderPrimitives::default();
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        color: Color::rgba(255, 0, 0, 128),
+    });
     let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
     let rendered = renderer.render_full_scene_gpu(
-        &p,
+        &primitives,
         &font_loader,
         &mut glyph_cache,
-        Some(&mut image_cache),
+        None,
         &[],
         &[],
         &[],
         &[],
         1.0,
     );
-    assert!(!rendered, "半透明场景应返回 false 触发 CPU 回退");
+    assert!(rendered, "半透明场景应被 GPU 支持（P2-8 alpha 通道）");
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    // headless 目标 Rgba8UnormSrgb：shader 输出 byte/255（当 linear）经 sRGB 编码。
+    // 混合结果 0.5 分量 → 读回 encode(0.5) ≈ 187。窗口模式（非 sRGB surface）输出
+    // byte 原值 128，与 CPU 一致（此编码效应是 headless 特有，P2-8 中间色对齐待办）。
+    assert_eq!(pixels[0], 255, "R 应为 255（红分量满）");
+    assert!(
+        (pixels[1] as i32 - 187).abs() <= 8,
+        "G 应 ≈encode(0.5)≈187，got {}",
+        pixels[1]
+    );
+    assert!(
+        (pixels[2] as i32 - 187).abs() <= 8,
+        "B 应 ≈encode(0.5)≈187，got {}",
+        pixels[2]
+    );
 }

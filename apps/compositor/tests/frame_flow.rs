@@ -399,11 +399,11 @@ fn compositor_gpu_path_produces_expected_fill() {
     assert_eq!(&frame.rgba[..4], &[255, 0, 0, 255]);
 }
 
-/// P0-1（真实合成器进程）：GPU 光栅模式下半透明 fill 会被 `scene_supported` 拒绝
-/// （GPU shader 固定 alpha=1.0 会画错）→ 整帧回退 CPU → 像素为半透明混合结果。
-/// GPU 错误路径会输出 (255,0,0,255)，断言 R<200 && A<255 可区分。
+/// P2-8（真实合成器进程）：GPU 光栅模式下半透明 fill 由 GPU 直接渲染
+/// （顶点 alpha 通道，shader 输出 color.a × 覆盖率）——像素为半透明混合结果
+/// （128-alpha 红 over 黑底：0.5×红 → sRGB 编码 R<255，而非不透明 255）。
 #[test]
-fn compositor_gpu_semitransparent_falls_back_to_cpu() {
+fn compositor_gpu_semitransparent_renders_correctly() {
     let (mut transport, _comp) =
         spawn_compositor_with_env(&[("ZW_COMPOSITOR_GPU", "1"), ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0")]);
     assert_eq!(
@@ -413,8 +413,8 @@ fn compositor_gpu_semitransparent_falls_back_to_cpu() {
     let frame = get_frame(&mut transport, 2, 9, 2, 1);
     let center = ((32 * 64 + 32) * 4) as usize;
     assert!(
-        frame.rgba[center] < 200,
-        "半透明红 over 黑底应回退 CPU 混合（R<200），GPU 错画应为 255，got {}",
+        (128..255).contains(&frame.rgba[center]),
+        "半透明红应被 GPU 半混合渲染（R 在 128..255，非不透明 255），got {}",
         frame.rgba[center]
     );
 }

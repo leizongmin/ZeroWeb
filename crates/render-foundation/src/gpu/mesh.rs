@@ -12,18 +12,29 @@ pub fn color_to_f32(color: Color) -> (f32, f32, f32) {
     (color.r as f32 / 255.0, color.g as f32 / 255.0, color.b as f32 / 255.0)
 }
 
+/// Color → (f32, f32, f32, f32) 归一化到 [0, 1]（P2-8：顶点携带 alpha 通道，
+/// fill shader 输出 `color.a × 覆盖率 alpha`，半透明填充不再被画成不透明）
+pub fn color_to_f32a(color: Color) -> (f32, f32, f32, f32) {
+    (
+        color.r as f32 / 255.0,
+        color.g as f32 / 255.0,
+        color.b as f32 / 255.0,
+        color.a as f32 / 255.0,
+    )
+}
+
 /// 推入一个填充矩形的 6 个顶点（2 个三角形）
 pub fn push_fill_quad(vertices: &mut Vec<f32>, left: f32, top: f32, right: f32, bottom: f32, color: Color) {
-    let (r, g, b) = color_to_f32(color);
+    let (r, g, b, a) = color_to_f32a(color);
     let (u, v) = (-1.0f32, -1.0f32);
     // 三角形 1: 左上 → 右上 → 左下
-    vertices.extend_from_slice(&[left, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[right, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b]);
+    vertices.extend_from_slice(&[left, top, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[right, top, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b, a]);
     // 三角形 2: 右上 → 右下 → 左下
-    vertices.extend_from_slice(&[right, top, u, v, r, g, b]);
-    vertices.extend_from_slice(&[right, bottom, u, v, r, g, b]);
-    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b]);
+    vertices.extend_from_slice(&[right, top, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[right, bottom, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[left, bottom, u, v, r, g, b, a]);
 }
 
 /// 推入圆角矩形网格顶点
@@ -44,7 +55,7 @@ pub fn push_rounded_rect_mesh(
     color: Color,
     segments: usize,
 ) {
-    let (r, g, b) = color_to_f32(color);
+    let (r, g, b, a) = color_to_f32a(color);
 
     // 中心点（扇形中心）
     let cx = (left + right) * 0.5;
@@ -86,6 +97,7 @@ pub fn push_rounded_rect_mesh(
         r,
         g,
         b,
+        a,
     );
     push_corner_fan(
         vertices,
@@ -100,6 +112,7 @@ pub fn push_rounded_rect_mesh(
         r,
         g,
         b,
+        a,
     );
     push_corner_fan(
         vertices,
@@ -114,6 +127,7 @@ pub fn push_rounded_rect_mesh(
         r,
         g,
         b,
+        a,
     );
     push_corner_fan(
         vertices,
@@ -128,6 +142,7 @@ pub fn push_rounded_rect_mesh(
         r,
         g,
         b,
+        a,
     );
 }
 
@@ -146,6 +161,7 @@ fn push_corner_fan(
     r: f32,
     g: f32,
     b: f32,
+    a: f32,
 ) {
     if radius < 0.5 || segments == 0 {
         return;
@@ -163,9 +179,9 @@ fn push_corner_fan(
         let y1 = center_y + radius * a1.sin();
 
         // 三角形：扇形中心 → 弧起点 → 弧终点
-        vertices.extend_from_slice(&[fan_cx, fan_cy, u, v, r, g, b]);
-        vertices.extend_from_slice(&[x0, y0, u, v, r, g, b]);
-        vertices.extend_from_slice(&[x1, y1, u, v, r, g, b]);
+        vertices.extend_from_slice(&[fan_cx, fan_cy, u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[x0, y0, u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[x1, y1, u, v, r, g, b, a]);
     }
 }
 
@@ -206,7 +222,7 @@ fn push_solid_line_mesh(
     color: Color,
     cap: LineCap,
 ) {
-    let (r, g, b) = color_to_f32(color);
+    let (r, g, b, a) = color_to_f32a(color);
     let (u, v) = (-1.0f32, -1.0f32);
 
     let dx = x2 - x1;
@@ -229,19 +245,19 @@ fn push_solid_line_mesh(
     let d_y = y2 - ny;
 
     // 两个三角形
-    vertices.extend_from_slice(&[ax, ay, u, v, r, g, b]);
-    vertices.extend_from_slice(&[cx, cy, u, v, r, g, b]);
-    vertices.extend_from_slice(&[bx, by, u, v, r, g, b]);
-    vertices.extend_from_slice(&[cx, cy, u, v, r, g, b]);
-    vertices.extend_from_slice(&[d_x, d_y, u, v, r, g, b]);
-    vertices.extend_from_slice(&[bx, by, u, v, r, g, b]);
+    vertices.extend_from_slice(&[ax, ay, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[bx, by, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[d_x, d_y, u, v, r, g, b, a]);
+    vertices.extend_from_slice(&[bx, by, u, v, r, g, b, a]);
 
     // LineCap 扩展
     match cap {
         LineCap::Round => {
             // 在端点添加半圆（用扇形近似）
-            push_half_circle(vertices, x1, y1, width * 0.5, dx, dy, true, r, g, b);
-            push_half_circle(vertices, x2, y2, width * 0.5, dx, dy, false, r, g, b);
+            push_half_circle(vertices, x1, y1, width * 0.5, dx, dy, true, r, g, b, a);
+            push_half_circle(vertices, x2, y2, width * 0.5, dx, dy, false, r, g, b, a);
         }
         LineCap::Square => {
             // Square cap 在端点各延伸 width/2 的矩形
@@ -270,6 +286,7 @@ fn push_half_circle(
     r: f32,
     g: f32,
     b: f32,
+    a: f32,
 ) {
     let (u, v) = (-1.0f32, -1.0f32);
     let base_angle = dir_y.atan2(dir_x);
@@ -290,9 +307,9 @@ fn push_half_circle(
     for i in 0..segments {
         let a0 = start + step * i as f32;
         let a1 = start + step * (i + 1) as f32;
-        vertices.extend_from_slice(&[cx, cy, u, v, r, g, b]);
-        vertices.extend_from_slice(&[cx + radius * a0.cos(), cy + radius * a0.sin(), u, v, r, g, b]);
-        vertices.extend_from_slice(&[cx + radius * a1.cos(), cy + radius * a1.sin(), u, v, r, g, b]);
+        vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[cx + radius * a0.cos(), cy + radius * a0.sin(), u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[cx + radius * a1.cos(), cy + radius * a1.sin(), u, v, r, g, b, a]);
     }
 }
 
@@ -305,8 +322,10 @@ fn push_dashed_line_mesh(vertices: &mut Vec<f32>, x1: f32, y1: f32, x2: f32, y2:
         return;
     }
 
-    let dash_len = width * 3.0;
-    let gap_len = width * 2.0;
+    // P2-8：dash=2×width、gap=1×width（chromium 实测比例，与 CPU stroke.rs R795 对齐；
+    // 旧 3w:2w 与 chromium 发散）
+    let dash_len = width * 2.0;
+    let gap_len = width * 1.0;
     let pattern_len = dash_len + gap_len;
 
     let dir_x = dx / len;
@@ -345,9 +364,19 @@ fn push_dotted_line_mesh(vertices: &mut Vec<f32>, x1: f32, y1: f32, x2: f32, y2:
     while pos <= len {
         let cx = x1 + dir_x * pos;
         let cy = y1 + dir_y * pos;
-        // 用小圆表示点（简化为四边形）
-        let hw = width * 0.5;
-        push_fill_quad(vertices, cx - hw, cy - hw, cx + hw, cy + hw, color);
+        // P2-8：圆点（半径 = width/2，8 段扇形近似）对齐 CPU dot 圆点语义；
+        // 旧实现为方块（视觉与 CPU 圆点发散）
+        let radius = width * 0.5;
+        let (r, g, b, a) = color_to_f32a(color);
+        let (u, v) = (-1.0f32, -1.0f32);
+        let segments = 8;
+        for i in 0..segments {
+            let a0 = std::f32::consts::TAU * i as f32 / segments as f32;
+            let a1 = std::f32::consts::TAU * (i + 1) as f32 / segments as f32;
+            vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+            vertices.extend_from_slice(&[cx + radius * a0.cos(), cy + radius * a0.sin(), u, v, r, g, b, a]);
+            vertices.extend_from_slice(&[cx + radius * a1.cos(), cy + radius * a1.sin(), u, v, r, g, b, a]);
+        }
         pos += dot_spacing;
     }
 }
@@ -362,7 +391,7 @@ pub fn push_path_fill_mesh(vertices: &mut Vec<f32>, path: &PathFillPrimitive, sc
         return; // 至少需要 3 个顶点
     }
 
-    let (r, g, b) = color_to_f32(path.color);
+    let (r, g, b, a) = color_to_f32a(path.color);
     let (u, v) = (-1.0f32, -1.0f32);
 
     // 第一个顶点作为扇形中心
@@ -377,9 +406,9 @@ pub fn push_path_fill_mesh(vertices: &mut Vec<f32>, path: &PathFillPrimitive, sc
         let x2 = coords[(i + 1) * 2] * scale;
         let y2 = coords[(i + 1) * 2 + 1] * scale;
 
-        vertices.extend_from_slice(&[cx, cy, u, v, r, g, b]);
-        vertices.extend_from_slice(&[x1, y1, u, v, r, g, b]);
-        vertices.extend_from_slice(&[x2, y2, u, v, r, g, b]);
+        vertices.extend_from_slice(&[cx, cy, u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[x1, y1, u, v, r, g, b, a]);
+        vertices.extend_from_slice(&[x2, y2, u, v, r, g, b, a]);
     }
 }
 
@@ -439,7 +468,7 @@ mod tests {
         let mut vertices = Vec::new();
         push_fill_quad(&mut vertices, 0.0, 0.0, 100.0, 50.0, Color::rgba(255, 0, 0, 255));
         // 6 vertices × 7 floats = 42
-        assert_eq!(vertices.len(), 42);
+        assert_eq!(vertices.len(), 48);
         assert_eq!(vertices[2], -1.0); // u
         assert_eq!(vertices[3], -1.0); // v
     }
@@ -468,7 +497,7 @@ mod tests {
             Color::RED,
             8,
         );
-        assert!(vertices.len() > 42, "Should generate more vertices than a simple fill");
+        assert!(vertices.len() > 48, "Should generate more vertices than a simple fill");
     }
 
     #[test]
@@ -506,7 +535,7 @@ mod tests {
         };
         push_stroke_mesh(&mut vertices, &stroke, 1.0);
         // 1 quad = 6 vertices × 7 floats = 42
-        assert_eq!(vertices.len(), 42);
+        assert_eq!(vertices.len(), 48);
     }
 
     #[test]
@@ -524,7 +553,7 @@ mod tests {
         };
         push_stroke_mesh(&mut vertices, &stroke, 1.0);
         // Should produce multiple segments
-        assert!(vertices.len() > 42, "Dashed line should produce multiple segments");
+        assert!(vertices.len() > 48, "Dashed line should produce multiple segments");
     }
 
     #[test]
@@ -554,7 +583,7 @@ mod tests {
         };
         push_path_fill_mesh(&mut vertices, &path, 1.0);
         // 1 triangle = 3 vertices × 7 floats = 21
-        assert_eq!(vertices.len(), 21);
+        assert_eq!(vertices.len(), 24);
     }
 
     #[test]
@@ -567,9 +596,9 @@ mod tests {
             closed: false,
         };
         push_path_stroke_mesh(&mut vertices, &path, 1.0);
-        // 1 line segment quad (42) + 2 half-circle caps (8 segments × 21 floats each = 168 × 2 = 336)
-        // Total: 42 + 336 = 378
-        assert_eq!(vertices.len(), 378);
+        // 1 line segment quad (48) + 2 half-circle caps (8 segments × 24 floats each = 192 × 2 = 384)
+        // Total: 48 + 384 = 432
+        assert_eq!(vertices.len(), 432);
     }
 
     #[test]

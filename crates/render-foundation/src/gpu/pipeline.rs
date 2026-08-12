@@ -13,10 +13,10 @@ use std::num::NonZeroU64;
 
 /// WGSL 着色器 — 统一处理填充矩形和 glyph 文本
 ///
-/// 顶点格式：7 个 float = [x, y, u, v, r, g, b]（28 字节步幅）
+/// 顶点格式：8 个 float = [x, y, u, v, r, g, b, a]（32 字节步幅；P2-8 加 alpha）
 /// - pos (x, y): 像素空间坐标
 /// - uv (u, v): atlas UV 坐标（填充矩形使用 -1,-1）
-/// - color (r, g, b): 逐顶点 RGB 颜色
+/// - color (r, g, b, a): 逐顶点 RGBA 颜色
 pub const FILL_GLYPH_SHADER: &str = r#"
 struct Uniforms {
     screen_width: f32,
@@ -32,14 +32,14 @@ struct Uniforms {
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
-    @location(1) color: vec3f,
+    @location(1) color: vec4f,
 };
 
 @vertex
 fn vs_main(
     @location(0) pos: vec2f,
     @location(1) uv: vec2f,
-    @location(2) color: vec3f,
+    @location(2) color: vec4f,
 ) -> VertexOutput {
     let x = (pos.x / uniforms.screen_width) * 2.0 - 1.0;
     let y = 1.0 - (pos.y / uniforms.screen_height) * 2.0;
@@ -58,7 +58,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     } else {
         alpha = textureSample(atlas_texture, atlas_sampler, in.uv).r;
     }
-    return vec4f(in.color, alpha);
+    // P2-8：顶点携带 alpha（color.a），与覆盖率 alpha（glyph atlas 或 1.0）相乘——
+    // 半透明填充/glyph/描边不再被画成不透明（旧实现恒 alpha=1.0）
+    return vec4f(in.color.rgb, in.color.a * alpha);
 }
 "#;
 
@@ -253,9 +255,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         }
     } else {
         // 锥形渐变: param0=cx, param1=cy, param2=start_angle
+        // CSS Images 4 §4.3.4 角度约定（与 CPU gradient.rs 对齐）：0deg = 正上方
+        // 顺时针递增，屏幕 y 向下 → θ = atan2(dx, -dy)。旧 atan2(dy, dx) = 正右
+        // 逆时针，差 90°+反向（P2-8 修复）。
         let dx = in.world_pos.x - in.param0;
         let dy = in.world_pos.y - in.param1;
-        let angle = atan2(dy, dx);
+        let angle = atan2(dx, -dy);
         t = fract((angle - in.param2) / 6.283185307179586);
     }
     if (!is_repeating) {
@@ -482,10 +487,10 @@ fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
 // ─── 通用常量 ──────────────────────────────────────────────────
 
 /// Fill/Glyph 顶点步幅（字节）
-pub const FILL_VERTEX_STRIDE: u64 = 28;
+pub const FILL_VERTEX_STRIDE: u64 = 32;
 
 /// Fill/Glyph 每 vertex float 数量
-pub const FILL_FLOATS_PER_VERTEX: usize = 7;
+pub const FILL_FLOATS_PER_VERTEX: usize = 8;
 
 /// Uniform 缓冲区大小（16 字节 = 4 个 f32）
 pub const UNIFORM_SIZE: u64 = 16;
@@ -573,11 +578,27 @@ pub const GRADIENT_VERTEX_STRIDE: u64 = 40;
 /// Gradient 每 vertex float 数量
 pub const GRADIENT_FLOATS_PER_VERTEX: usize = 10;
 
-/// Image 顶点步幅（字节）— 与 fill 相同 7 个 float
+/// Image 顶点步幅（字节）— 固定 7 个 float（P2-8 后 fill 布局已 8 float，image 独立）
 pub const IMAGE_VERTEX_STRIDE: u64 = 28;
 
 /// Image 每 vertex float 数量
 pub const IMAGE_FLOATS_PER_VERTEX: usize = 7;
+
+/// Image 顶点属性（独立于 fill 的 7-float 格式：[x, y, u, v, r, g, b]）
+const IMAGE_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+    0 => Float32x2,   // pos [x, y]
+    1 => Float32x2,   // uv  [u, v]
+    2 => Float32x3,   // color [r, g, b]
+];
+
+/// 返回 Image 顶点缓冲区布局
+pub fn image_vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+    wgpu::VertexBufferLayout {
+        array_stride: IMAGE_VERTEX_STRIDE,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &IMAGE_VERTEX_ATTRIBUTES,
+    }
+}
 
 /// Blur Uniform 缓冲区大小（16 字节 = 4 个 f32）
 pub const BLUR_UNIFORM_SIZE: u64 = 16;
@@ -588,7 +609,7 @@ pub const BLUR_UNIFORM_SIZE: u64 = 16;
 const FILL_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
     0 => Float32x2,   // pos [x, y]
     1 => Float32x2,   // uv  [u, v]
-    2 => Float32x3,   // color [r, g, b]
+    2 => Float32x4,   // color [r, g, b, a]
 ];
 
 /// 返回 Fill+Glyph 顶点缓冲区布局
@@ -839,7 +860,7 @@ pub fn create_image_pipeline(
             module: &shader_module,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[fill_vertex_buffer_layout()], // same layout as fill
+            buffers: &[image_vertex_buffer_layout()],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
@@ -1194,8 +1215,8 @@ mod tests {
 
     #[test]
     fn test_vertex_constants() {
-        assert_eq!(FILL_FLOATS_PER_VERTEX, 7);
-        assert_eq!(FILL_VERTEX_STRIDE, 28);
+        assert_eq!(FILL_FLOATS_PER_VERTEX, 8);
+        assert_eq!(FILL_VERTEX_STRIDE, 32);
         assert_eq!(UNIFORM_SIZE, 16);
         assert_eq!(ROUNDED_RECT_FLOATS_PER_VERTEX, 16);
         assert_eq!(ROUNDED_RECT_VERTEX_STRIDE, 64);

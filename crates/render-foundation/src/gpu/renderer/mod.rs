@@ -10,7 +10,9 @@ use crate::font::cache::GlyphCache;
 use crate::font::loader::FontLoader;
 use crate::geometry::Rect;
 use crate::gpu::atlas::{GlyphAtlas, GlyphAtlasKey};
-use crate::gpu::mesh::{color_to_f32, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh};
+use crate::gpu::mesh::{
+    color_to_f32, color_to_f32a, push_fill_quad, push_path_fill_mesh, push_path_stroke_mesh, push_stroke_mesh,
+};
 use crate::gpu::pipeline::{
     FILL_FLOATS_PER_VERTEX, GRADIENT_FLOATS_PER_VERTEX, IMAGE_FLOATS_PER_VERTEX, ROUNDED_RECT_FLOATS_PER_VERTEX,
     create_atlas_bind_group_layout, create_blur_pipeline, create_color_filter_pipeline, create_gradient_pipeline,
@@ -691,25 +693,25 @@ impl GpuRenderer {
                 let gy = gy.round();
                 let gw = placement.width as f32;
                 let gh = placement.height as f32;
-                let (r, g, b) = color_to_f32(*color);
+                let (r, g, b, a) = color_to_f32a(*color);
 
                 // R1595 DC-9 GPU parity：90° CW 旋转（匹配 CPU cpu/mod.rs is_rotated_90）。
                 // 旋转后 quad 尺寸 gh×gw（swap），UV 角点重映射（orig TR→out TL 等），使 GPU-mode
                 // vertical-rl/lr Latin 文本字形旋转正确。
                 if (*rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
-                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
                 } else {
-                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
                 }
             }
 
@@ -757,22 +759,22 @@ impl GpuRenderer {
                 let gy = gy.round();
                 let gw = placement.width as f32;
                 let gh = placement.height as f32;
-                let (r, g, b) = color_to_f32(*color);
+                let (r, g, b, a) = color_to_f32a(*color);
                 // R1595 DC-9 GPU parity：90° CW 旋转（同主 glyph 循环）。
                 if (*rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
-                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
                 } else {
-                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                    vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b, a]);
+                    vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
                 }
             }
 
@@ -808,14 +810,7 @@ impl GpuRenderer {
         // P0-1：GPU 生产路径未实现的特性（clips/blend_modes/半透明颜色/带模糊阴影/
         // 窗口模式滤镜变换）静默画错——返回 false 由调用方回退 CPU 整帧重画（慢但对）。
         // 基线：docs/learnings/bugs/cpu-gpu-path-divergence.md
-        if !crate::gpu::scene_support::scene_supported(
-            primitives,
-            ui_glyphs,
-            overlay_fills,
-            overlay_glyphs,
-            overlay_rounded_rects,
-            self.headless_texture.is_some(),
-        ) {
+        if !crate::gpu::scene_support::scene_supported(primitives, self.headless_texture.is_some()) {
             return false;
         }
 
@@ -1618,13 +1613,13 @@ impl GpuRenderer {
             );
             let (gx, gy) = (gx.round(), gy.round());
             let (gw, gh) = (placement.width as f32, placement.height as f32);
-            let (r, g, b) = color_to_f32(gp.color);
-            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+            let (r, g, b, a) = color_to_f32a(gp.color);
+            vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
+            vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+            vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b, a]);
+            vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
         }
         vertices
     }
@@ -1670,22 +1665,22 @@ impl GpuRenderer {
             );
             let (gx, gy) = (gx.round(), gy.round());
             let (gw, gh) = (placement.width as f32, placement.height as f32);
-            let (r, g, b) = color_to_f32(gd.color);
+            let (r, g, b, a) = color_to_f32a(gd.color);
             // R1595 DC-9 GPU parity：90° CW 旋转（同主 glyph 循环）。
             if (gd.rotation - std::f32::consts::FRAC_PI_2).abs() < 0.1 {
-                vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy, u1, v0, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gh, gy, u1, v1, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gh, gy + gw, u0, v1, r, g, b, a]);
+                vertices.extend_from_slice(&[gx, gy + gw, u0, v0, r, g, b, a]);
             } else {
-                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b]);
-                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b]);
-                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b]);
+                vertices.extend_from_slice(&[gx, gy, u0, v0, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gw, gy, u1, v0, r, g, b, a]);
+                vertices.extend_from_slice(&[gx + gw, gy + gh, u1, v1, r, g, b, a]);
+                vertices.extend_from_slice(&[gx, gy + gh, u0, v1, r, g, b, a]);
             }
         }
         vertices
