@@ -934,6 +934,118 @@ fn test_canvas_create_image_bitmap_sources_r3310() {
 }
 
 #[test]
+fn test_canvas_create_image_bitmap_crop_r3311() {
+    // R3311：createImageBitmap options（sx/sy/sw/sh source 裁剪）——ImageBitmap 面收尾切片。
+    // R3309/R3310 defer 项。spec `createImageBitmap(source, sx, sy, sw, sh)` 取 source 子矩形。
+    // 本测断言：① 4×4 四色 ImageData 取右下 2×2 子矩形 → ImageBitmap 2×2（裁剪生效）；
+    // ② drawImage 裁剪结果真栅格（右下角像素色，非左上）；③ 无 options 不裁剪（全图）；④ 裁剪区超源 → reject。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='dst' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var dst = document.getElementById('dst');\
+             var dctx = dst.getContext('2d');\
+             /* 4×4 ImageData：左上红、右上绿、左下蓝、右下白（每象限 2×2 同色）*/\
+             var R = [255,0,0,255], G = [0,255,0,255], B = [0,0,255,255], W = [255,255,255,255];\
+             var px = [];\
+             /* 行0-1：左红右绿；行2-3：左蓝右白 */\
+             for (var y = 0; y < 4; y++) {\
+               for (var x = 0; x < 4; x++) {\
+                 var c = (y < 2) ? (x < 2 ? R : G) : (x < 2 ? B : W);\
+                 for (var k = 0; k < 4; k++) px.push(c[k]);\
+               }\
+             }\
+             var imgData = new ImageData(new Uint8ClampedArray(px), 4, 4);\
+             /* ① 取右下 2×2 子矩形（sx=2,sy=2,sw=2,sh=2）→ 应为白色象限 */\
+             createImageBitmap(imgData, 2, 2, 2, 2).then(function (bm) {\
+               globalThis.__cropW = String(bm.width);\
+               globalThis.__cropH = String(bm.height);\
+               dctx.drawImage(bm, 0, 0);\
+               var p = dctx.getImageData(0, 0, 1, 1).data;\
+               globalThis.__cropColor = String(p[0] + ',' + p[1] + ',' + p[2]);\
+               globalThis.__cropOk = 'ok';\
+             }, function (e) { globalThis.__cropOk = 'reject:' + String(e && e.message ? e.message : e); });\
+             /* ② 无 options → 全图 4×4，左上角红 */\
+             createImageBitmap(imgData).then(function (bm) {\
+               globalThis.__fullW = String(bm.width);\
+               dctx.drawImage(bm, 5, 5);\
+               var p = dctx.getImageData(5, 5, 1, 1).data;\
+               globalThis.__fullColor = String(p[0] + ',' + p[1] + ',' + p[2]);\
+               globalThis.__fullOk = 'ok';\
+             }, function (e) { globalThis.__fullOk = 'reject:' + String(e && e.message ? e.message : e); });\
+             /* ③ 裁剪区完全超源（sx=10）→ 零尺寸 reject */\
+             createImageBitmap(imgData, 10, 10, 2, 2).then(function () {\
+               globalThis.__oobOk = 'ok';\
+             }, function () { globalThis.__oobOk = 'reject'; });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__noop = 1;").unwrap();
+    sandbox.execute("globalThis.__noop = 2;").unwrap();
+    sandbox.execute("globalThis.__noop = 3;").unwrap();
+
+    // ① 裁剪右下 2×2 → 白色象限。
+    assert_eq!(
+        sandbox.execute("globalThis.__cropOk").unwrap().value,
+        "ok",
+        "createImageBitmap(imgData, 2,2,2,2) 应 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cropW").unwrap().value,
+        "2",
+        "裁剪后 ImageBitmap.width = 2（sw）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cropH").unwrap().value,
+        "2",
+        "裁剪后 ImageBitmap.height = 2（sh）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cropColor").unwrap().value,
+        "255,255,255",
+        "裁剪取右下象限 → 白色像素（非左上红）"
+    );
+
+    // ② 无 options → 全图。
+    assert_eq!(
+        sandbox.execute("globalThis.__fullOk").unwrap().value,
+        "ok",
+        "createImageBitmap(imgData) 无 options 应 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fullW").unwrap().value,
+        "4",
+        "无 options → 全图 width = 4"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fullColor").unwrap().value,
+        "255,0,0",
+        "全图左上角 → 红色像素"
+    );
+
+    // ③ 裁剪区超源 → reject。
+    assert_eq!(
+        sandbox.execute("globalThis.__oobOk").unwrap().value,
+        "reject",
+        "裁剪区完全超源（sx=10）→ 零尺寸 reject"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

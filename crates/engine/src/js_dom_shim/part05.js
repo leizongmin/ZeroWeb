@@ -945,12 +945,56 @@
     }
     return null;
   }
+  // R3311：wire 串子矩形裁剪（createImageBitmap options sx/sy/sw/sh）。解析源 wire 像素 → 取 [sx,sx+sw)×[sy,sy+sh)
+  // 子矩形 → 重编码为 sw×sh wire。越界 clamp 到源边界（spec：超界范围不贡献像素，结果尺寸为有效交集——本实现
+  // 简化为 clamp sw/sh 到源内，spec 近似 documented）。源尺寸 0 或 sw/sh ≤ 0 → 返原 wire（调用方判零尺寸 reject）。
+  function _zwCropWire(wire, sx, sy, sw, sh) {
+    var s = String(wire);
+    var semi = s.indexOf(';');
+    if (semi < 0) return s;
+    var dims = s.substring(0, semi).split(':');
+    var srcW = parseInt(dims[0], 10) || 0;
+    var srcH = parseInt(dims[1], 10) || 0;
+    if (srcW <= 0 || srcH <= 0) return s;
+    // options 缺省/无效 → 不裁剪。
+    if (sw == null || sh == null || !isFinite(sw) || !isFinite(sh) || sw <= 0 || sh <= 0) return s;
+    sx = (sx == null || !isFinite(sx)) ? 0 : (sx | 0);
+    sy = (sy == null || !isFinite(sy)) ? 0 : (sy | 0);
+    sw = sw | 0;
+    sh = sh | 0;
+    // clamp 到源边界。
+    if (sx < 0) { sw += sx; sx = 0; }
+    if (sy < 0) { sh += sy; sy = 0; }
+    if (sx + sw > srcW) sw = srcW - sx;
+    if (sy + sh > srcH) sh = srcH - sy;
+    if (sw <= 0 || sh <= 0) return '0:0;'; // 裁剪区完全在源外 → 零尺寸
+    // 解析源像素（逗号分隔十进制）。
+    var pix = s.substring(semi + 1).split(',');
+    var out = sw + ':' + sh + ';';
+    var first = true;
+    for (var y = 0; y < sh; y++) {
+      for (var x = 0; x < sw; x++) {
+        // 源像素索引 = ((sy + y) * srcW + (sx + x)) * 4，取 RGBA 4 分量。
+        var base = ((sy + y) * srcW + (sx + x)) * 4;
+        for (var c = 0; c < 4; c++) {
+          if (!first) out += ',';
+          first = false;
+          out += (parseInt(pix[base + c], 10) || 0);
+        }
+      }
+    }
+    return out;
+  }
   if (!globalThis.createImageBitmap) {
-    globalThis.createImageBitmap = function createImageBitmap(source) {
+    globalThis.createImageBitmap = function createImageBitmap(source, sx, sy, sw, sh) {
       return Promise.resolve(source).then(function (src) {
         var wire = _zwImageBitmapSourceToWire(src);
         if (wire === null) {
           return Promise.reject(new TypeError('createImageBitmap: 不支持的 source 或解码失败'));
+        }
+        // R3311：options 裁剪（sx/sy/sw/sh 子矩形）。4 数值参齐备时裁剪，否则不裁。
+        if (sw != null || sh != null) {
+          wire = _zwCropWire(wire, sx, sy, sw, sh);
         }
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
