@@ -392,6 +392,20 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
         set_feature(&mut features, *b"clig", 0);
     }
 
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-numeric-prop
+    use zero_style_system::FontVariantNumericValue;
+    match &style.font_variant_numeric {
+        FontVariantNumericValue::Normal => {}
+        FontVariantNumericValue::Ordinal => set_feature(&mut features, *b"ordn", 1),
+        FontVariantNumericValue::SlashedZero => set_feature(&mut features, *b"zero", 1),
+        FontVariantNumericValue::LiningNums => set_feature(&mut features, *b"lnum", 1),
+        FontVariantNumericValue::OldstyleNums => set_feature(&mut features, *b"onum", 1),
+        FontVariantNumericValue::ProportionalNums => set_feature(&mut features, *b"pnum", 1),
+        FontVariantNumericValue::TabularNums => set_feature(&mut features, *b"tnum", 1),
+        FontVariantNumericValue::DiagonalFractions => set_feature(&mut features, *b"frac", 1),
+        FontVariantNumericValue::StackedFractions => set_feature(&mut features, *b"afrc", 1),
+    }
+
     if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
         for setting in settings {
             set_feature(&mut features, setting.tag, setting.value);

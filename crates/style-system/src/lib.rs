@@ -1547,6 +1547,48 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
         }
     }
 
+    // HTML §14.3.5 Bidirectional text: `dir` attribute → direction + unicode-bidi.
+    // https://html.spec.whatwg.org/multipage/rendering.html#bidi-rendering
+    if let Some(dir) = elem_attr(elem, "dir") {
+        let dir_lower = dir.trim().to_ascii_lowercase();
+        let is_bdo = tag == "bdo";
+        match dir_lower.as_str() {
+            "ltr" => {
+                hints.push(("direction".to_string(), "ltr".to_string()));
+                if is_bdo {
+                    hints.push(("unicode-bidi".to_string(), "isolate-override".to_string()));
+                } else {
+                    hints.push(("unicode-bidi".to_string(), "isolate".to_string()));
+                }
+            }
+            "rtl" => {
+                hints.push(("direction".to_string(), "rtl".to_string()));
+                if is_bdo {
+                    hints.push(("unicode-bidi".to_string(), "isolate-override".to_string()));
+                } else {
+                    hints.push(("unicode-bidi".to_string(), "isolate".to_string()));
+                }
+            }
+            "auto" => {
+                // dir="auto" → unicode-bidi: isolate (direction determined by first strong char;
+                // full auto-direction requires first-strong algorithm which we don't implement yet,
+                // so we only set unicode-bidi to get the isolation behavior).
+                if is_bdo {
+                    hints.push(("unicode-bidi".to_string(), "isolate-override".to_string()));
+                } else {
+                    hints.push(("unicode-bidi".to_string(), "isolate".to_string()));
+                }
+            }
+            _ => {}
+        }
+    } else if tag == "bdo" {
+        // <bdo> without dir: spec says unicode-bidi: isolate-override regardless
+        hints.push(("unicode-bidi".to_string(), "isolate-override".to_string()));
+    } else if tag == "bdi" {
+        // <bdi> without dir: spec says unicode-bidi: isolate (implicit dir=auto isolation)
+        hints.push(("unicode-bidi".to_string(), "isolate".to_string()));
+    }
+
     hints
 }
 
