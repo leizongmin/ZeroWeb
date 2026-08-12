@@ -68,7 +68,7 @@ fn test_gpu_renderer_headless_creation() {
     let renderer = renderer.unwrap();
     assert!(!renderer.is_window_mode());
     assert_eq!(renderer.surface_size(), (64, 64));
-    assert_eq!(renderer.surface_format(), wgpu::TextureFormat::Rgba8UnormSrgb);
+    assert_eq!(renderer.surface_format(), wgpu::TextureFormat::Rgba8Unorm);
 }
 
 /// 测试渲染红色填充并回读像素验证
@@ -487,7 +487,7 @@ fn test_render_scene_with_alpha_blending() {
 fn test_surface_format_returns_expected() {
     let renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
     let format = renderer.surface_format();
-    matches!(format, wgpu::TextureFormat::Rgba8UnormSrgb);
+    matches!(format, wgpu::TextureFormat::Rgba8Unorm);
 }
 
 /// 测试窗口模式下的 atlas state
@@ -1412,20 +1412,18 @@ fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
     );
 
     let pixels = renderer.read_pixels().expect("read_pixels");
-    // 渲染目标为 Rgba8UnormSrgb：shader 在**线性空间**做 RGB *= amount（sRGB 自动解码→乘→
-    // 自动编码），故 255(红) * 0.5(linear) → sRGB 编码 ≈ 187（1.055*0.5^(1/2.4)-0.055≈0.735）。
-    // 这是感知正确的线性空间 opacity（区别于 CPU 的 sRGB 空间朴素乘 128）；GPU test/ref
-    // 同路径渲染故 reftest 自洽。
+    // #2 修复后 headless 目标为 Rgba8Unorm：shader 输出 byte/255 直通存储（gamma 空间
+    // 乘法，与 CPU effects.rs 一致），255 * 0.5 = 128。
     let r = pixels[0] as i32;
     assert!(
-        (r - 187).abs() <= 4,
-        "R should be ~187 (sRGB-encoded 0.5 linear) after Opacity(0.5), got {r}"
+        (r - 128).abs() <= 4,
+        "R should be ~128 (byte 直通) after Opacity(0.5), got {r}"
     );
     assert!(pixels[1] <= 4, "G should be ~0, got {}", pixels[1]);
     assert!(pixels[2] <= 4, "B should be ~0, got {}", pixels[2]);
 }
 
-/// DC-9 GPU filter:brightness — 红色填充 + Brightness(0.5)，断言 RGB *= 0.5（线性空间 sRGB 编码）。
+/// DC-9 GPU filter:brightness — 红色填充 + Brightness(0.5)，断言 RGB *= 0.5（byte 直通）。
 #[serial]
 #[test]
 fn test_gpu_full_scene_filter_brightness() {
@@ -1456,7 +1454,10 @@ fn test_gpu_full_scene_filter_brightness() {
     let pixels = renderer.read_pixels().expect("read_pixels");
     // brightness(0.5) 与 opacity 同数学（RGB *= 0.5，线性空间）→ sRGB 编码 ≈ 187
     let r = pixels[0] as i32;
-    assert!((r - 187).abs() <= 4, "R should be ~187 after Brightness(0.5), got {r}");
+    assert!(
+        (r - 128).abs() <= 4,
+        "R should be ~128 (byte 直通) after Brightness(0.5), got {r}"
+    );
     assert!(pixels[1] <= 4, "G should be ~0, got {}", pixels[1]);
 }
 
@@ -1530,7 +1531,10 @@ fn test_gpu_full_scene_filter_grayscale() {
     // grayscale(1.0)：三通道相等（灰），值在中灰区间（red 线性 1.0 luma=0.299 → sRGB≈148）。
     assert!((r - g).abs() <= 8, "R≈G after Grayscale(1.0), got r={r} g={g}");
     assert!((g - b).abs() <= 8, "G≈B after Grayscale(1.0), got g={g} b={b}");
-    assert!((100..=200).contains(&r), "gray value mid-range, got r={r}");
+    assert!(
+        (60..=100).contains(&r),
+        "gray value mid-range (luma 0.299×255≈76), got r={r}"
+    );
 }
 
 /// DC-9 GPU filter:hue-rotate — 红色填充 + HueRotate(120)，断言 120° 旋转将红映射为绿
@@ -1641,7 +1645,10 @@ fn test_gpu_full_scene_filter_saturate() {
     // saturate(0.0)：三通道收敛为 luma 灰（red luma=0.299 → sRGB≈148）。
     assert!((r - g).abs() <= 8, "R≈G after Saturate(0.0), got r={r} g={g}");
     assert!((g - b).abs() <= 8, "G≈B after Saturate(0.0), got g={g} b={b}");
-    assert!((100..=200).contains(&r), "gray value mid-range, got r={r}");
+    assert!(
+        (60..=100).contains(&r),
+        "gray value mid-range (luma 0.299×255≈76), got r={r}"
+    );
 }
 
 /// DC-9 GPU filter:sepia — 红色填充 + Sepia(1.0)，断言转换为暖棕调
@@ -1676,7 +1683,10 @@ fn test_gpu_full_scene_filter_sepia() {
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
     // sepia(1.0)：red → 暖棕，三通道均升高（原 B=0 → ~142），且 R>G>B（暖调）。
-    assert!(b > 100, "B should rise from 0 to ~142 (sepia warm tone), got b={b}");
+    assert!(
+        (50..=100).contains(&b),
+        "B should rise from 0 to ~69 (sepia 0.272×255), got b={b}"
+    );
     assert!(r >= g, "R>=G (warm sepia), got r={r} g={g}");
     assert!(g >= b, "G>=B (warm sepia), got g={g} b={b}");
 }

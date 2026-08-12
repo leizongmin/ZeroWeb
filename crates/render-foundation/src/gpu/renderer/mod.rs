@@ -249,7 +249,12 @@ impl GpuRenderer {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        // P0-2 修复（#2）：headless 目标改 Rgba8Unorm——shader 输出 byte/255 直通存储，
+        // 与窗口模式（非 sRGB surface）一致。旧 Rgba8UnormSrgb 会把 fill/图片中间色
+        // sRGB 编码（128→187 偏色），且合成器 GPU 光栅（默认开）走此路径致用户可见偏色。
+        // 渐变纹理同步改 Rgba8Unorm（见 prepare_gradient_resources），全部直通 byte；
+        // 顺带把 GPU 滤镜后处理带入 gamma 空间（与 CPU effects.rs 一致）。
+        let format = wgpu::TextureFormat::Rgba8Unorm;
         let headless_texture = create_headless_texture(&device, width, height, format);
 
         Self::from_device(device, queue, format, Some(headless_texture), None)
@@ -1253,7 +1258,7 @@ impl GpuRenderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });

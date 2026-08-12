@@ -21,11 +21,8 @@ use crate::surface::FrameBuffer;
 
 /// 全帧逐像素对比：GPU 读回字节 vs CPU 原值字节，直接比较。
 ///
-/// 格式语义：headless 目标是 `Rgba8UnormSrgb`——fill/图片/stroke/圆角的中间色会被
-/// sRGB 编码（byte/255 当 linear 输出），故场景图元使用 sRGB 传递函数不动点色
-/// （0 或 255）规避；渐变走「sRGB 纹理 decode → sRGB target encode」近似恒等链，
-/// 中间色无损，可直接比。中间色 fill 的对齐是 P2-8 独立任务。
-/// A 通道直通（sRGB 格式 alpha 不编码）。返回 (通道数超差, 最大通道差)。
+/// #2 修复后 headless 目标为 `Rgba8Unorm`：shader 输出 byte/255 直通存储（与窗口
+/// 模式、CPU 一致），中间色可直接比；A 通道直通。返回 (通道数超差, 最大通道差)。
 fn compare_frames(cpu: &[u8], gpu: &[u8], tolerance: u8) -> (usize, u8) {
     assert_eq!(cpu.len(), gpu.len(), "帧尺寸不一致");
     let mut over = 0;
@@ -302,18 +299,17 @@ fn parity_semitransparent_gpu_renders_correctly() {
     );
     assert!(rendered, "半透明场景应被 GPU 支持（P2-8 alpha 通道）");
     let pixels = renderer.read_pixels().expect("read_pixels");
-    // headless 目标 Rgba8UnormSrgb：shader 输出 byte/255（当 linear）经 sRGB 编码。
-    // 混合结果 0.5 分量 → 读回 encode(0.5) ≈ 187。窗口模式（非 sRGB surface）输出
-    // byte 原值 128，与 CPU 一致（此编码效应是 headless 特有，P2-8 中间色对齐待办）。
+    // #2 修复后 headless 目标 Rgba8Unorm：byte/255 直通存储，混合结果 0.5 分量 = 128
+    //（与窗口模式、CPU 一致）。
     assert_eq!(pixels[0], 255, "R 应为 255（红分量满）");
     assert!(
-        (pixels[1] as i32 - 187).abs() <= 8,
-        "G 应 ≈encode(0.5)≈187，got {}",
+        (pixels[1] as i32 - 128).abs() <= 5,
+        "G 应 ≈128（半混合），got {}",
         pixels[1]
     );
     assert!(
-        (pixels[2] as i32 - 187).abs() <= 8,
-        "B 应 ≈encode(0.5)≈187，got {}",
+        (pixels[2] as i32 - 128).abs() <= 5,
+        "B 应 ≈128（半混合），got {}",
         pixels[2]
     );
 }
