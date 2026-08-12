@@ -27,6 +27,9 @@ use zero_wasm_sandbox::WasmInstance;
 
 use crate::WebViewError;
 
+mod user_actions;
+pub use user_actions::WebViewUserActionResult;
+
 /// 外部 JS 执行器类型（浏览器 Tab JS 线程注入；为 None 时使用进程内 V8）。
 pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
@@ -172,6 +175,14 @@ pub struct WebView {
     script_source_fetcher: Option<ScriptSourceFetcher>,
     /// 当前 URL。
     current_url: Option<String>,
+    /// 当前导航 epoch（user-action node identity scope）。
+    navigation_epoch: u64,
+    /// 当前 live Document generation。
+    document_generation: u64,
+    /// 当前 focus owner。
+    focus_owner: Option<zero_page_runtime::PageNodeRef>,
+    /// 当前文档页面脚本是否已经执行。
+    page_scripts_initialized: bool,
     /// 来源页 URL（导航前的 current_url；`document.referrer` 读，sync 到 pipeline）。
     referrer: Option<String>,
     /// 页面标题。
@@ -258,6 +269,10 @@ impl WebView {
             external_script,
             script_source_fetcher,
             current_url: None,
+            navigation_epoch: 0,
+            document_generation: 0,
+            focus_owner: None,
+            page_scripts_initialized: false,
             referrer: None,
             title: None,
             loading: false,
@@ -356,6 +371,9 @@ impl WebView {
 
     /// 加载 HTML 内容。
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.focus_owner = None;
+        self.page_scripts_initialized = false;
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
@@ -370,6 +388,8 @@ impl WebView {
 
     /// 脚本修改 DOM 后重新加载 HTML（保留已缓存 CSS，并刷新图片子资源）。
     pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.focus_owner = None;
         self.cached_html = html.to_string();
         if let Some(page_url) = self.current_url.clone() {
             // R1794：脚本改 DOM 后刷新图片子资源，CSS url() 引用随 cached_css + inline <style> 一起重抓。
@@ -616,6 +636,9 @@ impl WebView {
         tracing::info!("Fetching URL: {url}");
 
         // 设置加载状态
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.focus_owner = None;
+        self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
         self.referrer = old_url.clone();
@@ -791,6 +814,10 @@ impl WebView {
     /// 用于需要异步/外部驱动的加载场景。
     /// 调用方应随后调用 `fetch_url` 或 `complete_load` 来完成加载。
     pub fn load_url(&mut self, url: &str) {
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.focus_owner = None;
+        self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
         self.referrer = old_url.clone();
@@ -864,6 +891,10 @@ impl WebView {
     ///
     /// 必须丢弃上一文档的 `last_render` / 缓存，否则多进程增量 publish 会把旧帧 IPC 到浏览器。
     pub fn prepare_document_state(&mut self, page_url: &str) {
+        self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.focus_owner = None;
+        self.page_scripts_initialized = false;
         self.last_render = None;
         self.cached_html.clear();
         self.cached_css.clear();
@@ -1314,9 +1345,13 @@ impl WebView {
     }
 
     fn run_page_scripts_impl(&mut self, strict: bool) -> Result<String, WebViewError> {
+        if self.page_scripts_initialized {
+            return Ok(self.cached_html.clone());
+        }
         let html = self.cached_html.clone();
         let scripts = extract_page_scripts_indexed(&html);
         if scripts.is_empty() {
+            self.page_scripts_initialized = true;
             return Ok(html);
         }
         self.ensure_sandbox()?;
@@ -1482,6 +1517,7 @@ impl WebView {
                 tracing::warn!("页面脚本执行警告: {e}");
             }
         }
+        self.page_scripts_initialized = true;
         let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if recorded.is_empty() {
             // P1b L1b（R3108）：polyfill 无变更，但 native 绑定可能已直改 live doc → 检测并重渲染
