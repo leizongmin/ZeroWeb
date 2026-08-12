@@ -2713,3 +2713,143 @@ fn refresh_button_click_stops_loading_when_loading() {
         "clicking refresh button while loading should stop loading"
     );
 }
+
+/// R3254：轮询等待合成帧相对基线发生变化（renderer 输入/渲染异步——不等快照 seq，
+/// 直接等像素变化，比 wait_for_snapshot_after 更贴近「合成帧内容」语义）。最多 10s。
+/// 合成帧（CPU/GPU 双通道输出）。
+type CompositeFrame = (Vec<u8>, Vec<u8>);
+/// 合成帧差异比率（0..1）。
+type DiffFn = dyn Fn(&[u8], &[u8]) -> f32;
+
+fn wait_composite_changed(
+    app: &mut BrowserApp,
+    composite: &dyn Fn(&mut BrowserApp) -> CompositeFrame,
+    diff_ratio: &DiffFn,
+    base_cpu: &[u8],
+    base_gpu: &[u8],
+    label: &str,
+) -> CompositeFrame {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let (cpu, gpu) = composite(app);
+        let cpu_diff = diff_ratio(base_cpu, &cpu);
+        let gpu_diff = diff_ratio(base_gpu, &gpu);
+        if cpu_diff > 0.00005 && gpu_diff > 0.00005 {
+            return (cpu, gpu);
+        }
+        app.poll_tab_fetch();
+        if std::time::Instant::now() >= deadline {
+            panic!("{label} 后合成帧应变化（cpu_diff={cpu_diff:.5} gpu_diff={gpu_diff:.5}，阈值 0.005%）");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// R3254：本地合成 CPU/GPU 双参数矩阵——多进程 renderer（完整 shim/焦点/输入）+
+/// legacy 帧发布（ViewPainted → last_render 含页面主体，本地合成可渲染页面内容）。
+/// 依次交互（点击聚焦 + 输入 / IME 中文 / 滚动），每步用 CPU（rasterize_full_scene）
+/// 与 GPU（headless wgpu）两个通道渲染合成帧，断言：① 页面内容像素存在（非纯白）；
+/// ② 交互引起合成帧变化；③ 两通道输出一致（parity——同输入同渲染）。
+#[test]
+fn local_composite_cpu_gpu_matrix_for_form_interactions() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.enable_multiprocess_for_test();
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.set_legacy_frame_publish_for_test(tab_id);
+    let html = include_str!("../../../examples/forms/form-interaction-test.html");
+    let before_load = app.snapshot_seq_for_test(tab_id);
+    app.load_webview_html_without_wait_for_test(tab_id, html, None);
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, before_load, false),
+        "表单页应在 renderer 加载完成"
+    );
+    // 合成帧 helper：CPU/GPU 双通道。
+    let composite = |app: &mut BrowserApp| -> (Vec<u8>, Vec<u8>) {
+        let cpu = app.render_full_scene_with_webview_for_test(1280, 900);
+        let gpu = app.render_full_scene_with_webview_gpu_for_test(1280, 900);
+        (cpu.data, gpu.data)
+    };
+    let non_white_ratio = |fb: &[u8]| -> f32 {
+        let mut non_white = 0usize;
+        for px in fb.chunks_exact(4) {
+            if px[0] < 250 || px[1] < 250 || px[2] < 250 {
+                non_white += 1;
+            }
+        }
+        non_white as f32 / (fb.len() / 4) as f32
+    };
+    let diff_ratio = |a: &[u8], b: &[u8]| -> f32 {
+        let mut diff = 0usize;
+        for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+            let da = pa[0].abs_diff(pb[0]) + pa[1].abs_diff(pb[1]) + pa[2].abs_diff(pb[2]);
+            if da > 48 {
+                diff += 1;
+            }
+        }
+        diff as f32 / (a.len() / 4) as f32
+    };
+
+    // ① 初始合成帧：两通道都含页面内容（非纯白），且 CPU/GPU parity。
+    let (cpu0, gpu0) = composite(&mut app);
+    assert!(non_white_ratio(&cpu0) > 0.01, "CPU 初始合成帧应含页面内容（非纯白）");
+    assert!(non_white_ratio(&gpu0) > 0.01, "GPU 初始合成帧应含页面内容（非纯白）");
+    let parity0 = diff_ratio(&cpu0, &gpu0);
+    assert!(parity0 < 0.15, "CPU/GPU 初始合成帧差异应 <15%（got {parity0:.3}）");
+
+    // ② 点击聚焦 #name（多进程 renderer 完整焦点链路）+ 键盘输入 'abc'。
+    // 命中扫描找 #name 中心（表单布局位置不确定）。
+    let (content_x, content_y, logical_w, logical_h) = app.page_content_rect();
+    let mut name_point: Option<(f32, f32)> = None;
+    'scan: for y in (0..logical_h as u32).step_by(4) {
+        for x in (0..logical_w as u32).step_by(4) {
+            if let Some(hit) = app.hit_test_page_element_for_test(tab_id, x as f32, y as f32)
+                && hit.id.as_deref() == Some("name")
+            {
+                name_point = Some((x as f32, y as f32));
+                break 'scan;
+            }
+        }
+    }
+    let (doc_x, doc_y) = name_point.expect("hit-test 扫描应找到 #name");
+    let px = (content_x + doc_x * app.scale_factor) as f64;
+    let py = (content_y + doc_y * app.scale_factor) as f64;
+    app.handle_mouse_click(px, py, true, "Left");
+    app.handle_mouse_click(px, py, false, "Left");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while app.page_event_target_for_test(tab_id) != Some("#name") {
+        app.poll_tab_fetch();
+        assert!(std::time::Instant::now() < deadline, "点击应同步 event_targets");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    for ch in "abc".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    // 轮询等合成帧反映输入（renderer 输入 + 渲染异步，不等 seq 更鲁棒）。
+    let (cpu1, gpu1) = wait_composite_changed(&mut app, &composite, &diff_ratio, &cpu0, &gpu0, "输入 abc");
+    let parity1 = diff_ratio(&cpu1, &gpu1);
+    assert!(parity1 < 0.15, "CPU/GPU 输入后合成帧差异应 <15%（got {parity1:.3}）");
+
+    // ③ IME 中文提交（Preedit + Commit 到焦点 input）。
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Commit("中".to_string()));
+    let (cpu2, gpu2) = wait_composite_changed(&mut app, &composite, &diff_ratio, &cpu1, &gpu1, "IME 提交");
+    let parity2 = diff_ratio(&cpu2, &gpu2);
+    assert!(parity2 < 0.15, "CPU/GPU IME 后合成帧差异应 <15%（got {parity2:.3}）");
+
+    // ④ 滚动（滚轮）——合成帧的 webview 内容偏移。
+    let (content_x, content_y, _, _) = app.page_content_rect();
+    let mx = (content_x + 100.0) as f64;
+    let my = (content_y + 100.0) as f64;
+    app.mouse_pos = (mx, my);
+    app.handle_scroll(zero_host_runtime::event::MouseScrollDelta::LineDelta(0.0, -3.0), mx, my);
+    let (cpu3, gpu3) = wait_composite_changed(&mut app, &composite, &diff_ratio, &cpu1, &gpu1, "滚动");
+    let parity3 = diff_ratio(&cpu3, &gpu3);
+    assert!(parity3 < 0.15, "CPU/GPU 滚动后合成帧差异应 <15%（got {parity3:.3}）");
+}

@@ -132,6 +132,14 @@ impl TabManager {
         self.process_backend = ProcessTabBackend::try_new();
     }
 
+    /// R3254 测试用：强制 renderer legacy 帧发布（本地合成像素测试需要 last_render）。
+    #[cfg(test)]
+    pub fn set_legacy_frame_publish_for_test(&mut self, tab_id: TabId) {
+        if let Some(backend) = self.process_backend.as_mut() {
+            backend.set_legacy_frame_publish_for_test(tab_id);
+        }
+    }
+
     /// 显式终止所有渲染子进程。
     ///
     /// 供 `BrowserApp::shutdown_child_processes` 调用，确保 `std::process::exit`

@@ -657,6 +657,13 @@ impl ProcessTabBackend {
         err.is_disconnected() || format!("{err}").contains("IPC 通道已关闭")
     }
 
+    /// R3254 测试用：强制 renderer 走 legacy 帧发布（ViewPainted → snapshot.last_render
+    /// 含页面主体——本地合成像素测试需要）。compositor 模式下 browser 不重建 primitives。
+    #[cfg(test)]
+    pub fn set_legacy_frame_publish_for_test(&mut self, tab_id: TabId) {
+        self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+    }
+
     fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
         #[cfg(test)]
         TEST_RENDERER_OUTBOUND.with(|log| log.borrow_mut().push(kind.clone()));

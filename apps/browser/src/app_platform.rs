@@ -749,6 +749,57 @@ impl BrowserApp {
             &overlay_rounded_rects,
         )
     }
+
+    /// R3254：GPU 等价的完整合成帧渲染（headless wgpu）——与
+    /// [`Self::render_full_scene_with_webview_for_test`] 同一场景（chrome + webview
+    /// 图元 + ImageCache 装配），经 headless GpuRenderer 渲染后 read_pixels 读回。
+    /// 供 CPU/GPU 双参数矩阵测试：两通道输入相同 → 输出像素应一致。
+    #[cfg(test)]
+    pub fn render_full_scene_with_webview_gpu_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> zero_render_foundation::surface::FrameBuffer {
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+        let webview_extras = self.get_webview_extra_primitives();
+        let mut scene_primitives = webview_extras;
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+
+        let mut renderer = match GpuRenderer::new_headless(width, height) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("GPU 合成测试通道不可用（headless 初始化失败: {e}）——返回空白帧");
+                let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
+                fb.clear(255, 255, 255, 255);
+                return fb;
+            }
+        };
+        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.tabs.image_cache_mut(id),
+            None => None,
+        };
+        let rendered = renderer.render_full_scene_gpu(
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            image_cache,
+            &glyphs,
+            &overlay_fills,
+            &overlay_glyphs,
+            &overlay_rounded_rects,
+            1.0,
+        );
+        let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
+        if rendered {
+            if let Some(pixels) = renderer.read_pixels() {
+                fb.data.copy_from_slice(&pixels);
+            }
+        } else {
+            fb.clear(255, 255, 255, 255);
+        }
+        fb
+    }
 }
 
 fn needs_ime_enabled(window_focused: bool, address_bar: bool, find_bar: bool, page_active: bool) -> bool {
