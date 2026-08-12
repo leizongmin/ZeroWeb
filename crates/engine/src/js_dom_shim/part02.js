@@ -2275,7 +2275,103 @@
         return id;
       },
       clearWatch: function(_id) {},
-    }
+    },
+    // serviceWorker（R3318）——Service Worker 注册 API（PWA / 离线缓存 / 推送通知 / 后台同步基础）。
+    // Done Criteria §3 Tier 2 + zero-web.md M12 列项。**此前仅存在于 A-gen dom_bridge.rs（死代码，
+    // generate_dom_api_polyfill 无页面交互生产调用方——见 R2821 Performance API 迁移说明），B-gen 生产
+    // 页面 shim（run_page_scripts 真实 DOM 桥路径，wpt-runner/reftest 同机制）缺失 → `navigator.serviceWorker`
+    // 为 undefined，PWA 注册脚本 `navigator.serviceWorker.register(...)` 全抛 TypeError**。本切片移植到生产 shim。
+    // spec https://w3c.github.io/ServiceWorker/。headless 无真 SW 执行环境（无独立 worker 线程、无真 fetch
+    // 拦截、无真 install/activate 事件派发）→ **进程内注册表近似**（参照 A-gen + storage crate
+    // ServiceWorkerRegistry 状态机）：register 返 Promise<registration>，经 setTimeout(0) 模拟 install→
+    // waiting→active 异步生命周期（installing/waiting/active 字段逐态推进 + scope 派生 + oncontrollerchange）。
+    // getRegistration/getRegistrations/ready/unregister 完整注册查询面。fetch 拦截 / 真事件回调 defer
+    //（需独立 worker 执行环境，跨层大改）。
+    serviceWorker: (function () {
+      var _registrations = [];
+      var _controller = null;
+      // ready Promise 在首个 registration 激活后 resolve（active registration）。
+      var _readyResolve;
+      var _ready = new Promise(function (resolve) { _readyResolve = resolve; });
+      // 容器自身引用（setTimeout 回调读 oncontrollerchange 经此，避免 this 绑定脆弱）。
+      var _container = {
+        oncontrollerchange: null,
+        onmessage: null
+      };
+      // 构造 ServiceWorker 实例（state 推进时镜像 A-gen 字段）。
+      function makeSW(scriptURL, state) {
+        return { scriptURL: scriptURL, state: state, onstatechange: null };
+      }
+      // 构造 ServiceWorkerRegistration（spec 字段：scope + installing/waiting/active + updateViaCache +
+      // onupdatefound；方法：unregister/update）。
+      function makeReg(scriptURL, scope) {
+        var reg = {
+          scope: scope,
+          updateViaCache: 'imports',
+          installing: null,
+          waiting: null,
+          active: null,
+          onupdatefound: null,
+          // unregister → 从注册表移除，返 Promise<true>（spec）。
+          unregister: function () {
+            for (var i = 0; i < _registrations.length; i++) {
+              if (_registrations[i] === reg) { _registrations.splice(i, 1); break; }
+            }
+            return Promise.resolve(true);
+          },
+          update: function () { return Promise.resolve(); },
+          // spec：getNotifications / showNotification（Notifications API 配对）—— headless 无通知，stub。
+          getNotifications: function () { return Promise.resolve([]); },
+          showNotification: function () { return Promise.resolve(); }
+        };
+        return reg;
+      }
+      _container.register = function (scriptURL, options) {
+        if (!scriptURL || typeof scriptURL !== 'string') {
+          return Promise.reject(new TypeError('ServiceWorkerContainer.register: scriptURL is required'));
+        }
+        // scope 缺省 = scriptURL 所在目录（spec §4.5.1）。
+        var scope = (options && options.scope) || scriptURL.substring(0, scriptURL.lastIndexOf('/') + 1);
+        var reg = makeReg(scriptURL, scope);
+        _registrations.push(reg);
+        // 模拟 install→installed(waiting)→activated(active) 异步生命周期（每态 setTimeout(0) 推进，
+        // 下 execute checkpoint 可读）。installing 立即置（installing→installed 是异步过渡）。
+        reg.installing = makeSW(scriptURL, 'installing');
+        if (typeof reg.onupdatefound === 'function') {
+          try { reg.onupdatefound({ type: 'updatefound', target: reg }); } catch (_e) {}
+        }
+        setTimeout(function () {
+          reg.waiting = makeSW(scriptURL, 'installed');
+          reg.installing = null;
+        }, 0);
+        setTimeout(function () {
+          reg.active = makeSW(scriptURL, 'activated');
+          reg.waiting = null;
+          _controller = reg.active;
+          if (_readyResolve) { _readyResolve(reg); _readyResolve = null; }
+          if (typeof _container.oncontrollerchange === 'function') {
+            try { _container.oncontrollerchange({ type: 'controllerchange', target: _container }); } catch (_e) {}
+          }
+        }, 0);
+        return Promise.resolve(reg);
+      };
+      _container.getRegistration = function (scope) {
+        for (var i = 0; i < _registrations.length; i++) {
+          if (!scope || _registrations[i].scope === scope) {
+            return Promise.resolve(_registrations[i]);
+          }
+        }
+        return Promise.resolve(undefined);
+      };
+      _container.getRegistrations = function () {
+        return Promise.resolve(_registrations.slice());
+      };
+      // ready → Promise<ServiceWorkerRegistration>，首个 registration 激活后 resolve（否则挂起，spec 行为）。
+      Object.defineProperty(_container, 'ready', { get: function () { return _ready; } });
+      // controller → 当前控制页面的 active ServiceWorker（激活前为 null）。
+      Object.defineProperty(_container, 'controller', { get: function () { return _controller; } });
+      return _container;
+    })()
   };
 
   // R3256：console 桥接宿主——page console.log/warn/error 等经 `__zw_console_log(level,msg)` 回调转发到宿主日志
