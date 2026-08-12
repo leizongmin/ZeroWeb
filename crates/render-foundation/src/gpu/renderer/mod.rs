@@ -3383,6 +3383,8 @@ impl GpuRenderer {
         };
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Inset Blur Sampler"),
+            // ClampToBorder 需 ADDRESS_MODE_CLAMP_TO_BORDER feature（未启用）——
+            // 保持 ClampToEdge；洞边界边缘语义差异为视觉近似（见 parity 容差）
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
