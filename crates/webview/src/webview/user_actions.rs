@@ -200,20 +200,34 @@ impl WebView {
                 })
             }
             HtmlUserAction::Activate => {
-                let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) else {
-                    return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
-                };
-                let Some(select) = self.page_node_ref_for_selector(&option.select_selector) else {
-                    return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
-                };
-                ActionTargetState::Option(OptionActionState {
-                    select,
-                    selected: option.selected,
-                    multiple: option.multiple,
-                    previous_selected: option
-                        .previous_selected_selector
-                        .and_then(|previous| self.page_node_ref_for_selector(&previous)),
-                })
+                if let Some(url) = zero_engine::anchor_click_target(
+                    &html,
+                    &selector,
+                    self.current_url.as_deref().unwrap_or("about:blank"),
+                ) {
+                    ActionTargetState::Navigate {
+                        intent: FormNavigationIntent {
+                            url,
+                            method: "GET".to_string(),
+                            body: None,
+                        },
+                    }
+                } else {
+                    let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) else {
+                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                    };
+                    let Some(select) = self.page_node_ref_for_selector(&option.select_selector) else {
+                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                    };
+                    ActionTargetState::Option(OptionActionState {
+                        select,
+                        selected: option.selected,
+                        multiple: option.multiple,
+                        previous_selected: option
+                            .previous_selected_selector
+                            .and_then(|previous| self.page_node_ref_for_selector(&previous)),
+                    })
+                }
             }
             HtmlUserAction::MoveFocus { forward } => {
                 let next = zero_engine::next_focus_selector(&html, Some(&selector), *forward)

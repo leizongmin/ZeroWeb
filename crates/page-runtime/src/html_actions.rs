@@ -100,6 +100,11 @@ pub enum ActionTargetState {
     Radio(RadioActionState),
     /// option 与 owning select 状态。
     Option(OptionActionState),
+    /// 可导航链接的规范化 intent。
+    Navigate {
+        /// 未取消时产生的导航。
+        intent: FormNavigationIntent,
+    },
     /// 顺序焦点移动的计算结果。
     Focus {
         /// 下一个 focus owner；`None` 表示清除焦点。
@@ -316,6 +321,9 @@ pub fn plan_html_action(
         }
         (HtmlUserAction::Activate, ActionTargetState::Radio(state)) => plan_radio(request.target, state),
         (HtmlUserAction::Activate, ActionTargetState::Option(state)) => plan_option(request.target, state),
+        (HtmlUserAction::Activate, ActionTargetState::Navigate { intent }) => {
+            Ok(plan_navigation(request.target, intent.clone()))
+        }
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
         (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
         (HtmlUserAction::Submit, ActionTargetState::Submit { form, submitter }) => {
@@ -437,6 +445,19 @@ fn plan_option(target: PageNodeRef, state: &OptionActionState) -> Result<HtmlAct
         effects: vec![],
         invalidation: InvalidationKind::Paint,
     })
+}
+
+fn plan_navigation(target: PageNodeRef, intent: FormNavigationIntent) -> HtmlActionPlan {
+    HtmlActionPlan {
+        target,
+        prepare: vec![],
+        cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
+        rollback: vec![],
+        commit: vec![],
+        followup_events: vec![],
+        effects: vec![PageEffect::Navigate(intent)],
+        invalidation: InvalidationKind::Navigation,
+    }
 }
 
 fn checkedness_events(target: PageNodeRef) -> Vec<PlannedEvent> {
@@ -880,6 +901,45 @@ mod tests {
                 form: node(2),
                 submitter: Some(node(1))
             }]
+        );
+    }
+
+    #[test]
+    fn anchor_navigation_emits_one_effect_only_when_click_is_allowed() {
+        let intent = FormNavigationIntent {
+            url: "https://zero.test/next".to_string(),
+            method: "GET".to_string(),
+            body: None,
+        };
+        let plan = plan_html_action(
+            &request(node(1), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Navigate { intent: intent.clone() },
+        )
+        .unwrap();
+        assert_eq!(plan.cancelable_event.as_ref().unwrap().event_type, "click");
+        assert_eq!(
+            resolve_html_action(
+                plan.clone(),
+                EventDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                },
+            )
+            .effects,
+            [PageEffect::Navigate(intent)]
+        );
+        assert!(
+            resolve_html_action(
+                plan,
+                EventDispatchResult {
+                    default_allowed: false,
+                    html_changed: false,
+                },
+            )
+            .effects
+            .is_empty()
         );
     }
 

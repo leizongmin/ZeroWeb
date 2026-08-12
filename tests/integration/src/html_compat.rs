@@ -665,6 +665,89 @@ document.getElementById('foreign').value='dirty-foreign';
 }
 
 #[test]
+fn anchor_activation_produces_single_navigation_intent() {
+    // https://html.spec.whatwg.org/multipage/links.html#following-hyperlinks-2
+    const SCRIPT: &str = "globalThis.__anchorClicks=0;document.getElementById('link').addEventListener('click',function(){globalThis.__anchorClicks++;});";
+    let html =
+        format!(r#"<html><body><a id="link" href="../next?q=1">Next</a><script>{SCRIPT}</script></body></html>"#);
+
+    fn run(html: &str, executor: Option<&dyn JsExecutor>) -> (Vec<(String, String, Option<String>)>, String) {
+        let url = "https://zero.test/path/page";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor
+                .execute_script_direct(SCRIPT)
+                .expect("register anchor listener");
+        }
+        let link = webview.page_node_ref_for_selector("#link").expect("anchor");
+        let result = dispatch(&mut webview, executor, link, HtmlUserAction::Activate);
+        let intents = result
+            .effects
+            .into_iter()
+            .filter_map(|effect| match effect {
+                PageEffect::Navigate(intent) => Some((intent.url, intent.method, intent.body)),
+                _ => None,
+            })
+            .collect();
+        let clicks = match executor {
+            Some(executor) => executor.execute_script_direct("String(globalThis.__anchorClicks)"),
+            None => webview
+                .execute_script("String(globalThis.__anchorClicks)")
+                .map_err(|error| error.to_string()),
+        }
+        .expect("anchor click count");
+        (intents, clicks)
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(102);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(103));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(
+        renderer_result,
+        (
+            vec![("https://zero.test/next?q=1".to_string(), "GET".to_string(), None)],
+            "1".to_string()
+        )
+    );
+}
+
+#[test]
+fn prevented_anchor_click_does_not_navigate() {
+    // https://dom.spec.whatwg.org/#dom-event-preventdefault
+    const SCRIPT: &str =
+        "document.getElementById('link').addEventListener('click',function(event){event.preventDefault();});";
+    let html = format!(r#"<html><body><a id="link" href="/next">Next</a><script>{SCRIPT}</script></body></html>"#);
+    let url = "https://zero.test/current";
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state(url);
+    webview.load_html(&html, None);
+    let before = webview.page_node_ref_for_selector("#link").expect("anchor before");
+    let history_before = webview
+        .execute_script("String(history.length)")
+        .expect("history before");
+
+    let result = dispatch(&mut webview, None, before, HtmlUserAction::Activate);
+    let after = webview.page_node_ref_for_selector("#link").expect("anchor after");
+    let history_after = webview.execute_script("String(history.length)").expect("history after");
+
+    assert!(result.canceled);
+    assert!(result.effects.is_empty());
+    assert_eq!(before.navigation_epoch(), after.navigation_epoch());
+    assert_eq!(before.document_generation(), after.document_generation());
+    assert_eq!(history_before, history_after);
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());

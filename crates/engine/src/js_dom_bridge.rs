@@ -1450,7 +1450,10 @@ pub fn is_reset_button(html: &str, elem_sel: &str) -> bool {
 /// [`resolve_document_url`] 按 base 解析为绝对。否则 `None`（不导航）。`javascript:` URL 不 eval（headless 简化）；
 /// `#hash` 不滚动到锚（headless 无 viewport）。
 pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option<String> {
-    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+    if !matches!(
+        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
+        "a" | "area"
+    ) {
         return None;
     }
     let href = query_attr_from_html(html, selector, "href");
@@ -1483,7 +1486,10 @@ pub fn anchor_click_target(html: &str, selector: &str, base_url: &str) -> Option
 /// href 以 `#` 开头；否则 `None`。renderer 经 `script_call_set_location_hash` 调 shim `location.hash = hash`
 ///（R3006：更新 hash + history entry + 派 hashchange）。headless 无 viewport → 不滚动到锚，仅 hash/hashchange。
 pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
-    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+    if !matches!(
+        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
+        "a" | "area"
+    ) {
         return None;
     }
     let href = query_attr_from_html(html, selector, "href");
@@ -1502,7 +1508,10 @@ pub fn anchor_hash_target(html: &str, selector: &str) -> Option<String> {
 /// handler 同一 JS 执行通路——非新增 eval 表面，CSP `script-src` 统辖内联/eval 拦截）。空体（`javascript:`）
 /// 返 `Some("")` → 执行空脚本 no-op。real browser：`javascript:` URL click 执行其体，返回值丢弃（非导航）。
 pub fn anchor_javascript_target(html: &str, selector: &str) -> Option<String> {
-    if !query_tag_from_html(html, selector).eq_ignore_ascii_case("a") {
+    if !matches!(
+        query_tag_from_html(html, selector).to_ascii_lowercase().as_str(),
+        "a" | "area"
+    ) {
         return None;
     }
     let href = query_attr_from_html(html, selector, "href");

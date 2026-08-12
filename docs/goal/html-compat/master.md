@@ -78,6 +78,13 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] select/option 用户激活事务与三宿主一致性
 - [x] output/defaultValue reset 与 form owner 集成
 
+## M3c 工作包
+
+- [x] a/area 跨文档导航 intent 与 click 取消
+- [ ] 同文档 fragment/hash 激活
+- [ ] details/summary 激活与取消
+- [ ] dialog/popover 目标校验与 top-layer 状态
+
 ## 下一步
 
-实施 M3c 导航与交互元素族，先闭合 FR-008 的 anchor/area 激活与取消语义。
+闭合同文档 fragment/hash 激活，保持 navigation epoch 不变并更新 history。
