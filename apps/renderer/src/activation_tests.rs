@@ -141,3 +141,52 @@ fn checked_radio_reactivation_does_not_dispatch_change() {
         "1,0"
     );
 }
+
+#[test]
+fn shared_form_actions_preserve_reset_and_submit_semantics() {
+    let html = r#"<html><body>
+        <form id="form" action="https://zero.test/submitted">
+          <input id="name" name="name" value="base">
+          <button id="reset" type="reset">Reset</button>
+          <button id="submit" type="submit" name="go" value="1">Submit</button>
+        </form>
+        <script>
+          globalThis.__cancelSubmit = true;
+          document.querySelector('#form').addEventListener('reset', function() {
+            queueMicrotask(function() {
+              globalThis.__resetValue = document.querySelector('#name').value;
+            });
+          });
+          document.querySelector('#form').addEventListener('submit', function(event) {
+            document.querySelector('#name').value = 'listener';
+            if (globalThis.__cancelSubmit) event.preventDefault();
+          });
+        </script>
+    </body></html>"#;
+    let mut runtime = runtime_with_scripts(html, 924);
+    runtime.stub_network = true;
+    runtime.focus_target("#name").unwrap();
+
+    runtime.apply_text_input_at("#name", "dirty").unwrap();
+    runtime.reset_form_on_click_at("#reset").unwrap();
+    assert_eq!(
+        runtime
+            .js_worker
+            .execute_script_direct("[document.querySelector('#name').value,globalThis.__resetValue].join(',')")
+            .unwrap(),
+        "base,base"
+    );
+
+    runtime.submit_form_on_click_at("#submit").unwrap();
+    assert_eq!(runtime.current_url.as_deref(), Some("https://zero.test/activation"));
+
+    runtime
+        .js_worker
+        .execute_script_direct("globalThis.__cancelSubmit=false")
+        .unwrap();
+    runtime.submit_form_on_click_at("#submit").unwrap();
+    assert_eq!(
+        runtime.history.last().map(String::as_str),
+        Some("https://zero.test/submitted?name=listener&go=1")
+    );
+}

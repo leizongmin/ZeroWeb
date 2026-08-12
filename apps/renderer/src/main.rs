@@ -654,79 +654,114 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
-        self.execute_text_action(
+        self.execute_shared_action(
             selector,
             zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
         )
+        .map(|_| ())
     }
 
     /// P1a form input：Backspace 删焦点 input/textarea 末字符（value + input 事件）；改 DOM 则单次 rerender。
     fn apply_text_delete_at(&mut self, selector: &str) -> Result<(), String> {
-        self.execute_text_action(selector, zero_page_runtime::HtmlUserAction::DeleteBackward)
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::DeleteBackward)
+            .map(|_| ())
     }
 
-    fn execute_text_action(&mut self, selector: &str, action: zero_page_runtime::HtmlUserAction) -> Result<(), String> {
-        let Some(target) = self.node_ref_for_selector(selector) else {
-            return Ok(());
+    fn execute_shared_action(
+        &mut self,
+        selector: &str,
+        action: zero_page_runtime::HtmlUserAction,
+    ) -> Result<Option<zero_webview::WebViewUserActionResult>, String> {
+        let Some(target) = self
+            .webview
+            .as_ref()
+            .and_then(|webview| webview.page_node_ref_for_selector(selector))
+        else {
+            return Ok(None);
         };
-        let Some(state) = self.form_controls.get(selector).cloned() else {
-            return Ok(());
-        };
-        let Ok(plan) = zero_page_runtime::plan_html_action(
-            &zero_page_runtime::HtmlActionRequest {
-                target,
-                action,
-                shift: false,
-            },
-            self.navigation_epoch,
-            self.document_generation,
-            &zero_page_runtime::ActionTargetState::Text(zero_page_runtime::TextActionState {
-                value: state.value,
-                selection_start: state.selection_start,
-                selection_end: state.selection_end,
-            }),
-        ) else {
-            return Ok(());
-        };
-        let dispatch = if self.javascript_enabled {
-            plan.cancelable_event
-                .as_ref()
-                .map(|event| self.dispatch_planned_event(event))
-                .unwrap_or(DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                })
-        } else {
-            DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            }
-        };
-        let outcome = zero_page_runtime::resolve_html_action(
-            plan,
-            zero_page_runtime::EventDispatchResult {
-                default_allowed: dispatch.default_allowed,
-                html_changed: dispatch.html_changed,
-            },
+        let sync_text = matches!(
+            &action,
+            zero_page_runtime::HtmlUserAction::InsertText { .. } | zero_page_runtime::HtmlUserAction::DeleteBackward
         );
-        let state_changed = self.apply_planned_mutations(&outcome.mutations);
-        let listener_changed = self.dispatch_planned_events(&outcome.followup_events);
-        if state_changed || outcome.html_changed || listener_changed {
+        let sync_focused_after_reset = matches!(&action, zero_page_runtime::HtmlUserAction::Reset)
+            .then(|| self.interaction.focus_owner().map(str::to_string))
+            .flatten();
+        let request = zero_page_runtime::HtmlActionRequest {
+            target,
+            action,
+            shift: false,
+        };
+        let result = self
+            .webview
+            .as_mut()
+            .expect("webview")
+            .dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
+            .map_err(|error| error.to_string())?;
+        self.sync_cached_html_from_webview();
+        if sync_text {
+            self.sync_text_control_state_from_worker(selector);
+        }
+        if let Some(focused) = sync_focused_after_reset {
+            self.sync_text_control_state_from_worker(&focused);
+        }
+        let navigated = self.apply_webview_action_effects(&result.effects)?;
+        if !navigated && result.changed {
             self.publish_webview(None, true)?;
         }
-        Ok(())
+        Ok(Some(result))
+    }
+
+    fn sync_text_control_state_from_worker(&mut self, selector: &str) {
+        let Some((value, selection_start, selection_end)) = self
+            .js_worker
+            .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
+            .ok()
+            .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
+        else {
+            return;
+        };
+        self.form_controls
+            .update(selector, value, selection_start, selection_end);
+    }
+
+    fn apply_webview_action_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
+        let mut navigated = false;
+        for effect in effects {
+            match effect {
+                zero_page_runtime::PageEffect::Focus(next) => {
+                    let next = next.and_then(|node| {
+                        self.webview
+                            .as_ref()
+                            .and_then(|webview| webview.selector_for_page_node_handle(node.node().get()))
+                    });
+                    self.blur_focused()?;
+                    if let Some(next) = next {
+                        self.focus_via_tab(&next)?;
+                    }
+                }
+                zero_page_runtime::PageEffect::Navigate(intent) => {
+                    self.navigate_with(
+                        zero_protocol::message::NavigateParams {
+                            url: intent.url.clone(),
+                            referrer: self.current_url.clone(),
+                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                        },
+                        &intent.method,
+                        intent.body.as_deref(),
+                    )?;
+                    navigated = true;
+                }
+                zero_page_runtime::PageEffect::SubmitForm { .. } => {}
+            }
+        }
+        Ok(navigated)
     }
 
     /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
     // https://w3c.github.io/uievents/#event-type-keydown
     fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool) -> Result<(), String> {
         if key == "Tab" {
-            let current = self.interaction.focus_owner().map(str::to_string);
-            if let Some(next) = zero_engine::next_focus_selector(&self.cached_html, current.as_deref(), !shift)
-                && self.interaction.focus_owner() != Some(next.as_str())
-            {
-                self.execute_focus_action(target, &next, !shift)?;
-            }
+            self.execute_shared_action(target, zero_page_runtime::HtmlUserAction::MoveFocus { forward: !shift })?;
         } else if is_printable_key(key) && !self.is_composing_at(target) {
             // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
             self.apply_text_input_at(target, key)?;
@@ -740,35 +775,6 @@ impl RendererRuntime {
             }
         }
         Ok(())
-    }
-
-    fn execute_focus_action(&mut self, target: &str, next: &str, forward: bool) -> Result<(), String> {
-        let Some(target_ref) = self.node_ref_for_selector(target) else {
-            return Ok(());
-        };
-        let Some(next_ref) = self.node_ref_for_selector(next) else {
-            return Ok(());
-        };
-        let Ok(plan) = zero_page_runtime::plan_html_action(
-            &zero_page_runtime::HtmlActionRequest {
-                target: target_ref,
-                action: zero_page_runtime::HtmlUserAction::MoveFocus { forward },
-                shift: !forward,
-            },
-            self.navigation_epoch,
-            self.document_generation,
-            &zero_page_runtime::ActionTargetState::Focus { next: Some(next_ref) },
-        ) else {
-            return Ok(());
-        };
-        let outcome = zero_page_runtime::resolve_html_action(
-            plan,
-            zero_page_runtime::EventDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            },
-        );
-        self.apply_planned_effects(&outcome.effects).map(|_| ())
     }
 
     /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
@@ -906,7 +912,8 @@ impl RendererRuntime {
         if !zero_engine::query_tag_from_html(&self.cached_html, selector).eq_ignore_ascii_case("input") {
             return Ok(());
         }
-        self.execute_form_action(selector, None, zero_page_runtime::HtmlUserAction::Submit)
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
     }
 
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
@@ -915,132 +922,8 @@ impl RendererRuntime {
         if !zero_engine::is_submit_button(&self.cached_html, selector) {
             return Ok(());
         }
-        self.execute_form_action(selector, Some(selector), zero_page_runtime::HtmlUserAction::Submit)
-    }
-
-    fn execute_form_action(
-        &mut self,
-        selector: &str,
-        submitter: Option<&str>,
-        action: zero_page_runtime::HtmlUserAction,
-    ) -> Result<(), String> {
-        let Some(target) = self.node_ref_for_selector(selector) else {
-            return Ok(());
-        };
-        let Some(form_selector) = zero_engine::enclosing_form_selector(&self.cached_html, selector) else {
-            return Ok(());
-        };
-        let Some(form) = self.node_ref_for_selector(&form_selector) else {
-            return Ok(());
-        };
-        let is_reset = matches!(action, zero_page_runtime::HtmlUserAction::Reset);
-        let state = match &action {
-            zero_page_runtime::HtmlUserAction::Reset => zero_page_runtime::ActionTargetState::Reset { form },
-            zero_page_runtime::HtmlUserAction::Submit => zero_page_runtime::ActionTargetState::Submit {
-                form,
-                submitter: submitter.and_then(|selector| self.node_ref_for_selector(selector)),
-            },
-            _ => return Ok(()),
-        };
-        let Ok(plan) = zero_page_runtime::plan_html_action(
-            &zero_page_runtime::HtmlActionRequest {
-                target,
-                action,
-                shift: false,
-            },
-            self.navigation_epoch,
-            self.document_generation,
-            &state,
-        ) else {
-            return Ok(());
-        };
-        if is_reset && self.javascript_enabled {
-            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            page_scripts::begin_host_action_transaction(&mut ctx);
-        }
-        let dispatch = if self.javascript_enabled {
-            plan.cancelable_event
-                .as_ref()
-                .map(|event| self.dispatch_planned_event(event))
-                .unwrap_or(DomDispatchResult {
-                    default_allowed: true,
-                    html_changed: false,
-                })
-        } else {
-            DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            }
-        };
-        let outcome = zero_page_runtime::resolve_html_action(
-            plan,
-            zero_page_runtime::EventDispatchResult {
-                default_allowed: dispatch.default_allowed,
-                html_changed: dispatch.html_changed,
-            },
-        );
-        let state_changed = self.apply_planned_mutations(&outcome.mutations);
-        let microtask_changed = if is_reset && self.javascript_enabled {
-            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            page_scripts::end_host_action_transaction(&mut ctx)
-        } else {
-            false
-        };
-        let navigated = self.apply_planned_effects(&outcome.effects)?;
-        if !navigated && (state_changed || outcome.html_changed || microtask_changed) {
-            self.publish_webview(None, true)?;
-        }
-        Ok(())
-    }
-
-    /// 在 submit listener 完成后构造 entry list 并执行 GET/POST 导航。
-    fn navigate_form_selector(&mut self, form_selector: &str, submitter: Option<&str>) -> Result<bool, String> {
-        let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let html = self.cached_html.clone();
-        let live_values = self
-            .webview
-            .as_ref()
-            .map(|webview| webview.form_control_value_overrides())
-            .unwrap_or_default();
-        // R3055：POST 表单 → POST 导航（url + body）。
-        if let Some((nav_url, body)) =
-            zero_engine::form_post_submission_with_values(&html, form_selector, submitter, &base, &live_values)
-        {
-            self.navigate_with(
-                zero_protocol::message::NavigateParams {
-                    url: nav_url,
-                    referrer: self.current_url.clone(),
-                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                },
-                "POST",
-                Some(&body),
-            )?;
-            return Ok(true);
-        }
-        // R3054：GET 表单 → GET 导航。
-        if let Some(nav_url) =
-            zero_engine::form_get_submission_url_with_values(&html, form_selector, submitter, &base, &live_values)
-        {
-            self.handle_navigate(zero_protocol::message::NavigateParams {
-                url: nav_url,
-                referrer: self.current_url.clone(),
-                navigation_epoch: self.navigation_epoch.wrapping_add(1),
-            })?;
-            return Ok(true);
-        }
-        Ok(false)
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
     }
 
     /// P1a form reset（R3050）：click 命中 reset button → 解析 enclosing `<form>` 调 `form.reset()`
@@ -1049,7 +932,8 @@ impl RendererRuntime {
         if !zero_engine::is_reset_button(&self.cached_html, selector) {
             return Ok(());
         }
-        self.execute_form_action(selector, None, zero_page_runtime::HtmlUserAction::Reset)
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Reset)
+            .map(|_| ())
     }
 
     /// P1a 导航（R3053，闭合 R3052 限制③）：click 命中 hash 链接（`<a href="#sec">`）→
@@ -1097,223 +981,24 @@ impl RendererRuntime {
         Ok(())
     }
 
-    fn node_ref_for_selector(&self, selector: &str) -> Option<zero_page_runtime::PageNodeRef> {
-        let handle = self.webview.as_ref()?.page_node_handle_for_selector(selector)?;
-        Some(zero_page_runtime::PageNodeRef::new(
-            self.navigation_epoch,
-            self.document_generation,
-            zero_page_runtime::PageNodeHandle::new(handle),
-        ))
-    }
-
-    fn selector_for_node_ref(&self, node: zero_page_runtime::PageNodeRef) -> Option<String> {
-        if !node.is_current(self.navigation_epoch, self.document_generation) {
-            return None;
-        }
-        self.webview.as_ref()?.selector_for_page_node_handle(node.node().get())
-    }
-
-    fn checked_action_plan(
-        &self,
-        target: &str,
-    ) -> Option<Result<zero_page_runtime::HtmlActionPlan, zero_page_runtime::ActionNoopReason>> {
-        let target_ref = self.node_ref_for_selector(target)?;
-        let state = if zero_engine::is_checkbox(&self.cached_html, target) {
-            zero_page_runtime::ActionTargetState::Checkbox {
-                checked: zero_engine::has_attribute(&self.cached_html, target, "checked"),
-            }
-        } else if zero_engine::is_radio(&self.cached_html, target) {
-            let previous_checked = zero_engine::checked_radio_group_selector(&self.cached_html, target)
-                .and_then(|selector| self.node_ref_for_selector(&selector));
-            zero_page_runtime::ActionTargetState::Radio(zero_page_runtime::RadioActionState {
-                checked: zero_engine::has_attribute(&self.cached_html, target, "checked"),
-                previous_checked,
-            })
-        } else {
-            return None;
-        };
-        Some(zero_page_runtime::plan_html_action(
-            &zero_page_runtime::HtmlActionRequest {
-                target: target_ref,
-                action: zero_page_runtime::HtmlUserAction::Activate,
-                shift: false,
-            },
-            self.navigation_epoch,
-            self.document_generation,
-            &state,
-        ))
-    }
-
-    fn apply_planned_mutations(&mut self, mutations: &[zero_page_runtime::PlannedMutation]) -> bool {
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let mut changed = false;
-        for mutation in mutations {
-            match mutation {
-                zero_page_runtime::PlannedMutation::SetChecked { target, checked } => {
-                    let Some(selector) = self.selector_for_node_ref(*target) else {
-                        continue;
-                    };
-                    let mut ctx = PageScriptContext {
-                        html: &mut self.cached_html,
-                        url: &url,
-                        js_worker: &self.js_worker,
-                        webview: self.webview.as_mut(),
-                    };
-                    changed |= page_scripts::apply_set_checked_without_events(&mut ctx, &selector, *checked);
-                }
-                zero_page_runtime::PlannedMutation::SetText {
-                    target,
-                    value,
-                    selection_start,
-                    selection_end,
-                } => {
-                    let Some(selector) = self.selector_for_node_ref(*target) else {
-                        continue;
-                    };
-                    let mut ctx = PageScriptContext {
-                        html: &mut self.cached_html,
-                        url: &url,
-                        js_worker: &self.js_worker,
-                        webview: self.webview.as_mut(),
-                    };
-                    if page_scripts::apply_text_state_without_events(
-                        &mut ctx,
-                        &selector,
-                        value,
-                        *selection_start,
-                        *selection_end,
-                    ) {
-                        self.form_controls
-                            .update(&selector, value.clone(), *selection_start, *selection_end);
-                        changed = true;
-                    }
-                }
-                zero_page_runtime::PlannedMutation::ResetForm { form } => {
-                    let Some(form_selector) = self.selector_for_node_ref(*form) else {
-                        continue;
-                    };
-                    let focused = self.interaction.focus_owner().map(str::to_string);
-                    let mut ctx = PageScriptContext {
-                        html: &mut self.cached_html,
-                        url: &url,
-                        js_worker: &self.js_worker,
-                        webview: self.webview.as_mut(),
-                    };
-                    if page_scripts::apply_form_reset_without_events(&mut ctx, &form_selector) {
-                        if let Some(selector) = focused {
-                            let value = self
-                                .webview
-                                .as_ref()
-                                .and_then(|webview| webview.form_control_value_overrides().get(&selector).cloned())
-                                .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, &selector));
-                            let caret = value.encode_utf16().count();
-                            self.form_controls.update(&selector, value, caret, caret);
-                        }
-                        changed = true;
-                    }
-                }
-            }
-        }
-        changed
-    }
-
-    fn dispatch_planned_event(&mut self, event: &zero_page_runtime::PlannedEvent) -> DomDispatchResult {
-        if !self.javascript_enabled {
-            return DomDispatchResult {
-                default_allowed: true,
-                html_changed: false,
-            };
-        }
-        let Some(selector) = self.selector_for_node_ref(event.target) else {
-            return DomDispatchResult {
-                default_allowed: false,
-                html_changed: false,
-            };
-        };
-        let detail = event.input_type.as_ref().map(|input_type| DomEventDetail {
-            data: event.data.clone(),
-            input_type: Some(input_type.clone()),
-            ..Default::default()
-        });
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let mut ctx = PageScriptContext {
-            html: &mut self.cached_html,
-            url: &url,
-            js_worker: &self.js_worker,
-            webview: self.webview.as_mut(),
-        };
-        page_scripts::dispatch_dom_event(&mut ctx, true, &selector, &event.event_type, detail.as_ref())
-    }
-
-    fn dispatch_planned_events(&mut self, events: &[zero_page_runtime::PlannedEvent]) -> bool {
-        if !self.javascript_enabled {
-            return false;
-        }
-        let mut changed = false;
-        for event in events {
-            changed |= self.dispatch_planned_event(event).html_changed;
-        }
-        changed
-    }
-
-    fn apply_planned_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
-        let mut navigated = false;
-        for effect in effects {
-            match effect {
-                zero_page_runtime::PageEffect::Focus(next) => {
-                    let next = next.and_then(|node| self.selector_for_node_ref(node));
-                    self.blur_focused()?;
-                    if let Some(next) = next {
-                        self.focus_via_tab(&next)?;
-                    }
-                }
-                zero_page_runtime::PageEffect::Navigate(intent) => {
-                    self.navigate_with(
-                        zero_protocol::message::NavigateParams {
-                            url: intent.url.clone(),
-                            referrer: self.current_url.clone(),
-                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                        },
-                        &intent.method,
-                        intent.body.as_deref(),
-                    )?;
-                    navigated = true;
-                }
-                zero_page_runtime::PageEffect::SubmitForm { form, submitter } => {
-                    let Some(form_selector) = self.selector_for_node_ref(*form) else {
-                        continue;
-                    };
-                    let submitter = submitter.and_then(|node| self.selector_for_node_ref(node));
-                    navigated |= self.navigate_form_selector(&form_selector, submitter.as_deref())?;
-                }
-            }
-        }
-        Ok(navigated)
-    }
-
     fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
-        let Some(plan) = self.checked_action_plan(&target) else {
+        if !zero_engine::is_checkbox(&self.cached_html, &target) && !zero_engine::is_radio(&self.cached_html, &target) {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+        }
+        self.interaction.set_pointer_target(target.clone());
+        let Some(result) = self.execute_shared_action(&target, zero_page_runtime::HtmlUserAction::Activate)? else {
             return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
         };
-        let handled = true;
-        let Ok(plan) = plan else {
-            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), handled));
-        };
-        let prepared = self.apply_planned_mutations(&plan.prepare);
-        let click = self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None);
-        let outcome = zero_page_runtime::resolve_html_action(
-            plan,
-            zero_page_runtime::EventDispatchResult {
-                default_allowed: click.default_allowed,
-                html_changed: click.html_changed,
-            },
-        );
-        let state_changed = self.apply_planned_mutations(&outcome.mutations);
-        let listener_changed = self.dispatch_planned_events(&outcome.followup_events);
-        if (!outcome.canceled && (prepared || state_changed)) || outcome.html_changed || listener_changed {
-            self.publish_webview(None, true)?;
+        if result.noop_reason == Some(zero_page_runtime::ActionNoopReason::AlreadySelected) {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), true));
         }
-        Ok((click, handled))
+        Ok((
+            DomDispatchResult {
+                default_allowed: !result.canceled && result.noop_reason.is_none(),
+                html_changed: result.changed,
+            },
+            true,
+        ))
     }
 
     fn activate_form_control_at(&mut self, selector: &str) -> Result<bool, String> {

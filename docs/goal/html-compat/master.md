@@ -2,8 +2,8 @@
 
 ## 当前状态
 
-- 阶段：M2
-- 状态：M1 完成，M2 实施中
+- 阶段：M3a
+- 状态：M0-M2 完成，M3 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -22,8 +22,8 @@
 | 里程碑 | 主题 | 状态 |
 |---|---|---|
 | M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | completed |
-| M2 | `page-runtime` 共享默认动作核心 | in_progress |
-| M3 | 文本、选择/表单、导航/交互元素族 | pending |
+| M2 | `page-runtime` 共享默认动作核心 | completed |
+| M3 | 文本、选择/表单、导航/交互元素族 | in_progress |
 | M4 | live renderer WebDriver 与 WPT testdriver | pending |
 
 ## 跨线边界
@@ -56,8 +56,13 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] 三执行器默认动作与取消 conformance
 - [x] 20 轮确定性短序列重放
 - [x] TabWorker 委托共享 WebView coordinator 并删除重复 action 逻辑
-- [ ] renderer 委托共享 WebView coordinator 并删除重复 action 逻辑
+- [x] renderer 委托共享 WebView coordinator 并删除重复 action 逻辑
+
+## M2 验证备注
+
+- `form_input` 性能子门禁通过：p95 `0.0295ms`、jank `0`，每次输入 parse/style/layout 为 `0`、paint/publish 为 `1`。
+- 整套 `make bench-gate` 的全局比较因平台基线 CPU 不一致不可归因：当前 Xeon 8260 KVM 对比 i5-13500H 基线，102 个跨 crate 指标同步超预算；未修改或放宽基线。
 
 ## 下一步
 
-切换 renderer 到共享 WebView coordinator，完成 M2。
+实施 M3a 文本控件元素族，先审计 FR-006 的 live/default value、selection、change-on-blur、IME 与约束属性矩阵。

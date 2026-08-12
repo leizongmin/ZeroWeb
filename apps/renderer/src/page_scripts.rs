@@ -7,13 +7,13 @@ use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
     apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
-    script_dispatch_script_event, script_report_error, script_reset_form_controls, script_run_classic_page,
-    script_set_control_checked, script_set_text_control_state,
+    script_dispatch_script_event, script_report_error, script_run_classic_page,
 };
 #[cfg(test)]
 use zero_engine::{
-    enclosing_form_selector, is_reset_button, is_submit_button, script_call_form_reset, script_text_control_snapshot,
-    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
+    enclosing_form_selector, is_reset_button, is_submit_button, script_call_form_reset, script_reset_form_controls,
+    script_set_control_checked, script_text_control_snapshot, script_text_delete, script_text_delete_without_event,
+    script_text_input, script_text_input_without_event,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -515,6 +515,7 @@ pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, sele
 }
 
 /// 重置已解析的 form owner，不派发页面 `reset` listener。
+#[cfg(test)]
 pub fn apply_form_reset_without_events(ctx: &mut PageScriptContext<'_>, form_selector: &str) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
@@ -530,6 +531,7 @@ pub fn apply_form_reset_without_events(ctx: &mut PageScriptContext<'_>, form_sel
 }
 
 /// 开始宿主默认动作事务，暂缓 listener 排入的 microtask。
+#[cfg(test)]
 pub fn begin_host_action_transaction(ctx: &mut PageScriptContext<'_>) {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     let _ = ctx
@@ -538,6 +540,7 @@ pub fn begin_host_action_transaction(ctx: &mut PageScriptContext<'_>) {
 }
 
 /// 完成宿主默认动作事务，flush microtask 并应用其 DOM mutations。
+#[cfg(test)]
 pub fn end_host_action_transaction(ctx: &mut PageScriptContext<'_>) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
@@ -634,24 +637,12 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
 }
 
 /// 设置 checkbox/radio checkedness，不派发页面事件。
+#[cfg(test)]
 pub fn apply_set_checked_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, checked: bool) -> bool {
     apply_state_script(ctx, &script_set_control_checked(selector, checked))
 }
 
-/// 设置文本控件 live value/selection，不派发页面事件。
-pub fn apply_text_state_without_events(
-    ctx: &mut PageScriptContext<'_>,
-    selector: &str,
-    value: &str,
-    selection_start: usize,
-    selection_end: usize,
-) -> bool {
-    apply_state_script(
-        ctx,
-        &script_set_text_control_state(selector, value, selection_start, selection_end),
-    )
-}
-
+#[cfg(test)]
 fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
