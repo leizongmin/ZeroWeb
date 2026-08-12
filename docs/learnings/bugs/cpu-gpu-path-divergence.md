@@ -93,6 +93,12 @@
 - **GPU clip/blend 完成（R3278）**：clip 白 rect 擦白 + blend 双 pass 源层混合
   （BLEND_SHADER 16 模式），与 CPU 逐像素一致
 - **窗口模式滤镜/变换完成（R3279）**：离屏纹理 ping-pong + blit 回 surface
+- **device-lost 真实恢复（R3281）**：wgpu set_device_lost_callback → 丢弃重建
+- **CDP 截图 GPU 化（R3282）**：env 开关（默认 CPU 保 oracle 基线）
+- **draw_order 合批（R3283）**：连续同类图元合并 draw，减缓冲创建开销
+- **分桶路径 clip（R3284）**：末尾擦白对齐 CPU typed 分桶（blend 分桶仍回退，
+  影响面≈0——painter 默认产 draw_order）
+- **GPU scroll bake 测试（R3285）**：合成器 GPU 光栅 + scroll 位移
 - **#12 device-lost**：真实恢复循环（wgpu 24 无 DeviceLostCallback；现「失败→CPU
   回退」已覆盖正确性，缺 GPU 设备重建）
 - **#13 atlas 2048**：已是 WebGL2 下限兼容值（所有设备支持），rebuild 机制兜底——
