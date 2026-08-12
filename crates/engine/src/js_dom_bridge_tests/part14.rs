@@ -1130,6 +1130,92 @@ fn test_offscreen_canvas_main_thread_r3312() {
 }
 
 #[test]
+fn test_canvas_transfer_control_to_offscreen_r3313() {
+    // R3313：canvas.transferControlToOffscreen()——DOM canvas 转 OffscreenCanvas（闭合 R3312 defer 项）。
+    // spec HTML §4.12：返回 OffscreenCanvas 共享 DOM canvas bitmap（对 offscreen 绘制反映到 DOM canvas 显示）。
+    // 本测断言：① 方法存在 + 返 offscreen 对象；② offscreen.getContext('2d') 绘制反映到 DOM canvas
+    //（共享 host handle——DOM canvas getImageData 读到 offscreen 绘的红色）；③ offscreen.transferToImageBitmap 可用；
+    // ④ 二次 transfer 抛 InvalidStateError（spec，control 已转交）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='5' height='5'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             globalThis.__hasMethod = String(typeof cv.transferControlToOffscreen === 'function');\
+             /* ① transfer → offscreen 对象 */\
+             var oc = cv.transferControlToOffscreen();\
+             globalThis.__hasOc = String(oc !== null && typeof oc.getContext === 'function');\
+             globalThis.__ocW = String(oc.width);\
+             /* ② offscreen.getContext 绘制 → DOM canvas getImageData 读到（共享 handle）*/\
+             var octx = oc.getContext('2d');\
+             globalThis.__hasOctx = String(octx !== null);\
+             octx.fillStyle = 'rgb(255,0,0)';\
+             octx.fillRect(0, 0, 5, 5);\
+             /* DOM canvas 经自身 getContext 取同一 context（已建，共享 handle），getImageData 读到 offscreen 绘制 */\
+             var dctx = cv.getContext('2d');\
+             var px = dctx.getImageData(0, 0, 1, 1).data;\
+             globalThis.__sharedRed = String(px[0] + ',' + px[1] + ',' + px[2]);\
+             /* ③ offscreen.transferToImageBitmap 可用 */\
+             var bm = oc.transferToImageBitmap();\
+             globalThis.__hasBitmap = String(bm !== null && bm.width === 5);\
+             /* ④ 二次 transfer 抛（spec InvalidStateError）*/\
+             globalThis.__secondThrew = 'no';\
+             try { cv.transferControlToOffscreen(); } catch (e) { globalThis.__secondThrew = 'yes'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hasMethod").unwrap().value,
+        "true",
+        "HTMLCanvasElement.transferControlToOffscreen 方法存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasOc").unwrap().value,
+        "true",
+        "transferControlToOffscreen() 返 offscreen 对象（含 getContext）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ocW").unwrap().value,
+        "5",
+        "offscreen 继承 DOM canvas width"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasOctx").unwrap().value,
+        "true",
+        "offscreen.getContext('2d') 返 context"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__sharedRed").unwrap().value,
+        "255,0,0",
+        "offscreen 绘制反映到 DOM canvas（共享 host handle）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasBitmap").unwrap().value,
+        "true",
+        "offscreen.transferToImageBitmap() 返 ImageBitmap"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__secondThrew").unwrap().value,
+        "yes",
+        "二次 transferControlToOffscreen 抛（spec InvalidStateError）"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

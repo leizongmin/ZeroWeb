@@ -154,6 +154,49 @@
               return undefined;
             };
           }
+          // R3313：transferControlToOffscreen()——DOM canvas 转 OffscreenCanvas（spec HTML §4.12）。
+          // 返回 OffscreenCanvas 对象，其 getContext('2d') **复用** DOM canvas 的 host context handle
+          //（共享 bitmap——对 offscreen 的绘制反映到 DOM canvas 显示）。spec：transfer 后 DOM canvas
+          // getContext() 抛 InvalidStateError（control 已转交）。实现：建 DOM canvas context（若未建）→
+          // 标记 _transferred → 返 offscreen 对象持同一 handle。offscreen.transferToImageBitmap 复用 R3312 路径。
+          if (prop === 'transferControlToOffscreen') {
+            return function () {
+              if (typeof __zw_canvas_op !== 'function') return null;
+              // spec：已 transferred → 抛 InvalidStateError（同 canvas 二次 transfer）。
+              var drc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+              if (drc._transferred) {
+                throw new TypeError('transferControlToOffscreen: canvas control already transferred');
+              }
+              // 建 DOM canvas context（若未建），取其 host handle 共享给 offscreen。
+              if (!_zwCanvasCtx[key] || !_zwCanvasCtx[key]._handle) {
+                var proxy = _makeProxy(sel, handle);
+                if (typeof proxy.getContext === 'function') proxy.getContext('2d');
+              }
+              var domCtx = _zwCanvasCtx[key];
+              if (!domCtx || !domCtx._handle) return null;
+              drc._transferred = true; // 标记：后续 DOM canvas getContext 抛（spec）
+              var sharedHandle = domCtx._handle;
+              var cw = _zwCanvasDim(sel, handle, 'width', 300);
+              var ch = _zwCanvasDim(sel, handle, 'height', 150);
+              // offscreen 对象：getContext 复用 sharedHandle（不新建 host context），transferToImageBitmap 取全像素。
+              var oc = { width: cw, height: ch, _ctx: null, _sharedHandle: sharedHandle };
+              oc.getContext = function (type) {
+                if (String(type) !== '2d') return null;
+                if (oc._ctx) return oc._ctx;
+                // 复用 DOM canvas 的 ctx proxy（持同一 host handle，绘制共享 bitmap）。
+                oc._ctx = _zwMakeCtx2d(sharedHandle);
+                return oc._ctx;
+              };
+              oc.transferToImageBitmap = function () {
+                var wire = String(__zw_canvas_op(sharedHandle, 'getImageData', '0', '0', String(oc.width), String(oc.height)));
+                var bm = _zwMakeImageBitmap(wire);
+                if (bm.width <= 0 || bm.height <= 0) return null;
+                __zw_canvas_op(sharedHandle, 'resizeContext', String(oc.width), String(oc.height));
+                return bm;
+              };
+              return oc;
+            };
+          }
           if (prop === 'width' || prop === 'height') {
             // sync set→get 优先读缓存（setter R3077 写数值）；无缓存则反射内容属性（default 300/150）。
             var cdc = _reflectedAttrs[key];
