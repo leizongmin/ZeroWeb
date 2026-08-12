@@ -507,6 +507,23 @@ impl TabManager {
         self.dispatch_dom_event_async(tab_id, &selector, event_type, Some(detail), None);
     }
 
+    /// R3293（S0）：向页面 JS 派发「用户滚动」事件（fire-and-forget，闭合 R3253 主路径不可达 gap）。
+    ///
+    /// 多路径：多进程经 `process_backend.send_user_scroll` 发 `ScrollEvent` IPC（激活既有 renderer
+    /// `handle_scroll_event` R3253 路径）；单进程经 `TabWorkerCommand::UserScroll` worker 线程注入
+    /// `__zw_user_scroll`。JS 禁用 / 无可用渲染端时 no-op（best-effort，不影响视觉滚动）。无回执。
+    /// 调用方 `apply_page_scroll_delta` 已完成视觉滚动 + 重绘，本方法仅补「页面 JS 可观察 'scroll'」半边。
+    pub fn dispatch_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32) {
+        if !self.javascript_enabled {
+            return;
+        }
+        if let Some(ref mut backend) = self.process_backend {
+            backend.send_user_scroll(tab_id, delta_x, delta_y);
+        } else if let Some(worker) = self.workers.get(&tab_id) {
+            worker.send(TabWorkerCommand::UserScroll { delta_x, delta_y });
+        }
+    }
+
     /// 处理页面点击释放：异步派发 mouseup + click。
     ///
     /// 若鼠标命中链接，会把“导航 / 后台新标签”作为 `on_allowed` 注册到 click 的回执上，

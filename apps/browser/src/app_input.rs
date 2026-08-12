@@ -162,6 +162,14 @@ impl BrowserApp {
         entry.x = (entry.x + delta_x).clamp(0.0, layout.max_scroll_x);
         entry.y = (entry.y + delta_y).clamp(0.0, layout.max_scroll_y);
 
+        // R3293（S0）：派发用户滚动 'scroll' 事件到页面 JS（闭合 R3253 主路径不可达 gap）。
+        // 主线程已完成视觉滚动（entry.x/y 更新 + 重绘），本调用仅补「页面 JS 可观察」半边——
+        // infinite scroll / lazy load / sticky nav / parallax 的用户滚动触发依赖。kill-switch
+        // `ZW_USER_SCROLL_EVENT=0` 关闭（default-on）。fire-and-forget，无回执不阻塞 UI。
+        if std::env::var("ZW_USER_SCROLL_EVENT").as_deref() != Ok("0") {
+            self.tabs.dispatch_user_scroll(tab_id, delta_x, delta_y);
+        }
+
         if crate::compositor_client::async_scroll_enabled() {
             if let Some(submission) = self
                 .tabs
