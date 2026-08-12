@@ -270,6 +270,61 @@ fn parity_scene_supported_rejects_unimplemented() {
     ));
 }
 
+/// P2-6：超过 adapter max_texture_dimension_2d 的图片必须触发回退（返回 false），
+/// 而非上传校验失败 panic。上限随驱动不同（llvmpipe≈8192 / Intel Arc≈16384）。
+#[serial]
+#[test]
+fn parity_oversize_image_gpu_returns_false() {
+    let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+    let max_tex = renderer.device_limits().max_texture_dimension_2d;
+    // 超限图（max_tex+1 宽 × 1 高；纯色像素数据量小）
+    let mut px = Vec::with_capacity((max_tex as usize + 1) * 4);
+    px.resize((max_tex as usize + 1) * 4, 255);
+    let mut image_cache = ImageCache::new(16, 1 << 30);
+    let key = image_cache.insert(ImageData::from_rgba(px, max_tex + 1, 1).expect("big image"));
+    let mut primitives = RenderPrimitives::default();
+    primitives.images.push(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        image_key: key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let rendered = renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert!(!rendered, "超限图应返回 false 触发 CPU 回退");
+    // 正常尺寸图不受影响（对照组）
+    let mut image_cache2 = ImageCache::new(16, 1 << 20);
+    let key2 = image_cache2.insert(ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).expect("small image"));
+    let mut small = RenderPrimitives::default();
+    small.images.push(ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 16.0, 16.0),
+        image_key: key2,
+        clip: None,
+    });
+    let rendered_ok = renderer.render_full_scene_gpu(
+        &small,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache2),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert!(rendered_ok, "正常尺寸图应正常渲染");
+}
+
 /// 半透明场景 GPU 渲染必须返回 false（触发回退），而非静默画错。
 #[serial]
 #[test]

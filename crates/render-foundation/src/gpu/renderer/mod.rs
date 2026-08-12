@@ -791,7 +791,7 @@ impl GpuRenderer {
         primitives: &RenderPrimitives,
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
-        image_cache: Option<&mut ImageCache>,
+        mut image_cache: Option<&mut ImageCache>,
         ui_glyphs: &[GlyphDraw],
         overlay_fills: &[FillPrimitive],
         overlay_glyphs: &[GlyphDraw],
@@ -817,6 +817,24 @@ impl GpuRenderer {
             self.headless_texture.is_some(),
         ) {
             return false;
+        }
+
+        // P2-6：图片纹理尺寸 clamp——超过 adapter `max_texture_dimension_2d` 的图片
+        // 上传会校验失败。真实硬件上限不同（llvmpipe≈8192 / Intel Arc≈16384 /
+        // WebGL2 级=2048），且测试只覆盖 1×1 图；超限回退 CPU 整帧（慢但对）。
+        {
+            let cache = image_cache.as_mut();
+            if let Some(cache) = cache {
+                let max_tex = self.device.limits().max_texture_dimension_2d;
+                let over_limit = primitives.images.iter().any(|img| {
+                    cache
+                        .get(&img.image_key)
+                        .is_some_and(|d| d.width > max_tex || d.height > max_tex)
+                });
+                if over_limit {
+                    return false;
+                }
+            }
         }
 
         // ── Phase 1: 收集所有顶点数据（不持有 GPU 资源借用） ──
@@ -1963,6 +1981,11 @@ impl GpuRenderer {
     /// 获取已缓存 glyph 数量
     pub fn atlas_glyph_count(&self) -> usize {
         self.atlas.glyph_count()
+    }
+
+    /// wgpu 设备 limits（测试用：max_texture_dimension_2d 等能力上限）。
+    pub fn device_limits(&self) -> wgpu::Limits {
+        self.device.limits()
     }
 
     /// 获取 wgpu 设备引用（Linux dma-buf 导入等）。
