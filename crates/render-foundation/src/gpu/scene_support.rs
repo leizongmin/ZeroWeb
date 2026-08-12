@@ -26,13 +26,9 @@ pub fn scene_supported(primitives: &RenderPrimitives) -> bool {
     if !primitives.blend_modes.is_empty() && primitives.draw_order.is_empty() {
         return false;
     }
-    // 阴影：GPU 仅硬边矩形（collect_shadow_vertices），
-    // 无模糊 / 无 spread / 无 inset 时才与 CPU 行为一致。
-    if primitives
-        .shadows
-        .iter()
-        .any(|s| s.blur_radius > 0.0 || s.spread_radius != 0.0 || s.inset)
-    {
+    // R3287：阴影模糊 GPU 已支持（离屏画 + 区域 blur + alpha 混合）；spread 走
+    // collect_shadow_vertices 的矩形外扩；inset 阴影仍回退（GPU 无内阴影实现）。
+    if primitives.shadows.iter().any(|s| s.inset) {
         return false;
     }
     // 重复渐变且首色标 offset ≠ 0：GPU shader `fract(t)` 折叠回 [0,1)（归一化纹理），

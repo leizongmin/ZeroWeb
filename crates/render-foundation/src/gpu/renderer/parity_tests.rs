@@ -197,10 +197,10 @@ fn parity_scene_supported_rejects_unimplemented() {
     with_alpha.fills[0].color = Color::rgba(255, 0, 0, 128);
     assert!(crate::gpu::scene_support::scene_supported(&with_alpha));
 
-    // 带模糊阴影
+    // R3287：模糊阴影 GPU 已支持（离屏 blur + 混合）→ 接受
     let mut with_shadow_blur = p.clone();
     with_shadow_blur.shadows[0].blur_radius = 4.0;
-    assert!(!crate::gpu::scene_support::scene_supported(&with_shadow_blur));
+    assert!(crate::gpu::scene_support::scene_supported(&with_shadow_blur));
 
     // D/R3279：filter 窗口模式与 headless 均支持（离屏后处理）→ 不拒绝
     let mut with_filter = p.clone();
@@ -509,4 +509,55 @@ fn parity_clip_bucket_path_matches_cpu() {
         over, 0,
         "分桶 clip 场景 CPU/GPU 应逐像素一致，diff={over} max={max_diff}"
     );
+}
+
+/// R3287：blur 阴影 GPU（离屏 blur + 混合）与 CPU 阴影（σ=blur/2 三遍 box blur）
+/// 视觉对照——容差内一致（模糊核不同导致亚像素差异，宽容差）。
+#[serial]
+#[test]
+fn parity_blur_shadow_matches_cpu() {
+    // 无背景 fill：clear 白底即背景（阴影画在背景之上可见；
+    // 有背景时背景盖阴影是正确 CSS 语义，阴影不可见）
+    let mut p = RenderPrimitives::default();
+    p.shadows.push(ShadowPrimitive {
+        rect: Rect::new(4.0, 4.0, 16.0, 16.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur_radius: 3.0,
+        spread_radius: 0.0,
+        inset: false,
+    });
+    p.draw_order = vec![DrawOp::Shadow(0)];
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    {
+        let row: Vec<(u8, u8)> = (0..32)
+            .map(|px| {
+                let b = (10 * 32 + px) * 4;
+                (cpu_fb.data[b], gpu_px[b])
+            })
+            .collect();
+        eprintln!("BLURDIAG shadow row y=10 (cpu, gpu) x=0..32: {row:?}");
+    }
+    // 阴影中心（rect+offset 内）：CPU blur 后暗（阴影色混合），GPU 同
+    let center = (10 * 32 + 10) * 4;
+    assert!(
+        cpu_fb.data[center] < 200,
+        "CPU 阴影中心应暗，got {}",
+        cpu_fb.data[center]
+    );
+    assert!(gpu_px[center] < 200, "GPU 阴影中心应暗，got {}", gpu_px[center]);
+    // 全帧对照（容差 90：CPU 3-pass box vs GPU 三角窗的模糊核差异是视觉近似，
+    // 渐变形状不可能逐像素一致；断言差异比例受控且渐变存在而非硬边）
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 90);
+    let total = cpu_fb.data.len() / 4;
+    let over_ratio = over as f64 / total as f64;
+    assert!(
+        over_ratio < 0.35,
+        "blur 阴影 CPU/GPU 差异通道比例应 <35%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+    // 渐变存在断言：矩形边缘外（x=4）GPU 应非纯白（blur 扩散生效）
+    let edge = (10 * 32 + 4) * 4;
+    assert!(gpu_px[edge] < 250, "GPU 阴影边缘应有 blur 渐变，got {}", gpu_px[edge]);
 }

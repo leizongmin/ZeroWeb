@@ -122,6 +122,9 @@ pub struct GpuRenderer {
     /// #3（R3281）：设备丢失标志——set_device_lost_callback 置位，
     /// 调用方检查后丢弃 renderer（下帧重建），本帧回退 CPU。
     device_lost: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// R3287：阴影模糊预处理的离屏纹理（+ blur ping-pong）
+    offscreen_shadow_texture: Option<wgpu::Texture>,
+    offscreen_shadow_texture_b: Option<wgpu::Texture>,
     /// Uniform 绑定组布局
     uniform_bgl: wgpu::BindGroupLayout,
     /// Atlas 绑定组布局（保留用于 atlas 重建时重新创建绑定组）
@@ -398,6 +401,8 @@ impl GpuRenderer {
             blend_source_texture: None,
             blend_backdrop_texture: None,
             offscreen_texture: None,
+            offscreen_shadow_texture: None,
+            offscreen_shadow_texture_b: None,
             device_lost,
             uniform_bgl,
             transform_uniform_bgl,
@@ -938,15 +943,44 @@ impl GpuRenderer {
         };
         let device = self.device.clone();
         let queue = self.queue.clone();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Full Scene Encoder"),
+        });
+
+        // R3287：主 pass 前 clear 主帧（白）+ blur 阴影合成（alpha 混合到白底）。
+        // 主 pass 随后 load 绘制——背景覆盖阴影（CSS：box-shadow 在背景之下）。
+        // 须在 uniform_bg 借用前执行（&mut self）。
+        let blur_shadows: Vec<&crate::primitive::ShadowPrimitive> =
+            primitives.shadows.iter().filter(|s| s.blur_radius > 0.0).collect();
+        if !blur_shadows.is_empty() {
+            self.preprocess_blur_shadows(&mut encoder, &target, width, height, scale, &blur_shadows);
+        } else {
+            // 无 blur 阴影：仍 clear 主帧（主 pass 改 load 的统一起点）
+            let mut clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Clear Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target.view(),
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let _ = &mut clear_pass;
+        }
+
         let uniform_bg = self
             .uniform_bind_group
             .as_ref()
             .expect("uniform bind group initialized");
         let view = target.view();
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Full Scene Encoder"),
-        });
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -956,7 +990,7 @@ impl GpuRenderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -2948,5 +2982,228 @@ impl GpuRenderer {
     /// 测试/模拟：注入设备丢失（recovery 路径验证）。
     pub fn simulate_device_lost(&self) {
         self.device_lost.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// R3287：GPU 阴影模糊——主 pass 前把带 blur 的阴影画到离屏、区域 blur（复用
+/// blur_pipeline），alpha 混合合成回主帧（clear 白底上）。blur=0 阴影走主 pass 硬边。
+impl GpuRenderer {
+    fn ensure_shadow_textures(&mut self, width: u32, height: u32) {
+        let need = |t: &Option<wgpu::Texture>| match t {
+            Some(tex) => {
+                let size = tex.size();
+                size.width != width.max(1) || size.height != height.max(1)
+            }
+            None => true,
+        };
+        if need(&self.offscreen_shadow_texture) || need(&self.offscreen_shadow_texture_b) {
+            let desc = wgpu::TextureDescriptor {
+                label: Some("Shadow Offscreen"),
+                size: wgpu::Extent3d {
+                    width: width.max(1),
+                    height: height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            };
+            self.offscreen_shadow_texture = Some(self.device.create_texture(&desc));
+            self.offscreen_shadow_texture_b = Some(self.device.create_texture(&desc));
+        }
+    }
+
+    /// 预处理 blur 阴影：clear 主帧（白）→ 画阴影矩形到离屏 → 区域 blur → alpha 混合
+    /// blit 回主帧。主 pass 随后 load 绘制背景（阴影在底层，背景覆盖其上——CSS 语义）。
+    fn preprocess_blur_shadows(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &RenderTarget,
+        width: u32,
+        height: u32,
+        scale: f32,
+        shadows: &[&crate::primitive::ShadowPrimitive],
+    ) {
+        self.ensure_shadow_textures(width, height);
+        let Some(shadow_tex) = self.offscreen_shadow_texture.as_ref() else {
+            return;
+        };
+        let Some(shadow_tex_b) = self.offscreen_shadow_texture_b.as_ref() else {
+            return;
+        };
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+
+        // 1. 画全部 blur 阴影矩形到离屏（透明底）——独立 encoder 先提交，
+        //    blur 的 encoder 随后提交（避免 blur 先采样空纹理的命令顺序问题）
+        let mut rect_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Shadow Rect Encoder"),
+        });
+        {
+            let view = shadow_tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut pass = rect_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Shadow Offscreen Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let mut verts = Vec::new();
+            for shadow in shadows {
+                let sr = &shadow.rect;
+                let spread = shadow.spread_radius * scale;
+                let ox = shadow.offset_x * scale;
+                let oy = shadow.offset_y * scale;
+                let l = sr.left() * scale - spread + ox;
+                let t = sr.top() * scale - spread + oy;
+                let r = sr.right() * scale + spread + ox;
+                let b = sr.bottom() * scale + spread + oy;
+                let c = Color::rgba(shadow.color.r, shadow.color.g, shadow.color.b, shadow.color.a);
+                push_fill_quad(&mut verts, l, t, r, b, c);
+            }
+            let uniform_bg = self
+                .uniform_bind_group
+                .as_ref()
+                .expect("uniform bind group initialized");
+            self.draw_fill_pass(&mut pass, uniform_bg, &device, &verts, "ShadowBlur");
+        }
+        queue.submit(std::iter::once(rect_encoder.finish()));
+
+        // 2. 区域 blur（每个阴影 blur_radius，H+V 两趟 ping-pong）
+        let extent = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Shadow Blur Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let _ = shadows;
+        for shadow in shadows {
+            // CPU 阴影语义：σ = blur_radius/2（三遍 box blur）。GPU 三角窗 σ = r/√3，
+            // 取 r ≈ 2σ 匹配视觉扩散（模糊核差异导致的边缘过渡宽度差为近似，对照测试宽容差）
+            let sigma = shadow.blur_radius * scale * 0.5;
+            let radius = (sigma * 2.0).ceil() as u32;
+            if radius < 1 {
+                continue;
+            }
+            // blur 区域 = 阴影矩形外扩 σ（CPU spread 语义 + blur 扩散）
+            let sr = &shadow.rect;
+            let spread = shadow.spread_radius * scale;
+            let ox = shadow.offset_x * scale;
+            let oy = shadow.offset_y * scale;
+            let bl = (sr.left() * scale - spread + ox - sigma).floor().max(0.0) as u32;
+            let bt = (sr.top() * scale - spread + oy - sigma).floor().max(0.0) as u32;
+            let br = (sr.right() * scale + spread + ox + sigma).ceil().min(width as f32) as u32;
+            let bb = (sr.bottom() * scale + spread + oy + radius as f32)
+                .ceil()
+                .min(height as f32) as u32;
+            if bl >= br || bt >= bb {
+                continue;
+            }
+            let scissor = (bl, bt, br - bl, bb - bt);
+            run_blur_pass(
+                &device,
+                &queue,
+                &self.blur_pipeline,
+                &self.uniform_bgl,
+                &self.blur_bgl,
+                shadow_tex,
+                shadow_tex_b,
+                extent,
+                &sampler,
+                radius as f32,
+                0.0,
+                scissor,
+                "Shadow Blur H",
+            );
+            run_blur_pass(
+                &device,
+                &queue,
+                &self.blur_pipeline,
+                &self.uniform_bgl,
+                &self.blur_bgl,
+                shadow_tex_b,
+                shadow_tex,
+                extent,
+                &sampler,
+                radius as f32,
+                1.0,
+                scissor,
+                "Shadow Blur V",
+            );
+        }
+
+        // 3. 主帧 clear 白 + alpha 混合 blit 阴影离屏（复用 draw_image_pass 成熟路径）
+        let view = target.view();
+        let shadow_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let img_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shadow Blit BG"),
+            layout: &self.image_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&img_sampler),
+                },
+            ],
+        });
+        let (fw, fh) = (width as f32, height as f32);
+        // image 管线 7-float 全屏 quad（ALPHA_BLENDING：阴影 alpha 蒙版混合到白底）
+        let verts = vec![
+            0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, fw, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, fw, fh, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 1.0, fw, fh, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, fh, 0.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let uniform_bg = self
+            .uniform_bind_group
+            .as_ref()
+            .expect("uniform bind group initialized");
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Shadow Composite Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.draw_image_pass(&mut pass, uniform_bg, &device, &[(bg.into(), verts)]);
     }
 }
