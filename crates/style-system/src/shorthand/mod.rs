@@ -1674,7 +1674,19 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     if matches_css_wide_keyword(value) {
         return wide_keyword_to_longhands(
             value,
-            &["font-style", "font-weight", "font-size", "line-height", "font-family"],
+            &[
+                "font-style",
+                "font-weight",
+                "font-size",
+                "line-height",
+                "font-family",
+                "font-variant-ligatures",
+                "font-variant-caps",
+                "font-variant-numeric",
+                "font-variant-east-asian",
+                "font-variant-position",
+                "font-stretch",
+            ],
             important,
             specificity,
         );
@@ -1763,6 +1775,12 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
                 mk("font-size", "medium"),
                 mk("line-height", "normal"),
                 mk("font-family", value),
+                mk("font-variant-ligatures", "normal"),
+                mk("font-variant-caps", "normal"),
+                mk("font-variant-numeric", "normal"),
+                mk("font-variant-east-asian", "normal"),
+                mk("font-variant-position", "normal"),
+                mk("font-stretch", "normal"),
             ];
         }
         // 无效的 font 简写声明
@@ -1782,6 +1800,13 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         mk("font-size", &size),
         mk("line-height", &line_height),
         mk("font-family", &family),
+        // CSS Fonts 4 §4: font shorthand resets font-variant and font-stretch to initial
+        mk("font-variant-ligatures", "normal"),
+        mk("font-variant-caps", "normal"),
+        mk("font-variant-numeric", "normal"),
+        mk("font-variant-east-asian", "normal"),
+        mk("font-variant-position", "normal"),
+        mk("font-stretch", "normal"),
     ]
 }
 
