@@ -80,6 +80,8 @@ pub struct BrowserApp {
     font_id: Option<u32>,
     /// 是否已初始化 GPU 表面
     pub surface_configured: bool,
+    /// GPU 初始化时的窗口引用（R3254-G5：设备丢失后重建 renderer 用）。
+    gpu_window: Option<std::sync::Arc<winit::window::Window>>,
     /// GPU 表面在失焦后需重新配置（Wayland surface 挂起）
     pub gpu_surface_stale: bool,
     /// 窗口是否获得焦点（Wayland 下失焦时 surface 可能挂起）
@@ -242,6 +244,7 @@ impl BrowserApp {
             glyph_cache: GlyphCache::new(8192),
             font_id,
             surface_configured: false,
+            gpu_window: None,
             gpu_surface_stale: false,
             window_focused: true,
             address_bar: TextInput::new(),

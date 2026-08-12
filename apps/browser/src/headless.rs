@@ -698,6 +698,11 @@ impl HeadlessServer {
         let fb = if std::env::var("ZW_HEADLESS_GPU_SCREENSHOT").as_deref() == Ok("1") {
             let w = self.viewport_width as u32;
             let h = self.viewport_height as u32;
+            // R3254-G5：设备丢失（真实）后丢弃 renderer——保留带标志的实例会
+            // 永不重建、截图永久回退 CPU。
+            if session.gpu_renderer.as_ref().is_some_and(|g| g.is_device_lost()) {
+                session.gpu_renderer = None;
+            }
             if session.gpu_renderer.is_none() {
                 session.gpu_renderer = zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(w, h).ok();
             }

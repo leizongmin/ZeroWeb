@@ -12,6 +12,8 @@ impl BrowserApp {
 
     /// 初始化 GPU 渲染器（Wayland 上跳过 wgpu 窗口 surface，改走 CPU present）
     pub fn init_gpu(&mut self, window: &std::sync::Arc<winit::window::Window>) {
+        // R3254-G5：缓存窗口引用——设备丢失后 render_frame 据此重建 renderer。
+        self.gpu_window = Some(std::sync::Arc::clone(window));
         if matches!(self.render_mode, RenderMode::Cpu) || self.wayland_forces_cpu_present() {
             if self.wayland_forces_cpu_present() {
                 tracing::warn!(
@@ -34,6 +36,24 @@ impl BrowserApp {
                 } else {
                     tracing::warn!("GPU renderer init failed: {e}; using CPU renderer");
                 }
+            }
+        }
+    }
+
+    /// R3254-G5：设备丢失后重建窗口 GPU renderer（下帧 render_frame 调用）。
+    fn recreate_gpu_renderer(&mut self) {
+        let Some(window) = self.gpu_window.as_ref() else {
+            return;
+        };
+        match GpuRenderer::new_for_window(std::sync::Arc::clone(window)) {
+            Ok(renderer) => {
+                tracing::info!("GPU renderer recreated after device loss (format: {:?})", renderer.surface_format());
+                self.gpu_renderer = Some(renderer);
+                self.surface_configured = false;
+                self.needs_redraw = true;
+            }
+            Err(e) => {
+                tracing::warn!("GPU renderer recreate failed: {e}; staying on CPU fallback");
             }
         }
     }
@@ -212,6 +232,14 @@ impl BrowserApp {
         }
         self.apply_compositor_dmabuf_import(width, height);
         let mut gpu = self.gpu_renderer.take();
+        // R3254-G5：窗口模式主路径的设备丢失恢复——wgpu 设备丢失（真实）后丢弃
+        // renderer 并重建（此前无检测：死设备上提交被静默吞掉，画面永久冻结）。
+        // 纹理等 GPU 资源随 renderer drop 释放，缓存自然清空。
+        if gpu.as_ref().is_some_and(|r| r.is_device_lost()) {
+            tracing::warn!("browser: GPU 设备丢失，丢弃 renderer 并重建");
+            self.recreate_gpu_renderer();
+            gpu = self.gpu_renderer.take();
+        }
         if let Some(ref mut renderer) = gpu {
             if renderer.is_present_suspended() {
                 self.gpu_renderer = gpu;
