@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3332：P1b native-dom 路径 parity 回归门——经 native_dom=true flag 锁原生绑定（S0–S5，19 文件，无 CI 变体覆盖）与 shim 路径行为对等（dataset 反射 / MO 记录 / localStorage round-trip 三类单 WebView parity 门全过）。**实测发现多 WebView 同线程顺序创建触 disposed-Isolate panic**（gc.rs 线程局部缓存跨 isolate 泄漏，记 learning 作 P1b 默认开前必修阻塞项）。**重要校准**：P1b 实际已 land 到 S5（master 头此前过时称仅 S0），S6/S7 shim 萎缩为剩余。前轮 R3331：multiprocess 锁。
+**最后更新**: 2026-08-13（R3333：扩展 native-dom 路径 parity 门至 5 类（+geometry/runtime），native path CI 覆盖从 0→5 单 WebView 门跨 dataset/MO/storage/geometry/runtime 全对等确认；platform-input 2 残余脚本用例经审计确认为事件驱动不可锁（R3331 同类），自主测试加固面穷尽）。前轮 R3332：native parity 门 + isolate-leak 发现。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,22 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### native-dom parity 门扩展至 5 类 + 自主测试加固面穷尽确认（本轮 R3333，wpt-runner）
+
+承接 R3332（native parity 门首建 3 类 + isolate-leak 发现）。本轮**扩展 native 路径 CI 覆盖** + **审计确认自主测试加固面穷尽**：
+
+**① R3333 parity 门扩展**：R3332 建 3 单 WebView native parity 门（dataset/MO/storage）。本轮补 2 门至 **5 类全覆盖**——`native_dom_path_parity_geometry_r3333`（web-api/geometry/interfaces：DOMRect/DOMMatrix/DOMPoint 全局构造器 + instanceof 继承 + 派生属性）+ `native_dom_path_parity_runtime_r3333`（web-api/runtime/timer-nesting：嵌套 setTimeout + Promise microtask + 错误捕获）。native path CI 覆盖从 **0→5 单 WebView 门**，跨 dataset/geometry/MO/runtime/storage 全行为锁类别 parity 确认（均过）。仍守「每测试 1 WebView」粒度（R3332 isolate-leak 规避）。
+
+**② 自主测试加固面穷尽确认**：核查 wpt-runner 全 category 含 `<script>` 但无 `js_executes_ok` 覆盖门的残余——仅 `platform-input` 2 用例（keyboard/touch event-handlers）。经审计（R3331 已 probe）事件驱动监听器在 about:blank 不触发，**无同步可锁行为**（同 navigation R3331 结论）。**全 category js_executes_ok 覆盖门现已穷尽**（web-api/canvas/web-workers/storage/runtime/interactive/es-modules/security/multiprocess），行为锁升级亦穷尽（R3320-R3331）。自主测试加固面**正式宣告穷尽**。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +2 单 WebView native parity 门（geometry/runtime）→ 5 类全覆盖 |
+
+**为何净正向且零回归**：纯测试增强。**验证**：`runtime_path_tests` **20 passed / 0 failed**（5 native parity 门 + 15 既有，0 回归，test-guard 包裹）；fmt clean + clippy v8/quickjs 双 feature 零警告。
+
+**下游判断（固化）**：R3320-R3333 连续 9 轮后，zero-web 流**自主面全面饱和**：① DOM/Web API + Canvas 行为锁（R3320-R3331）穷尽；② native path parity CI 覆盖（R3332-R3333）5 类穷尽；③ 测试加固面穷尽。剩余战略方向**全部需用户点名（rule 11）或环境依赖**：P1b native 默认开（→ S6/S7 shim 萎缩 + 多标签）、R3332 isolate-leak 修复（gc.rs 线程局部 per-Isolate 化，native bindings 内部）、渲染深结构（font-stack 已批）、GPU/Display 验证。**无更多可自主 land 的高价值工作面**——后续轮次除非用户点名，否则进入纯守成/低价值填充。
 
 ### P1b native-dom 路径 parity 回归门 + master 头校准 + 多 WebView 隔离 bug 记录（本轮 R3332，wpt-runner + learnings）
 

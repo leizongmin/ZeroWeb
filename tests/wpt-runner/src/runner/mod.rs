@@ -554,6 +554,35 @@ mod runtime_path_tests {
             .expect("native-dom 路径 storage parity（localStorage setItem/getItem===value/removeItem→null）");
     }
 
+    /// R3333：native-dom 路径 Geometry Interfaces parity（单 WebView）——锁 R3319/R3320
+    ///（DOMRect/DOMRectReadOnly/DOMMatrix/DOMPoint 全局构造器 + instanceof 继承 + 派生属性）经原生路径。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_path_parity_geometry_r3333() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "web-api/geometry/interfaces")
+            .expect("web-api/geometry/interfaces 用例存在");
+        check_js_executes_ok_native(&case.html, &ctx).expect(
+            "native-dom 路径 geometry parity（DOMRect/DOMMatrix/DOMPoint 全局构造器 + instanceof 继承 + 派生属性）",
+        );
+    }
+
+    /// R3333：native-dom 路径 runtime timer-nesting parity（单 WebView）——锁 R3321 运行时
+    ///（嵌套 setTimeout + Promise microtask + 错误捕获）经原生路径。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_path_parity_runtime_r3333() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "web-api/runtime/timer-nesting")
+            .expect("web-api/runtime/timer-nesting 用例存在");
+        check_js_executes_ok_native(&case.html, &ctx)
+            .expect("native-dom 路径 runtime parity（嵌套 setTimeout + Promise microtask + 错误捕获）");
+    }
+
     /// R3322：storage/* 同步用例 js_executes_ok——锁 Web Storage API 行为（localStorage/sessionStorage
     /// CRUD + length + clear + key 迭代 + 批量写入）。此前 storage/* 全用弱断言（render_completes），
     /// 内联脚本写结果不校验，存储静默失效（getItem 返 undefined / length 不变）仍通过。本轮升级内联脚本
