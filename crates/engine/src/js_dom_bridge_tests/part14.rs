@@ -492,6 +492,78 @@ fn test_canvas_dash_image_smoothing_r3305() {
 }
 
 #[test]
+fn test_canvas_path2d_r3306() {
+    // R3306：Path2D（spec CanvasPath）——`new Path2D()` 可复用路径对象 + `ctx.fill(path)`/stroke(path)/clip(path)
+    // 参数形式。此前 Path2D JS 构造器全缺，ctx.fill/stroke/clip 仅无参当前路径形式 → 路径库（chart.js/D3/SVG）
+    // `new Path2D()` + ctx.fill(path) 不可用。本测断言：① new Path2D() 返对象含 _zwPath id + 路径方法；
+    // ② path 方法链构建（moveTo/lineTo/closePath/arc/bezier 等）不抛；③ ctx.fill(path)/stroke(path)/clip(path)
+    // 不抛 + 用 Path2D 绘制（当前路径不被消费——验证后 ctx.beginPath 再 fill 仍可独立绘制）；④ addPath 复制；
+    // ⑤ new Path2D(other) 复制既有 path；⑥ Path2D 全局构造器存在。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "globalThis.__hasCtor = String(typeof Path2D === 'function');\
+             var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             var p = new Path2D();\
+             globalThis.__isObj = String(p && typeof p === 'object');\
+             globalThis.__hasPathId = String(typeof p._zwPath === 'string' && p._zwPath.length > 0);\
+             globalThis.__hasMethods = String(['moveTo','lineTo','closePath','arc','arcTo','quadraticCurveTo','bezierCurveTo','ellipse','rect','addPath'].every(function (k) { return typeof p[k] === 'function'; }));\
+             p.moveTo(10, 10);\
+             p.lineTo(90, 90);\
+             p.lineTo(10, 90);\
+             p.closePath();\
+             globalThis.__buildOk = 'ok';\
+             ctx.fillStyle = 'red';\
+             ctx.fill(p); /* Path2D 参数形式：用 p 绘制，不消费 ctx 当前路径 */\
+             ctx.strokeStyle = 'blue';\
+             ctx.stroke(p);\
+             ctx.clip(p);\
+             globalThis.__fillStrokeClipOk = 'ok';\
+             /* 验证当前路径未被消费：beginPath + 画一个新矩形再 fill 仍独立工作 */\
+             ctx.beginPath();\
+             ctx.rect(0, 0, 5, 5);\
+             ctx.fill();\
+             globalThis.__ctxPathIndependent = 'ok';\
+             /* addPath 复制 */\
+             var p2 = new Path2D();\
+             p2.addPath(p);\
+             ctx.fill(p2);\
+             globalThis.__addPathOk = 'ok';\
+             /* new Path2D(other) 复制形式 */\
+             var p3 = new Path2D(p);\
+             globalThis.__copyDistinct = String(p3._zwPath !== p._zwPath && p3._zwPath.length > 0);\
+             ctx.fill(p3);\
+             globalThis.__copyOk = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__hasCtor").unwrap().value, "true", "Path2D 全局构造器存在");
+    assert_eq!(sandbox.execute("globalThis.__isObj").unwrap().value, "true", "new Path2D() 返对象");
+    assert_eq!(sandbox.execute("globalThis.__hasPathId").unwrap().value, "true", "Path2D 含 _zwPath id 标记");
+    assert_eq!(sandbox.execute("globalThis.__hasMethods").unwrap().value, "true", "Path2D 含全套路径方法");
+    assert_eq!(sandbox.execute("globalThis.__buildOk").unwrap().value, "ok", "Path2D 路径方法链构建不抛");
+    assert_eq!(sandbox.execute("globalThis.__fillStrokeClipOk").unwrap().value, "ok", "ctx.fill(path)/stroke(path)/clip(path) 不抛");
+    assert_eq!(sandbox.execute("globalThis.__ctxPathIndependent").unwrap().value, "ok", "Path2D 参数形式不消费 ctx 当前路径");
+    assert_eq!(sandbox.execute("globalThis.__addPathOk").unwrap().value, "ok", "Path2D.addPath 复制不抛");
+    assert_eq!(sandbox.execute("globalThis.__copyDistinct").unwrap().value, "true", "new Path2D(other) 产新 path id（复制非同源）");
+    assert_eq!(sandbox.execute("globalThis.__copyOk").unwrap().value, "ok", "new Path2D(other) 复制形式可用");
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

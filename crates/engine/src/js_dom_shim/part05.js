@@ -836,6 +836,38 @@
       },
     };
   }
+  // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)`）。`_zwPath` 为 host 路径 id 标记
+  //（ctx.fill(path) 等 setter 检测）。方法镜像 ctx 路径族（经 host path id 改 host Path2D）。**诚实范围**：
+  // svgString 构造形式（`new Path2D("M10 10")`）暂不支持（需 SVG path 解析器，host lenient 建空路径）。
+  function _zwMakePath2d(h, pid) {
+    var p = { _zwPath: pid };
+    p.moveTo = function (x, y) { __zw_canvas_op(h, 'pathMoveTo', pid, String(x), String(y)); };
+    p.lineTo = function (x, y) { __zw_canvas_op(h, 'pathLineTo', pid, String(x), String(y)); };
+    p.closePath = function () { __zw_canvas_op(h, 'pathClose', pid); };
+    p.arc = function (x, y, r, s, e) { __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e)); };
+    p.arcTo = function (x1, y1, x2, y2, r) { __zw_canvas_op(h, 'pathArcTo', pid, String(x1), String(y1), String(x2), String(y2), String(r)); };
+    p.quadraticCurveTo = function (cpx, cpy, x, y) { __zw_canvas_op(h, 'pathQuadratic', pid, String(cpx), String(cpy), String(x), String(y)); };
+    p.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) { __zw_canvas_op(h, 'pathBezier', pid, String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y)); };
+    p.ellipse = function (x, y, rx, ry, rot, s, e) { __zw_canvas_op(h, 'pathEllipse', pid, String(x), String(y), String(rx), String(ry), String(rot), String(s), String(e)); };
+    p.rect = function (x, y, w, hh) { __zw_canvas_op(h, 'pathRect', pid, String(x), String(y), String(w), String(hh)); };
+    p.addPath = function (other) {
+      if (other && other._zwPath) __zw_canvas_op(h, 'addPath', pid, String(other._zwPath));
+    };
+    return p;
+  }
+  // Path2D 全局构造器（幂等注册——多 canvas 不重复覆盖）。host createPath 忽略 handle（路径 context 无关），
+  // 故用任意 handle '0'；首参为 Path2D 对象（复制）或 svgString（defer 建空）或 undefined（建空）。
+  if (!globalThis.Path2D) {
+    globalThis.Path2D = function Path2D(arg) {
+      if (typeof __zw_canvas_op !== 'function') { this._zwPath = 0; return; }
+      var other = (arg && typeof arg === 'object' && arg._zwPath) ? String(arg._zwPath) : '';
+      var id = String(__zw_canvas_op('0', 'createPath', other));
+      this._zwPath = id;
+      // 把 _zwMakePath2d 的方法绑到本实例（复用方法集，pid 为本实例 id）。
+      var proto = _zwMakePath2d('0', id);
+      for (var k in proto) { if (k !== '_zwPath') this[k] = proto[k]; }
+    };
+  }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
     // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。
@@ -882,8 +914,16 @@
     ctx.arc = function (x, y, r, s, e) {
       __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e));
     };
-    ctx.fill = function () { __zw_canvas_op(h, 'fill'); };
-    ctx.stroke = function () { __zw_canvas_op(h, 'stroke'); };
+    // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
+    //（用给定 Path2D 替代 ctx 当前路径）；无参走当前路径形式（既定）。
+    ctx.fill = function (path) {
+      if (path && path._zwPath) __zw_canvas_op(h, 'fillPath', String(path._zwPath));
+      else __zw_canvas_op(h, 'fill');
+    };
+    ctx.stroke = function (path) {
+      if (path && path._zwPath) __zw_canvas_op(h, 'strokePath', String(path._zwPath));
+      else __zw_canvas_op(h, 'stroke');
+    };
     ctx.fillRect = function (x, y, w, hh) {
       __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
     };
@@ -1029,7 +1069,10 @@
     ctx.isPointInStroke = function (x, y /*, fillRule */) {
       return __zw_canvas_op(h, 'isPointInStroke', String(x), String(y)) === '1';
     };
-    ctx.clip = function () { __zw_canvas_op(h, 'clip'); };
+    ctx.clip = function (path) {
+      if (path && path._zwPath) __zw_canvas_op(h, 'clipPath', String(path._zwPath));
+      else __zw_canvas_op(h, 'clip');
+    };
     ctx.save = function () { __zw_canvas_op(h, 'save'); };
     ctx.restore = function () { __zw_canvas_op(h, 'restore'); };
     ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(tx), String(ty)); };

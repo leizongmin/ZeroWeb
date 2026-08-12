@@ -777,6 +777,31 @@ impl CanvasContext {
         }
     }
 
+    // ── Path2D 参数形式（R3306：ctx.fill(path)/stroke(path)/clip(path)，spec CanvasDrawingStyles）──
+    // 语义：fill(path) 用给定 Path2D 而非当前路径（current_path 不变）。实现：保存当前路径 → 替换 →
+    // 调裸方法 → 恢复（零侵入，复用既有光栅化）。Path2D 经 engine 路径注册表（path registry）按 id 引用。
+
+    /// 用给定 `Path2D` 填充（替代当前路径，spec `ctx.fill(path)`）。当前路径不被修改。
+    pub fn fill_path(&mut self, path: &Path2D) {
+        let saved = std::mem::replace(&mut self.current_path, path.clone());
+        self.fill();
+        self.current_path = saved;
+    }
+
+    /// 用给定 `Path2D` 描边（替代当前路径，spec `ctx.stroke(path)`）。当前路径不被修改。
+    pub fn stroke_path(&mut self, path: &Path2D) {
+        let saved = std::mem::replace(&mut self.current_path, path.clone());
+        self.stroke();
+        self.current_path = saved;
+    }
+
+    /// 用给定 `Path2D` 设置裁剪（替代当前路径，spec `ctx.clip(path)`）。当前路径不被修改。
+    pub fn clip_path(&mut self, path: &Path2D) {
+        let saved = std::mem::replace(&mut self.current_path, path.clone());
+        self.clip();
+        self.current_path = saved;
+    }
+
     // ── Composite operation ──
 
     /// 设置合成操作模式。

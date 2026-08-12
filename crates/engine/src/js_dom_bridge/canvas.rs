@@ -6,12 +6,14 @@
 
 use std::collections::HashMap;
 
-/// Canvas host 注册表：上下文表 + 渐变表。
+/// Canvas host 注册表：上下文表 + 渐变表 + Path2D 表。
 ///
 /// 上下文由 `getContext('2d')` 创建（`getContext2d` op），按 id 索引。
 /// 渐变由 `createLinearGradient`/`createRadialGradient`/`createConicGradient` 创建，独立 id 命名空间
 ///（spec：CanvasGradient 为独立对象，可被任意 context 的 fillStyle/strokeStyle 引用）。`addColorStop`
 /// 经渐变 id 变更停止点；`setFillStyleGradient`/`setStrokeStyleGradient` 经渐变 id 查表克隆到 context 样式。
+/// Path2D（R3306）由 `createPath` 创建（`new Path2D()`），独立 id 命名空间；ctx.fill(path)/stroke(path)/
+/// clip(path) 经 path id 查表取 Path2D 引用调 fill_path/stroke_path/clip_path（替代 ctx 当前路径）。
 pub struct CanvasRegistry {
     /// 下一个 context id（从 1 起）。
     pub next_ctx_id: u64,
@@ -21,6 +23,10 @@ pub struct CanvasRegistry {
     pub next_grad_id: u64,
     /// gradient id → CanvasStyle（仅渐变变体）。
     pub gradients: HashMap<u64, zero_canvas::CanvasStyle>,
+    /// 下一个 Path2D id（从 1 起，独立命名空间，R3306）。
+    pub next_path_id: u64,
+    /// path id → Path2D（R3306）。
+    pub paths: HashMap<u64, zero_canvas::Path2D>,
 }
 
 impl CanvasRegistry {
@@ -31,6 +37,8 @@ impl CanvasRegistry {
             contexts: HashMap::new(),
             next_grad_id: 1,
             gradients: HashMap::new(),
+            next_path_id: 1,
+            paths: HashMap::new(),
         }
     }
 }
@@ -162,6 +170,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
     let arg = |i: usize| args.get(i).map(String::as_str).unwrap_or("0");
     let f = |i: usize| arg(i).trim().parse::<f32>().unwrap_or(0.0);
     let hid = || handle.trim().parse::<u64>().unwrap_or(0);
+    // Path2D id（R3306）：Path2D 操作首参为 path id（args[0]）。
+    let pid = || arg(0).trim().parse::<u64>().unwrap_or(0);
     match op {
         "getContext2d" => {
             let id = reg.next_ctx_id;
@@ -828,6 +838,110 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 .into();
             }
             "high".into()
+        }
+        // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)` / `new Path2D(svgString)`）。
+        // Path2D 为 context 无关的可复用路径对象，经独立 id 命名空间存注册表。ctx.fill(path)/stroke(path)/
+        // clip(path) 取 path id 查表得 Path2D 调 fill_path/stroke_path/clip_path（替代 ctx 当前路径）。
+        // path id 为 args[0]，坐标参从 args[1] 起。**诚实范围**：svgString 构造形式（`new Path2D("M10 10 L90 90")`）
+        // 暂不支持（需 SVG path 解析器，canvas crate 无依赖；首参为非数字串时建空路径 lenient 不抛）。
+        "createPath" => {
+            let id = reg.next_path_id;
+            reg.next_path_id += 1;
+            // 首参若为 path id（数字）→ 复制既有 Path2D（new Path2D(other)）；否则建空（含 svgString defer）。
+            let path = if let Ok(other_id) = arg(0).trim().parse::<u64>()
+                && let Some(src) = reg.paths.get(&other_id)
+            {
+                let mut p = zero_canvas::Path2D::new();
+                p.add_path(src);
+                p
+            } else {
+                zero_canvas::Path2D::new()
+            };
+            reg.paths.insert(id, path);
+            id.to_string()
+        }
+        "pathMoveTo" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.move_to(f(1), f(2));
+            }
+            "ok".into()
+        }
+        "pathLineTo" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.line_to(f(1), f(2));
+            }
+            "ok".into()
+        }
+        "pathClose" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.close_path();
+            }
+            "ok".into()
+        }
+        "pathArc" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.arc(f(1), f(2), f(3), f(4), f(5));
+            }
+            "ok".into()
+        }
+        "pathArcTo" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.arc_to(f(1), f(2), f(3), f(4), f(5));
+            }
+            "ok".into()
+        }
+        "pathQuadratic" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.quadratic_curve_to(f(1), f(2), f(3), f(4));
+            }
+            "ok".into()
+        }
+        "pathBezier" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.bezier_curve_to(f(1), f(2), f(3), f(4), f(5), f(6));
+            }
+            "ok".into()
+        }
+        "pathEllipse" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.ellipse(f(1), f(2), f(3), f(4), f(5), f(6), f(7));
+            }
+            "ok".into()
+        }
+        "pathRect" => {
+            if let Some(p) = reg.paths.get_mut(&pid()) {
+                p.rect(f(1), f(2), f(3), f(4));
+            }
+            "ok".into()
+        }
+        // addPath(src)：dest.add_path(src)（spec Path2D.addPath）。先克隆 src 避免借用冲突。
+        "addPath" => {
+            let src_id = arg(1).trim().parse::<u64>().unwrap_or(0);
+            if let Some(src) = reg.paths.get(&src_id).cloned()
+                && let Some(dest) = reg.paths.get_mut(&pid())
+            {
+                dest.add_path(&src);
+            }
+            "ok".into()
+        }
+        // ctx.fill(path)/stroke(path)/clip(path)：path id 为 args[0]，ctx 来自 handle。
+        "fillPath" => {
+            if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
+                ctx.fill_path(path);
+            }
+            "ok".into()
+        }
+        "strokePath" => {
+            if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
+                ctx.stroke_path(path);
+            }
+            "ok".into()
+        }
+        "clipPath" => {
+            if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
+                ctx.clip_path(path);
+            }
+            "ok".into()
         }
         _ => "ok".into(),
     }
