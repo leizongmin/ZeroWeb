@@ -80,9 +80,26 @@
   conic 角度约定、dash 2w:1w / dot 圆点、凹多边形耳切、synthetic italic shear、
   HiDPI scale_factor、repeating first≠0 回退
 
-**仍待办**：真 Vulkan dma-buf（wgpu 30+ API，dependency-upgrade-backlog P1）、
-窗口模式滤镜/变换（headless 守卫）、clip GPU 实现、blend GPU 实现、
-headless 中间色 sRGB 编码对齐（窗口模式无此问题）。
+**仍待办**：
+- **#2 已修（R3267）**：headless 目标改 Rgba8Unorm 直通 byte——合成器中间色偏色消除
+- **#1 已修（R3268）**：canvas 显示链路（getContext 属性桥 → painter 图元 → ImageCache 注入）
+- **#5 已修（R3270）**：reftest --gpu 真 GPU 渲染（取代 CPU stub，WPT 基线拉到 GPU）
+- **#11 已修（R3269）**：compositor import blit 顶点格式对齐（7-float）
+- **#6/#7/#8/#9 已修（R3271）**：整链契约测试、CI GPU 套件（此前 CI 只跑 cpu::）、
+  回退 blit 视觉验证、多渲染器交替
+- 真 Vulkan dma-buf（wgpu 24→30 升级，dependency-upgrade-backlog P1 独立工程）
+- 窗口模式滤镜/变换（headless 守卫；现回退 CPU 慢但对）、clip GPU 实现、
+  blend GPU 实现
+- **#14 GPU draw_order**：GPU 分桶绘制 vs CSS painting order（DC-10：父 bg-image
+  被子元素 bg-color 场景缺陷）——修复需绘制阶段按 draw_order 重构（每图元独立
+  顶点数组 + 单 draw call），独立任务
+- **#12 device-lost**：真实恢复循环（wgpu 24 无 DeviceLostCallback；现「失败→CPU
+  回退」已覆盖正确性，缺 GPU 设备重建）
+- **#13 atlas 2048**：已是 WebGL2 下限兼容值（所有设备支持），rebuild 机制兜底——
+  设计决策保留
+- **#15 bytes_per_row**：wgpu 接受非对齐（仅个别驱动性能提示），数据紧密排布
+  无需重排——非问题
+- **#16 CDP 截图**：CPU 路径正确可用，GPU 化纯性能项
 
 ## 如何复用 / 后续
 
