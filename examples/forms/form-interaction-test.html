@@ -27,35 +27,81 @@
     <fieldset>
       <legend>选择控件</legend>
       <label><input id="subscribe" name="subscribe" type="checkbox"> 订阅更新</label>
-      <label><input name="plan" type="radio" value="basic" checked> 基础版</label>
-      <label><input name="plan" type="radio" value="pro"> 专业版</label>
+      <label><input id="plan-basic" name="plan" type="radio" value="basic" checked> 基础版</label>
+      <label><input id="plan-pro" name="plan" type="radio" value="pro"> 专业版</label>
     </fieldset>
 
     <button id="click" type="button">普通点击按钮</button>
-    <button type="reset">重置表单</button>
-    <button type="submit">提交表单</button>
+    <button id="reset" type="reset">重置表单</button>
+    <button id="submit" type="submit">提交表单</button>
   </form>
 
   <output id="result" aria-live="polite">等待交互</output>
+  <output id="test-state" hidden>{}</output>
 
   <script>
     const result = document.getElementById('result');
+    const form = document.getElementById('form');
+    const name = document.getElementById('name');
+    const note = document.getElementById('note');
+    const subscribe = document.getElementById('subscribe');
+    const planBasic = document.getElementById('plan-basic');
+    const planPro = document.getElementById('plan-pro');
+    const testState = document.getElementById('test-state');
+    let focused = '';
+    const syncTestState = reason => {
+      const serialized = JSON.stringify({
+        reason,
+        name: name.value,
+        note: note.value,
+        subscribe: subscribe.checked,
+        plan: planBasic.checked ? 'basic' : planPro.checked ? 'pro' : '',
+        focused,
+        result: result.textContent
+      });
+      testState.textContent = serialized;
+      if (location.search.includes('__zero_test_state=1')) {
+        document.title = `ZERO_TEST_STATE:${serialized}`;
+      }
+    };
+    ['name', 'note', 'subscribe', 'plan-basic', 'plan-pro', 'click', 'reset', 'submit'].forEach(id => {
+      document.getElementById(id).addEventListener('focus', event => {
+        focused = event.target.id;
+        syncTestState('focus');
+      });
+    });
     document.getElementById('click').addEventListener('click', () => {
       result.textContent = '普通按钮 click 事件已触发。';
+      syncTestState('button');
     });
-    document.getElementById('name').addEventListener('input', event => {
+    name.addEventListener('input', event => {
       result.textContent = `输入事件：${event.target.value}`;
+      syncTestState('name-input');
     });
-    document.getElementById('subscribe').addEventListener('change', event => {
+    note.addEventListener('input', event => {
+      result.textContent = `备注输入：${event.target.value}`;
+      syncTestState('note-input');
+    });
+    subscribe.addEventListener('change', event => {
       result.textContent = `复选框：${event.target.checked ? '已选中' : '未选中'}`;
+      syncTestState('subscribe-change');
     });
-    document.getElementById('form').addEventListener('reset', () => {
+    [planBasic, planPro].forEach(radio => {
+      radio.addEventListener('change', event => {
+        result.textContent = `套餐：${event.target.value}`;
+        syncTestState('plan-change');
+      });
+    });
+    form.addEventListener('reset', () => {
       result.textContent = '表单已重置。';
+      queueMicrotask(() => syncTestState('reset'));
     });
-    document.getElementById('form').addEventListener('submit', event => {
+    form.addEventListener('submit', event => {
       event.preventDefault();
       result.textContent = '提交事件已触发（已阻止导航）。';
+      syncTestState('submit');
     });
+    syncTestState('initial');
   </script>
 </body>
 </html>

@@ -1015,10 +1015,41 @@ impl BrowserApp {
         self.tabs.load_html(tab_id, html, css, None);
     }
 
+    #[cfg(test)]
+    pub fn load_webview_html_with_url_without_wait_for_test(&mut self, tab_id: TabId, html: &str, url: &str) {
+        self.tabs.ensure_tab(tab_id);
+        self.sync_webview_viewport();
+        self.tabs.load_html(tab_id, html, None, Some(url));
+    }
+
     /// 测试用：读取标签页最近一次渲染快照的序号。
     #[cfg(test)]
     pub fn snapshot_seq_for_test(&self, tab_id: TabId) -> u64 {
         self.tabs.snapshot_seq(tab_id)
+    }
+
+    /// 测试用：读取标签页最近快照中的 HTML。
+    #[cfg(test)]
+    pub fn page_html_for_test(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.page_html(tab_id)
+    }
+
+    /// 测试用：读取标签页最近快照中的 URL。
+    #[cfg(test)]
+    pub fn page_url_for_test(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.page_url(tab_id)
+    }
+
+    /// 测试用：读取标签页最近快照中的标题。
+    #[cfg(test)]
+    pub fn page_title_for_test(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.page_title_for_test(tab_id)
+    }
+
+    /// 测试用：读取标签页最近快照中的导航 epoch。
+    #[cfg(test)]
+    pub fn navigation_epoch_for_test(&self, tab_id: TabId) -> u64 {
+        self.tabs.navigation_epoch_for_test(tab_id)
     }
 
     /// 测试用：以 GPU/合成器路径轮询渲染进程。

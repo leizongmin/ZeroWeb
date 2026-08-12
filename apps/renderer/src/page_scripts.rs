@@ -4,12 +4,13 @@ use std::collections::HashMap;
 
 use tracing::warn;
 use zero_engine::{
-    DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target, apply_mutations_to_html,
-    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, has_attribute,
-    is_checkbox, is_radio, is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html,
-    resolve_document_url, script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event,
-    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event, script_report_error,
-    script_run_classic_page, script_text_control_snapshot, script_text_delete, script_text_input, toggle_radio_html,
+    DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
+    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, is_checkbox, is_radio,
+    is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
+    script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
+    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_run_classic_page,
+    script_select_radio_checked, script_text_control_snapshot, script_text_delete, script_text_input,
+    script_toggle_checkbox_checked,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -584,30 +585,17 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
     }
 }
 
-/// P1a checkbox：click `<input type=checkbox>` → 翻转 `checked` 属性（boolean：存在→`RemoveAttr`，
-/// 不存在→`SetAttr` 空值）+ 派发 'change' 事件。change listener 经 `el.checked` 读翻转后状态。
-/// 返回 true（checked 翻转总改 DOM，调用方 rerender）。
+/// P1a checkbox：click `<input type=checkbox>` → 经 IDL `.checked=` setter 翻转 checkedness，
+/// 使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
 pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     let snap = ctx.html.clone();
     if !is_checkbox(&snap, selector) {
         return false;
     }
-    let mutation = if has_attribute(&snap, selector, "checked") {
-        DomMutation::RemoveAttr {
-            selector: selector.into(),
-            name: "checked".into(),
-        }
-    } else {
-        DomMutation::SetAttr {
-            selector: selector.into(),
-            name: "checked".into(),
-            value: String::new(),
-        }
-    };
-    if let Ok(new_html) = apply_mutations_to_html(&snap, std::slice::from_ref(&mutation)) {
-        *ctx.html = new_html;
+    if !apply_checkedness_script(ctx, &script_toggle_checkbox_checked(selector)) {
+        return false;
     }
-    // 派发 'change'（dom_html 已含翻转后 checked，listener 经 el.checked / hasAttribute 读到新状态）。
+    // 派发 change（dom_html 已含翻转后 checked，listener 经 el.checked 读到新状态）。
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
@@ -622,17 +610,17 @@ pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) ->
     true
 }
 
-/// P1a radio：click `<input type=radio>` → set `checked` on it + `toggle_radio_html` 解析同 name
-/// 组兄弟 unset → 派发 'change' 事件。返回 true（radio toggle 总改 DOM，调用方 rerender）。
+/// P1a radio：click `<input type=radio>` → 经 IDL `.checked=` setter 选择目标并清除同组
+/// 其他项，使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
 pub fn apply_toggle_radio(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     let snap = ctx.html.clone();
     if !is_radio(&snap, selector) {
         return false;
     }
-    if let Some(new_html) = toggle_radio_html(&snap, selector) {
-        *ctx.html = new_html;
+    if !apply_checkedness_script(ctx, &script_select_radio_checked(selector)) {
+        return false;
     }
-    // 派发 'change'（dom_html 已含 target checked + 同组兄弟 unset）。
+    // 派发 change（dom_html 已含 target checked + 同组兄弟 unset）。
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
@@ -645,6 +633,21 @@ pub fn apply_toggle_radio(ctx: &mut PageScriptContext<'_>, selector: &str) -> bo
     let html_snap = ctx.html.clone();
     let _ = apply_recorded_mutations(ctx, &html_snap);
     true
+}
+
+fn apply_checkedness_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    if let Err(error) = ctx.js_worker.execute_script_direct(script) {
+        warn!("apply checkedness: {error}");
+        return false;
+    }
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
 }
 
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
@@ -838,6 +841,84 @@ mod tests {
         assert!(note.html_changed);
         assert_eq!(note.snapshot.expect("note snapshot").value, "第二个输入框");
         assert_eq!(zero_engine::query_text_from_html(ctx.html, "#note"), "");
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn form_interaction_fixture_complete_sequence() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let page_url = "https://zero.test/forms?__zero_test_state=1";
+        let mut worker = RendererJsWorker::spawn(147);
+        worker.set_dom_snapshot(html, page_url);
+        run_scripts(html, &worker);
+
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: None,
+        };
+        let state = |html: &str| -> serde_json::Value {
+            serde_json::from_str(&zero_engine::query_text_from_html(html, "#test-state")).expect("fixture state JSON")
+        };
+
+        let typed = apply_text_input(&mut ctx, "#name", "abc");
+        assert_eq!(typed.snapshot.expect("name snapshot").value, "abc");
+        assert_eq!(state(ctx.html)["name"], "abc");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "输入事件：abc");
+        assert!(
+            zero_engine::query_text_from_html(ctx.html, "title").starts_with("ZERO_TEST_STATE:"),
+            "诊断模式必须把结构化状态同步到标题"
+        );
+
+        let deleted = apply_text_delete(&mut ctx, "#name");
+        assert_eq!(deleted.snapshot.expect("delete snapshot").value, "ab");
+        assert_eq!(state(ctx.html)["name"], "ab");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "输入事件：ab");
+
+        let note = apply_text_input(&mut ctx, "#note", "中文备注");
+        assert_eq!(note.snapshot.expect("note snapshot").value, "中文备注");
+        assert_eq!(state(ctx.html)["note"], "中文备注");
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "备注输入：中文备注"
+        );
+
+        assert!(apply_toggle_checkbox(&mut ctx, "#subscribe"));
+        assert_eq!(state(ctx.html)["subscribe"], true);
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "复选框：已选中");
+
+        assert!(apply_toggle_radio(&mut ctx, "#plan-pro"));
+        assert_eq!(state(ctx.html)["plan"], "pro");
+        assert!(!zero_engine::has_attribute(ctx.html, "#plan-basic", "checked"));
+        assert!(zero_engine::has_attribute(ctx.html, "#plan-pro", "checked"));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "套餐：pro");
+
+        let button = dispatch_dom_event(&mut ctx, true, "#click", "click", None);
+        assert!(button.html_changed);
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "普通按钮 click 事件已触发。"
+        );
+
+        assert!(apply_reset_on_click(&mut ctx, "#reset"));
+        let reset_state = state(ctx.html);
+        assert_eq!(reset_state["name"], "");
+        assert_eq!(reset_state["note"], "");
+        assert_eq!(reset_state["subscribe"], false);
+        assert_eq!(reset_state["plan"], "basic");
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#result"), "表单已重置。");
+
+        let submit = apply_submit_on_click(&mut ctx, "#submit");
+        assert!(submit.html_changed);
+        assert!(!submit.default_allowed);
+        assert_eq!(state(ctx.html)["reason"], "submit");
+        assert_eq!(
+            zero_engine::query_text_from_html(ctx.html, "#result"),
+            "提交事件已触发（已阻止导航）。"
+        );
 
         worker.shutdown();
     }

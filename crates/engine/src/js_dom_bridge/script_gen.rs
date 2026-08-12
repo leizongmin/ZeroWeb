@@ -174,6 +174,33 @@ pub fn script_call_form_reset(form_selector: &str) -> String {
     format!("(function(){{var f=document.querySelector('{esc}');if(f&&typeof f.reset==='function')f.reset();}})()")
 }
 
+/// 构造 checkbox 用户激活的 checkedness 更新脚本。
+///
+/// 必须经 IDL `.checked=` setter，而不是宿主直接改内容属性；setter 会捕获
+/// dirty checkedness 对应的 `defaultChecked` 基线，供后续 `form.reset()` 恢复。
+/// https://html.spec.whatwg.org/multipage/input.html#checkbox-state-(type=checkbox)
+pub fn script_toggle_checkbox_checked(selector: &str) -> String {
+    let esc = escape_js_string(selector);
+    format!("(function(){{var e=document.querySelector('{esc}');if(e)e.checked=!e.checked;}})()")
+}
+
+/// 构造 radio 用户激活的 checkedness 更新脚本。
+///
+/// 同 name 组成员均经 IDL `.checked=` setter 更新，确保每个成员保留各自的
+/// defaultChecked 基线；目标最终 checked，其他同组成员 unchecked。
+/// https://html.spec.whatwg.org/multipage/input.html#radio-button-state-(type=radio)
+pub fn script_select_radio_checked(selector: &str) -> String {
+    let esc = escape_js_string(selector);
+    format!(
+        "(function(){{\
+var t=document.querySelector('{esc}');if(!t||t.checked)return;\
+var n=t.getAttribute('name'),rs=document.querySelectorAll('input[type=radio]');\
+for(var i=0;i<rs.length;i++){{var r=rs[i];if(r!==t&&n!==null&&r.getAttribute('name')===n)r.checked=false;}}\
+t.checked=true;\
+}})()"
+    )
+}
+
 /// 构造「设置 location.hash」的 shim 脚本（P1a 导航，R3053）。宿主在 `<a href="#...">` 被 click 时执行：
 /// 调 shim `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange 事件 + 触 onhashchange）。
 /// headless 无 viewport → 不滚动到锚。hash 经 `escape_js_string` 安全嵌入。

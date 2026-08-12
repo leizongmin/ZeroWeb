@@ -32,8 +32,8 @@ use std::time::{Duration, Instant};
 
 use std::io;
 use zero_engine::{
-    DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit, set_char_measure_fn,
-    set_text_shape_fn,
+    DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, selector_from_element_hit,
+    set_char_measure_fn, set_text_shape_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -181,6 +181,8 @@ struct RendererRuntime {
     frame_transaction: FrameTransaction,
     /// 事务内最后一个非空标题；在事务边界与页面帧一起提交。
     pending_frame_title: Option<String>,
+    /// 最近一次发送给 browser 的页面标题，用于脚本 title 变更去重。
+    last_published_title: Option<String>,
     /// 事务内发布是否允许补抓图片资源。
     pending_frame_network_fetch: bool,
     /// 导航历史栈。
@@ -300,6 +302,7 @@ impl RendererRuntime {
             frame_publish: FramePublishState::new(renderer_id, frame_publish_mode),
             frame_transaction: FrameTransaction::default(),
             pending_frame_title: None,
+            last_published_title: None,
             pending_frame_network_fetch: false,
             history: Vec::new(),
             history_index: 0,
@@ -500,6 +503,13 @@ impl RendererRuntime {
             self.sent_image_keys.extend(thread.drain_sent_image_keys());
         }
         let html = self.cached_html.clone();
+        let current_title = title.unwrap_or_else(|| query_text_from_html(&html, "title"));
+        let title = if self.last_published_title.as_deref() == Some(current_title.as_str()) {
+            None
+        } else {
+            self.last_published_title = Some(current_title.clone());
+            Some(current_title)
+        };
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
         let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
             let wv = self.webview.as_ref().expect("webview");
@@ -1616,6 +1626,7 @@ impl RendererRuntime {
         // input transaction. Never publish that stale snapshot under the new epoch.
         self.frame_transaction.discard_pending();
         self.pending_frame_title = None;
+        self.last_published_title = None;
         self.pending_frame_network_fetch = false;
         self.pending_load = None;
         self.pending_script_prefetch = None;
@@ -1663,6 +1674,7 @@ impl RendererRuntime {
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
+        self.last_published_title = None;
         // P1a change-on-blur：加载新 HTML 清焦点状态。
         self.form_controls.clear();
         self.interaction.clear();

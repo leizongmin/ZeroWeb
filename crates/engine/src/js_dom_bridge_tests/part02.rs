@@ -1177,6 +1177,10 @@ fn test_is_submit_button() {
         "#nb",
     ));
     assert!(!is_submit_button(
+        "<html><body><form><button id='reset' type='reset'>Clear</button></form></body></html>",
+        "#reset",
+    ));
+    assert!(!is_submit_button(
         "<html><body><form><div id='d'>x</div></form></body></html>",
         "#d",
     ));

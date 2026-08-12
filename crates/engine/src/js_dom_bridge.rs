@@ -1426,8 +1426,9 @@ pub fn is_submit_button(html: &str, elem_sel: &str) -> bool {
         return ty == "submit" || ty == "image";
     }
     if tag.eq_ignore_ascii_case("button") {
-        // type="button" 不提交；type=submit/空/missing → 提交（button 默认 type=submit）。
-        return ty != "button";
+        // https://html.spec.whatwg.org/multipage/form-elements.html#attr-button-type
+        // type=button/reset 不提交；submit/空/missing/非法值 → submit（missing/invalid default）。
+        return ty != "button" && ty != "reset";
     }
     false
 }

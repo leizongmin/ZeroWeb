@@ -162,6 +162,11 @@ impl TabManager {
         self.snapshots.get(&tab_id)?.url.clone()
     }
 
+    #[cfg(test)]
+    pub fn page_title_for_test(&self, tab_id: TabId) -> Option<String> {
+        self.snapshots.get(&tab_id)?.title.clone()
+    }
+
     /// 更新默认视口（新 Tab 使用）。
     pub fn set_viewport(&mut self, width: u32, height: u32) {
         self.viewport = (width, height);
@@ -754,6 +759,11 @@ impl TabManager {
     /// 滚动 blit 据此失效保留帧缓冲。
     pub fn snapshot_seq(&self, tab_id: TabId) -> u64 {
         self.snapshot_seq.get(&tab_id).copied().unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub fn navigation_epoch_for_test(&self, tab_id: TabId) -> u64 {
+        self.snapshots.get(&tab_id).map(|s| s.navigation_epoch).unwrap_or(0)
     }
 
     #[cfg(test)]

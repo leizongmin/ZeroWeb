@@ -6,6 +6,9 @@
 use super::*;
 use app::append_webview_primitives;
 
+mod html_scenario;
+use html_scenario::{BrowserScenarioHost, HtmlScenario, StateExpectation};
+
 /// R3254：多进程 GUI 测试串行化——并行 spawn 多个 renderer 子进程（每个约 582MB 二进制
 /// 加字体加载）、叠加共享进程内 compositor client，会资源竞争导致快照轮询超时
 /// （form_fixture / typing 并行即挂）。多进程测试须先持锁。
@@ -1279,6 +1282,78 @@ fn form_fixture_physical_clicks_reach_controls_at_windows_scale_factors() {
         }
     }
     assert!(ime_verified, "示例页 textarea 的中文 IME commit 未执行");
+}
+
+#[test]
+fn form_fixture_complete_multiprocess_semantics() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Gpu);
+    app.enable_multiprocess_for_test();
+    app.physical_size = (1600, 1800);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("active tab");
+    app.ensure_webview(tab_id);
+    app.sync_webview_viewport();
+    let html = include_str!("../../../examples/forms/form-interaction-test.html");
+    let before_load = app.snapshot_seq_for_test(tab_id);
+    app.load_webview_html_with_url_without_wait_for_test(tab_id, html, "https://zero.test/forms?__zero_test_state=1");
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, before_load, true),
+        "目标表单页必须在真实 renderer/GPU 路径加载完成"
+    );
+    let initial_url = app.page_url_for_test(tab_id).expect("page URL");
+
+    let mut host = BrowserScenarioHost::new(&mut app, tab_id, true);
+    HtmlScenario::new(&mut host)
+        .click("#name")
+        .assert_focused("#name")
+        .type_text("abc")
+        .assert_output("输入事件：abc")
+        .assert_state(
+            StateExpectation::default()
+                .reason("name-input")
+                .name("abc")
+                .note("")
+                .subscribe(false)
+                .plan("basic"),
+        )
+        .press_key("Backspace")
+        .assert_output("输入事件：ab")
+        .assert_state(StateExpectation::default().reason("name-input").name("ab"))
+        .press_key("Tab")
+        .assert_focused("#note")
+        .type_text("x")
+        .ime_preedit("zhong")
+        .ime_commit("中")
+        .assert_output("备注输入：x中")
+        .assert_state(StateExpectation::default().reason("note-input").note("x中"))
+        .click("#subscribe")
+        .assert_checked("#subscribe", true)
+        .assert_output("复选框：已选中")
+        .assert_state(StateExpectation::default().reason("subscribe-change").subscribe(true))
+        .click("#plan-pro")
+        .assert_checked("#plan-basic", false)
+        .assert_checked("#plan-pro", true)
+        .assert_output("套餐：pro")
+        .assert_state(StateExpectation::default().reason("plan-change").plan("pro"))
+        .click("#click")
+        .assert_output("普通按钮 click 事件已触发。")
+        .click("#reset")
+        .assert_output("表单已重置。")
+        .assert_state(
+            StateExpectation::default()
+                .reason("reset")
+                .name("")
+                .note("")
+                .subscribe(false)
+                .plan("basic"),
+        )
+        .click("#submit")
+        .assert_output("提交事件已触发（已阻止导航）。")
+        .assert_state(StateExpectation::default().reason("submit"))
+        .assert_url(&initial_url)
+        .run()
+        .unwrap_or_else(|error| panic!("{error}"));
 }
 
 /// 验证设置页面生成正确 HTML。
