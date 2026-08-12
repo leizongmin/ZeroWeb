@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 阶段：M3c
+- 阶段：M4
 - 状态：M0-M2 完成，M3 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
@@ -83,8 +83,8 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] a/area 跨文档导航 intent 与 click 取消
 - [x] 同文档 fragment/hash 激活
 - [x] details/summary 激活与取消
-- [ ] dialog/popover 目标校验与 top-layer 状态
+- [x] dialog/popover 目标校验与 top-layer 状态
 
 ## 下一步
 
-闭合 dialog/popover 目标校验与 top-layer 状态，完成 M3c。
+实施 M4 live renderer automation IPC、WebDriver 与 WPT testharness/testdriver 闭环。

@@ -570,6 +570,8 @@
         if (prop === 'removeAttribute') {
           return function(name) {
             var n = String(name);
+            var nLower = n.toLowerCase();
+            var targetTag = _realTag(sel, handle);
             // R2992 custom element attributeChangedCallback：移除前读 old（newVal=null）。
             var ceEntry = _ceEntryFor(key, sel, handle);
             var ceOld = ceEntry ? _ce_attrValue(sel, handle, n) : null;
@@ -583,6 +585,11 @@
             if (n === 'class') _classCache[key] = '';
             else if (n === 'value') { _inputValues[key] = ''; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：removeAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
+            if (nLower === 'popover') delete _zwTopLayer[key];
+            if (nLower === 'open' && targetTag === 'DIALOG') {
+              delete _zwDialogModal[key];
+              delete _zwTopLayer[key];
+            }
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
@@ -759,18 +766,18 @@
             else _zwShowPopover(key, sel, handle);
           };
         }
-        // R3290：HTMLDialogElement 三方法（show/showModal/close）。暴露于全部元素 proxy（与 popover API 同设计），
+        // R3290：HTMLDialogElement 三方法（show/showModal/close）。仅向 dialog proxy 暴露，
         // 状态机校验经 _zwDialog* helper（part01.js）。dialog 元素 feature-detect + 调 show/showModal/close +
         // 监听 'close' 事件不中断（模态/对话框 UI 库 high-frequency 路径）。headless 无真 top-layer paint /
         // ::backdrop / focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态（open 属性 + 模态态）。
         // https://html.spec.whatwg.org/multipage/interactive-elements.html#htmldialogelement
-        if (prop === 'show') {
+        if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
           return function () { _zwDialogShow(key, sel, handle); };
         }
-        if (prop === 'showModal') {
+        if (prop === 'showModal' && _realTag(sel, handle) === 'DIALOG') {
           return function () { _zwDialogShowModal(key, sel, handle); };
         }
-        if (prop === 'close') {
+        if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
           return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
         }
         // R3290：HTMLDialogElement.open / HTMLDetailsElement.open ——boolean 反射 open 内容属性。
@@ -785,7 +792,7 @@
         // getter 返存储值（默认 ''，spec 空 dialog returnValue 为 ''）。直接 setAttribute 不可达（IDL 属性 setter
         // 不反射内容属性——dialog 无 returnValue 内容属性，仅 IDL），故存 _expando。setter 任意值 → 串。
         // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-returnvalue
-        if (prop === 'returnValue') return _expando[key + '::returnValue'] || '';
+        if (prop === 'returnValue' && _realTag(sel, handle) === 'DIALOG') return _expando[key + '::returnValue'] || '';
         if (prop === 'scrollTo' || prop === 'scrollBy') {
           var _ss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           var _byM = prop === 'scrollBy';
@@ -1748,8 +1755,14 @@
           // 模态 dialog 经 open setter 关闭（falsy）不派 close 事件（spec：close 事件仅 close() 派发，
           // 直接 removeAttribute 不派——real browser 一致）。getter 直读属性（无缓存 → 无 stale）。
           if (value) _zwSetAttr(key, sel, handle, 'open', '');
-          else _zwRemoveAttr(key, sel, handle, 'open');
-        } else if (p === 'returnValue') {
+          else {
+            _zwRemoveAttr(key, sel, handle, 'open');
+            if (_realTag(sel, handle) === 'DIALOG') {
+              delete _zwDialogModal[key];
+              delete _zwTopLayer[key];
+            }
+          }
+        } else if (p === 'returnValue' && _realTag(sel, handle) === 'DIALOG') {
           // R3290：HTMLDialogElement.returnValue IDL setter。spec：存任意值为串（不反射内容属性——dialog 无
           // returnValue 内容属性）。lenient 接受任意值（null → ''，与 getter 默认值一致）。
           _expando[key + '::returnValue'] = (value == null) ? '' : String(value);
@@ -1758,6 +1771,7 @@
           //（getter 经 `_zwReadPopover` 映射 invalid→manual，real browser 一致）。不写 _reflectedAttrs 缓存
           //（getter 直读属性，无 sync set→get stale gap 风险——popover 读经属性而非缓存，与 title/lang/dir 不同）。
           if (value === null) {
+            delete _zwTopLayer[key];
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, 'popover');
             else if (!handle && typeof __zw_remove_attr === 'function') { __zw_remove_attr(sel, 'popover'); moAttr = 'popover'; }
           } else {

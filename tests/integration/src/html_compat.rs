@@ -875,6 +875,93 @@ details.addEventListener('toggle',function(){
 }
 
 #[test]
+fn dialog_popover_invalid_targets_leave_no_top_layer_state() {
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+    // https://html.spec.whatwg.org/multipage/popover.html
+    const SCRIPT: &str = r#"
+var plain=document.getElementById('plain');
+plain.returnValue='custom';
+var detachedDialog=document.createElement('dialog');
+var detachedPopover=document.createElement('div');
+detachedPopover.popover='manual';
+var detachedDialogError='',detachedPopoverError='';
+try{detachedDialog.showModal();}catch(error){detachedDialogError=error.name;}
+try{detachedPopover.showPopover();}catch(error){detachedPopoverError=error.name;}
+
+var dialog=document.getElementById('dialog');
+dialog.showModal();
+dialog.open=false;
+var dialogReopened=true;
+try{dialog.showModal();}catch(_error){dialogReopened=false;}
+dialog.close();
+
+var popover=document.getElementById('popover');
+popover.showPopover();
+popover.removeAttribute('popover');
+popover.setAttribute('popover','manual');
+var popoverReopened=true;
+try{popover.showPopover();popover.hidePopover();}catch(_error){popoverReopened=false;}
+var hiddenError='';
+try{popover.hidePopover();}catch(error){hiddenError=error.name;}
+
+var openDialog=document.getElementById('open-dialog');
+openDialog.show();
+var openError='';
+try{openDialog.showModal();}catch(error){openError=error.name;}
+document.getElementById('missing-target').click();
+globalThis.__topLayerResult=[
+  typeof plain.showModal,plain.returnValue,detachedDialogError,detachedPopoverError,
+  String(dialogReopened),String(popoverReopened),hiddenError,openError
+].join('|');
+"#;
+    let html = format!(
+        r#"<html><body>
+        <div id="plain"></div>
+        <dialog id="dialog"></dialog><dialog id="open-dialog"></dialog>
+        <div id="popover" popover="manual"></div>
+        <button id="missing-target" popovertarget="missing">Missing</button>
+        <script>{SCRIPT}</script>
+        </body></html>"#
+    );
+
+    fn run(html: &str, executor: Option<&dyn JsExecutor>) -> String {
+        let url = "https://zero.test/top-layer";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        match executor {
+            Some(executor) => {
+                executor.set_dom_snapshot(html, url);
+                executor.execute_script_direct(SCRIPT).expect("top-layer state script");
+                executor.execute_script_direct("globalThis.__topLayerResult")
+            }
+            None => {
+                webview.run_page_scripts().expect("top-layer state script");
+                webview
+                    .execute_script("globalThis.__topLayerResult")
+                    .map_err(|error| error.to_string())
+            }
+        }
+        .expect("top-layer result")
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(108);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(109));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(
+        renderer_result,
+        "undefined|custom|InvalidStateError|InvalidStateError|true|true|InvalidStateError|InvalidStateError"
+    );
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());
