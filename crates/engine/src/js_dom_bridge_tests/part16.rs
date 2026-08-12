@@ -177,3 +177,101 @@ fn test_opfs_directory_and_remove_r3314() {
         "estimate() 返配额对象（含 quota 数值）"
     );
 }
+
+#[test]
+fn test_opfs_writable_seek_truncate_r3315() {
+    // R3315：OPFS createWritable seek/truncate/position（spec FileSystemWritableFileStream §8.5）。
+    // R3314 createWritable 仅追加式 write/close。本测断言：① write→seek→write 在指定位置写入（覆盖中间，非纯追加）；
+    // ② truncate 截断；③ write({position,data}) 带位置写入；④ keepExistingData:true 保留原内容后追加。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 用 async/await 扁平化 4 子测试（避免手动 Promise 链括号失衡）。V8 原生支持 async/await。
+    sandbox
+        .execute(
+            "(async function () {\
+               try {\
+                 var root = await navigator.storage.getDirectory();\
+                 /* ① write→seek→write：ABCDE → pos1 写 XY → AXYDE */\
+                 var fh1 = await root.getFileHandle('f1', { create: true });\
+                 var w1 = await fh1.createWritable();\
+                 await w1.write('ABCDE');\
+                 await w1.seek(1);\
+                 await w1.write('XY');\
+                 await w1.close();\
+                 globalThis.__seekResult = String(await (await fh1.getFile()).text());\
+                 /* ② truncate：ABCDEF → truncate(3) → ABC */\
+                 var fh2 = await root.getFileHandle('f2', { create: true });\
+                 var w2 = await fh2.createWritable();\
+                 await w2.write('ABCDEF');\
+                 await w2.truncate(3);\
+                 await w2.close();\
+                 globalThis.__truncResult = String(await (await fh2.getFile()).text());\
+                 /* ③ write({position,data}) 带位置：AAAA → pos2 写 BB → AABB */\
+                 var fh3 = await root.getFileHandle('f3', { create: true });\
+                 var w3 = await fh3.createWritable();\
+                 await w3.write('AAAA');\
+                 await w3.write({ type: 'write', position: 2, data: 'BB' });\
+                 await w3.close();\
+                 globalThis.__posResult = String(await (await fh3.getFile()).text());\
+                 /* ④ keepExistingData：orig → keepExistingData createWritable → seek(4) 写 + → orig+ */\
+                 var fh4 = await root.getFileHandle('f4', { create: true });\
+                 var w4a = await fh4.createWritable();\
+                 await w4a.write('orig');\
+                 await w4a.close();\
+                 var w4b = await fh4.createWritable({ keepExistingData: true });\
+                 await w4b.seek(4);\
+                 await w4b.write('+');\
+                 await w4b.close();\
+                 globalThis.__keepResult = String(await (await fh4.getFile()).text());\
+                 globalThis.__ok = 'ok';\
+               } catch (err) {\
+                 globalThis.__ok = 'reject:' + String(err && err.message ? err.message : err);\
+               }\
+             })();",
+        )
+        .unwrap();
+    // pump microtask（async 函数每 await 让出，多轮 execute drain）。
+    for i in 1..=15 {
+        let _ = sandbox.execute(&format!("globalThis.__p{i} = 1;"));
+    }
+
+    assert_eq!(
+        sandbox.execute("globalThis.__ok").unwrap().value,
+        "ok",
+        "OPFS seek/truncate/position 链应成功"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__seekResult").unwrap().value,
+        "AXYDE",
+        "write→seek(1)→write('XY')：pos 1-2 被覆盖为 AXYDE"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__truncResult").unwrap().value,
+        "ABC",
+        "truncate(3) 截断 ABCDEF → ABC"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__posResult").unwrap().value,
+        "AABB",
+        "write({{type:'write',position:2,data:'BB'}}) 带位置写入 AAAA → AABB"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__keepResult").unwrap().value,
+        "orig+",
+        "keepExistingData:true 保留原内容后 seek(4)+write('+') → orig+"
+    );
+}
+

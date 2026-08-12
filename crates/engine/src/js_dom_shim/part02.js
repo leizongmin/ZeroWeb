@@ -2148,32 +2148,81 @@
               return new Blob([node.data.slice()], { type: 'application/octet-stream' });
             });
           },
-          // createWritable() → FileSystemWritableFileStream（write(data) + close()）。write 接 string/Blob/TypedArray/BufferSource。
-          createWritable: function () {
-            var chunks = [];
+          // createWritable({keepExistingData}) → FileSystemWritableFileStream（spec FS §8.5）。
+          // R3315：内部模型「缓冲 Uint8Array + 文件指针 pos」（替代 R3314 chunks 数组，支持 seek/truncate/position）。
+          // keepExistingData:false（默认）→ 空缓冲（整体替换，spec 默认）；true → 复制原文件内容为初始缓冲。
+          // write(data) 在 pos 写入（自动扩展缓冲，pos 前进）；write({position,data}) 先 seek(position) 再写；
+          // seek(offset) 移 pos（不足自动扩展填零）；truncate(size) 缓冲截断/扩展；close 缓冲落 node.data。
+          createWritable: function (opts) {
+            // 初始缓冲：keepExistingData 时复制原内容，否则空（整体替换）。
+            var buf = (opts && opts.keepExistingData) ? new Uint8Array(node.data) : new Uint8Array(0);
+            var pos = 0;
+            var closed = false;
+            function guard() { if (closed) return Promise.reject(new TypeError('stream 已关闭')); return null; }
+            // 把 string/Blob/TypedArray/BufferSource 归一为 Uint8Array。
+            function toBytes(data) {
+              if (data == null) return new Uint8Array(0);
+              if (typeof data === 'string') {
+                var s = new Uint8Array(data.length);
+                for (var i = 0; i < data.length; i++) s[i] = data.charCodeAt(i) & 0xff;
+                return s;
+              }
+              if (data instanceof Uint8Array) return new Uint8Array(data);
+              if (data instanceof Blob) return _zw_blobBytes(data).slice(); // 同步取（headless 近似）
+              if (data.byteLength != null) return new Uint8Array(data.buffer ? data.buffer : data);
+              return new Uint8Array(0);
+            }
+            // 在 pos 写入 bytes（自动扩展缓冲，不截断既有超出内容）。
+            function writeAt(curPos, bytes) {
+              var need = curPos + bytes.length;
+              if (need > buf.length) {
+                var grown = new Uint8Array(need);
+                grown.set(buf);
+                buf = grown;
+              }
+              for (var k = 0; k < bytes.length; k++) buf[curPos + k] = bytes[k];
+            }
             return Promise.resolve({
+              // write(data) 或 write({type:'write', position, data}) 或 write({type:'seek', position}) 或 write({type:'truncate', size})。
               write: function (data) {
-                if (data == null) return Promise.resolve();
-                var bytes;
-                if (typeof data === 'string') {
-                  bytes = new Uint8Array(data.length);
-                  for (var i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
-                } else if (data instanceof Uint8Array) {
-                  bytes = new Uint8Array(data);
-                } else if (data instanceof Blob) {
-                  // Blob 写入需同步取字节——headless Blob 经 arrayBuffer() 异步，但 createWritable.write 同步语义。
-                  // pragmatic：Blob 经 _zw_blobBytes 同步取（part02 闭包可见）。
-                  bytes = _zw_blobBytes(data).slice();
-                } else if (data.byteLength != null) {
-                  bytes = new Uint8Array(data.byteLength != null ? new Uint8Array(data.buffer ? data.buffer : data) : []);
-                } else {
-                  bytes = new Uint8Array(0);
+                var g = guard(); if (g) return g;
+                // 对象形式：write({type:'seek'|'truncate'|'write', position/size/data})。
+                if (data && typeof data === 'object' && typeof data.type === 'string') {
+                  if (data.type === 'seek') { pos = (data.position | 0); return Promise.resolve(); }
+                  if (data.type === 'truncate') {
+                    var sz = data.size | 0;
+                    if (sz < 0) sz = 0;
+                    var tr = new Uint8Array(sz);
+                    tr.set(buf.subarray(0, Math.min(sz, buf.length)));
+                    buf = tr;
+                    if (pos > sz) pos = sz;
+                    return Promise.resolve();
+                  }
+                  // type === 'write'
+                  var wpos = (typeof data.position === 'number') ? (data.position | 0) : pos;
+                  var wb = toBytes(data.data);
+                  writeAt(wpos, wb);
+                  pos = wpos + wb.length;
+                  return Promise.resolve();
                 }
-                for (var j = 0; j < bytes.length; j++) chunks.push(bytes[j]);
+                // 简单形式：write(data) 在 pos 写。
+                var b = toBytes(data);
+                writeAt(pos, b);
+                pos += b.length;
                 return Promise.resolve();
               },
-              close: function () { node.data = new Uint8Array(chunks); return Promise.resolve(); },
-              abort: function () { return Promise.resolve(); },
+              seek: function (offset) { var g = guard(); if (g) return g; pos = (offset | 0); return Promise.resolve(); },
+              truncate: function (size) {
+                var g = guard(); if (g) return g;
+                var tz = (size | 0); if (tz < 0) tz = 0;
+                var tn = new Uint8Array(tz);
+                tn.set(buf.subarray(0, Math.min(tz, buf.length)));
+                buf = tn;
+                if (pos > tz) pos = tz;
+                return Promise.resolve();
+              },
+              close: function () { closed = true; node.data = buf; return Promise.resolve(); },
+              abort: function () { closed = true; return Promise.resolve(); },
             });
           },
           isSameEntry: function (other) { return this === other; },
