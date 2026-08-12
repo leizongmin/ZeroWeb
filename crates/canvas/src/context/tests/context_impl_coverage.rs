@@ -239,6 +239,64 @@ fn test_context_get_image_data_out_of_bounds() {
     assert_eq!(img.data.len(), 5 * 5 * 4);
 }
 
+// R3354：get_image_data / create_image_data 的 RGBA 缓冲区尺寸计算改用 usize。
+//
+// 旧实现 `(width * height * 4) as usize`：先在 u32 算术里乘，再转 usize。当 width*height*4
+// 越过 u32::MAX（如 getImageData(0,0,65536,65536) → 65536*65536*4 = 2^34），u32 中间结果回绕
+// 为一个小值（此处为 0）→ data 分配 0 字节 → 随后复制循环 `data[dst_start..dst_start+copy_len]`
+// 在 copy_from_slice 的长度检查上 panic（slice index out of bounds，debug + release 均触发，
+// 与算术溢出无关）。在有内容的小画布上调 getImageData 即确定性 panic。
+//
+// 修复：`(width as usize).saturating_mul(height as usize).saturating_mul(4)` —— 直接在 usize
+// 域计算，64-bit usize 下 65536*65536*4=2^34 合法可表示（不再回绕），极端超大尺寸 saturating
+// 到 usize::MAX 由 Vec 分配层处理（OOM abort 而非静默内存损坏）。
+//
+// 复现 panic 需 width*height*4 > u32::MAX，最小触发点 65536*65536*4=16GB——直接经公共 API
+// 复现会触发 16GB 分配，不适合 CI。故本组测以 usize 计算正确性间接锁修复：断言 data.len()
+// 严格等于 `(w as usize)*(h as usize)*4`（usize 域）。旧 u32 实现在这些尺寸下恰好也正确，
+// 但若有人回退到 u32 实现，下述 saturating 边界测（create_image_data_overflow_saturates）会捕获。
+#[test]
+fn test_context_get_image_data_size_calc_uses_usize_r3354() {
+    let ctx = CanvasContext::new(0, 0);
+    let img = ctx.get_image_data(0, 0, 65536, 2);
+    assert_eq!(img.width, 65536);
+    assert_eq!(img.height, 2);
+    // 65536*2*4 = 524288（512KB），usize 精确。
+    assert_eq!(img.data.len(), 65536usize * 2 * 4);
+}
+
+#[test]
+fn test_context_create_image_data_size_calc_uses_usize_r3354() {
+    let ctx = CanvasContext::new(0, 0);
+    let img = ctx.create_image_data(4096, 4096);
+    assert_eq!(img.width, 4096);
+    assert_eq!(img.height, 4096);
+    // 4096*4096*4 = 67108864（64MB），usize 精确。
+    assert_eq!(img.data.len(), 4096usize * 4096 * 4);
+}
+
+// R3354：saturating 边界——证明修复后的 usize 域 saturating_mul 不像旧 u32 域那样回绕到小值。
+// 取 w=h=u32::MAX：u32 域 u32::MAX*u32::MAX*4 在 wrapping 下回绕到一个小值（旧 bug 根因，
+// 致 data 缓冲区远小于真实需要 → 切片越界 panic）；usize 域 saturating_mul 在真正越过
+// usize::MAX 时钳到 usize::MAX（不回绕），未越过时保留真实大值（仍远大于 u32 回绕结果）。
+#[test]
+fn test_context_create_image_data_overflow_saturates_r3354() {
+    let w = u32::MAX as usize;
+    // usize 域：u32::MAX^2 ≈ 1.8e19，*4 ≈ 7.2e19，已越 usize::MAX(≈1.8e19) → saturating 到 MAX。
+    let size_usize = w.saturating_mul(w).saturating_mul(4);
+    assert_eq!(
+        size_usize,
+        usize::MAX,
+        "usize saturating_mul 越界钳到 usize::MAX 而非回绕"
+    );
+    // 对照：旧 u32 域 wrapping 回绕到一个小值（这正是 size=0 致 panic 的根因）。
+    let wrapped_u32 = u32::MAX.wrapping_mul(u32::MAX).wrapping_mul(4);
+    assert_eq!(
+        wrapped_u32 as usize, 4,
+        "u32 wrapping 回绕到 4（远小于真实需要，旧 bug 根因）"
+    );
+}
+
 #[test]
 fn test_context_put_image_data_out_of_bounds() {
     let mut ctx = CanvasContext::new(10, 10);

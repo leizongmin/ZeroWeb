@@ -12,7 +12,10 @@ use super::types::*;
 impl CanvasContext {
     /// 创建指定尺寸的 Canvas 上下文。
     pub fn new(width: u32, height: u32) -> Self {
-        let buffer_size = (width as usize) * (height as usize) * 4;
+        // R3354：尺寸计算用 usize + saturating_mul，避免 width*height*4 在 u32 上溢出
+        // （65536*65536*4 在 u32 回绕为 0 → 分配 0 字节缓冲区，后续索引写越界）。
+        // saturating 后极端大尺寸 → Vec 分配失败（安全 abort），而非静默回绕致内存损坏。
+        let buffer_size = (width as usize).saturating_mul(height as usize).saturating_mul(4);
         Self {
             width,
             height,
@@ -878,7 +881,11 @@ impl CanvasContext {
 
     /// 获取像素数据。从画布像素缓冲区中读取指定区域的 RGBA 数据。
     pub fn get_image_data(&self, x: u32, y: u32, width: u32, height: u32) -> ImageData {
-        let size = (width * height * 4) as usize;
+        // R3354：usize + saturating_mul 计算 RGBA 缓冲区大小。
+        // 旧实现 `(width * height * 4) as usize` 在 u32 算术溢出：getImageData(0,0,65536,65536)
+        // → 65536*65536 在 u32 回绕为 0 → data 为空 vec → 复制循环 data[0..N] 切片越界 panic。
+        // spec getImageData：返回请求 width×height 的 ImageData，画布外像素透明黑。
+        let size = (width as usize).saturating_mul(height as usize).saturating_mul(4);
         let mut data = vec![0u8; size];
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
@@ -910,7 +917,8 @@ impl CanvasContext {
 
     /// 创建指定尺寸的 ImageData，填充透明黑色（rgba 0,0,0,0）。
     pub fn create_image_data(&self, width: u32, height: u32) -> ImageData {
-        let size = (width * height * 4) as usize;
+        // R3354：usize + saturating_mul（同 get_image_data，避免 u32 溢出回绕为 0 字节缓冲区）。
+        let size = (width as usize).saturating_mul(height as usize).saturating_mul(4);
         ImageData {
             width,
             height,
