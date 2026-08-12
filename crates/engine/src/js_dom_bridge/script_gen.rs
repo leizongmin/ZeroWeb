@@ -174,6 +174,28 @@ pub fn script_call_form_reset(form_selector: &str) -> String {
     format!("(function(){{var f=document.querySelector('{esc}');if(f&&typeof f.reset==='function')f.reset();}})()")
 }
 
+/// 构造不派发页面事件的 UA 表单重置脚本。
+///
+/// JavaScript 被禁用时，用户代理仍须恢复表单控件默认状态，但不得调用页面
+/// `reset` listener。恢复规则与 shim `form.reset()` 的未取消分支保持一致。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#resetting-a-form
+pub fn script_reset_form_controls(form_selector: &str) -> String {
+    let esc = escape_js_string(form_selector);
+    format!(
+        "(function(){{\
+var f=document.querySelector('{esc}');if(!f||!f.elements)return;\
+var cs=f.elements;\
+for(var i=0;i<cs.length;i++){{var c=cs[i],t=c.tagName;\
+if(t==='TEXTAREA'||t==='OUTPUT')c.value=c.defaultValue;\
+else if(t==='INPUT'){{var k=c.type;\
+if(k==='checkbox'||k==='radio')c.checked=c.defaultChecked;\
+else if(k!=='submit'&&k!=='reset'&&k!=='button'&&k!=='image'&&k!=='file')c.value=c.defaultValue;\
+}}else if(t==='SELECT'){{var os=c.options;for(var j=0;os&&j<os.length;j++)os[j].selected=os[j].defaultSelected;}}\
+}}\
+}})()"
+    )
+}
+
 /// 构造 checkbox 用户激活的 checkedness 更新脚本。
 ///
 /// 必须经 IDL `.checked=` setter，而不是宿主直接改内容属性；setter 会捕获
@@ -218,11 +240,49 @@ pub fn script_text_input(selector: &str, key: &str) -> String {
     format!("__zw_text_input('{esc_sel}', '{esc_ch}')")
 }
 
+/// 构造不派发 `input` listener 的 UA 文本插入脚本。
+///
+/// 仅用于页面 JavaScript 禁用路径；IDL value/selection 状态仍由用户代理更新。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-textarea/input-relevant-value
+pub fn script_text_input_without_event(selector: &str, text: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_text = escape_js_string(text);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
+var v=String(e.value||''),s=Number(e.selectionStart),n=Number(e.selectionEnd);\
+if(!Number.isFinite(s))s=v.length;if(!Number.isFinite(n))n=s;\
+s=Math.max(0,Math.min(v.length,s));n=Math.max(s,Math.min(v.length,n));\
+var x='{esc_text}';e.value=v.slice(0,s)+x+v.slice(n);\
+var c=s+x.length;if(typeof e.setSelectionRange==='function')e.setSelectionRange(c,c);\
+}})()"
+    )
+}
+
 /// 构造「Backspace 删末字符」的 shim 脚本（P1a form input 编辑互补）。宿主在 keydown
 /// Backspace 时执行：shim `__zw_text_delete(sel)` 删 value 末字符并派发 'input' 事件。
 pub fn script_text_delete(selector: &str) -> String {
     let esc_sel = escape_js_string(selector);
     format!("__zw_text_delete('{esc_sel}')")
+}
+
+/// 构造不派发 `input` listener 的 UA Backspace 脚本。
+///
+/// 选区非空时删除选区；否则删除 caret 前一个 UTF-16 code unit。
+/// https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
+pub fn script_text_delete_without_event(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!(
+        "(function(){{var e=document.querySelector('{esc_sel}');\
+if(!e||(e.tagName!=='INPUT'&&e.tagName!=='TEXTAREA'))return;\
+var v=String(e.value||''),s=Number(e.selectionStart),n=Number(e.selectionEnd);\
+if(!Number.isFinite(s))s=v.length;if(!Number.isFinite(n))n=s;\
+s=Math.max(0,Math.min(v.length,s));n=Math.max(s,Math.min(v.length,n));\
+if(s===n){{if(s===0)return;s--;}}\
+e.value=v.slice(0,s)+v.slice(n);\
+if(typeof e.setSelectionRange==='function')e.setSelectionRange(s,s);\
+}})()"
+    )
 }
 
 /// 读取文本控件当前 value 与 DOM 选区，返回 JSON 数组字符串。

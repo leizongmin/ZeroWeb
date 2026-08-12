@@ -1932,6 +1932,32 @@ fn test_form_get_submission_url_r3054() {
 }
 
 #[test]
+fn form_submission_uses_live_text_values_without_changing_defaults() {
+    let html = "<html><body><form id='f' action='/s'>\
+        <input id='name' name='name' value='default'>\
+        <textarea id='note' name='note'>default note</textarea>\
+        </form></body></html>";
+    let live_values = std::collections::HashMap::from([
+        ("#name".to_string(), "edited".to_string()),
+        ("#note".to_string(), "live note".to_string()),
+        ("#stale".to_string(), "ignored".to_string()),
+    ]);
+
+    assert_eq!(
+        form_get_submission_url_with_values(
+            html,
+            "#f",
+            None,
+            "https://example.com/page",
+            &live_values
+        ),
+        Some("https://example.com/s?name=edited&note=live+note".to_string())
+    );
+    assert_eq!(query_attr_from_html(html, "#name", "value"), "default");
+    assert_eq!(query_text_from_html(html, "#note"), "default note");
+}
+
+#[test]
 fn test_form_post_submission_r3055() {
     // R3055：form_post_submission 解析 <form method=post> 提交目标（action_url + urlencoded body）。
     // 对称 R3054 GET——POST 数据在 body，action_url 不含 query。控件收集规则与 GET 完全一致。

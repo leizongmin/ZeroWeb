@@ -1027,6 +1027,11 @@ impl BrowserApp {
         self.tabs.load_html(tab_id, html, None, Some(url));
     }
 
+    #[cfg(test)]
+    pub fn set_javascript_enabled_for_test(&mut self, enabled: bool) {
+        self.tabs.set_javascript_enabled(enabled);
+    }
+
     /// 测试用：读取标签页最近一次渲染快照的序号。
     #[cfg(test)]
     pub fn snapshot_seq_for_test(&self, tab_id: TabId) -> u64 {

@@ -770,6 +770,24 @@ impl RenderPipeline {
         self.cached_doc.clone()
     }
 
+    /// 返回文本表单控件的 live value 覆盖表，键为当前文档中的唯一选择器。
+    ///
+    /// dirty value 不写回 HTML 内容属性；表单提交需消费该快照，而 reset 后的默认值
+    /// 也会通过 [`crate::js_dom_bridge::DomMutation::SetFormValue`] 更新此表。
+    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+    pub fn form_control_value_overrides(&self) -> HashMap<String, String> {
+        let Some(doc) = self.cached_doc.as_ref() else {
+            return HashMap::new();
+        };
+        let doc = doc.borrow();
+        self.form_control_values
+            .iter()
+            .filter_map(|(node, value)| {
+                crate::js_dom_bridge::unique_selector_for_node(&doc, *node).map(|selector| (selector, value.clone()))
+            })
+            .collect()
+    }
+
     /// 渲染 HTML 文档（全流程）。
     ///
     /// 执行完整的 HTML→CSS→Style→Layout→Paint 管线。

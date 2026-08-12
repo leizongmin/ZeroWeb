@@ -956,6 +956,11 @@ impl WebView {
         &self.cached_html
     }
 
+    /// 返回当前文档中文本表单控件的 live value 覆盖表。
+    pub fn form_control_value_overrides(&self) -> HashMap<String, String> {
+        self.pipeline.form_control_value_overrides()
+    }
+
     /// 获取配置。
     pub fn config(&self) -> &WebViewConfig {
         &self.config

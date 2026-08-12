@@ -142,6 +142,7 @@ pub struct ProcessTabBackend {
     tab_to_renderer: HashMap<TabId, u64>,
     renderer_bin: PathBuf,
     viewport: (u32, u32),
+    javascript_enabled: bool,
     storage: StorageManager,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
@@ -209,6 +210,7 @@ impl ProcessTabBackend {
             tab_to_renderer: HashMap::new(),
             renderer_bin,
             viewport: (800, 600),
+            javascript_enabled: true,
             storage: StorageManager::new(),
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
@@ -694,6 +696,7 @@ impl ProcessTabBackend {
                         height: viewport.1,
                     }),
                 );
+                self.send_to_renderer(tab_id, IpcMessageKind::SetJavascriptEnabled(self.javascript_enabled));
             }
             Err(e) => {
                 tracing::error!("Failed to spawn renderer for tab {}: {e}", tab_id.0);
@@ -778,6 +781,15 @@ impl ProcessTabBackend {
         let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
         for tab_id in tabs {
             self.send_to_renderer(tab_id, IpcMessageKind::SetViewport(SetViewportParams { width, height }));
+        }
+    }
+
+    /// 广播页面 JavaScript 执行策略；用户代理默认动作不受该开关影响。
+    pub fn set_javascript_enabled(&mut self, enabled: bool) {
+        self.javascript_enabled = enabled;
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(tab_id, IpcMessageKind::SetJavascriptEnabled(enabled));
         }
     }
 

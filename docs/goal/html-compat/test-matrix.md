@@ -15,5 +15,6 @@ WPT 是外部规范 Oracle，不能替代 `local_unit` 或 `local_integration`�
 | document-title-script-update | https://html.spec.whatwg.org/multipage/dom.html#document.title | FR-001 | renderer frame publish | `form_interaction_fixture_complete_sequence` | `form_fixture_complete_multiprocess_semantics` | - | pass |
 | page-node-identity | https://dom.spec.whatwg.org/#concept-node | FR-004/FR-005 | page-runtime + hit-test + paint IPC | `page_node_ref_rejects_navigation_and_document_replacement` / `same_node_handle_is_distinct_across_document_scopes` | `page_target_is_scoped_to_snapshot_document_generation` | - | pass |
 | pointer-paired-target | https://w3c.github.io/uievents/#events-mouseevent-event-order | FR-004 | browser interaction routing | `page_target_is_scoped_to_snapshot_document_generation` | `pressed_target_pairs_release_and_cancels_when_document_changes` | - | pass |
+| javascript-disabled-default-actions | https://html.spec.whatwg.org/multipage/webappapis.html#scripting | FR-002 | protocol + renderer UA actions + WebView retained values | `javascript_disabled_skips_listeners_not_default_actions` / `form_submission_uses_live_text_values_without_changing_defaults` | `html_compat::default_actions_work_without_javascript` / browser `default_actions_work_without_javascript` | - | pass |
 
 状态值：`planned`、`partial`、`pass`、`blocked`。

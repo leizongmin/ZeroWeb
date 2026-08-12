@@ -649,9 +649,6 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            return Ok(());
-        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let outcome = {
             let mut ctx = PageScriptContext {
@@ -660,7 +657,11 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_text_input(&mut ctx, selector, key)
+            if self.javascript_enabled {
+                page_scripts::apply_text_input(&mut ctx, selector, key)
+            } else {
+                page_scripts::apply_text_input_without_events(&mut ctx, selector, key)
+            }
         };
         if let Some(snapshot) = outcome.snapshot {
             self.form_controls.update(
@@ -678,9 +679,6 @@ impl RendererRuntime {
 
     /// P1a form input：Backspace 删焦点 input/textarea 末字符（value + input 事件）；改 DOM 则单次 rerender。
     fn apply_text_delete_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            return Ok(());
-        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let outcome = {
             let mut ctx = PageScriptContext {
@@ -689,7 +687,11 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_text_delete(&mut ctx, selector)
+            if self.javascript_enabled {
+                page_scripts::apply_text_delete(&mut ctx, selector)
+            } else {
+                page_scripts::apply_text_delete_without_events(&mut ctx, selector)
+            }
         };
         if let Some(snapshot) = outcome.snapshot {
             self.form_controls.update(
@@ -837,6 +839,12 @@ impl RendererRuntime {
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+            if zero_engine::query_tag_from_html(&self.cached_html, selector).eq_ignore_ascii_case("input")
+                && zero_engine::enclosing_form_selector(&self.cached_html, selector).is_some()
+            {
+                self.navigate_form(selector, None)?;
+            }
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -850,7 +858,7 @@ impl RendererRuntime {
             page_scripts::apply_submit_on_enter(&mut ctx, selector)
         };
         if outcome.html_changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         // R3054：implicit submit（submitter=None）未取消 → GET 导航。
         if outcome.default_allowed {
@@ -863,6 +871,10 @@ impl RendererRuntime {
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（submitter name=value 入 query）。
     fn submit_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
         if !self.javascript_enabled {
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+            if zero_engine::is_submit_button(&self.cached_html, selector) {
+                self.navigate_form(selector, Some(selector))?;
+            }
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -876,7 +888,7 @@ impl RendererRuntime {
             page_scripts::apply_submit_on_click(&mut ctx, selector)
         };
         if outcome.html_changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         // R3054：click submit（submitter=该按钮）未取消 → GET 导航。
         if outcome.default_allowed {
@@ -895,8 +907,15 @@ impl RendererRuntime {
         let Some(form_sel) = zero_engine::enclosing_form_selector(&html, selector) else {
             return Ok(());
         };
+        let live_values = self
+            .webview
+            .as_ref()
+            .map(|webview| webview.form_control_value_overrides())
+            .unwrap_or_default();
         // R3055：POST 表单 → POST 导航（url + body）。
-        if let Some((nav_url, body)) = zero_engine::form_post_submission(&html, &form_sel, submitter, &base) {
+        if let Some((nav_url, body)) =
+            zero_engine::form_post_submission_with_values(&html, &form_sel, submitter, &base, &live_values)
+        {
             return self.navigate_with(
                 zero_protocol::message::NavigateParams {
                     url: nav_url,
@@ -908,7 +927,9 @@ impl RendererRuntime {
             );
         }
         // R3054：GET 表单 → GET 导航。
-        if let Some(nav_url) = zero_engine::form_get_submission_url(&html, &form_sel, submitter, &base) {
+        if let Some(nav_url) =
+            zero_engine::form_get_submission_url_with_values(&html, &form_sel, submitter, &base, &live_values)
+        {
             self.handle_navigate(zero_protocol::message::NavigateParams {
                 url: nav_url,
                 referrer: self.current_url.clone(),
@@ -921,9 +942,6 @@ impl RendererRuntime {
     /// P1a form reset（R3050）：click 命中 reset button → 解析 enclosing `<form>` 调 `form.reset()`
     ///（dispatch 'reset' + revert 控件，复用 R3048）。改 DOM 则 rerender。
     fn reset_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            return Ok(());
-        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -932,10 +950,14 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_reset_on_click(&mut ctx, selector)
+            if self.javascript_enabled {
+                page_scripts::apply_reset_on_click(&mut ctx, selector)
+            } else {
+                page_scripts::apply_reset_on_click_without_events(&mut ctx, selector)
+            }
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -987,9 +1009,6 @@ impl RendererRuntime {
 
     /// P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 'change' 事件；改 DOM 则 rerender。
     fn toggle_checkbox_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            return Ok(());
-        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -998,19 +1017,20 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_toggle_checkbox(&mut ctx, selector)
+            if self.javascript_enabled {
+                page_scripts::apply_toggle_checkbox(&mut ctx, selector)
+            } else {
+                page_scripts::apply_toggle_checkbox_without_events(&mut ctx, selector)
+            }
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
 
     /// P1a radio：click 命中 radio → set checked + 同 name 组兄弟 unset + 派发 'change'。
     fn toggle_radio_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            return Ok(());
-        }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
             let mut ctx = PageScriptContext {
@@ -1019,10 +1039,14 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_toggle_radio(&mut ctx, selector)
+            if self.javascript_enabled {
+                page_scripts::apply_toggle_radio(&mut ctx, selector)
+            } else {
+                page_scripts::apply_toggle_radio_without_events(&mut ctx, selector)
+            }
         };
         if changed {
-            self.rerender_publish_webview()?;
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
@@ -2094,6 +2118,10 @@ impl RendererRuntime {
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
             IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
             IpcMessageKind::SetMediaType(params) => self.handle_set_media_type(params),
+            IpcMessageKind::SetJavascriptEnabled(enabled) => {
+                self.javascript_enabled = enabled;
+                Ok(())
+            }
             IpcMessageKind::SetFramePublishMode(mode) => {
                 self.frame_publish.set_mode(mode);
                 Ok(())

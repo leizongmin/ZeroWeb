@@ -80,6 +80,9 @@ mod multi_process;
 mod navigation_paint;
 
 #[cfg(test)]
+mod html_compat;
+
+#[cfg(test)]
 mod security_pipeline;
 
 #[cfg(test)]

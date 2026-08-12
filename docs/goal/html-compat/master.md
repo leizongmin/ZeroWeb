@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 阶段：M1
-- 状态：A/B 完成，C 实施中
+- 状态：A/B/C 完成，D 实施中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -36,10 +36,10 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] renderer → protocol → browser document generation
 - [x] hit-test opaque node handle
 - [x] press/release 稳定目标与 stale generation 取消
-- [ ] JavaScript 禁用时 UA 默认动作
+- [x] JavaScript 禁用时 UA 默认动作
 - [ ] beforeinput/input 与键盘入口统一
 - [ ] focus/label/activation/forms 完整验收
 
 ## 下一步
 
-提交 M1-A/B 阶段进展，继续实现 JavaScript-disabled 默认动作。
+提交 M1-C 阶段进展，继续实现 beforeinput/input 与键盘入口统一。

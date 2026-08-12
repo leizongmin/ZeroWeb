@@ -1364,6 +1364,70 @@ fn form_fixture_complete_multiprocess_semantics() {
         .unwrap_or_else(|error| panic!("{error}"));
 }
 
+#[test]
+fn default_actions_work_without_javascript() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Gpu);
+    app.enable_multiprocess_for_test();
+    app.set_javascript_enabled_for_test(false);
+    app.physical_size = (1000, 900);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("active tab");
+    app.ensure_webview(tab_id);
+    app.sync_webview_viewport();
+    let html = r#"<html><head><title>js-off</title></head><body>
+        <form action="https://zero.test/submitted" method="get">
+          <input id="name" name="name" style="display:block;width:200px;height:32px">
+          <input id="subscribe" name="subscribe" value="yes" type="checkbox" style="display:block;width:24px;height:24px">
+          <input id="basic" name="plan" value="basic" type="radio" checked style="display:block;width:24px;height:24px">
+          <input id="pro" name="plan" value="pro" type="radio" style="display:block;width:24px;height:24px">
+          <button id="reset" type="reset" style="display:block;width:100px;height:32px">Reset</button>
+          <button id="submit" name="go" value="1" type="submit" style="display:block;width:100px;height:32px">Submit</button>
+        </form>
+        <script>
+          document.title = 'script-ran';
+          document.querySelector('#name').addEventListener('input', () => document.title = 'input-listener');
+          document.querySelector('#subscribe').addEventListener('change', () => document.title = 'change-listener');
+          document.querySelector('form').addEventListener('reset', () => document.title = 'reset-listener');
+        </script>
+    </body></html>"#;
+    let before_load = app.snapshot_seq_for_test(tab_id);
+    app.load_webview_html_with_url_without_wait_for_test(tab_id, html, "https://zero.test/js-disabled");
+    assert!(
+        wait_for_snapshot_after(&mut app, tab_id, before_load, true),
+        "JavaScript-disabled fixture must load in the renderer"
+    );
+
+    {
+        let mut host = BrowserScenarioHost::new(&mut app, tab_id, true);
+        HtmlScenario::new(&mut host)
+            .click("#name")
+            .type_text("before")
+            .click("#subscribe")
+            .click("#pro")
+            .click("#reset")
+            .click("#name")
+            .type_text("after")
+            .click("#subscribe")
+            .click("#pro")
+            .run()
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+    assert_eq!(
+        app.page_title_for_test(tab_id).as_deref(),
+        Some("js-off"),
+        "page scripts and input/change/reset listeners must stay disabled"
+    );
+
+    let expected_url = "https://zero.test/submitted?name=after&subscribe=yes&plan=pro&go=1";
+    let mut host = BrowserScenarioHost::new(&mut app, tab_id, true);
+    HtmlScenario::new(&mut host)
+        .click("#submit")
+        .assert_url(expected_url)
+        .run()
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
 /// 验证设置页面生成正确 HTML。
 #[test]
 fn settings_page_generates_html() {

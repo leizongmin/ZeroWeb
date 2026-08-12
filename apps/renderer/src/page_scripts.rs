@@ -8,8 +8,9 @@ use zero_engine::{
     apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, is_checkbox, is_radio,
     is_reset_button, is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url,
     script_call_form_reset, script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event,
-    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_run_classic_page,
-    script_select_radio_checked, script_text_control_snapshot, script_text_delete, script_text_input,
+    script_dispatch_link_event, script_dispatch_script_event, script_report_error, script_reset_form_controls,
+    script_run_classic_page, script_select_radio_checked, script_text_control_snapshot, script_text_delete,
+    script_text_delete_without_event, script_text_input, script_text_input_without_event,
     script_toggle_checkbox_checked,
 };
 
@@ -363,17 +364,22 @@ pub fn tick_observers(ctx: &mut PageScriptContext<'_>) -> bool {
 /// 非 input/textarea 目标 shim 内 no-op。返回 value 属性是否变更（调用方据此单次 rerender）。
 /// 调用方须先判定 `key` 为单字符可打印键（见 `main::is_printable_key`）。
 pub fn apply_text_input(ctx: &mut PageScriptContext<'_>, selector: &str, key: &str) -> TextEditOutcome {
+    apply_text_edit(ctx, selector, &script_text_input(selector, key))
+}
+
+/// 执行 JavaScript-disabled 路径的 UA 文本插入，不派发页面 listener。
+pub fn apply_text_input_without_events(ctx: &mut PageScriptContext<'_>, selector: &str, text: &str) -> TextEditOutcome {
+    apply_text_edit(ctx, selector, &script_text_input_without_event(selector, text))
+}
+
+fn apply_text_edit(ctx: &mut PageScriptContext<'_>, selector: &str, edit_script: &str) -> TextEditOutcome {
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
     ctx.js_worker
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    let script = format!(
-        "{};{}",
-        script_text_input(selector, key),
-        script_text_control_snapshot(selector)
-    );
+    let script = format!("{edit_script};{}", script_text_control_snapshot(selector));
     let snapshot = ctx
         .js_worker
         .execute_script_direct(&script)
@@ -432,32 +438,12 @@ pub fn dispatch_composition_events(
 /// P1a form input：Backspace 删焦点 input/textarea 的末字符 + 派发 'input' 事件。
 /// 镜像 `apply_text_input`。返回 value 属性是否变更（调用方据此单次 rerender）。
 pub fn apply_text_delete(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
-    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
-    ctx.js_worker
-        .mutations()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clear();
-    let script = format!(
-        "{};{}",
-        script_text_delete(selector),
-        script_text_control_snapshot(selector)
-    );
-    let snapshot = ctx
-        .js_worker
-        .execute_script_direct(&script)
-        .ok()
-        .and_then(|value| serde_json::from_str::<(String, usize, usize)>(&value).ok())
-        .map(|(value, selection_start, selection_end)| TextControlSnapshot {
-            value,
-            selection_start,
-            selection_end,
-        });
-    let html_snap = ctx.html.clone();
-    TextEditOutcome {
-        html_changed: apply_recorded_mutations(ctx, &html_snap).is_some(),
-        snapshot,
-    }
+    apply_text_edit(ctx, selector, &script_text_delete(selector))
+}
+
+/// 执行 JavaScript-disabled 路径的 UA Backspace，不派发页面 listener。
+pub fn apply_text_delete_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> TextEditOutcome {
+    apply_text_edit(ctx, selector, &script_text_delete_without_event(selector))
 }
 
 /// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
@@ -501,6 +487,28 @@ pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> 
         .clear();
     // 调 shim form.reset()（R3048）：reset 事件派发 + 控件恢复 default 经 proxy setter 记 mutation。
     let _ = ctx.js_worker.execute_script_direct(&script_call_form_reset(&form_sel));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// 执行 JavaScript-disabled 路径的 UA reset，不派发页面 `reset` listener。
+pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    if !is_reset_button(ctx.html, selector) {
+        return false;
+    }
+    let snap = ctx.html.clone();
+    let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
+        return false;
+    };
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_reset_form_controls(&form_sel));
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
@@ -588,12 +596,24 @@ fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submit
 /// P1a checkbox：click `<input type=checkbox>` → 经 IDL `.checked=` setter 翻转 checkedness，
 /// 使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
 pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    apply_toggle_checkbox_with_events(ctx, selector, true)
+}
+
+/// 执行 JavaScript-disabled 路径的 checkbox 激活，不派发页面 listener。
+pub fn apply_toggle_checkbox_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    apply_toggle_checkbox_with_events(ctx, selector, false)
+}
+
+fn apply_toggle_checkbox_with_events(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) -> bool {
     let snap = ctx.html.clone();
     if !is_checkbox(&snap, selector) {
         return false;
     }
     if !apply_checkedness_script(ctx, &script_toggle_checkbox_checked(selector)) {
         return false;
+    }
+    if !dispatch_events {
+        return true;
     }
     // 派发 change（dom_html 已含翻转后 checked，listener 经 el.checked 读到新状态）。
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
@@ -613,12 +633,24 @@ pub fn apply_toggle_checkbox(ctx: &mut PageScriptContext<'_>, selector: &str) ->
 /// P1a radio：click `<input type=radio>` → 经 IDL `.checked=` setter 选择目标并清除同组
 /// 其他项，使 dirty/defaultChecked 状态可供 reset 恢复，然后派发 change listener。
 pub fn apply_toggle_radio(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    apply_toggle_radio_with_events(ctx, selector, true)
+}
+
+/// 执行 JavaScript-disabled 路径的 radio 激活，不派发页面 listener。
+pub fn apply_toggle_radio_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
+    apply_toggle_radio_with_events(ctx, selector, false)
+}
+
+fn apply_toggle_radio_with_events(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) -> bool {
     let snap = ctx.html.clone();
     if !is_radio(&snap, selector) {
         return false;
     }
     if !apply_checkedness_script(ctx, &script_select_radio_checked(selector)) {
         return false;
+    }
+    if !dispatch_events {
+        return true;
     }
     // 派发 change（dom_html 已含 target checked + 同组兄弟 unset）。
     ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
@@ -918,6 +950,97 @@ mod tests {
         assert_eq!(
             zero_engine::query_text_from_html(ctx.html, "#result"),
             "提交事件已触发（已阻止导航）。"
+        );
+
+        worker.shutdown();
+    }
+
+    #[test]
+    fn javascript_disabled_skips_listeners_not_default_actions() {
+        let html = r#"<html><body>
+            <form id="f">
+              <input id="name" value="base">
+              <textarea id="note">note</textarea>
+              <input id="check" type="checkbox">
+              <input id="basic" type="radio" name="plan" checked>
+              <input id="pro" type="radio" name="plan">
+              <button id="reset" type="reset">Reset</button>
+            </form>
+            <output id="out">unchanged</output>
+            <script>
+              document.querySelector('#name').addEventListener('input', () => {
+                document.querySelector('#out').textContent = 'input-listener';
+              });
+              document.querySelector('#check').addEventListener('change', () => {
+                document.querySelector('#out').textContent = 'change-listener';
+              });
+              document.querySelector('#f').addEventListener('reset', () => {
+                document.querySelector('#out').textContent = 'reset-listener';
+              });
+            </script>
+        </body></html>"#;
+        let page_url = "https://zero.test/js-disabled";
+        let mut worker = RendererJsWorker::spawn(148);
+        worker.set_dom_snapshot(html, page_url);
+        run_scripts(html, &worker);
+
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+
+        let inserted = apply_text_input_without_events(&mut ctx, "#name", "x");
+        assert_eq!(inserted.snapshot.expect("input snapshot").value, "xbase");
+        assert_eq!(
+            ctx.webview
+                .as_ref()
+                .unwrap()
+                .form_control_value_overrides()
+                .get("#name")
+                .map(String::as_str),
+            Some("xbase")
+        );
+        let deleted = apply_text_delete_without_events(&mut ctx, "#name");
+        assert_eq!(deleted.snapshot.expect("delete snapshot").value, "base");
+        assert!(apply_text_input_without_events(&mut ctx, "#note", "x").html_changed);
+        assert!(apply_toggle_checkbox_without_events(&mut ctx, "#check"));
+        assert!(apply_toggle_radio_without_events(&mut ctx, "#pro"));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#out"), "unchanged");
+        assert!(zero_engine::has_attribute(ctx.html, "#check", "checked"));
+        assert!(!zero_engine::has_attribute(ctx.html, "#basic", "checked"));
+        assert!(zero_engine::has_attribute(ctx.html, "#pro", "checked"));
+
+        assert!(apply_reset_on_click_without_events(&mut ctx, "#reset"));
+        worker.set_dom_snapshot(ctx.html, page_url);
+        let name = worker
+            .execute_script_direct(&script_text_control_snapshot("#name"))
+            .expect("name snapshot");
+        let note = worker
+            .execute_script_direct(&script_text_control_snapshot("#note"))
+            .expect("note snapshot");
+        assert_eq!(serde_json::from_str::<(String, usize, usize)>(&name).unwrap().0, "base");
+        assert_eq!(serde_json::from_str::<(String, usize, usize)>(&note).unwrap().0, "note");
+        assert!(!zero_engine::has_attribute(ctx.html, "#check", "checked"));
+        assert!(zero_engine::has_attribute(ctx.html, "#basic", "checked"));
+        assert!(!zero_engine::has_attribute(ctx.html, "#pro", "checked"));
+        assert_eq!(zero_engine::query_text_from_html(ctx.html, "#out"), "unchanged");
+
+        assert!(apply_text_input_without_events(&mut ctx, "#name", "after").html_changed);
+        assert!(apply_toggle_checkbox_without_events(&mut ctx, "#check"));
+        assert!(apply_toggle_radio_without_events(&mut ctx, "#pro"));
+        assert_eq!(
+            ctx.webview
+                .as_ref()
+                .unwrap()
+                .form_control_value_overrides()
+                .get("#name")
+                .map(String::as_str),
+            Some("afterbase")
         );
 
         worker.shutdown();

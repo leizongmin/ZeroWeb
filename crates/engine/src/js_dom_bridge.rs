@@ -1548,7 +1548,21 @@ pub fn form_get_submission_url(
     submitter_sel: Option<&str>,
     base_url: &str,
 ) -> Option<String> {
-    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url)?;
+    form_get_submission_url_with_values(html, form_sel, submitter_sel, base_url, &HashMap::new())
+}
+
+/// 解析 GET 表单提交 URL，并用 selector→live value 覆盖 dirty 文本控件值。
+///
+/// HTML 内容属性保存默认值，用户编辑后的 live value 由页面 pipeline retained state 提供。
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set
+pub fn form_get_submission_url_with_values(
+    html: &str,
+    form_sel: &str,
+    submitter_sel: Option<&str>,
+    base_url: &str,
+    live_values: &HashMap<String, String>,
+) -> Option<String> {
+    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url, live_values)?;
     // GET：method 非 post/dialog（缺省/GET/无效值均按 GET，spec）。POST 由 form_post_submission 处理。
     if method == "post" || method == "dialog" {
         return None;
@@ -1583,7 +1597,18 @@ pub fn form_post_submission(
     submitter_sel: Option<&str>,
     base_url: &str,
 ) -> Option<(String, String)> {
-    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url)?;
+    form_post_submission_with_values(html, form_sel, submitter_sel, base_url, &HashMap::new())
+}
+
+/// 解析 POST 表单提交，并用 selector→live value 覆盖 dirty 文本控件值。
+pub fn form_post_submission_with_values(
+    html: &str,
+    form_sel: &str,
+    submitter_sel: Option<&str>,
+    base_url: &str,
+    live_values: &HashMap<String, String>,
+) -> Option<(String, String)> {
+    let (action_abs, method, pairs) = collect_form_data(html, form_sel, submitter_sel, base_url, live_values)?;
     if method != "post" {
         return None;
     }
@@ -1608,6 +1633,7 @@ fn collect_form_data(
     form_sel: &str,
     submitter_sel: Option<&str>,
     base_url: &str,
+    live_values: &HashMap<String, String>,
 ) -> Option<(String, String, Vec<(String, String)>)> {
     let doc = parse_html(html);
     let form = find_by_selector(&doc, form_sel)?;
@@ -1652,6 +1678,7 @@ fn collect_form_data(
         }
         let tag = element_local_name(&doc, ctrl).to_ascii_lowercase();
         let ty = doc.get_attribute(ctrl, "type").unwrap_or_default().to_ascii_lowercase();
+        let live_value = unique_selector_for_node(&doc, ctrl).and_then(|selector| live_values.get(&selector));
         match tag.as_str() {
             "input" => match ty.as_str() {
                 // submit/image：仅激活的 submitter 参与（spec）；非 submitter 跳过。image 坐标 defer。
@@ -1670,7 +1697,12 @@ fn collect_form_data(
                     }
                 }
                 // text/password/hidden/search/email/url/number/date/color/range/... → value 属性。
-                _ => pairs.push((name, doc.get_attribute(ctrl, "value").unwrap_or_default())),
+                _ => pairs.push((
+                    name,
+                    live_value
+                        .cloned()
+                        .unwrap_or_else(|| doc.get_attribute(ctrl, "value").unwrap_or_default()),
+                )),
             },
             "select" => {
                 // R3056：multiple → 全部 selected 且未 disabled 的 option 各入一项（spec）；无 selected 则不提交
@@ -1707,7 +1739,7 @@ fn collect_form_data(
             }
             "textarea" => {
                 // textarea 值 = 子树文本内容（R2996 模型：value ↔ textContent，inner_html 近似纯文本节点）。
-                pairs.push((name, doc.inner_html(ctrl)));
+                pairs.push((name, live_value.cloned().unwrap_or_else(|| doc.inner_html(ctrl))));
             }
             "button" => {
                 // <button>：默认 type=submit；仅 submitter 参与，type=button/reset 跳过。

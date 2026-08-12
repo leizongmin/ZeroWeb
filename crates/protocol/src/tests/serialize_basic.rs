@@ -245,6 +245,7 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::SetColorScheme(SetColorSchemeParams {
             scheme: IpcColorScheme::Dark,
         }),
+        IpcMessageKind::SetJavascriptEnabled(false),
         IpcMessageKind::TitleChanged("T".into()),
         IpcMessageKind::UrlChanged("https://example.com".into()),
         IpcMessageKind::LoadComplete,

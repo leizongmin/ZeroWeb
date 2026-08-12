@@ -6,7 +6,7 @@ use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_control_snapshot,
-    script_text_delete, script_text_input,
+    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
 };
 use zero_webview::WebView;
 
@@ -376,13 +376,17 @@ pub fn apply_text_input_default(
     html: &str,
     delete: bool,
 ) -> bool {
-    if !javascript_enabled || !should_run_scripts_for_url(wv.url()) {
+    if !should_run_scripts_for_url(wv.url()) {
         return false;
     }
-    let script = if delete {
+    let script = if delete && javascript_enabled {
         script_text_delete(selector)
-    } else {
+    } else if delete {
+        script_text_delete_without_event(selector)
+    } else if javascript_enabled {
         script_text_input(selector, key)
+    } else {
+        script_text_input_without_event(selector, key)
     };
     if let Some(worker) = js_worker {
         let page_url = wv.url().unwrap_or("about:blank");

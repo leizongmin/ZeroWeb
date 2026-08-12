@@ -33,6 +33,8 @@ pub enum IpcMessageKind {
     SetColorScheme(SetColorSchemeParams),
     /// 更新渲染媒体类型（浏览器→渲染，DC-12 @media print；R1993）。
     SetMediaType(SetMediaTypeParams),
+    /// 更新页面 JavaScript 执行策略；不影响用户代理默认动作。
+    SetJavascriptEnabled(bool),
     /// 更新页面绘制帧的 Browser IPC 发布模式。
     SetFramePublishMode(FramePublishMode),
     /// 请求 renderer 立即从当前页面状态重新发布一帧。

@@ -153,6 +153,9 @@ impl TabManager {
         for worker in self.workers.values() {
             worker.send(TabWorkerCommand::SetJavascriptEnabled(enabled));
         }
+        if let Some(ref mut backend) = self.process_backend {
+            backend.set_javascript_enabled(enabled);
+        }
     }
 
     /// 读取 Tab 页面 HTML 源码（快照）。
@@ -567,13 +570,6 @@ impl TabManager {
         shift: bool,
         on_allowed: Option<PendingTabAction>,
     ) {
-        // JS 禁用：没有 handler 会 preventDefault，直接走默认动作。
-        if !self.javascript_enabled {
-            if let Some(action) = on_allowed {
-                self.pending_actions.push_back((tab_id, action));
-            }
-            return;
-        }
         let dispatch_id = self.next_dispatch_id;
         self.next_dispatch_id += 1;
         let key = detail.as_ref().and_then(|d| d.key.clone());
