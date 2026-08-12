@@ -88,13 +88,15 @@ pub enum ActionTargetState {
     },
     /// reset 后应提交的默认状态 mutation。
     Reset {
-        /// resettable controls 的默认状态。
-        defaults: Vec<PlannedMutation>,
+        /// form owner。
+        form: PageNodeRef,
     },
-    /// submit 后的宿主导航意图。
+    /// submit 的 form owner 与 submitter。
     Submit {
-        /// 不产生导航时为 `None`。
-        navigation: Option<FormNavigationIntent>,
+        /// form owner。
+        form: PageNodeRef,
+        /// 触发提交的 submitter；隐式提交为 `None`。
+        submitter: Option<PageNodeRef>,
     },
 }
 
@@ -118,6 +120,11 @@ pub enum PlannedMutation {
         target: PageNodeRef,
         /// 新 checkedness。
         checked: bool,
+    },
+    /// 恢复 form 内所有 resettable controls 的默认状态。
+    ResetForm {
+        /// form owner。
+        form: PageNodeRef,
     },
 }
 
@@ -165,6 +172,13 @@ pub enum PageEffect {
     Focus(Option<PageNodeRef>),
     /// 执行表单导航。
     Navigate(FormNavigationIntent),
+    /// 在 submit listener 完成后构造 entry list 并导航。
+    SubmitForm {
+        /// form owner。
+        form: PageNodeRef,
+        /// submitter；隐式提交为 `None`。
+        submitter: Option<PageNodeRef>,
+    },
 }
 
 /// 动作产生的 typed frame invalidation。
@@ -268,11 +282,9 @@ pub fn plan_html_action(
         }
         (HtmlUserAction::Activate, ActionTargetState::Radio(state)) => plan_radio(request.target, state),
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
-        (HtmlUserAction::Reset, ActionTargetState::Reset { defaults }) => {
-            Ok(plan_reset(request.target, defaults.clone()))
-        }
-        (HtmlUserAction::Submit, ActionTargetState::Submit { navigation }) => {
-            Ok(plan_submit(request.target, navigation.clone()))
+        (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
+        (HtmlUserAction::Submit, ActionTargetState::Submit { form, submitter }) => {
+            Ok(plan_submit(request.target, *form, *submitter))
         }
         _ => Err(ActionNoopReason::NotApplicable),
     }
@@ -435,28 +447,28 @@ fn plan_focus(target: PageNodeRef, next: Option<PageNodeRef>) -> HtmlActionPlan 
     }
 }
 
-fn plan_reset(target: PageNodeRef, defaults: Vec<PlannedMutation>) -> HtmlActionPlan {
+fn plan_reset(target: PageNodeRef, form: PageNodeRef) -> HtmlActionPlan {
     HtmlActionPlan {
         target,
         prepare: vec![],
-        cancelable_event: Some(PlannedEvent::simple(target, "reset", true)),
+        cancelable_event: Some(PlannedEvent::simple(form, "reset", true)),
         rollback: vec![],
-        commit: defaults,
+        commit: vec![PlannedMutation::ResetForm { form }],
         followup_events: vec![],
         effects: vec![],
         invalidation: InvalidationKind::Paint,
     }
 }
 
-fn plan_submit(target: PageNodeRef, navigation: Option<FormNavigationIntent>) -> HtmlActionPlan {
+fn plan_submit(target: PageNodeRef, form: PageNodeRef, submitter: Option<PageNodeRef>) -> HtmlActionPlan {
     HtmlActionPlan {
         target,
         prepare: vec![],
-        cancelable_event: Some(PlannedEvent::simple(target, "submit", true)),
+        cancelable_event: Some(PlannedEvent::simple(form, "submit", true)),
         rollback: vec![],
         commit: vec![],
         followup_events: vec![],
-        effects: navigation.into_iter().map(PageEffect::Navigate).collect(),
+        effects: vec![PageEffect::SubmitForm { form, submitter }],
         invalidation: InvalidationKind::Navigation,
     }
 }
@@ -651,17 +663,13 @@ mod tests {
 
     #[test]
     fn prevented_submit_has_no_navigation_effect() {
-        let navigation = FormNavigationIntent {
-            url: "https://zero.test/submitted".to_string(),
-            method: "GET".to_string(),
-            body: None,
-        };
         let plan = plan_html_action(
             &request(node(1), HtmlUserAction::Submit),
             4,
             9,
             &ActionTargetState::Submit {
-                navigation: Some(navigation.clone()),
+                form: node(2),
+                submitter: Some(node(1)),
             },
         )
         .unwrap();
@@ -680,6 +688,40 @@ mod tests {
                 html_changed: false,
             },
         );
-        assert_eq!(allowed.effects, [PageEffect::Navigate(navigation)]);
+        assert_eq!(
+            allowed.effects,
+            [PageEffect::SubmitForm {
+                form: node(2),
+                submitter: Some(node(1))
+            }]
+        );
+    }
+
+    #[test]
+    fn reset_dispatches_to_form_and_commits_only_when_allowed() {
+        let plan = plan_html_action(
+            &request(node(1), HtmlUserAction::Reset),
+            4,
+            9,
+            &ActionTargetState::Reset { form: node(2) },
+        )
+        .unwrap();
+        assert_eq!(plan.cancelable_event.as_ref().unwrap().target, node(2));
+        let canceled = resolve_html_action(
+            plan.clone(),
+            EventDispatchResult {
+                default_allowed: false,
+                html_changed: false,
+            },
+        );
+        assert!(canceled.mutations.is_empty());
+        let allowed = resolve_html_action(
+            plan,
+            EventDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            },
+        );
+        assert_eq!(allowed.mutations, [PlannedMutation::ResetForm { form: node(2) }]);
     }
 }

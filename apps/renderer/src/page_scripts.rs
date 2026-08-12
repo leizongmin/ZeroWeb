@@ -5,16 +5,15 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
-    apply_mutations_to_html_with_handles, enclosing_form_selector, extract_page_scripts_indexed, is_reset_button,
-    is_submit_button, page_script_error_check, query_tag_from_html, resolve_document_url, script_call_form_reset,
+    apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
     script_call_set_location_hash, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_script_event, script_report_error, script_reset_form_controls, script_run_classic_page,
     script_set_control_checked, script_set_text_control_state,
 };
 #[cfg(test)]
 use zero_engine::{
-    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
-    script_text_input_without_event,
+    enclosing_form_selector, is_reset_button, is_submit_button, script_call_form_reset, script_text_control_snapshot,
+    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
 };
 
 use crate::js_worker::{RendererJsWorker, collect_module_deps};
@@ -30,6 +29,7 @@ pub struct DomDispatchResult {
 
 /// P1a form submit 结果（R3054）：submit 事件派发后的两项判定。
 /// `html_changed` → 调用方 rerender；`default_allowed` → 未 preventDefault → 调用方据 method=GET 导航。
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SubmitOutcome {
     /// submit listener 改了 DOM（调用方单次 rerender）。
@@ -456,20 +456,9 @@ pub fn apply_text_delete_without_events(ctx: &mut PageScriptContext<'_>, selecto
     apply_text_edit(ctx, selector, &script_text_delete_without_event(selector))
 }
 
-/// P1a form submit：Enter 在单行 `<input>`（非 textarea）→ 解析 enclosing `<form>` → 派发
-/// 'submit' 事件。textarea 的 Enter 为换行不提交；input 无 enclosing form 不提交。
-/// 返回 submit 结果（html_changed + default_allowed，R3054：default_allowed 驱动 GET 导航）。
-pub fn apply_submit_on_enter(ctx: &mut PageScriptContext<'_>, selector: &str) -> SubmitOutcome {
-    // 仅单行 input 的 Enter 触发 submit（textarea 的 Enter 为换行）。
-    if !query_tag_from_html(ctx.html, selector).eq_ignore_ascii_case("input") {
-        return SubmitOutcome::default();
-    }
-    // Enter 隐式提交：submitter = None（spec：表单默认提交按钮或 null）。
-    submit_enclosing_form(ctx, selector, None)
-}
-
 /// P1a form submit：click 命中 submit button（`<input type=submit/image>` / `<button>` type≠button）
 /// → 解析 enclosing `<form>` → 派发 'submit' 事件。返回 submit 结果（含 default_allowed 供 GET 导航）。
+#[cfg(test)]
 pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> SubmitOutcome {
     if !is_submit_button(ctx.html, selector) {
         return SubmitOutcome::default();
@@ -481,6 +470,7 @@ pub fn apply_submit_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) ->
 /// P1a form reset（R3050，闭合 R3048 限制⑤）：click 命中 reset button（`<input type=reset>` / `<button type=reset>`）
 /// → 解析 enclosing `<form>` → 调 shim `form.reset()`（dispatch cancelable 'reset' 事件 + 未取消则 revert 控件，
 /// 复用 R3048 全部 reset 语义）。返回 reset 回调是否改 DOM。无 enclosing form → false。
+#[cfg(test)]
 pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     if !is_reset_button(ctx.html, selector) {
         return false;
@@ -502,6 +492,7 @@ pub fn apply_reset_on_click(ctx: &mut PageScriptContext<'_>, selector: &str) -> 
 }
 
 /// 执行 JavaScript-disabled 路径的 UA reset，不派发页面 `reset` listener。
+#[cfg(test)]
 pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, selector: &str) -> bool {
     if !is_reset_button(ctx.html, selector) {
         return false;
@@ -519,6 +510,44 @@ pub fn apply_reset_on_click_without_events(ctx: &mut PageScriptContext<'_>, sele
     let _ = ctx
         .js_worker
         .execute_script_direct(&script_reset_form_controls(&form_sel));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// 重置已解析的 form owner，不派发页面 `reset` listener。
+pub fn apply_form_reset_without_events(ctx: &mut PageScriptContext<'_>, form_selector: &str) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct(&script_reset_form_controls(form_selector));
+    let html_snap = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snap).is_some()
+}
+
+/// 开始宿主默认动作事务，暂缓 listener 排入的 microtask。
+pub fn begin_host_action_transaction(ctx: &mut PageScriptContext<'_>) {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    let _ = ctx
+        .js_worker
+        .execute_script_direct("__zw_begin_host_action_transaction()");
+}
+
+/// 完成宿主默认动作事务，flush microtask 并应用其 DOM mutations。
+pub fn end_host_action_transaction(ctx: &mut PageScriptContext<'_>) -> bool {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+    let _ = ctx
+        .js_worker
+        .execute_script_direct("__zw_end_host_action_transaction()");
     let html_snap = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
@@ -573,6 +602,7 @@ pub fn apply_javascript_href(ctx: &mut PageScriptContext<'_>, selector: &str) ->
 /// 共享 submit 核心：解析 enclosing `<form>` → 派发 'submit'（复用 `script_dispatch_dom_event`）
 /// → apply。无触发 gate（调用方先判 Enter-in-input / submit-button）。无 enclosing form → 默认 outcome。
 /// 返回 submit 结果（R3054：default_allowed = 未 preventDefault，驱动 GET 导航）。
+#[cfg(test)]
 fn submit_enclosing_form(ctx: &mut PageScriptContext<'_>, selector: &str, submitter: Option<&str>) -> SubmitOutcome {
     let snap = ctx.html.clone();
     let Some(form_sel) = enclosing_form_selector(&snap, selector) else {
@@ -1139,6 +1169,80 @@ mod tests {
         let commit = apply_text_input(&mut ctx, "#note", "中文备注");
         assert!(commit.html_changed, "IME commit must apply a retained value mutation");
         assert_eq!(commit.snapshot.expect("committed snapshot").value, "中文备注");
+        worker.shutdown();
+    }
+
+    #[test]
+    fn host_reset_transaction_flushes_microtasks_after_default_action() {
+        let html = include_str!("../../../examples/forms/form-interaction-test.html");
+        let page_url = "https://zero.test/forms?__zero_test_state=1";
+        let mut worker = RendererJsWorker::spawn(148);
+        worker.set_dom_snapshot(html, page_url);
+        run_scripts(html, &worker);
+
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        webview.prepare_document_state(page_url);
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+        let typed = apply_text_input(&mut ctx, "#name", "ab");
+        assert_eq!(typed.snapshot.expect("name snapshot").value, "ab");
+        assert!(apply_set_checked_without_events(&mut ctx, "#subscribe", true));
+        assert!(apply_set_checked_without_events(&mut ctx, "#plan-basic", false));
+        assert!(apply_set_checked_without_events(&mut ctx, "#plan-pro", true));
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "[document.querySelector('#subscribe').checked,\
+                      document.querySelector('#subscribe').defaultChecked].join(',')"
+                )
+                .expect("checkbox state"),
+            "true,false"
+        );
+        worker
+            .execute_script_direct(
+                "document.querySelector('#form').addEventListener('reset',function(){\
+                 Promise.resolve().then(function(){\
+                 globalThis.__promiseResetChecked=document.querySelector('#subscribe').checked;\
+                 });\
+                 });",
+            )
+            .expect("register promise reset listener");
+
+        begin_host_action_transaction(&mut ctx);
+        let dispatched = dispatch_dom_event(&mut ctx, true, "#form", "reset", None);
+        assert!(dispatched.default_allowed);
+        assert!(apply_form_reset_without_events(&mut ctx, "#form"));
+        assert_eq!(
+            worker
+                .execute_script_direct(
+                    "[document.querySelector('#subscribe').checked,\
+                      document.querySelector('#subscribe').defaultChecked].join(',')"
+                )
+                .expect("reset checkbox state"),
+            "false,false"
+        );
+        assert!(end_host_action_transaction(&mut ctx));
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__promiseResetChecked)")
+                .expect("promise reset state"),
+            "false"
+        );
+
+        let state: serde_json::Value =
+            serde_json::from_str(&zero_engine::query_text_from_html(ctx.html, "#test-state"))
+                .expect("fixture state JSON");
+        assert_eq!(state["reason"], "reset");
+        assert_eq!(state["name"], "");
+        assert_eq!(state["subscribe"], false);
+        assert_eq!(state["plan"], "basic");
+
         worker.shutdown();
     }
 

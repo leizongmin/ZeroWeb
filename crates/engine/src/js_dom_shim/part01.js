@@ -1487,6 +1487,48 @@
     });
     el.dispatchEvent(input);
   };
+
+  // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
+  var _zwNativeQueueMicrotask = globalThis.queueMicrotask;
+  var _zwNativePromiseThen = typeof Promise === 'function' ? Promise.prototype.then : null;
+  var _zwHostMicrotasks = null;
+  function _zwRunOrDeferPromiseReaction(callback, value) {
+    if (!_zwHostMicrotasks) return callback(value);
+    return new Promise(function(resolve, reject) {
+      _zwHostMicrotasks.push(function() {
+        try { resolve(callback(value)); } catch (error) { reject(error); }
+      });
+    });
+  }
+  globalThis.__zw_begin_host_action_transaction = function() {
+    _zwHostMicrotasks = [];
+  };
+  globalThis.__zw_end_host_action_transaction = function() {
+    var pending = _zwHostMicrotasks || [];
+    _zwHostMicrotasks = null;
+    for (var i = 0; i < pending.length; i++) {
+      try { pending[i](); } catch (_) {}
+    }
+  };
+  if (typeof _zwNativeQueueMicrotask === 'function') {
+    globalThis.queueMicrotask = function(callback) {
+      if (typeof callback !== 'function') throw new TypeError('queueMicrotask callback must be callable');
+      if (_zwHostMicrotasks) _zwHostMicrotasks.push(callback);
+      else _zwNativeQueueMicrotask(callback);
+    };
+  }
+  if (_zwNativePromiseThen) {
+    Promise.prototype.then = function(onFulfilled, onRejected) {
+      var fulfilled = typeof onFulfilled === 'function'
+        ? function(value) { return _zwRunOrDeferPromiseReaction(onFulfilled, value); }
+        : onFulfilled;
+      var rejected = typeof onRejected === 'function'
+        ? function(reason) { return _zwRunOrDeferPromiseReaction(onRejected, reason); }
+        : onRejected;
+      return _zwNativePromiseThen.call(this, fulfilled, rejected);
+    };
+  }
   // 解析 selector → canonical stable selector（`__zw_query_match`，与 querySelector 同 identity）+
   // 真实 tag（`__zw_get_tag`，非 `_tagFromSel` 启发式）判 INPUT/TEXTAREA → 返元素 proxy（否则 null）。
   // __zw_text_input / __zw_text_delete 共用。

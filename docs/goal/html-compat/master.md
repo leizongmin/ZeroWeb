@@ -48,11 +48,11 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] renderer checkedness adapter 使用 shared plan
 - [x] renderer 文本 adapter 使用 shared plan
 - [x] renderer focus adapter 使用 shared effect
-- [ ] renderer reset/submit 迁移
+- [x] renderer reset/submit adapter 使用 shared plan/effect
 - [ ] TabWorker adapter 迁移
 - [ ] ZeroWebView user-action adapter
 - [ ] 三宿主 conformance 与取消一致性
 
 ## 下一步
 
-提交 M2-C renderer focus adapter，继续迁移 reset/submit 与其他宿主。
+提交 M2-D renderer reset/submit adapter，继续迁移 TabWorker 与 ZeroWebView。

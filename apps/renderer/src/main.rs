@@ -763,7 +763,7 @@ impl RendererRuntime {
                 html_changed: false,
             },
         );
-        self.apply_planned_effects(&outcome.effects)
+        self.apply_planned_effects(&outcome.effects).map(|_| ())
     }
 
     /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
@@ -897,75 +897,113 @@ impl RendererRuntime {
     /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
     fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
-            if zero_engine::query_tag_from_html(&self.cached_html, selector).eq_ignore_ascii_case("input")
-                && zero_engine::enclosing_form_selector(&self.cached_html, selector).is_some()
-            {
-                self.navigate_form(selector, None)?;
-            }
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+        if !zero_engine::query_tag_from_html(&self.cached_html, selector).eq_ignore_ascii_case("input") {
             return Ok(());
         }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let outcome = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            page_scripts::apply_submit_on_enter(&mut ctx, selector)
-        };
-        if outcome.html_changed {
-            self.publish_webview(None, true)?;
-        }
-        // R3054：implicit submit（submitter=None）未取消 → GET 导航。
-        if outcome.default_allowed {
-            self.navigate_form(selector, None)?;
-        }
-        Ok(())
+        self.execute_form_action(selector, None, zero_page_runtime::HtmlUserAction::Submit)
     }
 
     /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
     /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（submitter name=value 入 query）。
     fn submit_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
-        if !self.javascript_enabled {
-            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-            if zero_engine::is_submit_button(&self.cached_html, selector) {
-                self.navigate_form(selector, Some(selector))?;
-            }
+        if !zero_engine::is_submit_button(&self.cached_html, selector) {
             return Ok(());
         }
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let outcome = {
+        self.execute_form_action(selector, Some(selector), zero_page_runtime::HtmlUserAction::Submit)
+    }
+
+    fn execute_form_action(
+        &mut self,
+        selector: &str,
+        submitter: Option<&str>,
+        action: zero_page_runtime::HtmlUserAction,
+    ) -> Result<(), String> {
+        let Some(target) = self.node_ref_for_selector(selector) else {
+            return Ok(());
+        };
+        let Some(form_selector) = zero_engine::enclosing_form_selector(&self.cached_html, selector) else {
+            return Ok(());
+        };
+        let Some(form) = self.node_ref_for_selector(&form_selector) else {
+            return Ok(());
+        };
+        let is_reset = matches!(action, zero_page_runtime::HtmlUserAction::Reset);
+        let state = match &action {
+            zero_page_runtime::HtmlUserAction::Reset => zero_page_runtime::ActionTargetState::Reset { form },
+            zero_page_runtime::HtmlUserAction::Submit => zero_page_runtime::ActionTargetState::Submit {
+                form,
+                submitter: submitter.and_then(|selector| self.node_ref_for_selector(selector)),
+            },
+            _ => return Ok(()),
+        };
+        let Ok(plan) = zero_page_runtime::plan_html_action(
+            &zero_page_runtime::HtmlActionRequest {
+                target,
+                action,
+                shift: false,
+            },
+            self.navigation_epoch,
+            self.document_generation,
+            &state,
+        ) else {
+            return Ok(());
+        };
+        if is_reset && self.javascript_enabled {
+            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &url,
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::apply_submit_on_click(&mut ctx, selector)
-        };
-        if outcome.html_changed {
-            self.publish_webview(None, true)?;
+            page_scripts::begin_host_action_transaction(&mut ctx);
         }
-        // R3054：click submit（submitter=该按钮）未取消 → GET 导航。
-        if outcome.default_allowed {
-            self.navigate_form(selector, Some(selector))?;
+        let dispatch = if self.javascript_enabled {
+            plan.cancelable_event
+                .as_ref()
+                .map(|event| self.dispatch_planned_event(event))
+                .unwrap_or(DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                })
+        } else {
+            DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            }
+        };
+        let outcome = zero_page_runtime::resolve_html_action(
+            plan,
+            zero_page_runtime::EventDispatchResult {
+                default_allowed: dispatch.default_allowed,
+                html_changed: dispatch.html_changed,
+            },
+        );
+        let state_changed = self.apply_planned_mutations(&outcome.mutations);
+        let microtask_changed = if is_reset && self.javascript_enabled {
+            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::end_host_action_transaction(&mut ctx)
+        } else {
+            false
+        };
+        let navigated = self.apply_planned_effects(&outcome.effects)?;
+        if !navigated && (state_changed || outcome.html_changed || microtask_changed) {
+            self.publish_webview(None, true)?;
         }
         Ok(())
     }
 
-    /// P1a 导航（R3054）：form GET 提交导航——解析 enclosing form → [`form_get_submission_url`]
-    /// 算提交目标：**POST** → [`form_post_submission`]（url + urlencoded body）→ `navigate_with(POST, body)`；
-    /// 否则 **GET** → [`form_get_submission_url`] → `handle_navigate`（R3054）。method=dialog / 无 form / 解析失败 → no-op。
-    /// 在 submit 事件派发 + apply 之后读 `cached_html`（含 listener 变更，如 JS 注入隐藏字段）。
-    fn navigate_form(&mut self, selector: &str, submitter: Option<&str>) -> Result<(), String> {
+    /// 在 submit listener 完成后构造 entry list 并执行 GET/POST 导航。
+    fn navigate_form_selector(&mut self, form_selector: &str, submitter: Option<&str>) -> Result<bool, String> {
         let base = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let html = self.cached_html.clone();
-        let Some(form_sel) = zero_engine::enclosing_form_selector(&html, selector) else {
-            return Ok(());
-        };
         let live_values = self
             .webview
             .as_ref()
@@ -973,9 +1011,9 @@ impl RendererRuntime {
             .unwrap_or_default();
         // R3055：POST 表单 → POST 导航（url + body）。
         if let Some((nav_url, body)) =
-            zero_engine::form_post_submission_with_values(&html, &form_sel, submitter, &base, &live_values)
+            zero_engine::form_post_submission_with_values(&html, form_selector, submitter, &base, &live_values)
         {
-            return self.navigate_with(
+            self.navigate_with(
                 zero_protocol::message::NavigateParams {
                     url: nav_url,
                     referrer: self.current_url.clone(),
@@ -983,42 +1021,30 @@ impl RendererRuntime {
                 },
                 "POST",
                 Some(&body),
-            );
+            )?;
+            return Ok(true);
         }
         // R3054：GET 表单 → GET 导航。
         if let Some(nav_url) =
-            zero_engine::form_get_submission_url_with_values(&html, &form_sel, submitter, &base, &live_values)
+            zero_engine::form_get_submission_url_with_values(&html, form_selector, submitter, &base, &live_values)
         {
             self.handle_navigate(zero_protocol::message::NavigateParams {
                 url: nav_url,
                 referrer: self.current_url.clone(),
                 navigation_epoch: self.navigation_epoch.wrapping_add(1),
             })?;
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     /// P1a form reset（R3050）：click 命中 reset button → 解析 enclosing `<form>` 调 `form.reset()`
     ///（dispatch 'reset' + revert 控件，复用 R3048）。改 DOM 则 rerender。
     fn reset_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
-        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        let changed = {
-            let mut ctx = PageScriptContext {
-                html: &mut self.cached_html,
-                url: &url,
-                js_worker: &self.js_worker,
-                webview: self.webview.as_mut(),
-            };
-            if self.javascript_enabled {
-                page_scripts::apply_reset_on_click(&mut ctx, selector)
-            } else {
-                page_scripts::apply_reset_on_click_without_events(&mut ctx, selector)
-            }
-        };
-        if changed {
-            self.publish_webview(None, true)?;
+        if !zero_engine::is_reset_button(&self.cached_html, selector) {
+            return Ok(());
         }
-        Ok(())
+        self.execute_form_action(selector, None, zero_page_runtime::HtmlUserAction::Reset)
     }
 
     /// P1a 导航（R3053，闭合 R3052 限制③）：click 命中 hash 链接（`<a href="#sec">`）→
@@ -1157,6 +1183,30 @@ impl RendererRuntime {
                         changed = true;
                     }
                 }
+                zero_page_runtime::PlannedMutation::ResetForm { form } => {
+                    let Some(form_selector) = self.selector_for_node_ref(*form) else {
+                        continue;
+                    };
+                    let focused = self.interaction.focus_owner().map(str::to_string);
+                    let mut ctx = PageScriptContext {
+                        html: &mut self.cached_html,
+                        url: &url,
+                        js_worker: &self.js_worker,
+                        webview: self.webview.as_mut(),
+                    };
+                    if page_scripts::apply_form_reset_without_events(&mut ctx, &form_selector) {
+                        if let Some(selector) = focused {
+                            let value = self
+                                .webview
+                                .as_ref()
+                                .and_then(|webview| webview.form_control_value_overrides().get(&selector).cloned())
+                                .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, &selector));
+                            let caret = value.encode_utf16().count();
+                            self.form_controls.update(&selector, value, caret, caret);
+                        }
+                        changed = true;
+                    }
+                }
             }
         }
         changed
@@ -1201,7 +1251,8 @@ impl RendererRuntime {
         changed
     }
 
-    fn apply_planned_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<(), String> {
+    fn apply_planned_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
+        let mut navigated = false;
         for effect in effects {
             match effect {
                 zero_page_runtime::PageEffect::Focus(next) => {
@@ -1211,10 +1262,28 @@ impl RendererRuntime {
                         self.focus_via_tab(&next)?;
                     }
                 }
-                zero_page_runtime::PageEffect::Navigate(_) => {}
+                zero_page_runtime::PageEffect::Navigate(intent) => {
+                    self.navigate_with(
+                        zero_protocol::message::NavigateParams {
+                            url: intent.url.clone(),
+                            referrer: self.current_url.clone(),
+                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                        },
+                        &intent.method,
+                        intent.body.as_deref(),
+                    )?;
+                    navigated = true;
+                }
+                zero_page_runtime::PageEffect::SubmitForm { form, submitter } => {
+                    let Some(form_selector) = self.selector_for_node_ref(*form) else {
+                        continue;
+                    };
+                    let submitter = submitter.and_then(|node| self.selector_for_node_ref(node));
+                    navigated |= self.navigate_form_selector(&form_selector, submitter.as_deref())?;
+                }
             }
         }
-        Ok(())
+        Ok(navigated)
     }
 
     fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
