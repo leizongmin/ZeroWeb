@@ -295,13 +295,13 @@ ZeroWeb 已具备 HTML 解析、DOM、页面脚本、retained 表单状态、多
   假设 input/textarea 具有初始值
   当用户编辑 value 后调用 form.reset()
   那么 live value 恢复默认值，defaultValue 未被用户编辑污染
-  验证: crates/engine/src/js_dom_bridge_tests/part15.rs::text_control_reset_restores_unpolluted_default
+  验证: crates/engine/src/js_dom_bridge_tests/part16.rs::text_control_reset_restores_unpolluted_default
 
 场景: 不适用的 selection API
   假设 input type 不支持文本选区
   当脚本读取 selectionStart 或调用不适用的 selection 方法
   那么返回值或异常符合该 input state 的规范要求，不修改 value
-  验证: crates/engine/src/js_dom_bridge_tests/part15.rs::non_text_input_rejects_text_selection_operations
+  验证: crates/engine/src/js_dom_bridge_tests/part16.rs::non_text_input_rejects_text_selection_operations
 
 场景: caret、selection 与点击定位使用同一文本边界
   假设文本包含比例字体、CJK 和代理对

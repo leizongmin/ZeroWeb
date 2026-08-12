@@ -1864,6 +1864,8 @@
             } else {
               so.direction = (value === 'backward' || value === 'none') ? value : 'forward';
             }
+          } else if (_realTag(sel, handle) === 'INPUT') {
+            _throwDom('InvalidStateError', 'input type does not support text selection');
           }
         } else if (p === 'htmlFor') {
           // `label.htmlFor = x`（R2840）——反射 `for` 属性（attr 名映射 htmlFor→for）。仅 LABEL。

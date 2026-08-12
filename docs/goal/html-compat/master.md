@@ -63,6 +63,13 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - `form_input` 性能子门禁通过：p95 `0.0295ms`、jank `0`，每次输入 parse/style/layout 为 `0`、paint/publish 为 `1`。
 - 整套 `make bench-gate` 的全局比较因平台基线 CPU 不一致不可归因：当前 Xeon 8260 KVM 对比 i5-13500H 基线，102 个跨 crate 指标同步超预算；未修改或放宽基线。
 
+## M3a 工作包
+
+- [x] input/textarea live value 与 default value 分离及 reset
+- [x] 非文本 input selection getter/方法适用性
+- [ ] caret、点击 hit-test 与 IME rect 共用 shaping 边界
+- [ ] readonly、maxlength、minlength 用户编辑约束
+
 ## 下一步
 
 实施 M3a 文本控件元素族，先审计 FR-006 的 live/default value、selection、change-on-blur、IME 与约束属性矩阵。

@@ -1648,7 +1648,7 @@ fn test_text_control_selection_r2844() {
     // selectionDirection getter + setSelectionRange + select + 属性 setter。Chromium 150 oracle 锚定：
     // 默认 {0, 0, 'forward'}（未聚焦 text control 选区折叠在 0，非值末）；select()→{0, len, forward}；
     // setSelectionRange clamp [0,len]，end<start 折叠到 end，direction 缺省 forward；属性 setter 保持 0≤start≤end≤len。
-    // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。number/checkbox 非选区 type → undefined（Chrome null）。
+    // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。number/checkbox 非选区 type → null。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -1672,7 +1672,7 @@ fn test_text_control_selection_r2844() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // 默认选区 = {0, 0, 'forward'}（text control 未设/未聚焦）；非选区 type（number/checkbox）→ undefined。
+    // 默认选区 = {0, 0, 'forward'}（text control 未设/未聚焦）；非选区 type（number/checkbox）→ null。
     sandbox
         .execute(
             "var i = document.querySelector('#i');\
@@ -1711,13 +1711,13 @@ fn test_text_control_selection_r2844() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__num)").unwrap().value,
-        "undefined",
-        "number input 非选区 type → selectionStart undefined（Chrome null）"
+        "null",
+        "number input 非选区 type → selectionStart null"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__chk)").unwrap().value,
-        "undefined",
-        "checkbox 非选区 type → selectionStart undefined"
+        "null",
+        "checkbox 非选区 type → selectionStart null"
     );
 
     // select() → {0, value.length, 'forward'}（input 5 / textarea 5）。

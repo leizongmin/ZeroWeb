@@ -347,6 +347,29 @@ fn default_actions_work_without_javascript() {
 }
 
 #[test]
+fn non_text_selection_api_matches_input_state() {
+    // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.load_html(
+        "<html><body><input id='number' type='number' value='42'>\
+         <script>globalThis.__selectionReady=true;</script></body></html>",
+        None,
+    );
+    webview.run_page_scripts().expect("initialize page DOM");
+
+    let observed = webview
+        .execute_script(
+            "var number=document.getElementById('number');\
+             var errorName='none';\
+             try{number.setSelectionRange(0,1);}catch(error){errorName=error.name;}\
+             [String(number.selectionStart),errorName,number.value].join('|');",
+        )
+        .expect("observe selection API");
+
+    assert_eq!(observed, "null|InvalidStateError|42");
+}
+
+#[test]
 fn label_click_activates_associated_control_once() {
     let html = r#"<html><body>
         <label id="explicit" for="check">Explicit</label>

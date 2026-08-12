@@ -1830,29 +1830,36 @@
         }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
-        // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text control 落 undefined（Chrome 返 null，
-        // `!= null` 判定两者皆过——documented 微差）。getter 不污染 _textSelection（纯读）。
-        if ((prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') &&
-            _isTextControl(sel, handle)) {
-          var gs = _textSelection[key] || { start: 0, end: 0, direction: 'forward' };
-          if (prop === 'selectionStart') return gs.start;
-          if (prop === 'selectionEnd') return gs.end;
-          return gs.direction;
+        // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text input 按规范返回 null。
+        // getter 不污染 _textSelection（纯读）。
+        if (prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') {
+          if (_isTextControl(sel, handle)) {
+            var gs = _textSelection[key] || { start: 0, end: 0, direction: 'forward' };
+            if (prop === 'selectionStart') return gs.start;
+            if (prop === 'selectionEnd') return gs.end;
+            return gs.direction;
+          }
+          if (_realTag(sel, handle) === 'INPUT') return null;
         }
         // `el.setSelectionRange(start, end, direction?)`（HTMLInputElement.textarea，R2844）——设选区。
         // Chromium 150 oracle 锚定：start/end clamp [0, len]；end<start → start 折叠到 end（setSR(4,2)→{2,2}）；
         // direction 缺省 'forward'，否则取给定值（'backward'/'none'，其他归 'forward'）。仅 text control。
-        if (prop === 'setSelectionRange' && _isTextControl(sel, handle)) {
-          return function(s, e, dir) {
-            var len = _controlValue(sel, handle, key).length;
-            var ne = _clampSelOffset(e, len);
-            var ns = _clampSelOffset(s, len);
-            if (ne < ns) ns = ne;
-            var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
-            var so = _selObj(key);
-            so.start = ns; so.end = ne; so.direction = d;
-            return undefined;
-          };
+        if (prop === 'setSelectionRange') {
+          if (_isTextControl(sel, handle)) {
+            return function(s, e, dir) {
+              var len = _controlValue(sel, handle, key).length;
+              var ne = _clampSelOffset(e, len);
+              var ns = _clampSelOffset(s, len);
+              if (ne < ns) ns = ne;
+              var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
+              var so = _selObj(key);
+              so.start = ns; so.end = ne; so.direction = d;
+              return undefined;
+            };
+          }
+          if (_realTag(sel, handle) === 'INPUT') {
+            return function() { _throwDom('InvalidStateError', 'input type does not support text selection'); };
+          }
         }
         // `el.setRangeText(replacement [, start [, end [, selectionMode]]])`（HTMLInputElement/textarea，
         // R3245）——替换 value 中 [start,end) 子串为 replacement 并按 selectionMode 重定选区。
@@ -1860,8 +1867,13 @@
         // start/end 缺省取 selectionStart/End；start>end 抛 IndexSizeError；selectionMode ∈ select/start/end/preserve
         //（缺省 preserve）。复用既有原语：`_controlValue` 读、`this.value=` setter 写（textarea 走 text-content、
         // input 走 attr + dirty 跟踪）、`_selObj` 选区。文本编辑库（auto-format / mask / undo 补全）高频。
-        if (prop === 'setRangeText' && _isTextControl(sel, handle)) {
-          return function(replacement, start, end, selectionMode) {
+        if (prop === 'setRangeText') {
+          if (!_isTextControl(sel, handle)) {
+            if (_realTag(sel, handle) === 'INPUT') {
+              return function() { _throwDom('InvalidStateError', 'input type does not support text selection'); };
+            }
+          } else {
+            return function(replacement, start, end, selectionMode) {
             var so = _selObj(key);
             if (arguments.length < 2) start = so.start;
             if (arguments.length < 3) end = so.end;
@@ -1891,8 +1903,9 @@
               so.start = (oldStart <= cs) ? oldStart : (oldStart >= ce ? oldStart + delta : cs);
               so.end = (oldEnd <= cs) ? oldEnd : (oldEnd >= ce ? oldEnd + delta : cs);
             }
-            return undefined;
-          };
+              return undefined;
+            };
+          }
         }
         // `input.stepUp(n)` / `input.stepDown(n)`（HTMLInputElement，R3317）——number/range 按步进增减
         // （数量调节器、范围滑块步进 UI 高频）。n 缺省 1。按 step 属性（缺省 1）×n 改 value，clamp [min,max]

@@ -1041,3 +1041,103 @@ fn label_control_resolution_supports_for_and_nested_controls() {
     assert_eq!(associated_label_control_selector(html, "#hidden-label"), None);
     assert_eq!(associated_label_control_selector(html, "#not-label"), None);
 }
+
+#[test]
+fn text_control_reset_restores_unpolluted_default() {
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='form'>\
+         <input id='input' value='input-default'>\
+         <textarea id='textarea'>textarea-default</textarea>\
+         </form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var input=document.getElementById('input');\
+             var textarea=document.getElementById('textarea');\
+             input.value='input-dirty';\
+             textarea.value='textarea-dirty';\
+             globalThis.__defaults=input.defaultValue+','+textarea.defaultValue;\
+             document.getElementById('form').reset();\
+             globalThis.__values=input.value+','+textarea.value;",
+        )
+        .unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__defaults").unwrap().value,
+        "input-default,textarea-default"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__values").unwrap().value,
+        "input-default,textarea-default"
+    );
+}
+
+#[test]
+fn non_text_input_rejects_text_selection_operations() {
+    // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='number' type='number' value='42'>\
+         <input id='checkbox' type='checkbox'>\
+         <input id='email' type='email' value='a@example.test'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "function errorName(fn){try{fn();return 'none';}catch(error){return error.name;}}\
+             var number=document.getElementById('number');\
+             var checkbox=document.getElementById('checkbox');\
+             var email=document.getElementById('email');\
+             globalThis.__getters=[number.selectionStart,number.selectionEnd,\
+               number.selectionDirection,checkbox.selectionStart,email.selectionStart].map(String).join(',');\
+             globalThis.__errors=[\
+               errorName(function(){number.setSelectionRange(0,1);}),\
+               errorName(function(){number.selectionStart=0;}),\
+               errorName(function(){number.selectionEnd=1;}),\
+               errorName(function(){number.selectionDirection='forward';}),\
+               errorName(function(){number.setRangeText('x');})\
+             ].join(',');\
+             globalThis.__value=number.value;",
+        )
+        .unwrap();
+
+    assert_eq!(sandbox.execute("globalThis.__getters").unwrap().value, "null,null,null,null,null");
+    assert_eq!(
+        sandbox.execute("globalThis.__errors").unwrap().value,
+        "InvalidStateError,InvalidStateError,InvalidStateError,InvalidStateError,InvalidStateError"
+    );
+    assert_eq!(sandbox.execute("globalThis.__value").unwrap().value, "42");
+}
