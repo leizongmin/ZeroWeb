@@ -829,6 +829,111 @@ fn test_canvas_create_image_bitmap_r3309() {
 }
 
 #[test]
+fn test_canvas_create_image_bitmap_sources_r3310() {
+    // R3310：createImageBitmap source 扩展——ImageData + HTMLCanvasElement（R3309 仅 Blob source）。
+    // ImageData source：直接 JS 编码 wire（无 host 解码）；HTMLCanvasElement source：经 getImageData 取 wire
+    //（镜像 drawImage canvas 源）。本测断言：① ImageData source → ImageBitmap（width/height 正确 + drawImage 真栅格）；
+    // ② HTMLCanvasElement source → ImageBitmap（drawImage 真栅格）；③ 未知 source（null/数字）reject。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='dst' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var dst = document.getElementById('dst');\
+             var dctx = dst.getContext('2d');\
+             /* ① ImageData source：手构 2×2 红色 ImageData（data = 4 像素 × RGBA）*/\
+             var imgData = new ImageData(new Uint8ClampedArray([255,0,0,255, 255,0,0,255, 255,0,0,255, 255,0,0,255]), 2, 2);\
+             createImageBitmap(imgData).then(function (bm) {\
+               globalThis.__idW = String(bm.width);\
+               globalThis.__idH = String(bm.height);\
+               dctx.drawImage(bm, 0, 0);\
+               var px = dctx.getImageData(0, 0, 1, 1).data;\
+               globalThis.__idRed = String(px[0] + ',' + px[1] + ',' + px[2]);\
+               globalThis.__idOk = 'ok';\
+             }, function (e) { globalThis.__idOk = 'reject:' + String(e && e.message ? e.message : e); });\
+             /* ② HTMLCanvasElement source：源 canvas 绘蓝后 createImageBitmap → drawImage 到 dst */\
+             var src = document.createElement('canvas'); src.width = 3; src.height = 3;\
+             var sctx = src.getContext('2d'); sctx.fillStyle = 'rgb(0,0,255)'; sctx.fillRect(0, 0, 3, 3);\
+             createImageBitmap(src).then(function (bm) {\
+               globalThis.__cvW = String(bm.width);\
+               globalThis.__cvH = String(bm.height);\
+               dctx.drawImage(bm, 5, 5);\
+               var px = dctx.getImageData(5, 5, 1, 1).data;\
+               globalThis.__cvBlue = String(px[0] + ',' + px[1] + ',' + px[2]);\
+               globalThis.__cvOk = 'ok';\
+             }, function (e) { globalThis.__cvOk = 'reject:' + String(e && e.message ? e.message : e); });\
+             /* ③ 未知 source reject */\
+             createImageBitmap(42).then(function () { globalThis.__unkOk = 'ok'; },\
+               function () { globalThis.__unkOk = 'reject'; });",
+        )
+        .unwrap();
+    // pump microtask（execute 末 drain；Promise 链需 1-2 轮）。
+    sandbox.execute("globalThis.__noop = 1;").unwrap();
+    sandbox.execute("globalThis.__noop = 2;").unwrap();
+    sandbox.execute("globalThis.__noop = 3;").unwrap();
+
+    // ① ImageData source。
+    assert_eq!(
+        sandbox.execute("globalThis.__idOk").unwrap().value,
+        "ok",
+        "createImageBitmap(ImageData) 应 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__idW").unwrap().value,
+        "2",
+        "ImageData source → ImageBitmap.width = 2"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__idH").unwrap().value,
+        "2",
+        "ImageData source → ImageBitmap.height = 2"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__idRed").unwrap().value,
+        "255,0,0",
+        "drawImage(bitmap from ImageData) 真栅格——红色像素"
+    );
+
+    // ② HTMLCanvasElement source。
+    assert_eq!(
+        sandbox.execute("globalThis.__cvOk").unwrap().value,
+        "ok",
+        "createImageBitmap(canvas) 应 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cvW").unwrap().value,
+        "3",
+        "canvas source → ImageBitmap.width = 3"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cvBlue").unwrap().value,
+        "0,0,255",
+        "drawImage(bitmap from canvas) 真栅格——蓝色像素"
+    );
+
+    // ③ 未知 source reject。
+    assert_eq!(
+        sandbox.execute("globalThis.__unkOk").unwrap().value,
+        "reject",
+        "createImageBitmap(42) 应 reject（未知 source）"
+    );
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

@@ -887,13 +887,13 @@
     };
   }
   // R3309：ImageBitmap + createImageBitmap（HTML spec）——异步解码图片源为可绘制位图。
-  // source = Blob（最高频：fetch 图片 → createImageBitmap → drawImage）。实现：Blob 字节 → base64 data URI
-  // → host decodeImageBitmap（render-foundation::decode_data_uri，PNG/JPEG/WebP/SVG）→ wire 串 `"w:h;rgba,..."`
+  // R3310：source 扩展——Blob（fetch 图片，host decode_data_uri 解码）/ ImageData（直接 JS 编码 wire，无解码）/
+  // HTMLCanvasElement（经 getImageData 取 wire，镜像 drawImage canvas 源模式）。三者统一产 wire 串 `"w:h;rgba,..."`
   // 包成 ImageBitmap 对象（持 _zwBitmapWire，drawImage 检测该标记复用既有 drawImage host wire 路径，零 host 改动）。
-  // spec 返 Promise（异步）；headless 近似 microtask（Promise.resolve.then）。失败（尺寸 0 / 无 host）→ reject。
-  // **诚实范围**：① 仅 Blob source（ImageData/HTMLCanvasElement/HTMLImageElement source defer——后者需 img decode 基建）；
-  // ② 无 options（sx/sy/sw/sh/dw/dh 裁剪 + imageOrientation/premultiplyAlpha，spec 罕见，defer）；
-  // ③ width/height 从 wire 解析（spec ImageBitmap 只读 width/height）。
+  // spec 返 Promise（异步）；headless 近似 microtask（Promise.resolve.then）。失败（尺寸 0 / 无 host / 未知 source）→ reject。
+  // **诚实范围**：① HTMLImageElement source defer（img 元素 headless 无加载/解码基建，naturalWidth 恒 0）；
+  // ② ImageBitmap source（clone，罕见）；③ 无 options（sx/sy/sw/sh/dw/dh 裁剪 + imageOrientation/premultiplyAlpha，spec 罕见，defer）；
+  // ④ width/height 从 wire 解析（spec ImageBitmap 只读 width/height）。
   // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-createimagebitmap
   function _zwMakeImageBitmap(wire) {
     // wire "w:h;..." 解析 width/height（失败 → 0×0，调用方 reject）。
@@ -903,30 +903,58 @@
     var bh = parseInt(parts[1], 10) || 0;
     return { _zwBitmapWire: String(wire), width: bw, height: bh, _closed: false };
   }
+  // R3310：source → wire 串（同步）。返 null 表 source 不可识别/解码失败（调用方 reject）。
+  // 三 source 分发：Blob（host 解码）/ ImageData（JS 直接编码）/ HTMLCanvasElement（getImageData 取 wire）。
+  function _zwImageBitmapSourceToWire(src) {
+    if (!src) return null;
+    // Blob：有 _parts + size（instanceof Blob 或 duck-type）。字节 → base64 data URI → host decodeImageBitmap。
+    var isBlob = src instanceof Blob || (src._parts !== undefined && typeof src.size === 'number');
+    if (isBlob) {
+      if (typeof __zw_canvas_op !== 'function') return null;
+      var bytes = _zw_blobBytes(src);
+      if (!bytes || bytes.length === 0) return null;
+      var bin = '';
+      for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      var mime = (src.type && src.type.indexOf('image/') === 0) ? src.type : 'image/png';
+      var uri = 'data:' + mime + ';base64,' + btoa(bin);
+      return String(__zw_canvas_op('0', 'decodeImageBitmap', uri));
+    }
+    // ImageData：有 data（类数组，length = w*h*4）+ width + height。直接 JS 编码 wire（无解码，零 host 调用）。
+    // R3309 全局 ImageData（part05.js）+ canvas crate getImageData 返均此形状。
+    if (src.data && typeof src.width === 'number' && typeof src.height === 'number' && typeof src.data.length === 'number') {
+      var w = src.width | 0;
+      var h = src.height | 0;
+      if (w <= 0 || h <= 0) return null;
+      var wire = w + ':' + h + ';';
+      var d = src.data;
+      for (var j = 0; j < d.length; j++) {
+        if (j > 0) wire += ',';
+        wire += (d[j] | 0);
+      }
+      return wire;
+    }
+    // HTMLCanvasElement：有 getContext（canvas 元素）。经 getImageData 取全 canvas wire（镜像 drawImage canvas 源）。
+    if (typeof src.getContext === 'function') {
+      if (typeof __zw_canvas_op !== 'function') return null;
+      if (!src._ctx) src.getContext('2d');
+      if (!src._ctx) return null;
+      var sw = src.width | 0;
+      var sh = src.height | 0;
+      if (sw <= 0 || sh <= 0) return null;
+      return String(__zw_canvas_op(src._ctx._handle, 'getImageData', '0', '0', String(sw), String(sh)));
+    }
+    return null;
+  }
   if (!globalThis.createImageBitmap) {
     globalThis.createImageBitmap = function createImageBitmap(source) {
       return Promise.resolve(source).then(function (src) {
-        if (typeof __zw_canvas_op !== 'function') {
-          return Promise.reject(new TypeError('canvas host unavailable'));
+        var wire = _zwImageBitmapSourceToWire(src);
+        if (wire === null) {
+          return Promise.reject(new TypeError('createImageBitmap: 不支持的 source 或解码失败'));
         }
-        // source 须为 Blob（有 _parts / instanceof Blob）。非 Blob source defer（见诚实范围）。
-        var isBlob = src && (src instanceof Blob || (src._parts !== undefined && typeof src.size === 'number'));
-        if (!isBlob) {
-          return Promise.reject(new TypeError('createImageBitmap: 仅支持 Blob source'));
-        }
-        var bytes = _zw_blobBytes(src);
-        if (!bytes || bytes.length === 0) {
-          return Promise.reject(new TypeError('createImageBitmap: 空 Blob'));
-        }
-        // 字节 → base64 → data URI（host decode_data_uri 接受 base64 payload）。
-        var bin = '';
-        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        var mime = (src.type && src.type.indexOf('image/') === 0) ? src.type : 'image/png';
-        var uri = 'data:' + mime + ';base64,' + btoa(bin);
-        var wire = String(__zw_canvas_op('0', 'decodeImageBitmap', uri));
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
-          return Promise.reject(new TypeError('createImageBitmap: 解码失败（不支持格式或损坏）'));
+          return Promise.reject(new TypeError('createImageBitmap: 解码失败（零尺寸）'));
         }
         return bm;
       });
