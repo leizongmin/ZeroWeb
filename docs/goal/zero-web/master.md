@@ -1,8 +1,10 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3346：deep-review zero-net 发现并修复一项真 bug——**`parse_expires_date` day=0 panic + 日期字段无范围校验**：cookie.rs 的 RFC 1123/850/asctime 日期解析把 day/hour/minute/second 直接喂入 `to_unix_secs` 无范围校验。day=0 时 `(d-1) as u64` u32 下溢——**debug profile panic**（测试/开发构建崩溃），release wrap 为巨大数（cookie 永不过期）；攻击者可经 `Set-Cookie: x=1; Expires=Wed, 00 Jun 2021 10:18:14 GMT` 触发 cookie 解析 panic（DoS）。day=32/hour=99/分秒=99 静默返回错误时间戳（应按 RFC 7231 §7.1.1 视为无效日期→None）。新增 `validate_date_fields`（day 1..days_in_month、hour 0-23、min/sec 0-59），三解析分支前置调用。**选 crate 理由**：net 是 zero-web 流自主域（run-rules §9 明确 net 属 zero-web 流），且 R3339 仅定点审过 client.rs 重定向、未完整审；刻意避开 layout-engine/render-foundation/style-system-font（渲染流高频活跃面）。8 测确定性复现+修复过（含 3 个 day=0 panic 跨三种格式），net 394+8 全绿，workspace-minus-browser 零回归，fmt+clippy 零警告。R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346 = 第九项真 bug 修复。）
+**最后更新**: 2026-08-13（R3347：deep-review zero-wasm-sandbox 发现并修复一项真 bug——**`read_memory` offset+len 溢出致 OOB 切片 panic（高危）**：wasmi_backend 与 wasmtime_backend 的 `read_memory` 用裸 `offset + len > data.len()` 边界检查——`offset = usize::MAX, len >= 1` 时 `offset + len` 溢出回绕为小值（usize::MAX+1=0），`> data.len()` 误判通过 → `data[offset..offset+len]` 在巨大 offset 处切片 **panic**（OOB，宿主代码可触发，WASM 宿主崩溃）。**不一致证据**：同两文件 `write_memory` 已用 `checked_add` 防此溢出，`read_memory` 漏——疏漏非刻意。改两后端 `read_memory` 均 `offset.checked_add(len)?`。**选 crate 理由**：wasm-sandbox 近 30 天 **0 commits**（最干净的自主可审域，渲染流/html 流零触碰），规避 webview/dom/canvas 等高频共享活跃面（run-rules §9 碰头信号）。6 测确定性复现+修复过（含 3 个 usize::MAX offset panic 变体），wasm-sandbox 198→204 全绿，workspace-minus-browser 零回归，fmt+clippy 零警告。R3334+R3339+R3340+R3341+R3342+R3343+R3344+R3345+R3346+R3347 = 第十项真 bug 修复（连续 8 crate 产出真 bug，含 4 项高危 panic）。）
 
-> **R3345（上一轮）**：deep-review zero-style-system 非字体面修复 flex-grow/flex-shrink longhand 接受 Infinity（apply.rs `v>=0.0` 漏 `is_finite()`，flex 简写严 longhand 松）；加 `is_finite()` 前置。避开渲染流 computed.rs font-metric 活跃面。7 测复现+修复，style-system 2164→2171 全绿。
+> **R3346（上一轮）**：deep-review zero-net 修复 cookie `parse_expires_date` day=0 panic + 日期字段无范围校验（day=0 `(d-1)` u32 下溢 debug 构建 panic，攻击者可经 Set-Cookie Expires 触发 DoS；day=32/hour=99 等静默错误时间戳）。新增 `validate_date_fields` 三分支前置。net 394+8 全绿。
+
+> **R3345**：deep-review zero-style-system 非字体面修复 flex-grow/flex-shrink longhand 接受 Infinity（apply.rs `v>=0.0` 漏 `is_finite()`，flex 简写严 longhand 松）；加 `is_finite()` 前置。避开渲染流 computed.rs font-metric 活跃面。7 测复现+修复，style-system 2164→2171 全绿。
 
 > **R3344**：deep-review zero-css-parser 一轮三项真 bug——① 高危 panic `eval_calc` 的 `clamp(MIN,VAL,MAX)` 调 `f64::clamp(min,max)`，MIN>MAX 时 std panic（渲染进程崩溃）；改 `val.min(max).max(min)`。② 中危 tokenizer `consume_number` 科学计数法 `e` 后无 digit（`1e+`/`1e`）`unwrap_or(0.0)` 静默吞成 0；改前置校验。③ 中危 `parse_hex_color` 3/4 位 hex 非法字符 `unwrap_or(0)` 误返回黑色（6/8 位用 `.ok()?` 拒绝，不一致）；改 `hex_char_to_byte` 返回 `Option<u8>`。13 测复现+修复，css-parser 2842 全绿。
 
@@ -167,6 +169,21 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-wasm-sandbox 修复 read_memory offset 溢出 OOB panic（本轮 R3347，wasm-sandbox wasmi_backend.rs + wasmtime_backend.rs——真 bug 修复，含高危 panic）
+
+承接 R3346（zero-net）。本轮 deep-review 推进至 **`zero-wasm-sandbox`**（6.2k LOC，WASM 运行时沙箱 wasmi/wasmtime 双后端）。**选 crate 理由**：核查各候选 crate 近 30 天 commit 触碰度后发现 wasm-sandbox **0 commits/30d**——是最干净的自主可审域（渲染流/html 流/zero-web 流零触碰），规避 webview（87 commits/30d，html 流+zero-web 流双活跃共享面）、dom（47）、canvas（23，已被 R3254-C* 审）等高频活跃面（run-rules §9 碰头信号）。wasm-sandbox 从未被 deep-review 过。逐文件审 wasmi_backend.rs（271 行，默认后端）+ wasmtime_backend.rs（773 行）+ types.rs + stub_backend.rs。**生产代码大量委托上游 wasmi/wasmtime（成熟 crate），自身实现沙箱宿主桥接**（主机导入、内存读写、fuel）——定位一项真 bug：
+
+#### R3347：read_memory offset+len 溢出致 OOB 切片 panic（高危，wasmi_backend.rs:195-202 + wasmtime_backend.rs:235-243）
+
+- **根因**：两后端 `read_memory` 用裸 `if offset + len > data.len() { return None; }` 边界检查。`offset + len` 为 `usize` 加法——`offset = usize::MAX, len >= 1` 时溢出回绕（usize::MAX + 1 = 0，usize::MAX + 2 = 1...），回绕后的小值 `> data.len()` 为 false（内存非空时）→ 检查误判通过 → `data[offset..offset+len]` 在 `usize::MAX` 偏移处切片 → **panic**（slice index out of bounds）。
+- **生产影响**：`read_memory` 是公共 API（宿主读 WASM 线性内存）。宿主代码（或经主机导入桥接的恶意 WASM 间接控制 offset）传入 `usize::MAX` offset 即触发 **WASM 宿主进程 panic/崩溃**（DoS）。debug 与 release profile 均 panic（slice 索引 panic 与 profile 无关）。真高危 panic bug，可被宿主侧敌意参数触发。
+- **不一致证据（根因确认）**：**同两文件的 `write_memory` 已正确用 `offset.checked_add(data.len()).ok_or(...)?` 防此溢出**（wasmi_backend.rs:211-213、wasmtime_backend.rs:254），`read_memory` 漏——同文件 twin 函数一严一松，证明是疏漏非刻意设计。
+- **修复**：两后端 `read_memory` 改 `let end = offset.checked_add(len)?; if end > data.len() { return None; } Some(data[offset..end].to_vec())`——溢出时 `checked_add` 返 `None` → `?` 早返 `None`（与 OOB 同语义：读出界返回 None，符合既有 `read_memory` 返回 `Option` 的契约）。与 `write_memory` 一致。
+- **复现+回归测**：6 测（`tests/review_r3347.rs`，wasmi feature 守卫）——`test_read_memory_offset_overflow_no_panic_r3347`（**修复前确定性 panic at wasmi_backend.rs:198**，offset=usize::MAX len=2，修复后 None）、`_offset_max_len1_`（usize::MAX+1=0 回绕变体）、`_large_offset_overflow_`（usize::MAX-1 len=5）、`_normal_read_unchanged_`（合法读 "hello" 回归）、`_zero_len_unchanged_`（len=0 合法空读）、`_normal_oob_unchanged_`（正常 OOB 返 None 回归）。**确定性复现**：修复前 3 测 panic（catch_unwind 捕获），修复后全过。
+- **为何净正向且零回归**：纯 wasm-sandbox 两后端 `read_memory` 边界检查加严（checked_add），无公共 API 签名变更（仍返 `Option<Vec<u8>>`）；既有内存读写测试（test_memory_read_out_of_bounds/test_memory_not_found/正常读写全测）保持过（回归测守护）。**验证**：zero-wasm-sandbox **198→204 passed / 0 failed**（+6 review_r3347 测，test-guard wasmi feature）；workspace-minus-browser 全绿 0 失败（engine 2051 / style-system 2171 / css-parser 2842 / layout-engine 1372 / net 394 / dom 824 / security 386 全过）；`cargo fmt` clean + clippy `-D warnings` 零警告（wasm-sandbox wasmi + 全 workspace）。**未触任何渲染/html 活跃面**（wasm-sandbox 0 commits/30d，完全自主域）。
+
+**下游判断（固化）**：R3347 = deep-review 的**第八刀**（zero-wasm-sandbox），**第十项真 bug 修复**（R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏 + R3341 auto-inc 生成器 + R3342 CSP 前缀绕过 + R3343 mixed-content scheme 绕过 + R3344 三项 + R3345 flex-grow Infinity + R3346 cookie Expires panic + R3347 read_memory OOB panic），证实 deep-review「找真 bug」模式**连续 8 crate 产出真 bug**（含 **4 项高危 panic**：R3334 dispose-isolate / R3344 calc-clamp / R3346 cookie-day0 / R3347 read_memory-OOB——panic 类 bug 是最高危的可触发崩溃）。wasm-sandbox 主面（编译/实例化/调用/fuel/host import 桥接）经逐文件审确认健壮，唯 read_memory 边界检查漏网已修（write_memory twin 已示范正确模式）。**剩余可自主审域**（按 30d 触碰度排序）：① host-runtime（1 commit/30d，窗口/事件循环/IME/surface——平台宿主层，边界条件多）；② browser-shell（2 commits/30d，浏览器 UI 标签页/书签/地址栏）；③ page-runtime（11 commits/30d，WPT/TabWorker/renderer 统一契约）；④ script-sandbox（17 commits/30d，V8/QuickJS 扩展沙箱）。下轮续 deep-review 优先 **host-runtime**（近 30d 几乎未碰，平台宿主层窗口/IME/事件循环边界条件易藏 bug，且非渲染非共享面）或已审 crate 二轮复扫，延续找真 bug 模式。
 
 ### deep-review zero-net 修复 cookie Expires 日期 day=0 panic + 字段范围校验（本轮 R3346，net cookie.rs——真 bug 修复，含高危 panic）
 
