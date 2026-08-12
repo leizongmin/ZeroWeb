@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3338：deep-review native dom_bindings 生产代码 ~7600 行——核查 GC 生命周期/stale NodeId/borrow_mut 重入/slotmap ABA/错误吞没四高风险域，结论无真 bug（代码经 R3133-R3272/R3334 多轮棘手边界打磨，设计健壮）；唯一发现 ATTR_NAMES 已记录的 append-only 微泄漏（bounded、S6/S7 defer）。前轮 R3337：饱和结论固化。）
+**最后更新**: 2026-08-13（R3339：deep-review zero-net 发现并修复真 bug——POST→GET 重定向（301/302/303）清 body 时未同步剥 Content-Type/Content-Length 头，重定向 GET 残留 POST content-type（malformed，真浏览器会剥）；复现测试 + 修复 + 全量 394 测零回归。转向未触生产 crate deep-review 找真 bug 的第一刀。）
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -159,6 +159,24 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-net 修复 POST→GET 重定向头泄漏（本轮 R3339，net client.rs——真 bug 修复）
+
+承接 R3338（dom_bindings deep-review 无 bug）。本轮**转向未触生产 crate deep-review 找真 bug**——`crates/net/src/client.rs` HTTP 重定向逻辑发现并修复一项**真 bug**：
+
+**Bug**：`client.rs::send` 重定向循环——POST→GET 转换（301/302 POST→GET / 303 总是→GET）清 `body=None` 时，**未同步剥离 `active_headers` 的 Content-Type / Content-Length 头**。结果：重定向后的 GET 仍带 POST 的 `content-type: application/json`（但无 body）——**对接收方 malformed**（Fetch 标准重定向：清 body 须清 body 相关头；真浏览器会剥）。影响所有 POST 遇 301/302/303 的场景（登录/表单提交流常见），严格服务器解析器可能报错。
+
+**复现**：新增 `test_post_to_get_redirect_strips_body_headers_r3339`——本地 mock TCP 服务端，第 1 连接 POST→302 到 /dest，第 2 连接捕获重定向 GET，断言「GET /dest」+ 不含 content-type。**修复前失败**（content-type 残留），**修复后通过**。
+
+**修复**（client.rs:164-171）：body 被清除（`body.is_none()`）时，`active_headers.retain` 剥 `content-type` / `content-length`（`matches!` 小写匹配）。镜像既存 SEC-03 跨域敏感头剥离模式（同 retain 模式）。
+
+| 文件 | 改动 |
+|------|------|
+| `crates/net/src/client.rs` | 重定向 POST→GET 清 body 时同步剥 Content-Type/Content-Length 头（+R3339 复现测试）|
+
+**为何净正向且零回归**：真 bug 修复（spec 合规对齐真浏览器）；既有重定向测试全过。**验证**：zero-net **394 passed / 0 failed**（含 39 client 重定向测 + 新 R3339 测，0 回归，test-guard）；`cargo fmt -p zero-net` clean + clippy `-D warnings` 零警告。
+
+**下游判断（固化）**：R3339 = deep-review 未触生产 crate 的**第一刀**，证实该方向（非 native 线、非渲染线）有真 bug 可挖（第二项真 bug 修复：R3334 + R3339）。**剩余未审生产 crate**：storage(14.7k)/protocol(10.8k)/security(7.9k)/navigation/cache 等——下轮续 deep-review（storage 或 protocol，错误处理/资源泄漏/并发维度），延续找真 bug 模式。
 
 ### deep-review native dom_bindings 生产代码——无真 bug，确认健壮（本轮 R3338，engine 审查）
 

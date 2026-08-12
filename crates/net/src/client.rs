@@ -161,6 +161,14 @@ impl HttpClient {
                     body = None;
                 }
                 // 307/308 保持原方法和 body
+                // R3339：body 被清除（303 / 301+302 POST→GET）时，同步剥离 Content-Type / Content-Length
+                // 头——带 Content-Type 但无 body 的 GET 对接收方 malformed（Fetch 标准重定向：清 body 须清
+                // body 相关头）。此前仅清 body 不清头 → 重定向 GET 残留 POST 的 content-type（真浏览器会剥）。
+                if body.is_none() {
+                    active_headers.retain(|(name, _)| {
+                        !matches!(name.to_ascii_lowercase().as_str(), "content-type" | "content-length")
+                    });
+                }
 
                 // SEC-03: 跨域重定向时剥离敏感头（Authorization、Cookie 等）
                 if !same_origin(&current_url, &request.url) {
@@ -445,6 +453,56 @@ mod integration_tests {
         assert_eq!(resp.status_code, 201);
         assert!(resp.is_success());
         assert_eq!(resp.redirect_count, 0);
+    }
+
+    /// R3339：POST→GET 重定向（301/302/303）须剥离 body 相关头（Content-Type / Content-Length）。
+    /// Spec：Fetch 标准重定向——POST 改 GET 且清 body 时，Content-Type / Content-Length 不应保留
+    ///（带 Content-Type 但无 body 的 GET 对接收方是 malformed）。此前 `client.rs` 153-162 行
+    /// 仅清 `body=None`，未清 `active_headers` 的 Content-Type/Content-Length → 重定向 GET 仍带 POST 的
+    /// content-type（真浏览器会剥）。本测试复现：POST with Content-Type → 302 → GET 不应带 Content-Type。
+    #[test]
+    fn test_post_to_get_redirect_strips_body_headers_r3339() {
+        let (listener, url) = bind_server();
+
+        let server = std::thread::spawn(move || {
+            // 第 1 个连接：POST → 302 重定向到 /dest（同源）。
+            {
+                let mut stream = listener.incoming().next().unwrap().unwrap();
+                let mut buf = [0u8; 8192];
+                let _ = stream.read(&mut buf);
+                let resp = "HTTP/1.1 302 Found\r\nLocation: /dest\r\nContent-Length: 0\r\n\r\n";
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+            // 第 2 个连接：重定向后的 GET → 捕获请求，断言 Content-Type 不应出现。
+            let mut stream = listener.incoming().next().unwrap().unwrap();
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap();
+            let captured_get = String::from_utf8_lossy(&buf[..n]).to_string();
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+            captured_get
+        });
+
+        let client = HttpClient::with_max_redirects(5);
+        let req = HttpRequest::post(&url, br#"{"k":"v"}"#.to_vec()).header("content-type", "application/json");
+        let resp = send_with_local_retry(|| client.send(req.clone()));
+        let _ = resp.expect("POST→GET 重定向应成功");
+        let captured = server.join().expect("server thread");
+
+        // 第 2 请求须是 GET（非 POST）——方法已转。
+        assert!(
+            captured.starts_with("GET /dest"),
+            "重定向后应为 GET /dest，got: {}",
+            captured.lines().next().unwrap_or("")
+        );
+        // R3339 核心：Content-Type 不应泄漏到重定向 GET（body 已清，content-type 无意义且 malformed）。
+        let lower = captured.to_ascii_lowercase();
+        assert!(
+            !lower.contains("content-type:"),
+            "POST→GET 重定向 GET 不应带 Content-Type（body 已清），captured:\n{captured}"
+        );
     }
 
     /// 验证 404 响应正确解析（非成功状态码）。
