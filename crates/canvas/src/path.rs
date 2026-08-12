@@ -138,6 +138,161 @@ impl Path2D {
         self.commands.extend_from_slice(&other.commands);
     }
 
+    /// 从 SVG path data 字符串解析（HTML Canvas `new Path2D(d)`，
+    /// https://html.spec.whatwg.org/multipage/canvas.html#dom-path2d + SVG 2 §9.3 path data）。
+    ///
+    /// R3307：补全 Path2D svgString 构造形式（R3306 createPath lenient 建空路径）。支持全部 SVG 路径命令：
+    /// `M/L/H/V/C/S/Q/T/A/Z`（大小写 = 绝对/相对），含隐式重复（命令后多组参数）+ 参数分隔符（空白/逗号，
+    /// flag 例外）。`A`（椭圆弧）经端点→中心参数转换（SVG 实现说明 F.6.5）映射到本 Path2D 的 `ellipse`。
+    ///
+    /// **诚实范围**：① 浮点解析容忍非法数字（NaN/溢出）→ 该命令跳过；② 极少数病态输入（rx/ry=0、
+    /// 端点重合）按 SVG 规范退化为 line_to（spec 同语义）；③ 数值精度受 f32 限制。非法/截断命令静默跳过
+    /// （real browser spec 亦尽力解析非法 path data 不抛）。返 `true` 表示至少解析出一组有效命令。
+    pub fn from_svg(&mut self, d: &str) -> bool {
+        let mut p = SvgPathParser::new(d);
+        let mut cur_x = 0.0f32;
+        let mut cur_y = 0.0f32;
+        let mut sub_start_x = 0.0f32;
+        let mut sub_start_y = 0.0f32;
+        // 上一贝塞尔控制点（S/T 平滑反射用），None 表无前置曲线。
+        let mut prev_cubic_cp: Option<(f32, f32)> = None;
+        let mut prev_quad_cp: Option<(f32, f32)> = None;
+        let mut any = false;
+
+        while let Some((cmd, relative)) = p.next_command() {
+            match cmd {
+                b'M' | b'L' => {
+                    // M/L：隐式重复 = 后续按 L 处理（M 首点 move_to，重复点 line_to）。
+                    let mut first = true;
+                    while let Some((x, y)) = p.parse_point(cur_x, cur_y, relative) {
+                        if cmd == b'M' && first {
+                            self.move_to(x, y);
+                            sub_start_x = x;
+                            sub_start_y = y;
+                            first = false;
+                        } else {
+                            self.line_to(x, y);
+                        }
+                        cur_x = x;
+                        cur_y = y;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                    prev_quad_cp = None;
+                }
+                b'H' => {
+                    while let Some(v) = p.parse_number() {
+                        let x = if relative { cur_x + v } else { v };
+                        self.line_to(x, cur_y);
+                        cur_x = x;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                    prev_quad_cp = None;
+                }
+                b'V' => {
+                    while let Some(v) = p.parse_number() {
+                        let y = if relative { cur_y + v } else { v };
+                        self.line_to(cur_x, y);
+                        cur_y = y;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                    prev_quad_cp = None;
+                }
+                b'C' => {
+                    while let (Some(c1), Some(c2), Some(e)) = (
+                        p.parse_point(cur_x, cur_y, relative),
+                        p.parse_point(cur_x, cur_y, relative),
+                        p.parse_point(cur_x, cur_y, relative),
+                    ) {
+                        self.bezier_curve_to(c1.0, c1.1, c2.0, c2.1, e.0, e.1);
+                        prev_cubic_cp = Some(c2);
+                        cur_x = e.0;
+                        cur_y = e.1;
+                        any = true;
+                    }
+                    prev_quad_cp = None;
+                }
+                b'S' => {
+                    while let (Some(c2), Some(e)) = (
+                        p.parse_point(cur_x, cur_y, relative),
+                        p.parse_point(cur_x, cur_y, relative),
+                    ) {
+                        // 反射前三次控制点作 c1（无前置 → c1 = 当前点）。
+                        let c1 = match prev_cubic_cp {
+                            Some((px, py)) => (2.0 * cur_x - px, 2.0 * cur_y - py),
+                            None => (cur_x, cur_y),
+                        };
+                        self.bezier_curve_to(c1.0, c1.1, c2.0, c2.1, e.0, e.1);
+                        prev_cubic_cp = Some(c2);
+                        cur_x = e.0;
+                        cur_y = e.1;
+                        any = true;
+                    }
+                    prev_quad_cp = None;
+                }
+                b'Q' => {
+                    while let (Some(c), Some(e)) = (
+                        p.parse_point(cur_x, cur_y, relative),
+                        p.parse_point(cur_x, cur_y, relative),
+                    ) {
+                        self.quadratic_curve_to(c.0, c.1, e.0, e.1);
+                        prev_quad_cp = Some(c);
+                        cur_x = e.0;
+                        cur_y = e.1;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                }
+                b'T' => {
+                    while let Some(e) = p.parse_point(cur_x, cur_y, relative) {
+                        let c = match prev_quad_cp {
+                            Some((px, py)) => (2.0 * cur_x - px, 2.0 * cur_y - py),
+                            None => (cur_x, cur_y),
+                        };
+                        self.quadratic_curve_to(c.0, c.1, e.0, e.1);
+                        prev_quad_cp = Some(c);
+                        cur_x = e.0;
+                        cur_y = e.1;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                }
+                b'A' => {
+                    while let Some(arc) = p.parse_arc_args(relative, cur_x, cur_y) {
+                        if let Some((cx, cy, rx, ry, rot, start, end)) = arc_to_center(
+                            cur_x, cur_y, arc.rx, arc.ry, arc.rot, arc.large, arc.sweep, arc.x, arc.y,
+                        ) {
+                            self.ellipse(cx, cy, rx, ry, rot, start, end);
+                        } else {
+                            // 退化（rx/ry=0 或端点重合）→ line_to（SVG spec 同语义）。
+                            self.line_to(arc.x, arc.y);
+                        }
+                        cur_x = arc.x;
+                        cur_y = arc.y;
+                        any = true;
+                    }
+                    prev_cubic_cp = None;
+                    prev_quad_cp = None;
+                }
+                b'Z' => {
+                    self.close_path();
+                    cur_x = sub_start_x;
+                    cur_y = sub_start_y;
+                    any = true;
+                    // Z 无参数；跳过任何尾随数字（非法但 lenient）。
+                    prev_cubic_cp = None;
+                    prev_quad_cp = None;
+                }
+                _ => {
+                    // 未知命令：跳过（lenient）。
+                }
+            }
+        }
+        any
+    }
+
     /// 判断点是否在路径内部（使用射线法，奇偶填充规则）。
     /// 将路径扁平化为多边形顶点后，用射线法判断点是否在多边形内。
     /// 支持多个子路径。
@@ -339,6 +494,246 @@ pub fn point_in_polygon(px: f32, py: f32, points: &[(f32, f32)]) -> bool {
     inside
 }
 
+// ── SVG path data 解析器（R3307：Path2D::from_svg）──────────────────────────
+
+/// SVG 弧参数（端点形式）。
+struct SvgArcArgs {
+    rx: f32,
+    ry: f32,
+    rot: f32,
+    large: bool,
+    sweep: bool,
+    x: f32,
+    y: f32,
+}
+
+/// SVG path data 词法解析器。逐命令消费输入，提供 number/point/arc 参数解析。
+struct SvgPathParser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> SvgPathParser<'a> {
+    fn new(s: &'a str) -> Self {
+        Self {
+            bytes: s.as_bytes(),
+            pos: 0,
+        }
+    }
+
+    /// 跳过空白与逗号（SVG path data 参数分隔符）。
+    fn skip_sep(&mut self) {
+        while self.pos < self.bytes.len() {
+            let b = self.bytes[self.pos];
+            if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' || b == b',' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// 返回下一命令字母（绝对/相对标志）。命令字母后的隐式重复参数由调用方循环 parse_* 消费。
+    fn next_command(&mut self) -> Option<(u8, bool)> {
+        loop {
+            self.skip_sep();
+            if self.pos >= self.bytes.len() {
+                return None;
+            }
+            let b = self.bytes[self.pos];
+            // SVG path 命令字母集合。
+            if matches!(
+                b,
+                b'M' | b'm'
+                    | b'L'
+                    | b'l'
+                    | b'H'
+                    | b'h'
+                    | b'V'
+                    | b'v'
+                    | b'C'
+                    | b'c'
+                    | b'S'
+                    | b's'
+                    | b'Q'
+                    | b'q'
+                    | b'T'
+                    | b't'
+                    | b'A'
+                    | b'a'
+                    | b'Z'
+                    | b'z'
+            ) {
+                self.pos += 1;
+                return Some((b.to_ascii_uppercase(), b.is_ascii_lowercase()));
+            }
+            // 非命令字母（含数字/符号 → 调用方应已消费）：跳过避免死循环。
+            self.pos += 1;
+        }
+    }
+
+    /// 解析一个浮点数。容忍前导符号 + 科学计数法。失败返 None。
+    fn parse_number(&mut self) -> Option<f32> {
+        self.skip_sep();
+        let start = self.pos;
+        // 简易浮点扫描：[+-]? digits? . digits? ([eE][+-]? digits)?；至少一位数字。
+        let mut seen_digit = false;
+        if self.pos < self.bytes.len() && (self.bytes[self.pos] == b'+' || self.bytes[self.pos] == b'-') {
+            self.pos += 1;
+        }
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+            seen_digit = true;
+            self.pos += 1;
+        }
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b'.' {
+            self.pos += 1;
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+                seen_digit = true;
+                self.pos += 1;
+            }
+        }
+        // 科学计数法
+        if self.pos < self.bytes.len() && (self.bytes[self.pos] == b'e' || self.bytes[self.pos] == b'E') {
+            let save = self.pos;
+            self.pos += 1;
+            if self.pos < self.bytes.len() && (self.bytes[self.pos] == b'+' || self.bytes[self.pos] == b'-') {
+                self.pos += 1;
+            }
+            let mut exp_digit = false;
+            while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
+                exp_digit = true;
+                self.pos += 1;
+            }
+            if !exp_digit {
+                self.pos = save; // 回退：e 后无数字，非科学计数法
+            }
+        }
+        if !seen_digit {
+            self.pos = start;
+            return None;
+        }
+        let s = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
+        let v = s.parse::<f32>().ok()?;
+        if v.is_finite() { Some(v) } else { None }
+    }
+
+    /// 解析一个点 (x, y)。相对坐标按 (cur_x, cur_y) 偏移（cur 由调用方传入，用于相对偏移）。
+    fn parse_point(&mut self, cx: f32, cy: f32, relative: bool) -> Option<(f32, f32)> {
+        let x = self.parse_number()?;
+        let y = self.parse_number()?;
+        if relative { Some((cx + x, cy + y)) } else { Some((x, y)) }
+    }
+
+    /// 解析弧参数（rx ry rot large-arc-flag sweep-flag x y）。flag 为单字符（0/1，无分隔符要求）。
+    /// (x,y) 相对按 cur 偏移。返回 None 表参数不足/非法。
+    fn parse_arc_args(&mut self, relative: bool, cur_x: f32, cur_y: f32) -> Option<SvgArcArgs> {
+        let rx = self.parse_number()?;
+        let ry = self.parse_number()?;
+        let rot = self.parse_number()?;
+        let rot = rot.to_radians();
+        let large = self.parse_flag()?;
+        let sweep = self.parse_flag()?;
+        let x = self.parse_number()?;
+        let y = self.parse_number()?;
+        let (x, y) = if relative { (cur_x + x, cur_y + y) } else { (x, y) };
+        Some(SvgArcArgs {
+            rx,
+            ry,
+            rot,
+            large,
+            sweep,
+            x,
+            y,
+        })
+    }
+
+    /// 解析弧 flag（单字符 0/1，可无分隔符）。SVG 规范 flag 不容忍多字符/分隔符歧义，本实现 lenient：
+    /// 跳过空白/逗号后取下一字符。
+    fn parse_flag(&mut self) -> Option<bool> {
+        self.skip_sep();
+        if self.pos < self.bytes.len() {
+            let b = self.bytes[self.pos];
+            if b == b'0' || b == b'1' {
+                self.pos += 1;
+                return Some(b == b'1');
+            }
+        }
+        None
+    }
+}
+
+/// SVG 弧端点→中心参数转换（SVG 2 实现说明 F.6.5）。返 (cx, cy, rx, ry, rot, start_angle, end_angle)。
+/// None 表退化（rx/ry=0 或端点重合）—— 调用方应退化 line_to。
+#[allow(clippy::too_many_arguments)]
+fn arc_to_center(
+    x1: f32,
+    y1: f32,
+    rx: f32,
+    ry: f32,
+    phi: f32,
+    large: bool,
+    sweep: bool,
+    x2: f32,
+    y2: f32,
+) -> Option<(f32, f32, f32, f32, f32, f32, f32)> {
+    // 退化：端点重合或半径为 0。
+    if ((x1 - x2).abs() < 1e-6 && (y1 - y2).abs() < 1e-6) || rx.abs() < 1e-6 || ry.abs() < 1e-6 {
+        return None;
+    }
+    let rx = rx.abs();
+    let ry = ry.abs();
+    let cos_p = phi.cos();
+    let sin_p = phi.sin();
+    // 步骤1：将端点变换到 x'-y'（旋转消除）。
+    let dx = (x1 - x2) / 2.0;
+    let dy = (y1 - y2) / 2.0;
+    let x1p = cos_p * dx + sin_p * dy;
+    let y1p = -sin_p * dx + cos_p * dy;
+    // 步骤2：修正半径（保证方程有解）。
+    let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+    let (rx, ry) = if lambda > 1.0 {
+        let s = lambda.sqrt();
+        (rx * s, ry * s)
+    } else {
+        (rx, ry)
+    };
+    // 步骤3：计算中心 c'。
+    let rx2 = rx * rx;
+    let ry2 = ry * ry;
+    let x1p2 = x1p * x1p;
+    let y1p2 = y1p * y1p;
+    let denom = rx2 * y1p2 + ry2 * x1p2;
+    let num = (rx2 * ry2 - denom).max(0.0);
+    let factor = if denom > 1e-12 { (num / denom).sqrt() } else { 0.0 };
+    let sign = if large == sweep { -1.0 } else { 1.0 };
+    let cxp = sign * factor * (rx * y1p) / ry;
+    let cyp = sign * factor * -(ry * x1p) / rx;
+    // 步骤4：变换回原坐标系得中心。
+    let cx = cos_p * cxp - sin_p * cyp + (x1 + x2) / 2.0;
+    let cy = sin_p * cxp + cos_p * cyp + (y1 + y2) / 2.0;
+    // 步骤5：计算起止角（相对中心、椭圆参数角）。
+    let angle = |vx: f32, vy: f32| vy.atan2(vx);
+    let mut start = angle((x1p - cxp) / rx, (y1p - cyp) / ry);
+    let mut delta = angle((-x1p - cxp) / rx, (-y1p - cyp) / ry) - start;
+    // sweep 方向调整到 [0, 2π) 范围语义。
+    if !sweep && delta > 0.0 {
+        delta -= std::f32::consts::TAU;
+    } else if sweep && delta < 0.0 {
+        delta += std::f32::consts::TAU;
+    }
+    let mut end = start + delta;
+    // 规范化 start 到 [-π, π]，便于光栅化。
+    while start > std::f32::consts::PI {
+        start -= std::f32::consts::TAU;
+        end -= std::f32::consts::TAU;
+    }
+    while start < -std::f32::consts::PI {
+        start += std::f32::consts::TAU;
+        end += std::f32::consts::TAU;
+    }
+    Some((cx, cy, rx, ry, phi, start, end))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,5 +855,141 @@ mod tests {
         p.rect(0.0, 0.0, 10.0, 10.0);
         p.rect(20.0, 20.0, 10.0, 10.0);
         assert_eq!(p.commands().len(), 10); // 2 × 5
+    }
+
+    // ── from_svg 测试（R3307：Path2D svgString 解析）──
+
+    #[test]
+    fn test_from_svg_moveto_lineto() {
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10 20 L30 40"));
+        assert_eq!(p.commands().len(), 2);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)));
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(30.0, 40.0)));
+    }
+
+    #[test]
+    fn test_from_svg_implicit_repeat() {
+        // M 后多组坐标：首点 move_to，余点 implicit line_to（spec）。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M0 0 10 10 20 20"));
+        assert_eq!(p.commands().len(), 3);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(0.0, 0.0)));
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(10.0, 10.0)));
+        assert!(matches!(p.commands()[2], PathCommand::LineTo(20.0, 20.0)));
+    }
+
+    #[test]
+    fn test_from_svg_relative() {
+        // 相对坐标 m/l（小写）= 当前点 + 偏移。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10 10 l5 5"));
+        assert_eq!(p.commands().len(), 2);
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 10.0)));
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(15.0, 15.0))); // 10+5
+    }
+
+    #[test]
+    fn test_from_svg_hv() {
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M0 0 H50 V30"));
+        assert_eq!(p.commands().len(), 3);
+        assert!(matches!(p.commands()[1], PathCommand::LineTo(50.0, 0.0)));
+        assert!(matches!(p.commands()[2], PathCommand::LineTo(50.0, 30.0)));
+    }
+
+    #[test]
+    fn test_from_svg_bezier_quadratic() {
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M0 0 C10 10 20 20 30 30"));
+        assert!(matches!(
+            p.commands()[1],
+            PathCommand::BezierCurveTo(10.0, 10.0, 20.0, 20.0, 30.0, 30.0)
+        ));
+
+        let mut q = Path2D::new();
+        assert!(q.from_svg("M0 0 Q10 10 20 20"));
+        assert!(matches!(
+            q.commands()[1],
+            PathCommand::QuadraticCurveTo(10.0, 10.0, 20.0, 20.0)
+        ));
+    }
+
+    #[test]
+    fn test_from_svg_smooth_bezier() {
+        // S 无前置曲线 → c1 = 当前点；有前置 → c1 = 反射。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M0 0 C10 10 20 20 30 30 S50 50 60 60"));
+        // 第二段 S：c1 = 反射 (30,30) 前控制点 (20,20) → (2*30-20, 2*30-20) = (40,40)
+        assert!(matches!(
+            p.commands().last(),
+            Some(PathCommand::BezierCurveTo(40.0, 40.0, 50.0, 50.0, 60.0, 60.0))
+        ));
+    }
+
+    #[test]
+    fn test_from_svg_closepath() {
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M0 0 L10 10 Z"));
+        assert!(matches!(p.commands().last(), Some(PathCommand::ClosePath)));
+    }
+
+    #[test]
+    fn test_from_svg_arc() {
+        // A rx ry rot large sweep x y：非退化弧（端点不重合、半径>0）→ 经端点→中心转换产 Ellipse 命令。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10 10 A5 5 0 0 0 20 10"));
+        assert_eq!(p.commands().len(), 2); // MoveTo + Ellipse
+        assert!(
+            matches!(p.commands()[1], PathCommand::Ellipse(_, _, 5.0, 5.0, _, _, _)),
+            "非退化弧应产 Ellipse 命令（半径 abs=5），实际: {:?}",
+            p.commands()[1]
+        );
+    }
+
+    #[test]
+    fn test_from_svg_arc_degenerate() {
+        // 端点重合 → 退化 line_to（SVG spec 同语义）。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10 10 A5 5 0 0 0 10 10"));
+        assert!(matches!(p.commands().last(), Some(PathCommand::LineTo(10.0, 10.0))));
+    }
+
+    #[test]
+    fn test_from_svg_arc_zero_radius_degenerate() {
+        // rx=0 → 退化 line_to（SVG spec：零半径弧等价于直线到端点）。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10 10 A0 0 0 0 0 30 40"));
+        assert!(matches!(p.commands().last(), Some(PathCommand::LineTo(30.0, 40.0))));
+    }
+
+    #[test]
+    fn test_from_svg_comma_separators() {
+        // 逗号分隔（"M10,20"）+ 负号充当分隔符（"L30-40" = x=30, y=-40，SVG path data 允许符号紧贴）。
+        let mut p = Path2D::new();
+        assert!(p.from_svg("M10,20 L30-40"));
+        assert!(matches!(p.commands()[0], PathCommand::MoveTo(10.0, 20.0)), "逗号分隔");
+        assert!(
+            matches!(p.commands()[1], PathCommand::LineTo(30.0, -40.0)),
+            "负号分隔（符号紧贴下一数）: {:?}",
+            p.commands()[1]
+        );
+    }
+
+    #[test]
+    fn test_from_svg_invalid_returns_false() {
+        // 空串 / 无命令字母 → false（无有效命令解析出）。
+        let mut p = Path2D::new();
+        assert!(!p.from_svg(""));
+        assert!(!p.from_svg("   "));
+        assert_eq!(p.commands().len(), 0);
+    }
+
+    #[test]
+    fn test_from_svg_truncated_lenient() {
+        // 截断命令（C 不足 6 参）静默跳过，不抛。
+        let mut p = Path2D::new();
+        let _ = p.from_svg("M0 0 C10 10"); // 缺参，lenient 跳过 C
+        assert!(p.commands().len() >= 1); // 至少 MoveTo 解析出
     }
 }

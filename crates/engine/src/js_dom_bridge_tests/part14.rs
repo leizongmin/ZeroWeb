@@ -580,6 +580,67 @@ fn test_canvas_path2d_r3306() {
 }
 
 #[test]
+fn test_canvas_path2d_svg_string_r3307() {
+    // R3307：Path2D svgString 构造形式（`new Path2D("M10 10 L90 90")`）。R3306 createPath lenient 建空路径，
+    // 本切片闭合：JS 端 string 首参透传 host createPath → canvas crate `Path2D::from_svg` 解析 SVG path data
+    // （M/L/H/V/C/S/Q/T/A/Z，绝对/相对，隐式重复，flag 单字符）。断言：① new Path2D(svgString) 返对象含
+    // _zwPath id；② ctx.fill(svgPath)/stroke(svgPath)/clip(svgPath) 不抛（解析出的路径可绘制）；③ 相对坐标 +
+    // 闭合 + 弧命令混合串可解析不抛；④ 非法/空串 lenient 建空路径不抛（real browser spec 亦尽力解析不抛）。
+    // 解析器逐命令正确性见 canvas crate test_from_svg_*（path.rs R3307）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             /* ① new Path2D(svgString)：基础 M/L 串 */\
+             var p = new Path2D('M10 10 L90 90');\
+             globalThis.__svgIsObj = String(p && typeof p === 'object');\
+             globalThis.__svgHasPathId = String(typeof p._zwPath === 'string' && p._zwPath.length > 0);\
+             ctx.fillStyle = 'red';\
+             ctx.fill(p);\
+             ctx.strokeStyle = 'blue';\
+             ctx.stroke(p);\
+             ctx.clip(p);\
+             globalThis.__svgFillStrokeClipOk = 'ok';\
+             /* ② 混合命令串（相对 l + 闭合 Z + 弧 A）：解析不抛 */\
+             var p2 = new Path2D('M0 0 l20 20 A5 5 0 0 0 40 0 Z');\
+             ctx.fill(p2);\
+             globalThis.__svgMixedOk = String(p2._zwPath.length > 0);\
+             /* ③ 非法/空串：lenient 建空路径不抛 */\
+             var p3 = new Path2D('');\
+             var p4 = new Path2D('garbage not a path');\
+             globalThis.__svgLenientOk = String(p3._zwPath.length > 0 && p4._zwPath.length > 0);\
+             /* ④ 多子路径 + 隐式重复（M 后多组 = 首点 move + 余点 line）*/\
+             var p5 = new Path2D('M0 0 10 10 20 0 Z');\
+             ctx.fill(p5);\
+             globalThis.__svgImplicitOk = 'ok';",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__svgIsObj").unwrap().value, "true", "new Path2D(svgString) 返对象");
+    assert_eq!(sandbox.execute("globalThis.__svgHasPathId").unwrap().value, "true", "svgString Path2D 含 _zwPath id");
+    assert_eq!(sandbox.execute("globalThis.__svgFillStrokeClipOk").unwrap().value, "ok", "ctx.fill/stroke/clip(svgPath) 不抛");
+    assert_eq!(sandbox.execute("globalThis.__svgMixedOk").unwrap().value, "true", "混合命令串（相对/闭合/弧）可解析");
+    assert_eq!(sandbox.execute("globalThis.__svgLenientOk").unwrap().value, "true", "非法/空串 lenient 建空路径不抛");
+    assert_eq!(sandbox.execute("globalThis.__svgImplicitOk").unwrap().value, "ok", "隐式重复 + 多子路径串可解析绘制");
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

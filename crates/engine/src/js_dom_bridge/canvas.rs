@@ -842,17 +842,26 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)` / `new Path2D(svgString)`）。
         // Path2D 为 context 无关的可复用路径对象，经独立 id 命名空间存注册表。ctx.fill(path)/stroke(path)/
         // clip(path) 取 path id 查表得 Path2D 调 fill_path/stroke_path/clip_path（替代 ctx 当前路径）。
-        // path id 为 args[0]，坐标参从 args[1] 起。**诚实范围**：svgString 构造形式（`new Path2D("M10 10 L90 90")`）
-        // 暂不支持（需 SVG path 解析器，canvas crate 无依赖；首参为非数字串时建空路径 lenient 不抛）。
+        // path id 为 args[0]，坐标参从 args[1] 起。
+        // R3307：svgString 构造形式（`new Path2D("M10 10 L90 90")`）补全——首参为非数字串时走
+        // `Path2D::from_svg`（canvas crate SVG path 解析器，lenient 不抛，详见 path.rs R3307 注释）。
         "createPath" => {
             let id = reg.next_path_id;
             reg.next_path_id += 1;
-            // 首参若为 path id（数字）→ 复制既有 Path2D（new Path2D(other)）；否则建空（含 svgString defer）。
-            let path = if let Ok(other_id) = arg(0).trim().parse::<u64>()
+            let raw0 = arg(0);
+            // 三态分支：path id（数字）→ 复制既有 Path2D（new Path2D(other)）；
+            //         非数字非空串 → SVG path data 解析（new Path2D(svgString)）；
+            //         空串/缺省 → 建空（new Path2D()）。
+            let path = if let Ok(other_id) = raw0.trim().parse::<u64>()
                 && let Some(src) = reg.paths.get(&other_id)
             {
                 let mut p = zero_canvas::Path2D::new();
                 p.add_path(src);
+                p
+            } else if !raw0.trim().is_empty() {
+                // SVG path data：lenient 解析（非法命令静默跳过，real browser spec 亦尽力解析非法 path data 不抛）。
+                let mut p = zero_canvas::Path2D::new();
+                p.from_svg(raw0);
                 p
             } else {
                 zero_canvas::Path2D::new()

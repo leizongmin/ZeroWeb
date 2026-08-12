@@ -836,9 +836,9 @@
       },
     };
   }
-  // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)`）。`_zwPath` 为 host 路径 id 标记
-  //（ctx.fill(path) 等 setter 检测）。方法镜像 ctx 路径族（经 host path id 改 host Path2D）。**诚实范围**：
-  // svgString 构造形式（`new Path2D("M10 10")`）暂不支持（需 SVG path 解析器，host lenient 建空路径）。
+  // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)` / `new Path2D(svgString)`）。
+  // `_zwPath` 为 host 路径 id 标记（ctx.fill(path) 等 setter 检测）。方法镜像 ctx 路径族（经 host path id 改
+  // host Path2D）。R3307：svgString 构造形式补全（host createPath 走 canvas crate `Path2D::from_svg`）。
   function _zwMakePath2d(h, pid) {
     var p = { _zwPath: pid };
     p.moveTo = function (x, y) { __zw_canvas_op(h, 'pathMoveTo', pid, String(x), String(y)); };
@@ -856,12 +856,19 @@
     return p;
   }
   // Path2D 全局构造器（幂等注册——多 canvas 不重复覆盖）。host createPath 忽略 handle（路径 context 无关），
-  // 故用任意 handle '0'；首参为 Path2D 对象（复制）或 svgString（defer 建空）或 undefined（建空）。
+  // 故用任意 handle '0'；首参三态：Path2D 对象（复制）、svgString（host from_svg 解析）、undefined（建空）。
+  // R3307：svgString 形式补全（`new Path2D("M10 10 L90 90")`），整串透传 host createPath 走 from_svg。
   if (!globalThis.Path2D) {
     globalThis.Path2D = function Path2D(arg) {
       if (typeof __zw_canvas_op !== 'function') { this._zwPath = 0; return; }
-      var other = (arg && typeof arg === 'object' && arg._zwPath) ? String(arg._zwPath) : '';
-      var id = String(__zw_canvas_op('0', 'createPath', other));
+      // 首参三态：Path2D 对象 → 传 path id（host 复制）；string → 透传整串（host from_svg）；否则空串（建空）。
+      var first = '';
+      if (arg && typeof arg === 'object' && arg._zwPath) {
+        first = String(arg._zwPath);
+      } else if (typeof arg === 'string') {
+        first = arg;
+      }
+      var id = String(__zw_canvas_op('0', 'createPath', first));
       this._zwPath = id;
       // 把 _zwMakePath2d 的方法绑到本实例（复用方法集，pid 为本实例 id）。
       var proto = _zwMakePath2d('0', id);
