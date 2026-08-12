@@ -285,7 +285,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             bitmap_width: None,
             bitmap_height: None,
             rotation: glyph.rotation,
-            synthetic_italic: false,
+            synthetic_italic: glyph.synthetic_italic,
         });
     }
     primitives.draw_order = params.draw_order.iter().map(|op| ipc_draw_op_to_draw_op(*op)).collect();
@@ -322,5 +322,31 @@ mod tests {
             },
         ]);
         assert!(glyph_source_from_ipc(&source, &conflicting_runs).is_none());
+    }
+
+    #[test]
+    fn conversion_preserves_synthetic_italic() {
+        let params = PaintSnapshotParams {
+            glyphs: vec![zero_protocol::IpcGlyph {
+                x: 1.0,
+                y: 2.0,
+                font_size: 16.0,
+                glyph_id: 'A' as u32,
+                font_glyph_index: None,
+                source: None,
+                font_id: 0,
+                color: IpcColor {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+                rotation: 0.0,
+                synthetic_italic: true,
+            }],
+            ..Default::default()
+        };
+
+        assert!(to_render_primitives(&params).glyphs[0].synthetic_italic);
     }
 }

@@ -483,7 +483,7 @@ fn transform_webview_primitives_impl(
                 bitmap_width: glyph.bitmap_width,
                 bitmap_height: glyph.bitmap_height,
                 rotation: glyph.rotation,
-                synthetic_italic: false,
+                synthetic_italic: glyph.synthetic_italic,
             });
         }
     }

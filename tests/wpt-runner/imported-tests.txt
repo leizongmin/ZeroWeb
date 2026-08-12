@@ -21,3 +21,4 @@ css/css-fonts/font-size-adjust-012.html css/css-fonts/font-size-adjust-012-ref.h
 css/css-fonts/quoted-generic-ignored.html css/css-fonts/quoted-generic-ignored-ref.html == 2026-08-11 R3249-F quoted generic family name distinction
 css/css-fonts/font-variant-alternates-02.html css/css-fonts/font-variant-alternates-02-ref.html == 2026-08-12 R3256-F historical-forms OT hist
 css/css-fonts/font-kerning-04.html css/css-fonts/font-kerning-04-ref.html == 2026-08-12 R3265-F font-kerning
+css/css-fonts/font-synthesis-style.html css/css-fonts/font-synthesis-style-ref.html == 2026-08-12 R3267-F synthetic italic IPC

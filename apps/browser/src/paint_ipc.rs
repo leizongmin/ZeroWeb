@@ -291,7 +291,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             bitmap_width: None,
             bitmap_height: None,
             rotation: glyph.rotation,
-            synthetic_italic: false,
+            synthetic_italic: glyph.synthetic_italic,
         });
     }
     primitives.draw_order = params.draw_order.into_iter().map(ipc_draw_op_to_draw_op).collect();
@@ -474,6 +474,7 @@ mod tests {
                 a: 255,
             },
             rotation: 0.0,
+            synthetic_italic: true,
         };
         let params = PaintSnapshotParams {
             glyph_text_runs: vec![
@@ -497,6 +498,7 @@ mod tests {
         let first = glyphs[0].source.as_ref().expect("first source");
         let second = glyphs[1].source.as_ref().expect("second source");
         let independent = glyphs[2].source.as_ref().expect("independent source");
+        assert!(glyphs[0].synthetic_italic);
         assert!(first.same_cluster(second));
         assert!(!first.same_cluster(independent));
     }

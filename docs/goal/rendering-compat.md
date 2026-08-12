@@ -29,6 +29,8 @@
 >
 > **▶ 字体栈增量进展（R3265-F font-kerning·2026-08-12）**：补齐 CSS `font-kerning: auto | normal | none` 的 computed/default/inherit/initial/registry、`font` shorthand 重置与 CSSOM 序列化；shaping 按 writing mode 注入横排 `kern` / 竖排 `vkrn`，`none` 同时禁用两者，显式 `font-feature-settings` 继续保持最高优先级。上游 `font-kerning-04` 与 `FontWithFancyFeatures.otf` 已资产化；目标 5 案 self-source 可信 strict `2/5→3/5`，04 从 `0.07%→0.00%`，Chromium Oracle 仍 `1/5`，全 css-fonts 保持 `84/282`、credible `74`、strict `54`，无目录级回归。reftest `687/687`、workspace default/QuickJS clippy、产品 smoke 全绿；`make test` 并发态仅既有 real HTTP fetch 时序失败（隔离及 browser 串行全绿），workspace 串行态仅本机无 wgpu adapter 的 compositor recovery 测试阻断。
 >
+> **▶ 字体栈增量进展（R3267-F synthetic-italic-ipc·2026-08-12）**：R3264 已让 GPU 消费 `GlyphPrimitive.synthetic_italic`，但 renderer IPC 未序列化该字段，browser/compositor 接收端与单进程 WebView transform 又固定写 `false`，导致生产端判定的合成斜体在进程/宿主边界静默丢失。本轮给 `IpcGlyph` 增加向后默认的 `synthetic_italic`，贯通 renderer export、browser/compositor restore 与 WebView transform，并在五个边界各加回归断言；`font-synthesis-style` 上游 WPT 已资产化。同期 synthetic bold 完整实验因 `font-synthesis-08 4.08%→4.23%`、禁用类仅各改善约 `0.01pp`，全 css-fonts 另有 `font-face-local-not-family +0.01pp`，按净负门禁完整撤回。验证：workspace default/QuickJS clippy、reftest `687/687`、产品 smoke desktop/375/320 与表单性能全绿；`make test` 仍受既有 real HTTP fetch 与多进程表单快照时序阻断。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

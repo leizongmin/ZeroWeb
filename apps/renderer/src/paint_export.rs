@@ -252,6 +252,7 @@ pub fn paint_snapshot_from_primitives(
             font_id: g.font_id.0,
             color: color_to_ipc(g.color),
             rotation: g.rotation,
+            synthetic_italic: g.synthetic_italic,
         })
         .collect();
     PaintSnapshotParams {
@@ -465,6 +466,7 @@ fn hit_test_layout_to_ipc(node: &HitTestLayoutSnapshot) -> IpcHitTestLayoutNode 
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use zero_render_foundation::primitive::{FontId, GlyphPrimitive};
 
     #[test]
     fn glyph_source_run_id_tracks_shared_text_allocation() {
@@ -485,5 +487,27 @@ mod tests {
         );
         assert_eq!(text_runs.len(), 2);
         assert_eq!(text_runs[0].text, "A\u{301}");
+    }
+
+    #[test]
+    fn paint_snapshot_preserves_synthetic_italic() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_glyph(GlyphPrimitive {
+            x: 1.0,
+            y: 2.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 'A' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: FontId(0),
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: true,
+        });
+
+        let snapshot = paint_snapshot_from_primitives(10, 10, 10.0, &primitives, &[], vec![], None, 1);
+        assert!(snapshot.glyphs[0].synthetic_italic);
     }
 }

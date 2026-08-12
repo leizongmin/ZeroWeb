@@ -2048,7 +2048,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
-        synthetic_italic: false,
+        synthetic_italic: true,
     });
     p.transforms.push(TransformPrimitive {
         rect: Rect::new(1.0, 2.0, 10.0, 10.0),
@@ -2117,6 +2117,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
 
     let g = &out.glyphs[0];
     assert_eq!((g.x, g.y, g.font_size), (12.0, 24.0, 32.0));
+    assert!(g.synthetic_italic);
 
     let t = &out.transforms[0];
     assert_eq!((t.rect.origin.x, t.rect.origin.y), (12.0, 24.0));

@@ -97,6 +97,9 @@ pub struct IpcGlyph {
     pub color: IpcColor,
     /// 旋转（弧度）。
     pub rotation: f32,
+    /// 是否合成斜体。
+    #[serde(default)]
+    pub synthetic_italic: bool,
 }
 
 /// IPC 图片图元（不含像素，像素见 [`IpcImagePayload`]）。
@@ -613,6 +616,7 @@ mod tests {
                 a: 255,
             },
             rotation: 0.0,
+            synthetic_italic: true,
         };
         let snapshot = PaintSnapshotParams {
             glyph_text_runs: vec![IpcGlyphTextRun {
@@ -629,6 +633,7 @@ mod tests {
 
         assert_eq!(glyph.glyph_id, 'A' as u32);
         assert_eq!(glyph.font_glyph_index, Some(42));
+        assert!(glyph.synthetic_italic);
         let source = glyph.source.as_ref().expect("source cluster");
         assert_eq!(source.run_id, 9);
         assert_eq!((source.start, source.end), (0, 3));
