@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3331：去重 security/csp/wasm-unsafe-eval id（policy vs capability 双块）+ multiprocess/storage-isolation localStorage 同步 round-trip 行为锁（原 try/catch 吞错静默通过）+ multiprocess js_executes_ok 覆盖门；navigation/* 审计确认纯结构性（R3324 正确）。前轮 R3330：MO 差异 #4 闭合。
+**最后更新**: 2026-08-13（R3332：P1b native-dom 路径 parity 回归门——经 native_dom=true flag 锁原生绑定（S0–S5，19 文件，无 CI 变体覆盖）与 shim 路径行为对等（dataset 反射 / MO 记录 / localStorage round-trip 三类单 WebView parity 门全过）。**实测发现多 WebView 同线程顺序创建触 disposed-Isolate panic**（gc.rs 线程局部缓存跨 isolate 泄漏，记 learning 作 P1b 默认开前必修阻塞项）。**重要校准**：P1b 实际已 land 到 S5（master 头此前过时称仅 S0），S6/S7 shim 萎缩为剩余。前轮 R3331：multiprocess 锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,25 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### P1b native-dom 路径 parity 回归门 + master 头校准 + 多 WebView 隔离 bug 记录（本轮 R3332，wpt-runner + learnings）
+
+承接 R3331。本轮**校准 master.md 头部过时认知 + 为 P1b 原生绑定补 CI 变体级别的 parity 门**：
+
+**① master.md 头部校准（重要）**：此前 master 头称「P1b V8 原生绑定 RFC v0.1 已批准 S0…S0 PoC」**已严重过时**——核查 `docs/specs/p1b-v8-native-bindings-rfc.md` + 代码，P1b **实际已 land 到 S5**（R3095–R3274）：S0 PoC 验证 + S1 dom_bindings 生产化（nodeType/tagName getter + NodeId 映射 + bench native ~15.6x）+ S2 webview 接线（`native_dom` kill-switch 默认关）+ S3 选择器→NodeId + S4 EventTarget/事件原生 + L1 live Document 共享（`Rc<RefCell<Document>>`）+ S5 customElements/Web Components（HTMLElement class-extends / upgrade / lifecycle / attributeChanged / 子树 upgrade）。`crates/engine/src/dom_bindings/` 19 文件已就位。**剩余 = S6（shim 高层 API 改调原生，萎缩）+ S7（收尾删死代码）**，均需 native 路径默认开（rule 11 用户决策）。
+
+**② R3332 native-dom parity 门**：P1b S0–S5 原生绑定**无 CI 变体覆盖**（默认关，无测试在 native 路径跑 WPT）——原生绑定可静默漂移。本轮加 `check_js_executes_ok_native`（`native_dom=true` flag 入口，非 env `ZW_NATIVE_DOM`，无全局副作用可并行）+ 3 个单 WebView parity 门：`native_dom_path_parity_dataset_r3332`（dataset camelCase↔kebab 反射）、`_mutation_observer_r3332`（R3330 MO 记录逐条不合并）、`_storage_r3332`（R3331 localStorage round-trip）——三类经原生路径**全过**（native↔shim parity 确认）。
+
+**③ 多 WebView 隔离 bug 记录（实测发现，非阻塞）**：建 parity 门时实测**同线程顺序建多个 native WebView** 触 `v8::handle.rs:628 "Handle hosted by disposed Isolate"` panic——根因 gc.rs 线程局部 DOM-source / element_template 缓存跨 isolate 泄漏（首 WebView drop 销毁 Isolate，线程局部仍持旧 Handle）。记 `docs/learnings/bugs/native-dom-multi-webview-isolate-leak.md` 作 **P1b 默认开前必修阻塞项**（多标签生产 = 多 WebView 同进程，默认开会 break）。故 parity 门用**每测试 1 WebView** 粒度规避。
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/mod.rs` | +`check_js_executes_ok_native`（native_dom=true flag 入口）+ 3 单 WebView parity 门（dataset/MO/storage）|
+| `docs/learnings/bugs/native-dom-multi-webview-isolate-leak.md` | 新建：多 WebView 同线程 disposed-Isolate panic 根因 + 影响 + 闭合需 |
+
+**为何净正向且零回归**：纯测试增强 + 文档（无生产代码改动）；parity 门默认关路径不触。**验证**：`runtime_path_tests` **18 passed / 0 failed**（+3 native parity 门，0 回归，test-guard 包裹，`--test-threads=1`）；`cargo fmt` clean + clippy `-p zero-wpt-runner --features v8` **和** `--no-default-features --features quickjs` 均零警告（`check_js_executes_ok_native` 加 `#[cfg(all(test, feature="v8"))]` 避 quickjs dead-code）。
+
+**下游判断（固化）**：R3332 校准 master 头过时认知（P1b 实际 S5 已 land，剩 S6/S7）+ 补 native 路径 parity 门（防原生绑定静默漂移）+ 记录多 WebView 隔离 bug（P1b 默认开前必修）。**P1b 剩余自主面**：S6/S7 shim 萎缩需 native 默认开（rule 11）；多 WebView 隔离 bug 闭合需改 gc.rs 线程局部生命周期（native bindings 内部，连接 shim→native 生产路径，rule 11 风险）。**两项均需用户点名**，zero-web 流自主面（行为锁 + native parity 门）实质饱和，剩余战略方向全部需用户点名或环境依赖。
 
 ### multiprocess 行为锁 + 重复 id 去重 + navigation 审计确认（本轮 R3331，wpt-runner）
 

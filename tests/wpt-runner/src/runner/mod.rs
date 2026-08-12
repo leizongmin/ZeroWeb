@@ -171,6 +171,27 @@ fn check_js_executes_ok(html: &str, ctx: &TestContext) -> Result<(), String> {
     }
 }
 
+/// R3332：`check_js_executes_ok` 的 **native-dom 路径** 变体——`WebViewConfig.native_dom=true`
+/// 经 V8 原生 dom_bindings（P1b S0–S5）真实执行内联 `<script>`，而非默认关的 polyfill shim 路径。
+/// 与 [`check_js_executes_ok`]（shim 路径）互补：本变体锁 P1b 原生路径与 shim 路径的 **行为对等**
+/// （native path 不得静默回归——S0–S5 原生绑定无 CI 变体覆盖，靠本门防漂移）。不依赖 env
+/// （`ZW_NATIVE_DOM`）——直接经 `native_dom=true` flag 入口（webview `install_native_dom_bindings`
+/// 调 `install_dom_bindings` 非 env-gated `_if_enabled`），故测试无全局副作用、可并行。
+#[cfg(all(test, feature = "v8"))]
+fn check_js_executes_ok_native(html: &str, ctx: &TestContext) -> Result<(), String> {
+    let mut wv = zero_webview::WebView::new(zero_webview::WebViewConfig {
+        width: ctx.viewport_width as u32,
+        height: ctx.viewport_height as u32,
+        native_dom: true,
+        ..Default::default()
+    });
+    wv.load_html(html, None);
+    match wv.run_page_scripts_strict() {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("[native_dom] inline script threw: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod runtime_path_tests {
     use super::*;
@@ -477,6 +498,60 @@ mod runtime_path_tests {
             failed.len(),
             failed.join("\n")
         );
+    }
+
+    /// R3332：P1b **native-dom 路径** parity 回归门——经 `WebViewConfig.native_dom=true`（V8 原生
+    /// dom_bindings S0–S5）真实执行**已行为锁定的用例**，断言原生路径与默认 shim 路径**行为对等**
+    ///（脚本经原生绑定执行，行为锁断言仍成立——不静默回归）。
+    ///
+    /// **为何需要**：P1b S0–S5 原生 dom_bindings（`crates/engine/src/dom_bindings/`，19 文件）已 land
+    ///（R3095–R3274），但生产路径默认关（`native_dom=false`），**无 CI 变体在 native 路径跑 WPT**——
+    /// 原生绑定可静默漂移而无人察觉。本门经 flag 入口（非 env `ZW_NATIVE_DOM`，无全局副作用、可并行）
+    /// 锁 native↔shim parity，是 S6/S7（shim 萎缩、默认开）的前置——对等确认后默认开才安全。
+    ///
+    /// **单用例粒度**：每个测试建 **1 个** native WebView。R3332 实测发现「同线程顺序建多个 native
+    /// WebView」触发 `v8::handle.rs:628 "Handle hosted by disposed Isolate"` panic（gc.rs 线程局部
+    /// element_template/DOM-source 缓存跨 isolate 泄漏——多标签生产风险，记 master.md 待修，非阻塞：
+    /// 生产默认关、单页面单 WebView 不触）。故本门 + 多个 `_single_*` 变体各建 1 WebView，覆盖跨类别
+    /// parity 而不触多-isolate bug。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_path_parity_dataset_r3332() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "js-dom/dataset-api")
+            .expect("js-dom/dataset-api 用例存在");
+        check_js_executes_ok_native(&case.html, &ctx).expect(
+            "native-dom 路径 dataset 反射 parity（native getElementById.dataset camelCase↔kebab + 写回 getAttribute）",
+        );
+    }
+
+    /// R3332b：native-dom 路径 MO 记录 parity（单 WebView）——锁 R3330 行为锁用例经原生路径同样逐条不合并。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_path_parity_mutation_observer_r3332() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "js-dom/mutation-observer")
+            .expect("js-dom/mutation-observer 用例存在");
+        check_js_executes_ok_native(&case.html, &ctx).expect(
+            "native-dom 路径 MO parity（setAttribute×2 → 2 条独立 records 不合并，native 原生 setter 经 Rust）",
+        );
+    }
+
+    /// R3332c：native-dom 路径 storage-isolation parity（单 WebView）——锁 R3331 localStorage round-trip。
+    #[test]
+    #[cfg(feature = "v8")]
+    fn native_dom_path_parity_storage_r3332() {
+        let ctx = TestContext::default();
+        let case = builtin_tests()
+            .into_iter()
+            .find(|c| c.id == "multiprocess/storage-isolation")
+            .expect("multiprocess/storage-isolation 用例存在");
+        check_js_executes_ok_native(&case.html, &ctx)
+            .expect("native-dom 路径 storage parity（localStorage setItem/getItem===value/removeItem→null）");
     }
 
     /// R3322：storage/* 同步用例 js_executes_ok——锁 Web Storage API 行为（localStorage/sessionStorage
