@@ -2316,6 +2316,7 @@ mod font_face_extract_tests {
                     None,
                     false,
                     None,
+                    None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
                 ),
@@ -2324,6 +2325,7 @@ mod font_face_extract_tests {
                     vec!["t.woff".to_string()],
                     None,
                     false,
+                    None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
@@ -2338,7 +2340,12 @@ mod font_face_extract_tests {
     fn extract_font_faces_returns_weight_and_style() {
         let css = r#"
             @font-face { font-family: "Bold"; src: url(b.woff); font-weight: bold; }
-            @font-face { font-family: "Reg"; src: url(r.woff); font-stretch: condensed; }
+            @font-face {
+                font-family: "Reg";
+                src: url(r.woff);
+                font-stretch: condensed;
+                size-adjust: 150%;
+            }
             @font-face { font-family: "Italic"; src: url(i.woff); font-style: italic; }
             @font-face { font-family: "Oblique"; src: url(o.woff); font-style: oblique; }
         "#;
@@ -2352,6 +2359,7 @@ mod font_face_extract_tests {
                     Some(700),
                     false,
                     None,
+                    None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
                 ),
@@ -2361,6 +2369,7 @@ mod font_face_extract_tests {
                     None,
                     false,
                     Some(75.0),
+                    Some(1.5),
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
                 ),
@@ -2370,6 +2379,7 @@ mod font_face_extract_tests {
                     None,
                     true,
                     None,
+                    None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
                 ),
@@ -2378,6 +2388,7 @@ mod font_face_extract_tests {
                     vec!["o.woff".to_string()],
                     None,
                     true,
+                    None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
                     Vec::new(),
@@ -2415,6 +2426,7 @@ mod font_face_extract_tests {
                         ff.weight,
                         is_italic,
                         ff.stretch,
+                        ff.size_adjust,
                         ff.feature_settings.clone(),
                         ff.unicode_ranges.clone(),
                     ))

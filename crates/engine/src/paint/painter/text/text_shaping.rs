@@ -669,6 +669,8 @@ pub(super) fn fragment_glyphs<'a>(
         let Some(sources) = sources else {
             return FragmentGlyphs::Legacy(text.chars());
         };
+        let adjusted_glyph_size = crate::text_metrics::glyph_sizes_adjusted(font_size, &glyphs);
+        let advance_eligible = advance_eligible || adjusted_glyph_size;
         let generic_contextual = simple_mapping && !advance_eligible && shaped_generic_paint_enabled();
         if generic_contextual {
             for glyph in &mut glyphs {

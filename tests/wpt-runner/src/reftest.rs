@@ -645,7 +645,7 @@ fn render_with_layout_inner(
     // 直接复用 BASE_FONT_LOADER，免 ~480ms 创建成本。
     let needs_custom_faces = faces
         .iter()
-        .any(|(family, _, _, _, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
+        .any(|(family, _, _, _, _, _, _, _)| !family.eq_ignore_ascii_case("Ahem"));
     let _zw_t4c = std::time::Instant::now();
     // 杠杆4：默认字体（系统 + CJK + Ahem + 回退链）跨 case 完全一致，而 fontdue
     // from_bytes 解析（尤以 ~16MB NotoSansCJK）占单案 ~85% 串行成本（实测每 render
@@ -657,51 +657,53 @@ fn render_with_layout_inner(
     // 声明需加载 @font-face 的 case 按「src 解析后的路径列表」缓存 Arc<FontLoader>——
     // 键取 load_font_faces_into 的真实输入，页面间仅内联样式不同的 case 共享同一键
     //（WPT 通用 ahem.css 系、absolute-src 的 test/ref 对），只 create 一次。
-    let fresh_arc: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>> =
-        if has_font_face && needs_custom_faces {
-            let cache = FRESH_LOADER_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-            // 全字符串键：@font-face src 按 base_dir 解析后的路径列表（Debug 序列化）。
-            // 无哈希碰撞风险；不同页面即使其余 CSS 不同，只要 @font-face 声明解析结果
-            // 相同即共享同一 loader（绝对 src 跨目录共享——reference/ 子目录的 ref
-            // 渲染与 test 渲染同键；相对 src 解析为各自目录路径，正确区分）。
-            let key = format!(
-                "{:?}",
-                faces
-                    .iter()
-                    .map(
-                        |(family, sources, weight, is_italic, stretch, feature_settings, unicode_ranges)| (
-                            family,
-                            sources
-                                .iter()
-                                .map(|src| resolve_font_src(src, base_dir))
-                                .collect::<Vec<_>>(),
-                            weight,
-                            is_italic,
-                            stretch.map(f32::to_bits),
-                            feature_settings,
-                            unicode_ranges,
-                        )
+    let fresh_arc: Option<std::sync::Arc<zero_render_foundation::font::loader::FontLoader>> = if has_font_face
+        && needs_custom_faces
+    {
+        let cache = FRESH_LOADER_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+        // 全字符串键：@font-face src 按 base_dir 解析后的路径列表（Debug 序列化）。
+        // 无哈希碰撞风险；不同页面即使其余 CSS 不同，只要 @font-face 声明解析结果
+        // 相同即共享同一 loader（绝对 src 跨目录共享——reference/ 子目录的 ref
+        // 渲染与 test 渲染同键；相对 src 解析为各自目录路径，正确区分）。
+        let key = format!(
+            "{:?}",
+            faces
+                .iter()
+                .map(
+                    |(family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges)| (
+                        family,
+                        sources
+                            .iter()
+                            .map(|src| resolve_font_src(src, base_dir))
+                            .collect::<Vec<_>>(),
+                        weight,
+                        is_italic,
+                        stretch.map(f32::to_bits),
+                        size_adjust.map(f32::to_bits),
+                        feature_settings,
+                        unicode_ranges,
                     )
-                    .collect::<Vec<_>>()
-            );
-            let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(fl) = guard.get(&key) {
-                Some(fl.clone())
-            } else {
-                if guard.len() >= FRESH_LOADER_CACHE_MAX {
-                    guard.clear();
-                }
-                // 从 BASE 深拷贝而非 create_font_loader 全量重解析：19MB CJK fontdue
-                // 解析（~0.5s）只做一次，duplicate 复用已解析结果，每键成本降一个量级。
-                let mut fl = BASE_FONT_LOADER.get_or_init(create_font_loader).duplicate();
-                load_font_faces_into(&mut fl, base_dir, &font_scan_css);
-                let arc = std::sync::Arc::new(fl);
-                guard.insert(key, arc.clone());
-                Some(arc)
-            }
+                )
+                .collect::<Vec<_>>()
+        );
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(fl) = guard.get(&key) {
+            Some(fl.clone())
         } else {
-            None
-        };
+            if guard.len() >= FRESH_LOADER_CACHE_MAX {
+                guard.clear();
+            }
+            // 从 BASE 深拷贝而非 create_font_loader 全量重解析：19MB CJK fontdue
+            // 解析（~0.5s）只做一次，duplicate 复用已解析结果，每键成本降一个量级。
+            let mut fl = BASE_FONT_LOADER.get_or_init(create_font_loader).duplicate();
+            load_font_faces_into(&mut fl, base_dir, &font_scan_css);
+            let arc = std::sync::Arc::new(fl);
+            guard.insert(key, arc.clone());
+            Some(arc)
+        }
+    } else {
+        None
+    };
     let font_loader: &FontLoader = fresh_arc
         .as_deref()
         .unwrap_or_else(|| BASE_FONT_LOADER.get_or_init(create_font_loader));

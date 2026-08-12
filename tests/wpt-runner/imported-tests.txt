@@ -60,4 +60,4 @@ css/css-fonts/first-available-font-001.html css/css-fonts/first-available-font-0
 css/css-fonts/first-available-font-002.html css/css-fonts/first-available-font-002-ref.html == 2026-08-13 R3327-F first available font ch metric
 css/css-fonts/font-size-adjust-units-001.html css/css-fonts/font-size-adjust-units-001-ref.html == 2026-08-13 R3327-F used-font ex and ch metrics
 css/css-fonts/font-size-adjust-order-001.html css/css-fonts/font-size-adjust-order-001-ref.html == 2026-08-13 R3328-F glyph-derived x-height and normal line height
-css/css-fonts/size-adjust-03.html css/css-fonts/size-adjust-03-ref.html == 2026-08-13 R3329-F adjusted generic shaped advance
+css/css-fonts/size-adjust-03.html css/css-fonts/size-adjust-03-ref.html == 2026-08-13 R3329/R3330-F adjusted generic and descriptor advances

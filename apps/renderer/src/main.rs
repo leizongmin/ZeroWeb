@@ -48,6 +48,11 @@ use zero_protocol::{ProcessRole, is_disconnected_channel_message};
 
 /// 渲染进程 → 浏览器 IPC 发送端（stdout）。
 type IpcOutbound = PipeTransport<io::Empty, Box<dyn io::Write + Send>>;
+type LoadedFontMetadata<'a> = (
+    Option<&'a [zero_render_foundation::font::OpenTypeFeature]>,
+    &'a [(u32, u32)],
+    Option<f32>,
+);
 
 fn browser_ipc_disconnected(err: &str) -> bool {
     is_disconnected_channel_message(err)
@@ -1575,7 +1580,7 @@ impl RendererRuntime {
                     continue;
                 }
             };
-            match self.register_loaded_font(&req.family, req.weight, req.is_italic, None, (None, &[]), &bytes) {
+            match self.register_loaded_font(&req.family, req.weight, req.is_italic, None, (None, &[], None), &bytes) {
                 true => {
                     updated = true;
                     resolver.resolve(&req.resolve_id, "ok");
@@ -1628,7 +1633,7 @@ impl RendererRuntime {
         weight: Option<u16>,
         is_italic: bool,
         stretch: Option<f32>,
-        metadata: (Option<&[zero_render_foundation::font::OpenTypeFeature]>, &[(u32, u32)]),
+        metadata: LoadedFontMetadata<'_>,
         bytes: &[u8],
     ) -> bool {
         let Ok(id) = self.font_loader.load_font(bytes) else {
@@ -1639,6 +1644,9 @@ impl RendererRuntime {
             self.font_loader.register_font_features(id, features.to_vec());
         }
         self.font_loader.register_unicode_ranges(id, metadata.1.to_vec());
+        if let Some(scale) = metadata.2 {
+            self.font_loader.register_font_size_adjust(id, scale);
+        }
         for alias in zero_render_foundation::font::font_face_aliases(family, weight, is_italic, stretch) {
             self.font_loader.register_family_alias(&alias, id);
         }
@@ -1686,7 +1694,7 @@ impl RendererRuntime {
             let loaded = pending.load.drain_loaded_fonts();
             if !loaded.is_empty() {
                 let mut updated = false;
-                for (family, weight, is_italic, stretch, features, unicode_ranges, bytes) in loaded {
+                for (family, weight, is_italic, stretch, size_adjust, features, unicode_ranges, bytes) in loaded {
                     // R2417/R2493（weight, style）注册键规则抽入 register_loaded_font，
                     // 与 FontFace.load()（tick_font_face_loads）共用——bold/italic face 不注册到 plain family
                     //（否则 build_font_resolver 的「second face=bold」启发式顺序依赖错配，R2417）。
@@ -1695,7 +1703,7 @@ impl RendererRuntime {
                         weight,
                         is_italic,
                         stretch,
-                        (Some(&features), &unicode_ranges),
+                        (Some(&features), &unicode_ranges, size_adjust),
                         &bytes,
                     ) {
                         updated = true;

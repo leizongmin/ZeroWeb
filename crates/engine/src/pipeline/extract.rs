@@ -200,6 +200,7 @@ pub type ExtractedFontFace = (
     Option<u16>,
     bool,
     Option<f32>,
+    Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
     Vec<(u32, u32)>,
 );
@@ -223,6 +224,7 @@ pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
                     ff.weight,
                     is_italic,
                     ff.stretch,
+                    ff.size_adjust,
                     ff.feature_settings.clone(),
                     ff.unicode_ranges.clone(),
                 ))

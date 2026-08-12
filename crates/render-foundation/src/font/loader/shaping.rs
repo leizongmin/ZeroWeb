@@ -121,4 +121,12 @@ impl FontLoader {
             self.font_features.insert(font_id, features);
         }
     }
+
+    /// 注册 face 级 `size-adjust` 缩放因子。
+    pub fn register_font_size_adjust(&mut self, font_id: u32, scale: f32) {
+        if self.fonts.contains_key(&font_id) && scale.is_finite() && scale >= 0.0 {
+            self.font_size_adjustments.insert(font_id, scale);
+            self.shape_cache.lock().expect("shape cache poisoned").clear();
+        }
+    }
 }

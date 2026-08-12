@@ -149,6 +149,7 @@ type FontFaceSpec = (
     Option<u16>,
     bool,
     Option<f32>,
+    Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
     Vec<(u32, u32)>,
 );
@@ -175,6 +176,7 @@ pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
                     ff.weight,
                     is_italic,
                     ff.stretch,
+                    ff.size_adjust,
                     ff.feature_settings.clone(),
                     ff.unicode_ranges.clone(),
                 ))
@@ -233,7 +235,9 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
 /// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
 /// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources, weight, is_italic, stretch, feature_settings, unicode_ranges) in extract_font_faces(css) {
+    for (family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges) in
+        extract_font_faces(css)
+    {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
             continue;
@@ -247,6 +251,9 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
             {
                 loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
                 loader.register_unicode_ranges(id, unicode_ranges.clone());
+                if let Some(scale) = size_adjust {
+                    loader.register_font_size_adjust(id, scale);
+                }
                 for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
                     loader.register_family_alias(&alias, id);
                 }
@@ -286,6 +293,27 @@ mod feature_tests {
             .shape_text_cached_with_features(font_id, "fi", 16.0, TextDirection::LeftToRight, &[])
             .expect("shape with face defaults");
         assert_eq!(glyphs.len(), 2, "face-level liga=off must suppress fi ligature");
+    }
+
+    #[test]
+    fn font_face_size_adjust_registers_on_loaded_face() {
+        let fonts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/fonts");
+        let css = r#"@font-face {
+            font-family: LargeLato;
+            src: url(Lato-Medium.ttf);
+            size-adjust: 150%;
+        }"#;
+        let mut loader = FontLoader::new();
+        load_font_faces_into(&mut loader, Some(&fonts_dir), css);
+        let font_id = *loader
+            .build_font_resolver()
+            .get("LargeLato")
+            .expect("size-adjust face alias");
+
+        assert_eq!(
+            loader.adjusted_font_size(font_id, font_id, 16.0, FontSizeAdjustment::None),
+            24.0
+        );
     }
 
     #[test]

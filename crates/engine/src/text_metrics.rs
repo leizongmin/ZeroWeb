@@ -175,7 +175,9 @@ impl AdvanceSource for ShapedAdvanceSource {
         if !one_to_one_source_mapping(text, &shaped) || source_mapping_requires_offsets(text, &shaped) {
             return estimated;
         }
-        if !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None) {
+        if !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None)
+            || glyph_sizes_adjusted(font_size, &shaped)
+        {
             return contextual;
         }
         let unshaped: f32 = shaped.iter().map(|glyph| glyph.unshaped_advance_x).sum();
@@ -189,6 +191,12 @@ impl AdvanceSource for ShapedAdvanceSource {
 
 pub(crate) fn paint_base_with_contextual_delta(paint_base: f32, shaped: f32, unshaped: f32) -> f32 {
     paint_base + shaped - unshaped
+}
+
+pub(crate) fn glyph_sizes_adjusted(font_size: f32, glyphs: &[ShapedGlyph]) -> bool {
+    glyphs
+        .iter()
+        .any(|glyph| (glyph.font_size - font_size).abs() > f32::EPSILON)
 }
 
 #[cfg(test)]
@@ -269,5 +277,13 @@ mod tests {
     #[test]
     fn contextual_layout_advance_keeps_the_paint_base() {
         assert_eq!(paint_base_with_contextual_delta(20.0, 18.5, 19.0), 19.5);
+    }
+
+    #[test]
+    fn adjusted_glyph_size_requires_absolute_shaped_advance() {
+        let mut glyph = glyph('A', 1);
+        assert!(!glyph_sizes_adjusted(16.0, std::slice::from_ref(&glyph)));
+        glyph.font_size = 24.0;
+        assert!(glyph_sizes_adjusted(16.0, std::slice::from_ref(&glyph)));
     }
 }

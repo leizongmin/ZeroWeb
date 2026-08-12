@@ -27,6 +27,7 @@ type PendingFont = (
     Option<u16>,
     bool,
     Option<f32>,
+    Option<f32>,
     FontFeatures,
     Vec<(u32, u32)>,
     String,
@@ -37,6 +38,7 @@ pub type LoadedFont = (
     String,
     Option<u16>,
     bool,
+    Option<f32>,
     Option<f32>,
     Vec<OpenTypeFeature>,
     Vec<(u32, u32)>,
@@ -533,7 +535,7 @@ impl AsyncPageLoad {
         }
         let faces = extract_font_faces(&css);
         let base = url::Url::parse(&self.url).ok();
-        for (family, sources, weight, is_italic, stretch, feature_settings, unicode_ranges) in faces {
+        for (family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges) in faces {
             let features = zero_engine::font_feature_settings_to_opentype(&feature_settings);
             for src in &sources {
                 // data: 不走 fetch（与图片 data: 路径一致）；local() 已被 css-parser 排除。
@@ -551,6 +553,7 @@ impl AsyncPageLoad {
                     weight,
                     is_italic,
                     stretch,
+                    size_adjust,
                     features.clone(),
                     unicode_ranges.clone(),
                     abs.clone(),
@@ -565,7 +568,7 @@ impl AsyncPageLoad {
 
     fn poll_fonts(&mut self, changed: &mut bool) {
         self.font_pending.retain(
-            |(family, weight, is_italic, stretch, feature_settings, unicode_ranges, url, rx)| {
+            |(family, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges, url, rx)| {
                 if let Ok(result) = rx.try_recv() {
                     match result {
                         Ok(bytes) => {
@@ -579,6 +582,7 @@ impl AsyncPageLoad {
                                 *weight,
                                 *is_italic,
                                 *stretch,
+                                *size_adjust,
                                 feature_settings.clone(),
                                 unicode_ranges.clone(),
                                 bytes,
@@ -1161,6 +1165,7 @@ mod tests {
                 font-family: "TestFont";
                 src: url(test.woff);
                 font-stretch: condensed;
+                size-adjust: 150%;
                 font-feature-settings: "liga" off;
                 unicode-range: U+41-5A;
             }</style>
@@ -1186,6 +1191,7 @@ mod tests {
                 None,
                 false,
                 Some(75.0),
+                Some(1.5),
                 vec![OpenTypeFeature::new(*b"liga", 0)],
                 vec![(0x41, 0x5A)],
                 font_bytes,
@@ -1218,6 +1224,7 @@ mod tests {
                 "InlineFont".to_string(),
                 None,
                 false,
+                None,
                 None,
                 Vec::new(),
                 Vec::new(),
@@ -1286,7 +1293,9 @@ mod tests {
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
             if live_enabled {
-                for (family, _weight, _is_italic, _stretch, _features, ranges, bytes) in load.drain_loaded_fonts() {
+                for (family, _weight, _is_italic, _stretch, _size_adjust, _features, ranges, bytes) in
+                    load.drain_loaded_fonts()
+                {
                     if let Ok(id) = loader.load_font(&bytes) {
                         loader.register_unicode_ranges(id, ranges);
                         loader.register_family_alias(&family, id);
@@ -1345,7 +1354,9 @@ mod tests {
         let _decoy = loader.load_font(&ahem); // id 0：fallback 槽（镜像生产系统字体先载）
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
-            for (family, weight, _is_italic, stretch, _features, ranges, bytes) in load.drain_loaded_fonts() {
+            for (family, weight, _is_italic, stretch, _size_adjust, _features, ranges, bytes) in
+                load.drain_loaded_fonts()
+            {
                 if let Ok(id) = loader.load_font(&bytes) {
                     loader.register_unicode_ranges(id, ranges);
                     for alias in zero_render_foundation::font::font_face_aliases(&family, weight, false, stretch) {
@@ -1391,7 +1402,9 @@ mod tests {
         while load.is_active() {
             let _ = load.tick(&mut wv, &mut host, 500.0);
             // 镜像生产 drain：按 (weight, is_italic) 构注册键。
-            for (family, weight, is_italic, stretch, _features, ranges, bytes) in load.drain_loaded_fonts() {
+            for (family, weight, is_italic, stretch, _size_adjust, _features, ranges, bytes) in
+                load.drain_loaded_fonts()
+            {
                 if let Ok(id) = loader.load_font(&bytes) {
                     loader.register_unicode_ranges(id, ranges);
                     for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {

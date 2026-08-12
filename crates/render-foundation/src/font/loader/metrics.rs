@@ -59,7 +59,18 @@ impl FontLoader {
     ) -> f32 {
         // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
         let (metric, target) = match adjustment {
-            crate::font::FontSizeAdjustment::None => return font_size,
+            crate::font::FontSizeAdjustment::None => {
+                // https://drafts.csswg.org/css-fonts-5/#descdef-font-face-size-adjust
+                // The property preempts the descriptor; only apply face size-adjust
+                // when no font-size-adjust property is active.
+                if std::env::var("ZW_FONT_FACE_SIZE_ADJUST").as_deref() == Ok("0") {
+                    return font_size;
+                }
+                return self
+                    .font_size_adjustments
+                    .get(&resolved_font_id)
+                    .map_or(font_size, |scale| font_size * scale);
+            }
             crate::font::FontSizeAdjustment::Adjust { metric, target } => {
                 let target = match target {
                     Some(value) if value.is_finite() && value >= 0.0 => value,
@@ -128,6 +139,31 @@ mod tests {
         assert_eq!(ex_height_units(None, Some(500)), Some(500.0));
         assert_eq!(ex_height_units(None, Some(0)), None);
         assert_eq!(ex_height_units(None, None), None);
+    }
+
+    #[test]
+    fn font_size_adjust_property_preempts_face_size_adjust_descriptor() {
+        let data = include_bytes!("../../../../../tests/wpt-runner/fonts/Ahem.ttf");
+        let mut loader = FontLoader::new();
+        let id = loader.load_font(data).expect("Ahem");
+        loader.register_font_size_adjust(id, 1.5);
+
+        assert_eq!(
+            loader.adjusted_font_size(id, id, 40.0, crate::font::FontSizeAdjustment::None),
+            60.0
+        );
+        assert_eq!(
+            loader.adjusted_font_size(
+                id,
+                id,
+                40.0,
+                crate::font::FontSizeAdjustment::Adjust {
+                    metric: crate::font::FontSizeAdjustMetric::ExHeight,
+                    target: Some(0.8),
+                },
+            ),
+            40.0
+        );
     }
 
     #[test]

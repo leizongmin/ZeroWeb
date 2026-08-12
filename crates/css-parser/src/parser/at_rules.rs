@@ -116,6 +116,7 @@ impl<'a> Parser<'a> {
         let mut weight: Option<u16> = None;
         let mut style: Option<FontStyleValue> = None;
         let mut stretch: Option<f32> = None;
+        let mut size_adjust: Option<f32> = None;
         let mut feature_settings = crate::values::FontFeatureSettingsValue::Normal;
         let mut unicode_ranges = Vec::new();
         for decl in &declarations {
@@ -131,6 +132,8 @@ impl<'a> Parser<'a> {
                 style = Self::parse_font_face_style(&decl.value);
             } else if decl.property.eq_ignore_ascii_case("font-stretch") {
                 stretch = crate::values::parse_font_stretch(&decl.value);
+            } else if decl.property.eq_ignore_ascii_case("size-adjust") {
+                size_adjust = Self::parse_font_face_size_adjust(&decl.value);
             } else if decl.property.eq_ignore_ascii_case("font-feature-settings")
                 && let Some(parsed) = crate::values::parse_font_feature_settings(&decl.value)
             {
@@ -150,9 +153,17 @@ impl<'a> Parser<'a> {
             weight,
             style,
             stretch,
+            size_adjust,
             feature_settings,
             unicode_ranges,
         })
+    }
+
+    /// 解析 CSS Fonts `size-adjust` descriptor 为字号缩放因子。
+    fn parse_font_face_size_adjust(value: &str) -> Option<f32> {
+        // https://drafts.csswg.org/css-fonts-5/#descdef-font-face-size-adjust
+        let percentage = value.trim().strip_suffix('%')?.trim().parse::<f32>().ok()?;
+        (percentage.is_finite() && percentage >= 0.0).then_some(percentage / 100.0)
     }
 
     /// 解析 CSS Fonts `unicode-range` descriptor 为闭区间。

@@ -100,6 +100,8 @@ pub struct FontFaceRule {
     pub style: Option<FontStyleValue>,
     /// `font-stretch` 描述符解析后的百分比（`normal` = 100）；缺失或非法为 `None`。
     pub stretch: Option<f32>,
+    /// `size-adjust` 描述符解析后的缩放因子（`150%` = 1.5）；缺失或非法为 `None`。
+    pub size_adjust: Option<f32>,
     /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
     pub feature_settings: FontFeatureSettingsValue,
     /// `unicode-range` descriptor 的闭区间列表；空列表表示 unrestricted。

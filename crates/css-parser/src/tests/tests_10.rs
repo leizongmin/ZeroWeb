@@ -496,6 +496,25 @@ fn test_font_face_stretch_descriptor() {
 }
 
 #[test]
+fn test_font_face_size_adjust_descriptor() {
+    let cases = [
+        ("150%", Some(1.5)),
+        ("0%", Some(0.0)),
+        ("-1%", None),
+        ("1.5", None),
+        ("invalid", None),
+    ];
+    for (value, expected) in cases {
+        let css = format!("@font-face {{ font-family: A; src: url(a.woff); size-adjust: {value}; }}");
+        let stylesheet = Parser::parse_stylesheet(&css);
+        match &stylesheet.rules[0] {
+            Rule::FontFace(face) => assert_eq!(face.size_adjust, expected, "value: {value}"),
+            other => panic!("expected FontFace, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn test_font_face_unicode_range_descriptor() {
     let css = "@font-face { font-family: A; src: url(a.woff); unicode-range: U+41-5A, U+6??, U+1F600; }";
     let stylesheet = Parser::parse_stylesheet(css);
