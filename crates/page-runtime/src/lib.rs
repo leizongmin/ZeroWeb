@@ -24,7 +24,7 @@ pub mod html_actions;
 pub use html_actions::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionOutcome, HtmlActionPlan,
     HtmlActionRequest, HtmlUserAction, InvalidationKind, OptionActionState, PageEffect, PlannedEvent, PlannedMutation,
-    RadioActionState, TextActionState, plan_html_action, resolve_html_action,
+    RadioActionState, SummaryActionState, TextActionState, plan_html_action, resolve_html_action,
 };
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};

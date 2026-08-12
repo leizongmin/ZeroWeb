@@ -4,13 +4,13 @@ use std::sync::{Arc, Mutex};
 use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_dispatch_dom_event,
-    script_reset_form_controls, script_set_control_checked, script_set_option_selected, script_set_text_control_state,
-    script_text_control_snapshot,
+    script_reset_form_controls, script_set_control_checked, script_set_open, script_set_option_selected,
+    script_set_text_control_state, script_text_control_snapshot,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
     InvalidationKind, JsExecutor, OptionActionState, PageEffect, PageNodeHandle, PageNodeRef, PlannedEvent,
-    PlannedMutation, RadioActionState, TextActionState, plan_html_action, resolve_html_action,
+    PlannedMutation, RadioActionState, SummaryActionState, TextActionState, plan_html_action, resolve_html_action,
 };
 
 use super::{WebView, WebViewError, render_result_to_webview};
@@ -214,6 +214,14 @@ impl WebView {
                             body: None,
                         },
                     }
+                } else if let Some(summary) = zero_engine::summary_activation_snapshot(&html, &selector) {
+                    let Some(details) = self.page_node_ref_for_selector(&summary.details_selector) else {
+                        return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
+                    };
+                    ActionTargetState::Summary(SummaryActionState {
+                        details,
+                        open: summary.open,
+                    })
                 } else {
                     let Some(option) = zero_engine::option_activation_snapshot(&html, &selector) else {
                         return Ok(WebViewUserActionResult::noop(ActionNoopReason::NotApplicable));
@@ -392,6 +400,12 @@ impl WebView {
                         continue;
                     };
                     script_set_option_selected(&option_selector, &select_selector, *selected, *clear_others)
+                }
+                PlannedMutation::SetOpen { target, open } => {
+                    let Some(selector) = self.selector_for_page_node_handle(target.node().get()) else {
+                        continue;
+                    };
+                    script_set_open(&selector, *open)
                 }
                 PlannedMutation::ResetForm { form } => {
                     let Some(selector) = self.selector_for_page_node_handle(form.node().get()) else {

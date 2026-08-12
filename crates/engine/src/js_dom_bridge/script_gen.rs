@@ -254,6 +254,13 @@ else o.selected={selected};\
     )
 }
 
+/// 构造 details/dialog open 状态更新脚本，不派发事件。
+pub fn script_set_open(selector: &str, open: bool) -> String {
+    let selector = escape_js_string(selector);
+    let open = if open { "true" } else { "false" };
+    format!("(function(){{var e=document.querySelector('{selector}');if(e)e.open={open};}})()")
+}
+
 /// 构造「设置 location.hash」的 shim 脚本（P1a 导航，R3053）。宿主在 `<a href="#...">` 被 click 时执行：
 /// 调 shim `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange 事件 + 触 onhashchange）。
 /// headless 无 viewport → 不滚动到锚。hash 经 `escape_js_string` 安全嵌入。

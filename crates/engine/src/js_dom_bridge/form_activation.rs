@@ -2,6 +2,41 @@
 
 use super::*;
 
+/// details 首个 summary 激活所需状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryActivationSnapshot {
+    /// owning details 的唯一选择器。
+    pub details_selector: String,
+    /// 激活前 open 状态。
+    pub open: bool,
+}
+
+/// 解析 summary 默认动作；仅 details 的首个 summary 元素子可激活。
+/// https://html.spec.whatwg.org/multipage/interactive-elements.html#the-summary-element
+pub fn summary_activation_snapshot(html: &str, selector: &str) -> Option<SummaryActivationSnapshot> {
+    let doc = parse_html(html);
+    let summary = find_by_selector(&doc, selector)?;
+    if element_local_name(&doc, summary) != "summary" {
+        return None;
+    }
+    let details = doc.parent_node(summary)?;
+    if element_local_name(&doc, details) != "details" {
+        return None;
+    }
+    let first_summary = doc
+        .child_nodes(details)
+        .iter()
+        .copied()
+        .find(|child| element_local_name(&doc, *child) == "summary")?;
+    if first_summary != summary {
+        return None;
+    }
+    Some(SummaryActivationSnapshot {
+        details_selector: unique_selector_for_node(&doc, details)?,
+        open: doc.get_attribute(details, "open").is_some(),
+    })
+}
+
 /// 返回 owner 为指定 form 的 listed controls 唯一选择器，保持文档序。
 /// https://html.spec.whatwg.org/multipage/forms.html#category-listed
 pub fn form_control_selectors(html: &str, form_selector: &str) -> Vec<String> {

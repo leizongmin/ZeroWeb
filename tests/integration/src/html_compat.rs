@@ -801,6 +801,80 @@ fn fragment_anchor_updates_history_without_new_document() {
 }
 
 #[test]
+fn details_summary_activation_and_cancellation_conform_across_hosts() {
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-summary-element
+    const SCRIPT: &str = r#"
+globalThis.__detailsEvents=[];
+globalThis.__preventSummary=false;
+var details=document.getElementById('details');
+document.getElementById('summary').addEventListener('click',function(event){
+  globalThis.__detailsEvents.push('click:'+String(details.open));
+  if(globalThis.__preventSummary)event.preventDefault();
+});
+details.addEventListener('toggle',function(){
+  globalThis.__detailsEvents.push('toggle:'+String(details.open));
+});
+"#;
+    let html = format!(
+        r#"<html><body><details id="details"><summary id="summary">First</summary><summary id="second">Second</summary><p>Body</p></details><script>{SCRIPT}</script></body></html>"#
+    );
+
+    fn run(
+        html: &str,
+        executor: Option<&dyn JsExecutor>,
+    ) -> (String, bool, bool, Option<zero_page_runtime::ActionNoopReason>) {
+        let url = "https://zero.test/details";
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state(url);
+        webview.load_html(html, None);
+        if let Some(executor) = executor {
+            executor.set_dom_snapshot(html, url);
+            executor
+                .execute_script_direct(SCRIPT)
+                .expect("register details listeners");
+        }
+        let summary = webview.page_node_ref_for_selector("#summary").expect("first summary");
+        let second = webview.page_node_ref_for_selector("#second").expect("second summary");
+        let opened = dispatch(&mut webview, executor, summary, HtmlUserAction::Activate);
+        match executor {
+            Some(executor) => executor
+                .execute_script_direct("globalThis.__preventSummary=true")
+                .expect("enable summary cancellation"),
+            None => webview
+                .execute_script("globalThis.__preventSummary=true")
+                .expect("enable summary cancellation"),
+        };
+        let canceled = dispatch(&mut webview, executor, summary, HtmlUserAction::Activate);
+        let ignored = dispatch(&mut webview, executor, second, HtmlUserAction::Activate);
+        let script = "[String(document.getElementById('details').open),globalThis.__detailsEvents.join(',')].join('|')";
+        let observed = match executor {
+            Some(executor) => executor.execute_script_direct(script),
+            None => webview.execute_script(script).map_err(|error| error.to_string()),
+        }
+        .expect("details observable");
+        (observed, opened.canceled, canceled.canceled, ignored.noop_reason)
+    }
+
+    let mut renderer = zero_renderer::js_worker::RendererJsWorker::spawn(106);
+    let mut tab = zero_browser::tab_js_worker::TabJsWorkerHandle::spawn(zero_browser_shell::TabId(107));
+    let renderer_result = run(&html, Some(&renderer));
+    let tab_result = run(&html, Some(&tab));
+    let webview_result = run(&html, None);
+    renderer.shutdown();
+    tab.shutdown();
+
+    assert_eq!(renderer_result, tab_result);
+    assert_eq!(renderer_result, webview_result);
+    assert_eq!(renderer_result.0, "true|click:false,toggle:true,click:true");
+    assert!(!renderer_result.1);
+    assert!(renderer_result.2);
+    assert_eq!(
+        renderer_result.3,
+        Some(zero_page_runtime::ActionNoopReason::NotApplicable)
+    );
+}
+
+#[test]
 fn non_text_selection_api_matches_input_state() {
     // https://html.spec.whatwg.org/multipage/input.html#concept-input-apply
     let mut webview = WebView::new(WebViewConfig::default());

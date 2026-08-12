@@ -73,6 +73,15 @@ pub struct OptionActionState {
     pub previous_selected: Option<PageNodeRef>,
 }
 
+/// summary 激活规划所需的 details 状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryActionState {
+    /// owning details。
+    pub details: PageNodeRef,
+    /// 激活前 open 状态。
+    pub open: bool,
+}
+
 /// GET/POST 表单导航意图。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormNavigationIntent {
@@ -110,6 +119,8 @@ pub enum ActionTargetState {
         /// 目标 hash（含 `#`）。
         hash: String,
     },
+    /// details 首个 summary 的激活状态。
+    Summary(SummaryActionState),
     /// 顺序焦点移动的计算结果。
     Focus {
         /// 下一个 focus owner；`None` 表示清除焦点。
@@ -160,6 +171,13 @@ pub enum PlannedMutation {
         selected: bool,
         /// 是否先清除 owning select 的其他 option。
         clear_others: bool,
+    },
+    /// 设置 details/dialog open 状态。
+    SetOpen {
+        /// 目标 details/dialog。
+        target: PageNodeRef,
+        /// 新 open 状态。
+        open: bool,
     },
     /// 恢复 form 内所有 resettable controls 的默认状态。
     ResetForm {
@@ -337,6 +355,7 @@ pub fn plan_html_action(
         (HtmlUserAction::Activate, ActionTargetState::Fragment { hash }) => {
             Ok(plan_fragment(request.target, hash.clone()))
         }
+        (HtmlUserAction::Activate, ActionTargetState::Summary(state)) => Ok(plan_summary(request.target, state)),
         (HtmlUserAction::MoveFocus { .. }, ActionTargetState::Focus { next }) => Ok(plan_focus(request.target, *next)),
         (HtmlUserAction::Reset, ActionTargetState::Reset { form }) => Ok(plan_reset(request.target, *form)),
         (HtmlUserAction::Submit, ActionTargetState::Submit { form, submitter }) => {
@@ -483,6 +502,22 @@ fn plan_fragment(target: PageNodeRef, hash: String) -> HtmlActionPlan {
         followup_events: vec![],
         effects: vec![PageEffect::SetFragment { hash }],
         invalidation: InvalidationKind::None,
+    }
+}
+
+fn plan_summary(target: PageNodeRef, state: &SummaryActionState) -> HtmlActionPlan {
+    HtmlActionPlan {
+        target,
+        prepare: vec![],
+        cancelable_event: Some(PlannedEvent::simple(target, "click", true)),
+        rollback: vec![],
+        commit: vec![PlannedMutation::SetOpen {
+            target: state.details,
+            open: !state.open,
+        }],
+        followup_events: vec![PlannedEvent::simple(state.details, "toggle", false)],
+        effects: vec![],
+        invalidation: InvalidationKind::Paint,
     }
 }
 
@@ -1054,6 +1089,40 @@ mod tests {
             }]
         );
         assert_eq!(multiple.followup_events[0].target, node(11));
+    }
+
+    #[test]
+    fn summary_toggles_after_uncanceled_click() {
+        let plan = plan_html_action(
+            &request(node(1), HtmlUserAction::Activate),
+            4,
+            9,
+            &ActionTargetState::Summary(SummaryActionState {
+                details: node(2),
+                open: false,
+            }),
+        )
+        .unwrap();
+        assert!(plan.prepare.is_empty());
+        assert_eq!(
+            plan.commit,
+            [PlannedMutation::SetOpen {
+                target: node(2),
+                open: true,
+            }]
+        );
+        assert_eq!(plan.followup_events[0].target, node(2));
+        assert!(
+            resolve_html_action(
+                plan,
+                EventDispatchResult {
+                    default_allowed: false,
+                    html_changed: false,
+                },
+            )
+            .mutations
+            .is_empty()
+        );
     }
 
     #[test]
