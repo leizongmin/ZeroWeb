@@ -1,6 +1,8 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-13（R3340：deep-review zero-protocol 发现并修复第三项真 bug——`fd_socket_linux::publish_fd` 取得 `RawFd` 所有权但 SCM_RIGHTS 后从不关闭发送方本地 fd 副本（内核只为接收方复制，不关发送方），每帧 dma-buf 发布泄漏一个 fd → compositor 每帧泄漏直至 fd 耗尽崩溃；`OwnedFd` RAII 包裹成功+全部错误路径关闭，同步更新唯一调用方 `publish_compositor_fd` 所有权契约（避免 double-close）；确定性 `/proc/self/fd` 计数 delta 测试在修复前复现（success +12 / error +6）修复后过。zero-protocol 278→281 全绿，下游 compositor/integration 零回归。R3334+R3339+R3340 = 第三项真 bug 修复，deep-review 未触生产 crate 找真 bug 方向持续产出。）
+**最后更新**: 2026-08-13（R3341：deep-review zero-storage 发现并修复第四项真 bug——IndexedDB auto-increment key generator 在提供显式数值 key 时未按 W3C §1.8.2 推进（仅在 None 自动分配路径推进；非事务 `add`/`put` 显式 Number key 完全不推进，事务 `tx_add`/`tx_put` 仅窄匹配 `key==effective_next` 推进）→ 新建 auto-inc store `add(v,Some(Number(100)))` 后生成器仍为 1，下次自动分配 key=1 而非 101（spec 违规 + 错键序列，seed 参考数据再插新行场景破坏）。新 `advance_generator_for_explicit_key`（max 语义 floor(n)+1，小 key 不回退）应用到 add/put/tx_add/tx_put 四路径；3 回归测修复前复现（auto key 留 1 应 101；tx 同；+ 无回归测小 key 不回退）修复后过。zero-storage 657→660 全绿，engine 2049 零回归。R3334+R3339+R3340+R3341 = 第四项真 bug 修复。）
+
+> **R3340（上一轮）**：zero-protocol `fd_socket_linux::publish_fd` SCM_RIGHTS 发送方 fd 泄漏（compositor 每帧泄漏 fd）。OwnedFd RAII 修，确定性测试复现+回归过。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -159,6 +161,20 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### deep-review zero-storage 修复 IndexedDB auto-increment 显式数值 key 不推进生成器（本轮 R3341，storage indexed_db/types.rs——真 bug 修复）
+
+承接 R3340（zero-protocol fd 泄漏）。本轮 deep-review 推进至 **`zero-storage`**（14.7k LOC，IndexedDB/localStorage/Cache API/OPFS——实际生产代码 6249 行，其余为覆盖率测试）。逐文件审全部生产代码（lib.rs/local_storage/storage_manager/cache_api/service_worker/indexed_db/types+cursor）+ 委派 deep-review agent 复核 6 高风险域。发现并修复一项**真 bug**：
+
+- **根因**：`crates/storage/src/indexed_db/types.rs` 的 IndexedDB object store key generator（`store.next_key` / 事务局部 `tx_next`）**仅在 None（自动分配）路径推进**。W3C IndexedDB §1.8.2「Object store key generator」要求：当向使用 key generator 的 store 提供一个**数值** key 时，若该值 ≥ 生成器当前值，生成器须推进到 `providedKey + 1`。当前实现：
+  - 非事务 `add`/`put`（line 510-590）：`Some(Number(n))` 显式 key 路径**完全不触碰** `store.next_key`（只有 `None` 分支 `store.next_key += 1`）。
+  - 事务 `tx_add`/`tx_put`（line 1047-1142）：`tx_add` 仅窄匹配 `key == effective_next` 才推进（漏 key > effective_next 的 §1.8.2 情形）；`tx_put` 显式 key 路径完全不推进。
+- **生产影响**：新建 auto-inc store `add(v, Some(Number(100)))` 后生成器仍为 1，下一次 `add(v, None)` 自动分配 key=1（**spec 应为 101**）→ 与已存 key 冲突报错 / 错键序列。破坏「先 seed 参考数据（显式 id）再插新行（自增）」高频模式（如 ORM 种子数据、迁移脚本、用户表预置管理员账号）。真 spec 合规 bug，纯数据正确性，修在 storage crate 内部。
+- **修复**：新私有 helper `advance_generator_for_explicit_key(current, explicit)`——max 语义：`Number(n)` 且 finite 时 candidate=`floor(n)+1`（生成器只产整数键），`max(current, candidate)` 不回退；非数值/更小 key 不推进。应用到四路径：`add`/`put`（`Some` 分支调 helper 推进 live `store.next_key`）、`tx_add`/`tx_put`（解析 key 后调 helper 推进 tx-local `tx_next`，替换旧窄匹配；auto 分配时 helper 给出 effective_next+1 等价旧 +1 推进，行为不变）。
+- **复现+回归测**：3 测加 `lib.rs`——`test_idb_auto_increment_advances_on_explicit_large_number_key_r3341`（非事务 add 显式 100→auto 应 101 + put 显式 500→auto 应 501）、`test_idb_tx_auto_increment_advances_on_explicit_large_number_key_r3341`（tx 内显式 100→tx 内 auto 101→commit 写回→新 tx auto 102，验证 tx-local 推进 + commit 写回 + live 生效全链）、`test_idb_auto_increment_no_regression_on_small_explicit_key_r3341`（显式 key 1.5 < 生成器值 2 → 不回退，auto 仍 2，取 max 语义）。**确定性复现**：修复前前两测失败（auto key 留 `Number(1.0)` 应 101），修复后全过；无回归测始终过（确认修复不破坏既有小 key 行为）。
+- **为何净正向且零回归**：真 spec 合规修复（W3C §1.8.2）；纯 storage 内部逻辑，无公共 API 变更；既有 auto-inc 序列测试（R3229 全部）保持过（auto 分配路径行为不变）。**验证**：zero-storage **657→660 passed / 0 failed**（+3 测，test-guard）；下游 zero-engine 2049/0（IndexedDB JS shim 消费方）零回归；`cargo fmt` clean + clippy `-D warnings` 零警告。
+
+**下游判断（固化）**：R3341 = deep-review 未触生产 crate 的**第三刀**（zero-storage），第四项真 bug 修复（R3334 dispose-isolate panic + R3339 重定向头泄漏 + R3340 fd 泄漏 + R3341 auto-inc 生成器），证实该方向（非 native 线、非渲染线）**持续产出真 bug**。zero-storage 其余生产代码（localStorage/cache_api/service_worker/cursor）经逐文件 + agent 复核确认健壮（R3226-R3229 已修原子性/NaN/序/事务回滚，覆盖率充分）。**剩余未审生产 crate**：security(7.9k，CORS/CSP/same-origin 策略执行，安全策略绕过维度)、navigation/cache（网络级）——下轮续 deep-review（security 优先——安全策略 crate 最易藏真 bug 且影响面大），延续找真 bug 模式。
 
 ### deep-review zero-protocol 修复 publish_fd SCM_RIGHTS 发送方 fd 泄漏（本轮 R3340，protocol fd_socket_linux.rs——真 bug 修复）
 
