@@ -59,7 +59,8 @@ sudo apt-get install -y \
   libx11-dev \
   libxrandr-dev \
   libxi-dev \
-  libgl1-mesa-dev
+  libgl1-mesa-dev \
+  mesa-vulkan-drivers   # wgpu Vulkan 后端（GPU 渲染 / GPU 测试）必需；缺省时回退 GL/llvmpipe 软件渲染
 ```
 
 ### 常用命令

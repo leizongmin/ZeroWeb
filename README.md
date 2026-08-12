@@ -72,8 +72,12 @@ sudo apt-get install -y \
   libx11-dev \
   libxrandr-dev \
   libxi-dev \
-  libgl1-mesa-dev
+  libgl1-mesa-dev \
+  mesa-vulkan-drivers   # wgpu Vulkan 后端（GPU 渲染 / GPU 测试）必需；缺省时回退 GL/llvmpipe 软件渲染
 ```
+
+> [!NOTE]
+> 安装 `mesa-vulkan-drivers` 后可用 `vulkaninfo --summary`（vulkan-tools 包）验证 Vulkan 设备枚举。GPU 无头测试默认优先软件适配器（lavapipe，确定性优先）；验证真实 GPU 硬件路径可用 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.json cargo test -p zero-render-foundation --lib gpu:: -- --test-threads=1`（仅枚举 Intel ICD）。
 
 ### 2. 构建与测试
 
