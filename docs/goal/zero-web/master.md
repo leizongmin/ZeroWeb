@@ -1,6 +1,6 @@
 # ZeroWeb 运行时控制面板
 
-**最后更新**: 2026-08-12（R3321：web-api/runtime/* 10 用例升级锁 P1a 运行时行为——闭合「弱断言静默通过」真覆盖缺口：runtime/* 用例此前全用 dom_has_body/h1/render_completes 弱断言，内联脚本写 #log 不校验，运行时静默失效仍 100% 通过。本轮内联脚本加行为断言（失败抛）+ 加 js_executes_ok，使 WPT 真实验证微任务序/async-await/MO 派发/事件冒泡捕获/history。承接 R3320（Geometry 锁）继续锁饱和面）。前轮 R3320：Geometry Interfaces WPT 覆盖锁。
+**最后更新**: 2026-08-12（R3322：storage/* 同步用例升级锁 Web Storage API 行为——闭合 storage 域「弱断言静默通过」缺口：storage/* 全用 render_completes/dom_has_body 弱断言，内联脚本写结果不校验，存储静默失效仍通过。本轮升级 7 个同步 Web Storage 用例（localStorage/sessionStorage CRUD+length+clear+key 迭代+批量写）加行为断言 + js_executes_ok。承接 R3321（runtime 行为锁）继续锁饱和面。IndexedDB/Cache 异步用例 defer）。前轮 R3321：runtime/* 行为锁。
 
 > **R3311 起自主能力面饱和结论（再确认）**：zero-web 流 DOM/Web API + Canvas 主面实质饱和，剩余战略方向（escape-hatch 收敛 P1b、渲染深结构、GPU/Display）均需用户点名（rule 11）或环境依赖。本轮 R3317 为饱和后的机械窄补缺——核实 master.md「下一步」剩余窄候选列表的真实性，发现 Image/Audio/scrollIntoViewIfNeeded/checkValidity/reportValidity 等已实现（列表过时），仅 valueAsDate/stepUp/stepDown 真实缺失，本轮闭合。**下游判断**：剩余窄候选边际收益趋零，战略收敛继续等用户点名。
 
@@ -147,6 +147,29 @@ Limit。**前轮 R3303**：TextMetrics 全 10 字段。**前轮 R3302**：`:focu
 ---
 
 ## 最近完成的改进
+
+### storage/* WPT 用例升级锁 Web Storage API 行为（本轮 R3322，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口（storage 域）
+
+承接 R3321（runtime/* 行为锁）。**核查 storage/* 用例**（40 例，38 含 `<script>`，全用弱断言 `render_completes`/`dom_has_body`）发现同 R3321 的「弱断言静默通过」缺口：内联脚本写结果（`var v = localStorage.getItem(...)` / `localStorage.length`）**从不校验**，存储静默失效（getItem 返 undefined / length 不变 / clear 不清空）仍 100% 通过。本切片升级**同步 Web Storage 用例**（localStorage/sessionStorage CRUD + length + clear + key 迭代 + 批量写入）锁核心存储行为。
+
+| 用例 | 升级（断言 + 失败抛） |
+|------|----------------------|
+| localstorage-basic | getItem 读回 'value1' + removeItem 后 null |
+| localstorage-multi-keys | 3 键 length=3 + clear 后 0 |
+| localstorage-clear | before=3 + after=0 |
+| sessionstorage-ops | getItem='test' + removeItem 后 length=1 |
+| localstorage-iteration | length=3 + key(i) 全非 null（Storage.key() 迭代） |
+| localstorage-quota | 批量写 50 键 length=50 |
+| sessionstorage-events | removeItem 后 length=1 |
+
+| 文件 | 改动 |
+|------|------|
+| `tests/wpt-runner/src/runner/test_cases/test_cases_storage.rs` | 7 个同步 Web Storage 用例：内联脚本加行为断言（失败抛）+ assertions 加 `js_executes_ok`。 |
+| `tests/wpt-runner/src/runner/mod.rs` | +`storage_cases_assert_web_storage_behavior_r3322` 永久测试：全量遍历 storage/* js_executes_ok 用例（非采样），`check_js_executes_ok` 逐个验证行为。 |
+
+**诚实范围**：IndexedDB / Cache API 用例为**异步**（`req.onsuccess` 回调在 headless `run_page_scripts_strict` drain 窗口内不保证触发），本轮不升级（同 R3321 raf/worker 的谨慎），避免 flaky。**为何净正向且零回归**：纯测试增强（无生产代码改动）；行为正确时断言不抛，仅存储静默失效时 fail。**验证**：`cargo fmt` clean + `cargo clippy -p zero-wpt-runner --all-targets -D warnings` 零警告 + `runtime_path_tests` **12 passed / 0 failed**（11→12，+1 新测 R3322，0 回归，test-guard 包裹）。
+
+**下游判断（固化）**：R3320（Geometry 锁）+ R3321（runtime 行为锁）+ R3322（storage 行为锁）连续三轮闭合「弱断言静默通过」类覆盖缺口。剩余可挖：其他 category（navigation/security 等含 `<script>` 但无 js_executes_ok 强断言的用例）+ IndexedDB/Cache 异步用例（需评估 headless 异步可断言性）。战略方向（escape-hatch P1b、渲染深结构、GPU/Display）仍需用户点名（rule 11）或环境依赖。
 
 ### web-api/runtime/* WPT 用例升级锁 P1a 运行时行为（本轮 R3321，wpt-runner）—— 闭合「弱断言静默通过」真覆盖缺口
 
