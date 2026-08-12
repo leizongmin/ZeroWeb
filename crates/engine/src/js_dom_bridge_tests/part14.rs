@@ -365,6 +365,78 @@ fn test_canvas_measure_text_full_fields_r3303() {
 }
 
 #[test]
+fn test_canvas_text_state_props_r3304() {
+    // R3304：Canvas 2D 文本/线连接状态属性（ctx.font / textAlign / textBaseline / direction / miterLimit）。
+    // Rust 后端早全，此前缺 host op + JS shim 暴露 → ctx.font='20px Arial' no-op，measureText 恒用默认 10px。
+    // 本测断言：① 默认值（spec：font='10px sans-serif' / textAlign='start' / textBaseline='alphabetic' /
+    // direction='inherit' / miterLimit=10）；② setter→getter 往返（host 归一化）；③ ctx.font 改字号后
+    // measureText width 随之放大（证明 setFont 真改 FontDescriptor，measure_text 读 self.font.size）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url);
+
+    sandbox
+        .execute(
+            "var cv = document.getElementById('cv');\
+             var ctx = cv.getContext('2d');\
+             globalThis.__defFont = ctx.font;\
+             globalThis.__defAlign = ctx.textAlign;\
+             globalThis.__defBaseline = ctx.textBaseline;\
+             globalThis.__defDir = ctx.direction;\
+             globalThis.__defMiter = ctx.miterLimit;\
+             var w10 = ctx.measureText('hello').width;\
+             ctx.font = 'italic bold 20px Arial';\
+             globalThis.__setFont = ctx.font;\
+             ctx.textAlign = 'center';\
+             globalThis.__setAlign = ctx.textAlign;\
+             ctx.textBaseline = 'middle';\
+             globalThis.__setBaseline = ctx.textBaseline;\
+             ctx.direction = 'rtl';\
+             globalThis.__setDir = ctx.direction;\
+             ctx.miterLimit = 5;\
+             globalThis.__setMiter = ctx.miterLimit;\
+             var w20 = ctx.measureText('hello').width;\
+             globalThis.__widthScaled = String(w20 > w10 && Math.abs(w20 - 2 * w10) < 1e-3);\
+             globalThis.__hasProps = String(['font','textAlign','textBaseline','direction','miterLimit'].every(function (k) { return typeof ctx[k] !== 'undefined'; }));",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__defFont").unwrap().value, "10px sans-serif", "默认 font");
+    assert_eq!(sandbox.execute("globalThis.__defAlign").unwrap().value, "start", "默认 textAlign");
+    assert_eq!(sandbox.execute("globalThis.__defBaseline").unwrap().value, "alphabetic", "默认 textBaseline");
+    assert_eq!(sandbox.execute("globalThis.__defDir").unwrap().value, "inherit", "默认 direction");
+    assert_eq!(sandbox.execute("globalThis.__defMiter").unwrap().value, "10", "默认 miterLimit");
+    // font setter 经 host 归一化：'italic bold 20px Arial' → 'italic bold 20px Arial'。
+    assert_eq!(sandbox.execute("globalThis.__setFont").unwrap().value, "italic bold 20px Arial", "setFont 归一化往返");
+    assert_eq!(sandbox.execute("globalThis.__setAlign").unwrap().value, "center", "textAlign 往返");
+    assert_eq!(sandbox.execute("globalThis.__setBaseline").unwrap().value, "middle", "textBaseline 往返");
+    assert_eq!(sandbox.execute("globalThis.__setDir").unwrap().value, "rtl", "direction 往返");
+    assert_eq!(sandbox.execute("globalThis.__setMiter").unwrap().value, "5", "miterLimit 往返");
+    // 关键：font 改字号 10→20 后 measureText width 翻倍（证明 setFont 真改 FontDescriptor）。
+    assert_eq!(sandbox.execute("globalThis.__widthScaled").unwrap().value, "true", "font 字号 10→20 后 measureText width 翻倍");
+    assert_eq!(sandbox.execute("globalThis.__hasProps").unwrap().value, "true", "五个文本/线连接状态属性均 defined");
+
+    // 非法 font 串 spec 忽略（保持原值，不抛 + getter 仍返上一个有效值）。
+    sandbox
+        .execute(
+            "ctx.font = '20px'; /* 缺 family，非法 */\
+             globalThis.__badFont = ctx.font;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__badFont").unwrap().value, "italic bold 20px Arial", "非法 font 串忽略，保持原值");
+}
+
+#[test]
 fn test_canvas_ctx2d_gradient_r3079() {
     // R3079：Canvas Gradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop
     // + fillStyle 接 gradient + fill/fillRect 光栅化）。R3078 闭合 ctx2d 文本/ImageData；本切片闭合最后 2 canvas

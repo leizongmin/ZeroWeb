@@ -674,6 +674,135 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R3304：Canvas 2D 文本/线连接状态属性（ctx.font / textAlign / textBaseline / direction / miterLimit）。
+        // Rust 后端（CanvasContext::set_font/set_text_align/set_text_baseline/set_direction/set_miter_limit
+        // + getter）早全，但缺 host op 派发 + JS shim 暴露 → 页面 `ctx.font='20px Arial'` no-op，measureText/
+        // fillText 恒用默认 10px。setFont 解析 CSS font 简写串（FontDescriptor::parse_css），解析失败忽略（spec
+        // 忽略非法 font 串保持原值）。getter 返归一化 spec 字符串。https://html.spec.whatwg.org/multipage/canvas.html
+        "setFont" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid())
+                && let Some(fd) = zero_canvas::FontDescriptor::parse_css(arg(0))
+            {
+                ctx.set_font(fd);
+                // 解析失败：spec 忽略非法 font 串，保持原值（返 ok 不报错）。
+            }
+            "ok".into()
+        }
+        // ctx.font getter：返 CSS font 简写串（"style weight sizepx family"）。real browser 返解析后规范化串。
+        "getFont" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                let fd = ctx.font();
+                let style_str = match fd.style {
+                    zero_canvas::FontStyle::Italic => "italic ",
+                    zero_canvas::FontStyle::Normal => "",
+                };
+                let weight_str = match fd.weight {
+                    zero_canvas::FontWeight::Bold => "bold ",
+                    zero_canvas::FontWeight::Normal => "",
+                };
+                return format!("{}{}{}px {}", style_str, weight_str, fd.size, fd.family);
+            }
+            "10px sans-serif".into()
+        }
+        "setTextAlign" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_text_align(parse_text_align(arg(0)));
+            }
+            "ok".into()
+        }
+        "getTextAlign" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return match ctx.text_align() {
+                    zero_canvas::TextAlign::Start => "start",
+                    zero_canvas::TextAlign::End => "end",
+                    zero_canvas::TextAlign::Left => "left",
+                    zero_canvas::TextAlign::Right => "right",
+                    zero_canvas::TextAlign::Center => "center",
+                }
+                .into();
+            }
+            "start".into()
+        }
+        "setTextBaseline" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_text_baseline(parse_text_baseline(arg(0)));
+            }
+            "ok".into()
+        }
+        "getTextBaseline" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return match ctx.text_baseline() {
+                    zero_canvas::TextBaseline::Top => "top",
+                    zero_canvas::TextBaseline::Middle => "middle",
+                    zero_canvas::TextBaseline::Alphabetic => "alphabetic",
+                    zero_canvas::TextBaseline::Bottom => "bottom",
+                }
+                .into();
+            }
+            "alphabetic".into()
+        }
+        "setDirection" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_direction(parse_text_direction(arg(0)));
+            }
+            "ok".into()
+        }
+        "getDirection" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return match ctx.direction() {
+                    zero_canvas::TextDirection::Ltr => "ltr",
+                    zero_canvas::TextDirection::Rtl => "rtl",
+                    zero_canvas::TextDirection::Inherit => "inherit",
+                }
+                .into();
+            }
+            "inherit".into()
+        }
+        "setMiterLimit" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_miter_limit(f(0));
+            }
+            "ok".into()
+        }
+        "getMiterLimit" => {
+            if let Some(ctx) = reg.contexts.get(&hid()) {
+                return ctx.miter_limit().to_string();
+            }
+            "10".into()
+        }
         _ => "ok".into(),
+    }
+}
+
+/// 解析 textAlign 字符串（spec CSS：start/end/left/right/center，大小写不敏感，非法 → Start 默认）。
+fn parse_text_align(s: &str) -> zero_canvas::TextAlign {
+    use zero_canvas::TextAlign as A;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "end" => A::End,
+        "left" => A::Left,
+        "right" => A::Right,
+        "center" => A::Center,
+        _ => A::Start, // start + 非法值 → Start（spec 非法值忽略，保持原值；此处保守默认）
+    }
+}
+
+/// 解析 textBaseline 字符串（top/middle/alphabetic/bottom，大小写不敏感，非法 → Alphabetic 默认）。
+fn parse_text_baseline(s: &str) -> zero_canvas::TextBaseline {
+    use zero_canvas::TextBaseline as B;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "top" => B::Top,
+        "middle" => B::Middle,
+        "bottom" => B::Bottom,
+        _ => B::Alphabetic, // alphabetic + 非法值 → Alphabetic
+    }
+}
+
+/// 解析 direction 字符串（ltr/rtl/inherit，大小写不敏感，非法 → Inherit 默认）。
+fn parse_text_direction(s: &str) -> zero_canvas::TextDirection {
+    use zero_canvas::TextDirection as D;
+    match s.trim().to_ascii_lowercase().as_str() {
+        "ltr" => D::Ltr,
+        "rtl" => D::Rtl,
+        _ => D::Inherit, // inherit + 非法值 → Inherit
     }
 }

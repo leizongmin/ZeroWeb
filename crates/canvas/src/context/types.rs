@@ -47,6 +47,147 @@ impl Default for FontDescriptor {
     }
 }
 
+impl FontDescriptor {
+    /// 解析 CSS font 简写字符串（HTML Canvas `ctx.font`，https://drafts.csswg.org/css-fonts/#font-shorthand）。
+    ///
+    /// 格式：`[style] [variant] [weight] <size>[/<line-height>] <family>`——style/variant/weight 为
+    /// 可选关键字（序无关，size 之前），size 与 family 必需。R3304：canvas 文本状态面暴露 `ctx.font`
+    /// 需把页面设的 CSS font 串解析为 `FontDescriptor`。
+    ///
+    /// **诚实范围**（headless canvas 无真实字体管线）：① 仅解析 size 的 px/em/rem/pt（em/rem 同字号
+    /// 上下文近似作 px，pt 按 96/72）；size 关键字（`small`/`large`）→ 默认 size（无法精确映射）。
+    /// ② variant（`small-caps`）/line-height/stretch 解析后丢弃（canvas FontDescriptor 不建模这些）。
+    /// ③ weight 数字（100-900）/`bolder`/`lighter` 仅区分 Bold（≥600 或 `bold`/`bolder`）vs Normal。
+    /// ④ 解析失败返 `None`（real browser 忽略非法 font 串保持原值，本解析器同语义，调用方决定回退）。
+    /// family 保留原串（含逗号多族 / 引号），交字体解析流后续精确解析。
+    pub fn parse_css(s: &str) -> Option<Self> {
+        // 简单分词：按空白切，但 family（size 之后全部）整体保留（含逗号/引号）。
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+        if tokens.len() < 2 {
+            return None; // 至少 size + family
+        }
+
+        let mut style = FontStyle::Normal;
+        let mut weight = FontWeight::Normal;
+
+        // size 之前的关键字（style/variant/weight），序无关——遇 size token 停。
+        let mut i = 0;
+        while i < tokens.len() {
+            let t = tokens[i];
+            let lower = t.to_ascii_lowercase();
+            if lower == "italic" || lower == "oblique" {
+                style = FontStyle::Italic;
+                i += 1;
+                continue;
+            }
+            if lower == "normal" {
+                // normal 可表 style/variant/weight/stretch 任一 → 忽略（默认即 normal）
+                i += 1;
+                continue;
+            }
+            if lower == "bold" || lower == "bolder" {
+                weight = FontWeight::Bold;
+                i += 1;
+                continue;
+            }
+            if lower == "lighter" {
+                weight = FontWeight::Normal;
+                i += 1;
+                continue;
+            }
+            if lower == "small-caps" {
+                // font-variant：丢弃（不建模）
+                i += 1;
+                continue;
+            }
+            // 数字 weight（100-900）
+            if let Ok(n) = lower.parse::<u32>()
+                && (100..=900).contains(&n)
+            {
+                weight = if n >= 600 { FontWeight::Bold } else { FontWeight::Normal };
+                i += 1;
+                continue;
+            }
+            // 否则视作 size 起点（数字 + 单位 / 关键字）→ 停
+            break;
+        }
+        if i >= tokens.len() {
+            return None; // 缺 size
+        }
+
+        // size：解析 tokens[i]，可能含 `/line-height`。
+        let size_tok = tokens[i];
+        let size_part = size_tok.split('/').next().unwrap_or(size_tok);
+        // size 关键字（`medium`/`small`/`large`...）→ parse_font_size 返 None（canvas headless 无关键字→px
+        // 映射表）。real browser 这些关键字合法；此处保守：若 size 未解析出，返 None（调用方保持原 font）。
+        let size = parse_font_size(size_part)?;
+        let family_start = i + 1; // family 从 size 之后开始
+        if family_start >= tokens.len() {
+            return None; // 缺 family
+        }
+
+        // family：size 之后全部原串保留（重新从 trimmed 切，避分词丢逗号/引号内空白）。
+        // 找到 family 起点 = 第 (family_start) 个空白分隔 token 在 trimmed 中的偏移。
+        let family = extract_family(trimmed, family_start);
+        if family.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            family,
+            size,
+            weight,
+            style,
+        })
+    }
+}
+
+/// 解析 font-size 单位→px。支持 px/em/rem/pt（em/rem 无上下文近似作绝对 px）。
+/// 失败（无单位 / 未知单位 / 非数字）返 None。
+fn parse_font_size(s: &str) -> Option<f32> {
+    let lower = s.to_ascii_lowercase();
+    // 单位→乘数（无单位 / % / 关键字 / 其它 → None）。注意先剥 rem 再剥 em（后者前缀匹配）。
+    let (num_str, mul) = lower
+        .strip_suffix("px")
+        .map(|st| (st, 1.0))
+        .or_else(|| lower.strip_suffix("pt").map(|st| (st, 96.0 / 72.0)))
+        .or_else(|| lower.strip_suffix("rem").map(|st| (st, 16.0))) // root em 近似 16px
+        .or_else(|| lower.strip_suffix("em").map(|st| (st, 16.0)))?; // em 相对当前字号，无上下文近似 16px
+    let n = num_str.trim().parse::<f32>().ok()?;
+    if !n.is_finite() || n <= 0.0 {
+        return None;
+    }
+    Some(n * mul)
+}
+
+/// 从 CSS font 串中提取第 `token_index` 个空白分隔 token 起的子串作为 family（保留逗号/引号）。
+fn extract_family(s: &str, token_index: usize) -> String {
+    // 扫描字节，找第 token_index 个非空白 token 的起点，返回该起点到串尾的 trim 子串。
+    let bytes = s.as_bytes();
+    let mut idx = 0usize; // 已跳过的 token 数
+    let mut in_token = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        let is_ws = b == b' ' || b == b'\t' || b == b'\n' || b == b'\r';
+        if !is_ws {
+            if !in_token {
+                // token 起点
+                if idx == token_index {
+                    return s[i..].trim().to_string();
+                }
+                idx += 1;
+                in_token = true;
+            }
+        } else {
+            in_token = false;
+        }
+    }
+    String::new()
+}
+
 /// 2D 仿射变换矩阵。
 #[derive(Debug, Clone, Copy)]
 pub struct Transform2D {
@@ -832,6 +973,86 @@ mod tests {
         let desc = FontDescriptor::default();
         let debug = format!("{:?}", desc);
         assert!(debug.contains("sans-serif"));
+    }
+
+    // ── FontDescriptor::parse_css 测试（R3304：ctx.font CSS font 串解析）──
+
+    #[test]
+    fn test_font_descriptor_parse_css_basic() {
+        // 最简：size + family。
+        let d = FontDescriptor::parse_css("16px Arial").unwrap();
+        assert!((d.size - 16.0).abs() < f32::EPSILON);
+        assert_eq!(d.family, "Arial");
+        assert_eq!(d.weight, FontWeight::Normal);
+        assert_eq!(d.style, FontStyle::Normal);
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_style_weight() {
+        // italic bold 在 size 前，序无关。
+        let d = FontDescriptor::parse_css("italic bold 20px serif").unwrap();
+        assert!((d.size - 20.0).abs() < f32::EPSILON);
+        assert_eq!(d.style, FontStyle::Italic);
+        assert_eq!(d.weight, FontWeight::Bold);
+        assert_eq!(d.family, "serif");
+
+        // 反序同样识别。
+        let d2 = FontDescriptor::parse_css("bold italic 20px serif").unwrap();
+        assert_eq!(d2.style, FontStyle::Italic);
+        assert_eq!(d2.weight, FontWeight::Bold);
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_numeric_weight() {
+        // 数字 weight ≥600 → Bold，<600 → Normal。
+        let bold = FontDescriptor::parse_css("700 12px sans").unwrap();
+        assert_eq!(bold.weight, FontWeight::Bold);
+        let normal = FontDescriptor::parse_css("400 12px sans").unwrap();
+        assert_eq!(normal.weight, FontWeight::Normal);
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_line_height_dropped() {
+        // /line-height 应被丢弃，size 与 family 正确。
+        let d = FontDescriptor::parse_css("20px/1.5 Arial").unwrap();
+        assert!((d.size - 20.0).abs() < f32::EPSILON);
+        assert_eq!(d.family, "Arial");
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_units() {
+        assert!((FontDescriptor::parse_css("12pt serif").unwrap().size - 16.0).abs() < 0.01); // 12pt * 96/72 = 16
+        assert!((FontDescriptor::parse_css("2em serif").unwrap().size - 32.0).abs() < f32::EPSILON); // 2 * 16
+        assert!((FontDescriptor::parse_css("1rem serif").unwrap().size - 16.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_multi_family_preserved() {
+        // 逗号多族 family 整体保留（含内部空白）。
+        let d = FontDescriptor::parse_css("14px \"Helvetica Neue\", Arial, sans-serif").unwrap();
+        assert!((d.size - 14.0).abs() < f32::EPSILON);
+        assert!(d.family.contains("Helvetica Neue"));
+        assert!(d.family.contains("Arial"));
+        assert!(d.family.contains("sans-serif"));
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_invalid() {
+        // 缺 size / 缺 family / 空串 → None（real browser 忽略非法 font 串）。
+        assert!(FontDescriptor::parse_css("").is_none());
+        assert!(FontDescriptor::parse_css("Arial").is_none()); // 缺 size
+        assert!(FontDescriptor::parse_css("20px").is_none()); // 缺 family
+        assert!(FontDescriptor::parse_css("small Arial").is_none()); // size 关键字不支持 → None
+    }
+
+    #[test]
+    fn test_font_descriptor_parse_css_variant_dropped() {
+        // small-caps（font-variant）应被识别为关键字并丢弃，不破坏后续解析。
+        let d = FontDescriptor::parse_css("italic small-caps bold 18px monospace").unwrap();
+        assert!((d.size - 18.0).abs() < f32::EPSILON);
+        assert_eq!(d.style, FontStyle::Italic);
+        assert_eq!(d.weight, FontWeight::Bold);
+        assert_eq!(d.family, "monospace");
     }
 
     // ── Transform2D 测试 ──────────────────────────────────

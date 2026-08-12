@@ -1071,6 +1071,44 @@
       set: function (v) { this._lc = String(v); __zw_canvas_op(h, 'setLineCap', String(v)); },
       get: function () { return this._lc; }
     });
+    // ── slice R3304：文本/线连接状态属性（font / textAlign / textBaseline / direction / miterLimit）──
+    // Rust 后端早全（CanvasContext::set_font 等），此前缺 host op + JS shim 暴露 → ctx.font='20px Arial'
+    // no-op，measureText/fillText 恒用默认 10px。font setter 解析 CSS font 简写（host FontDescriptor::
+    // parse_css），非法串忽略（spec）；font getter 读 host 归一化串（解析后规范化，非原样回显）。
+    // textAlign/textBaseline/direction/miterLimit 用客户端镜像（免 host 往返，spec 值集封闭小）。
+    ctx._font = '10px sans-serif';
+    Object.defineProperty(ctx, 'font', {
+      set: function (v) {
+        this._font = String(v);
+        __zw_canvas_op(h, 'setFont', String(v));
+      },
+      get: function () {
+        // 读 host 归一化串（host 解析失败时保持原值，故 host 为权威）。
+        var f = String(__zw_canvas_op(h, 'getFont'));
+        if (f) this._font = f; // 同步客户端镜像
+        return this._font;
+      }
+    });
+    ctx._ta = 'start';
+    Object.defineProperty(ctx, 'textAlign', {
+      set: function (v) { this._ta = String(v); __zw_canvas_op(h, 'setTextAlign', String(v)); },
+      get: function () { return this._ta; }
+    });
+    ctx._tb = 'alphabetic';
+    Object.defineProperty(ctx, 'textBaseline', {
+      set: function (v) { this._tb = String(v); __zw_canvas_op(h, 'setTextBaseline', String(v)); },
+      get: function () { return this._tb; }
+    });
+    ctx._dir = 'inherit';
+    Object.defineProperty(ctx, 'direction', {
+      set: function (v) { this._dir = String(v); __zw_canvas_op(h, 'setDirection', String(v)); },
+      get: function () { return this._dir; }
+    });
+    ctx._ml = 10;
+    Object.defineProperty(ctx, 'miterLimit', {
+      set: function (v) { this._ml = +v; __zw_canvas_op(h, 'setMiterLimit', String(v)); },
+      get: function () { return this._ml; }
+    });
     // ── slice 4：globalCompositeOperation / shadow / putImageData（R2798）──
     // 客户端镜像串 + push host（同 lineJoin/lineCap 模式）。getter 取客户端镜像，免 host 往返。
     // **已知限制**：composite 仅对 stroke/rect-blit 生效（host composite_pixel），path-based fillRect 不消费。
