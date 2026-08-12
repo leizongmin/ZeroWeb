@@ -23,11 +23,14 @@ localStorage.setItem('key1', 'value1');
 var v = localStorage.getItem('key1');
 localStorage.removeItem('key1');
 var removed = localStorage.getItem('key1');
+// 断言 getItem 读回 setItem 值 + removeItem 后清空（null）——锁 Web Storage 同步 CRUD 行为。
+if (v !== 'value1') throw new Error('localstorage-basic: getItem got "' + v + '" expected "value1"');
+if (removed !== null) throw new Error('localstorage-basic: removed key not null (got "' + removed + '")');
 </script>
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string()],
+            assertions: vec!["render_completes".to_string(), "js_executes_ok".to_string()],
         },
         TestCase {
             id: "storage/localstorage-multi-keys".to_string(),
@@ -42,11 +45,14 @@ localStorage.setItem('c', '3');
 var len = localStorage.length;
 localStorage.clear();
 var after = localStorage.length;
+// 断言 length 反映 3 键 + clear 后归零。
+if (len !== 3) throw new Error('localstorage-multi-keys: length=' + len + ' expected 3');
+if (after !== 0) throw new Error('localstorage-multi-keys: after clear length=' + after + ' expected 0');
 </script>
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string()],
+            assertions: vec!["render_completes".to_string(), "js_executes_ok".to_string()],
         },
         TestCase {
             id: "storage/sessionstorage-basic".to_string(),
@@ -405,11 +411,13 @@ localStorage.setItem('c', '3');
 var before = localStorage.length;
 localStorage.clear();
 var after = localStorage.length;
+if (before !== 3) throw new Error('localstorage-clear: before=' + before + ' expected 3');
+if (after !== 0) throw new Error('localstorage-clear: after=' + after + ' expected 0');
 </script>
 </body></html>"#
                 .to_string(),
             css: String::new(),
-            assertions: vec!["render_completes".to_string()],
+            assertions: vec!["render_completes".to_string(), "js_executes_ok".to_string()],
         },
         TestCase {
             id: "storage/localstorage-json-roundtrip".to_string(),
@@ -698,11 +706,16 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
             for (var i = 0; i < localStorage.length; i++) {
                 keys.push(localStorage.key(i));
             }
+            // 断言 key(i) 迭代覆盖全 3 键（无 null，length=3）——锁 Storage.key() 迭代行为。
+            if (localStorage.length !== 3) throw new Error('localstorage-iteration: length=' + localStorage.length + ' expected 3');
+            for (var j = 0; j < keys.length; j++) {
+                if (keys[j] === null || keys[j] === undefined) throw new Error('localstorage-iteration: key(' + j + ') is null');
+            }
             document.body.innerHTML += '<p>Keys: ' + keys.join(', ') + '</p>';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         // ── sessionStorage 独立存储 ──
@@ -718,11 +731,14 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
             var val = sessionStorage.getItem('tab');
             sessionStorage.removeItem('temp');
             var count = sessionStorage.length;
+            // 断言 getItem 读回 + removeItem 后 length 减一（2→1）。
+            if (val !== 'test') throw new Error('sessionstorage-ops: getItem="' + val + '" expected "test"');
+            if (count !== 1) throw new Error('sessionstorage-ops: length=' + count + ' expected 1 after removeItem');
             document.body.innerHTML += '<p>Tab: ' + val + ', Count: ' + count + '</p>';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         // ═══════════════════════════════════════════════════════════════
@@ -872,12 +888,14 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
             for (var i = 0; i < 50; i++) {
                 localStorage.setItem('key_' + i, 'value_' + i + '_' + 'x'.repeat(100));
             }
+            // 断言批量写入 50 键全部持久化（length=50）。
+            if (localStorage.length !== 50) throw new Error('localstorage-quota: length=' + localStorage.length + ' expected 50');
             document.body.innerHTML += '<p>Stored ' + localStorage.length + ' items</p>';
             localStorage.clear();
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "js_executes_ok".into()],
         },
 
         TestCase {
@@ -890,11 +908,13 @@ document.getElementById('output').textContent = keys.length + ':' + afterRemove;
             sessionStorage.setItem('event_test', 'hello');
             sessionStorage.setItem('event_test2', 'world');
             sessionStorage.removeItem('event_test');
+            // 断言 removeItem 后 length=1（2 键 - 1 删）。
+            if (sessionStorage.length !== 1) throw new Error('sessionstorage-events: length=' + sessionStorage.length + ' expected 1');
             document.body.innerHTML += '<p>Session length: ' + sessionStorage.length + '</p>';
             </script>
             </body></html>"#.into(),
             css: String::new(),
-            assertions: vec!["dom_has_body".into(), "render_completes".into()],
+            assertions: vec!["dom_has_body".into(), "render_completes".into(), "js_executes_ok".into()],
         },
     ]
 }

@@ -415,6 +415,35 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3322：storage/* 同步用例 js_executes_ok——锁 Web Storage API 行为（localStorage/sessionStorage
+    /// CRUD + length + clear + key 迭代 + 批量写入）。此前 storage/* 全用弱断言（render_completes），
+    /// 内联脚本写结果不校验，存储静默失效（getItem 返 undefined / length 不变）仍通过。本轮升级内联脚本
+    /// 「行为完成→断言预期→失败抛」+ 加 js_executes_ok。全量遍历 storage/* js_executes_ok 用例。
+    #[test]
+    fn storage_cases_assert_web_storage_behavior_r3322() {
+        let ctx = TestContext::default();
+        let storage_cases: Vec<_> = builtin_tests()
+            .into_iter()
+            .filter(|c| c.id.starts_with("storage/") && c.assertions.iter().any(|a| a == "js_executes_ok"))
+            .collect();
+        assert!(
+            !storage_cases.is_empty(),
+            "storage/* js_executes_ok 用例应非空（本轮升级后应有 ≥1）"
+        );
+        let mut failed: Vec<String> = Vec::new();
+        for case in &storage_cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "storage/* js_executes_ok 用例应全部通过并断言 Web Storage 行为（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]
