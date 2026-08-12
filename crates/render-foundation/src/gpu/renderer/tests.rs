@@ -917,12 +917,71 @@ fn test_gpu_full_scene_gradient() {
         "right B should be ~255, got {}",
         pixels[right_idx + 2]
     );
+    // P1-5 加固：中间点 x=32 应为红蓝各半（渐变走 sRGB 纹理↔target 恒等链，
+    // 中间值字节无损；此前仅左右 2 像素断言，中部插值从未验证）
+    let mid_idx = (32 * 4) as usize;
+    assert!(
+        (pixels[mid_idx] as i32 - 128).abs() <= 5,
+        "mid R should be ~128, got {}",
+        pixels[mid_idx]
+    );
+    assert!(
+        (pixels[mid_idx + 2] as i32 - 128).abs() <= 5,
+        "mid B should be ~128, got {}",
+        pixels[mid_idx + 2]
+    );
 }
 
-/// 测试 render_full_scene_gpu 渲染阴影
+/// 测试 render_full_scene_gpu 渲染不透明无模糊阴影（P1-5 加固：原测试用半透明阴影
+/// 会被 scene_supported 拒绝（返回 false 触发回退），且单像素「非纯白」断言在
+/// 渲染被跳过、纹理未初始化时也能侥幸通过——连「什么都没画」都测不出来）。
+/// 现改为区域断言：阴影矩形（rect+offset）内全黑、阴影外保持白底。
 #[serial]
 #[test]
-fn test_gpu_full_scene_shadow() {
+fn test_gpu_full_scene_shadow_opaque() {
+    let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
+    let mut primitives = RenderPrimitives::default();
+    primitives.shadows.push(crate::primitive::ShadowPrimitive {
+        rect: Rect::new(4.0, 4.0, 24.0, 24.0),
+        color: Color::BLACK,
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur_radius: 0.0,
+        spread_radius: 0.0,
+        inset: false,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+
+    let rendered = renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert!(rendered, "不透明无模糊阴影属于 GPU 支持子集，应渲染成功");
+
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    assert_eq!(pixels.len(), 32 * 32 * 4);
+    // 阴影矩形 4..28 × 4..28 + offset(2,2) → 6..30 × 6..30
+    for &(px, py) in &[(10usize, 10usize), (20, 20), (6, 6), (29, 29)] {
+        let b = (py * 32 + px) * 4;
+        assert_eq!(&pixels[b..b + 4], &[0, 0, 0, 255], "阴影内 ({px},{py}) 应为不透明黑");
+    }
+    // 阴影外（2,2）保持 clear 白底
+    let outside = &pixels[(2 * 32 + 2) * 4..(2 * 32 + 2) * 4 + 4];
+    assert_eq!(outside, &[255, 255, 255, 255], "阴影外应保持白底");
+}
+
+/// 半透明阴影触发 CPU 回退（GPU 只画硬边不透明矩形，静默画错 → 返回 false）。
+#[serial]
+#[test]
+fn test_gpu_full_scene_shadow_semitransparent_returns_false() {
     let mut renderer = GpuRenderer::new_headless(32, 32).expect("headless renderer");
     let mut primitives = RenderPrimitives::default();
     primitives.shadows.push(crate::primitive::ShadowPrimitive {
@@ -936,8 +995,7 @@ fn test_gpu_full_scene_shadow() {
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
-
-    renderer.render_full_scene_gpu(
+    let rendered = renderer.render_full_scene_gpu(
         &primitives,
         &font_loader,
         &mut glyph_cache,
@@ -948,15 +1006,7 @@ fn test_gpu_full_scene_shadow() {
         &[],
         1.0,
     );
-
-    let pixels = renderer.read_pixels().expect("read_pixels");
-    assert_eq!(pixels.len(), 32 * 32 * 4);
-    // 阴影区域应有非白色像素
-    let shadow_px = &pixels[(10 * 32 + 10) * 4..(10 * 32 + 10) * 4 + 4];
-    assert!(
-        shadow_px[0] < 255 || shadow_px[1] < 255 || shadow_px[2] < 255,
-        "shadow area should not be pure white"
-    );
+    assert!(!rendered, "半透明阴影应返回 false 触发 CPU 回退");
 }
 
 /// 测试 render_full_scene_gpu 渲染线段
@@ -1727,15 +1777,22 @@ fn test_gpu_full_scene_filter_blur_softens_edges() {
     // 模糊(3) 后，边缘 G 通道应因白色渗入而上升（白 G=255，红 G=0）。
     // 白/红边界处 R 通道两侧均为 255（白=255, 红=255），不区分；用 G 通道判定：
     // 边缘像素 (8,8) 模糊前 G=0（纯红），模糊后邻近白色（G=255）渗入 → G 显著上升。
-    let edge_g = pixels[((8 * 32) + 8) * 4 + 1] as i32;
-    // 红块中心 (16,16) 远离边界，邻域全红，模糊后 G 仍接近 0。
+    // P1-5 加固：原相对阈值（中心<60、边缘>30）可容忍错误的模糊核（中心严重污染 /
+    // 边缘仅微量渗入都算过）；改为三角核 blur(3) 的精确语义：
+    // 中心 (16,16) 距边界 8px > 核半径 → 几乎不渗入（G<15）；
+    // 边缘 (8,8) 半邻域为白 → G 应显著（>80）；多采样 3 个边缘点取均值。
     let center_g = pixels[((16 * 32) + 16) * 4 + 1] as i32;
+    let edge_gs: i32 = [(8, 8), (8, 12), (10, 8)]
+        .iter()
+        .map(|&(px, py)| pixels[(py * 32 + px) * 4 + 1] as i32)
+        .sum();
+    let edge_avg = edge_gs / 3;
     assert!(
-        center_g < 60,
-        "blur center G should stay low (deep red), got {center_g}"
+        center_g < 15,
+        "blur center G should stay near 0 (8px from edge > blur radius), got {center_g}"
     );
     assert!(
-        edge_g > 30,
-        "edge pixel G should rise (white bleed-in) after blur, got {edge_g}"
+        edge_avg > 80,
+        "blur edge G should rise strongly (white bleed-in), got avg {edge_avg}"
     );
 }
