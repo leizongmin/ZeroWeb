@@ -71,9 +71,14 @@ impl FontLoader {
         adjustment: crate::font::FontSizeAdjustment,
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
         let &primary_id = font_ids.first()?;
-        let instance_ids = font_ids
+        // OPTIMIZATION: 缓存 key 用字体字节 hash 而非 instance_id——instance_id 全局
+        // 递增，perf/reftest 每帧新建 FontLoader 重新加载字体（id 重新分配）→ key 每帧
+        // 不同 → 缓存全 miss（`word-break: break-word` 中文长文逐字 fragment 每帧全量
+        // 重排，perf-gate morning paint 回归）。按内容寻址跨帧/跨 loader 稳定；
+        // 语义等价（不同字体数据 → 不同 hash，同 instance 隔离效果）。
+        let font_hashes = font_ids
             .iter()
-            .map(|font_id| self.font_instance_ids.get(font_id).copied())
+            .map(|font_id| self.get_font_data(*font_id).map(crate::font::font_bytes_hash))
             .collect::<Option<Vec<_>>>()?;
         let mut resolved_features = self.font_features.get(&primary_id).cloned().unwrap_or_default();
         for feature in features {
@@ -87,7 +92,7 @@ impl FontLoader {
             }
         }
         let key = (
-            instance_ids,
+            font_hashes,
             font_size.to_bits(),
             adjustment.cache_key(),
             direction,
@@ -108,7 +113,10 @@ impl FontLoader {
                 adjustment,
             );
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
-        if cache.len() >= 4096 {
+        // OPTIMIZATION: 4096 上限在 `word-break: break-word` 中文长文下逐字 fragment
+        //（每汉字一 key）数帧即清空 → 每帧全量 miss 重排（perf-gate morning paint
+        // 回归，R3243-F 扩大 fallback 调用面）。65536 覆盖长文全帧 key 集，跨帧命中。
+        if cache.len() >= 65536 {
             cache.clear();
         }
         cache.insert(key, glyphs.clone());

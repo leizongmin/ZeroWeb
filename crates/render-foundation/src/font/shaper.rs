@@ -9,7 +9,10 @@ use unicode_segmentation::UnicodeSegmentation;
 
 fn shaped_fallback_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0"))
+    // R3243-F 曾默认开启（!= "0"）：中文长文逐字 fragment 每帧多 face fallback
+    // shaping 重排，perf-gate morning paint 3x 回归。改回显式 opt-in（R3243-F 之前
+    // 语义）；reftest 实测 fallback 关闭零回归（css-fonts 17/20 与全量均一致）。
+    *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"))
 }
 
 /// 文本 shaping 方向。
@@ -246,6 +249,15 @@ impl<'a> TextShaper<'a> {
             return None;
         }
         let primary_id = FontId(*font_ids.first()?);
+        // OPTIMIZATION: fallback 链预构建一次（去重），避免每 grapheme 重建
+        //（resolve_font_for_code_point_in 每次重新拼 chain + contains 去重——
+        // 中文长文逐字扫描下 O(graphemes × chain) 分配/比较，perf-gate morning paint 回归）。
+        let mut chain = Vec::with_capacity(font_ids.len() + self.font_loader.fallback_chain().len());
+        for &font_id in font_ids.iter().chain(self.font_loader.fallback_chain()) {
+            if !chain.contains(&font_id) {
+                chain.push(font_id);
+            }
+        }
 
         let mut runs: Vec<(usize, usize, FontId)> = Vec::new();
         let mut used_fallback = false;
@@ -254,7 +266,10 @@ impl<'a> TextShaper<'a> {
                 .chars()
                 .find(|ch| !is_face_ignorable(*ch))
                 .or_else(|| grapheme.chars().next())?;
-            let font_id = FontId(self.font_loader.resolve_font_for_code_point_in(font_ids, selector)?);
+            let font_id = FontId(
+                self.font_loader
+                    .resolve_font_for_code_point_in_chain(&chain, selector)?,
+            );
             let end = start + grapheme.len();
             used_fallback |= font_id != primary_id;
             if let Some((_, run_end, run_font_id)) = runs.last_mut()

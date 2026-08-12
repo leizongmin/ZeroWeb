@@ -44,7 +44,7 @@ fn configure_inline_fonts(
         context = context.with_font_resolver(resolver.clone());
         if use_advance
             && inline_fonts.advance_source.is_some()
-            && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0")
+            && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1")
         {
             let overrides = crate::font_resolution::collect_font_overrides(doc, styles, root, resolver);
             context = context
@@ -1238,7 +1238,7 @@ pub(crate) fn measure_text_content(
                 })
                 .or_else(|| font_metric_provider.and_then(|provider| provider.font_id_of(&style.font_family)))
         });
-        let ordered_font_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
+        let ordered_font_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
             parent_style
                 .zip(font_resolver)
                 .map(|(style, resolver)| {

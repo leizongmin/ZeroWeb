@@ -602,14 +602,10 @@ impl FontLoader {
     }
 
     /// 按有序 CSS face 列表与系统回退链解析字符字体，不触发光栅化。
-    pub(crate) fn resolve_font_for_code_point_in(&self, font_ids: &[u32], code_point: char) -> Option<u32> {
-        let mut chain = Vec::with_capacity(font_ids.len() + self.fallback_chain.len());
-        for &font_id in font_ids.iter().chain(&self.fallback_chain) {
-            if !chain.contains(&font_id) {
-                chain.push(font_id);
-            }
-        }
-        chain.into_iter().find(|font_id| {
+    /// 在预构建的 fallback 链上解析字符字体（shaper 批量扫描复用同一 chain，
+    /// 避免逐 grapheme 重建去重——中文长文逐字扫描下 O(graphemes × chain) 分配）。
+    pub(crate) fn resolve_font_for_code_point_in_chain(&self, chain: &[u32], code_point: char) -> Option<u32> {
+        chain.iter().copied().find(|font_id| {
             self.font_allows_code_point(*font_id, code_point)
                 && self
                     .fonts

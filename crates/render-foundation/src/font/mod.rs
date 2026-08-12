@@ -37,6 +37,20 @@ pub struct FontFamilyMetrics {
 /// CSS family 到 first-available face 度量的映射。
 pub type FontFamilyMetricMap = std::collections::HashMap<String, FontFamilyMetrics>;
 
+/// 采样 FNV-1a 哈希（字体字节缓存键；O(1)）。
+///
+/// 全量遍历 19MB CJK TTC 开销大（~50ms/次 debug）——前 4KB + 总长采样：
+/// 不同字体的头部表数据几乎必然不同，冲突概率可忽略；每次调用成本 ~微秒。
+pub(crate) fn font_bytes_hash(bytes: &[u8]) -> u64 {
+    let window = &bytes[..bytes.len().min(4096)];
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in window {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h ^= bytes.len() as u64;
+    h
+}
 /// 字体描述
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDesc {

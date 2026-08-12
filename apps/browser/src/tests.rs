@@ -2785,7 +2785,7 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     let diff_ratio = |a: &[u8], b: &[u8]| -> f32 {
         let mut diff = 0usize;
         for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
-            let da = pa[0].abs_diff(pb[0]) + pa[1].abs_diff(pb[1]) + pa[2].abs_diff(pb[2]);
+            let da = pa[0].abs_diff(pb[0]) as u16 + pa[1].abs_diff(pb[1]) as u16 + pa[2].abs_diff(pb[2]) as u16;
             if da > 48 {
                 diff += 1;
             }

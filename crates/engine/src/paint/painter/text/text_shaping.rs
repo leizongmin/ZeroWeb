@@ -141,7 +141,9 @@ impl super::super::Painter {
             font_ids.retain(|font_id| *font_id != fragment_font_id.0);
             font_ids.insert(0, fragment_font_id.0);
         }
-        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("0") {
+        // R3243-F 曾默认开（`!= "0"`）：fallback 多 face shaping 每帧全量重排
+        // （perf-gate morning paint 回归）；改回显式 opt-in（R3243-F 之前语义）。
+        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
             font_ids.truncate(1);
         }
         font_ids
@@ -153,7 +155,7 @@ pub(super) fn fragment_font_size_adjustment(
     stored: Option<&zero_style_system::FontSizeAdjustValue>,
     fallback: &zero_style_system::FontSizeAdjustValue,
 ) -> zero_render_foundation::font::FontSizeAdjustment {
-    if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("0") {
+    if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
         return zero_render_foundation::font::FontSizeAdjustment::None;
     }
     crate::text_metrics::font_size_adjustment(
@@ -242,7 +244,7 @@ pub(super) fn configure_paint_ifc_advance(
     text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
-    if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("0")
+    if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("1")
     {
         return context;
     }
@@ -293,12 +295,12 @@ pub(super) fn configure_paint_ifc_advance(
         };
         primary_ids.entry(owner_id).or_insert(font_id.0);
     }
-    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
+    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
         text_node_shaping_font_ids.clone()
     } else {
         HashMap::new()
     };
-    let size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("0") {
+    let size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
         text_node_font_size_adjust.clone()
     } else {
         HashMap::new()

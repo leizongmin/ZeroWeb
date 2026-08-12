@@ -458,7 +458,11 @@ impl RenderPipeline {
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
         self.layout_engine.set_font_resolver(resolver.clone());
         if std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0")
-            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("0")
+            // R3234-F 曾改为默认开启（!= "0"）：layout advance 默认走 ShapedAdvanceSource，
+            // 每个文本 run 的 advance 测量都触发 rustybuzz shaping + 逐字符 fontdue 度量，
+            // perf-gate page/* layout_ms 37x 回归（welcome 1.7→60ms）。改回显式 opt-in
+            //（R3234-F 之前语义）；产品/reftest 路径均不设置此 env，行为与之前一致。
+            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1")
         {
             self.layout_engine
                 .set_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource));

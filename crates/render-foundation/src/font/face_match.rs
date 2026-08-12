@@ -133,6 +133,19 @@ pub fn resolve_font_faces(
         (false, true) => &[":italic", ""],
         (false, false) => &[""],
     };
+    // OPTIMIZATION: desired stretch 为 normal（默认）时先查 legacy 键——O(1) HashMap
+    // 命中，避免 available_widths 全表扫描（paint 每文本片段做一次字体解析 × O(resolver
+    // 键数) 字符串扫描/格式化/排序 → perf-gate page/* paint_ms ~4.5x 回归，R3255-F 引入）。
+    // normal 宽度的 face 始终注册 legacy 键（font_face_aliases），结果与 width 扫描一致；
+    // 仅当 legacy 键缺失（face 只注册了 stretch 键）时回退扫描。
+    if desired_stretch == NORMAL_FONT_STRETCH {
+        for suffix in style_suffixes {
+            let ids = lookup_faces(resolver, &format!("{family}{suffix}"));
+            if !ids.is_empty() {
+                return Some((ids, suffix.contains("italic")));
+            }
+        }
+    }
     let normal_basis = stretch_basis(NORMAL_FONT_STRETCH);
     for basis in width_preference(available_widths(resolver, family), stretch_basis(desired_stretch)) {
         for suffix in style_suffixes {
