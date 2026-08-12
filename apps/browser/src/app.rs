@@ -963,6 +963,12 @@ impl BrowserApp {
     /// 测试用：Tab 是否已有可滚动/可交互的页面内容。
     #[cfg(test)]
     fn is_tab_content_ready(&self, tab_id: TabId) -> bool {
+        // compositor 发布模式下页面经 compositor 进程位图显示，浏览器侧不重建
+        // primitives（last_render 恒 None，见 apply_compositor_paint_metadata）——
+        // 以已提交的 compositor 帧作为内容就绪判据。
+        if self.tabs.compositor_frame(tab_id).is_some() {
+            return true;
+        }
         let has_primitives = self
             .tabs
             .last_render(tab_id)
