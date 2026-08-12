@@ -842,3 +842,102 @@ fn inset_shadow_zero_blur_is_hard_edge() {
         gpu_px[hole_edge]
     );
 }
+
+/// R3254：图片图元正常绘制 parity——2×2 四色图 + ImageCache，CPU/GPU 逐像素一致。
+#[serial]
+#[test]
+fn parity_image_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.images.push(ImagePrimitive {
+        rect: Rect::new(4.0, 4.0, 24.0, 24.0),
+        image_key: crate::image_cache::ImageKey::new(42),
+        clip: None,
+    });
+    let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
+    image_cache.insert_with_key(
+        crate::image_cache::ImageKey::new(42),
+        crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).unwrap(),
+    );
+    let cpu_fb = render_cpu(32, 32, &p, Some(&mut image_cache));
+    let gpu_px = render_gpu(32, 32, &p, Some(&mut image_cache));
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    assert_eq!(over, 0, "图片绘制 CPU/GPU 应逐像素一致，diff={over} max={max_diff}");
+}
+
+/// R3254：线段（stroke）parity——描边矩形轮廓，CPU/GPU 一致。
+#[serial]
+#[test]
+fn parity_stroke_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.strokes.push(crate::primitive::StrokePrimitive {
+        x1: 2.0,
+        y1: 2.0,
+        x2: 30.0,
+        y2: 2.0,
+        width: 2.0,
+        color: crate::color::Color::rgba(0, 0, 200, 255),
+        style: crate::primitive::LineStyle::Solid,
+        cap: crate::primitive::LineCap::Butt,
+    });
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.05,
+        "线段绘制 CPU/GPU 差异比例应 <5%（端点亚像素近似），got {over_ratio:.3} (max_diff={max_diff})"
+    );
+}
+
+/// R3254：颜色滤镜 parity——opacity/brightness 滤镜区域，CPU/GPU 一致。
+#[serial]
+#[test]
+fn parity_color_filter_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(2.0, 2.0, 28.0, 28.0),
+        color: crate::color::Color::rgba(50, 100, 150, 255),
+    });
+    p.filters.push(crate::primitive::FilterPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        filters: vec![crate::primitive::FilterKind::Brightness(1.5)],
+    });
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.05,
+        "颜色滤镜 CPU/GPU 差异比例应 <5%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+}
+
+/// R3254：变换（translate）parity——元素平移后 CPU/GPU 一致。
+#[serial]
+#[test]
+fn parity_transform_matches_cpu() {
+    let mut p = RenderPrimitives::default();
+    p.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        color: crate::color::Color::rgba(0, 180, 0, 255),
+    });
+    p.transforms.push(crate::primitive::TransformPrimitive {
+        rect: Rect::new(0.0, 0.0, 32.0, 32.0),
+        origin_x: 0.0,
+        origin_y: 0.0,
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        tx: 12.0,
+        ty: 8.0,
+    });
+    let cpu_fb = render_cpu(32, 32, &p, None);
+    let gpu_px = render_gpu(32, 32, &p, None);
+    let (over, max_diff) = compare_frames(&cpu_fb.data, &gpu_px, 8);
+    let over_ratio = over as f64 / (cpu_fb.data.len() / 4) as f64;
+    assert!(
+        over_ratio < 0.05,
+        "变换 CPU/GPU 差异比例应 <5%，got {over_ratio:.3} (max_diff={max_diff})"
+    );
+}

@@ -2853,3 +2853,80 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     let parity3 = diff_ratio(&cpu3, &gpu3);
     assert!(parity3 < 0.15, "CPU/GPU 滚动后合成帧差异应 <15%（got {parity3:.3}）");
 }
+
+/// R3254：窗口 surface present 路径冒烟——真实 winit 窗口（Xvfb/CI 有显示）+
+/// `init_gpu`（wgpu 窗口 surface）→ `render_frame(present=true)`（swapchain 提交）。
+/// 窗口模式无法 read_pixels——验证「present 全流程不崩溃 + GPU 渲染器存活 +
+/// 表面状态流转」。无显示环境（无 DISPLAY/WAYLAND）或 wgpu surface 不可用
+///（无 GPU 后端）时优雅跳过（测试意义 = 有窗口环境下的 present 冒烟）。
+#[test]
+fn window_surface_present_smoke() {
+    use winit::application::ApplicationHandler;
+    use winit::event::WindowEvent;
+    use winit::event_loop::{ActiveEventLoop, EventLoop};
+    use winit::window::{Window, WindowId};
+
+    let has_display = std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok();
+    if !has_display {
+        eprintln!("skipping window present smoke (no DISPLAY/WAYLAND)");
+        return;
+    }
+
+    struct PresentProbe {
+        outcome: Option<String>,
+    }
+    impl ApplicationHandler for PresentProbe {
+        fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+            let attrs = winit::window::Window::default_attributes().with_title("zero-window-probe");
+            let Ok(window) = event_loop.create_window(attrs) else {
+                self.outcome = Some("window creation failed".to_string());
+                event_loop.exit();
+                return;
+            };
+            let window = std::sync::Arc::new(window);
+            let mut app = BrowserApp::new(RenderMode::Gpu);
+            app.window_focused = true;
+            app.init_gpu(&window);
+            if !app.gpu_renderer_is_some() {
+                // wgpu 窗口 surface 不可用（无 GPU 后端）——优雅跳过。
+                self.outcome = Some("gpu surface unavailable (no backend)".to_string());
+                event_loop.exit();
+                return;
+            };
+            // present 全流程：surface configure + swapchain acquire + 合成 + queue.present
+            //（configure 由主事件循环驱动，测试手动补齐——render_frame 依赖外部配置）。
+            let (w, h) = (window.inner_size().width.max(1), window.inner_size().height.max(1));
+            if let Some(gpu) = app.gpu_renderer_as_mut() {
+                gpu.configure_surface(w, h);
+            }
+            app.surface_configured = true;
+            app.render_frame(w, h, true);
+            self.outcome = Some(format!(
+                "presented {}x{} surface_configured={}",
+                w, h, app.surface_configured
+            ));
+            event_loop.exit();
+        }
+        fn window_event(&mut self, _el: &ActiveEventLoop, _id: WindowId, _e: WindowEvent) {}
+    }
+
+    // cargo test 线程非主线程——winit 30 默认拒绝；X11 用 any_thread（macOS/Windows
+    // 允许非主线程，Linux 需显式开启）。
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = winit::event_loop::EventLoop::builder();
+        builder.with_any_thread(true);
+        builder.build().expect("event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let event_loop = EventLoop::new().expect("event loop");
+    let mut probe = PresentProbe { outcome: None };
+    let _ = event_loop.run_app(&mut probe);
+    let outcome = probe.outcome.expect("probe should complete");
+    if outcome.contains("failed") || outcome.contains("unavailable") {
+        eprintln!("window present smoke skipped: {outcome}");
+        return;
+    }
+    assert!(outcome.starts_with("presented"), "窗口 present 应完成：{outcome}");
+}
