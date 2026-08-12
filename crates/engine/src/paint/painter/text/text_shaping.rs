@@ -406,6 +406,24 @@ pub(super) fn style_open_type_features(style: &zero_style_system::ComputedStyle)
         FontVariantNumericValue::StackedFractions => set_feature(&mut features, *b"afrc", 1),
     }
 
+    // https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+    use zero_style_system::FontVariantCapsValue;
+    match style.font_variant_caps {
+        FontVariantCapsValue::Normal => {}
+        FontVariantCapsValue::SmallCaps => set_feature(&mut features, *b"smcp", 1),
+        FontVariantCapsValue::AllSmallCaps => {
+            set_feature(&mut features, *b"smcp", 1);
+            set_feature(&mut features, *b"c2sc", 1);
+        }
+        FontVariantCapsValue::PetiteCaps => set_feature(&mut features, *b"pcap", 1),
+        FontVariantCapsValue::AllPetiteCaps => {
+            set_feature(&mut features, *b"pcap", 1);
+            set_feature(&mut features, *b"c2pc", 1);
+        }
+        FontVariantCapsValue::Unicase => set_feature(&mut features, *b"unic", 1),
+        FontVariantCapsValue::TitlingCaps => set_feature(&mut features, *b"titl", 1),
+    }
+
     if let zero_style_system::FontFeatureSettingsValue::Features(settings) = &style.font_feature_settings {
         for setting in settings {
             set_feature(&mut features, setting.tag, setting.value);

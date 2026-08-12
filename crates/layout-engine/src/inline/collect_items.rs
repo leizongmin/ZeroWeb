@@ -129,6 +129,9 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
+                                is_plaintext_bidi: style.is_some_and(|s| {
+                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                                }),
                             }));
                         }
                     }
@@ -470,6 +473,9 @@ impl InlineFormattingContext {
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
                                 }),
+                                is_plaintext_bidi: style.is_some_and(|s| {
+                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
+                                }),
                             }));
                         } else {
                             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
@@ -492,6 +498,9 @@ impl InlineFormattingContext {
                                 font_id: None,
                                 is_rtl: style.is_some_and(|s| {
                                     matches!(s.direction, zero_style_system::DirectionValue::Rtl)
+                                }),
+                                is_plaintext_bidi: style.is_some_and(|s| {
+                                    matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                                 }),
                             }));
                         }

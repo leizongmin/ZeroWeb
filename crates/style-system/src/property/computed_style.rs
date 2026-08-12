@@ -446,6 +446,8 @@ pub struct ComputedStyle {
     pub text_align_last: TextAlignLastValue,
     /// font-variant-numeric 属性。
     pub font_variant_numeric: FontVariantNumericValue,
+    /// font-variant-caps 属性。
+    pub font_variant_caps: FontVariantCapsValue,
 
     // ── Writing Direction / Tab ──
     /// direction 属性。

@@ -635,13 +635,16 @@ pub(crate) struct BidiFragmentCursor {
 }
 
 impl BidiFragmentCursor {
-    /// 为一个逻辑文本运行创建游标，带 CSS direction 参数。
+    /// 为一个逻辑文本运行创建游标，带 CSS direction 和 unicode-bidi 参数。
     ///
     /// UAX #9 HL1: `is_rtl = true` → paragraph base level = 1 (RTL),
     /// 使 BiDi 算法按 RTL 基方向重排序视觉文本。
-    pub(crate) fn with_direction(text: &str, is_rtl: bool) -> Self {
+    /// UAX #9 HL4: `is_plaintext = true` → 忽略 CSS direction，强制 auto-detect。
+    pub(crate) fn with_direction(text: &str, is_rtl: bool, is_plaintext: bool) -> Self {
         let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
-        let reordered = bidi_reorder_with_direction(text, enabled, is_rtl);
+        // unicode-bidi: plaintext → paragraph level auto-detect (CSS Writing Modes §2.2)
+        let effective_rtl = is_rtl && !is_plaintext;
+        let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl);
         let identity = reordered.visual_text == text
             && reordered
                 .visual_to_logical

@@ -254,6 +254,7 @@ impl PropertyRegistry {
             "overflow-wrap" => Some(OverflowWrap(OverflowWrapValue::Normal)),
             "text-align-last" => Some(TextAlignLast(TextAlignLastValue::Auto)),
             "font-variant-numeric" => Some(FontVariantNumeric(FontVariantNumericValue::Normal)),
+            "font-variant-caps" => Some(FontVariantCaps(FontVariantCapsValue::Normal)),
 
             // Writing Direction / Tab
             "direction" => Some(Direction(DirectionValue::Ltr)),
@@ -386,6 +387,7 @@ impl PropertyRegistry {
                 | "overflow-wrap"
                 | "text-align-last"
                 | "font-variant-numeric"
+                | "font-variant-caps"
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
@@ -589,6 +591,7 @@ impl PropertyRegistry {
             "overflow-wrap",
             "text-align-last",
             "font-variant-numeric",
+            "font-variant-caps",
             "direction",
             "unicode-bidi",
             "tab-size",

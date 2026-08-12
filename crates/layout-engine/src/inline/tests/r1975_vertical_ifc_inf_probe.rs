@@ -40,6 +40,7 @@ fn ahem_run(text: &str) -> TextRun {
         is_ahem_font: true,
         font_id: None,
         is_rtl: false,
+        is_plaintext_bidi: false,
     }
 }
 

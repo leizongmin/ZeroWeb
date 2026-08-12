@@ -71,7 +71,7 @@ impl InlineFormattingContext {
             match item {
                 InlineItem::Text(run) => {
                     // 应用 BiDi 重排序（RTL 文本需要视觉顺序）
-                    let mut source_cursor = BidiFragmentCursor::with_direction(&run.text, run.is_rtl);
+                    let mut source_cursor = BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 

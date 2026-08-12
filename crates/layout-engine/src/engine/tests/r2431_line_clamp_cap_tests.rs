@@ -31,6 +31,7 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            is_plaintext_bidi: false,
         })
         .collect();
     ctx.break_into_lines(runs);

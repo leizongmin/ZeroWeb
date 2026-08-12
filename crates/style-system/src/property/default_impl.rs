@@ -280,6 +280,7 @@ impl Default for ComputedStyle {
             overflow_wrap: OverflowWrapValue::Normal,
             text_align_last: TextAlignLastValue::Auto,
             font_variant_numeric: FontVariantNumericValue::Normal,
+            font_variant_caps: FontVariantCapsValue::Normal,
 
             // Writing Direction / Tab
             direction: DirectionValue::Ltr,

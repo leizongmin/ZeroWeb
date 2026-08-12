@@ -71,6 +71,9 @@ pub struct TextRun {
     /// CSS `direction` 属性：true = rtl, false = ltr（默认）。
     /// 用于 BiDi 段落基方向（UBA paragraph level）。
     pub is_rtl: bool,
+    /// CSS `unicode-bidi: plaintext` — 强制 BiDi 段落方向从文本内容自动检测，
+    /// 忽略 CSS `direction`（UAX #9 HL4 / CSS Writing Modes §2.2）。
+    pub is_plaintext_bidi: bool,
 }
 
 impl TextRun {
@@ -101,6 +104,7 @@ impl TextRun {
             is_ahem_font: false,
             font_id: None,
             is_rtl: false,
+            is_plaintext_bidi: false,
         }
     }
 

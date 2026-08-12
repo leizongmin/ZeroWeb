@@ -146,6 +146,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_variant_numeric = parent.font_variant_numeric.clone();
             true
         }
+        "font-variant-caps" => {
+            child.font_variant_caps = parent.font_variant_caps;
+            true
+        }
         "direction" => {
             child.direction = parent.direction.clone();
             true
@@ -1233,6 +1237,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-variant-numeric" => {
             style.font_variant_numeric = default_style.font_variant_numeric;
+            true
+        }
+        "font-variant-caps" => {
+            style.font_variant_caps = default_style.font_variant_caps;
             true
         }
         "user-select" => {

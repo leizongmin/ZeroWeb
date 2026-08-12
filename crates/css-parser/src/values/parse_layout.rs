@@ -710,6 +710,40 @@ pub fn parse_font_variant_numeric(value: &str) -> Option<FontVariantNumericValue
     }
 }
 
+/// CSS font-variant-caps 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontVariantCapsValue {
+    /// normal。
+    Normal,
+    /// small-caps。
+    SmallCaps,
+    /// all-small-caps。
+    AllSmallCaps,
+    /// petite-caps。
+    PetiteCaps,
+    /// all-petite-caps。
+    AllPetiteCaps,
+    /// unicase。
+    Unicase,
+    /// titling-caps。
+    TitlingCaps,
+}
+
+/// 解析 CSS font-variant-caps 属性值。
+pub fn parse_font_variant_caps(value: &str) -> Option<FontVariantCapsValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "normal" => Some(FontVariantCapsValue::Normal),
+        "small-caps" => Some(FontVariantCapsValue::SmallCaps),
+        "all-small-caps" => Some(FontVariantCapsValue::AllSmallCaps),
+        "petite-caps" => Some(FontVariantCapsValue::PetiteCaps),
+        "all-petite-caps" => Some(FontVariantCapsValue::AllPetiteCaps),
+        "unicase" => Some(FontVariantCapsValue::Unicase),
+        "titling-caps" => Some(FontVariantCapsValue::TitlingCaps),
+        _ => None,
+    }
+}
+
 /// CSS `font-feature-settings` 中的单个 OpenType feature。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontFeatureSetting {

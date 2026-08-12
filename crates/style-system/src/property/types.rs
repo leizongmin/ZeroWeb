@@ -926,6 +926,27 @@ pub enum FontVariantNumericValue {
     StackedFractions,
 }
 
+/// CSS font-variant-caps 属性值。
+/// https://drafts.csswg.org/css-fonts-4/#font-variant-caps-prop
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FontVariantCapsValue {
+    /// normal（默认值）— 不激活任何 caps OpenType feature。
+    #[default]
+    Normal,
+    /// small-caps → OT `smcp`。
+    SmallCaps,
+    /// all-small-caps → OT `smcp` + `c2sc`。
+    AllSmallCaps,
+    /// petite-caps → OT `pcap`。
+    PetiteCaps,
+    /// all-petite-caps → OT `pcap` + `c2pc`。
+    AllPetiteCaps,
+    /// unicase → OT `unic`。
+    Unicase,
+    /// titling-caps → OT `titl`。
+    TitlingCaps,
+}
+
 /// CSS direction 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectionValue {
@@ -1436,6 +1457,8 @@ pub enum PropertyValue {
     TextAlignLast(TextAlignLastValue),
     /// font-variant-numeric 值。
     FontVariantNumeric(FontVariantNumericValue),
+    /// font-variant-caps 值。
+    FontVariantCaps(FontVariantCapsValue),
     /// font-feature-settings 值。
     FontFeatureSettings(FontFeatureSettingsValue),
     /// font-variant-ligatures 值。

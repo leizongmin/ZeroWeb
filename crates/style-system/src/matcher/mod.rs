@@ -1215,7 +1215,7 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             let v = trimmed.to_ascii_lowercase();
             v == "auto" || v == "normal" || v == "none"
         }
-        "font-variant-numeric" | "font-feature-settings" | "font-variation-settings" => true,
+        "font-variant-numeric" | "font-variant-caps" | "font-feature-settings" | "font-variation-settings" => true,
         // https://drafts.csswg.org/css-fonts-4/#font-synthesis
         "font-synthesis" => parse_font_synthesis(trimmed).is_some(),
         "font-synthesis-weight" | "font-synthesis-style" | "font-synthesis-small-caps" | "font-synthesis-position" => {

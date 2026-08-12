@@ -715,6 +715,21 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        // ── FontVariantCaps 属性 ──
+        "font-variant-caps" => {
+            if let Some(v) = values::parse_font_variant_caps(value) {
+                style.font_variant_caps = match v {
+                    zero_css_parser::values::FontVariantCapsValue::Normal => FontVariantCapsValue::Normal,
+                    zero_css_parser::values::FontVariantCapsValue::SmallCaps => FontVariantCapsValue::SmallCaps,
+                    zero_css_parser::values::FontVariantCapsValue::AllSmallCaps => FontVariantCapsValue::AllSmallCaps,
+                    zero_css_parser::values::FontVariantCapsValue::PetiteCaps => FontVariantCapsValue::PetiteCaps,
+                    zero_css_parser::values::FontVariantCapsValue::AllPetiteCaps => FontVariantCapsValue::AllPetiteCaps,
+                    zero_css_parser::values::FontVariantCapsValue::Unicase => FontVariantCapsValue::Unicase,
+                    zero_css_parser::values::FontVariantCapsValue::TitlingCaps => FontVariantCapsValue::TitlingCaps,
+                };
+                return true;
+            }
+        }
         // ── Direction 属性 ──
         "direction" => {
             if let Some(v) = values::parse_direction(value) {
