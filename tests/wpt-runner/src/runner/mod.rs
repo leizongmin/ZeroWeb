@@ -444,6 +444,38 @@ mod runtime_path_tests {
             failed.join("\n")
         );
     }
+
+    /// R3323：js-dom/* 含脚本用例 js_executes_ok——锁核心 DOM API 行为（dataset camelCase↔kebab 反射 /
+    /// classList toggle·replace·contains / element.matches·closest / CustomEvent dispatch /
+    /// DocumentFragment 批量插入 / compareDocumentPosition 位掩码 / innerHTML·outerHTML /
+    /// MutationObserver takeRecords / attachShadow / createComment·createTextNode）。此前 js-dom/*
+    /// 含脚本用例全用弱断言（dom_has_body/render_completes/no_panic），内联脚本算结果不校验，DOM API
+    /// 静默失效仍通过。本轮升级 10 个用例加行为断言 + js_executes_ok。全量遍历 js-dom/* js_executes_ok 用例。
+    #[test]
+    fn js_dom_cases_assert_dom_api_behavior_r3323() {
+        let ctx = TestContext::default();
+        let js_dom_cases: Vec<_> = builtin_tests()
+            .into_iter()
+            .filter(|c| c.id.starts_with("js-dom/") && c.assertions.iter().any(|a| a == "js_executes_ok"))
+            .collect();
+        assert!(
+            js_dom_cases.len() >= 10,
+            "js-dom/* js_executes_ok 用例应 ≥10（本轮升级后，实际 {}）",
+            js_dom_cases.len()
+        );
+        let mut failed: Vec<String> = Vec::new();
+        for case in &js_dom_cases {
+            if let Err(e) = check_js_executes_ok(&case.html, &ctx) {
+                failed.push(format!("{}: {}", case.id, e));
+            }
+        }
+        assert!(
+            failed.is_empty(),
+            "js-dom/* js_executes_ok 用例应全部通过并断言 DOM API 行为（{} 例失败）:\n{}",
+            failed.len(),
+            failed.join("\n")
+        );
+    }
 }
 /// 根据预期元数据管理已知行为：
 #[allow(dead_code)]

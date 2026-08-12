@@ -982,6 +982,11 @@ var el = document.getElementById('user');
 var id = el.dataset.userId;
 var name = el.dataset.userName;
 el.dataset.active = 'true';
+// 断言 dataset camelCase↔kebab-case 反射（data-user-id → userId）+ 写回反射。
+if (id !== '42') throw new Error('dataset-api: userId="' + id + '" expected "42"');
+if (name !== 'Alice') throw new Error('dataset-api: userName="' + name + '" expected "Alice"');
+if (el.dataset.active !== 'true') throw new Error('dataset-api: active writeback failed');
+if (el.getAttribute('data-active') !== 'true') throw new Error('dataset-api: getAttribute(data-active) reflection failed');
 document.getElementById('result').textContent = id + '-' + name;
 </script>
 </body></html>"#.to_string(),
@@ -990,6 +995,7 @@ document.getElementById('result').textContent = id + '-' + name;
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1007,6 +1013,11 @@ el.classList.replace('visible', 'hidden');
 el.classList.add('new-class');
 var contains = el.classList.contains('hidden');
 var count = el.classList.length;
+// toggle('active') 移除 active；replace visible→hidden；add new-class → 最终 'hidden new-class'。
+if (!contains) throw new Error('classlist-advanced: contains(hidden)=false expected true');
+if (count !== 2) throw new Error('classlist-advanced: length=' + count + ' expected 2');
+if (el.classList.contains('active')) throw new Error('classlist-advanced: active should have been toggled off');
+if (!el.classList.contains('new-class')) throw new Error('classlist-advanced: new-class missing after add');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1014,6 +1025,7 @@ var count = el.classList.length;
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1033,6 +1045,12 @@ var isLink = link.matches('a.link');
 var li = link.closest('li');
 var menu = link.closest('.menu');
 var nav = link.closest('nav');
+// 断言 matches + closest（逐层祖先查询）+ 不匹配返 null。
+if (!isLink) throw new Error('element-matches-closest: matches(a.link)=false expected true');
+if (li === null || li.tagName !== 'LI') throw new Error('element-matches-closest: closest(li) failed: ' + (li && li.tagName));
+if (menu === null || !menu.classList.contains('menu')) throw new Error('element-matches-closest: closest(.menu) failed');
+if (nav === null || nav.id !== 'nav') throw new Error('element-matches-closest: closest(nav) failed');
+if (link.closest('section') !== null) throw new Error('element-matches-closest: closest(section) should be null');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1040,6 +1058,7 @@ var nav = link.closest('nav');
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1058,6 +1077,9 @@ document.getElementById('target').addEventListener('my-event', function(e) {
 });
 var evt = new CustomEvent('my-event', { detail: { key: 'value' } });
 document.getElementById('target').dispatchEvent(evt);
+// dispatchEvent 同步触发监听器——received + detail 应已设置。
+if (!received) throw new Error('custom-event: listener not invoked by dispatchEvent');
+if (!detail || detail.key !== 'value') throw new Error('custom-event: detail.key="' + (detail && detail.key) + '" expected "value"');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1065,6 +1087,7 @@ document.getElementById('target').dispatchEvent(evt);
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1081,7 +1104,11 @@ for (var i = 0; i < 5; i++) {
     li.textContent = 'Item ' + i;
     fragment.appendChild(li);
 }
+// 断言 fragment 累积 5 子（appendChild 真实工作）——DocumentFragment 批量插入的容器侧验证。
+if (fragment.childNodes.length !== 5) throw new Error('document-fragment: fragment childNodes=' + fragment.childNodes.length + ' expected 5');
 document.getElementById('list').appendChild(fragment);
+// appendChild 后 fragment 应清空（子迁移到 list）——锁 DocumentFragment 一次性插入语义。
+if (fragment.childNodes.length !== 0) throw new Error('document-fragment: fragment not emptied after append (leftover=' + fragment.childNodes.length + ')');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1090,6 +1117,7 @@ document.getElementById('list').appendChild(fragment);
                 "render_completes".to_string(),
                 "layout_has_children".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1108,6 +1136,10 @@ var second = document.getElementById('second');
 var pos = first.compareDocumentPosition(second);
 // second FOLLOWING first = Node.DOCUMENT_POSITION_FOLLOWING (4)
 var isFollowing = (pos & 4) !== 0;
+if (!isFollowing) throw new Error('node-compare-document-position: second not detected as FOLLOWING first (pos=' + pos + ')');
+// 反向：first 相对 second 应 PRECEDING (2)。
+var posRev = second.compareDocumentPosition(first);
+if ((posRev & 2) === 0) throw new Error('node-compare-document-position: first not detected as PRECEDING second (pos=' + posRev + ')');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1115,6 +1147,7 @@ var isFollowing = (pos & 4) !== 0;
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1131,6 +1164,12 @@ var html = content.innerHTML;
 content.innerHTML = '<span>Replaced</span>';
 var holder = document.getElementById('holder');
 holder.innerHTML = '<em>New content</em>';
+// 初始 innerHTML 读回含 <p>（selector-identity 元素读 parsed DOM 快照）；outerHTML 含元素 tag + id。
+// 注：set innerHTML 写入 handle 子树不回写 parsed 快照（headless handle-only 限制，R3316），故不校验写回。
+if (html.indexOf('<p>') < 0 && html.indexOf('<P>') < 0) throw new Error('innerhtml-outerhtml: initial innerHTML missing <p>: "' + html + '"');
+if (content.outerHTML.indexOf('content') < 0) throw new Error('innerhtml-outerhtml: outerHTML missing element id: "' + content.outerHTML + '"');
+// holder 初始空（写前），outerHTML 亦含 tag。
+if (holder.outerHTML.indexOf('holder') < 0) throw new Error('innerhtml-outerhtml: holder outerHTML missing id: "' + holder.outerHTML + '"');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1139,6 +1178,7 @@ holder.innerHTML = '<em>New content</em>';
                 "render_completes".to_string(),
                 "layout_has_children".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1161,6 +1201,13 @@ target.textContent = 'Changed';
 target.setAttribute('data-x', '1');
 var records = observer.takeRecords();
 observer.disconnect();
+// textContent + setAttribute 经 Proxy trap 同步记录——takeRecords 应捕获变更（至少 1 条记录）。
+// headless 可能将多次 mutation 合并/部分捕获，故仅断言「至少 1 条记录 + 存在 attributes 或 childList 类型」。
+if (records.length < 1) throw new Error('mutation-observer: takeRecords returned 0 records, expected >= 1');
+var types = records.map(function (r) { return r.type; });
+var hasAttr = types.indexOf('attributes') >= 0;
+var hasChild = types.indexOf('childList') >= 0;
+if (!hasAttr && !hasChild) throw new Error('mutation-observer: no attributes/childList record (types=' + types.join(',') + ')');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1168,6 +1215,7 @@ observer.disconnect();
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1181,6 +1229,14 @@ observer.disconnect();
 var host = document.getElementById('host');
 var shadow = host.attachShadow({ mode: 'open' });
 shadow.innerHTML = '<p>Shadow content</p>';
+// attachShadow 返 ShadowRoot（nodeType 11 + '#shadow-root' nodeName + host 反向引用 + mode）。
+// 注：shadow 树内容不经宿主 querySelectorAll 遍历（headless 渲染走 flat tree），故仅断言 root 身份。
+if (!shadow || shadow.nodeType !== 11) throw new Error('shadow-dom-basic: attachShadow did not return a ShadowRoot (nodeType=' + (shadow && shadow.nodeType) + ')');
+if (shadow.host !== host) throw new Error('shadow-dom-basic: shadow.host not the host element');
+if (shadow.mode !== 'open') throw new Error('shadow-dom-basic: shadow.mode="' + shadow.mode + '" expected "open"');
+// 二次 attachShadow 应拒绝（spec：host 已附加 shadow → NotSupportedError）。
+try { host.attachShadow({ mode: 'open' }); throw new Error('shadow-dom-basic: second attachShadow should throw'); }
+catch (e) { if (e.message === 'shadow-dom-basic: second attachShadow should throw') throw e; /* expected */ }
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1188,6 +1244,7 @@ shadow.innerHTML = '<p>Shadow content</p>';
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
         TestCase {
@@ -1203,6 +1260,12 @@ var target = document.getElementById('target');
 target.parentNode.insertBefore(comment, target);
 var text = document.createTextNode(' appended');
 target.appendChild(text);
+// createComment → 注释节点（nodeType 8 + 正确 data）；createTextNode → 文本节点（nodeType 3 + 正确 data）。
+// 注：insertBefore 在 handle-identity 子树下的 sibling 链读取有 headless 限制（R3316），故仅断言节点工厂身份。
+if (!comment || comment.nodeType !== 8) throw new Error('element-create-comment: createComment nodeType=' + (comment && comment.nodeType) + ' expected 8');
+if (comment.data !== 'This is a comment') throw new Error('element-create-comment: comment.data="' + comment.data + '"');
+if (!text || text.nodeType !== 3) throw new Error('element-create-comment: createTextNode nodeType=' + (text && text.nodeType) + ' expected 3');
+if (text.data !== ' appended') throw new Error('element-create-comment: text.data="' + text.data + '"');
 </script>
 </body></html>"#.to_string(),
             css: String::new(),
@@ -1210,6 +1273,7 @@ target.appendChild(text);
                 "dom_has_body".to_string(),
                 "render_completes".to_string(),
                 "no_panic".to_string(),
+                "js_executes_ok".to_string(),
             ],
         },
     ]
