@@ -512,7 +512,7 @@ fn test_incremental_render_performance_criterion() {
 
     assert!(inc_primitives.is_some(), "增量渲染应返回结果");
 
-    let inc_count = inc_primitives.unwrap().len();
+    let inc_count = inc_primitives.unwrap().0.len();
 
     // 增量渲染应产生明显更少的图元
     assert!(
@@ -566,7 +566,7 @@ fn test_incremental_render_dirty_area_sizes() {
         },
     };
     let small_inc = pipeline.incremental_paint(&doc, &[], small).unwrap();
-    assert!(small_inc.len() < full_count, "小脏区域增量渲染应更少图元");
+    assert!(small_inc.0.len() < full_count, "小脏区域增量渲染应更少图元");
 
     // 中等脏区域（10%）
     let medium = Rect {
@@ -577,13 +577,13 @@ fn test_incremental_render_dirty_area_sizes() {
         },
     };
     let medium_inc = pipeline.incremental_paint(&doc, &[], medium).unwrap();
-    assert!(medium_inc.len() < full_count, "中等脏区域增量渲染应更少图元");
+    assert!(medium_inc.0.len() < full_count, "中等脏区域增量渲染应更少图元");
 
     // 小脏区域应比中等脏区域产生更少或相等的图元
     assert!(
-        small_inc.len() <= medium_inc.len(),
+        small_inc.0.len() <= medium_inc.0.len(),
         "小脏区域 ({}) 应 <= 中等脏区域 ({}) 图元数",
-        small_inc.len(),
-        medium_inc.len()
+        small_inc.0.len(),
+        medium_inc.0.len()
     );
 }
