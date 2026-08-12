@@ -107,3 +107,16 @@
 - GPU 新增功能后记得收窄 `scene_supported` 回退面（如 P2-8 alpha 移除半透明检测）。
 - 排查工具：`VK_ICD_FILENAMES` 单 ICD 验证真硬件；`--test-threads=1` 防 wgpu SIGSEGV。
 - 排查基线已文档化：改 GPU 渲染代码时对照上表逐项核对，避免新增分叉；每修一项在表中划掉。
+
+## wgpu 30 升级与 dma-buf 结论（2026-08-12，R3275）
+
+- **wgpu 24→30 升级完成**（R3275）：PollType/Queue::present/CurrentSurfaceTexture/
+  multiview_mask/depth_slice/as_hal 等 API 迁移，render-foundation 598 + GPU 117 全过。
+- **真 dma-buf 仍受 upstream 限制**：
+  - 导入：wgpu-hal 30 Vulkan `texture_from_dmabuf_fd`（unsafe）+ `Device::as_hal`/
+    `Texture::as_hal` 路径存在，但 hal Texture **无公开包装 API**（无 from_hal）——
+    需 hal 层命令编码或 upstream 补包装
+  - 导出：wgpu-hal 30 **无 dma-buf 导出 API**（仅导入）——compositor→browser
+    零拷贝共享仍只能 memfd 回读
+  - 结论：完整真 dma-buf 闭环需 wgpu 31+（或 upstream 暴露 export + from_hal），
+    当前保持 memfd 路径；升级本身是必要前置（as_hal 骨架已就位）
