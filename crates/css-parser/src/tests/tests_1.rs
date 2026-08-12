@@ -915,20 +915,14 @@ fn test_parse_position_values() {
 #[test]
 /// 测试 tokenizer 对 Unicode 范围的解析
 fn test_tokenize_unicode_range() {
-    // The tokenizer doesn't produce UnicodeRange tokens - it treats them as identifiers
-    // This test verifies the current behavior
-
-    // 测试基本 Unicode 范围 - just check we get some tokens
     let tokens: Vec<_> = Tokenizer::new("U+0-7F").collect_tokens();
-    assert!(tokens.len() > 0);
+    assert_eq!(tokens[0], Token::UnicodeRange("0".into(), "7F".into()));
 
-    // 测试单个 Unicode 码点 - just check we get some tokens
     let tokens: Vec<_> = Tokenizer::new("U+41").collect_tokens();
-    assert!(tokens.len() > 0);
+    assert_eq!(tokens[0], Token::UnicodeRange("41".into(), "41".into()));
 
-    // 测试通配符范围 - just check we get some tokens
     let tokens: Vec<_> = Tokenizer::new("U+4??").collect_tokens();
-    assert!(tokens.len() > 0);
+    assert_eq!(tokens[0], Token::UnicodeRange("400".into(), "4FF".into()));
 }
 
 #[test]

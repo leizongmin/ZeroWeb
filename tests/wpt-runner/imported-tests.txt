@@ -53,3 +53,6 @@ css/css-fonts/font-variant-alternates-19.html css/css-fonts/font-variant-alterna
 css/css-fonts/font-variant-alternates-layers.html css/css-fonts/font-variant-alternates-layers-ref.html == 2026-08-12 R3273-F font-feature-values layer cascade
 css/CSS2/bidi-text/bidi-glyph-mirroring-001.xht css/CSS2/bidi-text/bidi-glyph-mirroring-001-ref.xht == 2026-08-12 R3319-F container bidi override + L4 mirroring
 css/CSS2/bidi-text/bidi-glyph-mirroring-002.xht css/CSS2/bidi-text/bidi-glyph-mirroring-002-ref.xht == 2026-08-12 R3319-F bidi mirroring guard
+css/css-fonts/size-adjust-02.html css/css-fonts/size-adjust-02-ref.html == 2026-08-12 R3325-F font face unicode-range
+css/css-fonts/font-face-unicode-range-2.html css/css-fonts/font-face-unicode-range-2-ref.html == 2026-08-12 R3325-F unicode-range face selection
+css/css-fonts/font-face-unicode-range-nbsp.html css/css-fonts/font-face-unicode-range-nbsp-ref.html == 2026-08-12 R3325-F unicode-range whitespace selection

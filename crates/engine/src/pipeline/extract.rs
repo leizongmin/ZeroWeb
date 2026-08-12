@@ -201,6 +201,7 @@ pub type ExtractedFontFace = (
     bool,
     Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
+    Vec<(u32, u32)>,
 );
 
 /// 从 CSS 文本提取所有有效的 `@font-face` 规则。
@@ -223,6 +224,7 @@ pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
                     is_italic,
                     ff.stretch,
                     ff.feature_settings.clone(),
+                    ff.unicode_ranges.clone(),
                 ))
             }
             _ => None,

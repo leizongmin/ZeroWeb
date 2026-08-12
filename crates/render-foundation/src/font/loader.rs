@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 mod metrics;
 mod shaping;
+mod unicode_range;
 
 /// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
 ///
@@ -228,6 +229,8 @@ pub struct FontLoader {
     font_instance_ids: HashMap<u32, u64>,
     /// `@font-face font-feature-settings` 提供的 face 级默认 feature。
     font_features: HashMap<u32, Vec<crate::font::OpenTypeFeature>>,
+    /// `@font-face unicode-range` 提供的 face 级闭区间；缺项表示 unrestricted。
+    font_unicode_ranges: HashMap<u32, Vec<(u32, u32)>>,
     /// 字体族到 ID 的映射
     family_map: HashMap<String, Vec<u32>>,
     /// 回退字体链（CJK、Emoji 等），在主字体缺字时使用
@@ -252,6 +255,7 @@ impl FontLoader {
             next_id: 0,
             font_instance_ids: HashMap::new(),
             font_features: HashMap::new(),
+            font_unicode_ranges: HashMap::new(),
             family_map: HashMap::new(),
             fallback_chain: Vec::new(),
             bitmap_glyphs: HashMap::new(),
@@ -273,6 +277,7 @@ impl FontLoader {
             next_id: self.next_id,
             font_instance_ids: self.font_instance_ids.clone(),
             font_features: self.font_features.clone(),
+            font_unicode_ranges: self.font_unicode_ranges.clone(),
             family_map: self.family_map.clone(),
             fallback_chain: self.fallback_chain.clone(),
             bitmap_glyphs: self.bitmap_glyphs.clone(),
@@ -588,9 +593,11 @@ impl FontLoader {
             }
         }
         chain.into_iter().find(|font_id| {
-            self.fonts
-                .get(font_id)
-                .is_some_and(|font| code_point.is_whitespace() || font.has_glyph(code_point))
+            self.font_allows_code_point(*font_id, code_point)
+                && self
+                    .fonts
+                    .get(font_id)
+                    .is_some_and(|font| code_point.is_whitespace() || font.has_glyph(code_point))
         })
     }
 
@@ -601,13 +608,18 @@ impl FontLoader {
         code_point: char,
         size: f32,
     ) -> Result<(u32, GlyphBitmap), FontError> {
-        if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
+        if self.font_allows_code_point(primary_id, code_point)
+            && let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits()))
+        {
             return Ok((primary_id, bitmap.clone()));
         }
 
         let chain = self.lookup_chain(primary_id);
 
         for font_id in chain {
+            if !self.font_allows_code_point(font_id, code_point) {
+                continue;
+            }
             let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
                 continue;
             };
@@ -680,7 +692,9 @@ impl FontLoader {
 
     /// 测量字符 advance 宽度（含回退）
     pub fn measure_advance(&self, primary_id: u32, code_point: char, size: f32) -> f32 {
-        if let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits())) {
+        if self.font_allows_code_point(primary_id, code_point)
+            && let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits()))
+        {
             return bitmap.advance;
         }
         // 快路径：轻量测量（不产位图）——CJK 页每帧 paint 对每个 (字符, 字号)
@@ -693,6 +707,9 @@ impl FontLoader {
         // 语义（glyph_has_coverage 位图判定）与旧版完全一致。
         let chain = self.lookup_chain(primary_id);
         for font_id in chain {
+            if !self.font_allows_code_point(font_id, code_point) {
+                continue;
+            }
             let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
                 continue;
             };
@@ -1069,6 +1086,24 @@ mod tests {
             loader.font_instance_ids.get(&left_id),
             duplicate.font_instance_ids.get(&right_id),
             "new fonts in separate duplicates require distinct cache identities"
+        );
+    }
+
+    #[test]
+    fn unicode_range_skips_face_outside_registered_intervals() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let uppercase = loader.load_font(LATO_TTF).expect("uppercase face");
+        let fallback = loader.load_font(LATO_TTF).expect("fallback face");
+        loader.register_unicode_ranges(uppercase, vec![(0x41, 0x5A)]);
+
+        assert_eq!(
+            loader.resolve_font_for_code_point_in(&[uppercase, fallback], 'A'),
+            Some(uppercase)
+        );
+        assert_eq!(
+            loader.resolve_font_for_code_point_in(&[uppercase, fallback], 'a'),
+            Some(fallback)
         );
     }
 

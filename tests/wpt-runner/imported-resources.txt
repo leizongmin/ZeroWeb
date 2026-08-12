@@ -2,3 +2,7 @@
 css/css-fonts/resources/ahem-ex-500.otf
 css/css-fonts/resources/ahem-ex-250.otf
 css/css-fonts/support/fonts/FontWithFancyFeatures.otf
+fonts/Ahem.ttf
+css/css-fonts/support/fonts/LigatureSymbolsWithSpaces.woff
+css/css-fonts/support/fonts/Rochester.otf
+fonts/GentiumPlus-R.woff

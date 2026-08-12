@@ -496,6 +496,25 @@ fn test_font_face_stretch_descriptor() {
 }
 
 #[test]
+fn test_font_face_unicode_range_descriptor() {
+    let css = "@font-face { font-family: A; src: url(a.woff); unicode-range: U+41-5A, U+6??, U+1F600; }";
+    let stylesheet = Parser::parse_stylesheet(css);
+    match &stylesheet.rules[0] {
+        Rule::FontFace(face) => assert_eq!(
+            face.unicode_ranges,
+            vec![(0x41, 0x5A), (0x600, 0x6FF), (0x1F600, 0x1F600)]
+        ),
+        other => panic!("expected FontFace, got {other:?}"),
+    }
+
+    let invalid = Parser::parse_stylesheet("@font-face { font-family: A; src: url(a.woff); unicode-range: U+4?F; }");
+    match &invalid.rules[0] {
+        Rule::FontFace(face) => assert!(face.unicode_ranges.is_empty()),
+        other => panic!("expected FontFace, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_font_face_missing_family_or_src_dropped() {
     // 缺 src → 规则被丢弃（返回 None），不进入样式表
     let css = r#"@font-face { font-family: "NoSrc"; }"#;

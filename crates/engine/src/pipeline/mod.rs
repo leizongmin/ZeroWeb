@@ -2282,6 +2282,7 @@ mod font_face_extract_tests {
                     false,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
                 (
                     "Title".to_string(),
@@ -2290,6 +2291,7 @@ mod font_face_extract_tests {
                     false,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
             ],
             "family dequoted; sources ordered; format() ignored; non-font-face rules skipped"
@@ -2316,6 +2318,7 @@ mod font_face_extract_tests {
                     false,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
                 (
                     "Reg".to_string(),
@@ -2324,6 +2327,7 @@ mod font_face_extract_tests {
                     false,
                     Some(75.0),
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
                 (
                     "Italic".to_string(),
@@ -2332,6 +2336,7 @@ mod font_face_extract_tests {
                     true,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
                 (
                     "Oblique".to_string(),
@@ -2340,6 +2345,7 @@ mod font_face_extract_tests {
                     true,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    Vec::new(),
                 ),
             ]
         );
@@ -2375,6 +2381,7 @@ mod font_face_extract_tests {
                         is_italic,
                         ff.stretch,
                         ff.feature_settings.clone(),
+                        ff.unicode_ranges.clone(),
                     ))
                 }
                 _ => None,

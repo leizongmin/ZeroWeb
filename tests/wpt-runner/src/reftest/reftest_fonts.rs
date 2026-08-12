@@ -150,6 +150,7 @@ type FontFaceSpec = (
     bool,
     Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
+    Vec<(u32, u32)>,
 );
 
 /// 从 CSS 文本中提取所有 `@font-face` 规则的 face 列表。
@@ -175,6 +176,7 @@ pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
                     is_italic,
                     ff.stretch,
                     ff.feature_settings.clone(),
+                    ff.unicode_ranges.clone(),
                 ))
             }
             _ => None,
@@ -231,7 +233,7 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
 /// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
 /// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources, weight, is_italic, stretch, feature_settings) in extract_font_faces(css) {
+    for (family, sources, weight, is_italic, stretch, feature_settings, unicode_ranges) in extract_font_faces(css) {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
             continue;
@@ -244,6 +246,7 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
                 && let Ok(id) = loader.load_font(&data)
             {
                 loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
+                loader.register_unicode_ranges(id, unicode_ranges.clone());
                 for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
                     loader.register_family_alias(&alias, id);
                 }

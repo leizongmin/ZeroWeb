@@ -102,6 +102,8 @@ pub struct FontFaceRule {
     pub stretch: Option<f32>,
     /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
     pub feature_settings: FontFeatureSettingsValue,
+    /// `unicode-range` descriptor 的闭区间列表；空列表表示 unrestricted。
+    pub unicode_ranges: Vec<(u32, u32)>,
 }
 
 /// `@font-feature-values` 中的 alias 类型。

@@ -608,10 +608,11 @@ fn tab_worker_main(
                 let loaded = load.drain_loaded_fonts();
                 if !loaded.is_empty() {
                     let mut updated = false;
-                    for (family, weight, is_italic, stretch, features, bytes) in loaded {
+                    for (family, weight, is_italic, stretch, features, unicode_ranges, bytes) in loaded {
                         match font_loader.load_font(&bytes) {
                             Ok(id) => {
                                 font_loader.register_font_features(id, features);
+                                font_loader.register_unicode_ranges(id, unicode_ranges);
                                 for alias in
                                     zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch)
                                 {

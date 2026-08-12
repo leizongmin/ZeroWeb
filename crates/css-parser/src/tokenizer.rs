@@ -435,6 +435,36 @@ impl<'a> Tokenizer<'a> {
         ident
     }
 
+    /// 消耗 CSS Fonts `unicode-range-token`。
+    fn consume_unicode_range(&mut self) -> Token {
+        // https://drafts.csswg.org/css-syntax-3/#consume-unicode-range-token
+        self.consume(); // U/u
+        self.consume(); // +
+        let mut body = String::new();
+        while body.len() < 6 && self.peek().is_some_and(Self::is_hex_digit) {
+            body.push(self.consume().unwrap());
+        }
+        while body.len() < 6 && self.peek() == Some('?') {
+            body.push(self.consume().unwrap());
+        }
+        if body.contains('?') && self.peek().is_some_and(Self::is_hex_digit) {
+            return Token::Error("Invalid unicode range wildcard".to_string());
+        }
+        let (start, end) = if body.contains('?') {
+            (body.replace('?', "0"), body.replace('?', "F"))
+        } else {
+            let mut end = body.clone();
+            if self.consume_if('-') {
+                end.clear();
+                while end.len() < 6 && self.peek().is_some_and(Self::is_hex_digit) {
+                    end.push(self.consume().unwrap());
+                }
+            }
+            (body, end)
+        };
+        Token::UnicodeRange(start, end)
+    }
+
     /// 消耗转义序列。
     fn consume_escape(&mut self) -> Option<char> {
         // 已经确认以 \ 开头
@@ -1062,6 +1092,14 @@ impl<'a> Iterator for Tokenizer<'a> {
                     self.consume();
                     Token::Delim('\\')
                 }
+            }
+
+            // CSS Fonts unicode-range token（须先于普通 ident 消费 U/u）。
+            'U' | 'u'
+                if self.peek_at(1) == Some('+')
+                    && self.peek_at(2).is_some_and(|ch| Self::is_hex_digit(ch) || ch == '?') =>
+            {
+                self.consume_unicode_range()
             }
 
             // 标识符

@@ -117,6 +117,7 @@ impl<'a> Parser<'a> {
         let mut style: Option<FontStyleValue> = None;
         let mut stretch: Option<f32> = None;
         let mut feature_settings = crate::values::FontFeatureSettingsValue::Normal;
+        let mut unicode_ranges = Vec::new();
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
                 family = strip_css_quotes(decl.value.trim());
@@ -134,6 +135,8 @@ impl<'a> Parser<'a> {
                 && let Some(parsed) = crate::values::parse_font_feature_settings(&decl.value)
             {
                 feature_settings = parsed;
+            } else if decl.property.eq_ignore_ascii_case("unicode-range") {
+                unicode_ranges = Self::parse_font_face_unicode_ranges(&decl.value).unwrap_or_default();
             }
         }
 
@@ -148,7 +151,36 @@ impl<'a> Parser<'a> {
             style,
             stretch,
             feature_settings,
+            unicode_ranges,
         })
+    }
+
+    /// 解析 CSS Fonts `unicode-range` descriptor 为闭区间。
+    fn parse_font_face_unicode_ranges(value: &str) -> Option<Vec<(u32, u32)>> {
+        // https://drafts.csswg.org/css-fonts-4/#unicode-range-desc
+        let mut ranges = Vec::new();
+        for item in value.split(',') {
+            let item = item.trim();
+            let body = item.strip_prefix("U+").or_else(|| item.strip_prefix("u+"))?;
+            let (start, end) = if body.contains('?') {
+                if body.len() > 6 || body.chars().any(|ch| !ch.is_ascii_hexdigit() && ch != '?') {
+                    return None;
+                }
+                let start = u32::from_str_radix(&body.replace('?', "0"), 16).ok()?;
+                let end = u32::from_str_radix(&body.replace('?', "F"), 16).ok()?;
+                (start, end)
+            } else if let Some((start, end)) = body.split_once('-') {
+                (u32::from_str_radix(start, 16).ok()?, u32::from_str_radix(end, 16).ok()?)
+            } else {
+                let value = u32::from_str_radix(body, 16).ok()?;
+                (value, value)
+            };
+            if start > end || end > 0x10_FFFF {
+                return None;
+            }
+            ranges.push((start, end));
+        }
+        (!ranges.is_empty()).then_some(ranges)
     }
 
     /// 消耗 `@font-feature-values <family># { ... }`。
