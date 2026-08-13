@@ -24,7 +24,8 @@
 | pixel-manipulation | 14 / 14 | ✅ 全绿 |
 | line-styles | 33 / 33 | ✅ 全绿 |
 | shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
-| **合计** | **185 文件 / 218 subtest** | ✅ **218 Pass**（shadows 11 个待决策） |
+| compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
+| **合计** | **309 文件 / 280 subtest** | ✅ **280 Pass**（47 个 G5/深语义待决策） |
 
 - 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
 - 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
@@ -68,6 +69,8 @@
 | 阴影 region 可见范围裁剪（画布−offset）+ mask 闭区间 | stroke.join.2 |
 | 阴影受 clip 裁剪 | shadow.clip.2 |
 | 阴影段逐像素投影判定 + join 真实几何 + 端 cap | stroke.join.1/2 / stroke.cap.1/2 |
+| CompositeOperation 补 SourceOut/Clear + source 独占类未覆盖清除（受 clip 约束） | composite.uncovered.fill.* / clip.* / transparent.source-out |
+| globalCompositeOperation 枚举校验 + globalAlpha 范围 | operation.* / globalAlpha.range |
 
 ## 缺口清单
 
@@ -90,7 +93,7 @@
 
 ## 下一步计划
 
-1. **M1 扩展**：导入下一批 WPT 目录（compositing/path-objects/fill-and-stroke-styles——compositing 与已修 composite 光栅直接相关），失败聚类 → 轻量修复
+1. **M1 扩展**：导入下一批 WPT 目录（path-objects/fill-and-stroke-styles/text——与已修路径/样式光栅直接相关），失败聚类 → 轻量修复
 2. **M2**：G4 createImageBitmap options（轻量可先行）
 3. **Oracle**：Chromium 环境可用后补像素 oracle A/B（G2）
 4. **待决策**：G5 DOM img 源（解锁 9 个 shadow 用例）、currentColor（2 用例）、OffscreenCanvas Worker

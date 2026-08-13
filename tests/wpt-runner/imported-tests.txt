@@ -102,3 +102,6 @@ css/css-fonts/font-weight-normal-variable.html css/css-fonts/font-weight-normal-
 #   pixel-manipulation（14）line-styles（33）
 # 目录面登记于 tests/wpt-runner/src/testharness.rs CANVAS_TEST_SUBDIRS。
 css/css-fonts/synthetic-bold-out-of-capabilities-range.html css/css-fonts/synthetic-bold-out-of-capabilities-range-ref.html == 2026-08-13 R3403-F RobotoExtremo variable capability fixture
+# ── Canvas 2D 专项扩展批次 2（2026-08-13 R34xx）──
+# shadows（61 文件，50 Pass，11 = G5/currentColor 待决策）+ compositing（124 文件，
+# 62 Pass，36 = G5 img 依赖）经 fetch-canvas-subset.sh 导入 wpt-data/html/canvas/。
