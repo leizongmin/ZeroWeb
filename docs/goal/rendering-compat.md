@@ -65,6 +65,8 @@
 >
 > **▶ Oracle 可靠性进展（R3373-F shaping cache descriptor isolation·2026-08-13）**：共享 shaping cache 的内容寻址 key 原只含字体字节 hash，遗漏 `@font-face size-adjust`；同字节 Ahem face 在不同 loader 中带 150%/默认 descriptor 时发生缓存碰撞，使完整 css-fonts `--jobs 8` 的 `size-adjust-03` 假降至 `16.65%`，单案与 `--jobs 1` 则为 `18.37%`。key 现同时包含每个 face 的 descriptor scale，回归测试用共享 cache 的双 loader 锁定 24px/16px glyph size。修复后 css-fonts `--jobs 1/8` 数值完全一致：`size-adjust-03 18.37%`、`size-adjust-01 11.65%`，pass/credible/strict 保持 `86/76/54`；旧并行数值属于虚假改善，不再作为历史收益基线。同期将上游 `font-synthesis-weight-webfont-bold` 与固定 `Lato-Bold.ttf` 纳入账本，资源独立 Oracle `1.10%→1.08%`，self-source 均为 strict `0.00%`。
 >
+> **▶ WPT 资产进展（R3374-F separator fixed webfont·2026-08-13）**：css-fonts `url()` 资源完整性扫描发现 `separators` 缺少固定 `separator-test-font.ttf`，导致自定义字体断言走 fallback。标准 importer 补齐 test/ref 与资源账本后，Chromium Oracle `0.74%→0.71%`，self-source 保持可信 strict `0.00%`，完整 css-fonts pass/credible/strict 保持 `86/76/54`，无回归。同期 `IcTestFullWidth.woff2` 因现有 FontLoader 不支持 WOFF2 而无像素变化，`Exo-DemiBold.otf` 使目标 Oracle `2.72%→2.95%`，两项均按门禁回退。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
