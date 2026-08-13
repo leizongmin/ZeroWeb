@@ -1027,12 +1027,23 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_s_maxage() {
+    fn test_cache_s_maxage_ignored_by_private_cache_r3392() {
+        // R3392：s-maxage 仅对共享缓存生效（RFC 9111 §4.2.1）；浏览器为私有缓存，须忽略 s-maxage。
+        // 仅 s-maxage（无 max-age/Expires/validator）→ 私有缓存不可存（无新鲜期来源）。
         let mut cache = HttpCache::new();
         let resp = make_response(200, b"hello", vec![("cache-control", "s-maxage=3600")]);
-        assert!(cache.put("https://example.com/test", &resp));
-        let cached = cache.get("https://example.com/test").unwrap();
-        assert_eq!(cached.body, b"hello");
+        assert!(
+            !cache.put("https://example.com/test", &resp),
+            "仅 s-maxage（无 max-age）的响应在私有浏览器缓存中不可存"
+        );
+        assert!(cache.get("https://example.com/test").is_none());
+
+        // s-maxage + max-age → 私有缓存须用 max-age（忽略 s-maxage）。
+        let mut cache2 = HttpCache::new();
+        let resp2 = make_response(200, b"hi", vec![("cache-control", "s-maxage=3600, max-age=60")]);
+        assert!(cache2.put("https://example.com/test", &resp2));
+        // 命中 → 用 max-age=60 新鲜期（非 s-maxage=3600）；此处仅验可存 + 命中（新鲜期内）。
+        assert_eq!(cache2.get("https://example.com/test").unwrap().body, b"hi");
     }
 
     #[test]

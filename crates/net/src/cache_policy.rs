@@ -67,9 +67,13 @@ pub(crate) fn compute_ttl_secs(cc: &CacheControl, response: &HttpResponse) -> Op
     if cc.no_cache {
         return Some(0);
     }
-    if let Some(s_maxage) = cc.s_maxage {
-        return Some(s_maxage);
-    }
+    // R3392：`s-maxage` 仅对**共享缓存**（CDN/代理）生效（RFC 9111 §4.2.1），私有缓存
+    // （浏览器）**必须忽略** 它并回退 max-age。旧实现无条件优先返回 s_maxage →
+    // `Cache-Control: s-maxage=3600, max-age=60` 在浏览器侧误按 3600s 视为新鲜（过度缓存，
+    // 可能在服务器期望的 60s 后仍发过期内容）。本仓 HttpCache 为浏览器私有缓存
+    // （磁盘层亦为私有磁盘缓存，is_shared 标志恒 false），故一律忽略 s-maxage。
+    // s_maxage 仍由 parse_cache_control 解析保留（is_shared 标志据此置位），但不参与 TTL。
+    // 规范引用：https://www.rfc-editor.org/rfc/rfc9111#section-4.2.1
     if let Some(max_age) = cc.max_age {
         return Some(max_age);
     }
