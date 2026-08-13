@@ -862,6 +862,9 @@
   // R34xx：addColorStop 参数校验（spec：offset 非有限/越界抛 IndexSizeError；颜色无效抛
   // SyntaxError——2d.gradient.object.invalidoffset/invalidcolor）+ 全局 CanvasGradient 构造器
   //（2d.gradient.object.type/return 依赖 prototype）。
+  if (!globalThis.CanvasPattern) {
+    globalThis.CanvasPattern = function CanvasPattern() {};
+  }
   if (!globalThis.CanvasGradient) {
     globalThis.CanvasGradient = function CanvasGradient() {};
     // R34xx：prototype.addColorStop 委托实例方法（2d.gradient.object.type 断言 prototype 方法存在）。
@@ -1379,13 +1382,44 @@
     // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
     ctx.createPattern = function (image, repetition) {
       if (typeof __zw_canvas_op !== 'function') return null;
+      // R34xx：参数校验——null/undefined/非对象抛 TypeError；img 加载失败（broken/
+      // nonexistent → naturalWidth=0）抛 InvalidStateError（2d.pattern.image.*）。
+      if (image === null || image === undefined) {
+        throw new TypeError('createPattern: image is null or undefined');
+      }
+      if (typeof image !== 'object') {
+        throw new TypeError('createPattern: invalid image source');
+      }
+      var isImgEl = (typeof image.getContext !== 'function') && ('naturalWidth' in image || String(image.tagName || '').toLowerCase() === 'img');
+      if (isImgEl && typeof __zw_get_image_size === 'function') {
+        var errSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+        var errDims = String(__zw_get_image_size(errSrc));
+        // 静态 img 加载失败（broken.png 解码失败、no-such-image 不存在）→ InvalidStateError；
+        // 动态创建未挂载的 img（加载中/未开始）→ 不抛（返回 null——2d.pattern.image.
+        // nonexistent-but-loading）。
+        if (image.naturalWidth <= 0 && !errDims) {
+          // 静态 img（HTML 中、有 id 且 getElementById 命中）→ 加载失败抛；
+          // 动态创建未挂载（createElement 无 id）→ 返回 null（加载中语义）。
+          var imgId = (image.getAttribute ? String(image.getAttribute('id') || '') : '') || '';
+          var inDoc = imgId ? !!(globalThis.document && globalThis.document.getElementById(imgId)) : false;
+          if (inDoc) {
+            throw _zwDomException('createPattern: image failed to load', 'InvalidStateError');
+          }
+          return null;
+        }
+      }
       // R34xx：G5 —— HTMLImageElement 源 → __zw_get_image_wire → host createPattern。
       if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && typeof __zw_get_image_wire === 'function') {
         var imgSrc2 = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
         var iwire2 = String(__zw_get_image_wire(imgSrc2));
         if (iwire2) {
           var pid2 = String(__zw_canvas_op(h, 'createPattern', iwire2, String(repetition || '')));
-          if (pid2 && pid2 !== '0') return { _zwPattern: pid2 };
+          if (pid2 && pid2 !== '0') {
+            // R34xx：CanvasPattern 全局构造器 + prototype（2d.pattern.basic.type）。
+            var pat = { _zwPattern: pid2 };
+            Object.setPrototypeOf(pat, CanvasPattern.prototype);
+            return pat;
+          }
         }
         return null;
       }
@@ -1398,6 +1432,10 @@
       var rep = (repetition === null) ? '' : String(repetition);
       if (rep !== '' && rep !== 'repeat' && rep !== 'repeat-x' && rep !== 'repeat-y' && rep !== 'no-repeat') {
         throw _zwDomException('Invalid repetition value: ' + rep, 'SyntaxError');
+      }
+      // R34xx：0 尺寸 canvas 源 → InvalidStateError（2d.pattern.basic.zerocanvas）。
+      if (image && typeof image.getContext === 'function' && ((image.width | 0) === 0 || (image.height | 0) === 0)) {
+        throw _zwDomException('createPattern: canvas has zero size', 'InvalidStateError');
       }
       var wire = '';
       if (image && typeof image.getContext === 'function') {
