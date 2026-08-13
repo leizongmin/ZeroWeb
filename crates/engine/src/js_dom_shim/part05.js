@@ -1190,7 +1190,14 @@
       get: function () {
         // R34xx：颜色串读 host 规范化（opaque→#rrggbb / alpha→rgba(带空格)——与
         // shadowColor 同款；2d.fillStyle.get.* 断言格式）。渐变/图案对象走本地缓存。
+        // CSS Color 4 输入（color-mix/相对色）→ host 返 color(srgb ...) 保留表示
+        //（2d.fillStyle.colormix/relativecolor）。
         if (typeof this._fs === 'string' && typeof __zw_canvas_op === 'function') {
+          var v = String(this._fs);
+          if (v.indexOf('color-mix(') === 0 || v.indexOf('rgb(from ') === 0 || v.indexOf('hsl(from ') === 0) {
+            var r4 = String(__zw_canvas_op(h, 'parseColorCss4', v));
+            if (r4) return r4;
+          }
           var r = String(__zw_canvas_op(h, 'getFillStyle'));
           if (r) return r;
         }

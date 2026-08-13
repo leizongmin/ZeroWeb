@@ -70,6 +70,21 @@ fn color_to_canvas_css(c: &zero_render_foundation::color::Color) -> String {
     }
 }
 
+/// R34xx：CSS Color 4 颜色序列化（color-mix/相对色输入 → `color(srgb r g b[/ a])`——
+/// 2d.fillStyle.colormix 期望 'color(srgb 0.5 0 0.5)'）。分量 round 2 位。
+fn color_to_css4(c: &zero_render_foundation::color::Color) -> String {
+    let fmt = |v: u8| {
+        let x = ((v as f64 / 255.0) * 100.0).round() / 100.0;
+        format!("{x}")
+    };
+    if c.a == 255 {
+        format!("color(srgb {} {} {})", fmt(c.r), fmt(c.g), fmt(c.b))
+    } else {
+        let a = ((c.a as f64 / 255.0) * 100.0).round() / 100.0;
+        format!("color(srgb {} {} {} / {a})", fmt(c.r), fmt(c.g), fmt(c.b))
+    }
+}
+
 /// canvas `lineJoin` 串 → LineJoin（spec: miter/round/bevel；未知回落 Miter = 默认）。
 fn parse_line_join(s: &str) -> zero_canvas::LineJoin {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -574,6 +589,17 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 "1".to_string()
             } else {
                 String::new()
+            }
+        }
+        "parseColorCss4" => {
+            // R34xx：CSS Color 4 输入（color-mix/相对色）→ 规范化 color() 串；普通颜色返空
+            //（JS 回退 hex getter）。Mix/RelativeColor 变体才需要 color() 保留。
+            let cv = zero_css_parser::values::parse_color(arg(0).trim());
+            match cv {
+                Some(
+                    zero_css_parser::values::ColorValue::Mix(_) | zero_css_parser::values::ColorValue::RelativeColor(_),
+                ) => color_to_css4(&crate::color_value_to_render(&cv.unwrap())),
+                _ => String::new(),
             }
         }
         "getFillStyle" => reg
