@@ -7,10 +7,11 @@ pub use zero_css_parser::values::{
     self, AlignmentValue, BoxSizingValue, ClipPathRadius, ColorValue, ColumnCountValue, ColumnWidthValue, ContainValue,
     ContainerTypeValue, ContentValue, ContentVisibilityValue, CounterActionValue, DisplayValue, FilterValue,
     FlexDirectionValue, FlexWrapValue, FontFeatureSetting, FontFeatureSettingsValue, FontStyleValue,
-    FontSynthesisValue, FontVariantAlternates, FontVariantAlternatesValue, FontVariantLigaturesValue, FontWeightValue,
-    LengthValue, ObjectFitValue, OverflowClipMarginBox, OverflowClipMarginValue, OverflowValue, PolygonFillRule,
-    PositionValue, QuotesValue, ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue,
-    TextEmphasisPositionValue, TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
+    FontSynthesisValue, FontVariantAlternates, FontVariantAlternatesValue, FontVariantLigaturesValue,
+    FontVariationSetting, FontVariationSettingsValue, FontWeightValue, LengthValue, ObjectFitValue,
+    OverflowClipMarginBox, OverflowClipMarginValue, OverflowValue, PolygonFillRule, PositionValue, QuotesValue,
+    ScrollSnapAlignValue, ScrollSnapAxis, ScrollSnapStopValue, ScrollSnapTypeValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, VerticalAlignValue, VisibilityValue,
 };
 
 /// CSS border-style 值。
@@ -1522,6 +1523,8 @@ pub enum PropertyValue {
     FontVariantAlternates(FontVariantAlternatesValue),
     /// font-feature-settings 值。
     FontFeatureSettings(FontFeatureSettingsValue),
+    /// font-variation-settings 值。
+    FontVariationSettings(FontVariationSettingsValue),
     /// font-variant-ligatures 值。
     FontVariantLigatures(FontVariantLigaturesValue),
     /// font-synthesis 值。

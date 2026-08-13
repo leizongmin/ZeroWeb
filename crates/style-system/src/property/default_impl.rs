@@ -93,6 +93,7 @@ impl Default for ComputedStyle {
             line_height: LineHeightValue::Normal,
             font_size_adjust: FontSizeAdjustValue::None,
             font_feature_settings: FontFeatureSettingsValue::Normal,
+            font_variation_settings: FontVariationSettingsValue::Normal,
             font_variant_ligatures: FontVariantLigaturesValue::default(),
             font_kerning: FontKerningValue::Auto,
             font_synthesis: FontSynthesisValue::default(),

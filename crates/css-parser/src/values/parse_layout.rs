@@ -990,6 +990,59 @@ pub fn parse_font_feature_settings(value: &str) -> Option<FontFeatureSettingsVal
     (!features.is_empty()).then_some(FontFeatureSettingsValue::Features(features))
 }
 
+/// CSS `font-variation-settings` 中的单个 OpenType variation axis。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FontVariationSetting {
+    /// 四字节 OpenType axis tag。
+    pub tag: [u8; 4],
+    /// axis 坐标。
+    pub value: f32,
+}
+
+/// CSS `font-variation-settings` 计算值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum FontVariationSettingsValue {
+    /// 使用字体/高级字体属性决定的默认 axis。
+    Normal,
+    /// 显式 axis 列表。
+    Settings(Vec<FontVariationSetting>),
+}
+
+/// 解析 CSS `font-variation-settings`。
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-variation-settings-def
+pub fn parse_font_variation_settings(value: &str) -> Option<FontVariationSettingsValue> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("normal") {
+        return Some(FontVariationSettingsValue::Normal);
+    }
+    if value.is_empty() {
+        return None;
+    }
+
+    let mut settings = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        let quote = item.as_bytes().first().copied()?;
+        if quote != b'\'' && quote != b'"' {
+            return None;
+        }
+        let close = item[1..].find(quote as char)? + 1;
+        let tag_text = &item[1..close];
+        if tag_text.len() != 4 || !tag_text.is_ascii() {
+            return None;
+        }
+        let mut tag = [0; 4];
+        tag.copy_from_slice(tag_text.as_bytes());
+        let value = item[close + 1..].trim().parse::<f32>().ok()?;
+        if !value.is_finite() {
+            return None;
+        }
+        settings.push(FontVariationSetting { tag, value });
+    }
+    (!settings.is_empty()).then_some(FontVariationSettingsValue::Settings(settings))
+}
+
 /// CSS `font-variant-ligatures` 计算值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FontVariantLigaturesValue {

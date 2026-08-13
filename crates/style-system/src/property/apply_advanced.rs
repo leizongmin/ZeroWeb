@@ -680,6 +680,12 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        "font-variation-settings" => {
+            if let Some(v) = values::parse_font_variation_settings(value) {
+                style.font_variation_settings = v;
+                return true;
+            }
+        }
         "font-variant-ligatures" => {
             if let Some(v) = values::parse_font_variant_ligatures(value) {
                 style.font_variant_ligatures = v;

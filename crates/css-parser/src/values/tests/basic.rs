@@ -1457,6 +1457,31 @@ fn test_parse_font_feature_settings() {
 }
 
 #[test]
+fn test_parse_font_variation_settings() {
+    assert_eq!(
+        parse_font_variation_settings("normal"),
+        Some(FontVariationSettingsValue::Normal)
+    );
+    assert_eq!(
+        parse_font_variation_settings("'wght' 600.7, \"slnt\" -12"),
+        Some(FontVariationSettingsValue::Settings(vec![
+            FontVariationSetting {
+                tag: *b"wght",
+                value: 600.7,
+            },
+            FontVariationSetting {
+                tag: *b"slnt",
+                value: -12.0,
+            },
+        ]))
+    );
+    assert!(parse_font_variation_settings("wght 600").is_none());
+    assert!(parse_font_variation_settings("'weight' 600").is_none());
+    assert!(parse_font_variation_settings("'wght' NaN").is_none());
+    assert!(parse_font_variation_settings("'wght' 600 trailing").is_none());
+}
+
+#[test]
 fn test_parse_font_variant_ligatures() {
     assert_eq!(
         parse_font_variant_ligatures("normal"),

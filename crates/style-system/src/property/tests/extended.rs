@@ -540,6 +540,40 @@ fn test_font_feature_settings_apply_initial_and_inherit() {
 }
 
 #[test]
+fn test_font_variation_settings_apply_initial_and_inherit() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(
+        &mut style,
+        "font-variation-settings",
+        "'wght' 600.7, \"slnt\" -12"
+    ));
+    assert_eq!(
+        style.font_variation_settings,
+        FontVariationSettingsValue::Settings(vec![
+            FontVariationSetting {
+                tag: *b"wght",
+                value: 600.7,
+            },
+            FontVariationSetting {
+                tag: *b"slnt",
+                value: -12.0,
+            },
+        ])
+    );
+    assert!(PropertyRegistry::is_inherited("font-variation-settings"));
+
+    let mut child = ComputedStyle::default();
+    assert!(inherit_property(&style, &mut child, "font-variation-settings"));
+    assert_eq!(child.font_variation_settings, style.font_variation_settings);
+    assert!(apply_initial_value(&mut child, "font-variation-settings"));
+    assert_eq!(child.font_variation_settings, FontVariationSettingsValue::Normal);
+    assert_eq!(
+        PropertyRegistry::initial_value("font-variation-settings"),
+        Some(PropertyValue::FontVariationSettings(FontVariationSettingsValue::Normal))
+    );
+}
+
+#[test]
 fn test_font_variant_ligatures_apply_initial_and_inherit() {
     let mut style = ComputedStyle::default();
     assert!(apply_property_value(

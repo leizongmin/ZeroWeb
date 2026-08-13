@@ -132,6 +132,8 @@ pub struct ComputedStyle {
     pub font_size_adjust: FontSizeAdjustValue,
     /// font-feature-settings 属性。
     pub font_feature_settings: FontFeatureSettingsValue,
+    /// font-variation-settings 属性。
+    pub font_variation_settings: FontVariationSettingsValue,
     /// font-variant-ligatures 属性。
     pub font_variant_ligatures: FontVariantLigaturesValue,
     /// font-kerning 属性。

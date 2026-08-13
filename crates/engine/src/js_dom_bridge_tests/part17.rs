@@ -98,6 +98,29 @@ fn form_submission_uses_live_text_values_without_changing_defaults() {
 }
 
 #[test]
+fn computed_font_variation_settings_serializes_and_inherits() {
+    let html = "<html><body>\
+        <div id='parent' style='font-variation-settings: \"wght\" 600.7, \"slnt\" -12'>\
+          <span id='child'></span>\
+        </div>\
+        <div id='default'></div>\
+        </body></html>";
+
+    assert_eq!(
+        computed_style_property(html, "#parent", "font-variation-settings"),
+        "\"wght\" 600.7, \"slnt\" -12"
+    );
+    assert_eq!(
+        computed_style_property(html, "#child", "font-variation-settings"),
+        "\"wght\" 600.7, \"slnt\" -12"
+    );
+    assert_eq!(
+        computed_style_property(html, "#default", "font-variation-settings"),
+        "normal"
+    );
+}
+
+#[test]
 fn test_form_post_submission_r3055() {
     // R3055：form_post_submission 解析 <form method=post> 提交目标（action_url + urlencoded body）。
     // 对称 R3054 GET——POST 数据在 body，action_url 不含 query。控件收集规则与 GET 完全一致。

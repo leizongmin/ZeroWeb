@@ -43,6 +43,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.font_feature_settings = parent.font_feature_settings.clone();
             true
         }
+        "font-variation-settings" => {
+            child.font_variation_settings = parent.font_variation_settings.clone();
+            true
+        }
         "font-variant-ligatures" => {
             child.font_variant_ligatures = parent.font_variant_ligatures;
             true
@@ -764,6 +768,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "font-feature-settings" => {
             style.font_feature_settings = default_style.font_feature_settings;
+            true
+        }
+        "font-variation-settings" => {
+            style.font_variation_settings = default_style.font_variation_settings;
             true
         }
         "font-variant-ligatures" => {

@@ -29,15 +29,16 @@ use zero_style_system::{
     ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
     DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue,
     FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
-    FontVariantNumericValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue, ListStyleImageComputedValue,
-    MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue, OutlineStyleValue, OverflowWrapValue,
-    PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue, TextAlignLastValue, TextAlignValue,
-    TextDecorationLineValue, TextDecorationStyleValue, TextDecorationThicknessValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextShadowComputedValue, TextTransformValue, TextWrapComputedValue,
-    TouchActionValue, TransformStyleValue, UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue,
-    WillChangeValue, WordBreakValue, WritingModeValue, ZIndexValue,
+    FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
+    ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
+    ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
+    OutlineStyleValue, OverflowWrapValue, PointerEventsValue, QuotesComputedValue, ResizeValue, ScrollPadding,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, StyleSystem, TabSizeValue, TableLayoutValue,
+    TextAlignLastValue, TextAlignValue, TextDecorationLineValue, TextDecorationStyleValue,
+    TextDecorationThicknessValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
+    TextShadowComputedValue, TextTransformValue, TextWrapComputedValue, TouchActionValue, TransformStyleValue,
+    UnicodeBidiValue, UserSelectValue, VerticalAlignValue, WhiteSpaceValue, WillChangeValue, WordBreakValue,
+    WritingModeValue, ZIndexValue,
 };
 
 use super::{DomMutation, apply_remove_style, apply_style_property, find_by_selector};
@@ -310,6 +311,20 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             FontKerningValue::Auto => "auto".to_string(),
             FontKerningValue::Normal => "normal".to_string(),
             FontKerningValue::None => "none".to_string(),
+        },
+        "font-variation-settings" => match &style.font_variation_settings {
+            FontVariationSettingsValue::Normal => "normal".to_string(),
+            FontVariationSettingsValue::Settings(settings) => settings
+                .iter()
+                .map(|setting| {
+                    format!(
+                        "\"{}\" {}",
+                        String::from_utf8_lossy(&setting.tag),
+                        format_num(setting.value as f64, "")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
         },
         "font-variant-alternates" => font_variant_alternates_str(&style.font_variant_alternates),
         "line-height" => line_height_str(&style.line_height, font_size_px),
