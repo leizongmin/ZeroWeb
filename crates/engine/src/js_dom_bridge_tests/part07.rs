@@ -159,11 +159,10 @@ fn test_event_subclasses2_r2812() {
         "AnimationEvent elapsedTime"
     );
 
-    // createEvent 映射（map）含 6 新 type：createEvent('StorageEvent') instanceof StorageEvent。
+    // createEvent 映射（map）：createEvent('StorageEvent') instanceof StorageEvent（StorageEvent legacy createable）。
     sandbox
         .execute(
-            "globalThis.__cse = document.createEvent('StorageEvent') instanceof StorageEvent;\
-             globalThis.__cpr = document.createEvent('ProgressEvent') instanceof ProgressEvent;",
+            "globalThis.__cse = document.createEvent('StorageEvent') instanceof StorageEvent;",
         )
         .unwrap();
     assert_eq!(
@@ -171,10 +170,18 @@ fn test_event_subclasses2_r2812() {
         "true",
         "createEvent('StorageEvent') instanceof StorageEvent"
     );
+    // R17：ProgressEvent 是 non-createable modern event interface（spec createEvent 仅支持 legacy；
+    // WPT someNonCreateableEvents）→ createEvent('ProgressEvent') 抛 NotSupportedError（不再 lenient 返实例）。
+    sandbox
+        .execute(
+            "globalThis.__cpr = (function(){ try { document.createEvent('ProgressEvent'); return 'no-throw'; }\
+             catch(e){ return e instanceof DOMException && e.name; } })();",
+        )
+        .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__cpr)").unwrap().value,
-        "true",
-        "createEvent('ProgressEvent') instanceof ProgressEvent"
+        "NotSupportedError",
+        "createEvent('ProgressEvent') 抛 NotSupportedError（non-createable，R17）"
     );
     // R14：spec 合规——未知 event type 抛 NotSupportedError（不再 lenient 回落 Event）。
     sandbox
@@ -1556,11 +1563,13 @@ fn test_window_onerror_report_r2940() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // ErrorEvent 构造器（字段 message/filename/lineno/colno/error）+ createEvent('ErrorEvent') 返 ErrorEvent 实例。
+    // ErrorEvent 构造器（字段 message/filename/lineno/colno/error）。R17：ErrorEvent 为 non-createable
+    // modern event interface（spec createEvent 仅支持 legacy；WPT someNonCreateableEvents）→ 用 `new ErrorEvent`
+    // 构造（modern 路径），不再 createEvent。
     sandbox
         .execute(
             "globalThis.__ev = new ErrorEvent('error', {message:'boom', filename:'a.js', lineno:7, colno:3});\
-             globalThis.__ce = document.createEvent('ErrorEvent');",
+             globalThis.__ce = new ErrorEvent('error');",
         )
         .unwrap();
     assert_eq!(
@@ -1602,7 +1611,7 @@ fn test_window_onerror_report_r2940() {
             .unwrap()
             .value,
         "true",
-        "createEvent('ErrorEvent') 返 ErrorEvent 实例"
+        "new ErrorEvent 返 ErrorEvent 实例（modern 路径，R17）"
     );
 
     // __zw_report_error：window.addEventListener('error') 接 ErrorEvent + window.onerror legacy 5-arg，不重复触发。

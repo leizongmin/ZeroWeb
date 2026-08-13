@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R16 — classList toggle force no-op（无变化不 write 保持原样）+ write runUpdate 比较（新集合序列化 vs 原 attribute，相同不 setAttribute）+ replace 顺序/同名 runUpdate（有序去重保位置）；基线 polyfill 52.11%→53.00% / native 51.84%→52.73%（双路径对等差 0.27pp，classlist 用例 1360P/60F→1400P/20F +40）
+**本轮**: R17 — createEvent 移除 9 个 non-createable modern interface（WPT someNonCreateableEvents，spec createEvent 仅支持 legacy，modern 走 new 构造器）→ 对其抛 NotSupportedError；核实 event target null gap 实际不存在（_makeEvent 已设 null）；基线 polyfill 53.00%→53.20% / native 52.73%→52.93%（双路径对等差 0.27pp，createEvent 用例 264P/15F→273P/6F +9）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **polyfill 53.00% / native 52.73% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R16 classlist toggle/replace 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R16 classList toggle no-op + write runUpdate + replace 顺序（classlist 1360P/60F→1400P/20F）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估）/createEvent 剩 15F/classlist 剩 20F/createElementNS 大小写 |
+| WPT dom 上游基线 | ✅ **polyfill 53.20% / native 52.93% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R17 createEvent non-createable 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R17 createEvent 移除 9 non-createable modern interface（createEvent 264P/15F→273P/6F）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估）/classlist 剩 20F/createEvent 剩 6F（TouchEvent assert_implements_optional）/createElementNS 大小写 |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -77,7 +77,8 @@
 - R14 已做：① 注册 5 缺失 event 子类构造器（part05 `_defineEventSubclass`：BeforeUnloadEvent/DeviceMotionEvent/DeviceOrientationEvent/TextEvent/TouchEvent）② createEvent map 全覆盖（part06：扩全集 alias 含复数 Events/HTMLEvents/SVGEvents→Event、MouseEvents→MouseEvent、UIEvents→UIEvent、custom→CustomEvent + 缺失子类）③ 未知 type 抛 NotSupportedError（spec `dom-document-createevent`，原 lenient 回落 Event 改 spec 合规抛，globalThis.DOMException 保 identity）④ 更新 test_event_subclasses2_r2812（UnknownEvent 改期望抛）+ 新增 createEvent alias/NotSupported 单测。基线 polyfill 46.60%→50.33%、native 46.33%→50.07%（双路径对等差 0.26pp，**dom/nodes 突破 50%**）；createEvent 用例 96P/183F→264P/15F（+168）。engine v8 2085 / quickjs 1408 单测，双矩阵 clippy 干净
 - R15 已做：① implementation.createDocumentType 返 DocumentType（part06 主 document + part03 detached doc，spec `dom-domimplementation-createdocumenttype` 不校验，返 name/nodeName=qualifiedName、publicId、systemId、nodeType 10、ownerDocument、nodeValue/textContent=null；原 return null stub）② detached doc（_makeDetachedDocument）加 implementation 块（hasFeature + createDocumentType，ownerDocument 指 detached doc；用例 doTest(doc,...) 经 doc.implementation.createDocumentType）③ **顺带修并行 canvas 流 2 个 clippy 红灯**（main 既有：crates/canvas types.rs:199 `.or_else(||Some)`→`.or(Some)` + js_dom_bridge/canvas.rs:873 setWordSpacing 嵌套 if 合并，机械修正无逻辑变化）④ createDocumentType 单测。基线 polyfill 50.33%→52.11%、native 50.07%→51.84%（双路径对等差 0.27pp）；createDocumentType 用例 1P/81F→80P/2F（+79）。engine v8 2086 / quickjs 1408 单测，双矩阵 clippy 干净
 - R16 已做：① classList write 加 runUpdate 比较（spec DOMTokenList update 算法：新 token 集合序列化 vs 原 attribute 原始值，相同不 setAttribute；add/remove/replace 总经此，原值含尾空格/重复时规范化重写）② toggle force 分支 no-op（force 与现状一致直接 return 不 write，保持 attribute 原样；spec toggle(token,force)，WPT checkToggle 保持原样非规范化）③ replace 顺序 + 同名 runUpdate（oldT===newT 存在→runUpdate 规范化；replace 在 oldT 位置换 newT + 移除后续重复有序去重保位置，WPT checkReplace("c b a","c","a")→"a b"）。基线 polyfill 52.11%→53.00%、native 51.84%→52.73%（双路径对等差 0.27pp）；classlist 用例 1360P/60F→1400P/20F（+40）。engine v8 2086 / quickjs 1408 单测，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R16 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **createEvent 剩 15F**（TouchEvent feature-detect + event target 默认 null gap）③ **createElementNS 保留原 tag 大小写**（case.js prefix abc/Abc 态，深改 host tag 存储）④ classlist 剩 20F（replace(" ","") 异常名 + classList assignment setter + 边缘）⑤ canvas proxy instanceof（canvas 流路径）⑥ polyfill appendChild 闭环（待 M1 L2）⑦ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
+- R17 已做：① createEvent 移除 9 个 non-createable modern interface（part06 map：wheelevent/pointerevent/popstateevent/progressevent/transitionevent/animationevent/pagetransitionevent/clipboardevent/errorevent，按 WPT someNonCreateableEvents 列表；spec createEvent 仅支持 legacy event interface，modern 走 `new XxxEvent()` 构造器）→ 对其抛 NotSupportedError ② 更新 2 受影响单测（test_event_subclasses2 ProgressEvent 改断言抛、test_window_onerror ErrorEvent 改 new 构造）③ **核实 event target null gap 实际不存在**（_makeEvent part03:1063-1064 已设 target/currentTarget=null，createEvent 初始化测试已 Pass，R14 误记）。基线 polyfill 53.00%→53.20%、native 52.73%→52.93%（双路径对等差 0.27pp）；createEvent 用例 264P/15F→273P/6F（+9）。engine v8 2086 / quickjs 1408 单测，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R17 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **createElementNS 保留原 tag 大小写**（case.js prefix abc/Abc 态，深改 host tag 存储）③ **classlist 剩 20F**（replace(" ","") 异常名 + classList assignment setter + 边缘）④ createEvent 剩 6F（TouchEvent assert_implements_optional，testharness OptionalFeatureUnsupportedError 跳过语义 gap）⑤ canvas proxy instanceof（canvas 流路径）⑥ polyfill appendChild 闭环（待 M1 L2）⑦ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -143,6 +144,7 @@
 | 2026-08-14 | R14 | createEvent alias 全覆盖（注册 5 缺失 event 子类 BeforeUnloadEvent/DeviceMotionEvent/DeviceOrientationEvent/TextEvent/TouchEvent + map 扩全集含复数别名）+ 未知 type 抛 NotSupportedError（spec 合规，原 lenient 改抛）+ 更新 event_subclasses2 测试 + 新增 createEvent 单测；engine v8 2085 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升 + 突破 50%**：polyfill 46.60%→50.33%、native 46.33%→50.07%（双路径对等差 0.26pp）；createEvent 用例 96P/183F→264P/15F（+168）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R15 | implementation.createDocumentType 返 DocumentType（part06 主 + part03 detached doc，spec 不校验）+ detached doc 加 implementation + 顺带修并行 canvas 流 2 个 clippy 红灯（main 既有，机械修正）+ 单测；engine v8 2086 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 50.33%→52.11%、native 50.07%→51.84%（双路径对等差 0.27pp）；createDocumentType 用例 1P/81F→80P/2F（+79）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R16 | classList toggle force no-op（无变化不 write 保持原样）+ write runUpdate 比较（新集合序列化 vs 原 attribute，相同不 setAttribute）+ replace 顺序/同名 runUpdate（有序去重保位置）；engine v8 2086 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 52.11%→53.00%、native 51.84%→52.73%（双路径对等差 0.27pp）；classlist 用例 1360P/60F→1400P/20F（+40）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R17 | createEvent 移除 9 个 non-createable modern interface（WPT someNonCreateableEvents，spec createEvent 仅 legacy）→ 抛 NotSupportedError + 更新 2 单测（ProgressEvent/ErrorEvent）+ 核实 event target null gap 不存在；engine v8 2086 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 53.00%→53.20%、native 52.73%→52.93%（双路径对等差 0.27pp）；createEvent 用例 264P/15F→273P/6F（+9）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -152,11 +154,11 @@
 
 ## 下一步计划
 
-1. **R16（本轮，已完成）**：classList toggle no-op + write runUpdate + replace 顺序 → land（polyfill 53.00% / native 52.73%，双路径对等差 0.27pp，classlist +40 pass）
-2. **下轮候选（按剩余 ROI，R16 后重排）**：
-   - **(a) createEvent 剩 15F + event target 默认 null gap**。
-   - **(b) createElementNS 保留原 tag 大小写**（解 case.js prefix abc/Abc 态；深改 host tag 存储）。
-   - **(c) classlist 剩 20F**（replace(" ","") 异常名 + classList assignment setter + 边缘）。
+1. **R17（本轮，已完成）**：createEvent 移除 9 non-createable modern interface（→抛 NotSupportedError）+ 核实 event target null gap 不存在 → land（polyfill 53.20% / native 52.93%，双路径对等差 0.27pp，createEvent +9 pass）
+2. **下轮候选（按剩余 ROI，R17 后重排）**：
+   - **(a) createElementNS 保留原 tag 大小写**（解 case.js prefix abc/Abc 态；深改 host tag 存储，但 ROI 高——case.html 多块依赖）。
+   - **(b) classlist 剩 20F**（replace(" ","") 异常名 + classList assignment setter + 边缘）。
+   - **(c) createEvent 剩 6F**（TouchEvent assert_implements_optional，testharness optional 跳过语义）。
    - **(d) iframe.contentDocument**（深结构 html-compat 域，待评估/转 html-compat 流）。
    - **(e) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
    - **(f) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
@@ -215,3 +217,4 @@
 - R14：M4 createEvent alias 全覆盖 + 未知 type 抛 NotSupportedError（createEvent +168 pass，dom/nodes 突破 50%）→ archive/m14-slice-createevent-aliases-notsupported.md
 - R15：M4 implementation.createDocumentType + detached doc implementation（createDocumentType +79 pass）+ 修 canvas 流 2 clippy 红灯 → archive/m15-slice-createdocumenttype.md
 - R16：M4 classList toggle no-op + write runUpdate + replace 顺序（classlist +40 pass）→ archive/m16-slice-classlist-toggle-replace.md
+- R17：M4 createEvent 移除 9 non-createable modern interface（createEvent +9 pass）+ 核实 event target null gap 不存在 → archive/m17-slice-createevent-noncreateable.md

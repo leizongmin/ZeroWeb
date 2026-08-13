@@ -983,26 +983,21 @@
         mouseevent: globalThis.MouseEvent, mouseevents: globalThis.MouseEvent,
         uievent: globalThis.UIEvent, uievents: globalThis.UIEvent,
         focusevent: globalThis.FocusEvent,
-        wheelevent: globalThis.WheelEvent,
-        pointerevent: globalThis.PointerEvent,
         inputevent: globalThis.InputEvent,
         compositionevent: globalThis.CompositionEvent,
         hashchangeevent: globalThis.HashChangeEvent,
-        popstateevent: globalThis.PopStateEvent,
         storageevent: globalThis.StorageEvent,
-        progressevent: globalThis.ProgressEvent,
-        transitionevent: globalThis.TransitionEvent,
-        animationevent: globalThis.AnimationEvent,
-        pagetransitionevent: globalThis.PageTransitionEvent,
-        clipboardevent: globalThis.ClipboardEvent,
         dragevent: globalThis.DragEvent,
-        errorevent: globalThis.ErrorEvent,
         messageevent: globalThis.MessageEvent,
         beforeunloadevent: globalThis.BeforeUnloadEvent,
         devicemotionevent: globalThis.DeviceMotionEvent,
         deviceorientationevent: globalThis.DeviceOrientationEvent,
         textevent: globalThis.TextEvent,
         touchevent: globalThis.TouchEvent,
+        // R17：以下 modern event interface 为 non-createable（spec createEvent 仅支持 legacy event interface；
+        // WPT someNonCreateableEvents 列表）——**不**入 map，createEvent 对其抛 NotSupportedError：
+        // WheelEvent/PointerEvent/PopStateEvent/ProgressEvent/TransitionEvent/AnimationEvent/
+        // PageTransitionEvent/ClipboardEvent/ErrorEvent（modern 路径走 `new XxxEvent()` 构造器）。
       };
       var Ctor = map[t];
       if (!Ctor || typeof Ctor !== 'function') {
