@@ -343,13 +343,15 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // TextMetrics（R3303 spec 全 10 字段，csv 串参返 JS 构 TextMetrics）。spec CanvasRenderingContext2D。
         "fillText" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.fill_text(arg(0), f(1), f(2));
+                // R34xx：第 4 参 maxWidth（spec fillText(text,x,y,maxWidth)；0/负/非有限 → None）。
+                let mw = f(3);
+                ctx.fill_text(arg(0), f(1), f(2), (mw.is_finite() && mw > 0.0).then_some(mw));
             }
             "ok".into()
         }
         "strokeText" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.fill_text(arg(0), f(1), f(2)); // canvas crate 无独立 stroke_text；近似 fill_text（headless 简化）
+                ctx.fill_text(arg(0), f(1), f(2), None); // canvas crate 无独立 stroke_text；近似 fill_text（headless 简化）
             }
             "ok".into()
         }
@@ -915,6 +917,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     zero_canvas::TextBaseline::Middle => "middle",
                     zero_canvas::TextBaseline::Alphabetic => "alphabetic",
                     zero_canvas::TextBaseline::Bottom => "bottom",
+                    zero_canvas::TextBaseline::Hanging => "hanging",
+                    zero_canvas::TextBaseline::Ideographic => "ideographic",
                 }
                 .into();
             }
@@ -1146,6 +1150,8 @@ fn parse_text_baseline(s: &str) -> zero_canvas::TextBaseline {
         "top" => B::Top,
         "middle" => B::Middle,
         "bottom" => B::Bottom,
+        "hanging" => B::Hanging,
+        "ideographic" => B::Ideographic,
         _ => B::Alphabetic, // alphabetic + 非法值 → Alphabetic
     }
 }

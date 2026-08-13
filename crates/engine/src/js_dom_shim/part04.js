@@ -169,6 +169,13 @@
               var ctx = _zwMakeCtx2d(String(id));
               ctx.canvas = _makeProxy(sel, handle); // canvas back-ref → 元素 proxy（spec ctx.canvas）
               _zwCanvasCtx[key] = ctx;
+              // R34xx：direction 'inherit' 解析为 canvas 元素方向（dir 属性——
+              // 2d.text.draw.align.start.rtl 的 <canvas dir="rtl">）。host 存解析值；
+              // client getter 保持 'inherit'（spec 值）。
+              var elDir = String(ctx.canvas.getAttribute ? String(ctx.canvas.getAttribute('dir') || '') : '').toLowerCase();
+              if (elDir === 'rtl' || elDir === 'ltr') {
+                __zw_canvas_op(String(id), 'setDirection', elDir);
+              }
               // R3268 canvas 显示链路：把 ctx id 写入元素属性，painter 据此把 canvas
               // 内容桥接为页面图元（data-zw-canvas-ctx 非标准属性，仅内部使用）。
               if (handle) __zw_set_attr_handle(handle, 'data-zw-canvas-ctx', String(id));

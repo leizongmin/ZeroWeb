@@ -853,7 +853,7 @@ fn test_transform_method_accumulates_vs_set_transform_replaces() {
 fn test_fill_text_glyph_offset_scales_with_font_size() {
     // 字体大小 10.0（默认）
     let mut ctx_small = CanvasContext::new(200, 200);
-    ctx_small.fill_text("AB", 0.0, 0.0);
+    ctx_small.fill_text("AB", 0.0, 0.0, None);
     let glyphs_small = &ctx_small.primitives().glyphs;
     // 第二个字符的 x 应为 0.0 + 10.0 * 0.6 = 6.0
     assert!(
@@ -870,7 +870,7 @@ fn test_fill_text_glyph_offset_scales_with_font_size() {
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
     });
-    ctx_large.fill_text("AB", 0.0, 0.0);
+    ctx_large.fill_text("AB", 0.0, 0.0, None);
     let glyphs_large = &ctx_large.primitives().glyphs;
     // 第二个字符的 x 应为 0.0 + 20.0 * 0.6 = 12.0
     assert!(
@@ -1121,7 +1121,7 @@ fn test_restore_without_matching_save_no_panic() {
 #[test]
 fn test_fill_text_empty_string_no_panic() {
     let mut ctx = CanvasContext::new(100, 100);
-    ctx.fill_text("", 10.0, 20.0);
+    ctx.fill_text("", 10.0, 20.0, None);
     // 空字符串不应产生任何图元
     assert!(
         ctx.primitives().glyphs.is_empty(),
@@ -1355,7 +1355,7 @@ fn test_canvas_fill_text_no_panic() {
     let mut ctx = CanvasContext::new(200, 100);
     ctx.set_fill_color(Color::BLACK);
     // fillText 应不 panic（即使无字体加载）
-    ctx.fill_text("Hello", 10.0, 50.0);
+    ctx.fill_text("Hello", 10.0, 50.0, None);
 }
 
 /// 测试 stroke_rect 零尺寸不 panic。

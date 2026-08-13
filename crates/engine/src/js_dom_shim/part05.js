@@ -826,6 +826,12 @@
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
       el._ctx.canvas = el;
+      // R34xx：direction 'inherit' 解析为 canvas 元素方向（dir 属性——2d.text.draw.align.
+      // start.rtl 的 <canvas dir="rtl">）。host 存解析值；client getter 保持 'inherit'（spec）。
+      var elDir = String(el.getAttribute ? String(el.getAttribute('dir') || '') : '').toLowerCase();
+      if (elDir === 'rtl' || elDir === 'ltr') {
+        __zw_canvas_op(String(id), 'setDirection', elDir);
+      }
       return el._ctx;
     };
     // toDataURL（R2797，canvas slice 3）：PNG 导出。host 编码 ctx.pixel_buffer → PNG（csv 字节）→
@@ -945,7 +951,8 @@
       return +c;
     };
     var cl = function (x) { return Math.round(Math.min(Math.max(x, 0), 1) * 255); };
-    var alpha = ch(v.alpha != null ? v.alpha : 1);
+    // WPT colorObject 用 `a:` 键（{r,g,b,a}）；CSSRGB/CSSHSL 用 `alpha:`——两者都支持。
+    var alpha = ch(v.alpha != null ? v.alpha : (v.a != null ? v.a : 1));
     if (!isFinite(alpha)) return null;
     var aClamped = Math.min(Math.max(alpha, 0), 1);
     if (v.h != null) {
@@ -1397,8 +1404,15 @@
         }
       },
       get: function () {
-        // R34xx：同 fillStyle getter（host 规范化）。
+        // R34xx：同 fillStyle getter（host 规范化 + CSS Color 4 保留表示——
+        // 2d.strokeStyle.colormix/relativecolor）。
         if (typeof this._ss === 'string' && typeof __zw_canvas_op === 'function') {
+          var v = String(this._ss);
+          if (v.indexOf('color-mix(') === 0 || v.indexOf('rgb(from ') === 0 ||
+              v.indexOf('hsl(from ') === 0 || v.indexOf('color(from ') === 0) {
+            var r4 = String(__zw_canvas_op(h, 'parseColorCss4', v));
+            if (r4) return r4;
+          }
           var r = String(__zw_canvas_op(h, 'getStrokeStyle'));
           if (r) return r;
         }
@@ -1455,8 +1469,9 @@
     // fillText 经 host fill_text（canvas crate 写 pixel_buffer）；measureText 返 TextMetrics（width+bounding）；
     // createImageData 返 blank ImageData（全透明 = 全 0，Uint8ClampedArray(w*h*4)，JS 构无需 host）。createImageData
     // 双形式：createImageData(w,h) / createImageData(imageData)（复制尺寸）。spec CanvasRenderingContext2D。
-    ctx.fillText = function (text, x, y /*, maxWidth */) {
-      __zw_canvas_op(h, 'fillText', String(text), String(+x || 0), String(+y || 0));
+    ctx.fillText = function (text, x, y, maxWidth) {
+      // R34xx：maxWidth 透传（spec fillText(text,x,y,maxWidth)）。
+      __zw_canvas_op(h, 'fillText', String(text), String(+x || 0), String(+y || 0), String(maxWidth === undefined ? '' : +maxWidth));
     };
     ctx.strokeText = function (text, x, y) {
       __zw_canvas_op(h, 'strokeText', String(text), String(+x || 0), String(+y || 0));
@@ -1580,10 +1595,14 @@
           (isSvgImg && image.getAttribute ? (String(image.getAttribute('href') || '') || String(image.getAttribute('xlink:href') || '')) : '') ||
           String(image.src || '');
         var errDims = String(__zw_get_image_size(errSrc));
+        // SVG <image> 元素无 naturalWidth（DOM shim）→ 归一为 0（2d.pattern.svgimage.
+        // nonexistent 须抛 InvalidStateError）。
+        var nw = image.naturalWidth;
+        if (nw === undefined || nw === null) nw = 0;
         // 静态 img 加载失败（broken.png 解码失败、no-such-image 不存在）→ InvalidStateError；
         // 动态创建未挂载的 img（加载中/未开始）→ 不抛（返回 null——2d.pattern.image.
         // nonexistent-but-loading）。
-        if (image.naturalWidth <= 0 && !errDims) {
+        if (nw <= 0 && !errDims) {
           // src 空（未设置/被清空——incomplete.emptysrc/removedsrc）→ 未加载返 null。
           if (!errSrc) {
             return null;
@@ -1603,7 +1622,8 @@
         }
       }
       // R34xx：G5 —— HTMLImageElement 源 → __zw_get_image_wire → host createPattern。
-      if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && typeof __zw_get_image_wire === 'function') {
+      // 双维须 > 0（zeroheight SVG：naturalWidth=100 但高 0 → null——2d.pattern.image.zeroheight）。
+      if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && (image.naturalHeight === undefined || image.naturalHeight > 0) && typeof __zw_get_image_wire === 'function') {
         var imgSrc2 = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
         var iwire2 = String(__zw_get_image_wire(imgSrc2));
         if (iwire2) {

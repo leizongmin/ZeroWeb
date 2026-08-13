@@ -46,7 +46,7 @@ fn test_canvas_clear_rect() {
 #[test]
 fn test_canvas_fill_text() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.fill_text("hello", 10.0, 20.0);
+    ctx.fill_text("hello", 10.0, 20.0, None);
     // 每个字符生成一个 glyph
     assert_eq!(ctx.primitives().glyphs.len(), 5);
 }
@@ -171,7 +171,7 @@ fn test_canvas_multiple_operations() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
     ctx.stroke_rect(60.0, 60.0, 30.0, 30.0);
-    ctx.fill_text("test", 0.0, 0.0);
+    ctx.fill_text("test", 0.0, 0.0, None);
     // fill_rect = 1, stroke_rect = 1 path_stroke（R34xx 旧四边 fill 已废弃）, fill_text = 4 glyphs
     assert_eq!(ctx.primitives().fills.len(), 1);
     assert_eq!(ctx.primitives().path_strokes.len(), 1);
@@ -664,7 +664,7 @@ fn test_canvas_reset_after_transform() {
 #[test]
 fn test_canvas_text_produces_glyphs() {
     let mut ctx = CanvasContext::new(400, 300);
-    ctx.fill_text("Hello", 10.0, 20.0);
+    ctx.fill_text("Hello", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs.len(), 5); // 5 chars
     ctx.stroke_text("World", 10.0, 50.0);
     assert_eq!(ctx.primitives().glyphs.len(), 10); // 5 + 5 chars
@@ -933,7 +933,7 @@ fn test_stroke_writes_pixels() {
 #[test]
 fn test_fill_text_glyph_ids_are_codepoints() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.fill_text("AB", 10.0, 20.0);
+    ctx.fill_text("AB", 10.0, 20.0, None);
     let glyphs = &ctx.primitives().glyphs;
     assert_eq!(glyphs.len(), 2);
     assert_eq!(glyphs[0].glyph_id, 'A' as u32);
@@ -944,7 +944,7 @@ fn test_fill_text_glyph_ids_are_codepoints() {
 #[test]
 fn test_fill_text_glyph_positions_offset() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.fill_text("abc", 10.0, 20.0);
+    ctx.fill_text("abc", 10.0, 20.0, None);
     let glyphs = &ctx.primitives().glyphs;
     assert_eq!(glyphs.len(), 3);
     let em_width = 10.0 * 0.6; // font_size * 0.6
@@ -967,7 +967,7 @@ fn test_stroke_text_uses_stroke_color() {
 fn test_fill_text_uses_fill_color() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.set_fill_color(Color::GREEN);
-    ctx.fill_text("X", 10.0, 20.0);
+    ctx.fill_text("X", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs[0].color, Color::GREEN);
 }
 
@@ -975,7 +975,7 @@ fn test_fill_text_uses_fill_color() {
 #[test]
 fn test_fill_text_empty_string() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.fill_text("", 10.0, 20.0);
+    ctx.fill_text("", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs.len(), 0);
 }
 
@@ -991,7 +991,7 @@ fn test_stroke_text_empty_string() {
 #[test]
 fn test_fill_text_unicode_glyph_ids() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.fill_text("日本", 10.0, 20.0);
+    ctx.fill_text("日本", 10.0, 20.0, None);
     let glyphs = &ctx.primitives().glyphs;
     assert_eq!(glyphs.len(), 2);
     assert_eq!(glyphs[0].glyph_id, '日' as u32);

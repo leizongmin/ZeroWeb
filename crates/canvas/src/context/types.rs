@@ -323,6 +323,10 @@ pub enum TextBaseline {
     Alphabetic,
     /// 底部。
     Bottom,
+    /// 悬挂基线（R34xx：2d.text.draw.baseline.hanging——0.5em 近似）。
+    Hanging,
+    /// 表意基线（R34xx：2d.text.draw.baseline.ideographic——em 盒底 = +descent）。
+    Ideographic,
 }
 
 /// 文本方向。
@@ -761,9 +765,14 @@ fn radial_gradient_t(g: &RadialGradient, x: f32, y: f32) -> Option<f32> {
         [t, f64::NAN]
     } else {
         let disc = b * b - 4.0 * a * c;
-        if disc < 0.0 {
+        // R34xx：相对容差——切线边界（cone.shape1 的 (50,25) 恰在 iso 圆上）判别式数学上
+        // = 0，f64 表示误差（0.4/1.2/1.8 非精确）产生 ~1e-16 负值；真实判别式负（锥外）量级
+        // 远大于此（如 shape1 (1,1) 的 −17）。
+        let scale = (b * b).abs().max((4.0 * a * c).abs()).max(1e-30);
+        if disc < -1e-10 * scale {
             return None;
         }
+        let disc = disc.max(0.0);
         let sq = disc.sqrt();
         let t1 = (-b - sq) / (2.0 * a);
         let t2 = (-b + sq) / (2.0 * a);
