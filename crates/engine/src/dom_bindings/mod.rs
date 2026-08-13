@@ -787,3 +787,8 @@ mod tests_events;
 // 拆为独立模块避免 tests_dom_api.rs（2631 行）继续膨胀；共享 tests::run_script。
 #[cfg(test)]
 mod tests_html_setters;
+// polyfill vs native A/B 行为对照门骨架（js-dom goal M0 must-complete 项 5）。
+// v8 门控：polyfill 路径经 V8Sandbox + generate_js_dom_shim（与 js_dom_bridge_tests 一致）。
+#[cfg(test)]
+#[cfg(feature = "v8")]
+mod tests_ab_compare;
