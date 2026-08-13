@@ -275,9 +275,15 @@ fn run_testharness_html_inner(
             zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule(_) => 0,
         })
         .collect::<Vec<_>>();
+    // js-dom goal DC-3「native 路径对照」：env `ZW_NATIVE_DOM=1` 时 runner 走原生绑定路径
+    //（WebViewConfig.native_dom=true），而非默认 polyfill 字符串桥。用于建立 native 通过率
+    // 基线，让 R2/R3/R4 native 修复（classList/createElement/node mutation DOMException）的基线
+    // 价值可见。env 进程级（testharness 一次跑一个路径，无混跑）。
+    let native_dom = std::env::var("ZW_NATIVE_DOM").as_deref() == Ok("1");
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
+        native_dom,
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));

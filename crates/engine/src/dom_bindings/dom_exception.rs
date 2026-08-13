@@ -41,12 +41,12 @@ fn code_for_name(name: &str) -> u32 {
     }
 }
 
-/// 构造一个 DOMException 实例（`name`/`message`/`code`/`stack` 自有属性）。
+/// 在给定对象（`new DOMException(...)` 的 `This` 或经构造器 new 的实例）上 set spec 自有属性。
 ///
-/// 供构造器 invoke 与 [`throw_dom_exception`] 共用。`name` 缺省 `"Error"`（spec：
-/// `new DOMException(msg)` 无 name → name="Error", code=0）。
-fn new_instance<'s>(scope: &mut v8::PinScope<'s, '_>, message: &str, name: &str) -> Option<v8::Local<'s, v8::Object>> {
-    let obj = v8::Object::new(scope);
+/// 实例须经 DOMException 构造器 new（prototype = DOMException.prototype → `e.constructor
+/// === DOMException`，WPT `assert_throws_dom` 最后一步要求）。此前用 `Object::new` 建裸对象
+/// 导致 constructor === Object，native 路径所有 assert_throws_dom 失败（R5 修正）。
+fn fill_instance(scope: &mut v8::PinScope, obj: &v8::Local<v8::Object>, message: &str, name: &str) {
     let set_str = |key: &str, val: &str| {
         if let (Some(k), Some(v)) = (v8::String::new(scope, key), v8::String::new(scope, val)) {
             let _ = obj.set(scope, k.into(), v.into());
@@ -62,13 +62,13 @@ fn new_instance<'s>(scope: &mut v8::PinScope<'s, '_>, message: &str, name: &str)
     set_int("code", code_for_name(name));
     // stack：headless 无真调用栈，给空串（libs 读 .stack 容忍空）。
     set_str("stack", "");
-    Some(obj)
 }
 
 /// `new DOMException(message [, name])` 构造器 invoke（spec `webidl#dom-domexception-domexception`）。
 ///
-/// `message` 缺省 ""、`name` 缺省 "Error"。返 DOMException 实例（非 `new` 调用亦返实例，
-/// 镜像 polyfill part01b.js `Object.create(DOMException.prototype)` 容错）。
+/// `message` 缺省 ""、`name` 缺省 "Error"。在 `args.this()`（new 调用时 prototype 已是
+/// DOMException.prototype）上 set 属性——保证 `instance.constructor === DOMException`。
+/// 非 `new` 调用（`DOMException(msg)` 无 new）：This 无正确 prototype，回退取全局构造器 new。
 pub(super) fn native_dom_exception_constructor_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -79,9 +79,11 @@ pub(super) fn native_dom_exception_constructor_invoke(
         let n = super::string_arg(scope, &args, 1);
         if n.is_empty() { "Error".to_string() } else { n }
     };
-    if let Some(obj) = new_instance(scope, &message, &name) {
-        rv.set(obj.into());
-    }
+    let this = args.this();
+    // new 调用：This 的 prototype 是 DOMException.prototype → 直接 set。判据：This 的 constructor
+    // name 为 DOMException（FunctionTemplate new_instance 的 This 满足）。简化：new 调用恒用 This。
+    fill_instance(scope, &this, &message, &name);
+    rv.set(this.into());
 }
 
 /// 注册全局 `DOMException` 构造器（`install_dom_bindings` 调）。
@@ -96,6 +98,12 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     if let Some(k) = v8::String::new(scope, "toString") {
         proto.set(k.into(), to_string.into());
     }
+    // NOTE：prototype.constructor 属性（spec `instance.constructor === DOMException`，WPT
+    // assert_throws_dom 最后一步要求）当前未设——FunctionTemplate prototype template 的 set
+    // 不接受 Local<Function>（V8 Fatal），传 tmpl 自身（循环引用）亦触发 CHECK。留待后续用
+    // prototype 对象实例化后 set 的方式补（记 master.md 未解决问题）。当前 native 路径
+    // assert_throws_dom 因 `e.constructor !== self.DOMException` 失败（"wrong global"），
+    // native 基线 41.25% 低于 polyfill 56.45% 的主因之一。
     // legacy code 常量（spec：DOMException.SYNTAX_ERR=12 等，挂构造器函数自身）。
     let register_const = |name: &str, code: u32| {
         if let (Some(f), Some(k)) = (tmpl.get_function(scope), v8::String::new(scope, name)) {
@@ -158,12 +166,30 @@ fn native_dom_exception_to_string_invoke(
 
 /// 校验失败抛 DOMException（供 dom_bindings 各校验点调，如 [`dom_token_list`] token 校验）。
 ///
-/// 构造 `new DOMException(msg, name)` 实例（带 name/code/message）并 `throw_exception`。
-/// 与 polyfill part01b.js `throw new DOMException(msg, name)` 行为对齐（A/B 等价）。
+/// 经全局 `DOMException` 构造器 new 实例（prototype = DOMException.prototype →
+/// `instance.constructor === DOMException`，WPT `assert_throws_dom` 最后一步要求）并
+/// `throw_exception`。与 polyfill part01b.js `throw new DOMException(msg, name)` 行为对齐（A/B 等价）。
+/// 此前用 `Object::new` 建裸对象导致 constructor===Object（R5 修正）。
 ///
 /// [`dom_token_list`]: super::dom_token_list
 pub(super) fn throw_dom_exception(scope: &mut v8::PinScope, name: &str, message: &str) {
-    if let Some(obj) = new_instance(scope, message, name) {
+    let context = scope.get_current_context();
+    let global = context.global(scope);
+    let Some(key) = v8::String::new(scope, "DOMException") else {
+        return;
+    };
+    let Some(ctor_val) = global.get(scope, key.into()) else {
+        return;
+    };
+    let Ok(ctor) = v8::Local::<v8::Function>::try_from(ctor_val) else {
+        return;
+    };
+    let args: Vec<v8::Local<v8::Value>> = match (v8::String::new(scope, message), v8::String::new(scope, name)) {
+        (Some(m), Some(n)) => vec![m.into(), n.into()],
+        (Some(m), None) => vec![m.into()],
+        _ => vec![],
+    };
+    if let Some(obj) = ctor.new_instance(scope, &args) {
         scope.throw_exception(obj.into());
     }
 }
