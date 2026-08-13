@@ -159,10 +159,31 @@ fn proxy_source_hint() -> String {
         if let Ok(val) = std::env::var(key)
             && !val.is_empty()
         {
-            return format!("proxy ({key}={val}) — ");
+            // 代理 URL 可能内嵌凭据（如 `http://user:pass@host:port`），错误消息会经
+            // NetError::Proxy → tracing 日志 / UI load-failed 透传，直接写入原始值会
+            // 把密码泄漏到日志与界面。这里只保留 scheme + host(:port)，剥离 userinfo。
+            return format!("proxy ({key}={}) — ", redact_proxy_userinfo(&val));
         }
     }
     "system proxy — ".to_string()
+}
+
+/// 剥离代理 URL 中的 userinfo（`user[:pass]@`），保留 scheme 与 host(:port) 用于诊断。
+///
+/// 例如 `http://bob:s3cr3t@proxy.corp:8080` → `http://***@proxy.corp:8080`，
+/// `socks5://host:1080`（无凭据）原样返回。无法解析的值原样返回（保守，不吞诊断信息）。
+fn redact_proxy_userinfo(val: &str) -> String {
+    // 分离可选的 scheme 前缀（如 `http://`、`socks5://`）。
+    let (scheme, rest) = match val.split_once("://") {
+        Some((s, r)) => (format!("{s}://"), r),
+        None => (String::new(), val),
+    };
+    // 以首个 `@` 分割 userinfo 与 host（host 部分不应再含 `@`）。
+    match rest.split_once('@') {
+        // 存在 userinfo → 用占位符替换，保留 host(:port)。
+        Some((_, host)) => format!("{scheme}***@{host}"),
+        None => val.to_string(),
+    }
 }
 
 /// 发送 HTTP 请求（经 IPv4 优先解析器）。
@@ -183,7 +204,7 @@ pub(crate) fn send_with_ipv4_fallback(
 
 #[cfg(test)]
 mod tests {
-    use super::{env_proxy_var, message_indicates_proxy_failure, no_proxy_enabled};
+    use super::{env_proxy_var, message_indicates_proxy_failure, no_proxy_enabled, redact_proxy_userinfo};
 
     #[test]
     fn proxy_tunnel_message_is_recognized() {
@@ -240,5 +261,43 @@ mod tests {
         }
 
         unsafe { std::env::remove_var("ZERO_NOPROXY") };
+    }
+
+    // ── R3368：代理凭据脱敏（防日志/UI 泄漏）──
+
+    #[test]
+    /// R3368：`redact_proxy_userinfo` 剥离 `user:pass@`，保留 scheme + host(:port)。
+    ///
+    /// `proxy_source_hint` 直接对 env 值调用此函数（connect.rs:162），故此纯函数测试
+    /// 即锁定「代理密码不泄漏到 NetError::Proxy → 日志/UI」的安全属性，无需触碰进程级
+    /// env 变量（避免与 `env_proxy_var_unset_and_set` 在多线程下并发读 `HTTPS_PROXY` 的竞态）。
+    fn redact_proxy_userinfo_strips_credentials_r3368() {
+        // user:pass@
+        assert_eq!(
+            redact_proxy_userinfo("http://bob:s3cr3t@proxy.corp:8080"),
+            "http://***@proxy.corp:8080",
+        );
+        // 仅 user@（无密码，username 仍属敏感）
+        assert_eq!(
+            redact_proxy_userinfo("http://alice@proxy.corp:8080"),
+            "http://***@proxy.corp:8080",
+        );
+        // socks5 + 凭据
+        assert_eq!(
+            redact_proxy_userinfo("socks5://u:p@127.0.0.1:1080"),
+            "socks5://***@127.0.0.1:1080",
+        );
+        // 无凭据 → 原样返回
+        assert_eq!(
+            redact_proxy_userinfo("http://proxy.corp:8080"),
+            "http://proxy.corp:8080"
+        );
+        assert_eq!(redact_proxy_userinfo("socks5://host:1080"), "socks5://host:1080");
+        // 无 scheme 但含 userinfo
+        assert_eq!(redact_proxy_userinfo("bob:s3cr3t@host:8080"), "***@host:8080");
+        // 无 scheme 无凭据
+        assert_eq!(redact_proxy_userinfo("host:8080"), "host:8080");
+        // 空值原样返回
+        assert_eq!(redact_proxy_userinfo(""), "");
     }
 }
