@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R7 — fetch-dom-subset 拉 .js 依赖（基线真实化：polyfill 56.45%→51.12% / native 56.08%→50.79%，双路径对等）+ native createProcessingInstruction API（target/data/nodeName/spec 校验）
+**本轮**: R8 — testharness 运行时本地 .js 内联（`inline_local_scripts`）+ 与并行 canvas 流（G5 image fetcher）合并 wpt_root 贯穿；基线进一步真实化（polyfill 51.12%→37.82% / native 50.79%→37.59%，178 用例 / 4490 subtest，双路径对等差 0.23pp）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **polyfill 51.12% / native 50.79% 双基线对等**（dom/nodes 141 用例，R7 .js 依赖补齐后真实化） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R7 fetch-dom-subset 补齐 .js 依赖（用例引用的测试体 .js + dom 根共享 .js），基线从虚高（用例 .js 缺失致跳过）真实化——polyfill 56.45%→51.12%、native 56.08%→50.79%，双路径对等（差 0.33pp）。R7 新增 native createProcessingInstruction API |
+| WPT dom 上游基线 | ✅ **polyfill 37.82% / native 37.59% 双基线对等**（dom/nodes 178 用例 / 4490 subtest，R8 .js 运行时内联后真实化） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R8 `inline_local_scripts` 让用例引用的本地 .js（attributes.js / Document-createProcessingInstruction.js 等）运行时内联执行，用例真正跑起来——subtest ~2696→4490（+1794 真实），polyfill 51.12%→37.82%、native 50.79%→37.59%（双路径对等差 0.23pp）。R8 与并行 canvas 流（G5 image fetcher）合并 `wpt_root` 贯穿。失败聚类：assert_equals(913)/cannot read(726)/is not a function(284)/instanceof(89) |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -65,7 +65,8 @@
 - R6 已修（native 追平 polyfill）：DOMException identity 三重根因修复。native 41.25% → 56.08%
 - R7 已做：① fetch-dom-subset 补齐 .js 依赖（.html + .js + dom 根共享 .js + testharnessreport.js）——基线真实化（polyfill 56.45%→51.12%、native 56.08%→50.79%，双路径对等，差 0.33pp；此前虚高因用例 .js 缺失被跳过）② native createProcessingInstruction API（factories invoke + document.rs 注册 + node.rs PI target/data getter + node_name PI→target 修正 + spec 校验 invalid target/data→InvalidCharacterError）+ native 单测
 - R7 发现：PI 用例（Document-createProcessingInstruction.html）超时——用例外层 `test()` 嵌套多个 `test()` + `pi instanceof ProcessingInstruction`（ProcessingInstruction 构造器未装）→ testharness completion callback 未调。需 ProcessingInstruction 构造器（下轮）
-- 剩余聚类（按 ROI）：① ProcessingInstruction 构造器（instanceof + 解 PI 超时）② instanceof HTMLElement/Element 原型链 ~88 ③ polyfill appendChild 闭环（待 L2）④ `attr_is is not defined`（attributes.js 等 helper 缺失/未加载）
+- R8 已做：① testharness 运行时本地 .js 内联（`inline_local_scripts`：用例引用的 `attributes.js`/`Document-createProcessingInstruction.js`/`../constants.js` 等相对路径 .js 从 wpt-data 读内容内联为 inline `<script>`，规范化 `./` 与 `../` 上溯；文件缺失移除标签）② 与并行 canvas 流（`ad0ef686` G5 headless image fetcher）合并 `wpt_root` 贯穿——canvas 流独立把 `wpt_root`（其设计 `Option<&Path>`）加到 inner，R8 合并统一为 `&Path`（dom/canvas 双路径都需要本地资源），保留 image fetcher 并让 dom 路径也启用。基线进一步真实化：subtest ~2696→4490（+1794 真实），polyfill 51.12%→37.82%、native 50.79%→37.59%（双路径对等差 0.23pp，非回归——用例真正跑起来暴露真实 gap）。wpt-runner v8 168 / quickjs 103 单测全绿，clippy 干净
+- 剩余聚类（按 ROI，R8 真实化后重排）：① **createElementNS namespace 处理**（596 subtest，最大块）② createEvent / createProcessingInstruction 方法（284 is not a function）③ instanceof HTMLElement/Element 原型链（89）④ polyfill appendChild 闭环（待 L2）⑤ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -122,6 +123,7 @@
 | 2026-08-14 | R5 | `testharness-dom-native` 入口（ZW_NATIVE_DOM=1）+ native DOMException constructor 修复（throw_dom_exception 取全局构造器 new + 构造器 invoke 用 This；prototype.constructor 属性 V8 Fatal 回退留下轮）；dom_bindings 197 全绿，双矩阵 clippy 干净 | **建立 polyfill 56.45% vs native 41.25% 双基线**（DC-3 native 对照达成）；定位 native 落后 15.2pp 根因（DOMException prototype.constructor 缺失 → assert_throws_dom "wrong global" ~414） |
 | 2026-08-14 | R6 | DOMException identity 三重根因修复（prototype.constructor 补齐 + build_and_register 幂等 + shim part03 check 用 globalThis.DOMException）+ webview overlap 诊断测试；zero-engine v8 2073 / webview_coverage 17 全绿，双矩阵 clippy 干净 | **native dom/nodes 41.25% → 56.08%（+14.83pp，追平 polyfill 56.45%，差仅 0.37pp）**；classList 单用例 native 80.3%（=polyfill） |
 | 2026-08-14 | R7 | fetch-dom-subset 补齐 .js 依赖（.html+.js+dom 根共享.js+testharnessreport.js）+ native createProcessingInstruction API（factories invoke + document.rs 注册 + node.rs PI target/data getter + node_name PI→target + spec 校验）+ native PI 单测；dom_bindings 199 全绿，双矩阵 clippy 干净 | **基线真实化**（用例 .js 缺失致跳过→真跑暴露 gap）：polyfill 56.45%→51.12%、native 56.08%→50.79%（双路径对等差 0.33pp）。native PI API 净正（单测证明），PI 用例待 ProcessingInstruction 构造器 |
+| 2026-08-14 | R8 | testharness 运行时本地 .js 内联（`inline_local_scripts` + `extract_script_src` + `normalize_relative`）+ `wpt_root`/`case_path` 贯穿 `prepare_harness_html`/`run_testharness_html`/`run_canvas_testharness_html`/`run_testharness_html_inner`；与并行 canvas 流（G5 image fetcher）合并（统一 `&Path`）；wpt-runner v8 168 / quickjs 103 单测全绿，clippy 干净 | **基线进一步真实化**（用例 .js 运行时内联→用例真正跑起来）：subtest ~2696→4490（+1794），polyfill 51.12%→37.82%、native 50.79%→37.59%（双路径对等差 0.23pp，**非回归**——暴露真实 gap：createElementNS 596/createEvent/createProcessingInstruction instanceof 89 等）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -131,12 +133,13 @@
 
 ## 下一步计划
 
-1. **R7（本轮，已完成）**：fetch .js 基线真实化 + native createProcessingInstruction API → land（基线真实化双路径对等，native PI 净正）
-2. **下轮候选（按剩余 ROI）**：
-   - **(a) ProcessingInstruction 构造器**（解 PI 用例 instanceof + 超时；native PI API 已就位）。
-   - **(b) instanceof HTMLElement/Element 原型链**（~88 失败）。
-   - **(c) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
-   - **(d) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
+1. **R8（本轮，已完成）**：testharness 本地 .js 内联 + wpt_root 贯穿合并 → land（基线真实化 178 用例 / 4490 subtest，双路径对等差 0.23pp）
+2. **下轮候选（按剩余 ROI，R8 真实化后重排）**：
+   - **(a) createElementNS namespace 处理**（596 subtest，最大块；`assert_equals mismatch` 主因）。
+   - **(b) createEvent / createProcessingInstruction 方法实现**（284 `is not a function`；native PI API 已部分就位，但用例侧 `document.createProcessingInstruction` 仍缺）。
+   - **(c) instanceof HTMLElement/Element 原型链**（89 失败；同时解 PI 用例 instanceof + 超时）。
+   - **(d) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
+   - **(e) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
 3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
 ---
@@ -160,8 +163,8 @@
 4. **polyfill appendChild/insertBefore 闭环校验架构限制**（R4 发现）：polyfill 桥的 mutation 经 `__zw_append_child` 回调延迟批处理（`apply_dom_mutations` 在脚本执行后 apply），且 shim 层 `_makeProxy` 只有 selector/handle 无 live 祖先链——无法在 `appendChild` 调用点同步抛 HierarchyRequestError。native 路径已修（R4），polyfill 待 M1 L2 polyfill-live 合一（shim 改读 live Document 后才有祖先链）。
 5. **testharness-dom 仅测 polyfill 路径**（R4 发现，**R5 已解**）：R5 加 `testharness-dom-native` 入口（ZW_NATIVE_DOM=1）。
 6. ~~**native DOMException identity**（R5 定位）~~ → ✅ **R6 已修**：三重根因全部修复。native dom/nodes 41.25% → 56.08% 追平 polyfill（注：R7 .js 依赖补齐后基线真实化为 50.79%，双路径对等）。
-7. **PI 用例超时 + ProcessingInstruction 构造器缺失**（R7 发现）：Document-createProcessingInstruction.html 外层 `test()` 嵌套多个 `test()` + `pi instanceof ProcessingInstruction`（构造器未装）→ testharness completion callback 未调 → 超时。native PI API（target/data/nodeName/校验）已就位（R7），但需 ProcessingInstruction 构造器（instanceof + 解嵌套 test 超时）。
-8. **基线真实化**（R7）：R7 前 dom/nodes 基线（56.45%/56.08%）虚高——因用例引用的 .js 测试体缺失被跳过。R7 补齐 .js 后真跑暴露 gap（createProcessingInstruction/instanceof/attr_is 等），双路径对等降至 51.12%/50.79%（更诚实，非回归）。
+7. **PI 用例超时 + ProcessingInstruction 构造器缺失**（R7 发现，R8 部分缓解）：Document-createProcessingInstruction.html 外层 `test()` 嵌套多个 `test()` + `pi instanceof ProcessingInstruction`（构造器未装）→ testharness completion callback 未调 → 超时。native PI API（target/data/nodeName/校验）已就位（R7），R8 .js 内联后用例侧 `document.createProcessingInstruction` 仍 `is not a function`（284 块的一部分）。需 ProcessingInstruction 构造器 + document 侧 createProcessingInstruction 方法接线（下轮候选 b）。
+8. **基线真实化**（R7→R8 持续）：R7 前 dom/nodes 基线虚高（用例 .js 缺失被跳过）；R7 补 .js 文件 → 51.12%/50.79%；**R8 让 .js 运行时内联执行** → 用例真正跑起来，subtest ~2696→4490，双路径对等降至 37.82%/37.59%（更诚实，非回归）。R8 已解 R7 的 `attr_is is not defined`（attributes.js 等 helper 现内联加载）。
 
 ---
 
@@ -176,4 +179,5 @@
 - R4：M4 native node mutation DomError→DOMException（append/insert/remove/replace）→ archive/m4-slice-node-mutation-dom-exception.md
 - R5：M4 testharness-dom native 路径对照 + native DOMException constructor 修复（部分）→ archive/m5-slice-native-baseline-domexception-constructor.md
 - R6：M4 DOMException identity 三重根因修复（native 追平 polyfill 56.08%）→ archive/m6-slice-dom-exception-identity.md
-- R7：M4 fetch .js 基线真实化 + native createProcessingInstruction API → archive/m7-slice-js-deps-createprocessinginstruction.md（本轮 land 时附）（本轮 land 时附）（本轮 land 时附）（本轮 land 时附）
+- R7：M4 fetch .js 基线真实化 + native createProcessingInstruction API → archive/m7-slice-js-deps-createprocessinginstruction.md
+- R8：M4 testharness 本地 .js 内联 + wpt_root 贯穿合并（基线真实化 178 用例 / 4490 subtest）→ archive/m8-slice-testharness-local-js-inline.md

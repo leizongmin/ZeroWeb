@@ -92,7 +92,7 @@ pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<
         .map(|path| {
             let source = std::fs::read_to_string(wpt_root.join(path));
             let results = match source {
-                Ok(source) => run_testharness_html(path, &source, &harness_source, CASE_TIMEOUT),
+                Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
                 Err(error) => vec![HarnessSubtestResult {
                     name: "load WPT case".into(),
                     status: HarnessStatus::Fail,
@@ -228,7 +228,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
                     continue;
                 }
             };
-            let results = run_testharness_html(&relative, &source, &harness_source, CASE_TIMEOUT);
+            let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
             cases.push((relative, results));
         }
     }
@@ -245,24 +245,18 @@ fn run_canvas_testharness_html(
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
     let inline_extras = [(CANVAS_TESTS_JS_PATH, canvas_tests_source)];
-    run_testharness_html_inner(
-        Some(wpt_root),
-        case_name,
-        source,
-        harness_source,
-        &inline_extras,
-        timeout,
-    )
+    run_testharness_html_inner(wpt_root, case_name, source, harness_source, &inline_extras, timeout)
 }
 
 /// Run one HTML testharness case with the declared click/send_keys adapter.
 pub fn run_testharness_html(
+    wpt_root: &Path,
     case_name: &str,
     source: &str,
     harness_source: &str,
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
-    run_testharness_html_inner(None, case_name, source, harness_source, &[], timeout)
+    run_testharness_html_inner(wpt_root, case_name, source, harness_source, &[], timeout)
 }
 
 /// R34xx：headless 图片源获取器——`https://wpt.test/<path>`（wpt-data 相对路径）→
@@ -283,7 +277,7 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
 }
 
 fn run_testharness_html_inner(
-    wpt_root: Option<&Path>,
+    wpt_root: &Path,
     case_name: &str,
     source: &str,
     harness_source: &str,
@@ -299,7 +293,7 @@ fn run_testharness_html_inner(
         }];
     }
 
-    let html = prepare_harness_html(source, harness_source, inline_extras);
+    let html = prepare_harness_html(source, harness_source, inline_extras, wpt_root, case_name);
     let scripts = zero_engine::extract_page_scripts(&html);
     let script_lengths = scripts
         .iter()
@@ -319,7 +313,8 @@ fn run_testharness_html_inner(
         native_dom,
         // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
-        image_source_fetcher: wpt_root.and_then(wpt_data_image_fetcher),
+        // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
+        image_source_fetcher: wpt_data_image_fetcher(wpt_root),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
@@ -399,7 +394,13 @@ fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResu
         .collect()
 }
 
-fn prepare_harness_html(source: &str, harness_source: &str, inline_extras: &[(&str, &str)]) -> String {
+fn prepare_harness_html(
+    source: &str,
+    harness_source: &str,
+    inline_extras: &[(&str, &str)],
+    wpt_root: &Path,
+    case_path: &str,
+) -> String {
     let reporter = r#"
 if (typeof setup === 'function') setup({output: false});
 globalThis.__zw_harness_results = [];
@@ -441,6 +442,12 @@ add_completion_callback(function() {
     for (script_src, inline_source) in inline_extras {
         html = replace_script_source(&html, script_src, &format!("<script>{inline_source}</script>"));
     }
+    // js-dom goal：用例引用的本地 .js 测试体（如 <script src="attributes.js">、
+    // <script src="Document-createProcessingInstruction.js">）——extract_page_scripts 不加载外部 src，
+    // 故此处从 wpt-data 读文件内容内联。case_path 形如 "dom/nodes/attributes.html"，本地 .js 解析为
+    // 同目录文件（相对 src 如 "attributes.js" / "./attributes.js" / "../constants.js"）。
+    // 仅内联相对路径（非 /resources/、非 http(s):）；文件缺失则移除该 script 标签（不注入空）。
+    html = inline_local_scripts(&html, wpt_root, case_path);
     html.push_str(
         "<script>\
          document.dispatchEvent(new Event('DOMContentLoaded'));\
@@ -481,6 +488,98 @@ fn replace_script_source(source: &str, script_src: &str, replacement: &str) -> S
         remaining = &candidate[end..];
     }
     output
+}
+
+/// 内联用例引用的本地 .js 测试体（js-dom goal R8）。
+///
+/// `extract_page_scripts` 不加载外部 `<script src>`，故用例引用的同目录 .js（如 attributes.js、
+/// Document-createProcessingInstruction.js）或相对路径（../constants.js）不会执行 → `attr_is`/
+/// 测试体 not defined。本函数扫描剩余的 `<script src="...">`（相对路径，非 /resources/、非 http），
+/// 从 wpt-data 读文件内容内联为 inline `<script>`；文件缺失则移除该标签（best-effort，不注入空）。
+///
+/// `case_path` 形如 "dom/nodes/attributes.html"；相对 src 解析为相对该 case 所在目录。
+fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String {
+    // case 所在目录（相对 wpt_root），如 "dom/nodes"。
+    let case_dir = case_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let mut output = String::with_capacity(html.len());
+    let mut remaining = html;
+    loop {
+        let Some(start) = remaining.find("<script") else {
+            output.push_str(remaining);
+            break;
+        };
+        let Some(open_end) = remaining[start..].find('>') else {
+            output.push_str(remaining);
+            break;
+        };
+        let open_end = start + open_end;
+        let open = &remaining[start..=open_end];
+        // 提取 src="..."（仅相对路径 .js）。
+        let src = extract_script_src(open);
+        let resolved = src.and_then(|s| {
+            // 仅相对路径（不以 / 开头、非 http(s):、非 // ）。
+            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") || s.starts_with("//") {
+                return None;
+            }
+            // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
+            let rel = s.strip_prefix("./").unwrap_or(s);
+            let combined = if case_dir.is_empty() {
+                rel.to_string()
+            } else {
+                normalize_relative(&format!("{case_dir}/{rel}"))
+            };
+            std::fs::read_to_string(wpt_root.join(&combined))
+                .ok()
+                .map(|c| (combined, c))
+        });
+        let rest_start = open_end + 1;
+        match resolved {
+            Some((combined, content)) => {
+                output.push_str(&remaining[..start]);
+                output.push_str("<script data-inline=\"");
+                output.push_str(&combined);
+                output.push_str("\">");
+                output.push_str(&content);
+                output.push_str("</script>");
+            }
+            None => {
+                // 非本地 .js（/resources/、http、或文件缺失）：保留原标签（extract_page_scripts 处理）。
+                output.push_str(&remaining[..rest_start]);
+            }
+        }
+        remaining = &remaining[rest_start..];
+    }
+    output
+}
+
+/// 从 `<script src="...">` 标签提取 src 值（单/双引号）。
+fn extract_script_src(open_tag: &str) -> Option<&str> {
+    let key = "src=\"";
+    if let Some(i) = open_tag.find(key) {
+        let after = &open_tag[i + key.len()..];
+        return after.split('"').next();
+    }
+    let key = "src='";
+    if let Some(i) = open_tag.find(key) {
+        let after = &open_tag[i + key.len()..];
+        return after.split('\'').next();
+    }
+    None
+}
+
+/// 规范化相对路径（处理 `..` 上溯，如 "dom/nodes/../constants.js" → "dom/constants.js"）。
+fn normalize_relative(path: &str) -> String {
+    let mut stack: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                stack.pop();
+            }
+            s => stack.push(s),
+        }
+    }
+    stack.join("/")
 }
 
 fn unsupported_testdriver_dependencies(source: &str) -> Vec<String> {
@@ -686,7 +785,13 @@ promise_test(async function() {
 }, 'click updates live checkedness');
 </script>
 "##;
-        let results = run_testharness_html("local-supported.html", html, MINI_HARNESS, Duration::from_secs(2));
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "local-supported.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(2),
+        );
         assert_eq!(
             results,
             vec![
@@ -707,7 +812,13 @@ promise_test(async function() {
     #[test]
     fn unsupported_testdriver_command_is_explicit() {
         let html = "test_driver.set_permission({name:'clipboard-read'}, 'granted')";
-        let results = run_testharness_html("unsupported.html", html, MINI_HARNESS, Duration::from_secs(1));
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "unsupported.html",
+            html,
+            MINI_HARNESS,
+            Duration::from_secs(1),
+        );
         assert_eq!(results[0].status, HarnessStatus::Unsupported);
         assert!(results[0].message.as_deref().unwrap().contains("set_permission"));
     }
@@ -716,6 +827,7 @@ promise_test(async function() {
     fn missing_harness_completion_is_timeout() {
         let html = r#"<script src="/resources/testharness.js"></script>"#;
         let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
             "timeout.html",
             html,
             "function add_result_callback(){} function add_completion_callback(){}",
