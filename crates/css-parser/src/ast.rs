@@ -2,7 +2,7 @@
 //!
 //! 定义 CSS 样式表的抽象语法树结构。
 
-use crate::values::{FontFeatureSettingsValue, types::FontStyleValue};
+use crate::values::{FontFeatureSettingsValue, FontVariationSettingsValue, types::FontStyleValue};
 
 /// CSS 样式表 AST。
 #[derive(Debug, Clone)]
@@ -104,6 +104,8 @@ pub struct FontFaceRule {
     pub size_adjust: Option<f32>,
     /// `font-feature-settings` descriptor；缺失或 `normal` 表示无 face 级覆盖。
     pub feature_settings: FontFeatureSettingsValue,
+    /// `font-variation-settings` descriptor；缺失或 `normal` 表示无 face 级 axis 默认值。
+    pub variation_settings: FontVariationSettingsValue,
     /// `unicode-range` descriptor 的闭区间列表；空列表表示 unrestricted。
     pub unicode_ranges: Vec<(u32, u32)>,
 }

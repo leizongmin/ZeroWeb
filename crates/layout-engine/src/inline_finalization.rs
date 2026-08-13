@@ -49,7 +49,8 @@ fn configure_inline_fonts(
             let overrides = crate::font_resolution::collect_font_overrides(doc, styles, root, resolver);
             context = context
                 .with_font_ids_overrides(overrides.ids)
-                .with_font_size_adjust_overrides(overrides.size_adjust);
+                .with_font_size_adjust_overrides(overrides.size_adjust)
+                .with_font_variation_overrides(overrides.variations);
         }
     }
     context
@@ -1280,6 +1281,9 @@ pub(crate) fn measure_text_content(
                     parent_style
                         .map(|style| &style.font_size_adjust)
                         .unwrap_or(&zero_style_system::FontSizeAdjustValue::None),
+                    parent_style
+                        .map(|style| &style.font_variation_settings)
+                        .unwrap_or(&zero_style_system::FontVariationSettingsValue::Normal),
                 )
             }
         };

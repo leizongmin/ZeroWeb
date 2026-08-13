@@ -6,12 +6,21 @@
 use std::sync::OnceLock;
 
 use zero_layout_engine::inline::{AdvanceSource, estimate_char_width};
-use zero_render_foundation::font::{FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, TextDirection};
+use zero_render_foundation::font::{
+    FontSizeAdjustment, OpenTypeFeature, OpenTypeVariation, ShapedGlyph, TextDirection,
+};
 
 static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
 /// 宿主提供的文本整形回调签名。
-pub type TextShapeFn =
-    fn(&[u32], &str, f32, TextDirection, &[OpenTypeFeature], FontSizeAdjustment) -> Option<Vec<ShapedGlyph>>;
+pub type TextShapeFn = fn(
+    &[u32],
+    &str,
+    f32,
+    TextDirection,
+    &[OpenTypeFeature],
+    &[OpenTypeVariation],
+    FontSizeAdjustment,
+) -> Option<Vec<ShapedGlyph>>;
 static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
@@ -22,6 +31,13 @@ pub fn set_char_measure_fn(f: fn(char, f32, bool) -> f32) {
 /// 注册全局文本整形函数（宿主启动时调用一次）。
 pub fn set_text_shape_fn(f: TextShapeFn) {
     let _ = TEXT_SHAPE.set(f);
+}
+
+/// 是否启用 production variable-font axis 消费。
+///
+/// 当前仅 shaping advance支持 axis；字形 raster/IPC 尚未携带坐标，因此默认关闭。
+pub fn font_variations_enabled() -> bool {
+    std::env::var("ZW_FONT_VARIATIONS").as_deref() == Ok("1")
 }
 
 /// Paint 阶段测量单个字符 advance；Ahem 字体固定为 1em 方框宽。
@@ -48,11 +64,13 @@ pub fn shape_text_for_paint(
     font_size: f32,
     direction: TextDirection,
     features: &[OpenTypeFeature],
+    variations: &[OpenTypeVariation],
     adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
+    let variations = if font_variations_enabled() { variations } else { &[] };
     TEXT_SHAPE
         .get()
-        .and_then(|shape| shape(font_ids, text, font_size, direction, features, adjustment))
+        .and_then(|shape| shape(font_ids, text, font_size, direction, features, variations, adjustment))
 }
 
 pub(crate) fn font_size_adjustment(value: &zero_style_system::FontSizeAdjustValue) -> FontSizeAdjustment {
@@ -82,6 +100,16 @@ pub(crate) fn font_size_adjustment(value: &zero_style_system::FontSizeAdjustValu
             };
             FontSizeAdjustment::Adjust { metric, target }
         }
+    }
+}
+
+pub(crate) fn font_variations(value: &zero_style_system::FontVariationSettingsValue) -> Vec<OpenTypeVariation> {
+    match value {
+        zero_style_system::FontVariationSettingsValue::Normal => Vec::new(),
+        zero_style_system::FontVariationSettingsValue::Settings(settings) => settings
+            .iter()
+            .map(|setting| OpenTypeVariation::new(setting.tag, setting.value))
+            .collect(),
     }
 }
 
@@ -137,6 +165,7 @@ impl AdvanceSource for ShapedAdvanceSource {
             font_size,
             is_ahem,
             &zero_style_system::FontSizeAdjustValue::None,
+            &zero_style_system::FontVariationSettingsValue::Normal,
         )
     }
 
@@ -147,6 +176,7 @@ impl AdvanceSource for ShapedAdvanceSource {
         font_size: f32,
         is_ahem: bool,
         size_adjust: &zero_style_system::FontSizeAdjustValue,
+        variations: &zero_style_system::FontVariationSettingsValue,
     ) -> f32 {
         let estimated: f32 = text.chars().map(|ch| estimate_char_width(ch, font_size, is_ahem)).sum();
         if is_ahem {
@@ -155,12 +185,18 @@ impl AdvanceSource for ShapedAdvanceSource {
         if font_ids.is_empty() {
             return estimated;
         }
+        let variation_input = if font_variations_enabled() {
+            font_variations(variations)
+        } else {
+            Vec::new()
+        };
         let Some(shaped) = shape_text_for_paint(
             font_ids,
             text,
             font_size,
             TextDirection::LeftToRight,
             &[],
+            &variation_input,
             font_size_adjustment(size_adjust),
         ) else {
             return estimated;
@@ -223,6 +259,28 @@ mod tests {
             dot_width < 100.0,
             "非 Ahem '.' 须窄于 1em（font_size），实际 {dot_width}"
         );
+    }
+
+    #[test]
+    fn computed_variations_convert_to_shaping_axes() {
+        let value = zero_style_system::FontVariationSettingsValue::Settings(vec![
+            zero_style_system::FontVariationSetting {
+                tag: *b"wdth",
+                value: 125.0,
+            },
+            zero_style_system::FontVariationSetting {
+                tag: *b"wght",
+                value: 600.7,
+            },
+        ]);
+        assert_eq!(
+            font_variations(&value),
+            vec![
+                OpenTypeVariation::new(*b"wdth", 125.0),
+                OpenTypeVariation::new(*b"wght", 600.7),
+            ]
+        );
+        assert!(font_variations(&zero_style_system::FontVariationSettingsValue::Normal).is_empty());
     }
 
     fn glyph(code_point: char, glyph_id: u32) -> ShapedGlyph {

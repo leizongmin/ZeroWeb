@@ -271,6 +271,7 @@ impl super::Painter {
             zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
         };
         let shape_features = style_open_type_features(style);
+        let shape_variations = crate::text_metrics::font_variations(&style.font_variation_settings);
         let shape_adjustment = crate::text_metrics::font_size_adjustment(&style.font_size_adjust);
         let mut line_utf16_start = 0usize;
         let block_height = lines.len() as f32 * line_height;
@@ -294,6 +295,7 @@ impl super::Painter {
                     font_size,
                     text_direction,
                     &shape_features,
+                    &shape_variations,
                     shape_adjustment,
                 )
             })
@@ -1515,6 +1517,8 @@ impl super::Painter {
                                 frag_font_id,
                             );
                             let open_type_features = style_open_type_features(shaping_style);
+                            let variations =
+                                crate::text_metrics::font_variations(&shaping_style.font_variation_settings);
                             let advance_trace = fragment_advance_trace(
                                 &shaping_font_ids,
                                 &transformed,
@@ -1522,6 +1526,7 @@ impl super::Painter {
                                 text_direction,
                                 logical_source.as_ref(),
                                 &open_type_features,
+                                &variations,
                                 size_adjust,
                             );
                             for glyph in fragment_glyphs(
@@ -1533,6 +1538,7 @@ impl super::Painter {
                                 shaped_advance_eligible,
                                 logical_source,
                                 &open_type_features,
+                                &variations,
                                 size_adjust,
                             ) {
                                 let ch = glyph.code_point;

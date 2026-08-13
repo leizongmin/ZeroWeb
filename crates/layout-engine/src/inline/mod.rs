@@ -157,6 +157,8 @@ pub struct InlineFormattingContext {
     pub font_ids_overrides: HashMap<NodeId, Vec<u32>>,
     /// 文本/inline run 的 `font-size-adjust` 计算值。
     pub font_size_adjust_overrides: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+    /// 文本/inline run 的 `font-variation-settings` 计算值。
+    pub font_variation_overrides: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
     /// 逐文本节点的 Ahem 字体标志覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法检测 Ahem 字体，
@@ -285,6 +287,7 @@ impl InlineFormattingContext {
             font_id_overrides: HashMap::new(),
             font_ids_overrides: HashMap::new(),
             font_size_adjust_overrides: HashMap::new(),
+            font_variation_overrides: HashMap::new(),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
             line_height_overrides: HashMap::new(),
@@ -396,6 +399,15 @@ impl InlineFormattingContext {
         overrides: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     ) -> Self {
         self.font_size_adjust_overrides = overrides;
+        self
+    }
+
+    /// 注入逐 run 的 `font-variation-settings` 计算值。
+    pub fn with_font_variation_overrides(
+        mut self,
+        overrides: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
+    ) -> Self {
+        self.font_variation_overrides = overrides;
         self
     }
 
@@ -519,8 +531,18 @@ impl InlineFormattingContext {
                     .font_size_adjust_overrides
                     .get(&run.node_id)
                     .unwrap_or(&zero_style_system::FontSizeAdjustValue::None);
-                let width =
-                    source.measure_text_with_font_context(text, font_ids, run.font_size, run.is_ahem_font, size_adjust);
+                let variations = self
+                    .font_variation_overrides
+                    .get(&run.node_id)
+                    .unwrap_or(&zero_style_system::FontVariationSettingsValue::Normal);
+                let width = source.measure_text_with_font_context(
+                    text,
+                    font_ids,
+                    run.font_size,
+                    run.is_ahem_font,
+                    size_adjust,
+                    variations,
+                );
                 if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1")
                     && !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None)
                 {

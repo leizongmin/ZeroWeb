@@ -223,7 +223,14 @@ fn adjusted_text_max_width(
         zero_css_parser::values::LengthValue::Px(value) => *value as f32,
         _ => crate::inline::DEFAULT_FONT_SIZE,
     };
-    Some(advance_source.measure_text_with_font_context(&text, &font_ids, font_size, false, &style.font_size_adjust))
+    Some(advance_source.measure_text_with_font_context(
+        &text,
+        &font_ids,
+        font_size,
+        false,
+        &style.font_size_adjust,
+        &style.font_variation_settings,
+    ))
 }
 
 /// 垂直书写模式下 width:auto 块级元素收缩到内容（CSS §10.3.3 + CSS Writing Modes §7.1）。

@@ -2380,6 +2380,7 @@ mod font_face_extract_tests {
                     None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
                 (
@@ -2390,6 +2391,7 @@ mod font_face_extract_tests {
                     None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
             ],
@@ -2423,6 +2425,7 @@ mod font_face_extract_tests {
                     None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
                 (
@@ -2433,6 +2436,7 @@ mod font_face_extract_tests {
                     Some(75.0),
                     Some(1.5),
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
                 (
@@ -2443,6 +2447,7 @@ mod font_face_extract_tests {
                     None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
                 (
@@ -2453,6 +2458,7 @@ mod font_face_extract_tests {
                     None,
                     None,
                     zero_css_parser::values::FontFeatureSettingsValue::Normal,
+                    zero_css_parser::values::FontVariationSettingsValue::Normal,
                     Vec::new(),
                 ),
             ]
@@ -2490,6 +2496,7 @@ mod font_face_extract_tests {
                         ff.stretch,
                         ff.size_adjust,
                         ff.feature_settings.clone(),
+                        ff.variation_settings.clone(),
                         ff.unicode_ranges.clone(),
                     ))
                 }

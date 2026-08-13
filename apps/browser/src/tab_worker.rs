@@ -753,10 +753,24 @@ fn tab_worker_main(
                 let loaded = load.drain_loaded_fonts();
                 if !loaded.is_empty() {
                     let mut updated = false;
-                    for (family, weight, is_italic, stretch, size_adjust, features, unicode_ranges, bytes) in loaded {
+                    for (
+                        family,
+                        weight,
+                        is_italic,
+                        stretch,
+                        size_adjust,
+                        features,
+                        variations,
+                        unicode_ranges,
+                        bytes,
+                    ) in loaded
+                    {
                         match font_loader.load_font(&bytes) {
                             Ok(id) => {
                                 font_loader.register_font_features(id, features);
+                                if zero_engine::font_variations_enabled() {
+                                    font_loader.register_font_variations(id, variations);
+                                }
                                 font_loader.register_unicode_ranges(id, unicode_ranges);
                                 if let Some(scale) = size_adjust {
                                     font_loader.register_font_size_adjust(id, scale);

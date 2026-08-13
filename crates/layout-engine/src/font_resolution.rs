@@ -69,6 +69,7 @@ pub fn resolve_font_ids_for_style(
 pub(crate) struct FontOverrides {
     pub(crate) ids: HashMap<NodeId, Vec<u32>>,
     pub(crate) size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+    pub(crate) variations: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
 }
 
 pub(crate) fn collect_font_overrides(
@@ -104,6 +105,9 @@ pub(crate) fn collect_font_overrides(
                 ),
             );
             overrides.size_adjust.insert(node_id, style.font_size_adjust);
+            overrides
+                .variations
+                .insert(node_id, style.font_variation_settings.clone());
         }
         for child in doc.child_nodes(node_id) {
             visit(doc, styles, child, resolver, overrides);
@@ -113,6 +117,7 @@ pub(crate) fn collect_font_overrides(
     let mut overrides = FontOverrides {
         ids: HashMap::new(),
         size_adjust: HashMap::new(),
+        variations: HashMap::new(),
     };
     visit(doc, styles, root, resolver, &mut overrides);
     overrides
@@ -206,6 +211,10 @@ mod tests {
         assert_eq!(
             overrides.size_adjust.get(&text),
             Some(&zero_style_system::FontSizeAdjustValue::None)
+        );
+        assert_eq!(
+            overrides.variations.get(&text),
+            Some(&zero_style_system::FontVariationSettingsValue::Normal)
         );
     }
 }

@@ -10,7 +10,8 @@ use std::cell::Cell;
 
 use zero_engine::layout_estimate_char_width;
 use zero_render_foundation::font::{
-    FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, TextDirection, loader::FontLoader,
+    FontSizeAdjustment, OpenTypeFeature, OpenTypeVariation, ShapedGlyph, TextDirection, TextShapingOptions,
+    loader::FontLoader,
 };
 
 thread_local! {
@@ -40,6 +41,7 @@ pub fn shape_text(
     font_size: f32,
     direction: TextDirection,
     features: &[OpenTypeFeature],
+    variations: &[OpenTypeVariation],
     adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
@@ -47,8 +49,17 @@ pub fn shape_text(
         font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
-        loader
-            .shape_text_cached_with_font_ids_and_adjustment(font_ids, text, font_size, direction, features, adjustment)
+        loader.shape_text_cached_with_font_ids_and_options(
+            font_ids,
+            text,
+            font_size,
+            TextShapingOptions {
+                direction,
+                features,
+                variations,
+                adjustment,
+            },
+        )
     })
 }
 
@@ -75,6 +86,7 @@ mod tests {
                 16.0,
                 TextDirection::LeftToRight,
                 &[],
+                &[],
                 FontSizeAdjustment::None,
             )
             .is_none()
@@ -91,6 +103,7 @@ mod tests {
                     16.0,
                     TextDirection::LeftToRight,
                     &[],
+                    &[],
                     FontSizeAdjustment::None,
                 )
             })
@@ -102,6 +115,7 @@ mod tests {
                 "AV",
                 16.0,
                 TextDirection::LeftToRight,
+                &[],
                 &[],
                 FontSizeAdjustment::None,
             )
@@ -119,6 +133,7 @@ mod tests {
                 16.0,
                 TextDirection::RightToLeft,
                 &[],
+                &[],
                 FontSizeAdjustment::None,
             )
             .expect("RTL shape")
@@ -132,6 +147,7 @@ mod tests {
                 16.0,
                 TextDirection::LeftToRight,
                 &[OpenTypeFeature::new(*b"liga", 1)],
+                &[],
                 FontSizeAdjustment::None,
             )
             .expect("liga enabled shape");
@@ -141,6 +157,7 @@ mod tests {
                 16.0,
                 TextDirection::LeftToRight,
                 &[OpenTypeFeature::new(*b"liga", 0)],
+                &[],
                 FontSizeAdjustment::None,
             )
             .expect("liga disabled shape");
@@ -148,5 +165,43 @@ mod tests {
         });
         assert_eq!(ligatures.0.len(), 1);
         assert_eq!(ligatures.1.len(), 2);
+    }
+
+    #[test]
+    fn shape_text_forwards_variation_axes() {
+        const ROBOTO_EXTREMO: &[u8] = include_bytes!("../fonts/RobotoExtremo-VF.subset.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader
+            .load_font(ROBOTO_EXTREMO)
+            .expect("load RobotoExtremo variable font");
+
+        let (condensed, expanded) = with_measure_ctx(&loader, font_id, || {
+            let condensed = shape_text(
+                &[font_id],
+                "text",
+                32.0,
+                TextDirection::LeftToRight,
+                &[],
+                &[OpenTypeVariation::new(*b"wdth", 75.0)],
+                FontSizeAdjustment::None,
+            )
+            .expect("shape condensed instance");
+            let expanded = shape_text(
+                &[font_id],
+                "text",
+                32.0,
+                TextDirection::LeftToRight,
+                &[],
+                &[OpenTypeVariation::new(*b"wdth", 125.0)],
+                FontSizeAdjustment::None,
+            )
+            .expect("shape expanded instance");
+            (condensed, expanded)
+        });
+
+        assert!(
+            expanded.iter().map(|glyph| glyph.advance_x).sum::<f32>()
+                > condensed.iter().map(|glyph| glyph.advance_x).sum::<f32>()
+        );
     }
 }

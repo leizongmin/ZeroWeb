@@ -301,6 +301,7 @@ pub type ExtractedFontFace = (
     Option<f32>,
     Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
+    zero_css_parser::values::FontVariationSettingsValue,
     Vec<(u32, u32)>,
 );
 
@@ -325,6 +326,7 @@ pub fn extract_font_faces(css: &str) -> Vec<ExtractedFontFace> {
                     ff.stretch,
                     ff.size_adjust,
                     ff.feature_settings.clone(),
+                    ff.variation_settings.clone(),
                     ff.unicode_ranges.clone(),
                 ))
             }
@@ -342,6 +344,19 @@ pub fn font_feature_settings_to_opentype(
         zero_css_parser::values::FontFeatureSettingsValue::Features(features) => features
             .iter()
             .map(|feature| zero_render_foundation::font::OpenTypeFeature::new(feature.tag, feature.value))
+            .collect(),
+    }
+}
+
+/// 将 CSS variation settings 转为字体整形层输入。
+pub fn font_variation_settings_to_opentype(
+    settings: &zero_css_parser::values::FontVariationSettingsValue,
+) -> Vec<zero_render_foundation::font::OpenTypeVariation> {
+    match settings {
+        zero_css_parser::values::FontVariationSettingsValue::Normal => Vec::new(),
+        zero_css_parser::values::FontVariationSettingsValue::Settings(variations) => variations
+            .iter()
+            .map(|variation| zero_render_foundation::font::OpenTypeVariation::new(variation.tag, variation.value))
             .collect(),
     }
 }

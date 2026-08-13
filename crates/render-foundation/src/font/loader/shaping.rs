@@ -3,7 +3,14 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 
 type ShapeCacheKey = (
-    Vec<(u32, u64, u32, Vec<(u32, u32)>, Vec<crate::font::OpenTypeFeature>)>,
+    Vec<(
+        u32,
+        u64,
+        u32,
+        Vec<(u32, u32)>,
+        Vec<crate::font::OpenTypeFeature>,
+        Vec<([u8; 4], u32)>,
+    )>,
     u32,
     (u8, u32),
     crate::font::TextDirection,
@@ -69,6 +76,33 @@ impl FontLoader {
         features: &[crate::font::OpenTypeFeature],
         adjustment: crate::font::FontSizeAdjustment,
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
+        self.shape_text_cached_with_font_ids_and_options(
+            font_ids,
+            text,
+            font_size,
+            crate::font::TextShapingOptions {
+                direction,
+                features,
+                adjustment,
+                ..crate::font::TextShapingOptions::default()
+            },
+        )
+    }
+
+    /// 使用有序 CSS face 列表、variation axes 和 per-face `font-size-adjust` 整形文本，并缓存结果。
+    pub fn shape_text_cached_with_font_ids_and_options(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        font_size: f32,
+        options: crate::font::TextShapingOptions<'_>,
+    ) -> Option<Vec<crate::font::ShapedGlyph>> {
+        let crate::font::TextShapingOptions {
+            direction,
+            features,
+            variations,
+            adjustment,
+        } = options;
         let &primary_id = font_ids.first()?;
         let per_face_features = crate::font::shaper::per_face_features_enabled();
         let primary_features = self.resolved_font_features(primary_id, features);
@@ -95,6 +129,10 @@ impl FontLoader {
                         } else {
                             primary_features.clone()
                         },
+                        self.resolved_font_variations(*font_id, variations)
+                            .into_iter()
+                            .map(crate::font::OpenTypeVariation::cache_key)
+                            .collect(),
                     )
                 })
             })
@@ -111,13 +149,14 @@ impl FontLoader {
         }
 
         let glyphs = crate::font::TextShaper::new(self, Some(crate::primitive::FontId(primary_id)))
-            .shape_single_line_with_font_ids_and_adjustment(
+            .shape_single_line_with_font_ids_and_options(
                 font_ids,
                 text,
                 font_size,
-                direction,
-                if per_face_features { features } else { &primary_features },
-                adjustment,
+                crate::font::TextShapingOptions {
+                    features: if per_face_features { features } else { &primary_features },
+                    ..options
+                },
             );
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
         // OPTIMIZATION: 4096 上限在 `word-break: break-word` 中文长文下逐字 fragment
@@ -149,6 +188,30 @@ impl FontLoader {
                 *existing = *feature;
             } else {
                 resolved.push(*feature);
+            }
+        }
+        resolved
+    }
+
+    /// 注册 face 级 OpenType variation axis 默认值。
+    pub fn register_font_variations(&mut self, font_id: u32, variations: Vec<crate::font::OpenTypeVariation>) {
+        if self.fonts.contains_key(&font_id) {
+            self.font_variations.insert(font_id, variations);
+            self.shape_cache.lock().expect("shape cache poisoned").clear();
+        }
+    }
+
+    pub(in crate::font) fn resolved_font_variations(
+        &self,
+        font_id: u32,
+        caller_variations: &[crate::font::OpenTypeVariation],
+    ) -> Vec<crate::font::OpenTypeVariation> {
+        let mut resolved = self.font_variations.get(&font_id).cloned().unwrap_or_default();
+        for variation in caller_variations {
+            if let Some(existing) = resolved.iter_mut().find(|existing| existing.tag == variation.tag) {
+                *existing = *variation;
+            } else {
+                resolved.push(*variation);
             }
         }
         resolved
@@ -265,5 +328,47 @@ mod tests {
             .expect("shape with caller override");
         assert_eq!(caller_glyphs.len(), 1);
         assert_eq!(caller_glyphs[0].font_id.0, secondary);
+    }
+
+    #[test]
+    fn variation_axes_change_advance_and_isolate_cache_entries() {
+        const ROBOTO_EXTREMO: &[u8] =
+            include_bytes!("../../../../../tests/wpt-runner/fonts/RobotoExtremo-VF.subset.ttf");
+
+        let mut loader = FontLoader::new();
+        let font_id = loader
+            .load_font(ROBOTO_EXTREMO)
+            .expect("load RobotoExtremo variable font");
+        loader.register_font_variations(font_id, vec![crate::font::OpenTypeVariation::new(*b"wdth", 75.0)]);
+        let condensed = loader
+            .shape_text_cached_with_font_ids_and_options(
+                &[font_id],
+                "text",
+                32.0,
+                crate::font::TextShapingOptions {
+                    direction: TextDirection::LeftToRight,
+                    ..crate::font::TextShapingOptions::default()
+                },
+            )
+            .expect("shape descriptor-default condensed instance");
+        let expanded = loader
+            .shape_text_cached_with_font_ids_and_options(
+                &[font_id],
+                "text",
+                32.0,
+                crate::font::TextShapingOptions {
+                    direction: TextDirection::LeftToRight,
+                    variations: &[crate::font::OpenTypeVariation::new(*b"wdth", 125.0)],
+                    ..crate::font::TextShapingOptions::default()
+                },
+            )
+            .expect("shape caller-overridden expanded instance");
+
+        let condensed_width: f32 = condensed.iter().map(|glyph| glyph.advance_x).sum();
+        let expanded_width: f32 = expanded.iter().map(|glyph| glyph.advance_x).sum();
+        assert!(
+            expanded_width > condensed_width,
+            "wdth axis must affect shaping advance: condensed={condensed_width}, expanded={expanded_width}"
+        );
     }
 }

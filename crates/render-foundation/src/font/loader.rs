@@ -252,6 +252,8 @@ pub struct FontLoader {
     font_instance_ids: HashMap<u32, u64>,
     /// `@font-face font-feature-settings` 提供的 face 级默认 feature。
     font_features: HashMap<u32, Vec<crate::font::OpenTypeFeature>>,
+    /// `@font-face font-variation-settings` 提供的 face 级默认 axis 坐标。
+    font_variations: HashMap<u32, Vec<crate::font::OpenTypeVariation>>,
     /// `@font-face unicode-range` 提供的 face 级闭区间；缺项表示 unrestricted。
     font_unicode_ranges: HashMap<u32, Vec<(u32, u32)>>,
     /// `@font-face size-adjust` 提供的 face 级字号缩放因子。
@@ -283,6 +285,7 @@ impl FontLoader {
             next_id: 0,
             font_instance_ids: HashMap::new(),
             font_features: HashMap::new(),
+            font_variations: HashMap::new(),
             font_unicode_ranges: HashMap::new(),
             font_size_adjustments: HashMap::new(),
             family_map: HashMap::new(),
@@ -308,6 +311,7 @@ impl FontLoader {
             next_id: self.next_id,
             font_instance_ids: self.font_instance_ids.clone(),
             font_features: self.font_features.clone(),
+            font_variations: self.font_variations.clone(),
             font_unicode_ranges: self.font_unicode_ranges.clone(),
             font_size_adjustments: self.font_size_adjustments.clone(),
             family_map: self.family_map.clone(),

@@ -128,6 +128,7 @@ pub trait AdvanceSource {
         font_size: f32,
         is_ahem: bool,
         _size_adjust: &zero_style_system::FontSizeAdjustValue,
+        _variations: &zero_style_system::FontVariationSettingsValue,
     ) -> f32 {
         self.measure_text_with_fonts(text, font_ids, font_size, is_ahem)
     }
@@ -187,9 +188,10 @@ impl AdvanceSourceHandle {
         font_size: f32,
         is_ahem: bool,
         size_adjust: &zero_style_system::FontSizeAdjustValue,
+        variations: &zero_style_system::FontVariationSettingsValue,
     ) -> f32 {
         self.0
-            .measure_text_with_font_context(text, font_ids, font_size, is_ahem, size_adjust)
+            .measure_text_with_font_context(text, font_ids, font_size, is_ahem, size_adjust, variations)
     }
 }
 

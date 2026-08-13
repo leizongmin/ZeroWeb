@@ -88,6 +88,7 @@ impl AdvanceSource for AdjustedAdvance {
         _font_size: f32,
         _is_ahem: bool,
         size_adjust: &FontSizeAdjustValue,
+        _variations: &zero_style_system::FontVariationSettingsValue,
     ) -> f32 {
         let scale = match size_adjust {
             FontSizeAdjustValue::Adjust {

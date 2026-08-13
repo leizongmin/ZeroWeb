@@ -118,6 +118,7 @@ impl<'a> Parser<'a> {
         let mut stretch: Option<f32> = None;
         let mut size_adjust: Option<f32> = None;
         let mut feature_settings = crate::values::FontFeatureSettingsValue::Normal;
+        let mut variation_settings = crate::values::FontVariationSettingsValue::Normal;
         let mut unicode_ranges = Vec::new();
         for decl in &declarations {
             if decl.property.eq_ignore_ascii_case("font-family") {
@@ -138,6 +139,10 @@ impl<'a> Parser<'a> {
                 && let Some(parsed) = crate::values::parse_font_feature_settings(&decl.value)
             {
                 feature_settings = parsed;
+            } else if decl.property.eq_ignore_ascii_case("font-variation-settings")
+                && let Some(parsed) = crate::values::parse_font_variation_settings(&decl.value)
+            {
+                variation_settings = parsed;
             } else if decl.property.eq_ignore_ascii_case("unicode-range") {
                 unicode_ranges = Self::parse_font_face_unicode_ranges(&decl.value).unwrap_or_default();
             }
@@ -155,6 +160,7 @@ impl<'a> Parser<'a> {
             stretch,
             size_adjust,
             feature_settings,
+            variation_settings,
             unicode_ranges,
         })
     }

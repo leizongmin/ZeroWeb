@@ -3,7 +3,7 @@
 use crate::ast::*;
 use crate::parser::Parser;
 use crate::tokenizer::{Token, Tokenizer};
-use crate::values::{FontFeatureSetting, FontFeatureSettingsValue};
+use crate::values::{FontFeatureSetting, FontFeatureSettingsValue, FontVariationSetting, FontVariationSettingsValue};
 
 // ═══════════════════════════════════════════════════════════════════════
 // parser.rs — nth 表达式解析（通过 :nth-child 等伪类测试）
@@ -397,6 +397,32 @@ fn test_font_face_feature_settings_descriptor() {
                 FontFeatureSetting {
                     tag: *b"kern",
                     value: 2,
+                },
+            ])
+        ),
+        other => panic!("expected FontFace, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_font_face_variation_settings_descriptor() {
+    let css = r#"@font-face {
+        font-family: VariableFont;
+        src: url(variable.ttf);
+        font-variation-settings: "wdth" 125, "wght" 600.7;
+    }"#;
+    let ws = Parser::parse_stylesheet(css);
+    match &ws.rules[0] {
+        Rule::FontFace(ff) => assert_eq!(
+            ff.variation_settings,
+            FontVariationSettingsValue::Settings(vec![
+                FontVariationSetting {
+                    tag: *b"wdth",
+                    value: 125.0,
+                },
+                FontVariationSetting {
+                    tag: *b"wght",
+                    value: 600.7,
                 },
             ])
         ),

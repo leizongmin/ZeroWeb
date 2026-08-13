@@ -97,6 +97,50 @@ impl OpenTypeFeature {
     }
 }
 
+/// 应用于完整 shaping run 的 OpenType variation axis。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenTypeVariation {
+    /// 四字节 OpenType axis tag（如 `wght`）。
+    pub tag: [u8; 4],
+    /// axis 坐标。
+    pub value: f32,
+}
+
+impl OpenTypeVariation {
+    /// 创建一个作用于完整 shaping run 的 variation axis。
+    pub const fn new(tag: [u8; 4], value: f32) -> Self {
+        Self { tag, value }
+    }
+
+    pub(crate) fn cache_key(self) -> ([u8; 4], u32) {
+        (self.tag, self.value.to_bits())
+    }
+}
+
+/// 一次文本整形调用的可选输入。
+#[derive(Debug, Clone, Copy)]
+pub struct TextShapingOptions<'a> {
+    /// 文本方向。
+    pub direction: TextDirection,
+    /// 元素级 OpenType feature overrides。
+    pub features: &'a [OpenTypeFeature],
+    /// 元素级 OpenType variation axis overrides。
+    pub variations: &'a [OpenTypeVariation],
+    /// per-face `font-size-adjust`。
+    pub adjustment: FontSizeAdjustment,
+}
+
+impl Default for TextShapingOptions<'_> {
+    fn default() -> Self {
+        Self {
+            direction: TextDirection::Auto,
+            features: &[],
+            variations: &[],
+            adjustment: FontSizeAdjustment::None,
+        }
+    }
+}
+
 /// 单个整形后的 Glyph 信息
 #[derive(Debug, Clone)]
 pub struct ShapedGlyph {
@@ -207,6 +251,33 @@ impl<'a> TextShaper<'a> {
         features: &[OpenTypeFeature],
         adjustment: FontSizeAdjustment,
     ) -> Vec<ShapedGlyph> {
+        self.shape_single_line_with_font_ids_and_options(
+            font_ids,
+            text,
+            font_size,
+            TextShapingOptions {
+                direction,
+                features,
+                adjustment,
+                ..TextShapingOptions::default()
+            },
+        )
+    }
+
+    /// 使用有序 CSS face 列表、variation axes 和 per-face `font-size-adjust` 整形文本。
+    pub fn shape_single_line_with_font_ids_and_options(
+        &self,
+        font_ids: &[u32],
+        text: &str,
+        font_size: f32,
+        options: TextShapingOptions<'_>,
+    ) -> Vec<ShapedGlyph> {
+        let TextShapingOptions {
+            direction,
+            features,
+            variations,
+            adjustment,
+        } = options;
         let primary_id = font_ids
             .first()
             .copied()
@@ -222,18 +293,23 @@ impl<'a> TextShaper<'a> {
         } else {
             features.to_vec()
         };
+        let primary_variations = self.font_loader.resolved_font_variations(primary_id.0, variations);
 
         // 尝试 rustybuzz shaping
         if !font_ids.is_empty() || self.default_font_id.is_some() {
-            if (font_ids.len() > 1 || shaped_fallback_enabled())
-                && let Some(glyphs) =
-                    self.shape_with_fallback_runs(font_ids, text, font_size, direction, features, adjustment)
+            if (font_ids.len() > 1 || shaped_fallback_enabled() || !primary_variations.is_empty())
+                && let Some(glyphs) = self.shape_with_fallback_runs(font_ids, text, font_size, options)
             {
                 return glyphs;
             }
-            if let Some(glyphs) =
-                self.shape_with_rustybuzz(primary_id, text, primary_size, direction, &primary_features)
-            {
+            if let Some(glyphs) = self.shape_with_rustybuzz(
+                primary_id,
+                text,
+                primary_size,
+                direction,
+                &primary_features,
+                &primary_variations,
+            ) {
                 return glyphs;
             }
         }
@@ -254,10 +330,14 @@ impl<'a> TextShaper<'a> {
         font_ids: &[u32],
         text: &str,
         font_size: f32,
-        direction: TextDirection,
-        features: &[OpenTypeFeature],
-        adjustment: FontSizeAdjustment,
+        options: TextShapingOptions<'_>,
     ) -> Option<Vec<ShapedGlyph>> {
+        let TextShapingOptions {
+            direction,
+            features,
+            variations,
+            adjustment,
+        } = options;
         let per_face_features = per_face_features_enabled();
         if text.is_empty() || direction != TextDirection::LeftToRight || !per_face_features && !features.is_empty() {
             return None;
@@ -317,8 +397,15 @@ impl<'a> TextShaper<'a> {
             } else {
                 features.to_vec()
             };
-            let mut glyphs =
-                self.shape_with_rustybuzz(font_id, run_text, resolved_size, direction, &resolved_features)?;
+            let resolved_variations = self.font_loader.resolved_font_variations(font_id.0, variations);
+            let mut glyphs = self.shape_with_rustybuzz(
+                font_id,
+                run_text,
+                resolved_size,
+                direction,
+                &resolved_features,
+                &resolved_variations,
+            )?;
             let cluster_base = u32::try_from(start).ok()?;
             for glyph in &mut glyphs {
                 glyph.cluster = glyph.cluster.checked_add(cluster_base)?;
@@ -336,10 +423,20 @@ impl<'a> TextShaper<'a> {
         font_size: f32,
         direction: TextDirection,
         features: &[OpenTypeFeature],
+        variations: &[OpenTypeVariation],
     ) -> Option<Vec<ShapedGlyph>> {
         let font_data = self.font_loader.get_font_data(font_id.0)?;
 
-        let face = rustybuzz::Face::from_slice(font_data, self.font_loader.face_index(font_id.0))?;
+        let mut face = rustybuzz::Face::from_slice(font_data, self.font_loader.face_index(font_id.0))?;
+        // https://drafts.csswg.org/css-fonts-4/#font-variation-settings-def
+        let variations = variations
+            .iter()
+            .map(|variation| rustybuzz::Variation {
+                tag: rustybuzz::ttf_parser::Tag::from_bytes(&variation.tag),
+                value: variation.value,
+            })
+            .collect::<Vec<_>>();
+        face.set_variations(&variations);
 
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);
@@ -834,9 +931,10 @@ mod tests {
                     &[primary, fallback],
                     "f\u{200C}i",
                     16.0,
-                    TextDirection::LeftToRight,
-                    &[],
-                    FontSizeAdjustment::None,
+                    TextShapingOptions {
+                        direction: TextDirection::LeftToRight,
+                        ..TextShapingOptions::default()
+                    },
                 )
                 .is_none(),
             "ZWNJ must remain in the primary grapheme run"
@@ -848,9 +946,10 @@ mod tests {
                 &[primary, fallback],
                 &text,
                 16.0,
-                TextDirection::LeftToRight,
-                &[],
-                FontSizeAdjustment::None,
+                TextShapingOptions {
+                    direction: TextDirection::LeftToRight,
+                    ..TextShapingOptions::default()
+                },
             )
             .expect("fallback run");
 

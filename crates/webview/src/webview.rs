@@ -672,7 +672,7 @@ impl WebView {
                 return;
             }
         };
-        for (family, sources, weight, is_italic, stretch, size_adjust, features, unicode_ranges) in faces {
+        for (family, sources, weight, is_italic, stretch, size_adjust, features, variations, unicode_ranges) in faces {
             let Some(src) = sources.first() else {
                 continue;
             };
@@ -687,6 +687,12 @@ impl WebView {
             match loader.load_font(&bytes) {
                 Ok(id) => {
                     loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&features));
+                    if zero_engine::font_variations_enabled() {
+                        loader.register_font_variations(
+                            id,
+                            zero_engine::font_variation_settings_to_opentype(&variations),
+                        );
+                    }
                     loader.register_unicode_ranges(id, unicode_ranges);
                     if let Some(scale) = size_adjust {
                         loader.register_font_size_adjust(id, scale);

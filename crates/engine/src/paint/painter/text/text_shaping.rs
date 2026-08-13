@@ -643,6 +643,7 @@ pub(super) fn fragment_glyphs<'a>(
     advance_eligible: bool,
     logical_source: Option<LogicalFragmentSource<'a>>,
     features: &[OpenTypeFeature],
+    variations: &[zero_render_foundation::font::OpenTypeVariation],
     size_adjust: zero_render_foundation::font::FontSizeAdjustment,
 ) -> FragmentGlyphs<'a> {
     if font_ids.is_empty() {
@@ -666,6 +667,7 @@ pub(super) fn fragment_glyphs<'a>(
             font_size,
             shape_direction,
             features,
+            variations,
             size_adjust,
         )
     {
@@ -731,6 +733,7 @@ pub(super) fn fragment_advance_trace(
     direction: TextDirection,
     logical_source: Option<&LogicalFragmentSource<'_>>,
     features: &[OpenTypeFeature],
+    variations: &[zero_render_foundation::font::OpenTypeVariation],
     size_adjust: zero_render_foundation::font::FontSizeAdjustment,
 ) -> Option<FragmentAdvanceTrace> {
     if !shaped_advance_trace_enabled() {
@@ -750,6 +753,7 @@ pub(super) fn fragment_advance_trace(
         font_size,
         shape_direction,
         features,
+        variations,
         size_adjust,
     )?;
     Some(advance_trace_from_glyphs(shaping_text, font_size, &glyphs, size_adjust))

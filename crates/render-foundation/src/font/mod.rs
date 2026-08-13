@@ -11,8 +11,8 @@ pub use cache::GlyphCache;
 pub use face_match::{NORMAL_FONT_STRETCH, font_face_aliases, resolve_font_face, resolve_font_faces};
 pub use loader::FontLoader;
 pub use shaper::{
-    FontSizeAdjustMetric, FontSizeAdjustment, OpenTypeFeature, ShapedGlyph, ShapedLine, TextDirection, TextShaper,
-    measure_text_width,
+    FontSizeAdjustMetric, FontSizeAdjustment, OpenTypeFeature, OpenTypeVariation, ShapedGlyph, ShapedLine,
+    TextDirection, TextShaper, TextShapingOptions, measure_text_width,
 };
 pub use woff::{decode_woff, is_woff};
 

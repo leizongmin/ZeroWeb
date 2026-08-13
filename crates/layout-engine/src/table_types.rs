@@ -467,8 +467,14 @@ fn cell_direct_text_width(
         // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
         // R3278-F：table cell 的 max-content 使用与 IFC 相同的真实字体 advance。
         return (
-            source.measure_text_with_font_context(&text, &font_ids, font_size, is_ahem, &style.font_size_adjust)
-                + letter_spacing * text.chars().count() as f32,
+            source.measure_text_with_font_context(
+                &text,
+                &font_ids,
+                font_size,
+                is_ahem,
+                &style.font_size_adjust,
+                &style.font_variation_settings,
+            ) + letter_spacing * text.chars().count() as f32,
             true,
         );
     }

@@ -1751,6 +1751,7 @@ fn ifc_advance_source_receives_ordered_font_ids() {
             _font_size: f32,
             _is_ahem: bool,
             size_adjust: &zero_style_system::FontSizeAdjustValue,
+            variations: &zero_style_system::FontVariationSettingsValue,
         ) -> f32 {
             assert_eq!(text, "xA");
             assert_eq!(font_ids, &[7, 9]);
@@ -1760,6 +1761,15 @@ fn ifc_advance_source_receives_ordered_font_ids() {
                     metric: None,
                     basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
                 }
+            );
+            assert_eq!(
+                variations,
+                &zero_style_system::FontVariationSettingsValue::Settings(vec![
+                    zero_style_system::FontVariationSetting {
+                        tag: *b"wdth",
+                        value: 125.0,
+                    },
+                ])
             );
             22.0
         }
@@ -1775,6 +1785,13 @@ fn ifc_advance_source_receives_ordered_font_ids() {
                 metric: None,
                 basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
             },
+        )]))
+        .with_font_variation_overrides(HashMap::from([(
+            node,
+            zero_style_system::FontVariationSettingsValue::Settings(vec![zero_style_system::FontVariationSetting {
+                tag: *b"wdth",
+                value: 125.0,
+            }]),
         )]));
     let run = TextRun {
         text: "xA".to_string(),

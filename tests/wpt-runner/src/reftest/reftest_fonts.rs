@@ -169,6 +169,7 @@ type FontFaceSpec = (
     Option<f32>,
     Option<f32>,
     zero_css_parser::values::FontFeatureSettingsValue,
+    zero_css_parser::values::FontVariationSettingsValue,
     Vec<(u32, u32)>,
 );
 
@@ -196,6 +197,7 @@ pub(super) fn extract_font_faces(css: &str) -> Vec<FontFaceSpec> {
                     ff.stretch,
                     ff.size_adjust,
                     ff.feature_settings.clone(),
+                    ff.variation_settings.clone(),
                     ff.unicode_ranges.clone(),
                 ))
             }
@@ -262,8 +264,17 @@ fn read_font_src(href: &str, base_dir: Option<&Path>) -> Option<Vec<u8>> {
 /// 对每个 face，按 src 顺序读取本地文件或解码 `data:` URI 并 `load_font`；
 /// 首个成功加载的源即注册。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
-    for (family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges) in
-        extract_font_faces(css)
+    for (
+        family,
+        sources,
+        weight,
+        is_italic,
+        stretch,
+        size_adjust,
+        feature_settings,
+        variation_settings,
+        unicode_ranges,
+    ) in extract_font_faces(css)
     {
         // Ahem 由 FontLoader 特殊处理（按 family 名合成方块），无需加载文件
         if family.eq_ignore_ascii_case("Ahem") {
@@ -275,6 +286,12 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
             };
             if let Ok(id) = loader.load_font(&data) {
                 loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
+                if zero_engine::font_variations_enabled() {
+                    loader.register_font_variations(
+                        id,
+                        zero_engine::font_variation_settings_to_opentype(&variation_settings),
+                    );
+                }
                 loader.register_unicode_ranges(id, unicode_ranges.clone());
                 if let Some(scale) = size_adjust {
                     loader.register_font_size_adjust(id, scale);
