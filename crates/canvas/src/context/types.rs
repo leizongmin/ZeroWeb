@@ -371,6 +371,9 @@ pub enum CompositeOperation {
     DestinationIn,
     /// 新图元与已有内容重叠区域显示新图元，其余清除。
     SourceIn,
+    /// R34xx：新图元只绘制在透明区域（Porter-Duff source-out——此前缺失，composite
+    /// 光栅的 source-out 语义从未实现）。
+    SourceOut,
     /// 新图元与已有内容重叠区域显示新图元。
     SourceAtop,
     /// 新图元和已有内容取较亮值。
@@ -379,6 +382,8 @@ pub enum CompositeOperation {
     Copy,
     /// 新图元和已有内容取异或。
     Xor,
+    /// R34xx：清除画布（Porter-Duff clear：Fa=0, Fb=0——2d.composite.operation.clear）。
+    Clear,
     /// 新图元乘以已有内容（变暗）。
     Multiply,
     /// 新图元与已有内容取屏幕混合（变亮）。

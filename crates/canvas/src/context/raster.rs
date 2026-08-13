@@ -945,11 +945,16 @@ impl CanvasContext {
             CompositeOperation::SourceIn => (da, 0.0),
             CompositeOperation::DestinationIn => (0.0, sa),
             CompositeOperation::DestinationOut => (0.0, 1.0 - sa),
+            // R34xx：标准 Porter-Duff source-out = (1-da, 0)（源画在目标外）——旧实现误用
+            // destination-out 的 (0, 1-sa)（2d.composite.transparent.source-out 期望
+            // 半透明目标的形状内输出源）。
+            CompositeOperation::SourceOut => (1.0 - da, 0.0),
             CompositeOperation::SourceAtop => (da, 1.0 - sa),
             CompositeOperation::DestinationAtop => (1.0 - da, sa),
             CompositeOperation::Copy => (1.0, 0.0),
             CompositeOperation::Xor => (1.0 - da, 1.0 - sa),
             CompositeOperation::Lighter => (1.0, 1.0),
+            CompositeOperation::Clear => (0.0, 0.0),
             // 其余混合模式使用 source-over 的合成因子
             _ => (1.0, 1.0 - sa),
         };

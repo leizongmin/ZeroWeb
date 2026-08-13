@@ -95,6 +95,11 @@ impl CanvasContext {
             self.primitives.add_fill(rect, color);
             self.blit_rect_to_pixels(&rect, color);
         }
+        // R34xx：source 独占类 composite 的未覆盖区域清除（矩形外置透明——
+        // 2d.composite.uncovered.fill.* / solid.*）。
+        if self.composite_clears_uncovered() {
+            self.clear_outside_rect(&rect);
+        }
     }
 
     /// 描边矩形。
@@ -320,6 +325,8 @@ impl CanvasContext {
         if vertices.is_empty() {
             return;
         }
+        // R34xx：source 独占类 composite 的未覆盖区域清除（path 外置透明）。
+        let clear_uncovered = self.composite_clears_uncovered();
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
             let (min_x, min_y, max_x, max_y) = vertices
@@ -338,6 +345,10 @@ impl CanvasContext {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), color);
             self.blit_path_to_pixels(&vertices, color);
+        }
+        // R34xx：source 独占类 composite 的未覆盖区域清除（path 外置透明）。
+        if clear_uncovered {
+            self.clear_outside_path();
         }
     }
 
@@ -1162,6 +1173,59 @@ impl CanvasContext {
     // ── Output ──
 
     /// 判断当前是否启用了阴影（阴影颜色不透明且偏移或模糊非零）。
+    /// R34xx：composite 模式是否在绘制前清除未覆盖区域（spec：source 独占类操作
+    /// source-in/source-out/copy 等绘制后未覆盖像素为 (0,0,0,0)——Porter-Duff 的
+    /// 全局语义，2d.composite.uncovered.fill.* 全族）。
+    fn composite_clears_uncovered(&self) -> bool {
+        matches!(
+            self.composite_operation,
+            CompositeOperation::SourceIn
+                | CompositeOperation::SourceOut
+                | CompositeOperation::DestinationIn
+                | CompositeOperation::DestinationAtop
+                | CompositeOperation::Copy
+                | CompositeOperation::Clear
+        )
+    }
+
+    /// R34xx：source 独占类 composite 绘制后清除矩形外像素（未覆盖区域 → 透明）。
+    fn clear_outside_rect(&mut self, rect: &Rect) {
+        let (x0, y0) = (rect.left().max(0.0) as usize, rect.top().max(0.0) as usize);
+        let (x1, y1) = (
+            (rect.right().min(self.width as f32) as usize).min(self.width as usize),
+            (rect.bottom().min(self.height as f32) as usize).min(self.height as usize),
+        );
+        let w = self.width as usize;
+        for y in 0..self.height as usize {
+            for x in 0..w {
+                // R34xx：clip 外的像素不受影响（clip 限制绘制与清除范围——clip.copy 等）。
+                if (x < x0 || x >= x1 || y < y0 || y >= y1) && self.clip_applies(x as f32, y as f32) {
+                    let idx = (y * w + x) * 4;
+                    self.pixel_buffer[idx] = 0;
+                    self.pixel_buffer[idx + 1] = 0;
+                    self.pixel_buffer[idx + 2] = 0;
+                    self.pixel_buffer[idx + 3] = 0;
+                }
+            }
+        }
+    }
+
+    /// R34xx：source 独占类 composite 绘制后清除当前路径外像素（未覆盖区域 → 透明）。
+    fn clear_outside_path(&mut self) {
+        let w = self.width as usize;
+        for y in 0..self.height as usize {
+            for x in 0..w {
+                if !self.is_point_in_path(x as f32 + 0.5, y as f32 + 0.5) && self.clip_applies(x as f32, y as f32) {
+                    let idx = (y * w + x) * 4;
+                    self.pixel_buffer[idx] = 0;
+                    self.pixel_buffer[idx + 1] = 0;
+                    self.pixel_buffer[idx + 2] = 0;
+                    self.pixel_buffer[idx + 3] = 0;
+                }
+            }
+        }
+    }
+
     /// R34xx：样式代表 alpha（阴影 mask 调制用——半透明形状的阴影应半透明，
     /// 2d.shadow.gradient.alpha / alpha.5）。per-pixel 样式在给定点采样。
     fn style_alpha(&self, style: &CanvasStyle, x: f32, y: f32) -> f32 {

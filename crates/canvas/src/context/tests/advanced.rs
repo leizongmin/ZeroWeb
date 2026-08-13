@@ -92,9 +92,10 @@ fn test_composite_copy() {
     let inside = ctx.get_image_data(7, 0, 1, 1);
     assert_eq!(inside.data[0..4], [0, 0, 255, 255], "copy: 绘制区域内应为蓝色");
 
-    // copy 区域外应为红色（未被覆盖）
+    // R34xx：copy 的未覆盖区域清除为透明（spec Porter-Duff 全局语义——
+    // 2d.composite.uncovered.fill.copy；旧实现保留底）。
     let outside = ctx.get_image_data(0, 0, 1, 1);
-    assert_eq!(outside.data[0..4], [255, 0, 0, 255], "copy: 未绘制区域应保留红色");
+    assert_eq!(outside.data[0..4], [0, 0, 0, 0], "copy: 未绘制区域应清除为透明");
 }
 
 /// 测试 xor 合成：先绘制红色矩形，再绘制重叠的蓝色矩形，
@@ -642,8 +643,9 @@ fn test_composite_copy_replaces() {
 
     let inside = ctx.get_image_data(10, 0, 1, 1);
     assert_eq!(inside.data[0..4], [0, 255, 0, 255], "copy: 内部区域应为绿色");
+    // R34xx：copy 的未覆盖区域清除为透明（同 test_composite_copy）。
     let outside = ctx.get_image_data(0, 0, 1, 1);
-    assert_eq!(outside.data[0..4], [255, 0, 0, 255], "copy: 外部区域应保留红色");
+    assert_eq!(outside.data[0..4], [0, 0, 0, 0], "copy: 外部区域应清除为透明");
 }
 
 // ── OffscreenCanvas 测试 ──

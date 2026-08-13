@@ -1405,7 +1405,13 @@
     // globalAlpha / lineDash / lineJoin / lineCap：getter+setter（client-side 存值 + push host）。
     ctx._ga = 1.0;
     Object.defineProperty(ctx, 'globalAlpha', {
-      set: function (v) { this._ga = +v; __zw_canvas_op(h, 'setGlobalAlpha', String(v)); },
+      // R34xx：值须 ∈ [0,1]（非有限/越界忽略保持旧值——2d.composite.globalAlpha.range）。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v) || v < 0 || v > 1) return;
+        this._ga = v;
+        __zw_canvas_op(h, 'setGlobalAlpha', String(v));
+      },
       get: function () { return this._ga; }
     });
     ctx.setLineDash = function (segs) {
@@ -1507,7 +1513,20 @@
     // **已知限制**：composite 仅对 stroke/rect-blit 生效（host composite_pixel），path-based fillRect 不消费。
     ctx._gco = 'source-over';
     Object.defineProperty(ctx, 'globalCompositeOperation', {
-      set: function (v) { this._gco = String(v); __zw_canvas_op(h, 'setCompositeOperation', String(v)); },
+      // R34xx：非法值（非 spec 枚举/大小写不匹配）忽略保持旧值（spec：
+      // 2d.composite.operation.casesensitive/unrecognised）。
+      set: function (v) {
+        // R34xx：枚举值大小写敏感（'XOR' 非法忽略——casesensitive）；'clear' 为合法值
+        //（2d.composite.operation.clear 断言可设置）。
+        v = String(v);
+        var VALID = ['source-over','source-in','source-out','source-atop','destination-over',
+                     'destination-in','destination-out','destination-atop','lighter','copy','xor',
+                     'clear','multiply','screen','overlay','darken','lighten','color-dodge','color-burn',
+                     'hard-light','soft-light','difference','exclusion','hue','saturation','color','luminosity'];
+        if (VALID.indexOf(v) < 0) return;
+        this._gco = v;
+        __zw_canvas_op(h, 'setCompositeOperation', String(v));
+      },
       get: function () { return this._gco; }
     });
     ctx._sc = 'rgba(0, 0, 0, 0)';
