@@ -232,7 +232,9 @@ fn hex_char_to_byte(c1: char, c2: char) -> Option<u8> {
 /// driving: css-color rgb-001..006 / background-color-rgb-001..002。
 fn parse_rgb_function(value: &str) -> Option<ColorValue> {
     let start = value.find('(')?;
-    let end = value.rfind(')')?;
+    // R34xx：缺 ')' 时按字符串尾解析（2d.fillStyle.parse.rgb-eof：'rgb(0, 255, 0'
+    // 分量完整 → 有效；不完整分量由分量数检查拒绝）。
+    let end = value.rfind(')').unwrap_or(value.len());
     let inner_str = strip_css_comments(value.get(start + 1..end)?);
     let inner = inner_str.trim();
 
@@ -480,7 +482,8 @@ fn parse_color_number(s: &str) -> Option<f64> {
 /// background-color-hsl-001..003 / t424 / t425。
 fn parse_hsl_function(value: &str) -> Option<ColorValue> {
     let start = value.find('(')?;
-    let end = value.rfind(')')?;
+    // R34xx：缺 ')' 时按字符串尾解析（同 rgb-eof）。
+    let end = value.rfind(')').unwrap_or(value.len());
     let inner_str = strip_css_comments(value.get(start + 1..end)?);
     let inner = inner_str.trim();
 
@@ -512,6 +515,11 @@ fn parse_hsl_function(value: &str) -> Option<ColorValue> {
     }
 
     let h = parse_hue_angle(comps[0])?;
+    // R34xx：逗号语法（遗留 hsl(H, S%, L%)）的 S/L 必须带 %（hsl(0, 0, 50%) 的
+    // s='0' 无 % → 无效——2d.fillStyle.parse.invalid.hsl-3）。
+    if main.contains(',') && (!comps[1].trim().ends_with('%') || !comps[2].trim().ends_with('%')) {
+        return None;
+    }
     let s = parse_percent_component(comps[1])?;
     let l = parse_percent_component(comps[2])?;
     let a = if let Some(ap) = slash_alpha {
