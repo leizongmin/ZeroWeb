@@ -92,6 +92,8 @@
 >
 > **🧪 净负实验裁决（R3390-F lh/rlh used line-height·2026-08-13）**：审计并试作 typed `lh/rlh`、parent/current/root line-height context 与 root lifecycle，随后完整回退源码。CSS Values 4 要求 `lh/rlh` 用于 `font-size`、`line-height` 等 font-affecting 属性时按父元素 computed metrics 消解循环；fresh Chrome 127 probe 在 `rlh-in-monospace` 中给出 body 子级 `19px`、monospace 祖先内子级 `23.3846px`。当前 ZeroWeb 默认 `normal=1.164em` 只能得到近似值，且 layout per-font provider 默认关闭；root-fixed 与 parent-computed 两种候选均使 fresh Chromium Oracle `0.96%→0.98%`（净退 `0.02pp`）。root-fixed 虽令 self-source `0.15%→0.00%`，但与 Chromium 循环语义不符；parent-computed self-source为 `0.22%`。故不提交半正确实现，等待 root/parent used `line-height:normal` 与 Chromium 同源后再恢复。经验见 [`lh-rlh-needs-used-line-height-provider.md`](../learnings/bugs/lh-rlh-needs-used-line-height-provider.md)。
 >
+> **🧪 净负实验裁决（R3397-F font-language-override·2026-08-13）**：完整试作 `font-language-override:normal|"<tag>"` 的 parse/computed/inherit/shorthand/CSSOM、大小写敏感 OpenType language tag、shaping callback/cache 与 browser/renderer/WPT 三宿主桥接，随后完整回退源码。真实 Libertine WOFF 机制测试证明默认 `fi` 为 1 glyph、`"TRK"` 为 2 glyph、规范不生效的 `"trk"` 仍为 1 glyph；treatment PNG 与 `font-feature-settings:"liga" 0` reference 字节完全一致。fresh Chromium 串行 A/B 却为 01 `0.78%→0.79%`、03 保持 `0.74%`，两案聚合净退 `0.01pp`。说明 language-system 选择已正确，剩余差异在分离 glyph 的定位/advance/光栅路径；不以 self-reference 覆盖 Oracle 门禁。经验见 [`font-language-override-needs-chromium-glyph-positioning.md`](../learnings/bugs/font-language-override-needs-chromium-glyph-positioning.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
