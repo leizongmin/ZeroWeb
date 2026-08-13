@@ -118,6 +118,8 @@
 >
 > **▶ WPT 资产进展（R3414-F resource closure automatic gate·2026-08-14）**：`fetch-wpt-data` 过去只执行资源同步，不验证常驻 test/ref 的字体引用是否全部进入账本；漏项在本机 full corpus存在时仍会静默通过。现把 `audit-imported-font-resources.sh` 接到同步步骤之后，所有 `reftest` / `reftest-oracle` / `import-wpt` 的 fetch前置链都会自动验证闭包，缺失即失败。手动 `make audit-imported-font-resources` 入口继续保留。
 >
+> **▶ WPT 资产进展（R3415-F linked stylesheet font closure·2026-08-14）**：字体闭包门此前只扫 test/ref 内联 `url()`，`<link href="/fonts/*.css">` 中的字体可绕过。现同时解析 test/ref 直接引用的 stylesheet并扫描其字体 URL；相对路径按浏览器 web-root 语义归一化，`..` 不得逃出 WPT root。常驻用例当前主要命中 `/fonts/ahem.css → fonts/Ahem.ttf`，手动门与 `fetch-wpt-data` 自动链均 PASS，未发现新的账本缺口。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

@@ -9,11 +9,10 @@ RESOURCE_LEDGER="${RUNNER_DIR}/imported-resources.txt"
 
 missing=0
 
-inspect_page() {
-  local page="$1"
-  local file="${DATA_DIR}/${page}"
-  [[ -f "${file}" ]] || return 0
-
+inspect_font_urls() {
+  local file="$1"
+  local owner="$2"
+  local web_path="$3"
   while IFS= read -r raw_url; do
     local url="${raw_url#url(}"
     url="${url%)}"
@@ -22,23 +21,61 @@ inspect_page() {
     url="${url#\'}"
     url="${url%\'}"
 
+    local relative resolved
     case "${url}" in
       data:*|http:*|https:*) continue ;;
-      /*) resolved="${DATA_DIR}/${url#/}" ;;
-      *) resolved="$(dirname "${file}")/${url}" ;;
+      /*) relative="${url#/}" ;;
+      *) relative="$(realpath -m "/$(dirname "${web_path}")/${url}")"; relative="${relative#/}" ;;
     esac
+    resolved="${DATA_DIR}/${relative}"
 
     case "${resolved}" in
       *.ttf|*.otf|*.woff|*.woff2)
-        local relative
-        relative="$(realpath -m --relative-to="${DATA_DIR}" "${resolved}")"
         if ! grep -Fqx "${relative}" "${RESOURCE_LEDGER}"; then
-          printf 'missing font resource: %s -> %s\n' "${page}" "${relative}" >&2
+          printf 'missing font resource: %s -> %s\n' "${owner}" "${relative}" >&2
           missing=1
         fi
         ;;
     esac
   done < <(grep -Eo 'url\([^)]*\)' "${file}" || true)
+}
+
+inspect_page() {
+  local page="$1"
+  local file="${DATA_DIR}/${page}"
+  [[ -f "${file}" ]] || return 0
+
+  inspect_font_urls "${file}" "${page}" "${page}"
+
+  while IFS= read -r raw_href; do
+    local href="${raw_href#href=}"
+    href="${href#\"}"
+    href="${href%\"}"
+    href="${href#\'}"
+    href="${href%\'}"
+
+    local stylesheet_relative stylesheet
+    case "${href}" in
+      http:*|https:*) continue ;;
+      /*) stylesheet_relative="${href#/}" ;;
+      *)
+        stylesheet_relative="$(realpath -m "/$(dirname "${page}")/${href}")"
+        stylesheet_relative="${stylesheet_relative#/}"
+        ;;
+    esac
+    stylesheet="${DATA_DIR}/${stylesheet_relative}"
+    if [[ ! -f "${stylesheet}" ]]; then
+      printf 'missing stylesheet resource: %s -> %s\n' "${page}" "${href}" >&2
+      missing=1
+      continue
+    fi
+    inspect_font_urls "${stylesheet}" "${page} -> ${href}" "${stylesheet_relative}"
+  done < <(
+    {
+      grep -Eo 'href="[^"]+\.css[^"]*"' "${file}" || true
+      grep -Eo "href='[^']+\\.css[^']*'" "${file}" || true
+    } | sort -u
+  )
 }
 
 while read -r test reference _; do

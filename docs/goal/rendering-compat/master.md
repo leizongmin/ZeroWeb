@@ -12,7 +12,9 @@
 
 > **▶ 恢复主动实施裁决（2026-08-09 用户决策，记录自 zero-web/master.md「双线并行裁决」）**：用户批准**字体栈重建 RFC v0.2.3**（[`fontdue-replacement-scoping.md`](./fontdue-replacement-scoping.md)，接受 HarfBuzz C 依赖；FreeType 已 default-on 无争议）——**本 goal 由降频守成恢复主动实施**，拆分为独立可验证切片，每片 kill-switch + 全量 oracle A/B net≥0 才落地；**font-stack 从「待用户点名深结构」清单消除**，R1043 / R2174 / Phase A IFC 等仍等点名。与 zero-web 流 P1b（V8 原生绑定，engine DOM 桥）工作面不重叠（本 goal 为 render-foundation/font 栈），可并行。注：实施切片未开工前，本 master.md 进度锚保持 R2921 记录（下述），font-stack 实施进展由后续轮次续记。
 
-> **📍 当前 rally 进度态（R3414-F·2026-08-14）=【字体资源闭包接入所有 WPT fetch 前置链】**：R3413 已有手动审计，但 `fetch-wpt-data` 同步后不会自动验证，漏账本仍可能在 full corpus机器假绿。现把闭包审计接到 sync 后，所有依赖 fetch 的 reftest/oracle/import入口自动 fail-closed；手动 target保留。验证 `make fetch-wpt-data` 在现有 v1.10 数据上同步+审计 PASS。**下一步**：继续筛实际像素候选；资源型修复须由该门禁守住 fresh checkout。
+> **📍 当前 rally 进度态（R3415-F·2026-08-14）=【字体闭包扩展至 test/ref 外链 stylesheet】**：R3414 自动门只扫描页面内联 URL，外链 `/fonts/*.css` 可绕过。现解析直接 stylesheet依赖并扫描其字体 URL，路径按 web-root归一化，防止 `../../` 被文件系统语义误判为逃出 wpt-data。当前常驻集命中 Ahem CSS链，手动与 fetch自动门均 PASS，无新增缺口。**下一步**：继续筛实际像素候选；若未来出现 @import 链，再按真实输入扩一层，不预做无限递归。
+
+> **📍 前一进度态（R3414-F·2026-08-14）=【字体资源闭包接入所有 WPT fetch 前置链】**：R3413 已有手动审计，但 `fetch-wpt-data` 同步后不会自动验证，漏账本仍可能在 full corpus机器假绿。现把闭包审计接到 sync 后，所有依赖 fetch 的 reftest/oracle/import入口自动 fail-closed；手动 target保留。验证 `make fetch-wpt-data` 在现有 v1.10 数据上同步+审计 PASS。**下一步**：继续筛实际像素候选；资源型修复须由该门禁守住 fresh checkout。
 
 > **📍 前一进度态（R3413-F·2026-08-14）=【imported WPT 字体资源闭包门禁·补齐 3 个 fresh-checkout 缺口】**：新增 `make audit-imported-font-resources`，扫描常驻 test/ref 的直接字体 URL 与资源账本闭包。首跑发现 full corpus掩盖的 `Lato-Medium-Liga.ttf`、`sileot-webfont.woff`、`Lato-Medium.ttf` 三项缺失，分别影响 feature-resolution、plaintext bidi 11 案与 font-synthesis-style；已通过标准 importer登记，门禁现 PASS。当前机器文件本就存在，故本切片不宣称 Oracle收益，只保证 fresh sync 测试语义不退化。**下一步**：把闭包门作为资源导入后的固定检查，继续筛实际像素候选。
 
