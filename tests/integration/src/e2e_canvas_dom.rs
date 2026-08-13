@@ -64,7 +64,7 @@ fn test_canvas_2d_text() {
     let mut ctx = CanvasContext::new(400, 100);
     ctx.set_font(FontDescriptor::default());
     ctx.set_fill_style(zero_canvas::CanvasStyle::default_black());
-    ctx.fill_text("Hello, World!", 10.0, 50.0);
+    ctx.fill_text("Hello, World!", 10.0, 50.0, None);
 }
 
 #[test]
