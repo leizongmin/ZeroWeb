@@ -423,7 +423,7 @@ fn test_flatten_path_arc() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path
-        .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0);
+        .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0, false);
     let verts = ctx.flatten_path();
     assert_eq!(verts.len(), 64, "arc = 16 segments × 4");
 }
@@ -515,7 +515,7 @@ fn test_flatten_path_for_arc() {
     let ctx = CanvasContext::new(100, 100);
     let mut path = Path2D::new();
     path.move_to(50.0, 0.0);
-    path.arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0);
+    path.arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0, false);
     let verts = ctx.flatten_path_for(&path);
     assert_eq!(verts.len(), 64, "path arc = 16×4");
 }
@@ -697,8 +697,9 @@ fn test_blit_line_cap_square() {
     let mut ctx = ctx_with_pixels(20, 20);
     ctx.line_cap = LineCap::Square;
     ctx.blit_line_cap(10.0, 10.0, 15.0, 10.0, 3.0, Color::rgba(0, 0, 255, 255));
-    // Square cap 在端点外延伸
-    let idx = ((10 * 20) + 10) * 4;
+    // R34xx：cap 矩形 = 延伸段（endpoint→ext）垂直扩 half_lw——端点像素本身由段主体
+    // 覆盖（cap 单独调用时端点 (10,10) 在矩形边界外，断言改为延伸段内点 (9,10)）。
+    let idx = ((10 * 20) + 9) * 4;
     assert!(ctx.pixel_buffer[idx + 2] > 0, "square cap blue channel");
 }
 
@@ -939,7 +940,8 @@ fn test_flatten_path_line_to_same_point() {
 fn test_flatten_path_arc_full_circle() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
-    ctx.current_path.arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU);
+    ctx.current_path
+        .arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU, false);
     let vertices = ctx.flatten_path();
     // Full circle should still produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
@@ -949,7 +951,7 @@ fn test_flatten_path_arc_full_circle() {
 fn test_flatten_path_arc_zero_radius() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(10.0, 10.0);
-    ctx.current_path.arc(20.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+    ctx.current_path.arc(20.0, 20.0, 0.0, 0.0, std::f32::consts::PI, false);
     let vertices = ctx.flatten_path();
     // Zero radius arc - just verify it doesn't panic
     let _ = vertices.len();
@@ -959,7 +961,8 @@ fn test_flatten_path_arc_zero_radius() {
 fn test_flatten_path_arc_negative_angles() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
-    ctx.current_path.arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0);
+    ctx.current_path
+        .arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0, false);
     let vertices = ctx.flatten_path();
     // Negative angles should still work
     assert_eq!(vertices.len(), 64); // 16 segments × 4
@@ -969,7 +972,7 @@ fn test_flatten_path_arc_negative_angles() {
 fn test_flatten_path_arc_start_greater_than_end() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
-    ctx.current_path.arc(50.0, 50.0, 50.0, std::f32::consts::PI, 0.0);
+    ctx.current_path.arc(50.0, 50.0, 50.0, std::f32::consts::PI, 0.0, false);
     let vertices = ctx.flatten_path();
     // Start > end should still produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
@@ -1079,7 +1082,8 @@ fn test_flatten_path_multiple_commands() {
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.line_to(10.0, 10.0);
     ctx.current_path.quadratic_curve_to(20.0, 0.0, 30.0, 10.0);
-    ctx.current_path.arc(50.0, 50.0, 10.0, 0.0, std::f32::consts::PI / 2.0);
+    ctx.current_path
+        .arc(50.0, 50.0, 10.0, 0.0, std::f32::consts::PI / 2.0, false);
     ctx.current_path.close_path();
     let vertices = ctx.flatten_path();
     // Multiple command types should produce many vertices

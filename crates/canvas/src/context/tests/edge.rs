@@ -750,7 +750,7 @@ fn test_path2d_mixed_commands_count() {
     p.bezier_curve_to(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
     assert_eq!(p.len(), 4, "bezier_curve_to 后应有 4 个命令");
 
-    p.arc(0.0, 0.0, 10.0, 0.0, std::f32::consts::PI);
+    p.arc(0.0, 0.0, 10.0, 0.0, std::f32::consts::PI, false);
     assert_eq!(p.len(), 5, "arc 后应有 5 个命令");
 
     p.close_path();
@@ -767,7 +767,7 @@ fn test_path2d_mixed_commands_count() {
         p.commands()[3],
         PathCommand::BezierCurveTo(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
     ));
-    assert!(matches!(p.commands()[4], PathCommand::Arc(0.0, 0.0, 10.0, 0.0, _)));
+    assert!(matches!(p.commands()[4], PathCommand::Arc(0.0, 0.0, 10.0, 0.0, _, _)));
     assert!(matches!(p.commands()[5], PathCommand::ClosePath));
 }
 
@@ -1209,9 +1209,9 @@ fn test_canvas_save_restore_line_width_nested() {
 fn test_canvas_multiple_arc_paths() {
     let mut ctx = CanvasContext::new(400, 400);
     ctx.begin_path();
-    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI);
-    ctx.arc(200.0, 100.0, 30.0, 0.0, std::f32::consts::FRAC_PI_2);
-    ctx.arc(300.0, 100.0, 40.0, 0.0, std::f32::consts::TAU);
+    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI, false);
+    ctx.arc(200.0, 100.0, 30.0, 0.0, std::f32::consts::FRAC_PI_2, false);
+    ctx.arc(300.0, 100.0, 40.0, 0.0, std::f32::consts::TAU, false);
     // 不应 panic
     ctx.fill();
     assert!(

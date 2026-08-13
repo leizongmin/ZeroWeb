@@ -51,10 +51,12 @@ impl Default for CanvasRegistry {
 
 /// canvas 颜色串 → render Color（复用 CSS 颜色解析：named/hex/rgb/hsl 等）。解析失败回落黑色。
 fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
-    use zero_render_foundation::color::Color;
-    zero_css_parser::values::parse_color(s.trim())
-        .map(|cv| crate::color_value_to_render(&cv))
-        .unwrap_or_else(|| Color::rgba(0, 0, 0, 255))
+    try_parse_canvas_color(s).unwrap_or_else(|| zero_render_foundation::color::Color::rgba(0, 0, 0, 255))
+}
+
+/// R34xx：可失败颜色解析（无效返回 None，调用方保持旧值——spec 忽略无效 strokeStyle/fillStyle）。
+fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Color> {
+    zero_css_parser::values::parse_color(s.trim()).map(|cv| crate::color_value_to_render(&cv))
 }
 
 /// canvas `lineJoin` 串 → LineJoin（spec: miter/round/bevel；未知回落 Miter = 默认）。
@@ -228,13 +230,20 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "setFillStyle" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.set_fill_color(parse_canvas_color(arg(0)));
+                // R34xx：无效颜色忽略保持旧值（同 setStrokeStyle）。
+                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                    ctx.set_fill_color(color);
+                }
             }
             "ok".into()
         }
         "setStrokeStyle" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.set_stroke_color(parse_canvas_color(arg(0)));
+                // R34xx：无效颜色忽略保持旧值（spec：2d.line.invalid.strokestyle 设
+                // 'nonsense' 后仍用原绿色）。旧实现 parse 失败回落黑色覆盖旧值。
+                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                    ctx.set_stroke_color(color);
+                }
             }
             "ok".into()
         }
@@ -270,7 +279,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "arc" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.arc(f(0), f(1), f(2), f(3), f(4));
+                // R34xx：anticlockwise 第 6 参（'true'/'false'/'1'/'0'）。
+                let ccw = matches!(arg(5).trim(), "true" | "1");
+                ctx.arc(f(0), f(1), f(2), f(3), f(4), ccw);
             }
             "ok".into()
         }
@@ -923,7 +934,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "pathArc" => {
             if let Some(p) = reg.paths.get_mut(&pid()) {
-                p.arc(f(1), f(2), f(3), f(4), f(5));
+                // R34xx：anticlockwise 第 6 参。
+                let ccw = matches!(arg(6).trim(), "true" | "1");
+                p.arc(f(1), f(2), f(3), f(4), f(5), ccw);
             }
             "ok".into()
         }

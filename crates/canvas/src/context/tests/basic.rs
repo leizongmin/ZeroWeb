@@ -375,7 +375,7 @@ fn test_canvas_close_path_on_context() {
 #[test]
 fn test_canvas_arc_on_context() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
     ctx.line_to(100.0, 100.0); // 确保有非弧线的路径点
     ctx.fill();
     assert!(!ctx.primitives().path_fills.is_empty());
@@ -570,7 +570,7 @@ fn test_canvas_put_image_data_no_panic() {
 fn test_canvas_arc_no_panic() {
     let mut ctx = CanvasContext::new(400, 400);
     ctx.begin_path();
-    ctx.arc(200.0, 200.0, 50.0, 0.0, std::f32::consts::TAU);
+    ctx.arc(200.0, 200.0, 50.0, 0.0, std::f32::consts::TAU, false);
     // arc 不 panic 即可
 }
 
@@ -579,7 +579,7 @@ fn test_canvas_arc_no_panic() {
 fn test_canvas_arc_partial_no_panic() {
     let mut ctx = CanvasContext::new(400, 400);
     ctx.begin_path();
-    ctx.arc(200.0, 200.0, 100.0, 0.0, std::f32::consts::PI);
+    ctx.arc(200.0, 200.0, 100.0, 0.0, std::f32::consts::PI, false);
     // arc 不 panic 即可
 }
 
@@ -1031,7 +1031,7 @@ fn test_bezier_curve_flattening() {
 fn test_arc_flattening() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.begin_path();
-    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
     // 16 段细分 × 4 floats = 64

@@ -367,7 +367,7 @@ fn test_add_path_composition() {
     let mut path1 = Path2D::new();
     path1.move_to(10.0, 10.0);
     path1.line_to(50.0, 10.0);
-    path1.arc(30.0, 30.0, 20.0, 0.0, std::f32::consts::PI);
+    path1.arc(30.0, 30.0, 20.0, 0.0, std::f32::consts::PI, false);
 
     let mut path2 = Path2D::new();
     path2.rect(60.0, 60.0, 30.0, 30.0);
@@ -443,7 +443,7 @@ fn test_is_point_in_path_various_shapes() {
 
     // 圆形路径（使用多边形近似）
     ctx.begin_path();
-    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI * 2.0);
+    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI * 2.0, false);
     ctx.fill();
 
     // 圆心在内部
@@ -504,7 +504,7 @@ fn test_path_command_generation() {
     path.line_to(30.0, 40.0);
     path.quadratic_curve_to(50.0, 60.0, 70.0, 80.0);
     path.bezier_curve_to(90.0, 100.0, 110.0, 120.0, 130.0, 140.0);
-    path.arc(150.0, 160.0, 17.0, 0.0, std::f32::consts::PI);
+    path.arc(150.0, 160.0, 17.0, 0.0, std::f32::consts::PI, false);
     path.arc_to(180.0, 170.0, 190.0, 180.0, 19.0);
     path.ellipse(200.0, 210.0, 20.0, 15.0, 0.5, 0.0, std::f32::consts::PI);
     path.round_rect(220.0, 230.0, 40.0, 30.0, vec![5.0, 10.0, 15.0, 20.0]);
@@ -553,7 +553,7 @@ fn test_path_command_generation() {
     }
 
     match &commands[4] {
-        PathCommand::Arc(x, y, radius, start, end) => {
+        PathCommand::Arc(x, y, radius, start, end, _anticlockwise) => {
             assert_eq!(*x, 150.0);
             assert_eq!(*y, 160.0);
             assert_eq!(*radius, 17.0);
@@ -611,7 +611,7 @@ fn test_path_edge_cases() {
     path.line_to(10.0, 20.0);
 
     // 测试负坐标的圆弧
-    path.arc(-50.0, -50.0, 25.0, 0.0, std::f32::consts::PI);
+    path.arc(-50.0, -50.0, 25.0, 0.0, std::f32::consts::PI, false);
 
     // 测试负坐标的椭圆
     path.ellipse(-100.0, -100.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
@@ -643,7 +643,7 @@ fn test_path_flattening() {
     path.line_to(100.0, 0.0);
     path.quadratic_curve_to(50.0, 100.0, 100.0, 200.0);
     path.bezier_curve_to(150.0, 100.0, 200.0, 300.0, 300.0, 200.0);
-    path.arc(150.0, 150.0, 50.0, 0.0, std::f32::consts::PI);
+    path.arc(150.0, 150.0, 50.0, 0.0, std::f32::consts::PI, false);
     path.ellipse(250.0, 250.0, 50.0, 30.0, 0.0, 0.0, std::f32::consts::PI);
     path.round_rect(0.0, 300.0, 200.0, 100.0, vec![10.0]);
     path.close_path();

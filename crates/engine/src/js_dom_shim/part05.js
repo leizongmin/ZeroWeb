@@ -876,7 +876,7 @@
     p.moveTo = function (x, y) { __zw_canvas_op(h, 'pathMoveTo', pid, String(x), String(y)); };
     p.lineTo = function (x, y) { __zw_canvas_op(h, 'pathLineTo', pid, String(x), String(y)); };
     p.closePath = function () { __zw_canvas_op(h, 'pathClose', pid); };
-    p.arc = function (x, y, r, s, e) { __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e)); };
+    p.arc = function (x, y, r, s, e, anticlockwise) { __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false'); };
     p.arcTo = function (x1, y1, x2, y2, r) { __zw_canvas_op(h, 'pathArcTo', pid, String(x1), String(y1), String(x2), String(y2), String(r)); };
     p.quadraticCurveTo = function (cpx, cpy, x, y) { __zw_canvas_op(h, 'pathQuadratic', pid, String(cpx), String(cpy), String(x), String(y)); };
     p.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) { __zw_canvas_op(h, 'pathBezier', pid, String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y)); };
@@ -1161,8 +1161,9 @@
     ctx.closePath = function () { __zw_canvas_op(h, 'closePath'); };
     ctx.moveTo = function (x, y) { __zw_canvas_op(h, 'moveTo', String(x), String(y)); };
     ctx.lineTo = function (x, y) { __zw_canvas_op(h, 'lineTo', String(x), String(y)); };
-    ctx.arc = function (x, y, r, s, e) {
-      __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e));
+    ctx.arc = function (x, y, r, s, e, anticlockwise) {
+      // R34xx：anticlockwise 第 6 参透传（spec：2d.line.cap.round 等 arc 填充用例依赖方向）。
+      __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
     //（用给定 Path2D 替代 ctx 当前路径）；无参走当前路径形式（既定）。

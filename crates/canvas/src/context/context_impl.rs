@@ -249,9 +249,10 @@ impl CanvasContext {
     }
 
     /// 画弧。
-    pub fn arc(&mut self, x: f32, y: f32, radius: f32, start_angle: f32, end_angle: f32) {
+    pub fn arc(&mut self, x: f32, y: f32, radius: f32, start_angle: f32, end_angle: f32, anticlockwise: bool) {
         let (tx, ty) = self.transform.transform_point(x, y);
-        self.current_path.arc(tx, ty, radius, start_angle, end_angle);
+        self.current_path
+            .arc(tx, ty, radius, start_angle, end_angle, anticlockwise);
     }
 
     /// 添加圆角矩形子路径（Canvas 2D `roundRect`，HTML Canvas §`dom-context-2d-api` roundRect）。

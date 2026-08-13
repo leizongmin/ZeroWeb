@@ -11,8 +11,8 @@ pub enum PathCommand {
     QuadraticCurveTo(f32, f32, f32, f32),
     /// 三次贝塞尔曲线。
     BezierCurveTo(f32, f32, f32, f32, f32, f32),
-    /// 圆弧。
-    Arc(f32, f32, f32, f32, f32),
+    /// 圆弧（x, y, 半径, 起始角, 结束角, 逆时针）。
+    Arc(f32, f32, f32, f32, f32, bool),
     /// 圆弧切线（控制点1 x, 控制点1 y, 控制点2 x, 控制点2 y, 半径）。
     ArcTo(f32, f32, f32, f32, f32),
     /// 椭圆弧（圆心 x, 圆心 y, 半径 x, 半径 y, 旋转, 起始角, 结束角）。
@@ -51,8 +51,9 @@ impl Path2D {
     }
 
     /// 添加圆弧。
-    pub fn arc(&mut self, x: f32, y: f32, radius: f32, start: f32, end: f32) {
-        self.commands.push(PathCommand::Arc(x, y, radius, start, end));
+    pub fn arc(&mut self, x: f32, y: f32, radius: f32, start: f32, end: f32, anticlockwise: bool) {
+        self.commands
+            .push(PathCommand::Arc(x, y, radius, start, end, anticlockwise));
     }
 
     /// 添加圆弧切线（arcTo）。
@@ -376,9 +377,11 @@ impl Path2D {
                     current_x = bx;
                     current_y = by;
                 }
-                PathCommand::Arc(cx, cy, radius, start_angle, end_angle) => {
+                PathCommand::Arc(cx, cy, radius, start_angle, end_angle, anticlockwise) => {
                     let (cx, cy, radius, start_angle, end_angle) = (*cx, *cy, *radius, *start_angle, *end_angle);
-                    let angle_span = end_angle - start_angle;
+                    // R34xx：anticlockwise 方向（canvas y 向下：角度递增 = 顺时针，递减 = 逆时针）。
+                    let dir = if *anticlockwise { -1.0 } else { 1.0 };
+                    let angle_span = (end_angle - start_angle).abs() * dir;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut px = cx + radius * start_angle.cos();
                     let mut py = cy + radius * start_angle.sin();
@@ -783,9 +786,9 @@ mod tests {
     #[test]
     fn test_path_arc() {
         let mut p = Path2D::new();
-        p.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+        p.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
         assert_eq!(p.commands().len(), 1);
-        assert!(matches!(p.commands()[0], PathCommand::Arc(50.0, 50.0, 25.0, 0.0, _)));
+        assert!(matches!(p.commands()[0], PathCommand::Arc(50.0, 50.0, 25.0, 0.0, _, _)));
     }
 
     #[test]

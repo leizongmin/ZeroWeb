@@ -431,7 +431,7 @@ fn test_stroke_with_path() {
 fn test_arc() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.begin_path();
-    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI);
+    ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
 }
 
 #[test]
