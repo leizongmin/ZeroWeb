@@ -39,13 +39,18 @@ impl IdbCursor {
             self.current = 0;
             return true;
         }
-        self.current += count;
+        // R3361：saturating_add 防 usize 溢出——`current += count` 在 count 极大（如 usize::MAX）
+        // 时 debug panic（overflow-checks）/ release 回绕致 current 错乱，后续 continue_to 的
+        // `current + 1` 二次溢出。advance 越过 keys 末尾应判为完成（返 false），而非 panic。
+        self.current = self.current.saturating_add(count);
         self.current < self.keys.len()
     }
 
     /// 继续到指定键。
     pub fn continue_to(&mut self, key: &IdbKey) -> bool {
-        let start = self.current + 1;
+        // R3361：saturating_add 防 `current + 1` 溢出——advance 经 saturating 可置 current=usize::MAX，
+        // 此处 +1 溢出 panic（debug）/ 回绕（release）。
+        let start = self.current.saturating_add(1);
         for i in start..self.keys.len() {
             if &self.keys[i] >= key {
                 self.current = i;
@@ -90,7 +95,8 @@ impl IdbCursorWithValue {
             self.current = 0;
             return true;
         }
-        self.current += count;
+        // R3361：saturating_add 防 usize 溢出（同 IdbCursor::advance）。
+        self.current = self.current.saturating_add(count);
         self.current < self.positions.len()
     }
 
@@ -267,6 +273,31 @@ mod tests {
         assert_eq!(cursor.current, 0);
     }
 
+    // R3361：advance(count) 极大值不再 usize 溢出 panic——`current += count` 在 current+count >
+    // usize::MAX 时 debug panic（overflow-checks）/ release 回绕致 current 错乱。
+    #[test]
+    fn test_cursor_advance_huge_count_no_overflow_r3361() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        cursor.current = 10; // current + count 溢出窗口：10 + (usize::MAX - 5) > usize::MAX
+        // 旧实现 `current += count` debug panic（overflow-checks）。修复后 saturating 置 usize::MAX > keys.len → 完成。
+        let advanced = cursor.advance(usize::MAX - 5);
+        assert!(!advanced, "advance 越过末尾应判完成（返 false），不 panic");
+        assert!(cursor.is_finished());
+    }
+
+    // R3361：advance 越过后 continue_to 不再二次溢出 panic——current 经 saturating 置 usize::MAX
+    // 时，旧 `current + 1` 溢出 panic；saturating_add 后 start=usize::MAX > keys.len → 空迭代返 false。
+    #[test]
+    fn test_cursor_continue_to_after_advance_overflow_r3361() {
+        let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(2.0)]);
+        // current = usize::MAX（经 saturating_add；旧实现 advance(usize::MAX) from current=0 不溢出，
+        // 直接赋 usize::MAX 模拟 saturating 后状态）。
+        cursor.current = usize::MAX;
+        // 旧实现 continue_to 的 `self.current + 1` 在此 panic（usize::MAX + 1 溢出）。
+        let found = cursor.continue_to(&IdbKey::Number(5.0));
+        assert!(!found, "current 已越过末尾，continue_to 应安全返 false 不 panic");
+    }
+
     #[test]
     fn test_cursor_continue_to_existing_key() {
         let mut cursor = make_cursor(vec![IdbKey::Number(1.0), IdbKey::Number(3.0), IdbKey::Number(5.0)]);
@@ -347,6 +378,16 @@ mod tests {
         cursor.current = 1;
         assert!(cursor.advance(0));
         assert_eq!(cursor.current, 0);
+    }
+
+    // R3361：IdbCursorWithValue::advance(count) 极大值不再 usize 溢出 panic（saturating_add）。
+    #[test]
+    fn test_value_cursor_advance_huge_count_no_overflow_r3361() {
+        let mut cursor = make_value_cursor(vec![10, 20, 30]);
+        cursor.current = 10; // current + count 溢出窗口
+        let advanced = cursor.advance(usize::MAX - 5);
+        assert!(!advanced, "advance 越过末尾应判完成，不 panic");
+        assert!(cursor.is_finished());
     }
 
     #[test]
