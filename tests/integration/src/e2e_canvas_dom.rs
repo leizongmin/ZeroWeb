@@ -25,7 +25,7 @@ fn test_canvas_2d_path_drawing() {
     ctx.fill();
 
     ctx.begin_path();
-    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI * 2.0);
+    ctx.arc(100.0, 100.0, 50.0, 0.0, std::f32::consts::PI * 2.0, false);
     ctx.fill();
 }
 
