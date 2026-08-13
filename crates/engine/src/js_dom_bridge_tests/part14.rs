@@ -1046,6 +1046,63 @@ fn test_canvas_create_image_bitmap_crop_r3311() {
 }
 
 #[test]
+fn test_canvas_create_image_bitmap_flip_y_r34xx() {
+    // R34xx：createImageBitmap options（imageOrientation: 'flipY'）——垂直翻转源像素。
+    // 本测断言：① (source, {imageOrientation:'flipY'}) 形式解析；② 4×4 四色 ImageData
+    // 翻转后左上 = 原左下（蓝）；③ 无 options 不翻转（左上红）；④ (source, sx, sy, sw, sh,
+    // options) 六参形式同样翻转。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='dst' width='10' height='10'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var dst = document.getElementById('dst');             var dctx = dst.getContext('2d');             var R = [255,0,0,255], G = [0,255,0,255], B = [0,0,255,255], W = [255,255,255,255];             var px = [];             for (var y = 0; y < 4; y++) {               for (var x = 0; x < 4; x++) {                 var c = (y < 2) ? (x < 2 ? R : G) : (x < 2 ? B : W);                 for (var k = 0; k < 4; k++) px.push(c[k]);               }             }             var imgData = new ImageData(new Uint8ClampedArray(px), 4, 4);             /* ① options 形式（第 2 参对象）→ flipY：左上 = 原左下蓝 */             createImageBitmap(imgData, {imageOrientation: 'flipY'}).then(function (bm) {               dctx.drawImage(bm, 0, 0);               var p = dctx.getImageData(0, 0, 1, 1).data;               globalThis.__flipTopLeft = String(p[0] + ',' + p[1] + ',' + p[2]);               globalThis.__flipOk = 'ok';             }, function (e) { globalThis.__flipOk = 'reject:' + String(e && e.message ? e.message : e); });             /* ② 无 options → 左上红 */             createImageBitmap(imgData).then(function (bm) {               dctx.drawImage(bm, 5, 5);               var p = dctx.getImageData(5, 5, 1, 1).data;               globalThis.__noFlipColor = String(p[0] + ',' + p[1] + ',' + p[2]);               globalThis.__noFlipOk = 'ok';             }, function (e) { globalThis.__noFlipOk = 'reject:' + String(e && e.message ? e.message : e); });             /* ③ 六参形式 + options → 裁剪右下 2×2 后 flipY：左上 = 原左下（该象限蓝） */             createImageBitmap(imgData, 2, 2, 2, 2, {imageOrientation: 'flipY'}).then(function (bm) {               dctx.drawImage(bm, 0, 6);               var p = dctx.getImageData(0, 6, 1, 1).data;               globalThis.__cropFlipColor = String(p[0] + ',' + p[1] + ',' + p[2]);               globalThis.__cropFlipOk = 'ok';             }, function (e) { globalThis.__cropFlipOk = 'reject:' + String(e && e.message ? e.message : e); });",
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__noop = 1;").unwrap();
+    sandbox.execute("globalThis.__noop = 2;").unwrap();
+    sandbox.execute("globalThis.__noop = 3;").unwrap();
+
+    // ① flipY：4×4 翻转后左上 = 原左下（蓝 0,0,255）。
+    assert_eq!(
+        sandbox.execute("globalThis.__flipOk").unwrap().value,
+        "ok",
+        "createImageBitmap(imgData, {{flipY}}) 应 resolve"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__flipTopLeft").unwrap().value,
+        "0,0,255",
+        "flipY 后左上 = 原左下蓝"
+    );
+    // ② 无 options 不翻转。
+    assert_eq!(
+        sandbox.execute("globalThis.__noFlipColor").unwrap().value,
+        "255,0,0",
+        "无 options → 左上红"
+    );
+    // ③ 六参 + flipY：裁剪右下白象限翻转后该象限内左上 = 左下（同象限白）。
+    assert_eq!(
+        sandbox.execute("globalThis.__cropFlipColor").unwrap().value,
+        "255,255,255",
+        "裁剪 2×2 白象限 flipY 后仍白（象限内同色）"
+    );
+}
+
+#[test]
 fn test_offscreen_canvas_main_thread_r3312() {
     // R3312：OffscreenCanvas 主线程切片（Done Criteria §3 Tier 3）。`new OffscreenCanvas(w,h)` 此前全缺。
     // 本测断言：① OffscreenCanvas 构造器存在 + 实例化（width/height）；② getContext('2d') 返真 2d context（可绘制）；

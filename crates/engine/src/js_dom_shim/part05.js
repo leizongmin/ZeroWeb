@@ -1028,8 +1028,42 @@
     }
     return out;
   }
+  // R34xx：垂直翻转 wire 像素（createImageBitmap options imageOrientation: 'flipY'）。
+  function _zwFlipWireY(wire) {
+    var s = String(wire);
+    var semi = s.indexOf(';');
+    if (semi < 0) return s;
+    var dims = s.substring(0, semi).split(':');
+    var w = parseInt(dims[0], 10) || 0;
+    var h = parseInt(dims[1], 10) || 0;
+    if (w <= 0 || h <= 0) return s;
+    var pix = s.substring(semi + 1).split(',');
+    var out = w + ':' + h + ';';
+    var first = true;
+    for (var y = h - 1; y >= 0; y--) {
+      for (var x = 0; x < w; x++) {
+        var base = (y * w + x) * 4;
+        for (var c = 0; c < 4; c++) {
+          if (!first) out += ',';
+          first = false;
+          out += (parseInt(pix[base + c], 10) || 0);
+        }
+      }
+    }
+    return out;
+  }
   if (!globalThis.createImageBitmap) {
     globalThis.createImageBitmap = function createImageBitmap(source, sx, sy, sw, sh) {
+      // R34xx：options（imageOrientation/premultiplyAlpha）——(source, options) 或
+      // (source, sx, sy, sw, sh, options) 两形式。flipY 翻转；premultiplyAlpha 接受
+      //（'none'|'premultiply'|'default'，像素格式无预乘概念 → 无操作，记录）。
+      var opts = {};
+      if (arguments.length >= 2 && typeof arguments[1] === 'object' && arguments[1] !== null && arguments[1].nodeType === undefined) {
+        opts = arguments[1];
+      } else if (arguments.length >= 6 && typeof arguments[5] === 'object' && arguments[5] !== null) {
+        opts = arguments[5];
+      }
+      var flipY = !!opts.imageOrientation && String(opts.imageOrientation).toLowerCase() === 'flipy';
       return Promise.resolve(source).then(function (src) {
         var wire = _zwImageBitmapSourceToWire(src);
         if (wire === null) {
@@ -1053,6 +1087,9 @@
             // 裁剪区与源无交集（完全在源外）→ InvalidStateError（spec/WPT "oversized crop region"）。
             return Promise.reject(_zwDomException('createImageBitmap: 裁剪区与源无交集', 'InvalidStateError'));
           }
+        }
+        if (flipY) {
+          wire = _zwFlipWireY(wire);
         }
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
