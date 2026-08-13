@@ -676,6 +676,11 @@ fn try_parse_relative_identity(value: &str) -> Option<ColorValue> {
     if close <= open {
         return None;
     }
+    // R34xx：')' 后不得有多余 token（'rgb(from #fff r g b) 100%' 的尾部 '100%' 应致整个
+    // 解析失败——2d.fillStyle.parse.invalid.css-color-4-rgb-6 期望无效值忽略）。
+    if value.get(close + 1..).is_some_and(|s| !s.trim().is_empty()) {
+        return None;
+    }
     let func = value[..open].trim().to_ascii_lowercase();
     let inner = strip_css_comments(value.get(open + 1..close)?).trim().to_string();
     let lower_inner = inner.to_ascii_lowercase();
@@ -784,6 +789,11 @@ fn parse_relative_color(value: &str) -> Option<ColorValue> {
     let open = value.find('(')?;
     let close = value.rfind(')')?;
     if close <= open {
+        return None;
+    }
+    // R34xx：')' 后不得有多余 token（'rgb(from #fff r g b) 100%' 的尾部 '100%' 应致整个
+    // 解析失败——2d.fillStyle.parse.invalid.css-color-4-rgb-6 期望无效值忽略）。
+    if value.get(close + 1..).is_some_and(|s| !s.trim().is_empty()) {
         return None;
     }
     let func_name = value[..open].trim().to_ascii_lowercase();
