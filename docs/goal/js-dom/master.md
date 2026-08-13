@@ -20,9 +20,11 @@
 > 2. roundRect DOMPoint 断言（~26 用例：fill 扫描线与椭圆弧交点/精度）
 > 3. arc 形状精度（~16）、arcTo/quadratic/bezier/isPointIn* 等 JS 侧 API 语义
 > 4. roundrect 语义校验（badinput/negative/toomany 抛异常、winding/zero）
-> **运行入口**：`zero-wpt-runner testharness-canvas path-objects`（用例已导入
-> `tests/wpt-runner/wpt-data/html/canvas/element/path-objects/`，205 文件；canvas 流已从
-> `CANVAS_TEST_SUBDIRS` 移除该目录，本流接手时按需重新加入）。
+> **运行入口**：`zero-wpt-runner testharness-canvas path-objects`。
+> **⚠️ 用例需重新导入**：canvas-2d master.md 交接记录称「用例已导入 205 文件」，但 2026-08-13 实测
+> `tests/wpt-runner/wpt-data/html/canvas/element/path-objects/` 目录**为空**（canvas 流从
+> `CANVAS_TEST_SUBDIRS` 移除该目录后用例未留在仓库）——本流接手时**须先重新导入** path-objects
+> 用例并重新加入 `CANVAS_TEST_SUBDIRS`，不能假设用例已在。详见入口文档 v1.2 说明块 + DC-8 + M8。
 
 ## 当前状态（执行 agent 首轮填充）
 
@@ -40,6 +42,7 @@
 | **双引擎** default-on + 删 kill-switch | 待核实 | |
 | 真实 SPA/WC 端到端验收 | 待核实 | |
 | WPT dom 上游基线 | 待核实 | |
+| **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | 待核实（用例需重新导入，目录实测为空） | |
 | `make test` / clippy / coverage（含 `--features quickjs` 矩阵） | 待核实 | |
 | dom_bindings 独立 coverage 口径 | 待核实 | |
 
@@ -94,7 +97,7 @@
 
 1. （首轮）按入口文档「首轮进入检查清单」完成探索（含核实 QuickJS 页面引擎路径 = native 真空）+ 重写本文件 + 建 archive/evidence + 补 dom_bindings coverage 口径 + 建**双 feature 可参数化** A/B 对照门骨架
 2. （首轮）选定 M0 首切片（V8 L2-read-only 候选）并直接动手推进
-3. 后续按入口文档 Ordered Next Milestones（M1→M7）切片推进：V8 先行（M1–M5），QuickJS native 镜像（M6），双引擎 default-on + 收尾（M7）
+3. 后续按入口文档 Ordered Next Milestones（M1→M8）切片推进：V8 先行（M1–M5），QuickJS native 镜像（M6），双引擎 default-on + 收尾（M7）；M8 canvas path-objects 可与主线并行穿插推进
 
 ---
 

@@ -1,6 +1,6 @@
 # JS/DOM 原生化 — 双引擎（V8 + QuickJS）原生绑定生产路径收口目标
 
-**版本**: v1.1（v1.0→v1.1：扩展为 V8 + QuickJS 双 feature 等价，2026-08-13 用户决策）
+**版本**: v1.2（v1.1→v1.2：接手 canvas path-objects JS 侧 API 语义，2026-08-13 用户决策）
 **日期**: 2026-08-13
 **状态**: Active
 **执行模式**: 长期无人值守持续执行（`rally run docs/goal/js-dom.md`）
@@ -20,6 +20,8 @@
 > - **生产路径仍走 polyfill 桥**：`ZW_NATIVE_DOM` 默认关，`js_dom_shim/part01-06.js`（~810KB）+ `js_dom_bridge.rs`（~122KB）+ `dom_bridge.rs` 为权威路径。这是本目标要消除的核心状态。
 > - **WPT dom 分类无真实上游用例**：`test_cases_js_dom.rs` 全部为内建用例（`render_completes`/`js_executes_ok` smoke），0 上游导入，无通过率基线。
 > - **QuickJS 页面引擎 native = 真空（v1.1 核实）**：`crates/script-sandbox/src/quickjs_runtime.rs` 经 `register_callback` 注册 `__zw_*` 走 polyfill 桥（与 V8 共用 `js_dom_shim`），无任何原生 DOM 绑定；`Sandbox::install_native_bindings` 默认 `false`，QuickJS 未实现 escape-hatch。CI 已强制跑 `--features quickjs` 矩阵（Makefile QUICKJS_CLIPPY_CRATES/QUICKJS_TEST_CRATES），但 dom_bindings 相关 quickjs 测试点 14 个 vs v8 73 个——native DOM 这块 quickjs 是真空。本目标 M6 从零补齐。
+>
+> **▶ v1.2 接手 canvas path-objects（2026-08-13 用户决策）**：canvas-2d goal 的 `html/canvas/element/path-objects` 剩余工作（JS 侧 API 语义面）合并入本 goal 统一执行。canvas 流已完成 roundRect 基础（角对半径/比例缩放/非有限守卫/16 段椭圆弧，commit `d0874c28`），并已从 `CANVAS_TEST_SUBDIRS` 移除 path-objects 目录（canvas 流不再跑）。**接手待办**：roundRect 批量 panic（NaN 排序，canvas 流观察到 wpt-runner 崩溃级，接手第一优先级——需重新导入用例后复现定位）、roundRect DOMPoint 断言精度（~26 用例）、arc/arcTo/quadratic/bezier/isPointIn* 形状精度、roundrect 语义校验（异常/边界）。**核实修正**：canvas-2d master.md 交接记录说「用例已导入 205 文件」，但实测 `tests/wpt-runner/wpt-data/html/canvas/element/path-objects/` 目录**为空**（canvas 流移除 SUBDIRS 后用例未留在仓库）——故 js-dom 流接手时**须先重新导入** path-objects 用例，不能假设用例已在。新增 DC-8 + M8。运行入口：`zero-wpt-runner testharness-canvas path-objects`（用例导入后按需重新加入 `CANVAS_TEST_SUBDIRS`）。
 
 ---
 
@@ -61,12 +63,13 @@
 | customElements/Web Components 完整化 | attributeChangedCallback 全化 + observedAttributes 完整 parity；lit/stencil 等真实 CE 库集成测试；Web Components 端到端验收（V8 先行，QuickJS 随 M6 对齐） | RFC §3.5.1 S5 剩余后续项 |
 | SPA 框架端到端验收 | 真实加载并交互运行 React / Vue / Svelte 之一（至少其一）的代表性页面，验证 reconciliation、hydration、事件、状态更新 | 父目标 Done Criteria §1.3 对 SPA 的实质达成 |
 | WPT dom 上游基线 | 从上游 WPT 仓库导入 `dom/` + `jsdom/`（若范围合适）范围内真实用例，建立按子分类的通过率报告（文本 + JSON），记录基线 | 当前 dom 分类 0 上游导入，本目标建立基线并持续扩展 |
+| **Canvas path-objects API 语义（v1.2 接手，见 DC-8/M8）** | 接手 canvas-2d 流移交的 `html/canvas/element/path-objects` JS 侧 API 语义工作：roundRect（panic 修复 + DOMPoint 断言精度）、arc/arcTo/quadratic/bezier/isPointIn* 形状精度、roundrect 语义校验（异常/边界） | WPT 用例需 js-dom 流重新导入（canvas 流已从 `CANVAS_TEST_SUBDIRS` 移除 path-objects，目录实际为空）；运行入口 `zero-wpt-runner testharness-canvas path-objects` |
 | 单元测试与覆盖率 | dom_bindings 每项迁移/修复带单测；polyfill vs native A/B 对照门（每切片行为等价，**双 feature 均跑**）；覆盖率持续提升、不退化（dom_bindings 为新模块，补齐独立 coverage 口径） | CLAUDE.md 测试资产化规则适用 |
 
 ### 不在范围内（明确排除）
 
 - **CSS 渲染兼容性**：属 rendering-compat 目标域（字体栈/布局/绘制管线差异），本目标不碰
-- **Canvas 2D API 语义/像素**：属 canvas-2d 目标域；`js_dom_shim` part04/05 的 canvas 段不归本目标改写（见下「工作面切分」）
+- **Canvas 2D 像素/光栅/合成正确性**：属 canvas-2d 目标域（offscreen/createImageBitmap options/compositing/pixel-manipulation 等）；**本目标只接手 path-objects 的 JS 侧 API 语义**（roundRect/arc/arcTo/bezier/isPointIn* 行为），其余 canvas 子目录（`CANVAS_TEST_SUBDIRS` 当前 7 个）仍归 canvas-2d 流
 - **表单元素默认动作/交互语义**：属 html-compat 目标域（focus/activation/checkedness/submit）；本目标只经 DOM 事件与原生 node 提供基础，不旁路修补表单语义
 - **V8/QuickJS 引擎替换**：rusty_v8 与 rquickjs 仍是两个页面引擎后端，不替换引擎本身；QuickJS 的**扩展脚本沙箱**用法（非页面路径）与本目标无关
 - **网络栈/存储/WASM 行为本身**：net/storage/wasm-sandbox crate 行为不变，仅 JS 侧桥（fetch/Storage/WebAssembly JS API）因去字符串 ser/deser 间接受益
@@ -82,7 +85,9 @@
 | `crates/engine/src/dom_bindings/` | **本目标** | 是（核心） |
 | `crates/engine/src/js_dom_bridge.rs` + `dom_bridge.rs` | **本目标** | 是（polyfill 桥萎缩/合一） |
 | `js_dom_shim/part01.js`（event loop / rAF / Observer / 定时器）+ `part02.js`（AbortSignal / Fetch shim）+ `part03.js`（customElements registry / lifecycle） | **本目标** | 是（DOM/事件/桥接段） |
-| `js_dom_shim/part04.js` / `part05.js` 的 canvas 段 | **canvas-2d 流** | 否（碰撞先 `git log` 核对，转零碰撞面） |
+| `js_dom_shim/part04.js` / `part05.js` 的 **path-objects API 段**（roundRect/arc/arcTo/bezier/isPointIn* 的 JS 桥） | **本目标**（v1.2 接手，见 DC-8） | 是 |
+| `js_dom_shim/part04.js` / `part05.js` 的 **其余 canvas 段**（offscreen/createImageBitmap/compositing/pixel 等） | **canvas-2d 流** | 否（碰撞先 `git log` 核对，转零碰撞面） |
+| `crates/canvas/src/path.rs`（round_rect/arc/arc_to 等 Rust 路径几何实现） | **本目标**（path-objects API 语义对应实现） | 是（仅 path-objects 相关） |
 | `js_dom_shim` 的表单事件 / 默认动作段 | **html-compat 流** | 否（同上） |
 | `crates/webview`（native_dom 接线 / default-on 开关） | **本目标** | 是（生产接线） |
 | `apps/browser`（TabWorker / js_worker） | **本目标**（与零-web 流共享） | 是，但遵守零-web 流工作面（engine/dom/script-sandbox/net/webview + zero-web/*） |
@@ -150,6 +155,17 @@
 - [ ] **双 feature polyfill vs native A/B 行为等价**：同一套 driving 测试（既有 dom_bindings 单测 + driving WPT 用例）在 `--features v8` 与 `--features quickjs` 两个矩阵下行为一致；CI 已强制跑 quickjs 矩阵（Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES`），M6 补齐 dom_bindings 相关 quickjs 测试点（当前 14 vs v8 73 的差距）
 - [ ] QuickJS 页面引擎路径在 default-on 后走 native（不再经 `__zw_*` polyfill 桥），与 V8 生产路径对等
 
+### DC-8: Canvas path-objects JS 侧 API 语义（v1.2 接手）
+
+> canvas-2d 流移交的 `html/canvas/element/path-objects` JS 侧 API 语义工作。本 DC 只覆盖 **path-objects 一个子目录**的 JS 侧行为，不涉 canvas 其余像素/光栅/合成正确性（仍归 canvas-2d 流）。
+
+- [ ] **path-objects 用例重新导入**：从上游 WPT 导入 `html/canvas/element/path-objects` 用例到 `tests/wpt-runner/wpt-data/`，重新加入 `CANVAS_TEST_SUBDIRS`，建立通过率基线（canvas 流已移除，目录实测为空）
+- [ ] **roundRect 批量 panic 修复**（接手第一优先级）：canvas 流观察到 wpt-runner 崩溃级 panic（NaN 排序 / scale 归一化后复现，疑似负 w/h 或 NaN radii 组合）——导入用例后复现、定位根因、修复到稳定可重复（CLAUDE.md「不允许留给下一轮」）
+- [ ] **roundRect DOMPoint 断言精度**（~26 用例）：shim `"p<x>,<y>"` 编码 + host 配对解析已通，但渲染偏离（fill 扫描线与椭圆弧交点配对 / 16 段精度）——对齐到上游期望
+- [ ] **arc/arcTo/quadratic/bezier/isPointIn* JS 侧 API 语义对齐**（形状精度 + API 行为），driving 用例经 `make import-wpt` 资产化并记入 `imported-tests.txt`
+- [ ] **roundrect 语义校验**（badinput/negative/toomany 抛异常、winding/zero 边界）与上游 spec 一致
+- [ ] path-objects 通过率报告持久化到 `docs/goal/js-dom/evidence/`，历史可追溯
+
 ---
 
 ## Current Proven Baseline
@@ -201,7 +217,7 @@
 
 ## Ordered Next Milestones
 
-> M0 完成后按序推进。每个 milestone 切成可独立 land 的切片（kill-switch + A/B 对照门 + 全量回归）。深结构护栏：default-on（M7）是改 Mission 级单向门，记「待用户决策」清单，goal 把它定为收敛目标。**双引擎对等**：M1–M5 先以 V8 为权威路径推进；M6 完成 QuickJS native 移植后，M7 的 default-on 对双 feature 同时生效。
+> M0 完成后按序推进。每个 milestone 切成可独立 land 的切片（kill-switch + A/B 对照门 + 全量回归）。深结构护栏：default-on（M7）是改 Mission 级单向门，记「待用户决策」清单，goal 把它定为收敛目标。**双引擎对等**：M1–M5 先以 V8 为权威路径推进；M6 完成 QuickJS native 移植后，M7 的 default-on 对双 feature 同时生效。**M8 独立并行**：canvas path-objects（v1.2 接手）工作面与原生绑定主线基本不重叠，可作为轻量填充在任意轮次穿插推进，不强制排在 M7 之后。
 
 ### M1 — polyfill-live 合一（L2 完整）
 
@@ -282,6 +298,20 @@
 3. polyfill 桥彻底删除：QuickJS 不再经 `__zw_*` 的部分（`register_callback` 注册的 DOM 回调）删除，shim 最终萎缩
 
 **验收**：DC-1 全项（双引擎）满足；双 feature default-on、kill-switch 移除、polyfill 桥死代码全删，双引擎 native 为唯一生产路径，全量回归 + product-smoke + perf-gate（双 feature）全绿。
+
+### M8 — Canvas path-objects JS 侧 API 语义（v1.2 接手，可与其他 milestone 并行）
+
+**目标**：接手 canvas-2d 流移交的 `html/canvas/element/path-objects` JS 侧 API 语义工作，建立通过率基线并修复 panic + 精度缺口。
+
+> **并行性**：M8 工作面（`crates/canvas/src/path.rs` + `js_dom_shim` path-objects API 段 + WPT 导入）与 M1–M7 的原生绑定主线**基本不重叠**（path-objects 是 Canvas 路径几何 + JS 桥语义，非 DOM node 原生绑定），可作为轻量填充在任意轮次穿插推进，不强制排在 M7 之后。
+
+**切片建议**：
+1. **用例重新导入 + roundRect panic 复现定位**（接手第一优先级）：导入 path-objects 用例 → 重新加入 `CANVAS_TEST_SUBDIRS` → 跑 `zero-wpt-runner testharness-canvas path-objects` 复现 panic → 定位 NaN 排序/scale 归一化根因 → 修复到稳定
+2. **roundRect DOMPoint 断言精度**（~26 用例）：fill 扫描线与椭圆弧交点配对 + 16 段精度对齐
+3. **arc/arcTo/quadratic/bezier/isPointIn* 形状精度**（~16+ 用例）+ roundrect 语义校验（异常/边界）
+4. driving 用例经 `make import-wpt` 资产化 + 通过率报告持久化 `evidence/`
+
+**验收**：DC-8 满足；path-objects panic 修复（稳定可重复）、API 语义对齐、通过率基线建立；`make test` + `make reftest`（canvas 段）零回归。
 
 ---
 
@@ -394,7 +424,7 @@
 执行 agent 在首次进入时**必须**完成以下操作——这些不是可选的，也不是可以推迟的工作：
 
 - [ ] **探索当前仓库事实**：`dom_bindings/`（V8 原生绑定）+ `js_dom_bridge.rs` + `js_dom_shim/` 当前代码状态、RFC §3.7 L1/L2 切片定义与代码现状是否一致、`ZW_NATIVE_DOM` kill-switch 现状（V8）、既有 e2e 测试基线；**v1.1 新增：核实 QuickJS 页面引擎路径**（`quickjs_runtime.rs` 的 `register_callback` + `Sandbox::install_native_bindings` 默认 `false`）确认 native 真空状态、CI quickjs 矩阵覆盖范围（`QUICKJS_*_CRATES`）
-- [ ] **定义/确认 Done Criteria**：与本文件 DC-1~7 一致；若发现代码现状与本文件基线事实不符，先在 master.md 记录勘误
+- [ ] **定义/确认 Done Criteria**：与本文件 DC-1~8 一致；若发现代码现状与本文件基线事实不符，先在 master.md 记录勘误
 - [ ] **创建 `docs/goal/js-dom/master.md`**：包含完整的当前状态评估 + 首个 active milestone（M0）切片计划 + 测试基线 + 缺口清单 + 待用户决策清单（含 default-on M5/M7）
 - [ ] **确认 `docs/goal/js-dom/archive/` 与 `evidence/` 目录存在**（不存在就立即创建——这不是可选项，也不是以后再补的工作）
 - [ ] **确认测试基线**：`make test`（含 `--features quickjs` 矩阵）当前全绿状态、dom_bindings 无独立 coverage 口径（M0 要补齐）、WPT dom 分类 0 上游导入（M4 要补齐）
@@ -420,7 +450,7 @@
 
 | 情况 | 输出 | 说明 |
 |------|------|------|
-| DC-1~7 **全部**满足，目标能力达到 production-ready 水平 | `DONE` | 见下方「DONE 允许条件」 |
+| DC-1~8 **全部**满足，目标能力达到 production-ready 水平 | `DONE` | 见下方「DONE 允许条件」 |
 | 进展仍可推进，还有未完成的工作 | `CONTINUE: <下一步>` | **这是默认输出** |
 | 遇到真正的外部阻塞（依赖不可用、平台根本性不支持、安全漏洞无法绕过） | `BLOCK: <原因>` | 罕见使用 |
 | verify 发现未满足条件但进展仍可推进 | `CONTINUE: <下一步>` | **返回执行，不是 DONE**，不是解释性段落 |
@@ -429,7 +459,7 @@
 
 **同时满足以下所有条件时才允许输出 `DONE`**：
 
-1. ✅ DC-1~7 全部满足
+1. ✅ DC-1~8 全部满足
 2. ✅ 目标能力本身已达到生产可用质量（**双引擎** native 为唯一生产路径 + SPA/WC 端到端跑通 + WPT dom 基线建立），**不只是文档完整**
 3. ✅ 有真实代码、测试和验收证据直接对应目标能力（非仅计划）
 4. ✅ `make test`（含 `--features quickjs` 矩阵）+ `cargo clippy --workspace --all-targets -- -D warnings` + `make product-smoke` + `make bench-gate` 全通过
@@ -463,7 +493,7 @@
 ### verify 发现缺口时的处理
 
 - 默认输出 `CONTINUE: <下一步>` 并**返回执行**，不是 `DONE`，不是大段解释
-- 如果仍有可能推进，就不结束——`DONE` 只在 DC-1~7 全满足时才允许
+- 如果仍有可能推进，就不结束——`DONE` 只在 DC-1~8 全满足时才允许
 
 ---
 
@@ -479,7 +509,7 @@
 4. **自主添加测试**：每项迁移/修复必带单测 + polyfill vs native A/B 对照（**双 feature 均跑**）+ driving WPT 用例资产化
 5. **自主验证**：`make test`（含 `--features quickjs` 矩阵）+ clippy +（渲染/JS 热路径）`make product-smoke` + `make bench-gate` 确认修复有效、零回归
 6. **自主归档**：完成的 milestone/切片记录到 archive；evidence 持久化到 evidence/
-7. **持续推动**，直到 DC-1~7 全部满足——在未达 done criteria 前持续推进，不等待用户逐步下达下一条指令
+7. **持续推动**，直到 DC-1~8 全部满足——在未达 done criteria 前持续推进，不等待用户逐步下达下一条指令
 
 ### 轻量修复优先（借鉴 rendering-compat / canvas-2d 裁决）
 
