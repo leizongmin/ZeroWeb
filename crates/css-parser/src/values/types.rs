@@ -12,6 +12,9 @@ pub enum LengthValue {
     Em(f64),
     /// ex 单位（当前字体的 x-height）。
     Ex(f64),
+    // https://drafts.csswg.org/css-values-4/#font-relative-lengths
+    /// rex 单位（根元素字体的 x-height）。
+    Rex(f64),
     /// rem 单位。
     Rem(f64),
     /// vh 单位。
@@ -842,6 +845,8 @@ pub struct CalcContext {
     pub x_height: Option<f64>,
     /// 根元素字体大小（px），用于 rem 单位转换。
     pub root_font_size: Option<f64>,
+    /// 根元素字体 x-height（px），用于 rex 单位转换。
+    pub root_x_height: Option<f64>,
     /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
     pub viewport_height: Option<f64>,
     /// 视口宽度（px），用于 vw/vmin/vmax 单位转换。
@@ -1495,6 +1500,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Percentage(pct) => ctx.parent_length.map(|pl| pct / 100.0 * pl),
         LengthValue::Em(v) => ctx.font_size.map(|fs| v * fs),
         LengthValue::Ex(v) => ctx.x_height.map(|xh| v * xh),
+        LengthValue::Rex(v) => ctx.root_x_height.map(|xh| v * xh),
         LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
         LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
         LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
@@ -1604,6 +1610,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "px" => Some(LengthValue::Px(num)),
         "em" => Some(LengthValue::Em(num)),
         "ex" => Some(LengthValue::Ex(num)),
+        "rex" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rex(num)),
         "rem" => Some(LengthValue::Rem(num)),
         "vh" => Some(LengthValue::Vh(num)),
         "vw" => Some(LengthValue::Vw(num)),

@@ -1586,6 +1586,17 @@ fn test_parse_length_ex_preserves_font_metric_unit() {
 }
 
 #[test]
+fn test_parse_and_evaluate_rex() {
+    assert_eq!(parse_length("1.5rex"), Some(LengthValue::Rex(1.5)));
+    let expr = parse_calc("calc(2rex + 1px)").unwrap();
+    let context = CalcContext {
+        root_x_height: Some(5.0),
+        ..Default::default()
+    };
+    assert_eq!(eval_calc_with_context(&expr, &context), Some(11.0));
+}
+
+#[test]
 fn test_parse_length_quirks_unitless_number() {
     // 裸数字在 quirks mode 下视为 px
     assert_eq!(parse_length_quirks("100"), Some(LengthValue::Px(100.0)));

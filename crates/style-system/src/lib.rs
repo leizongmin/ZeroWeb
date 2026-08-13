@@ -270,6 +270,8 @@ pub struct StyleSystem {
     font_feature_values: FontFeatureValuesRegistry,
     /// 可作为 first available font 的 family → (`ex`, `ch`) aspect。
     font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
+    /// 根元素字体的已用 x-height（px），用于 `rex`。
+    root_x_height: Option<f64>,
     /// 视口宽度（px），用于 vh/vw 计算。
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
@@ -289,6 +291,7 @@ impl StyleSystem {
             registered_properties: HashMap::new(),
             font_feature_values: HashMap::new(),
             font_relative_metrics: HashMap::new(),
+            root_x_height: None,
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -352,6 +355,7 @@ impl StyleSystem {
     /// 返回一个 HashMap，键为元素 NodeId，值为对应的 ComputedStyle。
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = HashMap::new();
+        self.root_x_height = None;
 
         // 预扫描所有样式表的 `@property` 规则，注册自定义属性（syntax/inherits/initial-value）。
         // 注册信息在 `gather_custom_properties` 中为未显式声明的注册属性提供 initial-value
@@ -1324,13 +1328,20 @@ impl StyleSystem {
             }
         });
         let font_metrics = self.font_relative_metrics_for(&style.font_family);
+        let parent_font_metrics = parent_style.and_then(|parent| {
+            computed::adjusted_font_relative_metrics(parent, self.font_relative_metrics_for(&parent.font_family))
+        });
         let mut resolved = computed::resolve_computed_style_with_font_metrics(
             &style,
             &self.custom_properties,
             self.viewport_width,
             self.viewport_height,
             parent_fs,
-            font_metrics,
+            computed::FontRelativeContext {
+                current: font_metrics,
+                parent: parent_font_metrics,
+                root_x_height: self.root_x_height,
+            },
         );
 
         // 7. Quirks mode 调整（复用步骤 1.7 已提取的 tag_name）
@@ -1364,6 +1375,17 @@ impl StyleSystem {
         }
 
         resolve_font_variant_alternates(&mut resolved, &self.font_feature_values);
+        if parent_style.is_none() && pseudo.is_none() {
+            let root_font_size = match &resolved.font_size {
+                zero_css_parser::values::LengthValue::Px(value) => *value,
+                _ => computed::ROOT_FONT_SIZE,
+            };
+            self.root_x_height = Some(
+                root_font_size
+                    * computed::adjusted_font_relative_metrics(&resolved, font_metrics)
+                        .map_or(0.8, |metrics| metrics.ex_height),
+            );
+        }
         resolved
     }
 }

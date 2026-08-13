@@ -260,6 +260,7 @@ fn test_eval_calc_with_context_relative_units() {
         font_size: Some(16.0),         // 16px
         x_height: Some(8.0),           // 8px
         root_font_size: Some(16.0),    // 16px
+        root_x_height: Some(8.0),      // 8px
         viewport_height: Some(1000.0), // 1000px
         viewport_width: Some(800.0),   // 800px
         ch_width: Some(8.0),           // 8px (average character width)
@@ -522,6 +523,7 @@ fn test_complex_calc_expression_chain() {
         font_size: Some(16.0),
         x_height: Some(8.0),
         root_font_size: Some(16.0),
+        root_x_height: Some(8.0),
         viewport_height: Some(1000.0),
         viewport_width: Some(800.0),
         ch_width: Some(8.0),

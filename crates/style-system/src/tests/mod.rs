@@ -18,5 +18,6 @@ mod matcher_coverage5;
 mod matcher_extra;
 mod registered_property;
 mod review_r3345;
+mod root_font_units;
 mod shorthand_coverage;
 mod style_system_coverage;
