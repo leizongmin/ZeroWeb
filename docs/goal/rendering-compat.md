@@ -98,6 +98,8 @@
 >
 > **▶ WPT 资产进展（R3403-F RobotoExtremo variable capability fixture·2026-08-13）**：资源完整性审计继续发现 `synthetic-bold-out-of-capabilities-range` 的 test/ref 已存在，但固定 `RobotoExtremo-VF-wght-400-500.subset.ttf` 未登记，导致两侧同走 fallback。标准 importer 现登记 test/ref/font；同一 HEAD、同一 release runner 的缺资源/有资源 Chromium 串行 A/B 为 `0.50%→0.48%`，完整 css-fonts pass/credible/strict 保持 `87/77/54`，self-source 为可信 strict `0.00%`。字体只由该 test/ref 引用；本切片仅保证 variable capability fixture 可再生，不宣称 synthetic bold 或 variation-axis 实现。
 >
+> **🧪 净负实验裁决（R3405-F dynamic font-variant fixture·2026-08-13）**：审计发现 `font-variant-{caps,east-asian,ligatures,numeric,position}` 共用的两段 JS generator 与 `gsubtest-lookup3.otf` 缺失，旧 Chrome/ZeroWeb 均渲染近空页而形成 `0.00%` 假绿。试作补齐完整资源闭包并 fresh 重抓 5 张 Chrome Oracle；同一 fresh Oracle 下，缺资源 baseline 为 `1.27/2.54/4.94/3.80/0.46%`（合计 `13.01pp`），资源完整 treatment 为 `2.82/5.55/10.50/8.27/0.95%`（合计 `28.09pp`），5/5 回归、净退 `15.08pp`。完整 self-source 中 ligatures `7.08%`、numeric `5.52%` 亦直接 mismatch。故资源/账本完整回退，不把动态 fixture 资产化；fresh Oracle 本地保留，等待 DOM generator、GSUB shaping 与字体路径协同闭合。经验见 [`dynamic-wpt-fixtures-need-fresh-oracle-before-import.md`](../learnings/bugs/dynamic-wpt-fixtures-need-fresh-oracle-before-import.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
