@@ -7,8 +7,9 @@ use std::sync::mpsc::Receiver;
 use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, extract_css_image_urls, extract_font_faces, extract_html_style_text,
-    extract_img_resources, extract_import_urls, extract_stylesheet_hrefs,
+    BudgetAdvance, BudgetedRenderSession, MediaResourceElementKind, extract_css_image_urls, extract_font_faces,
+    extract_html_style_text, extract_img_resources, extract_import_urls, extract_media_resources,
+    extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::font::OpenTypeFeature;
@@ -21,6 +22,7 @@ use crate::webview::WebView;
 
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
 type BytesFetchRx = Receiver<Result<Vec<u8>, String>>;
+type PendingElementResource = (usize, MediaResourceElementKind, String, BytesFetchRx);
 type FontFeatures = Vec<OpenTypeFeature>;
 type PendingFont = (
     String,
@@ -64,6 +66,43 @@ pub enum PageLoadStage {
     Failed,
 }
 
+/// 资源元素一次加载尝试的最终结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceElementOutcome {
+    /// 资源已获取并完成本层所需处理（图片还包括成功解码）。
+    Loaded,
+    /// 资源已获取，但本里程碑不执行媒体解码。
+    Available,
+    /// 获取或图片解码失败。
+    Error,
+}
+
+impl ResourceElementOutcome {
+    /// JS shim 协议使用的稳定字符串。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Loaded => "loaded",
+            Self::Available => "available",
+            Self::Error => "error",
+        }
+    }
+}
+
+/// 提交给页面脚本环境的资源元素最终状态。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceElementEvent {
+    /// 目标元素标签名。
+    pub tag: &'static str,
+    /// 资源绝对 URL。
+    pub url: String,
+    /// 最终结果。
+    pub outcome: ResourceElementOutcome,
+    /// 图片解码成功后的固有宽度，其他元素或失败为 0。
+    pub natural_width: u32,
+    /// 图片解码成功后的固有高度，其他元素或失败为 0。
+    pub natural_height: u32,
+}
+
 /// in-process 异步抓取宿主：经 webview net_pool 线程池抓取（tabworker 默认）。
 pub struct InProcessFetchHost;
 
@@ -105,6 +144,8 @@ pub struct AsyncPageLoad {
     css_seen: HashSet<String>,
     img_pending: Vec<(String, u64, BytesFetchRx)>,
     lazy_img_pending: Vec<(String, u64, BytesFetchRx)>,
+    resource_pending: Vec<PendingElementResource>,
+    resource_settled: Vec<(usize, ResourceElementEvent)>,
     font_pending: Vec<PendingFont>,
     /// R2408+ slice 2：poll_fonts 收集的已就绪 @font-face 字节 `(family, weight, bytes)`，
     /// 供宿主在 tick 后经 `drain_loaded_fonts()` 取出并 load+register（drain pattern）。
@@ -120,24 +161,21 @@ pub struct AsyncPageLoad {
     render_session: Option<BudgetedRenderSession>,
     budget_pending: bool,
     last_error: Option<String>,
-    /// R2942：子资源 fetch/decode 失败记录，供宿主派发 window 'error' 事件（错误上报库 hook）。
-    /// stylesheet fetch 失败 + image fetch/decode 失败收集于此；经 `take_failed_resources()` drain。
+    /// 子资源 fetch/decode 失败记录，供宿主派发 window error 事件。
     failed_resources: Vec<FailedResource>,
-    /// R2943：img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
-    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素（img.onload/onerror）。成功 → "load"，
-    /// fetch/decode 失败 → "error"；经 `take_img_element_events()` drain。
-    img_element_events: Vec<(String, &'static str)>,
+    /// FR-009：img/audio/video/source/track 最终状态，供宿主提交 IDL 状态与元素事件。
+    resource_element_events: Vec<ResourceElementEvent>,
     /// R2944：stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
     /// `__zw_dispatch_link_event` 派发到匹配 href 的 `<link>` 元素（link.onload/onerror）。成功 → "load"，
     /// fetch 失败 → "error"；经 `take_link_element_events()` drain。
     link_element_events: Vec<(String, &'static str)>,
 }
 
-/// R2942：子资源 fetch/decode 失败记录。`kind` = "stylesheet" / "image"；`url` = 资源绝对 URL。
-/// 宿主（tab_worker → PageScriptRunner::finish）在页面 load 之后派发 window 'error'（确保脚本注册的
-/// onerror handler 已就位）。外部 `<script src>` fetch 失败不经此（在 tab_scripts tick 即时派发）。
+/// 子资源 fetch/decode 失败记录。`kind` 标识 stylesheet/image/audio/video/source/track。
+/// 宿主在页面脚本注册 handler 后、window load 前派发 window error。外部 `<script src>` fetch
+/// 失败不经此（在 tab_scripts tick 即时派发）。
 pub struct FailedResource {
-    /// 资源类型："stylesheet" / "image"（decode 失败同 image）。
+    /// 资源类型。
     pub kind: &'static str,
     /// 资源绝对 URL。
     pub url: String,
@@ -162,6 +200,8 @@ impl AsyncPageLoad {
             css_seen: HashSet::new(),
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
+            resource_pending: Vec::new(),
+            resource_settled: Vec::new(),
             font_pending: Vec::new(),
             font_loaded: Vec::new(),
             font_events: Vec::new(),
@@ -171,7 +211,7 @@ impl AsyncPageLoad {
             budget_pending: false,
             last_error: None,
             failed_resources: Vec::new(),
-            img_element_events: Vec::new(),
+            resource_element_events: Vec::new(),
             link_element_events: Vec::new(),
         }
     }
@@ -181,15 +221,32 @@ impl AsyncPageLoad {
         self.last_error.take()
     }
 
-    /// R2942：取出并清除子资源 fetch/decode 失败记录（stylesheet/image），供宿主派发 window 'error'。
+    /// 取出并清除子资源 fetch/decode 失败记录。
     pub fn take_failed_resources(&mut self) -> Vec<FailedResource> {
         std::mem::take(&mut self.failed_resources)
     }
 
-    /// R2943：取出并清除 img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
-    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
+    /// 取出并清除所有资源元素最终状态。
+    pub fn take_resource_element_events(&mut self) -> Vec<ResourceElementEvent> {
+        std::mem::take(&mut self.resource_element_events)
+    }
+
+    /// 兼容旧宿主：只取出 img 元素的 load/error，不携带固有尺寸。
     pub fn take_img_element_events(&mut self) -> Vec<(String, &'static str)> {
-        std::mem::take(&mut self.img_element_events)
+        let mut events = Vec::new();
+        self.resource_element_events.retain(|event| {
+            if event.tag != "img" {
+                return true;
+            }
+            let ty = match event.outcome {
+                ResourceElementOutcome::Loaded => "load",
+                ResourceElementOutcome::Error => "error",
+                ResourceElementOutcome::Available => return false,
+            };
+            events.push((event.url.clone(), ty));
+            false
+        });
+        events
     }
 
     /// R2944：取出并清除 stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，供宿主经
@@ -216,6 +273,8 @@ impl AsyncPageLoad {
             css_seen: HashSet::new(),
             img_pending: Vec::new(),
             lazy_img_pending: Vec::new(),
+            resource_pending: Vec::new(),
+            resource_settled: Vec::new(),
             font_pending: Vec::new(),
             font_loaded: Vec::new(),
             font_events: Vec::new(),
@@ -225,7 +284,7 @@ impl AsyncPageLoad {
             budget_pending: true,
             last_error: None,
             failed_resources: Vec::new(),
-            img_element_events: Vec::new(),
+            resource_element_events: Vec::new(),
             link_element_events: Vec::new(),
         }
     }
@@ -246,7 +305,10 @@ impl AsyncPageLoad {
         // R2408+ slice 2：budget_pending 亦视作活跃——字体加载后 request_rerender 置位，
         // 须保留 load 至该重绘 tick 完成后再判定结束（否则末个字体到达即 complete 会
         // 丢弃 request_rerender，最终帧用 fallback 字体）。
-        !self.font_pending.is_empty() || !self.lazy_img_pending.is_empty() || self.budget_pending
+        !self.font_pending.is_empty()
+            || !self.lazy_img_pending.is_empty()
+            || !self.resource_pending.is_empty()
+            || self.budget_pending
     }
 
     /// 请求下一 tick 重渲染（外部状态变化后调用，如宿主加载 @font-face 后更新 resolver）。
@@ -329,6 +391,7 @@ impl AsyncPageLoad {
 
         self.poll_stylesheets(webview, host, budget_ms, &mut changed);
         self.poll_images(webview, budget_ms, &mut changed);
+        self.poll_element_resources(webview, budget_ms, &mut changed);
         self.poll_fonts(&mut changed);
         self.poll_lazy_images(webview, budget_ms, &mut changed);
 
@@ -402,6 +465,7 @@ impl AsyncPageLoad {
                     let done = matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete)
                         && self.img_pending.is_empty()
                         && self.lazy_img_pending.is_empty()
+                        && self.resource_pending.is_empty()
                         && self.font_pending.is_empty();
                     webview.apply_render_result(result, &self.url, done);
                 }
@@ -414,6 +478,7 @@ impl AsyncPageLoad {
                     PageLoadStage::StyledPaint | PageLoadStage::FetchingImages
                         if self.css_pending.is_empty()
                             && self.img_pending.is_empty()
+                            && self.resource_pending.is_empty()
                             && self.font_pending.is_empty() =>
                     {
                         self.stage = PageLoadStage::Complete;
@@ -625,9 +690,32 @@ impl AsyncPageLoad {
             if img.src.starts_with("data:") {
                 // R1987：data: URI（PNG/JPEG/WebP/SVG）无 HTTP fetch，直接解码并入缓存
                 // （in-scope img 子资源，goal line 118；与 sync 路径 fetch_image_subresources 对齐）。
-                if let Ok(data) = decode_data_uri(&img.src) {
-                    let key = image_resource_key(&img.src, None);
-                    webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                match decode_data_uri(&img.src) {
+                    Ok(data) => {
+                        let key = image_resource_key(&img.src, None);
+                        self.resource_element_events.push(ResourceElementEvent {
+                            tag: "img",
+                            url: img.src.clone(),
+                            outcome: ResourceElementOutcome::Loaded,
+                            natural_width: data.width,
+                            natural_height: data.height,
+                        });
+                        webview.image_cache().insert_with_key(ImageKey::new(key), data);
+                    }
+                    Err(e) => {
+                        tracing::warn!("data: URI image decode failed: {e}");
+                        self.failed_resources.push(FailedResource {
+                            kind: "image",
+                            url: img.src.clone(),
+                        });
+                        self.resource_element_events.push(ResourceElementEvent {
+                            tag: "img",
+                            url: img.src,
+                            outcome: ResourceElementOutcome::Error,
+                            natural_width: 0,
+                            natural_height: 0,
+                        });
+                    }
                 }
                 continue;
             }
@@ -678,14 +766,16 @@ impl AsyncPageLoad {
             self.img_pending
                 .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
         }
-        if self.img_pending.is_empty() && self.lazy_urls.is_empty() {
+        self.begin_element_resource_fetch(host);
+        if self.img_pending.is_empty() && self.lazy_urls.is_empty() && self.resource_pending.is_empty() {
             self.stage = PageLoadStage::Complete;
-        } else if !self.img_pending.is_empty() {
+        } else if !self.img_pending.is_empty() || !self.resource_pending.is_empty() {
             tracing::info!(
                 url = %self.url,
                 count = self.img_pending.len(),
+                resources = self.resource_pending.len(),
                 lazy = self.lazy_urls.len(),
-                "page load: fetch images"
+                "page load: fetch images and resource elements"
             );
             self.stage = PageLoadStage::FetchingImages;
         } else {
@@ -706,6 +796,25 @@ impl AsyncPageLoad {
         }
     }
 
+    fn begin_element_resource_fetch(&mut self, host: &mut dyn AsyncFetchHost) {
+        let Some(html) = self.html.as_deref() else {
+            return;
+        };
+        let base = url::Url::parse(&self.url).ok();
+        for (index, resource) in extract_media_resources(html).into_iter().enumerate() {
+            let abs = match base.as_ref().and_then(|base| base.join(&resource.src).ok()) {
+                Some(url) => url.to_string(),
+                None => resource.src,
+            };
+            self.resource_pending.push((
+                index,
+                resource.kind,
+                abs.clone(),
+                host.fetch_bytes_meta(&abs, ResourceFetchMeta::MEDIA),
+            ));
+        }
+    }
+
     fn poll_lazy_images(&mut self, webview: &mut WebView, budget_ms: f64, changed: &mut bool) {
         if self.lazy_img_pending.is_empty() {
             if self.stage == PageLoadStage::Complete && !self.lazy_urls.is_empty() {
@@ -720,22 +829,58 @@ impl AsyncPageLoad {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok(bytes) => {
-                        if let Ok(img) = decode_image(&bytes) {
-                            // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
-                            let intrinsic_ratio = img.intrinsic_ratio();
-                            if let Some(r) = intrinsic_ratio {
-                                ratios.insert(*key, r);
-                            } else {
-                                let (w, h) = (img.width as f32, img.height as f32);
-                                sizes.insert(*key, (w, h));
-                                if let Some(dims) = img.no_ratio_intrinsic() {
-                                    no_ratio.insert(*key, dims);
+                        match decode_image(&bytes) {
+                            Ok(img) => {
+                                // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
+                                let intrinsic_ratio = img.intrinsic_ratio();
+                                if let Some(r) = intrinsic_ratio {
+                                    ratios.insert(*key, r);
+                                } else {
+                                    let (w, h) = (img.width as f32, img.height as f32);
+                                    sizes.insert(*key, (w, h));
+                                    if let Some(dims) = img.no_ratio_intrinsic() {
+                                        no_ratio.insert(*key, dims);
+                                    }
                                 }
+                                self.resource_element_events.push(ResourceElementEvent {
+                                    tag: "img",
+                                    url: url.clone(),
+                                    outcome: ResourceElementOutcome::Loaded,
+                                    natural_width: img.width,
+                                    natural_height: img.height,
+                                });
+                                webview.image_cache().insert_with_key(ImageKey::new(*key), img);
                             }
-                            webview.image_cache().insert_with_key(ImageKey::new(*key), img);
+                            Err(e) => {
+                                tracing::warn!("lazy image {url} decode failed: {e}");
+                                self.failed_resources.push(FailedResource {
+                                    kind: "image",
+                                    url: url.clone(),
+                                });
+                                self.resource_element_events.push(ResourceElementEvent {
+                                    tag: "img",
+                                    url: url.clone(),
+                                    outcome: ResourceElementOutcome::Error,
+                                    natural_width: 0,
+                                    natural_height: 0,
+                                });
+                            }
                         }
                     }
-                    Err(e) => tracing::warn!("lazy image {url} fetch failed: {e}"),
+                    Err(e) => {
+                        tracing::warn!("lazy image {url} fetch failed: {e}");
+                        self.failed_resources.push(FailedResource {
+                            kind: "image",
+                            url: url.clone(),
+                        });
+                        self.resource_element_events.push(ResourceElementEvent {
+                            tag: "img",
+                            url: url.clone(),
+                            outcome: ResourceElementOutcome::Error,
+                            natural_width: 0,
+                            natural_height: 0,
+                        });
+                    }
                 }
                 *changed = true;
                 false
@@ -771,6 +916,8 @@ impl AsyncPageLoad {
                 match result {
                     Ok(bytes) => match decode_image(&bytes) {
                         Ok(img) => {
+                            let natural_width = img.width;
+                            let natural_height = img.height;
                             // 非 BothAbs SVG 进 no_ratio（default object size sizing）；其余进 sizes。
                             if let Some(r) = img.intrinsic_ratio() {
                                 ratios.insert(*key, r);
@@ -782,7 +929,13 @@ impl AsyncPageLoad {
                                 }
                             }
                             webview.image_cache().insert_with_key(ImageKey::new(*key), img);
-                            self.img_element_events.push((url.clone(), "load"));
+                            self.resource_element_events.push(ResourceElementEvent {
+                                tag: "img",
+                                url: url.clone(),
+                                outcome: ResourceElementOutcome::Loaded,
+                                natural_width,
+                                natural_height,
+                            });
                         }
                         Err(e) => {
                             tracing::warn!("image {url} decode failed: {e}");
@@ -790,7 +943,13 @@ impl AsyncPageLoad {
                                 kind: "image",
                                 url: url.clone(),
                             });
-                            self.img_element_events.push((url.clone(), "error"));
+                            self.resource_element_events.push(ResourceElementEvent {
+                                tag: "img",
+                                url: url.clone(),
+                                outcome: ResourceElementOutcome::Error,
+                                natural_width: 0,
+                                natural_height: 0,
+                            });
                         }
                     },
                     Err(e) => {
@@ -799,7 +958,13 @@ impl AsyncPageLoad {
                             kind: "image",
                             url: url.clone(),
                         });
-                        self.img_element_events.push((url.clone(), "error"));
+                        self.resource_element_events.push(ResourceElementEvent {
+                            tag: "img",
+                            url: url.clone(),
+                            outcome: ResourceElementOutcome::Error,
+                            natural_width: 0,
+                            natural_height: 0,
+                        });
                     }
                 }
                 image_changed = true;
@@ -827,8 +992,54 @@ impl AsyncPageLoad {
             );
             self.budget_pending = true;
         }
-        if self.img_pending.is_empty() {
+        if self.img_pending.is_empty() && self.resource_pending.is_empty() {
             tracing::info!(url = %self.url, "page load: all eager images ready, final render");
+            self.stage = PageLoadStage::Complete;
+            self.budget_pending = true;
+            *changed = true;
+            let _ = self.advance_render(webview, budget_ms);
+        }
+    }
+
+    fn poll_element_resources(&mut self, webview: &mut WebView, budget_ms: f64, changed: &mut bool) {
+        if self.stage != PageLoadStage::FetchingImages {
+            return;
+        }
+        self.resource_pending.retain(|(index, kind, url, rx)| {
+            let Ok(result) = rx.try_recv() else {
+                return true;
+            };
+            let outcome = if result.is_ok() {
+                ResourceElementOutcome::Available
+            } else {
+                ResourceElementOutcome::Error
+            };
+            if let Err(error) = result {
+                tracing::warn!(tag = kind.tag_name(), "resource {url} fetch failed: {error}");
+                self.failed_resources.push(FailedResource {
+                    kind: kind.tag_name(),
+                    url: url.clone(),
+                });
+            }
+            self.resource_settled.push((
+                *index,
+                ResourceElementEvent {
+                    tag: kind.tag_name(),
+                    url: url.clone(),
+                    outcome,
+                    natural_width: 0,
+                    natural_height: 0,
+                },
+            ));
+            *changed = true;
+            false
+        });
+        if self.resource_pending.is_empty() {
+            self.resource_settled.sort_by_key(|(index, _)| *index);
+            self.resource_element_events
+                .extend(self.resource_settled.drain(..).map(|(_, event)| event));
+        }
+        if self.resource_pending.is_empty() && self.img_pending.is_empty() {
             self.stage = PageLoadStage::Complete;
             self.budget_pending = true;
             *changed = true;

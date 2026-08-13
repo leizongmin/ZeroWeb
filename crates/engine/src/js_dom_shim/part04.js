@@ -71,14 +71,61 @@
           if (prop === 'spellcheck') return rfRaw !== 'false'; // "false"→false，余（含缺省）→true（spec 默认 true）
           return rfRaw !== 'no';                               // translate："no"→false，余→true（默认 true）
         }
+        // FR-009：资源获取 settle 后的 IMG / media / track IDL 状态。
+        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-naturalwidth
+        // https://html.spec.whatwg.org/multipage/media.html#dom-media-networkstate
+        var resourceTag = _realTag(sel, handle);
+        var resourceState = _resourceStates[key];
+        if (resourceTag === 'IMG' && prop === 'complete') {
+          if (resourceState) return true;
+          var completeSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
+          var completeSrcset = handle ? __zw_get_attr_handle(handle, 'srcset') : __zw_get_attr(sel, 'srcset');
+          return !completeSrc && !completeSrcset;
+        }
+        if ((resourceTag === 'IMG' || resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'currentSrc') {
+          return resourceState ? resourceState.url : '';
+        }
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') &&
+            (prop === 'NETWORK_EMPTY' || prop === 'NETWORK_IDLE' || prop === 'NETWORK_LOADING' ||
+             prop === 'NETWORK_NO_SOURCE' || prop === 'HAVE_NOTHING' || prop === 'HAVE_METADATA' ||
+             prop === 'HAVE_CURRENT_DATA' || prop === 'HAVE_FUTURE_DATA' || prop === 'HAVE_ENOUGH_DATA')) {
+          return {
+            NETWORK_EMPTY: 0, NETWORK_IDLE: 1, NETWORK_LOADING: 2, NETWORK_NO_SOURCE: 3,
+            HAVE_NOTHING: 0, HAVE_METADATA: 1, HAVE_CURRENT_DATA: 2, HAVE_FUTURE_DATA: 3, HAVE_ENOUGH_DATA: 4
+          }[prop];
+        }
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'networkState') {
+          if (resourceState) return resourceState.outcome === 'error' ? 3 : 1;
+          var mediaSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
+          if (mediaSrc) return 2;
+          try {
+            var mediaSources = _makeProxy(sel, handle).querySelectorAll('source');
+            return mediaSources && mediaSources.length ? 2 : 0;
+          } catch (_e) { return 0; }
+        }
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'readyState') return 0;
+        if ((resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'error') {
+          return resourceState && resourceState.outcome === 'error' ? resourceState.error : null;
+        }
+        if (resourceTag === 'TRACK' &&
+            (prop === 'NONE' || prop === 'LOADING' || prop === 'LOADED' || prop === 'ERROR')) {
+          return { NONE: 0, LOADING: 1, LOADED: 2, ERROR: 3 }[prop];
+        }
+        if (resourceTag === 'TRACK' && prop === 'readyState') {
+          if (!resourceState) {
+            var trackSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
+            return trackSrc ? 1 : 0;
+          }
+          return resourceState.outcome === 'error' ? 3 : 2;
+        }
         // reflected unsigned-long 维度属性（R2851）：IMG/IFRAME `.width`/`.height`（反射 width/height 内容属性
-        // 为非负整数，缺省/不可解析 → 0；spec「reflect unsigned long」算法）+ IMG `.naturalWidth`/`.naturalHeight`
-        // （固有像素尺寸，headless 无真图加载 → 恒 0，spec unloaded→0 一致）。响应式/布局 JS 读 img.width 高频。
+        // 为非负整数，缺省/不可解析 → 0；spec「reflect unsigned long」算法）+ IMG `.naturalWidth`/`.naturalHeight`.
         // CANVAS（缺省 300/150 且 setter 改 bitmap，特殊）/ VIDEO/EMBED defer。
         if (prop === 'width' || prop === 'height' || prop === 'naturalWidth' || prop === 'naturalHeight') {
-          var rgTag = _realTag(sel, handle);
+          var rgTag = resourceTag;
           if (rgTag === 'IMG' && (prop === 'naturalWidth' || prop === 'naturalHeight')) {
-            return 0;  // headless 无真图加载（onload 不触发）→ 固有尺寸 0（spec unloaded→0）。
+            if (!resourceState || resourceState.outcome !== 'loaded') return 0;
+            return prop === 'naturalWidth' ? resourceState.width : resourceState.height;
           }
           if ((rgTag === 'IMG' || rgTag === 'IFRAME') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。

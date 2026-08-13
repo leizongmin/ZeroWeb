@@ -147,6 +147,90 @@ pub struct ImgResource {
     pub lazy: bool,
 }
 
+/// 需要获取以提交基础加载状态的媒体/资源元素类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaResourceElementKind {
+    /// `<audio src>`.
+    Audio,
+    /// `<video src>`.
+    Video,
+    /// `<source src>`（仅限 audio/video 子元素）。
+    Source,
+    /// `<track src>`.
+    Track,
+}
+
+impl MediaResourceElementKind {
+    /// 对应的 HTML 标签名。
+    pub const fn tag_name(self) -> &'static str {
+        match self {
+            Self::Audio => "audio",
+            Self::Video => "video",
+            Self::Source => "source",
+            Self::Track => "track",
+        }
+    }
+}
+
+/// 媒体/资源元素及其待获取 URL。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaResourceElement {
+    /// 元素类型。
+    pub kind: MediaResourceElementKind,
+    /// `src` 原始值。
+    pub src: String,
+}
+
+/// 提取 `audio`、`video`、其直属 `source` 以及 `track` 的非空 `src`。
+///
+/// 本层只识别文档关系和 URL 字符串；候选选择、获取与状态提交由 WebView
+/// 加载协调器负责。
+/// https://html.spec.whatwg.org/multipage/media.html#concept-media-load-resource
+pub fn extract_media_resources(html: &str) -> Vec<MediaResourceElement> {
+    let doc = zero_dom::parse_html(html);
+    let mut out = Vec::new();
+    for id in doc.get_elements_by_tag_names(&["audio", "video", "source", "track"]) {
+        let Some(node) = doc.get(id) else {
+            continue;
+        };
+        let zero_dom::NodeKind::Element(element) = &node.kind else {
+            continue;
+        };
+        let kind = match element.local_name() {
+            "audio" => MediaResourceElementKind::Audio,
+            "video" => MediaResourceElementKind::Video,
+            "track" => MediaResourceElementKind::Track,
+            "source" => {
+                let Some(parent) = doc.parent_node(id).and_then(|parent| doc.get(parent)) else {
+                    continue;
+                };
+                let zero_dom::NodeKind::Element(parent) = &parent.kind else {
+                    continue;
+                };
+                if !matches!(parent.local_name(), "audio" | "video") {
+                    continue;
+                }
+                if parent.get_attribute("src").is_some_and(|src| !src.trim().is_empty()) {
+                    continue;
+                }
+                MediaResourceElementKind::Source
+            }
+            _ => continue,
+        };
+        let Some(src) = doc.get_attribute(id, "src") else {
+            continue;
+        };
+        let src = src.trim();
+        if !src.is_empty() {
+            out.push(MediaResourceElement {
+                kind,
+                src: src.to_string(),
+            });
+        }
+    }
+    out
+}
+
 /// 从 `srcset` 属性取首个候选 URL（R2419：srcset-only `<img>` 回退 src）。
 ///
 /// `srcset="a.jpg 1x, b.jpg 2x"` → `a.jpg`。仅取首候选首 token（最小正确性修：
@@ -380,4 +464,30 @@ fn strip_script_cdata(code: &str) -> &str {
         s = rest;
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MediaResourceElementKind, extract_media_resources};
+
+    #[test]
+    fn media_resource_extraction_respects_owner_and_direct_src() {
+        let resources = extract_media_resources(
+            r#"<audio src="audio.mp3"><source src="ignored-audio.ogg"></audio>
+               <video><source src="fallback.webm"></video>
+               <picture><source src="image.webp"><img src="image.png"></picture>
+               <track src="captions.vtt">"#,
+        );
+        assert_eq!(
+            resources
+                .iter()
+                .map(|resource| (resource.kind, resource.src.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (MediaResourceElementKind::Audio, "audio.mp3"),
+                (MediaResourceElementKind::Source, "fallback.webm"),
+                (MediaResourceElementKind::Track, "captions.vtt"),
+            ]
+        );
+    }
 }

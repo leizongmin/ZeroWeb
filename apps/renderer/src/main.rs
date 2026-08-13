@@ -230,12 +230,11 @@ struct RendererRuntime {
     observer_tick_depth: u32,
     /// 页面级 retained 文本表单控件状态（值、选区、焦点和 change 基线）。
     form_controls: FormControlStateStore,
-    /// R2942 mirror：子资源 fetch/decode 失败 `(kind, url)`（stylesheet/image）。load 完成时从
+    /// 子资源 fetch/decode 失败 `(kind, url)`。load 完成时从
     /// `AsyncPageLoad.take_failed_resources` drain 并 stash，脚本阶段经 `finish_page_load` 派 window 'error'。
     pending_resource_errors: Vec<(String, String)>,
-    /// R2943 mirror：img 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
-    /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_img_event`。
-    pending_img_events: Vec<(String, &'static str)>,
+    /// FR-009：资源元素最终状态。load 完成时 drain，脚本阶段提交 IDL 状态与规范事件。
+    pending_resource_element_events: Vec<zero_webview::ResourceElementEvent>,
     /// R2944 mirror：stylesheet 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
     /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_link_event`。
     pending_link_events: Vec<(String, &'static str)>,
@@ -333,7 +332,7 @@ impl RendererRuntime {
             observer_tick_depth: 0,
             form_controls: FormControlStateStore::new(),
             pending_resource_errors: Vec::new(),
-            pending_img_events: Vec::new(),
+            pending_resource_element_events: Vec::new(),
             pending_link_events: Vec::new(),
             pending_font_events: Vec::new(),
         }
@@ -424,10 +423,16 @@ impl RendererRuntime {
         // 无脚本但 JS 启用的页面（仅 `<body onload>`）也派发——finish_page_load 内 lifecycle 无条件执行。
         if js_enabled && !skip {
             let resource_errors = std::mem::take(&mut self.pending_resource_errors);
-            let img_events = std::mem::take(&mut self.pending_img_events);
+            let resource_events = std::mem::take(&mut self.pending_resource_element_events);
             let link_events = std::mem::take(&mut self.pending_link_events);
             let font_events = std::mem::take(&mut self.pending_font_events);
-            page_scripts::finish_page_load(&self.js_worker, resource_errors, img_events, link_events, font_events);
+            page_scripts::finish_page_load(
+                &self.js_worker,
+                resource_errors,
+                resource_events,
+                link_events,
+                font_events,
+            );
         }
         Ok(())
     }
@@ -1457,7 +1462,7 @@ impl RendererRuntime {
             .into_iter()
             .map(|r| (r.kind.to_string(), r.url))
             .collect();
-        self.pending_img_events = pending.load.take_img_element_events();
+        self.pending_resource_element_events = pending.load.take_resource_element_events();
         self.pending_link_events = pending.load.take_link_element_events();
         self.pending_font_events = pending.load.take_font_events();
 

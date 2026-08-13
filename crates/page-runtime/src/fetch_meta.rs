@@ -30,6 +30,11 @@ impl ResourceFetchMeta {
         resource_type: "image",
         priority: 2,
     };
+    /// 音视频、`source` 与文本轨道资源。
+    pub const MEDIA: Self = Self {
+        resource_type: "media",
+        priority: 2,
+    };
     /// 字体。
     pub const FONT: Self = Self {
         resource_type: "font",
@@ -48,12 +53,13 @@ impl ResourceFetchMeta {
             "script" => "script",
             "font" => "font",
             "image" => "image",
+            "media" => "media",
             _ => "preload",
         };
         let priority = match as_type {
             "style" | "document" => 4,
             "script" | "font" => 3,
-            "image" => 2,
+            "image" | "media" => 2,
             _ => 2,
         };
         Self {

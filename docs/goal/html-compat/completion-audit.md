@@ -14,9 +14,9 @@ Date: 2026-08-13
 | FR-006 reset | reset tests across engine, renderer, TabWorker and WebView | complete |
 | FR-007 submission | owner-aware entry list; GET/POST intent tests across hosts | complete |
 | FR-008 interactive element families | anchor/fragment, details/summary, dialog/popover, select/option integration tests | complete |
-| FR-009 resource element events | RFC priority is optional; M3d explicitly may be deferred and does not block M4 | non-blocking optional |
+| FR-009 resource element events | image dimensions/complete + single load/error; media/source/track settle state; 3 integration tests; 6 upstream WPT subtests | complete |
 | FR-010 live renderer WebDriver | automation IPC contract; live HTTP form and stale-reference tests | complete |
-| FR-011 WPT harness/testdriver | PASS/FAIL/TIMEOUT/UNSUPPORTED reporter; click/send_keys shared-action adapter; 8 upstream subtests | complete |
+| FR-011 WPT harness/testdriver | PASS/FAIL/TIMEOUT/UNSUPPORTED reporter; click/send_keys shared-action adapter; 14 upstream subtests | complete |
 | FR-012 repository-owned coverage | `test-matrix.md`, integration tests, pinned WPT ledger | complete |
 
 ## Non-Functional Requirements
@@ -44,7 +44,7 @@ Date: 2026-08-13
 ## Gates
 
 - `make test`: pass; adapter-only GPU tests run only when the headless adapter probe succeeds.
-- `make testharness-html`: pass, 8 upstream subtests.
+- `make testharness-html`: pass, 14 upstream subtests.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 - Full benchmark report: 16/16 microbench executors and retained form hard gate pass.
 - `perf-gate.sh`: pass; absolute budgets pass and an incompatible i5 baseline is not applied to the Xeon host.

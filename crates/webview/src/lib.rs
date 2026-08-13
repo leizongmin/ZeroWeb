@@ -19,7 +19,10 @@ mod net_pool;
 pub mod webview;
 pub mod webview_builder;
 
-pub use async_load::{AsyncPageLoad, FailedResource, InProcessFetchHost, PageLoadStage, live_fontface_enabled};
+pub use async_load::{
+    AsyncPageLoad, FailedResource, InProcessFetchHost, PageLoadStage, ResourceElementEvent, ResourceElementOutcome,
+    live_fontface_enabled,
+};
 pub use net_pool::{fetch_bytes_async, fetch_text_async};
 pub use webview::*;
 pub use webview_builder::*;

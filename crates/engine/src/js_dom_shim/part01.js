@@ -61,6 +61,9 @@
   // _outputValue = dirty 后的当前值（key 存在即 dirty）。同 _inputValues 经 `__zw_reset_form_state` 清空。
   var _outputDefault = {};
   var _outputValue = {};
+  // FR-009：资源元素最终状态（key → {url,outcome,width,height,error}）。
+  // host 在 fetch/decode settle 后提交；导航与其它 page-local 状态一并清空。
+  var _resourceStates = {};
   // R3049：textarea defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，无独立初值缓存
   //（区别 INPUT value 属性 / OUTPUT _outputDefault）→ form.reset 无法还原 textarea。本 map 惰性捕获 textarea 初值
   //（getter 首读 / value setter 首写前），供 defaultValue getter + form.reset 还原。同 _outputDefault 经 reset 清空。
@@ -1561,7 +1564,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

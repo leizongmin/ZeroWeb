@@ -11,6 +11,9 @@ const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// First supported upstream HTML interaction cases.
 pub const HTML_INTERACTION_CASES: &[&str] = &[
+    "html/semantics/embedded-content/media-elements/networkState_initial.html",
+    "html/semantics/embedded-content/media-elements/readyState_initial.html",
+    "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html",
     "html/semantics/forms/the-output-element/output.html",
     "html/semantics/forms/the-input-element/input-whitespace.html",
     "html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/focus-tabindex-default-value.html",

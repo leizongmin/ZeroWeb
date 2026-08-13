@@ -14,6 +14,9 @@ FILES=(
   "html/semantics/forms/the-output-element/output.html"
   "html/semantics/forms/the-input-element/input-whitespace.html"
   "html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/focus-tabindex-default-value.html"
+  "html/semantics/embedded-content/media-elements/networkState_initial.html"
+  "html/semantics/embedded-content/media-elements/readyState_initial.html"
+  "html/semantics/embedded-content/media-elements/interfaces/HTMLElement/HTMLTrackElement/readyState.html"
   "uievents/constructors/inputevent-constructor.html"
 )
 

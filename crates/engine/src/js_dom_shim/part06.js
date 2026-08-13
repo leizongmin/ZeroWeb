@@ -1777,9 +1777,73 @@
       }
     } catch (_e) {}
   };
-  // 元素级派发便捷封装（R2943 img / R2944 link / script）。
+  // FR-009：提交资源最终状态，并按元素种类派发 non-bubbling/non-cancelable 事件。
+  // https://html.spec.whatwg.org/multipage/embedded-content.html#updating-the-image-data
+  // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-resource
+  function _zwSettleResourceSelector(sel, tag, url, outcome, width, height) {
+    var key = _elKey(sel, null);
+    if (_resourceStates[key]) return false; // 每个资源请求只 settle / 派发一次。
+    var state = {
+      url: String(url), outcome: String(outcome),
+      width: Math.max(0, Number(width) || 0), height: Math.max(0, Number(height) || 0),
+      error: outcome === 'error' ? _zwMediaError(2, 'Error loading resource: ' + String(url)) : null
+    };
+    _resourceStates[key] = state;
+    var eventType = '';
+    if (tag === 'img') eventType = outcome === 'error' ? 'error' : 'load';
+    else if (tag === 'track') eventType = outcome === 'error' ? 'error' : 'load';
+    else if ((tag === 'source' || tag === 'audio' || tag === 'video') && outcome === 'error') eventType = 'error';
+    if (eventType) {
+      _dispatchWithBubble(key, sel, null, _makeEvent(eventType, { bubbles: false, cancelable: false }));
+    }
+    return true;
+  }
+  globalThis.__zw_commit_resource_element_state = function (tag, absUrl, outcome, width, height) {
+    try {
+      tag = String(tag).toLowerCase();
+      if (typeof __zw_query_all !== 'function') return;
+      var sels = (__zw_query_all(tag) || '').split('|').filter(Boolean);
+      var pageUrl = typeof __zw_get_page_url === 'function' ? __zw_get_page_url() : '';
+      var target = String(absUrl == null ? '' : absUrl);
+      for (var i = 0; i < sels.length; i++) {
+        var sel = sels[i];
+        var raw = typeof __zw_get_attr === 'function' ? __zw_get_attr(sel, 'src') : '';
+        if (!raw && tag === 'img' && typeof __zw_get_attr === 'function') {
+          var srcset = __zw_get_attr(sel, 'srcset') || '';
+          raw = srcset.split(',')[0].trim().split(/\s+/)[0] || '';
+        }
+        if (!raw) continue;
+        var resolved = raw;
+        if (pageUrl && raw.indexOf('://') < 0 && raw.indexOf('data:') !== 0 &&
+            typeof __zw_parse_url === 'function') {
+          try {
+            var parsed = JSON.parse(__zw_parse_url(raw, pageUrl));
+            if (parsed && parsed.href) resolved = parsed.href;
+          } catch (_e) {}
+        }
+        if (resolved !== target) continue;
+        var committed = _zwSettleResourceSelector(sel, tag, target, outcome, width, height);
+        if (!committed || tag !== 'source') continue;
+        var parent = _parentNodeFor(sel, null);
+        var parentTag = parent && parent.tagName ? String(parent.tagName).toLowerCase() : '';
+        if (parentTag !== 'audio' && parentTag !== 'video') continue;
+        if (outcome !== 'error') {
+          _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'available', 0, 0);
+          continue;
+        }
+        var candidates = parent.querySelectorAll ? parent.querySelectorAll('source') : [];
+        var allFailed = candidates.length > 0;
+        for (var j = 0; j < candidates.length; j++) {
+          var candidateState = _resourceStates[_elKey(candidates[j].__zwSelector, null)];
+          if (!candidateState || candidateState.outcome !== 'error') { allFailed = false; break; }
+        }
+        if (allFailed) _zwSettleResourceSelector(parent.__zwSelector, parentTag, target, 'error', 0, 0);
+      }
+    } catch (_e) {}
+  };
+  // 元素级派发便捷封装（旧 R2943 img / R2944 link / script）。
   globalThis.__zw_dispatch_img_event = function (absUrl, type) {
-    __zw_dispatch_element_event('img', 'src', absUrl, type);
+    __zw_commit_resource_element_state('img', absUrl, type === 'error' ? 'error' : 'loaded', 0, 0);
   };
   globalThis.__zw_dispatch_link_event = function (absHref, type) {
     __zw_dispatch_element_event('link', 'href', absHref, type);

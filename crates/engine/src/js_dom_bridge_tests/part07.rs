@@ -1663,6 +1663,8 @@ fn test_img_element_events_r2943() {
         "<html><body>\
          <img id='i1' src='https://example.com/a.png'>\
          <img src='https://example.com/b.png'>\
+         <img src='https://example.com/c.png'>\
+         <img srcset='https://example.com/d.png 1x'>\
          </body></html>"
             .to_string(),
     ));
@@ -1671,7 +1673,7 @@ fn test_img_element_events_r2943() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // img#i1：addEventListener('load') + onload IDL + onerror；img b.png：onload。
+    // img#i1：load listener + IDL（重复 settle 仍仅各触发一次）；b load；c error。
     sandbox
         .execute(
             "globalThis.__hit = [];\
@@ -1679,16 +1681,21 @@ fn test_img_element_events_r2943() {
              imgs[0].addEventListener('load', function(){ globalThis.__hit.push('i1-load-ael'); });\
              imgs[0].onload = function(){ globalThis.__hit.push('i1-load-idl'); };\
              imgs[0].onerror = function(){ globalThis.__hit.push('i1-error'); };\
-             imgs[1].onload = function(){ globalThis.__hit.push('b-load'); };",
+             imgs[1].onload = function(){ globalThis.__hit.push('b-load'); };\
+             imgs[2].onerror = function(){ globalThis.__hit.push('c-error'); };\
+             imgs[3].onload = function(){ globalThis.__hit.push('d-load'); };",
         )
         .unwrap();
 
-    // host 派发：i1 load + i1 error + b load（绝对 URL；src 已绝对故不经 parse_url 解析）。
+    // host 派发：i1 重复 load 后再 error（均须被首次 settle 去重）+ b load + c error。
     sandbox
         .execute(
             "__zw_dispatch_img_event('https://example.com/a.png', 'load');\
+             __zw_dispatch_img_event('https://example.com/a.png', 'load');\
              __zw_dispatch_img_event('https://example.com/a.png', 'error');\
-             __zw_dispatch_img_event('https://example.com/b.png', 'load');",
+             __zw_dispatch_img_event('https://example.com/b.png', 'load');\
+             __zw_dispatch_img_event('https://example.com/c.png', 'error');\
+             __zw_dispatch_img_event('https://example.com/d.png', 'load');",
         )
         .unwrap();
     assert_eq!(
@@ -1709,11 +1716,15 @@ fn test_img_element_events_r2943() {
     );
     assert_eq!(
         sandbox
-            .execute("String(globalThis.__hit.indexOf('i1-error') >= 0)")
+            .execute(
+                "String(globalThis.__hit.filter(function(x){return x==='i1-load-ael';}).length===1 && \
+                 globalThis.__hit.filter(function(x){return x==='i1-load-idl';}).length===1 && \
+                 globalThis.__hit.indexOf('i1-error')<0)",
+            )
             .unwrap()
             .value,
         "true",
-        "img#i1 onerror 触发（fetch/decode 失败派 error）"
+        "同一 img 请求仅首次 settle，load 不重复且后续 error 不触发"
     );
     assert_eq!(
         sandbox
@@ -1722,6 +1733,25 @@ fn test_img_element_events_r2943() {
             .value,
         "true",
         "img b.png onload 触发（多 img 按 src 区分）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__hit.indexOf('c-error') >= 0)")
+            .unwrap()
+            .value,
+        "true",
+        "独立 img fetch/decode 失败派 error"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "String(globalThis.__hit.indexOf('d-load') >= 0 && imgs[3].complete && \
+                 imgs[3].currentSrc === 'https://example.com/d.png')",
+            )
+            .unwrap()
+            .value,
+        "true",
+        "srcset-only img 匹配首候选并提交 complete/currentSrc"
     );
     // 未匹配 src 不派发（计数不变）。
     sandbox
@@ -2021,4 +2051,3 @@ fn test_location_reflects_pushstate_replacestate_r3005() {
     assert_eq!(sandbox.execute("globalThis.__pNoUrl").unwrap().value, "/c", "pushState 无 url 不改 location（保持 /c）");
     assert_eq!(sandbox.execute("globalThis.__href1").unwrap().value, "https://example.com/c", "location.href 绝对 URL");
 }
-

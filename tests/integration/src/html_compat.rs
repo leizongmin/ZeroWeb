@@ -1,8 +1,10 @@
 //! HTML 行为兼容性的跨 crate 契约测试。
 
-use zero_engine::{DomMutation, form_get_submission_url_with_values};
-use zero_page_runtime::{HtmlActionRequest, HtmlUserAction, JsExecutor, PageEffect, PageNodeRef};
-use zero_webview::{WebView, WebViewConfig};
+use zero_engine::{DomMutation, form_get_submission_url_with_values, script_commit_resource_element_state};
+use zero_page_runtime::{
+    AsyncFetchHost, HtmlActionRequest, HtmlUserAction, JsExecutor, PageEffect, PageNodeRef, ResourceFetchMeta,
+};
+use zero_webview::{AsyncPageLoad, ResourceElementEvent, WebView, WebViewConfig};
 
 const CONFORMANCE_SCRIPT: &str = r#"
 globalThis.__events=[];
@@ -1066,4 +1068,173 @@ fn release_uses_stable_pressed_target_across_reflow() {
     assert_eq!(pressed.selector(), "#pressed");
     assert_ne!(pressed.node_ref(), current_hover.node_ref());
     assert!(!pressed.node_ref().is_current(7, 4));
+}
+
+struct ResourceHost;
+
+impl AsyncFetchHost for ResourceHost {
+    fn fetch_text_meta(
+        &mut self,
+        url: &str,
+        _meta: ResourceFetchMeta,
+    ) -> std::sync::mpsc::Receiver<Result<String, String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(if url.contains("missing") {
+            Err(format!("missing: {url}"))
+        } else {
+            Ok(String::new())
+        })
+        .unwrap();
+        rx
+    }
+
+    fn fetch_bytes_meta(
+        &mut self,
+        url: &str,
+        _meta: ResourceFetchMeta,
+    ) -> std::sync::mpsc::Receiver<Result<Vec<u8>, String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(if url.contains("missing") {
+            Err(format!("missing: {url}"))
+        } else {
+            Ok(vec![0])
+        })
+        .unwrap();
+        rx
+    }
+}
+
+fn finish_resource_load(html: &str) -> (WebView, Vec<ResourceElementEvent>) {
+    let mut load = AsyncPageLoad::from_html("https://zero.test/resources/page.html", html.to_string());
+    let mut webview = WebView::new(WebViewConfig::default());
+    let mut host = ResourceHost;
+    for _ in 0..100 {
+        if !load.is_active() {
+            break;
+        }
+        load.tick(&mut webview, &mut host, 500.0);
+    }
+    assert!(!load.is_active(), "resource loading loop must settle");
+    let events = load.take_resource_element_events();
+    webview.run_page_scripts().expect("register resource listeners");
+    (webview, events)
+}
+
+fn commit_resource_events(webview: &mut WebView, events: &[ResourceElementEvent]) {
+    for event in events {
+        let script = script_commit_resource_element_state(
+            event.tag,
+            &event.url,
+            event.outcome.as_str(),
+            event.natural_width,
+            event.natural_height,
+        );
+        webview.execute_script(&script).expect("commit resource state");
+    }
+}
+
+#[test]
+fn image_load_state_and_event_are_coherent() {
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#updating-the-image-data
+    const PNG: &str = "data:image/png;base64,\
+        iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII=";
+    let html = format!(
+        r#"<html><body><img id="image" src="{PNG}">
+        <script>
+        globalThis.__imageLoads=0;globalThis.__imageErrors=0;
+        var image=document.getElementById('image');
+        image.addEventListener('load',function(){{globalThis.__imageLoads++;}});
+        image.addEventListener('error',function(){{globalThis.__imageErrors++;}});
+        </script></body></html>"#
+    );
+    let (mut webview, events) = finish_resource_load(&html);
+    assert_eq!(events.len(), 1);
+    assert_eq!((events[0].natural_width, events[0].natural_height), (2, 2));
+    commit_resource_events(&mut webview, &events);
+    commit_resource_events(&mut webview, &events);
+    assert_eq!(
+        webview
+            .execute_script(
+                "[image.complete,image.naturalWidth,image.naturalHeight,\
+                 globalThis.__imageLoads,globalThis.__imageErrors].join('|')",
+            )
+            .unwrap(),
+        "true|2|2|1|0"
+    );
+}
+
+#[test]
+fn media_resource_fetch_state_is_observable() {
+    // Fetch success alone does not claim media metadata decoding: readyState remains HAVE_NOTHING.
+    let html = r#"<html><body>
+        <audio id="audio" src="ok.mp3"></audio>
+        <video id="direct" src="ok.mp4"><source src="missing-ignored.webm"></video>
+        <video id="fallback"><source id="source" src="ok.webm"></video>
+        <track id="track" src="ok.vtt">
+        <script>
+        globalThis.__mediaEvents=[];
+        globalThis.__beforeFallback=document.getElementById('fallback').networkState;
+        ['audio','direct','fallback','source','track'].forEach(function(id){
+          var element=document.getElementById(id);
+          element.addEventListener('load',function(){globalThis.__mediaEvents.push(id+':load');});
+          element.addEventListener('error',function(){globalThis.__mediaEvents.push(id+':error');});
+        });
+        </script></body></html>"#;
+    let (mut webview, events) = finish_resource_load(html);
+    assert_eq!(
+        events.len(),
+        4,
+        "audio/direct video/source/track; ignored source is not fetched"
+    );
+    assert_eq!(
+        events.iter().map(|event| event.tag).collect::<Vec<_>>(),
+        vec!["audio", "video", "source", "track"],
+        "resource settle commits preserve document order"
+    );
+    commit_resource_events(&mut webview, &events);
+    assert_eq!(
+        webview
+            .execute_script(
+                "var a=document.getElementById('audio'),d=document.getElementById('direct');\
+                 var f=document.getElementById('fallback'),t=document.getElementById('track');\
+                 [globalThis.__mediaEvents.join(','),globalThis.__beforeFallback,\
+                  a.networkState,a.readyState,a.error===null,\
+                  d.networkState,d.currentSrc,f.networkState,f.currentSrc,t.readyState].join('|')",
+            )
+            .unwrap(),
+        "track:load|2|1|0|true|1|https://zero.test/resources/ok.mp4|1|https://zero.test/resources/ok.webm|2"
+    );
+}
+
+#[test]
+fn resource_failure_dispatches_error_without_hang() {
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-load-resource
+    let html = r#"<html><body>
+        <img id="image" src="missing.png">
+        <audio id="audio" src="missing.mp3"></audio>
+        <video id="video"><source id="source" src="missing.webm"></video>
+        <track id="track" src="missing.vtt">
+        <script>
+        globalThis.__resourceEvents=[];
+        var image=document.getElementById('image'),audio=document.getElementById('audio');
+        var video=document.getElementById('video'),track=document.getElementById('track');
+        ['image','audio','video','source','track'].forEach(function(id){
+          var element=document.getElementById(id);
+          element.addEventListener('load',function(){globalThis.__resourceEvents.push(id+':load');});
+          element.addEventListener('error',function(){globalThis.__resourceEvents.push(id+':error');});
+        });
+        </script></body></html>"#;
+    let (mut webview, events) = finish_resource_load(html);
+    assert_eq!(events.len(), 4, "img/audio/source/track each settles once");
+    commit_resource_events(&mut webview, &events);
+    assert_eq!(
+        webview
+            .execute_script(
+                "[globalThis.__resourceEvents.sort().join(','),\
+                  image.complete,image.naturalWidth,audio.networkState,audio.error instanceof MediaError,audio.error.code,\
+                  video.networkState,video.error.code,track.readyState].join('|')",
+            )
+            .unwrap(),
+        "audio:error,image:error,source:error,track:error,video:error|true|0|3|true|2|3|2|3"
+    );
 }

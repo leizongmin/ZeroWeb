@@ -390,6 +390,25 @@ pub fn script_dispatch_img_event(abs_url: &str, ty: &str) -> String {
     format!("__zw_dispatch_img_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 构造「提交资源元素最终状态」的 shim 脚本。`outcome` 为 `loaded` / `available` /
+/// `error`；图片成功时携带固有像素尺寸。shim 负责更新元素 IDL 状态并按元素类型派发规范事件。
+/// https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element
+/// https://html.spec.whatwg.org/multipage/media.html#media-elements
+pub fn script_commit_resource_element_state(
+    tag: &str,
+    abs_url: &str,
+    outcome: &str,
+    natural_width: u32,
+    natural_height: u32,
+) -> String {
+    let esc_tag = escape_js_string(tag);
+    let esc_url = escape_js_string(abs_url);
+    let esc_outcome = escape_js_string(outcome);
+    format!(
+        "__zw_commit_resource_element_state('{esc_tag}', '{esc_url}', '{esc_outcome}', {natural_width}, {natural_height})"
+    )
+}
+
 /// 构造「派发 `<link rel=stylesheet>` 元素级 load/error 事件」的 shim 脚本（R2944）。宿主在样式表 fetch
 /// 完成（成功 → "load" / 失败 → "error"）时执行：shim `__zw_dispatch_link_event(absHref, type)` 按 href 绝对
 /// URL 匹配 `<link>` 元素 proxy 并用其自身 selector 派发（link.onload/onerror 触发）。

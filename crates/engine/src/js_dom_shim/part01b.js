@@ -1,3 +1,28 @@
+  // FR-009：媒体资源状态接口常量。元素 proxy 的实例读由 get trap 提供；构造器仅暴露
+  // Web IDL 静态常量，MediaError 实例用于失败状态。
+  function HTMLMediaElement() { throw new TypeError('Illegal constructor'); }
+  HTMLMediaElement.NETWORK_EMPTY = 0; HTMLMediaElement.NETWORK_IDLE = 1;
+  HTMLMediaElement.NETWORK_LOADING = 2; HTMLMediaElement.NETWORK_NO_SOURCE = 3;
+  HTMLMediaElement.HAVE_NOTHING = 0; HTMLMediaElement.HAVE_METADATA = 1;
+  HTMLMediaElement.HAVE_CURRENT_DATA = 2; HTMLMediaElement.HAVE_FUTURE_DATA = 3;
+  HTMLMediaElement.HAVE_ENOUGH_DATA = 4;
+  globalThis.HTMLMediaElement = globalThis.HTMLMediaElement || HTMLMediaElement;
+  function HTMLTrackElement() { throw new TypeError('Illegal constructor'); }
+  HTMLTrackElement.NONE = 0; HTMLTrackElement.LOADING = 1;
+  HTMLTrackElement.LOADED = 2; HTMLTrackElement.ERROR = 3;
+  globalThis.HTMLTrackElement = globalThis.HTMLTrackElement || HTMLTrackElement;
+  function MediaError() { throw new TypeError('Illegal constructor'); }
+  MediaError.MEDIA_ERR_ABORTED = 1; MediaError.MEDIA_ERR_NETWORK = 2;
+  MediaError.MEDIA_ERR_DECODE = 3; MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+  MediaError.prototype.MEDIA_ERR_ABORTED = 1; MediaError.prototype.MEDIA_ERR_NETWORK = 2;
+  MediaError.prototype.MEDIA_ERR_DECODE = 3; MediaError.prototype.MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+  globalThis.MediaError = globalThis.MediaError || MediaError;
+  function _zwMediaError(code, message) {
+    var error = Object.create(globalThis.MediaError.prototype);
+    error.code = Number(code) || 0; error.message = String(message || '');
+    return error;
+  }
+
   // scroll 事件由实际滚动派发，不受页面 JS 影响）；② 两参数恒为数值（IPC delta），免 `_zwApplyScroll` 的
   // 对象/Number 归一分支。host 经 `script_user_scroll` 注入，typeof 守卫防 shim 未安装时 ReferenceError。
   globalThis.__zw_user_scroll = function (dx, dy) {

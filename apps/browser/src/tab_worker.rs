@@ -798,7 +798,7 @@ fn tab_worker_main(
                 } else {
                     page_script_runner = tab_scripts::PageScriptRunner::start(&wv, javascript_enabled);
                     // R2942：drain async_load 期收集的子资源 fetch/decode 失败（stylesheet/image），
-                    // 注入 runner——finish() 在页面 load 之后派发对应 window 'error'（onerror handler 已就位）。
+                    // 注入 runner——finish() 在页面脚本之后、window load 前派发 window error。
                     let failed: Vec<(String, String)> = load
                         .take_failed_resources()
                         .into_iter()
@@ -809,12 +809,11 @@ fn tab_worker_main(
                             r.set_resource_errors(failed);
                         }
                     }
-                    // R2943：drain img 元素级 load/error 事件——finish() 经 __zw_dispatch_img_event 派发到
-                    // 匹配 src 的 <img> 元素（img.onload/onerror）。
-                    let img_events = load.take_img_element_events();
-                    if !img_events.is_empty() {
+                    // FR-009：drain 资源元素最终状态，finish() 提交 IDL 状态与规范事件。
+                    let resource_element_events = load.take_resource_element_events();
+                    if !resource_element_events.is_empty() {
                         if let Some(r) = page_script_runner.as_mut() {
-                            r.set_img_events(img_events);
+                            r.set_resource_element_events(resource_element_events);
                         }
                     }
                     // R2944：drain stylesheet 元素级 load/error 事件——finish() 经 __zw_dispatch_link_event 派发到

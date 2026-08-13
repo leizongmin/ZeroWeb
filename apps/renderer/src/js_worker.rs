@@ -747,7 +747,7 @@ mod tests {
     fn renderer_js_worker_default_fetch_handler_real_http() {
         // P1b S3（镜像 browser）：生产 default_fetch_handler 经 net pool 真实 HTTP GET。
         // 本地 HTTP server（127.0.0.1）服务固定 body——不依赖外部网络。非阻塞：子线程 recv
-        // （不冻结 JS worker），测试 polling（3s 超时，本地 fetch ~ms）。
+        // （不冻结 JS worker）。全仓并发构建/字体加载会挤占 runtime，使用 15s 墙钟预算。
         use std::io::{Read, Write};
         use std::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind local server");
@@ -776,7 +776,7 @@ mod tests {
                 url
             ))
             .unwrap();
-        let r = wait_for_global(&worker, "__result", 3000);
+        let r = wait_for_global(&worker, "__result", 15_000);
         assert_eq!(r, "hello-from-renderer");
         worker.shutdown();
         let _ = server.join();

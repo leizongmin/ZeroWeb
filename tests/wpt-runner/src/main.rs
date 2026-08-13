@@ -33,7 +33,7 @@ Commands:
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
-  testharness-html  Run selected forms/focus/input-event testharness cases
+  testharness-html  Run selected media/forms/focus/input-event testharness cases
   layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
                        see scripts/run-layout-golden.sh)
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)

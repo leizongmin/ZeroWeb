@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use tracing::warn;
 use zero_engine::{
     DomEventDetail, PageScript, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
-    script_dispatch_dom_event, script_report_error, script_run_classic_page, script_text_control_snapshot,
-    script_text_delete, script_text_delete_without_event, script_text_input, script_text_input_without_event,
+    script_commit_resource_element_state, script_dispatch_dom_event, script_report_error, script_run_classic_page,
+    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
+    script_text_input_without_event,
 };
-use zero_webview::WebView;
+use zero_webview::{ResourceElementEvent, WebView};
 
 use crate::tab_js_worker::{TabJsWorkerHandle, collect_module_deps};
 
@@ -28,14 +29,12 @@ pub struct PageScriptRunner {
     base: String,
     html: String,
     original_html: String,
-    /// R2942：子资源 fetch/decode 失败记录 `(kind, url)`（stylesheet/image，由 tab_worker 从
-    /// AsyncPageLoad.take_failed_resources drain 后经 `set_resource_errors` 注入）。finish() 在页面
-    /// load 之后派发对应 window 'error' 事件（确保脚本注册的 onerror handler 已就位）。
+    /// 子资源 fetch/decode 失败记录 `(kind, url)`（由 tab_worker 从
+    /// AsyncPageLoad.take_failed_resources drain 后经 `set_resource_errors` 注入）。finish() 在页面脚本
+    /// 注册 handler 后、window load 前派发对应 window 'error'。
     resource_errors: Vec<(String, String)>,
-    /// R2943：img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`（由 tab_worker 从
-    /// AsyncPageLoad.take_img_element_events drain 后注入）。finish() 经 `__zw_dispatch_img_event` 派发到
-    /// 匹配 src 的 `<img>` 元素（img.onload/onerror）。
-    img_events: Vec<(String, &'static str)>,
+    /// FR-009：资源元素最终状态，finish() 提交 IDL 状态与规范事件。
+    resource_element_events: Vec<ResourceElementEvent>,
     /// R2944：stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`（由 tab_worker 从
     /// AsyncPageLoad.take_link_element_events drain 后注入）。finish() 经 `__zw_dispatch_link_event` 派发到
     /// 匹配 href 的 `<link>` 元素（link.onload/onerror）。
@@ -68,21 +67,20 @@ impl PageScriptRunner {
             html,
             original_html,
             resource_errors: Vec::new(),
-            img_events: Vec::new(),
+            resource_element_events: Vec::new(),
             link_events: Vec::new(),
             font_events: Vec::new(),
         })
     }
 
-    /// R2942：注入子资源 fetch/decode 失败记录（stylesheet/image），finish() 在 load 之后派发 window 'error'。
+    /// R2942：注入子资源失败记录，finish() 在页面脚本之后、window load 前派发 window error。
     pub fn set_resource_errors(&mut self, errors: Vec<(String, String)>) {
         self.resource_errors = errors;
     }
 
-    /// R2943：注入 img 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，finish() 经
-    /// `__zw_dispatch_img_event` 派发到匹配 src 的 `<img>` 元素。
-    pub fn set_img_events(&mut self, events: Vec<(String, &'static str)>) {
-        self.img_events = events;
+    /// 注入资源元素最终状态。
+    pub fn set_resource_element_events(&mut self, events: Vec<ResourceElementEvent>) {
+        self.resource_element_events = events;
     }
 
     /// R2944：注入 stylesheet 元素级 load/error 事件 `(绝对 URL, "load"/"error")`，finish() 经
@@ -176,22 +174,16 @@ impl PageScriptRunner {
         if self.html != self.original_html && wv.html_content() != self.html {
             wv.reload_html_after_script(&self.html);
         }
-        // R2941：脚本阶段完成 → 派发 DOMContentLoaded + load（DOMContentLoaded 先于 load，spec）。
-        // analytics onload / jQuery ready / 框架 mount 高频 hook 经此触发。
-        dispatch_page_lifecycle(js_worker);
-        // R2942：在 load 之后派发子资源 fetch/decode 失败的 window 'error'（stylesheet/image）——
-        // 此时脚本注册的 onerror handler 已就位（资源 fetch 失败发生在 async_load 期，早于脚本，
-        // 故延后到 load 之后派发以确保 handler 可触）。
+        dispatch_page_lifecycle(js_worker, "DOMContentLoaded");
+        // R2942：页面脚本注册 handler 后、window load 前派发资源 window 'error'。
         for (kind, url) in &self.resource_errors {
             report_resource_error(js_worker, kind, url);
         }
-        // R2943：img 元素级 load/error——经 `__zw_dispatch_img_event` 派发到匹配 src 的 <img> 元素
-        //（img.onload/onerror）。延后到 load 之后（同 R2942 理由，确保 handler 已注册）。
-        for (url, ty) in &self.img_events {
-            dispatch_img_event(js_worker, url, ty);
+        // FR-009：提交 img/media/source/track 状态并派发其规范事件。
+        for event in &self.resource_element_events {
+            dispatch_resource_element_event(js_worker, event);
         }
-        // R2944：stylesheet 元素级 load/error——经 `__zw_dispatch_link_event` 派发到匹配 href 的 <link> 元素
-        //（link.onload/onerror）。延后到 load 之后（同上理由）。
+        // R2944：stylesheet 元素级 load/error，位于 DOMContentLoaded 与 window load 之间。
         for (url, ty) in &self.link_events {
             dispatch_link_event(js_worker, url, ty);
         }
@@ -204,6 +196,7 @@ impl PageScriptRunner {
         let had_loaded = self.font_events.iter().any(|(_, t)| *t == "loaded");
         let had_error = self.font_events.iter().any(|(_, t)| *t == "error");
         dispatch_font_settle(js_worker, had_loaded, had_error);
+        dispatch_page_lifecycle(js_worker, "load");
     }
 }
 
@@ -229,18 +222,13 @@ fn dispatch_font_settle(js_worker: Option<&TabJsWorkerHandle>, had_loaded: bool,
     }
 }
 
-/// R2941：派发页面生命周期事件（DOMContentLoaded + load）进 shim。均派发到 'html' 选择器
-///（document/window listener 同存 `_elKey('html', null)` 键）→ `document.addEventListener('DOMContentLoaded')` /
-/// `window.addEventListener('load')` / `window.onload` / `document.onDOMContentLoaded` / `<body onload>`（R2946
-/// 反射）触发。派发前先调 `__zw_reflect_body_handlers`——覆盖无 `<script>` 页面（不经 __zw_begin_script，
-/// 反射不会随脚本执行触发）。best-effort（报告失败仅 `warn!`，不影响后续）。
-fn dispatch_page_lifecycle(js_worker: Option<&TabJsWorkerHandle>) {
+/// 派发一个页面生命周期事件。资源 settle 事件位于 DOMContentLoaded 与 window load 之间。
+fn dispatch_page_lifecycle(js_worker: Option<&TabJsWorkerHandle>, event: &str) {
     let Some(worker) = js_worker else { return };
     let reflect = zero_engine::script_reflect_body_handlers();
-    let dcl = script_dispatch_dom_event("html", "DOMContentLoaded", None);
-    let load = script_dispatch_dom_event("html", "load", None);
-    if let Err(e) = worker.execute_script_direct(&format!("{reflect} {dcl}; {load}")) {
-        warn!("dispatch page lifecycle: {e}");
+    let dispatch = script_dispatch_dom_event("html", event, None);
+    if let Err(e) = worker.execute_script_direct(&format!("{reflect} {dispatch}")) {
+        warn!("dispatch page lifecycle {event}: {e}");
     }
 }
 
@@ -256,15 +244,17 @@ fn report_resource_error(js_worker: Option<&TabJsWorkerHandle>, kind: &str, url:
     }
 }
 
-/// R2943：派发 img 元素级 load/error 事件进 shim。经 `script_dispatch_img_event` 生成
-/// `__zw_dispatch_img_event(url, type)` 调用串——shim 按 src 绝对 URL 匹配 `<img>` 元素 proxy，
-/// 用其自身 selector 派发（保证 listener key 匹配，img.onload/onerror + addEventListener('load'/'error') 触发）。
-/// `ty` = "load"（fetch+decode 成功）/ "error"（fetch 或 decode 失败）。best-effort。
-fn dispatch_img_event(js_worker: Option<&TabJsWorkerHandle>, url: &str, ty: &str) {
+fn dispatch_resource_element_event(js_worker: Option<&TabJsWorkerHandle>, event: &ResourceElementEvent) {
     let Some(worker) = js_worker else { return };
-    let report = zero_engine::script_dispatch_img_event(url, ty);
+    let report = script_commit_resource_element_state(
+        event.tag,
+        &event.url,
+        event.outcome.as_str(),
+        event.natural_width,
+        event.natural_height,
+    );
     if let Err(e) = worker.execute_script_direct(&report) {
-        warn!("dispatch img event ({ty} {url}): {e}");
+        warn!("commit resource state ({} {}): {e}", event.tag, event.url);
     }
 }
 

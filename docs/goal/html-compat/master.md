@@ -23,7 +23,7 @@
 |---|---|---|
 | M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | completed |
 | M2 | `page-runtime` 共享默认动作核心 | completed |
-| M3 | 文本、选择/表单、导航/交互元素族 | completed |
+| M3 | 文本、选择/表单、导航/交互、媒体与资源元素族 | completed |
 | M4 | live renderer WebDriver 与 WPT testdriver | completed |
 
 ## 跨线边界
@@ -84,6 +84,15 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] 同文档 fragment/hash 激活
 - [x] details/summary 激活与取消
 - [x] dialog/popover 目标校验与 top-layer 状态
+
+## M3d 工作包
+
+- [x] img 解码尺寸、complete/currentSrc 与单次 load/error
+- [x] audio/video networkState、readyState、currentSrc 与 MediaError
+- [x] source 候选失败事件与 media owner settle
+- [x] track readyState 与 load/error
+- [x] renderer/TabWorker 统一资源状态提交与页面 load 顺序
+- [x] 仓内 integration 测试与固定上游 WPT 状态子集
 
 ## 下一步
 
