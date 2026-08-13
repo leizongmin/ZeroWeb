@@ -94,6 +94,8 @@
 >
 > **🧪 净负实验裁决（R3397-F font-language-override·2026-08-13）**：完整试作 `font-language-override:normal|"<tag>"` 的 parse/computed/inherit/shorthand/CSSOM、大小写敏感 OpenType language tag、shaping callback/cache 与 browser/renderer/WPT 三宿主桥接，随后完整回退源码。真实 Libertine WOFF 机制测试证明默认 `fi` 为 1 glyph、`"TRK"` 为 2 glyph、规范不生效的 `"trk"` 仍为 1 glyph；treatment PNG 与 `font-feature-settings:"liga" 0` reference 字节完全一致。fresh Chromium 串行 A/B 却为 01 `0.78%→0.79%`、03 保持 `0.74%`，两案聚合净退 `0.01pp`。说明 language-system 选择已正确，剩余差异在分离 glyph 的定位/advance/光栅路径；不以 self-reference 覆盖 Oracle 门禁。经验见 [`font-language-override-needs-chromium-glyph-positioning.md`](../learnings/bugs/font-language-override-needs-chromium-glyph-positioning.md)。
 >
+> **▶ WPT 资产进展（R3399-F Noto Sans JP variable default instance·2026-08-13）**：资源完整性审计发现 `font-weight-normal-variable` 的 test/ref 已在 full corpus，但固定 `NotoSansJP.subset.ttf` 未登记，fresh checkout 会让两侧同走 fallback。现通过标准 importer 将 test/ref 与字体写入常驻账本；同一 HEAD 移走/恢复字体的 fresh Chromium 串行 A/B 为 `0.36%→0.35%`，完整 css-fonts 保持 pass/credible/strict `87/77/54`，self-source 为可信 strict `0.00%`。该用例 test 的 `font-weight:normal` 与 reference 的 `"wght" 400` 均使用 variable font 默认实例，本切片不宣称 variable-axis plumbing，仅保证固定测试资产完整。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
