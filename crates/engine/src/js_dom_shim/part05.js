@@ -207,6 +207,24 @@
           return { value: _exD[prop], writable: true, enumerable: true, configurable: true };
         }
         return undefined;
+      },
+      // js-dom M4 R10：`instanceof` 原型链（spec `Node` / `Element` / `HTMLElement` 子类）——polyfill Proxy
+      // 默认走 target({})原型（Object.prototype），`el instanceof Element/Node` 恒 false（createElement/cloneNode
+      // 用例 89 instanceof 块）。按节点类型返对应 prototype：element→HTMLElement.prototype（链 Element→Node，覆盖
+      // 绝大多数 instanceof Element/HTMLElement/Node；具体 HTMLDivElement 等子类 instanceof 留扩展）、
+      // text/comment→Node、PI→ProcessingInstruction、fragment→DocumentFragment。
+      // **安全**：getPrototypeOf 仅影响 `instanceof` / `Object.getPrototypeOf` / 解构原型查找，不影响 get/set（属性读
+      // 仍走 get trap）。返构造器缺失时回落 Object.prototype（零回归）。
+      getPrototypeOf: function(_t) {
+        var _gp = globalThis;
+        // 节点类型判定：PI/fragment/comment/text 经 handle set；element 为默认（无 set 的 selector/handle 节点）。
+        if (handle && _piHandles[handle] && _gp.ProcessingInstruction) return _gp.ProcessingInstruction.prototype;
+        if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
+        if (handle && _commentHandles[handle] && _gp.Node) return _gp.Node.prototype;
+        if (handle && _textHandles[handle] && _gp.Node) return _gp.Node.prototype;
+        // element（含 selector-based 与 createElement handle）：HTMLElement → Element → Node 链。
+        if (_gp.HTMLElement && _gp.HTMLElement.prototype) return _gp.HTMLElement.prototype;
+        return Object.prototype;
       }
     });
     _proxyCache[key] = proxy;

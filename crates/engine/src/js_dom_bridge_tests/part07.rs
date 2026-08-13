@@ -2161,3 +2161,109 @@ fn test_location_reflects_pushstate_replacestate_r3005() {
     assert_eq!(sandbox.execute("globalThis.__pNoUrl").unwrap().value, "/c", "pushState 无 url 不改 location（保持 /c）");
     assert_eq!(sandbox.execute("globalThis.__href1").unwrap().value, "https://example.com/c", "location.href 绝对 URL");
 }
+
+#[test]
+fn test_instanceof_prototype_chain_r10() {
+    // js-dom M4 R10：`instanceof` 原型链（spec Node/Element/HTMLElement 子类）——polyfill Proxy 默认走 target({})原型，
+    // `el instanceof Element/Node` 恒 false（createElement/cloneNode 用例 89 instanceof 块）。R10 给 _makeProxy 的
+    // Proxy handler 加 getPrototypeOf trap，按节点类型返对应 prototype（element→HTMLElement.prototype 链 Element→Node，
+    // PI→ProcessingInstruction，fragment→DocumentFragment）。仅影响 instanceof/getPrototypeOf，不影响 get/set。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // createElement 返回的 element instanceof Element/HTMLElement/Node 为 true。
+    sandbox
+        .execute(
+            "globalThis.__el = document.createElement('div');\
+             globalThis.__eEl = __el instanceof Element;\
+             globalThis.__eHtml = __el instanceof HTMLElement;\
+             globalThis.__eNode = __el instanceof Node;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eEl)").unwrap().value,
+        "true",
+        "createElement('div') instanceof Element"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eHtml)").unwrap().value,
+        "true",
+        "createElement('div') instanceof HTMLElement"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eNode)").unwrap().value,
+        "true",
+        "createElement('div') instanceof Node"
+    );
+
+    // selector-based 元素（querySelector）同样 instanceof Element/Node。
+    sandbox
+        .execute(
+            "globalThis.__qs = document.querySelector('#d');\
+             globalThis.__qsEl = __qs instanceof Element;\
+             globalThis.__qsNode = __qs instanceof Node;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__qsEl)").unwrap().value,
+        "true",
+        "querySelector 元素 instanceof Element"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__qsNode)").unwrap().value,
+        "true",
+        "querySelector 元素 instanceof Node"
+    );
+
+    // PI 节点 instanceof ProcessingInstruction/Node（构造器占位 + getPrototypeOf 返 PI.prototype）。
+    sandbox
+        .execute(
+            "globalThis.__pi = document.createProcessingInstruction('xml-ss', 'href=\"x\"');\
+             globalThis.__piPI = __pi instanceof ProcessingInstruction;\
+             globalThis.__piNode = __pi instanceof Node;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__piPI)").unwrap().value,
+        "true",
+        "createProcessingInstruction instanceof ProcessingInstruction"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__piNode)").unwrap().value,
+        "true",
+        "createProcessingInstruction instanceof Node"
+    );
+
+    // instanceof 不误伤：element instanceof DocumentFragment 应为 false（原型链不含 fragment）。
+    sandbox
+        .execute("globalThis.__eFrag = __el instanceof DocumentFragment;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__eFrag)").unwrap().value,
+        "false",
+        "element instanceof DocumentFragment = false（原型链正确）"
+    );
+
+    // getPrototypeOf 不破坏基本属性读写（get trap 仍工作）。
+    assert_eq!(
+        sandbox.execute("String(__el.tagName)").unwrap().value,
+        "DIV",
+        "getPrototypeOf 不破坏 get trap（tagName 仍可读）"
+    );
+}
+
+

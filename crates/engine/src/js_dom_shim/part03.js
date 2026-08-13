@@ -128,7 +128,12 @@
   // cloneNode(deep)（Node 方法）：DOMPurify keep-content 路径（clone 子节点插回 parentNode）。deep 克隆
   // 复制 nodeType/attrs/子树（含文本/注释），parentNode=null 由 insertBefore relink。内联深克隆（不依赖子
   // 节点有 cloneNode 方法——_zwMText/_zwMComment 为 plain object 无原型方法）。
-  globalThis.Element.prototype.cloneNode = function (deep) {
+  // DOM 原型方法设为不可枚举（spec：WebIDL 操作默认 enumerable:false）——R10 getPrototypeOf 让 polyfill
+  // Proxy 原型链含 HTMLElement/Element.prototype，若这些方法可枚举会污染 for...in（expando 枚举回归）。
+  function _zwDefProtoMethod(proto, name, fn) {
+    Object.defineProperty(proto, name, { value: fn, writable: true, configurable: true, enumerable: false });
+  }
+  _zwDefProtoMethod(globalThis.Element.prototype, 'cloneNode', function (deep) {
     function deepClone(n) {
       if (!n || typeof n !== 'object' || n.nodeType === undefined) return null;
       var o;
@@ -149,7 +154,7 @@
       return o;
     }
     return deepClone(this);
-  };
+  });
   // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
   globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;
   globalThis.Node.DOCUMENT_POSITION_PRECEDING = 2;
@@ -157,12 +162,12 @@
   globalThis.Node.DOCUMENT_POSITION_CONTAINS = 8;
   globalThis.Node.DOCUMENT_POSITION_CONTAINED_BY = 16;
   globalThis.Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 32;
-  globalThis.Element.prototype.addEventListener = function(type, fn, opts) {
+  _zwDefProtoMethod(globalThis.Element.prototype, 'addEventListener', function(type, fn, opts) {
     _globalAddEventListener(type, fn, opts);
-  };
-  globalThis.Element.prototype.removeEventListener = function(type, fn, opts) {
+  });
+  _zwDefProtoMethod(globalThis.Element.prototype, 'removeEventListener', function(type, fn, opts) {
     _globalRemoveEventListener(type, fn, opts);
-  };
+  });
 
   // customElements（CustomElementRegistry，R2813）——web components 生态门控（lit / stencil / fast 及所有
   // custom-element 库 feature-detect `window.customElements` + define/whenDefined）。**scoped registry slice**：
