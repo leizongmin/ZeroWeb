@@ -130,12 +130,26 @@ mod tests {
     #[test]
     /// R3367：`file://` URL 中的 `..` 段被规范化，不能路径遍历到任意文件。
     fn file_url_to_path_normalizes_dotdot_segments_r3367() {
-        let path = file_url_to_path("file:///tmp/a/../../etc/hostname").expect("应解析成功");
-        assert_eq!(
-            path,
-            std::path::PathBuf::from("/etc/hostname"),
-            "`..` 段须被 url crate 规范化"
-        );
+        // url::Url::to_file_path 的平台差异：Windows 仅接受盘符路径
+        // （file:///C:/...），POSIX 接受 / 根路径。
+        #[cfg(not(target_os = "windows"))]
+        {
+            let path = file_url_to_path("file:///tmp/a/../../etc/hostname").expect("应解析成功");
+            assert_eq!(
+                path,
+                std::path::PathBuf::from("/etc/hostname"),
+                "`..` 段须被 url crate 规范化"
+            );
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let path = file_url_to_path("file:///C:/tmp/a/../../etc/hostname").expect("应解析成功");
+            assert_eq!(
+                path,
+                std::path::PathBuf::from(r"C:\etc\hostname"),
+                "`..` 段须被 url crate 规范化（不能穿透盘符）"
+            );
+        }
     }
 
     #[test]
