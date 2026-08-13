@@ -49,4 +49,43 @@ mod tests {
             vec![uppercase, lowercase]
         );
     }
+
+    #[test]
+    fn shared_cache_separates_unicode_range_descriptors() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut base = FontLoader::new();
+        let first = base.load_font(LATO_TTF).expect("first face");
+        let second = base.load_font(LATO_TTF).expect("second face");
+        let mut upper_first = base.duplicate();
+        let mut lower_first = base.duplicate();
+
+        upper_first.register_unicode_ranges(first, vec![(0x41, 0x5A)]);
+        upper_first.register_unicode_ranges(second, vec![(0x61, 0x7A)]);
+        lower_first.register_unicode_ranges(first, vec![(0x61, 0x7A)]);
+        lower_first.register_unicode_ranges(second, vec![(0x41, 0x5A)]);
+
+        let upper_glyphs = upper_first
+            .shape_text_cached_with_font_ids(&[first, second], "Aa", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape upper-first ranges");
+        assert_eq!(
+            upper_glyphs.iter().map(|glyph| glyph.font_id.0).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+
+        let lower_glyphs = lower_first
+            .shape_text_cached_with_font_ids(&[first, second], "Aa", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape lower-first ranges");
+        assert_eq!(
+            lower_glyphs.iter().map(|glyph| glyph.font_id.0).collect::<Vec<_>>(),
+            vec![second, first]
+        );
+
+        let upper_again = upper_first
+            .shape_text_cached_with_font_ids(&[first, second], "Aa", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape upper-first ranges again");
+        assert_eq!(
+            upper_again.iter().map(|glyph| glyph.font_id.0).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+    }
 }

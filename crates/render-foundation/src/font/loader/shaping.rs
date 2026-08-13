@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 
 type ShapeCacheKey = (
-    Vec<(u64, u32)>,
+    Vec<(u32, u64, u32, Vec<(u32, u32)>)>,
     u32,
     (u8, u32),
     crate::font::TextDirection,
@@ -75,16 +75,20 @@ impl FontLoader {
         // 递增，perf/reftest 每帧新建 FontLoader 重新加载字体（id 重新分配）→ key 每帧
         // 不同 → 缓存全 miss（`word-break: break-word` 中文长文逐字 fragment 每帧全量
         // 重排，perf-gate morning paint 回归）。按内容寻址跨帧/跨 loader 稳定；
-        // face descriptor scale 同时入 key，避免同字节字体的 @font-face size-adjust
-        // 跨 loader 复用错误结果。
+        // loader-local font ID、face descriptor scale 与 unicode-range 同时入 key：
+        // cache value 保留 font ID，且同字节 @font-face 可携带不同元数据，均不能跨
+        // 不兼容的 loader 实例复用。
         let font_faces = font_ids
             .iter()
             .map(|font_id| {
                 self.get_font_data(*font_id).map(|data| {
                     let descriptor_scale = self.font_size_adjustments.get(font_id).copied().unwrap_or(1.0);
+                    let unicode_ranges = self.font_unicode_ranges.get(font_id).cloned().unwrap_or_default();
                     (
+                        *font_id,
                         crate::font::font_bytes_hash(data) ^ (u64::from(self.face_index(*font_id)) << 32),
                         descriptor_scale.to_bits(),
+                        unicode_ranges,
                     )
                 })
             })
@@ -186,5 +190,30 @@ mod tests {
 
         assert_eq!(adjusted_glyphs[0].font_size, 24.0);
         assert_eq!(plain_glyphs[0].font_size, 16.0);
+    }
+
+    #[test]
+    fn shared_cache_preserves_loader_local_font_ids() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        const AHEM_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+        let mut first = FontLoader::new();
+        let first_lato = first.load_font(LATO_TTF).expect("load Lato first");
+        let mut second = first.duplicate();
+        let first_ahem = first.load_font(AHEM_TTF).expect("load Ahem second");
+        let second_ahem = second.load_font(AHEM_TTF).expect("load Ahem first");
+        let second_lato = second.load_font(LATO_TTF).expect("load Lato second");
+        assert_eq!(first_ahem, second_ahem);
+        assert_ne!(first_lato, second_lato);
+
+        let first_glyphs = first
+            .shape_text_cached_with_font_ids(&[first_lato], "A", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape first loader");
+        let second_glyphs = second
+            .shape_text_cached_with_font_ids(&[second_lato], "A", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape second loader");
+
+        assert_eq!(first_glyphs[0].font_id.0, first_lato);
+        assert_eq!(second_glyphs[0].font_id.0, second_lato);
     }
 }
