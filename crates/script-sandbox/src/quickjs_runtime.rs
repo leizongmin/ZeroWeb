@@ -3,12 +3,45 @@
 //! 封装 rquickjs，提供轻量级 JavaScript 脚本执行沙箱。
 //! QuickJS 是一个小巧且可嵌入的 JS 引擎，支持 ES2023 规范的大部分特性。
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::{SandboxConfig, ScriptError, ScriptResult};
 
 /// 宿主回调类型（与 V8Sandbox 的 HostCallback 一致）。
 type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync>;
+
+/// 执行超时装载守卫：`arm` 设 `timeout_deadline = now + timeout_ms`（timeout_ms > 0），
+/// Drop 时清 deadline，防 interrupt handler 误伤后续 execute。
+///
+/// R3400：QuickJS interrupt handler 在 runtime 级注册（跨 execute 持续），故每次
+/// execute 须显式 arm/disarm 截止时刻——guard Drop 保证即便 eval 出错提前返回也清。
+struct TimeoutGuard {
+    deadline: Arc<Mutex<Option<Instant>>>,
+}
+
+impl TimeoutGuard {
+    /// 装载超时：timeout_ms > 0 时设 deadline = now + timeout_ms，返回 guard。
+    fn arm(deadline: &Arc<Mutex<Option<Instant>>>, timeout_ms: u64) -> Self {
+        if timeout_ms > 0
+            && let Ok(mut g) = deadline.lock()
+        {
+            *g = Some(Instant::now() + std::time::Duration::from_millis(timeout_ms));
+        }
+        TimeoutGuard {
+            deadline: Arc::clone(deadline),
+        }
+    }
+}
+
+impl Drop for TimeoutGuard {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.deadline.lock() {
+            *g = None;
+        }
+    }
+}
 
 /// QuickJS 脚本沙箱 — 封装一个 QuickJS Runtime 和 Context。
 ///
@@ -17,6 +50,9 @@ type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync>;
 /// - QuickJS 是解释器，V8 是 JIT 编译器，性能差异显著
 /// - QuickJS 体积小（约 700KB），适合嵌入式场景
 /// - 两者提供相同的 [`execute()`]/[`execute_json()`]/[`register_callback()`] 接口
+/// - 两者都经 `timeout_ms` 强制执行超时：V8 用 SEC-13 看门狗 `terminate_execution`，
+///   QuickJS 用 `set_interrupt_handler`（R3400 对齐——旧实现 `set_timeout_ms` 是静默
+///   no-op，`while(true){}` 永久挂死，无执行中断）。
 ///
 /// # 线程安全
 ///
@@ -33,6 +69,14 @@ pub struct QuickJSSandbox {
     /// 持久上下文（`persistent_context: true` 时跨 execute 复用，2026-08-08——
     /// 对齐 V8 持久化语义；false 时每次 execute 新建 = 旧行为状态隔离）。
     context: Option<rquickjs::Context>,
+    /// R3400：执行超时截止时刻。`Some(d)` 时，interrupt handler 在 `now >= d` 返 true
+    /// 中断执行。execute 前 set（= now + timeout_ms），后 clear。与 runtime 级
+    /// `interrupt_handler` 共享（handler 构造时 clone 一份）。
+    timeout_deadline: Arc<Mutex<Option<Instant>>>,
+    /// R3400：标记本次 execute 是否因超时被 interrupt handler 中断（execute 后据此
+    /// 把 QuickJS 抛出的 uncatchable 异常映射为 `ScriptError::Timeout`，区别于普通
+    /// RuntimeError）。每次 execute 前 reset。
+    timeout_fired: Arc<AtomicBool>,
 }
 
 impl QuickJSSandbox {
@@ -53,11 +97,37 @@ impl QuickJSSandbox {
             runtime.set_memory_limit(config.heap_limit);
         }
 
+        // R3400：注册执行超时 interrupt handler（镜像 V8 SEC-13 看门狗）。
+        // QuickJS 解释器周期性调此 handler：若当前有 deadline 且 now >= deadline，
+        // 返 true 抛 uncatchable 异常中断执行（`while(true){}` 等）。timeout_ms=0 时
+        // deadline 恒为 None，handler 永不中断（无超时语义不变）。
+        let timeout_deadline: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        let timeout_fired = Arc::new(AtomicBool::new(false));
+        {
+            let dl = Arc::clone(&timeout_deadline);
+            let fired = Arc::clone(&timeout_fired);
+            runtime.set_interrupt_handler(Some(Box::new(move || {
+                let exceed = dl
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g)
+                    .is_some_and(|deadline| Instant::now() >= deadline);
+                if exceed {
+                    fired.store(true, Ordering::Release);
+                    true // 中断执行
+                } else {
+                    false
+                }
+            })));
+        }
+
         Ok(Self {
             runtime,
             config,
             callbacks: Vec::new(),
             context: None,
+            timeout_deadline,
+            timeout_fired,
         })
     }
 
@@ -77,7 +147,7 @@ impl QuickJSSandbox {
         // 使用 eval + String() 确保任意代码都能执行并返回字符串
         let wrapped = format!("String(eval({quoted:?}))", quoted = trimmed);
 
-        let result = self.eval_wrapped(&wrapped);
+        let result = self.run_eval(&wrapped, self.config.timeout_ms);
 
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -88,6 +158,28 @@ impl QuickJSSandbox {
             }),
             Err(e) => Err(e),
         }
+    }
+
+    /// 在（持久或新建的）Context 中执行包装脚本（带 timeout 装载 + 超时映射）。
+    ///
+    /// R3400：`timeout_ms > 0` 时 arm 截止时刻 = now + timeout_ms；interrupt handler 到期
+    /// 返 true 抛 uncatchable 异常 → eval 返 `Error::Exception`。`run_eval` 据超时标志把
+    /// 该异常映射为 `ScriptError::Timeout`（区别普通 RuntimeError），与 V8 SEC-13 对齐。
+    /// `timeout_ms = 0` 时不 arm（无超时，旧行为不变）。
+    fn run_eval(&mut self, wrapped: &str, timeout_ms: u64) -> Result<String, ScriptError> {
+        // 重置超时标志（上一轮 execute 若超时已置位）。
+        self.timeout_fired.store(false, Ordering::Release);
+        // arm 超时（guard Drop 时清 deadline，防 interrupt handler 误伤后续 execute）。
+        let _guard = TimeoutGuard::arm(&self.timeout_deadline, timeout_ms);
+
+        let result = self.eval_wrapped(wrapped);
+
+        // 超时优先于 RuntimeError 报告（与 V8 execute 一致：terminate_execution 后
+        // TryCatch 表现为异常，须先于 RuntimeError 判 Timeout）。
+        if self.timeout_fired.load(Ordering::Acquire) {
+            return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
+        }
+        result
     }
 
     /// 在（持久或新建的）Context 中执行包装脚本并提取 JS 异常消息。
@@ -179,6 +271,25 @@ impl QuickJSSandbox {
             quoted = trimmed
         );
 
+        // R3400：经 run_eval 装载超时 + 映射 Timeout（与 execute 同路径）。
+        let result = self.run_eval_json(&wrapped, self.config.timeout_ms);
+
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        match result {
+            Ok(value) => Ok(ScriptResult {
+                value,
+                execution_time_ms: elapsed_ms,
+            }),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// `execute_json` 的超时装载 + JSON-wrap eval（镜像 [`Self::run_eval`]）。
+    fn run_eval_json(&mut self, wrapped: &str, timeout_ms: u64) -> Result<String, ScriptError> {
+        self.timeout_fired.store(false, Ordering::Release);
+        let _guard = TimeoutGuard::arm(&self.timeout_deadline, timeout_ms);
+
         let result: Result<String, ScriptError> = (|| {
             let ctx = rquickjs::Context::full(&self.runtime)
                 .map_err(|e| ScriptError::EngineUnavailable(format!("failed to create context: {e}")))?;
@@ -223,15 +334,10 @@ impl QuickJSSandbox {
             })
         })();
 
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-        match result {
-            Ok(value) => Ok(ScriptResult {
-                value,
-                execution_time_ms: elapsed_ms,
-            }),
-            Err(e) => Err(e),
+        if self.timeout_fired.load(Ordering::Acquire) {
+            return Err(ScriptError::Timeout(format!("{}ms", self.config.timeout_ms)));
         }
+        result
     }
 
     /// 返回 QuickJS 引擎版本号。
@@ -642,5 +748,93 @@ mod tests {
         // 3. 持久上下文下跨 execute 仍可调用
         let r2 = sandbox.execute("__zw_probe_cb('x')").unwrap();
         assert_eq!(r2.value, "cb:x");
+    }
+
+    // ── R3400：QuickJS set_timeout_ms 须被 execute/execute_json 强制执行（SEC-13 对称）──
+    // 修复前：set_timeout_ms 是静默 no-op，`while(true){}` 永久挂死（无 interrupt handler）。
+    // 修复后：interrupt handler 到期抛 uncatchable 异常 → ScriptError::Timeout。
+
+    #[test]
+    fn test_timeout_interrupts_dead_loop_r3400() {
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig {
+            timeout_ms: 500,
+            ..Default::default()
+        })
+        .unwrap();
+        let start = std::time::Instant::now();
+        let result = sandbox.execute("while(true){}");
+        let elapsed = start.elapsed();
+        assert!(
+            matches!(result, Err(crate::ScriptError::Timeout(_))),
+            "死循环应被超时中断为 Timeout，实际: {result:?}"
+        );
+        // 应在 ~timeout_ms 附近返回，远低于 5s（修复前永久挂死）。
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "超时应及时生效（耗时 {elapsed:?}），R3400 回归"
+        );
+    }
+
+    #[test]
+    fn test_timeout_json_interrupts_dead_loop_r3400() {
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig {
+            timeout_ms: 500,
+            ..Default::default()
+        })
+        .unwrap();
+        let start = std::time::Instant::now();
+        let result = sandbox.execute_json("while(true){}");
+        let elapsed = start.elapsed();
+        assert!(
+            matches!(result, Err(crate::ScriptError::Timeout(_))),
+            "execute_json 死循环应被超时中断为 Timeout，实际: {result:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "execute_json 超时应及时生效（耗时 {elapsed:?}），R3400 回归"
+        );
+    }
+
+    #[test]
+    fn test_set_timeout_ms_dynamic_then_interrupt_r3400() {
+        // 默认无超时（timeout_ms=0）→ 正常快速返回；set_timeout_ms 后 → 超时中断。
+        let mut sandbox = QuickJSSandbox::new().unwrap();
+        sandbox.set_timeout_ms(400);
+        let start = std::time::Instant::now();
+        let result = sandbox.execute("while(true){}");
+        assert!(
+            matches!(result, Err(crate::ScriptError::Timeout(_))),
+            "set_timeout_ms 后死循环应被中断，实际: {result:?}"
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_no_timeout_zero_ms_does_not_interrupt_r3400() {
+        // timeout_ms=0 = 无超时，正常快速脚本不受影响（回归保护：handler 不误伤）。
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig {
+            timeout_ms: 0,
+            ..Default::default()
+        })
+        .unwrap();
+        let r = sandbox.execute("var s=0; for(var i=0;i<1000;i++) s+=i; s").unwrap();
+        assert_eq!(r.value, "499500");
+    }
+
+    #[test]
+    fn test_timeout_recovers_for_next_execute_r3400() {
+        // 超时中断后 deadline 被 guard Drop 清除——下一次正常脚本可执行
+        //（防 interrupt handler 残留 deadline 误伤后续 execute）。
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig {
+            timeout_ms: 300,
+            ..Default::default()
+        })
+        .unwrap();
+        // 触发超时。
+        let _ = sandbox.execute("while(true){}");
+        // 清除超时，正常脚本应成功执行。
+        sandbox.set_timeout_ms(0);
+        let r = sandbox.execute("1 + 1").unwrap();
+        assert_eq!(r.value, "2", "超时后 deadline 须清除，后续 execute 不受误伤");
     }
 }
