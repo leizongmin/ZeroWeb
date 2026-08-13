@@ -348,6 +348,43 @@ impl CookieStore {
             ));
         }
 
+        // R3391：Cookie 名称前缀校验（RFC 6265bis §5.4 step 12「Cookie Prefixes」，
+        // https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html#name-cookie-prefixes）。
+        // 真浏览器对违规前缀 cookie **拒绝存储**（而非静默剥离前缀），旧实现完全不校验 →
+        // `__Host-session=x`（无 Secure / 带 Domain / Path≠/）或 `__Secure-t=x`（无 Secure）
+        // 被当普通 cookie 存储，绕过这些前缀的安全语义（认证/CSRF token 防护）。
+        // ① `__Secure-` 前缀：须设 Secure 属性（§5.4 step 12.1）。
+        // ② `__Host-` 前缀：须设 Secure + 无 Domain（host-only）+ Path 恰为 "/"（§5.4 step 12.2）。
+        // 仅校验「属性可判」部分（Secure/Domain/Path）；完整 __Host- 还要求请求经 https 到达——
+        // https 约束由 Secure 属性本身的发送规则承载（非 https 不发 Secure cookie），故 parse 时
+        // 属性校验已闭合前缀的核心安全语义。名称前缀比较 ASCII 大小写敏感（前缀字面 '__Host-'/'__Secure-'）。
+        if cookie.name.starts_with("__Secure-") {
+            if !cookie.secure {
+                return Err(NetError::InvalidCookie(
+                    "__Secure- prefixed cookie must have Secure attribute".to_string(),
+                ));
+            }
+        } else if cookie.name.starts_with("__Host-") {
+            if !cookie.secure {
+                return Err(NetError::InvalidCookie(
+                    "__Host- prefixed cookie must have Secure attribute".to_string(),
+                ));
+            }
+            // __Host- 须 host-only：不得有显式 Domain 属性（cookie.domain 此处为原始属性，
+            // host_only 标志在 Domain 解析分支置 false，故用 host_only 判定）。
+            if !cookie.host_only {
+                return Err(NetError::InvalidCookie(
+                    "__Host- prefixed cookie must not have Domain attribute".to_string(),
+                ));
+            }
+            // __Host- 须 Path 恰为 "/"（default-path 会把无 Path 的 cookie 置 "/"，故无 Path 亦合法）。
+            if cookie.path.as_deref().is_some_and(|p| p != "/") {
+                return Err(NetError::InvalidCookie(
+                    "__Host- prefixed cookie must have Path=\"/\"".to_string(),
+                ));
+            }
+        }
+
         // Max-Age 优先于 Expires
         if let Some(max_age) = max_age_seen {
             let now_secs = SystemTime::now()
@@ -719,6 +756,65 @@ mod tests {
         // 未识别 SameSite 值 → Default = Lax（不要求 Secure）
         let unrecognized = CookieStore::parse_set_cookie("id=1; SameSite=Foo").unwrap();
         assert_eq!(unrecognized.same_site, SameSite::Lax, "未识别 SameSite 须回落 Lax");
+    }
+
+    // R3391：Cookie 名称前缀校验（RFC 6265bis §5.4 step 12「Cookie Prefixes」）。
+    // 真浏览器对违规前缀 cookie **拒绝存储**（而非静默剥离前缀）。旧实现完全不校验。
+    #[test]
+    fn test_parse_cookie_secure_prefix_requires_secure_r3391() {
+        // __Secure- 无 Secure → 拒绝
+        assert!(
+            CookieStore::parse_set_cookie("__Secure-sid=1").is_err(),
+            "__Secure- 前缀无 Secure 须拒绝"
+        );
+        // __Secure- 有 Secure → 接受
+        assert!(
+            CookieStore::parse_set_cookie("__Secure-sid=1; Secure").is_ok(),
+            "__Secure- 前缀 + Secure 须接受"
+        );
+    }
+
+    #[test]
+    fn test_parse_cookie_host_prefix_rules_r3391() {
+        // __Host- 无 Secure → 拒绝
+        assert!(
+            CookieStore::parse_set_cookie("__Host-sid=1").is_err(),
+            "__Host- 前缀无 Secure 须拒绝"
+        );
+        // __Host- 有 Domain → 拒绝（须 host-only）
+        assert!(
+            CookieStore::parse_set_cookie("__Host-sid=1; Secure; Domain=example.com").is_err(),
+            "__Host- 前缀带 Domain 须拒绝"
+        );
+        // __Host- Path≠"/" → 拒绝
+        assert!(
+            CookieStore::parse_set_cookie("__Host-sid=1; Secure; Path=/app").is_err(),
+            "__Host- 前缀 Path≠/ 须拒绝"
+        );
+        // __Host- 合法（Secure + 无 Domain + 无 Path〔default-path 会在存储时置 "/"〕）→ 接受
+        assert!(
+            CookieStore::parse_set_cookie("__Host-sid=1; Secure").is_ok(),
+            "__Host- 前缀 + Secure + 无 Domain + 无 Path 须接受"
+        );
+        // __Host- 合法（显式 Path="/"）→ 接受
+        assert!(
+            CookieStore::parse_set_cookie("__Host-sid=1; Secure; Path=/").is_ok(),
+            "__Host- 前缀 + Secure + Path=/ 须接受"
+        );
+    }
+
+    #[test]
+    fn test_parse_cookie_non_prefixed_unaffected_r3391() {
+        // 普通名（非前缀）不要求 Secure，回归保护
+        assert!(
+            CookieStore::parse_set_cookie("sid=1").is_ok(),
+            "普通 cookie 无前缀不要求 Secure"
+        );
+        // 小写前缀非前缀（前缀字面大小写敏感，__host- 非前缀）
+        assert!(
+            CookieStore::parse_set_cookie("__host-sid=1").is_ok(),
+            "前缀大小写敏感：__host-（小写）非 __Host- 前缀，不校验"
+        );
     }
 
     /// R3219：default_path 按 RFC 6265 §5.1.4 计算（直接测 helper）。
