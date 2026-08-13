@@ -14,7 +14,8 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 3. 两端必须使用同一场景、viewport、DPR、locale、颜色主题、字体环境和 scrollbar 策略。
 4. 每个稳定检查点分别比较状态、事件序列、几何和像素，不得把四项平均成单一分数。
 5. 缺少必需产物时判定失败。只有用户明确要求诊断模式或仅静态模式时才能降级。
-6. 全图像素阈值是严格小于关系。`5%` 表示结果必须 `<5%`。
+6. 全图和控件区域像素阈值都是严格小于关系。`3%` 表示结果必须 `<3%`。
+7. 验收结束时必须向用户直接展示同一检查点的 Chrome 和 ZeroWeb 两张全帧截图，不得只提供报告路径或文字结论。
 
 ## 必读资料
 
@@ -41,7 +42,9 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
 
 ## 执行流程
 
-1. 准备仓库依赖：
+1. 选择证据目录。默认使用仓库内已被 `.gitignore` 忽略的 `.acceptance/chrome-parity/<scenario-name>-<timestamp>/`，一次性或 CI 诊断也可使用系统临时目录。不得把截图写入受版本控制的源码或文档目录。
+
+2. 准备仓库依赖：
 
    ```bash
    cd tests/wpt-runner/scripts
@@ -58,15 +61,15 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
 
    Windows 使用仓库在该平台提供的等价 `test-guard` 入口，不得裸跑长时间构建。
 
-2. 复制 [templates/form-interaction.scenario.json](templates/form-interaction.scenario.json)，只修改页面 URL、观察目标和动作。
+3. 复制 [templates/form-interaction.scenario.json](templates/form-interaction.scenario.json)，只修改页面 URL、观察目标和动作。
 
-3. 校验场景：
+4. 校验场景：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/validate-scenario.mjs <scenario.json>
    ```
 
-4. 采集 Chrome 证据。优先使用 CDP 连接预启动的 GUI Chrome：
+5. 采集 Chrome 证据。优先使用 CDP 连接预启动的 GUI Chrome：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/capture-chrome.mjs \
@@ -76,7 +79,7 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
 
    未设置 `ORACLE_CDP_URL` 时脚本会启动 headless Chrome。该结果可用于行为诊断，但不满足生产视觉门禁。
 
-5. 用仓库命令生成 ZeroWeb 证据。命令会收到：
+6. 用仓库命令生成 ZeroWeb 证据。命令会收到：
 
    ```text
    PARITY_SCENARIO
@@ -94,7 +97,13 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
    }
    ```
 
-6. 比较证据：
+   本仓内置生产器：
+
+   ```text
+   ZEROWEB_EVIDENCE_COMMAND=["target/release/zero-browser","--renderer=gpu","--scale=1","--parity-scenario","${PARITY_SCENARIO}","--parity-output-dir","${PARITY_OUTPUT_DIR}"]
+   ```
+
+7. 比较证据：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/compare-evidence.mjs \
@@ -105,7 +114,7 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
      --require-production
    ```
 
-7. 一键编排使用跨平台 Node 入口。将 ZeroWeb 生产器命令写成 JSON 字符串数组，避免 shell quoting 的平台差异：
+8. 一键编排使用跨平台 Node 入口。将 ZeroWeb 生产器命令写成 JSON 字符串数组，避免 shell quoting 的平台差异：
 
    ```text
    ZEROWEB_EVIDENCE_COMMAND=["cargo","run","--release","--bin","zero-parity-producer"]
@@ -117,6 +126,10 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/run-parity.mjs \
      <scenario.json> <evidence-dir>
    ```
+
+9. 展示验收截图。优先选择最终检查点；若验收提前失败，选择最后一个两端均有截图的检查点。使用 `view_image` 分别展示 `<evidence-dir>/chrome/<step-id>.png` 和 `<evidence-dir>/zeroweb/<step-id>.png`，并在最终回复中以内联图片并排或相邻呈现，清楚标注 `Chrome` 与 `ZeroWeb`。同时给出两张图片及 `report.json` 的绝对路径，便于用户打开原图核对。
+
+   两张图必须来自同一场景、同一检查点、同一 viewport 和 DPR。不得用 diff 图、控件裁剪图或其他检查点截图代替任一全帧截图。
 
 ## ZeroWeb 适配器优先级
 
@@ -147,7 +160,7 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
 - 归一化事件序列一致；
 - 所有观察矩形偏差不超过几何阈值；
 - 每张全帧 diff 严格小于 `maxDiffPercent`；
-- 每个控件区域 diff 不超过 `maxRegionDiffPercent`；
+- 每个控件区域 diff 严格小于 `maxRegionDiffPercent`；
 - 不缺少任何必需产物或检查点。
 
 ## 失败定位

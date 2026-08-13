@@ -4,6 +4,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
 
 import { loadScenario } from './validate-scenario.mjs';
 
@@ -61,7 +62,7 @@ function canonicalEvents(events) {
 }
 
 function equalJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function compareGeometry(chrome, zeroweb, limit) {
@@ -114,6 +115,7 @@ async function comparePng(options, actual, expected, maxDiffPercent) {
     '--pixel-radius',
     String(options.thresholds.pixelRadius),
   ];
+  if (options.padToUnion) args.push('--pad-to-union');
   const comparatorIsNodeScript = options.comparator.endsWith('.mjs') || options.comparator.endsWith('.js');
   const result = comparatorIsNodeScript
     ? await run(process.execPath, [options.comparator, ...args])
@@ -209,6 +211,7 @@ async function main() {
           {
             comparator: cli.comparator,
             thresholds: scenario.thresholds,
+            padToUnion: true,
           },
           resolve(zeroweb.directory, zeroRegion),
           resolve(chrome.directory, chromeRegion),

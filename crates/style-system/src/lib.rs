@@ -853,6 +853,14 @@ impl StyleSystem {
         };
         #[allow(clippy::type_complexity)]
         let mut ua_decl_inputs: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
+        // https://html.spec.whatwg.org/multipage/rendering.html#hiddenCSS
+        if pseudo.is_none()
+            && doc
+                .get_attribute(element, "hidden")
+                .is_some_and(|value| !value.eq_ignore_ascii_case("until-found"))
+        {
+            ua_decl_inputs.push(("display".to_string(), "none".to_string(), true, (0, 0, 0), None));
+        }
         if let Some(ref tag) = tag_name
             && let Some(display) = ua_default_display(tag)
         {

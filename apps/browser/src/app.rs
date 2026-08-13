@@ -1087,7 +1087,7 @@ impl BrowserApp {
     /// 测试用：读取标签页最近快照中的标题。
     #[cfg(test)]
     pub fn page_title_for_test(&self, tab_id: TabId) -> Option<String> {
-        self.tabs.page_title_for_test(tab_id)
+        self.tabs.page_title(tab_id)
     }
 
     /// 测试用：读取标签页最近快照中的导航 epoch。
@@ -1392,6 +1392,36 @@ impl BrowserApp {
     /// 页面内容区（物理像素，边框内侧）：WebView 绘制与命中区域。
     pub fn page_content_rect(&self) -> (f32, f32, f32, f32) {
         self.page_content_rect_for(self.physical_size.0, self.physical_size.1)
+    }
+
+    /// 产品一致性验收：当前活动标签页。
+    pub fn parity_active_tab_id(&self) -> Option<TabId> {
+        self.shell.active_tab_id()
+    }
+
+    /// 产品一致性验收：活动页最新快照序号。
+    pub fn parity_snapshot_seq(&self, tab_id: TabId) -> u64 {
+        self.tabs.snapshot_seq(tab_id)
+    }
+
+    /// 产品一致性验收：最新可显示 compositor 页面帧序号。
+    pub fn parity_compositor_frame_id(&self, tab_id: TabId) -> u64 {
+        self.tabs.compositor_frame_id(tab_id)
+    }
+
+    /// 产品一致性验收：活动页标题快照（compositor 模式状态 fallback）。
+    pub fn parity_page_title(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.page_title(tab_id)
+    }
+
+    /// 产品一致性验收：活动页与绘制快照同步的 HTML。
+    pub fn parity_page_html(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.page_html(tab_id)
+    }
+
+    /// 产品一致性验收：使用真实 renderer 命中缓存查询页面元素。
+    pub fn parity_hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
+        self.tabs.hit_test_element(tab_id, x, y)
     }
 
     /// 浮动查找栏外框（物理像素）。

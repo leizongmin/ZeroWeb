@@ -17,8 +17,8 @@
     "chromeVersionPattern": "Chrome/127\\."
   },
   "thresholds": {
-    "maxDiffPercent": 5,
-    "maxRegionDiffPercent": 10,
+    "maxDiffPercent": 3,
+    "maxRegionDiffPercent": 5,
     "channelDiff": 8,
     "pixelRadius": 1,
     "maxGeometryDiffPx": 2
@@ -128,12 +128,12 @@ WebDriver `ElementClick` 可用于行为诊断，但必须声明 `inputPath: "we
 ```bash
 zero-wpt-runner compare-png \
   <zeroweb.png> <chrome.png> \
-  --max-diff 5 \
+  --max-diff 3 \
   --channel-diff 8 \
   --pixel-radius 1
 ```
 
-全图阈值为严格小于；区域阈值默认包含等于边界。
+全图和控件区域阈值均为严格小于。
 
 字体由其他 goal 负责时，仍保留未遮罩的全图结果，同时增加排除 glyph mask 的布局/控件报告。不得丢弃全图结果。
 
@@ -170,6 +170,7 @@ ZeroBrowser 真实窗口
 ```
 
 禁止传 shell 命令字符串。JSON argv 不依赖 Bash、PowerShell 或 CMD quoting，可在 Windows、Linux、macOS 使用。
+参数中的 `${PARITY_SCENARIO}`、`${PARITY_OUTPUT_DIR}` 和 `${PARITY_REPO_ROOT}` 会在启动前替换为绝对路径。
 
 生产器会收到：
 

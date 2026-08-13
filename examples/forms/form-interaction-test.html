@@ -10,7 +10,7 @@
     input, textarea, button { font: inherit; padding: 6px; }
     textarea { width: 100%; min-height: 80px; box-sizing: border-box; }
     button { margin-right: 8px; }
-    output { display: block; min-height: 1.5em; margin-top: 16px; color: #075985; }
+    #result { display: block; min-height: 1.5em; margin-top: 16px; color: #075985; }
   </style>
 </head>
 <body>
@@ -48,6 +48,18 @@
     const planBasic = document.getElementById('plan-basic');
     const planPro = document.getElementById('plan-pro');
     const testState = document.getElementById('test-state');
+    const eventLog = [];
+    const observedEvents = ['mousedown', 'focus', 'mouseup', 'click', 'input', 'change', 'reset', 'submit'];
+    observedEvents.forEach(type => {
+      // https://w3c.github.io/uievents/#event-flow
+      document.addEventListener(type, event => {
+        eventLog.push({
+          event,
+          type: event.type,
+          target: event.target.id ? `#${event.target.id}` : event.target.tagName.toLowerCase()
+        });
+      }, true);
+    });
     let focused = '';
     const syncTestState = reason => {
       const serialized = JSON.stringify({
@@ -57,7 +69,12 @@
         subscribe: subscribe.checked,
         plan: planBasic.checked ? 'basic' : planPro.checked ? 'pro' : '',
         focused,
-        result: result.textContent
+        result: result.textContent,
+        events: eventLog.map(entry => ({
+          type: entry.type,
+          target: entry.target,
+          defaultPrevented: entry.event.defaultPrevented
+        }))
       });
       testState.textContent = serialized;
       if (location.search.includes('__zero_test_state=1')) {

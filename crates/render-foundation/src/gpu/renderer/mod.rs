@@ -2126,6 +2126,9 @@ impl GpuRenderer {
     ) -> Vec<Vec<f32>> {
         let mut batches: Vec<Vec<f32>> = Vec::new();
         for gp in glyphs {
+            // Keep one vertex slot per primitive so DrawOp::Glyph indices remain valid
+            // when a missing font or glyph cannot be rasterized.
+            batches.push(Vec::new());
             let mut vertices: Vec<f32> = Vec::new();
             let physical_font_size = gp.font_size * scale;
             let font_id = gp.font_id.0;
@@ -2202,7 +2205,7 @@ impl GpuRenderer {
             vertices.extend_from_slice(&[trx, tly, u1, v0, r, g, b, a]);
             vertices.extend_from_slice(&[brx, bry, u1, v1, r, g, b, a]);
             vertices.extend_from_slice(&[blx, bly, u0, v1, r, g, b, a]);
-            batches.push(vertices);
+            *batches.last_mut().expect("glyph vertex slot exists") = vertices;
         }
         batches
     }

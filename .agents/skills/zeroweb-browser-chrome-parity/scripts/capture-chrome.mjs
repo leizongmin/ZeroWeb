@@ -9,7 +9,10 @@ import { loadScenario } from './validate-scenario.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../../../..');
-const PUPPETEER_PATH = resolve(REPO_ROOT, 'tests/wpt-runner/scripts/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js');
+const PUPPETEER_PATH = resolve(
+  REPO_ROOT,
+  'tests/wpt-runner/scripts/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js',
+);
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -235,9 +238,13 @@ async function observe(page, scenario) {
     } catch (error) {
       throw new Error(`stateExpression failed: ${error.message}`);
     }
+    const events = Array.isArray(state?.events)
+      ? state.events
+      : Array.from(globalThis.__browserParityEvents || []);
+    if (state && typeof state === 'object') delete state.events;
     return {
       state,
-      events: Array.from(globalThis.__browserParityEvents || []),
+      events,
       geometry,
       activeElement: document.activeElement?.id ? `#${document.activeElement.id}` : '',
       url: location.href,
@@ -295,7 +302,15 @@ async function main() {
         const box = handle ? await handle.boundingBox() : null;
         if (!handle || !box || box.width <= 0 || box.height <= 0) continue;
         const regionPath = `${step.id}.region-${Buffer.from(selector).toString('hex')}.png`;
-        await handle.screenshot({ path: resolve(output, regionPath), type: 'png' });
+        const x = Math.floor(box.x);
+        const y = Math.floor(box.y);
+        const width = Math.ceil(box.x + box.width) - x;
+        const height = Math.ceil(box.y + box.height) - y;
+        await page.screenshot({
+          path: resolve(output, regionPath),
+          type: 'png',
+          clip: { x, y, width, height },
+        });
         regions[selector] = regionPath;
       }
       steps.push({

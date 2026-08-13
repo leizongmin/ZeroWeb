@@ -14,8 +14,8 @@
     "chromeVersionPattern": "Chrome/127\\."
   },
   "thresholds": {
-    "maxDiffPercent": 5,
-    "maxRegionDiffPercent": 10,
+    "maxDiffPercent": 3,
+    "maxRegionDiffPercent": 5,
     "channelDiff": 8,
     "pixelRadius": 1,
     "maxGeometryDiffPx": 2
@@ -31,7 +31,7 @@
       "#reset",
       "#submit"
     ],
-    "stateExpression": "JSON.parse(document.querySelector('#test-state').textContent)",
+    "stateExpression": "(() => { const stored = JSON.parse(document.querySelector('#test-state').textContent); return { ...stored, name: document.querySelector('#name').value, note: document.querySelector('#note').value, subscribe: document.querySelector('#subscribe').checked, plan: document.querySelector('#plan-basic').checked ? 'basic' : document.querySelector('#plan-pro').checked ? 'pro' : '', focused: document.activeElement?.id || '' }; })()",
     "eventTypes": [
       "mousedown",
       "focus",
@@ -93,14 +93,22 @@
       "id": "06-subscribe",
       "action": {
         "type": "click",
-        "selector": "#subscribe"
+        "selector": "#subscribe",
+        "offset": {
+          "x": 0.15,
+          "y": 0.5
+        }
       }
     },
     {
       "id": "07-plan-pro",
       "action": {
         "type": "click",
-        "selector": "#plan-pro"
+        "selector": "#plan-pro",
+        "offset": {
+          "x": 0.15,
+          "y": 0.5
+        }
       }
     },
     {

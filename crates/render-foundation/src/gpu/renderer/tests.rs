@@ -821,6 +821,68 @@ fn test_gpu_full_scene_indexed_glyph_matches_code_point() {
     assert_eq!(indexed_pixels, unicode_pixels);
 }
 
+#[serial]
+#[test]
+fn test_gpu_full_scene_preserves_draw_indices_after_unrenderable_glyph() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut renderer = GpuRenderer::new_headless(40, 40).expect("headless renderer");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+    let glyph_index = font_loader
+        .get(font_id)
+        .expect("font should remain loaded")
+        .lookup_glyph_index('A');
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_glyph(crate::primitive::GlyphPrimitive {
+        x: 0.0,
+        y: 20.0,
+        font_size: 20.0,
+        color: Color::RED,
+        glyph_id: '中' as u32,
+        font_glyph_index: Some(0),
+        source: None,
+        font_id: crate::primitive::FontId(u32::MAX),
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+    primitives.add_glyph(crate::primitive::GlyphPrimitive {
+        x: 8.0,
+        y: 28.0,
+        font_size: 20.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: Some(glyph_index),
+        source: None,
+        font_id: crate::primitive::FontId(font_id),
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+    let mut glyph_cache = GlyphCache::new(8);
+
+    assert!(renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    ));
+    let pixels = renderer.read_pixels().expect("readback");
+    assert!(
+        pixels
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] < 250 || pixel[1] < 250 || pixel[2] < 250),
+        "the renderable glyph after the missing glyph should still be drawn"
+    );
+}
+
 /// 测试 render_full_scene_gpu 渲染圆角矩形
 #[serial]
 #[test]

@@ -299,7 +299,16 @@ impl ProcessTabBackend {
         pending_errors: &mut Vec<(TabId, String)>,
     ) {
         match kind {
-            IpcMessageKind::TitleChanged(title) => snap.title = Some(title),
+            IpcMessageKind::TitleChanged(title) => {
+                if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                    tracing::info!(
+                        "SMOKE_EVENT component=browser event=title_changed tab={} length={}",
+                        tab_id.0,
+                        title.len()
+                    );
+                }
+                snap.title = Some(title);
+            }
             IpcMessageKind::LoadComplete => {
                 // loading 结束与 paint 提交仅由 ViewPainted / LoadFailed 驱动。
             }

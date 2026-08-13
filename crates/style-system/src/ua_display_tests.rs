@@ -118,3 +118,16 @@ fn test_hidden_elements_default_to_none() {
         );
     }
 }
+
+#[test]
+fn hidden_attribute_suppresses_output_element() {
+    let doc =
+        zero_dom::parse_html(r#"<output id="visible">visible</output><output id="hidden" hidden>hidden</output>"#);
+    let visible = doc.get_element_by_id("visible").expect("visible output");
+    let hidden = doc.get_element_by_id("hidden").expect("hidden output");
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+
+    assert_ne!(styles[&visible].display, DisplayValue::None);
+    assert_eq!(styles[&hidden].display, DisplayValue::None);
+}

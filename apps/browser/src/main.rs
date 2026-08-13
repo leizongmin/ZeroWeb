@@ -36,6 +36,7 @@ mod page_scroll;
 mod page_selection;
 mod pages;
 mod paint_ipc;
+mod parity_smoke;
 mod process_backend;
 mod shutdown_signal;
 mod smoke_capture;
@@ -79,6 +80,8 @@ struct CliArgs {
     smoke_capture: Option<PathBuf>,
     /// 显式启用真实网站 compositor GUI 操作 smoke。
     gui_smoke: Option<gui_smoke::GuiSmokeConfig>,
+    /// 显式启用 Chrome 一致性真实窗口交互场景。
+    parity_smoke: Option<parity_smoke::ParitySmokeConfig>,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -106,6 +109,8 @@ fn parse_args_from(
     let mut smoke_capture = None;
     let mut gui_smoke_url = None;
     let mut gui_smoke_dir = None;
+    let mut parity_scenario = None;
+    let mut parity_output_dir = None;
 
     while let Some(arg) = args.next() {
         if let Some(value) = arg.strip_prefix("--renderer=") {
@@ -207,6 +212,28 @@ fn parse_args_from(
                     "--gui-smoke-dir requires a directory path".to_string()
                 })?));
         }
+
+        if let Some(value) = arg.strip_prefix("--parity-scenario=") {
+            parity_scenario = Some(PathBuf::from(value));
+        }
+
+        if arg == "--parity-scenario" {
+            parity_scenario = Some(PathBuf::from(
+                args.next()
+                    .ok_or_else(|| "--parity-scenario requires a JSON path".to_string())?,
+            ));
+        }
+
+        if let Some(value) = arg.strip_prefix("--parity-output-dir=") {
+            parity_output_dir = Some(PathBuf::from(value));
+        }
+
+        if arg == "--parity-output-dir" {
+            parity_output_dir =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--parity-output-dir requires a directory path".to_string()
+                })?));
+        }
     }
 
     let cli_render_mode = render_mode;
@@ -229,10 +256,19 @@ fn parse_args_from(
             return Err("--gui-smoke-url and --gui-smoke-dir must be provided together".to_string());
         }
     };
-    if smoke_capture.is_some() && gui_smoke.is_some() {
-        return Err("--smoke-capture cannot be combined with --gui-smoke-url".to_string());
+    let parity_smoke = match (parity_scenario, parity_output_dir) {
+        (Some(scenario), Some(output_dir)) => Some(parity_smoke::ParitySmokeConfig::load(scenario, output_dir)?),
+        (None, None) => None,
+        _ => {
+            return Err("--parity-scenario and --parity-output-dir must be provided together".to_string());
+        }
+    };
+    let smoke_modes =
+        usize::from(smoke_capture.is_some()) + usize::from(gui_smoke.is_some()) + usize::from(parity_smoke.is_some());
+    if smoke_modes > 1 {
+        return Err("smoke capture, GUI smoke, and parity smoke are mutually exclusive".to_string());
     }
-    if smoke_capture.is_some() || gui_smoke.is_some() {
+    if smoke_modes > 0 {
         if headless {
             return Err("GUI smoke requires a real window".to_string());
         }
@@ -258,6 +294,7 @@ fn parse_args_from(
         wpt_parity,
         smoke_capture,
         gui_smoke,
+        parity_smoke,
     })
 }
 
@@ -278,6 +315,8 @@ Options:
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
   --gui-smoke-url=<url>          Run compositor GUI actions against a real HTTP(S) website
   --gui-smoke-dir=<dir>          Write GUI smoke step screenshots into this directory
+  --parity-scenario=<json>       Run a real-window Chrome parity interaction scenario
+  --parity-output-dir=<dir>      Write ZeroWeb parity evidence into this directory
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -545,14 +584,15 @@ fn main() {
     }
     tracing::info!("Renderer mode: {}", cli.render_mode);
     #[cfg(target_os = "linux")]
-    if cli.render_mode == RenderMode::Cpu {
-        // CPU 呈现无法消费 dma-buf；禁用 Browser 导入，compositor 帧经 RGBA 回退。
+    if cli.render_mode == RenderMode::Cpu || cli.parity_smoke.is_some() {
+        // CPU present 与 parity GPU readback 都需要 compositor RGBA 交付。
+        // parity 仍会把 GPU 合成帧上传到 Browser GPU 场景。
         // SAFETY: 须在 compositor worker / 子进程启动前设置。
         unsafe {
             std::env::set_var("ZW_BROWSER_GPU_DMABUF_IMPORT", "0");
         }
     }
-    if cli.smoke_capture.is_some() || cli.gui_smoke.is_some() {
+    if cli.smoke_capture.is_some() || cli.gui_smoke.is_some() || cli.parity_smoke.is_some() {
         // SAFETY: 设置发生在任何 renderer/compositor 子进程和工作线程启动之前。
         unsafe {
             std::env::set_var("ZERO_BROWSER_PRODUCT_SMOKE", "1");
@@ -561,6 +601,7 @@ fn main() {
             .gui_smoke
             .as_ref()
             .map(|config| config.url.as_str())
+            .or_else(|| cli.parity_smoke.as_ref().map(parity_smoke::ParitySmokeConfig::url))
             .unwrap_or("zero://newtab");
         tracing::info!("SMOKE_EVENT component=browser event=enabled fixture={fixture}");
     }
@@ -580,13 +621,19 @@ fn main() {
 
     let mut app = BrowserApp::new(cli.render_mode);
     let smoke_viewport = cli
-        .gui_smoke
+        .parity_smoke
         .as_ref()
-        .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32));
+        .map(parity_smoke::ParitySmokeConfig::viewport)
+        .or_else(|| {
+            cli.gui_smoke
+                .as_ref()
+                .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32))
+        });
     let config = browser_window_config(&app, smoke_viewport);
     let runtime = HostRuntime::new(config);
     let smoke_capture_path = cli.smoke_capture;
     let mut gui_smoke = cli.gui_smoke.map(gui_smoke::GuiSmoke::new);
+    let mut parity_smoke = cli.parity_smoke.map(parity_smoke::ParitySmoke::new);
 
     tracing::info!("Entering event loop...");
 
@@ -610,13 +657,20 @@ fn main() {
             app.shutdown_child_processes();
             std::process::exit(3);
         }
+        if let Some(smoke) = parity_smoke.as_ref()
+            && let Err(error) = smoke.check_timeout()
+        {
+            tracing::error!("PARITY_SMOKE_FAILURE error={error}");
+            app.shutdown_child_processes();
+            std::process::exit(3);
+        }
 
         app.poll_tab_fetch();
         app.expire_scrollbar_overlay();
-
         match event {
             AppEvent::RedrawRequested => {
-                if !app.window_focused && smoke_capture_path.is_none() && gui_smoke.is_none() {
+                if !app.window_focused && smoke_capture_path.is_none() && gui_smoke.is_none() && parity_smoke.is_none()
+                {
                     app.needs_redraw = false;
                 } else {
                     if !app.surface_configured {
@@ -643,6 +697,9 @@ fn main() {
                                 sync_window_chrome_icon(&mut app, win);
                                 app.sync_webview_viewport();
                                 if let Some(smoke) = gui_smoke.as_mut() {
+                                    smoke.start(&mut app);
+                                }
+                                if let Some(smoke) = parity_smoke.as_mut() {
                                     smoke.start(&mut app);
                                 }
                                 tracing::debug!(
@@ -877,8 +934,42 @@ fn main() {
             _ => {}
         }
 
-        if app.needs_redraw
-            && (app.window_focused || smoke_capture_path.is_some() || gui_smoke.is_some())
+        if app.surface_configured
+            && app.gpu_renderer_is_some()
+            && let Some(smoke) = parity_smoke.as_mut()
+        {
+            // compositor 完成可能在本轮窗口事件处理期间到达；证据 tick 前再 poll 一次，
+            // 保证状态与最新可显示页面帧来自同一输入事务。
+            app.poll_tab_fetch();
+            let source = app.product_smoke_frame_source();
+            if let Some(source) = source {
+                match app.render_full_scene_gpu_capture(app.physical_size.0, app.physical_size.1) {
+                    Ok(frame) => {
+                        let result = smoke.on_presented_frame(&mut app, &frame, source);
+                        match result {
+                            Ok(true) => {
+                                app.shutdown_child_processes();
+                                std::process::exit(0);
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                tracing::error!("PARITY_SMOKE_FAILURE error={error}");
+                                app.shutdown_child_processes();
+                                std::process::exit(3);
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::error!("GPU_SMOKE_CAPTURE_FAILURE error={error}");
+                        app.shutdown_child_processes();
+                        std::process::exit(3);
+                    }
+                }
+            }
+        }
+
+        if (app.needs_redraw || parity_smoke.is_some())
+            && (app.window_focused || smoke_capture_path.is_some() || gui_smoke.is_some() || parity_smoke.is_some())
             && let Some(ref win) = window
         {
             win.request_redraw();

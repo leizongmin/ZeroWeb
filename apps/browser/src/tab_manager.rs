@@ -176,8 +176,8 @@ impl TabManager {
         self.snapshots.get(&tab_id)?.url.clone()
     }
 
-    #[cfg(test)]
-    pub fn page_title_for_test(&self, tab_id: TabId) -> Option<String> {
+    /// 读取 Tab 当前标题（快照）。
+    pub fn page_title(&self, tab_id: TabId) -> Option<String> {
         self.snapshots.get(&tab_id)?.title.clone()
     }
 
@@ -879,6 +879,15 @@ impl TabManager {
     /// 滚动 blit 据此失效保留帧缓冲。
     pub fn snapshot_seq(&self, tab_id: TabId) -> u64 {
         self.snapshot_seq.get(&tab_id).copied().unwrap_or(0)
+    }
+
+    /// 最新可显示 compositor 页面帧序号。
+    pub fn compositor_frame_id(&self, tab_id: TabId) -> u64 {
+        self.snapshots
+            .get(&tab_id)
+            .and_then(|snapshot| snapshot.compositor_frame.as_ref())
+            .map(|frame| frame.frame_id)
+            .unwrap_or(0)
     }
 
     #[cfg(test)]

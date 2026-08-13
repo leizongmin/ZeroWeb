@@ -45,6 +45,13 @@ function timeoutMilliseconds() {
   return seconds * 1000;
 }
 
+function expandProducerArguments(command, values) {
+  return command.map((argument) => argument
+    .replaceAll('${PARITY_SCENARIO}', values.scenario)
+    .replaceAll('${PARITY_OUTPUT_DIR}', values.outputDir)
+    .replaceAll('${PARITY_REPO_ROOT}', values.repoRoot));
+}
+
 async function terminateTree(child) {
   if (child.exitCode !== null) return;
   if (process.platform === 'win32') {
@@ -115,7 +122,11 @@ async function main() {
   const chromeDir = resolve(output, 'chrome');
   const zerowebDir = resolve(output, 'zeroweb');
   const timeoutMs = timeoutMilliseconds();
-  const producer = parseProducerCommand();
+  const producer = expandProducerArguments(parseProducerCommand(), {
+    scenario,
+    outputDir: zerowebDir,
+    repoRoot: REPO_ROOT,
+  });
 
   await mkdir(chromeDir, { recursive: true });
   await mkdir(zerowebDir, { recursive: true });

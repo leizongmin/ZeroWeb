@@ -240,8 +240,14 @@ fn cmd_compare_png(args: &[String]) {
     let mut max_diff = 5.0;
     let mut channel_diff = 8_u8;
     let mut pixel_radius = 1_usize;
+    let mut pad_to_union = false;
     let mut index = 2;
     while index < args.len() {
+        if args[index] == "--pad-to-union" {
+            pad_to_union = true;
+            index += 1;
+            continue;
+        }
         let value = args.get(index + 1);
         match args[index].as_str() {
             "--max-diff" => max_diff = value.and_then(|value| value.parse().ok()).unwrap_or(max_diff),
@@ -258,20 +264,27 @@ fn cmd_compare_png(args: &[String]) {
         }
         index += 2;
     }
-    let actual = load_png_to_framebuffer(&args[0]).unwrap_or_else(|error| {
+    let mut actual = load_png_to_framebuffer(&args[0]).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
     });
-    let expected = load_png_to_framebuffer(&args[1]).unwrap_or_else(|error| {
+    let mut expected = load_png_to_framebuffer(&args[1]).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
     });
     if actual.width != expected.width || actual.height != expected.height {
-        eprintln!(
-            "PNG size mismatch: actual={}x{}, expected={}x{}",
-            actual.width, actual.height, expected.width, expected.height
-        );
-        std::process::exit(2);
+        if pad_to_union {
+            let width = actual.width.max(expected.width);
+            let height = actual.height.max(expected.height);
+            actual = pad_framebuffer(&actual, width, height);
+            expected = pad_framebuffer(&expected, width, height);
+        } else {
+            eprintln!(
+                "PNG size mismatch: actual={}x{}, expected={}x{}",
+                actual.width, actual.height, expected.width, expected.height
+            );
+            std::process::exit(2);
+        }
     }
     let different = product_smoke::full_diff_pixels(&actual, &expected, channel_diff, pixel_radius);
     let total = u64::from(actual.width) * u64::from(actual.height);
@@ -281,6 +294,22 @@ fn cmd_compare_png(args: &[String]) {
         eprintln!("REGRESSION: PNG diff {pct:.2}% meets or exceeds strict threshold {max_diff:.2}%");
         std::process::exit(2);
     }
+}
+
+fn pad_framebuffer(
+    source: &zero_render_foundation::surface::FrameBuffer,
+    width: u32,
+    height: u32,
+) -> zero_render_foundation::surface::FrameBuffer {
+    let mut padded = zero_render_foundation::surface::FrameBuffer::new_filled(width, height, 255, 255, 255, 255);
+    for y in 0..source.height {
+        let source_start = (y * source.width * 4) as usize;
+        let source_end = source_start + (source.width * 4) as usize;
+        let target_start = (y * width * 4) as usize;
+        padded.data[target_start..target_start + (source.width * 4) as usize]
+            .copy_from_slice(&source.data[source_start..source_end]);
+    }
+    padded
 }
 
 fn cmd_testharness_html(options: &CliOptions, filter: Option<&str>) {
@@ -2103,4 +2132,19 @@ fn default_parallel_jobs() -> usize {
 
 fn print_usage() {
     print!("{USAGE}");
+}
+
+#[cfg(test)]
+mod compare_png_tests {
+    use super::*;
+
+    #[test]
+    fn pad_framebuffer_preserves_pixels_on_white_union_canvas() {
+        let source = zero_render_foundation::surface::FrameBuffer::new_filled(2, 1, 1, 2, 3, 255);
+        let padded = pad_framebuffer(&source, 3, 2);
+        assert_eq!((padded.width, padded.height), (3, 2));
+        assert_eq!(&padded.data[..8], &[1, 2, 3, 255, 1, 2, 3, 255]);
+        assert_eq!(&padded.data[8..12], &[255, 255, 255, 255]);
+        assert_eq!(&padded.data[12..], &[255; 12]);
+    }
 }

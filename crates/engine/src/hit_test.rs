@@ -143,21 +143,26 @@ impl HitTestCache {
     pub fn fill_layout_rect_snapshot(&self, snapshot: &crate::rect_bridge::LayoutRectSnapshot) {
         if let Ok(mut map) = snapshot.lock() {
             map.clear();
-            fill_rect_from_layout_box(&self.layout_root, &mut map);
+            fill_rect_from_layout_box(&self.layout_root, 0.0, 0.0, &mut map);
         }
     }
 }
 
 /// `LayoutBox` 递归填充 rect snapshot（`fill_layout_rect_snapshot` 的内部实现，直接走 LayoutBox 避 clone）。
-fn fill_rect_from_layout_box(box_node: &LayoutBox, map: &mut HashMap<u64, crate::rect_bridge::Rect4>) {
+fn fill_rect_from_layout_box(
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    map: &mut HashMap<u64, crate::rect_bridge::Rect4>,
+) {
+    let box_x = abs_x + box_node.x;
+    let box_y = abs_y + box_node.y;
     if let Some(id) = box_node.node_id {
-        map.insert(
-            node_id_to_u64(id),
-            (box_node.x, box_node.y, box_node.width, box_node.height),
-        );
+        map.insert(node_id_to_u64(id), (box_x, box_y, box_node.width, box_node.height));
     }
+    let (child_x, child_y) = child_origin(box_node, box_x, box_y);
     for child in &box_node.children {
-        fill_rect_from_layout_box(child, map);
+        fill_rect_from_layout_box(child, child_x, child_y, map);
     }
 }
 
@@ -209,13 +214,25 @@ pub struct HitTestCacheSnapshot {
 }
 
 fn layout_snapshot_from_box(layout: &LayoutBox) -> HitTestLayoutSnapshot {
+    layout_snapshot_from_box_with_offset(layout, 0.0, 0.0)
+}
+
+fn layout_snapshot_from_box_with_offset(
+    layout: &LayoutBox,
+    parent_content_x: f32,
+    parent_content_y: f32,
+) -> HitTestLayoutSnapshot {
     HitTestLayoutSnapshot {
         node_id: layout.node_id,
-        x: layout.x,
-        y: layout.y,
+        x: layout.x + parent_content_x,
+        y: layout.y + parent_content_y,
         width: layout.width,
         height: layout.height,
-        children: layout.children.iter().map(layout_snapshot_from_box).collect(),
+        children: layout
+            .children
+            .iter()
+            .map(|child| layout_snapshot_from_box_with_offset(child, child_offset_x(layout), child_offset_y(layout)))
+            .collect(),
     }
 }
 
@@ -387,8 +404,9 @@ fn deepest_node_at(
         *best = (depth, node_id);
     }
 
+    let (child_x, child_y) = child_origin(layout, box_x, box_y);
     for child in &layout.children {
-        deepest_node_at(child, box_x, box_y, point_x, point_y, depth + 1, best);
+        deepest_node_at(child, child_x, child_y, point_x, point_y, depth + 1, best);
     }
 }
 
@@ -415,8 +433,9 @@ fn collect_nodes_at(
         out.push((depth, node_id));
     }
 
+    let (child_x, child_y) = child_origin(layout, box_x, box_y);
     for child in &layout.children {
-        collect_nodes_at(child, box_x, box_y, point_x, point_y, depth + 1, out);
+        collect_nodes_at(child, child_x, child_y, point_x, point_y, depth + 1, out);
     }
 }
 
@@ -516,12 +535,35 @@ fn layout_box_for_node(layout: &LayoutBox, target: NodeId, abs_x: f32, abs_y: f3
     if layout.node_id == Some(target) {
         return Some((box_x, box_y, layout.width, layout.height));
     }
+    let (child_x, child_y) = child_origin(layout, box_x, box_y);
     for child in &layout.children {
-        if let Some(found) = layout_box_for_node(child, target, box_x, box_y) {
+        if let Some(found) = layout_box_for_node(child, target, child_x, child_y) {
             return Some(found);
         }
     }
     None
+}
+
+fn child_origin(layout: &LayoutBox, box_x: f32, box_y: f32) -> (f32, f32) {
+    (box_x + child_offset_x(layout), box_y + child_offset_y(layout))
+}
+
+fn child_offset_x(layout: &LayoutBox) -> f32 {
+    let scroll_x = if matches!(layout.overflow_x, zero_layout_engine::OverflowClip::Scroll) {
+        layout.scroll_x
+    } else {
+        0.0
+    };
+    layout.border_left + layout.padding_left - scroll_x
+}
+
+fn child_offset_y(layout: &LayoutBox) -> f32 {
+    let scroll_y = if matches!(layout.overflow_y, zero_layout_engine::OverflowClip::Scroll) {
+        layout.scroll_y
+    } else {
+        0.0
+    };
+    layout.border_top + layout.padding_top - scroll_y
 }
 
 fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Option<ElementHit> {
@@ -583,6 +625,53 @@ mod tests {
         let mut layout_engine = LayoutEngine::new(800.0, 600.0);
         let layout = layout_engine.compute(&doc, &styles);
         (doc, layout)
+    }
+
+    #[test]
+    fn nested_content_offsets_are_included_in_hit_and_rect_geometry() {
+        let doc = zero_dom::parse_html(r#"<body><fieldset><input id="target"></fieldset></body>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let fieldset = doc.get_elements_by_tag_name("fieldset")[0];
+        let input = doc.get_element_by_id("target").expect("target input");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            padding_left: 8.0,
+            padding_top: 8.0,
+            ..LayoutBox::default()
+        };
+        let mut fieldset_box = LayoutBox {
+            node_id: Some(fieldset),
+            x: 10.0,
+            y: 20.0,
+            width: 300.0,
+            height: 200.0,
+            border_left: 2.0,
+            border_top: 2.0,
+            padding_left: 16.0,
+            padding_top: 16.0,
+            ..LayoutBox::default()
+        };
+        fieldset_box.children.push(LayoutBox {
+            node_id: Some(input),
+            x: 5.0,
+            y: 6.0,
+            width: 100.0,
+            height: 40.0,
+            ..LayoutBox::default()
+        });
+        root.children.push(fieldset_box);
+        let cache = HitTestCache::from_document(&doc, &root);
+
+        let hit = cache.hit_test_element(42.0, 53.0).expect("input hit");
+        assert_eq!(hit.id.as_deref(), Some("target"));
+        assert_eq!((hit.x, hit.y, hit.width, hit.height), (41.0, 52.0, 100.0, 40.0));
+
+        let snapshot = crate::rect_bridge::new_layout_rect_snapshot();
+        cache.fill_layout_rect_snapshot(&snapshot);
+        let rects = snapshot.lock().expect("rect snapshot");
+        assert_eq!(rects[&node_id_to_u64(input)], (41.0, 52.0, 100.0, 40.0));
     }
 
     // ── 基础命中测试 ──
