@@ -121,4 +121,90 @@ mod tests {
         let url = url::Url::from_file_path(&file).unwrap().to_string();
         assert!(read_file_url(&url).is_err());
     }
+
+    // ── R3367：file:// 安全/正确性属性锁定 ──
+    // 这些属性当前依赖 `url` crate 的 WHATWG file-URL 规范化与 scheme 校验；
+    // 锁定它们防止未来重构（换解析器 / 手工拼路径 / 放宽 scheme 校验）静默引入
+    // 路径遍历或非 file scheme 任意本地文件读取。
+
+    #[test]
+    /// R3367：`file://` URL 中的 `..` 段被规范化，不能路径遍历到任意文件。
+    fn file_url_to_path_normalizes_dotdot_segments_r3367() {
+        let path = file_url_to_path("file:///tmp/a/../../etc/hostname").expect("应解析成功");
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/etc/hostname"),
+            "`..` 段须被 url crate 规范化"
+        );
+    }
+
+    #[test]
+    /// R3367：scheme 大小写不敏感（RFC 3986），`FILE:`/`FiLe:` 均识别为 file URL。
+    fn is_file_url_is_case_insensitive_r3367() {
+        assert!(is_file_url("file:///x"));
+        assert!(is_file_url("FILE:///x"));
+        assert!(is_file_url("FiLe:///x"));
+        assert!(!is_file_url("files:///x"), "files: 不应误判为 file:");
+        assert!(!is_file_url("http://x"));
+        assert!(
+            !is_file_url("httpsfile:///x"),
+            "前缀恰好是 file 但非 file: scheme 不应误判"
+        );
+    }
+
+    #[test]
+    /// R3367：非 file scheme（http/ftp 等）经 `file_url_to_path` 必须被拒。
+    fn file_url_to_path_rejects_non_file_scheme_r3367() {
+        assert!(file_url_to_path("http://example.com/x").is_err());
+        assert!(file_url_to_path("ftp://example.com/x").is_err());
+        assert!(file_url_to_path("data:text/plain,hi").is_err());
+    }
+
+    #[test]
+    /// R3367：sidecar `<file>.headers` 的 Content-Type 优先于按扩展名猜测，
+    /// 且 sidecar 内自定义 header 被原样注入（用于 WPT charset 注入）。
+    fn read_file_url_sidecar_overrides_content_type_r3367() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir();
+        let fname = format!("zero_net_sidecar_probe_{}.html", N.fetch_add(1, Ordering::SeqCst));
+        let file = dir.join(&fname);
+        std::fs::write(&file, b"<html></html>").unwrap();
+        let sidecar = dir.join(format!("{fname}.headers"));
+        std::fs::write(
+            &sidecar,
+            b"X-Custom: probe-value\r\nContent-Type: text/html; charset=iso-8859-1\r\n",
+        )
+        .unwrap();
+        let url = url::Url::from_file_path(&file).unwrap().to_string();
+        let resp = read_file_url(&url).expect("读取成功");
+
+        // sidecar 指定了 Content-Type → 不应再用扩展名猜测（猜测值无 charset）
+        let ct = resp
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+            .expect("应有 Content-Type");
+        assert_eq!(
+            ct.1, "text/html; charset=iso-8859-1",
+            "sidecar Content-Type 须优先于猜测"
+        );
+        // 仅一个 Content-Type（不应猜测后再追加）
+        let ct_count = resp
+            .headers
+            .iter()
+            .filter(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+            .count();
+        assert_eq!(ct_count, 1, "Content-Type 不应重复");
+        // 自定义 header 注入
+        let xc = resp
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("x-custom"))
+            .expect("应有 X-Custom");
+        assert_eq!(xc.1, "probe-value");
+
+        let _ = std::fs::remove_file(file);
+        let _ = std::fs::remove_file(sidecar);
+    }
 }
