@@ -49,15 +49,21 @@ fetch_dir_html() {
   while IFS= read -r line; do
     local name="${line#\"name\": \"}"
     name="${name%\"}"
-    # 只取主线程 .html（排除 .worker.js / .any.js 变体、目录、crashtests）。
+    # 拉主线程 .html + .js 依赖（用例常引用同目录 .js 测试体，如 Document-createElementNS.js）。
+    # 排除 .worker.js / .any.js 变体（需 dedicated worker / 不同 harness）。
     case "${name}" in
-      *.html) fetch_raw "${dir}/${name}" ;;
+      *.html | *.js) fetch_raw "${dir}/${name}" ;;
     esac
   done <<< "${names}"
 }
 
-# testharness.js 为所有 dom 用例共享（canvas fetch 已拉则跳过）。
+# testharness.js / testharnessreport.js 为所有 dom 用例共享（canvas fetch 已拉 testharness.js 则跳过）。
+# testharnessreport.js：runner 内联替换为空，但仍需文件存在（prepare_harness_html 替换 src）。
 fetch_raw "resources/testharness.js"
+fetch_raw "resources/testharnessreport.js"
+# dom 根共享 JS（dom/nodes 用例引用 ../constants.js / ../common.js）。
+fetch_raw "dom/constants.js"
+fetch_raw "dom/common.js"
 
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"

@@ -2898,3 +2898,37 @@ fn native_element_namespace_uri_r3165() {
         "http://www.w3.org/2000/svg"
     );
 }
+
+/// `document.createProcessingInstruction(target, data)`（spec `dom-document-createprocessinginstruction`）。
+/// R7：valid 返 PI 对象（target/data/nodeName=target/nodeType=7）；invalid target/data 抛 InvalidCharacterError。
+#[test]
+fn native_document_create_processing_instruction_r7() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // valid：返 PI，target/data/nodeName/nodeType 正确。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const pi=__zw_native_get_document().createProcessingInstruction('xml-stylesheet','href=\"x.css\"');\
+             return pi.target+'/'+pi.data+'/'+pi.nodeName+'/'+pi.nodeType; })()"
+        ),
+        "xml-stylesheet/href=\"x.css\"/xml-stylesheet/7"
+    );
+    // invalid target（数字首 "0"）→ InvalidCharacterError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_get_document().createProcessingInstruction('0','x'); return 'no-throw'; }\
+             catch(e){ return e.name; } })()"
+        ),
+        "InvalidCharacterError"
+    );
+    // invalid data（含 `?>`）→ InvalidCharacterError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_get_document().createProcessingInstruction('ok','a?>b'); return 'no-throw'; }\
+             catch(e){ return e.name; } })()"
+        ),
+        "InvalidCharacterError"
+    );
+}

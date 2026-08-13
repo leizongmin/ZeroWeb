@@ -298,6 +298,15 @@ pub(super) fn build_and_cache_template(scope: &mut v8::PinScope) {
         factories::native_create_text_node_invoke,
     );
     set_method(scope, &tmpl, "createComment", factories::native_create_comment_invoke);
+    // `createProcessingInstruction(target, data)`（spec `dom-document-createprocessinginstruction`）：
+    // 校验 target（Name production）+ data（不含 `?>`）→ PI 节点（nodeType=7）。target/data 经
+    // NodeKind::ProcessingInstruction 读（.target/.data/.nodeName=target）。R7 补全。
+    set_method(
+        scope,
+        &tmpl,
+        "createProcessingInstruction",
+        factories::native_create_processing_instruction_invoke,
+    );
     set_method(
         scope,
         &tmpl,

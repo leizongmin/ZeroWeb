@@ -222,6 +222,44 @@ pub(super) fn native_create_comment_invoke(
     }
 }
 
+/// `document.createProcessingInstruction(target, data)`：spec `dom-document-createprocessinginstruction`。
+///
+/// 校验（spec 步骤，失败抛 InvalidCharacterError DOMException）：
+///  - target 须匹配 Name production（复用 [`super::is_valid_qualified_name`]）
+///  - data 不得含 `?>`（spec：包含则抛）
+///
+/// 合法 → `Document::create_processing_instruction` 造 PI NodeId（nodeType=7）→ native 对象（PI
+/// 共用 Element 模板，nodeType/target/data 经 NodeKind 读；`.target`=PI.target、`.data`=PI.data、
+/// `.nodeName`=target）。未挂载（**spec**：返游离 PI，需 appendChild 落位）。
+pub(super) fn native_create_processing_instruction_invoke(
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let target = string_arg(scope, &args, 0);
+    let data = string_arg(scope, &args, 1);
+    // spec 步骤 2：target 须合法 Name。
+    if !super::is_valid_qualified_name(&target) {
+        super::dom_exception::throw_dom_exception(
+            scope,
+            "InvalidCharacterError",
+            "The target provided is not a valid name.",
+        );
+        return;
+    }
+    // spec 步骤 3：data 不得含 `?>`。
+    if data.contains("?>") {
+        super::dom_exception::throw_dom_exception(scope, "InvalidCharacterError", "The data provided contains '?>'.");
+        return;
+    }
+    let Some(id) = with_dom_mut(|d| d.create_processing_instruction(&target, &data)) else {
+        return;
+    };
+    if let Some(obj) = get_or_create_native_element(scope, id) {
+        rv.set(obj.into());
+    }
+}
+
 /// `__zw_native_create_document_fragment()`：spec `dom-document-createdocumentfragment`——
 /// `Document::create_document_fragment` 造 DocumentFragment NodeId → native 对象（nodeType=11，**未挂载**）。
 /// appendChild/insertBefore fragment 经 Document 自动 flatten 子节点（spec：insert fragment 等价插其子）。

@@ -78,8 +78,8 @@ fn node_name(doc: &Document, id: NodeId) -> Option<String> {
         NodeKind::Comment(_) => "#comment".into(),
         NodeKind::Document(_) => "#document".into(),
         NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => "#document-fragment".into(),
-        // PI 的 nodeName=target、DocumentType=name；native 对象均为 Element，此处近似防御。
-        NodeKind::ProcessingInstruction(_) => "#processing-instruction".into(),
+        // spec `dom-processinginstruction-target`：PI.nodeName == target（同 .target）。
+        NodeKind::ProcessingInstruction(p) => p.target.clone(),
         NodeKind::DocumentType(_) => "#document-type".into(),
     })
 }
@@ -171,6 +171,50 @@ pub(super) fn native_node_value_getter(
         return;
     };
     if let Some(s) = v8::String::new(scope, &val) {
+        rv.set(s.into());
+    }
+}
+
+/// `ProcessingInstruction.target` getter（spec `dom-processinginstruction-target`）：PI.target。
+/// 非 PI 节点（Element/Text 等）→ undefined（accessor 注册于共享 Element 模板，仅 PI 返值）。
+pub(super) fn native_pi_target_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let target: Option<String> = with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::ProcessingInstruction(p) => Some(p.target.clone()),
+            _ => None,
+        })
+    })
+    .flatten();
+    if let Some(t) = target
+        && let Some(s) = v8::String::new(scope, &t)
+    {
+        rv.set(s.into());
+    }
+}
+
+/// `ProcessingInstruction.data` getter（spec `dom-characterdata-data`，PI 继承 CharacterData）：
+/// PI.data。非 PI → undefined。等同 nodeValue（PI.data），但 `.data` 是 spec IDL 属性。
+pub(super) fn native_pi_data_getter(
+    scope: &mut v8::PinScope,
+    _name: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut rv: v8::ReturnValue<v8::Value>,
+) {
+    let holder = args.holder();
+    let Some(id) = read_node_id(scope, &holder) else {
+        return;
+    };
+    let data: Option<String> = with_dom(|d| node_value(d, id)).flatten();
+    if let Some(s) = v8::String::new(scope, &data.unwrap_or_default()) {
         rv.set(s.into());
     }
 }

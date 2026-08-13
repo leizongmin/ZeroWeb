@@ -326,6 +326,14 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     if let Some(k) = v8::String::new(scope, "nodeValue") {
         tmpl.set_accessor_with_setter(k.into(), node::native_node_value_getter, node::native_node_value_setter);
     }
+    // `ProcessingInstruction.target`/`.data`（spec `dom-processinginstruction`）：PI 专用，注册于共享
+    // 模板（仅 PI 节点返值，非 PI → undefined/空）。R7 createProcessingInstruction 配套。
+    if let Some(k) = v8::String::new(scope, "target") {
+        tmpl.set_accessor(k.into(), node::native_pi_target_getter);
+    }
+    if let Some(k) = v8::String::new(scope, "data") {
+        tmpl.set_accessor(k.into(), node::native_pi_data_getter);
+    }
     // spec 方法（FunctionTemplate，args.this 读 NodeId）：getAttribute / hasAttribute /
     // setAttribute / removeAttribute。ObjectTemplate::set 须传 **Template**（非 Function 实例）——
     // FunctionTemplate 是 Template，实例化时各对象共享，args.this() 取回实例。
