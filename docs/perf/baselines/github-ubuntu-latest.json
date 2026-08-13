@@ -66,9 +66,9 @@
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
-      "p95": 36716.25609548167,
+      "p95": 35949.286875,
       "tier": "budget",
-      "tightened_at": "2026-08-10T20:50:16Z"
+      "tightened_at": "2026-08-13T15:21:14Z"
     },
     {
       "id": "mb/zero-canvas/stroke_rect_1000",
