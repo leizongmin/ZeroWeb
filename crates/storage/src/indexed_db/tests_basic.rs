@@ -496,6 +496,68 @@ fn test_get_all_from_index_sorted() {
     assert_eq!(results[2].value["name"], "Charlie");
 }
 
+/// R3385 回归锁定：`add` 在 `create_index` **之后** 插入记录时，索引条目经
+/// `commit_entry_from_record` 提交（而非 rebuild），返回结果仍须按索引键有序。
+/// 旧实现 commit 仅 push 不重排 → 失序，违反 W3C「getAllFromIndex 按索引键序」。
+/// （`test_get_all_from_index_sorted` 先 add 再 create_index 走 rebuild，漏此路径。）
+#[test]
+fn test_get_all_from_index_sorted_after_post_index_add_r3385() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("users", None, false).unwrap();
+    // 先建索引，再 add（走 commit_entry_from_record 路径）。
+    db.create_index("users", "name_idx", "name", false, false).unwrap();
+    db.add(
+        "users",
+        serde_json::json!({"name": "Charlie"}),
+        Some(IdbKey::String("u1".into())),
+    )
+    .unwrap();
+    db.add(
+        "users",
+        serde_json::json!({"name": "Alice"}),
+        Some(IdbKey::String("u2".into())),
+    )
+    .unwrap();
+    db.add(
+        "users",
+        serde_json::json!({"name": "Bob"}),
+        Some(IdbKey::String("u3".into())),
+    )
+    .unwrap();
+
+    let results = db.get_all_from_index("users", "name_idx").unwrap();
+    assert_eq!(results.len(), 3);
+    // 须按索引键（name 字典序）有序：Alice < Bob < Charlie。
+    assert_eq!(results[0].value["name"], "Alice");
+    assert_eq!(results[1].value["name"], "Bob");
+    assert_eq!(results[2].value["name"], "Charlie");
+}
+
+/// R3385 回归锁定：经索引的范围查询（get_all_from_index_with_range）在
+/// create_index 后 add 的记录上也须按键序返回完整结果集。
+#[test]
+fn test_get_all_from_index_with_range_after_post_index_add_r3385() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("users", None, false).unwrap();
+    db.create_index("users", "name_idx", "name", false, false).unwrap();
+    // 倒序插入（C, A, B），逼出 commit 路径的失序。
+    for (name, pk) in [("Charlie", "u1"), ("Alice", "u2"), ("Bob", "u3")] {
+        db.add(
+            "users",
+            serde_json::json!({"name": name}),
+            Some(IdbKey::String(pk.into())),
+        )
+        .unwrap();
+    }
+    // 范围 [A, D] 闭区间，应返回全部 3 条且有序（"Charlie" < "D"）。
+    let range = IdbKeyRange::bound(IdbKey::String("A".into()), IdbKey::String("D".into()), false, false);
+    let results = db.get_all_from_index_with_range("users", "name_idx", &range).unwrap();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].value["name"], "Alice");
+    assert_eq!(results[1].value["name"], "Bob");
+    assert_eq!(results[2].value["name"], "Charlie");
+}
+
 #[test]
 fn test_get_all_from_index_with_range() {
     let mut db = IdbDatabase::new("test", 1);

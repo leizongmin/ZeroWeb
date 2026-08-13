@@ -270,10 +270,7 @@ impl IdbIndex {
         for record in records {
             self.add_entry_from_record(record)?;
         }
-        self.entries.sort_by(|a, b| match a.index_key.cmp(&b.index_key) {
-            Ordering::Equal => a.primary_key.cmp(&b.primary_key),
-            other => other,
-        });
+        self.sort_entries();
         Ok(())
     }
 
@@ -305,6 +302,11 @@ impl IdbIndex {
 
     /// 仅提交（不校验）——从 record 提取 keys 批量 push。供 add/put 预校验（check_unique）全过后调用，
     /// 避免重复校验。rebuild 等无预校验场景用 [`add_entry_from_record`]（校验 + 提交）。
+    ///
+    /// R3385：push 后须重排，维持 [`sorted_entries`] 的「按索引键排序，相同索引键按主键排序」
+    /// 不变量。旧实现仅 push 不重排，致 `add`/`put` 后 `entries` 失序，
+    /// `get_all_from_index` / `get_all_from_index_with_range` / 经索引游标返回的记录违反
+    /// W3C IndexedDB「按索引键有序」契约（cursor / getAllFromIndex 须按 index-key 序）。
     fn commit_entry_from_record(&mut self, record: &IdbRecord) {
         let primary_key = record.key.clone();
         let keys = self.extract_keys(&record.value);
@@ -314,6 +316,15 @@ impl IdbIndex {
                 primary_key: primary_key.clone(),
             });
         }
+        self.sort_entries();
+    }
+
+    /// 按（索引键，主键）字典序重排条目，与 [`rebuild`] 的排序口径一致。
+    fn sort_entries(&mut self) {
+        self.entries.sort_by(|a, b| match a.index_key.cmp(&b.index_key) {
+            Ordering::Equal => a.primary_key.cmp(&b.primary_key),
+            other => other,
+        });
     }
 
     /// 从单条记录添加索引条目（校验 + 提交，原子——R3228：部分 key 违 unique 不再部分提交）。
