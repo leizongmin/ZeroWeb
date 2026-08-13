@@ -9,6 +9,21 @@ RESOURCE_LEDGER="${RUNNER_DIR}/imported-resources.txt"
 
 missing=0
 
+# POSIX 可移植路径归一化（解析 "."/".." 但不要求文件存在，等价 GNU `realpath -m`；
+# macOS 的 BSD realpath 不支持 -m，CI macos runner 实测 "realpath: illegal option -- m"）。
+normalize_web_path() {
+  local path="$1" out="" segment
+  local IFS='/'
+  for segment in ${path}; do
+    case "${segment}" in
+      '' | '.') continue ;;
+      '..') out="${out%/*}" ;;
+      *) out="${out}/${segment}" ;;
+    esac
+  done
+  printf '%s' "${out}"
+}
+
 inspect_font_urls() {
   local file="$1"
   local owner="$2"
@@ -25,7 +40,7 @@ inspect_font_urls() {
     case "${url}" in
       data:*|http:*|https:*) continue ;;
       /*) relative="${url#/}" ;;
-      *) relative="$(realpath -m "/$(dirname "${web_path}")/${url}")"; relative="${relative#/}" ;;
+      *) relative="$(normalize_web_path "/$(dirname "${web_path}")/${url}")"; relative="${relative#/}" ;;
     esac
     resolved="${DATA_DIR}/${relative}"
 
@@ -59,7 +74,7 @@ inspect_page() {
       http:*|https:*) continue ;;
       /*) stylesheet_relative="${href#/}" ;;
       *)
-        stylesheet_relative="$(realpath -m "/$(dirname "${page}")/${href}")"
+        stylesheet_relative="$(normalize_web_path "/$(dirname "${page}")/${href}")"
         stylesheet_relative="${stylesheet_relative#/}"
         ;;
     esac
