@@ -741,37 +741,49 @@ fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
     if stops.is_empty() {
         return Color::BLACK;
     }
-    if stops.len() == 1 {
-        return stops[0].color;
-    }
     let t = offset.clamp(0.0, 1.0);
-    // 偏移量在第一个停止点之前
-    if t <= stops[0].offset {
-        return stops[0].color;
-    }
-    // 偏移量在最后一个停止点之后
-    if t >= stops[stops.len() - 1].offset {
-        return stops[stops.len() - 1].color;
-    }
-    // 找到包围 t 的两个停止点
-    for i in 0..stops.len() - 1 {
-        if t >= stops[i].offset && t <= stops[i + 1].offset {
-            let span = stops[i + 1].offset - stops[i].offset;
-            if span < f32::EPSILON {
-                return stops[i].color;
+    // R34xx：先按 offset 稳定排序（spec：color stops sorted by offset——添加序可能乱序，
+    // 0.75 插在 0.5 中间会破坏同 offset 组连续性）；同 offset 保持添加序（稳定排序）。
+    let mut sorted: Vec<&GradientStop> = stops.iter().collect();
+    sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
+    // R34xx：同 offset 组（spec：同 offset 多个 stop，最后添加者生效）——插值对 =
+    // (前组最后, 后组第一)（2d.gradient.interpolate.overlap：t=0.245 用 0.25 组第一蓝、
+    // t=0.255 用 0.25 组最后黄——Skia 相邻对语义）。
+    let mut groups: Vec<(f32, Color, Color)> = Vec::new(); // (offset, first, last)
+    for s in &sorted {
+        if let Some(g) = groups.last_mut() {
+            if (g.0 - s.offset).abs() < f32::EPSILON {
+                g.2 = s.color;
+                continue;
             }
-            let frac = (t - stops[i].offset) / span;
-            let c0 = stops[i].color;
-            let c1 = stops[i + 1].color;
+        }
+        groups.push((s.offset, s.color, s.color));
+    }
+    if t <= groups[0].0 {
+        return groups[0].2;
+    }
+    let last = groups[groups.len() - 1];
+    if t >= last.0 {
+        return last.2;
+    }
+    for i in 0..groups.len() - 1 {
+        let (o0, _f0, l0) = groups[i];
+        let (o1, f1, _l1) = groups[i + 1];
+        if t >= o0 && t <= o1 {
+            let span = o1 - o0;
+            if span < f32::EPSILON {
+                continue;
+            }
+            let frac = (t - o0) / span;
             return Color::rgba(
-                lerp_u8(c0.r, c1.r, frac),
-                lerp_u8(c0.g, c1.g, frac),
-                lerp_u8(c0.b, c1.b, frac),
-                lerp_u8(c0.a, c1.a, frac),
+                lerp_u8(l0.r, f1.r, frac),
+                lerp_u8(l0.g, f1.g, frac),
+                lerp_u8(l0.b, f1.b, frac),
+                lerp_u8(l0.a, f1.a, frac),
             );
         }
     }
-    stops[stops.len() - 1].color
+    last.2
 }
 
 /// 线性插值两个 u8 值。
