@@ -15,4 +15,6 @@ The shaping path applied variation coordinates through `rustybuzz::Face::set_var
 
 Keep the production gate off until the same ordered axis vector is carried through `GlyphPrimitive`, raster cache keys, FreeType variation coordinates, renderer IPC, browser, and compositor reconstruction. Use a variable font with a width axis to test shaping and cache isolation because weight-only axes may change outlines without changing advances.
 
+FreeType faces are mutable and cached across glyphs. Every raster call must therefore apply the requested full coordinate vector, including an explicit reset to axis defaults when the vector is empty. Glyph bitmap and GPU atlas keys must include the ordered `(tag, value.to_bits())` vector; otherwise two instances of the same font, glyph, and size alias even though their outlines differ.
+
 Chromium Oracle is the activation gate. A shaping-only implementation is infrastructure, not a completed visual implementation.

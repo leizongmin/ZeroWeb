@@ -54,26 +54,58 @@ pub struct GlyphAtlasKey {
     pub font_glyph_index: Option<u16>,
     /// 字体大小（像素，取整）
     pub size_px: u16,
+    /// OpenType axis 坐标；浮点值按 IEEE-754 bits 参与键比较。
+    variation_coordinates: Box<[([u8; 4], u32)]>,
 }
 
 impl GlyphAtlasKey {
     /// 创建新的 atlas 键
     pub fn new(font_id: u32, codepoint: u32, size_px: f32) -> Self {
+        Self::new_with_variations(font_id, codepoint, size_px, &[])
+    }
+
+    /// 创建包含 OpenType axis 坐标的 atlas 键。
+    pub fn new_with_variations(
+        font_id: u32,
+        codepoint: u32,
+        size_px: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> Self {
         Self {
             font_id,
             codepoint,
             font_glyph_index: None,
             size_px: size_px.round() as u16,
+            variation_coordinates: variations
+                .iter()
+                .copied()
+                .map(crate::font::OpenTypeVariation::cache_key)
+                .collect(),
         }
     }
 
     /// 创建字体内部 glyph index 的 atlas 键。
     pub fn new_indexed(font_id: u32, glyph_index: u16, size_px: f32) -> Self {
+        Self::new_indexed_with_variations(font_id, glyph_index, size_px, &[])
+    }
+
+    /// 创建包含 OpenType axis 坐标的字体内部 glyph index atlas 键。
+    pub fn new_indexed_with_variations(
+        font_id: u32,
+        glyph_index: u16,
+        size_px: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> Self {
         Self {
             font_id,
             codepoint: glyph_index as u32,
             font_glyph_index: Some(glyph_index),
             size_px: size_px.round() as u16,
+            variation_coordinates: variations
+                .iter()
+                .copied()
+                .map(crate::font::OpenTypeVariation::cache_key)
+                .collect(),
         }
     }
 }
@@ -556,6 +588,24 @@ mod tests {
         let indexed = GlyphAtlasKey::new_indexed(5, 65, 20.0);
 
         assert_ne!(unicode, indexed);
+    }
+
+    #[test]
+    fn variation_coordinates_isolate_atlas_keys() {
+        let condensed = GlyphAtlasKey::new_indexed_with_variations(
+            5,
+            65,
+            20.0,
+            &[crate::font::OpenTypeVariation::new(*b"wdth", 75.0)],
+        );
+        let expanded = GlyphAtlasKey::new_indexed_with_variations(
+            5,
+            65,
+            20.0,
+            &[crate::font::OpenTypeVariation::new(*b"wdth", 125.0)],
+        );
+
+        assert_ne!(condensed, expanded);
     }
 
     /// 测试 atlas 放置 0 高度 glyph 仍然成功

@@ -9,234 +9,8 @@ mod metrics;
 mod shaping;
 mod unicode_range;
 
-/// FreeType 光栅化路径（`freetype-raster` feature，默认关）。
-///
-/// Phase 2（fontdue→chromium-matching 光栅化替换）的实验通道：用 FreeType
-/// `FT_Render_Glyph`（chromium Linux 同栈）替换 fontdue tight-ink 光栅化。
-/// feature 关时整个模块不编译，CI / 默认构建保持纯 Rust。
-///
-/// GlyphBitmap 坐标约定：paint 经 `glyph_top_left(x, baseline_y, x_offset, y_offset, height)`
-/// = `(x + x_offset, baseline_y − y_offset − height)` 定位位图左上角。FreeType
-/// `bitmap_left`（pen→位图左缘 px）`bitmap_top`（baseline→位图顶 px，向上正）映射：
-/// 位图顶 = baseline − bitmap_top = baseline − y_offset − height ⇒ **y_offset = bitmap_top − height**。
 #[cfg(feature = "freetype-raster")]
-mod freetype_raster {
-    use crate::font::{FontError, GlyphBitmap};
-    use std::cell::{OnceCell, RefCell};
-    use std::collections::HashMap;
-
-    enum GlyphSelector {
-        CodePoint(char),
-        GlyphIndex(u16),
-    }
-
-    thread_local! {
-        static FT_LIB: OnceCell<freetype::Library> = const { OnceCell::new() };
-        // face 缓存（2026-08-07 CJK 优化）：Face<Rc<Vec<u8>>> 自含字体字节，
-        // 一次解析（19MB TTC ~6.6ms）后复用——此前每次 new_memory_face2
-        // 重新解析整字体是 CJK 栅格化重尾根因（探针实测 6.6ms/字 → 目标 <0.1ms）。
-        // 容量上限 8（按字体字节 hash 键），超限清空重建（低频字体轮换场景）。
-        static FT_FACE_CACHE: RefCell<HashMap<u64, freetype::Face<Vec<u8>>>> = RefCell::new(HashMap::new());
-        // 栅格化统计（env CJK_RASTER_STAT=1 时打印；诊断用）
-        static RASTER_STAT: RefCell<(u64, f64)> = const { RefCell::new((0, 0.0)) };
-    }
-
-    const FACE_CACHE_MAX: usize = 8;
-
-    /// 采样 FNV-1a 哈希（缓存键；O(1)）。
-    ///
-    /// 2026-08-07 探针实测：全量遍历 19MB CJK TTC 在 debug 下 ~50ms/次
-    ///（CJK 栅格化重尾主因之一）——改为**前 4KB + 总长**采样（不同字体的
-    /// 头部表数据几乎必然不同，冲突概率可忽略；每次调用成本 ~微秒）。
-    fn bytes_hash(bytes: &[u8], face_index: u32) -> u64 {
-        let window = &bytes[..bytes.len().min(4096)];
-        let mut h: u64 = 0xcbf29ce484222325;
-        for &b in window {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x100000001b3);
-        }
-        h ^= bytes.len() as u64;
-        h ^= u64::from(face_index) << 32;
-        h
-    }
-
-    /// 在线程局部 FreeType Library 上跑一次闭包（懒初始化）。
-    fn with_lib<R>(f: impl FnOnce(&freetype::Library) -> R) -> R {
-        FT_LIB.with(|cell| {
-            let lib = cell.get_or_init(|| freetype::Library::init().expect("FreeType Library::init failed"));
-            f(lib)
-        })
-    }
-
-    /// 用 FreeType 光栅化单字形 → GlyphBitmap（与 fontdue 路径同坐标约定）。
-    ///
-    /// `font_bytes`：字体 sfnt 字节（来自 FontLoader.font_data）。`size`：字号 px。
-    /// 失败（字形缺失 / FreeType 错误）由调用方回退 fontdue。
-    ///
-    /// 性能（2026-08-07 探针，NotoSansCJK 19MB）：face 缓存（RefCell borrow
-    /// 贯穿，免 clone——Face<Vec<u8>> clone 会复制 19MB）后每次栅格化不再
-    /// 重新解析字体（6.6ms/字 → 目标 <0.1ms/字）。
-    pub(crate) fn rasterize(
-        font_bytes: &[u8],
-        face_index: u32,
-        code_point: char,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
-        if size <= 0.0 {
-            return Err(FontError::NotFound(format!("non-positive size {size}")));
-        }
-        let _raster_t = std::time::Instant::now();
-        let result = rasterize_inner(font_bytes, face_index, GlyphSelector::CodePoint(code_point), size);
-        // OnceLock 缓存 env 状态（避免每字一次 std::env::var——热路径）
-        static RASTER_STAT_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let raster_stat_enabled = *RASTER_STAT_ENABLED.get_or_init(|| std::env::var("CJK_RASTER_STAT").is_ok());
-        if raster_stat_enabled {
-            RASTER_STAT.with(|s| {
-                let mut s = s.borrow_mut();
-                s.0 += 1;
-                s.1 += _raster_t.elapsed().as_secs_f64() * 1000.0;
-                if s.0 % 50 == 0 {
-                    eprintln!(
-                        "[raster-stat] count={} total={:.0}ms avg={:.3}ms",
-                        s.0,
-                        s.1,
-                        s.1 / s.0 as f64
-                    );
-                }
-            });
-        }
-        result
-    }
-
-    /// 用字体内部 glyph index 光栅化整形后的字形。
-    pub(crate) fn rasterize_indexed(
-        font_bytes: &[u8],
-        face_index: u32,
-        glyph_index: u16,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
-        if size <= 0.0 {
-            return Err(FontError::NotFound(format!("non-positive size {size}")));
-        }
-        rasterize_inner(font_bytes, face_index, GlyphSelector::GlyphIndex(glyph_index), size)
-    }
-
-    fn rasterize_inner(
-        font_bytes: &[u8],
-        face_index: u32,
-        selector: GlyphSelector,
-        size: f32,
-    ) -> Result<GlyphBitmap, FontError> {
-        // thread_local with 不允许借用逃逸：cache borrow 与 face 使用都在闭包内
-        FT_FACE_CACHE.with(|cache_cell| {
-            let mut cache = cache_cell.borrow_mut();
-            with_lib(|lib| {
-                let key = bytes_hash(font_bytes, face_index);
-                if !cache.contains_key(&key) {
-                    if cache.len() >= FACE_CACHE_MAX {
-                        cache.clear(); // 低频字体轮换：清空重建
-                    }
-                    let face = lib
-                        .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
-                        .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
-                    cache.insert(key, face);
-                }
-                // face 方法均为 &self：RefCell borrow 贯穿，免 clone
-                let face = cache.get(&key).expect("face 已插入");
-                face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
-                    .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
-                let idx = match selector {
-                    GlyphSelector::CodePoint(code_point) => face
-                        .get_char_index(code_point as usize)
-                        .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?,
-                    GlyphSelector::GlyphIndex(glyph_index) => glyph_index as u32,
-                };
-                // LoadFlag::DEFAULT（含 TARGET_NORMAL = full hinting）。R1069 A/B 实测（css-text
-                // Oracle 1650 案）：DEFAULT 381 pass > LIGHT(TARGET_LIGHT) 371 > NO_HINTING 357 ≈
-                // fontdue 基线。NOHINT==fontdue 证 fontdue tight-ink 即 unhinted，FreeType full
-                // hinting 向 chromium（hinted）收敛——故 DEFAULT 为最优，勿改 LIGHT/NOHINT。
-                face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
-                    .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
-                let glyph = face.glyph();
-                glyph
-                    .render_glyph(freetype::RenderMode::Normal)
-                    .map_err(|e| FontError::ParseFailed(format!("FreeType render_glyph: {e:?}")))?;
-                let bitmap = glyph.bitmap();
-                let width = bitmap.width().max(0) as u16;
-                let height = bitmap.rows().max(0) as u16;
-                let pitch = bitmap.pitch().unsigned_abs() as usize;
-                // 灰度位图按行拷贝到紧凑 width×height 缓冲（pitch 可 ≥ width）。
-                let mut data = vec![0u8; width as usize * height as usize];
-                if width > 0 && height > 0 && pitch > 0 {
-                    let src = bitmap.buffer();
-                    let copy_w = (width as usize).min(pitch).min(src.len());
-                    for y in 0..height as usize {
-                        let src_off = y * pitch;
-                        if src_off + copy_w <= src.len() {
-                            let dst_off = y * width as usize;
-                            data[dst_off..dst_off + copy_w].copy_from_slice(&src[src_off..src_off + copy_w]);
-                        }
-                    }
-                }
-                let x_offset = glyph.bitmap_left() as i16;
-                let top = glyph.bitmap_top();
-                // y_offset = bitmap_top − height（见模块注释坐标推导）。
-                let y_offset = (top - height as i32) as i16;
-                let advance = glyph.advance().x as f64 / 64.0;
-                Ok(GlyphBitmap {
-                    data,
-                    width,
-                    height,
-                    x_offset,
-                    y_offset,
-                    advance: advance as f32,
-                })
-            })
-        })
-    }
-
-    /// 轻量测量 advance（不产位图）——与 [`rasterize`] 完全同源：同一 face
-    /// 缓存，`load_glyph`（FT_Load_Glyph 即计算 advance 字段，render 只产
-    /// 位图）后直接读 advance，返回 FreeType 26.6 定点量化值。
-    ///
-    /// 布局测量与绘制光栅化必须用同源值，否则宽度漂移（fontdue metrics 是
-    /// 浮点，与 FreeType 定点有约 0.5% 差异，会破坏 reftest 像素对比）。
-    pub(crate) fn measure_advance(
-        font_bytes: &[u8],
-        face_index: u32,
-        code_point: char,
-        size: f32,
-    ) -> Result<f32, FontError> {
-        if size <= 0.0 {
-            return Err(FontError::NotFound(format!("non-positive size {size}")));
-        }
-        FT_FACE_CACHE.with(|cache_cell| {
-            let mut cache = cache_cell.borrow_mut();
-            with_lib(|lib| {
-                let key = bytes_hash(font_bytes, face_index);
-                if !cache.contains_key(&key) {
-                    if cache.len() >= FACE_CACHE_MAX {
-                        cache.clear(); // 低频字体轮换：清空重建
-                    }
-                    let face = lib
-                        .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
-                        .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
-                    cache.insert(key, face);
-                }
-                // face 方法均为 &self：RefCell borrow 贯穿，免 clone
-                let face = cache.get(&key).expect("face 已插入");
-                face.set_char_size((size * 64.0) as isize, (size * 64.0) as isize, 0, 0)
-                    .map_err(|e| FontError::ParseFailed(format!("FreeType set_char_size: {e:?}")))?;
-                let idx = face
-                    .get_char_index(code_point as usize)
-                    .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
-                face.load_glyph(idx, freetype::face::LoadFlag::DEFAULT)
-                    .map_err(|e| FontError::ParseFailed(format!("FreeType load_glyph: {e:?}")))?;
-                Ok((face.glyph().advance().x as f64 / 64.0) as f32)
-            })
-        })
-    }
-}
+mod freetype_raster;
 
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
@@ -529,6 +303,17 @@ impl FontLoader {
 
     /// 渲染指定字符的 glyph
     pub fn rasterize_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+        self.rasterize_glyph_with_variations(font_id, code_point, size, &[])
+    }
+
+    /// 使用指定 OpenType axis 坐标渲染字符 glyph。
+    pub fn rasterize_glyph_with_variations(
+        &self,
+        font_id: u32,
+        code_point: char,
+        size: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> Result<GlyphBitmap, FontError> {
         // Ahem 特殊处理：渲染为完美填充方块，匹配 Chrome/Skia 的渲染结果
         if self.ahem_font_id == Some(font_id) && !code_point.is_whitespace() {
             return self.rasterize_ahem_glyph(font_id, code_point, size);
@@ -537,10 +322,18 @@ impl FontLoader {
         // Phase 2（freetype-raster feature）：非-Ahem 字形优先 FreeType 光栅化
         //（chromium Linux 同栈），失败回退 fontdue。feature 关时不编译，走纯 fontdue。
         #[cfg(feature = "freetype-raster")]
-        if let Some(bytes) = self.font_data.get(&font_id)
-            && let Ok(bm) = freetype_raster::rasterize(bytes, self.face_index(font_id), code_point, size)
-        {
-            return Ok(bm);
+        if let Some(bytes) = self.font_data.get(&font_id) {
+            match freetype_raster::rasterize(bytes, self.face_index(font_id), code_point, size, variations) {
+                Ok(bitmap) => return Ok(bitmap),
+                Err(error) if !variations.is_empty() => return Err(error),
+                Err(_) => {}
+            }
+        }
+        #[cfg(not(feature = "freetype-raster"))]
+        if !variations.is_empty() {
+            return Err(FontError::ParseFailed(
+                "variation-aware rasterization requires freetype-raster".into(),
+            ));
         }
         // FreeType 失败（字形缺失等）→ 回退 fontdue 路径（下方 fontdue 代码）。
 
@@ -567,6 +360,17 @@ impl FontLoader {
     /// 本路径不做字体回退：glyph index 只在产生它的字体 face 内有意义，调用方
     /// 必须同时携带对应的 `font_id`。
     pub fn rasterize_glyph_index(&self, font_id: u32, glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
+        self.rasterize_glyph_index_with_variations(font_id, glyph_index, size, &[])
+    }
+
+    /// 使用指定 OpenType axis 坐标渲染字体内部 glyph index。
+    pub fn rasterize_glyph_index_with_variations(
+        &self,
+        font_id: u32,
+        glyph_index: u16,
+        size: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> Result<GlyphBitmap, FontError> {
         if let Some(bytes) = self.font_data.get(&font_id)
             && let Ok(face) = rustybuzz::ttf_parser::Face::parse(bytes, self.face_index(font_id))
             && glyph_index >= face.number_of_glyphs()
@@ -578,10 +382,18 @@ impl FontLoader {
         }
 
         #[cfg(feature = "freetype-raster")]
-        if let Some(bytes) = self.font_data.get(&font_id)
-            && let Ok(bitmap) = freetype_raster::rasterize_indexed(bytes, self.face_index(font_id), glyph_index, size)
-        {
-            return Ok(bitmap);
+        if let Some(bytes) = self.font_data.get(&font_id) {
+            match freetype_raster::rasterize_indexed(bytes, self.face_index(font_id), glyph_index, size, variations) {
+                Ok(bitmap) => return Ok(bitmap),
+                Err(error) if !variations.is_empty() => return Err(error),
+                Err(_) => {}
+            }
+        }
+        #[cfg(not(feature = "freetype-raster"))]
+        if !variations.is_empty() {
+            return Err(FontError::ParseFailed(
+                "variation-aware rasterization requires freetype-raster".into(),
+            ));
         }
 
         let font = self
@@ -973,7 +785,8 @@ mod tests {
     fn freetype_rasterize_ahem_glyph_end_to_end() {
         // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
         const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
-        let bm = freetype_raster::rasterize(AHEM_TTF, 0, 'X', 20.0).expect("FreeType should rasterize Ahem 'X' @20px");
+        let bm =
+            freetype_raster::rasterize(AHEM_TTF, 0, 'X', 20.0, &[]).expect("FreeType should rasterize Ahem 'X' @20px");
         // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
         assert!(
             bm.width > 0 && bm.height > 0,
@@ -1152,6 +965,52 @@ mod tests {
             duplicate.font_instance_ids.get(&right_id),
             "new fonts in separate duplicates require distinct cache identities"
         );
+    }
+
+    #[cfg(feature = "freetype-raster")]
+    #[test]
+    fn variable_axis_changes_freetype_outline_and_resets_to_default() {
+        const ROBOTO_EXTREMO: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/RobotoExtremo-VF.subset.ttf");
+
+        let mut loader = FontLoader::new();
+        let font_id = loader
+            .load_font(ROBOTO_EXTREMO)
+            .expect("load RobotoExtremo variable font");
+        let glyph_index = loader.get(font_id).expect("loaded font").lookup_glyph_index('e');
+        let default_before = loader
+            .rasterize_glyph_index(font_id, glyph_index, 64.0)
+            .expect("rasterize default instance");
+        let condensed = loader
+            .rasterize_glyph_index_with_variations(
+                font_id,
+                glyph_index,
+                64.0,
+                &[crate::font::OpenTypeVariation::new(*b"wdth", 75.0)],
+            )
+            .expect("rasterize condensed instance");
+        let expanded = loader
+            .rasterize_glyph_index_with_variations(
+                font_id,
+                glyph_index,
+                64.0,
+                &[crate::font::OpenTypeVariation::new(*b"wdth", 125.0)],
+            )
+            .expect("rasterize expanded instance");
+        let default_after = loader
+            .rasterize_glyph_index(font_id, glyph_index, 64.0)
+            .expect("reset to default instance");
+
+        assert_ne!(
+            (condensed.width, condensed.x_offset, condensed.advance, &condensed.data),
+            (expanded.width, expanded.x_offset, expanded.advance, &expanded.data),
+            "wdth axis must change the rasterized glyph"
+        );
+        assert_eq!(default_after.width, default_before.width);
+        assert_eq!(default_after.height, default_before.height);
+        assert_eq!(default_after.x_offset, default_before.x_offset);
+        assert_eq!(default_after.y_offset, default_before.y_offset);
+        assert_eq!(default_after.advance, default_before.advance);
+        assert_eq!(default_after.data, default_before.data);
     }
 
     #[test]
@@ -2020,7 +1879,7 @@ mod cjk_raster_probe {
         for i in 0..50 {
             let t = Instant::now();
             for &c in &chars {
-                if freetype_raster::rasterize(&bytes, 0, c, size).is_ok() {
+                if freetype_raster::rasterize(&bytes, 0, c, size, &[]).is_ok() {
                     ok += 1;
                 }
             }
