@@ -487,6 +487,7 @@ impl RenderPipeline {
                         ex_height: f64::from(metrics.ex_height),
                         cap_height: f64::from(metrics.cap_height),
                         ch_width: f64::from(metrics.ch_width),
+                        ic_width: f64::from(metrics.ic_width),
                         size_adjust: f64::from(metrics.size_adjust),
                     },
                 )

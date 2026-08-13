@@ -32,6 +32,8 @@ pub struct FontFamilyMetrics {
     pub cap_height: f32,
     /// `0` glyph advance / em。
     pub ch_width: f32,
+    /// U+6C34 glyph advance / em。
+    pub ic_width: f32,
     /// `@font-face size-adjust` 缩放因子。
     pub size_adjust: f32,
 }

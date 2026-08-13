@@ -136,6 +136,8 @@ fn length_to_px(value: &LengthValue, container_width: f32, font_size_px: f32) ->
         LengthValue::Vmax(v) => (*v as f32) * 8.0,
         LengthValue::Ch(v) => *v as f32 * 8.0,
         LengthValue::Rch(v) => *v as f32 * 8.0,
+        LengthValue::Ic(v) => *v as f32 * font_size_px,
+        LengthValue::Ric(v) => *v as f32 * 16.0,
         LengthValue::FitContent(inner) => length_to_px(inner, container_width, font_size_px),
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
     }

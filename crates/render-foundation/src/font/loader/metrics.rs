@@ -131,6 +131,9 @@ impl FontLoader {
                 let ch_width = self
                     .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ChWidth)
                     .unwrap_or(0.5);
+                let ic_width = self
+                    .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::IcWidth)
+                    .unwrap_or(1.0);
                 let size_adjust = self.font_size_scale(id);
                 Some((
                     family,
@@ -142,6 +145,7 @@ impl FontLoader {
                         ex_height,
                         cap_height,
                         ch_width,
+                        ic_width,
                         size_adjust,
                     },
                 ))
@@ -215,6 +219,10 @@ mod tests {
         assert_eq!(
             Some(metrics.cap_height),
             loader.font_metric_aspect(font_id, crate::font::FontSizeAdjustMetric::CapHeight)
+        );
+        assert_eq!(
+            Some(metrics.ic_width),
+            loader.font_metric_aspect(font_id, crate::font::FontSizeAdjustMetric::IcWidth)
         );
     }
 }

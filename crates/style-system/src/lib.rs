@@ -268,7 +268,7 @@ pub struct StyleSystem {
     registered_properties: HashMap<String, RegisteredProperty>,
     /// `@font-feature-values` family-scoped alias 表。
     font_feature_values: FontFeatureValuesRegistry,
-    /// 可作为 first available font 的 family → (`ex`, `ch`) aspect。
+    /// 可作为 first available font 的 family → 字体相对单位 aspect。
     font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
     root_x_height: Option<f64>,
@@ -276,6 +276,8 @@ pub struct StyleSystem {
     root_cap_height: Option<f64>,
     /// 根元素字体的已用 U+0030 advance（px），用于 `rch`。
     root_ch_width: Option<f64>,
+    /// 根元素字体的已用 U+6C34 advance（px），用于 `ric`。
+    root_ic_width: Option<f64>,
     /// 视口宽度（px），用于 vh/vw 计算。
     viewport_width: Option<f64>,
     /// 视口高度（px），用于 vh/vw 计算。
@@ -298,6 +300,7 @@ impl StyleSystem {
             root_x_height: None,
             root_cap_height: None,
             root_ch_width: None,
+            root_ic_width: None,
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -364,6 +367,7 @@ impl StyleSystem {
         self.root_x_height = None;
         self.root_cap_height = None;
         self.root_ch_width = None;
+        self.root_ic_width = None;
 
         // 预扫描所有样式表的 `@property` 规则，注册自定义属性（syntax/inherits/initial-value）。
         // 注册信息在 `gather_custom_properties` 中为未显式声明的注册属性提供 initial-value
@@ -1404,6 +1408,7 @@ impl StyleSystem {
                 root_x_height: self.root_x_height,
                 root_cap_height: self.root_cap_height,
                 root_ch_width: self.root_ch_width,
+                root_ic_width: self.root_ic_width,
             },
         );
 
@@ -1447,6 +1452,7 @@ impl StyleSystem {
             self.root_x_height = Some(root_font_size * root_metrics.map_or(0.8, |metrics| metrics.ex_height));
             self.root_cap_height = Some(root_font_size * root_metrics.map_or(0.8, |metrics| metrics.cap_height));
             self.root_ch_width = Some(root_font_size * root_metrics.map_or(0.5, |metrics| metrics.ch_width));
+            self.root_ic_width = Some(root_font_size * root_metrics.map_or(1.0, |metrics| metrics.ic_width));
         }
         resolved
     }

@@ -264,6 +264,8 @@ fn test_eval_calc_with_context_relative_units() {
         cap_height: Some(11.0),        // 11px
         root_cap_height: Some(11.0),   // 11px
         root_ch_width: Some(8.0),      // 8px
+        ic_width: Some(16.0),          // 16px
+        root_ic_width: Some(16.0),     // 16px
         viewport_height: Some(1000.0), // 1000px
         viewport_width: Some(800.0),   // 800px
         ch_width: Some(8.0),           // 8px (average character width)
@@ -530,6 +532,8 @@ fn test_complex_calc_expression_chain() {
         cap_height: Some(11.0),
         root_cap_height: Some(11.0),
         root_ch_width: Some(8.0),
+        ic_width: Some(16.0),
+        root_ic_width: Some(16.0),
         viewport_height: Some(1000.0),
         viewport_width: Some(800.0),
         ch_width: Some(8.0),

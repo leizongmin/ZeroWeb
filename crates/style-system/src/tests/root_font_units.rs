@@ -27,6 +27,7 @@ fn root_font_units_use_root_metrics_and_font_size_ex_uses_parent_metrics() {
             width: calc(2rex);
             height: 1rch;
             min-width: 1rcap;
+            max-width: 1ric;
         }
     "#;
     let mut metrics = HashMap::new();
@@ -36,6 +37,7 @@ fn root_font_units_use_root_metrics_and_font_size_ex_uses_parent_metrics() {
             ex_height: 0.25,
             cap_height: 0.7,
             ch_width: 0.5,
+            ic_width: 0.6,
             size_adjust: 1.0,
         },
     );
@@ -45,6 +47,7 @@ fn root_font_units_use_root_metrics_and_font_size_ex_uses_parent_metrics() {
             ex_height: 0.75,
             cap_height: 0.4,
             ch_width: 0.9,
+            ic_width: 0.3,
             size_adjust: 1.0,
         },
     );
@@ -58,4 +61,5 @@ fn root_font_units_use_root_metrics_and_font_size_ex_uses_parent_metrics() {
     assert_eq!(styles[&inner].width, LengthValue::Px(10.0));
     assert_eq!(styles[&inner].height, LengthValue::Px(10.0));
     assert_eq!(styles[&inner].min_width, LengthValue::Px(14.0));
+    assert_eq!(styles[&inner].max_width, LengthValue::Px(12.0));
 }

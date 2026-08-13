@@ -21,6 +21,8 @@ pub struct FontRelativeMetrics {
     pub cap_height: f64,
     /// U+0030 advance / em，用于 `ch`。
     pub ch_width: f64,
+    /// U+6C34 advance / em，用于 `ic`。
+    pub ic_width: f64,
     /// `@font-face size-adjust` 缩放因子。
     pub size_adjust: f64,
 }
@@ -30,7 +32,7 @@ pub struct FontRelativeMetrics {
 pub struct FontRelativeContext {
     /// 当前元素 first available font 的度量。
     pub current: Option<FontRelativeMetrics>,
-    /// 父元素 first available font 的度量，用于 `font-size` 中的 `ex`/`cap`/`ch`。
+    /// 父元素 first available font 的度量，用于 `font-size` 中的字体相对单位。
     pub parent: Option<FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
     pub root_x_height: Option<f64>,
@@ -38,6 +40,8 @@ pub struct FontRelativeContext {
     pub root_cap_height: Option<f64>,
     /// 根元素字体的已用 U+0030 advance（px），用于 `rch`。
     pub root_ch_width: Option<f64>,
+    /// 根元素字体的已用 U+6C34 advance（px），用于 `ric`。
+    pub root_ic_width: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -45,6 +49,7 @@ struct RootRelativeMetrics {
     x_height: Option<f64>,
     cap_height: Option<f64>,
     ch_width: Option<f64>,
+    ic_width: Option<f64>,
 }
 
 pub(crate) fn adjusted_font_relative_metrics(
@@ -61,6 +66,7 @@ pub(crate) fn adjusted_font_relative_metrics(
                     crate::property::types::FontSizeAdjustMetric::ExHeight => Some(metrics.ex_height),
                     crate::property::types::FontSizeAdjustMetric::CapHeight => Some(metrics.cap_height),
                     crate::property::types::FontSizeAdjustMetric::ChWidth => Some(metrics.ch_width),
+                    crate::property::types::FontSizeAdjustMetric::IcWidth => Some(metrics.ic_width),
                     _ => None,
                 };
                 aspect.filter(|value| *value > 0.0).map_or(1.0, |value| target / value)
@@ -76,6 +82,7 @@ pub(crate) fn adjusted_font_relative_metrics(
         metrics.ex_height *= scale;
         metrics.cap_height *= scale;
         metrics.ch_width *= scale;
+        metrics.ic_width *= scale;
         metrics
     })
 }
@@ -136,6 +143,8 @@ fn resolve_length_with_font_metrics(
         }
         LengthValue::Ch(v) => v * font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width),
         LengthValue::Rch(v) => v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
+        LengthValue::Ic(v) => v * font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width),
+        LengthValue::Ric(v) => v * root_metrics.ic_width.unwrap_or(ROOT_FONT_SIZE),
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
@@ -153,6 +162,8 @@ fn resolve_length_with_font_metrics(
                 viewport_height,
                 ch_width: Some(font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width)),
                 root_ch_width: root_metrics.ch_width,
+                ic_width: Some(font_size * font_metrics.map_or(1.0, |metrics| metrics.ic_width)),
+                root_ic_width: root_metrics.ic_width,
                 ..Default::default()
             };
             zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
@@ -396,6 +407,7 @@ pub fn resolve_computed_style_with_font_metrics(
     let font_size_context = parent_font_size.unwrap_or(ROOT_FONT_SIZE);
     let root_font_units_enabled = std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0");
     let root_cap_units_enabled = std::env::var("ZW_ROOT_CAP_UNITS").as_deref() != Ok("0");
+    let root_ic_units_enabled = std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0");
     let font_size_px = match &style.font_size {
         LengthValue::Percentage(v) => v / 100.0 * font_size_context,
         LengthValue::Ex(v) if root_font_units_enabled => {
@@ -416,17 +428,22 @@ pub fn resolve_computed_style_with_font_metrics(
         LengthValue::Rcap(v) if root_cap_units_enabled => {
             v * font_context.root_cap_height.unwrap_or(ROOT_FONT_SIZE * 0.8)
         }
+        LengthValue::Ic(v) if root_ic_units_enabled => {
+            v * font_size_context * font_context.parent.map_or(1.0, |metrics| metrics.ic_width)
+        }
+        LengthValue::Ric(v) if root_ic_units_enabled => v * font_context.root_ic_width.unwrap_or(ROOT_FONT_SIZE),
         other => resolve_length(other, font_size_context, viewport_width, viewport_height),
     };
     // https://drafts.csswg.org/css-fonts-5/#descdef-font-face-size-adjust
     // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
-    // `em` stays tied to computed font-size, while ex/cap/ch use metrics from the adjusted used font.
+    // `em` stays tied to computed font-size, while font-relative units use adjusted used-font metrics.
     // The property preempts the descriptor, so exactly one adjustment is applied.
     let font_metrics = adjusted_font_relative_metrics(style, font_context.current);
     let root_metrics = RootRelativeMetrics {
         x_height: font_context.root_x_height,
         cap_height: font_context.root_cap_height,
         ch_width: font_context.root_ch_width,
+        ic_width: font_context.root_ic_width,
     };
 
     let mut resolved = style.clone();
@@ -467,6 +484,14 @@ pub fn resolve_computed_style_with_font_metrics(
             }
             LengthValue::Rch(v) => {
                 let px = v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
+            LengthValue::Ic(v) => {
+                let px = v * font_size_px * font_metrics.map_or(1.0, |metrics| metrics.ic_width);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
+            LengthValue::Ric(v) => {
+                let px = v * root_metrics.ic_width.unwrap_or(ROOT_FONT_SIZE);
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
             }
             _ => {}
@@ -949,6 +974,7 @@ mod tests {
                     ex_height: 0.6,
                     cap_height: 0.65,
                     ch_width: 0.7,
+                    ic_width: 0.9,
                     size_adjust: 1.0,
                 }),
                 ..Default::default()
@@ -964,6 +990,7 @@ mod tests {
             ex_height: 0.8,
             cap_height: 0.7,
             ch_width: 1.0,
+            ic_width: 1.0,
             size_adjust: 0.5,
         });
         let mut adjusted = ComputedStyle::default();
@@ -998,6 +1025,7 @@ mod tests {
             ex_height: 0.8,
             cap_height: 0.7,
             ch_width: 1.0,
+            ic_width: 1.0,
             size_adjust: 0.5,
         });
         let mut style = ComputedStyle::default();

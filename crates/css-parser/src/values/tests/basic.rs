@@ -1591,15 +1591,19 @@ fn test_parse_and_evaluate_root_font_units() {
     assert_eq!(parse_length("1.5rch"), Some(LengthValue::Rch(1.5)));
     assert_eq!(parse_length("1.5cap"), Some(LengthValue::Cap(1.5)));
     assert_eq!(parse_length("1.5rcap"), Some(LengthValue::Rcap(1.5)));
-    let expr = parse_calc("calc(2rex + 3rch + 1cap + 2rcap + 1px)").unwrap();
+    assert_eq!(parse_length("1.5ic"), Some(LengthValue::Ic(1.5)));
+    assert_eq!(parse_length("1.5ric"), Some(LengthValue::Ric(1.5)));
+    let expr = parse_calc("calc(2rex + 3rch + 1cap + 2rcap + 1ic + 2ric + 1px)").unwrap();
     let context = CalcContext {
         root_x_height: Some(5.0),
         root_ch_width: Some(2.0),
         cap_height: Some(3.0),
         root_cap_height: Some(4.0),
+        ic_width: Some(3.0),
+        root_ic_width: Some(4.0),
         ..Default::default()
     };
-    assert_eq!(eval_calc_with_context(&expr, &context), Some(28.0));
+    assert_eq!(eval_calc_with_context(&expr, &context), Some(39.0));
 }
 
 #[test]

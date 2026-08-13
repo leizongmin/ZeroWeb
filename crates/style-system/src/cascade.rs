@@ -166,6 +166,8 @@ fn is_invalid_negative_length(property: &str, value: &str) -> bool {
         Some(LengthValue::Cap(c)) if c < 0.0 => true,
         Some(LengthValue::Rcap(c)) if c < 0.0 => true,
         Some(LengthValue::Ch(c)) if c < 0.0 => true,
+        Some(LengthValue::Ic(i)) if i < 0.0 => true,
+        Some(LengthValue::Ric(i)) if i < 0.0 => true,
         Some(LengthValue::Percentage(p)) if p < 0.0 => true,
         _ => false,
     }

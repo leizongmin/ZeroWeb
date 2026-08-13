@@ -283,6 +283,7 @@ impl FontMetricProvider for FontMetricMap {
             zero_style_system::FontSizeAdjustMetric::ExHeight => Some(metrics.ex_height),
             zero_style_system::FontSizeAdjustMetric::CapHeight => Some(metrics.cap_height),
             zero_style_system::FontSizeAdjustMetric::ChWidth => Some(metrics.ch_width),
+            zero_style_system::FontSizeAdjustMetric::IcWidth => Some(metrics.ic_width),
             _ => None,
         }
     }
@@ -322,6 +323,7 @@ mod tests {
             ex_height: 0.5,
             cap_height: 0.7,
             ch_width: 0.6,
+            ic_width: 1.0,
             size_adjust,
         }
     }

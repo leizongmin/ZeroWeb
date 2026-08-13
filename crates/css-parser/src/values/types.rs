@@ -33,6 +33,10 @@ pub enum LengthValue {
     Ch(f64),
     /// rch 单位（根元素字体中 U+0030 "0" 字形的 advance）。
     Rch(f64),
+    /// ic 单位（当前字体中 U+6C34 "水" 字形的 advance）。
+    Ic(f64),
+    /// ric 单位（根元素字体中 U+6C34 "水" 字形的 advance）。
+    Ric(f64),
     /// 百分比值（0-100）。
     Percentage(f64),
     /// auto 关键字。
@@ -859,6 +863,10 @@ pub struct CalcContext {
     pub root_cap_height: Option<f64>,
     /// 根元素字体 "0" 字形宽度（px），用于 rch 单位转换。
     pub root_ch_width: Option<f64>,
+    /// 当前字体 "水" 字形宽度（px），用于 ic 单位转换。
+    pub ic_width: Option<f64>,
+    /// 根元素字体 "水" 字形宽度（px），用于 ric 单位转换。
+    pub root_ic_width: Option<f64>,
     /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
     pub viewport_height: Option<f64>,
     /// 视口宽度（px），用于 vw/vmin/vmax 单位转换。
@@ -1528,6 +1536,8 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         },
         LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
         LengthValue::Rch(v) => ctx.root_ch_width.map(|cw| v * cw),
+        LengthValue::Ic(v) => ctx.ic_width.map(|width| v * width),
+        LengthValue::Ric(v) => ctx.root_ic_width.map(|width| v * width),
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
@@ -1647,6 +1657,8 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vb" | "svb" | "lvb" | "dvb" => Some(LengthValue::Vh(num)),
         "ch" => Some(LengthValue::Ch(num)),
         "rch" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rch(num)),
+        "ic" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ic(num)),
+        "ric" if std::env::var("ZW_ROOT_IC_UNITS").as_deref() != Ok("0") => Some(LengthValue::Ric(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
         "in" => Some(LengthValue::Px(num * 96.0)),

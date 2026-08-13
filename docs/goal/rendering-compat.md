@@ -88,6 +88,8 @@
 >
 > **🛡️ 组合态回归修复（R3388-F non-Ahem CJK contiguous gate·2026-08-13）**：远端 form-control 提交把 CJK/SEA per-char 断行的无空格模式从 Ahem 专用全局启用，重开了代码注释已记录的 advance-wall 回归。现默认恢复 Ahem-only，普通字体新语义保留为 `ZW_CJK_CONTIGUOUS=1` 显式实验。A/B：welcome `15.96%→22.70%`（实验开启净退 `+6.74pp`）；全 css-text self-source pass 均为 `1762/1826`，但可信 strict `580→466`（-114），且出现 2 个 pass→fail。故默认 gate-off 是产品硬门与规范集共同裁决，不是单纯回退偏好。
 >
+> **▶ 字体度量进展（R3389-F ic/ric root ideographic advance·2026-08-13）**：CSS Values 4 `ic/ric` 现保留 typed 单位至 computed/calc；FontLoader 将既有 U+6C34 horizontal advance provider纳入 first-available family metric map，StyleSystem 按 current/parent/root ownership 解析普通长度、`font-size` 与 root unit，并缓存 root used ideographic advance。缺 U+6C34 时沿用规范 `1em` fallback；`ZW_ROOT_IC_UNITS=0` 独立回滚。`ric-in-monospace` self-source `0.15%→0.03%`，Chromium Oracle `0.94%→0.92%`。串行 css-fonts Oracle 282 案仅该用例改善 `0.02pp`、0 回归；pass/credible/strict 保持 `87/77/54`，self-source pass `280/287`、可信 strict `154` 与 7 mismatch 均不变。既有 WPT/WOFF2 资产账本归属更新为 R3375/R3389-F。`rlh` 仍需独立 root line-height lifecycle。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
