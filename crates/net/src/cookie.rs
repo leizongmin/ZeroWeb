@@ -499,6 +499,44 @@ pub fn same_site_allows(same_site: SameSite, context: RequestContext, is_safe_me
     }
 }
 
+/// 判断两个主机名是否属于「同站」（schemelessly same-site）。
+///
+/// 依据 [RFC 6265bis §5.2 site] 与 [Public Suffix List]：取两主机的注册域名
+/// （eTLD+1，经 zero-psl 计算）做 ASCII 大小写不敏感比较。两个 IP 字面量须
+/// 完全相同才算同站（IP 无 PSL 语义）。
+///
+/// 核心修正：朴素「取末两段」会把 `a.github.io` 与 `b.github.io` 误判同站；
+/// 经 PSL（`*.github.io` 为公共后缀）二者注册域分别为 `a.github.io` /
+/// `b.github.io` → 不同站。供 cookie same-site 判定与 site-isolation 使用。
+///
+/// [RFC 6265bis §5.2 site]: https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-rfc6265bis
+/// [Public Suffix List]: https://publicsuffix.org/
+pub fn is_same_site(a: &str, b: &str) -> bool {
+    // IP 字面量须精确相等（IP 地址无注册域/PSL 语义）。
+    if a.parse::<std::net::IpAddr>().is_ok() || b.parse::<std::net::IpAddr>().is_ok() {
+        return a.eq_ignore_ascii_case(b);
+    }
+    let psl = zero_psl::PublicSuffixList::shared();
+    psl.registrable_domain(a)
+        .eq_ignore_ascii_case(&psl.registrable_domain(b))
+}
+
+/// 根据请求目标主机与顶层文档站点主机，推断 SameSite 请求上下文。
+///
+/// - 两者同站（`is_same_site`）→ [`RequestContext::SameSite`]。
+/// - 否则视为跨站子资源请求 → [`RequestContext::CrossSiteSubresource`]。
+///
+/// 「跨站顶层导航」的判定需要导航语义（是否用户触发的顶层跳转 + 安全方法），
+/// 超出主机比较范畴，故本函数不返回 [`RequestContext::CrossSiteTopLevel`]；
+/// 由导航层在判定为顶层安全方法导航时显式覆盖。
+pub fn request_context(request_host: &str, top_level_site_host: &str) -> RequestContext {
+    if is_same_site(request_host, top_level_site_host) {
+        RequestContext::SameSite
+    } else {
+        RequestContext::CrossSiteSubresource
+    }
+}
+
 /// 检查 cookie 是否匹配给定 URL。
 fn cookie_matches_url(cookie: &Cookie, url: &ParsedUrl) -> bool {
     // Secure cookie 只能用于 HTTPS
@@ -1522,5 +1560,74 @@ mod tests {
         // data: URL 无 host
         let header = store.cookie_header(&parse_url("data:text/html,hello").unwrap());
         assert!(!header.contains("test=1"), "cookie should not match empty-host URL");
+    }
+
+    // ===== R3381：is_same_site / request_context（PSL-backed）回归测试 =====
+
+    #[test]
+    fn test_is_same_site_same_registrable_domain() {
+        // 同注册域（eTLD+1）→ 同站，即便子域不同。
+        assert!(is_same_site("sub.example.com", "example.com"));
+        assert!(is_same_site("a.b.example.com", "c.example.com"));
+    }
+
+    #[test]
+    fn test_is_same_site_different_domain() {
+        assert!(!is_same_site("example.com", "other.com"));
+        assert!(!is_same_site("sub.example.com", "sub.other.com"));
+    }
+
+    /// R3381 回归锁定：`*.github.io` 各用户子域是独立注册域 → 不同站。
+    /// 朴素「取末两段」会把二者误判同站（都归 github.io）。
+    #[test]
+    fn test_is_same_site_psl_wildcard_isolates_github_user_subdomains() {
+        assert!(
+            !is_same_site("a.github.io", "b.github.io"),
+            "a.github.io 与 b.github.io 经 PSL 须判为不同站"
+        );
+        // 注意：`*.github.io` 下 user.github.io 自身即注册域（通配位置=user），
+        // 故 www.user.github.io 的注册域是 www.user.github.io，与 user.github.io
+        // **不同站**——这是 PSL 通配语义的正确推论，与朴素直觉相反。
+        assert!(!is_same_site("www.user.github.io", "user.github.io"));
+        // 同一注册域的不同深子域才同站。
+        assert!(is_same_site("a.www.user.github.io", "b.www.user.github.io"));
+    }
+
+    #[test]
+    fn test_is_same_site_multilabel_suffix_co_uk() {
+        // co.uk 多标签后缀：example.co.uk 与 sub.example.co.uk 同站。
+        assert!(is_same_site("sub.example.co.uk", "example.co.uk"));
+        assert!(!is_same_site("example.co.uk", "other.co.uk"));
+    }
+
+    #[test]
+    fn test_is_same_site_case_insensitive() {
+        assert!(is_same_site("Sub.Example.COM", "example.com"));
+    }
+
+    #[test]
+    fn test_is_same_site_ip_requires_exact_match() {
+        // IP 字面量无 PSL 语义，须精确相等（大小写不敏感）。
+        assert!(is_same_site("127.0.0.1", "127.0.0.1"));
+        assert!(!is_same_site("127.0.0.1", "127.0.0.2"));
+        assert!(!is_same_site("192.168.1.1", "example.com"));
+    }
+
+    #[test]
+    fn test_request_context_same_vs_cross_site() {
+        // 同站 → SameSite。
+        assert_eq!(
+            request_context("sub.example.com", "example.com"),
+            RequestContext::SameSite
+        );
+        // 跨站 → CrossSiteSubresource（顶层导航由导航层覆盖）。
+        assert_eq!(
+            request_context("a.github.io", "b.github.io"),
+            RequestContext::CrossSiteSubresource
+        );
+        assert_eq!(
+            request_context("cdn.thirdparty.com", "example.com"),
+            RequestContext::CrossSiteSubresource
+        );
     }
 }

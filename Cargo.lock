@@ -6484,6 +6484,7 @@ dependencies = [
  "tungstenite",
  "url",
  "zero-product-version",
+ "zero-psl",
 ]
 
 [[package]]

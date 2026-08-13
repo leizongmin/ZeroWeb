@@ -26,7 +26,9 @@ pub mod url_parser;
 pub mod websocket;
 
 pub use client::*;
-pub use cookie::{Cookie, CookieStore, RequestContext, SameSite, parse_expires_date, same_site_allows};
+pub use cookie::{
+    Cookie, CookieStore, RequestContext, SameSite, is_same_site, parse_expires_date, request_context, same_site_allows,
+};
 pub use disk_cache::{DiskHttpCache, default_cache_dir};
 pub use fetch_priority::{FetchPriority, infer_resource_type_from_url};
 pub use fetch_scheduler::{FetchJobResult, PerOriginFetchScheduler};
