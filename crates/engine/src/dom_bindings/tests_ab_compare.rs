@@ -189,3 +189,43 @@ fn polyfill_helper_shim_callbacks_works() {
     assert_eq!(run_polyfill(html, "document.getElementById('a').tagName"), "DIV");
     assert_eq!(run_polyfill(html, "document.querySelector('.c').id"), "a");
 }
+
+// ── 异常路径 A/B 对照（classList token 校验抛 DOMException）─────────
+//
+// 读路径对照（READ_CASES）验证「正常返回值等价」；异常路径对照验证「校验失败抛相同 DOMException
+// （按 name 区分）」。两路径共用 try/catch 脚本形式，断言返串一致。这是 DOMException 抛出语义
+// 切片（dom/nodes/Element-classlist ~405 失败修复）的 A/B 验收。
+
+/// 异常路径对照 helper：对 `expr`（应为会抛的 classList 调用）跑两路径，各返 `"threw|<name>"`
+/// 或 `"no-throw|<String(value)>"`。两路径用同一 try/catch 包装脚本。
+fn ab_catch(html: &str, expr: &str) -> (String, String) {
+    // try/catch：捕获异常返 name，否则返 value（与既有 tests_collections token 校验测一致形式）。
+    let script =
+        format!("(()=>{{ try {{ return 'no-throw|'+String({expr}); }} catch(e) {{ return 'threw|'+e.name; }} }})()");
+    let native = run_native(html, &script);
+    let polyfill = run_polyfill(html, &script);
+    (native, polyfill)
+}
+
+/// classList token 校验异常路径：空 token / 含空白 token 两路径都抛对应 name 的 DOMException。
+#[test]
+fn ab_classlist_token_validation_throws_dom_exception() {
+    let html = r#"<html><body><div id="a" class="a"></div></body></html>"#;
+    // 空 token → SyntaxError（spec dom-domtokenlist-validation）。
+    let (n, p) = ab_catch(html, "document.getElementById('a').classList.add('')");
+    assert_eq!(n, p, "classList.add('') A/B 不一致：native=`{n}` polyfill=`{p}`");
+    assert!(n.starts_with("threw|SyntaxError"), "应抛 SyntaxError，实际：{n}");
+
+    // 含空白 token → InvalidCharacterError。
+    let (n, p) = ab_catch(html, "document.getElementById('a').classList.add('foo bar')");
+    assert_eq!(n, p, "classList.add('foo bar') A/B 不一致：native=`{n}` polyfill=`{p}`");
+    assert!(
+        n.starts_with("threw|InvalidCharacterError"),
+        "应抛 InvalidCharacterError，实际：{n}"
+    );
+
+    // contains/toggle 同样校验（覆盖校验点一致性）。
+    let (n, p) = ab_catch(html, "document.getElementById('a').classList.toggle('')");
+    assert_eq!(n, p, "classList.toggle('') A/B 不一致：native=`{n}` polyfill=`{p}`");
+    assert!(n.starts_with("threw|"), "toggle('') 应抛，实际：{n}");
+}

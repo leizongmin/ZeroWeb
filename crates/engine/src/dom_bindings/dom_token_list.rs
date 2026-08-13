@@ -47,21 +47,29 @@ fn write_tokens(doc: &mut zero_dom::Document, id: NodeId, tokens: &[String]) {
     doc.set_attribute(id, "class", &joined);
 }
 
-/// spec DOMTokenList token 校验：token 须非空且不含空白。非法 → 抛 TypeError（headless 无 DOMException，
-/// 同 polyfill 取最接近可获取异常类型）并返 `false`；合法返 `true`（调用方早退）。
+/// spec DOMTokenList token 校验（`dom-domtokenlist-validation`）：token 须非空且不含 ASCII 空白。
+///
+/// - 空 token（`""`）→ 抛 `DOMException` name=`SyntaxError`（code 12）
+/// - 含 ASCII 空白 → 抛 `DOMException` name=`InvalidCharacterError`（code 5）
+///
+/// 非法返 `false`（调用方早退，不再 mutation）；合法返 `true`。与 polyfill part03.js `check()`
+/// 行为对齐（A/B 等价）——两路径都抛真正 `DOMException`（按 name 区分），WPT `assert_throws_dom`
+/// 据此判定。此前抛 `TypeError` 是 headless 简化，与 spec/WPT 不符（基线 dom/nodes/Element-classlist
+/// ~405 失败根因）。
 fn require_valid_token(scope: &mut v8::PinScope, token: &str) -> bool {
-    if token.is_empty() || token.chars().any(|c| c.is_whitespace()) {
-        if let Some(msg) = v8::String::new(
-            scope,
-            "An invalid or illegal string was specified (token must not be empty or contain whitespace).",
-        ) {
-            let exc = v8::Exception::type_error(scope, msg);
-            scope.throw_exception(exc);
-        }
-        false
-    } else {
-        true
+    if token.is_empty() {
+        super::dom_exception::throw_dom_exception(scope, "SyntaxError", "An invalid or illegal string was specified.");
+        return false;
     }
+    if token.chars().any(|c| c.is_whitespace()) {
+        super::dom_exception::throw_dom_exception(
+            scope,
+            "InvalidCharacterError",
+            "An invalid or illegal string was specified.",
+        );
+        return false;
+    }
+    true
 }
 
 /// `classList` getter（spec `dom-element-classlist`）：返 owner 元素的 DOMTokenList（缓存保身份）。

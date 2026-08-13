@@ -656,12 +656,18 @@
       else __zw_set_attr(sel, 'class', v);
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class' });
     };
-    // DOMTokenList token 校验：空串或含 ASCII 空白 → 抛（spec：浏览器同步抛 SyntaxError DOMException）。
-    // headless 无 DOMException，抛 TypeError（最接近的可获取异常类型，libs try/catch 捕获兼容）。
+    // DOMTokenList token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError
+    // DOMException（code 12）；含 ASCII 空白 → InvalidCharacterError DOMException（code 5）。
+    // 抛真正 DOMException（part01b.js 构造器，按 name 区分）——WPT assert_throws_dom 据 name
+    // 判定；此前抛 TypeError 与 spec/WPT 不符（dom/nodes/Element-classlist ~405 失败根因）。
+    // 与 native dom_token_list.rs require_valid_token 行为对齐（A/B 等价）。
     var check = function (t) {
       var s = String(t);
-      if (s === '' || /\s/.test(s)) {
-        throw new TypeError("An invalid or illegal string was specified (token must not be empty or contain whitespace).");
+      if (s === '') {
+        throw new DOMException("An invalid or illegal string was specified.", "SyntaxError");
+      }
+      if (/\s/.test(s)) {
+        throw new DOMException("An invalid or illegal string was specified.", "InvalidCharacterError");
       }
     };
     var target = {

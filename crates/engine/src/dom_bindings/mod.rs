@@ -17,6 +17,7 @@ mod css_style_declaration;
 mod custom_elements;
 mod dataset;
 mod document;
+mod dom_exception;
 mod dom_token_list;
 mod element;
 mod event;
@@ -678,6 +679,10 @@ pub fn install_dom_bindings(scope: &mut v8::PinScope, ctx: v8::Local<v8::Context
     //    （instanceof Event 成立），stop/preventDefault 上原型（共享，非每次派发注入）。
     //    闭合 R3124 限制③ + R3126 限制③。详见 `event` 子模块。
     event::build_and_register(scope, global);
+    // 全局 DOMException 构造器（spec webidl#idl-DOMException）——DOM API 校验失败抛此类型
+    // （classList token 校验 / appendChild 闭环等）。WPT assert_throws_dom 按 name 判定，
+    // 故 native 侧须抛真正 DOMException 实例（非 v8::Exception::type_error）。
+    dom_exception::build_and_register(scope, global);
     // P1b S5a（R3264）：原生 HTMLElement 构造器——`class X extends HTMLElement` 子类化基础。
     // kill-switch：随 native_dom 安装（默认关 → 零回归）。
     html_element::build_and_register(scope, global);

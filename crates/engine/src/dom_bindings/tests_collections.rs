@@ -165,31 +165,32 @@ fn native_class_list_mutation_r3145() {
     );
 }
 
-/// token 校验（spec `dom-domtokenlist-validation`）：空串 / 含空白 token → 抛 TypeError，
-/// 且 add 多 token 时任一非法即抛、已校验通过的 token 不写入（spec 原子性：校验全部先于 mutation）。
-/// 用 try/catch 捕获 → 返是否抛 + 抛后 class 属性是否被部分写入。
+/// token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError DOMException；
+/// 含 ASCII 空白 → InvalidCharacterError DOMException。add 多 token 时任一非法即抛、
+/// 已校验通过的 token 不写入（spec 原子性：校验全部先于 mutation）。用 try/catch 捕获 →
+/// 返是否抛 + 异常 name + 抛后 class 属性是否被部分写入。
 #[test]
 fn native_class_list_token_validation_r3145() {
     let html = r#"<div id="a" class="a"></div>"#;
-    // add("") → 抛 + 不写入（class 仍 "a"）。
+    // add("") → SyntaxError DOMException + 不写入（class 仍 "a"）。
     assert_eq!(
         run_script(
             html,
             "(()=>{ const el=__zw_native_element_for_id('a');\
              try { el.classList.add(''); return 'no-throw'; }\
-             catch(e) { return 'threw|'+el.getAttribute('class'); } })()"
+             catch(e) { return 'threw|'+e.name+'|'+el.getAttribute('class'); } })()"
         ),
-        "threw|a"
+        "threw|SyntaxError|a"
     );
-    // add("foo bar")（含空白）→ 抛。
+    // add("foo bar")（含空白）→ InvalidCharacterError DOMException。
     assert_eq!(
         run_script(
             html,
             "(()=>{ const el=__zw_native_element_for_id('a');\
              try { el.classList.add('foo bar'); return 'no-throw'; }\
-             catch(e) { return 'threw'; } })()"
+             catch(e) { return 'threw|'+e.name; } })()"
         ),
-        "threw"
+        "threw|InvalidCharacterError"
     );
     // add 原子性：第二 token 非法 → 抛，第一（合法）token 不写入。
     assert_eq!(
