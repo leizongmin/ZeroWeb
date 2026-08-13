@@ -1383,6 +1383,19 @@ impl CanvasContext {
         let ry0 = (min_y.floor() as i32).saturating_sub(pad);
         let rx1 = (max_x.ceil() as i32).saturating_add(pad);
         let ry1 = (max_y.ceil() as i32).saturating_add(pad);
+        // R34xx（2026-08-14 CI 修复）：与 draw_shadow_rect 一致的可见性裁剪——裁剪到
+        // 「阴影 offset 后可能落入画布」的区域。path 版本此前缺失该裁剪，极端 blur
+        // 下 mask 封顶到 4×画布（如 201×201）+ 朴素 box_blur O(w·h·r) → 单测 33s、
+        // macos-x86_64 CI 120s 超时（test_shadow_path_huge_blur_no_overflow_panic_r3355）。
+        // 裁剪后 mask ≈ 画布尺寸，耗时降 ~16×，渲染结果不变（composite_shadow_mask 钳位兜底）。
+        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
+        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
+        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
+        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let rx0 = rx0.max(vis_x0);
+        let ry0 = ry0.max(vis_y0);
+        let rx1 = rx1.min(vis_x1);
+        let ry1 = ry1.min(vis_y1);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
