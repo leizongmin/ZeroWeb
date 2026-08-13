@@ -12,6 +12,7 @@ fetch-wpt-data:
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 	@bash scripts/fetch-wpt-smoke-subdirs.sh
 	@bash tests/wpt-runner/scripts/sync-imported-resources.sh
+	@bash tests/wpt-runner/scripts/audit-imported-font-resources.sh
 
 fetch-wpt-html-testharness:
 	bash tests/wpt-runner/scripts/fetch-html-testharness-subset.sh

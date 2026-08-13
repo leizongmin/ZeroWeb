@@ -116,6 +116,8 @@
 >
 > **▶ WPT 资产进展（R3413-F imported font resource closure·2026-08-14）**：新增 `make audit-imported-font-resources`，逐项扫描 `imported-tests.txt` 的 test/ref 直接 `url()` 字体引用并要求存在于 `imported-resources.txt`。首轮立即发现 3 个 fresh-checkout 缺口：`font-feature-resolution-*` 的 `fonts/Lato-Medium-Liga.ttf`、plaintext bidi 11 案的 `fonts/sileot-webfont.woff`、`font-synthesis-style` 的 `fonts/Lato-Medium.ttf`；本机 full corpus此前掩盖了账本缺失。三项已通过标准 importer登记，闭包门禁现 PASS。该切片不改变当前机器像素，只保证常驻 WPT 在 fresh sync 后仍消费相同固定字体。
 >
+> **▶ WPT 资产进展（R3414-F resource closure automatic gate·2026-08-14）**：`fetch-wpt-data` 过去只执行资源同步，不验证常驻 test/ref 的字体引用是否全部进入账本；漏项在本机 full corpus存在时仍会静默通过。现把 `audit-imported-font-resources.sh` 接到同步步骤之后，所有 `reftest` / `reftest-oracle` / `import-wpt` 的 fetch前置链都会自动验证闭包，缺失即失败。手动 `make audit-imported-font-resources` 入口继续保留。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
