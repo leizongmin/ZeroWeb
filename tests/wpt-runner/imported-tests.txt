@@ -67,3 +67,22 @@ css/css-fonts/font-synthesis-weight-webfont-bold.html css/css-fonts/font-synthes
 css/css-fonts/separators.html css/css-fonts/separators-ref.html == 2026-08-13 R3374-F fixed separator test font asset
 css/css-fonts/ric-in-monospace.html css/css-fonts/ric-in-monospace-ref.html == 2026-08-13 R3375-F WOFF2 decoding and root ic unit
 css/css-text/shaping/shaping-001.html css/css-text/shaping/reference/shaping-001-ref.html == 2026-08-13 R3375-F WOFF2 Arabic shaping
+css/css-text/shaping/shaping-000.html css/css-text/shaping/reference/shaping-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-002.html css/css-text/shaping/reference/shaping-002-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-003.html css/css-text/shaping/reference/shaping-003-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-004.html css/css-text/shaping/reference/shaping-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-005.html css/css-text/shaping/reference/shaping-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-006.html css/css-text/shaping/reference/shaping-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-007.html css/css-text/shaping/reference/shaping-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-008.html css/css-text/shaping/reference/shaping-008-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-009.html css/css-text/shaping/reference/shaping-009-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-010.html css/css-text/shaping/reference/shaping-010-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-011.html css/css-text/shaping/reference/shaping-011-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-012.html css/css-text/shaping/reference/shaping-012-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-013.html css/css-text/shaping/reference/shaping-012-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-014.html css/css-text/shaping/reference/shaping-014-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-016.html css/css-text/shaping/reference/shaping-016-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-017.html css/css-text/shaping/reference/shaping-003-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-018.html css/css-text/shaping/reference/shaping-002-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping-arabic-diacritics-002.html css/css-text/shaping/reference/shaping-arabic-diacritics-002-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/shaping/shaping_lig-000.html css/css-text/shaping/reference/shaping_lig-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus

@@ -69,6 +69,8 @@
 >
 > **▶ 字体栈增量进展（R3375-F WOFF2 decoding·2026-08-13）**：引入 pure-Rust、MIT、MSRV 1.85 的 `wuff 0.2.8`，FontLoader 统一支持 WOFF2→sfnt 解码，`ZW_WOFF2=0` 可回滚；真实 `IcTestFullWidth.woff2` 测试覆盖解码及原始 FontLoader 入口。导入 `NotoNaskhArabic-regular.woff2` 与 `shaping-001` 后，Arabic shaping 28 案为 20 改善/0 回归/8 持平，总 `-9.01pp`、可信 strict `4→7`；全 css-text 1826 案为 37 改善/5 微退/1784 持平，总 `-9.98pp`、strict `574→581`，pass 保持 `1762/1826`。解码扩大字体 surface 后暴露 indexed glyph 越界 panic，现于共享 raster 入口按 sfnt `numGlyphs` 校验并 fail-closed。css-fonts Chromium Oracle 282 案逐像素持平；Arabic shaping 尚无 Chromium shot。
 >
+> **▶ WPT 资产进展（R3380-F Naskh shaping corpus·2026-08-13）**：按当前 HEAD 复验 `ZW_WOFF2=0/1`，将 R3375 的全部 20 个改善案通过标准 importer 纳入常驻账本，test/ref 路径完整且 test key 20/20 唯一；A/B 保持 20 改善/0 回归/8 持平、总 `-9.01pp`、可信 strict `4→7`，其中 `shaping-009/010/011` 达 strict `0.00%`。NKo 固定 WOFF2 试验使 `020/021/022` 从 `1.31/1.13/1.05%` 退至 `1.35/1.34/1.29%`，已完整回退；其跨 inline boundary shaping 以及 Mongolian vertical corpus 等 Phase A/vertical 路径闭合后再导入。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
