@@ -103,6 +103,13 @@ pub struct SandboxConfig {
 /// V8 要求 `initial <= max`（`SetHeapLimits` CHECK，违反即致命崩溃）。当
 /// `heap_limit = 0`（无上限）但设置了 `initial_heap_size` 时，max 取 4GB
 /// 显式上限——V8 默认堆上限量级，实际不会触发，仅满足 CHECK。
+///
+/// R3397：`SandboxConfig` 是公共嵌入 API（[`crate::SandboxConfig`]），嵌入方可能传
+/// `initial_heap_size > 4GB`（默认 max）而 `heap_limit = 0`，此时 `initial > max`
+/// 会触发 V8 `CHECK` **致命崩溃整个进程**（abort，非 panic 可捕获）。此处在校验
+/// `initial <= max` 并把越界 `initial` 钳到 `max`（信任边界输入校验，CLAUDE.md「安全措施/
+/// 输入校验不可简化」）。本仓内置 WebView config（initial=128MB / heap_limit=0）不受影响，
+/// 此为公共 API 防崩溃硬化。
 #[cfg(feature = "v8")]
 pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
     if config.initial_heap_size == 0 && config.heap_limit == 0 {
@@ -113,7 +120,9 @@ pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
     } else {
         4 * 1024 * 1024 * 1024
     };
-    Some((config.initial_heap_size, max))
+    // R3397：钳制 initial 不超过 max，防 V8 SetHeapLimits CHECK 致命崩溃。
+    let initial = config.initial_heap_size.min(max);
+    Some((initial, max))
 }
 
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
@@ -165,3 +174,56 @@ pub trait Sandbox {
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]
 compile_error!("至少需要启用一个JS引擎feature: `v8` 或 `quickjs`");
+
+#[cfg(all(test, feature = "v8"))]
+mod tests {
+    use super::*;
+
+    // R3397：v8_heap_limits 须钳制 initial <= max，防 V8 SetHeapLimits CHECK 致命崩溃。
+    #[test]
+    fn v8_heap_limits_clamps_initial_to_max_r3397() {
+        // 两零 → None（用 V8 默认）。
+        let none_cfg = SandboxConfig {
+            initial_heap_size: 0,
+            heap_limit: 0,
+            ..Default::default()
+        };
+        assert!(v8_heap_limits(&none_cfg).is_none());
+
+        // initial > 默认 max(4GB) 且 heap_limit=0 → 须钳 initial 到 4GB（防 CHECK 崩溃）。
+        let over_cfg = SandboxConfig {
+            initial_heap_size: 8 * 1024 * 1024 * 1024, // 8GB > 4GB 默认 max
+            heap_limit: 0,
+            ..Default::default()
+        };
+        let (initial, max) = v8_heap_limits(&over_cfg).expect("应返回 Some");
+        assert_eq!(max, 4 * 1024 * 1024 * 1024);
+        assert!(
+            initial <= max,
+            "initial({initial}) 须钳到 <= max({max})，防 V8 CHECK 致命崩溃"
+        );
+        assert_eq!(initial, max, "8GB initial 须钳到 4GB max");
+
+        // initial > 显式 heap_limit → 须钳到 heap_limit。
+        let over_explicit = SandboxConfig {
+            initial_heap_size: 512 * 1024 * 1024, // 512MB
+            heap_limit: 256 * 1024 * 1024,        // 256MB
+            ..Default::default()
+        };
+        let (initial, max) = v8_heap_limits(&over_explicit).expect("应返回 Some");
+        assert_eq!(max, 256 * 1024 * 1024);
+        assert!(initial <= max, "initial 须钳到显式 heap_limit");
+        assert_eq!(initial, 256 * 1024 * 1024);
+
+        // 合法配置不受影响（回归保护）：initial < max 原样。
+        let ok_cfg = SandboxConfig {
+            initial_heap_size: 128 * 1024 * 1024, // 128MB（内置 WebView config）
+            heap_limit: 0,
+            ..Default::default()
+        };
+        let (initial, max) = v8_heap_limits(&ok_cfg).expect("应返回 Some");
+        assert_eq!(initial, 128 * 1024 * 1024);
+        assert_eq!(max, 4 * 1024 * 1024 * 1024);
+        assert!(initial < max);
+    }
+}
