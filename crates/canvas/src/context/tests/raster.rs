@@ -136,9 +136,10 @@ fn test_composite_pixel_zero_alpha_src() {
 fn test_line_segment_rect_horizontal() {
     let ctx = CanvasContext::new(100, 100);
     let rect = ctx.line_segment_rect(10.0, 50.0, 90.0, 50.0, 4.0);
-    assert_eq!(rect.origin.x, 8.0); // 10 - 2
+    // R34xx：段矩形精确到端点（端点延伸归 cap 绘制）；垂直方向扩半线宽。
+    assert_eq!(rect.origin.x, 10.0);
     assert_eq!(rect.origin.y, 48.0); // 50 - 2
-    assert_eq!(rect.size.width, 84.0); // 90-10+4
+    assert_eq!(rect.size.width, 80.0); // 90-10
     assert_eq!(rect.size.height, 4.0); // line_width
 }
 
@@ -147,9 +148,9 @@ fn test_line_segment_rect_vertical() {
     let ctx = CanvasContext::new(100, 100);
     let rect = ctx.line_segment_rect(50.0, 10.0, 50.0, 90.0, 6.0);
     assert_eq!(rect.origin.x, 47.0); // 50 - 3
-    assert_eq!(rect.origin.y, 7.0); // 10 - 3
+    assert_eq!(rect.origin.y, 10.0);
     assert_eq!(rect.size.width, 6.0);
-    assert_eq!(rect.size.height, 86.0);
+    assert_eq!(rect.size.height, 80.0); // 90-10
 }
 
 #[test]
@@ -617,10 +618,13 @@ fn test_blit_stroke_single_segment() {
 fn test_blit_stroke_two_segments_miter_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Miter;
-    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0]; // L 形
+    // R34xx：旧数据 [5,15,15,15,15,5] 仅 6 元素 = 1.5 段（chunks_exact(4) 丢余数，join 循环
+    // 不执行），旧断言靠段矩形外扩误覆盖。修正为 2 段 8 元素；断言点 (16,15) 在 miter
+    // 尖角三角内（(15,15) 恰在角平分线斜边上，无抗锯齿光栅不覆盖）。
+    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 5.0]; // L 形
     ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 0, 0, 255), 4.0, false);
     // 连接点 (15, 15) 附近应有像素
-    let idx = ((15 * 30) + 15) * 4;
+    let idx = ((15 * 30) + 16) * 4;
     assert_eq!(ctx.pixel_buffer[idx], 255, "join point should be written");
 }
 
@@ -628,8 +632,9 @@ fn test_blit_stroke_two_segments_miter_join() {
 fn test_blit_stroke_two_segments_round_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Round;
-    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0];
+    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 5.0];
     ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 0, 255, 255), 4.0, false);
+    // R34xx：round join 圆盘（半径 half_lw=2）覆盖 join 点 (15,15)。
     let idx = ((15 * 30) + 15) * 4;
     assert_eq!(ctx.pixel_buffer[idx + 2], 255, "round join point should be blue");
 }
@@ -638,8 +643,9 @@ fn test_blit_stroke_two_segments_round_join() {
 fn test_blit_stroke_two_segments_bevel_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Bevel;
-    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0];
+    let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 15.0, 15.0, 5.0];
     ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 255, 0, 255), 4.0, false);
+    // R34xx：bevel 平切三角 {jx, a_ext, b_ext} 覆盖 join 点 (15,15)。
     let idx = ((15 * 30) + 15) * 4;
     assert!(ctx.pixel_buffer[idx] > 0 || ctx.pixel_buffer[idx + 1] > 0, "bevel join");
 }

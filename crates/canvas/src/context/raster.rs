@@ -1025,6 +1025,201 @@ impl CanvasContext {
         }
     }
 
+    /// R34xx：按 lineJoin 真实几何绘制 join 点。旧实现三种 join 均画 half_lw 方块——
+    /// 方块覆盖角点外大片区域（2d.line.cap.closed / join.open / miter.* 角落 (1,1) 失败），
+    /// 且 miter 忽略 miter_limit（2d.line.miter.exceeded）。miter 尖角三角 / bevel 平切
+    /// 三角经 blit_path_to_pixels 通用扫描线填充；round 画圆盘。
+    pub(crate) fn blit_join(
+        &mut self,
+        seg_a: &[f32; 4],
+        seg_b: &[f32; 4],
+        jx: f32,
+        jy: f32,
+        half_lw: f32,
+        color: Color,
+    ) {
+        // 两边方向（单位向量）：seg_a 指向 join 点，seg_b 从 join 点出发。
+        let (dax, day) = (jx - seg_a[0], jy - seg_a[1]);
+        let (dbx, dby) = (seg_b[2] - jx, seg_b[3] - jy);
+        let la = (dax * dax + day * day).sqrt();
+        let lb = (dbx * dbx + dby * dby).sqrt();
+        if la < f32::EPSILON || lb < f32::EPSILON {
+            return;
+        }
+        let (uax, uay) = (dax / la, day / la);
+        let (ubx, uby) = (dbx / lb, dby / lb);
+        // R34xx：外扩点用法线方向（rot90(u) = (-u.y, u.x)）——旧实现沿段方向外扩，
+        // 三角画在错误一侧（bevel join 单测 (15,15) 无像素）。
+        let (a_ext_x, a_ext_y) = (jx - uay * half_lw, jy + uax * half_lw);
+        let (b_ext_x, b_ext_y) = (jx - uby * half_lw, jy + ubx * half_lw);
+        match self.line_join {
+            LineJoin::Round => {
+                let r2 = half_lw * half_lw;
+                let x0 = (jx - half_lw).floor() as i32;
+                let y0 = (jy - half_lw).floor() as i32;
+                let x1 = (jx + half_lw).ceil() as i32;
+                let y1 = (jy + half_lw).ceil() as i32;
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let dx = px as f32 + 0.5 - jx;
+                        let dy = py as f32 + 0.5 - jy;
+                        if dx * dx + dy * dy <= r2 {
+                            self.blit_pixel(px, py, color);
+                        }
+                    }
+                }
+            }
+            LineJoin::Bevel => {
+                let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                self.blit_path_to_pixels(&verts, color);
+            }
+            LineJoin::Miter => {
+                // R34xx：miter 尖点。方向 = 外角平分（u1 - u2 归一化——u1 指向 join、u2 离开
+                // join；对 90° 角尖点在对角线方向）。miter 长度 = half_lw / sin(θ/2)，θ 取
+                // 两线几何锐角（cos θ = |u1·u2|）——2d.line.miter.acute 的 45° 角期望
+                // ratio = 1/sin(22.5°) = 2.6139 恰在 miterLimit 2.613/2.614 边界。
+                // 超限判定 spec：ratio = miter_len / half_lw = 1/sin(θ/2) > miterLimit → bevel。
+                let cos_theta = (uax * ubx + uay * uby).abs();
+                let sin_half = ((1.0 - cos_theta) / 2.0).sqrt();
+                if sin_half < f32::EPSILON {
+                    return;
+                }
+                let miter_len = half_lw / sin_half;
+                let (mx, my) = (uax - ubx, uay - uby);
+                let ml = (mx * mx + my * my).sqrt();
+                if ml < f32::EPSILON {
+                    return;
+                }
+                let (dx, dy) = (mx / ml, my / ml);
+                if miter_len / half_lw > self.miter_limit {
+                    // 超 miter limit → 降级 bevel 平切
+                    let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                    self.blit_path_to_pixels(&verts, color);
+                } else {
+                    let (px, py) = (jx + dx * miter_len, jy + dy * miter_len);
+                    // 扫掠四边形轮廓：{jx, a_ext, P, b_ext}
+                    let verts = [jx, jy, a_ext_x, a_ext_y, px, py, b_ext_x, b_ext_y, jx, jy];
+                    self.blit_path_to_pixels(&verts, color);
+                }
+            }
+        }
+    }
+
+    /// R34xx：单像素合成写入（round cap/join 圆盘循环用），含画布边界与 clip 检查。
+    pub(crate) fn blit_pixel(&mut self, px: i32, py: i32, color: Color) {
+        if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
+            return;
+        }
+        if !self.clip_applies(px as f32, py as f32) {
+            return;
+        }
+        let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
+        let (r, g, b, a) = self.composite_pixel(
+            color,
+            self.pixel_buffer[idx],
+            self.pixel_buffer[idx + 1],
+            self.pixel_buffer[idx + 2],
+            self.pixel_buffer[idx + 3],
+        );
+        self.pixel_buffer[idx] = r;
+        self.pixel_buffer[idx + 1] = g;
+        self.pixel_buffer[idx + 2] = b;
+        self.pixel_buffer[idx + 3] = a;
+    }
+
+    /// R34xx：blit_join 的渐变采样版（join 三角经 blit_path_gradient 逐像素采样；round 圆盘
+    /// 经 blit_pixel_gradient）。
+    pub(crate) fn blit_join_gradient(
+        &mut self,
+        seg_a: &[f32; 4],
+        seg_b: &[f32; 4],
+        jx: f32,
+        jy: f32,
+        half_lw: f32,
+        style: &CanvasStyle,
+    ) {
+        let (dax, day) = (jx - seg_a[0], jy - seg_a[1]);
+        let (dbx, dby) = (seg_b[2] - jx, seg_b[3] - jy);
+        let la = (dax * dax + day * day).sqrt();
+        let lb = (dbx * dbx + dby * dby).sqrt();
+        if la < f32::EPSILON || lb < f32::EPSILON {
+            return;
+        }
+        let (uax, uay) = (dax / la, day / la);
+        let (ubx, uby) = (dbx / lb, dby / lb);
+        // R34xx：外扩点用法线方向（同 blit_join）。
+        let (a_ext_x, a_ext_y) = (jx - uay * half_lw, jy + uax * half_lw);
+        let (b_ext_x, b_ext_y) = (jx - uby * half_lw, jy + ubx * half_lw);
+        match self.line_join {
+            LineJoin::Round => {
+                let r2 = half_lw * half_lw;
+                let x0 = (jx - half_lw).floor() as i32;
+                let y0 = (jy - half_lw).floor() as i32;
+                let x1 = (jx + half_lw).ceil() as i32;
+                let y1 = (jy + half_lw).ceil() as i32;
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let dx = px as f32 + 0.5 - jx;
+                        let dy = py as f32 + 0.5 - jy;
+                        if dx * dx + dy * dy <= r2 {
+                            self.blit_pixel_gradient(px, py, style);
+                        }
+                    }
+                }
+            }
+            LineJoin::Bevel => {
+                let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                self.blit_path_gradient(&verts, style);
+            }
+            LineJoin::Miter => {
+                // R34xx：同 blit_join 的 miter 几何（外角平分尖点 + 锐角 θ + spec ratio 判定）。
+                let cos_theta = (uax * ubx + uay * uby).abs();
+                let sin_half = ((1.0 - cos_theta) / 2.0).sqrt();
+                if sin_half < f32::EPSILON {
+                    return;
+                }
+                let miter_len = half_lw / sin_half;
+                let (mx, my) = (uax - ubx, uay - uby);
+                let ml = (mx * mx + my * my).sqrt();
+                if ml < f32::EPSILON {
+                    return;
+                }
+                let (dx, dy) = (mx / ml, my / ml);
+                if miter_len / half_lw > self.miter_limit {
+                    let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                    self.blit_path_gradient(&verts, style);
+                } else {
+                    let (px, py) = (jx + dx * miter_len, jy + dy * miter_len);
+                    let verts = [jx, jy, a_ext_x, a_ext_y, px, py, b_ext_x, b_ext_y, jx, jy];
+                    self.blit_path_gradient(&verts, style);
+                }
+            }
+        }
+    }
+
+    /// R34xx：单像素渐变采样写入（round cap/join 圆盘循环用）。
+    pub(crate) fn blit_pixel_gradient(&mut self, px: i32, py: i32, style: &CanvasStyle) {
+        if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
+            return;
+        }
+        if !self.clip_applies(px as f32, py as f32) {
+            return;
+        }
+        let color = self.apply_alpha(style.sample_at(px as f32, py as f32));
+        let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
+        let (r, g, b, a) = self.composite_pixel(
+            color,
+            self.pixel_buffer[idx],
+            self.pixel_buffer[idx + 1],
+            self.pixel_buffer[idx + 2],
+            self.pixel_buffer[idx + 3],
+        );
+        self.pixel_buffer[idx] = r;
+        self.pixel_buffer[idx + 1] = g;
+        self.pixel_buffer[idx + 2] = b;
+        self.pixel_buffer[idx + 3] = a;
+    }
+
     /// 将矩形区域的颜色写入像素缓冲区（光栅化填充），应用当前合成操作模式。
     pub(crate) fn blit_rect_to_pixels(&mut self, rect: &Rect, color: Color) {
         let canvas_w = self.width as usize;
@@ -1266,7 +1461,9 @@ impl CanvasContext {
         }
 
         // 绘制连接点（相邻线段交汇处）。R34xx：共线角（Miter/Bevel）不画——Nx0 退化
-        // 矩形往返线端点的 180° 角不得覆盖端点外区域（zero.4）。
+        // 矩形往返线端点的 180° 角不得覆盖端点外区域（zero.4）。join 形状按 lineJoin 真实
+        // 几何（miter 尖角三角 / bevel 平切三角 / round 圆盘）——旧方块近似把 90° miter
+        // 画成 400×400 方块，覆盖角点外大片区域（2d.line.cap.closed/join.open 等失败）。
         for i in 0..segments.len().saturating_sub(1) {
             let seg_a = segments[i];
             let seg_b = segments[i + 1];
@@ -1276,9 +1473,7 @@ impl CanvasContext {
             // seg_a 的终点应与 seg_b 的起点相同
             let jx = seg_a[2];
             let jy = seg_a[3];
-            // 尖角/圆角/斜角均近似为覆盖 half_lw 的正方形（既有近似保持）
-            let rect = Rect::new(jx - half_lw, jy - half_lw, line_width, line_width);
-            self.blit_rect_to_pixels(&rect, color);
+            self.blit_join(&seg_a, &seg_b, jx, jy, half_lw, color);
         }
 
         // R34xx：闭合路径首尾段连接处画 join（最后段终点 = 第一段起点；退化矩形 flatten
@@ -1288,8 +1483,7 @@ impl CanvasContext {
             let last_seg = segments[segments.len() - 1];
             let first_seg = segments[0];
             if self.join_visible(&last_seg, &first_seg) {
-                let rect = Rect::new(last_seg[2] - half_lw, last_seg[3] - half_lw, line_width, line_width);
-                self.blit_rect_to_pixels(&rect, color);
+                self.blit_join(&last_seg, &first_seg, last_seg[2], last_seg[3], half_lw, color);
             }
         }
 
@@ -1321,9 +1515,22 @@ impl CanvasContext {
                 // 平头：不做额外处理（线段矩形已精确到端点）
             }
             LineCap::Round => {
-                // 圆头：在端点画一个半径为 half_lw 的圆（近似为正方形）
-                let rect = Rect::new(endpoint_x - half_lw, endpoint_y - half_lw, half_lw * 2.0, half_lw * 2.0);
-                self.blit_rect_to_pixels(&rect, color);
+                // R34xx：真圆盘（半径 half_lw）——旧方块覆盖圆外四角
+                // （2d.line.cap.round 断言 (67,6) 距端点 12.04 > 半径 10 应透明）。
+                let r2 = half_lw * half_lw;
+                let x0 = (endpoint_x - half_lw).floor() as i32;
+                let y0 = (endpoint_y - half_lw).floor() as i32;
+                let x1 = (endpoint_x + half_lw).ceil() as i32;
+                let y1 = (endpoint_y + half_lw).ceil() as i32;
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let dx = px as f32 + 0.5 - endpoint_x;
+                        let dy = py as f32 + 0.5 - endpoint_y;
+                        if dx * dx + dy * dy <= r2 {
+                            self.blit_pixel(px, py, color);
+                        }
+                    }
+                }
             }
             LineCap::Square => {
                 // 方头：在端点方向延伸 half_lw 的矩形
@@ -1391,23 +1598,21 @@ impl CanvasContext {
             }
             self.blit_rect_gradient(&rect, style);
         }
-        // 连接点（Miter/Round/Bevel 均近似为覆盖 half_lw 的正方形；R34xx：共线角不画）
+        // 连接点（R34xx：同 blit_stroke_to_pixels 真实 join 几何；共线角不画）
         for i in 0..segments.len().saturating_sub(1) {
             let seg_a = segments[i];
             let seg_b = segments[i + 1];
             if !self.join_visible(&seg_a, &seg_b) {
                 continue;
             }
-            let rect = Rect::new(seg_a[2] - half_lw, seg_a[3] - half_lw, line_width, line_width);
-            self.blit_rect_gradient(&rect, style);
+            self.blit_join_gradient(&seg_a, &seg_b, seg_a[2], seg_a[3], half_lw, style);
         }
         // R34xx：闭合路径首尾段连接处画 join（同 blit_stroke_to_pixels；共线角不画）。
         if closed && segments.len() >= 2 {
             let last_seg = segments[segments.len() - 1];
             let first_seg = segments[0];
             if self.join_visible(&last_seg, &first_seg) {
-                let rect = Rect::new(last_seg[2] - half_lw, last_seg[3] - half_lw, line_width, line_width);
-                self.blit_rect_gradient(&rect, style);
+                self.blit_join_gradient(&last_seg, &first_seg, last_seg[2], last_seg[3], half_lw, style);
             }
         }
         // 端点 cap（闭合路径无端点 → 不画）
@@ -1432,8 +1637,21 @@ impl CanvasContext {
         match self.line_cap {
             LineCap::Butt => {}
             LineCap::Round => {
-                let rect = Rect::new(endpoint_x - half_lw, endpoint_y - half_lw, half_lw * 2.0, half_lw * 2.0);
-                self.blit_rect_gradient(&rect, style);
+                // R34xx：真圆盘（同 blit_line_cap）。
+                let r2 = half_lw * half_lw;
+                let x0 = (endpoint_x - half_lw).floor() as i32;
+                let y0 = (endpoint_y - half_lw).floor() as i32;
+                let x1 = (endpoint_x + half_lw).ceil() as i32;
+                let y1 = (endpoint_y + half_lw).ceil() as i32;
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let dx = px as f32 + 0.5 - endpoint_x;
+                        let dy = py as f32 + 0.5 - endpoint_y;
+                        if dx * dx + dy * dy <= r2 {
+                            self.blit_pixel_gradient(px, py, style);
+                        }
+                    }
+                }
             }
             LineCap::Square => {
                 let dx = endpoint_x - other_x;
@@ -1458,11 +1676,20 @@ impl CanvasContext {
 
     /// 计算线段的描边矩形（沿线段方向扩展 line_width / 2）。
     pub(crate) fn line_segment_rect(&self, x1: f32, y1: f32, x2: f32, y2: f32, line_width: f32) -> Rect {
+        // R34xx：段矩形精确到端点（不向端点外扩）——端点延伸属 cap 的职责（butt 无延伸、
+        // round/square 由 blit_line_cap 单独画）。旧实现两端各扩 half_lw 使 butt cap 覆盖
+        // 端点外区域（2d.line.cap.butt/closed、join.open、miter.* 角落 (1,1) 全失败）。
         let half_lw = line_width / 2.0;
-        let min_x = x1.min(x2) - half_lw;
-        let min_y = y1.min(y2) - half_lw;
-        let max_x = x1.max(x2) + half_lw;
-        let max_y = y1.max(y2) + half_lw;
+        let (dx, dy) = (x2 - x1, y2 - y1);
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < f32::EPSILON {
+            return Rect::new(x1, y1, 0.0, 0.0);
+        }
+        let (nx, ny) = (-dy / len * half_lw, dx / len * half_lw);
+        let min_x = x1.min(x2).min(x1 + nx).min(x2 + nx).min(x1 - nx).min(x2 - nx);
+        let max_x = x1.max(x2).max(x1 + nx).max(x2 + nx).max(x1 - nx).max(x2 - nx);
+        let min_y = y1.min(y2).min(y1 + ny).min(y2 + ny).min(y1 - ny).min(y2 - ny);
+        let max_y = y1.max(y2).max(y1 + ny).max(y2 + ny).max(y1 - ny).max(y2 - ny);
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
     }
 

@@ -1147,7 +1147,14 @@
       get: function () { return this._ss; }
     });
     Object.defineProperty(ctx, 'lineWidth', {
-      set: function (v) { this._lw = +v; __zw_canvas_op(h, 'setLineWidth', String(v)); },
+      // R34xx：非法值（非有限/≤0）忽略保持旧值（spec：lineWidth 须为正有限数；
+      // 上游 2d.line.width.invalid）。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v) || v <= 0) return;
+        this._lw = v;
+        __zw_canvas_op(h, 'setLineWidth', String(v));
+      },
       get: function () { return this._lw; }
     });
     ctx.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
@@ -1430,12 +1437,24 @@
     });
     ctx._lj = 'miter';
     Object.defineProperty(ctx, 'lineJoin', {
-      set: function (v) { this._lj = String(v); __zw_canvas_op(h, 'setLineJoin', String(v)); },
+      // R34xx：非法值（非 miter/round/bevel 精确匹配）忽略（spec：上游 2d.line.join.invalid）。
+      set: function (v) {
+        v = String(v);
+        if (v !== 'miter' && v !== 'round' && v !== 'bevel') return;
+        this._lj = v;
+        __zw_canvas_op(h, 'setLineJoin', String(v));
+      },
       get: function () { return this._lj; }
     });
     ctx._lc = 'butt';
     Object.defineProperty(ctx, 'lineCap', {
-      set: function (v) { this._lc = String(v); __zw_canvas_op(h, 'setLineCap', String(v)); },
+      // R34xx：非法值（非 butt/round/square 精确匹配）忽略（spec：上游 2d.line.cap.invalid）。
+      set: function (v) {
+        v = String(v);
+        if (v !== 'butt' && v !== 'round' && v !== 'square') return;
+        this._lc = v;
+        __zw_canvas_op(h, 'setLineCap', String(v));
+      },
       get: function () { return this._lc; }
     });
     // ── slice R3304：文本/线连接状态属性（font / textAlign / textBaseline / direction / miterLimit）──
@@ -1473,7 +1492,13 @@
     });
     ctx._ml = 10;
     Object.defineProperty(ctx, 'miterLimit', {
-      set: function (v) { this._ml = +v; __zw_canvas_op(h, 'setMiterLimit', String(v)); },
+      // R34xx：非法值（非有限/≤0）忽略保持旧值（spec：上游 2d.line.miter.invalid）。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v) || v <= 0) return;
+        this._ml = v;
+        __zw_canvas_op(h, 'setMiterLimit', String(v));
+      },
       get: function () { return this._ml; }
     });
     // ── slice 4：globalCompositeOperation / shadow / putImageData（R2798）──

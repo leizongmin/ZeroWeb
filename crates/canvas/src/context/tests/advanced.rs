@@ -229,13 +229,12 @@ fn test_stroke_line_cap_round_extended_endpoints() {
     ctx.move_to(30.0, 50.0);
     ctx.line_to(70.0, 50.0);
     ctx.stroke();
-    // Round cap 应在端点处产生额外像素（半圆近似为正方形）
-    // half_lw = 5, 起点 (30,50)，Round cap 正方形覆盖 (25,45)-(35,55)
-    // 终点 (70,50)，Round cap 正方形覆盖 (65,45)-(75,55)
-    let near_start = ctx.get_image_data(25, 46, 1, 1);
-    assert_ne!(near_start.data[3], 0, "Round cap: 起点端附近应有像素");
-    let near_end = ctx.get_image_data(74, 46, 1, 1);
-    assert_ne!(near_end.data[3], 0, "Round cap: 终点端附近应有像素");
+    // R34xx：Round cap 为真圆盘（半径 half_lw=5）——旧断言 (25,46) 距端点 6.4 > 5 在圆外，
+    // 方块近似已废弃。断言圆盘内点（(30,45) 距端点恰 5、(26,49) 距 √17≈4.1）。
+    let near_start = ctx.get_image_data(26, 49, 1, 1);
+    assert_ne!(near_start.data[3], 0, "Round cap: 起点端圆盘内应有像素");
+    let near_end = ctx.get_image_data(72, 46, 1, 1);
+    assert_ne!(near_end.data[3], 0, "Round cap: 终点端圆盘内应有像素");
 }
 
 /// 测试描边使用 line_join Miter 时产生尖角连接。
