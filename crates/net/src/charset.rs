@@ -75,17 +75,28 @@ fn sniff_at_charset(body: &[u8]) -> Option<&'static Encoding> {
 }
 
 /// 从 `Content-Type` header 解析 `charset=xxx` 参数为编码。
+///
+/// 按 RFC 7231 把 header 切成 `;` 分隔的参数段，只匹配**参数名恰好为 `charset`** 的段——
+/// 不用子串匹配（旧实现 `find("charset=")` 会误命中 `xcharset=`/`supercharset=` 等非标准
+/// 参数名，错误提取其值作为编码，偏离 CSS Syntax §6.2 语义）。
 fn charset_from_content_type(content_type: &str) -> Option<&'static Encoding> {
-    let lower = content_type.to_ascii_lowercase();
-    let idx = lower.find("charset=")?;
-    let after = &content_type[idx + "charset=".len()..];
-    // label 到下一个 `;` 或空白结束，去引号
-    let label: String = after
-        .chars()
-        .take_while(|c| *c != ';' && !c.is_ascii_whitespace())
-        .collect();
-    let label = label.trim_matches(|c| c == '"' || c == '\'');
-    Encoding::for_label(label.as_bytes())
+    // 第一段是媒体类型（如 `text/css`），后续段为参数。逐段检查参数名。
+    for param in content_type.split(';').skip(1) {
+        // 无 `=` 的畸形参数段跳过（不应让一个坏参数终止整个解析）。
+        let Some((name, value)) = param.split_once('=') else {
+            continue;
+        };
+        // 参数名去首尾空白后大小写不敏感比较（RFC 7231 token 大小写不敏感）。
+        if name.trim().eq_ignore_ascii_case("charset") {
+            // label 到下一个 `;` 或空白结束（参数段内已无 `;`，这里主要防尾随空白/引号）。
+            let label: String = value.trim().chars().take_while(|c| !c.is_ascii_whitespace()).collect();
+            let label = label.trim_matches(|c| c == '"' || c == '\'');
+            if let Some(enc) = Encoding::for_label(label.as_bytes()) {
+                return Some(enc);
+            }
+        }
+    }
+    None
 }
 
 /// 用指定编码解码字节，剥离 UTF-8 BOM（若有）。
@@ -173,5 +184,54 @@ mod tests {
             Some(encoding_rs::UTF_8)
         );
         assert_eq!(charset_from_content_type("text/css"), None);
+    }
+
+    // ── R3370：charset 参数边界匹配（防子串误命中）──
+
+    #[test]
+    /// R3370：非标准参数名 `xcharset=`/`supercharset=` 含子串 `charset=`，
+    /// 不得被误当作 charset 参数提取其值（旧实现 `find("charset=")` 会误命中）。
+    fn content_type_charset_param_name_must_be_exact_r3370() {
+        // xcharset=iso-8859-1 不是 charset 参数 → 应返 None（无合法 charset）
+        assert_eq!(
+            charset_from_content_type("text/css; xcharset=iso-8859-1"),
+            None,
+            "xcharset= 不得误命中为 charset 参数"
+        );
+        assert_eq!(
+            charset_from_content_type("text/css; supercharset=utf-16be"),
+            None,
+            "supercharset= 不得误命中为 charset 参数"
+        );
+        // 真正的 charset 参数仍正确提取
+        assert_eq!(
+            charset_from_content_type("text/css; charset=utf-8"),
+            Some(encoding_rs::UTF_8)
+        );
+    }
+
+    #[test]
+    /// R3370：charset 参数名大小写不敏感（RFC 7231 token 大小写不敏感），
+    /// 且其前可有多余空白。
+    fn content_type_charset_param_case_insensitive_r3370() {
+        assert_eq!(
+            charset_from_content_type("text/css;  CHARSET=utf-8"),
+            Some(encoding_rs::UTF_8),
+            "CHARSET= 应大小写不敏感匹配 charset"
+        );
+        assert_eq!(
+            charset_from_content_type("text/css; CharSet=\"utf-8\""),
+            Some(encoding_rs::UTF_8)
+        );
+    }
+
+    #[test]
+    /// R3370：畸形无 `=` 参数段不应终止解析——charset 在其后仍应被找到。
+    fn content_type_malformed_param_does_not_abort_r3370() {
+        assert_eq!(
+            charset_from_content_type("text/css; bogusparam; charset=utf-8"),
+            Some(encoding_rs::UTF_8),
+            "无 `=` 的畸形参数段应跳过，不影响后续 charset 解析"
+        );
     }
 }
