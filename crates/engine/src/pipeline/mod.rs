@@ -470,12 +470,12 @@ impl RenderPipeline {
         self.font_resolver = resolver;
     }
 
-    /// 注入 per-family 行度量与 `ex`/`ch` aspect 映射。
+    /// 注入 per-family 行度量与字体相对单位 aspect 映射。
     ///
     /// 调用方从 `FontLoader::build_line_metric_map()` 构建并传入（拥有所有权，避
     /// FontLoader Rc-share 冲突）。包装为 `FontMetricMap` provider 注入 LayoutEngine，
     /// 经 compute_final_inline_layouts + measure_text_content 双路径触达 IFC，使
-    /// `ex`/`ch` 始终供 style-system 解析字体相对单位；line-height provider 仍由
+    /// 字体 aspect 始终供 style-system 解析字体相对单位；line-height provider 仍由
     /// `ZW_PERFONT_LINEHEIGHT=1` 激活，默认保持常数度量。
     pub fn set_font_metric_map(&mut self, map: zero_render_foundation::font::FontFamilyMetricMap) {
         let relative_metrics = map
@@ -485,6 +485,7 @@ impl RenderPipeline {
                     family.clone(),
                     zero_style_system::FontRelativeMetrics {
                         ex_height: f64::from(metrics.ex_height),
+                        cap_height: f64::from(metrics.cap_height),
                         ch_width: f64::from(metrics.ch_width),
                         size_adjust: f64::from(metrics.size_adjust),
                     },

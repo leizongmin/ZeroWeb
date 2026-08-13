@@ -15,6 +15,10 @@ pub enum LengthValue {
     // https://drafts.csswg.org/css-values-4/#font-relative-lengths
     /// rex 单位（根元素字体的 x-height）。
     Rex(f64),
+    /// cap 单位（当前字体的大写字母高度）。
+    Cap(f64),
+    /// rcap 单位（根元素字体的大写字母高度）。
+    Rcap(f64),
     /// rem 单位。
     Rem(f64),
     /// vh 单位。
@@ -849,6 +853,10 @@ pub struct CalcContext {
     pub root_font_size: Option<f64>,
     /// 根元素字体 x-height（px），用于 rex 单位转换。
     pub root_x_height: Option<f64>,
+    /// 当前字体 cap-height（px），用于 cap 单位转换。
+    pub cap_height: Option<f64>,
+    /// 根元素字体 cap-height（px），用于 rcap 单位转换。
+    pub root_cap_height: Option<f64>,
     /// 根元素字体 "0" 字形宽度（px），用于 rch 单位转换。
     pub root_ch_width: Option<f64>,
     /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
@@ -1505,6 +1513,8 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
         LengthValue::Em(v) => ctx.font_size.map(|fs| v * fs),
         LengthValue::Ex(v) => ctx.x_height.map(|xh| v * xh),
         LengthValue::Rex(v) => ctx.root_x_height.map(|xh| v * xh),
+        LengthValue::Cap(v) => ctx.cap_height.map(|height| v * height),
+        LengthValue::Rcap(v) => ctx.root_cap_height.map(|height| v * height),
         LengthValue::Rem(v) => ctx.root_font_size.map(|rfs| v * rfs),
         LengthValue::Vh(v) => ctx.viewport_height.map(|vh| v * vh / 100.0),
         LengthValue::Vw(v) => ctx.viewport_width.map(|vw| v * vw / 100.0),
@@ -1616,6 +1626,8 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "em" => Some(LengthValue::Em(num)),
         "ex" => Some(LengthValue::Ex(num)),
         "rex" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rex(num)),
+        "cap" if std::env::var("ZW_ROOT_CAP_UNITS").as_deref() != Ok("0") => Some(LengthValue::Cap(num)),
+        "rcap" if std::env::var("ZW_ROOT_CAP_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rcap(num)),
         "rem" => Some(LengthValue::Rem(num)),
         "vh" => Some(LengthValue::Vh(num)),
         "vw" => Some(LengthValue::Vw(num)),

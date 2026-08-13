@@ -5,7 +5,7 @@ use zero_css_parser::{Parser as CssParser, values::LengthValue};
 use zero_dom::Document;
 
 #[test]
-fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
+fn root_font_units_use_root_metrics_and_font_size_ex_uses_parent_metrics() {
     let mut doc = Document::new();
     let html = doc.create_element("html");
     doc.append_child(doc.root(), html).unwrap();
@@ -26,6 +26,7 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
             font-size: 1rex;
             width: calc(2rex);
             height: 1rch;
+            min-width: 1rcap;
         }
     "#;
     let mut metrics = HashMap::new();
@@ -33,6 +34,7 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
         "RootFont".to_string(),
         FontRelativeMetrics {
             ex_height: 0.25,
+            cap_height: 0.7,
             ch_width: 0.5,
             size_adjust: 1.0,
         },
@@ -41,6 +43,7 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
         "monospace".to_string(),
         FontRelativeMetrics {
             ex_height: 0.75,
+            cap_height: 0.4,
             ch_width: 0.9,
             size_adjust: 1.0,
         },
@@ -54,4 +57,5 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
     assert_eq!(styles[&inner].font_size, LengthValue::Px(5.0));
     assert_eq!(styles[&inner].width, LengthValue::Px(10.0));
     assert_eq!(styles[&inner].height, LengthValue::Px(10.0));
+    assert_eq!(styles[&inner].min_width, LengthValue::Px(14.0));
 }

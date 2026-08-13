@@ -812,6 +812,8 @@ fn is_background_position_length(lv: &LengthValue) -> bool {
             | LengthValue::Vw(_)
             | LengthValue::Vmin(_)
             | LengthValue::Vmax(_)
+            | LengthValue::Cap(_)
+            | LengthValue::Rcap(_)
             | LengthValue::Ch(_)
     )
 }

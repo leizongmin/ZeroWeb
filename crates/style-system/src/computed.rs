@@ -17,6 +17,8 @@ pub const ROOT_FONT_SIZE: f64 = 16.0;
 pub struct FontRelativeMetrics {
     /// x-height / em，用于 `ex`。
     pub ex_height: f64,
+    /// cap-height / em，用于 `cap`。
+    pub cap_height: f64,
     /// U+0030 advance / em，用于 `ch`。
     pub ch_width: f64,
     /// `@font-face size-adjust` 缩放因子。
@@ -28,12 +30,21 @@ pub struct FontRelativeMetrics {
 pub struct FontRelativeContext {
     /// 当前元素 first available font 的度量。
     pub current: Option<FontRelativeMetrics>,
-    /// 父元素 first available font 的度量，用于 `font-size` 中的 `ex`/`ch`。
+    /// 父元素 first available font 的度量，用于 `font-size` 中的 `ex`/`cap`/`ch`。
     pub parent: Option<FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
     pub root_x_height: Option<f64>,
+    /// 根元素字体的已用 cap-height（px），用于 `rcap`。
+    pub root_cap_height: Option<f64>,
     /// 根元素字体的已用 U+0030 advance（px），用于 `rch`。
     pub root_ch_width: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct RootRelativeMetrics {
+    x_height: Option<f64>,
+    cap_height: Option<f64>,
+    ch_width: Option<f64>,
 }
 
 pub(crate) fn adjusted_font_relative_metrics(
@@ -48,6 +59,7 @@ pub(crate) fn adjusted_font_relative_metrics(
             } if target.is_finite() && target >= 0.0 => {
                 let aspect = match metric.unwrap_or(crate::property::types::FontSizeAdjustMetric::ExHeight) {
                     crate::property::types::FontSizeAdjustMetric::ExHeight => Some(metrics.ex_height),
+                    crate::property::types::FontSizeAdjustMetric::CapHeight => Some(metrics.cap_height),
                     crate::property::types::FontSizeAdjustMetric::ChWidth => Some(metrics.ch_width),
                     _ => None,
                 };
@@ -62,6 +74,7 @@ pub(crate) fn adjusted_font_relative_metrics(
             crate::property::types::FontSizeAdjustValue::None => 1.0,
         };
         metrics.ex_height *= scale;
+        metrics.cap_height *= scale;
         metrics.ch_width *= scale;
         metrics
     })
@@ -76,7 +89,14 @@ pub fn resolve_length(
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
 ) -> f64 {
-    resolve_length_with_font_metrics(length, font_size, viewport_width, viewport_height, None, None, None)
+    resolve_length_with_font_metrics(
+        length,
+        font_size,
+        viewport_width,
+        viewport_height,
+        None,
+        RootRelativeMetrics::default(),
+    )
 }
 
 fn resolve_length_with_font_metrics(
@@ -85,15 +105,16 @@ fn resolve_length_with_font_metrics(
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
     font_metrics: Option<FontRelativeMetrics>,
-    root_x_height: Option<f64>,
-    root_ch_width: Option<f64>,
+    root_metrics: RootRelativeMetrics,
 ) -> f64 {
     match length {
         LengthValue::Px(v) => *v,
         LengthValue::Em(v) => v * font_size,
         // 无字体上下文时保持历史 Ahem-oriented 近似，避免改变独立 style-system 调用方。
         LengthValue::Ex(v) => v * font_size * font_metrics.map_or(0.8, |metrics| metrics.ex_height),
-        LengthValue::Rex(v) => v * root_x_height.unwrap_or(ROOT_FONT_SIZE * 0.8),
+        LengthValue::Rex(v) => v * root_metrics.x_height.unwrap_or(ROOT_FONT_SIZE * 0.8),
+        LengthValue::Cap(v) => v * font_size * font_metrics.map_or(0.8, |metrics| metrics.cap_height),
+        LengthValue::Rcap(v) => v * root_metrics.cap_height.unwrap_or(ROOT_FONT_SIZE * 0.8),
         LengthValue::Rem(v) => v * ROOT_FONT_SIZE,
         LengthValue::Vh(v) => {
             let vh = viewport_height.unwrap_or(900.0);
@@ -114,7 +135,7 @@ fn resolve_length_with_font_metrics(
             v * vw.max(vh) / 100.0
         }
         LengthValue::Ch(v) => v * font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width),
-        LengthValue::Rch(v) => v * root_ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
+        LengthValue::Rch(v) => v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5),
         // 百分比值不在此处解析，由布局引擎根据容器尺寸处理
         LengthValue::Percentage(v) => *v,
         // auto 不需要解析为 px
@@ -125,11 +146,13 @@ fn resolve_length_with_font_metrics(
                 font_size: Some(font_size),
                 x_height: Some(font_size * font_metrics.map_or(0.8, |metrics| metrics.ex_height)),
                 root_font_size: Some(ROOT_FONT_SIZE),
-                root_x_height,
+                root_x_height: root_metrics.x_height,
+                cap_height: Some(font_size * font_metrics.map_or(0.8, |metrics| metrics.cap_height)),
+                root_cap_height: root_metrics.cap_height,
                 viewport_width,
                 viewport_height,
                 ch_width: Some(font_size * font_metrics.map_or(0.5, |metrics| metrics.ch_width)),
-                root_ch_width,
+                root_ch_width: root_metrics.ch_width,
                 ..Default::default()
             };
             zero_css_parser::values::eval_calc_with_context(expr, &ctx).unwrap_or(0.0)
@@ -141,8 +164,7 @@ fn resolve_length_with_font_metrics(
             viewport_width,
             viewport_height,
             font_metrics,
-            root_x_height,
-            root_ch_width,
+            root_metrics,
         ),
         // min-content/max-content 需要内容信息，此处返回 0.0
         LengthValue::MinContent | LengthValue::MaxContent => 0.0,
@@ -357,7 +379,7 @@ pub fn resolve_computed_style(
     )
 }
 
-/// 解析计算样式，并用 first available font 的真实 `ex`/`ch` 度量解析字体相对单位。
+/// 解析计算样式，并用 first available font 的真实字体度量解析字体相对单位。
 pub fn resolve_computed_style_with_font_metrics(
     style: &ComputedStyle,
     _custom_properties: &HashMap<String, String>,
@@ -373,6 +395,7 @@ pub fn resolve_computed_style_with_font_metrics(
     // Percentage 分支（那里返回原始数值交由布局引擎按容器解析），在此就地解析。
     let font_size_context = parent_font_size.unwrap_or(ROOT_FONT_SIZE);
     let root_font_units_enabled = std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0");
+    let root_cap_units_enabled = std::env::var("ZW_ROOT_CAP_UNITS").as_deref() != Ok("0");
     let font_size_px = match &style.font_size {
         LengthValue::Percentage(v) => v / 100.0 * font_size_context,
         LengthValue::Ex(v) if root_font_units_enabled => {
@@ -387,15 +410,24 @@ pub fn resolve_computed_style_with_font_metrics(
         LengthValue::Rch(v) if root_font_units_enabled => {
             v * font_context.root_ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5)
         }
+        LengthValue::Cap(v) if root_cap_units_enabled => {
+            v * font_size_context * font_context.parent.map_or(0.8, |metrics| metrics.cap_height)
+        }
+        LengthValue::Rcap(v) if root_cap_units_enabled => {
+            v * font_context.root_cap_height.unwrap_or(ROOT_FONT_SIZE * 0.8)
+        }
         other => resolve_length(other, font_size_context, viewport_width, viewport_height),
     };
     // https://drafts.csswg.org/css-fonts-5/#descdef-font-face-size-adjust
     // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
-    // `em` stays tied to computed font-size, while ex/ch use metrics from the adjusted used font.
+    // `em` stays tied to computed font-size, while ex/cap/ch use metrics from the adjusted used font.
     // The property preempts the descriptor, so exactly one adjustment is applied.
     let font_metrics = adjusted_font_relative_metrics(style, font_context.current);
-    let root_x_height = font_context.root_x_height;
-    let root_ch_width = font_context.root_ch_width;
+    let root_metrics = RootRelativeMetrics {
+        x_height: font_context.root_x_height,
+        cap_height: font_context.root_cap_height,
+        ch_width: font_context.root_ch_width,
+    };
 
     let mut resolved = style.clone();
 
@@ -418,7 +450,15 @@ pub fn resolve_computed_style_with_font_metrics(
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
             }
             LengthValue::Rex(v) => {
-                let px = v * root_x_height.unwrap_or(ROOT_FONT_SIZE * 0.8);
+                let px = v * root_metrics.x_height.unwrap_or(ROOT_FONT_SIZE * 0.8);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
+            LengthValue::Cap(v) => {
+                let px = v * font_size_px * font_metrics.map_or(0.8, |metrics| metrics.cap_height);
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
+            }
+            LengthValue::Rcap(v) => {
+                let px = v * root_metrics.cap_height.unwrap_or(ROOT_FONT_SIZE * 0.8);
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
             }
             LengthValue::Ch(v) => {
@@ -426,7 +466,7 @@ pub fn resolve_computed_style_with_font_metrics(
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
             }
             LengthValue::Rch(v) => {
-                let px = v * root_ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5);
+                let px = v * root_metrics.ch_width.unwrap_or(ROOT_FONT_SIZE * 0.5);
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(px));
             }
             _ => {}
@@ -440,8 +480,7 @@ pub fn resolve_computed_style_with_font_metrics(
             viewport_width,
             viewport_height,
             font_metrics,
-            root_x_height,
-            root_ch_width,
+            root_metrics,
         );
     };
 
@@ -525,8 +564,7 @@ fn resolve_length_field(
     viewport_width: Option<f64>,
     viewport_height: Option<f64>,
     font_metrics: Option<FontRelativeMetrics>,
-    root_x_height: Option<f64>,
-    root_ch_width: Option<f64>,
+    root_metrics: RootRelativeMetrics,
 ) {
     match field {
         LengthValue::Px(_) => { /* 已经是绝对值 */ }
@@ -545,8 +583,7 @@ fn resolve_length_field(
                 viewport_width,
                 viewport_height,
                 font_metrics,
-                root_x_height,
-                root_ch_width,
+                root_metrics,
             );
             *field = LengthValue::Px(px);
         }
@@ -877,21 +914,21 @@ mod tests {
     #[test]
     fn test_resolve_length_field_preserves_percentage() {
         let mut field = LengthValue::Percentage(50.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
         assert_eq!(field, LengthValue::Percentage(50.0));
     }
 
     #[test]
     fn test_resolve_length_field_preserves_auto() {
         let mut field = LengthValue::Auto;
-        resolve_length_field(&mut field, 16.0, None, None, None, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
         assert_eq!(field, LengthValue::Auto);
     }
 
     #[test]
     fn test_resolve_length_field_converts_em() {
         let mut field = LengthValue::Em(2.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
         assert_eq!(field, LengthValue::Px(32.0));
     }
 
@@ -910,6 +947,7 @@ mod tests {
             FontRelativeContext {
                 current: Some(FontRelativeMetrics {
                     ex_height: 0.6,
+                    cap_height: 0.65,
                     ch_width: 0.7,
                     size_adjust: 1.0,
                 }),
@@ -924,6 +962,7 @@ mod tests {
     fn test_font_size_adjust_scales_ex_and_ch_but_not_em() {
         let metrics = Some(FontRelativeMetrics {
             ex_height: 0.8,
+            cap_height: 0.7,
             ch_width: 1.0,
             size_adjust: 0.5,
         });
@@ -957,6 +996,7 @@ mod tests {
     fn test_font_face_size_adjust_scales_ex_and_ch_but_not_em() {
         let metrics = Some(FontRelativeMetrics {
             ex_height: 0.8,
+            cap_height: 0.7,
             ch_width: 1.0,
             size_adjust: 0.5,
         });
@@ -1053,7 +1093,7 @@ mod tests {
     fn test_explicit_zero_px_not_auto() {
         // 确保 0px 不被误认为 auto
         let mut field = LengthValue::Px(0.0);
-        resolve_length_field(&mut field, 16.0, None, None, None, None, None);
+        resolve_length_field(&mut field, 16.0, None, None, None, RootRelativeMetrics::default());
         assert_eq!(field, LengthValue::Px(0.0));
         assert_ne!(field, LengthValue::Auto);
     }

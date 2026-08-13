@@ -261,6 +261,8 @@ fn test_eval_calc_with_context_relative_units() {
         x_height: Some(8.0),           // 8px
         root_font_size: Some(16.0),    // 16px
         root_x_height: Some(8.0),      // 8px
+        cap_height: Some(11.0),        // 11px
+        root_cap_height: Some(11.0),   // 11px
         root_ch_width: Some(8.0),      // 8px
         viewport_height: Some(1000.0), // 1000px
         viewport_width: Some(800.0),   // 800px
@@ -525,6 +527,8 @@ fn test_complex_calc_expression_chain() {
         x_height: Some(8.0),
         root_font_size: Some(16.0),
         root_x_height: Some(8.0),
+        cap_height: Some(11.0),
+        root_cap_height: Some(11.0),
         root_ch_width: Some(8.0),
         viewport_height: Some(1000.0),
         viewport_width: Some(800.0),

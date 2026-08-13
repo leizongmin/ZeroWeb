@@ -92,3 +92,4 @@ css/css-fonts/font-synthesis-style-binary.html css/css-fonts/font-synthesis-styl
 css/css-fonts/font-synthesis-weight-binary.html css/css-fonts/font-synthesis-weight-binary-ref.html == 2026-08-13 R3384-F data URI webfont
 css/css-fonts/rex-in-monospace.html css/css-fonts/rex-in-monospace-ref.html == 2026-08-13 R3385-F rex root x-height
 css/css-fonts/rch-in-monospace.html css/css-fonts/rch-in-monospace-ref.html == 2026-08-13 R3386-F rch root zero advance
+css/css-fonts/rcap-in-monospace.html css/css-fonts/rcap-in-monospace-ref.html == 2026-08-13 R3387-F cap and rcap root cap-height

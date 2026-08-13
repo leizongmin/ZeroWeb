@@ -125,6 +125,9 @@ impl FontLoader {
                 let ex_height = self
                     .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ExHeight)
                     .unwrap_or(0.5);
+                let cap_height = self
+                    .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::CapHeight)
+                    .unwrap_or(0.8);
                 let ch_width = self
                     .font_metric_aspect(id, crate::font::FontSizeAdjustMetric::ChWidth)
                     .unwrap_or(0.5);
@@ -137,6 +140,7 @@ impl FontLoader {
                         descent,
                         line_gap,
                         ex_height,
+                        cap_height,
                         ch_width,
                         size_adjust,
                     },
@@ -206,6 +210,11 @@ mod tests {
         loader.register_font_size_adjust(font_id, 0.5);
 
         let metrics = loader.build_line_metric_map();
-        assert_eq!(metrics.get("AdjustedMetrics").map(|entry| entry.size_adjust), Some(0.5));
+        let metrics = metrics.get("AdjustedMetrics").expect("family metrics");
+        assert_eq!(metrics.size_adjust, 0.5);
+        assert_eq!(
+            Some(metrics.cap_height),
+            loader.font_metric_aspect(font_id, crate::font::FontSizeAdjustMetric::CapHeight)
+        );
     }
 }

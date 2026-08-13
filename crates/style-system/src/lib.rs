@@ -272,6 +272,8 @@ pub struct StyleSystem {
     font_relative_metrics: HashMap<String, computed::FontRelativeMetrics>,
     /// 根元素字体的已用 x-height（px），用于 `rex`。
     root_x_height: Option<f64>,
+    /// 根元素字体的已用 cap-height（px），用于 `rcap`。
+    root_cap_height: Option<f64>,
     /// 根元素字体的已用 U+0030 advance（px），用于 `rch`。
     root_ch_width: Option<f64>,
     /// 视口宽度（px），用于 vh/vw 计算。
@@ -294,6 +296,7 @@ impl StyleSystem {
             font_feature_values: HashMap::new(),
             font_relative_metrics: HashMap::new(),
             root_x_height: None,
+            root_cap_height: None,
             root_ch_width: None,
             viewport_width: None,
             viewport_height: None,
@@ -359,6 +362,7 @@ impl StyleSystem {
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = HashMap::new();
         self.root_x_height = None;
+        self.root_cap_height = None;
         self.root_ch_width = None;
 
         // 预扫描所有样式表的 `@property` 规则，注册自定义属性（syntax/inherits/initial-value）。
@@ -1398,6 +1402,7 @@ impl StyleSystem {
                 current: font_metrics,
                 parent: parent_font_metrics,
                 root_x_height: self.root_x_height,
+                root_cap_height: self.root_cap_height,
                 root_ch_width: self.root_ch_width,
             },
         );
@@ -1440,6 +1445,7 @@ impl StyleSystem {
             };
             let root_metrics = computed::adjusted_font_relative_metrics(&resolved, font_metrics);
             self.root_x_height = Some(root_font_size * root_metrics.map_or(0.8, |metrics| metrics.ex_height));
+            self.root_cap_height = Some(root_font_size * root_metrics.map_or(0.8, |metrics| metrics.cap_height));
             self.root_ch_width = Some(root_font_size * root_metrics.map_or(0.5, |metrics| metrics.ch_width));
         }
         resolved

@@ -28,6 +28,8 @@ pub struct FontFamilyMetrics {
     pub line_gap: f32,
     /// x-height / em。
     pub ex_height: f32,
+    /// cap-height / em。
+    pub cap_height: f32,
     /// `0` glyph advance / em。
     pub ch_width: f32,
     /// `@font-face size-adjust` 缩放因子。

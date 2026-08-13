@@ -83,6 +83,8 @@
 >
 > **▶ 字体度量进展（R3386-F rch root zero advance·2026-08-13）**：沿用 R3385 的 root metric 生命周期，新增 typed `LengthValue::Rch`、`CalcContext.root_ch_width` 与 `FontRelativeContext.root_ch_width`；StyleSystem 在根元素完成后缓存 root first-available font 的 used U+0030 advance，`font-size`、`line-height`、普通 length 与 `calc()` 均从同一根字体度量解析 `rch`，不受当前/祖先 family 或 font-size 影响。`ZW_ROOT_FONT_UNITS=0` 同时回滚 `rex/rch`。`rch-in-monospace` self-source `0.15%→0.00%`（strict flip），fresh Chromium Oracle `0.92%→0.84%`。串行 css-fonts Oracle 282 案中，除同一 kill-switch 下既有 `rex` 改善外，仅 `rch` 改善 `0.08pp`、零回归；pass/credible/strict 保持 `87/77/54`。self-source pass 保持 `280/287`、可信 strict `150→152`。test/ref 已通过标准 importer 常驻。`rcap/ric/rlh` 分别需要 root cap-height、ideographic advance 与 line-height provider，不并入本切片。
 >
+> **▶ 字体度量进展（R3387-F cap/rcap root cap-height·2026-08-13）**：CSS Values 4 `cap/rcap` 现以 typed `LengthValue` 保留至 computed/calc 阶段；FontLoader 将既有 OS/2 cap-height provider 纳入 first-available family metric map，StyleSystem 分别按当前/父/root 字体 ownership 解析普通长度、`font-size` 与 root unit，并缓存 root used cap-height。`ZW_ROOT_CAP_UNITS=0` 独立回滚本切片，不影响已落地的 `rex/rch`。`rcap-in-monospace` self-source `0.15%→0.00%`（strict flip），fresh Chromium Oracle `0.92%→0.84%`。串行 css-fonts Oracle 282 案仅该用例改善 `0.08pp`、0 回归；pass/credible/strict 保持 `87/77/54`。self-source pass `280/287` 与 7 个既有 mismatch 不变，可信 strict `152→153`。test/ref 已通过标准 importer 常驻。`ric/rlh` 继续作为独立 provider/lifecycle 切片。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
