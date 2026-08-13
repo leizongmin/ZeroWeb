@@ -21,7 +21,12 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
     let css = r#"
         html { font-family: RootFont; font-size: 20px; }
         .outer { font-size: 1ex; }
-        .inner { font-family: monospace; font-size: 1rex; width: calc(2rex); }
+        .inner {
+            font-family: monospace;
+            font-size: 1rex;
+            width: calc(2rex);
+            height: 1rch;
+        }
     "#;
     let mut metrics = HashMap::new();
     metrics.insert(
@@ -36,7 +41,7 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
         "monospace".to_string(),
         FontRelativeMetrics {
             ex_height: 0.75,
-            ch_width: 0.5,
+            ch_width: 0.9,
             size_adjust: 1.0,
         },
     );
@@ -48,4 +53,5 @@ fn rex_uses_root_font_x_height_and_font_size_ex_uses_parent_metrics() {
     assert_eq!(styles[&outer].font_size, LengthValue::Px(5.0));
     assert_eq!(styles[&inner].font_size, LengthValue::Px(5.0));
     assert_eq!(styles[&inner].width, LengthValue::Px(10.0));
+    assert_eq!(styles[&inner].height, LengthValue::Px(10.0));
 }

@@ -81,6 +81,8 @@
 >
 > **▶ 字体度量进展（R3385-F rex root x-height·2026-08-13）**：CSS Values 4 `rex` 现以 typed `LengthValue` 保留至 computed/calc 阶段；StyleSystem 在根元素完成后缓存 root first-available font 的 used x-height，并用独立 `FontRelativeContext` 同时传 current/parent/root 度量。`font-size` 中 `ex/ch` 现按规范读取父元素字体，普通 `ex/ch` 仍读当前元素字体，`rex` 始终读根字体且支持 `calc()`；`ZW_ROOT_FONT_UNITS=0` 回滚。`rex-in-monospace` self-source `0.22%→0.00%`（strict flip），fresh Chromium Oracle `1.33%→1.16%`。串行 css-fonts 282 案仅该用例改变：1 改善/0 回归/281 持平，总 `896.98→896.81pp`（净 `-0.17pp`）；pass/credible/strict 保持 `87/77/54`。self-source pass `280/287` 保持、可信 strict `150→151`。test/ref 与 `ExTest.woff` 已常驻。验证：parser `2843`、style `2172`、layout `1373`、workspace default/QuickJS clippy、`make test`、reftest `687/687`、产品 smoke/perf 全绿。
 >
+> **▶ 字体度量进展（R3386-F rch root zero advance·2026-08-13）**：沿用 R3385 的 root metric 生命周期，新增 typed `LengthValue::Rch`、`CalcContext.root_ch_width` 与 `FontRelativeContext.root_ch_width`；StyleSystem 在根元素完成后缓存 root first-available font 的 used U+0030 advance，`font-size`、`line-height`、普通 length 与 `calc()` 均从同一根字体度量解析 `rch`，不受当前/祖先 family 或 font-size 影响。`ZW_ROOT_FONT_UNITS=0` 同时回滚 `rex/rch`。`rch-in-monospace` self-source `0.15%→0.00%`（strict flip），fresh Chromium Oracle `0.92%→0.84%`。串行 css-fonts Oracle 282 案中，除同一 kill-switch 下既有 `rex` 改善外，仅 `rch` 改善 `0.08pp`、零回归；pass/credible/strict 保持 `87/77/54`。self-source pass 保持 `280/287`、可信 strict `150→152`。test/ref 已通过标准 importer 常驻。`rcap/ric/rlh` 分别需要 root cap-height、ideographic advance 与 line-height provider，不并入本切片。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

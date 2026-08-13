@@ -27,6 +27,8 @@ pub enum LengthValue {
     Vmax(f64),
     /// ch 单位。
     Ch(f64),
+    /// rch 单位（根元素字体中 U+0030 "0" 字形的 advance）。
+    Rch(f64),
     /// 百分比值（0-100）。
     Percentage(f64),
     /// auto 关键字。
@@ -847,6 +849,8 @@ pub struct CalcContext {
     pub root_font_size: Option<f64>,
     /// 根元素字体 x-height（px），用于 rex 单位转换。
     pub root_x_height: Option<f64>,
+    /// 根元素字体 "0" 字形宽度（px），用于 rch 单位转换。
+    pub root_ch_width: Option<f64>,
     /// 视口高度（px），用于 vh/vmin/vmax 单位转换。
     pub viewport_height: Option<f64>,
     /// 视口宽度（px），用于 vw/vmin/vmax 单位转换。
@@ -1513,6 +1517,7 @@ fn resolve_length_to_px(lv: &LengthValue, ctx: &CalcContext) -> Option<f64> {
             _ => None,
         },
         LengthValue::Ch(v) => ctx.ch_width.map(|cw| v * cw),
+        LengthValue::Rch(v) => ctx.root_ch_width.map(|cw| v * cw),
         LengthValue::Auto => None,
         LengthValue::Calc(expr) => eval_calc_with_context(expr, ctx),
         LengthValue::FitContent(inner) => resolve_length_to_px(inner, ctx),
@@ -1629,6 +1634,7 @@ pub fn parse_length(value: &str) -> Option<LengthValue> {
         "vi" | "svi" | "lvi" | "dvi" => Some(LengthValue::Vw(num)),
         "vb" | "svb" | "lvb" | "dvb" => Some(LengthValue::Vh(num)),
         "ch" => Some(LengthValue::Ch(num)),
+        "rch" if std::env::var("ZW_ROOT_FONT_UNITS").as_deref() != Ok("0") => Some(LengthValue::Rch(num)),
         "%" => Some(LengthValue::Percentage(num)),
         // CSS 绝对长度单位 → 转换为 px（96 DPI）
         "in" => Some(LengthValue::Px(num * 96.0)),

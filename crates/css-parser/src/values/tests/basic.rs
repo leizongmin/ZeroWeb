@@ -1588,12 +1588,14 @@ fn test_parse_length_ex_preserves_font_metric_unit() {
 #[test]
 fn test_parse_and_evaluate_rex() {
     assert_eq!(parse_length("1.5rex"), Some(LengthValue::Rex(1.5)));
-    let expr = parse_calc("calc(2rex + 1px)").unwrap();
+    assert_eq!(parse_length("1.5rch"), Some(LengthValue::Rch(1.5)));
+    let expr = parse_calc("calc(2rex + 3rch + 1px)").unwrap();
     let context = CalcContext {
         root_x_height: Some(5.0),
+        root_ch_width: Some(2.0),
         ..Default::default()
     };
-    assert_eq!(eval_calc_with_context(&expr, &context), Some(11.0));
+    assert_eq!(eval_calc_with_context(&expr, &context), Some(17.0));
 }
 
 #[test]
