@@ -1564,6 +1564,8 @@
         // 须先于通用 type 字符串反射（R3037）——INPUT/BUTTON 的 type 为枚举（缺省/非法→default，关键字→规范小写），
         // 非 INPUT/BUTTON（link/script/style/embed 等）回落通用字符串反射。经 [`_reflectedTypeEnum`]（part01.js）。
         if (prop === 'type') {
+          // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-type
+          if (_realTag(sel, handle) === 'OUTPUT') return 'output';
           var _et = _reflectedTypeEnum(sel, handle);
           if (_et !== null) return _et;
         }
@@ -1685,6 +1687,12 @@
             var _charMoOld = _mo_any_wants_char_old(_charMoId) ? _mo_read_text(sel, handle) : null;
             // spec `LegacyNullToEmptyString`：null → 空串（清子）。
             var _tcVal = value === null ? '' : String(value);
+            if (_realTag(sel, handle) === 'OUTPUT') {
+              // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
+              // Replacing descendants updates defaultValue. In default mode value follows it;
+              // in value mode `_outputValue` keeps the live value.
+              _outputDefault[key] = _tcVal;
+            }
             if (handle) __zw_set_text_handle(handle, _tcVal);
             else __zw_set_text(sel, _tcVal);
             _mo_notify(sel, handle, { type: 'characterData', oldValue: _charMoOld });
@@ -1813,9 +1821,15 @@
             // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
             // 不发 select 的 attributes MO 通知（语义正确）。
           } else if (_realTag(sel, handle) === 'OUTPUT') {
-            // HTMLOutputElement.value setter（R2846）：dirty + 存当前值。spec：value 独立于 textContent——
-            // <output> 按 children 渲染非 value，故设 .value 不写 DOM text（与 textarea 区分）。
-            _outputValue[key] = String(value);
+            // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-value
+            // Capture default mode before entering value mode, then replace descendants.
+            if (_outputDefault[key] == null) {
+              _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+            }
+            var _ov = String(value);
+            _outputValue[key] = _ov;
+            if (handle) __zw_set_text_handle(handle, _ov);
+            else __zw_set_text(sel, _ov);
           } else {
             _inputValues[key] = String(value);
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。

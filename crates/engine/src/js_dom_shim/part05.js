@@ -8,9 +8,13 @@
             if (handle) __zw_set_attr_handle(handle, 'value', String(value));
             else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
           } else if (_realTag(sel, handle) === 'OUTPUT') {
-            // `output.defaultValue = x`（R2846）——更新捕获的初值缓存（不联动 textContent/.value 当前态——
-            // spec 仅当未 dirty 时联动，罕见 defer；Chromium 150 oracle：dirty 时设 defaultValue 不改 value）。
-            _outputDefault[key] = String(value);
+            // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
+            var _odv = String(value);
+            _outputDefault[key] = _odv;
+            if (_outputValue[key] == null) {
+              if (handle) __zw_set_text_handle(handle, _odv);
+              else __zw_set_text(sel, _odv);
+            }
           }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。

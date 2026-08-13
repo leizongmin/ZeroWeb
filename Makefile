@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -12,6 +12,9 @@ fetch-wpt-data:
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 	@bash scripts/fetch-wpt-smoke-subdirs.sh
 	@bash tests/wpt-runner/scripts/sync-imported-resources.sh
+
+fetch-wpt-html-testharness:
+	bash tests/wpt-runner/scripts/fetch-html-testharness-subset.sh
 
 # 升级 wpt-data 套件到新 tag（A2：套件随上游滚动，否则通过率无法对比）。
 # 用法: make update-wpt-data REF=v2.0        升级到指定 tag
@@ -116,6 +119,10 @@ test: target/test-guard
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 endif
+
+# M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
+testharness-html: fetch-wpt-html-testharness target/test-guard
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-html
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard

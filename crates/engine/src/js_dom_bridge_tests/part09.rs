@@ -1964,11 +1964,17 @@ fn test_output_value_default_value_r2846() {
     sandbox
         .execute(
             "var a = document.querySelector('#o1');\
+             globalThis.__type1 = a.type;\
              globalThis.__v1 = a.value;\
              globalThis.__dv1 = a.defaultValue;\
              globalThis.__v2 = document.querySelector('#o2').value;",
         )
         .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__type1)").unwrap().value,
+        "output",
+        "output.type is the constant 'output'"
+    );
     assert_eq!(
         sandbox.execute("String(globalThis.__v1)").unwrap().value,
         "12",
@@ -1985,9 +1991,19 @@ fn test_output_value_default_value_r2846() {
         "o2 空 output → value=''"
     );
 
-    // value setter 仅更新 dirty 当前值（client 缓存即时）；spec：value 独立于 textContent——
-    // 设 .value 不触碰 DOM text（<output> 按 children 渲染非 value），故 textContent 仍='12'。
-    // defaultValue 不被 value 变更影响（捕获稳定）。每 execute 内声明局部元素 var（_proxyCache identity-stable）。
+    // default mode：textContent 变化同步 value/defaultValue。
+    sandbox
+        .execute(
+            "var t = document.querySelector('#o1');\
+             t.textContent = '5';\
+             globalThis.__tv = t.value;\
+             globalThis.__tdv = t.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tv)").unwrap().value, "5");
+    assert_eq!(sandbox.execute("String(globalThis.__tdv)").unwrap().value, "5");
+
+    // value setter 进入 dirty/value mode，替换 textContent，但保留 defaultValue。
     sandbox
         .execute(
             "var o = document.querySelector('#o1');\
@@ -2004,13 +2020,13 @@ fn test_output_value_default_value_r2846() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__tc1)").unwrap().value,
-        "12",
-        "o1.value setter 不触碰 textContent（仍='12'，spec value 独立于 text）"
+        "99",
+        "o1.value setter replaces textContent"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__dv1b)").unwrap().value,
-        "12",
-        "defaultValue 跨 value 变更保持稳定（仍='12'）"
+        "5",
+        "defaultValue remains the pre-dirty text"
     );
 
     // defaultValue setter 更新捕获值；value（dirty）不受影响。
@@ -2033,12 +2049,12 @@ fn test_output_value_default_value_r2846() {
         "dirty 时设 defaultValue 不改 value（仍='99'）"
     );
 
-    // value setter 不写 DOM text（spec：value 独立于 textContent）——apply 后 output 仍含初值 '12'，无 text mutation。
+    // value setter writes DOM text; dirty defaultValue changes do not replace the live text.
     let ms = mutations.lock().unwrap().clone();
     let (out, _handles) = apply_mutations_to_html_with_handles(&dom_html.lock().unwrap().clone(), &ms).unwrap();
     assert!(
-        out.contains("<output id=\"o1\">12</output>"),
-        "output.value=99 不写 DOM text（apply 后 textContent 仍='12'，value 独立）\n{out}"
+        out.contains("<output id=\"o1\">99</output>"),
+        "output.value=99 replaces DOM text\n{out}"
     );
 }
 

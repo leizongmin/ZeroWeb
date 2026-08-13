@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 阶段：M4
-- 状态：M0-M3 完成，M4 实施中
+- 状态：M0-M4 实施完成，最终审计中
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -24,7 +24,7 @@
 | M1 | PageNodeRef、pressed target、JS-disabled、输入事件、焦点/激活 | completed |
 | M2 | `page-runtime` 共享默认动作核心 | completed |
 | M3 | 文本、选择/表单、导航/交互元素族 | completed |
-| M4 | live renderer WebDriver 与 WPT testdriver | in_progress |
+| M4 | live renderer WebDriver 与 WPT testdriver | completed |
 
 ## 跨线边界
 
@@ -91,7 +91,7 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 
 - [x] live renderer automation IPC 与有界 owner loop
 - [x] WebDriver live renderer session 与 HTML 交互端点
-- [ ] WPT testharness reporter 与 testdriver 动作
-- [ ] forms/focus/input-events 选定子集
+- [x] WPT testharness reporter 与 testdriver 动作
+- [x] forms/focus/input-events 选定子集
 
-实施 WPT testharness reporter 与 testdriver 动作。
+按 FR-001 至 FR-012、NFR 和接口清单执行最终完成度审计。

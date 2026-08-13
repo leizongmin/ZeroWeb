@@ -115,7 +115,7 @@ impl WebView {
         &mut self,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(None, true, request)
+        self.dispatch_user_action_impl(None, true, true, request)
     }
 
     /// 通过内部 executor 执行 action，并显式控制页面 JavaScript 事件派发。
@@ -125,7 +125,16 @@ impl WebView {
         javascript_enabled: bool,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(None, javascript_enabled, request)
+        self.dispatch_user_action_impl(None, javascript_enabled, true, request)
+    }
+
+    /// 在页面脚本已初始化的同一 sandbox 中执行自动化动作。
+    #[doc(hidden)]
+    pub fn dispatch_loaded_page_user_action(
+        &mut self,
+        request: HtmlActionRequest,
+    ) -> Result<WebViewUserActionResult, WebViewError> {
+        self.dispatch_user_action_impl(None, true, false, request)
     }
 
     /// 通过外部页面 JS executor 执行 shared HTML user action。
@@ -135,7 +144,7 @@ impl WebView {
         executor: &dyn JsExecutor,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(Some(executor), true, request)
+        self.dispatch_user_action_impl(Some(executor), true, false, request)
     }
 
     /// 通过外部 executor 执行 action，并显式控制页面 JavaScript 事件派发。
@@ -146,16 +155,17 @@ impl WebView {
         javascript_enabled: bool,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        self.dispatch_user_action_impl(Some(executor), javascript_enabled, request)
+        self.dispatch_user_action_impl(Some(executor), javascript_enabled, false, request)
     }
 
     fn dispatch_user_action_impl(
         &mut self,
         executor: Option<&dyn JsExecutor>,
         javascript_enabled: bool,
+        initialize_page_scripts: bool,
         request: HtmlActionRequest,
     ) -> Result<WebViewUserActionResult, WebViewError> {
-        if executor.is_none() && javascript_enabled {
+        if initialize_page_scripts && executor.is_none() && javascript_enabled {
             self.run_page_scripts()?;
         }
         if !request

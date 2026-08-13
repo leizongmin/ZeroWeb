@@ -1,0 +1,6 @@
+# Pinned upstream WPT testharness cases for HTML behavior compatibility.
+# Format: <path> <wpt-revision> <date> <requirement>
+html/semantics/forms/the-output-element/output.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
+html/semantics/forms/the-input-element/input-whitespace.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
+html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/focus-tabindex-default-value.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
+uievents/constructors/inputevent-constructor.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011

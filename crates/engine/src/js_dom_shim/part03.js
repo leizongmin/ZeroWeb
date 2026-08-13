@@ -2453,14 +2453,26 @@
           var dlo = String(dval).toLowerCase();
           return (dlo === 'ltr' || dlo === 'rtl' || dlo === 'auto') ? dlo : '';
         }
-        // `el.tabIndex`——反射 tabindex 属性为数值；无属性 → -1（spec：非 tab 序元素默认 -1；
-        // natively focusable 默认 0 简化为 -1，常见用法足）。同步 set→get 优先读缓存。
+        // https://html.spec.whatwg.org/multipage/interaction.html#dom-tabindex
+        // `el.tabIndex` reflects explicit tabindex; natively focusable elements default to 0.
         if (prop === 'tabIndex') {
           var rtc = _reflectedAttrs[key];
           if (rtc && Object.prototype.hasOwnProperty.call(rtc, 'tabindex')) return rtc['tabindex'];
           var tiraw = handle ? __zw_get_attr_handle(handle, 'tabindex') : __zw_get_attr(sel, 'tabindex');
           var tin = parseInt(tiraw, 10);
-          return isNaN(tin) ? -1 : tin;
+          if (!isNaN(tin)) return tin;
+          var titag = _realTag(sel, handle);
+          if (titag === 'BUTTON' || titag === 'INPUT' || titag === 'SELECT' || titag === 'TEXTAREA' || titag === 'SUMMARY') return 0;
+          if (titag === 'A' || titag === 'AREA') {
+            var tihref = handle ? __zw_has_attr_handle(handle, 'href') : __zw_has_attr(sel, 'href');
+            if (tihref === '1') return 0;
+          }
+          var ticeHas = handle ? __zw_has_attr_handle(handle, 'contenteditable') : __zw_has_attr(sel, 'contenteditable');
+          if (ticeHas === '1') {
+            var tice = handle ? __zw_get_attr_handle(handle, 'contenteditable') : __zw_get_attr(sel, 'contenteditable');
+            if (tice === '' || String(tice).toLowerCase() === 'true') return 0;
+          }
+          return -1;
         }
         // `el.contentEditable`——spec HTML 枚举属性反射，规范化状态：空串/case-insensitive "true"→"true"、
         // "false"→"false"、缺省/非法→"inherit"。经 [`_contentEditableState`]（R3187，has_attr 区分缺省与空串

@@ -1,6 +1,40 @@
 // js_dom_bridge 测试模块拆分 part 17，承接 part13 的 POST submission 测试。
 
 #[test]
+fn tabindex_defaults_follow_native_focusability() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><button id='button'>B</button><div id='div'>D</div>\
+         <a id='link' href='#x'>A</a><div id='editable' contenteditable></div></body></html>"
+            .to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/tabindex".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    assert_eq!(
+        sandbox
+            .execute(
+                "['button','div','link','editable'].map(function(id){\
+                   return document.getElementById(id).tabIndex;\
+                 }).join('|')"
+            )
+            .unwrap()
+            .value,
+        "0|-1|0|0"
+    );
+}
+
+#[test]
 fn form_owner_attribute_does_not_fall_back_to_ancestor() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

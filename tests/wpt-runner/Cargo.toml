@@ -13,6 +13,7 @@ quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/q
 serde = { workspace = true }
 serde_json = { workspace = true }
 zero-engine = { workspace = true }
+zero-page-runtime = { workspace = true }
 zero-net = { workspace = true }
 zero-dom = { workspace = true }
 zero-css-parser = { workspace = true }

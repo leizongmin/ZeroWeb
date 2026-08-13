@@ -14,6 +14,7 @@ mod reftest_data;
 mod report;
 mod runner;
 mod runner_text_metrics;
+mod testharness;
 mod wpt_file_loader;
 
 use rayon::prelude::*;
@@ -32,6 +33,7 @@ Commands:
   summary           Run tests and print summary only
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
+  testharness-html  Run selected forms/focus/input-event testharness cases
   layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
                        see scripts/run-layout-golden.sh)
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
@@ -204,6 +206,7 @@ fn main() {
         "summary" => cmd_summary(&options, filter.as_deref()),
         "reftest" => cmd_reftest(&options, filter.as_deref()),
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
+        "testharness-html" => cmd_testharness_html(&options, filter.as_deref()),
         "layout-dump" => cmd_layout_dump(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
         "struct-sweep" => cmd_struct_sweep(&options, filter.as_deref()),
@@ -213,6 +216,42 @@ fn main() {
             print_usage();
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_testharness_html(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_html_interaction_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
     }
 }
 
