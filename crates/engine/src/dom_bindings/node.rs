@@ -222,8 +222,34 @@ fn insert_with_fragment_flatten(
     }
 }
 
+/// dom crate `DomError` → DOMException (name, message) 映射（spec `dom-node-insertbefore` /
+/// `dom-node-replacechild` / `dom-node-removechild` 错误步）。
+///
+/// dom crate 层已实现全部 spec 校验（cycle / 不能插文档根 / not-a-child），返带类型的 `DomError`；
+/// 本映射把其转成 spec DOMException name，经 [`super::dom_exception::throw_dom_exception`] 抛出
+/// （此前 native invoke 仅 `.is_ok()` 吞掉错误 → best-effort 留 undefined，与 spec/WPT 不符）。
+///
+/// - `WouldCreateCycle` / `CannotInsertDocumentRoot` → `HierarchyRequestError`
+/// - `NotAChild` → `NotFoundError`（replaceChild/removeChild child 不在 context node）
+/// - `NodeNotFound` → 节点不在文档（spec 内部不变量；best-effort HierarchyRequestError）
+fn dom_error_exception(err: &DomError) -> (&'static str, String) {
+    match err {
+        DomError::WouldCreateCycle | DomError::CannotInsertDocumentRoot => (
+            "HierarchyRequestError",
+            "The new child is an ancestor of the parent.".into(),
+        ),
+        DomError::NotAChild { .. } => (
+            "NotFoundError",
+            "The child to be replaced is not a child of this node.".into(),
+        ),
+        DomError::NodeNotFound(_) => ("HierarchyRequestError", "The node does not exist.".into()),
+        // ShadowRoot 相关（attachShadow 专用，非 node mutation 路径）：best-effort InvalidStateError。
+        DomError::NotAnElement | DomError::AlreadyHasShadowRoot => ("InvalidStateError", err.to_string()),
+    }
+}
+
 /// 对象；`Document::append_child` 移动（含 re-parent、cycle 检测）。成功返 child 对象（spec），
-/// Err（cycle/not-found）→ best-effort 留 undefined（不抛，限制记录）。
+/// Err（cycle/not-found）→ 抛 DOMException（HierarchyRequestError/NotFoundError，spec 合规）。
 /// R3132：DocumentFragment 参 → flatten（子节点移到 parent、fragment 清空，spec）。
 pub(super) fn native_append_child_invoke(
     scope: &mut v8::PinScope,
@@ -237,19 +263,23 @@ pub(super) fn native_append_child_invoke(
     let Some(child) = node_id_from_value(scope, args.get(0)) else {
         return;
     };
-    let ok = with_dom_mut(|d| insert_with_fragment_flatten(d, parent, child, None))
-        .map(|r| r.is_ok())
-        .unwrap_or(false);
-    if ok {
-        // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发 connectedCallback/disconnectedCallback。
-        super::custom_elements::notify_connect_after_insert(scope, parent, child);
-        set_native_element(scope, child, &mut rv);
+    match with_dom_mut(|d| insert_with_fragment_flatten(d, parent, child, None)) {
+        Some(Ok(())) => {
+            // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发 connectedCallback/disconnectedCallback。
+            super::custom_elements::notify_connect_after_insert(scope, parent, child);
+            set_native_element(scope, child, &mut rv);
+        }
+        Some(Err(e)) => {
+            let (name, msg) = dom_error_exception(&e);
+            super::dom_exception::throw_dom_exception(scope, name, &msg);
+        }
+        None => {}
     }
 }
 
 /// `insertBefore(newChild, refChild)`：spec `dom-node-insertbefore`——parent=this，参 0=newChild、
 /// 参 1=refChild native 对象；`Document::insert_before`。`refChild` 缺省/null → 末尾追加（spec）。
-/// 成功返 newChild 对象；Err → best-effort 留 undefined。
+/// 成功返 newChild 对象；Err → 抛 DOMException（HierarchyRequestError/NotFoundError）。
 /// R3132：DocumentFragment 参 → flatten（子节点插到 refNode 前、fragment 清空，spec）。
 pub(super) fn native_insert_before_invoke(
     scope: &mut v8::PinScope,
@@ -265,18 +295,22 @@ pub(super) fn native_insert_before_invoke(
     };
     // refChild null/缺省 → 末尾追加（spec：ref 为 null 时同 appendChild）。
     let ref_child = node_id_from_value(scope, args.get(1));
-    let ok = with_dom_mut(|d| insert_with_fragment_flatten(d, parent, new_child, ref_child))
-        .map(|r| r.is_ok())
-        .unwrap_or(false);
-    if ok {
-        // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发（同 appendChild）。
-        super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
-        set_native_element(scope, new_child, &mut rv);
+    match with_dom_mut(|d| insert_with_fragment_flatten(d, parent, new_child, ref_child)) {
+        Some(Ok(())) => {
+            // R3266 S5c：custom 元素连接态变化 → 桥接 JS 派发（同 appendChild）。
+            super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
+            set_native_element(scope, new_child, &mut rv);
+        }
+        Some(Err(e)) => {
+            let (name, msg) = dom_error_exception(&e);
+            super::dom_exception::throw_dom_exception(scope, name, &msg);
+        }
+        None => {}
     }
 }
 
 /// `removeChild(child)`：spec `dom-node-removechild`——parent=this，参=child native 对象；
-/// `Document::remove_child`。成功返被移除的 child 对象（spec）；Err → best-effort 留 undefined。
+/// `Document::remove_child`。成功返被移除的 child 对象（spec）；Err → 抛 NotFoundError（child 不在 parent）。
 pub(super) fn native_remove_child_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -289,18 +323,23 @@ pub(super) fn native_remove_child_invoke(
     let Some(child) = node_id_from_value(scope, args.get(0)) else {
         return;
     };
-    let ok = with_dom_mut(|d| d.remove_child(parent, child))
-        .map(|r| r.is_ok())
-        .unwrap_or(false);
-    if ok {
-        // R3266 S5c：custom 元素断开 document → 桥接 JS 派发 disconnectedCallback（子树 DFS）。
-        super::custom_elements::notify_disconnect_after_remove(scope, child);
-        set_native_element(scope, child, &mut rv);
+    match with_dom_mut(|d| d.remove_child(parent, child)) {
+        Some(Ok(_removed)) => {
+            // R3266 S5c：custom 元素断开 document → 桥接 JS 派发 disconnectedCallback（子树 DFS）。
+            super::custom_elements::notify_disconnect_after_remove(scope, child);
+            set_native_element(scope, child, &mut rv);
+        }
+        Some(Err(e)) => {
+            let (name, msg) = dom_error_exception(&e);
+            super::dom_exception::throw_dom_exception(scope, name, &msg);
+        }
+        None => {}
     }
 }
 
 /// `replaceChild(newChild, oldChild)`：spec `dom-node-replace-child`——parent=this，参为两个 native
 /// 元素对象（读 internal slot NodeId）；`Document::replace_child`。成功返 oldChild（spec）。
+/// Err → 抛 DOMException（HierarchyRequestError 闭环 / NotFoundError child 不在 parent）。
 pub(super) fn native_replace_child_invoke(
     scope: &mut v8::PinScope,
     args: v8::FunctionCallbackArguments,
@@ -316,15 +355,19 @@ pub(super) fn native_replace_child_invoke(
     let Some(old_child) = node_id_from_value(scope, args.get(1)) else {
         return;
     };
-    let ok = with_dom_mut(|d| d.replace_child(parent, new_child, old_child))
-        .map(|r| r.is_ok())
-        .unwrap_or(false);
-    if ok {
-        // R3266 S5c：newChild 连入（connect）+ oldChild 断开（disconnect）→ 桥接派发。
-        super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
-        super::custom_elements::notify_disconnect_after_remove(scope, old_child);
-        // spec：返被替换的 oldChild。
-        set_native_element(scope, old_child, &mut rv);
+    match with_dom_mut(|d| d.replace_child(parent, new_child, old_child)) {
+        Some(Ok(_old)) => {
+            // R3266 S5c：newChild 连入（connect）+ oldChild 断开（disconnect）→ 桥接派发。
+            super::custom_elements::notify_connect_after_insert(scope, parent, new_child);
+            super::custom_elements::notify_disconnect_after_remove(scope, old_child);
+            // spec：返被替换的 oldChild。
+            set_native_element(scope, old_child, &mut rv);
+        }
+        Some(Err(e)) => {
+            let (name, msg) = dom_error_exception(&e);
+            super::dom_exception::throw_dom_exception(scope, name, &msg);
+        }
+        None => {}
     }
 }
 

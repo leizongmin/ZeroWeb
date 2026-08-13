@@ -632,6 +632,65 @@ return host.children[0].tagName+'/'+host.children[1].tagName+'/'+host.children.l
     );
 }
 
+/// `appendChild` 闭环插入（自身/祖先）→ 抛 HierarchyRequestError（spec `dom-node-insertbefore`
+/// 闭环步；WPT dom/nodes/Node-replaceChild.html "inclusive ancestor" 场景同源）。此前 native
+/// 静默吞错留 undefined，现 dom crate DomError::WouldCreateCycle → DOMException。
+#[test]
+fn native_append_child_cycle_throws_hierarchy_request() {
+    let html = r#"<div id="a"><div id="b"></div></div>"#;
+    // a.appendChild(a) → 自身闭环 → HierarchyRequestError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a');\
+             try { a.appendChild(a); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "HierarchyRequestError"
+    );
+    // a.appendChild(b) 其中 b 是 a 的祖先 → 闭环 → HierarchyRequestError。
+    // （b 在 a 内部，a.appendChild(外部祖先) 需构造；此处测 a 把自身加入子树→已覆盖）
+    // b.appendChild(祖先a) → a 是 b 的祖先，闭环。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b');\
+             try { b.appendChild(a); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "HierarchyRequestError"
+    );
+}
+
+/// `replaceChild(oldChild 不在 parent)` → 抛 NotFoundError（spec `dom-node-replace-child`）。
+#[test]
+fn native_replace_child_not_a_child_throws_not_found() {
+    let html = r#"<div id="a"></div><div id="b"></div><div id="c"></div>"#;
+    // a.replaceChild(b, c)：c 不是 a 的子 → NotFoundError（WPT "child's parent is not context node"）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const b=__zw_native_element_for_id('b');\
+             const c=__zw_native_element_for_id('c');\
+             try { a.replaceChild(b, c); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "NotFoundError"
+    );
+}
+
+/// `removeChild(child 不在 parent)` → 抛 NotFoundError（spec `dom-node-removechild`）。
+#[test]
+fn native_remove_child_not_a_child_throws_not_found() {
+    let html = r#"<div id="a"></div><div id="orphan"></div>"#;
+    // a.removeChild(orphan)：orphan 不是 a 的子 → NotFoundError。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ const a=__zw_native_element_for_id('a'); const o=__zw_native_element_for_id('orphan');\
+             try { a.removeChild(o); return 'no-throw'; } catch(e){ return e.name; } })()"
+        ),
+        "NotFoundError"
+    );
+}
+
 // ── R3110 节点导航 getter（parentNode / firstChild / lastChild / nextSibling / previousSibling / hasChildNodes）──
 //
 
