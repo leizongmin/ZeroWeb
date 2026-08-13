@@ -202,3 +202,60 @@ fn normal_beats_wildcard_when_same_label_count() {
     // host=x.yp：普通 x.yp 命中，公共后缀=x.yp（2 标签）→ host==后缀 → 返回自身。
     assert_eq!(psl.registrable_domain("x.yp"), "x.yp");
 }
+
+// ===== R3383：例外规则矩阵 + same-site 边界 测试加固 =====
+// 锁定 R3380/R3381 算法的微妙路径（独立 review 健康确认）。
+
+/// 例外规则的全矩阵：例外规则把公共后缀回退一标签，使例外目标本身成为注册域。
+/// 用默认规则集的 `*.ck` + `!www.ck` 验证。
+#[test]
+fn exception_rule_matrix_default_ruleset() {
+    let psl = dflt();
+    // www.ck：例外命中 → 公共后缀 = ck（回退一标签），注册域 = www.ck。
+    assert_eq!(psl.registrable_domain("www.ck"), "www.ck");
+    // foo.www.ck：例外规则 !www.ck 的尾部 www.ck 仍命中 → 公共后缀 = ck，
+    // 注册域 = ck + 1 标签 = www.ck（与 libpsl 一致：例外把任意尾部匹配
+    // www.ck 的主机的后缀都回退，故 foo.www.ck 折叠到 www.ck，而非 foo.www.ck）。
+    assert_eq!(psl.registrable_domain("foo.www.ck"), "www.ck");
+    // a.ck：通配命中（无例外），公共后缀 = a.ck，注册域 = a.ck。
+    assert_eq!(psl.registrable_domain("a.ck"), "a.ck");
+    // b.a.ck：通配命中，公共后缀 = a.ck，注册域 = b.a.ck。
+    assert_eq!(psl.registrable_domain("b.a.ck"), "b.a.ck");
+}
+
+/// 例外规则须在同标签数下胜出通配（优先级锁）。
+#[test]
+fn exception_beats_wildcard_at_same_label_count() {
+    // 显式构造：通配 *.yp（2 标签）+ 例外 !y.yp（2 标签）。
+    let psl = PublicSuffixList::from_rules("*.yp\n!y.yp\n");
+    // y.yp：例外命中 → 公共后缀回退一标签 = yp，注册域 = y.yp（例外目标可注册）。
+    assert_eq!(psl.registrable_domain("y.yp"), "y.yp");
+    // z.yp：无例外 → 通配命中，注册域 = z.yp。
+    assert_eq!(psl.registrable_domain("z.yp"), "z.yp");
+    // w.y.yp：例外规则尾部 y.yp 仍命中 → 公共后缀 = yp，注册域 = y.yp
+    // （例外折叠语义，与 libpsl 一致；不是 w.y.yp）。
+    assert_eq!(psl.registrable_domain("w.y.yp"), "y.yp");
+}
+
+/// 公共后缀本身 vs 注册域：is_same_site 边界（registrable vs public-suffix）。
+#[test]
+fn same_site_boundary_public_suffix_vs_registrable() {
+    let psl = dflt();
+    // 公共后缀自身与自身同站（RFC 6265bis §5.2 case 2：均不可注册且规范化主机相同）。
+    assert_eq!(psl.registrable_domain("com"), "com");
+    assert_eq!(psl.registrable_domain("co.uk"), "co.uk");
+    // 公共后缀与某注册域不同站（一个可注册、一个不可注册）。
+    assert_ne!(psl.registrable_domain("com"), psl.registrable_domain("example.com"));
+}
+
+/// 默认规则集加载后规则数 > 0（防止 include_str! / parse 静默退化）。
+#[test]
+fn default_ruleset_parses_nonempty() {
+    // 默认规则集解析后应有数十条规则（gTLD + ccTLD + 平台 + 例外）。
+    let psl = dflt();
+    // 间接验证：多类后缀都能命中（若规则集为空则全走未知 TLD 回退）。
+    assert_eq!(psl.registrable_domain("a.b.example.com"), "example.com");
+    assert_eq!(psl.registrable_domain("x.shop.ne.jp"), "shop.ne.jp");
+    assert_eq!(psl.registrable_domain("app.vercel.app"), "app.vercel.app");
+    assert_eq!(psl.registrable_domain("www.ck"), "www.ck");
+}
