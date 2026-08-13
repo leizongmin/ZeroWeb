@@ -1,4 +1,4 @@
-//! WOFF (Web Open Font Format 1.0) 解码器。
+//! WOFF / WOFF2 web font container decoding.
 //!
 //! WOFF 是带 zlib 压缩的 sfnt 字体容器（`.woff`）。fontdue 仅加载裸 sfnt
 //! （`.ttf`/`.otf`），不识别 woff 容器；本模块把 WOFF 字节解码为 sfnt 字节序列，
@@ -15,6 +15,8 @@ use std::io::Read;
 
 /// WOFF 文件魔数（`"wOFF"`，4 字节，offset 0）。
 const WOFF_MAGIC: [u8; 4] = *b"wOFF";
+/// WOFF2 file magic (`"wOF2"`).
+const WOFF2_MAGIC: [u8; 4] = *b"wOF2";
 /// WOFF 头部固定长度（44 字节）。
 const WOFF_HEADER_LEN: usize = 44;
 /// WOFF 表目录每条记录长度（20 字节）。
@@ -29,6 +31,18 @@ const SFNT_TABLE_ENTRY_LEN: usize = 16;
 /// 注意：WOFF2（`"wOF2"`）是不同格式（brotli 压缩），本解码器不处理。
 pub fn is_woff(data: &[u8]) -> bool {
     data.len() >= 4 && data[0..4] == WOFF_MAGIC
+}
+
+/// Detect a WOFF2 container.
+pub fn is_woff2(data: &[u8]) -> bool {
+    data.len() >= 4 && data[0..4] == WOFF2_MAGIC
+}
+
+/// Decode WOFF2 bytes into a raw sfnt font.
+///
+/// https://www.w3.org/TR/WOFF2/
+pub fn decode_woff2(data: &[u8]) -> Option<Vec<u8>> {
+    is_woff2(data).then(|| wuff::decompress_woff2(data).ok()).flatten()
 }
 
 /// 把 WOFF 1.0 字节解码为 sfnt（`.ttf`/`.otf`）字节序列。
@@ -219,8 +233,30 @@ mod tests {
     #[test]
     fn is_woff_rejects_non_woff() {
         assert!(!is_woff(&[0x00, 0x01, 0x00, 0x00]));
-        assert!(!is_woff(b"wOF2...")); // WOFF2 不处理
+        assert!(!is_woff(b"wOF2..."));
         assert!(!is_woff(&[]));
+    }
+
+    #[test]
+    fn decode_real_woff2_ic_test_font() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/wpt-runner/wpt-data/css/css-values/resources/IcTestFullWidth.woff2");
+        let data = match std::fs::read(&path) {
+            Ok(data) => data,
+            Err(_) => {
+                eprintln!("skip: IcTestFullWidth.woff2 not present");
+                return;
+            }
+        };
+        assert!(is_woff2(&data));
+        let sfnt = decode_woff2(&data).expect("WOFF2 decode should succeed");
+        assert!(
+            fontdue::Font::from_bytes(sfnt.as_slice(), fontdue::FontSettings::default()).is_ok(),
+            "fontdue should load decoded WOFF2"
+        );
+        let mut loader = crate::font::loader::FontLoader::new();
+        let font_id = loader.load_font(&data).expect("FontLoader should accept raw WOFF2");
+        assert!(loader.measure_advance(font_id, '\u{6c34}', 20.0) > 0.0);
     }
 
     /// 残缺数据（魔数正确但长度不足）应返回 None，不 panic。

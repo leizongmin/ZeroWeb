@@ -65,3 +65,5 @@ css/css-fonts/size-adjust.tentative.html css/css-fonts/size-adjust-tentative-ref
 css/css-fonts/font-size-adjust-ic-height.html css/css-fonts/font-size-adjust-ic-height-ref.html == 2026-08-13 R3346-F ic-height fixed webfont asset
 css/css-fonts/font-synthesis-weight-webfont-bold.html css/css-fonts/font-synthesis-weight-webfont-bold-ref.html == 2026-08-13 R3373-F fixed Lato Bold webfont asset
 css/css-fonts/separators.html css/css-fonts/separators-ref.html == 2026-08-13 R3374-F fixed separator test font asset
+css/css-fonts/ric-in-monospace.html css/css-fonts/ric-in-monospace-ref.html == 2026-08-13 R3375-F WOFF2 decoding and root ic unit
+css/css-text/shaping/shaping-001.html css/css-text/shaping/reference/shaping-001-ref.html == 2026-08-13 R3375-F WOFF2 Arabic shaping

@@ -67,6 +67,8 @@
 >
 > **▶ WPT 资产进展（R3374-F separator fixed webfont·2026-08-13）**：css-fonts `url()` 资源完整性扫描发现 `separators` 缺少固定 `separator-test-font.ttf`，导致自定义字体断言走 fallback。标准 importer 补齐 test/ref 与资源账本后，Chromium Oracle `0.74%→0.71%`，self-source 保持可信 strict `0.00%`，完整 css-fonts pass/credible/strict 保持 `86/76/54`，无回归。同期 `IcTestFullWidth.woff2` 因现有 FontLoader 不支持 WOFF2 而无像素变化，`Exo-DemiBold.otf` 使目标 Oracle `2.72%→2.95%`，两项均按门禁回退。
 >
+> **▶ 字体栈增量进展（R3375-F WOFF2 decoding·2026-08-13）**：引入 pure-Rust、MIT、MSRV 1.85 的 `wuff 0.2.8`，FontLoader 统一支持 WOFF2→sfnt 解码，`ZW_WOFF2=0` 可回滚；真实 `IcTestFullWidth.woff2` 测试覆盖解码及原始 FontLoader 入口。导入 `NotoNaskhArabic-regular.woff2` 与 `shaping-001` 后，Arabic shaping 28 案为 20 改善/0 回归/8 持平，总 `-9.01pp`、可信 strict `4→7`；全 css-text 1826 案为 37 改善/5 微退/1784 持平，总 `-9.98pp`、strict `574→581`，pass 保持 `1762/1826`。解码扩大字体 surface 后暴露 indexed glyph 越界 panic，现于共享 raster 入口按 sfnt `numGlyphs` 校验并 fail-closed。css-fonts Chromium Oracle 282 案逐像素持平；Arabic shaping 尚无 Chromium shot。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

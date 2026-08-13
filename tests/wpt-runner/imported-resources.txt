@@ -11,3 +11,5 @@ fonts/AD.woff
 fonts/noto/cjk/NotoSansCJKjp-Regular-subset-chws.otf
 fonts/Lato-Bold.ttf
 css/css-fonts/resources/separator-test-font.ttf
+css/css-values/resources/IcTestFullWidth.woff2
+fonts/noto/NotoNaskhArabic-regular.woff2

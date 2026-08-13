@@ -328,12 +328,15 @@ impl FontLoader {
 
     /// 从字节数据加载字体
     ///
-    /// 自动识别 WOFF 1.0 容器（`.woff`，"wOFF" 魔数）并先解码为 sfnt，再交给 fontdue
-    /// （fontdue 不识别 woff 容器）。`.ttf`/`.otf` 裸 sfnt 直接加载。WOFF2（`wOF2`）不支持。
+    /// 自动识别 WOFF / WOFF2 容器并先解码为 sfnt，再交给 fontdue。
+    /// `.ttf` / `.otf` 裸 sfnt 直接加载。
     pub fn load_font(&mut self, data: &[u8]) -> Result<u32, FontError> {
-        // WOFF 容器解码（None = 非 WOFF 或解码失败，回退原数据由 fontdue 报错）
+        // Decode supported webfont containers. Decode failure falls through to fontdue,
+        // which returns the existing ParseFailed error at the trust boundary.
         let decoded = if crate::font::woff::is_woff(data) {
             crate::font::woff::decode_woff(data)
+        } else if crate::font::woff::is_woff2(data) && std::env::var("ZW_WOFF2").as_deref() != Ok("0") {
+            crate::font::woff::decode_woff2(data)
         } else {
             None
         };
@@ -518,6 +521,16 @@ impl FontLoader {
     /// 本路径不做字体回退：glyph index 只在产生它的字体 face 内有意义，调用方
     /// 必须同时携带对应的 `font_id`。
     pub fn rasterize_glyph_index(&self, font_id: u32, glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
+        if let Some(bytes) = self.font_data.get(&font_id)
+            && let Ok(face) = rustybuzz::ttf_parser::Face::parse(bytes, 0)
+            && glyph_index >= face.number_of_glyphs()
+        {
+            return Err(FontError::GlyphNotFound {
+                font_id,
+                glyph_id: u32::from(glyph_index),
+            });
+        }
+
         #[cfg(feature = "freetype-raster")]
         if let Some(bytes) = self.font_data.get(&font_id)
             && let Ok(bitmap) = freetype_raster::rasterize_indexed(bytes, glyph_index, size)
@@ -1041,6 +1054,21 @@ mod tests {
         assert_eq!(by_index.x_offset, by_code_point.x_offset);
         assert_eq!(by_index.y_offset, by_code_point.y_offset);
         assert_eq!(by_index.advance, by_code_point.advance);
+    }
+
+    #[test]
+    fn rasterize_glyph_index_rejects_out_of_range_index() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("load bundled Lato");
+
+        assert!(matches!(
+            loader.rasterize_glyph_index(font_id, u16::MAX, 16.0),
+            Err(FontError::GlyphNotFound {
+                font_id: rejected_font,
+                glyph_id
+            }) if rejected_font == font_id && glyph_id == u32::from(u16::MAX)
+        ));
     }
 
     #[test]

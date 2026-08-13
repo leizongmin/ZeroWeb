@@ -79,6 +79,7 @@ rustybuzz = "0.20"
 unicode-bidi = "0.3"
 unicode-bidi-mirroring = "0.4"
 unicode-segmentation = "=1.12.0"
+wuff = { version = "0.2.8", default-features = false, features = ["brotli"] }
 
 # 窗口与平台
 winit = "0.30"
