@@ -6,8 +6,14 @@
 //! 提供 Dedicated Worker：独立线程 + 持久 QuickJS Context + postMessage/onmessage。
 
 use crate::{SandboxConfig, ScriptError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+
+/// `terminate()` join 的墙上墙钟上限（同 [`crate::worker`] V8 实现）。超时则 detach，
+/// 确保 Drop/terminate **永不无限阻塞**主线程。R3399：QuickJS worker 对称修复。
+const TERMINATE_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Worker 线程接收的命令。
 enum WorkerCommand {
@@ -40,6 +46,19 @@ pub enum WorkerState {
     Terminated,
 }
 
+/// 限时 join worker 线程；超时则 detach（不阻塞调用线程）。同 [`crate::worker`] V8 实现。
+fn join_bounded_or_detach(handle: JoinHandle<()>) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < TERMINATE_JOIN_TIMEOUT {
+        if handle.is_finished() {
+            let _ = handle.join();
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    drop(handle);
+}
+
 /// Dedicated Worker 运行时（QuickJS 实现）。
 ///
 /// 在独立线程中运行 QuickJS Runtime + 持久 Context，通过通道与主线程通信。
@@ -49,6 +68,10 @@ pub struct WorkerRuntime {
     event_receiver: Receiver<WorkerEvent>,
     worker_handle: Option<JoinHandle<()>>,
     state: WorkerState,
+    /// 终止标志（worker 线程 interrupt handler 据此返 true 中断死循环）。
+    /// R3399：QuickJS worker 对称修复——terminate() 置位 + bounded join + detach 兜底，
+    /// 防 page-supplied 死循环 worker 致 Drop/terminate 永久挂死主线程。
+    terminate_flag: Arc<AtomicBool>,
 }
 
 impl WorkerRuntime {
@@ -60,10 +83,14 @@ impl WorkerRuntime {
         let (event_sender, event_receiver) = mpsc::channel::<WorkerEvent>();
         let script = script.to_string();
 
+        // R3399：终止标志（主线程 terminate() 与 worker 线程 interrupt handler 共享）。
+        let terminate_flag = Arc::new(AtomicBool::new(false));
+        let worker_terminate_flag = terminate_flag.clone();
+
         let handle = thread::Builder::new()
             .name("zero-quickjs-worker".to_string())
             .spawn(move || {
-                quickjs_worker_thread_fn(script, config, cmd_receiver, event_sender);
+                quickjs_worker_thread_fn(script, config, cmd_receiver, event_sender, worker_terminate_flag);
             })
             .map_err(|e| ScriptError::EngineUnavailable(format!("Failed to spawn worker thread: {e}")))?;
 
@@ -72,6 +99,7 @@ impl WorkerRuntime {
             event_receiver,
             worker_handle: Some(handle),
             state: WorkerState::Running,
+            terminate_flag,
         })
     }
 
@@ -120,13 +148,18 @@ impl WorkerRuntime {
     }
 
     /// 终止 Worker。
+    ///
+    /// R3399：置终止标志（worker interrupt handler 据此返 true 中断死循环）后发 Terminate
+    /// 命令，再限时 join——确保即便 worker 卡在 page-supplied 死循环也能及时退出；超时则
+    /// detach（绝不无限阻塞调用线程，Drop 也走此路径）。QuickJS 对称 V8 worker 修复。
     pub fn terminate(&mut self) {
         if self.state == WorkerState::Terminated {
             return;
         }
+        self.terminate_flag.store(true, Ordering::Release);
         let _ = self.cmd_sender.send(WorkerCommand::Terminate);
         if let Some(handle) = self.worker_handle.take() {
-            let _ = handle.join();
+            join_bounded_or_detach(handle);
         }
         self.state = WorkerState::Terminated;
     }
@@ -158,11 +191,16 @@ impl std::fmt::Debug for WorkerRuntime {
 ///
 /// 创建 QuickJS Runtime + 持久 Context，注入 Worker bootstrap，执行初始化脚本，
 /// 然后循环处理命令（Execute/PostMessage/Terminate）。
+///
+/// R3399：`terminate_flag` 经 `set_interrupt_handler` 注册——terminate() 置位后，
+/// QuickJS 解释器周期性调 interrupt handler 返 true → 抛 uncatchable 异常中断
+/// page-supplied 死循环，worker 线程得以退出 recv 循环（对称 V8 worker 修复）。
 fn quickjs_worker_thread_fn(
     init_script: String,
     config: SandboxConfig,
     cmd_receiver: Receiver<WorkerCommand>,
     event_sender: Sender<WorkerEvent>,
+    terminate_flag: Arc<AtomicBool>,
 ) {
     let runtime = match rquickjs::Runtime::new() {
         Ok(r) => r,
@@ -173,6 +211,12 @@ fn quickjs_worker_thread_fn(
     };
     if config.heap_limit > 0 {
         runtime.set_memory_limit(config.heap_limit);
+    }
+    // R3399：注册 interrupt handler——终止标志置位时返 true 中断死循环。
+    // handler clone 一份 terminate_flag（Arc，廉价）；QuickJS 周期性调用它。
+    {
+        let flag = terminate_flag.clone();
+        runtime.set_interrupt_handler(Some(Box::new(move || flag.load(Ordering::Acquire))));
     }
     let ctx = match rquickjs::Context::full(&runtime) {
         Ok(c) => c,
@@ -248,4 +292,56 @@ fn json_stringify(s: &str) -> String {
         .replace('\r', "\\r")
         .replace('\t', "\\t");
     format!("\"{escaped}\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_quickjs_worker_basic() {
+        let mut worker = WorkerRuntime::new("postMessage('hi');", SandboxConfig::default()).unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "hi"),
+            other => panic!("Expected Message, got: {other:?}"),
+        }
+        worker.terminate();
+    }
+
+    // ── R3399：page-supplied 死循环 QuickJS worker 不应让 terminate()/Drop 永久挂死 ──
+    // 对称 V8 worker 修复（interrupt handler + bounded join + detach）。
+
+    #[test]
+    fn test_quickjs_terminate_returns_for_infinite_loop_r3399() {
+        // QuickJS 死循环——interrupt handler 置位后周期性返 true 中断。
+        let mut worker = WorkerRuntime::new("while (true) {}", SandboxConfig::default()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+
+        let start = std::time::Instant::now();
+        worker.terminate();
+        let elapsed = start.elapsed();
+        assert_eq!(worker.state(), WorkerState::Terminated);
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "QuickJS worker terminate() 挂死（耗时 {:?}），R3399 回归",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_quickjs_drop_returns_for_infinite_loop_r3399() {
+        let worker = WorkerRuntime::new("while (true) {}", SandboxConfig::default()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+
+        let start = std::time::Instant::now();
+        drop(worker);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "QuickJS worker Drop 挂死（耗时 {:?}），R3399 回归",
+            elapsed
+        );
+    }
 }
