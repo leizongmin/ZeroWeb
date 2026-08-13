@@ -200,3 +200,51 @@ fn search_suggestion_url_equals_query_for_normalize_handoff() {
     // url 与 title 一致，交给 normalize_url 转换为搜索引擎 URL
     assert_eq!(s.url(), s.title());
 }
+
+// ── R3366：跨来源排序行为锁定 ──
+
+#[test]
+/// R3366：书签 +100 加分整体优先于历史项，即便历史项是 URL 前缀精确匹配。
+///
+/// 文档（autocomplete.rs suggest docstring）描述的单来源 4 级分数仅作用于同一来源内部；
+/// 书签的 +100 跨来源加分是独立提升，使书签条目整体排在历史项之前。
+/// 此测试锁定该跨来源语义，防止未来误把「URL 前缀(40) 应高于 书签标题包含(10+100)」
+/// 当作 bug 而改动评分逻辑（行为是设计意图——书签是用户主动收藏，应优先）。
+fn bookmark_bonus_outranks_history_url_prefix_r3366() {
+    let ac = Autocomplete::new().with_max_results(10);
+    let mut history = History::new();
+    let mut bookmarks = Bookmarks::new();
+    // 历史：query "rust" 是该 URL 的精确前缀匹配（score 40）
+    history.record("rust-lang.org", "Other Title");
+    // 书签：query "rust" 仅在标题中包含匹配（raw score 10，+100 加分 = 110）
+    bookmarks.add("a rust example", "https://zzz-bm.com", None);
+
+    let results = ac.suggest("rust", &history, &bookmarks);
+    // "rust" 非纯 URL 形式（无点号 TLD）→ 顶部插入搜索建议，其后为书签，再后为历史
+    assert_eq!(results.len(), 3, "搜索建议 + 书签 + 历史");
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(
+        results[1].source(),
+        SuggestionSource::Bookmark,
+        "书签 +100 加分应排在历史 URL 前缀匹配之前"
+    );
+    assert_eq!(results[1].url(), "https://zzz-bm.com");
+    assert_eq!(results[2].source(), SuggestionSource::History);
+    assert_eq!(results[2].url(), "rust-lang.org");
+}
+
+#[test]
+/// R3366：同 URL 同时存在于书签与历史时，去重后只保留书签来源。
+fn same_url_dedup_keeps_bookmark_source_r3366() {
+    let ac = Autocomplete::new().with_max_results(10);
+    let mut history = History::new();
+    let mut bookmarks = Bookmarks::new();
+    history.record("https://example.com", "Example Page");
+    bookmarks.add("Example", "https://example.com", None);
+
+    let results = ac.suggest("ex", &history, &bookmarks);
+    // 搜索建议 + 单条去重后的书签
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].source(), SuggestionSource::Search);
+    assert_eq!(results[1].source(), SuggestionSource::Bookmark);
+}
