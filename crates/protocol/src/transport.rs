@@ -9,8 +9,20 @@ use std::sync::Arc;
 use crate::serialize;
 use crate::{IpcChannel, IpcMessage, ProtocolError};
 
-/// 消息帧的最大长度（16 MiB），防止恶意或错误数据导致内存爆炸。
-const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
+/// 消息帧的最大长度（64 MiB），防止恶意或错误数据导致内存爆炸。
+///
+/// Compositor 图元快照可能携带解码后的图片像素；正常页面首帧已超过旧的
+/// 16 MiB 上限。64 MiB 可容纳当前快照和单张 4K RGBA 帧，同时保持有界分配。
+const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
+
+fn validate_frame_size(len: usize) -> Result<(), ProtocolError> {
+    if len > MAX_FRAME_SIZE {
+        return Err(ProtocolError::Channel(format!(
+            "帧过大: {len} 字节（上限 {MAX_FRAME_SIZE}）"
+        )));
+    }
+    Ok(())
+}
 
 // ── 基于管道的传输 ──────────────────────────────────────────────
 
@@ -31,6 +43,7 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
 
     /// 发送原始字节帧（4 字节 LE 长度前缀 + 载荷）。
     fn send_frame(&mut self, data: &[u8]) -> Result<(), ProtocolError> {
+        validate_frame_size(data.len())?;
         let len = data.len() as u32;
         self.writer
             .write_all(&len.to_le_bytes())
@@ -51,11 +64,7 @@ impl<R: Read, W: Write> PipeTransport<R, W> {
             .read_exact(&mut len_buf)
             .map_err(|e| ProtocolError::Channel(format!("读取帧头失败: {e}")))?;
         let len = u32::from_le_bytes(len_buf) as usize;
-        if len > MAX_FRAME_SIZE {
-            return Err(ProtocolError::Channel(format!(
-                "帧过大: {len} 字节（上限 {MAX_FRAME_SIZE}）"
-            )));
-        }
+        validate_frame_size(len)?;
         let mut data = vec![0u8; len];
         self.reader
             .read_exact(&mut data)
@@ -308,6 +317,17 @@ mod tests {
         } else {
             panic!("期望 Channel 错误");
         }
+    }
+
+    #[test]
+    fn compositor_snapshot_above_legacy_limit_is_accepted() {
+        const OBSERVED_COMPOSITOR_FRAME_SIZE: usize = 21_797_029;
+
+        let payload = vec![0; OBSERVED_COMPOSITOR_FRAME_SIZE];
+        let mut transport = PipeTransport::new(io::empty(), io::sink());
+        transport.send_frame(&payload).unwrap();
+        validate_frame_size(MAX_FRAME_SIZE).unwrap();
+        assert!(validate_frame_size(MAX_FRAME_SIZE + 1).is_err());
     }
 
     /// 测试通道关闭后清空 inbox。
