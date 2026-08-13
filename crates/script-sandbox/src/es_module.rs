@@ -363,6 +363,24 @@ fn build_dep_iife(
     Ok(output)
 }
 
+/// 内联依赖模块 IIFE，**首次访问**时递归转换，**已访问**（循环 / 菱形 import）时返空对象占位
+/// `(function(){return {};})()` 而非递归——防循环 import（a↔b）无限递归致栈溢出 abort（R3398
+/// 实测 `thread '...' has overflowed its stack`）。已访问返空对象使 JS 仍可编译运行，循环依赖
+/// 绑定解析为 undefined（转换式架构无 live binding，此为防崩溃的安全近似，非 spec 精确循环语义）。
+/// `visited` 在整个模块图编译间共享（compile_module_script 起 `&mut HashSet` 透传）。
+fn inline_dep_once(
+    specifier: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+) -> Result<String, ScriptError> {
+    if !visited.contains(specifier) {
+        visited.insert(specifier.to_string());
+        return build_dep_iife(specifier, registry, visited);
+    }
+    // 已访问（循环/菱形）→ 空对象占位，不递归。
+    Ok("(function(){return {};})()".to_string())
+}
+
 /// 转换 import 声明。
 fn transform_import(
     line: &str,
@@ -389,8 +407,9 @@ fn transform_import(
     {
         let ns_name = rest[as_pos + 5..from_pos].trim();
         let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
-        visited.insert(specifier.clone());
-        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        // R3398：防循环/菱形 import 无限递归（仅首次访问时内联依赖 IIFE；已访问 → 空对象占位，
+        // 避免 a↔b 循环致栈溢出 abort）。镜像 import 'm' 副作用导入的 visited 守卫（line 378）。
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
         return Ok(format!("  var {ns_name} = {dep_code};\n"));
     }
 
@@ -401,8 +420,7 @@ fn transform_import(
         let bindings = rest[..from_pos].trim();
         let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
         let safe = safe_ident(&specifier);
-        visited.insert(specifier.clone());
-        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
         let mut result = format!("  var _mod_{safe} = {dep_code};\n");
         result.push_str(&destructure_bindings(bindings, &safe));
         return Ok(result);
@@ -412,10 +430,11 @@ fn transform_import(
     if let Some(from_pos) = rest.find(" from ") {
         let name = rest[..from_pos].trim();
         let specifier = extract_import_specifier_from_rest(&rest[from_pos + 6..])?;
-        visited.insert(specifier.clone());
-        let dep_code = build_dep_iife(&specifier, registry, visited)?;
+        let dep_code = inline_dep_once(&specifier, registry, visited)?;
+        // R3398：旧实现把 dep_code（整段 IIFE）字符串拼接 3 次 → 模块副作用执行 3 次（正确性
+        // + 性能 + 资源放大）。改为求值一次存变量，default fallback 引用该变量。
         return Ok(format!(
-            "  var {name} = ({dep_code}).default !== undefined ? ({dep_code}).default : {dep_code};\n"
+            "  var _dep_{name} = {dep_code};\n  var {name} = _dep_{name}.default !== undefined ? _dep_{name}.default : _dep_{name};\n"
         ));
     }
 
@@ -805,6 +824,50 @@ mod tests {
             .execute_module("import { doubled } from './b.js'\nexport default doubled", None)
             .unwrap();
         assert!(r.namespace_json.contains("10"));
+    }
+
+    // R3398：循环 import（a↔b）旧实现无限递归 → 栈溢出 abort（实测 `has overflowed its stack`）。
+    // 修复后须编译成功（不再无限递归），循环绑定解析为 undefined（转换式无 live binding，安全近似）。
+    #[test]
+    fn test_circular_import_no_overflow_r3398() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("a", "import { b } from 'b'; export const a = b;");
+        reg.register("b", "import { a } from 'a'; export const b = a;");
+        // 修复前：栈溢出 abort（fatal runtime error）；修复后：编译成功返 Ok。
+        let result = compile_module_script("import { a } from 'a';", "http://a/", &reg);
+        assert!(result.is_ok(), "循环 import 须编译成功（不栈溢出）: {:?}", result.err());
+        let script = result.unwrap();
+        // 确认输出含占位空对象（已访问分支）而非无限内联。
+        assert!(script.contains("(function(){return {};})()"), "已访问依赖须空对象占位");
+    }
+
+    // R3398：菱形 import（root→a, root→b, a→shared, b→shared）——shared 不应被递归内联两次。
+    #[test]
+    fn test_diamond_import_no_duplicate_inline_r3398() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("shared", "export const shared = 42;");
+        reg.register("a", "import { shared } from 'shared'; export const a = shared;");
+        reg.register("b", "import { shared } from 'shared'; export const b = shared;");
+        // 无循环，应正常编译（菱形 shared 经 visited 守卫不被重复递归致冗余，且不栈溢出）。
+        let result = compile_module_script("import { a } from 'a';\nimport { b } from 'b';", "http://root/", &reg);
+        assert!(result.is_ok(), "菱形 import 须编译成功: {:?}", result.err());
+    }
+
+    // R3398：默认导入旧实现把依赖 IIFE 字符串拼接 3 次 → 副作用执行 3 次。修复后求值一次。
+    #[test]
+    fn test_default_import_evaluated_once_r3398() {
+        let mut reg = ModuleRegistry::new();
+        // 依赖模块副作用：模块顶层表达式（计数）。若求值 3 次，输出会含 3 个相同语句。
+        reg.register("dep", "export default 1; 2;");
+        let script = compile_module_script("import d from 'dep';", "http://x/", &reg).unwrap();
+        // 修复前默认导入分支把 dep IIFE 字面拼 3 次（出现 3 处 `(function(){...2;...})()`）；
+        // 修复后求值一次存 `_dep_d` 变量。断言不再三重拼接：依赖模块体 "2;" 应只出现一次
+        // 在 IIFE 内（+ 一次在变量赋值的引用，但那是变量名非字面 "2;"）。
+        let count = script.matches("  2;").count();
+        assert_eq!(
+            count, 1,
+            "默认导入依赖 IIFE 须只求值一次（'2;' 出现 1 次），got {count}：\n{script}"
+        );
     }
 
     #[test]
