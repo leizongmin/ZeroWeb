@@ -26,7 +26,7 @@
 | shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
 | compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
 | path-objects | 205 / 26+ | 🔄 部分（roundrect 26 Pass；**剩余移交 js-dom goal**——见下方交接记录） |
-| fill-and-stroke-styles | 261 / 182 | 🔄 182 Pass（66 = G5 DOM img 源、13 = radial cone 几何深） |
+| fill-and-stroke-styles | 261 / 183 | 🔄 183 Pass（66 = G5 DOM img 源、13 = radial cone、parse eof/％容错 ~7） |
 | text | 144 / 非像素面修复 | 🔄 setter 校验/fonts.ready/align-baseline 定位已修；**draw 像素断言需 canvas 字体像素光栅（深缺口）** |
 | **合计** | **919 文件 / 462+ subtest** | ✅ **462 Pass**（剩余失败 = G5 DOM img 源 ~87 + text 像素光栅 ~37 + radial cone 13 + currentColor 4 + CSS Color 4 其余 ~17） |
 
