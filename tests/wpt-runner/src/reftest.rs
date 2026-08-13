@@ -674,7 +674,11 @@ fn render_with_layout_inner(
                         family,
                         sources
                             .iter()
-                            .map(|src| resolve_font_src(src, base_dir))
+                            .map(|src| {
+                                resolve_font_src(src, base_dir)
+                                    .map(|path| path.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| src.clone())
+                            })
                             .collect::<Vec<_>>(),
                         weight,
                         is_italic,

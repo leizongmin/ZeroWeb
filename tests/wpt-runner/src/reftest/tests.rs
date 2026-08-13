@@ -27,7 +27,23 @@ fn test_font_face_loads_custom_family_alias() {
     );
 }
 
-/// R329：`@font-face` 解析 + 跳过 data:/http: 源（不可本地加载）。
+#[test]
+fn font_face_loads_base64_data_uri() {
+    use base64::Engine;
+
+    let ahem = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts/Ahem.ttf");
+    let Ok(bytes) = std::fs::read(ahem) else {
+        return;
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let css = format!("@font-face {{ font-family: DataFont; src: url(data:font/ttf;base64,{encoded}); }}");
+    let mut loader = create_font_loader();
+    load_font_faces_into(&mut loader, None, &css);
+
+    assert!(loader.build_font_resolver().contains_key("DataFont"));
+}
+
+/// R329：本地路径解析不把 data:/http: 源误当文件路径。
 #[test]
 fn test_font_face_resolves_local_and_skips_remote() {
     let css = r#"@font-face { font-family: "Remote"; src: url("https://example.com/x.woff"); }"#;

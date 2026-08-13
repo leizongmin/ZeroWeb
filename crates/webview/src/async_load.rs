@@ -13,7 +13,7 @@ use zero_engine::{
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::font::OpenTypeFeature;
-use zero_render_foundation::image_cache::{ImageKey, decode_data_uri};
+use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data_uri_bytes};
 
 use crate::image_decoder::decode_image;
 
@@ -603,8 +603,28 @@ impl AsyncPageLoad {
         for (family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges) in faces {
             let features = zero_engine::font_feature_settings_to_opentype(&feature_settings);
             for src in &sources {
-                // data: 不走 fetch（与图片 data: 路径一致）；local() 已被 css-parser 排除。
-                if src.starts_with("data:") {
+                if src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
+                    if std::env::var("ZW_DATA_FONT").as_deref() != Ok("0") {
+                        match decode_data_uri_bytes(src) {
+                            Ok(bytes) => {
+                                self.font_loaded.push((
+                                    family.clone(),
+                                    weight,
+                                    is_italic,
+                                    stretch,
+                                    size_adjust,
+                                    features.clone(),
+                                    unicode_ranges.clone(),
+                                    bytes,
+                                ));
+                                self.font_events.push((family.clone(), "loaded"));
+                            }
+                            Err(error) => {
+                                tracing::warn!(family, %error, "page load: data font decode failed");
+                                self.font_events.push((family.clone(), "error"));
+                            }
+                        }
+                    }
                     continue;
                 }
                 // 抓取所有非 data 源（woff2/woff/ttf）——fontdue 对 woff2 加载会失败被跳过，
@@ -1499,9 +1519,9 @@ mod tests {
         );
     }
 
-    /// R2408+ slice 2 / FR-002：@font-face `src: url(data:...)` 不发起 fetch（与图片 data: 一致）。
+    /// `@font-face src:data:` 不发起 fetch，解码后直接进入字体 drain。
     #[test]
-    fn begin_font_fetch_skips_data_uri_src() {
+    fn begin_font_fetch_decodes_data_uri_src() {
         let html = r#"<html><head>
             <style>@font-face { font-family: DFont; src: url(data:application/font-woff;base64,AAAA); }</style>
             </head><body></body></html>"#;
@@ -1516,7 +1536,20 @@ mod tests {
             "data: src 不应被抓取: {:?}",
             host.calls
         );
-        assert!(load.drain_loaded_fonts().is_empty(), "无 data: 字体被加载");
+        assert_eq!(
+            load.drain_loaded_fonts(),
+            vec![(
+                "DFont".to_string(),
+                None,
+                false,
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                vec![0, 0, 0],
+            )]
+        );
+        assert_eq!(load.take_font_events(), vec![("DFont".to_string(), "loaded")]);
     }
 
     /// R2408+ slice 2：fetch 失败的字体不污染 drain（仅 log，drain 为空）。

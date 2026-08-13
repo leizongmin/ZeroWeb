@@ -229,11 +229,20 @@ pub(super) fn resolve_font_src(href: &str, base_dir: Option<&Path>) -> Option<st
     Some(path)
 }
 
+fn read_font_src(href: &str, base_dir: Option<&Path>) -> Option<Vec<u8>> {
+    if href.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
+        if std::env::var("ZW_DATA_FONT").as_deref() == Ok("0") {
+            return None;
+        }
+        return zero_render_foundation::image_cache::decode_data_uri_bytes(href).ok();
+    }
+    std::fs::read(resolve_font_src(href, base_dir)?).ok()
+}
+
 /// 把 CSS 中 `@font-face` 声明的自定义字体加载进 FontLoader。
 ///
-/// 对每个 face，按 src 顺序尝试解析到本地文件并 `load_font`；首个成功加载的源即注册
-/// （fontdue 解码 .ttf/.otf；.woff 需解压，当前 fontdue 不支持 woff 容器，会静默失败并
-/// 跳到下一个 src）。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
+/// 对每个 face，按 src 顺序读取本地文件或解码 `data:` URI 并 `load_font`；
+/// 首个成功加载的源即注册。加载后 `build_font_resolver` 即可按 family 匹配到该字体。
 pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Path>, css: &str) {
     for (family, sources, weight, is_italic, stretch, size_adjust, feature_settings, unicode_ranges) in
         extract_font_faces(css)
@@ -243,12 +252,10 @@ pub(super) fn load_font_faces_into(loader: &mut FontLoader, base_dir: Option<&Pa
             continue;
         }
         for src in &sources {
-            let Some(path) = resolve_font_src(src, base_dir) else {
+            let Some(data) = read_font_src(src, base_dir) else {
                 continue;
             };
-            if let Ok(data) = std::fs::read(&path)
-                && let Ok(id) = loader.load_font(&data)
-            {
+            if let Ok(id) = loader.load_font(&data) {
                 loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&feature_settings));
                 loader.register_unicode_ranges(id, unicode_ranges.clone());
                 if let Some(scale) = size_adjust {

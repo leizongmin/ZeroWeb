@@ -517,18 +517,22 @@ pub fn is_raster_image_bytes(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG") || bytes.starts_with(&[0xFF, 0xD8, 0xFF]) || is_webp_magic(bytes)
 }
 
-/// R1705：解析 `data:` URI 并解码为 `ImageData`（renderer 多进程路径 + wpt-runner 共用）。
+/// 解析 `data:` URI 为原始字节。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
-/// 否则按字节 percent-decode（%XX）。所得字节交 `decode_image_bytes` 按 magic 分派
-///（PNG/JPEG/WebP/SVG）。无逗号或解码失败返回 Err（调用方降级，不阻断页面）。
-pub fn decode_data_uri(src: &str) -> Result<ImageData, String> {
+/// 否则按字节 percent-decode（%XX）。无逗号或解码失败返回 Err。
+///
+/// https://url.spec.whatwg.org/#data-urls
+pub fn decode_data_uri_bytes(src: &str) -> Result<Vec<u8>, String> {
+    if !src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
+        return Err("不是 data URI".to_string());
+    }
     let Some(comma) = src.find(',') else {
         return Err("data URI 缺逗号分隔符".to_string());
     };
     let header = &src[..comma];
     let payload = &src[comma + 1..];
-    let bytes: Vec<u8> = if header.contains("base64") {
+    let bytes = if header.split(';').any(|part| part.eq_ignore_ascii_case("base64")) {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
             .decode(payload)
@@ -536,7 +540,15 @@ pub fn decode_data_uri(src: &str) -> Result<ImageData, String> {
     } else {
         percent_decode_bytes(payload)
     };
-    decode_image_bytes(&bytes)
+    Ok(bytes)
+}
+
+/// R1705：解析 `data:` URI 并解码为 `ImageData`（renderer 多进程路径 + wpt-runner 共用）。
+///
+/// 所得字节交 `decode_image_bytes` 按 magic 分派（PNG/JPEG/WebP/SVG）。
+/// 解码失败返回 Err（调用方降级，不阻断页面）。
+pub fn decode_data_uri(src: &str) -> Result<ImageData, String> {
+    decode_image_bytes(&decode_data_uri_bytes(src)?)
 }
 
 /// 字节级 percent-decode（%XX → byte）；非 % 字节原样保留（data URI 非 base64 payload）。
@@ -943,6 +955,19 @@ mod decode_tests {
         assert_eq!(img.width, 2);
         assert_eq!(img.height, 2);
         assert_eq!(&img.pixels[..4], &[255, 0, 0, 255]); // 红
+    }
+
+    #[test]
+    fn decode_data_uri_bytes_supports_font_payloads() {
+        assert_eq!(
+            decode_data_uri_bytes("data:font/woff2;BASE64,d09GMg==").unwrap(),
+            b"wOF2"
+        );
+        assert_eq!(
+            decode_data_uri_bytes("data:application/font-sfnt,%00%01%00%00").unwrap(),
+            [0, 1, 0, 0]
+        );
+        assert!(decode_data_uri_bytes("https://example.com/font.woff2").is_err());
     }
 
     /// R1705：无逗号的非法 data URI → Err（调用方降级，不阻断）。
