@@ -121,6 +121,33 @@ fn computed_font_variation_settings_serializes_and_inherits() {
 }
 
 #[test]
+fn fetch_sync_wire_preserves_response_contract() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(|_| "__zwfr:201\u{001f}Created\u{001f}content-type\u{001e}text/plain\u{001f}body".to_string()),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "fetch('https://wpt.test/data').then(function(r){\
+               globalThis.__syncMeta = [r instanceof Response, r.status, r.headers.get('content-type')].join('|');\
+               return r.text();\
+             }).then(function(body){ globalThis.__syncBody = body; });",
+        )
+        .unwrap();
+
+    assert_eq!(sandbox.execute("globalThis.__syncMeta").unwrap().value, "true|201|text/plain");
+    assert_eq!(sandbox.execute("globalThis.__syncBody").unwrap().value, "body");
+}
+
+#[test]
 fn test_form_post_submission_r3055() {
     // R3055：form_post_submission 解析 <form method=post> 提交目标（action_url + urlencoded body）。
     // 对称 R3054 GET——POST 数据在 body，action_url 不含 query。控件收集规则与 GET 完全一致。

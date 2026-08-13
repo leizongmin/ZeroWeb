@@ -74,7 +74,7 @@
   // 本地 Chromium 150 oracle 锚定）；supports 委托 host `__zw_css_supports`（known-property gate +
   // apply，两参声明 / 单参条件 not/括号/声明/and/or/嵌套——R2951 经 css-parser parse_supports_condition
   // 完整求值）。supports 语义近似「ZW 能 apply」（偏乐观）；selector() 恒 true（permissive）。
-  globalThis.CSS = globalThis.CSS || {
+  var _zwCssNamespace = {
     escape: function (str) {
       var s = String(str);
       var out = '';
@@ -104,6 +104,9 @@
       return __zw_css_supports(String(prop)) === '1';
     },
   };
+  globalThis.CSS = globalThis.CSS || {};
+  globalThis.CSS.escape = globalThis.CSS.escape || _zwCssNamespace.escape;
+  globalThis.CSS.supports = globalThis.CSS.supports || _zwCssNamespace.supports;
 
   // document.cookie 的 in-JS 存储（name → value）。document.cookie setter 写入，getter 序列化。
   // 不接真 cookie jar（host-layer defer）；per-上下文（无 origin 隔离）。

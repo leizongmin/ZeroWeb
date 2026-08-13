@@ -347,7 +347,7 @@ fn run_testharness_html_inner(
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
         image_source_fetcher: wpt_data_image_fetcher(wpt_root),
         // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
-        fetch_handler: wpt_root.and_then(wpt_data_fetch_handler),
+        fetch_handler: wpt_data_fetch_handler(wpt_root),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
