@@ -195,6 +195,76 @@ fn test_sandbox_empty() {
     assert!(flags.is_empty());
 }
 
+// R3389：CSP directive name / sandbox token 须 ASCII 大小写不敏感匹配，空源列表等价 'none'。
+// 三处 CSP spec 合规修复回归锁定。
+
+#[test]
+fn test_sandbox_token_case_insensitive_r3389() {
+    // 全大写 token 须识别（CSP §6.3.2 sandbox token 大小写不敏感，与 HTML iframe 同根）
+    let csp = ContentSecurityPolicy::parse("sandbox ALLOW-SCRIPTS ALLOW-FORMS");
+    let flags = csp.sandbox_flags().unwrap();
+    assert_eq!(flags.len(), 2, "全大写 sandbox token 须识别");
+    // 首字母大写（HTML/CSP 常见书写）
+    let csp = ContentSecurityPolicy::parse("sandbox Allow-Same-Origin Allow-Top-Navigation");
+    let flags = csp.sandbox_flags().unwrap();
+    assert_eq!(flags.len(), 2, "首字母大写 sandbox token 须识别");
+    // 小写回归保护
+    let csp = ContentSecurityPolicy::parse("sandbox allow-scripts allow-forms");
+    assert_eq!(csp.sandbox_flags().unwrap().len(), 2);
+}
+
+#[test]
+fn test_directive_name_case_insensitive_r3389() {
+    // mixed-case 指令名须按大小写不敏感匹配（CSP §2.2.1 parse step 4 小写化 directive name）。
+    // 旧实现：`Script-Src 'none'` 被当未知指令丢弃 → 回退 default-src（缺省）→ 放行 = CSP 绕过。
+    let csp = ContentSecurityPolicy::parse("Script-Src 'none'");
+    assert!(
+        !csp.is_resource_allowed("script", "https://evil.com/evil.js", None),
+        "mixed-case 指令名须识别，'none' 应阻断脚本"
+    );
+    // 首字母大写 + 小写混合（用 host 而非 'self'，避免依赖 document_origin）
+    let csp = ContentSecurityPolicy::parse("DEFAULT-SRC https://example.com");
+    assert!(csp.is_resource_allowed("script", "https://example.com/s.js", None));
+    assert!(!csp.is_resource_allowed("script", "https://evil.com/s.js", None));
+    // 解析后指令名须规范化为小写
+    let csp = ContentSecurityPolicy::parse("Script-Src 'none'");
+    assert_eq!(csp.directives[0].name, "script-src");
+}
+
+#[test]
+fn test_empty_source_list_blocks_all_r3389() {
+    // 空源列表等价只含 'none'，须阻断全部（CSP §6.7.2.7）。
+    // 旧实现：`script-src`（无值）空列表返回 true（放行全部）= CSP 绕过。
+    let csp = ContentSecurityPolicy::parse("script-src");
+    assert!(
+        !csp.is_resource_allowed("script", "https://example.com/s.js", None),
+        "空源列表应阻断全部资源"
+    );
+    assert!(
+        !csp.is_resource_allowed("script", "https://evil.com/s.js", None),
+        "空源列表应阻断全部资源"
+    );
+}
+
+#[test]
+fn test_none_ignored_when_other_source_present_r3389() {
+    // 'none' 与其它源共存时须被忽略（CSP §6.7.2.7 注：'none' ignored if other source present）。
+    // 旧实现：`script-src 'none' 'self'` 因 'none' 在场而阻断 self（过度阻断，非 spec 语义）。
+    let origin = crate::origin::Origin::parse("https://example.com").unwrap();
+    let csp = ContentSecurityPolicy::parse("script-src 'none' 'self'");
+    assert!(
+        csp.is_resource_allowed("script", "https://example.com/s.js", Some(&origin)),
+        "'none' 与 'self' 共存时应忽略 'none'，放行 self"
+    );
+    assert!(
+        !csp.is_resource_allowed("script", "https://evil.com/s.js", Some(&origin)),
+        "非 self 仍应阻断"
+    );
+    // 'none' 独占时仍阻断全部（回归保护）
+    let csp = ContentSecurityPolicy::parse("script-src 'none'");
+    assert!(!csp.is_resource_allowed("script", "https://example.com/s.js", None));
+}
+
 #[test]
 fn test_navigate_to_allowed() {
     let csp = ContentSecurityPolicy::parse("navigate-to 'self'");

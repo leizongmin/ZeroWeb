@@ -61,23 +61,44 @@ pub enum SandboxFlag {
 
 impl SandboxFlag {
     /// 从 CSP 指令值字符串解析。
+    ///
+    /// R3389：CSP sandbox 指令 token 须按 **ASCII 大小写不敏感**匹配（CSP §6.3.2 sandbox
+    /// directive，token 语义继承 HTML iframe sandbox，与 R3388 sandbox.rs 同根）。指令值
+    /// 由 parse() 从 header 原样保留大小写喂入（CSP source-list token 保留大小写），故
+    /// `sandbox Allow-Scripts` 会真实到达，旧精确 match 静默丢弃 token → 整个沙箱退化为
+    /// 最严格，丢失作者意图启用的能力。
+    /// 规范引用：https://www.w3.org/TR/CSP3/#directive-sandbox
     fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "allow-forms" => Some(Self::AllowForms),
-            "allow-popups" => Some(Self::AllowPopups),
-            "allow-same-origin" => Some(Self::AllowSameOrigin),
-            "allow-scripts" => Some(Self::AllowScripts),
-            "allow-top-navigation" => Some(Self::AllowTopNavigation),
-            "allow-top-navigation-by-user-activation" => Some(Self::AllowTopNavigationByUserActivation),
-            "allow-popups-to-escape-sandbox" => Some(Self::AllowPopupsToEscapeSandbox),
-            "allow-downloads" => Some(Self::AllowDownloads),
-            "allow-presentation" => Some(Self::AllowPresentation),
-            "allow-storage-access-by-user-activation" => Some(Self::AllowStorageAccessByUserActivation),
-            "allow-orientation-lock" => Some(Self::AllowOrientationLock),
-            "allow-pointer-lock" => Some(Self::AllowPointerLock),
-            "allow-autoplay" => Some(Self::AllowAutoplay),
-            "allow-modals" => Some(Self::AllowModals),
-            _ => None,
+        if s.eq_ignore_ascii_case("allow-forms") {
+            Some(Self::AllowForms)
+        } else if s.eq_ignore_ascii_case("allow-popups") {
+            Some(Self::AllowPopups)
+        } else if s.eq_ignore_ascii_case("allow-same-origin") {
+            Some(Self::AllowSameOrigin)
+        } else if s.eq_ignore_ascii_case("allow-scripts") {
+            Some(Self::AllowScripts)
+        } else if s.eq_ignore_ascii_case("allow-top-navigation") {
+            Some(Self::AllowTopNavigation)
+        } else if s.eq_ignore_ascii_case("allow-top-navigation-by-user-activation") {
+            Some(Self::AllowTopNavigationByUserActivation)
+        } else if s.eq_ignore_ascii_case("allow-popups-to-escape-sandbox") {
+            Some(Self::AllowPopupsToEscapeSandbox)
+        } else if s.eq_ignore_ascii_case("allow-downloads") {
+            Some(Self::AllowDownloads)
+        } else if s.eq_ignore_ascii_case("allow-presentation") {
+            Some(Self::AllowPresentation)
+        } else if s.eq_ignore_ascii_case("allow-storage-access-by-user-activation") {
+            Some(Self::AllowStorageAccessByUserActivation)
+        } else if s.eq_ignore_ascii_case("allow-orientation-lock") {
+            Some(Self::AllowOrientationLock)
+        } else if s.eq_ignore_ascii_case("allow-pointer-lock") {
+            Some(Self::AllowPointerLock)
+        } else if s.eq_ignore_ascii_case("allow-autoplay") {
+            Some(Self::AllowAutoplay)
+        } else if s.eq_ignore_ascii_case("allow-modals") {
+            Some(Self::AllowModals)
+        } else {
+            None
         }
     }
 }
@@ -95,7 +116,14 @@ impl ContentSecurityPolicy {
                     return None;
                 }
                 let mut tokens = part.split_whitespace();
-                let name = tokens.next()?.to_string();
+                // R3389：CSP 规范「解析序列化 CSP」§2.2.1 第 4 步要求对 directive name 做
+                // ASCII 小写化。旧实现保留原大小写，致 `Script-Src 'none'` 这类 mixed-case
+                // 指令名在 find_directive 精确比较时被当未知指令丢弃 → 回退 default-src 或
+                // 放行 = CSP 绕过（应阻断的脚本被允许）。指令值（source list）保留大小写
+                // （'self'/'unsafe-inline' 等 token 自带单引号区分，host 由 origin_expr_matches
+                // 已做 eq_ignore_ascii_case）。
+                // 规范引用：https://www.w3.org/TR/CSP3/#parse-serialized-csp
+                let name = tokens.next()?.to_ascii_lowercase();
                 let values: Vec<String> = tokens.map(|t| t.to_string()).collect();
                 Some(CspDirective { name, values })
             })
@@ -134,12 +162,22 @@ impl ContentSecurityPolicy {
 
     /// 检查源列表是否匹配给定 URL。
     fn check_source_list(&self, values: &[String], url: &str, document_origin: Option<&Origin>) -> bool {
+        // R3389：CSP §6.7.2.7「Matches the source list」——空源列表等价于只含 'none'
+        // 的列表，须阻断全部资源（fetch 指令无值即「全禁」）。旧实现空列表返回 true
+        // （放行全部）= CSP 绕过：`script-src`（无值）应阻断所有脚本，旧实现却放行
+        // 任意脚本。`directive.values` 空 = 指令存在但无源，区别于「无该指令」（由
+        // find_directive_or_default 的 None 分支走 default-src/默认放行）。
+        // 规范引用：https://www.w3.org/TR/CSP3/#match-source-list
         if values.is_empty() {
-            return true;
+            return false;
         }
 
-        // 检查 'none'
-        if values.iter().any(|v| v == "'none'") {
+        // R3389：'none' 仅当**独占**源列表时表示「阻断全部」；与其它源共存时须被忽略
+        // （CSP §6.7.2.7 注：'none' is ignored if any other source is present）。旧实现
+        // `script-src 'none' 'self'` 会因 'none' 在场而阻断 self——过度阻断（安全方向但
+        // 非 spec 语义）。现仅当列表除 'none' 外无其它源时才短路返 false。
+        let has_other_source = values.iter().any(|v| v != "'none'");
+        if !has_other_source {
             return false;
         }
 
