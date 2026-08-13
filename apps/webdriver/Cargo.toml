@@ -11,13 +11,13 @@ path = "src/main.rs"
 
 [dependencies]
 zero-product-version = { workspace = true }
-zero-webview = { workspace = true }
-zero-dom = { workspace = true }
+zero-net = { workspace = true }
+zero-protocol = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [features]
-default = ["v8"]
-v8 = ["zero-webview/v8"]
-quickjs = ["zero-webview/quickjs"]
+default = []
+v8 = []
+quickjs = []

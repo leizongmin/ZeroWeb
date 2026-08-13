@@ -88,7 +88,10 @@ impl RendererRuntime {
                 }
                 let arguments =
                     serde_json::Value::Array(arguments.iter().map(automation_value_to_json).collect::<Vec<_>>());
-                let source = format!("(function(){{return (function(){{{script}\n}}).apply(null,{arguments});}})()");
+                let source = format!(
+                    "(function(){{var __zw_value=(function(){{{script}\n}}).apply(null,{arguments});\
+                     return JSON.stringify({{defined:typeof __zw_value!=='undefined',value:__zw_value}});}})()"
+                );
                 let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
                 let (value, changed) = {
                     let mut context = PageScriptContext {
@@ -239,6 +242,13 @@ fn automation_value_from_script(value: &str) -> AutomationValue {
         return AutomationValue::Null;
     }
     match serde_json::from_str::<serde_json::Value>(value) {
+        Ok(serde_json::Value::Object(mut envelope)) if envelope.contains_key("defined") => {
+            if envelope.get("defined").and_then(serde_json::Value::as_bool) != Some(true) {
+                AutomationValue::Null
+            } else {
+                automation_value_from_json(envelope.remove("value").unwrap_or(serde_json::Value::Null))
+            }
+        }
         Ok(value) => automation_value_from_json(value),
         Err(_) => AutomationValue::String(value.to_string()),
     }

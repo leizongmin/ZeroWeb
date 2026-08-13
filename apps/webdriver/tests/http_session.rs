@@ -52,6 +52,7 @@ fn spawn_test_page_server_with_button() -> (std::thread::JoinHandle<()>, u16) {
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
             let body = "<html><head><title>WebDriver Test</title></head><body>\
+                        <input id=\"name\"><input id=\"check\" type=\"checkbox\">\
                         <button id=\"btn\" onclick=\"document.title='Clicked!'\">Click me</button>\
                         </body></html>";
             let resp = format!(
@@ -67,7 +68,7 @@ fn spawn_test_page_server_with_button() -> (std::thread::JoinHandle<()>, u16) {
 }
 
 #[test]
-fn webdriver_element_interaction() {
+fn webdriver_drives_live_form_controls() {
     let (_driver, port) = spawn_driver();
     let (_page_server, page_port) = spawn_test_page_server_with_button();
 
@@ -87,7 +88,7 @@ fn webdriver_element_interaction() {
     );
     assert_eq!(status, 200);
 
-    // Find Element（css selector）
+    // Find Element 返回 session-local opaque id。
     let (status, body) = http_request(
         port,
         "POST",
@@ -108,19 +109,59 @@ fn webdriver_element_interaction() {
     );
     assert_eq!(status, 404, "不存在的元素应 404");
 
-    // Execute Script（JS 沙箱语义——如实断言：表达式求值可用；
-    // 页面 DOM 操作为 M2 renderer 桥接能力）
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#name" }).to_string()),
+    );
+    assert_eq!(status, 200, "Find input 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let name_ref = value["value"][element_key]
+        .as_str()
+        .expect("input reference")
+        .to_string();
+
+    // Send Keys 走 live renderer keydown/up；WebDriver Tab 特殊键移动真实焦点。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{name_ref}/value"),
+        Some(&serde_json::json!({ "text": "Zoé\u{E004}" }).to_string()),
+    );
+    assert_eq!(status, 200, "Send Keys 应 200: {body}");
+
+    let (status, body) = http_request(port, "GET", &format!("/session/{session_id}/element/active"), None);
+    assert_eq!(status, 200, "Get Active Element 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let active_ref = value["value"][element_key].as_str().expect("active reference");
+    assert_ne!(active_ref, name_ref, "Tab 应把焦点移到 checkbox");
+
+    // Execute Script 在同一个 live page context 读到输入结果。
     let (status, body) = http_request(
         port,
         "POST",
         &format!("/session/{session_id}/execute/sync"),
-        Some(&serde_json::json!({ "script": "1 + 1", "args": [] }).to_string()),
+        Some(
+            &serde_json::json!({
+                "script": "return document.getElementById('name').value;",
+                "args": []
+            })
+            .to_string(),
+        ),
     );
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&body).expect("json");
-    assert_eq!(v["value"], "2");
+    assert_eq!(v["value"], "Zoé");
 
-    // Element Click（M1：存在性验证；onclick 事件注入为 M2 引擎级能力）
+    // Checkbox 与 button click 都真实改变页面状态。
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{active_ref}/click"),
+        None,
+    );
+    assert_eq!(status, 200, "checkbox click 应 200: {body}");
     let (status, body) = http_request(
         port,
         "POST",
@@ -129,7 +170,23 @@ fn webdriver_element_interaction() {
     );
     assert_eq!(status, 200, "Element Click 应 200: {body}");
 
-    // Click 不存在的引用 → no such element
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/execute/sync"),
+        Some(
+            &serde_json::json!({
+                "script": "return [document.getElementById('check').checked, document.title];",
+                "args": []
+            })
+            .to_string(),
+        ),
+    );
+    assert_eq!(status, 200, "live state query 应 200: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"], serde_json::json!([true, "Clicked!"]));
+
+    // 未登记 opaque id → no such element。
     let (status, _) = http_request(
         port,
         "POST",
@@ -137,6 +194,65 @@ fn webdriver_element_interaction() {
         None,
     );
     assert_eq!(status, 404, "不存在的元素引用应 404");
+}
+
+#[test]
+fn webdriver_rejects_missing_and_stale_element_references() {
+    let (_driver, port) = spawn_driver();
+    let (_page_server, page_port) = spawn_test_page_server_with_button();
+    let (status, body) = http_request(port, "POST", "/session", Some("{}"));
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let session_id = value["value"]["sessionId"].as_str().expect("sessionId");
+    let url = format!("http://127.0.0.1:{page_port}/");
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200, "Navigate 应 200: {body}");
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#btn" }).to_string()),
+    );
+    assert_eq!(status, 200);
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let reference = value["value"]["element-6066-11e4-a52e-4f735466cecf"]
+        .as_str()
+        .expect("element reference");
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/url"),
+        Some(&serde_json::json!({ "url": url }).to_string()),
+    );
+    assert_eq!(status, 200, "second Navigate 应 200: {body}");
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element/{reference}/click"),
+        None,
+    );
+    assert_eq!(status, 404, "旧文档引用应 404: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "stale element reference");
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        &format!("/session/{session_id}/element"),
+        Some(&serde_json::json!({ "using": "css selector", "value": "#missing" }).to_string()),
+    );
+    assert_eq!(status, 404, "缺失元素应 404: {body}");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(value["value"]["error"], "no such element");
 }
 
 /// 本地测试 HTTP 服务器：固定返回带标题的 HTML 页。

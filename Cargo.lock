@@ -6617,9 +6617,9 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
- "zero-dom",
+ "zero-net",
  "zero-product-version",
- "zero-webview",
+ "zero-protocol",
 ]
 
 [[package]]

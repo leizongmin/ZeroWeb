@@ -90,8 +90,8 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 ### M4 工作包
 
 - [x] live renderer automation IPC 与有界 owner loop
-- [ ] WebDriver live renderer session 与 HTML 交互端点
+- [x] WebDriver live renderer session 与 HTML 交互端点
 - [ ] WPT testharness reporter 与 testdriver 动作
 - [ ] forms/focus/input-events 选定子集
 
-实施 WebDriver live renderer session 与 HTML 交互端点。
+实施 WPT testharness reporter 与 testdriver 动作。
