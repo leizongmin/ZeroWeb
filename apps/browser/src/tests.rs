@@ -273,6 +273,68 @@ fn content_logical_size_uses_device_pixel_ratio() {
 }
 
 #[test]
+fn browser_gpu_scene_does_not_apply_device_scale_twice() {
+    assert_eq!(BrowserApp::browser_scene_gpu_scale_factor(), 1.0);
+}
+
+#[test]
+fn browser_cpu_gpu_chrome_geometry_matches_at_hidpi() {
+    let mut app = BrowserApp::new(RenderMode::Gpu);
+    app.physical_size = (640, 480);
+    app.scale_factor = 2.0;
+
+    let cpu = app.render_full_scene_with_webview_for_test(640, 480);
+    let gpu = app
+        .render_full_scene_gpu_capture(640, 480)
+        .expect("HiDPI browser chrome should be supported by the GPU path");
+
+    let different_pixels = cpu
+        .data
+        .chunks_exact(4)
+        .zip(gpu.data.chunks_exact(4))
+        .filter(|(left, right)| {
+            left[0].abs_diff(right[0]) as u16 + left[1].abs_diff(right[1]) as u16 + left[2].abs_diff(right[2]) as u16
+                > 48
+        })
+        .count();
+    let ratio = different_pixels as f32 / (cpu.data.len() / 4) as f32;
+    assert!(ratio < 0.01, "HiDPI CPU/GPU geometry diverged: {ratio:.3}");
+}
+
+#[test]
+fn windows_browser_scripts_build_required_child_processes() {
+    for script in [
+        include_str!("../../../scripts/browser.ps1"),
+        include_str!("../../../scripts/browser-cpu.ps1"),
+    ] {
+        assert!(script.contains("-p zero-renderer -p zero-compositor"));
+        assert!(script.contains("Test-Path -LiteralPath $CompositorBin"));
+    }
+}
+
+#[test]
+fn browser_build_and_release_entries_include_compositor() {
+    let makefile = include_str!("../../../Makefile");
+    assert!(makefile.contains("-p zero-browser -p zero-renderer -p zero-compositor"));
+
+    for script in [
+        include_str!("../../../scripts/package-linux.sh"),
+        include_str!("../../../scripts/package-macos.sh"),
+        include_str!("../../../scripts/package-windows.ps1"),
+    ] {
+        assert!(script.contains("zero-compositor"));
+    }
+
+    for workflow in [
+        include_str!("../../../.github/workflows/weekly.yml"),
+        include_str!("../../../.github/workflows/release.yml"),
+    ] {
+        assert!(workflow.contains("--bin zero-compositor"));
+        assert!(workflow.contains("release/zero-compositor"));
+    }
+}
+
+#[test]
 fn startup_has_single_default_tab() {
     let app = BrowserApp::new(RenderMode::Cpu);
     assert_eq!(app.shell.tab_count(), 1, "should start with exactly one tab");

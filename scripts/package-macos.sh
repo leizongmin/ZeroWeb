@@ -12,6 +12,7 @@ HELPER_NAME="ZeroBrowser Helper (Renderer)"
 OUTPUT_DIR="$PROJECT_ROOT/target/packages"
 BROWSER_BINARY=""
 RENDERER_BINARY=""
+COMPOSITOR_BINARY=""
 APP_VERSION=""
 ARCHIVE_PATH=""
 SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:-}"
@@ -25,6 +26,7 @@ Usage:
 Options:
   --browser PATH         Use an existing zero-browser binary.
   --renderer PATH        Use an existing zero-renderer binary.
+  --compositor PATH      Use an existing zero-compositor binary.
   --output-dir PATH      Output directory (default: target/packages).
   --version VERSION      Bundle version (default: current local date as YY.M.D).
   --archive PATH         Zip path (default: <output-dir>/zero-browser-macos.zip).
@@ -34,7 +36,7 @@ Options:
                          Requires APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_PASSWORD.
   -h, --help             Show this help.
 
-When --browser and --renderer are omitted, the script builds both release binaries.
+When process paths are omitted, the script builds all three release binaries.
 The zip contains ZeroBrowser.app at its root.
 EOF
 }
@@ -58,6 +60,11 @@ while [[ $# -gt 0 ]]; do
         --renderer)
             [[ $# -ge 2 ]] || fail "--renderer requires a path"
             RENDERER_BINARY="$2"
+            shift 2
+            ;;
+        --compositor)
+            [[ $# -ge 2 ]] || fail "--compositor requires a path"
+            COMPOSITOR_BINARY="$2"
             shift 2
             ;;
         --output-dir)
@@ -119,25 +126,28 @@ IFS=. read -r version_year version_month version_day <<< "$APP_VERSION"
 BUNDLE_VERSION="$APP_VERSION"
 export ZERO_BUILD_VERSION="$APP_VERSION"
 
-if [[ -n "$BROWSER_BINARY" || -n "$RENDERER_BINARY" ]]; then
-    [[ -n "$BROWSER_BINARY" && -n "$RENDERER_BINARY" ]] \
-        || fail "--browser and --renderer must be provided together"
+if [[ -n "$BROWSER_BINARY" || -n "$RENDERER_BINARY" || -n "$COMPOSITOR_BINARY" ]]; then
+    [[ -n "$BROWSER_BINARY" && -n "$RENDERER_BINARY" && -n "$COMPOSITOR_BINARY" ]] \
+        || fail "--browser, --renderer, and --compositor must be provided together"
 else
     info "Building release binaries"
     (
         cd "$PROJECT_ROOT"
-        cargo build --release -p zero-browser -p zero-renderer
+        cargo build --release -p zero-browser -p zero-renderer -p zero-compositor
     )
     BROWSER_BINARY="$PROJECT_ROOT/target/release/zero-browser"
     RENDERER_BINARY="$PROJECT_ROOT/target/release/zero-renderer"
+    COMPOSITOR_BINARY="$PROJECT_ROOT/target/release/zero-compositor"
 fi
 
 [[ "$BROWSER_BINARY" = /* ]] || BROWSER_BINARY="$PROJECT_ROOT/$BROWSER_BINARY"
 [[ "$RENDERER_BINARY" = /* ]] || RENDERER_BINARY="$PROJECT_ROOT/$RENDERER_BINARY"
+[[ "$COMPOSITOR_BINARY" = /* ]] || COMPOSITOR_BINARY="$PROJECT_ROOT/$COMPOSITOR_BINARY"
 [[ "$OUTPUT_DIR" = /* ]] || OUTPUT_DIR="$PROJECT_ROOT/$OUTPUT_DIR"
 
 [[ -f "$BROWSER_BINARY" ]] || fail "browser binary not found: $BROWSER_BINARY"
 [[ -f "$RENDERER_BINARY" ]] || fail "renderer binary not found: $RENDERER_BINARY"
+[[ -f "$COMPOSITOR_BINARY" ]] || fail "compositor binary not found: $COMPOSITOR_BINARY"
 
 mkdir -p "$OUTPUT_DIR"
 if [[ -z "$ARCHIVE_PATH" ]]; then
@@ -162,6 +172,7 @@ mkdir -p \
     "$HELPER_BUNDLE/Contents/Resources"
 
 install -m 755 "$BROWSER_BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
+install -m 755 "$COMPOSITOR_BINARY" "$APP_BUNDLE/Contents/MacOS/zero-compositor"
 install -m 755 "$RENDERER_BINARY" "$HELPER_EXECUTABLE"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
@@ -234,12 +245,15 @@ if [[ -n "$SIGN_IDENTITY" ]]; then
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
         --entitlements "$ENTITLEMENTS_PATH" "$HELPER_EXECUTABLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE/Contents/MacOS/zero-compositor"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
         --entitlements "$ENTITLEMENTS_PATH" "$HELPER_BUNDLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
         --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE"
 else
     info "No Developer ID identity provided; applying ad-hoc signature"
     codesign --force --sign - "$HELPER_EXECUTABLE"
+    codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/zero-compositor"
     codesign --force --sign - "$HELPER_BUNDLE"
     codesign --force --sign - "$APP_BUNDLE"
 fi

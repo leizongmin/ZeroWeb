@@ -20,8 +20,6 @@
 //! 当前 polyfill 路径 + native 路径均依赖 V8，故整模块 `#[cfg(feature = "v8")]` 门控
 //!（与 `js_dom_bridge_tests` 一致）。
 
-#![cfg(feature = "v8")]
-
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};

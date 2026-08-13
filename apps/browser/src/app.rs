@@ -1515,10 +1515,8 @@ impl BrowserApp {
         } else if url.starts_with("http://") || url.starts_with("https://") {
             tracing::info!("Tab {} navigate IPC: {method} {url}", tab_id.0);
             self.tabs.navigate_request(tab_id, url, method, body);
-        } else {
-            if method == "GET" && body.is_none() {
-                self.load_local_tab_url(tab_id, &url);
-            }
+        } else if method == "GET" && body.is_none() {
+            self.load_local_tab_url(tab_id, &url);
         }
         self.needs_redraw = true;
     }

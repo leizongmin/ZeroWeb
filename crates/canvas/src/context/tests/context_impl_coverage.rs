@@ -426,9 +426,7 @@ fn test_context_is_point_in_path_line_segment() {
     ctx.move_to(0.0, 0.0);
     ctx.line_to(10.0, 10.0);
     // Point on the line may return true or false depending on implementation
-    let on_path = ctx.is_point_in_path(5.0, 5.0);
-    // Don't assert specific value as it depends on the point-in-polygon implementation
-    assert!(on_path || !on_path);
+    let _ = ctx.is_point_in_path(5.0, 5.0);
 }
 
 #[test]

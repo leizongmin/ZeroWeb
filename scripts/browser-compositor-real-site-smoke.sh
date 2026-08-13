@@ -27,6 +27,7 @@ if test "$(uname -s)" = "Darwin"; then
     bash "$ROOT/scripts/package-macos.sh" \
         --browser "$RAW_BROWSER_BIN" \
         --renderer "$RAW_RENDERER_BIN" \
+        --compositor "$COMPOSITOR_BIN" \
         --output-dir "$OUT_DIR/package" \
         --archive "$OUT_DIR/package/zero-browser-gui-smoke.zip"
     BIN="$OUT_DIR/package/ZeroBrowser.app/Contents/MacOS/ZeroBrowser"

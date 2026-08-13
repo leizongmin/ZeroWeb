@@ -10,8 +10,6 @@
 //! 正确用 `checked_add` 防溢出，`read_memory` 漏——证明疏漏非刻意。改 `read_memory`
 //! 两后端均用 `checked_add`，溢出返回 None。
 
-#![cfg(feature = "wasmi")]
-
 use crate::WasmSandbox;
 
 /// 辅助函数：编译 WAT 文本为 WASM 字节（镜像 basic.rs）。

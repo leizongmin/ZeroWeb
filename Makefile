@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -30,31 +30,32 @@ build: setup-rusty-v8
 # debug different backends and should not be combined in one run.
 
 BROWSER_BIN = ./target/release/zero-browser
+BROWSER_RUN = $(BROWSER_BIN)
 
-browser: setup-rusty-v8
-	cargo build --release -p zero-browser -p zero-renderer
+browser-build: setup-rusty-v8
+	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor
+
+browser: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
 
 # 与 browser-cpu 相同（保留别名）
 browser-wpt-parity: browser-cpu
 
-browser-cpu: setup-rusty-v8
-	cargo build --release -p zero-browser -p zero-renderer
+browser-cpu: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --wpt-parity
 
-browser-debug: setup-rusty-v8
-	cargo build --release -p zero-browser -p zero-renderer
+browser-debug: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
 
-browser-debug-wayland: setup-rusty-v8
+browser-debug-wayland: browser-build
 	mkdir -p target
 	RUST_BACKTRACE=1 WINIT_UNIX_BACKEND=wayland WAYLAND_DEBUG=1 $(BROWSER_RUN) 2>&1 | tee target/zero-browser-wayland-debug.log
 
-browser-debug-wayland-log: setup-rusty-v8
+browser-debug-wayland-log: browser-build
 	mkdir -p target
 	RUST_BACKTRACE=1 WINIT_UNIX_BACKEND=wayland WAYLAND_DEBUG=1 $(BROWSER_RUN) > target/zero-browser-wayland-debug.log 2>&1
 
-browser-debug-x11: setup-rusty-v8
+browser-debug-x11: browser-build
 	RUST_BACKTRACE=1 WAYLAND_DISPLAY= WAYLAND_SOCKET= WINIT_UNIX_BACKEND=x11 $(BROWSER_RUN)
 
 # 真实产品窗口 smoke：CPU/scale=1 下串行运行 legacy 与 compositor 两种模式，

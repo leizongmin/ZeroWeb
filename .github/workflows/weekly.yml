@@ -249,7 +249,9 @@ jobs:
           echo "Patch applied."
 
       - name: Build release binaries
-        run: cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
+        run: |
+          cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
+          cargo build --release --bin zero-compositor --target ${{ matrix.target }}
 
       - name: Import Developer ID certificate
         if: runner.os == 'macOS'
@@ -283,6 +285,7 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/zero-compositor${{ matrix.ext }} dist/
 
       - name: Build macOS app archive
         if: runner.os == 'macOS'
@@ -299,6 +302,7 @@ jobs:
           args=(
             --browser "target/${{ matrix.target }}/release/zero-browser"
             --renderer "target/${{ matrix.target }}/release/zero-renderer"
+            --compositor "target/${{ matrix.target }}/release/zero-compositor"
             --output-dir package
             --version "$VERSION"
             --archive "dist/${{ matrix.artifact }}.zip"
@@ -377,8 +381,8 @@ jobs:
             Automated weekly build of `main` (${{ github.sha }}).
 
             macOS zips contain `ZeroBrowser.app`. Linux and Windows zips contain
-            both `zero-browser` and `zero-renderer`; keep those executables in
-            the same directory after extracting.
+            `zero-browser`, `zero-renderer`, and `zero-compositor`; keep those
+            executables in the same directory after extracting.
 
             V8 builds carry a `-v8` suffix, QuickJS builds a `-quickjs` suffix.
             Pick the zip matching your platform and engine:

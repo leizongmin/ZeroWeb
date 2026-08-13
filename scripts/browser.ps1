@@ -6,8 +6,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --scale=2
 #
 # 默认 --renderer=gpu。WPT 对齐（CPU + scale 1.0）请用 browser-cpu.ps1 / make browser-cpu。
-# 会先下载 rusty_v8，再 release 编译 zero-browser + zero-renderer，最后运行已构建的二进制
-# （不用 cargo run，确保与 zero-renderer.exe 同目录，多进程模式可 spawn 子进程）。
+# 会先下载 rusty_v8，再 release 编译 browser、renderer 与 compositor，最后运行已构建的二进制
+# （不用 cargo run，确保三个进程的可执行文件同目录）。
 
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -20,6 +20,7 @@ $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $DownloadScript = Join-Path $PSScriptRoot "download-rusty-v8.ps1"
 $BrowserBin = Join-Path $ProjectRoot "target\release\zero-browser.exe"
 $RendererBin = Join-Path $ProjectRoot "target\release\zero-renderer.exe"
+$CompositorBin = Join-Path $ProjectRoot "target\release\zero-compositor.exe"
 
 Push-Location $ProjectRoot
 try {
@@ -29,7 +30,7 @@ try {
         Write-Error "rusty_v8 setup failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "ZeroBrowser: building zero-browser and zero-renderer (release)..."
+    Write-Host "ZeroBrowser: building zero-browser, zero-renderer, and zero-compositor (release)..."
 
     # 确保 freetype-sys 编译 libpng 时能找到 zlib.h。Windows 上 cc crate 传递
     # 的相对路径 -I "libz-sys/src/zlib" 可能无法正确解析，通过 CFLAGS 提供系统
@@ -52,7 +53,7 @@ try {
 
     # 启用 windows-console feature：让 zero-browser 走 console 子系统，
     # tracing 日志输出到当前控制台、Ctrl+C 可终止；打包构建默认 GUI 子系统。
-    cargo build --release -p zero-browser -p zero-renderer --features zero-browser/windows-console
+    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor --features zero-browser/windows-console
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
@@ -62,6 +63,9 @@ try {
     }
     if (-not (Test-Path -LiteralPath $RendererBin)) {
         Write-Error "zero-renderer not found at $RendererBin (required for default multi-process mode)"
+    }
+    if (-not (Test-Path -LiteralPath $CompositorBin)) {
+        Write-Error "zero-compositor not found at $CompositorBin (required for compositor mode)"
     }
 
     Write-Host "ZeroBrowser: starting $BrowserBin (GPU renderer)"

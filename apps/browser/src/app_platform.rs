@@ -5,6 +5,12 @@
 // ── BrowserApp GPU/CPU 渲染 impl ──────────────────────────────────
 
 impl BrowserApp {
+    /// Browser 场景在 `build_scene` 和 WebView 拼装阶段已转换为物理像素。
+    /// GPU 光栅化不得再次应用窗口 DPI，否则高分屏会产生二次缩放。
+    pub(crate) fn browser_scene_gpu_scale_factor() -> f32 {
+        1.0
+    }
+
     /// Wayland 上是否强制使用 CPU softbuffer present（规避 wgpu swapchain 与 winit CSD 冲突）
     pub fn wayland_forces_cpu_present(&self) -> bool {
         is_wayland() && matches!(self.render_mode, RenderMode::Gpu | RenderMode::Auto)
@@ -275,10 +281,7 @@ impl BrowserApp {
                 &overlay_fills,
                 &overlay_glyphs,
                 &overlay_rounded_rects,
-                // P2-8 HiDPI：scene_primitives 为 CSS 逻辑坐标，GPU 顶点按
-                // scale_factor 缩放（与 CPU 路径 render_scene_cpu 一致）；
-                // 旧传 1.0 致高分屏下文字/图片按 1x 光栅。
-                self.scale_factor,
+                Self::browser_scene_gpu_scale_factor(),
             ) {
                 // P0-1：GPU 不支持本帧特性（clips/blend_modes/半透明/带模糊阴影/
                 // 窗口模式滤镜变换）→ CPU 整帧渲染后上传 blit（慢但对，避免静默画错）。
@@ -781,7 +784,7 @@ impl BrowserApp {
             &overlay_fills,
             &overlay_glyphs,
             &overlay_rounded_rects,
-            self.scale_factor,
+            Self::browser_scene_gpu_scale_factor(),
         ) {
             return Err("GPU capture rejected unsupported scene; CPU fallback is not accepted".to_string());
         }

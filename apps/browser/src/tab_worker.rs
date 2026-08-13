@@ -483,17 +483,15 @@ fn tab_worker_main(
                                 ) {
                                     input_changed |= action.changed;
                                 }
-                            } else {
-                                if let Some(action) = execute_shared_action(
-                                    &mut wv,
-                                    _js_worker.as_ref(),
-                                    javascript_enabled,
-                                    &selector,
-                                    zero_page_runtime::HtmlUserAction::Submit,
-                                ) {
-                                    input_changed |= action.changed;
-                                    navigation = action_navigation(&action);
-                                }
+                            } else if let Some(action) = execute_shared_action(
+                                &mut wv,
+                                _js_worker.as_ref(),
+                                javascript_enabled,
+                                &selector,
+                                zero_page_runtime::HtmlUserAction::Submit,
+                            ) {
+                                input_changed |= action.changed;
+                                navigation = action_navigation(&action);
                             }
                         }
                     }

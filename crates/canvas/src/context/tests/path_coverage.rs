@@ -193,8 +193,7 @@ fn test_path2d_is_point_on_edge() {
     p.close_path();
 
     // Point exactly on edge - behavior might vary
-    let on_edge = p.is_point_in_path(50.0, 0.0);
-    assert!(on_edge || !on_edge); // Either is acceptable
+    let _ = p.is_point_in_path(50.0, 0.0);
 }
 
 #[test]
