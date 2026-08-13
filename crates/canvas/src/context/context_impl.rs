@@ -853,7 +853,11 @@ impl CanvasContext {
     // ── Hit testing ──
 
     /// 判断点是否在当前路径内部（使用奇偶填充规则）。
-    /// 点坐标为 Canvas 坐标空间，会先通过当前变换矩阵的逆变换映射到路径空间。
+    ///
+    /// 点坐标 (x, y) 为画布坐标空间（device space），与 [`Self::move_to`] / [`Self::line_to`]
+    /// 追加路径顶点时已按当前变换矩阵（CTM）变换到设备空间的顶点同空间比对——无需逆变换。
+    /// spec `CanvasRenderingContext2D.isPointInPath`：点在画布坐标空间，命中测试针对当前
+    /// 变换后的路径（路径顶点在追加时即经 CTM 映射，见 [`Self::move_to`]）。
     pub fn is_point_in_path(&self, x: f32, y: f32) -> bool {
         let vertices = self.flatten_path();
         if vertices.is_empty() {
@@ -864,7 +868,9 @@ impl CanvasContext {
     }
 
     /// 判断点是否在当前路径的描边区域内。
-    /// 检测点到路径中每条线段的距离是否小于 line_width / 2。
+    ///
+    /// 点坐标 (x, y) 为画布坐标空间，与描边中线顶点（追加时已按 CTM 变换到设备空间）同空间
+    /// 比对；检测点到各线段的距离是否小于 `line_width / 2`（设备空间度量）。
     pub fn is_point_in_stroke(&self, x: f32, y: f32) -> bool {
         let vertices = self.flatten_path();
         if vertices.is_empty() {

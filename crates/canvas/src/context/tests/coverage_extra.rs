@@ -341,6 +341,64 @@ fn test_is_point_in_path_miss() {
     assert!(!ctx.is_point_in_path(0.0, 0.0));
 }
 
+// R3359：isPointInPath 命中测试在画布坐标空间（device space）进行——路径顶点在 move_to/
+// line_to 追加时已按 CTM 变换（context_impl.rs move_to/line_to），flatten_path 产出设备空间
+// 顶点，故 isPointInPath(x,y) 直接在设备空间点 vs 设备空间顶点命中（spec CanvasRenderingContext2D.
+// isPointInPath：点在画布坐标空间）。本组测锁定「CTM 非单位时命中测试正确」——translate 后
+// 路径在设备空间偏移，设备空间点命中设备空间变换后路径。
+#[test]
+fn test_is_point_in_path_under_transform_r3359() {
+    let mut ctx = CanvasContext::new(100, 100);
+    // translate(50,0)：move_to(10,10) 经 CTM 追加为设备空间顶点 (60,10)；路径设备空间 (60,10)-(70,20)。
+    ctx.translate(50.0, 0.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(20.0, 10.0);
+    ctx.line_to(20.0, 20.0);
+    ctx.line_to(10.0, 20.0);
+    ctx.close_path();
+    // 设备空间点 (65,15) 在设备空间路径 (60,10)-(70,20) 内 → 命中。
+    assert!(
+        ctx.is_point_in_path(65.0, 15.0),
+        "isPointInPath 须在画布坐标空间命中（路径顶点已按 CTM 变换）"
+    );
+    // 设备空间点 (15,15) 在路径空间但不在设备空间路径内 → 未命中。
+    assert!(!ctx.is_point_in_path(15.0, 15.0));
+}
+
+// R3359：scale(2,2) 下路径顶点放大——move_to(10,10) 经 scale 追加为 (20,20)，路径设备空间 (20,20)-(40,40)。
+#[test]
+fn test_is_point_in_path_under_scale_r3359() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.scale(2.0, 2.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(20.0, 10.0);
+    ctx.line_to(20.0, 20.0);
+    ctx.line_to(10.0, 20.0);
+    ctx.close_path();
+    // 设备空间点 (30,30) 在设备空间路径 (20,20)-(40,40) 内 → 命中。
+    assert!(ctx.is_point_in_path(30.0, 30.0));
+    // 设备空间点 (15,15) 在路径空间但不在放大后的设备空间路径内 → 未命中。
+    assert!(!ctx.is_point_in_path(15.0, 15.0));
+}
+
+// R3359：isPointInStroke 同在画布坐标空间——描边中线顶点已按 CTM 变换，距离阈值 line_width/2
+// 在设备空间度量。
+#[test]
+fn test_is_point_in_stroke_under_transform_r3359() {
+    let mut ctx = CanvasContext::new(100, 100);
+    ctx.translate(50.0, 0.0);
+    ctx.set_line_width(4.0);
+    ctx.begin_path();
+    ctx.move_to(10.0, 30.0); // 经 CTM 追加为设备空间 (60,30)
+    ctx.line_to(20.0, 30.0); // 设备空间 (70,30)
+    // 设备空间点 (65,30) 在描边中线 (60,30)-(70,30) 上 → 命中。
+    assert!(ctx.is_point_in_stroke(65.0, 30.0));
+    // 设备空间点 (15,30) 远离设备空间描边 → 未命中。
+    assert!(!ctx.is_point_in_stroke(15.0, 30.0));
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // fill_with_path / stroke_with_path（lines 286-315）
 // ═══════════════════════════════════════════════════════════════════════
