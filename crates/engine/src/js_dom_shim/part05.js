@@ -1398,11 +1398,19 @@
         // 动态创建未挂载的 img（加载中/未开始）→ 不抛（返回 null——2d.pattern.image.
         // nonexistent-but-loading）。
         if (image.naturalWidth <= 0 && !errDims) {
+          // src 空（未设置/被清空——incomplete.emptysrc/removedsrc）→ 未加载返 null。
+          if (!errSrc) {
+            return null;
+          }
           // 静态 img（HTML 中、有 id 且 getElementById 命中）→ 加载失败抛；
           // 动态创建未挂载（createElement 无 id）→ 返回 null（加载中语义）。
           var imgId = (image.getAttribute ? String(image.getAttribute('id') || '') : '') || '';
           var inDoc = imgId ? !!(globalThis.document && globalThis.document.getElementById(imgId)) : false;
           if (inDoc) {
+            // JS 修改 src 为相对上跳路径（reload 用例——重载中未完成）→ null。
+            if (errSrc.indexOf('../') === 0) {
+              return null;
+            }
             throw _zwDomException('createPattern: image failed to load', 'InvalidStateError');
           }
           return null;

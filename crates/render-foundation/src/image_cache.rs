@@ -608,7 +608,13 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let w = size.width().ceil() as u32;
     let h = size.height().ceil() as u32;
     if w == 0 || h == 0 {
-        return Err("SVG 零尺寸".to_string());
+        // R34xx：0 尺寸 SVG 合法（2d.pattern.image.zerowidth/zeroheight——createPattern
+        // 期望 null 而非 InvalidStateError；尺寸记录供 naturalWidth 查询）。
+        return ImageData::from_rgba(Vec::new(), w.max(1), h.max(1)).map(|mut d| {
+            d.width = w;
+            d.height = h;
+            d
+        });
     }
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or_else(|| format!("SVG pixmap 分配失败 {w}x{h}"))?;
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
