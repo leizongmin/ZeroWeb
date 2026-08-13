@@ -38,6 +38,10 @@ pub type ExternalScriptExecutor = std::sync::Arc<dyn Fn(&str) -> Result<String, 
 /// 与 reftest 一致）。与 `external_script`（多进程执行委托，互斥）独立——本获取器仅进程内 sandbox 路径消费。
 pub type ScriptSourceFetcher = std::sync::Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
+/// R34xx：图片源获取器（headless/testharness 路径 fetch `<img src>` / CSS `url()` 图片；
+/// None → 走 HTTP 网络）。返回图片字节；返回 None 表示该 URL 无法本地提供（回退网络）。
+pub type ImageSourceFetcher = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+
 /// WebView 配置。
 #[derive(Clone)]
 pub struct WebViewConfig {
@@ -63,6 +67,8 @@ pub struct WebViewConfig {
     pub external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源；None → 外链脚本跳过，离线语义）。
     pub script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// R34xx：图片源获取器（headless/testharness 路径；None → HTTP 网络）。
+    pub image_source_fetcher: Option<ImageSourceFetcher>,
     /// P1b S2：启用原生 DOM 绑定（RFC `p1b-v8-native-bindings-rfc.md`）。
     ///
     /// 开启时，`run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
@@ -84,6 +90,7 @@ impl Default for WebViewConfig {
             http_timeout_secs: None,
             external_script: None,
             script_source_fetcher: None,
+            image_source_fetcher: None,
             native_dom: false,
         }
     }
@@ -173,6 +180,7 @@ pub struct WebView {
     external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
     script_source_fetcher: Option<ScriptSourceFetcher>,
+    image_source_fetcher: Option<ImageSourceFetcher>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 当前导航 epoch（user-action node identity scope）。
@@ -255,6 +263,7 @@ impl WebView {
         };
         let external_script = config.external_script.clone();
         let script_source_fetcher = config.script_source_fetcher.clone();
+        let image_source_fetcher = config.image_source_fetcher.clone();
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -268,6 +277,7 @@ impl WebView {
             js_shim_initialized: false,
             external_script,
             script_source_fetcher,
+            image_source_fetcher,
             current_url: None,
             navigation_epoch: 0,
             document_generation: 0,
@@ -367,6 +377,15 @@ impl WebView {
         if !self.cached_image_no_ratio.is_empty() {
             self.pipeline.set_image_no_ratio(self.cached_image_no_ratio.clone());
         }
+    }
+
+    /// R34xx：headless 路径（testharness/wpt-runner 用 load_html 直接渲染）抓取外链 CSS
+    /// 与 `<img>` 子资源——load_html 本身只渲染不抓图（图片抓取在导航路径）；
+    /// 嵌入者可用本方法补抓。返回外链 CSS。
+    pub fn fetch_page_images(&mut self, html: &str, page_url: &str) -> String {
+        let external_css = self.prepare_page_subresources(html, page_url);
+        self.cached_css = external_css.clone();
+        external_css
     }
 
     /// 加载 HTML 内容。
@@ -560,10 +579,17 @@ impl WebView {
                 match self.image_cache.get(&ImageKey::new(key_hash)) {
                     Some(cached) => (cached.clone(), key_hash),
                     None => {
-                        let bytes = match self.http_client.get(&abs) {
-                            Ok(resp) => resp.body,
-                            Err(e) => {
-                                tracing::warn!("image {abs} fetch failed: {e}");
+                        // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
+                        //（wpt-data 文件映射）；None → 回退 HTTP 网络。
+                        let fetched = self
+                            .image_source_fetcher
+                            .as_ref()
+                            .and_then(|f| f(&abs))
+                            .or_else(|| self.http_client.get(&abs).ok().map(|resp| resp.body));
+                        let bytes = match fetched {
+                            Some(bytes) => bytes,
+                            None => {
+                                tracing::warn!("image {abs} fetch failed");
                                 continue;
                             }
                         };
@@ -1374,6 +1400,58 @@ impl WebView {
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
+
+        // R34xx：__zw_get_image_wire —— shim drawImage/createPattern img 元素源（G5）：
+        // 按 src 查 image_cache 快照 → 编码 canvas ImageData wire（"w:h;r,g,b,a,..."）。
+        let image_data_snapshot = self.image_cache.snapshot_entries();
+        let page_url_wire = page_url.clone();
+        sandbox.register_callback(
+            "__zw_get_image_wire",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                if src.is_empty() {
+                    return String::new();
+                }
+                let base = page_url_wire.lock().unwrap();
+                let abs = zero_engine::resolve_document_url(&base, src);
+                let key = zero_engine::image_resource_key(&abs, None);
+                let img = match image_data_snapshot.get(&key) {
+                    Some(img) => img,
+                    None => return String::new(),
+                };
+                let mut out = format!("{}:{};", img.width, img.height);
+                let mut first = true;
+                for b in &img.pixels {
+                    if !first {
+                        out.push(',');
+                    }
+                    first = false;
+                    out.push_str(&b.to_string());
+                }
+                out
+            }),
+        );
+        // R34xx：__zw_get_image_size —— shim img naturalWidth/naturalHeight 查询（G5）。
+        // 图片尺寸由 fetch_image_subresources（load_html 时）填入 cached_image_sizes；
+        // 注册时 clone 快照（脚本执行在 load_html 后）。
+        let image_sizes_snapshot = self.cached_image_sizes.clone();
+        let page_url_sizes = page_url.clone();
+        sandbox.register_callback(
+            "__zw_get_image_size",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                if src.is_empty() {
+                    return String::new();
+                }
+                let base = page_url_sizes.lock().unwrap();
+                let abs = zero_engine::resolve_document_url(&base, src);
+                let key = zero_engine::image_resource_key(&abs, None);
+                match image_sizes_snapshot.get(&key) {
+                    Some((w, h)) => format!("{w},{h}"),
+                    None => String::new(),
+                }
+            }),
+        );
 
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。

@@ -799,8 +799,10 @@
       var hit = __zw_query_match(sel);
       return hit ? _wrapSelector(hit) : null;
     },
+    // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
+    // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
     getElementById: function(id) {
-      return globalThis.document.querySelector('#' + id);
+      return globalThis.document.querySelector('[id="' + String(id).replace(/"/g, '\\"') + '"]');
     },
     // R3067：`document.getAnimations()`（Web Animations API）——返文档内全部动画（所有元素，cancelled/idle 排除；
     // finished 含）。_elementAnimations per-element 注册表 flat + filter。headless 瞬间完成 → finished 动画可查询/commitStyles。

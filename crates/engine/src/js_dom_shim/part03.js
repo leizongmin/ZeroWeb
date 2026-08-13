@@ -1404,7 +1404,9 @@
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
-      getElementById: function (id) { return queryOne('#' + String(id)); },
+      // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
+      // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
+      getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
       // R3016/R3017：body.childNodes 递归遍历（cached mutable tree）。DOMPurify.sanitize walk 入口。
@@ -1423,7 +1425,9 @@
       title: title != null ? String(title) : '',
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
-      getElementById: function (id) { return queryOne('#' + String(id)); },
+      // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
+      // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
+      getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
       getElementsByTagName: function (tag) { return queryAll(String(tag)); },
       getElementsByClassName: function (cls) { return queryAll('.' + String(cls)); },
       // R3018：createElement/createTextNode 返完整可变节点（_zwMEl/_zwMText），非 hollow stub。

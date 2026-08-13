@@ -124,8 +124,21 @@
         if (prop === 'width' || prop === 'height' || prop === 'naturalWidth' || prop === 'naturalHeight') {
           var rgTag = resourceTag;
           if (rgTag === 'IMG' && (prop === 'naturalWidth' || prop === 'naturalHeight')) {
-            if (!resourceState || resourceState.outcome !== 'loaded') return 0;
-            return prop === 'naturalWidth' ? resourceState.width : resourceState.height;
+            if (resourceState && resourceState.outcome === 'loaded') {
+              return prop === 'naturalWidth' ? resourceState.width : resourceState.height;
+            }
+            // R34xx：G5 —— host 查询图片尺寸（webview image_sizes 快照，__zw_get_image_size）。
+            if (typeof __zw_get_image_size === 'function') {
+              var srcAttr = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
+              var dims = String(__zw_get_image_size(srcAttr));
+              if (dims) {
+                var wh = dims.split(',');
+                var w = parseInt(wh[0], 10) || 0;
+                var h = parseInt(wh[1], 10) || 0;
+                return prop === 'naturalWidth' ? w : h;
+              }
+            }
+            return 0;
           }
           if ((rgTag === 'IMG' || rgTag === 'IFRAME') && (prop === 'width' || prop === 'height')) {
             // sync set→get 优先读缓存（setter 写数值）；无缓存则解析 width/height 内容属性（缺省/非负整数失败 → 0）。

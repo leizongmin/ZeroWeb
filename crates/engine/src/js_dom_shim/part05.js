@@ -1379,6 +1379,16 @@
     // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
     ctx.createPattern = function (image, repetition) {
       if (typeof __zw_canvas_op !== 'function') return null;
+      // R34xx：G5 —— HTMLImageElement 源 → __zw_get_image_wire → host createPattern。
+      if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && typeof __zw_get_image_wire === 'function') {
+        var imgSrc2 = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+        var iwire2 = String(__zw_get_image_wire(imgSrc2));
+        if (iwire2) {
+          var pid2 = String(__zw_canvas_op(h, 'createPattern', iwire2, String(repetition || '')));
+          if (pid2 && pid2 !== '0') return { _zwPattern: pid2 };
+        }
+        return null;
+      }
       // R34xx：repetition 校验（spec：''/repeat/repeat-x/repeat-y/no-repeat 合法（大小写敏感）；
       // undefined 抛 SYNTAX_ERR、null → ''（WebIDL DOMString 转换）、非法串抛——
       // 2d.pattern.repeat.*）。DOMException 用 _zwDomException（assert_throws_dom 匹配）。
@@ -1742,6 +1752,24 @@
           __zw_canvas_op(h, 'drawImageSliced', image._zwBitmapWire,
             String(a[1]), String(a[2]), String(a[3]), String(a[4]),
             String(a[5]), String(a[6]), String(a[7]), String(a[8]));
+        }
+        return;
+      }
+      // R34xx：G5 —— HTMLImageElement 源（naturalWidth>0 = 已加载）→ __zw_get_image_wire
+      //（host 查 image_cache 编码 ImageData wire）。img 元素无 getContext。
+      if (image && typeof image.getContext !== 'function' && image.naturalWidth > 0 && typeof __zw_get_image_wire === 'function') {
+        var imgSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+        var iwire = String(__zw_get_image_wire(imgSrc));
+        if (iwire) {
+          if (a.length === 3) {
+            __zw_canvas_op(h, 'drawImage', iwire, String(a[1]), String(a[2]));
+          } else if (a.length === 5) {
+            __zw_canvas_op(h, 'drawImageScaled', iwire, String(a[1]), String(a[2]), String(a[3]), String(a[4]));
+          } else if (a.length === 9) {
+            __zw_canvas_op(h, 'drawImageSliced', iwire,
+              String(a[1]), String(a[2]), String(a[3]), String(a[4]),
+              String(a[5]), String(a[6]), String(a[7]), String(a[8]));
+          }
         }
         return;
       }

@@ -224,6 +224,12 @@ impl ImageCache {
         }
     }
 
+    /// R34xx：快照全部缓存条目（key hash → ImageData clone），供 host 回调查询
+    ///（webview 的 __zw_get_image_wire——headless canvas drawImage img 源 G5）。
+    pub fn snapshot_entries(&self) -> std::collections::HashMap<u64, ImageData> {
+        self.entries.iter().map(|(k, e)| (k.0, e.data.clone())).collect()
+    }
+
     /// 插入图片数据，返回缓存键
     pub fn insert(&mut self, data: ImageData) -> ImageKey {
         let key = ImageKey::new(self.next_key);

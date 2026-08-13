@@ -165,8 +165,14 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
                     continue;
                 }
             };
-            let results =
-                run_canvas_testharness_html(&relative, &source, &harness_source, &canvas_tests_source, CASE_TIMEOUT);
+            let results = run_canvas_testharness_html(
+                wpt_root,
+                &relative,
+                &source,
+                &harness_source,
+                &canvas_tests_source,
+                CASE_TIMEOUT,
+            );
             cases.push((relative, results));
         }
     }
@@ -231,6 +237,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 
 /// Run one canvas testharness case with `canvas-tests.js` inlined.
 fn run_canvas_testharness_html(
+    wpt_root: &Path,
     case_name: &str,
     source: &str,
     harness_source: &str,
@@ -238,7 +245,14 @@ fn run_canvas_testharness_html(
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
     let inline_extras = [(CANVAS_TESTS_JS_PATH, canvas_tests_source)];
-    run_testharness_html_inner(case_name, source, harness_source, &inline_extras, timeout)
+    run_testharness_html_inner(
+        Some(wpt_root),
+        case_name,
+        source,
+        harness_source,
+        &inline_extras,
+        timeout,
+    )
 }
 
 /// Run one HTML testharness case with the declared click/send_keys adapter.
@@ -248,10 +262,28 @@ pub fn run_testharness_html(
     harness_source: &str,
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
-    run_testharness_html_inner(case_name, source, harness_source, &[], timeout)
+    run_testharness_html_inner(None, case_name, source, harness_source, &[], timeout)
+}
+
+/// R34xx：headless 图片源获取器——`https://wpt.test/<path>`（wpt-data 相对路径）→
+/// `wpt_root/<path>` 本地文件读取（PNG 等解码由 webview decode_image 完成）。
+fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ImageSourceFetcher> {
+    let root = wpt_root.to_path_buf();
+    Some(std::sync::Arc::new(move |url: &str| {
+        // 仅 wpt.test 域名（测试资源）；其他 URL 回退网络。
+        let path_part = url.strip_prefix("https://wpt.test")?;
+        let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
+        // 去查询串/片段。
+        let clean = path_part.split(['?', '#']).next()?;
+        if clean.is_empty() {
+            return None;
+        }
+        std::fs::read(root.join(clean)).ok()
+    }))
 }
 
 fn run_testharness_html_inner(
+    wpt_root: Option<&Path>,
     case_name: &str,
     source: &str,
     harness_source: &str,
@@ -285,10 +317,15 @@ fn run_testharness_html_inner(
         width: 800,
         height: 600,
         native_dom,
+        // R34xx：headless 图片源——wpt.test/images/* 映射到本地 wpt-data 目录
+        //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
+        image_source_fetcher: wpt_root.and_then(wpt_data_image_fetcher),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
-    webview.load_html(&html, None);
+    let page_url = format!("https://wpt.test/{case_name}");
+    let external_css = webview.fetch_page_images(&html, &page_url);
+    webview.load_html(&html, Some(&external_css));
     if let Err(error) = webview.run_page_scripts_strict() {
         return vec![HarnessSubtestResult {
             name: case_name.to_string(),
