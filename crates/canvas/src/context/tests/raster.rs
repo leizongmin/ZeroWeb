@@ -598,7 +598,7 @@ fn test_blit_path_single_point_no_fill() {
 #[test]
 fn test_blit_stroke_empty() {
     let mut ctx = ctx_with_pixels(10, 10);
-    ctx.blit_stroke_to_pixels(&[], Color::rgba(255, 0, 0, 255), 2.0);
+    ctx.blit_stroke_to_pixels(&[], Color::rgba(255, 0, 0, 255), 2.0, false);
     let all_zero = ctx.pixel_buffer.iter().all(|&v| v == 0);
     assert!(all_zero, "empty stroke should not write pixels");
 }
@@ -607,7 +607,7 @@ fn test_blit_stroke_empty() {
 fn test_blit_stroke_single_segment() {
     let mut ctx = ctx_with_pixels(20, 20);
     let segments = [5.0, 10.0, 15.0, 10.0]; // 水平线段
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 255, 0, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 255, 0, 255), 4.0, false);
     // 中间点应该被写入
     let idx = ((10 * 20) + 10) * 4;
     assert_eq!(ctx.pixel_buffer[idx + 1], 255, "green channel on line");
@@ -618,7 +618,7 @@ fn test_blit_stroke_two_segments_miter_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Miter;
     let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0]; // L 形
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 0, 0, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 0, 0, 255), 4.0, false);
     // 连接点 (15, 15) 附近应有像素
     let idx = ((15 * 30) + 15) * 4;
     assert_eq!(ctx.pixel_buffer[idx], 255, "join point should be written");
@@ -629,7 +629,7 @@ fn test_blit_stroke_two_segments_round_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Round;
     let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0];
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 0, 255, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 0, 255, 255), 4.0, false);
     let idx = ((15 * 30) + 15) * 4;
     assert_eq!(ctx.pixel_buffer[idx + 2], 255, "round join point should be blue");
 }
@@ -639,7 +639,7 @@ fn test_blit_stroke_two_segments_bevel_join() {
     let mut ctx = ctx_with_pixels(30, 30);
     ctx.line_join = LineJoin::Bevel;
     let segments = [5.0, 15.0, 15.0, 15.0, 15.0, 5.0];
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 255, 0, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 255, 0, 255), 4.0, false);
     let idx = ((15 * 30) + 15) * 4;
     assert!(ctx.pixel_buffer[idx] > 0 || ctx.pixel_buffer[idx + 1] > 0, "bevel join");
 }
@@ -649,7 +649,7 @@ fn test_blit_stroke_round_cap() {
     let mut ctx = ctx_with_pixels(20, 20);
     ctx.line_cap = LineCap::Round;
     let segments = [5.0, 10.0, 15.0, 10.0];
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 0, 0, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(255, 0, 0, 255), 4.0, false);
     // 端点附近应该有像素
     let idx_start = ((10 * 20) + 5) * 4;
     assert_eq!(ctx.pixel_buffer[idx_start], 255, "round cap at start");
@@ -660,7 +660,7 @@ fn test_blit_stroke_square_cap() {
     let mut ctx = ctx_with_pixels(20, 20);
     ctx.line_cap = LineCap::Square;
     let segments = [5.0, 10.0, 15.0, 10.0];
-    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 128, 0, 255), 4.0);
+    ctx.blit_stroke_to_pixels(&segments, Color::rgba(0, 128, 0, 255), 4.0, false);
     // Square cap 应在端点外延伸
     let idx = ((10 * 20) + 15) * 4;
     assert!(ctx.pixel_buffer[idx + 1] > 0, "square cap extends beyond endpoint");

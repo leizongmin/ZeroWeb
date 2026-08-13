@@ -413,8 +413,8 @@ fn test_stroke_rect_with_round_join() {
     ctx.set_line_join(LineJoin::Round);
     ctx.set_line_width(5.0);
     ctx.stroke_rect(10.0, 10.0, 30.0, 30.0);
-    // stroke_rect 生成 4 条边的 fill 图元
-    assert_eq!(ctx.primitives().fills.len(), 4);
+    // R34xx：stroke_rect 生成 1 个周长路径描边图元（旧四边 fill 已废弃）
+    assert_eq!(ctx.primitives().path_strokes.len(), 1);
     assert_eq!(ctx.line_join(), LineJoin::Round);
 }
 
@@ -521,8 +521,9 @@ fn test_line_dash_single_element_doubled() {
 fn test_canvas_stroke_rect_zero_size() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.stroke_rect(50.0, 50.0, 0.0, 0.0);
-    // stroke_rect 始终生成 4 条边的 fill 图元，即使零尺寸
-    assert_eq!(ctx.primitives().fills.len(), 4);
+    // R34xx：0x0 无操作（spec：strokeRect of 0x0 draws nothing）——零图元零像素
+    assert_eq!(ctx.primitives().fills.len(), 0);
+    assert_eq!(ctx.primitives().path_strokes.len(), 0);
 }
 
 /// 测试深度嵌套 save/restore 正确恢复每一层状态。
@@ -998,7 +999,7 @@ fn test_negative_line_width_no_panic() {
     ctx.set_stroke_color(Color::RED);
     ctx.stroke_rect(10.0, 10.0, 30.0, 30.0);
     // 验证描边图元已生成（即使线宽为负）
-    assert!(!ctx.primitives().fills.is_empty(), "负线宽描边矩形仍应生成图元");
+    assert!(!ctx.primitives().path_strokes.is_empty(), "负线宽描边矩形仍应生成图元");
 }
 
 // ── 边界条件测试（第十三批）──

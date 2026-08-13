@@ -1167,13 +1167,21 @@
       if (path && path._zwPath) __zw_canvas_op(h, 'strokePath', String(path._zwPath));
       else __zw_canvas_op(h, 'stroke');
     };
+    // R34xx：fillRect/strokeRect/clearRect 任一参数非有限（NaN/Infinity）→ 方法忽略
+    //（spec：上游 2d.fillRect.nonfinite / strokeRect.nonfinite / clearRect.nonfinite）。
+    var _zwRectFinite = function (x, y, w, h) {
+      return isFinite(+x) && isFinite(+y) && isFinite(+w) && isFinite(+h);
+    };
     ctx.fillRect = function (x, y, w, hh) {
+      if (!_zwRectFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
     };
     ctx.strokeRect = function (x, y, w, hh) {
+      if (!_zwRectFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'strokeRect', String(x), String(y), String(w), String(hh));
     };
     ctx.clearRect = function (x, y, w, hh) {
+      if (!_zwRectFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
     // R3078：Canvas 2D 文本 API（fillText/strokeText/measureText）+ createImageData（blank）。
@@ -1206,17 +1214,48 @@
         ideographicBaseline: num(9),
       };
     };
-    ctx.createImageData = function (a, b) {
+    // R34xx：createImageData spec 语义（HTML §4.12.5.1）——非 ImageData 对象/null 抛 TypeError、
+    // 非有限尺寸抛 TypeError、尺寸向零截断（WebIDL long 转换，上游 2d.imageData.create2.double
+    // 断言 10.99→10）、产物 instanceof ImageData。共享实现供 ctx proxy 与
+    // CanvasRenderingContext2D.prototype 委托（illegal-invocation 检查）。
+    function _zwCreateImageData(owner, a, b) {
       var w, h;
-      if (typeof a === 'object' && a !== null) { // createImageData(imageData) → 复制尺寸
-        w = Math.abs(+a.width || 0) | 0;
-        h = Math.abs(+a.height || 0) | 0;
-      } else { // createImageData(width, height)
-        w = Math.abs(+a || 0) | 0;
-        h = Math.abs(+b || 0) | 0;
+      if (a === null) {
+        throw new TypeError('createImageData: argument must implement ImageData');
       }
-      return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4), colorSpace: 'srgb' };
-    };
+      if (typeof a === 'object') { // createImageData(imageData) → 复制尺寸
+        if (typeof a.width !== 'number' || typeof a.height !== 'number') {
+          throw new TypeError('createImageData: argument must implement ImageData');
+        }
+        w = Math.abs(Math.trunc(a.width));
+        h = Math.abs(Math.trunc(a.height));
+      } else { // createImageData(width, height)
+        w = Math.trunc(+a);
+        h = Math.trunc(+b);
+        if (!isFinite(w) || !isFinite(h)) {
+          throw new TypeError('createImageData: dimensions must be finite');
+        }
+        w = Math.abs(w);
+        h = Math.abs(h);
+      }
+      return new ImageData(w, h);
+    }
+    ctx.createImageData = function (a, b) { return _zwCreateImageData(this, a, b); };
+    // R34xx：CanvasRenderingContext2D 全局构造器（此前缺失 → WPT illegal-invocation 用例
+    // `CanvasRenderingContext2D.prototype.createImageData.call(null)` 抛 ReferenceError 而非
+    // 期望的 TypeError）。prototype 方法做 illegal-invocation 检查（sloppy mode 下 call(null)
+    // this=globalThis）后委托共享实现。
+    if (!globalThis.CanvasRenderingContext2D) {
+      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+      CanvasRenderingContext2D.prototype.createImageData = function (a, b) {
+        // illegal-invocation：this 须为 ctx proxy（持 _handle）。call(null) sloppy 下
+        // this=globalThis，call({}) 为普通对象——均无 _handle → TypeError（spec + WPT .this 用例）。
+        if (!this || this._handle === undefined || this === CanvasRenderingContext2D.prototype) {
+          throw new TypeError('Illegal invocation');
+        }
+        return _zwCreateImageData(this, a, b);
+      };
+    }
     // R3079：CanvasGradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop）。
     // host 持渐变注册表（独立 id 命名空间）；create* 返 host id，JS 包一层 proxy。addColorStop 经 host
     // 变更停止点。fillStyle/strokeStyle 设渐变对象走 setFillStyleGradient（host 查表克隆）。spec CanvasGradient。
@@ -1316,8 +1355,26 @@
       if (path && path._zwPath) __zw_canvas_op(h, 'clipPath', String(path._zwPath));
       else __zw_canvas_op(h, 'clip');
     };
-    ctx.save = function () { __zw_canvas_op(h, 'save'); };
-    ctx.restore = function () { __zw_canvas_op(h, 'restore'); };
+    // R33xx：save/restore 客户端镜像状态栈。host save/restore 只回滚引擎状态，
+    // JS 侧 getter 读 `_x` 缓存（字符串/number/对象引用），不同步则 restore 后 getter
+    // 返回旧值（上游 2d.state.saverestore.* WPT 全族失败）。恢复仅改写 JS 缓存；
+    // lineDash/clip/transform 无 JS 缓存（getLineDash/getTransform 读 host），随 host 回滚。
+    var _zwCtxStateKeys = ['_fs','_ss','_lw','_ga','_lj','_lc','_font','_ta','_tb','_dir',
+                           '_ml','_gco','_sc','_sb','_sox','_soy','_ldo','_ise','_isq'];
+    ctx.save = function () {
+      var snap = {};
+      for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; snap[k] = this[k]; }
+      this._stack = this._stack || [];
+      this._stack.push(snap);
+      __zw_canvas_op(h, 'save');
+    };
+    ctx.restore = function () {
+      __zw_canvas_op(h, 'restore');
+      var st = this._stack;
+      if (!st || !st.length) return; // 空栈无操作（spec：restore() with empty stack has no effect）
+      var snap = st.pop();
+      for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; this[k] = snap[k]; }
+    };
     ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(tx), String(ty)); };
     ctx.rotate = function (angle) { __zw_canvas_op(h, 'rotate', String(angle)); };
     ctx.scale = function (sx, sy) { __zw_canvas_op(h, 'scale', String(sx), String(sy)); };
@@ -1508,7 +1565,10 @@
     };
     ctx.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
-      var r = String(__zw_canvas_op(h, 'getImageData', String(x), String(y), String(w), String(hh)));
+      // R34xx：x/y/w/h 经 Math.trunc 归一（spec：与 createImageData 同一 WebIDL long 截断语义，
+      // 上游 2d.imageData.create2.round 断言两者一致）。
+      var r = String(__zw_canvas_op(h, 'getImageData',
+        String(Math.trunc(+x)), String(Math.trunc(+y)), String(Math.trunc(+w)), String(Math.trunc(+hh))));
       if (!r) return null;
       var parts = r.split(';');
       var dims = parts[0].split(':');

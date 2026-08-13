@@ -20,6 +20,20 @@ pub const HTML_INTERACTION_CASES: &[&str] = &[
     "uievents/constructors/inputevent-constructor.html",
 ];
 
+/// Canvas 2D 专项（docs/goal/canvas-2d.md）M1 切片 1 导入的目录面。
+///
+/// 由 `scripts/fetch-canvas-subset.sh` 维护；新目录随切片扩展追加。
+pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
+    "html/canvas/element/the-canvas-state",
+    "html/canvas/element/drawing-rectangles-to-the-canvas",
+    "html/canvas/element/transformations",
+    "html/canvas/element/pixel-manipulation",
+    "html/canvas/element/line-styles",
+];
+
+/// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
+const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
+
 /// WPT subtest status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HarnessStatus {
@@ -79,11 +93,102 @@ pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<
         .collect()
 }
 
+/// Run the upstream `html/canvas` testharness cases under `wpt_root` (Canvas 2D goal M1).
+///
+/// 扫描 [`CANVAS_TEST_SUBDIRS`] 下全部主线程 .html 用例；`canvas-tests.js`（用例的
+/// `_addTest` 驱动框架）与 testharness.js 一样内联执行。filter 按路径子串过滤。
+pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let canvas_tests_source = match std::fs::read_to_string(wpt_root.join(CANVAS_TESTS_JS_PATH)) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                CANVAS_TESTS_JS_PATH.to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load canvas-tests.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in CANVAS_TEST_SUBDIRS {
+        let dir = wpt_root.join(subdir);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "html") {
+                continue;
+            }
+            let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let source = match std::fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: "load WPT case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    continue;
+                }
+            };
+            let results =
+                run_canvas_testharness_html(&relative, &source, &harness_source, &canvas_tests_source, CASE_TIMEOUT);
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
+/// Run one canvas testharness case with `canvas-tests.js` inlined.
+fn run_canvas_testharness_html(
+    case_name: &str,
+    source: &str,
+    harness_source: &str,
+    canvas_tests_source: &str,
+    timeout: Duration,
+) -> Vec<HarnessSubtestResult> {
+    let inline_extras = [(CANVAS_TESTS_JS_PATH, canvas_tests_source)];
+    run_testharness_html_inner(case_name, source, harness_source, &inline_extras, timeout)
+}
+
 /// Run one HTML testharness case with the declared click/send_keys adapter.
 pub fn run_testharness_html(
     case_name: &str,
     source: &str,
     harness_source: &str,
+    timeout: Duration,
+) -> Vec<HarnessSubtestResult> {
+    run_testharness_html_inner(case_name, source, harness_source, &[], timeout)
+}
+
+fn run_testharness_html_inner(
+    case_name: &str,
+    source: &str,
+    harness_source: &str,
+    inline_extras: &[(&str, &str)],
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
     let unsupported = unsupported_testdriver_dependencies(source);
@@ -95,7 +200,7 @@ pub fn run_testharness_html(
         }];
     }
 
-    let html = prepare_harness_html(source, harness_source);
+    let html = prepare_harness_html(source, harness_source, inline_extras);
     let scripts = zero_engine::extract_page_scripts(&html);
     let script_lengths = scripts
         .iter()
@@ -184,7 +289,7 @@ fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResu
         .collect()
 }
 
-fn prepare_harness_html(source: &str, harness_source: &str) -> String {
+fn prepare_harness_html(source: &str, harness_source: &str, inline_extras: &[(&str, &str)]) -> String {
     let reporter = r#"
 if (typeof setup === 'function') setup({output: false});
 globalThis.__zw_harness_results = [];
@@ -222,6 +327,10 @@ add_completion_callback(function() {
     html = replace_script_source(&html, "/resources/testdriver.js", TESTDRIVER_STUB);
     html = replace_script_source(&html, "/resources/testdriver-vendor.js", "");
     html = replace_script_source(&html, "/resources/testdriver-actions.js", "");
+    // canvas-tests.js 等用例框架脚本：与 testharness.js 同款内联（外部脚本提取器不加载 src）。
+    for (script_src, inline_source) in inline_extras {
+        html = replace_script_source(&html, script_src, &format!("<script>{inline_source}</script>"));
+    }
     html.push_str(
         "<script>\
          document.dispatchEvent(new Event('DOMContentLoaded'));\

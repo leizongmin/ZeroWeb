@@ -803,6 +803,10 @@ pub(crate) struct CanvasState {
     pub(crate) miter_limit: f32,
     /// 文本方向。
     pub(crate) direction: TextDirection,
+    /// R34xx：裁剪路径（drawing state 的一部分，spec：save/restore 管理 clip——上游
+    /// 2d.state.saverestore.clip：restore 后 clip 须回滚）。此前缺失致 restore 后 clip
+    /// 残留裁剪后续绘制。
+    pub(crate) clip_path: Option<Path2D>,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。

@@ -324,29 +324,18 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
         }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。
+        // fillRect/strokeRect 直接绘制，不得改动当前路径（HTML spec §4.12.5.1：fillRect 不影响
+        // current default path）。旧实现 begin_path+fill 会清空并重写路径，使 save/restore 后的
+        // fill() 把残留矩形并入路径（even-odd 镂空，上游 2d.state.saverestore.path WPT 失败）。
         "fillRect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                let (x, y, w, h) = (f(0), f(1), f(2), f(3));
-                ctx.begin_path();
-                ctx.move_to(x, y);
-                ctx.line_to(x + w, y);
-                ctx.line_to(x + w, y + h);
-                ctx.line_to(x, y + h);
-                ctx.close_path();
-                ctx.fill();
+                ctx.fill_rect(f(0), f(1), f(2), f(3));
             }
             "ok".into()
         }
         "strokeRect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                let (x, y, w, h) = (f(0), f(1), f(2), f(3));
-                ctx.begin_path();
-                ctx.move_to(x, y);
-                ctx.line_to(x + w, y);
-                ctx.line_to(x + w, y + h);
-                ctx.line_to(x, y + h);
-                ctx.close_path();
-                ctx.stroke();
+                ctx.stroke_rect(f(0), f(1), f(2), f(3));
             }
             "ok".into()
         }

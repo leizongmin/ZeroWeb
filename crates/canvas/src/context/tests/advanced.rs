@@ -864,8 +864,8 @@ fn test_canvas_stroke_zero_width() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.set_line_width(0.0);
     ctx.stroke_rect(10.0, 10.0, 50.0, 50.0);
-    // 不应 panic
-    assert_eq!(ctx.primitives().fills.len(), 4);
+    // 不应 panic；零线宽生成描边图元但无像素（R34xx 旧四边 fill 断言已废弃）
+    assert_eq!(ctx.primitives().path_strokes.len(), 1);
 }
 
 /// 测试负值平移后变换矩阵正确。

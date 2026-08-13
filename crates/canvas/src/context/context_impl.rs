@@ -64,6 +64,10 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32) as usize).min(canvas_h);
         for py in y_start..y_end {
             for px in x_start..x_end {
+                // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
+                if !self.clip_applies(px as f32, py as f32) {
+                    continue;
+                }
                 let idx = (py * canvas_w + px) * 4;
                 self.pixel_buffer[idx] = 0;
                 self.pixel_buffer[idx + 1] = 0;
@@ -95,34 +99,41 @@ impl CanvasContext {
 
     /// 描边矩形。
     pub fn stroke_rect(&mut self, x: f32, y: f32, width: f32, height: f32) {
-        // 简化实现：用描边样式填充四个薄矩形表示描边（上/下/左/右）
-        let lw = self.line_width;
-
-        // 绘制阴影（在形状之前）
-        if self.has_shadow() {
-            let rect = self.transform_rect(x, y, width, height);
-            self.draw_shadow_rect(&rect);
+        // R34xx：改为矩形周长路径 + stroke 语义（spec：strokeRect 画闭合矩形路径并按
+        // lineWidth/lineJoin 描边，线向内外各扩 lw/2）。旧四边薄矩形实现：(a) 只覆盖矩形
+        // 内侧，Nx0 退化矩形（上游 2d.strokeRect.zero.5）与负尺寸（2d.strokeRect.negative）
+        // 描边几何错位；(b) 阴影走 rect 而非 stroke 足迹。顶点先经 CTM 变换（同 move_to/line_to）。
+        let (x1, y1) = self.transform.transform_point(x, y);
+        let (x2, y2) = self.transform.transform_point(x + width, y + height);
+        // R34xx：0x0（含变换后）→ 无操作（spec：strokeRect of 0x0 draws nothing，含 caps/joins）。
+        if x1 == x2 && y1 == y2 {
+            return;
         }
-
-        // R3084：渐变描边逐像素光栅化（对称 fill_rect 渐变 R3079）。四边各经 blit_rect_gradient；
-        // 纯色走 flat 快路径。primitives 合成层用 midpoint 近似（与 fill_rect 一致）。
-        let gradient = self.stroke_style.is_per_pixel_style();
-        let approx_or_color = self.apply_alpha(self.stroke_style.resolve_color());
-        let style = self.stroke_style.clone();
-        // 上 / 下 / 左 / 右 四边
-        let sides = [
-            self.transform_rect(x, y, width, lw),
-            self.transform_rect(x, y + height - lw, width, lw),
-            self.transform_rect(x, y, lw, height),
-            self.transform_rect(x + width - lw, y, lw, height),
-        ];
-        for rect in sides {
-            self.primitives.add_fill(rect, approx_or_color);
-            if gradient {
-                self.blit_rect_gradient(&rect, &style);
-            } else {
-                self.blit_rect_to_pixels(&rect, approx_or_color);
-            }
+        let mut rect_path = Path2D::new();
+        rect_path.move_to(x1, y1);
+        rect_path.line_to(x2, y1);
+        rect_path.line_to(x2, y2);
+        rect_path.line_to(x1, y2);
+        rect_path.close_path();
+        let vertices = rect_path.flatten_to_vertices();
+        if vertices.is_empty() {
+            return;
+        }
+        // 绘制阴影（在形状之前）——stroke 足迹（同 stroke()/stroke_with_path R3356 口径）。
+        if self.has_shadow() {
+            self.draw_shadow_stroke(&vertices, self.line_width);
+        }
+        let closed = true;
+        if self.stroke_style.is_per_pixel_style() {
+            let approx = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
+        } else {
+            let color = self.apply_alpha(self.stroke_style.resolve_color());
+            self.primitives
+                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
         }
     }
 
@@ -337,12 +348,12 @@ impl CanvasContext {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
                 .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
-            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width);
+            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
         } else {
             let color = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
                 .add_path_stroke(vertices.clone(), color, self.line_width, closed);
-            self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+            self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
         }
     }
 
@@ -383,12 +394,12 @@ impl CanvasContext {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
                 .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
-            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width);
+            self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
         } else {
             let color = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
                 .add_path_stroke(vertices.clone(), color, self.line_width, closed);
-            self.blit_stroke_to_pixels(&vertices, color, self.line_width);
+            self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
         }
     }
 
@@ -470,6 +481,7 @@ impl CanvasContext {
             text_baseline: self.text_baseline,
             miter_limit: self.miter_limit,
             direction: self.direction,
+            clip_path: self.clip_path.clone(),
         });
     }
 
@@ -497,6 +509,7 @@ impl CanvasContext {
             self.text_baseline = state.text_baseline;
             self.miter_limit = state.miter_limit;
             self.direction = state.direction;
+            self.clip_path = state.clip_path;
         }
     }
 
@@ -867,6 +880,17 @@ impl CanvasContext {
         point_in_polygon(x, y, &points)
     }
 
+    /// R34xx：CPU 光栅路径的裁剪判定。clip 后绘制须裁剪到 clip_path 内——旧实现只把 clip
+    /// 加入 primitives 图元层（GPU/合成路径生效），blit_* 直接写像素无视裁剪（上游
+    /// 2d.fillRect.clip / clearRect.clip / strokeRect.clip 全失败）。clip 未设时零开销。
+    /// 点坐标 (x, y) 为画布像素坐标（device space），与 clip_path 顶点同空间。
+    pub(crate) fn clip_applies(&self, x: f32, y: f32) -> bool {
+        match &self.clip_path {
+            Some(path) => path.is_point_in_path(x + 0.5, y + 0.5),
+            None => true,
+        }
+    }
+
     /// 判断点是否在当前路径的描边区域内。
     ///
     /// 点坐标 (x, y) 为画布坐标空间，与描边中线顶点（追加时已按 CTM 变换到设备空间）同空间
@@ -1119,19 +1143,22 @@ impl CanvasContext {
         let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
         let cw = self.width as i32;
         let ch = self.height as i32;
-        // R3355：shadowBlur 极大值经 shadow_blur_geom 使 pad 经 f32→i32 饱和到 i32::MAX，
-        // 此时 `rect.floor() as i32 ± pad` 的 i32 加减法溢出（cargo debug overflow-checks
-        // 致 panic，release 回绕致 region 错乱）。改 saturating_add/sub：pad 下溢钳到 0、
-        // 上溢钳到 i32::MAX，再经 .max(0)/.min(cw) 规整到画布内——region 仍合法。
-        let rx0 = (rect.left().floor() as i32).saturating_sub(pad).max(0);
-        let ry0 = (rect.top().floor() as i32).saturating_sub(pad).max(0);
-        let rx1 = (rect.right().ceil() as i32).saturating_add(pad).min(cw);
-        let ry1 = (rect.bottom().ceil() as i32).saturating_add(pad).min(ch);
+        // R34xx：region 用 rect 原始坐标（不提前钳到画布）——画布外矩形（如 y=-50..0）若
+        // 被 .max(0) 钳成 0 高度，region 空直接 return，阴影（含 offset 后落入画布的部分）
+        // 整体丢失（上游 2d.fillRect.shadow 断言中心像素阴影色失败）。
+        // R3355：saturating_add/sub 防 shadowBlur 极大时 pad 致 i32 加减溢出（保持）。
+        // 偏移后的可见性由 composite_shadow_mask 的 cx/cy 画布钳位负责。
+        let rx0 = (rect.left().floor() as i32).saturating_sub(pad);
+        let ry0 = (rect.top().floor() as i32).saturating_sub(pad);
+        let rx1 = (rect.right().ceil() as i32).saturating_add(pad);
+        let ry1 = (rect.bottom().ceil() as i32).saturating_add(pad);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
-        let rw = (rx1 - rx0) as usize;
-        let rh = (ry1 - ry0) as usize;
+        // R34xx：mask 尺寸封顶（画布 4 倍）防画布外超大矩形致 mask 分配 OOM；composite 钳位
+        // 保证画布外部分不落像素。
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
         let mut mask = vec![0u8; rw * rh];
         let (rl, rt, rr, rb) = (rect.left(), rect.top(), rect.right(), rect.bottom());
         for ly in 0..rh as i32 {
@@ -1178,16 +1205,19 @@ impl CanvasContext {
         }
         let cw = self.width as i32;
         let ch = self.height as i32;
+        // R34xx：region 用原始坐标不提前钳画布（同 draw_shadow_rect——画布外路径的阴影
+        // 含 offset 后落入画布部分不可丢）；可见性由 composite_shadow_mask 钳位负责。
         // R3355：saturating_add/sub 避免 pad（极大 shadowBlur 时为 i32::MAX）致 i32 加减溢出。
-        let rx0 = (min_x.floor() as i32).saturating_sub(pad).max(0);
-        let ry0 = (min_y.floor() as i32).saturating_sub(pad).max(0);
-        let rx1 = (max_x.ceil() as i32).saturating_add(pad).min(cw);
-        let ry1 = (max_y.ceil() as i32).saturating_add(pad).min(ch);
+        let rx0 = (min_x.floor() as i32).saturating_sub(pad);
+        let ry0 = (min_y.floor() as i32).saturating_sub(pad);
+        let rx1 = (max_x.ceil() as i32).saturating_add(pad);
+        let ry1 = (max_y.ceil() as i32).saturating_add(pad);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
-        let rw = (rx1 - rx0) as usize;
-        let rh = (ry1 - ry0) as usize;
+        // R34xx：mask 尺寸封顶（画布 4 倍）防画布外超大路径致 mask 分配 OOM。
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
         let mut mask = vec![0u8; rw * rh];
         super::raster::rasterize_path_coverage(vertices, &mut mask, rw, rh, rx0, ry0);
         // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
@@ -1232,15 +1262,17 @@ impl CanvasContext {
         }
         let cw = self.width as i32;
         let ch = self.height as i32;
-        let rx0 = ((min_x - pad).floor() as i32).max(0);
-        let ry0 = ((min_y - pad).floor() as i32).max(0);
-        let rx1 = ((max_x + pad).ceil() as i32).min(cw);
-        let ry1 = ((max_y + pad).ceil() as i32).min(ch);
+        // R34xx：region 不提前钳画布（同 draw_shadow_rect——画布外描边的阴影经 offset 落入
+        // 画布的部分不可丢；可见性由 composite_shadow_mask 钳位负责）。mask 尺寸封顶防 OOM。
+        let rx0 = (min_x - pad).floor() as i32;
+        let ry0 = (min_y - pad).floor() as i32;
+        let rx1 = (max_x + pad).ceil() as i32;
+        let ry1 = (max_y + pad).ceil() as i32;
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
-        let rw = (rx1 - rx0) as usize;
-        let rh = (ry1 - ry0) as usize;
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
         let mut mask = vec![0u8; rw * rh];
         // 每段 thick rect（与 blit_stroke_to_pixels 同款 line_segment_rect）。
         for s in &segments {

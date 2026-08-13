@@ -29,8 +29,9 @@ fn test_canvas_fill_rect() {
 fn test_canvas_stroke_rect() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.stroke_rect(0.0, 0.0, 50.0, 50.0);
-    // stroke_rect adds 4 fill primitives (top, bottom, left, right)
-    assert_eq!(ctx.primitives().fills.len(), 4);
+    // R34xx：stroke_rect 生成 1 个闭合周长路径描边图元（旧四边 fill 实现已废弃——
+    // 负尺寸/零尺寸退化矩形与 join/cap 语义对齐 spec 需要路径描边）。
+    assert_eq!(ctx.primitives().path_strokes.len(), 1);
 }
 
 #[test]
@@ -171,8 +172,9 @@ fn test_canvas_multiple_operations() {
     ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
     ctx.stroke_rect(60.0, 60.0, 30.0, 30.0);
     ctx.fill_text("test", 0.0, 0.0);
-    // fill_rect = 1, stroke_rect = 4, fill_text = 4 glyphs
-    assert_eq!(ctx.primitives().fills.len(), 5);
+    // fill_rect = 1, stroke_rect = 1 path_stroke（R34xx 旧四边 fill 已废弃）, fill_text = 4 glyphs
+    assert_eq!(ctx.primitives().fills.len(), 1);
+    assert_eq!(ctx.primitives().path_strokes.len(), 1);
     assert_eq!(ctx.primitives().glyphs.len(), 4);
 }
 
@@ -605,8 +607,8 @@ fn test_canvas_stroke_rect_accumulates() {
     let mut ctx = CanvasContext::new(400, 300);
     ctx.stroke_rect(10.0, 10.0, 50.0, 50.0);
     ctx.stroke_rect(100.0, 100.0, 50.0, 50.0);
-    // 每个 stroke_rect 生成 4 条边
-    assert_eq!(ctx.primitives().fills.len(), 8);
+    // R34xx：每个 stroke_rect 生成 1 个周长路径描边图元（旧四边 fill 已废弃）
+    assert_eq!(ctx.primitives().path_strokes.len(), 2);
 }
 
 /// 测试 into_primitives 消费上下文。
