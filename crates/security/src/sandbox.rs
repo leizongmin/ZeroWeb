@@ -37,22 +37,43 @@ pub enum IframeSandboxFlag {
 
 impl IframeSandboxFlag {
     /// 从 HTML sandbox 属性值字符串解析。
+    ///
+    /// R3388：HTML 规范要求 sandbox 属性 token 按 **ASCII 大小写不敏感**匹配
+    /// （HTML §4.7.4 sandbox 属性 token，reflecting 的 keyword matching）。旧实现用
+    /// 精确 `match`，致 mixed-case token（如 `Allow-Scripts`）被静默丢弃 → 整个 sandbox
+    /// 退化为最严格，丢失作者意图启用的能力。HTML 属性值保留大小写（仅标签/属性名
+    /// 小写化，属性值为 CDATA 原样保留），故页面写 `sandbox="Allow-Same-Origin"` 会
+    /// 真实到达。改 ASCII case-insensitive 比较。
     pub fn parse_flag(s: &str) -> Option<Self> {
-        match s {
-            "allow-forms" => Some(Self::AllowForms),
-            "allow-popups" => Some(Self::AllowPopups),
-            "allow-same-origin" => Some(Self::AllowSameOrigin),
-            "allow-scripts" => Some(Self::AllowScripts),
-            "allow-top-navigation" => Some(Self::AllowTopNavigation),
-            "allow-top-navigation-by-user-activation" => Some(Self::AllowTopNavigationByUserActivation),
-            "allow-popups-to-escape-sandbox" => Some(Self::AllowPopupsToEscapeSandbox),
-            "allow-downloads" => Some(Self::AllowDownloads),
-            "allow-presentation" => Some(Self::AllowPresentation),
-            "allow-orientation-lock" => Some(Self::AllowOrientationLock),
-            "allow-pointer-lock" => Some(Self::AllowPointerLock),
-            "allow-autoplay" => Some(Self::AllowAutoplay),
-            "allow-modals" => Some(Self::AllowModals),
-            _ => None,
+        // 规范引用：https://html.spec.whatwg.org/#attr-iframe-sandbox
+        if s.eq_ignore_ascii_case("allow-forms") {
+            Some(Self::AllowForms)
+        } else if s.eq_ignore_ascii_case("allow-popups") {
+            Some(Self::AllowPopups)
+        } else if s.eq_ignore_ascii_case("allow-same-origin") {
+            Some(Self::AllowSameOrigin)
+        } else if s.eq_ignore_ascii_case("allow-scripts") {
+            Some(Self::AllowScripts)
+        } else if s.eq_ignore_ascii_case("allow-top-navigation") {
+            Some(Self::AllowTopNavigation)
+        } else if s.eq_ignore_ascii_case("allow-top-navigation-by-user-activation") {
+            Some(Self::AllowTopNavigationByUserActivation)
+        } else if s.eq_ignore_ascii_case("allow-popups-to-escape-sandbox") {
+            Some(Self::AllowPopupsToEscapeSandbox)
+        } else if s.eq_ignore_ascii_case("allow-downloads") {
+            Some(Self::AllowDownloads)
+        } else if s.eq_ignore_ascii_case("allow-presentation") {
+            Some(Self::AllowPresentation)
+        } else if s.eq_ignore_ascii_case("allow-orientation-lock") {
+            Some(Self::AllowOrientationLock)
+        } else if s.eq_ignore_ascii_case("allow-pointer-lock") {
+            Some(Self::AllowPointerLock)
+        } else if s.eq_ignore_ascii_case("allow-autoplay") {
+            Some(Self::AllowAutoplay)
+        } else if s.eq_ignore_ascii_case("allow-modals") {
+            Some(Self::AllowModals)
+        } else {
+            None
         }
     }
 }
@@ -203,6 +224,28 @@ mod tests {
         let sandbox = IframeSandbox::parse("allow-scripts allow-unknown-flag");
         assert!(sandbox.allows_scripts());
         assert_eq!(sandbox.flags.len(), 1);
+    }
+
+    // R3388 回归锁定：HTML 规范要求 sandbox 属性 token 按 ASCII 大小写不敏感匹配
+    // （HTML §attribute sandbox tokens）。旧实现 parse_flag 用精确 match，致 mixed-case
+    // token（如 "Allow-Scripts"）被静默丢弃 → 整个 sandbox 退化为最严格，丢失作者意图
+    // 启用的能力（脚本/同源/表单等）。HTML 属性值保留大小写（仅标签/属性名小写化），
+    // 故页面写 sandbox="Allow-Same-Origin" 会真实到达 parse()。
+    #[test]
+    fn test_iframe_sandbox_flag_parsing_case_insensitive_r3388() {
+        // 全大写
+        let sandbox = IframeSandbox::parse("ALLOW-SCRIPTS ALLOW-FORMS");
+        assert!(sandbox.allows_scripts(), "全大写 token 须识别");
+        assert!(sandbox.allows_forms());
+        // 首字母大写（HTML 属性常见书写）
+        let sandbox = IframeSandbox::parse("Allow-Same-Origin Allow-Top-Navigation");
+        assert!(sandbox.allows_same_origin(), "首字母大写 token 须识别");
+        assert!(sandbox.allows_top_navigation());
+        // 混合大小写 + 长名
+        let sandbox = IframeSandbox::parse("allow-Top-Navigation-By-User-Activation");
+        assert!(sandbox.has_flag(IframeSandboxFlag::AllowTopNavigationByUserActivation));
+        // 已有小写形式不受影响（回归保护）
+        assert!(IframeSandbox::parse("allow-scripts").allows_scripts());
     }
 
     #[test]
