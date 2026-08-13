@@ -26,7 +26,8 @@
 | shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
 | compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
 | path-objects | 205 / 26+ | 🔄 部分（roundrect 26 Pass；**剩余移交 js-dom goal**——见下方交接记录） |
-| **合计** | **309 文件 / 280+ subtest** | ✅ **280 Pass**（path-objects 剩余已移交） |
+| fill-and-stroke-styles | 261 / 182 | 🔄 182 Pass（66 = G5 DOM img 源、13 = radial cone 几何深） |
+| **合计** | **570 文件 / 460+ subtest** | ✅ **460 Pass**（113 失败 = G5 132 计入 + radial 13 深） |
 
 - 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
 - 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
