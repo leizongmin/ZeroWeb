@@ -124,6 +124,7 @@ mod tests {
             secure: false,
             http_only: true,
             same_site: SameSite::None,
+            creation_time: 0,
         };
         assert!(cookie.http_only);
     }
@@ -205,6 +206,7 @@ mod tests {
             secure: true,
             http_only: false,
             same_site: SameSite::Lax,
+            creation_time: 0,
         };
         assert!(cookie.secure, "secure 标志应为 true");
         assert!(!cookie.http_only, "httpOnly 标志应为 false");

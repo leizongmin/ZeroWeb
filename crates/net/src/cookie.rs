@@ -52,6 +52,10 @@ pub struct Cookie {
     pub http_only: bool,
     /// SameSite 策略。
     pub same_site: SameSite,
+    /// 创建时间（Unix epoch 起算的秒数），用于 RFC 6265 §5.4 Cookie 顺序（longest-path-first
+    /// 后 earliest-creation）。同 name+domain+path 替换时**保留**原 cookie 的创建时间
+    /// （§5.3 step 11），仅首次创建时由 [`CookieStore::add`] 填入。
+    pub creation_time: u64,
 }
 
 impl Cookie {
@@ -291,6 +295,9 @@ impl CookieStore {
             secure: false,
             http_only: false,
             same_site: SameSite::Lax,
+            // R3395：creation_time 占位 0，由 CookieStore::add 在首次存储时填入真实 now；
+            // 同 name+domain+path 替换时由 add 保留原 creation_time（§5.3 step 11）。
+            creation_time: 0,
         };
 
         let mut max_age_seen: Option<i64> = None;
@@ -411,14 +418,27 @@ impl CookieStore {
     ///
     /// **注意**：如果 cookie 的 domain 为 None，则该 cookie 不会匹配任何 URL。
     /// 推荐使用 [`CookieStore::add_from_url`] 来正确设置 domain。
-    pub fn add(&mut self, cookie: Cookie) {
+    pub fn add(&mut self, mut cookie: Cookie) {
         // 不存储已过期的 cookie
         if cookie.is_expired() {
             return;
         }
-        // 如果同名同 domain 同 path，替换旧值
+        // R3395：RFC 6265 §5.3 step 11——同 name+domain+path 替换时**保留**原 cookie 的创建时间
+        // （creation-time），仅首次创建时填入 now。保证 §5.4 排序的「earliest-creation」二级键
+        // 在更新值时稳定（不会因更新而成为「最新」）。parse_set_cookie 占位 creation_time=0。
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs();
+        let prev_creation = self
+            .cookies
+            .iter()
+            .find(|c| c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path)
+            .map(|c| c.creation_time);
+        // 如果同名同 domain 同 path，替换旧值（保留旧 creation_time）
         self.cookies
             .retain(|c| !(c.name == cookie.name && c.domain == cookie.domain && c.path == cookie.path));
+        cookie.creation_time = prev_creation.unwrap_or(now);
         self.cookies.push(cookie);
 
         // SEC-09: 超过最大条目时驱逐过期和最旧 cookie
@@ -491,10 +511,17 @@ impl CookieStore {
     /// - `SameSite::Lax` 在 `SameSite` 和 `CrossSiteTopLevel`（安全方法）时发送。
     /// - `SameSite::None` 始终发送。
     pub fn cookie_header_with_context(&self, url: &ParsedUrl, context: RequestContext, is_safe_method: bool) -> String {
-        self.cookies
+        let mut matched: Vec<&Cookie> = self
+            .cookies
             .iter()
             .filter(|c| !c.is_expired() && cookie_matches_url(c, url))
             .filter(|c| same_site_allows(c.same_site, context, is_safe_method))
+            .collect();
+        // R3395：RFC 6265 §5.4——Cookie 顺序按 path 长度降序（longest-path-first），
+        // 再按创建时间升序（earliest-creation）。长路径 cookie 优先（更具体），同路径时先创建优先。
+        sort_cookies_for_header(&mut matched);
+        matched
+            .iter()
             .map(|c| format!("{}={}", c.name, c.value))
             .collect::<Vec<_>>()
             .join("; ")
@@ -502,7 +529,10 @@ impl CookieStore {
 
     /// 生成 Cookie header 值（不检查 SameSite，兼容旧调用方）。
     pub fn cookie_header(&self, url: &ParsedUrl) -> String {
-        self.get_for_url(url)
+        let mut matched: Vec<&Cookie> = self.get_for_url(url);
+        // R3395：同 cookie_header_with_context 的 RFC 6265 §5.4 排序。
+        sort_cookies_for_header(&mut matched);
+        matched
             .iter()
             .map(|c| format!("{}={}", c.name, c.value))
             .collect::<Vec<_>>()
@@ -607,6 +637,32 @@ pub fn request_context(request_host: &str, top_level_site_host: &str) -> Request
     } else {
         RequestContext::CrossSiteSubresource
     }
+}
+
+/// RFC 6265 §5.4 step 2——cookie 的「路径长度」= Path 属性值的字节数；无 Path（默认 "/"）
+/// 的 cookie 计为 1（§5.1.4 default-path 为 "/"，长度 1）。
+fn cookie_path_len(cookie: &Cookie) -> usize {
+    match &cookie.path {
+        // 空串亦按 default-path 语义计 1（不应出现，但防御）。
+        Some(p) if !p.is_empty() => p.len(),
+        _ => 1,
+    }
+}
+
+/// 按 RFC 6265 §5.4 对匹配的 cookies 排序：先按 path 长度**降序**（longest-path-first，
+/// 更具体的路径优先），同长度再按创建时间**升序**（earliest-creation）。稳定排序保证
+/// 同 path+creation 的 cookie 保持存储序（确定性）。
+/// 规范引用：https://www.rfc-editor.org/rfc/rfc6265#section-5.4
+fn sort_cookies_for_header(cookies: &mut [&Cookie]) {
+    cookies.sort_by(|a, b| {
+        // path 长度降序：b 在前为 Greater，故 b_len - a_len（用 cmp 反转）。
+        let path_cmp = cookie_path_len(b).cmp(&cookie_path_len(a));
+        if path_cmp != std::cmp::Ordering::Equal {
+            return path_cmp;
+        }
+        // 同 path → 创建时间升序（earliest-creation first）。
+        a.creation_time.cmp(&b.creation_time)
+    });
 }
 
 /// 检查 cookie 是否匹配给定 URL。
@@ -1722,6 +1778,63 @@ mod tests {
         let b_pos = header.find("b=2").unwrap();
         let a_pos = header.find("a=1").unwrap();
         assert!(b_pos < a_pos, "b=2 should appear before a=1");
+    }
+
+    // R3395：RFC 6265 §5.4 Cookie 顺序——longest-path-first，同 path earliest-creation。
+    #[test]
+    fn test_cookie_header_rfc_5_4_ordering_r3395() {
+        // ① longest-path-first：/app/sub 的 cookie 须排在 /app 之前，即便后者先插入。
+        let mut store = CookieStore::new();
+        store.add(CookieStore::parse_set_cookie("short=1; Path=/app; Domain=example.com").unwrap());
+        store.add(CookieStore::parse_set_cookie("deep=2; Path=/app/sub; Domain=example.com").unwrap());
+        let header = store.cookie_header(&parse_url("https://example.com/app/sub/x").unwrap());
+        let deep_pos = header.find("deep=2").unwrap();
+        let short_pos = header.find("short=1").unwrap();
+        assert!(
+            deep_pos < short_pos,
+            "longest-path-first：Path=/app/sub (deep) 须排在 Path=/app (short) 之前: {header}"
+        );
+
+        // ② 同 path earliest-creation：用受控 creation_time（直接构造 Cookie，绕开
+        //    SystemTime::now 同秒不可分 + add 的 now 覆盖）验证「早创建优先」。
+        let mut store = CookieStore::new();
+        let mut a = CookieStore::parse_set_cookie("a=1; Path=/app; Domain=example.com").unwrap();
+        a.creation_time = 100; // 早
+        let mut b = CookieStore::parse_set_cookie("b=2; Path=/app; Domain=example.com").unwrap();
+        b.creation_time = 200; // 晚
+        // 直接 push（b 先 a 后），绕开 add 的 now 覆盖——验证排序确按 creation_time 而非插入序。
+        store.cookies.push(b);
+        store.cookies.push(a);
+        let header = store.cookie_header(&parse_url("https://example.com/app/x").unwrap());
+        let a_pos = header.find("a=1").unwrap();
+        let b_pos = header.find("b=2").unwrap();
+        assert!(
+            a_pos < b_pos,
+            "同 path earliest-creation：creation_time=100 (a) 须排在 =200 (b) 之前，即使 b 先插入: {header}"
+        );
+    }
+
+    // R3395：RFC 6265 §5.3 step 11——同 name+domain+path 更新值后保留原 creation_time。
+    #[test]
+    fn test_cookie_update_preserves_creation_time_r3395() {
+        let mut store = CookieStore::new();
+        let mut orig = CookieStore::parse_set_cookie("first=1; Path=/app; Domain=example.com").unwrap();
+        orig.creation_time = 1000;
+        // 直接 push 绕开 add 的 now 覆盖，建一个已知 creation_time 的 cookie。
+        store.cookies.push(orig);
+        // 经 add 更新同 key → 须保留 creation_time=1000（而非填 now）。
+        store.add(CookieStore::parse_set_cookie("first=UPD; Path=/app; Domain=example.com").unwrap());
+        let stored = store
+            .cookies
+            .iter()
+            .find(|c| c.name == "first")
+            .expect("first cookie 须存在");
+        assert_eq!(stored.value, "UPD", "值须更新为 UPD");
+        assert_eq!(
+            stored.creation_time, 1000,
+            "更新须保留原 creation_time=1000（§5.3 step 11），got {}",
+            stored.creation_time
+        );
     }
 
     #[test]
