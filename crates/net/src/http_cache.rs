@@ -3,7 +3,7 @@
 //! 内存热缓存 + 可选磁盘持久层（对齐浏览器 memory cache / disk cache）。
 
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
 use crate::cache_policy::{CacheStoreMode, parse_cache_control, storable_mode};
@@ -270,7 +270,9 @@ impl HttpCache {
         }
         let fresh = entry.ttl_secs.is_some_and(|ttl| {
             // R3233：RFC 9111 §4.2.4——`current_age = initial_age + resident_time`，新鲜 ⇔ `current_age < lifetime`。
-            entry.stored_at.elapsed() + Duration::from_secs(entry.initial_age_secs) <= Duration::from_secs(ttl)
+            // R3371：用 u64 saturating_add 计算 current_age（秒），避免 `Duration + Duration` 在
+            // `initial_age_secs == u64::MAX`（来自恶意/畸形 `Age:` 头）时溢出 panic。
+            current_age_secs(entry.stored_at.elapsed(), entry.initial_age_secs) <= ttl
         });
         if fresh {
             self.promote(key);
@@ -335,7 +337,8 @@ impl HttpCache {
             && let Some(ttl) = entry.ttl_secs
         {
             // R3233：与 lookup_memory 同——freshness 计入 initial_age（Age/Date 头）。
-            return entry.stored_at.elapsed() + Duration::from_secs(entry.initial_age_secs) <= Duration::from_secs(ttl);
+            // R3371：同 lookup 新鲜度检查——用 u64 saturating_add 避免 `Duration + Duration` 溢出 panic。
+            return current_age_secs(entry.stored_at.elapsed(), entry.initial_age_secs) <= ttl;
         }
         false
     }
@@ -606,6 +609,16 @@ fn cached_from_disk_hit(hit: &crate::disk_cache::DiskCacheHit) -> CachedResponse
 
 fn is_revalidatable(etag: &Option<String>, last_modified: &Option<String>) -> bool {
     etag.is_some() || last_modified.is_some()
+}
+
+/// RFC 9111 §4.2.4——`current_age = initial_age + resident_time`（秒）。
+///
+/// R3371：用 `u64::saturating_add` 而非 `Duration + Duration`。`initial_age_secs` 来自响应的
+/// `Age` 头（信任边界输入，远端可控），可被恶意/畸形服务器设为 `u64::MAX`；`Duration` 的 `+`
+/// 在溢出时 **panic**（core/src/time.rs:1257），而 `saturating_add` 溢出到 `u64::MAX`——
+/// 后者天然表示「已远超任何 TTL → 不新鲜」，符合语义且不 panic。
+fn current_age_secs(resident: std::time::Duration, initial_age_secs: u64) -> u64 {
+    initial_age_secs.saturating_add(resident.as_secs())
 }
 
 /// 用 304 响应的元数据字段更新 header 列表（RFC 9111 §4.3.4——同名替换，缺则追加；name 大小写不敏感）。
@@ -1153,5 +1166,46 @@ mod tests {
         assert_eq!(hit.body, b"tiered");
         assert!(cache.entries.contains_key(url), "应回填内存层");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    // ── R3371：Age 头巨值致 current_age Duration 加法溢出 panic ──
+
+    #[test]
+    // R3371：响应带 `Age: <u64::MAX>`（恶意/畸形，远端可控信任边界）+ 可缓存（max-age=100）
+    // → put 时 `initial_age_secs = u64::MAX` → 后续 lookup 新鲜度检查
+    // `stored_at.elapsed() + Duration::from_secs(u64::MAX)` 旧实现 **溢出 panic**
+    // （core/src/time.rs:1257）。修复后用 `u64::saturating_add` → current_age=u64::MAX，
+    // 大于 ttl=100 → 判为不新鲜（stale），不 panic。
+    // 端到端复现：修复前此测 panic（overflow when adding durations）；修复后 lookup 不 panic。
+    fn huge_age_header_does_not_panic_on_lookup_r3371() {
+        let mut cache = HttpCache::with_config(10, 1024 * 1024);
+        let url = "https://example.com/aged.js";
+        let resp = make_response(
+            200,
+            b"x",
+            vec![("cache-control", "max-age=100"), ("age", &u64::MAX.to_string())],
+        );
+        assert!(cache.put(url, &resp), "应作为 Fresh 存入");
+
+        // 关键：lookup 不得 panic。修复前在此 overflow-panic（overflow when adding durations）。
+        let lookup = cache.lookup(url, &[]);
+        // current_age = u64::MAX + resident > ttl=100 → 不新鲜。无 validator → Miss（条目被移除）。
+        assert!(
+            !matches!(lookup, crate::CacheLookup::Hit(_)),
+            "Age=u64::MAX 的响应不应判为新鲜 Hit"
+        );
+    }
+
+    #[test]
+    /// R3371：`current_age_secs` 在 `initial_age_secs == u64::MAX` 时 saturating 不 panic。
+    fn current_age_secs_saturates_on_huge_initial_age_r3371() {
+        use std::time::Duration;
+        // 任意 resident + u64::MAX → u64::MAX（不 panic，不回绕）
+        assert_eq!(current_age_secs(Duration::from_secs(5), u64::MAX), u64::MAX);
+        assert_eq!(current_age_secs(Duration::from_secs(0), u64::MAX), u64::MAX);
+        // 正常值正确相加
+        assert_eq!(current_age_secs(Duration::from_secs(30), 100), 130);
+        // resident 的亚秒部分被 as_secs 截断
+        assert_eq!(current_age_secs(Duration::from_millis(999), 100), 100);
     }
 }
