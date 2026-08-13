@@ -100,6 +100,8 @@
 >
 > **🧪 净负实验裁决（R3405-F dynamic font-variant fixture·2026-08-13）**：审计发现 `font-variant-{caps,east-asian,ligatures,numeric,position}` 共用的两段 JS generator 与 `gsubtest-lookup3.otf` 缺失，旧 Chrome/ZeroWeb 均渲染近空页而形成 `0.00%` 假绿。试作补齐完整资源闭包并 fresh 重抓 5 张 Chrome Oracle；同一 fresh Oracle 下，缺资源 baseline 为 `1.27/2.54/4.94/3.80/0.46%`（合计 `13.01pp`），资源完整 treatment 为 `2.82/5.55/10.50/8.27/0.95%`（合计 `28.09pp`），5/5 回归、净退 `15.08pp`。完整 self-source 中 ligatures `7.08%`、numeric `5.52%` 亦直接 mismatch。故资源/账本完整回退，不把动态 fixture 资产化；fresh Oracle 本地保留，等待 DOM generator、GSUB shaping 与字体路径协同闭合。经验见 [`dynamic-wpt-fixtures-need-fresh-oracle-before-import.md`](../learnings/bugs/dynamic-wpt-fixtures-need-fresh-oracle-before-import.md)。
 >
+> **🧪 净负实验裁决（R3406-F Inter variation descriptor fixture·2026-08-13）**：`font-variation-settings-descriptor-01/02` 共用的 `Inter.var.subset.ttf` 缺失；试作补齐字体并 fresh 重抓两张 Chrome Oracle。Oracle 百分比 off/on 均四舍五入为 `0.78/0.77%`，但直接比较 ZeroWeb PNG 与 fresh Oracle 的精确像素后，01 为 `2157→2177`（+20 px）、02 为 `2137→2158`（+21 px），合计净退 41 px。原因是字体改变了默认 face，而 ZeroWeb 目前只有 `@supports` 声称支持 `font-variation-settings`，未把 `slnt/wght` axis 贯通 computed/shaping；self-source `0.00%` 是 test/ref 同时忽略 axis 的假绿。故 Inter 资源与账本完整回退，fresh Oracle 本地保留，待 variation-axis contract 闭合后再导入。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
