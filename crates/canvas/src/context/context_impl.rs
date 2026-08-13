@@ -50,6 +50,7 @@ impl CanvasContext {
             direction: TextDirection::Inherit,
             font_loader: None,
             font_id: None,
+            stroke_dedup_mask: None,
         }
     }
 

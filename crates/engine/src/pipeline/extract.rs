@@ -135,6 +135,21 @@ pub fn extract_img_srcs(html: &str) -> Vec<String> {
             }
         }
     }
+    // R34xx：SVG `<image>` 元素源（href/xlink:href——2d.pattern.svgimage.zeroheight 的
+    // `<svg><image xlink:href="/images/red-zeroheight.svg">` 须进尺寸/像素缓存，
+    // createPattern 才能判 0 尺寸 → null）。
+    for img_id in doc.get_elements_by_tag_name("image") {
+        let src = doc
+            .get_attribute(img_id, "href")
+            .or_else(|| doc.get_attribute(img_id, "xlink:href"))
+            .or_else(|| doc.get_attribute(img_id, "src"));
+        if let Some(src) = src {
+            let src = src.trim();
+            if !src.is_empty() {
+                srcs.push(src.to_string());
+            }
+        }
+    }
     srcs
 }
 

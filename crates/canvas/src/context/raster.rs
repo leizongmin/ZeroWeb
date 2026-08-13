@@ -1236,6 +1236,15 @@ impl CanvasContext {
         if !self.clip_applies(px as f32, py as f32) {
             return;
         }
+        // R34xx：stroke 去重——同一次 stroke 调用内已覆盖像素跳过（段/join/cap 重叠区
+        // 只合成一次）。
+        if let Some(mask) = self.stroke_dedup_mask.as_mut() {
+            let mi = (py as usize) * (self.width as usize) + px as usize;
+            if mask[mi] != 0 {
+                return;
+            }
+            mask[mi] = 1;
+        }
         let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
         let (r, g, b, a) = self.composite_pixel(
             color,
@@ -1335,6 +1344,14 @@ impl CanvasContext {
         }
         if !self.clip_applies(px as f32, py as f32) {
             return;
+        }
+        // R34xx：stroke 去重（同 blit_pixel——渐变 stroke 的段/join/cap 重叠只合成一次）。
+        if let Some(mask) = self.stroke_dedup_mask.as_mut() {
+            let mi = (py as usize) * (self.width as usize) + px as usize;
+            if mask[mi] != 0 {
+                return;
+            }
+            mask[mi] = 1;
         }
         let color = self.apply_alpha(style.sample_at(px as f32, py as f32));
         let idx = ((py as usize) * (self.width as usize) + px as usize) * 4;
@@ -1566,6 +1583,10 @@ impl CanvasContext {
         // half_lw（线宽），端点方向不扩——闭合线无 cap，线帽外扩只存在于开放段端点
         //（上游 2d.strokeRect.zero.*：Nx0 退化矩形的闭合线无 cap，端点外区域不得被段矩形
         // 覆盖；同时线宽须应用于垂直方向，2d.strokeRect.transform 期望 scale 后线仍 5px 宽）。
+        // R34xx：stroke 单次调用去重 mask（段矩形/join/cap 重叠像素只合成一次——
+        // 2d.strokeStyle.colorObject.transparency 的 2px 高矩形 50px 线宽）。
+        self.stroke_dedup_mask = Some(vec![0u8; (self.width as usize) * (self.height as usize)]);
+        self.stroke_dedup_mask = Some(vec![0u8; (self.width as usize) * (self.height as usize)]);
         let mut dev_half_lw = half_lw;
         for seg in &segments {
             // R34xx：per-segment 设备空间半线宽（CTM 非均匀变换下随段方向变化）。
@@ -1652,6 +1673,7 @@ impl CanvasContext {
             // 终点端 cap
             self.blit_line_cap(last_seg[2], last_seg[3], last_seg[0], last_seg[1], dev_half_lw, color);
         }
+        self.stroke_dedup_mask = None;
     }
 
     /// 绘制线段端点的 cap。
@@ -1797,6 +1819,7 @@ impl CanvasContext {
             );
             self.blit_line_cap_gradient(last_seg[2], last_seg[3], last_seg[0], last_seg[1], dev_half_lw, style);
         }
+        self.stroke_dedup_mask = None;
     }
 
     /// 线段端点 cap **渐变**光栅化（R3084）：与 `blit_line_cap` 同几何，每矩形经 `blit_rect_gradient`。

@@ -999,6 +999,10 @@ pub struct CanvasContext {
     /// R34xx：共享字体加载器（headless/testharness 路径注入——@font-face 字体 shape +
     /// 光栅化的真文本像素；None = 无字体栈，fill_text 回落启发式）。
     pub(crate) font_loader: Option<Arc<Mutex<FontLoader>>>,
+    /// R34xx：stroke 单次调用去重 mask（段矩形/join/cap 重叠区只合成一次——spec stroke
+    /// 每像素画一次；2d.strokeStyle.colorObject.transparency 的 2px 高矩形 50px 线宽
+    /// 三段覆盖同像素致 alpha 128 变 224）。None = 非 stroke 绘制。
+    pub(crate) stroke_dedup_mask: Option<Vec<u8>>,
     /// R34xx：当前字体解析到的 font_id（set_font 时经 loader 解析器查找）。
     pub(crate) font_id: Option<u32>,
 }
