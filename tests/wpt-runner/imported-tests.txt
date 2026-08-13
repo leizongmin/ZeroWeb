@@ -105,3 +105,4 @@ css/css-fonts/synthetic-bold-out-of-capabilities-range.html css/css-fonts/synthe
 # ── Canvas 2D 专项扩展批次 2（2026-08-13 R34xx）──
 # shadows（61 文件，50 Pass，11 = G5/currentColor 待决策）+ compositing（124 文件，
 # 62 Pass，36 = G5 img 依赖）经 fetch-canvas-subset.sh 导入 wpt-data/html/canvas/。
+css/css-fonts/font-size-adjust-013.html css/css-fonts/font-size-adjust-013-ref.html == 2026-08-13 R3408-F author font fallback

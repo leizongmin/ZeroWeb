@@ -104,6 +104,8 @@
 >
 > **🧪 净负实验裁决（R3407-F Deseret case-mapping fixture·2026-08-13）**：从 css-text 固定字体缺口中选取不依赖 vertical/inline boundary 的 Deseret `capitalize/uppercase/lowercase` 三案；Rust Unicode scalar case mapping 已使资源完整 self-source 三案均 strict `0.00%`。补齐 `NotoSansDeseret-Regular.ttf` 并 fresh 重抓 Chrome 后，以同一 fresh Oracle 做资源 off/on A/B：baseline `6.99/3.87/3.47%`（总 `14.33pp`），treatment `9.75/5.08/4.45%`（总 `19.28pp`），3/3 回归、净退 `4.95pp`。说明 case mapping 正确，但固定字体暴露 layout/paint glyph geometry 与 Chrome 的差异；资源与账本完整回退，fresh Oracle 本地保留。
 >
+> **▶ 字体回退进展（R3408-F author font fallback·2026-08-13）**：R3243 为止住普通 CJK 长文多 face shaping 性能回归，将 `ZW_SHAPED_FALLBACK` 改为显式 opt-in，却同时截断了显式 `@font-face` family 列表并关闭其 `font-size-adjust` used size。`font-size-adjust-013` 运行帧因此把 primary 缺失的 `A` 落到默认字体，而非 secondary AhemEx。现以 `ZW_AUTHOR_FONT_FALLBACK=0` 为 kill-switch，仅当解析到多个非 generic author face 时保留有序 fallback 并恢复 adjustment；generic/system 文本仍维持单 face 快路径。fresh Chromium 串行 css-fonts 282 案 A/B 为 7 改善、0 回归、275 持平，总差异 `909.51→905.07pp`（净改善 `4.44pp`）：`size-adjust-02 9.87%→6.20%`、`font-size-adjust-013 17.19%→17.01%`、009/010/011 各 `10.37%→10.25%`、012 `14.09%→13.98%`、`font-face-unicode-range-2 5.18%→5.06%`；fresh corpus pass/credible/strict 保持 `83/78/50`。`font-size-adjust-013` self-source 保持 approximate `0.94%` 并已常驻账本；剩余第三组缺图属于既有 inline-block ownership，不在本切片扩修。经验见 [`author-font-fallback-must-not-share-generic-perf-gate.md`](../learnings/bugs/author-font-fallback-must-not-share-generic-perf-gate.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

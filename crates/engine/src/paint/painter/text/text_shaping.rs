@@ -143,27 +143,54 @@ impl super::super::Painter {
         }
         // R3243-F 曾默认开（`!= "0"`）：fallback 多 face shaping 每帧全量重排
         // （perf-gate morning paint 回归）；改回显式 opt-in（R3243-F 之前语义）。
-        if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+        if !preserve_font_fallback_faces(&font_ids, &self.generic_font_ids) {
             font_ids.truncate(1);
         }
         font_ids
     }
 }
 
+fn preserve_font_fallback_faces(font_ids: &[u32], generic_font_ids: &HashSet<u32>) -> bool {
+    // https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
+    // OPTIMIZATION: keep R3243's single-face path for generic/system text, but
+    // preserve explicit author faces so missing glyphs can continue down the
+    // declared family list without reopening the CJK product perf regression.
+    preserve_font_fallback_faces_with_policy(
+        std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"),
+        std::env::var("ZW_AUTHOR_FONT_FALLBACK").as_deref() != Ok("0"),
+        font_ids.len() > 1 && font_ids.iter().all(|font_id| !generic_font_ids.contains(font_id)),
+    )
+}
+
+fn preserve_font_fallback_faces_with_policy(
+    global_fallback: bool,
+    author_fallback: bool,
+    all_faces_are_author_faces: bool,
+) -> bool {
+    global_fallback || author_fallback && all_faces_are_author_faces
+}
+
 pub(super) fn fragment_font_size_adjustment(
     owner_style: Option<&ComputedStyle>,
     stored: Option<&zero_style_system::FontSizeAdjustValue>,
     fallback: &zero_style_system::FontSizeAdjustValue,
+    author_face: bool,
 ) -> zero_render_foundation::font::FontSizeAdjustment {
-    if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
-        return zero_render_foundation::font::FontSizeAdjustment::None;
-    }
-    crate::text_metrics::font_size_adjustment(
+    let adjustment = crate::text_metrics::font_size_adjustment(
         owner_style
             .map(|style| &style.font_size_adjust)
             .or(stored)
             .unwrap_or(fallback),
-    )
+    );
+    if preserve_font_fallback_faces_with_policy(
+        std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"),
+        std::env::var("ZW_AUTHOR_FONT_FALLBACK").as_deref() != Ok("0"),
+        author_face,
+    ) {
+        adjustment
+    } else {
+        zero_render_foundation::font::FontSizeAdjustment::None
+    }
 }
 
 pub(super) fn font_size_adjustment_active(adjustment: zero_render_foundation::font::FontSizeAdjustment) -> bool {
@@ -1062,6 +1089,14 @@ mod tests {
             style_open_type_features(&style),
             vec![OpenTypeFeature::new(*b"hist", 1)]
         );
+    }
+
+    #[test]
+    fn author_faces_preserve_fallback_without_enabling_global_fallback() {
+        assert!(!preserve_font_fallback_faces_with_policy(false, true, false));
+        assert!(preserve_font_fallback_faces_with_policy(false, true, true));
+        assert!(!preserve_font_fallback_faces_with_policy(false, false, true));
+        assert!(preserve_font_fallback_faces_with_policy(true, false, false));
     }
 
     #[test]

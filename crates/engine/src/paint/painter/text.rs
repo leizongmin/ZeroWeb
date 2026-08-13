@@ -1472,6 +1472,7 @@ impl super::Painter {
                                 owner_style_opt,
                                 box_node.text_node_font_size_adjust.get(&$frag_nid),
                                 &style.font_size_adjust,
+                                !self.generic_font_ids.contains(&frag_font_id.0),
                             );
                             let shaped_text_eligible = !char_advance_is_y
                                 && !$is_ahem
