@@ -724,7 +724,7 @@ impl super::Painter {
         }
 
         // 使用 accent-color 或默认蓝色
-        let accent = match &style.accent_color {
+        let mut accent = match &style.accent_color {
             AccentColorComputedValue::Auto => Color {
                 r: 0,
                 g: 117,
@@ -733,6 +733,11 @@ impl super::Painter {
             },
             AccentColorComputedValue::Color(c) => color_value_to_render(c),
         };
+        if box_node.node_id == self.focused_node {
+            accent.r = ((accent.r as u16 * 18) / 25) as u8;
+            accent.g = ((accent.g as u16 * 18) / 25) as u8;
+            accent.b = ((accent.b as u16 * 18) / 25) as u8;
+        }
 
         let cx = abs_x + box_node.border_left;
         let cy = abs_y + box_node.border_top;
@@ -757,10 +762,29 @@ impl super::Painter {
                 if is_radio {
                     self.paint_native_radio(ox, oy, size, checked, accent, border_color);
                 } else {
-                    let background = if checked { accent } else { Color::WHITE };
-                    self.primitives.add_fill(Rect::new(ox, oy, size, size), border_color);
-                    self.primitives
-                        .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, size - 2.0), background);
+                    let oy = oy.floor();
+                    if checked {
+                        self.primitives.add_fill(Rect::new(ox, oy, size, size), accent);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, size - 2.0), accent);
+                    } else {
+                        self.primitives
+                            .add_fill(Rect::new(ox + 2.0, oy, size - 4.0, 1.0), border_color);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, 1.0), border_color);
+                        self.primitives
+                            .add_fill(Rect::new(ox, oy + 2.0, size, size - 4.0), border_color);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 1.0, oy + size - 2.0, size - 2.0, 1.0), border_color);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 2.0, oy + size - 1.0, size - 4.0, 1.0), border_color);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 2.0, oy + 1.0, size - 4.0, 1.0), Color::WHITE);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 1.0, oy + 2.0, size - 2.0, size - 4.0), Color::WHITE);
+                        self.primitives
+                            .add_fill(Rect::new(ox + 2.0, oy + size - 2.0, size - 4.0, 1.0), Color::WHITE);
+                    }
                 }
                 if checked && !is_radio {
                     self.primitives.add_stroke(StrokePrimitive {

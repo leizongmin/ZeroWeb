@@ -140,6 +140,8 @@ pub struct RenderPipeline {
     form_control_values: HashMap<NodeId, String>,
     /// 文本表单控件尚未提交的 IME preedit。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
+    /// 宿主维护的页面焦点所有者 selector。
+    focused_selector: Option<String>,
     /// 是否跳过属性指示器（用于 reftest 精确像素对比）。
     pub(crate) skip_indicators: bool,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
@@ -285,6 +287,16 @@ fn collect_node_dirty_rects(
 }
 
 impl RenderPipeline {
+    /// 设置页面焦点所有者，供原生控件状态外观使用。
+    pub fn set_focused_selector(&mut self, selector: Option<&str>) {
+        self.focused_selector = selector.map(str::to_string);
+    }
+
+    /// 返回当前宿主焦点 selector。
+    pub fn focused_selector(&self) -> Option<&str> {
+        self.focused_selector.as_deref()
+    }
+
     /// R3268：设置 CanvasRegistry（宿主创建，与 register_dom_callbacks 共享同一实例——
     /// canvas 显示链路：JS getContext 写入的像素经 painter 桥接为图元）。
     pub fn set_canvas_registry(
@@ -315,6 +327,7 @@ impl RenderPipeline {
             cached_styles: HashMap::new(),
             form_control_values: HashMap::new(),
             form_control_compositions: HashMap::new(),
+            focused_selector: None,
             cached_layout: None,
             cached_doc: None,
             cached_css_text: None,
@@ -695,6 +708,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
@@ -880,6 +898,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.set_canvas_registry(self.canvas_registry.clone());
@@ -1063,6 +1086,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1290,6 +1318,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1402,6 +1435,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
@@ -1475,6 +1513,11 @@ impl RenderPipeline {
         painter.image_sizes.clone_from(&self.image_sizes);
         painter.set_form_control_values(self.form_control_values.clone());
         painter.set_form_control_compositions(self.form_control_compositions.clone());
+        painter.set_focused_node(
+            self.focused_selector
+                .as_deref()
+                .and_then(|selector| doc.query_selector(doc.root(), selector)),
+        );
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;

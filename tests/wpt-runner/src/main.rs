@@ -241,6 +241,7 @@ fn cmd_compare_png(args: &[String]) {
     let mut channel_diff = 8_u8;
     let mut pixel_radius = 1_usize;
     let mut pad_to_union = false;
+    let mut ignore_inset = None;
     let mut index = 2;
     while index < args.len() {
         if args[index] == "--pad-to-union" {
@@ -256,6 +257,9 @@ fn cmd_compare_png(args: &[String]) {
             }
             "--pixel-radius" => {
                 pixel_radius = value.and_then(|value| value.parse().ok()).unwrap_or(pixel_radius);
+            }
+            "--ignore-inset" => {
+                ignore_inset = value.and_then(|value| value.parse().ok());
             }
             other => {
                 eprintln!("unknown compare-png option: {other}");
@@ -286,6 +290,10 @@ fn cmd_compare_png(args: &[String]) {
             std::process::exit(2);
         }
     }
+    if let Some(inset) = ignore_inset {
+        mask_framebuffer_interior(&mut actual, inset);
+        mask_framebuffer_interior(&mut expected, inset);
+    }
     let different = product_smoke::full_diff_pixels(&actual, &expected, channel_diff, pixel_radius);
     let total = u64::from(actual.width) * u64::from(actual.height);
     let pct = different as f64 * 100.0 / total as f64;
@@ -293,6 +301,19 @@ fn cmd_compare_png(args: &[String]) {
     if !product_smoke::full_diff_passes(pct, max_diff) {
         eprintln!("REGRESSION: PNG diff {pct:.2}% meets or exceeds strict threshold {max_diff:.2}%");
         std::process::exit(2);
+    }
+}
+
+fn mask_framebuffer_interior(frame: &mut zero_render_foundation::surface::FrameBuffer, inset: u32) {
+    let x1 = inset.min(frame.width);
+    let y1 = inset.min(frame.height);
+    let x2 = frame.width.saturating_sub(inset).max(x1);
+    let y2 = frame.height.saturating_sub(inset).max(y1);
+    for y in y1..y2 {
+        for x in x1..x2 {
+            let offset = ((y * frame.width + x) * 4) as usize;
+            frame.data[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
     }
 }
 
@@ -2146,5 +2167,14 @@ mod compare_png_tests {
         assert_eq!(&padded.data[..8], &[1, 2, 3, 255, 1, 2, 3, 255]);
         assert_eq!(&padded.data[8..12], &[255, 255, 255, 255]);
         assert_eq!(&padded.data[12..], &[255; 12]);
+    }
+
+    #[test]
+    fn mask_framebuffer_interior_preserves_border() {
+        let mut frame = zero_render_foundation::surface::FrameBuffer::new_filled(5, 5, 1, 2, 3, 255);
+        mask_framebuffer_interior(&mut frame, 1);
+        assert_eq!(&frame.data[..4], &[1, 2, 3, 255]);
+        let center = ((2 * frame.width + 2) * 4) as usize;
+        assert_eq!(&frame.data[center..center + 4], &[255, 255, 255, 255]);
     }
 }

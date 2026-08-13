@@ -147,6 +147,36 @@ fn test_pipeline_consecutive_different_renders() {
     assert_eq!(cached.viewport_width, 800.0);
 }
 
+#[test]
+fn focused_native_control_uses_state_accent_color() {
+    use zero_render_foundation::color::Color;
+
+    let html = r#"<html><body><input id="check" type="checkbox" checked></body></html>"#;
+    let css = r#"#check { accent-color: rgb(0, 92, 200); }"#;
+    let mut pipeline = RenderPipeline::new(200.0, 100.0);
+
+    let normal = pipeline.render_html(html, css);
+    assert!(
+        normal
+            .primitives()
+            .fills
+            .iter()
+            .any(|fill| fill.color == Color::rgba(0, 92, 200, 255)),
+        "unfocused control should use the declared accent color"
+    );
+
+    pipeline.set_focused_selector(Some("#check"));
+    let focused = pipeline.render_html(html, css);
+    assert!(
+        focused
+            .primitives()
+            .fills
+            .iter()
+            .any(|fill| fill.color == Color::rgba(0, 66, 144, 255)),
+        "focused control should use the native state accent color"
+    );
+}
+
 /// R639：跨多行的 inline span 背景应按行片段（per-fragment）绘制，而非单一 bounding-box
 /// rect。窄视口强制 span 文本换行；若按 box-level 仅 1 个 blue fill，按 per-fragment 则
 /// 行数个。此测试守护 R639 per-fragment inline bg 行为不退化为 box-level（同时验证

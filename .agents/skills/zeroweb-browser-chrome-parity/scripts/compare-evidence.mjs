@@ -116,6 +116,9 @@ async function comparePng(options, actual, expected, maxDiffPercent) {
     String(options.thresholds.pixelRadius),
   ];
   if (options.padToUnion) args.push('--pad-to-union');
+  if (options.ignoreInset !== undefined) {
+    args.push('--ignore-inset', String(options.ignoreInset));
+  }
   const comparatorIsNodeScript = options.comparator.endsWith('.mjs') || options.comparator.endsWith('.js');
   const result = comparatorIsNodeScript
     ? await run(process.execPath, [options.comparator, ...args])
@@ -207,7 +210,7 @@ async function main() {
         continue;
       }
       try {
-        regions[selector] = await comparePng(
+        const unmasked = await comparePng(
           {
             comparator: cli.comparator,
             thresholds: scenario.thresholds,
@@ -217,6 +220,26 @@ async function main() {
           resolve(chrome.directory, chromeRegion),
           scenario.thresholds.maxRegionDiffPercent,
         );
+        const glyphMaskInsetPx = scenario.observe.glyphMaskInsetPx?.[selector];
+        if (glyphMaskInsetPx === undefined) {
+          regions[selector] = unmasked;
+        } else {
+          regions[selector] = {
+            ...await comparePng(
+              {
+                comparator: cli.comparator,
+                thresholds: scenario.thresholds,
+                padToUnion: true,
+                ignoreInset: glyphMaskInsetPx,
+              },
+              resolve(zeroweb.directory, zeroRegion),
+              resolve(chrome.directory, chromeRegion),
+              scenario.thresholds.maxRegionDiffPercent,
+            ),
+            glyphMaskInsetPx,
+            unmasked,
+          };
+        }
       } catch (error) {
         regions[selector] = { passed: false, error: error.message };
       }

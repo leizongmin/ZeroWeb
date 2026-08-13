@@ -31,6 +31,13 @@
       "#reset",
       "#submit"
     ],
+    "glyphMaskInsetPx": {
+      "#name": 3,
+      "#note": 3,
+      "#click": 3,
+      "#reset": 3,
+      "#submit": 3
+    },
     "stateExpression": "(() => { const stored = JSON.parse(document.querySelector('#test-state').textContent); return { ...stored, name: document.querySelector('#name').value, note: document.querySelector('#note').value, subscribe: document.querySelector('#subscribe').checked, plan: document.querySelector('#plan-basic').checked ? 'basic' : document.querySelector('#plan-pro').checked ? 'pro' : '', focused: document.activeElement?.id || '' }; })()",
     "eventTypes": [
       "mousedown",

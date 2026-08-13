@@ -1060,6 +1060,7 @@ impl RendererRuntime {
         let Some(old) = self.interaction.set_focus_owner(None) else {
             return Ok(());
         };
+        self.sync_webview_focus_owner();
         // R3254-H1：焦点回执（仅实际失焦时）。
         self.send_focus_change(None)?;
         let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
@@ -1102,6 +1103,7 @@ impl RendererRuntime {
             return Ok(());
         }
         let old = self.interaction.set_focus_owner(Some(selector.to_string()));
+        self.sync_webview_focus_owner();
         if old.as_deref() != Some(selector) {
             // R3254-H1：焦点回执（仅焦点所有者实际变化时，避免重复聚焦刷屏）。
             self.send_focus_change(Some(selector.to_string()))?;
@@ -1162,6 +1164,7 @@ impl RendererRuntime {
             if old.as_deref() == Some(selector.as_str()) {
                 continue;
             }
+            self.sync_webview_focus_owner();
             // 同步 form_controls 基线（同 focus_target；JS 已派发 focus 事件，无 DOM 派发）。
             if zero_engine::is_text_input(&self.cached_html, &selector)
                 && let Some((value, selection_start, selection_end)) = self.text_control_state_from_worker(&selector)
@@ -1180,6 +1183,7 @@ impl RendererRuntime {
         let Some(old) = self.interaction.set_focus_owner(None) else {
             return;
         };
+        self.sync_webview_focus_owner();
         let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
             self.form_controls
                 .blur_focused()
@@ -1201,6 +1205,13 @@ impl RendererRuntime {
         }
         if let Err(e) = self.send_focus_change(None) {
             tracing::warn!("send focus change: {e}");
+        }
+    }
+
+    fn sync_webview_focus_owner(&mut self) {
+        let focused = self.interaction.focus_owner().map(str::to_string);
+        if let Some(webview) = self.webview.as_mut() {
+            webview.set_focused_selector(focused.as_deref());
         }
     }
 

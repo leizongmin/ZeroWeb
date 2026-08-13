@@ -86,6 +86,70 @@ fn prevented_checkbox_click_rolls_back_checkedness() {
 }
 
 #[test]
+fn focused_checkbox_paints_focused_accent_after_activation() {
+    let checked_html = r#"<html><head><style>
+        #check { accent-color: rgb(0, 92, 200); }
+    </style></head><body><input id="check" type="checkbox" checked></body></html>"#;
+    let mut focused_runtime = runtime_with_scripts(checked_html, 926);
+
+    focused_runtime.focus_target("#check").unwrap();
+    focused_runtime
+        .webview
+        .as_mut()
+        .unwrap()
+        .reload_html_after_script(&focused_runtime.cached_html);
+    assert!(
+        focused_runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .last_render()
+            .unwrap()
+            .primitives
+            .fills
+            .iter()
+            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 66, 144, 255)),
+        "focused checkbox should use the focused accent before activation"
+    );
+
+    let unchecked_html = r#"<html><head><style>
+        #check { accent-color: rgb(0, 92, 200); }
+    </style></head><body>
+        <input id="check" type="checkbox">
+        <output id="state"></output>
+        <script>
+        document.querySelector('#check').addEventListener('change', function() {
+          document.querySelector('#state').textContent = this.checked ? 'checked' : 'unchecked';
+        });
+        </script>
+    </body></html>"#;
+    let mut runtime = runtime_with_scripts(unchecked_html, 927);
+    runtime.focus_target("#check").unwrap();
+    let (click, handled) = runtime.dispatch_checked_click("#check".to_string()).unwrap();
+    assert!(click.default_allowed);
+    assert!(handled);
+    assert!(zero_engine::has_attribute(&runtime.cached_html, "#check", "checked"));
+
+    runtime.webview.as_mut().unwrap().resize(200, 100);
+    runtime.webview.as_mut().unwrap().render();
+    let render = runtime.webview.as_ref().unwrap().last_render().unwrap();
+    assert!(
+        render
+            .primitives
+            .fills
+            .iter()
+            .any(|fill| fill.color == zero_render_foundation::color::Color::rgba(0, 66, 144, 255)),
+        "focused checkbox should retain the focused accent through activation paint; fills={:?}",
+        render
+            .primitives
+            .fills
+            .iter()
+            .map(|fill| fill.color)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn prevented_radio_click_restores_previous_group_member() {
     let html = r#"<html><body>
         <input id="a" type="radio" name="plan" checked>

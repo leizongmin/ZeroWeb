@@ -74,7 +74,8 @@ fn form_interaction_fixture_controls_are_hit_testable() {
 
     let mut input_found = false;
     let mut button_selectors = std::collections::HashSet::new();
-    for y in (0..600).step_by(2) {
+    let document_height = wv.document_height().unwrap_or(600.0).ceil() as usize;
+    for y in (0..document_height).step_by(2) {
         for x in (0..800).step_by(2) {
             if let Some(hit) = wv.hit_test_element(x as f32, y as f32) {
                 input_found |= hit.id.as_deref() == Some("name");

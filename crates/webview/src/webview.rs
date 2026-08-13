@@ -408,6 +408,7 @@ impl WebView {
     pub fn load_html(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         self.document_generation = self.document_generation.wrapping_add(1);
         self.focus_owner = None;
+        self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
@@ -736,6 +737,7 @@ impl WebView {
         // 设置加载状态
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.focus_owner = None;
+        self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
@@ -915,6 +917,7 @@ impl WebView {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.document_generation = self.document_generation.wrapping_add(1);
         self.focus_owner = None;
+        self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         let old_url = self.current_url.clone();
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
@@ -992,6 +995,7 @@ impl WebView {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1);
         self.document_generation = self.document_generation.wrapping_add(1);
         self.focus_owner = None;
+        self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
         self.last_render = None;
         self.cached_html.clear();
@@ -1090,6 +1094,12 @@ impl WebView {
         self.pipeline.form_control_value_overrides()
     }
 
+    /// 同步宿主持有的页面焦点 selector，供原生控件状态外观使用。
+    #[doc(hidden)]
+    pub fn set_focused_selector(&mut self, selector: Option<&str>) {
+        self.pipeline.set_focused_selector(selector);
+    }
+
     /// 从当前 live Document 查询 selector 对应的 opaque node handle。
     pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
         self.pipeline.page_node_handle_for_selector(selector)
@@ -1118,6 +1128,7 @@ impl WebView {
     /// 调整大小。
     pub fn resize(&mut self, width: u32, height: u32) {
         let doc_url = self.current_url.clone();
+        let focused_selector = self.pipeline.focused_selector().map(str::to_string);
         let image_sizes = self.cached_image_sizes.clone();
         let image_ratios = self.cached_image_ratios.clone();
         let image_no_ratio = self.cached_image_no_ratio.clone();
@@ -1127,6 +1138,7 @@ impl WebView {
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
         self.pipeline.set_document_url(doc_url.as_deref());
+        self.pipeline.set_focused_selector(focused_selector.as_deref());
         if !image_sizes.is_empty() {
             self.pipeline.set_image_sizes(image_sizes);
         }

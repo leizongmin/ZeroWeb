@@ -137,6 +137,24 @@ zero-wpt-runner compare-png \
 
 字体由其他 goal 负责时，仍保留未遮罩的全图结果，同时增加排除 glyph mask 的布局/控件报告。不得丢弃全图结果。
 
+场景可为文本控件声明内部字形遮罩：
+
+```json
+{
+  "observe": {
+    "selectors": ["#name", "#submit"],
+    "glyphMaskInsetPx": {
+      "#name": 3,
+      "#submit": 3
+    }
+  }
+}
+```
+
+值表示从区域四边保留的像素宽度；比较器仅把其余内部像素统一为白色。selector 必须同时出现在 `observe.selectors`，值必须为非负整数。该能力只用于字体字形由其他目标负责的文本控件，不得用于 checkbox、radio 等需要完整 native appearance 证据的控件。
+
+遮罩后的结果仍使用 `maxRegionDiffPercent` 判定，并在区域报告中记录 `glyphMaskInsetPx`。同一区域未遮罩的原始结果保存在 `unmasked` 字段；全图 `pixels` 结果始终不遮罩。
+
 ## 生产证据边界
 
 完整 Chrome 一致性要求：

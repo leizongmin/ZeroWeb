@@ -66,6 +66,20 @@ export function validateScenario(scenario) {
   if (new Set(observe.selectors).size !== observe.selectors.length) {
     fail('observe.selectors must not contain duplicates');
   }
+  if (observe.glyphMaskInsetPx !== undefined) {
+    if (!observe.glyphMaskInsetPx || typeof observe.glyphMaskInsetPx !== 'object'
+      || Array.isArray(observe.glyphMaskInsetPx)) {
+      fail('observe.glyphMaskInsetPx must be an object');
+    }
+    for (const [selector, inset] of Object.entries(observe.glyphMaskInsetPx)) {
+      if (!observe.selectors.includes(selector)) {
+        fail(`observe.glyphMaskInsetPx selector is not observed: ${selector}`);
+      }
+      if (!Number.isInteger(inset) || inset < 0) {
+        fail(`observe.glyphMaskInsetPx.${selector} must be a non-negative integer`);
+      }
+    }
+  }
   if (typeof observe.stateExpression !== 'string' || !observe.stateExpression.trim()) {
     fail('observe.stateExpression is required');
   }

@@ -454,6 +454,25 @@ fn test_appearance_with_accent_color_override() {
     // checkbox 内部应使用 accent-color 而非默认蓝色
     let has_green = prims.fills.iter().any(|f| f.color.g == 128 && f.color.r == 0);
     assert!(has_green, "checkbox 应使用 accent-color (绿色)");
+    assert!(
+        !prims
+            .fills
+            .iter()
+            .any(|fill| fill.rect.size.width == 6.0 && fill.rect.size.height == 6.0),
+        "native checkbox 不应叠加通用 accent-color 色块"
+    );
+
+    let mut focused_painter = Painter::new();
+    focused_painter.set_focused_node(Some(elem));
+    focused_painter.paint(&layout, &styles, Some(&doc));
+    assert!(
+        focused_painter
+            .primitives()
+            .fills
+            .iter()
+            .any(|fill| fill.color.g == 92 && fill.color.r == 0),
+        "focused checkbox 应使用 native 聚焦态 accent-color"
+    );
 }
 
 // === 无节点 ID 不崩溃测试 ===

@@ -66,6 +66,8 @@ pub struct Painter {
     pub(crate) form_control_values: HashMap<NodeId, String>,
     /// 文本控件的临时 IME preedit 与其替换选区。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
+    /// 当前页面焦点所有者，用于原生控件状态外观。
+    pub(crate) focused_node: Option<NodeId>,
     /// CSS font-family 查找表（字体族名 → FontId）。
     ///
     /// 由调用方从 FontLoader.build_font_resolver() 构建并传入。
@@ -384,6 +386,7 @@ impl Painter {
             image_sizes: HashMap::new(),
             form_control_values: HashMap::new(),
             form_control_compositions: HashMap::new(),
+            focused_node: None,
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
             generic_font_ids: HashSet::new(),
@@ -472,6 +475,11 @@ impl Painter {
     /// 设置本帧文本控件的临时 IME preedit。
     pub fn set_form_control_compositions(&mut self, values: HashMap<NodeId, (String, usize, usize)>) {
         self.form_control_compositions = values;
+    }
+
+    /// 设置本帧的页面焦点所有者。
+    pub fn set_focused_node(&mut self, node: Option<NodeId>) {
+        self.focused_node = node;
     }
 
     /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。
@@ -1448,6 +1456,10 @@ impl Painter {
             if let Some(node_id) = box_node.node_id
                 && let Some(style) = styles.get(&node_id)
                 && !matches!(style.accent_color, AccentColorComputedValue::Auto)
+                && !matches!(
+                    style.appearance,
+                    AppearanceComputedValue::Checkbox | AppearanceComputedValue::Radio
+                )
             {
                 self.paint_accent_color_indicator(box_node, abs_x, abs_y, style);
             }
