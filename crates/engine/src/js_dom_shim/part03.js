@@ -108,6 +108,76 @@
   // R8 instanceof 89 块缺口，独立切片）。
   globalThis.ProcessingInstruction = globalThis.ProcessingInstruction || function ProcessingInstruction() {};
   globalThis.ProcessingInstruction.prototype = Object.create(globalThis.Node.prototype);
+  // js-dom M4 R11：HTML 元素接口子类构造器（spec HTML 元素接口表，~64 个）——`el instanceof HTMLDivElement`
+  // 等（Node-cloneNode 用例 `create_element_and_check` 对每个 tag 查对应接口）。构造器占位（polyfill Proxy 非
+  // 真实例，instanceof 经 getPrototypeOf 返对应 prototype 为 true，R10 getPrototypeOf + R11 tag 映射）。
+  // 原型链：HTML*Element.prototype → HTMLElement.prototype → Element.prototype → Node.prototype。
+  // 已注册（如 HTMLFormElement）跳过，避免覆盖既有 prototype 成员。
+  var _zwHtmlElementIfaces = [
+    'HTMLAnchorElement','HTMLAreaElement','HTMLAudioElement','HTMLBRElement','HTMLBaseElement',
+    'HTMLBodyElement','HTMLButtonElement','HTMLCanvasElement','HTMLDListElement','HTMLDataElement',
+    'HTMLDataListElement','HTMLDialogElement','HTMLDirectoryElement','HTMLDivElement','HTMLElement',
+    'HTMLEmbedElement','HTMLFieldSetElement','HTMLFontElement','HTMLFrameElement','HTMLFrameSetElement',
+    'HTMLHRElement','HTMLHeadElement','HTMLHeadingElement','HTMLHtmlElement','HTMLIFrameElement',
+    'HTMLImageElement','HTMLInputElement','HTMLLIElement','HTMLLabelElement','HTMLLegendElement',
+    'HTMLLinkElement','HTMLMapElement','HTMLMediaElement','HTMLMenuElement','HTMLMetaElement','HTMLMeterElement',
+    'HTMLModElement','HTMLOListElement','HTMLObjectElement','HTMLOptGroupElement','HTMLOptionElement',
+    'HTMLOutputElement','HTMLParagraphElement','HTMLParamElement','HTMLPictureElement','HTMLPreElement',
+    'HTMLProgressElement','HTMLQuoteElement','HTMLScriptElement','HTMLSelectElement','HTMLSlotElement',
+    'HTMLSourceElement','HTMLSpanElement','HTMLStyleElement','HTMLTableCaptionElement','HTMLTableCellElement',
+    'HTMLTableColElement','HTMLTableElement','HTMLTableRowElement','HTMLTableSectionElement','HTMLTemplateElement',
+    'HTMLTextAreaElement','HTMLTimeElement','HTMLTitleElement','HTMLTrackElement','HTMLUListElement',
+    'HTMLUnknownElement','HTMLVideoElement',
+  ];
+  for (var _zi = 0; _zi < _zwHtmlElementIfaces.length; _zi++) {
+    var _zn = _zwHtmlElementIfaces[_zi];
+    if (!globalThis[_zn]) {
+      globalThis[_zn] = new Function('return function ' + _zn + '() {}')();
+      // HTMLElement 自身 prototype 已建（_zwBuiltNodeChain）；其余子类 → HTMLElement.prototype。
+      globalThis[_zn].prototype = (_zn === 'HTMLElement')
+        ? globalThis.HTMLElement.prototype
+        : Object.create(globalThis.HTMLElement.prototype);
+    }
+  }
+  // spec tag → HTML 元素接口名映射（HTMLElement 接口表，html.spec.whatwg.org#toc-named-given）。
+  // getPrototypeOf（part05）按元素 tag 查此表返对应子类 prototype；未知/自定义元素 → HTMLUnknownElement。
+  // R11：使 `document.createElement('div') instanceof HTMLDivElement` 为 true（Node-cloneNode 用例）。
+  globalThis.__zwHtmlTagIface = {
+    a: 'HTMLAnchorElement', abbr: 'HTMLElement', acronym: 'HTMLElement', address: 'HTMLElement',
+    area: 'HTMLAreaElement', article: 'HTMLElement', aside: 'HTMLElement', audio: 'HTMLAudioElement',
+    b: 'HTMLElement', base: 'HTMLBaseElement', bdi: 'HTMLElement', bdo: 'HTMLElement', bgsound: 'HTMLElement',
+    big: 'HTMLElement', blockquote: 'HTMLQuoteElement', body: 'HTMLBodyElement', br: 'HTMLBRElement',
+    button: 'HTMLButtonElement', canvas: 'HTMLCanvasElement', caption: 'HTMLTableCaptionElement',
+    center: 'HTMLElement', cite: 'HTMLElement', code: 'HTMLElement', col: 'HTMLTableColElement',
+    colgroup: 'HTMLTableColElement', data: 'HTMLDataElement', datalist: 'HTMLDataListElement',
+    dd: 'HTMLElement', del: 'HTMLModElement', details: 'HTMLElement', dfn: 'HTMLElement',
+    dialog: 'HTMLDialogElement', dir: 'HTMLDirectoryElement', div: 'HTMLDivElement', dl: 'HTMLDListElement',
+    dt: 'HTMLElement', em: 'HTMLElement', embed: 'HTMLEmbedElement', fieldset: 'HTMLFieldSetElement',
+    figcaption: 'HTMLElement', figure: 'HTMLElement', font: 'HTMLFontElement', footer: 'HTMLElement',
+    form: 'HTMLFormElement', frame: 'HTMLFrameElement', frameset: 'HTMLFrameSetElement',
+    h1: 'HTMLHeadingElement', h2: 'HTMLHeadingElement', h3: 'HTMLHeadingElement', h4: 'HTMLHeadingElement',
+    h5: 'HTMLHeadingElement', h6: 'HTMLHeadingElement', head: 'HTMLHeadElement', header: 'HTMLElement',
+    hgroup: 'HTMLElement', hr: 'HTMLHRElement', html: 'HTMLHtmlElement', i: 'HTMLElement',
+    iframe: 'HTMLIFrameElement', img: 'HTMLImageElement', input: 'HTMLInputElement', ins: 'HTMLModElement',
+    kbd: 'HTMLElement', label: 'HTMLLabelElement', legend: 'HTMLLegendElement', li: 'HTMLLIElement',
+    link: 'HTMLLinkElement', listing: 'HTMLPreElement', main: 'HTMLElement', map: 'HTMLMapElement',
+    mark: 'HTMLElement', marquee: 'HTMLElement', menu: 'HTMLMenuElement', meta: 'HTMLMetaElement',
+    meter: 'HTMLMeterElement', nav: 'HTMLElement', nobr: 'HTMLElement', noembed: 'HTMLElement',
+    noframes: 'HTMLElement', noscript: 'HTMLElement', object: 'HTMLObjectElement', ol: 'HTMLOListElement',
+    optgroup: 'HTMLOptGroupElement', option: 'HTMLOptionElement', output: 'HTMLOutputElement',
+    p: 'HTMLParagraphElement', param: 'HTMLParamElement', picture: 'HTMLPictureElement', plaintext: 'HTMLElement',
+    pre: 'HTMLPreElement', progress: 'HTMLProgressElement', q: 'HTMLQuoteElement', rp: 'HTMLElement',
+    rt: 'HTMLElement', ruby: 'HTMLElement', s: 'HTMLElement', samp: 'HTMLElement', script: 'HTMLScriptElement',
+    section: 'HTMLElement', select: 'HTMLSelectElement', slot: 'HTMLSlotElement', small: 'HTMLElement',
+    source: 'HTMLSourceElement', span: 'HTMLSpanElement', strike: 'HTMLElement', strong: 'HTMLElement',
+    style: 'HTMLStyleElement', sub: 'HTMLElement', summary: 'HTMLElement', sup: 'HTMLElement',
+    table: 'HTMLTableElement', tbody: 'HTMLTableSectionElement', td: 'HTMLTableCellElement',
+    template: 'HTMLTemplateElement', textarea: 'HTMLTextAreaElement', tfoot: 'HTMLTableSectionElement',
+    th: 'HTMLTableCellElement', thead: 'HTMLTableSectionElement', time: 'HTMLTimeElement',
+    title: 'HTMLTitleElement', tr: 'HTMLTableRowElement', track: 'HTMLTrackElement', tt: 'HTMLElement',
+    u: 'HTMLElement', ul: 'HTMLUListElement', var: 'HTMLElement', video: 'HTMLVideoElement',
+    wbr: 'HTMLElement', xmp: 'HTMLPreElement',
+  };
   // R3019：Element.prototype 成员补全——DOMPurify 等库加载时经 lookupGetter(ElementPrototype, 'parentNode'/
   // 'remove'/'cloneNode'/'nextSibling'/'childNodes') 固化原型链成员（unapply 后以节点为 this 调用）。旧 shim
   // 原型空壳 → lookup 全落 fallback（恒返 null）→ _forceRemove 的 getParentNode(node).removeChild(node) 抛

@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R10 — polyfill Proxy getPrototypeOf trap 解 instanceof（element→HTMLElement.prototype 链 Element→Node，PI→ProcessingInstruction 等）+ DOM 原型方法不可枚举（修 for-in 副作用）+ 顺带修并行 canvas 流 2 个回归（CSS.escape/supports 合并 + testharness fetch_handler 编译）；基线 polyfill 38.03%→39.23% / native 37.81%→38.96%（双路径对等差 0.27pp，cloneNode 用例 0P→51P）
+**本轮**: R11 — element.localName getter（part04，HTML 小写/去 prefix/非 Element→null）+ HTML 元素子类 instanceof（part03 注册 ~64 个 HTML*Element 构造器 + __zwHtmlTagIface tag→接口映射，part05 getPrototypeOf 按 tag 返子类 prototype）；基线 polyfill 39.23%→40.89% / native 38.96%→40.63%（双路径对等差 0.26pp，cloneNode 用例 51P→121P）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **polyfill 39.23% / native 38.96% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R10 instanceof 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R10 polyfill Proxy getPrototypeOf 解 instanceof（element→HTMLElement.prototype 链，cloneNode 0P→51P）+ DOM 原型方法不可枚举 + 修并行流 CSS.escape 合并回归。失败聚类：assert_equals(localName/namespace)/cannot read(iframe.contentDocument 大头 ~720)/具体元素子类 instanceof(HTMLDivElement 等) |
+| WPT dom 上游基线 | ✅ **polyfill 40.89% / native 40.63% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R11 localName+子类 instanceof 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R11 element.localName getter + HTML 元素子类 instanceof（~64 HTML*Element 构造器 + tag 映射，getPrototypeOf 按 tag 返子类 prototype，cloneNode 51P→121P）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，html-compat 域）/canvas proxy instanceof 边缘/cloneNode 剩 14F |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -69,7 +69,9 @@
 - R9 关键发现：**用例侧 `document` 始终是 polyfill document（即使 ZW_NATIVE_DOM=1）**——native document template（R7 PI API）用例访问不到。故 PI 必须在 polyfill document 实现，双路径用例才能过。DOMException identity：native 路径 shim 裸 `new DOMException` 抛的异常 → testharness assert_throws_dom "wrong global"，改 `globalThis.DOMException` 修复（R6 教训）
 - R10 已做：① polyfill Proxy `_makeProxy` handler 加 `getPrototypeOf` trap（part05 handler 闭合处）——element→HTMLElement.prototype（链 Element→Node）、PI→ProcessingInstruction、fragment→DocumentFragment、text/comment→Node；构造器缺失回落 Object.prototype。仅影响 instanceof/getPrototypeOf/原型链查找，不影响 get/set ② DOM 原型方法不可枚余（part03 cloneNode/addEventListener/removeEventListener 改 Object.defineProperty enumerable:false，修 getPrototypeOf 副作用——for-in 枚举到原型方法污染 expando）③ **顺带修并行 canvas 流 2 个回归**：CSS.escape/supports 合并（canvas 流 part05:920 先建 CSS={percent,deg} 致 part06 `||` 短路，escape/supports 丢失 → CSS.escape is not a function；改 part06 合并模式）+ testharness.rs fetch_handler 编译错误（`wpt_root.and_then` → `wpt_data_fetch_handler(wpt_root)`，&Path 无 and_then）④ instanceof 单测 `test_instanceof_prototype_chain_r10`。基线 polyfill 38.03%→39.23%、native 37.81%→38.96%（双路径对等差 0.27pp）；cloneNode 用例 0P→51P。engine v8 2071 / quickjs 1407 单测，双矩阵 clippy 干净
 - R10 归因：**6 个 fetch/response 测试既存失败**（clean R9 tree 同样存在，并行流引入）——`instanceof Response`=false（fetch 结果非 Response 实例）+ fetch abort/binary/stream/signal/forbidden-headers。归因 fetch/net 域，非 js-dom DOM 桥工作面，记未解决问题不硬解（run-rules §9）。本切片修了同源 CSS 回归（part06 工作面内）
-- 剩余聚类（按 ROI，R10 后重排）：① **具体元素子类 instanceof**（HTMLDivElement/HTMLHeadingElement 等，cloneNode 用例 39 行 `orig instanceof type` + ~15 "is not defined/unsupported"；需注册子类构造器 + getPrototypeOf 按 tag 返子类 prototype）② createElement localName getter（返 undefined，createElement 用例主因之一）③ iframe.contentDocument（createElementNS/case 大头 ~390，html-compat 域）④ polyfill appendChild 闭环（待 L2）⑤ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
+- R11 已做：① element.localName getter（part04 get trap：HTML 元素 = tagName 小写；带 prefix 限定名去 prefix；非 Element→null）② **HTML 元素子类 instanceof**（part03 注册 ~64 个 HTML*Element 构造器 prototype→HTMLElement.prototype + `__zwHtmlTagIface` tag→接口映射表 div→HTMLDivElement 等覆盖 spec HTML 元素接口全表；part05 getPrototypeOf element 分支按 tag 查映射返对应子类 prototype）③ localName 单测 + 子类 instanceof 单测。基线 polyfill 39.23%→40.89%、native 38.96%→40.63%（双路径对等差 0.26pp）；cloneNode 用例 51P→121P（+70）。engine v8 2082 / quickjs 1408 单测，双矩阵 clippy 干净
+- R11 已知边缘：`createElement('canvas') instanceof HTMLCanvasElement` 仍 false——canvas 经 `_zwMakeCanvas()` 特殊 proxy（canvas 流专用路径），不走 _makeProxy/getPrototypeOf。记未解决问题
+- 剩余聚类（按 ROI，R11 后重排）：① **iframe.contentDocument**（createElementNS/case/cloneNode 大头 ~390，`Cannot read properties of undefined (reading 'documentElement')`，html-compat 域，需评估范围边界）② canvas proxy instanceof（canvas 流路径，待协调）③ polyfill appendChild 闭环（待 M1 L2）④ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -129,6 +131,7 @@
 | 2026-08-14 | R8 | testharness 运行时本地 .js 内联（`inline_local_scripts` + `extract_script_src` + `normalize_relative`）+ `wpt_root`/`case_path` 贯穿 `prepare_harness_html`/`run_testharness_html`/`run_canvas_testharness_html`/`run_testharness_html_inner`；与并行 canvas 流（G5 image fetcher）合并（统一 `&Path`）；wpt-runner v8 168 / quickjs 103 单测全绿，clippy 干净 | **基线进一步真实化**（用例 .js 运行时内联→用例真正跑起来）：subtest ~2696→4490（+1794），polyfill 51.12%→37.82%、native 50.79%→37.59%（双路径对等差 0.23pp，**非回归**——暴露真实 gap：createElementNS 596/createEvent/createProcessingInstruction instanceof 89 等）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R9 | polyfill document.createProcessingInstruction 桥接（DomMutation::CreateProcessingInstruction + __zw_create_processing_instruction callback + shim part06 方法/part01 _piHandles/part04 PI 节点包装/part03 构造器占位）+ DOMException identity 对等（createElement/PI 用 globalThis.DOMException，顺带修 R3 既存对等 bug）+ PI 单测；engine v8 2076 / quickjs 1407 / wpt-runner v8 168 / quickjs 103 全绿，双矩阵 clippy 干净 | **基线提升 + PI 双路径对等**：polyfill 37.82%→38.03%、native 37.59%→37.81%（双路径对等差 0.22pp）；PI 用例双路径 1P/11F→6P/6F。关键发现：用例侧 document 始终是 polyfill document（即使 native_dom=1）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R10 | polyfill Proxy getPrototypeOf trap（part05 _makeProxy handler：element→HTMLElement.prototype 链、PI→ProcessingInstruction 等）+ DOM 原型方法不可枚举（part03，修 for-in 副作用）+ 顺带修并行 canvas 流回归（part06 CSS.escape/supports 合并 + testharness fetch_handler 编译）+ instanceof 单测；engine v8 2071 / quickjs 1407 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 38.03%→39.23%、native 37.81%→38.96%（双路径对等差 0.27pp）；cloneNode 用例 0P→51P（+51，instanceof 直接解锁）。归因：6 fetch 既存失败（clean R9 同样）非本切片引入。完整 JSON 快照入 evidence |
+| 2026-08-14 | R11 | element.localName getter（part04：HTML 小写/去 prefix/非 Element→null）+ HTML 元素子类 instanceof（part03 注册 ~64 HTML*Element 构造器 + __zwHtmlTagIface tag→接口映射；part05 getPrototypeOf 按 tag 返子类 prototype）+ localName/子类 instanceof 单测；engine v8 2082 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 39.23%→40.89%、native 38.96%→40.63%（双路径对等差 0.26pp）；cloneNode 用例 51P→121P（+70）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -138,12 +141,12 @@
 
 ## 下一步计划
 
-1. **R10（本轮，已完成）**：polyfill Proxy getPrototypeOf 解 instanceof + CSS 回归修复 → land（polyfill 39.23% / native 38.96%，双路径对等差 0.27pp，cloneNode 0P→51P）
-2. **下轮候选（按剩余 ROI，R10 后重排）**：
-   - **(a) 具体元素子类 instanceof**（HTMLDivElement/HTMLHeadingElement 等；cloneNode 用例 39 行 `orig instanceof type` + ~15 "is not defined/unsupported"；需注册子类构造器 + getPrototypeOf 按 tag 返子类 prototype）。
-   - **(b) createElement localName getter**（返 undefined，createElement 用例主因之一）。
-   - **(c) iframe.contentDocument**（createElementNS/case 大头 ~390，html-compat 域，需评估范围边界）。
-   - **(d) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
+1. **R11（本轮，已完成）**：element.localName getter + HTML 元素子类 instanceof → land（polyfill 40.89% / native 40.63%，双路径对等差 0.26pp，cloneNode 51P→121P）
+2. **下轮候选（按剩余 ROI，R11 后重排）**：
+   - **(a) iframe.contentDocument**（createElementNS/case/cloneNode 大头 ~390 subtest，`Cannot read properties of undefined (reading 'documentElement')`，html-compat 域，需评估范围边界——iframe 解析是较深结构）。
+   - **(b) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产，零风险，可与其他切片并行）。
+   - **(c) canvas proxy instanceof**（canvas 流 `_zwMakeCanvas` 路径，需协调 canvas 流）。
+   - **(d) polyfill appendChild 闭环**（待 M1 L2）。
    - **(e) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
 3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
@@ -173,7 +176,8 @@
 9. **用例侧 document 始终是 polyfill document（R9 发现）**：即使 `ZW_NATIVE_DOM=1`，顶层 `globalThis.document` 仍是 polyfill shim 装的（part06.js）。native document template（dom_bindings 装的方法）用例访问不到。故 polyfill document 必须实现所有 document.* 方法，native dom_bindings document 方法仅作生产路径（default-on 后）能力。**对等含义**：driving 用例经 polyfill document 跑，native 路径修复须经 polyfill document 同步才能基线可见（R4 注释的架构限制的另一面）。
 10. **DOMException identity 对等**（R9 修复）：native_dom 叠加路径下，shim 裸 `new DOMException(...)` 抛的异常 → testharness `assert_throws_dom` "wrong global"（词法作用域 part01b DOMException ≠ 全局 native DOMException）。R9 已修 createElement/PI 校验路径（改 `globalThis.DOMException`）。**R3 createElement 既存对等 bug 同步修**（但其 0P/147F 主因是 instanceof Element + iframe，非 DOMException）。其余 shim 抛 DOMException 路径（如需）应同样用 `globalThis.DOMException`。
 11. **6 个 fetch/response 测试既存失败**（R10 归因，并行流引入）：`test_fetch_abort_signal_r3044`/`test_fetch_forbidden_headers_r3221_r3222`/`test_fetch_response_binary_body_r3021`/`test_request_signal_passthrough_r3045`/`test_response_body_readable_stream_r2967`/`test_response_request_constructors_r2968`。clean R9 tree 同样失败（非 js-dom 流引入）。根因 `instanceof Response`=false（fetch 结果非 Response 实例，`_makeResponseFromWire` 路由问题）+ fetch abort/binary/stream/signal/forbidden-headers。**归因 fetch/net 域**（并行 canvas/net 流引入），非 js-dom DOM 桥工作面（run-rules §9 工作面不重叠）。修复需深入 fetch 桥接，留给引入它的流或专项切片。注：本切片修了同源的 CSS.escape 回归（part06 工作面内，canvas 流 part05 CSS.percent/deg 破坏 part06 CSS 定义顺序）。
-12. **instanceof 具体元素子类剩余**（R10 部分解）：R10 解了 instanceof Element/HTMLElement/Node（cloneNode 0P→51P），但 **具体子类 instanceof**（cloneNode 用例 39 行 `orig instanceof HTMLDivElement` 等 + ~15 "is not defined/unsupported"）仍失败——需注册 HTMLDivElement/HTMLHeadingElement 等子类构造器 + getPrototypeOf 按 tag 返子类 prototype。下轮候选 a。
+12. **instanceof 具体元素子类剩余**（R10 部分解，**R11 已修**）：R10 解了 instanceof Element/HTMLElement/Node（cloneNode 0P→51P）；**R11 注册 ~64 HTML*Element 构造器 + tag 映射，getPrototypeOf 按 tag 返子类 prototype**，cloneNode 51P→121P。**剩余边缘**：`createElement('canvas') instanceof HTMLCanvasElement` 仍 false——canvas 经 `_zwMakeCanvas()` 特殊 proxy（canvas 流专用路径），不走 _makeProxy/getPrototypeOf。canvas proxy instanceof 待 canvas 流或专项协调。
+13. **iframe.contentDocument 是当前最大失败块**（~390 subtest，R11 后首位）：createElementNS/case/cloneNode 用例的 XML/XHTML iframe document 路径 `Cannot read properties of undefined (reading 'documentElement')`——polyfill document 无 iframe contentDocument 解析。属 html-compat 域（iframe 解析较深结构），需评估范围边界。下轮候选 a。
 
 ---
 
@@ -192,3 +196,4 @@
 - R8：M4 testharness 本地 .js 内联 + wpt_root 贯穿合并（基线真实化 178 用例 / 4490 subtest）→ archive/m8-slice-testharness-local-js-inline.md
 - R9：M4 polyfill createProcessingInstruction 桥接 + DOMException identity 对等（PI 1P/11F→6P/6F）→ archive/m9-slice-createprocessinginstruction.md
 - R10：M4 polyfill Proxy getPrototypeOf 解 instanceof + CSS 回归修复（cloneNode 0P→51P）→ archive/m10-slice-instanceof-prototype-chain.md
+- R11：M4 element.localName getter + HTML 元素子类 instanceof（cloneNode 51P→121P）→ archive/m11-slice-localname-subclass-instanceof.md

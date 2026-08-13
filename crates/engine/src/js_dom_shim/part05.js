@@ -222,8 +222,14 @@
         if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
         if (handle && _commentHandles[handle] && _gp.Node) return _gp.Node.prototype;
         if (handle && _textHandles[handle] && _gp.Node) return _gp.Node.prototype;
-        // element（含 selector-based 与 createElement handle）：HTMLElement → Element → Node 链。
-        if (_gp.HTMLElement && _gp.HTMLElement.prototype) return _gp.HTMLElement.prototype;
+        // element（含 selector-based 与 createElement handle）：按 tag 查 __zwHtmlTagIface 返对应
+        // HTML*Element 子类 prototype（R11，使 `el instanceof HTMLDivElement` 等为 true）；无映射/构造器
+        // 缺失回落 HTMLElement.prototype（链 Element → Node）。
+        if (_gp.HTMLElement && _gp.HTMLElement.prototype) {
+          var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
+          if (_iface && _gp[_iface] && _gp[_iface].prototype) return _gp[_iface].prototype;
+          return _gp.HTMLElement.prototype;
+        }
         return Object.prototype;
       }
     });

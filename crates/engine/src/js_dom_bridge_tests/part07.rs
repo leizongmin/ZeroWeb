@@ -2266,4 +2266,166 @@ fn test_instanceof_prototype_chain_r10() {
     );
 }
 
+#[test]
+fn test_element_local_name_r11() {
+    // js-dom M4 R11：`element.localName`（spec `dom-element-localname`）——polyfill 元素 proxy 此前无 localName
+    // getter（返 undefined）。createElement 用例核心断言之一（`elt.localName` == tag 小写）。R11 在 part04 get
+    // trap 加 localName：HTML 元素 = tagName 小写；带 prefix（`svg:rect`，createElementNS）去 prefix 取冒号后；
+    // 非 Element（text/comment/PI/fragment）→ null（spec Element 接口范围）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><span id='s'></span></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // createElement('div') → tagName DIV / localName 'div'（小写）。
+    sandbox
+        .execute(
+            "globalThis.__el = document.createElement('div');\
+             globalThis.__tag = __el.tagName;\
+             globalThis.__ln = __el.localName;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__tag)").unwrap().value, "DIV", "tagName 大写");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ln)").unwrap().value,
+        "div",
+        "localName 小写 = tag"
+    );
+
+    // createElement('FOO')（大写输入）→ localName 'foo'（HTML 小写化，与 tagName 一致）。
+    sandbox
+        .execute("globalThis.__ln2 = document.createElement('FOO').localName;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ln2)").unwrap().value,
+        "foo",
+        "createElement('FOO') localName 小写化"
+    );
+
+    // selector-based 元素（querySelector）localName 可读。
+    sandbox
+        .execute("globalThis.__ln3 = document.querySelector('#s').localName;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ln3)").unwrap().value,
+        "span",
+        "querySelector 元素 localName"
+    );
+
+    // 带 prefix 的限定名（createElementNS `svg:rect`，非 HTML ns 但 polyfill 忽略 ns）→ localName 'rect'（去 prefix）。
+    sandbox
+        .execute("globalThis.__ln4 = document.createElementNS('http://www.w3.org/2000/svg', 'svg:rect').localName;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ln4)").unwrap().value,
+        "rect",
+        "createElementNS 限定名 localName 去 prefix"
+    );
+
+    // 非 Element 节点 localName → null（spec Element 接口范围；Text/Comment/PI/Fragment 无 localName）。
+    sandbox
+        .execute(
+            "globalThis.__tLn = document.createTextNode('x').localName;\
+             globalThis.__cLn = document.createComment('y').localName;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tLn)").unwrap().value,
+        "null",
+        "Text 节点 localName = null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cLn)").unwrap().value,
+        "null",
+        "Comment 节点 localName = null"
+    );
+}
+
+#[test]
+fn test_html_element_subclass_instanceof_r11() {
+    // js-dom M4 R11：具体 HTML 元素子类 instanceof（spec HTML 元素接口表）——`document.createElement('div')
+    // instanceof HTMLDivElement` 等（Node-cloneNode 用例 create_element_and_check 对每个 tag 查对应接口）。
+    // R11 注册 ~64 个 HTML*Element 构造器（prototype → HTMLElement.prototype）+ __zwHtmlTagIface tag→接口映射，
+    // getPrototypeOf 按 tag 返对应子类 prototype。未知/自定义元素 → HTMLUnknownElement。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // div → HTMLDivElement（同时仍 instanceof HTMLElement/Element/Node，原型链完整）。
+    sandbox
+        .execute(
+            "globalThis.__d = document.createElement('div');\
+             globalThis.__dDiv = __d instanceof HTMLDivElement;\
+             globalThis.__dHtml = __d instanceof HTMLElement;\
+             globalThis.__dEl = __d instanceof Element;\
+             globalThis.__dNode = __d instanceof Node;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__dDiv)").unwrap().value, "true", "div instanceof HTMLDivElement");
+    assert_eq!(sandbox.execute("String(globalThis.__dHtml)").unwrap().value, "true", "div instanceof HTMLElement（链）");
+    assert_eq!(sandbox.execute("String(globalThis.__dEl)").unwrap().value, "true", "div instanceof Element（链）");
+    assert_eq!(sandbox.execute("String(globalThis.__dNode)").unwrap().value, "true", "div instanceof Node（链）");
+
+    // 多 tag → 对应接口（覆盖 cloneNode 用例代表性 tag）。
+    sandbox
+        .execute(
+            "globalThis.__ck = (function(){\
+               var m = {h1:'HTMLHeadingElement',a:'HTMLAnchorElement',p:'HTMLParagraphElement',\
+                 span:'HTMLSpanElement',input:'HTMLInputElement',\
+                 table:'HTMLTableElement',script:'HTMLScriptElement',form:'HTMLFormElement'};\
+               var out = {};\
+               for (var t in m) { var el = document.createElement(t); out[t] = (el instanceof window[m[t]]); }\
+               return out;\
+             })();",
+        )
+        .unwrap();
+    for (tag, iface) in [
+        ("h1", "HTMLHeadingElement"),
+        ("a", "HTMLAnchorElement"),
+        ("p", "HTMLParagraphElement"),
+        ("span", "HTMLSpanElement"),
+        ("input", "HTMLInputElement"),
+        ("table", "HTMLTableElement"),
+        ("script", "HTMLScriptElement"),
+        ("form", "HTMLFormElement"),
+    ] {
+        assert_eq!(
+            sandbox.execute(&format!("String(globalThis.__ck.{tag})")).unwrap().value,
+            "true",
+            "createElement('{tag}') instanceof {iface}"
+        );
+    }
+
+    // 跨接口不误伤：div instanceof HTMLSpanElement 应为 false。
+    sandbox.execute("globalThis.__dSpan = __d instanceof HTMLSpanElement;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dSpan)").unwrap().value,
+        "false",
+        "div instanceof HTMLSpanElement = false（接口精确）"
+    );
+}
+
 

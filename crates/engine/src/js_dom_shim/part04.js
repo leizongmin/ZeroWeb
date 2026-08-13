@@ -499,6 +499,16 @@
         if (prop === 'tagName') {
           return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
         }
+        // `element.localName`（spec `dom-element-localname`，R11）：HTML 元素 = tagName 小写；
+        // 带 prefix 的限定名（`svg:rect`，createElementNS）去 prefix 取冒号后。非 Element → null
+        //（spec Attr/Text 等另走各自接口，此处元素 getter 范围）。createElement 用例核心断言之一。
+        if (prop === 'localName') {
+          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          var _ln = _realTag(sel, handle);
+          var _colon = _ln.indexOf(':');
+          if (_colon >= 0) _ln = _ln.slice(_colon + 1);
+          return _ln.toLowerCase();
+        }
         if (prop === 'nodeName') {
           return isShadow ? '#shadow-root'
             : isFrag ? '#document-fragment'
