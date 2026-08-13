@@ -26,7 +26,7 @@
 | shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
 | compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
 | path-objects | 205 / 26+ | 🔄 部分（roundrect 26 Pass；**剩余移交 js-dom goal**——见下方交接记录） |
-| fill-and-stroke-styles | 261 / 183 | 🔄 183 Pass（66 = G5 DOM img 源、13 = radial cone、parse eof/％容错 ~7） |
+| fill-and-stroke-styles | 261 / 188 | 🔄 188 Pass（剩余 = G5 img 源 66 + radial cone 13 + colorObject 2） |
 | text | 144 / 非像素面修复 | 🔄 setter 校验/fonts.ready/align-baseline 定位已修；**draw 像素断言需 canvas 字体像素光栅（深缺口）** |
 | **合计** | **919 文件 / 462+ subtest** | ✅ **462 Pass**（剩余失败 = G5 DOM img 源 ~87 + text 像素光栅 ~37 + radial cone 13 + currentColor 4 + CSS Color 4 其余 ~17） |
 
@@ -112,9 +112,9 @@ js-dom 流接手时按需重新加入并修复）。
 
 ## 下一步计划
 
-1. **M1 扩展**：剩余大目录（drawing-images/layers/reset 等）——大量含 G5 img 依赖，收益低；优先等 G5 解锁
+1. **待决策**：G5 DOM img 源（~87 用例，需 testharness 图片加载链路 + img 元素状态机 + drawImage 源扩展——跨 webview/engine/shim 三层深项）、canvas 字体像素光栅（text draw ~37）、radial cone 双曲线（13）、currentColor/colorObject（CSS Typed OM，js-dom 流面）、OffscreenCanvas Worker（G6）
 2. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）
-3. **待决策**：G5 DOM img 源（~87 用例）、canvas 字体像素光栅（text draw ~37）、radial cone 几何（13）、currentColor（4）、OffscreenCanvas Worker（G6）
+3. 轻量/中等面已穷尽——剩余全为深结构，等用户点名（任一解锁后可在新会话继续）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
