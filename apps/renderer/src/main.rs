@@ -4,6 +4,7 @@
 // 不需要控制台；不加此项 Windows 会为子进程分配一个控制台窗口。
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod automation;
 mod compositor_publish_thread;
 mod error_page;
 mod ipc_fetch;
@@ -2162,6 +2163,9 @@ impl RendererRuntime {
             IpcMessageKind::DispatchDomEvent(params) => {
                 self.run_frame_transaction(|runtime| runtime.handle_dispatch_dom_event(msg.id, params))
             }
+            IpcMessageKind::AutomationRequest(request) => {
+                self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
+            }
             IpcMessageKind::FetchRequest(_)
             | IpcMessageKind::FetchResponse(_)
             | IpcMessageKind::ImageDecodeRequest(_)
@@ -2187,6 +2191,7 @@ impl RendererRuntime {
             | IpcMessageKind::HitTestImageResult(_)
             | IpcMessageKind::DispatchDomEventResult(_)
             | IpcMessageKind::FocusOwnerChanged(_)
+            | IpcMessageKind::AutomationResponse(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

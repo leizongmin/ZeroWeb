@@ -59,6 +59,7 @@ impl crate::IpcChannel for MockChannel {
     }
 }
 
+mod automation_protocol;
 mod channel_and_advanced;
 mod compositor_protocol;
 mod comprehensive_coverage;

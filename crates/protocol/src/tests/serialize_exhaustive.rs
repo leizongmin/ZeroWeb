@@ -184,6 +184,20 @@ fn test_roundtrip_all_message_kinds() {
             id: 24,
             kind: IpcMessageKind::Error("something went wrong".into()),
         },
+        IpcMessage {
+            id: 27,
+            kind: IpcMessageKind::AutomationRequest(AutomationRequest {
+                operation: AutomationOperation::GetActiveElement,
+            }),
+        },
+        IpcMessage {
+            id: 28,
+            kind: IpcMessageKind::AutomationResponse(AutomationResponse {
+                navigation_epoch: 1,
+                document_generation: 2,
+                result: Ok(AutomationResult::Empty),
+            }),
+        },
     ];
 
     for msg in &messages {
@@ -192,7 +206,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 26, "should test all 26 message kinds");
+    assert_eq!(messages.len(), 28, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

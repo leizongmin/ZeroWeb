@@ -658,6 +658,22 @@ fn apply_state_script(ctx: &mut PageScriptContext<'_>, script: &str) -> bool {
     apply_recorded_mutations(ctx, &html_snap).is_some()
 }
 
+/// 在 live page 脚本上下文执行自动化脚本，并应用其 DOM mutations。
+///
+/// https://w3c.github.io/webdriver/#execute-script
+pub fn execute_automation_script(ctx: &mut PageScriptContext<'_>, script: &str) -> Result<(String, bool), String> {
+    ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    ctx.js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clear();
+    let value = ctx.js_worker.execute_script_direct(script)?;
+    let html_snapshot = ctx.html.clone();
+    let changed = apply_recorded_mutations(ctx, &html_snapshot).is_some();
+    Ok((value, changed))
+}
+
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,

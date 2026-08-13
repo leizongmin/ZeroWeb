@@ -226,6 +226,10 @@ pub enum IpcMessageKind {
     // 严禁插入中间（否则跨版本 peer 静默错位，见审查 R3254-L6）。
     /// 页面焦点所有者变更（R3254-H1：同步 browser 的 event_targets / 文本控件守卫）。
     FocusOwnerChanged(FocusChangeInfo),
+    /// 自动化请求（WebDriver/testdriver → live renderer）。
+    AutomationRequest(AutomationRequest),
+    /// 自动化响应（live renderer → WebDriver/testdriver）。
+    AutomationResponse(AutomationResponse),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -235,6 +239,151 @@ pub struct FocusChangeInfo {
     pub selector: Option<String>,
     /// 焦点是否在可编辑文本控件（input 文本类 / textarea）——browser 侧滚动守卫用。
     pub text_input: bool,
+}
+
+/// 自动化请求。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationRequest {
+    /// 要在 live renderer owner 上执行的操作。
+    pub operation: AutomationOperation,
+}
+
+/// 自动化操作。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationOperation {
+    /// 在当前 live document 中定位第一个元素。
+    FindElement {
+        /// 定位策略。
+        using: AutomationLocatorStrategy,
+        /// 定位值。
+        value: String,
+    },
+    /// 激活一个已定位元素。
+    ElementClick {
+        /// 带文档作用域的元素引用。
+        element: AutomationElementRef,
+    },
+    /// 向一个已定位元素发送文本或特殊键。
+    SendKeys {
+        /// 带文档作用域的元素引用。
+        element: AutomationElementRef,
+        /// 按顺序执行的键序列。
+        keys: Vec<AutomationKey>,
+    },
+    /// 查询当前焦点元素。
+    GetActiveElement,
+    /// 在当前页面脚本上下文执行同步脚本。
+    ExecuteScript {
+        /// 脚本源码。
+        script: String,
+        /// 传给脚本的 JSON 兼容参数。
+        arguments: Vec<AutomationValue>,
+    },
+    /// 显式表示适配层尚未支持的命令；renderer 只返回错误，不执行名称内容。
+    Unsupported {
+        /// 未支持命令名。
+        name: String,
+    },
+}
+
+/// 自动化元素定位策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutomationLocatorStrategy {
+    /// CSS selector。
+    CssSelector,
+}
+
+/// 带 live document 作用域的自动化元素引用。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AutomationElementRef {
+    /// 所属导航 epoch。
+    pub navigation_epoch: u64,
+    /// 所属 document generation。
+    pub document_generation: u64,
+    /// 当前 document 内的 opaque node handle。
+    pub node_handle: u64,
+}
+
+/// 自动化发送键。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutomationKey {
+    /// 一段 Unicode 文本。
+    Text(String),
+    /// Tab。
+    Tab,
+    /// Shift+Tab。
+    ShiftTab,
+    /// Backspace。
+    Backspace,
+    /// Enter。
+    Enter,
+}
+
+/// 自动化响应。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationResponse {
+    /// renderer 处理请求时的导航 epoch。
+    pub navigation_epoch: u64,
+    /// renderer 处理请求时的 document generation。
+    pub document_generation: u64,
+    /// 操作结果或确定性错误。
+    pub result: Result<AutomationResult, AutomationError>,
+}
+
+/// 自动化成功结果。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationResult {
+    /// 无返回值。
+    Empty,
+    /// 元素引用；`None` 表示当前无焦点元素。
+    Element(Option<AutomationElementRef>),
+    /// JSON 兼容脚本返回值。
+    Value(AutomationValue),
+}
+
+/// 自动化脚本值。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationValue {
+    /// JavaScript null/undefined。
+    Null,
+    /// 布尔值。
+    Bool(bool),
+    /// 数值。
+    Number(f64),
+    /// 字符串。
+    String(String),
+    /// 数组。
+    Array(Vec<AutomationValue>),
+    /// 对象键值列表。
+    Object(Vec<(String, AutomationValue)>),
+}
+
+/// 自动化错误。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationError {
+    /// 稳定错误分类。
+    pub code: AutomationErrorCode,
+    /// 面向调用方的错误消息。
+    pub message: String,
+}
+
+/// 自动化错误分类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutomationErrorCode {
+    /// 当前文档中没有匹配元素。
+    NoSuchElement,
+    /// 元素引用不属于当前 live document，或其节点已被替换。
+    StaleElementReference,
+    /// 请求参数不合法。
+    InvalidArgument,
+    /// 操作不在当前支持面内。
+    UnsupportedOperation,
+    /// 页面脚本执行失败。
+    JavascriptError,
+    /// 自动化请求超时。
+    Timeout,
+    /// renderer 内部错误。
+    Internal,
 }
 
 /// 导航参数。

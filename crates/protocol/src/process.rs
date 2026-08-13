@@ -9,6 +9,7 @@
 //!
 //! 子进程通过 `Command::spawn` + stdin/stdout 管道 IPC 创建，**不是** fork 后与父进程 CoW 共享 DOM。
 
+use std::collections::HashSet;
 use std::io;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,7 +18,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::channel::IpcChannel;
-use crate::message::{FetchResponseParams, IpcMessage, IpcMessageKind, NavigateParams};
+use crate::message::{
+    AutomationRequest, AutomationResponse, FetchResponseParams, IpcMessage, IpcMessageKind, NavigateParams,
+};
 use crate::transport::PipeTransport;
 use crate::{ProcessRole, ProtocolError};
 
@@ -26,6 +29,7 @@ pub type RendererId = u64;
 
 /// 心跳超时时间。
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_PENDING_AUTOMATION_REQUESTS: usize = 64;
 
 /// 全局渲染进程 ID 计数器。
 static NEXT_RENDERER_ID: AtomicU64 = AtomicU64::new(1);
@@ -61,6 +65,8 @@ pub struct RendererHandle {
     last_heartbeat: Instant,
     /// 渲染进程正在加载的 URL。
     current_url: Option<String>,
+    /// 等待响应的 automation request id；有界，防止失联 peer 导致无界增长。
+    pending_automation: HashSet<u64>,
 }
 
 /// 构造子进程启动参数（对齐 Chromium `--type=` 约定）。
@@ -140,6 +146,7 @@ impl RendererHandle {
             state: RendererState::Starting,
             last_heartbeat: Instant::now(),
             current_url: None,
+            pending_automation: HashSet::new(),
         })
     }
 
@@ -199,6 +206,79 @@ impl RendererHandle {
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(ProtocolError::Channel("IPC 通道已关闭".into())),
         }
+    }
+
+    /// 向 renderer owner 发送自动化请求并有界等待匹配响应。
+    ///
+    /// 等待期间收到的 fetch、生命周期或绘制消息交给 `handle_other`，调用方必须
+    /// 完成其负责的代理工作。request id 重复、pending 超限、超时或 peer close
+    /// 都返回确定错误，并移除 pending 记录。
+    pub fn request_automation(
+        &mut self,
+        request_id: u64,
+        request: AutomationRequest,
+        timeout: Duration,
+        mut handle_other: impl FnMut(&mut Self, IpcMessage) -> Result<(), ProtocolError>,
+    ) -> Result<AutomationResponse, ProtocolError> {
+        self.register_automation_request(request_id)?;
+        if let Err(error) = self.send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::AutomationRequest(request),
+        }) {
+            self.pending_automation.remove(&request_id);
+            return Err(error);
+        }
+
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                self.pending_automation.remove(&request_id);
+                return Err(ProtocolError::Channel("automation request timeout".into()));
+            }
+            let message = match self.recv_timeout(remaining) {
+                Ok(message) => message,
+                Err(error) => {
+                    self.pending_automation.remove(&request_id);
+                    return Err(error);
+                }
+            };
+            if message.id == request_id
+                && let IpcMessageKind::AutomationResponse(response) = message.kind
+            {
+                self.pending_automation.remove(&request_id);
+                return Ok(response);
+            }
+            if let Err(error) = handle_other(self, message) {
+                self.pending_automation.remove(&request_id);
+                return Err(error);
+            }
+        }
+    }
+
+    fn register_automation_request(&mut self, request_id: u64) -> Result<(), ProtocolError> {
+        if self.pending_automation.contains(&request_id) {
+            return Err(ProtocolError::Channel(format!(
+                "duplicate automation request id: {request_id}"
+            )));
+        }
+        if self.pending_automation.len() >= MAX_PENDING_AUTOMATION_REQUESTS {
+            return Err(ProtocolError::Channel(
+                "automation pending request limit reached".into(),
+            ));
+        }
+        self.pending_automation.insert(request_id);
+        Ok(())
+    }
+
+    fn recv_timeout(&mut self, timeout: Duration) -> Result<IpcMessage, ProtocolError> {
+        let message = self.inbound_rx.recv_timeout(timeout).map_err(|error| match error {
+            std::sync::mpsc::RecvTimeoutError::Timeout => ProtocolError::Channel("automation request timeout".into()),
+            std::sync::mpsc::RecvTimeoutError::Disconnected => ProtocolError::Channel("IPC 通道已关闭".into()),
+        })?;
+        self.touch_activity();
+        self.reply_heartbeat_if_needed(&message)?;
+        Ok(message)
     }
 
     /// 发送导航命令。
@@ -303,6 +383,7 @@ impl RendererHandle {
             ch.close();
         }
         self.send_transport = None;
+        self.pending_automation.clear();
 
         if let Some(handle) = self.reader_thread.take() {
             let _ = handle.join();
@@ -321,6 +402,7 @@ impl RendererHandle {
             let _ = child.wait();
         }
         self.send_transport = None;
+        self.pending_automation.clear();
         self.child = None;
         if let Some(handle) = self.reader_thread.take() {
             let _ = handle.join();
@@ -337,6 +419,7 @@ impl RendererHandle {
             let _ = child.wait();
             self.child = None;
             self.send_transport = None;
+            self.pending_automation.clear();
             if let Some(handle) = self.reader_thread.take() {
                 let _ = handle.join();
             }
@@ -467,6 +550,62 @@ mod tests {
     use crate::message::{FetchParams, StorageOpParams};
     use crate::transport::shared_channel_pair;
     use std::path::PathBuf;
+
+    fn test_renderer_handle() -> (RendererHandle, std::sync::mpsc::Sender<IpcMessage>) {
+        let (inbound_tx, inbound_rx) = std::sync::mpsc::channel();
+        (
+            RendererHandle {
+                id: 99,
+                child: None,
+                send_transport: None,
+                inbound_rx,
+                reader_thread: None,
+                state: RendererState::Running,
+                last_heartbeat: Instant::now(),
+                current_url: None,
+                pending_automation: HashSet::new(),
+            },
+            inbound_tx,
+        )
+    }
+
+    #[test]
+    fn automation_pending_requests_are_bounded_and_unique() {
+        let (mut renderer, _tx) = test_renderer_handle();
+        renderer.register_automation_request(1).expect("first request");
+        assert!(renderer.register_automation_request(1).is_err());
+        for request_id in 2..=MAX_PENDING_AUTOMATION_REQUESTS as u64 {
+            renderer
+                .register_automation_request(request_id)
+                .expect("request below limit");
+        }
+        assert_eq!(renderer.pending_automation.len(), MAX_PENDING_AUTOMATION_REQUESTS);
+        assert!(renderer.register_automation_request(65).is_err());
+    }
+
+    #[test]
+    fn automation_receive_reports_timeout_and_peer_close() {
+        let (mut renderer, tx) = test_renderer_handle();
+        let timeout = renderer
+            .recv_timeout(Duration::from_millis(1))
+            .expect_err("empty live channel must time out");
+        assert!(timeout.to_string().contains("timeout"));
+
+        drop(tx);
+        let closed = renderer
+            .recv_timeout(Duration::from_millis(10))
+            .expect_err("closed channel must fail");
+        assert!(closed.to_string().contains("关闭"));
+    }
+
+    #[test]
+    fn renderer_shutdown_clears_pending_automation() {
+        let (mut renderer, _tx) = test_renderer_handle();
+        renderer.register_automation_request(7).expect("pending request");
+        renderer.shutdown().expect("shutdown");
+        assert!(renderer.pending_automation.is_empty());
+        assert_eq!(renderer.state(), &RendererState::Closed);
+    }
 
     /// 测试 RendererState 比较和转换。
     #[test]
