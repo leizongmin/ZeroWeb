@@ -94,3 +94,10 @@ css/css-fonts/rex-in-monospace.html css/css-fonts/rex-in-monospace-ref.html == 2
 css/css-fonts/rch-in-monospace.html css/css-fonts/rch-in-monospace-ref.html == 2026-08-13 R3386-F rch root zero advance
 css/css-fonts/rcap-in-monospace.html css/css-fonts/rcap-in-monospace-ref.html == 2026-08-13 R3387-F cap and rcap root cap-height
 css/css-fonts/font-weight-normal-variable.html css/css-fonts/font-weight-normal-variable-ref.html == 2026-08-13 R3399-F Noto Sans JP variable default instance
+# ── Canvas 2D 专项（docs/goal/canvas-2d.md，2026-08-13 R34xx 批次）──
+# 124 个 html/canvas testharness 用例经 tests/wpt-runner/scripts/fetch-canvas-subset.sh
+# 导入 wpt-data/html/canvas/（固定 WPT rev 315976933870b34d6ea30e3f6643403edae678ba），
+# zero-wpt-runner testharness-canvas 执行（168 subtest 全绿）。5 目录：
+#   the-canvas-state（23）drawing-rectangles-to-the-canvas（32）transformations（22）
+#   pixel-manipulation（14）line-styles（33）
+# 目录面登记于 tests/wpt-runner/src/testharness.rs CANVAS_TEST_SUBDIRS。

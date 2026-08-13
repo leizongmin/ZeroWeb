@@ -1,6 +1,6 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-13（专项立项——入口 goal `docs/goal/canvas-2d.md` v1.0 创建，基于 zero-canvas 实测基线盘点）。
+**最后更新**: 2026-08-13（M1 完成——WPT canvas 5 目录 168/168 全绿；G3 OffscreenCanvas Rust 真实化；GPU 路径测试就位）。
 
 ---
 
@@ -9,78 +9,95 @@
 **专项定位**：从 zero-web.md Tier 3「Canvas 2D 完整 API（Path2D、OffscreenCanvas、ImageBitmap）」拆出的独立目标，WPT `html/canvas` 真实用例驱动。
 
 **与兄弟 goal 的边界**：
-- rendering-compat（CSS 渲染/字体/布局）— 零工作重叠，canvas 像素输出差异归本专项管理（经显示链路 R3268 到达页面图元后即属 rendering-compat 域，若修复面落在 paint 管线则以 reftest 为准协商归属）
-- zero-web 父目标（JS/DOM 桥主线）— 仅 `js_dom_shim` part04/05.js canvas 段共享，run-rules §9 碰头管理
+- rendering-compat（CSS 渲染/字体/布局）— 零工作重叠
+- zero-web 父目标（JS/DOM 桥主线）— 仅 `js_dom_shim` part04/05.js canvas 段共享，run-rules §9 碰头管理（本轮碰头核对：part05.js 近 7 天无活跃编辑，安全修改）
 
 ## 实测基线（2026-08-13）
 
-### Rust 层（crates/canvas，~1700 行 + context 子模块 ~4500 行）
+### WPT 面（M1 切片 1+2 完成）
 
-| 面 | 状态 | 证据 |
-|----|------|------|
-| CanvasContext | ✅ ~90 方法：路径（begin/move/line/arc/arcTo/ellipse/quadratic/bezier/rect/roundRect）、fill/stroke/clip（含 Path2D 变体）、文本（fill/stroke/measure）、变换（set/getTransform/translate/rotate/scale/reset/transform）、渐变（linear/radial/conic/pattern）、阴影四属性、合成、像素（get/put/createImageData）、drawImage（3 签名）、isPointInPath/isPointInStroke、save/restore、lineDash | `context/context_impl.rs` |
-| Path2D | ✅ 21 方法：moveTo/lineTo/closePath/arc/arcTo/quadratic/bezier/ellipse/rect/roundRect/addPath/from_svg/is_point_in_path/flatten | `path.rs` |
-| OffscreenCanvas | ⚠️ **桩**：`offscreen.rs` 仅 new/get_context/width/height，`transfer_to_image_bitmap` 返 ImageData 非 ImageBitmap（docstring 自述"API 桩"） | `context/offscreen.rs` |
-| 测试 | ✅ ~737 全绿（master 记录 734→737，R3359 后），覆盖率在核心 crate ≥70% 口径内 | `make test` |
-| 依赖 | ✅ 仅 zero-render-foundation / thiserror / bytemuck | `Cargo.toml` |
+| 目录 | 用例数 | 状态 |
+|------|--------|------|
+| the-canvas-state | 23 文件 / 68 subtest | ✅ 全绿 |
+| drawing-rectangles-to-the-canvas | 32 / 32 | ✅ 全绿 |
+| transformations | 22 / 22 | ✅ 全绿 |
+| pixel-manipulation | 14 / 14 | ✅ 全绿 |
+| line-styles | 33 / 33 | ✅ 全绿 |
+| **合计** | **124 文件 / 168 subtest** | ✅ **168/168** |
 
-### JS 接线层（crates/engine/js_dom_shim + js_dom_bridge/canvas.rs）
+- 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
+- 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
+- WPT 用例目录面见 `CANVAS_TEST_SUBDIRS`（testharness.rs）——新目录导入时同步追加
 
-| 面 | 状态 | 证据 |
-|----|------|------|
-| getContext('2d') proxy | ✅ DOM 元素 proxy + standalone `_zwMakeCanvas`（R2795/R3077），per-element 缓存 `_zwCanvasCtx`，host 未注册 lenient 回落 | part01.js:97 / part04.js:140 |
-| host 派发 | ✅ `__zw_canvas_op(handle, op, ...args)` 串参 → engine `CanvasRegistry`，~40+ op | part05.js:787 |
-| 显示链路 | ✅ R3268：ctx id 写入 `data-zw-canvas-ctx`，painter 桥接 canvas 像素为页面图元；wpt-runner reftest 同链路 | part04.js:159 / reftest.rs:597 |
-| toDataURL / toBlob | ✅ R2797 / R3296（PNG 导出 + Blob） | part05.js:813/827 |
-| Path2D | ✅ R3306/R3307：new()/new(other)/new(svgString)，host createPath 走 `Path2D::from_svg` | part05.js:871-908 |
-| ImageBitmap / createImageBitmap | ✅ 基础 R3309/R3311：Blob/ImageBitmap/ImageData 源 + 子矩形裁剪 + 参数校验（0 尺寸 RangeError/InvalidStateError） | part05.js:910-1040 |
-| OffscreenCanvas | ✅ JS 侧 R3312/R3313：transferControlToOffscreen（复用 host handle）+ transferToImageBitmap | part04.js:204 / part05.js:1087 |
+### Rust 层（crates/canvas）
 
-### WPT 面
+- ✅ 743 测试全绿（基线 737 + R34xx +6：OffscreenCanvas 行为 4 + GPU 路径 2）
+- ✅ GPU 路径测试就位（`tests/gpu_path.rs`：canvas → RenderPrimitives → GpuRenderer 软件后端 → 像素回读；无 adapter 环境自动跳过）
+- ✅ OffscreenCanvas 真实化（持有 CanvasContext + transfer 清空语义 + 尺寸 setter）
+- ✅ Path2D 完整（21 方法含 from_svg/is_point_in_path + anticlockwise arc 支持）
 
-| 面 | 状态 | 证据 |
-|----|------|------|
-| 内建用例 | ✅ 40 个 canvas smoke 用例（分类 "canvas"），R3079 断言全部 js_executes_ok | `test_cases_canvas.rs` |
-| 上游真实导入 | ❌ **零**——无 `html/canvas` 真实用例导入，无通过率基线 | — |
-| 像素 oracle | ❌ 无 canvas 像素对比集；Oracle 工具链存在但当前环境无 Chromium（R3344 记录） | — |
+### JS 接线层（js_dom_shim + engine canvas.rs）
 
-## 缺口清单（按建议处理顺序）
+- ✅ CanvasRenderingContext2D proxy 全 API 派发（R2795/R3077 + R34xx setter 校验/arc anticlockwise/无效颜色忽略）
+- ✅ Path2D（R3306/R3307 + R34xx anticlockwise）、ImageBitmap+createImageBitmap（R3309/R3311）、OffscreenCanvas（R3312/R3313）
+- ✅ 显示链路（R3268）
 
-| # | 缺口 | 证据 | 建议 |
-|---|------|------|------|
-| G1 | WPT `html/canvas` 真实用例覆盖为零 | 40 内建 smoke 非上游导入 | M1 切片 1（纯资产，零源码） |
-| G2 | 像素级 canvas 验证缺失 | reftest.rs:597 有链路无对比集 | M1 切片 3（复用 Oracle 工具链） |
-| G3 | OffscreenCanvas Rust 桩 | `offscreen.rs` docstring 自述桩 | M2，轻量可先行 |
-| G4 | createImageBitmap options defer（imageOrientation/premultiplyAlpha） | part05.js:916 注释 | M2 |
-| G5 | ImageBitmap 源类型受限（HTMLImageElement 等） | part05.js:929 仅 Blob/ImageBitmap/ImageData | M2，深结构待点名 |
-| G6 | OffscreenCanvas × Web Worker 未集成 | worker.rs 无 OffscreenCanvas 路径 | **深结构，待用户点名** |
-| G7 | API 语义细节（异常路径/属性反射/边界） | 待 WPT 驱动发现 | M1 切片 2 聚类后逐项修 |
+## R34xx 修复记录（WPT 驱动，全部带 driving 用例）
+
+| 修复 | 驱动用例 |
+|------|----------|
+| save/restore 客户端镜像状态栈（19 属性快照） | the-canvas-state saverestore.* |
+| fillRect/strokeRect 不污染当前路径（Rust fill_rect/stroke_rect） | saverestore.path |
+| createImageData spec 语义 + CanvasRenderingContext2D 构造器 + getImageData trunc | pixel-manipulation create* |
+| shadow region 不提前钳画布（画布外矩形阴影）+ mask 封顶 | fillRect.shadow / strokeRect.shadow |
+| strokeRect 周长路径 + stroke 语义（负/零尺寸、join/cap） | strokeRect.negative/zero.* |
+| CPU blit 应用 clip（clip_applies）+ clip 入 save/restore 栈 | fillRect.clip / saverestore.clip |
+| blit 上界 ceil（亚像素矩形漏行） | strokeRect 系列 |
+| setter 非法值忽略（lineWidth/lineJoin/lineCap/miterLimit） | line.*.invalid |
+| 无效颜色忽略（try_parse_canvas_color） | invalid.strokestyle |
+| line_segment_rect 精确端点（cap 职责分离）+ round cap/join 真圆盘 | cap.butt/round / join.round |
+| miter 真实尖角三角（外角平分 + 补角 θ + spec ratio 判定→bevel 降级） | miter.acute/obtuse/exceeded/within |
+| join 外扩点按角内侧选法线侧 + 共线角不画 | join.miter/bevel / strokeRect.zero.4 |
+| 设备空间线宽（per-segment \|T·n̂\|） | width.scaledefault/transformed |
+| arc anticlockwise 贯穿（枚举字段 + 3 处 flatten 方向 ±\|end-start\|）+ 弧起点连接 | cap.round/square 胶囊 fill |
+| square cap 矩形 = 延伸段垂直扩 | cap.square |
+| 段主体逐像素精确判定（投影+距离，斜线段 bbox 过覆盖） | miter.acute (48,48) |
+
+## 缺口清单
+
+| # | 缺口 | 状态 |
+|---|------|------|
+| G1 | WPT html/canvas 真实用例覆盖为零 | ✅ M1 完成（124 文件导入，168/168） |
+| G2 | 像素级 canvas 验证缺失 | 🔄 GPU 路径测试就位；Chromium oracle 对比待 oracle 环境（R3344 记录本机无 Chromium） |
+| G3 | OffscreenCanvas Rust 桩 | ✅ 真实化（行为测试 4 个） |
+| G4 | createImageBitmap options defer（imageOrientation/premultiplyAlpha） | ⏳ 未开工（M2） |
+| G5 | ImageBitmap 源类型受限（HTMLImageElement 等） | ⏳ 深结构待点名 |
+| G6 | OffscreenCanvas × Web Worker 未集成 | ⏳ 深结构待点名 |
+| G7 | 后续 WPT 目录（compositing/shadows/path-objects/text/fill-and-stroke-styles 等，上游 ~1500 文件） | ⏳ M1 扩展（交替推进） |
 
 ## 待用户决策清单
 
-- 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
-- [ ] OffscreenCanvas × Web Worker 集成（G6）— 深结构（worker 线程上下文 + 消息传递语义），需独立设计 — 等点名 — 2026-08-13
-- [ ] ImageBitmap 全源类型（G5 扩展至 HTMLImageElement/HTMLVideoElement/VideoFrame）— 跨面深改（依赖 img 解码/视频链路）— 等点名 — 2026-08-13
+- [ ] OffscreenCanvas × Web Worker 集成（G6）— 深结构 — 等点名 — 2026-08-13
+- [ ] ImageBitmap 全源类型（G5）— 跨面深改 — 等点名 — 2026-08-13
 
 ## 下一步计划
 
-1. **M1 切片 1（零源码）**：上游 `html/canvas` 真实用例导入 `tests/wpt-runner`，跑 testharness 执行，记录分类通过率基线（当前无基线）
-2. **M1 切片 2**：失败聚类 → 首个轻量修复队列（预期集中在 G7 语义细节）
-3. **M1 切片 3**：canvas 像素对比 harness（复用 reftest canvas 链路 + Oracle 工具链，环境可用后）
-4. **M2**：G3（Rust 桩真实化）可零碰撞先行；G4/G5 随 WPT 驱动
+1. **M1 扩展**：导入下一批 WPT 目录（shadows/compositing/path-objects，与已修光栅面直接相关），失败聚类 → 轻量修复
+2. **M2**：G4 createImageBitmap options（轻量可先行）
+3. **Oracle**：Chromium 环境可用后补像素 oracle A/B（G2）
 
-**碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面；活跃则本流只做 canvas crate 本体 / WPT 资产 / Rust 侧。
+**碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT canvas 基线建立 | ⏳ 未开工（切片 1 为首个动作） |
-| M2 — API 语义补齐 | ⏳ 未开工 |
-| M3 — 像素正确性冲刺 | ⏳ 未开工 |
+| M1 — WPT canvas 基线建立 | ✅ 完成（切片 1 导入 + 切片 2 修复 168/168；扩展导入进行中） |
+| M2 — API 语义补齐 | 🔄 部分（OffscreenCanvas 完成；G4/G5 待办） |
+| M3 — 像素正确性冲刺 | 🔄 GPU 路径测试就位；Chromium oracle 待环境 |
 
 ## 验证基线
 
-- 测试基线：canvas crate ~737 全绿（含 R3354-R3359 溢出/命中测试加固家族）；workspace `make test` 全绿（既有 real-HTTP 并发时序失败为已知跨流限制）
+- 测试基线：canvas 743 全绿；engine canvas 32 全绿；WPT canvas 168/168
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test`
-- 资产化：修复必须 `make import-wpt TEST=html/canvas/...` 常驻断言集并记入 `imported-tests.txt`
+- 资产化：修复必须 `make import-wpt TEST=html/canvas/...` 常驻断言集并记入 `imported-tests.txt`（本轮 124 文件经 fetch 脚本导入 wpt-data 独立 repo 机制；`imported-tests.txt` 账本同步追加）
