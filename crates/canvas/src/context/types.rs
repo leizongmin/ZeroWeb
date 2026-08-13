@@ -563,12 +563,19 @@ pub struct CanvasPattern {
     pub image_data: ImageData,
     /// 重复模式。
     pub repetition: PatternRepetition,
+    /// R34xx：pattern 变换（CanvasPattern.setTransform——恒等生效；非 identity 的
+    /// 采样变换为已知缺口）。
+    pub transform: Transform2D,
 }
 
 impl CanvasPattern {
     /// 创建图案。
     pub fn new(image_data: ImageData, repetition: PatternRepetition) -> Self {
-        Self { image_data, repetition }
+        Self {
+            image_data,
+            repetition,
+            transform: Transform2D::identity(),
+        }
     }
 }
 

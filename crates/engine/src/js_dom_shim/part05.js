@@ -864,6 +864,45 @@
   //（2d.gradient.object.type/return 依赖 prototype）。
   if (!globalThis.CanvasPattern) {
     globalThis.CanvasPattern = function CanvasPattern() {};
+    // R34xx：CanvasPattern.setTransform（spec：接受 DOMMatrix 或 6 参；恒等生效——
+    // 非 identity 的 pattern 采样变换为已知缺口）。
+    CanvasPattern.prototype.setTransform = function (m) {
+      if (!this || this._zwPattern === undefined) {
+        throw new TypeError('Illegal invocation');
+      }
+      var vals = null;
+      if (m && typeof m === 'object') {
+        var hasM = typeof m.m11 === 'number' || typeof m.m12 === 'number' || typeof m.m21 === 'number' ||
+                   typeof m.m22 === 'number' || typeof m.m41 === 'number' || typeof m.m42 === 'number';
+        var hasAB = typeof m.a === 'number' || typeof m.b === 'number' || typeof m.c === 'number' ||
+                    typeof m.d === 'number' || typeof m.e === 'number' || typeof m.f === 'number';
+        if (hasM && hasAB) {
+          // DOMMatrixInit 别名冲突（m11 与 a 同值合法——DOMMatrix 实例；异值 → TypeError）。
+          var pairs = [['a','m11'],['b','m12'],['c','m21'],['d','m22'],['e','m41'],['f','m42']];
+          for (var i = 0; i < pairs.length; i++) {
+            var x = m[pairs[i][0]], y = m[pairs[i][1]];
+            if (x != null && y != null && Number(x) !== Number(y)) {
+              throw new TypeError('DOMMatrixInit: conflicting alias members');
+            }
+          }
+        }
+        if (hasM) {
+          vals = [m.m11 == null ? 1 : m.m11, m.m12 == null ? 0 : m.m12, m.m21 == null ? 0 : m.m21,
+                  m.m22 == null ? 1 : m.m22, m.m41 == null ? 0 : m.m41, m.m42 == null ? 0 : m.m42];
+        } else if (hasAB) {
+          vals = [m.a == null ? 1 : m.a, m.b == null ? 0 : m.b, m.c == null ? 0 : m.c,
+                  m.d == null ? 1 : m.d, m.e == null ? 0 : m.e, m.f == null ? 0 : m.f];
+        }
+      }
+      if (vals === null) {
+        if (arguments.length < 6) throw new TypeError('setTransform: invalid matrix');
+        vals = [arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], arguments[5]];
+      }
+      if (typeof __zw_canvas_op === 'function') {
+        __zw_canvas_op('0', 'setPatternTransform', String(this._zwPattern),
+          String(vals[0]), String(vals[1]), String(vals[2]), String(vals[3]), String(vals[4]), String(vals[5]));
+      }
+    };
   }
   if (!globalThis.CanvasGradient) {
     globalThis.CanvasGradient = function CanvasGradient() {};
@@ -1466,7 +1505,11 @@
       }
       if (!wire) return null;
       var pid = String(__zw_canvas_op(h, 'createPattern', wire, String(repetition || '')));
-      return { _zwPattern: pid };
+      // R34xx：canvas 源 pattern 同挂 CanvasPattern.prototype（setTransform 可见）。
+      if (!globalThis.CanvasPattern) globalThis.CanvasPattern = function CanvasPattern() {};
+      var cpat = { _zwPattern: pid };
+      Object.setPrototypeOf(cpat, CanvasPattern.prototype);
+      return cpat;
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
