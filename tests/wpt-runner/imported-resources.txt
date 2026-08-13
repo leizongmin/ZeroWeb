@@ -16,3 +16,6 @@ fonts/noto/NotoNaskhArabic-regular.woff2
 css/css-values/resources/ExTest.woff
 css/css-fonts/support/fonts/NotoSansJP.subset.ttf
 css/css-fonts/support/fonts/RobotoExtremo-VF-wght-400-500.subset.ttf
+fonts/Lato-Medium-Liga.ttf
+fonts/sileot-webfont.woff
+fonts/Lato-Medium.ttf

@@ -114,6 +114,8 @@
 >
 > **🔬 候选裁决（R3412-F synthetic small-caps expansion·2026-08-14）**：`small-caps-letter-spacing-001` 使用无 `smcp` 的 Ahem，self-source `0.13%`、Chromium Oracle `1.85%`，表面像 spacing 缺口，实际要求 synthetic small-caps 把 `ß` 展开为 `SS`。ZeroWeb 当前只注入 OpenType `smcp`，缺 feature时没有 case expansion。正确修复会改变字符数、advance、断行和 source range，必须在线断前建立一对多映射并让 layout/shaping/paint共同消费；paint侧补 spacing或 Ahem特判都会制造半正确实现。故本轮不提交源码，留待 inline text transform ownership协同切片。经验见 [`synthetic-small-caps-needs-pre-line-break-expansion.md`](../learnings/bugs/synthetic-small-caps-needs-pre-line-break-expansion.md)。
 >
+> **▶ WPT 资产进展（R3413-F imported font resource closure·2026-08-14）**：新增 `make audit-imported-font-resources`，逐项扫描 `imported-tests.txt` 的 test/ref 直接 `url()` 字体引用并要求存在于 `imported-resources.txt`。首轮立即发现 3 个 fresh-checkout 缺口：`font-feature-resolution-*` 的 `fonts/Lato-Medium-Liga.ttf`、plaintext bidi 11 案的 `fonts/sileot-webfont.woff`、`font-synthesis-style` 的 `fonts/Lato-Medium.ttf`；本机 full corpus此前掩盖了账本缺失。三项已通过标准 importer登记，闭包门禁现 PASS。该切片不改变当前机器像素，只保证常驻 WPT 在 fresh sync 后仍消费相同固定字体。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
