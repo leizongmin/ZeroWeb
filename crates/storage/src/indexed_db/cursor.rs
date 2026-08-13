@@ -102,7 +102,10 @@ impl IdbCursorWithValue {
 
     /// 继续到下一个位置。返回 false 表示已到达末尾。
     pub fn continue_next(&mut self) -> bool {
-        self.current += 1;
+        // R3387：saturating_add 防 `current + 1` 溢出——advance 经 saturating 可置 current=usize::MAX，
+        // 此处裸 `+= 1` 溢出 panic（debug，overflow-checks）/ 回绕 0（release，然后 0 < len 误返 true
+        // 「重启」游标）。同 R3361 修复的 advance/continue_to 溢出家族，本方法是当时漏修的孪生。
+        self.current = self.current.saturating_add(1);
         self.current < self.positions.len()
     }
 
@@ -401,6 +404,25 @@ mod tests {
     fn test_value_cursor_continue_next_past_end() {
         let mut cursor = make_value_cursor(vec![10]);
         assert!(!cursor.continue_next());
+        assert!(cursor.is_finished());
+    }
+
+    // R3387：continue_next 经 saturating advance 置 current=usize::MAX 后不再 +1 溢出
+    // panic（debug）/ 回绕 0 误判重启（release）。R3361 修了 advance/continue_to 的
+    // saturating_add，但孪生方法 continue_next 用裸 `current += 1` 漏修。
+    #[test]
+    fn test_value_cursor_continue_next_after_saturating_advance_no_overflow_r3387() {
+        let mut cursor = make_value_cursor(vec![10, 20, 30]);
+        cursor.current = 10; // current + count 溢出窗口
+        // saturating advance 置 current=usize::MAX（> positions.len → 完成）。
+        assert!(!cursor.advance(usize::MAX - 5));
+        assert_eq!(cursor.current, usize::MAX);
+        // 旧实现 `self.current += 1` 在 usize::MAX + 1 溢出 panic（debug）/ 回绕 0（release，
+        // 然后 0 < positions.len()=3 → 误返 true「重启」游标）。修复后 saturating 安全返 false。
+        assert!(
+            !cursor.continue_next(),
+            "current 已饱和到 usize::MAX，continue_next 应安全判完成（返 false），不 panic/回绕"
+        );
         assert!(cursor.is_finished());
     }
 
