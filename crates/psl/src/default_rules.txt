@@ -23,29 +23,134 @@ io
 dev
 app
 co
+me
+tv
+cc
+xyz
+online
+site
+tech
+store
+cloud
+page
+ai
+gg
+to
+sh
 
-// === 典型 ccTLD 二级公共后缀（客观 DNS 结构示例，非完整列表）===
+// === ccTLD 二级公共后缀（客观 DNS 结构示例，非完整列表）===
+// 英国（.uk 家族）
 co.uk
 ac.uk
 gov.uk
 org.uk
+me.uk
+ltd.uk
+plc.uk
+net.uk
+sch.uk
+nhs.uk
+police.uk
+mod.uk
+// 澳大利亚（.au 家族）
 com.au
 net.au
 org.au
+edu.au
+gov.au
+asn.au
+id.au
+// 日本（.jp 家族）
 co.jp
+ne.jp
+or.jp
+ac.jp
+go.jp
+ed.jp
+// 韩国
 co.kr
+ne.kr
+or.kr
+go.kr
+ac.kr
+pe.kr
+// 中国大陆 / 港 / 台
 com.cn
-com.br
-co.in
+net.cn
+org.cn
+gov.cn
+edu.cn
+ac.cn
+com.hk
+net.hk
+org.hk
+gov.hk
+edu.hk
+com.tw
+net.tw
+org.tw
+gov.tw
+edu.tw
+// 新西兰 / 印度 / 南非
 co.nz
+net.nz
+org.nz
+govt.nz
+ac.nz
+co.in
+net.in
+org.in
+gen.in
+firm.in
+ind.in
+co.za
+net.za
+org.za
+web.za
+// 巴西 / 阿根廷 / 墨西哥
+com.br
+net.br
+org.br
+gov.br
+edu.br
+com.ar
+gov.ar
+com.mx
+org.mx
+// 俄罗斯 / 法国 / 德国 / 荷兰 / 波兰 / 瑞典 / 加拿大：
+// 这些 ccTLD 以直接注册为主（example.ru / example.fr / example.de / example.nl /
+// example.pl / example.se / example.ca），无广泛使用的二级公共后缀，故不列。
+// .it（意大利）二级公共后缀
+co.it
+gov.it
+edu.it
+// .at（奥地利）二级公共后缀
+co.at
+or.at
+ac.at
+gv.at
 
 // === 文档化平台公共后缀（通配规则）===
-// GitHub Pages：每个用户/项目子域独立注册，须隔离。
+// GitHub Pages / 静态托管：每个用户/项目子域独立注册，须隔离。
 *.github.io
 *.githubusercontent.com
-// Cloudflare / Glitch 等平台公共后缀。
+// Cloudflare / Glitch / Render / Vercel / Netlify 等平台公共后缀。
 *.pages.dev
 *.glitch.me
+*.onrender.com
+*.vercel.app
+*.netlify.app
+*.herokuapp.com
+*.fly.dev
+// Amazon S3 / CloudFront（桶名 / 分发域独立）
+*.s3.amazonaws.com
+*.s3-website-us-east-1.amazonaws.com
+// Microsoft Azure 静态托管
+*.azurewebsites.net
+*.blob.core.windows.net
+// Google Cloud / Firebase
+*.web.app
+*.firebaseapp.com
 
 // === 例外规则语义示例（PSL 例外规则）===
 // *.ck 为通配公共后缀，但 www.ck 自身可注册——例外规则把公共后缀回退一标签。

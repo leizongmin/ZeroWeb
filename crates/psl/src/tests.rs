@@ -25,6 +25,46 @@ fn multi_label_suffix_co_uk() {
     assert_eq!(dflt().registrable_domain("deep.sub.example.co.uk"), "example.co.uk");
 }
 
+/// R3382：扩展后的默认规则集覆盖更多 ccTLD 二级公共后缀。
+/// 锁定各区域代表性后缀的 eTLD+1 折叠行为。
+#[test]
+fn expanded_ruleset_covers_regional_cctld_suffixes() {
+    let psl = dflt();
+    // 日本 .jp 家族：ne.jp / or.jp / co.jp / ac.jp / go.jp。
+    assert_eq!(psl.registrable_domain("shop.ne.jp"), "shop.ne.jp");
+    assert_eq!(psl.registrable_domain("corp.or.jp"), "corp.or.jp");
+    assert_eq!(psl.registrable_domain("sub.shop.co.jp"), "shop.co.jp");
+    assert_eq!(psl.registrable_domain("u-tokyo.ac.jp"), "u-tokyo.ac.jp");
+    // 台湾 .tw 家族。
+    assert_eq!(psl.registrable_domain("site.com.tw"), "site.com.tw");
+    // 巴西 .br 家族。
+    assert_eq!(psl.registrable_domain("loja.com.br"), "loja.com.br");
+    // 南非 .za 家族。
+    assert_eq!(psl.registrable_domain("firm.co.za"), "firm.co.za");
+    // 奥地利 .at 家族。
+    assert_eq!(psl.registrable_domain("club.or.at"), "club.or.at");
+    // 意大利 .it 家族。
+    assert_eq!(psl.registrable_domain("ente.gov.it"), "ente.gov.it");
+}
+
+/// R3382：扩展后的平台通配规则——各托管平台子域独立隔离。
+#[test]
+fn expanded_ruleset_covers_platform_wildcard_suffixes() {
+    let psl = dflt();
+    // Vercel / Netlify / Render 等静态托管。
+    assert_eq!(psl.registrable_domain("myapp.vercel.app"), "myapp.vercel.app");
+    assert_eq!(psl.registrable_domain("site.netlify.app"), "site.netlify.app");
+    assert_eq!(psl.registrable_domain("svc.onrender.com"), "svc.onrender.com");
+    // 不同子域 → 不同注册域（隔离）。
+    assert_ne!(
+        psl.registrable_domain("a.vercel.app"),
+        psl.registrable_domain("b.vercel.app")
+    );
+    // Azure / Firebase。
+    assert_eq!(psl.registrable_domain("app.azurewebsites.net"), "app.azurewebsites.net");
+    assert_eq!(psl.registrable_domain("proj.web.app"), "proj.web.app");
+}
+
 #[test]
 fn suffix_itself_has_no_registrable_domain_beyond_itself() {
     // 主机 == 公共后缀 → 返回自身（无可注册子域）。
