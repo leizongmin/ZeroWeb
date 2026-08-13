@@ -102,6 +102,8 @@
 >
 > **🧪 净负实验裁决（R3406-F Inter variation descriptor fixture·2026-08-13）**：`font-variation-settings-descriptor-01/02` 共用的 `Inter.var.subset.ttf` 缺失；试作补齐字体并 fresh 重抓两张 Chrome Oracle。Oracle 百分比 off/on 均四舍五入为 `0.78/0.77%`，但直接比较 ZeroWeb PNG 与 fresh Oracle 的精确像素后，01 为 `2157→2177`（+20 px）、02 为 `2137→2158`（+21 px），合计净退 41 px。原因是字体改变了默认 face，而 ZeroWeb 目前只有 `@supports` 声称支持 `font-variation-settings`，未把 `slnt/wght` axis 贯通 computed/shaping；self-source `0.00%` 是 test/ref 同时忽略 axis 的假绿。故 Inter 资源与账本完整回退，fresh Oracle 本地保留，待 variation-axis contract 闭合后再导入。
 >
+> **🧪 净负实验裁决（R3407-F Deseret case-mapping fixture·2026-08-13）**：从 css-text 固定字体缺口中选取不依赖 vertical/inline boundary 的 Deseret `capitalize/uppercase/lowercase` 三案；Rust Unicode scalar case mapping 已使资源完整 self-source 三案均 strict `0.00%`。补齐 `NotoSansDeseret-Regular.ttf` 并 fresh 重抓 Chrome 后，以同一 fresh Oracle 做资源 off/on A/B：baseline `6.99/3.87/3.47%`（总 `14.33pp`），treatment `9.75/5.08/4.45%`（总 `19.28pp`），3/3 回归、净退 `4.95pp`。说明 case mapping 正确，但固定字体暴露 layout/paint glyph geometry 与 Chrome 的差异；资源与账本完整回退，fresh Oracle 本地保留。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
