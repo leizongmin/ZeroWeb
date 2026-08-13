@@ -751,11 +751,9 @@ fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
     // t=0.255 用 0.25 组最后黄——Skia 相邻对语义）。
     let mut groups: Vec<(f32, Color, Color)> = Vec::new(); // (offset, first, last)
     for s in &sorted {
-        if let Some(g) = groups.last_mut() {
-            if (g.0 - s.offset).abs() < f32::EPSILON {
-                g.2 = s.color;
-                continue;
-            }
+        if let Some(g) = groups.last_mut().filter(|g| (g.0 - s.offset).abs() < f32::EPSILON) {
+            g.2 = s.color;
+            continue;
         }
         groups.push((s.offset, s.color, s.color));
     }
