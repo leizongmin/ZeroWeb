@@ -2674,4 +2674,66 @@ fn test_create_event_aliases_and_not_supported_r14() {
     );
 }
 
+#[test]
+fn test_create_document_type_r15() {
+    // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
+    // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub
+    //（79 subtest "Cannot read null.name"）。R15 返 DocumentType：name=nodeName=qualifiedName、publicId、systemId、
+    // nodeType 10、ownerDocument（主 document + detached doc 两路径）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 主 document.implementation.createDocumentType：name/nodeName/publicId/systemId/nodeType/ownerDocument。
+    sandbox
+        .execute(
+            "globalThis.__dt = document.implementation.createDocumentType('html', '', 'about:legacy-compat');\
+             globalThis.__name = __dt.name;\
+             globalThis.__nn = __dt.nodeName;\
+             globalThis.__pid = __dt.publicId;\
+             globalThis.__sid = __dt.systemId;\
+             globalThis.__nt = __dt.nodeType;\
+             globalThis.__od = __dt.ownerDocument === document;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__name)").unwrap().value, "html", "name=qualifiedName");
+    assert_eq!(sandbox.execute("String(globalThis.__nn)").unwrap().value, "html", "nodeName=qualifiedName");
+    assert_eq!(sandbox.execute("String(globalThis.__pid)").unwrap().value, "", "publicId");
+    assert_eq!(sandbox.execute("String(globalThis.__sid)").unwrap().value, "about:legacy-compat", "systemId");
+    assert_eq!(sandbox.execute("String(globalThis.__nt)").unwrap().value, "10", "nodeType=10 (DOCUMENT_TYPE_NODE)");
+    assert_eq!(sandbox.execute("String(globalThis.__od)").unwrap().value, "true", "ownerDocument === document");
+
+    // 三空参：name='' 仍合法（spec createDocumentType 不校验）。
+    sandbox
+        .execute(
+            "globalThis.__e = document.implementation.createDocumentType('', '', '');\
+             globalThis.__eName = __e.name;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__eName)").unwrap().value, "", "空 qualifiedName name=''");
+
+    // detached doc（createHTMLDocument）的 implementation.createDocumentType：ownerDocument 指向 detached doc。
+    sandbox
+        .execute(
+            "globalThis.__dd = document.implementation.createHTMLDocument('t');\
+             globalThis.__ddDt = __dd.implementation.createDocumentType('x', 'p', 's');\
+             globalThis.__ddOd = __ddDt.ownerDocument === __dd;\
+             globalThis.__ddName = __ddDt.name;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__ddOd)").unwrap().value, "true", "detached doc doctype.ownerDocument === detached doc");
+    assert_eq!(sandbox.execute("String(globalThis.__ddName)").unwrap().value, "x", "detached doc doctype.name");
+}
+
 

@@ -870,10 +870,10 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             "ok".into()
         }
         "setWordSpacing" => {
-            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                if zero_canvas::parse_length_px(arg(0), ctx.font().size).is_some() {
-                    ctx.set_word_spacing(arg(0));
-                }
+            if let Some(ctx) = reg.contexts.get_mut(&hid())
+                && zero_canvas::parse_length_px(arg(0), ctx.font().size).is_some()
+            {
+                ctx.set_word_spacing(arg(0));
             }
             "ok".into()
         }

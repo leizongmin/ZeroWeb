@@ -1080,7 +1080,23 @@
       hasFeature: function() { return true; }, // spec：deprecated，恒返 true
       createDocument: function() { return _makeDetachedDocument(''); },
       createHTMLDocument: function(title) { return _makeDetachedDocument(title); },
-      createDocumentType: function() { return null; },
+      // `createDocumentType(qualifiedName, publicId, systemId)`（spec `dom-domimplementation-createdocumenttype`，
+      // R15）——建 DocumentType 节点（nodeType 10）。spec：不校验（publicId/systemId 任意串；qualifiedName 校验
+      // 在 createDocument 而非此处）。返 DocumentType：name=nodeName=qualifiedName、publicId、systemId、
+      // nodeType 10、ownerDocument。ownerDocument 经 `this` 上下文取所属 document（主 document vs detached doc）。
+      createDocumentType: function(qualifiedName, publicId, systemId) {
+        var owner = globalThis.document;
+        return {
+          nodeType: 10,
+          name: String(qualifiedName == null ? '' : qualifiedName),
+          nodeName: String(qualifiedName == null ? '' : qualifiedName),
+          publicId: String(publicId == null ? '' : publicId),
+          systemId: String(systemId == null ? '' : systemId),
+          ownerDocument: owner,
+          nodeValue: null,
+          textContent: null,
+        };
+      },
     },
     documentElement: _wrapSelector('html'),
     // `document.scrollingElement`（HTML §3.1.1）——返回文档视口滚动元素。standards 模式

@@ -1530,7 +1530,24 @@
       // DOMPurify / 模板引擎经 createElement 建替换节点后 insertBefore/appendChild 入树，须支持 parentNode/
       // sibling/childNodes/setAttribute/序列化全套语义。HTML 文档 tagName 大写、localName 小写。
       createElement: function (t) { return _zwMEl({ tag: String(t).toLowerCase() }, null); },
-      createTextNode: function (t) { return _zwMText(String(t), null); }
+      createTextNode: function (t) { return _zwMText(String(t), null); },
+      // R15：detached doc 的 implementation（用例 doTest(doc,...) 经 doc.implementation.createDocumentType）。
+      // ownerDocument 指向此 detached doc（spec：doctype.ownerDocument === 创建它的 document）。
+      implementation: {
+        hasFeature: function () { return true; },
+        createDocumentType: function (qualifiedName, publicId, systemId) {
+          return {
+            nodeType: 10,
+            name: String(qualifiedName == null ? '' : qualifiedName),
+            nodeName: String(qualifiedName == null ? '' : qualifiedName),
+            publicId: String(publicId == null ? '' : publicId),
+            systemId: String(systemId == null ? '' : systemId),
+            ownerDocument: doc,
+            nodeValue: null,
+            textContent: null,
+          };
+        },
+      },
     };
     body.ownerDocument = doc;
     return doc;

@@ -196,7 +196,7 @@ pub fn parse_length_px(s: &str, font_size: f32) -> Option<f32> {
         .or_else(|| lower.strip_suffix("mm").map(|st| (st, 96.0 / 25.4)))
         .or_else(|| lower.strip_suffix("in").map(|st| (st, 96.0)))
         .or_else(|| lower.strip_suffix('%').map(|st| (st, font_size / 100.0)))
-        .or_else(|| Some((lower.as_str(), 1.0)))?;
+        .or(Some((lower.as_str(), 1.0)))?;
     let n = num_str.trim().parse::<f32>().ok()?;
     if !n.is_finite() {
         return None;

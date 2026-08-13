@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R14 — createEvent alias 全覆盖（注册 5 缺失 event 子类 + map 扩全集含复数别名）+ 未知 type 抛 NotSupportedError（spec 合规，原 lenient 回落 Event 改抛）；基线 polyfill 46.60%→50.33% / native 46.33%→50.07%（双路径对等差 0.26pp，**dom/nodes 突破 50%**，createEvent 用例 96P/183F→264P/15F +168）
+**本轮**: R15 — implementation.createDocumentType 返 DocumentType（part06 主 + part03 detached doc，spec 不校验，name/nodeName/publicId/systemId/nodeType 10/ownerDocument/nodeValue）+ detached doc 加 implementation + 顺带修并行 canvas 流 2 个 clippy 红灯（main 既有）；基线 polyfill 50.33%→52.11% / native 50.07%→51.84%（双路径对等差 0.27pp，createDocumentType 用例 1P/81F→80P/2F +79）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **polyfill 50.33% / native 50.07% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R14 createEvent 后，**突破 50%**） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R14 createEvent alias 全覆盖 + 未知 type 抛 NotSupportedError（createEvent 96P/183F→264P/15F）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估）/createDocumentType(81)/classlist 剩 60F/createEvent 剩 15F |
+| WPT dom 上游基线 | ✅ **polyfill 52.11% / native 51.84% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R15 createDocumentType 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R15 implementation.createDocumentType 返 DocumentType + detached doc implementation（createDocumentType 1P/81F→80P/2F）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估）/classlist 剩 60F/createEvent 剩 15F/createElementNS 大小写 |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -75,7 +75,8 @@
 - R12 评估：**iframe.contentDocument 是深结构跨面改**（createElementNS XML/XHTML 路径需 iframe src 真实解析 + 独立 Document + 独立 window（defaultView.DOMException）+ 跨文档节点归属 ownerDocument===doc，完整 iframe 子文档 = html-compat 域），记未解决问题待评估，转零碰撞面
 - R13 已做：① classList token 有序去重（part03 `_classListProxy` cur() 加 Object.create(null) seen 表，spec DOMTokenList 有序去重 + ASCII 空白分隔，`"a a a"`→["a"]）② contains() 空串/含 ASCII 空白 token → false 不抛（spec `dom-domtokenlist-contains`，区别于 add/remove/toggle/replace 的 check 抛；原 contains 误用 check 抛）③ classlist 单测。基线 polyfill 41.71%→46.60%、native 41.45%→46.33%（双路径对等差 0.27pp）；classlist 用例 1140P/280F→1360P/60F（+220，迄今最大单切片提升）。engine v8 2084 / quickjs 1408 单测，双矩阵 clippy 干净
 - R14 已做：① 注册 5 缺失 event 子类构造器（part05 `_defineEventSubclass`：BeforeUnloadEvent/DeviceMotionEvent/DeviceOrientationEvent/TextEvent/TouchEvent）② createEvent map 全覆盖（part06：扩全集 alias 含复数 Events/HTMLEvents/SVGEvents→Event、MouseEvents→MouseEvent、UIEvents→UIEvent、custom→CustomEvent + 缺失子类）③ 未知 type 抛 NotSupportedError（spec `dom-document-createevent`，原 lenient 回落 Event 改 spec 合规抛，globalThis.DOMException 保 identity）④ 更新 test_event_subclasses2_r2812（UnknownEvent 改期望抛）+ 新增 createEvent alias/NotSupported 单测。基线 polyfill 46.60%→50.33%、native 46.33%→50.07%（双路径对等差 0.26pp，**dom/nodes 突破 50%**）；createEvent 用例 96P/183F→264P/15F（+168）。engine v8 2085 / quickjs 1408 单测，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R14 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **createDocumentType**（81，DOMImplementation）③ **classlist 剩 60F**（add/toggle/replace 边缘 + toString/value + forEach）④ createEvent 剩 15F（TouchEvent feature-detect + event target 默认 null gap）⑤ createElementNS 保留原 tag 大小写（case.js prefix abc/Abc 态）⑥ canvas proxy instanceof（canvas 流路径）⑦ polyfill appendChild 闭环（待 M1 L2）⑧ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
+- R15 已做：① implementation.createDocumentType 返 DocumentType（part06 主 document + part03 detached doc，spec `dom-domimplementation-createdocumenttype` 不校验，返 name/nodeName=qualifiedName、publicId、systemId、nodeType 10、ownerDocument、nodeValue/textContent=null；原 return null stub）② detached doc（_makeDetachedDocument）加 implementation 块（hasFeature + createDocumentType，ownerDocument 指 detached doc；用例 doTest(doc,...) 经 doc.implementation.createDocumentType）③ **顺带修并行 canvas 流 2 个 clippy 红灯**（main 既有：crates/canvas types.rs:199 `.or_else(||Some)`→`.or(Some)` + js_dom_bridge/canvas.rs:873 setWordSpacing 嵌套 if 合并，机械修正无逻辑变化）④ createDocumentType 单测。基线 polyfill 50.33%→52.11%、native 50.07%→51.84%（双路径对等差 0.27pp）；createDocumentType 用例 1P/81F→80P/2F（+79）。engine v8 2086 / quickjs 1408 单测，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R15 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **classlist 剩 60F**（add/toggle/replace 边缘 + toString/value + forEach）③ createEvent 剩 15F（TouchEvent feature-detect + event target 默认 null gap）④ createElementNS 保留原 tag 大小写（case.js prefix abc/Abc 态）⑤ canvas proxy instanceof（canvas 流路径）⑥ polyfill appendChild 闭环（待 M1 L2）⑦ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -139,6 +140,7 @@
 | 2026-08-14 | R12 | element.prefix getter（part04：限定名冒号前/无冒号→null）+ getElementsByTagNameNS（part04 元素级 + part06 document 级，忽略 ns 按 localName 查）+ 单测；engine v8 2083 / quickjs 1408 全绿，双矩阵 clippy 干净。iframe.contentDocument 评估为深结构跨面改（html-compat 域），记待评估 | **基线提升**：polyfill 40.89%→41.71%、native 40.63%→41.45%（双路径对等差 0.26pp）；polyfill 净 +37 pass。完整 JSON 快照入 evidence |
 | 2026-08-14 | R13 | classList token 有序去重（part03 cur() seen 表，`"a a a"`→["a"]）+ contains 空串/含 ASCII 空白→false 不抛（区别于 add/remove/toggle/replace 抛）+ 单测；engine v8 2084 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线大幅提升**：polyfill 41.71%→46.60%、native 41.45%→46.33%（双路径对等差 0.27pp）；classlist 用例 1140P/280F→1360P/60F（+220，迄今最大单切片提升）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R14 | createEvent alias 全覆盖（注册 5 缺失 event 子类 BeforeUnloadEvent/DeviceMotionEvent/DeviceOrientationEvent/TextEvent/TouchEvent + map 扩全集含复数别名）+ 未知 type 抛 NotSupportedError（spec 合规，原 lenient 改抛）+ 更新 event_subclasses2 测试 + 新增 createEvent 单测；engine v8 2085 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升 + 突破 50%**：polyfill 46.60%→50.33%、native 46.33%→50.07%（双路径对等差 0.26pp）；createEvent 用例 96P/183F→264P/15F（+168）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R15 | implementation.createDocumentType 返 DocumentType（part06 主 + part03 detached doc，spec 不校验）+ detached doc 加 implementation + 顺带修并行 canvas 流 2 个 clippy 红灯（main 既有，机械修正）+ 单测；engine v8 2086 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 50.33%→52.11%、native 50.07%→51.84%（双路径对等差 0.27pp）；createDocumentType 用例 1P/81F→80P/2F（+79）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -148,15 +150,14 @@
 
 ## 下一步计划
 
-1. **R14（本轮，已完成）**：createEvent alias 全覆盖 + 未知 type 抛 NotSupportedError → land（polyfill 50.33% / native 50.07%，双路径对等差 0.26pp，**dom/nodes 突破 50%**，createEvent +168 pass）
-2. **下轮候选（按剩余 ROI，R14 后重排）**：
-   - **(a) createDocumentType**（81，DOMImplementation；聚焦）。
-   - **(b) classlist 剩 60F**（add/toggle/replace 边缘 + toString/value + forEach 迭代）。
-   - **(c) createEvent 剩 15F + event target 默认 null gap**。
-   - **(d) createElementNS 保留原 tag 大小写**（解 case.js prefix abc/Abc 态；深改 host tag 存储）。
-   - **(e) iframe.contentDocument**（深结构 html-compat 域，待评估/转 html-compat 流）。
-   - **(f) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
-   - **(g) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
+1. **R15（本轮，已完成）**：implementation.createDocumentType + detached doc implementation + 修 canvas 流 2 clippy 红灯 → land（polyfill 52.11% / native 51.84%，双路径对等差 0.27pp，createDocumentType +79 pass）
+2. **下轮候选（按剩余 ROI，R15 后重排）**：
+   - **(a) classlist 剩 60F**（add/toggle/replace 边缘 + toString/value + forEach 迭代）。
+   - **(b) createEvent 剩 15F + event target 默认 null gap**。
+   - **(c) createElementNS 保留原 tag 大小写**（解 case.js prefix abc/Abc 态；深改 host tag 存储）。
+   - **(d) iframe.contentDocument**（深结构 html-compat 域，待评估/转 html-compat 流）。
+   - **(e) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
+   - **(f) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
 3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
 ---
@@ -210,3 +211,4 @@
 - R12：M4 element.prefix getter + getElementsByTagNameNS（polyfill +37 pass）→ archive/m12-slice-prefix-getelementsbytagnamens.md
 - R13：M4 classList token 去重 + contains 空白不抛（classlist +220 pass，迄今最大单切片）→ archive/m13-slice-classlist-dedupe-contains.md
 - R14：M4 createEvent alias 全覆盖 + 未知 type 抛 NotSupportedError（createEvent +168 pass，dom/nodes 突破 50%）→ archive/m14-slice-createevent-aliases-notsupported.md
+- R15：M4 implementation.createDocumentType + detached doc implementation（createDocumentType +79 pass）+ 修 canvas 流 2 clippy 红灯 → archive/m15-slice-createdocumenttype.md
