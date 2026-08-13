@@ -1,14 +1,16 @@
-# JS/DOM 原生化 — V8 原生绑定生产路径收口目标
+# JS/DOM 原生化 — 双引擎（V8 + QuickJS）原生绑定生产路径收口目标
 
-**版本**: v1.0
+**版本**: v1.1（v1.0→v1.1：扩展为 V8 + QuickJS 双 feature 等价，2026-08-13 用户决策）
 **日期**: 2026-08-13
 **状态**: Active
 **执行模式**: 长期无人值守持续执行（`rally run docs/goal/js-dom.md`）
 **父目标**: `docs/goal/zero-web.md`（ZeroWeb 总体目标，本目标对应其 Done Criteria §3「JS/DOM」+ P1 主线）
-**关联 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md`（P1b V8 原生绑定，方案 C 混合 DOM-Node，S0–S5 已 land）
+**关联 RFC**: `docs/specs/p1b-v8-native-bindings-rfc.md`（P1b 原生绑定，方案 C 混合 DOM-Node；V8 S0–S5 已 land；TBD-5「原生绑定仅 V8」需更新为双引擎）
 
 > **说明**
-> 本文档是 ZeroWeb「JS/DOM 原生化」专项目标执行契约。目标是把页面 JS↔DOM 的桥接从 polyfill 字符串桥（`js_dom_shim` + `__zw_*` 字符串编解码）彻底迁移到 V8 原生绑定（`dom_bindings/`），使 native 路径成为唯一生产路径（默认开启并移除 kill-switch），并以「真实 SPA/Web Components 端到端跑通 + 上游 WPT dom 用例通过率基线」为验收锚点。本文定义 Mission、边界、Done Criteria、执行协议和文档治理规则，供后续每个 `rally run` session 作为稳定输入。**不要在每轮执行里重写本入口文档**；日常进展、evidence、active milestone 更新写入 `master.md`。
+> 本文档是 ZeroWeb「JS/DOM 原生化」专项目标执行契约。目标是把页面 JS↔DOM 的桥接从 polyfill 字符串桥（`js_dom_shim` + `__zw_*` 字符串编解码）彻底迁移到**原生绑定**（`dom_bindings/`），使 **V8 与 QuickJS 两个页面引擎的 native 路径都成为唯一生产路径**（双 feature 默认开启并移除 kill-switch），让 ZeroWeb 能真实跑通现代 SPA（React/Vue/Svelte 之一）与 Web Components（customElements/lit 之一），并通过上游 WPT `dom`/`jsdom` 真实用例建立通过率基线。本文定义 Mission、边界、Done Criteria、执行协议和文档治理规则，供后续每个 `rally run` session 作为稳定输入。**不要在每轮执行里重写本入口文档**；日常进展、evidence、active milestone 更新写入 `master.md`。
+>
+> **▶ v1.1 双引擎扩展（2026-08-13 用户决策）**：v1.0 误以 QuickJS 为「仅扩展沙箱非页面引擎」（沿用 RFC TBD-5 措辞）。代码核实推翻此假设——QuickJS 是 feature-gated 的**页面引擎之一**（`webview.rs:1215 #[cfg(feature="quickjs")]` 与 V8 对称构造页面沙箱；`apps/browser/src/tab_js_worker.rs:276` 同款；Makefile CI 矩阵 `make test`/clippy 都跑 `--no-default-features --features quickjs`）。其页面 DOM 路径**仅走 polyfill 字符串桥**（`QuickJSSandbox::register_callback` 注册 `__zw_*`，与 V8 共用同一 `js_dom_shim`），而原生绑定 escape-hatch `Sandbox::install_native_bindings` 默认返 `false`、QuickJS **不实现**——故若不覆盖 QuickJS，其页面引擎路径将**永远停在 polyfill 字符串桥**（正是本目标要消除的状态）。用户裁决：**方案 A 全 feature 等价**——V8 与 QuickJS 的 native 路径都达到 production-ready（QuickJS 需从零实现 rquickjs 原生绑定，镜像 V8 S0–S5 切片）。新增 DC-7 + M6。RFC TBD-5 由「仅 V8」更新为「双引擎」。
 >
 > **▶ 拆分动机（2026-08-13 用户决策）**：父目标 P1「DOM/JS Bridge 原生化」已推进到 P1a 实质完成 + P1b S0–S5 native bindings 已 land，但 native 路径**默认仍关闭**（`ZW_NATIVE_DOM` 默认关，生产仍走 polyfill 字符串桥），SPA/Web Components 不可用是父目标 Done Criteria §1.3/§3 剩余的主要阻塞。用户要求把这条主线拆成独立专项收敛到 production-ready：**P1a follow-up + P1b 全量原生化（L2/S6/S7 + default-on + 删 kill-switch）**。理由：① JS/DOM 桥是父目标唯一一条「能力未达成而非环境受限」的阻塞（P3 GPU/Display 受限于物理环境），是产品可用性破局点；② 边界清晰——`dom_bindings/` + `js_dom_shim` 的 DOM/事件/桥接段，与 CSS 渲染（rendering-compat）、canvas（canvas-2d）、表单事件（html-compat）三条并行流工作面正交，碰撞可经 run-rules §9 管理；③ 有独立验收面（真实 SPA/WC 端到端 + WPT `dom`/`jsdom` 上游用例）。
 >
@@ -17,26 +19,30 @@
 > - **P1b native bindings S0–S5 已 land**：Node/Element/Document/EventTarget/Event 原生 + customElements/Web Components 五件套 + lifecycle 四件套 + Live Document 共享（L1，`Rc<RefCell<Document>>`，native 写触发重渲染）。native 读比 polyfill 快 ~15.6x（RFC §4 bench：215ns vs 3.36µs）。`dom_bindings/` 共 19 文件（node/element/document/html_element/event_target/event/custom_elements/gc/css_style_declaration/dom_token_list/dataset/namednodemap/factories 等）。
 > - **生产路径仍走 polyfill 桥**：`ZW_NATIVE_DOM` 默认关，`js_dom_shim/part01-06.js`（~810KB）+ `js_dom_bridge.rs`（~122KB）+ `dom_bridge.rs` 为权威路径。这是本目标要消除的核心状态。
 > - **WPT dom 分类无真实上游用例**：`test_cases_js_dom.rs` 全部为内建用例（`render_completes`/`js_executes_ok` smoke），0 上游导入，无通过率基线。
+> - **QuickJS 页面引擎 native = 真空（v1.1 核实）**：`crates/script-sandbox/src/quickjs_runtime.rs` 经 `register_callback` 注册 `__zw_*` 走 polyfill 桥（与 V8 共用 `js_dom_shim`），无任何原生 DOM 绑定；`Sandbox::install_native_bindings` 默认 `false`，QuickJS 未实现 escape-hatch。CI 已强制跑 `--features quickjs` 矩阵（Makefile QUICKJS_CLIPPY_CRATES/QUICKJS_TEST_CRATES），但 dom_bindings 相关 quickjs 测试点 14 个 vs v8 73 个——native DOM 这块 quickjs 是真空。本目标 M6 从零补齐。
 
 ---
 
 ## Mission
 
-把页面 JS↔DOM 桥接从 polyfill 字符串桥彻底迁移到 V8 原生绑定，使 **native 路径成为唯一生产路径**（默认开启并移除 `ZW_NATIVE_DOM` kill-switch），让 ZeroWeb 能真实跑通现代 SPA（React/Vue/Svelte 之一）与 Web Components（customElements/lit 之一），并通过上游 WPT `dom`/`jsdom` 真实用例建立通过率基线。
+把页面 JS↔DOM 桥接从 polyfill 字符串桥彻底迁移到**原生绑定**，使 **V8 与 QuickJS 两个页面引擎的 native 路径都成为唯一生产路径**（双 feature 默认开启并移除 kill-switch），让 ZeroWeb 能真实跑通现代 SPA（React/Vue/Svelte 之一）与 Web Components（customElements/lit 之一），并通过上游 WPT `dom`/`jsdom` 真实用例建立通过率基线。
 
 **Mission 不变式的三层含义**（每轮执行都必须向这三层收敛）：
 
 1. **能力层**：ZeroWeb 能端到端加载并交互式运行真实 SPA 框架页面与 Web Components 页面（不是只渲染静态页），这是父目标 Done Criteria §1.3「执行页面 JS + 基础 DOM 操作」对 SPA 的实质达成。
-2. **架构层**：原生 DOM node 对象（`NodeId` internal slot）是 JS 持有 DOM 引用的**单一权威形态**；polyfill 字符串桥（`__zw_*` 回调 + `DomMutation` + Proxy selector/handle）在生产路径被移除或萎缩为死代码。
-3. **验证层**：上游 WPT `dom`/`jsdom` 真实用例有导入、有通过率基线、有按子分类追踪；不是用内建 inline smoke 充数。
+2. **架构层**：原生 DOM node 对象（V8 = `NodeId` internal slot；QuickJS = rquickjs 原生对象持有 `NodeId`）是 JS 持有 DOM 引用的**单一权威形态**；polyfill 字符串桥（`__zw_*` 回调 + `DomMutation` + Proxy selector/handle）在**两个引擎**的生产路径都被移除或萎缩为死代码。
+3. **验证层**：上游 WPT `dom`/`jsdom` 真实用例有导入、有通过率基线、有按子分类追踪；**V8 与 QuickJS 双 feature 均验证**；不是用内建 inline smoke 充数。
+
+**双引擎对等原则**：QuickJS 作为 feature-gated 页面引擎（`--features quickjs`），其 native 路径必须与 V8 **行为等价**（同一套 driving 测试 + polyfill vs native A/B 对照门在两 feature 下都跑），不允许「V8 优先 QuickJS 凑合」。default-on 与 kill-switch 移除对**两个 feature 同时生效**。
 
 **分阶段里程碑校准**（数字在首次导入/首跑后按实测校准）：
 
 | 阶段 | 目标 | 说明 |
 |---|---|---|
-| 第一阶段 | **polyfill-live 合一 + 高层 API 去字符串** | L2（polyfill 桥改读 live Document）+ S6（Fetch/Observer/FontFaceSet 等 shim 改调 native node）→ native(A)=polyfill(B)=renderer(C) 三方合一 |
-| 第二阶段 | **SPA/WC 端到端跑通 + WPT dom 基线** | 真实 SPA 框架页 + Web Components 页端到端验收通过；上游 WPT dom 用例导入 + 通过率基线建立 |
-| 第三阶段 | **default-on + 收尾** | `ZW_NATIVE_DOM` 默认开启、移除 kill-switch、S7 删 polyfill 桥死代码、shim 萎缩；native 为唯一生产路径 |
+| 第一阶段 | **V8 polyfill-live 合一 + 高层 API 去字符串** | V8 侧 L2（polyfill 桥改读 live Document）+ S6（Fetch/Observer/FontFaceSet 等 shim 改调 native node）→ native(A)=polyfill(B)=renderer(C) 三方合一 |
+| 第二阶段 | **SPA/WC 端到端跑通 + WPT dom 基线** | 真实 SPA 框架页 + Web Components 页端到端验收通过（V8 先行）；上游 WPT dom 用例导入 + 通过率基线建立 |
+| 第三阶段 | **QuickJS native 移植（双引擎对等）** | QuickJS 从零实现 rquickjs 原生绑定（镜像 V8 S0–S5），双 feature A/B 行为等价 |
+| 第四阶段 | **双引擎 default-on + 收尾** | `ZW_NATIVE_DOM` 双 feature 默认开启、移除 kill-switch、S7 删 polyfill 桥死代码、shim 萎缩；**双引擎** native 为唯一生产路径 |
 
 **执行方式**：**轻量修复优先、永不停、深结构护栏**（借鉴 rendering-compat / canvas-2d 裁决）——每轮推进一个可独立 land 的切片，遇需用户决策项（如 default-on 这个改 Mission 级单向门、或深结构跨面改）记入「待用户决策」清单并跳过，继续下一个轻量修复。
 
@@ -48,20 +54,21 @@
 
 | 领域 | 具体内容 | 说明 |
 |------|----------|------|
-| P1b native bindings 收尾 | L2 polyfill-live 合一；S6 高层 API（Fetch/Observer/FontFaceSet/事件循环）改调 native node、去 `__zw_*` 字符串 ser/deser；S7 删 polyfill 桥死代码、shim 萎缩 | RFC §3.6/§3.7 + §4 切片定义 |
-| default-on 生产路径 | `ZW_NATIVE_DOM` 默认开启为生产路径；default-on 后**移除 kill-switch**（以 native 为唯一生产路径，polyfill 桥死代码删除）；default-on 前每切片仍 kill-switch + 全量回归守稳 | 改 Mission 级单向门（rule 11），default-on 动作本身记「待用户决策」清单，goal 把它定为收敛目标而非自动触发 |
+| P1b V8 native bindings 收尾 | V8 侧 L2 polyfill-live 合一；S6 高层 API（Fetch/Observer/FontFaceSet/事件循环）改调 native node、去 `__zw_*` 字符串 ser/deser；S7 删 polyfill 桥死代码、shim 萎缩 | RFC §3.6/§3.7 + §4 切片定义 |
+| **QuickJS native 移植（v1.1 新增）** | QuickJS 从零实现 rquickjs 原生 DOM 绑定（镜像 V8 S0–S5：Node/Element/Document/EventTarget/customElements/Live Document），实现 `Sandbox::install_native_bindings` escape-hatch；双 feature polyfill vs native A/B 行为等价 | QuickJS 当前 native = 真空；TBD-5 由「仅 V8」更新为双引擎 |
+| 双引擎 default-on 生产路径 | `ZW_NATIVE_DOM` **双 feature** 默认开启为生产路径；default-on 后**移除 kill-switch**（双引擎 native 为唯一生产路径，polyfill 桥死代码删除）；default-on 前每切片仍 kill-switch + 全量回归守稳 | 改 Mission 级单向门（rule 11），default-on 动作本身记「待用户决策」清单，goal 把它定为收敛目标而非自动触发 |
 | P1a follow-up | IntersectionObserver/ResizeObserver 持续 tick（Slice 2b，依赖 host render-loop tick）；纯 host 侧 DOM 变更触发 MutationObserver；event loop 每-task microtask checkpoint（spec 严格化） | 非阻塞 follow-up，随原生化主线附带推进 |
-| customElements/Web Components 完整化 | attributeChangedCallback 全化 + observedAttributes 完整 parity；lit/stencil 等真实 CE 库集成测试；Web Components 端到端验收 | RFC §3.5.1 S5 剩余后续项 |
+| customElements/Web Components 完整化 | attributeChangedCallback 全化 + observedAttributes 完整 parity；lit/stencil 等真实 CE 库集成测试；Web Components 端到端验收（V8 先行，QuickJS 随 M6 对齐） | RFC §3.5.1 S5 剩余后续项 |
 | SPA 框架端到端验收 | 真实加载并交互运行 React / Vue / Svelte 之一（至少其一）的代表性页面，验证 reconciliation、hydration、事件、状态更新 | 父目标 Done Criteria §1.3 对 SPA 的实质达成 |
 | WPT dom 上游基线 | 从上游 WPT 仓库导入 `dom/` + `jsdom/`（若范围合适）范围内真实用例，建立按子分类的通过率报告（文本 + JSON），记录基线 | 当前 dom 分类 0 上游导入，本目标建立基线并持续扩展 |
-| 单元测试与覆盖率 | dom_bindings 每项迁移/修复带单测；polyfill vs native A/B 对照门（每切片行为等价）；覆盖率持续提升、不退化（dom_bindings 为新模块，补齐独立 coverage 口径） | CLAUDE.md 测试资产化规则适用 |
+| 单元测试与覆盖率 | dom_bindings 每项迁移/修复带单测；polyfill vs native A/B 对照门（每切片行为等价，**双 feature 均跑**）；覆盖率持续提升、不退化（dom_bindings 为新模块，补齐独立 coverage 口径） | CLAUDE.md 测试资产化规则适用 |
 
 ### 不在范围内（明确排除）
 
 - **CSS 渲染兼容性**：属 rendering-compat 目标域（字体栈/布局/绘制管线差异），本目标不碰
 - **Canvas 2D API 语义/像素**：属 canvas-2d 目标域；`js_dom_shim` part04/05 的 canvas 段不归本目标改写（见下「工作面切分」）
 - **表单元素默认动作/交互语义**：属 html-compat 目标域（focus/activation/checkedness/submit）；本目标只经 DOM 事件与原生 node 提供基础，不旁路修补表单语义
-- **V8 引擎替换 / QuickJS 沙箱**：rusty_v8 仍是唯一页面引擎；script-sandbox 的 QuickJS 扩展沙箱与本目标无关（RFC TBD-5：原生绑定仅 V8）
+- **V8/QuickJS 引擎替换**：rusty_v8 与 rquickjs 仍是两个页面引擎后端，不替换引擎本身；QuickJS 的**扩展脚本沙箱**用法（非页面路径）与本目标无关
 - **网络栈/存储/WASM 行为本身**：net/storage/wasm-sandbox crate 行为不变，仅 JS 侧桥（fetch/Storage/WebAssembly JS API）因去字符串 ser/deser 间接受益
 - **GPU/Display 验证**：父目标 Done Criteria §4 剩余项，受限于物理环境，非本目标
 - **新 crate 或大规模新依赖引入**：最小化新依赖，仅在必要时引入 MIT/Apache-2.0/BSD 许可证兼容 crate
@@ -84,7 +91,8 @@
 
 ### 依赖约束
 
-- **rusty_v8 150.x**：`ObjectTemplate` internal-field + `FunctionTemplate` 继承链 + `Weak` handle GC（TBD-1/TBD-2 已 S0 验证，RFC §6）
+- **rusty_v8 150.x（V8 后端）**：`ObjectTemplate` internal-field + `FunctionTemplate` 继承链 + `Weak` handle GC（TBD-1/TBD-2 已 S0 验证，RFC §6）
+- **rquickjs 0.7（QuickJS 后端，v1.1 新增）**：提供 `Ctx`/`Object`/`IntoJs`/`from_js`/`Class`/`Accessor`/`Getter`/`Setter` 等原生绑定能力（`features = ["bindgen"]`）；M6 需验证 rquickjs 原生对象持有 `NodeId` + 生命周期/GC 管线（镜像 V8 TBD-1/TBD-2 的 rquickjs 等价物），标 TBD 待 M6 首切片验证
 - **许可证**：仅接受 MIT / Apache-2.0 / BSD
 - **无新 MPL 依赖**（父目标硬约束）
 
@@ -94,17 +102,17 @@
 
 以下条件**全部满足**时，方可判定本目标完成。任何一项未满足，必须输出 `CONTINUE: <下一步>`。
 
-### DC-1: 原生 DOM 为唯一生产路径（架构闭环）
+### DC-1: 原生 DOM 为双引擎唯一生产路径（架构闭环）
 
-- [ ] `ZW_NATIVE_DOM` 默认开启：`WebViewConfig.native_dom` 默认 `true`，生产 `run_page_scripts` 路径默认安装并使用原生绑定
-- [ ] kill-switch 已移除：`ZW_NATIVE_DOM` env 与 `native_dom=false` 回退路径作为死代码删除（default-on 后以 native 为唯一生产路径，无一键回退——用户已决策）
-- [ ] L2 polyfill-live 合一完成：polyfill 桥（`__zw_*` 回调）从 re-parse `dom_html` String 改读共享 live Document（`Rc<RefCell<Document>>`），native(A)=polyfill(B)=renderer(C) 三方合一，无独立快照
-- [ ] S6 高层 API 去字符串完成：Fetch / Observer / FontFaceSet / 事件循环等高层 API 改调 native node 方法，DOM 操作热路径不经 `__zw_*` String ser/deser
+- [ ] `ZW_NATIVE_DOM` **双 feature 默认开启**：V8 与 QuickJS 两个 feature 的 `WebViewConfig.native_dom` 均默认 `true`，生产 `run_page_scripts` 路径在两个 feature 下都默认安装并使用原生绑定
+- [ ] kill-switch 已移除：`ZW_NATIVE_DOM` env 与 `native_dom=false` 回退路径作为死代码删除（default-on 后双引擎 native 为唯一生产路径，无一键回退——用户已决策）
+- [ ] V8 L2 polyfill-live 合一完成：polyfill 桥（`__zw_*` 回调）从 re-parse `dom_html` String 改读共享 live Document（`Rc<RefCell<Document>>`），native(A)=polyfill(B)=renderer(C) 三方合一，无独立快照
+- [ ] V8 S6 高层 API 去字符串完成：Fetch / Observer / FontFaceSet / 事件循环等高层 API 改调 native node 方法，DOM 操作热路径不经 `__zw_*` String ser/deser
 - [ ] S7 收尾完成：polyfill 桥死代码（无调用方的 `__zw_*` 回调 + `DomMutation` 变体 + Proxy selector/handle）删除，`js_dom_shim` 体量显著萎缩（相对基线 810KB）
 
 ### DC-2: 真实 SPA / Web Components 端到端跑通
 
-- [ ] 至少一个现代 SPA 框架（React / Vue / Svelte 之一）代表性页面可真实加载、渲染、交互（事件触发、状态更新、reconciliation、hydration），非仅静态渲染
+- [ ] 至少一个现代 SPA 框架（React / Vue / Svelte 之一）代表性页面可真实加载、渲染、交互（事件触发、状态更新、reconciliation、hydration），非仅静态渲染（**至少 V8 feature 验证通过**；QuickJS feature 在 DC-7 达成后跑同一验收页对齐）
 - [ ] 至少一套 Web Components（customElements + lit/stencil 之一或原生 customElements）代表性页面可真实运行：自定义元素定义/实例化、connectedCallback/disconnectedCallback/attributeChangedCallback lifecycle、Shadow DOM 基础
 - [ ] SPA/WC 验收页面作为常驻 e2e 测试资产化（进入 `tests/integration` 或 `apps/browser` 测试，`make test` 内运行），有可复现的断言
 
@@ -131,7 +139,16 @@
 
 - [ ] `master.md` 内部自洽（active milestone / done criteria / coverage / Latest Evidence 互不矛盾）
 - [ ] `archive/` 已建立，完成的里程碑/切片记录到 archive
-- [ ] RFC `p1b-v8-native-bindings-rfc.md` 的剩余切片状态与 master.md 实际推进一致（TBD 项关闭/更新同步）
+- [ ] RFC `p1b-v8-native-bindings-rfc.md` 的剩余切片状态与 master.md 实际推进一致（TBD 项关闭/更新同步）；**TBD-5 由「原生绑定仅 V8」更新为「双引擎 V8+QuickJS」**
+
+### DC-7: QuickJS 原生绑定等价（v1.1 新增）
+
+> QuickJS 当前 native = 真空（`Sandbox::install_native_bindings` 默认 `false`、QuickJS 不实现）。本 DC 是双引擎对等原则的硬收敛项。
+
+- [ ] QuickJS（rquickjs）实现原生 DOM 绑定，镜像 V8 S0–S5：Node/Element/Document/HTMLElement/EventTarget/Event/customElements（五件套 + lifecycle 四件套）+ Live Document 共享（rquickjs 原生对象持有 `NodeId`，经 `QuickJSSandbox::install_native_bindings` escape-hatch 安装到页面 Context）
+- [ ] QuickJS 原生绑定的 GC/生命周期安全验证（镜像 V8 TBD-1/TBD-2：rquickjs 原生对象与 Rust `NodeId` 的引用关系 + stale 校验 + 节点移除后不悬垂/泄漏）
+- [ ] **双 feature polyfill vs native A/B 行为等价**：同一套 driving 测试（既有 dom_bindings 单测 + driving WPT 用例）在 `--features v8` 与 `--features quickjs` 两个矩阵下行为一致；CI 已强制跑 quickjs 矩阵（Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES`），M6 补齐 dom_bindings 相关 quickjs 测试点（当前 14 vs v8 73 的差距）
+- [ ] QuickJS 页面引擎路径在 default-on 后走 native（不再经 `__zw_*` polyfill 桥），与 V8 生产路径对等
 
 ---
 
@@ -144,15 +161,17 @@
 - **生产路径仍走 polyfill 桥**：`js_dom_shim/part01-06.js`（~810KB）+ `js_dom_bridge.rs`（~122KB，30+ `__zw_*` 回调）+ `dom_bridge.rs`（~69KB）+ `dom_bindings/computed_style.rs`（~158KB）为权威路径。
 - **测试基线**：workspace ~13,000+ 测试全绿，行覆盖率 95.46%（函数 96.94%、区域 94.88%），clippy 零警告。dom_bindings 尚无独立 coverage 口径（纳入本目标首个 milestone）。
 - **WPT dom 分类**：23 分类之一，但 `test_cases_js_dom.rs` 全部为内建 smoke 用例（`render_completes`/`js_executes_ok`），**0 上游真实导入**，无通过率基线。
-- **RFC**：`docs/specs/p1b-v8-native-bindings-rfc.md` v0.2，S0–S5 + L1 已 land；S6/S7 + L2/L3 + default-on 为本目标剩余。
+- **RFC**：`docs/specs/p1b-v8-native-bindings-rfc.md` v0.2，S0–S5 + L1 已 land；S6/S7 + L2/L3 + default-on 为本目标剩余；**TBD-5「原生绑定仅 V8」需更新为双引擎（v1.1 决策）**。
+- **QuickJS 页面引擎 native = 真空（v1.1 核实）**：`crates/script-sandbox/src/quickjs_runtime.rs` 经 `register_callback` 注册 `__zw_*` 走 polyfill 桥（与 V8 共用 `js_dom_shim`），无任何原生 DOM 绑定；`Sandbox::install_native_bindings` 默认 `false`、QuickJS 未实现 escape-hatch。QuickJS 是 feature-gated 页面引擎（`webview.rs:1215` / `tab_js_worker.rs:276` 与 V8 对称），CI 已强制 `--features quickjs` 矩阵（Makefile `QUICKJS_CLIPPY_CRATES`/`QUICKJS_TEST_CRATES`），但 dom_bindings 相关 quickjs 测试点 14 vs v8 73——native DOM 这块 quickjs 是真空。本目标 M6 从零补齐。
 
 **核心缺口（本目标要消除）**：
-1. native 路径默认关 → 生产仍走 polyfill 字符串桥（SPA/WC 不可用根因）
-2. polyfill 桥仍 re-parse String 快照，三方 Document（A native / B polyfill / C renderer）未合一（L2 未做）
-3. 高层 API（Fetch/Observer）仍经 `__zw_*` String ser/deser（S6 未做）
+1. V8 native 路径默认关 → 生产仍走 polyfill 字符串桥（SPA/WC 不可用根因）
+2. V8 polyfill 桥仍 re-parse String 快照，三方 Document（A native / B polyfill / C renderer）未合一（L2 未做）
+3. V8 高层 API（Fetch/Observer）仍经 `__zw_*` String ser/deser（S6 未做）
 4. polyfill 桥死代码未清理、shim 未萎缩（S7 未做）
 5. WPT dom 上游用例 0 导入，无通过率基线
 6. 无真实 SPA/WC 端到端验收资产
+7. **QuickJS 页面引擎 native 完全缺失**（v1.1 新增）：QuickJS 无原生 DOM 绑定，页面 DOM 路径仅走 polyfill 桥，无法 default-on（M6 补齐）
 
 ---
 
@@ -162,7 +181,7 @@
 
 ### 当前活跃里程碑：**M0 — 基线建立 + polyfill-live 合一起刀（L2/S6 入口）**
 
-**目标**：建立本目标独有的验证与度量基线（dom_bindings coverage 口径、polyfill vs native A/B 对照门、上游 WPT dom 导入空集确认），并完成 L2（polyfill 桥改读 live Document）的首个可独立 land 切片，使 native(A) 与 renderer(C) 在 live Document 上对齐，为后续 S6/S7/default-on 铺路。
+**目标**：建立本目标独有的验证与度量基线（dom_bindings coverage 口径、**双 feature 可参数化的** polyfill vs native A/B 对照门、上游 WPT dom 导入空集确认、QuickJS native 真空核实），并完成 V8 侧 L2（polyfill 桥改读 live Document）的首个可独立 land 切片，使 native(A) 与 renderer(C) 在 live Document 上对齐，为后续 V8 S6/S7（M2/M5）、QuickJS native 移植（M6）、双引擎 default-on（M7）铺路。
 
 **首轮必须完成的入口动作**（Must-Complete-First-Round，详见「首轮进入检查清单」）：
 1. 探索 `dom_bindings/` + `js_dom_bridge.rs` + `js_dom_shim/` 当前事实，确认 RFC §3.7 L1/L2 切片定义与代码现状一致
@@ -182,7 +201,7 @@
 
 ## Ordered Next Milestones
 
-> M0 完成后按序推进。每个 milestone 切成可独立 land 的切片（kill-switch + A/B 对照门 + 全量回归）。深结构护栏：default-on（M3）是改 Mission 级单向门，记「待用户决策」清单，goal 把它定为收敛目标。
+> M0 完成后按序推进。每个 milestone 切成可独立 land 的切片（kill-switch + A/B 对照门 + 全量回归）。深结构护栏：default-on（M7）是改 Mission 级单向门，记「待用户决策」清单，goal 把它定为收敛目标。**双引擎对等**：M1–M5 先以 V8 为权威路径推进；M6 完成 QuickJS native 移植后，M7 的 default-on 对双 feature 同时生效。
 
 ### M1 — polyfill-live 合一（L2 完整）
 
@@ -226,16 +245,43 @@
 
 > **注**：M4 可与 M1–M3 早期并行（导入本身零源码改动），但修复须以 M1/M2 的 live Document + native 路径为权威（避免在 polyfill 桥上做长期修复再被废弃）。
 
-### M5 — default-on + 收尾（L3 + S7）
+### M5 — V8 default-on + 收尾（L3 + S7）
 
-**目标**：`ZW_NATIVE_DOM` 默认开启、移除 kill-switch、S7 删 polyfill 桥死代码、shim 萎缩，native 为唯一生产路径。
+**目标**：V8 侧 `ZW_NATIVE_DOM` 默认开启、移除 kill-switch（V8 路径）、S7 删 polyfill 桥死代码、shim 萎缩，**V8 native 为唯一生产路径**。
 
 **切片建议**：
-1. default-on：`WebViewConfig.native_dom` 默认 `true`，全量回归 + product-smoke + perf-gate net≥0 守稳（**改 Mission 级单向门，记「待用户决策」清单，等用户点名后 land**）
-2. 移除 kill-switch + `native_dom=false` 回退死代码
-3. S7：删无调用方的 `__zw_*` 回调 + `DomMutation` 变体 + Proxy selector/handle，shim 体量压缩
+1. V8 default-on：`WebViewConfig.native_dom`（v8 feature）默认 `true`，全量回归 + product-smoke + perf-gate net≥0 守稳（**改 Mission 级单向门，记「待用户决策」清单，等用户点名后 land**）
+2. S7：删无调用方的 `__zw_*` 回调 + `DomMutation` 变体 + Proxy selector/handle（V8 不再经 polyfill 桥的部分），shim 体量压缩
+3. L3 清理：移除 `cached_html` String 路径 + re-parse 死代码 + A/B 快照分支
 
-**验收**：DC-1 + DC-5 满足；kill-switch 移除后 native 为唯一生产路径，全量回归 + product-smoke + perf-gate 全绿。
+**验收**：DC-1（V8 部分）+ DC-5（V8）满足；kill-switch 移除后 V8 native 为唯一生产路径，全量回归 + product-smoke + perf-gate 全绿。
+
+> **注**：M5 只收敛 V8 路径；QuickJS 的 default-on + kill-switch 移除在 M7 完成（M6 先补 QuickJS native）。polyfill 桥的彻底删除（含 QuickJS 还在用的部分）在 M7 之后。
+
+### M6 — QuickJS 原生绑定移植（双引擎对等，v1.1 新增）
+
+**目标**：QuickJS 从零实现 rquickjs 原生 DOM 绑定，镜像 V8 S0–S5 切片，使 QuickJS 页面引擎路径具备与 V8 行为等价的 native 能力。
+
+**切片建议**（镜像 V8 切片命名，加 `q` 后缀）：
+1. **S0q 骨架 + PoC**：`crates/script-sandbox/src/quickjs_dom_bindings.rs`（新）+ rquickjs 原生对象持有 `NodeId`（`Ctx`/`Object`/`IntoJs`/`from_js`）+ 一个 PoC 原生 `Element.nodeType`/`tagName` getter + GC/生命周期 PoC（镜像 V8 TBD-1/TBD-2 的 rquickjs 等价物）+ bench 对照 + `Sandbox::install_native_bindings` 在 QuickJS 实现 escape-hatch
+2. **S1q 只读属性族**：tagName/nodeName/nodeType/attributes 原生绑定
+3. **S2q 写入 + 子树**：setAttribute/removeAttribute/appendChild/insertBefore/removeChild/childNodes 原生 + 经 live Document
+4. **S3q 查询**：querySelector/querySelectorAll/getElementById 原生（消费 `zero_dom` 选择器引擎）
+5. **S4q EventTarget**：addEventListener/removeEventListener/dispatchEvent 原生
+6. **S5q customElements/Web Components**：原生 HTMLElement class（rquickjs `Class`）+ customElements 五件套 + lifecycle 四件套（镜像 V8 S5）
+
+**验收**：DC-7 满足；双 feature polyfill vs native A/B 行为等价（driving 测试 + WPT 在 `--features v8` 与 `--features quickjs` 两个矩阵下一致）；QuickJS 矩阵 dom_bindings 测试点补齐（缩小 14 vs 73 的差距）。
+
+### M7 — 双引擎 default-on + 全量收尾
+
+**目标**：QuickJS 侧 default-on + kill-switch 移除，**双引擎** native 均为唯一生产路径；polyfill 桥彻底删除。
+
+**切片建议**：
+1. QuickJS default-on：`WebViewConfig.native_dom`（quickjs feature）默认 `true`，quickjs 矩阵全量回归 + perf-gate net≥0 守稳（**改 Mission 级单向门，记「待用户决策」清单，等用户点名后 land**）
+2. 移除 kill-switch 残余（`ZW_NATIVE_DOM` env 全删）+ `native_dom=false` 回退死代码全删
+3. polyfill 桥彻底删除：QuickJS 不再经 `__zw_*` 的部分（`register_callback` 注册的 DOM 回调）删除，shim 最终萎缩
+
+**验收**：DC-1 全项（双引擎）满足；双 feature default-on、kill-switch 移除、polyfill 桥死代码全删，双引擎 native 为唯一生产路径，全量回归 + product-smoke + perf-gate（双 feature）全绿。
 
 ---
 
@@ -290,15 +336,16 @@
 | 项 | 状态 |
 |----|------|
 | P1a（event loop / fetch / Observer） | ✅ 实质完成（非阻塞 follow-up 见 master.md） |
-| P1b native bindings S0–S5 | ✅ 已 land，默认关（`ZW_NATIVE_DOM`） |
-| L1 Live Document 共享 | ✅ 已 land（`Rc<RefCell<Document>>`） |
-| L2 polyfill-live 合一 | ❌ 未做（本目标 M1） |
-| S6 高层 API 去字符串 | ❌ 未做（本目标 M2） |
-| S7 死代码清理 + shim 萎缩 | ❌ 未做（本目标 M5） |
-| default-on + 删 kill-switch | ❌ 未做（本目标 M5，改 Mission 级单向门） |
-| 真实 SPA/WC 端到端验收 | ❌ 无资产（本目标 M3） |
+| P1b **V8** native bindings S0–S5 | ✅ 已 land，默认关（`ZW_NATIVE_DOM`） |
+| L1 Live Document 共享（V8） | ✅ 已 land（`Rc<RefCell<Document>>`） |
+| L2 polyfill-live 合一（V8） | ❌ 未做（本目标 M1） |
+| S6 高层 API 去字符串（V8） | ❌ 未做（本目标 M2） |
+| **QuickJS 原生 DOM 绑定** | ❌ **完全缺失**（v1.1 新增，本目标 M6） |
+| S7 死代码清理 + shim 萎缩 | ❌ 未做（本目标 M5/M7） |
+| **双引擎** default-on + 删 kill-switch | ❌ 未做（V8 在 M5，QuickJS 在 M7，改 Mission 级单向门） |
+| 真实 SPA/WC 端到端验收 | ❌ 无资产（本目标 M3，V8 先行） |
 | WPT dom 上游基线 | ❌ 0 上游导入（本目标 M4） |
-| 编译/clippy/test | ✅ workspace ~13,000+ 测试全绿，行覆盖 95.46%，clippy 零警告 |
+| 编译/clippy/test | ✅ workspace ~13,000+ 测试全绿，行覆盖 95.46%，clippy 零警告（含 `--features quickjs` CI 矩阵） |
 | dom_bindings 独立 coverage 口径 | ❌ 待补齐（本目标 M0） |
 
 **关键证据锚点**（RFC commit / 测试位置，执行 agent 可按此核对）：
@@ -307,6 +354,7 @@
 - 生产接线 kill-switch：`crates/engine/src/dom_bindings/mod.rs`（`ZW_NATIVE_DOM` env，`install_dom_bindings_if_enabled`）+ `crates/webview`（`WebViewConfig.native_dom`，默认 `false`）
 - 既有 e2e 基线：`apps/browser/src/tab_js_worker.rs`（fetch 端到端 / 定时器 / MutationObserver 五连测）
 - WPT runner：`tests/wpt-runner/src/runner/test_cases/test_cases_js_dom.rs`（内建 smoke，0 上游）
+- **QuickJS 页面引擎路径**（v1.1 核实锚点）：`crates/script-sandbox/src/quickjs_runtime.rs`（`register_callback` 注册 `__zw_*` 走 polyfill 桥，无原生绑定）；`crates/webview/src/webview.rs:1215` + `apps/browser/src/tab_js_worker.rs:276`（`#[cfg(feature="quickjs")]` 页面沙箱构造，与 V8 对称）；`crates/script-sandbox/src/lib.rs:167`（`Sandbox::install_native_bindings` 默认 `false`，QuickJS 未实现）；Makefile `QUICKJS_CLIPPY_CRATES`/`QUICKJS_TEST_CRATES`（CI 强制 quickjs 矩阵）
 
 ---
 
@@ -345,11 +393,11 @@
 
 执行 agent 在首次进入时**必须**完成以下操作——这些不是可选的，也不是可以推迟的工作：
 
-- [ ] **探索当前仓库事实**：`dom_bindings/` + `js_dom_bridge.rs` + `js_dom_shim/` 当前代码状态、RFC §3.7 L1/L2 切片定义与代码现状是否一致、`ZW_NATIVE_DOM` kill-switch 现状、既有 e2e 测试基线
-- [ ] **定义/确认 Done Criteria**：与本文件 DC-1~6 一致；若发现代码现状与本文件基线事实不符，先在 master.md 记录勘误
-- [ ] **创建 `docs/goal/js-dom/master.md`**：包含完整的当前状态评估 + 首个 active milestone（M0）切片计划 + 测试基线 + 缺口清单 + 待用户决策清单
+- [ ] **探索当前仓库事实**：`dom_bindings/`（V8 原生绑定）+ `js_dom_bridge.rs` + `js_dom_shim/` 当前代码状态、RFC §3.7 L1/L2 切片定义与代码现状是否一致、`ZW_NATIVE_DOM` kill-switch 现状（V8）、既有 e2e 测试基线；**v1.1 新增：核实 QuickJS 页面引擎路径**（`quickjs_runtime.rs` 的 `register_callback` + `Sandbox::install_native_bindings` 默认 `false`）确认 native 真空状态、CI quickjs 矩阵覆盖范围（`QUICKJS_*_CRATES`）
+- [ ] **定义/确认 Done Criteria**：与本文件 DC-1~7 一致；若发现代码现状与本文件基线事实不符，先在 master.md 记录勘误
+- [ ] **创建 `docs/goal/js-dom/master.md`**：包含完整的当前状态评估 + 首个 active milestone（M0）切片计划 + 测试基线 + 缺口清单 + 待用户决策清单（含 default-on M5/M7）
 - [ ] **确认 `docs/goal/js-dom/archive/` 与 `evidence/` 目录存在**（不存在就立即创建——这不是可选项，也不是以后再补的工作）
-- [ ] **确认测试基线**：`make test` 当前全绿状态、dom_bindings 无独立 coverage 口径（M0 要补齐）、WPT dom 分类 0 上游导入（M4 要补齐）
+- [ ] **确认测试基线**：`make test`（含 `--features quickjs` 矩阵）当前全绿状态、dom_bindings 无独立 coverage 口径（M0 要补齐）、WPT dom 分类 0 上游导入（M4 要补齐）
 - [ ] **选定第一个 active milestone（M0）的首个切片并直接动手推进**
 
 **关键要求**：完成第一版 master.md + archive/evidence bootstrap 后，执行 agent 在**同一轮内必须继续启动第一个真实 milestone（M0 首切片）**，直接推进核心目标能力本身——**不允许**把「文档框架已建立」当成 milestone 完成或收工依据。
@@ -372,7 +420,7 @@
 
 | 情况 | 输出 | 说明 |
 |------|------|------|
-| DC-1~6 **全部**满足，目标能力达到 production-ready 水平 | `DONE` | 见下方「DONE 允许条件」 |
+| DC-1~7 **全部**满足，目标能力达到 production-ready 水平 | `DONE` | 见下方「DONE 允许条件」 |
 | 进展仍可推进，还有未完成的工作 | `CONTINUE: <下一步>` | **这是默认输出** |
 | 遇到真正的外部阻塞（依赖不可用、平台根本性不支持、安全漏洞无法绕过） | `BLOCK: <原因>` | 罕见使用 |
 | verify 发现未满足条件但进展仍可推进 | `CONTINUE: <下一步>` | **返回执行，不是 DONE**，不是解释性段落 |
@@ -381,12 +429,12 @@
 
 **同时满足以下所有条件时才允许输出 `DONE`**：
 
-1. ✅ DC-1~6 全部满足
-2. ✅ 目标能力本身已达到生产可用质量（native 为唯一生产路径 + SPA/WC 端到端跑通 + WPT dom 基线建立），**不只是文档完整**
+1. ✅ DC-1~7 全部满足
+2. ✅ 目标能力本身已达到生产可用质量（**双引擎** native 为唯一生产路径 + SPA/WC 端到端跑通 + WPT dom 基线建立），**不只是文档完整**
 3. ✅ 有真实代码、测试和验收证据直接对应目标能力（非仅计划）
-4. ✅ `make test` + `cargo clippy --workspace --all-targets -- -D warnings` + `make product-smoke` + `make bench-gate` 全通过
+4. ✅ `make test`（含 `--features quickjs` 矩阵）+ `cargo clippy --workspace --all-targets -- -D warnings` + `make product-smoke` + `make bench-gate` 全通过
 5. ✅ master.md 内部自洽，archive + evidence 已建立，完成的 milestone/切片已归档
-6. ✅ RFC `p1b-v8-native-bindings-rfc.md` 剩余切片状态与 master.md 一致
+6. ✅ RFC `p1b-v8-native-bindings-rfc.md` 剩余切片状态与 master.md 一致；TBD-5 已更新为双引擎
 
 ### 禁止输出 DONE 的情况
 
@@ -401,6 +449,8 @@
 - ❌ 测试全绿、coverage 达标、文档完整，但**目标能力本身未达到生产可用质量**（如 native 仍默认关、SPA/WC 仍跑不通、WPT dom 仍 0 上游）
 - ❌ 仅通过内建 inline 用例，未导入上游真实 WPT dom 用例
 - ❌ default-on 未做（DC-1 硬条件）
+- ❌ **QuickJS native 缺失或未对齐**（DC-7 硬条件，v1.1）：只 V8 达成而 QuickJS 仍走 polyfill 字符串桥 = 双引擎不对等，不允许 `DONE`
+- ❌ **只在一个 feature 下验证**：driving 测试/A/B 对照/WPT 只跑了 `--features v8` 没跑 `--features quickjs`（或反之）
 
 ### BLOCK 策略（默认禁用 BLOCK）
 
@@ -413,7 +463,7 @@
 ### verify 发现缺口时的处理
 
 - 默认输出 `CONTINUE: <下一步>` 并**返回执行**，不是 `DONE`，不是大段解释
-- 如果仍有可能推进，就不结束——`DONE` 只在 DC-1~6 全满足时才允许
+- 如果仍有可能推进，就不结束——`DONE` 只在 DC-1~7 全满足时才允许
 
 ---
 
@@ -423,19 +473,19 @@
 
 执行 agent 必须：
 
-1. **自主探索**当前 JS/DOM 桥状态，识别 native vs polyfill 缺口（每轮开工前先 `git pull --rebase` 拉最新 main）
+1. **自主探索**当前 JS/DOM 桥状态（V8 与 QuickJS 双路径），识别 native vs polyfill 缺口（每轮开工前先 `git pull --rebase` 拉最新 main）
 2. **自主分解**milestone 为可独立 land 的切片（kill-switch + A/B 对照门 + 全量回归）
 3. **自主实现**迁移/修复代码，不等待用户逐步指令；每片 net≥0 即 land，commit 小而频繁
-4. **自主添加测试**：每项迁移/修复必带单测 + polyfill vs native A/B 对照 + driving WPT 用例资产化
-5. **自主验证**：`make test` + clippy +（渲染/JS 热路径）`make product-smoke` + `make bench-gate` 确认修复有效、零回归
+4. **自主添加测试**：每项迁移/修复必带单测 + polyfill vs native A/B 对照（**双 feature 均跑**）+ driving WPT 用例资产化
+5. **自主验证**：`make test`（含 `--features quickjs` 矩阵）+ clippy +（渲染/JS 热路径）`make product-smoke` + `make bench-gate` 确认修复有效、零回归
 6. **自主归档**：完成的 milestone/切片记录到 archive；evidence 持久化到 evidence/
-7. **持续推动**，直到 DC-1~6 全部满足——在未达 done criteria 前持续推进，不等待用户逐步下达下一条指令
+7. **持续推动**，直到 DC-1~7 全部满足——在未达 done criteria 前持续推进，不等待用户逐步下达下一条指令
 
 ### 轻量修复优先（借鉴 rendering-compat / canvas-2d 裁决）
 
 1. **主线 = 轻量修复**：kill-switch 仍开、根因清楚、改动面小、A/B 无新失败的切片
 2. **永不停**：遇需用户拍板事项（default-on 改 Mission 级单向门、深结构跨面改）记「待用户决策」清单并跳过，继续下一个轻量修复
-3. **深结构护栏**：default-on（M5）、polyfill 桥全量重写（L2 完整）等改 Mission / 跨面深改不自主 land，记待决策清单等用户点名；其余切片自主推进
+3. **深结构护栏**：default-on（M5 V8 / M7 QuickJS）、QuickJS native 移植（M6 全量）、polyfill 桥全量重写（L2 完整）等改 Mission / 跨面深改不自主 land，记待决策清单等用户点名；其余切片自主推进
 4. **碰撞管理**：碰 canvas-2d / html-compat 共享面（`js_dom_shim` part04/05、表单事件段）前先 `git log` 核对；有活跃编辑则转零碰撞面
 
 ### 遇到问题时的处理原则
@@ -460,7 +510,9 @@
 以下为执行阶段参考，本轮**不实施**：
 
 1. **M0 首切片选 L2-read-only**：polyfill 桥只读 getter（getElementById/querySelector/getAttribute）改读 live Document，写仍走旧路径——最小风险验证三方合一管线，kill-switch 仍开零生产影响。
-2. **A/B 对照门前置**：M0 就建 polyfill vs native 行为等价测试骨架，每个迁移切片复用——这是整个迁移期「行为不退化」的安全网。
+2. **A/B 对照门前置**：M0 就建 polyfill vs native 行为等价测试骨架，每个迁移切片复用——这是整个迁移期「行为不退化」的安全网。**v1.1：A/B 对照门设计为双 feature 可参数化**（同一套断言跑 `--features v8` 与 `--features quickjs`），为 M6 QuickJS 对齐提前铺路。
 3. **WPT dom 导入可早期并行**：M4 导入本身零源码改动，可与 M1/M2 并行启动（先建通过率基线，暴露真实缺口）。
-4. **default-on 是最后的单向门**：M5 才做，前面所有切片（M1–M4）都在 kill-switch 仍开下推进，保证可回退；default-on land 前必跑全量 `make test` + `make product-smoke` + `make bench-gate`，net≥0 才 land。
-5. **默认禁用 BLOCK**：执行 agent 默认输出 `CONTINUE: <下一步>`；未完成/证据不足/coverage 暂不可验/文档不一致/等用户点名 default-on 都是继续信号。
+4. **V8 先行，QuickJS 镜像**：M1–M5 先把 V8 路径收敛到 native production-ready；M6 再镜像 V8 切片到 QuickJS（S0q–S5q）。这样避免双引擎并行开发的状态爆炸——V8 切片模式稳定后，QuickJS 是"翻译"而非"设计"。
+5. **M6 首切片选 S0q PoC**：先验证 rquickjs 原生对象持有 `NodeId` + GC/生命周期管线（镜像 V8 TBD-1/TBD-2），确认可行再铺 S1q–S5q。若 rquickjs API 边角阻塞，标 TBD 不 BLOCK，转其他切片。
+6. **default-on 分两步（V8→QuickJS）**：M5 先 V8 default-on，M7 再 QuickJS default-on，最后删 kill-switch。每步都是改 Mission 级单向门，各自记「待用户决策」清单等用户点名；default-on land 前必跑全量 `make test`（双 feature）+ `make product-smoke` + `make bench-gate`，net≥0 才 land。
+7. **默认禁用 BLOCK**：执行 agent 默认输出 `CONTINUE: <下一步>`；未完成/证据不足/coverage 暂不可验/文档不一致/等用户点名 default-on 都是继续信号。

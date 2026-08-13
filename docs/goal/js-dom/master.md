@@ -31,15 +31,16 @@
 | 项 | 状态 | 证据（待填充） |
 |----|------|----------------|
 | P1a（event loop / fetch / Observer） | 待核实 | |
-| P1b native bindings S0–S5 | 待核实 | |
-| L1 Live Document 共享 | 待核实 | |
-| L2 polyfill-live 合一 | 待核实 | |
-| S6 高层 API 去字符串 | 待核实 | |
+| P1b **V8** native bindings S0–S5 | 待核实 | |
+| L1 Live Document 共享（V8） | 待核实 | |
+| L2 polyfill-live 合一（V8） | 待核实 | |
+| S6 高层 API 去字符串（V8） | 待核实 | |
+| **QuickJS 原生 DOM 绑定（DC-7, v1.1）** | 待核实（预期真空） | |
 | S7 死代码清理 + shim 萎缩 | 待核实 | |
-| default-on + 删 kill-switch | 待核实 | |
+| **双引擎** default-on + 删 kill-switch | 待核实 | |
 | 真实 SPA/WC 端到端验收 | 待核实 | |
 | WPT dom 上游基线 | 待核实 | |
-| `make test` / clippy / coverage | 待核实 | |
+| `make test` / clippy / coverage（含 `--features quickjs` 矩阵） | 待核实 | |
 | dom_bindings 独立 coverage 口径 | 待核实 | |
 
 **核心缺口**（本目标要消除，首轮核实并补全）：
@@ -91,9 +92,9 @@
 
 ## 下一步计划（执行 agent 每轮更新）
 
-1. （首轮）按入口文档「首轮进入检查清单」完成探索 + 重写本文件 + 建 archive/evidence + 补 dom_bindings coverage 口径 + 建 A/B 对照门骨架
-2. （首轮）选定 M0 首切片（L2-read-only 候选）并直接动手推进
-3. 后续按入口文档 Ordered Next Milestones（M1→M5）切片推进
+1. （首轮）按入口文档「首轮进入检查清单」完成探索（含核实 QuickJS 页面引擎路径 = native 真空）+ 重写本文件 + 建 archive/evidence + 补 dom_bindings coverage 口径 + 建**双 feature 可参数化** A/B 对照门骨架
+2. （首轮）选定 M0 首切片（V8 L2-read-only 候选）并直接动手推进
+3. 后续按入口文档 Ordered Next Milestones（M1→M7）切片推进：V8 先行（M1–M5），QuickJS native 镜像（M6），双引擎 default-on + 收尾（M7）
 
 ---
 
@@ -103,7 +104,8 @@
 
 | 事项 | 触发条件 | 状态 |
 |------|----------|------|
-| `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、native 路径生产就绪 | 待 M5 启动前征询 |
+| V8 `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M5） | M1–M4 完成、V8 native 路径生产就绪 | 待 M5 启动前征询 |
+| QuickJS `ZW_NATIVE_DOM` default-on（改 Mission 级单向门，M7） | M6 QuickJS native 移植完成 | 待 M7 启动前征询 |
 
 ---
 
