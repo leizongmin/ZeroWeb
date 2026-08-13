@@ -253,3 +253,56 @@ fn test_bookmarks_save_load_roundtrip() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// R3363：本地 bookmarks.json 含 `"id": u64::MAX` 时不再 panic——`from_snapshot` 的
+// `max_id + 1` 旧实现溢出 panic（debug overflow-checks）/ release 回绕为 0 致 ID 冲突。
+// 本地信任边界文件（~/.config/zeroweb/bookmarks.json）解析须 fail-safe 不 crash 浏览器。
+#[test]
+fn test_bookmarks_load_max_u64_id_no_overflow_r3363() {
+    let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks_ovf-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("bookmarks.json");
+
+    // 手工构造含 u64::MAX id 的 bookmarks.json（模拟损坏/恶意本地文件）。
+    // bookmarks.json 格式：{"bookmarks":[{id,title,url,folder_id}], "folders":[{id,name}]}
+    let crafted = r#"{
+        "bookmarks": [
+            {"id": 18446744073709551615, "title": "Max", "url": "https://max.example.com", "folder_id": null}
+        ],
+        "folders": []
+    }"#;
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(&path, crafted).unwrap();
+
+    // 旧实现 from_snapshot 的 `max_id + 1`（max_id=u64::MAX）→ debug panic
+    //（attempt to add with overflow）/ release 回绕 sync_counter(0)。
+    // 修复后 saturating_add 不 panic。
+    let loaded = Bookmarks::load(&path);
+    assert_eq!(loaded.len(), 1, "损坏文件含 u64::MAX id 仍应加载（fail-safe）");
+    assert_eq!(loaded.list_root()[0].title(), "Max");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// R3363：folder id 为 u64::MAX 时同样不 panic（from_snapshot 的 max_id 经 folder_id 分支也取 max）。
+#[test]
+fn test_bookmarks_load_max_u64_folder_id_no_overflow_r3363() {
+    let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks_fovf-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("bookmarks.json");
+
+    let crafted = r#"{
+        "bookmarks": [],
+        "folders": [
+            {"id": 18446744073709551615, "name": "MaxFolder"}
+        ]
+    }"#;
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(&path, crafted).unwrap();
+
+    let loaded = Bookmarks::load(&path);
+    assert_eq!(loaded.folders().len(), 1);
+    assert_eq!(loaded.folders()[0].name(), "MaxFolder");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

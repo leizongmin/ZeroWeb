@@ -306,7 +306,14 @@ impl Bookmarks {
             })
             .collect();
         if max_id > 0 {
-            BookmarkId::sync_counter(max_id + 1);
+            // R3363：saturating_add 防 u64 溢出——恶意/损坏的本地 bookmarks.json 含
+            // `"id": 18446744073709551615`（u64::MAX）时，`max_id + 1` debug panic
+            //（overflow-checks）/ release 回绕为 0 致 sync_counter(0) 不推进（恢复后 ID 冲突）。
+            // saturating 后 max_id==u64::MAX 时 next=u64::MAX（sync_counter 仅在 current<min_next 时推进，
+            // 与已有 u64::MAX ID 共存——下一 next() 经 fetch_add 溢出回绕到 0，但这是 u64 极端边界，
+            // 实际书签量级永不触及；核心是不 panic）。本地信任边界文件解析须 fail-safe 不 crash。
+            let next = max_id.saturating_add(1);
+            BookmarkId::sync_counter(next);
         }
         Self { bookmarks, folders }
     }
