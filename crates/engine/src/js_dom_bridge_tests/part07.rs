@@ -163,8 +163,7 @@ fn test_event_subclasses2_r2812() {
     sandbox
         .execute(
             "globalThis.__cse = document.createEvent('StorageEvent') instanceof StorageEvent;\
-             globalThis.__cpr = document.createEvent('ProgressEvent') instanceof ProgressEvent;\
-             globalThis.__cuk = document.createEvent('UnknownEvent') instanceof Event;",
+             globalThis.__cpr = document.createEvent('ProgressEvent') instanceof ProgressEvent;",
         )
         .unwrap();
     assert_eq!(
@@ -177,10 +176,17 @@ fn test_event_subclasses2_r2812() {
         "true",
         "createEvent('ProgressEvent') instanceof ProgressEvent"
     );
+    // R14：spec 合规——未知 event type 抛 NotSupportedError（不再 lenient 回落 Event）。
+    sandbox
+        .execute(
+            "globalThis.__cuk = (function(){ try { document.createEvent('UnknownEvent'); return 'no-throw'; }\
+             catch(e){ return e instanceof DOMException && e.name; } })();",
+        )
+        .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__cuk)").unwrap().value,
-        "true",
-        "createEvent(未知 type) 回落 instanceof Event"
+        "NotSupportedError",
+        "createEvent(未知 type) 抛 NotSupportedError（spec，R14）"
     );
 }
 
@@ -2577,6 +2583,95 @@ fn test_classlist_dedupe_and_contains_whitespace_r13() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__norm)").unwrap().value, "2", "前后空白 + 中间空白 规范化 length=2");
+}
+
+#[test]
+fn test_create_event_aliases_and_not_supported_r14() {
+    // js-dom M4 R14：document.createEvent spec 合规——① alias 表覆盖 WPT Document-createEvent.https.html
+    // 全集（含复数 Events/HTMLEvents/SVGEvents→Event、MouseEvents→MouseEvent、UIEvents→UIEvent、custom→CustomEvent
+    // + 缺失子类 BeforeUnloadEvent/DeviceMotionEvent/DeviceOrientationEvent/TextEvent/TouchEvent/MessageEvent）；
+    // ② Object.getPrototypeOf(ev)===window[iface].prototype（createEvent 返事件原型链 = 对应构造器 prototype）；
+    // ③ 未知 type 抛 NotSupportedError（spec，不再 lenient 回落 Event）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // alias → 对应构造器 prototype（WPT testAlias 等价：getPrototypeOf===window[iface].prototype）。
+    // 覆盖 alias / lowercase / uppercase 三态（用例对每个 alias 跑三态）。
+    sandbox
+        .execute(
+            "globalThis.__aliasOk = (function(){\
+               var cases = [\
+                 ['Event','Event'],['Events','Event'],['HTMLEvents','Event'],['SVGEvents','Event'],\
+                 ['CustomEvent','CustomEvent'],['custom','CustomEvent'],\
+                 ['MouseEvent','MouseEvent'],['MouseEvents','MouseEvent'],\
+                 ['UIEvent','UIEvent'],['UIEvents','UIEvent'],\
+                 ['KeyboardEvent','KeyboardEvent'],['FocusEvent','FocusEvent'],\
+                 ['BeforeUnloadEvent','BeforeUnloadEvent'],\
+                 ['CompositionEvent','CompositionEvent'],\
+                 ['DeviceMotionEvent','DeviceMotionEvent'],\
+                 ['DeviceOrientationEvent','DeviceOrientationEvent'],\
+                 ['MessageEvent','MessageEvent'],['StorageEvent','StorageEvent'],\
+                 ['TextEvent','TextEvent'],['DragEvent','DragEvent'],['HashChangeEvent','HashChangeEvent']\
+               ];\
+               for (var i=0;i<cases.length;i++){\
+                 var arg=cases[i][0], iface=cases[i][1];\
+                 var ev=document.createEvent(arg);\
+                 if (Object.getPrototypeOf(ev)!==window[iface].prototype) return 'fail:'+arg;\
+               }\
+               return 'ok';\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__aliasOk)").unwrap().value,
+        "ok",
+        "createEvent alias 全集 prototype 链正确（含复数/小写/缺失子类）"
+    );
+
+    // 未知 type（含复数形式 CustomEvents/KeyEvents）→ NotSupportedError。
+    sandbox
+        .execute(
+            "globalThis.__unk = (function(){\
+               var unknowns=['foo','CustomEvents','KeyEvents','BogusEvent'];\
+               for (var i=0;i<unknowns.length;i++){\
+                 try { document.createEvent(unknowns[i]); return 'no-throw:'+unknowns[i]; }\
+                 catch(e){ if(!(e instanceof DOMException && e.name==='NotSupportedError')) return 'wrong:'+e.name; }\
+               }\
+               return 'ok';\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__unk)").unwrap().value,
+        "ok",
+        "createEvent 未知/复数 type 抛 NotSupportedError"
+    );
+
+    // createEvent 返事件初始化正确（type='' / eventPhase=0 / bubbles=false）。target 默认值另测
+    //（polyfill event target 默认可能为 undefined，spec 期望 null——独立 gap，本切片聚焦 alias + NotSupported）。
+    sandbox
+        .execute(
+            "globalThis.__ev = document.createEvent('MouseEvent');\
+             globalThis.__init = [__ev.type, __ev.eventPhase, __ev.bubbles].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__init)").unwrap().value,
+        ",0,false",
+        "createEvent 返事件初始化（type 空/eventPhase 0/bubbles false）"
+    );
 }
 
 

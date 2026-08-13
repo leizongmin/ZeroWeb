@@ -2641,6 +2641,14 @@
   _defineEventSubclass('DragEvent', 'MouseEvent', [
     ['dataTransfer', 'dataTransfer', null],
   ]);
+  // js-dom M4 R14：createEvent alias 用例（Document-createEvent.https.html aliases 表）需这些 event 子类
+  // 构造器存在（createEvent('BeforeUnloadEvent') → Object.getPrototypeOf(ev)===BeforeUnloadEvent.prototype）。
+  // headless 无对应真实事件源，构造器仅为 createEvent 合成 + instanceof + 原型链（无特化字段，空 props）。
+  _defineEventSubclass('BeforeUnloadEvent', 'Event', []);
+  _defineEventSubclass('DeviceMotionEvent', 'Event', []);
+  _defineEventSubclass('DeviceOrientationEvent', 'Event', []);
+  _defineEventSubclass('TextEvent', 'UIEvent', []);
+  _defineEventSubclass('TouchEvent', 'UIEvent', []);
 
   // R2937 DataTransfer——拖放载荷容器（format→string map + effectAllowed/dropEffect + files/items 只读视图）。
   // headless 无真拖拽源（无 OS 文件 / 无 pointer-drag 几何），但 D&D 库（SortableJS / react-dnd fallback /

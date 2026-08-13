@@ -971,15 +971,22 @@
     // NotSupportedError——本沙箱不抛，避免中断脚本）。
     createEvent: function(type) {
       var t = String(type == null ? '' : type).toLowerCase();
+      // spec `dom-document-createevent`：type（大小写不敏感）映射到 legacy event interface 构造器。
+      // 别名表覆盖 WPT Document-createEvent.https.html aliases（含复数 Events/HTMLEvents/SVGEvents→Event、
+      // MouseEvents→MouseEvent、UIEvents→UIEvent、custom→CustomEvent）。未知 type → 抛 NotSupportedError
+      //（spec `dom-document-createevent` 步骤，WPT assert_throws_dom NOT_SUPPORTED_ERR；R14 由 lenient 回落
+      // Event 改为 spec 合规抛）。已知别名返**空 type** 事件（initEvent/initCustomEvent 设 type）。
       var map = {
+        event: globalThis.Event, events: globalThis.Event, htmlevents: globalThis.Event, svgevents: globalThis.Event,
         customevent: globalThis.CustomEvent, custom: globalThis.CustomEvent,
         keyboardevent: globalThis.KeyboardEvent,
-        mouseevent: globalThis.MouseEvent,
-        uievent: globalThis.UIEvent,
+        mouseevent: globalThis.MouseEvent, mouseevents: globalThis.MouseEvent,
+        uievent: globalThis.UIEvent, uievents: globalThis.UIEvent,
         focusevent: globalThis.FocusEvent,
         wheelevent: globalThis.WheelEvent,
         pointerevent: globalThis.PointerEvent,
         inputevent: globalThis.InputEvent,
+        compositionevent: globalThis.CompositionEvent,
         hashchangeevent: globalThis.HashChangeEvent,
         popstateevent: globalThis.PopStateEvent,
         storageevent: globalThis.StorageEvent,
@@ -990,9 +997,20 @@
         clipboardevent: globalThis.ClipboardEvent,
         dragevent: globalThis.DragEvent,
         errorevent: globalThis.ErrorEvent,
+        messageevent: globalThis.MessageEvent,
+        beforeunloadevent: globalThis.BeforeUnloadEvent,
+        devicemotionevent: globalThis.DeviceMotionEvent,
+        deviceorientationevent: globalThis.DeviceOrientationEvent,
+        textevent: globalThis.TextEvent,
+        touchevent: globalThis.TouchEvent,
       };
-      var Ctor = (map[t] && typeof map[t] === 'function') ? map[t] : globalThis.Event;
-      // 构造器接收 (type, options)；createEvent 返**空 type** 事件（initEvent/initCustomEvent 设 type）。
+      var Ctor = map[t];
+      if (!Ctor || typeof Ctor !== 'function') {
+        // spec：不支持的 event type 抛 NotSupportedError（DOMException code 9）。globalThis.DOMException
+        // 保 identity（R6 教训：叠加路径用全局构造器，避免 wrong global）。
+        throw new (globalThis.DOMException)('The provided event type is not supported.', 'NotSupportedError');
+      }
+      // 构造器接收 (type, options)；createEvent 返**空 type** 事件。
       return new Ctor('');
     },
     // execCommand / queryCommand*（R2826/R2936）——legacy 编辑/剪贴板命令表面（旧 copy 按钮
