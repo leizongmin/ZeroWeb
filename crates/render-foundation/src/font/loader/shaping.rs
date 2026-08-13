@@ -3,11 +3,10 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 
 type ShapeCacheKey = (
-    Vec<(u32, u64, u32, Vec<(u32, u32)>)>,
+    Vec<(u32, u64, u32, Vec<(u32, u32)>, Vec<crate::font::OpenTypeFeature>)>,
     u32,
     (u8, u32),
     crate::font::TextDirection,
-    Vec<crate::font::OpenTypeFeature>,
     String,
 );
 pub(super) type ShapeCache = Arc<std::sync::Mutex<HashMap<ShapeCacheKey, Vec<crate::font::ShapedGlyph>>>>;
@@ -71,6 +70,8 @@ impl FontLoader {
         adjustment: crate::font::FontSizeAdjustment,
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
         let &primary_id = font_ids.first()?;
+        let per_face_features = crate::font::shaper::per_face_features_enabled();
+        let primary_features = self.resolved_font_features(primary_id, features);
         // OPTIMIZATION: 缓存 key 用字体字节 hash 而非 instance_id——instance_id 全局
         // 递增，perf/reftest 每帧新建 FontLoader 重新加载字体（id 重新分配）→ key 每帧
         // 不同 → 缓存全 miss（`word-break: break-word` 中文长文逐字 fragment 每帧全量
@@ -89,27 +90,20 @@ impl FontLoader {
                         crate::font::font_bytes_hash(data) ^ (u64::from(self.face_index(*font_id)) << 32),
                         descriptor_scale.to_bits(),
                         unicode_ranges,
+                        if per_face_features {
+                            self.resolved_font_features(*font_id, features)
+                        } else {
+                            primary_features.clone()
+                        },
                     )
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        let mut resolved_features = self.font_features.get(&primary_id).cloned().unwrap_or_default();
-        for feature in features {
-            if let Some(existing) = resolved_features
-                .iter_mut()
-                .find(|existing| existing.tag == feature.tag)
-            {
-                *existing = *feature;
-            } else {
-                resolved_features.push(*feature);
-            }
-        }
         let key = (
             font_faces,
             font_size.to_bits(),
             adjustment.cache_key(),
             direction,
-            resolved_features.clone(),
             text.to_string(),
         );
         if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {
@@ -122,7 +116,7 @@ impl FontLoader {
                 text,
                 font_size,
                 direction,
-                &resolved_features,
+                if per_face_features { features } else { &primary_features },
                 adjustment,
             );
         let mut cache = self.shape_cache.lock().expect("shape cache poisoned");
@@ -140,7 +134,24 @@ impl FontLoader {
     pub fn register_font_features(&mut self, font_id: u32, features: Vec<crate::font::OpenTypeFeature>) {
         if self.fonts.contains_key(&font_id) {
             self.font_features.insert(font_id, features);
+            self.shape_cache.lock().expect("shape cache poisoned").clear();
         }
+    }
+
+    pub(in crate::font) fn resolved_font_features(
+        &self,
+        font_id: u32,
+        caller_features: &[crate::font::OpenTypeFeature],
+    ) -> Vec<crate::font::OpenTypeFeature> {
+        let mut resolved = self.font_features.get(&font_id).cloned().unwrap_or_default();
+        for feature in caller_features {
+            if let Some(existing) = resolved.iter_mut().find(|existing| existing.tag == feature.tag) {
+                *existing = *feature;
+            } else {
+                resolved.push(*feature);
+            }
+        }
+        resolved
     }
 
     /// 注册 face 级 `size-adjust` 缩放因子。
@@ -215,5 +226,44 @@ mod tests {
 
         assert_eq!(first_glyphs[0].font_id.0, first_lato);
         assert_eq!(second_glyphs[0].font_id.0, second_lato);
+    }
+
+    #[test]
+    fn fallback_face_uses_its_descriptor_features_and_caller_override() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+
+        let mut base = FontLoader::new();
+        let primary = base.load_font(LATO_TTF).expect("load primary Lato");
+        let secondary = base.load_font(LATO_TTF).expect("load secondary Lato");
+        base.register_unicode_ranges(primary, vec![(u32::from('A'), u32::from('Z'))]);
+        base.register_unicode_ranges(secondary, vec![(u32::from('a'), u32::from('z'))]);
+        let mut disabled = base.duplicate();
+        let mut enabled = base.duplicate();
+        disabled.register_font_features(secondary, vec![crate::font::OpenTypeFeature::new(*b"liga", 0)]);
+        enabled.register_font_features(secondary, vec![crate::font::OpenTypeFeature::new(*b"liga", 1)]);
+
+        let descriptor_glyphs = disabled
+            .shape_text_cached_with_font_ids(&[primary, secondary], "fi", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape with secondary descriptor");
+        assert_eq!(descriptor_glyphs.len(), 2);
+        assert!(descriptor_glyphs.iter().all(|glyph| glyph.font_id.0 == secondary));
+
+        let enabled_glyphs = enabled
+            .shape_text_cached_with_font_ids(&[primary, secondary], "fi", 16.0, TextDirection::LeftToRight, &[])
+            .expect("shape with enabled secondary descriptor");
+        assert_eq!(enabled_glyphs.len(), 1);
+        assert_eq!(enabled_glyphs[0].font_id.0, secondary);
+
+        let caller_glyphs = disabled
+            .shape_text_cached_with_font_ids(
+                &[primary, secondary],
+                "fi",
+                16.0,
+                TextDirection::LeftToRight,
+                &[crate::font::OpenTypeFeature::new(*b"liga", 1)],
+            )
+            .expect("shape with caller override");
+        assert_eq!(caller_glyphs.len(), 1);
+        assert_eq!(caller_glyphs[0].font_id.0, secondary);
     }
 }

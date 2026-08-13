@@ -108,6 +108,8 @@
 >
 > **▶ Oracle 可靠性进展（R3409-F shaping cache loader/descriptor isolation·2026-08-13）**：共享 shaping cache 的内容寻址 key 已包含字体字节、face index 与 `size-adjust`，但遗漏 `unicode-range` 和 loader-local `font_id`。前者会改变 fallback 选择；后者直接存于 cached `ShapedGlyph`，不同 loader 若以不同顺序加载相同字体，内容 key 相同却会把旧 loader 的 ID 解释为另一张字体。初版只补 range 后，最新组合态仍使 `font-stretch-01..05` 在 `--jobs 1/8` 间漂移 `2.42%↔2.79%`。最终每个 face key 同时包含 local ID 与 range；两组共享 cache 回归测试分别锁定相反 range 的 fallback ID 和相反加载顺序的 local ID。fresh css-fonts Oracle `--jobs 1/8` 的 282 个逐案百分比完全一致，汇总均为 pass/credible/near `83/78/33`；本切片不改变正确串行像素，不宣称兼容率收益。经验见 [`shaping-cache-font-face-metadata.md`](../learnings/bugs/shaping-cache-font-face-metadata.md)。
 >
+> **▶ 字体回退进展（R3410-F per-face feature descriptor·2026-08-14）**：ordered fallback shaping 过去只在 FontLoader 入口合并 primary face 的 `@font-face font-feature-settings`，随后把同一 feature vector用于所有 run；secondary descriptor 被忽略，primary descriptor则错误泄漏。现按 CSS Fonts 4 precedence为每个 resolved face独立合并 descriptor，再由 caller feature覆盖；resolved vector进入每个 face 的 cache key，descriptor 注册同步清 cache。共享 cache 双 loader 机制测试以相同 Lato 字节、互斥 `unicode-range`、secondary `liga=0/1` 证明 descriptor 分别产出 2/1 glyph，caller `liga=1` 可重新启用 ligature。`ZW_PER_FACE_FEATURES=0` 回滚。fresh css-fonts Oracle 282 案 A/B 全部逐像素持平，pass/credible/near 均 `83/78/33`；self-source off/on 同为 `280/287`，可信 strict/可疑/near/fail 均 `164/40/76/7`。现有上游 corpus 没有 secondary fallback descriptor driving case，故本切片按规范机制与零回归落地，不宣称像素收益。经验见 [`fallback-face-feature-descriptor-ownership.md`](../learnings/bugs/fallback-face-feature-descriptor-ownership.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

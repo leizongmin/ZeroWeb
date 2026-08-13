@@ -15,6 +15,11 @@ fn shaped_fallback_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"))
 }
 
+pub(crate) fn per_face_features_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_PER_FACE_FEATURES").as_deref() != Ok("0"))
+}
+
 /// 文本 shaping 方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextDirection {
@@ -211,6 +216,12 @@ impl<'a> TextShaper<'a> {
         let primary_size = self
             .font_loader
             .adjusted_font_size(primary_id.0, primary_id.0, font_size, adjustment);
+        let per_face_features = per_face_features_enabled();
+        let primary_features = if per_face_features {
+            self.font_loader.resolved_font_features(primary_id.0, features)
+        } else {
+            features.to_vec()
+        };
 
         // 尝试 rustybuzz shaping
         if !font_ids.is_empty() || self.default_font_id.is_some() {
@@ -220,7 +231,9 @@ impl<'a> TextShaper<'a> {
             {
                 return glyphs;
             }
-            if let Some(glyphs) = self.shape_with_rustybuzz(primary_id, text, primary_size, direction, features) {
+            if let Some(glyphs) =
+                self.shape_with_rustybuzz(primary_id, text, primary_size, direction, &primary_features)
+            {
                 return glyphs;
             }
         }
@@ -245,7 +258,8 @@ impl<'a> TextShaper<'a> {
         features: &[OpenTypeFeature],
         adjustment: FontSizeAdjustment,
     ) -> Option<Vec<ShapedGlyph>> {
-        if text.is_empty() || direction != TextDirection::LeftToRight || !features.is_empty() {
+        let per_face_features = per_face_features_enabled();
+        if text.is_empty() || direction != TextDirection::LeftToRight || !per_face_features && !features.is_empty() {
             return None;
         }
         let primary_id = FontId(*font_ids.first()?);
@@ -297,7 +311,14 @@ impl<'a> TextShaper<'a> {
             let resolved_size = self
                 .font_loader
                 .adjusted_font_size(primary_id.0, font_id.0, font_size, adjustment);
-            let mut glyphs = self.shape_with_rustybuzz(font_id, run_text, resolved_size, direction, features)?;
+            // https://drafts.csswg.org/css-fonts-4/#feature-precedence
+            let resolved_features = if per_face_features {
+                self.font_loader.resolved_font_features(font_id.0, features)
+            } else {
+                features.to_vec()
+            };
+            let mut glyphs =
+                self.shape_with_rustybuzz(font_id, run_text, resolved_size, direction, &resolved_features)?;
             let cluster_base = u32::try_from(start).ok()?;
             for glyph in &mut glyphs {
                 glyph.cluster = glyph.cluster.checked_add(cluster_base)?;
