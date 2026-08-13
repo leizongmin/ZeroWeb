@@ -1620,6 +1620,7 @@ mod tests {
     fn renderer_js_worker_page_lifecycle_r2931() {
         // R2931 页面生命周期/分析簇：navigator.sendBeacon（卸载 beacon，accept-and-return-true）+
         // PageTransitionEvent 构造器 + pageshow 首次注册 _defer 派发（window + document 路径）。
+        // PageTransitionEvent 是 modern non-createable interface，须通过构造器创建。
         let mut worker = RendererJsWorker::spawn(38);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
@@ -1628,7 +1629,7 @@ mod tests {
                  globalThis.__beacon2 = navigator.sendBeacon();\
                  globalThis.__pt1 = new PageTransitionEvent('pageshow', { persisted: true }).persisted;\
                  globalThis.__pt2 = new PageTransitionEvent('pageshow').persisted;\
-                 globalThis.__ev = (document.createEvent('PageTransitionEvent').constructor === globalThis.PageTransitionEvent);\
+                 globalThis.__ev = (new PageTransitionEvent('').constructor === globalThis.PageTransitionEvent);\
                  globalThis.__ps = 'no'; globalThis.__ps2 = 'no';\
                  window.addEventListener('pageshow', function (e) {\
                    globalThis.__ps = e.type + ':' + String(e.persisted);\
@@ -1661,7 +1662,7 @@ mod tests {
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__ev)").unwrap(),
             "true",
-            "createEvent('PageTransitionEvent') 构造器匹配"
+            "new PageTransitionEvent() 构造器匹配"
         );
         // pageshow 经首次注册 _defer 派发（execute 末 drain）；window + document 两路径 listener 均收。
         let ps = wait_eq(&worker, "__ps", "pageshow:false", 2000);
@@ -1888,13 +1889,14 @@ mod tests {
     fn renderer_js_worker_clipboard_events_r2936() {
         // R2936 剪贴板事件：ClipboardEvent 构造器 + document.execCommand('copy') 派发 ClipboardEvent 到
         // document.activeElement（焦点元素，bubbles+cancelable）→ copy listener + oncopy handler + 冒泡到 window。
+        // ClipboardEvent 是 modern non-createable interface，须通过构造器创建。
         let mut worker = RendererJsWorker::spawn(43);
         let html = "<html><body><input id='inp'></body></html>";
         worker.set_dom_snapshot(html, "about:blank");
         worker
             .execute_script_direct(
                 "globalThis.__cd = new ClipboardEvent('copy', { clipboardData: 'dt' }).clipboardData;\
-                 globalThis.__evc = (document.createEvent('ClipboardEvent').constructor === globalThis.ClipboardEvent);\
+                 globalThis.__evc = (new ClipboardEvent('').constructor === globalThis.ClipboardEvent);\
                  var inp = document.getElementById('inp');\
                  inp.focus();\
                  globalThis.__copy = 'no';\
@@ -1916,7 +1918,7 @@ mod tests {
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__evc)").unwrap(),
             "true",
-            "createEvent('ClipboardEvent') 构造器匹配"
+            "new ClipboardEvent() 构造器匹配"
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__copy)").unwrap(),
