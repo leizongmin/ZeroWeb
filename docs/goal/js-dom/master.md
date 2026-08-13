@@ -11,6 +11,19 @@
 
 ---
 
+> **📥 接收登记（2026-08-13 用户决策）**：canvas-2d goal 的 `html/canvas/element/path-objects`
+> 剩余工作**合并入本 goal 统一执行**（JS/DOM API 语义面）。canvas 流已完成并提交的部分
+> （commit `d0874c28`：roundRect 角对半径/比例缩放/非有限守卫/16 段椭圆弧 + 新子路径）可复用。
+> **待接手项**（详见 canvas-2d master.md「交接记录」）：
+> 1. **roundRect 批量运行 panic**（NaN 排序，scale 归一化后复现——单用例未定位，wpt-runner
+>    崩溃级）——**接手第一优先级**（定位后解阻塞剩余 roundrect 用例）
+> 2. roundRect DOMPoint 断言（~26 用例：fill 扫描线与椭圆弧交点/精度）
+> 3. arc 形状精度（~16）、arcTo/quadratic/bezier/isPointIn* 等 JS 侧 API 语义
+> 4. roundrect 语义校验（badinput/negative/toomany 抛异常、winding/zero）
+> **运行入口**：`zero-wpt-runner testharness-canvas path-objects`（用例已导入
+> `tests/wpt-runner/wpt-data/html/canvas/element/path-objects/`，205 文件；canvas 流已从
+> `CANVAS_TEST_SUBDIRS` 移除该目录，本流接手时按需重新加入）。
+
 ## 当前状态（执行 agent 首轮填充）
 
 > **填充指引**：逐项核实，标 ✅/⚠️/❌，附证据（commit hash / 测试命令 / 文件路径）。与本节互斥矛盾的内容不允许出现在其他 section。

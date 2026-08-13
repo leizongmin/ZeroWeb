@@ -25,7 +25,8 @@
 | line-styles | 33 / 33 | ✅ 全绿 |
 | shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
 | compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
-| **合计** | **309 文件 / 280 subtest** | ✅ **280 Pass**（47 个 G5/深语义待决策） |
+| path-objects | 205 / 26+ | 🔄 部分（roundrect 26 Pass；**剩余移交 js-dom goal**——见下方交接记录） |
+| **合计** | **309 文件 / 280+ subtest** | ✅ **280 Pass**（path-objects 剩余已移交） |
 
 - 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
 - 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
@@ -71,6 +72,22 @@
 | 阴影段逐像素投影判定 + join 真实几何 + 端 cap | stroke.join.1/2 / stroke.cap.1/2 |
 | CompositeOperation 补 SourceOut/Clear + source 独占类未覆盖清除（受 clip 约束） | composite.uncovered.fill.* / clip.* / transparent.source-out |
 | globalCompositeOperation 枚举校验 + globalAlpha 范围 | operation.* / globalAlpha.range |
+
+## 🔄 交接记录（2026-08-13 用户决策：path-objects 剩余合并入 docs/goal/js-dom.md 统一执行）
+
+canvas 流的 path-objects 目录工作**暂停移交** js-dom goal（JS/DOM API 语义面）。已完成的并入本流提交
+（d0874c28：roundRect 角对半径/比例缩放/非有限守卫/16 段椭圆弧）；**未完成移交项**：
+
+1. **roundRect DOMPoint 断言**（~26 用例）：shim "p<x>,<y>" 编码 + host 配对解析已通，但渲染仍
+   偏离（部分断言 got 绿 vs 期望红——疑似 fill 扫描线与椭圆弧的交点配对或 16 段精度仍不足）
+2. **roundRect 批量运行 panic**（NaN 排序，scale 归一化后复现——单用例未定位，疑似某
+   负 w/h 或 NaN radii 组合）——**js-dom 流接手时先定位此 panic**（wpt-runner 崩溃级）
+3. **arc 形状精度**（~16 用例：径向带 vs 折线垂直带、端点角度截断）、**arcTo/quadratic/
+   bezier/isPointIn*** 等 JS 侧 API 语义——均属 JS/DOM API 面，移交 js-dom
+4. **roundrect 语义校验**（badinput/negative/toomany 抛异常、winding/zero 边界）
+
+**移交操作**：`CANVAS_TEST_SUBDIRS` 已移除 path-objects 目录（canvas 流不再跑；
+js-dom 流接手时按需重新加入并修复）。
 
 ## 缺口清单
 
