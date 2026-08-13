@@ -27,7 +27,7 @@
 | compositing | 124 / 62 | 🔄 62 Pass（36 个 = G5 DOM img 源；其余全修） |
 | path-objects | 205 / 26+ | 🔄 部分（roundrect 26 Pass；**剩余移交 js-dom goal**——见下方交接记录） |
 | fill-and-stroke-styles | 261 / 182 | 🔄 182 Pass（66 = G5 DOM img 源、13 = radial cone 几何深） |
-| **合计** | **570 文件 / 460+ subtest** | ✅ **460 Pass**（113 失败 = G5 132 计入 + radial 13 深） |
+| **合计** | **775 文件 / 462 subtest** | ✅ **462 Pass**（121 失败 = G5 DOM img 源 ~87 + radial cone 13 + currentColor 4 + CSS Color 4 其余 ~17） |
 
 - 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
 - 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
@@ -97,7 +97,7 @@ js-dom 流接手时按需重新加入并修复）。
 | G1 | WPT html/canvas 真实用例覆盖为零 | ✅ M1 完成（124 文件导入，168/168） |
 | G2 | 像素级 canvas 验证缺失 | 🔄 GPU 路径测试就位；Chromium oracle 对比待 oracle 环境（R3344 记录本机无 Chromium） |
 | G3 | OffscreenCanvas Rust 桩 | ✅ 真实化（行为测试 4 个） |
-| G4 | createImageBitmap options defer（imageOrientation/premultiplyAlpha） | ⏳ 未开工（M2） |
+| G4 | createImageBitmap options defer（imageOrientation/premultiplyAlpha） | ✅ flipY 实现（R34xx）+ 单测；premultiplyAlpha 接受规格化无操作 |
 | G5 | ImageBitmap 源类型受限（HTMLImageElement 等） | ⏳ 深结构待点名 |
 | G6 | OffscreenCanvas × Web Worker 未集成 | ⏳ 深结构待点名 |
 | G7 | 后续 WPT 目录（compositing/shadows/path-objects/text/fill-and-stroke-styles 等，上游 ~1500 文件） | ⏳ M1 扩展（交替推进） |
@@ -111,10 +111,9 @@ js-dom 流接手时按需重新加入并修复）。
 
 ## 下一步计划
 
-1. **M1 扩展**：导入下一批 WPT 目录（path-objects/fill-and-stroke-styles/text——与已修路径/样式光栅直接相关），失败聚类 → 轻量修复
-2. **M2**：G4 createImageBitmap options（轻量可先行）
-3. **Oracle**：Chromium 环境可用后补像素 oracle A/B（G2）
-4. **待决策**：G5 DOM img 源（解锁 9 个 shadow 用例）、currentColor（2 用例）、OffscreenCanvas Worker
+1. **M1 扩展**：导入下一批 WPT 目录（text——与已修文本光栅直接相关；其余大目录含大量 G5 img 依赖）
+2. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）
+3. **待决策**：G5 DOM img 源（~87 用例）、radial cone 几何（13）、currentColor（4）、OffscreenCanvas Worker（G6）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
