@@ -69,7 +69,16 @@ impl FetchPriority {
 
 /// 从 URL 路径推断资源类型（无显式 hint 时的兜底）。
 pub fn infer_resource_type_from_url(url: &str) -> &'static str {
-    let path = url.split('?').next().unwrap_or(url).rsplit('/').next().unwrap_or("");
+    // RFC 3986：fragment（`#...`）不属于 path，且查询串（`?...`）也不参与扩展名；
+    // 二者都先剥离，避免 `app.js#frag` 因 `#frag` 后缀被误判为 document。
+    let no_frag = url.split('#').next().unwrap_or(url);
+    let path = no_frag
+        .split('?')
+        .next()
+        .unwrap_or(no_frag)
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".css") {
         "style"
@@ -112,5 +121,38 @@ mod tests {
         let (p, rt) = FetchPriority::from_fetch_headers(&headers, "https://x/a.js");
         assert_eq!(rt, "script");
         assert_eq!(p, FetchPriority::HIGH);
+    }
+
+    // ── R3384：infer_resource_type_from_url 测试加固 + fragment 修复回归 ──
+
+    #[test]
+    fn infer_resource_type_extensions_case_insensitive() {
+        assert_eq!(infer_resource_type_from_url("https://x/A.CSS"), "style");
+        assert_eq!(infer_resource_type_from_url("https://x/A.Js"), "script");
+        assert_eq!(infer_resource_type_from_url("https://x/x.WOFF2"), "font");
+        assert_eq!(infer_resource_type_from_url("https://x/IMG.PNG"), "image");
+    }
+
+    #[test]
+    fn infer_resource_type_query_string_ignored() {
+        assert_eq!(infer_resource_type_from_url("https://x/a.js?v=2"), "script");
+        assert_eq!(infer_resource_type_from_url("https://x/a.css?cache=bust"), "style");
+    }
+
+    /// R3384 回归锁定：fragment（#frag）须被剥离，否则 `app.js#frag` 因
+    /// 后缀 `.js#frag` 不匹配 `.js` 被误判为 document（修复前确证 bug）。
+    #[test]
+    fn infer_resource_type_fragment_stripped_r3384() {
+        assert_eq!(infer_resource_type_from_url("https://x/app.js#frag"), "script");
+        assert_eq!(infer_resource_type_from_url("https://x/a.css#section"), "style");
+        assert_eq!(infer_resource_type_from_url("https://x/a.js?b=1#frag"), "script");
+        assert_eq!(infer_resource_type_from_url("https://x/pic.png#"), "image");
+    }
+
+    #[test]
+    fn infer_resource_type_trailing_slash_is_document() {
+        // 目录路径（无扩展名 basename）→ document。
+        assert_eq!(infer_resource_type_from_url("https://x/dir/"), "document");
+        assert_eq!(infer_resource_type_from_url("https://x/"), "document");
     }
 }
