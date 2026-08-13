@@ -569,6 +569,29 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        "validateColor" => {
+            if try_parse_canvas_color(arg(0)).is_some() {
+                "1".to_string()
+            } else {
+                String::new()
+            }
+        }
+        "getFillStyle" => reg
+            .contexts
+            .get(&hid())
+            .map(|ctx| match ctx.fill_style() {
+                zero_canvas::CanvasStyle::Color(c) => color_to_canvas_css(c),
+                _ => String::new(), // 渐变/图案——JS 侧缓存返回对象
+            })
+            .unwrap_or_default(),
+        "getStrokeStyle" => reg
+            .contexts
+            .get(&hid())
+            .map(|ctx| match ctx.stroke_style() {
+                zero_canvas::CanvasStyle::Color(c) => color_to_canvas_css(c),
+                _ => String::new(),
+            })
+            .unwrap_or_default(),
         "getShadowColor" => reg
             .contexts
             .get(&hid())

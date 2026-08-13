@@ -859,14 +859,35 @@
     return (isNaN(n) || n < 0) ? def : n;
   }
   // R3079：CanvasGradient proxy。_zwGrad 为渐变 host id 标记（fillStyle/strokeStyle setter 检测）。
-  // addColorStop(offset, color) 经 host 变更停止点（offset canvas crate clamp [0,1]）。
-  function _zwMakeGradient(h, gid) {
-    return {
-      _zwGrad: gid,
-      addColorStop: function (offset, color) {
-        __zw_canvas_op(h, 'addColorStop', gid, String(offset), String(color));
-      },
+  // R34xx：addColorStop 参数校验（spec：offset 非有限/越界抛 IndexSizeError；颜色无效抛
+  // SyntaxError——2d.gradient.object.invalidoffset/invalidcolor）+ 全局 CanvasGradient 构造器
+  //（2d.gradient.object.type/return 依赖 prototype）。
+  if (!globalThis.CanvasGradient) {
+    globalThis.CanvasGradient = function CanvasGradient() {};
+    // R34xx：prototype.addColorStop 委托实例方法（2d.gradient.object.type 断言 prototype 方法存在）。
+    CanvasGradient.prototype.addColorStop = function (offset, color) {
+      if (this && typeof this.addColorStop === 'function' && this !== CanvasGradient.prototype) {
+        return this.addColorStop(offset, color);
+      }
+      throw new TypeError('Illegal invocation');
     };
+  }
+  function _zwMakeGradient(h, gid) {
+    function addColorStop(offset, color) {
+      // R34xx：参数校验（spec：offset 非有限/越界抛 IndexSizeError；颜色无效抛 SyntaxError）。
+      offset = +offset;
+      if (!isFinite(offset) || offset < 0 || offset > 1) {
+        throw _zwDomException('gradient offset out of range', 'IndexSizeError');
+      }
+      var c = String(color);
+      if (c === '' || (typeof __zw_canvas_op === 'function' && !String(__zw_canvas_op('0', 'validateColor', c)))) {
+        throw _zwDomException('invalid gradient color', 'SyntaxError');
+      }
+      __zw_canvas_op(h, 'addColorStop', gid, String(offset), String(color));
+    }
+    var g = { _zwGrad: gid, addColorStop: addColorStop };
+    Object.setPrototypeOf(g, CanvasGradient.prototype);
+    return g;
   }
   // R3306：Path2D（spec CanvasPath，`new Path2D()` / `new Path2D(other)` / `new Path2D(svgString)`）。
   // `_zwPath` 为 host 路径 id 标记（ctx.fill(path) 等 setter 检测）。方法镜像 ctx 路径族（经 host path id 改
@@ -1129,7 +1150,15 @@
           __zw_canvas_op(h, 'setFillStyle', String(v));
         }
       },
-      get: function () { return this._fs; }
+      get: function () {
+        // R34xx：颜色串读 host 规范化（opaque→#rrggbb / alpha→rgba(带空格)——与
+        // shadowColor 同款；2d.fillStyle.get.* 断言格式）。渐变/图案对象走本地缓存。
+        if (typeof this._fs === 'string' && typeof __zw_canvas_op === 'function') {
+          var r = String(__zw_canvas_op(h, 'getFillStyle'));
+          if (r) return r;
+        }
+        return this._fs;
+      }
     });
     Object.defineProperty(ctx, 'strokeStyle', {
       set: function (v) {
@@ -1144,7 +1173,14 @@
           __zw_canvas_op(h, 'setStrokeStyle', String(v));
         }
       },
-      get: function () { return this._ss; }
+      get: function () {
+        // R34xx：同 fillStyle getter（host 规范化）。
+        if (typeof this._ss === 'string' && typeof __zw_canvas_op === 'function') {
+          var r = String(__zw_canvas_op(h, 'getStrokeStyle'));
+          if (r) return r;
+        }
+        return this._ss;
+      }
     });
     Object.defineProperty(ctx, 'lineWidth', {
       // R34xx：非法值（非有限/≤0）忽略保持旧值（spec：lineWidth 须为正有限数；
@@ -1287,6 +1323,16 @@
     // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
     ctx.createPattern = function (image, repetition) {
       if (typeof __zw_canvas_op !== 'function') return null;
+      // R34xx：repetition 校验（spec：''/repeat/repeat-x/repeat-y/no-repeat 合法（大小写敏感）；
+      // undefined 抛 SYNTAX_ERR、null → ''（WebIDL DOMString 转换）、非法串抛——
+      // 2d.pattern.repeat.*）。DOMException 用 _zwDomException（assert_throws_dom 匹配）。
+      if (repetition === undefined) {
+        throw _zwDomException('Invalid repetition value', 'SyntaxError');
+      }
+      var rep = (repetition === null) ? '' : String(repetition);
+      if (rep !== '' && rep !== 'repeat' && rep !== 'repeat-x' && rep !== 'repeat-y' && rep !== 'no-repeat') {
+        throw _zwDomException('Invalid repetition value: ' + rep, 'SyntaxError');
+      }
       var wire = '';
       if (image && typeof image.getContext === 'function') {
         // 源 canvas 元素：getContext('2d') 返（缓存）ctx2d proxy（DOM 元素缓存于 _zwCanvasCtx[key]，

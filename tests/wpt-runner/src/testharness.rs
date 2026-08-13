@@ -31,6 +31,7 @@ pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
     "html/canvas/element/line-styles",
     "html/canvas/element/shadows",
     "html/canvas/element/compositing",
+    "html/canvas/element/fill-and-stroke-styles",
 ];
 
 /// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
