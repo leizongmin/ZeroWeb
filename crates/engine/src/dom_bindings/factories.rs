@@ -111,9 +111,18 @@ pub(super) fn native_create_element_invoke(
     args: v8::FunctionCallbackArguments,
     mut rv: v8::ReturnValue<v8::Value>,
 ) {
-    let mut tag = string_arg(scope, &args, 0);
-    if tag.trim().is_empty() {
-        tag = "div".to_string();
+    let tag = string_arg(scope, &args, 0);
+    // spec `dom-document-createelement` validate：标签名（String(tag) 后）须匹配 Name production。
+    // 非法（空 / 首字符非 name-start / 含 `<`/`>`/空白等）→ 抛 InvalidCharacterError DOMException。
+    // 注意：`createElement(undefined)`/`(null)` 经 String → "undefined"/"null"（首字符字母）合法通过
+    //（WPT valid 列表含 undefined/null）。此前空标签静默回落 div 是 lenient 简化，与 spec/WPT 不符。
+    if !super::is_valid_qualified_name(&tag) {
+        super::dom_exception::throw_dom_exception(
+            scope,
+            "InvalidCharacterError",
+            "The tag name provided is not a valid name.",
+        );
+        return;
     }
     let tag_trim = tag.trim().to_string();
     // create（borrow_mut 释放后）。host 先建元素得 NodeId（custom 元素的 tag = 'my-el' 原样保留）。

@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R2 — classList token 校验抛 DOMException（双路径）+ native DOMException 构造器；dom/nodes 通过率 41.25% → 56.08%
+**本轮**: R3 — createElement 非法标签名校验抛 InvalidCharacterError（双路径）；dom/nodes 56.08% → 56.45%
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -31,7 +31,7 @@
 
 **核心缺口**（本目标要消除，按优先级）：
 1. ~~**WPT dom 上游用例 0 导入**（DC-3）~~ → ✅ **R1 首切片已建**：dom/nodes 141 用例，41.25% pass 基线。**剩余**：扩展子目录（events/collections/...）+ native 路径对照（`ZW_NATIVE_DOM=1`）。基线暴露的真实差距已重排见下。
-2. ~~**DOMException 抛出语义未实现（classList 部分）**~~ → ✅ **R2 已修**：classList token 校验抛真 DOMException（空→SyntaxError、空白→InvalidCharacterError），双路径同步 + native DOMException 构造器。dom/nodes **41.25% → 56.08%（+14.83pp）**。**剩余**：createElement 非法标签（~10）/ appendChild 闭环等其余 DOMException 抛出点。
+2. ~~**DOMException 抛出语义未实现（classList 部分）**~~ → ✅ **R2 已修**：classList token 校验抛真 DOMException（空→SyntaxError、空白→InvalidCharacterError），双路径同步 + native DOMException 构造器。dom/nodes **41.25% → 56.08%（+14.83pp）**。✅ **R3 已修**：createElement 非法标签名抛 InvalidCharacterError（双路径 + spec Name production 校验 helper），dom/nodes **56.08% → 56.45%（+0.37pp）**。**剩余**：appendChild/insertBefore 闭环（HierarchyRequestError）等其他 DOMException 抛出点；createElement XML/XHTML iframe 上下文（独立缺口）。
 3. **polyfill vs native A/B 对照门**（DC-4）→ ✅ R0 读路径骨架 + R2 异常路径扩展（classList 抛 DOMException 等价）
 3. **dom_bindings 独立 coverage 口径缺失**（DC-4）——`check-coverage.sh` 无子模块报告（M0 项 4）
 4. V8 native 路径默认关 → 生产仍走 polyfill 字符串桥（DC-1，M5）
@@ -56,10 +56,11 @@
 
 **M0 状态**: 项 1/2/3/5/6 ✅ 完成；项 4（dom_bindings coverage 口径）待 `cargo-llvm-cov` 安装（记「未解决问题」）。M0 核心目标（基线 + A/B 门 + 首切片 land）已达成，**转入 M4 推进**（入口文档允许 M4 与 M1–M3 早期并行）。
 
-**当前推进: M4 — WPT dom 上游基线 + 按聚类驱动修复（R2 已 land）**
+**当前推进: M4 — WPT dom 上游基线 + 按聚类驱动修复（R3 已 land）**
 - R1 已建：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS=["dom/nodes"]` + `make testharness-dom`/`fetch-wpt-dom`；基线 41.25%
-- R2 已修（最高 ROI 聚类）：classList token 校验抛 DOMException（双路径）+ native DOMException 构造器（`dom_bindings/dom_exception.rs`）+ A/B 门异常路径扩展。**dom/nodes 41.25% → 56.08%（+14.83pp，400 subtest 净 pass，0 回归）**
-- 剩余聚类（按 ROI）：① 其余 DOMException 抛出点（createElement 非法标签 ~10、appendChild 闭环 HierarchyRequestError 等）② createProcessingInstruction 未实现 44 ③ XML/XHTML doc 模型 98 ④ instanceof HTMLElement/Element 原型链 ~88
+- R2 已修（最高 ROI 聚类）：classList token 校验抛 DOMException（双路径）+ native DOMException 构造器（`dom_bindings/dom_exception.rs`）+ A/B 门异常路径扩展。dom/nodes 41.25% → 56.08%
+- R3 已修：createElement 非法标签名抛 InvalidCharacterError（双路径 + spec Name production 校验 helper `is_valid_qualified_name`/`_zwIsValidQualifiedName`）+ A/B 门 createElement 异常路径扩展。dom/nodes **56.08% → 56.45%（HTML 上下文 invalid 全转 pass，0 回归）**
+- 剩余聚类（按 ROI）：① appendChild/insertBefore 闭环与无效层级（HierarchyRequestError）② createProcessingInstruction 未实现 44 ③ XML/XHTML doc 模型 98（iframe 不加载，独立缺口）④ instanceof HTMLElement/Element 原型链 ~88
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -80,7 +81,7 @@
 
 | 基线 | 命令 | 当前值 |
 |------|------|--------|
-| zero-engine 测试（v8） | `cargo test -p zero-engine --features v8 --lib` | ✅ 2065 passed（含 A/B 门 5 个 + DOMException 增强，R2 实测） |
+| zero-engine 测试（v8） | `cargo test -p zero-engine --features v8 --lib` | ✅ 2068 passed（含 A/B 门 6 个 + createElement valid/invalid，R3 实测） |
 | zero-engine 测试（quickjs） | `cargo test -p zero-engine --no-default-features --features quickjs --lib` | ✅ 1406 passed（A/B 门 + dom_exception 均 cfg(v8) 排除，R2 实测） |
 | zero-webview 测试（v8） | `cargo test -p zero-webview --features v8` | ✅ 17 passed（native_dom 接线回归） |
 | clippy（v8 + quickjs 双矩阵） | `cargo clippy -p zero-engine ...` | ✅ 零警告（双矩阵） |
@@ -111,6 +112,7 @@
 | 2026-08-13 | R0 首切片 | A/B 对照门骨架 `tests_ab_compare.rs`（9 读用例 + 索引读 + 2 sanity）；v8 2063 + quickjs 1405 + webview 17 全绿，双矩阵 clippy 干净 | **native 读路径 ≡ polyfill 读路径**（行为等价实证），M0 项 5+6 完成 |
 | 2026-08-13 | R1 | WPT dom/nodes 基线：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS` + Makefile；141 用例 / 2696 subtest / **41.25% pass** | DC-3 首切片达成；暴露 DOMException 抛出语义（~474）/ createProcessingInstruction（44）/ XML doc 模型（98）为最高 ROI 修复方向 |
 | 2026-08-13 | R2 | classList token 校验抛 DOMException（双路径）+ native DOMException 构造器（`dom_exception.rs`）+ A/B 门异常路径扩展；v8 2065 / quickjs 1406 / wpt-runner 167 全绿，双矩阵 clippy 干净 | **dom/nodes 41.25% → 56.08%（+14.83pp，400 subtest 净 pass，0 回归）**；Element-classlist.html 单用例 80.3% |
+| 2026-08-13 | R3 | createElement 非法标签名抛 InvalidCharacterError（双路径 + spec Name production 校验 helper `is_valid_qualified_name` native / `_zwIsValidQualifiedName` polyfill）+ A/B 门 createElement 异常路径扩展；v8 2068 / wpt-runner 167 全绿，双矩阵 clippy 干净 | dom/nodes 56.08% → **56.45%（+0.37pp，createElement HTML 上下文 invalid 全转 pass，0 回归）** |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -120,9 +122,9 @@
 
 ## 下一步计划
 
-1. **R2（本轮，已完成）**：classList token 校验抛 DOMException（双路径）+ native DOMException 构造器 → dom/nodes +14.83pp → land
+1. **R3（本轮，已完成）**：createElement 非法标签名校验抛 InvalidCharacterError（双路径 + spec Name production 校验 helper）→ dom/nodes +0.37pp → land
 2. **下轮候选（按剩余 ROI）**：
-   - **(a) 其余 DOMException 抛出点**：createElement 非法标签（~10，需 spec name 校验 → InvalidCharacterError）+ appendChild 闭环（HierarchyRequestError）。native DOMException 基建已就位（`throw_dom_exception`），扩点成本低。
+   - **(a) appendChild/insertBefore 闭环与无效层级**（HierarchyRequestError）：node 树插入校验。复用 `throw_dom_exception` 基建。
    - **(b) `document.createProcessingInstruction` 实现**（44 失败，单一 API）。
    - **(c) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
    - **(d) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
@@ -155,4 +157,5 @@
 
 - R0：M0 A/B 对照门骨架 → [archive/m0-slice-ab-gate-skeleton.md](archive/m0-slice-ab-gate-skeleton.md)
 - R1：M4 WPT dom/nodes 基线首切片 → [archive/m4-slice-wpt-dom-nodes-baseline.md](archive/m4-slice-wpt-dom-nodes-baseline.md)
-- R2：M4 classList DOMException 修复（双路径 + native DOMException 构造器）→ archive/m4-slice-classlist-dom-exception.md（本轮 land 时附）
+- R2：M4 classList DOMException 修复（双路径 + native DOMException 构造器）→ archive/m4-slice-classlist-dom-exception.md
+- R3：M4 createElement 非法标签名校验（双路径 + spec Name production helper）→ archive/m4-slice-create-element-validation.md（本轮 land 时附）

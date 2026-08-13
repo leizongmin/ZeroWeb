@@ -226,6 +226,27 @@ fn ab_classlist_token_validation_throws_dom_exception() {
 
     // contains/toggle 同样校验（覆盖校验点一致性）。
     let (n, p) = ab_catch(html, "document.getElementById('a').classList.toggle('')");
-    assert_eq!(n, p, "classList.toggle('') A/B 不一致：native=`{n}` polyfill=`{p}`");
+    assert_eq!(n, p, "classList.toggle('') A/B 不齐：native=`{n}` polyfill=`{p}`");
     assert!(n.starts_with("threw|"), "toggle('') 应抛，实际：{n}");
+}
+
+/// createElement 非法标签名校验异常路径：两路径都抛 InvalidCharacterError DOMException。
+/// 对齐 WPT dom/nodes/Document-createElement.html invalid 列表。
+#[test]
+fn ab_create_element_invalid_name_throws_dom_exception() {
+    let html = r#"<html><body></body></html>"#;
+    // 数字首 / `<` / 含空白 / `-`首 → InvalidCharacterError（两路径一致）。
+    for bad in ["1foo", "<foo", "foo>", "fo o", "-foo"] {
+        let escaped = bad.replace('\\', "\\\\").replace('\'', "\\'");
+        let (n, p) = ab_catch(html, &format!("document.createElement('{escaped}')"));
+        assert_eq!(n, p, "createElement('{bad}') A/B 不一致：native=`{n}` polyfill=`{p}`");
+        assert!(
+            n.starts_with("threw|InvalidCharacterError"),
+            "createElement('{bad}') 应抛 InvalidCharacterError，实际：{n}"
+        );
+    }
+    // 合法标签不抛（防误伤）—— 两路径都返正常元素。
+    let (n, p) = ab_catch(html, "document.createElement('foo').tagName");
+    assert_eq!(n, p, "createElement('foo') A/B 不一致：native=`{n}` polyfill=`{p}`");
+    assert!(n.starts_with("no-throw|"), "createElement('foo') 不应抛，实际：{n}");
 }

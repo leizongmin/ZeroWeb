@@ -2400,6 +2400,53 @@ fn native_document_create_element_ns_r3163() {
     );
 }
 
+/// `document.createElement(tag)` spec validate（`dom-document-createelement`）：非法标签名抛
+/// InvalidCharacterError DOMException。对齐 WPT `dom/nodes/Document-createElement.html` invalid 列表。
+#[test]
+fn native_document_create_element_invalid_name_throws() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // invalid 列表（WPT）：空 / 数字首 / `-`/`.`首 / 含空白 / `<`/`>` / `}` → InvalidCharacterError。
+    let invalid = [
+        "", "1foo", "1:foo", "fo o", "}foo", "<foo", "foo>", "<foo>", "-foo", ".foo",
+    ];
+    for tag in invalid {
+        let escaped = tag.replace('\\', "\\\\").replace('\'', "\\'");
+        // 用 run_script 跑会抛 → 返异常串；改用 try/catch 包装返 name（run_script 不捕异常）。
+        // 注：run_script 遇未捕获异常返 V8 异常串（非 panic），断言含 InvalidCharacterError。
+        let script = format!(
+            "(()=>{{ try {{ __zw_native_get_document().createElement('{escaped}'); return 'no-throw'; }}\
+             catch(e){{ return e.name; }} }})()"
+        );
+        let got = run_script(html, &script);
+        assert_eq!(
+            got, "InvalidCharacterError",
+            "createElement({tag:?}) 应抛 InvalidCharacterError，实际：{got}"
+        );
+    }
+}
+
+/// `document.createElement` valid 标签不抛（含 undefined/null ToString、含 `:`、Unicode 首字符）。
+/// 对齐 WPT valid 列表（防 is_valid_qualified_name 误伤）。
+#[test]
+fn native_document_create_element_valid_name_passes() {
+    let html = r#"<html><head></head><body></body></html>"#;
+    // 合法名 → 不抛，返元素 tagName（HTML 大写）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createElement('foo').tagName)"),
+        "FOO"
+    );
+    // 含 `:`（Name production 允许，非 QName 限制）→ 合法。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createElement('f:oo').tagName)"),
+        "F:OO"
+    );
+    // createElement(undefined) → JS ToString 成 "undefined"（首字符字母）合法通过（WPT valid 列表）。
+    assert_eq!(
+        run_script(html, "(__zw_native_get_document().createElement(undefined).tagName)"),
+        "UNDEFINED"
+    );
+}
+
 /// R3166 `element.tagName` / `nodeName` 命名空间大小写敏感（spec `dom-element-tagname`：
 /// HTML-uppercased local name）。闭合 R3163 限制①——HTML 命名空间元素大写，SVG/MathML 等原样小写。
 #[test]

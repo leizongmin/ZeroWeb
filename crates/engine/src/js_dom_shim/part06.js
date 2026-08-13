@@ -875,6 +875,12 @@
     },
     createElement: function(tag) {
       tag = String(tag);
+      // spec `dom-document-createelement` validate：非法标签名（空/首字符非 name-start/含
+      // <>空白等）→ 抛 InvalidCharacterError DOMException。与 native dom_bindings
+      // is_valid_qualified_name 逻辑对齐（A/B 等价）。createElement(undefined)→"undefined" 合法通过。
+      if (!_zwIsValidQualifiedName(tag)) {
+        throw new DOMException('The tag name provided is not a valid name.', 'InvalidCharacterError');
+      }
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
       var handle = __zw_create_element(tag);
       return _wrapHandle(handle);

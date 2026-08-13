@@ -720,6 +720,38 @@ fn string_arg(scope: &mut v8::PinScope, args: &v8::FunctionCallbackArguments, id
         .unwrap_or_default()
 }
 
+/// spec DOM `validate`（qualified name / Name production，`dom-document-createelement`）。
+///
+/// 判定 `String(tag)` 后的名是否合法 createElement 标签名。规则（对齐 WPT `dom/nodes/
+/// Document-createElement.html` valid/invalid 列表）：
+/// - 空串 → 非法
+/// - 首字符须是 **name-start char**：ASCII 字母 / `_` / `:` 或非 ASCII（`+`，含 İ/K/ Tamil 等）
+/// - 后续字符须是 **name char**：name-start char 或 ASCII 数字 / `-` / `.`
+/// - 任何位置含 `<` / `>` / 空白 / `}` 等非法字符 → 非法
+///
+/// 注：`createElement(undefined)`/`(null)` 经 JS ToString → `"undefined"`/`"null"`（首字符字母）
+/// 故合法通过（WPT valid 列表含之）。与 polyfill part06.js `createElement` 校验逻辑对齐（A/B 等价）。
+fn is_valid_qualified_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false; // 空串非法
+    };
+    if !is_name_start_char(first) {
+        return false;
+    }
+    chars.all(is_name_char)
+}
+
+/// Name production 首字符（name-start char）：ASCII 字母 / `_` / `:` / 非 ASCII。
+fn is_name_start_char(c: char) -> bool {
+    matches!(c, 'a'..='z' | 'A'..='Z' | '_' | ':') || (c as u32) >= 0x80
+}
+
+/// Name production 后续字符（name char）：name-start char 或 ASCII 数字 / `-` / `.`。
+fn is_name_char(c: char) -> bool {
+    is_name_start_char(c) || matches!(c, '0'..='9' | '-' | '.')
+}
+
 /// 从任意 `Value` 取其 internal slot NodeId（若为 native element 对象）；否则 `None`
 /// （非 native 对象误作参 → best-effort 忽略）。`args.get(idx)` 取参后经此读 NodeId。
 ///

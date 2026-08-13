@@ -249,6 +249,26 @@
   DOMException.DATA_CLONE_ERR = 25;
   globalThis.DOMException = globalThis.DOMException || DOMException;
 
+  // spec DOM `validate`（Name production，`dom-document-createelement`）：判定 String(tag) 后的名
+  // 是否合法 createElement 标签名。与 native dom_bindings is_valid_qualified_name 逻辑对齐（A/B 等价）：
+  // 空串 → 非法；首字符须 name-start（ASCII 字母 / `_` / `:` / 非 ASCII）；后续须 name-char（name-start
+  // 或数字 / `-` / `.`）。createElement(undefined)→"undefined" 合法通过（WPT valid 列表）。
+  function _zwIsNameStartChar(c) {
+    return /[A-Za-z_:]/.test(c) || c.charCodeAt(0) >= 0x80;
+  }
+  function _zwIsNameChar(c) {
+    return _zwIsNameStartChar(c) || /[0-9.\-]/.test(c);
+  }
+  function _zwIsValidQualifiedName(name) {
+    if (name === '') return false;
+    var chars = Array.from(name);
+    if (!_zwIsNameStartChar(chars[0])) return false;
+    for (var i = 1; i < chars.length; i++) {
+      if (!_zwIsNameChar(chars[i])) return false;
+    }
+    return true;
+  }
+
   // atob/btoa——Base64 编解码（Web 平台高频：data: URL / JWT / 二进制载荷）。纯 JS（ZW 无 base64
   // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛 InvalidCharacterError
   // DOMException（spec，R2776 升级自裸 Error）；atob 容错（忽略空白/padding，best-effort）。多字节 UTF-8
