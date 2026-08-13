@@ -73,6 +73,8 @@
 >
 > **▶ 文本度量进展（R3381-F Unicode NSM zero advance·2026-08-13）**：layout estimator 过去把 Arabic nonspacing marks U+0654/U+0670 各算 `0.5em`，令真实 shaping 仅 `26.48px` 的 `NBSP + marks` fragment 虚增至 `180px`。现用既有 `unicode-bidi` 的 `BidiClass::NSM` 将 nonspacing mark 独立 advance 置 0，shaper仍负责 glyph offset；`ZW_ZERO_WIDTH_NSM=0` 回滚。目标 `shaping-arabic-diacritics-002` `7.53%→6.21%`；全 css-text 21 改善/10 微退/1795 持平，总 `-2.64pp`，pass 保持 `1762/1826`、可信 strict `581→582`，无 pass flip。当前 css-text 无 Chromium shot；复用 R3380 常驻 WPT并新增 estimator 单测。
 >
+> **▶ WPT 资产进展（R3382-F NSM line-break strict flip·2026-08-13）**：将 R3381 唯一新增 strict flip `line-break-anywhere-overrides-uax-behavior-011` 经标准 importer 常驻；默认 `0.00%`，`ZW_ZERO_WIDTH_NSM=0` 为 `0.52%`，test/ref 无外部字体依赖。其余改善案已跟踪、属于 vertical，或仅微量变化，未扩成低信号 CI 集。Arabic driving case 的剩余差异已定位为 inline bidi 层未消费 `unicode-bidi:isolate`，受 Phase A 护栏约束。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

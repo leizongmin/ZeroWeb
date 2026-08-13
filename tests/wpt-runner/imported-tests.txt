@@ -86,3 +86,4 @@ css/css-text/shaping/shaping-017.html css/css-text/shaping/reference/shaping-003
 css/css-text/shaping/shaping-018.html css/css-text/shaping/reference/shaping-002-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
 css/css-text/shaping/shaping-arabic-diacritics-002.html css/css-text/shaping/reference/shaping-arabic-diacritics-002-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
 css/css-text/shaping/shaping_lig-000.html css/css-text/shaping/reference/shaping_lig-000-ref.html == 2026-08-13 R3380-F WOFF2 Arabic shaping corpus
+css/css-text/line-break/line-break-anywhere-overrides-uax-behavior-011.html css/css-text/line-break/reference/line-break-anywhere-004-ref.html == 2026-08-13 R3382-F NSM zero-advance strict flip
