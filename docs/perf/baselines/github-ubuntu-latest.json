@@ -66,9 +66,9 @@
     },
     {
       "id": "mb/zero-canvas/save_restore_100_deep",
-      "p95": 35949.286875,
+      "p95": 28047.13996062992,
       "tier": "budget",
-      "tightened_at": "2026-08-13T15:21:14Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-canvas/stroke_rect_1000",
@@ -78,9 +78,9 @@
     },
     {
       "id": "mb/zero-canvas/transform_chain_100",
-      "p95": 25786.26013714967,
+      "p95": 21065.854370439374,
       "tier": "budget",
-      "tightened_at": "2026-08-10T09:40:05Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
@@ -360,9 +360,9 @@
     },
     {
       "id": "mb/zero-render-foundation/glyph_cache/insert",
-      "p95": 25281.527482269503,
+      "p95": 24655.066666666666,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-render-foundation/primitives/build_1000_fills",
@@ -456,9 +456,9 @@
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
-      "p95": 34857.60161030596,
+      "p95": 34223.47428943372,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
@@ -558,9 +558,9 @@
     },
     {
       "id": "mb/zero-webview/webview_inject_css",
-      "p95": 28936495,
+      "p95": 26644706.214285713,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-webview/webview_load_html_simple",
@@ -570,15 +570,15 @@
     },
     {
       "id": "mb/zero-webview/webview_load_html_with_css",
-      "p95": 28854563.25,
+      "p95": 26239492.470588237,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-webview/webview_render",
-      "p95": 27260820.733333334,
+      "p95": 26218120.166666668,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "mb/zero-webview/webview_resize_and_render",
@@ -625,9 +625,9 @@
     },
     {
       "id": "page/medium/style_ms",
-      "p95": 25.482101,
+      "p95": 22.732365,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-13T15:58:39Z"
     },
     {
       "id": "page/medium/layout_ms",
