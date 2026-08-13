@@ -23,7 +23,8 @@
 | transformations | 22 / 22 | ✅ 全绿 |
 | pixel-manipulation | 14 / 14 | ✅ 全绿 |
 | line-styles | 33 / 33 | ✅ 全绿 |
-| **合计** | **124 文件 / 168 subtest** | ✅ **168/168** |
+| shadows | 61 / 50 | 🔄 50 Pass（11 个 = G5 DOM img 源 9 + currentColor 2，待决策） |
+| **合计** | **185 文件 / 218 subtest** | ✅ **218 Pass**（shadows 11 个待决策） |
 
 - 导入机制：`tests/wpt-runner/scripts/fetch-canvas-subset.sh`（固定 WPT rev `315976933870b34d6ea30e3f6643403edae678ba`）+ `zero-wpt-runner testharness-canvas [filter]`（canvas-tests.js 内联驱动 `_addTest`）
 - 用例资产在 `tests/wpt-runner/wpt-data/html/canvas/`（独立 repo 机制，git-ignored）
@@ -62,6 +63,11 @@
 | arc anticlockwise 贯穿（枚举字段 + 3 处 flatten 方向 ±\|end-start\|）+ 弧起点连接 | cap.round/square 胶囊 fill |
 | square cap 矩形 = 延伸段垂直扩 | cap.square |
 | 段主体逐像素精确判定（投影+距离，斜线段 bbox 过覆盖） | miter.acute (48,48) |
+| shadowBlur/Offset 非法值忽略 + shadowColor getter host 规范化（hex/rgba） | shadow.attributes.* |
+| 阴影 mask 乘形状 alpha（rect 逐像素采样样式） | shadow.alpha.5 / gradient.alpha / transparent.* |
+| 阴影 region 可见范围裁剪（画布−offset）+ mask 闭区间 | stroke.join.2 |
+| 阴影受 clip 裁剪 | shadow.clip.2 |
+| 阴影段逐像素投影判定 + join 真实几何 + 端 cap | stroke.join.1/2 / stroke.cap.1/2 |
 
 ## 缺口清单
 
@@ -79,12 +85,15 @@
 
 - [ ] OffscreenCanvas × Web Worker 集成（G6）— 深结构 — 等点名 — 2026-08-13
 - [ ] ImageBitmap 全源类型（G5）— 跨面深改 — 等点名 — 2026-08-13
+- [ ] **DOM img 元素作为 drawImage/createPattern 源**（G5 切片：9 个 shadow.canvas/image/pattern 用例被阻塞——shim 仅支持 canvas/ImageBitmap 源）— 依赖图片加载链路 — 等点名 — 2026-08-13
+- [ ] **shadowColor 'currentColor' 关键字**（2 用例：从 canvas 元素 CSS color 计算）— 需元素计算样式集成 — 等点名 — 2026-08-13
 
 ## 下一步计划
 
-1. **M1 扩展**：导入下一批 WPT 目录（shadows/compositing/path-objects，与已修光栅面直接相关），失败聚类 → 轻量修复
+1. **M1 扩展**：导入下一批 WPT 目录（compositing/path-objects/fill-and-stroke-styles——compositing 与已修 composite 光栅直接相关），失败聚类 → 轻量修复
 2. **M2**：G4 createImageBitmap options（轻量可先行）
 3. **Oracle**：Chromium 环境可用后补像素 oracle A/B（G2）
+4. **待决策**：G5 DOM img 源（解锁 9 个 shadow 用例）、currentColor（2 用例）、OffscreenCanvas Worker
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
