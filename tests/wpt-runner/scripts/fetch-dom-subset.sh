@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Fetch a pinned subset of the upstream WPT dom/ tests (testharness style)
+# used by the JS/DOM nativization goal (docs/goal/js-dom.md, M4 / DC-3).
+#
+# Strategy: first batch = main-thread .html cases of dom/nodes/ (the core
+# Node/Element/Document surface — directly exercises native DOM bindings vs
+# polyfill). Subdirectories (events/, collections/, lists/, ranges/,
+# traversal/) are appended per M4 slices as the baseline grows.
+#
+# 与 fetch-canvas-subset.sh 同构（同 WPT_REV pin + GitHub API 列目录 + raw 拉单文件）。
+# wpt-data 整体 gitignored，用例按需 fetch、不入库。
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
+WPT_REV="315976933870b34d6ea30e3f6643403edae678ba"
+RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
+API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
+
+# 第一批：dom/nodes/ 核心 Node/Element/Document 主线程 .html 用例。
+# 后续 M4 切片按需追加 "dom/events" / "dom/collections" / "dom/lists" /
+# "dom/ranges" / "dom/traversal"。
+SUBDIRS=(
+  "dom/nodes"
+)
+
+fetch_raw() {
+  local relative="$1"
+  local target="${WPT_DATA}/${relative}"
+  if [[ -s "${target}" && "${FORCE:-0}" != "1" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "${target}")"
+  local temporary="${target}.tmp"
+  curl --fail --location --silent --show-error --retry 3 \
+    --connect-timeout 8 --max-time 30 \
+    "${RAW_ROOT}/${relative}" -o "${temporary}"
+  test -s "${temporary}"
+  mv "${temporary}" "${target}"
+}
+
+fetch_dir_html() {
+  local dir="$1"
+  local names
+  names=$(curl --fail --location --silent --show-error --retry 3 --connect-timeout 8 --max-time 30 \
+    "${API_ROOT}/${dir}" | grep -o '"name": "[^"]*"')
+  while IFS= read -r line; do
+    local name="${line#\"name\": \"}"
+    name="${name%\"}"
+    # 只取主线程 .html（排除 .worker.js / .any.js 变体、目录、crashtests）。
+    case "${name}" in
+      *.html) fetch_raw "${dir}/${name}" ;;
+    esac
+  done <<< "${names}"
+}
+
+# testharness.js 为所有 dom 用例共享（canvas fetch 已拉则跳过）。
+fetch_raw "resources/testharness.js"
+
+for dir in "${SUBDIRS[@]}"; do
+  fetch_dir_html "${dir}"
+done
+
+echo "DOM testharness subset ready (${#SUBDIRS[@]} dirs, WPT ${WPT_REV})"

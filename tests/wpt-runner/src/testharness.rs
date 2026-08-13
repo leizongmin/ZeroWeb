@@ -37,6 +37,13 @@ pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
 /// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
 const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 
+/// DOM 专项（docs/goal/js-dom.md，M4 / DC-3）导入的上游 `dom/` 子目录面。
+///
+/// 由 `tests/wpt-runner/scripts/fetch-dom-subset.sh` 维护（wpt-data gitignored，
+/// 用例按需 fetch、不入库）；新子目录随 M4 切片扩展追加。dom 用例只需
+/// `resources/testharness.js`（runner 内联），不依赖 canvas-tests.js。
+pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes"];
+
 /// WPT subtest status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HarnessStatus {
@@ -159,6 +166,62 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
             };
             let results =
                 run_canvas_testharness_html(&relative, &source, &harness_source, &canvas_tests_source, CASE_TIMEOUT);
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
+/// Run the upstream `dom/` testharness cases under `wpt_root`（JS/DOM nativization goal M4 / DC-3）。
+///
+/// 扫描 [`DOM_TEST_SUBDIRS`] 下全部主线程 .html 用例；仅依赖 `testharness.js`（与
+/// [`run_html_interaction_cases`] 同一底层 [`run_testharness_html`]，不经 canvas-tests.js）。
+/// filter 按路径子串过滤。用例由 `fetch-dom-subset.sh` 按需拉取（wpt-data gitignored）。
+pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    let mut cases = Vec::new();
+    for subdir in DOM_TEST_SUBDIRS {
+        let dir = wpt_root.join(subdir);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "html") {
+                continue;
+            }
+            let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let source = match std::fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: "load WPT case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    continue;
+                }
+            };
+            let results = run_testharness_html(&relative, &source, &harness_source, CASE_TIMEOUT);
             cases.push((relative, results));
         }
     }

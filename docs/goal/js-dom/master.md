@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R0 核实 + master.md 重写（基线 commit `f7219b2c`，2026-08-13）
+**本轮**: R1 — WPT dom/nodes 上游通过率基线建立（M4 / DC-3 首切片）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,14 +24,15 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ❌ 0 上游导入（M4） | `tests/wpt-runner/.../test_cases_js_dom.rs` 全内建 inline smoke（`dom_has_body` 等），无上游 `dom/` 用例 |
+| WPT dom 上游基线 | ⚠️ **首切片已建**（dom/nodes 141 用例，41.25% pass） | `testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS`（R1 land）；基线见 [evidence/2026-08-13-r1-wpt-dom-nodes-baseline.md](evidence/2026-08-13-r1-wpt-dom-nodes-baseline.md)。待扩展 dom/events 等子目录 + native 路径对照 |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
 
 **核心缺口**（本目标要消除，按优先级）：
-1. **WPT dom 上游用例 0 导入**（DC-3）——无通过率基线，无法度量 native vs polyfill 真实差距
-2. **polyfill vs native A/B 对照门缺失**（DC-4）——dom_bindings 5457 行测试全 native-only，无两条路径行为等价断言（M0 must-complete 项 5）
+1. ~~**WPT dom 上游用例 0 导入**（DC-3）~~ → ✅ **R1 首切片已建**：dom/nodes 141 用例，41.25% pass 基线。**剩余**：扩展子目录（events/collections/...）+ native 路径对照（`ZW_NATIVE_DOM=1`）。基线暴露的真实差距已重排见下。
+2. **DOMException 抛出语义未实现**（M4 基线暴露，~474 失败）——createElement 非法标签 + classList token 校验应抛 InvalidCharacterError/DOMException——**当前最高 ROI 修复**
+3. **polyfill vs native A/B 对照门**（DC-4）→ ✅ R0 已建骨架（读路径等价实证）
 3. **dom_bindings 独立 coverage 口径缺失**（DC-4）——`check-coverage.sh` 无子模块报告（M0 项 4）
 4. V8 native 路径默认关 → 生产仍走 polyfill 字符串桥（DC-1，M5）
 5. V8 polyfill 桥仍 re-parse String 快照，三方 Document 未合一（DC-1，M1 L2）
@@ -50,10 +51,17 @@
 - [x] 2. 创建/重写 `master.md`（本文件）
 - [x] 3. 确认 `archive/` + `evidence/` 目录存在（均空，待首轮证据追加）
 - [ ] 4. 补齐 dom_bindings 独立 coverage 口径（**环境前提 `cargo-llvm-cov` 本地未装**，本轮记入「未解决问题」，待装后补）
-- [ ] 5. 建 polyfill vs native A/B 对照门骨架（双 feature 可参数化）← **本轮首切片目标**
-- [x] 6. 选定首切片并直接动手推进 ✅（A/B 对照门骨架，项 5 与项 6 合并完成）
+- [x] 5. 建 polyfill vs native A/B 对照门骨架（双 feature 可参数化）✅（R0，`tests_ab_compare.rs`）
+- [x] 6. 选定首切片并直接动手推进 ✅（R0：A/B 门；R1：WPT dom 基线）
 
-**M0 首切片（本轮）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
+**M0 状态**: 项 1/2/3/5/6 ✅ 完成；项 4（dom_bindings coverage 口径）待 `cargo-llvm-cov` 安装（记「未解决问题」）。M0 核心目标（基线 + A/B 门 + 首切片 land）已达成，**转入 M4 推进**（入口文档允许 M4 与 M1–M3 早期并行）。
+
+**当前推进: M4 — WPT dom 上游基线（首切片 R1 进行中）**
+- 已建：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS=["dom/nodes"]` + `make testharness-dom`/`fetch-wpt-dom`
+- 基线：dom/nodes 141 用例 / 2696 subtest / **41.25% pass**（详见 evidence）
+- 暴露的真实差距（重排后续 ROI）：① DOMException 抛出语义 ~474 失败（最高 ROI）② createProcessingInstruction 未实现 44 ③ XML/XHTML doc 模型 98 ④ instanceof HTMLElement/Element 原型链 ~88
+
+**M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
 - 设计：对同一 HTML + 同一可观测 DOM 操作（如 `getAttribute`/`textContent`/`tagName`/`querySelector` 命中），断言 native 路径（`install_dom_bindings` + `__zw_native_*`）与 polyfill 路径（`generate_js_dom_shim` + `register_dom_callbacks` + `__zw_*`）返回一致。聚焦**行为等价**（可观测结果），不强求 API 形态同构（native=真对象 vs polyfill=Proxy）。
 
@@ -101,6 +109,7 @@
 | 2026-08-13 | goal 拆分 bootstrap | 入口文档基线事实块 | 框架占位 |
 | 2026-08-13 | R0 核实 | 代码实测（commit `f7219b2c`）：dom_bindings 19 文件 / QuickJS native 真空确认 / L2 仍 re-parse 确认 / canvas wpt-data 缺失确认 / cargo-llvm-cov 未装确认 | 本文件重写，勘误见下 |
 | 2026-08-13 | R0 首切片 | A/B 对照门骨架 `tests_ab_compare.rs`（9 读用例 + 索引读 + 2 sanity）；v8 2063 + quickjs 1405 + webview 17 全绿，双矩阵 clippy 干净 | **native 读路径 ≡ polyfill 读路径**（行为等价实证），M0 项 5+6 完成 |
+| 2026-08-13 | R1 | WPT dom/nodes 基线：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS` + Makefile；141 用例 / 2696 subtest / **41.25% pass** | DC-3 首切片达成；暴露 DOMException 抛出语义（~474）/ createProcessingInstruction（44）/ XML doc 模型（98）为最高 ROI 修复方向 |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -110,12 +119,13 @@
 
 ## 下一步计划
 
-1. **本轮（已完成）**：polyfill vs native A/B 对照门骨架 ✅（M0 项 5+6）→ 验证 native≡polyfill 读路径等价 → land
-2. **下轮候选（按优先级）**：
-   - **(a) WPT dom 上游用例导入**（M4 早期切片，零源码改动）：从上游 `web-platform-tests/wpt` 导入 `dom/` 真实用例到 `wpt-runner`，建按子分类通过率基线（DC-3）——这是 DC 硬缺口中**唯一纯资产、零碰撞、可独立 land** 的，且立即暴露 native/polyfill 真实规范差距。优先选此。
-   - **(b) dom_bindings 独立 coverage 口径**（M0 项 4）：需先装 `cargo-llvm-cov` + `llvm-tools-preview`，扩 `check-coverage.sh` 加 `-p zero-engine` 子模块报告。
-   - **(c) M1 L2-read-only 最小子集**：A/B 门已就位，可安全切 `getElementById`/`querySelector` getter 改读 live Document（仍需评估 `register_dom_callbacks` 签名跨面改动）。
-3. **后续主线**：M1 L2 → M2 S6 → M3 SPA/WC → M4 WPT dom → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
+1. **R1（本轮，进行中→收尾）**：WPT dom/nodes 基线建立 ✅（41.25% pass，141 用例）→ land（fetch 脚本 + runner 子命令 + Makefile + evidence 报告）
+2. **下轮候选（按基线暴露的 ROI 重排）**：
+   - **(a) DOMException 抛出语义**（~474 失败，最高 ROI）：createElement 非法标签 + classList token 校验应抛 InvalidCharacterError。需评估 polyfill 桥（`__zw_create_element`）vs native（`create_element`）两路径同步加，A/B 门扩展写/异常路径后守。
+   - **(b) `document.createProcessingInstruction` 实现**（44 失败，单一 API，面小）。
+   - **(c) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
+   - **(d) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
+3. **后续主线**：M1 L2 → M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
 ---
 
@@ -140,6 +150,7 @@
 
 ## 归档记录
 
-> 已完成的 milestone/切片记录到 `archive/`。当前无已完成项。
+> 已完成的 milestone/切片记录到 `archive/`。
 
-- （无）
+- R0：M0 A/B 对照门骨架 → [archive/m0-slice-ab-gate-skeleton.md](archive/m0-slice-ab-gate-skeleton.md)
+- R1：M4 WPT dom/nodes 基线首切片 → archive/m4-slice-wpt-dom-nodes-baseline.md（本轮 land 时附）

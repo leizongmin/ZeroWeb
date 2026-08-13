@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -130,6 +130,14 @@ endif
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
 testharness-html: fetch-wpt-html-testharness target/test-guard
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-html
+
+# js-dom goal M4 / DC-3：上游 dom/ testharness 通过率基线（dom/nodes 首批）。
+# 用例 gitignored（fetch-dom-subset.sh 按需拉取）。filter 透传：make testharness-dom FILTER=Document-createElement。
+fetch-wpt-dom:
+	bash tests/wpt-runner/scripts/fetch-dom-subset.sh
+
+testharness-dom: fetch-wpt-dom target/test-guard
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-dom $(if $(FILTER),$(FILTER),)
 
 # WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
 reftest: fetch-wpt-data target/test-guard
