@@ -96,6 +96,8 @@
 >
 > **▶ WPT 资产进展（R3399-F Noto Sans JP variable default instance·2026-08-13）**：资源完整性审计发现 `font-weight-normal-variable` 的 test/ref 已在 full corpus，但固定 `NotoSansJP.subset.ttf` 未登记，fresh checkout 会让两侧同走 fallback。现通过标准 importer 将 test/ref 与字体写入常驻账本；同一 HEAD 移走/恢复字体的 fresh Chromium 串行 A/B 为 `0.36%→0.35%`，完整 css-fonts 保持 pass/credible/strict `87/77/54`，self-source 为可信 strict `0.00%`。该用例 test 的 `font-weight:normal` 与 reference 的 `"wght" 400` 均使用 variable font 默认实例，本切片不宣称 variable-axis plumbing，仅保证固定测试资产完整。
 >
+> **▶ WPT 资产进展（R3403-F RobotoExtremo variable capability fixture·2026-08-13）**：资源完整性审计继续发现 `synthetic-bold-out-of-capabilities-range` 的 test/ref 已存在，但固定 `RobotoExtremo-VF-wght-400-500.subset.ttf` 未登记，导致两侧同走 fallback。标准 importer 现登记 test/ref/font；同一 HEAD、同一 release runner 的缺资源/有资源 Chromium 串行 A/B 为 `0.50%→0.48%`，完整 css-fonts pass/credible/strict 保持 `87/77/54`，self-source 为可信 strict `0.00%`。字体只由该 test/ref 引用；本切片仅保证 variable capability fixture 可再生，不宣称 synthetic bold 或 variation-axis 实现。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

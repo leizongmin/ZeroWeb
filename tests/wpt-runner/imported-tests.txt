@@ -101,3 +101,4 @@ css/css-fonts/font-weight-normal-variable.html css/css-fonts/font-weight-normal-
 #   the-canvas-state（23）drawing-rectangles-to-the-canvas（32）transformations（22）
 #   pixel-manipulation（14）line-styles（33）
 # 目录面登记于 tests/wpt-runner/src/testharness.rs CANVAS_TEST_SUBDIRS。
+css/css-fonts/synthetic-bold-out-of-capabilities-range.html css/css-fonts/synthetic-bold-out-of-capabilities-range-ref.html == 2026-08-13 R3403-F RobotoExtremo variable capability fixture

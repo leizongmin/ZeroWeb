@@ -15,3 +15,4 @@ css/css-values/resources/IcTestFullWidth.woff2
 fonts/noto/NotoNaskhArabic-regular.woff2
 css/css-values/resources/ExTest.woff
 css/css-fonts/support/fonts/NotoSansJP.subset.ttf
+css/css-fonts/support/fonts/RobotoExtremo-VF-wght-400-500.subset.ttf
