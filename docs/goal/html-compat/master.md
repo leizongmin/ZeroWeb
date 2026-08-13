@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 阶段：M4
-- 状态：M0-M4 实施完成，最终审计中
+- 状态：M0-M4 实施与最终审计完成
 - 主 fixture：`examples/forms/form-interaction-test.html`
 - 完成标准：FR-001、FR-012
 
@@ -94,4 +94,4 @@ CSS、布局或绘制根因只在本目标记录最小复现，移交对应开�
 - [x] WPT testharness reporter 与 testdriver 动作
 - [x] forms/focus/input-events 选定子集
 
-按 FR-001 至 FR-012、NFR 和接口清单执行最终完成度审计。
+完成度证据见 `docs/goal/html-compat/completion-audit.md`。

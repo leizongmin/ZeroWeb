@@ -116,6 +116,7 @@ impl HtmlStep {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct ScenarioDiagnostics {
+    pub phase: String,
     pub url: String,
     pub navigation_epoch: u64,
     pub snapshot_sequence: u64,
@@ -133,10 +134,11 @@ impl std::fmt::Display for ScenarioError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "step {} {} failed: {}; url={:?} navigation_epoch={} snapshot_sequence={}",
+            "step {} {} failed: {}; phase={} url={:?} navigation_epoch={} snapshot_sequence={}",
             self.step,
             self.description,
             self.detail,
+            self.diagnostics.phase,
             self.diagnostics.url,
             self.diagnostics.navigation_epoch,
             self.diagnostics.snapshot_sequence
@@ -487,6 +489,11 @@ impl HtmlScenarioHost for BrowserScenarioHost<'_> {
 
     fn diagnostics(&self) -> ScenarioDiagnostics {
         ScenarioDiagnostics {
+            phase: if self.app.page_html_for_test(self.tab_id).is_some() {
+                "hit-test".to_string()
+            } else {
+                "awaiting-snapshot".to_string()
+            },
             url: self
                 .app
                 .page_url_for_test(self.tab_id)
@@ -506,11 +513,15 @@ mod tests {
         state: FixtureState,
         output: String,
         focused: String,
+        click_error: Option<String>,
         diagnostics: ScenarioDiagnostics,
     }
 
     impl HtmlScenarioHost for FakeHost {
         fn click(&mut self, selector: &str) -> Result<(), String> {
+            if let Some(error) = &self.click_error {
+                return Err(format!("{error}: {selector}"));
+            }
             self.focused = selector.to_string();
             Ok(())
         }
@@ -576,6 +587,7 @@ mod tests {
     fn scenario_failure_reports_exact_step_and_state() {
         let mut host = FakeHost {
             diagnostics: ScenarioDiagnostics {
+                phase: "assertion".to_string(),
                 url: "about:blank".to_string(),
                 navigation_epoch: 7,
                 snapshot_sequence: 11,
@@ -596,5 +608,31 @@ mod tests {
         assert_eq!(error.diagnostics.navigation_epoch, 7);
         assert_eq!(error.diagnostics.snapshot_sequence, 11);
         assert!(error.to_string().contains("step 3"));
+    }
+
+    #[test]
+    fn form_fixture_reports_missing_control_stage() {
+        let mut host = FakeHost {
+            click_error: Some("no hit-test point".to_string()),
+            diagnostics: ScenarioDiagnostics {
+                phase: "hit-test".to_string(),
+                url: "https://zero.test/forms".to_string(),
+                navigation_epoch: 12,
+                snapshot_sequence: 34,
+            },
+            ..Default::default()
+        };
+
+        let error = HtmlScenario::new(&mut host)
+            .click("#missing")
+            .run()
+            .expect_err("missing control must fail");
+        assert_eq!(error.step, 1);
+        assert_eq!(error.description, "click(#missing)");
+        assert!(error.detail.contains("#missing"));
+        assert_eq!(error.diagnostics.phase, "hit-test");
+        assert_eq!(error.diagnostics.url, "https://zero.test/forms");
+        assert_eq!(error.diagnostics.navigation_epoch, 12);
+        assert_eq!(error.diagnostics.snapshot_sequence, 34);
     }
 }

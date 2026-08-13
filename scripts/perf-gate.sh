@@ -95,6 +95,28 @@ if [ "$REP_HASH" != "$BASE_HASH" ]; then
     exit 2
 fi
 
+# `platform_class` only identifies the OS/architecture family. Relative microbench and
+# stage budgets are valid only on the hardware used to capture the baseline; keep the
+# absolute page-total and retained-form gates above, but do not compare unlike CPUs.
+REP_CPU_MODEL=$(jq -r '.platform.cpu_model // ""' "$REPORT")
+REP_CPU_CORES=$(jq -r '.platform.cpu_cores // 0' "$REPORT")
+BASE_CPU_MODEL=$(jq -r '.cpu_model // ""' "$BASELINE")
+BASE_CPU_CORES=$(jq -r '.cpu_cores // 0' "$BASELINE")
+if [ "$REP_CPU_MODEL" != "$BASE_CPU_MODEL" ] || [ "$REP_CPU_CORES" != "$BASE_CPU_CORES" ]; then
+    HARD_TOTAL_MS=$(jq -r '.budgets.hard_total_ms // 2000' "$BASELINE")
+    HARD_FAILURES=$(jq --argjson budget "$HARD_TOTAL_MS" \
+        '[.pages[] | select(.stages.total_ms.p95 > $budget) | .scenario] | length' "$REPORT")
+    if [ "$HARD_FAILURES" -gt 0 ]; then
+        echo "perf-gate: FAIL — $HARD_FAILURES page scenario(s) exceed absolute total budget ${HARD_TOTAL_MS}ms"
+        exit 1
+    fi
+    echo "perf-gate: WARN — baseline hardware mismatch; relative metrics are not comparable"
+    echo "  report:   $REP_CPU_MODEL ($REP_CPU_CORES cores)"
+    echo "  baseline: $BASE_CPU_MODEL ($BASE_CPU_CORES cores)"
+    echo "perf-gate: absolute page-total and retained-form budgets passed; capture a hardware-specific baseline to enable relative gates"
+    exit 0
+fi
+
 RESULT=$(jq -n --slurpfile rep "$REPORT" --slurpfile base "$BASELINE" '
     def family($id):
         if ($id | startswith("mb/")) then "mb"

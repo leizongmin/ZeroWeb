@@ -107,15 +107,22 @@ test: target/test-guard
 	#   v8 阶段 47.3s（nextest 68s，-30%），且与 CI（cargo test --workspace）
 	#   覆盖口径一致。历史评估（2026-08-07 nextest 1m29s vs cargo test 1m58s）
 	#   未计入字体缓存与「每测试进程」的相互作用，已被推翻。
-	# - wgpu headless 挂起（本地无 GPU 后端）由 test-guard --time-limit 900 兜底
-	#   （正常全量 ~50s；挂起 15min 杀进程树，替代 nextest slow-timeout）。
+	# - adapter-only GPU 测试从 workspace 主矩阵剥离：headless probe 成功才执行，
+	#   无 adapter 的主机明确跳过 capability 分支；所有命令仍由 test-guard 兜底。
 	# - 并行化：QuickJS clippy（编译型）与 v8 测试并行跑——clippy 编译的是
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
 	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。test-guard 两个实例
 	#   独立监控各自进程树（阈值各自生效，不叠加）。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace & test_pid=$$!; \
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
+	@if ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
+		echo "wgpu adapter available; running adapter-only GPU tests"; \
+		./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
+		./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation surface::tests::test_gpu_cpu_rendering_consistency_solid_fill -- --exact --test-threads=1; \
+	else \
+		echo "wgpu adapter unavailable; adapter-only GPU tests skipped"; \
+	fi
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
 	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 endif

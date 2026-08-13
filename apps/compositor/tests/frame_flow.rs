@@ -80,7 +80,7 @@ fn spawn_compositor_gpu_dmabuf() -> (PipeTransport<ChildStdout, ChildStdin>, Com
 fn spawn_compositor_with_env(
     extra_env: &[(&str, &str)],
 ) -> (PipeTransport<ChildStdout, ChildStdin>, CompositorProcess) {
-    let env_lock = COMPOSITOR_TEST_ENV.lock().unwrap();
+    let env_lock = COMPOSITOR_TEST_ENV.lock().unwrap_or_else(|error| error.into_inner());
 
     let mut env: Vec<(&str, &str)> = vec![
         ("ZW_COMPOSITOR_GPU", "0"),
@@ -1020,6 +1020,9 @@ fn compositor_gpu_seccomp_allows_frame_ipc() {
 #[cfg(target_os = "linux")]
 #[serial_test::serial]
 fn compositor_gpu_dmabuf_browser_import_round_trips() {
+    if zero_render_foundation::gpu::renderer::GpuRenderer::new_headless(1, 1).is_err() {
+        return;
+    }
     let (mut transport, _comp) = spawn_compositor_gpu_dmabuf();
     let frame = make_frame(4, 4, [255, 128, 0, 255]);
     assert_eq!(submit_frame(&mut transport, 1, 14, 1, 1, frame), (14, 1, 1));

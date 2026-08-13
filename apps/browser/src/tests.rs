@@ -2793,10 +2793,22 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
         diff as f32 / (a.len() / 4) as f32
     };
 
-    // ① 初始合成帧：两通道都含页面内容（非纯白），且 CPU/GPU parity。
-    let (cpu0, gpu0) = composite(&mut app);
-    assert!(non_white_ratio(&cpu0) > 0.01, "CPU 初始合成帧应含页面内容（非纯白）");
-    assert!(non_white_ratio(&gpu0) > 0.01, "GPU 初始合成帧应含页面内容（非纯白）");
+    // ① 首个就绪合成帧：GPU backend 初始化可能晚于 renderer 首帧，轮询到两通道
+    // 都含页面内容；不降低非白阈值。
+    let initial_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let (cpu0, gpu0) = loop {
+        let (cpu, gpu) = composite(&mut app);
+        let cpu_non_white = non_white_ratio(&cpu);
+        let gpu_non_white = non_white_ratio(&gpu);
+        if cpu_non_white > 0.01 && gpu_non_white > 0.01 {
+            break (cpu, gpu);
+        }
+        app.poll_tab_fetch();
+        if std::time::Instant::now() >= initial_deadline {
+            panic!("CPU/GPU 首个就绪合成帧应含页面内容（cpu={cpu_non_white:.3}, gpu={gpu_non_white:.3}）");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
     let parity0 = diff_ratio(&cpu0, &gpu0);
     assert!(parity0 < 0.15, "CPU/GPU 初始合成帧差异应 <15%（got {parity0:.3}）");
 

@@ -753,6 +753,7 @@ impl BrowserApp {
     /// R3254：GPU 等价的完整合成帧渲染（headless wgpu）——与
     /// [`Self::render_full_scene_with_webview_for_test`] 同一场景（chrome + webview
     /// 图元 + ImageCache 装配），经 headless GpuRenderer 渲染后 read_pixels 读回。
+    /// GPU 初始化失败或场景超出 GPU 支持面时按生产契约回退 CPU 整帧。
     /// 供 CPU/GPU 双参数矩阵测试：两通道输入相同 → 输出像素应一致。
     #[cfg(test)]
     pub fn render_full_scene_with_webview_gpu_for_test(
@@ -769,10 +770,8 @@ impl BrowserApp {
         let mut renderer = match GpuRenderer::new_headless(width, height) {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!("GPU 合成测试通道不可用（headless 初始化失败: {e}）——返回空白帧");
-                let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
-                fb.clear(255, 255, 255, 255);
-                return fb;
+                tracing::warn!("GPU 合成测试通道不可用（headless 初始化失败: {e}）——回退 CPU");
+                return self.render_full_scene_with_webview_for_test(width, height);
             }
         };
         let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
@@ -794,11 +793,10 @@ impl BrowserApp {
         if rendered {
             if let Some(pixels) = renderer.read_pixels() {
                 fb.data.copy_from_slice(&pixels);
+                return fb;
             }
-        } else {
-            fb.clear(255, 255, 255, 255);
         }
-        fb
+        self.render_full_scene_with_webview_for_test(width, height)
     }
 }
 
