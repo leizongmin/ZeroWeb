@@ -881,7 +881,10 @@ mod tests {
         let mut last = n1;
         let mut stable = 0u32;
         let conv = std::time::Instant::now();
-        while conv.elapsed().as_millis() < 500 && stable < 3 {
+        // 收敛窗口 1000ms（与第一阶段一致）：macos-aarch64 慢 runner 上 clearInterval 后的
+        // 尾 tick（re-arm 已入队回调）可能迟至 ~400ms 才触发，500ms 窗口会耗尽在
+        // stable=2 处 false-fail（R3092 同族时序 flake，2026-08-13 CI 实测）
+        while conv.elapsed().as_millis() < 1000 && stable < 3 {
             std::thread::sleep(std::time::Duration::from_millis(30));
             let n_now = worker
                 .execute_script_direct("String(globalThis.__n)")

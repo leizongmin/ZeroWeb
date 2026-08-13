@@ -465,20 +465,32 @@ mod integration_tests {
         let (listener, url) = bind_server();
 
         let server = std::thread::spawn(move || {
+            // 读完整请求头（Windows TCP 分片下单次 read 常只读到部分请求，
+            // 服务器提前响应会致客户端 send 失败重试整个 POST，污染捕获断言）。
+            let read_full_headers = |stream: &mut std::net::TcpStream| -> Vec<u8> {
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 1024];
+                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let n = stream.read(&mut chunk).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+                buf
+            };
             // 第 1 个连接：POST → 302 重定向到 /dest（同源）。
             {
                 let mut stream = listener.incoming().next().unwrap().unwrap();
-                let mut buf = [0u8; 8192];
-                let _ = stream.read(&mut buf);
+                let _ = read_full_headers(&mut stream);
                 let resp = "HTTP/1.1 302 Found\r\nLocation: /dest\r\nContent-Length: 0\r\n\r\n";
                 let _ = stream.write_all(resp.as_bytes());
                 let _ = stream.flush();
             }
             // 第 2 个连接：重定向后的 GET → 捕获请求，断言 Content-Type 不应出现。
             let mut stream = listener.incoming().next().unwrap().unwrap();
-            let mut buf = [0u8; 8192];
-            let n = stream.read(&mut buf).unwrap();
-            let captured_get = String::from_utf8_lossy(&buf[..n]).to_string();
+            let captured = read_full_headers(&mut stream);
+            let captured_get = String::from_utf8_lossy(&captured).to_string();
             let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
             let _ = stream.write_all(resp.as_bytes());
             let _ = stream.flush();
