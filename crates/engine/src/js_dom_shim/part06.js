@@ -1308,12 +1308,21 @@
   // 仍 resolve（font set 从不进入 loading）。minimal EventTarget（listener store + IDL handler + dispatchEvent）。
   // https://drafts.csswg.org/css-font-loading/#FontFaceSet-interface
   var _fontsListeners = {};
+  // R34xx：宏任务 fallback settle（宿主反射未在同步期 resolve 时兜底）。
+  setTimeout(function () { if (globalThis.document && globalThis.document.fonts && globalThis.document.fonts.__zwSettle) globalThis.document.fonts.__zwSettle(); }, 0);
   var _fontsReadyResolve = null;
   var _fontFaceSetFaces = []; // FontFace 对象列表（add/delete 管理；values/forEach/size/迭代反映）
   var _fontFaceSet = {
     status: 'loaded', // 'loading' | 'loaded'（headless 简化：初始即 loaded，settle 时不改）
     onloading: null, onloadingdone: null, onloadingerror: null,
     ready: new Promise(function (resolve) { _fontsReadyResolve = resolve; }),
+    // R34xx：无宿主字体反射（wpt-runner/testharness 环境无 @font-face 加载事件）时
+    // ready 仍 resolve（spec：无加载任务时 ready settle）——await document.fonts.ready
+    // 的 WPT 用例（2d.text.draw.align.*）不再挂起。宿主反射（R2950）先于宏任务完成时
+    // resolve 已发生 → 本 fallback 无操作。
+    __zwSettle: function () {
+      if (_fontsReadyResolve) { var r = _fontsReadyResolve; _fontsReadyResolve = null; r(); }
+    },
     addEventListener: function (type, fn) {
       if (typeof fn !== 'function') return;
       (_fontsListeners[type] = _fontsListeners[type] || []).push(fn);

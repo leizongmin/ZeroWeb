@@ -155,8 +155,21 @@ impl CanvasContext {
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32) {
         let color = self.apply_alpha(self.fill_style.resolve_color());
         let font_size = self.font.size;
-        let (tx, ty) = self.transform.transform_point(x, y);
         let em_width = font_size * 0.6;
+        // R34xx：textAlign/textBaseline 应用到绘制位置（2d.text.draw.align.* /
+        // baseline.*——旧实现忽略对齐，字恒左对齐顶部定位）。
+        let width = text.chars().count() as f32 * em_width;
+        let ox = match self.text_align {
+            TextAlign::Center => -width / 2.0,
+            TextAlign::End | TextAlign::Right => -width,
+            TextAlign::Start | TextAlign::Left => 0.0,
+        };
+        let oy = match self.text_baseline {
+            TextBaseline::Top => font_size,
+            TextBaseline::Middle => font_size * 0.5,
+            TextBaseline::Alphabetic | TextBaseline::Bottom => 0.0,
+        };
+        let (tx, ty) = self.transform.transform_point(x + ox, y + oy);
         let mut offset_x = 0.0f32;
         for ch in text.chars() {
             let glyph_id = ch as u32;

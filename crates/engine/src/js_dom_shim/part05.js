@@ -1589,17 +1589,35 @@
     });
     ctx._ta = 'start';
     Object.defineProperty(ctx, 'textAlign', {
-      set: function (v) { this._ta = String(v); __zw_canvas_op(h, 'setTextAlign', String(v)); },
+      // R34xx：非法值忽略保持旧值（spec：2d.text.align.invalid）。
+      set: function (v) {
+        v = String(v);
+        if (v !== 'start' && v !== 'end' && v !== 'left' && v !== 'right' && v !== 'center') return;
+        this._ta = v;
+        __zw_canvas_op(h, 'setTextAlign', String(v));
+      },
       get: function () { return this._ta; }
     });
     ctx._tb = 'alphabetic';
     Object.defineProperty(ctx, 'textBaseline', {
-      set: function (v) { this._tb = String(v); __zw_canvas_op(h, 'setTextBaseline', String(v)); },
+      // R34xx：非法值忽略保持旧值（spec：2d.text.baseline.invalid）。
+      set: function (v) {
+        v = String(v);
+        if (v !== 'alphabetic' && v !== 'top' && v !== 'hanging' && v !== 'middle' && v !== 'ideographic' && v !== 'bottom') return;
+        this._tb = v;
+        __zw_canvas_op(h, 'setTextBaseline', String(v));
+      },
       get: function () { return this._tb; }
     });
     ctx._dir = 'inherit';
     Object.defineProperty(ctx, 'direction', {
-      set: function (v) { this._dir = String(v); __zw_canvas_op(h, 'setDirection', String(v)); },
+      // R34xx：非法值忽略保持旧值（spec：2d.text.direction.invalid）。
+      set: function (v) {
+        v = String(v);
+        if (v !== 'ltr' && v !== 'rtl' && v !== 'inherit') return;
+        this._dir = v;
+        __zw_canvas_op(h, 'setDirection', String(v));
+      },
       get: function () { return this._dir; }
     });
     ctx._ml = 10;
