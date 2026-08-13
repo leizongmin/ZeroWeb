@@ -658,16 +658,18 @@
     };
     // DOMTokenList token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError
     // DOMException（code 12）；含 ASCII 空白 → InvalidCharacterError DOMException（code 5）。
-    // 抛真正 DOMException（part01b.js 构造器，按 name 区分）——WPT assert_throws_dom 据 name
-    // 判定；此前抛 TypeError 与 spec/WPT 不符（dom/nodes/Element-classlist ~405 失败根因）。
-    // 与 native dom_token_list.rs require_valid_token 行为对齐（A/B 等价）。
+    // 用 `globalThis.DOMException`（native_dom=true 叠加路径下 = 原生 DOMException；纯 polyfill
+    // 下 = part01b 的）——保证抛的异常 `e.constructor === self.DOMException`（WPT assert_throws_dom
+    // "wrong global" 要求）。若用词法作用域的 part01b DOMException，叠加路径下 shim 实例
+    // constructor（part01b）≠ 全局 native DOMException → wrong global（R6 定位修复）。
     var check = function (t) {
       var s = String(t);
+      var DOMEx = globalThis.DOMException;
       if (s === '') {
-        throw new DOMException("An invalid or illegal string was specified.", "SyntaxError");
+        throw new DOMEx("An invalid or illegal string was specified.", "SyntaxError");
       }
       if (/\s/.test(s)) {
-        throw new DOMException("An invalid or illegal string was specified.", "InvalidCharacterError");
+        throw new DOMEx("An invalid or illegal string was specified.", "InvalidCharacterError");
       }
     };
     var target = {

@@ -342,3 +342,31 @@ fn native_style_important_priority_r3171() {
         "red/"
     );
 }
+
+/// DOMException identity（spec：`instance.constructor === DOMException` + `instanceof DOMException`）。
+/// R6：补 prototype.constructor 属性后验证——此前 native 实例 constructor 走到 Object（R5 "wrong global"）。
+#[test]
+fn native_dom_exception_identity_r6() {
+    let html = r#"<div id="a"></div>"#;
+    // new DOMException(...) → constructor === DOMException + instanceof DOMException。
+    assert_eq!(
+        run_script(
+            html,
+            "(new DOMException('m','SyntaxError').constructor === DOMException)"
+        ),
+        "true"
+    );
+    assert_eq!(
+        run_script(html, "(new DOMException('m','SyntaxError') instanceof DOMException)"),
+        "true"
+    );
+    // classList 抛的 DOMException 同样 identity 正确（经 throw_dom_exception 全局构造器 new）。
+    assert_eq!(
+        run_script(
+            html,
+            "(()=>{ try { __zw_native_element_for_id('a').classList.add(''); }\
+             catch(e) { return (e.constructor === DOMException)+'/'+(e instanceof DOMException); } })()"
+        ),
+        "true/true"
+    );
+}

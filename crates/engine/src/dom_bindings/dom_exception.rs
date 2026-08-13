@@ -91,6 +91,16 @@ pub(super) fn native_dom_exception_constructor_invoke(
 /// 原型挂 `toString`（`"name: message"`，spec）+ legacy code 常量（`INDEX_SIZE_ERR` 等，
 /// 兼容旧代码读 `DOMException.SYNTAX_ERR`）。
 pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8::Object>) {
+    // 幂等：install_dom_bindings 在 webview native_dom=true 路径被多次调（run_page_scripts +
+    // execute_script 各一次），每次建新 FunctionTemplate 会覆盖全局 DOMException → 抛出的异常
+    // 持有旧构造器、全局是新构造器，`e.constructor === DOMException` 失败（"wrong global"）。
+    // 若全局已有 DOMException（首次 install 装的），跳过重建，复用同一构造器。
+    let has_dom_exception = v8::String::new(scope, "DOMException")
+        .and_then(|key| global.get(scope, key.into()))
+        .is_some_and(|v| !v.is_undefined() && !v.is_null());
+    if has_dom_exception {
+        return;
+    }
     let tmpl = v8::FunctionTemplate::builder(native_dom_exception_constructor_invoke).build(scope);
     // 原型 toString：name + ": " + message（spec DOMException.prototype.toString）。
     let proto = tmpl.prototype_template(scope);
@@ -98,12 +108,6 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     if let Some(k) = v8::String::new(scope, "toString") {
         proto.set(k.into(), to_string.into());
     }
-    // NOTE：prototype.constructor 属性（spec `instance.constructor === DOMException`，WPT
-    // assert_throws_dom 最后一步要求）当前未设——FunctionTemplate prototype template 的 set
-    // 不接受 Local<Function>（V8 Fatal），传 tmpl 自身（循环引用）亦触发 CHECK。留待后续用
-    // prototype 对象实例化后 set 的方式补（记 master.md 未解决问题）。当前 native 路径
-    // assert_throws_dom 因 `e.constructor !== self.DOMException` 失败（"wrong global"），
-    // native 基线 41.25% 低于 polyfill 56.45% 的主因之一。
     // legacy code 常量（spec：DOMException.SYNTAX_ERR=12 等，挂构造器函数自身）。
     let register_const = |name: &str, code: u32| {
         if let (Some(f), Some(k)) = (tmpl.get_function(scope), v8::String::new(scope, name)) {
@@ -132,6 +136,18 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     register_const("DATA_CLONE_ERR", 25);
 
     if let (Some(f), Some(key)) = (tmpl.get_function(scope), v8::String::new(scope, "DOMException")) {
+        // prototype.constructor → DOMException function（spec：保证 `instance.constructor
+        // === DOMException`，WPT assert_throws_dom 最后一步 `e.constructor === self.DOMException`
+        // 要求）。FunctionTemplate prototype template 的 set 不接受 Local<Function>（V8 Fatal），
+        // 亦不接受 tmpl 自身（循环 CHECK），故改为在 prototype **对象**（构造器 function 的
+        // `prototype` 属性，FunctionTemplate 实例化时自动建）上 set constructor——对象 set
+        // 接受任意 Value。R6 修复 R5 的 "wrong global"。
+        let proto_obj = v8::String::new(scope, "prototype")
+            .and_then(|pk| f.get(scope, pk.into()))
+            .and_then(|v| v8::Local::<v8::Object>::try_from(v).ok());
+        if let (Some(proto), Some(ck)) = (proto_obj, v8::String::new(scope, "constructor")) {
+            let _ = proto.set(scope, ck.into(), f.into());
+        }
         let _ = global.set(scope, key.into(), f.into());
     }
 }

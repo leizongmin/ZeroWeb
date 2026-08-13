@@ -712,6 +712,51 @@ fn test_native_dom_live_document_de_inert_r3107() {
     assert_eq!(v, "9", "native 读 live Document（de-inert）：见 native 写");
 }
 
+// ── R6：native_dom=true 叠加路径下 DOMException identity（testharness "wrong global" 修复）──
+//
+// testharness-dom-native 曾报 ~400 "threw an exception from the wrong global"（classList/createElement
+// 抛 DOMException 时 e.constructor !== self.DOMException）。根因：install_dom_bindings 在 webview
+// native_dom=true 路径被多次调（run_page_scripts + execute_script），每次建新 FunctionTemplate
+// 覆盖全局 DOMException → 抛出的异常持有旧构造器、全局是新构造器。R6 修复：dom_exception
+// build_and_register 幂等（全局已有 DOMException 则跳过重建）+ prototype.constructor 补齐。
+// 本测试在 webview 叠加路径下断言 classList 抛的 DOMException identity 正确。
+
+#[cfg(feature = "v8")]
+#[test]
+fn test_native_dom_exception_identity_overlap_r6() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body><div id=\"a\"></div>\
+         <script>\
+           globalThis.__ex = null;\
+           try { document.getElementById('a').classList.add(''); }\
+           catch(e) { globalThis.__ex = e; }\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "native_dom 接线无异常, got: {:?}", r.err());
+    // classList add('') 应抛 DOMException（SyntaxError）。
+    let name = wv
+        .execute_script("globalThis.__ex ? globalThis.__ex.name : 'no-throw'")
+        .unwrap();
+    assert_eq!(name, "SyntaxError", "classList add('') 抛 SyntaxError DOMException");
+    // identity：e.constructor === DOMException + instanceof DOMException（R6 修复——幂等 install
+    // 避免多次 install_dom_bindings 建不同 FunctionTemplate 导致 wrong global）。
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ex && globalThis.__ex.constructor === DOMException)")
+            .unwrap(),
+        "true",
+        "classList 抛的 DOMException constructor === 全局 DOMException"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ex instanceof DOMException)")
+            .unwrap(),
+        "true",
+        "classList 抛的异常 instanceof DOMException"
+    );
+}
+
 // ── P1b L1b caveat ①：native 写触发重渲染（本轮 R3108）──
 
 // native_dom=true + load_html → native 绑定经 execute_script 安装（R3108 修复 R3107 red：
