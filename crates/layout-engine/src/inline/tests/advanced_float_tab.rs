@@ -409,6 +409,18 @@ fn r1449_zero_width_joiners_have_zero_advance() {
     }
 }
 
+#[test]
+fn nonspacing_marks_have_zero_advance() {
+    for ch in ['\u{0654}', '\u{0670}'] {
+        assert_eq!(estimate_char_width(ch, 120.0, false), 0.0);
+        assert_eq!(estimate_char_width(ch, 120.0, true), 0.0);
+    }
+    assert_eq!(
+        estimate_string_width("\u{00a0}\u{0654}\u{0670}", 120.0, false),
+        estimate_string_width("\u{00a0}", 120.0, false)
+    );
+}
+
 /// R1449：ZWSP U+200B 在 pre-wrap（preserve）模式下是**零宽断行机会**（CSS Text 3 §5.4）。
 ///
 /// 驱动案 css-text letter-spacing 簇 + pre-wrap ZWSP 案。旧实现把 U+200B 当普通字符留词内

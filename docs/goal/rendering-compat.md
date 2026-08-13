@@ -71,6 +71,8 @@
 >
 > **▶ WPT 资产进展（R3380-F Naskh shaping corpus·2026-08-13）**：按当前 HEAD 复验 `ZW_WOFF2=0/1`，将 R3375 的全部 20 个改善案通过标准 importer 纳入常驻账本，test/ref 路径完整且 test key 20/20 唯一；A/B 保持 20 改善/0 回归/8 持平、总 `-9.01pp`、可信 strict `4→7`，其中 `shaping-009/010/011` 达 strict `0.00%`。NKo 固定 WOFF2 试验使 `020/021/022` 从 `1.31/1.13/1.05%` 退至 `1.35/1.34/1.29%`，已完整回退；其跨 inline boundary shaping 以及 Mongolian vertical corpus 等 Phase A/vertical 路径闭合后再导入。
 >
+> **▶ 文本度量进展（R3381-F Unicode NSM zero advance·2026-08-13）**：layout estimator 过去把 Arabic nonspacing marks U+0654/U+0670 各算 `0.5em`，令真实 shaping 仅 `26.48px` 的 `NBSP + marks` fragment 虚增至 `180px`。现用既有 `unicode-bidi` 的 `BidiClass::NSM` 将 nonspacing mark 独立 advance 置 0，shaper仍负责 glyph offset；`ZW_ZERO_WIDTH_NSM=0` 回滚。目标 `shaping-arabic-diacritics-002` `7.53%→6.21%`；全 css-text 21 改善/10 微退/1795 持平，总 `-2.64pp`，pass 保持 `1762/1826`、可信 strict `581→582`，无 pass flip。当前 css-text 无 Chromium shot；复用 R3380 常驻 WPT并新增 estimator 单测。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：

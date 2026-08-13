@@ -6,8 +6,9 @@
 //! font-metrics 解析（resolve_font_metrics）、inline-block 尺寸解析、BiDi 重排序。
 
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
+use unicode_bidi::{BidiClass, bidi_class};
 use zero_css_parser::values::LengthValue;
 use zero_style_system::{ComputedStyle, TextAutospaceValue};
 // 经 `pub use text_metrics::*`（inline/mod.rs）再导出，供 inline/tests 子模块经 glob 访问。
@@ -53,6 +54,13 @@ pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     // 回归（ZW seg-break 变换 bug，20px U+200B 反而更近 oracle）——故 U+200B 零宽仅经
     // preserve 模式 split_into_words 的断词丢弃路径实现（见 mod.rs），normal 模式暂不零宽。
     if matches!(c, '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}') {
+        return 0.0;
+    }
+    static ZERO_WIDTH_NSM: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_ZERO_WIDTH_NSM").as_deref() != Ok("0"));
+    // https://www.unicode.org/reports/tr53/
+    // Nonspacing marks are positioned relative to a base glyph by shaping and do not
+    // contribute an independent inline advance.
+    if *ZERO_WIDTH_NSM && bidi_class(c) == BidiClass::NSM {
         return 0.0;
     }
     if is_ahem {
