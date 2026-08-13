@@ -9,3 +9,4 @@ fonts/GentiumPlus-R.woff
 fonts/Revalia.woff
 fonts/AD.woff
 fonts/noto/cjk/NotoSansCJKjp-Regular-subset-chws.otf
+fonts/Lato-Bold.ttf

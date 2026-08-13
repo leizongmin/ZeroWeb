@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 
 type ShapeCacheKey = (
-    Vec<u64>,
+    Vec<(u64, u32)>,
     u32,
     (u8, u32),
     crate::font::TextDirection,
@@ -75,10 +75,16 @@ impl FontLoader {
         // 递增，perf/reftest 每帧新建 FontLoader 重新加载字体（id 重新分配）→ key 每帧
         // 不同 → 缓存全 miss（`word-break: break-word` 中文长文逐字 fragment 每帧全量
         // 重排，perf-gate morning paint 回归）。按内容寻址跨帧/跨 loader 稳定；
-        // 语义等价（不同字体数据 → 不同 hash，同 instance 隔离效果）。
-        let font_hashes = font_ids
+        // face descriptor scale 同时入 key，避免同字节字体的 @font-face size-adjust
+        // 跨 loader 复用错误结果。
+        let font_faces = font_ids
             .iter()
-            .map(|font_id| self.get_font_data(*font_id).map(crate::font::font_bytes_hash))
+            .map(|font_id| {
+                self.get_font_data(*font_id).map(|data| {
+                    let descriptor_scale = self.font_size_adjustments.get(font_id).copied().unwrap_or(1.0);
+                    (crate::font::font_bytes_hash(data), descriptor_scale.to_bits())
+                })
+            })
             .collect::<Option<Vec<_>>>()?;
         let mut resolved_features = self.font_features.get(&primary_id).cloned().unwrap_or_default();
         for feature in features {
@@ -92,7 +98,7 @@ impl FontLoader {
             }
         }
         let key = (
-            font_hashes,
+            font_faces,
             font_size.to_bits(),
             adjustment.cache_key(),
             direction,
@@ -136,5 +142,46 @@ impl FontLoader {
             self.font_size_adjustments.insert(font_id, scale);
             self.shape_cache.lock().expect("shape cache poisoned").clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::font::{FontSizeAdjustment, TextDirection};
+
+    #[test]
+    fn shared_cache_separates_face_size_adjust_descriptors() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+
+        let mut base = FontLoader::new();
+        let font_id = base.load_font(LATO_TTF).expect("load bundled Lato");
+        let mut adjusted = base.duplicate();
+        let plain = base.duplicate();
+        adjusted.register_font_size_adjust(font_id, 1.5);
+
+        let adjusted_glyphs = adjusted
+            .shape_text_cached_with_font_ids_and_adjustment(
+                &[font_id],
+                "A",
+                16.0,
+                TextDirection::LeftToRight,
+                &[],
+                FontSizeAdjustment::None,
+            )
+            .expect("shape adjusted face");
+        let plain_glyphs = plain
+            .shape_text_cached_with_font_ids_and_adjustment(
+                &[font_id],
+                "A",
+                16.0,
+                TextDirection::LeftToRight,
+                &[],
+                FontSizeAdjustment::None,
+            )
+            .expect("shape plain face");
+
+        assert_eq!(adjusted_glyphs[0].font_size, 24.0);
+        assert_eq!(plain_glyphs[0].font_size, 16.0);
     }
 }

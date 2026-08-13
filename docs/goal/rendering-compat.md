@@ -63,6 +63,8 @@
 >
 > **▶ WPT 资产进展（R3346-F ic-height fixed webfont·2026-08-13）**：用 `ORACLE_DUMP_ALL=1` 展开 css-fonts 全候选后，排除了 Chromium 不支持 `font-synthesis-position` 的旧 shot、平台 `local()` family、待重抓 webfont、table 双路径及 generic raster 簇。`font-size-adjust-ic-height` 的 test/ref 已导入，却遗漏其固定 `NotoSansCJKjp-Regular-subset-chws.otf`，ZeroWeb 因 test/reference 分别落不同 fallback 路径形成 self-source 假绿。标准 importer 现将该字体写入 `imported-resources.txt` 并保留测试账本；Chromium Oracle 单案 `2.85%→2.44%`，完整 css-fonts 1 改善、0 回归、281 持平，pass/credible/strict 保持 `86/76/54`。self-source `2.60%→4.60%` 反向变差，进一步证明资源缺失时不得以 test-vs-ref 单独裁决。该切片零引擎源码变更。
 >
+> **▶ Oracle 可靠性进展（R3373-F shaping cache descriptor isolation·2026-08-13）**：共享 shaping cache 的内容寻址 key 原只含字体字节 hash，遗漏 `@font-face size-adjust`；同字节 Ahem face 在不同 loader 中带 150%/默认 descriptor 时发生缓存碰撞，使完整 css-fonts `--jobs 8` 的 `size-adjust-03` 假降至 `16.65%`，单案与 `--jobs 1` 则为 `18.37%`。key 现同时包含每个 face 的 descriptor scale，回归测试用共享 cache 的双 loader 锁定 24px/16px glyph size。修复后 css-fonts `--jobs 1/8` 数值完全一致：`size-adjust-03 18.37%`、`size-adjust-01 11.65%`，pass/credible/strict 保持 `86/76/54`；旧并行数值属于虚假改善，不再作为历史收益基线。同期将上游 `font-synthesis-weight-webfont-bold` 与固定 `Lato-Bold.ttf` 纳入账本，资源独立 Oracle `1.10%→1.08%`，self-source 均为 strict `0.00%`。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
