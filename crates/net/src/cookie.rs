@@ -445,6 +445,21 @@ impl CookieStore {
             // domain-match cookie 的 Domain，否则拒绝（防 evil.com 跨域设 example.com cookie 注入）。
             // IP 字面量 host 不参与子域匹配（§5.1.3）——Domain 须精确等于该 IP。
             let domain_attr = cookie.domain.as_deref().unwrap_or("");
+
+            // R3394：RFC 6265bis §5.4 step 1 + §5.3——cookie 的 Domain 属性若本身是公共后缀
+            // （PSL：com / co.uk / github.io 等），**拒绝存储**（而非接受为该后缀下所有站点共享
+            // 的 cookie）。否则 evil.com 响应可设 `Domain=com` → cookie 发往任意 .com 站点
+            // （bank.com / paypal.com），跨站 cookie 注入 + 覆盖。R3225 的 domain-match 不拦此
+            // （com 是 evil.com 的公共后缀祖先，evil.com domain-matches com），故须独立 PSL 检查。
+            // 判定：host 是公共后缀 ⟺ `registrable_domain(host) == host`（PSL 文档约定「host 等于
+            // 公共后缀本身 → 返回该 host」）。IP 字面量无 PSL 语义，跳过（IP 不会是公共后缀）。
+            // 前导 '.' 容错剥离（Domain=.com 与 Domain=com 同义，§4.1.2.7 host-domain）。
+            // 规范引用：https://httpwg.org/http-extensions/draft-ietf-httpbis-rfc6265bis.html#storage-model
+            let domain_attr_no_dot = domain_attr.trim_start_matches('.');
+            if !is_ip_literal(domain_attr_no_dot) && is_public_suffix(domain_attr_no_dot) {
+                return;
+            }
+
             let domain_ok = if is_ip_literal(host) {
                 domain_attr.trim_start_matches('.').eq_ignore_ascii_case(host)
             } else {
@@ -556,6 +571,26 @@ pub fn is_same_site(a: &str, b: &str) -> bool {
     let psl = zero_psl::PublicSuffixList::shared();
     psl.registrable_domain(a)
         .eq_ignore_ascii_case(&psl.registrable_domain(b))
+}
+
+/// 判断主机名是否为「公共后缀」（public suffix，如 `com` / `co.uk` / `github.io`）。
+///
+/// R3394：供 cookie Domain 属性公共后缀拒绝（RFC 6265bis §5.4 step 1）使用。判定基于
+/// [Public Suffix List] 注册域语义：**给 host 左侧追加一个标签（`x.host`）后，若其注册域
+/// 仍为 `x.host` 自身**，则 host 是公共后缀——因为只有公共后缀的 eTLD+1 才会「吸收」新标签
+/// 成为可注册域（`com`→`x.com`；`github.io`→`x.github.io`）。非公共后缀（如 `example.com`）
+/// 追加标签后注册域仍为原 eTLD+1（`x.example.com`→`example.com`），故返 false。
+/// 实测锚定：com/co.uk/github.io/com.cn → true；example.com/evil.com → false。
+/// IP 字面量无 PSL 语义（调用方先过滤）；空串 → false。ASCII 大小写不敏感。
+///
+/// [Public Suffix List]: https://publicsuffix.org/
+fn is_public_suffix(host: &str) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    let psl = zero_psl::PublicSuffixList::shared();
+    let probe = format!("x.{host}");
+    psl.registrable_domain(&probe).eq_ignore_ascii_case(&probe)
 }
 
 /// 根据请求目标主机与顶层文档站点主机，推断 SameSite 请求上下文。
@@ -945,6 +980,47 @@ mod tests {
         let url = parse_url("http://example.com/").unwrap();
         store.add_from_url(cookie, &url);
         assert_eq!(store.len(), 1, "host-only cookie 须接受（domain=来源 host）");
+    }
+
+    // R3394：cookie Domain 属性为公共后缀（PSL）→ 拒绝存储（RFC 6265bis §5.4 step 1）。
+    // 否则 evil.com 可设 Domain=com → cookie 发往任意 .com 站点（bank.com/paypal.com），跨站注入。
+    #[test]
+    fn test_add_from_url_rejects_public_suffix_domain_r3394() {
+        // ① Domain=com（公共后缀）来自 evil.com（evil.com domain-matches com，故 R3225 不拦）
+        //    → 须拒绝（PSL 公共后缀）。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("x=1; Domain=com").unwrap();
+        let url = parse_url("http://evil.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "Domain=com（公共后缀）须拒绝，防跨站 .com 注入");
+
+        // ② Domain=.com（前导点）→ 同义，须拒绝。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("x=1; Domain=.com").unwrap();
+        let url = parse_url("http://evil.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "Domain=.com（前导点）须拒绝");
+
+        // ③ Domain=co.uk（公共后缀）→ 须拒绝。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("x=1; Domain=co.uk").unwrap();
+        let url = parse_url("http://evil.co.uk/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "Domain=co.uk（公共后缀）须拒绝");
+
+        // ④ Domain=github.io（公共后缀，PSL 通配规则）→ 须拒绝。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("x=1; Domain=github.io").unwrap();
+        let url = parse_url("http://evil.github.io/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 0, "Domain=github.io（公共后缀）须拒绝");
+
+        // ⑤ 回归保护：Domain=example.com（eTLD+1，非公共后缀）来自 example.com → 须接受。
+        let mut store = CookieStore::new();
+        let cookie = CookieStore::parse_set_cookie("x=1; Domain=example.com").unwrap();
+        let url = parse_url("http://example.com/").unwrap();
+        store.add_from_url(cookie, &url);
+        assert_eq!(store.len(), 1, "Domain=example.com（eTLD+1）须接受，回归保护");
     }
 
     /// R3225：is_ip_literal 助函数——IPv4/IPv6（含 URL 括号形式）识别。
