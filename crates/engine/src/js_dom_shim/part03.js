@@ -743,7 +743,12 @@
       return out;
     };
     var write = function (arr) {
+      // spec DOMTokenList runUpdate：比较「新 token 集合序列化（单空格分隔）」与「原 attribute 原始值」，
+      // 不同才 setAttribute（避免无谓 mutation；MutationObserver 检查依赖此）。add/remove/replace 总经此
+      //（即使 token 集合不变，原值含尾空格/重复时仍规范化重写，WPT checkAdd("a b c ",["a","a"],"a b c")）。
+      // toggle 的 force 分支无变化时直接 return 不调 write（spec toggle no-op，WPT checkToggle 保持原样）。
       var v = arr.join(' ');
+      if (v === _readClass(key, sel, handle)) return;
       _classCache[key] = v;
       if (handle) __zw_set_attr_handle(handle, 'class', v);
       else __zw_set_attr(sel, 'class', v);
@@ -801,8 +806,11 @@
         // force≠undefined：force true→加、false→移除（不切换）；force undefined→切换。
         if (force !== undefined) {
           on = !!force;
+          // spec toggle(token, force)：force 与现状一致（on 且已在 / off 且不在）→ **no-op，不触发 update**
+          //（WPT checkToggle("a a a  b","a",true)→保持原样 "a a a  b"，不规范化）。仅状态冲突时修改 + write。
           if (on && i < 0) p.push(c);
           else if (!on && i >= 0) p.splice(i, 1);
+          else return on; // 无变化 no-op（不 write，保持 attribute 原样）
         } else if (i >= 0) {
           p.splice(i, 1);
           on = false;
@@ -818,12 +826,21 @@
         newT = String(newT);
         check(oldT);
         check(newT);
-        if (oldT === newT) return cur().indexOf(oldT) >= 0;
+        // spec dom-domtokenlist-replace：oldT===newT 时若 oldT 存在返 true 且 runUpdate（规范化 attribute，
+        // WPT checkReplace("a","a") with "a a a  b" 期望 mutation）。无则返 false。
+        if (oldT === newT) {
+          if (cur().indexOf(oldT) < 0) return false;
+          write(cur()); // runUpdate：规范化（去重/空白）attribute
+          return true;
+        }
         var p = cur();
         var i = p.indexOf(oldT);
         if (i < 0) return false;
-        p.splice(i, 1); // 先移除 old；若 newT 已存在则不重复插入（dedupe，spec 结果）。
-        if (p.indexOf(newT) < 0) p.splice(i, 0, newT);
+        // spec：在 oldT 位置替换为 newT；若 newT 已存在别处，移除旧位置保留 newT 在 oldT 位置（有序去重）。
+        // WPT checkReplace("c b a","c","a")→expected "a b"（a 占 c 的 index 0，原 a 去重）。
+        p.splice(i, 1, newT);
+        // 移除 newT 在后续位置的重复（保留刚插入的 index i）。
+        for (var j = p.length - 1; j > i; j--) { if (p[j] === newT) p.splice(j, 1); }
         write(p);
         return true;
       },
