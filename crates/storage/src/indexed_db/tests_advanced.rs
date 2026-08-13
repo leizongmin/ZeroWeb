@@ -132,6 +132,86 @@ fn test_tx_delete_then_commit_data_removed() {
     assert!(db.get("store", &key).is_none());
 }
 
+/// R3386 回归锁定：事务提交须原子——若提交时缓冲的变更之间存在 unique-index 冲突
+/// （tx_add 阶段未对 buffered 记录预检 index 唯一性，故两条不同主键但同 index-key
+/// 的记录都能进缓冲区），commit_tx 必须**全部不持久化**（W3C IndexedDB 事务原子性
+/// §1.6：要么全部生效，要么全部不生效），而非部分提交（旧实现：第一条 add 已入库，
+/// 第二条 add 报错 ?  提前返回 → 第一条残留 = 非原子部分提交）。
+#[test]
+fn test_commit_tx_atomic_on_buffered_index_conflict_r3386() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("store", None, false).unwrap();
+    // unique 索引建在 "email" 字段上。
+    db.create_index("store", "email_idx", "email", true, false).unwrap();
+
+    let mut tx = db.transaction(&["store"], IdbTransactionMode::ReadWrite).unwrap();
+    // 两条不同主键、相同 email（index 键）的记录——tx_add 仅预检主键冲突，不预检 index 唯一性，
+    // 故两条都能进缓冲区。commit 时 self.add 的 check_unique 才暴露冲突。
+    db.tx_add(
+        &tx,
+        "store",
+        serde_json::json!({"email": "dup@example.com"}),
+        Some(IdbKey::String("k1".into())),
+    )
+    .unwrap();
+    db.tx_add(
+        &tx,
+        "store",
+        serde_json::json!({"email": "dup@example.com"}),
+        Some(IdbKey::String("k2".into())),
+    )
+    .unwrap();
+
+    // 提交应失败（unique 冲突）。
+    let result = db.commit_tx(&mut tx);
+    assert!(result.is_err(), "缓冲区内同 index-key 冲突应使提交失败");
+
+    // 原子性：**两条都不应入库**（事务整体回滚），而非第一条残留。
+    assert!(
+        db.get("store", &IdbKey::String("k1".into())).is_none(),
+        "原子性：失败的提交不应部分持久化 k1"
+    );
+    assert!(
+        db.get("store", &IdbKey::String("k2".into())).is_none(),
+        "原子性：失败的提交不应部分持久化 k2"
+    );
+    assert_eq!(db.count("store").unwrap(), 0);
+}
+
+/// R3386 回归锁定（覆盖 Put 模拟路径）：live 记录 + buffered Put 使两条不同主键记录
+/// 在提交后态共享 unique index 键。precheck_commit 须按「commit 后」虚拟记录集（live
+/// 排除被 Put 覆盖的 + buffered Put 的新值）检测冲突，整批拒绝，live 数据不被破坏。
+#[test]
+fn test_commit_tx_atomic_put_conflict_with_live_r3386() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("store", None, false).unwrap();
+    db.create_index("store", "email_idx", "email", true, false).unwrap();
+    // live 记录 k1 占用 email=a@x.com。
+    db.add(
+        "store",
+        serde_json::json!({"email": "a@x.com"}),
+        Some(IdbKey::String("k1".into())),
+    )
+    .unwrap();
+
+    let mut tx = db.transaction(&["store"], IdbTransactionMode::ReadWrite).unwrap();
+    // buffered Put 把 k2（新主键）的 email 改成 a@x.com → 与 live k1 冲突。
+    db.tx_put(
+        &tx,
+        "store",
+        serde_json::json!({"email": "a@x.com"}),
+        Some(IdbKey::String("k2".into())),
+    )
+    .unwrap();
+    let result = db.commit_tx(&mut tx);
+    assert!(result.is_err(), "buffered Put 与 live 记录 index 冲突应使提交失败");
+    // 原子性：k2 不入库；live k1 原值保留（未被部分提交破坏）。
+    assert!(db.get("store", &IdbKey::String("k2".into())).is_none());
+    let live = db.get("store", &IdbKey::String("k1".into())).unwrap();
+    assert_eq!(live.value["email"], "a@x.com");
+    assert_eq!(db.count("store").unwrap(), 1);
+}
+
 /// 事务内 tx_get 应能看到缓冲区的未提交变更。
 #[test]
 fn test_tx_get_sees_buffered_add() {

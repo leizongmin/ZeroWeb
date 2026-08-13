@@ -1219,6 +1219,12 @@ impl IdbDatabase {
     pub fn commit_tx(&mut self, tx: &mut IdbTransaction) -> Result<(), StorageError> {
         tx.commit()?;
         let mutations = tx.mutations.borrow_mut().drain(..).collect::<Vec<_>>();
+        // R3386：原子性预校验——先模拟应用全量变更（构建 commit 后的虚拟记录集 + index 键），
+        // 检查 unique 索引冲突。旧实现直接逐条 self.add/put/delete 并 `?` 提前返回：缓冲记录间
+        // 的 index 唯一性冲突（tx_add 阶段未对 buffered 记录预检）会在 commit 中途暴露——第一条
+        // add 已入库，第二条 add 报错返回 → 部分提交，违反 W3C IndexedDB 事务原子性（§1.6）。
+        // 预校验全过后再 apply，apply 阶段不再因 index 冲突中途失败。
+        self.precheck_commit(&mutations)?;
         for m in mutations {
             match m {
                 TxMutation::Add { store, value, key } => {
@@ -1240,6 +1246,82 @@ impl IdbDatabase {
                 && *tx_next > store.next_key
             {
                 store.next_key = *tx_next;
+            }
+        }
+        Ok(())
+    }
+
+    /// R3386：模拟提交后的记录集，预校验每条 unique 索引在 commit 后态无冲突。
+    ///
+    /// 构建每个 store「commit 后」的虚拟记录表（live 记录叠加 buffered Add/Put/Delete），
+    /// 对每条 unique 索引重算键集检测重复。冲突则整批拒绝（commit_tx 不 mutate live store，
+    /// 事务原子回滚）。
+    fn precheck_commit(&self, mutations: &[TxMutation]) -> Result<(), StorageError> {
+        // 按 store 分组虚拟记录：(primary_key, value)，后者用于提取 index 键。
+        // 同一 primary_key 后到的 Add/Put 覆盖前者；Delete 移除。
+        use std::collections::HashMap as StdMap;
+        let mut per_store: StdMap<String, StdMap<IdbKey, serde_json::Value>> = StdMap::new();
+        // 标记被 buffered Delete/Put 覆盖的 live key，避免重复计入。
+        let mut deleted_keys: StdMap<String, std::collections::HashSet<IdbKey>> = StdMap::new();
+
+        for m in mutations {
+            match m {
+                TxMutation::Add { store, value, key } => {
+                    per_store
+                        .entry(store.clone())
+                        .or_default()
+                        .insert(key.clone(), value.clone());
+                }
+                TxMutation::Put { store, value, key } => {
+                    per_store
+                        .entry(store.clone())
+                        .or_default()
+                        .insert(key.clone(), value.clone());
+                    // Put 覆盖 live 记录：标记其 live 值不再独立计入（buffered 值已取代）。
+                    deleted_keys.entry(store.clone()).or_default().insert(key.clone());
+                }
+                TxMutation::Delete { store, key } => {
+                    per_store.entry(store.clone()).or_default().remove(key);
+                    deleted_keys.entry(store.clone()).or_default().insert(key.clone());
+                }
+            }
+        }
+
+        // 对每个有 buffered 变更的 store，构建 commit 后记录集并校验 unique 索引。
+        for (store_name, buffered) in &per_store {
+            let Some(store) = self.stores.get(store_name) else {
+                continue;
+            };
+            let deleted = deleted_keys.get(store_name);
+            // commit 后记录集 = live 记录（排除被 buffered Put/Delete 覆盖的）∪ buffered Add/Put。
+            // 收集 (primary_key, value) 对。
+            let mut committed: Vec<(IdbKey, serde_json::Value)> = Vec::new();
+            for r in &store.records {
+                if let Some(true) = deleted.map(|d| d.contains(&r.key)) {
+                    continue;
+                }
+                committed.push((r.key.clone(), r.value.clone()));
+            }
+            for (k, v) in buffered {
+                committed.push((k.clone(), v.clone()));
+            }
+            // 对每个 unique 索引，提取所有记录的 index 键，检测重复。
+            for idx in store.indexes.values() {
+                if !idx.unique {
+                    continue;
+                }
+                let mut seen: Vec<IdbKey> = Vec::new();
+                for (_pk, value) in &committed {
+                    for ik in idx.extract_keys(value) {
+                        if seen.iter().any(|s| s == &ik) {
+                            return Err(StorageError::Database(format!(
+                                "Unique index '{}' constraint violation for key {:?}",
+                                idx.name, ik
+                            )));
+                        }
+                        seen.push(ik);
+                    }
+                }
             }
         }
         Ok(())
