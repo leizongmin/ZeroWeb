@@ -270,7 +270,7 @@ impl CanvasContext {
     /// 起点角经当前变换矩阵映射（与 `arc`/`rect` 同语义）；`radii` 为角半径列表（spec：单值 / [tl,tr,br,bl]
     /// / 其它长度按 [HTML §roundrect] 规则解析，本层透传 Path2D::round_rect，flattener 现 best-effort 退化
     /// 为矩形——角圆为 rendering 流域已知简化，几何/命中测试仍正确）。
-    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<f32>) {
+    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<(f32, f32)>) {
         let (tx, ty) = self.transform.transform_point(x, y);
         self.current_path.round_rect(tx, ty, w, h, radii);
     }

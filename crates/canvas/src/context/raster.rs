@@ -342,10 +342,10 @@ impl CanvasContext {
         y: f32,
         w: f32,
         h: f32,
-        radii: &[f32],
+        radii: &[(f32, f32)],
     ) -> (f32, f32) {
-        // 解析圆角半径：[左上, 右上, 右下, 左下]
-        let mut r = [0.0f32; 4];
+        // R34xx：解析圆角半径角对 [tl, tr, br, bl]（每角 (x, y)——DOMPoint 半径支持）。
+        let mut r = [(0.0f32, 0.0f32); 4];
         match radii.len() {
             0 => {}
             1 => {
@@ -373,14 +373,24 @@ impl CanvasContext {
                 r[3] = radii[3];
             }
         }
-        // 限制半径不超过短边的一半
-        let max_r = w.min(h) / 2.0;
+        // R34xx：按比例缩放（spec §roundrect：scale = min(w/2/maxRx, h/2/maxRy, 1)，
+        // 保持半径纵横比——旧 clamp 到短边/2 把 (40,20) 压成 (25,25)）。
+        let max_rx = r.iter().map(|&(rx, _)| rx).fold(0.0f32, f32::max);
+        let max_ry = r.iter().map(|&(_, ry)| ry).fold(0.0f32, f32::max);
+        let scale = if max_rx > 0.0 || max_ry > 0.0 {
+            let sx = if max_rx > 0.0 { w / 2.0 / max_rx } else { f32::MAX };
+            let sy = if max_ry > 0.0 { h / 2.0 / max_ry } else { f32::MAX };
+            sx.min(sy).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         for radius in &mut r {
-            *radius = radius.min(max_r).max(0.0);
+            radius.0 *= scale;
+            radius.1 *= scale;
         }
 
         // 所有半径为 0 时退化为矩形
-        if r.iter().all(|&v| v < f32::EPSILON) {
+        if r.iter().all(|&(rx, ry)| rx < f32::EPSILON && ry < f32::EPSILON) {
             let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
             vertices.push(current_x);
             vertices.push(current_y);
@@ -399,13 +409,13 @@ impl CanvasContext {
             return (corners[0].0, corners[0].1);
         }
 
-        // 圆角中心坐标和对应的弧角度范围
-        // 左上角 (x + r[0], y + r[0]), 角度 π ~ 3π/2
-        // 右上角 (x + w - r[1], y + r[1]), 角度 3π/2 ~ 2π
-        // 右下角 (x + w - r[2], y + h - r[2]), 角度 0 ~ π/2
-        // 左下角 (x + r[3], y + h - r[3]), 角度 π/2 ~ π
-        let corner_cx = [x + r[0], x + w - r[1], x + w - r[2], x + r[3]];
-        let corner_cy = [y + r[0], y + r[1], y + h - r[2], y + h - r[3]];
+        // R34xx：圆角中心坐标（角对 x=水平/ y=垂直半径——椭圆弧）。
+        // 左上角 (x + r[0].0, y + r[0].1), 角度 π ~ 3π/2
+        // 右上角 (x + w - r[1].0, y + r[1].1), 角度 3π/2 ~ 2π
+        // 右下角 (x + w - r[2].0, y + h - r[2].1), 角度 0 ~ π/2
+        // 左下角 (x + r[3].0, y + h - r[3].1), 角度 π/2 ~ π
+        let corner_cx = [x + r[0].0, x + w - r[1].0, x + w - r[2].0, x + r[3].0];
+        let corner_cy = [y + r[0].1, y + r[1].1, y + h - r[2].1, y + h - r[3].1];
         let corner_start = [
             std::f32::consts::PI,
             std::f32::consts::FRAC_PI_2 * 3.0,
@@ -419,26 +429,25 @@ impl CanvasContext {
             std::f32::consts::PI,
         ];
 
-        const CORNER_SEGMENTS: usize = 8;
+        // R34xx：16 段/角（旧 8 段对椭圆弧近似过粗——圆角外像素被折线误填，
+        // 2d.path.roundrect.* DOMPoint 用例 (20,1) 期望椭圆外）。
+        const CORNER_SEGMENTS: usize = 16;
 
-        // 从当前点连线到第一个圆角的起点
+        // R34xx：roundRect 是自包含子路径（round_rect 已 push MoveTo）——不连当前点；
+        // 首弧段由下方循环从 start 角开始输出（此处不额外 push，保持段对格式）。
         let start_angle = corner_start[0];
-        let start_x = corner_cx[0] + r[0] * start_angle.cos();
-        let start_y = corner_cy[0] + r[0] * start_angle.sin();
-        vertices.push(current_x);
-        vertices.push(current_y);
-        vertices.push(start_x);
-        vertices.push(start_y);
+        let start_x = corner_cx[0] + r[0].0 * start_angle.cos();
+        let start_y = corner_cy[0] + r[0].1 * start_angle.sin();
 
-        // 遍历 4 个圆角
+        // 遍历 4 个圆角（椭圆弧：x 用水平半径 r[c].0，y 用垂直半径 r[c].1）
         for c in 0..4 {
             let step = (corner_end[c] - corner_start[c]) / CORNER_SEGMENTS as f32;
-            let mut px = corner_cx[c] + r[c] * corner_start[c].cos();
-            let mut py = corner_cy[c] + r[c] * corner_start[c].sin();
+            let mut px = corner_cx[c] + r[c].0 * corner_start[c].cos();
+            let mut py = corner_cy[c] + r[c].1 * corner_start[c].sin();
             for i in 0..CORNER_SEGMENTS {
                 let angle = corner_start[c] + step * (i + 1) as f32;
-                let nx = corner_cx[c] + r[c] * angle.cos();
-                let ny = corner_cy[c] + r[c] * angle.sin();
+                let nx = corner_cx[c] + r[c].0 * angle.cos();
+                let ny = corner_cy[c] + r[c].1 * angle.sin();
                 vertices.push(px);
                 vertices.push(py);
                 vertices.push(nx);
@@ -449,8 +458,8 @@ impl CanvasContext {
             // 从圆角末尾连线到下一个圆角的起点（即直边段）
             let next = (c + 1) % 4;
             let next_start = corner_start[next];
-            let next_x = corner_cx[next] + r[next] * next_start.cos();
-            let next_y = corner_cy[next] + r[next] * next_start.sin();
+            let next_x = corner_cx[next] + r[next].0 * next_start.cos();
+            let next_y = corner_cy[next] + r[next].1 * next_start.sin();
             vertices.push(px);
             vertices.push(py);
             vertices.push(next_x);

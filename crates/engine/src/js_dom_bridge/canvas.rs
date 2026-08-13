@@ -400,11 +400,24 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // 透传但当前 is_point_in_path 用奇偶规则（canvas crate 限制）。
         "roundRect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                let radii: Vec<f32> = arg(4)
-                    .split(',')
-                    .filter(|s| !s.trim().is_empty())
-                    .filter_map(|s| s.trim().parse::<f32>().ok())
-                    .collect();
+                // R34xx：radii 串支持角对——"p40,20"（DOMPoint x,y，'p' 前缀与后续数字成对）
+                // 与裸标量 "10"（(10,10)）。
+                let parts: Vec<&str> = arg(4).split(',').filter(|s| !s.trim().is_empty()).collect();
+                let mut radii: Vec<(f32, f32)> = Vec::new();
+                let mut i = 0;
+                while i < parts.len() {
+                    if let Some(pair) = parts[i].trim().strip_prefix('p') {
+                        let x = pair.trim().parse::<f32>().unwrap_or(0.0);
+                        let y = parts.get(i + 1).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(x);
+                        radii.push((x, y));
+                        i += 2;
+                    } else if let Ok(v) = parts[i].trim().parse::<f32>() {
+                        radii.push((v, v));
+                        i += 1;
+                    } else {
+                        i += 1;
+                    }
+                }
                 ctx.round_rect(f(0), f(1), f(2), f(3), radii);
             }
             "ok".into()

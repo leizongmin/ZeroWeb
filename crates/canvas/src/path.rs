@@ -17,8 +17,9 @@ pub enum PathCommand {
     ArcTo(f32, f32, f32, f32, f32),
     /// 椭圆弧（圆心 x, 圆心 y, 半径 x, 半径 y, 旋转, 起始角, 结束角）。
     Ellipse(f32, f32, f32, f32, f32, f32, f32),
-    /// 圆角矩形子路径（x, y, 宽, 高, 圆角半径列表）。
-    RoundRect(f32, f32, f32, f32, Vec<f32>),
+    /// 圆角矩形子路径（x, y, 宽, 高, 圆角半径角对列表 [tl, tr, br, bl]——R34xx 支持
+    /// DOMPoint 半径（x=水平, y=垂直）后为角对）。
+    RoundRect(f32, f32, f32, f32, Vec<(f32, f32)>),
     /// 闭合路径。
     ClosePath,
 }
@@ -105,7 +106,10 @@ impl Path2D {
     }
 
     /// 添加圆角矩形子路径。
-    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<f32>) {
+    pub fn round_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radii: Vec<(f32, f32)>) {
+        // R34xx：roundRect 开始新子路径（spec：不连当前点——否则 flatten 的 current 连接
+        // 段把当前点拉进填充，2d.path.roundrect.* 的圆角外像素被误填）。
+        self.commands.push(PathCommand::MoveTo(x, y));
         self.commands.push(PathCommand::RoundRect(x, y, w, h, radii));
     }
 
@@ -440,11 +444,11 @@ impl Path2D {
                     current_y = py;
                 }
                 PathCommand::RoundRect(rx, ry, w, h, _radii) => {
+                    // R34xx：角对列表（退化矩形保留——几何 flatten 在 raster.rs）。
                     let (rx, ry, w, h) = (*rx, *ry, *w, *h);
                     // 简化：退化为矩形的 4 条边
                     let corners = [(rx, ry), (rx + w, ry), (rx + w, ry + h), (rx, ry + h)];
-                    vertices.push(current_x);
-                    vertices.push(current_y);
+                    // R34xx：自包含子路径（不连当前点）。
                     vertices.push(corners[0].0);
                     vertices.push(corners[0].1);
                     for i in 0..3 {

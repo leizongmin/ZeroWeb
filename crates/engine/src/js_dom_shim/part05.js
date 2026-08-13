@@ -1332,16 +1332,26 @@
     //（负值/NaN）spec 抛 RangeError，lenient 过滤（headless 简化，避免中断脚本）。
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
     ctx.roundRect = function (x, y, w, hh, radii) {
+      // R34xx：任一参数非有限（NaN/Infinity）→ 忽略（spec：2d.path.roundrect.nonfinite）。
+      if (!isFinite(+x) || !isFinite(+y) || !isFinite(+w) || !isFinite(+hh)) return;
+      // R34xx：radii 元素可为 number 或 DOMPoint/DOMPointInit（x=水平半径, y=垂直半径）。
+      // 角对编码：DOMPoint → "p<x>,<y>"；标量 → "<v>"（host 解为 (v,v)）。
       var r;
       if (radii == null) {
         r = '0';
       } else if (typeof radii === 'number') {
-        r = String(radii);
+        r = (radii >= 0) ? String(radii) : '0';
       } else if (typeof radii === 'object' && radii !== null && typeof radii.length === 'number') {
         var parts = [];
         for (var i = 0; i < radii.length; i++) {
-          var v = +radii[i];
-          if (!isNaN(v) && v >= 0) parts.push(String(v));
+          var v = radii[i];
+          if (v && typeof v === 'object') {
+            var hx = +v.x, hy = +v.y;
+            if (!isNaN(hx) && hx >= 0 && !isNaN(hy) && hy >= 0) parts.push('p' + hx + ',' + hy);
+          } else {
+            var n = +v;
+            if (!isNaN(n) && n >= 0) parts.push(String(n));
+          }
         }
         r = parts.length ? parts.join(',') : '0';
       } else {

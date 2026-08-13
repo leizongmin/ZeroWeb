@@ -341,22 +341,28 @@ fn test_round_rect_different_radii() {
     let mut path = Path2D::new();
 
     // 单个半径
-    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![5.0]);
+    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![(5.0, 5.0)]);
 
     // 四个不同半径
-    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![5.0, 10.0, 15.0, 20.0]);
+    path.round_rect(
+        10.0,
+        10.0,
+        100.0,
+        80.0,
+        vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)],
+    );
 
     // 两个半径
-    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![5.0, 10.0]);
+    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![(5.0, 5.0), (10.0, 10.0)]);
 
     // 零半径
-    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![0.0]);
+    path.round_rect(10.0, 10.0, 100.0, 80.0, vec![(0.0, 0.0)]);
 
     // 空半径列表
     path.round_rect(10.0, 10.0, 100.0, 80.0, vec![]);
 
     // 超大半径（应被限制）
-    path.round_rect(0.0, 0.0, 40.0, 20.0, vec![50.0]);
+    path.round_rect(0.0, 0.0, 40.0, 20.0, vec![(50.0, 50.0)]);
 
     assert!(path.len() > 0);
 }
@@ -507,11 +513,18 @@ fn test_path_command_generation() {
     path.arc(150.0, 160.0, 17.0, 0.0, std::f32::consts::PI, false);
     path.arc_to(180.0, 170.0, 190.0, 180.0, 19.0);
     path.ellipse(200.0, 210.0, 20.0, 15.0, 0.5, 0.0, std::f32::consts::PI);
-    path.round_rect(220.0, 230.0, 40.0, 30.0, vec![5.0, 10.0, 15.0, 20.0]);
+    path.round_rect(
+        220.0,
+        230.0,
+        40.0,
+        30.0,
+        vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)],
+    );
     path.close_path();
 
     let commands = path.commands();
-    assert_eq!(commands.len(), 9);
+    // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
+    assert_eq!(commands.len(), 10);
 
     // 验证每个命令的类型和参数
     match &commands[0] {
@@ -584,18 +597,18 @@ fn test_path_command_generation() {
         _ => panic!("Expected Ellipse command"),
     }
 
-    match &commands[7] {
+    match &commands[8] {
         PathCommand::RoundRect(x, y, w, h, radii) => {
             assert_eq!(*x, 220.0);
             assert_eq!(*y, 230.0);
             assert_eq!(*w, 40.0);
             assert_eq!(*h, 30.0);
-            assert_eq!(radii, &vec![5.0, 10.0, 15.0, 20.0]);
+            assert_eq!(radii, &vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)]);
         }
         _ => panic!("Expected RoundRect command"),
     }
 
-    match &commands[8] {
+    match &commands[9] {
         PathCommand::ClosePath => {}
         _ => panic!("Expected ClosePath command"),
     }
@@ -617,7 +630,7 @@ fn test_path_edge_cases() {
     path.ellipse(-100.0, -100.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
 
     // 测试负坐标的圆角矩形
-    path.round_rect(-200.0, -200.0, 100.0, 80.0, vec![5.0]);
+    path.round_rect(-200.0, -200.0, 100.0, 80.0, vec![(5.0, 5.0)]);
 
     // 测试大数值
     path.move_to(10000.0, 10000.0);
@@ -628,7 +641,7 @@ fn test_path_edge_cases() {
     path.move_to(f32::NAN, f32::NAN);
     path.arc_to(f32::NAN, f32::NAN, f32::NAN, f32::NAN, f32::NAN);
     path.ellipse(f32::NAN, f32::NAN, f32::NAN, f32::NAN, f32::NAN, f32::NAN, f32::NAN);
-    path.round_rect(f32::NAN, f32::NAN, f32::NAN, f32::NAN, vec![f32::NAN]);
+    path.round_rect(f32::NAN, f32::NAN, f32::NAN, f32::NAN, vec![(f32::NAN, f32::NAN)]);
 
     assert!(path.len() > 0);
 }
@@ -645,7 +658,7 @@ fn test_path_flattening() {
     path.bezier_curve_to(150.0, 100.0, 200.0, 300.0, 300.0, 200.0);
     path.arc(150.0, 150.0, 50.0, 0.0, std::f32::consts::PI, false);
     path.ellipse(250.0, 250.0, 50.0, 30.0, 0.0, 0.0, std::f32::consts::PI);
-    path.round_rect(0.0, 300.0, 200.0, 100.0, vec![10.0]);
+    path.round_rect(0.0, 300.0, 200.0, 100.0, vec![(10.0, 10.0)]);
     path.close_path();
 
     // 获取扁平化的顶点

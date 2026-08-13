@@ -320,11 +320,12 @@ fn test_path_rect_subpath_count() {
 #[test]
 fn test_path_round_rect_command() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 20.0, 100.0, 50.0, vec![5.0]);
-    assert_eq!(p.len(), 1);
+    p.round_rect(10.0, 20.0, 100.0, 50.0, vec![(5.0, 5.0)]);
+    // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
+    assert_eq!(p.len(), 2);
     assert!(matches!(
-        p.commands()[0],
-        PathCommand::RoundRect(10.0, 20.0, 100.0, 50.0, ref r) if r == &vec![5.0]
+        p.commands()[1],
+        PathCommand::RoundRect(10.0, 20.0, 100.0, 50.0, ref r) if r == &vec![(5.0, 5.0)]
     ));
 }
 
@@ -332,14 +333,21 @@ fn test_path_round_rect_command() {
 #[test]
 fn test_path_round_rect_different_radii() {
     let mut p = Path2D::new();
-    p.round_rect(0.0, 0.0, 80.0, 60.0, vec![5.0, 10.0, 15.0, 20.0]);
-    assert_eq!(p.len(), 1);
-    if let PathCommand::RoundRect(x, y, w, h, ref radii) = p.commands()[0] {
+    p.round_rect(
+        0.0,
+        0.0,
+        80.0,
+        60.0,
+        vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)],
+    );
+    // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
+    assert_eq!(p.len(), 2);
+    if let PathCommand::RoundRect(x, y, w, h, ref radii) = p.commands()[1] {
         assert!((x).abs() < f32::EPSILON);
         assert!((y).abs() < f32::EPSILON);
         assert!((w - 80.0).abs() < f32::EPSILON);
         assert!((h - 60.0).abs() < f32::EPSILON);
-        assert_eq!(radii, &[5.0, 10.0, 15.0, 20.0]);
+        assert_eq!(radii, &[(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)]);
     } else {
         panic!("expected RoundRect command");
     }
@@ -533,7 +541,7 @@ fn test_ellipse_flattening_via_fill_with_path() {
 fn test_round_rect_more_vertices_than_plain_rect() {
     let mut ctx = CanvasContext::new(200, 200);
     let mut path = Path2D::new();
-    path.round_rect(10.0, 20.0, 100.0, 80.0, vec![10.0]);
+    path.round_rect(10.0, 20.0, 100.0, 80.0, vec![(10.0, 10.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 带圆角：1（初始连线）+ 4 × (8 段圆角 + 1 直边) = 1 + 36 = 37 段 × 4 = 148 floats
@@ -554,7 +562,7 @@ fn test_round_rect_vertices_avoid_sharp_corners() {
     let y = 20.0f32;
     let w = 100.0f32;
     let h = 80.0f32;
-    path.round_rect(x, y, w, h, vec![15.0]);
+    path.round_rect(x, y, w, h, vec![(15.0, 15.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 矩形的四个尖角不应出现在顶点中
@@ -579,7 +587,7 @@ fn test_round_rect_vertices_avoid_sharp_corners() {
 fn test_round_rect_zero_radius_degrades_to_rect() {
     let mut ctx = CanvasContext::new(200, 200);
     let mut path = Path2D::new();
-    path.round_rect(10.0, 20.0, 100.0, 80.0, vec![0.0]);
+    path.round_rect(10.0, 20.0, 100.0, 80.0, vec![(0.0, 0.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 零半径应退化为普通矩形：5 段 × 4 = 20 floats
@@ -602,7 +610,13 @@ fn test_round_rect_empty_radii_degrades_to_rect() {
 fn test_round_rect_four_different_radii() {
     let mut ctx = CanvasContext::new(200, 200);
     let mut path = Path2D::new();
-    path.round_rect(10.0, 20.0, 100.0, 80.0, vec![5.0, 10.0, 15.0, 20.0]);
+    path.round_rect(
+        10.0,
+        20.0,
+        100.0,
+        80.0,
+        vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)],
+    );
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 有圆角应产生远多于普通矩形的顶点
@@ -615,7 +629,7 @@ fn test_round_rect_radius_clamped() {
     let mut ctx = CanvasContext::new(200, 200);
     let mut path = Path2D::new();
     // 宽 40，高 20，半径 50 超过短边一半(10)
-    path.round_rect(0.0, 0.0, 40.0, 20.0, vec![50.0]);
+    path.round_rect(0.0, 0.0, 40.0, 20.0, vec![(50.0, 50.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 应该不 panic，并且顶点不应超出矩形范围
@@ -639,7 +653,7 @@ fn test_round_rect_radius_clamped() {
 fn test_round_rect_via_current_path() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.begin_path();
-    ctx.current_path.round_rect(10.0, 20.0, 100.0, 80.0, vec![10.0]);
+    ctx.current_path.round_rect(10.0, 20.0, 100.0, 80.0, vec![(10.0, 10.0)]);
     ctx.fill();
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
@@ -659,7 +673,7 @@ fn test_round_rect_corner_vertices_offset_inward() {
     let w = 100.0f32;
     let h = 100.0f32;
     let r = 20.0f32;
-    path.round_rect(x, y, w, h, vec![r]);
+    path.round_rect(x, y, w, h, vec![(r, r)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
     // 检查所有顶点不在矩形的四个尖角 20×20 正方形区域内
@@ -692,13 +706,19 @@ fn test_round_rect_corner_vertices_offset_inward() {
 fn test_round_rect_two_radii_mapping() {
     let mut ctx = CanvasContext::new(200, 200);
     let mut path1 = Path2D::new();
-    path1.round_rect(0.0, 0.0, 100.0, 100.0, vec![5.0, 15.0]);
+    path1.round_rect(0.0, 0.0, 100.0, 100.0, vec![(5.0, 5.0), (15.0, 15.0)]);
     ctx.fill_with_path(&path1);
     let pf1 = ctx.primitives().path_fills[0].vertices.clone();
 
     // 与四个不同半径对比：[5, 15, 5, 15]
     let mut path2 = Path2D::new();
-    path2.round_rect(0.0, 0.0, 100.0, 100.0, vec![5.0, 15.0, 5.0, 15.0]);
+    path2.round_rect(
+        0.0,
+        0.0,
+        100.0,
+        100.0,
+        vec![(5.0, 5.0), (15.0, 15.0), (5.0, 5.0), (15.0, 15.0)],
+    );
     // 清空之前的图元
     let mut ctx2 = CanvasContext::new(200, 200);
     ctx2.fill_with_path(&path2);
@@ -1354,7 +1374,7 @@ fn test_is_point_in_stroke_thick_line() {
 #[test]
 fn test_context_round_rect_hit_test_r3291() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![10.0]);
+    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![(10.0, 10.0)]);
     assert!(ctx.is_point_in_path(50.0, 50.0), "round_rect 内点在路径内");
     assert!(!ctx.is_point_in_path(5.0, 5.0), "round_rect 外点不在路径内");
 }
@@ -1365,7 +1385,7 @@ fn test_context_round_rect_hit_test_r3291() {
 fn test_context_round_rect_applies_transform_r3291() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.translate(20.0, 0.0);
-    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![5.0]);
+    ctx.round_rect(10.0, 10.0, 100.0, 80.0, vec![(5.0, 5.0)]);
     assert!(
         ctx.is_point_in_path(80.0, 50.0),
         "translate(20,0) 后 round_rect 中心(80,50) 在路径内"

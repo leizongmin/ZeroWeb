@@ -87,7 +87,7 @@ fn test_path2d_ellipse_zero_rotation() {
 #[test]
 fn test_path2d_round_rect_zero_size() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 10.0, 0.0, 0.0, vec![5.0]);
+    p.round_rect(10.0, 10.0, 0.0, 0.0, vec![(5.0, 5.0)]);
     // Zero width/height rectangle
     assert!(!p.is_empty());
 }
@@ -95,7 +95,7 @@ fn test_path2d_round_rect_zero_size() {
 #[test]
 fn test_path2d_round_rect_negative_size() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 10.0, -5.0, -5.0, vec![5.0]);
+    p.round_rect(10.0, 10.0, -5.0, -5.0, vec![(5.0, 5.0)]);
     // Negative width/height - might be handled as absolute or produce degenerate path
     assert!(!p.is_empty());
 }
@@ -111,7 +111,7 @@ fn test_path2d_round_rect_empty_radii() {
 #[test]
 fn test_path2d_round_rect_odd_radii_count() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![5.0, 10.0, 15.0]);
+    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0)]);
     // Odd number of radii - should handle gracefully
     assert!(!p.is_empty());
 }
@@ -119,7 +119,7 @@ fn test_path2d_round_rect_odd_radii_count() {
 #[test]
 fn test_path2d_round_rect_radii_larger_than_half_size() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![100.0]);
+    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![(100.0, 100.0)]);
     // Radii larger than half size - should be clamped
     assert!(!p.is_empty());
 }
@@ -127,7 +127,7 @@ fn test_path2d_round_rect_radii_larger_than_half_size() {
 #[test]
 fn test_path2d_round_rect_negative_radii() {
     let mut p = Path2D::new();
-    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![-5.0]);
+    p.round_rect(10.0, 10.0, 50.0, 50.0, vec![(-5.0, -5.0)]);
     // Negative radii - might be clamped to 0
     assert!(!p.is_empty());
 }

@@ -232,7 +232,7 @@ fn test_flatten_round_rect_empty_radii() {
 #[test]
 fn test_flatten_round_rect_one_radius() {
     let mut verts = Vec::new();
-    let (_cx, _cy) = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0]);
+    let (_cx, _cy) = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[(8.0, 8.0)]);
     // 应产生顶点（圆角路径）
     assert!(!verts.is_empty(), "should produce vertices for rounded rect");
 }
@@ -240,22 +240,48 @@ fn test_flatten_round_rect_one_radius() {
 #[test]
 fn test_flatten_round_rect_two_radii() {
     let mut verts = Vec::new();
-    let (_cx, _cy) = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0, 12.0]);
+    let (_cx, _cy) = CanvasContext::flatten_round_rect(
+        &mut verts,
+        0.0,
+        0.0,
+        10.0,
+        10.0,
+        50.0,
+        50.0,
+        &[(8.0, 8.0), (12.0, 12.0)],
+    );
     assert!(!verts.is_empty(), "should produce vertices for 2-radii round rect");
 }
 
 #[test]
 fn test_flatten_round_rect_three_radii() {
     let mut verts = Vec::new();
-    let (_cx, _cy) = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0, 12.0, 6.0]);
+    let (_cx, _cy) = CanvasContext::flatten_round_rect(
+        &mut verts,
+        0.0,
+        0.0,
+        10.0,
+        10.0,
+        50.0,
+        50.0,
+        &[(8.0, 8.0), (12.0, 12.0), (6.0, 6.0)],
+    );
     assert!(!verts.is_empty(), "should produce vertices for 3-radii round rect");
 }
 
 #[test]
 fn test_flatten_round_rect_four_radii() {
     let mut verts = Vec::new();
-    let (_cx, _cy) =
-        CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[8.0, 12.0, 6.0, 10.0]);
+    let (_cx, _cy) = CanvasContext::flatten_round_rect(
+        &mut verts,
+        0.0,
+        0.0,
+        10.0,
+        10.0,
+        50.0,
+        50.0,
+        &[(8.0, 8.0), (12.0, 12.0), (6.0, 6.0), (10.0, 10.0)],
+    );
     assert!(!verts.is_empty(), "should produce vertices for 4-radii round rect");
 }
 
@@ -263,7 +289,7 @@ fn test_flatten_round_rect_four_radii() {
 fn test_flatten_round_rect_zero_radius_degenerates() {
     // 所有半径为 0 → 退化为矩形
     let mut verts = Vec::new();
-    let (cx, cy) = CanvasContext::flatten_round_rect(&mut verts, 5.0, 5.0, 10.0, 10.0, 50.0, 50.0, &[0.0]);
+    let (cx, cy) = CanvasContext::flatten_round_rect(&mut verts, 5.0, 5.0, 10.0, 10.0, 50.0, 50.0, &[(0.0, 0.0)]);
     assert_eq!(cx, 10.0);
     assert_eq!(cy, 10.0);
     // 应产生 5 条线段（4 边 + 起始连接线）
@@ -274,7 +300,7 @@ fn test_flatten_round_rect_zero_radius_degenerates() {
 fn test_flatten_round_rect_large_radius_clamped() {
     // 半径超过短边一半时应被钳位
     let mut verts = Vec::new();
-    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 20.0, 10.0, &[100.0]);
+    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 20.0, 10.0, &[(100.0, 100.0)]);
     // max_r = min(20,10)/2 = 5, radius should be clamped to 5
     assert!(!verts.is_empty());
 }
@@ -282,7 +308,7 @@ fn test_flatten_round_rect_large_radius_clamped() {
 #[test]
 fn test_flatten_round_rect_negative_radius_clamped() {
     let mut verts = Vec::new();
-    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[-5.0]);
+    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[(-5.0, -5.0)]);
     // 负半径被钳位到 0 → 退化为矩形
     assert_eq!(verts.len(), 5 * 4, "negative radius degenerates to rect");
 }
@@ -464,7 +490,7 @@ fn test_flatten_path_ellipse_command() {
 fn test_flatten_path_round_rect_command() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
-    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![8.0]);
+    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(8.0, 8.0)]);
     let verts = ctx.flatten_path();
     assert!(!verts.is_empty(), "round rect should produce vertices");
 }
@@ -535,7 +561,7 @@ fn test_flatten_path_for_round_rect() {
     let ctx = CanvasContext::new(100, 100);
     let mut path = Path2D::new();
     path.move_to(0.0, 0.0);
-    path.round_rect(10.0, 10.0, 50.0, 50.0, vec![8.0]);
+    path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(8.0, 8.0)]);
     let verts = ctx.flatten_path_for(&path);
     assert!(!verts.is_empty(), "path round rect should produce vertices");
 }
@@ -1032,7 +1058,7 @@ fn test_flatten_path_ellipse_zero_rotation() {
 #[test]
 fn test_flatten_path_round_rect_zero_radius() {
     let mut ctx = CanvasContext::new(100, 100);
-    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![0.0]);
+    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(0.0, 0.0)]);
     let vertices = ctx.flatten_path();
     // Zero radius should degenerate to rectangle
     assert_eq!(vertices.len(), 20); // 5 segments × 4
@@ -1041,7 +1067,7 @@ fn test_flatten_path_round_rect_zero_radius() {
 #[test]
 fn test_flatten_path_round_rect_negative_radius() {
     let mut ctx = CanvasContext::new(100, 100);
-    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![-5.0]);
+    ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(-5.0, -5.0)]);
     let vertices = ctx.flatten_path();
     // Negative radius should be clamped to 0, degenerate to rectangle
     assert_eq!(vertices.len(), 20); // 5 segments × 4
@@ -1050,7 +1076,8 @@ fn test_flatten_path_round_rect_negative_radius() {
 #[test]
 fn test_flatten_path_round_rect_radii_too_large() {
     let mut ctx = CanvasContext::new(100, 100);
-    ctx.current_path.round_rect(10.0, 10.0, 20.0, 20.0, vec![100.0]);
+    ctx.current_path
+        .round_rect(10.0, 10.0, 20.0, 20.0, vec![(100.0, 100.0)]);
     let vertices = ctx.flatten_path();
     // Radius larger than half size should be clamped - just verify no panic
     let _ = vertices.len();
@@ -1443,10 +1470,10 @@ fn test_fill_rect_pattern_rasterizes_r3085() {
         width: 2,
         height: 2,
         data: vec![
-            255, 0, 0, 255, // (0,0) red
+            255, 0, 0, 255, // 0 red
             0, 255, 0, 255, // (1,0) green
             0, 0, 255, 255, // (0,1) blue
-            255, 255, 255, 255, // (1,1) white
+            255, 255, 255, 255, // 1 white
         ],
     };
     ctx.set_fill_style(CanvasStyle::Pattern(CanvasPattern::new(img, PatternRepetition::Repeat)));
