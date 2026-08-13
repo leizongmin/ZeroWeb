@@ -6512,6 +6512,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-psl"
+version = "0.1.0"
+
+[[package]]
 name = "zero-render-foundation"
 version = "0.1.0"
 dependencies = [
@@ -6586,6 +6590,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "url",
+ "zero-psl",
 ]
 
 [[package]]

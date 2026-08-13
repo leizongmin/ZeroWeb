@@ -9,6 +9,7 @@ license.workspace = true
 url = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+zero-psl = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

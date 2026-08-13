@@ -23,10 +23,14 @@ pub struct Site {
 impl Site {
     /// 从 Origin 提取站点。
     ///
-    /// 提取规则简化为：取 host 的最后两段作为 registrable_domain。
-    /// 例如 `sub.example.com` → `example.com`，`example.com` → `example.com`。
+    /// registrable_domain 经 zero-psl 按 [Public Suffix List] 语义计算（eTLD+1），
+    /// 而非朴素「取末两段」——后者会把 `a.github.io` 与 `b.github.io` 误判为同站。
+    /// 例如 `sub.example.com` → `example.com`，`example.com` → `example.com`，
+    /// 但 `a.github.io` → `a.github.io`（`*.github.io` 为公共后缀，各用户子域独立）。
+    ///
+    /// [Public Suffix List]: https://publicsuffix.org/
     pub fn from_origin(origin: &Origin) -> Self {
-        let registrable_domain = extract_registrable_domain(&origin.host);
+        let registrable_domain = zero_psl::PublicSuffixList::shared().registrable_domain(&origin.host);
         Self {
             scheme: origin.scheme.clone(),
             registrable_domain,
@@ -42,26 +46,6 @@ impl Site {
 impl fmt::Display for Site {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}://{}", self.scheme, self.registrable_domain)
-    }
-}
-
-/// 从主机名提取注册域名（简化的 eTLD+1 算法）。
-///
-/// 对于 IP 地址、单段域名或空字符串，直接返回原值。
-/// 对于多段域名，取最后两段。
-fn extract_registrable_domain(host: &str) -> String {
-    // IP 地址直接返回
-    if host.parse::<std::net::IpAddr>().is_ok() {
-        return host.to_string();
-    }
-
-    let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() <= 2 {
-        // 单段或两段域名直接返回
-        host.to_string()
-    } else {
-        // 取最后两段
-        format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1])
     }
 }
 
@@ -335,6 +319,29 @@ mod tests {
         let o = origin("https://sub.example.com");
         let site = Site::from_origin(&o);
         assert_eq!(site.to_string(), "https://example.com");
+    }
+
+    /// R3380 回归锁定：`*.github.io` 是公共后缀，各用户子域是独立注册域。
+    /// 朴素「取末两段」会把 a.github.io / b.github.io 都判为 github.io（同站），
+    /// 正确 PSL 语义应判为不同站点（cookie same-site / site-isolation 依据）。
+    #[test]
+    fn test_psl_wildcard_suffix_isolates_github_user_subdomains() {
+        let a = origin("https://a.github.io");
+        let b = origin("https://b.github.io");
+        assert_eq!(Site::from_origin(&a).registrable_domain, "a.github.io");
+        assert_eq!(Site::from_origin(&b).registrable_domain, "b.github.io");
+        assert!(
+            !Site::is_same_site(&a, &b),
+            "a.github.io 与 b.github.io 经 PSL 须判为不同站点"
+        );
+    }
+
+    /// R3380 回归锁定：多标签公共后缀（co.uk）正确折叠。
+    #[test]
+    fn test_psl_multilabel_suffix_co_uk() {
+        let a = origin("https://sub.example.co.uk");
+        let site = Site::from_origin(&a);
+        assert_eq!(site.registrable_domain, "example.co.uk");
     }
 
     #[test]

@@ -14,6 +14,7 @@ members = [
     "crates/host-runtime",
     "crates/net",
     "crates/security",
+    "crates/psl",
     "crates/storage",
     "crates/protocol",
     "crates/product-version",
@@ -145,6 +146,7 @@ zero-canvas = { path = "crates/canvas" }
 zero-render-foundation = { path = "crates/render-foundation" }
 zero-host-runtime = { path = "crates/host-runtime" }
 zero-net = { path = "crates/net" }
+zero-psl = { path = "crates/psl" }
 zero-security = { path = "crates/security" }
 zero-storage = { path = "crates/storage" }
 zero-protocol = { path = "crates/protocol" }

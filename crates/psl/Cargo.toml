@@ -1,0 +1,9 @@
+[package]
+name = "zero-psl"
+description = "ZeroWeb 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"

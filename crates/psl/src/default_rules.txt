@@ -1,0 +1,53 @@
+// ZeroWeb zero-psl 内置默认规则集
+//
+// ⚠️ 许可证：本文件是 ZeroWeb 项目原创的事实性公共后缀摘要，NOT 衍生自
+// Mozilla 管理的 public_suffix_list.dat（后者以 MPL-2.0 授权，不得在 MIT
+// 仓库中重分发）。本文件仅收录客观 DNS 顶层结构（gTLD/ccTLD 标签）与公开
+// 文档化的平台公共后缀，属事实表达，与 MIT 许可证兼容。
+//
+// 覆盖范围有限——完整上游数据需经 PublicSuffixList::from_rules() 注入经
+// 许可证审核的 PSL 文本。每行格式同上游：普通规则 / *.通配 / !例外。
+
+// === 通用顶级域（gTLD）===
+com
+net
+org
+edu
+gov
+mil
+int
+info
+biz
+name
+io
+dev
+app
+co
+
+// === 典型 ccTLD 二级公共后缀（客观 DNS 结构示例，非完整列表）===
+co.uk
+ac.uk
+gov.uk
+org.uk
+com.au
+net.au
+org.au
+co.jp
+co.kr
+com.cn
+com.br
+co.in
+co.nz
+
+// === 文档化平台公共后缀（通配规则）===
+// GitHub Pages：每个用户/项目子域独立注册，须隔离。
+*.github.io
+*.githubusercontent.com
+// Cloudflare / Glitch 等平台公共后缀。
+*.pages.dev
+*.glitch.me
+
+// === 例外规则语义示例（PSL 例外规则）===
+// *.ck 为通配公共后缀，但 www.ck 自身可注册——例外规则把公共后缀回退一标签。
+*.ck
+!www.ck
