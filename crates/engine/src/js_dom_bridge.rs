@@ -151,6 +151,17 @@ pub enum DomMutation {
         /// 注释内容。
         text: String,
     },
+    /// `document.createProcessingInstruction(target, data)`（js-dom M4 / spec `dom-document-createprocessinginstruction`）——
+    /// PI 节点（nodeType 7）。镜像 [`Self::CreateComment`]（host `doc.create_processing_instruction` 已存在）。
+    /// spec 校验（非法 target / data 含 `?>`）在 JS 桥（shim）同步抛 DOMException，合法才 push 此 mutation。
+    CreateProcessingInstruction {
+        /// 稳定句柄。
+        handle: String,
+        /// PI target（合法 Name production）。
+        target: String,
+        /// PI data（不含 `?>`）。
+        data: String,
+    },
     /// `parent.appendChild(child)` — 子节点用 create 时返回的句柄。
     AppendChild {
         /// 父节点选择器。
@@ -540,6 +551,10 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             }
             DomMutation::CreateComment { handle, text } => {
                 let id = doc.create_comment(text);
+                handles.insert(handle.clone(), id);
+            }
+            DomMutation::CreateProcessingInstruction { handle, target, data } => {
+                let id = doc.create_processing_instruction(target, data);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::AppendChild {
@@ -2210,6 +2225,11 @@ pub fn query_inner_html_from_mutations(mutations: &[DomMutation], handle: &str) 
         {
             return text.clone();
         }
+        if let DomMutation::CreateProcessingInstruction { handle: h, data, .. } = m
+            && h == handle
+        {
+            return data.clone();
+        }
         if let DomMutation::SetTextOnHandle { handle: h, text } = m
             && h == handle
         {
@@ -2339,6 +2359,11 @@ pub fn query_text_from_mutations(mutations: &[DomMutation], handle: &str) -> Str
             && h == handle
         {
             return text.clone();
+        }
+        if let DomMutation::CreateProcessingInstruction { handle: h, data, .. } = m
+            && h == handle
+        {
+            return data.clone();
         }
         if let DomMutation::SetTextOnHandle { handle: h, text } = m
             && h == handle

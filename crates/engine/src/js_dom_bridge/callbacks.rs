@@ -1075,6 +1075,29 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `__zw_create_processing_instruction(target, data)`——document.createProcessingInstruction（js-dom M4，
+    // spec `dom-document-createprocessinginstruction`）。PI 节点 nodeType 7。镜像 `__zw_create_comment`。
+    // spec 校验（非法 target Name / data 含 `?>`）已在 JS 桥（shim）同步抛 DOMException，此处仅收合法值。
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback(
+        "__zw_create_processing_instruction",
+        Box::new(move |args| {
+            let target = args.first().map(String::from).unwrap_or_default();
+            let data = args.get(1).map(String::from).unwrap_or_default();
+            let n = c.fetch_add(1, Ordering::Relaxed);
+            let handle = format!("__n{n}");
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::CreateProcessingInstruction {
+                    handle: handle.clone(),
+                    target,
+                    data,
+                });
+            handle
+        }),
+    );
+
     let m = Arc::clone(mutations);
     let c = Arc::clone(&counter);
     sandbox.register_callback(

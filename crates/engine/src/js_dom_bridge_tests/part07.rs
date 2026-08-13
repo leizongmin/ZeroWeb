@@ -905,6 +905,116 @@ fn test_create_comment_r2816() {
 }
 
 #[test]
+fn test_create_processing_instruction_r9() {
+    // js-dom M4 R9：document.createProcessingInstruction(target, data)（spec `dom-document-createprocessinginstruction`）——
+    // PI 节点（nodeType 7）。polyfill document（part06.js）方法 + spec 校验（target 须合法 Name production、data
+    // 不得含 `?>`，违则抛 InvalidCharacterError DOMException）+ __zw_create_processing_instruction callback →
+    // DomMutation::CreateProcessingInstruction → apply（doc.create_processing_instruction）。与 native dom_bindings
+    // factories.rs R7 对齐（A/B 等价）。shim _piHandles 标识 nodeType/nodeName(=target)/target/data。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // createProcessingInstruction 返节点：nodeType=7 / nodeName=target / tagName undefined / target/data 读回。
+    sandbox
+        .execute(
+            "globalThis.__pi = document.createProcessingInstruction('xml-stylesheet', 'href=\"x.css\"');\
+             globalThis.__nt = __pi.nodeType;\
+             globalThis.__nn = __pi.nodeName;\
+             globalThis.__tag = __pi.tagName;\
+             globalThis.__tgt = __pi.target;\
+             globalThis.__data = __pi.data;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nt)").unwrap().value,
+        "7",
+        "createProcessingInstruction nodeType=7"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nn)").unwrap().value,
+        "xml-stylesheet",
+        "nodeName=target"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tag)").unwrap().value,
+        "undefined",
+        "PI tagName undefined"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tgt)").unwrap().value,
+        "xml-stylesheet",
+        "target 读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__data)").unwrap().value,
+        "href=\"x.css\"",
+        "data 读回"
+    );
+
+    // host 记 CreateProcessingInstruction mutation（验证 host 桥接）。
+    let muts = mutations.lock().unwrap();
+    let has_pi = muts.iter().any(|m| {
+        matches!(m, DomMutation::CreateProcessingInstruction { target, data, .. }
+            if target == "xml-stylesheet" && data == "href=\"x.css\"")
+    });
+    drop(muts);
+    assert!(
+        has_pi,
+        "createProcessingInstruction 须经 __zw_create_processing_instruction 记 DomMutation::CreateProcessingInstruction"
+    );
+
+    // spec 校验：非法 target（Name production 失败）抛 InvalidCharacterError。
+    sandbox
+        .execute(
+            "globalThis.__err1 = (function(){ try { document.createProcessingInstruction('0bad', 'x'); return 'no-throw'; }\
+             catch(e){ return e instanceof DOMException && e.name; } })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__err1)").unwrap().value,
+        "InvalidCharacterError",
+        "非法 target 抛 InvalidCharacterError DOMException"
+    );
+
+    // spec 校验：data 含 `?>` 抛 InvalidCharacterError。
+    sandbox
+        .execute(
+            "globalThis.__err2 = (function(){ try { document.createProcessingInstruction('ok', 'a?>b'); return 'no-throw'; }\
+             catch(e){ return e instanceof DOMException && e.name; } })();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__err2)").unwrap().value,
+        "InvalidCharacterError",
+        "data 含 ?> 抛 InvalidCharacterError DOMException"
+    );
+
+    // ProcessingInstruction 构造器占位存在（instanceof 不抛 TypeError）。
+    sandbox
+        .execute(
+            "globalThis.__hasPI = (typeof ProcessingInstruction === 'function');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasPI)").unwrap().value,
+        "true",
+        "ProcessingInstruction 构造器占位存在"
+    );
+}
+
+#[test]
 fn test_modern_interaction_stubs_r2817() {
     // R2817：现代交互 API stubs 簇——navigator.clipboard/permissions + element.requestFullscreen +
     // document.fullscreen/exitFullscreen + element/window scroll。headless 无真剪贴板/全屏/滚动 → resolving

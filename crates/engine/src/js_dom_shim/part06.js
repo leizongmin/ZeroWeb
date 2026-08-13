@@ -881,7 +881,10 @@
       // <>空白等）→ 抛 InvalidCharacterError DOMException。与 native dom_bindings
       // is_valid_qualified_name 逻辑对齐（A/B 等价）。createElement(undefined)→"undefined" 合法通过。
       if (!_zwIsValidQualifiedName(tag)) {
-        throw new DOMException('The tag name provided is not a valid name.', 'InvalidCharacterError');
+        // 用 globalThis.DOMException（native_dom=true 叠加路径下 = 原生 DOMException；纯 polyfill 下 =
+        // part01b 的）——保证 e.constructor === self.DOMException（WPT assert_throws_dom "wrong global"
+        // 要求，R6 定位）。裸 new DOMException 走词法作用域，叠加路径下 wrong global。
+        throw new (globalThis.DOMException)('The tag name provided is not a valid name.', 'InvalidCharacterError');
       }
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
       var handle = __zw_create_element(tag);
@@ -928,6 +931,28 @@
       var handle = (typeof __zw_create_comment === 'function')
         ? __zw_create_comment(String(text)) : __zw_create_text(String(text));
       if (handle) _commentHandles[handle] = true;
+      return _wrapHandle(handle);
+    },
+    // `document.createProcessingInstruction(target, data)`（js-dom M4，spec `dom-document-createprocessinginstruction`）——
+    // PI 节点（nodeType 7，target/data/nodeName=target）。spec 校验在调用点同步抛 DOMException（与 native
+    // dom_bindings factories.rs 对齐：① target 须合法 Name production ② data 不得含 `?>`，违则
+    // InvalidCharacterError）。合法经 host `__zw_create_processing_instruction`（apply 时 doc.create_processing_instruction）。
+    createProcessingInstruction: function(target, data) {
+      var t = String(target == null ? '' : target);
+      var d = String(data == null ? '' : data);
+      // spec 步骤 2：target 须合法 Name（复用 R3 createElement 校验 helper）。
+      if (!_zwIsValidQualifiedName(t)) {
+        // globalThis.DOMException（R6 identity：叠加路径下 = 原生 DOMException，避免 wrong global）。
+        throw new (globalThis.DOMException)('The target provided is not a valid name.', 'InvalidCharacterError');
+      }
+      // spec 步骤 3：data 不得含 `?>`。
+      if (d.indexOf('?>') !== -1) {
+        throw new (globalThis.DOMException)("The data provided contains '?>'.", 'InvalidCharacterError');
+      }
+      var handle = (typeof __zw_create_processing_instruction === 'function')
+        ? __zw_create_processing_instruction(t, d)
+        : __zw_create_text(t + ' ' + d);
+      if (handle) _piHandles[handle] = { target: t, data: d };
       return _wrapHandle(handle);
     },
     // `document.createEvent(type)`——legacy 合成事件工厂（jQuery<3 / 旧库 / 分析脚本高频）。返空 type 事件，

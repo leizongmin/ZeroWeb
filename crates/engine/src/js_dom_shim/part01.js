@@ -443,6 +443,10 @@
   // P1a Text（R2816）：已创建的 text handle 集合（nodeType=3 / nodeName '#text' 标识）——修正旧实现 created
   // text 节点误报 nodeType 1（element）的 bug（与 _commentHandles 对称）。createTextNode 经 __zw_create_text。
   var _textHandles = {};
+  // js-dom M4 ProcessingInstruction（spec `dom-document-createprocessinginstruction`）：已创建的 PI handle
+  // 集合（nodeType=7），存 { target, data }（PI 无独立 selector，区别于普通元素句柄；与 _commentHandles 对称）。
+  // target/data/nodeName(=target) 经此读回（PI 节点无 CharacterData 编辑方法）。
+  var _piHandles = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
   // queueMicrotask——调度 microtask（高频：每个异步库 / polyfill / 框架都用）。本 V8 embed 未暴露

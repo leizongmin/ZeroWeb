@@ -488,18 +488,20 @@
         var isShadow = handle && _shadowHandles[handle];
         var isComment = handle && _commentHandles[handle];
         var isText = handle && _textHandles[handle];
+        var isPI = handle && _piHandles[handle];
         if (prop === 'tagName') {
-          return (isFrag || isShadow || isComment || isText) ? undefined : _realTag(sel, handle);
+          return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
         }
         if (prop === 'nodeName') {
           return isShadow ? '#shadow-root'
             : isFrag ? '#document-fragment'
             : isComment ? '#comment'
             : isText ? '#text'
+            : isPI ? _piHandles[handle].target
             : _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
-          return (isShadow || isFrag) ? 11 : (isComment ? 8 : (isText ? 3 : 1));
+          return (isShadow || isFrag) ? 11 : (isPI ? 7 : (isComment ? 8 : (isText ? 3 : 1)));
         }
         // ShadowRoot 专用属性（R2926）：host = 宿主元素 proxy；mode = 'open'/'closed'。
         if (isShadow && prop === 'host') {
@@ -513,6 +515,14 @@
         // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
           return handle ? __zw_get_text_handle(handle) : '';
+        }
+        // ProcessingInstruction 节点（js-dom M4）：`.target` = PI target，`.data`/`.nodeValue` = PI data
+        //（spec `dom-processinginstruction`：data 即 CharacterData.data；nodeName = target 见上）。读自 _piHandles。
+        if (isPI) {
+          var _pi = _piHandles[handle];
+          if (prop === 'target') return _pi ? _pi.target : '';
+          if (prop === 'data' || prop === 'nodeValue') return _pi ? _pi.data : '';
+          if (prop === 'length') return _pi ? _pi.data.length : 0;
         }
         // CharacterData 数据编辑方法（R2823，text/comment 节点）+ Text.splitText。仅 handle-based
         // 文本/注释节点（createTextNode/createComment 所建——parsed DOM 文本节点为 _wrapNodeEntry 静态

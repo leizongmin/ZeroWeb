@@ -101,6 +101,13 @@
   globalThis.Attr = globalThis.Attr || function Attr() {};
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
+  // js-dom M4：ProcessingInstruction 构造器占位（spec `dom-processinginstruction`，CharacterData : Node 子类）。
+  // createProcessingInstruction 返 polyfill Proxy 节点（非构造器真实例），instanceof 恒 false（与
+  // HTMLFormElement 占位同语义）；构造器须以 function 存在，使 `x instanceof ProcessingInstruction` 不抛
+  // TypeError。原型挂 Node.prototype（PI instanceof Node 经原型链，polyfill Proxy instanceof 仍 false，记入
+  // R8 instanceof 89 块缺口，独立切片）。
+  globalThis.ProcessingInstruction = globalThis.ProcessingInstruction || function ProcessingInstruction() {};
+  globalThis.ProcessingInstruction.prototype = Object.create(globalThis.Node.prototype);
   // R3019：Element.prototype 成员补全——DOMPurify 等库加载时经 lookupGetter(ElementPrototype, 'parentNode'/
   // 'remove'/'cloneNode'/'nextSibling'/'childNodes') 固化原型链成员（unapply 后以节点为 this 调用）。旧 shim
   // 原型空壳 → lookup 全落 fallback（恒返 null）→ _forceRemove 的 getParentNode(node).removeChild(node) 抛
