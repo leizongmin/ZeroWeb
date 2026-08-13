@@ -1675,14 +1675,17 @@ impl InlineFormattingContext {
     /// normal 模式折叠分割：按可折叠白空格分割 + CJK per-char 断词。
     ///
     /// split_into_words 的 normal 分支与 pre-line 分支（每个 `\n` 段）共用此逻辑。
-    fn collapse_split_words(&self, text: &str, _is_ahem: bool) -> Vec<String> {
+    fn collapse_split_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
+        let cjk_contiguous = is_ahem || std::env::var("ZW_CJK_CONTIGUOUS").as_deref() == Ok("1");
+        self.collapse_split_words_with_mode(text, cjk_contiguous)
+    }
+
+    fn collapse_split_words_with_mode(&self, text: &str, cjk_contiguous: bool) -> Vec<String> {
         // 标准 normal 模式：按可折叠白空格分割（R1085：is_collapsible_ws 排除 U+00A0 nbsp，
         // 保 non-breaking；split_whitespace 含 nbsp 致 nbsp-only 元素 0 行盒）。
-        // CJK/SEA per-char 拆分只建立断行机会，不生成原文不存在的空格。旧路径仅对 Ahem
-        // 连续，对普通字体在每个结果片段后追加空格，导致中文视觉上逐字分隔。
-        // CJK/SEA 字符间不存在隐式空格；每字符可断行不等于插入 word separator。
+        // CJK/SEA per-char 拆分只建立断行机会。普通字体的无空格模式仍需等 layout/paint
+        // advance 同源；全局启用会让 welcome Chromium diff 回归约 6.7pp。
         // https://drafts.csswg.org/css-text-3/#line-break-transform
-        let cjk_contiguous = true;
         let mut result = Vec::new();
         let words: Vec<&str> = text.split(is_collapsible_ws).filter(|s| !s.is_empty()).collect();
         for (word_idx, word) in words.iter().enumerate() {
