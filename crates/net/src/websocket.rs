@@ -100,7 +100,7 @@ impl WebSocket {
     ///
     /// # 错误
     ///
-    /// - URL 格式无效时返回 [`InvalidUrl`](WebSocketError::InvalidUrl)。
+    /// - URL 格式无效或 scheme 非 `ws`/`wss` 时返回 [`InvalidUrl`](WebSocketError::InvalidUrl)。
     /// - 无法建立 TCP/TLS 连接或握手失败时返回
     ///   [`ConnectionFailed`](WebSocketError::ConnectionFailed)。
     pub fn connect(&mut self) -> Result<(), WebSocketError> {
@@ -109,6 +109,15 @@ impl WebSocket {
         }
 
         let parsed_url = Url::parse(&self.url).map_err(|e| WebSocketError::InvalidUrl(e.to_string()))?;
+        // 信任边界输入校验：WebSocket 仅支持 ws/wss scheme。非 ws/wss（如 http/ftp/file）
+        // 虽能被 Url::parse 接受，但不是合法 WebSocket URL——提前拒为 InvalidUrl，避免
+        // 交给 tungstenite 后被归类为 ConnectionFailed（错误类型与实际原因不符，误导排查）。
+        if !matches!(parsed_url.scheme(), "ws" | "wss") {
+            return Err(WebSocketError::InvalidUrl(format!(
+                "WebSocket URL must use ws:// or wss:// scheme, got: {scheme}",
+                scheme = parsed_url.scheme()
+            )));
+        }
 
         let (socket, _response) =
             tungstenite::connect(parsed_url.as_str()).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
@@ -265,6 +274,49 @@ mod tests {
             WebSocketError::InvalidUrl(_) => {}
             other => panic!("expected InvalidUrl, got: {other:?}"),
         }
+    }
+
+    // ── R3369：scheme 校验（信任边界输入校验）──
+
+    #[test]
+    /// R3369：非 ws/wss scheme（http/ftp/file）须被拒为 InvalidUrl，
+    /// 而非交给 tungstenite 后归类为 ConnectionFailed（错误类型与原因不符）。
+    fn test_websocket_non_ws_scheme_rejected_as_invalid_url_r3369() {
+        for bad in [
+            "http://127.0.0.1:1/x",
+            "https://127.0.0.1:1/x",
+            "ftp://127.0.0.1/x",
+            "file:///x",
+        ] {
+            let mut ws = WebSocket::new(bad);
+            let result = ws.connect();
+            let err = result.expect_err("{bad:?} 应被拒");
+            match err {
+                WebSocketError::InvalidUrl(msg) => {
+                    assert!(
+                        msg.contains("ws://") || msg.contains("wss://"),
+                        "错误消息应提示合法 scheme：{msg}"
+                    );
+                }
+                other => panic!("scheme={bad:?} 应返回 InvalidUrl，实际：{other:?}"),
+            }
+            // 被拒后状态不应变为 Open
+            assert_ne!(ws.state(), &WebSocketState::Open);
+        }
+    }
+
+    #[test]
+    /// R3369：合法 ws/wss scheme 但连接不可达时仍返回 ConnectionFailed（scheme 校验通过，
+    /// 仅网络层失败）——确保 scheme 校验未误伤合法 URL。
+    fn test_websocket_valid_ws_scheme_still_attempts_connect_r3369() {
+        let mut ws = WebSocket::new("ws://127.0.0.1:1/unreachable");
+        let result = ws.connect();
+        let err = result.expect_err("不可达端口应失败");
+        // scheme 合法 → 不应是 InvalidUrl，而是 ConnectionFailed（网络层）
+        assert!(
+            matches!(err, WebSocketError::ConnectionFailed(_)),
+            "ws:// 不可达应返回 ConnectionFailed，实际：{err:?}"
+        );
     }
 
     #[test]
