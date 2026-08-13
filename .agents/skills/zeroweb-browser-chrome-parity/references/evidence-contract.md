@@ -1,0 +1,197 @@
+# ZeroWeb Chrome 一致性证据契约
+
+## 场景结构
+
+场景使用 JSON：
+
+```json
+{
+  "version": 1,
+  "name": "form-interaction",
+  "url": "file://${REPO_ROOT}/examples/forms/form-interaction-test.html?__zero_test_state=1",
+  "viewport": { "width": 800, "height": 720, "dpr": 1 },
+  "environment": {
+    "locale": "zh-CN",
+    "colorScheme": "light",
+    "reducedMotion": "reduce",
+    "chromeVersionPattern": "Chrome/127\\."
+  },
+  "thresholds": {
+    "maxDiffPercent": 5,
+    "maxRegionDiffPercent": 10,
+    "channelDiff": 8,
+    "pixelRadius": 1,
+    "maxGeometryDiffPx": 2
+  },
+  "observe": {
+    "selectors": ["#name", "#note"],
+    "stateExpression": "JSON.parse(document.querySelector('#test-state').textContent)",
+    "eventTypes": ["mousedown", "focus", "mouseup", "click", "input", "change"]
+  },
+  "steps": [
+    { "id": "initial", "action": { "type": "snapshot" } },
+    { "id": "focus-name", "action": { "type": "click", "selector": "#name" } },
+    { "id": "type-name", "action": { "type": "type", "text": "abc" } },
+    { "id": "tab", "action": { "type": "key", "key": "Tab" } }
+  ]
+}
+```
+
+脚本会展开 `${REPO_ROOT}`。每个步骤 ID 必须唯一，并且可安全用作文件名。
+
+Chrome 端支持以下动作：
+
+- `snapshot`
+- `click`，需要 `selector`
+- `type`，需要 `text`
+- `key`，需要 Puppeteer 支持的 `key`
+- `wait`，需要 `milliseconds`，仅用于诊断
+
+页面专用的 `stateExpression` 必须返回可 JSON 序列化的数据。只记录 Web 可观察行为，不加入引擎私有字段。
+
+## Manifest 结构
+
+每个引擎写出 `manifest.json`：
+
+```json
+{
+  "schemaVersion": 1,
+  "scenario": "form-interaction",
+  "engine": "chrome",
+  "engineVersion": "Chrome/127.0.0.0",
+  "capturePath": "chrome-cdp-gui",
+  "inputPath": "browser-pointer",
+  "viewport": { "width": 800, "height": 720, "dpr": 1 },
+  "steps": [
+    {
+      "id": "initial",
+      "action": { "type": "snapshot" },
+      "screenshot": "initial.png",
+      "state": {},
+      "events": [],
+      "geometry": {
+        "#name": {
+          "x": 118,
+          "y": 201,
+          "width": 193,
+          "height": 40
+        }
+      }
+    }
+  ]
+}
+```
+
+文件路径相对于 manifest 所在目录。证据生产器可以增加字段，但不得改变必需字段的语义。
+
+## 事件归一化
+
+比较前只保留：
+
+```json
+{
+  "type": "click",
+  "target": "#subscribe",
+  "defaultPrevented": false
+}
+```
+
+不比较时间戳。可以附加 value 和 checked 快照用于诊断，但 canonical state 比较仍是权威结果。
+
+采集器使用 capture phase，以观察 focus 和不冒泡事件；在 microtask 中更新 `defaultPrevented`，确保后续 listener 的取消结果可见。不得通过程序化 dispatch 制造事件日志。
+
+## 点击语义
+
+Chrome：
+
+1. 解析 selector。
+2. 获取可见 bounding box。
+3. 未指定归一化 offset 时取中心点。
+4. 执行 `mouse.move`、`mouse.down`、`mouse.up`。
+5. 校验事件目标或动作后的状态。
+
+ZeroWeb：
+
+1. 在当前 document generation 中解析目标。
+2. 在 renderer hit-test 区域内寻找点击点。
+3. 把 document 坐标转换为 page-content 物理坐标。
+4. 执行浏览器 mouse move、press、release。
+5. 校验实际 target selector。
+6. 等待新 compositor 帧后再截图。
+
+WebDriver `ElementClick` 可用于行为诊断，但必须声明 `inputPath: "webdriver-element"`，不能满足完整生产输入门禁。
+
+## 像素比较
+
+标准比较器：
+
+```bash
+zero-wpt-runner compare-png \
+  <zeroweb.png> <chrome.png> \
+  --max-diff 5 \
+  --channel-diff 8 \
+  --pixel-radius 1
+```
+
+全图阈值为严格小于；区域阈值默认包含等于边界。
+
+字体由其他 goal 负责时，仍保留未遮罩的全图结果，同时增加排除 glyph mask 的布局/控件报告。不得丢弃全图结果。
+
+## 生产证据边界
+
+完整 Chrome 一致性要求：
+
+```text
+Chrome GUI CDP
+以及
+ZeroBrowser 真实窗口
+-> 多进程 zero-renderer
+-> compositor
+-> wgpu present
+-> 严格 GPU readback
+```
+
+以下路径仅能用于诊断：
+
+- engine-direct framebuffer
+- CPU raster screenshot
+- 不含浏览器窗口合成的 ZeroWeb headless GPU
+- `zero-webdriver` live renderer
+- Rust 单元或集成测试快照
+
+这些仍是有价值的底层回归测试，但必须如实标注 `capturePath` 和 `inputPath`。
+
+## 跨平台命令契约
+
+一键编排器读取 `ZEROWEB_EVIDENCE_COMMAND`，其值必须是 JSON 字符串数组：
+
+```json
+["cargo", "run", "--release", "--bin", "zero-parity-producer"]
+```
+
+禁止传 shell 命令字符串。JSON argv 不依赖 Bash、PowerShell 或 CMD quoting，可在 Windows、Linux、macOS 使用。
+
+生产器会收到：
+
+```text
+PARITY_SCENARIO=<场景绝对路径>
+PARITY_OUTPUT_DIR=<ZeroWeb 证据目录绝对路径>
+PARITY_REPO_ROOT=<仓库根目录绝对路径>
+```
+
+路径由 Node.js `path.resolve()` 生成。生产器必须使用这些环境变量，不得假设系统临时目录、用户主目录、盘符或路径分隔符。
+
+## 产物布局
+
+```text
+evidence/
+├── chrome/
+│   ├── manifest.json
+│   └── <step-id>.png
+├── zeroweb/
+│   ├── manifest.json
+│   └── <step-id>.png
+└── report.json
+```
+
+任一门禁失败时保留完整 evidence 目录。

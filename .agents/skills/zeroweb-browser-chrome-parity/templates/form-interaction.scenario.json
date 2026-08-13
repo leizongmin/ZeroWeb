@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "name": "form-interaction",
+  "url": "file://${REPO_ROOT}/examples/forms/form-interaction-test.html?__zero_test_state=1",
+  "viewport": {
+    "width": 800,
+    "height": 720,
+    "dpr": 1
+  },
+  "environment": {
+    "locale": "zh-CN",
+    "colorScheme": "light",
+    "reducedMotion": "reduce",
+    "chromeVersionPattern": "Chrome/127\\."
+  },
+  "thresholds": {
+    "maxDiffPercent": 5,
+    "maxRegionDiffPercent": 10,
+    "channelDiff": 8,
+    "pixelRadius": 1,
+    "maxGeometryDiffPx": 2
+  },
+  "observe": {
+    "selectors": [
+      "#name",
+      "#note",
+      "#subscribe",
+      "#plan-basic",
+      "#plan-pro",
+      "#click",
+      "#reset",
+      "#submit"
+    ],
+    "stateExpression": "JSON.parse(document.querySelector('#test-state').textContent)",
+    "eventTypes": [
+      "mousedown",
+      "focus",
+      "mouseup",
+      "click",
+      "input",
+      "change",
+      "reset",
+      "submit"
+    ]
+  },
+  "steps": [
+    {
+      "id": "00-initial",
+      "action": {
+        "type": "snapshot"
+      }
+    },
+    {
+      "id": "01-focus-name",
+      "action": {
+        "type": "click",
+        "selector": "#name",
+        "jitter": {
+          "x": 1,
+          "y": 1
+        }
+      }
+    },
+    {
+      "id": "02-type-name",
+      "action": {
+        "type": "type",
+        "text": "abc"
+      }
+    },
+    {
+      "id": "03-backspace",
+      "action": {
+        "type": "key",
+        "key": "Backspace"
+      }
+    },
+    {
+      "id": "04-tab-to-note",
+      "action": {
+        "type": "key",
+        "key": "Tab"
+      }
+    },
+    {
+      "id": "05-type-note",
+      "action": {
+        "type": "type",
+        "text": "x"
+      }
+    },
+    {
+      "id": "06-subscribe",
+      "action": {
+        "type": "click",
+        "selector": "#subscribe"
+      }
+    },
+    {
+      "id": "07-plan-pro",
+      "action": {
+        "type": "click",
+        "selector": "#plan-pro"
+      }
+    },
+    {
+      "id": "08-button",
+      "action": {
+        "type": "click",
+        "selector": "#click"
+      }
+    },
+    {
+      "id": "09-reset",
+      "action": {
+        "type": "click",
+        "selector": "#reset"
+      }
+    },
+    {
+      "id": "10-submit",
+      "action": {
+        "type": "click",
+        "selector": "#submit"
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "skill_name": "zeroweb-browser-chrome-parity",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "验证 examples/forms/form-interaction-test.html 在 ZeroWeb 真实 GPU 窗口中点击、输入、重置和提交后的状态及画面是否与 Chrome 一致。",
+      "expected_output": "使用共享交互场景，分别收集 Chrome GUI CDP 和 ZeroWeb production-window-gpu 证据，逐步比较状态、事件、几何、全帧和控件区域，并拒绝用 CPU 或单测截图替代产品证据。",
+      "files": [
+        "examples/forms/form-interaction-test.html"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "这个页面静态截图已经接近 Chrome，请补一个真实鼠标点击 checkbox 后的 Chrome parity 门禁。",
+      "expected_output": "通过 bounding box 和真实 move/down/up 驱动 Chrome，通过浏览器输入链路驱动 ZeroWeb，等待稳定 compositor 帧后比较 checked 状态、事件顺序、几何和点击后截图。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "CPU framebuffer 的 reftest 已经通过，可以直接宣布 make browser 与 Chrome 一致吗？",
+      "expected_output": "明确否定，区分 engine-direct/CPU/headless 与真实窗口多进程 GPU 链路，并要求 production capturePath 和 inputPath 证据。",
+      "files": []
+    }
+  ]
+}
