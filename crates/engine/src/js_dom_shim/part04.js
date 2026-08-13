@@ -509,6 +509,16 @@
           if (_colon >= 0) _ln = _ln.slice(_colon + 1);
           return _ln.toLowerCase();
         }
+        // `element.prefix`（spec `dom-node-prefix`，R12）：限定名冒号前部分；无冒号 → null。
+        // 非 Element → null。**注**：polyfill `_realTag` 强制大写（HTML 语义），故 prefix 返大写——
+        // case.js 测 abc/Abc/ABC 三态时仅 ABC 态匹配（abc/Abc 仍 fail，待 createElementNS 保留原 tag
+        // 大小写的深改，记 master.md）。无冒号的普通元素（createElement）→ null（spec）。
+        if (prop === 'prefix') {
+          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          var _pfTag = _realTag(sel, handle);
+          var _pfColon = _pfTag.indexOf(':');
+          return _pfColon >= 0 ? _pfTag.slice(0, _pfColon) : null;
+        }
         if (prop === 'nodeName') {
           return isShadow ? '#shadow-root'
             : isFrag ? '#document-fragment'
@@ -1490,6 +1500,29 @@
               return _zwMakeCollection([], true);
             }
             if (handle) return _zwMakeCollection(_handleQueryAll(handle, q), true);
+            return _zwMakeCollection([], true);
+          };
+        }
+        // `el.getElementsByTagNameNS(ns, localName)`（spec `dom-element-getelementsbytagnamens`，R12）——
+        // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns，按 localName 查
+        //（同 getElementsByTagName 的 tag 逻辑）。case.html 用例 + 命名空间库高频。
+        if (prop === 'getElementsByTagNameNS') {
+          return function(_ns, localName) {
+            var ln = String(localName == null ? '' : localName);
+            if (ln === '') return _zwMakeCollection([], true);
+            if (ln === '*') {
+              if (sel) return _zwMakeCollection(_descendantElements(sel), true);
+              if (handle) return _zwMakeCollection(_handleQueryAll(handle, '*'), true);
+              return _zwMakeCollection([], true);
+            }
+            if (sel && typeof __zw_query_all_sub === 'function') {
+              try {
+                var all = __zw_query_all_sub(sel, ln);
+                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), true);
+              } catch (_e) {}
+              return _zwMakeCollection([], true);
+            }
+            if (handle) return _zwMakeCollection(_handleQueryAll(handle, ln), true);
             return _zwMakeCollection([], true);
           };
         }

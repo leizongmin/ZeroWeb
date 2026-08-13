@@ -2428,4 +2428,86 @@ fn test_html_element_subclass_instanceof_r11() {
     );
 }
 
+#[test]
+fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
+    // js-dom M4 R12：element.prefix getter + getElementsByTagNameNS（element/document 两级）。
+    // case.html 用例 createElementNS('ns','prefix:local') 后查 node.prefix；getElementsByTagNameNS 此前
+    // is not a function（20 subtest）。prefix 从限定名冒号前取（polyfill _realTag 大写 → prefix 大写，
+    // 仅 ABC 态匹配 case.js，abc/Abc 待 createElementNS 保留原 tag 深改）。无冒号 → null。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d'><span>x</span><p>y</p></div><span id='top'>z</span></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // prefix：createElementNS('ns','svg:rect') → prefix 'SVG'（_realTag 大写化，注 case.js abc/Abc 限制）。
+    sandbox
+        .execute(
+            "globalThis.__e = document.createElementNS('http://www.w3.org/2000/svg', 'svg:rect');\
+             globalThis.__pf = __e.prefix;\
+             globalThis.__ln = __e.localName;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pf)").unwrap().value,
+        "SVG",
+        "createElementNS 限定名 prefix（冒号前，大写化）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ln)").unwrap().value,
+        "rect",
+        "localName（冒号后小写）"
+    );
+
+    // 普通元素（createElement，无冒号）prefix → null（spec）。
+    sandbox.execute("globalThis.__pf2 = document.createElement('div').prefix;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pf2)").unwrap().value,
+        "null",
+        "createElement（无冒号）prefix = null"
+    );
+
+    // document.getElementsByTagNameNS 忽略 ns，按 localName 查（返 HTMLCollection）。
+    sandbox
+        .execute("globalThis.__spanCnt = document.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'span').length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__spanCnt)").unwrap().value,
+        "2",
+        "document.getElementsByTagNameNS('xhtml','span') 命中 2 个 span"
+    );
+
+    // element.getElementsByTagNameNS 子树作用域（div 内 1 个 span）。
+    sandbox
+        .execute("globalThis.__divSpan = document.querySelector('#d').getElementsByTagNameNS(null, 'span').length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__divSpan)").unwrap().value,
+        "1",
+        "element.getElementsByTagNameNS 子树 span 命中 1 个"
+    );
+
+    // '*' 通配（element 级，全后代）。
+    sandbox
+        .execute("globalThis.__allCnt = document.querySelector('#d').getElementsByTagNameNS(null, '*').length;")
+        .unwrap();
+    // div 内 span + p + 文本不计 → 2 元素后代
+    assert_eq!(
+        sandbox.execute("String(globalThis.__allCnt)").unwrap().value,
+        "2",
+        "element.getElementsByTagNameNS('*') 全后代元素"
+    );
+}
+
 

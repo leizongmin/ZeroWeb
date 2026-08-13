@@ -861,6 +861,13 @@
       }
       return _zwMakeCollection(globalThis.document.querySelectorAll(tag), true);
     },
+    // `document.getElementsByTagNameNS(ns, localName)`（spec `dom-document-getelementsbytagnamens`，R12）——
+    // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns 按 localName 查
+    //（同 getElementsByTagName）。case.html 用例 + 命名空间库高频。返 HTMLCollection（item + namedItem）。
+    getElementsByTagNameNS: function(_ns, localName) {
+      var ln = String(localName == null ? '' : localName);
+      return _zwMakeCollection(globalThis.document.querySelectorAll(ln), true);
+    },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
     // meta[name] 高频，如 `document.getElementsByName('csrf-token')`）。此前全缺 → ReferenceError
     // 中断含此调用的脚本。spec 返 live NodeList；headless 近似为静态数组（同 getElementsByTagName）。
