@@ -36,7 +36,7 @@
 | M6 | JavaScript 运行时与 DOM 绑定基础 | `✅ 已完成` | V8 / QuickJS feature gate、DOM bridge、事件基础、Web Worker、ES Modules、WASM bridge 等基础能力已落地；完整 Web API 兼容性放到 M13 |
 | M7 | 网络、安全与导航基础 | `✅ 已完成` | HTTP、URL、导航历史、Cookie、同源策略、CORS、CSP 基础能力 |
 | M8 | 协议与多进程基础 | `✅ 已完成` | IPC 消息、协议定义、序列化边界、renderer 入口和进程管理基础已经建立；合成器进程（C2）RFC v2.1 五切片落地（dma-buf/mailbox fence 零拷贝、landlock/seccomp 沙箱、GPU device-lost CPU 回退） |
-| M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中 |
+| M9 | Canvas 与存储 | `✅ 已完成` | Canvas 2D、localStorage、sessionStorage、IndexedDB、Cache API、Service Worker registry 基础已在仓库中；Canvas WPT 兼容性批量修复持续（line-styles/shadows/compositing/gradient/pattern/text 等 R34xx 系列） |
 | M10 | WebView API 与自动化基础 | `✅ 已完成` | 已有可嵌入 API、导航加载、测试和 headless/自动化相关基础，但还会继续演进 |
 | M11 | 浏览器产品层 | `🚧 进行中` | `browser-shell`、标签页、地址栏、历史、书签、下载、设置等基础逐步落地；真实窗口/GPU/display 产品验收仍需补齐 |
 | M12 | Render compatibility / render-compact | `🚧 进行中` | 2026-08-04 起降频守成、2026-08-09 字体栈重建获批后恢复主动实施；WPT/CSSWG reftest 对齐 Chromium Oracle，详见「当前重点」 |

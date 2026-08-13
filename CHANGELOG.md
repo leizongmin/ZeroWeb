@@ -27,6 +27,11 @@
 - **GPU 渲染**：draw_order 逐图元绘制修复 DC-10 分桶 z 序缺陷（R3277）、clip/blend 双 pass 源层混合（R3278）、窗口模式滤镜/变换离屏 ping-pong（R3279）、分桶路径 clip（R3284）、GPU 阴影模糊离屏画（R3287）、repeating 渐变首色标≠0（R3289）、inset 阴影 GPU + box blur 逐像素对齐 CPU（R3290/R3291）。
 - **DOM/CSS 伪类与文档 API**：`:defined`/`:blank`/`:fullscreen`/`:modal`/`:focus`/`:focus-visible`/`:focus-within` DOM/CSS 一致化（R3299–R3302）、元素滚动 RFC S1/S2（ScrollEventParams cursor_x/y IPC，R3298）、DOMRect/DOMRectReadOnly 构造器（R3319）、navigator.serviceWorker 迁移 B-gen shim（R3318）、input.valueAsDate + stepUp/stepDown（R3317）、全局 ImageData 构造器（R3297）。
 - **安全与存储修复**：CSP source-expr host 匹配 + mixed-content scheme 大小写（R3342/R3343，真安全绕过修复）、Web Storage auto-inc generator 显式数值 key 修复（R3341）。
+- **zero-psl crate**（R3380）：公共后缀列表（PSL）解析与注册域名（eTLD+1）提取，接入 site-isolation；工作区 27→28 member。
+- **Canvas WPT 驱动兼容性批量修复（R34xx）**：line-styles 33/33（真 join/cap/miter 几何 + setter 校验）、shadows 50/61（形状 alpha、可见区裁剪、真 join/cap）、compositing（source-out/Clear ops、uncovered-clear、composite enum）、gradient 语义（CTM 变换坐标、零长度、nonfinite、stop 分组插值）、pattern（验证/setTransform/图像错误/零尺寸）、text（fonts.ready settle、align/baseline、setter 校验）、roundRect 角对半径、CSS Color 4 getter 保留 `color()` 形式、clip draw_shadow_path 可见区裁剪。
+- **js-dom M4**：native `createProcessingInstruction` + DOMException 身份一致性（polyfill/native 双路径对齐，classList/createElement 校验异常）、testharness-dom WPT 基线（DC-3，testharness local .js inline + baseline truthing）。
+- **字体与 net**：WOFF2 webfont 安全解码（R3375-F）；net 修复（R3339 redirect 测试服务器完整请求头读取、R3367 dotdot Windows `to_file_path` 语义）。
+- **浏览器打包**：compositor 随 launch/release 构建发布（`make browser` 与发布产物含合成器）、production chrome parity 证据集。
 - **产品版本号**：`crates/product-version` 从构建日期推导版本。
 - **渲染兼容性度量**：导入上游真实 WPT reftest（约 9967 个）、`make reftest-oracle` Chromium Oracle 像素一致率（诚实通过率）、`make product-smoke` / `make product-smoke-legacy` 产品回归门禁、`make import-wpt` 测试资产化流程。
 - **性能预算体系**：`make bench-gate` / `make bench-capture`（测量 + 门禁比较 + 趋势，perf-gate）。
@@ -34,7 +39,7 @@
 
 ### 变更
 
-- 工作区从 20 个 member 扩展到 27 个（新增 `renderer` / `page-runtime` / `product-version` / `image-decoder` / `compositor` / `webdriver` / `icon-gen`）。
+- 工作区从 20 个 member 扩展到 28 个（新增 `renderer` / `page-runtime` / `product-version` / `psl` / `image-decoder` / `compositor` / `webdriver` / `icon-gen`）。
 - 测试规模从约 1,000 增长到约 14,281（v8 feature 全量全绿，R3126 记录）。
 - 跨平台打包：macOS `.app` bundle + zip、Linux AppImage / .deb、Windows .zip / NSIS 安装器，配套 CI release 工作流（`v*` tag 触发）；release zip 按平台分装、macOS 打包版本号按构建日期推导。
 - 渲染兼容性：`freetype-raster` feature 默认开启（FreeType 替代 fontdue 光栅化，broad 一致率显著提升）；WPT reftest 对齐 Chromium Oracle（self-source 约 77%、oracle 真一致约 47.5%）；2026-08-09 字体栈重建 RFC v0.2.3 获批，恢复主动实施。

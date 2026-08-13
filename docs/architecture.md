@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 27 个 workspace member：18 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 28 个 workspace member：19 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -63,6 +63,7 @@
 | `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表 |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
 | `crates/product-version` | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
+| `crates/psl` | 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取，接入 site-isolation（R3380） |
 | `crates/wasm-sandbox` | 受控 WASM 执行环境（wasmi），host function 导入、fuel / 执行限制、错误传播 |
 | `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（`v8` crate，原 rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |
 | `crates/page-runtime` | WPT / TabWorker / `zero-renderer` 三条页面路径共享的页面运行时契约（`PageLoadHost` / `AsyncFetchHost` / `BlockingFetchHost` 等），让 in-process（webview）和 IPC（renderer）两种宿主复用同一套分阶段页面加载逻辑 |
@@ -100,7 +101,7 @@
 
 粗略说，仓库现在分成三档：
 
-- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、webview 都有可运行代码和对应测试。
+- **核心内核已有实质实现**: dom、css-parser、style-system、layout-engine、engine、render-foundation、host-runtime、net、security、storage、protocol、canvas、wasm-sandbox、script-sandbox、page-runtime、product-version、psl、webview 都有可运行代码和对应测试。
 - **产品层骨架已成，持续打磨**: `apps/browser`（桌面入口 + headless / remote debugging）、`browser-shell`（标签页 / 书签 / 历史 / 下载 / 设置 / 上下文菜单等数据模型）、`apps/renderer`（多进程渲染进程入口）、`apps/image-decoder`（D1 图像解码进程）、`apps/compositor`（C2 合成器进程）、`apps/webdriver`（WebDriver 服务）已打通，但产品形态、稳定性和真实站点兼容性仍在推进。
 - **当前主线**: P1b V8 原生 DOM 绑定（2026-08-09 RFC 获批，R3095 起持续落地：S0 PoC 验证 native ~15.6×、S1 原生只读属性族 + NodeId 映射、S2 生产接线 + 树写/属性写原生、live Document 共享、S3 查询原生、S4 EventTarget 与事件派发/冒泡/stopPropagation 原生化，命名空间/序列化 spec 合规 R3181–R3208，**S5 customElements/Web Components 里程碑完成 R3262–R3269**，DOM/CSS 表单状态选择器一致化 R3277–R3284；P1a DOM/JS Bridge 原生化已主体落地）；渲染兼容性（WPT/CSSWG reftest 对齐 Chromium Oracle）2026-08-04 起降频守成、2026-08-09 字体栈重建 RFC v0.2.3 获批后恢复主动实施——多切片已落地（OpenType features 贯通、shaped fallback default-on、two-value `font-size-adjust` 全栈贯通 css-fonts Oracle 净改善 14.34pp、font-synthesis/font-size 绝对关键字）——Chromium Oracle 真一致约 47.5%、self-source 约 77%、strict 处低位 plateau，自主 clean-lever 轻量修复面已 11 vein 审计穷尽；残余缺口为 vertical writing modes（部分切片已落地，整体仍 user-gated）、multicol 碎片化、R109 inline-as-block 等结构性问题，根因是 layout↔paint IFC 度量不一致（Phase-A spread），Phase A IFC / R1043 / R2174 等深方向仍需用户点名授权。完整 Web API 与真实网站交互兼容性是后续阶段。详见 [路线图](../ROADMAP.md)。
 
