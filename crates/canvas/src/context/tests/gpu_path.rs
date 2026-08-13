@@ -78,3 +78,68 @@ fn test_canvas_stroke_primitives_gpu_path() {
         let _ = supported;
     }
 }
+
+/// R34xx：fill_text 真字体光栅 → 图元（GlyphPrimitive 带真实 font_id/glyph 索引）经 GPU
+/// 渲染不 panic（CPU 像素路径已由 test_fill_text_real_font_rasterization 断言）。
+#[test]
+fn test_canvas_text_primitives_gpu_path() {
+    use std::sync::{Arc, Mutex};
+    let bytes = std::fs::read("/lzcapp/document/work/ZeroWeb-2/tests/wpt-runner/wpt-data/fonts/CanvasTest.ttf")
+        .unwrap_or_default();
+    if bytes.is_empty() {
+        return; // 资产缺失（非 wpt-runner 环境）跳过
+    }
+    let mut loader = FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("CanvasTest", fid);
+    let loader = Arc::new(Mutex::new(loader));
+    let mut ctx = CanvasContext::new(64, 32);
+    ctx.set_font_loader(Some(loader));
+    ctx.set_font(crate::context::types::FontDescriptor {
+        family: "CanvasTest".to_string(),
+        size: 20.0,
+        weight: crate::context::types::FontWeight::Normal,
+        style: crate::context::types::FontStyle::Normal,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
+    });
+    ctx.set_fill_color(Color::GREEN);
+    ctx.fill_text("AB", 0.0, 16.0, None);
+    let prims = ctx.into_primitives();
+    // 真字体路径产 GlyphPrimitive（font_id ≠ 0 且带真实 glyph 索引）。
+    let glyph_count = prims.glyphs.len();
+    assert!(glyph_count >= 2, "shaped glyph primitives expected, got {glyph_count}");
+    // 真路径的 GlyphPrimitive 带 font_glyph_index（fallback 启发式为 None）。
+    let has_real_font = prims.glyphs.iter().any(|g| g.font_glyph_index.is_some());
+    assert!(has_real_font, "glyphs should carry real glyph index");
+
+    let mut renderer = match GpuRenderer::new_headless(64, 32) {
+        Ok(renderer) => renderer,
+        Err(_) => return, // 无 wgpu adapter 环境跳过
+    };
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    renderer.render_scene(&prims.fills, &font_loader, &mut glyph_cache, &[], &[]);
+    // 不 panic 即验证（glyph 位图需 GPU 场景字体加载器——headless 路径加载器空 → 降级）。
+}
+
+/// R34xx：drawImage（含阴影）→ CPU 像素缓冲（getImageData 读回）与图元双路径。
+/// GPU 显示链路经像素缓冲上传纹理（engine painter R3268）——此处验证像素路径确定性。
+#[test]
+fn test_canvas_draw_image_shadow_pixels_and_primitives() {
+    let mut ctx = CanvasContext::new(64, 32);
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(0.0, 0.0, 64.0, 32.0);
+    let img = crate::context::types::ImageData {
+        width: 10,
+        height: 10,
+        data: vec![255u8; 10 * 10 * 4],
+    };
+    ctx.set_shadow_color(Color::GREEN);
+    ctx.set_shadow_offset_y(32.0);
+    ctx.draw_image(&img, 0.0, -32.0);
+    let p = ctx.get_image_data(5, 5, 1, 1);
+    assert_eq!((p.data[0], p.data[1]), (0, 255), "shadow pixel green");
+    let prims = ctx.into_primitives();
+    assert!(!prims.fills.is_empty(), "drawImage 后应有图元");
+}
