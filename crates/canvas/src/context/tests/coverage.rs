@@ -55,7 +55,7 @@ fn test_offscreen_canvas_new() {
 
 #[test]
 fn test_offscreen_canvas_get_context() {
-    let canvas = OffscreenCanvas::new(50, 50);
+    let mut canvas = OffscreenCanvas::new(50, 50);
     let ctx = canvas.get_context();
     let img = ctx.get_image_data(0, 0, 50, 50);
     assert_eq!(img.width, 50);
@@ -64,7 +64,7 @@ fn test_offscreen_canvas_get_context() {
 
 #[test]
 fn test_offscreen_canvas_transfer_to_image_bitmap() {
-    let canvas = OffscreenCanvas::new(10, 10);
+    let mut canvas = OffscreenCanvas::new(10, 10);
     let bitmap = canvas.transfer_to_image_bitmap();
     assert_eq!(bitmap.width, 10);
     assert_eq!(bitmap.height, 10);
@@ -73,7 +73,7 @@ fn test_offscreen_canvas_transfer_to_image_bitmap() {
 
 #[test]
 fn test_offscreen_canvas_small() {
-    let canvas = OffscreenCanvas::new(1, 1);
+    let mut canvas = OffscreenCanvas::new(1, 1);
     assert_eq!(canvas.width(), 1);
     assert_eq!(canvas.height(), 1);
     let bitmap = canvas.transfer_to_image_bitmap();
@@ -155,4 +155,54 @@ fn test_point_in_polygon_on_edge() {
 fn test_point_in_polygon_single_point() {
     let point = [(5.0, 5.0)];
     assert!(!point_in_polygon(5.0, 5.0, &point));
+}
+
+// ── OffscreenCanvas 真实化行为（R34xx）──
+
+/// 绘制状态跨 get_context 调用保留（旧桩每次新建丢失状态）。
+#[test]
+fn test_offscreen_canvas_state_persists() {
+    let mut canvas = OffscreenCanvas::new(20, 20);
+    canvas.get_context().set_fill_color(Color::rgba(10, 20, 30, 255));
+    canvas.get_context().fill_rect(0.0, 0.0, 20.0, 20.0);
+    // 同一上下文：像素可见
+    let px = canvas.get_context().get_image_data(5, 5, 1, 1);
+    assert_eq!(px.data[0], 10, "R34xx: 绘制状态跨调用保留");
+    assert_eq!(px.data[2], 30);
+}
+
+/// transfer_to_image_bitmap 取真实像素快照（旧桩返回空画布）。
+#[test]
+fn test_offscreen_canvas_transfer_pixels() {
+    let mut canvas = OffscreenCanvas::new(10, 10);
+    canvas.get_context().set_fill_color(Color::rgba(255, 0, 0, 255));
+    canvas.get_context().fill_rect(0.0, 0.0, 10.0, 10.0);
+    let bitmap = canvas.transfer_to_image_bitmap();
+    assert_eq!(bitmap.data[0], 255, "R34xx: transfer 应含真实像素");
+    assert_eq!(bitmap.data[3], 255);
+}
+
+/// transfer 后 bitmap 清空（spec transferToImageBitmap 语义），绘制状态保留。
+#[test]
+fn test_offscreen_canvas_transfer_clears_bitmap() {
+    let mut canvas = OffscreenCanvas::new(10, 10);
+    canvas.get_context().set_fill_color(Color::rgba(255, 0, 0, 255));
+    canvas.get_context().fill_rect(0.0, 0.0, 10.0, 10.0);
+    let _ = canvas.transfer_to_image_bitmap();
+    let after = canvas.get_context().get_image_data(5, 5, 1, 1);
+    assert_eq!(after.data[3], 0, "R34xx: transfer 后 bitmap 清空");
+    // 绘制状态保留：fill 颜色仍为红
+    assert_eq!(canvas.get_context().fill_color().r, 255);
+}
+
+/// width/height setter 重置画布尺寸与 bitmap（spec OffscreenCanvas.width 可写）。
+#[test]
+fn test_offscreen_canvas_resize() {
+    let mut canvas = OffscreenCanvas::new(10, 10);
+    canvas.set_width(20);
+    canvas.set_height(30);
+    assert_eq!(canvas.width(), 20);
+    assert_eq!(canvas.height(), 30);
+    let img = canvas.get_context().get_image_data(0, 0, 20, 30);
+    assert_eq!(img.data.len(), 20 * 30 * 4, "R34xx: resize 后 bitmap 尺寸同步");
 }

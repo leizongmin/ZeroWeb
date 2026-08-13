@@ -659,7 +659,7 @@ fn test_offscreen_canvas_creation_with_dimensions() {
 /// 测试 OffscreenCanvas get_context 返回正确尺寸的 CanvasContext。
 #[test]
 fn test_offscreen_canvas_get_context_returns_working_context() {
-    let oc = OffscreenCanvas::new(200, 150);
+    let mut oc = OffscreenCanvas::new(200, 150);
     let ctx = oc.get_context();
     assert_eq!(ctx.width(), 200);
     assert_eq!(ctx.height(), 150);
@@ -668,8 +668,8 @@ fn test_offscreen_canvas_get_context_returns_working_context() {
 /// 测试在 OffscreenCanvas 上下文上绘制操作后能产生像素数据。
 #[test]
 fn test_offscreen_canvas_drawing_produces_pixels() {
-    let oc = OffscreenCanvas::new(100, 100);
-    let mut ctx = oc.get_context();
+    let mut oc = OffscreenCanvas::new(100, 100);
+    let ctx = oc.get_context();
     ctx.set_fill_color(Color::RED);
     ctx.fill_rect(10.0, 10.0, 30.0, 30.0);
     // 验证绘制区域内有红色像素
@@ -696,7 +696,7 @@ fn test_offscreen_canvas_dimensions_are_correct() {
 /// 测试 OffscreenCanvas transfer_to_image_bitmap 返回正确尺寸的 ImageData。
 #[test]
 fn test_offscreen_canvas_transfer_to_image_bitmap() {
-    let oc = OffscreenCanvas::new(50, 40);
+    let mut oc = OffscreenCanvas::new(50, 40);
     let bitmap = oc.transfer_to_image_bitmap();
     assert_eq!(bitmap.width, 50);
     assert_eq!(bitmap.height, 40);
