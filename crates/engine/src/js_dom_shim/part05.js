@@ -1304,14 +1304,26 @@
     // host 持渐变注册表（独立 id 命名空间）；create* 返 host id，JS 包一层 proxy。addColorStop 经 host
     // 变更停止点。fillStyle/strokeStyle 设渐变对象走 setFillStyleGradient（host 查表克隆）。spec CanvasGradient。
     ctx.createLinearGradient = function (x0, y0, x1, y1) {
+      // R34xx：任一参数非有限抛 NotSupportedError（spec：2d.gradient.linear.nonfinite）。
+      if (!isFinite(+x0) || !isFinite(+y0) || !isFinite(+x1) || !isFinite(+y1)) {
+        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+      }
       var gid = String(__zw_canvas_op(h, 'createLinearGradient', String(+x0 || 0), String(+y0 || 0), String(+x1 || 0), String(+y1 || 0)));
       return _zwMakeGradient(h, gid);
     };
     ctx.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
+      // R34xx：非有限参数抛 NotSupportedError（同 createLinearGradient）。
+      if (!isFinite(+x0) || !isFinite(+y0) || !isFinite(+r0) || !isFinite(+x1) || !isFinite(+y1) || !isFinite(+r1)) {
+        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+      }
       var gid = String(__zw_canvas_op(h, 'createRadialGradient', String(+x0 || 0), String(+y0 || 0), String(+r0 || 0), String(+x1 || 0), String(+y1 || 0), String(+r1 || 0)));
       return _zwMakeGradient(h, gid);
     };
     ctx.createConicGradient = function (startAngle, cx, cy) {
+      // R34xx：非有限参数抛 NotSupportedError（同 createLinearGradient）。
+      if (!isFinite(+startAngle) || !isFinite(+cx) || !isFinite(+cy)) {
+        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+      }
       var gid = String(__zw_canvas_op(h, 'createConicGradient', String(+startAngle || 0), String(+cx || 0), String(+cy || 0)));
       return _zwMakeGradient(h, gid);
     };

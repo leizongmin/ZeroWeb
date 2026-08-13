@@ -89,7 +89,8 @@ impl CanvasContext {
             //（GPU 合成路径的 gradient 为独立大工程，headless 像素回读路径已逐像素正确）。
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_fill(rect, approx);
-            self.blit_rect_gradient(&rect, &self.fill_style.clone());
+            let style = self.transform_gradient(&self.fill_style);
+            self.blit_rect_gradient(&rect, &style);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_fill(rect, color);
@@ -340,7 +341,8 @@ impl CanvasContext {
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
-            self.blit_path_gradient(&vertices, &self.fill_style.clone());
+            let style = self.transform_gradient(&self.fill_style);
+            self.blit_path_gradient(&vertices, &style);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), color);
@@ -405,7 +407,8 @@ impl CanvasContext {
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
-            self.blit_path_gradient(&vertices, &self.fill_style.clone());
+            let style = self.transform_gradient(&self.fill_style);
+            self.blit_path_gradient(&vertices, &style);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), color);
@@ -1176,6 +1179,41 @@ impl CanvasContext {
     /// R34xx：composite 模式是否在绘制前清除未覆盖区域（spec：source 独占类操作
     /// source-in/source-out/copy 等绘制后未覆盖像素为 (0,0,0,0)——Porter-Duff 的
     /// 全局语义，2d.composite.uncovered.fill.* 全族）。
+    /// R34xx：绘制时按当前 CTM 变换渐变坐标（spec：渐变坐标相对 fill 时的坐标空间——
+    /// 2d.gradient.linear.transform.*）。半径/角度不缩放（画布单位）。
+    fn transform_gradient(&self, style: &CanvasStyle) -> CanvasStyle {
+        match style {
+            CanvasStyle::LinearGradient(g) => {
+                let (x0, y0) = self.transform.transform_point(g.x0, g.y0);
+                let (x1, y1) = self.transform.transform_point(g.x1, g.y1);
+                let mut ng = g.clone();
+                ng.x0 = x0;
+                ng.y0 = y0;
+                ng.x1 = x1;
+                ng.y1 = y1;
+                CanvasStyle::LinearGradient(ng)
+            }
+            CanvasStyle::RadialGradient(g) => {
+                let (x0, y0) = self.transform.transform_point(g.x0, g.y0);
+                let (x1, y1) = self.transform.transform_point(g.x1, g.y1);
+                let mut ng = g.clone();
+                ng.x0 = x0;
+                ng.y0 = y0;
+                ng.x1 = x1;
+                ng.y1 = y1;
+                CanvasStyle::RadialGradient(ng)
+            }
+            CanvasStyle::ConicGradient(g) => {
+                let (cx, cy) = self.transform.transform_point(g.cx, g.cy);
+                let mut ng = g.clone();
+                ng.cx = cx;
+                ng.cy = cy;
+                CanvasStyle::ConicGradient(ng)
+            }
+            _ => style.clone(),
+        }
+    }
+
     fn composite_clears_uncovered(&self) -> bool {
         matches!(
             self.composite_operation,

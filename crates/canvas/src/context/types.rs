@@ -649,11 +649,12 @@ impl CanvasStyle {
                 let dx = g.x1 - g.x0;
                 let dy = g.y1 - g.y0;
                 let len2 = dx * dx + dy * dy;
-                let t = if len2 < f32::EPSILON {
-                    0.0
-                } else {
-                    ((x - g.x0) * dx + (y - g.y0) * dy) / len2
-                };
+                // R34xx：零长度渐变线（undefined direction）→ 渐变不画（透明——
+                // 2d.gradient.interpolate.zerosize.* 期望保持底）。
+                if len2 < f32::EPSILON {
+                    return Color::TRANSPARENT;
+                }
+                let t = ((x - g.x0) * dx + (y - g.y0) * dy) / len2;
                 sample_gradient_stops(&g.stops, t)
             }
             CanvasStyle::RadialGradient(g) => {
