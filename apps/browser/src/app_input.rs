@@ -161,6 +161,7 @@ impl BrowserApp {
         let entry = self.scroll.entry(tab_id).or_default();
         entry.x = (entry.x + delta_x).clamp(0.0, layout.max_scroll_x);
         entry.y = (entry.y + delta_y).clamp(0.0, layout.max_scroll_y);
+        self.show_scrollbar_overlay();
 
         // R3293（S0）：派发用户滚动 'scroll' 事件到页面 JS（闭合 R3253 主路径不可达 gap）。
         // 主线程已完成视觉滚动（entry.x/y 更新 + 重绘），本调用仅补「页面 JS 可观察」半边——

@@ -4,6 +4,7 @@ pub mod cache;
 mod face_match;
 pub mod loader;
 pub mod shaper;
+pub mod system;
 pub mod woff;
 
 pub use cache::GlyphCache;

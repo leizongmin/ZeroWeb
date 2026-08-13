@@ -157,10 +157,16 @@ fn parse_args_from(
 
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
             viewport_width = value.parse::<f32>().map_err(|_| format!("invalid width: {value}"))?;
+            if viewport_width <= 0.0 || !viewport_width.is_finite() {
+                return Err(format!("viewport width must be positive: {viewport_width}"));
+            }
         }
 
         if let Some(value) = arg.strip_prefix("--viewport-height=") {
             viewport_height = value.parse::<f32>().map_err(|_| format!("invalid height: {value}"))?;
+            if viewport_height <= 0.0 || !viewport_height.is_finite() {
+                return Err(format!("viewport height must be positive: {viewport_height}"));
+            }
         }
 
         if let Some(value) = arg.strip_prefix("--smoke-capture=") {
@@ -234,12 +240,11 @@ fn parse_args_from(
             return Err("GUI smoke requires the multi-process renderer".to_string());
         }
         let gpu_dmabuf_smoke = std::env::var("ZERO_BROWSER_GPU_DMABUF_SMOKE").as_deref() == Ok("1");
-        if gpu_dmabuf_smoke {
-            if render_mode == RenderMode::Cpu || scale_override != Some(1.0) {
-                return Err("GPU dma-buf smoke requires --renderer=gpu|auto --scale=1".to_string());
-            }
-        } else if render_mode != RenderMode::Cpu || scale_override != Some(1.0) {
-            return Err("GUI smoke requires --renderer=cpu --scale=1".to_string());
+        if gpu_dmabuf_smoke && render_mode == RenderMode::Cpu {
+            return Err("GPU dma-buf smoke requires --renderer=gpu|auto --scale=1".to_string());
+        }
+        if scale_override != Some(1.0) {
+            return Err("GUI smoke requires --scale=1".to_string());
         }
     }
     Ok(CliArgs {
@@ -265,12 +270,12 @@ Options:
   --scale=<factor>               Override window scale factor (e.g. --scale=2 for HiDPI)
   --headless                     Run without a window (remote debugging mode)
   --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
-  --viewport-width=<px>          Headless viewport width (default: 800)
-  --viewport-height=<px>         Headless viewport height (default: 600)
+  --viewport-width=<px>          Headless/GUI smoke page viewport width (default: 800)
+  --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
   --single-process               Run tabs in browser process threads (disable renderer isolation)
   --multi-process                Use zero-renderer child processes per tab (default)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
-  --smoke-capture=<png>          Capture the real CPU-presented window frame, emit region stats, then exit
+  --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
   --gui-smoke-url=<url>          Run compositor GUI actions against a real HTTP(S) website
   --gui-smoke-dir=<dir>          Write GUI smoke step screenshots into this directory
   --help, -h                     Show this help
@@ -406,11 +411,17 @@ fn run_headless(cli: CliArgs) {
 /// - Windows：禁用系统装饰，改用自绘标题栏（控制按钮 + 拖拽区），
 ///   依赖 winit 0.30 对无边框窗口的 Aero Snap 支持（WS_THICKFRAME 保留）
 /// - macOS：使用一体化标题栏（系统 traffic lights 与标签栏同排）
-fn browser_window_config() -> WindowConfig {
+fn browser_window_config(app: &BrowserApp, smoke_viewport: Option<(u32, u32)>) -> WindowConfig {
     let mut config = WindowConfig::new("ZeroBrowser")
         .with_size(1024, 768)
         .with_resizable(true)
         .with_maximized(true);
+    if let Some((viewport_width, viewport_height)) = smoke_viewport {
+        let (_, _, current_width, current_height) = app.page_content_rect_for(1024, 768);
+        let window_width = (1024.0 + viewport_width as f32 - current_width).round().max(1.0) as u32;
+        let window_height = (768.0 + viewport_height as f32 - current_height).round().max(1.0) as u32;
+        config = config.with_size(window_width, window_height).with_maximized(false);
+    }
     if app::is_wayland() {
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
         config = config.with_decorations(false);
@@ -567,10 +578,13 @@ fn main() {
         tracing::info!("CLI --scale={scale}, overriding WINIT_X11_SCALE_FACTOR");
     }
 
-    let config = browser_window_config();
-
-    let runtime = HostRuntime::new(config);
     let mut app = BrowserApp::new(cli.render_mode);
+    let smoke_viewport = cli
+        .gui_smoke
+        .as_ref()
+        .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32));
+    let config = browser_window_config(&app, smoke_viewport);
+    let runtime = HostRuntime::new(config);
     let smoke_capture_path = cli.smoke_capture;
     let mut gui_smoke = cli.gui_smoke.map(gui_smoke::GuiSmoke::new);
 
@@ -598,6 +612,7 @@ fn main() {
         }
 
         app.poll_tab_fetch();
+        app.expire_scrollbar_overlay();
 
         match event {
             AppEvent::RedrawRequested => {
@@ -675,9 +690,22 @@ fn main() {
                     // 必须在场景装配前锁定来源；render 后的 poll 可能采用新快照，
                     // 不能把新状态误配到刚呈现的上一张 framebuffer。
                     let presented_source = app.product_smoke_frame_source();
+                    let capture_gpu_frame =
+                        app.gpu_renderer_is_some() && (smoke_capture_path.is_some() || gui_smoke.is_some());
                     let presented_frame = if app.gpu_renderer_is_some() {
                         app.render_frame(app.physical_size.0, app.physical_size.1, true);
-                        None
+                        if capture_gpu_frame {
+                            match app.render_full_scene_gpu_capture(app.physical_size.0, app.physical_size.1) {
+                                Ok(frame) => Some(frame),
+                                Err(error) => {
+                                    tracing::error!("GPU_SMOKE_CAPTURE_FAILURE error={error}");
+                                    app.shutdown_child_processes();
+                                    std::process::exit(3);
+                                }
+                            }
+                        } else {
+                            None
+                        }
                     } else {
                         app.render_cpu(app.physical_size.0, app.physical_size.1, &mut cpu_surface, true)
                     };

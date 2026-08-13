@@ -39,15 +39,15 @@ fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, g
 }
 
 #[test]
-fn smoke_capture_cli_requires_real_cpu_multiprocess_window() {
+fn smoke_capture_cli_requires_real_multiprocess_window_at_scale_one() {
     let parsed = parse_args_from(
-        ["--renderer=cpu", "--scale=1", "--smoke-capture=target/smoke.png"]
+        ["--renderer=gpu", "--scale=1", "--smoke-capture=target/smoke.png"]
             .into_iter()
             .map(str::to_string),
         None,
     )
     .unwrap();
-    assert_eq!(parsed.render_mode, RenderMode::Cpu);
+    assert_eq!(parsed.render_mode, RenderMode::Gpu);
     assert_eq!(parsed.scale_override, Some(1.0));
     assert_eq!(parsed.smoke_capture, Some(std::path::PathBuf::from("target/smoke.png")));
     assert!(parsed.gui_smoke.is_none());
@@ -59,7 +59,6 @@ fn smoke_capture_cli_requires_real_cpu_multiprocess_window() {
             "--single-process",
             "--smoke-capture=x.png",
         ],
-        vec!["--renderer=gpu", "--scale=1", "--smoke-capture=x.png"],
         vec!["--renderer=cpu", "--scale=2", "--smoke-capture=x.png"],
         vec!["--renderer=cpu", "--scale=1", "--headless", "--smoke-capture=x.png"],
     ] {
@@ -338,7 +337,8 @@ fn unfocus_marks_gpu_surface_stale() {
 
 #[test]
 fn browser_window_config_starts_maximized_not_fullscreen() {
-    let config = super::browser_window_config();
+    let app = BrowserApp::new(RenderMode::Cpu);
+    let config = super::browser_window_config(&app, None);
     assert!(!config.fullscreen);
     assert!(config.maximized);
     // 无装饰平台：Wayland（规避 CSD 崩溃）+ Windows（自绘标题栏）
@@ -348,6 +348,15 @@ fn browser_window_config_starts_maximized_not_fullscreen() {
     } else {
         assert!(config.decorations, "应保留系统装饰");
     }
+}
+
+#[test]
+fn browser_window_config_sizes_gui_smoke_page_viewport() {
+    let app = BrowserApp::new(RenderMode::Cpu);
+    let config = super::browser_window_config(&app, Some((800, 720)));
+    let (_, _, page_width, page_height) = app.page_content_rect_for(config.width, config.height);
+    assert_eq!((page_width, page_height), (800.0, 720.0));
+    assert!(!config.maximized);
 }
 
 /// Wayland 非最大化时应自绘窗口外框，便于与桌面其他窗口区分。

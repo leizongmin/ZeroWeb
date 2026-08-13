@@ -115,6 +115,13 @@ fn layout_direct_fieldsets(form: &mut LayoutBox, doc: &Document, styles: &HashMa
             }
         }
         let Some(legend_index) = legend_index else { continue };
+        if let Some(legend_id) = fieldset.children[legend_index].node_id {
+            let legend = &mut fieldset.children[legend_index];
+            let content_width = crate::intrinsic_sizing::text_content_max_width(legend_id, doc, styles);
+            legend.content_width = content_width;
+            legend.width =
+                legend.border_left + legend.padding_left + content_width + legend.padding_right + legend.border_right;
+        }
         let legend_height = fieldset.children[legend_index].height;
         fieldset.children[legend_index].y = -(fieldset.border_top + fieldset.padding_top);
 

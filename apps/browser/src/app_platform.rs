@@ -750,6 +750,51 @@ impl BrowserApp {
         )
     }
 
+    /// 对当前生产场景执行严格 GPU 离屏渲染并读回。
+    ///
+    /// 用于真实窗口 smoke：窗口 swapchain 先正常 present，再用相同多进程
+    /// renderer/compositor/browser 场景做可断言的 GPU readback。失败不回退 CPU。
+    pub fn render_full_scene_gpu_capture(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<zero_render_foundation::surface::FrameBuffer, String> {
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) =
+            self.build_scene(width, height);
+        let webview_extras = self.get_webview_extra_primitives();
+        let mut scene_primitives = webview_extras;
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+
+        let mut renderer =
+            GpuRenderer::new_headless(width, height).map_err(|error| format!("GPU capture init failed: {error}"))?;
+        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.tabs.image_cache_mut(id),
+            None => None,
+        };
+        if !renderer.render_full_scene_gpu(
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            image_cache,
+            &glyphs,
+            &overlay_fills,
+            &overlay_glyphs,
+            &overlay_rounded_rects,
+            self.scale_factor,
+        ) {
+            return Err("GPU capture rejected unsupported scene; CPU fallback is not accepted".to_string());
+        }
+        let pixels = renderer
+            .read_pixels()
+            .ok_or_else(|| "GPU capture readback failed".to_string())?;
+        Ok(zero_render_foundation::surface::FrameBuffer {
+            width,
+            height,
+            data: pixels,
+        })
+    }
+
     /// R3254：GPU 等价的完整合成帧渲染（headless wgpu）——与
     /// [`Self::render_full_scene_with_webview_for_test`] 同一场景（chrome + webview
     /// 图元 + ImageCache 装配），经 headless GpuRenderer 渲染后 read_pixels 读回。
@@ -761,42 +806,13 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) -> zero_render_foundation::surface::FrameBuffer {
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
-        let webview_extras = self.get_webview_extra_primitives();
-        let mut scene_primitives = webview_extras;
-        scene_primitives.fills = [fills, scene_primitives.fills].concat();
-        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
-
-        let mut renderer = match GpuRenderer::new_headless(width, height) {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("GPU 合成测试通道不可用（headless 初始化失败: {e}）——回退 CPU");
-                return self.render_full_scene_with_webview_for_test(width, height);
-            }
-        };
-        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
-            Some(id) => self.tabs.image_cache_mut(id),
-            None => None,
-        };
-        let rendered = renderer.render_full_scene_gpu(
-            &scene_primitives,
-            &self.font_loader,
-            &mut self.glyph_cache,
-            image_cache,
-            &glyphs,
-            &overlay_fills,
-            &overlay_glyphs,
-            &overlay_rounded_rects,
-            1.0,
-        );
-        let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
-        if rendered {
-            if let Some(pixels) = renderer.read_pixels() {
-                fb.data.copy_from_slice(&pixels);
-                return fb;
+        match self.render_full_scene_gpu_capture(width, height) {
+            Ok(frame) => frame,
+            Err(error) => {
+                tracing::warn!("GPU 合成测试通道不可用（{error}）——回退 CPU");
+                self.render_full_scene_with_webview_for_test(width, height)
             }
         }
-        self.render_full_scene_with_webview_for_test(width, height)
     }
 }
 
@@ -941,117 +957,11 @@ pub fn normalize_url(input: &str, shell: &BrowserShell) -> String {
     shell.settings().search(input)
 }
 
-/// Chrome UI 主字体候选路径（按平台 OS Citizenship 优先级，与 Chromium 一致）。
-fn chrome_ui_primary_font_paths() -> &'static [&'static str] {
-    #[cfg(target_os = "macos")]
-    {
-        &[
-            // San Francisco（macOS 系统 UI 字体，Chrome 同源）
-            "/System/Library/Fonts/SFNS.ttf",
-            "/System/Library/Fonts/SFCompact.ttf",
-            "/System/Library/Fonts/HelveticaNeue.ttc",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        &[
-            // Segoe UI（Windows 系统 UI 字体）
-            "C:\\Windows\\Fonts\\segoeui.ttf",
-            "C:\\Windows\\Fonts\\arial.ttf",
-        ]
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        &[
-            // GTK/Fontconfig 常见 UI sans（Linux 桌面 Chrome 经 fontconfig 解析的同类字体）
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/opentype/cantarell/Cantarell-VF.otf",
-            "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        ]
-    }
-}
-
 /// 加载系统字体（主字体 + CJK/Emoji 回退链）
 pub fn load_system_fonts(font_loader: &mut FontLoader) -> Option<u32> {
-    let primary_paths = chrome_ui_primary_font_paths();
-
-    let (primary, loaded_path) = primary_paths.iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = font_loader.load_font(&data).ok()?;
-        Some((id, *path))
-    })?;
-    tracing::info!("Chrome UI primary font: {loaded_path} (id={primary})");
-
-    #[cfg(target_os = "macos")]
-    let bold_paths = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-    ];
-    #[cfg(target_os = "windows")]
-    let bold_paths = [
-        "C:\\Windows\\Fonts\\arialbd.ttf",
-        "C:\\Windows\\Fonts\\segoeuib.ttf",
-    ];
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let bold_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    ];
-    if let Some((bold_id, bold_path)) = bold_paths.iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = font_loader.load_font(&data).ok()?;
-        Some((id, *path))
-    }) {
-        tracing::info!("Bold UI font: {bold_path} (id={bold_id})");
-    }
-
-    #[cfg(target_os = "macos")]
-    let fallback_paths = [
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        "/System/Library/Fonts/Apple Symbols.ttf",
-    ];
-    #[cfg(target_os = "windows")]
-    let fallback_paths = ["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\seguiemj.ttf"];
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let fallback_paths = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-        "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-    ];
-
-    let mut fallbacks = Vec::new();
-    for path in fallback_paths {
-        if path.contains("NotoColorEmoji") {
-            // fontdue 无法 rasterize CBDT/CBLC 彩色 emoji 字体，跳过以免浪费内存
-            continue;
-        }
-        match std::fs::read(path) {
-            Ok(data) => match font_loader.load_font(&data) {
-                Ok(id) if id != primary => {
-                    tracing::info!("Loaded fallback font: {path} (id={id})");
-                    fallbacks.push(id);
-                }
-                Ok(_) => {}
-                Err(e) => tracing::debug!("Failed to load fallback font {path}: {e}"),
-            },
-            Err(e) => tracing::debug!("Fallback font not found {path}: {e}"),
-        }
-    }
-    font_loader.set_fallback_chain(fallbacks);
-    tracing::info!("Font fallback chain: {} fonts", font_loader.fallback_chain().len());
-
-    Some(primary)
+    let platform = zero_render_foundation::font::system::load_platform_fonts();
+    *font_loader = platform.loader;
+    platform.primary_id
 }
 
 /// 进程级共享的系统字体 base 集（生产与测试同路径）。
@@ -1180,11 +1090,6 @@ mod tests {
             load_system_fonts(&mut loader).is_some(),
             "expected at least one Chrome UI font on this platform"
         );
-    }
-
-    #[test]
-    fn chrome_ui_primary_paths_non_empty() {
-        assert!(!chrome_ui_primary_font_paths().is_empty());
     }
 
     #[test]

@@ -194,6 +194,8 @@ pub struct BrowserApp {
     scrollbar_drag: Option<ScrollbarDrag>,
     /// 滚动条 hover 命中。
     scrollbar_hover: Option<crate::page_scroll::ScrollbarHit>,
+    /// Overlay 滚动条因最近滚动保持可见的截止时间。
+    scrollbar_visible_until: Option<Instant>,
     /// 进行中的 favicon 异步拉取。
     favicon_fetch: FaviconFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
@@ -300,6 +302,7 @@ impl BrowserApp {
             content_pointer_drag: None,
             scrollbar_drag: None,
             scrollbar_hover: None,
+            scrollbar_visible_until: None,
             favicon_fetch: FaviconFetchState::new(),
             download_panel_open: false,
             permissions: zero_security::permission::PermissionManager::new(),
@@ -1569,6 +1572,29 @@ impl BrowserApp {
 
     pub fn any_tab_loading(&self) -> bool {
         self.shell.tabs().any(|tab| tab.is_loading()) || self.tabs.any_loading()
+    }
+
+    pub(crate) fn show_scrollbar_overlay(&mut self) {
+        self.scrollbar_visible_until = Some(Instant::now() + Duration::from_millis(750));
+    }
+
+    pub(crate) fn scrollbar_overlay_visible(&self) -> bool {
+        self.scrollbar_drag.is_some()
+            || self.scrollbar_hover.is_some()
+            || self.touch_scroll.is_some()
+            || self
+                .scrollbar_visible_until
+                .is_some_and(|deadline| Instant::now() < deadline)
+    }
+
+    pub(crate) fn expire_scrollbar_overlay(&mut self) {
+        if self
+            .scrollbar_visible_until
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.scrollbar_visible_until = None;
+            self.needs_redraw = true;
+        }
     }
 
     /// 返回当前 Tab 后端实际可用的 compositor 状态。

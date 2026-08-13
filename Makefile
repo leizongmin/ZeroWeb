@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend
 
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
@@ -178,11 +178,21 @@ FORM_VISUAL_ROOT := .acceptance/artifacts/form-chrome-visual-parity-2026-08-13
 FORM_VISUAL_ORACLE ?= $(FORM_VISUAL_ROOT)/screenshots/chrome-800x720-gray.png
 FORM_VISUAL_GEOMETRY ?= $(FORM_VISUAL_ROOT)/chrome-geometry-gray.json
 FORM_VISUAL_CJK_DIR ?= $(HOME)/.cache/zw-oracle-fonts/usr/share/fonts/opentype/noto
+FORM_VISUAL_GPU_DIR ?= target/form-visual-browser-gpu-smoke
 form-visual-smoke: target/test-guard
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_GEOMETRY) || (echo "Error: missing $(FORM_VISUAL_GEOMETRY)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
 	ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke examples/forms/form-interaction-test.html --base-dir examples/forms --oracle $(FORM_VISUAL_ORACLE) --geometry-oracle $(FORM_VISUAL_GEOMETRY) --out $(FORM_VISUAL_ROOT)/screenshots/zeroweb-final.png --width 800 --height 720 --channel-diff 8 --pixel-radius 1 --max-diff 5 --max-geometry-diff 2 --struct-check --region name:10 --region note:10 --region subscribe:10 --region plan-basic:10 --region plan-pro:10 --region click:10 --region reset:10 --region submit:10 --region result:10
+
+form-visual-browser-gpu-smoke: target/test-guard
+	@test -n "$(DISPLAY)" || (echo "Error: DISPLAY is required for the real browser GPU smoke"; exit 2)
+	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
+	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
+	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-wpt-runner
+	rm -rf $(FORM_VISUAL_GPU_DIR)
+	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
+	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1
 
 product-smoke: target/test-guard
 	# 表单流畅度门禁：固定尺寸 value-only 输入不得重新 parse/style/layout，且每次最多发布一帧。

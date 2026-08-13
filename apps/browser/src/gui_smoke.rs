@@ -23,8 +23,8 @@ pub struct GuiSmokeConfig {
 impl GuiSmokeConfig {
     /// 创建并校验 GUI smoke 配置。
     pub fn new(url: String, output_dir: PathBuf) -> Result<Self, String> {
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err("--gui-smoke-url requires an http:// or https:// URL".to_string());
+        if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("file://") {
+            return Err("--gui-smoke-url requires an http://, https://, or file:// URL".to_string());
         }
         if output_dir.as_os_str().is_empty() {
             return Err("--gui-smoke-dir requires a directory path".to_string());
@@ -49,6 +49,7 @@ pub struct GuiSmoke {
     stage: Stage,
     deadline: Instant,
     previous_page: Option<RegionStats>,
+    initial_frame_retry_requested: bool,
 }
 
 impl GuiSmoke {
@@ -59,6 +60,7 @@ impl GuiSmoke {
             stage: Stage::Pending,
             deadline: Instant::now() + STEP_TIMEOUT,
             previous_page: None,
+            initial_frame_retry_requested: false,
         }
     }
 
@@ -96,6 +98,12 @@ impl GuiSmoke {
             && visible_page_stats(app, framebuffer)?.is_none()
         {
             // 网络导航会先发布空白过渡帧；只接受首个具备真实可见内容的 compositor 帧。
+            if self.stage == Stage::WaitingInitialFrame && !self.initial_frame_retry_requested {
+                app.sync_webview_viewport();
+                app.needs_redraw = true;
+                self.initial_frame_retry_requested = true;
+                tracing::info!("GUI_SMOKE_RETRY reason=blank_initial_frame action=resync_viewport");
+            }
             return Ok(false);
         }
 
@@ -103,6 +111,11 @@ impl GuiSmoke {
             Stage::WaitingInitialFrame => {
                 let page = self.capture_step(app, framebuffer, source, "01-loaded.png", "loaded")?;
                 self.previous_page = Some(page);
+                if self.config.url.starts_with("file://") {
+                    tracing::info!("GUI_SMOKE_COMPLETE url={} steps=load", self.config.url);
+                    self.stage = Stage::Complete;
+                    return Ok(true);
+                }
 
                 let (x, y, width, height) = app.page_content_rect_for(framebuffer.width, framebuffer.height);
                 app.handle_scroll(
@@ -176,6 +189,8 @@ impl GuiSmoke {
             &self.config.url,
             source,
         )?;
+        let page_path = self.config.output_dir.join(filename.replace(".png", "-page.png"));
+        smoke_capture::capture_region(&page_path, framebuffer, page_region)?;
         let page =
             smoke_capture::analyze_region(framebuffer.width, framebuffer.height, &framebuffer.data, page_region)?;
         tracing::info!(
@@ -255,6 +270,7 @@ mod tests {
     #[test]
     fn config_requires_real_web_url_and_output_directory() {
         assert!(GuiSmokeConfig::new("https://www.iana.org/domains/reserved".into(), "target/gui".into()).is_ok());
+        assert!(GuiSmokeConfig::new("file:///tmp/form.html".into(), "target/gui".into()).is_ok());
         assert!(GuiSmokeConfig::new("zero://newtab".into(), "target/gui".into()).is_err());
         assert!(GuiSmokeConfig::new("https://example.com".into(), PathBuf::new()).is_err());
     }

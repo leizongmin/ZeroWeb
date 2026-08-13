@@ -389,6 +389,9 @@ impl BrowserApp {
         width: u32,
         height: u32,
     ) {
+        if !self.scrollbar_overlay_visible() {
+            return;
+        }
         let Some(tab_id) = self.shell.active_tab_id() else {
             return;
         };

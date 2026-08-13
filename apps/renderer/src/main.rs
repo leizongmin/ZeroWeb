@@ -2498,32 +2498,9 @@ fn ipc_media_to_engine(media: IpcMediaType) -> MediaType {
 }
 
 fn load_system_fonts() -> (FontLoader, Option<u32>, HashMap<String, u32>) {
-    let mut loader = FontLoader::new();
-    let mut primary_font_id = None;
-    let mut resolver = HashMap::new();
-    #[cfg(target_os = "windows")]
-    let primary_paths = ["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"];
-    #[cfg(target_os = "macos")]
-    let primary_paths = [
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-    ];
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let primary_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ];
-
-    if let Some((id, path)) = primary_paths.iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = loader.load_font(&data).ok()?;
-        Some((id, *path))
-    }) {
-        tracing::info!("Renderer primary font: {path} (id={id})");
-        primary_font_id = Some(id);
-        resolver = loader.build_font_resolver();
-    }
-    (loader, primary_font_id, resolver)
+    let platform = zero_render_foundation::font::system::load_platform_fonts();
+    let resolver = platform.loader.build_font_resolver();
+    (platform.loader, platform.primary_id, resolver)
 }
 
 fn parse_renderer_launch() -> (ProcessRole, u64) {

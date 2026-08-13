@@ -81,6 +81,15 @@ fn test_inline_elements_remain_unset() {
     }
 }
 
+#[test]
+fn test_textarea_defaults_to_bidirectional_resize() {
+    let doc = zero_dom::parse_html("<textarea></textarea>");
+    let textarea = doc.get_elements_by_tag_name("textarea")[0];
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc, &[]);
+    assert_eq!(styles[&textarea].resize, ResizeValue::Both);
+}
+
 /// 隐藏元素（script/style/noframes/noscript 等）必须 display:none。
 /// `<noframes>` 内容在 frame-capable UA（含 chromium oracle，所有现代浏览器）中按
 /// HTML 渲染规范隐藏；`<noscript>` 在脚本启用时同理隐藏。R1657：legacy-html fixture

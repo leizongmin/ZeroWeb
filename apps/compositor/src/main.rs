@@ -67,119 +67,14 @@ impl SurfaceState {
     }
 }
 
-fn primary_font_paths() -> &'static [&'static str] {
-    #[cfg(target_os = "macos")]
-    {
-        &[
-            "/System/Library/Fonts/SFNS.ttf",
-            "/System/Library/Fonts/SFCompact.ttf",
-            "/System/Library/Fonts/HelveticaNeue.ttc",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        &["C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"]
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        &[
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/opentype/cantarell/Cantarell-VF.otf",
-            "/usr/share/fonts/truetype/cantarell/Cantarell-Regular.otf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        ]
-    }
-}
-
-fn bold_font_paths() -> &'static [&'static str] {
-    #[cfg(target_os = "macos")]
-    {
-        &[
-            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        &["C:\\Windows\\Fonts\\arialbd.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf"]
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        ]
-    }
-}
-
-fn fallback_font_paths() -> &'static [&'static str] {
-    #[cfg(target_os = "macos")]
-    {
-        &[
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/Apple Symbols.ttf",
-        ]
-    }
-    #[cfg(target_os = "windows")]
-    {
-        &["C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\seguiemj.ttf"]
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        &[
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-            "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-        ]
-    }
-}
-
 /// 按 Browser 字体 ID 顺序加载 compositor 光栅化所需的系统字体。
 fn load_compositor_fonts() -> FontLoader {
-    let mut loader = FontLoader::new();
-    let primary = primary_font_paths().iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = loader.load_font(&data).ok()?;
-        tracing::info!("compositor: loaded primary font {path} (id={id})");
-        Some(id)
-    });
-    let Some(primary) = primary else {
-        tracing::warn!("compositor: no system font available; page text may be missing");
-        return loader;
-    };
-
-    if let Some((id, path)) = bold_font_paths().iter().find_map(|path| {
-        let data = std::fs::read(path).ok()?;
-        let id = loader.load_font(&data).ok()?;
-        Some((id, *path))
-    }) {
-        tracing::info!("compositor: loaded bold font {path} (id={id})");
-    }
-
-    let fallbacks = fallback_font_paths()
-        .iter()
-        .filter_map(|path| {
-            let data = std::fs::read(path).ok()?;
-            let id = loader.load_font(&data).ok()?;
-            (id != primary).then_some(id)
-        })
-        .collect::<Vec<_>>();
-    loader.set_fallback_chain(fallbacks);
+    let platform = zero_render_foundation::font::system::load_platform_fonts();
     tracing::info!(
         "compositor: font fallback chain contains {} fonts",
-        loader.fallback_chain().len()
+        platform.loader.fallback_chain().len()
     );
-    loader
+    platform.loader
 }
 
 fn main() {

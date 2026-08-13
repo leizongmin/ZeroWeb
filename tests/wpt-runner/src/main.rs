@@ -43,6 +43,8 @@ Commands:
                        (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>,
                         --channel-diff <0..255>, --geometry-oracle <json>,
                         --max-geometry-diff <px>, --region <id>:<max-pct>)
+  compare-png <actual> <expected>  Compare two PNG files
+                       (--max-diff <pct>, --channel-diff <0..255>, --pixel-radius <px>)
   perf                  Page-level perf benchmark (perf-gate page scenarios)
                        (--scenario <id>:<path> [repeatable], --base-dir,
                         --width <px>, --height <px>, --iterations <n>)
@@ -123,6 +125,10 @@ fn main() {
     }
     if command == "perf" {
         cmd_perf(&args[2..]);
+        return;
+    }
+    if command == "compare-png" {
+        cmd_compare_png(&args[2..]);
         return;
     }
 
@@ -219,6 +225,57 @@ fn main() {
             print_usage();
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_compare_png(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("compare-png requires <actual> <expected>");
+        std::process::exit(2);
+    }
+    let mut max_diff = 5.0;
+    let mut channel_diff = 8_u8;
+    let mut pixel_radius = 1_usize;
+    let mut index = 2;
+    while index < args.len() {
+        let value = args.get(index + 1);
+        match args[index].as_str() {
+            "--max-diff" => max_diff = value.and_then(|value| value.parse().ok()).unwrap_or(max_diff),
+            "--channel-diff" => {
+                channel_diff = value.and_then(|value| value.parse().ok()).unwrap_or(channel_diff);
+            }
+            "--pixel-radius" => {
+                pixel_radius = value.and_then(|value| value.parse().ok()).unwrap_or(pixel_radius);
+            }
+            other => {
+                eprintln!("unknown compare-png option: {other}");
+                std::process::exit(2);
+            }
+        }
+        index += 2;
+    }
+    let actual = load_png_to_framebuffer(&args[0]).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    let expected = load_png_to_framebuffer(&args[1]).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(2);
+    });
+    if actual.width != expected.width || actual.height != expected.height {
+        eprintln!(
+            "PNG size mismatch: actual={}x{}, expected={}x{}",
+            actual.width, actual.height, expected.width, expected.height
+        );
+        std::process::exit(2);
+    }
+    let different = product_smoke::full_diff_pixels(&actual, &expected, channel_diff, pixel_radius);
+    let total = u64::from(actual.width) * u64::from(actual.height);
+    let pct = different as f64 * 100.0 / total as f64;
+    println!("PNG diff: {different}/{total} pixels = {pct:.2}% (channel<={channel_diff}, radius={pixel_radius}px)");
+    if !product_smoke::full_diff_passes(pct, max_diff) {
+        eprintln!("REGRESSION: PNG diff {pct:.2}% meets or exceeds strict threshold {max_diff:.2}%");
+        std::process::exit(2);
     }
 }
 

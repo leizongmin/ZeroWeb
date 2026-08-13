@@ -288,12 +288,13 @@ impl GpuRenderer {
     /// 创建窗口模式的 GPU 渲染器
     pub fn new_for_window(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let _guard = GPU_CREATE_MUTEX.lock().unwrap();
+        let display = window.clone();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::empty(),
             memory_budget_thresholds: Default::default(),
             backend_options: Default::default(),
-            display: None,
+            display: Some(Box::new(display)),
         });
 
         let surface = instance

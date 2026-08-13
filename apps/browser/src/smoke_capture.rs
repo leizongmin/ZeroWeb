@@ -180,6 +180,38 @@ pub fn capture_presented_frame(
     Ok(())
 }
 
+/// 将帧缓冲中的指定区域保存为独立 PNG。
+pub fn capture_region(path: &Path, framebuffer: &FrameBuffer, region: PixelRegion) -> Result<(), String> {
+    let x1 = region.x.saturating_add(region.width).min(framebuffer.width);
+    let y1 = region.y.saturating_add(region.height).min(framebuffer.height);
+    if region.x >= x1 || region.y >= y1 {
+        return Err("capture region is outside the framebuffer".to_string());
+    }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create smoke capture directory: {error}"))?;
+    }
+    let width = x1 - region.x;
+    let height = y1 - region.y;
+    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
+    for y in region.y..y1 {
+        let start = ((y * framebuffer.width + region.x) * 4) as usize;
+        let end = start + width as usize * 4;
+        pixels.extend_from_slice(&framebuffer.data[start..end]);
+    }
+    let file = std::fs::File::create(path)
+        .map_err(|error| format!("failed to create region capture {}: {error}", path.display()))?;
+    let mut encoder = png::Encoder::new(file, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .and_then(|mut writer| writer.write_image_data(&pixels))
+        .map_err(|error| format!("failed to write region capture: {error}"))
+}
+
 fn log_region(name: &str, stats: &RegionStats) {
     let signature = stats.signature.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
     tracing::info!(

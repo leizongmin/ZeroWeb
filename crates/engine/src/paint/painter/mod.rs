@@ -188,6 +188,33 @@ fn child_content_origin(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> (f32, f
     (cx, cy)
 }
 
+fn find_legend_layout(
+    box_node: &LayoutBox,
+    doc: &zero_dom::Document,
+    content_x: f32,
+    content_y: f32,
+) -> Option<(f32, f32, f32)> {
+    for child in &box_node.children {
+        let child_x = content_x + child.x;
+        let child_y = content_y + child.y;
+        if child.node_id.is_some_and(|id| {
+            doc.get(id).is_some_and(|node| {
+                matches!(
+                    &node.kind,
+                    zero_dom::NodeKind::Element(element) if element.local_name() == "legend"
+                )
+            })
+        }) {
+            return Some((child_x, child.width, child.height));
+        }
+        let (nested_x, nested_y) = child_content_origin(child, child_x, child_y);
+        if let Some(legend) = find_legend_layout(child, doc, nested_x, nested_y) {
+            return Some(legend);
+        }
+    }
+    None
+}
+
 /// CSS Containment §4：paint containment 是否对该元素触发 paint 层裁剪。
 ///
 /// 须同时满足：(a) 启用 paint containment（`has_paint()`：Paint/Strict/Content/Custom 含
@@ -721,7 +748,30 @@ impl Painter {
                     || box_node.border_left > 0.0)
                     && !is_collapsed_table
                 {
-                    self.paint_borders(box_node, abs_x, abs_y, style);
+                    let fieldset_legend = doc.and_then(|doc| {
+                        let node = doc.get(node_id)?;
+                        let zero_dom::NodeKind::Element(element) = &node.kind else {
+                            return None;
+                        };
+                        if element.local_name() != "fieldset" {
+                            return None;
+                        }
+                        let (content_x, content_y) = child_content_origin(box_node, abs_x, abs_y);
+                        find_legend_layout(box_node, doc, content_x, content_y)
+                    });
+                    if let Some((legend_x, legend_width, legend_height)) = fieldset_legend {
+                        self.paint_fieldset_borders(
+                            box_node,
+                            abs_x,
+                            abs_y,
+                            style,
+                            legend_x,
+                            legend_width,
+                            legend_height,
+                        );
+                    } else {
+                        self.paint_borders(box_node, abs_x, abs_y, style);
+                    }
                 }
                 if !is_table_internal {
                     self.paint_outline(box_node, abs_x, abs_y, style);
@@ -909,7 +959,30 @@ impl Painter {
                         || box_node.border_bottom > 0.0
                         || box_node.border_left > 0.0)
                 {
-                    self.paint_borders(box_node, abs_x, abs_y, style);
+                    let fieldset_legend = doc.and_then(|doc| {
+                        let node = doc.get(node_id)?;
+                        let zero_dom::NodeKind::Element(element) = &node.kind else {
+                            return None;
+                        };
+                        if element.local_name() != "fieldset" {
+                            return None;
+                        }
+                        let (content_x, content_y) = child_content_origin(box_node, abs_x, abs_y);
+                        find_legend_layout(box_node, doc, content_x, content_y)
+                    });
+                    if let Some((legend_x, legend_width, legend_height)) = fieldset_legend {
+                        self.paint_fieldset_borders(
+                            box_node,
+                            abs_x,
+                            abs_y,
+                            style,
+                            legend_x,
+                            legend_width,
+                            legend_height,
+                        );
+                    } else {
+                        self.paint_borders(box_node, abs_x, abs_y, style);
+                    }
                 }
 
                 // 2b. Border-image 绘制（替换或覆盖常规边框）

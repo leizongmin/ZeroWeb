@@ -30,6 +30,55 @@ pub(super) struct BorderEdgeSpec {
 }
 
 impl super::Painter {
+    /// 绘制带首个 `<legend>` 的 fieldset 边框。
+    ///
+    /// https://html.spec.whatwg.org/multipage/rendering.html#the-fieldset-and-legend-elements
+    pub(super) fn paint_fieldset_borders(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        legend_x: f32,
+        legend_width: f32,
+        legend_height: f32,
+    ) {
+        let top_y = abs_y + legend_height / 2.0;
+        let mut lower_box = box_node.clone();
+        lower_box.height = (lower_box.height - legend_height / 2.0).max(0.0);
+        lower_box.border_top = 0.0;
+        self.paint_borders(&lower_box, abs_x, top_y, style);
+
+        if box_node.border_top <= 0.0
+            || matches!(
+                style.border_top_style,
+                BorderStyleValue::None | BorderStyleValue::Hidden
+            )
+        {
+            return;
+        }
+        let color = resolve_border_current_color(style.border_top_color.clone(), &style.color);
+        let left_end = legend_x.clamp(abs_x, abs_x + box_node.width);
+        let right_start = (legend_x + legend_width).clamp(abs_x, abs_x + box_node.width);
+        for (x1, x2) in [(abs_x, left_end), (right_start, abs_x + box_node.width)] {
+            if x2 > x1 {
+                self.paint_border_edge(
+                    &BorderEdgeSpec {
+                        x1,
+                        y1: top_y,
+                        x2,
+                        y2: top_y,
+                        thickness: box_node.border_top,
+                        is_horizontal: true,
+                        extend_left: false,
+                    },
+                    &style.border_top_style,
+                    &color,
+                );
+            }
+        }
+    }
+
     /// 绘制边框（4 条边，支持多种 border-style）。
     ///
     /// 分别绘制上、右、下、左四条边框。根据 border-style 生成不同类型的图元：

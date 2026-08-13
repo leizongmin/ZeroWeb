@@ -1148,6 +1148,10 @@ impl StyleSystem {
                         None,
                     ));
                     ua_decl_inputs.push(("padding".to_string(), "2px".to_string(), false, (0, 0, 0), None));
+                    if tag == "textarea" {
+                        // https://html.spec.whatwg.org/multipage/rendering.html#the-textarea-element-2
+                        ua_decl_inputs.push(("resize".to_string(), "both".to_string(), false, (0, 0, 0), None));
+                    }
 
                     // R1659：`<input>` 固有尺寸（form-control intrinsic sizing）。
                     // `<input>` 是 void inline-block（无子节点），无固有尺寸时 ZW 把 auto 宽度当
