@@ -2510,4 +2510,73 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
     );
 }
 
+#[test]
+fn test_classlist_dedupe_and_contains_whitespace_r13() {
+    // js-dom M4 R13：classList 两处 spec 修复——① DOMTokenList token 集合有序去重（`"a a a"` → length 1，
+    // 首位置保留）+ ASCII 空白分隔规范化；② contains() 空串/含 ASCII 空白 token → 返 false（不抛，
+    // 区别于 add/remove/toggle/replace 的 check 抛）。WPT Element-classlist checkItems/checkContains。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='a a a  b'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 去重：class="a a a  b" → length 2（a, b），item(0)="a"。
+    sandbox
+        .execute(
+            "globalThis.__d = document.querySelector('#d');\
+             globalThis.__len = __d.classList.length;\
+             globalThis.__i0 = __d.classList.item(0);\
+             globalThis.__i1 = __d.classList.item(1);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__len)").unwrap().value, "2", "class='a a a  b' 去重 length=2");
+    assert_eq!(sandbox.execute("String(globalThis.__i0)").unwrap().value, "a", "item(0)=a");
+    assert_eq!(sandbox.execute("String(globalThis.__i1)").unwrap().value, "b", "item(1)=b");
+
+    // 空白/空串 contains → false（不抛）。
+    sandbox
+        .execute(
+            "globalThis.__cEmpty = __d.classList.contains('');\
+             globalThis.__cWs = __d.classList.contains('  ');\
+             globalThis.__cTab = __d.classList.contains('a\t');\
+             globalThis.__cA = __d.classList.contains('a');",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__cEmpty)").unwrap().value, "false", "contains('')=false 不抛");
+    assert_eq!(sandbox.execute("String(globalThis.__cWs)").unwrap().value, "false", "contains('  ')=false 不抛");
+    assert_eq!(sandbox.execute("String(globalThis.__cTab)").unwrap().value, "false", "contains('a\\t')=false 不抛");
+    assert_eq!(sandbox.execute("String(globalThis.__cA)").unwrap().value, "true", "contains('a')=true");
+
+    // add 后去重写回：add('a')（已存在）应为 no-op，class 仍去重。
+    sandbox
+        .execute(
+            "globalThis.__add = (function(){ __d.classList.add('a'); return __d.classList.length; })();",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__add)").unwrap().value, "2", "add('a') 已存在 no-op，length 仍 2");
+
+    // 前后空白 token 规范化：setAttribute('class','  \\t\\na\\tb\\n') → 去重空白分隔 [a,b]。
+    sandbox
+        .execute(
+            "globalThis.__norm = (function(){\
+               __d.setAttribute('class', '  \\t\\na\\tb\\n');\
+               return __d.classList.length;\
+             })();",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__norm)").unwrap().value, "2", "前后空白 + 中间空白 规范化 length=2");
+}
+
 

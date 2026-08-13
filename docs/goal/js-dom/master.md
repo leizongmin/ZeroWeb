@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R12 — element.prefix getter（part04，限定名冒号前/无冒号→null）+ getElementsByTagNameNS（part04 元素级 + part06 document 级，忽略 ns 按 localName 查）；基线 polyfill 40.89%→41.71% / native 40.63%→41.45%（双路径对等差 0.26pp）。iframe.contentDocument 评估为深结构跨面改（html-compat 域），记待评估
+**本轮**: R13 — classList token 有序去重（part03 cur() seen 表去重，`"a a a"`→["a"]）+ contains 空串/含 ASCII 空白→false 不抛（区别于 add/remove/toggle/replace 抛）；基线 polyfill 41.71%→46.60% / native 41.45%→46.33%（双路径对等差 0.27pp，classlist 用例 1140P/280F→1360P/60F +220，迄今最大单切片提升）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **polyfill 41.71% / native 41.45% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R12 prefix+getElementsByTagNameNS 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R12 element.prefix getter + getElementsByTagNameNS（document/element 两级）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，**深结构 html-compat 域，待评估**）/Element-classlist(280)/createEvent(183)/createDocumentType(81) |
+| WPT dom 上游基线 | ✅ **polyfill 46.60% / native 46.33% 双基线对等**（dom/nodes 178 用例 / 4502 subtest，R13 classlist 去重+contains 后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R13 classList token 有序去重 + contains 空白不抛（classlist 1140P/280F→1360P/60F）。失败聚类：iframe.contentDocument（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估）/createEvent(183)/createDocumentType(81)/classlist 剩 60F |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -73,7 +73,8 @@
 - R11 已知边缘：`createElement('canvas') instanceof HTMLCanvasElement` 仍 false——canvas 经 `_zwMakeCanvas()` 特殊 proxy（canvas 流专用路径），不走 _makeProxy/getPrototypeOf。记未解决问题
 - R12 已做：① element.prefix getter（part04 get trap：限定名冒号前；无冒号→null；非 Element→null。注：_realTag 大写化致 prefix 大写，case.js abc/Abc 态仍 fail，待 createElementNS 保留原 tag 深改）② getElementsByTagNameNS（part04 元素级 + part06 document 级，忽略 ns 按 localName 查，元素级支持 `*` 通配，返 HTMLCollection）③ prefix+getElementsByTagNameNS 单测。基线 polyfill 40.89%→41.71%、native 40.63%→41.45%（双路径对等差 0.26pp）；polyfill 净 +37 pass。engine v8 2083 / quickjs 1408 单测，双矩阵 clippy 干净
 - R12 评估：**iframe.contentDocument 是深结构跨面改**（createElementNS XML/XHTML 路径需 iframe src 真实解析 + 独立 Document + 独立 window（defaultView.DOMException）+ 跨文档节点归属 ownerDocument===doc，完整 iframe 子文档 = html-compat 域），记未解决问题待评估，转零碰撞面
-- 剩余聚类（按 ROI，R12 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **Element-classlist**（280 失败，聚焦 API）③ **createEvent**（183，Document-createEvent.https.html）④ createDocumentType（81）⑤ canvas proxy instanceof（canvas 流路径）⑥ createElementNS 保留原 tag 大小写（case.js prefix abc/Abc 态）⑦ polyfill appendChild 闭环（待 M1 L2）⑧ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
+- R13 已做：① classList token 有序去重（part03 `_classListProxy` cur() 加 Object.create(null) seen 表，spec DOMTokenList 有序去重 + ASCII 空白分隔，`"a a a"`→["a"]）② contains() 空串/含 ASCII 空白 token → false 不抛（spec `dom-domtokenlist-contains`，区别于 add/remove/toggle/replace 的 check 抛；原 contains 误用 check 抛）③ classlist 单测。基线 polyfill 41.71%→46.60%、native 41.45%→46.33%（双路径对等差 0.27pp）；classlist 用例 1140P/280F→1360P/60F（+220，迄今最大单切片提升）。engine v8 2084 / quickjs 1408 单测，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R13 后重排）：① **iframe.contentDocument**（createElementNS/case 大头 ~390，深结构 html-compat 域，待评估/转 html-compat 流）② **createEvent**（183，Document-createEvent.https.html，event 子类构造/init 精度）③ createDocumentType（81，DOMImplementation）④ classlist 剩 60F（add/toggle/replace 边缘 + toString/value + forEach）⑤ createElementNS 保留原 tag 大小写（case.js prefix abc/Abc 态）⑥ canvas proxy instanceof（canvas 流路径）⑦ polyfill appendChild 闭环（待 M1 L2）⑧ 扩 DOM_TEST_SUBDIRS（dom/events，纯资产）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -135,6 +136,7 @@
 | 2026-08-14 | R10 | polyfill Proxy getPrototypeOf trap（part05 _makeProxy handler：element→HTMLElement.prototype 链、PI→ProcessingInstruction 等）+ DOM 原型方法不可枚举（part03，修 for-in 副作用）+ 顺带修并行 canvas 流回归（part06 CSS.escape/supports 合并 + testharness fetch_handler 编译）+ instanceof 单测；engine v8 2071 / quickjs 1407 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 38.03%→39.23%、native 37.81%→38.96%（双路径对等差 0.27pp）；cloneNode 用例 0P→51P（+51，instanceof 直接解锁）。归因：6 fetch 既存失败（clean R9 同样）非本切片引入。完整 JSON 快照入 evidence |
 | 2026-08-14 | R11 | element.localName getter（part04：HTML 小写/去 prefix/非 Element→null）+ HTML 元素子类 instanceof（part03 注册 ~64 HTML*Element 构造器 + __zwHtmlTagIface tag→接口映射；part05 getPrototypeOf 按 tag 返子类 prototype）+ localName/子类 instanceof 单测；engine v8 2082 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线提升**：polyfill 39.23%→40.89%、native 38.96%→40.63%（双路径对等差 0.26pp）；cloneNode 用例 51P→121P（+70）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R12 | element.prefix getter（part04：限定名冒号前/无冒号→null）+ getElementsByTagNameNS（part04 元素级 + part06 document 级，忽略 ns 按 localName 查）+ 单测；engine v8 2083 / quickjs 1408 全绿，双矩阵 clippy 干净。iframe.contentDocument 评估为深结构跨面改（html-compat 域），记待评估 | **基线提升**：polyfill 40.89%→41.71%、native 40.63%→41.45%（双路径对等差 0.26pp）；polyfill 净 +37 pass。完整 JSON 快照入 evidence |
+| 2026-08-14 | R13 | classList token 有序去重（part03 cur() seen 表，`"a a a"`→["a"]）+ contains 空串/含 ASCII 空白→false 不抛（区别于 add/remove/toggle/replace 抛）+ 单测；engine v8 2084 / quickjs 1408 全绿，双矩阵 clippy 干净 | **基线大幅提升**：polyfill 41.71%→46.60%、native 41.45%→46.33%（双路径对等差 0.27pp）；classlist 用例 1140P/280F→1360P/60F（+220，迄今最大单切片提升）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -144,11 +146,11 @@
 
 ## 下一步计划
 
-1. **R12（本轮，已完成）**：element.prefix getter + getElementsByTagNameNS → land（polyfill 41.71% / native 41.45%，双路径对等差 0.26pp）。iframe.contentDocument 评估为深结构，记待评估
-2. **下轮候选（按剩余 ROI，R12 后重排）**：
-   - **(a) Element-classlist**（280 失败，第二大聚焦 API 块；需看具体失败模式——token 操作/add/remove/toggle/replace 精度）。
-   - **(b) createEvent**（183，Document-createEvent.https.html；event 子类构造/init 精度）。
-   - **(c) createDocumentType**（81，DOMImplementation；聚焦）。
+1. **R13（本轮，已完成）**：classList token 去重 + contains 空白不抛 → land（polyfill 46.60% / native 46.33%，双路径对等差 0.27pp，classlist +220 pass，迄今最大单切片提升）
+2. **下轮候选（按剩余 ROI，R13 后重排）**：
+   - **(a) createEvent**（183，Document-createEvent.https.html；event 子类构造/init 精度）。
+   - **(b) createDocumentType**（81，DOMImplementation；聚焦）。
+   - **(c) classlist 剩 60F**（add/toggle/replace 边缘 + toString/value + forEach 迭代）。
    - **(d) createElementNS 保留原 tag 大小写**（解 case.js prefix abc/Abc 态；深改 host tag 存储）。
    - **(e) iframe.contentDocument**（深结构 html-compat 域，待评估/转 html-compat 流）。
    - **(f) 扩展 `DOM_TEST_SUBDIRS`**：导入 `dom/events` 扩通过率面（纯资产）。
@@ -204,3 +206,4 @@
 - R10：M4 polyfill Proxy getPrototypeOf 解 instanceof + CSS 回归修复（cloneNode 0P→51P）→ archive/m10-slice-instanceof-prototype-chain.md
 - R11：M4 element.localName getter + HTML 元素子类 instanceof（cloneNode 51P→121P）→ archive/m11-slice-localname-subclass-instanceof.md
 - R12：M4 element.prefix getter + getElementsByTagNameNS（polyfill +37 pass）→ archive/m12-slice-prefix-getelementsbytagnamens.md
+- R13：M4 classList token 去重 + contains 空白不抛（classlist +220 pass，迄今最大单切片）→ archive/m13-slice-classlist-dedupe-contains.md

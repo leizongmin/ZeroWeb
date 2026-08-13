@@ -730,7 +730,18 @@
   function _classListProxy(sel, handle) {
     var key = _elKey(sel, handle);
     // 当前列表（缓存优先，反映同脚本内累积操作，非 stale snapshot）。
-    var cur = function () { return _readClass(key, sel, handle).split(/\s+/).filter(Boolean); };
+    // spec DOMTokenList：token 集合为**有序去重**（首个出现位置保留，后续重复丢弃）+ 按 ASCII 空白分隔。
+    // `"a a a"` → `["a"]`（length 1）；`"\t\n\f\r a\t\n\f\r b\t\n\f\r "` → `["a","b"]`（R13 classlist 去重）。
+    var cur = function () {
+      var raw = _readClass(key, sel, handle).split(/\s+/).filter(Boolean);
+      var seen = Object.create(null);
+      var out = [];
+      for (var i = 0; i < raw.length; i++) {
+        var t = raw[i];
+        if (!seen[t]) { seen[t] = 1; out.push(t); }
+      }
+      return out;
+    };
     var write = function (arr) {
       var v = arr.join(' ');
       _classCache[key] = v;
@@ -775,7 +786,10 @@
       },
       contains: function (c) {
         c = String(c);
-        check(c);
+        // spec `dom-domtokenlist-contains`（R13）：空串或含 ASCII 空白的 token → 返 false（**不抛**，
+        // 区别于 add/remove/toggle/replace 的 check 抛 SyntaxError/InvalidCharacterError）。WPT
+        // Element-classlist checkContains(null,["a","","  "],false) + checkContains("a",["a\t",...],false)。
+        if (c === '' || /\s/.test(c)) return false;
         return cur().indexOf(c) >= 0;
       },
       toggle: function (c, force) {
