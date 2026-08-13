@@ -112,6 +112,8 @@
 >
 > **🧪 Dormant 实验裁决（R3411-F italic/oblique face category·2026-08-14）**：`italic-oblique-fallback` 是固定 `markA.ttf`、fresh Chromium Oracle `3.49%`、self-source `3.36%` 的明确 matching 缺口。实验把静态 `@font-face` 加载链从 `is_italic:bool` 升级为 Normal/Italic/Oblique 三态，shared resolver按 CSS Fonts 4实现 `italic→oblique→normal` 与 `oblique→normal→italic`，并以 `ZW_FONT_STYLE_MATCHING_V2=0` 回滚。resolver单测与全 workspace编译通过，但同一 release runner 的完整 css-fonts 282 案 Oracle A/B 全部逐像素持平，目标页也保持 `3.49%`；说明 inline span owner 的 resolved face未进入最终 paint glyph，三态 plumbing在当前生产路径 dormant。源码已完整回退，不提交无像素作用的实现。后续须与 inline owner face ownership/Phase A 协同，禁止单独重试 resolver。经验见 [`italic-oblique-matching-needs-inline-face-ownership.md`](../learnings/bugs/italic-oblique-matching-needs-inline-face-ownership.md)。
 >
+> **🔬 候选裁决（R3412-F synthetic small-caps expansion·2026-08-14）**：`small-caps-letter-spacing-001` 使用无 `smcp` 的 Ahem，self-source `0.13%`、Chromium Oracle `1.85%`，表面像 spacing 缺口，实际要求 synthetic small-caps 把 `ß` 展开为 `SS`。ZeroWeb 当前只注入 OpenType `smcp`，缺 feature时没有 case expansion。正确修复会改变字符数、advance、断行和 source range，必须在线断前建立一对多映射并让 layout/shaping/paint共同消费；paint侧补 spacing或 Ahem特判都会制造半正确实现。故本轮不提交源码，留待 inline text transform ownership协同切片。经验见 [`synthetic-small-caps-needs-pre-line-break-expansion.md`](../learnings/bugs/synthetic-small-caps-needs-pre-line-break-expansion.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
