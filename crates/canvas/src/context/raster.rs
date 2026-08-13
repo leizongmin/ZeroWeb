@@ -183,6 +183,18 @@ fn blend_source_color(op: CompositeOperation, da: f32, src: Rgb, dst: Rgb) -> Rg
     ]
 }
 
+/// R34xx：点在三角形内判定（重心同侧法——阴影 join 三角 mask 用）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn point_in_triangle(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32, cx: f32, cy: f32) -> bool {
+    let sign = |x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32| (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3);
+    let d1 = sign(px, py, ax, ay, bx, by);
+    let d2 = sign(px, py, bx, by, cx, cy);
+    let d3 = sign(px, py, cx, cy, ax, ay);
+    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    !(has_neg && has_pos)
+}
+
 /// R3240：单遍可分离 box blur（边缘 clamp）作用于 alpha mask。半径 0 / 空 mask 为 no-op。
 /// 窗口样本数恒为 `2r+1`（边缘重复采样），故除数固定 `2r+1`。
 pub(crate) fn box_blur_alpha(buf: &mut [u8], w: usize, h: usize, radius: usize) {
@@ -979,6 +991,7 @@ impl CanvasContext {
         off_y: f32,
         color: Color,
         global_alpha: f32,
+        shape_alpha: f32,
     ) {
         let cw = self.width as i32;
         let ch = self.height as i32;
@@ -996,7 +1009,11 @@ impl CanvasContext {
                 if cx < 0 || cy < 0 || cx >= cw || cy >= ch {
                     continue;
                 }
-                let alpha = (base_a * coverage * global_alpha).clamp(0.0, 1.0);
+                // R34xx：阴影受 clip 区域裁剪（2d.shadow.clip.2——clip 外不画阴影）。
+                if !self.clip_applies(cx as f32, cy as f32) {
+                    continue;
+                }
+                let alpha = (base_a * coverage * global_alpha * shape_alpha).clamp(0.0, 1.0);
                 if alpha <= 0.0 {
                     continue;
                 }

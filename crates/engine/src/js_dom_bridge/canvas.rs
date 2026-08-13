@@ -59,6 +59,17 @@ fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Colo
     zero_css_parser::values::parse_color(s.trim()).map(|cv| crate::color_value_to_render(&cv))
 }
 
+/// R34xx：Canvas 颜色属性 getter 的规范化序列化（spec：opaque → `#rrggbb`，alpha → `rgba(...)`——
+/// 2d.shadow.attributes.shadowColor.valid 断言 'lime' → '#00ff00'、'RGBA(0,255,0,0)' → 'rgba(0, 255, 0, 0)'）。
+fn color_to_canvas_css(c: &zero_render_foundation::color::Color) -> String {
+    if c.a == 255 {
+        format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
+    } else {
+        let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
+        format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
+    }
+}
+
 /// canvas `lineJoin` 串 → LineJoin（spec: miter/round/bevel；未知回落 Miter = 默认）。
 fn parse_line_join(s: &str) -> zero_canvas::LineJoin {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -535,10 +546,19 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "setShadowColor" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.set_shadow_color(parse_canvas_color(arg(0)));
+                // R34xx：无效颜色忽略保持旧值（同 setStrokeStyle——2d.shadow.attributes
+                // shadowColor.invalid 设 'bogus' 应保持原值）。
+                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                    ctx.set_shadow_color(color);
+                }
             }
             "ok".into()
         }
+        "getShadowColor" => reg
+            .contexts
+            .get(&hid())
+            .map(|ctx| color_to_canvas_css(ctx.shadow_color()))
+            .unwrap_or_default(),
         "setShadowBlur" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_shadow_blur(f(0));

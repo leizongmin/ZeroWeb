@@ -22,6 +22,7 @@ SUBDIRS=(
   "html/canvas/element/transformations"
   "html/canvas/element/pixel-manipulation"
   "html/canvas/element/line-styles"
+  "html/canvas/element/shadows"
 )
 
 fetch_raw() {

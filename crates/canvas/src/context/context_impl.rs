@@ -82,7 +82,7 @@ impl CanvasContext {
         let rect = self.transform_rect(x, y, width, height);
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
-            self.draw_shadow_rect(&rect);
+            self.draw_shadow_rect(&rect, &self.fill_style.clone());
         }
         if self.fill_style.is_per_pixel_style() {
             // 渐变：每像素采样光栅化（真实 gradient 渲染）。primitives 合成层用 midpoint 近似单色记录
@@ -121,7 +121,13 @@ impl CanvasContext {
         }
         // 绘制阴影（在形状之前）——stroke 足迹（同 stroke()/stroke_with_path R3356 口径）。
         if self.has_shadow() {
-            self.draw_shadow_stroke(&vertices, self.line_width);
+            let (min_x, min_y, max_x, max_y) = vertices
+                .chunks_exact(2)
+                .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
+                    (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
+                });
+            let shape_alpha = self.style_alpha(&self.stroke_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+            self.draw_shadow_stroke(&vertices, self.line_width, shape_alpha);
         }
         let closed = true;
         if self.stroke_style.is_per_pixel_style() {
@@ -316,7 +322,13 @@ impl CanvasContext {
         }
         // 绘制阴影（在形状之前）
         if self.has_shadow() {
-            self.draw_shadow_path(&vertices);
+            let (min_x, min_y, max_x, max_y) = vertices
+                .chunks_exact(2)
+                .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
+                    (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
+                });
+            let shape_alpha = self.style_alpha(&self.fill_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+            self.draw_shadow_path(&vertices, shape_alpha);
         }
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
@@ -337,7 +349,13 @@ impl CanvasContext {
         }
         // 绘制阴影（在形状之前）——R3241：用 stroke 足迹（thick rect + 连接点），非 centerline。
         if self.has_shadow() {
-            self.draw_shadow_stroke(&vertices, self.line_width);
+            let (min_x, min_y, max_x, max_y) = vertices
+                .chunks_exact(2)
+                .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
+                    (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
+                });
+            let shape_alpha = self.style_alpha(&self.stroke_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+            self.draw_shadow_stroke(&vertices, self.line_width, shape_alpha);
         }
         let closed = self
             .current_path
@@ -365,7 +383,13 @@ impl CanvasContext {
             return;
         }
         if self.has_shadow() {
-            self.draw_shadow_path(&vertices);
+            let (min_x, min_y, max_x, max_y) = vertices
+                .chunks_exact(2)
+                .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
+                    (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
+                });
+            let shape_alpha = self.style_alpha(&self.fill_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+            self.draw_shadow_path(&vertices, shape_alpha);
         }
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
@@ -388,7 +412,13 @@ impl CanvasContext {
         // 一致。旧实现误用 draw_shadow_path（centerline），致同一描边几何经 stroke_with_path 与
         // stroke_path（→stroke()）产生不同阴影（粗线 stroke_with_path 阴影过细）。
         if self.has_shadow() {
-            self.draw_shadow_stroke(&vertices, self.line_width);
+            let (min_x, min_y, max_x, max_y) = vertices
+                .chunks_exact(2)
+                .fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(mnx, mny, mxx, mxy), c| {
+                    (mnx.min(c[0]), mny.min(c[1]), mxx.max(c[0]), mxy.max(c[1]))
+                });
+            let shape_alpha = self.style_alpha(&self.stroke_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+            self.draw_shadow_stroke(&vertices, self.line_width, shape_alpha);
         }
         let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
         if self.stroke_style.is_per_pixel_style() {
@@ -1132,6 +1162,15 @@ impl CanvasContext {
     // ── Output ──
 
     /// 判断当前是否启用了阴影（阴影颜色不透明且偏移或模糊非零）。
+    /// R34xx：样式代表 alpha（阴影 mask 调制用——半透明形状的阴影应半透明，
+    /// 2d.shadow.gradient.alpha / alpha.5）。per-pixel 样式在给定点采样。
+    fn style_alpha(&self, style: &CanvasStyle, x: f32, y: f32) -> f32 {
+        match style {
+            CanvasStyle::Color(c) => c.a as f32 / 255.0,
+            _ => style.sample_at(x, y).a as f32 / 255.0,
+        }
+    }
+
     fn has_shadow(&self) -> bool {
         self.shadow_color.a > 0
             && (self.shadow_blur > 0.0 || self.shadow_offset_x != 0.0 || self.shadow_offset_y != 0.0)
@@ -1140,7 +1179,7 @@ impl CanvasContext {
     /// R3240：为矩形绘制阴影——region alpha mask（矩形覆盖）+ box blur（shadowBlur）+ 经
     /// composite_shadow_mask 合成（消费 globalCompositeOperation，与 fill/stroke 一致）。
     /// 旧实现仅画偏移硬边矩形、alpha 按 `1/(1+blur·0.1)` 衰减（无 blur）。
-    fn draw_shadow_rect(&mut self, rect: &Rect) {
+    fn draw_shadow_rect(&mut self, rect: &Rect, style: &CanvasStyle) {
         let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
         let cw = self.width as i32;
         let ch = self.height as i32;
@@ -1153,13 +1192,25 @@ impl CanvasContext {
         let ry0 = (rect.top().floor() as i32).saturating_sub(pad);
         let rx1 = (rect.right().ceil() as i32).saturating_add(pad);
         let ry1 = (rect.bottom().ceil() as i32).saturating_add(pad);
+        // R34xx：region 裁剪到阴影可见范围（画布 − offset）——阴影只可能在 offset 后落入
+        // 画布的区域出现；旧实现不裁剪 + mask 封顶（4×画布）会截断画布外大偏移阴影
+        //（2d.shadow.stroke.join.2：offsetX=100 的阴影 y∈[-200,50] 被 4×50=200 封顶截断）。
+        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
+        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
+        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
+        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let rx0 = rx0.max(vis_x0);
+        let ry0 = ry0.max(vis_y0);
+        let rx1 = rx1.min(vis_x1);
+        let ry1 = ry1.min(vis_y1);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
-        // R34xx：mask 尺寸封顶（画布 4 倍）防画布外超大矩形致 mask 分配 OOM；composite 钳位
-        // 保证画布外部分不落像素。
-        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
-        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
+        // R34xx：mask 尺寸封顶（画布 4 倍）兜底防极端 offset 下 region 过大；裁剪后
+        // 常规阴影 region ≤ 画布尺寸不受影响。
+        // R34xx：+1 闭区间 [rx0, rx1]（半开丢右/下边界像素——2d.shadow.stroke.join.2 的 (-50,25) 恰在边界）。
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4)) + 1;
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4)) + 1;
         let mut mask = vec![0u8; rw * rh];
         let (rl, rt, rr, rb) = (rect.left(), rect.top(), rect.right(), rect.bottom());
         for ly in 0..rh as i32 {
@@ -1167,7 +1218,10 @@ impl CanvasContext {
             for lx in 0..rw as i32 {
                 let wx = rx0 + lx;
                 if (wx as f32) >= rl && (wx as f32) < rr && (wy as f32) >= rt && (wy as f32) < rb {
-                    mask[(ly as usize) * rw + (lx as usize)] = 255;
+                    // R34xx：mask 逐像素乘形状 alpha（渐变/图案透明部分无阴影——
+                    // 2d.shadow.gradient.transparent.2 / pattern.transparent.1）。
+                    let alpha = self.style_alpha(style, wx as f32, wy as f32);
+                    mask[(ly as usize) * rw + (lx as usize)] = (255.0 * alpha) as u8;
                 }
             }
         }
@@ -1185,11 +1239,12 @@ impl CanvasContext {
             self.shadow_offset_y,
             self.shadow_color,
             self.global_alpha,
+            1.0, // mask 已逐像素乘形状 alpha（R34xx）
         );
     }
 
     /// R3240：为路径绘制阴影——region alpha mask（扫描线覆盖）+ box blur + composite_shadow_mask。
-    fn draw_shadow_path(&mut self, vertices: &[f32]) {
+    fn draw_shadow_path(&mut self, vertices: &[f32], shape_alpha: f32) {
         if vertices.len() < 4 {
             return;
         }
@@ -1217,8 +1272,9 @@ impl CanvasContext {
             return;
         }
         // R34xx：mask 尺寸封顶（画布 4 倍）防画布外超大路径致 mask 分配 OOM。
-        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
-        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
+        // R34xx：+1 闭区间 [rx0, rx1]（半开丢右/下边界像素——2d.shadow.stroke.join.2 的 (-50,25) 恰在边界）。
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4)) + 1;
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4)) + 1;
         let mut mask = vec![0u8; rw * rh];
         super::raster::rasterize_path_coverage(vertices, &mut mask, rw, rh, rx0, ry0);
         // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
@@ -1235,12 +1291,13 @@ impl CanvasContext {
             self.shadow_offset_y,
             self.shadow_color,
             self.global_alpha,
+            shape_alpha,
         );
     }
 
     /// R3241：为描边绘制阴影——region mask 由 stroke 足迹（每段 thick rect + 连接点方块）构成，
     /// 非 centerline（旧 stroke() 传 centerline 致粗描边阴影过细）。box blur + composite 同 R3240。
-    fn draw_shadow_stroke(&mut self, vertices: &[f32], line_width: f32) {
+    fn draw_shadow_stroke(&mut self, vertices: &[f32], line_width: f32, shape_alpha: f32) {
         if vertices.len() < 4 {
             return;
         }
@@ -1269,21 +1326,164 @@ impl CanvasContext {
         let ry0 = (min_y - pad).floor() as i32;
         let rx1 = (max_x + pad).ceil() as i32;
         let ry1 = (max_y + pad).ceil() as i32;
+        // R34xx：region 裁剪到阴影可见范围（同 draw_shadow_rect）。
+        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
+        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
+        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
+        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let rx0 = rx0.max(vis_x0);
+        let ry0 = ry0.max(vis_y0);
+        let rx1 = rx1.min(vis_x1);
+        let ry1 = ry1.min(vis_y1);
         if rx1 <= rx0 || ry1 <= ry0 {
             return;
         }
-        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4));
-        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4));
+        // R34xx：+1 闭区间 [rx0, rx1]（半开丢右/下边界像素——2d.shadow.stroke.join.2 的 (-50,25) 恰在边界）。
+        let rw = ((rx1 - rx0) as usize).min((cw as usize).saturating_mul(4)) + 1;
+        let rh = ((ry1 - ry0) as usize).min((ch as usize).saturating_mul(4)) + 1;
         let mut mask = vec![0u8; rw * rh];
-        // 每段 thick rect（与 blit_stroke_to_pixels 同款 line_segment_rect）。
+        // R34xx：段主体逐像素精确判定（投影 t∈[0,1] + 距中心线 ≤ half——旧 bbox 直填对
+        // 斜线段覆盖端点外区域，2d.shadow.stroke.join.1 的 (-99,1) 在段2 延长线外仍被覆盖）。
         for s in &segments {
-            let r = self.line_segment_rect(s[0], s[1], s[2], s[3], line_width);
-            super::raster::fill_rect_into_mask(&mut mask, rw, rh, rx0, ry0, &r);
+            let (ax, ay) = (s[0], s[1]);
+            let (bx, by) = (s[2], s[3]);
+            let (dx, dy) = (bx - ax, by - ay);
+            let len2 = dx * dx + dy * dy;
+            if len2 < f32::EPSILON {
+                continue;
+            }
+            let len = len2.sqrt();
+            let (nx, ny) = (-dy / len * half_lw, dx / len * half_lw);
+            let min_x = ax.min(bx).min(ax + nx).min(bx + nx).min(ax - nx).min(bx - nx);
+            let max_x = ax.max(bx).max(ax + nx).max(bx + nx).max(ax - nx).max(bx - nx);
+            let min_y = ay.min(by).min(ay + ny).min(by + ny).min(ay - ny).min(by - ny);
+            let max_y = ay.max(by).max(ay + ny).max(by + ny).max(ay - ny).max(by - ny);
+            let h2 = half_lw * half_lw;
+            let x0 = (min_x.floor() as i32).max(rx0);
+            let y0 = (min_y.floor() as i32).max(ry0);
+            let x1 = (max_x.ceil() as i32).min(rx0 + rw as i32 - 1);
+            let y1 = (max_y.ceil() as i32).min(ry0 + rh as i32 - 1);
+            for wy in y0..=y1 {
+                for wx in x0..=x1 {
+                    let (qx, qy) = (wx as f32 + 0.5 - ax, wy as f32 + 0.5 - ay);
+                    let t = (qx * dx + qy * dy) / len2;
+                    if t < 0.0 || t > 1.0 {
+                        continue;
+                    }
+                    let (rx, ry) = (qx - t * dx, qy - t * dy);
+                    if rx * rx + ry * ry > h2 {
+                        continue;
+                    }
+                    let (lx, ly) = ((wx - rx0) as usize, (wy - ry0) as usize);
+                    if lx < rw && ly < rh {
+                        mask[ly * rw + lx] = 255;
+                    }
+                }
+            }
         }
-        // 连接点方块（half_lw 偏移、line_width 边长，与 blit_stroke_to_pixels 一致）。
-        for s in segments.iter().take(segments.len().saturating_sub(1)) {
-            let r = Rect::new(s[2] - half_lw, s[3] - half_lw, line_width, line_width);
-            super::raster::fill_rect_into_mask(&mut mask, rw, rh, rx0, ry0, &r);
+        // R34xx：端 cap（square/round）——阴影 cap 与形状 cap 同几何
+        //（2d.shadow.stroke.cap.2：square cap 的阴影应覆盖 cap 延伸区域）。
+        if let Some(first) = segments.first() {
+            self.shadow_cap_into_mask(
+                first[0], first[1], first[2], first[3], &mut mask, rw, rh, rx0, ry0, half_lw,
+            );
+        }
+        if let Some(last) = segments.last() {
+            self.shadow_cap_into_mask(last[2], last[3], last[0], last[1], &mut mask, rw, rh, rx0, ry0, half_lw);
+        }
+        // R34xx：连接点用真实 join 几何（miter 尖角三角 / bevel 平切 / round 圆盘；共线角
+        // 不画）——旧方块近似覆盖角外大片区域（2d.shadow.stroke.join.2 (1,1) 失败）。
+        for i in 0..segments.len().saturating_sub(1) {
+            let seg_a = segments[i];
+            let seg_b = segments[i + 1];
+            if !self.join_visible(&seg_a, &seg_b) {
+                continue;
+            }
+            let (jx, jy) = (seg_a[2], seg_a[3]);
+            let (dax, day) = (jx - seg_a[0], jy - seg_a[1]);
+            let (dbx, dby) = (seg_b[2] - jx, seg_b[3] - jy);
+            let la = (dax * dax + day * day).sqrt();
+            let lb = (dbx * dbx + dby * dby).sqrt();
+            if la < f32::EPSILON || lb < f32::EPSILON {
+                continue;
+            }
+            let (uax, uay) = (dax / la, day / la);
+            let (ubx, uby) = (dbx / lb, dby / lb);
+            let (mx, my) = (uax - ubx, uay - uby);
+            let ml = (mx * mx + my * my).sqrt();
+            if ml < f32::EPSILON {
+                continue;
+            }
+            let (a_ext_x, a_ext_y) = if mx * -uay + my * uax > 0.0 {
+                (jx - uay * half_lw, jy + uax * half_lw)
+            } else {
+                (jx + uay * half_lw, jy - uax * half_lw)
+            };
+            let (b_ext_x, b_ext_y) = if mx * -uby + my * ubx > 0.0 {
+                (jx - uby * half_lw, jy + ubx * half_lw)
+            } else {
+                (jx + uby * half_lw, jy - ubx * half_lw)
+            };
+            match self.line_join {
+                LineJoin::Round => {
+                    let r2 = half_lw * half_lw;
+                    for ly in 0..rh as i32 {
+                        let wy = ry0 + ly;
+                        for lx in 0..rw as i32 {
+                            let wx = rx0 + lx;
+                            let dx = wx as f32 + 0.5 - jx;
+                            let dy = wy as f32 + 0.5 - jy;
+                            if dx * dx + dy * dy <= r2 {
+                                mask[(ly as usize) * rw + (lx as usize)] = 255;
+                            }
+                        }
+                    }
+                }
+                LineJoin::Bevel => {
+                    // R34xx：bevel 单平切三角 {jx, a_ext, b_ext}（旧并入 Miter 分支且
+                    // P=jx 时退化成两个退化三角，point_in_triangle 误判覆盖角外——
+                    // 2d.shadow.stroke.join.1 的 (-99,1) 被误覆盖）。
+                    for ly in 0..rh as i32 {
+                        let wy = ry0 + ly;
+                        for lx in 0..rw as i32 {
+                            let wx = rx0 + lx;
+                            let x = wx as f32 + 0.5;
+                            let y = wy as f32 + 0.5;
+                            if super::raster::point_in_triangle(x, y, jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y) {
+                                mask[(ly as usize) * rw + (lx as usize)] = 255;
+                            }
+                        }
+                    }
+                }
+                LineJoin::Miter => {
+                    // miter 尖点（超限降级 bevel 平切三角）——两个三角填充（重心同侧判定）。
+                    let cos_theta = -(uax * ubx + uay * uby);
+                    let sin_half = ((1.0 - cos_theta) / 2.0).sqrt();
+                    let (px, py) = if sin_half < f32::EPSILON {
+                        (jx, jy)
+                    } else {
+                        let miter_len = half_lw / sin_half;
+                        if miter_len / half_lw > self.miter_limit {
+                            (jx, jy) // 超限 → bevel（只画平切三角）
+                        } else {
+                            (jx + mx / ml * miter_len, jy + my / ml * miter_len)
+                        }
+                    };
+                    for ly in 0..rh as i32 {
+                        let wy = ry0 + ly;
+                        for lx in 0..rw as i32 {
+                            let wx = rx0 + lx;
+                            let x = wx as f32 + 0.5;
+                            let y = wy as f32 + 0.5;
+                            if super::raster::point_in_triangle(x, y, jx, jy, a_ext_x, a_ext_y, px, py)
+                                || super::raster::point_in_triangle(x, y, jx, jy, px, py, b_ext_x, b_ext_y)
+                            {
+                                mask[(ly as usize) * rw + (lx as usize)] = 255;
+                            }
+                        }
+                    }
+                }
+            }
         }
         // R3242：3 遍 box blur ≈ gaussian（比单遍 triangle 衰减更平滑）。
         for _ in 0..passes {
@@ -1299,7 +1499,53 @@ impl CanvasContext {
             self.shadow_offset_y,
             self.shadow_color,
             self.global_alpha,
+            shape_alpha,
         );
+    }
+
+    /// R34xx：端 cap 写入阴影 mask（square = 延伸段矩形，round = 圆盘；butt 无）。
+    #[allow(clippy::too_many_arguments)]
+    fn shadow_cap_into_mask(
+        &self,
+        endpoint_x: f32,
+        endpoint_y: f32,
+        other_x: f32,
+        other_y: f32,
+        mask: &mut [u8],
+        rw: usize,
+        rh: usize,
+        rx0: i32,
+        ry0: i32,
+        half_lw: f32,
+    ) {
+        match self.line_cap {
+            LineCap::Butt => {}
+            LineCap::Square => {
+                let (dx, dy) = (endpoint_x - other_x, endpoint_y - other_y);
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < f32::EPSILON {
+                    return;
+                }
+                let (ux, uy) = (dx / len, dy / len);
+                let (ext_x, ext_y) = (endpoint_x + ux * half_lw, endpoint_y + uy * half_lw);
+                let rect = self.line_segment_rect(endpoint_x, endpoint_y, ext_x, ext_y, half_lw * 2.0);
+                super::raster::fill_rect_into_mask(mask, rw, rh, rx0, ry0, &rect);
+            }
+            LineCap::Round => {
+                let r2 = half_lw * half_lw;
+                for ly in 0..rh as i32 {
+                    let wy = ry0 + ly;
+                    for lx in 0..rw as i32 {
+                        let wx = rx0 + lx;
+                        let dx = wx as f32 + 0.5 - endpoint_x;
+                        let dy = wy as f32 + 0.5 - endpoint_y;
+                        if dx * dx + dy * dy <= r2 {
+                            mask[(ly as usize) * rw + (lx as usize)] = 255;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// 消费上下文，返回渲染图元列表。

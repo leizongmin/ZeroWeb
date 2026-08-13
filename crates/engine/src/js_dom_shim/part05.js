@@ -1512,22 +1512,49 @@
     });
     ctx._sc = 'rgba(0, 0, 0, 0)';
     Object.defineProperty(ctx, 'shadowColor', {
+      // R34xx：getter 读 host 规范化值（opaque→#rrggbb / alpha→rgba；无效设值被 host
+      // 忽略后 getter 返旧值——2d.shadow.attributes.shadowColor.valid/invalid）。host
+      // 不可用时回退本地缓存。
       set: function (v) { this._sc = String(v); __zw_canvas_op(h, 'setShadowColor', String(v)); },
-      get: function () { return this._sc; }
+      get: function () {
+        if (typeof __zw_canvas_op === 'function') {
+          var r = String(__zw_canvas_op(h, 'getShadowColor'));
+          if (r) return r;
+        }
+        return this._sc;
+      }
     });
     ctx._sb = 0;
     Object.defineProperty(ctx, 'shadowBlur', {
-      set: function (v) { this._sb = +v; __zw_canvas_op(h, 'setShadowBlur', String(v)); },
+      // R34xx：非法值（非有限/负）忽略保持旧值（spec：2d.shadow.attributes.shadowBlur.invalid）。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v) || v < 0) return;
+        this._sb = v;
+        __zw_canvas_op(h, 'setShadowBlur', String(v));
+      },
       get: function () { return this._sb; }
     });
     ctx._sox = 0;
     Object.defineProperty(ctx, 'shadowOffsetX', {
-      set: function (v) { this._sox = +v; __zw_canvas_op(h, 'setShadowOffsetX', String(v)); },
+      // R34xx：非有限值忽略（负偏移合法——2d.shadow.attributes.shadowOffset.invalid）。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v)) return;
+        this._sox = v;
+        __zw_canvas_op(h, 'setShadowOffsetX', String(v));
+      },
       get: function () { return this._sox; }
     });
     ctx._soy = 0;
     Object.defineProperty(ctx, 'shadowOffsetY', {
-      set: function (v) { this._soy = +v; __zw_canvas_op(h, 'setShadowOffsetY', String(v)); },
+      // R34xx：非有限值忽略。
+      set: function (v) {
+        v = +v;
+        if (!isFinite(v)) return;
+        this._soy = v;
+        __zw_canvas_op(h, 'setShadowOffsetY', String(v));
+      },
       get: function () { return this._soy; }
     });
     // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
