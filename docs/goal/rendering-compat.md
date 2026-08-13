@@ -75,6 +75,8 @@
 >
 > **▶ WPT 资产进展（R3382-F NSM line-break strict flip·2026-08-13）**：将 R3381 唯一新增 strict flip `line-break-anywhere-overrides-uax-behavior-011` 经标准 importer 常驻；默认 `0.00%`，`ZW_ZERO_WIDTH_NSM=0` 为 `0.52%`，test/ref 无外部字体依赖。其余改善案已跟踪、属于 vertical，或仅微量变化，未扩成低信号 CI 集。Arabic driving case 的剩余差异已定位为 inline bidi 层未消费 `unicode-bidi:isolate`，受 Phase A 护栏约束。
 >
+> **🔬 候选裁决（R3383-F full-width space / inline owner transform·2026-08-13）**：审计确认 `text-transform:full-width` 的共享转换未把 U+0020 映射到 U+3000，且 inline 元素收集分支未在行断前应用自身 `text-transform`。实验补齐两点后，全 css-text self-source pass 保持 `1762/1826`、可信 strict `582→592`；但 driving `text-transform-fullwidth-009` 对 reference 与 Chromium Oracle 均精确持平（`5.19%` / `6.64%`）。fresh Chrome 150 重抓 `css-text/text-transform` 后，107 案 Oracle 为 4 改善/9 回归/94 持平，总差异 `+0.24pp`，pass/credible/strict 均保持 `7/5/4`；最大回归 `capitalize-016 +0.14pp`。按 Oracle net≥0 门禁，源码与测试已完整回退。结论：U+0020 phase-2 whitespace 处理和 inline transform ownership 不能作为两个局部补丁合并启用；须等 inline style ownership/whitespace phase 协同闭合，禁止重试该单点组合。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
