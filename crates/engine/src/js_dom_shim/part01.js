@@ -695,7 +695,15 @@
           });
         }
         try {
-          __zw_fetch(id, method, url, headersWire, body);
+          var _sync = __zw_fetch(id, method, url, headersWire, body);
+          // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
+          // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由
+          // settled 防护）。unblock 2d.composite.image.*（fetch + createImageBitmap(blob)）。
+          if (_sync && !settled) {
+            settled = true;
+            delete globalThis.__zw_pending[id];
+            resolve(_makeResponseFromWire(String(_sync)));
+          }
         } catch (_e) {
           if (!settled) { settled = true; delete globalThis.__zw_pending[id]; }
           resolve(_makeResponse('__zw_fetch_error:throw'));

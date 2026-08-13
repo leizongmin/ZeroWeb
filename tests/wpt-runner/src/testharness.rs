@@ -276,6 +276,37 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
     }))
 }
 
+/// R34xx：`fetch()` 的 wpt-data 本地处理器（2d.composite.image.* 等用例经
+/// `fetch('/images/...') + createImageBitmap(blob)` 取图像源——shim fetch 落 ok:false stub
+/// 时无法取源）。接受 `https://wpt.test/<path>`（绝对）与 `<path>`（相对——shim 原样透传
+/// fetch 入参，如 '/images/yellow75.png'）；文件缺失返 Err → shim 落 ok:false（404 语义）。
+fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fetch_bridge::FetchHandler> {
+    let root = wpt_root.to_path_buf();
+    Some(std::sync::Arc::new(
+        move |req: &zero_engine::fetch_bridge::FetchRequest| {
+            if req.method != "GET" {
+                return Err(format!("method not supported: {}", req.method));
+            }
+            let path_part = req.url.strip_prefix("https://wpt.test").unwrap_or(&req.url);
+            let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
+            let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+            if clean.is_empty() {
+                return Err("empty path".to_string());
+            }
+            match std::fs::read(root.join(clean)) {
+                Ok(bytes) => Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers: Vec::new(),
+                    body: String::from_utf8_lossy(&bytes).into_owned(),
+                    body_bytes: Some(bytes),
+                }),
+                Err(e) => Err(format!("not found: {clean} ({e})")),
+            }
+        },
+    ))
+}
+
 fn run_testharness_html_inner(
     wpt_root: &Path,
     case_name: &str,
@@ -315,6 +346,8 @@ fn run_testharness_html_inner(
         //（testharness 无网络；G5 DOM img 源解锁依赖图片加载）。
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
         image_source_fetcher: wpt_data_image_fetcher(wpt_root),
+        // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
+        fetch_handler: wpt_root.and_then(wpt_data_fetch_handler),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));

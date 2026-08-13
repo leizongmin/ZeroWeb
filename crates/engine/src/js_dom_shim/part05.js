@@ -858,6 +858,89 @@
     var n = parseInt(String(raw == null ? '' : raw), 10);
     return (isNaN(n) || n < 0) ? def : n;
   }
+  // R34xx：'currentColor' 关键字解析（spec：canvas 元素 computed color，设值时求值——
+  // 2d.fillStyle.parse.current.* / 2d.shadow.attributes.shadowColor.current.*）。shim 内
+  // style.color 为内联值；无内联 → 默认黑（CSS 初始值）。设置后变更 style 不影响（.changed）。
+  function _zwResolveCurrentColor(el) {
+    // spec：currentColor = 元素 computed color；不在 document（remove 后——2d.shadow.
+    // attributes.shadowColor.current.removed）→ CSS 初始值黑。DOM shim 的 document 节点
+    // 不挂在 parent 链上（probe：CANVAS→BODY→HTML→end），故以「parent 链存在」近似
+    // connected（remove 后 parentNode 为 null；standalone canvas 无 parentNode → 黑）。
+    var inTree = false;
+    if (el) {
+      var cur = el;
+      var guard = 0;
+      while (cur && guard < 10000) {
+        var p = null;
+        try { p = cur.parentNode; } catch (_e) { break; }
+        if (p === null || p === undefined) break;
+        inTree = true;
+        cur = p;
+        guard++;
+      }
+    }
+    if (!inTree) {
+      return '#000000';
+    }
+    if (el.style && typeof el.style.color === 'string' && el.style.color !== '') {
+      return String(el.style.color);
+    }
+    // R34xx：setAttribute('style', 'color: magenta') 路径——DOM shim 的 style 对象可能
+    // 未同步该属性（2d.fillStyle.relativecolor.currentcolor：解析 style 属性串的 color 声明）。
+    if (el.getAttribute) {
+      var stAttr = String(el.getAttribute('style') || '');
+      var m = /(?:^|;)\s*color\s*:\s*([^;]+)/i.exec(stAttr);
+      if (m && m[1].trim()) {
+        return m[1].trim();
+      }
+    }
+    return '#000000';
+  }
+  // R34xx：CSS Typed OM 最小面（2d.fillStyle.CSSRGB/CSSHSL/colorObject.*）——
+  // CSSRGB/CSSHSL 构造器 + CSS.percent/CSS.deg 数值对象。分量 0-1 浮点（或 CSSUnitValue）；
+  // 渲染为规范化颜色串（fillStyle setter 的 object 分支消费）。
+  if (!globalThis.CSS) globalThis.CSS = {};
+  if (!CSS.percent) CSS.percent = function (v) { return { value: +v, unit: 'percent' }; };
+  if (!CSS.deg) CSS.deg = function (v) { return { value: +v, unit: 'deg' }; };
+  if (!globalThis.CSSRGB) {
+    globalThis.CSSRGB = function (r, g, b, alpha) {
+      this.r = r; this.g = g; this.b = b; this.alpha = alpha != null ? alpha : 1;
+    };
+  }
+  if (!globalThis.CSSHSL) {
+    globalThis.CSSHSL = function (h, s, l, alpha) {
+      this.h = h; this.s = s; this.l = l; this.alpha = alpha != null ? alpha : 1;
+    };
+  }
+  // color object → 规范化颜色串（null = 非对象不可转换）。分量语义：CSSRGB 通道 0-1 浮点 /
+  // CSS.percent(v)（v/100）；CSSHSL h 角度（deg 原值）、s/l 0-1 浮点或 percent。alpha 越界钳
+  // [0,1]（2d.fillStyle.colorObject.transparency 的 a:-1 → 全透明）。
+  function _zwColorObjectToString(v) {
+    var ch = function (c) {
+      if (c == null) return NaN;
+      if (typeof c === 'object') {
+        var val = +c.value;
+        if (String(c.unit).toLowerCase() === 'percent') return val / 100;
+        if (String(c.unit).toLowerCase() === 'deg') return val;
+        return val;
+      }
+      return +c;
+    };
+    var cl = function (x) { return Math.round(Math.min(Math.max(x, 0), 1) * 255); };
+    var alpha = ch(v.alpha != null ? v.alpha : 1);
+    if (!isFinite(alpha)) return null;
+    var aClamped = Math.min(Math.max(alpha, 0), 1);
+    if (v.h != null) {
+      var h = ch(v.h), s = ch(v.s), l = ch(v.l);
+      if (!isFinite(h) || !isFinite(s) || !isFinite(l)) return null;
+      if (aClamped >= 1) return 'hsl(' + h + ', ' + (s * 100) + '%, ' + (l * 100) + '%)';
+      return 'hsla(' + h + ', ' + (s * 100) + '%, ' + (l * 100) + '%, ' + aClamped + ')';
+    }
+    var r = ch(v.r), g = ch(v.g), b = ch(v.b);
+    if (!isFinite(r) || !isFinite(g) || !isFinite(b)) return null;
+    if (aClamped >= 1) return 'rgb(' + cl(r) + ', ' + cl(g) + ', ' + cl(b) + ')';
+    return 'rgba(' + cl(r) + ', ' + cl(g) + ', ' + cl(b) + ', ' + aClamped + ')';
+  }
   // R3079：CanvasGradient proxy。_zwGrad 为渐变 host id 标记（fillStyle/strokeStyle setter 检测）。
   // R34xx：addColorStop 参数校验（spec：offset 非有限/越界抛 IndexSizeError；颜色无效抛
   // SyntaxError——2d.gradient.object.invalidoffset/invalidcolor）+ 全局 CanvasGradient 构造器
@@ -916,9 +999,14 @@
   }
   function _zwMakeGradient(h, gid) {
     function addColorStop(offset, color) {
-      // R34xx：参数校验（spec：offset 非有限/越界抛 IndexSizeError；颜色无效抛 SyntaxError）。
+      // R34xx：参数校验（spec：https://html.spec.whatwg.org/multipage/canvas.html#dom-
+      // canvasgradient-addcolorstop——offset 非有限抛 TypeError（2d.gradient.object.invalidoffset）；
+      // 越界抛 IndexSizeError；颜色无效抛 SyntaxError）。
       offset = +offset;
-      if (!isFinite(offset) || offset < 0 || offset > 1) {
+      if (!isFinite(offset)) {
+        throw new TypeError('addColorStop: non-finite offset');
+      }
+      if (offset < 0 || offset > 1) {
         throw _zwDomException('gradient offset out of range', 'IndexSizeError');
       }
       var c = String(color);
@@ -1224,9 +1312,25 @@
         } else if (v && typeof v === 'object' && v._zwPattern) {
           this._fs = v;
           __zw_canvas_op(h, 'setFillStylePattern', String(v._zwPattern));
+        } else if (v && typeof v === 'object') {
+          // R34xx：color object（CSSRGB/CSSHSL/plain {r,g,b[,a]}——spec CSS Color 4；
+          // 2d.fillStyle.colorObject.* / CSSRGB / CSSHSL）。转换失败（不可转换对象）回落旧行为。
+          var _cs = _zwColorObjectToString(v);
+          if (_cs !== null) {
+            this._fs = _cs;
+            __zw_canvas_op(h, 'setFillStyle', _cs);
+          } else {
+            this._fs = String(v);
+            __zw_canvas_op(h, 'setFillStyle', String(v));
+          }
         } else {
-          this._fs = String(v);
-          __zw_canvas_op(h, 'setFillStyle', String(v));
+          // R34xx：'currentColor' 设值时解析为 canvas 元素计算色（2d.fillStyle.parse.current.*）；
+          // 表达式内嵌 currentcolor（color-mix/相对色——2d.fillStyle.colormix.currentcolor）整体替换。
+          var _v = String(v);
+          if (_v.toLowerCase() === 'currentcolor') _v = _zwResolveCurrentColor(this.canvas);
+          else if (/currentcolor/i.test(_v)) _v = _v.replace(/currentcolor/gi, _zwResolveCurrentColor(this.canvas));
+          this._fs = _v;
+          __zw_canvas_op(h, 'setFillStyle', _v);
         }
       },
       get: function () {
@@ -1236,7 +1340,8 @@
         //（2d.fillStyle.colormix/relativecolor）。
         if (typeof this._fs === 'string' && typeof __zw_canvas_op === 'function') {
           var v = String(this._fs);
-          if (v.indexOf('color-mix(') === 0 || v.indexOf('rgb(from ') === 0 || v.indexOf('hsl(from ') === 0) {
+          if (v.indexOf('color-mix(') === 0 || v.indexOf('rgb(from ') === 0 ||
+              v.indexOf('hsl(from ') === 0 || v.indexOf('color(from ') === 0) {
             var r4 = String(__zw_canvas_op(h, 'parseColorCss4', v));
             if (r4) return r4;
           }
@@ -1254,9 +1359,23 @@
         } else if (v && typeof v === 'object' && v._zwPattern) {
           this._ss = v;
           __zw_canvas_op(h, 'setStrokeStylePattern', String(v._zwPattern));
+        } else if (v && typeof v === 'object') {
+          // R34xx：color object（同 fillStyle；2d.strokeStyle.colorObject.*）。
+          var _cs = _zwColorObjectToString(v);
+          if (_cs !== null) {
+            this._ss = _cs;
+            __zw_canvas_op(h, 'setStrokeStyle', _cs);
+          } else {
+            this._ss = String(v);
+            __zw_canvas_op(h, 'setStrokeStyle', String(v));
+          }
         } else {
-          this._ss = String(v);
-          __zw_canvas_op(h, 'setStrokeStyle', String(v));
+          // R34xx：'currentColor' 设值时解析（同 fillStyle）；表达式内嵌 currentcolor 替换。
+          var _v = String(v);
+          if (_v.toLowerCase() === 'currentcolor') _v = _zwResolveCurrentColor(this.canvas);
+          else if (/currentcolor/i.test(_v)) _v = _v.replace(/currentcolor/gi, _zwResolveCurrentColor(this.canvas));
+          this._ss = _v;
+          __zw_canvas_op(h, 'setStrokeStyle', _v);
         }
       },
       get: function () {
@@ -1390,25 +1509,30 @@
     // host 持渐变注册表（独立 id 命名空间）；create* 返 host id，JS 包一层 proxy。addColorStop 经 host
     // 变更停止点。fillStyle/strokeStyle 设渐变对象走 setFillStyleGradient（host 查表克隆）。spec CanvasGradient。
     ctx.createLinearGradient = function (x0, y0, x1, y1) {
-      // R34xx：任一参数非有限抛 NotSupportedError（spec：2d.gradient.linear.nonfinite）。
+      // R34xx：任一参数非有限抛 TypeError（spec：
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createlineargradient——
+      // 2d.gradient.linear.nonfinite 断言 TypeError，非 NotSupportedError）。
       if (!isFinite(+x0) || !isFinite(+y0) || !isFinite(+x1) || !isFinite(+y1)) {
-        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+        throw new TypeError('createLinearGradient: non-finite coordinate');
       }
       var gid = String(__zw_canvas_op(h, 'createLinearGradient', String(+x0 || 0), String(+y0 || 0), String(+x1 || 0), String(+y1 || 0)));
       return _zwMakeGradient(h, gid);
     };
     ctx.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
-      // R34xx：非有限参数抛 NotSupportedError（同 createLinearGradient）。
+      // R34xx：非有限 → TypeError；负半径 → IndexSizeError（spec 2d.gradient.radial.nonfinite/negative）。
       if (!isFinite(+x0) || !isFinite(+y0) || !isFinite(+r0) || !isFinite(+x1) || !isFinite(+y1) || !isFinite(+r1)) {
-        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+        throw new TypeError('createRadialGradient: non-finite argument');
+      }
+      if (+r0 < 0 || +r1 < 0) {
+        throw _zwDomException('createRadialGradient: negative radius', 'IndexSizeError');
       }
       var gid = String(__zw_canvas_op(h, 'createRadialGradient', String(+x0 || 0), String(+y0 || 0), String(+r0 || 0), String(+x1 || 0), String(+y1 || 0), String(+r1 || 0)));
       return _zwMakeGradient(h, gid);
     };
     ctx.createConicGradient = function (startAngle, cx, cy) {
-      // R34xx：非有限参数抛 NotSupportedError（同 createLinearGradient）。
+      // R34xx：非有限 → TypeError（2d.gradient.conic.invalid.inputs）。
       if (!isFinite(+startAngle) || !isFinite(+cx) || !isFinite(+cy)) {
-        throw _zwDomException('non-finite gradient coordinate', 'NotSupportedError');
+        throw new TypeError('createConicGradient: non-finite argument');
       }
       var gid = String(__zw_canvas_op(h, 'createConicGradient', String(+startAngle || 0), String(+cx || 0), String(+cy || 0)));
       return _zwMakeGradient(h, gid);
@@ -1429,9 +1553,14 @@
       if (typeof image !== 'object') {
         throw new TypeError('createPattern: invalid image source');
       }
-      var isImgEl = (typeof image.getContext !== 'function') && ('naturalWidth' in image || String(image.tagName || '').toLowerCase() === 'img');
+      // R34xx：SVG `<image>` 元素（无 src 属性——源为 href/xlink:href；naturalWidth 缺）
+      // 与 `<img>` 同路径（2d.pattern.svgimage.nonexistent——缺失资源须抛 InvalidStateError）。
+      var isSvgImg = String(image.tagName || '').toLowerCase() === 'image';
+      var isImgEl = (typeof image.getContext !== 'function') && ('naturalWidth' in image || String(image.tagName || '').toLowerCase() === 'img' || isSvgImg);
       if (isImgEl && typeof __zw_get_image_size === 'function') {
-        var errSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+        var errSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') ||
+          (isSvgImg && image.getAttribute ? (String(image.getAttribute('href') || '') || String(image.getAttribute('xlink:href') || '')) : '') ||
+          String(image.src || '');
         var errDims = String(__zw_get_image_size(errSrc));
         // 静态 img 加载失败（broken.png 解码失败、no-such-image 不存在）→ InvalidStateError；
         // 动态创建未挂载的 img（加载中/未开始）→ 不抛（返回 null——2d.pattern.image.
@@ -1613,6 +1742,22 @@
     };
     // R2985 resetTransform：重置为单位矩阵（spec setTransform(identity)）。
     ctx.resetTransform = function () { __zw_canvas_op(h, 'resetTransform'); };
+    // R34xx：reset()（spec：清空画布 + 状态回默认）。host 重建 context；client 镜像同步默认。
+    ctx.reset = function () {
+      if (typeof __zw_canvas_op === 'function') __zw_canvas_op(h, 'reset');
+      this._fs = '#000000';
+      this._ss = '#000000';
+      this._ga = 1.0;
+      this._gco = 'source-over';
+      this._sc = 'rgba(0, 0, 0, 0)';
+      this._sb = 0;
+      this._sox = 0;
+      this._soy = 0;
+      this._lw = 1;
+      this._lj = 'miter';
+      this._lc = 'butt';
+      this._ml = 10;
+    };
     // globalAlpha / lineDash / lineJoin / lineCap：getter+setter（client-side 存值 + push host）。
     ctx._ga = 1.0;
     Object.defineProperty(ctx, 'globalAlpha', {
@@ -1763,7 +1908,14 @@
       // R34xx：getter 读 host 规范化值（opaque→#rrggbb / alpha→rgba；无效设值被 host
       // 忽略后 getter 返旧值——2d.shadow.attributes.shadowColor.valid/invalid）。host
       // 不可用时回退本地缓存。
-      set: function (v) { this._sc = String(v); __zw_canvas_op(h, 'setShadowColor', String(v)); },
+      set: function (v) {
+        // R34xx：'currentColor' 设值时解析为 canvas 元素计算色（2d.shadow.attributes.
+        // shadowColor.current.basic/changed——spec：currentColor 取设值时刻的元素 color）。
+        var _v = String(v);
+        if (_v.toLowerCase() === 'currentcolor') _v = _zwResolveCurrentColor(this.canvas);
+        this._sc = _v;
+        __zw_canvas_op(h, 'setShadowColor', _v);
+      },
       get: function () {
         if (typeof __zw_canvas_op === 'function') {
           var r = String(__zw_canvas_op(h, 'getShadowColor'));

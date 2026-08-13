@@ -1,6 +1,9 @@
 //! Canvas 2D 类型定义 — 枚举、结构体、辅助函数。
 
+use std::sync::{Arc, Mutex};
+
 use zero_render_foundation::color::Color;
+use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::primitive::RenderPrimitives;
 
 use crate::path::Path2D;
@@ -271,6 +274,26 @@ impl Transform2D {
     /// 变换点。
     pub fn transform_point(&self, x: f32, y: f32) -> (f32, f32) {
         (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
+    }
+
+    /// 逆变换（2×3 仿射矩阵求逆）。det≈0（奇异）时返恒等（调用方容错）。
+    pub fn inverse(&self) -> Transform2D {
+        let det = self.a * self.d - self.b * self.c;
+        if det.abs() < f32::EPSILON {
+            return Transform2D::identity();
+        }
+        let ia = self.d / det;
+        let ib = -self.b / det;
+        let ic = -self.c / det;
+        let id = self.a / det;
+        Transform2D {
+            a: ia,
+            b: ib,
+            c: ic,
+            d: id,
+            e: -(ia * self.e + ic * self.f),
+            f: -(ib * self.e + id * self.f),
+        }
     }
 }
 
@@ -566,6 +589,10 @@ pub struct CanvasPattern {
     /// R34xx：pattern 变换（CanvasPattern.setTransform——恒等生效；非 identity 的
     /// 采样变换为已知缺口）。
     pub transform: Transform2D,
+    /// R34xx：平铺锚定变换 = fill 时 CTM 的逆（spec：pattern 网格锚定在 fill 坐标空间——
+    /// 2d.pattern.paint.repeat.coord1 的 translate(-128,-78) 后 device (1,1) 映射到 fill
+    /// (129,79) → 绿象限）。transform_gradient 的 Pattern 分支填充。
+    pub tile_transform: Transform2D,
 }
 
 impl CanvasPattern {
@@ -575,6 +602,7 @@ impl CanvasPattern {
             image_data,
             repetition,
             transform: Transform2D::identity(),
+            tile_transform: Transform2D::identity(),
         }
     }
 }
@@ -665,16 +693,12 @@ impl CanvasStyle {
                 sample_gradient_stops(&g.stops, t)
             }
             CanvasStyle::RadialGradient(g) => {
-                let ddx = x - g.x0;
-                let ddy = y - g.y0;
-                let dist = (ddx * ddx + ddy * ddy).sqrt();
-                let span = g.r1 - g.r0;
-                let t = if span.abs() < f32::EPSILON {
-                    0.0
-                } else {
-                    (dist - g.r0) / span
-                };
-                sample_gradient_stops(&g.stops, t)
+                // R34xx：radial 全几何解（见 `radial_gradient_t`）——cone/相交/相切/退化
+                // 圆族全部经二次方程精确解；未覆盖点（cone 背后/判别式负）返透明不画。
+                match radial_gradient_t(g, x, y) {
+                    Some(t) => sample_gradient_stops(&g.stops, t),
+                    None => Color::TRANSPARENT,
+                }
             }
             CanvasStyle::ConicGradient(g) => {
                 let mut ang = (y - g.cy).atan2(x - g.cx) - g.start_angle;
@@ -692,6 +716,74 @@ impl CanvasStyle {
     }
 }
 
+/// 径向渐变采样参数 t（R34xx，spec：canvas `createRadialGradient` 光栅化的完整几何）。
+///
+/// 规范模型：t ∈ [0,1] 的每条 iso-line 是「中心 = lerp(C0,C1,t)、半径 = lerp(r0,r1,t)」
+/// 的圆（https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createradialgradient）。
+/// 对点 P 解关于 t 的二次方程 `(x - c(t))² + y² = r(t)²`（归一化到 C0 原点、|C1−C0|=1）：
+///
+/// ```text
+/// a = 1 - (r1-r0)²,  b = -2(x + r0(r1-r0)),  c = x² + y² - r0²
+/// ```
+///
+/// 分支语义（WPT 2d.gradient.radial.cone.* / touch* / equal / bottom / front 驱动）：
+/// - 判别式 < 0：点不在任何 iso 圆上 → 渐变未覆盖该点（透明不画——cone.shape1/behind 背后区）。
+/// - 实根中取**有效根**（半径 r(t) ≥ 0；t 越过半径穿零点 r0/(r0−r1) 的根是镜像伪根——
+///   cone.behind 的 t=−0.44 假根）的**较大值**（Skia 同款取法；cone.top/bottom 的 t>1 端）。
+/// - 同心退化（|C1−C0|≈0）回落距离归一化（旧行为，inside*/outside* 等）；r0==r1 时
+///   渐变退化为单个圆（测度零）→ 不画（radial.equal）。
+fn radial_gradient_t(g: &RadialGradient, x: f32, y: f32) -> Option<f32> {
+    let (dx, dy) = (g.x1 - g.x0, g.y1 - g.y0);
+    let d2 = dx * dx + dy * dy;
+    if d2 < f32::EPSILON {
+        // 同心：距离归一化（旧行为）。r0 == r1 → 单个圆（测度零）→ 不画。
+        if (g.r1 - g.r0).abs() < f32::EPSILON {
+            return None;
+        }
+        let dist = ((x - g.x0).powi(2) + (y - g.y0).powi(2)).sqrt();
+        return Some((dist - g.r0) / (g.r1 - g.r0));
+    }
+    let d = d2.sqrt();
+    // 归一化：P = C0 + px·(C1−C0) + py·⊥(C1−C0)。R34xx：内部用 f64——判别式在切线
+    // 边界（cone.shape1 的 (50,25) 恰在 iso 圆上，disc 数学上 = 0）f32 舍入成 −ε 误判 None。
+    let (px, py) = (
+        ((x - g.x0) as f64 * dx as f64 + (y - g.y0) as f64 * dy as f64) / d2 as f64,
+        ((x - g.x0) as f64 * (-dy as f64) + (y - g.y0) as f64 * dx as f64) / d2 as f64,
+    );
+    let (r0, r1) = (g.r0 as f64 / d as f64, g.r1 as f64 / d as f64);
+    let delta = r1 - r0;
+    let a = 1.0 - delta * delta;
+    let b = -2.0 * (px + r0 * delta);
+    let c = px * px + py * py - r0 * r0;
+    // |r1−r0| ≈ d（内切抛物线退化）：一次方程。
+    let roots: [f64; 2] = if a.abs() < 1e-12 {
+        let t = if b.abs() < 1e-12 { f64::NAN } else { -c / b };
+        [t, f64::NAN]
+    } else {
+        let disc = b * b - 4.0 * a * c;
+        if disc < 0.0 {
+            return None;
+        }
+        let sq = disc.sqrt();
+        let t1 = (-b - sq) / (2.0 * a);
+        let t2 = (-b + sq) / (2.0 * a);
+        [t1, t2]
+    };
+    // 有效根：半径 r(t) = r0 + t·delta ≥ 0（等价 Skia x̂_t ≥ 0——cone.behind 的
+    // t=−0.44 假根半径已穿零）；取较大有效根（Skia「bigger t」语义）。
+    let mut best: Option<f32> = None;
+    for t in roots {
+        if !t.is_finite() || r0 + t * delta < 0.0 {
+            continue;
+        }
+        let tf = t as f32;
+        if best.is_none_or(|b| tf > b) {
+            best = Some(tf);
+        }
+    }
+    best
+}
+
 /// 图案平铺采样：按重复模式在 (x, y) 处取源 ImageData 像素。
 ///
 /// - Repeat：x/y 均取模回绕。
@@ -706,10 +798,13 @@ fn sample_pattern_pixel(pattern: &CanvasPattern, x: f32, y: f32) -> Color {
     if w == 0 || h == 0 {
         return Color::TRANSPARENT;
     }
+    // R34xx：平铺网格锚定在 fill 坐标空间——device 采样点先经 tile_transform（CTM 逆）映射
+    // 回 fill 空间再取模（2d.pattern.paint.repeat.coord1 等；恒等 CTM 时零开销近似无）。
+    let (fx, fy) = pattern.tile_transform.transform_point(x, y);
     let iw = w as i32;
     let ih = h as i32;
-    let ix = x.floor() as i32;
-    let iy = y.floor() as i32;
+    let ix = fx.floor() as i32;
+    let iy = fy.floor() as i32;
     // 按重复模式计算有效 tile 坐标；超出区域返回透明。
     let (tx, ty) = match pattern.repetition {
         PatternRepetition::Repeat => (ix.rem_euclid(iw), iy.rem_euclid(ih)),
@@ -745,8 +840,10 @@ fn sample_pattern_pixel(pattern: &CanvasPattern, x: f32, y: f32) -> Color {
 ///
 /// 将偏移量限制在 [0.0, 1.0]，找到包围偏移量的两个停止点并线性插值。
 fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
+    // R34xx：无停止点 → 全透明（spec：渐变无 stops 时绘制无效果——2d.gradient.empty 期望
+    // 保持背景；旧实现返 BLACK 污染像素）。
     if stops.is_empty() {
-        return Color::BLACK;
+        return Color::TRANSPARENT;
     }
     let t = offset.clamp(0.0, 1.0);
     // R34xx：先按 offset 稳定排序（spec：color stops sorted by offset——添加序可能乱序，
@@ -890,6 +987,11 @@ pub struct CanvasContext {
     pub(crate) miter_limit: f32,
     /// 文本方向。
     pub(crate) direction: TextDirection,
+    /// R34xx：共享字体加载器（headless/testharness 路径注入——@font-face 字体 shape +
+    /// 光栅化的真文本像素；None = 无字体栈，fill_text 回落启发式）。
+    pub(crate) font_loader: Option<Arc<Mutex<FontLoader>>>,
+    /// R34xx：当前字体解析到的 font_id（set_font 时经 loader 解析器查找）。
+    pub(crate) font_id: Option<u32>,
 }
 
 /// 文本度量（HTML Canvas `TextMetrics`，
@@ -1225,7 +1327,8 @@ mod tests {
     fn test_linear_gradient_sample_empty() {
         let g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
         let c = g.sample_color(0.5);
-        assert_eq!(c, Color::BLACK);
+        // R34xx：无停止点 → 全透明（spec；2d.gradient.empty）。
+        assert_eq!(c, Color::TRANSPARENT);
     }
 
     #[test]
@@ -1284,6 +1387,100 @@ mod tests {
         let mid = g.sample_color(0.5);
         assert_eq!(mid.r, 128);
         assert_eq!(mid.b, 128);
+    }
+
+    // R34xx：radial_gradient_t 完整几何（cone 双曲线族/相切/退化）——WPT 2d.gradient.radial.* 驱动。
+    // 用例几何照搬上游：
+    // - cone.behind：c0=(120,25,10) c1=(211,25,100) 相交，背后区不画
+    // - cone.beside：c0=(0,100,40) c1=(100,100,50) 相离，全部不画
+    // - cone.bottom：c0=(210,25,100) c1=(230,25,101) 相交，远端点 t<0 → clamp 0
+    // - cone.front：c0=(311,25,10) c1=(210,25,100) 相交，远端点 t>1 → clamp 1
+    // - shape1：c0=(55,40,15) c1=(67.5,40,22.5) 相交，锥外判别式负 → None
+    #[test]
+    fn test_radial_t_cone_behind_not_painted() {
+        let g = RadialGradient::new(120.0, 25.0, 10.0, 211.0, 25.0, 100.0);
+        // 画布 (50,25) 位于两圆相交 chord 之后 → 半径穿零伪根 → None（透明不画）。
+        assert_eq!(radial_gradient_t(&g, 50.0, 25.0), None);
+        assert_eq!(radial_gradient_t(&g, 1.0, 25.0), None);
+    }
+
+    #[test]
+    fn test_radial_t_cone_beside_not_painted() {
+        let g = RadialGradient::new(0.0, 100.0, 40.0, 100.0, 100.0, 50.0);
+        // 相离：画布像素射线不达外圆 → 判别式负/伪根 → None。
+        assert_eq!(radial_gradient_t(&g, 50.0, 25.0), None);
+        assert_eq!(radial_gradient_t(&g, 1.0, 1.0), None);
+    }
+
+    #[test]
+    fn test_radial_t_cone_bottom_clamps_zero() {
+        let g = RadialGradient::new(210.0, 25.0, 100.0, 230.0, 25.0, 101.0);
+        // (50,25) 在外圆左侧：二次根 t≈-3.16（有效）→ clamp 0（WPT 期望 stop0 色）。
+        let t = radial_gradient_t(&g, 50.0, 25.0).unwrap();
+        assert!(t < 0.0, "t={t} should be negative (clamp to 0)");
+    }
+
+    #[test]
+    fn test_radial_t_cone_front_clamps_one() {
+        let g = RadialGradient::new(311.0, 25.0, 10.0, 210.0, 25.0, 100.0);
+        // (50,25) 远在外圆左侧：较大根 t≈24.6 → clamp 1（WPT 期望 stop1 色）。
+        let t = radial_gradient_t(&g, 50.0, 25.0).unwrap();
+        assert!(t > 1.0, "t={t} should be > 1 (clamp to 1)");
+    }
+
+    #[test]
+    fn test_radial_t_cone_shape1_discriminant_negative() {
+        let g = RadialGradient::new(55.0, 40.0, 15.0, 67.5, 40.0, 22.5);
+        // (1,1) 在锥外：判别式负 → None（WPT shape1 期望保持背景）。
+        assert_eq!(radial_gradient_t(&g, 1.0, 1.0), None);
+        // (50,1) 同样在 iso 圆族之外（圆锥外）→ None；WPT shape2 的 (50,1) 断言像素
+        // 位于其绿三角覆盖区内，故外部 None 与期望一致。
+        assert_eq!(radial_gradient_t(&g, 50.0, 1.0), None);
+    }
+
+    #[test]
+    fn test_radial_t_contained_classic_focal_point() {
+        // 经典焦点退化：c0 半径 0（焦点），点 (50,0) 在焦点与外圆之间 →
+        // t = |P|/|Q| = 1/3（较大根为 1 = 端点圆本身，取较大根得 1——clamp 仍 1；
+        // 断言取较大根语义本身：t=1 而非 1/3）。
+        let g = RadialGradient::new(0.0, 0.0, 0.0, 100.0, 0.0, 50.0);
+        let t = radial_gradient_t(&g, 50.0, 0.0).unwrap();
+        assert!((t - 1.0).abs() < 1e-5, "larger root expected, got {t}");
+    }
+
+    #[test]
+    fn test_radial_t_equal_radii_concentric_empty() {
+        // 同心等半径：单个圆（测度零）→ None（WPT 2d.gradient.radial.equal 期望保持背景）。
+        let g = RadialGradient::new(50.0, 25.0, 20.0, 50.0, 25.0, 20.0);
+        assert_eq!(radial_gradient_t(&g, 1.0, 1.0), None);
+        assert_eq!(radial_gradient_t(&g, 50.0, 25.0), None);
+    }
+
+    #[test]
+    fn test_radial_t_cylinder_equal_radii_offset() {
+        // 等半径不同心（cylinder）：半径恒正，t<0 → clamp 0。
+        let g = RadialGradient::new(210.0, 25.0, 100.0, 230.0, 25.0, 100.0);
+        let t = radial_gradient_t(&g, 50.0, 25.0).unwrap();
+        assert!(t < 0.0, "t={t}");
+    }
+
+    #[test]
+    fn test_radial_t_tangent_circles_not_painted() {
+        // 内切相切（touch1：c0=(150,25,50) c1=(200,25,100)，d=50=r1-r0）：
+        // 画布在切点左侧，iso 圆族均不达 → 无有效根。
+        let g = RadialGradient::new(150.0, 25.0, 50.0, 200.0, 25.0, 100.0);
+        assert_eq!(radial_gradient_t(&g, 50.0, 25.0), None);
+        assert_eq!(radial_gradient_t(&g, 98.0, 25.0), None);
+    }
+
+    #[test]
+    fn test_radial_t_concentric_fallback() {
+        // 同心不同径：回落距离归一化（inside1 语义）。
+        let g = RadialGradient::new(50.0, 25.0, 0.0, 50.0, 25.0, 100.0);
+        let t = radial_gradient_t(&g, 50.0, 25.0).unwrap();
+        assert_eq!(t, 0.0);
+        let t2 = radial_gradient_t(&g, 100.0, 25.0).unwrap();
+        assert_eq!(t2, 0.5);
     }
 
     // ── ConicGradient 测试 ────────────────────────────────

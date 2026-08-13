@@ -23,6 +23,13 @@ pub struct CanvasRegistry {
     pub next_grad_id: u64,
     /// gradient id → CanvasStyle（仅渐变变体）。
     pub gradients: HashMap<u64, zero_canvas::CanvasStyle>,
+    /// R34xx：gradient id → 引用它的 (context id, 槽位) 列表（0=fill, 1=stroke）。
+    /// addColorStop 后对引用 context live 重放（spec：渐变对象 live——改停止点影响后续
+    /// 绘制，2d.gradient.object.update）。
+    pub grad_refs: HashMap<u64, Vec<(u64, u8)>>,
+    /// R34xx：共享字体加载器（headless/testharness 路径——webview load_html 把 @font-face
+    /// 字体字节 load_font + register_family_alias 进来；canvas text 真文本光栅消费）。
+    pub font_loader: std::sync::Arc<std::sync::Mutex<zero_render_foundation::font::loader::FontLoader>>,
     /// 下一个 Path2D id（从 1 起，独立命名空间，R3306）。
     pub next_path_id: u64,
     /// path id → Path2D（R3306）。
@@ -37,8 +44,12 @@ impl CanvasRegistry {
             contexts: HashMap::new(),
             next_grad_id: 1,
             gradients: HashMap::new(),
+            grad_refs: HashMap::new(),
             next_path_id: 1,
             paths: HashMap::new(),
+            font_loader: std::sync::Arc::new(std::sync::Mutex::new(
+                zero_render_foundation::font::loader::FontLoader::new(),
+            )),
         }
     }
 }
@@ -223,7 +234,10 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             reg.next_ctx_id += 1;
             let w = arg(0).trim().parse::<u32>().unwrap_or(300);
             let h = arg(1).trim().parse::<u32>().unwrap_or(150);
-            reg.contexts.insert(id, zero_canvas::CanvasContext::new(w, h));
+            let mut ctx = zero_canvas::CanvasContext::new(w, h);
+            // R34xx：注入共享字体加载器（@font-face 字体真文本光栅）。
+            ctx.set_font_loader(Some(reg.font_loader.clone()));
+            reg.contexts.insert(id, ctx);
             id.to_string()
         }
         // R3308：canvas resize（spec 设 canvas.width/height 清空 bitmap + 重置绘图状态）。
@@ -536,6 +550,15 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R34xx：reset()（spec：清空画布 + 上下文状态回默认——2d.fillStyle.CSSRGB 尾部调用）。
+        // 经 `CanvasContext::new` 重建（全状态默认；尺寸不变）。
+        "reset" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                let (w, h) = (ctx.width(), ctx.height());
+                *ctx = zero_canvas::CanvasContext::new(w, h);
+            }
+            "ok".into()
+        }
         "setGlobalAlpha" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.set_global_alpha(f(0));
@@ -769,6 +792,20 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let Some(style) = reg.gradients.get_mut(&gid) {
                 style.add_color_stop(offset, parse_canvas_color(arg(2)));
             }
+            // R34xx：live 重放——引用该渐变 id 的 context 样式同步更新（2d.gradient.object.update：
+            // 第二次 fill 前 addColorStop 新停止点须生效）。
+            if let Some(style) = reg.gradients.get(&gid)
+                && let Some(refs) = reg.grad_refs.get(&gid).cloned()
+            {
+                for (ctx_id, slot) in refs {
+                    if let Some(ctx) = reg.contexts.get_mut(&ctx_id) {
+                        match slot {
+                            0 => ctx.set_fill_style(style.clone()),
+                            _ => ctx.set_stroke_style(style.clone()),
+                        }
+                    }
+                }
+            }
             "ok".into()
         }
         "setFillStyleGradient" => {
@@ -776,6 +813,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&gid)) {
                 ctx.set_fill_style(style.clone());
             }
+            // R34xx：记录引用（addColorStop live 重放用）。
+            reg.grad_refs.entry(gid).or_default().push((hid(), 0));
             "ok".into()
         }
         "setStrokeStyleGradient" => {
@@ -783,6 +822,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let (Some(ctx), Some(style)) = (reg.contexts.get_mut(&hid()), reg.gradients.get(&gid)) {
                 ctx.set_stroke_style(style.clone());
             }
+            reg.grad_refs.entry(gid).or_default().push((hid(), 1));
             "ok".into()
         }
         // ── 图案（R3085）：createPattern 经 ImageData wire（shim 从源 canvas getImageData 取）建 CanvasStyle::Pattern

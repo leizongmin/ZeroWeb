@@ -164,7 +164,7 @@ pub fn decode_body_bytes_raw(wire: &str) -> Option<Vec<u8>> {
 }
 
 /// 把响应头列表编码为 `name\x1evalue\x1e...` wire（空列表 → 空串）。
-fn encode_headers(headers: &[(String, String)]) -> String {
+pub fn encode_headers(headers: &[(String, String)]) -> String {
     let mut out = String::new();
     for (i, (n, v)) in headers.iter().enumerate() {
         if i > 0 {
@@ -178,7 +178,7 @@ fn encode_headers(headers: &[(String, String)]) -> String {
 }
 
 /// 解码请求头 wire（`name\x1evalue\x1e...`）为 (name,value) 列表；奇数尾项忽略。
-fn decode_headers(wire: &str) -> Vec<(String, String)> {
+pub fn decode_headers(wire: &str) -> Vec<(String, String)> {
     if wire.is_empty() {
         return Vec::new();
     }
@@ -195,7 +195,7 @@ fn decode_headers(wire: &str) -> Vec<(String, String)> {
 /// 序列化 [`FetchResponse`] 为 host→JS wire（`__zwfr:` + status + `\x1f` + ... + body）。
 /// R3021：二进制 body（非 UTF-8）经 `__zw_bytes:` csv-decimal wire（与请求侧对称，response.blob()/
 /// arrayBuffer() 二进制保真）；UTF-8 body 原样文本（高效 + 向后兼容）。
-fn serialize_response(resp: &FetchResponse) -> String {
+pub fn serialize_response(resp: &FetchResponse) -> String {
     let body_field = match &resp.body_bytes {
         Some(bb) if std::str::from_utf8(bb).is_err() => encode_body_bytes(bb),
         _ => resp.body.clone(),

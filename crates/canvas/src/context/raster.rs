@@ -1182,6 +1182,53 @@ impl CanvasContext {
     }
 
     /// R34xx：单像素合成写入（round cap/join 圆盘循环用），含画布边界与 clip 检查。
+    /// R34xx：把字体灰度位图（每字节一像素的 coverage）alpha 混合进 pixel_buffer——
+    /// 每像素源色 = 绘制色 × coverage（2d.text.draw.* 真文本光栅；clip/composite 同其他 blit）。
+    pub(crate) fn blit_glyph_bitmap(
+        &mut self,
+        bmp: &zero_render_foundation::font::GlyphBitmap,
+        gx: f32,
+        gy: f32,
+        color: Color,
+    ) {
+        let canvas_w = self.width as usize;
+        let canvas_h = self.height as usize;
+        let (ix, iy) = (gx.floor() as i32, gy.floor() as i32);
+        for by in 0..bmp.height as i32 {
+            for bx in 0..bmp.width as i32 {
+                let coverage = bmp.data[(by as usize) * bmp.width as usize + (bx as usize)];
+                if coverage == 0 {
+                    continue;
+                }
+                let (px, py) = (ix + bx, iy + by);
+                if px < 0 || py < 0 || px as usize >= canvas_w || py as usize >= canvas_h {
+                    continue;
+                }
+                if !self.clip_applies(px as f32, py as f32) {
+                    continue;
+                }
+                let idx = (py as usize * canvas_w + px as usize) * 4;
+                let src = Color {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: ((color.a as f32 * coverage as f32 / 255.0) * self.global_alpha) as u8,
+                };
+                let (pr, pg, pb, pa) = self.composite_pixel(
+                    src,
+                    self.pixel_buffer[idx],
+                    self.pixel_buffer[idx + 1],
+                    self.pixel_buffer[idx + 2],
+                    self.pixel_buffer[idx + 3],
+                );
+                self.pixel_buffer[idx] = pr;
+                self.pixel_buffer[idx + 1] = pg;
+                self.pixel_buffer[idx + 2] = pb;
+                self.pixel_buffer[idx + 3] = pa;
+            }
+        }
+    }
+
     pub(crate) fn blit_pixel(&mut self, px: i32, py: i32, color: Color) {
         if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
             return;

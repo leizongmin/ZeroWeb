@@ -69,6 +69,10 @@ pub struct WebViewConfig {
     pub script_source_fetcher: Option<ScriptSourceFetcher>,
     /// R34xx：图片源获取器（headless/testharness 路径；None → HTTP 网络）。
     pub image_source_fetcher: Option<ImageSourceFetcher>,
+    /// R34xx：fetch 处理器（headless/testharness 路径；None → 不注册 `__zw_fetch`，shim 落
+    /// ok:false stub——浏览器路径由 app 层 `FetchBridge` 注册异步 `__zw_fetch`，二者互斥）。
+    /// 经本配置注册的 `__zw_fetch` 走**同步返回**契约（回调直接返 wire；shim R34xx 支持）。
+    pub fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
     /// P1b S2：启用原生 DOM 绑定（RFC `p1b-v8-native-bindings-rfc.md`）。
     ///
     /// 开启时，`run_page_scripts` 在 polyfill 桥之上额外安装原生 `nodeType`/`tagName` 等
@@ -91,6 +95,7 @@ impl Default for WebViewConfig {
             external_script: None,
             script_source_fetcher: None,
             image_source_fetcher: None,
+            fetch_handler: None,
             native_dom: false,
         }
     }
@@ -108,6 +113,8 @@ impl std::fmt::Debug for WebViewConfig {
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
             .field("script_source_fetcher", &self.script_source_fetcher.is_some())
+            .field("image_source_fetcher", &self.image_source_fetcher.is_some())
+            .field("fetch_handler", &self.fetch_handler.is_some())
             .field("native_dom", &self.native_dom)
             .finish()
     }
@@ -181,6 +188,8 @@ pub struct WebView {
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
     script_source_fetcher: Option<ScriptSourceFetcher>,
     image_source_fetcher: Option<ImageSourceFetcher>,
+    /// R34xx：同步 `__zw_fetch` 处理器（headless/testharness 本地资源路径）。
+    fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
     /// 当前 URL。
     current_url: Option<String>,
     /// 当前导航 epoch（user-action node identity scope）。
@@ -264,6 +273,7 @@ impl WebView {
         let external_script = config.external_script.clone();
         let script_source_fetcher = config.script_source_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
+        let fetch_handler = config.fetch_handler.clone();
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -278,6 +288,7 @@ impl WebView {
             external_script,
             script_source_fetcher,
             image_source_fetcher,
+            fetch_handler,
             current_url: None,
             navigation_epoch: 0,
             document_generation: 0,
@@ -359,6 +370,11 @@ impl WebView {
         self.cached_image_ratios = image_ratios.clone();
         self.cached_image_no_ratio = image_no_ratio.clone();
         self.pipeline.set_image_sizes(image_sizes);
+        // R34xx：@font-face 字体同步加载（headless/testharness 路径——canvas 文本像素光栅
+        // 与页面文本的字体栈）。经 image_source_fetcher（wpt-data 文件映射）取字节 →
+        // load_font + register_family_alias 进 canvas 注册表共享加载器。浏览器路径
+        // （fetcher=None）跳过（async_load 既有 live 字体路径不变）。
+        self.load_page_font_faces(&combined_css, page_url);
         self.pipeline.set_image_ratios(image_ratios);
         self.pipeline.set_image_no_ratio(image_no_ratio);
         external_css
@@ -625,6 +641,62 @@ impl WebView {
             self.image_cache.insert_with_key(key, img);
         }
         (image_sizes, image_ratios, image_no_ratio)
+    }
+
+    /// R34xx：@font-face 字体同步加载（headless/testharness 路径）。从 CSS 提取 font-face，
+    /// 取首个 URL 源（wpt.test → image_source_fetcher 本地字节；其他 URL / 无 fetcher 跳过），
+    /// load_font + register_family_alias 进 canvas 注册表共享 FontLoader（canvas 文本像素
+    /// 光栅与页面字体栈共用）。浏览器路径（fetcher=None）跳过——async_load 的 live 字体
+    /// 路径不变（零回归）。
+    fn load_page_font_faces(&mut self, css: &str, base_url: &str) {
+        let Some(fetcher) = self.image_source_fetcher.clone() else {
+            return;
+        };
+        let faces = zero_engine::extract_font_faces(css);
+        if faces.is_empty() {
+            return;
+        }
+        let base = url::Url::parse(base_url).ok();
+        let reg_guard = match self.canvas_registry.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::warn!("canvas registry lock failed: {e}");
+                return;
+            }
+        };
+        let mut loader = match reg_guard.font_loader.lock() {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!("font loader lock failed: {e}");
+                return;
+            }
+        };
+        for (family, sources, weight, is_italic, stretch, size_adjust, features, unicode_ranges) in faces {
+            let Some(src) = sources.first() else {
+                continue;
+            };
+            let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                Some(u) => u.to_string(),
+                None => src.clone(),
+            };
+            let Some(bytes) = fetcher(&abs) else {
+                tracing::warn!(src = %src, "font fetch failed");
+                continue;
+            };
+            match loader.load_font(&bytes) {
+                Ok(id) => {
+                    loader.register_font_features(id, zero_engine::font_feature_settings_to_opentype(&features));
+                    loader.register_unicode_ranges(id, unicode_ranges);
+                    if let Some(scale) = size_adjust {
+                        loader.register_font_size_adjust(id, scale);
+                    }
+                    for alias in zero_render_foundation::font::font_face_aliases(&family, weight, is_italic, stretch) {
+                        loader.register_family_alias(&alias, id);
+                    }
+                }
+                Err(e) => tracing::warn!(family = %family, err = %e, "@font-face load failed"),
+            }
+        }
     }
 
     /// 获取已解码图片子资源缓存的可变引用，供下游渲染器绘制时消费。
@@ -1453,6 +1525,42 @@ impl WebView {
             }),
         );
 
+        // R34xx：__zw_fetch（同步契约）——headless/testharness 宿主经 config.fetch_handler 提供
+        // 本地资源（wpt-data 文件映射：/images/*、/fonts/* 等）。None → 不注册（shim typeof-check
+        // 落 ok:false stub；浏览器路径由 app 层 FetchBridge 注册异步 __zw_fetch，互斥不重叠）。
+        // 回调同步执行 handler 并直接返 wire（shim R34xx 支持同步返回）；wire 格式与 fetch_bridge
+        // 相同（__zwfr: status\x1fstatusText\x1fheaders\x1fbody；body 二进制经 __zw_bytes: csv）。
+        if let Some(fetch_handler) = self.fetch_handler.clone() {
+            sandbox.register_callback(
+                "__zw_fetch",
+                Box::new(move |args: &[String]| -> String {
+                    let method = args.get(1).cloned().unwrap_or_else(|| "GET".to_string());
+                    let url = args.get(2).cloned().unwrap_or_default();
+                    let headers =
+                        zero_engine::fetch_bridge::decode_headers(args.get(3).map(String::as_str).unwrap_or(""));
+                    let body_raw = args.get(4).cloned().unwrap_or_default();
+                    let (body, body_bytes) =
+                        if let Some(bytes) = zero_engine::fetch_bridge::decode_body_bytes_raw(&body_raw) {
+                            (None, Some(bytes))
+                        } else if body_raw.is_empty() {
+                            (None, None)
+                        } else {
+                            (Some(body_raw), None)
+                        };
+                    let req = zero_engine::fetch_bridge::FetchRequest {
+                        url,
+                        method,
+                        headers,
+                        body,
+                        body_bytes,
+                    };
+                    match fetch_handler(&req) {
+                        Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
+                        Err(msg) => format!("__zw_fetch_error:{msg}"),
+                    }
+                }),
+            );
+        }
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {

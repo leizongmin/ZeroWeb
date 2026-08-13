@@ -1,6 +1,9 @@
 //! Canvas 2D 渲染上下文 — 公共 API 方法。
 
+use std::sync::{Arc, Mutex};
+
 use zero_render_foundation::color::Color;
+use zero_render_foundation::font::loader::FontLoader;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::RenderPrimitives;
 
@@ -45,7 +48,38 @@ impl CanvasContext {
             text_baseline: TextBaseline::Alphabetic,
             miter_limit: 10.0,
             direction: TextDirection::Inherit,
+            font_loader: None,
+            font_id: None,
         }
+    }
+
+    /// R34xx：注入共享字体加载器（bridge 在 getContext2d 时设置；None = 无字体栈）。
+    pub fn set_font_loader(&mut self, loader: Option<Arc<Mutex<FontLoader>>>) {
+        self.font_loader = loader;
+        // 字体栈变化 → 重新解析当前字体。
+        self.resolve_font_id();
+    }
+
+    /// R34xx：按当前 FontDescriptor.family 经 loader 解析器查 font_id（找不到 → None，
+    /// fill_text 回落启发式）。
+    fn resolve_font_id(&mut self) {
+        self.font_id = None;
+        let Some(loader) = self.font_loader.clone() else {
+            return;
+        };
+        let Ok(loader) = loader.lock() else {
+            return;
+        };
+        let resolver = loader.build_font_resolver();
+        let family = self.font.family.to_ascii_lowercase();
+        self.font_id = resolver.get(&family).copied().or_else(|| {
+            // 未注册族 → 通用族回落（sans-serif 等）。
+            resolver
+                .get("sans-serif")
+                .or_else(|| resolver.get("serif"))
+                .or_else(|| resolver.get("monospace"))
+                .copied()
+        });
     }
 
     // ── Rectangle drawing ──
@@ -152,13 +186,15 @@ impl CanvasContext {
     // ── Text ──
 
     /// 填充文本。为每个字符生成独立的 GlyphPrimitive，glyph_id 取字符的 Unicode 码点。
+    /// R34xx：字体栈可用（headless/testharness @font-face 注入）时走真实 shape + 光栅化——
+    /// 逐 glyph 灰度位图 alpha 混合进 pixel_buffer（2d.text.draw.* 像素断言）。
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32) {
         let color = self.apply_alpha(self.fill_style.resolve_color());
         let font_size = self.font.size;
-        let em_width = font_size * 0.6;
         // R34xx：textAlign/textBaseline 应用到绘制位置（2d.text.draw.align.* /
         // baseline.*——旧实现忽略对齐，字恒左对齐顶部定位）。
-        let width = text.chars().count() as f32 * em_width;
+        // 真字体路径：宽度取 shape 后 advances 和（WPT align.* 期望 em 方块中心对齐）。
+        let width = text.chars().count() as f32 * font_size * 0.6;
         let ox = match self.text_align {
             TextAlign::Center => -width / 2.0,
             TextAlign::End | TextAlign::Right => -width,
@@ -170,6 +206,44 @@ impl CanvasContext {
             TextBaseline::Alphabetic | TextBaseline::Bottom => 0.0,
         };
         let (tx, ty) = self.transform.transform_point(x + ox, y + oy);
+        // R34xx：真实字体光栅路径——shape + 逐 glyph 位图 blit（CPU 像素）。无字体栈 →
+        // 回落旧启发式（仅 primitives，不写像素）。
+        if let Some(font_id) = self.font_id
+            && let Some(loader) = self.font_loader.clone()
+            && let Ok(loader) = loader.lock()
+            && let Some(shaped) = loader.shape_text_cached(font_id, text, font_size)
+        {
+            let mut pen_x = tx;
+            for g in &shaped {
+                let glyph_index = g.glyph_id.min(u32::from(u16::MAX)) as u16;
+                if let Ok(bmp) = loader.rasterize_glyph_index(font_id, glyph_index, g.font_size) {
+                    // glyph_top_left 同款坐标换算（fontdue y-up 度量 → 屏幕 y-down）。
+                    let (gx, gy) = (
+                        pen_x + g.x_offset + bmp.x_offset as f32,
+                        ty - bmp.y_offset as f32 - bmp.height as f32,
+                    );
+                    self.blit_glyph_bitmap(&bmp, gx, gy, color);
+                }
+                self.primitives
+                    .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
+                        x: pen_x + g.x_offset,
+                        y: ty,
+                        font_size: g.font_size,
+                        color,
+                        glyph_id: g.glyph_id,
+                        font_glyph_index: Some(glyph_index),
+                        source: None,
+                        font_id: zero_render_foundation::primitive::FontId(font_id),
+                        bitmap_width: None,
+                        bitmap_height: None,
+                        rotation: 0.0,
+                        synthetic_italic: false,
+                    });
+                pen_x += g.advance_x;
+            }
+            return;
+        }
+        let em_width = font_size * 0.6;
         let mut offset_x = 0.0f32;
         for ch in text.chars() {
             let glyph_id = ch as u32;
@@ -653,6 +727,7 @@ impl CanvasContext {
     /// 设置字体。
     pub fn set_font(&mut self, font: FontDescriptor) {
         self.font = font;
+        self.resolve_font_id();
     }
 
     /// 设置全局透明度。
@@ -1113,6 +1188,11 @@ impl CanvasContext {
             return;
         }
 
+        // R34xx：drawImage 阴影（2d.shadow.image.* / 2d.shadow.canvas.*）——先画阴影再画图像本身。
+        if self.has_shadow() {
+            self.draw_shadow_image(image_data, sx, sy, sw, sh, dx, dy, dw, dh);
+        }
+
         let sx = sx.max(0.0) as usize;
         let sy = sy.max(0.0) as usize;
         // R3292：源矩形起点越出图像边界（sx>=img_w / sy>=img_h）时无像素可取，提前返回。
@@ -1209,11 +1289,19 @@ impl CanvasContext {
             CanvasStyle::RadialGradient(g) => {
                 let (x0, y0) = self.transform.transform_point(g.x0, g.y0);
                 let (x1, y1) = self.transform.transform_point(g.x1, g.y1);
+                // R34xx：半径随 CTM 缩放（spec：渐变坐标相对 fill 时坐标空间——radii 同为
+                // 该空间长度，2d.gradient.radial.transform.1/2/3 断言 scale(10) 后几何放大）。
+                // 取各向同性近似 sqrt(|det|)（旋转不变；非均匀缩放为近似，WPT 为均匀场景）。
+                let scale = (self.transform.a * self.transform.d - self.transform.b * self.transform.c)
+                    .abs()
+                    .sqrt();
                 let mut ng = g.clone();
                 ng.x0 = x0;
                 ng.y0 = y0;
                 ng.x1 = x1;
                 ng.y1 = y1;
+                ng.r0 *= scale;
+                ng.r1 *= scale;
                 CanvasStyle::RadialGradient(ng)
             }
             CanvasStyle::ConicGradient(g) => {
@@ -1222,6 +1310,12 @@ impl CanvasContext {
                 ng.cx = cx;
                 ng.cy = cy;
                 CanvasStyle::ConicGradient(ng)
+            }
+            CanvasStyle::Pattern(p) => {
+                // R34xx：平铺锚定 fill 空间（见 CanvasPattern::tile_transform）。
+                let mut ng = p.clone();
+                ng.tile_transform = self.transform.inverse();
+                CanvasStyle::Pattern(ng)
             }
             _ => style.clone(),
         }
@@ -1355,6 +1449,114 @@ impl CanvasContext {
             self.shadow_color,
             self.global_alpha,
             1.0, // mask 已逐像素乘形状 alpha（R34xx）
+        );
+    }
+
+    /// R34xx：为 drawImage 绘制阴影——mask = 变换后目标区域的源图 alpha（与主循环同源采样），
+    /// box blur + composite_shadow_mask（2d.shadow.image.* / 2d.shadow.canvas.*——canvas 源经
+    /// shim getImageData wire 走同一 draw_image 路径）。源像素 alpha 作形状 alpha（透源阴影轻）。
+    #[allow(clippy::too_many_arguments)]
+    fn draw_shadow_image(
+        &mut self,
+        image_data: &ImageData,
+        sx: f32,
+        sy: f32,
+        sw: f32,
+        sh: f32,
+        dx: f32,
+        dy: f32,
+        dw: f32,
+        dh: f32,
+    ) {
+        let img_w = image_data.width as usize;
+        let img_h = image_data.height as usize;
+        if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {
+            return;
+        }
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        // 变换后目标矩形的 device bbox（旋转/非轴对齐四边形取角点包围盒）。
+        let corners = [
+            self.transform.transform_point(dx, dy),
+            self.transform.transform_point(dx + dw, dy),
+            self.transform.transform_point(dx, dy + dh),
+            self.transform.transform_point(dx + dw, dy + dh),
+        ];
+        let (mut l, mut t) = (f32::INFINITY, f32::INFINITY);
+        let (mut rr, mut bb) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for (cx, cy) in corners {
+            l = l.min(cx);
+            rr = rr.max(cx);
+            t = t.min(cy);
+            bb = bb.max(cy);
+        }
+        // region + 可见性裁剪：与 draw_shadow_rect 同款（画布 − offset；saturating 防溢出）。
+        let rx0 = (l.floor() as i32).saturating_sub(pad);
+        let ry0 = (t.floor() as i32).saturating_sub(pad);
+        let rx1 = (rr.ceil() as i32).saturating_add(pad);
+        let ry1 = (bb.ceil() as i32).saturating_add(pad);
+        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
+        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
+        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
+        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let rx0 = rx0.max(vis_x0);
+        let ry0 = ry0.max(vis_y0);
+        let rx1 = rx1.min(vis_x1);
+        let ry1 = ry1.min(vis_y1);
+        if rx1 <= rx0 || ry1 <= ry0 {
+            return;
+        }
+        let rw = ((rx1 - rx0) as usize).min((self.width as usize).saturating_mul(4)) + 1;
+        let rh = ((ry1 - ry0) as usize).min((self.height as usize).saturating_mul(4)) + 1;
+        let mut mask = vec![0u8; rw * rh];
+        // 逆变换（2×3 仿射）：device → 目标空间，再按 x_scale/y_scale 映射到源像素（与主循环一致）。
+        let det = self.transform.a * self.transform.d - self.transform.b * self.transform.c;
+        let x_scale = sw / dw;
+        let y_scale = sh / dh;
+        for ly in 0..rh as i32 {
+            let wy = ry0 + ly;
+            for lx in 0..rw as i32 {
+                let wx = rx0 + lx;
+                let dxw = wx as f32 - self.transform.e;
+                let dyw = wy as f32 - self.transform.f;
+                // 逆矩阵乘（det≠0；退化矩阵阴影 region 恒空，兜底 0）
+                let (ix, iy) = if det.abs() > f32::EPSILON {
+                    let ux = (dxw * self.transform.d - dyw * self.transform.b) / det;
+                    let uy = (-dxw * self.transform.c + dyw * self.transform.a) / det;
+                    (ux, uy)
+                } else {
+                    continue;
+                };
+                let rel_x = ix - dx;
+                let rel_y = iy - dy;
+                if rel_x < 0.0 || rel_y < 0.0 || rel_x >= dw || rel_y >= dh {
+                    continue;
+                }
+                let src_x = sx as usize + (rel_x * x_scale) as usize;
+                let src_y = sy as usize + (rel_y * y_scale) as usize;
+                if src_x >= img_w || src_y >= img_h {
+                    continue;
+                }
+                let idx = (src_y * img_w + src_x) * 4;
+                if idx + 3 >= image_data.data.len() {
+                    continue;
+                }
+                mask[(ly as usize) * rw + (lx as usize)] = image_data.data[idx + 3];
+            }
+        }
+        for _ in 0..passes {
+            super::raster::box_blur_alpha(&mut mask, rw, rh, radius);
+        }
+        self.composite_shadow_mask(
+            &mask,
+            rx0,
+            ry0,
+            rw,
+            rh,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+            self.shadow_color,
+            self.global_alpha,
+            1.0, // mask 已逐像素乘形状 alpha（源 alpha 直接作 mask 值）
         );
     }
 

@@ -255,6 +255,13 @@ fn parse_rgb_function(value: &str) -> Option<ColorValue> {
         if parts.iter().any(|c| c.is_empty()) {
             return None;
         }
+        // R34xx：legacy 逗号语法禁止混合 % 与数字分量（2d.fillStyle.parse.invalid.rgb-2：
+        // 'rgb(100%, 0, 0)' 无效）。前 3 分量类型须一致。
+        let has_pct = |c: &&str| c.ends_with('%');
+        let first_pct = has_pct(&parts[0]);
+        if parts.iter().take(3).any(|c| has_pct(c) != first_pct) {
+            return None;
+        }
         parts
     } else {
         main.split_whitespace().collect()
@@ -295,24 +302,40 @@ fn parse_rgb_alpha(s: &str) -> Option<u8> {
     parse_alpha_component(s)
 }
 
+/// R34xx：颜色分量数值合法性——NaN（Rust f64 parse 接受 "NaN"）→ 无效（CSS 数值须有限，
+/// 2d.gradient.object.invalidcolor 的 'rgb(NaN%, NaN%, NaN%)' 必须 SyntaxError）；
+/// 溢出 → inf → **钳制**（2d.fillStyle.parse.rgb-clamp-5：超长整数字面量钳到 0/255）。
+/// 尾点数字（'1.' / '100.%'——CSS 数值不允许尾点，2d.fillStyle.parse.invalid.rgba-3/hsl-5）→ 无效。
+fn parse_color_number_value(s: &str) -> Option<f64> {
+    let num = s.trim();
+    if num.ends_with('.') {
+        return None;
+    }
+    let v: f64 = num.parse().ok()?;
+    if v.is_nan() {
+        return None;
+    }
+    Some(v)
+}
+
 /// 解析颜色分量（0-255 或 0%-100%）。
 fn parse_color_component(s: &str) -> Option<u8> {
     if s.ends_with('%') {
-        let pct: f64 = s.trim_end_matches('%').parse().ok()?;
+        let pct = parse_color_number_value(s.strip_suffix('%')?)?;
         Some((pct / 100.0 * 255.0).round().clamp(0.0, 255.0) as u8)
     } else {
-        let v: f64 = s.parse().ok()?;
+        let v = parse_color_number_value(s)?;
         Some(v.round().clamp(0.0, 255.0) as u8)
     }
 }
 
-/// 解析 alpha 分量（0-1 或 0%-100%）。
+/// 解析 alpha 分量（0-1 或 0%-100%）。合法性同 [`parse_color_component`]。
 fn parse_alpha_component(s: &str) -> Option<u8> {
     if s.ends_with('%') {
-        let pct: f64 = s.trim_end_matches('%').parse().ok()?;
+        let pct = parse_color_number_value(s.strip_suffix('%')?)?;
         Some((pct / 100.0 * 255.0).round().clamp(0.0, 255.0) as u8)
     } else {
-        let v: f64 = s.parse().ok()?;
+        let v = parse_color_number_value(s)?;
         Some((v * 255.0).round().clamp(0.0, 255.0) as u8)
     }
 }
@@ -384,15 +407,17 @@ fn split_color_components(inner: &str) -> Option<(Vec<&str>, Option<f64>)> {
 }
 
 /// 解析带可选百分比的分量：`<number>` 或 `<number>%`（按 `percent_scale` 缩放）；`none`→0。
+/// 合法性同 [`parse_color_component`]（NaN 拒绝、溢出钳制由调用方 clamp、尾点拒绝）。
 fn parse_scaled_component(s: &str, percent_scale: f64) -> Option<f64> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("none") {
         return Some(0.0);
     }
     if let Some(num_str) = s.strip_suffix('%') {
-        return num_str.parse::<f64>().ok().map(|v| v * percent_scale / 100.0);
+        let v = parse_color_number_value(num_str)?;
+        return Some(v * percent_scale / 100.0);
     }
-    s.parse::<f64>().ok()
+    parse_color_number_value(s)
 }
 
 /// alpha f64 → u8。
@@ -464,10 +489,12 @@ fn parse_color_number(s: &str) -> Option<f64> {
     }
     // CSS Color 4：color() 预定义空间分量可为 <number>（0-1）或 <percentage>（0-100% → 0-1）。
     // driving: css-color predefined-002（color(srgb 0% 60% 0%) ≡ #009900）。
+    // 合法性同 parse_color_component（NaN 拒绝、尾点拒绝、溢出钳制）。
     if let Some(pct) = s.strip_suffix('%') {
-        return pct.trim().parse::<f64>().ok().map(|v| v / 100.0);
+        let v = parse_color_number_value(pct)?;
+        return Some(v / 100.0);
     }
-    s.parse().ok()
+    parse_color_number_value(s)
 }
 
 /// 解析 hsl() / hsla() 函数。
@@ -1014,17 +1041,18 @@ fn parse_hue_angle(s: &str) -> Option<f64> {
     } else {
         (lower.as_str(), 1.0) // 裸数字 = deg
     };
-    let v: f64 = num_str.trim().parse().ok()?;
+    let v = parse_color_number_value(num_str.trim())?;
     Some(v * scale)
 }
 
-/// 解析百分比分量（S/L）：去掉 `%` 返回数值（0-100+）。`none` → 0。
+/// 解析百分比分量（S/L）：去掉 `%` 返回数值（0-100+）。`none` → 0。合法性同
+/// [`parse_color_component`]（NaN/尾点拒绝——2d.fillStyle.parse.invalid.hsl-5 的 '100.%'）。
 fn parse_percent_component(s: &str) -> Option<f64> {
     let s = s.trim();
     if s.eq_ignore_ascii_case("none") {
         return Some(0.0);
     }
-    s.trim_end_matches('%').parse().ok()
+    parse_color_number_value(s.trim_end_matches('%'))
 }
 
 /// 解析 alpha 分量（0-1 或 0%-100%），钳制到 [0,1]。`none` → 0。
@@ -1034,10 +1062,10 @@ fn parse_alpha_value(s: &str) -> Option<f64> {
         return Some(0.0);
     }
     if let Some(pct) = s.strip_suffix('%') {
-        let v: f64 = pct.parse().ok()?;
+        let v = parse_color_number_value(pct)?;
         Some((v / 100.0).clamp(0.0, 1.0))
     } else {
-        let v: f64 = s.parse().ok()?;
+        let v = parse_color_number_value(s)?;
         Some(v.clamp(0.0, 1.0))
     }
 }

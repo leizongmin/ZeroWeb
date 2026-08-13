@@ -63,6 +63,9 @@ fetch_raw "images/clear-100x50.png"
 fetch_raw "images/green-100x50.png"
 fetch_raw "images/red.png"
 
+# text 目录像素用例的 @font-face 测试字体（2d.text.draw.*——canvas 文本像素光栅）
+fetch_raw "fonts/CanvasTest.ttf"
+
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"
 done

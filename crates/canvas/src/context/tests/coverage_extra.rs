@@ -141,6 +141,97 @@ fn test_draw_image_sliced_zero_source() {
     ctx.draw_image_sliced(&img, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, 10.0);
 }
 
+// R34xx：drawImage 阴影（WPT 2d.shadow.image.* / 2d.shadow.canvas.*）——源图 alpha 构
+// shadow mask + offset/blur 合成，再画图像本身。CPU 像素路径（GPU 路径经像素缓冲上传）。
+#[test]
+fn test_draw_image_shadow_offset() {
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(255, 0, 0)));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let img = ImageData {
+        width: 100,
+        height: 50,
+        data: vec![255u8; 100 * 50 * 4],
+    };
+    ctx.set_shadow_color(Color::rgb(0, 255, 0));
+    ctx.set_shadow_offset_y(50.0);
+    // 源图绘于 (0,-50)：阴影（绿）落于 (0,0)..(100,50)。
+    ctx.draw_image(&img, 0.0, -50.0);
+    let p = ctx.get_image_data(50, 25, 1, 1);
+    assert_eq!(
+        (p.data[0], p.data[1], p.data[2]),
+        (0, 255, 0),
+        "shadow pixel should be green"
+    );
+}
+
+#[test]
+fn test_draw_image_shadow_respects_source_alpha() {
+    let mut ctx = CanvasContext::new(50, 50);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(255, 0, 0)));
+    ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+    // 半透明源（alpha=128）→ 阴影 alpha 减半：合成后绿通道 ~128（WPT shadow.image.alpha）。
+    let mut img = ImageData {
+        width: 10,
+        height: 10,
+        data: vec![0u8; 10 * 10 * 4],
+    };
+    for px in img.data.chunks_mut(4) {
+        px[0] = 255;
+        px[3] = 128;
+    }
+    ctx.set_shadow_color(Color::rgb(0, 255, 0));
+    ctx.set_shadow_offset_y(50.0);
+    ctx.draw_image(&img, 0.0, -50.0);
+    let p = ctx.get_image_data(5, 5, 1, 1);
+    // 源 alpha 128/255 → 阴影绿贡献 ≈ (0, 128, 0) 混合红底 → g ∈ (0, 255) 之间（非全强度）。
+    assert!(
+        p.data[1] > 0 && p.data[1] < 255,
+        "shadow should be semi-transparent green, got g={}",
+        p.data[1]
+    );
+}
+
+#[test]
+fn test_draw_image_shadow_transparent_source_no_shadow() {
+    let mut ctx = CanvasContext::new(50, 50);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(255, 0, 0)));
+    ctx.fill_rect(0.0, 0.0, 50.0, 50.0);
+    // 全透明源 → 无阴影（WPT 2d.shadow.image.transparent.2：透明部分不画阴影）。
+    let img = ImageData {
+        width: 10,
+        height: 10,
+        data: vec![0u8; 10 * 10 * 4],
+    };
+    ctx.set_shadow_color(Color::rgb(0, 255, 0));
+    ctx.set_shadow_offset_y(50.0);
+    ctx.draw_image(&img, 0.0, -50.0);
+    let p = ctx.get_image_data(5, 25, 1, 1);
+    assert_eq!(
+        (p.data[0], p.data[1], p.data[2]),
+        (255, 0, 0),
+        "no shadow for transparent source"
+    );
+}
+
+#[test]
+fn test_draw_image_shadow_scaled_sliced() {
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(255, 0, 0)));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let img = ImageData {
+        width: 50,
+        height: 25,
+        data: vec![255u8; 50 * 25 * 4],
+    };
+    ctx.set_shadow_color(Color::rgb(0, 255, 0));
+    ctx.set_shadow_offset_y(50.0);
+    // 9 参重载：源切片 (0,0,50,25) → 目标 (-10,-50,240,50)（WPT 2d.shadow.image.scale）。
+    ctx.draw_image_sliced(&img, 0.0, 0.0, 50.0, 25.0, -10.0, -50.0, 240.0, 50.0);
+    let p = ctx.get_image_data(50, 25, 1, 1);
+    assert_eq!((p.data[0], p.data[1], p.data[2]), (0, 255, 0), "scaled shadow pixel");
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // draw_image_with_size（lines 833-846）
 // ═══════════════════════════════════════════════════════════════════════

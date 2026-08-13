@@ -324,7 +324,8 @@ fn test_save_restore_gradient_style() {
 fn test_gradient_sample_empty_stops() {
     let ctx = CanvasContext::new(200, 200);
     let grad = ctx.create_linear_gradient(0.0, 0.0, 100.0, 0.0);
-    assert_eq!(grad.sample_color(0.5), Color::BLACK);
+    // R34xx：无停止点 → 全透明（spec；2d.gradient.empty 期望保持背景）。
+    assert_eq!(grad.sample_color(0.5), Color::TRANSPARENT);
 }
 
 /// 测试使用渐变 fill_style 绘制 fill_rect（逐像素光栅化，R3079）。

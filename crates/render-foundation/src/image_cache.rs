@@ -523,6 +523,34 @@ pub fn is_raster_image_bytes(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG") || bytes.starts_with(&[0xFF, 0xD8, 0xFF]) || is_webp_magic(bytes)
 }
 
+/// R34xx：从 SVG 源提取根 `<svg>` 元素的 width/height 属性（0 尺寸 SVG 的 usvg 拒绝兜底——
+/// [`decode_svg_bytes`]）。仅接受无单位或 px 的数字；任一缺失/非有限/负 → None。
+fn extract_svg_attr_dims(bytes: &[u8]) -> Option<(u32, u32)> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let svg_start = text.find("<svg")?;
+    let rest = &text[svg_start..];
+    let tag_end = rest.find('>')?;
+    let tag = &rest[..tag_end];
+    let attr = |name: &str| -> Option<f64> {
+        let pat = format!("{name}=");
+        let idx = tag.find(&pat)?;
+        let after = &tag[idx + pat.len()..];
+        let v = after.trim_start();
+        let quote = v.chars().next()?;
+        if quote != '"' && quote != '\'' {
+            return None;
+        }
+        let inner = v.get(1..)?.split(quote).next()?;
+        let num = inner.strip_suffix("px").unwrap_or(inner).trim();
+        let val: f64 = num.parse().ok()?;
+        if !val.is_finite() || val < 0.0 {
+            return None;
+        }
+        Some(val)
+    };
+    Some((attr("width")?.ceil() as u32, attr("height")?.ceil() as u32))
+}
+
 /// 解析 `data:` URI 为原始字节。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
@@ -601,16 +629,45 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 ///（no-ratio）——usvg 对缺失维给出默认值（如缺 height 时 h=100），该默认值非真实固有
 /// 尺寸，布局须以 `no_ratio` 信号处理（不设 aspect_ratio，缺失维按 default object size 回退）。
 pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
-    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
-        .map_err(|e| format!("SVG 解析失败: {e}"))?;
+    let tree = match resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default()) {
+        Ok(tree) => tree,
+        Err(e) => {
+            // R34xx：usvg 拒绝 0 尺寸 SVG（width="0"/height="0"）——手工提取根元素
+            // width/height 属性，双绝对且含 0 维 → 返回 0 维 ImageData（2d.pattern.
+            // image.zerowidth/zeroheight——createPattern 期望 null 而非解码错误）。
+            if let Some((w, h)) = extract_svg_attr_dims(bytes)
+                && (w == 0 || h == 0)
+            {
+                // 空像素缓冲须与 (max(w,1) × max(h,1)) 匹配（from_rgba 校验长度）。
+                return ImageData::from_rgba(
+                    vec![0u8; (w.max(1) as usize).saturating_mul(h.max(1) as usize).saturating_mul(4)],
+                    w.max(1),
+                    h.max(1),
+                )
+                .map(|mut d| {
+                    d.width = w;
+                    d.height = h;
+                    d
+                });
+            }
+            return Err(format!("SVG 解析失败: {e}"));
+        }
+    };
     let size = tree.size();
     // usvg Size 的 width()/height() 返回 f32（SVG 内在尺寸）
     let w = size.width().ceil() as u32;
     let h = size.height().ceil() as u32;
     if w == 0 || h == 0 {
         // R34xx：0 尺寸 SVG 合法（2d.pattern.image.zerowidth/zeroheight——createPattern
-        // 期望 null 而非 InvalidStateError；尺寸记录供 naturalWidth 查询）。
-        return ImageData::from_rgba(Vec::new(), w.max(1), h.max(1)).map(|mut d| {
+        // 期望 null 而非 InvalidStateError；尺寸记录供 naturalWidth 查询）。usvg 对
+        // width="0"/height="0" 的 SVG **拒绝解析**（不达此处）——零维解析兜底在下方
+        // from_data 失败分支。
+        return ImageData::from_rgba(
+            vec![0u8; (w.max(1) as usize).saturating_mul(h.max(1) as usize).saturating_mul(4)],
+            w.max(1),
+            h.max(1),
+        )
+        .map(|mut d| {
             d.width = w;
             d.height = h;
             d
@@ -1000,6 +1057,35 @@ mod decode_tests {
         let px = img.get_pixel(1, 1);
         assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
         assert!(px[3] == 255, "alpha should be fully opaque, got {}", px[3]);
+    }
+
+    /// R34xx：0 尺寸 SVG（width="0" height="100"——usvg 拒绝解析）→ 兜底提取属性返回
+    /// 0×100 空像素 ImageData（2d.pattern.image.zerowidth 期望 createPattern null）。
+    #[test]
+    fn decode_svg_bytes_zero_width_fallback() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"0\" height=\"100\">\
+                   <rect fill=\"red\" width=\"100\" height=\"100\"/></svg>";
+        let img = decode_svg_bytes(svg.as_bytes()).expect("zero-width SVG should decode");
+        assert_eq!(img.width, 0);
+        assert_eq!(img.height, 100);
+        // 缓冲按存储维 (max(w,1)×max(h,1)) 分配（from_rgba 长度校验）。
+        assert_eq!(img.pixels.len(), 1 * 100 * 4);
+    }
+
+    /// R34xx：extract_svg_attr_dims 属性提取（px 后缀 / 单引号 / 缺失任一 → None）。
+    #[test]
+    fn extract_svg_attr_dims_parses_root_attrs() {
+        assert_eq!(
+            extract_svg_attr_dims(b"<svg xmlns=\"x\" width=\"0\" height=\"100px\"></svg>"),
+            Some((0, 100))
+        );
+        assert_eq!(
+            extract_svg_attr_dims(b"<svg width='10' height='20'></svg>"),
+            Some((10, 20))
+        );
+        assert_eq!(extract_svg_attr_dims(b"<svg width=\"10\"></svg>"), None);
+        assert_eq!(extract_svg_attr_dims(b"<div></div>"), None);
+        assert_eq!(extract_svg_attr_dims(b"not xml"), None);
     }
 
     #[test]
