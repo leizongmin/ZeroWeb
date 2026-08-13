@@ -860,10 +860,31 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // + getter）早全，但缺 host op 派发 + JS shim 暴露 → 页面 `ctx.font='20px Arial'` no-op，measureText/
         // fillText 恒用默认 10px。setFont 解析 CSS font 简写串（FontDescriptor::parse_css），解析失败忽略（spec
         // 忽略非法 font 串保持原值）。getter 返归一化 spec 字符串。https://html.spec.whatwg.org/multipage/canvas.html
+        "setLetterSpacing" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                // R34xx：存原始 CSS 长度串（相对单位随字号重解析——change.font 用例）。
+                if zero_canvas::parse_length_px(arg(0), ctx.font().size).is_some() {
+                    ctx.set_letter_spacing(arg(0));
+                }
+            }
+            "ok".into()
+        }
+        "setWordSpacing" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                if zero_canvas::parse_length_px(arg(0), ctx.font().size).is_some() {
+                    ctx.set_word_spacing(arg(0));
+                }
+            }
+            "ok".into()
+        }
         "setFont" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid())
-                && let Some(fd) = zero_canvas::FontDescriptor::parse_css(arg(0))
+                && let Some(mut fd) = zero_canvas::FontDescriptor::parse_css(arg(0))
             {
+                // R34xx：letterSpacing/wordSpacing 跨字体变更保持（spec——change.font 用例；
+                // parse_css 新描述符默认 0，须继承现有值）。
+                fd.letter_spacing = ctx.font().letter_spacing.clone();
+                fd.word_spacing = ctx.font().word_spacing.clone();
                 ctx.set_font(fd);
                 // 解析失败：spec 忽略非法 font 串，保持原值（返 ok 不报错）。
             }

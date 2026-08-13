@@ -1882,6 +1882,75 @@
         return this._font;
       }
     });
+    // R34xx：letterSpacing/wordSpacing（spec CanvasTextDrawingStyles——CSS <length>；
+    // 非法（非有限/负）忽略保持旧值——2d.text.drawing.style.invalid.spacing）。
+    ctx._ls = '0px';
+    Object.defineProperty(ctx, 'letterSpacing', {
+      set: function (v) {
+        v = String(v);
+        if (v === 'normal') v = '0px';
+        if (!/^[+-]?([0-9]*[.])?[0-9]+(px|em|rem|ex|ch|ic|cap|pt|pc|cm|mm|in|%)?$/i.test(v)) return;
+        this._ls = String(v).toLowerCase();
+        __zw_canvas_op(h, 'setLetterSpacing', String(v));
+      },
+      get: function () { return this._ls; }
+    });
+    ctx._ws = '0px';
+    Object.defineProperty(ctx, 'wordSpacing', {
+      set: function (v) {
+        v = String(v);
+        if (v === 'normal') v = '0px';
+        if (!/^[+-]?([0-9]*[.])?[0-9]+(px|em|rem|ex|ch|ic|cap|pt|pc|cm|mm|in|%)?$/i.test(v)) return;
+        this._ws = String(v).toLowerCase();
+        __zw_canvas_op(h, 'setWordSpacing', String(v));
+      },
+      get: function () { return this._ws; }
+    });
+    // R34xx：fontKerning/fontStretch/fontVariantCaps/textRendering（spec
+    // CanvasTextDrawingStyles——值集封闭，客户端镜像 + host 校验；CanvasTest 单面字体
+    // 下绘制效果为 no-op）。
+    ctx._fk = 'auto';
+    Object.defineProperty(ctx, 'fontKerning', {
+      set: function (v) {
+        v = String(v).toLowerCase();
+        if (v !== 'auto' && v !== 'normal' && v !== 'none') return;
+        this._fk = v;
+        __zw_canvas_op(h, 'setFontKerning', String(v));
+      },
+      get: function () { return this._fk; }
+    });
+    ctx._fst = 'normal';
+    Object.defineProperty(ctx, 'fontStretch', {
+      set: function (v) {
+        v = String(v).toLowerCase();
+        if (['ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'normal',
+             'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded'].indexOf(v) < 0) return;
+        this._fst = v;
+        __zw_canvas_op(h, 'setFontStretch', String(v));
+      },
+      get: function () { return this._fst; }
+    });
+    ctx._fvc = 'normal';
+    Object.defineProperty(ctx, 'fontVariantCaps', {
+      set: function (v) {
+        v = String(v).toLowerCase();
+        if (['normal', 'small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps',
+             'unicase', 'titling-caps'].indexOf(v) < 0) return;
+        this._fvc = v;
+        __zw_canvas_op(h, 'setFontVariantCaps', String(v));
+      },
+      get: function () { return this._fvc; }
+    });
+    ctx._tr = 'auto';
+    Object.defineProperty(ctx, 'textRendering', {
+      set: function (v) {
+        v = String(v).toLowerCase();
+        if (v !== 'auto' && v !== 'optimizeSpeed' && v !== 'optimizeLegibility' && v !== 'geometricPrecision') return;
+        this._tr = v;
+        __zw_canvas_op(h, 'setTextRendering', String(v));
+      },
+      get: function () { return this._tr; }
+    });
     ctx._ta = 'start';
     Object.defineProperty(ctx, 'textAlign', {
       // R34xx：非法值忽略保持旧值（spec：2d.text.align.invalid）。

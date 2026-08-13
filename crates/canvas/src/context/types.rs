@@ -37,6 +37,11 @@ pub struct FontDescriptor {
     pub weight: FontWeight,
     /// 字体样式。
     pub style: FontStyle,
+    /// R34xx：letterSpacing 原始 CSS 长度串（spec CanvasTextDrawingStyles——每字符簇附加
+    /// 间距；em/% 等相对单位**随字号重解析**——2d.text.drawing.style.letterSpacing.change.font）。
+    pub letter_spacing: String,
+    /// R34xx：wordSpacing 原始 CSS 长度串（每个词后附加间距）。
+    pub word_spacing: String,
 }
 
 impl Default for FontDescriptor {
@@ -46,6 +51,8 @@ impl Default for FontDescriptor {
             size: 10.0,
             weight: FontWeight::Normal,
             style: FontStyle::Normal,
+            letter_spacing: "0px".to_string(),
+            word_spacing: "0px".to_string(),
         }
     }
 }
@@ -145,6 +152,8 @@ impl FontDescriptor {
             size,
             weight,
             style,
+            letter_spacing: "0px".to_string(),
+            word_spacing: "0px".to_string(),
         })
     }
 }
@@ -162,6 +171,34 @@ fn parse_font_size(s: &str) -> Option<f32> {
         .or_else(|| lower.strip_suffix("em").map(|st| (st, 16.0)))?; // em 相对当前字号，无上下文近似 16px
     let n = num_str.trim().parse::<f32>().ok()?;
     if !n.is_finite() || n <= 0.0 {
+        return None;
+    }
+    Some(n * mul)
+}
+
+/// R34xx：解析 CSS 长度到 px（letterSpacing/wordSpacing——spec CanvasTextDrawingStyles）。
+/// 支持 px/em/rem/ex/pt/pc/cm/mm/in（em/rem/ex 按字号近似；% 按字号百分比；无单位 → px）。
+/// 非有限/负值 → None（调用方保持旧值，spec 非法忽略）。
+pub fn parse_length_px(s: &str, font_size: f32) -> Option<f32> {
+    let lower = s.trim().to_ascii_lowercase();
+    let (num_str, mul) = lower
+        .strip_suffix("px")
+        .map(|st| (st, 1.0))
+        .or_else(|| lower.strip_suffix("em").map(|st| (st, font_size)))
+        .or_else(|| lower.strip_suffix("rem").map(|st| (st, 16.0)))
+        .or_else(|| lower.strip_suffix("ex").map(|st| (st, font_size * 0.5)))
+        .or_else(|| lower.strip_suffix("ch").map(|st| (st, font_size * 0.5)))
+        .or_else(|| lower.strip_suffix("ic").map(|st| (st, font_size)))
+        .or_else(|| lower.strip_suffix("cap").map(|st| (st, font_size * 0.5)))
+        .or_else(|| lower.strip_suffix("pt").map(|st| (st, 96.0 / 72.0)))
+        .or_else(|| lower.strip_suffix("pc").map(|st| (st, 16.0)))
+        .or_else(|| lower.strip_suffix("cm").map(|st| (st, 96.0 / 2.54)))
+        .or_else(|| lower.strip_suffix("mm").map(|st| (st, 96.0 / 25.4)))
+        .or_else(|| lower.strip_suffix("in").map(|st| (st, 96.0)))
+        .or_else(|| lower.strip_suffix('%').map(|st| (st, font_size / 100.0)))
+        .or_else(|| Some((lower.as_str(), 1.0)))?;
+    let n = num_str.trim().parse::<f32>().ok()?;
+    if !n.is_finite() {
         return None;
     }
     Some(n * mul)

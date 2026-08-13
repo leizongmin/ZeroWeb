@@ -294,6 +294,14 @@ impl CanvasContext {
                         synthetic_italic: false,
                     });
                 pen_x += g.advance_x * scale;
+                // R34xx：letterSpacing/wordSpacing（每字符簇加 letter——与 measureText 一致）。
+                let ls = parse_length_px(&self.font.letter_spacing, font_size).unwrap_or(0.0);
+                pen_x += ls * scale;
+                // 词分隔 glyph（space）后加 wordSpacing。
+                if g.glyph_id == 7 {
+                    let ws = parse_length_px(&self.font.word_spacing, font_size).unwrap_or(0.0);
+                    pen_x += ws * scale;
+                }
             }
             return;
         }
@@ -365,27 +373,69 @@ impl CanvasContext {
             (Some(loader), Some(fid)) => {
                 if let Ok(loader) = loader.lock() {
                     let shaped = loader.shape_text_cached(fid, text, size).unwrap_or_default();
-                    let w: f32 = shaped.iter().map(|g| g.advance_x).sum();
+                    let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
+                    // R34xx：letterSpacing（除末簇）与 wordSpacing（词分隔后）计入宽度。
+                    // WPT 期望：letterSpacing × 字符数（含末字符——2d.text.drawing.style.
+                    // letterSpacing.measure 的 11 字符 × 9px = 99）。相对单位按当前字号解析。
+                    let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
+                    let ws = parse_length_px(&self.font.word_spacing, size).unwrap_or(0.0);
+                    w += ls * shaped.len() as f32;
+                    let words = text.split_whitespace().count();
+                    if words > 1 {
+                        w += ws * (words - 1) as f32;
+                    }
                     let (a, d) = loader.line_metrics(fid, size).unwrap_or((size * 0.8, size * 0.2));
                     (w, a, d)
                 } else {
                     (char_count * (size * 0.6), size * 0.8, size * 0.2)
                 }
             }
-            _ => (char_count * (size * 0.6), size * 0.8, size * 0.2),
+            _ => {
+                let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
+                let ws = parse_length_px(&self.font.word_spacing, size).unwrap_or(0.0);
+                let w = char_count * (size * 0.6)
+                    + ls * char_count
+                    + ws * text.split_whitespace().count().saturating_sub(1) as f32;
+                (w, size * 0.8, size * 0.2)
+            }
         };
         let descent_abs = descent.abs();
+        // R34xx：actualBoundingBoxLeft/Right 按 textAlign/direction 锚定（2d.text.drawing.
+        // style.measure.direction/textAlign——rtl/right 对齐时文本在原点左侧 → left > right）。
+        // left/right = 原点到 bbox 边缘的正向距离（extent 语义）。
+        let rtl_measure = matches!(self.direction, TextDirection::Rtl);
+        let anchor = match self.text_align {
+            TextAlign::Center => -width / 2.0,
+            TextAlign::Right => -width,
+            TextAlign::Left => 0.0,
+            TextAlign::Start => {
+                if rtl_measure {
+                    -width
+                } else {
+                    0.0
+                }
+            }
+            TextAlign::End => {
+                if rtl_measure {
+                    0.0
+                } else {
+                    -width
+                }
+            }
+        };
+        let bbox_l = anchor.min(anchor + width);
+        let bbox_r = anchor.max(anchor + width);
         TextMetrics {
             width,
             actual_bounding_box_ascent: ascent,
             actual_bounding_box_descent: descent_abs,
-            actual_bounding_box_left: 0.0, // 原点到最左像素；无 advance 起点偏移（左伸字形如 italic 负值，拉丁默认 0）
-            actual_bounding_box_right: width, // 原点到最右像素 ≈ advance 宽
-            font_bounding_box_ascent: ascent, // 字体 ascent，由字体表给定
+            actual_bounding_box_left: (-bbox_l).max(0.0),
+            actual_bounding_box_right: bbox_r.max(0.0),
+            font_bounding_box_ascent: ascent,       // 字体 ascent，由字体表给定
             font_bounding_box_descent: descent_abs, // 字体 descent，由字体表给定
-            alphabetic_baseline: 0.0,      // 默认基线即 alphabetic → 距自身 0
-            hanging_baseline: ascent,      // Latin 悬挂基线在大写字母顶附近 ≈ ascent
-            ideographic_baseline: -descent_abs, // CJK 表意基线略低于 alphabetic ≈ -descent
+            alphabetic_baseline: 0.0,               // 默认基线即 alphabetic → 距自身 0
+            hanging_baseline: ascent,               // Latin 悬挂基线在大写字母顶附近 ≈ ascent
+            ideographic_baseline: -descent_abs,     // CJK 表意基线略低于 alphabetic ≈ -descent
         }
     }
 
@@ -794,6 +844,16 @@ impl CanvasContext {
     pub fn set_font(&mut self, font: FontDescriptor) {
         self.font = font;
         self.resolve_font_id();
+    }
+
+    /// R34xx：letterSpacing 原始 CSS 长度串（相对单位随字号重解析）。
+    pub fn set_letter_spacing(&mut self, raw: &str) {
+        self.font.letter_spacing = raw.to_string();
+    }
+
+    /// R34xx：wordSpacing 原始 CSS 长度串。
+    pub fn set_word_spacing(&mut self, raw: &str) {
+        self.font.word_spacing = raw.to_string();
     }
 
     /// 设置全局透明度。
