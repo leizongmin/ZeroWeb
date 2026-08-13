@@ -90,6 +90,8 @@
 >
 > **▶ 字体度量进展（R3389-F ic/ric root ideographic advance·2026-08-13）**：CSS Values 4 `ic/ric` 现保留 typed 单位至 computed/calc；FontLoader 将既有 U+6C34 horizontal advance provider纳入 first-available family metric map，StyleSystem 按 current/parent/root ownership 解析普通长度、`font-size` 与 root unit，并缓存 root used ideographic advance。缺 U+6C34 时沿用规范 `1em` fallback；`ZW_ROOT_IC_UNITS=0` 独立回滚。`ric-in-monospace` self-source `0.15%→0.03%`，Chromium Oracle `0.94%→0.92%`。串行 css-fonts Oracle 282 案仅该用例改善 `0.02pp`、0 回归；pass/credible/strict 保持 `87/77/54`，self-source pass `280/287`、可信 strict `154` 与 7 mismatch 均不变。既有 WPT/WOFF2 资产账本归属更新为 R3375/R3389-F。`rlh` 仍需独立 root line-height lifecycle。
 >
+> **🧪 净负实验裁决（R3390-F lh/rlh used line-height·2026-08-13）**：审计并试作 typed `lh/rlh`、parent/current/root line-height context 与 root lifecycle，随后完整回退源码。CSS Values 4 要求 `lh/rlh` 用于 `font-size`、`line-height` 等 font-affecting 属性时按父元素 computed metrics 消解循环；fresh Chrome 127 probe 在 `rlh-in-monospace` 中给出 body 子级 `19px`、monospace 祖先内子级 `23.3846px`。当前 ZeroWeb 默认 `normal=1.164em` 只能得到近似值，且 layout per-font provider 默认关闭；root-fixed 与 parent-computed 两种候选均使 fresh Chromium Oracle `0.96%→0.98%`（净退 `0.02pp`）。root-fixed 虽令 self-source `0.15%→0.00%`，但与 Chromium 循环语义不符；parent-computed self-source为 `0.22%`。故不提交半正确实现，等待 root/parent used `line-height:normal` 与 Chromium 同源后再恢复。经验见 [`lh-rlh-needs-used-line-height-provider.md`](../learnings/bugs/lh-rlh-needs-used-line-height-provider.md)。
+>
 > **📋 待用户决策清单（遇需拍板项在此追加，跳过并继续其他轻量修复）**：
 > - 格式：`- [ ] <事项> — 为何需用户（深结构 / 许可证 / 破坏性操作 / 改 Mission / 超大下载）— 建议 — 追加时间`
 > - **深结构方向（用户 2026-07-29「主做轻量修复」指令划入护栏，等点名，不自主开工）**：
