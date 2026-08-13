@@ -375,7 +375,9 @@ pub fn hsla_to_rgba(h: f64, s: f64, l: f64, a: f64) -> Color {
     // `((h % 360) + 360) % 360` 把 -300→60、-360→0、450→90。driving: css-color
     // t424-hsl-h-rotating-b / t425-hsla-h-rotating-b（H 值「even when outside [0,360)」）。
     let h = ((h % 360.0) + 360.0) % 360.0;
-    let s = s / 100.0;
+    // R34xx：饱和度 clamp 到 [0, 100]（负饱和度 → 0——2d.fillStyle.parse
+    // hsl-clamp-negative-saturation 期望 hsl(120,-200%,49.9%) = 灰）。
+    let s = s.clamp(0.0, 100.0) / 100.0;
     let l = l / 100.0;
 
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;

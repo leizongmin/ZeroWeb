@@ -247,7 +247,13 @@ fn parse_rgb_function(value: &str) -> Option<ColorValue> {
     };
 
     let comps: Vec<&str> = if main.contains(',') {
-        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+        let parts: Vec<&str> = main.split(',').map(str::trim).collect();
+        // R34xx：空分量（尾部/连续逗号）→ 无效（2d.fillStyle.parse.invalid.rgb-1：
+        // 'rgb(255.0, 0, 0,)' 应被拒绝）。
+        if parts.iter().any(|c| c.is_empty()) {
+            return None;
+        }
+        parts
     } else {
         main.split_whitespace().collect()
     };
@@ -491,7 +497,13 @@ fn parse_hsl_function(value: &str) -> Option<ColorValue> {
 
     // 分量分隔：逗号（遗留）或空白（Color 4）。
     let comps: Vec<&str> = if main.contains(',') {
-        main.split(',').map(str::trim).filter(|s| !s.is_empty()).collect()
+        let parts: Vec<&str> = main.split(',').map(str::trim).collect();
+        // R34xx：空分量（尾部/连续逗号）→ 无效（2d.fillStyle.parse.invalid.rgb-1：
+        // 'rgb(255.0, 0, 0,)' 应被拒绝）。
+        if parts.iter().any(|c| c.is_empty()) {
+            return None;
+        }
+        parts
     } else {
         main.split_whitespace().collect()
     };
