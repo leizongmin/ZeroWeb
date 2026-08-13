@@ -10,7 +10,7 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{ImagePrimitive, LineCap, LineStyle, StrokePrimitive};
 use zero_style_system::{
-    BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
+    AppearanceComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
     BorderImageSourceComputedValue, BorderImageWidthComputedComponent, BorderStyleValue, ComputedStyle,
 };
 
@@ -41,6 +41,55 @@ impl super::Painter {
     pub(super) fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
         let w = box_node.width;
         let h = box_node.height;
+        if matches!(
+            style.appearance,
+            AppearanceComputedValue::Button
+                | AppearanceComputedValue::PushButton
+                | AppearanceComputedValue::SquareButton
+        ) {
+            // https://html.spec.whatwg.org/multipage/rendering.html#widgets
+            // Chromium keeps the 2px native button border in layout geometry but
+            // rasterizes a single outer device-pixel edge.
+            let color = resolve_color_current(&style.border_top_color, &style.color);
+            let corner_outer = Color::rgba(162, 162, 162, 255);
+            let corner_inner = Color::rgba(152, 152, 152, 255);
+            self.primitives
+                .add_fill(Rect::new(abs_x + 3.0, abs_y, (w - 6.0).max(0.0), 1.0), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x + 3.0, abs_y + h - 1.0, (w - 6.0).max(0.0), 1.0), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x, abs_y + 3.0, 1.0, (h - 6.0).max(0.0)), color);
+            self.primitives
+                .add_fill(Rect::new(abs_x + w - 1.0, abs_y + 3.0, 1.0, (h - 6.0).max(0.0)), color);
+            for (offset, shade) in [(1.0, corner_outer), (2.0, corner_inner)] {
+                self.primitives
+                    .add_fill(Rect::new(abs_x + offset, abs_y, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x + w - offset - 1.0, abs_y, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x + offset, abs_y + h - 1.0, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x + w - offset - 1.0, abs_y + h - 1.0, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x, abs_y + offset, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x + w - 1.0, abs_y + offset, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x, abs_y + h - offset - 1.0, 1.0, 1.0), shade);
+                self.primitives
+                    .add_fill(Rect::new(abs_x + w - 1.0, abs_y + h - offset - 1.0, 1.0, 1.0), shade);
+            }
+            let corner_center = Color::rgba(172, 172, 172, 255);
+            for (x, y) in [
+                (abs_x + 1.0, abs_y + 1.0),
+                (abs_x + w - 2.0, abs_y + 1.0),
+                (abs_x + 1.0, abs_y + h - 2.0),
+                (abs_x + w - 2.0, abs_y + h - 2.0),
+            ] {
+                self.primitives.add_fill(Rect::new(x, y, 1.0, 1.0), corner_center);
+            }
+            return;
+        }
 
         // border-collapse:collapse 时，内共享边（有邻居）厚度减半，两邻居各画一半合成
         // 居中的完整边框（CSS 2.1 §17.6.2）；外边缘（表格周边，无邻居共享）须绘制

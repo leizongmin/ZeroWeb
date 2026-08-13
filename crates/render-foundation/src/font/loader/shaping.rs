@@ -82,7 +82,10 @@ impl FontLoader {
             .map(|font_id| {
                 self.get_font_data(*font_id).map(|data| {
                     let descriptor_scale = self.font_size_adjustments.get(font_id).copied().unwrap_or(1.0);
-                    (crate::font::font_bytes_hash(data), descriptor_scale.to_bits())
+                    (
+                        crate::font::font_bytes_hash(data) ^ (u64::from(self.face_index(*font_id)) << 32),
+                        descriptor_scale.to_bits(),
+                    )
                 })
             })
             .collect::<Option<Vec<_>>>()?;

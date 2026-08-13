@@ -48,7 +48,7 @@ mod freetype_raster {
     /// 2026-08-07 探针实测：全量遍历 19MB CJK TTC 在 debug 下 ~50ms/次
     ///（CJK 栅格化重尾主因之一）——改为**前 4KB + 总长**采样（不同字体的
     /// 头部表数据几乎必然不同，冲突概率可忽略；每次调用成本 ~微秒）。
-    fn bytes_hash(bytes: &[u8]) -> u64 {
+    fn bytes_hash(bytes: &[u8], face_index: u32) -> u64 {
         let window = &bytes[..bytes.len().min(4096)];
         let mut h: u64 = 0xcbf29ce484222325;
         for &b in window {
@@ -56,6 +56,7 @@ mod freetype_raster {
             h = h.wrapping_mul(0x100000001b3);
         }
         h ^= bytes.len() as u64;
+        h ^= u64::from(face_index) << 32;
         h
     }
 
@@ -75,12 +76,17 @@ mod freetype_raster {
     /// 性能（2026-08-07 探针，NotoSansCJK 19MB）：face 缓存（RefCell borrow
     /// 贯穿，免 clone——Face<Vec<u8>> clone 会复制 19MB）后每次栅格化不再
     /// 重新解析字体（6.6ms/字 → 目标 <0.1ms/字）。
-    pub(crate) fn rasterize(font_bytes: &[u8], code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
+    pub(crate) fn rasterize(
+        font_bytes: &[u8],
+        face_index: u32,
+        code_point: char,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
         let _raster_t = std::time::Instant::now();
-        let result = rasterize_inner(font_bytes, GlyphSelector::CodePoint(code_point), size);
+        let result = rasterize_inner(font_bytes, face_index, GlyphSelector::CodePoint(code_point), size);
         // OnceLock 缓存 env 状态（避免每字一次 std::env::var——热路径）
         static RASTER_STAT_ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let raster_stat_enabled = *RASTER_STAT_ENABLED.get_or_init(|| std::env::var("CJK_RASTER_STAT").is_ok());
@@ -103,25 +109,35 @@ mod freetype_raster {
     }
 
     /// 用字体内部 glyph index 光栅化整形后的字形。
-    pub(crate) fn rasterize_indexed(font_bytes: &[u8], glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
+    pub(crate) fn rasterize_indexed(
+        font_bytes: &[u8],
+        face_index: u32,
+        glyph_index: u16,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
-        rasterize_inner(font_bytes, GlyphSelector::GlyphIndex(glyph_index), size)
+        rasterize_inner(font_bytes, face_index, GlyphSelector::GlyphIndex(glyph_index), size)
     }
 
-    fn rasterize_inner(font_bytes: &[u8], selector: GlyphSelector, size: f32) -> Result<GlyphBitmap, FontError> {
+    fn rasterize_inner(
+        font_bytes: &[u8],
+        face_index: u32,
+        selector: GlyphSelector,
+        size: f32,
+    ) -> Result<GlyphBitmap, FontError> {
         // thread_local with 不允许借用逃逸：cache borrow 与 face 使用都在闭包内
         FT_FACE_CACHE.with(|cache_cell| {
             let mut cache = cache_cell.borrow_mut();
             with_lib(|lib| {
-                let key = bytes_hash(font_bytes);
+                let key = bytes_hash(font_bytes, face_index);
                 if !cache.contains_key(&key) {
                     if cache.len() >= FACE_CACHE_MAX {
                         cache.clear(); // 低频字体轮换：清空重建
                     }
                     let face = lib
-                        .new_memory_face2(font_bytes.to_vec(), 0)
+                        .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
                         .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
                     cache.insert(key, face);
                 }
@@ -185,20 +201,25 @@ mod freetype_raster {
     ///
     /// 布局测量与绘制光栅化必须用同源值，否则宽度漂移（fontdue metrics 是
     /// 浮点，与 FreeType 定点有约 0.5% 差异，会破坏 reftest 像素对比）。
-    pub(crate) fn measure_advance(font_bytes: &[u8], code_point: char, size: f32) -> Result<f32, FontError> {
+    pub(crate) fn measure_advance(
+        font_bytes: &[u8],
+        face_index: u32,
+        code_point: char,
+        size: f32,
+    ) -> Result<f32, FontError> {
         if size <= 0.0 {
             return Err(FontError::NotFound(format!("non-positive size {size}")));
         }
         FT_FACE_CACHE.with(|cache_cell| {
             let mut cache = cache_cell.borrow_mut();
             with_lib(|lib| {
-                let key = bytes_hash(font_bytes);
+                let key = bytes_hash(font_bytes, face_index);
                 if !cache.contains_key(&key) {
                     if cache.len() >= FACE_CACHE_MAX {
                         cache.clear(); // 低频字体轮换：清空重建
                     }
                     let face = lib
-                        .new_memory_face2(font_bytes.to_vec(), 0)
+                        .new_memory_face2(font_bytes.to_vec(), isize::try_from(face_index).unwrap_or(0))
                         .map_err(|e| FontError::ParseFailed(format!("FreeType new_memory_face: {e:?}")))?;
                     cache.insert(key, face);
                 }
@@ -223,6 +244,8 @@ pub struct FontLoader {
     fonts: HashMap<u32, Arc<fontdue::Font>>,
     /// 字体原始字节数据（供 rustybuzz / freetype-raster 使用；Arc 共享同上）
     font_data: HashMap<u32, Arc<Vec<u8>>>,
+    /// TTC/OTC collection face index；普通单字体文件为 0。
+    face_indices: HashMap<u32, u32>,
     /// 下一个字体 ID
     next_id: u32,
     /// 字体 ID 对应的进程唯一实例 ID；duplicate 保留，后续新字体重新分配。
@@ -256,6 +279,7 @@ impl FontLoader {
         Self {
             fonts: HashMap::new(),
             font_data: HashMap::new(),
+            face_indices: HashMap::new(),
             next_id: 0,
             font_instance_ids: HashMap::new(),
             font_features: HashMap::new(),
@@ -280,6 +304,7 @@ impl FontLoader {
         Self {
             fonts: self.fonts.clone(),
             font_data: self.font_data.clone(),
+            face_indices: self.face_indices.clone(),
             next_id: self.next_id,
             font_instance_ids: self.font_instance_ids.clone(),
             font_features: self.font_features.clone(),
@@ -331,6 +356,11 @@ impl FontLoader {
     /// 自动识别 WOFF / WOFF2 容器并先解码为 sfnt，再交给 fontdue。
     /// `.ttf` / `.otf` 裸 sfnt 直接加载。
     pub fn load_font(&mut self, data: &[u8]) -> Result<u32, FontError> {
+        self.load_font_at_index(data, 0)
+    }
+
+    /// 从 TTC/OTC collection 的指定 face 加载字体。
+    pub fn load_font_at_index(&mut self, data: &[u8], face_index: u32) -> Result<u32, FontError> {
         // Decode supported webfont containers. Decode failure falls through to fontdue,
         // which returns the existing ParseFailed error at the trust boundary.
         let decoded = if crate::font::woff::is_woff(data) {
@@ -342,8 +372,14 @@ impl FontLoader {
         };
         let bytes: &[u8] = decoded.as_deref().unwrap_or(data);
 
-        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-            .map_err(|e| FontError::ParseFailed(e.to_string()))?;
+        let font = fontdue::Font::from_bytes(
+            bytes,
+            fontdue::FontSettings {
+                collection_index: face_index,
+                ..fontdue::FontSettings::default()
+            },
+        )
+        .map_err(|e| FontError::ParseFailed(e.to_string()))?;
 
         let id = self.next_id;
         self.next_id += 1;
@@ -363,6 +399,7 @@ impl FontLoader {
 
         self.fonts.insert(id, Arc::new(font));
         self.font_data.insert(id, Arc::new(bytes.to_vec()));
+        self.face_indices.insert(id, face_index);
         Ok(id)
     }
 
@@ -384,6 +421,11 @@ impl FontLoader {
     /// 获取字体原始字节数据（供 rustybuzz 等 shaping 引擎使用）。
     pub fn get_font_data(&self, id: u32) -> Option<&[u8]> {
         self.font_data.get(&id).map(|v| v.as_ref().as_slice())
+    }
+
+    /// 返回字体实例在 TTC/OTC collection 中的 face index。
+    pub fn face_index(&self, id: u32) -> u32 {
+        self.face_indices.get(&id).copied().unwrap_or(0)
     }
 
     /// 根据字体描述查找最佳匹配字体 ID
@@ -492,7 +534,7 @@ impl FontLoader {
         //（chromium Linux 同栈），失败回退 fontdue。feature 关时不编译，走纯 fontdue。
         #[cfg(feature = "freetype-raster")]
         if let Some(bytes) = self.font_data.get(&font_id)
-            && let Ok(bm) = freetype_raster::rasterize(bytes, code_point, size)
+            && let Ok(bm) = freetype_raster::rasterize(bytes, self.face_index(font_id), code_point, size)
         {
             return Ok(bm);
         }
@@ -522,7 +564,7 @@ impl FontLoader {
     /// 必须同时携带对应的 `font_id`。
     pub fn rasterize_glyph_index(&self, font_id: u32, glyph_index: u16, size: f32) -> Result<GlyphBitmap, FontError> {
         if let Some(bytes) = self.font_data.get(&font_id)
-            && let Ok(face) = rustybuzz::ttf_parser::Face::parse(bytes, 0)
+            && let Ok(face) = rustybuzz::ttf_parser::Face::parse(bytes, self.face_index(font_id))
             && glyph_index >= face.number_of_glyphs()
         {
             return Err(FontError::GlyphNotFound {
@@ -533,7 +575,7 @@ impl FontLoader {
 
         #[cfg(feature = "freetype-raster")]
         if let Some(bytes) = self.font_data.get(&font_id)
-            && let Ok(bitmap) = freetype_raster::rasterize_indexed(bytes, glyph_index, size)
+            && let Ok(bitmap) = freetype_raster::rasterize_indexed(bytes, self.face_index(font_id), glyph_index, size)
         {
             return Ok(bitmap);
         }
@@ -724,7 +766,7 @@ impl FontLoader {
             }
             #[cfg(feature = "freetype-raster")]
             if let Some(bytes) = self.font_data.get(&font_id)
-                && let Ok(advance) = freetype_raster::measure_advance(bytes, code_point, size)
+                && let Ok(advance) = freetype_raster::measure_advance(bytes, self.face_index(font_id), code_point, size)
                 && advance > 0.0
             {
                 return advance;
@@ -927,7 +969,7 @@ mod tests {
     fn freetype_rasterize_ahem_glyph_end_to_end() {
         // loader.rs 在 crates/render-foundation/src/font/，4 级 .. 回 workspace 根。
         const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
-        let bm = freetype_raster::rasterize(AHEM_TTF, 'X', 20.0).expect("FreeType should rasterize Ahem 'X' @20px");
+        let bm = freetype_raster::rasterize(AHEM_TTF, 0, 'X', 20.0).expect("FreeType should rasterize Ahem 'X' @20px");
         // Ahem 方块：位图非空，宽高 ≈ 20px（FreeType @20px 实测 20×20，A4）。
         assert!(
             bm.width > 0 && bm.height > 0,
@@ -1974,7 +2016,7 @@ mod cjk_raster_probe {
         for i in 0..50 {
             let t = Instant::now();
             for &c in &chars {
-                if freetype_raster::rasterize(&bytes, c, size).is_ok() {
+                if freetype_raster::rasterize(&bytes, 0, c, size).is_ok() {
                     ok += 1;
                 }
             }

@@ -1458,6 +1458,16 @@ fn render_with_dom_mutations_input_value_only_paints() {
     assert_eq!(result.timings.style_count, 0);
     assert_eq!(result.timings.layout_count, 0);
     assert_eq!(result.timings.paint_count, 1);
+    let painted = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id))
+        .collect::<String>();
+    assert!(
+        painted.contains("new value"),
+        "updated control value must be painted: {painted:?}"
+    );
 }
 
 /// IDL 当前值不改变 `[value]` 内容属性选择器，仍走 paint-only。

@@ -106,36 +106,14 @@ pub(super) fn adjust_inline_block_positions(
         return;
     }
 
-    // 构建 inline-block 子元素的 LayoutBox 尺寸映射
-    // 包含 CSS width 或 height 为 Auto/Percentage 的元素
-    // （Percentage 无法在 IFC 中直接解析，需要 taffy 布局后的结果回填）
+    // 构建 inline-block 子元素的 used border-box 尺寸映射。IFC 的原子盒推进与行盒高度
+    // 均使用 border-box；computed width/height 可能是 content-box，不能替代最终布局尺寸。
     let ib_sizes: HashMap<NodeId, (f32, f32)> = ib_indices
         .iter()
         .filter_map(|&idx| {
             let child = &root.children[idx];
             let node_id = child.node_id?;
-            let style = styles.get(&node_id)?;
-            // R1147：除 Auto/Pct 外，empty InlineBlock（content_height≈0 但 border 撑出视觉高度）
-            // 也须入 ib_sizes——height:0 显式 + border（border-*-width-072/073）的 content_height=0，
-            // IFC 会降级零宽。下方 ib_h 逻辑给 border-box height。
-            let is_inline_block = matches!(style.display, DisplayValue::InlineBlock);
-            let empty_with_visual_h = is_inline_block && child.content_height.abs() < 1.0 && child.height.abs() >= 1.0;
-            let needs_fallback = matches!(style.width, LengthValue::Auto | LengthValue::Percentage(_))
-                || matches!(style.height, LengthValue::Auto | LengthValue::Percentage(_))
-                || empty_with_visual_h;
-            if !needs_fallback {
-                return None;
-            }
-            // R1147：empty inline-block（content_height≈0，如 border-top-width 撑高但无内容）
-            // 会被 IFC 降级为零宽 TextRun → 后续 inline 重叠（border-{top,bottom}-width-061/062/
-            // 072/073 簇）。仅 InlineBlock + 空时用 border-box height（含 border）；InlineTable 有
-            // 独立 table 布局尺寸，用 border-box 反回归（border-*-width-applies-to-014，A/B 实测）。
-            let ib_h = if is_inline_block && child.content_height.abs() < 1.0 {
-                child.height
-            } else {
-                child.content_height
-            };
-            Some((node_id, (child.content_width, ib_h)))
+            Some((node_id, (child.width, child.height)))
         })
         .collect();
 

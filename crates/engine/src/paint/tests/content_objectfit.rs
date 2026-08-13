@@ -503,6 +503,30 @@ fn paint_input_value_text_renders_value_and_skips_non_text_types() {
 }
 
 #[test]
+fn paint_input_placeholder_does_not_create_editable_boundaries() {
+    let (doc, input) = first_input(r#"<body><input type="text" placeholder="placeholder"></body>"#);
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.font_size = LengthValue::Px(16.0);
+    let mut box_node = make_box(148.0, 24.0);
+    box_node.node_id = Some(input);
+
+    painter.paint_input_value(&box_node, 0.0, 0.0, &style, &doc);
+
+    assert_eq!(painter.primitives().glyphs.len(), "placeholder".len());
+    assert_eq!(
+        painter
+            .primitives()
+            .text_control_boundaries
+            .iter()
+            .map(|boundary| boundary.utf16_offset)
+            .collect::<Vec<_>>(),
+        [0],
+        "placeholder must expose only the empty value's caret anchor"
+    );
+}
+
+#[test]
 fn paint_input_value_centers_text_in_content_box() {
     let (doc, input) = first_input(r#"<body><input type="text" value="A"></body>"#);
     let mut painter = Painter::new();

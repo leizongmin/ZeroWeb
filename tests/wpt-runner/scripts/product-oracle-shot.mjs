@@ -8,7 +8,7 @@
 //
 // 用法：
 //   node product-oracle-shot.mjs --root <dir> --html <relpath> --out <png> \
-//       [--width 800 --height 600 --selector <css> --wait 300]
+//       [--width 800 --height 600 --selector <css> --geometry-out <json> --wait 300]
 //
 //   --root      静态 server 根目录（HTML 的相对资源从此解析）。
 //   --html      相对 root 的 HTML 路径（如 morning-work/article.html）。
@@ -19,7 +19,7 @@
 //
 // 依赖：puppeteer-core（tests/wpt-runner/scripts/package.json）+ 系统 chromium（/usr/bin/chromium）。
 // 外部资源（ads/disqus CDN 等）任其超时失败 —— 仅本地静态内容入 oracle。
-import { readFile, mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, dirname, extname, normalize, resolve } from 'node:path';
@@ -44,11 +44,15 @@ const MIME = {
 
 function parseArgs() {
   const a = process.argv.slice(2);
-  const o = { root: null, html: null, out: null, width: 800, height: 600, selector: null, wait: 300 };
+  const o = {
+    root: null, html: null, out: null, geometryOut: null,
+    width: 800, height: 600, selector: null, wait: 300
+  };
   for (let i = 0; i < a.length; i++) {
     if (a[i] === '--root') o.root = a[++i];
     else if (a[i] === '--html') o.html = a[++i];
     else if (a[i] === '--out') o.out = a[++i];
+    else if (a[i] === '--geometry-out') o.geometryOut = a[++i];
     else if (a[i] === '--width') o.width = parseInt(a[++i], 10);
     else if (a[i] === '--height') o.height = parseInt(a[++i], 10);
     else if (a[i] === '--selector') o.selector = a[++i];
@@ -56,7 +60,7 @@ function parseArgs() {
     else if (a[i] === '--help') { console.log('See header comment.'); process.exit(0); }
   }
   if (!o.root || !o.html || !o.out) {
-    console.error('Usage: product-oracle-shot.mjs --root <dir> --html <rel> --out <png> [--width 800 --height 600 --selector <css> --wait 300]');
+    console.error('Usage: product-oracle-shot.mjs --root <dir> --html <rel> --out <png> [--width 800 --height 600 --selector <css> --geometry-out <json> --wait 300]');
     process.exit(2);
   }
   return o;
@@ -104,7 +108,8 @@ async function main() {
     browser = await puppeteer.launch({
       executablePath: CHROMIUM,
       headless: 'new',
-      args: ['--no-sandbox', '--disable-gpu'],
+      // Pixel oracles must not depend on host LCD subpixel order.
+      args: ['--no-sandbox', '--disable-gpu', '--disable-lcd-text'],
     });
     shouldCloseBrowser = true;
   }
@@ -127,6 +132,34 @@ async function main() {
           : new Promise((res) => { im.onload = im.onerror = () => res(); setTimeout(res, 800); })
       ));
     }).catch(() => {});
+    if (opts.geometryOut) {
+      const geometry = await page.evaluate(() => ({
+        viewport: [innerWidth, innerHeight, devicePixelRatio],
+        rects: Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map((element) => {
+          const rect = element.getBoundingClientRect();
+          return [element.id, [rect.x, rect.y, rect.width, rect.height]];
+        })),
+        styles: Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map((element) => {
+          const style = getComputedStyle(element);
+          return [element.id, {
+            display: style.display, boxSizing: style.boxSizing,
+            width: style.width, height: style.height, margin: style.margin,
+            padding: style.padding, borderWidth: style.borderWidth,
+            font: style.font, lineHeight: style.lineHeight,
+          }];
+        })),
+        groups: Object.fromEntries(['fieldset', 'legend', 'label'].map((selector) => [
+          selector,
+          Array.from(document.querySelectorAll(selector)).map((element) => {
+            const rect = element.getBoundingClientRect();
+            return [rect.x, rect.y, rect.width, rect.height];
+          }),
+        ])),
+      }));
+      await mkdir(dirname(opts.geometryOut), { recursive: true });
+      await writeFile(opts.geometryOut, JSON.stringify(geometry, null, 2) + '\n');
+      console.log(`wrote geometry: ${opts.geometryOut}`);
+    }
     const shotOpts = { path: opts.out, type: 'png' };
     if (opts.selector) {
       const el = await page.$(opts.selector);

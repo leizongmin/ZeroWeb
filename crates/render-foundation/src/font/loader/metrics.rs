@@ -21,7 +21,7 @@ impl FontLoader {
     pub fn font_metric_aspect(&self, font_id: u32, metric: crate::font::FontSizeAdjustMetric) -> Option<f32> {
         // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop
         let data = self.font_data.get(&font_id)?;
-        let face = rustybuzz::ttf_parser::Face::parse(data, 0).ok()?;
+        let face = rustybuzz::ttf_parser::Face::parse(data, self.face_index(font_id)).ok()?;
         let units_per_em = f32::from(face.units_per_em());
         if units_per_em <= 0.0 {
             return None;

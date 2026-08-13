@@ -212,19 +212,11 @@ impl InlineFormattingContext {
                             // 从 CSS 计算样式提取尺寸（仅支持绝对长度单位）
                             let mut w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
                             let mut h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
-                            // Auto/Percentage 值无法在 IFC 中直接解析，使用 LayoutBox 预计算尺寸回退。
-                            let need_lb = w <= 0.0 || h <= 0.0;
-                            if need_lb && let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
-                                if matches!(s.width, LengthValue::Auto | LengthValue::Percentage(_)) && w <= 0.0 {
-                                    w = lw;
-                                }
-                                // R1147：height 回退不限 Auto/Pct——height:0 显式（如 border-top-width
-                                // 撑高的空 inline-block，border-*-width-072/073）的 h=0 也会降级零宽。
-                                // lh 由 ib_sizes 的 R1147 ib_h 逻辑给（空→border-box，有内容→content_height），
-                                // 故 h<=0 一律用 lh 安全（非空显式 height>0 不触发）。
-                                if h <= 0.0 {
-                                    h = lh;
-                                }
+                            // IFC 中原子行内盒参与排版的是 used border-box。计算样式的 width/height
+                            // 可能是 content-box，不能直接拿来推进下一项；优先使用已完成布局的盒尺寸。
+                            if let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
+                                w = lw;
+                                h = lh;
                             }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align = s.vertical_align.clone();

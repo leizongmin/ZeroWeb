@@ -47,9 +47,8 @@ fn test_r645_sea_text_per_char_break() {
 
 /// R1214：is_ahem（cjk_contiguous）时 CJK per-char 拆分不加词间空格（连续）。
 /// 旧 post-loop 给同一 step-1 词内 CJK per-char 也加 1em 词间距 → Ahem CJK 2em 发散
-///（text-autospace ideograph-numeric/alpha-001）。修复后 is_ahem=true 时 CJK 连续
-///（1em == chromium Ahem），仅 step-1 词之间（真实空格处）加空格。is_ahem=false 保留
-/// 旧词间空格（advance-wall：estimate 1em ≠ real font，非-Ahem 连续致 welcome +7.39pp）。
+///（text-autospace ideograph-numeric/alpha-001）。CJK 每字符可断行不意味着产生空格；
+/// Ahem 与普通字体都只在原文真实空格处生成间隔。
 #[test]
 fn test_r1214_cjk_per_char_contiguous_when_ahem() {
     let ctx = InlineFormattingContext::new(800.0);
@@ -65,9 +64,11 @@ fn test_r1214_cjk_per_char_contiguous_when_ahem() {
     // 真实空格分隔的两个 CJK 词：第一个词末尾加空格
     let words4 = ctx.split_into_words("水 水", true);
     assert_eq!(words4, vec!["水 ".to_string(), "水".to_string()]);
-    // is_ahem=false：保留旧词间空格（CJK per-char 也加尾部空格，避免 advance-wall 回归）
+    // is_ahem=false：同样连续，不在每个 CJK 字符后制造空格。
     let words5 = ctx.split_into_words("4水水", false);
-    assert_eq!(words5, vec!["4 ".to_string(), "水 ".to_string(), "水".to_string()]);
+    assert_eq!(words5, vec!["4".to_string(), "水".to_string(), "水".to_string()]);
+    let words6 = ctx.split_into_words("姓名 ", false);
+    assert_eq!(words6, vec!["姓".to_string(), "名 ".to_string()]);
 }
 
 /// R1215：text-autospace 字符类别判定。

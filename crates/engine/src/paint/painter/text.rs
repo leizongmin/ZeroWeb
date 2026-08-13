@@ -193,14 +193,20 @@ impl super::Painter {
             current_value = replace_utf16_range(&current_value, *start, *end, text);
         }
         let boundary_value = current_value.clone();
+        let current_value_empty = current_value.is_empty();
         // 决定渲染标签 + 是否水平居中。
-        let (label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
+        let (mut label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
             if !self.form_control_values.contains_key(&node_id)
                 && !self.form_control_compositions.contains_key(&node_id)
             {
-                return;
+                if current_value.is_empty() {
+                    (elem.get_attribute("placeholder").unwrap_or_default(), false)
+                } else {
+                    return;
+                }
+            } else {
+                (current_value, false)
             }
-            (current_value, false)
         } else {
             match itype.as_str() {
                 "submit" => (
@@ -216,6 +222,14 @@ impl super::Painter {
                 _ => return,
             }
         };
+        let placeholder = elem.get_attribute("placeholder");
+        if label.is_empty()
+            && let Some(placeholder) = placeholder.as_ref()
+        {
+            label = placeholder.clone();
+        }
+        let is_placeholder =
+            current_value_empty && placeholder.as_deref().is_some_and(|placeholder| placeholder == label);
         let has_text_boundaries = elem.local_name().eq_ignore_ascii_case("textarea")
             || matches!(itype.as_str(), "" | "text" | "search" | "url" | "tel" | "password");
         if label.is_empty() && !has_text_boundaries {
@@ -230,7 +244,16 @@ impl super::Painter {
             return;
         }
 
-        let color = super::super::color::color_value_to_render(&style.color);
+        let color = if is_placeholder {
+            zero_render_foundation::color::Color {
+                r: 117,
+                g: 117,
+                b: 117,
+                a: 255,
+            }
+        } else {
+            super::super::color::color_value_to_render(&style.color)
+        };
         let (default_font_id, synthetic_italic) = self.resolve_style_font_id(&style.font_family, style);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
@@ -254,20 +277,27 @@ impl super::Painter {
         let block_top = content_y + (box_node.content_height - block_height).max(0.0) / 2.0;
         for (line_index, line) in lines.iter().enumerate() {
             let line_top = block_top + line_index as f32 * line_height;
-            let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size;
-            let shaped =
-                (has_text_boundaries && itype != "password" && matches!(text_direction, TextDirection::LeftToRight))
-                    .then(|| {
-                        crate::shape_text_for_paint(
-                            &[default_font_id.0],
-                            line,
-                            font_size,
-                            text_direction,
-                            &shape_features,
-                            shape_adjustment,
-                        )
-                    })
-                    .flatten();
+            let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size
+                - if is_placeholder && !elem.local_name().eq_ignore_ascii_case("textarea") {
+                    font_size * 0.875
+                } else {
+                    0.0
+                };
+            let shaped = (has_text_boundaries
+                && !is_placeholder
+                && itype != "password"
+                && matches!(text_direction, TextDirection::LeftToRight))
+            .then(|| {
+                crate::shape_text_for_paint(
+                    &[default_font_id.0],
+                    line,
+                    font_size,
+                    text_direction,
+                    &shape_features,
+                    shape_adjustment,
+                )
+            })
+            .flatten();
             // 居中按钮标签：先测总宽再定起始 x。
             let total_w: f32 = shaped
                 .as_ref()
@@ -356,7 +386,7 @@ impl super::Painter {
                     });
                     char_x += advance;
                     utf16_offset += source_chars.next().map(char::len_utf16).unwrap_or(1);
-                    if has_text_boundaries {
+                    if has_text_boundaries && !is_placeholder {
                         self.primitives.add_text_control_boundary(TextControlBoundary {
                             node_handle,
                             utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
@@ -479,6 +509,20 @@ impl super::Painter {
         {
             return;
         }
+        let abs_y = if matches!(
+            style.appearance,
+            zero_style_system::AppearanceComputedValue::Button
+                | zero_style_system::AppearanceComputedValue::PushButton
+                | zero_style_system::AppearanceComputedValue::SquareButton
+        ) && box_node.node_id.is_some_and(|node_id| {
+            doc.and_then(|doc| doc.get(node_id)).is_some_and(
+                |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name().eq_ignore_ascii_case("button")),
+            )
+        }) {
+            abs_y + 2.0
+        } else {
+            abs_y
+        };
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,

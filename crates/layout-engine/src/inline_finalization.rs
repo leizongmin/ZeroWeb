@@ -1608,14 +1608,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 })
                 .filter_map(|c| {
                     let node_id = c.node_id?;
-                    // R1147：empty inline-block（content_height≈0）用 border-box height
-                    //（含 border），避免 IFC 降级零宽（见 postprocess.rs 同改）。
-                    let ib_h = if c.content_height.abs() < 1.0 {
-                        c.height
-                    } else {
-                        c.content_height
-                    };
-                    Some((node_id, (c.content_width, ib_h)))
+                    Some((node_id, (c.width, c.height)))
                 })
                 .collect();
 
@@ -1779,13 +1772,7 @@ pub(crate) fn remeasure_inline_only_containers(
             })
             .filter_map(|c| {
                 let node_id = c.node_id?;
-                // R1147：empty inline-block 用 border-box height（见 postprocess.rs）。
-                let ib_h = if c.content_height.abs() < 1.0 {
-                    c.height
-                } else {
-                    c.content_height
-                };
-                Some((node_id, (c.content_width, ib_h)))
+                Some((node_id, (c.width, c.height)))
             })
             .collect();
         let ib_sizes_for_mc = ib_sizes.clone();
@@ -1877,11 +1864,21 @@ pub(crate) fn remeasure_inline_only_containers(
             // 例如 writing-mode:vertical-rl 根页面整页渲染为空白（box-offsets-rel-pos-vrl-004）。
             && matches!(box_node.writing_mode, WritingModeValue::HorizontalTb)
         {
+            let child = &box_node.children[idx];
+            let next_in_flow = box_node.children.iter().enumerate().skip(idx + 1).find(|(_, sibling)| {
+                !sibling.is_absolute && !sibling.is_fixed && matches!(sibling.float, FloatValue::None)
+            });
+            let shift = next_in_flow
+                .map(|(_, sibling)| {
+                    let collapsed_margin = child.margin_bottom.max(sibling.margin_top).max(0.0);
+                    (child.y + child.height + collapsed_margin - sibling.y).min(0.0)
+                })
+                .unwrap_or(0.0);
             for sibling in box_node.children.iter_mut().skip(idx + 1) {
                 if sibling.is_absolute || sibling.is_fixed || !matches!(sibling.float, FloatValue::None) {
                     continue;
                 }
-                sibling.y += shrink_delta;
+                sibling.y += shift;
             }
         }
         idx += 1;

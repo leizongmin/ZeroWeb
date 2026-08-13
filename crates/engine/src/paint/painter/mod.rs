@@ -1394,17 +1394,6 @@ impl Painter {
                 self.paint_scrollbar_indicator(box_node, abs_x, abs_y, style);
             }
 
-            // CSS appearance — 绘制原生控件外观
-            if let Some(node_id) = box_node.node_id
-                && let Some(style) = styles.get(&node_id)
-                && !matches!(
-                    style.appearance,
-                    AppearanceComputedValue::None | AppearanceComputedValue::Auto
-                )
-            {
-                self.paint_appearance(box_node, abs_x, abs_y, style);
-            }
-
             // CSS scrollbar-gutter — 预留滚动条空间
             if let Some(node_id) = box_node.node_id
                 && let Some(style) = styles.get(&node_id)
@@ -1667,6 +1656,17 @@ impl Painter {
                 self.paint_container_type_indicator(box_node, abs_x, abs_y, style);
             }
         } // end skip_indicators guard
+
+        // `appearance` 是元素真实渲染，不是调试指示器；reftest/product-smoke 也必须绘制。
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(
+                style.appearance,
+                AppearanceComputedValue::None | AppearanceComputedValue::Auto
+            )
+        {
+            self.paint_appearance(box_node, abs_x, abs_y, style, doc);
+        }
 
         // 弹出本元素 counter-reset 创建的作用域（CSS2 §12.4.1：作用域在元素子树结束后关闭）。
         // 仅本元素 reset 的计数器名；paint_node 单一出口（除 line 695 orphan-skip 早返，

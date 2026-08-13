@@ -539,7 +539,7 @@ fn mark_gets_yellow_bg_black_color_from_ua() {
 
 /// R1659：`<input>` 是 void inline-block（无子节点），缺固有尺寸时 ZW 把 auto 宽度当全容器宽
 ///（fixture 37 实测 784×6）致 `<label>` 换行重叠。本测试钉死 UA 按类型注入的固有 width/height：
-/// 文本类按 `size` 属性（默认 20）估宽 + 15px 内容高；checkbox/radio/color 固定 13px 方框；
+/// 文本类按 `size` 属性（默认 20）估宽 + 24px 内容高；checkbox/radio 固定 13px 方框；
 /// submit/reset/button 按 `value` 字符数估宽。select/textarea 仍 width:auto（按内容测宽）。
 #[test]
 fn input_gets_intrinsic_sizing_from_ua_by_type() {
@@ -560,29 +560,29 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
     let mut system = StyleSystem::new();
     let styles = system.compute_styles(&doc, &[]);
     let inputs = doc.get_elements_by_tag_name("input");
-    // 文本类（type=text/password）：默认 size=20 → 20*7+8 = 148px，height 15px。
+    // 文本类（type=text/password）：默认 size=20 → 20*8.5+8 = 178px，height 24px。
     for &i in &inputs[0..2] {
         let s = styles.get(&i).expect("text input styled");
         assert!(
-            matches!(s.width, LengthValue::Px(w) if (140.0..=160.0).contains(&w)),
-            "text input default-size width ~148px, got {:?}",
+            matches!(s.width, LengthValue::Px(w) if (174.0..=182.0).contains(&w)),
+            "text input default-size width ~178px, got {:?}",
             s.width
         );
         assert!(
-            matches!(s.height, LengthValue::Px(15.0)),
-            "text input content height 15px, got {:?}",
+            matches!(s.height, LengthValue::Px(24.0)),
+            "text input content height 24px, got {:?}",
             s.height
         );
     }
-    // 显式 size=10（无 type → 文本类）→ 10*7+8 = 78px（窄于默认 20）。
+    // 显式 size=10（无 type → 文本类）→ 10*8.5+8 = 93px（窄于默认 20）。
     let sized = styles.get(&inputs[2]).expect("size=10 input styled");
     assert!(
-        matches!(sized.width, LengthValue::Px(w) if (74.0..=84.0).contains(&w)),
-        "size=10 input width ~78px, got {:?}",
+        matches!(sized.width, LengthValue::Px(w) if (89.0..=97.0).contains(&w)),
+        "size=10 input width ~93px, got {:?}",
         sized.width
     );
     // checkbox / radio：固定 13px 方框。
-    for &i in &inputs[3..5] {
+    for (index, &i) in inputs[3..5].iter().enumerate() {
         let s = styles.get(&i).expect("check input styled");
         assert!(
             matches!(s.width, LengthValue::Px(13.0)),
@@ -594,6 +594,16 @@ fn input_gets_intrinsic_sizing_from_ua_by_type() {
             "checkbox/radio height 13px, got {:?}",
             s.height
         );
+        assert!(matches!(
+            s.box_sizing,
+            zero_css_parser::values::BoxSizingValue::BorderBox
+        ));
+        assert!(matches!(s.padding_left, LengthValue::Px(0.0)));
+        assert!(matches!(s.border_left_width, LengthValue::Px(0.0)));
+        assert!(matches!(
+            (&s.appearance, index),
+            (AppearanceComputedValue::Checkbox, 0) | (AppearanceComputedValue::Radio, 1)
+        ));
     }
     // submit value="Send"（4 字符）→ 4*7+14 = 42px；reset value="Clear"（5）→ 49px。
     let submit = styles.get(&inputs[5]).expect("submit styled");

@@ -80,20 +80,38 @@ fn build_base_font_loader() -> FontLoader {
 
     // 加载 CJK 字体（Noto Sans CJK）并加入回退链——主字体缺 CJK 字形时回退到此，
     // 使中文/日文/韩文字符可渲染（DC-13 welcome.html 等含 CJK 文本的真实页面）。
-    let mut cjk_font_paths = vec![
+    let cjk_font_dir = std::env::var_os("ZW_CJK_FONT_DIR").map(PathBuf::from);
+    let mut cjk_font_paths = std::env::var_os("ZW_CJK_FONT_PATH")
+        .map(PathBuf::from)
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Some(directory) = cjk_font_dir.as_ref() {
+        cjk_font_paths.insert(0, directory.join("NotoSansCJK-Regular.ttc"));
+    }
+    cjk_font_paths.extend([
         PathBuf::from("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
         PathBuf::from("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
         PathBuf::from("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
         PathBuf::from("/System/Library/Fonts/Hiragino Sans GB.ttc"),
-    ];
+    ]);
+    let cjk_face_index = std::env::var("ZW_CJK_FACE_INDEX")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
     if let Some(fonts) = windows_fonts.as_ref() {
         cjk_font_paths.push(fonts.join("msyh.ttc"));
         cjk_font_paths.push(fonts.join("simhei.ttf"));
     }
     for path in &cjk_font_paths {
         if let Ok(data) = std::fs::read(path) {
-            if let Ok(id) = loader.load_font(&data) {
+            if let Ok(id) = loader.load_font_at_index(&data, cjk_face_index) {
                 fallback_ids.push(id);
+            }
+            if let Some(directory) = cjk_font_dir.as_ref() {
+                let bold = directory.join("NotoSansCJK-Bold.ttc");
+                if let Ok(data) = std::fs::read(bold) {
+                    let _ = loader.load_font_at_index(&data, cjk_face_index);
+                }
             }
             break;
         }

@@ -355,15 +355,14 @@ fn test_appearance_checkbox_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint(&layout, &styles, None);
+    painter.paint(&layout, &styles, Some(&doc));
 
     let prims = painter.primitives();
-    // checkbox 应生成边框（4 条线）+ 内部填充色
-    assert!(prims.fills.len() >= 4, "checkbox 应至少生成 4 个边框图元");
+    assert!(prims.fills.len() >= 2, "未选中 checkbox 应生成边框与白底");
 }
 
 #[test]
-fn test_appearance_button_generates_fill() {
+fn test_appearance_button_does_not_cover_standard_paint() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("button");
     let layout = make_box(Some(elem), 0.0, 0.0, 80.0, 30.0);
@@ -377,15 +376,10 @@ fn test_appearance_button_generates_fill() {
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
-    // button 应生成背景填充 + 高光
-    assert!(prims.fills.len() >= 2, "button 应生成背景和高光图元");
-
-    // 检查有宽度和高度匹配 box 的填充
-    let has_bg = prims
-        .fills
-        .iter()
-        .any(|f| f.rect.size.width == 80.0 && f.rect.size.height == 30.0);
-    assert!(has_bg, "button 背景应匹配 box 尺寸");
+    assert!(
+        prims.fills.is_empty(),
+        "button appearance 不应覆盖标准背景、边框和文字绘制"
+    );
 }
 
 #[test]
@@ -426,10 +420,18 @@ fn test_appearance_radio_generates_indicator() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint(&layout, &styles, None);
+    doc.set_attribute(elem, "checked", "");
+    painter.paint(&layout, &styles, Some(&doc));
 
     let prims = painter.primitives();
-    assert!(prims.fills.len() >= 4, "radio 应至少生成 4 个边框图元");
+    assert!(!prims.fills.is_empty(), "选中 radio 应生成抗锯齿外圈与实心圆");
+    assert!(
+        prims
+            .fills
+            .iter()
+            .any(|fill| fill.color.r == 0 && fill.color.g == 117 && fill.color.b == 255),
+        "选中 radio 应包含默认 accent 色"
+    );
 }
 
 #[test]
@@ -445,7 +447,8 @@ fn test_appearance_with_accent_color_override() {
     styles.insert(elem, style);
 
     let mut painter = Painter::new();
-    painter.paint(&layout, &styles, None);
+    doc.set_attribute(elem, "checked", "");
+    painter.paint(&layout, &styles, Some(&doc));
 
     let prims = painter.primitives();
     // checkbox 内部应使用 accent-color 而非默认蓝色

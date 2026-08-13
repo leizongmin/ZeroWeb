@@ -2760,6 +2760,7 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     let tab_id = app.shell.active_tab_id().unwrap();
     app.ensure_webview(tab_id);
     app.set_legacy_frame_publish_for_test(tab_id);
+    app.set_compositor_status_for_test(crate::compositor_client::CompositorStatus::Disconnected);
     let html = include_str!("../../../examples/forms/form-interaction-test.html");
     let before_load = app.snapshot_seq_for_test(tab_id);
     app.load_webview_html_without_wait_for_test(tab_id, html, None);
@@ -2792,11 +2793,34 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
         }
         diff as f32 / (a.len() / 4) as f32
     };
+    let diff_bounds = |a: &[u8], b: &[u8]| -> Option<(usize, usize, usize, usize, usize)> {
+        let frame_width = 1280usize;
+        let mut bounds: Option<(usize, usize, usize, usize)> = None;
+        let mut diff = 0usize;
+        for py in 0..900 {
+            for px in 0..frame_width {
+                let index = (py * frame_width + px) * 4;
+                let delta = a[index].abs_diff(b[index]) as u16
+                    + a[index + 1].abs_diff(b[index + 1]) as u16
+                    + a[index + 2].abs_diff(b[index + 2]) as u16;
+                if delta > 48 {
+                    diff += 1;
+                    bounds = Some(match bounds {
+                        Some((min_x, min_y, max_x, max_y)) => {
+                            (min_x.min(px), min_y.min(py), max_x.max(px), max_y.max(py))
+                        }
+                        None => (px, py, px, py),
+                    });
+                }
+            }
+        }
+        bounds.map(|(min_x, min_y, max_x, max_y)| (min_x, min_y, max_x, max_y, diff))
+    };
 
     // ① 首个就绪合成帧：GPU backend 初始化可能晚于 renderer 首帧，轮询到两通道
     // 都含页面内容；不降低非白阈值。
     let initial_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let (cpu0, gpu0) = loop {
+    let (_first_cpu, _first_gpu) = loop {
         let (cpu, gpu) = composite(&mut app);
         let cpu_non_white = non_white_ratio(&cpu);
         let gpu_non_white = non_white_ratio(&gpu);
@@ -2809,9 +2833,25 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
+    let settle_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut observed_seq = app.snapshot_seq_for_test(tab_id);
+    let mut quiet_since = std::time::Instant::now();
+    while quiet_since.elapsed() < std::time::Duration::from_millis(200) {
+        app.poll_tab_fetch();
+        let current = app.snapshot_seq_for_test(tab_id);
+        if current != observed_seq {
+            observed_seq = current;
+            quiet_since = std::time::Instant::now();
+        }
+        assert!(
+            std::time::Instant::now() < settle_deadline,
+            "首屏 legacy 快照应在 10s 内稳定"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let (cpu0, gpu0) = composite(&mut app);
     let parity0 = diff_ratio(&cpu0, &gpu0);
     assert!(parity0 < 0.15, "CPU/GPU 初始合成帧差异应 <15%（got {parity0:.3}）");
-
     // ② 点击聚焦 #name（多进程 renderer 完整焦点链路）+ 键盘输入 'abc'。
     // 命中扫描找 #name 中心（表单布局位置不确定）。R3254-F 时序适配：慢 runner
     //（windows/macos）上 wait_for_snapshot_after 通过但 hit-test 的 DOM/布局未就绪——
@@ -2820,16 +2860,25 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     let scan_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let mut name_point: Option<(f32, f32)> = None;
     while name_point.is_none() {
-        'scan: for y in (0..logical_h as u32).step_by(4) {
+        let mut bounds: Option<(f32, f32, f32, f32)> = None;
+        for y in (0..logical_h as u32).step_by(4) {
             for x in (0..logical_w as u32).step_by(4) {
                 if let Some(hit) = app.hit_test_page_element_for_test(tab_id, x as f32, y as f32)
                     && hit.id.as_deref() == Some("name")
                 {
-                    name_point = Some((x as f32, y as f32));
-                    break 'scan;
+                    bounds = Some(match bounds {
+                        Some((min_x, min_y, max_x, max_y)) => (
+                            min_x.min(x as f32),
+                            min_y.min(y as f32),
+                            max_x.max(x as f32),
+                            max_y.max(y as f32),
+                        ),
+                        None => (x as f32, y as f32, x as f32, y as f32),
+                    });
                 }
             }
         }
+        name_point = bounds.map(|(min_x, min_y, max_x, max_y)| ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0));
         if name_point.is_none() {
             app.poll_tab_fetch();
             assert!(
@@ -2853,8 +2902,25 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     for ch in "abc".chars() {
         app.handle_key(&ch.to_string(), true, None);
     }
-    // 轮询等合成帧反映输入（renderer 输入 + 渲染异步，不等 seq 更鲁棒）。
-    let (cpu1, gpu1) = wait_composite_changed(&mut app, &composite, &diff_ratio, &cpu0, &gpu0, "输入 abc");
+    let glyph_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !app
+        .last_render_text_for_test(tab_id)
+        .is_some_and(|text| text.contains("abc"))
+    {
+        app.poll_tab_fetch();
+        assert!(
+            std::time::Instant::now() < glyph_deadline,
+            "输入 abc 后 renderer 的 legacy glyph 快照必须包含 abc"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let (cpu1, gpu1) = composite(&mut app);
+    let cpu_bounds = diff_bounds(&cpu0, &cpu1);
+    let gpu_bounds = diff_bounds(&gpu0, &gpu1);
+    assert!(
+        cpu_bounds.is_some() && gpu_bounds.is_some(),
+        "输入 abc 后合成帧必须变化（cpu={cpu_bounds:?} gpu={gpu_bounds:?}, click=({px:.1},{py:.1})）"
+    );
     let parity1 = diff_ratio(&cpu1, &gpu1);
     assert!(parity1 < 0.15, "CPU/GPU 输入后合成帧差异应 <15%（got {parity1:.3}）");
 

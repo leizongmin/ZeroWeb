@@ -318,7 +318,7 @@ impl<'a> TextShaper<'a> {
     ) -> Option<Vec<ShapedGlyph>> {
         let font_data = self.font_loader.get_font_data(font_id.0)?;
 
-        let face = rustybuzz::Face::from_slice(font_data, 0)?;
+        let face = rustybuzz::Face::from_slice(font_data, self.font_loader.face_index(font_id.0))?;
 
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(text);

@@ -9,6 +9,7 @@
 //! - `product-smoke <html>` — 渲染产品静态 fixture 到 CPU PNG，可与 chromium Oracle PNG 像素对比（DC-13）
 
 mod manifest;
+mod product_smoke;
 mod reftest;
 mod reftest_data;
 mod report;
@@ -39,7 +40,9 @@ Commands:
   reftest-oracle [filter]  DC-14: render upstream test pages vs chromium oracle-shots (true pass-rate)
   struct-sweep [filter]   DC-13: sibling-overlap struct-check sweep over upstream test pages
   product-smoke <html>  Render a product static fixture to CPU PNG (DC-13)
-                       (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>)
+                       (--base-dir, --oracle <png>, --out <png>, --max-diff <pct>,
+                        --channel-diff <0..255>, --geometry-oracle <json>,
+                        --max-geometry-diff <px>, --region <id>:<max-pct>)
   perf                  Page-level perf benchmark (perf-gate page scenarios)
                        (--scenario <id>:<path> [repeatable], --base-dir,
                         --width <px>, --height <px>, --iterations <n>)
@@ -273,6 +276,11 @@ fn cmd_product_smoke(args: &[String]) {
     // DC-13 回归门禁阈值（%）：diff 超过则非零退出。用于每轮 product-smoke 检查
     // 捕获产品可见回归（如 R428 min-size:auto 致 welcome +7.65pp，此前藏了 14 轮）。
     let mut max_diff: Option<f64> = None;
+    let mut channel_diff: u8 = 0;
+    let mut pixel_radius: usize = 0;
+    let mut geometry_oracle: Option<String> = None;
+    let mut max_geometry_diff: f64 = 2.0;
+    let mut region_gates = Vec::new();
     // DC-13 line 321：经 zero-webview 嵌入边界渲染（对照 engine-direct 默认路径），
     // 验证产品层与 WebView 层不互相掩盖问题。仅自包含 fixture（无外链资源）适用。
     let mut via_webview = false;
@@ -330,6 +338,39 @@ fn cmd_product_smoke(args: &[String]) {
                 i += 1;
                 if i < args.len() {
                     max_diff = args[i].parse().ok();
+                }
+            }
+            "--channel-diff" => {
+                i += 1;
+                if i < args.len() {
+                    channel_diff = args[i].parse().unwrap_or(0);
+                }
+            }
+            "--pixel-radius" => {
+                i += 1;
+                if i < args.len() {
+                    pixel_radius = args[i].parse().unwrap_or(0);
+                }
+            }
+            "--geometry-oracle" => {
+                i += 1;
+                if i < args.len() {
+                    geometry_oracle = Some(args[i].clone());
+                }
+            }
+            "--max-geometry-diff" => {
+                i += 1;
+                if i < args.len() {
+                    max_geometry_diff = args[i].parse().unwrap_or(2.0);
+                }
+            }
+            "--region" => {
+                i += 1;
+                if i < args.len() {
+                    match product_smoke::parse_region_gate(&args[i]) {
+                        Some(gate) => region_gates.push(gate),
+                        None => eprintln!("Warning: --region expects <id>:<max-pct>, got {}", args[i]),
+                    }
                 }
             }
             "--via-webview" => {
@@ -423,7 +464,9 @@ fn cmd_product_smoke(args: &[String]) {
         || !expect_classes.is_empty()
         || !expect_lines.is_empty()
         || !expect_lines_min.is_empty()
-        || check_img_visibility;
+        || check_img_visibility
+        || geometry_oracle.is_some()
+        || !region_gates.is_empty();
     // layout_html = render_html 实际解析的 HTML（经 script DOM 变更后的 mutated_html）。
     // 结构检查须用它建 labels（node_id 与 layout 树一致），否则真元素误标 "(anon)"。
     // R2198：paint_skip = orphan inline 元素集（R2197 Phase A slice 3），供 struct-check
@@ -453,6 +496,7 @@ fn cmd_product_smoke(args: &[String]) {
     reftest::save_fb_as_png(&fb, std::path::Path::new(out_path));
     eprintln!("wrote ZeroWeb CPU PNG: {out_path} ({}x{})", fb.width, fb.height);
 
+    let mut visual_failed = false;
     if let Some(oracle_path) = oracle {
         match load_png_to_framebuffer(&oracle_path) {
             Ok(oracle_fb) => {
@@ -462,7 +506,8 @@ fn cmd_product_smoke(args: &[String]) {
                         fb.width, fb.height, oracle_fb.width, oracle_fb.height
                     );
                 }
-                let (diff_px, _max_diff) = reftest::compare_pixels(&fb, &oracle_fb, 0);
+                let (_, max_channel_diff) = reftest::compare_pixels(&fb, &oracle_fb, channel_diff);
+                let diff_px = product_smoke::full_diff_pixels(&fb, &oracle_fb, channel_diff, pixel_radius);
                 let w = fb.width.min(oracle_fb.width) as usize;
                 let h = fb.height.min(oracle_fb.height) as usize;
                 let total = w * h;
@@ -472,19 +517,72 @@ fn cmd_product_smoke(args: &[String]) {
                     0.0
                 };
                 println!(
-                    "product-smoke diff vs chromium {}: {diff_px}/{total} px ({:.2}%)",
-                    oracle_path, pct
+                    "product-smoke diff vs chromium {}: {diff_px}/{total} px ({:.2}%, channel tolerance={}, pixel radius={}, max channel diff={})",
+                    oracle_path, pct, channel_diff, pixel_radius, max_channel_diff
                 );
-                // DC-13 回归门禁：diff 超阈值则非零退出（退出码 2，区别于参数错误 1）。
                 if let Some(threshold) = max_diff
-                    && pct > threshold
+                    && !product_smoke::full_diff_passes(pct, threshold)
                 {
                     eprintln!(
-                        "REGRESSION: product-smoke diff {:.2}% exceeds threshold {:.2}% \
-                         (baseline ~17%; investigate or raise --max-diff if baseline shifted)",
+                        "REGRESSION: product-smoke diff {:.2}% meets or exceeds strict threshold {:.2}%",
                         pct, threshold
                     );
-                    std::process::exit(2);
+                    visual_failed = true;
+                }
+
+                if let Some(path) = geometry_oracle.as_deref() {
+                    match product_smoke::load_geometry_oracle(path) {
+                        Ok(geometry) => {
+                            let actual = layout_root
+                                .as_ref()
+                                .map(|root| product_smoke::collect_layout_rects(root, &layout_html))
+                                .unwrap_or_default();
+                            for gate in &region_gates {
+                                match product_smoke::geometry_diff(&gate.id, &geometry, &actual) {
+                                    Ok(diff) => {
+                                        println!(
+                                            "product-smoke geometry #{}: max delta {:.2}px (threshold {:.2}px)",
+                                            gate.id, diff, max_geometry_diff
+                                        );
+                                        if diff > max_geometry_diff {
+                                            visual_failed = true;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        eprintln!("REGRESSION: {error}");
+                                        visual_failed = true;
+                                    }
+                                }
+                                match (actual.get(&gate.id), geometry.rects.get(&gate.id)) {
+                                    (Some(actual_rect), Some(expected_rect)) => {
+                                        let pct = product_smoke::region_diff_pct(
+                                            &fb,
+                                            &oracle_fb,
+                                            *actual_rect,
+                                            *expected_rect,
+                                            channel_diff,
+                                            pixel_radius,
+                                        );
+                                        println!(
+                                            "product-smoke region #{}: {:.2}% (threshold {:.2}%)",
+                                            gate.id, pct, gate.max_diff_pct
+                                        );
+                                        if pct > gate.max_diff_pct {
+                                            visual_failed = true;
+                                        }
+                                    }
+                                    _ => {
+                                        eprintln!("REGRESSION: geometry missing #{}", gate.id);
+                                        visual_failed = true;
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("Error loading geometry oracle: {error}");
+                            visual_failed = true;
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -587,6 +685,9 @@ fn cmd_product_smoke(args: &[String]) {
             }
             std::process::exit(3);
         }
+    }
+    if visual_failed {
+        std::process::exit(2);
     }
 }
 

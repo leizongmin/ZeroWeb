@@ -778,6 +778,7 @@ impl LayoutEngine {
         if std::env::var("ZW_IFC_GROW_SHIFT").as_deref() != Ok("0") {
             shift_siblings_after_ifc_grow(&mut root_box, styles, false);
         }
+        crate::form_layout::shrink_mixed_control_forms(&mut root_box, doc, styles);
 
         // 12.5 后处理：修正 calc(P% ± Npx) 尺寸。
         // taffy 不支持 calc 表达式，convert 层将 calc(100% - 6px) 近似为 Percent(1.0)。

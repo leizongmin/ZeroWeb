@@ -922,6 +922,19 @@ impl StyleSystem {
                 "p" => {
                     ua_decl_inputs.push(("margin".to_string(), "1em 0".to_string(), false, (0, 0, 0), None));
                 }
+                // https://html.spec.whatwg.org/multipage/rendering.html#the-fieldset-and-legend-elements
+                "fieldset" => {
+                    ua_decl_inputs.push((
+                        "border".to_string(),
+                        "2px groove #c0c0c0".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                }
+                "legend" => {
+                    ua_decl_inputs.push(("padding".to_string(), "0 2px".to_string(), false, (0, 0, 0), None));
+                }
                 // R1690：HTML 渲染规范 UA 块级元素的默认 margin（chromium UA 样式表）。
                 // ZW 此前仅给 display:block 无 margin → blockquote/dd/figure 内容无缩进，
                 // 与 chromium 发散。blockquote/figure margin 1em 40px（上下 1em + 左右 40px），
@@ -1081,20 +1094,30 @@ impl StyleSystem {
                 // bg + 边框 + padding 使控件可见（产品验收口径「结构不崩、核心语义可见」）。
                 // 精确像素匹配系统色 ButtonFace/Canvas 须系统色支持（后续），当前用近似 hex。
                 "button" => {
+                    ua_decl_inputs.push(("color".to_string(), "#080808".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push((
                         "background-color".to_string(),
-                        "#d4d4d4".to_string(),
+                        "#efefef".to_string(),
                         false,
                         (0, 0, 0),
                         None,
                     ));
                     ua_decl_inputs.push((
                         "border".to_string(),
-                        "1px solid #767676".to_string(),
+                        "2px solid #767676".to_string(),
                         false,
                         (0, 0, 0),
                         None,
                     ));
+                    ua_decl_inputs.push((
+                        "box-sizing".to_string(),
+                        "border-box".to_string(),
+                        false,
+                        (0, 0, 0),
+                        None,
+                    ));
+                    ua_decl_inputs.push(("border-radius".to_string(), "2px".to_string(), false, (0, 0, 0), None));
+                    ua_decl_inputs.push(("appearance".to_string(), "button".to_string(), false, (0, 0, 0), None));
                     ua_decl_inputs.push(("padding".to_string(), "1px 6px".to_string(), false, (0, 0, 0), None));
                 }
                 "input" | "select" | "textarea" => {
@@ -1107,7 +1130,11 @@ impl StyleSystem {
                     ));
                     ua_decl_inputs.push((
                         "border".to_string(),
-                        "1px solid #767676".to_string(),
+                        if tag == "input" {
+                            "2px solid #767676".to_string()
+                        } else {
+                            "1px solid #767676".to_string()
+                        },
                         false,
                         (0, 0, 0),
                         None,
@@ -1129,7 +1156,33 @@ impl StyleSystem {
                         const CHAR_PX: f32 = 7.0;
                         match itype.as_str() {
                             // checkbox/radio：固定方框（Chromium ~13px）。
-                            "checkbox" | "radio" | "color" => {
+                            "checkbox" | "radio" => {
+                                ua_decl_inputs.push(("width".to_string(), "13px".to_string(), false, (0, 0, 0), None));
+                                ua_decl_inputs.push(("height".to_string(), "13px".to_string(), false, (0, 0, 0), None));
+                                ua_decl_inputs.push((
+                                    "box-sizing".to_string(),
+                                    "border-box".to_string(),
+                                    true,
+                                    (0, 0, 0),
+                                    None,
+                                ));
+                                ua_decl_inputs.push(("padding".to_string(), "0".to_string(), true, (0, 0, 0), None));
+                                ua_decl_inputs.push(("border".to_string(), "0".to_string(), true, (0, 0, 0), None));
+                                ua_decl_inputs.push(("appearance".to_string(), itype.clone(), false, (0, 0, 0), None));
+                                ua_decl_inputs.push((
+                                    "margin".to_string(),
+                                    if itype == "checkbox" {
+                                        "3px 3px 3px 4px"
+                                    } else {
+                                        "3px 3px 0 5px"
+                                    }
+                                    .to_string(),
+                                    false,
+                                    (0, 0, 0),
+                                    None,
+                                ));
+                            }
+                            "color" => {
                                 ua_decl_inputs.push(("width".to_string(), "13px".to_string(), false, (0, 0, 0), None));
                                 ua_decl_inputs.push(("height".to_string(), "13px".to_string(), false, (0, 0, 0), None));
                             }
@@ -1157,7 +1210,7 @@ impl StyleSystem {
                                     .filter(|&n| n >= 1.0)
                                     .unwrap_or(20.0);
                                 // +8 ≈ 输入框左右 padding/border chrome（2px padding + 1px border ×2）。
-                                let w = size * CHAR_PX + 8.0;
+                                let w = size * 8.5 + 8.0;
                                 ua_decl_inputs.push((
                                     "width".to_string(),
                                     format!("{:.0}px", w),
@@ -1165,7 +1218,7 @@ impl StyleSystem {
                                     (0, 0, 0),
                                     None,
                                 ));
-                                ua_decl_inputs.push(("height".to_string(), "15px".to_string(), false, (0, 0, 0), None));
+                                ua_decl_inputs.push(("height".to_string(), "24px".to_string(), false, (0, 0, 0), None));
                             }
                         }
                     } else if tag == "select" && std::env::var("ZW_SELECT_SUPPRESS_OPTIONS").as_deref() != Ok("0") {

@@ -198,6 +198,8 @@ pub struct BrowserApp {
     favicon_fetch: FaviconFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
+    #[cfg(test)]
+    compositor_status_override: Option<crate::compositor_client::CompositorStatus>,
 }
 
 impl BrowserApp {
@@ -301,6 +303,8 @@ impl BrowserApp {
             favicon_fetch: FaviconFetchState::new(),
             download_panel_open: false,
             permissions: zero_security::permission::PermissionManager::new(),
+            #[cfg(test)]
+            compositor_status_override: None,
         };
         app.tabs.set_javascript_enabled(app.shell.settings().javascript_enabled);
         if crate::compositor_client::enabled() {
@@ -679,10 +683,27 @@ impl BrowserApp {
         self.tabs.set_legacy_frame_publish_for_test(tab_id);
     }
 
+    #[cfg(test)]
+    pub fn set_compositor_status_for_test(&mut self, status: crate::compositor_client::CompositorStatus) {
+        self.compositor_status_override = Some(status);
+    }
+
     /// R3254 测试 helper：last_render 的 glyph 数量（诊断合成帧内容）。
     #[cfg(test)]
     pub fn last_render_glyphs_for_test(&self, tab_id: TabId) -> Option<usize> {
         self.tabs.last_render(tab_id).map(|r| r.primitives.glyphs.len())
+    }
+
+    #[cfg(test)]
+    pub fn last_render_text_for_test(&self, tab_id: TabId) -> Option<String> {
+        self.tabs.last_render(tab_id).map(|render| {
+            render
+                .primitives
+                .glyphs
+                .iter()
+                .filter_map(|glyph| glyph.code_point())
+                .collect()
+        })
     }
 
     fn window_controls_origin_x(&self, width: f32, s: f32) -> f32 {
@@ -1552,6 +1573,10 @@ impl BrowserApp {
 
     /// 返回当前 Tab 后端实际可用的 compositor 状态。
     pub(crate) fn compositor_status(&self) -> crate::compositor_client::CompositorStatus {
+        #[cfg(test)]
+        if let Some(status) = self.compositor_status_override {
+            return status;
+        }
         if self.tabs.is_multiprocess() {
             crate::compositor_client::status()
         } else {

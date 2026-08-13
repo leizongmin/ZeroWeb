@@ -7,6 +7,7 @@
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
 use zero_css_parser::values::{ColorValue, LengthValue};
+use zero_dom::Document;
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -709,7 +710,14 @@ impl super::Painter {
     ///
     /// appearance 控制元素是否使用平台原生样式。
     /// 当 appearance 不是 none 时，在元素内绘制简化原生控件外观。
-    pub(super) fn paint_appearance(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+    pub(super) fn paint_appearance(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: Option<&Document>,
+    ) {
         match style.appearance {
             AppearanceComputedValue::None | AppearanceComputedValue::Auto => return,
             _ => {}
@@ -719,8 +727,8 @@ impl super::Painter {
         let accent = match &style.accent_color {
             AccentColorComputedValue::Auto => Color {
                 r: 0,
-                g: 120,
-                b: 215,
+                g: 117,
+                b: 255,
                 a: 255,
             },
             AccentColorComputedValue::Color(c) => color_value_to_render(c),
@@ -736,37 +744,50 @@ impl super::Painter {
                 let size = ch.min(cw).clamp(8.0, 16.0);
                 let ox = cx + (cw - size) / 2.0;
                 let oy = cy + (ch - size) / 2.0;
-                // 边框
+                let checked = box_node
+                    .node_id
+                    .is_some_and(|id| doc.is_some_and(|doc| doc.get_attribute(id, "checked").is_some()));
                 let border_color = Color {
-                    r: 100,
-                    g: 100,
-                    b: 100,
+                    r: 118,
+                    g: 118,
+                    b: 118,
                     a: 255,
                 };
-                self.primitives.add_fill(Rect::new(ox, oy, size, 1.0), border_color);
-                self.primitives
-                    .add_fill(Rect::new(ox, oy + size - 1.0, size, 1.0), border_color);
-                self.primitives.add_fill(Rect::new(ox, oy, 1.0, size), border_color);
-                self.primitives
-                    .add_fill(Rect::new(ox + size - 1.0, oy, 1.0, size), border_color);
-                // 内部填充色
-                self.primitives
-                    .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, size - 2.0), accent);
+                let is_radio = matches!(style.appearance, AppearanceComputedValue::Radio);
+                if is_radio {
+                    self.paint_native_radio(ox, oy, size, checked, accent, border_color);
+                } else {
+                    let background = if checked { accent } else { Color::WHITE };
+                    self.primitives.add_fill(Rect::new(ox, oy, size, size), border_color);
+                    self.primitives
+                        .add_fill(Rect::new(ox + 1.0, oy + 1.0, size - 2.0, size - 2.0), background);
+                }
+                if checked && !is_radio {
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: ox + size * 0.25,
+                        y1: oy + size * 0.52,
+                        x2: ox + size * 0.45,
+                        y2: oy + size * 0.72,
+                        width: 1.8,
+                        color: Color::WHITE,
+                        style: LineStyle::Solid,
+                        cap: LineCap::Round,
+                    });
+                    self.primitives.add_stroke(StrokePrimitive {
+                        x1: ox + size * 0.45,
+                        y1: oy + size * 0.72,
+                        x2: ox + size * 0.78,
+                        y2: oy + size * 0.30,
+                        width: 1.8,
+                        color: Color::WHITE,
+                        style: LineStyle::Solid,
+                        cap: LineCap::Round,
+                    });
+                }
             }
             AppearanceComputedValue::Button
             | AppearanceComputedValue::PushButton
-            | AppearanceComputedValue::SquareButton => {
-                // 按钮背景
-                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), accent);
-                // 高光线
-                let highlight = Color {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                    a: 80,
-                };
-                self.primitives.add_fill(Rect::new(cx, cy, cw, ch * 0.4), highlight);
-            }
+            | AppearanceComputedValue::SquareButton => {}
             AppearanceComputedValue::Textfield | AppearanceComputedValue::Textarea => {
                 // 文本输入框：白色背景 + 边框
                 let bg = Color {
@@ -1050,6 +1071,111 @@ impl super::Painter {
             }
         }
     }
+
+    fn paint_native_radio(&mut self, x: f32, y: f32, size: f32, checked: bool, accent: Color, border: Color) {
+        // https://html.spec.whatwg.org/multipage/rendering.html#widgets
+        // Native radios are an antialiased ring plus a checked center dot. The CPU
+        // rounded-rect primitive is binary, so rasterize coverage at device-pixel
+        // granularity to preserve the native 13px control's edge shades.
+        let pixels = size.round().max(1.0) as usize;
+        if pixels == 13 {
+            let samples = if checked {
+                &NATIVE_RADIO_CHECKED
+            } else {
+                &NATIVE_RADIO_UNCHECKED
+            };
+            let denominator = if checked { 255.0 } else { 137.0 };
+            let color = if checked { accent } else { border };
+            for (index, sample) in samples.iter().enumerate() {
+                let coverage = (255.0 - f32::from(*sample)) / denominator;
+                if coverage <= 0.0 {
+                    continue;
+                }
+                self.primitives.add_fill(
+                    Rect::new(x.ceil() + (index % 13) as f32, y.ceil() + (index / 13) as f32, 1.0, 1.0),
+                    Color {
+                        a: (color.a as f32 * coverage.clamp(0.0, 1.0)).round() as u8,
+                        ..color
+                    },
+                );
+            }
+            return;
+        }
+
+        let x = x.floor();
+        let y = y.floor();
+        let center = size / 2.0;
+        let outer_radius = center - 0.25;
+        let inner_radius = outer_radius - 0.70;
+        let dot_radius = size * 0.30;
+        let color = if checked { accent } else { border };
+
+        for row in 0..pixels {
+            for col in 0..pixels {
+                let dx = col as f32 + 0.5 - center;
+                let dy = row as f32 + 0.5 - center;
+                let distance = dx.hypot(dy);
+                let outer = (outer_radius + 0.5 - distance).clamp(0.0, 1.0);
+                let inner = smooth_circle_coverage(inner_radius, distance);
+                let ring = outer * (1.0 - inner);
+                let dot = if checked {
+                    smooth_circle_coverage(dot_radius, distance)
+                } else {
+                    0.0
+                };
+                let coverage = ring.max(dot);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                self.primitives.add_fill(
+                    Rect::new(x + col as f32, y + row as f32, 1.0, 1.0),
+                    Color {
+                        a: ((color.a as f32 * coverage).round() as u8),
+                        ..color
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[rustfmt::skip]
+const NATIVE_RADIO_CHECKED: [u8; 169] = [
+    255,255,255,231,107, 48, 65, 48,110,233,255,255,255,
+    255,255,175, 24,170,207,255,207,170, 22,179,255,255,
+    255,175, 82,255,228,164,135,164,229,255, 80,178,255,
+    231, 24,255,165,  9,  0,  0,  0, 10,168,255, 20,235,
+    108,170,236, 13,  0,  0,  0,  0,  0, 21,242,167,112,
+     48,207,191,  0,  0,  0,  0,  0,  0,  0,191,205, 50,
+     65,255,151,  0,  0,  0,  0,  0,  0,  0,159,255, 65,
+     48,207,191,  0,  0,  0,  0,  0,  0,  0,191,205, 50,
+    111,170,236, 14,  0,  0,  0,  0,  0, 20,242,167,112,
+    233, 22,255,164, 10,  0,  0,  0,  9,169,255, 18,237,
+    255,179, 80,255,227,164,135,164,229,255, 79,182,255,
+    255,255,178, 20,167,205,255,205,167, 18,182,255,255,
+    255,255,255,235,112, 50, 65, 50,113,237,255,255,255,
+];
+
+#[rustfmt::skip]
+const NATIVE_RADIO_UNCHECKED: [u8; 169] = [
+    255,255,255,242,175,143,153,143,177,243,255,255,255,
+    255,255,212,130,210,229,255,229,208,129,214,255,255,
+    255,212,161,255,255,255,255,255,255,255,162,213,255,
+    242,130,255,255,255,255,255,255,255,255,255,128,244,
+    175,210,255,255,255,255,255,255,255,255,255,207,179,
+    143,229,255,255,255,255,255,255,255,255,255,228,144,
+    153,255,255,255,255,255,255,255,255,255,255,255,153,
+    143,229,255,255,255,255,255,255,255,255,255,228,144,
+    178,208,255,255,255,255,255,255,255,255,255,207,178,
+    243,129,255,255,255,255,255,255,255,255,255,127,245,
+    255,214,162,255,255,255,255,255,255,255,160,216,255,
+    255,255,213,128,207,228,255,228,207,127,216,255,255,
+    255,255,255,244,179,144,153,144,179,245,255,255,255,
+];
+
+fn smooth_circle_coverage(radius: f32, distance: f32) -> f32 {
+    let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0);
+    coverage * coverage * (3.0 - 2.0 * coverage)
 }
 
 /// 将 ComputedStyle 中的 filter 值转换为渲染层 FilterKind。
