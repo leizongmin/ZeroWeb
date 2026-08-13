@@ -1912,7 +1912,8 @@
     ctx._fk = 'auto';
     Object.defineProperty(ctx, 'fontKerning', {
       set: function (v) {
-        v = String(v).toLowerCase();
+        // R34xx：值大小写敏感（spec——'nORmal' 等混合大小写非法忽略，保持旧值）。
+        v = String(v);
         if (v !== 'auto' && v !== 'normal' && v !== 'none') return;
         this._fk = v;
         __zw_canvas_op(h, 'setFontKerning', String(v));
@@ -1922,7 +1923,7 @@
     ctx._fst = 'normal';
     Object.defineProperty(ctx, 'fontStretch', {
       set: function (v) {
-        v = String(v).toLowerCase();
+        v = String(v);
         if (['ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'normal',
              'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded'].indexOf(v) < 0) return;
         this._fst = v;
@@ -1933,7 +1934,7 @@
     ctx._fvc = 'normal';
     Object.defineProperty(ctx, 'fontVariantCaps', {
       set: function (v) {
-        v = String(v).toLowerCase();
+        v = String(v);
         if (['normal', 'small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps',
              'unicase', 'titling-caps'].indexOf(v) < 0) return;
         this._fvc = v;
@@ -1944,7 +1945,7 @@
     ctx._tr = 'auto';
     Object.defineProperty(ctx, 'textRendering', {
       set: function (v) {
-        v = String(v).toLowerCase();
+        v = String(v);
         if (v !== 'auto' && v !== 'optimizeSpeed' && v !== 'optimizeLegibility' && v !== 'geometricPrecision') return;
         this._tr = v;
         __zw_canvas_op(h, 'setTextRendering', String(v));

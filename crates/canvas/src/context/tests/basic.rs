@@ -258,6 +258,8 @@ fn test_font_descriptor_custom() {
         size: 14.0,
         weight: FontWeight::Bold,
         style: FontStyle::Italic,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
     };
     assert_eq!(f.family, "monospace");
     assert!(matches!(f.weight, FontWeight::Bold));
@@ -272,6 +274,8 @@ fn test_canvas_set_font() {
         size: 20.0,
         weight: FontWeight::Bold,
         style: FontStyle::Italic,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
     };
     ctx.set_font(font);
     let metrics = ctx.measure_text("test");
@@ -486,6 +490,8 @@ fn test_canvas_save_restore_font() {
         size: 16.0,
         weight: FontWeight::Bold,
         style: FontStyle::Normal,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
     });
     ctx.save();
     ctx.set_font(FontDescriptor {
@@ -493,6 +499,8 @@ fn test_canvas_save_restore_font() {
         size: 20.0,
         weight: FontWeight::Normal,
         style: FontStyle::Italic,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
     });
     ctx.restore();
     let m = ctx.measure_text("x");

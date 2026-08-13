@@ -555,3 +555,74 @@ fn test_bezier_curve_to() {
     ctx.move_to(10.0, 10.0);
     ctx.bezier_curve_to(30.0, 0.0, 70.0, 20.0, 90.0, 10.0);
 }
+
+// R34xx：真字体光栅路径（headless @font-face 注入的 FontLoader）——fill_text 像素落盘 +
+// measure_text 真度量。CanvasTest.ttf 资产位于 tests/wpt-runner/wpt-data/fonts/。
+#[test]
+fn test_fill_text_real_font_rasterization() {
+    use std::sync::{Arc, Mutex};
+    let bytes = std::fs::read("/lzcapp/document/work/ZeroWeb-2/tests/wpt-runner/wpt-data/fonts/CanvasTest.ttf")
+        .unwrap_or_else(|_| Vec::new());
+    if bytes.is_empty() {
+        // 资产缺失（非 wpt-runner 环境）→ 跳过（不 panic）。
+        return;
+    }
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("CanvasTest", fid);
+    let loader = Arc::new(Mutex::new(loader));
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_font_loader(Some(loader));
+    ctx.set_font(FontDescriptor {
+        family: "CanvasTest".to_string(),
+        size: 50.0,
+        weight: FontWeight::Normal,
+        style: FontStyle::Normal,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
+    });
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(0, 255, 0)));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(255, 0, 0)));
+    ctx.fill_text("CC", 0.0, 37.5, None);
+    // CanvasTest 'C' 为竖条字形：墨水覆盖 (5,5)..(95,45)（WPT baseline.alphabetic 同断言）。
+    for (x, y) in [(5, 5), (25, 25), (5, 45), (75, 25), (95, 45)] {
+        let p = ctx.get_image_data(x, y, 1, 1);
+        assert_eq!(
+            (p.data[0], p.data[1]),
+            (255, 0),
+            "text ink at ({x},{y}) should be red, got r={} g={}",
+            p.data[0],
+            p.data[1]
+        );
+    }
+    // measureText 真度量：CanvasTest advance = 1em/字符。
+    let m = ctx.measure_text("CC");
+    assert!((m.width - 100.0).abs() < 1.0, "advance 2em, got {}", m.width);
+}
+
+// R34xx：letterSpacing 相对单位随字号重解析（change.font 语义）。
+#[test]
+fn test_letter_spacing_em_reresolves_on_font_change() {
+    let mut ctx = CanvasContext::new(200, 50);
+    ctx.set_font(FontDescriptor {
+        family: "sans-serif".to_string(),
+        size: 10.0,
+        weight: FontWeight::Normal,
+        style: FontStyle::Normal,
+        letter_spacing: "1em".to_string(),
+        word_spacing: "0px".to_string(),
+    });
+    let m10 = ctx.measure_text("hello");
+    assert!((m10.width - (5.0 * 6.0 + 10.0 * 5.0)).abs() < 0.01, "10px: 1em=10px");
+    ctx.set_font(FontDescriptor {
+        family: "sans-serif".to_string(),
+        size: 20.0,
+        weight: FontWeight::Normal,
+        style: FontStyle::Normal,
+        letter_spacing: "1em".to_string(),
+        word_spacing: "0px".to_string(),
+    });
+    let m20 = ctx.measure_text("hello");
+    assert!((m20.width - (5.0 * 12.0 + 20.0 * 5.0)).abs() < 0.01, "20px: 1em=20px");
+}

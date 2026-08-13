@@ -1160,6 +1160,8 @@ mod tests {
             size: 14.0,
             weight: FontWeight::Bold,
             style: FontStyle::Italic,
+            letter_spacing: "0px".to_string(),
+            word_spacing: "0px".to_string(),
         };
         let cloned = desc.clone();
         assert_eq!(cloned.family, "serif");
