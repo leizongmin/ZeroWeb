@@ -2348,8 +2348,16 @@ mod css_image_url_tests {
         assert_eq!(imgs[0].src, "hi.jpg", "srcset-only 用首 URL");
         assert!(!imgs[0].lazy, "无 loading=lazy");
         assert_eq!(imgs[1].src, "real.jpg", "src 优先于 srcset");
+        assert_eq!(imgs[1].fetchpriority, None);
         assert_eq!(imgs[2].src, "narrow.jpg", "srcset-only 用首 URL + lazy 保留");
         assert!(imgs[2].lazy, "loading=lazy 保留");
+    }
+
+    #[test]
+    fn extract_img_resources_keeps_fetchpriority() {
+        let imgs = extract_img_resources(r#"<img src="hero.jpg" fetchpriority="high">"#);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].fetchpriority.as_deref(), Some("high"));
     }
 }
 
