@@ -1,0 +1,44 @@
+{
+  "round": "R40",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (events)",
+  "slice": "document/window join the dispatch chain (slot-tagged listeners, virtual doc/win stations)",
+  "context": "R39 diagnosed full document/window-in-chain as deep structure (12 dispatch sites + triple key). R40 implements it WITHOUT splitting the triple key: slot-tagged listener entries + virtual dispatch stations.",
+  "design": {
+    "slot_tagging": "listener entry gains tgt field ('doc' for document.addEventListener / 'win' for window + _globalAddEventListener / undefined = html element registration). Storage stays in the _elKey('html') triple key (postMessage/onerror/inline-handler dependencies intact).",
+    "virtual_stations": "_dispatchWithBubble appends document/window virtual stations after the element chain (capture reverse: win -> doc -> element chain; bubble forward: element chain -> doc -> win). Each station dispatches with slot filter so listeners fire on their registration identity (currentTarget = document/window itself, not html proxy).",
+    "target_slot": "document.dispatchEvent / window.dispatchEvent pass targetSlot ('doc'/'win'): path = [document, window] / [window]; doc is AT_TARGET once, win bubbles once; element chain empty. composedPath[0] uses the doc/win object itself.",
+    "detached": "detached elements (handle-only / not in html subtree) skip doc/win stations (path ends at root).",
+    "html_target_filter": "html element as target (host lifecycle __zw_dispatch_event('html', type)) filters target station to null slot — doc/win registrations fire only at their virtual stations (prevents double-fire; caught by renderer R2941/R2943 quickjs regression, fixed same round).",
+    "once_removal_fix": "once-listener removal now filters from the original store array (slot-filtered list may be a subset copy; writing it back would drop other slots' registrations)."
+  },
+  "results": {
+    "multiple_stop_propagation": "0P/1F -> 1P/0F both paths (document.dispatchEvent -> [document, window])",
+    "omitted_capture": "0P/1F -> 1P/0F both paths",
+    "bubbles_true": "2P/5F -> 2P/3F both paths (main-path subtests incl. window->document full chain pass; remaining 3F = document.cloneNode/new Document()/createHTMLDocument deep structure)",
+    "bubbles_false": "same shape as bubbles_true",
+    "dom_events_polyfill_full": { "pass": 189, "fail": 139, "timeout": 3, "rate": "57.62%", "prev": "179P/148F (54.74%)", "delta": "+10 pass (+2.88pp)" },
+    "dom_events_native_full": { "pass": 169, "fail": 159, "timeout": 3, "rate": "51.52%", "prev": "159P/168F (48.62%)", "delta": "+10 pass (+2.90pp)", "gap_pp": "6.10 (equivalent)" },
+    "regression": {
+      "dom_nodes_polyfill": "2502P unchanged (zero regression)",
+      "dom_collections_polyfill": "17P unchanged (zero regression)",
+      "renderer_quickjs_r2941_r2943": "double-fire regression caught and fixed in-round (html target station slot filter)"
+    }
+  },
+  "deferred_deep_structure": "document.cloneNode(true) / new Document() / implementation.createHTMLDocument() as independent Document instances (Event-dispatch-bubbles-true/false remaining 3F each) — independent-Document infrastructure, html-compat adjacent.",
+  "ab_equivalence": true,
+  "unit_tests": {
+    "r40_unit_test": "test_doc_win_dispatch_chain_slots_r40 (5 scenarios: element chain w/ doc-win identity, document.dispatchEvent=[doc,win], window.dispatchEvent=[win], ancestor stopPropagation halts virtual stations, detached skips stations)",
+    "v8_engine_lib": "2121 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "renderer_quickjs": "124 passed (incl. R2941/R2943 lifecycle double-fire regression caught+fixed)",
+    "webview": "595 passed",
+    "wpt_runner": "171 passed / 10 ignored",
+    "quickjs_matrix": "script-sandbox 749 / renderer 124 / integration 75 / wpt-runner 547 / webview-demo 10 all green"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

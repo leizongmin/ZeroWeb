@@ -55,7 +55,8 @@
     var t = String(type);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
-    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts) });
+    // R40：window 注册打 tgt='win' 标（document/window/html 三合一 key 内槽位区分）。
+    _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'win' });
     if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
   }
 
@@ -67,8 +68,9 @@
     var t = String(type);
     if (!_listenerStore[key] || !_listenerStore[key][t]) return;
     var cap = _optCapture(opts);
+    // R40：window 注册带 tgt='win'，移除也限定同槽位（避免误删 document 同 fn 同 capture 注册）。
     _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) {
-      return !(l.fn === fn && l.capture === cap);
+      return !(l.fn === fn && l.capture === cap && l.tgt === 'win');
     });
   }
 
@@ -909,10 +911,24 @@
   // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
   // 中断当前节点内后续 listener。`once` listener（`{once:true}` 注册）派发后自动移除——用快照迭代，
   // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
-  function _dispatchToListeners(key, event, phase, thisObj) {
+  function _dispatchToListeners(key, event, phase, thisObj, slot) {
     var listeners = _listenerStore[key];
     if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
     var list = listeners[event.type];
+    // js-dom M4 R40：槽位过滤——document/window listener 与 html 元素 listener 共存于 _elKey('html') key
+    //（三合一，postMessage/onerror/inline-handler 依赖）。entry.tgt 标记注册目标（'doc'/'win'/undefined=html
+    // 元素注册）。派发虚站（document 站只触发 tgt==='doc'，window 站只触发 tgt==='win'，html 站只触发
+    // 无标记的）保证 currentTarget 身份与注册目标一致（spec：listener 在其注册的节点上触发）。
+    // slot 为 undefined → 无过滤（旧行为：全部触发），兼容既存 12 个直接派发点（lifecycle/postMessage 等
+    // 「任一注册都触发」语义）。
+    if (slot !== undefined) {
+      if (slot === null) {
+        // null slot = html 元素站：只触发无标记（html 元素 addEventListener）注册。
+        list = list.filter(function(e) { return e.tgt === undefined; });
+      } else {
+        list = list.filter(function(e) { return e.tgt === slot; });
+      }
+    }
     var ctx = thisObj || event.target;
     event.currentTarget = ctx;
     // js-dom M4 R35：spec `concept-event-dispatch`——派发期 event.eventPhase 反映当前阶段：capture 祖先→
@@ -966,7 +982,7 @@
       // stopImmediatePropagation 止当前节点剩余 + 后续节点（更强，已在每 listener 后检查）。
       if (stopped()) {
         if (firedOnce) {
-          listeners[event.type] = list.filter(function(e) { return firedOnce.indexOf(e) < 0; });
+          listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
         }
         return !event._defaultPrevented;
       }
@@ -978,7 +994,9 @@
       }
     }
     if (firedOnce) {
-      listeners[event.type] = list.filter(function(e) { return firedOnce.indexOf(e) < 0; });
+      // R40：once 移除须从原始 store 数组过滤（slot 过滤下 list 可能是子集副本，直接写回会丢
+      // 其他槽位的注册）。firedOnce 引用原始 entry 对象，indexOf 匹配安全。
+      listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
     }
     return !event._defaultPrevented;
   }
@@ -1049,7 +1067,7 @@
   // 现在经捕获/冒泡两期触发（R2692 仅冒泡、R2693 补捕获）。`event.currentTarget` 随阶段更新。
   // 仅 sel-based target 且 `__zw_parent` 注册时走 capture/bubble（polyfill/handle-only detached 无父链 →
   // 仅 target，保旧行为）。kill-switch：`globalThis.__zw_no_capture` 关捕获期、`__zw_no_bubble` 关冒泡期。
-  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event) {
+  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
 
@@ -1067,19 +1085,55 @@
     }
     var propagate = chain.length > 0;
 
+    // js-dom M4 R40：document/window 入派发链（spec 结构 html → document → window）。
+    // 元素祖先链止于 html（host `__zw_parent('html')` 返空）；此处追加两个**虚派发站**：
+    //   - 仅当 target 连入文档（__zw_contains('html', targetSel)，与 composedPath 同判定）时追加；
+    //   - capture 反序：window → document → (html 元素链反序)；
+    //   - bubble 正序：(html 元素链正序) → document → window。
+    // 虚站经 `_dispatchToListeners(htmlKey, …, slot)` 槽位过滤：document 站只触发 document.addEventListener
+    // 注册（entry.tgt==='doc'），window 站只触发 window/on* 注册（entry.tgt==='win'）；html 元素站只触发
+    // 无标记注册（html 元素 addEventListener 不打标）。listener 在其注册的节点身份上触发（currentTarget
+    // = document/window 本体），三合一 key 存储不变（postMessage/onerror/inline-handler 依赖）。
+    // handle-only（detached createElement 容器）targetSel 为 null → 不追加（detached 不经 document/window）。
+    // targetSlot（R40）：document.dispatchEvent / window.dispatchEvent 以 document/window 为 target——
+    // target 阶段用对应槽位（'doc'/'win'），且不再向 document/window 虚站冒泡（target 已是它们；spec：
+    // document.dispatchEvent 的 path = [document, window]，window 是 document 的唯一祖先）。
+    // https://dom.spec.whatwg.org/#concept-event-dispatch（event path 结构）
+    var htmlKey = _elKey('html', null);
+    var isDocTarget = targetSlot === 'doc';
+    var isWinTarget = targetSlot === 'win';
+    var inDoc = false;
+    if (targetSel && typeof __zw_contains === 'function') {
+      try { inDoc = __zw_contains('html', targetSel) === '1'; } catch (_e) {}
+    }
+    // document 为 target：path = [document, window]（window 是 document 祖先）；元素 target：连入文档才追加。
+    var docObj = globalThis.document
+      ? (isDocTarget ? globalThis.document : (inDoc ? globalThis.document : null))
+      : null;
+    var winObj = globalThis.window ? globalThis.window : null;
+    // capture/bubble 是否经过 document/window 虚站：元素 target 连入文档 → 经过（capture 反序 win→doc，
+    // bubble 正序 doc→win）；document target → path = [document, window]，doc 已是 target 不再入虚站
+    //（capture 无更早节点，bubble 仅 window）；window target → path = [window]，无虚站。detached 元素
+    //（handle-only / 不在 html 子树）不经虚站（spec：path 止于其 root）。
+    var passDoc = !isWinTarget && !isDocTarget && inDoc;
+    var passWin = !isWinTarget && (isDocTarget || inDoc);
+    // target 是 document/window 时，元素链（targetSel='html' 的祖先链）不应派发——document.dispatchEvent
+    // 的 path 不含 html 元素站。用空元素链实现。
+    var elemChain = (isDocTarget || isWinTarget) ? [] : chain;
+
     // composedPath（R3244，DOM §4.3）：dispatch 期事件路径 = [target, ...祖先链, (document, window 若连入文档)]。
     // 祖先链经 _wrapSelector 转 proxy；连入文档（target 在 html 子树，__zw_contains 判）→ 追加 document + window
     //（spec 路径末端；detached 元素链止于其 root，不追加）。dispatch 结束 finally 清空（spec：非 dispatch 返 []）。
-    var cpPath = [target];
-    for (var cpi = 0; cpi < chain.length; cpi++) cpPath.push(_wrapSelector(chain[cpi]));
-    var cpConnected = false;
-    if (targetSel && typeof __zw_contains === 'function') {
-      try { cpConnected = __zw_contains('html', targetSel) === '1'; } catch (_e) {}
-    }
-    if (cpConnected) {
-      if (globalThis.document) cpPath.push(globalThis.document);
-      if (globalThis.window) cpPath.push(globalThis.window);
-    }
+    // R40：document/window 为 target 时 path[0] 是 document/window 本体（非 html proxy——targetSlot 场景
+    // _makeProxy('html') 只是占位，真正 target 在 target 阶段覆盖，composedPath 同步用本体）。
+    var cpTarget = isDocTarget ? docObj : (isWinTarget ? winObj : target);
+    if (!cpTarget) cpTarget = target;
+    var cpPath = [cpTarget];
+    for (var cpi = 0; cpi < elemChain.length; cpi++) cpPath.push(_wrapSelector(elemChain[cpi]));
+    // R40：composedPath 与派发虚站一致——passDoc/passWin 控制 document/window 追加（document target 的
+    // path = [document, window]；window target = [window]；元素连入文档 = [..., document, window]）。
+    if (passDoc && docObj) cpPath.push(docObj);
+    if (passWin && winObj) cpPath.push(winObj);
     event._composedPath = cpPath;
 
     // js-dom M4 R33：`Window.event`（HTML `current event`）——dispatch 前 save 外层 event、set 当前 event。
@@ -1101,31 +1155,68 @@
       // https://dom.spec.whatwg.org/#concept-event-dispatch
       if (bubbleStopped()) return !event._defaultPrevented;
 
-      // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
-      if (propagate && !globalThis.__zw_no_capture) {
-        for (var i = chain.length - 1; i >= 0; i--) {
-          var capKey = _elKey(chain[i], null);
-          _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
-          var capAnc = _wrapSelector(chain[i]);
-          _dispatchToListeners(capKey, event, 'capture', capAnc);
+      // ① capture 阶段：root→target 方向（window → document → chain 反序），祖先派发 capture-only。
+      if (!globalThis.__zw_no_capture) {
+        if (passWin && winObj) {
+          _dispatchToListeners(htmlKey, event, 'capture', winObj, 'win');
           if (bubbleStopped()) return !event._defaultPrevented;
+        }
+        if (passDoc && docObj) {
+          _dispatchToListeners(htmlKey, event, 'capture', docObj, 'doc');
+          if (bubbleStopped()) return !event._defaultPrevented;
+        }
+        if (elemChain.length > 0) {
+          for (var i = elemChain.length - 1; i >= 0; i--) {
+            var capKey = _elKey(elemChain[i], null);
+            _ensureInlineHandler(capKey, elemChain[i], null, event.type); // R2935 祖先 inline on* handler 触发
+            var capAnc = _wrapSelector(elemChain[i]);
+            _dispatchToListeners(capKey, event, 'capture', capAnc, elemChain[i] === 'html' ? null : undefined);
+            if (bubbleStopped()) return !event._defaultPrevented;
+          }
         }
       }
 
-      // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。
+      // ② target 阶段：capture + 非 capture（AT_TARGET，保旧行为）。R40：document/window 为 target 时
+      // 用对应槽位（只触发 document/window 注册）；currentTarget/target 用 document/window 本体（非
+      // html proxy——event.target 已在函数开头经 _makeProxy('html') 设为 html proxy，此处覆盖）。
+      if (isDocTarget || isWinTarget) {
+        var tgtObj = isDocTarget ? globalThis.document : globalThis;
+        event.target = tgtObj;
+        target = tgtObj;
+      }
       event.currentTarget = target;
-      _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
-      _dispatchToListeners(targetKey, event, 'all', target);
+      if (!isDocTarget && !isWinTarget) {
+        _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+      }
+      // R40：html 元素为 target（host lifecycle `__zw_dispatch_event('html', …)`）时 target 站也只触发
+      // html 元素槽位（null slot）——doc/win 注册留给后续 doc/win 虚站（否则 target 站全触发 + 虚站再
+      // 触发 = 双 fire，renderer R2941/R2943 回归）。其他元素 target 无共存槽位问题（slot undefined 全触发，
+      // 旧行为）。
+      var tgtSlotFilter = targetSlot !== undefined ? targetSlot : (targetSel === 'html' ? null : undefined);
+      _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter);
       if (bubbleStopped()) return !event._defaultPrevented;
 
-      // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
-      if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
-        for (var k = 0; k < chain.length; k++) {
-          var bKey = _elKey(chain[k], null);
-          _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
-          var bAnc = _wrapSelector(chain[k]);
-          _dispatchToListeners(bKey, event, 'bubble', bAnc);
-          if (bubbleStopped()) break;
+      // ③ bubble 阶段：target→root 方向（chain 正序 → document → window），祖先派发非 capture（仅 event.bubbles）。
+      if (event.bubbles && !globalThis.__zw_no_bubble) {
+        if (elemChain.length > 0) {
+          for (var k = 0; k < elemChain.length; k++) {
+            var bKey = _elKey(elemChain[k], null);
+            _ensureInlineHandler(bKey, elemChain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
+            var bAnc = _wrapSelector(elemChain[k]);
+            _dispatchToListeners(bKey, event, 'bubble', bAnc, elemChain[k] === 'html' ? null : undefined);
+            if (bubbleStopped()) break;
+          }
+        }
+        // R40：document / window 虚站冒泡。元素链 html 站被 stopPropagation 止住时（上面 break），
+        // spec 语义后续节点（document/window）也不再触发——用同一 bubbleStopped 检查统一处理。
+        // document 为 target 时链空但 window 仍冒泡（path = [document, window]）；window 为 target 无更高站。
+        if (!bubbleStopped()) {
+          if (passDoc && docObj) {
+            _dispatchToListeners(htmlKey, event, 'bubble', docObj, 'doc');
+          }
+          if (!bubbleStopped() && passWin && winObj) {
+            _dispatchToListeners(htmlKey, event, 'bubble', winObj, 'win');
+          }
         }
       }
       return !event._defaultPrevented;

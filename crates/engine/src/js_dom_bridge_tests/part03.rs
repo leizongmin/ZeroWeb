@@ -2362,3 +2362,100 @@ fn test_preset_stop_flag_zero_dispatch_r39() {
         "无 pre-set flag 的正常 dispatch 不受影响（capture/target/bubble + window listener）"
     );
 }
+
+#[test]
+fn test_doc_win_dispatch_chain_slots_r40() {
+    // R40：document/window 入派发链（spec 结构 html → document → window）+ 槽位身份。
+    // ① 元素 target 连入文档：完整链 = [元素祖先链…, document, window]，document/window listener 以
+    //    document/window 本体为 currentTarget 触发（不再是 html proxy）；capture 反序 win→doc 在元素链前。
+    // ② document.dispatchEvent：path = [document, window]——doc AT_TARGET 一次 + win 冒泡一次。
+    // ③ window.dispatchEvent：path = [window] 仅 win AT_TARGET。
+    // ④ stopPropagation 在元素祖先链止住后，document/window 虚站不再触发。
+    // ⑤ detached 元素（createElement 未挂载）不经 document/window 虚站。
+    // WPT Event-dispatch-multiple-stopPropagation / omitted-capture / bubbles-true 主路径。
+    // https://dom.spec.whatwg.org/#concept-event-dispatch
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><i id=\"c\">x</i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var log = [];\n\
+             function tag(e){ return e === document ? 'DOC' : e === window ? 'WIN' : (e && e.id) || String(e); }\n\
+             document.querySelector('#c').addEventListener('k', function(e){ log.push('c:'+tag(e.currentTarget)+':'+e.eventPhase); }, false);\n\
+             document.addEventListener('k', function(e){ log.push('doc@doc:'+tag(e.currentTarget)+':'+e.eventPhase); }, false);\n\
+             window.addEventListener('k', function(e){ log.push('win@win:'+tag(e.currentTarget)+':'+e.eventPhase); }, false);\n\
+             // ① 元素派发：完整链 target(#c:2) → doc 站(3, DOC 身份) → win 站(3, WIN 身体)\n\
+             var e1 = new Event('k', { bubbles: true });\n\
+             document.querySelector('#c').dispatchEvent(e1);\n\
+             globalThis.__r1 = log.join(','); log = [];\n\
+             // ② document.dispatchEvent：DOC:2（AT_TARGET 一次）→ WIN:3（冒泡一次）\n\
+             var e2 = new Event('k', { bubbles: true });\n\
+             document.dispatchEvent(e2);\n\
+             globalThis.__r2 = log.join(','); log = [];\n\
+             // ③ window.dispatchEvent：仅 WIN:2\n\
+             var e3 = new Event('k', { bubbles: true });\n\
+             window.dispatchEvent(e3);\n\
+             globalThis.__r3 = log.join(','); log = [];\n\
+             // ④ 祖先链 stopPropagation 止住后 doc/win 虚站不触发\n\
+             document.querySelector('#a').addEventListener('k', function(e){ e.stopPropagation(); }, false);\n\
+             var e4 = new Event('k', { bubbles: true });\n\
+             document.querySelector('#c').dispatchEvent(e4);\n\
+             globalThis.__r4 = log.join(','); log = [];\n\
+             // ⑤ detached 元素不经 doc/win 虚站\n\
+             var d = document.createElement('div');\n\
+             d.addEventListener('k', function(e){ log.push('det:'+tag(e.currentTarget)); }, false);\n\
+             var e5 = new Event('k', { bubbles: true });\n\
+             d.dispatchEvent(e5);\n\
+             globalThis.__r5 = log.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "c:c:2,doc@doc:DOC:3,win@win:WIN:3",
+        "① 元素派发完整链：target(#c AT_TARGET) → document 站（DOC 身份，bubble 3）→ window 站（WIN 身份，bubble 3）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "doc@doc:DOC:2,win@win:WIN:3",
+        "② document.dispatchEvent = [document(AT_TARGET 一次), window(bubble 一次)]，doc 不重复触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "win@win:WIN:2",
+        "③ window.dispatchEvent = [window] 仅 AT_TARGET，无 doc 站（doc 是 window 的后代不在 path）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "c:c:2",
+        "④ 祖先 #a stopPropagation 止住后 document/window 虚站不再触发（spec path 后续节点全止）"
+    );
+    sandbox
+        .execute(
+            "globalThis.__r5has = log.join(',').indexOf('DOC') >= 0 || log.join(',').indexOf('WIN') >= 0 || log.join(',').indexOf('doc@doc') >= 0 || log.join(',').indexOf('win@win') >= 0;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5has").unwrap().value,
+        "false",
+        "⑤ detached 元素（未挂载）path 止于自身，不经 document/window 虚站（无 DOC/WIN 触发）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r5.split(':').length >= 2").unwrap().value,
+        "true",
+        "⑤ detached 元素自身 listener 正常触发（target 站）"
+    );
+}

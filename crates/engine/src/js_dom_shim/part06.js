@@ -1249,20 +1249,33 @@
     plugins: _liveQueryCollection(['embed', 'object']),
     anchors: _liveQueryCollection('a[name]'),
     addEventListener: function(type, fn, opts) {
-      _makeProxy('html', null).addEventListener(type, fn, opts);
-      if (String(type) === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
+      // R40：document 注册打 tgt='doc' 标（document/window/html 三合一 _elKey('html') key 内槽位区分，
+      // 派发期 document 虚站只触发本槽位注册，currentTarget=document 本体）。不再经 _makeProxy('html')
+      //（那是 html 元素槽位，无标记）。
+      var key = _elKey('html', null);
+      var t = String(type);
+      if (!_listenerStore[key]) _listenerStore[key] = {};
+      if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
+      _listenerStore[key][t].push({ fn: fn, capture: _optCapture(opts), once: _optOnce(opts), tgt: 'doc' });
+      if (t === 'pageshow') _maybeFirePageShow(); // R2931：首次 pageshow listener → _defer 派发一次
     },
     removeEventListener: function(type, fn, opts) {
-      _makeProxy('html', null).removeEventListener(type, fn, opts);
+      var key = _elKey('html', null);
+      var t = String(type);
+      if (!_listenerStore[key] || !_listenerStore[key][t]) return;
+      var cap = _optCapture(opts);
+      _listenerStore[key][t] = _listenerStore[key][t].filter(function(l) {
+        return !(l.fn === fn && l.capture === cap && l.tgt === 'doc');
+      });
     },
-    // R3082 `document.dispatchEvent`——document 为 EventTarget（spec 有 dispatchEvent）。与 addEventListener/
-    // removeEventListener 同转发 html key（_elKey('html', null)），故 document.dispatchEvent 触达 document/
-    // window addEventListener 注册的 listener（headless document/window 共享 html key，对称 window.dispatchEvent）。
+    // R3082 `document.dispatchEvent`——document 为 EventTarget（spec 有 dispatchEvent）。
+    // R40 改经 `_dispatchWithBubble('html', …)`：document 为 target（AT_TARGET 只触发 tgt='doc' 構位），
+    // bubble 上行 window 虚站（tgt='win'），currentTarget 身份正确（WPT Event-dispatch-multiple-
+    // stopPropagation 第 3 断言：document.dispatchEvent → [document, window]）。
     // 返 `!defaultPrevented`（spec）。
     dispatchEvent: function (event) {
       if (!event || typeof event.type !== 'string') return true;
-      if (!event.target) event.target = globalThis.document;
-      return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis.document);
+      return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'doc');
     },
     attachEvent: function(type, fn) {
       _attachEventForKey(_elKey('html', null), type, fn);
@@ -1274,18 +1287,12 @@
   globalThis.window = globalThis;
   globalThis.addEventListener = _globalAddEventListener;
   globalThis.removeEventListener = _globalRemoveEventListener;
-  // R2932 `window.dispatchEvent`——window 为 EventTarget（spec 有 dispatchEvent）。复用 window listener
-  // 派发路径（_elKey('html', null) + 'all' phase），返 `!defaultPrevented`（spec）。使合成事件可测 on* handler。
+  // R2932 `window.dispatchEvent`——window 为 EventTarget（spec 有 dispatchEvent）。R40 改经
+  // `_dispatchWithBubble(…, 'win')`：window 为 target（AT_TARGET 只触发 tgt='win' 槽位注册，含
+  // window.addEventListener + on* handler 注册），path = [window]，返 `!defaultPrevented`（spec）。
   globalThis.dispatchEvent = function(event) {
     if (!event || typeof event.type !== 'string') return true;
-    if (!event.target) event.target = globalThis;
-    // composedPath（R3244，DOM §4.3）：window 派发事件路径 = [window]（target 即 window）。
-    event._composedPath = [globalThis];
-    try {
-      return _dispatchToListeners(_elKey('html', null), event, 'all', globalThis);
-    } finally {
-      event._composedPath = null;
-    }
+    return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
   // 此前缺（MessagePort/MessageChannel/BroadcastChannel 既有，但 window.postMessage 本身零定义）→
