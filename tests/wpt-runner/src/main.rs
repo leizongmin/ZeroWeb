@@ -219,6 +219,7 @@ fn main() {
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
         "testharness-html" => cmd_testharness_html(&options, filter.as_deref()),
         "testharness-canvas" => cmd_testharness_canvas(&options, filter.as_deref()),
+        "testharness-canvas-worker" => cmd_testharness_canvas_worker(&options, filter.as_deref()),
         "testharness-dom" => cmd_testharness_dom(&options, filter.as_deref()),
         "layout-dump" => cmd_layout_dump(&options, filter.as_deref()),
         "reftest-oracle" => cmd_reftest_oracle(&options, filter.as_deref()),
@@ -410,6 +411,43 @@ fn cmd_testharness_canvas(options: &CliOptions, filter: Option<&str>) {
 /// 用例由 `fetch-dom-subset.sh` 按需拉到 `wpt-data/dom/`（gitignored）。退出码：有用例
 /// 非 Pass 或用例集为空 → 1（与 testharness-html/canvas 一致）。基线首跑即便大量 Fail
 /// 也只用于记录通过率（agent 经 `--format json` 捕获后写 evidence/），不作为 land 门禁。
+/// R34xx（G6）：`html/canvas` `.worker.js` OffscreenCanvas worker 变体（fetch_tests_from_worker
+/// 聚合）。输出与 testharness-canvas 同构；退出码：非 Pass → 1。
+fn cmd_testharness_canvas_worker(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_canvas_worker_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
 fn cmd_testharness_dom(options: &CliOptions, filter: Option<&str>) {
     let wpt_root = options
         .wpt_data

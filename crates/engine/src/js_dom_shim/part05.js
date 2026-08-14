@@ -3144,9 +3144,36 @@
           });
         }
       },
-      importScripts: function () {}, // no-op（headless 无 fetch）
+      // R34xx（G6）：importScripts 经 host __zw_fetch_script 同步抓取并执行（worker 测试
+      // 框架的 testharness.js/canvas-tests.js 导入——OffscreenCanvas worker 变体）。
+      importScripts: function () {
+        for (var ai = 0; ai < arguments.length; ai++) {
+          var u = String(arguments[ai]);
+          if (typeof __zw_fetch_script !== 'function') continue;
+          var src = null;
+          try {
+            src = __zw_fetch_script(String(typeof location !== 'undefined' && location.href ? location.href : ''), u) || null;
+          } catch (_e) { src = null; }
+          if (src === null) continue;
+          try {
+            var body = 'var postMessage=self.postMessage.bind(self);'
+              + 'var importScripts=function(){};'
+              + 'var onmessage;'
+              + src
+              + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+            new Function('self', body).call(null, wctx);
+          } catch (_e) { /* 导入失败不阻断（测试自行报告） */ }
+        }
+      },
       close: function () { main._terminated = true; },
     };
+    // R34xx（G6）：worker 全局暴露（OffscreenCanvas 等 canvas 构造器——worker 测试用）。
+    wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
+    wctx.ImageBitmap = globalThis.ImageBitmap;
+    wctx.ImageData = globalThis.ImageData;
+    wctx.addEventListener = wctx.addEventListener || function () {};
+    wctx.dispatchEvent = wctx.dispatchEvent || function () {};
+    wctx.location = wctx.location || { href: '' };
     // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
     Object.defineProperty(wctx, 'onmessage', {
       configurable: true,
@@ -3165,8 +3192,26 @@
       }
     }
     if (scriptSrc) {
+      // R34xx（G6）：预提取 importScripts 源并**内联**到同一 Function 作用域（worker 测试
+      // 框架的 testharness.js/canvas-tests.js 全局定义须与测试脚本共享——各自独立
+      // Function 会隔离 _assertPixel 等定义）。移除原 importScripts 行（已内联）。
+      var inlineImports = '';
+      if (typeof __zw_fetch_script === 'function') {
+        var importCalls = scriptSrc.match(/importScripts\([^;]*?\)/g) || [];
+        for (var ii = 0; ii < importCalls.length; ii++) {
+          var urlMatch = importCalls[ii].match(/["']([^"']+)["']/);
+          if (!urlMatch) continue;
+          var impSrc = null;
+          try {
+            impSrc = __zw_fetch_script(String(typeof location !== 'undefined' && location.href ? location.href : ''), urlMatch[1]) || null;
+          } catch (_e) { impSrc = null; }
+          if (impSrc !== null) inlineImports += impSrc + '\n';
+        }
+        scriptSrc = scriptSrc.replace(/importScripts\([^;]*?\);/g, '');
+      }
       try {
-        var body = 'var postMessage=self.postMessage.bind(self);'
+        var body = inlineImports
+          + 'var postMessage=self.postMessage.bind(self);'
           + 'var importScripts=function(){};'
           + 'var onmessage;'
           + scriptSrc

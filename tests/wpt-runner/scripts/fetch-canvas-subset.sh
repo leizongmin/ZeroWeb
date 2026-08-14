@@ -16,6 +16,19 @@ RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
 
 # 第一批：核心 API 面主线程 .html 用例（与 test_cases_canvas.rs 既有 40 smoke 面一致）。
+# R34xx（G6）：OffscreenCanvas worker 变体目录面（html/canvas/offscreen/*）
+OFFSCREEN_SUBDIRS=(
+  "html/canvas/offscreen/the-canvas-state"
+  "html/canvas/offscreen/drawing-rectangles-to-the-canvas"
+  "html/canvas/offscreen/transformations"
+  "html/canvas/offscreen/pixel-manipulation"
+  "html/canvas/offscreen/line-styles"
+  "html/canvas/offscreen/shadows"
+  "html/canvas/offscreen/compositing"
+  "html/canvas/offscreen/fill-and-stroke-styles"
+  "html/canvas/offscreen/text"
+  "html/canvas/offscreen/conformance-requirements"
+)
 SUBDIRS=(
   "html/canvas/element/the-canvas-state"
   "html/canvas/element/drawing-rectangles-to-the-canvas"
@@ -23,6 +36,9 @@ SUBDIRS=(
   "html/canvas/element/pixel-manipulation"
   "html/canvas/element/line-styles"
   "html/canvas/element/shadows"
+  "html/canvas/element/compositing"
+  "html/canvas/element/fill-and-stroke-styles"
+  "html/canvas/element/text"
 )
 
 fetch_raw() {
@@ -33,9 +49,14 @@ fetch_raw() {
   fi
   mkdir -p "$(dirname "${target}")"
   local temporary="${target}.tmp"
-  curl --fail --location --silent --show-error --retry 3 \
+  # 404/网络失败容忍（部分引用资源上游不存在——如 CanvasTest-low-ascent.ttf）：
+  # 失败不阻断（set -e 下 return 0 继续后续抓取）。
+  if ! curl --fail --location --silent --show-error --retry 3 \
     --connect-timeout 8 --max-time 30 \
-    "${RAW_ROOT}/${relative}" -o "${temporary}"
+    "${RAW_ROOT}/${relative}" -o "${temporary}" 2>/dev/null; then
+    rm -f "${temporary}"
+    return 0
+  fi
   test -s "${temporary}"
   mv "${temporary}" "${target}"
 }
@@ -48,9 +69,9 @@ fetch_dir_html() {
   while IFS= read -r line; do
     local name="${line#\"name\": \"}"
     name="${name%\"}"
-    # 只取主线程 .html（排除 .worker.js / .any.js 变体与 manual/、目录）
+    # 主线程 .html + OffscreenCanvas .worker.js 变体（G6——fetch_tests_from_worker 聚合）
     case "${name}" in
-      *.html) fetch_raw "${dir}/${name}" ;;
+      *.html|*.worker.js) fetch_raw "${dir}/${name}" ;;
     esac
   done <<< "${names}"
 }
@@ -69,9 +90,13 @@ fetch_raw "images/yellow75.png"
 fetch_raw "fonts/CanvasTest.ttf"
 fetch_raw "fonts/CanvasTest-ascent256.ttf"
 fetch_raw "fonts/CanvasTest-descent0.ttf"
-fetch_raw "fonts/CanvasTest-low-ascent.ttf"
 
 for dir in "${SUBDIRS[@]}"; do
+  fetch_dir_html "${dir}"
+done
+
+# R34xx（G6）：offscreen worker 变体（.worker.js——fetch_tests_from_worker 聚合执行）
+for dir in "${OFFSCREEN_SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"
 done
 

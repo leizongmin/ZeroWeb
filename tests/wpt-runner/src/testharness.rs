@@ -23,6 +23,21 @@ pub const HTML_INTERACTION_CASES: &[&str] = &[
 /// Canvas 2D 专项（docs/goal/canvas-2d.md）M1 切片 1 导入的目录面。
 ///
 /// 由 `scripts/fetch-canvas-subset.sh` 维护；新目录随切片扩展追加。
+/// R34xx（G6）：OffscreenCanvas worker 变体目录面（`html/canvas/offscreen/*`——与
+/// CANVAS_TEST_SUBDIRS 的 element 面镜像；.worker.js 变体经 fetch_tests_from_worker 聚合）。
+pub const CANVAS_OFFSCREEN_SUBDIRS: &[&str] = &[
+    "html/canvas/offscreen/the-canvas-state",
+    "html/canvas/offscreen/drawing-rectangles-to-the-canvas",
+    "html/canvas/offscreen/transformations",
+    "html/canvas/offscreen/pixel-manipulation",
+    "html/canvas/offscreen/line-styles",
+    "html/canvas/offscreen/shadows",
+    "html/canvas/offscreen/compositing",
+    "html/canvas/offscreen/fill-and-stroke-styles",
+    "html/canvas/offscreen/text",
+    "html/canvas/offscreen/conformance-requirements",
+];
+
 pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
     "html/canvas/element/the-canvas-state",
     "html/canvas/element/drawing-rectangles-to-the-canvas",
@@ -292,6 +307,85 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
     }))
 }
 
+/// R34xx（G6）：外链脚本源获取器（.worker.js worker 变体 + worker 内 importScripts 的
+/// testharness.js/canvas-tests.js）——`(page_url, src)` → wpt-data 文件。
+fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
+    let root = wpt_root.to_path_buf();
+    Some(std::sync::Arc::new(move |_page_url: &str, src: &str| {
+        let path_part = src.strip_prefix('/').unwrap_or(src);
+        let clean = path_part.split(['?', '#']).next().unwrap_or(path_part);
+        if clean.is_empty() {
+            return Err("empty path".to_string());
+        }
+        let full = root.join(clean);
+        std::fs::read_to_string(&full).map_err(|e| format!("script fetch failed: {clean} ({e})"))
+    }))
+}
+
+/// R34xx（G6）：运行导入的 `html/canvas` `.worker.js` OffscreenCanvas worker 变体——每个
+/// 文件包一个 `fetch_tests_from_worker(new Worker(...))` 主页面（testharness.js 的 worker
+/// 聚合协议），经 run_testharness_html_inner 同款轮询执行。返回与主线程用例同构结果。
+pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    for subdir in CANVAS_OFFSCREEN_SUBDIRS {
+        let dir = wpt_root.join(subdir);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".worker.js") {
+                continue;
+            }
+            let relative = format!("{}/{}", subdir, name);
+            if filter.is_some_and(|filter| !relative.contains(filter)) {
+                continue;
+            }
+            let source = match std::fs::read_to_string(&path) {
+                Ok(source) => source,
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: "load WPT worker case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    continue;
+                }
+            };
+            // 主页面：testharness.js 内联 + fetch_tests_from_worker 聚合 worker。
+            let page = format!(
+                "<!DOCTYPE html><html><body><canvas id='c' width='10' height='10'></canvas>\
+                 <script src='/resources/testharness.js'></script>\
+                 <script>\
+                 fetch_tests_from_worker(new Worker('/{relative}'));\
+                 </script></body></html>"
+            );
+            let results = run_testharness_html_inner(wpt_root, &relative, &page, &harness_source, &[], CASE_TIMEOUT);
+            // worker 内嵌脚本经 __zw_fetch_script 取（source 变量仅为存在性检查）。
+            let _ = source;
+            cases.push((relative, results));
+        }
+    }
+    cases
+}
+
 /// R34xx：`fetch()` 的 wpt-data 本地处理器（2d.composite.image.* 等用例经
 /// `fetch('/images/...') + createImageBitmap(blob)` 取图像源——shim fetch 落 ok:false stub
 /// 时无法取源）。接受 `https://wpt.test/<path>`（绝对）与 `<path>`（相对——shim 原样透传
@@ -364,6 +458,8 @@ fn run_testharness_html_inner(
         image_source_fetcher: wpt_data_image_fetcher(wpt_root),
         // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
         fetch_handler: wpt_data_fetch_handler(wpt_root),
+        // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
+        script_source_fetcher: wpt_data_script_fetcher(wpt_root),
         ..WebViewConfig::default()
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
@@ -683,7 +779,11 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
     let value = webview
         .execute_script(
             "JSON.stringify({\
-             complete:!!globalThis.__zw_harness_complete,\
+             complete:!!globalThis.__zw_harness_complete || (function(){\
+               if (typeof globalThis.__zw_harness_state !== 'function') return false;\
+               var st = globalThis.__zw_harness_state();\
+               return st && st.phase === 3;\
+             })(),\
              results:globalThis.__zw_harness_results||[],\
              test_function:typeof globalThis.test,\
              harness_hook:typeof globalThis.__zw_mark_harness_loaded,\
