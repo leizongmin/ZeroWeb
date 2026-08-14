@@ -1964,6 +1964,31 @@ mod integration_tests {
     }
 
     #[test]
+    fn streamed_response_failure_does_not_return_a_complete_body() {
+        let (listener, url) = bind_server();
+        let server = std::thread::spawn(move || {
+            let mut stream = listener.incoming().next().expect("connection").expect("stream");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).expect("read request");
+            // Content-Length 宣称的长度大于实际 body；关闭连接必须使 chunk reader 报错。
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\npartial")
+                .expect("write truncated response");
+        });
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        let mut delivered = Vec::new();
+        let result = runtime
+            .block_on(client.send_async_stream(HttpRequest::get(&url), |chunk| delivered.extend_from_slice(chunk)));
+        assert!(result.is_err(), "truncated stream must fail");
+        assert!(
+            delivered.len() < 12,
+            "consumer must not mistake partial bytes for a complete body"
+        );
+        server.join().expect("join server");
+    }
+
+    #[test]
     fn preconnect_uses_credential_free_head_request() {
         use std::io::{Read, Write};
 
