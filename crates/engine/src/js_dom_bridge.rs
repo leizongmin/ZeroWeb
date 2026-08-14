@@ -230,6 +230,17 @@ pub enum DomMutation {
         /// 文本内容。
         text: String,
     },
+    /// js-dom M4 R48：对 parsed DOM 的**文本/注释子节点**按父 selector + child 索引设置数据
+    ///（CharacterData.appendData/insertData/deleteData/replaceData/data= 的 sel-based 路径——
+    /// parsed 文本节点无 handle，唯一定位 = 父 + childNodes 索引）。
+    SetChildText {
+        /// 父元素唯一选择器。
+        parent_selector: String,
+        /// childNodes 中的索引（含文本/注释的全节点序）。
+        child_index: usize,
+        /// 新数据。
+        text: String,
+    },
     /// 对 create 句柄设置 innerHTML。
     SetInnerHtmlOnHandle {
         /// 节点句柄。
@@ -721,6 +732,22 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
                 doc.set_text_content(node, &text);
+            }
+            // js-dom M4 R48：按父 selector + child 索引定位 parsed 文本/注释子并整体替换数据。
+            // 索引基于 childNodes 全节点序（与 `__zw_child_nodes` 的 JSON 序一致）。
+            DomMutation::SetChildText {
+                parent_selector,
+                child_index,
+                text,
+            } => {
+                let parent = find_by_selector(doc, &parent_selector)
+                    .ok_or_else(|| format!("set_child_text: no parent match for {parent_selector}"))?;
+                let child = doc
+                    .child_nodes(parent)
+                    .get(child_index)
+                    .copied()
+                    .ok_or_else(|| format!("set_child_text: no child {child_index} under {parent_selector}"))?;
+                doc.set_text_content(child, &text);
             }
             DomMutation::SetInnerHtmlOnHandle { handle, html } => {
                 let node = handles

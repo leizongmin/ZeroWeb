@@ -3100,3 +3100,74 @@ fn test_mutation_observer_childlist_fragment_r47() {
         "③ el.remove() 发 childList removed record（removedNodes=[自身]）"
     );
 }
+
+#[test]
+fn test_parsed_text_characterdata_r48() {
+    // R48：parsed DOM 文本节点的 CharacterData 编辑 + MutationObserver record（WPT
+    // MutationObserver-characterData 4P/12F→18P/0F 驱动）：
+    // ① parsed 文本节点（<p>firstChild，_wrapNodeEntry 普通对象）具备 appendData/insertData/
+    //    deleteData/replaceData/substringData + data/nodeValue setter
+    // ② 编辑经「父 selector + childNodes 索引」写入 host（SetChildText mutation→__zw_set_child_text）
+    // ③ observe(文本节点) 落到父元素 id；characterData record 携带 characterDataOldValue 的写前 oldValue
+    // ④ 本地 data 同步（同块读不 stale）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"t\">CHAN</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var recs = [];\n\
+             var tn = document.querySelector('#t').firstChild;\n\
+             var mo = new MutationObserver(function(rs) { recs = rs; });\n\
+             mo.observe(tn, { characterData: true, characterDataOldValue: true });\n\
+             tn.appendData('GED');",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "1" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox.execute("recs[0] && recs[0].type + ',' + recs[0].oldValue").unwrap().value,
+        "characterData,CHAN",
+        "③ record type=characterData + oldValue 写前捕获（CHAN）"
+    );
+    assert_eq!(
+        sandbox.execute("tn.data").unwrap().value,
+        "CHANGED",
+        "④ 本地 data 同步（appendData 后同块读不 stale）"
+    );
+    // ② mutation 队列有 SetChildText（父 sel + 索引 + 新文本）
+    sandbox
+        .execute(
+            "tn.deleteData(0, 6);\n\
+             tn.insertData(0, 'X');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("tn.data").unwrap().value,
+        "XD",
+        "① deleteData/insertData 组合（CHANGED 删 [0,6) 剩 D → 前插 X → XD）"
+    );
+    assert_eq!(
+        sandbox.execute("tn.substringData(0, 1)").unwrap().value,
+        "X",
+        "① substringData 读"
+    );
+}

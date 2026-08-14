@@ -1094,6 +1094,12 @@
   globalThis.MutationObserver.prototype.observe = function(target, options) {
     if (!target) return;
     var id = _mo_id(target.__zwHandle, target.__zwSelector);
+    // js-dom M4 R48：parsed 文本/注释节点（_wrapNodeEntry 普通对象，无自身 sel/handle）——观测
+    // 落到**父元素 id**（其 characterData 编辑 notify 发 s:parentSel，见 part05 _write）。target
+    // proxy 仍记原文本节点（record.target 语义）。无父 sel 的纯快照节点不可观测（旧 no-op）。
+    if (id == null && target.__zwIsText && target.parentNode && target.parentNode.__zwSelector) {
+      id = 's:' + target.parentNode.__zwSelector;
+    }
     if (id == null) return;
     this._targets[id] = options || {};
     this._targetProxies[id] = target;

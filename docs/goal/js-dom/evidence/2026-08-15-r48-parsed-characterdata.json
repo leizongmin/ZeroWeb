@@ -1,0 +1,40 @@
+{
+  "round": "R48",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (nodes MutationObserver)",
+  "slice": "parsed-DOM CharacterData editing + characterData records (SetChildText full chain)",
+  "context": "MutationObserver-characterData was 4P/12F with the entire failure cluster 'appendData/insertData/deleteData/replaceData is not a function' — the methods existed only for handle-based text nodes (createTextNode), while WPT edits parsed-DOM text nodes (<p id=n10>CHAN</p>.firstChild, plain snapshot objects with no handle).",
+  "implementation": {
+    "host_side": "new DomMutation::SetChildText { parent_selector, child_index, text } — applies by locating the parent via selector and replacing the child at childNodes index (same full-node order as __zw_child_nodes JSON). Registered as __zw_set_child_text callback.",
+    "shim_side": "_wrapNodeEntry text/comment objects gain appendData/insertData/deleteData/replaceData/substringData + data/nodeValue setters. Writes go through parent-selector + __zwChildIndex (stamped by _childNodeList's map) via __zw_set_child_text; local data/nodeValue/length stay in sync for same-block reads; a characterData record is notified on the parent id with oldValue captured before the write when an observer requested characterDataOldValue.",
+    "observe_fallback": "MO.observe(textNode) previously no-oped (no sel/handle → null id). Now falls back to the parent element's id so characterData observation of parsed text nodes delivers; the recorded target proxy stays the text node.",
+    "bug_fixed_in_round": "the first notify call passed (null, parentSel) against the (sel, handle) signature — parentSel landed in the handle slot and produced h: ids; caught via probe, corrected."
+  },
+  "results": {
+    "mutation_observer_characterdata": "4P/12F -> 18P/0F (100%) both paths",
+    "dom_nodes_polyfill": { "pass": 2566, "prev": 2552, "delta": "+14" },
+    "dom_nodes_native": { "pass": 2536 },
+    "node_textcontent": "17P unchanged (data/nodeValue setter change verified non-regressing)",
+    "regression": {
+      "dom_events": "189P unchanged",
+      "dom_collections": "24P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged",
+      "element_classlist": "1420P unchanged"
+    }
+  },
+  "mo_family_progress": "R45-R48 cumulative: attributes 0->38P/0F (100%), childList 10->15P/1F, characterData 4->18P/0F (100%); dom/nodes 2507->2566 (+59 over four rounds).",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r48_unit_test": "test_parsed_text_characterdata_r48 (record type+oldValue / local data sync / delete+insert combo / substringData)",
+    "v8_engine_lib": "2129 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

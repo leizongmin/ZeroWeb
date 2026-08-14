@@ -1336,6 +1336,26 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        // js-dom M4 R48：parsed 文本/注释子节点的 CharacterData 编辑——按父 sel + child 索引定位。
+        "__zw_set_child_text",
+        Box::new(move |args| {
+            if args.len() >= 3
+                && let Ok(idx) = args[1].parse::<usize>()
+            {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SetChildText {
+                        parent_selector: args[0].clone(),
+                        child_index: idx,
+                        text: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let html = Arc::clone(dom_html);
     sandbox.register_callback(
         "__zw_get_inner_html",

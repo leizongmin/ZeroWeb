@@ -2905,12 +2905,20 @@
     if (entry.k === 'E') return _wrapSelector(entry.s);
     var isComment = entry.k === 'C';
     var text = entry.v != null ? entry.v : '';
-    return {
+    // js-dom M4 R48：parsed 文本/注释节点的 CharacterData 方法（appendData/insertData/deleteData/
+    // replaceData/substringData + data/nodeValue setter）——经「父 selector + childNodes 索引」定位
+    // 写入（`__zw_set_child_text`，host SetChildText mutation）。WPT MutationObserver-characterData
+    // 对 parsed 节点（<p id=n10>CHAN</p>.firstChild）编辑 + record 的路径。方法闭包持有 parentSel +
+    // childIndex（构造时索引），编辑后同步本地 data/nodeValue（同块后续读不 stale）+ 发 characterData
+    // record（oldValue 写前捕获，有 observer 请求时）。offset clamp（spec 抛 IndexSizeError，permissive）。
+    var parentSel = parentProxy && parentProxy.__zwSelector ? parentProxy.__zwSelector : null;
+    var node = {
       nodeType: isComment ? 8 : 3,
       nodeName: isComment ? '#comment' : '#text',
-      nodeValue: text,
+      // data/nodeValue 经下方 defineProperty（getter 读 __nv——_write 同步写；无 parentSel 的
+      // 纯快照节点保持普通字段不可写，下行 __nv 初始化同时覆盖两态）。
+      __nv: text,
       textContent: text,
-      data: text,
       length: text.length,
       parentNode: parentProxy,
       parentElement: parentProxy,
@@ -2918,7 +2926,61 @@
       nextSibling: null,
       __zwIsText: true,
     };
+    Object.defineProperty(node, 'nodeValue', {
+      get: function () { return node.__nv; },
+      set: function (v) {
+        // 无 parentSel（快照节点）——纯本地赋值（旧语义兼容）。
+        node.__nv = String(v == null ? '' : v); node.textContent = node.__nv; node.length = node.__nv.length;
+      },
+      configurable: true, enumerable: true,
+    });
+    if (parentSel && typeof __zw_set_child_text === 'function') {
+      // childIndex 由 _childNodeList 的 map 调用方按位置补（node.__zwChildIndex）。
+      var _cur = function () { return String(node.nodeValue != null ? node.nodeValue : ''); };
+      var _write = function (nv) {
+        var _moTgt = _mo_id(null, parentSel);
+        var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _cur() : null;
+        node.__nv = nv; node.textContent = nv; node.length = nv.length;
+        __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
+        _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node });
+      };
+      node.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
+      node.insertData = function (offset, s) {
+        var cur = _cur(); var o = Math.max(0, offset | 0);
+        _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o));
+        return undefined;
+      };
+      node.deleteData = function (offset, count) {
+        var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+        _write(cur.slice(0, o) + cur.slice(o + c2));
+        return undefined;
+      };
+      node.replaceData = function (offset, count, s) {
+        var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+        _write(cur.slice(0, o) + String(s == null ? '' : s) + cur.slice(o + c2));
+        return undefined;
+      };
+      node.substringData = function (offset, count) {
+        var cur = _cur(); var o = Math.max(0, offset | 0); var c2 = Math.max(0, count | 0);
+        return cur.slice(o, o + c2);
+      };
+      // data/nodeValue setter（CharacterData data IDL 可写）——写经 _write；getter 读本地（_write 同步）。
+      Object.defineProperty(node, 'data', {
+        get: function () { return node.nodeValue; },
+        set: function (v) { _write(String(v == null ? '' : v)); },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(node, 'nodeValue', {
+        get: function () { return node.__nv; },
+        set: function (v) { _write(String(v == null ? '' : v)); },
+        configurable: true, enumerable: true,
+      });
+      node.__zwWriteChildText = _write;
+    }
+    return node;
   }
+  // data getter 的辅助（无 live 源时读本地缓存——_write 已同步）。
+  function _wrapNodeEntryData(node) { return node.__localData != null ? node.__localData : node.nodeValue; }
 
   // `el.childNodes`（含文本/注释）：解析 __zw_child_nodes JSON 数组 → 节点数组（快照，非 live）。
   function _childNodeList(sel, handle) {
@@ -2926,7 +2988,12 @@
     try {
       var arr = JSON.parse(__zw_child_nodes(sel) || '[]');
       var parent = handle ? _wrapHandle(handle) : _wrapSelector(sel);
-      return arr.map(function(e) { return _wrapNodeEntry(e, parent); });
+      // R48：parsed 文本/注释子带 __zwChildIndex（CharacterData 方法经「父 sel + 索引」写入）。
+      return arr.map(function(e, i) {
+        var n = _wrapNodeEntry(e, parent);
+        if (n && n.__zwIsText) n.__zwChildIndex = i;
+        return n;
+      });
     } catch (_e) { return []; }
   }
 
