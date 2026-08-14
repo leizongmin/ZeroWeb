@@ -2554,6 +2554,22 @@
       this._defaultPrevented = false;
     };
   }
+  // R23：`Event` eventPhase 常量（spec `Event` 接口的静态 + 原型属性，WPT Event-constants.html testConstants）。
+  // 挂在**接口对象**（Event 构造器，静态常量）+ **Event.prototype**（实例经原型链继承）。spec DOM：
+  // NONE=0、CAPTURING_PHASE=1、AT_TARGET=2、BUBBLING_PHASE=3。createEvent('Event')/createEvent('CustomEvent')
+  // 实例经 setPrototypeOf(Event.prototype) / CustomEvent.prototype(=Object.create(Event.prototype)) 继承获得。
+  // 定义属性 enumerable:false（与 DOM 原型方法不可枚举一致，R10——避免 for-in 污染 expando）。guard 幂等。
+  (function () {
+    var consts = { NONE: 0, CAPTURING_PHASE: 1, AT_TARGET: 2, BUBBLING_PHASE: 3 };
+    for (var k in consts) {
+      if (!(k in globalThis.Event)) {
+        Object.defineProperty(globalThis.Event, k, { value: consts[k], enumerable: false });
+      }
+      if (!(k in globalThis.Event.prototype)) {
+        Object.defineProperty(globalThis.Event.prototype, k, { value: consts[k], enumerable: false });
+      }
+    }
+  })();
 
   globalThis.CustomEvent = function CustomEvent(type, options) {
     var ev = _makeEvent(type, options);

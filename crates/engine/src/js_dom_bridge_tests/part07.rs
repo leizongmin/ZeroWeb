@@ -2914,6 +2914,58 @@ fn test_create_event_aliases_and_not_supported_r14() {
 }
 
 #[test]
+fn test_event_constants_none_capturing_at_target_bubbling_r23() {
+    // js-dom M4 R23：Event eventPhase 常量（spec `Event` 接口静态 + 原型属性）。WPT Event-constants.html
+    // testConstants 检查 4 对象（Event 接口 / Event.prototype / createEvent('Event') / createEvent('CustomEvent')）
+    // 各有 NONE=0 / CAPTURING_PHASE=1 / AT_TARGET=2 / BUBBLING_PHASE=3（共 16 subtest）。polyfill 在 Event 构造器
+    // + Event.prototype 挂常量（enumerable:false），实例经原型链继承（CustomEvent.prototype 链 Event.prototype）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 4 对象 × 4 常量全检查（镜像 WPT testConstants）：Event 接口 / Event.prototype /
+    // createEvent('Event') 实例 / createEvent('CustomEvent') 实例。
+    sandbox
+        .execute(
+            "globalThis.__c = [\
+[Event.NONE, Event.CAPTURING_PHASE, Event.AT_TARGET, Event.BUBBLING_PHASE].join(','),\
+[Event.prototype.NONE, Event.prototype.CAPTURING_PHASE, Event.prototype.AT_TARGET, Event.prototype.BUBBLING_PHASE].join(','),\
+[document.createEvent('Event').NONE, document.createEvent('Event').CAPTURING_PHASE, document.createEvent('Event').AT_TARGET, document.createEvent('Event').BUBBLING_PHASE].join(','),\
+[document.createEvent('CustomEvent').NONE, document.createEvent('CustomEvent').CAPTURING_PHASE, document.createEvent('CustomEvent').AT_TARGET, document.createEvent('CustomEvent').BUBBLING_PHASE].join(',')\
+].join(';');",
+        )
+        .unwrap();
+    let val = sandbox.execute("String(globalThis.__c)").unwrap().value;
+    // 4 对象均应为 "0,1,2,3"，分号分隔。
+    assert_eq!(
+        val,
+        "0,1,2,3;0,1,2,3;0,1,2,3;0,1,2,3",
+        "R23 Event eventPhase 常量（Event/prototype/Event 实例/CustomEvent 实例 各 NONE=0/CAPTURING=1/AT_TARGET=2/BUBBLING=3）"
+    );
+
+    // 常量不可枚举（spec DOM 原型属性非 enumerable，R10 一致——for-in 不污染 expando）。
+    sandbox
+        .execute("globalThis.__enum = Object.keys(Event.prototype).filter(function(k){return ['NONE','CAPTURING_PHASE','AT_TARGET','BUBBLING_PHASE'].indexOf(k)>=0;}).length;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__enum)").unwrap().value,
+        "0",
+        "R23 eventPhase 常量不可枚举（Object.keys 不含，与 DOM 原型方法一致）"
+    );
+}
+
+#[test]
 fn test_create_document_type_r15() {
     // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
     // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub
