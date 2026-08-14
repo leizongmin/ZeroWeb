@@ -1633,18 +1633,60 @@
     return {
       startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
       commonAncestorContainer: null, collapsed: true, _mode: null,
-      setStart: function (node, off) { this.startContainer = node; this.startOffset = off | 0; this._recalc(); return this; },
-      setEnd: function (node, off) { this.endContainer = node; this.endOffset = off | 0; this._recalc(); return this; },
-      setStartBefore: function (node) { var p = node && node.parentNode; return p ? this.setStart(p, this._indexOf(p, node)) : this; },
-      setStartAfter: function (node) { var p = node && node.parentNode; return p ? this.setStart(p, this._indexOf(p, node) + 1) : this; },
-      setEndBefore: function (node) { var p = node && node.parentNode; return p ? this.setEnd(p, this._indexOf(p, node)) : this; },
-      setEndAfter: function (node) { var p = node && node.parentNode; return p ? this.setEnd(p, this._indexOf(p, node) + 1) : this; },
+      // js-dom M4 R42：spec `range-set-start/end` 校验——① node 无效（非 Node / DocumentType / Attr
+      // 的 setStartBefore 族无 parent）抛 InvalidNodeTypeError；② offset 超节点 length 抛 IndexSizeError
+      //（Attr length=0[子节点数]，Text/Comment=length[data]，Element=childNodes.length；WPT
+      // Range-attribute-nodes "past its length throws IndexSizeError"）。length 计算按 spec
+      // `concept-node-length`。
+      _nodeLength: function (node) {
+        if (!node) return 0;
+        if (node.nodeType === 2 || node.nodeType === 10) return 0; // Attr / DocumentType：子节点数为 0
+        if (node.nodeType === 3 || node.nodeType === 4 || node.nodeType === 7 || node.nodeType === 8) {
+          return (node.data != null ? String(node.data).length : (node.nodeValue != null ? String(node.nodeValue).length : 0));
+        }
+        return node.childNodes ? node.childNodes.length : 0;
+      },
+      // R42 修正：spec `range-set-start/end` 仅拒 **DocumentType**（InvalidNodeTypeError）——Attr 允许作
+      // 端点容器（length=0，offset 0 合法、>0 抛 IndexSizeError，WPT Range-attribute-nodes 正反两断言）。
+      // 旧初版把 Attr 一并拒绝 → "at offset 0 is allowed" 误伤。Offset 校验：仅当 length 可判定时
+      //（detached/handle-only proxy childNodes 恒空但树存在——children 视图缺失时 childNodes.length===0
+      // 与真 length 无法区分 → 对元素容器放宽不抛，保既有用例不回归；文本/注释/PI data 可判定仍精确校验）。
+      setStart: function (node, off) {
+        if (!node || typeof node.nodeType !== 'number' || node.nodeType === 10) {
+          throw new globalThis.DOMException('The given node is invalid.', 'InvalidNodeTypeError');
+        }
+        var o = off | 0;
+        if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        if (node.nodeType !== 1 && o > this._nodeLength(node)) {
+          throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        }
+        this.startContainer = node; this.startOffset = o; this._recalc(); return this;
+      },
+      setEnd: function (node, off) {
+        if (!node || typeof node.nodeType !== 'number' || node.nodeType === 10) {
+          throw new globalThis.DOMException('The given node is invalid.', 'InvalidNodeTypeError');
+        }
+        var o = off | 0;
+        if (o < 0) throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        if (node.nodeType !== 1 && o > this._nodeLength(node)) {
+          throw new globalThis.DOMException('The given offset is out of bounds.', 'IndexSizeError');
+        }
+        this.endContainer = node; this.endOffset = o; this._recalc(); return this;
+      },
+      // js-dom M4 R42：spec setStartBefore/After、setEndBefore/After、selectNode——ref 的父为 null
+      //（Attr 无 parent / detached）抛 InvalidNodeTypeError（WPT "with an Attr node throws
+      // InvalidNodeTypeError (null parent)"）。
+      setStartBefore: function (node) { var p = node && node.parentNode; if (!p) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError'); return this.setStart(p, this._indexOf(p, node)); },
+      setStartAfter: function (node) { var p = node && node.parentNode; if (!p) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError'); return this.setStart(p, this._indexOf(p, node) + 1); },
+      setEndBefore: function (node) { var p = node && node.parentNode; if (!p) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError'); return this.setEnd(p, this._indexOf(p, node)); },
+      setEndAfter: function (node) { var p = node && node.parentNode; if (!p) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError'); return this.setEnd(p, this._indexOf(p, node) + 1); },
       selectNode: function (node) {
-        var p = (node && node.parentNode) || node;
-        var i = this._indexOf(p, node);
-        this.startContainer = p; this.startOffset = i;
-        this.endContainer = p; this.endOffset = i + 1;
-        this.commonAncestorContainer = p; this.collapsed = false; this._mode = { node: node, kind: 'node' };
+        var sp = (node && node.parentNode) || null;
+        if (!sp) throw new globalThis.DOMException('The given node has no parent.', 'InvalidNodeTypeError');
+        var i = this._indexOf(sp, node);
+        this.startContainer = sp; this.startOffset = i;
+        this.endContainer = sp; this.endOffset = i + 1;
+        this.commonAncestorContainer = sp; this.collapsed = false; this._mode = { node: node, kind: 'node' };
         return this;
       },
       selectNodeContents: function (node) {
@@ -1828,7 +1870,32 @@
   }
   globalThis.getSelection = _getSelection;
   globalThis.Selection = function Selection() {};
-  globalThis.Range = function Range() {};
+  // js-dom M4 R42：`new Range()` 返真实 Range 实例（spec Range 有构造器，同 document.createRange()）。
+  // 旧空函数 stub → `new Range().setStart` 抛 TypeError（WPT Range-attribute-nodes 等用 new Range()）。
+  globalThis.Range = function Range() { return _makeRange(); };
+  // js-dom M4 R42：`StaticRange` 构造器（spec `dom-staticrange`）——读 RangeInit dict（startContainer/
+  // startOffset/endContainer/endOffset），属性 readonly，无 setStart/setEnd 等 mutable 方法。
+  // WPT StaticRange-constructor：合法容器（Element/Text/PI/Comment）构造 + collapsed 派生 +
+  // 非 Node 容器抛 TypeError。
+  globalThis.StaticRange = function StaticRange(init) {
+    var d = init || {};
+    var sc = d.startContainer, ec = d.endContainer;
+    var isNode = function (n) { return !!n && typeof n.nodeType === 'number'; };
+    if (!isNode(sc) || !isNode(ec)) {
+      throw new globalThis.TypeError("StaticRangeInit containers must be Nodes");
+    }
+    var r = {};
+    var so = d.startOffset | 0, eo = d.endOffset | 0;
+    Object.defineProperty(r, 'startContainer', { get: function () { return sc; }, configurable: true });
+    Object.defineProperty(r, 'startOffset', { get: function () { return so; }, configurable: true });
+    Object.defineProperty(r, 'endContainer', { get: function () { return ec; }, configurable: true });
+    Object.defineProperty(r, 'endOffset', { get: function () { return eo; }, configurable: true });
+    Object.defineProperty(r, 'collapsed', {
+      get: function () { return sc === ec && so === eo; },
+      configurable: true
+    });
+    return r;
+  };
 
   // HTML 规范「Window 上的命名属性访问」：带 id 的元素应作为全局变量可访问
   // （`<div id="container">…</div>` → JS `container.appendChild(...)`）。动态 reftest

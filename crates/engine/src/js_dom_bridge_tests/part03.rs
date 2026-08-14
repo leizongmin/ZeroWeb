@@ -2574,3 +2574,121 @@ fn test_treewalker_api_surface_r41() {
         "⑥ currentNode 赋合法 Node 接受"
     );
 }
+
+#[test]
+fn test_range_apis_r42() {
+    // R42：dom/ranges 导入建基线驱动的 Range/StaticRange/Attr 端点 API 面修复。
+    // ① `new Range()` 返真实实例（旧空函数 stub → setStart 抛 TypeError）
+    // ② `StaticRange(init)` 构造器：readonly 四属性 + collapsed 派生 + 非 Node 容器抛 TypeError
+    // ③ `element.getAttributeNode(name)` 返 Attr 节点（instanceof Attr / value / ownerElement），缺省 null
+    // ④ Range setStart/setEnd spec 校验：仅拒 DocumentType（Attr 允许作容器，length=0）；offset 越界
+    //    （文本/注释/PI data length 或 Attr 0）抛 IndexSizeError；setStartBefore 族 parent=null 抛
+    //    InvalidNodeTypeError；selectNode 无 parent 同抛
+    // https://dom.spec.whatwg.org/#interface-range / #dom-staticrange
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\">hello</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var results = [];\n\
+             // ① new Range() 真实实例\n\
+             var r1 = new Range();\n\
+             globalThis.__n1 = typeof r1.setStart;\n\
+             // ② StaticRange 构造器\n\
+             var div = document.querySelector('#a');\n\
+             var sr = new StaticRange({ startContainer: div, startOffset: 1, endContainer: div, endOffset: 2 });\n\
+             globalThis.__n2 = [sr.startContainer === div, sr.startOffset, sr.endOffset, sr.collapsed].join(',');\n\
+             try { new StaticRange({ startContainer: {}, startOffset: 0, endContainer: div, endOffset: 0 }); globalThis.__n3 = 'no-throw'; }\n\
+             catch (e) { globalThis.__n3 = e instanceof TypeError ? 'TypeError' : String(e); }\n\
+             var sr2 = new StaticRange({ startContainer: div, startOffset: 1, endContainer: div, endOffset: 1 });\n\
+             globalThis.__n3b = sr2.collapsed;\n\
+             // ③ getAttributeNode\n\
+             div.setAttribute('x', 'abc');\n\
+             var attr = div.getAttributeNode('x');\n\
+             globalThis.__n4 = [attr instanceof Attr, attr.value, attr.name, attr.ownerElement === div].join(',');\n\
+             globalThis.__n5 = div.getAttributeNode('nonexistent');\n\
+             // ④ Range 校验\n\
+             var r2 = new Range();\n\
+             r2.setStart(attr, 0);\n\
+             globalThis.__n6 = r2.startContainer === attr;\n\
+             try { r2.setStart(attr, 1); globalThis.__n7 = 'no-throw'; }\n\
+             catch (e) { globalThis.__n7 = (e && e.name) || String(e); }\n\
+             var text = document.createTextNode('hello');\n\
+             try { r2.setStart(text, 6); globalThis.__n8 = 'no-throw'; }\n\
+             catch (e) { globalThis.__n8 = (e && e.name) || String(e); }\n\
+             try { r2.setStartBefore(attr); globalThis.__n9 = 'no-throw'; }\n\
+             catch (e) { globalThis.__n9 = (e && e.name) || String(e); }\n\
+             try { r2.selectNode(attr); globalThis.__n10 = 'no-throw'; }\n\
+             catch (e) { globalThis.__n10 = (e && e.name) || String(e); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__n1").unwrap().value,
+        "function",
+        "① new Range() 返真实实例（setStart 可用）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n2").unwrap().value,
+        "true,1,2,false",
+        "② StaticRange 四属性 + collapsed=false"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n3").unwrap().value,
+        "TypeError",
+        "② StaticRange 非 Node 容器抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n3b").unwrap().value,
+        "true",
+        "② StaticRange start===end collapsed=true"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n4").unwrap().value,
+        "true,abc,x,true",
+        "③ getAttributeNode 返 Attr（instanceof/value/name/ownerElement）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n5").unwrap().value,
+        "null",
+        "③ getAttributeNode 缺省属性返 null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n6").unwrap().value,
+        "true",
+        "④ Attr 允许作 setStart 容器（offset 0）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n7").unwrap().value,
+        "IndexSizeError",
+        "④ Attr offset>0（length=0）抛 IndexSizeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n8").unwrap().value,
+        "IndexSizeError",
+        "④ 文本节点 offset>length 抛 IndexSizeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n9").unwrap().value,
+        "InvalidNodeTypeError",
+        "④ setStartBefore 无 parent（Attr）抛 InvalidNodeTypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__n10").unwrap().value,
+        "InvalidNodeTypeError",
+        "④ selectNode 无 parent 抛 InvalidNodeTypeError"
+    );
+}

@@ -664,6 +664,26 @@
             return present ? '' : null;
           };
         }
+        // js-dom M4 R42：`getAttributeNode(name)`（spec `dom-element-getattributenode`）——返 Attr 节点
+        //（经 _zwMakeAttr，instanceof Attr true；ownerElement=本元素 proxy），缺省 null。WPT
+        // Range-attribute-nodes（Attr 作为 Range 端点容器）。getAttributeNodeNS 同理（忽略 ns 按限定名查，
+        // 与 getAttributeNS 的 _nsQualName 一致语义）。
+        if (prop === 'getAttributeNode' || prop === 'getAttributeNodeNS') {
+          return function(a, b) {
+            var n = prop === 'getAttributeNode' ? String(a) : _nsQualName(a, b);
+            var self = proxy;
+            var v = handle
+              ? __zw_get_attr_handle(handle, n)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, n) : __zw_get_attr(sel, n));
+            if (v === '' || v == null) {
+              var present = (handle
+                ? __zw_has_attr_handle(handle, n)
+                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, n) : __zw_has_attr(sel, n))) === '1';
+              if (!present) return null;
+            }
+            return _zwMakeAttr(n, v != null ? v : '', self);
+          };
+        }
         if (prop === 'setAttribute') {
           return function(name, value) {
             var n = String(name);

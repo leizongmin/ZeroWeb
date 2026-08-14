@@ -1,0 +1,45 @@
+{
+  "round": "R42",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (ranges)",
+  "slice": "import dom/ranges (44 cases) + baseline + Range/StaticRange/Attr-endpoint API fixes",
+  "context": "R41 plan candidate (b): extend DOM_TEST_SUBDIRS with dom/ranges. raw.githubusercontent was intermittently slow; files fetched with per-file retry loop (45/45: 44 .html + Range-mutations.js; crashtests/tentative subdirs skipped — crashtests are non-asserting, tentative is experimental API).",
+  "import": {
+    "dirs": ["testharness.rs DOM_TEST_SUBDIRS + fetch-dom-subset.sh SUBDIRS += dom/ranges"],
+    "files": "45 fetched via retry loop (FORCE=1 re-list hit repeated curl timeouts; manual loop with 5 retries per file succeeded)"
+  },
+  "api_surface_fixes": {
+    "get_attribute_node": "part04 get trap getAttributeNode/getAttributeNodeNS: returns real Attr node via _zwMakeAttr (instanceof Attr true, value/name/ownerElement), null when absent (spec dom-element-getattributenode). Was entirely missing -> 'getAttributeNode is not a function' 25-fail cluster.",
+    "range_ctor": "new Range() now returns a real _makeRange() instance (was empty function stub -> setStart threw TypeError). WPT Range-attribute-nodes etc use new Range().",
+    "static_range": "StaticRange(init) constructor: readonly accessor quartet + derived collapsed + non-Node containers throw TypeError (spec dom-staticrange; WPT StaticRange-constructor 14 subtests).",
+    "range_validation": "setStart/setEnd spec validation: reject only DocumentType as container (Attr IS allowed, length=0 -> offset 0 ok / >0 IndexSizeError — WPT Range-attribute-nodes both polarity assertions); offset > length on character-data nodes throws IndexSizeError; element containers exempt from upper-bound check (detached/handle-only proxies have empty childNodes view — indistinguishable from true 0, relaxing avoids false throws); setStartBefore/After/EndBefore/After/selectNode with null parent (Attr/detached) throw InvalidNodeTypeError."
+  },
+  "results": {
+    "range_attribute_nodes": "0P/26F -> 15P/11F",
+    "static_range_constructor": "0P/17F -> 14P/3F",
+    "dom_ranges_polyfill_full": { "pass": 39, "fail": 59, "rate": "39.80%", "prev": "9P/89F (9.18%)", "delta": "+30 pass" },
+    "dom_ranges_native_full": { "pass": 39, "fail": 59, "rate": "39.80%", "delta": "+30 pass, gap 0pp" },
+    "regression": {
+      "dom_events_polyfill": "189P unchanged",
+      "dom_nodes_polyfill": "2503P unchanged",
+      "dom_collections_polyfill": "17P unchanged",
+      "dom_traversal_polyfill": "9P unchanged"
+    }
+  },
+  "deferred_deep_structure": "dom/ranges remaining ~59 fail: (a) cloneContents/deleteContents/extractContents/insertNode/surroundContents/cloneRange mega-cases driven via iframe.contentWindow.setupRangeTests (cross-document, R12 iframe deep structure html-compat domain); (b) ShadowRoot range cases (Range-cloneContents-in-ShadowRoot); (c) comparePoint/isPointInRange/intersectsNode missing methods (need node-position geometry over live tree, M1 L2); (d) detached createDocument/appendChild infrastructure.",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r42_unit_test": "test_range_apis_r42 (11 assertion groups: new Range instance / StaticRange ctor 3 groups / getAttributeNode 2 / Range validation 5)",
+    "v8_engine_lib": "2123 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "wpt_runner": "171 passed / 10 ignored",
+    "webview": "595 passed",
+    "quickjs_matrix": "14 test-result-ok lines across QUICKJS_TEST_CRATES"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff (after cargo fmt --all)"
+  }
+}
