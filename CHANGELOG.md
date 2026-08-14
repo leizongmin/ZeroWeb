@@ -32,6 +32,10 @@
 - **js-dom M4**：native `createProcessingInstruction` + DOMException 身份一致性（polyfill/native 双路径对齐，classList/createElement 校验异常）、testharness-dom WPT 基线（DC-3，testharness local .js inline + baseline truthing）。
 - **字体与 net**：WOFF2 webfont 安全解码（R3375-F）；net 修复（R3339 redirect 测试服务器完整请求头读取、R3367 dotdot Windows `to_file_path` 语义）。
 - **浏览器打包**：compositor 随 launch/release 构建发布（`make browser` 与发布产物含合成器）、production chrome parity 证据集。
+- **js-dom M4（原生/聚 polyfill DOM 对齐，R38–R49）**：MutationObserver 记录语义完整化（childList fragment 展开、NS 记录、no-mutation 守卫、classList parity、批量 id 重命名链、attributeOldValue 预捕获、observe options 校验、CharacterData 编辑 + SetChildText characterData 记录）、HTMLCollection legacy 索引/命名属性语义 + `Element.children` 返回 HTMLCollection、Range/StaticRange/Attr 端点 API、TreeWalker/NodeIterator 遍历 API、document/window slot-tagged 联合派发链、pre-set stopPropagation 标志跳过全部派发监听。
+- **Canvas WPT 批量修复（R34xx 续）**：G7 聚类全灭（variationSelectors / ctor.basics / index-from-offset 边角）、`ctx.lang`、WPT 验证证据 662 Pass / 89.28% 覆盖率。
+- **net resource loader 重构**：guarded DNS prefetch、异步 HTTP 连接预暖、资源请求/结果桥队列上限、动态模块 fetch 集中调度、HTTP2 优先级与协议遥测、截断流式响应测试覆盖。
+- **字体栈续（R3422-F–R3426-F）**：可变轴贯穿光栅 IPC（R3422-F）、author face 布局 advance 对齐（R3424-F）、layout overrides Rc 共享 + 组合 memo（修 R3424-F 默认开启后 layout 10× 回归）、generic CJK contiguous 保留 opt-in（R3426-F）。
 - **产品版本号**：`crates/product-version` 从构建日期推导版本。
 - **渲染兼容性度量**：导入上游真实 WPT reftest（约 9967 个）、`make reftest-oracle` Chromium Oracle 像素一致率（诚实通过率）、`make product-smoke` / `make product-smoke-legacy` 产品回归门禁、`make import-wpt` 测试资产化流程。
 - **性能预算体系**：`make bench-gate` / `make bench-capture`（测量 + 门禁比较 + 趋势，perf-gate）。
