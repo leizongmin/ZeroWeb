@@ -895,6 +895,38 @@ fn native_event_constructor_defaults_r3127() {
     );
 }
 
+/// `Event.timeStamp`（js-dom R22）：DOMHighResTimeStamp——创建时刻的单调 perf time（ms，子毫秒）。
+/// 旧实现恒 0 致 WPT `Event-timestamp-safe-resolution.html` 的 `do { e2.timeStamp - e1.timeStamp }
+/// while (==0)` 死循环（连续 new MouseEvent 时间戳相同 → 恒 0 差，>60s 卡死 native dom/events 全量）。
+/// 修：timeStamp = perf_now_ms()（进程级 OnceLock<Instant> origin elapsed）。验证：① 非 0；② 是有限数；
+/// ③ 连续两次创建差值可收敛非死循环（do-while 累积差，模拟 WPT 收集逻辑，限定迭代次数防爆）。
+#[test]
+fn native_event_timestamp_monotonic_nonzero_r22() {
+    let html = r#"<div id="a"></div>"#;
+    // 验证 timeStamp 非 0 + Number.isFinite（spec DOMHighResTimeStamp 是有限数，非 0 origin 后恒正）。
+    let script = "(()=>{const e=new Event('x'); return (e.timeStamp>0)+'/'+Number.isFinite(e.timeStamp);})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/true",
+        "R22 Event.timeStamp 非 0 + 有限数（DOMHighResTimeStamp）"
+    );
+    // 验证连续创建可收集非零差（模拟 WPT Event-timestamp-safe-resolution do-while 逻辑，限 1e4 迭代防爆）：
+    // 旧恒 0 时此循环永不退出（delta 恒 0）；修复后 perf_now_ms 单调推进，有限迭代内必得非零 delta。
+    let script2 = "(()=>{\
+let nonZero=0;\
+for(let i=0;i<1e4;i++){\
+  const e1=new MouseEvent('a');const e2=new MouseEvent('b');\
+  const d=Math.round((e2.timeStamp-e1.timeStamp)*1000);\
+  if(d!==0){nonZero=d;break;}\
+}\
+return nonZero>0;})()";
+    assert_eq!(
+        run_script(html, script2),
+        "true",
+        "R22 连续 new MouseEvent timeStamp 差可收集非零（解锁 WPT do-while 死循环）"
+    );
+}
+
 /// `new CustomEvent(type, {detail})`：instanceof CustomEvent + detail 读 init dict（任意类型，缺省 null）。
 #[test]
 fn native_custom_event_constructor_r3127() {

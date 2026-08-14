@@ -4,7 +4,7 @@
 //!
 //! spec DOM `Event`：构造器读 `(type, eventInitDict?)`；init dict `bubbles`/`cancelable`/`composed`
 //!（缺省 false）。派发态属性 `target`/`currentTarget`（null）、`eventPhase`（NONE=0）、
-//! `defaultPrevented`/`isTrusted`（false）、`timeStamp`（0，沙箱无 perf timer，后续）。
+//! `defaultPrevented`/`isTrusted`（false）、`timeStamp`（DOMHighResTimeStamp，R22 单调 perf time）。
 //! [`event_target::native_dispatch_event_invoke`] 派发时覆写 `target`/`currentTarget`/`eventPhase`。
 //! `MouseEvent`（R3129）加 坐标族/clientX/clientY/button/buttons/修饰键/relatedTarget；`KeyboardEvent`（R3129）
 //! 加 key/code/修饰键/repeat/isComposing/keyCode/charCode/location。两子类经 inherit → `instanceof Event`
@@ -22,6 +22,26 @@
 use v8;
 
 use super::event_target::{native_stop_immediate_invoke, native_stop_propagation_invoke};
+
+/// `Event.timeStamp` 的单调时钟 origin（js-dom R22）。
+///
+/// spec DOM `Event.timeStamp` = 创建时刻的 DOMHighResTimeStamp（ms，单调，自 time origin 起的子毫秒精度）。
+/// 旧实现恒 0（注释「沙箱无 perf timer，暂 0」）致 WPT `Event-timestamp-safe-resolution.html` 的
+/// `do { e2.timeStamp - e1.timeStamp } while (==0)` 死循环（连续两次 `new MouseEvent()` 时间戳相同 → 恒 0 差），
+/// 拖垮 native dom/events 全量（>60s 卡死，非真 dispatchEvent hang）。
+///
+/// 复用 polyfill `__zw_performance_now` 同款 `Instant` 语义：进程级 origin（`OnceLock`，首次构造 Event 时
+/// 懒初始化）+ `elapsed()` ms。**不要求与 polyfill perf_origin 完全一致**——spec 仅要求单调 + 连续创建非零差
+///（解锁死循环 + spec 合规）。`OnceLock<Instant>` lazy init 线程安全；`Instant::elapsed` 无锁纯读。
+fn perf_time_origin() -> std::time::Instant {
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    *ORIGIN.get_or_init(std::time::Instant::now)
+}
+
+/// 当前 DOMHighResTimeStamp（ms，自 [`perf_time_origin`] 起的单调 elapsed）。供 `Event.timeStamp` 用。
+fn perf_now_ms() -> f64 {
+    perf_time_origin().elapsed().as_secs_f64() * 1000.0
+}
 use super::string_arg;
 
 /// 构建并注册 `Event` + 子类（`CustomEvent`/`MouseEvent`/`KeyboardEvent`）全局构造器（mod.rs
@@ -184,9 +204,11 @@ fn set_event_init(
     }
     set_bool(scope, obj, "defaultPrevented", false);
     set_bool(scope, obj, "isTrusted", false);
-    // timeStamp：沙箱无 perf timer（Date.now 受限），暂 0（后续接 performance.now()）。
+    // timeStamp（spec `Event.timeStamp` = DOMHighResTimeStamp，js-dom R22）：创建时刻的单调 perf time（ms，
+    // 子毫秒）。旧恒 0 致 WPT Event-timestamp-safe-resolution do-while(==0) 死循环。f64（Number）——spec 要求
+    // 子毫秒精度（5µs 分辨率断言），Integer 会丢精度。
     if let Some(k) = v8::String::new(scope, "timeStamp") {
-        let _ = obj.set(scope, k.into(), v8::Integer::new(scope, 0).into());
+        let _ = obj.set(scope, k.into(), v8::Number::new(scope, perf_now_ms()).into());
     }
 }
 
