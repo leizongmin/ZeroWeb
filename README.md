@@ -58,41 +58,20 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 
 ### 1. 前置要求
 
-- Rust `1.85` 或更新版本
-- `cargo fmt`
-- `cargo clippy`
+- Rust `1.85` 或更新版本，包含 `rustfmt` 和 `clippy`
+- Linux 和 macOS 请按 [Linux 和 macOS 开发环境](docs/development/linux-macos.md) 配置。
 - Windows 开发环境（MSVC、LLVM/libclang、rusty_v8）请按 [Windows 开发环境](docs/development/windows.md) 配置。
-- Linux 桌面环境下需要安装与 CI 一致的系统依赖：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  libxcb-xfixes0-dev \
-  libxkbcommon-dev \
-  libfontconfig1-dev \
-  libwayland-dev \
-  libx11-dev \
-  libxrandr-dev \
-  libxi-dev \
-  libgl1-mesa-dev \
-  libclang-dev \
-  mesa-vulkan-drivers   # wgpu Vulkan 后端（GPU 渲染 / GPU 测试）必需；缺省时回退 GL/llvmpipe 软件渲染
-```
-
-`libclang-dev` 提供 QuickJS 构建脚本运行 bindgen 所需的 `libclang` 共享库；缺失时 `make test` 的 QuickJS Clippy 门禁会在 `rquickjs-sys` 构建阶段失败。
-
-> [!NOTE]
-> 安装 `mesa-vulkan-drivers` 后可用 `vulkaninfo --summary`（vulkan-tools 包）验证 Vulkan 设备枚举。GPU 无头测试默认优先软件适配器（lavapipe，确定性优先）；验证真实 GPU 硬件路径可用 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.json cargo test -p zero-render-foundation --lib gpu:: -- --test-threads=1`（仅枚举 Intel ICD）。
 
 ### 2. 构建与测试
 
 ```bash
-cargo build --workspace                    # Linux/macOS 首次构建前需先 make setup-rusty-v8（或直接用 make build）
-make test                                  # = cargo test --workspace（经 test-guard 包裹）
+make build                                 # 准备 rusty_v8 并构建整个 workspace
+make test                                  # 完整测试门禁（经 test-guard 包裹）
 make fetch-wpt-data                        # 首次跑 reftest 前先拉取上游 WPT 测试数据（~2 万文件，独立 repo；reftest target 会自动触发）
 make reftest                               # = WPT reftest（release 构建，经 test-guard 包裹）
 make reftest-oracle                        # ZeroWeb 渲染 vs Chromium Oracle 像素一致率（诚实通过率度量）
-make browser                                 # 启动浏览器（默认 WPT 对齐：CPU + scale 1.0）
+make browser                               # 启动浏览器（GPU 模式）
+make browser-cpu                           # CPU + scale 1.0 的 WPT 对齐模式
 make product-smoke                         # 产品静态页（welcome.html）vs Chromium Oracle 像素回归门禁
 make product-smoke-legacy                  # HTML 3.2/4 + CSS1/2 静态页（42 个 fixture）vs Chromium Oracle 趋势门禁
 cargo clippy --workspace --all-targets -- -D warnings
@@ -102,8 +81,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 > 跑测试和 WPT reftest 请用 `make test` / `make reftest`，不要裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`。`make reftest` 使用 release 构建（约 4× 快于 debug）。这两个 target 由 `scripts/test-guard.rs` 包裹，在单进程 RSS 超过 6 GB、全树内存超过 16 GB 或总时长超过 1800 s 时杀掉整棵进程树，避免内存型 bug（如 CSS parser 未闭合括号死循环）或长时间挂起触发系统级 OOM 连累整台机器。阈值可在命令行覆盖，例如大目录 reftest 需放宽超时：`./target/test-guard --time-limit 7200 -- cargo run --release --bin zero-wpt-runner -- reftest`。
 
 > 涉及渲染 / 布局变更时，建议额外跑 `make product-smoke`：它把产品静态页 `apps/browser/assets/welcome.html` 渲染后与 Chromium Oracle 像素截图对比（默认 diff 超过 20% 即失败，可用 `make product-smoke MAX_DIFF=22` 调阈值），用来捕获 `make test` / `make reftest` 覆盖不到的产品可见回归。
-
-在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 启动脚本会下载到项目内缓存，详见 [Windows 开发环境](docs/development/windows.md)。
 
 `freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率显著提升的关键（R1094 实测全 corpus oracle +232 零回归）。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
 
@@ -120,7 +97,7 @@ cargo run --bin zero-browser
 cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 ```
 
-想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 headless 能力，就跑 `make browser`（**默认 WPT 对齐**：CPU 渲染 + scale 1.0，与 reftest/product-smoke 一致）。需要 GPU 时可传 `--renderer=gpu`（Windows：`scripts\browser.ps1 -- --renderer=gpu`）。
+想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 GPU 路径，就跑 `make browser`。需要 CPU + scale 1.0 的 WPT 对齐模式时使用 `make browser-cpu`。Windows 对应入口见 [Windows 开发环境](docs/development/windows.md)。
 
 ### 4. 打包为可分发产物
 
@@ -199,6 +176,8 @@ macOS 下载产物要免除 Gatekeeper 手工放行，必须使用 Apple Develop
 | [ROADMAP.md](ROADMAP.md) | 对外路线图，说明已经做完什么、正在推什么、接下来补什么 |
 | [CHANGELOG.md](CHANGELOG.md) | 对外发布层面的变更记录 |
 | [docs/architecture.md](docs/architecture.md) | 面向贡献者的整体架构与阅读路径 |
+| [docs/development/linux-macos.md](docs/development/linux-macos.md) | Linux 和 macOS 开发环境配置 |
+| [docs/development/windows.md](docs/development/windows.md) | Windows 开发环境配置 |
 | [docs/governance/contribution-responsibility.md](docs/governance/contribution-responsibility.md) | 贡献责任、风险等级、责任域和 owner 路由 |
 | [docs/releases/github-metadata.md](docs/releases/github-metadata.md) | GitHub 仓库介绍、Topics、tag 和 release 标题建议 |
 | [docs/releases/v0.1.0-alpha.0.md](docs/releases/v0.1.0-alpha.0.md) | 首个预发布版本的 release 文案草稿 |
