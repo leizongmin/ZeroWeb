@@ -45,6 +45,19 @@ pub struct HttpClient {
     pub timeout_secs: u64,
 }
 
+/// 流式 HTTP 响应的元数据；响应体通过回调逐块交付。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpResponseHead {
+    /// HTTP 状态码。
+    pub status_code: u16,
+    /// 响应头。
+    pub headers: Vec<(String, String)>,
+    /// 最终响应 URL。
+    pub url: String,
+    /// 已跟随的重定向数。
+    pub redirect_count: usize,
+}
+
 impl Clone for HttpClient {
     fn clone(&self) -> Self {
         Self {
@@ -72,6 +85,91 @@ impl HttpClient {
     /// P2 迁移的接缝：调用方在 Tokio runtime 中可避免为每个请求创建阻塞 worker。
     pub async fn send_async(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
         Self::send_async_with_config(self.timeout_secs, self.max_redirects, request).await
+    }
+
+    /// 异步流式发送请求，不在客户端中聚合响应体。
+    ///
+    /// 回调在 async runtime 线程执行，应快速处理或自行转交数据。重定向、方法转换与敏感
+    /// 头剥离语义与 [`Self::send_async`] 保持一致。
+    pub async fn send_async_stream<F>(
+        &self,
+        request: HttpRequest,
+        mut on_chunk: F,
+    ) -> Result<HttpResponseHead, NetError>
+    where
+        F: FnMut(&[u8]),
+    {
+        let client = async_client(self.timeout_secs)?;
+        let mut current_url = request.url.clone();
+        let mut method = request.method.clone();
+        let mut body = request.body.clone();
+        let mut redirect_count = 0;
+        let mut active_headers = request.headers.clone();
+
+        loop {
+            let mut builder = client.request(method.to_reqwest(), &current_url);
+            for (name, value) in &active_headers {
+                builder = builder.header(name, value);
+            }
+            if let Some(body) = body.clone() {
+                builder = builder.body(body);
+            }
+            let mut response = builder.send().await.map_err(map_reqwest_error)?;
+            let status_code = response.status().as_u16();
+            if matches!(status_code, 301 | 302 | 303 | 307 | 308) {
+                redirect_count += 1;
+                if redirect_count > self.max_redirects {
+                    return Err(NetError::TooManyRedirects);
+                }
+                let Some(location) = response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                else {
+                    return Err(NetError::Http(format!(
+                        "{status_code} redirect without Location header"
+                    )));
+                };
+                current_url = url::Url::parse(&current_url)
+                    .and_then(|base| base.join(location))
+                    .map(|url| url.to_string())
+                    .map_err(|error| NetError::Http(format!("invalid redirect URL: {error}")))?;
+                if status_code == 303
+                    || ((status_code == 301 || status_code == 302) && method == crate::HttpMethod::Post)
+                {
+                    method = crate::HttpMethod::Get;
+                    body = None;
+                }
+                if body.is_none() {
+                    active_headers.retain(|(name, _)| {
+                        !matches!(name.to_ascii_lowercase().as_str(), "content-type" | "content-length")
+                    });
+                }
+                if !same_origin(&current_url, &request.url) {
+                    active_headers.retain(|(name, _)| {
+                        !Self::SENSITIVE_HEADERS
+                            .iter()
+                            .any(|sensitive| name.eq_ignore_ascii_case(sensitive))
+                    });
+                }
+                continue;
+            }
+
+            let head = HttpResponseHead {
+                status_code,
+                headers: response
+                    .headers()
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
+                    .collect(),
+                url: response.url().to_string(),
+                redirect_count,
+            };
+            while let Some(chunk) = response.chunk().await.map_err(map_reqwest_error)? {
+                on_chunk(&chunk);
+            }
+            return Ok(head);
+        }
     }
 
     /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。
@@ -1700,6 +1798,23 @@ mod integration_tests {
             .expect("async fetch");
         assert_eq!(response.status_code, 200);
         assert_eq!(response.body, b"async hello");
+        server.join().expect("join server");
+    }
+
+    #[test]
+    fn send_async_stream_delivers_body_without_response_buffer() {
+        let (listener, url) = bind_server();
+        let server = std::thread::spawn(move || {
+            respond_once(&listener, 200, "Content-Type: text/plain\r\n", "streamed body");
+        });
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        let mut body = Vec::new();
+        let head = runtime
+            .block_on(client.send_async_stream(HttpRequest::get(&url), |chunk| body.extend_from_slice(chunk)))
+            .expect("stream fetch");
+        assert_eq!(head.status_code, 200);
+        assert_eq!(body, b"streamed body");
         server.join().expect("join server");
     }
 

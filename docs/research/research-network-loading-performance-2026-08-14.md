@@ -8,7 +8,8 @@
 
 - 已完成：统一 `ResourceLoader` 入口、请求身份合并、全局与 origin 并发预算、同优先级 origin 轮转、请求缓存指令、缓存分区、unsafe 请求的同源关联 URI 失效、浏览器页面 origin 分区传递、匿名加载生命周期事件（navigation/destination/origin/时序/字节/缓存结果/合并数）、`fetchpriority`（preload 与图片）及 lazy 图片低优先级。
 - 已完成：本地 TCP fixture 覆盖 fresh hit、身份/Vary 隔离、缓存分区、`no-store`、并发 ETag 304 元数据合并、关键资源拥塞优先及匿名加载指标；加载器提供 cache/revalidate/network/only-if-cached、字节数与等待时长聚合计数。
-- 未完成：真正 async/流式传输、连接预建、HTTP/3 与 RFC 9218 `Priority`；这些需要引入 runtime 并重构传输 API，仍按本文 P2 边界单独实施。
+- P2 已完成接缝：`HttpClient::send_async_stream` 提供不聚合响应体的异步 chunk 回调及与普通 async 请求一致的重定向/安全头语义；缓存加载器仍使用全量体路径以保证缓存写入原子性。
+- 未完成：将流式消费者接入页面/解码器、连接预建、HTTP/3 与 RFC 9218 `Priority`；这些仍按本文 P2 边界单独实施。
 
 ## 阅读指引：来源分级
 
