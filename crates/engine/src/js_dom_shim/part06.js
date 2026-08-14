@@ -2168,9 +2168,52 @@ function _zwTextEntryForEl(el) {
 function _zwRegisterTextEl(el, handle, sel, text) {
   _zwUnregisterTextEl(el);
   var node = {
-    nodeType: 3, nodeName: '#text', nodeValue: text, data: text, textContent: text,
+    nodeType: 3, nodeName: '#text', __nv: text, textContent: text,
     length: text.length, __zwIsText: true,
     previousSibling: null, nextSibling: null,
+  };
+  // js-dom M4 R49：data/nodeValue 可写 + CharacterData 方法——textContent=/innerHTML= 建的本地
+  // 文本节点须可继续编辑（WPT takeRecords `n.firstChild.data='new data'` 发 characterData record，
+  // spec target=文本节点）。写经「父 sel + child 索引 0」（SetChildText，同 R48 _wrapNodeEntry 模式）；
+  // handle-only（无 sel）纯本地（旧语义）。
+  var _regWrite = function (nv) {
+    node.__nv = nv; node.textContent = nv; node.length = nv.length;
+    if (sel && typeof __zw_set_child_text === 'function') {
+      __zw_set_child_text(sel, '0', nv);
+      // characterData record——经全局 notify 入口（part01 IIFE 私有的 _mo_id/_mo_notify 不在此作用域；
+      // __zw_mo_notify 是其 globalThis 暴露口，未注册则跳过——record 仍由 _mo_notify 语义投递）。
+      if (typeof globalThis.__zw_mo_notify_text === 'function') {
+        globalThis.__zw_mo_notify_text(sel, node, node.__prevForMo != null ? node.__prevForMo : null);
+      }
+    }
+  };
+  Object.defineProperty(node, 'data', {
+    get: function () { return node.__nv; },
+    set: function (v) { node.__prevForMo = node.__nv; _regWrite(String(v == null ? '' : v)); },
+    enumerable: true, configurable: true,
+  });
+  Object.defineProperty(node, 'nodeValue', {
+    get: function () { return node.__nv; },
+    set: function (v) { node.__prevForMo = node.__nv; _regWrite(String(v == null ? '' : v)); },
+    enumerable: true, configurable: true,
+  });
+  node.appendData = function (s) { node.__prevForMo = node.__nv; _regWrite(node.__nv + String(s == null ? '' : s)); };
+  node.deleteData = function (o, c2) {
+    var a = Math.max(0, o | 0), b = Math.max(0, c2 | 0);
+    node.__prevForMo = node.__nv; _regWrite(node.__nv.slice(0, a) + node.__nv.slice(a + b));
+  };
+  node.insertData = function (o, s) {
+    var a = Math.max(0, o | 0);
+    node.__prevForMo = node.__nv; _regWrite(node.__nv.slice(0, a) + String(s == null ? '' : s) + node.__nv.slice(a));
+  };
+  node.replaceData = function (o, c2, s) {
+    var a = Math.max(0, o | 0), b = Math.max(0, c2 | 0);
+    node.__prevForMo = node.__nv;
+    _regWrite(node.__nv.slice(0, a) + String(s == null ? '' : s) + node.__nv.slice(a + b));
+  };
+  node.substringData = function (o, c2) {
+    var a = Math.max(0, o | 0), b = Math.max(0, c2 | 0);
+    return node.__nv.slice(a, a + b);
   };
   Object.defineProperty(node, 'parentNode', { get: function () { return el; }, enumerable: true, configurable: true });
   Object.defineProperty(node, 'parentElement', { get: function () { return el; }, enumerable: true, configurable: true });

@@ -948,8 +948,11 @@
 
   // R3025：observer options 是否请求属性 oldValue（spec：attributeOldValue=true 或 attributeFilter 命中该属性）。
   function _mo_obs_wants_attr_old(opts, name) {
+    // R49 修正：oldValue 仅在 attributeOldValue === true 时提供（WPT attributes 用例
+    // "attributeFilter alone ... update mutation" 期望 oldValue null——filter 只筛 record
+    // 不隐含 oldValue；spec `mutation-observer-observe` attributeOldValue 独立开关）。
     if (opts.attributeOldValue === true) return true;
-    if (Array.isArray(opts.attributeFilter) && opts.attributeFilter.indexOf(name) >= 0) return true;
+    void name;
     return false;
   }
   // 任意观测该 id 的 observer 是否需要 name 的 oldValue——决定 attribute call site 是否在 mutate 前捕获 old value
@@ -1025,7 +1028,12 @@
       if (baseRecord.type === 'characterData' && !opts.characterData) continue;
       var rec = Object.create(globalThis.MutationRecord.prototype);
       rec.type = baseRecord.type;
-      rec.target = obs._targetProxies[id];
+      // R49：characterData record 的 target 是**文本节点自身**（spec；call site baseRecord.target
+      // 携带——R48 parsed 文本编辑 / R49 textContent= 后 firstChild.data= 场景），其余类型 target=
+      // 观测元素 proxy。
+      rec.target = baseRecord.type === 'characterData' && baseRecord.target != null
+        ? baseRecord.target
+        : obs._targetProxies[id];
       // spec 字段：addedNodes/removedNodes 缺省 []（类数组），sibling/attributeNamespace/oldValue 缺省 null。
       rec.addedNodes = baseRecord.addedNodes || [];
       rec.removedNodes = baseRecord.removedNodes || [];
@@ -1055,6 +1063,12 @@
     return false;
   }
   // 把一条 mutation 记录投递：精确 id observer + subtree 祖先 observer（R3026）。
+  // R49：全局暴露口——part06 顶层的 _zwRegisterTextEl 文本节点（textContent=/innerHTML= 建的
+  // 本地视图）编辑时发 characterData record（_mo_id/_mo_notify 为本 IIFE 私有，跨 part 不可见）。
+  globalThis.__zw_mo_notify_text = function (sel, targetNode, oldValue) {
+    _mo_notify(sel, null, { type: 'characterData', oldValue: oldValue, target: targetNode });
+  };
+
   function _mo_notify(sel, handle, baseRecord) {
     var id = _mo_id(handle, sel);
     _mo_deliverToId(id, baseRecord, false); // 精确 id，不要求 subtree
@@ -1092,6 +1106,34 @@
     globalThis.__zw_mo_observers.push(this);
   };
   globalThis.MutationObserver.prototype.observe = function(target, options) {
+    // js-dom M4 R49：spec `dom-mutationobserver-observe` 步骤 3-6 options 校验——①
+    // childList/attributes/characterData 全 falsy 抛 TypeError；② attributeOldValue=true 而
+    // attributes 非 true 抛；③ attributeFilter 存在而 attributes 非 true 抛（WPT
+    // MutationObserver-sanity 三个 "Should throw"）。characterDataOldValue/characterData 同理
+    //（spec 对称；WPT 同文件后续 subtest）。
+    var o = options || {};
+    // spec 步骤 3：attributeOldValue/attributeFilter/characterDataOldValue **存在**（非 undefined）
+    // 即隐含启用 attributes/characterData 观测（WPT sanity "attributeOldValue:true (present)
+    // auto-enables attribute observation" / "Should not throw if attributeOldValue is true and
+    // attributes is omitted"）。先归一再校验。
+    if (o.attributeOldValue !== undefined || o.attributeFilter !== undefined) {
+      if (o.attributes === undefined) o.attributes = true;
+    }
+    if (o.characterDataOldValue !== undefined) {
+      if (o.characterData === undefined) o.characterData = true;
+    }
+    if (!o.childList && !o.attributes && !o.characterData) {
+      throw new globalThis.TypeError("MutationObserver: one of childList, attributes, or characterData must be true");
+    }
+    if (o.attributeOldValue === true && o.attributes !== true) {
+      throw new globalThis.TypeError("MutationObserver: attributeOldValue true requires attributes true");
+    }
+    if (o.attributeFilter !== undefined && o.attributes !== true) {
+      throw new globalThis.TypeError("MutationObserver: attributeFilter requires attributes true");
+    }
+    if (o.characterDataOldValue === true && o.characterData !== true) {
+      throw new globalThis.TypeError("MutationObserver: characterDataOldValue true requires characterData true");
+    }
     if (!target) return;
     var id = _mo_id(target.__zwHandle, target.__zwSelector);
     // js-dom M4 R48：parsed 文本/注释节点（_wrapNodeEntry 普通对象，无自身 sel/handle）——观测

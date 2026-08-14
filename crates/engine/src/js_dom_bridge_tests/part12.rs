@@ -1793,8 +1793,8 @@ fn test_mutation_observer_attr_filter_and_old_value_r3025() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r4[0].oldValue").unwrap().value,
-        "v3",
-        "attributeFilter 命中报告 oldValue='v3'（spec：filter 命中 == 请求 old value）"
+        "null",
+        "R49 修正：attributeFilter alone 不提供 oldValue（仅 attributeOldValue===true；WPT attributes 用例）"
     );
 }
 
@@ -1934,18 +1934,14 @@ fn test_mutation_observer_character_data_r3027() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__recs.length)").unwrap().value,
-        "1",
-        "characterData：a.textContent 变更 → 1 记录"
+        "0",
+        "R49 修正：textContent= 不发 characterData（spec：替换子树发 childList；characterData 仅文本节点编辑发）"
     );
+    // R49：新语义——textContent= 发 childList（removed=旧子 + added=[新文本节点]）。
     assert_eq!(
-        sandbox.execute("globalThis.__recs[0].type").unwrap().value,
-        "characterData",
-        "记录 type=characterData"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__recs[0].target.id").unwrap().value,
-        "a",
-        "characterData 记录 target=a（元素，pragmatic）"
+        sandbox.execute("globalThis.__recs.length").unwrap().value,
+        "0",
+        "textContent= 不发 characterData（R49 spec 语义——此 observer 只订阅 characterData，childList record 不投递）"
     );
 
     // ② subtree 后代：observe(container,{characterData,subtree}) + leaf.textContent → 冒泡到 container。
@@ -1962,13 +1958,8 @@ fn test_mutation_observer_character_data_r3027() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__recs2.length)").unwrap().value,
-        "1",
-        "subtree characterData：后代 leaf.textContent → container observer 收 1 记录"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__recs2[0].target.id").unwrap().value,
-        "container",
-        "subtree characterData 记录 target=container（经 ancestor 冒泡）"
+        "0",
+        "R49：textContent= 发 childList 非 characterData——characterData-only subtree observer 收 0 记录"
     );
 
     // ③ 未观测 characterData → textContent 变更不产 characterData 记录。

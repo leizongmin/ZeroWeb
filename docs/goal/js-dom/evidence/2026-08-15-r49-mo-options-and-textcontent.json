@@ -1,0 +1,48 @@
+{
+  "round": "R49",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (nodes MutationObserver)",
+  "slice": "observe options validation/implicit-enable + textContent childList semantics + registered-text-node editing",
+  "fixes": {
+    "options_validation": "MO.observe validates options per spec: all of childList/attributes/characterData absent throws TypeError; attributeOldValue=true with attributes!==true throws; attributeFilter present with attributes!==true throws; characterDataOldValue likewise.",
+    "implicit_enable": "attributeOldValue/attributeFilter/characterDataOldValue present (non-undefined) implicitly enable attributes/characterData observation (WPT sanity 'attributeOldValue true and attributes omitted should not throw').",
+    "filter_no_oldvalue": "oldValue is provided only when attributeOldValue === true — attributeFilter alone filters records but does not request old values (WPT attributes 'attributeFilter alone' expects null). _mo_obs_wants_attr_old tightened.",
+    "textcontent_semantics": "textContent= per spec: same-value no-op (comparison BEFORE the host write — latest-wins already contains the new value after writing, which made the first gate always-true and broke takeRecords; also local registered text first, since firstChild.data= edits only touch local state + SetChildText pending); different value emits childList (removed=old children snapshot, added=[new text node]) and NOT characterData (characterData records come only from text-node edits — R3027's characterData-for-textContent removed). firstChild immediately visible via the canvas _zwRegisterTextEl registry (firstChild/lastChild now consume _zwLocalChildNodes like childNodes already did).",
+    "registered_node_editing": "_zwRegisterTextEl nodes (built by textContent=/innerHTML=) gain data/nodeValue setters + appendData/insertData/deleteData/replaceData/substringData — writes go through __zw_set_child_text (index 0) and emit characterData records via a new global hook __zw_mo_notify_text (part01 exports _mo_notify for the part06 top-level scope). characterData record target = the text node itself.",
+    "setchildtext_fallbacks": "apply-side: SetChildText with out-of-range child_index falls back to parent set_text_content (equivalent for single-text-child semantics); SetChildText joined rewrite_pending_id_selectors (same-batch id renames now rewrite its parent_selector too).",
+    "legacy_test_updates": "R3025/R3027/R3028 tests locked the old pragmatic semantics (filter-implied oldValue, characterData-for-textContent); updated to the R49 spec semantics (childList records, null oldValue without explicit request, characterData-only observers receive 0 records for textContent=).",
+    "in_round_regressions": [
+      "same-value gate initially read _tcCur AFTER the host write (latest-wins already contained the new value → always-same → registration skipped → firstChild null again) — moved before the write",
+      "same-value on a locally-edited node: gate must read the local registered text first (data= edits don't show in element-level latest-wins)"
+    ]
+  },
+  "results": {
+    "mutation_observer_sanity": "11P/4F -> 16P/0F (100%)",
+    "mutation_observer_takeRecords": "1P/2F -> 3P/0F (100%)",
+    "mutation_observer_attributes": "38P/0F -> 40P/0F (100%, +2 filter cases)",
+    "mutation_observer_childList": "15P/1F -> 18P/1F (+3)",
+    "mutation_observer_characterData": "19P/0F maintained",
+    "dom_nodes_polyfill": { "pass": 2579, "prev": 2566, "delta": "+13" },
+    "dom_nodes_native": { "pass": 2549 },
+    "regression": {
+      "dom_events": "189P unchanged",
+      "dom_collections": "24P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged",
+      "element_classlist": "1420P unchanged",
+      "node_textcontent": "17P unchanged"
+    }
+  },
+  "mo_family_progress": "R45-R49 cumulative: attributes 40P/0F, characterData 19P/0F, sanity 16P/0F, takeRecords 3P/0F (four at 100%), childList 18P/1F (remaining = deferred sibling-visibility M1 L2); dom/nodes 2507 -> 2579 (+72 over five rounds).",
+  "remaining": "MutationObserver-document (parser-time mutations — deep structure), inner-outer (addedNodes ordering), disconnect (1F).",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r49_unit_test": "test_mo_observe_options_and_textcontent_records_r49 (options validation 4 groups + textContent childList/characterData chain + same-value no-op)",
+    "legacy_updated": ["test_mutation_observer_attr_filter_and_old_value_r3025", "test_mutation_observer_character_data_r3027", "test_character_data_old_value_and_text_lw_r3028"],
+    "v8_engine_lib": "2131 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": { "clippy_v8_workspace": "clean", "clippy_quickjs_matrix": "clean", "fmt": "no diff" }
+}

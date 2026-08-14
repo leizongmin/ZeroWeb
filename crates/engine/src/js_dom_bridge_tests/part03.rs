@@ -3171,3 +3171,87 @@ fn test_parsed_text_characterdata_r48() {
         "① substringData 读"
     );
 }
+
+#[test]
+fn test_mo_observe_options_and_textcontent_records_r49() {
+    // R49：MutationObserver 语义四件（WPT sanity 11→16P/0F + takeRecords 1→3P/0F + attributes
+    // 38→40P/0F + childList 15→18P/1F 驱动）：
+    // ① observe options 校验（全缺抛/oldValue 矛盾抛/filter 矛盾抛）
+    // ② 隐含启用——attributeOldValue/attributeFilter/characterDataOldValue 存在即隐含对应观测
+    // ③ attributeFilter alone 不提供 oldValue（仅 attributeOldValue===true）
+    // ④ textContent=——异值发 childList（removed=旧子 + added=[新文本节点]）不发 characterData；
+    //    firstChild 立即可见且 data= 可编辑（characterData oldValue=写前值 target=文本节点）；
+    //    同值 no-op（本地注册文本优先判等）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><p id=\"t\">old</p><p id=\"e\"></p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var t = document.querySelector('#t');\n\
+             var mk = function() { return new MutationObserver(function(){}); };\n\
+             try { mk().observe(t, {}); globalThis.__v1 = 'no-throw'; }\n\
+             catch (e) { globalThis.__v1 = e instanceof TypeError ? 'TypeError' : String(e); }\n\
+             try { mk().observe(t, { childList: true, attributeOldValue: true, attributes: false }); globalThis.__v2 = 'no-throw'; }\n\
+             catch (e) { globalThis.__v2 = e instanceof TypeError ? 'TypeError' : String(e); }\n\
+             try { mk().observe(t, { childList: true, attributeFilter: ['a'], attributes: false }); globalThis.__v3 = 'no-throw'; }\n\
+             catch (e) { globalThis.__v3 = e instanceof TypeError ? 'TypeError' : String(e); }\n\
+             try { mk().observe(t, { attributeOldValue: true }); mk().observe(t, { attributeFilter: ['a'] }); mk().observe(t, { characterDataOldValue: true }); globalThis.__v4 = 'ok'; }\n\
+             catch (e) { globalThis.__v4 = 'threw:' + String(e); }",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__v1").unwrap().value, "TypeError", "① 全缺 options 抛 TypeError");
+    assert_eq!(sandbox.execute("globalThis.__v2").unwrap().value, "TypeError", "① attributeOldValue true + attributes false 抛");
+    assert_eq!(sandbox.execute("globalThis.__v3").unwrap().value, "TypeError", "① attributeFilter + attributes false 抛");
+    assert_eq!(sandbox.execute("globalThis.__v4").unwrap().value, "ok", "② 隐含启用三形态不抛");
+
+    sandbox
+        .execute(
+            "var recs = [];\n\
+             var e = document.querySelector('#e');\n\
+             var mo = new MutationObserver(function(rs) { recs = rs; });\n\
+             mo.observe(e, { childList: true, characterData: true, characterDataOldValue: true });\n\
+             e.textContent = 'old data';\n\
+             e.firstChild.data = 'new data';",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "2" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox.execute("recs.map(function(r) { return r.type; }).join(',')").unwrap().value,
+        "childList,characterData",
+        "④ textContent= 发 childList；firstChild.data= 发 characterData（各一条）"
+    );
+    assert_eq!(
+        sandbox.execute("recs[1].oldValue + '/' + String(recs[1].target === e.firstChild)").unwrap().value,
+        "old data/true",
+        "④ characterData oldValue=写前值 + target=文本节点"
+    );
+    // 同值 no-op（data= 后 textContent=同值）
+    sandbox.execute("recs = []; e.textContent = 'new data';").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    let _ = sandbox.execute("0");
+    assert_eq!(
+        sandbox.execute("recs.length").unwrap().value,
+        "0",
+        "④ 同值 textContent= 不发 record（本地注册文本优先判等）"
+    );
+}

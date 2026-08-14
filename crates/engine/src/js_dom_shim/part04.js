@@ -387,7 +387,17 @@
           return _childNodeList(sel, handle);
         }
         if (prop === 'firstChild' || prop === 'lastChild') {
-          var cn = _isContainerHandle(handle) ? _handleChildNodes(handle) : _childNodeList(sel, handle);
+          // R49：firstChild/lastChild 同步消费 _zwLocalChildNodes（textContent=/innerHTML= 的本地
+          // 文本视图——childNodes 已接，此处漏；WPT takeRecords `n.textContent='old'; n.firstChild.data=`）。
+          var cn = _isContainerHandle(handle)
+            ? _handleChildNodes(handle)
+            : (function () {
+                if (typeof _zwLocalChildNodes === 'function') {
+                  var _loc = _zwLocalChildNodes(sel, handle);
+                  if (_loc) return _loc;
+                }
+                return _childNodeList(sel, handle);
+              })();
           if (!cn.length) return null;
           return prop === 'firstChild' ? cn[0] : cn[cn.length - 1];
         }
@@ -1983,9 +1993,6 @@
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。
             if (typeof _zwRegisterTextEl === 'function' && _ihVal.indexOf('<') < 0) {
               _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ihVal);
-              if (typeof _zwTextEls !== 'undefined' && !_zwTextEls.length) {
-                throw new Error('REG-DEBUG: register no-op');
-              }
             } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
               _zwUnregisterTextEl(_makeProxy(sel, handle));
             }
@@ -2004,9 +2011,49 @@
               // in value mode `_outputValue` keeps the live value.
               _outputDefault[key] = _tcVal;
             }
-            if (handle) __zw_set_text_handle(handle, _tcVal);
-            else __zw_set_text(sel, _tcVal);
-            _mo_notify(sel, handle, { type: 'characterData', oldValue: _charMoOld });
+            // R49：同值 no-op——textContent 与当前文本相同不重写不发 record（spec set 同值
+            // 不产生 mutation；WPT childList "textContent no mutation" 期望仅 id 改名 1 条）。
+            // **写前**读当前值（写后 latest-wins 已含新值，恒同值——takeRecords 回归根因）。
+            // 本地注册文本优先（firstChild.data= 编辑只改本地 __nv + SetChildText pending，lw 元素级
+            // 读不到 → 误判异值多发 record）。无本地注册才读 host lw。
+            var _tcCur = '';
+            var _tcHasLocal = false;
+            if (typeof _zwLocalChildNodes === 'function') {
+              var _tcLocal = _zwLocalChildNodes(sel, handle);
+              if (_tcLocal && _tcLocal[0]) {
+                _tcHasLocal = true;
+                _tcCur = String(_tcLocal[0].data != null ? _tcLocal[0].data : '');
+              }
+            }
+            if (!_tcHasLocal) {
+              _tcCur = (handle ? __zw_get_text_handle(handle) : (typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel))) || '';
+            }
+            var _tcSame = _tcVal === _tcCur;
+            if (!_tcSame) {
+              if (handle) __zw_set_text_handle(handle, _tcVal);
+              else __zw_set_text(sel, _tcVal);
+              // js-dom M4 R49：本地文本子视图——textContent= 替换全部子为单文本节点，host 延迟 apply
+              // 期间 firstChild/childNodes 须立即可见（WPT takeRecords `n.textContent='old data';
+              // n.firstChild.data='new data'`）。复用 canvas 的 _zwRegisterTextEl 注册表（_zwLocalChildNodes
+              // 消费）；host 侧文本旧子与新文本等价（纯文本替换），不移除 host 旧子。
+              // spec `dom-node-textcontent` setter：替换全部子 → **childList record**（removed=旧子快照，
+              // added=[新文本节点]；R3027 的 characterData-only 记录不完整——characterData record 仅由
+              // 文本节点自身编辑发）。
+              var _tcRemoved = _childNodeList(sel, handle);
+              if (typeof _zwRegisterTextEl === 'function' && _tcVal.indexOf('<') < 0) {
+                _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _tcVal);
+              } else if (typeof _zwUnregisterTextEl === 'function') {
+                _zwUnregisterTextEl(_makeProxy(sel, handle));
+              }
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _tcVal !== '' ? [_zwLocalChildNodes(sel, handle)[0]] : [], removedNodes: _tcRemoved, previousSibling: null, nextSibling: null });
+            }
+            void _charMoOld;
+            // R49 修正：textContent= 只发 childList（spec `dom-node-textcontent` 替换子树）；
+            // characterData record 仅由**文本节点自身编辑**（data=/appendData 族）发——R3027 的
+            // textContent characterData record 移除（WPT takeRecords：`textContent='old data'` 期望
+            // 1 条 childList；后续 `firstChild.data='new data'` 由 R48 _write 发 characterData
+            // oldValue='old data' target=文本节点）。
+            void _charMoOld;
           }
         } else if (p === 'outerHTML') {
           // outerHTML setter：整体替换元素为解析后的片段。仅 sel-based（需父节点）；

@@ -539,6 +539,10 @@ fn rewrite_pending_id_selectors(
             | DomMutation::InsertBefore {
                 parent_selector: selector,
                 ..
+            }
+            | DomMutation::SetChildText {
+                parent_selector: selector,
+                ..
             } => selector,
             _ => continue,
         };
@@ -742,12 +746,17 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             } => {
                 let parent = find_by_selector(doc, &parent_selector)
                     .ok_or_else(|| format!("set_child_text: no parent match for {parent_selector}"))?;
-                let child = doc
-                    .child_nodes(parent)
-                    .get(child_index)
-                    .copied()
-                    .ok_or_else(|| format!("set_child_text: no child {child_index} under {parent_selector}"))?;
-                doc.set_text_content(child, &text);
+                match doc.child_nodes(parent).get(child_index).copied() {
+                    Some(child) => {
+                        doc.set_text_content(child, &text);
+                    }
+                    // R49：child_index 越界（textContent= 建 JS 本地文本后同批编辑——host 树尚未 apply
+                    // 该 textContent=，child 0 不存在）→ 对父**整体 set_text_content**（等价语义：
+                    // 单文本子 = 全文本）。与批内前序 SetText/文本替换 compose 正确。
+                    None => {
+                        doc.set_text_content(parent, &text);
+                    }
+                }
             }
             DomMutation::SetInnerHtmlOnHandle { handle, html } => {
                 let node = handles

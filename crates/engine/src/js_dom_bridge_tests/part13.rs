@@ -34,7 +34,7 @@ fn test_character_data_old_value_and_text_lw_r3028() {
         .execute(
             "var a = document.getElementById('a');\
              var mo = new MutationObserver(function(){});\
-             mo.observe(a, { characterData: true, subtree: true, characterDataOldValue: true });\
+             mo.observe(a, { characterData: true, childList: true, subtree: true, characterDataOldValue: true });\
              a.textContent = 'first';\
              globalThis.__r1 = mo.takeRecords();\
              a.textContent = 'second';\
@@ -43,18 +43,18 @@ fn test_character_data_old_value_and_text_lw_r3028() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r1[0].type").unwrap().value,
-        "characterData",
-        "characterDataOldValue：记录 type=characterData"
+        "childList",
+        "R49：textContent= 发 childList（spec 替换子树；characterData 仅文本节点编辑发）"
     );
     assert_eq!(
-        sandbox.execute("globalThis.__r1[0].oldValue").unwrap().value,
-        "init",
-        "characterDataOldValue：首次变更 oldValue=初值 'init'"
-    );
-    assert_eq!(
-        sandbox.execute("globalThis.__r2[0].oldValue").unwrap().value,
+        sandbox.execute("globalThis.__r1[0].addedNodes[0].data").unwrap().value,
         "first",
-        "characterDataOldValue：二次变更 oldValue=前值 'first'（latest-wins 反映同批前序 set）"
+        "childList addedNodes[0]=新文本节点（data='first'）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2[0].addedNodes[0].data").unwrap().value,
+        "second",
+        "R49：二次 textContent= addedNodes[0].data='second'（同值 no-op 不发——异值替换可见）"
     );
 
     // ② 未请求 characterDataOldValue → oldValue 恒 null（spec），即使旧值存在。
@@ -68,9 +68,9 @@ fn test_character_data_old_value_and_text_lw_r3028() {
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__r3[0].oldValue)").unwrap().value,
-        "null",
-        "未请求 characterDataOldValue → oldValue=null（即使有旧值）"
+        sandbox.execute("String(globalThis.__r3.length)").unwrap().value,
+        "0",
+        "R49：characterData-only（无 oldValue 请求）observer 对 textContent= 收 0 记录（childList 不投递）"
     );
 
     // ③ textContent getter latest-wins（R3028 stale 快照修复）：`textContent=` 后立即读反映新值。
