@@ -1173,6 +1173,11 @@ pub struct TextMetrics {
     pub font_bounding_box_ascent: f32,
     /// 字体边界框下方（字体 descent，由字体表给定；近似 0.2em）。
     pub font_bounding_box_descent: f32,
+    /// R34xx：em square 顶距基线（spec TextMetrics——em square 半行距定位；
+    /// 与 fontBoundingBox 不同源——2d.text.measure.emHeights-low-ascent/zero-descent）。
+    pub em_height_ascent: f32,
+    /// R34xx：em square 底距基线（同 `em_height_ascent`）。
+    pub em_height_descent: f32,
     /// 字母基线距默认基线（alphabetic）的距离（默认基线即 alphabetic → 0）。
     pub alphabetic_baseline: f32,
     /// 悬挂基线距默认基线的距离（Latin 近似 0.8em，悬挂基线在大写字母顶附近）。
@@ -1883,6 +1888,8 @@ mod tests {
             actual_bounding_box_left: -1.0,
             actual_bounding_box_right: 120.5,
             font_bounding_box_ascent: 12.0,
+            em_height_ascent: 10.0,
+            em_height_descent: 6.0,
             font_bounding_box_descent: 3.5,
             alphabetic_baseline: 0.0,
             hanging_baseline: 10.0,
@@ -1910,6 +1917,8 @@ mod tests {
             actual_bounding_box_left: 0.0,
             actual_bounding_box_right: 50.0,
             font_bounding_box_ascent: 8.0,
+            em_height_ascent: 7.0,
+            em_height_descent: 5.0,
             font_bounding_box_descent: 2.0,
             alphabetic_baseline: 0.0,
             hanging_baseline: 8.0,

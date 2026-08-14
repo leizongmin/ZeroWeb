@@ -511,6 +511,16 @@ impl CanvasContext {
                 .unwrap_or((None, None)),
             _ => (None, None),
         };
+        // R34xx：emHeightAscent/Descent——em square 半行距定位（实测三字体吻合）：
+        //   leading = em − (ascent+descent)；bottom_leading = min(leading/2, descent)；
+        //   top_leading = leading − bottom_leading；emHeightAscent = ascent + top_leading，
+        //   emHeightDescent = descent + bottom_leading。
+        // （CanvasTest: 768/256→768/256；ascent256: 256/256→512/512；descent0: 768/0→1024/0）
+        let em = size;
+        let em_leading = (em - ascent - descent_abs).max(0.0);
+        let em_bottom_lead = (em_leading * 0.5).min(descent_abs);
+        let em_height_ascent = ascent + (em_leading - em_bottom_lead);
+        let em_height_descent = descent_abs + em_bottom_lead;
         TextMetrics {
             width,
             actual_bounding_box_ascent: ink_asc,
@@ -522,7 +532,9 @@ impl CanvasContext {
             actual_bounding_box_right: bbox_r,
             font_bounding_box_ascent: ascent,       // 字体 ascent，由字体表给定
             font_bounding_box_descent: descent_abs, // 字体 descent，由字体表给定
-            alphabetic_baseline: 0.0,               // 默认基线即 alphabetic → 距自身 0
+            em_height_ascent,
+            em_height_descent,
+            alphabetic_baseline: 0.0, // 默认基线即 alphabetic → 距自身 0
             // R34xx：BASE 表 'hang'/'ideo' 基线（2d.text.measure.baselines：CanvasTest
             // hang=512units=0.5em、ideo=128units=0.125em）；无 BASE 表回退启发式。
             hanging_baseline: base_hang.unwrap_or(ascent),

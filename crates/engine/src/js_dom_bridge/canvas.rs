@@ -401,7 +401,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     glyphs.push_str(&format!("{gl},{gt},{gr},{gb}"));
                 }
                 format!(
-                    "{},{},{},{},{},{},{},{},{},{}|{}|{}",
+                    "{},{},{},{},{},{},{},{},{},{},{},{}|{}|{}",
                     m.width,
                     m.actual_bounding_box_ascent,
                     m.actual_bounding_box_descent,
@@ -409,6 +409,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     m.actual_bounding_box_right,
                     m.font_bounding_box_ascent,
                     m.font_bounding_box_descent,
+                    m.em_height_ascent,
+                    m.em_height_descent,
                     m.alphabetic_baseline,
                     m.hanging_baseline,
                     m.ideographic_baseline,
@@ -419,7 +421,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 )
             } else {
                 // 无 ctx → 全 0（与既有 0 width 同语义）。
-                "0,0,0,0,0,0,0,0,0,0|".into()
+                "0,0,0,0,0,0,0,0,0,0,0,0|".into()
             }
         }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。

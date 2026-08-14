@@ -1704,12 +1704,13 @@
         actualBoundingBoxRight: num(4),
         fontBoundingBoxAscent: num(5),
         fontBoundingBoxDescent: num(6),
-        // R34xx：emHeight*（spec TextMetrics——em 盒顶/底距基线；fontBoundingBox 同源）。
-        emHeightAscent: num(5),
-        emHeightDescent: num(6),
-        alphabeticBaseline: num(7),
-        hangingBaseline: num(8),
-        ideographicBaseline: num(9),
+        // R34xx：emHeight*（spec TextMetrics——em 盒顶/底距基线，host 独立计算——
+        // emHeights-low-ascent/zero-descent）。
+        emHeightAscent: num(7),
+        emHeightDescent: num(8),
+        alphabeticBaseline: num(9),
+        hangingBaseline: num(10),
+        ideographicBaseline: num(11),
         // R34xx：getActualBoundingBox(start, end)——[start, end) 字形墨迹并集矩形
         //（相对文本原点；无字体栈/空区间 → 空矩形 {0,0,0,0}）。
         // R34xx：getTextClusters(start, end)——UAX#29 字素簇分段（GB9 ZWJ/Extend、

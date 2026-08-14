@@ -833,3 +833,48 @@ fn test_baselines_from_base_table() {
         m.ideographic_baseline
     );
 }
+
+// R34xx：emHeight 半行距定位（2d.text.measure.emHeights-low-ascent/zero-descent 驱动）——
+//   leading = em − (A+D)；bottom_leading = min(leading/2, D)；top_leading = leading − bottom。
+//   ascent256（256,256）→ 512/512；descent0（768,0）→ 1024/0。
+#[test]
+fn test_em_height_half_leading() {
+    for (path, a, d, expect_a, expect_d) in [
+        ("CanvasTest.ttf", 0.75f32, 0.25f32, 0.75f32, 0.25f32),
+        ("CanvasTest-ascent256.ttf", 0.25f32, 0.25f32, 0.5f32, 0.5f32),
+        ("CanvasTest-descent0.ttf", 0.75f32, 0.0f32, 1.0f32, 0.0f32),
+    ] {
+        let bytes = std::fs::read(format!(
+            "{}/../../tests/wpt-runner/wpt-data/fonts/{path}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap_or_else(|_| Vec::new());
+        if bytes.is_empty() {
+            continue;
+        }
+        use std::sync::{Arc, Mutex};
+        let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+        let fid = loader.load_font(&bytes).unwrap();
+        loader.register_family_alias("T", fid);
+        let mut ctx = CanvasContext::new(100, 50);
+        ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+        ctx.set_font(FontDescriptor {
+            family: "T".to_string(),
+            size: 40.0,
+            ..FontDescriptor::default()
+        });
+        let m = ctx.measure_text("A");
+        assert!(
+            (m.em_height_ascent - expect_a * 40.0).abs() < 0.5,
+            "{path}: emHeightAscent {} vs {}",
+            m.em_height_ascent,
+            expect_a * 40.0
+        );
+        assert!(
+            (m.em_height_descent - expect_d * 40.0).abs() < 0.5,
+            "{path}: emHeightDescent {} vs {}",
+            m.em_height_descent,
+            expect_d * 40.0
+        );
+    }
+}
