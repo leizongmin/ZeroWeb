@@ -1,8 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（R34xx 续：colormix/relativecolor OKLab 插值、halftransparent alpha
-序列化、nonfinite 忽略 vs 缺参 TypeError、setTransform 双重重载、ImageData 构造器 spec 化、
-fontKerning/maxWidth、系统默认字体预载 + 族名大小写不敏感解析；text 100→115 Pass）。
+**最后更新**: 2026-08-14（R34xx 第三批：bbox 符号约定/whitespace 转换/em+lh 字号/亚像素
+墨迹/显式 undefined 语义/零长渐变文本/timer 触发；text 100→121 Pass；fill-and-stroke
+254 Pass 0 Fail；最终全量数字见 evidence/r34xx-batch2）。
 
 ---
 
@@ -65,14 +65,17 @@ fontKerning/maxWidth、系统默认字体预载 + 族名大小写不敏感解析
 
 | 修复 | 驱动用例 |
 |------|----------|
-| stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值；legacy 直 sRGB（premultiplied 语义保持） | gradient.colormix / gradient.relativecolor |
+| stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值；legacy 直 sRGB | gradient.colormix / gradient.relativecolor |
 | alpha 序列化最短可回滚十进制（u8 量化 0.5→128 回读 '0.5'） | fillStyle.get.halftransparent / semitransparent |
-| 缺参 TypeError vs 非有限忽略分流（_zwNumArg/_zwAllFinite——570b552c 过度抛错修正） | fillRect.nonfinite / rotate.nonfinite / translate.nonfinite / scale.nonfinite / transform.nonfinite / setTransform.nonfinite / clearRect.nonfinite / strokeRect.nonfinite |
-| setTransform 双重重载（0 参 → DOMMatrix2DInit identity；1-5 参 → TypeError） | setTransform.multiple / conformance.requirements.missingargs |
-| ImageData 构造器 spec 化（WebIDL 缺参/类型 TypeError、长度 InvalidState/IndexSizeError 分步、pixelFormat rgba-unorm8/float16、Float16Array 原生存储） | imageData.object.ctor.*（basics 1 陈旧断言除外） |
-| fontKerning 'none' → shaping 关 kern；系统默认字体预载（DejaVu 带 kern）；resolve_font_id 族名大小写不敏感（潜在 bug：@font-face 'CanvasTest' miss 后回退首字体被掩盖） | drawing.style.fontKerning / reset.fontKerning.none / draw.* 全族 |
-| fillText maxWidth ≤ 0 → 不绘制（spec text preparation algorithm） | draw.fill.maxWidth.zero / maxWidth.negative |
-| ctx.font 二次设置保留 fontKerning（桥层 setFont 继承，同 letter/wordSpacing） | drawing.style.reset.fontKerning.none |
+| 缺参 TypeError vs 非有限忽略分流（_zwNumArg/_zwAllFinite） | 8 个 .nonfinite 系列 |
+| setTransform 双重重载（0 参 → DOMMatrix2DInit identity） | setTransform.multiple / missingargs |
+| ImageData 构造器 spec 化（WebIDL union/长度算法/pixelFormat float16） | imageData.object.ctor.* |
+| fontKerning 'none' → shaping 关 kern；系统默认字体预载；resolve_font_id 大小写不敏感 | drawing.style.fontKerning / reset.fontKerning.none |
+| fillText maxWidth ≤ 0 不绘制；ctx.font 保留 fontKerning；% / em / lh 字号（canvas 元素样式基准） | maxWidth.zero/negative / reset.fontKerning.none / percentage* / parent-style-relative-units |
+| 显式 undefined vs 缺参（DOMString 转换语义） | gradient.object.invalidcolor / pattern.repeat.undefined |
+| 文本路径 sample_at（零长渐变不绘制） | gradient.interpolate.zerosize.fillText/strokeText |
+| bbox 符号约定去钳制（Left 正值=向左）；ASCII whitespace → U+0020；亚像素墨迹（轮廓 bbox） | actualBoundingBox.whitespace / getActualBoundingBox*.tentative / small-font / space.* 全族 |
+| testharness 定时器记录式触发（t.step_timeout 回调最终执行） | draw.fontface.repeat |
 | radial 二次方程全几何（f64 + 容差 + 有效根） | cone.behind/beside/bottom/front/shape1/touch*/equal/transform.* |
 | 渐变半径随 CTM 缩放 | radial.transform.1/2/3 |
 | drawImage 阴影 | shadow.image.* / shadow.canvas.* |
@@ -101,7 +104,7 @@ fontKerning/maxWidth、系统默认字体预载 + 族名大小写不敏感解析
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
-| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~74（indexFromOffset/selectionRects/fillTextCluster——依赖 document.caretPositionFromPoint/Range.getClientRects）+ emHeight/基线字体度量深面 5 + float16 数据路径 2 + current.removed 1（js-dom 面移交）+ ctor.basics 陈旧子断言 1（Uint8Array 2 参 INDEX_SIZE 与同文件 3 参 TypeError 不可兼得，当前 spec WebIDL 行为） |
+| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~74（indexFromOffset/selectionRects/fillTextCluster——依赖 document.caretPositionFromPoint/Range.getClientRects）+ emHeight/基线字体度量深面 5（OS/2 usWinAscent + em square 定位算法待确认）+ float16 数据路径 2 + lang/VS 深面 4 + current.removed 1（js-dom 面移交）+ ctor.basics 陈旧子断言 1 |
 
 ## 待用户决策清单
 
