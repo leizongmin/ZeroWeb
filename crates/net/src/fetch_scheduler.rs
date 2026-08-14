@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::client::{HttpClient, async_runtime};
 use crate::fetch_priority::FetchPriority;
@@ -10,6 +11,19 @@ use crate::resource_policy::{max_connections_per_origin, max_connections_total, 
 
 /// HTTP GET 任务结果。
 pub type FetchJobResult = Result<crate::HttpResponse, String>;
+
+/// 单个网络事务的匿名时序数据。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchTelemetry {
+    /// 不含路径或查询参数的请求 origin。
+    pub origin: String,
+    /// 调度器从接收任务到开始传输的等待时间。
+    pub queue_wait_ms: u64,
+    /// 网络传输和完整响应体读取时间。
+    pub network_ms: u64,
+    /// 共享该网络事务的订阅者数。
+    pub coalesced_subscriber_count: usize,
+}
 
 struct QueuedJob {
     /// 请求身份键；只有身份相同的请求允许合并。
@@ -21,6 +35,8 @@ struct QueuedJob {
     reply_tx: Sender<FetchJobResult>,
     /// 合并路径（submit_shared_*）：完成时经 pending 广播给全部订阅者。
     shared: bool,
+    submitted_at: Instant,
+    telemetry_tx: Option<Sender<FetchTelemetry>>,
 }
 
 /// 按 origin 限制并发数的 fetch 调度器；复用单个 [`HttpClient`]（keep-alive）。
@@ -93,6 +109,8 @@ impl PerOriginFetchScheduler {
             extra_headers,
             reply_tx,
             shared: false,
+            submitted_at: Instant::now(),
+            telemetry_tx: None,
         };
         self.try_start(job);
         reply_rx
@@ -134,9 +152,21 @@ impl PerOriginFetchScheduler {
         priority: FetchPriority,
         extra_headers: Vec<(String, String)>,
     ) -> Receiver<FetchJobResult> {
+        Self::submit_shared_with_key_headers_and_telemetry(sched, key, url, priority, extra_headers).0
+    }
+
+    /// 经共享调度器提交带身份键的 GET，并在完成时发送匿名时序数据。
+    pub fn submit_shared_with_key_headers_and_telemetry(
+        sched: &Arc<Mutex<Self>>,
+        key: impl Into<String>,
+        url: impl Into<String>,
+        priority: FetchPriority,
+        extra_headers: Vec<(String, String)>,
+    ) -> (Receiver<FetchJobResult>, Receiver<FetchTelemetry>, bool) {
         let key = key.into();
         let url = url.into();
         let (reply_tx, reply_rx) = channel();
+        let (event_tx, event_rx) = channel();
         let mut s = sched.lock().expect("fetch scheduler lock");
         if let Some(subscribers) = s.pending.get_mut(&key) {
             subscribers.push(reply_tx);
@@ -144,7 +174,7 @@ impl PerOriginFetchScheduler {
             if let Some(job) = s.queue.iter_mut().find(|job| job.key == key) {
                 job.priority = job.priority.max(priority);
             }
-            return reply_rx;
+            return (reply_rx, event_rx, false);
         }
         s.pending.insert(key.clone(), vec![reply_tx.clone()]);
         let job = QueuedJob {
@@ -155,9 +185,11 @@ impl PerOriginFetchScheduler {
             extra_headers,
             reply_tx,
             shared: true,
+            submitted_at: Instant::now(),
+            telemetry_tx: Some(event_tx),
         };
         s.try_start(job);
-        reply_rx
+        (reply_rx, event_rx, true)
     }
 
     /// 某 origin 上一个 in-flight 请求结束。
@@ -208,7 +240,10 @@ impl PerOriginFetchScheduler {
         let hook = self.self_hook.clone();
         let extra_headers = job.extra_headers;
         let shared = job.shared;
+        let submitted_at = job.submitted_at;
+        let telemetry_tx = job.telemetry_tx;
         async_runtime().spawn(async move {
+            let network_started = Instant::now();
             let mut req = crate::HttpRequest::get(&url);
             for (name, value) in extra_headers {
                 req = req.header(&name, &value);
@@ -223,18 +258,34 @@ impl PerOriginFetchScheduler {
                 ),
                 Err(e) => tracing::warn!(url = %url, error = %e, "HTTP fetch failed"),
             }
-            if shared {
+            let coalesced_subscriber_count = if shared {
                 // S6 合并路径：广播给全部订阅者后移除 pending 条目
                 if let Some(sched) = hook.as_ref()
                     && let Ok(mut s) = sched.lock()
                     && let Some(subscribers) = s.pending.remove(&key)
                 {
+                    let count = subscribers.len();
                     for tx in subscribers {
                         let _ = tx.send(result.clone());
                     }
+                    count
+                } else {
+                    0
                 }
             } else {
                 let _ = reply_tx.send(result);
+                1
+            };
+            if let Some(tx) = telemetry_tx {
+                let _ = tx.send(FetchTelemetry {
+                    origin: origin.clone(),
+                    queue_wait_ms: network_started
+                        .duration_since(submitted_at)
+                        .as_millis()
+                        .min(u128::from(u64::MAX)) as u64,
+                    network_ms: network_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                    coalesced_subscriber_count,
+                });
             }
             if let Some(sched) = hook.as_ref()
                 && let Ok(mut s) = sched.lock()

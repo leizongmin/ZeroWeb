@@ -42,7 +42,7 @@ where
 }
 
 /// 统一缓存感知提交：负缓存 → `ResourceLoader`（缓存/在途合并/调度）→ 负缓存回写。
-fn submit_cached(url: String, priority: FetchPriority) -> Receiver<FetchJobResult> {
+fn submit_cached(url: String, meta: ResourceFetchMeta) -> Receiver<FetchJobResult> {
     // 负缓存：失败冷却期内跳过网络（renderer 每 publish 重请求失败图 → 此处收敛）
     if zero_net::shared_negative_cache()
         .lock()
@@ -54,7 +54,9 @@ fn submit_cached(url: String, priority: FetchPriority) -> Receiver<FetchJobResul
         return rx;
     }
 
-    let rx = ResourceLoader::shared().submit(ResourceRequest::get(url.clone(), priority));
+    let rx = ResourceLoader::shared().submit(
+        ResourceRequest::get(url.clone(), FetchPriority::from_u8(meta.priority)).with_destination(meta.resource_type),
+    );
     bridge_rx(rx, move |result| finalize_result(result, &url))
 }
 
@@ -79,7 +81,7 @@ pub fn fetch_text_async(url: impl Into<String>) -> Receiver<HttpTextResult> {
 
 /// 带优先级的文本 GET。
 pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<HttpTextResult> {
-    let rx = submit_cached(url.into(), FetchPriority::from_u8(meta.priority));
+    let rx = submit_cached(url.into(), meta);
     bridge_rx(rx, map_fetch_text)
 }
 
@@ -119,7 +121,7 @@ pub fn fetch_bytes_async(url: impl Into<String>) -> Receiver<Result<Vec<u8>, Str
 
 /// 带优先级的字节 GET。
 pub fn fetch_bytes_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
-    let rx = submit_cached(url.into(), FetchPriority::from_u8(meta.priority));
+    let rx = submit_cached(url.into(), meta);
     bridge_rx(rx, map_fetch_result)
 }
 

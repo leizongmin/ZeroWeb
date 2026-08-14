@@ -8,10 +8,53 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
+use crate::fetch_scheduler::FetchTelemetry;
 use crate::{
     CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest,
     PerOriginFetchScheduler, shared_http_cache,
 };
+
+const MAX_RESOURCE_LOAD_EVENTS: usize = 1024;
+
+/// 缓存决策结果，不包含 URL 或请求头。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheOutcome {
+    /// 使用了新鲜缓存响应。
+    FreshHit,
+    /// 使用条件请求重新验证缓存。
+    Revalidated,
+    /// 未命中缓存并完成网络请求。
+    Network,
+    /// `only-if-cached` 无法由缓存满足。
+    OnlyIfCachedMiss,
+    /// 非安全方法完成后失效缓存。
+    UnsafeWrite,
+}
+
+/// 单个资源加载的匿名生命周期事件。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceLoadEvent {
+    /// 宿主赋予的导航编号；未提供时为 `None`。
+    pub navigation_id: Option<u64>,
+    /// 资源目的地，如 `image`、`style` 或 `document`。
+    pub destination: String,
+    /// 不含路径、查询参数的 origin。
+    pub origin: String,
+    /// 调度器排队到开始网络传输的时间。
+    pub queue_wait_ms: u64,
+    /// 网络传输及响应体读取时间。
+    pub network_ms: u64,
+    /// 已读取的响应体字节数。
+    pub bytes: u64,
+    /// 调度优先级。
+    pub priority: FetchPriority,
+    /// 已协商协议；当前 transport 未公开该信息时为 `unknown`。
+    pub protocol: String,
+    /// 缓存决策结果。
+    pub cache_outcome: CacheOutcome,
+    /// 共享该网络事务的订阅者数。
+    pub coalesced_subscriber_count: usize,
+}
 
 /// 请求对缓存的要求。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +99,10 @@ pub struct ResourceRequest {
     pub priority: FetchPriority,
     /// 缓存模式。
     pub cache_mode: CacheMode,
+    /// 可选导航编号，仅用于匿名加载事件关联。
+    pub navigation_id: Option<u64>,
+    /// 资源目的地，仅用于调度与匿名事件；默认 `other`。
+    pub destination: String,
 }
 
 impl ResourceRequest {
@@ -67,6 +114,8 @@ impl ResourceRequest {
             partition: "default".to_string(),
             priority,
             cache_mode: CacheMode::Default,
+            navigation_id: None,
+            destination: "other".to_string(),
         }
     }
 
@@ -85,6 +134,18 @@ impl ResourceRequest {
     /// 设置缓存模式。
     pub fn with_cache_mode(mut self, cache_mode: CacheMode) -> Self {
         self.cache_mode = cache_mode;
+        self
+    }
+
+    /// 设置宿主导航编号。
+    pub fn with_navigation_id(mut self, navigation_id: u64) -> Self {
+        self.navigation_id = Some(navigation_id);
+        self
+    }
+
+    /// 设置资源目的地。
+    pub fn with_destination(mut self, destination: impl Into<String>) -> Self {
+        self.destination = destination.into();
         self
     }
 
@@ -117,6 +178,7 @@ pub struct ResourceLoader {
     partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
     stats: Arc<Mutex<ResourceLoadStats>>,
+    events: Arc<Mutex<Vec<ResourceLoadEvent>>>,
 }
 
 impl ResourceLoader {
@@ -136,6 +198,7 @@ impl ResourceLoader {
             partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
             stats: Arc::new(Mutex::new(ResourceLoadStats::default())),
+            events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -158,6 +221,7 @@ impl ResourceLoader {
         match lookup {
             CacheLookup::Hit(cached) if request.cache_mode != CacheMode::NoCache => {
                 self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
+                self.record_event(&request, CacheOutcome::FreshHit, None, 0);
                 immediate(Ok(cached.into_response()))
             }
             CacheLookup::Hit(_) | CacheLookup::Revalidate { .. } if request.cache_mode == CacheMode::OnlyIfCached => {
@@ -165,6 +229,7 @@ impl ResourceLoader {
                     .lock()
                     .expect("resource loader stats lock")
                     .only_if_cached_misses += 1;
+                self.record_event(&request, CacheOutcome::OnlyIfCachedMiss, None, 0);
                 // only-if-cached 可使用 fresh 条目；stale 条目不能启动验证网络请求。
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
@@ -187,6 +252,7 @@ impl ResourceLoader {
                     .lock()
                     .expect("resource loader stats lock")
                     .only_if_cached_misses += 1;
+                self.record_event(&request, CacheOutcome::OnlyIfCachedMiss, None, 0);
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
             CacheLookup::Miss => self.submit_network(cache, request, Vec::new(), true),
@@ -196,6 +262,11 @@ impl ResourceLoader {
     /// 返回当前加载器的匿名聚合计数。
     pub fn stats(&self) -> ResourceLoadStats {
         *self.stats.lock().expect("resource loader stats lock")
+    }
+
+    /// 返回最近的匿名加载事件，按完成顺序排列。
+    pub fn events(&self) -> Vec<ResourceLoadEvent> {
+        self.events.lock().expect("resource loader events lock").clone()
     }
 
     /// 受理任意 HTTP 请求。
@@ -223,6 +294,10 @@ impl ResourceLoader {
         }
         let cache = self.cache_for_partition(&partition);
         let url = request.url.clone();
+        let event_request = ResourceRequest::get(url.clone(), priority)
+            .with_partition(partition)
+            .with_destination("other");
+        let events = Arc::clone(&self.events);
         let (tx, rx) = mpsc::channel();
         crate::client::async_runtime().spawn(async move {
             let result = HttpClient::send_async_with_timeout(30, request)
@@ -231,6 +306,8 @@ impl ResourceLoader {
             if matches!(result, Ok(ref response) if response.is_success()) {
                 cache.lock().expect("HTTP cache lock").invalidate(&url);
             }
+            let bytes = result.as_ref().map(|response| response.body.len() as u64).unwrap_or(0);
+            record_event_into(&events, &event_request, CacheOutcome::UnsafeWrite, None, bytes);
             let _ = tx.send(result);
         });
         rx
@@ -253,30 +330,41 @@ impl ResourceLoader {
     ) -> Receiver<FetchJobResult> {
         self.stats.lock().expect("resource loader stats lock").network_requests += 1;
         let mut headers = request.headers.clone();
+        let is_revalidation = !conditional_headers.is_empty();
         for (name, value) in conditional_headers {
             if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case(&name)) {
                 headers.push((name, value));
             }
         }
         let key = request.identity_key();
-        let rx = PerOriginFetchScheduler::submit_shared_with_key_and_headers(
+        let (rx, telemetry_rx, owns_telemetry) = PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
             &self.scheduler,
             key,
             request.url.clone(),
             request.priority,
             headers,
         );
+        let event_request = request.clone();
+        let cache_outcome = if is_revalidation {
+            CacheOutcome::Revalidated
+        } else {
+            CacheOutcome::Network
+        };
         let url = request.url;
         let request_headers = request.headers;
         let started = Instant::now();
         let stats = Arc::clone(&self.stats);
+        let events = Arc::clone(&self.events);
         bridge(rx, move |result| {
+            let telemetry = owns_telemetry.then(|| telemetry_rx.recv().ok()).flatten();
             let mut stats = stats.lock().expect("resource loader stats lock");
             stats.network_elapsed_ms += started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
             if let Ok(response) = &result {
                 stats.network_response_bytes += response.body.len() as u64;
             }
             drop(stats);
+            let bytes = result.as_ref().map(|response| response.body.len() as u64).unwrap_or(0);
+            record_event_into(&events, &event_request, cache_outcome, telemetry.as_ref(), bytes);
             match result {
                 Ok(response) if response.status_code == 304 => cache
                     .lock()
@@ -309,6 +397,43 @@ impl ResourceLoader {
             .or_insert_with(|| Arc::new(Mutex::new(HttpCache::new())))
             .clone()
     }
+
+    fn record_event(
+        &self,
+        request: &ResourceRequest,
+        cache_outcome: CacheOutcome,
+        telemetry: Option<&FetchTelemetry>,
+        bytes: u64,
+    ) {
+        record_event_into(&self.events, request, cache_outcome, telemetry, bytes);
+    }
+}
+
+fn record_event_into(
+    events: &Arc<Mutex<Vec<ResourceLoadEvent>>>,
+    request: &ResourceRequest,
+    cache_outcome: CacheOutcome,
+    telemetry: Option<&FetchTelemetry>,
+    bytes: u64,
+) {
+    let mut events = events.lock().expect("resource loader events lock");
+    if events.len() == MAX_RESOURCE_LOAD_EVENTS {
+        events.remove(0);
+    }
+    events.push(ResourceLoadEvent {
+        navigation_id: request.navigation_id,
+        destination: request.destination.clone(),
+        origin: telemetry
+            .map(|event| event.origin.clone())
+            .unwrap_or_else(|| crate::resource_policy::origin_from_url(&request.url)),
+        queue_wait_ms: telemetry.map(|event| event.queue_wait_ms).unwrap_or(0),
+        network_ms: telemetry.map(|event| event.network_ms).unwrap_or(0),
+        bytes,
+        priority: request.priority,
+        protocol: "unknown".to_string(),
+        cache_outcome,
+        coalesced_subscriber_count: telemetry.map(|event| event.coalesced_subscriber_count).unwrap_or(1),
+    });
 }
 
 fn immediate(result: FetchJobResult) -> Receiver<FetchJobResult> {
@@ -454,5 +579,56 @@ mod tests {
             .expect("only-if-cached result");
         assert!(isolated.is_err(), "another partition must not see site-a's entry");
         assert_eq!(loader.stats().only_if_cached_misses, 1);
+    }
+
+    #[test]
+    fn fresh_hit_records_anonymous_navigation_event() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "site-a");
+        let url = "https://cdn.example/asset.css?private=value";
+        assert!(cache.lock().unwrap().put(url, &fresh_response(url)));
+
+        let result = loader
+            .submit(
+                ResourceRequest::get(url, FetchPriority::CRITICAL)
+                    .with_navigation_id(42)
+                    .with_destination("style"),
+            )
+            .recv()
+            .expect("fresh cache response");
+        assert!(result.is_ok());
+
+        let events = loader.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].navigation_id, Some(42));
+        assert_eq!(events[0].destination, "style");
+        assert_eq!(events[0].origin, "https://cdn.example");
+        assert_eq!(events[0].cache_outcome, CacheOutcome::FreshHit);
+        assert_eq!(events[0].bytes, 0);
+        assert_eq!(events[0].coalesced_subscriber_count, 1);
+    }
+
+    #[test]
+    fn network_telemetry_is_recorded_without_request_details() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let request = ResourceRequest::get("https://cdn.example/a.js?secret=value", FetchPriority::HIGH)
+            .with_navigation_id(7)
+            .with_destination("script");
+        let telemetry = FetchTelemetry {
+            origin: "https://cdn.example".to_string(),
+            queue_wait_ms: 3,
+            network_ms: 17,
+            coalesced_subscriber_count: 2,
+        };
+
+        record_event_into(&events, &request, CacheOutcome::Network, Some(&telemetry), 128);
+
+        let event = events.lock().unwrap().pop().expect("event");
+        assert_eq!(event.origin, "https://cdn.example");
+        assert_eq!(event.queue_wait_ms, 3);
+        assert_eq!(event.network_ms, 17);
+        assert_eq!(event.bytes, 128);
+        assert_eq!(event.coalesced_subscriber_count, 2);
+        assert_eq!(event.cache_outcome, CacheOutcome::Network);
     }
 }

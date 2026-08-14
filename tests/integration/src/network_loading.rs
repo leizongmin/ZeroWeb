@@ -153,6 +153,13 @@ fn coalesce_respects_request_identity_and_vary() {
         );
     }
     assert_eq!(server.request_count(), 2, "only the equal en-US requests may collapse");
+    assert!(
+        loader
+            .events()
+            .iter()
+            .any(|event| event.coalesced_subscriber_count == 2),
+        "the owning transaction event must report both coalesced subscribers"
+    );
 }
 
 /// NFR-001：顶级站点分区是缓存与在途事务的隔离边界，不能从另一站点复用响应。
