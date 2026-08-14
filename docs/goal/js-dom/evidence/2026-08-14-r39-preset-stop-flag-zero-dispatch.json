@@ -1,0 +1,42 @@
+{
+  "round": "R39",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (events)",
+  "slice": "pre-set stop propagation flag -> zero listener dispatch",
+  "context": "R38 后下轮候选 (a) Event-dispatch 系列最小子集。诊断确认完整 document/window 入 dispatch chain 为深结构（host parent_selector_for('html') 返空 → chain 止于 html；document/window/html 三合一 _elKey('html') listener key 被 part06 postMessage/onerror/inline-handler + part02 5 处派发点依赖）。但从失败聚类中提取出可独立 land 的最小子集：dispatch 前已设 stop flag 的零触发语义。",
+  "diagnosis": {
+    "root_cause": "_dispatchWithBubble 各阶段循环先派发后才查 bubbleStopped() → dispatch 前外部调 stopPropagation()/stopImmediatePropagation()/设 cancelBubble=true（R29 setter 置 flag）时，capture 阶段 html 先触发 2 次才止（wrong）。spec concept-event-dispatch 步骤 2：dispatch 开始时 stop propagation flag 已设 → 跳过全部 listener 触发。",
+    "wpt_evidence": "Event-dispatch-propagation-stopped: expected [] got [html, html, ...] length 3 (window/document listener 都存 html key，capture 第一站 html 触发 2 个注册)；Event-dispatch-bubble-canceled 同根因（cancelBubble=true prior to dispatch）",
+    "deep_structure_boundary": "Event-dispatch-bubbles-true/order 等需要 window→document→…→target 完整链（currentTarget 顺序断言）= 深结构（host 哨兵 + 12 派发点 + 三合一 key 拆分），本切片不碰；multiple-stopPropagation 需 document.dispatchEvent 触发 window listener 的顺序语义，同深结构"
+  },
+  "implementation": {
+    "fix": "part03.js _dispatchWithBubble try 块开头加 `if (bubbleStopped()) return !event._defaultPrevented;`——三阶段（capture/target/bubble）全不进，target/composedPath/Window.event 赋值保留，finally 正常清理（flag 重置，同 event 再派发恢复正常）",
+    "spec_link": "https://dom.spec.whatwg.org/#concept-event-dispatch"
+  },
+  "results": {
+    "propagation_stopped_polyfill": { "pass": 1, "fail": 0, "prev": "0P/1F" },
+    "propagation_stopped_native": { "pass": 1, "fail": 0, "prev": "0P/1F", "gap_pp": "0 (equivalent)" },
+    "bubble_canceled_polyfill": { "pass": 1, "fail": 0, "prev": "0P/1F" },
+    "bubble_canceled_native": { "pass": 1, "fail": 0, "prev": "0P/1F", "gap_pp": "0 (equivalent)" },
+    "dom_events_polyfill_full": { "pass": 179, "fail": 148, "timeout": 3, "rate": "54.74%", "prev": "177P/151F (54.13%)", "delta": "+2 pass net (new +2, 1 pre-existing flaky unblocked)" },
+    "dom_events_native_full": { "pass": 159, "fail": 168, "timeout": 3, "rate": "48.62%", "prev": "157P/171F (47.87%)", "delta": "+2 pass" },
+    "gap_pp": 6.12,
+    "dom_nodes_polyfill_regression": { "pass": 2502, "fail": 1970, "rate": "55.95%", "note": "vs R20 55.63% — 含并行流/基线漂移 +32P net，零回归" }
+  },
+  "deferred_deep_structure": "document/window 入 dispatch chain（Event-dispatch-bubbles-true/order/omitted-capture/multiple-stopPropagation 等 ~29 个 0-pass 主力）——host parent_selector_for 返 'doc'/'win' 哨兵 + shim chain 构造识别 + 12 个 _dispatchToListeners 派发点改双 key + document.addEventListener/window.addEventListener 独立 key 存储（拆 _elKey('html') 三合一）。波及 postMessage/onerror/inline-handler，须独立深结构切片（或随 M1 L2）。",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r39_unit_test": "test_preset_stop_flag_zero_dispatch_r39（stopPropagation/stopImmediatePropagation/cancelBubble=true 三形态零触发 + 无 flag 正常 dispatch 不受影响）",
+    "v8_engine_lib": "2120 passed (R38 baseline 2115 +1... 实为 2120 含并行流新增)",
+    "quickjs_engine_lib": "1415 passed (zero regression)",
+    "wpt_runner": "171 passed / 10 ignored",
+    "webview": "595 passed"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean (QUICKJS_CLIPPY_CRATES canonical)",
+    "fmt": "no diff",
+    "quickjs_test_matrix": "547+17+106 passed (script-sandbox/webview/wpt-runner)"
+  }
+}

@@ -1091,6 +1091,16 @@
     // （ZW_NATIVE_DOM=1 叠加，dispatch 仍走此 polyfill 路径，未解问题 #9）设 `__zw_stop`。两 flag 都须认。
     var bubbleStopped = function() { return event._propagationStopped || event.__zw_stop === true; };
     try {
+      // js-dom M4 R39：spec `concept-event-dispatch` 步骤 2——dispatch 开始时若 stop propagation flag
+      // **已设**（dispatch 前外部调 stopPropagation()/stopImmediatePropagation()/设 cancelBubble=true，
+      // R29 setter 等同 stopPropagation），跳过全部 listener 触发（capture/target/bubble 三阶段全不进），
+      // 仅保留 target/composedPath/Window.event 等 dispatch 期赋值（finally 正常清理）。
+      // WPT Event-dispatch-propagation-stopped（dispatch 前 stopPropagation → 期望零触发）+
+      // Event-dispatch-bubble-canceled（dispatch 前 cancelBubble=true → 同零触发）。
+      // 旧实现各阶段循环先派发后才查 flag → html capture 先触发 2 次才止（wrong）。
+      // https://dom.spec.whatwg.org/#concept-event-dispatch
+      if (bubbleStopped()) return !event._defaultPrevented;
+
       // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
       if (propagate && !globalThis.__zw_no_capture) {
         for (var i = chain.length - 1; i >= 0; i--) {

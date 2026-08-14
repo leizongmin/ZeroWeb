@@ -2293,3 +2293,72 @@ fn test_event_phase_during_dispatch_r35() {
         "dispatch 后 currentTarget 复位 null"
     );
 }
+
+#[test]
+fn test_preset_stop_flag_zero_dispatch_r39() {
+    // R39：spec `concept-event-dispatch` 步骤 2——dispatch 开始时若 stop propagation flag **已设**
+    // （dispatch 前外部调 stopPropagation()/stopImmediatePropagation()/设 cancelBubble=true，R29 setter
+    // 等同 stopPropagation），跳过全部 listener 触发（capture/target/bubble 三阶段全不进）。
+    // WPT Event-dispatch-propagation-stopped（dispatch 前 stopPropagation → 零触发）+
+    // Event-dispatch-bubble-canceled（dispatch 前 cancelBubble=true → 零触发）。
+    // 旧实现各阶段循环先派发后才查 flag → html capture 先触发 2 次才止（wrong）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><i id=\"c\">x</i></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 三种 pre-set flag 形态（stopPropagation / stopImmediatePropagation / cancelBubble=true）都零触发；
+    // dispatch 后 flag 被 finally 重置（R29 spec 步骤14），同 event 再派发恢复正常三阶段。
+    sandbox
+        .execute(
+            "var hits = [];\n\
+             function arm() { hits = [];\n\
+               document.querySelector('#a').addEventListener('click', function(e){ hits.push('a-cap'); }, true);\n\
+               document.querySelector('#a').addEventListener('click', function(e){ hits.push('a-bub'); }, false);\n\
+               document.querySelector('#c').addEventListener('click', function(e){ hits.push('c'); }, false);\n\
+               window.addEventListener('click', function(e){ hits.push('win'); }); }\n\
+             function fresh() { var ev = new Event('click', { bubbles: true }); return ev; }\n\
+             var e1 = fresh(); e1.stopPropagation(); document.querySelector('#c').dispatchEvent(e1);\n\
+             globalThis.__h1 = hits.join(',');\n\
+             var e2 = fresh(); e2.stopImmediatePropagation(); document.querySelector('#c').dispatchEvent(e2);\n\
+             globalThis.__h2 = hits.join(',');\n\
+             var e3 = fresh(); e3.cancelBubble = true; document.querySelector('#c').dispatchEvent(e3);\n\
+             globalThis.__h3 = hits.join(',');\n\
+             arm();\n\
+             var e4 = fresh(); document.querySelector('#c').dispatchEvent(e4);\n\
+             globalThis.__h4 = hits.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__h1").unwrap().value,
+        "",
+        "dispatch 前 stopPropagation → 零触发（含 window/html 共享 key listener）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h2").unwrap().value,
+        "",
+        "dispatch 前 stopImmediatePropagation → 零触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h3").unwrap().value,
+        "",
+        "dispatch 前 cancelBubble=true（R29 setter 置 flag）→ 零触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__h4").unwrap().value,
+        "a-cap,c,a-bub,win",
+        "无 pre-set flag 的正常 dispatch 不受影响（capture/target/bubble + window listener）"
+    );
+}
