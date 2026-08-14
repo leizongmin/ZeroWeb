@@ -3,9 +3,8 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
-use crate::client::HttpClient;
+use crate::client::{HttpClient, async_runtime};
 use crate::fetch_priority::FetchPriority;
 use crate::resource_policy::{max_connections_per_origin, max_connections_total, origin_from_url};
 
@@ -209,12 +208,12 @@ impl PerOriginFetchScheduler {
         let hook = self.self_hook.clone();
         let extra_headers = job.extra_headers;
         let shared = job.shared;
-        thread::spawn(move || {
+        async_runtime().spawn(async move {
             let mut req = crate::HttpRequest::get(&url);
             for (name, value) in extra_headers {
                 req = req.header(&name, &value);
             }
-            let result = client.send(req).map_err(|e| e.to_string());
+            let result = client.send_async(req).await.map_err(|e| e.to_string());
             match &result {
                 Ok(resp) => tracing::info!(
                     url = %url,

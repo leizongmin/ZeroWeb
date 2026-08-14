@@ -8,6 +8,12 @@ use reqwest::header::HeaderMap;
 use crate::connect::{build_blocking_client, map_reqwest_error, send_with_ipv4_fallback};
 use crate::{HttpRequest, HttpResponse, NetError};
 
+/// 共享异步网络 runtime，避免资源调度器为每个请求创建线程或 runtime。
+pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("create async network runtime"))
+}
+
 /// HTTP 客户端 — 封装 reqwest。
 pub struct HttpClient {
     client: Client,
