@@ -132,7 +132,7 @@ jobs:
     command: "rally"
     args:
       - "query"
-      - "使用 $zeroweb-regression-guard Skill 巡检当前 main。严格按 Skill 收集 renderer/compositor 内存、compositor 断连、性能、product-smoke 与 Chrome production parity 证据；无新 SHA 时立即 DONE。发现可复现劣化后先按 docs/rally/run-rules.md 发飞书告警，再尝试最小修复；修复后完成质量门禁和 lei-pre-commit-guard，git pull --rebase，提交并普通推送 main，最后发飞书汇报。不得放宽阈值、覆盖较差基线、强推或触碰既有未提交改动。"
+      - "使用 $zeroweb-regression-guard Skill 巡检当前 main。严格复用 make bench-gate 和 docs/perf/baselines 检查 CPU、页面耗时与整体 RSS，并收集 renderer/compositor 分进程内存、断连、product-smoke 与 Chrome production parity 证据；无新 SHA 时立即 DONE。发现可复现劣化后先按 docs/rally/run-rules.md 发飞书告警：局部问题尝试最小修复并完成质量门禁、lei-pre-commit-guard、rebase、提交和普通推送 main；工程量大、两次尝试失败或需要架构/基线决策时，停止改代码，把证据与专项方案记入对应 goal master，只提交并推送该文档，飞书通知等待人工确认。不得放宽阈值、覆盖较差基线、强推或触碰既有未提交改动。"
       - "-w"
       - "."
       - "--agent-command"

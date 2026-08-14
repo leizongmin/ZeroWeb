@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "每天早上 6 点检查 ZeroWeb 最近提交是否让 renderer/compositor 内存、compositor 稳定性或 Chrome 一致性劣化；发现问题后通知并自动修复。",
-      "expected_output": "先同步 main 并用本地成功 SHA 跳过未变化版本；对新 SHA 运行生产多进程内存、断连、bench、product-smoke 和 Chrome production parity 门禁。可复现回归先飞书告警，再最小修复、完整验证、安全扫描、提交并普通推送 main，最后飞书汇报。",
+      "expected_output": "先同步 main 并用本地成功/专项 SHA 跳过未变化版本；对新 SHA 复用仓库 perf baseline 检查 CPU、页面耗时和整体 RSS，再运行生产多进程内存、断连、product-smoke 和 Chrome production parity 门禁。可复现回归先飞书告警；局部问题最小修复并推送，超出安全范围则记录专项待办、只提交文档并等待人工确认。",
       "files": [
         "docs/rally/jobs.yaml",
         "docs/rally/run-rules.md"
@@ -13,13 +13,13 @@
     {
       "id": 2,
       "prompt": "renderer 从 70MB 涨到 720MB，但页面还能正常显示；夜间巡检应该怎么处理？",
-      "expected_output": "把超过绝对内存预算两倍的结果直接判为回归，保存进程树和测量口径证据，先发送飞书告警；定位引入提交和内存根因，不通过放宽预算掩盖，修复后重跑原门禁及提交质量门禁并汇报 commit。",
+      "expected_output": "把超过生产分进程绝对预算两倍的结果直接判为回归，同时引用 make bench-gate 的既有 resource/peak_rss_mb 基线结果；保存进程树和测量口径证据并先飞书告警，不通过放宽预算掩盖。局部根因可自动修复，跨生命周期或多模块重构则转专项记录。",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "夜间机器没有可用 GPU，CPU product-smoke 通过了，是否可以写入成功 SHA？",
-      "expected_output": "不可以。生产 GPU/Chrome 证据缺失应判 BLOCKED 而非 PASS，发送飞书说明环境卡点，不修改产品代码，也不更新成功 SHA。",
+      "prompt": "夜间巡检确认 compositor 内存回归，但修复需要重构跨进程 surface 所有权，本轮做不完，应该继续硬修吗？",
+      "expected_output": "不继续硬修。停止并撤销本轮未验证实验代码，把指标、perf baseline、坏提交范围、证据、根因假设和专项方案写入 rendering-compat 控制面的待用户决策/专项修复清单；安全扫描后只提交并推送文档，飞书通知等待人工确认，并用 deferred SHA 防止同版本重复消耗。",
       "files": []
     }
   ]
