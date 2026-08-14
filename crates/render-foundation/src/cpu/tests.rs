@@ -84,6 +84,11 @@ fn indexed_glyph_renders_identically_to_unicode_code_point() {
 }
 
 #[test]
+// 可变轴（wdth 等）渲染仅 freetype-raster 路径支持（fontdue 纯 Rust 路径无
+// variation 支持，loader.rs 在 variations 非空时直接返回
+// "variation-aware rasterization requires freetype-raster"）；`--no-default-features`
+// 构建（quickjs 矩阵）下本测试无渲染前提，跳过（R3422-F 引入时未覆盖该矩阵）。
+#[cfg(feature = "freetype-raster")]
 fn variable_glyph_primitives_change_pixels_and_isolate_shared_cache() {
     const ROBOTO_EXTREMO: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/RobotoExtremo-VF.subset.ttf");
     let mut font_loader = FontLoader::new();
