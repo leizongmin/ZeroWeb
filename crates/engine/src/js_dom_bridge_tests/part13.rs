@@ -658,19 +658,28 @@ fn test_htmlcollection_nodelist_item_nameditem_r3033() {
     assert_eq!(sandbox.execute("globalThis.__ni_name").unwrap().value, "p1", "namedItem('para') 按 name 匹配");
     assert_eq!(sandbox.execute("globalThis.__ni_none").unwrap().value, "null", "namedItem(不匹配)=null");
 
-    // ② forEach 仍工作（数组原生，未被 item/namedItem 破坏）+ for...in 不泄漏 item/namedItem（非 enumerable）。
+    // ② R50：HTMLCollection 为 spec legacy platform object——**无** forEach/values/entries
+    //（WPT HTMLCollection-iterator 断言不存在；旧 Array 承载泄漏），for-of（@@iterator）替代
+    //+ for...in 仅 indexed/named（0,1——item/namedItem 在原型不可枚举）。
     sandbox
         .execute(
-            "globalThis.__fe = []; ps.forEach(function(el){ globalThis.__fe.push(el.id); });\
+            "globalThis.__fe = [];\
+             for (var _e of ps) globalThis.__fe.push(_e.id);\
              globalThis.__feJ = String(globalThis.__fe);\
+             globalThis.__hasFE = ('forEach' in ps);\
              var keys = []; for (var k in ps) keys.push(k); globalThis.__inKeys = String(keys);",
         )
         .unwrap();
-    assert_eq!(sandbox.execute("globalThis.__feJ").unwrap().value, "p1,p2", "forEach 迭代仍工作（p1,p2）");
+    assert_eq!(sandbox.execute("globalThis.__feJ").unwrap().value, "p1,p2", "for-of 迭代产出（p1,p2）");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__hasFE)").unwrap().value,
+        "false",
+        "HTMLCollection 无 forEach（R50 spec 语义，旧 Array 泄漏已移除）"
+    );
     assert_eq!(
         sandbox.execute("globalThis.__inKeys").unwrap().value,
         "0,1",
-        "for...in 仅 0,1（item/namedItem 非 enumerable 不泄漏）"
+        "for...in 仅 0,1（item/namedItem/toString/constructor 非 enumerable 不泄漏；length 在 Proxy target 之外）"
     );
 
     // ③ getElementsByClassName('x') → HTMLCollection：item + namedItem。
@@ -1955,5 +1964,214 @@ fn test_form_get_submission_url_r3054() {
         form_get_submission_url("<html><body><form id='f' action='/s'></form></body></html>", "#f", None, base),
         Some("https://example.com/s".to_string()),
         "无控件 GET → action 无 query（仅路径）"
+    );
+}
+
+#[test]
+fn test_htmlcollection_proxy_semantics_r50() {
+    // R50：HTMLCollection 从 Array 承载升级为 Proxy 承载（spec legacy platform object，
+    // https://dom.spec.whatwg.org/#interface-htmlcollection + WebIDL legacy platform objects）。
+    // 覆盖 WPT dom/collections 五用例的语义面：own 枚举（无 length/item/namedItem）、无
+    // values/entries/forEach、indexed/named 拒绝 set/defineProperty/delete、canonical 索引
+    // 边界（负数/2^31/2^32 走 named）、illegal invocation（作 prototype）、live overlay
+    // （同步 appendChild 后 c[0] 可见）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><i id='foo'></i><b id='bar' name='baz'></b></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① own 枚举：[indices…, names…]——无 length/item/namedItem（spec supported property
+    //    names；WPT supported-property-names 首断言）。
+    sandbox
+        .execute(
+            "var c = document.getElementsByTagName('i');\n\
+             globalThis.__own = Object.getOwnPropertyNames(c).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__own").unwrap().value,
+        "0,foo",
+        "own keys = ['0','foo']（无 length/item/namedItem）"
+    );
+
+    // ② 无 values/entries/forEach（spec HTMLCollection 非 iterable interface member；WPT
+    //    HTMLCollection-iterator）+ @@iterator 存在 + for-of 可迭代。
+    sandbox
+        .execute(
+            "globalThis.__no_iter = ('values' in c) + ',' + ('entries' in c) + ',' + ('forEach' in c);\n\
+             globalThis.__has_it = typeof Symbol !== 'undefined' && typeof c[Symbol.iterator] === 'function';\n\
+             var ids = [];\n\
+             for (var el of c) ids.push(el.getAttribute('id'));\n\
+             globalThis.__forof = ids.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__no_iter").unwrap().value,
+        "false,false,false",
+        "values/entries/forEach 不存在（非 iterable 接口成员）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__has_it)").unwrap().value,
+        "true",
+        "@@iterator 存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__forof").unwrap().value,
+        "foo",
+        "for-of 迭代产出元素"
+    );
+
+    // ③ indexed 拒绝 set/defineProperty/delete（loose no-op；strict/define 抛 TypeError——
+    //    getOwnPropertyDescriptor 报 non-writable non-configurable 语义由 trap 表达）。
+    sandbox
+        .execute(
+            "var before = c[0];\n\
+             c[0] = 'x';\n\
+             globalThis.__set_kept = (c[0] === before);\n\
+             globalThis.__def_threw = 'no';\n\
+             try { Object.defineProperty(c, 0, { value: 5 }); } catch (e) { globalThis.__def_threw = 'yes'; }\n\
+             delete c[0];\n\
+             globalThis.__del_kept = (c[0] === before);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__set_kept)").unwrap().value,
+        "true",
+        "indexed set 不覆盖元素（loose no-op）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__def_threw").unwrap().value,
+        "yes",
+        "defineProperty 已有 indexed 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__del_kept)").unwrap().value,
+        "true",
+        "delete indexed no-op（元素保留）"
+    );
+
+    // ④ named 拒绝 set（WPT own-props "Setting non-array index while named property exists"）。
+    sandbox
+        .execute(
+            "var b = document.getElementsByTagName('b');\n\
+             var el = b.namedItem('bar');\n\
+             b['bar'] = 'x';\n\
+             globalThis.__named_kept = (b['bar'] === el);\n\
+             globalThis.__named_strict = 'no';\n\
+             try { b['baz'] = 'x'; } catch (e) { globalThis.__named_strict = 'yes'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__named_kept)").unwrap().value,
+        "true",
+        "named set 不覆盖元素（loose no-op）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__named_strict").unwrap().value,
+        "no",
+        "loose named set 静默 no-op（不抛）"
+    );
+
+    // ⑤ canonical 索引边界：item() ToUint32（4294967296 → 0）；'-2' 落 named getter
+    //    （WPT supported-property-indices）。
+    sandbox
+        .execute(
+            "var d = document.createElement('i'); d.id = '-2'; document.body.appendChild(d);\n\
+             var neg = document.getElementsByTagName('i');\n\
+             globalThis.__neg_named = String(neg['-2'] === d);\n\
+             globalThis.__wrap_item = String(neg.item(4294967296) === neg[0]);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__neg_named").unwrap().value,
+        "true",
+        "'-2'（非 canonical 索引）落 named getter 命中新元素"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__wrap_item").unwrap().value,
+        "true",
+        "item(2^32) ToUint32 → 0（命中首元素）"
+    );
+
+    // ⑥ live overlay：同步脚本 appendChild 后 c[0] 立即可见（WPT own-props "Setting array
+    //    index while indexed property doesn't exist (loose)"：append 后 c[0]===element）。
+    sandbox
+        .execute(
+            "var q = document.getElementsByTagName('q');\n\
+             globalThis.__q_empty = q.length;\n\
+             q[0] = 'foo';\n\
+             globalThis.__q_still_undef = String(q[0] === undefined);\n\
+             var el = document.createElement('q');\n\
+             document.body.appendChild(el);\n\
+             globalThis.__q_live = String(q[0] === el);\n\
+             globalThis.__q_len = q.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__q_empty)").unwrap().value,
+        "0",
+        "初始空集合"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__q_still_undef)").unwrap().value,
+        "true",
+        "越界 indexed set 被拒（仍 undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__q_live").unwrap().value,
+        "true",
+        "同步 appendChild 后 c[0] === element（live overlay）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__q_len)").unwrap().value,
+        "1",
+        "live overlay 后 length=1"
+    );
+
+    // ⑦ illegal invocation：collection 作 prototype，base object 读 .length 抛 TypeError
+    //    （WPT HTMLCollection-as-prototype）。
+    sandbox
+        .execute(
+            "var obj = Object.create(document.getElementsByTagName('i'));\n\
+             globalThis.__proto_len_threw = 'no';\n\
+             try { obj.length; } catch (e) { globalThis.__proto_len_threw = 'yes'; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__proto_len_threw").unwrap().value,
+        "yes",
+        "Object.create(collection).length 抛 illegal invocation TypeError"
+    );
+
+    // ⑧ expando：可写可删，own 枚举含 expando（WPT "with expando object"）。
+    sandbox
+        .execute(
+            "var e2 = document.getElementsByTagName('b');\n\
+             e2.someProperty = 'v';\n\
+             globalThis.__expando = e2.someProperty;\n\
+             globalThis.__expando_own = Object.getOwnPropertyNames(e2).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__expando").unwrap().value,
+        "v",
+        "expando 可写可读"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__expando_own").unwrap().value,
+        "0,bar,baz,someProperty",
+        "own keys = [indices, names, expando]"
     );
 }

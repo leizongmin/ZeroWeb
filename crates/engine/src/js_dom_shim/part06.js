@@ -891,19 +891,53 @@
       // R3019：honor `this` for cross-document use（DOMPurify 等库 getElementsByClassName.call(parsedDoc, cls)
       // 须查 parsedDoc 而非页面 document）。this === 页面 document 时走页面 DOM；否则委托 this.querySelectorAll。
       // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
+      // R50：liveSpec——同步脚本内 append/remove 后集合 lazy 重查（matches 按 class 判定归属）。
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
         return _zwMakeCollection(this.querySelectorAll('.' + cls), true);
       }
-      return _zwMakeCollection(globalThis.document.querySelectorAll('.' + cls), true);
+      var clsStr = String(cls);
+      return _zwMakeCollection(globalThis.document.querySelectorAll('.' + cls), true, {
+        matches: function (el) {
+          try { return !!el && (' ' + (el.className || '') + ' ').indexOf(' ' + clsStr + ' ') !== -1; } catch (_e) { return false; }
+        },
+      });
     },
     getElementsByTagName: function(tag) {
       // R3019：honor `this` for cross-document use（DOMPurify _initDocument 经 getElementsByTagName.call(doc,'body')[0]
       // 取 parsed doc 的 body——旧实现恒查页面 document 致 DOMPurify 清洗空页面 body 返 ""）。
       // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
+      // R50：liveSpec——同步脚本内 append/remove 后集合 lazy 重查（matches 按 tagName 判定归属）。
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
         return _zwMakeCollection(this.querySelectorAll(String(tag)), true);
       }
-      return _zwMakeCollection(globalThis.document.querySelectorAll(tag), true);
+      // spec `dom-document-getelementsbytagname` 匹配模型（WPT case.js 期望模型实证）：
+      // HTML 文档中查询参数 **ascii-lowercase**（'Abc'→'abc'，'ä' 不变——ascii-lower 不动
+      // non-ASCII）；元素按 qualified name（prefix:local）**精确**比较。HTML ns 元素
+      // localName 已小写（createElement；createElementNS 保留大小写 → 'Abc' ≠ 'abc' 不命中，
+      // WPT case.html HTML 分支 get_qualified_name === expected_case 无元素侧 lowercase）；
+      // 非 HTML ns 同样精确（'a:abc' ≠ 'abc'，WPT "non-HTML namespace, prefix"）。
+      var tagLower = _zwAsciiLower(String(tag));
+      var tagRaw = String(tag);
+      return _zwMakeCollection(globalThis.document.querySelectorAll(tag), true, {
+        matches: function (el) {
+          try {
+            if (!el) return false;
+            if (tagRaw === '*') return true;
+            var q = el.localName;
+            var pfx = el.prefix;
+            if (pfx) q = pfx + ':' + q;
+            var ns = el.namespaceURI;
+            if (ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml') {
+              // HTML ns：查询 ascii-lowercase，元素 qualified name 精确比较（WPT case.js
+              // HTML 分支 get_qualified_name === expected_case）。
+              return q === tagLower;
+            }
+            // 非 HTML ns：查询原样精确比较（WPT case.js else 分支 === search_string——
+            // 'Abc' 命中 SVG 'Abc'，不命中 SVG 'abc'）。
+            return q === tagRaw;
+          } catch (_e) { return false; }
+        },
+      });
     },
     // `document.getElementsByTagNameNS(ns, localName)`（spec `dom-document-getelementsbytagnamens`，R12）——
     // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns 按 localName 查

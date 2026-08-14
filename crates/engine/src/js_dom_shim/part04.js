@@ -384,6 +384,13 @@
             var _zwLocal = _zwLocalChildNodes(sel, handle);
             if (_zwLocal) return _zwLocal;
           }
+          // R50：普通 handle 元素（createElement 后 append 子——mutation pending、无 selector）
+          // 从 R2927 registry 读子（appendChild 对所有 handle 父都 _recordHandleChild）。
+          // WPT case.js：`container.childNodes`（detached handle 容器）此前恒 [] → expected
+          // 伪空（双缺陷与查询侧抵消）；live 集合修复后查询侧正确暴露 expected 侧缺陷。
+          if (!sel && handle && _handleChildren[handle] && _handleChildren[handle].length) {
+            return _handleChildren[handle].slice();
+          }
           return _childNodeList(sel, handle);
         }
         if (prop === 'firstChild' || prop === 'lastChild') {

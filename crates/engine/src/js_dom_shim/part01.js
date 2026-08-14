@@ -1080,6 +1080,13 @@
         _mo_deliverToId('s:' + chain[k], baseRecord, true);
       }
     }
+    // js-dom M4 R50：childList mutation → live HTMLCollection 失效标记（本函数是 shim 全部
+    // childList 记录的单一汇流点——part04 appendChild/removeChild/insertBefore/replaceChild/
+    // insertAdjacent/textContent= 等 13 处均经此）。集合下次读取时 lazy 重查（_zwHCLiveInvalidate
+    // 在 part05 定义，同一 IIFE 作用域；hoisting 使前向引用安全）。
+    if (baseRecord && baseRecord.type === 'childList') {
+      _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes);
+    }
   }
   function _mo_scheduleFlush() {
     if (_moFlushScheduled) return;

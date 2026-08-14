@@ -3023,14 +3023,38 @@
   }
 
   // R3033：把元素数组包成 spec 集合——补 `.item(i)`（HTMLCollection/NodeList 共有），`htmlCollection=true`
-  // 时再补 `.namedItem(name)`（id 或 name 首匹配，HTMLCollection 专有）。既有数组 length/indexed/forEach/
-  // entries-keys-values/Symbol.iterator 天然具备（不破坏）；item/namedItem 用 defineProperty 设为非 enumerable，
-  // 不污染 `for...in`（real browser 这些方法在原型链上，for...in 不可见）。`getElementsByTagName`/
-  // `getElementsByClassName` 返 HTMLCollection（item + namedItem）；`querySelectorAll`/`getElementsByName`
-  // 返 NodeList（仅 item）。live 语义保持静态快照近似（documented，headless 模型一致）。
-  function _zwMakeCollection(arr, htmlCollection) {
+  // 时再补 `.namedItem(name)`（id 或 name 首匹配，HTMLCollection 专有）。NodeList（false）保持 Array
+  // 承载（length/indexed/迭代天然 + 内部调用方依赖 Array 方法，见下 R43 块）；HTMLCollection（true）
+  // R50 起走 `_zwMakeHTMLCollection` Proxy 承载（legacy platform object 完整语义，见其头注释）。
+  // `liveSpec`（可选，R50）：`{ matches(el) }`——childList mutation 后同步维护集合元素表
+  // （_zwHCLiveInvalidate 经 matches 判定新增节点归属，纯 JS 端无 host 重查）。
+  function _zwMakeCollection(arr, htmlCollection, liveSpec) {
     var a = arr || [];
-    // js-dom M4 R43：spec legacy platform object（HTMLCollection/NodeList）的 indexed 属性
+    if (htmlCollection) {
+      var els = [];
+      for (var _q = 0; _q < a.length; _q++) els.push(a[_q]);
+      // R50：同步脚本内已 append（快照未含）/ 已 remove（快照仍含）的元素按 matches 并入/剔除
+      //（WPT own-props 顺序：append 后再取集合，快照查询看不到新元素）。
+      if (liveSpec && typeof liveSpec.matches === 'function') {
+        for (var _p = 0; _p < _zwPendingRemoved.length; _p++) {
+          for (var _pi = els.length - 1; _pi >= 0; _pi--) {
+            if (els[_pi] === _zwPendingRemoved[_p]) els.splice(_pi, 1);
+          }
+        }
+        for (var _pa = 0; _pa < _zwPendingAdded.length; _pa++) {
+          var _pnd = _zwPendingAdded[_pa];
+          var _pm = false;
+          try { _pm = liveSpec.matches(_pnd); } catch (_e) { _pm = false; }
+          if (_pm) {
+            var _pd2 = false;
+            for (var _pj = 0; _pj < els.length; _pj++) if (els[_pj] === _pnd) { _pd2 = true; break; }
+            if (!_pd2) els.push(_pnd);
+          }
+        }
+      }
+      return _zwMakeHTMLCollection(els, liveSpec);
+    }
+    // js-dom M4 R43：spec legacy platform object（NodeList）的 indexed 属性
     // 不可配置——`delete c[0]`（loose）no-op、strict 抛 TypeError（WPT HTMLCollection-delete：
     // 普通数组 delete 挖洞致 c[0] 永久 undefined → "before" 断言也炸）。对每个索引
     // defineProperty accessor（configurable:false），元素经 getter 读（不占 data slot）。
@@ -3051,64 +3075,404 @@
         });
       })(_i);
     }
-    // js-dom M4 R43：HTMLCollection named getter（spec supported property names——元素的
-    // id/name 作为属性名暴露，WPT HTMLCollection-delete "Loose/Strict name"：`c.foo` 命中
-    // `<i id=foo>`，且与 indexed 同为不可配置——delete c.foo no-op / strict TypeError）。
-    if (htmlCollection) {
-      for (var _k = 0; _k < _elems.length; _k++) {
-        (function (el) {
-          var names = [];
-          try {
-            if (el && el.id) names.push(String(el.id));
-            var nm = el && el.getAttribute ? el.getAttribute('name') : null;
-            if (nm) names.push(String(nm));
-          } catch (_e) {}
-          for (var _n = 0; _n < names.length; _n++) {
-            var key = names[_n];
-            // 纯数字键跳过：数组上 defineProperty 数字键 accessor 会把 length 推到 index+1
-            //（JS 语义），且 spec named getter 与 indexed 不混淆（WPT getElementsByClassName-32
-            // "does not get confused by numeric IDs"：数字 id 只经 indexed 访问）。
-            if (key !== '' && !isNaN(Number(key))) continue;
-            var d = Object.getOwnPropertyDescriptor(a, key);
-            if (d) continue; // 首个命中者胜（文档序），已有（含 Object.prototype 成员）不动
-            Object.defineProperty(a, key, {
-              get: function () { return el; },
-              set: function () { /* named 属性只读 */ },
-              enumerable: false,
-              configurable: false,
-            });
-          }
-        })(_elems[_k]);
-      }
-    }
     Object.defineProperty(a, 'item', {
-      value: function (i) { i = i | 0; return i >= 0 && i < a.length ? a[i] : null; },
+      value: function (i) { i = _zwToUint32(i); return i < a.length ? a[i] : null; },
       enumerable: false, configurable: true, writable: true,
     });
-    if (htmlCollection) {
-      Object.defineProperty(a, 'namedItem', {
-        value: function (name) {
-          var n = String(name);
-          // js-dom M4 R38：spec `dom-htmlcollection` namedItem / named getter——空串**不是** supported
-          // property name（HTMLCollection supported property names 排除空串，WPT HTMLCollection-empty-name：
-          // `namedItem("")===null`、`c[""]===undefined`、`"" in c===false`）。元素空 id/name（`<div id>`）
-          // 不应被空串命中。
-          if (n === '') return null;
-          for (var k = 0; k < a.length; k++) {
-            var el = a[k];
-            if (!el) continue;
-            // id/name 反射：优先 getAttribute（可靠），回落 .id/.name 反射字段。
-            var id = (typeof el.getAttribute === 'function') ? (el.getAttribute('id') || '') : (el.id || '');
-            if (id === n) return el;
-            var nm = (typeof el.getAttribute === 'function') ? (el.getAttribute('name') || '') : (el.name || '');
-            if (nm === n) return el;
-          }
-          return null;
+    return a;
+  }
+
+
+  // js-dom M4 R50：HTMLCollection 从 Array 承载升级为 Proxy 承载（spec legacy platform object，
+  // https://dom.spec.whatwg.org/#interface-htmlcollection + WebIDL §3.10 legacy platform objects）。
+  // 旧 Array 路径在 WPT dom/collections 五用例暴露 24 处语义缺口（R37 聚类的深结构主簇）：
+  // ① own 枚举多出 length/item/namedItem（Array 原型方法混入 getOwnPropertyNames）
+  // ② values/entries/forEach 泄漏（Array 原型方法，spec HTMLCollection 无 iterable 接口成员）
+  // ③ indexed/named data 描述符 configurable:true 但 defineProperty/set/delete 不拒绝
+  // ④ 负数 / 2^31~2^32 边界 named 键（非 canonical 索引）被 `!isNaN(Number(key))` 误跳过
+  // ⑤ `obj.length`（collection 作 prototype）不抛 illegal invocation TypeError
+  // ⑥ 同步脚本内 appendChild 后集合不反映（live 语义）
+  // 设计：Proxy target 只存 expando；indexed/named 由 trap 动态求值（元素快照 + live 追加 overlay）；
+  // prototype 上挂 length/item/namedItem（receiver 校验——proxy 归一后集合自身合法，作 prototype
+  // 的 base object 读取抛 TypeError）。NodeList（htmlCollection=false）路径保持 Array 不动（WPT
+  // NodeList 语义已过 + 内部调用方依赖 Array 方法，见 _zwMakeCollection 头注释）。
+  var _hcProto = null;
+  function _zwHCPrototype() {
+    if (_hcProto) return _hcProto;
+    // 原型链：HC prototype → Object.prototype（保留 hasOwnProperty/valueOf/toString 等 standard
+    // 内建——assert_array_equals 等测试设施依赖 `collection.hasOwnProperty(...)`；WPT
+    // Document-Element-getElementsByTagName.js 直接断言 list.hasOwnProperty）。
+    var p = Object.create(Object.prototype);
+    // spec HTMLCollection length getter——receiver 须为本集合（Proxy 归一后 this===proxy）。
+    // 作 prototype 用（Object.create(collection)）时 receiver 是 base object：无 __zwHC 标记
+    // → illegal invocation TypeError（WPT HTMLCollection-as-prototype）。
+    Object.defineProperty(p, 'length', {
+      get: function () {
+        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+        return this.__zwHC().length;
+      },
+      set: function () {}, enumerable: false, configurable: true,
+    });
+    // WebIDL §3.6.5：接口操作（method）在 prototype 上 enumerable:false（for-in 不可见），
+    // regular attribute（length getter）enumerable:true。WPT own-props for-in 期望仅
+    // indexed/named（+length 属 prototype 层）。
+    Object.defineProperty(p, 'item', {
+      value: function (i) {
+        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+        var n = this.__zwHC(), u = _zwToUint32(i);
+        return u < n.length ? n[u] : null;
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(p, 'namedItem', {
+      value: function (name) {
+        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+        var n = String(name), els = this.__zwHC();
+        if (n === '') return null;
+        for (var k = 0; k < els.length; k++) {
+          var el = els[k];
+          if (!el) continue;
+          var id = (typeof el.getAttribute === 'function') ? (el.getAttribute('id') || '') : (el.id || '');
+          if (id === n) return el;
+          var nm = (typeof el.getAttribute === 'function') ? (el.getAttribute('name') || '') : (el.name || '');
+          if (nm === n) return el;
+        }
+        return null;
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    // spec HTMLCollection 无 values/entries/keys/forEach 接口成员（WPT HTMLCollection-iterator
+    // 断言不存在）；@@iterator 为 value iterator（同 for-of 消费路径）。
+    if (typeof Symbol === 'function' && Symbol.iterator) {
+      Object.defineProperty(p, Symbol.iterator, {
+        value: function () {
+          if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+          var els = this.__zwHC(), idx = 0;
+          return { next: function () { return idx < els.length ? { value: els[idx++], done: false } : { value: undefined, done: true }; } };
         },
-        enumerable: false, configurable: true, writable: true,
+        writable: true, enumerable: false, configurable: true,
       });
     }
-    return a;
+    Object.defineProperty(p, Symbol.toPrimitive, { value: String, writable: true, enumerable: false, configurable: true });
+    Object.defineProperty(p, 'toString', {
+      value: function () {
+        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+        return '[object HTMLCollection]';
+      },
+      writable: true, enumerable: false, configurable: true,
+    });
+    Object.defineProperty(p, 'constructor', { value: Object, writable: true, enumerable: false, configurable: true });
+    _hcProto = p;
+    return p;
+  }
+
+  // spec HTMLCollection supported property names：仅 HTML namespace 元素的 id/name 计入
+  //（WPT supported-property-names "non-HTML namespace"）。proxy 元素经 namespaceURI getter
+  //（R18 `_nsHandles` 读回 createElementNS 原值）；异常/无 getter 回落 true（HTML 主路径）。
+  function _zwIsHTMLNamespace(el) {
+    try {
+      var ns = el.namespaceURI;
+      return ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  // ASCII-only lowercase（spec「ascii lowercase」——仅 A-Z，不动 'Ä'/'Ç' 等 non-ASCII，
+  // WPT case.js ascii_lowercase：'Ä' 查询不得匹配 'ä'）。
+  function _zwAsciiLower(s) {
+    return String(s).replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); });
+  }
+
+  // WebIDL `an array index` is a canonical numeric string: 0 ≤ n < 2^32−1（"0".."4294967294"）。
+  // "-2"/"4294967295"+ 非规范索引 → 落 named getter（WPT supported-property-indices）。
+  function _zwIsCanonicalIndex(s) {
+    if (!/^(0|[1-9][0-9]*)$/.test(s)) return false;
+    return s.length < 10 || (s.length === 10 && s <= '4294967294');
+  }
+  // WebIDL ToUint32（https://webidl.spec.whatwg.org/#es-unsigned-long）：Number → mod 2^32。
+  // `item(4294967296)` → 0（命中首元素，WPT supported-property-indices 2^32 断言）。
+  function _zwToUint32(v) {
+    var n = Number(v);
+    if (!isFinite(n)) n = 0;
+    n = Math.trunc(n) % 4294967296;
+    if (n < 0) n += 4294967296;
+    return n;
+  }
+
+  // live 集合注册表（R50）：childList mutation（_mo_notify 单一汇流点）后**同步**维护集合
+  // 元素表——matches 的新元素追加、移除元素过滤。不重查 host（`__zw_query_all` 读 dom_html
+  // 快照，脚本批末才回写——同步脚本内重查反而拿到旧结果冲掉 overlay，R48/R49 同款教训：
+  // JS 本地视图优先）。同步脚本内 appendChild → c[0] 立即可见（WPT own-props
+  // "Setting array index while indexed property doesn't exist"：append 后 c[0]===element）。
+  // `_zwPendingAdded`：同步脚本内已 append 但 host 快照未含的元素（快照后取的新集合——
+  // WPT own-props 先 append 再 getElementsByTagName 顺序——构建时按 matches 并入）。
+  // added/removed 均展开 handle 子树（`_handleChildren` R2927 registry——WPT case.js 先建
+  // container 挂 15 个 NS 元素再 append container：childList notify 只含 container，孙节点
+  // 须经展开进 pending 表；remove container 同理整树剔除，防跨子测试泄漏）。
+  var _zwLiveCollections = [];
+  var _zwPendingAdded = [];
+  var _zwPendingRemoved = [];
+  function _zwHCCollectSubtree(node, out) {
+    if (!node) return;
+    out.push(node);
+    var h = node.__zwHandle;
+    var kids = h ? (_handleChildren[h] || []) : null;
+    if (kids) {
+      for (var i = 0; i < kids.length; i++) _zwHCCollectSubtree(kids[i], out);
+    }
+  }
+  function _zwHCLiveInvalidate(addedNodes, removedNodes) {
+    var addFlat = [], remFlat = [];
+    if (removedNodes) for (var r0 = 0; r0 < removedNodes.length; r0++) _zwHCCollectSubtree(removedNodes[r0], remFlat);
+    if (addedNodes) for (var a0 = 0; a0 < addedNodes.length; a0++) _zwHCCollectSubtree(addedNodes[a0], addFlat);
+    if (remFlat.length) {
+      var keep = [];
+      for (var e0 = 0; e0 < _zwPendingAdded.length; e0++) {
+        var still = true;
+        for (var r1 = 0; r1 < remFlat.length; r1++) if (_zwPendingAdded[e0] === remFlat[r1]) { still = false; break; }
+        if (still) keep.push(_zwPendingAdded[e0]);
+      }
+      _zwPendingAdded = keep;
+      for (var r2 = 0; r2 < remFlat.length; r2++) _zwPendingRemoved.push(remFlat[r2]);
+    }
+    if (addFlat.length) {
+      for (var a1 = 0; a1 < addFlat.length; a1++) {
+        var nd0 = addFlat[a1];
+        if (!nd0) continue;
+        var seen = false;
+        for (var s0 = 0; s0 < _zwPendingAdded.length; s0++) if (_zwPendingAdded[s0] === nd0) { seen = true; break; }
+        if (!seen) _zwPendingAdded.push(nd0);
+        var rk = [];
+        for (var k0 = 0; k0 < _zwPendingRemoved.length; k0++) if (_zwPendingRemoved[k0] !== nd0) rk.push(_zwPendingRemoved[k0]);
+        _zwPendingRemoved = rk;
+      }
+    }
+    for (var i = 0; i < _zwLiveCollections.length; i++) {
+      var lc = _zwLiveCollections[i];
+      if (remFlat.length) {
+        var out = [];
+        var els = lc.elements();
+        for (var e = 0; e < els.length; e++) {
+          var drop = false;
+          for (var r = 0; r < remFlat.length; r++) if (els[e] === remFlat[r]) { drop = true; break; }
+          if (!drop) out.push(els[e]);
+        }
+        if (out.length !== els.length) lc.replace(out);
+      }
+      if (addFlat.length) {
+        for (var a = 0; a < addFlat.length; a++) {
+          var nd = addFlat[a];
+          if (!nd) continue;
+          var matched = false;
+          try { matched = lc.matches(nd); } catch (_e) { matched = false; }
+          if (matched) {
+            var cur = lc.elements();
+            var dup = false;
+            for (var c2 = 0; c2 < cur.length; c2++) if (cur[c2] === nd) { dup = true; break; }
+            if (!dup) cur.push(nd);
+          }
+        }
+      }
+    }
+  }
+
+  function _zwMakeHTMLCollection(elements, liveSpec) {
+    var state = { els: elements };
+    var target = Object.create(_zwHCPrototype());
+    // __zwHC：读入口（trap 与 prototype 方法共用）。live 维护在写入侧（_zwHCLiveInvalidate
+    // 同步 push/filter state.els），读取零开销。
+    function current() {
+      return state.els;
+    }
+    target.__zwHC = current;
+    // named 候选表：文档序首匹配（id 或 name 反射）。与旧 R43 实现一致（含空串/纯数字排除语义
+    // 移到 _zwIsCanonicalIndex——canonical 数字串走 indexed，非 canonical（"-2"/"4294967295"+）
+    // 走 named，WPT supported-property-indices）。
+    function namedFor(name) {
+      // R38：空串**不是** supported property name（HTMLCollection supported property names
+      // 排除空串，WPT HTMLCollection-empty-name：`c[""]===undefined`、`"" in c===false`）。
+      if (name === '') return undefined;
+      var els = current();
+      for (var k = 0; k < els.length; k++) {
+        var el = els[k];
+        if (!el) continue;
+        // spec supported property names：仅 HTML namespace 元素的 id/name 计入（WPT
+        // supported-property-names "non-HTML namespace"：createElementNS 元素 name 不暴露）。
+        if (!_zwIsHTMLNamespace(el)) continue;
+        try {
+          if (el.getAttribute) {
+            if (el.getAttribute('id') === name) return el;
+            if (el.getAttribute('name') === name) return el;
+          } else {
+            if (el.id === name) return el;
+            if (el.name === name) return el;
+          }
+        } catch (_e) {}
+      }
+      return undefined;
+    }
+    var proxy = new Proxy(target, {
+      get: function (t, prop, recv) {
+        if (prop === '__zwHC') return current;
+        var s = (typeof prop === 'symbol') ? '' : String(prop);
+        // canonical 索引 → indexed getter（越界 undefined，spec）。
+        if (_zwIsCanonicalIndex(s)) {
+          var els = current();
+          var n = Number(s);
+          return n < els.length ? els[n] : undefined;
+        }
+        // illegal invocation（WPT HTMLCollection-as-prototype）：collection 作 prototype 时
+        // base object 读 length——receiver 非 proxy 本体（Object.create(c) 的派生对象），
+        // spec legacy platform object 校验 receiver 抛 TypeError。
+        if (s === 'length' && recv !== proxy) throw new TypeError('Illegal invocation');
+        // named getter（expando 覆盖优先——WPT "shadows a named property that gets added later"：
+        // 先 set 的 expando 在 named 出现后仍胜出）。
+        if (Object.prototype.hasOwnProperty.call(t, s)) {
+          var d = Object.getOwnPropertyDescriptor(t, s);
+          if (d && d.get) return d.get.call(recv);
+          return d ? d.value : undefined;
+        }
+        if (s !== '__zwHC' && s !== 'length' && s !== 'item' && s !== 'namedItem' && s !== 'toString' &&
+            s !== 'constructor' && typeof prop !== 'symbol') {
+          var hit = namedFor(s);
+          if (hit !== undefined) return hit;
+        }
+        var pd = Object.getOwnPropertyDescriptor(t, s);
+        if (pd) return pd.value;
+        return t[prop];
+      },
+      set: function (t, prop, v, recv) {
+        var s = String(prop);
+        // 派生对象（collection 作 prototype，WPT HTMLCollection-as-prototype "setting own
+        // properties"）：赋值在 base object 上创建 own property（原型 named getter 不阻 own
+        // 创建），不落 target。
+        if (recv !== proxy) {
+          try { Object.defineProperty(recv, prop, { value: v, writable: true, enumerable: true, configurable: true }); return true; } catch (_e) { return false; }
+        }
+        // spec：indexed/named setter 不存在——已有元素不可覆盖。trap 返 false：loose 静默
+        // no-op、strict 由引擎抛 TypeError（WPT own-props 各 "strict" 断言）。
+        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return false;
+        var d = Object.getOwnPropertyDescriptor(t, s);
+        if (d && d.configurable === false) return false;
+        // 已有 named（元素存在）：拒绝（WPT "Setting non-array index while named property exists"）。
+        if (namedFor(s) !== undefined) return false;
+        // 越界 indexed（无元素）：同样拒绝（WPT "Setting array index while indexed property
+        // doesn't exist"：赋值后仍 undefined；strict 抛）。
+        if (_zwIsCanonicalIndex(s)) return false;
+        t[s] = v;
+        return true;
+      },
+      defineProperty: function (t, prop, desc) {
+        var s = String(prop);
+        var els = current();
+        // spec：indexed 属性（含越界——legacy getter 覆盖全部 canonical 索引，WPT
+        // supported-property-indices "past the end of the list"：defineProperty 越界也抛）。
+        if (_zwIsCanonicalIndex(s)) {
+          throw new TypeError('Cannot redefine property: ' + s);
+        }
+        if (namedFor(s) !== undefined) {
+          // 已存在 named：spec 拒绝 defineProperty（WPT "set an expando that would shadow an
+          // already-existing named property"：assert_throws_js TypeError）。
+          throw new TypeError('Cannot redefine property: ' + s);
+        }
+        Object.defineProperty(t, s, desc);
+        return true;
+      },
+      deleteProperty: function (t, prop) {
+        var s = String(prop);
+        // own expando 优先删除（WPT "shadows a named property that gets added later"：
+        // delete expando 后 named getter 重新可见）。non-configurable expando 不可删（Proxy
+        // invariant：trap 返 false；WPT "non-configurable expando" strict delete 抛）。
+        if (Object.prototype.hasOwnProperty.call(t, s)) {
+          var dd = Object.getOwnPropertyDescriptor(t, s);
+          if (dd && dd.configurable === false) return false;
+          delete t[s];
+          return true;
+        }
+        // spec：indexed/named 不可删除——trap 返 false：loose 静默 no-op、strict 抛 TypeError
+        //（WPT HTMLCollection-delete "Strict id"/"Strict name"）。
+        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return false;
+        if (namedFor(s) !== undefined) return false;
+        delete t[s];
+        return true;
+      },
+      getOwnPropertyDescriptor: function (t, prop) {
+        var s = (typeof prop === 'symbol') ? '' : String(prop);
+        var els = current();
+        if (_zwIsCanonicalIndex(s)) {
+          var n = Number(s);
+          if (n < els.length) {
+            return { value: els[n], writable: false, enumerable: true, configurable: true };
+          }
+          return undefined;
+        }
+        if (Object.prototype.hasOwnProperty.call(t, s)) return Object.getOwnPropertyDescriptor(t, s);
+        var hit = namedFor(s);
+        if (hit !== undefined && s !== 'length' && s !== 'item' && s !== 'namedItem' && s !== 'toString' && s !== 'constructor') {
+          return { value: hit, writable: false, enumerable: false, configurable: true };
+        }
+        var pd = Object.getOwnPropertyDescriptor(t, s);
+        return pd || undefined;
+      },
+      ownKeys: function (t) {
+        // spec supported property names：[indices…, names…, expandos…]（WPT
+        // supported-property-names：无 length/item/namedItem）。
+        var els = current();
+        var keys = [];
+        for (var i = 0; i < els.length; i++) keys.push(String(i));
+        var seen = {};
+        for (var k = 0; k < els.length; k++) {
+          var el = els[k];
+          if (!el) continue;
+          if (!_zwIsHTMLNamespace(el)) continue; // spec：仅 HTML namespace（WPT non-HTML namespace）
+          var names = [];
+          try {
+            if (el.getAttribute) {
+              var id = el.getAttribute('id'); if (id) names.push(id);
+              var nm = el.getAttribute('name'); if (nm) names.push(nm);
+            } else {
+              if (el.id) names.push(el.id);
+              if (el.name) names.push(el.name);
+            }
+          } catch (_e) {}
+          for (var q = 0; q < names.length; q++) {
+            var name = String(names[q]);
+            if (name === '' || seen[name]) continue;
+            if (_zwIsCanonicalIndex(name)) continue; // canonical 数字 name 走 indexed（spec 不重复暴露）
+            seen[name] = true;
+            keys.push(name);
+          }
+        }
+        var own = Object.getOwnPropertyNames(t);
+        for (var oi = 0; oi < own.length; oi++) {
+          var ok = own[oi];
+          if (ok === '__zwHC') continue;
+          if (!seen[ok]) keys.push(ok);
+        }
+        return keys;
+      },
+      has: function (t, prop) {
+        var s = (typeof prop === 'symbol') ? '' : String(prop);
+        var els = current();
+        if (_zwIsCanonicalIndex(s)) return Number(s) < els.length;
+        if (Object.prototype.hasOwnProperty.call(t, s)) return true;
+        // prototype 成员（length/item/namedItem/@@iterator 等，WPT HTMLCollection-iterator
+        // "has length method"/"has Symbol.iterator"）。
+        var pd = Object.getOwnPropertyDescriptor(t, prop);
+        if (pd !== undefined) return true;
+        if (prop in Object.getPrototypeOf(t)) return true;
+        return namedFor(s) !== undefined;
+      },
+    });
+    if (liveSpec && typeof liveSpec.matches === 'function') {
+      _zwLiveCollections.push({
+        matches: liveSpec.matches,
+        elements: function () { return state.els; },
+        replace: function (out) { state.els = out; },
+      });
+    }
+    return proxy;
   }
 
   // `prepend`/`before`/`after` 共用：variadic 节点/字符串按 position 经 insertAdjacent*

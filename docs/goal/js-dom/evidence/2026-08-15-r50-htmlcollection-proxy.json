@@ -1,0 +1,50 @@
+{
+  "round": "R50",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (dom/collections + cross-subdir lift)",
+  "slice": "HTMLCollection Proxy carrier: legacy platform object semantics + live overlay",
+  "results": {
+    "dom_collections_polyfill": {
+      "pass": 48,
+      "fail": 0,
+      "timeout": 1,
+      "prev": "24P/24F/1TO",
+      "delta": "+24 (all cleared)"
+    },
+    "dom_collections_native": {
+      "pass": 48,
+      "fail": 0,
+      "timeout": 1,
+      "parity": "0pp"
+    },
+    "dom_nodes_polyfill": {
+      "pass": 2508,
+      "prev": 2479,
+      "delta": "+29"
+    },
+    "dom_traversal_polyfill": {
+      "pass": 27,
+      "prev": 9,
+      "delta": "+18 (live overlay exposes detached-tree traversal)"
+    },
+    "dom_traversal_native": {
+      "pass": 8,
+      "prev": 8,
+      "delta": "0 (case-side polyfill-sourced)"
+    },
+    "dom_events_polyfill": {
+      "pass": 189,
+      "delta": "0"
+    },
+    "dom_ranges_polyfill": {
+      "pass": 39,
+      "delta": "0"
+    },
+    "unit_tests": {
+      "engine_v8": "2132 passed",
+      "engine_quickjs": "1415 passed",
+      "clippy": "both matrices clean",
+      "fmt": "no diff"
+    }
+  }
+}
