@@ -4,6 +4,9 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+
+static DRIVER_SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
 fn free_port() -> u16 {
     // 简单探测一个空闲端口
@@ -22,6 +25,8 @@ impl Drop for DriverProcess {
 }
 
 fn spawn_driver() -> (DriverProcess, u16) {
+    // Keep the free-port probe and child bind atomic relative to sibling tests.
+    let _spawn_guard = DRIVER_SPAWN_LOCK.lock().expect("driver spawn lock");
     let port = free_port();
     // lint 不追踪 DriverProcess 的 Drop（kill+wait）——RAII 保证所有路径收尾
     #[allow(clippy::zombie_processes)]

@@ -166,7 +166,24 @@ fn recvmsg_fd(socket: RawFd, iov: &mut [IoSliceMut<'_>]) -> Result<RawFd, Protoc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use std::thread;
+
+    const FD_COUNT_TEST_CHILD: &str = "ZERO_PROTOCOL_FD_COUNT_TEST_CHILD";
+
+    fn run_fd_count_test_in_isolated_process(test_name: &str) -> bool {
+        if std::env::var(FD_COUNT_TEST_CHILD).as_deref() == Ok(test_name) {
+            return false;
+        }
+
+        let status = Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
+            .env(FD_COUNT_TEST_CHILD, test_name)
+            .status()
+            .expect("spawn isolated fd count test");
+        assert!(status.success(), "隔离 fd 计数测试失败: {status}");
+        true
+    }
 
     #[test]
     fn fd_socket_round_trip_memfd() {
@@ -198,10 +215,14 @@ mod tests {
     /// `SCM_RIGHTS` 在内核中为接收方复制一份 fd，但**不**关闭发送方的副本——
     /// 若 publish_fd 不关闭，每帧 dma-buf 发布都泄漏一个 fd，最终耗尽 compositor 的
     /// fd 上限。本测反复往返 N 次，用打开 fd 总数单调性判定泄漏（修复前每轮 +1）。
-    /// serial：读进程全局 `/proc/self/fd`，避免与并行 fd 测互相干扰计数。
+    /// 该断言在只运行本用例的子进程中执行，隔离 test harness 的并行 fd 活动。
     #[test]
-    #[serial_test::serial]
     fn fd_socket_publish_closes_sender_fd_on_success() {
+        let test_name = "fd_socket_linux::tests::fd_socket_publish_closes_sender_fd_on_success";
+        if run_fd_count_test_in_isolated_process(test_name) {
+            return;
+        }
+
         let baseline = count_open_fds();
         let mut max_growth = 0isize;
         for i in 0..12 {
@@ -229,10 +250,14 @@ mod tests {
     }
 
     /// R3340：错误路径（accept 超时——无消费者连接）也必须关闭发送方 fd。
-    /// serial：同上，避免与并行 fd 测互相干扰 `/proc/self/fd` 计数。
+    /// 该断言在只运行本用例的子进程中执行，隔离 test harness 的并行 fd 活动。
     #[test]
-    #[serial_test::serial]
     fn fd_socket_publish_closes_sender_fd_on_error() {
+        let test_name = "fd_socket_linux::tests::fd_socket_publish_closes_sender_fd_on_error";
+        if run_fd_count_test_in_isolated_process(test_name) {
+            return;
+        }
+
         let baseline = count_open_fds();
         let mut max_growth = 0isize;
         for i in 0..6 {
