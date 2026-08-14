@@ -87,11 +87,15 @@ async function main() {
     windowsCandidates.slice(0, firstEdge).every((path) => path.endsWith('chrome.exe')),
     'Windows Edge candidates must follow Chrome/Chromium candidates',
   );
+  const macCandidates = chromeCandidates('darwin', {});
   assert(
-    chromeCandidates('darwin', {}).some((path) => path.includes('.app/Contents/MacOS/')),
+    macCandidates.some((path) => path.includes('.app/Contents/MacOS/')),
     'macOS Chrome candidates must use app bundle executables',
   );
-  assert(chromeCandidates('linux', {}).some((path) => path === '/usr/bin/chromium'), 'Linux Chromium path missing');
+  assert(macCandidates.some((path) => path.includes('Microsoft Edge.app')), 'macOS Edge candidate missing');
+  const linuxCandidates = chromeCandidates('linux', {});
+  assert(linuxCandidates.some((path) => path === '/usr/bin/chromium'), 'Linux Chromium path missing');
+  assert(linuxCandidates.some((path) => path.endsWith('/microsoft-edge')), 'Linux Edge candidate missing');
   assert(defaultComparatorPath('win32').endsWith('zero-wpt-runner.exe'), 'Windows comparator must use .exe');
   assert(!defaultComparatorPath('linux').endsWith('.exe'), 'Unix comparator must not use .exe');
 

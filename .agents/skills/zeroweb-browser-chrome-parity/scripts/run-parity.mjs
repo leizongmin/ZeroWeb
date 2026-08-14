@@ -15,7 +15,8 @@ function usage() {
   ZEROWEB_EVIDENCE_COMMAND  JSON 字符串数组，例如 ["cargo","run","--bin","producer"]
 
 可选环境变量:
-  ORACLE_CDP_URL            GUI Chrome DevTools 地址；完整生产验收必须设置
+  ORACLE_CDP_URL            复用已有 GUI Chrome 的 DevTools 地址
+  PARITY_ORACLE_MODE        未提供 ORACLE_CDP_URL 时使用 gui 或 headless，默认 headless
   PARITY_TIMEOUT            每个生产器的墙钟超时秒数，默认 180
   PARITY_PNG_COMPARATOR     zero-wpt-runner 可执行文件路径`);
 }

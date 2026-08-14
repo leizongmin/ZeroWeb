@@ -34,12 +34,12 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 
 - Node.js 20+；
 - 仓库 Rust 工具链和 `test-guard`；
-- Chrome/Chromium 127、Windows Edge，或场景指定的版本；
+- Chrome/Chromium 127、Microsoft Edge，或场景指定的版本；
 - 可用的窗口系统和 GPU adapter；
 - Windows 首次构建前配置 `RUSTY_V8_ARCHIVE`；
 - Linux/macOS 首次构建前执行 `make setup-rusty-v8`。
 
-浏览器自动探测顺序见 `capture-chrome.mjs`。Windows 按 Chrome、Chromium、Edge 的顺序探测；也可在所有平台显式设置 `PUPPETEER_EXECUTABLE_PATH`。Edge 后备不会放宽场景的 `chromeVersionPattern`，需要由场景明确接受对应的 `Edg/...` 版本。生产视觉验收优先连接预启动的 GUI Chrome：`ORACLE_CDP_URL=http://127.0.0.1:9222`。
+浏览器自动探测顺序见 `capture-chrome.mjs`。各平台均按 Chrome、Chromium、Edge 的顺序探测；也可显式设置 `PUPPETEER_EXECUTABLE_PATH`。Edge 后备不会放宽场景的 `chromeVersionPattern`，需要由场景明确接受对应的 `Edg/...` 版本。
 
 ## 执行流程
 
@@ -70,7 +70,7 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/validate-scenario.mjs <scenario.json>
    ```
 
-5. 采集 Chrome 证据。优先使用 CDP 连接预启动的 GUI Chrome：
+5. 采集 Chrome 证据。完整生产验收先在当前进程环境设置 `PARITY_ORACLE_MODE=gui`，让脚本跨平台启动独立的 GUI Chrome：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/capture-chrome.mjs \
@@ -78,7 +78,7 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
      --out <evidence-dir>/chrome
    ```
 
-   未设置 `ORACLE_CDP_URL` 时脚本会启动 headless Chrome。该结果可用于行为诊断，但不满足生产视觉门禁。
+   已有带远程调试的 GUI Chrome 时，设置 `ORACLE_CDP_URL=http://127.0.0.1:9222` 可复用该实例；它的优先级高于 `PARITY_ORACLE_MODE`。两者均未设置时脚本启动 headless Chrome，仅用于行为诊断，不满足生产视觉门禁。
 
 6. 用仓库命令生成 ZeroWeb 证据。命令会收到：
 
@@ -121,7 +121,7 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
    ZEROWEB_EVIDENCE_COMMAND=["cargo","run","--release","--bin","zero-parity-producer"]
    ```
 
-   然后执行：
+   完整生产验收同时设置 `PARITY_ORACLE_MODE=gui`，然后执行：
 
    ```bash
    node .agents/skills/zeroweb-browser-chrome-parity/scripts/run-parity.mjs \

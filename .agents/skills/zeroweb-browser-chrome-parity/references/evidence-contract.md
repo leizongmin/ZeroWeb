@@ -195,6 +195,9 @@ ZeroBrowser 真实窗口
 ```
 
 禁止传 shell 命令字符串。JSON argv 不依赖 Bash、PowerShell 或 CMD quoting，可在 Windows、Linux、macOS 使用。
+
+Chrome Oracle 未提供 `ORACLE_CDP_URL` 时，`PARITY_ORACLE_MODE=gui` 会通过 Puppeteer 启动独立的可见浏览器实例，适用于三平台生产验收。默认值 `headless` 只用于行为诊断。`ORACLE_CDP_URL` 始终优先，用于复用已开启远程调试的 GUI 浏览器。
+
 参数中的 `${PARITY_SCENARIO}`、`${PARITY_OUTPUT_DIR}` 和 `${PARITY_REPO_ROOT}` 会在启动前替换为绝对路径。
 
 生产器会收到：

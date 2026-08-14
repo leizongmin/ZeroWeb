@@ -84,6 +84,7 @@ export function chromeCandidates(platform, environment) {
     return [
       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
     ];
   }
   return [
@@ -91,6 +92,8 @@ export function chromeCandidates(platform, environment) {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
+    '/usr/bin/microsoft-edge',
+    '/usr/bin/microsoft-edge-stable',
   ];
 }
 
@@ -122,10 +125,14 @@ async function connectBrowser(puppeteer, locale) {
     return { browser, capturePath: 'chrome-cdp-gui', close: () => browser.disconnect() };
   }
 
+  const oracleMode = process.env.PARITY_ORACLE_MODE || 'headless';
+  if (!['gui', 'headless'].includes(oracleMode)) {
+    throw new Error('PARITY_ORACLE_MODE 必须是 gui 或 headless');
+  }
   const executablePath = await resolveChromeExecutable();
   const browser = await puppeteer.launch({
     executablePath,
-    headless: 'new',
+    headless: oracleMode === 'headless' ? 'new' : false,
     args: [
       '--no-sandbox',
       '--disable-lcd-text',
@@ -133,7 +140,11 @@ async function connectBrowser(puppeteer, locale) {
       `--lang=${locale}`,
     ],
   });
-  return { browser, capturePath: 'chrome-headless', close: () => browser.close() };
+  return {
+    browser,
+    capturePath: oracleMode === 'gui' ? 'chrome-cdp-gui' : 'chrome-headless',
+    close: () => browser.close(),
+  };
 }
 
 async function installEventProbe(page, eventTypes) {
