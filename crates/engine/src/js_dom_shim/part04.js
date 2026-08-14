@@ -1314,7 +1314,17 @@
                 // _recordHandleChild 内 flatten 清空）。
                 _handleChildren[child.__zwHandle] = [];
               }
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [child], removedNodes: [] });
+              // js-dom M4 R47：spec appendChild(fragment) 的 childList record——addedNodes 为
+              // fragment 的**子节点**（flatten 前快照，即 ceAdded；fragment 自身不入树不出现在
+              // record，WPT childList "fragment addition mutations" 期望 [f.firstChild, f.lastChild]）。
+              // previousSibling：append 前容器的 lastChild（写入前读——flatten 后再读已是新末尾）；
+              // nextSibling 恒 null（append 到尾）。WPT "fragment addition mutations" 断言 previousSibling。
+              var _apPrev = null;
+              try {
+                var _kidsBefore = _isContainerHandle(handle) ? _handleChildNodes(handle) : _childNodeList(sel, handle);
+                if (_kidsBefore.length) _apPrev = _kidsBefore[_kidsBefore.length - 1];
+              } catch (_e) {}
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded, removedNodes: [], previousSibling: _apPrev, nextSibling: null });
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
@@ -1368,7 +1378,15 @@
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
               }
               // refNode 为 create 句柄（无 selector）时不支持（罕见）。
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [] });
+              // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，
+              // spec insertBefore(fragment) record 不含 fragment 自身）。nextSibling=refNode
+              //（spec record 字段：插入位置的后继）+ previousSibling（refNode 的前兄弟；WPT
+              // "Range.insertNode" 断言 previousSibling）。
+              var _ibPrev = null;
+              try {
+                if (refNode && refNode.previousSibling) _ibPrev = refNode.previousSibling;
+              } catch (_e) {}
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded || [newNode], removedNodes: [], previousSibling: _ibPrev, nextSibling: refNode || null });
               // R2994 connectedCallback：子树按父连接态传播。
               if (ceAdded) {
                 var cePconn = _ceParentConnected(sel, handle);
@@ -1400,9 +1418,10 @@
                 __zw_insert_before(sel, newChild.__zwHandle, oldChild.__zwSelector);
               }
               __zw_remove(oldChild.__zwSelector);
+              // js-dom M4 R47：fragment flatten record（同 insertBefore——addedNodes 用 ceAdded）。
               _mo_notify(sel, handle, {
                 type: 'childList',
-                addedNodes: [newChild],
+                addedNodes: ceAdded,
                 removedNodes: [oldChild],
               });
               // R2994：newChild 子树按父连接态连入；oldChild 断连。
@@ -1418,11 +1437,28 @@
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
             // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
+            // js-dom M4 R47：childList removed record——el.remove() 须发 MutationObserver record
+            //（spec `dom-child-remove`；旧缺——WPT surroundContents 期望每 removed 各 1 条）。
+            // previous/nextSibling 在移除前捕获（移除后兄弟链断）。
+            var _rmPrev = null, _rmNext = null, _rmParent = null;
+            try {
+              _rmParent = ceSelf.parentNode || null;
+              _rmPrev = ceSelf.previousSibling || null;
+              _rmNext = ceSelf.nextSibling || null;
+            } catch (_e) {}
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
             // R34xx：移除注册的文本元素（DOM 对照侧几何清理）。
             if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(ceSelf);
             _ceApplyConn(ceSelf, false);
+            // R47：_zwSuppressRemoveRecord——组合操作（surroundContents 等）需要自定义 record
+            // 顺序时抑制逐次 notify，由调用方统一按文档序补发。
+            if (_rmParent && !globalThis._zwSuppressRemoveRecord) {
+              _mo_notify(_rmParent.__zwSelector || null, _rmParent.__zwHandle || null, {
+                type: 'childList', addedNodes: [], removedNodes: [ceSelf],
+                previousSibling: _rmPrev, nextSibling: _rmNext,
+              });
+            }
           };
         }
         // `element.replaceWith(...nodesOrStrings)`：用新节点序列替换自身（self 级，区别于

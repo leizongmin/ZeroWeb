@@ -1812,8 +1812,35 @@
         for (var i = 0; i < kids.length; i++) {
           try { newParent.appendChild(kids[i].cloneNode(true)); } catch (_e) {}
         }
-        for (var j = kids.length - 1; j >= 0; j--) {
-          try { if (typeof kids[j].remove === 'function') kids[j].remove(); } catch (_e) {}
+        // js-dom M4 R47：record 顺序与树操作顺序解耦——removed records 按**文档序**（WPT
+        // surroundContents 期望 [removed first, removed last, added]），但树操作保持**逆序 remove**
+        //（R2930：正序 remove 后 nth-child selector 前移失效，移错节点——renderer R2930 测试捕获）。
+        // 实现：先按文档序捕获每个 child 的兄弟快照（remove 前），置 _zwSuppressRemoveRecord 抑制
+        // remove() 的逐次 notify，逆序 remove（树正确），再按文档序统一补发 records。
+        var _rmSnap = [];
+        var _scSel = null, _scHandle = null;
+        try {
+          _scSel = this.startContainer.__zwSelector || null;
+          _scHandle = this.startContainer.__zwHandle || null;
+        } catch (_e) {}
+        for (var j = 0; j < kids.length; j++) {
+          var _rprev = null, _rnext = null;
+          try {
+            _rprev = kids[j].previousSibling || null;
+            _rnext = kids[j].nextSibling || null;
+          } catch (_e) {}
+          _rmSnap.push({ node: kids[j], prev: _rprev, next: _rnext });
+        }
+        globalThis._zwSuppressRemoveRecord = true;
+        for (var k = kids.length - 1; k >= 0; k--) {
+          try { if (typeof kids[k].remove === 'function') kids[k].remove(); } catch (_e) {}
+        }
+        globalThis._zwSuppressRemoveRecord = false;
+        for (var m = 0; m < _rmSnap.length; m++) {
+          _mo_notify(_scSel, _scHandle, {
+            type: 'childList', addedNodes: [], removedNodes: [_rmSnap[m].node],
+            previousSibling: _rmSnap[m].prev, nextSibling: _rmSnap[m].next,
+          });
         }
         try { this.startContainer.appendChild(newParent); } catch (_e) {}
       },

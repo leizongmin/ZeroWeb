@@ -1,0 +1,42 @@
+{
+  "round": "R47",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (nodes MutationObserver)",
+  "slice": "childList fragment-expansion records + previous/nextSibling fields + el.remove() records + surroundContents record order",
+  "context": "R46 follow-up: MutationObserver-childList remaining clusters (fragment additions / sibling fields / remove records / surroundContents order).",
+  "fixes": {
+    "fragment_expansion": "appendChild/insertBefore/replaceChild with a DocumentFragment now record addedNodes = the fragment's children (pre-flatten snapshot, i.e. the existing ceAdded) — the fragment itself never enters the tree and must not appear in the record. Previously all three recorded [fragmentProxy].",
+    "sibling_fields": "childList records now carry previousSibling/nextSibling: appendChild captures the container's lastChild before writing (prev) and null (next); insertBefore captures refNode.previousSibling and refNode itself; el.remove() captures both siblings before detaching. WPT asserts these on fragment-addition and Range.insertNode subtests.",
+    "remove_records": "element.remove() now emits a childList removed record on the parent (was entirely missing — surroundContents' per-removal records depend on it). A _zwSuppressRemoveRecord flag lets composite operations suppress per-call notifies.",
+    "surround_contents_order": "record order and tree-operation order are decoupled: removed records must be in document order (WPT expects [removed-first, removed-last, added]) but the tree ops must stay reverse-order removal — forward removal breaks nth-child selectors and removes wrong nodes (caught live by the renderer R2930 quickjs test: #sc ended with 2 children). surroundContents snapshots each child's siblings in document order, sets the suppress flag, removes in reverse (correct tree), then emits the document-order records itself.",
+    "regressions_caught_in_round": [
+      "renderer R2930 surroundContents quickjs test broke twice: (1) forward remove broke nth-child removal (2 children left); (2) the first decoupled version referenced out-of-scope sel/handle in the _makeRange closure (QuickJS 'sel is not defined'). Both fixed; renderer back to 55P+126P."
+    ]
+  },
+  "results": {
+    "mutation_observer_childList": "10P/4F -> 15P/1F (+5)",
+    "remaining_1f": "surroundContents second removed record previousSibling: JS-side previousSibling reads host state which still contains the not-yet-applied first removal (deferred apply) — needs synchronous sibling visibility (M1 L2), deferred with diagnosis",
+    "dom_nodes_polyfill": { "pass": 2552, "prev": 2547, "delta": "+5" },
+    "dom_nodes_native": { "pass": 2522 },
+    "element_classlist": "1420P/0F maintained",
+    "regression": {
+      "dom_events": "189P unchanged",
+      "dom_collections": "24P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged",
+      "renderer_quickjs": "55P + 126P (R2930 restored)"
+    }
+  },
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r47_unit_test": "test_mutation_observer_childlist_fragment_r47 (fragment addedNodes=[children] + appendChild previousSibling + el.remove() record)",
+    "v8_engine_lib": "2128 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines (renderer R2930 restored)"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "fmt": "no diff"
+  }
+}

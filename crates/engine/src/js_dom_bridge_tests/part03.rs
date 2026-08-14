@@ -3013,3 +3013,90 @@ fn test_mutation_observer_ns_and_no_mutation_r46() {
         "③ classList.add 已存在 token 仍发 attributes record（spec update 步骤 8 仍 set）"
     );
 }
+
+#[test]
+fn test_mutation_observer_childlist_fragment_r47() {
+    // R47：childList record 语义（WPT MutationObserver-childList 10P→15P/1F 驱动）：
+    // ① appendChild/insertBefore(fragment) 的 addedNodes = fragment **子节点**（flatten 前快照；
+    //    spec fragment 自身不入树不出现在 record）
+    // ② record.previousSibling/nextSibling：appendChild prev=写入前容器 lastChild / next=null；
+    //    insertBefore prev=refNode 前兄弟 / next=refNode
+    // ③ el.remove() 发 childList removed record（旧缺——surroundContents 多 record 依赖）
+    // ④ surroundContents 逐 removed 正序 record（每 child 一条）+ added 一条
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><span id=\"s0\">a</span></div><div id=\"rm\"><i id=\"r1\">x</i><i id=\"r2\">y</i></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var recs = [];\n\
+             var host = document.querySelector('#host');\n\
+             var mo = new MutationObserver(function(rs) { recs = rs; });\n\
+             mo.observe(host, { childList: true });\n\
+             // ① fragment append：addedNodes = 子节点数组\n\
+             var f = document.createDocumentFragment();\n\
+             var b1 = document.createElement('b'); b1.id = 'b1';\n\
+             var b2 = document.createElement('b'); b2.id = 'b2';\n\
+             f.appendChild(b1); f.appendChild(b2);\n\
+             host.appendChild(f);",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "1" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox
+            .execute("recs[0] && recs[0].addedNodes.length + ',' + String(recs[0].addedNodes[0] === b1) + ',' + String(recs[0].addedNodes[1] === b2)")
+            .unwrap()
+            .value,
+        "2,true,true",
+        "① appendChild(fragment) record.addedNodes = [b1, b2]（fragment 子节点，非 fragment 自身）"
+    );
+    assert_eq!(
+        sandbox.execute("String(recs[0].previousSibling === document.querySelector('#s0'))").unwrap().value,
+        "true",
+        "② appendChild record.previousSibling = 写入前容器 lastChild（#s0）"
+    );
+    // ③ el.remove() record
+    sandbox
+        .execute(
+            "recs = [];\n\
+             var rmDiv = document.querySelector('#rm');\n\
+             mo.observe(rmDiv, { childList: true });\n\
+             document.querySelector('#r1').remove();",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "1" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox
+            .execute("recs[0] && recs[0].type + ',' + String(recs[0].removedNodes[0] === document.querySelector('#r1'))")
+            .unwrap()
+            .value,
+        "childList,true",
+        "③ el.remove() 发 childList removed record（removedNodes=[自身]）"
+    );
+}
