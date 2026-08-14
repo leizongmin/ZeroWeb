@@ -133,6 +133,10 @@ fn dispatch_event_impl(
     if let Some(k) = v8::String::new(scope, "target") {
         let _ = event_obj.set(scope, k.into(), this.into());
     }
+    // srcElement（R32，spec `dom-event-srcelement`）= target 的 legacy 别名，与 target 同步设派发目标。
+    if let Some(k) = v8::String::new(scope, "srcElement") {
+        let _ = event_obj.set(scope, k.into(), this.into());
+    }
     // event.bubbles（缺省 false）控制是否上溯祖先。
     let bubbles = v8::String::new(scope, "bubbles")
         .and_then(|k| event_obj.get(scope, k.into()))

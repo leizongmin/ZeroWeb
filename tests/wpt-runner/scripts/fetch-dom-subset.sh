@@ -45,6 +45,17 @@ fetch_raw() {
 
 fetch_dir_html() {
   local dir="$1"
+  local local_dir="${WPT_DATA}/${dir}"
+  # 幂等快路径：WPT_REV 固定 → 目录文件集稳定。若目录已含 .html 用例（此前已 fetch），且
+  # 未设 FORCE=1，则跳过 GitHub Contents API 列目录步骤（避免无谓的未认证 API 调用触发
+  # GitHub 60/h 速率限制 → 403 阻断 `make testharness-dom`）。缺文件时仍逐文件 fetch_raw（其
+  # 自身 `-s` 跳过已存在）；FORCE=1 强制重列目录拉最新文件集。
+  if [[ "${FORCE:-0}" != "1" && -d "${local_dir}" ]]; then
+    if compgen -G "${local_dir}/*.html" > /dev/null; then
+      echo "  ${dir}: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）"
+      return 0
+    fi
+  fi
   local names
   names=$(curl --fail --location --silent --show-error --retry 3 --connect-timeout 8 --max-time 30 \
     "${API_ROOT}/${dir}" | grep -o '"name": "[^"]*"')

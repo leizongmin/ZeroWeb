@@ -2219,3 +2219,33 @@ fn native_style_item_boundary_and_named_deleter_r31() {
         "delete el.style.color（named-deleter）移除 color 声明，剩 margin"
     );
 }
+
+// ── R32 Event.srcElement（legacy IE 别名 = target，spec dom-event-srcelement）──
+
+/// `new Event('t')` srcElement 初始 null（dispatch 前 target 未设）；dispatch 期 srcElement === target
+///（派发目标）。覆盖 event.rs set_event_init srcElement null 初始化 + event_target.rs dispatch 同步设。
+#[test]
+fn native_event_src_element_r32() {
+    let html = r#"<html><body><div id="a"></div></body></html>"#;
+    // 初始：new Event srcElement === null（spec srcElement getter 返 target，dispatch 前 target=null）。
+    assert_eq!(
+        run_script(html, r#"(new Event('test').srcElement === null)"#),
+        "true",
+        "new Event srcElement 初始 null（dispatch 前 target=null）"
+    );
+    // dispatch 期 srcElement === target === 派发目标元素。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  let got = 'unset';
+  el.addEventListener('test', e => { got = (e.srcElement === el) + '/' + (e.srcElement === e.target); });
+  el.dispatchEvent(new Event('test'));
+  return got;
+})()"#
+        ),
+        "true/true",
+        "dispatch 期 srcElement === target === 派发目标元素"
+    );
+}

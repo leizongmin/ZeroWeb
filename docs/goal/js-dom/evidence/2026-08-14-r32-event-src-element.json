@@ -1,0 +1,23 @@
+{
+  "round": "R32",
+  "date": "2026-08-14",
+  "milestone": "M4",
+  "slice": "Event.srcElement (legacy IE alias = target, spec dom-event-srcelement)",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "case": "dom/events/event-src-element-nullable.html",
+  "implementation": {
+    "polyfill": "part03.js _makeEvent: srcElement 占位 null + defineProperty getter 读 this.target（dispatch 期 target 更新即反映）；setter 不定义（spec 只读，静默丢弃）",
+    "native": "event.rs set_event_init: srcElement 初始化 null；event_target.rs dispatch_event_impl: dispatch 期 srcElement 与 target 同步设为派发目标"
+  },
+  "results": {
+    "polyfill": { "pass": 1, "total_subtest": 1, "status": "Pass" },
+    "native": { "pass": 1, "total_subtest": 1, "status": "Pass" }
+  },
+  "note": "srcElement 此前完全未实现（polyfill + native 双路径 0-pass）。本轮双路径全 Pass。fetch-dom-subset.sh 幂等快路径同步 land（避免 GitHub 60/h API 限流阻断 make testharness-dom）。",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "v8_engine_lib": "2109 passed (baseline 2107 +2)",
+    "quickjs_engine_lib": "1411 passed (baseline 1410 +1)"
+  }
+}

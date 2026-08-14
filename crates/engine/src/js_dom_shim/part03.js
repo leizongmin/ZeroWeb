@@ -1109,6 +1109,11 @@
       isTrusted: false, // spec（合成事件恒 false）
       target: null,
       currentTarget: null,
+      // srcElement（js-dom M4 R32，spec `dom-event-srcelement`）：Event.target 的 legacy IE 别名（IDL
+      // [LegacyLenientThis] getter 返 target）。初始 null（dispatch 前 target 未设），dispatch 期返 target。
+      // 与 defaultPrevented/cancelBubble 同款「公开镜像」——此处占位 null，真正的 getter 经下方
+      // defineProperty 定义（读 this.target，dispatch 时 target 更新即反映）。
+      srcElement: null,
       timeStamp: typeof __zw_performance_now === 'function'
         ? Number(__zw_performance_now())
         : (typeof Date.now === 'function' ? Date.now() : 0),
@@ -1171,6 +1176,16 @@
         // 等同 stopPropagation）。设 false → no-op（flag 不可被 setter 清，只能 initEvent 重置）。
         if (v) { this._propagationStopped = true; }
       }
+    });
+    // js-dom M4 R32：`Event.srcElement`（spec `dom-event-srcelement`，legacy IE 别名 = target）。IDL getter
+    // [LegacyLenientThis] 返 target——dispatch 前 target=null 故 srcElement=null；dispatch 期 target 已设故
+    // srcElement=target。用 defineProperty getter 读 this.target（dispatch 时 target 更新即反映，与普通 data 属性
+    // 占位 null 不同——占位会在 dispatch 后读 null 而非 target）。WPT event-src-element-nullable：new Event 读
+    // null + dispatch 后 listener 读非 null。setter 不定义（spec 只读，赋值静默丢弃，JS 默认行为）。
+    Object.defineProperty(ev, 'srcElement', {
+      enumerable: false,
+      configurable: true,
+      get: function() { return this.target; }
     });
     return ev;
   }

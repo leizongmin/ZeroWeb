@@ -220,6 +220,12 @@ fn set_event_init(
     if let Some(k) = v8::String::new(scope, "currentTarget") {
         let _ = obj.set(scope, k.into(), v8::null(scope).into());
     }
+    // srcElement（js-dom M4 R32，spec `dom-event-srcelement`）：Event.target 的 legacy IE 别名
+    //（IDL getter 返 target）。native 用 data 属性镜像 target（init null + dispatch 与 target 同步设），
+    // 避免 prototype accessor 复杂度（与 target 同生命周期）。
+    if let Some(k) = v8::String::new(scope, "srcElement") {
+        let _ = obj.set(scope, k.into(), v8::null(scope).into());
+    }
     if let Some(k) = v8::String::new(scope, "eventPhase") {
         let _ = obj.set(scope, k.into(), v8::Integer::new(scope, 0).into());
     }
