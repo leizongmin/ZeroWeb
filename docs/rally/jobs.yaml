@@ -123,3 +123,23 @@ jobs:
     query:
       session_reuse: true
       max_session_uses: 7
+
+  # 每天 06:00 对新 main SHA 做低频防劣化巡检；无新提交时由 Skill 的本地 SHA 标记快速退出。
+  # 发现可复现回归后先飞书告警，再最小修复、验证、提交并普通推送 main，最后飞书汇报。
+  - id: "zeroweb-regression-guard"
+    enabled: true
+    schedule: "0 6 * * *"
+    command: "rally"
+    args:
+      - "query"
+      - "使用 $zeroweb-regression-guard Skill 巡检当前 main。严格按 Skill 收集 renderer/compositor 内存、compositor 断连、性能、product-smoke 与 Chrome production parity 证据；无新 SHA 时立即 DONE。发现可复现劣化后先按 docs/rally/run-rules.md 发飞书告警，再尝试最小修复；修复后完成质量门禁和 lei-pre-commit-guard，git pull --rebase，提交并普通推送 main，最后发飞书汇报。不得放宽阈值、覆盖较差基线、强推或触碰既有未提交改动。"
+      - "-w"
+      - "."
+      - "--agent-command"
+      - "claude-dsflash"
+    cwd: "$DIR/../.."
+    concurrency: "skip"
+    start: "next"
+    timeout_seconds: 18000
+    query:
+      session_reuse: false

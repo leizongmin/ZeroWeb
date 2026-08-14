@@ -1,0 +1,26 @@
+{
+  "skill_name": "zeroweb-regression-guard",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "每天早上 6 点检查 ZeroWeb 最近提交是否让 renderer/compositor 内存、compositor 稳定性或 Chrome 一致性劣化；发现问题后通知并自动修复。",
+      "expected_output": "先同步 main 并用本地成功 SHA 跳过未变化版本；对新 SHA 运行生产多进程内存、断连、bench、product-smoke 和 Chrome production parity 门禁。可复现回归先飞书告警，再最小修复、完整验证、安全扫描、提交并普通推送 main，最后飞书汇报。",
+      "files": [
+        "docs/rally/jobs.yaml",
+        "docs/rally/run-rules.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "renderer 从 70MB 涨到 720MB，但页面还能正常显示；夜间巡检应该怎么处理？",
+      "expected_output": "把超过绝对内存预算两倍的结果直接判为回归，保存进程树和测量口径证据，先发送飞书告警；定位引入提交和内存根因，不通过放宽预算掩盖，修复后重跑原门禁及提交质量门禁并汇报 commit。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "夜间机器没有可用 GPU，CPU product-smoke 通过了，是否可以写入成功 SHA？",
+      "expected_output": "不可以。生产 GPU/Chrome 证据缺失应判 BLOCKED 而非 PASS，发送飞书说明环境卡点，不修改产品代码，也不更新成功 SHA。",
+      "files": []
+    }
+  ]
+}
