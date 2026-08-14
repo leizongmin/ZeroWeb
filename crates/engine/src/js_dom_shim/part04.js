@@ -169,6 +169,14 @@
               var ctx = _zwMakeCtx2d(String(id));
               ctx.canvas = _makeProxy(sel, handle); // canvas back-ref → 元素 proxy（spec ctx.canvas）
               _zwCanvasCtx[key] = ctx;
+              // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
+              //（createImageBitmap.srgb.rgba.float16 的越界值往返；DOM canvas 与 standalone
+              // part05 _zwMakeCanvas 同语义——getImageData 回读按覆盖层优先）。
+              if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' &&
+                  String(arguments[1].colorType || '') === 'float16') {
+                ctx._f16 = true;
+                ctx._f16Overlay = null;
+              }
               // R34xx：direction 'inherit' 解析为 canvas 元素方向（dir 属性——
               // 2d.text.draw.align.start.rtl 的 <canvas dir="rtl">）。host 存解析值；
               // client getter 保持 'inherit'（spec 值）。

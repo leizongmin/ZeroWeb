@@ -2028,3 +2028,114 @@ fn test_image_data_constructor_r3297() {
         "new ImageData 经 putImageData 写入 + getImageData 回读保真"
     );
 }
+
+#[test]
+fn test_canvas_float16_overlay_roundtrip_r34xx() {
+    // R34xx：float16 上下文 + float16 ImageData → ImageBitmap → drawImage → getImageData
+    // 越界值往返（[1.0, 2.0, -1.0, 1.0]——u8 wire/缓冲无法表达 2/-1，JS 侧覆盖层回读原始
+    // 浮点像素）。驱动 WPT: 2d.imageData.createImageBitmap.srgb.rgba.float16。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "globalThis.__c = document.createElement('canvas'); __c.width = 4; __c.height = 4;\
+             globalThis.__ctx = __c.getContext('2d', {colorType: 'float16'});\
+             globalThis.__id = new ImageData(2, 2, {pixelFormat: 'rgba-float16'});\
+             for (var i = 0; i < 16; i++) __id.data[i] = [1.0, 2.0, -1.0, 1.0][i % 4];\
+             globalThis.__bm = null;\
+             createImageBitmap(__id).then(function (bm) { globalThis.__bm = bm; });",
+        )
+        .unwrap();
+    // createImageBitmap 同步编码 + microtask 排空 → then 回调已执行。
+    assert_eq!(
+        sandbox.execute("String(__bm !== null)").unwrap().value,
+        "true",
+        "createImageBitmap promise 已解析"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(__bm.width + 'x' + __bm.height)")
+            .unwrap()
+            .value,
+        "2x2",
+        "bitmap 尺寸 2x2"
+    );
+    sandbox
+        .execute(
+            "__ctx.drawImage(__bm, 0, 0);\
+             globalThis.__px = __ctx.getImageData(0, 0, 1, 1, {pixelFormat: 'rgba-float16'});",
+        )
+        .unwrap();
+    // 越界值往返（spec 允许 float16 存 1.0/2.0/-1.0）：
+    for (i, v) in [1.0, 2.0, -1.0, 1.0].iter().enumerate() {
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(Math.abs(__px.data[{i}] - {v}) <= 0.01)"))
+                .unwrap()
+                .value,
+            "true",
+            "channel {i} 往返 ≈ {v}"
+        );
+    }
+    // 覆盖层失效：clearRect 后回读 → u8 域（0..1 归一化），非陈旧原始浮点。
+    sandbox
+        .execute(
+            "__ctx.clearRect(0, 0, 4, 4);\
+             globalThis.__px2 = __ctx.getImageData(0, 0, 1, 1, {pixelFormat: 'rgba-float16'});",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(__px2.data[0] <= 1.0)").unwrap().value,
+        "true",
+        "clearRect 后覆盖层失效（回读 u8 归一化域）"
+    );
+
+    // DOM 解析 canvas（WPT 用例形态——document.getElementById('c') 取 host-backed proxy，
+    // getContext 走 part04 DOM canvas 路径，须与 standalone 同语义记录覆盖层）。
+    *dom_html.lock().unwrap() =
+        "<html><body><canvas id=\"c\" width=\"100\" height=\"50\"></canvas></body></html>".to_string();
+    sandbox
+        .execute(
+            "globalThis.__dc = document.getElementById('c');\
+             globalThis.__dctx = __dc.getContext('2d', {colorSpace: 'srgb', colorType: 'float16'});\
+             globalThis.__id2 = new ImageData(10, 10, {colorSpace: 'srgb', pixelFormat: 'rgba-float16'});\
+             for (var i = 0; i < 400; i++) __id2.data[i] = [1.0, 2.0, -1.0, 1.0][i % 4];\
+             globalThis.__bm2 = null;\
+             createImageBitmap(__id2).then(function (bm) { globalThis.__bm2 = bm; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(__bm2 !== null)").unwrap().value,
+        "true",
+        "DOM canvas createImageBitmap promise 已解析"
+    );
+    sandbox
+        .execute(
+            "__dctx.drawImage(__bm2, 0, 0);\
+             globalThis.__dpx = __dctx.getImageData(0, 0, 1, 1, {colorSpace: 'srgb', pixelFormat: 'rgba-float16'});",
+        )
+        .unwrap();
+    for (i, v) in [1.0, 2.0, -1.0, 1.0].iter().enumerate() {
+        assert_eq!(
+            sandbox
+                .execute(&format!("String(Math.abs(__dpx.data[{i}] - {v}) <= 0.01)"))
+                .unwrap()
+                .value,
+            "true",
+            "DOM canvas channel {i} 往返 ≈ {v}"
+        );
+    }
+}

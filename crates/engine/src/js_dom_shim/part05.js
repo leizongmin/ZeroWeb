@@ -921,6 +921,13 @@
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
       el._ctx.canvas = el;
+      // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
+      //（createImageBitmap.srgb.rgba.float16 的越界值往返）。
+      if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' &&
+          String(arguments[1].colorType || '') === 'float16') {
+        el._ctx._f16 = true;
+        el._ctx._f16Overlay = null;
+      }
       // R34xx：direction 'inherit' 解析为 canvas 元素方向（dir 属性——2d.text.draw.align.
       // start.rtl 的 <canvas dir="rtl">）。host 存解析值；client getter 保持 'inherit'（spec）。
       var elDir = String(el.getAttribute ? String(el.getAttribute('dir') || '') : '').toLowerCase();
@@ -1306,6 +1313,41 @@
     }
     return out;
   }
+  // R34xx：float16 ImageData 源 → 原始浮点像素（_zwBitmapF16）。u8 wire 无法表达越界值
+  //（2/-1），drawImage 进 float16 上下文时记录覆盖层、getImageData 按位回读原始浮点
+  //（createImageBitmap.srgb.rgba.float16 往返）。裁剪/翻转与 wire 变换同步，保证对齐。
+  // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-createimagebitmap
+  function _zwCropF16Data(data, srcW, srcH, sx, sy, sw, sh) {
+    sx = (sx == null || !isFinite(sx)) ? 0 : (sx | 0);
+    sy = (sy == null || !isFinite(sy)) ? 0 : (sy | 0);
+    sw = sw | 0;
+    sh = sh | 0;
+    if (sx < 0) { sw += sx; sx = 0; }
+    if (sy < 0) { sh += sy; sy = 0; }
+    if (sx + sw > srcW) sw = srcW - sx;
+    if (sy + sh > srcH) sh = srcH - sy;
+    if (sw <= 0 || sh <= 0) return [];
+    var out = new Float32Array(sw * sh * 4);
+    var o = 0;
+    for (var y = 0; y < sh; y++) {
+      for (var x = 0; x < sw; x++) {
+        var base = ((sy + y) * srcW + (sx + x)) * 4;
+        for (var c = 0; c < 4; c++) out[o++] = data[base + c];
+      }
+    }
+    return out;
+  }
+  function _zwFlipF16DataY(data, w, h) {
+    var out = new Float32Array(data.length);
+    var o = 0;
+    for (var y = h - 1; y >= 0; y--) {
+      for (var x = 0; x < w; x++) {
+        var base = (y * w + x) * 4;
+        for (var c = 0; c < 4; c++) out[o++] = data[base + c];
+      }
+    }
+    return out;
+  }
   if (!globalThis.createImageBitmap) {
     globalThis.createImageBitmap = function createImageBitmap(source, sx, sy, sw, sh) {
       // R34xx：options（imageOrientation/premultiplyAlpha）——(source, options) 或
@@ -1319,6 +1361,9 @@
       }
       var flipY = !!opts.imageOrientation && String(opts.imageOrientation).toLowerCase() === 'flipy';
       return Promise.resolve(source).then(function (src) {
+        // R34xx：float16 ImageData 源标记（_zwImageBitmapSourceToWire 的 ImageData 分支
+        // 只编码 u8 wire，原始浮点像素由下方 `srcF16` 分支单独携带）。
+        var srcF16 = !!(src && src.data && src.pixelFormat === 'rgba-float16');
         var wire = _zwImageBitmapSourceToWire(src);
         if (wire === null) {
           return Promise.reject(new TypeError('createImageBitmap: 不支持的 source 或解码失败'));
@@ -1348,6 +1393,20 @@
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
           return Promise.reject(new TypeError('createImageBitmap: 解码失败（零尺寸）'));
+        }
+        // R34xx：float16 ImageData 源 → 携带原始浮点像素（drawImage 覆盖层回读越界值）。
+        // 裁剪/翻转与 wire 变换同步（sw/sh 此处已规范化：负值翻转矩形）。
+        if (srcF16 && src && src.data) {
+          var raw = src.data;
+          var srcW = src.width | 0;
+          var srcH = src.height | 0;
+          if (sw != null || sh != null) {
+            raw = _zwCropF16Data(raw, srcW, srcH, sx, sy, sw, sh);
+          }
+          if (flipY) {
+            raw = _zwFlipF16DataY(raw, bm.width, bm.height);
+          }
+          bm._zwBitmapF16 = raw;
         }
         return bm;
       });
@@ -1406,6 +1465,13 @@
     var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height));
     if (!id || String(id).charAt(0) === '!') return null;
     this._ctx = _zwMakeCtx2d(String(id));
+    // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
+    //（createImageBitmap.srgb.rgba.float16 越界值往返——OffscreenCanvas worker 变体同语义）。
+    if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' &&
+        String(arguments[1].colorType || '') === 'float16') {
+      this._ctx._f16 = true;
+      this._ctx._f16Overlay = null;
+    }
     return this._ctx;
   };
   // transferToImageBitmap()：取当前 canvas 全像素 wire 包成 ImageBitmap（spec 返新 ImageBitmap，canvas bitmap 清空）。
@@ -1592,6 +1658,8 @@
     ctx.clearRect = function (x, y, w, hh) {
       x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
       if (!_zwAllFinite(x, y, w, hh)) return;
+      // R34xx：写像素操作使 float16 覆盖层失效（避免陈旧原始浮点回读）。
+      if (this._f16) this._f16Overlay = null;
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
     // R3078：Canvas 2D 文本 API（fillText/strokeText/measureText）+ createImageData（blank）。
@@ -2296,6 +2364,8 @@
     // R34xx：reset()（spec：清空画布 + 状态回默认）。host 重建 context；client 镜像同步默认。
     ctx.reset = function () {
       if (typeof __zw_canvas_op === 'function') __zw_canvas_op(h, 'reset');
+      // R34xx：清空 float16 覆盖层（重置后无原始浮点回读）。
+      if (this._f16) this._f16Overlay = null;
       this._fs = '#000000';
       this._ss = '#000000';
       this._ga = 1.0;
@@ -2648,6 +2718,8 @@
         }
       }
       var d = img.data;
+      // R34xx：写像素操作使 float16 覆盖层失效（避免陈旧原始浮点回读）。
+      if (this._f16) this._f16Overlay = null;
       // R34xx：dirty 矩形（spec putImageData(img, dx, dy[, dirtyX, dirtyY, dirtyW,
       // dirtyH])——负 dims 矩形反向（put.dirty.negative：目标 = dx+dirtyX+dirtyW）。
       var sx = 0, sy = 0, sw = img.width | 0, sh = img.height | 0;
@@ -2702,6 +2774,11 @@
         if (bmw <= 0 || bmh <= 0) return;
         if (a.length === 3) {
           __zw_canvas_op(h, 'drawImage', image._zwBitmapWire, String(a[1]), String(a[2]));
+          // R34xx：float16 上下文 + float16 位图 → 记录原始浮点像素覆盖层
+          //（createImageBitmap.srgb.rgba.float16 越界值往返——u8 缓冲无法存 2/-1）。
+          if (this._f16 && image._zwBitmapF16) {
+            this._f16Overlay = { x: a[1] | 0, y: a[2] | 0, w: bmw, h: bmh, data: image._zwBitmapF16 };
+          }
         } else if (a.length === 5) {
           __zw_canvas_op(h, 'drawImageScaled', image._zwBitmapWire,
             String(a[1]), String(a[2]), String(a[3]), String(a[4]));
@@ -2790,7 +2867,19 @@
       var arr;
       if (f16) {
         arr = new Float16Array(nums.length);
-        for (var i = 0; i < nums.length; i++) arr[i] = +nums[i] / 255;
+        // R34xx：float16 上下文覆盖层（float16 位图绘制区）→ 原始浮点像素。
+        var _ov = this._f16Overlay;
+        for (var i = 0; i < nums.length; i++) {
+          var _px = i / 4 | 0;
+          var _pxX = (_px % tw) + (Math.trunc(vx) | 0);
+          var _pxY = (_px / tw | 0) + (Math.trunc(vy) | 0);
+          var _raw = null;
+          if (_ov && _pxX >= _ov.x && _pxX < _ov.x + _ov.w && _pxY >= _ov.y && _pxY < _ov.y + _ov.h) {
+            var _oi = ((_pxY - _ov.y) * _ov.w + (_pxX - _ov.x)) * 4 + (i % 4);
+            if (_oi < _ov.data.length) _raw = _ov.data[_oi];
+          }
+          arr[i] = (_raw !== null) ? _raw : (+nums[i] / 255);
+        }
       } else {
         arr = new Uint8ClampedArray(nums.length);
         for (var i = 0; i < nums.length; i++) arr[i] = +nums[i];
