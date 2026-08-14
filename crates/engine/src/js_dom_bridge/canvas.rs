@@ -684,8 +684,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // putImageData（get_imageData 对偶）：args = [dx, dy, w, h, "r,g,b,a,..."]。
         // 直接写 pixel_buffer（put_image_data copy_from_slice，1:1 替换，无 composite/alpha 合成）。
         "putImageData" => {
-            let dx = arg(0).trim().parse::<u32>().unwrap_or(0);
-            let dy = arg(1).trim().parse::<u32>().unwrap_or(0);
+            let dx = arg(0).trim().parse::<i32>().unwrap_or(0);
+            let dy = arg(1).trim().parse::<i32>().unwrap_or(0);
             let w = arg(2).trim().parse::<u32>().unwrap_or(0);
             let h = arg(3).trim().parse::<u32>().unwrap_or(0);
             let data: Vec<u8> = arg(4)
@@ -738,7 +738,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let Some(ctx) = reg.contexts.get(&hid()) {
                 let w = ctx.width().max(1);
                 let h = ctx.height().max(1);
-                let img = ctx.get_image_data(0, 0, w, h);
+                let img = ctx.get_image_data(0, 0, w as i32, h as i32);
                 let mut out: Vec<u8> = Vec::new();
                 {
                     let mut enc = png::Encoder::new(&mut out, w, h);
@@ -757,11 +757,12 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             String::new()
         }
         "getImageData" => {
+            // R34xx：有符号解析（负 dims 翻转/负坐标越界透明语义）。
             let (x, y, w, h) = (
-                arg(0).trim().parse::<u32>().unwrap_or(0),
-                arg(1).trim().parse::<u32>().unwrap_or(0),
-                arg(2).trim().parse::<u32>().unwrap_or(0),
-                arg(3).trim().parse::<u32>().unwrap_or(0),
+                arg(0).trim().parse::<i32>().unwrap_or(0),
+                arg(1).trim().parse::<i32>().unwrap_or(0),
+                arg(2).trim().parse::<i32>().unwrap_or(0),
+                arg(3).trim().parse::<i32>().unwrap_or(0),
             );
             if let Some(ctx) = reg.contexts.get(&hid()) {
                 let img = ctx.get_image_data(x, y, w, h);

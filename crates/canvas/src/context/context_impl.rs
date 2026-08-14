@@ -1188,29 +1188,65 @@ impl CanvasContext {
     // ── Pixel data ──
 
     /// 获取像素数据。从画布像素缓冲区中读取指定区域的 RGBA 数据。
-    pub fn get_image_data(&self, x: u32, y: u32, width: u32, height: u32) -> ImageData {
+    pub fn get_image_data(&self, x: i32, y: i32, width: i32, height: i32) -> ImageData {
         // R3354：usize + saturating_mul 计算 RGBA 缓冲区大小。
         // 旧实现 `(width * height * 4) as usize` 在 u32 算术溢出：getImageData(0,0,65536,65536)
         // → 65536*65536 在 u32 回绕为 0 → data 为空 vec → 复制循环 data[0..N] 切片越界 panic。
         // spec getImageData：返回请求 width×height 的 ImageData，画布外像素透明黑。
-        let size = (width as usize).saturating_mul(height as usize).saturating_mul(4);
+        // R34xx：有符号语义——负 sw/sh 矩形翻转（2d.imageData.get.source.negative）；
+        // 负/越界 sx/sy 区域画布外像素透明（get.source.outside）。
+        let flip_x = width < 0;
+        let flip_y = height < 0;
+        let (w, h) = (width.unsigned_abs(), height.unsigned_abs());
+        let size = (w as usize).saturating_mul(h as usize).saturating_mul(4);
         let mut data = vec![0u8; size];
-        let canvas_w = self.width as usize;
-        let canvas_h = self.height as usize;
-        for row in 0..(height as usize) {
-            let src_row = y as usize + row;
-            if src_row >= canvas_h {
-                break;
+        let canvas_w = self.width as i32;
+        let canvas_h = self.height as i32;
+        if !flip_x && !flip_y {
+            // 快路径：行复制（画布内行）。
+            for row in 0..h {
+                let src_row = y + row as i32;
+                if src_row < 0 || src_row >= canvas_h {
+                    continue;
+                }
+                let col0 = x.max(0) as usize;
+                let col1 = (x + width).min(canvas_w).max(0) as usize;
+                if col1 <= col0 {
+                    continue;
+                }
+                let src_start = src_row as usize * canvas_w as usize * 4 + col0 * 4;
+                let src_end = src_row as usize * canvas_w as usize * 4 + col1 * 4;
+                // 结果列 = 源列 − x（负 x 时结果左侧为画布外透明区）。
+                let dst_col0 = (col0 as i32 - x) as usize;
+                let dst_start = row as usize * w as usize * 4 + dst_col0 * 4;
+                let dst_len = (col1 - col0) * 4;
+                data[dst_start..dst_start + dst_len].copy_from_slice(&self.pixel_buffer[src_start..src_end]);
             }
-            let src_start = src_row * canvas_w * 4 + x as usize * 4;
-            let src_end = (src_start + width as usize * 4).min(self.pixel_buffer.len());
-            let dst_start = row * width as usize * 4;
-            let copy_len = src_end.saturating_sub(src_start);
-            if copy_len > 0 {
-                data[dst_start..dst_start + copy_len].copy_from_slice(&self.pixel_buffer[src_start..src_end]);
+        } else {
+            // 负 dims：源矩形反向（[x+w, x)×[y+h, y)），数据仍按左上→右下读取
+            //（2d.imageData.get.source.negative——"top-to-bottom left-to-right"）。
+            for row in 0..h {
+                let src_y = if flip_y {
+                    y + height + row as i32
+                } else {
+                    y + row as i32
+                };
+                for col in 0..w {
+                    let src_x = if flip_x { x + width + col as i32 } else { x + col as i32 };
+                    if src_x < 0 || src_y < 0 || src_x >= canvas_w || src_y >= canvas_h {
+                        continue;
+                    }
+                    let src_idx = (src_y as usize * canvas_w as usize + src_x as usize) * 4;
+                    let dst_idx = (row as usize * w as usize + col as usize) * 4;
+                    data[dst_idx..dst_idx + 4].copy_from_slice(&self.pixel_buffer[src_idx..src_idx + 4]);
+                }
             }
         }
-        ImageData { width, height, data }
+        ImageData {
+            width: w,
+            height: h,
+            data,
+        }
     }
 
     /// 全画布 RGBA 快照（显示链路：canvas 元素内容 → ImagePrimitive）。
@@ -1235,22 +1271,28 @@ impl CanvasContext {
     }
 
     /// 放置像素数据。将 ImageData 写入画布像素缓冲区的指定偏移位置。
-    pub fn put_image_data(&mut self, image_data: &ImageData, x: u32, y: u32) {
-        let canvas_w = self.width as usize;
-        let canvas_h = self.height as usize;
-        for row in 0..(image_data.height as usize) {
-            let dst_row = y as usize + row;
-            if dst_row >= canvas_h {
-                break;
+    pub fn put_image_data(&mut self, image_data: &ImageData, x: i32, y: i32) {
+        let canvas_w = self.width as i32;
+        let canvas_h = self.height as i32;
+        let iw = image_data.width as i32;
+        let ih = image_data.height as i32;
+        for row in 0..ih {
+            let dst_row = y + row;
+            if dst_row < 0 || dst_row >= canvas_h {
+                continue;
             }
-            let src_start = row * image_data.width as usize * 4;
-            let src_end = src_start + image_data.width as usize * 4;
-            let dst_start = dst_row * canvas_w * 4 + x as usize * 4;
-            let dst_end = (dst_start + image_data.width as usize * 4).min(self.pixel_buffer.len());
-            let copy_len = dst_end.saturating_sub(dst_start);
-            if copy_len > 0 && src_end <= image_data.data.len() {
-                self.pixel_buffer[dst_start..dst_start + copy_len]
-                    .copy_from_slice(&image_data.data[src_start..src_start + copy_len]);
+            let src_row = row;
+            let col0 = x.max(0) as i32;
+            let col1 = (x + iw).min(canvas_w) as i32;
+            if col1 <= col0 {
+                continue;
+            }
+            let src_start = (src_row * iw + col0 - x) as usize * 4;
+            let dst_start = (dst_row * canvas_w + col0) as usize * 4;
+            let len = (col1 - col0) as usize * 4;
+            if src_start + len <= image_data.data.len() {
+                self.pixel_buffer[dst_start..dst_start + len]
+                    .copy_from_slice(&image_data.data[src_start..src_start + len]);
             }
         }
     }

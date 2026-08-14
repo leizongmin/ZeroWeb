@@ -790,18 +790,21 @@
       var w = Math.abs(+b || 0) | 0;
       if (w <= 0) w = 1; // 防 0 除
       var h = (c != null) ? (Math.abs(+c || 0) | 0) : ((data.length / 4) / w) | 0;
-      this.width = w;
-      this.height = h;
-      this.data = data;
       this.colorSpace = 'srgb';
+      this.pixelFormat = 'uint8';
+      Object.defineProperty(this, 'width', { value: w, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(this, 'height', { value: h, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(this, 'data', { value: data, writable: false, enumerable: true, configurable: false });
     } else {
       // new ImageData(width, height)——透明黑全零。
       var w2 = Math.abs(+a || 0) | 0;
       var h2 = Math.abs(+b || 0) | 0;
-      this.width = w2;
-      this.height = h2;
-      this.data = new Uint8ClampedArray(w2 * h2 * 4);
+      var data2 = new Uint8ClampedArray(w2 * h2 * 4);
       this.colorSpace = 'srgb';
+      this.pixelFormat = 'uint8';
+      Object.defineProperty(this, 'width', { value: w2, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(this, 'height', { value: h2, writable: false, enumerable: true, configurable: false });
+      Object.defineProperty(this, 'data', { value: data2, writable: false, enumerable: true, configurable: false });
     }
   }
   globalThis.ImageData = globalThis.ImageData || ImageData;
@@ -1752,6 +1755,10 @@
         }
         w = Math.abs(w);
         h = Math.abs(h);
+        // R34xx：零尺寸 → IndexSizeError（spec——2d.imageData.create2.zero）。
+        if (w === 0 || h === 0) {
+          throw _zwDomException('createImageData: zero dimension', 'IndexSizeError');
+        }
       }
       return new ImageData(w, h);
     }
@@ -2299,17 +2306,45 @@
       get: function () { return this._soy; }
     });
     // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
-    ctx.putImageData = function (img, dx, dy) {
+    ctx.putImageData = function (img, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) {
       if (!img || !img.data) return;
-      var d = img.data;
-      var n = d.length;
-      // 分片拼接（避免超大数据单次 += 触发大字符串重分配；测试用小图，正常路径即可）。
-      var chunks = [];
-      for (var i = 0; i < n; i++) {
-        chunks.push((i ? ',' : '') + d[i]);
+      // R34xx：非有限参数 → TypeError（spec——2d.imageData.put.nonfinite）。
+      var argv = [dx, dy, dirtyX, dirtyY, dirtyW, dirtyH];
+      for (var ai = 0; ai < arguments.length && ai < 6; ai++) {
+        if (typeof argv[ai] === 'number' && !isFinite(argv[ai])) {
+          throw new TypeError('putImageData: non-finite argument');
+        }
       }
-      __zw_canvas_op(h, 'putImageData', String(dx | 0), String(dy | 0),
-        String(img.width | 0), String(img.height | 0), chunks.join(''));
+      var d = img.data;
+      // R34xx：dirty 矩形（spec putImageData(img, dx, dy[, dirtyX, dirtyY, dirtyW,
+      // dirtyH])——负 dims 矩形反向（put.dirty.negative：目标 = dx+dirtyX+dirtyW）。
+      var sx = 0, sy = 0, sw = img.width | 0, sh = img.height | 0;
+      var ox = dx | 0, oy = dy | 0;
+      if (arguments.length >= 7) {
+        dirtyX = dirtyX | 0; dirtyY = dirtyY | 0; dirtyW = dirtyW | 0; dirtyH = dirtyH | 0;
+        // 负 dims：源矩形反向（[dirtyX+dirtyW, dirtyX)），目标 = (dx+dirtyX+dirtyW, ...)。
+        if (dirtyW < 0) { sx = dirtyX + dirtyW; ox = dx + dirtyX + dirtyW; }
+        else { sx = dirtyX; ox = dx + dirtyX; }
+        if (dirtyH < 0) { sy = dirtyY + dirtyH; oy = dy + dirtyY + dirtyH; }
+        else { sy = dirtyY; oy = dy + dirtyY; }
+        sw = Math.abs(dirtyW); sh = Math.abs(dirtyH);
+        // 源越界裁剪（透明省略——画布外部分不画）。
+        if (sx < 0) { sw += sx; ox -= sx; sx = 0; }
+        if (sy < 0) { sh += sy; oy -= sy; sy = 0; }
+        if (sx + sw > (img.width | 0)) sw = (img.width | 0) - sx;
+        if (sy + sh > (img.height | 0)) sh = (img.height | 0) - sy;
+        if (sw <= 0 || sh <= 0) return;
+      }
+      var chunks = [];
+      var iw = img.width | 0;
+      for (var r = 0; r < sh; r++) {
+        for (var c = 0; c < sw; c++) {
+          var si = ((sy + r) * iw + (sx + c)) * 4;
+          chunks.push(d[si] + ',' + d[si + 1] + ',' + d[si + 2] + ',' + d[si + 3]);
+        }
+      }
+      __zw_canvas_op(h, 'putImageData', String(ox), String(oy),
+        String(sw), String(sh), chunks.join(','));
     };
     // drawImage（R2799，canvas slice 5）：源 canvas → 本 ctx。3 spec 重载（arg 数 3/5/9）：
     //   drawImage(image, dx, dy) / drawImage(image, dx, dy, dw, dh) /
@@ -2379,15 +2414,32 @@
       if (typeof __zw_canvas_op !== 'function') return null;
       // R34xx：x/y/w/h 经 Math.trunc 归一（spec：与 createImageData 同一 WebIDL long 截断语义，
       // 上游 2d.imageData.create2.round 断言两者一致）。
+      // R34xx：WebIDL long EnforceRange——越界（非有限或超出有符号 32 位）→ TypeError
+      //（2d.imageData.get.large.crash 的 0xffffffff——避免巨尺寸分配）。
+      var vx = +x, vy = +y, vw = +w, vh = +hh;
+      if (!isFinite(vx) || !isFinite(vy) || !isFinite(vw) || !isFinite(vh) ||
+          vx > 2147483647 || vx < -2147483648 || vy > 2147483647 || vy < -2147483648 ||
+          vw > 2147483647 || vw < -2147483648 || vh > 2147483647 || vh < -2147483648) {
+        throw new TypeError('getImageData: argument out of range');
+      }
+      // R34xx：零尺寸 → IndexSizeError（spec——2d.imageData.get.zero）。
+      var tw = Math.trunc(vw), th = Math.trunc(vh);
+      if (tw === 0 || th === 0) {
+        throw _zwDomException('getImageData: zero dimension', 'IndexSizeError');
+      }
+      // R34xx：负 dims/坐标原样传 host（翻转/越界透明语义在 host）。
       var r = String(__zw_canvas_op(h, 'getImageData',
-        String(Math.trunc(+x)), String(Math.trunc(+y)), String(Math.trunc(+w)), String(Math.trunc(+hh))));
+        String(Math.trunc(vx)), String(Math.trunc(vy)),
+        String(tw), String(th)));
       if (!r) return null;
       var parts = r.split(';');
       var dims = parts[0].split(':');
       var nums = parts[1] ? parts[1].split(',') : [];
       var arr = new Uint8ClampedArray(nums.length);
       for (var i = 0; i < nums.length; i++) arr[i] = +nums[i];
-      return { width: +dims[0], height: +dims[1], data: arr };
+      // R34xx：返真 ImageData（colorSpace + 只读 width/height——object.properties/readonly）。
+      var img = new ImageData(arr, +dims[0], +dims[1]);
+      return img;
     };
     return ctx;
   }

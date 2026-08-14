@@ -72,7 +72,7 @@ impl OffscreenCanvas {
     /// 返回 ImageData 作为 ImageBitmap 的像素载体（ImageBitmap Rust 类型尚未建立）。
     pub fn transfer_to_image_bitmap(&mut self) -> ImageData {
         let (w, h) = (self.context.width(), self.context.height());
-        let bitmap = self.context.get_image_data(0, 0, w, h);
+        let bitmap = self.context.get_image_data(0, 0, w as i32, h as i32);
         // spec：transfer 后 bitmap 清空（绘制状态保留——仅 bitmap 像素清零）。
         self.context.clear_bitmap();
         bitmap
