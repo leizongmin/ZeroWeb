@@ -3052,6 +3052,81 @@ fn test_event_subclass_init_props_inherit_parent_chain_r24() {
 }
 
 #[test]
+fn test_event_cancel_bubble_mirror_r26() {
+    // js-dom M4 R26：Event.cancelBubble（spec `dom-event-cancelbubble`，stop propagation flag 的 legacy 公开镜像）。
+    // WPT Event-cancelBubble.html：① 初始 false；② initEvent 设 false（spec initialize 重置 dispatch flags）；
+    // ③ stopPropagation/stopImmediatePropagation 设 true。polyfill _makeEvent 加 cancelBubble 字段 +
+    // stop 方法联动 + initEvent 重置。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 初始 false（createEvent 后）。
+    sandbox
+        .execute("globalThis.__e0 = document.createEvent('Event').cancelBubble;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e0)").unwrap().value,
+        "false",
+        "R26 cancelBubble 初始 false（createEvent 后）"
+    );
+
+    // ② initEvent 设 false（即使之前 cancelBubble=true，initEvent 重置）。
+    sandbox
+        .execute(
+            "globalThis.__e1 = document.createEvent('Event');\
+             __e1.cancelBubble = true;\
+             __e1.initEvent('foo', true, false);\
+             globalThis.__cb1 = __e1.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb1)").unwrap().value,
+        "false",
+        "R26 initEvent 设 cancelBubble=false（spec initialize 重置 dispatch flags）"
+    );
+
+    // ③ stopPropagation 设 cancelBubble=true。
+    sandbox
+        .execute(
+            "globalThis.__e2 = document.createEvent('Event');\
+             __e2.stopPropagation();\
+             globalThis.__cb2 = __e2.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb2)").unwrap().value,
+        "true",
+        "R26 stopPropagation 设 cancelBubble=true"
+    );
+
+    // ④ stopImmediatePropagation 设 cancelBubble=true。
+    sandbox
+        .execute(
+            "globalThis.__e3 = document.createEvent('Event');\
+             __e3.stopImmediatePropagation();\
+             globalThis.__cb3 = __e3.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb3)").unwrap().value,
+        "true",
+        "R26 stopImmediatePropagation 设 cancelBubble=true"
+    );
+}
+
+#[test]
 fn test_create_document_type_r15() {
     // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
     // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub

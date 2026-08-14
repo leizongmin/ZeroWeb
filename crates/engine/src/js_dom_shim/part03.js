@@ -1098,6 +1098,10 @@
       _defaultPrevented: false,
       _propagationStopped: false,
       _immediateStopped: false,
+      // cancelBubble（js-dom M4 R26，spec `dom-event-cancelbubble`）：stop propagation flag 的公开镜像
+      //（legacy IE 别名）。初始 false；`stopPropagation`/`stopImmediatePropagation` 设 true；dispatch bubble
+      // 循环检查 cancelBubble 止上溯。与 defaultPrevented/_defaultPrevented 同款「公开镜像 + 私 flag」模式。
+      cancelBubble: false,
       // composedPath（R3244）：DOM §4.3——dispatch 期间返事件路径（target→祖先→document→window），
       // 非 dispatch（前后）返 []。`_composedPath` 由 _dispatchWithBubble / globalThis.dispatchEvent 在派发期
       // 填充、finally 清空（spec：dispatch flag unset 时返空）。事件委托（e.composedPath()[0] === target）
@@ -1107,10 +1111,11 @@
         return this._composedPath ? this._composedPath.slice() : [];
       },
       preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
-      stopPropagation: function() { this._propagationStopped = true; },
+      stopPropagation: function() { this._propagationStopped = true; this.cancelBubble = true; },
       stopImmediatePropagation: function() {
         this._immediateStopped = true;
         this._propagationStopped = true;
+        this.cancelBubble = true;
       }
     };
     return ev;

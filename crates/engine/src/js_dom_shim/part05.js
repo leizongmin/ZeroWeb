@@ -2552,6 +2552,11 @@
       this.cancelable = !!cancelable;
       this.defaultPrevented = false;
       this._defaultPrevented = false;
+      // js-dom M4 R26：spec `concept-event-initialize` 重置 dispatch flags——initEvent 把 cancelBubble +
+      // stop propagation flag 归零（WPT Event-cancelBubble "initEvent must set cancelBubble to false"）。
+      this.cancelBubble = false;
+      this._propagationStopped = false;
+      this._immediateStopped = false;
     };
   }
   // R23：`Event` eventPhase 常量（spec `Event` 接口的静态 + 原型属性，WPT Event-constants.html testConstants）。
