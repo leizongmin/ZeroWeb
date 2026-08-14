@@ -20,3 +20,4 @@ fonts/Lato-Medium-Liga.ttf
 fonts/sileot-webfont.woff
 fonts/Lato-Medium.ttf
 css/css-fonts/support/fonts/RobotoExtremo-VF.subset.ttf
+fonts/noto/noto-sans-v8-latin-regular.woff

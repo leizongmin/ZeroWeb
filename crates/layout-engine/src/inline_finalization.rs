@@ -1255,7 +1255,14 @@ pub(crate) fn measure_text_content(
         } else {
             Vec::new()
         };
+        let author_only = std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0")
+            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("1");
+        let author_face = parent_style
+            .zip(font_resolver)
+            .and_then(|(style, resolver)| crate::font_resolution::resolve_author_font_id_for_style(resolver, style))
+            .is_some();
         let shaped_measure_eligible = !is_ahem
+            && (!author_only || author_face)
             && parent_style.is_none_or(|style| {
                 matches!(style.direction, zero_style_system::DirectionValue::Ltr)
                     && matches!(style.writing_mode, WritingModeValue::HorizontalTb)

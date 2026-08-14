@@ -107,3 +107,6 @@ css/css-fonts/synthetic-bold-out-of-capabilities-range.html css/css-fonts/synthe
 # 62 Pass，36 = G5 img 依赖）经 fetch-canvas-subset.sh 导入 wpt-data/html/canvas/。
 css/css-fonts/font-size-adjust-013.html css/css-fonts/font-size-adjust-013-ref.html == 2026-08-13 R3408-F author font fallback
 css/css-fonts/font-variation-settings-descriptor-04.html css/css-fonts/font-variation-settings-descriptor-04-ref.html == 2026-08-14 R3418-F variation property descriptor shaping contract
+css/css-fonts/font-size-adjust-009.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance
+css/css-fonts/font-size-adjust-010.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance
+css/css-fonts/font-size-adjust-011.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance

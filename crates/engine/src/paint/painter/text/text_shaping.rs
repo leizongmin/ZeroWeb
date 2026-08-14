@@ -271,10 +271,14 @@ pub(super) fn configure_paint_ifc_advance(
     text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
-    if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("1")
-    {
+    let shaped_layout = std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1");
+    let author_shaped_layout = std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0");
+    if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || !shaped_layout && !author_shaped_layout {
         return context;
     }
+    // Keep generic/system text on the established estimate path; only explicit
+    // author faces need layout and paint to share their resolved face advances.
+    let author_only = author_shaped_layout && !shaped_layout;
     let mut primary_ids: HashMap<NodeId, u32> = text_node_font_ids
         .iter()
         .filter_map(|(&text_node, &font_id)| {
@@ -322,16 +326,27 @@ pub(super) fn configure_paint_ifc_advance(
         };
         primary_ids.entry(owner_id).or_insert(font_id.0);
     }
-    let shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+    if author_only {
+        primary_ids.clear();
+    }
+    let mut shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
         text_node_shaping_font_ids.clone()
     } else {
         HashMap::new()
     };
-    let size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+    if author_only {
+        shaping_ids.retain(|_, font_ids| {
+            !font_ids.is_empty() && font_ids.iter().all(|font_id| !generic_font_ids.contains(font_id))
+        });
+    }
+    let mut size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
         text_node_font_size_adjust.clone()
     } else {
         HashMap::new()
     };
+    if author_only {
+        size_adjust.retain(|node_id, _| shaping_ids.contains_key(node_id));
+    }
     context
         .with_font_id_overrides(primary_ids)
         .with_font_ids_overrides(shaping_ids)

@@ -491,19 +491,49 @@ impl InlineFormattingContext {
         word_spacing: f32,
         is_ruby: bool,
     ) -> Option<u32> {
+        let author_only = std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0")
+            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("1");
+        let style_font_id = style.and_then(|style| {
+            if author_only {
+                self.font_resolver
+                    .as_deref()
+                    .and_then(|resolver| crate::font_resolution::resolve_author_font_id_for_style(resolver, style))
+            } else {
+                self.font_id_for_style(Some(style))
+            }
+        });
         if is_ahem
             || letter_spacing != 0.0
             || word_spacing != 0.0
             || is_ruby
             || !style.map_or_else(
-                || override_node.is_some_and(|node| self.font_id_overrides.contains_key(&node)),
+                || {
+                    override_node.is_some_and(|node| {
+                        self.font_id_overrides.contains_key(&node)
+                            || self
+                                .font_ids_overrides
+                                .get(&node)
+                                .is_some_and(|font_ids| !font_ids.is_empty())
+                    })
+                },
                 |style| matches!(style.direction, zero_style_system::DirectionValue::Ltr),
             )
         {
             return None;
         }
-        self.font_id_for_style(style)
+        if style.is_some() {
+            return style_font_id;
+        }
+        style_font_id
             .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
+            .or_else(|| {
+                override_node.and_then(|node| {
+                    self.font_ids_overrides
+                        .get(&node)
+                        .and_then(|font_ids| font_ids.first())
+                        .copied()
+                })
+            })
     }
 
     /// 测量整段文本的 advance 宽度（C3 advance plumbing，R2 dormant）。
@@ -543,9 +573,7 @@ impl InlineFormattingContext {
                     size_adjust,
                     variations,
                 );
-                if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1")
-                    && !matches!(size_adjust, zero_style_system::FontSizeAdjustValue::None)
-                {
+                if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1") {
                     tracing::info!(
                         target: "zero_layout_engine::shaped_advance",
                         node_id = ?run.node_id,

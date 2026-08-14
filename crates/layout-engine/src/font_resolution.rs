@@ -8,6 +8,28 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_render_foundation::font::{resolve_font_face, resolve_font_faces};
 use zero_style_system::ComputedStyle;
 
+const GENERIC_FAMILIES: &[&str] = &[
+    "serif",
+    "sans-serif",
+    "monospace",
+    "cursive",
+    "fantasy",
+    "system-ui",
+    "ui-serif",
+    "ui-sans-serif",
+    "ui-monospace",
+    "ui-rounded",
+    "emoji",
+    "math",
+    "fangsong",
+];
+
+fn is_generic_family_name(name: &str) -> bool {
+    GENERIC_FAMILIES
+        .iter()
+        .any(|generic| generic.eq_ignore_ascii_case(name))
+}
+
 /// Resolves one available face per CSS family while preserving declaration order.
 ///
 /// Weight and style variants use the same fallback order as the painter. If no
@@ -24,27 +46,12 @@ pub fn resolve_font_ids_for_style(
         || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
     let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
     // https://drafts.csswg.org/css-fonts-4/#family-name-value
-    const GENERIC_FAMILIES: &[&str] = &[
-        "serif",
-        "sans-serif",
-        "monospace",
-        "cursive",
-        "fantasy",
-        "system-ui",
-        "ui-serif",
-        "ui-sans-serif",
-        "ui-monospace",
-        "ui-rounded",
-        "emoji",
-        "math",
-        "fangsong",
-    ];
     let mut ids = Vec::new();
     for family in font_family {
         let is_quoted = family.starts_with('"') || family.starts_with('\'');
         let name = family.trim_matches('"').trim_matches('\'');
         // R3249：quoted generic names 是自定义字体名，不匹配 generic resolver。
-        if is_quoted && GENERIC_FAMILIES.iter().any(|g| g.eq_ignore_ascii_case(name)) {
+        if is_quoted && is_generic_family_name(name) {
             continue;
         }
         if let Some((faces, _)) = resolve_font_faces(resolver, name, want_bold, want_italic, font_stretch) {
@@ -64,6 +71,25 @@ pub fn resolve_font_ids_for_style(
         );
     }
     ids
+}
+
+/// Resolves the first available non-generic family for scoped author-font shaping.
+///
+/// https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
+pub(crate) fn resolve_author_font_id_for_style(resolver: &HashMap<String, u32>, style: &ComputedStyle) -> Option<u32> {
+    let want_bold = matches!(style.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+        || matches!(style.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
+    let want_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+    for family in &style.font_family {
+        let name = family.trim_matches('"').trim_matches('\'');
+        if is_generic_family_name(name) {
+            continue;
+        }
+        if let Some((faces, _)) = resolve_font_faces(resolver, name, want_bold, want_italic, style.font_stretch) {
+            return faces.first().copied();
+        }
+    }
+    None
 }
 
 pub(crate) struct FontOverrides {
@@ -190,6 +216,18 @@ mod tests {
             ),
             vec![5]
         );
+    }
+
+    #[test]
+    fn resolves_only_explicit_author_face_for_scoped_layout_shaping() {
+        let resolver = HashMap::from([("Custom".to_string(), 7), ("sans-serif".to_string(), 0)]);
+        let mut author = ComputedStyle::default();
+        author.font_family = vec!["Custom".to_string(), "sans-serif".to_string()];
+        assert_eq!(resolve_author_font_id_for_style(&resolver, &author), Some(7));
+
+        let mut generic = ComputedStyle::default();
+        generic.font_family = vec!["sans-serif".to_string()];
+        assert_eq!(resolve_author_font_id_for_style(&resolver, &generic), None);
     }
 
     #[test]

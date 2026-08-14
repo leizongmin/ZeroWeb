@@ -1728,6 +1728,48 @@ fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
         ctx.shaping_font_id_for_style(Some(node), None, false, 1.0, 0.0, false),
         None
     );
+
+    let ordered_ctx = InlineFormattingContext::new(100.0).with_font_ids_overrides(HashMap::from([(node, vec![9, 7])]));
+    assert_eq!(
+        ordered_ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
+        Some(9)
+    );
+}
+
+#[test]
+fn paint_ifc_text_node_consumes_ordered_author_advance() {
+    struct AuthorAdvance;
+    impl AdvanceSource for AuthorAdvance {
+        fn measure(&self, _ch: char, _font_id: Option<u32>, _font_size: f32, _is_ahem: bool) -> f32 {
+            10.0
+        }
+
+        fn measure_text_with_font_context(
+            &self,
+            text: &str,
+            font_ids: &[u32],
+            _font_size: f32,
+            _is_ahem: bool,
+            _size_adjust: &zero_style_system::FontSizeAdjustValue,
+            _variations: &zero_style_system::FontVariationSettingsValue,
+        ) -> f32 {
+            assert_eq!(text, "xA");
+            assert_eq!(font_ids, &[9, 7]);
+            23.0
+        }
+    }
+
+    let doc = zero_dom::parse_html("<p>xA</p>");
+    let html = doc.first_child(doc.root()).expect("html");
+    let body = doc.last_child(html).expect("body");
+    let paragraph = doc.first_child(body).expect("paragraph");
+    let text = doc.first_child(paragraph).expect("text");
+    let mut ctx = InlineFormattingContext::new(100.0)
+        .with_advance_source(Rc::new(AuthorAdvance))
+        .with_font_ids_overrides(HashMap::from([(text, vec![9, 7])]));
+    ctx.layout(&doc, paragraph, &HashMap::new());
+
+    assert_eq!(ctx.lines[0].runs[0].width, 23.0);
 }
 
 #[test]
