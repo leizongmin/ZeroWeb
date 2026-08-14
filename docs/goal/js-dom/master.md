@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R29 — polyfill Event.cancelBubble setter dispatch 副作用（spec `dom-event-cancelbubble`，R26 普通 data 字段 → R29 defineProperty getter/setter，后端直接复用 stop propagation flag `_propagationStopped`：getter 返 flag，setter true→置 flag 等同 stopPropagation，false→no-op；`_dispatchWithBubble` finally 重置 flag=spec concept-event-dispatch 步骤14）：Event-cancelBubble.html 双路径 4P→8P/8（100%）；dom/events polyfill 49.68%→52.13% / native 43.18%→45.57%（双路径各 +6 pass，对等差 6.49→6.56pp 基本不变；polyfill 突破 52%）
+**本轮**: R30 — dom_bindings 独立 coverage 口径（M0 项 4 收口）：核实 cargo-llvm-cov 0.8.7 + llvm-tools-preview **已安装**（推翻 R0「本地未装」记录），新建 `scripts/check-dom-bindings-coverage.sh`（lcov 解析 + 源码/测试分离 + 逐文件明细 + 双 feature 可参数化 + JSON 模式）+ `check-coverage.sh --dom-bindings` 集成；**dom_bindings 源码 93.14%（4561/4897，15 文件）/ 全部 95.15%（20 文件）**，基线 JSON 入 evidence。纯脚本+度量，零生产代码改动，**M0 里程碑 6/6 项全完成收口**
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -27,7 +27,7 @@
 | WPT dom 上游基线 | ✅ **dom/nodes polyfill 55.63% / native 54.98% 双基线对等**（178 用例 / 4502 subtest；Element-classlist.html 100%）+ **dom/events polyfill 52.13% / native 45.57%**（81 用例 / 318 subtest，R29 Event.cancelBubble setter 后；双路径差 6.56pp） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R29 Event.cancelBubble setter（Event-cancelBubble 双路径 8P/8 100%）。失败聚类：dom/nodes iframe.contentDocument（深结构 html-compat）/querySelector-mixed-case（selector 域）；dom/events Event-dispatch 系列（深结构 document/window listener 独立）/~33 个 0-pass 用例 |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
-| dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
+| dom_bindings 独立 coverage 口径 | ✅ **已补齐（R30）**：源码 93.14%（4561/4897，15 文件）/ 全部 95.15%（20 文件）；`scripts/check-dom-bindings-coverage.sh`（lcov 解析 + 源码/测试分离 + 逐文件明细，双 feature 可参数化），`check-coverage.sh --dom-bindings` 集成 | cargo-llvm-cov 0.8.7 + llvm-tools-preview **已安装**（R30 核实推翻 R0「本地未装」记录）；最低 3 文件 `custom_elements 89.0%` / `css_style_declaration 86.7%` / `dom_exception 71.4%` |
 
 **核心缺口**（本目标要消除，按优先级）：
 1. ~~**WPT dom 上游用例 0 导入**（DC-3）~~ → ✅ **R1 首切片已建**：dom/nodes 141 用例，41.25% pass 基线。**剩余**：扩展子目录（events/collections/...）+ native 路径对照（`ZW_NATIVE_DOM=1`）。基线暴露的真实差距已重排见下。
@@ -50,11 +50,11 @@
 - [x] 1. 探索 `dom_bindings/` + `js_dom_bridge.rs` + `js_dom_shim/` 事实，核实 RFC L1/L2 与现状一致 ✅（本文件即产出）
 - [x] 2. 创建/重写 `master.md`（本文件）
 - [x] 3. 确认 `archive/` + `evidence/` 目录存在（均空，待首轮证据追加）
-- [ ] 4. 补齐 dom_bindings 独立 coverage 口径（**环境前提 `cargo-llvm-cov` 本地未装**，本轮记入「未解决问题」，待装后补）
+- [x] 4. 补齐 dom_bindings 独立 coverage 口径（**cargo-llvm-cov + llvm-tools 已安装，R30 落地**：`check-dom-bindings-coverage.sh` + 基线 93.14% 源码）
 - [x] 5. 建 polyfill vs native A/B 对照门骨架（双 feature 可参数化）✅（R0，`tests_ab_compare.rs`）
 - [x] 6. 选定首切片并直接动手推进 ✅（R0：A/B 门；R1：WPT dom 基线）
 
-**M0 状态**: 项 1/2/3/5/6 ✅ 完成；项 4（dom_bindings coverage 口径）待 `cargo-llvm-cov` 安装（记「未解决问题」）。M0 核心目标（基线 + A/B 门 + 首切片 land）已达成，**转入 M4 推进**（入口文档允许 M4 与 M1–M3 早期并行）。
+**M0 状态**: 项 1/2/3/4/5/6 ✅ **全部完成**（R30 补齐项 4：cargo-llvm-cov 已装 + dom_bindings 口径 93.14% 源码）。**M0 里程碑收口完成**，转入 M4 推进（入口文档允许 M4 与 M1–M3 早期并行）。
 
 **当前推进: M4 — WPT dom 上游基线 + 按聚类驱动修复（R5 已 land）**
 - R1 已建：`testharness-dom` 子命令 + `fetch-dom-subset.sh` + `DOM_TEST_SUBDIRS=["dom/nodes"]`；基线 41.25%
@@ -90,7 +90,8 @@
 - R27 已做：① polyfill EventListener handleEvent（part03 `_dispatchToListeners` 的 fire 按类型分支：函数直接 call(this=currentTarget) / 对象 Get handleEvent.call(fn)(this=对象)，每次派发都 Get 支持 getter；handleEvent 非 callable 跳过不抛）② R27 单测（对象 listener handleEvent+this=对象+evt 正确 / getter 每次 Get / 函数 listener 不回归）。EventListener-handleEvent.html 双路径 0P→3P/5；dom/events：polyfill 45.48%→46.75%（144P，+3 pass）、native 39.03%→40.26%（124P，+3 pass，双路径各 +3 同步提升，对等差 6.49pp 基本不变）。engine v8 单测全绿，双矩阵 clippy 干净
 - R28 已做：① polyfill Event.returnValue（part03 `_makeEvent` 用 Object.defineProperty：getter 返 !\_defaultPrevented[canceled flag 反向镜像]，setter 仅 cancelable+false 触发 prevent，true/非cancelable no-op；preventDefault/initEvent 经 _defaultPrevented 自动联动）② R28 单测（7 spec 场景全覆盖：初始/preventDefault cancelable gate/returnValue setter gate/initEvent 重置/已 canceled no-op）。Event-returnValue.html 双路径 0P→7P/7（100%）；dom/events：polyfill 46.75%→49.68%（153P，+9 pass，**突破 49.68% 接近 50%**）、native 40.26%→43.18%（133P，+9 pass，双路径各 +9 同步提升，对等差 6.49pp 不变）。engine v8 单测全绿，双矩阵 clippy 干净
 - R29 已做：① polyfill Event.cancelBubble 改 defineProperty getter/setter（part03 `_makeEvent`：getter 返 `_propagationStopped`[stop propagation flag]，setter true→置 flag 等同 stopPropagation，false→no-op；R26 普通 data 字段升级——外部 `ev.cancelBubble=true` 现有副作用止上溯）② stopPropagation/stopImmediatePropagation 移除冗余 `this.cancelBubble=true`（getter 现读 flag，flag 已设）③ `_dispatchWithBubble` try/finally 重置 `_propagationStopped=false`（spec concept-event-dispatch 步骤14，dispatch 后 cancelBubble 返 false）④ initEvent（part05）移除无效 `this.cancelBubble=false`（R29 setter false no-op），保留 `_propagationStopped=false` 重置 ⑤ R29 单测 4 场景（setter=false no-op / setter=true 置 flag / dispatch 后 flag 清 / 保留 R26 4 场景）。**Event-cancelBubble.html 双路径 4P→8P/8（100%）；dom/events：polyfill 49.68%→52.13%（159P，+6 pass，**突破 52%**）、native 43.18%→45.57%（139P，+6 pass，双路径各 +6 同步提升，对等差 6.49→6.56pp 基本不变）**。engine v8 2097 / quickjs 1410 单测全绿，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R29 后重排）：① **Event-dispatch 系列**（深结构：document/window listener 独立存储 + capture/bubble 含 document/window 链 + document.cloneNode/new Document/new Text 基础设施，~33 个 0-pass 主力但需深改）② 双路径差 6.56pp 收口（WheelEvent 子类链/SubclassedEvent，分散低 ROI）③ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）④ iframe.contentDocument（深结构 html-compat 域）⑤ querySelector-mixed-case（selector 域）⑥ polyfill appendChild 闭环（M1 L2）⑦ 扩 DOM_TEST_SUBDIRS（dom/collections 等）⑧ Event-dispatch-multiple-cancelBubble.html（dispatch 内多次 cancelBubble 状态机，依赖 Event-dispatch 深结构）
+- R30 已做（M0 项 4 收口）：① 核实 cargo-llvm-cov 0.8.7 + llvm-tools-preview **已安装**（推翻 R0「本地未装」记录）② 新建 `scripts/check-dom-bindings-coverage.sh`：cargo llvm-cov -p zero-engine --lib --lcov → 内联 Python 解析，源码/测试分离（src 15 文件 / tests_* 5 文件）+ 逐文件明细 + <90% 提升候选提示 + `--json` 机器可读 + 双 feature 可参数化（`--features v8` 默认 / 透传 quickjs）③ `check-coverage.sh --dom-bindings` 集成（cov run 额外 ~15s，flag 开启不阻默认快路径）④ 基线：**dom_bindings 源码 93.14%（4561/4897）/ 全部 95.15%（6590/6926）**；最低 3 文件 custom_elements 89.0% / css_style_declaration 86.7% / dom_exception 71.4%。基线 JSON 入 evidence。纯脚本+度量零生产代码改动，**M0 里程碑 6/6 项全完成收口**
+- 剩余聚类（按 ROI，R30 后重排）：① **Event-dispatch 系列**（深结构：document/window listener 独立存储 + capture/bubble 含 document/window 链 + document.cloneNode/new Document/new Text 基础设施，~33 个 0-pass 主力但需深改）② dom_bindings coverage 提升（dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%，纯补测试，零碰撞）③ 双路径差 6.56pp 收口（WheelEvent 子类链/SubclassedEvent，分散低 ROI）④ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑤ iframe.contentDocument（深结构 html-compat 域）⑥ querySelector-mixed-case（selector 域）⑦ polyfill appendChild 闭环（M1 L2）⑧ 扩 DOM_TEST_SUBDIRS（dom/collections 等）⑨ Event-dispatch-multiple-cancelBubble.html（dispatch 内多次 cancelBubble 状态机，依赖 Event-dispatch 深结构）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -119,7 +120,7 @@
 | clippy（v8 + quickjs 双矩阵） | `cargo clippy -p zero-engine ...` | ✅ 零警告（双矩阵） |
 | workspace 全量 `make test` | `make test` | ⚠️ 本轮单次超时未跑完（workspace 全量编译+测试+quickjs 矩阵 >580s）；聚焦验证已覆盖变更面（纯测试新增，无生产代码改动） |
 | 行覆盖率（全量） | `scripts/check-coverage.sh` | 95.46%（基线；**本地缺 `cargo-llvm-cov`，本轮无法实测**） |
-| dom_bindings 覆盖率（独立） | 待补口径（M0 项 4） | ❌ 无口径 |
+| dom_bindings 覆盖率（独立） | `scripts/check-dom-bindings-coverage.sh`（R30） | ✅ 源码 93.14%（4561/4897）/ 全部 95.15%，双 feature 可参数化，逐文件明细 |
 | product-smoke | `make product-smoke` | 本轮非渲染热路径变更，A/B 骨架（纯测试）豁免 |
 | bench-gate | `make bench-gate` | 本轮非 JS 桥热路径代码变更，豁免 |
 
@@ -129,7 +130,7 @@
 
 | crate/模块 | 行覆盖率 | 趋势 | 备注 |
 |------------|----------|------|------|
-| dom_bindings（zero-engine 子模块） | ❌ 待补口径 | — | `mod.rs` + 14 子模块 + 5 测试文件（5457 行测试）；M0 项 4 待 `cargo-llvm-cov` 装后补 `check-coverage.sh` 子模块口径 |
+| dom_bindings（zero-engine 子模块） | **源码 93.14%（4561/4897，15 文件）/ 全部 95.15%（20 文件）** | R30 首建基线 | `scripts/check-dom-bindings-coverage.sh`（lcov 解析 + 源码/测试分离 + 逐文件明细）；最低 3 文件 dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%（提升候选）；持续提升不退化 |
 
 **覆盖率口径规则**：不缩范围伪造达标；新代码必带测试；持续提升、不退化。
 
@@ -171,6 +172,7 @@
 | 2026-08-14 | R27 | polyfill EventListener handleEvent（_dispatchToListeners fire 按类型分支：函数 call / 对象 Get handleEvent.call(fn)，每次派发都 Get 支持 getter）+ R27 单测（对象 listener+this=对象+evt / getter 每次 Get / 函数不回归）；engine v8 全绿，双矩阵 clippy 干净 | **EventListener-handleEvent 双路径 0P→3P/5**。dom/events：polyfill 45.48%→46.75%（144P，+3 pass）/ native 39.03%→40.26%（124P，+3 pass，双路径同步提升，对等差 6.49pp 基本不变）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R28 | polyfill Event.returnValue（_makeEvent Object.defineProperty：getter 返 !_defaultPrevented，setter cancelable+false 触发 prevent，true/非cancelable no-op）+ R28 单测（7 spec 场景）；engine v8 全绿，双矩阵 clippy 干净 | **Event-returnValue 双路径 0P→7P/7（100%）**。dom/events：polyfill 46.75%→49.68%（153P，+9 pass，突破 49.68% 接近 50%）/ native 40.26%→43.18%（133P，+9 pass，双路径同步提升，对等差 6.49pp 不变）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R29 | polyfill Event.cancelBubble setter dispatch 副作用（_makeEvent 普通 data 字段→defineProperty getter/setter，后端复用 _propagationStopped；setter true→置 flag 等同 stopPropagation，false→no-op；stopPropagation/stopImmediatePropagation 移除冗余赋值；_dispatchWithBubble finally 重置 flag=spec dispatch 步骤14；initEvent 移除无效 setter 调）+ R29 单测 4 场景（setter no-op/置 flag/dispatch 后 flag 清 + 保留 R26 4）；engine v8 2097 / quickjs 1410 全绿，双矩阵 clippy 干净 | **Event-cancelBubble 双路径 4P→8P/8（100%）**。dom/events：polyfill 49.68%→52.13%（159P，+6 pass，突破 52%）/ native 43.18%→45.57%（139P，+6 pass，双路径同步提升，对等差 6.49→6.56pp 基本不变）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R30 | dom_bindings 独立 coverage 口径（M0 项 4 收口）：核实 cargo-llvm-cov 0.8.7 + llvm-tools 已装（推翻 R0「未装」）+ 新建 `scripts/check-dom-bindings-coverage.sh`（lcov 解析 + 源码/测试分离 + 逐文件明细 + JSON 模式 + 双 feature 参数化）+ `check-coverage.sh --dom-bindings` 集成；纯脚本+度量零生产代码改动 | **dom_bindings 基线：源码 93.14%（4561/4897，15 文件）/ 全部 95.15%（20 文件）**；最低 dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%。基线 JSON 入 evidence。**M0 里程碑 6/6 项全完成收口** |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -180,15 +182,15 @@
 
 ## 下一步计划
 
-1. **R29（本轮，已完成）**：polyfill Event.cancelBubble setter dispatch 副作用（R26 普通 data 字段→defineProperty getter/setter，后端复用 stop propagation flag _propagationStopped；setter true=stopPropagation，false=no-op；dispatch finally 重置 flag）→ land（Event-cancelBubble 双路径 8P/8 100%，dom/events polyfill 52.13% / native 45.57%，各 +6 pass，polyfill 突破 52%）
-2. **下轮候选（按剩余 ROI，R29 后重排）**：
+1. **R30（本轮，已完成）**：dom_bindings 独立 coverage 口径（M0 项 4 收口）→ land（cargo-llvm-cov 已装核实 + `check-dom-bindings-coverage.sh` + 基线 源码 93.14% / 全部 95.15%，M0 里程碑 6/6 项全完成）
+2. **下轮候选（按剩余 ROI，R30 后重排）**：
    - **(a) Event-dispatch 系列**（深结构：document/window listener 独立存储 + cloneNode/new Document/new Text 基础设施 + capture/bubble 含 document/window 链，~33 个 0-pass 主力但需深改，按需评估切片化——可先做最小可独立 land 子集如 document.addEventListener 独立派发）。
-   - **(b) Event-dispatch-multiple-cancelBubble.html**（dispatch 内多次 cancelBubble 状态机，部分依赖 Event-dispatch 深结构，评估独立切片可能）。
-   - **(c) 双路径差 6.56pp 收口**（WheelEvent 子类链/SubclassedEvent，分散低 ROI）。
-   - **(d) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
-   - **(e) querySelector-mixed-case**（selector 域）。
-   - **(f) iframe.contentDocument**（深结构 html-compat 域）。
-   - **(g) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
+   - **(b) dom_bindings coverage 提升**（dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%，纯补测试，零碰撞，DC-4 持续提升）。
+   - **(c) Event-dispatch-multiple-cancelBubble.html**（dispatch 内多次 cancelBubble 状态机，部分依赖 Event-dispatch 深结构，评估独立切片可能）。
+   - **(d) 双路径差 6.56pp 收口**（WheelEvent 子类链/SubclassedEvent，分散低 ROI）。
+   - **(e) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
+   - **(f) querySelector-mixed-case**（selector 域）。
+   - **(g) iframe.contentDocument**（深结构 html-compat 域）。
    - **(h) 主线里程碑推进**：M1 L2 / M6 QuickJS native——均为深结构，评估切片化可能。
 3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
@@ -207,7 +209,7 @@
 
 ## 未解决问题
 
-1. **`cargo-llvm-cov` 本地未安装** → dom_bindings 独立 coverage 口径（M0 项 4）本轮无法实测落地。方案：`cargo install cargo-llvm-cov` + `rustup component add llvm-tools-preview`，再扩 `check-coverage.sh` 加 `cargo llvm-cov -p zero-engine` 子模块报告。本轮记入，下轮处理（安装非阻塞）。
+1. ~~**`cargo-llvm-cov` 本地未安装** → dom_bindings 独立 coverage 口径（M0 项 4）~~ → ✅ **R30 已解**：cargo-llvm-cov 0.8.7 + llvm-tools-preview **已安装**（R30 核实推翻 R0 记录）。`scripts/check-dom-bindings-coverage.sh` 落地，基线 源码 93.14% / 全部 95.15%。**提升候选**：dom_exception 71.4% / css_style_declaration 86.7% / custom_elements 89.0%（纯补测试，下轮候选 b）。
 2. **canvas path-objects 是热碰撞面**：canvas 流（`f7219b2c` 等）正在活跃编辑 `part05.js` canvas 段 + `canvas.rs`。M8 path-objects 接手须等 canvas 流告段落，或确认 part04/05 path-objects 段无并发编辑后再动。碰撞信号点：`git log --since="14 days" -- crates/engine/src/js_dom_shim/part05.js crates/canvas/src/`。
 3. **canvas wpt-data html 子树缺失**：canvas testharness 用例（含 path-objects）需从上游 `web-platform-tests/wpt` 仓库单独导入到 `wpt-data/html/canvas/element/`，`make fetch-wpt-data` 不提供。M8 接手第一动作。
 4. **polyfill appendChild/insertBefore 闭环校验架构限制**（R4 发现）：polyfill 桥的 mutation 经 `__zw_append_child` 回调延迟批处理（`apply_dom_mutations` 在脚本执行后 apply），且 shim 层 `_makeProxy` 只有 selector/handle 无 live 祖先链——无法在 `appendChild` 调用点同步抛 HierarchyRequestError。native 路径已修（R4），polyfill 待 M1 L2 polyfill-live 合一（shim 改读 live Document 后才有祖先链）。
@@ -259,3 +261,4 @@
 - R27：M4 polyfill EventListener handleEvent（对象 listener 调 .handleEvent，EventListener-handleEvent 双路径 3P/5，dom/events 各 +3 pass）→ archive/m4-slice-event-listener-handle-event.md
 - R28：M4 polyfill Event.returnValue（defaultPrevented legacy 镜像，Event-returnValue 双路径 7P/7 100%，dom/events 各 +9 pass，polyfill 突破 49.68% 接近 50%）→ archive/m4-slice-event-return-value.md
 - R29：M4 polyfill Event.cancelBubble setter dispatch 副作用（data 字段→defineProperty getter/setter 后端 _propagationStopped，dispatch finally 重置 flag，Event-cancelBubble 双路径 8P/8 100%，dom/events 各 +6 pass，polyfill 突破 52%）→ archive/m4-slice-event-cancel-bubble-setter.md
+- R30：M0 项 4 dom_bindings 独立 coverage 口径收口（cargo-llvm-cov 已装核实 + check-dom-bindings-coverage.sh lcov 解析源码/测试分离 + check-coverage.sh --dom-bindings 集成 + 基线源码 93.14%/全部 95.15%，M0 里程碑 6/6 项全完成）→ archive/m0-slice-dom-bindings-coverage.md
