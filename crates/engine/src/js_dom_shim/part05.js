@@ -1479,6 +1479,67 @@
       // R34xx：maxWidth 透传（spec fillText(text,x,y,maxWidth)）。
       __zw_canvas_op(h, 'fillText', String(text), String(+x || 0), String(+y || 0), String(maxWidth === undefined ? '' : +maxWidth));
     };
+    // R34xx：fillTextCluster(cluster, x, y)——绘制单个字素簇（spec TextCluster；
+    // 2d.text.measure.fillTextCluster-*.tentative）。簇对象经 measureText().getTextClusters()
+    // 取得（含 x/y 相对文本原点偏移）。经 fillText 宿主路径（当前 font/baseline 生效）。
+    ctx.fillTextCluster = function (cluster, x, y, options) {
+      if (!cluster || typeof cluster !== 'object' || typeof cluster.text !== 'string') {
+        throw new TypeError('fillTextCluster: invalid cluster');
+      }
+      // R34xx：options {align, baseline, x, y}——簇按目标对齐/基线定位（fillTextCluster-
+      // options.tentative：right+bottom 使 em 右下角贴 (x,y)；x/y 覆盖簇自身偏移）。
+      var adv = +cluster.advance || 50;
+      var asc = +cluster.asc || adv * 0.75;
+      var desc = +cluster.desc || -(adv * 0.25);
+      var optX = (options && options.x !== undefined) ? (+options.x || 0) : (+cluster.x || 0);
+      var optY = (options && options.y !== undefined) ? (+options.y || 0) : (+cluster.y || 0);
+      var useAlign = (options && options.align !== undefined) ? String(options.align) : null;
+      var useBaseline = (options && options.baseline !== undefined) ? String(options.baseline) : null;
+      var alignOff = 0;
+      if (useAlign === 'center') alignOff = -adv / 2;
+      else if (useAlign === 'right' || useAlign === 'end') alignOff = -adv;
+      var drawX = (+x || 0) + optX + alignOff;
+      var drawY = (+y || 0) + optY;
+      if (useBaseline !== null) {
+        var oy = 0;
+        if (useBaseline === 'top') oy = asc;
+        else if (useBaseline === 'middle') oy = (asc + desc) / 2;
+        else if (useBaseline === 'bottom') oy = desc;
+        else if (useBaseline === 'hanging') oy = asc * (2 / 3);
+        drawY += oy - asc;
+      }
+      __zw_canvas_op(h, 'fillText', String(cluster.text),
+        String(drawX), String(drawY));
+    };
+    // R34xx：strokeTextCluster（spec TextCluster——与 fillTextCluster 对称，描边绘制）。
+    ctx.strokeTextCluster = function (cluster, x, y, options) {
+      if (!cluster || typeof cluster !== 'object' || typeof cluster.text !== 'string') {
+        throw new TypeError('strokeTextCluster: invalid cluster');
+      }
+      // R34xx：与 fillTextCluster 同 options 语义（描边版）。
+      var adv = +cluster.advance || 50;
+      var asc = +cluster.asc || adv * 0.75;
+      var desc = +cluster.desc || -(adv * 0.25);
+      var optX = (options && options.x !== undefined) ? (+options.x || 0) : (+cluster.x || 0);
+      var optY = (options && options.y !== undefined) ? (+options.y || 0) : (+cluster.y || 0);
+      var useAlign = (options && options.align !== undefined) ? String(options.align) : null;
+      var useBaseline = (options && options.baseline !== undefined) ? String(options.baseline) : null;
+      var alignOff = 0;
+      if (useAlign === 'center') alignOff = -adv / 2;
+      else if (useAlign === 'right' || useAlign === 'end') alignOff = -adv;
+      var drawX = (+x || 0) + optX + alignOff;
+      var drawY = (+y || 0) + optY;
+      if (useBaseline !== null) {
+        var oy = 0;
+        if (useBaseline === 'top') oy = asc;
+        else if (useBaseline === 'middle') oy = (asc + desc) / 2;
+        else if (useBaseline === 'bottom') oy = desc;
+        else if (useBaseline === 'hanging') oy = asc * (2 / 3);
+        drawY += oy - asc;
+      }
+      __zw_canvas_op(h, 'strokeText', String(cluster.text),
+        String(drawX), String(drawY));
+    };
     ctx.strokeText = function (text, x, y) {
       __zw_canvas_op(h, 'strokeText', String(text), String(+x || 0), String(+y || 0));
     };
@@ -1491,6 +1552,10 @@
       var parts = raw.split('|');
       var p = parts[0].split(',');
       var anchor = parseFloat(parts[2]) || 0;
+      // R34xx：getTextClusters 默认 align/baseline 取 ctx 当前状态（方法内 this = tm）。
+      var ctxTa = this._ta;
+      var ctxTb = this._tb;
+      var ctxDir = this._dir;
       var num = function (i) { return parseFloat(p[i]) || 0; };
       var glyphs = [];
       if (parts[1]) {
@@ -1509,11 +1574,114 @@
         actualBoundingBoxRight: num(4),
         fontBoundingBoxAscent: num(5),
         fontBoundingBoxDescent: num(6),
+        // R34xx：emHeight*（spec TextMetrics——em 盒顶/底距基线；fontBoundingBox 同源）。
+        emHeightAscent: num(5),
+        emHeightDescent: num(6),
         alphabeticBaseline: num(7),
         hangingBaseline: num(8),
         ideographicBaseline: num(9),
         // R34xx：getActualBoundingBox(start, end)——[start, end) 字形墨迹并集矩形
         //（相对文本原点；无字体栈/空区间 → 空矩形 {0,0,0,0}）。
+        // R34xx：getTextClusters(start, end)——UAX#29 字素簇分段（GB9 ZWJ/Extend、
+        // GB11 emoji ZWJ 序列近似——2d.text.measure.text-clusters-*.tentative）。
+        // 每簇 {start, end, text, x, y, width, height, advance, offsetInText}。
+        getTextClusters: function (start, end) {
+          // R34xx：options 形式 getTextClusters({align, baseline})——簇位置按目标
+          // align/baseline 计算（text-clusters-position.tentative）。
+          var optAlign = null, optBaseline = null;
+          if (start && typeof start === 'object' && !Array.isArray(start)) {
+            var opts = start;
+            start = 0;
+            end = text.length;
+            optAlign = opts.align !== undefined ? String(opts.align) : null;
+            optBaseline = opts.baseline !== undefined ? String(opts.baseline) : null;
+          }
+          start = start === undefined ? 0 : (+start || 0);
+          end = end === undefined ? text.length : (+end || 0);
+          if (start < 0 || end < 0) {
+            throw new TypeError('getTextClusters: invalid range');
+          }
+          if (start > end || end > text.length) {
+            throw _zwDomException('getTextClusters: invalid range', 'IndexSizeError');
+          }
+          var extRe = /[\u0300-\u036f\u0483-\u0489\u0591-\u05bd\u05bf\u05c1-\u05c2\u05c4-\u05c5\u05c7\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7-\u06e8\u06ea-\u06ed\u0711\u0730-\u074a\u07a6-\u07b0\u07eb-\u07f3\u0816-\u0819\u081b-\u0823\u0825-\u0827\u0829-\u082d\u0859-\u085b\u08d3-\u08e1\u08e3-\u0903\u093a-\u093c\u093e-\u094f\u0951-\u0957\u0962-\u0963\u0981-\u0983\u09bc\u09be-\u09c4\u09c7-\u09c8\u09cb-\u09cd\u09d7\u09e2-\u09e3\u0a01-\u0a03\u0a3c\u0a3e-\u0a42\u0a47-\u0a48\u0a4b-\u0a4d\u0a51\u0a70-\u0a71\u0a75\u0a81-\u0a83\u0abc\u0abe-\u0ac5\u0ac7-\u0ac9\u0acb-\u0acd\u0ae2-\u0ae3\u0b01-\u0b03\u0b3c\u0b3e-\u0b44\u0b47-\u0b48\u0b4b-\u0b4d\u0b56-\u0b57\u0b62-\u0b63\u0b82\u0bbe-\u0bc2\u0bc6-\u0bc8\u0bca-\u0bcd\u0bd7\u0c00-\u0c04\u0c3e-\u0c44\u0c46-\u0c48\u0c4a-\u0c4d\u0c55-\u0c56\u0c62-\u0c63\u0c81-\u0c83\u0cbc\u0cbe-\u0cc4\u0cc6-\u0cc8\u0cca-\u0ccd\u0cd5-\u0cd6\u0ce2-\u0ce3\u0d00-\u0d03\u0d3b-\u0d3c\u0d3e-\u0d44\u0d46-\u0d48\u0d4a-\u0d4d\u0d57\u0d62-\u0d63\u0d82-\u0d83\u0dca\u0dcf-\u0dd4\u0dd6\u0dd8-\u0ddf\u0df2-\u0df3\u0e31\u0e34-\u0e3a\u0e47-\u0e4e\u0eb1\u0eb4-\u0ebc\u0ec8-\u0ecd\u0f18-\u0f19\u0f35\u0f37\u0f39\u0f3e-\u0f3f\u0f71-\u0f84\u0f86-\u0f87\u0f8d-\u0f97\u0f99-\u0fbc\u0fc6\u102b-\u103e\u1056-\u1059\u105e-\u1060\u1062-\u1064\u1067-\u106d\u1071-\u1074\u1082-\u108d\u108f\u109a-\u109d\u135d-\u135f\u1712-\u1714\u1732-\u1734\u1752-\u1753\u1772-\u1773\u17b4-\u17d3\u17dd\u180b-\u180d\u1885-\u1886\u18a9\u1920-\u192b\u1930-\u193b\u1a17-\u1a1b\u1a55-\u1a5e\u1a60-\u1a7c\u1a7f\u1ab0-\u1abe\u1b00-\u1b04\u1b34-\u1b44\u1b6b-\u1b73\u1b80-\u1b82\u1ba1-\u1bad\u1be6-\u1bf3\u1c24-\u1c37\u1cd0-\u1cd2\u1cd4-\u1ce8\u1ced\u1cf2-\u1cf4\u1cf8-\u1cf9\u1dc0-\u1df9\u1dfb-\u1dff\u200c\u200d\u20d0-\u20f0\u2cef-\u2cf1\u2d7f\u2de0-\u2dff\u302a-\u302f\u3099-\u309a\ua66f\ua670-\ua672\ua674-\ua67d\ua69e-\ua69f\ua6f0-\ua6f1\ua802\ua806\ua80b\ua823-\ua827\ua880-\ua881\ua8b4-\ua8c5\ua8e0-\ua8f1\ua926-\ua92d\ua947-\ua953\ua980-\ua983\ua9b3-\ua9c0\ua9e5\uaa29-\uaa36\uaa43\uaa4c\uaa4d\uaa7b-\uaa7d\uaab0\uaab2-\uaab4\uaab7-\uaab8\uaabe-\uaabf\uaac1\uaaeb-\uaaef\uaaf5-\uaaf6\uabe3-\uabea\uabec\uabed\ufb1e\ufe00-\ufe0f\ufe20-\ufe2f\ufe33-\ufe34\ufe4d-\ufe4f\uff9e-\uff9f]/;
+          var clusters = [];
+          // 代理对原子性：高代理 + 低代理 = 一个字符单元（1FFFD 等 astral 字符）。
+          function unitLen(t, pos) {
+            var c = t.charCodeAt(pos);
+            if (c >= 0xd800 && c <= 0xdbff && pos + 1 < t.length) return 2;
+            return 1;
+          }
+          var i = start;
+          while (i < end) {
+            var j = i + unitLen(text, i);
+            // GB9：Extend / ZWJ 附加到前簇（跳过代理对——extRe 仅 BMP）。
+            while (j < end) {
+              var ul = unitLen(text, j);
+              if (ul === 1 && extRe.test(text.charAt(j))) {
+                j += 1;
+              } else {
+                break;
+              }
+            }
+            // GB11：Extended_Pictographic Extend* ZWJ × Extended_Pictographic——
+            // 仅簇首为 emoji 时 ZWJ 链式并入（'X\u200DY' 的 X 非 emoji → 拆两簇）。
+            var firstCp = text.codePointAt(i);
+            var isEmoji = (firstCp >= 0x2600 && firstCp <= 0x27bf) ||
+                          (firstCp >= 0x1f000 && firstCp <= 0x1faff) ||
+                          firstCp === 0x1fffd;
+            while (isEmoji && j < end && text.charAt(j - 1) === '\u200d') {
+              j += unitLen(text, j);
+              while (j < end) {
+                var ul2 = unitLen(text, j);
+                if (ul2 === 1 && extRe.test(text.charAt(j))) {
+                  j += 1;
+                } else {
+                  break;
+                }
+              }
+            }
+            // 簇位置：options align/baseline 优先，否则当前 ctx 状态；x/y = 原点到
+            // 簇左/顶的正向距离（position.tentative 的 center→20/right→40/bottom→40）。
+            var useAlign = optAlign !== null ? optAlign : ctxTa;
+            var useBaseline = optBaseline !== null ? optBaseline : ctxTb;
+            var asc = num(5), desc = num(6);
+            var oy = 0;
+            if (useBaseline === 'top') oy = asc;
+            else if (useBaseline === 'middle') oy = (asc - desc) / 2;
+            else if (useBaseline === 'bottom') oy = -desc;
+            else if (useBaseline === 'hanging') oy = asc * (2 / 3);
+            else if (useBaseline === 'ideographic') oy = -desc * 0.625;
+            var w = num(0);
+            var anch = 0;
+            if (useAlign === 'center') anch = -w / 2;
+            else if (useAlign === 'right' || (useAlign === 'end')) anch = -w;
+            else if (useAlign === 'start' && ctxDir === 'rtl') anch = -w;
+            // R34xx：簇位置 = em 基准（position.tentative：x 按字符位置、y 按 em 顶距
+            // 原点——top=0/middle=20/bottom=40/alphabetic=30 @40px；draw 用同约定）。
+            var perChar = text.length > 0 ? w / text.length : 0;
+            var charCount = j - i;
+            var cl = Math.abs(anch + i * perChar);
+            var ct = Math.abs(oy - asc);
+            var cr = anch + (i + charCount) * perChar;
+            var adv = perChar * charCount;
+            clusters.push({
+              start: i,
+              end: j,
+              text: text.slice(i, j),
+              x: cl,
+              y: ct,
+              width: cr - cl,
+              height: adv,
+              advance: adv,
+              asc: asc,
+              desc: -desc, // fontdue 约定（负值——oy 计算用 (asc+desc)/2、bottom=desc）
+              offsetInText: i
+            });
+            i = j;
+          }
+          return clusters;
+        },
         getActualBoundingBox: function (start, end) {
           // R34xx：WebIDL unsigned long 校验（负/非有限 → TypeError；start > end →
           // IndexSizeError——getActualBoundingBox-exceptions.tentative）。

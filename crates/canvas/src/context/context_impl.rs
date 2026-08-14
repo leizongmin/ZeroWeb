@@ -191,18 +191,22 @@ impl CanvasContext {
     /// 逐 glyph 灰度位图 alpha 混合进 pixel_buffer（2d.text.draw.* 像素断言）。
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32, max_width: Option<f32>) {
         let color = self.apply_alpha(self.fill_style.resolve_color());
+        self.draw_text_glyphs(text, x, y, color, max_width);
+    }
+
+    /// 描边文本。R34xx：与 fill_text 同真字体路径（shape + 墨迹 blit——描边以填充近似，
+    /// strokeTextCluster 等 WPT 断言字形覆盖；精确 outline 描边为深缺口）。
+    pub fn stroke_text(&mut self, text: &str, x: f32, y: f32, max_width: Option<f32>) {
+        let color = self.apply_alpha(self.stroke_style.resolve_color());
+        self.draw_text_glyphs(text, x, y, color, max_width);
+    }
+
+    /// R34xx：真字体光栅共用路径（shape + 逐 glyph 位图 blit + primitives）——fill_text 与
+    /// stroke_text 共用。无字体栈 → 仅 primitives 启发式（不写像素）。
+    fn draw_text_glyphs(&mut self, text: &str, x: f32, y: f32, color: Color, max_width: Option<f32>) {
         let font_size = self.font.size;
-        // R34xx：textAlign/textBaseline 应用到绘制位置（2d.text.draw.align.* /
-        // baseline.*）。对齐宽度 = em 方块数 × 字号（spec：align 定位以 em 方块为基准，
-        // 非字形 advance——2d.text.draw.align.center 期望 'DD' 50px 占满 100px）。
-        // 基线偏移按字体真实 ascent/descent（line_metrics；无字体栈回落 0.8/0.2em）：
-        // Top=+ascent、Hanging=+0.5em、Middle=+(ascent−descent)/2、Ideographic=+descent、
-        // Bottom=−descent（WPT baseline.* 的 em 方块定位几何推导）。
+        // 对齐/基线偏移（与 fill_text 同——R34xx 推导的 em 方块定位）。
         let width = text.chars().count() as f32 * font_size;
-        // R34xx：maxWidth（spec fillText(text,x,y,maxWidth)——文本自然宽度 > maxWidth 时
-        // 整体缩放至 advance 宽 = maxWidth；2d.text.draw.fill.maxWidth.*）。缩放同时作用于
-        // 对齐宽度与字形（光栅字号 × scale）。自然宽度取 shape 后 advances 和（无字体栈时
-        // 0.6em/字符 近似——host 恒传字体栈场景）。
         let rtl = matches!(self.direction, TextDirection::Rtl);
         let ox = match self.text_align {
             TextAlign::Center => -width / 2.0,
@@ -231,10 +235,6 @@ impl CanvasContext {
                 .unwrap_or((font_size * 0.8, font_size * 0.2)),
             _ => (font_size * 0.8, font_size * 0.2),
         };
-        // R34xx：fontdue 的 descent 为**负值**（CanvasTest: 37.5/−12.5）——em 盒 =
-        // [−ascent, +descent]。WPT baseline.* 的 em 方块定位（实测迭代）：
-        // Top=+ascent、Hanging=+0.5em、Middle=(ascent+descent)/2（em 中点）、
-        // Ideographic=+0.125em、Alphabetic=0、Bottom=descent（em 底 = y）。
         let oy = match self.text_baseline {
             TextBaseline::Top => ascent,
             TextBaseline::Hanging => font_size * 0.5,
@@ -244,8 +244,6 @@ impl CanvasContext {
             TextBaseline::Bottom => descent,
         };
         let (tx, ty) = self.transform.transform_point(x + ox, y + oy);
-        // R34xx：真实字体光栅路径——shape + 逐 glyph 位图 blit（CPU 像素）。无字体栈 →
-        // 回落旧启发式（仅 primitives，不写像素）。
         if let Some(font_id) = self.font_id
             && let Some(loader) = self.font_loader.clone()
             && let Ok(loader) = loader.lock()
@@ -260,8 +258,6 @@ impl CanvasContext {
                 loader.shape_text_cached(font_id, text, font_size)
             }
         {
-            // R34xx：maxWidth 缩放（spec：自然 advance 宽 > maxWidth → 整体缩放至 maxWidth；
-            // 对齐宽度同步缩放——2d.text.draw.fill.maxWidth.fontface）。
             let natural: f32 = shaped.iter().map(|g| g.advance_x).sum::<f32>().abs();
             let scale = match max_width {
                 Some(mw) if mw > 0.0 && natural > mw => mw / natural,
@@ -271,7 +267,6 @@ impl CanvasContext {
             for g in &shaped {
                 let glyph_index = g.glyph_id.min(u32::from(u16::MAX)) as u16;
                 if let Ok(bmp) = loader.rasterize_glyph_index(font_id, glyph_index, g.font_size * scale) {
-                    // glyph_top_left 同款坐标换算（fontdue y-up 度量 → 屏幕 y-down）。
                     let (gx, gy) = (
                         pen_x + g.x_offset * scale + bmp.x_offset as f32,
                         ty - bmp.y_offset as f32 - bmp.height as f32,
@@ -295,10 +290,8 @@ impl CanvasContext {
                         synthetic_italic: false,
                     });
                 pen_x += g.advance_x * scale;
-                // R34xx：letterSpacing/wordSpacing（每字符簇加 letter——与 measureText 一致）。
                 let ls = parse_length_px(&self.font.letter_spacing, font_size).unwrap_or(0.0);
                 pen_x += ls * scale;
-                // 词分隔 glyph（space）后加 wordSpacing。
                 if g.glyph_id == 7 {
                     let ws = parse_length_px(&self.font.word_spacing, font_size).unwrap_or(0.0);
                     pen_x += ws * scale;
@@ -306,35 +299,6 @@ impl CanvasContext {
             }
             return;
         }
-        let em_width = font_size * 0.6;
-        let mut offset_x = 0.0f32;
-        for ch in text.chars() {
-            let glyph_id = ch as u32;
-            self.primitives
-                .add_glyph(zero_render_foundation::primitive::GlyphPrimitive {
-                    x: tx + offset_x,
-                    y: ty,
-                    font_size,
-                    color,
-                    glyph_id,
-                    font_glyph_index: None,
-                    source: None,
-                    font_id: zero_render_foundation::primitive::FontId(0),
-                    font_variation_id: None,
-                    bitmap_width: None,
-                    bitmap_height: None,
-                    rotation: 0.0,
-                    synthetic_italic: false,
-                });
-            offset_x += em_width;
-        }
-    }
-
-    /// 描边文本。与 fill_text 相同逻辑，使用描边颜色。
-    pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) {
-        let color = self.apply_alpha(self.stroke_style.resolve_color());
-        let font_size = self.font.size;
-        let (tx, ty) = self.transform.transform_point(x, y);
         let em_width = font_size * 0.6;
         let mut offset_x = 0.0f32;
         for ch in text.chars() {
@@ -377,7 +341,9 @@ impl CanvasContext {
         let (width, ascent, descent, ink_l, ink_t, ink_r, ink_b) = match (self.font_loader.clone(), self.font_id) {
             (Some(loader), Some(fid)) => {
                 if let Ok(loader) = loader.lock() {
-                    let shaped = loader.shape_text_cached(fid, text, size).unwrap_or_default();
+                    // R34xx：null 字符（U+0000）剥离（spec——width.nullCharacter 期望 0）。
+                    let clean: String = text.chars().filter(|c| *c != '\0').collect();
+                    let shaped = loader.shape_text_cached(fid, &clean, size).unwrap_or_default();
                     let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
                     // R34xx：letterSpacing（含末字符——WPT ×11 期望）与 wordSpacing。
                     let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
@@ -429,8 +395,10 @@ impl CanvasContext {
             _ => {
                 let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
                 let ws = parse_length_px(&self.font.word_spacing, size).unwrap_or(0.0);
-                let w = char_count * (size * 0.6)
-                    + ls * char_count
+                // R34xx：null 字符（U+0000）不占宽（2d.text.measure.width.nullCharacter）。
+                let ink_chars = text.chars().filter(|c| *c != '\0').count() as f32;
+                let w = ink_chars * (size * 0.6)
+                    + ls * ink_chars
                     + ws * text.split_whitespace().count().saturating_sub(1) as f32;
                 (w, size * 0.8, size * 0.2, 0.0, 0.0, 0.0, 0.0)
             }

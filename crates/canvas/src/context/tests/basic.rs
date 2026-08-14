@@ -295,7 +295,7 @@ fn test_canvas_set_stroke_color() {
 #[test]
 fn test_canvas_stroke_text() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.stroke_text("hello", 10.0, 20.0);
+    ctx.stroke_text("hello", 10.0, 20.0, None);
     // 每个字符生成一个 glyph
     assert_eq!(ctx.primitives().glyphs.len(), 5);
 }
@@ -674,7 +674,7 @@ fn test_canvas_text_produces_glyphs() {
     let mut ctx = CanvasContext::new(400, 300);
     ctx.fill_text("Hello", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs.len(), 5); // 5 chars
-    ctx.stroke_text("World", 10.0, 50.0);
+    ctx.stroke_text("World", 10.0, 50.0, None);
     assert_eq!(ctx.primitives().glyphs.len(), 10); // 5 + 5 chars
 }
 
@@ -966,7 +966,7 @@ fn test_fill_text_glyph_positions_offset() {
 fn test_stroke_text_uses_stroke_color() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.set_stroke_color(Color::RED);
-    ctx.stroke_text("X", 10.0, 20.0);
+    ctx.stroke_text("X", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs[0].color, Color::RED);
 }
 
@@ -991,7 +991,7 @@ fn test_fill_text_empty_string() {
 #[test]
 fn test_stroke_text_empty_string() {
     let mut ctx = CanvasContext::new(200, 200);
-    ctx.stroke_text("", 10.0, 20.0);
+    ctx.stroke_text("", 10.0, 20.0, None);
     assert_eq!(ctx.primitives().glyphs.len(), 0);
 }
 

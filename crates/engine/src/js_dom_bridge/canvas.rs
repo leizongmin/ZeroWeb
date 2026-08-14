@@ -351,7 +351,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "strokeText" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.fill_text(arg(0), f(1), f(2), None); // canvas crate 无独立 stroke_text；近似 fill_text（headless 简化）
+                // R34xx：真描边色路径（stroke_text——与 fill_text 同真字体光栅）。
+                let mw = f(3);
+                ctx.stroke_text(arg(0), f(1), f(2), (mw.is_finite() && mw > 0.0).then_some(mw));
             }
             "ok".into()
         }
