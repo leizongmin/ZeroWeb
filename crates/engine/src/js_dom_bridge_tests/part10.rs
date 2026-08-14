@@ -2302,3 +2302,84 @@ fn test_request_headers_guard_r3223() {
 }
 
 
+
+#[test]
+fn test_htmlcollection_nameditem_empty_and_children_is_htmlcollection_r38() {
+    // R38：spec `dom-htmlcollection` namedItem / named getter——空串**不是** supported property name
+    //（HTMLCollection supported property names 排除空串）。元素空 id/name（`<div id>`）不应被空串命中。
+    // WPT HTMLCollection-empty-name：namedItem("")===null、c[""]===undefined、"" in c===false。
+    // 另：Element.children 返 HTMLCollection（带 namedItem），旧返纯数组缺 namedItem。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='test'><div class='a' id></div><div class='a' name></div><a class='a' name></a></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 元素级 getElementsByTagName 的 namedItem("") 守卫（返 null，不命中空 id/name 元素）。
+    sandbox
+        .execute(
+            "var c = document.getElementById('test').getElementsByTagName('*');\n\
+             globalThis.__ni_empty = String(c.namedItem(''));\n\
+             globalThis.__br_empty = String(c['']);\n\
+             globalThis.__in_empty = ('' in c);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ni_empty").unwrap().value,
+        "null",
+        "namedItem('') === null（空串非 supported property name）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__br_empty").unwrap().value,
+        "undefined",
+        "c[''] === undefined（空串非 named getter）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__in_empty)").unwrap().value,
+        "false",
+        "'' in c === false（空串非 named property）"
+    );
+
+    // ② Element.children 返 HTMLCollection（带 namedItem，空串守卫）。
+    sandbox
+        .execute(
+            "var ch = document.getElementById('test').children;\n\
+             globalThis.__children_has_namedItem = (typeof ch.namedItem === 'function');\n\
+             globalThis.__children_namedItem_empty = String(ch.namedItem(''));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__children_has_namedItem)").unwrap().value,
+        "true",
+        "Element.children 返 HTMLCollection（带 namedItem 方法）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__children_namedItem_empty").unwrap().value,
+        "null",
+        "Element.children.namedItem('') === null（R38 空串守卫）"
+    );
+
+    // ③ 正向 namedItem（非空 name）仍正常工作：getElementsByClassName 命中 class。
+    sandbox
+        .execute(
+            "var ac = document.getElementsByTagName('a');\n\
+             globalThis.__ni_anchor = (ac.namedItem('') === null) && (ac.length > 0);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ni_anchor)").unwrap().value,
+        "true",
+        "正向 namedItem 不受空串守卫影响（非空名仍查，空名 null）"
+    );
+}

@@ -1,0 +1,30 @@
+{
+  "round": "R38",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (collections)",
+  "slice": "HTMLCollection namedItem empty-string guard + Element.children returns HTMLCollection",
+  "context": "R37 dom/collections baseline 22.9%. HTMLCollection own-property enumeration (~19 fail) diagnosed as deep structure (live + full indexed/named property semantics + numeric edge). Pivoted to lighter HTMLCollection-empty-name.html (7 subtest, 1P/6F).",
+  "diagnosis": {
+    "nameditem_empty": "element-level collection namedItem('') hit empty-id/name element (<div id> getAttribute('id')='') -> returned element instead of null; spec dom-htmlcollection supported property names exclude empty string",
+    "doc_vs_elem": "document-level getElementsByTagName('*') returned length=0 (independent __zw_query_all '*' bug) -> doc-level namedItem('') passed by luck (no elements to hit); element-level length=3 correct -> hit empty-id element",
+    "element_children": "Element.children returned plain array (not via _zwMakeCollection) -> c.namedItem('') threw TypeError (no namedItem method)"
+  },
+  "implementation": {
+    "nameditem_guard": "part05.js _zwMakeCollection namedItem: `if (n === '') return null;` at entry",
+    "element_children": "part04.js get trap 'children': wrap via _zwMakeCollection(arr, true) instead of plain array; _splitSelectors already .map(_wrapSelector)"
+  },
+  "results": {
+    "empty_name_polyfill": { "pass": 7, "fail": 0, "prev": "1P/6F", "rate": "100%" },
+    "empty_name_native": { "pass": 7, "fail": 0, "prev": "1P/6F", "gap_pp": "0 (equivalent)" },
+    "dom_collections_polyfill_full": { "pass": 17, "fail": 31, "timeout": 1, "prev": "11P/37F/1TO (22.9%)", "rate": "35.4%", "delta": "+6 pass" },
+    "dom_events_regression": { "pass": 177, "fail": 150, "prev": "177P/151F", "delta": "+1 pass, zero regression" }
+  },
+  "deferred_deep_structure": "HTMLCollection own-property enumeration (supported-property-names/own-props/indices ~19 fail) — live collection + full indexed/named property get/set/has/delete/ownKeys + numeric-id edge; also document-level getElementsByTagName('*') returns empty (independent __zw_query_all bug).",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r38_unit_test": "test_htmlcollection_nameditem_empty_and_children_is_htmlcollection_r38 (namedItem empty guard + children HTMLCollection + positive namedItem)",
+    "v8_engine_lib": "2115 passed (R37 baseline 2114 +1)",
+    "quickjs_engine_lib": "1411 passed (zero regression, existing children.length/[0] usage intact)"
+  }
+}

@@ -334,8 +334,12 @@
         }
         // 元素遍历/导航 API（仅元素子/兄弟，跳过文本/注释）。handle（脱离 DOM，无 sel）→ null/[]。
         if (prop === 'children') {
+          // js-dom M4 R38：`Element.children` 返 HTMLCollection（spec `dom-parentnode-children`，带
+          // item/namedItem + indexed/named properties）。旧返纯数组缺 namedItem（WPT HTMLCollection-empty-name
+          // "Element.children" fail：`c.namedItem("")` 抛 TypeError）。经 _zwMakeCollection(true) 包成
+          // HTMLCollection（含 R38 namedItem 空串守卫）。_splitSelectors 已 .map(_wrapSelector) 返 proxy 数组。
           return sel && typeof __zw_element_children === 'function'
-            ? _splitSelectors(__zw_element_children(sel)) : [];
+            ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true) : _zwMakeCollection([], true);
         }
         if (prop === 'firstElementChild' || prop === 'lastElementChild' || prop === 'childElementCount') {
           // R2927：容器 handle（shadow/fragment）从 registry 读元素子（无 selector，须 registry）。

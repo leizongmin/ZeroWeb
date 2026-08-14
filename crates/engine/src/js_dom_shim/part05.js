@@ -2555,6 +2555,11 @@
       Object.defineProperty(a, 'namedItem', {
         value: function (name) {
           var n = String(name);
+          // js-dom M4 R38：spec `dom-htmlcollection` namedItem / named getter——空串**不是** supported
+          // property name（HTMLCollection supported property names 排除空串，WPT HTMLCollection-empty-name：
+          // `namedItem("")===null`、`c[""]===undefined`、`"" in c===false`）。元素空 id/name（`<div id>`）
+          // 不应被空串命中。
+          if (n === '') return null;
           for (var k = 0; k < a.length; k++) {
             var el = a[k];
             if (!el) continue;
