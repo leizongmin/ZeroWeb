@@ -1713,6 +1713,45 @@
         ideographicBaseline: num(11),
         // R34xx：getActualBoundingBox(start, end)——[start, end) 字形墨迹并集矩形
         //（相对文本原点；无字体栈/空区间 → 空矩形 {0,0,0,0}）。
+        // R34xx：getSelectionRects(start, end)——[start, end) 字形墨迹矩形序列（spec
+        // TextMetrics 新方法——selection-rects-exceptions.tentative 的索引校验；
+        // 与 DOM Range.getClientRects 对照的主测试依赖 DOM 文本几何，待 DOM 布局面）。
+        // 校验：负/非有限 → TypeError；越文本长度 → IndexSizeError；start>end（均在
+        // 范围内）→ 空序列（与 DOM 反向 range 的 getClientRects()=[] 一致）。
+        getSelectionRects: function (start, end) {
+          start = +start;
+          if (!isFinite(start) || start < 0) throw new TypeError('getSelectionRects: invalid start');
+          if (end === undefined || end === null) {
+            end = glyphs.length;
+          } else {
+            end = +end;
+            if (!isFinite(end) || end < 0) throw new TypeError('getSelectionRects: invalid end');
+          }
+          if (start > text.length || end > text.length) {
+            throw _zwDomException('getSelectionRects: out of range', 'IndexSizeError');
+          }
+          var rects = [];
+          for (var i = start; i < end && i < glyphs.length; i++) {
+            var r = glyphs[i];
+            if (r[2] <= r[0] && r[3] <= r[1]) continue; // 空墨迹（空格等）
+            rects.push(_makeDomRect(r[0], r[1], r[2] - r[0], r[3] - r[1]));
+          }
+          return rects;
+        },
+        // R34xx：getIndexFromOffset(x, y)——命中测试（spec TextMetrics 新方法——
+        // index-from-offset 系列与 DOM caretPositionFromPoint 对照，待 DOM 布局面；
+        // 本实现按字形墨迹矩形命中，返首个命中 glyph 的字符索引）。
+        getIndexFromOffset: function (x, y) {
+          x = +x;
+          y = +y;
+          if (!isFinite(x) || !isFinite(y)) throw new TypeError('getIndexFromOffset: invalid point');
+          for (var i = 0; i < glyphs.length; i++) {
+            var r = glyphs[i];
+            if (r[2] <= r[0] && r[3] <= r[1]) continue;
+            if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]) return i;
+          }
+          return glyphs.length;
+        },
         // R34xx：getTextClusters(start, end)——UAX#29 字素簇分段（GB9 ZWJ/Extend、
         // GB11 emoji ZWJ 序列近似——2d.text.measure.text-clusters-*.tentative）。
         // 每簇 {start, end, text, x, y, width, height, advance, offsetInText}。
