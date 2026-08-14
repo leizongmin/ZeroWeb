@@ -12,7 +12,7 @@ use zero_engine::{
     make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
     register_dom_callbacks,
 };
-use zero_net::{HttpClient, HttpMethod, HttpRequest};
+use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
@@ -404,12 +404,12 @@ fn js_worker_main(
     }
 }
 
-/// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::HttpClient::send` 发起真实 HTTP 请求，
+/// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::ResourceLoader` 发起真实 HTTP 请求，
 /// 支持全方法（GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS）、请求头、请求体，返 [`FetchResponse`]（status/
 /// status_text/headers/body）。renderer 进程直接联网（与 browser `tab_js_worker::default_fetch_handler`
 /// 同实现）。GET 行为零回归（method 默认 GET、body=None）。
 ///
-/// `FetchBridge::register` 在**子线程**调本 handler（`send()` 阻塞子线程，非 JS worker），故 JS worker
+/// `FetchBridge::register` 在**子线程**调本 handler（等待加载器结果时阻塞子线程，非 JS worker），故 JS worker
 /// 不在 fetch 期间冻结。Response 对象 spec-compliance 由 shim `_makeResponseFromWire` 在 JS 侧包装。
 pub fn default_fetch_handler() -> FetchHandler {
     Arc::new(|req: &FetchRequest| {
@@ -432,8 +432,10 @@ pub fn default_fetch_handler() -> FetchHandler {
                 .clone()
                 .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec())),
         };
-        let resp = HttpClient::new()
-            .send(http_req)
+        let resp = ResourceLoader::shared()
+            .submit_http(http_req, FetchPriority::MEDIUM)
+            .recv()
+            .map_err(|_| "fetch loader worker exited".to_string())?
             .map_err(|e| format!("fetch send: {e}"))?;
         Ok(FetchResponse {
             status: resp.status_code,
