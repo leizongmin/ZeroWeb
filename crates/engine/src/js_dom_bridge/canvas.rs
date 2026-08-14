@@ -384,7 +384,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     glyphs,
                     // R34xx：对齐锚定（getActualBoundingBox 的 rect 钳制原点侧——
                     // full-bounds 与 API rect 同约定）。
-                    alignment_anchor(&ctx, m.width),
+                    alignment_anchor(ctx, m.width),
                 )
             } else {
                 // 无 ctx → 全 0（与既有 0 width 同语义）。
