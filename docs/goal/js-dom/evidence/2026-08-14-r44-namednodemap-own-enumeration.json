@@ -1,0 +1,40 @@
+{
+  "round": "R44",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (collections)",
+  "slice": "NamedNodeMap supported property names (ownKeys/getOwnPropertyDescriptor/named getter)",
+  "context": "R43 plan candidate (d): namednodemap-supported-property-names 3 fail — Object.getOwnPropertyNames(el.attributes) returned [] (Proxy over {} with no ownKeys trap).",
+  "implementation": {
+    "own_keys": "_attributesProxy handler gains ownKeys trap: [numeric indices..., attribute names...] in document order (spec dom-namednodemap-supported-property-names).",
+    "gopd": "getOwnPropertyDescriptor returns data-property descriptors (enumerable for indexed/named, length non-enumerable) — Proxy invariant requires every ownKeys entry to have a descriptor.",
+    "named_getter": "get trap falls through to a named branch: attrs.<name> returns the Attr node when <name> is a current attribute name (matches the enumeration; unlocked el.attributes.<name> access patterns in dom/nodes)."
+  },
+  "diagnosis_not_fixed": {
+    "query_selector_mixed_case": "Test 1 [viewBox] passes; Test 2 [viewbox] gets 0. Root cause is NOT selector matching (zero-dom has_attribute already lowercases HTML-namespace attribute names via attr_name_effective while SVG stays exact) — the test builds a DETACHED tree (createElement/appendChild, never attached) and calls root.querySelectorAll on it; the detached root has no selector so the element-scoped host query returns empty. Same M1 L2 handle-tree root cause as dom/traversal detached walking. Deferred.",
+    "canvas_collision": "M8 path-objects still deferred: canvas stream committed at 22:15 today (part05.js active)."
+  },
+  "results": {
+    "namednodemap_supported_property_names": "0P/3F -> 3P/0F (100%) both paths",
+    "dom_collections_polyfill": { "pass": 24, "fail": 24, "rate": "50.00%", "prev": "21P/27F (43.75%)", "delta": "+3" },
+    "dom_collections_native": { "pass": 24, "rate": "50.00%", "gap_pp": "0" },
+    "dom_nodes_polyfill": { "pass": 2507, "delta": "+4 (named getter branch unlocked el.attributes.<name> patterns)", "prev": 2503 },
+    "regression": {
+      "dom_events_polyfill": "189P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged"
+    }
+  },
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r44_unit_test": "test_namednodemap_own_enumeration_r44 (4 groups: getOwnPropertyNames order, named access via descriptor, for-in enumeration, removal shrinks)",
+    "v8_engine_lib": "2125 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

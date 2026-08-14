@@ -2041,6 +2041,12 @@
         if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
           return attrObj(names[idx]);
         }
+        // js-dom M4 R44：named getter（spec supported property names）——`attrs.id` 返对应
+        // Attr 节点（与 ownKeys/getOwnPropertyDescriptor 枚举一致；WPT namednodemap +
+        // attrs.id.value 访问模式）。
+        if (typeof p === 'string' && names.indexOf(p) >= 0) {
+          return attrObj(p);
+        }
         return undefined;
       },
       has: function(_t, p) {
@@ -2050,6 +2056,32 @@
         var names = readNames();
         var idx = parseInt(p, 10);
         return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length;
+      },
+      // js-dom M4 R44：spec NamedNodeMap supported property names（`dom-namednodemap-supported-property-names`）
+      // ——own keys = 数值索引（"0","1",…）+ 属性名（id/class/…）。WPT namednodemap-supported-property-names
+      // 断言 `Object.getOwnPropertyNames(el.attributes)` === [indices..., names...]。旧实现 Proxy 落
+      // target（{}）→ 恒 []。ownKeys 须与 getOwnPropertyDescriptor 一致（invariant：ownKeys 列出的
+      // 键须存在可描述）——descriptor 返 {enumerable, configurable: true} 数据属性近似。
+      ownKeys: function() {
+        var names = readNames();
+        var keys = [];
+        for (var i = 0; i < names.length; i++) keys.push(String(i));
+        for (var j = 0; j < names.length; j++) keys.push(names[j]);
+        return keys;
+      },
+      getOwnPropertyDescriptor: function(_t, p) {
+        var names = readNames();
+        if (p === 'length') {
+          return { value: names.length, writable: false, enumerable: false, configurable: true };
+        }
+        var idx = parseInt(p, 10);
+        if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
+          return { value: attrObj(names[idx]), writable: false, enumerable: true, configurable: true };
+        }
+        if (names.indexOf(String(p)) >= 0) {
+          return { value: attrObj(String(p)), writable: false, enumerable: true, configurable: true };
+        }
+        return undefined;
       }
     });
   }

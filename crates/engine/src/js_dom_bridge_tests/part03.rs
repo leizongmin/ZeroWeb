@@ -2782,3 +2782,70 @@ fn test_htmlcollection_indexed_named_props_r43() {
         "③ indexed 顺序读不受 named 干扰（ids=1,2）"
     );
 }
+
+#[test]
+fn test_namednodemap_own_enumeration_r44() {
+    // R44：spec `dom-namednodemap-supported-property-names`——NamedNodeMap own keys =
+    // 数值索引（"0","1",…）+ 属性名（id/class/…）。WPT namednodemap-supported-property-names
+    // 断言 `Object.getOwnPropertyNames(el.attributes)` === [indices..., names...]。旧实现
+    // Proxy({}) 无 ownKeys/getOwnPropertyDescriptor trap → 恒 []。
+    // ① getOwnPropertyNames 返 [indices + names] 文档序
+    // ② named 索引访问（.attributes.id.value）经 descriptor 可见
+    // ③ for-in 枚举到全部（enumerable descriptor）
+    // ④ 移除属性后枚举收缩
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\" class=\"c1\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\n\
+             d.setAttribute('data-x', 'v1');\n\
+             var attrs = d.attributes;\n\
+             // ① getOwnPropertyNames：indices + names（文档序：id, class, data-x）\n\
+             globalThis.__o1 = Object.getOwnPropertyNames(attrs).join(',');\n\
+             // ② named 访问经 descriptor\n\
+             globalThis.__o2 = attrs.id ? attrs.id.value : 'none';\n\
+             // ③ for-in 枚举\n\
+             var seen = [];\n\
+             for (var k in attrs) seen.push(k);\n\
+             globalThis.__o3 = seen.join(',');\n\
+             // ④ 移除后收缩\n\
+             d.removeAttribute('data-x');\n\
+             globalThis.__o4 = Object.getOwnPropertyNames(attrs).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__o1").unwrap().value,
+        "0,1,2,id,class,data-x",
+        "① getOwnPropertyNames = [indices + names] 文档序"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__o2").unwrap().value,
+        "d",
+        "② named 访问（attrs.id.value）经 descriptor 可见"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__o3").unwrap().value,
+        "0,1,2,id,class,data-x",
+        "③ for-in 枚举到全部（descriptor enumerable）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__o4").unwrap().value,
+        "0,1,id,class",
+        "④ removeAttribute 后枚举收缩（indices + 剩余 names）"
+    );
+}
