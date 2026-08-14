@@ -303,8 +303,13 @@ impl ResourceLoader {
             let result = HttpClient::send_async_with_timeout(30, request)
                 .await
                 .map_err(|error| error.to_string());
-            if matches!(result, Ok(ref response) if response.is_success()) {
-                cache.lock().expect("HTTP cache lock").invalidate(&url);
+            if let Ok(response) = &result
+                && response.is_success()
+            {
+                let mut cache = cache.lock().expect("HTTP cache lock");
+                for target in unsafe_invalidation_targets(&url, response) {
+                    cache.invalidate(&target);
+                }
             }
             let bytes = result.as_ref().map(|response| response.body.len() as u64).unwrap_or(0);
             record_event_into(&events, &event_request, CacheOutcome::UnsafeWrite, None, bytes);
@@ -407,6 +412,30 @@ impl ResourceLoader {
     ) {
         record_event_into(&self.events, request, cache_outcome, telemetry, bytes);
     }
+}
+
+/// 计算 unsafe 请求成功后需要失效的同源缓存 URI。
+///
+/// https://www.rfc-editor.org/rfc/rfc9111#section-4.4
+fn unsafe_invalidation_targets(request_url: &str, response: &crate::HttpResponse) -> Vec<String> {
+    let Ok(request_url) = url::Url::parse(request_url) else {
+        return vec![request_url.to_string()];
+    };
+    let request_origin = request_url.origin();
+    let mut targets = vec![request_url.to_string()];
+    let response_base = url::Url::parse(&response.url).unwrap_or_else(|_| request_url.clone());
+    targets.push(response_base.to_string());
+    for (name, value) in &response.headers {
+        if (name.eq_ignore_ascii_case("location") || name.eq_ignore_ascii_case("content-location"))
+            && let Ok(target) = response_base.join(value)
+            && target.origin() == request_origin
+        {
+            targets.push(target.to_string());
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
 }
 
 fn record_event_into(
@@ -630,5 +659,30 @@ mod tests {
         assert_eq!(event.bytes, 128);
         assert_eq!(event.coalesced_subscriber_count, 2);
         assert_eq!(event.cache_outcome, CacheOutcome::Network);
+    }
+
+    #[test]
+    fn unsafe_invalidation_includes_only_same_origin_related_uris() {
+        let request = "https://example.test/articles/1";
+        let response = crate::HttpResponse {
+            status_code: 200,
+            headers: vec![
+                ("Location".into(), "/articles/2".into()),
+                (
+                    "Content-Location".into(),
+                    "https://example.test/articles/current".into(),
+                ),
+                ("Location".into(), "https://other.test/not-ours".into()),
+            ],
+            body: Vec::new(),
+            url: request.into(),
+            redirect_count: 0,
+        };
+
+        let targets = unsafe_invalidation_targets(request, &response);
+        assert!(targets.contains(&request.to_string()));
+        assert!(targets.contains(&"https://example.test/articles/2".to_string()));
+        assert!(targets.contains(&"https://example.test/articles/current".to_string()));
+        assert!(!targets.iter().any(|target| target.contains("other.test")));
     }
 }
