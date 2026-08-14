@@ -163,7 +163,7 @@ P0/P1 已将页面资源统一接入 `ResourceLoader`，并已提供 `HttpClient
 
 ### 6.3 已定决策
 
-- HTTP/3 暂不处理；不修改 `Cargo.toml` 引入 QUIC/HTTP/3 依赖。
+- HTTP/3 **明确不支持**（非暂缓）；不修改 `Cargo.toml` 引入 QUIC/HTTP/3 依赖，后续如需支持须另立设计。
 - 预热以同一 async reqwest client 的 HEAD 请求实现，目的是预热其连接池；它不是裸 TCP/TLS preconnect，需在 telemetry 中区分为 `head-preconnect`。
 - 流式路径不接入 HTTP cache，直到存在原子写入与取消设计。
 

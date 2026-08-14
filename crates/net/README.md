@@ -6,6 +6,12 @@
 
 `ZeroWeb Network` (`zero-net`) 是 ZeroWeb 的网络层，封装了 HTTP/HTTPS 请求的完整生命周期。它负责 URL 解析与同源判断、同步 HTTP 请求发送（支持重定向和超时控制）、浏览器风格的导航历史栈（前进/后退/替换），以及 Cookie 的解析、存储和按域名/路径匹配。
 
+## 协议支持
+
+- **HTTP/1.1** — 基础传输，始终可用。
+- **HTTP/2** — 默认启用（经 ALPN 协商）；设环境变量 `ZERO_HTTP2=0`（或 `false`）可退回 HTTP/1.1。
+- **HTTP/3（QUIC）** — **明确不支持**。不实现、不引入 QUIC/HTTP-3 依赖，也不支持 HTTP/3 优先级帧（RFC 9218）；后续如需支持须另立设计（见 `docs/specs/network-loading-p2-http2-rfc.md`）。
+
 ## 主要功能
 
 - **URL 解析** — 基于 `url` crate，解析 scheme、host、port、path、query、fragment、认证信息，支持同源判断和安全性检查

@@ -58,7 +58,7 @@
 |-------|------|
 | `crates/render-foundation` | GPU/CPU 渲染、字体栈（fontdue + `freetype-raster` feature default-on：非 Ahem 路径用 FreeType 光栅化，提升与 Chromium 字体度量一致性；R1094 实测全 corpus oracle +232 零回归，是 broad 一致率显著提升的关键）、图片缓存 + GC、裁剪 / scissor、图元基础设施 |
 | `crates/host-runtime` | 平台窗口、事件循环、surface 生命周期、输入事件（鼠标 / 键盘 / 触摸 / IME） |
-| `crates/net` | HTTP/HTTPS、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
+| `crates/net` | HTTP/HTTPS（HTTP/1.1 + HTTP/2，经 ALPN 协商；**不支持 HTTP/3/QUIC**）、URL、导航历史、Cookie、WebSocket（tungstenite）、HTTP 响应缓存 |
 | `crates/security` | 同源策略、CORS、CSP（含 `script-src-attr` / `unsafe-eval` / `wasm-unsafe-eval` / `strict-dynamic` 等完整指令）、HSTS 预加载、混合内容阻止 / 升级、权限模型、站点隔离、COOP/COEP，统一收敛到 `SecurityContext` 门面 |
 | `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表 |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
