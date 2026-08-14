@@ -117,6 +117,14 @@ fn cache_fresh_hit_bypasses_scheduler() {
             .is_ok()
     );
     assert_eq!(server.request_count(), 1, "fresh hits must not consume scheduler slots");
+    let stats = loader.stats();
+    assert_eq!(stats.network_requests, 1);
+    assert_eq!(stats.fresh_hits, 2);
+    assert_eq!(stats.network_response_bytes, b"fixture-response".len() as u64);
+    assert!(
+        stats.network_elapsed_ms <= 2_000,
+        "fixture request must complete within its timeout"
+    );
 }
 
 /// FR-002：仅完全相同的请求身份可合并；会影响 Vary 的请求头必须保留隔离。
