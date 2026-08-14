@@ -630,6 +630,8 @@ fn main() {
                 .map(|_| (cli.viewport_width.round() as u32, cli.viewport_height.round() as u32))
         });
     let config = browser_window_config(&app, smoke_viewport);
+    let scale_override = cli.scale_override;
+    let forced_physical_size = scale_override.map(|_| (config.width, config.height));
     let runtime = HostRuntime::new(config);
     let smoke_capture_path = cli.smoke_capture;
     let mut gui_smoke = cli.gui_smoke.map(gui_smoke::GuiSmoke::new);
@@ -675,6 +677,12 @@ fn main() {
                 } else {
                     if !app.surface_configured {
                         if let Some(ref win) = window {
+                            if let Some((width, height)) = forced_physical_size
+                                && win.inner_size() != winit::dpi::PhysicalSize::new(width, height)
+                            {
+                                let _ = win.request_inner_size(winit::dpi::PhysicalSize::new(width, height));
+                                return;
+                            }
                             let wayland_cpu = app.wayland_forces_cpu_present();
                             let needs_gpu = !wayland_cpu
                                 && matches!(app.render_mode(), RenderMode::Gpu | RenderMode::Auto)
@@ -687,8 +695,13 @@ fn main() {
                                     && cpu_surface.is_none());
 
                             if needs_gpu || needs_cpu {
-                                let (logical_size, scale_factor) = logical_size_from_window(win);
                                 let physical_size = win.inner_size();
+                                let scale_factor =
+                                    scale_override.unwrap_or_else(|| normalized_window_scale(win.scale_factor()));
+                                let logical_size = (
+                                    ((physical_size.width as f32 / scale_factor).round() as u32).max(1),
+                                    ((physical_size.height as f32 / scale_factor).round() as u32).max(1),
+                                );
                                 app.set_window_size(logical_size);
                                 app.physical_size = (physical_size.width, physical_size.height);
                                 app.scale_factor = scale_factor;
@@ -840,7 +853,11 @@ fn main() {
                 tracing::debug!("Window resized: {width}x{height}");
                 app.physical_size = (width, height);
                 if let Some(ref win) = window {
-                    let (logical_size, scale_factor) = logical_size_from_window(win);
+                    let scale_factor = scale_override.unwrap_or_else(|| normalized_window_scale(win.scale_factor()));
+                    let logical_size = (
+                        ((width as f32 / scale_factor).round() as u32).max(1),
+                        ((height as f32 / scale_factor).round() as u32).max(1),
+                    );
                     app.set_window_size(logical_size);
                     app.scale_factor = scale_factor;
                     sync_window_chrome_icon(&mut app, win);
@@ -862,7 +879,12 @@ fn main() {
                 tracing::debug!("Window scale factor changed: {scale_factor}");
                 if let Some(ref win) = window {
                     let physical_size = win.inner_size();
-                    let (logical_size, normalized_scale) = logical_size_from_window(win);
+                    let normalized_scale =
+                        scale_override.unwrap_or_else(|| normalized_window_scale(win.scale_factor()));
+                    let logical_size = (
+                        ((physical_size.width as f32 / normalized_scale).round() as u32).max(1),
+                        ((physical_size.height as f32 / normalized_scale).round() as u32).max(1),
+                    );
                     app.physical_size = (physical_size.width, physical_size.height);
                     app.set_window_size(logical_size);
                     app.scale_factor = normalized_scale;
@@ -875,7 +897,7 @@ fn main() {
                     }
                     app.sync_webview_viewport();
                 } else {
-                    app.scale_factor = normalized_window_scale(scale_factor);
+                    app.scale_factor = scale_override.unwrap_or_else(|| normalized_window_scale(scale_factor));
                 }
                 app.needs_redraw = true;
             }

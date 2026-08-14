@@ -1399,29 +1399,23 @@ impl BrowserApp {
         self.shell.active_tab_id()
     }
 
-    /// 产品一致性验收：活动页最新快照序号。
-    pub fn parity_snapshot_seq(&self, tab_id: TabId) -> u64 {
-        self.tabs.snapshot_seq(tab_id)
-    }
-
     /// 产品一致性验收：最新可显示 compositor 页面帧序号。
     pub fn parity_compositor_frame_id(&self, tab_id: TabId) -> u64 {
         self.tabs.compositor_frame_id(tab_id)
     }
 
-    /// 产品一致性验收：活动页标题快照（compositor 模式状态 fallback）。
-    pub fn parity_page_title(&self, tab_id: TabId) -> Option<String> {
-        self.tabs.page_title(tab_id)
+    pub(crate) fn parity_set_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        self.apply_color_scheme(scheme);
     }
 
-    /// 产品一致性验收：活动页与绘制快照同步的 HTML。
-    pub fn parity_page_html(&self, tab_id: TabId) -> Option<String> {
-        self.tabs.page_html(tab_id)
-    }
-
-    /// 产品一致性验收：使用真实 renderer 命中缓存查询页面元素。
-    pub fn parity_hit_test_element(&mut self, tab_id: TabId, x: f32, y: f32) -> Option<zero_engine::ElementHit> {
-        self.tabs.hit_test_element(tab_id, x, y)
+    /// 产品一致性验收：在 live renderer 的页面上下文执行观察脚本。
+    pub fn parity_execute_script(
+        &mut self,
+        tab_id: TabId,
+        script: String,
+        timeout: Duration,
+    ) -> Result<zero_protocol::message::AutomationValue, String> {
+        self.tabs.execute_script_for_parity(tab_id, script, timeout)
     }
 
     /// 浮动查找栏外框（物理像素）。

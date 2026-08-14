@@ -11,10 +11,9 @@
   "url": "file://${REPO_ROOT}/examples/forms/form-interaction-test.html?__zero_test_state=1",
   "viewport": { "width": 800, "height": 720, "dpr": 1 },
   "environment": {
-    "locale": "zh-CN",
+    "locale": "en-US",
     "colorScheme": "light",
-    "reducedMotion": "reduce",
-    "chromeVersionPattern": "Chrome/127\\."
+    "reducedMotion": "no-preference"
   },
   "thresholds": {
     "maxDiffPercent": 3,
@@ -48,6 +47,12 @@ Chrome 端支持以下动作：
 - `wait`，需要 `milliseconds`，仅用于诊断
 
 页面专用的 `stateExpression` 必须返回可 JSON 序列化的数据。只记录 Web 可观察行为，不加入引擎私有字段。
+
+`observe.selectors` 使用页面 `querySelector` 语义，允许 ID、class、属性、组合器等 CSS selector，不限于 `#id`。Chrome 和 ZeroWeb 都在各自 live document 的页面脚本上下文执行同一 `stateExpression` 并读取同一组 selector；页面不需要写入 `#test-state`、修改 title 或暴露其他验收专用通道。表达式报错、结果不可序列化或 selector 对应几何缺失时必须保留明确诊断，不得回退为解析 HTML 字符串猜测状态。
+
+`stateExpression` 的语法、运行时异常和 JSON 可序列化性只能在真实页面上下文中判定，因此静态 validator 只检查它是非空字符串，采集器负责在失败时输出诊断。`click` 的 selector 不必出现在 `observe.selectors`；两端均在动作发生时从当前 live document 单独解析点击目标。
+
+生产采集当前明确支持 `locale: "en-US"`、`reducedMotion: "no-preference"`，以及 `colorScheme: "light" | "dark"`。validator 会拒绝 ZeroWeb 尚不能真实应用的环境值，避免 Chrome 单边模拟后产生伪一致性结论。
 
 ## Manifest 结构
 
@@ -99,6 +104,8 @@ Chrome 端支持以下动作：
 不比较时间戳。可以附加 value 和 checked 快照用于诊断，但 canonical state 比较仍是权威结果。
 
 采集器使用 capture phase，以观察 focus 和不冒泡事件；在 microtask 中更新 `defaultPrevented`，确保后续 listener 的取消结果可见。不得通过程序化 dispatch 制造事件日志。
+
+无 `id` 的事件目标记录稳定的 `tag:nth-of-type(n)` DOM 路径，以区分页面中多个同标签元素；有 `id` 时仍使用 `#id`。
 
 ## 点击语义
 

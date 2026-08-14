@@ -11,9 +11,10 @@ use zero_browser_shell::TabId;
 use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    DispatchDomEventParams, FetchParams, FocusChangeInfo, FramePublishMode, ImeEventParams, IpcColorScheme,
-    IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams,
-    SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
+    FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
+    StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -151,6 +152,8 @@ pub struct ProcessTabBackend {
     pending_dispatch_results: Vec<(u64, bool)>,
     /// 页面焦点所有者变更（R3254-H1，由 TabManager 消费同步 event_targets）。
     pending_focus_changes: Vec<(TabId, FocusChangeInfo)>,
+    /// live renderer 自动化脚本回执（request id → tab + response）。
+    pending_automation_responses: HashMap<u64, (TabId, AutomationResponse)>,
     /// 上一次轮询观察到的 compositor client 状态，用于只处理一次断线边沿。
     compositor_status: crate::compositor_client::CompositorStatus,
     /// Browser 窗口 GPU 渲染器是否可用（dma-buf 导入 vs RGBA 回退）。
@@ -217,6 +220,7 @@ impl ProcessTabBackend {
             fetch_proxy: TabFetchProxy::new(),
             pending_dispatch_results: Vec::new(),
             pending_focus_changes: Vec::new(),
+            pending_automation_responses: HashMap::new(),
             compositor_status: crate::compositor_client::status(),
             browser_gpu_present: false,
         }
@@ -917,6 +921,9 @@ impl ProcessTabBackend {
                     IpcMessageKind::FocusOwnerChanged(info) => {
                         self.pending_focus_changes.push((tab_id, info));
                     }
+                    IpcMessageKind::AutomationResponse(response) => {
+                        self.pending_automation_responses.insert(msg.id, (tab_id, response));
+                    }
                     kind => {
                         let snap = snapshots.entry(tab_id).or_default();
                         Self::apply_inbound_message(
@@ -970,6 +977,39 @@ impl ProcessTabBackend {
     /// 取出页面焦点变更回执（R3254-H1）。
     pub fn take_focus_changes(&mut self) -> Vec<(TabId, FocusChangeInfo)> {
         std::mem::take(&mut self.pending_focus_changes)
+    }
+
+    /// 向 live renderer 发起异步自动化操作。
+    pub fn send_automation_request(
+        &mut self,
+        tab_id: TabId,
+        request_id: u64,
+        operation: AutomationOperation,
+    ) -> Result<(), String> {
+        let renderer = self
+            .renderer_mut(tab_id)
+            .ok_or_else(|| format!("no live renderer for tab {}", tab_id.0))?;
+        renderer
+            .send(IpcMessage {
+                id: request_id,
+                kind: IpcMessageKind::AutomationRequest(AutomationRequest { operation }),
+            })
+            .map_err(|error| format!("failed to send automation request for tab {}: {error}", tab_id.0))
+    }
+
+    /// 取出指定请求的自动化回执。
+    pub fn take_automation_response(&mut self, tab_id: TabId, request_id: u64) -> Option<AutomationResponse> {
+        let (response_tab, response) = self.pending_automation_responses.remove(&request_id)?;
+        if response_tab == tab_id {
+            Some(response)
+        } else {
+            tracing::warn!(
+                "automation response tab mismatch: request={request_id} expected={} actual={}",
+                tab_id.0,
+                response_tab.0
+            );
+            None
+        }
     }
 
     /// 异步派发 DOM 事件（fire-and-forget）。

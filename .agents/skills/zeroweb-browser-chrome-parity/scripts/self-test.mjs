@@ -32,6 +32,7 @@ const scenario = {
   name: 'self-test',
   url: 'file://${REPO_ROOT}/fixture.html',
   viewport: { width: 8, height: 8, dpr: 1 },
+  environment: { locale: 'en-US', colorScheme: 'light', reducedMotion: 'no-preference' },
   thresholds: {
     maxDiffPercent: 5,
     maxRegionDiffPercent: 10,
@@ -49,6 +50,16 @@ const scenario = {
 
 async function main() {
   validateScenario(scenario);
+  validateScenario({
+    ...scenario,
+    steps: [{ id: 'click-unobserved', action: { type: 'click', selector: '.not-observed' } }],
+  });
+  const genericTemplate = JSON.parse(await readFile(resolve(HERE, '../templates/generic-page.scenario.json'), 'utf8'));
+  validateScenario(genericTemplate);
+  assert(
+    genericTemplate.observe.selectors.some((selector) => selector.includes('[name=')),
+    'generic template must exercise a non-ID CSS selector',
+  );
   let rejected = false;
   try {
     validateScenario({ ...scenario, steps: [] });
@@ -56,6 +67,13 @@ async function main() {
     rejected = true;
   }
   assert(rejected, 'validator must reject an empty scenario');
+  rejected = false;
+  try {
+    validateScenario({ ...scenario, environment: { ...scenario.environment, reducedMotion: 'reduce' } });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, 'validator must reject an environment ZeroWeb cannot reproduce');
 
   const windowsCandidates = chromeCandidates('win32', {
     PROGRAMFILES: 'C:\\Program Files',
@@ -63,6 +81,12 @@ async function main() {
     LOCALAPPDATA: 'C:\\LocalAppData',
   });
   assert(windowsCandidates.some((path) => path.endsWith('chrome.exe')), 'Windows Chrome candidates must use .exe');
+  const firstEdge = windowsCandidates.findIndex((path) => path.endsWith('msedge.exe'));
+  assert(firstEdge >= 0, 'Windows Edge candidate missing');
+  assert(
+    windowsCandidates.slice(0, firstEdge).every((path) => path.endsWith('chrome.exe')),
+    'Windows Edge candidates must follow Chrome/Chromium candidates',
+  );
   assert(
     chromeCandidates('darwin', {}).some((path) => path.includes('.app/Contents/MacOS/')),
     'macOS Chrome candidates must use app bundle executables',

@@ -86,6 +86,15 @@ export function validateScenario(scenario) {
   if (!Array.isArray(observe.eventTypes) || observe.eventTypes.some((value) => typeof value !== 'string')) {
     fail('observe.eventTypes must be an array of strings');
   }
+  if (scenario.environment?.locale !== 'en-US') {
+    fail('environment.locale must be en-US for ZeroWeb production parity');
+  }
+  if (!['light', 'dark'].includes(scenario.environment?.colorScheme)) {
+    fail('environment.colorScheme must be light or dark');
+  }
+  if (scenario.environment?.reducedMotion !== 'no-preference') {
+    fail('environment.reducedMotion must be no-preference for ZeroWeb production parity');
+  }
   if (scenario.environment?.chromeVersionPattern !== undefined) {
     if (typeof scenario.environment.chromeVersionPattern !== 'string') {
       fail('environment.chromeVersionPattern must be a string');

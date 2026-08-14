@@ -1,10 +1,13 @@
 //! 标签页运行时管理 — 统一 in-process worker 与可选多进程后端。
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
-use zero_protocol::message::{DispatchDomEventParams, ImeEventParams};
+use zero_protocol::message::{
+    AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, ImeEventParams,
+};
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
@@ -888,6 +891,45 @@ impl TabManager {
             .and_then(|snapshot| snapshot.compositor_frame.as_ref())
             .map(|frame| frame.frame_id)
             .unwrap_or(0)
+    }
+
+    /// 在多进程 live renderer 的当前页面上下文执行一致性观察脚本。
+    pub fn execute_script_for_parity(
+        &mut self,
+        tab_id: TabId,
+        script: String,
+        timeout: Duration,
+    ) -> Result<AutomationValue, String> {
+        let request_id = self.next_dispatch_id;
+        self.next_dispatch_id = self.next_dispatch_id.wrapping_add(1);
+        let backend = self
+            .process_backend
+            .as_mut()
+            .ok_or_else(|| "production parity requires a live multi-process renderer".to_string())?;
+        backend.send_automation_request(
+            tab_id,
+            request_id,
+            AutomationOperation::ExecuteScript {
+                script,
+                arguments: Vec::new(),
+            },
+        )?;
+
+        let deadline = Instant::now() + timeout;
+        loop {
+            backend.poll(&mut self.snapshots, &mut self.snapshot_seq, Some(tab_id), true);
+            if let Some(response) = backend.take_automation_response(tab_id, request_id) {
+                return match response.result {
+                    Ok(AutomationResult::Value(value)) => Ok(value),
+                    Ok(other) => Err(format!("unexpected parity automation result: {other:?}")),
+                    Err(error) => Err(format!("parity automation {:?}: {}", error.code, error.message)),
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err(format!("parity automation request {request_id} timed out"));
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
     }
 
     #[cfg(test)]

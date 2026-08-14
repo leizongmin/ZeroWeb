@@ -74,6 +74,10 @@ export function chromeCandidates(platform, environment) {
         && resolve(environment['PROGRAMFILES(X86)'], 'Google/Chrome/Application/chrome.exe'),
       environment.LOCALAPPDATA && resolve(environment.LOCALAPPDATA, 'Google/Chrome/Application/chrome.exe'),
       environment.PROGRAMFILES && resolve(environment.PROGRAMFILES, 'Chromium/Application/chrome.exe'),
+      environment['PROGRAMFILES(X86)']
+        && resolve(environment['PROGRAMFILES(X86)'], 'Microsoft/Edge/Application/msedge.exe'),
+      environment.PROGRAMFILES && resolve(environment.PROGRAMFILES, 'Microsoft/Edge/Application/msedge.exe'),
+      environment.LOCALAPPDATA && resolve(environment.LOCALAPPDATA, 'Microsoft/Edge/Application/msedge.exe'),
     ].filter(Boolean);
   }
   if (platform === 'darwin') {
@@ -102,12 +106,12 @@ async function resolveChromeExecutable() {
   const candidates = chromeCandidates(process.platform, process.env);
   const executable = await firstExisting(candidates);
   if (!executable) {
-    throw new Error('未找到 Chrome/Chromium；请设置 PUPPETEER_EXECUTABLE_PATH');
+    throw new Error('未找到 Chrome/Chromium/Edge；请设置 PUPPETEER_EXECUTABLE_PATH');
   }
   return executable;
 }
 
-async function connectBrowser(puppeteer) {
+async function connectBrowser(puppeteer, locale) {
   const cdpUrl = process.env.ORACLE_CDP_URL;
   if (cdpUrl) {
     const version = await fetch(`${cdpUrl.replace(/\/$/, '')}/json/version`).then((response) => {
@@ -126,7 +130,7 @@ async function connectBrowser(puppeteer) {
       '--no-sandbox',
       '--disable-lcd-text',
       '--hide-scrollbars',
-      '--lang=zh-CN',
+      `--lang=${locale}`,
     ],
   });
   return { browser, capturePath: 'chrome-headless', close: () => browser.close() };
@@ -135,11 +139,25 @@ async function connectBrowser(puppeteer) {
 async function installEventProbe(page, eventTypes) {
   await page.evaluate((types) => {
     globalThis.__browserParityEvents = [];
+    const selectorFor = (element) => {
+      if (element.id) return `#${element.id}`;
+      const parts = [];
+      for (let node = element; node; node = node.parentElement) {
+        let part = node.tagName.toLowerCase();
+        if (node.parentElement) {
+          let index = 1;
+          for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+            if (sibling.tagName === node.tagName) index += 1;
+          }
+          part += `:nth-of-type(${index})`;
+        }
+        parts.unshift(part);
+      }
+      return parts.join('>');
+    };
     for (const type of types) {
       document.addEventListener(type, (event) => {
-        const target = event.target instanceof Element
-          ? (event.target.id ? `#${event.target.id}` : event.target.tagName.toLowerCase())
-          : '';
+        const target = event.target instanceof Element ? selectorFor(event.target) : '';
         const record = {
           type: event.type,
           target,
@@ -217,6 +235,23 @@ async function performAction(page, action) {
 
 async function observe(page, scenario) {
   return page.evaluate(({ selectors, stateExpression }) => {
+    const selectorFor = (element) => {
+      if (!element) return '';
+      if (element.id) return `#${element.id}`;
+      const parts = [];
+      for (let node = element; node; node = node.parentElement) {
+        let part = node.tagName.toLowerCase();
+        if (node.parentElement) {
+          let index = 1;
+          for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+            if (sibling.tagName === node.tagName) index += 1;
+          }
+          part += `:nth-of-type(${index})`;
+        }
+        parts.unshift(part);
+      }
+      return parts.join('>');
+    };
     const geometry = {};
     for (const selector of selectors) {
       const element = document.querySelector(selector);
@@ -239,14 +274,17 @@ async function observe(page, scenario) {
       throw new Error(`stateExpression failed: ${error.message}`);
     }
     const events = Array.isArray(state?.events)
-      ? state.events
+      ? Array.from(state.events)
       : Array.from(globalThis.__browserParityEvents || []);
-    if (state && typeof state === 'object') delete state.events;
+    if (state && typeof state === 'object' && !Array.isArray(state)) {
+      const { events: _events, ...rest } = state;
+      state = rest;
+    }
     return {
       state,
       events,
       geometry,
-      activeElement: document.activeElement?.id ? `#${document.activeElement.id}` : '',
+      activeElement: selectorFor(document.activeElement),
       url: location.href,
     };
   }, {
@@ -262,7 +300,7 @@ async function main() {
   await mkdir(output, { recursive: true });
 
   const puppeteer = await loadPuppeteer();
-  const connection = await connectBrowser(puppeteer);
+  const connection = await connectBrowser(puppeteer, scenario.environment?.locale || 'en-US');
   const browser = connection.browser;
   try {
     const engineVersion = await browser.version();

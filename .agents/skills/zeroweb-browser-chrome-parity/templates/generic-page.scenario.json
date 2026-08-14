@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "name": "generic-page",
+  "url": "file://${REPO_ROOT}/examples/forms/form-interaction-test.html",
+  "viewport": {
+    "width": 800,
+    "height": 720,
+    "dpr": 1
+  },
+  "environment": {
+    "locale": "en-US",
+    "colorScheme": "light",
+    "reducedMotion": "no-preference"
+  },
+  "thresholds": {
+    "maxDiffPercent": 3,
+    "maxRegionDiffPercent": 5,
+    "channelDiff": 8,
+    "pixelRadius": 1,
+    "maxGeometryDiffPx": 2
+  },
+  "observe": {
+    "selectors": [
+      "input[name=\"name\"]",
+      "input[type=\"checkbox\"]",
+      "button[type=\"button\"]"
+    ],
+    "stateExpression": "(() => ({ heading: document.querySelector('h1').textContent, value: document.querySelector('input[name=\\\"name\\\"]').value, checked: document.querySelector('input[type=\\\"checkbox\\\"]').checked, status: document.querySelector('output[aria-live]').textContent }))()",
+    "eventTypes": [
+      "mousedown",
+      "focus",
+      "mouseup",
+      "click",
+      "input",
+      "change"
+    ]
+  },
+  "steps": [
+    {
+      "id": "initial",
+      "action": {
+        "type": "snapshot"
+      }
+    },
+    {
+      "id": "focus-name",
+      "action": {
+        "type": "click",
+        "selector": "input[name=\"name\"]"
+      }
+    },
+    {
+      "id": "type-name",
+      "action": {
+        "type": "type",
+        "text": "Z"
+      }
+    },
+    {
+      "id": "toggle",
+      "action": {
+        "type": "click",
+        "selector": "input[type=\"checkbox\"]"
+      }
+    },
+    {
+      "id": "button",
+      "action": {
+        "type": "click",
+        "selector": "button[type=\"button\"]"
+      }
+    }
+  ]
+}

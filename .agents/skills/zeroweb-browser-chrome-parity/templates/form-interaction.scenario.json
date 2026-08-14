@@ -8,10 +8,9 @@
     "dpr": 1
   },
   "environment": {
-    "locale": "zh-CN",
+    "locale": "en-US",
     "colorScheme": "light",
-    "reducedMotion": "reduce",
-    "chromeVersionPattern": "Chrome/127\\."
+    "reducedMotion": "no-preference"
   },
   "thresholds": {
     "maxDiffPercent": 1,

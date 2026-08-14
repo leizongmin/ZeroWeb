@@ -7,14 +7,15 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zero_browser_shell::TabId;
+use zero_engine::PrefersColorSchemeValue;
+use zero_protocol::message::AutomationValue;
 use zero_render_foundation::surface::FrameBuffer;
 
 use crate::app::BrowserApp;
 use crate::smoke_capture::{self, PixelRegion};
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(30);
-const HIT_SCAN_STEP: u32 = 2;
-const TITLE_STATE_PREFIX: &str = "ZERO_TEST_STATE:";
+const OBSERVATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 一致性场景配置。
 #[derive(Clone, Debug)]
@@ -35,6 +36,18 @@ impl ParitySmokeConfig {
         }
         if scenario.steps.is_empty() {
             return Err("parity scenario requires at least one step".to_string());
+        }
+        if scenario.observe.state_expression.trim().is_empty() {
+            return Err("parity scenario requires observe.stateExpression".to_string());
+        }
+        if scenario.environment.locale != "en-US" {
+            return Err("production parity currently supports environment.locale=en-US".to_string());
+        }
+        if scenario.environment.reduced_motion != "no-preference" {
+            return Err("production parity currently supports environment.reducedMotion=no-preference".to_string());
+        }
+        if !matches!(scenario.environment.color_scheme.as_str(), "light" | "dark") {
+            return Err("environment.colorScheme must be light or dark".to_string());
         }
         if scenario.viewport.width == 0 || scenario.viewport.height == 0 || scenario.viewport.dpr != 1.0 {
             return Err("production parity currently requires a non-empty DPR=1 viewport".to_string());
@@ -61,8 +74,17 @@ struct Scenario {
     name: String,
     url: String,
     viewport: Viewport,
+    environment: ScenarioEnvironment,
     observe: Observe,
     steps: Vec<ScenarioStep>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScenarioEnvironment {
+    locale: String,
+    color_scheme: String,
+    reduced_motion: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -76,6 +98,8 @@ struct Viewport {
 #[serde(rename_all = "camelCase")]
 struct Observe {
     selectors: Vec<String>,
+    state_expression: String,
+    event_types: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -133,15 +157,27 @@ struct ManifestStep {
     regions: HashMap<String, String>,
     state: Value,
     events: Vec<Value>,
-    geometry: HashMap<String, Geometry>,
+    geometry: HashMap<String, Option<Geometry>>,
+    active_element: String,
+    url: String,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 struct Geometry {
     x: f32,
     y: f32,
     width: f32,
     height: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PageObservation {
+    state: Value,
+    events: Vec<Value>,
+    geometry: HashMap<String, Option<Geometry>>,
+    active_element: String,
+    url: String,
 }
 
 /// 真实窗口一致性场景执行状态。
@@ -151,7 +187,7 @@ pub struct ParitySmoke {
     next_step: usize,
     deadline: Instant,
     captured: Vec<ManifestStep>,
-    stable_geometry: Option<HashMap<String, Geometry>>,
+    event_probe_installed: bool,
     initial_frame_retry_requested: bool,
 }
 
@@ -164,7 +200,7 @@ impl ParitySmoke {
             next_step: 0,
             deadline: Instant::now() + STEP_TIMEOUT,
             captured: Vec::new(),
-            stable_geometry: None,
+            event_probe_installed: false,
             initial_frame_retry_requested: false,
         }
     }
@@ -175,6 +211,11 @@ impl ParitySmoke {
             return;
         }
         self.started = true;
+        let color_scheme = match self.config.scenario.environment.color_scheme.as_str() {
+            "dark" => PrefersColorSchemeValue::Dark,
+            _ => PrefersColorSchemeValue::Light,
+        };
+        app.parity_set_color_scheme(color_scheme);
         tracing::info!("PARITY_SMOKE_NAVIGATE url={}", self.config.url());
         app.navigate_to(self.config.url());
         self.deadline = Instant::now() + STEP_TIMEOUT;
@@ -215,77 +256,45 @@ impl ParitySmoke {
             return Ok(false);
         }
 
+        let tab_id = app
+            .parity_active_tab_id()
+            .ok_or_else(|| "parity smoke has no active tab".to_string())?;
+        if !self.event_probe_installed {
+            app.parity_execute_script(
+                tab_id,
+                event_probe_script(&self.config.scenario.observe.event_types)?,
+                OBSERVATION_TIMEOUT,
+            )?;
+            self.event_probe_installed = true;
+        }
+
         while self.next_step < self.config.scenario.steps.len() {
             let step_index = self.next_step;
-            if matches!(self.config.scenario.steps[step_index].action, ScenarioAction::Snapshot) {
-                let tab_id = app
-                    .parity_active_tab_id()
-                    .ok_or_else(|| "parity smoke has no active tab".to_string())?;
-                let Ok(current_state) = serialized_state(app, tab_id) else {
-                    if !self.initial_frame_retry_requested {
-                        app.sync_webview_viewport();
-                        self.initial_frame_retry_requested = true;
-                        tracing::info!("PARITY_SMOKE_RETRY reason=state_unavailable action=resync_viewport");
+            observe_page(app, tab_id, &self.config.scenario.observe)?;
+            if !matches!(self.config.scenario.steps[step_index].action, ScenarioAction::Snapshot) {
+                self.perform_action(app, tab_id, step_index)?;
+                self.deadline = Instant::now() + STEP_TIMEOUT;
+                let mut previous = None;
+                let mut stable_polls = 0;
+                loop {
+                    app.poll_tab_fetch();
+                    let observation = observe_page(app, tab_id, &self.config.scenario.observe)?;
+                    if previous.as_ref() == Some(&observation) {
+                        stable_polls += 1;
+                    } else {
+                        previous = Some(observation);
+                        stable_polls = 0;
                     }
-                    app.needs_redraw = true;
-                    return Ok(false);
-                };
-                let baseline_frame_id = app.parity_compositor_frame_id(tab_id);
-                app.sync_webview_viewport();
-                let settle_deadline = Instant::now() + Duration::from_secs(2);
-                while app.parity_compositor_frame_id(tab_id) <= baseline_frame_id {
-                    if Instant::now() > settle_deadline {
-                        return Ok(false);
+                    if stable_polls >= 2 {
+                        break;
+                    }
+                    if Instant::now() > self.deadline {
+                        return Err(format!(
+                            "parity observation did not stabilize after step {}",
+                            self.config.scenario.steps[step_index].id
+                        ));
                     }
                     std::thread::sleep(Duration::from_millis(5));
-                    app.poll_tab_fetch();
-                }
-                let fresh_frame = app.render_full_scene_gpu_capture(app.physical_size.0, app.physical_size.1)?;
-                if !visible_page(&fresh_frame, page_region(app, &fresh_frame))? {
-                    return Ok(false);
-                }
-                self.capture_step(app, &fresh_frame, step_index, &current_state)?;
-                self.next_step += 1;
-                continue;
-            }
-            let tab_id = app
-                .parity_active_tab_id()
-                .ok_or_else(|| "parity smoke has no active tab".to_string())?;
-            let baseline_state = serialized_state(app, tab_id)?;
-            self.perform_action(app, tab_id, step_index)?;
-            self.deadline = Instant::now() + STEP_TIMEOUT;
-            let mut settled_state = loop {
-                app.poll_tab_fetch();
-                if let Ok(state) = serialized_state(app, tab_id)
-                    && state != baseline_state
-                {
-                    break state;
-                }
-                if Instant::now() > self.deadline {
-                    return Err(format!(
-                        "parity action did not change state before timeout: {}",
-                        self.config.scenario.steps[step_index].id
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            };
-            let settle_deadline = Instant::now() + Duration::from_secs(2);
-            let mut stable_polls = 0;
-            while stable_polls < 20 {
-                std::thread::sleep(Duration::from_millis(5));
-                app.poll_tab_fetch();
-                let state = serialized_state(app, tab_id)?;
-                if state == settled_state {
-                    stable_polls += 1;
-                } else {
-                    settled_state = state;
-                    stable_polls = 0;
-                }
-                if Instant::now() > settle_deadline {
-                    return Err(format!(
-                        "parity state did not stabilize after step {}",
-                        self.config.scenario.steps[step_index].id
-                    ));
                 }
             }
             let mut fresh_frame = None;
@@ -312,8 +321,8 @@ impl ParitySmoke {
                     self.config.scenario.steps[step_index].id
                 )
             })?;
-            settled_state = serialized_state(app, tab_id)?;
-            self.capture_step(app, &fresh_frame, step_index, &settled_state)?;
+            let observation = observe_page(app, tab_id, &self.config.scenario.observe)?;
+            self.capture_step(app, &fresh_frame, step_index, observation)?;
             self.next_step += 1;
         }
 
@@ -335,9 +344,8 @@ impl ParitySmoke {
                 offset,
                 jitter,
             } => {
-                let geometry = scan_geometry(app, tab_id, std::slice::from_ref(selector))?
-                    .remove(selector)
-                    .ok_or_else(|| format!("no hit-test geometry for {selector}"))?;
+                let geometry = query_geometry(app, tab_id, selector)?
+                    .ok_or_else(|| format!("click target has no live geometry: {selector}"))?;
                 let offset = offset.unwrap_or(Point { x: 0.5, y: 0.5 });
                 let document_x = geometry.x + geometry.width * offset.x;
                 let document_y = geometry.y + geometry.height * offset.y;
@@ -375,36 +383,16 @@ impl ParitySmoke {
         app: &mut BrowserApp,
         framebuffer: &FrameBuffer,
         step_index: usize,
-        serialized_state: &str,
+        observation: PageObservation,
     ) -> Result<(), String> {
         let step = &self.config.scenario.steps[step_index];
-        let tab_id = app
-            .parity_active_tab_id()
-            .ok_or_else(|| "parity smoke has no active tab".to_string())?;
-        let mut state: Value = serde_json::from_str(serialized_state)
-            .map_err(|error| format!("invalid parity state in HTML snapshot: {error}"))?;
-        let events = state
-            .get("events")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(state) = state.as_object_mut() {
-            state.remove("events");
-        }
-        let geometry = match &self.stable_geometry {
-            Some(geometry) => geometry.clone(),
-            None => {
-                let geometry = scan_geometry(app, tab_id, &self.config.scenario.observe.selectors)?;
-                self.stable_geometry = Some(geometry.clone());
-                geometry
-            }
-        };
         let page_region = page_region(app, framebuffer);
         let screenshot = format!("{}.png", step.id);
         smoke_capture::capture_region(&self.config.output_dir.join(&screenshot), framebuffer, page_region)?;
 
         let mut regions = HashMap::new();
-        for (selector, rect) in &geometry {
+        for (selector, rect) in &observation.geometry {
+            let Some(rect) = rect else { continue };
             let filename = format!("{}.region-{}.png", step.id, hex_name(selector));
             let region = PixelRegion {
                 x: page_region.x.saturating_add(rect.x.floor().max(0.0) as u32),
@@ -421,9 +409,11 @@ impl ParitySmoke {
             action: step.action.clone(),
             screenshot,
             regions,
-            state,
-            events,
-            geometry,
+            state: observation.state,
+            events: observation.events,
+            geometry: observation.geometry,
+            active_element: observation.active_element,
+            url: observation.url,
         });
         tracing::info!("PARITY_SMOKE_STEP step={} status=captured", step.id);
         Ok(())
@@ -485,64 +475,124 @@ fn visible_page(framebuffer: &FrameBuffer, region: PixelRegion) -> Result<bool, 
     Ok(stats.opaque_pixels > 0 && stats.luma_max.saturating_sub(stats.luma_min) >= 12)
 }
 
-fn serialized_state(app: &BrowserApp, tab_id: TabId) -> Result<String, String> {
-    if let Some(state) = app
-        .parity_page_title(tab_id)
-        .and_then(|title| title.strip_prefix(TITLE_STATE_PREFIX).map(str::to_string))
-    {
-        return Ok(state);
-    }
-    if let Some(html) = app.parity_page_html(tab_id) {
-        let state = zero_engine::query_text_from_html(&html, "#test-state");
-        if !state.is_empty() {
-            return Ok(state);
-        }
-    }
-    Err("parity state is unavailable from title and HTML snapshot".to_string())
+fn observe_page(app: &mut BrowserApp, tab_id: TabId, observe: &Observe) -> Result<PageObservation, String> {
+    let value = app.parity_execute_script(tab_id, observation_script(observe)?, OBSERVATION_TIMEOUT)?;
+    serde_json::from_value(automation_value_to_json(value))
+        .map_err(|error| format!("invalid parity observation from renderer: {error}"))
 }
 
-fn scan_geometry(
-    app: &mut BrowserApp,
-    tab_id: TabId,
-    selectors: &[String],
-) -> Result<HashMap<String, Geometry>, String> {
-    let wanted = selectors
-        .iter()
-        .map(|selector| {
-            selector
-                .strip_prefix('#')
-                .map(|id| (id.to_string(), selector.clone()))
-                .ok_or_else(|| format!("ZeroWeb parity currently requires id selectors: {selector}"))
-        })
-        .collect::<Result<HashMap<_, _>, _>>()?;
-    let (_, _, physical_width, physical_height) = app.page_content_rect();
-    let logical_width = (physical_width / app.scale_factor).ceil().max(0.0) as u32;
-    let logical_height = (physical_height / app.scale_factor).ceil().max(0.0) as u32;
-    let mut result = HashMap::new();
-    for y in (0..logical_height).step_by(HIT_SCAN_STEP as usize) {
-        for x in (0..logical_width).step_by(HIT_SCAN_STEP as usize) {
-            let Some(hit) = app.parity_hit_test_element(tab_id, x as f32, y as f32) else {
-                continue;
-            };
-            let Some(id) = hit.id else {
-                continue;
-            };
-            if !wanted.contains_key(&id) {
-                continue;
-            }
-            let selector = wanted.get(&id).expect("wanted id exists").clone();
-            result.entry(selector).or_insert(Geometry {
-                x: hit.x,
-                y: hit.y,
-                width: hit.width,
-                height: hit.height,
-            });
-            if result.len() == wanted.len() {
-                return Ok(result);
-            }
-        }
+fn query_geometry(app: &mut BrowserApp, tab_id: TabId, selector: &str) -> Result<Option<Geometry>, String> {
+    let selector =
+        serde_json::to_string(selector).map_err(|error| format!("failed to serialize click selector: {error}"))?;
+    let script = format!(
+        "return (()=>{{const element=document.querySelector({selector});if(!element)return null;\
+         const rect=element.getBoundingClientRect();\
+         if(rect.width<=0||rect.height<=0)return null;\
+         return {{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};}})()"
+    );
+    let value = app.parity_execute_script(tab_id, script, OBSERVATION_TIMEOUT)?;
+    serde_json::from_value(automation_value_to_json(value))
+        .map_err(|error| format!("invalid click geometry from renderer: {error}"))
+}
+
+fn event_probe_script(event_types: &[String]) -> Result<String, String> {
+    let event_types = serde_json::to_string(event_types)
+        .map_err(|error| format!("failed to serialize parity event types: {error}"))?;
+    // https://dom.spec.whatwg.org/#add-an-event-listener
+    Ok(format!(
+        "return (() => {{\
+           globalThis.__browserParityEvents=[];\
+           const selectorFor=(element)=>{{\
+             if(element.id)return '#'+element.id;\
+             const parts=[];\
+             for(let node=element;node;node=node.parentElement){{\
+               let part=node.tagName.toLowerCase();\
+               if(node.parentElement){{\
+                 let index=1;\
+                 for(let sibling=node.previousElementSibling;sibling;sibling=sibling.previousElementSibling){{\
+                   if(sibling.tagName===node.tagName)index++;\
+                 }}\
+                 part+=`:nth-of-type(${{index}})`;\
+               }}\
+               parts.unshift(part);\
+             }}\
+             return parts.join('>');\
+           }};\
+           for(const type of {event_types}){{\
+             document.addEventListener(type,(event)=>{{\
+               const target=event.target instanceof Element?selectorFor(event.target):'';\
+               const record={{type:event.type,target,defaultPrevented:event.defaultPrevented}};\
+               globalThis.__browserParityEvents.push(record);\
+               queueMicrotask(()=>{{record.defaultPrevented=event.defaultPrevented;}});\
+             }},true);\
+           }}\
+           return null;\
+         }})()"
+    ))
+}
+
+fn observation_script(observe: &Observe) -> Result<String, String> {
+    let config = serde_json::to_string(&(&observe.selectors, &observe.state_expression))
+        .map_err(|error| format!("failed to serialize parity observation config: {error}"))?;
+    // https://www.w3.org/TR/cssom-view-1/#dom-element-getboundingclientrect
+    Ok(format!(
+        "return (() => {{\
+           const [selectors,stateExpression]={config};\
+           const selectorFor=(element)=>{{\
+             if(!element)return '';\
+             if(element.id)return '#'+element.id;\
+             const parts=[];\
+             for(let node=element;node;node=node.parentElement){{\
+               let part=node.tagName.toLowerCase();\
+               if(node.parentElement){{\
+                 let index=1;\
+                 for(let sibling=node.previousElementSibling;sibling;sibling=sibling.previousElementSibling){{\
+                   if(sibling.tagName===node.tagName)index++;\
+                 }}\
+                 part+=`:nth-of-type(${{index}})`;\
+               }}\
+               parts.unshift(part);\
+             }}\
+             return parts.join('>');\
+           }};\
+           const geometry={{}};\
+           for(const selector of selectors){{\
+             const element=document.querySelector(selector);\
+             if(!element){{geometry[selector]=null;continue;}}\
+             const rect=element.getBoundingClientRect();\
+             geometry[selector]={{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};\
+           }}\
+           let state=(0,eval)(stateExpression);\
+           const events=Array.isArray(state?.events)\
+             ?Array.from(state.events):Array.from(globalThis.__browserParityEvents||[]);\
+           if(state&&typeof state==='object'&&!Array.isArray(state)){{\
+             const {{events:_events,...rest}}=state;state=rest;\
+           }}\
+           return {{\
+             state,events,geometry,\
+             activeElement:selectorFor(document.activeElement),\
+             url:location.href\
+           }};\
+         }})()"
+    ))
+}
+
+fn automation_value_to_json(value: AutomationValue) -> Value {
+    match value {
+        AutomationValue::Null => Value::Null,
+        AutomationValue::Bool(value) => Value::Bool(value),
+        AutomationValue::Number(value) => serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        AutomationValue::String(value) => Value::String(value),
+        AutomationValue::Array(values) => Value::Array(values.into_iter().map(automation_value_to_json).collect()),
+        AutomationValue::Object(entries) => Value::Object(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key, automation_value_to_json(value)))
+                .collect(),
+        ),
     }
-    Ok(result)
 }
 
 fn hex_name(selector: &str) -> String {
@@ -576,6 +626,34 @@ mod tests {
                 }
             )
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn observation_script_preserves_arbitrary_css_selectors_and_expression() {
+        let observe = Observe {
+            selectors: vec![".card[data-kind=\"primary\"] > button".to_string()],
+            state_expression: "({ label: document.querySelector('button').textContent })".to_string(),
+            event_types: vec!["click".to_string()],
+        };
+
+        let script = observation_script(&observe).unwrap();
+
+        assert!(script.contains(r#".card[data-kind=\"primary\"] > button"#));
+        assert!(script.contains(r#"document.querySelector('button').textContent"#));
+        assert!(script.contains("getBoundingClientRect"));
+    }
+
+    #[test]
+    fn automation_values_keep_nested_json_shape() {
+        let value = AutomationValue::Object(vec![(
+            "items".to_string(),
+            AutomationValue::Array(vec![AutomationValue::Bool(true), AutomationValue::Number(2.5)]),
+        )]);
+
+        assert_eq!(
+            automation_value_to_json(value),
+            serde_json::json!({ "items": [true, 2.5] })
         );
     }
 }

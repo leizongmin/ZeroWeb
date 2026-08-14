@@ -61,6 +61,7 @@ ZeroWeb 是一个用 Rust 写的实验性跨平台浏览器项目。这个仓库
 - Rust `1.85` 或更新版本
 - `cargo fmt`
 - `cargo clippy`
+- Windows 开发环境（MSVC、LLVM/libclang、rusty_v8）请按 [Windows 开发环境](docs/development/windows.md) 配置。
 - Linux 桌面环境下需要安装与 CI 一致的系统依赖：
 
 ```bash
@@ -102,7 +103,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 > 涉及渲染 / 布局变更时，建议额外跑 `make product-smoke`：它把产品静态页 `apps/browser/assets/welcome.html` 渲染后与 Chromium Oracle 像素截图对比（默认 diff 超过 20% 即失败，可用 `make product-smoke MAX_DIFF=22` 调阈值），用来捕获 `make test` / `make reftest` 覆盖不到的产品可见回归。
 
-在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 需在本地环境里设置 `RUSTY_V8_ARCHIVE` 为 release `.lib` 的 URL。
+在 Linux 和 macOS 上，构建前需先下载 `rusty_v8` 预构建产物：`make setup-rusty-v8`（缓存到 `${XDG_CACHE_HOME:-$HOME/.cache}/zero-web/rusty_v8`）。推荐用 `make build` 或 `make browser`，会自动执行该步骤。Windows 启动脚本会下载到项目内缓存，详见 [Windows 开发环境](docs/development/windows.md)。
 
 `freetype-raster` feature（默认开启）在非 Ahem 字体路径上用 FreeType 替代 fontdue 光栅化，是 broad 一致率显著提升的关键（R1094 实测全 corpus oracle +232 零回归）。需纯 Rust 构建时：`cargo build --no-default-features -p zero-render-foundation`。
 

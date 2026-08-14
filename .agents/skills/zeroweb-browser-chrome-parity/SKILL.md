@@ -34,12 +34,12 @@ description: "对比 ZeroWeb 与 Chrome 的真实点击、页面状态、事件�
 
 - Node.js 20+；
 - 仓库 Rust 工具链和 `test-guard`；
-- Chrome/Chromium 127，或场景指定的版本；
+- Chrome/Chromium 127、Windows Edge，或场景指定的版本；
 - 可用的窗口系统和 GPU adapter；
 - Windows 首次构建前配置 `RUSTY_V8_ARCHIVE`；
 - Linux/macOS 首次构建前执行 `make setup-rusty-v8`。
 
-Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式设置 `PUPPETEER_EXECUTABLE_PATH`。生产视觉验收优先连接预启动的 GUI Chrome：`ORACLE_CDP_URL=http://127.0.0.1:9222`。
+浏览器自动探测顺序见 `capture-chrome.mjs`。Windows 按 Chrome、Chromium、Edge 的顺序探测；也可在所有平台显式设置 `PUPPETEER_EXECUTABLE_PATH`。Edge 后备不会放宽场景的 `chromeVersionPattern`，需要由场景明确接受对应的 `Edg/...` 版本。生产视觉验收优先连接预启动的 GUI Chrome：`ORACLE_CDP_URL=http://127.0.0.1:9222`。
 
 ## 执行流程
 
@@ -62,7 +62,7 @@ Chrome 自动探测顺序见 `capture-chrome.mjs`。也可在所有平台显式�
 
    Windows 使用仓库在该平台提供的等价 `test-guard` 入口，不得裸跑长时间构建。
 
-3. 复制 [templates/form-interaction.scenario.json](templates/form-interaction.scenario.json)，只修改页面 URL、观察目标和动作。
+3. 通用页面从 [templates/generic-page.scenario.json](templates/generic-page.scenario.json) 开始；表单专项验收可使用 [templates/form-interaction.scenario.json](templates/form-interaction.scenario.json)。修改页面 URL、`stateExpression`、观察 selector 和动作。页面无需提供 `#test-state`、特殊 title 或其他验收专用标记；ZeroWeb 会在 live renderer 的真实页面上下文执行观察表达式。`observe.selectors` 接受任意受页面 `querySelector` 支持的 CSS selector。点击 selector 无需同时列入观察列表。当前生产采集环境必须使用 `locale: "en-US"`、`reducedMotion: "no-preference"`，颜色主题可选 `light` 或 `dark`；不支持的值由 validator 明确拒绝。
 
 4. 校验场景：
 
