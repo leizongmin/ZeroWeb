@@ -293,6 +293,16 @@ fn request_cache_mode(headers: &[(String, String)]) -> Option<CacheMode> {
 mod tests {
     use super::*;
 
+    fn fresh_response(url: &str) -> crate::HttpResponse {
+        crate::HttpResponse {
+            status_code: 200,
+            headers: vec![("Cache-Control".into(), "max-age=60".into())],
+            body: b"cached".to_vec(),
+            url: url.into(),
+            redirect_count: 0,
+        }
+    }
+
     #[test]
     fn request_identity_is_order_independent_but_partitioned() {
         let a = ResourceRequest::get("https://example.com/a#fragment", FetchPriority::MEDIUM).with_headers(vec![
@@ -311,6 +321,11 @@ mod tests {
                 .with_headers(vec![("Cookie".into(), "a=2".into())])
                 .identity_key()
         );
+        assert_ne!(
+            a.identity_key(),
+            a.clone().with_cache_mode(CacheMode::NoCache).identity_key(),
+            "a forced revalidation must not join a normal cache transaction"
+        );
     }
 
     #[test]
@@ -323,6 +338,51 @@ mod tests {
             request_cache_mode(&[("Cache-Control".into(), "only-if-cached".into())]),
             Some(CacheMode::OnlyIfCached)
         );
+        assert_eq!(
+            request_cache_mode(&[("cache-control".into(), "max-age=0, NO-CACHE".into())]),
+            Some(CacheMode::NoCache)
+        );
+        assert_eq!(
+            request_cache_mode(&[("Cache-Control".into(), "no-store, no-cache".into())]),
+            Some(CacheMode::NoStore)
+        );
         assert_eq!(request_cache_mode(&[]), None);
+    }
+
+    #[test]
+    fn partition_cache_instances_are_stable_and_isolated() {
+        let default_cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&default_cache), "site-a");
+
+        assert!(Arc::ptr_eq(&loader.cache_for_partition("site-a"), &default_cache));
+        let first_site_b = loader.cache_for_partition("site-b");
+        let second_site_b = loader.cache_for_partition("site-b");
+        assert!(Arc::ptr_eq(&first_site_b, &second_site_b));
+        assert!(!Arc::ptr_eq(&first_site_b, &default_cache));
+    }
+
+    #[test]
+    fn fresh_default_partition_entry_is_not_visible_to_other_partition() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "site-a");
+        let url = "https://cdn.example/asset.css";
+        assert!(cache.lock().unwrap().put(url, &fresh_response(url)));
+
+        let cached = loader
+            .submit(ResourceRequest::get(url, FetchPriority::CRITICAL))
+            .recv()
+            .expect("fresh cache response")
+            .expect("successful fresh cache response");
+        assert_eq!(cached.body, b"cached");
+
+        let isolated = loader
+            .submit(
+                ResourceRequest::get(url, FetchPriority::CRITICAL)
+                    .with_partition("site-b")
+                    .with_cache_mode(CacheMode::OnlyIfCached),
+            )
+            .recv()
+            .expect("only-if-cached result");
+        assert!(isolated.is_err(), "another partition must not see site-a's entry");
     }
 }
