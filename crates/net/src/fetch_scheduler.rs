@@ -44,6 +44,7 @@ struct QueuedJob {
 pub struct PerOriginFetchScheduler {
     max_per_origin: usize,
     max_total: usize,
+    max_queued: usize,
     in_flight: HashMap<String, usize>,
     in_flight_total: usize,
     queue: Vec<QueuedJob>,
@@ -66,6 +67,7 @@ impl PerOriginFetchScheduler {
         Self {
             max_per_origin: max_per_origin.max(1),
             max_total: max_total.max(1),
+            max_queued: max_total.saturating_mul(16).clamp(64, 1024),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -222,6 +224,19 @@ impl PerOriginFetchScheduler {
         if self.in_flight_total >= self.max_total
             || self.in_flight.get(&job.origin).copied().unwrap_or(0) >= self.max_per_origin
         {
+            if self.queue.len() >= self.max_queued {
+                tracing::warn!(
+                    url = %job.url,
+                    origin = %job.origin,
+                    max_queued = self.max_queued,
+                    "fetch scheduler queue is full"
+                );
+                if job.shared {
+                    self.pending.remove(&job.key);
+                }
+                let _ = job.reply_tx.send(Err("fetch scheduler queue is full".to_string()));
+                return;
+            }
             tracing::info!(
                 url = %job.url,
                 origin = %job.origin,
@@ -393,6 +408,7 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 2,
             max_total: 24,
+            max_queued: 384,
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -411,10 +427,35 @@ mod tests {
     }
 
     #[test]
+    fn rejects_jobs_when_queue_capacity_is_reached() {
+        let mut sched = PerOriginFetchScheduler {
+            max_per_origin: 1,
+            max_total: 1,
+            max_queued: 1,
+            in_flight: HashMap::new(),
+            in_flight_total: 0,
+            queue: Vec::new(),
+            pending: HashMap::new(),
+            last_queued_origin: None,
+            self_hook: None,
+        };
+        let _running = sched.submit("http://127.0.0.1:1/running");
+        let _queued = sched.submit("http://127.0.0.1:1/queued");
+        let overloaded = sched.submit("http://127.0.0.1:1/overloaded");
+
+        assert_eq!(sched.queue.len(), 1);
+        assert!(matches!(
+            overloaded.recv().expect("queue rejection result"),
+            Err(error) if error == "fetch scheduler queue is full"
+        ));
+    }
+
+    #[test]
     fn higher_priority_jumps_queue() {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 24,
+            max_queued: 384,
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -435,6 +476,7 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 24,
+            max_queued: 384,
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -453,6 +495,7 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 6,
             max_total: 1,
+            max_queued: 64,
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -471,6 +514,7 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 1,
+            max_queued: 64,
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),

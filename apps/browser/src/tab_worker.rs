@@ -246,9 +246,8 @@ fn tab_worker_main(
         #[cfg(not(test))]
         {
             let js_worker = TabJsWorkerHandle::spawn(tab_id);
-            // P1b S3 / R2923：注入生产 fetch handler（经 zero_net::HttpClient::send 真实 HTTP，
-            // 支持全方法/头/体）。js_worker 早于 WebView 创建，但 HttpClient::new() 自建 reqwest
-            // client，无需 WebView 句柄，故可在 spawn 后立即注入。
+            // P1b S3 / R2923：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，支持全方法/头/体）。
+            // js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可在 spawn 后立即注入。
             js_worker.set_fetch_handler(crate::tab_js_worker::default_fetch_handler());
             Some(js_worker)
         }
