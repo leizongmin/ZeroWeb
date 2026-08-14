@@ -27,8 +27,9 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 | shadows | 61 | ✅ 60 Pass（1 = current.removed——js-dom 流 DOM remove 不置空 parentNode，移交） |
 | compositing | 124 | ✅ 98 Pass / **0 Fail**（26 = reftest 格式 grid 文件超时，非 canvas 面） |
 | fill-and-stroke-styles | 261 | ✅ 251+ Pass / 3 Fail（halftransparent alpha 精度 + gradient.colormix/relativecolor 插值空间）/ 7 超时（既有） |
-| text | 144 | ✅ 107+ Pass（draw 像素面 51；drawing.style 25；measure 全系 40+：真度量/bbox 锚定/getActualBoundingBox 11/TextCluster 7/emHeight）；剩余 = index-from-offset/selection-rects（DOM 布局面）~75 + lang 2 + 超时 33（既有） |
-| **合计** | **919 文件** | **684+ Pass**（基线 533 → +151） |
+| text | 144 | ✅ 110+ Pass（draw 像素面 51；drawing.style 25；measure 全系：真度量/bbox 锚定/getActualBoundingBox 11/TextCluster 7/emHeight/font.parse 7）；剩余 = index-from-offset/selection-rects（DOM 布局面）+ lang + 超时 33（既有） |
+| offscreen worker 变体 | 715 文件 | ✅ **630 Pass**（G6——OffscreenCanvas × Web Worker 集成：importScripts 内联 + fetch_tests_from_worker 聚合 + worker 字体面） |
+| **合计** | **1634 文件** | **1314+ Pass**（基线 533 → +781） |
 
 ### Rust 层（crates/canvas）
 
@@ -90,7 +91,7 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 | G3 | OffscreenCanvas Rust 桩 | ✅ 真实化 |
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
-| G6 | OffscreenCanvas × Web Worker | ⏳ 深结构（worker 运行时 + canvas 桥，当前 WPT 面不含 .worker.js） |
+| G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass：同 isolate 共享 canvas ops + importScripts 内联 + fetch_tests_from_worker 聚合 + worker FontFaceSet） |
 | G7 | 剩余失败聚类 | 🔄 text .tentative 新 API ~90 + gradient.colormix 插值空间 2 + halftransparent 1 + current.removed 1（js-dom 面） |
 
 ## 待用户决策清单
