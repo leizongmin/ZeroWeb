@@ -27,6 +27,7 @@ SUBDIRS=(
   "dom/nodes"
   "dom/events"
   "dom/collections"
+  "dom/traversal"
 )
 
 fetch_raw() {

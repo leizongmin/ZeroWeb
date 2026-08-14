@@ -159,17 +159,24 @@
     } catch (_e) {}
   }
 
-  // NodeFilter 常量（spec）——createTreeWalker/createNodeIterator 的 whatToShow 掩码 + acceptNode 返回值。
+  // NodeFilter 常量（spec `dom-nodefilter`，R41 对齐上游 NodeFilter-constants.html 全表）——
+  // createTreeWalker/createNodeIterator 的 whatToShow 掩码 + acceptNode 返回值。
+  // 修正：SHOW_PROCESSING_INSTRUCTION 0x10→0x40（原写错），补 SHOW_ATTRIBUTE/ENTITY_REFERENCE/ENTITY/NOTATION
+  //（历史常量，掩码位保留）。
   globalThis.NodeFilter = globalThis.NodeFilter || {
     SHOW_ALL: 0xFFFFFFFF,
     SHOW_ELEMENT: 0x1,
+    SHOW_ATTRIBUTE: 0x2,
     SHOW_TEXT: 0x4,
     SHOW_CDATA_SECTION: 0x8,
-    SHOW_PROCESSING_INSTRUCTION: 0x10,
+    SHOW_ENTITY_REFERENCE: 0x10,
+    SHOW_ENTITY: 0x20,
+    SHOW_PROCESSING_INSTRUCTION: 0x40,
     SHOW_COMMENT: 0x80,
     SHOW_DOCUMENT: 0x100,
     SHOW_DOCUMENT_TYPE: 0x200,
     SHOW_DOCUMENT_FRAGMENT: 0x400,
+    SHOW_NOTATION: 0x800,
     FILTER_ACCEPT: 1,
     FILTER_REJECT: 2,
     FILTER_SKIP: 3,
@@ -184,6 +191,11 @@
   // **已知限制**：① eager（非 lazy，spec TreeWalker 惰性——小树无碍，结果序一致）；② currentNode setter
   // 不重置游标（spec 应从 currentNode 续遍历）；③ 无 live/detach（NodeIterator 移除节点 detach defer）。
   function _makeNodeWalker(root, whatToShow, filter, isTreeWalker) {
+    // R41：spec `document-createtreewalker` 步骤 1——root 缺省/无效（无 nodeType）抛 TypeError
+    //（WPT TreeWalker-basic "Give an invalid root node"）。
+    if (!root || typeof root.nodeType !== 'number') {
+      throw new globalThis.TypeError("Argument 1 of Document.createTreeWalker is not an object.");
+    }
     var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow | 0);
     var filterFn = null;
     if (typeof filter === 'function') filterFn = filter;
@@ -224,20 +236,43 @@
       if (idx >= 0) return idx;
       return accepted.length > 0 && accepted[0] === root ? 0 : -1;
     }
-    function moveTo(i) { idx = i; walker.currentNode = accepted[i]; return accepted[i]; }
-    var walker = {
-      root: root,
-      whatToShow: wts,
-      filter: filter || null,
-      currentNode: root,
-      nextNode: function () {
-        if (idx < accepted.length - 1) { idx++; this.currentNode = accepted[idx]; return accepted[idx]; }
-        return null;
+    function moveTo(i) { idx = i; currentNodeVal = accepted[i]; return accepted[i]; }
+    var walker = {};
+    // R41：spec `treewalker` 接口——root/whatToShow/filter 为 readonly attribute（WPT TreeWalker-basic
+    // assert_readonly）。经 defineProperty getter-only 实现（无 setter → writable:false 语义）。
+    // whatToShow：**显式传 null** 按 0 处理（spec ToUint32(null)=0，区别缺省 undefined → SHOW_ALL；
+    // WPT "root, null, null" 断言 whatToShow===0）。
+    var wtsStored = (whatToShow === null) ? 0 : wts;
+    Object.defineProperty(walker, 'root', { get: function () { return root; }, configurable: true });
+    Object.defineProperty(walker, 'whatToShow', { get: function () { return wtsStored; }, configurable: true });
+    Object.defineProperty(walker, 'filter', { get: function () { return filter || null; }, configurable: true });
+    // R41：currentNode setter——spec：赋非 Node 值抛 TypeError（WPT TreeWalker-currentNode
+    // "setting currentNode to non-Node values throws"）。Node 判定 = 有 nodeType 数字。赋合法 Node：
+    // 更新 currentNode + 重置游标到「该节点在 accepted 中的位置」（命中则定位；root 外节点 -1 =
+    // 从头语义的近似——lazy 续走属 M1 L2 lazy 重构，eager 模型下尽力而为）。
+    var currentNodeVal = root;
+    Object.defineProperty(walker, 'currentNode', {
+      get: function () { return currentNodeVal; },
+      set: function (v) {
+        if (!v || typeof v.nodeType !== 'number') {
+          throw new globalThis.TypeError("currentNode is not a Node");
+        }
+        currentNodeVal = v;
+        var at = accepted.indexOf(v);
+        idx = at >= 0 ? at : -1;
       },
-      previousNode: function () {
-        if (idx > 0) { idx--; this.currentNode = accepted[idx]; return accepted[idx]; }
-        return null;
-      }
+      configurable: true
+    });
+    // R41：spec 接口 branding——WPT TreeWalker-basic 断言 `String(walker) === "[object TreeWalker]"`
+    //（NodeIterator 同理 "[object NodeIterator]"）。普通 data 属性即可（String() 走 toString 优先）。
+    walker.toString = function () { return isTreeWalker ? '[object TreeWalker]' : '[object NodeIterator]'; };
+    walker.nextNode = function () {
+      if (idx < accepted.length - 1) { idx++; currentNodeVal = accepted[idx]; return accepted[idx]; }
+      return null;
+    };
+    walker.previousNode = function () {
+      if (idx > 0) { idx--; currentNodeVal = accepted[idx]; return accepted[idx]; }
+      return null;
     };
     if (isTreeWalker) {
       // DOM §4.2.6 TreeWalker 层级方法（R3257）。基于 accepted[]（pre-order）+ parentAcceptedIdx：

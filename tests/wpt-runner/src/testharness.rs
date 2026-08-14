@@ -61,7 +61,7 @@ const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 /// R21 追加 dom/events（Event-dispatch 系列 / EventTarget / EventListener——事件桥核心面）。
 /// R37 追加 dom/collections（HTMLCollection / NodeList / document.forms 等集合 API——纯 DOM API，
 /// 不依赖 document/window listener 深结构，根因清楚可按聚类驱动修复）。
-pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes", "dom/events", "dom/collections"];
+pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes", "dom/events", "dom/collections", "dom/traversal"];
 
 /// WPT subtest status.
 ///
@@ -738,6 +738,13 @@ fn extract_script_src(open_tag: &str) -> Option<&str> {
     if let Some(i) = open_tag.find(key) {
         let after = &open_tag[i + key.len()..];
         return after.split('\'').next();
+    }
+    // R41：无引号属性值（HTML 合法语法，上游 dom/traversal NodeIterator.html 用 `src=../common.js`）。
+    // 值截止于空白或标签闭合 `>`（open_tag 含闭合尖括号）。
+    let key = "src=";
+    if let Some(i) = open_tag.find(key) {
+        let after = &open_tag[i + key.len()..];
+        return after.split_whitespace().next().map(|v| v.trim_end_matches('>'));
     }
     None
 }

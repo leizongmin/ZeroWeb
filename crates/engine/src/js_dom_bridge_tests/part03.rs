@@ -2459,3 +2459,118 @@ fn test_doc_win_dispatch_chain_slots_r40() {
         "⑤ detached 元素自身 listener 正常触发（target 站）"
     );
 }
+
+#[test]
+fn test_treewalker_api_surface_r41() {
+    // R41：dom/traversal 导入建基线驱动的 TreeWalker/NodeIterator API 面修复。
+    // ① NodeFilter 常量对齐上游全表（SHOW_PROCESSING_INSTRUCTION 0x40 修正 + SHOW_ATTRIBUTE/ENTITY/
+    //    ENTITY_REFERENCE/NOTATION 补齐，WPT NodeFilter-constants.html）
+    // ② createTreeWalker root 缺省/无效抛 TypeError（spec document-createtreewalker 步骤 1）
+    // ③ root/whatToShow/filter readonly（defineProperty getter-only）
+    // ④ whatToShow 显式 null → 0（ToUint32(null)，区别缺省 → SHOW_ALL）
+    // ⑤ toString 接口 branding（[object TreeWalker] / [object NodeIterator]）
+    // ⑥ currentNode 赋非 Node 抛 TypeError；赋合法 Node 接受
+    // https://dom.spec.whatwg.org/#interface-treewalker
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var body = document.body;\n\
+             // ① 常量全表（上游 NodeFilter-constants.html 断言集）\n\
+             globalThis.__c1 = [NodeFilter.SHOW_ALL, NodeFilter.SHOW_ELEMENT, NodeFilter.SHOW_ATTRIBUTE,\n\
+               NodeFilter.SHOW_TEXT, NodeFilter.SHOW_CDATA_SECTION, NodeFilter.SHOW_ENTITY_REFERENCE,\n\
+               NodeFilter.SHOW_ENTITY, NodeFilter.SHOW_PROCESSING_INSTRUCTION, NodeFilter.SHOW_COMMENT,\n\
+               NodeFilter.SHOW_DOCUMENT, NodeFilter.SHOW_DOCUMENT_TYPE, NodeFilter.SHOW_DOCUMENT_FRAGMENT,\n\
+               NodeFilter.SHOW_NOTATION, NodeFilter.FILTER_ACCEPT, NodeFilter.FILTER_REJECT, NodeFilter.FILTER_SKIP].join(',');\n\
+             // ② root 无效抛 TypeError\n\
+             try { document.createTreeWalker(); globalThis.__c2 = 'no-throw'; }\n\
+             catch (e) { globalThis.__c2 = (e instanceof TypeError) ? 'TypeError' : String(e); }\n\
+             try { document.createNodeIterator(null); globalThis.__c3 = 'no-throw'; }\n\
+             catch (e) { globalThis.__c3 = (e instanceof TypeError) ? 'TypeError' : String(e); }\n\
+             // ③④⑤ readonly + null→0 + toString\n\
+             var w = document.createTreeWalker(body);\n\
+             var w2 = document.createTreeWalker(body, null, null);\n\
+             var it = document.createNodeIterator(body);\n\
+             globalThis.__c4 = [String(w), String(it)].join('|');\n\
+             globalThis.__c5 = w.whatToShow;\n\
+             globalThis.__c6 = w2.whatToShow;\n\
+             // readonly 判定与 testharness assert_readonly 同口径：accessor 属性 set===undefined（getter-only）。\n\
+             globalThis.__c7 = Object.getOwnPropertyDescriptor(w, 'root').set === undefined\n\
+               && Object.getOwnPropertyDescriptor(w, 'whatToShow').set === undefined\n\
+               && Object.getOwnPropertyDescriptor(w, 'filter').set === undefined;\n\
+             // ⑥ currentNode setter 校验\n\
+             try { w.currentNode = null; globalThis.__c8 = 'no-throw'; }\n\
+             catch (e) { globalThis.__c8 = (e instanceof TypeError) ? 'TypeError' : String(e); }\n\
+             try { w.currentNode = {}; globalThis.__c9 = 'no-throw'; }\n\
+             catch (e) { globalThis.__c9 = (e instanceof TypeError) ? 'TypeError' : String(e); }\n\
+             var div = document.querySelector('#a');\n\
+             w.currentNode = div;\n\
+             globalThis.__c10 = (w.currentNode === div);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__c1").unwrap().value,
+        "4294967295,1,2,4,8,16,32,64,128,256,512,1024,2048,1,2,3",
+        "① NodeFilter 常量上游全表（含 SHOW_PI=0x40 修正 + 4 个补齐常量）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c2").unwrap().value,
+        "TypeError",
+        "② createTreeWalker() 无 root 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c3").unwrap().value,
+        "TypeError",
+        "② createNodeIterator(null) 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c4").unwrap().value,
+        "[object TreeWalker]|[object NodeIterator]",
+        "⑤ toString 接口 branding"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c5").unwrap().value,
+        "4294967295",
+        "④ 缺省 whatToShow → SHOW_ALL"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c6").unwrap().value,
+        "0",
+        "④ 显式 null whatToShow → 0（ToUint32(null)，非缺省语义）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c7").unwrap().value,
+        "true",
+        "③ root/whatToShow/filter readonly"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c8").unwrap().value,
+        "TypeError",
+        "⑥ currentNode = null 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c9").unwrap().value,
+        "TypeError",
+        "⑥ currentNode 赋普通对象抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c10").unwrap().value,
+        "true",
+        "⑥ currentNode 赋合法 Node 接受"
+    );
+}

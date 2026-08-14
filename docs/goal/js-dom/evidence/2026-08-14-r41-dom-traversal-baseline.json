@@ -1,0 +1,48 @@
+{
+  "round": "R41",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (traversal)",
+  "slice": "import dom/traversal (17 cases) + baseline + TreeWalker/NodeIterator API surface fixes",
+  "context": "Next-round candidate (b) from R40 plan: extend DOM_TEST_SUBDIRS with dom/traversal (17 cases, NodeIterator/TreeWalker/createNodeIterator/createTreeWalker, pure DOM API).",
+  "import": {
+    "dirs": ["testharness.rs DOM_TEST_SUBDIRS + fetch-dom-subset.sh SUBDIRS += dom/traversal"],
+    "support_files": ["dom/traversal/support/assert-node.js", "empty-document.html", "TreeWalker-acceptNode-filter-cross-realm-null-browsing-context-subframe.html (manual fetch — fetch_dir_html only lists top level)"],
+    "inline_fix": "extract_script_src now supports unquoted attribute values (src=../common.js — legal HTML syntax used by upstream NodeIterator.html/TreeWalker.html); previously only quoted values matched -> external fetch failed"
+  },
+  "api_surface_fixes": {
+    "nodefilter_constants": "aligned to upstream NodeFilter-constants.html full table: SHOW_PROCESSING_INSTRUCTION 0x10->0x40 (was wrong), added SHOW_ATTRIBUTE(0x2)/SHOW_ENTITY_REFERENCE(0x10)/SHOW_ENTITY(0x20)/SHOW_NOTATION(0x800)",
+    "root_validation": "createTreeWalker()/createNodeIterator(null) throw TypeError when root is not a Node (spec document-createtreewalker step 1)",
+    "readonly_attrs": "root/whatToShow/filter getter-only accessors (testharness assert_readonly passes: accessor descriptor with set===undefined)",
+    "what_to_show_null": "explicit null whatToShow -> 0 (ToUint32(null)), distinct from omitted -> SHOW_ALL",
+    "tostring_branding": "[object TreeWalker] / [object NodeIterator]",
+    "current_node_setter": "assigning non-Node (null/{}) throws TypeError; assigning a valid Node is accepted and retargets the cursor (indexOf in accepted[], miss -> -1)"
+  },
+  "results": {
+    "nodefilter_constants": "1P/1F -> 2P/0F (100%) both paths",
+    "treewalker_basic": "1P/5F -> 5P/1F (remaining 1F = detached childNodes deep structure)",
+    "treewalker_current_node": "1P/3F -> 2P/2F (remaining = lazy-walk-from-currentNode semantics, M1 L2)",
+    "dom_traversal_polyfill_full": { "pass": 9, "fail": 46, "rate": "16.36%", "baseline_note": "first real baseline (was 1P/24F pre-js-inline; 55 subtest now)" },
+    "dom_traversal_native_full": { "pass": 8, "fail": 47, "rate": "14.55%" },
+    "regression": {
+      "dom_events_polyfill": "189P unchanged",
+      "dom_nodes_polyfill": "2503P (+1, unquoted-src inline fix unlocked)",
+      "dom_collections_polyfill": "17P unchanged"
+    }
+  },
+  "deferred_deep_structure": "dom/traversal failure主力 = detached-tree walking (~30 fail): testElement built via createElement+appendChild never attached to document -> polyfill childNodes always empty (deferred mutation snapshot, same M1 L2 limitation as R4 appendChild). Also TreeWalker currentNode lazy-walk-from-outside-root semantics (eager model approximation) and cross-realm filter tests (iframe realm).",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r41_unit_test": "test_treewalker_api_surface_r41 (constants full table + root TypeError + readonly accessor + null->0 whatToShow + toString branding + currentNode setter validation)",
+    "v8_engine_lib": "2122 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "wpt_runner": "171 passed / 10 ignored",
+    "webview": "595 passed",
+    "quickjs_matrix": "script-sandbox 749 / renderer 124 / integration 75 / wpt-runner 547 / webview-demo 10 all green"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}
