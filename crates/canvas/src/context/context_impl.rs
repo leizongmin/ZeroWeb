@@ -257,24 +257,31 @@ impl CanvasContext {
         let (tx, ty) = self.transform.transform_point(x + ox, y + oy);
         // R34xx：spec text preparation——ASCII whitespace → U+0020（tab 等与 space 同绘制）。
         let prepared = prepare_canvas_text(text);
+        // R34xx：font-variant small-caps 合成（字体无 smcp 特征时 Chromium 以小写→大写
+        // 字形渲染——2d.text.fontVariantCaps2.worker 的 measure 宽度须不同）。
+        let shaped_text = if self.font.small_caps {
+            prepared.to_uppercase()
+        } else {
+            prepared
+        };
         if let Some(font_id) = self.font_id
             && let Some(loader) = self.font_loader.clone()
             && let Ok(loader) = loader.lock()
             && let Some(shaped) = if rtl {
                 loader.shape_text_cached_with_features(
                     font_id,
-                    &prepared,
+                    &shaped_text,
                     font_size,
                     zero_render_foundation::font::TextDirection::RightToLeft,
-                    kern_features(self.font.kerning_none),
+                    &text_features(self.font.kerning_none, self.font.small_caps),
                 )
             } else {
                 loader.shape_text_cached_with_features(
                     font_id,
-                    &prepared,
+                    &shaped_text,
                     font_size,
                     zero_render_foundation::font::TextDirection::Auto,
-                    kern_features(self.font.kerning_none),
+                    &text_features(self.font.kerning_none, self.font.small_caps),
                 )
             }
         {
@@ -363,18 +370,24 @@ impl CanvasContext {
                 if let Ok(loader) = loader.lock() {
                     // R34xx：spec text preparation——ASCII whitespace → U+0020 + null 剥离。
                     let clean = prepare_canvas_text(text);
+                    // R34xx：small-caps 合成（大写 shaping——字体无 smcp 特征）。
+                    let shaped_source = if self.font.small_caps {
+                        clean.to_uppercase()
+                    } else {
+                        clean
+                    };
                     let shaped = if self.font.kerning_none {
                         loader
                             .shape_text_cached_with_features(
                                 fid,
-                                &clean,
+                                &shaped_source,
                                 size,
                                 zero_render_foundation::font::TextDirection::Auto,
-                                &[zero_render_foundation::font::OpenTypeFeature::new(*b"kern", 0)],
+                                &text_features(self.font.kerning_none, self.font.small_caps),
                             )
                             .unwrap_or_default()
                     } else {
-                        loader.shape_text_cached(fid, &clean, size).unwrap_or_default()
+                        loader.shape_text_cached(fid, &shaped_source, size).unwrap_or_default()
                     };
                     let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
                     // R34xx：letterSpacing（含末字符——WPT ×11 期望）与 wordSpacing。
@@ -2146,16 +2159,18 @@ impl CanvasContext {
     }
 }
 
-/// R34xx：fontKerning 'none' 时返回关 kern 的 feature 列表（否则空——默认开）。
-fn kern_features(none: bool) -> &'static [zero_render_foundation::font::OpenTypeFeature] {
-    use std::sync::OnceLock;
-    static NONE: OnceLock<Vec<zero_render_foundation::font::OpenTypeFeature>> = OnceLock::new();
-    static ON: [zero_render_foundation::font::OpenTypeFeature; 0] = [];
-    if none {
-        NONE.get_or_init(|| vec![zero_render_foundation::font::OpenTypeFeature::new(*b"kern", 0)])
-    } else {
-        &ON
+/// R34xx：canvas 文本 shaping 的 OpenType feature 列表——fontKerning 'none' 关 kern；
+/// font-variant small-caps 开 smcp（2d.text.fontVariantCaps2.worker：small-caps 与
+/// normal 的 measure 宽度须不同）。
+fn text_features(kerning_none: bool, small_caps: bool) -> Vec<zero_render_foundation::font::OpenTypeFeature> {
+    let mut v = Vec::new();
+    if kerning_none {
+        v.push(zero_render_foundation::font::OpenTypeFeature::new(*b"kern", 0));
     }
+    if small_caps {
+        v.push(zero_render_foundation::font::OpenTypeFeature::new(*b"smcp", 1));
+    }
+    v
 }
 
 /// R34xx：canvas 文本预处理（spec text preparation algorithm：替换 ASCII whitespace 为

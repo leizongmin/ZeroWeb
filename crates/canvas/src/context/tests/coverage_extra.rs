@@ -755,3 +755,45 @@ fn test_measure_bbox_left_negative_when_ink_right_of_origin() {
     let m2 = ctx.measure_text("A");
     assert!(m2.actual_bounding_box_left.abs() <= 1.0);
 }
+
+// R34xx：font-variant small-caps 合成（字体无 smcp 特征 → 大写 shaping——
+// 2d.text.fontVariantCaps2.worker 驱动：small-caps 与 normal 的 measure 宽度不同）。
+#[test]
+fn test_small_caps_changes_measure_width() {
+    let paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    ];
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let mut loaded = false;
+    for p in paths {
+        if let Ok(bytes) = std::fs::read(p)
+            && let Ok(id) = loader.load_font(&bytes)
+        {
+            loader.register_family_alias("serif", id);
+            loaded = true;
+            break;
+        }
+    }
+    if !loaded {
+        return; // 无系统字体环境跳过。
+    }
+    use std::sync::{Arc, Mutex};
+    let mut ctx = CanvasContext::new(200, 50);
+    ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+    ctx.set_font(FontDescriptor {
+        family: "serif".to_string(),
+        size: 32.0,
+        small_caps: true,
+        ..FontDescriptor::default()
+    });
+    let sc = ctx.measure_text("Hello World").width;
+    ctx.set_font(FontDescriptor {
+        family: "serif".to_string(),
+        size: 32.0,
+        small_caps: false,
+        ..FontDescriptor::default()
+    });
+    let n = ctx.measure_text("Hello World").width;
+    assert_ne!(sc, n, "small-caps 与 normal 宽度须不同");
+}
