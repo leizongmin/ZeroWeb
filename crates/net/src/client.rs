@@ -13,6 +13,7 @@ use crate::{HttpRequest, HttpResponse, NetError};
 
 const ASYNC_NETWORK_WORKERS: usize = 4;
 const MAX_BLOCKING_NETWORK_TASKS: usize = 32;
+type AsyncClientCache = HashMap<(u64, bool, bool), reqwest::Client>;
 
 /// 共享异步网络 runtime，避免资源调度器为每个请求创建线程或 runtime。
 pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
@@ -38,11 +39,12 @@ where
 }
 
 fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
-    static CLIENTS: OnceLock<Mutex<HashMap<(u64, bool), reqwest::Client>>> = OnceLock::new();
+    static CLIENTS: OnceLock<Mutex<AsyncClientCache>> = OnceLock::new();
     let no_proxy = crate::connect::no_proxy_enabled();
+    let http2 = crate::connect::http2_enabled();
     let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut clients = clients.lock().expect("async HTTP client cache lock");
-    if let Some(client) = clients.get(&(timeout_secs, no_proxy)) {
+    if let Some(client) = clients.get(&(timeout_secs, no_proxy, http2)) {
         return Ok(client.clone());
     }
     let mut builder = reqwest::Client::builder()
@@ -52,8 +54,11 @@ fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
     if no_proxy {
         builder = builder.no_proxy();
     }
+    if !http2 {
+        builder = builder.http1_only();
+    }
     let client = builder.build().map_err(map_reqwest_error)?;
-    clients.insert((timeout_secs, no_proxy), client.clone());
+    clients.insert((timeout_secs, no_proxy, http2), client.clone());
     Ok(client)
 }
 
@@ -79,6 +84,11 @@ pub struct HttpResponseHead {
     pub redirect_count: usize,
     /// 协商的 HTTP 协议版本。
     pub protocol: String,
+}
+
+struct AsyncHttpResponse {
+    response: HttpResponse,
+    protocol: String,
 }
 
 impl Clone for HttpClient {
@@ -107,7 +117,11 @@ impl HttpClient {
     ///
     /// P2 迁移的接缝：调用方在 Tokio runtime 中可避免为每个请求创建阻塞 worker。
     pub async fn send_async(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
-        Self::send_async_with_config(self.timeout_secs, self.max_redirects, request).await
+        Ok(
+            Self::send_async_with_config(self.timeout_secs, self.max_redirects, request)
+                .await?
+                .response,
+        )
     }
 
     /// 异步流式发送请求，不在客户端中聚合响应体。
@@ -272,14 +286,23 @@ impl HttpClient {
 
     /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。
     pub async fn send_async_with_timeout(timeout_secs: u64, request: HttpRequest) -> Result<HttpResponse, NetError> {
-        Self::send_async_with_config(timeout_secs, 10, request).await
+        Ok(Self::send_async_with_config(timeout_secs, 10, request).await?.response)
+    }
+
+    /// 供调度器写入匿名实际协议 telemetry 的异步请求入口。
+    pub(crate) async fn send_async_with_timeout_and_protocol(
+        timeout_secs: u64,
+        request: HttpRequest,
+    ) -> Result<(HttpResponse, String), NetError> {
+        let response = Self::send_async_with_config(timeout_secs, 10, request).await?;
+        Ok((response.response, response.protocol))
     }
 
     async fn send_async_with_config(
         timeout_secs: u64,
         max_redirects: usize,
         request: HttpRequest,
-    ) -> Result<HttpResponse, NetError> {
+    ) -> Result<AsyncHttpResponse, NetError> {
         let client = async_client(timeout_secs)?;
         let mut current_url = request.url.clone();
         let mut method = request.method.clone();
@@ -338,18 +361,22 @@ impl HttpClient {
             }
 
             let url = response.url().to_string();
+            let protocol = protocol_name(response.version()).to_string();
             let headers = response
                 .headers()
                 .iter()
                 .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
                 .collect();
             let body = response.bytes().await.map_err(map_reqwest_error)?.to_vec();
-            return Ok(HttpResponse {
-                status_code,
-                headers,
-                body,
-                url,
-                redirect_count,
+            return Ok(AsyncHttpResponse {
+                response: HttpResponse {
+                    status_code,
+                    headers,
+                    body,
+                    url,
+                    redirect_count,
+                },
+                protocol,
             });
         }
     }

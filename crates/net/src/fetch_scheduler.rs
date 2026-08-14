@@ -21,6 +21,8 @@ pub struct FetchTelemetry {
     pub queue_wait_ms: u64,
     /// 网络传输和完整响应体读取时间。
     pub network_ms: u64,
+    /// 实际协商的响应协议，仅来自传输层 response version。
+    pub protocol: String,
     /// 共享该网络事务的订阅者数。
     pub coalesced_subscriber_count: usize,
 }
@@ -268,6 +270,7 @@ impl PerOriginFetchScheduler {
         let hook = self.self_hook.clone();
         let extra_headers = job.extra_headers;
         let shared = job.shared;
+        let priority = job.priority;
         let submitted_at = job.submitted_at;
         let telemetry_tx = job.telemetry_tx;
         let timeout_secs = job.timeout_secs;
@@ -277,9 +280,20 @@ impl PerOriginFetchScheduler {
             for (name, value) in extra_headers {
                 req = req.header(&name, &value);
             }
-            let result = HttpClient::send_async_with_timeout(timeout_secs, req)
-                .await
-                .map_err(|e| e.to_string());
+            // https://www.rfc-editor.org/rfc/rfc9218.html#section-4.1
+            // 调用方的显式 Priority 是更具体的请求意图，不能被本地调度提示覆盖。
+            if crate::connect::http2_enabled()
+                && !req
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("priority"))
+            {
+                req = req.header("Priority", priority.rfc9218_header_value());
+            }
+            let (result, protocol) = match HttpClient::send_async_with_timeout_and_protocol(timeout_secs, req).await {
+                Ok((response, protocol)) => (Ok(response), protocol),
+                Err(error) => (Err(error.to_string()), "unknown".to_string()),
+            };
             match &result {
                 Ok(resp) => tracing::info!(
                     url = %url,
@@ -315,6 +329,7 @@ impl PerOriginFetchScheduler {
                         .as_millis()
                         .min(u128::from(u64::MAX)) as u64,
                     network_ms: network_started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                    protocol,
                     coalesced_subscriber_count,
                 });
             }
@@ -402,6 +417,91 @@ impl Default for PerOriginFetchScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::OnceLock;
+
+    fn with_http2_enabled_for_test<T>(enabled: bool, test: impl FnOnce() -> T) -> T {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().expect("HTTP/2 env lock");
+        let previous = std::env::var_os("ZERO_HTTP2");
+        // Tests must exercise the externally configurable transport mode. The mutex serializes
+        // these mutations within this module and the value is restored before releasing it.
+        unsafe { std::env::set_var("ZERO_HTTP2", if enabled { "1" } else { "0" }) };
+        struct RestoreHttp2Env(Option<std::ffi::OsString>);
+        impl Drop for RestoreHttp2Env {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => unsafe { std::env::set_var("ZERO_HTTP2", value) },
+                    None => unsafe { std::env::remove_var("ZERO_HTTP2") },
+                }
+            }
+        }
+        let _restore = RestoreHttp2Env(previous);
+        test()
+    }
+
+    fn priority_request(
+        enabled: bool,
+        priority: FetchPriority,
+        headers: Vec<(String, String)>,
+    ) -> (String, FetchTelemetry) {
+        with_http2_enabled_for_test(enabled, || {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture");
+            let url = format!("http://{}/asset", listener.local_addr().expect("fixture address"));
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().expect("accept request");
+                let mut request = [0_u8; 4096];
+                let count = stream.read(&mut request).expect("read request");
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                    .expect("write response");
+                String::from_utf8_lossy(&request[..count]).to_ascii_lowercase()
+            });
+            let scheduler = PerOriginFetchScheduler::new_shared();
+            let (reply, telemetry, _) = PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
+                &scheduler, &url, &url, priority, headers, 5,
+            );
+            assert!(
+                reply
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("reply")
+                    .is_ok()
+            );
+            let telemetry = telemetry
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("telemetry");
+            (server.join().expect("join fixture"), telemetry)
+        })
+    }
+
+    #[test]
+    fn priority_header_maps_fetch_priority() {
+        let (critical, critical_telemetry) = priority_request(true, FetchPriority::CRITICAL, Vec::new());
+        let (low, low_telemetry) = priority_request(true, FetchPriority::LOW, Vec::new());
+        assert!(critical.contains("priority: u=0\r\n"));
+        assert!(low.contains("priority: u=5\r\n"));
+        assert_eq!(critical_telemetry.protocol, "http/1.1");
+        assert_eq!(low_telemetry.protocol, "http/1.1");
+    }
+
+    #[test]
+    fn priority_header_is_absent_for_http1() {
+        let (request, telemetry) = priority_request(false, FetchPriority::HIGH, Vec::new());
+        assert!(!request.contains("priority:"));
+        assert_eq!(telemetry.protocol, "http/1.1");
+    }
+
+    #[test]
+    fn priority_header_preserves_explicit_request_value() {
+        let (request, _) = priority_request(
+            true,
+            FetchPriority::CRITICAL,
+            vec![("Priority".to_string(), "u=6, i".to_string())],
+        );
+        assert!(request.contains("priority: u=6, i\r\n"));
+        assert!(!request.contains("priority: u=0\r\n"));
+    }
 
     #[test]
     fn queues_beyond_per_origin_limit() {

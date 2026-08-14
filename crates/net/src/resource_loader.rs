@@ -492,7 +492,9 @@ fn record_event_into(
         network_ms: telemetry.map(|event| event.network_ms).unwrap_or(0),
         bytes,
         priority: request.priority,
-        protocol: "unknown".to_string(),
+        protocol: telemetry
+            .map(|event| event.protocol.clone())
+            .unwrap_or_else(|| "unknown".to_string()),
         cache_outcome,
         coalesced_subscriber_count: telemetry.map(|event| event.coalesced_subscriber_count).unwrap_or(1),
     });
@@ -709,6 +711,7 @@ mod tests {
             origin: "https://cdn.example".to_string(),
             queue_wait_ms: 3,
             network_ms: 17,
+            protocol: "h2".to_string(),
             coalesced_subscriber_count: 2,
         };
 
@@ -718,6 +721,7 @@ mod tests {
         assert_eq!(event.origin, "https://cdn.example");
         assert_eq!(event.queue_wait_ms, 3);
         assert_eq!(event.network_ms, 17);
+        assert_eq!(event.protocol, "h2");
         assert_eq!(event.bytes, 128);
         assert_eq!(event.coalesced_subscriber_count, 2);
         assert_eq!(event.cache_outcome, CacheOutcome::Network);

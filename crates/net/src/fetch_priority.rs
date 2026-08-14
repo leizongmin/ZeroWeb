@@ -35,6 +35,19 @@ impl FetchPriority {
         }
     }
 
+    /// 将本地优先级映射为 RFC 9218 `Priority` header 值。
+    // https://www.rfc-editor.org/rfc/rfc9218.html#section-4.1
+    pub fn rfc9218_header_value(self) -> &'static str {
+        match self {
+            Self::CRITICAL => "u=0",
+            Self::HIGH => "u=1",
+            Self::MEDIUM => "u=3",
+            Self::LOW => "u=5",
+            Self::IDLE => "u=7, i",
+            _ => "u=3",
+        }
+    }
+
     /// 从 [`FetchParams`](zero_protocol::message::FetchParams) 的自定义头解析。
     pub fn from_fetch_headers(headers: &[(String, String)], url: &str) -> (Self, &'static str) {
         let mut resource_type = "";
@@ -121,6 +134,15 @@ mod tests {
         let (p, rt) = FetchPriority::from_fetch_headers(&headers, "https://x/a.js");
         assert_eq!(rt, "script");
         assert_eq!(p, FetchPriority::HIGH);
+    }
+
+    #[test]
+    fn rfc9218_header_values_are_deterministic() {
+        assert_eq!(FetchPriority::CRITICAL.rfc9218_header_value(), "u=0");
+        assert_eq!(FetchPriority::HIGH.rfc9218_header_value(), "u=1");
+        assert_eq!(FetchPriority::MEDIUM.rfc9218_header_value(), "u=3");
+        assert_eq!(FetchPriority::LOW.rfc9218_header_value(), "u=5");
+        assert_eq!(FetchPriority::IDLE.rfc9218_header_value(), "u=7, i");
     }
 
     // ── R3384：infer_resource_type_from_url 测试加固 + fragment 修复回归 ──

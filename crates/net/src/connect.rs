@@ -64,7 +64,7 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
 }
 
 /// 默认启用 HTTP/2；设 `ZERO_HTTP2=0` 可退回 HTTP/1.1。
-fn http2_enabled() -> bool {
+pub(crate) fn http2_enabled() -> bool {
     std::env::var("ZERO_HTTP2")
         .ok()
         .is_none_or(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
