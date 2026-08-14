@@ -1128,7 +1128,9 @@
       if (offset < 0 || offset > 1) {
         throw _zwDomException('gradient offset out of range', 'IndexSizeError');
       }
-      if (color === undefined) throw new TypeError('addColorStop: missing color');
+      // R34xx：缺参（arguments.length<2）→ TypeError（missingargs）；显式 undefined/null
+      // → DOMString 转换（'undefined'/'null'）→ 非法 → SyntaxError（object.invalidcolor）。
+      if (arguments.length < 2) throw new TypeError('addColorStop: missing color');
       var c = String(color);
       if (c === '' || (typeof __zw_canvas_op === 'function' && !String(__zw_canvas_op('0', 'validateColor', c)))) {
         throw _zwDomException('invalid gradient color', 'SyntaxError');
@@ -2002,9 +2004,9 @@
       // R34xx：repetition 校验（spec：''/repeat/repeat-x/repeat-y/no-repeat 合法（大小写敏感）；
       // undefined 抛 SYNTAX_ERR、null → ''（WebIDL DOMString 转换）、非法串抛——
       // 2d.pattern.repeat.*）。DOMException 用 _zwDomException（assert_throws_dom 匹配）。
-      // R34xx：repetition 缺省（undefined）→ TypeError（missingargs——非 SyntaxError）；
-      // 其余非法串 → SyntaxError。
-      if (repetition === undefined) {
+      // R34xx：缺参（arguments.length<2）→ TypeError（missingargs）；显式 undefined →
+      // DOMString 转换 'undefined' → 非法 → SyntaxError（pattern.repeat.undefined）。
+      if (arguments.length < 2) {
         throw new TypeError('createPattern: missing repetition');
       }
       var rep = (repetition === null) ? '' : String(repetition);
