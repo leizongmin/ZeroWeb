@@ -209,7 +209,8 @@ impl TabFetchProxy {
             .and_then(|context| context.page_origin())
             .map(|origin| format!("{}://{}:{}", origin.scheme, origin.host, origin.port))
             .unwrap_or_else(|| "default".to_string());
-        let rx = self.loader_for(tab_id).submit_http_in_partition(
+        let navigation_id = self.tab_epochs.get(&tab_id).copied();
+        let rx = self.loader_for(tab_id).submit_http_with_context_in_partition(
             HttpRequest {
                 method,
                 url: url.clone(),
@@ -218,6 +219,8 @@ impl TabFetchProxy {
             },
             priority,
             partition,
+            navigation_id,
+            resource_type,
         );
         self.pending.push(PendingFetch {
             tab_id,

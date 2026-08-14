@@ -284,19 +284,40 @@ impl ResourceLoader {
         priority: FetchPriority,
         partition: impl Into<String>,
     ) -> Receiver<FetchJobResult> {
+        self.submit_http_with_context_in_partition(request, priority, partition, None, "other")
+    }
+
+    /// 受理 HTTP 请求并将导航与资源目的地写入匿名加载事件。
+    pub fn submit_http_with_context_in_partition(
+        &self,
+        request: HttpRequest,
+        priority: FetchPriority,
+        partition: impl Into<String>,
+        navigation_id: Option<u64>,
+        destination: impl Into<String>,
+    ) -> Receiver<FetchJobResult> {
         let partition = partition.into();
+        let destination = destination.into();
         if request.method == HttpMethod::Get && request.body.is_none() {
-            return self.submit(
-                ResourceRequest::get(request.url, priority)
-                    .with_headers(request.headers)
-                    .with_partition(partition),
-            );
+            let mut resource_request = ResourceRequest::get(request.url, priority)
+                .with_headers(request.headers)
+                .with_partition(partition)
+                .with_destination(destination);
+            if let Some(navigation_id) = navigation_id {
+                resource_request = resource_request.with_navigation_id(navigation_id);
+            }
+            return self.submit(resource_request);
         }
         let cache = self.cache_for_partition(&partition);
         let url = request.url.clone();
         let event_request = ResourceRequest::get(url.clone(), priority)
             .with_partition(partition)
-            .with_destination("other");
+            .with_destination(destination);
+        let event_request = if let Some(navigation_id) = navigation_id {
+            event_request.with_navigation_id(navigation_id)
+        } else {
+            event_request
+        };
         let events = Arc::clone(&self.events);
         let (tx, rx) = mpsc::channel();
         crate::client::async_runtime().spawn(async move {
@@ -635,6 +656,30 @@ mod tests {
         assert_eq!(events[0].cache_outcome, CacheOutcome::FreshHit);
         assert_eq!(events[0].bytes, 0);
         assert_eq!(events[0].coalesced_subscriber_count, 1);
+    }
+
+    #[test]
+    fn http_submission_context_reaches_fresh_cache_event() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "site-a");
+        let url = "https://cdn.example/app.js";
+        assert!(cache.lock().unwrap().put(url, &fresh_response(url)));
+
+        let response = loader
+            .submit_http_with_context_in_partition(
+                HttpRequest::get(url),
+                FetchPriority::HIGH,
+                "site-a",
+                Some(99),
+                "script",
+            )
+            .recv()
+            .expect("cache response");
+        assert!(response.is_ok());
+
+        let event = loader.events().pop().expect("event");
+        assert_eq!(event.navigation_id, Some(99));
+        assert_eq!(event.destination, "script");
     }
 
     #[test]
