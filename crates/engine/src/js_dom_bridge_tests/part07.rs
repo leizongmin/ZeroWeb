@@ -3206,6 +3206,134 @@ fn test_event_listener_handle_event_object_r27() {
 }
 
 #[test]
+fn test_event_return_value_mirror_r28() {
+    // js-dom M4 R28：Event.returnValue（spec `dom-event-returnvalue`，legacy = !canceled flag）。
+    // WPT Event-returnValue.html：① 初始 true；② preventDefault 仅 cancelable 时设 false；③ returnValue=false
+    // 仅 cancelable 时触发 prevent；④ initEvent 重置（true）；⑤ returnValue=true 已 canceled 后 no-op。
+    // _makeEvent 用 defineProperty（getter 返 !_defaultPrevented，setter false+cancelable 触发 prevent）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 初始 true。
+    sandbox.execute("globalThis.__rv0 = new Event('foo').returnValue;").unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv0)").unwrap().value,
+        "true",
+        "R28 returnValue 初始 true"
+    );
+
+    // ② preventDefault(cancelable=false) 不改 returnValue（仍 true）。
+    sandbox
+        .execute(
+            "globalThis.__e1 = new Event('foo', {cancelable:false});\
+             __e1.preventDefault();\
+             globalThis.__rv1 = __e1.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv1)").unwrap().value,
+        "true",
+        "R28 preventDefault(cancelable=false) 不改 returnValue（仍 true）"
+    );
+
+    // ③ preventDefault(cancelable=true) 设 returnValue=false。
+    sandbox
+        .execute(
+            "globalThis.__e2 = new Event('foo', {cancelable:true});\
+             __e2.preventDefault();\
+             globalThis.__rv2 = __e2.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv2)").unwrap().value,
+        "false",
+        "R28 preventDefault(cancelable=true) 设 returnValue=false"
+    );
+
+    // ④ returnValue=false(cancelable=true) 触发 prevent（defaultPrevented=true）。
+    sandbox
+        .execute(
+            "globalThis.__e3 = new Event('foo', {cancelable:true});\
+             __e3.returnValue = false;\
+             globalThis.__rv3 = __e3.returnValue;\
+             globalThis.__dp3 = __e3.defaultPrevented;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv3)").unwrap().value,
+        "false",
+        "R28 returnValue=false(cancelable=true) → returnValue=false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dp3)").unwrap().value,
+        "true",
+        "R28 returnValue=false(cancelable=true) 触发 prevent（defaultPrevented=true）"
+    );
+
+    // ⑤ returnValue=false(cancelable=false) no-op（仍 true，未 prevent）。
+    sandbox
+        .execute(
+            "globalThis.__e4 = new Event('foo', {cancelable:false});\
+             __e4.returnValue = false;\
+             globalThis.__rv4 = __e4.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv4)").unwrap().value,
+        "true",
+        "R28 returnValue=false(cancelable=false) no-op（仍 true）"
+    );
+
+    // ⑥ initEvent 重置 returnValue=true（即使之前 prevent）。
+    sandbox
+        .execute(
+            "globalThis.__e5 = document.createEvent('Event');\
+             __e5.returnValue = false;\
+             __e5.initEvent('foo', true, true);\
+             globalThis.__rv5 = __e5.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv5)").unwrap().value,
+        "true",
+        "R28 initEvent 重置 returnValue=true"
+    );
+
+    // ⑦ returnValue=true 已 canceled 后 no-op（仍 false，defaultPrevented 保持）。
+    sandbox
+        .execute(
+            "globalThis.__e6 = new Event('foo', {cancelable:true});\
+             __e6.preventDefault();\
+             __e6.returnValue = true;\
+             globalThis.__rv6 = __e6.returnValue;\
+             globalThis.__dp6 = __e6.defaultPrevented;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rv6)").unwrap().value,
+        "false",
+        "R28 returnValue=true 已 canceled 后 no-op（仍 false）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dp6)").unwrap().value,
+        "true",
+        "R28 returnValue=true 已 canceled 后 defaultPrevented 保持 true"
+    );
+}
+
+#[test]
 fn test_create_document_type_r15() {
     // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
     // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub

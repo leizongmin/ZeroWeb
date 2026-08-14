@@ -1132,6 +1132,22 @@
         this.cancelBubble = true;
       }
     };
+    // js-dom M4 R28：`Event.returnValue`（spec `dom-event-returnvalue`，legacy IE 别名 = !canceled flag）。
+    // getter 返 `!_defaultPrevented`（canceled flag 的反向镜像）；setter：设 false 仅当 cancelable 时触发
+    // preventDefault（设 canceled），cancelable=false 或已 canceled 后设 true 均 no-op。WPT Event-returnValue：
+    // 初始 true / preventDefault(cancelable)→false / returnValue=false(cancelable)→prevent / initEvent 重置 /
+    // returnValue=true 已 canceled 后 no-op。用 defineProperty（getter/setter，非普通 data 属性——setter 需
+    // 触发 prevent 副作用）。
+    Object.defineProperty(ev, 'returnValue', {
+      enumerable: false,
+      configurable: true,
+      get: function() { return !this._defaultPrevented; },
+      set: function(v) {
+        // 仅 cancelable 且设 false 时触发 preventDefault（设 canceled flag）。设 true 永远 no-op（spec：canceled
+        // flag 一旦设不可清）。cancelable=false 时任何设值 no-op（WPT "no effect if cancelable is false"）。
+        if (!v && this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; }
+      }
+    });
     return ev;
   }
 
