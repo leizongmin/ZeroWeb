@@ -34,6 +34,8 @@ pub struct PerOriginFetchScheduler {
     queue: Vec<QueuedJob>,
     /// 在途/排队请求身份的订阅者；完成时广播结果。
     pending: HashMap<String, Vec<Sender<FetchJobResult>>>,
+    /// 同优先级队列上一次获选的 origin；用于按 origin 轮转而非 FIFO 偏置。
+    last_queued_origin: Option<String>,
     /// `submit_shared` 安装后，排队 job 启动时也能自动 `on_complete`。
     self_hook: Option<Arc<Mutex<Self>>>,
 }
@@ -49,6 +51,7 @@ impl PerOriginFetchScheduler {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            last_queued_origin: None,
             self_hook: None,
         }
     }
@@ -195,6 +198,7 @@ impl PerOriginFetchScheduler {
             priority = ?job.priority,
             "HTTP fetch start"
         );
+        self.last_queued_origin = Some(job.origin.clone());
         *self.in_flight.entry(job.origin.clone()).or_insert(0) += 1;
         self.in_flight_total += 1;
         let client = self.client.clone();
@@ -254,6 +258,13 @@ impl PerOriginFetchScheduler {
                 match best {
                     None => best = Some(i),
                     Some(bi) if job.priority > self.queue[bi].priority => best = Some(i),
+                    Some(bi)
+                        if job.priority == self.queue[bi].priority
+                            && self.last_queued_origin.as_deref() == Some(self.queue[bi].origin.as_str())
+                            && self.last_queued_origin.as_deref() != Some(job.origin.as_str()) =>
+                    {
+                        best = Some(i)
+                    }
                     Some(bi)
                         if job.priority == self.queue[bi].priority
                             && self.in_flight.get(&job.origin).copied().unwrap_or(0)
@@ -321,6 +332,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            last_queued_origin: None,
             self_hook: None,
         };
         let _r1 = sched.submit("http://127.0.0.1:1/a");
@@ -343,6 +355,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            last_queued_origin: None,
             self_hook: None,
         };
         let _r1 = sched.submit_with_priority("http://127.0.0.1:1/low", FetchPriority::LOW);
@@ -363,6 +376,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            last_queued_origin: None,
             self_hook: None,
         };
         let _r1 = sched.submit("http://127.0.0.1:1/a");
@@ -381,12 +395,36 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            last_queued_origin: None,
             self_hook: None,
         };
         let _r1 = sched.submit("http://127.0.0.1:1/a");
         let _r2 = sched.submit("http://127.0.0.2:1/b");
         assert_eq!(sched.in_flight_total_for_test(), 1);
         assert_eq!(sched.queued_count_for_test(), 1);
+    }
+
+    #[test]
+    fn equal_priority_queue_rotates_origins() {
+        let mut sched = PerOriginFetchScheduler {
+            max_per_origin: 1,
+            max_total: 1,
+            client: HttpClient::new(),
+            in_flight: HashMap::new(),
+            in_flight_total: 0,
+            queue: Vec::new(),
+            pending: HashMap::new(),
+            last_queued_origin: None,
+            self_hook: None,
+        };
+        let origin_a = "http://127.0.0.1:1";
+        let origin_b = "http://127.0.0.2:1";
+        let _ = sched.submit(format!("{origin_a}/running"));
+        let _ = sched.submit(format!("{origin_a}/queued-first"));
+        let _ = sched.submit(format!("{origin_b}/queued-second"));
+
+        sched.on_complete(origin_a);
+        assert_eq!(sched.last_queued_origin.as_deref(), Some(origin_b));
     }
 
     #[test]
