@@ -1,7 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（R34xx 第六批：ctx.lang shaping 语言——TRK 关闭 fi 连字，
-lang 3 测试主+worker 全过。主线程 747+ / worker 698+；证据见 evidence/r34xx-batch2）。
+**最后更新**: 2026-08-14（R34xx 第七批定稿：TextMetrics.getSelectionRects/getIndexFromOffset
+API 真实化；主线程 **751 Pass** / worker **701 Pass**（基线 718/630 → +33/+71）；
+证据见 evidence/r34xx-batch2）。
 
 ---
 
