@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::{
     CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest,
@@ -36,6 +37,10 @@ pub struct ResourceLoadStats {
     pub network_requests: u64,
     /// `only-if-cached` 未命中次数。
     pub only_if_cached_misses: u64,
+    /// 已完成网络事务的响应体字节数。
+    pub network_response_bytes: u64,
+    /// 已完成网络事务的总等待毫秒（包含调度等待）。
+    pub network_elapsed_ms: u64,
 }
 
 /// 可缓存资源请求。
@@ -111,7 +116,7 @@ pub struct ResourceLoader {
     /// 宁可降低跨会话命中率，也不能让不同顶级站点复用同一条目。
     partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
-    stats: Mutex<ResourceLoadStats>,
+    stats: Arc<Mutex<ResourceLoadStats>>,
 }
 
 impl ResourceLoader {
@@ -130,7 +135,7 @@ impl ResourceLoader {
             default_cache: cache,
             partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
-            stats: Mutex::new(ResourceLoadStats::default()),
+            stats: Arc::new(Mutex::new(ResourceLoadStats::default())),
         }
     }
 
@@ -261,23 +266,34 @@ impl ResourceLoader {
         );
         let url = request.url;
         let request_headers = request.headers;
-        bridge(rx, move |result| match result {
-            Ok(response) if response.status_code == 304 => cache
-                .lock()
-                .expect("HTTP cache lock")
-                .not_modified(&url, &request_headers, &response)
-                .map(|cached| cached.into_response())
-                .ok_or_else(|| "304 without cached entry".to_string()),
-            Ok(response) => {
-                if may_store && response.is_success() {
-                    let _ = cache
-                        .lock()
-                        .expect("HTTP cache lock")
-                        .put_with_headers(&url, &request_headers, &response);
-                }
-                Ok(response)
+        let started = Instant::now();
+        let stats = Arc::clone(&self.stats);
+        bridge(rx, move |result| {
+            let mut stats = stats.lock().expect("resource loader stats lock");
+            stats.network_elapsed_ms += started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+            if let Ok(response) = &result {
+                stats.network_response_bytes += response.body.len() as u64;
             }
-            Err(error) => Err(error),
+            drop(stats);
+            match result {
+                Ok(response) if response.status_code == 304 => cache
+                    .lock()
+                    .expect("HTTP cache lock")
+                    .not_modified(&url, &request_headers, &response)
+                    .map(|cached| cached.into_response())
+                    .ok_or_else(|| "304 without cached entry".to_string()),
+                Ok(response) => {
+                    if may_store && response.is_success() {
+                        let _ =
+                            cache
+                                .lock()
+                                .expect("HTTP cache lock")
+                                .put_with_headers(&url, &request_headers, &response);
+                    }
+                    Ok(response)
+                }
+                Err(error) => Err(error),
+            }
         })
     }
 
