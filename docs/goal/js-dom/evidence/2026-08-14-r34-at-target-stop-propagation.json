@@ -1,0 +1,32 @@
+{
+  "round": "R34",
+  "date": "2026-08-14",
+  "milestone": "M4",
+  "slice": "AT_TARGET stopPropagation halts same-element listeners + dual stop-flag compatibility",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "case": "dom/events/Event-stopPropagation-cancel-bubbling.html",
+  "root_cause": [
+    "_dispatchToListeners 'all' mode non-capture loop did not check stop flag -> AT_TARGET capture stopPropagation did not halt same-element non-capture listener",
+    "polyfill Event stopPropagation sets _propagationStopped, but ZW_NATIVE_DOM=1 overlay path new MouseEvent uses native Event ctor whose stopPropagation sets __zw_stop; polyfill dispatch only checked _propagationStopped, so native Event stopPropagation failed under overlay (unresolved #9: dispatch runs polyfill)"
+  ],
+  "implementation": {
+    "dispatch_to_listeners": "part03.js: local helpers stopped()/immediateStopped() checking both _propagationStopped||__zw_stop and _immediateStopped||__zw_stop_immediate; non-capture loop early-returns if stopped() (AT_TARGET halt); all _immediateStopped checks use helper",
+    "dispatch_with_bubble": "part03.js: local bubbleStopped() helper (dual flag); 3 stage checks (capture/target/bubble) use bubbleStopped(); finally resets __zw_stop/__zw_stop_immediate (native flags, fresh for re-dispatch, overlay path native dispatch_event_impl not run)",
+    "canvas_clippy_fix": "crates/canvas/src/context/context_impl.rs:1285-1286 removed 2 redundant 'as i32' (x.max(0) as i32 / (x+iw).min(canvas_w) as i32) introduced by parallel canvas commit c1e0bcc8 — zero logic change, restores main -D warnings green"
+  },
+  "results": {
+    "stop_propagation_cancel_bubbling_polyfill": { "pass": 1, "prev": "0P/1F" },
+    "stop_propagation_cancel_bubbling_native": { "pass": 1, "prev": "0P/1F" },
+    "dom_events_polyfill_full": { "pass": 175, "fail": 152, "timeout": 6, "prev": "174P/153F/6TO", "rate": "53.52%" },
+    "dom_events_native_full": { "pass": 155, "fail": 173, "timeout": 6, "prev": "154P/174F/6TO", "rate": "47.25%" }
+  },
+  "note": "Dual stop-flag compatibility is a minimal correct fix for the overlay path (native Event + polyfill dispatch). Root unification (single flag) resolves naturally with M1 L2 polyfill-live unification / default-on. Canvas clippy fix is mechanical (parallel canvas stream c1e0bcc8 pushed a red main without local clippy; restored green as cross-stream obligation, R10/R15 precedent).",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r34_unit_test": "test_at_target_stop_propagation_halts_same_element_r34 (4 scenarios: polyfill flag halt / registration-order-invariant / native __zw_stop flag compat / no-stop not over-halted)",
+    "v8_engine_lib": "2111 passed (R33 baseline 2110 +1)",
+    "quickjs_engine_lib": "1411 passed (zero regression)",
+    "existing_event_tests": "15 passed (zero regression)"
+  }
+}

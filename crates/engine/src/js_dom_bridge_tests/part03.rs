@@ -2145,3 +2145,92 @@ fn test_window_event_current_event_global_r33() {
         "嵌套 dispatch 内层结束后恢复外层 window.event === 外层 event"
     );
 }
+
+#[test]
+fn test_at_target_stop_propagation_halts_same_element_r34() {
+    // R34：AT_TARGET（target 阶段，element 无祖先）capture-listener 调 stopPropagation 须止**同元素**的
+    // non-capture listener。根因有两层：① `_dispatchToListeners` 'all' 模式 non-capture 循环未检查 stop flag；
+    // ② polyfill Event 设 `_propagationStopped`，但叠加路径（ZW_NATIVE_DOM=1，`new MouseEvent` 走 native Event
+    // 构造器）stopPropagation 设 `__zw_stop`，polyfill dispatch 须同认两 flag（未解问题 #9：dispatch 走 polyfill）。
+    // WPT Event-stopPropagation-cancel-bubbling：capture 内 stopPropagation 止同元素 bubble handler。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 同元素 capture（设 _propagationStopped，polyfill Event）止同元素 non-capture。
+    sandbox
+        .execute(
+            "document.querySelector('#t').addEventListener('click', function(e){ globalThis.__cap1 = true; e.stopPropagation(); }, { capture: true });\n\
+             document.querySelector('#t').addEventListener('click', function(){ globalThis.__bub1 = true; });\n\
+             document.querySelector('#t').dispatchEvent(new Event('click', { bubbles: true }));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap1 === true").unwrap().value,
+        "true",
+        "同元素 capture listener 应触发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__bub1 === true").unwrap().value,
+        "false",
+        "AT_TARGET capture stopPropagation 须止同元素 non-capture listener"
+    );
+
+    // ② 反向：non-capture 先注册，capture 后注册仍先触发并 stopPropagation 止 non-capture（注册序无关，
+    // capture 总在 non-capture 前）。验证 __bub2 仍 false。
+    sandbox
+        .execute(
+            "document.querySelector('#t').addEventListener('foo', function(){ globalThis.__bub2 = true; });\n\
+             document.querySelector('#t').addEventListener('foo', function(e){ globalThis.__cap2 = true; e.stopPropagation(); }, { capture: true });\n\
+             document.querySelector('#t').dispatchEvent(new Event('foo', { bubbles: true }));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bub2 === true").unwrap().value,
+        "false",
+        "capture 总先于 non-capture 触发并 stopPropagation 止之（注册序无关）"
+    );
+
+    // ③ native flag 兼容：模拟叠加路径下 stopPropagation 设 `__zw_stop`（native Event 构造器行为），
+    // polyfill dispatch 须认此 flag 止同元素 non-capture。
+    sandbox
+        .execute(
+            "document.querySelector('#t').addEventListener('bar', function(e){ globalThis.__cap3 = true; e.__zw_stop = true; }, { capture: true });\n\
+             document.querySelector('#t').addEventListener('bar', function(){ globalThis.__bub3 = true; });\n\
+             document.querySelector('#t').dispatchEvent(new Event('bar', { bubbles: true }));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__bub3 === true").unwrap().value,
+        "false",
+        "native __zw_stop flag 须被 polyfill dispatch 认（叠加路径对齐）"
+    );
+
+    // ④ 无 stopPropagation 的正常场景：同元素 capture + non-capture 都应触发（_propagationStopped 默认 false
+    // 不误伤）。防 R34 修改过度止息。
+    sandbox
+        .execute(
+            "document.querySelector('#t').addEventListener('baz', function(){ globalThis.__cap4 = true; }, { capture: true });\n\
+             document.querySelector('#t').addEventListener('baz', function(){ globalThis.__bub4 = true; });\n\
+             document.querySelector('#t').dispatchEvent(new Event('baz', { bubbles: true }));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__cap4 === true && globalThis.__bub4 === true").unwrap().value,
+        "true",
+        "无 stopPropagation 时 capture + non-capture 都应触发（不误伤）"
+    );
+}

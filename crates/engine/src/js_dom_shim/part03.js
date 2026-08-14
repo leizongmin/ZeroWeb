@@ -938,19 +938,37 @@
         firedOnce.push(entry);
       }
     };
+    // js-dom M4 R34：stop propagation flag 检查。polyfill Event（part05 `_makeEvent`）的 stopPropagation
+    // 设 `_propagationStopped`；ZW_NATIVE_DOM=1 叠加路径下 `new MouseEvent` 走 native Event 构造器，其
+    // stopPropagation（dom_bindings event_target.rs `native_stop_propagation_invoke`）设 `__zw_stop`——但 dispatch
+    // 仍走 polyfill `_dispatchWithBubble`（用例侧 document=shim，未解问题 #9）。故须同时认两个 flag 才能在两路径
+    // 下一致止上溯/止同节点后续 listener。immediate flag 同理（`_immediateStopped` polyfill / `__zw_stop_immediate` native）。
+    var stopped = function() { return event._propagationStopped || event.__zw_stop === true; };
+    var immediateStopped = function() { return event._immediateStopped || event.__zw_stop_immediate === true; };
     if (phase !== 'bubble') {
       for (var i = 0; i < snap.length; i++) {
         if (snap[i].capture) {
           fire(snap[i]);
-          if (event._immediateStopped) break;
+          if (immediateStopped()) break;
         }
       }
     }
-    if (phase !== 'capture' && !event._immediateStopped) {
+    if (phase !== 'capture' && !immediateStopped()) {
+      // js-dom M4 R34：spec `concept-event-dispatch`——AT_TARGET（phase 'all'）时 capture-listener 先于
+      // non-capture-listener 触发；若 capture listener 调 stopPropagation（设 _propagationStopped / __zw_stop），
+      // 同节点的 non-capture listener **不再触发**（WPT Event-stopPropagation-cancel-bubbling：capture 内
+      // stopPropagation 止同元素 bubble handler）。'bubble' phase（祖先冒泡）正常 stopped()=false 不受影响。
+      // stopImmediatePropagation 止当前节点剩余 + 后续节点（更强，已在每 listener 后检查）。
+      if (stopped()) {
+        if (firedOnce) {
+          listeners[event.type] = list.filter(function(e) { return firedOnce.indexOf(e) < 0; });
+        }
+        return !event._defaultPrevented;
+      }
       for (var j = 0; j < snap.length; j++) {
         if (!snap[j].capture) {
           fire(snap[j]);
-          if (event._immediateStopped) break;
+          if (immediateStopped()) break;
         }
       }
     }
@@ -1064,6 +1082,9 @@
     // finally 统一 restore，与 _composedPath/_propagationStopped 清理同处。prevEvent 用局部变量保 dispatch 栈。
     var prevEvent = globalThis.event;
     globalThis.event = event;
+    // js-dom M4 R34：stop propagation flag 兼容——polyfill Event 设 `_propagationStopped`，native Event
+    // （ZW_NATIVE_DOM=1 叠加，dispatch 仍走此 polyfill 路径，未解问题 #9）设 `__zw_stop`。两 flag 都须认。
+    var bubbleStopped = function() { return event._propagationStopped || event.__zw_stop === true; };
     try {
       // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
       if (propagate && !globalThis.__zw_no_capture) {
@@ -1072,7 +1093,7 @@
           _ensureInlineHandler(capKey, chain[i], null, event.type); // R2935 祖先 inline on* handler 触发
           var capAnc = _wrapSelector(chain[i]);
           _dispatchToListeners(capKey, event, 'capture', capAnc);
-          if (event._propagationStopped) return !event._defaultPrevented;
+          if (bubbleStopped()) return !event._defaultPrevented;
         }
       }
 
@@ -1080,7 +1101,7 @@
       event.currentTarget = target;
       _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
       _dispatchToListeners(targetKey, event, 'all', target);
-      if (event._propagationStopped) return !event._defaultPrevented;
+      if (bubbleStopped()) return !event._defaultPrevented;
 
       // ③ bubble 阶段：target→root 方向（chain 正序），祖先派发非 capture（仅 event.bubbles）。
       if (propagate && event.bubbles && !globalThis.__zw_no_bubble) {
@@ -1089,7 +1110,7 @@
           _ensureInlineHandler(bKey, chain[k], null, event.type); // R2935 祖先 inline on* handler 冒泡触发
           var bAnc = _wrapSelector(chain[k]);
           _dispatchToListeners(bKey, event, 'bubble', bAnc);
-          if (event._propagationStopped) break;
+          if (bubbleStopped()) break;
         }
       }
       return !event._defaultPrevented;
@@ -1103,6 +1124,10 @@
       //（WPT Event-cancelBubble "cancelBubble must be false after an event has been dispatched"）。
       // 仅清 dispatch 内设的 flag；监听器外显式 stopPropagation（未 dispatch）的 flag 保留至 initEvent 重置。
       event._propagationStopped = false;
+      // js-dom M4 R34：同步清 native Event 的 stop flag（叠加路径下 `new MouseEvent` 是 native 对象，dispatch
+      // 走此 polyfill 但 native dispatch_event_impl 未跑故不自清；同 event 重派发需 fresh，与 _propagationStopped 同语义）。
+      if (event.__zw_stop === true) event.__zw_stop = false;
+      if (event.__zw_stop_immediate === true) event.__zw_stop_immediate = false;
     }
   }
 
