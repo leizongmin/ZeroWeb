@@ -1,8 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（R34xx 第四批：worker 全局构造器/OffscreenCanvas 零尺寸/
-small-caps 合成 shaping；worker fill-and-stroke 234/0。主线程 743 Pass / worker 690+；
-最终数字见 evidence/r34xx-batch2）。
+**最后更新**: 2026-08-14（R34xx 第五批定稿：BASE 表基线 + emHeight 半行距定位；
+主线程 **747 Pass** / worker **698 Pass**（基线 718/630）；fill-and-stroke 254/0；
+证据见 evidence/r34xx-batch2）。
 
 ---
 
@@ -104,7 +104,7 @@ small-caps 合成 shaping；worker fill-and-stroke 234/0。主线程 743 Pass / 
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
-| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~74（indexFromOffset/selectionRects/fillTextCluster——依赖 document.caretPositionFromPoint/Range.getClientRects）+ emHeight/基线字体度量深面 5（OS/2 usWinAscent + em square 定位算法待确认）+ float16 数据路径 2 + lang/VS 深面 4 + current.removed 1（js-dom 面移交）+ ctor.basics 陈旧子断言 1 |
+| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~74（indexFromOffset/selectionRects/fillTextCluster——依赖 document.caretPositionFromPoint/Range.getClientRects，深 DOM 布局）+ lang 3 + variationSelectors 1（emoji 字体回退）+ float16 数据路径 2（getImageData/putImageData options + p3↔srgb 转换）+ current.removed 1（js-dom 面移交）+ ctor.basics 陈旧子断言 1 |
 
 ## 待用户决策清单
 
@@ -135,6 +135,6 @@ small-caps 合成 shaping；worker fill-and-stroke 234/0。主线程 743 Pass / 
 
 ## 验证基线
 
-- 测试基线：canvas 766 全绿（覆盖率 89.28% 基线，本轮 +9 单测）；WPT canvas 全量以最终运行 JSON 为准（evidence/ 存档）
+- 测试基线：canvas 772 全绿（基线 759，本轮 +13 单测）；WPT canvas 主线程 747 Pass / worker 698 Pass（evidence/r34xx-batch2 存档）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test`
 - 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；CanvasTest.ttf/yellow*.png 已入脚本）
