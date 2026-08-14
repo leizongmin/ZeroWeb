@@ -3,6 +3,7 @@
 //! 该模块把私有 HTTP 缓存、在途请求合并和并发调度放在同一边界。P0 仅处理
 //! 无 body 的 GET；其他方法必须经 [`HttpClient`] write-through，并在成功后使相关缓存失效。
 
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -89,7 +90,13 @@ impl ResourceRequest {
 /// 统一资源加载器。
 pub struct ResourceLoader {
     scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
-    cache: Arc<Mutex<HttpCache>>,
+    /// 默认分区的缓存。普通 profile 可在此使用持久化缓存；私密 profile 传入内存缓存。
+    default_cache: Arc<Mutex<HttpCache>>,
+    /// 非默认顶级站点分区的独立内存缓存。
+    ///
+    /// P0 保守地不把这些分区写入共享磁盘缓存：磁盘索引尚未携带 partition key 时，
+    /// 宁可降低跨会话命中率，也不能让不同顶级站点复用同一条目。
+    partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
 }
 
@@ -106,7 +113,8 @@ impl ResourceLoader {
     pub fn new(cache: Arc<Mutex<HttpCache>>, partition: impl Into<String>) -> Self {
         Self {
             scheduler: PerOriginFetchScheduler::new_shared(),
-            cache,
+            default_cache: cache,
+            partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
         }
     }
@@ -118,12 +126,12 @@ impl ResourceLoader {
         }
         let request_mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
         request.cache_mode = request_mode;
+        let cache = self.cache_for_partition(&request.partition);
         if request.cache_mode == CacheMode::NoStore {
-            return self.submit_network(request, Vec::new(), false);
+            return self.submit_network(cache, request, Vec::new(), false);
         }
 
-        let lookup = self
-            .cache
+        let lookup = cache
             .lock()
             .expect("HTTP cache lock")
             .lookup(&request.url, &request.headers);
@@ -136,20 +144,19 @@ impl ResourceLoader {
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
             CacheLookup::Hit(_) => {
-                let conditional = self
-                    .cache
+                let conditional = cache
                     .lock()
                     .expect("HTTP cache lock")
                     .conditional_headers_with_request(&request.url, &request.headers);
-                self.submit_network(request, conditional, true)
+                self.submit_network(cache, request, conditional, true)
             }
             CacheLookup::Revalidate {
                 conditional_headers, ..
-            } => self.submit_network(request, conditional_headers, true),
+            } => self.submit_network(cache, request, conditional_headers, true),
             CacheLookup::Miss if request.cache_mode == CacheMode::OnlyIfCached => {
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
-            CacheLookup::Miss => self.submit_network(request, Vec::new(), true),
+            CacheLookup::Miss => self.submit_network(cache, request, Vec::new(), true),
         }
     }
 
@@ -161,7 +168,7 @@ impl ResourceLoader {
         if request.method == HttpMethod::Get && request.body.is_none() {
             return self.submit(ResourceRequest::get(request.url, priority).with_headers(request.headers));
         }
-        let cache = Arc::clone(&self.cache);
+        let cache = self.cache_for_partition(&self.partition);
         let url = request.url.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
@@ -176,11 +183,15 @@ impl ResourceLoader {
 
     /// 成功的 unsafe 请求必须使目标 URI 的缓存变为不可复用。
     pub fn invalidate_after_unsafe(&self, url: &str) {
-        self.cache.lock().expect("HTTP cache lock").invalidate(url);
+        self.cache_for_partition(&self.partition)
+            .lock()
+            .expect("HTTP cache lock")
+            .invalidate(url);
     }
 
     fn submit_network(
         &self,
+        cache: Arc<Mutex<HttpCache>>,
         request: ResourceRequest,
         conditional_headers: Vec<(String, String)>,
         may_store: bool,
@@ -199,7 +210,6 @@ impl ResourceLoader {
             request.priority,
             headers,
         );
-        let cache = Arc::clone(&self.cache);
         let url = request.url;
         let request_headers = request.headers;
         bridge(rx, move |result| match result {
@@ -220,6 +230,17 @@ impl ResourceLoader {
             }
             Err(error) => Err(error),
         })
+    }
+
+    fn cache_for_partition(&self, partition: &str) -> Arc<Mutex<HttpCache>> {
+        if partition == self.partition {
+            return Arc::clone(&self.default_cache);
+        }
+        let mut caches = self.partition_caches.lock().expect("HTTP cache partition lock");
+        caches
+            .entry(partition.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(HttpCache::new())))
+            .clone()
     }
 }
 

@@ -146,3 +146,24 @@ fn coalesce_respects_request_identity_and_vary() {
     }
     assert_eq!(server.request_count(), 2, "only the equal en-US requests may collapse");
 }
+
+/// NFR-001：顶级站点分区是缓存与在途事务的隔离边界，不能从另一站点复用响应。
+#[test]
+fn cache_partition_prevents_cross_site_reuse() {
+    let server = FixtureServer::start("max-age=60", None, Duration::ZERO);
+    let loader = loader();
+    let url = server.url("/shared.png");
+    let site_a = || ResourceRequest::get(url.clone(), FetchPriority::MEDIUM).with_partition("https://a.example");
+    let site_b = || ResourceRequest::get(url.clone(), FetchPriority::MEDIUM).with_partition("https://b.example");
+
+    for request in [site_a(), site_b(), site_a(), site_b()] {
+        assert!(
+            loader
+                .submit(request)
+                .recv_timeout(Duration::from_secs(2))
+                .expect("fixture response")
+                .is_ok()
+        );
+    }
+    assert_eq!(server.request_count(), 2, "each partition needs its own initial fetch");
+}
