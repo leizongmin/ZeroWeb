@@ -1,0 +1,39 @@
+{
+  "round": "R46",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (nodes MutationObserver)",
+  "slice": "MutationObserver NS-attribute records + no-mutation semantics + classList record parity",
+  "context": "R45 follow-up: the remaining 8F of MutationObserver-attributes split into three clusters (NS records / no-mutation guards / classList same-value records). All three fixed this round; the case reaches 100%.",
+  "fixes": {
+    "ns_records": "setAttributeNS/removeAttributeNS now carry their own MutationObserver notify: record.attributeName = localName (prefixed qualified names decomposed), record.attributeNamespace = ns. The old delegation to setAttribute/removeAttribute produced records with the qualified name ('xml:lang') and namespace null. The NS paths write host callbacks directly (bypassing the delegate's namespace-less notify — the first cut double-notified, caught and fixed in-round).",
+    "no_mutation_guard": "removeAttribute (and removeAttributeNS) on a missing attribute no longer queue a record — spec queues a mutation record only when an existing attribute is removed (WPT 'removal no mutation': n71 without class, removeAttribute('class') then id rename → exactly 1 record). Presence checked via the same hasAttribute sources (handle/sel latest-wins).",
+    "classlist_records": "DOMTokenList update step 8: serializing the new token set equal to the current attribute value still sets the attribute and queues a record (real browsers emit an attributes record for classList.add of an existing token — WPT 'classList.add: same value mutation' expects 2 records). R16's same-value early-return swallowed it. Exception: remove-to-empty-set with the attribute originally absent does NOT write or notify (remove must not create an empty class attribute — WPT checkRemove(null,...) expects attribute to stay null; caught as a -10 regression on Element-classlist.html and fixed with the _readClassRaw absence check)."
+  },
+  "results": {
+    "mutation_observer_attributes": "30P/8F -> 38P/0F (100%) both paths",
+    "element_classlist": "1420P/0F maintained (the classList record change regressed it to 1410 mid-round; absence-check exception restored 100%)",
+    "dom_nodes_polyfill": { "pass": 2547, "prev": 2539, "delta": "+8" },
+    "dom_nodes_native": { "pass": 2517 },
+    "mutation_observer_childList": "10P unchanged (fragment-expansion records remain, separate cluster)",
+    "regression": {
+      "dom_events_polyfill": "189P unchanged",
+      "dom_collections": "24P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged"
+    }
+  },
+  "remaining_mo_clusters": "childList: fragment addition record expansion (addedNodes should be fragment children) + insertNode/surroundContents geometry records.",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r46_unit_test": "test_mutation_observer_ns_and_no_mutation_r46 (NS records localName+namespace incl. prefixed decomposition / no-record for missing removals and empty-set remove / record for same-value add)",
+    "v8_engine_lib": "2127 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

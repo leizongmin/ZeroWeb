@@ -724,6 +724,16 @@
     _classCache[key] = v;
     return v;
   }
+  // js-dom M4 R46：class attribute 是否缺失（_readClass 对缺失返 ''——与 present-empty 不可分）。
+  // remove 到空集且原缺失时不写不 notify（remove 不得创建空属性）。
+  function _readClassRaw(_key, sel, handle) {
+    try {
+      if (handle && typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, 'class') === '1' ? '' : null;
+      if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, 'class') === '1' ? '' : null;
+      if (typeof __zw_has_attr === 'function') return __zw_has_attr(sel, 'class') === '1' ? '' : null;
+    } catch (_e) {}
+    return '';
+  }
 
   // R3032：`classList` 完整 DOMTokenList。旧实现仅 add/remove/toggle/contains，缺 `toggle(token,force)`
   //（force 参被忽略——常见 `classList.toggle('x', cond)` 模式失效）、`replace`、`item`、`length`、indexed 访问、
@@ -755,7 +765,14 @@
       // attribute 值未变——WPT checkReplace("a","a","a",true,"a") 期望 mutation），故 replace 调 `write(p, true)`
       // 强制 setAttribute + notify，绕过 runUpdate 的「值相同 return」。返 false（oldT 不存在）时不 write。
       var v = arr.join(' ');
-      if (!force && v === _readClass(key, sel, handle)) return;
+      // js-dom M4 R46：spec DOMTokenList update 步骤 8——序列化值与 attribute 原值相同**仍 set attribute**
+      //（queue mutation record：real browser 对 classList.add 已存在 token 仍发 attributes record——
+      // WPT MutationObserver-attributes "classList.add: same value mutation" 期望 2 条）。R16 的
+      // 「值相同 return」吞掉了该 record。attribute 终值不变（写相同串），checkAdd 类 get 语义不受影响。
+      // force（R19 replace）语义保持。
+      // **例外（R46 修正）**：remove 到空集且原 attribute 缺失（null）——不写不 notify（remove 无 token
+      // 不得**创建**空 class 属性；WPT classlist checkRemove(null, ["a"], null) 期望 attribute 保持 null）。
+      if (!force && v === '' && _readClassRaw(key, sel, handle) === null) return;
       // js-dom M4 R45：classList write 的 attributeOldValue——写入前捕获（同 IDL setter 模式）。
       var _clsMoId = _mo_id(handle, sel);
       var _clsOld = (_clsMoId != null && _mo_any_wants_attr_old(_clsMoId, 'class'))

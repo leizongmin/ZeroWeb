@@ -699,6 +699,16 @@
             // R3025：MutationObserver attributeOldValue——有 observer 请求时捕获 mutate 前 old value。
             var moId = _mo_id(handle, sel);
             var moOld = _mo_any_wants_attr_old(moId, n) ? _mo_read_attr(sel, handle, n) : null;
+            // js-dom M4 R46：spec `dom-element-removeattribute`——属性不存在时移除**不产生 mutation
+            // record**（real browser：queue a mutation record 仅在「已存在的属性被移除」时）。
+            // WPT MutationObserver-attributes "removal no mutation"（n71 无 class，removeAttribute('class')
+            // 后仅 id 改名 1 条 record）。presence 经 hasAttribute 同源判定（handle/sel latest-wins）。
+            var _rmExisted = false;
+            try {
+              if (handle && typeof __zw_has_attr_handle === 'function') _rmExisted = __zw_has_attr_handle(handle, n) === '1';
+              else if (typeof __zw_has_attr_lw === 'function') _rmExisted = __zw_has_attr_lw(sel, n) === '1';
+              else if (typeof __zw_has_attr === 'function') _rmExisted = __zw_has_attr(sel, n) === '1';
+            } catch (_e) {}
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
@@ -721,6 +731,16 @@
             // R3025：MutationObserver attributeOldValue——移除前捕获 old value（有 observer 请求时）。
             var moId = _mo_id(handle, sel);
             var moOld = _mo_any_wants_attr_old(moId, n) ? _mo_read_attr(sel, handle, n) : null;
+            // js-dom M4 R46：spec `dom-element-removeattribute`——属性不存在时移除**不产生 mutation
+            // record**（real browser：queue a mutation record 仅在「已存在的属性被移除」时）。
+            // WPT MutationObserver-attributes "removal no mutation"（n71 无 class，removeAttribute('class')
+            // 后仅 id 改名 1 条 record）。presence 经 hasAttribute 同源判定（handle/sel latest-wins）。
+            var _rmExisted = false;
+            try {
+              if (handle && typeof __zw_has_attr_handle === 'function') _rmExisted = __zw_has_attr_handle(handle, n) === '1';
+              else if (typeof __zw_has_attr_lw === 'function') _rmExisted = __zw_has_attr_lw(sel, n) === '1';
+              else if (typeof __zw_has_attr === 'function') _rmExisted = __zw_has_attr(sel, n) === '1';
+            } catch (_e) {}
             // 真移除（区别于 set-empty 残留 `attr=""`——boolean 属性 checked/disabled 设空值仍 present
             // → hasAttribute 误 true）。handle 元素经 `__zw_remove_attr_handle`（RemoveAttrOnHandle，R2993）；
             // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
@@ -737,7 +757,7 @@
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
-            _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
         }
@@ -770,8 +790,28 @@
         // 属性）。闭合旧「读 local 查不到 setAttributeNS 的 prefix:local」不一致。spec 按 ns+localName 匹配，
         // 本实现按限定名字符串存故 ns→prefix 重构；自定义 ns 无常规 prefix 或 setAttributeNS 用非常规 prefix
         // 时回落裸 local（罕见，记限）。
+        // js-dom M4 R46：NS 属性族的 MutationObserver record——spec `mutation-observer-attributes`：
+        // record.attributeName = **localName**、attributeNamespace = ns（WPT MutationObserver-attributes
+        // "setAttributeNS: creation" 断言 namespace="http://example.org/" / attributeName="lang"——
+        // 旧委托 setAttribute 使 record 带限定名 "xml:lang" 且 namespace null）。NS 族四方法自带
+        // notify（绕过 delegate 的 setAttribute/removeAttribute notify），pre 捕获 old 同款。
         if (prop === 'setAttributeNS') {
-          return function(_ns, qualifiedName, value) { proxy.setAttribute(String(qualifiedName), value); };
+          return function(_ns, qualifiedName, value) {
+            var ns = _ns == null ? null : String(_ns);
+            var qn = String(qualifiedName);
+            var local = qn.indexOf(':') >= 0 ? qn.slice(qn.indexOf(':') + 1) : qn;
+            var _nsMoId = _mo_id(handle, sel);
+            var _nsOld = (_nsMoId != null && _mo_any_wants_attr_old(_nsMoId, local))
+              ? _mo_read_attr(sel, handle, _nsQualName(ns, local)) : null;
+            // 直写 host 回调（不经 proxy.setAttribute——那条路径自带无 namespace 的 notify，会双发）。
+            if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
+            else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
+            else proxy.setAttribute(qn, value);
+            _mo_notify(sel, handle, {
+              type: 'attributes', attributeName: local,
+              attributeNamespace: ns, oldValue: _nsOld,
+            });
+          };
         }
         if (prop === 'getAttributeNS') {
           return function(ns, localName) { return proxy.getAttribute(_nsQualName(ns, localName)); };
@@ -780,7 +820,29 @@
           return function(ns, localName) { return proxy.hasAttribute(_nsQualName(ns, localName)); };
         }
         if (prop === 'removeAttributeNS') {
-          return function(ns, localName) { return proxy.removeAttribute(_nsQualName(ns, localName)); };
+          return function(_ns, localName) {
+            var ns = _ns == null ? null : String(_ns);
+            var local = String(localName);
+            var qname = _nsQualName(ns, local);
+            var _nsMoId2 = _mo_id(handle, sel);
+            var _nsExisted = false;
+            try {
+              if (handle && typeof __zw_has_attr_handle === 'function') _nsExisted = __zw_has_attr_handle(handle, qname) === '1';
+              else if (typeof __zw_has_attr_lw === 'function') _nsExisted = __zw_has_attr_lw(sel, qname) === '1';
+              else if (typeof __zw_has_attr === 'function') _nsExisted = __zw_has_attr(sel, qname) === '1';
+            } catch (_e) {}
+            var _nsOld2 = (_nsExisted && _nsMoId2 != null && _mo_any_wants_attr_old(_nsMoId2, local))
+              ? _mo_read_attr(sel, handle, qname) : null;
+            // 直删 host 回调（不经 proxy.removeAttribute——那条路径自带无 namespace 的 notify，会双发）。
+            if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, qname);
+            else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, qname);
+            else proxy.removeAttribute(qname);
+            // R46：缺失属性的 NS 移除不发 record（同 removeAttribute presence guard）。
+            if (_nsExisted) _mo_notify(sel, handle, {
+              type: 'attributes', attributeName: local,
+              attributeNamespace: ns, oldValue: _nsOld2,
+            });
+          };
         }
         // `el.focus()` / `el.blur()`——焦点状态追踪（document.activeElement 对）+ 焦点事件派发（R3247）。
         // 纯 in-JS 状态：focus 记当前 key，blur 清当前 key。**已知限制**：① 无真键盘焦点（纯状态，无输入焦点点亮）；

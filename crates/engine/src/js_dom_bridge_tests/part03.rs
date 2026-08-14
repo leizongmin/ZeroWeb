@@ -2909,3 +2909,107 @@ fn test_mutation_observer_id_chain_and_oldvalue_r45() {
         "② attributeOldValue 写入前捕获（id=old / class=c0）+ ① 两条都入 record"
     );
 }
+
+#[test]
+fn test_mutation_observer_ns_and_no_mutation_r46() {
+    // R46：MutationObserver record 语义三件（WPT MutationObserver-attributes 0→38P/0F 驱动）：
+    // ① setAttributeNS record：attributeName=**localName** + attributeNamespace=ns（旧委托
+    //    setAttribute 使 record 带限定名 "xml:lang" 且 namespace null）
+    // ② removeAttribute 缺失属性**不发 record**（spec：queue record 仅当已存在属性被移除；
+    //    旧无条件 notify 致 "removal no mutation" 多一条）
+    // ③ classList.add 已存在 token 仍发 record（spec update 步骤 8 仍 set attribute）+
+    //    classList.remove 到空集且原属性缺失不写不 notify（remove 不得创建空属性）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\" class=\"c1\">x</div><div id=\"b\">y</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var recs = [];\n\
+             var mo = new MutationObserver(function(rs) { recs = rs; });\n\
+             var a = document.querySelector('#a');\n\
+             mo.observe(a, { attributes: true, attributeOldValue: true });\n\
+             // ① setAttributeNS：localName + namespace\n\
+             a.setAttributeNS('http://example.org/', 'xml:lang', 'en');\n\
+             a.setAttributeNS('http://example.org/ns2', 'title2', 'v');",
+        )
+        .unwrap();
+    let mut filled = false;
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "2" {
+            filled = true;
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(filled, "NS 两条 record 应 flush");
+    assert_eq!(
+        sandbox
+            .execute("recs.map(function(r) { return r.attributeName + '|' + String(r.attributeNamespace); }).join(',')")
+            .unwrap()
+            .value,
+        "lang|http://example.org/,title2|http://example.org/ns2",
+        "① setAttributeNS record：attributeName=localName + attributeNamespace=ns（prefixed 限定名拆解）"
+    );
+    // ② removeAttribute 缺失属性 + ③ classList 语义
+    sandbox
+        .execute(
+            "recs = [];\n\
+             var b = document.querySelector('#b');\n\
+             var mo2 = new MutationObserver(function(rs) { recs = rs; });\n\
+             mo2.observe(b, { attributes: true, attributeOldValue: true });\n\
+             b.removeAttribute('class');\n\
+             b.classList.remove('nonexistent');\n\
+             globalThis.__phase2 = true;",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value != "0" || sandbox.execute("globalThis.__phase2").unwrap().value == "true" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    // flush 后 recs 应仍 0（缺失移除 + 空集 remove 都不发）
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = sandbox.execute("0");
+    assert_eq!(
+        sandbox.execute("recs.length").unwrap().value,
+        "0",
+        "②③ removeAttribute 缺失 + classList.remove 空集（原无 class）均不发 record"
+    );
+    // ③ classList.add 已存在 token 仍发
+    sandbox
+        .execute(
+            "recs = [];\n\
+             a.classList.add('c1');\n\
+             globalThis.__phase3 = true;",
+        )
+        .unwrap();
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "1" {
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        sandbox.execute("recs.length").unwrap().value,
+        "1",
+        "③ classList.add 已存在 token 仍发 attributes record（spec update 步骤 8 仍 set）"
+    );
+}
