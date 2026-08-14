@@ -13,7 +13,7 @@ use zero_engine::{
     make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
     register_dom_callbacks,
 };
-use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader};
+use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
     ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife, compile_module_script,
     extract_module_import_specifiers,
@@ -470,7 +470,6 @@ fn execute_module_in_sandbox(
 }
 
 fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandbox) {
-    let http = zero_net::client::HttpClient::new();
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     sandbox.register_callback(
@@ -493,9 +492,16 @@ fn register_module_compile_callback(sandbox: &mut dyn zero_script_sandbox::Sandb
             }
 
             let fetch = |u: &str| -> Result<String, String> {
-                http.get(u)
-                    .map(|r| String::from_utf8_lossy(&r.body).into_owned())
-                    .map_err(|e| e.to_string())
+                let response = if zero_net::is_file_url(u) {
+                    zero_net::HttpClient::new().get(u).map_err(|e| e.to_string())?
+                } else {
+                    ResourceLoader::shared()
+                        .submit(ResourceRequest::get(u, FetchPriority::HIGH).with_destination("script"))
+                        .recv()
+                        .map_err(|_| "module loader worker exited".to_string())?
+                        .map_err(|e| format!("module fetch: {e}"))?
+                };
+                Ok(String::from_utf8_lossy(&response.body).into_owned())
             };
 
             let mut registry = HashMap::new();
