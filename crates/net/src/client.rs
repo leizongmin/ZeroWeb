@@ -56,6 +56,8 @@ pub struct HttpResponseHead {
     pub url: String,
     /// 已跟随的重定向数。
     pub redirect_count: usize,
+    /// 协商的 HTTP 协议版本。
+    pub protocol: String,
 }
 
 impl Clone for HttpClient {
@@ -164,6 +166,7 @@ impl HttpClient {
                     .collect(),
                 url: response.url().to_string(),
                 redirect_count,
+                protocol: protocol_name(response.version()).to_string(),
             };
             while let Some(chunk) = response.chunk().await.map_err(map_reqwest_error)? {
                 on_chunk(&chunk);
@@ -436,6 +439,17 @@ impl HttpClient {
     /// POST 请求。
     pub fn post(&self, url: &str, body: Vec<u8>) -> Result<HttpResponse, NetError> {
         self.send(HttpRequest::post(url, body))
+    }
+}
+
+fn protocol_name(version: reqwest::Version) -> &'static str {
+    match version {
+        reqwest::Version::HTTP_09 => "http/0.9",
+        reqwest::Version::HTTP_10 => "http/1.0",
+        reqwest::Version::HTTP_11 => "http/1.1",
+        reqwest::Version::HTTP_2 => "h2",
+        reqwest::Version::HTTP_3 => "h3",
+        _ => "unknown",
     }
 }
 
@@ -1814,6 +1828,7 @@ mod integration_tests {
             .block_on(client.send_async_stream(HttpRequest::get(&url), |chunk| body.extend_from_slice(chunk)))
             .expect("stream fetch");
         assert_eq!(head.status_code, 200);
+        assert_eq!(head.protocol, "http/1.1");
         assert_eq!(body, b"streamed body");
         server.join().expect("join server");
     }
