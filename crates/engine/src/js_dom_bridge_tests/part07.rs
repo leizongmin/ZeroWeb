@@ -3053,10 +3053,13 @@ fn test_event_subclass_init_props_inherit_parent_chain_r24() {
 
 #[test]
 fn test_event_cancel_bubble_mirror_r26() {
-    // js-dom M4 R26：Event.cancelBubble（spec `dom-event-cancelbubble`，stop propagation flag 的 legacy 公开镜像）。
-    // WPT Event-cancelBubble.html：① 初始 false；② initEvent 设 false（spec initialize 重置 dispatch flags）；
-    // ③ stopPropagation/stopImmediatePropagation 设 true。polyfill _makeEvent 加 cancelBubble 字段 +
-    // stop 方法联动 + initEvent 重置。
+    // js-dom M4 R26/R29：Event.cancelBubble（spec `dom-event-cancelbubble`，stop propagation flag 的 legacy 公开别名）。
+    // R26：① 初始 false；② initEvent 设 false（spec initialize 重置 dispatch flags）；③ stopPropagation/
+    // stopImmediatePropagation 设 true。polyfill _makeEvent 加 cancelBubble（R26 普通 data 字段，stop 方法联动）。
+    // R29：cancelBubble 改 defineProperty getter/setter，后端直接复用 stop propagation flag `_propagationStopped`
+    //——setter 设 true→置 flag（等同 stopPropagation，dispatch bubble 循环读 flag 止上溯），设 false→no-op
+    //（spec：flag 一旦设除非 initEvent 否则不可清）；getter 返 flag。覆盖 WPT Event-cancelBubble.html 全 8 test：
+    // R26 4（初始/initEvent/stop/stopImmediate）+ R29 4（setter=false no-op / dispatch 后 flag 清 / setter dispatch 止上溯）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -3123,6 +3126,55 @@ fn test_event_cancel_bubble_mirror_r26() {
         sandbox.execute("String(globalThis.__cb3)").unwrap().value,
         "true",
         "R26 stopImmediatePropagation 设 cancelBubble=true"
+    );
+
+    // ── R29：cancelBubble setter dispatch 副作用（spec `dom-event-cancelbubble` setter）──
+
+    // ⑤ cancelBubble=false 为 no-op：stopPropagation 置 flag 后，设 false 不清 flag（getter 仍 true）。
+    // spec：stop propagation flag 一旦设除非 initEvent 否则不可清。WPT "Event.cancelBubble=false must have no effect"。
+    sandbox
+        .execute(
+            "globalThis.__e4 = document.createEvent('Event');\
+             __e4.stopPropagation();\
+             __e4.cancelBubble = false;\
+             globalThis.__cb4 = __e4.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb4)").unwrap().value,
+        "true",
+        "R29 cancelBubble=false 设值 no-op（flag 不可被 setter 清）"
+    );
+
+    // ⑥ cancelBubble=true setter 直接置 flag（不经 stopPropagation，getter 返 true）。
+    sandbox
+        .execute(
+            "globalThis.__e5 = document.createEvent('Event');\
+             __e5.cancelBubble = true;\
+             globalThis.__cb5 = __e5.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb5)").unwrap().value,
+        "true",
+        "R29 cancelBubble=true setter 置 stop propagation flag"
+    );
+
+    // ⑦ dispatch 后 flag 清（spec concept-event-dispatch 步骤14 unset）→ cancelBubble=false。
+    // 监听器内 stopPropagation 设 flag，dispatch finally 清 flag。WPT "cancelBubble must be false after dispatched"。
+    sandbox
+        .execute(
+            "globalThis.__e6 = document.createEvent('Event');\
+             __e6.initEvent('foobar', true, true);\
+             document.body.addEventListener('foobar', function (e) { e.stopPropagation(); });\
+             document.body.dispatchEvent(__e6);\
+             globalThis.__cb6 = __e6.cancelBubble;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cb6)").unwrap().value,
+        "false",
+        "R29 dispatch 后 stop propagation flag 清（cancelBubble=false，spec dispatch 步骤14）"
     );
 }
 

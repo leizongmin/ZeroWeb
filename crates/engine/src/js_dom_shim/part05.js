@@ -2720,9 +2720,10 @@
       this.cancelable = !!cancelable;
       this.defaultPrevented = false;
       this._defaultPrevented = false;
-      // js-dom M4 R26：spec `concept-event-initialize` 重置 dispatch flags——initEvent 把 cancelBubble +
-      // stop propagation flag 归零（WPT Event-cancelBubble "initEvent must set cancelBubble to false"）。
-      this.cancelBubble = false;
+      // js-dom M4 R26/R29：spec `concept-event-initialize` 重置 dispatch flags——initEvent 把 stop propagation
+      // flag 归零。R26 显式 `this.cancelBubble = false`（旧 data 属性）；R29 cancelBubble 改 defineProperty
+      // getter/setter（后端 _propagationStopped，setter 设 false = no-op），故此处直接重置 _propagationStopped
+      // 即可让 cancelBubble getter 返 false（WPT Event-cancelBubble "initEvent must set cancelBubble to false"）。
       this._propagationStopped = false;
       this._immediateStopped = false;
     };

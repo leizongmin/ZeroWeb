@@ -1090,6 +1090,11 @@
       return !event._defaultPrevented;
     } finally {
       event._composedPath = null;
+      // js-dom M4 R29：spec `concept-event-dispatch` 步骤14——dispatch 结束 unset stop propagation flag
+      //（+ 步骤清其他 dispatch flags）。reset 后 cancelBubble getter（后端 _propagationStopped）返 false
+      //（WPT Event-cancelBubble "cancelBubble must be false after an event has been dispatched"）。
+      // 仅清 dispatch 内设的 flag；监听器外显式 stopPropagation（未 dispatch）的 flag 保留至 initEvent 重置。
+      event._propagationStopped = false;
     }
   }
 
@@ -1112,10 +1117,13 @@
       _defaultPrevented: false,
       _propagationStopped: false,
       _immediateStopped: false,
-      // cancelBubble（js-dom M4 R26，spec `dom-event-cancelbubble`）：stop propagation flag 的公开镜像
-      //（legacy IE 别名）。初始 false；`stopPropagation`/`stopImmediatePropagation` 设 true；dispatch bubble
-      // 循环检查 cancelBubble 止上溯。与 defaultPrevented/_defaultPrevented 同款「公开镜像 + 私 flag」模式。
-      cancelBubble: false,
+      // cancelBubble（js-dom M4 R26/R29，spec `dom-event-cancelbubble`）：stop propagation flag 的公开别名
+      //（legacy IE）。R26 为普通 data 属性（值镜像，stopPropagation 同步设 true），但 setter 无副作用——
+      // 外部 `ev.cancelBubble = true` 不止上溯。R29 改 defineProperty getter/setter 直接以 _propagationStopped
+      //（= stop propagation flag）为后端：getter 返 flag；setter 设 true→置 flag（等同 stopPropagation，dispatch
+      // bubble/capture 循环读 flag 止上溯），设 false→no-op（spec：flag 一旦设除非 initEvent 否则不可清）。
+      // _dispatchWithBubble finally 重置 flag（spec concept-event-dispatch 步骤14，dispatch 后 cancelBubble=false）。
+      // 与 R28 returnValue 同款「defineProperty getter/setter + 私 flag 后端」模式。
       // composedPath（R3244）：DOM §4.3——dispatch 期间返事件路径（target→祖先→document→window），
       // 非 dispatch（前后）返 []。`_composedPath` 由 _dispatchWithBubble / globalThis.dispatchEvent 在派发期
       // 填充、finally 清空（spec：dispatch flag unset 时返空）。事件委托（e.composedPath()[0] === target）
@@ -1125,11 +1133,10 @@
         return this._composedPath ? this._composedPath.slice() : [];
       },
       preventDefault: function() { if (this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; } },
-      stopPropagation: function() { this._propagationStopped = true; this.cancelBubble = true; },
+      stopPropagation: function() { this._propagationStopped = true; },
       stopImmediatePropagation: function() {
         this._immediateStopped = true;
         this._propagationStopped = true;
-        this.cancelBubble = true;
       }
     };
     // js-dom M4 R28：`Event.returnValue`（spec `dom-event-returnvalue`，legacy IE 别名 = !canceled flag）。
@@ -1146,6 +1153,23 @@
         // 仅 cancelable 且设 false 时触发 preventDefault（设 canceled flag）。设 true 永远 no-op（spec：canceled
         // flag 一旦设不可清）。cancelable=false 时任何设值 no-op（WPT "no effect if cancelable is false"）。
         if (!v && this.cancelable) { this.defaultPrevented = true; this._defaultPrevented = true; }
+      }
+    });
+    // js-dom M4 R29：`Event.cancelBubble` setter dispatch 副作用（spec `dom-event-cancelbubble`）。R26 用普通 data
+    // 属性镜像 stopPropagation 设值，但 `ev.cancelBubble = true` 无副作用不止上溯。R29 改 defineProperty，后端直
+    // 接复用 stop propagation flag `_propagationStopped`：getter 返 flag；setter 设 true→置 flag（等同 stopPropagation，
+    // _dispatchWithBubble capture/target/bubble 三循环均读此 flag 止上溯），设 false→no-op（spec：stop propagation
+    // flag 一旦设除非 initEvent 重新初始化否则不可清——WPT "cancelBubble=false must have no effect"）。WPT 覆盖：
+    // 初始 false / stopPropagation→true / cancelBubble=false no-op / dispatch bubble 循环止上溯 / dispatch 后 flag
+    // 清（_dispatchWithBubble finally 重置 _propagationStopped）→ cancelBubble=false。
+    Object.defineProperty(ev, 'cancelBubble', {
+      enumerable: false,
+      configurable: true,
+      get: function() { return this._propagationStopped; },
+      set: function(v) {
+        // 设 true → 置 stop propagation flag（spec cancelBubble setter：true 时「set this's stop propagation flag」，
+        // 等同 stopPropagation）。设 false → no-op（flag 不可被 setter 清，只能 initEvent 重置）。
+        if (v) { this._propagationStopped = true; }
       }
     });
     return ev;

@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R28 — polyfill Event.returnValue（spec `dom-event-returnvalue`，legacy = !canceled flag）：_makeEvent 用 Object.defineProperty（getter 返 !_defaultPrevented，setter 仅 cancelable+false 触发 prevent，true/非cancelable no-op）；Event-returnValue.html 双路径 0P→7P/7（100%）；dom/events polyfill 46.75%→49.68% / native 40.26%→43.18%（双路径各 +9 pass，对等差 6.49pp 不变；polyfill 突破 49.68% 接近 50%）
+**本轮**: R29 — polyfill Event.cancelBubble setter dispatch 副作用（spec `dom-event-cancelbubble`，R26 普通 data 字段 → R29 defineProperty getter/setter，后端直接复用 stop propagation flag `_propagationStopped`：getter 返 flag，setter true→置 flag 等同 stopPropagation，false→no-op；`_dispatchWithBubble` finally 重置 flag=spec concept-event-dispatch 步骤14）：Event-cancelBubble.html 双路径 4P→8P/8（100%）；dom/events polyfill 49.68%→52.13% / native 43.18%→45.57%（双路径各 +6 pass，对等差 6.49→6.56pp 基本不变；polyfill 突破 52%）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **dom/nodes polyfill 55.63% / native 54.98% 双基线对等**（178 用例 / 4502 subtest；Element-classlist.html 100%）+ **dom/events polyfill 49.68% / native 43.18%**（81 用例 / 318 subtest，R28 Event.returnValue 后；双路径差 6.49pp） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R28 Event.returnValue（Event-returnValue 双路径 7P/7 100%）。失败聚类：dom/nodes iframe.contentDocument（深结构 html-compat）/querySelector-mixed-case（selector 域）；dom/events Event-dispatch 系列（深结构 document/window listener 独立）/cancelBubble setter/~36 个 0-pass 用例 |
+| WPT dom 上游基线 | ✅ **dom/nodes polyfill 55.63% / native 54.98% 双基线对等**（178 用例 / 4502 subtest；Element-classlist.html 100%）+ **dom/events polyfill 52.13% / native 45.57%**（81 用例 / 318 subtest，R29 Event.cancelBubble setter 后；双路径差 6.56pp） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R29 Event.cancelBubble setter（Event-cancelBubble 双路径 8P/8 100%）。失败聚类：dom/nodes iframe.contentDocument（深结构 html-compat）/querySelector-mixed-case（selector 域）；dom/events Event-dispatch 系列（深结构 document/window listener 独立）/~33 个 0-pass 用例 |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -89,7 +89,8 @@
 - R26 已做：① polyfill Event.cancelBubble（part03 `_makeEvent` 加 cancelBubble:false 初始 + stopPropagation/stopImmediatePropagation 设 true，与 defaultPrevented 同款「公开镜像+私 flag」；part05 initEvent 重置 cancelBubble+stop flags，spec `concept-event-initialize`）② R26 单测（初始/initEvent 重置/stopPropagation/stopImmediatePropagation 联动）③ **Event-dispatch 系列评估为深结构**（capture/bubble 链不含 document/window + document/window/html 共享 listener key 无法独立派发 + document.cloneNode/new Document/new Text 基础设施缺），转 cancelBubble 轻量切片。Event-cancelBubble.html 双路径 0P→4P/8；dom/events：polyfill 42.58%→45.48%（141P，+9 pass）、native 36.13%→39.03%（121P，+9 pass，双路径各 +9 同步提升，对等差 6.45pp 不变）。engine v8 单测全绿，双矩阵 clippy 干净
 - R27 已做：① polyfill EventListener handleEvent（part03 `_dispatchToListeners` 的 fire 按类型分支：函数直接 call(this=currentTarget) / 对象 Get handleEvent.call(fn)(this=对象)，每次派发都 Get 支持 getter；handleEvent 非 callable 跳过不抛）② R27 单测（对象 listener handleEvent+this=对象+evt 正确 / getter 每次 Get / 函数 listener 不回归）。EventListener-handleEvent.html 双路径 0P→3P/5；dom/events：polyfill 45.48%→46.75%（144P，+3 pass）、native 39.03%→40.26%（124P，+3 pass，双路径各 +3 同步提升，对等差 6.49pp 基本不变）。engine v8 单测全绿，双矩阵 clippy 干净
 - R28 已做：① polyfill Event.returnValue（part03 `_makeEvent` 用 Object.defineProperty：getter 返 !\_defaultPrevented[canceled flag 反向镜像]，setter 仅 cancelable+false 触发 prevent，true/非cancelable no-op；preventDefault/initEvent 经 _defaultPrevented 自动联动）② R28 单测（7 spec 场景全覆盖：初始/preventDefault cancelable gate/returnValue setter gate/initEvent 重置/已 canceled no-op）。Event-returnValue.html 双路径 0P→7P/7（100%）；dom/events：polyfill 46.75%→49.68%（153P，+9 pass，**突破 49.68% 接近 50%**）、native 40.26%→43.18%（133P，+9 pass，双路径各 +9 同步提升，对等差 6.49pp 不变）。engine v8 单测全绿，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R28 后重排）：① **Event-dispatch 系列**（深结构：document/window listener 独立存储 + capture/bubble 含 document/window 链 + document.cloneNode/new Document/new Text 基础设施，~36 个 0-pass 主力但需深改）② cancelBubble setter dispatch 止上溯副作用（Event-cancelBubble 剩 4 test）③ 双路径差 6.49pp 收口（WheelEvent 子类链/SubclassedEvent，分散低 ROI）④ iframe.contentDocument（深结构 html-compat 域）⑤ querySelector-mixed-case（selector 域）⑥ polyfill appendChild 闭环（M1 L2）⑦ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑧ 扩 DOM_TEST_SUBDIRS（dom/collections 等）
+- R29 已做：① polyfill Event.cancelBubble 改 defineProperty getter/setter（part03 `_makeEvent`：getter 返 `_propagationStopped`[stop propagation flag]，setter true→置 flag 等同 stopPropagation，false→no-op；R26 普通 data 字段升级——外部 `ev.cancelBubble=true` 现有副作用止上溯）② stopPropagation/stopImmediatePropagation 移除冗余 `this.cancelBubble=true`（getter 现读 flag，flag 已设）③ `_dispatchWithBubble` try/finally 重置 `_propagationStopped=false`（spec concept-event-dispatch 步骤14，dispatch 后 cancelBubble 返 false）④ initEvent（part05）移除无效 `this.cancelBubble=false`（R29 setter false no-op），保留 `_propagationStopped=false` 重置 ⑤ R29 单测 4 场景（setter=false no-op / setter=true 置 flag / dispatch 后 flag 清 / 保留 R26 4 场景）。**Event-cancelBubble.html 双路径 4P→8P/8（100%）；dom/events：polyfill 49.68%→52.13%（159P，+6 pass，**突破 52%**）、native 43.18%→45.57%（139P，+6 pass，双路径各 +6 同步提升，对等差 6.49→6.56pp 基本不变）**。engine v8 2097 / quickjs 1410 单测全绿，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R29 后重排）：① **Event-dispatch 系列**（深结构：document/window listener 独立存储 + capture/bubble 含 document/window 链 + document.cloneNode/new Document/new Text 基础设施，~33 个 0-pass 主力但需深改）② 双路径差 6.56pp 收口（WheelEvent 子类链/SubclassedEvent，分散低 ROI）③ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）④ iframe.contentDocument（深结构 html-compat 域）⑤ querySelector-mixed-case（selector 域）⑥ polyfill appendChild 闭环（M1 L2）⑦ 扩 DOM_TEST_SUBDIRS（dom/collections 等）⑧ Event-dispatch-multiple-cancelBubble.html（dispatch 内多次 cancelBubble 状态机，依赖 Event-dispatch 深结构）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -110,10 +111,10 @@
 
 | 基线 | 命令 | 当前值 |
 |------|------|--------|
-| zero-engine 测试（v8） | `cargo test -p zero-engine --features v8 --lib` | ✅ 2088 passed（含 R19 classList replace+assignment+identity 单测，R19 实测） |
+| zero-engine 测试（v8） | `cargo test -p zero-engine --features v8 --lib` | ✅ 2097 passed（含 R29 cancelBubble setter dispatch 副作用单测，R29 实测） |
 | zero-wpt-runner 测试（v8/quickjs） | `cargo test -p zero-wpt-runner --features v8 --lib` | ✅ 181 passed（含 R20 status 映射单测，R20 实测） |
 | dom/nodes 通过率口径 | pass/(pass+fail)（中性 NotRun/PreconditionFailed 从分母排除） | polyfill 55.63% / native 54.98%（R20，WPT 标准口径） |
-| zero-engine 测试（quickjs） | `cargo test -p zero-engine --no-default-features --features quickjs --lib` | ✅ 1406 passed（A/B 门 + dom_exception 均 cfg(v8) 排除，R2 实测） |
+| zero-engine 测试（quickjs） | `cargo test -p zero-engine --no-default-features --features quickjs --lib` | ✅ 1410 passed（A/B 门 + dom_exception 均 cfg(v8) 排除，R2 实测；R29 cancelBubble 测试双路径共享 shim） |
 | zero-webview 测试（v8） | `cargo test -p zero-webview --features v8` | ✅ 17 passed（native_dom 接线回归） |
 | clippy（v8 + quickjs 双矩阵） | `cargo clippy -p zero-engine ...` | ✅ 零警告（双矩阵） |
 | workspace 全量 `make test` | `make test` | ⚠️ 本轮单次超时未跑完（workspace 全量编译+测试+quickjs 矩阵 >580s）；聚焦验证已覆盖变更面（纯测试新增，无生产代码改动） |
@@ -169,6 +170,7 @@
 | 2026-08-14 | R26 | polyfill Event.cancelBubble（_makeEvent 加 cancelBubble:false + stopPropagation/stopImmediatePropagation 设 true；initEvent 重置 cancelBubble+stop flags）+ R26 单测；Event-dispatch 系列评估为深结构（document/window listener 独立 + cloneNode/Document/Text 基础设施）转 cancelBubble 轻量；engine v8 全绿，双矩阵 clippy 干净 | **Event-cancelBubble 双路径 0P→4P/8**。dom/events：polyfill 42.58%→45.48%（141P，+9 pass）/ native 36.13%→39.03%（121P，+9 pass，双路径同步提升，对等差 6.45pp 不变）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R27 | polyfill EventListener handleEvent（_dispatchToListeners fire 按类型分支：函数 call / 对象 Get handleEvent.call(fn)，每次派发都 Get 支持 getter）+ R27 单测（对象 listener+this=对象+evt / getter 每次 Get / 函数不回归）；engine v8 全绿，双矩阵 clippy 干净 | **EventListener-handleEvent 双路径 0P→3P/5**。dom/events：polyfill 45.48%→46.75%（144P，+3 pass）/ native 39.03%→40.26%（124P，+3 pass，双路径同步提升，对等差 6.49pp 基本不变）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R28 | polyfill Event.returnValue（_makeEvent Object.defineProperty：getter 返 !_defaultPrevented，setter cancelable+false 触发 prevent，true/非cancelable no-op）+ R28 单测（7 spec 场景）；engine v8 全绿，双矩阵 clippy 干净 | **Event-returnValue 双路径 0P→7P/7（100%）**。dom/events：polyfill 46.75%→49.68%（153P，+9 pass，突破 49.68% 接近 50%）/ native 40.26%→43.18%（133P，+9 pass，双路径同步提升，对等差 6.49pp 不变）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R29 | polyfill Event.cancelBubble setter dispatch 副作用（_makeEvent 普通 data 字段→defineProperty getter/setter，后端复用 _propagationStopped；setter true→置 flag 等同 stopPropagation，false→no-op；stopPropagation/stopImmediatePropagation 移除冗余赋值；_dispatchWithBubble finally 重置 flag=spec dispatch 步骤14；initEvent 移除无效 setter 调）+ R29 单测 4 场景（setter no-op/置 flag/dispatch 后 flag 清 + 保留 R26 4）；engine v8 2097 / quickjs 1410 全绿，双矩阵 clippy 干净 | **Event-cancelBubble 双路径 4P→8P/8（100%）**。dom/events：polyfill 49.68%→52.13%（159P，+6 pass，突破 52%）/ native 43.18%→45.57%（139P，+6 pass，双路径同步提升，对等差 6.49→6.56pp 基本不变）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -178,11 +180,11 @@
 
 ## 下一步计划
 
-1. **R28（本轮，已完成）**：polyfill Event.returnValue（defaultPrevented legacy 镜像）→ land（Event-returnValue 双路径 7P/7 100%，dom/events polyfill 49.68% / native 43.18%，各 +9 pass，polyfill 突破接近 50%）
-2. **下轮候选（按剩余 ROI，R28 后重排）**：
-   - **(a) cancelBubble setter dispatch 止上溯副作用**（Event-cancelBubble 剩 4 test，独立小切片——dispatch bubble 循环检查 cancelBubble 止上溯）。
-   - **(b) Event-dispatch 系列**（深结构：document/window listener 独立存储 + cloneNode/new Document/new Text 基础设施 + capture/bubble 含 document/window 链，~36 个 0-pass 主力但需深改，按需评估切片化）。
-   - **(c) 双路径差 6.49pp 收口**（WheelEvent 子类链/SubclassedEvent，分散低 ROI）。
+1. **R29（本轮，已完成）**：polyfill Event.cancelBubble setter dispatch 副作用（R26 普通 data 字段→defineProperty getter/setter，后端复用 stop propagation flag _propagationStopped；setter true=stopPropagation，false=no-op；dispatch finally 重置 flag）→ land（Event-cancelBubble 双路径 8P/8 100%，dom/events polyfill 52.13% / native 45.57%，各 +6 pass，polyfill 突破 52%）
+2. **下轮候选（按剩余 ROI，R29 后重排）**：
+   - **(a) Event-dispatch 系列**（深结构：document/window listener 独立存储 + cloneNode/new Document/new Text 基础设施 + capture/bubble 含 document/window 链，~33 个 0-pass 主力但需深改，按需评估切片化——可先做最小可独立 land 子集如 document.addEventListener 独立派发）。
+   - **(b) Event-dispatch-multiple-cancelBubble.html**（dispatch 内多次 cancelBubble 状态机，部分依赖 Event-dispatch 深结构，评估独立切片可能）。
+   - **(c) 双路径差 6.56pp 收口**（WheelEvent 子类链/SubclassedEvent，分散低 ROI）。
    - **(d) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
    - **(e) querySelector-mixed-case**（selector 域）。
    - **(f) iframe.contentDocument**（深结构 html-compat 域）。
@@ -256,3 +258,4 @@
 - R26：M4 polyfill Event.cancelBubble（stop propagation flag 公开镜像，Event-cancelBubble 双路径 4P/8，dom/events 各 +9 pass；Event-dispatch 深结构评估转轻量）→ archive/m4-slice-event-cancel-bubble.md
 - R27：M4 polyfill EventListener handleEvent（对象 listener 调 .handleEvent，EventListener-handleEvent 双路径 3P/5，dom/events 各 +3 pass）→ archive/m4-slice-event-listener-handle-event.md
 - R28：M4 polyfill Event.returnValue（defaultPrevented legacy 镜像，Event-returnValue 双路径 7P/7 100%，dom/events 各 +9 pass，polyfill 突破 49.68% 接近 50%）→ archive/m4-slice-event-return-value.md
+- R29：M4 polyfill Event.cancelBubble setter dispatch 副作用（data 字段→defineProperty getter/setter 后端 _propagationStopped，dispatch finally 重置 flag，Event-cancelBubble 双路径 8P/8 100%，dom/events 各 +6 pass，polyfill 突破 52%）→ archive/m4-slice-event-cancel-bubble-setter.md
