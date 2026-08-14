@@ -27,8 +27,8 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 | shadows | 61 | ✅ 60 Pass（1 = current.removed——js-dom 流 DOM remove 不置空 parentNode，移交） |
 | compositing | 124 | ✅ 98 Pass / **0 Fail**（26 = reftest 格式 grid 文件超时，非 canvas 面） |
 | fill-and-stroke-styles | 261 | ✅ 251+ Pass / 3 Fail（halftransparent alpha 精度 + gradient.colormix/relativecolor 插值空间）/ 7 超时（既有） |
-| text | 144 | ✅ 80+ Pass（draw 像素面 46/52；drawing.style 18/25；measure 真度量 7）；剩余 = .tentative 新 API ~90 + 超时 23（既有） |
-| **合计** | **919 文件** | **657+ Pass**（基线 533 → +124） |
+| text | 144 | ✅ 107+ Pass（draw 像素面 51；drawing.style 25；measure 全系 40+：真度量/bbox 锚定/getActualBoundingBox 11/TextCluster 7/emHeight）；剩余 = index-from-offset/selection-rects（DOM 布局面）~75 + lang 2 + 超时 33（既有） |
+| **合计** | **919 文件** | **684+ Pass**（基线 533 → +151） |
 
 ### Rust 层（crates/canvas）
 
@@ -39,7 +39,10 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 - ✅ 文本真字体光栅：@font-face FontLoader 注入 → shape（rustybuzz，rtl 方向）→ glyph
   位图 blit；基线偏移真实 ascent/descent（fontdue descent 为负）；maxWidth 缩放；
   letterSpacing/wordSpacing（原始串 + em/% 随字号重解析）；measureText 真度量 +
-  actualBoundingBox 按 align/direction 锚定
+  actualBoundingBox 按 align/direction 锚定 + 真实墨迹边界
+- ✅ TextCluster 系列：getTextClusters（UAX#29 字素分段 + options 定位）、
+  fillTextCluster/strokeTextCluster（options align/baseline/x/y）；stroke_text 真字体路径；
+  TextMetrics emHeightAscent/Descent
 - ✅ 空 stops 渐变透明；stroke 单次调用去重 mask（段/join/cap 重叠只合成一次）
 - ✅ Transform2D::inverse；TextBaseline 补 Hanging/Ideographic
 
