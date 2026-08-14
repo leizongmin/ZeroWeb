@@ -196,14 +196,12 @@ fn stale_etag_revalidation_is_coalesced() {
     let first = loader.submit(ResourceRequest::get(url.clone(), FetchPriority::HIGH));
     let second = loader.submit(ResourceRequest::get(url, FetchPriority::HIGH));
     for response in [first, second] {
-        assert_eq!(
-            response
-                .recv_timeout(Duration::from_secs(2))
-                .expect("revalidated response")
-                .expect("successful revalidation")
-                .body,
-            b"cached-v1"
-        );
+        let response = response
+            .recv_timeout(Duration::from_secs(2))
+            .expect("revalidated response")
+            .expect("successful revalidation");
+        assert_eq!(response.body, b"cached-v1");
+        assert_eq!(response.header("cache-control"), Some("max-age=60"));
     }
 
     let requests: Vec<_> = (0..2)
