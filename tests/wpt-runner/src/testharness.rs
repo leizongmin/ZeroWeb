@@ -46,6 +46,14 @@ const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes"];
 
 /// WPT subtest status.
+///
+/// 映射上游 testharness subtest status 数字编码（`testharness.js` 的 `Test.status`）：
+/// `0=PASS`、`1=FAIL`、`2=TIMEOUT`、`3=NOTRUN`、`4=PRECONDITION_FAILED`。其中 `NOTRUN`（测试
+/// 因脚本错误/超时未执行）与 `PRECONDITION_FAILED`（`assert_implements`/`assert_implements_optional`
+/// 的 precondition 不满足，如 optional feature 不支持）是**中性状态**——上游 WPT dashboard 既不计入
+/// pass 也不计入 fail（precondition 失败非实现缺陷，NOTRUN 属基础设施跳过）。runner 通过率统计须把
+/// 它们与 `Fail` 区分（js-dom R20：原 `map_harness_results` 的 `_ => Fail` 把 3/4 误计为 Fail，
+/// 拖低 optional feature 如 TouchEvent 的 dom/nodes 通过率）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HarnessStatus {
     /// The subtest passed.
@@ -56,6 +64,13 @@ pub enum HarnessStatus {
     Timeout,
     /// The case requires a testdriver API outside the declared support surface.
     Unsupported,
+    /// The subtest was never run（上游 status `NOTRUN=3`）：脚本错误/超时致 test() 块未执行。
+    /// 中性状态，通过率统计不计入 fail。
+    NotRun,
+    /// The subtest's precondition failed（上游 status `PRECONDITION_FAILED=4`）：
+    /// `assert_implements`/`assert_implements_optional` 失败（optional feature 不支持等）。
+    /// 中性状态，通过率统计不计入 fail。
+    PreconditionFailed,
 }
 
 /// One WPT subtest result.
@@ -417,9 +432,14 @@ fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResu
         .into_iter()
         .map(|result| HarnessSubtestResult {
             name: result.name,
+            // 上游 testharness subtest status：0=PASS、1=FAIL、2=TIMEOUT、3=NOTRUN、4=PRECONDITION_FAILED
+            //（js-dom R20：3/4 此前落到 `_ => Fail` 误计为失败；NOTRUN/PRECONDITION_FAILED 是中性状态，
+            // 通过率统计不计入 fail）。未知编码（5+）回落 Fail（保守：无法识别视为失败暴露异常）。
             status: match result.status {
                 0 => HarnessStatus::Pass,
                 2 => HarnessStatus::Timeout,
+                3 => HarnessStatus::NotRun,
+                4 => HarnessStatus::PreconditionFailed,
                 _ => HarnessStatus::Fail,
             },
             message: result.message,
@@ -867,5 +887,54 @@ promise_test(async function() {
             Duration::from_millis(10),
         );
         assert_eq!(results[0].status, HarnessStatus::Timeout);
+    }
+
+    #[test]
+    fn maps_notrun_and_precondition_failed_as_neutral_r20() {
+        // js-dom R20：上游 testharness subtest status 数字编码 3=NOTRUN、4=PRECONDITION_FAILED 须映射为
+        // 中性变体（NotRun/PreconditionFailed），而非 Fail。PRECONDITION_FAILED 是 assert_implements_optional
+        // 失败（optional feature 如 TouchEvent 不支持），spec 不算失败——原 `_ => Fail` 误计拖低通过率。
+        let mapped = map_harness_results(vec![
+            RawHarnessResult {
+                name: "pass".into(),
+                status: 0,
+                message: None,
+            },
+            RawHarnessResult {
+                name: "fail".into(),
+                status: 1,
+                message: None,
+            },
+            RawHarnessResult {
+                name: "timeout".into(),
+                status: 2,
+                message: None,
+            },
+            RawHarnessResult {
+                name: "notrun".into(),
+                status: 3,
+                message: None,
+            },
+            RawHarnessResult {
+                name: "precondition".into(),
+                status: 4,
+                message: Some("'expose legacy touch event APIs'".into()),
+            },
+            RawHarnessResult {
+                name: "unknown".into(),
+                status: 9,
+                message: None,
+            },
+        ]);
+        assert_eq!(mapped[0].status, HarnessStatus::Pass);
+        assert_eq!(mapped[1].status, HarnessStatus::Fail);
+        assert_eq!(mapped[2].status, HarnessStatus::Timeout);
+        assert_eq!(mapped[3].status, HarnessStatus::NotRun, "status 3 → NotRun（中性）");
+        assert_eq!(
+            mapped[4].status,
+            HarnessStatus::PreconditionFailed,
+            "status 4 → PreconditionFailed（中性，非 Fail）"
+        );
+        assert_eq!(mapped[5].status, HarnessStatus::Fail, "未知编码 9 → Fail（保守回落）");
     }
 }
