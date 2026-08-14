@@ -1,0 +1,2002 @@
+[
+  [
+    "dom/events/Body-FrameSet-Event-Handlers.html",
+    [
+      {
+        "name": "Set HTMLBodyElement.onblur",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onblur",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onblur",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onblur to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onblur",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onblur",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onblur",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onblur to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLBodyElement.onerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onerror",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onerror to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onerror",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onerror",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onerror to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLBodyElement.onfocus",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onfocus",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onfocus",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onfocus to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onfocus",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onfocus",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onfocus",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onfocus to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLBodyElement.onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onload",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onload to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onload",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onload",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onload to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLBodyElement.onscroll",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onscroll",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onscroll",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onscroll to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onscroll",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onscroll",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onscroll",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onscroll to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLBodyElement.onresize",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLBodyElement.onresize",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLBodyElement.onresize",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLBodyElement.onresize to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      },
+      {
+        "name": "Set HTMLFrameSetElement.onresize",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Enumerate HTMLFrameSetElement.onresize",
+        "status": "Fail",
+        "message": "assert_true: expected true got undefined"
+      },
+      {
+        "name": "Reflect HTMLFrameSetElement.onresize",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Forward HTMLFrameSetElement.onresize to Window",
+        "status": "Fail",
+        "message": "assert_equals: Convert to function expected \"function\" but got \"object\""
+      }
+    ]
+  ],
+  [
+    "dom/events/CustomEvent.html",
+    [
+      {
+        "name": "CustomEvent dispatching.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First parameter to initCustomEvent should be mandatory.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() {\n        e.initCustomEvent();\n    }\" did not throw"
+      },
+      {
+        "name": "initCustomEvent's default parameter values.",
+        "status": "Fail",
+        "message": "assert_equals: detail expected (object) null but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-cancelBubble.html",
+    [
+      {
+        "name": "cancelBubble must be false when an event is initially created.",
+        "status": "Fail",
+        "message": "assert_false: cancelBubble must be false after event creation. expected false got undefined"
+      },
+      {
+        "name": "Initializing an event must set cancelBubble to false.",
+        "status": "Fail",
+        "message": "assert_false: initEvent() must set cancelBubble to false. [bubbles=true] expected false got true"
+      },
+      {
+        "name": "stopPropagation() must set cancelBubble to true.",
+        "status": "Fail",
+        "message": "assert_true: stopPropagation() must set cancelBubble to true. expected true got undefined"
+      },
+      {
+        "name": "stopImmediatePropagation() must set cancelBubble to true.",
+        "status": "Fail",
+        "message": "assert_true: stopImmediatePropagation() must set cancelBubble to true. expected true got undefined"
+      },
+      {
+        "name": "Event.cancelBubble=false must have no effect.",
+        "status": "Fail",
+        "message": "assert_true: cancelBubble must still be true after attempting to set it to false. expected true got false"
+      },
+      {
+        "name": "Event.cancelBubble=false must have no effect during event propagation.",
+        "status": "Fail",
+        "message": "assert_unreached: Setting Event.cancelBubble=false after setting Event.cancelBubble=true should have no effect. Reached unreachable code"
+      },
+      {
+        "name": "cancelBubble must be false after an event has been dispatched.",
+        "status": "Fail",
+        "message": "assert_false: cancelBubble must be false after an event has been dispatched. expected false got undefined"
+      },
+      {
+        "name": "Event.cancelBubble=true must set the stop propagation flag.",
+        "status": "Fail",
+        "message": "assert_unreached: Setting cancelBubble=true should stop the event from bubbling further. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-constants.html",
+    [
+      {
+        "name": "Constants for eventPhase on Event interface object.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constants for eventPhase on Event prototype object.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constants for eventPhase on Event object.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constants for eventPhase on CustomEvent object.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-defaultPrevented-after-dispatch.html",
+    [
+      {
+        "name": "Default prevention via preventDefault",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) object \"#target\" but got (undefined) undefined"
+      },
+      {
+        "name": "Default prevention via returnValue",
+        "status": "Fail",
+        "message": "assert_true: during dispatch expected true got false"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-defaultPrevented.html",
+    [
+      {
+        "name": "When an event is created, defaultPrevented should be initialized to false.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should work correctly (not cancelable).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preventDefault() should not change defaultPrevented if cancelable is false.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "returnValue should not change defaultPrevented if cancelable is false.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should work correctly (cancelable).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "preventDefault() should change defaultPrevented if cancelable is true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "returnValue should change defaultPrevented if cancelable is true.",
+        "status": "Fail",
+        "message": "assert_equals: defaultPrevented expected true but got false"
+      },
+      {
+        "name": "initEvent should unset defaultPrevented.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-bubble-canceled.html",
+    [
+      {
+        "name": "Setting cancelBubble=true prior to dispatchEvent()",
+        "status": "Fail",
+        "message": "assert_array_equals: actual_targets lengths differ, expected array [] length 0, got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]] length 16"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-bubbles-false.html",
+    [
+      {
+        "name": "In window.document with click event",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...]] got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...]])"
+      },
+      {
+        "name": "In window.document with load event",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...]] got [object \"html\", [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...]])"
+      },
+      {
+        "name": "In window.document.cloneNode(true)",
+        "status": "Fail",
+        "message": "document.cloneNode is not a function"
+      },
+      {
+        "name": "In new Document()",
+        "status": "Fail",
+        "message": "Document is not defined"
+      },
+      {
+        "name": "In DOMImplementation.createHTMLDocument()",
+        "status": "Fail",
+        "message": "targets[i].addEventListener is not a function"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-bubbles-true.html",
+    [
+      {
+        "name": "In window.document with click event",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]] got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]])"
+      },
+      {
+        "name": "In window.document with load event",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...]] got [object \"html\", [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...]])"
+      },
+      {
+        "name": "In window.document.cloneNode(true)",
+        "status": "Fail",
+        "message": "document.cloneNode is not a function"
+      },
+      {
+        "name": "In new Document()",
+        "status": "Fail",
+        "message": "Document is not defined"
+      },
+      {
+        "name": "In DOMImplementation.createHTMLDocument()",
+        "status": "Fail",
+        "message": "targets[i].addEventListener is not a function"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-click.html",
+    [
+      {
+        "name": "basic with click()",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "basic with dispatchEvent()",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "basic with wrong event class",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "look at parents only when event bubbles",
+        "status": "Fail",
+        "message": "Text is not defined"
+      },
+      {
+        "name": "look at parents when event bubbles",
+        "status": "Fail",
+        "message": "Text is not defined"
+      },
+      {
+        "name": "pick the first with activation behavior <input type=checkbox>",
+        "status": "Fail",
+        "message": "assert_true: child pre-click must be triggered expected true got false"
+      },
+      {
+        "name": "pick the first with activation behavior <input type=radio>",
+        "status": "Fail",
+        "message": "assert_true: child pre-click must be triggered expected true got false"
+      },
+      {
+        "name": "disabled checkbox still has activation behavior",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled checkbox still has activation behavior, part 2",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      },
+      {
+        "name": "disabled radio still has activation behavior",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      },
+      {
+        "name": "disconnected checkbox should be checked",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disconnected radio should be checked",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disconnected checkbox should be checked from dispatchEvent(new MouseEvent('click'))",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disconnected radio should be checked from dispatchEvent(new MouseEvent('click'))",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disabled checkbox should be checked from dispatchEvent(new MouseEvent(\"click\"))",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disabled radio should be checked from dispatchEvent(new MouseEvent(\"click\"))",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disabled checkbox should fire onclick",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled radio should fire onclick",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled checkbox should get legacy-canceled-activation behavior",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disabled radio should get legacy-canceled-activation behavior",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "disabled checkbox should get legacy-canceled-activation behavior 2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled radio should get legacy-canceled-activation behavior 2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disconnected form should not submit",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled submit button should not activate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "submit button should not activate if the event listener disables it",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "submit button that morphed from checkbox should not activate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "dom/events/Event-dispatch-click.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 12929, 201], state={\"loaded\":true,\"pending\":7,\"phase\":3,\"tests\":33})"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-click.tentative.html",
+    [
+      {
+        "name": "disabled checkbox should not be checked from label click",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled radio should not be checked from label click",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled checkbox should not be checked from label click by dispatchEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "disabled radio should not be checked from label click by dispatchEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "checkbox morphed into another type should not mutate checked state",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "radio morphed into another type should not steal the existing checked state",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-detached-click.html",
+    [
+      {
+        "name": "Click event can be dispatched to an element that is not in the document.",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) object \"__n0\" but got (undefined) undefined"
+      },
+      {
+        "name": "Click event on an element not in the document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-detached-input-and-change.html",
+    [
+      {
+        "name": "detached checkbox should not emit input or change events on click().",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "detached radio should not emit input or change events on click().",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "detached checkbox should not emit input or change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "detached radio should not emit input or change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "attached checkbox should emit input and change events on click().",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached radio should emit input and change events on click().",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached radio should emit input and change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached to shadow dom checkbox should emit input and change events on click().",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached to shadow dom radio should emit input and change events on click().",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached to shadow dom checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "attached to shadow dom radio should emit input and change events on dispatchEvent(new MouseEvent('click')).",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-handlers-changed.html",
+    [
+      {
+        "name": " Dispatch additional events inside an event listener ",
+        "status": "Fail",
+        "message": "assert_array_equals: actual_targets lengths differ, expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...], [...]] length 17, got [\u2026, object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...], [...], object \"html\", [...], [...], [...], [...], [...]] length 23"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-multiple-cancelBubble.html",
+    [
+      {
+        "name": "Multiple dispatchEvent() and cancelBubble",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [object \"#target\", object \"#parent\"] length 2, got [object \"#target\", object \"#parent\", object \"html\", [...]] length 4"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-multiple-stopPropagation.html",
+    [
+      {
+        "name": " Multiple dispatchEvent() and stopPropagation() ",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [object \"#parent\"] length 1, got [] length 0"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-omitted-capture.html",
+    [
+      {
+        "name": "EventTarget.addEventListener with the capture argument omitted",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 6 to be object \"[object Object]\" but got object \"html\" (expected array [object \"#target\", object \"#parent\", object \"#table-body\", object \"#table\", object \"body\", object \"html\", object \"[object Object]\", object \"[object Object]\"] got [object \"#target\", object \"#parent\", object \"#table-body\", object \"#table\", object \"body\", object \"html\", [...], [...]])"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-on-disabled-elements.html",
+    [
+      {
+        "name": "Can dispatch untrusted 'click' Events at disabled HTML elements.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "Can dispatch untrusted Events at disabled HTML elements.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "Can dispatch CustomEvents at disabled HTML elements.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "Calling click() on disabled elements must not dispatch events.",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'name')"
+      },
+      {
+        "name": "dom/events/Event-dispatch-on-disabled-elements.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 1214, 7248, 201], state={\"loaded\":true,\"pending\":5,\"phase\":3,\"tests\":9})"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-order-at-target.html",
+    [
+      {
+        "name": "Listeners are invoked in correct order (AT_TARGET phase)",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 0"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-order.html",
+    [
+      {
+        "name": "Event phases order",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-other-document.html",
+    [
+      {
+        "name": "Custom event on an element in another document",
+        "status": "Fail",
+        "message": "element.addEventListener is not a function"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-propagation-stopped.html",
+    [
+      {
+        "name": " Calling stopPropagation() prior to dispatchEvent() ",
+        "status": "Fail",
+        "message": "assert_array_equals: actual_targets lengths differ, expected array [] length 0, got [object \"html\", [...], [...]] length 3"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-redispatch.html",
+    [
+      {
+        "name": "Redispatching DOMContentLoaded event after being dispatched",
+        "status": "Fail",
+        "message": "assert_true: Received DOMContentLoaded event should be trusted before redispatching expected true got false"
+      },
+      {
+        "name": "Synthesizing click on button...",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Redispatching mouseup event whose default action dispatches a click event",
+        "status": "Fail",
+        "message": "assert_true: Failed to send mouse click due to Error: action was not applicable: Some(NotApplicable) expected true got false"
+      },
+      {
+        "name": "Redispatching event which is being dispatched",
+        "status": "Fail",
+        "message": "Maximum call stack size exceeded"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-reenter.html",
+    [
+      {
+        "name": " Dispatch additional events inside an event listener ",
+        "status": "Fail",
+        "message": "assert_array_equals: actual_targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#target\", object \"#parent\", object \"#table-body\", [...], [...], [...], [...], [...], [...], [...], [...]] got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#target\", object \"#parent\", object \"#table-body\", [...], [...], [...], [...], [...], [...], [...], [...]])"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-single-activation-behavior.html",
+    [
+      {
+        "name": "dom/events/Event-dispatch-single-activation-behavior.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: TypeError: Cannot read properties of undefined (reading 'children')\nTypeError: Cannot read properties of undefined (reading 'children')\n    at <anonymous>:57:46"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-target-moved.html",
+    [
+      {
+        "name": "Event propagation path when an element in it is moved within the DOM",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]] got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]])"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-target-removed.html",
+    [
+      {
+        "name": "Event propagation path when an element in it is removed from the DOM",
+        "status": "Fail",
+        "message": "assert_array_equals: targets expected property 0 to be object \"[object Object]\" but got object \"html\" (expected array [object \"[object Object]\", object \"[object Object]\", object \"html\", object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]] got [object \"html\", [...], [...], object \"body\", object \"#table\", object \"#table-body\", object \"#parent\", object \"#target\", [...], [...], [...], [...], [...], [...], [...], [...]])"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-throwing-multiple-globals.html",
+    [
+      {
+        "name": "dom/events/Event-dispatch-throwing-multiple-globals.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 2838, 201], state={\"loaded\":true,\"pending\":2,\"phase\":2,\"tests\":2})"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-dispatch-throwing.html",
+    [
+      {
+        "name": "Throwing in event listener with a single listeners",
+        "status": "Fail",
+        "message": "Error from only listener"
+      },
+      {
+        "name": "Throwing in event listener with multiple listeners",
+        "status": "Fail",
+        "message": "Error from first listener"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-init-while-dispatching.html",
+    [
+      {
+        "name": "Calling initKeyboardEvent while dispatching.",
+        "status": "Fail",
+        "message": "ev.initKeyboardEvent is not a function"
+      },
+      {
+        "name": "Calling initMouseEvent while dispatching.",
+        "status": "Fail",
+        "message": "ev.initMouseEvent is not a function"
+      },
+      {
+        "name": "Calling initCustomEvent while dispatching.",
+        "status": "Fail",
+        "message": "assert_equals: initCustomEvent detail setter should short-circuit expected (object) null but got (number) 1"
+      },
+      {
+        "name": "Calling initUIEvent while dispatching.",
+        "status": "Fail",
+        "message": "ev.initUIEvent is not a function"
+      },
+      {
+        "name": "Calling initEvent while dispatching.",
+        "status": "Fail",
+        "message": "assert_equals: initEvent bubbles setter should short-circuit expected false but got true"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-initEvent.html",
+    [
+      {
+        "name": "Properties of initEvent(type, true, true)",
+        "status": "Fail",
+        "message": "assert_equals: returnValue expected (boolean) true but got (undefined) undefined"
+      },
+      {
+        "name": "Properties of initEvent(type, true, false)",
+        "status": "Fail",
+        "message": "assert_equals: returnValue expected (boolean) true but got (undefined) undefined"
+      },
+      {
+        "name": "Properties of initEvent(type, false, true)",
+        "status": "Fail",
+        "message": "assert_equals: returnValue expected (boolean) true but got (undefined) undefined"
+      },
+      {
+        "name": "Properties of initEvent(type, false, false)",
+        "status": "Fail",
+        "message": "assert_equals: returnValue expected (boolean) true but got (undefined) undefined"
+      },
+      {
+        "name": "Calling initEvent multiple times (getting type).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling initEvent multiple times (not getting type).",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling initEvent must not have an effect during dispatching.",
+        "status": "Fail",
+        "message": "assert_equals: type (second init) expected \"type\" but got \"fail\""
+      },
+      {
+        "name": "Calling initEvent must unset the stop propagation flag.",
+        "status": "Fail",
+        "message": "assert_false: cancelBubble must be false expected false got undefined"
+      },
+      {
+        "name": "Calling initEvent must unset the stop immediate propagation flag.",
+        "status": "Fail",
+        "message": "assert_true: Listener must be called expected true got false"
+      },
+      {
+        "name": "Calling initEvent during propagation.",
+        "status": "Fail",
+        "message": "assert_equals: initEvent type setter should short-circuit expected \"type\" but got \"type2\""
+      },
+      {
+        "name": "First parameter to initEvent should be mandatory.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() {\n    e.initEvent()\n  }\" did not throw"
+      },
+      {
+        "name": "Tests initEvent's default parameter values.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-propagation.html",
+    [
+      {
+        "name": "Newly-created Event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "After stopPropagation()",
+        "status": "Fail",
+        "message": "assert_equals: Propagation flag after first dispatch expected true but got false"
+      },
+      {
+        "name": "Reinitialized after stopPropagation()",
+        "status": "Fail",
+        "message": "assert_equals: Propagation flag expected true but got false"
+      },
+      {
+        "name": "After stopImmediatePropagation()",
+        "status": "Fail",
+        "message": "assert_equals: Propagation flag after first dispatch expected true but got false"
+      },
+      {
+        "name": "Reinitialized after stopImmediatePropagation()",
+        "status": "Fail",
+        "message": "assert_equals: Propagation flag expected true but got false"
+      },
+      {
+        "name": "After cancelBubble=true",
+        "status": "Fail",
+        "message": "assert_equals: Propagation flag expected false but got true"
+      },
+      {
+        "name": "Reinitialized after cancelBubble=true",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-returnValue.html",
+    [
+      {
+        "name": "When an event is created, returnValue should be initialized to true.",
+        "status": "Fail",
+        "message": "assert_true: returnValue expected true got undefined"
+      },
+      {
+        "name": "preventDefault() should not change returnValue if cancelable is false.",
+        "status": "Fail",
+        "message": "assert_true: returnValue expected true got undefined"
+      },
+      {
+        "name": "returnValue=false should have no effect if cancelable is false.",
+        "status": "Fail",
+        "message": "assert_true: returnValue expected true got false"
+      },
+      {
+        "name": "preventDefault() should change returnValue if cancelable is true.",
+        "status": "Fail",
+        "message": "assert_false: returnValue expected false got undefined"
+      },
+      {
+        "name": "returnValue should change returnValue if cancelable is true.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should unset returnValue.",
+        "status": "Fail",
+        "message": "assert_true: returnValue expected true got false"
+      },
+      {
+        "name": "returnValue=true should have no effect once the canceled flag was set.",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-stopImmediatePropagation.html",
+    [
+      {
+        "name": "dom/events/Event-stopImmediatePropagation.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: Error: assert_equals: The stop propagation flag must have been set expected (boolean) true but got (undefined) undefined\nError\n    at get_stack (<anonymous>:4806:21)\n    at new AssertionError (<anonymous>:4799:22)\n    at assert (<anonymous>:4783:19)\n    at assert_equals (<anonymous>:1597:13)\n    at assert_wrapper (<anonymous>:1522:30)\n    at Proxy.<anonymous> (<anonymous>:13:3)\n    at fire (<anonymous>:6021:16)\n    at _dispatchToListeners (<anonymous>:6038:11)\n    at _dispatchWithBubble (<anonymous>:6163:7)\n    at controls.namedItem (<anonymous>:8855:20)"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-stopPropagation-cancel-bubbling.html",
+    [
+      {
+        "name": "Event-stopPropagation-cancel-bubbling",
+        "status": "Fail",
+        "message": "event is not defined"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-subclasses-constructors.html",
+    [
+      {
+        "name": "Event constructor (no argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event constructor (undefined argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event constructor (null argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event constructor (empty argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event constructor (argument with default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event constructor (argument with non-default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (no argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (undefined argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (null argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (empty argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (argument with default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "UIEvent constructor (argument with non-default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (no argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (undefined argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (null argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (empty argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (argument with default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "FocusEvent constructor (argument with non-default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "MouseEvent constructor (no argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "MouseEvent constructor (undefined argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "MouseEvent constructor (null argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "MouseEvent constructor (empty argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "MouseEvent constructor (argument with default values)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "MouseEvent constructor (argument with non-default values)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (no argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (undefined argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (null argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (empty argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (argument with default values)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "WheelEvent constructor (argument with non-default values)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a ctrlKey property expected true got false"
+      },
+      {
+        "name": "KeyboardEvent constructor (no argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a which property expected true got false"
+      },
+      {
+        "name": "KeyboardEvent constructor (undefined argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a which property expected true got false"
+      },
+      {
+        "name": "KeyboardEvent constructor (null argument)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a which property expected true got false"
+      },
+      {
+        "name": "KeyboardEvent constructor (empty argument)",
+        "status": "Fail",
+        "message": "assert_equals: The value of the key property should be \"\" expected \"\" but got \"undefined\""
+      },
+      {
+        "name": "KeyboardEvent constructor (argument with default values)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a which property expected true got false"
+      },
+      {
+        "name": "KeyboardEvent constructor (argument with non-default values)",
+        "status": "Fail",
+        "message": "assert_true: Event object \"[object Object]\" should have a which property expected true got false"
+      },
+      {
+        "name": "CompositionEvent constructor (no argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CompositionEvent constructor (undefined argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CompositionEvent constructor (null argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CompositionEvent constructor (empty argument)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CompositionEvent constructor (argument with default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "CompositionEvent constructor (argument with non-default values)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "SubclassedEvent constructor (no argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "SubclassedEvent constructor (undefined argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "SubclassedEvent constructor (null argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "SubclassedEvent constructor (empty argument)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "SubclassedEvent constructor (argument with default values)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "SubclassedEvent constructor (argument with non-default values)",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "UIEvent constructor (view argument with wrong type)",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"function() {\n    new UIEvent(\"x\", { view: 7 })\n  }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-timestamp-cross-realm-getter.html",
+    [
+      {
+        "name": "dom/events/Event-timestamp-cross-realm-getter.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 903, 201], state={\"loaded\":true,\"pending\":1,\"phase\":2,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-timestamp-high-resolution.html",
+    [
+      {
+        "name": "Constructed MouseEvent timestamp should be high resolution and have the same time origin as performance.now()",
+        "status": "Fail",
+        "message": "assert_less_than_equal: Event timestamp should be less than performance.now() timestamp taken after its creation expected a number less than or equal to 12.41859 but got 42140.512791"
+      },
+      {
+        "name": "Constructed KeyboardEvent timestamp should be high resolution and have the same time origin as performance.now()",
+        "status": "Fail",
+        "message": "assert_less_than_equal: Event timestamp should be less than performance.now() timestamp taken after its creation expected a number less than or equal to 14.596548 but got 42142.692363"
+      },
+      {
+        "name": "Constructed WheelEvent timestamp should be high resolution and have the same time origin as performance.now()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructed FocusEvent timestamp should be high resolution and have the same time origin as performance.now()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-timestamp-high-resolution.https.html",
+    [
+      {
+        "name": "Constructed GamepadEvent timestamp should be high resolution and have the same time origin as performance.now()",
+        "status": "Fail",
+        "message": "window[eventType] is not a constructor"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-timestamp-safe-resolution.html",
+    [
+      {
+        "name": "Event timestamp should not have a resolution better than 5 microseconds",
+        "status": "Fail",
+        "message": "assert_greater_than_equal: expected a number greater than or equal to 5 but got 1"
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-type-empty.html",
+    [
+      {
+        "name": "initEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Constructor",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/Event-type.html",
+    [
+      {
+        "name": "Event.type should initially be the empty string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event.type should be initialized by initEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Event.type should be initialized by the constructor",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-handleEvent-cross-realm.html",
+    [
+      {
+        "name": "EventListener is cross-realm plain object without 'handleEvent' property",
+        "status": "Fail",
+        "message": "eventListenerGlobalObject is not defined"
+      },
+      {
+        "name": "EventListener is cross-realm plain object with non-callable 'handleEvent' property",
+        "status": "Fail",
+        "message": "eventListenerGlobalObject is not defined"
+      },
+      {
+        "name": "EventListener is cross-realm plain object with revoked Proxy as 'handleEvent' property",
+        "status": "Fail",
+        "message": "eventListenerGlobalObject is not defined"
+      },
+      {
+        "name": "EventListener is cross-realm non-callable revoked Proxy",
+        "status": "Fail",
+        "message": "eventListenerGlobalObject is not defined"
+      },
+      {
+        "name": "EventListener is cross-realm callable revoked Proxy",
+        "status": "Fail",
+        "message": "eventListenerGlobalObject is not defined"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-handleEvent.html",
+    [
+      {
+        "name": "calls `handleEvent` method of `EventListener`",
+        "status": "Fail",
+        "message": "entry.fn.call is not a function"
+      },
+      {
+        "name": "performs `Get` every time event is dispatched",
+        "status": "Fail",
+        "message": "entry.fn.call is not a function"
+      },
+      {
+        "name": "doesn't call `handleEvent` method on callable `EventListener`",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "rethrows errors when getting `handleEvent`",
+        "status": "Fail",
+        "message": "promise_rejects_exactly: function \"function() { throw e; }\" threw object \"TypeError: entry.fn.call is not a function\" but we expected it to throw object \"[object Object]\""
+      },
+      {
+        "name": "throws if `handleEvent` is falsy and not callable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "throws if `handleEvent` is thruthy and not callable",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-incumbent-global-1.sub.html",
+    [
+      {
+        "name": "Check the incumbent global EventListeners  are called with",
+        "status": "Fail",
+        "message": "frames is not defined"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-incumbent-global-2.sub.html",
+    [
+      {
+        "name": "Check the incumbent global EventListeners  are called with",
+        "status": "Fail",
+        "message": "frames is not defined"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-incumbent-global-subframe-1.sub.html",
+    [
+      {
+        "name": "dom/events/EventListener-incumbent-global-subframe-1.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=undefined, hook=undefined, scripts=[318, 201], state=null)"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-incumbent-global-subframe-2.sub.html",
+    [
+      {
+        "name": "dom/events/EventListener-incumbent-global-subframe-2.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=undefined, hook=undefined, scripts=[280, 201], state=null)"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-incumbent-global-subsubframe.sub.html",
+    [
+      {
+        "name": "dom/events/EventListener-incumbent-global-subsubframe.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=undefined, hook=undefined, scripts=[451, 201], state=null)"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListener-invoke-legacy.html",
+    [
+      {
+        "name": "dom/events/EventListener-invoke-legacy.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 1651, 201], state={\"loaded\":true,\"pending\":6,\"phase\":2,\"tests\":6})"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventListenerOptions-capture.html",
+    [
+      {
+        "name": "Capture boolean should be honored correctly",
+        "status": "Fail",
+        "message": "assert_equals: Incorrect event phase for value: true expected 1 but got 0"
+      },
+      {
+        "name": "Capture option should be honored correctly",
+        "status": "Fail",
+        "message": "assert_equals: Incorrect event phase for value: {} expected 3 but got 0"
+      },
+      {
+        "name": "Supports capture option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Equivalence of option values",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/EventTarget-add-listener-platform-object.html",
+    [
+      {
+        "name": "dom/events/EventTarget-add-listener-platform-object.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: Error: assert_equals: expected (string) \"It worked!\" but got (undefined) undefined\nError\n    at get_stack (<anonymous>:4806:21)\n    at new AssertionError (<anonymous>:4799:22)\n    at assert (<anonymous>:4783:19)\n    at assert_equals (<anonymous>:1597:13)\n    at assert_wrapper (<anonymous>:1522:30)\n    at <anonymous>:22:1"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventTarget-dispatchEvent-returnvalue.html",
+    [
+      {
+        "name": "Return value of EventTarget.dispatchEvent() affected by preventDefault().",
+        "status": "Fail",
+        "message": "assert_false: expected false got undefined"
+      },
+      {
+        "name": "Return value of EventTarget.dispatchEvent() affected by returnValue.",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventTarget-dispatchEvent.html",
+    [
+      {
+        "name": "dom/events/EventTarget-dispatchEvent.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: ReferenceError: aliases is not defined\nReferenceError: aliases is not defined\n    at <anonymous>:11:19"
+      }
+    ]
+  ],
+  [
+    "dom/events/EventTarget-this-of-listener.html",
+    [
+      {
+        "name": "the this value inside the event listener callback should be the node",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "the this value inside the event listener object handleEvent should be the object",
+        "status": "Fail",
+        "message": "entry.fn.call is not a function"
+      },
+      {
+        "name": "dispatchEvent should invoke the current handleEvent method of the object",
+        "status": "Fail",
+        "message": "entry.fn.call is not a function"
+      },
+      {
+        "name": "addEventListener should not require handleEvent to be defined on object listeners",
+        "status": "Fail",
+        "message": "entry.fn.call is not a function"
+      },
+      {
+        "name": "handleEvent properties added to a function before addEventListener are not reached",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "handleEvent properties added to a function after addEventListener are not reached",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/KeyEvent-initKeyEvent.html",
+    [
+      {
+        "name": "KeyboardEvent.initKeyEvent shouldn't be defined (created by createEvent(\"KeyboardEvent\")",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "KeyboardEvent.initKeyEvent shouldn't be defined (created by constructor)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "KeyboardEvent.prototype.initKeyEvent shouldn't be defined",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/click-on-absolute-pseudo.html",
+    [
+      {
+        "name": "dom/events/click-on-absolute-pseudo.html",
+        "status": "Unsupported",
+        "message": "unsupported testdriver API: Actions"
+      }
+    ]
+  ],
+  [
+    "dom/events/event-disabled-dynamic.html",
+    [
+      {
+        "name": "disabled is honored properly in presence of dynamic changes",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html",
+    [
+      {
+        "name": "window.event is still set when 'beforeunload' result is coerced to string",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'location')"
+      }
+    ]
+  ],
+  [
+    "dom/events/event-global-is-still-set-when-reporting-exception-onerror.html",
+    [
+      {
+        "name": "window.onerror handler restores window.event after it reports an exception",
+        "status": "Fail",
+        "message": "frames is not defined"
+      }
+    ]
+  ],
+  [
+    "dom/events/event-global.html",
+    [
+      {
+        "name": "event exists on window, which is initially set to undefined",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"event\" missing"
+      },
+      {
+        "name": "window.event is only defined during dispatch",
+        "status": "Fail",
+        "message": "assert_equals: window.event set to current event during dispatch expected (object) object \"[object Object]\" but got (undefined) undefined"
+      },
+      {
+        "name": "window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree)",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) object \"[object Object]\" but got (undefined) undefined"
+      },
+      {
+        "name": "window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree)",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading 'addEventListener')"
+      },
+      {
+        "name": "window.event is set to the current event during dispatch",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'type')"
+      },
+      {
+        "name": "window.event is set to the current event, which is the event passed to dispatch",
+        "status": "Fail",
+        "message": "assert_equals: expected (undefined) undefined but got (object) object \"[object Object]\""
+      },
+      {
+        "name": "window.event is set to the current event, which is the event passed to dispatch (2)",
+        "status": "Fail",
+        "message": "target.dispatchEvent is not a function"
+      },
+      {
+        "name": "dom/events/event-global.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[199119, 4202, 201], state={\"loaded\":true,\"pending\":1,\"phase\":3,\"tests\":8})"
+      }
+    ]
+  ],
+  [
+    "dom/events/event-handler-attribute-replace-preserves-passive.html",
+    [
+      {
+        "name": "Replacing a wheel event handler attribute on body via setAttribute preserves its passive flag",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Replacing a wheel event handler attribute on document element via setAttribute preserves its passive flag",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/event-src-element-nullable.html",
+    [
+      {
+        "name": "Event srcElement should be nullable",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "dom/events/focus-event-document-move.html",
+    [
+      {
+        "name": "dom/events/focus-event-document-move.html",
+        "status": "Unsupported",
+        "message": "unsupported testdriver API: Actions"
+      }
+    ]
+  ],
+  [
+    "dom/events/handler-count.html",
+    [
+      {
+        "name": "dom/events/handler-count.html",
+        "status": "Unsupported",
+        "message": "unsupported testdriver API: Actions"
+      }
+    ]
+  ],
+  [
+    "dom/events/keypress-dispatch-crash.html",
+    [
+      {
+        "name": "dom/events/keypress-dispatch-crash.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: TypeError: newDoc.append is not a function\nTypeError: newDoc.append is not a function\n    at <anonymous>:5:8"
+      }
+    ]
+  ],
+  [
+    "dom/events/label-default-action.html",
+    [
+      {
+        "name": "Label default action should not trigger when clicked button removes itself",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/mouse-event-retarget.html",
+    [
+      {
+        "name": "offsetX is correctly adjusted",
+        "status": "Fail",
+        "message": "assert_equals: expected (number) 42 but got (undefined) undefined"
+      }
+    ]
+  ],
+  [
+    "dom/events/no-focus-events-at-clicking-editable-content-in-link.html",
+    [
+      {
+        "name": "Click editable element in link",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.Actions is not a constructor\""
+      },
+      {
+        "name": "Click editable link",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.Actions is not a constructor\""
+      }
+    ]
+  ],
+  [
+    "dom/events/passive-by-default.html",
+    [
+      {
+        "name": "dom/events/passive-by-default.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: TypeError: Cannot read properties of undefined (reading 'name')\nTypeError: Cannot read properties of undefined (reading 'name')\n    at isListenerPassive (<anonymous>:19:172)\n    at <anonymous>:34:7"
+      }
+    ]
+  ],
+  [
+    "dom/events/pointer-event-document-move.html",
+    [
+      {
+        "name": "dom/events/pointer-event-document-move.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: TypeError: Cannot read properties of undefined (reading 'cloneNode')\nTypeError: Cannot read properties of undefined (reading 'cloneNode')\n    at <anonymous>:3:57"
+      }
+    ]
+  ],
+  [
+    "dom/events/preventDefault-during-activation-behavior.html",
+    [
+      {
+        "name": "behavior of preventDefault during activation behavior",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "dom/events/remove-all-listeners.html",
+    [
+      {
+        "name": "Removing all listeners and then adding a new one should work.",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "Nested usage of once listeners should work.",
+        "status": "Fail",
+        "message": "Maximum call stack size exceeded"
+      }
+    ]
+  ],
+  [
+    "dom/events/replace-event-listener-null-browsing-context-crash.html",
+    [
+      {
+        "name": "dom/events/replace-event-listener-null-browsing-context-crash.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: TypeError: Cannot read properties of undefined (reading 'adoptNode')\nTypeError: Cannot read properties of undefined (reading 'adoptNode')\n    at <anonymous>:4:19"
+      }
+    ]
+  ],
+  [
+    "dom/events/shadow-relatedTarget.html",
+    [
+      {
+        "name": "relatedTarget should not leak at capturing phase, at window object.",
+        "status": "Fail",
+        "message": "root.getElementById is not a function"
+      },
+      {
+        "name": "relatedTarget should not leak at target.",
+        "status": "Fail",
+        "message": "root.getElementById is not a function"
+      }
+    ]
+  ],
+  [
+    "dom/events/webkit-animation-end-event.html",
+    [
+      {
+        "name": "dom/events/webkit-animation-end-event.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: ReferenceError: runAnimationEventTests is not defined\nReferenceError: runAnimationEventTests is not defined\n    at <anonymous>:5:1"
+      }
+    ]
+  ],
+  [
+    "dom/events/webkit-animation-iteration-event.html",
+    [
+      {
+        "name": "dom/events/webkit-animation-iteration-event.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: ReferenceError: runAnimationEventTests is not defined\nReferenceError: runAnimationEventTests is not defined\n    at <anonymous>:5:1"
+      }
+    ]
+  ],
+  [
+    "dom/events/webkit-animation-start-event.html",
+    [
+      {
+        "name": "dom/events/webkit-animation-start-event.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: ReferenceError: runAnimationEventTests is not defined\nReferenceError: runAnimationEventTests is not defined\n    at <anonymous>:5:1"
+      }
+    ]
+  ],
+  [
+    "dom/events/webkit-transition-end-event.html",
+    [
+      {
+        "name": "dom/events/webkit-transition-end-event.html",
+        "status": "Fail",
+        "message": "page script threw: Script error: page script: Runtime error: ReferenceError: runAnimationEventTests is not defined\nReferenceError: runAnimationEventTests is not defined\n    at <anonymous>:5:1"
+      }
+    ]
+  ],
+  [
+    "dom/events/window-composed-path.html",
+    [
+      {
+        "name": "window target has an empty path after dispatch",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "dom/events/window-event-restored-after-throwing-onerror.html",
+    [
+      {
+        "name": "window.event is restored after a throwing window.onerror handler",
+        "status": "Fail",
+        "message": "assert_equals: window.event is the outer event before the nested dispatch expected (object) object \"[object Object]\" but got (undefined) undefined"
+      }
+    ]
+  ]
+]

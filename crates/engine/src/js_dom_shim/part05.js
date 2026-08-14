@@ -2591,15 +2591,12 @@
     };
   }
 
-  globalThis.KeyboardEvent = function KeyboardEvent(type, options) {
-    var ev = _makeEvent(type, options);
-    Object.setPrototypeOf(ev, globalThis.KeyboardEvent.prototype);
-    ev.key = (options && options.key) || '';
-    ev.code = (options && (options.code || options.key)) || '';
-    return ev;
-  };
-  globalThis.KeyboardEvent.prototype = Object.create(globalThis.Event.prototype);
-  globalThis.KeyboardEvent.prototype.constructor = globalThis.KeyboardEvent;
+  // js-dom M4 R24：KeyboardEvent 改用 `_defineEventSubclass`（spec KeyboardEvent extends UIEvent，
+  // 含 EventModifierInit + key/code/location/repeat/isComposing/charCode/keyCode/which）。旧实现只设
+  // key/code + extends Event（非 UIEvent），WPT Event-subclasses-constructors KeyboardEvent 用例缺 view/detail
+  //（UIEvent 父链）+ 修饰键 + location/repeat 等。改经工厂后自动继承 UIEvent 父链 + 全属性补全。
+  // **须在 UIEvent 定义之后**（_defineEventSubclass('KeyboardEvent','UIEvent',...) 读 globalThis.UIEvent）。
+  // 注：此块下移到 UIEvent 定义之后（见 _defineEventSubclass 调用区）。
 
   // Event 子类簇（R2811）——UIEvent / MouseEvent / FocusEvent / WheelEvent / PointerEvent / InputEvent。
   // 现代输入事件表面：feature-detection（`'PointerEvent' in window`）+ `new MouseEvent('click',{clientX,...})`
@@ -2607,15 +2604,30 @@
   // extends parent）。**已知限制**：① 仅构造期填字段（无真事件循环派发——同 Event/KeyboardEvent 既有简化）；
   // ② getModifierState 仅跟踪 Alt/Control/Meta/Shift（CapsLock/NumLock 等未跟踪→false）；③ pageX/pageY
   // 存值非计算（spec 计算自 clientX+scroll，本沙箱无滚动→取存值或 0）。
+  // js-dom M4 R24：子类 props 注册表——构造器须沿**父链**收集全部 props 设值（MouseEvent extends UIEvent
+  // 实例须有 UIEvent 的 view/detail；旧实现只设子类自身 props → MouseEvent 实例缺 view/detail，WPT
+  // Event-subclasses-constructors assert_props 递归检查父链 fail）。键=子类名，值=[ownProps, parentName]。
+  var _eventSubclassProps = {};
   function _defineEventSubclass(name, parentName, props) {
     if (globalThis[name]) return globalThis[name];
     var Parent = globalThis[parentName] || globalThis.Event;
     var Ctor = function (type, options) {
       var ev = _makeEvent(type, options);
       Object.setPrototypeOf(ev, Ctor.prototype);
-      var o = options || {};
-      for (var i = 0; i < props.length; i++) {
-        var p = props[i];
+      var o = (options == null || typeof options !== 'object') ? {} : options;
+      // R24：沿父链收集 props（自身 + 所有祖先），子类 props 先于父类（同属性子类覆盖父类，spec 一致）。
+      // _makeEvent 已设 Event 基础属性（type/bubbles/cancelable/...），此处补子类 + 父链专属字段。
+      var chain = [];
+      var cur = name;
+      var guard = 0;
+      while (cur && _eventSubclassProps[cur] && guard++ < 32) {
+        var entry = _eventSubclassProps[cur];
+        chain = chain.concat(entry[0]);
+        cur = entry[1];
+      }
+      for (var i = 0; i < chain.length; i++) {
+        var p = chain[i];
+        // != null：null/undefined 用默认（spec init dict 缺省 → 默认值；显式 null → 默认，spec LegacyNull 不适用事件 init）。
         ev[p[0]] = o[p[1]] != null ? o[p[1]] : p[2];
       }
       return ev;
@@ -2623,6 +2635,7 @@
     Ctor.prototype = Object.create(Parent.prototype);
     Ctor.prototype.constructor = Ctor;
     globalThis[name] = Ctor;
+    _eventSubclassProps[name] = [props, parentName];
     return Ctor;
   }
   // UIEvent（Event 子类）：view（默认 null）/ detail（默认 0）。
@@ -2654,6 +2667,18 @@
   _defineEventSubclass('FocusEvent', 'UIEvent', [
     ['relatedTarget', 'relatedTarget', null],
   ]);
+  // js-dom M4 R24：KeyboardEvent（spec extends UIEvent）——EventModifierInit（修饰键）+ key/code/location/
+  // repeat/isComposing/charCode/keyCode/which。改用工厂（旧独立实现只设 key/code + extends Event，缺父链 +
+  // 全属性）。WPT Event-subclasses-constructors KeyboardEvent 用例（默认 + 设定值）。
+  var KeyboardEventCtor = _defineEventSubclass('KeyboardEvent', 'UIEvent', [
+    ['ctrlKey', 'ctrlKey', false], ['shiftKey', 'shiftKey', false],
+    ['altKey', 'altKey', false], ['metaKey', 'metaKey', false],
+    ['key', 'key', ''], ['code', 'code', ''],
+    ['location', 'location', 0], ['repeat', 'repeat', false],
+    ['isComposing', 'isComposing', false],
+    ['charCode', 'charCode', 0], ['keyCode', 'keyCode', 0], ['which', 'which', 0],
+  ]);
+  KeyboardEventCtor.prototype.getModifierState = MouseEventCtor.prototype.getModifierState;
   // WheelEvent（MouseEvent 子类）：delta + deltaMode + DOM_DELTA_* 静态常量。
   var WheelEventCtor = _defineEventSubclass('WheelEvent', 'MouseEvent', [
     ['deltaX', 'deltaX', 0], ['deltaY', 'deltaY', 0], ['deltaZ', 'deltaZ', 0],

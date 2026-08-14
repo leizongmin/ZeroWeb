@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R23 — polyfill Event eventPhase 常量补全（spec Event 接口静态 + prototype：NONE=0/CAPTURING_PHASE=1/AT_TARGET=2/BUBBLING_PHASE=3，WPT Event-constants.html testConstants 4 对象 × 4 常量）；part05 Event 构造器+prototype 挂常量（enumerable:false，实例经原型链继承，CustomEvent.prototype 链 Event.prototype）；Event-constants.html 双路径 0P→4P/4（100%）；dom/events 基线 polyfill 31.61%→32.90% / native 31.29%→32.58%（双路径各 +4 pass，对等差 0.32pp 不变）
+**本轮**: R24 — polyfill 事件子类 init 属性父链继承（`_defineEventSubclass` 构造器沿父链收集全部 props 设值——MouseEvent extends UIEvent 实例缺 view/detail 根因；`_eventSubclassProps` 注册表）；KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit + key/code/location/repeat/isComposing/charCode/keyCode/which）；Event-subclasses-constructors polyfill 0P→42P/49；dom/events polyfill 32.90%→42.58%（+30 pass）/ native 32.58%→36.13%（+11 pass，双路径差扩至 6.45pp——native dom_bindings event.rs 旧实现待 R25 对齐）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -24,7 +24,7 @@
 | S7 死代码清理 + shim 萎缩 | ❌ 未做（M5/M7） | `js_dom_shim/part01-06.js` 共 ~815KB（part01 111KB+part01b 28KB+part02 149KB+part03 148KB+part04 127KB+part05 150KB+part06 103KB） |
 | **双引擎** default-on + 删 kill-switch | ❌ 未做（V8=M5, QuickJS=M7，改 Mission 级单向门） | `WebViewConfig.native_dom` 默认 `false`（`webview_builder.rs:79`） |
 | 真实 SPA/WC 端到端验收 | ❌ 无资产（M3） | 无 React/Vue/Svelte/lit 端到端 fixture |
-| WPT dom 上游基线 | ✅ **dom/nodes polyfill 55.63% / native 54.98% 双基线对等**（178 用例 / 4502 subtest；Element-classlist.html 100%）+ **dom/events polyfill 32.90% / native 32.58% 双基线对等**（81 用例 / 319 subtest，R23 Event eventPhase 常量后） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R23 Event eventPhase 常量（Event-constants 双路径 100%）。失败聚类：dom/nodes iframe.contentDocument（深结构 html-compat）/querySelector-mixed-case（selector 域）；dom/events 事件子类 init 属性（UIEvent view/MouseEvent ctrlKey）/三阶段分发/EventListener（~50 个 0-pass 用例） |
+| WPT dom 上游基线 | ✅ **dom/nodes polyfill 55.63% / native 54.98% 双基线对等**（178 用例 / 4502 subtest；Element-classlist.html 100%）+ **dom/events polyfill 42.58% / native 36.13%**（81 用例 / 319 subtest，R24 事件子类父链继承后；双路径差 6.45pp——native dom_bindings event.rs 待 R25 对齐） | `testharness-dom`（polyfill）+ `testharness-dom-native`（ZW_NATIVE_DOM=1）双入口；R24 事件子类 init 属性父链继承（Event-subclasses-constructors polyfill 42P/49）。失败聚类：dom/nodes iframe.contentDocument（深结构 html-compat）/querySelector-mixed-case（selector 域）；dom/events native 事件构造器对齐（R25）/三阶段分发/EventListener（~44 个 0-pass 用例） |
 | **Canvas path-objects JS 侧 API（DC-8, v1.2 接手）** | ⚠️ 用例**完全缺失**（须重新导入） | `wpt-data/html/canvas/element/` 目录本地不存在（不止 path-objects，整个 canvas element 子树未 fetch）；`testharness.rs:26 CANVAS_TEST_SUBDIRS` 8 个目录无 path-objects；`testharness-canvas` 子命令已就绪（`main.rs:220`） |
 | `make test` / clippy / coverage（含 quickjs 矩阵） | ✅ 基线全绿（入口文档） | workspace ~13,000+ 测试，行覆盖 95.46%，clippy 零警告；Makefile `QUICKJS_TEST_CRATES`/`QUICKJS_CLIPPY_CRATES` CI 强制 `--features quickjs` |
 | dom_bindings 独立 coverage 口径 | ❌ 待补（M0 项 4） | `scripts/check-coverage.sh` 仅 workspace 全量，无单 crate/子模块口径；`cargo-llvm-cov` **本地未安装**（环境前提，见下） |
@@ -84,7 +84,8 @@
 - R21 已做：① 扩展 `DOM_TEST_SUBDIRS` + `fetch-dom-subset.sh` SUBDIRS 加 `dom/events`（81 .html + 16 .js，jsdelivr CDN 拉取 0 失败，零生产逻辑改动）② 建立 polyfill dom/events 基线 **31.61%（98P/212F/9timeout，319 subtest，81 cases）**③ 失败聚类分析（Event 对象缺属性[30]/事件分发断言[25+12]/EventListener handleEvent[12]/returnValue[4]/incumbent-global 测试设施[5]；54 个 0-pass 用例）④ 核实 dom/nodes 双路径零回归（native classlist 1420P/0F）。**误报 native events dispatchEvent hang**（R22 推翻——非系统性 hang，是单用例 timeStamp 死循环）。wpt-runner 双矩阵 clippy 干净
 - R22 已做：① 定位修复 native dom/events 死循环（**更正 R21 误报**：经诊断插桩 native dispatchEvent+polyfill __zw_parent 均 0 调用→用例走 polyfill dispatch；直接 binary 单用例 Event-dispatch-click 10P 正常；逐用例 timing 定位唯一真死循环 `Event-timestamp-safe-resolution`）② 根因 native `Event.timeStamp` 恒 0（event.rs 硬编码，注释「沙箱无 perf timer」）→ WPT `do-while(e2.timeStamp-e1.timeStamp==0)` 死循环（polyfill 用 `__zw_performance_now` 单调 timer 不 hang）③ 修复 native Event.timeStamp 改 `perf_now_ms()`（OnceLock<Instant> origin elapsed，DOMHighResTimeStamp，Number f64 保子毫秒精度）+ R22 单测（非0/有限 + 连续创建差值可收集非零）④ 建立 **native dom/events 基线 31.29%（97P/213F/9timeout，96s，从 570s 超时→96s）**，双路径对等差 0.32pp。dom_bindings v8 单测全绿，双矩阵 clippy 干净
 - R23 已做：① polyfill Event eventPhase 常量补全（part05：Event 构造器 + Event.prototype 各挂 NONE=0/CAPTURING_PHASE=1/AT_TARGET=2/BUBBLING_PHASE=3，Object.defineProperty enumerable:false，guard 幂等；实例经原型链继承，CustomEvent.prototype=Object.create(Event.prototype) 链继承）② R23 单测（4 对象 Event/Event.prototype/createEvent('Event')/createEvent('CustomEvent') × 4 常量 = "0,1,2,3"×4 + 不可枚举）。Event-constants.html 双路径 0P→4P/4（100%）；dom/events：polyfill 31.61%→32.90%（102P/208F）、native 31.29%→32.58%（101P/209F，双路径各 +4 pass，对等差 0.32pp 不变）。engine v8 单测全绿，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R23 后重排）：① **事件子类 init 属性**（Event-subclasses-constructors：UIEvent 缺 view、MouseEvent 缺 ctrlKey 等 init dict 属性，R24 候选）② 三阶段分发 capture/bubble/stopPropagation（Event-dispatch 系列）③ EventListener handleEvent ④ Event-cancelBubble setter 语义 ⑤ iframe.contentDocument（深结构 html-compat 域）⑥ querySelector-mixed-case（selector 域）⑦ canvas proxy instanceof（canvas 流）⑧ polyfill appendChild 闭环（M1 L2）⑨ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑩ 扩 DOM_TEST_SUBDIRS（dom/collections 等）
+- R24 已做：① polyfill `_defineEventSubclass` 父链继承（`_eventSubclassProps` 注册表记录 [ownProps, parentName]，构造器沿父链收集全部 props 设值——MouseEvent extends UIEvent 实例缺 view/detail 根因；子类先父类后，子类覆盖父类 spec 一致；null/undefined 用默认）② KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit + key/code/location/repeat/isComposing/charCode/keyCode/which + getModifierState 复用 MouseEvent）③ R24 单测（MouseEvent 默认/设定 + KeyboardEvent 默认含父链 + WheelEvent 三层父链）。Event-subclasses-constructors polyfill 0P→42P/49（native 24P/49）；dom/events：polyfill 32.90%→42.58%（132P/178F，+30 pass）、native 32.58%→36.13%（112P/198F，+11 pass，**双路径差扩至 6.45pp**——native dom_bindings event.rs 旧实现缺父链继承/KeyboardEvent which/MouseEvent instanceof/UIEvent view 校验，R25 对齐）。engine v8 单测全绿，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R24 后重排）：① **R25 native 事件构造器对齐**（dom_bindings event.rs：WheelEvent 父链 ctrlKey、KeyboardEvent which/key、MouseEvent instanceof 原型链、UIEvent view 校验——缩双路径差 6.45pp）② 三阶段分发 capture/bubble/stopPropagation（Event-dispatch 系列，polyfill 大块）③ EventListener handleEvent ④ Event-cancelBubble setter 语义 ⑤ SubclassedEvent（用户 class extends Event）native instanceof ⑥ iframe.contentDocument（深结构 html-compat 域）⑦ querySelector-mixed-case（selector 域）⑧ polyfill appendChild 闭环（M1 L2）⑨ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑩ 扩 DOM_TEST_SUBDIRS（dom/collections 等）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -159,6 +160,7 @@
 | 2026-08-14 | R21 | 扩展 DOM_TEST_SUBDIRS + fetch-dom-subset.sh 加 dom/events（81 .html + 16 .js，jsdelivr CDN 0 失败，零生产逻辑）+ polyfill dom/events 基线 31.61%（98P/212F/9timeout）+ 失败聚类 + dom/nodes 双路径零回归核验；wpt-runner 双矩阵 clippy 干净 | **polyfill dom/events 基线 31.61%**（54 个 0-pass 事件分发缺口：Event 属性/三阶段/EventListener/returnValue）。**误报 native events dispatchEvent hang**（R22 推翻：单用例 timeStamp 死循环）。不阻 CI（make test 不含 testharness-dom-native）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R22 | 定位修复 native Event.timeStamp 死循环（更正 R21 误报：诊断插桩+直接 binary+逐用例 timing 三步定位到 `Event-timestamp-safe-resolution` 的 do-while(timeStamp差==0) 死循环，根因 native timeStamp 恒 0）+ 修复 native timeStamp 改 perf_now_ms()（OnceLock<Instant>，DOMHighResTimeStamp）+ R22 单测；dom_bindings v8 全绿，双矩阵 clippy 干净 | **native dom/events 基线建立 31.29%**（97P/213F/9timeout，96s，从 570s 超时→96s）。双路径对等差 0.32pp（polyfill 31.61%）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R23 | polyfill Event eventPhase 常量（part05 Event 构造器+prototype 挂 NONE/CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE，enumerable:false，实例经原型链继承）+ R23 单测（4 对象×4 常量 + 不可枚举）；engine v8 全绿，双矩阵 clippy 干净 | **Event-constants.html 双路径 100%**（0P→4P/4）。dom/events：polyfill 31.61%→32.90%（102P/208F）、native 31.29%→32.58%（101P/209F，双路径各 +4 pass，对等差 0.32pp 不变）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R24 | polyfill 事件子类 init 属性父链继承（_defineEventSubclass 沿父链收集 props，_eventSubclassProps 注册表）+ KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit+key/code/location/repeat/isComposing/charCode/keyCode/which）+ R24 单测（MouseEvent 默认/设定 + KeyboardEvent 父链 + WheelEvent 三层）；engine v8 全绿，双矩阵 clippy 干净 | **Event-subclasses-constructors polyfill 0P→42P/49**（native 24P/49）。dom/events：polyfill 32.90%→42.58%（132P，+30 pass）/ native 32.58%→36.13%（112P，+11 pass）。**双路径差扩至 6.45pp**（native dom_bindings event.rs 待 R25 对齐）。完整 JSON 快照入 evidence |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -168,16 +170,16 @@
 
 ## 下一步计划
 
-1. **R23（本轮，已完成）**：polyfill Event eventPhase 常量 → land（Event-constants 双路径 100%，dom/events polyfill 32.90% / native 32.58%，各 +4 pass）
-2. **下轮候选（按剩余 ROI，R23 后重排）**：
-   - **(a) 事件子类 init 属性**（Event-subclasses-constructors：UIEvent 缺 view、MouseEvent 缺 ctrlKey 等 init dict 属性，聚类驱动批量解锁）。
-   - **(b) Event-cancelBubble setter 语义**（独立小切片）。
-   - **(c) 三阶段分发 capture/bubble/stopPropagation**（Event-dispatch 系列，较大）。
-   - **(d) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
-   - **(e) querySelector-mixed-case**（selector 域）。
-   - **(f) iframe.contentDocument**（深结构 html-compat 域）。
-   - **(g) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
-   - **(h) 扩 DOM_TEST_SUBDIRS**（dom/collections 等，纯资产）。
+1. **R24（本轮，已完成）**：polyfill 事件子类 init 属性父链继承 + KeyboardEvent 工厂化 → land（Event-subclasses polyfill 42P/49，dom/events polyfill 42.58% / native 36.13%，双路径差扩至 6.45pp）
+2. **下轮候选（按剩余 ROI，R24 后重排）**：
+   - **(a) R25 native 事件构造器对齐**（dom_bindings event.rs：WheelEvent 父链 ctrlKey、KeyboardEvent which/key 默认、MouseEvent instanceof 原型链、UIEvent view 非 window 抛 TypeError——缩双路径差 6.45pp，恢复对等）。
+   - **(b) 三阶段分发 capture/bubble/stopPropagation**（Event-dispatch 系列，polyfill 大块，~44 个 0-pass 用例主力）。
+   - **(c) EventListener handleEvent**（listener 是对象时调 .handleEvent）。
+   - **(d) Event-cancelBubble setter 语义**（独立小切片）。
+   - **(e) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
+   - **(f) querySelector-mixed-case**（selector 域）。
+   - **(g) iframe.contentDocument**（深结构 html-compat 域）。
+   - **(h) dom_bindings coverage 口径**（M0 项 4）：装 `cargo-llvm-cov` 后补。
    - **(i) 主线里程碑推进**：M1 L2 / M6 QuickJS native——均为深结构，评估切片化可能。
 3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
 
@@ -242,3 +244,4 @@
 - R21：M4 导入 dom/events 子目录建立 polyfill 基线 31.61%（54 个 0-pass 事件分发缺口）+ 发现 native events dispatchEvent hang（R22 首要）→ archive/m4-slice-dom-events-baseline.md
 - R22：M4 native Event.timeStamp 死循环修复（更正 R21 误报，timeStamp 恒 0→perf_now_ms）+ native dom/events 基线 31.29%（96s，双路径对等差 0.32pp）→ archive/m4-slice-native-event-timestamp-hang.md
 - R23：M4 Event eventPhase 常量（NONE/CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE，Event-constants 双路径 100%，各 +4 pass）→ archive/m4-slice-event-phase-constants.md
+- R24：M4 事件子类 init 属性父链继承 + KeyboardEvent 工厂化（Event-subclasses polyfill 42P/49，dom/events polyfill 42.58% +30P / native 36.13% +11P，双路径差扩至 6.45pp）→ archive/m4-slice-event-subclass-parent-chain.md

@@ -2966,6 +2966,92 @@ fn test_event_constants_none_capturing_at_target_bubbling_r23() {
 }
 
 #[test]
+fn test_event_subclass_init_props_inherit_parent_chain_r24() {
+    // js-dom M4 R24：事件子类 init 属性父链继承（WPT Event-subclasses-constructors.html assert_props 递归
+    // 检查父链）。旧 `_defineEventSubclass` 只设子类自身 props → MouseEvent（extends UIEvent）实例缺 view/detail。
+    // R24：工厂记录子类 props 到注册表，构造器沿父链收集全部 props 设值（子类先、父类后）。覆盖：
+    // ① MouseEvent 默认值（view=null/detail=0 父链 + ctrlKey=false/screenX=0 自身）；
+    // ② MouseEvent 设定值（view=window/detail=7/ctrlKey=true/screenX=40）；
+    // ③ KeyboardEvent（改用工厂，extends UIEvent）默认 + 设定；
+    // ④ WheelEvent（extends MouseEvent extends UIEvent）三层父链 view/detail。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① MouseEvent 默认值：父链 UIEvent（view=null/detail=0）+ 自身（ctrlKey=false/screenX=0/button=0/relatedTarget=null）。
+    sandbox
+        .execute(
+            "globalThis.__m = new MouseEvent('click');\
+             globalThis.__md = [\
+               String(__m.view), String(__m.detail),\
+               String(__m.ctrlKey), String(__m.shiftKey), String(__m.altKey), String(__m.metaKey),\
+               String(__m.screenX), String(__m.clientX), String(__m.button), String(__m.buttons),\
+               String(__m.relatedTarget === null)\
+             ].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__md)").unwrap().value,
+        "null,0,false,false,false,false,0,0,0,0,true",
+        "R24 MouseEvent 默认值（含 UIEvent 父链 view=null/detail=0）"
+    );
+
+    // ② MouseEvent 设定值：ctrlKey=true/screenX=40/detail=7/view=window（init dict 反映到实例）。
+    sandbox
+        .execute(
+            "globalThis.__m2 = new MouseEvent('click', {ctrlKey:true, screenX:40, clientX:40, button:40, detail:7, view:window});\
+             globalThis.__md2 = [\
+               String(__m2.view === window), String(__m2.detail),\
+               String(__m2.ctrlKey), String(__m2.screenX), String(__m2.clientX), String(__m2.button)\
+             ].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__md2)").unwrap().value,
+        "true,7,true,40,40,40",
+        "R24 MouseEvent 设定值（init dict 反映：view=window/detail=7/ctrlKey=true/screenX=40）"
+    );
+
+    // ③ KeyboardEvent（R24 改用工厂 extends UIEvent）：默认（key=''/code=''/location=0/repeat=false/ctrlKey=false/view=null）
+    // + 父链 view/detail。
+    sandbox
+        .execute(
+            "globalThis.__k = new KeyboardEvent('keydown');\
+             globalThis.__kd = [String(__k.key), String(__k.code), String(__k.location), String(__k.repeat), String(__k.isComposing), String(__k.charCode), String(__k.keyCode), String(__k.which), String(__k.ctrlKey), String(__k.view), String(__k.detail)].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__kd)").unwrap().value,
+        ",,0,false,false,0,0,0,false,null,0",
+        "R24 KeyboardEvent 默认（extends UIEvent：含 view=null/detail=0 父链 + 全属性）"
+    );
+
+    // ④ WheelEvent（extends MouseEvent extends UIEvent）三层父链：view/detail（UIEvent）+ ctrlKey（MouseEvent）+ delta（自身）。
+    sandbox
+        .execute(
+            "globalThis.__w = new WheelEvent('wheel');\
+             globalThis.__wd = [String(__w.view), String(__w.detail), String(__w.ctrlKey), String(__w.screenX), String(__w.deltaX), String(__w.deltaMode)].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wd)").unwrap().value,
+        "null,0,false,0,0,0",
+        "R24 WheelEvent 三层父链继承（UIEvent view/detail + MouseEvent ctrlKey/screenX + 自身 delta）"
+    );
+}
+
+#[test]
 fn test_create_document_type_r15() {
     // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
     // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub
