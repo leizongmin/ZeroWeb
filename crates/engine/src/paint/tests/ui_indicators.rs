@@ -359,6 +359,13 @@ fn test_appearance_checkbox_generates_indicator() {
 
     let prims = painter.primitives();
     assert!(prims.fills.len() >= 2, "未选中 checkbox 应生成边框与白底");
+    assert!(
+        prims
+            .fills
+            .iter()
+            .any(|fill| fill.color.r == 179 && fill.color.g == 179 && fill.color.b == 179),
+        "未选中 checkbox 应生成抗锯齿角点"
+    );
 }
 
 #[test]
@@ -432,6 +439,30 @@ fn test_appearance_radio_generates_indicator() {
             .any(|fill| fill.color.r == 0 && fill.color.g == 117 && fill.color.b == 255),
         "选中 radio 应包含默认 accent 色"
     );
+}
+
+#[test]
+fn test_appearance_13px_radio_floors_fractional_y() {
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("input");
+    let layout = make_box(Some(elem), 0.0, 0.8, 13.0, 13.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.appearance = AppearanceComputedValue::Radio;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    doc.set_attribute(elem, "checked", "");
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let top = painter
+        .primitives()
+        .fills
+        .iter()
+        .map(|fill| fill.rect.origin.y)
+        .fold(f32::INFINITY, f32::min);
+    assert_eq!(top, 0.0, "13px radio 模板应向下取整分数 y 坐标");
 }
 
 #[test]

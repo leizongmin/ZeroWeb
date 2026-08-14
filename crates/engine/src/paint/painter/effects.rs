@@ -759,10 +759,10 @@ impl super::Painter {
                     a: 255,
                 };
                 let is_radio = matches!(style.appearance, AppearanceComputedValue::Radio);
+                let oy = if is_radio { oy } else { oy.floor() };
                 if is_radio {
                     self.paint_native_radio(ox, oy, size, checked, accent, border_color);
                 } else {
-                    let oy = oy.floor();
                     if checked {
                         self.primitives.add_fill(Rect::new(ox, oy, size, size), accent);
                         self.primitives
@@ -784,6 +784,20 @@ impl super::Painter {
                             .add_fill(Rect::new(ox + 1.0, oy + 2.0, size - 2.0, size - 4.0), Color::WHITE);
                         self.primitives
                             .add_fill(Rect::new(ox + 2.0, oy + size - 2.0, size - 4.0, 1.0), Color::WHITE);
+                        let corner = Color {
+                            r: 179,
+                            g: 179,
+                            b: 179,
+                            a: 255,
+                        };
+                        for (x, y) in [
+                            (ox + 1.0, oy + 1.0),
+                            (ox + size - 2.0, oy + 1.0),
+                            (ox + 1.0, oy + size - 2.0),
+                            (ox + size - 2.0, oy + size - 2.0),
+                        ] {
+                            self.primitives.add_fill(Rect::new(x, y, 1.0, 1.0), corner);
+                        }
                     }
                 }
                 if checked && !is_radio {
@@ -1120,7 +1134,12 @@ impl super::Painter {
                     continue;
                 }
                 self.primitives.add_fill(
-                    Rect::new(x.ceil() + (index % 13) as f32, y.ceil() + (index / 13) as f32, 1.0, 1.0),
+                    Rect::new(
+                        x.ceil() + (index % 13) as f32,
+                        y.floor() + (index / 13) as f32,
+                        1.0,
+                        1.0,
+                    ),
                     Color {
                         a: (color.a as f32 * coverage.clamp(0.0, 1.0)).round() as u8,
                         ..color

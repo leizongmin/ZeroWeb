@@ -14,8 +14,8 @@
     "chromeVersionPattern": "Chrome/127\\."
   },
   "thresholds": {
-    "maxDiffPercent": 3,
-    "maxRegionDiffPercent": 5,
+    "maxDiffPercent": 1,
+    "maxRegionDiffPercent": 1,
     "channelDiff": 8,
     "pixelRadius": 1,
     "maxGeometryDiffPx": 2
