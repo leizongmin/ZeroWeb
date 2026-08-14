@@ -195,6 +195,35 @@ impl HttpClient {
         }
     }
 
+    /// 异步预热 HTTP/1.1/2 连接池。
+    ///
+    /// reqwest 未公开可复用的裸 TCP/TLS 预连接接口，因此以同一 async client 的无凭据 `HEAD`
+    /// 请求预热连接。该请求不会经过 HTTP 缓存，且调用方应将失败视为非致命。
+    pub async fn preconnect_async(&self, origin: &str) -> Result<HttpResponseHead, NetError> {
+        let parsed = url::Url::parse(origin).map_err(|error| NetError::UrlParse(error.to_string()))?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            return Err(NetError::UrlParse(format!(
+                "preconnect requires an HTTP(S) origin: {origin}"
+            )));
+        }
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(NetError::UrlParse(
+                "preconnect origin must not contain credentials".to_string(),
+            ));
+        }
+        let authority = match parsed.port() {
+            Some(port) => format!("{}:{port}", parsed.host_str().expect("validated host")),
+            None => parsed.host_str().expect("validated host").to_string(),
+        };
+        let request = HttpRequest {
+            method: crate::HttpMethod::Head,
+            url: format!("{}://{authority}/", parsed.scheme()),
+            headers: Vec::new(),
+            body: None,
+        };
+        self.send_async_stream(request, |_| {}).await
+    }
+
     /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。
     pub async fn send_async_with_timeout(timeout_secs: u64, request: HttpRequest) -> Result<HttpResponse, NetError> {
         Self::send_async_with_config(timeout_secs, 10, request).await
@@ -1851,6 +1880,47 @@ mod integration_tests {
         assert_eq!(head.protocol, "http/1.1");
         assert_eq!(body, b"streamed body");
         server.join().expect("join server");
+    }
+
+    #[test]
+    fn preconnect_uses_credential_free_head_request() {
+        use std::io::{Read, Write};
+
+        let (listener, url) = bind_server();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept preconnect");
+            let mut request = [0_u8; 4096];
+            let count = stream.read(&mut request).expect("read preconnect request");
+            let request = String::from_utf8_lossy(&request[..count]).to_ascii_lowercase();
+            assert!(request.starts_with("head / http/1.1\r\n"));
+            assert!(!request.contains("authorization:"));
+            assert!(!request.contains("cookie:"));
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .expect("write preconnect response");
+        });
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        let response = runtime
+            .block_on(client.preconnect_async(&url))
+            .expect("preconnect response");
+        assert_eq!(response.status_code, 204);
+        assert_eq!(response.protocol, "http/1.1");
+        server.join().expect("join preconnect server");
+    }
+
+    #[test]
+    fn preconnect_rejects_non_http_or_credentialed_origins() {
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        assert!(matches!(
+            runtime.block_on(client.preconnect_async("file:///tmp/nope")),
+            Err(NetError::UrlParse(_))
+        ));
+        assert!(matches!(
+            runtime.block_on(client.preconnect_async("https://user:pass@example.test")),
+            Err(NetError::UrlParse(_))
+        ));
     }
 
     #[test]
