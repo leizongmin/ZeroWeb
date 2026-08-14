@@ -1484,12 +1484,24 @@
     };
     ctx.measureText = function (text) {
       // R3303：spec TextMetrics 全 10 字段（host 返 width,actualBoxAsc/Desc/Left/Right,
-      // fontBoxAsc/Desc,alphabetic/hanging/ideographicBaseline csv）。canvas crate 无真实字体度量，
-      // 字体度量字段为 font.size 比例启发式近似（spec 合规字段集，值待字体栈接通后精确化）。
+      // fontBoxAsc/Desc,alphabetic/hanging/ideographicBaseline csv；`|` 后逐字形墨迹
+      // l,t,r,b 分号分隔）。R34xx：getActualBoundingBox(start,end) 子串墨迹 bbox（spec
+      // TextMetrics 新方法——2d.text.measure.getActualBoundingBox.tentative）。
       var raw = String(__zw_canvas_op(h, 'measureText', String(text)));
-      var p = raw.split(',');
+      var parts = raw.split('|');
+      var p = parts[0].split(',');
+      var anchor = parseFloat(parts[2]) || 0;
       var num = function (i) { return parseFloat(p[i]) || 0; };
-      return {
+      var glyphs = [];
+      if (parts[1]) {
+        var gs = parts[1].split(';');
+        for (var gi = 0; gi < gs.length; gi++) {
+          var gv = gs[gi].split(',');
+          glyphs.push([parseFloat(gv[0]) || 0, parseFloat(gv[1]) || 0,
+                       parseFloat(gv[2]) || 0, parseFloat(gv[3]) || 0]);
+        }
+      }
+      var tm = {
         width: num(0),
         actualBoundingBoxAscent: num(1),
         actualBoundingBoxDescent: num(2),
@@ -1500,7 +1512,54 @@
         alphabeticBaseline: num(7),
         hangingBaseline: num(8),
         ideographicBaseline: num(9),
+        // R34xx：getActualBoundingBox(start, end)——[start, end) 字形墨迹并集矩形
+        //（相对文本原点；无字体栈/空区间 → 空矩形 {0,0,0,0}）。
+        getActualBoundingBox: function (start, end) {
+          // R34xx：WebIDL unsigned long 校验（负/非有限 → TypeError；start > end →
+          // IndexSizeError——getActualBoundingBox-exceptions.tentative）。
+          start = +start;
+          if (!isFinite(start) || start < 0) throw new TypeError('getActualBoundingBox: invalid start');
+          if (end === undefined || end === null) {
+            end = glyphs.length;
+          } else {
+            end = +end;
+            if (!isFinite(end) || end < 0) throw new TypeError('getActualBoundingBox: invalid end');
+          }
+          if (start > end) throw _zwDomException('getActualBoundingBox: start > end', 'IndexSizeError');
+          // R34xx：end 超出文本长度（UTF-16 code units——多字节文本 glyph 数 < text.length）
+          // → IndexSizeError（exceptions.tentative）。
+          if (end > text.length) throw _zwDomException('getActualBoundingBox: end out of range', 'IndexSizeError');
+          var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          var any = false;
+          for (var i = start; i < end && i < glyphs.length; i++) {
+            var r = glyphs[i];
+            if (r[2] <= r[0] && r[3] <= r[1]) continue; // 空墨迹（空格等）
+            any = true;
+            if (r[0] < x0) x0 = r[0];
+            if (r[1] < y0) y0 = r[1];
+            if (r[2] > x1) x1 = r[2];
+            if (r[3] > y1) y1 = r[3];
+          }
+          // 无墨迹（无字体栈/全空格）→ 回落全文本 bbox（与 actualBoundingBox* 字段一致——
+          // full-text.tentative 的 API rect vs full-bounds rect 须匹配）。
+          // R34xx：rect 钳制原点侧（与 actualBoundingBox* extent 约定一致——
+          // full-bounds 的 x = −actualBoundingBoxLeft 即 min(0, anchor+ink_l)）。
+          if (!any) {
+            return {
+              x: -num(3),
+              y: -num(1),
+              width: num(3) + num(4),
+              height: num(1) + num(2)
+            };
+          }
+          var l = Math.min(0, x0 + anchor);
+          var t = Math.min(0, y0);
+          var r = Math.max(0, x1 + anchor);
+          var b = Math.max(0, y1);
+          return { x: l, y: t, width: r - l, height: b - t };
+        }
       };
+      return tm;
     };
     // R34xx：createImageData spec 语义（HTML §4.12.5.1）——非 ImageData 对象/null 抛 TypeError、
     // 非有限尺寸抛 TypeError、尺寸向零截断（WebIDL long 转换，上游 2d.imageData.create2.double

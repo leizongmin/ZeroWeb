@@ -367,16 +367,16 @@ impl CanvasContext {
         let char_count = text.chars().count() as f32;
         let size = self.font.size;
         // R34xx：字体栈可用（headless @font-face）→ 真实 shape 度量——width = advances 和、
-        // fontBoundingBox = 字体真实 ascent/descent（2d.text.measure.width.* / fontBoundingBox*）。
+        // fontBoundingBox = 字体真实 ascent/descent；actualBoundingBox* = 逐字形墨迹真实
+        // 边界（rasterize 位图——2d.text.measure.getActualBoundingBox.tentative）。
         // descent 为负值（fontdue）；无字体栈回落启发式（0.6em/字符、0.8/0.2em）。
-        let (width, ascent, descent) = match (self.font_loader.clone(), self.font_id) {
+        let mut glyph_rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+        let (width, ascent, descent, ink_l, ink_t, ink_r, ink_b) = match (self.font_loader.clone(), self.font_id) {
             (Some(loader), Some(fid)) => {
                 if let Ok(loader) = loader.lock() {
                     let shaped = loader.shape_text_cached(fid, text, size).unwrap_or_default();
                     let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
-                    // R34xx：letterSpacing（除末簇）与 wordSpacing（词分隔后）计入宽度。
-                    // WPT 期望：letterSpacing × 字符数（含末字符——2d.text.drawing.style.
-                    // letterSpacing.measure 的 11 字符 × 9px = 99）。相对单位按当前字号解析。
+                    // R34xx：letterSpacing（含末字符——WPT ×11 期望）与 wordSpacing。
                     let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
                     let ws = parse_length_px(&self.font.word_spacing, size).unwrap_or(0.0);
                     w += ls * shaped.len() as f32;
@@ -385,9 +385,42 @@ impl CanvasContext {
                         w += ws * (words - 1) as f32;
                     }
                     let (a, d) = loader.line_metrics(fid, size).unwrap_or((size * 0.8, size * 0.2));
-                    (w, a, d)
+                    // 逐字形墨迹（位图边界；pen 与 draw 同序：advance + ls）。
+                    let mut pen = 0.0f32;
+                    let mut il = f32::MAX;
+                    let mut it = f32::MAX;
+                    let mut ir = f32::NEG_INFINITY;
+                    let mut ib = f32::NEG_INFINITY;
+                    for g in &shaped {
+                        if let Ok(bmp) =
+                            loader.rasterize_glyph_index(fid, g.glyph_id.min(u32::from(u16::MAX)) as u16, g.font_size)
+                        {
+                            let gl = pen + g.x_offset + bmp.x_offset as f32;
+                            let gt = -bmp.y_offset as f32 - bmp.height as f32;
+                            let gr = gl + bmp.width as f32;
+                            let gb = gt + bmp.height as f32;
+                            // R34xx：空墨迹字形（空格 w/h=0）不入并集（否则退化矩形
+                            // (pen,0,pen,0) 的 r=pen 污染 max-right——'A    ' 的 R 应为 50）。
+                            if gr > gl || gb > gt {
+                                il = il.min(gl);
+                                it = it.min(gt);
+                                ir = ir.max(gr);
+                                ib = ib.max(gb);
+                            }
+                            glyph_rects.push((gl, gt, gr, gb));
+                        } else {
+                            glyph_rects.push((pen, 0.0, pen, 0.0));
+                        }
+                        pen += g.advance_x + ls;
+                    }
+                    let (il, it, ir, ib) = if glyph_rects.is_empty() {
+                        (0.0, 0.0, 0.0, 0.0)
+                    } else {
+                        (il, it, ir, ib)
+                    };
+                    (w, a, d, il, it, ir, ib)
                 } else {
-                    (char_count * (size * 0.6), size * 0.8, size * 0.2)
+                    (char_count * (size * 0.6), size * 0.8, size * 0.2, 0.0, 0.0, 0.0, 0.0)
                 }
             }
             _ => {
@@ -396,7 +429,7 @@ impl CanvasContext {
                 let w = char_count * (size * 0.6)
                     + ls * char_count
                     + ws * text.split_whitespace().count().saturating_sub(1) as f32;
-                (w, size * 0.8, size * 0.2)
+                (w, size * 0.8, size * 0.2, 0.0, 0.0, 0.0, 0.0)
             }
         };
         let descent_abs = descent.abs();
@@ -423,12 +456,23 @@ impl CanvasContext {
                 }
             }
         };
-        let bbox_l = anchor.min(anchor + width);
-        let bbox_r = anchor.max(anchor + width);
+        // 墨迹 bbox（loader 路径）：ink 相对基线原点，经锚定偏移；无墨迹（fallback）回落
+        // em 边界（anchor..anchor+width）。
+        let has_ink = glyph_rects.iter().any(|r| r.2 > r.0 || r.3 > r.1);
+        let (bbox_l, bbox_r) = if has_ink {
+            (anchor + ink_l, anchor + ink_r)
+        } else {
+            (anchor.min(anchor + width), anchor.max(anchor + width))
+        };
+        let (ink_asc, ink_desc) = if has_ink {
+            ((-ink_t).max(0.0), ink_b.max(0.0))
+        } else {
+            (ascent, descent_abs)
+        };
         TextMetrics {
             width,
-            actual_bounding_box_ascent: ascent,
-            actual_bounding_box_descent: descent_abs,
+            actual_bounding_box_ascent: ink_asc,
+            actual_bounding_box_descent: ink_desc,
             actual_bounding_box_left: (-bbox_l).max(0.0),
             actual_bounding_box_right: bbox_r.max(0.0),
             font_bounding_box_ascent: ascent,       // 字体 ascent，由字体表给定
@@ -436,6 +480,7 @@ impl CanvasContext {
             alphabetic_baseline: 0.0,               // 默认基线即 alphabetic → 距自身 0
             hanging_baseline: ascent,               // Latin 悬挂基线在大写字母顶附近 ≈ ascent
             ideographic_baseline: -descent_abs,     // CJK 表意基线略低于 alphabetic ≈ -descent
+            glyph_rects,
         }
     }
 

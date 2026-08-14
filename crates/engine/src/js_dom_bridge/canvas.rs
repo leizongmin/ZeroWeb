@@ -360,8 +360,17 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 let m = ctx.measure_text(arg(0));
                 // R3303：spec TextMetrics 全 10 字段 csv（width, actualBoxAscent/Descent/Left/Right,
                 // fontBoxAscent/Descent, alphabetic/hanging/ideographicBaseline）。JS 构完整 TextMetrics。
+                // R34xx：`|` 后接逐字形墨迹（l,t,r,b 逗号分隔、分号分隔字形）——
+                // shim TextMetrics.getActualBoundingBox(start,end) 子串 bbox。
+                let mut glyphs = String::new();
+                for (i, (gl, gt, gr, gb)) in m.glyph_rects.iter().enumerate() {
+                    if i > 0 {
+                        glyphs.push(';');
+                    }
+                    glyphs.push_str(&format!("{gl},{gt},{gr},{gb}"));
+                }
                 format!(
-                    "{},{},{},{},{},{},{},{},{},{}",
+                    "{},{},{},{},{},{},{},{},{},{}|{}|{}",
                     m.width,
                     m.actual_bounding_box_ascent,
                     m.actual_bounding_box_descent,
@@ -372,10 +381,14 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     m.alphabetic_baseline,
                     m.hanging_baseline,
                     m.ideographic_baseline,
+                    glyphs,
+                    // R34xx：对齐锚定（getActualBoundingBox 的 rect 钳制原点侧——
+                    // full-bounds 与 API rect 同约定）。
+                    alignment_anchor(&ctx, m.width),
                 )
             } else {
                 // 无 ctx → 全 0（与既有 0 width 同语义）。
-                "0,0,0,0,0,0,0,0,0,0".into()
+                "0,0,0,0,0,0,0,0,0,0|".into()
             }
         }
         // fillRect：经 path（rasterize 到 pixel_buffer，绕过 fill_rect 便捷法不写 pixel_buffer 之限制）。
@@ -1174,6 +1187,32 @@ fn parse_text_baseline(s: &str) -> zero_canvas::TextBaseline {
         "hanging" => B::Hanging,
         "ideographic" => B::Ideographic,
         _ => B::Alphabetic, // alphabetic + 非法值 → Alphabetic
+    }
+}
+
+/// R34xx：measureText 对齐锚定（与 fill_text 的 ox 同语义，按 textAlign/direction 与
+/// 文本宽度推导——getActualBoundingBox 的 rect 原点钳制用）。
+fn alignment_anchor(ctx: &zero_canvas::CanvasContext, width: f32) -> f32 {
+    use zero_canvas::{TextAlign, TextDirection};
+    let rtl = matches!(ctx.direction(), TextDirection::Rtl);
+    match ctx.text_align() {
+        TextAlign::Center => -width / 2.0,
+        TextAlign::Right => -width,
+        TextAlign::Left => 0.0,
+        TextAlign::Start => {
+            if rtl {
+                -width
+            } else {
+                0.0
+            }
+        }
+        TextAlign::End => {
+            if rtl {
+                0.0
+            } else {
+                -width
+            }
+        }
     }
 }
 

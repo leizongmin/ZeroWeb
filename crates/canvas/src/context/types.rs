@@ -1073,6 +1073,10 @@ pub struct TextMetrics {
     pub hanging_baseline: f32,
     /// 表意基线距默认基线的距离（近似 -0.2em，CJK 字形基线略低于 alphabetic）。
     pub ideographic_baseline: f32,
+    /// R34xx：逐字形墨迹矩形（相对基线原点，未含对齐锚定偏移），按字符序——
+    /// `(left, top, right, bottom)`。供 `TextMetrics.getActualBoundingBox(start, end)`
+    /// 子串 bbox（2d.text.measure.getActualBoundingBox.tentative）。无字体栈时空。
+    pub glyph_rects: Vec<(f32, f32, f32, f32)>,
 }
 
 /// 图像数据。
@@ -1703,6 +1707,7 @@ mod tests {
             alphabetic_baseline: 0.0,
             hanging_baseline: 10.0,
             ideographic_baseline: -3.0,
+            glyph_rects: Vec::new(),
         };
         assert!((metrics.width - 120.5).abs() < f32::EPSILON);
         assert_eq!(metrics.actual_bounding_box_ascent, 10.0);
@@ -1729,6 +1734,7 @@ mod tests {
             alphabetic_baseline: 0.0,
             hanging_baseline: 8.0,
             ideographic_baseline: -2.0,
+            glyph_rects: Vec::new(),
         };
         let cloned = m.clone();
         assert_eq!(cloned.width, m.width);
