@@ -58,9 +58,14 @@ pub struct PerOriginFetchScheduler {
 impl PerOriginFetchScheduler {
     /// 使用 [`max_connections_per_origin`] 作为并发上限。
     pub fn new() -> Self {
+        Self::with_limits(max_connections_per_origin(), max_connections_total())
+    }
+
+    /// 使用显式的 per-origin 与全局并发上限创建调度器。
+    pub fn with_limits(max_per_origin: usize, max_total: usize) -> Self {
         Self {
-            max_per_origin: max_connections_per_origin(),
-            max_total: max_connections_total(),
+            max_per_origin: max_per_origin.max(1),
+            max_total: max_total.max(1),
             client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
@@ -74,6 +79,13 @@ impl PerOriginFetchScheduler {
     /// 创建共享调度器并安装 self hook（供 `submit_shared` / 优先级队列使用）。
     pub fn new_shared() -> Arc<Mutex<Self>> {
         let sched = Arc::new(Mutex::new(Self::new()));
+        sched.lock().expect("fetch scheduler lock").self_hook = Some(Arc::clone(&sched));
+        sched
+    }
+
+    /// 使用显式并发上限创建共享调度器。
+    pub fn new_shared_with_limits(max_per_origin: usize, max_total: usize) -> Arc<Mutex<Self>> {
+        let sched = Arc::new(Mutex::new(Self::with_limits(max_per_origin, max_total)));
         sched.lock().expect("fetch scheduler lock").self_hook = Some(Arc::clone(&sched));
         sched
     }

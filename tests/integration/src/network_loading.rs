@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use zero_net::{CacheLookup, FetchPriority, HttpCache, ResourceLoader, ResourceRequest};
+use zero_net::{CacheLookup, FetchPriority, HttpCache, PerOriginFetchScheduler, ResourceLoader, ResourceRequest};
 
 struct FixtureServer {
     address: std::net::SocketAddr,
@@ -216,6 +216,78 @@ fn stale_etag_revalidation_is_coalesced() {
     assert!(requests[1].to_ascii_lowercase().contains("if-none-match: \"v1\""));
     assert_eq!(loader.stats().revalidations, 1);
     assert_eq!(loader.stats().network_requests, 2, "seed plus one shared revalidation");
+    server.join().expect("join fixture server");
+}
+
+/// FR-004/005：槽位释放后，Critical 必须先于已排队的 Low 发起网络请求。
+#[test]
+fn critical_resources_win_under_contention() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture");
+    let address = listener.local_addr().expect("fixture address");
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (path_tx, path_rx) = std::sync::mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..3 {
+            let (mut stream, _) = listener.accept().expect("accept fixture request");
+            let mut request = [0_u8; 4096];
+            let count = stream.read(&mut request).expect("read fixture request");
+            let path = String::from_utf8_lossy(&request[..count])
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .expect("request path")
+                .to_string();
+            path_tx.send(path).expect("record request path");
+            if index == 0 {
+                started_tx.send(()).expect("signal occupied slot");
+                release_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("release occupied slot");
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .expect("write fixture response");
+        }
+    });
+    let scheduler = PerOriginFetchScheduler::new_shared_with_limits(1, 1);
+    let origin = format!("http://{address}");
+    let running = PerOriginFetchScheduler::submit_shared_with_priority(
+        &scheduler,
+        format!("{origin}/running-low"),
+        FetchPriority::LOW,
+    );
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("low request starts");
+    let queued_low = PerOriginFetchScheduler::submit_shared_with_priority(
+        &scheduler,
+        format!("{origin}/queued-low"),
+        FetchPriority::LOW,
+    );
+    let critical = PerOriginFetchScheduler::submit_shared_with_priority(
+        &scheduler,
+        format!("{origin}/critical-style"),
+        FetchPriority::CRITICAL,
+    );
+    release_tx.send(()).expect("release slot");
+
+    for response in [running, queued_low, critical] {
+        assert!(
+            response
+                .recv_timeout(Duration::from_secs(2))
+                .expect("fixture response")
+                .is_ok()
+        );
+    }
+    let paths: Vec<_> = (0..3)
+        .map(|_| {
+            path_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("recorded request path")
+        })
+        .collect();
+    assert_eq!(paths, ["/running-low", "/critical-style", "/queued-low"]);
     server.join().expect("join fixture server");
 }
 
