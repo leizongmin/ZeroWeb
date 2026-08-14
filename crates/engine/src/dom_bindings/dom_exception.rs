@@ -74,9 +74,19 @@ pub(super) fn native_dom_exception_constructor_invoke(
     args: v8::FunctionCallbackArguments,
     mut rv: v8::ReturnValue<v8::Value>,
 ) {
-    let message = super::string_arg(scope, &args, 0);
-    let name = {
+    // spec `webidl#dom-domexception-domexception`：message 缺省 ""、name 缺省 "Error"。
+    // 注意 `string_arg` 对缺省/undefined 参数返 "undefined"（JS ToString），故须先判 undefined。
+    // `new DOMException()`（无参）→ message="" name="Error"；`new DOMException('m')` → name="Error"。
+    let message = if args.get(0).is_undefined() {
+        String::new()
+    } else {
+        super::string_arg(scope, &args, 0)
+    };
+    let name = if args.get(1).is_undefined() {
+        "Error".to_string()
+    } else {
         let n = super::string_arg(scope, &args, 1);
+        // spec：name 显式传空串仍按 "Error"（error-names-table 无空名）。非空用原值。
         if n.is_empty() { "Error".to_string() } else { n }
     };
     let this = args.this();

@@ -1,0 +1,163 @@
+{
+  "module": "dom_bindings (crates/engine/src/dom_bindings/)",
+  "source": {
+    "files": 15,
+    "hit": 4619,
+    "found": 4900,
+    "rate": 94.27
+  },
+  "test": {
+    "files": 5,
+    "hit": 2029,
+    "found": 2029,
+    "rate": 100.0
+  },
+  "all": {
+    "files": 20,
+    "hit": 6648,
+    "found": 6929,
+    "rate": 95.94
+  },
+  "per_file": [
+    {
+      "file": "/html_element.rs",
+      "kind": "src",
+      "hit": 228,
+      "found": 230,
+      "rate": 99.13
+    },
+    {
+      "file": "/gc.rs",
+      "kind": "src",
+      "hit": 285,
+      "found": 291,
+      "rate": 97.94
+    },
+    {
+      "file": "/document.rs",
+      "kind": "src",
+      "hit": 225,
+      "found": 230,
+      "rate": 97.83
+    },
+    {
+      "file": "/event.rs",
+      "kind": "src",
+      "hit": 295,
+      "found": 302,
+      "rate": 97.68
+    },
+    {
+      "file": "/factories.rs",
+      "kind": "src",
+      "hit": 316,
+      "found": 329,
+      "rate": 96.05
+    },
+    {
+      "file": "/event_target.rs",
+      "kind": "src",
+      "hit": 276,
+      "found": 289,
+      "rate": 95.5
+    },
+    {
+      "file": "/mod.rs",
+      "kind": "src",
+      "hit": 502,
+      "found": 529,
+      "rate": 94.9
+    },
+    {
+      "file": "/dom_exception.rs",
+      "kind": "src",
+      "hit": 135,
+      "found": 143,
+      "rate": 94.41
+    },
+    {
+      "file": "/dom_token_list.rs",
+      "kind": "src",
+      "hit": 277,
+      "found": 298,
+      "rate": 92.95
+    },
+    {
+      "file": "/namednodemap.rs",
+      "kind": "src",
+      "hit": 233,
+      "found": 251,
+      "rate": 92.83
+    },
+    {
+      "file": "/element.rs",
+      "kind": "src",
+      "hit": 662,
+      "found": 714,
+      "rate": 92.72
+    },
+    {
+      "file": "/css_style_declaration.rs",
+      "kind": "src",
+      "hit": 354,
+      "found": 382,
+      "rate": 92.67
+    },
+    {
+      "file": "/node.rs",
+      "kind": "src",
+      "hit": 536,
+      "found": 585,
+      "rate": 91.62
+    },
+    {
+      "file": "/dataset.rs",
+      "kind": "src",
+      "hit": 141,
+      "found": 154,
+      "rate": 91.56
+    },
+    {
+      "file": "/custom_elements.rs",
+      "kind": "src",
+      "hit": 154,
+      "found": 173,
+      "rate": 89.02
+    },
+    {
+      "file": "/tests_ab_compare.rs",
+      "kind": "test",
+      "hit": 79,
+      "found": 79,
+      "rate": 100.0
+    },
+    {
+      "file": "/tests_collections.rs",
+      "kind": "test",
+      "hit": 196,
+      "found": 196,
+      "rate": 100.0
+    },
+    {
+      "file": "/tests_dom_api.rs",
+      "kind": "test",
+      "hit": 1488,
+      "found": 1488,
+      "rate": 100.0
+    },
+    {
+      "file": "/tests_events.rs",
+      "kind": "test",
+      "hit": 131,
+      "found": 131,
+      "rate": 100.0
+    },
+    {
+      "file": "/tests_html_setters.rs",
+      "kind": "test",
+      "hit": 135,
+      "found": 135,
+      "rate": 100.0
+    }
+  ]
+}

@@ -1871,3 +1871,351 @@ return (outer.__outerMarked === true) + '/' + (outer._inner instanceof Inner) + 
         "R3272 嵌套 upgrade 栈隔离：外层 ctor body 内 createElement custom 不破坏外层 upgrade slot"
     );
 }
+
+// ── R31 DOMException 构造器 / toString / legacy code 常量（spec webidl#idl-DOMException）──
+
+/// `new DOMException(message)` name 缺省 "Error"、message 透传、code 按名查（Error 无 legacy code=0）。
+/// 覆盖 dom_exception.rs `native_dom_exception_constructor_invoke` + `code_for_name` 默认分支（_ => 0）。
+#[test]
+fn native_dom_exception_constructor_defaults_r31() {
+    let html = r#"<html><body></body></html>"#;
+    // message 透传 + name 缺省 "Error" + code=0（Error 无 legacy code）。
+    assert_eq!(
+        run_script(html, "(new DOMException('boom').message)"),
+        "boom",
+        "DOMException message 透传"
+    );
+    assert_eq!(
+        run_script(html, "(new DOMException('boom').name)"),
+        "Error",
+        "DOMException name 缺省 Error"
+    );
+    assert_eq!(
+        run_script(html, "(new DOMException('boom').code)"),
+        "0",
+        "DOMException Error 无 legacy code（code_for_name 默认 _ => 0）"
+    );
+    // message 缺省空串。
+    assert_eq!(
+        run_script(html, "(new DOMException().message)"),
+        "",
+        "DOMException message 缺省空串"
+    );
+}
+
+/// DOMException name → legacy code 全表（spec error-names-table）。覆盖 dom_exception.rs
+/// `code_for_name` 各 match 分支（code 13/14/15/18/19/20/21/23/24/25 + 已测的 1/3/4/5/7/8/9/10/11/12）。
+#[test]
+fn native_dom_exception_name_to_code_table_r31() {
+    let html = r#"<html><body></body></html>"#;
+    // (name, expected legacy code)——覆盖全表 + 默认分支。
+    let table = [
+        ("IndexSizeError", 1),
+        ("HierarchyRequestError", 3),
+        ("WrongDocumentError", 4),
+        ("InvalidCharacterError", 5),
+        ("NoModificationAllowedError", 7),
+        ("NotFoundError", 8),
+        ("NotSupportedError", 9),
+        ("InUseAttributeError", 10),
+        ("InvalidStateError", 11),
+        ("SyntaxError", 12),
+        ("InvalidModificationError", 13),
+        ("NamespaceError", 14),
+        ("InvalidAccessError", 15),
+        ("SecurityError", 18),
+        ("NetworkError", 19),
+        ("AbortError", 20),
+        ("URLMismatchError", 21),
+        ("TimeoutError", 23),
+        ("InvalidNodeTypeError", 24),
+        ("DataCloneError", 25),
+        // 未列入的 name → 0（spec 允许新 name 无 legacy code）。
+        ("UnknownNewError", 0),
+    ];
+    for (name, code) in table {
+        let script = format!("(new DOMException('m', '{name}').code)");
+        assert_eq!(
+            run_script(html, &script),
+            code.to_string(),
+            "DOMException name={name} 应映射 legacy code={code}"
+        );
+    }
+}
+
+/// `DOMException.prototype.toString()` → `"name: message"`（spec）；message 空串时仅 name。
+/// 覆盖 dom_exception.rs `native_dom_exception_to_string_invoke`（此前几乎无测试覆盖）。
+#[test]
+fn native_dom_exception_to_string_r31() {
+    let html = r#"<html><body></body></html>"#;
+    // name + ": " + message。
+    assert_eq!(
+        run_script(html, "(new DOMException('boom', 'SyntaxError').toString())"),
+        "SyntaxError: boom",
+        "toString → 'name: message'"
+    );
+    // message 空串 → 仅 name（spec：message 为空时不加 ': '）。
+    assert_eq!(
+        run_script(html, "(new DOMException('', 'NotFoundError').toString())"),
+        "NotFoundError",
+        "toString message 空 → 仅 name"
+    );
+    // 缺省 name Error + 有 message。
+    assert_eq!(
+        run_script(html, "(new DOMException('oops').toString())"),
+        "Error: oops",
+        "toString 缺省 name Error + message"
+    );
+}
+
+/// DOMException legacy code 常量挂构造器自身（`DOMException.SYNTAX_ERR` 等，兼容旧代码）。
+/// 覆盖 dom_exception.rs `register_const` 各分支（code 13/14/15/18/19/20/21/23/24/25 等）。
+#[test]
+fn native_dom_exception_legacy_constants_r31() {
+    let html = r#"<html><body></body></html>"#;
+    // 抽样覆盖各 register_const（含此前未触发的 INVALID_MODIFICATION_ERR 等）。
+    let consts = [
+        ("INDEX_SIZE_ERR", 1),
+        ("HIERARCHY_REQUEST_ERR", 3),
+        ("INVALID_MODIFICATION_ERR", 13),
+        ("NAMESPACE_ERR", 14),
+        ("INVALID_ACCESS_ERR", 15),
+        ("SECURITY_ERR", 18),
+        ("NETWORK_ERR", 19),
+        ("ABORT_ERR", 20),
+        ("URL_MISMATCH_ERR", 21),
+        ("TIMEOUT_ERR", 23),
+        ("INVALID_NODE_TYPE_ERR", 24),
+        ("DATA_CLONE_ERR", 25),
+    ];
+    for (cn, code) in consts {
+        let script = format!("(DOMException.{cn})");
+        assert_eq!(
+            run_script(html, &script),
+            code.to_string(),
+            "DOMException.{cn} legacy 常量 = {code}"
+        );
+    }
+}
+
+/// `instance.constructor === DOMException`（WPT assert_throws_dom 最后一步要求）。
+/// 覆盖 dom_exception.rs prototype.constructor set 分支（R6 修复 "wrong global" 的正确性回归）。
+#[test]
+fn native_dom_exception_constructor_identity_r31() {
+    let html = r#"<html><body></body></html>"#;
+    assert_eq!(
+        run_script(
+            html,
+            "(new DOMException('m', 'SyntaxError').constructor === DOMException)"
+        ),
+        "true",
+        "instance.constructor === DOMException（prototype.constructor 链）"
+    );
+    // build_and_register 幂等：install_dom_bindings 每次脚本新建 context 仅装一次，但断言构造器
+    // 稳定可用（同一 context 内 DOMException 不被重建）。
+    assert_eq!(
+        run_script(html, "(typeof DOMException)"),
+        "function",
+        "DOMException 构造器为 function"
+    );
+}
+
+// ── R31 custom element lifecycle 桥接（connect/disconnect/attr-change 派发路径覆盖）──
+//
+// custom_elements.rs 的 notify_connect_after_insert / notify_disconnect_after_remove /
+// notify_attribute_change 派发到 polyfill `__zw_native_ce_notify_connect` /
+// `__zw_native_ce_notify_attr_change`。既有测试仅覆盖 fast-path（非 custom tag 跳过），
+// 真派发路径（含连字符 tag + 已注册 notify 函数）此前无测试 → custom_elements.rs 多个
+// defensive early-return / branch 未覆盖。本组测试经 JS 注册 notify 记录器，驱动 connect
+//（appendChild 到 body）/ attr-change（setAttribute）/ disconnect（removeChild）三路径。
+
+/// custom element 连入 document（body.appendChild）→ connectedCallback 派发；
+/// 再 removeChild → disconnectedCallback 派发。覆盖 custom_elements.rs notify_connect_after_insert
+/// 的 connect 分支 + notify_disconnect_after_remove + dispatch_connect（含 `__zw_native_ce_notify_connect`
+/// 已注册 + pairs 非空 → 真派发）。
+#[test]
+fn native_custom_element_connect_disconnect_lifecycle_r31() {
+    let html = r#"<html><body></body></html>"#;
+    let script = r#"(() => {
+  var _ce = {};
+  globalThis.customElements = { define: function (n, c) { _ce[n] = { ctor: c }; } };
+  globalThis.__zw_native_ce_lookup = function (t) { return _ce[t] ? _ce[t].ctor : null; };
+  var _log = [];
+  globalThis.__zw_native_ce_notify_connect = function (insts, conn, tags) {
+    _log.push((conn ? 'connect:' : 'disconnect:') + tags.join(','));
+  };
+  class MyEl extends HTMLElement { constructor() { super(); } }
+  customElements.define('my-el', MyEl);
+  const el = __zw_native_create_element('my-el');
+  const body = __zw_native_get_body();
+  body.appendChild(el);
+  body.removeChild(el);
+  return _log.join('|');
+})()"#;
+    assert_eq!(
+        run_script(html, script),
+        "connect:my-el|disconnect:my-el",
+        "custom element appendChild→connect / removeChild→disconnect 派发"
+    );
+}
+
+/// custom element setAttribute（含连字符 tag + 已注册 notify）→ attributeChangedCallback 派发。
+/// 覆盖 custom_elements.rs notify_attribute_change 真派发分支（tag 含连字符过 fast-path +
+/// `__zw_native_ce_notify_attr_change` 已注册 + instance/name/old/new/tag 派发）。
+#[test]
+fn native_custom_element_attribute_change_dispatch_r31() {
+    let html = r#"<html><body></body></html>"#;
+    let script = r#"(() => {
+  var _ce = {};
+  globalThis.customElements = { define: function (n, c) { _ce[n] = { ctor: c }; } };
+  globalThis.__zw_native_ce_lookup = function (t) { return _ce[t] ? _ce[t].ctor : null; };
+  var _log = [];
+  globalThis.__zw_native_ce_notify_attr_change = function (inst, name, oldv, newv, tag) {
+    _log.push(name + ':' + (oldv === null ? 'null' : oldv) + '->' + (newv === null ? 'null' : newv));
+  };
+  class MyEl extends HTMLElement { constructor() { super(); } }
+  customElements.define('my-el', MyEl);
+  const el = __zw_native_create_element('my-el');
+  el.setAttribute('foo', 'bar');
+  el.setAttribute('foo', 'baz');
+  el.removeAttribute('foo');
+  return _log.join('|');
+})()"#;
+    assert_eq!(
+        run_script(html, script),
+        "foo:null->bar|foo:bar->baz|foo:baz->null",
+        "custom element setAttribute/removeAttribute → attr-change 派发（old/new/null 全路径）"
+    );
+}
+
+/// 非 custom tag（无连字符）setAttribute 不触发 attr-change 桥接（R3271 fast-path）；
+/// 含连字符但未注册 CE 的 tag（如 my-unregistered）仍走桥接但 polyfill registry 查无 → 不派发回调。
+/// 覆盖 notify_attribute_change 的 fast-path 跳过分支（`!tag.contains('-')` return）。
+#[test]
+fn native_custom_element_attr_change_fast_path_skip_r31() {
+    let html = r#"<html><body></body></html>"#;
+    let script = r#"(() => {
+  var _log = [];
+  globalThis.__zw_native_ce_notify_attr_change = function () { _log.push('called'); };
+  const div = __zw_native_create_element('div');
+  div.setAttribute('a', 'b');
+  return _log.length + '|div-ok:' + div.getAttribute('a');
+})()"#;
+    // fast-path：notify_attr_change 在 Rust 侧 `!tag.contains('-')` return，_log 为空；setAttribute 正常生效。
+    assert_eq!(
+        run_script(html, script),
+        "0|div-ok:b",
+        "非 custom tag（div）setAttribute 走 fast-path 不触发 attr-change 桥接，属性正常设置"
+    );
+}
+
+// ── R31 CSSStyleDeclaration 优先级 / item 边界 / named-deleter 路径覆盖（spec dom-cssstyledeclaration）──
+//
+// css_style_declaration.rs：getPropertyPriority（"important" 读取）+ setProperty important upsert 分支
+// + item() 越界空串 + named-deleter（`delete el.style.color`）此前无原生测试覆盖。
+
+/// `getPropertyPriority`：important 声明返 "important"，非 important / 未设返 ""；`setProperty(prop,val,'important')`
+/// upsert 时设 important 标志。覆盖 css_style_declaration.rs get_property_priority + set_property important 分支。
+#[test]
+fn native_style_property_priority_r31() {
+    let html = r#"<html><body><div id="a"></div></body></html>"#;
+    // setProperty 带 'important' → getPropertyPriority 返 "important"。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  el.style.setProperty('color', 'red', 'important');
+  return el.style.getPropertyPriority('color');
+})()"#
+        ),
+        "important",
+        "setProperty 第 3 参 'important' → getPropertyPriority 返 important"
+    );
+    // 非重要声明 → ""（priority 第 3 参空）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  el.style.setProperty('margin', '5px');
+  return '[' + el.style.getPropertyPriority('margin') + ']';
+})()"#
+        ),
+        "[]",
+        "setProperty 无 priority → getPropertyPriority 返空串"
+    );
+    // 未设属性 → ""。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  return '[' + el.style.getPropertyPriority('nope') + ']';
+})()"#
+        ),
+        "[]",
+        "未设属性 getPropertyPriority 返空串"
+    );
+    // 重要标志 upsert：已存在声明 → setProperty important 更新值 + 设 important 标志。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  el.style.setProperty('color', 'red');
+  el.style.setProperty('color', 'blue', 'important');
+  return el.style.getPropertyValue('color') + '/' + el.style.getPropertyPriority('color');
+})()"#
+        ),
+        "blue/important",
+        "setProperty important upsert：已存在声明更新值 + 设 important 标志"
+    );
+}
+
+/// `item(index)` 越界 → 空串（spec dom-cssstyledeclaration-item）；named-deleter
+/// （`delete el.style.color`）移除声明（spec IDL deleter）。
+#[test]
+fn native_style_item_boundary_and_named_deleter_r31() {
+    let html = r#"<html><body><div id="a"></div></body></html>"#;
+    // item() 越界 → 空串。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  el.style.color = 'red';
+  return '[' + el.style.item(5) + ']';
+})()"#
+        ),
+        "[]",
+        "item() 越界返空串"
+    );
+    // 负 index → 空串（integer_value 负 → get(neg as usize) None）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  return '[' + el.style.item(-1) + ']';
+})()"#
+        ),
+        "[]",
+        "item(-1) 负 index 返空串"
+    );
+    // named-deleter：delete el.style.color 移除声明（spec IDL deleter）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => {
+  const el = __zw_native_element_for_id('a');
+  el.style.color = 'red';
+  el.style.margin = '5px';
+  delete el.style.color;
+  return el.style.length + '/[' + el.style.color + ']/' + el.style.item(0);
+})()"#
+        ),
+        "1/[]/margin",
+        "delete el.style.color（named-deleter）移除 color 声明，剩 margin"
+    );
+}
