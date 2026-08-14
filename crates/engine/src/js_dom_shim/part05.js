@@ -1363,14 +1363,17 @@
     // R3254-C5：width/height 用 accessor——setter 在已 getContext 后调 host resizeContext
     //（spec：与 canvas.width 同语义——重置 bitmap + 绘图状态）；此前是普通数据属性，
     // `oc.width = 200` 只改 JS 数字、host bitmap 保持原尺寸（绘制被裁剪/尺寸错配）。
-    var _w = (typeof width === 'number' && width > 0) ? (width | 0) : 300;
-    var _h = (typeof height === 'number' && height > 0) ? (height | 0) : 150;
+    // R34xx：构造器/属性接受 0（spec OffscreenCanvas 无 canvas 元素的 0/负忽略语义——
+    // 2d.pattern.basic.zerocanvas：width=0 须生效且 createPattern 抛 InvalidStateError）。
+    // 非法（NaN/负/非数字）→ 保持旧值/默认（WebIDL 转换近似）。
+    var _w = (typeof width === 'number' && width >= 0) ? (width | 0) : 300;
+    var _h = (typeof height === 'number' && height >= 0) ? (height | 0) : 150;
     this._ctx = null;
     var self = this;
     Object.defineProperty(this, 'width', {
       get: function () { return _w; },
       set: function (v) {
-        var nv = (typeof v === 'number' && v > 0) ? (v | 0) : 300;
+        var nv = (typeof v === 'number' && v >= 0) ? (v | 0) : _w;
         if (nv === _w) return;
         _w = nv;
         if (self._ctx && typeof __zw_canvas_op === 'function') {
@@ -1383,7 +1386,7 @@
     Object.defineProperty(this, 'height', {
       get: function () { return _h; },
       set: function (v) {
-        var nv = (typeof v === 'number' && v > 0) ? (v | 0) : 150;
+        var nv = (typeof v === 'number' && v >= 0) ? (v | 0) : _h;
         if (nv === _h) return;
         _h = nv;
         if (self._ctx && typeof __zw_canvas_op === 'function') {
@@ -3448,6 +3451,12 @@
     wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
+    // R34xx：CanvasGradient/CanvasPattern/CanvasRenderingContext2D 全局（gradient.object.
+    // type/return、pattern.basic.type 的 self.CanvasGradient/CanvasPattern 断言——
+    // instanceof 与实例原型链同主全局对象）。
+    wctx.CanvasGradient = globalThis.CanvasGradient;
+    wctx.CanvasPattern = globalThis.CanvasPattern;
+    wctx.CanvasRenderingContext2D = globalThis.CanvasRenderingContext2D;
     // R34xx（G6）：worker 字体面——复用全局 FontFace/FontFaceSet（part06 的
     // `new FontFace(...).load()` 经 host __zw_load_font 真实加载 + document.fonts 同款
     // FontFaceSet 语义）；self.fonts 为独立 FontFaceSet 实例（worker 测试的 add/ready）。
