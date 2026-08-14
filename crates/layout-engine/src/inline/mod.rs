@@ -152,13 +152,13 @@ pub struct InlineFormattingContext {
     /// font_size 而非 16px 默认值，使字符宽度计算更准确。
     pub font_size_overrides: HashMap<NodeId, f32>,
     /// paint IFC 的父元素/inline 元素到已解析字体 ID 映射。
-    pub font_id_overrides: HashMap<NodeId, u32>,
+    pub font_id_overrides: std::rc::Rc<HashMap<NodeId, u32>>,
     /// 文本/inline owner 到有序 CSS face ID 列表的映射。
-    pub font_ids_overrides: HashMap<NodeId, Vec<u32>>,
+    pub font_ids_overrides: std::rc::Rc<HashMap<NodeId, Vec<u32>>>,
     /// 文本/inline run 的 `font-size-adjust` 计算值。
-    pub font_size_adjust_overrides: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+    pub font_size_adjust_overrides: std::rc::Rc<HashMap<NodeId, zero_style_system::FontSizeAdjustValue>>,
     /// 文本/inline run 的 `font-variation-settings` 计算值。
-    pub font_variation_overrides: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
+    pub font_variation_overrides: std::rc::Rc<HashMap<NodeId, zero_style_system::FontVariationSettingsValue>>,
     /// 逐文本节点的 Ahem 字体标志覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法检测 Ahem 字体，
@@ -284,10 +284,10 @@ impl InlineFormattingContext {
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: HashMap::new(),
-            font_id_overrides: HashMap::new(),
-            font_ids_overrides: HashMap::new(),
-            font_size_adjust_overrides: HashMap::new(),
-            font_variation_overrides: HashMap::new(),
+            font_id_overrides: std::rc::Rc::new(HashMap::new()),
+            font_ids_overrides: std::rc::Rc::new(HashMap::new()),
+            font_size_adjust_overrides: std::rc::Rc::new(HashMap::new()),
+            font_variation_overrides: std::rc::Rc::new(HashMap::new()),
             is_ahem_overrides: HashMap::new(),
             letter_spacing_overrides: HashMap::new(),
             line_height_overrides: HashMap::new(),
@@ -382,13 +382,13 @@ impl InlineFormattingContext {
     }
 
     /// 注入 paint IFC 的逐元素字体 ID。
-    pub fn with_font_id_overrides(mut self, overrides: HashMap<NodeId, u32>) -> Self {
+    pub fn with_font_id_overrides(mut self, overrides: std::rc::Rc<HashMap<NodeId, u32>>) -> Self {
         self.font_id_overrides = overrides;
         self
     }
 
     /// 注入逐元素有序 CSS face ID 列表。
-    pub fn with_font_ids_overrides(mut self, overrides: HashMap<NodeId, Vec<u32>>) -> Self {
+    pub fn with_font_ids_overrides(mut self, overrides: std::rc::Rc<HashMap<NodeId, Vec<u32>>>) -> Self {
         self.font_ids_overrides = overrides;
         self
     }
@@ -396,7 +396,7 @@ impl InlineFormattingContext {
     /// 注入逐 run 的 `font-size-adjust` 计算值。
     pub fn with_font_size_adjust_overrides(
         mut self,
-        overrides: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+        overrides: std::rc::Rc<HashMap<NodeId, zero_style_system::FontSizeAdjustValue>>,
     ) -> Self {
         self.font_size_adjust_overrides = overrides;
         self
@@ -405,7 +405,7 @@ impl InlineFormattingContext {
     /// 注入逐 run 的 `font-variation-settings` 计算值。
     pub fn with_font_variation_overrides(
         mut self,
-        overrides: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
+        overrides: std::rc::Rc<HashMap<NodeId, zero_style_system::FontVariationSettingsValue>>,
     ) -> Self {
         self.font_variation_overrides = overrides;
         self

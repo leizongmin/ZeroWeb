@@ -28,11 +28,10 @@ if [[ -z "$CRATE" ]]; then
   exit 1
 fi
 
-# test-guard 就绪（编译一次，供包裹使用）
-if [[ ! -x "${REPO_ROOT}/target/test-guard" ]]; then
-  mkdir -p "${REPO_ROOT}/target"
-  rustc -O "${REPO_ROOT}/scripts/test-guard.rs" -o "${REPO_ROOT}/target/test-guard"
-fi
+# test-guard 就绪（每次强制重编译：CI cargo 缓存可能恢复旧二进制——
+# 2026-08-15 smoke 曾因缓存的旧 test-guard 缺 --compile-first 参数而误判 FLAKY）
+mkdir -p "${REPO_ROOT}/target"
+rustc -O "${REPO_ROOT}/scripts/test-guard.rs" -o "${REPO_ROOT}/target/test-guard"
 
 echo "Flakiness check: cargo test -p ${CRATE} ${FILTER:-（全部）} × ${RUNS} 轮（test-threads=1）"
 echo "════════════════════════════════════════════════"

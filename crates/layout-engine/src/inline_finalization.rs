@@ -56,9 +56,9 @@ fn configure_inline_fonts(
             // 不再每 IFC 全子树 collect（R3424-F 默认开启后 446 IFC × 全文档遍历
             // 致 layout_ms 10x 回归，见 InlineFontContext::font_overrides 注释）。
             context = context
-                .with_font_ids_overrides(overrides.ids.clone())
-                .with_font_size_adjust_overrides(overrides.size_adjust.clone())
-                .with_font_variation_overrides(overrides.variations.clone());
+                .with_font_ids_overrides(std::rc::Rc::clone(&overrides.ids))
+                .with_font_size_adjust_overrides(std::rc::Rc::clone(&overrides.size_adjust))
+                .with_font_variation_overrides(std::rc::Rc::clone(&overrides.variations));
         }
     }
     context

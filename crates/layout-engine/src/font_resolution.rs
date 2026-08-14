@@ -93,9 +93,9 @@ pub(crate) fn resolve_author_font_id_for_style(resolver: &HashMap<String, u32>, 
 }
 
 pub(crate) struct FontOverrides {
-    pub(crate) ids: HashMap<NodeId, Vec<u32>>,
-    pub(crate) size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
-    pub(crate) variations: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
+    pub(crate) ids: std::rc::Rc<HashMap<NodeId, Vec<u32>>>,
+    pub(crate) size_adjust: std::rc::Rc<HashMap<NodeId, zero_style_system::FontSizeAdjustValue>>,
+    pub(crate) variations: std::rc::Rc<HashMap<NodeId, zero_style_system::FontVariationSettingsValue>>,
 }
 
 pub(crate) fn collect_font_overrides(
@@ -115,14 +115,12 @@ pub(crate) fn collect_font_overrides(
         italic: bool,
         stretch_bits: u32,
     }
-    let mut resolve_cache: HashMap<ResolveKey, Vec<u32>> = HashMap::new();
     fn visit(
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         node_id: NodeId,
         resolver: &HashMap<String, u32>,
-        overrides: &mut FontOverrides,
-        resolve_cache: &mut HashMap<ResolveKey, Vec<u32>>,
+        collector: &mut Collector,
     ) {
         let style_id = doc
             .get(node_id)
@@ -142,7 +140,8 @@ pub(crate) fn collect_font_overrides(
                 italic,
                 stretch_bits: style.font_stretch.to_bits(),
             };
-            let ids = resolve_cache
+            let ids_resolved = collector
+                .resolve_cache
                 .entry(key)
                 .or_insert_with(|| {
                     resolve_font_ids_for_style(
@@ -154,24 +153,35 @@ pub(crate) fn collect_font_overrides(
                     )
                 })
                 .clone();
-            overrides.ids.insert(node_id, ids);
-            overrides.size_adjust.insert(node_id, style.font_size_adjust);
-            overrides
+            collector.ids.insert(node_id, ids_resolved);
+            collector.size_adjust.insert(node_id, style.font_size_adjust);
+            collector
                 .variations
                 .insert(node_id, style.font_variation_settings.clone());
         }
         for child in doc.child_nodes(node_id) {
-            visit(doc, styles, child, resolver, overrides, resolve_cache);
+            visit(doc, styles, child, resolver, collector);
         }
     }
 
-    let mut overrides = FontOverrides {
+    struct Collector {
+        ids: HashMap<NodeId, Vec<u32>>,
+        size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+        variations: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
+        resolve_cache: HashMap<ResolveKey, Vec<u32>>,
+    }
+    let mut collector = Collector {
         ids: HashMap::new(),
         size_adjust: HashMap::new(),
         variations: HashMap::new(),
+        resolve_cache: HashMap::new(),
     };
-    visit(doc, styles, root, resolver, &mut overrides, &mut resolve_cache);
-    overrides
+    visit(doc, styles, root, resolver, &mut collector);
+    FontOverrides {
+        ids: std::rc::Rc::new(collector.ids),
+        size_adjust: std::rc::Rc::new(collector.size_adjust),
+        variations: std::rc::Rc::new(collector.variations),
+    }
 }
 
 #[cfg(test)]

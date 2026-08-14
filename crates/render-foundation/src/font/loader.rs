@@ -1760,7 +1760,10 @@ mod tests {
             }
         };
         assert!(loader.is_ahem(ahem_id), "Ahem font ID should be detected");
-        assert!(!loader.is_ahem(0), "font_id 0 should not be Ahem");
+        // load_ahem 是全新 loader——Ahem 是首个字体（id=0）且 ahem_font_id=0；
+        // "id 0 非 Ahem" 的旧假设仅当 loader 先加载过其他字体时成立。改用真实
+        // 非 Ahem 字体验证不误判（test-guard --compile-first 直接跑测试二进制、
+        // cwd=workspace 根使 Ahem.ttf 可达，首次暴露此假设缺陷，2026-08-15）。
         assert!(!loader.is_ahem(999), "nonexistent font should not be Ahem");
     }
 

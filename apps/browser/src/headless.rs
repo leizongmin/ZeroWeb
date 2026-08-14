@@ -1558,8 +1558,15 @@ mod tests {
         let _gpu_lock = super::GPU_SCREENSHOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use base64::Engine;
 
-        let welcome = std::fs::read_to_string("assets/welcome.html").expect("welcome.html tracked fixture");
-        let oracle_path = "../../docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png";
+        // 路径基于 CARGO_MANIFEST_DIR（package root）拼接，不依赖进程 cwd——
+        // make test 经 test-guard --compile-first 直接执行测试二进制（cwd=workspace
+        // root），cargo 原生模式 cwd=package root（d2d47a1a 引入后 make test 暴露）。
+        let welcome = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/welcome.html"))
+            .expect("welcome.html tracked fixture");
+        let oracle_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/goal/rendering-compat/evidence/product-static/welcome-chromium.png"
+        );
         let Ok(oracle_bytes) = std::fs::read(oracle_path) else {
             eprintln!("skipping chromium oracle comparison; {oracle_path} is not available");
             return;

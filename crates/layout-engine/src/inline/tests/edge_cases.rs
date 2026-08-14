@@ -1718,7 +1718,7 @@ fn ifc_advance_source_uses_contextual_text_measurement() {
 #[test]
 fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
     let node = NodeId::default();
-    let ctx = InlineFormattingContext::new(100.0).with_font_id_overrides(HashMap::from([(node, 7)]));
+    let ctx = InlineFormattingContext::new(100.0).with_font_id_overrides(std::rc::Rc::new(HashMap::from([(node, 7)])));
 
     assert_eq!(
         ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
@@ -1729,7 +1729,8 @@ fn paint_ifc_font_id_override_restores_shaping_id_without_styles() {
         None
     );
 
-    let ordered_ctx = InlineFormattingContext::new(100.0).with_font_ids_overrides(HashMap::from([(node, vec![9, 7])]));
+    let ordered_ctx = InlineFormattingContext::new(100.0)
+        .with_font_ids_overrides(std::rc::Rc::new(HashMap::from([(node, vec![9, 7])])));
     assert_eq!(
         ordered_ctx.shaping_font_id_for_style(Some(node), None, false, 0.0, 0.0, false),
         Some(9)
@@ -1766,7 +1767,7 @@ fn paint_ifc_text_node_consumes_ordered_author_advance() {
     let text = doc.first_child(paragraph).expect("text");
     let mut ctx = InlineFormattingContext::new(100.0)
         .with_advance_source(Rc::new(AuthorAdvance))
-        .with_font_ids_overrides(HashMap::from([(text, vec![9, 7])]));
+        .with_font_ids_overrides(std::rc::Rc::new(HashMap::from([(text, vec![9, 7])])));
     ctx.layout(&doc, paragraph, &HashMap::new());
 
     assert_eq!(ctx.lines[0].runs[0].width, 23.0);
@@ -1846,21 +1847,21 @@ fn ifc_advance_source_receives_ordered_font_ids() {
     let node = NodeId::default();
     let mut ctx = InlineFormattingContext::new(100.0)
         .with_advance_source(Rc::new(OrderedAdvance))
-        .with_font_ids_overrides(HashMap::from([(node, vec![7, 9])]))
-        .with_font_size_adjust_overrides(HashMap::from([(
+        .with_font_ids_overrides(std::rc::Rc::new(HashMap::from([(node, vec![7, 9])])))
+        .with_font_size_adjust_overrides(std::rc::Rc::new(HashMap::from([(
             node,
             zero_style_system::FontSizeAdjustValue::Adjust {
                 metric: None,
                 basis: zero_style_system::FontSizeAdjustBasis::Number(0.5),
             },
-        )]))
-        .with_font_variation_overrides(HashMap::from([(
+        )])))
+        .with_font_variation_overrides(std::rc::Rc::new(HashMap::from([(
             node,
             zero_style_system::FontVariationSettingsValue::Settings(vec![zero_style_system::FontVariationSetting {
                 tag: *b"wdth",
                 value: 125.0,
             }]),
-        )]));
+        )])));
     let run = TextRun {
         text: "xA".to_string(),
         node_id: node,
@@ -1883,7 +1884,7 @@ fn ifc_advance_source_receives_ordered_font_ids() {
     ctx.break_into_lines(vec![run.clone()]);
 
     assert_eq!(ctx.lines[0].runs[0].width, 22.0);
-    ctx.font_ids_overrides.insert(node, vec![9, 7]);
+    std::rc::Rc::make_mut(&mut ctx.font_ids_overrides).insert(node, vec![9, 7]);
     ctx.break_into_lines(vec![run]);
     assert_eq!(ctx.lines[0].runs[0].width, 20.0);
 }

@@ -382,9 +382,9 @@ pub(super) fn configure_paint_ifc_advance(
         size_adjust.retain(|node_id, _| shaping_ids.contains_key(node_id));
     }
     context
-        .with_font_id_overrides(primary_ids)
-        .with_font_ids_overrides(shaping_ids)
-        .with_font_size_adjust_overrides(size_adjust)
+        .with_font_id_overrides(std::rc::Rc::new(primary_ids))
+        .with_font_ids_overrides(std::rc::Rc::new(shaping_ids))
+        .with_font_size_adjust_overrides(std::rc::Rc::new(size_adjust))
         .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource))
 }
 
