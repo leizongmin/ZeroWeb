@@ -255,13 +255,15 @@ impl CanvasContext {
             TextBaseline::Bottom => descent,
         };
         let (tx, ty) = self.transform.transform_point(x + ox, y + oy);
+        // R34xx：spec text preparation——ASCII whitespace → U+0020（tab 等与 space 同绘制）。
+        let prepared = prepare_canvas_text(text);
         if let Some(font_id) = self.font_id
             && let Some(loader) = self.font_loader.clone()
             && let Ok(loader) = loader.lock()
             && let Some(shaped) = if rtl {
                 loader.shape_text_cached_with_features(
                     font_id,
-                    text,
+                    &prepared,
                     font_size,
                     zero_render_foundation::font::TextDirection::RightToLeft,
                     kern_features(self.font.kerning_none),
@@ -269,7 +271,7 @@ impl CanvasContext {
             } else {
                 loader.shape_text_cached_with_features(
                     font_id,
-                    text,
+                    &prepared,
                     font_size,
                     zero_render_foundation::font::TextDirection::Auto,
                     kern_features(self.font.kerning_none),
@@ -359,8 +361,8 @@ impl CanvasContext {
         let (width, ascent, descent, ink_l, ink_t, ink_r, ink_b) = match (self.font_loader.clone(), self.font_id) {
             (Some(loader), Some(fid)) => {
                 if let Ok(loader) = loader.lock() {
-                    // R34xx：null 字符（U+0000）剥离（spec——width.nullCharacter 期望 0）。
-                    let clean: String = text.chars().filter(|c| *c != '\0').collect();
+                    // R34xx：spec text preparation——ASCII whitespace → U+0020 + null 剥离。
+                    let clean = prepare_canvas_text(text);
                     let shaped = if self.font.kerning_none {
                         loader
                             .shape_text_cached_with_features(
@@ -384,20 +386,32 @@ impl CanvasContext {
                         w += ws * (words - 1) as f32;
                     }
                     let (a, d) = loader.line_metrics(fid, size).unwrap_or((size * 0.8, size * 0.2));
-                    // 逐字形墨迹（位图边界；pen 与 draw 同序：advance + ls）。
+                    // 逐字形墨迹（字形轮廓 bbox 亚像素精度——位图在亚像素字号下量化，
+                    // 2d.text.measure.actualBoundingBox.small-font：1.5px 期望 right≈1.5
+                    // 而非量化 2；outline 解析失败回落位图）。pen 与 draw 同序：advance + ls。
+                    let font_data = loader.get_font_data(fid).map(|d| d.to_vec());
                     let mut pen = 0.0f32;
                     let mut il = f32::MAX;
                     let mut it = f32::MAX;
                     let mut ir = f32::NEG_INFINITY;
                     let mut ib = f32::NEG_INFINITY;
                     for g in &shaped {
-                        if let Ok(bmp) =
-                            loader.rasterize_glyph_index(fid, g.glyph_id.min(u32::from(u16::MAX)) as u16, g.font_size)
-                        {
-                            let gl = pen + g.x_offset + bmp.x_offset as f32;
-                            let gt = -bmp.y_offset as f32 - bmp.height as f32;
-                            let gr = gl + bmp.width as f32;
-                            let gb = gt + bmp.height as f32;
+                        let gid = g.glyph_id.min(u32::from(u16::MAX)) as u16;
+                        let ink = font_data
+                            .as_deref()
+                            .and_then(|data| glyph_ink_bbox(data, loader.face_index(fid), gid, g.font_size))
+                            .or_else(|| {
+                                loader.rasterize_glyph_index(fid, gid, g.font_size).ok().map(|bmp| {
+                                    (
+                                        bmp.x_offset as f32,
+                                        -bmp.y_offset as f32 - bmp.height as f32,
+                                        bmp.x_offset as f32 + bmp.width as f32,
+                                        -bmp.y_offset as f32,
+                                    )
+                                })
+                            })
+                            .map(|(l, t, r, b)| (pen + g.x_offset + l, t, pen + g.x_offset + r, b));
+                        if let Some((gl, gt, gr, gb)) = ink {
                             // R34xx：空墨迹字形（空格 w/h=0）不入并集（否则退化矩形
                             // (pen,0,pen,0) 的 r=pen 污染 max-right——'A    ' 的 R 应为 50）。
                             if gr > gl || gb > gt {
@@ -474,8 +488,11 @@ impl CanvasContext {
             width,
             actual_bounding_box_ascent: ink_asc,
             actual_bounding_box_descent: ink_desc,
-            actual_bounding_box_left: (-bbox_l).max(0.0),
-            actual_bounding_box_right: bbox_r.max(0.0),
+            // R34xx：spec 符号约定——actualBoundingBoxLeft 正值=向左距离、Right 正值=向右
+            //（不钳制：墨迹在原点右侧时 Left 为负——2d.text.measure.actualBoundingBox.
+            // whitespace 的 ' A' 期望 |Left|≥49；旧 max(0) 把 -50 钳成 0）。
+            actual_bounding_box_left: -bbox_l,
+            actual_bounding_box_right: bbox_r,
             font_bounding_box_ascent: ascent,       // 字体 ascent，由字体表给定
             font_bounding_box_descent: descent_abs, // 字体 descent，由字体表给定
             alphabetic_baseline: 0.0,               // 默认基线即 alphabetic → 距自身 0
@@ -2139,4 +2156,33 @@ fn kern_features(none: bool) -> &'static [zero_render_foundation::font::OpenType
     } else {
         &ON
     }
+}
+
+/// R34xx：canvas 文本预处理（spec text preparation algorithm：替换 ASCII whitespace 为
+/// U+0020——tab/CR/LF/FF 与 space 同宽同墨迹；2d.text.measure.actualBoundingBox.whitespace
+/// 的 tab 期望 |Left|≥49，而 CanvasTest tab 字形自带墨迹）+ null 剥离（width.nullCharacter）。
+pub(crate) fn prepare_canvas_text(text: &str) -> String {
+    text.chars()
+        .filter(|c| *c != '\0')
+        .map(|c| if c.is_ascii_whitespace() && c != ' ' { ' ' } else { c })
+        .collect()
+}
+
+/// R34xx：字形墨迹 bbox（font units → px，亚像素精度）——ttf_parser 轮廓 bbox 按
+/// size/upem 缩放。位图光栅在亚像素字号下量化（2d.text.measure.actualBoundingBox.
+/// small-font：1.5px 'E' 期望 right≈1.5，量化位图给 2）。空字形（无轮廓）返 None。
+fn glyph_ink_bbox(data: &[u8], face_index: u32, glyph_id: u16, size: f32) -> Option<(f32, f32, f32, f32)> {
+    let face = rustybuzz::ttf_parser::Face::parse(data, face_index).ok()?;
+    let upem = f32::from(face.units_per_em());
+    if upem <= 0.0 {
+        return None;
+    }
+    let bb = face.glyph_bounding_box(rustybuzz::ttf_parser::GlyphId(glyph_id))?;
+    let s = size / upem;
+    Some((
+        bb.x_min as f32 * s,
+        -bb.y_max as f32 * s,
+        bb.x_max as f32 * s,
+        -bb.y_min as f32 * s,
+    ))
 }

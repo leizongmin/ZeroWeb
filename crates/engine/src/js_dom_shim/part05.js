@@ -1847,11 +1847,15 @@
               height: num(1) + num(2)
             };
           }
-          var l = Math.min(0, x0 + anchor);
-          var t = Math.min(0, y0);
-          var r = Math.max(0, x1 + anchor);
-          var b = Math.max(0, y1);
-          return { x: l, y: t, width: r - l, height: b - t };
+          // R34xx：rect = 墨迹位置（不钳制）——x = ink_left 位置（= −actualBoundingBoxLeft），
+          // 可与 full-bounds rect（getActualBoundingBox-full-text：x: -actualBoundingBoxLeft）
+          // 一致；旧 min/max 钳制把 'BCD' 子串 x 钳成 0（应为 50）。
+          return {
+            x: x0 + anchor,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0
+          };
         }
       };
       return tm;
@@ -2278,19 +2282,27 @@
     Object.defineProperty(ctx, 'font', {
       set: function (v) {
         v = String(v);
-        // R34xx：% 字号预解析（spec——解析基准为 canvas 元素 computed font-size：
-        // 2d.text.font.parse.size.percentage 内联 144px → 50% = '72px serif'；无样式
-        // canvas 默认 10px → 1000% = '100px serif'（.default）。斜杠行高后的 % 不属
-        // 字号（'10px/150%' 的 150% 是 line-height），以「% 前须为行首或空白」排除。
-        var m = /(?:^|\s)(\d+(?:\.\d+)?)%(?=\s|$)/.exec(v);
+        // R34xx：相对单位字号预解析（spec——解析基准为 canvas 元素 computed 样式：
+        // %/em 基准 = font-size（2d.text.font.parse.size.percentage 内联 144px → 50% =
+        // '72px serif'；无样式默认 10px → 1000% = '100px serif'）；lh 基准 = line-height
+        //（parent-style-relative-units：inline 30px/40px → 2em='60px'、2lh='80px'）。
+        // 斜杠行高后的单位不属字号（'10px/150%' 的 150% 是 line-height），以「单位前须为
+        // 行首或空白」排除。
+        var m = /(?:^|\s)(\d+(?:\.\d+)?)(em|lh|%)/.exec(v);
         if (m) {
-          var base = 10;
+          var baseFs = 10, baseLh = null;
           try {
             var fs = this.canvas && this.canvas.style && String(this.canvas.style.fontSize || '');
             var fm = /^(\d+(?:\.\d+)?)px$/.exec(fs);
-            if (fm) base = parseFloat(fm[1]);
+            if (fm) baseFs = parseFloat(fm[1]);
+            var lh = this.canvas && this.canvas.style && String(this.canvas.style.lineHeight || '');
+            var lm = /^(\d+(?:\.\d+)?)px$/.exec(lh);
+            if (lm) baseLh = parseFloat(lm[1]);
           } catch (_e) {}
-          var px = Math.round(base * parseFloat(m[1]) / 100 * 100) / 100;
+          var unit = m[2];
+          var mult = (unit === '%') ? parseFloat(m[1]) / 100 : parseFloat(m[1]);
+          var base = (unit === 'lh') ? (baseLh != null ? baseLh : baseFs) : baseFs;
+          var px = Math.round(base * mult * 100) / 100;
           v = v.slice(0, m.index) + px + 'px' + v.slice(m.index + m[0].length);
         }
         this._font = v;

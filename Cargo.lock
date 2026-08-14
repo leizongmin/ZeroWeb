@@ -6344,6 +6344,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "criterion",
+ "rustybuzz",
  "thiserror 2.0.18",
  "zero-render-foundation",
 ]

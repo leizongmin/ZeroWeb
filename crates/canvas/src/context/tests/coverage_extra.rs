@@ -709,3 +709,49 @@ fn test_fill_text_zero_size_gradient_paints_nothing() {
     let p = ctx.get_image_data(25, 25, 1, 1);
     assert_eq!((p.data[0], p.data[1]), (0, 255), "零长渐变不画文本（保持绿底）");
 }
+
+// R34xx：ASCII whitespace → U+0020 预处理（2d.text.measure.actualBoundingBox.whitespace
+// 驱动——'\t' 在 CanvasTest 有自带墨迹字形，转换后与 space 同墨迹；tab 期望 |Left|≥49）。
+#[test]
+fn test_prepare_canvas_text_whitespace_conversion() {
+    use crate::context::context_impl::prepare_canvas_text;
+    assert_eq!(prepare_canvas_text("a\tb"), "a b");
+    assert_eq!(prepare_canvas_text("a\nb\rc\x0Cd"), "a b c d");
+    assert_eq!(prepare_canvas_text("a b"), "a b"); // U+0020 不变
+    assert_eq!(prepare_canvas_text("a\u{3000}b"), "a\u{3000}b"); // 非 ASCII whitespace 不变
+    assert_eq!(prepare_canvas_text("a\u{0}b"), "ab"); // null 剥离
+}
+
+// R34xx：actualBoundingBoxLeft/Right 符号约定（spec：Left 正值=向左、Right 正值=向右，
+// 不钳制）——墨迹在原点右侧时 Left 为负（' A' 期望 |Left|≥49）。
+#[test]
+fn test_measure_bbox_left_negative_when_ink_right_of_origin() {
+    let bytes = std::fs::read(format!(
+        "{}/../../tests/wpt-runner/wpt-data/fonts/CanvasTest.ttf",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap_or_else(|_| Vec::new());
+    if bytes.is_empty() {
+        return;
+    }
+    use std::sync::{Arc, Mutex};
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("CanvasTest", fid);
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+    ctx.set_font(FontDescriptor {
+        family: "CanvasTest".to_string(),
+        size: 50.0,
+        ..FontDescriptor::default()
+    });
+    let m = ctx.measure_text(" A");
+    assert!(
+        m.actual_bounding_box_left.abs() >= 49.0,
+        "' A' 墨迹左缘应在原点右侧 1em 附近，got {}",
+        m.actual_bounding_box_left
+    );
+    // 首字即墨迹（'A'）：left ≈ 0。
+    let m2 = ctx.measure_text("A");
+    assert!(m2.actual_bounding_box_left.abs() <= 1.0);
+}

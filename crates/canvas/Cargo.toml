@@ -7,6 +7,9 @@ license.workspace = true
 
 [dependencies]
 zero-render-foundation = { workspace = true }
+# R34xx：measure 墨迹亚像素 bbox（字形轮廓，位图在亚像素字号下量化）——
+# 2d.text.measure.actualBoundingBox.small-font。rustybuzz 经 workspace 同版本复用。
+rustybuzz = { workspace = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
 
