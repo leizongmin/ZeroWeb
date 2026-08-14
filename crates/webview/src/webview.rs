@@ -15,7 +15,9 @@ use zero_engine::{
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
-use zero_net::{CacheLookup, HttpClient, NetError, is_file_url};
+use zero_net::{
+    CacheLookup, FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url,
+};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
@@ -552,7 +554,7 @@ impl WebView {
                 Some(u) => u.to_string(),
                 None => href.clone(),
             };
-            match self.http_client.get(&abs) {
+            match self.resource_get(&abs, FetchPriority::CRITICAL, "style") {
                 Ok(resp) => {
                     // CSS Syntax §6.2 charset determination：按 BOM / @charset / Content-Type
                     // charset 优先级解码（file:// 下 Content-Type charset 来自 `.headers`
@@ -631,11 +633,11 @@ impl WebView {
                     None => {
                         // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
                         //（wpt-data 文件映射）；None → 回退 HTTP 网络。
-                        let fetched = self
-                            .image_source_fetcher
-                            .as_ref()
-                            .and_then(|f| f(&abs))
-                            .or_else(|| self.http_client.get(&abs).ok().map(|resp| resp.body));
+                        let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
+                            self.resource_get(&abs, FetchPriority::MEDIUM, "image")
+                                .ok()
+                                .map(|resp| resp.body)
+                        });
                         let bytes = match fetched {
                             Some(bytes) => bytes,
                             None => {
@@ -1263,11 +1265,22 @@ impl WebView {
     /// 抓取 URL 文本资源（用于外链脚本等）。
     pub fn fetch_text_at(&self, url: &str) -> Result<String, WebViewError> {
         let resp = self
-            .http_client
-            .get(url)
+            .resource_get(url, FetchPriority::HIGH, "script")
             .map_err(|e| WebViewError::Navigation(format!("fetch {url}: {e}")))?;
         resp.text()
             .map_err(|e| WebViewError::Navigation(format!("decode {url}: {e}")))
+    }
+
+    /// 经统一资源加载器同步取得 HTTP 子资源；`file:` 保持本地读取语义。
+    fn resource_get(&self, url: &str, priority: FetchPriority, destination: &str) -> Result<HttpResponse, NetError> {
+        if is_file_url(url) {
+            return self.http_client.get(url);
+        }
+        ResourceLoader::shared()
+            .submit(ResourceRequest::get(url, priority).with_destination(destination))
+            .recv()
+            .map_err(|_| NetError::Network("resource loader worker exited".to_string()))?
+            .map_err(NetError::Network)
     }
 
     /// 文档布局高度（CSS 逻辑像素）。
