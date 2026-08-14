@@ -23,13 +23,18 @@ pub(crate) struct InlineFontContext<'a> {
     pub advance_source: Option<&'a crate::inline::AdvanceSourceHandle>,
     /// 可选 CSS family 到字体 ID 的解析表。
     pub resolver: Option<&'a std::rc::Rc<HashMap<String, u32>>>,
+    /// pass 级一次收集的 font overrides（`collect_font_overrides` 全文档结果，
+    /// 由 LayoutEngine 持有 Rc，此处借用）。
+    ///
+    /// OPTIMIZATION: R3424-F 默认开启 advance source 后，`configure_inline_fonts`
+    /// 每 IFC 构造都全子树 collect overrides——morning fixture（446 个 IFC）实测
+    /// layout_ms 10x 回归（6.8→72ms，collect 占 ~44ms）。提升为 pass 级一次收集，
+    /// 所有 IFC 共享同一份 map（按 node_id 查询，多余 key 无副作用）。
+    pub font_overrides: Option<&'a std::rc::Rc<crate::font_resolution::FontOverrides>>,
 }
 
 fn configure_inline_fonts(
     mut context: InlineFormattingContext,
-    doc: &Document,
-    styles: &HashMap<NodeId, ComputedStyle>,
-    root: NodeId,
     inline_fonts: InlineFontContext<'_>,
     allow_vertical_advance: bool,
 ) -> InlineFormattingContext {
@@ -45,12 +50,15 @@ fn configure_inline_fonts(
         if use_advance
             && inline_fonts.advance_source.is_some()
             && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1")
+            && let Some(overrides) = inline_fonts.font_overrides
         {
-            let overrides = crate::font_resolution::collect_font_overrides(doc, styles, root, resolver);
+            // OPTIMIZATION: overrides 由 LayoutEngine pass 级一次收集（全文档），
+            // 不再每 IFC 全子树 collect（R3424-F 默认开启后 446 IFC × 全文档遍历
+            // 致 layout_ms 10x 回归，见 InlineFontContext::font_overrides 注释）。
             context = context
-                .with_font_ids_overrides(overrides.ids)
-                .with_font_size_adjust_overrides(overrides.size_adjust)
-                .with_font_variation_overrides(overrides.variations);
+                .with_font_ids_overrides(overrides.ids.clone())
+                .with_font_size_adjust_overrides(overrides.size_adjust.clone())
+                .with_font_variation_overrides(overrides.variations.clone());
         }
     }
     context
@@ -363,14 +371,7 @@ fn store_inline_multicol_columns(
         return false;
     }
     // 列宽重排 IFC（目标案为简单文本；复杂 override 留后续扩展）
-    let mut col_ctx = configure_inline_fonts(
-        InlineFormattingContext::new(info.column_width),
-        doc,
-        styles,
-        node_id,
-        inline_fonts,
-        false,
-    );
+    let mut col_ctx = configure_inline_fonts(InlineFormattingContext::new(info.column_width), inline_fonts, false);
     col_ctx.layout(doc, node_id, styles);
     if col_ctx.lines.is_empty() {
         return false;
@@ -962,7 +963,7 @@ pub(crate) fn compute_final_inline_layouts(
     // 消费者回退常数 1.164/Ahem 1.0 = 逐字节等价旧路径（零回归）。`Some` 时经既有
     // override-map 链路（frag.height → store_font_sizes → text_node_line_heights → paint）
     // 触达 paint，绕 R890 空 styles 阻塞。Handle 内部 `Rc` clone 廉价共享。
-    inline_ctx = configure_inline_fonts(inline_ctx, doc, styles, node_id, inline_fonts, false);
+    inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
 
     if !exclusions.is_empty() {
         inline_ctx = inline_ctx.with_float_exclusions(exclusions);
@@ -1462,7 +1463,7 @@ pub(crate) fn measure_text_content(
         .with_break_word(break_word)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
-    inline_ctx = configure_inline_fonts(inline_ctx, doc, styles, dom_id, inline_fonts, false);
+    inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, dom_id, styles);
 
     let measured_width = inline_ctx
@@ -1511,7 +1512,7 @@ pub(crate) fn measure_text_content(
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve)
                     .with_break_at_newline(break_at_newline);
-                col_ctx = configure_inline_fonts(col_ctx, doc, styles, dom_id, inline_fonts, true);
+                col_ctx = configure_inline_fonts(col_ctx, inline_fonts, true);
                 col_ctx.layout(doc, dom_id, styles);
                 let cn = col_ctx.lines.len();
                 let ct = col_ctx.total_height();
@@ -1642,7 +1643,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .with_no_wrap(no_wrap)
                 .with_inline_block_sizes(ib_sizes)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
-            inline_ctx = configure_inline_fonts(inline_ctx, doc, styles, dom_id, inline_fonts, false);
+            inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
             inline_ctx.layout(doc, dom_id, styles);
 
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移

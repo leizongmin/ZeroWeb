@@ -286,11 +286,34 @@ impl LayoutEngine {
         self.font_resolver = Some(std::rc::Rc::new(resolver));
     }
 
-    fn inline_font_context(&self) -> crate::inline_finalization::InlineFontContext<'_> {
+    /// pass 级一次收集全文档 font overrides（所有 IFC 共享）。
+    ///
+    /// OPTIMIZATION: R3424-F 默认开启 advance source 后，`configure_inline_fonts`
+    /// 曾每 IFC 全子树 collect overrides——morning fixture（446 个 IFC）实测
+    /// layout_ms 10x 回归（6.8→72ms，collect 占 ~44ms）。提升为 pass 级一次
+    /// 收集（Rc 持有，调用点生命周期内有效）。collect 条件与旧 configure 分支
+    /// 一致：advance source 注入 + 非 ZW_SHAPED_FALLBACK=1 时才需要 overrides。
+    fn collect_font_overrides_for_pass(
+        &self,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+    ) -> Option<std::rc::Rc<crate::font_resolution::FontOverrides>> {
+        self.font_resolver.as_ref().and_then(|resolver| {
+            (self.advance_source.is_some() && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1"))
+                .then(|| crate::font_resolution::collect_font_overrides(doc, styles, doc.root(), resolver))
+                .map(std::rc::Rc::new)
+        })
+    }
+
+    fn inline_font_context<'a>(
+        &'a self,
+        font_overrides: &'a Option<std::rc::Rc<crate::font_resolution::FontOverrides>>,
+    ) -> crate::inline_finalization::InlineFontContext<'a> {
         crate::inline_finalization::InlineFontContext {
             metric_provider: self.font_metric_provider.as_ref(),
             advance_source: self.advance_source.as_ref(),
             resolver: self.font_resolver.as_ref(),
+            font_overrides: font_overrides.as_ref(),
         }
     }
 
@@ -359,6 +382,8 @@ impl LayoutEngine {
             width: AvailableSpace::Definite(self.effective_root_layout_width()),
             height: AvailableSpace::Definite(self.viewport_height),
         };
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
         let _ = taffy_tree.compute_layout_with_measure(
             root_id,
             available_space,
@@ -374,7 +399,7 @@ impl LayoutEngine {
                     known_dimensions,
                     available_space,
                     &intrinsic_for_r695,
-                    self.inline_font_context(),
+                    inline_fonts,
                 )
             },
         );
@@ -467,6 +492,8 @@ impl LayoutEngine {
                 width: AvailableSpace::Definite(self.effective_root_layout_width()),
                 height: AvailableSpace::Definite(self.viewport_height),
             };
+            let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+            let inline_fonts = self.inline_font_context(&font_overrides);
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
                 available_space,
@@ -482,7 +509,7 @@ impl LayoutEngine {
                         known_dimensions,
                         available_space,
                         &intrinsic_for_r695,
-                        self.inline_font_context(),
+                        inline_fonts,
                     )
                 },
             );
@@ -627,13 +654,9 @@ impl LayoutEngine {
         crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
-        remeasure_text_with_float_exclusions(
-            &mut root_box,
-            doc,
-            styles,
-            &intrinsic_for_r695,
-            self.inline_font_context(),
-        );
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        remeasure_text_with_float_exclusions(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts);
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
         // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
@@ -643,14 +666,18 @@ impl LayoutEngine {
         // 不需要额外后处理
 
         // 8. 后处理：对 display:table 容器执行 table grid 布局
-        crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, self.inline_font_context());
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
 
         // 8.5 后处理（R1518d V2）：table-among-floats scoped iterative fix。
         // step5 float 定位早于 step8 table layout，table shrink-to-fit 后不重跑 §9.5，
         // 致窄 table 堆在 float 下方扩容器。本 pass scoped（仅 float+table 同容器）：
         // A re-wrap 内层 float + B 重算 table 高 + C 手动 §9.5 push + D 重算容器高度。
         // env ZW_TABLE_FLOAT_ITER_V2=0 关闭（default-on）；ZW_TABLE_FLOAT_DBG 诊断。
-        crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, self.inline_font_context());
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, inline_fonts);
 
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
@@ -749,6 +776,8 @@ impl LayoutEngine {
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
         let mut paint_skip_set: HashSet<NodeId> = HashSet::new();
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
         compute_final_inline_layouts(
             &mut root_box,
             doc,
@@ -756,7 +785,7 @@ impl LayoutEngine {
             &[],
             &intrinsic_for_r695,
             &mut paint_skip_set,
-            self.inline_font_context(),
+            inline_fonts,
         );
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
@@ -914,10 +943,12 @@ impl LayoutEngine {
         let metric_provider = self.font_metric_provider.clone();
         let advance_source = self.advance_source.clone();
         let font_resolver = self.font_resolver.clone();
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = crate::inline_finalization::InlineFontContext {
             metric_provider: metric_provider.as_ref(),
             advance_source: advance_source.as_ref(),
             resolver: font_resolver.as_ref(),
+            font_overrides: font_overrides.as_ref(),
         };
         let cached = self.cached_state.as_mut().expect("cached_state checked above");
 

@@ -104,12 +104,25 @@ pub(crate) fn collect_font_overrides(
     root: NodeId,
     resolver: &HashMap<String, u32>,
 ) -> FontOverrides {
+    // OPTIMIZATION: 页面内 font-family/weight/style 组合远少于文本节点数
+    // （morning fixture ~1500 节点 vs ~10 组合）——按组合 memo 解析结果，避免
+    // 每节点重复 resolve_font_ids_for_style 的 format! 字符串分配（全文档 collect
+    // 实测 8ms → <1ms；R3424-F 默认开启 advance source 后该 collect 每 pass 多次）。
+    #[derive(PartialEq, Eq, Hash)]
+    struct ResolveKey {
+        families: Vec<String>,
+        bold: bool,
+        italic: bool,
+        stretch_bits: u32,
+    }
+    let mut resolve_cache: HashMap<ResolveKey, Vec<u32>> = HashMap::new();
     fn visit(
         doc: &Document,
         styles: &HashMap<NodeId, ComputedStyle>,
         node_id: NodeId,
         resolver: &HashMap<String, u32>,
         overrides: &mut FontOverrides,
+        resolve_cache: &mut HashMap<ResolveKey, Vec<u32>>,
     ) {
         let style_id = doc
             .get(node_id)
@@ -120,23 +133,35 @@ pub(crate) fn collect_font_overrides(
             })
             .unwrap_or(node_id);
         if let Some(style) = styles.get(&style_id) {
-            overrides.ids.insert(
-                node_id,
-                resolve_font_ids_for_style(
-                    resolver,
-                    &style.font_family,
-                    &style.font_weight,
-                    &style.font_style,
-                    style.font_stretch,
-                ),
-            );
+            let bold = matches!(style.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+                || matches!(style.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
+            let italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+            let key = ResolveKey {
+                families: style.font_family.clone(),
+                bold,
+                italic,
+                stretch_bits: style.font_stretch.to_bits(),
+            };
+            let ids = resolve_cache
+                .entry(key)
+                .or_insert_with(|| {
+                    resolve_font_ids_for_style(
+                        resolver,
+                        &style.font_family,
+                        &style.font_weight,
+                        &style.font_style,
+                        style.font_stretch,
+                    )
+                })
+                .clone();
+            overrides.ids.insert(node_id, ids);
             overrides.size_adjust.insert(node_id, style.font_size_adjust);
             overrides
                 .variations
                 .insert(node_id, style.font_variation_settings.clone());
         }
         for child in doc.child_nodes(node_id) {
-            visit(doc, styles, child, resolver, overrides);
+            visit(doc, styles, child, resolver, overrides, resolve_cache);
         }
     }
 
@@ -145,7 +170,7 @@ pub(crate) fn collect_font_overrides(
         size_adjust: HashMap::new(),
         variations: HashMap::new(),
     };
-    visit(doc, styles, root, resolver, &mut overrides);
+    visit(doc, styles, root, resolver, &mut overrides, &mut resolve_cache);
     overrides
 }
 
