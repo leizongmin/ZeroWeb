@@ -35,7 +35,7 @@ canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 
 ### Rust 层（crates/canvas）
 
-- ✅ 759 测试全绿（基线 737 +22）；**行覆盖率 89.28%**（≥70% 目标达成）
+- ✅ 774 测试全绿；**行覆盖率 91.18%**（≥70% 目标达成）
 - ✅ radial 渐变全几何：线性插值圆族二次方程（f64 精度 + 相对容差 + 半径穿零伪根过滤 +
   较大有效根）——cone.behind/beside/bottom/front/shape1/touch*/equal/transform.* 全族
 - ✅ drawImage 阴影（源 alpha mask + blur）；pattern 平铺锚定 fill 空间（tile_transform）
@@ -128,11 +128,13 @@ canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 
 ## 下一步计划
 
-1. **emHeight/baseline 字体度量深面**（5 用例：OS/2 usWinAscent 与 em square 定位算法——需字体表
-   解析扩展 + Chromium 算法确认）
-2. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）——GPU 路径测试已就位（lavapipe 4 测试）
-3. reftest-format 超时（65）——canvas reftest 面走 reftest harness 才是正解（非 testharness 面，
+1. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）——GPU 路径测试已就位（lavapipe 4 测试）
+2. reftest-format 超时（65）——canvas reftest 面走 reftest harness 才是正解（非 testharness 面，
    与 rendering-compat 共享 harness 决策）
+3. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），浏览器流
+   （非 canvas 面）处理
+
+（emHeight/baseline 深面已在第十一批前完成——emHeights*/baselines 全 Pass，不再待办）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
