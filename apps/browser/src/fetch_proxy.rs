@@ -1,7 +1,7 @@
 //! Browser 侧 fetch 代理 — 优先级、HTTP 缓存、安全策略、导航 cancel。
 
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 
 use zero_browser_shell::TabId;
@@ -20,6 +20,8 @@ pub struct CompletedFetch {
     pub request_id: u64,
     /// HTTP 状态码（失败时为 0）。
     pub status: u16,
+    /// 响应头；流式块以内部 `X-Zero-Stream-Chunk` 标记区分于最终响应。
+    pub headers: Vec<(String, String)>,
     /// 响应体。
     pub body: Vec<u8>,
 }
@@ -31,6 +33,8 @@ struct PendingFetch {
     rx: Receiver<Result<HttpResponse, String>>,
 }
 
+const MAX_IPC_STREAM_CHUNK_BYTES: usize = 64 * 1024;
+
 /// 多进程 browser 进程的 fetch 调度状态。
 pub struct TabFetchProxy {
     /// 普通 profile 与 WebView 共用的资源加载器。
@@ -39,6 +43,9 @@ pub struct TabFetchProxy {
     private_loader: Arc<ResourceLoader>,
     private_tabs: HashSet<TabId>,
     pending: Vec<PendingFetch>,
+    stream_tx: Sender<CompletedFetch>,
+    stream_rx: Receiver<CompletedFetch>,
+    stream_pending: HashSet<(TabId, u64)>,
     tab_epochs: HashMap<TabId, u64>,
     security: HashMap<TabId, SecurityContext>,
 }
@@ -46,11 +53,15 @@ pub struct TabFetchProxy {
 impl TabFetchProxy {
     /// 创建 fetch 代理。
     pub fn new() -> Self {
+        let (stream_tx, stream_rx) = channel();
         Self {
             normal_loader: ResourceLoader::shared(),
             private_loader: Arc::new(ResourceLoader::new(Arc::new(Mutex::new(HttpCache::new())), "private")),
             private_tabs: HashSet::new(),
             pending: Vec::new(),
+            stream_tx,
+            stream_rx,
+            stream_pending: HashSet::new(),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
         }
@@ -70,6 +81,7 @@ impl TabFetchProxy {
         self.private_tabs.remove(&tab_id);
         self.tab_epochs.remove(&tab_id);
         self.security.remove(&tab_id);
+        self.stream_pending.retain(|(pending_tab, _)| *pending_tab != tab_id);
     }
 
     fn loader_for(&self, tab_id: TabId) -> Arc<ResourceLoader> {
@@ -107,6 +119,7 @@ impl TabFetchProxy {
         *epoch += 1;
         let before = self.pending.len();
         self.pending.retain(|p| p.tab_id != tab_id);
+        self.stream_pending.retain(|(pending_tab, _)| *pending_tab != tab_id);
         let dropped = before.saturating_sub(self.pending.len());
         if dropped > 0 {
             tracing::info!("fetch cancel tab {} dropped {dropped} pending IPC fetches", tab_id.0);
@@ -119,6 +132,9 @@ impl TabFetchProxy {
         let mut url = params.url.clone();
         let request_headers = params.headers.clone();
         let (priority, resource_type) = FetchPriority::from_fetch_headers(&request_headers, &url);
+        let stream_image = request_headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-image") && value == "1");
 
         if let Some(ctx) = self.security.get_mut(&tab_id) {
             match ctx.check_resource_url(&url, resource_type) {
@@ -187,6 +203,11 @@ impl TabFetchProxy {
                 url,
                 rx,
             });
+            return;
+        }
+
+        if stream_image && resource_type == "image" && params.method.eq_ignore_ascii_case("GET") {
+            self.start_image_stream(tab_id, params.request_id, url, request_headers, priority);
             return;
         }
 
@@ -261,6 +282,7 @@ impl TabFetchProxy {
                         tab_id: pending.tab_id,
                         request_id: pending.request_id,
                         status: resp.status_code,
+                        headers: resp.headers,
                         body: resp.body,
                     });
                 }
@@ -275,6 +297,7 @@ impl TabFetchProxy {
                         tab_id: pending.tab_id,
                         request_id: pending.request_id,
                         status: 0,
+                        headers: Vec::new(),
                         body: format!("网络请求失败: {e}").into_bytes(),
                     });
                 }
@@ -284,19 +307,98 @@ impl TabFetchProxy {
                         tab_id: pending.tab_id,
                         request_id: pending.request_id,
                         status: 0,
+                        headers: Vec::new(),
                         body: "网络请求失败: fetch worker exited".as_bytes().to_vec(),
                     });
                 }
             }
         }
         self.pending = still_pending;
+        while let Ok(item) = self.stream_rx.try_recv() {
+            let key = (item.tab_id, item.request_id);
+            if self.stream_pending.contains(&key) {
+                if !is_stream_chunk(&item.headers) {
+                    self.stream_pending.remove(&key);
+                }
+                completed.push(item);
+            }
+        }
         completed
     }
 
     /// 仍在等待 HTTP 结果的 in-flight 数量。
     pub fn pending_count(&self) -> usize {
-        self.pending.len()
+        self.pending.len() + self.stream_pending.len()
     }
+
+    fn start_image_stream(
+        &mut self,
+        tab_id: TabId,
+        request_id: u64,
+        url: String,
+        request_headers: Vec<(String, String)>,
+        priority: FetchPriority,
+    ) {
+        self.stream_pending.insert((tab_id, request_id));
+        let tx = self.stream_tx.clone();
+        let client = HttpClient::new();
+        zero_net::client::spawn_network_task(async move {
+            let mut headers: Vec<_> = request_headers
+                .into_iter()
+                .filter(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"))
+                .collect();
+            if zero_net::connect::http2_enabled()
+                && !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("priority"))
+            {
+                headers.push(("Priority".into(), priority.rfc9218_header_value().into()));
+            }
+            let chunk_tx = tx.clone();
+            let result = client
+                .send_async_stream(
+                    HttpRequest {
+                        method: HttpMethod::Get,
+                        url: url.clone(),
+                        headers,
+                        body: None,
+                    },
+                    move |chunk| {
+                        for part in chunk.chunks(MAX_IPC_STREAM_CHUNK_BYTES) {
+                            let _ = chunk_tx.send(CompletedFetch {
+                                tab_id,
+                                request_id,
+                                status: 200,
+                                headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
+                                body: part.to_vec(),
+                            });
+                        }
+                    },
+                )
+                .await;
+            let completed = match result {
+                Ok(head) => CompletedFetch {
+                    tab_id,
+                    request_id,
+                    status: head.status_code,
+                    headers: head.headers,
+                    body: Vec::new(),
+                },
+                Err(error) => CompletedFetch {
+                    tab_id,
+                    request_id,
+                    status: 0,
+                    headers: Vec::new(),
+                    body: format!("网络请求失败: {error}").into_bytes(),
+                },
+            };
+            let _ = tx.send(completed);
+        });
+    }
+}
+
+fn is_stream_chunk(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-chunk") && value == "1")
 }
 
 impl Default for TabFetchProxy {
@@ -335,6 +437,8 @@ fn dns_prefetch(origin: String) -> Receiver<Result<HttpResponse, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
     use std::time::Duration;
     use zero_protocol::message::FetchParams;
 
@@ -440,5 +544,51 @@ mod tests {
         assert_eq!(done[0].request_id, 8);
         assert_eq!(done[0].status, 204);
         assert!(done[0].body.is_empty());
+    }
+
+    #[test]
+    fn image_stream_forwards_chunks_then_a_final_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/image.png", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nfirst")
+                .unwrap();
+            stream.write_all(b"second").unwrap();
+        });
+
+        let mut request = params(17, &url);
+        request.headers = vec![
+            ("X-Zero-Resource-Type".into(), "image".into()),
+            ("X-Zero-Stream-Image".into(), "1".into()),
+        ];
+        let mut proxy = TabFetchProxy::new();
+        proxy.enqueue(TabId(3), &request);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut completed = Vec::new();
+        while std::time::Instant::now() < deadline {
+            completed.extend(proxy.drain());
+            if completed.iter().any(|item| !is_stream_chunk(&item.headers)) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        server.join().unwrap();
+
+        assert!(completed.iter().any(|item| is_stream_chunk(&item.headers)));
+        let body: Vec<u8> = completed
+            .iter()
+            .filter(|item| is_stream_chunk(&item.headers))
+            .flat_map(|item| item.body.iter().copied())
+            .collect();
+        assert_eq!(body, b"firstsecond");
+        assert!(
+            completed
+                .iter()
+                .any(|item| !is_stream_chunk(&item.headers) && item.status == 200)
+        );
     }
 }

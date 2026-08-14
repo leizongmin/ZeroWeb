@@ -275,9 +275,16 @@ impl ProcessTabBackend {
         true
     }
 
-    fn send_fetch_response_now(&mut self, tab_id: TabId, request_id: u64, status: u16, body: Vec<u8>) {
+    fn send_fetch_response_now(
+        &mut self,
+        tab_id: TabId,
+        request_id: u64,
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) {
         if let Some(renderer) = self.renderer_mut(tab_id) {
-            if let Err(e) = renderer.send_fetch_response(request_id, status, Vec::new(), body) {
+            if let Err(e) = renderer.send_fetch_response(request_id, status, headers, body) {
                 tracing::warn!("FetchResponse send failed tab {}: {e}", tab_id.0);
             }
         } else {
@@ -566,7 +573,7 @@ impl ProcessTabBackend {
 
     fn drain_pending_fetches(&mut self) {
         for item in self.fetch_proxy.drain() {
-            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.body);
+            self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
         }
     }
 

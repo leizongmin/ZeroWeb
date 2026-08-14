@@ -64,7 +64,9 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
 }
 
 /// 默认启用 HTTP/2；设 `ZERO_HTTP2=0` 可退回 HTTP/1.1。
-pub(crate) fn http2_enabled() -> bool {
+///
+/// 供浏览器进程的流式 fetch 路径决定是否附加 RFC 9218 `Priority` 请求头。
+pub fn http2_enabled() -> bool {
     std::env::var("ZERO_HTTP2")
         .ok()
         .is_none_or(|v| v != "0" && !v.eq_ignore_ascii_case("false"))

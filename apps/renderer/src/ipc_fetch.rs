@@ -13,6 +13,10 @@ type IpcOutbound = PipeTransport<std::io::Empty, Box<dyn std::io::Write + Send>>
 enum InflightReply {
     Text(Sender<Result<String, String>>),
     Bytes(Sender<Result<Vec<u8>, String>>),
+    StreamBytes {
+        tx: Sender<Result<Vec<u8>, String>>,
+        body: Vec<u8>,
+    },
     Ignore,
 }
 
@@ -39,8 +43,8 @@ impl InflightIpcFetches {
         let IpcMessageKind::FetchResponse(FetchResponseParams {
             request_id,
             status_code,
+            headers,
             body,
-            ..
         }) = &msg.kind
         else {
             return false;
@@ -48,6 +52,20 @@ impl InflightIpcFetches {
         let Some(reply) = self.pending.remove(request_id) else {
             return false;
         };
+        if let InflightReply::StreamBytes {
+            tx,
+            body: mut collected,
+        } = reply
+        {
+            if is_stream_chunk(headers) {
+                collected.extend_from_slice(body);
+                self.pending
+                    .insert(*request_id, InflightReply::StreamBytes { tx, body: collected });
+            } else {
+                deliver_reply(InflightReply::StreamBytes { tx, body: collected }, *status_code, body);
+            }
+            return true;
+        }
         deliver_reply(reply, *status_code, body);
         true
     }
@@ -64,6 +82,18 @@ fn deliver_reply(reply: InflightReply, status_code: u16, body: &[u8]) {
             };
             let _ = tx.send(result);
         }
+        InflightReply::StreamBytes {
+            tx,
+            body: mut collected,
+        } => {
+            let result = if (200..300).contains(&status_code) {
+                collected.extend_from_slice(body);
+                Ok(collected)
+            } else {
+                Err(fetch_error(status_code, body))
+            };
+            let _ = tx.send(result);
+        }
         InflightReply::Text(tx) => {
             let result = if (200..300).contains(&status_code) {
                 String::from_utf8(body.to_vec()).map_err(|e| e.to_string())
@@ -73,6 +103,12 @@ fn deliver_reply(reply: InflightReply, status_code: u16, body: &[u8]) {
             let _ = tx.send(result);
         }
     }
+}
+
+fn is_stream_chunk(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-stream-chunk") && value == "1")
 }
 
 fn fetch_error(status_code: u16, body: &[u8]) -> String {
@@ -125,10 +161,16 @@ impl<'a> IpcAsyncFetchHost<'a> {
                 request_id,
                 url: url.to_string(),
                 method: "GET".into(),
-                headers: vec![
-                    ("X-Zero-Resource-Type".into(), meta.resource_type.into()),
-                    ("X-Zero-Priority".into(), meta.priority.to_string()),
-                ],
+                headers: {
+                    let mut headers = vec![
+                        ("X-Zero-Resource-Type".into(), meta.resource_type.into()),
+                        ("X-Zero-Priority".into(), meta.priority.to_string()),
+                    ];
+                    if matches!(&reply, InflightReply::StreamBytes { .. }) {
+                        headers.push(("X-Zero-Stream-Image".into(), "1".into()));
+                    }
+                    headers
+                },
                 body: None,
             }),
         };
@@ -204,7 +246,12 @@ impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
 
     fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
         let (tx, rx) = channel();
-        if let Err(e) = self.issue_fetch(url, meta, InflightReply::Bytes(tx)) {
+        let reply = if meta.resource_type == "image" {
+            InflightReply::StreamBytes { tx, body: Vec::new() }
+        } else {
+            InflightReply::Bytes(tx)
+        };
+        if let Err(e) = self.issue_fetch(url, meta, reply) {
             let (fallback_tx, fallback_rx) = channel();
             let _ = fallback_tx.send(Err(e));
             return fallback_rx;
@@ -265,6 +312,42 @@ mod tests {
         assert!(inflight.try_complete(&msg));
         assert_eq!(rx.try_recv().unwrap().unwrap(), b"ok");
         assert!(inflight.pending.is_empty());
+    }
+
+    #[test]
+    fn streamed_image_chunks_wait_for_final_response() {
+        let mut inflight = InflightIpcFetches::new();
+        let (tx, rx) = channel();
+        inflight
+            .pending
+            .insert(42, InflightReply::StreamBytes { tx, body: Vec::new() });
+        let chunk = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 42,
+                status_code: 200,
+                headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
+                body: b"first".to_vec(),
+            }),
+        };
+        assert!(inflight.try_complete(&chunk));
+        assert!(rx.try_recv().is_err());
+        assert!(matches!(
+            inflight.pending.get(&42),
+            Some(InflightReply::StreamBytes { .. })
+        ));
+
+        let final_response = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 42,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"second".to_vec(),
+            }),
+        };
+        assert!(inflight.try_complete(&final_response));
+        assert_eq!(rx.try_recv().unwrap().unwrap(), b"firstsecond");
     }
 
     #[test]
@@ -349,6 +432,27 @@ mod tests {
         assert_eq!(next_id, 2);
         assert_eq!(inflight.pending.len(), 1);
         assert!(!buf.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ipc_image_fetch_requests_browser_streaming() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+        let mut next_id = 1_u64;
+        let mut inflight = InflightIpcFetches::new();
+        let mut host = IpcAsyncFetchHost::new(&mut outbound, &mut next_id, &mut inflight);
+        let _ = host.fetch_bytes_meta("https://example.com/a.png", ResourceFetchMeta::IMAGE);
+        let frame = buf.0.lock().unwrap();
+        let request = zero_protocol::deserialize(&frame[4..]).unwrap();
+        assert!(matches!(
+            request.kind,
+            IpcMessageKind::FetchRequest(FetchParams { headers, .. })
+                if headers.iter().any(|(name, value)| name == "X-Zero-Stream-Image" && value == "1")
+        ));
+        assert!(matches!(
+            inflight.pending.get(&1),
+            Some(InflightReply::StreamBytes { .. })
+        ));
     }
 
     #[test]
