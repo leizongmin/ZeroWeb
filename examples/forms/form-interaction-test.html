@@ -12,12 +12,11 @@
     #name { display: block; width: 216px; height: 40px; box-sizing: border-box; }
     textarea { display: block; width: 100%; height: 80px; box-sizing: border-box; }
     input[type="checkbox"], input[type="radio"] { accent-color: #005cc8; }
+    .form-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     button {
-      height: 40px; margin-right: 8px; box-sizing: border-box; white-space: nowrap;
+      width: 100%; min-width: 0; height: 40px; box-sizing: border-box; white-space: nowrap;
       background: #efefef;
     }
-    #click { width: 74px; }
-    #reset, #submit { width: 54px; }
     #result { display: block; min-height: 1.5em; margin-top: 16px; color: #075985; }
   </style>
 </head>
@@ -41,7 +40,11 @@
       <label><input id="plan-pro" name="plan" type="radio" value="pro"> 专业版</label>
     </fieldset>
 
-    <button id="click" type="button">普通点击按钮</button><button id="reset" type="reset">重置表单</button><button id="submit" type="submit">提交表单</button>
+    <div class="form-actions">
+      <button id="click" type="button">普通点击按钮</button>
+      <button id="reset" type="reset">重置表单</button>
+      <button id="submit" type="submit">提交表单</button>
+    </div>
   </form>
 
   <output id="result" aria-live="polite">等待交互</output>
