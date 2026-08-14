@@ -2692,3 +2692,93 @@ fn test_range_apis_r42() {
         "④ selectNode 无 parent 抛 InvalidNodeTypeError"
     );
 }
+
+#[test]
+fn test_htmlcollection_indexed_named_props_r43() {
+    // R43：spec legacy platform object（HTMLCollection）属性语义（WPT HTMLCollection-delete +
+    // getElementsByClassName-32 "does not get confused by numeric IDs"）。
+    // ① indexed 属性不可配置：delete c[0] no-op（loose，值不丢——普通数组 delete 挖洞致永久
+    //    undefined）；strict 模式 delete 抛 TypeError
+    // ② named getter：c.<id> 命中带 id 元素，同样不可配置（delete c.foo no-op）
+    // ③ 纯数字 id 不经 named 暴露（数组 defineProperty 数字键会把 length 推到 index+1——
+    //    "does not get confused by numeric IDs" 断言 collection.length 与 map ids 不受扰）
+    // https://dom.spec.whatwg.org/#interface-htmlcollection（legacy platform object）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><i id=\"foo\"></i><div class=\"k\" id=\"1\"></div><div class=\"k\" id=\"2\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var c = document.getElementsByTagName('i');\n\
+             var e = document.getElementById('foo');\n\
+             // ① indexed delete no-op（loose）——值保留\n\
+             var before = c[0] === e;\n\
+             delete c[0];\n\
+             globalThis.__d1 = before && (c[0] === e);\n\
+             // ① strict delete 抛 TypeError\n\
+             try { (function(){ 'use strict'; delete c[0]; })(); globalThis.__d2 = 'no-throw'; }\n\
+             catch (err) { globalThis.__d2 = err instanceof TypeError ? 'TypeError' : String(err); }\n\
+             // ② named getter + delete no-op\n\
+             globalThis.__d3 = c.foo === e;\n\
+             delete c.foo;\n\
+             globalThis.__d3b = c.foo === e;\n\
+             try { (function(){ 'use strict'; delete c.foo; })(); globalThis.__d4 = 'no-throw'; }\n\
+             catch (err) { globalThis.__d4 = err instanceof TypeError ? 'TypeError' : String(err); }\n\
+             // ③ 数字 id 不经 named 暴露（length 不被推大）\n\
+             var k = document.getElementsByClassName('k');\n\
+             globalThis.__d5 = k.length;\n\
+             var ids = [];\n\
+             for (var i = 0; i < k.length; i++) ids.push(k[i] && k[i].id);\n\
+             globalThis.__d6 = ids.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d1").unwrap().value,
+        "true",
+        "① loose delete c[0] no-op——元素仍可读（无挖洞）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d2").unwrap().value,
+        "TypeError",
+        "① strict delete c[0] 抛 TypeError（不可配置）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d3").unwrap().value,
+        "true",
+        "② c.foo named getter 命中带 id 元素"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d3b").unwrap().value,
+        "true",
+        "② delete c.foo no-op——named 属性保留"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d4").unwrap().value,
+        "TypeError",
+        "② strict delete c.foo 抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d5").unwrap().value,
+        "2",
+        "③ 数字 id 不推大 length（2 个 .k 元素）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d6").unwrap().value,
+        "1,2",
+        "③ indexed 顺序读不受 named 干扰（ids=1,2）"
+    );
+}

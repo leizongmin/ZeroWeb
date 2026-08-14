@@ -1,0 +1,53 @@
+{
+  "round": "R43",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (collections) + M1 L2 前置诊断",
+  "slice": "HTMLCollection legacy platform object property semantics + L2 live-view diagnosis (not landed)",
+  "context": "Two parts this round: (1) M1 L2 live-view minimal slice implemented and measured — NOT landed (dom/nodes net -10, zero gain elsewhere), full diagnosis archived for M1; (2) lightweight fix landed: HTMLCollection indexed/named property semantics.",
+  "part1_l2_diagnosis": {
+    "implemented_then_reverted": "with_query_doc_live(html, mutations, f) — thread_local cache keyed (html, mutations.len()), FULL-REPLAY of pending mutations per rebuild (incremental is impossible: apply_dom_mutations' ephemeral handle map is per-call scope). Upgraded __zw_query_match/_all/parent/child_nodes. Unit test verified same-block appendChild-then-query visibility.",
+    "measured": {
+      "dom_traversal": "9P/46F unchanged (detached trees are handle-based — walk _handleChildNodes JS registry, not host callbacks)",
+      "dom_ranges": "39P/59F unchanged",
+      "dom_nodes": "2503P -> 2493P (-10): case.html builds elements in an IFRAME document and expects main-doc getElementsByTagName to return [] — old snapshot semantics accidentally correct; live view merges cross-document pending mutations into main view"
+    },
+    "verdict": "live view requires per-document mutation scoping — exactly what M1 L2 full (Rc<RefCell<Document>> per iframe) solves. Minimal slice cannot bypass it.",
+    "design_inputs_for_m1": [
+      "mutations must carry owner-document scope (or per-iframe queues)",
+      "handle-based detached trees (_handleChildNodes registry) and sel-based queries are two parallel data sources — L2 must unify via shared live Document",
+      "full-replay (not incremental) is a hard constraint of apply_dom_mutations handle scoping; persistent handle map needed for incremental",
+      "fail-soft + thread_local cache structure reusable"
+    ],
+    "file": "2026-08-14-r43-l2-live-view-diagnosis.md"
+  },
+  "part2_landed": {
+    "indexed_props": "_zwMakeCollection: each index 0..n-1 becomes a configurable:false accessor (get returns snapshotted element — snapshot avoids self-recursive getter when a===arr; guard skips already-wrapped arrays). delete c[0] is a no-op in loose mode, throws TypeError in strict (legacy platform object). Plain arrays hole-punch on delete making c[0] permanently undefined.",
+    "named_getter": "HTMLCollection named properties: each element's id/name exposed as configurable:false accessor (c.foo hits <i id=foo>; delete no-op / strict TypeError). First-hit-wins in document order.",
+    "numeric_key_skip": "pure-numeric ids are NOT exposed via named getter: defining a numeric-key accessor on an array pushes length to index+1 (JS semantics), and spec keeps named vs indexed distinct (getElementsByClassName-32 'does not get confused by numeric IDs' asserts length and map ids unaffected)."
+  },
+  "results": {
+    "htmlcollection_delete": "0P/4F -> 4P/0F (100%) both paths",
+    "dom_collections_polyfill": { "pass": 21, "fail": 27, "rate": "43.75%", "prev": "17P/31F (35.4%)", "delta": "+4" },
+    "dom_collections_native": { "pass": 21, "rate": "43.75%", "gap_pp": "0" },
+    "regression": {
+      "dom_nodes_polyfill": "2503P unchanged (numeric-id length bug caught via +4-line probe diff, fixed in-round)",
+      "dom_events_polyfill": "189P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged"
+    }
+  },
+  "process_note": "numeric-id length regression (2503->2502) caught by before/after per-subtest diff of full dom/nodes output; root cause = JS array defineProperty numeric key grows length; fixed by skipping numeric named keys.",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r43_unit_test": "test_htmlcollection_indexed_named_props_r43 (7 assertion groups: loose/strict delete indexed, named getter + loose/strict delete, numeric id length + indexed order)",
+    "v8_engine_lib": "2124 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

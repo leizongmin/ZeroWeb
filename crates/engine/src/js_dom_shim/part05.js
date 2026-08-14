@@ -2775,6 +2775,57 @@
   // 返 NodeList（仅 item）。live 语义保持静态快照近似（documented，headless 模型一致）。
   function _zwMakeCollection(arr, htmlCollection) {
     var a = arr || [];
+    // js-dom M4 R43：spec legacy platform object（HTMLCollection/NodeList）的 indexed 属性
+    // 不可配置——`delete c[0]`（loose）no-op、strict 抛 TypeError（WPT HTMLCollection-delete：
+    // 普通数组 delete 挖洞致 c[0] 永久 undefined → "before" 断言也炸）。对每个索引
+    // defineProperty accessor（configurable:false），元素经 getter 读（不占 data slot）。
+    // 元素值在包装前快照（a === arr 时 getter 读 a[idx] 会递归触发自身 getter）。
+    var _elems = [];
+    for (var _j = 0; _j < a.length; _j++) _elems.push(a[_j]);
+    for (var _i = 0; _i < _elems.length; _i++) {
+      (function (idx) {
+        var d = Object.getOwnPropertyDescriptor(a, String(idx));
+        // guard：已被包装（复用数组二次进 _zwMakeCollection）时跳过——configurable:false
+        // 属性二次 defineProperty 抛 TypeError。
+        if (d && d.configurable === false) return;
+        Object.defineProperty(a, String(idx), {
+          get: function () { return _elems[idx]; },
+          set: function () { /* spec：indexed 属性只读（设置 no-op，loose） */ },
+          enumerable: true,
+          configurable: false,
+        });
+      })(_i);
+    }
+    // js-dom M4 R43：HTMLCollection named getter（spec supported property names——元素的
+    // id/name 作为属性名暴露，WPT HTMLCollection-delete "Loose/Strict name"：`c.foo` 命中
+    // `<i id=foo>`，且与 indexed 同为不可配置——delete c.foo no-op / strict TypeError）。
+    if (htmlCollection) {
+      for (var _k = 0; _k < _elems.length; _k++) {
+        (function (el) {
+          var names = [];
+          try {
+            if (el && el.id) names.push(String(el.id));
+            var nm = el && el.getAttribute ? el.getAttribute('name') : null;
+            if (nm) names.push(String(nm));
+          } catch (_e) {}
+          for (var _n = 0; _n < names.length; _n++) {
+            var key = names[_n];
+            // 纯数字键跳过：数组上 defineProperty 数字键 accessor 会把 length 推到 index+1
+            //（JS 语义），且 spec named getter 与 indexed 不混淆（WPT getElementsByClassName-32
+            // "does not get confused by numeric IDs"：数字 id 只经 indexed 访问）。
+            if (key !== '' && !isNaN(Number(key))) continue;
+            var d = Object.getOwnPropertyDescriptor(a, key);
+            if (d) continue; // 首个命中者胜（文档序），已有（含 Object.prototype 成员）不动
+            Object.defineProperty(a, key, {
+              get: function () { return el; },
+              set: function () { /* named 属性只读 */ },
+              enumerable: false,
+              configurable: false,
+            });
+          }
+        })(_elems[_k]);
+      }
+    }
     Object.defineProperty(a, 'item', {
       value: function (i) { i = i | 0; return i >= 0 && i < a.length ? a[i] : null; },
       enumerable: false, configurable: true, writable: true,
