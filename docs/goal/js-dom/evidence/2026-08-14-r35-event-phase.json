@@ -1,0 +1,29 @@
+{
+  "round": "R35",
+  "date": "2026-08-14",
+  "milestone": "M4",
+  "slice": "eventPhase reflects dispatch phase (Event-dispatch series minimal subset)",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "case": "dom/events/Event-dispatch-order-at-target.html",
+  "root_cause": "_dispatchToListeners received phase param ('capture'/'all'/'bubble') but never set event.eventPhase -> stayed 0 (NONE) throughout dispatch; spec concept-event-dispatch requires CAPTURING_PHASE(1)/AT_TARGET(2)/BUBBLING_PHASE(3) per phase, NONE(0) + currentTarget=null after dispatch",
+  "diagnosis": "probe target.dispatchEvent path: PHASES=0,0,0,...,0 (all NONE); two gaps found: (1) eventPhase never set (this slice), (2) document/window not in dispatch chain (deep structure, deferred)",
+  "implementation": {
+    "dispatch_to_listeners": "part03.js: after setting currentTarget, event.eventPhase = phase==='capture'?1 : phase==='bubble'?3 : 2 (AT_TARGET for 'all'; target capture+non-capture both AT_TARGET)",
+    "dispatch_with_bubble": "part03.js finally: event.eventPhase=0; event.currentTarget=null (spec dispatch-end reset)"
+  },
+  "results": {
+    "order_at_target_polyfill": { "pass": 1, "prev": "0P/1F" },
+    "order_at_target_native": { "pass": 1, "prev": "0P/1F" },
+    "dom_events_polyfill_full": { "pass": 177, "fail": 151, "timeout": 6, "prev": "175P/152F/6TO", "rate": "54.13%" },
+    "dom_events_native_full": { "pass": 157, "fail": 171, "timeout": 6, "prev": "155P/173F/6TO", "rate": "47.87%" }
+  },
+  "deferred_deep_structure": "document/window/html not in dispatch chain (bubbles-true/false/bubble-canceled/order need [window,document,documentElement,body,...] path + cloneNode/new Document infra) — deep structure, next-round evaluation",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r35_unit_test": "test_event_phase_during_dispatch_r35 (3-stage eventPhase capture1/AT_TARGET2/bubble3 + post-dispatch NONE reset + currentTarget null)",
+    "v8_engine_lib": "2112 passed (R34 baseline 2111 +1)",
+    "quickjs_engine_lib": "1411 passed (zero regression)",
+    "existing_event_tests": "15 passed (zero regression)"
+  }
+}

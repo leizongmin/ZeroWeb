@@ -915,6 +915,11 @@
     var list = listeners[event.type];
     var ctx = thisObj || event.target;
     event.currentTarget = ctx;
+    // js-dom M4 R35：spec `concept-event-dispatch`——派发期 event.eventPhase 反映当前阶段：capture 祖先→
+    // CAPTURING_PHASE(1)、target（'all'）→ AT_TARGET(2)、bubble 祖先→ BUBBLING_PHASE(3)。target 阶段的 capture
+    // 与 non-capture listener 都为 AT_TARGET（WPT Event-dispatch-order-at-target）。dispatch 后由调用方
+    // （_dispatchWithBubble finally 或 _dispatchToListeners 末尾）复位为 NONE(0)。
+    event.eventPhase = phase === 'capture' ? 1 : (phase === 'bubble' ? 3 : 2);
     var snap = list.slice();
     var firedOnce = null;
     // js-dom M4 R27：spec `EventListener` invoke——listener 是**函数**直接 call；是**对象**则每次派发
@@ -1116,6 +1121,10 @@
       return !event._defaultPrevented;
     } finally {
       event._composedPath = null;
+      // js-dom M4 R35：spec `concept-event-dispatch` 末尾——dispatch 结束 eventPhase→NONE(0)、currentTarget→null
+      //（WPT Event-dispatch-order-at-target 等读 dispatch 后 eventPhase；event-global "currentTarget null after dispatch"）。
+      event.eventPhase = 0;
+      event.currentTarget = null;
       // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
       //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
       globalThis.event = prevEvent;

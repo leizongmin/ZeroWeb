@@ -2234,3 +2234,62 @@ fn test_at_target_stop_propagation_halts_same_element_r34() {
         "无 stopPropagation 时 capture + non-capture 都应触发（不误伤）"
     );
 }
+
+#[test]
+fn test_event_phase_during_dispatch_r35() {
+    // R35：spec `concept-event-dispatch`——派发期 event.eventPhase 反映当前阶段：祖先 capture→
+    // CAPTURING_PHASE(1)、target（AT_TARGET）→ 2（target 的 capture 与 non-capture listener 都为 AT_TARGET）、
+    // 祖先 bubble→ BUBBLING_PHASE(3)；dispatch 完全结束后复位 NONE(0) + currentTarget→null。
+    // WPT Event-dispatch-order-at-target：target 阶段 capture/bubble listener 都 eventPhase===AT_TARGET(2)。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"a\"><div id=\"b\"><i id=\"c\">x</i></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 三阶段 eventPhase：#a capture(1) → #c target AT_TARGET(2，capture+non-capture 都 2) → #a bubble(3)。
+    // 收集每个 listener 触发时的 eventPhase。
+    sandbox
+        .execute(
+            "var phases = [];\n\
+             document.querySelector('#a').addEventListener('click', function(e){ phases.push('a-cap:'+e.eventPhase); }, true);\n\
+             document.querySelector('#a').addEventListener('click', function(e){ phases.push('a-bub:'+e.eventPhase); }, false);\n\
+             document.querySelector('#c').addEventListener('click', function(e){ phases.push('c-cap:'+e.eventPhase); }, true);\n\
+             document.querySelector('#c').addEventListener('click', function(e){ phases.push('c-bub:'+e.eventPhase); }, false);\n\
+             var ev = new Event('click', { bubbles: true });\n\
+             document.querySelector('#c').dispatchEvent(ev);\n\
+             globalThis.__phases = phases.join(',');\n\
+             globalThis.__postPhase = ev.eventPhase;\n\
+             globalThis.__postCT = String(ev.currentTarget);",
+        )
+        .unwrap();
+    // capture 倒序：#a capture 先（1）；target #c：capture(2) + non-capture(2) 都 AT_TARGET；bubble 正序：#a(3)。
+    assert_eq!(
+        sandbox.execute("globalThis.__phases").unwrap().value,
+        "a-cap:1,c-cap:2,c-bub:2,a-bub:3",
+        "三阶段 eventPhase：capture(1)/AT_TARGET(2，target 的 cap+bub)/bubble(3)"
+    );
+    // dispatch 完全结束后 eventPhase 复位 NONE(0)。
+    assert_eq!(
+        sandbox.execute("globalThis.__postPhase").unwrap().value,
+        "0",
+        "dispatch 后 eventPhase 复位 NONE(0)"
+    );
+    // dispatch 后 currentTarget 复位 null（spec concept-event-dispatch 末尾）。
+    assert_eq!(
+        sandbox.execute("globalThis.__postCT").unwrap().value,
+        "null",
+        "dispatch 后 currentTarget 复位 null"
+    );
+}
