@@ -25,6 +25,19 @@ pub enum CacheMode {
     OnlyIfCached,
 }
 
+/// 可聚合的资源加载计数；不包含 URL、请求头或响应体等敏感内容。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceLoadStats {
+    /// 新鲜缓存命中次数。
+    pub fresh_hits: u64,
+    /// 发起条件再验证次数。
+    pub revalidations: u64,
+    /// 进入网络调度的次数。
+    pub network_requests: u64,
+    /// `only-if-cached` 未命中次数。
+    pub only_if_cached_misses: u64,
+}
+
 /// 可缓存资源请求。
 #[derive(Debug, Clone)]
 pub struct ResourceRequest {
@@ -98,6 +111,7 @@ pub struct ResourceLoader {
     /// 宁可降低跨会话命中率，也不能让不同顶级站点复用同一条目。
     partition_caches: Mutex<HashMap<String, Arc<Mutex<HttpCache>>>>,
     partition: String,
+    stats: Mutex<ResourceLoadStats>,
 }
 
 impl ResourceLoader {
@@ -116,6 +130,7 @@ impl ResourceLoader {
             default_cache: cache,
             partition_caches: Mutex::new(HashMap::new()),
             partition: partition.into(),
+            stats: Mutex::new(ResourceLoadStats::default()),
         }
     }
 
@@ -137,13 +152,19 @@ impl ResourceLoader {
             .lookup(&request.url, &request.headers);
         match lookup {
             CacheLookup::Hit(cached) if request.cache_mode != CacheMode::NoCache => {
+                self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
                 immediate(Ok(cached.into_response()))
             }
             CacheLookup::Hit(_) | CacheLookup::Revalidate { .. } if request.cache_mode == CacheMode::OnlyIfCached => {
+                self.stats
+                    .lock()
+                    .expect("resource loader stats lock")
+                    .only_if_cached_misses += 1;
                 // only-if-cached 可使用 fresh 条目；stale 条目不能启动验证网络请求。
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
             CacheLookup::Hit(_) => {
+                self.stats.lock().expect("resource loader stats lock").revalidations += 1;
                 let conditional = cache
                     .lock()
                     .expect("HTTP cache lock")
@@ -152,12 +173,24 @@ impl ResourceLoader {
             }
             CacheLookup::Revalidate {
                 conditional_headers, ..
-            } => self.submit_network(cache, request, conditional_headers, true),
+            } => {
+                self.stats.lock().expect("resource loader stats lock").revalidations += 1;
+                self.submit_network(cache, request, conditional_headers, true)
+            }
             CacheLookup::Miss if request.cache_mode == CacheMode::OnlyIfCached => {
+                self.stats
+                    .lock()
+                    .expect("resource loader stats lock")
+                    .only_if_cached_misses += 1;
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
             CacheLookup::Miss => self.submit_network(cache, request, Vec::new(), true),
         }
+    }
+
+    /// 返回当前加载器的匿名聚合计数。
+    pub fn stats(&self) -> ResourceLoadStats {
+        *self.stats.lock().expect("resource loader stats lock")
     }
 
     /// 受理任意 HTTP 请求。
@@ -196,6 +229,7 @@ impl ResourceLoader {
         conditional_headers: Vec<(String, String)>,
         may_store: bool,
     ) -> Receiver<FetchJobResult> {
+        self.stats.lock().expect("resource loader stats lock").network_requests += 1;
         let mut headers = request.headers.clone();
         for (name, value) in conditional_headers {
             if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case(&name)) {
@@ -374,6 +408,8 @@ mod tests {
             .expect("fresh cache response")
             .expect("successful fresh cache response");
         assert_eq!(cached.body, b"cached");
+        assert_eq!(loader.stats().fresh_hits, 1);
+        assert_eq!(loader.stats().network_requests, 0);
 
         let isolated = loader
             .submit(
@@ -384,5 +420,6 @@ mod tests {
             .recv()
             .expect("only-if-cached result");
         assert!(isolated.is_err(), "another partition must not see site-a's entry");
+        assert_eq!(loader.stats().only_if_cached_misses, 1);
     }
 }
