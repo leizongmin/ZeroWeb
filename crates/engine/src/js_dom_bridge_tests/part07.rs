@@ -3127,6 +3127,85 @@ fn test_event_cancel_bubble_mirror_r26() {
 }
 
 #[test]
+fn test_event_listener_handle_event_object_r27() {
+    // js-dom M4 R27：spec `EventListener` invoke——addEventListener 注册的 listener 若是**对象**（非函数），
+    // dispatch 时 Get 其 handleEvent 属性再调用（this=对象本身）。WPT EventListener-handleEvent.html。
+    // 覆盖：① 对象 listener handleEvent 被调 + this=对象 + evt.target 正确；② handleEvent 每次 dispatch 都 Get
+    //（getter 每次 dispatch 触发）；③ 函数 listener 仍直接 call（this=currentTarget，不回归）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 对象 listener：handleEvent 被调 + this=对象 + evt.type/target 正确（镜像 WPT "calls handleEvent"）。
+    sandbox
+        .execute(
+            "globalThis.__tgt = document.createElement('div');\
+             globalThis.__obj = { _this: null, _type: null, _target: null };\
+             __obj.handleEvent = function(evt) { this._this = (this === __obj); this._type = evt.type; this._target = (evt.target === __tgt); };\
+             __tgt.addEventListener('foo', __obj);\
+             __tgt.dispatchEvent(new Event('foo'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__obj._this)").unwrap().value,
+        "true",
+        "R27 对象 listener handleEvent 被调时 this=对象本身"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__obj._type)").unwrap().value,
+        "foo",
+        "R27 对象 listener handleEvent 收到正确 evt.type"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__obj._target)").unwrap().value,
+        "true",
+        "R27 对象 listener handleEvent 收到 evt.target=target"
+    );
+
+    // ② handleEvent 每次 dispatch 都 Get（getter 每次派发触发，WPT "performs Get every time"）。
+    sandbox
+        .execute(
+            "globalThis.__getCount = 0;\
+             globalThis.__tgt2 = document.createElement('div');\
+             __tgt2.addEventListener('bar', { get handleEvent() { globalThis.__getCount++; return function(){}; } });\
+             __tgt2.dispatchEvent(new Event('bar'));\
+             __tgt2.dispatchEvent(new Event('bar'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__getCount)").unwrap().value,
+        "2",
+        "R27 handleEvent 每次 dispatch 都 Get（2 次派发 → getter 触发 2 次）"
+    );
+
+    // ③ 函数 listener 不回归：直接 call，this=currentTarget（target）。
+    sandbox
+        .execute(
+            "globalThis.__fnThis = null;\
+             globalThis.__tgt3 = document.createElement('div');\
+             __tgt3.addEventListener('baz', function(evt) { globalThis.__fnThis = (this === __tgt3); });\
+             __tgt3.dispatchEvent(new Event('baz'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fnThis)").unwrap().value,
+        "true",
+        "R27 函数 listener 不回归：this=currentTarget（target）"
+    );
+}
+
+#[test]
 fn test_create_document_type_r15() {
     // js-dom M4 R15：implementation.createDocumentType(qualifiedName, publicId, systemId)（spec
     // `dom-domimplementation-createdocumenttype`）——建 DocumentType 节点（nodeType 10）。此前返 null stub

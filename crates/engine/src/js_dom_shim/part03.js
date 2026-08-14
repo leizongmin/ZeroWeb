@@ -917,8 +917,22 @@
     event.currentTarget = ctx;
     var snap = list.slice();
     var firedOnce = null;
+    // js-dom M4 R27：spec `EventListener` invoke——listener 是**函数**直接 call；是**对象**则每次派发
+    // Get 其 `handleEvent` 属性再调用（this=对象本身，支持 getter：WPT "performs Get every time event
+    // is dispatched"）。旧实现恒 `entry.fn.call(...)`，对象 listener 抛（对象无 call）→ WPT
+    // EventListener-handleEvent fail。
     var fire = function(entry) {
-      entry.fn.call(ctx, event);
+      var fn = entry.fn;
+      var callable = fn;
+      if (typeof fn !== 'function') {
+        // 对象 listener：Get handleEvent（每次派发都 Get，spec invoke 步骤）。非对象/null handleEvent → 跳过
+        //（spec：callable 为 undefined/null 则不抛不调）。
+        callable = fn && fn.handleEvent;
+      }
+      if (typeof callable === 'function') {
+        // 函数 listener: this=currentTarget；对象 listener: this=对象本身（spec EventListener invoke）。
+        callable.call(typeof fn !== 'function' ? fn : ctx, event);
+      }
       if (entry.once) {
         if (!firedOnce) firedOnce = [];
         firedOnce.push(entry);
