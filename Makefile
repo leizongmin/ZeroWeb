@@ -85,6 +85,11 @@ target/test-guard: scripts/test-guard.rs
 	@$(MKDIR_TARGET)
 	rustc -O scripts/test-guard.rs -o target/test-guard
 
+# WPT/产品测试的 runner 必须先完成不受内存阈值限制的编译；各 target 随后只守卫运行。
+.PHONY: zero-wpt-runner-release
+zero-wpt-runner-release:
+	cargo build --release --bin zero-wpt-runner
+
 # 全量测试：先无内存上限编译，再由 test-guard 包裹已编译测试运行。无人值守 /
 # rally / CI 请用此 target，不要裸跑 cargo test。可调阈值：./target/test-guard --compile-first --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
 # 2026-08-08：纳入 QuickJS 矩阵（v8/quickjs 接口一致性保证——此前 quickjs 只在 CI，
@@ -134,25 +139,24 @@ test: target/test-guard
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
-testharness-html: fetch-wpt-html-testharness target/test-guard
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-html
+testharness-html: fetch-wpt-html-testharness target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-html
 
 # js-dom goal M4 / DC-3：上游 dom/ testharness 通过率基线（dom/nodes 首批）。
 # 用例 gitignored（fetch-dom-subset.sh 按需拉取）。filter 透传：make testharness-dom FILTER=Document-createElement。
 fetch-wpt-dom:
 	bash tests/wpt-runner/scripts/fetch-dom-subset.sh
 
-testharness-dom: fetch-wpt-dom target/test-guard
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-dom $(if $(FILTER),$(FILTER),)
+testharness-dom: fetch-wpt-dom target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。
-testharness-dom-native: fetch-wpt-dom target/test-guard
-	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-dom $(if $(FILTER),$(FILTER),)
+testharness-dom-native: fetch-wpt-dom target/test-guard zero-wpt-runner-release
+	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # WPT reftest：release 构建不受内存限制，已编译 runner 的执行由 test-guard 包裹。
-reftest: fetch-wpt-data target/test-guard
-	cargo build --release --bin zero-wpt-runner
+reftest: fetch-wpt-data target/test-guard zero-wpt-runner-release
 	./target/test-guard -- ./target/release/zero-wpt-runner reftest
 
 # 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
@@ -161,8 +165,8 @@ reftest: fetch-wpt-data target/test-guard
 # 用法: make reftest-upstream                     全量上游（快，~25s）
 #       make reftest-upstream FILTER=css-tables   单目录/子串过滤（case.id.contains）
 #       make reftest-upstream FILTER=css/CSS2/backgrounds
-reftest-upstream: fetch-wpt-data target/test-guard
-	./target/test-guard --time-limit 3600 -- cargo run --release --bin zero-wpt-runner -- reftest-upstream $(FILTER)
+reftest-upstream: fetch-wpt-data target/test-guard zero-wpt-runner-release
+	./target/test-guard --time-limit 3600 -- ./target/release/zero-wpt-runner reftest-upstream $(FILTER)
 
 # DC-14 独立 Oracle：渲染上游 WPT test 页 vs chromium oracle-shots，报告真一致率
 # （chromium-Oracle pass-rate，替代 self-ref 的 ~46.5% 假通过）。oracle-shots 由
@@ -170,8 +174,8 @@ reftest-upstream: fetch-wpt-data target/test-guard
 # 用法：make reftest-oracle                       全量（慢，~10k 案）
 #       make reftest-oracle DIR=css-grid          单目录
 #       make reftest-oracle DIR=css-grid ORACLE_PASS_RATIO=0.005   调严判定阈值
-reftest-oracle: fetch-wpt-data target/test-guard
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest-oracle $(DIR)
+reftest-oracle: fetch-wpt-data target/test-guard zero-wpt-runner-release
+	./target/test-guard -- ./target/release/zero-wpt-runner reftest-oracle $(DIR)
 
 # DC-14 oracle-shots 抓取（R1253）：WSL2 + chromium 150 headless 渲染 SIGTRAP，用非 headless
 # chromium（GUI 渲染路径）+ CDP。抓完后 oracle-shots 存 tests/wpt-runner/oracle-shots/，
@@ -199,11 +203,11 @@ FORM_VISUAL_ORACLE ?= $(FORM_VISUAL_ROOT)/screenshots/chrome-800x720-gray.png
 FORM_VISUAL_GEOMETRY ?= $(FORM_VISUAL_ROOT)/chrome-geometry-gray.json
 FORM_VISUAL_CJK_DIR ?= $(HOME)/.cache/zw-oracle-fonts/usr/share/fonts/opentype/noto
 FORM_VISUAL_GPU_DIR ?= target/form-visual-browser-gpu-smoke
-form-visual-smoke: target/test-guard
+form-visual-smoke: target/test-guard zero-wpt-runner-release
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_GEOMETRY) || (echo "Error: missing $(FORM_VISUAL_GEOMETRY)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
-	ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke examples/forms/form-interaction-test.html --base-dir examples/forms --oracle $(FORM_VISUAL_ORACLE) --geometry-oracle $(FORM_VISUAL_GEOMETRY) --out $(FORM_VISUAL_ROOT)/screenshots/zeroweb-final.png --width 800 --height 720 --channel-diff 8 --pixel-radius 1 --max-diff 5 --max-geometry-diff 2 --struct-check --region name:10 --region note:10 --region subscribe:10 --region plan-basic:10 --region plan-pro:10 --region click:10 --region reset:10 --region submit:10 --region result:10
+	ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard -- ./target/release/zero-wpt-runner product-smoke examples/forms/form-interaction-test.html --base-dir examples/forms --oracle $(FORM_VISUAL_ORACLE) --geometry-oracle $(FORM_VISUAL_GEOMETRY) --out $(FORM_VISUAL_ROOT)/screenshots/zeroweb-final.png --width 800 --height 720 --channel-diff 8 --pixel-radius 1 --max-diff 5 --max-geometry-diff 2 --struct-check --region name:10 --region note:10 --region subscribe:10 --region plan-basic:10 --region plan-pro:10 --region click:10 --region reset:10 --region submit:10 --region result:10
 
 form-visual-browser-gpu-smoke: target/test-guard
 	@test -n "$(DISPLAY)" || (echo "Error: DISPLAY is required for the real browser GPU smoke"; exit 2)
@@ -214,7 +218,7 @@ form-visual-browser-gpu-smoke: target/test-guard
 	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1
 
-product-smoke: target/test-guard
+product-smoke: target/test-guard zero-wpt-runner-release
 	# 表单流畅度门禁：固定尺寸 value-only 输入不得重新 parse/style/layout，且每次最多发布一帧。
 	./target/test-guard --time-limit 900 -- bash scripts/run-form-input-perf.sh
 	@test -f $(WELCOME_ORACLE) || (echo "Error: missing $(WELCOME_ORACLE); run 'make product-smoke-oracle' and commit the generated oracle."; exit 2)
@@ -223,25 +227,25 @@ product-smoke: target/test-guard
 	# DC-13 line 325「sibling card/link/shortcut 文本不串联」）。计数断言覆盖 line 324 桌面须验证的
 	# 四个 feature card（card:4）+ 六个快捷键（shortcut:6）+ 四个快速访问（link-tile:4）；
 	# 行数断言守标题不拆行（title:1）+ tagline 2 行（tagline:2）。
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --oracle $(WELCOME_ORACLE) --max-diff $(or $(MAX_DIFF),20) --struct-check --expect-class card:4 --expect-class shortcut:6 --expect-class link-tile:4 --expect-class footer:1 --expect-lines title:1 --expect-lines tagline:2
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke $(WELCOME_HTML) --oracle $(WELCOME_ORACLE) --max-diff $(or $(MAX_DIFF),20) --struct-check --expect-class card:4 --expect-class shortcut:6 --expect-class link-tile:4 --expect-class footer:1 --expect-lines title:1 --expect-lines tagline:2
 	# DC-13 desktop morning（800px）：article 结构 + 三个 tag badge（item-tag:3，line 326）+
 	# pre/code 块在位（lang-bash:1，line 326 pre/code 独立背景换行）。struct-check 含 concat 守
 	# nav/title/date/tag badge 不串联 + 正文段落不压一行 + table 不塌缩。morning 故意缺 cc_unavailable
 	# 图测 alt 回退 → 不启用 --check-img-visibility（否则误报）。
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --struct-check --expect-class article:1 --expect-class item-tag:3 --expect-class lang-bash:1
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --struct-check --expect-class article:1 --expect-class item-tag:3 --expect-class lang-bash:1
 	# DC-13 goal line 322：窄屏 viewport（375px）结构门——窄宽逼长段落换行，暴露桌面宽不触发的
 	# 重叠（R1498 morning @375 `<p>` 长高重叠后续 `<table>` 即此门抓到）。无 oracle（窄屏 oracle
 	# 未抓），仅 struct-check 退码 3。--expect-class article:1 守 R1499 labels 修复（disqus
 	# loadDisqus() appendChild 致 mutated_html ≠ 原 html，labels 须从 mutated_html 建才匹配 layout）。
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --width 375 --struct-check --expect-class article:1
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --width 375 --struct-check --expect-class article:1
 	# DC-13 goal line 324「至少覆盖桌面和窄屏两个 viewport」：welcome 窄屏（375/320）结构门。
 	# welcome 无 width 媒体查询，grids 保持 2 列，card:4 在窄宽仍成立；标题/tagline 在窄宽会合法
 	# 换行故不强行断言行数。struct-check 含 text-concatenation 守窄宽下卡片/链接文本不串联。
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --width 375 --struct-check --expect-class card:4
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke $(WELCOME_HTML) --width 320 --struct-check --expect-class card:4
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke $(WELCOME_HTML) --width 375 --struct-check --expect-class card:4
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke $(WELCOME_HTML) --width 320 --struct-check --expect-class card:4
 	# DC-13 最窄 viewport（320px）结构门——守 R1502（split-gate article/disqus Flex-兄弟位移）+
 	# R1503（sub-pixel sliver 高度过滤）。@320 比 @375 更逼换行，曾暴露 article/disqus 32400px² 重叠。
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --width 320 --struct-check --expect-class article:1
+	./target/test-guard -- ./target/release/zero-wpt-runner product-smoke apps/browser/assets/morning-work/article.html --base-dir apps/browser/assets/morning-work --width 320 --struct-check --expect-class article:1
 
 # 测试资产化（P1）：把单个上游 WPT reftest 用例导入常驻断言集。
 # 文件本体进入 wpt-data/（独立 repo），条目追加到 imported-tests.txt 账本，

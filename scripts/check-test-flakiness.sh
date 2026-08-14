@@ -39,7 +39,7 @@ echo "════════════════════════�
 
 for i in $(seq 1 "$RUNS"); do
   echo "── 第 ${i}/${RUNS} 轮 ──"
-  if ! (cd "${REPO_ROOT}" && "${REPO_ROOT}/target/test-guard" -- cargo test -p "$CRATE" $FILTER -- --test-threads=1); then
+  if ! (cd "${REPO_ROOT}" && "${REPO_ROOT}/target/test-guard" --compile-first -- cargo test -p "$CRATE" $FILTER -- --test-threads=1); then
     echo ""
     echo "✗ FLAKY DETECTED：第 ${i} 轮失败（共 ${RUNS} 轮）——请先修复该测试的稳定性再合入"
     exit 1
