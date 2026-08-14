@@ -35,6 +35,9 @@ mod b3_load_mechanism;
 mod net_security;
 
 #[cfg(test)]
+mod network_loading;
+
+#[cfg(test)]
 mod storage;
 
 #[cfg(test)]
