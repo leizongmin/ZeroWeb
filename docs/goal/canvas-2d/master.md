@@ -1,9 +1,9 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-15（R34xx 第十批定稿：**getImageData/putImageData float16 options**——
-put.basic.rgba.float16 主+worker 通过；主线程 **828 Pass** / worker **713 Pass**
-（基线 718/630 → +110/+83）；GPU 路径 4 测试 lavapipe 真实执行确认；
-证据见 evidence/r34xx-batch2）。
+**最后更新**: 2026-08-15（R34xx 第十一批定稿：**G7 剩余失败聚类全灭**——主线程
+**832 Pass / 0 Fail / 65 Timeout**、worker **715 Pass / 0 Fail**（v6 828/4、713/2
+→ +4/+2，0 Fail）；65 Timeout 全为 reftest-format 文件（非 testharness 面）；
+canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 
 ---
 
@@ -24,14 +24,14 @@ put.basic.rgba.float16 主+worker 通过；主线程 **828 Pass** / worker **713
 | the-canvas-state | 23 文件 / 68 subtest | ✅ 68/68 全绿 |
 | drawing-rectangles-to-the-canvas | 32 | ✅ 32/32 |
 | transformations | 22 | ✅ 21 Pass（1 = reftest 格式文件超时，非 canvas 面） |
-| pixel-manipulation | 14 | ✅ 14/14 |
+| pixel-manipulation | 14 | ✅ **71/71**（float16 覆盖层 + ctor.basics 重载回退） |
 | line-styles | 33 | ✅ 33/33 |
-| shadows | 61 | ✅ 60 Pass（1 = current.removed——js-dom 流 DOM remove 不置空 parentNode，移交） |
+| shadows | 61 | ✅ 61/61 |
 | compositing | 124 | ✅ 98 Pass / **0 Fail**（26 = reftest 格式 grid 文件超时，非 canvas 面） |
-| fill-and-stroke-styles | 261 | ✅ 251+ Pass / 3 Fail（halftransparent alpha 精度 + gradient.colormix/relativecolor 插值空间）/ 7 超时（既有） |
-| text | 144 | ✅ 110+ Pass（draw 像素面 51；drawing.style 25；measure 全系：真度量/bbox 锚定/getActualBoundingBox 11/TextCluster 7/emHeight/font.parse 7）；剩余 = index-from-offset/selection-rects（DOM 布局面）+ lang + 超时 33（既有） |
-| offscreen worker 变体 | 715 文件 | ✅ **630 Pass**（G6——OffscreenCanvas × Web Worker 集成：importScripts 内联 + fetch_tests_from_worker 聚合 + worker 字体面） |
-| **合计** | **1634 文件** | **1314+ Pass**（基线 533 → +781） |
+| fill-and-stroke-styles | 261 | ✅ 254 Pass / **0 Fail** / 7 超时（既有） |
+| text | 144 | ✅ **193 Pass / 0 Fail**（variationSelectors 呈现感知 + edge-cases 中点边界）/ 19 超时（reftest 格式） |
+| offscreen worker 变体 | 662 文件 | ✅ **715 Pass / 0 Fail**（G6——OffscreenCanvas × Web Worker 集成：importScripts 内联 + fetch_tests_from_worker 聚合 + worker 字体面） |
+| **合计** | **1634 文件** | **testharness 面 0 Fail**（65 Timeout 全为 reftest-format 文件，非 canvas 面） |
 
 ### Rust 层（crates/canvas）
 
@@ -62,7 +62,18 @@ put.basic.rgba.float16 主+worker 通过；主线程 **828 Pass** / worker **713
 
 ## R34xx 修复记录（WPT 驱动，全部带 driving 用例）
 
-（前轮记录见 git log；本轮新增——按 driving 用例聚类）
+（前轮记录见 git log；第十一批（2026-08-15，G7 全灭）——按 driving 用例聚类）
+
+| 修复 | 驱动用例 |
+|------|----------|
+| float16 覆盖层补全（DOM canvas/OffscreenCanvas getContext `_f16` 标记 + `_zwBitmapF16` 原始浮点 + drawImage 记录/getImageData 回读 + 写像素失效） | createImageBitmap.srgb.rgba.float16（主+worker） |
+| 外链样式表 url() 按样式表 URL 绝对化 + headless 本地提供 | variationSelectors（variation-sequences.css 字体引用） |
+| 呈现感知字体选择（VS15 text 呈现 → 回落 sans-serif；VS16 保持 emoji 字体） | variationSelectors（⚓+FE0E vs ⚓+FE0F 宽度差） |
+| ImageData 构造器 WebIDL 重载回退（data union 失败 → (sw,sh) 重载；settings 非对象 → TypeError） | ctor.basics（Uint8Array 2 参 INDEX_SIZE_ERR + (self,4,4) TypeError） |
+| getIndexFromOffset/caretPositionFromPoint 字形中点边界语义（相邻原点中点，严格 <） | index-from-offset-edge-cases（主+worker） |
+| VS 字体资产（wpt-data ×7 + fonts/ ×2 subset 提交） | variationSelectors @font-face 族 |
+
+（更早轮次记录见 git log）
 
 | 修复 | 驱动用例 |
 |------|----------|
@@ -105,24 +116,23 @@ put.basic.rgba.float16 主+worker 通过；主线程 **828 Pass** / worker **713
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
-| G7 | 剩余失败聚类 | 🔄 createImageBitmap float16 1（画布 float16 原始像素存储——colorType float16 上下文）+ variationSelectors 1（emoji 字体回退，系统无 emoji 字体）+ ctor.basics 陈旧子断言 1（spec WebIDL 冲突）+ index-from-offset-edge-cases 2 断言（边界约定不一致）+ reftest-format 超时（非 testharness 面） |
+| G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
 
 ## 待用户决策清单
 
-- [x] G5 DOM img 源（drawImage/createPattern）— ✅ 本轮完成（headless 图片加载链路 + img 元素状态机 + shadow/composite/pattern 全解锁）
-- [x] ImageBitmap 全源类型 — ✅ 本轮完成（img/canvas/ImageBitmap/ImageData 源全通）
-- [x] shadowColor 'currentColor' — ✅ 本轮完成（设值时解析 + 元素 style 属性串）
-- [ ] OffscreenCanvas × Web Worker 集成（G6）— 深结构（worker 运行时 + canvas 桥跨面；当前 WPT 面不含 .worker.js 变体，非通过率分母）— 2026-08-14
+- [x] G5 DOM img 源（drawImage/createPattern）— ✅ 完成（headless 图片加载链路 + img 元素状态机 + shadow/composite/pattern 全解锁）
+- [x] ImageBitmap 全源类型 — ✅ 完成（img/canvas/ImageBitmap/ImageData 源全通）
+- [x] shadowColor 'currentColor' — ✅ 完成（设值时解析 + 元素 style 属性串）
+- [x] OffscreenCanvas × Web Worker 集成（G6）— ✅ 完成（.worker.js 变体全通，715 Pass；真独立 worker 线程运行时 OffscreenCanvas 为浏览器架构面，非 WPT 通过率分母）
+- [x] index-from-offset 边界约定 — ✅ 完成（字形中点规则，主+worker edge-cases 全过）
 
 ## 下一步计划
 
-1. **text .tentative DOM 布局面**（~74 用例：TextMetrics.getIndexFromOffset/getSelectionRects 与
-   document.caretPositionFromPoint / Range.getClientRects 对照——DOM 布局深结构，记待决策）
-2. **emHeight/baseline 字体度量深面**（5 用例：OS/2 usWinAscent 与 em square 定位算法——需字体表
+1. **emHeight/baseline 字体度量深面**（5 用例：OS/2 usWinAscent 与 em square 定位算法——需字体表
    解析扩展 + Chromium 算法确认）
-3. **float16 ImageData 数据路径**（2 用例：getImageData/putImageData options + display-p3↔srgb 转换）
-4. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）
-5. **current.removed**（1）：同步脚本内 remove 后 host 快照未应用 mutation——js-dom 流共享面
+2. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）——GPU 路径测试已就位（lavapipe 4 测试）
+3. reftest-format 超时（65）——canvas reftest 面走 reftest harness 才是正解（非 testharness 面，
+   与 rendering-compat 共享 harness 决策）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
@@ -130,12 +140,13 @@ put.basic.rgba.float16 主+worker 通过；主线程 **828 Pass** / worker **713
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入 + 修复 657+ Pass） |
-| M2 — API 语义补齐 | 🔄 大部分完成（Path2D/OffscreenCanvas 主线程/ImageBitmap/drawing.style 面；G6 Worker 待办） |
-| M3 — 像素正确性冲刺 | 🔄 GPU 路径测试就位；Chromium oracle 待环境 |
+| M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿） |
+| M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭） |
+| M3 — 像素正确性冲刺 | 🔄 GPU 路径测试就位（lavapipe 4 测试）；Chromium oracle 待环境 |
 
 ## 验证基线
 
-- 测试基线：canvas 772 全绿（基线 759，本轮 +13 单测）；WPT canvas 主线程 747 Pass / worker 698 Pass（evidence/r34xx-batch2 存档）
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test`
-- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；CanvasTest.ttf/yellow*.png 已入脚本）
+- 测试基线：canvas **774** 全绿（+1 presentation fallback）；render-foundation **640**（+1 VS cmap14）；engine **2129**（+1 float16 overlay）；wpt-runner 171；行覆盖率 **91.18%**（≥70% 达标）
+- WPT canvas 主线程 **832 Pass / 0 Fail / 65 Timeout**（全 reftest-format）/ worker **715 Pass / 0 Fail**（evidence/r34xx-batch3 存档）
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test` 全过
+- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；CanvasTest.ttf/yellow*.png/vs/*.ttf 已入脚本）；VS subset ×2 提交 tests/wpt-runner/fonts/ 供单测
