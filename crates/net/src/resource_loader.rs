@@ -224,8 +224,10 @@ impl ResourceLoader {
         let cache = self.cache_for_partition(&partition);
         let url = request.url.clone();
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = HttpClient::new().send(request).map_err(|error| error.to_string());
+        crate::client::async_runtime().spawn(async move {
+            let result = HttpClient::send_async_with_timeout(30, request)
+                .await
+                .map_err(|error| error.to_string());
             if matches!(result, Ok(ref response) if response.is_success()) {
                 cache.lock().expect("HTTP cache lock").invalidate(&url);
             }

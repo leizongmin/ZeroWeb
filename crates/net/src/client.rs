@@ -4,6 +4,8 @@
 
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use crate::connect::{build_blocking_client, map_reqwest_error, send_with_ipv4_fallback};
 use crate::{HttpRequest, HttpResponse, NetError};
@@ -12,6 +14,26 @@ use crate::{HttpRequest, HttpResponse, NetError};
 pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
     RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("create async network runtime"))
+}
+
+fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
+    static CLIENTS: OnceLock<Mutex<HashMap<(u64, bool), reqwest::Client>>> = OnceLock::new();
+    let no_proxy = crate::connect::no_proxy_enabled();
+    let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut clients = clients.lock().expect("async HTTP client cache lock");
+    if let Some(client) = clients.get(&(timeout_secs, no_proxy)) {
+        return Ok(client.clone());
+    }
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(HttpClient::default_user_agent());
+    if no_proxy {
+        builder = builder.no_proxy();
+    }
+    let client = builder.build().map_err(map_reqwest_error)?;
+    clients.insert((timeout_secs, no_proxy), client.clone());
+    Ok(client)
 }
 
 /// HTTP 客户端 — 封装 reqwest。
@@ -49,38 +71,91 @@ impl HttpClient {
     ///
     /// P2 迁移的接缝：调用方在 Tokio runtime 中可避免为每个请求创建阻塞 worker。
     pub async fn send_async(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
-        let mut builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(self.timeout_secs))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(Self::default_user_agent());
-        if crate::connect::no_proxy_enabled() {
-            builder = builder.no_proxy();
+        Self::send_async_with_config(self.timeout_secs, self.max_redirects, request).await
+    }
+
+    /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。
+    pub async fn send_async_with_timeout(timeout_secs: u64, request: HttpRequest) -> Result<HttpResponse, NetError> {
+        Self::send_async_with_config(timeout_secs, 10, request).await
+    }
+
+    async fn send_async_with_config(
+        timeout_secs: u64,
+        max_redirects: usize,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, NetError> {
+        let client = async_client(timeout_secs)?;
+        let mut current_url = request.url.clone();
+        let mut method = request.method.clone();
+        let mut body = request.body.clone();
+        let mut redirect_count = 0;
+        let mut active_headers = request.headers.clone();
+
+        loop {
+            let mut builder = client.request(method.to_reqwest(), &current_url);
+            for (name, value) in &active_headers {
+                builder = builder.header(name, value);
+            }
+            if let Some(body) = body.clone() {
+                builder = builder.body(body);
+            }
+            let response = builder.send().await.map_err(map_reqwest_error)?;
+            let status_code = response.status().as_u16();
+
+            if matches!(status_code, 301 | 302 | 303 | 307 | 308) {
+                redirect_count += 1;
+                if redirect_count > max_redirects {
+                    return Err(NetError::TooManyRedirects);
+                }
+                let Some(location) = response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                else {
+                    return Err(NetError::Http(format!(
+                        "{status_code} redirect without Location header"
+                    )));
+                };
+                current_url = url::Url::parse(&current_url)
+                    .and_then(|base| base.join(location))
+                    .map(|url| url.to_string())
+                    .map_err(|error| NetError::Http(format!("invalid redirect URL: {error}")))?;
+                if status_code == 303
+                    || ((status_code == 301 || status_code == 302) && method == crate::HttpMethod::Post)
+                {
+                    method = crate::HttpMethod::Get;
+                    body = None;
+                }
+                if body.is_none() {
+                    active_headers.retain(|(name, _)| {
+                        !matches!(name.to_ascii_lowercase().as_str(), "content-type" | "content-length")
+                    });
+                }
+                if !same_origin(&current_url, &request.url) {
+                    active_headers.retain(|(name, _)| {
+                        !Self::SENSITIVE_HEADERS
+                            .iter()
+                            .any(|sensitive| name.eq_ignore_ascii_case(sensitive))
+                    });
+                }
+                continue;
+            }
+
+            let url = response.url().to_string();
+            let headers = response
+                .headers()
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
+                .collect();
+            let body = response.bytes().await.map_err(map_reqwest_error)?.to_vec();
+            return Ok(HttpResponse {
+                status_code,
+                headers,
+                body,
+                url,
+                redirect_count,
+            });
         }
-        let client = builder.build().map_err(map_reqwest_error)?;
-        let method = request.method.to_reqwest();
-        let mut builder = client.request(method, &request.url);
-        for (name, value) in &request.headers {
-            builder = builder.header(name, value);
-        }
-        if let Some(body) = request.body {
-            builder = builder.body(body);
-        }
-        let response = builder.send().await.map_err(map_reqwest_error)?;
-        let status_code = response.status().as_u16();
-        let headers = response
-            .headers()
-            .iter()
-            .filter_map(|(name, value)| value.to_str().ok().map(|value| (name.to_string(), value.to_string())))
-            .collect();
-        let url = response.url().to_string();
-        let body = response.bytes().await.map_err(map_reqwest_error)?.to_vec();
-        Ok(HttpResponse {
-            status_code,
-            headers,
-            body,
-            url,
-            redirect_count: 0,
-        })
     }
 
     /// 创建指定超时时间的 HTTP 客户端。
@@ -1625,6 +1700,25 @@ mod integration_tests {
             .expect("async fetch");
         assert_eq!(response.status_code, 200);
         assert_eq!(response.body, b"async hello");
+        server.join().expect("join server");
+    }
+
+    #[test]
+    fn send_async_follows_relative_redirect() {
+        let (listener, url) = bind_server();
+        let server = std::thread::spawn(move || {
+            respond_once(&listener, 302, "Location: /final\r\n", "");
+            respond_once(&listener, 200, "Content-Type: text/plain\r\n", "redirected");
+        });
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        let response = runtime
+            .block_on(client.send_async(HttpRequest::get(&url)))
+            .expect("async redirect");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body, b"redirected");
+        assert_eq!(response.redirect_count, 1);
+        assert!(response.url.ends_with("/final"));
         server.join().expect("join server");
     }
 }
