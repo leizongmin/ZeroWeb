@@ -3158,3 +3158,14 @@ fn window_surface_present_smoke() {
     }
     assert!(outcome.starts_with("presented"), "窗口 present 应完成：{outcome}");
 }
+
+#[test]
+fn gpu_present_is_not_suppressed_by_compositor_owned_present() {
+    assert!(BrowserApp::should_skip_local_composite_for_owned_present(
+        true, true, true, false,
+    ));
+    assert!(
+        !BrowserApp::should_skip_local_composite_for_owned_present(true, true, true, true),
+        "the compositor returns a bitmap but does not submit the browser GPU swapchain; GPU must keep presenting locally"
+    );
+}

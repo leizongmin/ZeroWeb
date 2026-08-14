@@ -175,10 +175,23 @@ impl BrowserApp {
         }
     }
 
+    /// compositor 尚不能直接提交 browser 的 GPU swapchain；有本地 GPU 时必须继续 present。
+    pub(crate) fn should_skip_local_composite_for_owned_present(
+        owned_present: bool,
+        present_enabled: bool,
+        compositor_healthy: bool,
+        local_gpu_present_available: bool,
+    ) -> bool {
+        owned_present && present_enabled && compositor_healthy && !local_gpu_present_available
+    }
+
     fn skip_local_composite_for_owned_present(&self) -> bool {
-        crate::compositor_client::owned_present_enabled()
-            && crate::compositor_client::present_enabled()
-            && self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy
+        Self::should_skip_local_composite_for_owned_present(
+            crate::compositor_client::owned_present_enabled(),
+            crate::compositor_client::present_enabled(),
+            self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy,
+            self.gpu_renderer.is_some(),
+        )
     }
 
     /// Linux：将 tab 上 pending dma-buf 导入 GPU 纹理。
