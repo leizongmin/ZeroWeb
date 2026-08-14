@@ -1,7 +1,7 @@
 # ZeroWeb 网络加载性能专项：统一调度、协议缓存与可量化验收
 
 日期：2026-08-14
-状态：P0/P1 已完成（2026-08-14）；P2 传输层迁移待独立 RFC
+状态：P0/P1 已完成（2026-08-14）；P2（仅 HTTP/1.1/2）传输层迁移待独立 RFC
 范围：`zero-net`、`zero-webview`、`zero-browser` 的页面主文档及子资源加载路径
 
 ## 实施进展（持续更新）
@@ -9,7 +9,9 @@
 - 已完成：统一 `ResourceLoader` 入口，页面主文档、CSS/图片/脚本、生产 `fetch()` 与动态 `import()` 均经该入口；请求身份合并、全局与 origin 并发预算、同优先级 origin 轮转、等待队列容量上限、请求缓存指令、缓存分区、unsafe 请求的同源关联 URI 失效、浏览器页面 origin 分区传递、匿名加载生命周期事件（navigation/destination/origin/时序/字节/缓存结果/合并数）、`fetchpriority`（preload 与图片）及 lazy 图片低优先级。
 - 已完成：本地 TCP fixture 覆盖 fresh hit、身份/Vary 隔离、缓存分区、`no-store`、并发 ETag 304 元数据合并、关键资源拥塞优先及匿名加载指标；加载器提供 cache/revalidate/network/only-if-cached、字节数与等待时长聚合计数，结果桥接复用有上限的共享 Tokio blocking pool，避免按请求创建线程。
 - P2 已完成接缝：`HttpClient::send_async_stream` 提供不聚合响应体的异步 chunk 回调及与普通 async 请求一致的重定向/安全头语义；缓存加载器仍使用全量体路径以保证缓存写入原子性。
-- 未完成：将流式消费者接入页面/解码器、连接预建、HTTP/3 与 RFC 9218 `Priority`；这些仍按本文 P2 边界单独实施。
+- P2 已完成：`link rel=preconnect` 以无凭据 `HEAD` 异步预热共享 HTTP 客户端连接池；同进程与 renderer IPC 路径均已接线，且不写 HTTP 缓存。
+- 未完成：将流式消费者接入页面/解码器、`dns-prefetch`、HTTP/2 协商 telemetry 与 RFC 9218 `Priority`；这些仍按本文 P2 边界单独实施。
+- **协议边界：HTTP/3/QUIC 当前明确不支持，也不属于 P2 待办。** 本专项只实现及验收 HTTP/1.1 与 HTTP/2；后续若要支持 HTTP/3，必须另立 RFC、评审依赖与安全/性能验收，不能由本计划隐式引入。
 
 ## 阅读指引：来源分级
 
@@ -30,7 +32,7 @@
 
 1. **P0 正确性与统一入口**：引入 `RequestIdentity`，解决当前以 URL 合并在途请求的错误；资源请求统一经缓存感知调度器；补齐请求缓存指令与失效。
 2. **P1 调度质量**：把“每 origin 6”升级为“全局预算 + origin 公平队列 + 动态优先级”；接入 HTML 的 `fetchpriority`、preload、lazy 与可见性信号。
-3. **P2 传输与体验**：迁移到真正 async/流式网络层、度量 HTTP/2/HTTP/3 能力并支持 preconnect；在证据充分后再发送 RFC 9218 `Priority` 头。
+3. **P2 传输与体验**：迁移到真正 async/流式网络层、度量 HTTP/1.1/HTTP/2 能力并支持 preconnect；在证据充分后再发送 RFC 9218 `Priority` 头。HTTP/3/QUIC 明确不支持，另需独立 RFC。
 
 首批可验收成果：同一“等价 GET”只发一次网络请求；不同 `Authorization`、`Cookie`、`Accept-Language` 或 `Vary` 变体绝不串用；`Cache-Control: no-store/no-cache/max-age/must-revalidate` 和 304 合并行为通过本地 fixture；关键 CSS 在拥塞下先于图片启动；仪表盘能分别报告内存命中、磁盘命中、再验证、合并和队列等待。[3][4]
 

@@ -1,8 +1,8 @@
 # Spec：网络加载 P2（HTTP/1.1/2 流式传输与连接预热）
 
-**版本**：v1.0
+**版本**：v1.1
 **日期**：2026-08-14
-**状态**：已确认实施（HTTP/3 明确排除）
+**状态**：已确认实施（仅 HTTP/1.1/2；HTTP/3/QUIC 当前不支持且不在待办）
 
 ---
 
@@ -10,7 +10,7 @@
 
 - **目标**：在不引入 QUIC/HTTP/3 的前提下，将现有异步 HTTP/1.1/2 传输接入流式消费者和 HTML 连接预热提示。
 - **本期范围**：`HttpClient` 流式响应、协议 telemetry、`link rel=preconnect`/`dns-prefetch` 的受控执行。
-- **明确排除**：HTTP/3、QUIC、新第三方网络依赖、HTTP/3 优先级帧、跨导航持久化预热状态。
+- **明确排除**：HTTP/3、QUIC、新第三方网络依赖、HTTP/3 优先级帧、跨导航持久化预热状态。HTTP/3/QUIC 是当前产品不支持的协议能力，不能作为本 RFC 的隐含后续工作。
 - **核心约束**：预热不得写 HTTP 缓存、不得携带页面凭据或敏感头、不得阻断渲染或导航、失败仅记录匿名 telemetry。
 - **推荐方案**：复用已缓存的 reqwest async client，以无响应体的 `HEAD` 请求预热可复用连接；流式 API 直接消费 chunk，不在 `HttpClient` 聚合 body。
 - **首个落地步骤**：为 `zero-net` 定义预热请求/事件与 HTTP/2 Priority header 映射，并以本地 TCP fixture 验证请求方法、缓存隔离和失败降级。
