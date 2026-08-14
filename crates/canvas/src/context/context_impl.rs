@@ -497,6 +497,20 @@ impl CanvasContext {
         } else {
             (ascent, descent_abs)
         };
+        // R34xx：BASE 表基线（字体数据可解析时）——hanging/ideographic 在 font units 下
+        // 为正（基线上方距离），乘 size/upem 得 px。
+        let (base_hang, base_ideo) = match (self.font_loader.clone(), self.font_id) {
+            (Some(loader), Some(fid)) => loader
+                .lock()
+                .ok()
+                .and_then(|l| {
+                    let data = l.get_font_data(fid).map(|d| d.to_vec());
+                    let idx = l.face_index(fid);
+                    data.and_then(|d| font_baselines_px(&d, idx, size))
+                })
+                .unwrap_or((None, None)),
+            _ => (None, None),
+        };
         TextMetrics {
             width,
             actual_bounding_box_ascent: ink_asc,
@@ -509,8 +523,10 @@ impl CanvasContext {
             font_bounding_box_ascent: ascent,       // 字体 ascent，由字体表给定
             font_bounding_box_descent: descent_abs, // 字体 descent，由字体表给定
             alphabetic_baseline: 0.0,               // 默认基线即 alphabetic → 距自身 0
-            hanging_baseline: ascent,               // Latin 悬挂基线在大写字母顶附近 ≈ ascent
-            ideographic_baseline: -descent_abs,     // CJK 表意基线略低于 alphabetic ≈ -descent
+            // R34xx：BASE 表 'hang'/'ideo' 基线（2d.text.measure.baselines：CanvasTest
+            // hang=512units=0.5em、ideo=128units=0.125em）；无 BASE 表回退启发式。
+            hanging_baseline: base_hang.unwrap_or(ascent),
+            ideographic_baseline: base_ideo.unwrap_or(-descent_abs),
             glyph_rects,
         }
     }
@@ -2199,5 +2215,77 @@ fn glyph_ink_bbox(data: &[u8], face_index: u32, glyph_id: u16, size: f32) -> Opt
         -bb.y_max as f32 * s,
         bb.x_max as f32 * s,
         -bb.y_min as f32 * s,
+    ))
+}
+
+/// R34xx：BASE 表 'hang'/'ideo' 基线（font units → px）——2d.text.measure.baselines：
+/// CanvasTest BASE 表 hang=512（0.5em）、ideo=128（0.125em）。结构：
+/// BASE(version, horizAxisOffset) → horizAxis(tagList/scriptList/lineList 偏移) →
+/// tagList(count+tags) → scriptList 首脚本 → BaseScript(baseValuesOffset) →
+/// BaseValues(defaultIndex, count, count×offset) → BaselineValues(format1, int16)。
+/// 解析失败返 (None, None)（回退启发式）。
+pub(crate) fn font_baselines_px(data: &[u8], face_index: u32, size: f32) -> Option<(Option<f32>, Option<f32>)> {
+    fn u16at(data: &[u8], off: usize) -> Option<u16> {
+        data.get(off..off + 2).map(|b| u16::from_be_bytes([b[0], b[1]]))
+    }
+    let count = u16at(data, 4)? as usize;
+    let mut base = None;
+    for i in 0..count {
+        let start = 12 + 16 * i;
+        if data.get(start..start + 4) == Some(b"BASE") {
+            let o = data.get(start + 8..start + 12)?;
+            base = Some(u32::from_be_bytes([o[0], o[1], o[2], o[3]]) as usize);
+            break;
+        }
+    }
+    let base = base?;
+    let hax = base + u16at(data, base + 4)? as usize;
+    let tag_list = hax + u16at(data, hax)? as usize;
+    let script_list = hax + u16at(data, hax + 2)? as usize;
+    let tag_count = u16at(data, tag_list)? as usize;
+    let mut hang_idx = None;
+    let mut ideo_idx = None;
+    for i in 0..tag_count {
+        let start = tag_list + 2 + 4 * i;
+        let t = data.get(start..start + 4)?;
+        if t == b"hang" {
+            hang_idx = Some(i);
+        }
+        if t == b"ideo" {
+            ideo_idx = Some(i);
+        }
+    }
+    let (hang_idx, ideo_idx) = (hang_idx?, ideo_idx?);
+    let sc_count = u16at(data, script_list)? as usize;
+    if sc_count == 0 {
+        return None;
+    }
+    let script = script_list + u16at(data, script_list + 6)? as usize;
+    let bv = script + u16at(data, script)? as usize;
+    let v_count = u16at(data, bv + 2)? as usize;
+    let mut values: Vec<f32> = Vec::new();
+    for i in 0..v_count {
+        let rec = bv + 4 + 2 * i;
+        let off = u16at(data, rec)? as usize;
+        let v = bv + off;
+        let fmt = u16at(data, v)?;
+        if fmt != 1 {
+            continue;
+        }
+        let raw = data.get(v + 2..v + 4)?;
+        values.push(i16::from_be_bytes([raw[0], raw[1]]) as f32);
+    }
+    if values.len() <= hang_idx.max(ideo_idx) {
+        return None;
+    }
+    let face = rustybuzz::ttf_parser::Face::parse(data, face_index).ok()?;
+    let upem = f32::from(face.units_per_em());
+    if upem <= 0.0 {
+        return None;
+    }
+    let scale = size / upem;
+    Some((
+        values.get(hang_idx).copied().map(|v| v * scale),
+        values.get(ideo_idx).copied().map(|v| v * scale),
     ))
 }

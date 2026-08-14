@@ -797,3 +797,39 @@ fn test_small_caps_changes_measure_width() {
     let n = ctx.measure_text("Hello World").width;
     assert_ne!(sc, n, "small-caps 与 normal 宽度须不同");
 }
+
+// R34xx：BASE 表 hang/ideo 基线（2d.text.measure.baselines 驱动——CanvasTest BASE 表
+// hang=512units（0.5em）、ideo=128units（0.125em），50px 下 25/6.25）。
+#[test]
+fn test_baselines_from_base_table() {
+    let bytes = std::fs::read(format!(
+        "{}/../../tests/wpt-runner/wpt-data/fonts/CanvasTest.ttf",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap_or_else(|_| Vec::new());
+    if bytes.is_empty() {
+        return;
+    }
+    use std::sync::{Arc, Mutex};
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("CanvasTest", fid);
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+    ctx.set_font(FontDescriptor {
+        family: "CanvasTest".to_string(),
+        size: 50.0,
+        ..FontDescriptor::default()
+    });
+    let m = ctx.measure_text("A");
+    assert!(
+        (m.hanging_baseline - 25.0).abs() < 0.01,
+        "hanging 0.5em=25, got {}",
+        m.hanging_baseline
+    );
+    assert!(
+        (m.ideographic_baseline - 6.25).abs() < 0.01,
+        "ideo 0.125em=6.25, got {}",
+        m.ideographic_baseline
+    );
+}
