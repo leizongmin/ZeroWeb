@@ -1579,6 +1579,66 @@ impl WebView {
                 }),
             );
         }
+        // R34xx：__zw_load_font（同步契约——headless/testharness 的 FontFace.load() 路径；
+        // 与 __zw_fetch 同款：回调同步加载并直接返 'ok'/'err'，shim 同步 resolve）。
+        // 源 'url("/fonts/CanvasTest.ttf")' → 提取 URL → image_source_fetcher（wpt-data）
+        // → registry font_loader load + register_family_alias（weight/italic 键）。
+        if let Some(font_fetcher) = self.image_source_fetcher.clone() {
+            let reg = self.canvas_registry.clone();
+            let page_url_fonts = page_url.clone();
+            sandbox.register_callback(
+                "__zw_load_font",
+                Box::new(move |args: &[String]| -> String {
+                    let family = args.first().cloned().unwrap_or_default();
+                    let src = args.get(1).cloned().unwrap_or_default();
+                    let weight_num = args.get(3).and_then(|s| s.trim().parse::<u16>().ok());
+                    let is_italic = args.get(4).map(|s| s == "true").unwrap_or(false);
+                    // 提取 url(...) 内的 URL。
+                    let url = match src.find("url(") {
+                        Some(i) => {
+                            let rest = &src[i + 4..];
+                            let rest = rest.trim_start();
+                            let quote = rest.chars().next().unwrap_or('"');
+                            let inner = if quote == '"' || quote == '\'' {
+                                rest.get(1..).and_then(|r| r.split(quote).next()).unwrap_or("")
+                            } else {
+                                rest.split(|c: char| c == ')' || c.is_whitespace()).next().unwrap_or("")
+                            };
+                            inner.to_string()
+                        }
+                        None => src.clone(),
+                    };
+                    if url.is_empty() || family.is_empty() {
+                        return "err".to_string();
+                    }
+                    let base = page_url_fonts.lock().unwrap();
+                    let abs = zero_engine::resolve_document_url(&base, &url);
+                    let Some(bytes) = font_fetcher(&abs) else {
+                        return "err".to_string();
+                    };
+                    let Ok(reg_guard) = reg.lock() else {
+                        return "err".to_string();
+                    };
+                    let Ok(mut loader) = reg_guard.font_loader.lock() else {
+                        return "err".to_string();
+                    };
+                    match loader.load_font(&bytes) {
+                        Ok(id) => {
+                            let weight = weight_num.unwrap_or(400);
+                            let key = if is_italic {
+                                format!("{}:italic:{}", family.to_ascii_lowercase(), weight)
+                            } else {
+                                format!("{}:{}", family.to_ascii_lowercase(), weight)
+                            };
+                            loader.register_family_alias(&key, id);
+                            loader.register_family_alias(&family, id);
+                            "ok".into()
+                        }
+                        Err(_) => "err".into(),
+                    }
+                }),
+            );
+        }
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {

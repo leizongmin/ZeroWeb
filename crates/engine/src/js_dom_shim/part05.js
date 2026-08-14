@@ -1904,6 +1904,10 @@
             wire = String(__zw_canvas_op(srcH, 'getImageData', '0', '0', String(sw), String(sh)));
           }
         }
+      } else if (image && image._zwBitmapWire) {
+        // R34xx：ImageBitmap 源（createImageBitmap 产物——offscreen worker 的
+        // fetch+createImageBitmap 路径）直接用其 wire 串。
+        wire = String(image._zwBitmapWire);
       } else if (image && image.data && image.width != null && image.height != null) {
         // ImageData-like：手构 wire（dims;csv）。
         var d = image.data, n = d.length, nums = [];
@@ -2307,7 +2311,14 @@
     });
     // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
     ctx.putImageData = function (img, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) {
-      if (!img || !img.data) return;
+      // R34xx：null/undefined/非 ImageData → TypeError（spec——2d.imageData.put.null/wrongtype）。
+      if (img === null || img === undefined) {
+        throw new TypeError('putImageData: imageData is null');
+      }
+      if (typeof img !== 'object' || !(img.data instanceof Uint8ClampedArray) ||
+          !(typeof img.width === 'number') || !(typeof img.height === 'number')) {
+        throw new TypeError('putImageData: not an ImageData object');
+      }
       // R34xx：非有限参数 → TypeError（spec——2d.imageData.put.nonfinite）。
       var argv = [dx, dy, dirtyX, dirtyY, dirtyW, dirtyH];
       for (var ai = 0; ai < arguments.length && ai < 6; ai++) {
@@ -3223,26 +3234,13 @@
     wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
-    // R34xx（G6）：worker 字体面（FontFaceSet 最小面——offscreen worker 测试的
-    // `self.fonts.add(new FontFace(...)); await self.fonts.ready;`——字体经 host 加载器
-    // 注册，ready 立即 resolve）。
-    var wFontFaceSet = {
-      _faces: {},
-      add: function (f) { if (f && f.family) this._faces[f.family] = true; return this; },
-      delete: function () { return false; },
-      clear: function () { this._faces = {}; },
-      check: function () { return true; },
-      get size() { return Object.keys(this._faces).length; },
-      ready: Promise.resolve(),
-      load: function () { return Promise.resolve([]); }
-    };
-    wctx.fonts = wFontFaceSet;
-    wctx.FontFace = wctx.FontFace || function FontFace(family, src) {
-      this.family = family;
-      this.src = src;
-      this.status = 'loaded';
-      this.load = function () { return Promise.resolve(this); };
-    };
+    // R34xx（G6）：worker 字体面——复用全局 FontFace/FontFaceSet（part06 的
+    // `new FontFace(...).load()` 经 host __zw_load_font 真实加载 + document.fonts 同款
+    // FontFaceSet 语义）；self.fonts 为独立 FontFaceSet 实例（worker 测试的 add/ready）。
+    wctx.FontFace = globalThis.FontFace;
+    wctx.fonts = (typeof globalThis.FontFaceSet === 'function')
+      ? new globalThis.FontFaceSet()
+      : { add: function () { return this; }, ready: Promise.resolve(), load: function () { return Promise.resolve([]); } };
     wctx.addEventListener = wctx.addEventListener || function () {};
     wctx.dispatchEvent = wctx.dispatchEvent || function () {};
     wctx.location = wctx.location || { href: '' };

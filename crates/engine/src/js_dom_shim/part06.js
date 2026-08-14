@@ -1524,7 +1524,13 @@
         }
       };
       try {
-        __zw_load_font(self.family, self._src, id, weightNum, isItalic);
+        // R34xx：同步返回契约（headless __zw_load_font 直返 'ok'/'err'——webview 同步加载）。
+        var sync = __zw_load_font(self.family, self._src, id, weightNum, isItalic);
+        if (typeof sync === 'string' && sync.indexOf('ok') === 0 && globalThis.__zw_pending[id]) {
+          globalThis.__zw_pending[id]('ok');
+        } else if (typeof sync === 'string' && sync.indexOf('err') === 0 && globalThis.__zw_pending[id]) {
+          globalThis.__zw_pending[id]('err');
+        }
       } catch (e) {
         delete globalThis.__zw_pending[id];
         self.status = 'error';
