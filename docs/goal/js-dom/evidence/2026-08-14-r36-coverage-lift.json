@@ -1,0 +1,25 @@
+{
+  "round": "R36",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-4",
+  "slice": "dom_bindings coverage lift (node.rs mutation error paths + element.rs aria/role reflection)",
+  "context": "Event-dispatch document/window-in-chain deferred (deep structure: listener key trio-sharing); namespaceURI getter verified already done (master.md stale record corrected); pivoted to coverage lift (clean, low-risk, test-only).",
+  "implementation": {
+    "node_mutation_errors": "native_node_mutation_error_paths_r36: 5 error-path asserts via try/catch — appendChild(parent/ancestor) cycle->HierarchyRequestError, removeChild(non-child)->NotFoundError, replaceChild(new,non-child)->NotFoundError, insertBefore(self,ref) cycle->HierarchyRequestError. Covers node.rs Some(Err(e)) branches + dom_error_exception WouldCreateCycle/NotAChild mapping.",
+    "aria_role_reflection": "native_aria_role_idl_reflection_r36: 5 aria reflection asserts — ariaLabel<->aria-label, role<->role, default empty, ariaLabelledBy<->aria-labelledby, null->'null'. Covers element.rs idl_to_attr all branches."
+  },
+  "coverage": {
+    "dom_bindings_source": {"before": "94.27% (4625/4906)", "after": "94.35% (4629/4906)", "delta": "+0.08pp"},
+    "dom_bindings_all": {"before": "95.95%", "after": "96.01%"},
+    "node_rs": {"before": "91.6% (536/585)", "after": "92.3% (540/585)", "delta": "+4 lines"},
+    "element_rs": "92.7% (662/714, aria test added but idl_to_attr aria branch likely already covered by existing aria tests)"
+  },
+  "stale_record_corrected": "native namespaceURI getter (element.rs:61, R3163) already done — master.md remaining-cluster item 'native namespaceURI getter 独立化' is stale; dom/nodes 0.65pp gap root cause is elsewhere (not namespaceURI).",
+  "deferred_deep_structure": "Event-dispatch document/window/html into dispatch chain — listener key trio-sharing (part06.js:152/1265/1809 depend on html key shared by document/window/documentElement); changing it ripples to postMessage/onerror/inline-handler. Deferred.",
+  "ab_equivalence": "n/a (test-only, both unit tests run under v8 feature)",
+  "regression": false,
+  "unit_tests": {
+    "v8_engine_lib": "2114 passed (R35 baseline 2112 +2)",
+    "quickjs_engine_lib": "1411 passed (zero regression)"
+  }
+}

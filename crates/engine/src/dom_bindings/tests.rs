@@ -2249,3 +2249,113 @@ fn native_event_src_element_r32() {
         "dispatch 期 srcElement === target === 派发目标元素"
     );
 }
+
+// ── R36 node.rs mutation 错误分支 coverage（appendChild/insertBefore/removeChild/replaceChild
+//    的 DomError→DOMException 抛出路径，spec dom-node-* HierarchyRequestError/NotFoundError）──
+
+/// native 树 mutation 错误路径：appendChild cycle → HierarchyRequestError；removeChild 非 child →
+/// NotFoundError；replaceChild oldChild 不在 parent → NotFoundError。覆盖 node.rs `Some(Err(e))` 分支
+/// （dom_error_exception 映射 WouldCreateCycle→HierarchyRequestError、NotAChild→NotFoundError）。
+#[test]
+fn native_node_mutation_error_paths_r36() {
+    let html = r#"<div id="root"><span id="c1"></span><b id="c2"></b></div>"#;
+    // appendChild cycle：parent.appendChild(parent) → HierarchyRequestError（new child 是 parent 祖先）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const r = __zw_native_element_for_id('root'); try { r.appendChild(r); return 'no-throw'; } catch (e) { return e.name; } })()"#
+        ),
+        "HierarchyRequestError",
+        "appendChild(parent) cycle → HierarchyRequestError"
+    );
+    // appendChild cycle（孙→祖）：c1.appendChild(root) → root 是 c1 祖先 → HierarchyRequestError。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const r = __zw_native_element_for_id('root'); const c1 = __zw_native_element_for_id('c1'); try { c1.appendChild(r); return 'no-throw'; } catch (e) { return e.name; } })()"#
+        ),
+        "HierarchyRequestError",
+        "appendChild(ancestor) cycle → HierarchyRequestError"
+    );
+    // removeChild 非 child：root.removeChild(c2 的副本/非自身 child) — 用新建元素（不在 root 下）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const r = __zw_native_element_for_id('root'); const orphan = __zw_native_create_element('div'); try { r.removeChild(orphan); return 'no-throw'; } catch (e) { return e.name; } })()"#
+        ),
+        "NotFoundError",
+        "removeChild(非 child) → NotFoundError"
+    );
+    // replaceChild oldChild 不在 parent：root.replaceChild(new, orphan) → NotFoundError。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const r = __zw_native_element_for_id('root'); const nw = __zw_native_create_element('p'); const orphan = __zw_native_create_element('i'); try { r.replaceChild(nw, orphan); return 'no-throw'; } catch (e) { return e.name; } })()"#
+        ),
+        "NotFoundError",
+        "replaceChild(new, 非 child oldChild) → NotFoundError"
+    );
+    // insertBefore cycle：root.insertBefore(root, c1) → root 是自身祖先 → HierarchyRequestError。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const r = __zw_native_element_for_id('root'); const c1 = __zw_native_element_for_id('c1'); try { r.insertBefore(r, c1); return 'no-throw'; } catch (e) { return e.name; } })()"#
+        ),
+        "HierarchyRequestError",
+        "insertBefore(self, ref) cycle → HierarchyRequestError"
+    );
+}
+
+// ── R36 element.rs aria/role IDL 反射 coverage（idl_to_attr 全分支：aria*→aria-x、role→role、非 aria 原样）──
+
+/// WAI-ARIA IDL 反射：`el.ariaLabel`↔`aria-label`（aria 前缀+大写→连字符小写）、`el.role`↔`role`、
+/// aria 属性缺省 ""。覆盖 element.rs `idl_to_attr` + aria_reflected_getter/setter + read/write_reflected_attr。
+#[test]
+fn native_aria_role_idl_reflection_r36() {
+    let html = r#"<div id="el"></div>"#;
+    // ariaLabel setter → aria-label content 属性；getter 回读。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const el = __zw_native_element_for_id('el'); el.ariaLabel = 'Save'; return el.getAttribute('aria-label') + '/' + el.ariaLabel; })()"#
+        ),
+        "Save/Save",
+        "ariaLabel ↔ aria-label 反射（idl_to_attr aria 分支）"
+    );
+    // role setter → role content 属性；getter 回读（idl_to_attr role 特殊分支）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const el = __zw_native_element_for_id('el'); el.role = 'button'; return el.getAttribute('role') + '/' + el.role; })()"#
+        ),
+        "button/button",
+        "role ↔ role 反射（idl_to_attr role 分支）"
+    );
+    // aria 属性缺省 ""（无属性时 getter 返空串，spec WAI-ARIA IDL 反射缺省 ""）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const el = __zw_native_element_for_id('el'); return el.ariaLabel + '/' + el.role; })()"#
+        ),
+        "/",
+        "aria/role 反射缺省空串"
+    );
+    // ariaLabelledBy → aria-labelledby（驼峰多段，idl_to_attr rest.to_ascii_lowercase）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const el = __zw_native_element_for_id('el'); el.ariaLabelledBy = 't1 t2'; return el.getAttribute('aria-labelledby'); })()"#
+        ),
+        "t1 t2",
+        "ariaLabelledBy ↔ aria-labelledby（多段驼峰小写）"
+    );
+    // aria setter null → aria 属性 "null"（非 LegacyNullToEmptyString，spec null→\"null\"）。
+    assert_eq!(
+        run_script(
+            html,
+            r#"(() => { const el = __zw_native_element_for_id('el'); el.ariaLabel = null; return el.getAttribute('aria-label'); })()"#
+        ),
+        "null",
+        "aria setter null → content 属性 \"null\"（非 LegacyNullToEmptyString）"
+    );
+}
