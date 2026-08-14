@@ -578,6 +578,8 @@ fn test_fill_text_real_font_rasterization() {
         size: 50.0,
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });
@@ -610,6 +612,8 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         size: 10.0,
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
     });
@@ -620,6 +624,8 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         size: 20.0,
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
     });

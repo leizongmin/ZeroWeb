@@ -895,7 +895,7 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "setFont" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid())
-                && let Some(mut fd) = zero_canvas::FontDescriptor::parse_css(arg(0))
+                && let Some(mut fd) = zero_canvas::FontDescriptor::parse_css_with_current(arg(0), ctx.font().size)
             {
                 // R34xx：letterSpacing/wordSpacing 跨字体变更保持（spec——change.font 用例；
                 // parse_css 新描述符默认 0，须继承现有值）。
@@ -914,11 +914,69 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                     zero_canvas::FontStyle::Italic => "italic ",
                     zero_canvas::FontStyle::Normal => "",
                 };
-                let weight_str = match fd.weight {
-                    zero_canvas::FontWeight::Bold => "bold ",
-                    zero_canvas::FontWeight::Normal => "",
+                // R34xx：small-caps variant 重建（font.parse.complex——'italic small-caps 12px ...'）。
+                let variant_str = if fd.small_caps { "small-caps " } else { "" };
+                // R34xx：数值 weight 优先（'italic 300 12px serif' 保留 300）。
+                let weight_str = match fd.weight_value {
+                    Some(v) if v != 400 => format!("{v} "),
+                    _ => match fd.weight {
+                        zero_canvas::FontWeight::Bold => "bold ".to_string(),
+                        zero_canvas::FontWeight::Normal => String::new(),
+                    },
                 };
-                return format!("{}{}{}px {}", style_str, weight_str, fd.size, fd.family);
+                // R34xx：规范化——仅通用族关键字小写 + 逗号后空格（WPT font.parse.* 期望
+                // 'serif'/'cursive, fantasy, ...' 小写、自定义族名 'UnquotedFont' 保留）。
+                // CSV 感知拆分（引号内逗号是族名一部分——'..., "QuotedFont\\\","'）。
+                let mut family = String::new();
+                let mut seg = String::new();
+                let mut in_quote = false;
+                let mut chars = fd.family.chars().peekable();
+                while let Some(ch) = chars.next() {
+                    match ch {
+                        '\\' if in_quote => {
+                            // CSV 引号内反斜杠转义（\" → 字面引号）。
+                            seg.push(ch);
+                            if let Some(&next) = chars.peek() {
+                                seg.push(next);
+                                chars.next();
+                            }
+                        }
+                        '"' => {
+                            in_quote = !in_quote;
+                            seg.push(ch);
+                        }
+                        ',' if !in_quote => {
+                            let f = seg.trim();
+                            let lower = f.to_ascii_lowercase();
+                            let out = match lower.as_str() {
+                                "serif" | "sans-serif" | "cursive" | "fantasy" | "monospace" | "system-ui"
+                                | "ui-serif" | "ui-sans-serif" | "ui-monospace" | "ui-rounded" | "emoji" | "math"
+                                | "fangsong" => lower,
+                                _ => f.to_string(),
+                            };
+                            if !family.is_empty() {
+                                family.push_str(", ");
+                            }
+                            family.push_str(&out);
+                            seg.clear();
+                        }
+                        _ => seg.push(ch),
+                    }
+                }
+                {
+                    let f = seg.trim();
+                    let lower = f.to_ascii_lowercase();
+                    let out = match lower.as_str() {
+                        "serif" | "sans-serif" | "cursive" | "fantasy" | "monospace" | "system-ui" | "ui-serif"
+                        | "ui-sans-serif" | "ui-monospace" | "ui-rounded" | "emoji" | "math" | "fangsong" => lower,
+                        _ => f.to_string(),
+                    };
+                    if !family.is_empty() && !out.is_empty() {
+                        family.push_str(", ");
+                    }
+                    family.push_str(&out);
+                }
+                return format!("{}{}{}{}px {family}", style_str, variant_str, weight_str, fd.size);
             }
             "10px sans-serif".into()
         }

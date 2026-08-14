@@ -224,7 +224,7 @@ fn shadow_blur_softens_edge_r3240() {
         } else {
             ctx.fill_rect(5.0, 5.0, 10.0, 10.0);
         }
-        ctx.get_image_data(px, py, 1, 1).data[3]
+        ctx.get_image_data(px as i32, py as i32, 1, 1).data[3]
     };
 
     // (21,15)：silhouette 右边沿（20）外 1px，不被红矩形覆盖（到 15）。
@@ -297,7 +297,7 @@ fn shadow_blur_multipass_convex_falloff_r3242() {
     ctx.fill_rect(10.0, 10.0, 10.0, 10.0);
 
     // 读右边沿外 d=1,2,3,4 的阴影 alpha（y=15 矩形内部，x=21..24）。
-    let alpha_at = |x: u32| ctx.get_image_data(x, 15, 1, 1).data[3] as i32;
+    let alpha_at = |x: u32| ctx.get_image_data(x as i32, 15, 1, 1).data[3] as i32;
     let a1 = alpha_at(21);
     let a2 = alpha_at(22);
     let a3 = alpha_at(23);

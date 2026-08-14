@@ -37,6 +37,10 @@ pub struct FontDescriptor {
     pub weight: FontWeight,
     /// 字体样式。
     pub style: FontStyle,
+    /// R34xx：font-variant small-caps 标记（getter 重建 'small-caps'——font.parse.complex）。
+    pub small_caps: bool,
+    /// R34xx：数值 weight（100-900——getter 重建 '300' 等——font.parse.weight）。
+    pub weight_value: Option<u16>,
     /// R34xx：letterSpacing 原始 CSS 长度串（spec CanvasTextDrawingStyles——每字符簇附加
     /// 间距；em/% 等相对单位**随字号重解析**——2d.text.drawing.style.letterSpacing.change.font）。
     pub letter_spacing: String,
@@ -51,6 +55,8 @@ impl Default for FontDescriptor {
             size: 10.0,
             weight: FontWeight::Normal,
             style: FontStyle::Normal,
+            small_caps: false,
+            weight_value: None,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
         }
@@ -71,6 +77,11 @@ impl FontDescriptor {
     /// ④ 解析失败返 `None`（real browser 忽略非法 font 串保持原值，本解析器同语义，调用方决定回退）。
     /// family 保留原串（含逗号多族 / 引号），交字体解析流后续精确解析。
     pub fn parse_css(s: &str) -> Option<Self> {
+        Self::parse_css_with_current(s, 10.0)
+    }
+
+    /// R34xx：带当前字号解析（em/rem 相对当前 font size——'1em' 在默认 10px 下 → 10px）。
+    pub fn parse_css_with_current(s: &str, current_size: f32) -> Option<Self> {
         // 简单分词：按空白切，但 family（size 之后全部）整体保留（含逗号/引号）。
         let trimmed = s.trim();
         if trimmed.is_empty() {
@@ -83,6 +94,8 @@ impl FontDescriptor {
 
         let mut style = FontStyle::Normal;
         let mut weight = FontWeight::Normal;
+        let mut weight_value = None;
+        let mut small_caps = false;
 
         // size 之前的关键字（style/variant/weight），序无关——遇 size token 停。
         let mut i = 0;
@@ -110,7 +123,7 @@ impl FontDescriptor {
                 continue;
             }
             if lower == "small-caps" {
-                // font-variant：丢弃（不建模）
+                small_caps = true;
                 i += 1;
                 continue;
             }
@@ -119,6 +132,7 @@ impl FontDescriptor {
                 && (100..=900).contains(&n)
             {
                 weight = if n >= 600 { FontWeight::Bold } else { FontWeight::Normal };
+                weight_value = Some(n as u16);
                 i += 1;
                 continue;
             }
@@ -134,7 +148,7 @@ impl FontDescriptor {
         let size_part = size_tok.split('/').next().unwrap_or(size_tok);
         // size 关键字（`medium`/`small`/`large`...）→ parse_font_size 返 None（canvas headless 无关键字→px
         // 映射表）。real browser 这些关键字合法；此处保守：若 size 未解析出，返 None（调用方保持原 font）。
-        let size = parse_font_size(size_part)?;
+        let size = parse_font_size_with_current(size_part, current_size)?;
         let family_start = i + 1; // family 从 size 之后开始
         if family_start >= tokens.len() {
             return None; // 缺 family
@@ -146,12 +160,45 @@ impl FontDescriptor {
         if family.is_empty() {
             return None;
         }
+        // R34xx：family 段标识符校验——每段须为引号串或合法 CSS 标识符（无 { } / 等
+        // 非法字符——2d.text.font.parse.invalid 的 '{bogus}' 应整体拒绝保持原 font）。
+        let mut family_valid = true;
+        let mut in_quote = false;
+        let mut fam_chars = family.chars().peekable();
+        while let Some(ch) = fam_chars.next() {
+            match ch {
+                '\\' if in_quote => {
+                    // 引号内反斜杠转义（\" 是字面引号非闭合）。
+                    fam_chars.next();
+                }
+                '"' => in_quote = !in_quote,
+                ',' if !in_quote => {}
+                '{' | '}' | '/' | '\\' | '(' | ')' | ';' if !in_quote => {
+                    family_valid = false;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        // CSS-wide 关键字作族名 → 无效（'10px initial' 等——font.parse.invalid）。
+        let fam_lower = family.trim_matches('"').to_ascii_lowercase();
+        if matches!(
+            fam_lower.as_str(),
+            "initial" | "inherit" | "unset" | "revert" | "revert-layer" | "default"
+        ) {
+            return None;
+        }
+        if !family_valid || in_quote {
+            return None;
+        }
 
         Some(Self {
             family,
             size,
             weight,
             style,
+            small_caps,
+            weight_value,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
         })
@@ -160,15 +207,16 @@ impl FontDescriptor {
 
 /// 解析 font-size 单位→px。支持 px/em/rem/pt（em/rem 无上下文近似作绝对 px）。
 /// 失败（无单位 / 未知单位 / 非数字）返 None。
-fn parse_font_size(s: &str) -> Option<f32> {
+/// R34xx：em 相对当前字号（canvas ctx.font——'1em' 默认 10px → 10px）；
+/// rem 恒相对 root（近似 16px）。
+fn parse_font_size_with_current(s: &str, current_size: f32) -> Option<f32> {
     let lower = s.to_ascii_lowercase();
-    // 单位→乘数（无单位 / % / 关键字 / 其它 → None）。注意先剥 rem 再剥 em（后者前缀匹配）。
     let (num_str, mul) = lower
         .strip_suffix("px")
         .map(|st| (st, 1.0))
         .or_else(|| lower.strip_suffix("pt").map(|st| (st, 96.0 / 72.0)))
         .or_else(|| lower.strip_suffix("rem").map(|st| (st, 16.0))) // root em 近似 16px
-        .or_else(|| lower.strip_suffix("em").map(|st| (st, 16.0)))?; // em 相对当前字号，无上下文近似 16px
+        .or_else(|| lower.strip_suffix("em").map(|st| (st, current_size)))?; // em 相对当前字号
     let n = num_str.trim().parse::<f32>().ok()?;
     if !n.is_finite() || n <= 0.0 {
         return None;
@@ -1164,6 +1212,8 @@ mod tests {
             size: 14.0,
             weight: FontWeight::Bold,
             style: FontStyle::Italic,
+            small_caps: false,
+            weight_value: None,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
         };
@@ -1227,8 +1277,11 @@ mod tests {
 
     #[test]
     fn test_font_descriptor_parse_css_units() {
+        // R34xx：em 相对当前字号（默认 10px——'2em' → 20px）；rem 恒 16px。
+        assert!((FontDescriptor::parse_css_with_current("2em serif", 10.0).unwrap().size - 20.0).abs() < f32::EPSILON);
+        assert!((FontDescriptor::parse_css_with_current("2em serif", 40.0).unwrap().size - 80.0).abs() < f32::EPSILON);
         assert!((FontDescriptor::parse_css("12pt serif").unwrap().size - 16.0).abs() < 0.01); // 12pt * 96/72 = 16
-        assert!((FontDescriptor::parse_css("2em serif").unwrap().size - 32.0).abs() < f32::EPSILON); // 2 * 16
+        assert!((FontDescriptor::parse_css("2em serif").unwrap().size - 20.0).abs() < f32::EPSILON); // 2 * 默认 10px
         assert!((FontDescriptor::parse_css("1rem serif").unwrap().size - 16.0).abs() < f32::EPSILON);
     }
 

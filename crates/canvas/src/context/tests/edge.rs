@@ -641,6 +641,8 @@ fn test_measure_text_reflects_font_size_change() {
         size: 20.0,
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });
@@ -871,6 +873,8 @@ fn test_fill_text_glyph_offset_scales_with_font_size() {
         size: 20.0,
         weight: FontWeight::Normal,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });
@@ -1084,7 +1088,7 @@ fn test_put_image_data_out_of_bounds_dirty_rect_no_panic() {
     // 放置在远超画布边界的位置 — 不应 panic
     ctx.put_image_data(&img, 100, 100);
     ctx.put_image_data(&img, 200, 200);
-    ctx.put_image_data(&img, u32::MAX, u32::MAX);
+    ctx.put_image_data(&img, i32::MAX, i32::MAX);
     // 画布内像素应未被修改
     let pixel = ctx.get_image_data(0, 0, 1, 1);
     assert_eq!(pixel.data[0..4], [0, 0, 0, 0], "越界 put_image_data 不应写入画布内像素");

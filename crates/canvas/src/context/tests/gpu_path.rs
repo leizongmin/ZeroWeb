@@ -100,6 +100,8 @@ fn test_canvas_text_primitives_gpu_path() {
         size: 20.0,
         weight: crate::context::types::FontWeight::Normal,
         style: crate::context::types::FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });

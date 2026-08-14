@@ -1084,6 +1084,8 @@ fn test_canvas_set_font_and_get() {
         size: 16.0,
         weight: FontWeight::Bold,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     };

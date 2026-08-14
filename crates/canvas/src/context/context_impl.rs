@@ -1277,18 +1277,19 @@ impl CanvasContext {
         let iw = image_data.width as i32;
         let ih = image_data.height as i32;
         for row in 0..ih {
-            let dst_row = y + row;
-            if dst_row < 0 || dst_row >= canvas_h {
+            // i64 防溢出（极端坐标——edge 测试 u32::MAX/i32::MAX）。
+            let dst_row = y as i64 + row as i64;
+            if dst_row < 0 || dst_row >= canvas_h as i64 {
                 continue;
             }
             let src_row = row;
-            let col0 = x.max(0) as i32;
-            let col1 = (x + iw).min(canvas_w) as i32;
+            let col0 = x.max(0) as i64;
+            let col1 = ((x as i64 + iw as i64).min(canvas_w as i64)).max(0);
             if col1 <= col0 {
                 continue;
             }
-            let src_start = (src_row * iw + col0 - x) as usize * 4;
-            let dst_start = (dst_row * canvas_w + col0) as usize * 4;
+            let src_start = (src_row as i64 * iw as i64 + col0 - x as i64) as usize * 4;
+            let dst_start = (dst_row * canvas_w as i64 + col0) as usize * 4;
             let len = (col1 - col0) as usize * 4;
             if src_start + len <= image_data.data.len() {
                 self.pixel_buffer[dst_start..dst_start + len]

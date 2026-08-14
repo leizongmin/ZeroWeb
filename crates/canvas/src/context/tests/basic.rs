@@ -258,6 +258,8 @@ fn test_font_descriptor_custom() {
         size: 14.0,
         weight: FontWeight::Bold,
         style: FontStyle::Italic,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     };
@@ -274,6 +276,8 @@ fn test_canvas_set_font() {
         size: 20.0,
         weight: FontWeight::Bold,
         style: FontStyle::Italic,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     };
@@ -490,6 +494,8 @@ fn test_canvas_save_restore_font() {
         size: 16.0,
         weight: FontWeight::Bold,
         style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });
@@ -499,6 +505,8 @@ fn test_canvas_save_restore_font() {
         size: 20.0,
         weight: FontWeight::Normal,
         style: FontStyle::Italic,
+        small_caps: false,
+        weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
     });
