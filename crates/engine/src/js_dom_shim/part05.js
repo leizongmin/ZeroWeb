@@ -2629,7 +2629,10 @@
       if (img === null || img === undefined) {
         throw new TypeError('putImageData: imageData is null');
       }
-      if (typeof img !== 'object' || !(img.data instanceof Uint8ClampedArray) ||
+      // R34xx：Float16Array data（pixelFormat rgba-float16——put.basic.rgba.float16）——
+      // 归一化值 ×255 转字节。
+      var _isF16 = (typeof Float16Array === 'function') && (img.data instanceof Float16Array);
+      if (typeof img !== 'object' || (!(img.data instanceof Uint8ClampedArray) && !_isF16) ||
           !(typeof img.width === 'number') || !(typeof img.height === 'number')) {
         throw new TypeError('putImageData: not an ImageData object');
       }
@@ -2666,10 +2669,14 @@
       }
       var chunks = [];
       var iw = img.width | 0;
+      var _f16scale = _isF16 ? 255 : 1;
       for (var r = 0; r < sh; r++) {
         for (var c = 0; c < sw; c++) {
           var si = ((sy + r) * iw + (sx + c)) * 4;
-          chunks.push(d[si] + ',' + d[si + 1] + ',' + d[si + 2] + ',' + d[si + 3]);
+          // R34xx：Float16Array data → 字节（×255，clamp 0-255——put.basic.rgba.float16）。
+          var v0 = d[si] * _f16scale, v1 = d[si + 1] * _f16scale;
+          var v2 = d[si + 2] * _f16scale, v3 = d[si + 3] * _f16scale;
+          chunks.push(Math.round(v0) + ',' + Math.round(v1) + ',' + Math.round(v2) + ',' + Math.round(v3));
         }
       }
       __zw_canvas_op(h, 'putImageData', String(ox), String(oy),
@@ -2774,10 +2781,22 @@
       var parts = r.split(';');
       var dims = parts[0].split(':');
       var nums = parts[1] ? parts[1].split(',') : [];
-      var arr = new Uint8ClampedArray(nums.length);
-      for (var i = 0; i < nums.length; i++) arr[i] = +nums[i];
+      // R34xx：getImageData(x, y, w, h, settings)——settings（第 5 参）pixelFormat
+      // 'rgba-float16' → Float16Array 归一化值（字节/255）；colorSpace 原样透传
+      //（像素为当前画布空间，与 raw 字节一致——put.basic.rgba.float16 的纯红往返）。
+      var _settings = arguments.length > 4 ? arguments[4] : null;
+      var f16 = !!(_settings && typeof _settings === 'object' && _settings.pixelFormat === 'rgba-float16');
+      var cs = (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string') ? _settings.colorSpace : 'srgb';
+      var arr;
+      if (f16) {
+        arr = new Float16Array(nums.length);
+        for (var i = 0; i < nums.length; i++) arr[i] = +nums[i] / 255;
+      } else {
+        arr = new Uint8ClampedArray(nums.length);
+        for (var i = 0; i < nums.length; i++) arr[i] = +nums[i];
+      }
       // R34xx：返真 ImageData（colorSpace + 只读 width/height——object.properties/readonly）。
-      var img = new ImageData(arr, +dims[0], +dims[1]);
+      var img = new ImageData(arr, +dims[0], +dims[1], { colorSpace: cs, pixelFormat: f16 ? 'rgba-float16' : 'rgba-unorm8' });
       return img;
     };
     return ctx;
