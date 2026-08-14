@@ -16,6 +16,49 @@ pub(crate) struct CacheControl {
     pub must_revalidate: bool,
 }
 
+/// 请求侧 Cache-Control 指令；仅包含影响私有缓存复用的 P0 字段。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RequestCacheControl {
+    pub no_cache: bool,
+    pub no_store: bool,
+    pub only_if_cached: bool,
+    pub max_age: Option<u64>,
+    pub min_fresh: Option<u64>,
+    /// `Some(None)` 表示未限定秒数的 `max-stale`。
+    pub max_stale: Option<Option<u64>>,
+}
+
+/// 解析请求头中的 Cache-Control。
+pub(crate) fn parse_request_cache_control(headers: &[(String, String)]) -> RequestCacheControl {
+    let mut result = RequestCacheControl::default();
+    for (_, value) in headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("cache-control"))
+    {
+        for directive in value.split(',').map(str::trim) {
+            if directive.eq_ignore_ascii_case("no-cache") {
+                result.no_cache = true;
+            } else if directive.eq_ignore_ascii_case("no-store") {
+                result.no_store = true;
+            } else if directive.eq_ignore_ascii_case("only-if-cached") {
+                result.only_if_cached = true;
+            } else if directive.eq_ignore_ascii_case("max-stale") {
+                result.max_stale = Some(None);
+            } else {
+                let lower = directive.to_ascii_lowercase();
+                if let Some(value) = lower.strip_prefix("max-age=") {
+                    result.max_age = value.trim().parse().ok();
+                } else if let Some(value) = lower.strip_prefix("min-fresh=") {
+                    result.min_fresh = value.trim().parse().ok();
+                } else if let Some(value) = lower.strip_prefix("max-stale=") {
+                    result.max_stale = value.trim().parse().ok().map(Some);
+                }
+            }
+        }
+    }
+    result
+}
+
 /// 缓存写入模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CacheStoreMode {
@@ -184,6 +227,21 @@ mod tests {
     fn no_cache_not_storable_without_validators() {
         let r = resp(vec![("cache-control", "no-cache")]);
         assert_eq!(storable_mode(&r), None);
+    }
+
+    #[test]
+    fn request_cache_control_parses_reuse_constraints() {
+        let policy = parse_request_cache_control(&[(
+            "Cache-Control".into(),
+            "max-age=10, min-fresh=3, max-stale=20, only-if-cached".into(),
+        )]);
+        assert_eq!(policy.max_age, Some(10));
+        assert_eq!(policy.min_fresh, Some(3));
+        assert_eq!(policy.max_stale, Some(Some(20)));
+        assert!(policy.only_if_cached);
+
+        let unlimited = parse_request_cache_control(&[("cache-control".into(), "max-stale".into())]);
+        assert_eq!(unlimited.max_stale, Some(None));
     }
 
     #[test]

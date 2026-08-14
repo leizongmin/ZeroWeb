@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::cache_key::{cache_lookup_key, cache_store_key, strip_url_fragment};
-use crate::cache_policy::{CacheStoreMode, parse_cache_control, storable_mode};
+use crate::cache_policy::{
+    CacheStoreMode, RequestCacheControl, parse_cache_control, parse_request_cache_control, storable_mode,
+};
 use crate::disk_cache::DiskHttpCache;
 use crate::private_mode::private_browsing_enabled;
 use crate::request::HttpResponse;
@@ -41,6 +43,7 @@ struct CacheEntry {
     /// 新鲜 put 时从响应的 Age/Date 头算出；磁盘→内存提升时为 0（年龄已并入 `ttl_secs`=剩余新鲜期）。
     initial_age_secs: u64,
     revalidate_only: bool,
+    must_revalidate: bool,
     vary: Option<String>,
     etag: Option<String>,
     last_modified: Option<String>,
@@ -109,6 +112,16 @@ impl HttpCache {
 
     /// 查找缓存（新鲜命中 / 需再验证 / 未命中）。
     pub fn lookup(&mut self, url: &str, request_headers: &[(String, String)]) -> CacheLookup {
+        self.lookup_with_request_policy(url, request_headers, &parse_request_cache_control(request_headers))
+    }
+
+    /// 查找缓存，并应用请求侧 `Cache-Control` 的复用限制。
+    pub(crate) fn lookup_with_request_policy(
+        &mut self,
+        url: &str,
+        request_headers: &[(String, String)],
+        policy: &RequestCacheControl,
+    ) -> CacheLookup {
         self.ensure_disk_index();
         let base = strip_url_fragment(url);
         if let Some(keys) = self.resource_index.get(&base).cloned() {
@@ -116,18 +129,18 @@ impl HttpCache {
                 let vary = self.vary_for_key(&key);
                 let candidate = cache_lookup_key(&base, request_headers, vary.as_deref());
                 if candidate == key {
-                    let lookup = self.lookup_key(&key);
+                    let lookup = self.lookup_key(&key, policy);
                     if !matches!(lookup, CacheLookup::Miss) {
                         return lookup;
                     }
                 }
             }
         }
-        self.lookup_key(&base)
+        self.lookup_key(&base, policy)
     }
 
-    fn lookup_key(&mut self, key: &str) -> CacheLookup {
-        if let Some(lookup) = self.lookup_memory(key) {
+    fn lookup_key(&mut self, key: &str, policy: &RequestCacheControl) -> CacheLookup {
+        if let Some(lookup) = self.lookup_memory(key, policy) {
             return lookup;
         }
         let Some(disk) = self.disk.as_mut() else {
@@ -148,9 +161,20 @@ impl HttpCache {
             let _ = disk.remove(key);
             return CacheLookup::Miss;
         }
-        if hit.fresh_for_secs > 0 {
+        if hit.fresh_for_secs > 0 && request_accepts_fresh(policy, hit.fresh_for_secs, 0) {
             tracing::info!(url = %key, "HTTP disk cache hit");
             self.insert_memory_from_hit(key, &cached, hit);
+            return CacheLookup::Hit(cached);
+        }
+        let must_revalidate = parse_cache_control(&HttpResponse {
+            status_code: hit.status_code,
+            headers: hit.headers.clone(),
+            body: Vec::new(),
+            url: hit.resource_url.clone().unwrap_or_else(|| hit.url.clone()),
+            redirect_count: 0,
+        })
+        .must_revalidate;
+        if request_accepts_stale(policy, must_revalidate, hit.fresh_for_secs) {
             return CacheLookup::Hit(cached);
         }
         if is_revalidatable(&hit.etag, &hit.last_modified) {
@@ -197,6 +221,7 @@ impl HttpCache {
                 }
                 // R3233：304 可携新 Age/Date（CDN 重报）→ 重算 initial_age（与 R3231/R3232 头并入一致）。
                 e.initial_age_secs = crate::cache_policy::compute_initial_age(response);
+                e.must_revalidate = parse_cache_control(response).must_revalidate;
                 if let Some(etag) = response.header("etag") {
                     e.etag = Some(etag.to_string());
                     cached.etag = e.etag.clone();
@@ -248,7 +273,7 @@ impl HttpCache {
             _ => None,
         }
     }
-    fn lookup_memory(&mut self, key: &str) -> Option<CacheLookup> {
+    fn lookup_memory(&mut self, key: &str, policy: &RequestCacheControl) -> Option<CacheLookup> {
         let entry = self.entries.get(key)?;
         let cached = CachedResponse {
             body: entry.body.clone(),
@@ -268,14 +293,20 @@ impl HttpCache {
             self.remove(key);
             return None;
         }
+        let age = current_age_secs(entry.stored_at.elapsed(), entry.initial_age_secs);
         let fresh = entry.ttl_secs.is_some_and(|ttl| {
             // R3233：RFC 9111 §4.2.4——`current_age = initial_age + resident_time`，新鲜 ⇔ `current_age < lifetime`。
             // R3371：用 u64 saturating_add 计算 current_age（秒），避免 `Duration + Duration` 在
             // `initial_age_secs == u64::MAX`（来自恶意/畸形 `Age:` 头）时溢出 panic。
-            current_age_secs(entry.stored_at.elapsed(), entry.initial_age_secs) <= ttl
+            age <= ttl && request_accepts_fresh(policy, ttl, age)
         });
         if fresh {
             self.promote(key);
+            return Some(CacheLookup::Hit(cached));
+        }
+        if let Some(ttl) = entry.ttl_secs
+            && request_accepts_stale(policy, entry.must_revalidate, age.saturating_sub(ttl))
+        {
             return Some(CacheLookup::Hit(cached));
         }
         if is_revalidatable(&entry.etag, &entry.last_modified) {
@@ -321,6 +352,7 @@ impl HttpCache {
                 // R3233：磁盘→内存提升时年龄已并入 ttl_secs（= fresh_for_secs 剩余新鲜期），故 initial_age=0。
                 initial_age_secs: 0,
                 revalidate_only: disk.revalidate_only,
+                must_revalidate: cc.must_revalidate,
                 vary: disk.vary.clone(),
                 etag: cached.etag.clone(),
                 last_modified: cached.last_modified.clone(),
@@ -393,6 +425,7 @@ impl HttpCache {
                     // R3233：新鲜 put 从响应的 Age/Date 头算 initial_age（§4.2.3）。
                     initial_age_secs: crate::cache_policy::compute_initial_age(response),
                     revalidate_only,
+                    must_revalidate: cc.must_revalidate,
                     vary: vary.clone(),
                     etag: etag.clone(),
                     last_modified: last_modified.clone(),
@@ -633,6 +666,25 @@ fn is_revalidatable(etag: &Option<String>, last_modified: &Option<String>) -> bo
 /// 后者天然表示「已远超任何 TTL → 不新鲜」，符合语义且不 panic。
 fn current_age_secs(resident: std::time::Duration, initial_age_secs: u64) -> u64 {
     initial_age_secs.saturating_add(resident.as_secs())
+}
+
+fn request_accepts_fresh(policy: &RequestCacheControl, ttl_secs: u64, current_age_secs: u64) -> bool {
+    if policy.no_cache {
+        return false;
+    }
+    if policy.max_age.is_some_and(|max_age| current_age_secs > max_age) {
+        return false;
+    }
+    !policy
+        .min_fresh
+        .is_some_and(|min_fresh| ttl_secs.saturating_sub(current_age_secs) < min_fresh)
+}
+
+fn request_accepts_stale(policy: &RequestCacheControl, must_revalidate: bool, stale_secs: u64) -> bool {
+    if must_revalidate || policy.no_cache {
+        return false;
+    }
+    matches!(policy.max_stale, Some(None)) || matches!(policy.max_stale, Some(Some(limit)) if stale_secs <= limit)
 }
 
 /// 用 304 响应的元数据字段更新 header 列表（RFC 9111 §4.3.4——同名替换，缺则追加；name 大小写不敏感）。
@@ -1232,5 +1284,50 @@ mod tests {
         assert_eq!(current_age_secs(Duration::from_secs(30), 100), 130);
         // resident 的亚秒部分被 as_secs 截断
         assert_eq!(current_age_secs(Duration::from_millis(999), 100), 100);
+    }
+
+    #[test]
+    fn request_max_age_and_min_fresh_force_revalidation() {
+        let mut cache = HttpCache::new();
+        let url = "https://example.com/constrained.js";
+        let response = make_response(
+            200,
+            b"cached",
+            vec![("cache-control", "max-age=60"), ("age", "30"), ("etag", "\"v1\"")],
+        );
+        assert!(cache.put(url, &response));
+
+        assert!(matches!(
+            cache.lookup(url, &[("Cache-Control".into(), "max-age=10".into())]),
+            CacheLookup::Revalidate { .. }
+        ));
+        assert!(matches!(
+            cache.lookup(url, &[("Cache-Control".into(), "min-fresh=31".into())]),
+            CacheLookup::Revalidate { .. }
+        ));
+    }
+
+    #[test]
+    fn max_stale_never_overrides_must_revalidate() {
+        let url = "https://example.com/stale.css";
+        let stale = make_response(200, b"cached", vec![("cache-control", "max-age=1"), ("age", "2")]);
+        let mut cache = HttpCache::new();
+        assert!(cache.put(url, &stale));
+        assert!(matches!(
+            cache.lookup(url, &[("Cache-Control".into(), "max-stale".into())]),
+            CacheLookup::Hit(_)
+        ));
+
+        let must_revalidate = make_response(
+            200,
+            b"cached",
+            vec![("cache-control", "max-age=1, must-revalidate"), ("age", "2")],
+        );
+        let mut cache = HttpCache::new();
+        assert!(cache.put(url, &must_revalidate));
+        assert!(matches!(
+            cache.lookup(url, &[("Cache-Control".into(), "max-stale".into())]),
+            CacheLookup::Miss
+        ));
     }
 }
