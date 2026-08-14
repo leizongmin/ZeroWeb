@@ -1034,8 +1034,9 @@
   function _zwMakeGradient(h, gid) {
     function addColorStop(offset, color) {
       // R34xx：参数校验（spec：https://html.spec.whatwg.org/multipage/canvas.html#dom-
-      // canvasgradient-addcolorstop——offset 非有限抛 TypeError（2d.gradient.object.invalidoffset）；
+      // canvasgradient-addcolorstop——offset 非有限/缺省抛 TypeError（missingargs）；
       // 越界抛 IndexSizeError；颜色无效抛 SyntaxError）。
+      if (offset === undefined) throw new TypeError('addColorStop: missing offset');
       offset = +offset;
       if (!isFinite(offset)) {
         throw new TypeError('addColorStop: non-finite offset');
@@ -1043,6 +1044,7 @@
       if (offset < 0 || offset > 1) {
         throw _zwDomException('gradient offset out of range', 'IndexSizeError');
       }
+      if (color === undefined) throw new TypeError('addColorStop: missing color');
       var c = String(color);
       if (c === '' || (typeof __zw_canvas_op === 'function' && !String(__zw_canvas_op('0', 'validateColor', c)))) {
         throw _zwDomException('invalid gradient color', 'SyntaxError');
@@ -1333,6 +1335,14 @@
   if (!globalThis.OffscreenCanvas) {
     globalThis.OffscreenCanvas = OffscreenCanvas;
   }
+  // R34xx：数值参数校验（missingargs——undefined/NaN → TypeError，spec 非有限拒绝）。
+  function _zwFiniteNum(v) {
+    var n = +v;
+    if (v === undefined || v === null || !isFinite(n)) {
+      throw new TypeError('non-finite argument');
+    }
+    return n;
+  }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
     // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。
@@ -1441,10 +1451,11 @@
     });
     ctx.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
     ctx.closePath = function () { __zw_canvas_op(h, 'closePath'); };
-    ctx.moveTo = function (x, y) { __zw_canvas_op(h, 'moveTo', String(x), String(y)); };
-    ctx.lineTo = function (x, y) { __zw_canvas_op(h, 'lineTo', String(x), String(y)); };
+    ctx.moveTo = function (x, y) { __zw_canvas_op(h, 'moveTo', String(_zwFiniteNum(x)), String(_zwFiniteNum(y))); };
+    ctx.lineTo = function (x, y) { __zw_canvas_op(h, 'lineTo', String(_zwFiniteNum(x)), String(_zwFiniteNum(y))); };
     ctx.arc = function (x, y, r, s, e, anticlockwise) {
       // R34xx：anticlockwise 第 6 参透传（spec：2d.line.cap.round 等 arc 填充用例依赖方向）。
+      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(r); _zwFiniteNum(s); _zwFiniteNum(e);
       __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
@@ -1463,15 +1474,15 @@
       return isFinite(+x) && isFinite(+y) && isFinite(+w) && isFinite(+h);
     };
     ctx.fillRect = function (x, y, w, hh) {
-      if (!_zwRectFinite(x, y, w, hh)) return;
+      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
       __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
     };
     ctx.strokeRect = function (x, y, w, hh) {
-      if (!_zwRectFinite(x, y, w, hh)) return;
+      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
       __zw_canvas_op(h, 'strokeRect', String(x), String(y), String(w), String(hh));
     };
     ctx.clearRect = function (x, y, w, hh) {
-      if (!_zwRectFinite(x, y, w, hh)) return;
+      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
     // R3078：Canvas 2D 文本 API（fillText/strokeText/measureText）+ createImageData（blank）。
@@ -1479,8 +1490,9 @@
     // createImageData 返 blank ImageData（全透明 = 全 0，Uint8ClampedArray(w*h*4)，JS 构无需 host）。createImageData
     // 双形式：createImageData(w,h) / createImageData(imageData)（复制尺寸）。spec CanvasRenderingContext2D。
     ctx.fillText = function (text, x, y, maxWidth) {
-      // R34xx：maxWidth 透传（spec fillText(text,x,y,maxWidth)）。
-      __zw_canvas_op(h, 'fillText', String(text), String(+x || 0), String(+y || 0), String(maxWidth === undefined ? '' : +maxWidth));
+      // R34xx：maxWidth 透传 + 坐标非有限校验（missingargs）。
+      _zwFiniteNum(x); _zwFiniteNum(y);
+      __zw_canvas_op(h, 'fillText', String(text), String(+x), String(+y), String(maxWidth === undefined ? '' : +maxWidth));
     };
     // R34xx：fillTextCluster(cluster, x, y)——绘制单个字素簇（spec TextCluster；
     // 2d.text.measure.fillTextCluster-*.tentative）。簇对象经 measureText().getTextClusters()
@@ -1544,9 +1556,11 @@
         String(drawX), String(drawY));
     };
     ctx.strokeText = function (text, x, y) {
-      __zw_canvas_op(h, 'strokeText', String(text), String(+x || 0), String(+y || 0));
+      _zwFiniteNum(x); _zwFiniteNum(y);
+      __zw_canvas_op(h, 'strokeText', String(text), String(+x), String(+y));
     };
     ctx.measureText = function (text) {
+      if (text === undefined || text === null) throw new TypeError('measureText: missing text');
       // R3303：spec TextMetrics 全 10 字段（host 返 width,actualBoxAsc/Desc/Left/Right,
       // fontBoxAsc/Desc,alphabetic/hanging/ideographicBaseline csv；`|` 后逐字形墨迹
       // l,t,r,b 分号分隔）。R34xx：getActualBoundingBox(start,end) 子串墨迹 bbox（spec
@@ -1880,8 +1894,10 @@
       // R34xx：repetition 校验（spec：''/repeat/repeat-x/repeat-y/no-repeat 合法（大小写敏感）；
       // undefined 抛 SYNTAX_ERR、null → ''（WebIDL DOMString 转换）、非法串抛——
       // 2d.pattern.repeat.*）。DOMException 用 _zwDomException（assert_throws_dom 匹配）。
+      // R34xx：repetition 缺省（undefined）→ TypeError（missingargs——非 SyntaxError）；
+      // 其余非法串 → SyntaxError。
       if (repetition === undefined) {
-        throw _zwDomException('Invalid repetition value', 'SyntaxError');
+        throw new TypeError('createPattern: missing repetition');
       }
       var rep = (repetition === null) ? '' : String(repetition);
       if (rep !== '' && rep !== 'repeat' && rep !== 'repeat-x' && rep !== 'repeat-y' && rep !== 'no-repeat') {
@@ -1924,18 +1940,23 @@
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
+      _zwFiniteNum(cpx); _zwFiniteNum(cpy); _zwFiniteNum(x); _zwFiniteNum(y);
       __zw_canvas_op(h, 'quadraticCurveTo', String(cpx), String(cpy), String(x), String(y));
     };
     ctx.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) {
+      _zwFiniteNum(cp1x); _zwFiniteNum(cp1y); _zwFiniteNum(cp2x); _zwFiniteNum(cp2y);
+      _zwFiniteNum(x); _zwFiniteNum(y);
       __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
     };
     ctx.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
       __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
     };
     ctx.arcTo = function (x1, y1, x2, y2, r) {
+      _zwFiniteNum(x1); _zwFiniteNum(y1); _zwFiniteNum(x2); _zwFiniteNum(y2); _zwFiniteNum(r);
       __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
     };
     ctx.rect = function (x, y, w, hh) {
+      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
       __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
     };
     // R3291：Canvas 2D roundRect（HTML Canvas `dom-context-2d-api` roundRect）。radii 可为 number 或
@@ -1975,6 +1996,14 @@
     // spec isPointInPath(x,y[,fillRule])，fillRule 透传但 canvas crate 现用奇偶规则。无 ctx → false。
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
     ctx.isPointInPath = function (x, y /*, fillRule */) {
+      // 首个参数缺失或为 Path2D 时跳过数值校验；否则校验（missingargs 的 () → TypeError）。
+      if (x !== undefined && !(x && x._zwPath)) {
+        _zwFiniteNum(x); _zwFiniteNum(y);
+      } else if (x !== undefined && x && x._zwPath) {
+        // Path2D 形式：坐标参数不校验（可选）
+      } else {
+        throw new TypeError('isPointInPath: missing arguments');
+      }
       return __zw_canvas_op(h, 'isPointInPath', String(x), String(y)) === '1';
     };
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
@@ -2005,13 +2034,15 @@
       var snap = st.pop();
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; this[k] = snap[k]; }
     };
-    ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(tx), String(ty)); };
-    ctx.rotate = function (angle) { __zw_canvas_op(h, 'rotate', String(angle)); };
-    ctx.scale = function (sx, sy) { __zw_canvas_op(h, 'scale', String(sx), String(sy)); };
+    ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(_zwFiniteNum(tx)), String(_zwFiniteNum(ty))); };
+    ctx.rotate = function (angle) { __zw_canvas_op(h, 'rotate', String(_zwFiniteNum(angle))); };
+    ctx.scale = function (sx, sy) { __zw_canvas_op(h, 'scale', String(_zwFiniteNum(sx)), String(_zwFiniteNum(sy))); };
     ctx.setTransform = function (a, b, c, d, e, ff) {
+      _zwFiniteNum(a); _zwFiniteNum(b); _zwFiniteNum(c); _zwFiniteNum(d); _zwFiniteNum(e); _zwFiniteNum(ff);
       __zw_canvas_op(h, 'setTransform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
     ctx.transform = function (a, b, c, d, e, ff) {
+      _zwFiniteNum(a); _zwFiniteNum(b); _zwFiniteNum(c); _zwFiniteNum(d); _zwFiniteNum(e); _zwFiniteNum(ff);
       __zw_canvas_op(h, 'transform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
     // R2985 getTransform：返当前变换矩阵为 DOMMatrix（host 'getTransform' 返 "a,b,c,d,e,f"）。
@@ -2319,6 +2350,10 @@
           !(typeof img.width === 'number') || !(typeof img.height === 'number')) {
         throw new TypeError('putImageData: not an ImageData object');
       }
+      // R34xx：缺坐标 → TypeError（missingargs）。
+      if (dx === undefined || dy === undefined) {
+        throw new TypeError('putImageData: missing coordinates');
+      }
       // R34xx：非有限参数 → TypeError（spec——2d.imageData.put.nonfinite）。
       var argv = [dx, dy, dirtyX, dirtyY, dirtyW, dirtyH];
       for (var ai = 0; ai < arguments.length && ai < 6; ai++) {
@@ -2365,6 +2400,10 @@
     // HTMLImageElement/`<img>` decode defer。host draw_image* 真栅格（source-over alpha 混合）。
     ctx.drawImage = function (image) {
       if (typeof __zw_canvas_op !== 'function') return;
+      // R34xx：缺省源 → TypeError（missingargs）。
+      if (image === undefined || image === null) {
+        throw new TypeError('drawImage: missing image source');
+      }
       var a = arguments;
       // ImageBitmap 源（R3309 createImageBitmap 产物）：直接用其 wire 串调 drawImage host op。
       if (image && image._zwBitmapWire && !image._closed) {
@@ -2402,7 +2441,13 @@
         return;
       }
       // 源须为 canvas 元素（有 _ctx._handle + width/height）。未 getContext 则惰性建。
-      if (!image || typeof image.getContext !== 'function') return;
+      // R34xx：缺坐标参数 → TypeError（missingargs 的 drawImage(canvas)）。
+      if (!image || typeof image.getContext !== 'function') {
+        throw new TypeError('drawImage: invalid image source');
+      }
+      if (a.length < 3) {
+        throw new TypeError('drawImage: missing coordinates');
+      }
       if (!image._ctx) image.getContext('2d');
       if (!image._ctx) return;
       var srcHandle = image._ctx._handle;
