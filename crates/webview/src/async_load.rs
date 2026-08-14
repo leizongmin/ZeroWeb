@@ -18,7 +18,8 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data
 use crate::image_decoder::decode_image;
 
 use crate::net_pool::{
-    dns_prefetch_async, fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta, preconnect_async,
+    dns_prefetch_async, fetch_bytes_async_meta, fetch_bytes_stream_async_meta, fetch_document_async,
+    fetch_text_async_meta, preconnect_async,
 };
 use crate::webview::WebView;
 
@@ -129,7 +130,11 @@ impl AsyncFetchHost for InProcessFetchHost {
     }
 
     fn fetch_bytes_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
-        fetch_bytes_async_meta(url.to_string(), meta)
+        if meta.resource_type == "image" {
+            fetch_bytes_stream_async_meta(url.to_string(), meta)
+        } else {
+            fetch_bytes_async_meta(url.to_string(), meta)
+        }
     }
 }
 

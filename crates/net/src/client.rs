@@ -38,6 +38,14 @@ where
     async_runtime().spawn_blocking(task);
 }
 
+/// 在共享异步网络 runtime 上提交网络任务。
+pub fn spawn_network_task<F>(task: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    async_runtime().spawn(task);
+}
+
 fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
     static CLIENTS: OnceLock<Mutex<AsyncClientCache>> = OnceLock::new();
     let no_proxy = crate::connect::no_proxy_enabled();

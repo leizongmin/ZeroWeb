@@ -183,6 +183,42 @@ pub fn fetch_bytes_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) -
     bridge_rx(rx, map_fetch_result)
 }
 
+/// 流式抓取页面图片：chunk 在页面侧消费者中累积，传输层不聚合 body，也不读写 HTTP cache。
+///
+/// 图像格式解码仍需要完整输入，因此最终结果保持现有 `Vec<u8>` 契约；中途失败会丢弃缓冲，
+/// 不可能留下半个缓存条目。
+pub fn fetch_bytes_stream_async_meta(
+    url: impl Into<String>,
+    _meta: ResourceFetchMeta,
+) -> Receiver<Result<Vec<u8>, String>> {
+    let url = url.into();
+    // `HttpClient::new` 同时初始化 blocking fallback client；必须在 Tokio task 外创建，
+    // 否则 reqwest 在 async context drop 该 fallback runtime 时会 panic。
+    let client = HttpClient::new();
+    let (tx, rx) = mpsc::channel();
+    zero_net::client::spawn_network_task(async move {
+        let mut body = Vec::new();
+        let result = client
+            .send_async_stream(HttpRequest::get(&url), |chunk| body.extend_from_slice(chunk))
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|head| {
+                if (200..300).contains(&head.status_code) {
+                    Ok(body)
+                } else {
+                    let detail = String::from_utf8_lossy(&body);
+                    Err(if detail.trim().is_empty() {
+                        format!("HTTP {}", head.status_code)
+                    } else {
+                        detail.trim().to_string()
+                    })
+                }
+            });
+        let _ = tx.send(result);
+    });
+    rx
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +246,28 @@ mod tests {
         let rx = fetch_bytes_async("http://127.0.0.1:1/unreachable");
         let result = rx.recv_timeout(Duration::from_secs(5)).expect("worker should respond");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn stream_bytes_consumer_delivers_complete_image_payload() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("http://{}/image", listener.local_addr().expect("address"));
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).expect("read request");
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\nfirst-")
+                .expect("write first chunk");
+            stream.write_all(b"second").expect("write second chunk");
+        });
+
+        let bytes = fetch_bytes_stream_async_meta(url, ResourceFetchMeta::IMAGE)
+            .recv_timeout(Duration::from_secs(5))
+            .expect("stream completion")
+            .expect("successful stream");
+        assert_eq!(bytes, b"first-second");
+        server.join().expect("join server");
     }
 
     #[test]
