@@ -1115,6 +1115,24 @@
     return _tagFromSel(sel);
   }
 
+  // js-dom M4 createElementNS（spec `dom-document-createelementns`，R18）：大小写敏感的 qualifiedName 解析
+  // 辅助。createElementNS spec **不**小写 localName，且保留原 prefix——故 `_realTag` 的强制大写不适用。
+  // 这三个 helper 从原 qualifiedName 取 `prefix:local` 各段，原样返（不经 toUpperCase/toLowerCase）。
+  // - `_nsLocal("svg:rect")` → "rect"；`_nsLocal("rect")` → "rect"（大小写敏感）
+  // - `_nsPrefix("svg:rect")` → "svg"；`_nsPrefix("rect")` → null（无 prefix）
+  // - `_nsQualified` 直接返原值（tagName/nodeName 对 createElementNS = 大小写敏感 qualifiedName）
+  function _nsLocal(q) {
+    var c = q.indexOf(':');
+    return c >= 0 ? q.slice(c + 1) : q;
+  }
+  function _nsPrefix(q) {
+    var c = q.indexOf(':');
+    return c >= 0 ? q.slice(0, c) : null;
+  }
+  function _nsQualified(q) {
+    return q;
+  }
+
   // P1a select：经 host `__zw_get_tag` 判元素是否为某 tag（selector-identity 元素）。
   // `_tagFromSel` 是启发式（id-only 选择器猜 DIV），不足以判 SELECT；host 查询准确。
   function _isTag(sel, tagUpper) {

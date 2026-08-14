@@ -1038,6 +1038,31 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `__zw_create_element_ns(namespace, qualifiedName)`——document.createElementNS（js-dom M4 / R18）。
+    // 区别 `__zw_create_element`：经 `DomMutation::CreateElementNS` → `doc.create_element_ns`，**大小写敏感**
+    // 保留原 qualified name（spec createElementNS 不小写），且记录 namespace 供 `namespaceURI` getter。
+    // shim `createElementNS` 调本回调，并把句柄记入 `_nsHandles`（存原 qualified name + ns），
+    // 使 `tagName`/`prefix`/`localName`/`namespaceURI` getter 返大小写敏感正确值。
+    let m = Arc::clone(mutations);
+    let c = Arc::clone(&counter);
+    sandbox.register_callback(
+        "__zw_create_element_ns",
+        Box::new(move |args| {
+            let namespace = args.first().map(String::from).unwrap_or_default();
+            let qualified = args.get(1).map(String::from).unwrap_or_else(|| "div".into());
+            let n = c.fetch_add(1, Ordering::Relaxed);
+            let handle = format!("__n{n}");
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(DomMutation::CreateElementNS {
+                    handle: handle.clone(),
+                    namespace,
+                    qualified_name: qualified,
+                });
+            handle
+        }),
+    );
+
     let m = Arc::clone(mutations);
     let c = Arc::clone(&counter);
     sandbox.register_callback(

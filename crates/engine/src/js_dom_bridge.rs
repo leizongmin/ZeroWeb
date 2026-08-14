@@ -136,6 +136,18 @@ pub enum DomMutation {
         /// 标签名。
         tag: String,
     },
+    /// `document.createElementNS(namespace, qualifiedName)`（js-dom M4 / spec `dom-document-createelementns`）。
+    /// 区别 [`Self::CreateElement`]：经 `doc.create_element_ns`——**大小写敏感**保留原 qualified name
+    ///（spec createElementNS 不小写，`"Abc"` → localName `"Abc"`），且保留 prefix（`"p:l"` → prefix p）。
+    /// 同步记录 namespace 供 `namespaceURI` getter 读回（shim `_nsHandles` 存原 qualified name + ns）。
+    CreateElementNS {
+        /// 稳定句柄。
+        handle: String,
+        /// 命名空间 URI（`null`/空串 = 无命名空间）。
+        namespace: String,
+        /// 原 qualified name（大小写敏感保留，可含 `prefix:local`）。
+        qualified_name: String,
+    },
     /// `document.createTextNode(text)`
     CreateTextNode {
         /// 稳定句柄。
@@ -543,6 +555,19 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             }
             DomMutation::CreateElement { handle, tag } => {
                 let id = doc.create_element(tag);
+                handles.insert(handle.clone(), id);
+            }
+            // R18 createElementNS：经 `create_element_ns`（大小写敏感 + 保留 prefix + 保留 namespace），
+            // 区别 CreateElement 的 HTML `create_element`（无条件小写、无 namespace）。spec
+            // `dom-document-createelementns`：createElementNS 不小写 localName，故 `"Abc"` → localName
+            // `"Abc"`；带 prefix 的 qualified name（`"p:l"`）解析为 prefix p / local l。host DOM 层
+            //（dom crate `create_element_ns`）已正确处理，本变体直接路由过去。
+            DomMutation::CreateElementNS {
+                handle,
+                namespace,
+                qualified_name,
+            } => {
+                let id = doc.create_element_ns(namespace, qualified_name);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::CreateTextNode { handle, text } => {

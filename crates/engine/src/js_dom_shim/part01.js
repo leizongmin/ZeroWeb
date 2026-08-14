@@ -447,6 +447,12 @@
   // 集合（nodeType=7），存 { target, data }（PI 无独立 selector，区别于普通元素句柄；与 _commentHandles 对称）。
   // target/data/nodeName(=target) 经此读回（PI 节点无 CharacterData 编辑方法）。
   var _piHandles = {};
+  // js-dom M4 createElementNS（spec `dom-document-createelementns`，R18）：已创建的命名空间元素 handle 集合，
+  // 存 { qualifiedName, namespace }（**大小写敏感**原值）。区别普通 `createElement` handle（经 `_realTag`
+  // 强制大写 + host `create_element` 小写）：createElementNS spec 不小写 localName，须保留原大小写，且带
+  // prefix（`"p:l"`）/namespace。`tagName`/`nodeName`/`prefix`/`localName`/`namespaceURI` getter 先查此表，
+  // 命中则返大小写敏感正确值（不经 `_realTag` 大写化）。与 _piHandles 对称的 handle 标识模式。
+  var _nsHandles = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
   // queueMicrotask——调度 microtask（高频：每个异步库 / polyfill / 框架都用）。本 V8 embed 未暴露

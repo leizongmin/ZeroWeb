@@ -2445,10 +2445,11 @@ fn test_html_element_subclass_instanceof_r11() {
 
 #[test]
 fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
-    // js-dom M4 R12：element.prefix getter + getElementsByTagNameNS（element/document 两级）。
+    // js-dom M4 R12 + R18：element.prefix getter + getElementsByTagNameNS（element/document 两级）。
     // case.html 用例 createElementNS('ns','prefix:local') 后查 node.prefix；getElementsByTagNameNS 此前
-    // is not a function（20 subtest）。prefix 从限定名冒号前取（polyfill _realTag 大写 → prefix 大写，
-    // 仅 ABC 态匹配 case.js，abc/Abc 待 createElementNS 保留原 tag 深改）。无冒号 → null。
+    // is not a function（20 subtest）。prefix 从限定名冒号前取。R12 时 polyfill `_realTag` 强制大写 → prefix
+    // 大写（仅 ABC 态匹配 case.js），R18 createElementNS 改经 `__zw_create_element_ns` + `_nsHandles` 保留原
+    // qualifiedName 大小写后，prefix **大小写敏感**（`svg:rect` → `'svg'`）。无冒号 → null。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -2466,7 +2467,7 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
 
-    // prefix：createElementNS('ns','svg:rect') → prefix 'SVG'（_realTag 大写化，注 case.js abc/Abc 限制）。
+    // prefix：createElementNS('ns','svg:rect') → prefix 'svg'（R18：大小写敏感，不再大写化）。
     sandbox
         .execute(
             "globalThis.__e = document.createElementNS('http://www.w3.org/2000/svg', 'svg:rect');\
@@ -2476,8 +2477,8 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__pf)").unwrap().value,
-        "SVG",
-        "createElementNS 限定名 prefix（冒号前，大写化）"
+        "svg",
+        "createElementNS 限定名 prefix（冒号前，R18 大小写敏感）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ln)").unwrap().value,
@@ -2522,6 +2523,107 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
         sandbox.execute("String(globalThis.__allCnt)").unwrap().value,
         "2",
         "element.getElementsByTagNameNS('*') 全后代元素"
+    );
+}
+
+#[test]
+fn test_create_element_ns_case_sensitive_and_namespace_uri_r18() {
+    // js-dom M4 R18：createElementNS 经 `__zw_create_element_ns` → host `create_element_ns`，**大小写敏感**
+    // 保留原 qualifiedName（spec createElementNS 不小写 localName，区别 createElement 的 HTML 无条件小写）。
+    // 修 R12 遗留：case.js 测 abc/Abc/ABC 三态 prefix，R12 仅 ABC 态匹配（_realTag 大写化），R18 三态全过。
+    // 覆盖：① prefix 大小写三态（abc:l / Abc:l / ABC:l）；② localName 大小写敏感（Abc）；③ 裸名无 prefix；
+    // ④ namespaceURI 读回（SVG/HTML/null）；⑤ tagName/nodeName = 大小写敏感 qualifiedName。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ①② prefix/localName 大小写三态（spec createElementNS 大小写敏感，abc/Abc/ABC 均原样保留）。
+    sandbox
+        .execute(
+            "globalThis.__eLo = document.createElementNS('http://www.w3.org/2000/svg', 'abc:l');\
+             globalThis.__eMix = document.createElementNS('http://www.w3.org/2000/svg', 'Abc:l');\
+             globalThis.__eUp = document.createElementNS('http://www.w3.org/2000/svg', 'ABC:l');\
+             globalThis.__pLo = __eLo.prefix; globalThis.__pMix = __eMix.prefix; globalThis.__pUp = __eUp.prefix;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pLo)").unwrap().value,
+        "abc",
+        "R18 prefix 大小写三态：abc:l → prefix 'abc'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pMix)").unwrap().value,
+        "Abc",
+        "R18 prefix 大小写三态：Abc:l → prefix 'Abc'（原样保留）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pUp)").unwrap().value,
+        "ABC",
+        "R18 prefix 大小写三态：ABC:l → prefix 'ABC'"
+    );
+
+    // ③ 裸名（无冒号）prefix → null（spec dom-node-prefix）；localName 大小写敏感。
+    sandbox
+        .execute(
+            "globalThis.__bare = document.createElementNS('http://www.w3.org/2000/svg', 'Abc');\
+             globalThis.__barePf = __bare.prefix;\
+             globalThis.__bareLn = __bare.localName;\
+             globalThis.__bareTag = __bare.tagName;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__barePf)").unwrap().value,
+        "null",
+        "裸名（无冒号）prefix = null"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bareLn)").unwrap().value,
+        "Abc",
+        "裸名 localName 大小写敏感（createElementNS 不小写）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__bareTag)").unwrap().value,
+        "Abc",
+        "裸名 tagName/nodeName = 大小写敏感 qualifiedName"
+    );
+
+    // ④ namespaceURI 读回（SVG/null/HTML）。createElementNS 记 namespace，getter 读回；上游用法
+    // `createElementNS(null, ...)`（Document-createElementNS.html / Element-classlist.html）→ namespaceURI
+    // null（无命名空间）；普通 createElement 元素恒为 HTML 命名空间（spec HTML 元素）。
+    sandbox
+        .execute(
+            "globalThis.__svgNs = document.createElementNS('http://www.w3.org/2000/svg', 'rect').namespaceURI;\
+             globalThis.__noNs = document.createElementNS(null, 'span').namespaceURI;\
+             globalThis.__htmlNs = document.createElement('div').namespaceURI;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__svgNs)").unwrap().value,
+        "http://www.w3.org/2000/svg",
+        "createElementNS SVG namespaceURI 读回"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__noNs)").unwrap().value,
+        "null",
+        "createElementNS(null, …) → namespaceURI = null（无命名空间，上游用法）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__htmlNs)").unwrap().value,
+        "http://www.w3.org/1999/xhtml",
+        "createElement（HTML 元素）namespaceURI 恒为 XHTML"
     );
 }
 

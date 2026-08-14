@@ -900,11 +900,20 @@
       var handle = __zw_create_element(tag);
       return _wrapHandle(handle);
     },
-    // `createElementNS(ns, tag)`：HTML 命名空间元素与 createElement 等价；
-    // SVG 命名空间元素（filter/cursor 等）在本目标范围外，按通用元素创建（不渲染
-    // 为 SVG 但避免 ReferenceError 中断脚本，crashtest 尤其依赖不抛）。
-    createElementNS: function(_ns, tag) {
-      var handle = __zw_create_element(String(tag));
+    // `createElementNS(ns, qualifiedName)`（js-dom M4 / spec `dom-document-createelementns`）：
+    // 大小写敏感创建（spec createElementNS **不**小写 localName，`"Abc"` → localName `"Abc"`，区别
+    // `createElement` 的 HTML 无条件小写）。带 prefix 的 qualified name（`"p:l"`）解析为 prefix p / local l。
+    // 经 `__zw_create_element_ns` → host `doc.create_element_ns`（保留大小写 + prefix + namespace），并把句柄
+    // 记入 `_nsHandles`（存原 qualifiedName + ns），使 tagName/prefix/localName/namespaceURI getter 返正确值。
+    // SVG 命名空间元素（filter/cursor 等）的专用渲染在本目标范围外，按通用元素创建（不渲染为 SVG 但避免
+    // ReferenceError 中断脚本，crashtest 尤其依赖不抛）。
+    createElementNS: function(ns, qualifiedName) {
+      var _nsStr = (ns == null) ? '' : String(ns);
+      var _q = String(qualifiedName);
+      var handle = (typeof __zw_create_element_ns === 'function')
+        ? __zw_create_element_ns(_nsStr, _q)
+        : __zw_create_element(_q);
+      if (handle) _nsHandles[handle] = { qualifiedName: _q, namespace: (_nsStr || null) };
       return _wrapHandle(handle);
     },
     // R3023：`document.createAttribute(name)`——建 Attr 节点（nodeType 2，value=''）。供 setAttributeNode /

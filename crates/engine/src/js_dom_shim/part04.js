@@ -496,39 +496,56 @@
         var isComment = handle && _commentHandles[handle];
         var isText = handle && _textHandles[handle];
         var isPI = handle && _piHandles[handle];
+        // createElementNS handle（js-dom M4 / R18）：大小写敏感 + 带 prefix/namespace。其
+        // tagName/nodeName/prefix/localName 经 `_nsHandles` 原值读回，不经 `_realTag`（强制大写）。
+        var isNs = handle && _nsHandles[handle];
         if (prop === 'tagName') {
+          if (isNs) return _nsQualified(_nsHandles[handle].qualifiedName);
           return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
         }
         // `element.localName`（spec `dom-element-localname`，R11）：HTML 元素 = tagName 小写；
         // 带 prefix 的限定名（`svg:rect`，createElementNS）去 prefix 取冒号后。非 Element → null
         //（spec Attr/Text 等另走各自接口，此处元素 getter 范围）。createElement 用例核心断言之一。
+        // createElementNS handle（isNs）：spec createElementNS **不**小写，原样返冒号后大小写敏感值。
         if (prop === 'localName') {
           if (isFrag || isShadow || isComment || isText || isPI) return null;
+          if (isNs) return _nsLocal(_nsHandles[handle].qualifiedName);
           var _ln = _realTag(sel, handle);
           var _colon = _ln.indexOf(':');
           if (_colon >= 0) _ln = _ln.slice(_colon + 1);
           return _ln.toLowerCase();
         }
-        // `element.prefix`（spec `dom-node-prefix`，R12）：限定名冒号前部分；无冒号 → null。
-        // 非 Element → null。**注**：polyfill `_realTag` 强制大写（HTML 语义），故 prefix 返大写——
-        // case.js 测 abc/Abc/ABC 三态时仅 ABC 态匹配（abc/Abc 仍 fail，待 createElementNS 保留原 tag
-        // 大小写的深改，记 master.md）。无冒号的普通元素（createElement）→ null（spec）。
+        // `element.prefix`（spec `dom-node-prefix`，R12）：限定名冒号前部分；无冒号 → null。非 Element → null。
+        // createElementNS handle（isNs）：从原 qualifiedName 冒号前取，大小写敏感（spec createElementNS
+        // 不小写 prefix，`"abc:l"` → prefix `"abc"`）。无 prefix（无冒号）→ null。普通 createElement 元素
+        // 经 `_realTag`（强制大写）；createElement 不带 prefix 故恒 null。
         if (prop === 'prefix') {
           if (isFrag || isShadow || isComment || isText || isPI) return null;
+          if (isNs) return _nsPrefix(_nsHandles[handle].qualifiedName);
           var _pfTag = _realTag(sel, handle);
           var _pfColon = _pfTag.indexOf(':');
           return _pfColon >= 0 ? _pfTag.slice(0, _pfColon) : null;
         }
         if (prop === 'nodeName') {
-          return isShadow ? '#shadow-root'
-            : isFrag ? '#document-fragment'
-            : isComment ? '#comment'
-            : isText ? '#text'
-            : isPI ? _piHandles[handle].target
-            : _realTag(sel, handle);
+          if (isShadow) return '#shadow-root';
+          if (isFrag) return '#document-fragment';
+          if (isComment) return '#comment';
+          if (isText) return '#text';
+          if (isPI) return _piHandles[handle].target;
+          if (isNs) return _nsQualified(_nsHandles[handle].qualifiedName); // createElementNS 大小写敏感
+          return _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
           return (isShadow || isFrag) ? 11 : (isPI ? 7 : (isComment ? 8 : (isText ? 3 : 1)));
+        }
+        // `element.namespaceURI`（spec `dom-node-namespaceuri`，R18）：createElementNS handle 从
+        // `_nsHandles` 读记录的 namespace（SVG/MathML/自定义 URI）；普通 `createElement` 元素恒为
+        // HTML 命名空间 `"http://www.w3.org/1999/xhtml"`（spec HTML 元素）。createAttribute/PI 等非元素
+        // 另走各自接口，此处元素 getter 范围返 null 之外由 ns 表决定。
+        if (prop === 'namespaceURI') {
+          if (isNs) return _nsHandles[handle].namespace;
+          if (isFrag || isShadow || isComment || isText || isPI) return null;
+          return 'http://www.w3.org/1999/xhtml';
         }
         // ShadowRoot 专用属性（R2926）：host = 宿主元素 proxy；mode = 'open'/'closed'。
         if (isShadow && prop === 'host') {
