@@ -698,8 +698,8 @@ fn process_batch(
     next_message_id: &mut u64,
     last_response: &Arc<std::sync::Mutex<std::time::Instant>>,
 ) -> Result<(), ProtocolError> {
-    let mut outstanding = HashMap::new();
     for command in commands {
+        let mut outstanding = HashMap::new();
         let message_id = take_message_id(next_message_id);
         match command {
             WorkerCommand::Frame(frame) => {
@@ -795,151 +795,153 @@ fn process_batch(
                 outstanding.insert(message_id, ExpectedResponse::PresentData { page_surface_id });
             }
         }
-    }
 
-    while !outstanding.is_empty() {
-        let response = transport.recv()?;
-        // R3254-F10：每次成功响应更新看门狗时间戳（卡在 recv 时无法更新 → 主线程判超时）。
-        *last_response.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
-        let Some(expected) = outstanding.remove(&response.id) else {
-            return Err(ProtocolError::Channel(format!(
-                "unexpected compositor response id {}",
-                response.id
-            )));
-        };
-        match (expected, response.kind) {
-            (
-                ExpectedResponse::Result(expected),
-                IpcMessageKind::CompositorFrameResult {
-                    surface_id,
-                    navigation_epoch,
-                    frame_id,
-                },
-            ) if expected
-                == (FrameKey {
-                    surface_id,
-                    navigation_epoch,
-                    frame_id,
-                }) =>
-            {
-                let message_id = take_message_id(next_message_id);
-                transport.send(IpcMessage {
-                    id: message_id,
-                    kind: IpcMessageKind::GetCompositorFrame {
+        // UI 上传与 present 回读都可能超过 20 MiB。每条命令完成请求—响应后再写
+        // 下一条，避免两个进程同时向对方写大帧、却都没有读取而形成管道背压死锁。
+        while !outstanding.is_empty() {
+            let response = transport.recv()?;
+            // R3254-F10：每次成功响应更新看门狗时间戳（卡在 recv 时无法更新 → 主线程判超时）。
+            *last_response.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
+            let Some(expected) = outstanding.remove(&response.id) else {
+                return Err(ProtocolError::Channel(format!(
+                    "unexpected compositor response id {}",
+                    response.id
+                )));
+            };
+            match (expected, response.kind) {
+                (
+                    ExpectedResponse::Result(expected),
+                    IpcMessageKind::CompositorFrameResult {
                         surface_id,
                         navigation_epoch,
                         frame_id,
                     },
-                })?;
-                outstanding.insert(message_id, ExpectedResponse::Data(expected));
-            }
-            (
-                ExpectedResponse::Data(expected),
-                IpcMessageKind::CompositorFrameData {
-                    surface_id,
-                    navigation_epoch,
-                    frame_id,
-                    width,
-                    height,
-                    rgba,
-                    shm_name,
-                    scroll_x,
-                    scroll_y,
-                    gpu_image,
-                    ..
-                },
-            ) if expected
-                == (FrameKey {
-                    surface_id,
-                    navigation_epoch,
-                    frame_id,
-                }) =>
-            {
-                let resolved_frame = zero_protocol::resolve_compositor_frame_delivery_fenced(
-                    width,
-                    height,
-                    rgba,
-                    shm_name,
-                    gpu_image,
-                    Some(expected.frame_id),
-                )?;
-                #[cfg(target_os = "linux")]
-                let (rgba, dmabuf) = match resolved_frame {
-                    zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
-                        validate_frame_data(width, height, &bytes)?;
-                        (bytes, None)
-                    }
-                    #[cfg(target_os = "linux")]
-                    zero_protocol::CompositorResolvedFrame::Dmabuf {
-                        fd,
-                        stride,
-                        drm_fourcc,
-                        drm_modifier,
+                ) if expected
+                    == (FrameKey {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                    }) =>
+                {
+                    let message_id = take_message_id(next_message_id);
+                    transport.send(IpcMessage {
+                        id: message_id,
+                        kind: IpcMessageKind::GetCompositorFrame {
+                            surface_id,
+                            navigation_epoch,
+                            frame_id,
+                        },
+                    })?;
+                    outstanding.insert(message_id, ExpectedResponse::Data(expected));
+                }
+                (
+                    ExpectedResponse::Data(expected),
+                    IpcMessageKind::CompositorFrameData {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                        width,
+                        height,
+                        rgba,
+                        shm_name,
+                        scroll_x,
+                        scroll_y,
+                        gpu_image,
                         ..
-                    } => (
-                        Vec::new(),
-                        Some(CompletedDmabufFrame {
+                    },
+                ) if expected
+                    == (FrameKey {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                    }) =>
+                {
+                    let resolved_frame = zero_protocol::resolve_compositor_frame_delivery_fenced(
+                        width,
+                        height,
+                        rgba,
+                        shm_name,
+                        gpu_image,
+                        Some(expected.frame_id),
+                    )?;
+                    #[cfg(target_os = "linux")]
+                    let (rgba, dmabuf) = match resolved_frame {
+                        zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
+                            validate_frame_data(width, height, &bytes)?;
+                            (bytes, None)
+                        }
+                        #[cfg(target_os = "linux")]
+                        zero_protocol::CompositorResolvedFrame::Dmabuf {
                             fd,
                             stride,
                             drm_fourcc,
                             drm_modifier,
-                        }),
-                    ),
-                };
-                #[cfg(not(target_os = "linux"))]
-                let rgba = match resolved_frame {
-                    zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
-                        validate_frame_data(width, height, &bytes)?;
-                        bytes
+                            ..
+                        } => (
+                            Vec::new(),
+                            Some(CompletedDmabufFrame {
+                                fd,
+                                stride,
+                                drm_fourcc,
+                                drm_modifier,
+                            }),
+                        ),
+                    };
+                    #[cfg(not(target_os = "linux"))]
+                    let rgba = match resolved_frame {
+                        zero_protocol::CompositorResolvedFrame::Rgba(bytes) => {
+                            validate_frame_data(width, height, &bytes)?;
+                            bytes
+                        }
+                    };
+                    if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+                        tracing::info!(
+                            "SMOKE_EVENT component=compositor_client event=frame_completed surface={} epoch={} frame={} width={} height={}",
+                            expected.surface_id,
+                            expected.navigation_epoch,
+                            expected.frame_id,
+                            width,
+                            height
+                        );
                     }
-                };
-                if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
-                    tracing::info!(
-                        "SMOKE_EVENT component=compositor_client event=frame_completed surface={} epoch={} frame={} width={} height={}",
-                        expected.surface_id,
-                        expected.navigation_epoch,
-                        expected.frame_id,
+                    completed.send(CompletedFrame {
+                        key: expected,
                         width,
-                        height
-                    );
+                        height,
+                        rgba,
+                        scroll_x,
+                        scroll_y,
+                        #[cfg(target_os = "linux")]
+                        dmabuf,
+                    });
                 }
-                completed.send(CompletedFrame {
-                    key: expected,
-                    width,
-                    height,
-                    rgba,
-                    scroll_x,
-                    scroll_y,
-                    #[cfg(target_os = "linux")]
-                    dmabuf,
-                });
-            }
-            (
-                ExpectedResponse::PresentData { page_surface_id },
-                IpcMessageKind::CompositorFrameData {
-                    width,
-                    height,
-                    rgba,
-                    shm_name,
-                    gpu_image,
-                    ..
-                },
-            ) => {
-                let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)?;
-                validate_frame_data(width, height, &rgba)?;
-                present.store(PresentFrame {
-                    page_surface_id,
-                    width,
-                    height,
-                    rgba,
-                });
-            }
-            (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
-            _ => {
-                return Err(ProtocolError::Channel(format!(
-                    "mismatched compositor response id {}",
-                    response.id
-                )));
+                (
+                    ExpectedResponse::PresentData { page_surface_id },
+                    IpcMessageKind::CompositorFrameData {
+                        width,
+                        height,
+                        rgba,
+                        shm_name,
+                        gpu_image,
+                        ..
+                    },
+                ) => {
+                    let rgba = zero_protocol::resolve_compositor_frame_rgba(width, height, rgba, shm_name, gpu_image)?;
+                    validate_frame_data(width, height, &rgba)?;
+                    present.store(PresentFrame {
+                        page_surface_id,
+                        width,
+                        height,
+                        rgba,
+                    });
+                }
+                (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
+                _ => {
+                    return Err(ProtocolError::Channel(format!(
+                        "mismatched compositor response id {}",
+                        response.id
+                    )));
+                }
             }
         }
     }
@@ -1213,6 +1215,35 @@ mod tests {
         responses: VecDeque<Result<IpcMessage, ProtocolError>>,
     }
 
+    struct LockstepTransport {
+        sent: Arc<Mutex<Vec<IpcMessage>>>,
+        responses: VecDeque<Result<IpcMessage, ProtocolError>>,
+        awaiting_response: bool,
+    }
+
+    impl WorkerTransport for LockstepTransport {
+        fn send(&mut self, message: IpcMessage) -> Result<(), ProtocolError> {
+            if self.awaiting_response {
+                return Err(ProtocolError::Channel(
+                    "sent another command before reading the previous response".to_string(),
+                ));
+            }
+            self.sent.lock().unwrap().push(message);
+            self.awaiting_response = true;
+            Ok(())
+        }
+
+        fn recv(&mut self) -> Result<IpcMessage, ProtocolError> {
+            if !self.awaiting_response {
+                return Err(ProtocolError::Channel(
+                    "read without an outstanding command".to_string(),
+                ));
+            }
+            self.awaiting_response = false;
+            self.responses.pop_front().expect("lockstep response")
+        }
+    }
+
     impl WorkerTransport for ScriptedTransport {
         fn send(&mut self, message: IpcMessage) -> Result<(), ProtocolError> {
             self.sent.lock().unwrap().push(message);
@@ -1315,7 +1346,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_routes_interleaved_results_and_frame_data() {
+    fn worker_completes_each_frame_before_sending_the_next() {
         let first = FrameKey {
             surface_id: 10,
             navigation_epoch: 4,
@@ -1327,14 +1358,15 @@ mod tests {
             frame_id: 2,
         };
         let sent = Arc::new(Mutex::new(Vec::new()));
-        let mut transport = ScriptedTransport {
+        let mut transport = LockstepTransport {
             sent: Arc::clone(&sent),
             responses: VecDeque::from([
-                Ok(result(2, second)),
                 Ok(result(1, first)),
-                Ok(data(4, first, 11)),
-                Ok(data(3, second, 22)),
+                Ok(data(2, first, 11)),
+                Ok(result(3, second)),
+                Ok(data(4, second, 22)),
             ]),
+            awaiting_response: false,
         };
         let completed = CompletedFrameChannel::new(4);
         let present = PresentFrameChannel::new();

@@ -11,8 +11,8 @@ use crate::{IpcChannel, IpcMessage, ProtocolError};
 
 /// 消息帧的最大长度（64 MiB），防止恶意或错误数据导致内存爆炸。
 ///
-/// Compositor 图元快照可能携带解码后的图片像素；正常页面首帧已超过旧的
-/// 16 MiB 上限。64 MiB 可容纳当前快照和单张 4K RGBA 帧，同时保持有界分配。
+/// Compositor 的 UI 上传和 present 回读可能携带整张物理像素位图；高 DPI
+/// 窗口已超过旧的 16 MiB 上限。64 MiB 可容纳单张 4K RGBA 帧，同时保持有界分配。
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 fn validate_frame_size(len: usize) -> Result<(), ProtocolError> {
@@ -320,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn compositor_snapshot_above_legacy_limit_is_accepted() {
+    fn compositor_ui_frame_above_legacy_limit_is_accepted() {
         const OBSERVED_COMPOSITOR_FRAME_SIZE: usize = 21_797_029;
 
         let payload = vec![0; OBSERVED_COMPOSITOR_FRAME_SIZE];
