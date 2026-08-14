@@ -849,8 +849,11 @@ impl AsyncPageLoad {
         tracing::info!(url = %self.url, count = self.lazy_urls.len(), "page load: fetch lazy images");
         for abs in self.lazy_urls.drain(..) {
             let key = image_resource_key(&abs, None);
+            // `loading=lazy` 仅在初始关键资源完成后启动，且不应与可见图片竞争。
+            let mut meta = ResourceFetchMeta::IMAGE;
+            meta.priority = 1;
             self.lazy_img_pending
-                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
+                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, meta)));
         }
     }
 
