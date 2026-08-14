@@ -1,8 +1,14 @@
 # ZeroWeb 网络加载性能专项：统一调度、协议缓存与可量化验收
 
 日期：2026-08-14
-状态：调研及设计提案，未实施
+状态：P0/P1 实施中（2026-08-14 起）；P2 传输层迁移待独立 RFC
 范围：`zero-net`、`zero-webview`、`zero-browser` 的页面主文档及子资源加载路径
+
+## 实施进展（持续更新）
+
+- 已完成：统一 `ResourceLoader` 入口、请求身份合并、全局与 origin 并发预算、同优先级 origin 轮转、请求缓存指令、缓存分区、浏览器页面 origin 分区传递、`fetchpriority`（preload 与图片）及 lazy 图片低优先级。
+- 已完成：本地 TCP fixture 覆盖 fresh hit、身份/Vary 隔离、缓存分区及匿名加载指标；加载器提供 cache/revalidate/network/only-if-cached、字节数与等待时长聚合计数。
+- 未完成：真正 async/流式传输、连接预建、HTTP/3 与 RFC 9218 `Priority`；这些需要引入 runtime 并重构传输 API，仍按本文 P2 边界单独实施。
 
 ## 阅读指引：来源分级
 
