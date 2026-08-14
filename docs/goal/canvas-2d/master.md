@@ -1,8 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（R34xx 第八批定稿：remove 本地标记——current.removed 通过，
-shadows 目录 0 Fail；主线程 **752 Pass** / worker **701 Pass**（基线 718/630 →
-+34/+71）；证据见 evidence/r34xx-batch2）。
+**最后更新**: 2026-08-15（R34xx 第九批定稿：**text .tentative DOM 对照侧完成**——
+selection-rects 24/24 + index-from-offset 50/51（DOM 文本几何注册表 +
+caretPositionFromPoint + Range.getClientRects + em 盒 rect + pen wire）；
+主线程 **827 Pass** / worker **712 Pass**（基线 718/630 → +109/+82）；
+证据见 evidence/r34xx-batch2）。
 
 ---
 
@@ -104,7 +106,7 @@ shadows 目录 0 Fail；主线程 **752 Pass** / worker **701 Pass**（基线 71
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
-| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~73（indexFromOffset/selectionRects——依赖 DOM 文本几何：同步脚本内 mutation 可见性 + caretPositionFromPoint + Range.getClientRects 文本选区，js-dom 流深面）+ variationSelectors 1（emoji 字体回退）+ float16 数据路径 2（colorSpace 存储模型）+ ctor.basics 陈旧子断言 1 + reftest-format 超时 ~3 |
+| G7 | 剩余失败聚类 | 🔄 float16 数据路径 2（原始浮点像素存储/colorSpace 模型）+ variationSelectors 1（emoji 字体回退）+ ctor.basics 陈旧子断言 1 + index-from-offset-edge-cases 2 断言（边界约定与 DOM 对照族不一致）+ reftest-format 超时（非 testharness 面） |
 
 ## 待用户决策清单
 
