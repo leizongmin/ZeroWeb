@@ -37,13 +37,13 @@ struct QueuedJob {
     shared: bool,
     submitted_at: Instant,
     telemetry_tx: Option<Sender<FetchTelemetry>>,
+    timeout_secs: u64,
 }
 
-/// 按 origin 限制并发数的 fetch 调度器；复用单个 [`HttpClient`]（keep-alive）。
+/// 按 origin 限制并发数的 fetch 调度器。
 pub struct PerOriginFetchScheduler {
     max_per_origin: usize,
     max_total: usize,
-    client: HttpClient,
     in_flight: HashMap<String, usize>,
     in_flight_total: usize,
     queue: Vec<QueuedJob>,
@@ -66,7 +66,6 @@ impl PerOriginFetchScheduler {
         Self {
             max_per_origin: max_per_origin.max(1),
             max_total: max_total.max(1),
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -123,6 +122,7 @@ impl PerOriginFetchScheduler {
             shared: false,
             submitted_at: Instant::now(),
             telemetry_tx: None,
+            timeout_secs: 30,
         };
         self.try_start(job);
         reply_rx
@@ -164,7 +164,7 @@ impl PerOriginFetchScheduler {
         priority: FetchPriority,
         extra_headers: Vec<(String, String)>,
     ) -> Receiver<FetchJobResult> {
-        Self::submit_shared_with_key_headers_and_telemetry(sched, key, url, priority, extra_headers).0
+        Self::submit_shared_with_key_headers_and_telemetry(sched, key, url, priority, extra_headers, 30).0
     }
 
     /// 经共享调度器提交带身份键的 GET，并在完成时发送匿名时序数据。
@@ -174,6 +174,7 @@ impl PerOriginFetchScheduler {
         url: impl Into<String>,
         priority: FetchPriority,
         extra_headers: Vec<(String, String)>,
+        timeout_secs: u64,
     ) -> (Receiver<FetchJobResult>, Receiver<FetchTelemetry>, bool) {
         let key = key.into();
         let url = url.into();
@@ -199,6 +200,7 @@ impl PerOriginFetchScheduler {
             shared: true,
             submitted_at: Instant::now(),
             telemetry_tx: Some(event_tx),
+            timeout_secs,
         };
         s.try_start(job);
         (reply_rx, event_rx, true)
@@ -244,7 +246,6 @@ impl PerOriginFetchScheduler {
         self.last_queued_origin = Some(job.origin.clone());
         *self.in_flight.entry(job.origin.clone()).or_insert(0) += 1;
         self.in_flight_total += 1;
-        let client = self.client.clone();
         let url = job.url;
         let key = job.key;
         let origin = job.origin;
@@ -254,13 +255,16 @@ impl PerOriginFetchScheduler {
         let shared = job.shared;
         let submitted_at = job.submitted_at;
         let telemetry_tx = job.telemetry_tx;
+        let timeout_secs = job.timeout_secs;
         async_runtime().spawn(async move {
             let network_started = Instant::now();
             let mut req = crate::HttpRequest::get(&url);
             for (name, value) in extra_headers {
                 req = req.header(&name, &value);
             }
-            let result = client.send_async(req).await.map_err(|e| e.to_string());
+            let result = HttpClient::send_async_with_timeout(timeout_secs, req)
+                .await
+                .map_err(|e| e.to_string());
             match &result {
                 Ok(resp) => tracing::info!(
                     url = %url,
@@ -389,7 +393,6 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 2,
             max_total: 24,
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -412,7 +415,6 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 24,
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -433,7 +435,6 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 24,
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -452,7 +453,6 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 6,
             max_total: 1,
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),
@@ -471,7 +471,6 @@ mod tests {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
             max_total: 1,
-            client: HttpClient::new(),
             in_flight: HashMap::new(),
             in_flight_total: 0,
             queue: Vec::new(),

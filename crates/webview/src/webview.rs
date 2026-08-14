@@ -1201,16 +1201,24 @@ impl WebView {
 
     /// 经统一资源加载器同步取得 HTTP 子资源；`file:` 保持本地读取语义。
     fn resource_get(&self, url: &str, priority: FetchPriority, destination: &str) -> Result<HttpResponse, NetError> {
-        // `ResourceLoader` 当前共享默认 30 秒 transport timeout；保留宿主显式超时配置
-        // 的 API 语义，待 loader timeout 成为 request context 的一部分后再统一。
-        if is_file_url(url) || self.http_client.timeout_secs != 30 {
+        if is_file_url(url) {
             return self.http_client.get(url);
         }
         ResourceLoader::shared()
-            .submit(ResourceRequest::get(url, priority).with_destination(destination))
+            .submit(
+                ResourceRequest::get(url, priority)
+                    .with_destination(destination)
+                    .with_timeout_secs(self.http_client.timeout_secs),
+            )
             .recv()
             .map_err(|_| NetError::Network("resource loader worker exited".to_string()))?
-            .map_err(NetError::Network)
+            .map_err(|error| {
+                if error == NetError::Timeout.to_string() {
+                    NetError::Timeout
+                } else {
+                    NetError::Network(error)
+                }
+            })
     }
 
     /// 文档布局高度（CSS 逻辑像素）。

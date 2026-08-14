@@ -103,6 +103,8 @@ pub struct ResourceRequest {
     pub navigation_id: Option<u64>,
     /// 资源目的地，仅用于调度与匿名事件；默认 `other`。
     pub destination: String,
+    /// 网络超时秒数；不同超时不得合并同一在途事务。
+    pub timeout_secs: u64,
 }
 
 impl ResourceRequest {
@@ -116,6 +118,7 @@ impl ResourceRequest {
             cache_mode: CacheMode::Default,
             navigation_id: None,
             destination: "other".to_string(),
+            timeout_secs: 30,
         }
     }
 
@@ -149,6 +152,12 @@ impl ResourceRequest {
         self
     }
 
+    /// 设置网络超时秒数。
+    pub fn with_timeout_secs(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+
     fn identity_key(&self) -> String {
         // https://www.rfc-editor.org/rfc/rfc9111#section-4.1
         // 在未知 Vary 前保守地纳入全部请求头；这可能少合并，但不会将不同变体错误合并。
@@ -160,8 +169,8 @@ impl ResourceRequest {
         headers.sort_unstable();
         let normalized_url = crate::cache_key::strip_url_fragment(&self.url);
         format!(
-            "GET\0partition={}\0cache={:?}\0url={}\0headers={headers:?}",
-            self.partition, self.cache_mode, normalized_url
+            "GET\0partition={}\0cache={:?}\0timeout={}\0url={}\0headers={headers:?}",
+            self.partition, self.cache_mode, self.timeout_secs, normalized_url
         )
     }
 }
@@ -364,6 +373,7 @@ impl ResourceLoader {
             request.url.clone(),
             request.priority,
             headers,
+            request.timeout_secs,
         );
         if owns_telemetry {
             let mut stats = self.stats.lock().expect("resource loader stats lock");
@@ -569,6 +579,11 @@ mod tests {
             a.identity_key(),
             a.clone().with_cache_mode(CacheMode::NoCache).identity_key(),
             "a forced revalidation must not join a normal cache transaction"
+        );
+        assert_ne!(
+            a.identity_key(),
+            a.with_timeout_secs(5).identity_key(),
+            "requests with different network timeouts must not share a transaction"
         );
     }
 
