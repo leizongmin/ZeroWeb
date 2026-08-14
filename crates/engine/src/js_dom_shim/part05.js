@@ -819,6 +819,12 @@
       if (b === undefined) {
         throw new TypeError('missing height');
       }
+      // R34xx：settings 非对象 → TypeError（WebIDL 字典参转换——ctor.basics 的
+      // (self,4,4) 三参 TypeError：sw=ToUint32(self)→0 本可匹配 (sw,sh) 重载，但
+      // 字典参 4 转换失败 → 该重载被拒 → data 重载也拒 → 重载链全灭 → TypeError）。
+      if (c !== undefined && typeof c !== 'object') {
+        throw new TypeError('settings is not an object');
+      }
       w = Math.trunc(+a);
       h = Math.trunc(+b);
       settings = (c != null && typeof c === 'object') ? c : null;
@@ -841,19 +847,34 @@
     }
     var isF16 = fmt === 'rgba-float16';
     var data;
-    if (dataArg !== null) {
+    var dataPath = (dataArg !== null);
+    if (dataPath) {
       // 类型校验先于长度算法（Chromium 实际顺序）：
-      //   WebIDL union：非 Uint8ClampedArray/Float16Array → TypeError；
+      //   WebIDL union：非 Uint8ClampedArray/Float16Array → **重载回退**；
       //   data 类型与 pixelFormat 不匹配 → InvalidStateError
       //   （driving: 2d.imageData.object.ctor.array.bounds / pixelFormat）。
       var isU8 = (dataArg instanceof Uint8ClampedArray);
       var isF16a = (F16Ctor !== null && dataArg instanceof F16Ctor);
       if (!isU8 && !isF16a) {
-        throw new TypeError('data must be Uint8ClampedArray or Float16Array');
+        // WebIDL 重载链：data union 转换失败 → 试 (sw, sh[, settings]) 重载——
+        // sw = ToUint32(dataArg)（对象 → 0）→ IndexSizeError（ctor.basics 的
+        // Uint8Array 2 参 INDEX_SIZE_ERR）；settings 参数非对象 → TypeError
+        //（ctor.basics 的 (self, 4, 4) 3 参 TypeError——字典参转换失败终止重载链）。
+        if (c !== undefined && typeof c !== 'object') {
+          throw new TypeError('settings is not an object');
+        }
+        w = Math.trunc(+a);
+        h = Math.trunc(+b);
+        dataArg = null;
+        settings = (c != null && typeof c === 'object') ? c : null;
+        dataPath = false;
       }
-      if ((isF16 && !isF16a) || (!isF16 && !isU8)) {
+      // pixelFormat 与 data 类型不匹配 → InvalidStateError（重载回退后不属 data 路径）。
+      if (dataPath && ((isF16 && !isF16a) || (!isF16 && !isU8))) {
         throw _zwDomException('data type does not match pixelFormat', 'InvalidStateError');
       }
+    }
+    if (dataPath) {
       // spec（imagebitmap-and-animations §ImageData constructor）：
       //   1. bytesPerPixel = 4（unorm8）/ 8（float16）
       //   2. length = data 的 byte length
@@ -1865,13 +1886,17 @@
             }
             return cnt;
           }
-          // ltr：caret = 墨迹右缘 < x 的字形数（与 DOM caretPositionFromPoint 同语义——
-          // 字形墨迹间隙返回边界索引；index-from-offset 主测试 + edges 全过）。
+          // ltr：caret = 字形**中点** < x 的字形数（中点 = 相邻字形原点中点；末字形 =
+          // 与文本右缘中点——index-from-offset-edge-cases 的边界语义：a_width/2 → 0
+          //（中点相等不归）、a_width/2+1 → 1、a_width（右缘）→ 1、a_width+b_width →
+          // 2）。与 DOM caretPositionFromPoint 同规则（part06 _zwCaretFromPoint）。
           var cnt = 0;
           for (var i = 0; i < glyphs.length; i++) {
             var r = glyphs[i]; // [pen, l, t, r, b]
             if (r[3] <= r[1] && r[4] <= r[2]) continue;
-            if (r[3] < x) cnt++;
+            var nextPen = (i + 1 < glyphs.length) ? glyphs[i + 1][0] : num(0);
+            var center = (r[0] + nextPen) / 2;
+            if (center < x) cnt++;
           }
           return cnt;
         },

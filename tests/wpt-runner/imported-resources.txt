@@ -21,3 +21,10 @@ fonts/sileot-webfont.woff
 fonts/Lato-Medium.ttf
 css/css-fonts/support/fonts/RobotoExtremo-VF.subset.ttf
 fonts/noto/noto-sans-v8-latin-regular.woff
+css/css-fonts/resources/vs/NotoEmoji-Regular_subset.ttf
+css/css-fonts/resources/vs/NotoColorEmoji-Regular_subset.ttf
+css/css-fonts/resources/vs/NotoEmoji-Regular_without-cmap14-subset.ttf
+css/css-fonts/resources/vs/NotoSansJP-Regular_with-cmap14-subset.ttf
+css/css-fonts/resources/vs/MPLUS1-Regular_without-cmap14-subset.ttf
+css/css-fonts/resources/vs/STIXTwoMath-Regular_with-cmap14-subset.ttf
+css/css-fonts/resources/vs/NotoSansMath-Regular_without-cmap14-subset.ttf

@@ -91,6 +91,16 @@ fetch_raw "fonts/CanvasTest.ttf"
 fetch_raw "fonts/CanvasTest-ascent256.ttf"
 fetch_raw "fonts/CanvasTest-descent0.ttf"
 
+# R34xx：variationSelectors 的 @font-face 变体字体（css/css-fonts/resources/vs/——
+# 外链 variation-sequences.css 引用；色/单色 emoji + cmap14 对照族）。
+fetch_raw "css/css-fonts/resources/vs/NotoEmoji-Regular_subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/NotoColorEmoji-Regular_subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/NotoEmoji-Regular_without-cmap14-subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/NotoSansJP-Regular_with-cmap14-subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/MPLUS1-Regular_without-cmap14-subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/STIXTwoMath-Regular_with-cmap14-subset.ttf"
+fetch_raw "css/css-fonts/resources/vs/NotoSansMath-Regular_without-cmap14-subset.ttf"
+
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"
 done

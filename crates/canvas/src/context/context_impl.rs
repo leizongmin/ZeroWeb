@@ -269,25 +269,21 @@ impl CanvasContext {
             && let Ok(loader) = loader.lock()
             && let Some(shaped) = {
                 let lang = (!self.font.lang.is_empty()).then_some(self.font.lang.as_str());
-                if rtl {
-                    loader.shape_text_cached_with_features_lang(
-                        font_id,
-                        &shaped_text,
-                        font_size,
-                        zero_render_foundation::font::TextDirection::RightToLeft,
-                        &text_features(self.font.kerning_none, self.font.small_caps),
-                        lang,
-                    )
+                // R34xx：呈现感知 shaping（VS15 回落文本字体——2d.text.variationSelectors）。
+                let direction = if rtl {
+                    zero_render_foundation::font::TextDirection::RightToLeft
                 } else {
-                    loader.shape_text_cached_with_features_lang(
-                        font_id,
-                        &shaped_text,
-                        font_size,
-                        zero_render_foundation::font::TextDirection::Auto,
-                        &text_features(self.font.kerning_none, self.font.small_caps),
-                        lang,
-                    )
-                }
+                    zero_render_foundation::font::TextDirection::Auto
+                };
+                shape_text_with_presentation_fallback(
+                    &loader,
+                    font_id,
+                    &shaped_text,
+                    font_size,
+                    direction,
+                    &text_features(self.font.kerning_none, self.font.small_caps),
+                    lang,
+                )
             }
         {
             let natural: f32 = shaped.iter().map(|g| g.advance_x).sum::<f32>().abs();
@@ -382,20 +378,17 @@ impl CanvasContext {
                         clean
                     };
                     let lang = (!self.font.lang.is_empty()).then_some(self.font.lang.as_str());
-                    let shaped = if self.font.kerning_none || lang.is_some() {
-                        loader
-                            .shape_text_cached_with_features_lang(
-                                fid,
-                                &shaped_source,
-                                size,
-                                zero_render_foundation::font::TextDirection::Auto,
-                                &text_features(self.font.kerning_none, self.font.small_caps),
-                                lang,
-                            )
-                            .unwrap_or_default()
-                    } else {
-                        loader.shape_text_cached(fid, &shaped_source, size).unwrap_or_default()
-                    };
+                    // R34xx：呈现感知 shaping（VS15 回落文本字体——2d.text.variationSelectors）。
+                    let shaped = shape_text_with_presentation_fallback(
+                        &loader,
+                        fid,
+                        &shaped_source,
+                        size,
+                        zero_render_foundation::font::TextDirection::Auto,
+                        &text_features(self.font.kerning_none, self.font.small_caps),
+                        lang,
+                    )
+                    .unwrap_or_default();
                     let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
                     // R34xx：letterSpacing（含末字符——WPT ×11 期望）与 wordSpacing。
                     let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
@@ -2214,6 +2207,42 @@ fn text_features(kerning_none: bool, small_caps: bool) -> Vec<zero_render_founda
         v.push(zero_render_foundation::font::OpenTypeFeature::new(*b"smcp", 1));
     }
     v
+}
+
+/// R34xx：呈现感知 shaping——variation selector 决定字体选择（2d.text.variationSelectors）：
+/// ⚓+U+FE0E（text 呈现）在 color 字体（COLR/SVG 表——emoji 字体）下回落文本字体
+/// 'sans-serif'，⚓+U+FE0F（emoji 呈现）保持 color 字体 → 宽度不同。cmap14 变体 glyph
+/// 替换仍在 shaper 层（shape_with_rustybuzz）。**近似**：整串按是否存在 VS15 选字体
+///（Chromium 逐字回退细化——混合呈现串的中间字符宽度可能微差，文档化）。
+/// 无 VS15 / 非 color 字体 / 无回落 → 原路径（单字体 shaping）。
+fn shape_text_with_presentation_fallback(
+    loader: &FontLoader,
+    font_id: u32,
+    text: &str,
+    font_size: f32,
+    direction: zero_render_foundation::font::TextDirection,
+    features: &[zero_render_foundation::font::OpenTypeFeature],
+    lang: Option<&str>,
+) -> Option<Vec<zero_render_foundation::font::ShapedGlyph>> {
+    let fallback_id = (text.contains('\u{FE0E}'))
+        .then(|| {
+            loader.get_font_data(font_id).and_then(|data| {
+                let face = rustybuzz::ttf_parser::Face::parse(data, loader.face_index(font_id)).ok()?;
+                let is_color = face.tables().colr.is_some() || face.tables().svg.is_some();
+                is_color.then(|| {
+                    loader
+                        .build_font_resolver()
+                        .get("sans-serif")
+                        .copied()
+                        .filter(|fid| *fid != font_id)
+                })?
+            })
+        })
+        .flatten();
+    let Some(fid) = fallback_id else {
+        return loader.shape_text_cached_with_features_lang(font_id, text, font_size, direction, features, lang);
+    };
+    loader.shape_text_cached_with_features_lang(fid, text, font_size, direction, features, lang)
 }
 
 /// R34xx：canvas 文本预处理（spec text preparation algorithm：替换 ASCII whitespace 为

@@ -2209,18 +2209,23 @@ function _zwTextElGeometry(text, font, direction, spacing) {
     var width = parseFloat(p0[0]) || 0;
     var asc = parseFloat(p0[5]) || 0, desc = parseFloat(p0[6]) || 0;
     var rects = [];
+    var pens = [];
     if (parts[1]) {
       var gs = parts[1].split(';');
       for (var gi = 0; gi < gs.length; gi++) {
         var gv = gs[gi].split(','); // pen,l,t,r,b
+        var gpen = parseFloat(gv[0]) || 0;
         var gl = parseFloat(gv[1]) || 0, gt = parseFloat(gv[2]) || 0;
         var gr = parseFloat(gv[3]) || 0, gb = parseFloat(gv[4]) || 0;
         // 保留全部字形（含 0 墨迹空格——索引须与 getSelectionRects 的 glyphs 对齐；
         // 合并时 0 尺寸不影响 min/max）。
         rects.push([gl, gt, gr, gb]);
+        // R34xx：字形原点并行数组——caretPositionFromPoint 的 glyph 中点规则
+        //（与 getIndexFromOffset 同：中点 = 相邻原点中点，末字形 = 与文本右缘中点）。
+        pens.push(gpen);
       }
     }
-    return { width: width, ascent: asc, descent: desc, rects: rects };
+    return { width: width, ascent: asc, descent: desc, rects: rects, pens: pens };
   } catch (_e) { return null; }
 }
 function _zwTextElStyle(entry) {
@@ -2290,14 +2295,21 @@ function _zwCaretFromPoint(x, y) {
       if (gv[2] > gv[0] && gv[3] > gv[1] && yBase >= gv[1] && yBase <= gv[3]) { vHit = true; break; }
     }
     if (!vHit) continue;
-    // 边界语义与 getIndexFromOffset 一致（ltr：墨迹右缘 < x 的字形数；rtl：左缘 > x
-    // 的字形数）——字形墨迹间隙返回边界索引（非 null）。
+    // 边界语义与 getIndexFromOffset 一致（ltr：字形中点 < x 的字形数——中点 = 相邻
+    // 原点中点、末字形与文本右缘中点；index-from-offset-edge-cases 的 a_width/2+1 →
+    // 1 等；rtl：左缘 > x 的字形数）——字形间隙返回边界索引（非 null）。
     var cnt = 0;
     var rtl = (st.direction === 'rtl');
     for (var gi = 0; gi < geom.rects.length; gi++) {
       var g = geom.rects[gi]; // [l, t, r, b]
       if (g[2] <= g[0] && g[3] <= g[1]) continue;
-      if (rtl ? (g[0] > x) : (g[2] < x)) cnt++;
+      if (rtl) {
+        if (g[0] > x) cnt++;
+      } else {
+        var nextPen = (gi + 1 < geom.pens.length) ? geom.pens[gi + 1] : geom.width;
+        var center = (geom.pens[gi] + nextPen) / 2;
+        if (center < x) cnt++;
+      }
     }
     return { offsetNode: e.node, offset: cnt };
   }

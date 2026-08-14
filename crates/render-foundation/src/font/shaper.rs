@@ -678,6 +678,9 @@ mod tests {
     use crate::font::loader::FontLoader;
 
     const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    // R34xx：cmap format 14 变体字体（上游 WPT css/css-fonts/resources/vs/
+    // NotoEmoji-Regular_subset.ttf 副本——2d.text.variationSelectors 的 ⚓+FE0E/FE0F）。
+    const NOTO_EMOJI_VS_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/NotoEmoji-VS-subset.ttf");
 
     /// 创建空的 TextShaper（无字体）。
     fn make_empty_shaper() -> TextShaper<'static> {
@@ -1018,6 +1021,37 @@ mod tests {
             "unshaped={unshaped}, isolated={isolated}"
         );
         assert!(actual < unshaped, "Lato AV kerning must reduce advance");
+    }
+
+    /// R34xx：variation selector 语义锁定——VS 不贡献行宽（harfbuzz/rustybuzz 原生：
+    /// cmap14 命中 → 变体 glyph 并入基字 cluster；未命中 → default-ignorable 零宽）。
+    /// NotoEmoji-VS-subset 的 cmap14 覆盖 ℹ（U+2139：FE0E → glyph 1）。2d.text.
+    /// variationSelectors 的宽度差由 canvas 层呈现回退实现（见 canvas context_impl
+    /// shape_text_with_presentation_fallback）。
+    #[test]
+    fn test_variation_selector_zero_width_and_cmap14() {
+        let mut loader = FontLoader::new();
+        let font_id = loader
+            .load_font(NOTO_EMOJI_VS_TTF)
+            .expect("should load bundled NotoEmoji VS subset");
+        let shaper = TextShaper::new(&loader, Some(FontId(font_id)));
+
+        let anchor = '\u{2139}'; // U+2139 ℹ（subset：base → glyph 1）
+        let vs15 = '\u{FE0E}'; // text presentation selector
+        let w_bare = measure_text_width(&shaper, &anchor.to_string(), 32.0);
+        let mut text = String::from(anchor);
+        text.push(vs15);
+        let w_vs = measure_text_width(&shaper, &text, 32.0);
+        assert!(
+            (w_bare - w_vs).abs() < 0.001,
+            "VS 不应贡献行宽，w_bare={w_bare}, w_vs={w_vs}"
+        );
+
+        // cmap14 命中 → 变体 glyph 并入基字（1 个字形，glyph = cmap14 变体 1）。
+        let glyphs = shaper.shape_single_line(&text, 32.0);
+        assert_eq!(glyphs.len(), 1, "ℹ + FE0E cmap14 命中应合并为 1 个字形");
+        assert_eq!(glyphs[0].code_point, anchor);
+        assert_eq!(glyphs[0].glyph_id, 1, "cmap14 变体替换（→glyph 1）");
     }
 
     /// 测试使用真实字体的换行。

@@ -912,3 +912,51 @@ fn test_lang_tr_widens_fi() {
     let en = ctx.measure_text("fi").width;
     assert!(tr > en, "tr ({tr}) 应宽于 en ({en})——fi 连字在土耳其语关闭");
 }
+
+// R34xx：呈现感知 fallback——VS15（text 呈现）在 color 字体（COLR/SVG）下回落
+// 文本字体 'sans-serif'（2d.text.variationSelectors：⚓+FE0E vs ⚓+FE0F 宽度不同——
+// emoji 字体仅用于 emoji 呈现，Chromium 语义近似）。
+#[test]
+fn test_variation_selector_presentation_fallback() {
+    use std::sync::{Arc, Mutex};
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let emoji_bytes = std::fs::read(format!(
+        "{manifest}/../../tests/wpt-runner/fonts/NotoColorEmoji-VS-subset.ttf"
+    ))
+    .unwrap_or_else(|_| Vec::new());
+    // 文本回落字体须含 U+2693 ⚓——用系统 DejaVu（WPT 环境同款；缺失则跳过）。
+    let text_bytes = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    .iter()
+    .find_map(|p| std::fs::read(p).ok())
+    .unwrap_or_default();
+    if emoji_bytes.is_empty() || text_bytes.is_empty() {
+        return; // 资产缺失（非 wpt-runner 环境）→ 跳过。
+    }
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let efid = loader.load_font(&emoji_bytes).unwrap();
+    loader.register_family_alias("ColorEmojiFont", efid);
+    let tfid = loader.load_font(&text_bytes).unwrap();
+    loader.register_family_alias("sans-serif", tfid);
+    let mut ctx = CanvasContext::new(200, 50);
+    ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+    ctx.set_font(FontDescriptor {
+        family: "ColorEmojiFont".to_string(),
+        size: 32.0,
+        ..FontDescriptor::default()
+    });
+    // ⚓+FE0F（emoji 呈现）→ ColorEmojiFont（⚓ 无 glyph → notdef 宽）。
+    let w_emoji = ctx.measure_text("\u{2693}\u{FE0F}").width;
+    // ⚓+FE0E（text 呈现）→ 回落 'sans-serif'（Lato 有 ⚓ → 真字形宽）。
+    let w_text = ctx.measure_text("\u{2693}\u{FE0E}").width;
+    assert!(
+        (w_emoji - w_text).abs() > 0.001,
+        "⚓+FE0F ({w_emoji}) 与 ⚓+FE0E ({w_text}) 宽度应不同"
+    );
+    // 无 VS 文本不受影响（仍用 ColorEmojiFont——ℹ 有 glyph → 真字形）。
+    let w_plain = ctx.measure_text("\u{2139}").width;
+    assert!(w_plain > 0.0, "ℹ 在 ColorEmojiFont 应有真字形宽度");
+}
