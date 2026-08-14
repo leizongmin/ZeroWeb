@@ -426,6 +426,20 @@ impl HttpCache {
         mem || disk
     }
 
+    /// 使目标 URI 的全部 `Vary` 变体失效。
+    ///
+    /// https://www.rfc-editor.org/rfc/rfc9111#section-4.4
+    pub fn invalidate(&mut self, url: &str) -> bool {
+        self.ensure_disk_index();
+        let base = strip_url_fragment(url);
+        let keys = self.resource_index.get(&base).cloned().unwrap_or_else(|| vec![base]);
+        let mut removed = false;
+        for key in keys {
+            removed |= self.remove(&key);
+        }
+        removed
+    }
+
     /// 清空内存与磁盘缓存。
     pub fn clear(&mut self) {
         self.entries.clear();

@@ -7,12 +7,14 @@ use std::thread;
 
 use crate::client::HttpClient;
 use crate::fetch_priority::FetchPriority;
-use crate::resource_policy::{max_connections_per_origin, origin_from_url};
+use crate::resource_policy::{max_connections_per_origin, max_connections_total, origin_from_url};
 
 /// HTTP GET 任务结果。
 pub type FetchJobResult = Result<crate::HttpResponse, String>;
 
 struct QueuedJob {
+    /// 请求身份键；只有身份相同的请求允许合并。
+    key: String,
     url: String,
     origin: String,
     priority: FetchPriority,
@@ -25,11 +27,12 @@ struct QueuedJob {
 /// 按 origin 限制并发数的 fetch 调度器；复用单个 [`HttpClient`]（keep-alive）。
 pub struct PerOriginFetchScheduler {
     max_per_origin: usize,
+    max_total: usize,
     client: HttpClient,
     in_flight: HashMap<String, usize>,
+    in_flight_total: usize,
     queue: Vec<QueuedJob>,
-    /// 在途/排队 URL 的订阅者（性能门禁优化 S6，2026-08-08）：同一 URL 的
-    /// 重复 `submit_shared_*` 请求合并为一次网络请求，完成时广播结果。
+    /// 在途/排队请求身份的订阅者；完成时广播结果。
     pending: HashMap<String, Vec<Sender<FetchJobResult>>>,
     /// `submit_shared` 安装后，排队 job 启动时也能自动 `on_complete`。
     self_hook: Option<Arc<Mutex<Self>>>,
@@ -40,8 +43,10 @@ impl PerOriginFetchScheduler {
     pub fn new() -> Self {
         Self {
             max_per_origin: max_connections_per_origin(),
+            max_total: max_connections_total(),
             client: HttpClient::new(),
             in_flight: HashMap::new(),
+            in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
             self_hook: None,
@@ -79,6 +84,7 @@ impl PerOriginFetchScheduler {
         let url = url.into();
         let (reply_tx, reply_rx) = channel();
         let job = QueuedJob {
+            key: url.clone(),
             origin: origin_from_url(&url),
             url,
             priority,
@@ -112,16 +118,35 @@ impl PerOriginFetchScheduler {
         extra_headers: Vec<(String, String)>,
     ) -> Receiver<FetchJobResult> {
         let url = url.into();
+        Self::submit_shared_with_key_and_headers(sched, url.clone(), url, priority, extra_headers)
+    }
+
+    /// 经共享调度器提交带明确请求身份键的 GET。
+    ///
+    /// `key` 必须由调用方从方法、URL、缓存分区及会影响响应的请求头构造；调度器不会
+    /// 将不同 key 的请求合并，即使 URL 相同。
+    pub fn submit_shared_with_key_and_headers(
+        sched: &Arc<Mutex<Self>>,
+        key: impl Into<String>,
+        url: impl Into<String>,
+        priority: FetchPriority,
+        extra_headers: Vec<(String, String)>,
+    ) -> Receiver<FetchJobResult> {
+        let key = key.into();
+        let url = url.into();
         let (reply_tx, reply_rx) = channel();
         let mut s = sched.lock().expect("fetch scheduler lock");
-        // 性能门禁优化 S6（2026-08-08）：同一 URL 在途/排队时合并——订阅现有请求，
-        // 不重复发起网络请求（图片/字体/样式表的重复引用与 preload 双抓在此收敛）。
-        if let Some(subscribers) = s.pending.get_mut(&url) {
+        if let Some(subscribers) = s.pending.get_mut(&key) {
             subscribers.push(reply_tx);
+            // 后到的关键消费者可提升仍在队列中的共享请求；已运行任务不抢占。
+            if let Some(job) = s.queue.iter_mut().find(|job| job.key == key) {
+                job.priority = job.priority.max(priority);
+            }
             return reply_rx;
         }
-        s.pending.insert(url.clone(), vec![reply_tx.clone()]);
+        s.pending.insert(key.clone(), vec![reply_tx.clone()]);
         let job = QueuedJob {
+            key,
             origin: origin_from_url(&url),
             url,
             priority,
@@ -141,17 +166,21 @@ impl PerOriginFetchScheduler {
                 self.in_flight.remove(origin);
             }
         }
+        self.in_flight_total = self.in_flight_total.saturating_sub(1);
         self.pump_queue();
     }
 
     fn try_start(&mut self, job: QueuedJob) {
-        if self.in_flight.get(&job.origin).copied().unwrap_or(0) >= self.max_per_origin {
+        if self.in_flight_total >= self.max_total
+            || self.in_flight.get(&job.origin).copied().unwrap_or(0) >= self.max_per_origin
+        {
             tracing::info!(
                 url = %job.url,
                 origin = %job.origin,
                 priority = ?job.priority,
                 queued = self.queue.len() + 1,
-                "HTTP fetch queued (per-origin limit)"
+                total_in_flight = self.in_flight_total,
+                "HTTP fetch queued (concurrency limit)"
             );
             self.queue.push(job);
             return;
@@ -167,8 +196,10 @@ impl PerOriginFetchScheduler {
             "HTTP fetch start"
         );
         *self.in_flight.entry(job.origin.clone()).or_insert(0) += 1;
+        self.in_flight_total += 1;
         let client = self.client.clone();
         let url = job.url;
+        let key = job.key;
         let origin = job.origin;
         let reply_tx = job.reply_tx;
         let hook = self.self_hook.clone();
@@ -193,7 +224,7 @@ impl PerOriginFetchScheduler {
                 // S6 合并路径：广播给全部订阅者后移除 pending 条目
                 if let Some(sched) = hook.as_ref()
                     && let Ok(mut s) = sched.lock()
-                    && let Some(subscribers) = s.pending.remove(&url)
+                    && let Some(subscribers) = s.pending.remove(&key)
                 {
                     for tx in subscribers {
                         let _ = tx.send(result.clone());
@@ -212,6 +243,9 @@ impl PerOriginFetchScheduler {
 
     fn pump_queue(&mut self) {
         loop {
+            if self.in_flight_total >= self.max_total {
+                break;
+            }
             let mut best: Option<usize> = None;
             for (i, job) in self.queue.iter().enumerate() {
                 if self.in_flight.get(&job.origin).copied().unwrap_or(0) >= self.max_per_origin {
@@ -220,6 +254,13 @@ impl PerOriginFetchScheduler {
                 match best {
                     None => best = Some(i),
                     Some(bi) if job.priority > self.queue[bi].priority => best = Some(i),
+                    Some(bi)
+                        if job.priority == self.queue[bi].priority
+                            && self.in_flight.get(&job.origin).copied().unwrap_or(0)
+                                < self.in_flight.get(&self.queue[bi].origin).copied().unwrap_or(0) =>
+                    {
+                        best = Some(i)
+                    }
                     _ => {}
                 }
             }
@@ -241,10 +282,22 @@ impl PerOriginFetchScheduler {
         self.in_flight.get(origin).copied().unwrap_or(0)
     }
 
+    /// 测试用：当前所有 origin 合计的 in-flight 数。
+    #[cfg(test)]
+    pub fn in_flight_total_for_test(&self) -> usize {
+        self.in_flight_total
+    }
+
     /// 测试用：覆盖 per-origin 并发上限。
     #[cfg(test)]
     pub fn set_max_per_origin_for_test(&mut self, max: usize) {
         self.max_per_origin = max;
+    }
+
+    /// 测试用：覆盖全局并发上限。
+    #[cfg(test)]
+    pub fn set_max_total_for_test(&mut self, max: usize) {
+        self.max_total = max;
     }
 }
 
@@ -262,8 +315,10 @@ mod tests {
     fn queues_beyond_per_origin_limit() {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 2,
+            max_total: 24,
             client: HttpClient::new(),
             in_flight: HashMap::new(),
+            in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
             self_hook: None,
@@ -282,8 +337,10 @@ mod tests {
     fn higher_priority_jumps_queue() {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
+            max_total: 24,
             client: HttpClient::new(),
             in_flight: HashMap::new(),
+            in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
             self_hook: None,
@@ -300,8 +357,10 @@ mod tests {
     fn different_origins_do_not_share_limit() {
         let mut sched = PerOriginFetchScheduler {
             max_per_origin: 1,
+            max_total: 24,
             client: HttpClient::new(),
             in_flight: HashMap::new(),
+            in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
             self_hook: None,
@@ -310,6 +369,24 @@ mod tests {
         let _r2 = sched.submit("http://127.0.0.2:1/b");
         assert_eq!(sched.in_flight.len(), 2);
         assert!(sched.queue.is_empty());
+    }
+
+    #[test]
+    fn global_limit_bounds_different_origins() {
+        let mut sched = PerOriginFetchScheduler {
+            max_per_origin: 6,
+            max_total: 1,
+            client: HttpClient::new(),
+            in_flight: HashMap::new(),
+            in_flight_total: 0,
+            queue: Vec::new(),
+            pending: HashMap::new(),
+            self_hook: None,
+        };
+        let _r1 = sched.submit("http://127.0.0.1:1/a");
+        let _r2 = sched.submit("http://127.0.0.2:1/b");
+        assert_eq!(sched.in_flight_total_for_test(), 1);
+        assert_eq!(sched.queued_count_for_test(), 1);
     }
 
     #[test]

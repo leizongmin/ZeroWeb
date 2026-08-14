@@ -1,21 +1,12 @@
 //! 共享 HTTP 线程池 — per-origin 并发上限，对齐主流浏览器连接策略。
 
 use std::sync::mpsc::{self, Receiver};
-use std::sync::{Arc, Mutex, OnceLock};
 
-use zero_net::{
-    CacheLookup, FetchJobResult, FetchPriority, HttpClient, HttpRequest, HttpResponse, PerOriginFetchScheduler,
-};
+use zero_net::{FetchJobResult, FetchPriority, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_page_runtime::ResourceFetchMeta;
 
 /// HTTP GET 任务结果（文本）。
 pub type HttpTextResult = Result<String, String>;
-
-static NET_SCHEDULER: OnceLock<Arc<Mutex<PerOriginFetchScheduler>>> = OnceLock::new();
-
-fn scheduler() -> Arc<Mutex<PerOriginFetchScheduler>> {
-    NET_SCHEDULER.get_or_init(PerOriginFetchScheduler::new_shared).clone()
-}
 
 fn map_fetch_result(result: zero_net::FetchJobResult) -> Result<Vec<u8>, String> {
     match result {
@@ -50,9 +41,7 @@ where
     out
 }
 
-/// 统一缓存感知提交（性能门禁优化 S6，2026-08-08）：
-/// 负缓存（失败 URL 冷却期内直接返回失败）→ HTTP 缓存（Hit 立即返回 /
-/// Revalidate 带条件头 / Miss 提交）→ 完成时写回缓存 + 更新负缓存。
+/// 统一缓存感知提交：负缓存 → `ResourceLoader`（缓存/在途合并/调度）→ 负缓存回写。
 fn submit_cached(url: String, priority: FetchPriority) -> Receiver<FetchJobResult> {
     // 负缓存：失败冷却期内跳过网络（renderer 每 publish 重请求失败图 → 此处收敛）
     if zero_net::shared_negative_cache()
@@ -65,63 +54,14 @@ fn submit_cached(url: String, priority: FetchPriority) -> Receiver<FetchJobResul
         return rx;
     }
 
-    match zero_net::shared_http_cache().lock().unwrap().lookup(&url, &[]) {
-        CacheLookup::Hit(cached) => {
-            // 新鲜命中：不经网络直接返回缓存体
-            let (tx, rx) = mpsc::channel();
-            let _ = tx.send(Ok(HttpResponse {
-                status_code: cached.status_code,
-                headers: cached.headers,
-                body: cached.body,
-                url: cached.url,
-                redirect_count: 0,
-            }));
-            rx
-        }
-        CacheLookup::Revalidate {
-            conditional_headers, ..
-        } => {
-            let rx = PerOriginFetchScheduler::submit_shared_with_priority_and_headers(
-                &scheduler(),
-                url.clone(),
-                priority,
-                conditional_headers,
-            );
-            let url2 = url.clone();
-            bridge_rx(rx, move |result| match result {
-                Ok(resp) if resp.status_code == 304 => {
-                    // 304：用缓存体（not_modified 更新缓存元数据）
-                    match zero_net::shared_http_cache()
-                        .lock()
-                        .unwrap()
-                        .not_modified(&url, &[], &resp)
-                    {
-                        Some(c) => Ok(HttpResponse {
-                            status_code: c.status_code,
-                            headers: c.headers,
-                            body: c.body,
-                            url: c.url,
-                            redirect_count: 0,
-                        }),
-                        None => Err("304 without cached entry".to_string()),
-                    }
-                }
-                other => finalize_result(other, &url2),
-            })
-        }
-        CacheLookup::Miss => {
-            let rx = PerOriginFetchScheduler::submit_shared_with_priority(&scheduler(), url.clone(), priority);
-            let url2 = url.clone();
-            bridge_rx(rx, move |result| finalize_result(result, &url2))
-        }
-    }
+    let rx = ResourceLoader::shared().submit(ResourceRequest::get(url.clone(), priority));
+    bridge_rx(rx, move |result| finalize_result(result, &url))
 }
 
-/// 完成路径统一处理：2xx 写回共享缓存 + 清除失败标记；错误标记负缓存。
+/// 完成路径更新负缓存；HTTP 缓存由 `ResourceLoader` 统一处理。
 fn finalize_result(result: FetchJobResult, url: &str) -> FetchJobResult {
     match &result {
         Ok(resp) if (200..300).contains(&resp.status_code) => {
-            let _ = zero_net::shared_http_cache().lock().unwrap().put(url, resp);
             zero_net::shared_negative_cache().lock().unwrap().mark_ok(url);
         }
         Ok(_) => {}
@@ -143,7 +83,7 @@ pub fn fetch_text_async_meta(url: impl Into<String>, meta: ResourceFetchMeta) ->
     bridge_rx(rx, map_fetch_text)
 }
 
-/// 异步抓取主文档请求。GET 复用缓存调度器；POST 不缓存并在独立线程执行。
+/// 异步抓取主文档请求。GET 复用缓存调度器；unsafe 方法 write-through 后失效相关缓存。
 pub(crate) fn fetch_document_async(
     url: impl Into<String>,
     method: &str,
@@ -153,18 +93,22 @@ pub(crate) fn fetch_document_async(
     if method.eq_ignore_ascii_case("GET") && body.is_none() {
         return fetch_text_async_meta(url, ResourceFetchMeta::DOCUMENT);
     }
-    let method = method.to_ascii_uppercase();
-    let body = body.map(Vec::from);
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let result = match (method.as_str(), body) {
-            ("POST", Some(body)) => HttpClient::new()
-                .send(HttpRequest::post(&url, body).header("Content-Type", "application/x-www-form-urlencoded"))
-                .map_err(|error| error.to_string()),
-            _ => Err(format!("unsupported document request method: {method}")),
+    if method.eq_ignore_ascii_case("POST") {
+        let Some(body) = body else {
+            let (tx, rx) = mpsc::channel();
+            let _ = tx.send(Err("POST document request requires a body".to_string()));
+            return rx;
         };
-        let _ = tx.send(map_fetch_text(result));
-    });
+        return bridge_rx(
+            ResourceLoader::shared().submit_http(
+                HttpRequest::post(&url, body.to_vec()).header("Content-Type", "application/x-www-form-urlencoded"),
+                FetchPriority::CRITICAL,
+            ),
+            map_fetch_text,
+        );
+    }
+    let (tx, rx) = mpsc::channel();
+    let _ = tx.send(Err(format!("unsupported document request method: {method}")));
     rx
 }
 

@@ -212,6 +212,23 @@ impl ResourceHint {
             ResourceHintType::DnsPrefetch => LoadPriority::Low,
         }
     }
+
+    /// 应用 HTML `fetchpriority` 提示。
+    ///
+    /// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#attr-fetchpriority
+    /// 提示只调整本地调度相对顺序，不能把 render-blocking style 降到普通资源之后。
+    pub fn with_fetchpriority(mut self, value: Option<&str>) -> Self {
+        match value.map(str::trim) {
+            Some(value) if value.eq_ignore_ascii_case("high") => {
+                self.priority = self.priority.max(LoadPriority::High);
+            }
+            Some(value) if value.eq_ignore_ascii_case("low") && self.resource_type != ResourceType::Style => {
+                self.priority = self.priority.min(LoadPriority::Low);
+            }
+            _ => {}
+        }
+        self
+    }
 }
 
 /// 资源预加载管理器。
@@ -255,8 +272,21 @@ impl ResourcePreloader {
         crossorigin: bool,
         integrity: Option<&str>,
     ) -> bool {
+        self.register_link_with_fetchpriority(url, rel, as_value, crossorigin, integrity, None)
+    }
+
+    /// 从 HTML `<link>` 属性注册资源提示，包含可选 `fetchpriority`。
+    pub fn register_link_with_fetchpriority(
+        &mut self,
+        url: &str,
+        rel: &str,
+        as_value: Option<&str>,
+        crossorigin: bool,
+        integrity: Option<&str>,
+        fetchpriority: Option<&str>,
+    ) -> bool {
         if let Some(hint) = ResourceHint::from_link_attrs(url, rel, as_value, crossorigin, integrity) {
-            self.register(hint);
+            self.register(hint.with_fetchpriority(fetchpriority));
             true
         } else {
             false
@@ -357,9 +387,17 @@ fn scan_node_for_links(doc: &zero_dom::Document, node_id: zero_dom::NodeId, prel
             let as_value = doc.get_attribute(node_id, "as");
             let crossorigin = doc.has_attribute(node_id, "crossorigin");
             let integrity = doc.get_attribute(node_id, "integrity");
+            let fetchpriority = doc.get_attribute(node_id, "fetchpriority");
 
             if let (Some(href), Some(rel)) = (href, rel) {
-                preloader.register_link(&href, &rel, as_value.as_deref(), crossorigin, integrity.as_deref());
+                preloader.register_link_with_fetchpriority(
+                    &href,
+                    &rel,
+                    as_value.as_deref(),
+                    crossorigin,
+                    integrity.as_deref(),
+                    fetchpriority.as_deref(),
+                );
             }
         }
 
@@ -443,6 +481,29 @@ mod tests {
     fn test_preload_style_is_critical() {
         let hint = ResourceHint::from_link_attrs("style.css", "preload", Some("style"), false, None).unwrap();
         assert_eq!(hint.priority, LoadPriority::Critical);
+    }
+
+    #[test]
+    fn fetchpriority_adjusts_preload_without_demoting_stylesheet() {
+        let mut preloader = ResourcePreloader::new();
+        assert!(preloader.register_link_with_fetchpriority(
+            "hero.jpg",
+            "preload",
+            Some("image"),
+            false,
+            None,
+            Some("high"),
+        ));
+        assert_eq!(preloader.get("hero.jpg").unwrap().priority, LoadPriority::High);
+        assert!(preloader.register_link_with_fetchpriority(
+            "app.css",
+            "preload",
+            Some("style"),
+            false,
+            None,
+            Some("low"),
+        ));
+        assert_eq!(preloader.get("app.css").unwrap().priority, LoadPriority::Critical);
     }
 
     #[test]

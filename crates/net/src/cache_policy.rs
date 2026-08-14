@@ -139,7 +139,12 @@ pub(crate) fn compute_initial_age(response: &HttpResponse) -> u64 {
 /// 响应是否应写入缓存及其模式。
 pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     let cc = parse_cache_control(response);
-    if cc.no_store || !is_cacheable_status(response.status_code) {
+    // https://www.rfc-editor.org/rfc/rfc9111#section-4.1
+    // Vary: * 永不匹配后续请求，私有缓存不得存为可复用条目。
+    if cc.no_store
+        || response.header("vary").is_some_and(|vary| vary.trim() == "*")
+        || !is_cacheable_status(response.status_code)
+    {
         return None;
     }
     if cc.no_cache {
@@ -178,6 +183,12 @@ mod tests {
     #[test]
     fn no_cache_not_storable_without_validators() {
         let r = resp(vec![("cache-control", "no-cache")]);
+        assert_eq!(storable_mode(&r), None);
+    }
+
+    #[test]
+    fn vary_star_is_not_storable() {
+        let r = resp(vec![("cache-control", "max-age=60"), ("vary", "*")]);
         assert_eq!(storable_mode(&r), None);
     }
 

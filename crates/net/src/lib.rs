@@ -21,6 +21,7 @@ pub mod navigation;
 pub mod negative_cache;
 pub mod private_mode;
 pub mod request;
+pub mod resource_loader;
 pub mod resource_policy;
 pub mod url_parser;
 pub mod websocket;
@@ -37,8 +38,10 @@ pub use http_cache::{CacheLookup, CachedResponse, HttpCache, shared_http_cache};
 pub use navigation::*;
 pub use negative_cache::{NegativeCache, shared_negative_cache};
 pub use request::*;
+pub use resource_loader::{CacheMode, ResourceLoader, ResourceRequest};
 pub use resource_policy::{
-    DEFAULT_MAX_CONNECTIONS_PER_ORIGIN, ENV_MAX_CONNECTIONS_PER_ORIGIN, max_connections_per_origin, origin_from_url,
+    DEFAULT_MAX_CONNECTIONS_PER_ORIGIN, DEFAULT_MAX_CONNECTIONS_TOTAL, ENV_MAX_CONNECTIONS_PER_ORIGIN,
+    ENV_MAX_CONNECTIONS_TOTAL, max_connections_per_origin, max_connections_total, origin_from_url,
 };
 pub use url_parser::*;
 pub use websocket::{WebSocket, WebSocketError, WebSocketMessage, WebSocketState};

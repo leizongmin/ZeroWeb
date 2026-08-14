@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use zero_browser_shell::TabId;
 use zero_net::{
-    CacheLookup, FetchPriority, HttpCache, HttpResponse, PerOriginFetchScheduler, is_file_url, read_file_url,
+    FetchPriority, HttpCache, HttpMethod, HttpRequest, HttpResponse, ResourceLoader, is_file_url, read_file_url,
 };
 use zero_protocol::message::FetchParams;
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -27,17 +27,15 @@ struct PendingFetch {
     tab_id: TabId,
     request_id: u64,
     url: String,
-    request_headers: Vec<(String, String)>,
     rx: Receiver<Result<HttpResponse, String>>,
 }
 
 /// 多进程 browser 进程的 fetch 调度状态。
 pub struct TabFetchProxy {
-    scheduler: Arc<Mutex<PerOriginFetchScheduler>>,
-    // 普通缓存统一走 zero_net::shared_http_cache()（性能门禁优化 S6，2026-08-08——
-    // webview / fetch_proxy / net_pool 共享一份，同一 URL 不再跨路径反复走网络）；
-    // 无痕模式保留独立内存缓存（不写磁盘语义）。
-    private_cache: Arc<Mutex<HttpCache>>,
+    /// 普通 profile 与 WebView 共用的资源加载器。
+    normal_loader: Arc<ResourceLoader>,
+    /// 无痕 profile 的独立内存缓存/调度上下文。
+    private_loader: Arc<ResourceLoader>,
     private_tabs: HashSet<TabId>,
     pending: Vec<PendingFetch>,
     tab_epochs: HashMap<TabId, u64>,
@@ -48,8 +46,8 @@ impl TabFetchProxy {
     /// 创建 fetch 代理。
     pub fn new() -> Self {
         Self {
-            scheduler: PerOriginFetchScheduler::new_shared(),
-            private_cache: Arc::new(Mutex::new(HttpCache::new())),
+            normal_loader: ResourceLoader::shared(),
+            private_loader: Arc::new(ResourceLoader::new(Arc::new(Mutex::new(HttpCache::new())), "private")),
             private_tabs: HashSet::new(),
             pending: Vec::new(),
             tab_epochs: HashMap::new(),
@@ -73,11 +71,11 @@ impl TabFetchProxy {
         self.security.remove(&tab_id);
     }
 
-    fn cache_for(&self, tab_id: TabId) -> Arc<Mutex<HttpCache>> {
+    fn loader_for(&self, tab_id: TabId) -> Arc<ResourceLoader> {
         if self.private_tabs.contains(&tab_id) {
-            Arc::clone(&self.private_cache)
+            Arc::clone(&self.private_loader)
         } else {
-            zero_net::shared_http_cache()
+            Arc::clone(&self.normal_loader)
         }
     }
 
@@ -99,10 +97,7 @@ impl TabFetchProxy {
     /// 强制刷新前清除指定 URL 的缓存条目（绕过 HTTP 缓存）。
     /// 仅清除该 tab 对应缓存（普通/无痕）中的主资源条目。
     pub fn invalidate_url(&self, tab_id: TabId, url: &str) {
-        let cache = self.cache_for(tab_id);
-        if let Ok(mut cache) = cache.lock() {
-            cache.remove(url);
-        }
+        self.loader_for(tab_id).invalidate_after_unsafe(url);
     }
 
     /// 取消 Tab 当前 pending fetch。
@@ -141,7 +136,6 @@ impl TabFetchProxy {
                         tab_id,
                         request_id: params.request_id,
                         url,
-                        request_headers,
                         rx: immediate_err(format!("资源被安全策略阻止: {reason}")),
                     });
                     return;
@@ -156,7 +150,6 @@ impl TabFetchProxy {
                 tab_id,
                 request_id: params.request_id,
                 url,
-                request_headers,
                 rx,
             });
             return;
@@ -181,7 +174,6 @@ impl TabFetchProxy {
                 tab_id,
                 request_id: params.request_id,
                 url,
-                request_headers,
                 rx,
             });
             return;
@@ -193,64 +185,37 @@ impl TabFetchProxy {
             params.request_id
         );
 
-        let cache = self.cache_for(tab_id);
-        let lookup = {
-            let mut guard = cache.lock().expect("http cache");
-            guard.lookup(&url, &request_headers)
+        let method = match params.method.to_ascii_uppercase().as_str() {
+            "GET" => HttpMethod::Get,
+            "POST" => HttpMethod::Post,
+            "PUT" => HttpMethod::Put,
+            "DELETE" => HttpMethod::Delete,
+            "PATCH" => HttpMethod::Patch,
+            "HEAD" => HttpMethod::Head,
+            "OPTIONS" => HttpMethod::Options,
+            _ => {
+                self.pending.push(PendingFetch {
+                    tab_id,
+                    request_id: params.request_id,
+                    url,
+                    rx: immediate_err(format!("unsupported HTTP method: {}", params.method)),
+                });
+                return;
+            }
         };
-        match lookup {
-            CacheLookup::Hit(cached) => {
-                tracing::info!("fetch cache hit tab {} req_id={} {url}", tab_id.0, params.request_id);
-                let (tx, rx) = channel();
-                let _ = tx.send(Ok(cached.into_response()));
-                self.pending.push(PendingFetch {
-                    tab_id,
-                    request_id: params.request_id,
-                    url,
-                    request_headers,
-                    rx,
-                });
-                return;
-            }
-            CacheLookup::Revalidate {
-                cached,
-                conditional_headers,
-            } => {
-                tracing::info!(
-                    "fetch cache revalidate tab {} req_id={} {url}",
-                    tab_id.0,
-                    params.request_id
-                );
-                let rx = PerOriginFetchScheduler::submit_shared_with_priority_and_headers(
-                    &self.scheduler,
-                    &url,
-                    priority,
-                    conditional_headers,
-                );
-                self.pending.push(PendingFetch {
-                    tab_id,
-                    request_id: params.request_id,
-                    url,
-                    request_headers,
-                    rx,
-                });
-                let _ = cached;
-                return;
-            }
-            CacheLookup::Miss => {}
-        }
-
-        let rx = PerOriginFetchScheduler::submit_shared_with_priority_and_headers(
-            &self.scheduler,
-            &url,
+        let rx = self.loader_for(tab_id).submit_http(
+            HttpRequest {
+                method,
+                url: url.clone(),
+                headers: request_headers,
+                body: params.body.clone(),
+            },
             priority,
-            Vec::new(),
         );
         self.pending.push(PendingFetch {
             tab_id,
             request_id: params.request_id,
             url,
-            request_headers,
             rx,
         });
     }
@@ -261,40 +226,8 @@ impl TabFetchProxy {
         let mut completed = Vec::new();
         let drained = std::mem::take(&mut self.pending);
         for pending in drained {
-            let tab_cache = self.cache_for(pending.tab_id);
             match pending.rx.try_recv() {
-                Ok(Ok(resp)) if resp.status_code == 304 => {
-                    let body = if let Some(cached) = tab_cache.lock().expect("http cache").not_modified(
-                        &pending.url,
-                        &pending.request_headers,
-                        &resp,
-                    ) {
-                        cached.body
-                    } else {
-                        Vec::new()
-                    };
-                    tracing::info!(
-                        "fetch IPC 304 tab {} req_id={} {} bytes={}",
-                        pending.tab_id.0,
-                        pending.request_id,
-                        pending.url,
-                        body.len()
-                    );
-                    completed.push(CompletedFetch {
-                        tab_id: pending.tab_id,
-                        request_id: pending.request_id,
-                        status: 200,
-                        body,
-                    });
-                }
                 Ok(Ok(resp)) => {
-                    if (200..300).contains(&resp.status_code) {
-                        let _ = tab_cache.lock().expect("http cache").put_with_headers(
-                            &pending.url,
-                            &pending.request_headers,
-                            &resp,
-                        );
-                    }
                     tracing::info!(
                         "fetch IPC done tab {} req_id={} {} status={} bytes={}",
                         pending.tab_id.0,

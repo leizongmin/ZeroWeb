@@ -423,13 +423,15 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => hint.url.clone(),
             };
-            let meta = match hint.resource_type {
+            let mut meta = match hint.resource_type {
                 ResourceType::Style => ResourceFetchMeta::STYLESHEET,
                 ResourceType::Script => ResourceFetchMeta::SCRIPT,
                 ResourceType::Font => ResourceFetchMeta::FONT,
                 ResourceType::Image => ResourceFetchMeta::IMAGE,
                 _ => ResourceFetchMeta::preload("fetch"),
             };
+            // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#attr-fetchpriority
+            meta.priority = hint.priority as u8;
             match hint.resource_type {
                 ResourceType::Style | ResourceType::Script => {
                     let _ = host.fetch_text_meta(&abs, meta);
