@@ -234,7 +234,6 @@ impl ResourceLoader {
                 immediate(Err("only-if-cached cache miss (504)".to_string()))
             }
             CacheLookup::Hit(_) => {
-                self.stats.lock().expect("resource loader stats lock").revalidations += 1;
                 let conditional = cache
                     .lock()
                     .expect("HTTP cache lock")
@@ -243,10 +242,7 @@ impl ResourceLoader {
             }
             CacheLookup::Revalidate {
                 conditional_headers, ..
-            } => {
-                self.stats.lock().expect("resource loader stats lock").revalidations += 1;
-                self.submit_network(cache, request, conditional_headers, true)
-            }
+            } => self.submit_network(cache, request, conditional_headers, true),
             CacheLookup::Miss if request.cache_mode == CacheMode::OnlyIfCached => {
                 self.stats
                     .lock()
@@ -354,7 +350,6 @@ impl ResourceLoader {
         conditional_headers: Vec<(String, String)>,
         may_store: bool,
     ) -> Receiver<FetchJobResult> {
-        self.stats.lock().expect("resource loader stats lock").network_requests += 1;
         let mut headers = request.headers.clone();
         let is_revalidation = !conditional_headers.is_empty();
         for (name, value) in conditional_headers {
@@ -370,6 +365,13 @@ impl ResourceLoader {
             request.priority,
             headers,
         );
+        if owns_telemetry {
+            let mut stats = self.stats.lock().expect("resource loader stats lock");
+            stats.network_requests += 1;
+            if is_revalidation {
+                stats.revalidations += 1;
+            }
+        }
         let event_request = request.clone();
         let cache_outcome = if is_revalidation {
             CacheOutcome::Revalidated
