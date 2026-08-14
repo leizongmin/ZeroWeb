@@ -49,6 +49,9 @@ pub struct FontDescriptor {
     /// R34xx：fontKerning 'none'（spec CanvasTextDrawingStyles——shaping 关 kern 特征；
     /// 'auto'/'normal' 默认开。2d.text.drawing.style.fontKerning 的 measure 宽度对比）。
     pub kerning_none: bool,
+    /// R34xx：ctx.lang（spec CanvasTextDrawingStyles——shaping 语言系统；空 = 字体默认
+    /// 语言。'tr' 走 GSUB TRK lang sys 关闭 fi 连字——2d.text.measure.lang）。
+    pub lang: String,
 }
 
 impl Default for FontDescriptor {
@@ -63,6 +66,7 @@ impl Default for FontDescriptor {
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
             kerning_none: false,
+            lang: String::new(),
         }
     }
 }
@@ -206,6 +210,7 @@ impl FontDescriptor {
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
             kerning_none: false,
+            lang: String::new(),
         })
     }
 }
@@ -1280,6 +1285,7 @@ mod tests {
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
             kerning_none: false,
+            lang: String::new(),
         };
         let cloned = desc.clone();
         assert_eq!(cloned.family, "serif");

@@ -1089,6 +1089,7 @@ fn test_canvas_set_font_and_get() {
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
         kerning_none: false,
+        lang: String::new(),
     };
     ctx.set_font(font);
     let f = ctx.font();

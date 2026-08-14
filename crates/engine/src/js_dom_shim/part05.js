@@ -2346,6 +2346,27 @@
     // R34xx：fontKerning/fontStretch/fontVariantCaps/textRendering（spec
     // CanvasTextDrawingStyles——值集封闭，客户端镜像 + host 校验；CanvasTest 单面字体
     // 下绘制效果为 no-op）。
+    ctx._lang = 'inherit';
+    Object.defineProperty(ctx, 'lang', {
+      set: function (v) {
+        v = String(v);
+        this._lang = v;
+        // R34xx：'inherit' → canvas 元素 lang 属性（2d.text.measure.lang.inherit：
+        // canvas lang="tr" → ctx.lang='inherit' 解析为 'tr'）；无 → 'en'（默认）。
+        var resolved = v;
+        if (v === 'inherit') {
+          resolved = '';
+          try {
+            var el = this.canvas;
+            if (el && el.lang) resolved = String(el.lang);
+            else if (el && typeof el.getAttribute === 'function') resolved = String(el.getAttribute('lang') || '');
+          } catch (_e) {}
+          if (!resolved) resolved = 'en';
+        }
+        __zw_canvas_op(h, 'setLang', String(resolved));
+      },
+      get: function () { return this._lang; }
+    });
     ctx._fk = 'auto';
     Object.defineProperty(ctx, 'fontKerning', {
       set: function (v) {

@@ -14,6 +14,7 @@ type ShapeCacheKey = (
     u32,
     (u8, u32),
     crate::font::TextDirection,
+    Option<String>,
     String,
 );
 pub(super) type ShapeCache = Arc<std::sync::Mutex<HashMap<ShapeCacheKey, Vec<crate::font::ShapedGlyph>>>>;
@@ -36,6 +37,30 @@ impl FontLoader {
     }
 
     /// 使用指定 face、方向与 OpenType feature 整形文本，并缓存跨帧重复结果。
+    /// R34xx：`language` 为 BCP47 标签（canvas ctx.lang 等，None = 字体默认语言系统）。
+    pub fn shape_text_cached_with_features_lang(
+        &self,
+        font_id: u32,
+        text: &str,
+        font_size: f32,
+        direction: crate::font::TextDirection,
+        features: &[crate::font::OpenTypeFeature],
+        language: Option<&str>,
+    ) -> Option<Vec<crate::font::ShapedGlyph>> {
+        self.shape_text_cached_with_font_ids_and_options(
+            &[font_id],
+            text,
+            font_size,
+            crate::font::TextShapingOptions {
+                direction,
+                features,
+                language,
+                ..crate::font::TextShapingOptions::default()
+            },
+        )
+    }
+
+    /// 使用指定 face、方向与 OpenType feature 整形文本，并缓存跨帧重复结果。
     pub fn shape_text_cached_with_features(
         &self,
         font_id: u32,
@@ -44,7 +69,7 @@ impl FontLoader {
         direction: crate::font::TextDirection,
         features: &[crate::font::OpenTypeFeature],
     ) -> Option<Vec<crate::font::ShapedGlyph>> {
-        self.shape_text_cached_with_font_ids(&[font_id], text, font_size, direction, features)
+        self.shape_text_cached_with_features_lang(font_id, text, font_size, direction, features, None)
     }
 
     /// 使用有序 CSS face 列表整形文本，并缓存跨帧重复结果。
@@ -102,6 +127,7 @@ impl FontLoader {
             features,
             variations,
             adjustment,
+            language,
         } = options;
         let &primary_id = font_ids.first()?;
         let per_face_features = crate::font::shaper::per_face_features_enabled();
@@ -142,6 +168,7 @@ impl FontLoader {
             font_size.to_bits(),
             adjustment.cache_key(),
             direction,
+            language.map(str::to_string),
             text.to_string(),
         );
         if let Some(glyphs) = self.shape_cache.lock().expect("shape cache poisoned").get(&key) {

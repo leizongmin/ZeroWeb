@@ -267,22 +267,27 @@ impl CanvasContext {
         if let Some(font_id) = self.font_id
             && let Some(loader) = self.font_loader.clone()
             && let Ok(loader) = loader.lock()
-            && let Some(shaped) = if rtl {
-                loader.shape_text_cached_with_features(
-                    font_id,
-                    &shaped_text,
-                    font_size,
-                    zero_render_foundation::font::TextDirection::RightToLeft,
-                    &text_features(self.font.kerning_none, self.font.small_caps),
-                )
-            } else {
-                loader.shape_text_cached_with_features(
-                    font_id,
-                    &shaped_text,
-                    font_size,
-                    zero_render_foundation::font::TextDirection::Auto,
-                    &text_features(self.font.kerning_none, self.font.small_caps),
-                )
+            && let Some(shaped) = {
+                let lang = (!self.font.lang.is_empty()).then_some(self.font.lang.as_str());
+                if rtl {
+                    loader.shape_text_cached_with_features_lang(
+                        font_id,
+                        &shaped_text,
+                        font_size,
+                        zero_render_foundation::font::TextDirection::RightToLeft,
+                        &text_features(self.font.kerning_none, self.font.small_caps),
+                        lang,
+                    )
+                } else {
+                    loader.shape_text_cached_with_features_lang(
+                        font_id,
+                        &shaped_text,
+                        font_size,
+                        zero_render_foundation::font::TextDirection::Auto,
+                        &text_features(self.font.kerning_none, self.font.small_caps),
+                        lang,
+                    )
+                }
             }
         {
             let natural: f32 = shaped.iter().map(|g| g.advance_x).sum::<f32>().abs();
@@ -376,14 +381,16 @@ impl CanvasContext {
                     } else {
                         clean
                     };
-                    let shaped = if self.font.kerning_none {
+                    let lang = (!self.font.lang.is_empty()).then_some(self.font.lang.as_str());
+                    let shaped = if self.font.kerning_none || lang.is_some() {
                         loader
-                            .shape_text_cached_with_features(
+                            .shape_text_cached_with_features_lang(
                                 fid,
                                 &shaped_source,
                                 size,
                                 zero_render_foundation::font::TextDirection::Auto,
                                 &text_features(self.font.kerning_none, self.font.small_caps),
+                                lang,
                             )
                             .unwrap_or_default()
                     } else {
@@ -964,6 +971,12 @@ impl CanvasContext {
     /// 的 measure 宽度对比；'auto'/'normal' 默认开）。
     pub fn set_font_kerning(&mut self, v: &str) {
         self.font.kerning_none = v.trim().eq_ignore_ascii_case("none");
+    }
+
+    /// R34xx：ctx.lang（BCP47 语言标签——shaping 语言系统；'tr' → GSUB TRK 关闭
+    /// fi 连字。2d.text.measure.lang）。空串 = 字体默认语言。
+    pub fn set_lang(&mut self, v: &str) {
+        self.font.lang = v.trim().to_string();
     }
 
     /// 设置全局透明度。

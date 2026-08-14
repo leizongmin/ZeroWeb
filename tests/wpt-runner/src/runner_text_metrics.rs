@@ -58,6 +58,7 @@ pub fn shape_text(
                 features,
                 variations,
                 adjustment,
+                language: None,
             },
         )
     })

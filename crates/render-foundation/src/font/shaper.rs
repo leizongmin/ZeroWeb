@@ -128,6 +128,9 @@ pub struct TextShapingOptions<'a> {
     pub variations: &'a [OpenTypeVariation],
     /// per-face `font-size-adjust`。
     pub adjustment: FontSizeAdjustment,
+    /// R34xx：BCP47 语言标签（canvas ctx.lang 等——shaping 语言系统选择；
+    /// 'tr' 走 GSUB TRK lang sys 关闭 fi 连字。None = 字体默认语言）。
+    pub language: Option<&'a str>,
 }
 
 impl Default for TextShapingOptions<'_> {
@@ -137,6 +140,7 @@ impl Default for TextShapingOptions<'_> {
             features: &[],
             variations: &[],
             adjustment: FontSizeAdjustment::None,
+            language: None,
         }
     }
 }
@@ -277,6 +281,7 @@ impl<'a> TextShaper<'a> {
             features,
             variations,
             adjustment,
+            language,
         } = options;
         let primary_id = font_ids
             .first()
@@ -309,6 +314,7 @@ impl<'a> TextShaper<'a> {
                 direction,
                 &primary_features,
                 &primary_variations,
+                language,
             ) {
                 return glyphs;
             }
@@ -337,6 +343,7 @@ impl<'a> TextShaper<'a> {
             features,
             variations,
             adjustment,
+            language,
         } = options;
         let per_face_features = per_face_features_enabled();
         if text.is_empty() || direction != TextDirection::LeftToRight || !per_face_features && !features.is_empty() {
@@ -405,6 +412,7 @@ impl<'a> TextShaper<'a> {
                 direction,
                 &resolved_features,
                 &resolved_variations,
+                language,
             )?;
             let cluster_base = u32::try_from(start).ok()?;
             for glyph in &mut glyphs {
@@ -416,6 +424,7 @@ impl<'a> TextShaper<'a> {
     }
 
     /// 使用 rustybuzz 进行 OpenType shaping。
+    #[allow(clippy::too_many_arguments)]
     fn shape_with_rustybuzz(
         &self,
         font_id: FontId,
@@ -424,6 +433,7 @@ impl<'a> TextShaper<'a> {
         direction: TextDirection,
         features: &[OpenTypeFeature],
         variations: &[OpenTypeVariation],
+        language: Option<&str>,
     ) -> Option<Vec<ShapedGlyph>> {
         let font_data = self.font_loader.get_font_data(font_id.0)?;
 
@@ -444,6 +454,13 @@ impl<'a> TextShaper<'a> {
             TextDirection::Auto => {}
             TextDirection::LeftToRight => buffer.set_direction(rustybuzz::Direction::LeftToRight),
             TextDirection::RightToLeft => buffer.set_direction(rustybuzz::Direction::RightToLeft),
+        }
+        // R34xx：shaping 语言（canvas ctx.lang 等）——GSUB 语言系统选择（'tr' → TRK
+        // 关闭 fi 连字）。rustybuzz::Language 接受 BCP47 串（内部映射 OT lang tag）。
+        if let Some(lang) = language
+            && let Ok(l) = lang.parse::<rustybuzz::Language>()
+        {
+            buffer.set_language(l);
         }
 
         // https://drafts.csswg.org/css-fonts-4/#feature-precedence

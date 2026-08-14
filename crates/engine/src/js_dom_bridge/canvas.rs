@@ -943,6 +943,14 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R34xx：ctx.lang（BCP47——shaping 语言系统；'tr' → TRK 关 fi 连字。
+        // 2d.text.measure.lang）。shim 侧已把 'inherit' 解析为 canvas 元素 lang。
+        "setLang" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_lang(arg(0));
+            }
+            "ok".into()
+        }
         "setFont" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid())
                 && let Some(mut fd) = zero_canvas::FontDescriptor::parse_css_with_current(arg(0), ctx.font().size)

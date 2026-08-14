@@ -583,6 +583,7 @@ fn test_fill_text_real_font_rasterization() {
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
         kerning_none: false,
+        lang: String::new(),
     });
     ctx.set_fill_style(CanvasStyle::Color(Color::rgb(0, 255, 0)));
     ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
@@ -618,6 +619,7 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
         kerning_none: false,
+        lang: String::new(),
     });
     let m10 = ctx.measure_text("hello");
     assert!((m10.width - (5.0 * 6.0 + 10.0 * 5.0)).abs() < 0.01, "10px: 1em=10px");
@@ -631,6 +633,7 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
         kerning_none: false,
+        lang: String::new(),
     });
     let m20 = ctx.measure_text("hello");
     assert!((m20.width - (5.0 * 12.0 + 20.0 * 5.0)).abs() < 0.01, "20px: 1em=20px");
@@ -664,6 +667,7 @@ fn test_font_kerning_none_widens_measure() {
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
         kerning_none: false,
+        lang: String::new(),
     });
     let kerned = ctx.measure_text("TAWATAVA").width;
     ctx.set_font_kerning("none");
@@ -877,4 +881,34 @@ fn test_em_height_half_leading() {
             expect_d * 40.0
         );
     }
+}
+
+// R34xx：ctx.lang shaping 语言（2d.text.measure.lang 驱动——'tr' 走 GSUB TRK lang sys
+// 关闭 fi 连字 → 'fi' 宽度 > 'en'）。
+#[test]
+fn test_lang_tr_widens_fi() {
+    let bytes = std::fs::read(format!(
+        "{}/../../tests/wpt-runner/fonts/Lato-Medium.ttf",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap_or_else(|_| Vec::new());
+    if bytes.is_empty() {
+        return;
+    }
+    use std::sync::{Arc, Mutex};
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("Lato", fid);
+    let mut ctx = CanvasContext::new(200, 50);
+    ctx.set_font_loader(Some(Arc::new(Mutex::new(loader))));
+    ctx.set_font(FontDescriptor {
+        family: "Lato".to_string(),
+        size: 50.0,
+        ..FontDescriptor::default()
+    });
+    ctx.set_lang("tr");
+    let tr = ctx.measure_text("fi").width;
+    ctx.set_lang("en");
+    let en = ctx.measure_text("fi").width;
+    assert!(tr > en, "tr ({tr}) 应宽于 en ({en})——fi 连字在土耳其语关闭");
 }
