@@ -13,6 +13,7 @@ type IpcOutbound = PipeTransport<std::io::Empty, Box<dyn std::io::Write + Send>>
 enum InflightReply {
     Text(Sender<Result<String, String>>),
     Bytes(Sender<Result<Vec<u8>, String>>),
+    Ignore,
 }
 
 /// 进行中的 IPC fetch（request_id → 完成通道）。
@@ -54,6 +55,7 @@ impl InflightIpcFetches {
 
 fn deliver_reply(reply: InflightReply, status_code: u16, body: &[u8]) {
     match reply {
+        InflightReply::Ignore => {}
         InflightReply::Bytes(tx) => {
             let result = if (200..300).contains(&status_code) {
                 Ok(body.to_vec())
@@ -134,9 +136,36 @@ impl<'a> IpcAsyncFetchHost<'a> {
         self.inflight.pending.insert(request_id, reply);
         Ok(())
     }
+
+    fn issue_preconnect(&mut self, origin: &str) -> Result<(), String> {
+        let request_id = *self.next_fetch_id;
+        *self.next_fetch_id += 1;
+        tracing::info!(request_id, url = origin, "renderer IPC preconnect request");
+        let msg = IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id,
+                url: origin.to_string(),
+                method: "HEAD".into(),
+                // Preconnect is an implementation hint, not a page resource request.
+                // Do not forward renderer-only metadata to the origin server.
+                headers: Vec::new(),
+                body: None,
+            }),
+        };
+        self.outbound
+            .send(msg)
+            .map_err(|e| format!("IPC fetch send failed: {e}"))?;
+        self.inflight.pending.insert(request_id, InflightReply::Ignore);
+        Ok(())
+    }
 }
 
 impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
+    fn preconnect(&mut self, origin: &str) {
+        let _ = self.issue_preconnect(origin);
+    }
+
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
         let (tx, rx) = channel();
         if let Err(e) = self.issue_fetch(url, meta, InflightReply::Text(tx)) {
@@ -294,6 +323,47 @@ mod tests {
         assert_eq!(next_id, 2);
         assert_eq!(inflight.pending.len(), 1);
         assert!(!buf.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ipc_preconnect_uses_head_and_discards_response() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+        let mut next_id = 7_u64;
+        let mut inflight = InflightIpcFetches::new();
+        {
+            let mut host = IpcAsyncFetchHost::new(&mut outbound, &mut next_id, &mut inflight);
+            host.preconnect("https://cdn.example.test");
+        }
+
+        assert_eq!(next_id, 8);
+        assert!(matches!(inflight.pending.get(&7), Some(InflightReply::Ignore)));
+        let frame = buf.0.lock().unwrap();
+        let payload_len = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
+        assert_eq!(payload_len, frame.len() - 4);
+        let request = zero_protocol::deserialize(&frame[4..]).unwrap();
+        assert!(matches!(
+            request.kind,
+            IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 7,
+                method,
+                headers,
+                body: None,
+                ..
+            }) if method == "HEAD" && headers.is_empty()
+        ));
+        drop(frame);
+        let response = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 7,
+                status_code: 204,
+                headers: Vec::new(),
+                body: Vec::new(),
+            }),
+        };
+        assert!(inflight.try_complete(&response));
+        assert!(inflight.pending.is_empty());
     }
 
     #[test]

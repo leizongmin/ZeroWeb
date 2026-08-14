@@ -5,6 +5,7 @@
 use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
+use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Mutex, OnceLock};
 
 use crate::connect::{build_blocking_client, map_reqwest_error, send_with_ipv4_fallback};
@@ -222,6 +223,17 @@ impl HttpClient {
             body: None,
         };
         self.send_async_stream(request, |_| {}).await
+    }
+
+    /// 非阻塞提交连接预热；接收端获得成功的响应头或网络错误。
+    pub fn preconnect(&self, origin: impl Into<String>) -> Receiver<Result<HttpResponseHead, NetError>> {
+        let client = self.clone();
+        let origin = origin.into();
+        let (tx, rx) = channel();
+        async_runtime().spawn(async move {
+            let _ = tx.send(client.preconnect_async(&origin).await);
+        });
+        rx
     }
 
     /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。

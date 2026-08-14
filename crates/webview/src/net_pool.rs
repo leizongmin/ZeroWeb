@@ -1,12 +1,42 @@
 //! 共享 HTTP 线程池 — per-origin 并发上限，对齐主流浏览器连接策略。
 
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Mutex, OnceLock};
 
-use zero_net::{FetchJobResult, FetchPriority, HttpRequest, ResourceLoader, ResourceRequest};
+use zero_net::{FetchJobResult, FetchPriority, HttpClient, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_page_runtime::ResourceFetchMeta;
 
 /// HTTP GET 任务结果（文本）。
 pub type HttpTextResult = Result<String, String>;
+
+fn preconnecting_origins() -> &'static Mutex<HashSet<String>> {
+    static ORIGINS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    ORIGINS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// 非阻塞预热连接；失败只记录日志，不影响页面加载。
+pub fn preconnect_async(origin: impl Into<String>) {
+    let origin = origin.into();
+    let mut origins = preconnecting_origins()
+        .lock()
+        .expect("preconnect origin mutex poisoned");
+    if !origins.insert(origin.clone()) {
+        return;
+    }
+    drop(origins);
+
+    let rx = HttpClient::new().preconnect(origin.clone());
+    zero_net::client::spawn_network_bridge(move || {
+        if let Ok(Err(error)) = rx.recv() {
+            tracing::debug!(%error, "connection preconnect failed");
+        }
+        preconnecting_origins()
+            .lock()
+            .expect("preconnect origin mutex poisoned")
+            .remove(&origin);
+    });
+}
 
 fn map_fetch_result(result: zero_net::FetchJobResult) -> Result<Vec<u8>, String> {
     match result {

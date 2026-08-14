@@ -36,6 +36,9 @@ use zero_render_foundation::primitive::RenderPrimitives;
 /// 封装到独立线程后返回接收器。供 webview `AsyncPageLoad` 消除 `net_pool` 硬编码，
 /// 并为 renderer 复用同一加载器铺路（tick/轮询模型两端一致）。
 pub trait AsyncFetchHost {
+    /// 异步预热连接；默认忽略，供不具备网络权限的宿主安全降级。
+    fn preconnect(&mut self, _origin: &str) {}
+
     /// 抓取主文档请求。默认宿主仅支持无 body GET；支持表单 POST 的宿主必须显式覆盖。
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
         if method.eq_ignore_ascii_case("GET") && body.is_none() {

@@ -17,7 +17,7 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data
 
 use crate::image_decoder::decode_image;
 
-use crate::net_pool::{fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta};
+use crate::net_pool::{fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta, preconnect_async};
 use crate::webview::WebView;
 
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
@@ -110,6 +110,10 @@ pub struct ResourceElementEvent {
 pub struct InProcessFetchHost;
 
 impl AsyncFetchHost for InProcessFetchHost {
+    fn preconnect(&mut self, origin: &str) {
+        preconnect_async(origin.to_string());
+    }
+
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
         fetch_document_async(url.to_string(), method, body)
     }
@@ -416,13 +420,29 @@ impl AsyncPageLoad {
         let base = url::Url::parse(&self.url).ok();
         let mut count = 0usize;
         for hint in preloader.pending_resources() {
-            if hint.hint_type != ResourceHintType::Preload {
-                continue;
-            }
             let abs = match base.as_ref().and_then(|b| b.join(&hint.url).ok()) {
                 Some(u) => u.to_string(),
                 None => hint.url.clone(),
             };
+            if hint.hint_type == ResourceHintType::Preconnect {
+                let origin = match url::Url::parse(&abs) {
+                    Ok(url)
+                        if matches!(url.scheme(), "http" | "https")
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                            && url.host().is_some() =>
+                    {
+                        format!("{}/", url.origin().ascii_serialization())
+                    }
+                    _ => continue,
+                };
+                host.preconnect(&origin);
+                count += 1;
+                continue;
+            }
+            if hint.hint_type != ResourceHintType::Preload {
+                continue;
+            }
             let mut meta = match hint.resource_type {
                 ResourceType::Style => ResourceFetchMeta::STYLESHEET,
                 ResourceType::Script => ResourceFetchMeta::SCRIPT,
@@ -1192,6 +1212,7 @@ mod tests {
     /// 记录 fetch 调用并立即返回结果的 mock 宿主。
     struct MockFetchHost {
         calls: Vec<String>,
+        preconnects: Vec<String>,
         text_body: Result<String, String>,
         bytes_body: Result<Vec<u8>, String>,
     }
@@ -1200,6 +1221,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 calls: Vec::new(),
+                preconnects: Vec::new(),
                 text_body: Ok(String::new()),
                 bytes_body: Ok(Vec::new()),
             }
@@ -1217,6 +1239,10 @@ mod tests {
     }
 
     impl AsyncFetchHost for MockFetchHost {
+        fn preconnect(&mut self, origin: &str) {
+            self.preconnects.push(origin.to_string());
+        }
+
         fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
             self.calls.push(url.to_string());
             let (tx, rx) = channel();
@@ -1230,6 +1256,17 @@ mod tests {
             let _ = tx.send(self.bytes_body.clone());
             rx
         }
+    }
+
+    #[test]
+    fn preconnect_hint_is_submitted_without_fetching_a_resource() {
+        let mut load = AsyncPageLoad::from_html("https://example.com/page", String::new());
+        let mut host = MockFetchHost::new();
+
+        load.begin_preload_hints(r#"<link rel="preconnect" href="https://cdn.example.test">"#, &mut host);
+
+        assert_eq!(host.preconnects, ["https://cdn.example.test/"]);
+        assert!(host.calls.is_empty());
     }
 
     struct ErrFetchHost;
