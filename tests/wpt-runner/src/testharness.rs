@@ -583,12 +583,31 @@ add_completion_callback(function() {
          };\n})(self);",
         1,
     );
-    let harness = format!(
-        "<script>\n\
-         globalThis.__zw_setTimeout = function() {{}};\n\
-         globalThis.__zw_clearTimeout = function() {{}};\n\
-         {harness_source}\n{reporter}\n</script>"
-    );
+    // R34xx：__zw_setTimeout stub 记录定时器（id/at），经 take_probe 的
+    // __zw_fire_due_timers 按真实经过时间触发（t.step_timeout(500) 的 fontface.repeat
+    // 依赖回调最终触发；记录式避免 microtask 立即触发破坏 testharness 时序——
+    // 既有 no-op stub 使回调永不触发）。
+    let timer_stub = "\
+      globalThis.__zw_setTimeout = function(id, delay) {\n\
+        globalThis.__zw_timers = globalThis.__zw_timers || [];\n\
+        globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) });\n\
+      };\n\
+      globalThis.__zw_clearTimeout = function() {};\n\
+      globalThis.__zw_fire_due_timers = function() {\n\
+        var timers = globalThis.__zw_timers || [];\n\
+        if (!timers.length) return;\n\
+        var now = Date.now();\n\
+        var due = [], rest = [];\n\
+        for (var i = 0; i < timers.length; i++) {\n\
+          if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
+        }\n\
+        globalThis.__zw_timers = rest;\n\
+        for (var j = 0; j < due.length; j++) {\n\
+          var fn = globalThis.__zw_pending[due[j].id];\n\
+          if (fn) { delete globalThis.__zw_pending[due[j].id]; try { fn(); } catch (_e) {} }\n\
+        }\n\
+      };\n";
+    let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n</script>");
     let mut html = replace_script_source(source, "/resources/testharness.js", &harness);
     html = replace_script_source(&html, "/resources/testharnessreport.js", "");
     html = replace_script_source(&html, "/resources/testdriver.js", TESTDRIVER_STUB);
@@ -784,7 +803,8 @@ struct TestdriverCommand {
 fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
     let value = webview
         .execute_script(
-            "JSON.stringify({\
+            "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();\
+             JSON.stringify({\
              complete:!!globalThis.__zw_harness_complete || (function(){\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
