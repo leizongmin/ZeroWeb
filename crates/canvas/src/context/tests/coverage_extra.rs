@@ -692,3 +692,20 @@ fn test_font_kerning_state_roundtrip() {
     ctx.set_font_kerning("auto");
     assert!(!ctx.font().kerning_none, "'auto' 清位");
 }
+
+// R34xx：零长渐变 + fillText 不绘制（2d.gradient.interpolate.zerosize.fillText 驱动——
+// x0==x1&&y0==y1 的 linear gradient 在文本路径 sample_at → 透明；midpoint resolve 会取 stop 色）。
+#[test]
+fn test_fill_text_zero_size_gradient_paints_nothing() {
+    use crate::context::types::{CanvasStyle, LinearGradient};
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_style(CanvasStyle::Color(Color::rgb(0, 255, 0)));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let mut g = LinearGradient::new(50.0, 25.0, 50.0, 25.0); // 零长（undefined direction）
+    g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+    g.add_color_stop(1.0, Color::rgb(255, 0, 0));
+    ctx.set_fill_style(CanvasStyle::LinearGradient(g));
+    ctx.fill_text("AA", 0.0, 50.0, None);
+    let p = ctx.get_image_data(25, 25, 1, 1);
+    assert_eq!((p.data[0], p.data[1]), (0, 255), "零长渐变不画文本（保持绿底）");
+}

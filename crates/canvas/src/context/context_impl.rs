@@ -198,14 +198,17 @@ impl CanvasContext {
     /// R34xx：字体栈可用（headless/testharness @font-face 注入）时走真实 shape + 光栅化——
     /// 逐 glyph 灰度位图 alpha 混合进 pixel_buffer（2d.text.draw.* 像素断言）。
     pub fn fill_text(&mut self, text: &str, x: f32, y: f32, max_width: Option<f32>) {
-        let color = self.apply_alpha(self.fill_style.resolve_color());
+        // R34xx：文本路径经 sample_at 取样式色（替代 midpoint resolve_color）——零长渐变
+        // （x0==x1&&y0==y1）sample_at 返透明不画（2d.gradient.interpolate.zerosize.
+        // fillText/strokeText 期望保持底色；midpoint 会取 stop 色误画）。
+        let color = self.apply_alpha(self.fill_style.sample_at(x, y));
         self.draw_text_glyphs(text, x, y, color, max_width);
     }
 
     /// 描边文本。R34xx：与 fill_text 同真字体路径（shape + 墨迹 blit——描边以填充近似，
     /// strokeTextCluster 等 WPT 断言字形覆盖；精确 outline 描边为深缺口）。
     pub fn stroke_text(&mut self, text: &str, x: f32, y: f32, max_width: Option<f32>) {
-        let color = self.apply_alpha(self.stroke_style.resolve_color());
+        let color = self.apply_alpha(self.stroke_style.sample_at(x, y));
         self.draw_text_glyphs(text, x, y, color, max_width);
     }
 
