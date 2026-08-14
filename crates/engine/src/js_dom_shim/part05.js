@@ -3223,6 +3223,26 @@
     wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
+    // R34xx（G6）：worker 字体面（FontFaceSet 最小面——offscreen worker 测试的
+    // `self.fonts.add(new FontFace(...)); await self.fonts.ready;`——字体经 host 加载器
+    // 注册，ready 立即 resolve）。
+    var wFontFaceSet = {
+      _faces: {},
+      add: function (f) { if (f && f.family) this._faces[f.family] = true; return this; },
+      delete: function () { return false; },
+      clear: function () { this._faces = {}; },
+      check: function () { return true; },
+      get size() { return Object.keys(this._faces).length; },
+      ready: Promise.resolve(),
+      load: function () { return Promise.resolve([]); }
+    };
+    wctx.fonts = wFontFaceSet;
+    wctx.FontFace = wctx.FontFace || function FontFace(family, src) {
+      this.family = family;
+      this.src = src;
+      this.status = 'loaded';
+      this.load = function () { return Promise.resolve(this); };
+    };
     wctx.addEventListener = wctx.addEventListener || function () {};
     wctx.dispatchEvent = wctx.dispatchEvent || function () {};
     wctx.location = wctx.location || { href: '' };
