@@ -1059,6 +1059,11 @@
     }
     event._composedPath = cpPath;
 
+    // js-dom M4 R33：`Window.event`（HTML `current event`）——dispatch 前 save 外层 event、set 当前 event。
+    // 嵌套 dispatch（redispatch）时内层 finally 恢复外层（spec innermost-first，外层结束后其 event 仍可见）。
+    // finally 统一 restore，与 _composedPath/_propagationStopped 清理同处。prevEvent 用局部变量保 dispatch 栈。
+    var prevEvent = globalThis.event;
+    globalThis.event = event;
     try {
       // ① capture 阶段：root→target 方向（chain 反序），祖先派发 capture-only。
       if (propagate && !globalThis.__zw_no_capture) {
@@ -1090,6 +1095,9 @@
       return !event._defaultPrevented;
     } finally {
       event._composedPath = null;
+      // js-dom M4 R33：dispatch 结束 restore 外层 event（嵌套 dispatch 正确）；顶层 dispatch 后回 undefined
+      //（WPT event-global "undefined after dispatch"）。须先于 _propagationStopped 重置，保证 restore 与 set 配对。
+      globalThis.event = prevEvent;
       // js-dom M4 R29：spec `concept-event-dispatch` 步骤14——dispatch 结束 unset stop propagation flag
       //（+ 步骤清其他 dispatch flags）。reset 后 cancelBubble getter（后端 _propagationStopped）返 false
       //（WPT Event-cancelBubble "cancelBubble must be false after an event has been dispatched"）。

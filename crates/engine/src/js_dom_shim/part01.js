@@ -1741,6 +1741,17 @@
   globalThis.self = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;
+  // js-dom M4 R33：`Window.event`（HTML spec `current event`，legacy IE 全局）。Window 须 own `event`
+  // 属性，初值 undefined（spec dispatch 前 window.event === undefined）；dispatch 期 = 正在派发的 event
+  //（innermost，嵌套 dispatch 后恢复外层）；dispatch 后回 undefined。_dispatchWithBubble（part03）在派发
+  // 前 save+set、finally restore。defineProperty writable:true 使 dispatch 期可写、enumerable:true 使
+  // `assert_own_property(window,'event')` + for-in 可见（WPT event-global）。
+  Object.defineProperty(globalThis, 'event', {
+    value: undefined,
+    writable: true,
+    configurable: true,
+    enumerable: true
+  });
 
   globalThis.screen = {
     width: 1280,

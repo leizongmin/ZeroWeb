@@ -2053,3 +2053,95 @@ fn test_ro_size_change_host_tick_r3063() {
     sandbox.execute("__zw_observers_tick();").unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__count)").unwrap().value, "2", "rect 未变 -> tick 不派");
 }
+
+#[test]
+fn test_window_event_current_event_global_r33() {
+    // R33：`Window.event`（HTML spec `current event`，legacy IE 全局）。Window 须 own `event` 属性，初值
+    // undefined；dispatch 期 = 正在派发的 event（innermost，嵌套 dispatch 后恢复外层）；dispatch 后回 undefined。
+    // 裸 `event` 全局（listener 内 event.stopPropagation() 等 legacy 写法）依赖此。spec `window-event`。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"p\"><span id=\"c\">x</span></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① Window own `event` 属性 + 初值 undefined（WPT event-global "event exists on window, initially undefined"）。
+    assert_eq!(
+        sandbox
+            .execute("String(Object.prototype.hasOwnProperty.call(globalThis, 'event'))")
+            .unwrap()
+            .value,
+        "true",
+        "window 须 own event 属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.event)").unwrap().value,
+        "undefined",
+        "dispatch 前 window.event === undefined"
+    );
+
+    // ② dispatch 期 window.event === 正在派发的 event；dispatch 后回 undefined。
+    sandbox
+        .execute(
+            "var __captured;\n\
+             document.querySelector('#c').addEventListener('click', function(e){\n\
+               __captured = (window.event === e) + '/' + (typeof event !== 'undefined' && event === e);\n\
+             });",
+        )
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#c').dispatchEvent(new Event('click'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__captured").unwrap().value,
+        "true/true",
+        "dispatch 期 window.event === e（含裸 event 全局）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.event)").unwrap().value,
+        "undefined",
+        "dispatch 后 window.event === undefined"
+    );
+
+    // ③ 嵌套 dispatch（redispatch）：内层 dispatch 后恢复外层 event，外层 listener 仍见外层 event。
+    // 内层 listener 设 __inner，外层 listener 派发内层后再读 window.event 应仍 === 外层 event。
+    sandbox
+        .execute(
+            "var __outerEventEq = 'unset', __innerEventEq = 'unset';\n\
+             document.querySelector('#p').addEventListener('outer', function(eOuter){\n\
+               __innerEventEq = 'pre';\n\
+               // 内层 dispatch：listener 期 window.event 应 === 内层 event\n\
+               document.querySelector('#c').dispatchEvent(new Event('inner'));\n\
+               // 内层 dispatch 结束后 window.event 应恢复 === 外层 event\n\
+               __outerEventEq = (window.event === eOuter);\n\
+             });\n\
+             document.querySelector('#c').addEventListener('inner', function(eInner){\n\
+               __innerEventEq = (window.event === eInner);\n\
+             });",
+        )
+        .unwrap();
+    sandbox
+        .execute("document.querySelector('#p').dispatchEvent(new Event('outer'));")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__innerEventEq").unwrap().value,
+        "true",
+        "嵌套 dispatch 内层 window.event === 内层 event"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__outerEventEq").unwrap().value,
+        "true",
+        "嵌套 dispatch 内层结束后恢复外层 window.event === 外层 event"
+    );
+}

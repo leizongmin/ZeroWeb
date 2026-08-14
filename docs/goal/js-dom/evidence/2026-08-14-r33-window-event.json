@@ -1,0 +1,38 @@
+{
+  "round": "R33",
+  "date": "2026-08-14",
+  "milestone": "M4",
+  "slice": "Window.event (HTML current event legacy global, spec window-event)",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "case": "dom/events/event-global.html",
+  "implementation": {
+    "polyfill_init": "part01.js: Object.defineProperty(globalThis,'event',{value:undefined,writable:true,configurable:true,enumerable:true}) after self/top/parent",
+    "polyfill_dispatch": "part03.js _dispatchWithBubble: var prevEvent=globalThis.event; globalThis.event=event; (try capture/target/bubble) finally { globalThis.event=prevEvent; } — nested dispatch restores outer (innermost-first)",
+    "native": "not changed (case-side dispatch runs polyfill per master.md unresolved #9; native globalThis.event set would be dead path; deferred to default-on alignment)"
+  },
+  "results": {
+    "event-global_polyfill": { "pass": 5, "fail": 7, "prev": "0P/12F" },
+    "event-global_native": { "pass": 5, "fail": 7, "prev": "0P/12F" },
+    "dom_events_polyfill_full": { "pass": 174, "fail": 153, "timeout": 6, "prev": "159P/159F/6TO", "rate": "53.23%" },
+    "dom_events_native_full": { "pass": 154, "fail": 174, "timeout": 6, "prev": "146P/166F/6TO", "rate": "46.95%" }
+  },
+  "event_global_passing_subtests": [
+    "event exists on window, which is initially set to undefined",
+    "window.event is only defined during dispatch",
+    "window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree)",
+    "window.event is set to the current event during dispatch",
+    "window.event is set to the current event, which is the event passed to dispatch"
+  ],
+  "remaining_fail_deep_structure": [
+    "shadow tree in-dispatch window.event (needs Shadow DOM retarget infra)",
+    "window.onerror restore (needs window event handler infra)",
+    "redispatch event re-set during dispatch (2)"
+  ],
+  "note": "Event-stopPropagation-cancel-bubbling.html still fails — root cause is AT_TARGET stopPropagation not halting same-element subsequent listeners (_dispatchToListeners 'all' mode needs per-listener _propagationStopped check), NOT Window.event. Independent bug, logged for next round.",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "v8_engine_lib": "2110 passed (R32 baseline 2109 +1)",
+    "quickjs_engine_lib": "1411 passed (zero regression)"
+  }
+}
