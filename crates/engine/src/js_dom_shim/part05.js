@@ -184,7 +184,9 @@
           var _ex2 = _expando[key] || (_expando[key] = {});
           _ex2[p] = value;
         }
-        if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr });
+        // js-dom M4 R45：携带写入前捕获的 oldValue（part04 set trap 头预捕获 _moOldVal——仅 id/class/
+        // title/lang 高频反射集；其余反射属性 oldValue 保持 null，partial）。
+        if (moAttr) _mo_notify(sel, handle, { type: 'attributes', attributeName: moAttr, oldValue: (typeof _moOldVal !== 'undefined' && _moOldVal !== undefined) ? _moOldVal : null });
         return true;
       },
       // R3046：expando 枚举表面（R3042 follow-up，闭合 R3042 已知限制④）。无此三 trap → `Object.keys(el)` /

@@ -2849,3 +2849,63 @@ fn test_namednodemap_own_enumeration_r44() {
         "④ removeAttribute 后枚举收缩（indices + 剩余 names）"
     );
 }
+
+#[test]
+fn test_mutation_observer_id_chain_and_oldvalue_r45() {
+    // R45：MutationObserver 语义修复双件：
+    // ① 同批 id 重命名追链（Rust apply_dom_mutations）：`el.id="abc"; el.className="x"` 两条 mutation
+    //    的 selector 均取自 proxy 建立时（#old），第一条应用后 #old 消失——rewrite_pending_id_selectors
+    //    把剩余队列 #old → #abc，第二批不再整批崩（WPT MutationObserver-attributes 曾整用例
+    //    "set_attr: no match" 崩）。非 id 的 stale selector 仍走原错误路径（不掩盖真 bug）。
+    // ② attributeOldValue：IDL 反射 setter（id/className/title/lang/type）与 classList write 在
+    //    **写入前**捕获 old value（WPT "oldValue didn't match" 全族）。旧实现 notify 恒不带 old。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"old\" class=\"c0\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var recs = [];
+             var mo = new MutationObserver(function(rs) { recs = rs; });
+             var el = document.querySelector('#old');
+             mo.observe(el, { attributes: true, attributeOldValue: true });
+             // ① id 改名 + 同元素后续 mutation（同批追链）
+             el.id = 'newid';
+             el.className = 'c1';",
+        )
+        .unwrap();
+    // flush 经 `_defer`（microtask）。沙箱无 host 事件循环——V8 microtask 在 execute 返回后
+    // 由 sandbox 内部泵（persistent context 每次 execute 后跑 pending microtasks）。多轮 execute
+    // 轮询直到 recs 填充（上限 50 轮）。
+    let mut filled = false;
+    for _ in 0..50 {
+        if sandbox.execute("recs.length").unwrap().value == "2" {
+            filled = true;
+            break;
+        }
+        let _ = sandbox.execute("0");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(filled, "MO 回调应经 microtask flush 填充 recs（2 条）");
+    assert_eq!(
+        sandbox
+            .execute("recs.map(function(r) { return r.attributeName + '=' + r.oldValue; }).join(',')")
+            .unwrap()
+            .value,
+        "id=old,class=c0",
+        "② attributeOldValue 写入前捕获（id=old / class=c0）+ ① 两条都入 record"
+    );
+}

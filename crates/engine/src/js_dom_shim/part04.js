@@ -1792,6 +1792,21 @@
       set: function(_t, prop, value) {
         var p = String(prop);
         var moAttr = null;
+        // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
+        // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
+        // MutationObserver-attributes "oldValue didn't match" 全族 fail）。此处按 IDL 名预判目标内容属性名，
+        // 有 observer 请求 old 时读当前值暂存，末尾 notify 携带。非反射属性（expando 等）moAttr=null 不触发。
+        var _moIdVal = _mo_id(handle, sel);
+        var _moOldVal;
+        {
+          var _attrOf = null;
+          if (p === 'id') _attrOf = 'id';
+          else if (p === 'className') _attrOf = 'class';
+          else if (p === 'title' || p === 'lang' || p === 'type') _attrOf = p;
+          if (_attrOf && _moIdVal != null && _mo_any_wants_attr_old(_moIdVal, _attrOf)) {
+            _moOldVal = _mo_read_attr(sel, handle, _attrOf);
+          }
+        }
         // R3034：text/comment 节点 `.data`/`.nodeValue` IDL setter（CharacterData）。须先于末尾 generic fallthrough
         //（part05.js：'data' 落入 else 被误当内容属性 → `__zw_set_attr_handle(handle,'data')` + attributes MO 记录，
         // 类型错且文本内容未持久化——读回经 `__zw_get_text_handle` 返旧值，setter 失效）。handle-based 文本/注释

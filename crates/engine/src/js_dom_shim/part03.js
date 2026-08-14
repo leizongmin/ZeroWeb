@@ -756,10 +756,14 @@
       // 强制 setAttribute + notify，绕过 runUpdate 的「值相同 return」。返 false（oldT 不存在）时不 write。
       var v = arr.join(' ');
       if (!force && v === _readClass(key, sel, handle)) return;
+      // js-dom M4 R45：classList write 的 attributeOldValue——写入前捕获（同 IDL setter 模式）。
+      var _clsMoId = _mo_id(handle, sel);
+      var _clsOld = (_clsMoId != null && _mo_any_wants_attr_old(_clsMoId, 'class'))
+        ? _mo_read_attr(sel, handle, 'class') : null;
       _classCache[key] = v;
       if (handle) __zw_set_attr_handle(handle, 'class', v);
       else __zw_set_attr(sel, 'class', v);
-      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class' });
+      _mo_notify(sel, handle, { type: 'attributes', attributeName: 'class', oldValue: _clsOld });
     };
     // DOMTokenList token 校验（spec `dom-domtokenlist-validation`）：空串 → SyntaxError
     // DOMException（code 12）；含 ASCII 空白 → InvalidCharacterError DOMException（code 5）。

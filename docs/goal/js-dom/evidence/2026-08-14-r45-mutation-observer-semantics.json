@@ -1,0 +1,39 @@
+{
+  "round": "R45",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (nodes MutationObserver) + M2 S6 前置评估",
+  "slice": "MutationObserver batch-apply id-rename chaining + attributeOldValue pre-capture",
+  "context": "Planned as M2 S6 minimal-slice evaluation (MutationObserver de-stringing). S6 proper (mutation targets as native node objects) depends on L2 live-Document identity mapping — deferred with diagnosis. Instead the evaluation surfaced two concrete MO semantics bugs fixed this round.",
+  "fixes": {
+    "batch_id_rename_chaining": "apply_dom_mutations (js_dom_bridge.rs): `el.id='abc'; el.className='x'` produce two mutations whose selectors were both captured at proxy creation (#old). After the first SetAttr(id) applies, #old vanishes from the doc and the second mutation failed with 'set_attr: no match' — aborting the whole batch and crashing the page script (WPT MutationObserver-attributes died as 0P). New rewrite_pending_id_selectors rewrites remaining queued selectors from #old to #new after a successful id change (exact match or descendant-combinator prefix; nth-child structural paths unaffected by id changes). Other stale selectors keep the original error path — real bugs are not masked.",
+    "attribute_old_value": "IDL reflection setters (el.id=/className=/title=/lang/type) and classList writes notified MutationObserver AFTER writing, so oldValue was never captured (always null — 'oldValue didn't match' family). part04 set trap now pre-captures the old value for known reflection attrs when any observer requested attributeOldValue; part05's tail notify carries it. classList write (part03) captures before __zw_set_attr. setAttribute/removeAttribute paths already captured (R3025).",
+    "refactor_note": "apply_dom_mutations loop converted for→while-let over a VecDeque to enable in-place selector rewriting of the remaining queue (borrow adjustments throughout the match arms; clippy + fmt clean)."
+  },
+  "s6_deferred_diagnosis": "S6 (MO targets as native node objects, dropping __zw_* ser/deser) requires the L2 live-Document identity mapping — in the current stacked mode (ZW_NATIVE_DOM=1) page-side proxies are still polyfill selectors/handles, so swapping notify targets to native NodeIds needs the per-node identity bridge that L2 builds. Recorded as M2 precondition; this round's fixes are pure semantic correctness in the existing path.",
+  "results": {
+    "mutation_observer_attributes": "0P (whole case crashed) -> 30P/8F both paths",
+    "mutation_observer_childList": "10P unchanged (fragment-expansion records + insertNode geometry remain, separate clusters)",
+    "dom_nodes_polyfill": { "pass": 2539, "prev": 2507, "delta": "+32" },
+    "dom_nodes_native": { "pass": 2509 },
+    "regression": {
+      "dom_events_polyfill": "189P unchanged",
+      "dom_collections": "24P unchanged",
+      "dom_traversal": "9P unchanged",
+      "dom_ranges": "39P unchanged"
+    }
+  },
+  "remaining_mo_clusters": "MutationObserver-attributes 8F: setAttributeNS/removeAttributeNS attributeNamespace field + records-count semantics for same-value/no-mutation cases; childList fragment addition record expansion.",
+  "ab_equivalence": true,
+  "regression": false,
+  "unit_tests": {
+    "r45_unit_test": "test_mutation_observer_id_chain_and_oldvalue_r45 (two mutations both recorded after id rename + attributeOldValue id=old/class=c0 pre-capture; polls microtask flush)",
+    "v8_engine_lib": "2126 passed",
+    "quickjs_engine_lib": "1415 passed",
+    "quickjs_matrix": "14 test-result-ok lines"
+  },
+  "gates": {
+    "clippy_v8_workspace": "clean",
+    "clippy_quickjs_matrix": "clean",
+    "fmt": "no diff"
+  }
+}

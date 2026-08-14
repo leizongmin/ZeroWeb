@@ -498,10 +498,65 @@ fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
 /// 变更中 `CreateElement`/`CreateTextNode` 建立的 ephemeral handles，为每个元素算
 /// [`unique_selector_for_node`]（歧义选择器跳过 → 不入 map → 该 handle 回落零 rect）。
 /// 选择器反映**变更后**的文档状态（同 batch 内后置 SetAttrOnHandle 设的 id/class 已生效）。
+/// js-dom M4 R45：同批 id 重命名后重写剩余 mutation 的 `#旧id` selector 为 `#新id`。
+///
+/// `el.id = "abc"; el.className = "x"` 的两条 mutation selector 都取自 proxy 建立时（`#n1000`），
+/// 第一条应用后 `#n1000` 从文档消失，第二条失配。本 helper 在 id 改名成功后遍历剩余队列，
+/// 把以 `#旧id` 开头（或整个等于）的 selector 前缀替换为 `#新id`（nth-child 结构路径不受影响——
+/// 改 id 不动树结构）。仅在「本批前序改名」场景追链，其他 stale selector 仍走原错误路径。
+fn rewrite_pending_id_selectors(
+    pending: &mut std::collections::VecDeque<DomMutation>,
+    old_selector: &str,
+    new_id: &str,
+) {
+    let old_id_prefix = old_selector.strip_prefix('#');
+    let Some(_old_id) = old_id_prefix else { return };
+    let new_prefix = format!("#{new_id}");
+    for m in pending.iter_mut() {
+        let sel = match m {
+            DomMutation::SetAttr { selector, .. }
+            | DomMutation::RemoveAttr { selector, .. }
+            | DomMutation::SetText { selector, .. }
+            | DomMutation::SetInnerHtml { selector, .. }
+            | DomMutation::SetStyle { selector, .. }
+            | DomMutation::RemoveStyle { selector, .. }
+            | DomMutation::Remove { selector }
+            | DomMutation::AppendChild {
+                parent_selector: selector,
+                ..
+            }
+            | DomMutation::InsertBefore {
+                parent_selector: selector,
+                ..
+            } => selector,
+            _ => continue,
+        };
+        if sel == old_selector {
+            *sel = new_prefix.clone();
+        } else if let Some(rest) = sel.strip_prefix(old_selector) {
+            // `#n1000 > .child` 等复合选择器——后代部分保持。
+            if rest.starts_with(' ') || rest.starts_with('>') {
+                *sel = format!("{new_prefix}{rest}");
+            }
+        }
+    }
+}
+
+/// 应用一批 [`DomMutation`] 到 `doc`（解析 HTML 后调用；生产路径 renderer/browser 经
+/// `apply_mutations_to_html*` 包装）。CreateElement/Text/Comment/PI 建立的 ephemeral
+/// handle→NodeId 映射仅在本函数调用作用域内有效（返回 handle→selector 供 RectBridge）。
+/// R45：同批 id 重命名经 [`rewrite_pending_id_selectors`] 追链（见该函数文档）。
 pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<HashMap<String, String>, String> {
     let mut handles: HashMap<String, NodeId> = HashMap::new();
-
-    for mutation in mutations {
+    // js-dom M4 R45：同批 id 重命名追链——`el.id = "abc"; el.className = "x"` 两条 mutation 的
+    // selector 都取自 proxy 建立时（`#n1000`），第一条 SetAttr(id) 应用后文档中 `#n1000` 消失，
+    // 第二条失配 → 旧 `?` 硬错中止整批（WPT MutationObserver-attributes "apply mutations:
+    // set_attr: no match" 整用例崩）。spec 语义：两 mutation 引用同一元素，都应生效。apply 成功
+    // 改 id 后，把**剩余队列**中 `#旧id` 前缀 selector 重写为 `#新id`（仅此元素失配的根因是本批
+    // 前序改名，其他 stale selector 仍走原错误路径不掩盖真 bug）。SetText 的 lenient no-op（R3076）
+    // 保持不变。
+    let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
+    while let Some(mutation) = pending.pop_front() {
         match mutation {
             DomMutation::SetFormValue { .. } | DomMutation::SetFormComposition { .. } => {
                 // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
@@ -510,27 +565,33 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 // 焦点状态由宿主（renderer）消费，不写 DOM。
             }
             DomMutation::SetAttr { selector, name, value } => {
-                let node =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("set_attr: no match for {selector}"))?;
-                doc.set_attribute(node, name, value);
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    return Err(format!("set_attr: no match for {selector}"));
+                };
+                doc.set_attribute(node, &name, &value);
+                // id 改名 → 追链重写剩余 mutation 的 `#旧id` selector（属性名 effective 已小写）。
+                if name.eq_ignore_ascii_case("id") {
+                    rewrite_pending_id_selectors(&mut pending, &selector, &value);
+                }
             }
             DomMutation::RemoveAttr { selector, name } => {
-                let node =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("remove_attr: no match for {selector}"))?;
-                doc.remove_attribute(node, name);
+                let Some(node) = find_by_selector(doc, &selector) else {
+                    return Err(format!("remove_attr: no match for {selector}"));
+                };
+                doc.remove_attribute(node, &name);
             }
             DomMutation::SetText { selector, text } => {
                 // R3076：lenient no-op when selector 不匹配（如 `document.title=` 在无 `<title>` 页——R2815/R3035
                 // documented「无 title → no-op」）。旧 `?` 硬错会**中止整批 mutation apply**（后续 mutation 丢弃，
                 // 数据丢失）。SetText 对不存在元素无操作（real browser 语义）→ 跳过继续 apply 余下 mutation。
-                if let Some(node) = find_by_selector(doc, selector) {
-                    doc.set_text_content(node, text);
+                if let Some(node) = find_by_selector(doc, &selector) {
+                    doc.set_text_content(node, &text);
                 }
             }
             DomMutation::SetInnerHtml { selector, html } => {
-                let node = find_by_selector(doc, selector)
+                let node = find_by_selector(doc, &selector)
                     .ok_or_else(|| format!("set_inner_html: no match for {selector}"))?;
-                replace_inner_html(doc, node, html)?;
+                replace_inner_html(doc, node, &html)?;
             }
             DomMutation::SetStyle {
                 selector,
@@ -538,23 +599,23 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 value,
             } => {
                 let node =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("set_style: no match for {selector}"))?;
-                apply_style_property(doc, node, property, value);
+                    find_by_selector(doc, &selector).ok_or_else(|| format!("set_style: no match for {selector}"))?;
+                apply_style_property(doc, node, &property, &value);
             }
             DomMutation::RemoveStyle { selector, property } => {
                 let node =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("remove_style: no match for {selector}"))?;
-                apply_remove_style(doc, node, property);
+                    find_by_selector(doc, &selector).ok_or_else(|| format!("remove_style: no match for {selector}"))?;
+                apply_remove_style(doc, node, &property);
             }
             DomMutation::Remove { selector } => {
-                if let Some(node) = find_by_selector(doc, selector)
+                if let Some(node) = find_by_selector(doc, &selector)
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
                 {
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
                 }
             }
             DomMutation::CreateElement { handle, tag } => {
-                let id = doc.create_element(tag);
+                let id = doc.create_element(&tag);
                 handles.insert(handle.clone(), id);
             }
             // R18 createElementNS：经 `create_element_ns`（大小写敏感 + 保留 prefix + 保留 namespace），
@@ -567,29 +628,29 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 namespace,
                 qualified_name,
             } => {
-                let id = doc.create_element_ns(namespace, qualified_name);
+                let id = doc.create_element_ns(&namespace, &qualified_name);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::CreateTextNode { handle, text } => {
-                let id = doc.create_text_node(text);
+                let id = doc.create_text_node(&text);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::CreateComment { handle, text } => {
-                let id = doc.create_comment(text);
+                let id = doc.create_comment(&text);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::CreateProcessingInstruction { handle, target, data } => {
-                let id = doc.create_processing_instruction(target, data);
+                let id = doc.create_processing_instruction(&target, &data);
                 handles.insert(handle.clone(), id);
             }
             DomMutation::AppendChild {
                 parent_selector,
                 child_handle,
             } => {
-                let parent = find_by_selector(doc, parent_selector)
+                let parent = find_by_selector(doc, &parent_selector)
                     .ok_or_else(|| format!("append_child: no parent match for {parent_selector}"))?;
                 let child = handles
-                    .get(child_handle)
+                    .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
@@ -599,11 +660,11 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 child_handle,
             } => {
                 let parent = handles
-                    .get(parent_handle)
+                    .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
                 let child = handles
-                    .get(child_handle)
+                    .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
@@ -613,13 +674,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 child_handle,
                 ref_selector,
             } => {
-                let parent = find_by_selector(doc, parent_selector)
+                let parent = find_by_selector(doc, &parent_selector)
                     .ok_or_else(|| format!("insert_before: no parent match for {parent_selector}"))?;
                 let child = handles
-                    .get(child_handle)
+                    .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                let ref_node = find_by_selector(doc, ref_selector)
+                let ref_node = find_by_selector(doc, &ref_selector)
                     .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
@@ -629,44 +690,44 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 ref_selector,
             } => {
                 let parent = handles
-                    .get(parent_handle)
+                    .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
                 let child = handles
-                    .get(child_handle)
+                    .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                let ref_node = find_by_selector(doc, ref_selector)
+                let ref_node = find_by_selector(doc, &ref_selector)
                     .ok_or_else(|| format!("insert_before: no ref match for {ref_selector}"))?;
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
             DomMutation::SetAttrOnHandle { handle, name, value } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                doc.set_attribute(node, name, value);
+                doc.set_attribute(node, &name, &value);
             }
             DomMutation::RemoveAttrOnHandle { handle, name } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                doc.remove_attribute(node, name);
+                doc.remove_attribute(node, &name);
             }
             DomMutation::SetTextOnHandle { handle, text } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                doc.set_text_content(node, text);
+                doc.set_text_content(node, &text);
             }
             DomMutation::SetInnerHtmlOnHandle { handle, html } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                replace_inner_html(doc, node, html)?;
+                replace_inner_html(doc, node, &html)?;
             }
             DomMutation::SetStyleOnHandle {
                 handle,
@@ -674,20 +735,20 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 value,
             } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                apply_style_property(doc, node, property, value);
+                apply_style_property(doc, node, &property, &value);
             }
             DomMutation::RemoveStyleOnHandle { handle, property } => {
                 let node = handles
-                    .get(handle)
+                    .get(&handle)
                     .copied()
                     .ok_or_else(|| format!("unknown handle {handle}"))?;
-                apply_remove_style(doc, node, property);
+                apply_remove_style(doc, node, &property);
             }
             DomMutation::RemoveHandle { handle } => {
-                if let Some(node) = handles.get(handle).copied()
+                if let Some(node) = handles.get(&handle).copied()
                     && let Some(parent) = doc.get(node).and_then(|n| n.parent)
                 {
                     doc.remove_child(parent, node).map_err(|e| e.to_string())?;
@@ -695,8 +756,8 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
             }
             DomMutation::SelectOption { selector, value } => {
                 // P1a select：编程设 select.value——mark 匹配 option selected，deselect 兄弟。
-                let sel =
-                    find_by_selector(doc, selector).ok_or_else(|| format!("select_option: no match for {selector}"))?;
+                let sel = find_by_selector(doc, &selector)
+                    .ok_or_else(|| format!("select_option: no match for {selector}"))?;
                 let options = doc.query_selector_all(sel, "option");
                 let target = options
                     .iter()
@@ -716,37 +777,37 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 position,
                 html,
             } => {
-                let node = find_by_selector(doc, selector)
+                let node = find_by_selector(doc, &selector)
                     .ok_or_else(|| format!("insert_adjacent_html: no match for {selector}"))?;
-                insert_adjacent_html(doc, node, position, html)?;
+                insert_adjacent_html(doc, node, &position, &html)?;
             }
             DomMutation::InsertAdjacentText {
                 selector,
                 position,
                 text,
             } => {
-                let node = find_by_selector(doc, selector)
+                let node = find_by_selector(doc, &selector)
                     .ok_or_else(|| format!("insert_adjacent_text: no match for {selector}"))?;
                 // 字面 Text 节点（不解析 HTML）。
                 let tn = doc.create_text_node(text.as_str());
-                insert_nodes_at_position(doc, &[tn], node, position)?;
+                insert_nodes_at_position(doc, &[tn], node, &position)?;
             }
             DomMutation::InsertAdjacentElement {
                 selector,
                 position,
                 child_handle,
             } => {
-                let node = find_by_selector(doc, selector)
+                let node = find_by_selector(doc, &selector)
                     .ok_or_else(|| format!("insert_adjacent_element: no match for {selector}"))?;
                 let child = handles
-                    .get(child_handle)
+                    .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 // 复用 append_child 的自动 reparent（child 已挂载则从旧 parent 移除 → 移动语义）。
-                insert_nodes_at_position(doc, &[child], node, position)?;
+                insert_nodes_at_position(doc, &[child], node, &position)?;
             }
             DomMutation::SetOuterHtml { selector, html } => {
-                replace_outer_html(doc, selector, html)?;
+                replace_outer_html(doc, &selector, &html)?;
             }
             DomMutation::CreateDocumentFragment { handle } => {
                 let id = doc.create_document_fragment();
@@ -756,30 +817,30 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 parent_selector,
                 fragment_handle,
             } => {
-                let parent = find_by_selector(doc, parent_selector)
+                let parent = find_by_selector(doc, &parent_selector)
                     .ok_or_else(|| format!("append_fragment_children: no parent match for {parent_selector}"))?;
-                move_fragment_children(doc, parent, fragment_handle, None, &handles)?;
+                move_fragment_children(doc, parent, &fragment_handle, None, &handles)?;
             }
             DomMutation::AppendFragmentChildrenByHandle {
                 parent_handle,
                 fragment_handle,
             } => {
                 let parent = handles
-                    .get(parent_handle)
+                    .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                move_fragment_children(doc, parent, fragment_handle, None, &handles)?;
+                move_fragment_children(doc, parent, &fragment_handle, None, &handles)?;
             }
             DomMutation::InsertFragmentBefore {
                 parent_selector,
                 fragment_handle,
                 ref_selector,
             } => {
-                let parent = find_by_selector(doc, parent_selector)
+                let parent = find_by_selector(doc, &parent_selector)
                     .ok_or_else(|| format!("insert_fragment_before: no parent match for {parent_selector}"))?;
-                let ref_node = find_by_selector(doc, ref_selector)
+                let ref_node = find_by_selector(doc, &ref_selector)
                     .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
-                move_fragment_children(doc, parent, fragment_handle, Some(ref_node), &handles)?;
+                move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
             }
             DomMutation::InsertFragmentBeforeByHandle {
                 parent_handle,
@@ -787,12 +848,12 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 ref_selector,
             } => {
                 let parent = handles
-                    .get(parent_handle)
+                    .get(&parent_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown parent handle {parent_handle}"))?;
-                let ref_node = find_by_selector(doc, ref_selector)
+                let ref_node = find_by_selector(doc, &ref_selector)
                     .ok_or_else(|| format!("insert_fragment_before: no ref match for {ref_selector}"))?;
-                move_fragment_children(doc, parent, fragment_handle, Some(ref_node), &handles)?;
+                move_fragment_children(doc, parent, &fragment_handle, Some(ref_node), &handles)?;
             }
         }
     }
