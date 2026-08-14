@@ -509,7 +509,7 @@ where
     F: FnOnce(FetchJobResult) -> FetchJobResult + Send + 'static,
 {
     let (tx, out) = mpsc::channel();
-    std::thread::spawn(move || {
+    crate::client::spawn_network_bridge(move || {
         if let Ok(result) = rx.recv() {
             let _ = tx.send(map(result));
         }

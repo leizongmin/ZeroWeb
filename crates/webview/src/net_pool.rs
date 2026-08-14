@@ -33,7 +33,7 @@ where
     T: Send + 'static,
 {
     let (tx, out) = mpsc::channel();
-    std::thread::spawn(move || {
+    zero_net::client::spawn_network_bridge(move || {
         if let Ok(r) = rx.recv() {
             let _ = tx.send(map(r));
         }

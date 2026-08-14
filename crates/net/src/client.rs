@@ -10,10 +10,30 @@ use std::sync::{Mutex, OnceLock};
 use crate::connect::{build_blocking_client, map_reqwest_error, send_with_ipv4_fallback};
 use crate::{HttpRequest, HttpResponse, NetError};
 
+const ASYNC_NETWORK_WORKERS: usize = 4;
+const MAX_BLOCKING_NETWORK_TASKS: usize = 32;
+
 /// 共享异步网络 runtime，避免资源调度器为每个请求创建线程或 runtime。
 pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("create async network runtime"))
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(ASYNC_NETWORK_WORKERS)
+            .max_blocking_threads(MAX_BLOCKING_NETWORK_TASKS)
+            .build()
+            .expect("create async network runtime")
+    })
+}
+
+/// 在共享且有上限的网络 blocking pool 中运行短暂的接收/转换任务。
+///
+/// 仅用于等待同步 `mpsc` receiver；网络传输本身必须继续使用异步 API。
+pub fn spawn_network_bridge<F>(task: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    async_runtime().spawn_blocking(task);
 }
 
 fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
