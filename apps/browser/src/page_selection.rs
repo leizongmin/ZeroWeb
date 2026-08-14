@@ -250,6 +250,7 @@ mod tests {
             font_glyph_index: None,
             source: None,
             font_id: FontId(0),
+            font_variation_id: None,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,

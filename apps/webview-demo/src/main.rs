@@ -340,6 +340,7 @@ impl DemoState {
                     baseline_y,
                     color: text_color,
                     font_id: fid,
+                    font_variations: None,
                     font_size,
                     rotation: 0.0,
                 });

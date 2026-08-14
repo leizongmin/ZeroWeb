@@ -315,6 +315,8 @@ pub struct GlyphPrimitive {
     pub source: Option<GlyphSource>,
     /// 字体 ID
     pub font_id: FontId,
+    /// 当前帧 [`RenderPrimitives::font_variations`] 中的 OpenType axis vector。
+    pub font_variation_id: Option<FontVariationId>,
     /// 预缓存位图宽度（可选）
     pub bitmap_width: Option<u32>,
     /// 预缓存位图高度（可选）
@@ -471,6 +473,10 @@ pub struct BlendModePrimitive {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontId(pub u32);
 
+/// 当前帧内去重后的 OpenType variation axis vector ID。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FontVariationId(pub u32);
+
 /// 渲染统计 — 追踪图元数量、估算 draw call 数量和批处理效率。
 #[derive(Debug, Clone, Default)]
 pub struct RenderStats {
@@ -544,6 +550,8 @@ pub struct RenderPrimitives {
     pub images: Vec<ImagePrimitive>,
     /// Glyph 列表
     pub glyphs: Vec<GlyphPrimitive>,
+    /// 当前帧内去重后的 OpenType variation axis vectors。
+    pub font_variations: Vec<Arc<[crate::font::OpenTypeVariation]>>,
     /// 文本控件 caret 边界缓存（非绘制元数据）。
     pub text_control_boundaries: Vec<TextControlBoundary>,
     /// Filter 列表
@@ -679,6 +687,48 @@ impl RenderPrimitives {
         let idx = self.glyphs.len();
         self.glyphs.push(glyph);
         self.draw_order.push(DrawOp::Glyph(idx));
+    }
+
+    /// 注册当前帧使用的 OpenType variation axis vector；空或非法 vector 返回 `None`。
+    pub fn intern_font_variations(&mut self, variations: &[crate::font::OpenTypeVariation]) -> Option<FontVariationId> {
+        if variations.is_empty()
+            || variations.iter().any(|variation| {
+                !variation.value.is_finite() || !variation.tag.iter().all(|byte| (0x20..=0x7e).contains(byte))
+            })
+        {
+            return None;
+        }
+        if let Some(index) = self.font_variations.iter().position(|stored| {
+            stored.len() == variations.len()
+                && stored
+                    .iter()
+                    .zip(variations)
+                    .all(|(left, right)| left.cache_key() == right.cache_key())
+        }) {
+            return u32::try_from(index).ok().map(FontVariationId);
+        }
+        let id = u32::try_from(self.font_variations.len()).ok().map(FontVariationId)?;
+        self.font_variations.push(Arc::from(variations));
+        Some(id)
+    }
+
+    /// 返回 frame-local variation ID 对应的 axis vector；非法 ID 按默认实例处理。
+    pub fn font_variations(&self, id: Option<FontVariationId>) -> &[crate::font::OpenTypeVariation] {
+        id.and_then(|id| usize::try_from(id.0).ok())
+            .and_then(|index| self.font_variations.get(index))
+            .map_or(&[], Arc::as_ref)
+    }
+
+    /// 返回 frame-local variation ID 对应的共享 axis vector。
+    pub fn shared_font_variations(&self, id: Option<FontVariationId>) -> Option<Arc<[crate::font::OpenTypeVariation]>> {
+        id.and_then(|id| usize::try_from(id.0).ok())
+            .and_then(|index| self.font_variations.get(index))
+            .cloned()
+    }
+
+    /// 返回 glyph 对应的 OpenType axis vector。
+    pub fn glyph_font_variations(&self, glyph: &GlyphPrimitive) -> &[crate::font::OpenTypeVariation] {
+        self.font_variations(glyph.font_variation_id)
     }
 
     /// 添加一个 Filter

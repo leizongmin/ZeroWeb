@@ -150,6 +150,7 @@ fn test_gpu_renderer_rotated_glyph_swaps_dimensions() {
         baseline_y: 24.0,
         color: Color::BLACK,
         font_id: 0,
+        font_variations: None,
         font_size: 16.0,
         rotation: 0.0,
     }];
@@ -165,6 +166,7 @@ fn test_gpu_renderer_rotated_glyph_swaps_dimensions() {
         baseline_y: 24.0,
         color: Color::BLACK,
         font_id: 0,
+        font_variations: None,
         font_size: 16.0,
         rotation: std::f32::consts::FRAC_PI_2,
     }];
@@ -318,6 +320,7 @@ fn test_glyph_draw_fields() {
         baseline_y: 20.0,
         color: Color::RED,
         font_id: 1,
+        font_variations: None,
         font_size: 16.0,
         rotation: 0.0,
     };
@@ -374,6 +377,7 @@ fn test_glyph_draw_clone() {
         baseline_y: 88.0,
         color: Color::GREEN,
         font_id: 3,
+        font_variations: None,
         font_size: 24.0,
         rotation: 0.0,
     };
@@ -540,6 +544,7 @@ fn test_glyph_at_image_edge() {
         baseline_y: 15.0,
         color: Color::BLACK,
         font_id: 0,
+        font_variations: None,
         font_size: 8.0,
         rotation: 0.0,
     }];
@@ -562,6 +567,7 @@ fn test_glyph_alpha_zero() {
         baseline_y: 8.0,
         color: Color::rgba(255, 255, 255, 0),
         font_id: 0,
+        font_variations: None,
         font_size: 8.0,
         rotation: 0.0,
     }];
@@ -703,6 +709,7 @@ fn test_multiple_glyphs_same_font_char() {
             baseline_y: 30.0,
             color: Color::BLACK,
             font_id: 0,
+            font_variations: None,
             font_size: 16.0,
             rotation: 0.0,
         },
@@ -713,6 +720,7 @@ fn test_multiple_glyphs_same_font_char() {
             baseline_y: 30.0,
             color: Color::BLACK,
             font_id: 0,
+            font_variations: None,
             font_size: 16.0,
             rotation: 0.0,
         },
@@ -736,6 +744,7 @@ fn test_glyph_at_bottom_edge() {
         baseline_y: 30.0,
         color: Color::BLACK,
         font_id: 0,
+        font_variations: None,
         font_size: 8.0,
         rotation: 0.0,
     }];
@@ -802,6 +811,7 @@ fn test_gpu_full_scene_indexed_glyph_matches_code_point() {
             font_glyph_index,
             source: None,
             font_id: crate::primitive::FontId(font_id),
+            font_variation_id: None,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -842,6 +852,7 @@ fn test_gpu_full_scene_preserves_draw_indices_after_unrenderable_glyph() {
         font_glyph_index: Some(0),
         source: None,
         font_id: crate::primitive::FontId(u32::MAX),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -856,6 +867,7 @@ fn test_gpu_full_scene_preserves_draw_indices_after_unrenderable_glyph() {
         font_glyph_index: Some(glyph_index),
         source: None,
         font_id: crate::primitive::FontId(font_id),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,

@@ -160,6 +160,7 @@ pub fn render_icon(
         baseline_y: cy + size * 0.5,
         color,
         font_id: ICON_FONT_ID,
+        font_variations: None,
         font_size: size,
         rotation: 0.0,
     });

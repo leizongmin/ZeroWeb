@@ -318,12 +318,13 @@ impl FontLoader {
         if self.ahem_font_id == Some(font_id) && !code_point.is_whitespace() {
             return self.rasterize_ahem_glyph(font_id, code_point, size);
         }
+        let variations = self.resolved_font_variations(font_id, variations);
 
         // Phase 2（freetype-raster feature）：非-Ahem 字形优先 FreeType 光栅化
         //（chromium Linux 同栈），失败回退 fontdue。feature 关时不编译，走纯 fontdue。
         #[cfg(feature = "freetype-raster")]
         if let Some(bytes) = self.font_data.get(&font_id) {
-            match freetype_raster::rasterize(bytes, self.face_index(font_id), code_point, size, variations) {
+            match freetype_raster::rasterize(bytes, self.face_index(font_id), code_point, size, &variations) {
                 Ok(bitmap) => return Ok(bitmap),
                 Err(error) if !variations.is_empty() => return Err(error),
                 Err(_) => {}
@@ -371,6 +372,7 @@ impl FontLoader {
         size: f32,
         variations: &[crate::font::OpenTypeVariation],
     ) -> Result<GlyphBitmap, FontError> {
+        let variations = self.resolved_font_variations(font_id, variations);
         if let Some(bytes) = self.font_data.get(&font_id)
             && let Ok(face) = rustybuzz::ttf_parser::Face::parse(bytes, self.face_index(font_id))
             && glyph_index >= face.number_of_glyphs()
@@ -383,7 +385,7 @@ impl FontLoader {
 
         #[cfg(feature = "freetype-raster")]
         if let Some(bytes) = self.font_data.get(&font_id) {
-            match freetype_raster::rasterize_indexed(bytes, self.face_index(font_id), glyph_index, size, variations) {
+            match freetype_raster::rasterize_indexed(bytes, self.face_index(font_id), glyph_index, size, &variations) {
                 Ok(bitmap) => return Ok(bitmap),
                 Err(error) if !variations.is_empty() => return Err(error),
                 Err(_) => {}
@@ -492,7 +494,23 @@ impl FontLoader {
         code_point: char,
         size: f32,
     ) -> Result<(u32, GlyphBitmap), FontError> {
-        if self.font_allows_code_point(primary_id, code_point)
+        self.rasterize_glyph_with_fallback_and_variations(primary_id, code_point, size, &[])
+    }
+
+    /// 在主字体及回退链中使用指定 OpenType axis 坐标渲染 glyph。
+    pub fn rasterize_glyph_with_fallback_and_variations(
+        &self,
+        primary_id: u32,
+        code_point: char,
+        size: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> Result<(u32, GlyphBitmap), FontError> {
+        if variations.is_empty()
+            && self
+                .font_variations
+                .get(&primary_id)
+                .is_none_or(|descriptor| descriptor.is_empty())
+            && self.font_allows_code_point(primary_id, code_point)
             && let Some(bitmap) = self.bitmap_glyphs.get(&(primary_id, code_point as u32, size.to_bits()))
         {
             return Ok((primary_id, bitmap.clone()));
@@ -511,7 +529,7 @@ impl FontLoader {
             if !code_point.is_whitespace() && !font.has_glyph(code_point) {
                 continue;
             }
-            let bitmap = self.rasterize_glyph(font_id, code_point, size)?;
+            let bitmap = self.rasterize_glyph_with_variations(font_id, code_point, size, variations)?;
             if Self::glyph_has_coverage(code_point, &bitmap) {
                 return Ok((font_id, bitmap));
             }

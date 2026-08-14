@@ -14,13 +14,15 @@ use zero_protocol::{
 #[cfg(test)]
 use zero_protocol::{IpcImage, IpcImagePayload};
 use zero_render_foundation::color::Color;
+use zero_render_foundation::font::OpenTypeVariation;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontId,
-    GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive,
-    GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TextControlBoundary, TransformPrimitive,
+    FontVariationId, GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind,
+    GradientPrimitive, GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive,
+    PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TextControlBoundary,
+    TransformPrimitive,
 };
 use zero_webview::WebViewRenderResult;
 
@@ -275,8 +277,32 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
+    primitives.font_variations = params
+        .font_variations
+        .into_iter()
+        .map(|variations| -> Arc<[OpenTypeVariation]> {
+            if variations
+                .iter()
+                .copied()
+                .all(zero_protocol::IpcFontVariation::is_valid)
+            {
+                Arc::from(
+                    variations
+                        .into_iter()
+                        .map(|variation| OpenTypeVariation::new(variation.tag, variation.value))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                Arc::from([])
+            }
+        })
+        .collect();
     let glyph_text_runs = glyph_text_runs_from_ipc(params.glyph_text_runs);
     for glyph in params.glyphs {
+        let font_variation_id = glyph
+            .font_variation_id
+            .filter(|id| usize::try_from(*id).is_ok_and(|index| index < primitives.font_variations.len()))
+            .map(FontVariationId);
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
             y: glyph.y,
@@ -288,6 +314,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
                 .source
                 .and_then(|source| glyph_source_from_ipc(source, &glyph_text_runs)),
             font_id: FontId(glyph.font_id),
+            font_variation_id,
             bitmap_width: None,
             bitmap_height: None,
             rotation: glyph.rotation,
@@ -489,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_paint_snapshot_restores_glyph_source_run_identity() {
+    fn apply_paint_snapshot_restores_glyph_source_and_variations() {
         let source = |run_id| IpcGlyphSource {
             run_id,
             start: 0,
@@ -503,6 +530,7 @@ mod tests {
             font_glyph_index: Some(1),
             source: Some(source(run_id)),
             font_id: 1,
+            font_variation_id: Some(0),
             color: IpcColor {
                 r: 0,
                 g: 0,
@@ -513,6 +541,10 @@ mod tests {
             synthetic_italic: true,
         };
         let params = PaintSnapshotParams {
+            font_variations: vec![vec![zero_protocol::IpcFontVariation {
+                tag: *b"wdth",
+                value: 125.0,
+            }]],
             glyph_text_runs: vec![
                 IpcGlyphTextRun {
                     run_id: 7,
@@ -537,11 +569,16 @@ mod tests {
 
         apply_paint_snapshot(&mut snap, params);
 
-        let glyphs = &snap.last_render.as_ref().expect("render result").primitives().glyphs;
+        let primitives = snap.last_render.as_ref().expect("render result").primitives();
+        let glyphs = &primitives.glyphs;
         let first = glyphs[0].source.as_ref().expect("first source");
         let second = glyphs[1].source.as_ref().expect("second source");
         let independent = glyphs[2].source.as_ref().expect("independent source");
         assert!(glyphs[0].synthetic_italic);
+        assert_eq!(
+            primitives.glyph_font_variations(&glyphs[0]),
+            &[OpenTypeVariation::new(*b"wdth", 125.0)]
+        );
         assert!(first.same_cluster(second));
         assert!(!first.same_cluster(independent));
         assert_eq!(

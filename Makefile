@@ -95,6 +95,7 @@ QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_C
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target/test-guard
+	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo build -p zero-renderer -p zero-compositor
 	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
 	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	.\target\test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
@@ -102,6 +103,9 @@ test: target/test-guard
 	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
 test: target/test-guard
+	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
+	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo build -p zero-renderer -p zero-compositor
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
 	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程

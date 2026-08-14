@@ -10,13 +10,14 @@ use zero_protocol::paint_snapshot::{
     IpcGradientInterpolation, IpcGradientKind, IpcHueMethod, IpcLineCap, IpcLineStyle, IpcRect, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
+use zero_render_foundation::font::OpenTypeVariation;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{
-    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, GlyphPrimitive,
-    GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive, GradientStop, HueMethod,
-    ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive,
-    ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FillPrimitive, FilterKind, FilterPrimitive, FontVariationId,
+    GlyphPrimitive, GlyphSource, GradientColorSpace, GradientInterpolation, GradientKind, GradientPrimitive,
+    GradientStop, HueMethod, ImagePrimitive, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
+    RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 fn ipc_rect_to_rect(r: IpcRect) -> Rect {
@@ -268,8 +269,32 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
             mode: ipc_blend_mode_to_mode(blend.mode),
         });
     }
+    primitives.font_variations = params
+        .font_variations
+        .iter()
+        .map(|variations| -> Arc<[OpenTypeVariation]> {
+            if variations
+                .iter()
+                .copied()
+                .all(zero_protocol::IpcFontVariation::is_valid)
+            {
+                Arc::from(
+                    variations
+                        .iter()
+                        .map(|variation| OpenTypeVariation::new(variation.tag, variation.value))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                Arc::from([])
+            }
+        })
+        .collect();
     let glyph_text_runs = glyph_text_runs_from_ipc(&params.glyph_text_runs);
     for glyph in &params.glyphs {
+        let font_variation_id = glyph
+            .font_variation_id
+            .filter(|id| usize::try_from(*id).is_ok_and(|index| index < primitives.font_variations.len()))
+            .map(FontVariationId);
         primitives.glyphs.push(GlyphPrimitive {
             x: glyph.x,
             y: glyph.y,
@@ -282,6 +307,7 @@ pub fn to_render_primitives(params: &PaintSnapshotParams) -> RenderPrimitives {
                 .as_ref()
                 .and_then(|source| glyph_source_from_ipc(source, &glyph_text_runs)),
             font_id: zero_render_foundation::primitive::FontId(glyph.font_id),
+            font_variation_id,
             bitmap_width: None,
             bitmap_height: None,
             rotation: glyph.rotation,
@@ -325,8 +351,12 @@ mod tests {
     }
 
     #[test]
-    fn conversion_preserves_synthetic_italic() {
+    fn conversion_preserves_glyph_raster_metadata() {
         let params = PaintSnapshotParams {
+            font_variations: vec![vec![zero_protocol::IpcFontVariation {
+                tag: *b"wdth",
+                value: 125.0,
+            }]],
             glyphs: vec![zero_protocol::IpcGlyph {
                 x: 1.0,
                 y: 2.0,
@@ -335,6 +365,7 @@ mod tests {
                 font_glyph_index: None,
                 source: None,
                 font_id: 0,
+                font_variation_id: Some(0),
                 color: IpcColor {
                     r: 0,
                     g: 0,
@@ -347,6 +378,11 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(to_render_primitives(&params).glyphs[0].synthetic_italic);
+        let primitives = to_render_primitives(&params);
+        assert!(primitives.glyphs[0].synthetic_italic);
+        assert_eq!(
+            primitives.glyph_font_variations(&primitives.glyphs[0]),
+            &[OpenTypeVariation::new(*b"wdth", 125.0)]
+        );
     }
 }

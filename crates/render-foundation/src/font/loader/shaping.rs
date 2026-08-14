@@ -201,7 +201,8 @@ impl FontLoader {
         }
     }
 
-    pub(in crate::font) fn resolved_font_variations(
+    /// 合并 face descriptor defaults 与元素 caller axes；caller 同 tag 覆盖 descriptor。
+    pub fn resolved_font_variations(
         &self,
         font_id: u32,
         caller_variations: &[crate::font::OpenTypeVariation],

@@ -117,6 +117,7 @@ pub fn append_webview_primitives(
             } else {
                 glyph.font_id.0
             },
+            font_variations: primitives.shared_font_variations(glyph.font_variation_id),
             font_size,
             rotation: 0.0,
         });
@@ -246,6 +247,9 @@ fn transform_webview_primitives_impl(
     include_fills_glyphs: bool,
 ) -> RenderPrimitives {
     let mut out = RenderPrimitives::new();
+    if include_fills_glyphs {
+        out.font_variations = primitives.font_variations.clone();
+    }
 
     // 1. 阴影
     for shadow in &primitives.shadows {
@@ -480,6 +484,7 @@ fn transform_webview_primitives_impl(
                 font_glyph_index: None,
                 source: None,
                 font_id: glyph.font_id,
+                font_variation_id: glyph.font_variation_id,
                 bitmap_width: glyph.bitmap_width,
                 bitmap_height: glyph.bitmap_height,
                 rotation: glyph.rotation,

@@ -74,6 +74,22 @@ pub struct IpcGlyphSource {
     pub end: u32,
 }
 
+/// IPC OpenType variation axis coordinate。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct IpcFontVariation {
+    /// 四字节 OpenType axis tag。
+    pub tag: [u8; 4],
+    /// axis 坐标。
+    pub value: f32,
+}
+
+impl IpcFontVariation {
+    /// 校验 IPC 信任边界上的 OpenType tag 与有限坐标。
+    pub fn is_valid(self) -> bool {
+        self.tag.iter().all(|byte| (0x20..=0x7e).contains(byte)) && self.value.is_finite()
+    }
+}
+
 /// IPC 文本 glyph。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcGlyph {
@@ -93,6 +109,9 @@ pub struct IpcGlyph {
     pub source: Option<IpcGlyphSource>,
     /// 字体 id。
     pub font_id: u32,
+    /// `PaintSnapshotParams::font_variations` 中的 frame-local axis vector ID。
+    #[serde(default)]
+    pub font_variation_id: Option<u32>,
     /// 颜色。
     pub color: IpcColor,
     /// 旋转（弧度）。
@@ -514,6 +533,9 @@ pub struct PaintSnapshotParams {
     /// glyph 共享的源文本 run 表。
     #[serde(default)]
     pub glyph_text_runs: Vec<IpcGlyphTextRun>,
+    /// 当前帧内去重后的 OpenType variation axis vectors。
+    #[serde(default)]
+    pub font_variations: Vec<Vec<IpcFontVariation>>,
     /// 文本图元。
     pub glyphs: Vec<IpcGlyph>,
     /// 绘制顺序（与 engine `DrawOp` 子集对应）。
@@ -603,6 +625,7 @@ impl Default for PaintSnapshotParams {
             filters: Vec::new(),
             blend_modes: Vec::new(),
             glyph_text_runs: Vec::new(),
+            font_variations: Vec::new(),
             glyphs: Vec::new(),
             draw_order: Vec::new(),
             dirty_rects: Vec::new(),
@@ -619,6 +642,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ipc_font_variation_validates_tag_and_coordinate() {
+        assert!(
+            IpcFontVariation {
+                tag: *b"wdth",
+                value: 125.0
+            }
+            .is_valid()
+        );
+        assert!(
+            !IpcFontVariation {
+                tag: *b"wdth",
+                value: f32::NAN
+            }
+            .is_valid()
+        );
+        assert!(
+            !IpcFontVariation {
+                tag: [0, b'd', b't', b'h'],
+                value: 125.0
+            }
+            .is_valid()
+        );
+    }
+
+    #[test]
     fn paint_snapshot_roundtrip_preserves_glyph_source_run_and_font_index() {
         let glyph = IpcGlyph {
             x: 1.0,
@@ -632,6 +680,7 @@ mod tests {
                 end: 3,
             }),
             font_id: 7,
+            font_variation_id: Some(0),
             color: IpcColor {
                 r: 1,
                 g: 2,
@@ -642,6 +691,10 @@ mod tests {
             synthetic_italic: true,
         };
         let snapshot = PaintSnapshotParams {
+            font_variations: vec![vec![IpcFontVariation {
+                tag: *b"wdth",
+                value: 125.0,
+            }]],
             glyph_text_runs: vec![IpcGlyphTextRun {
                 run_id: 9,
                 text: "A\u{301}".to_string(),
@@ -663,7 +716,10 @@ mod tests {
 
         assert_eq!(glyph.glyph_id, 'A' as u32);
         assert_eq!(glyph.font_glyph_index, Some(42));
+        assert_eq!(glyph.font_variation_id, Some(0));
         assert!(glyph.synthetic_italic);
+        assert_eq!(decoded.font_variations[0][0].tag, *b"wdth");
+        assert_eq!(decoded.font_variations[0][0].value, 125.0);
         let source = glyph.source.as_ref().expect("source cluster");
         assert_eq!(source.run_id, 9);
         assert_eq!((source.start, source.end), (0, 3));

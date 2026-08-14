@@ -376,7 +376,14 @@ fn render_typed_buckets(
 
     // 9. 文字
     for glyph in &primitives.glyphs {
-        draw_glyph_primitive(fb, glyph, scale, font_loader, glyph_cache);
+        draw_glyph_primitive(
+            fb,
+            glyph,
+            primitives.glyph_font_variations(glyph),
+            scale,
+            font_loader,
+            glyph_cache,
+        );
     }
 
     // 10. 裁剪 — 后处理像素级裁剪
@@ -519,7 +526,14 @@ fn render_draw_order(
             }
             DrawOp::Glyph(i) => {
                 if let Some(p) = primitives.glyphs.get(*i) {
-                    draw_glyph_primitive(target, p, scale, font_loader, glyph_cache);
+                    draw_glyph_primitive(
+                        target,
+                        p,
+                        primitives.glyph_font_variations(p),
+                        scale,
+                        font_loader,
+                        glyph_cache,
+                    );
                 }
             }
             DrawOp::Filter(i) => {
@@ -785,15 +799,19 @@ fn draw_glyph(
 fn draw_glyph_primitive(
     fb: &mut FrameBuffer,
     glyph: &crate::primitive::GlyphPrimitive,
+    variations: &[crate::font::OpenTypeVariation],
     scale: f32,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
 ) {
     let physical_font_size = glyph.font_size * scale;
     let raw_font_id = glyph.font_id.0;
+    let raw_variations = font_loader.resolved_font_variations(raw_font_id, variations);
     let key = match glyph.font_glyph_index() {
-        Some(glyph_index) => GlyphKey::new_indexed(raw_font_id, glyph_index, physical_font_size),
-        None => GlyphKey::new(raw_font_id, glyph.glyph_id, physical_font_size),
+        Some(glyph_index) => {
+            GlyphKey::new_indexed_with_variations(raw_font_id, glyph_index, physical_font_size, &raw_variations)
+        }
+        None => GlyphKey::new_with_variations(raw_font_id, glyph.glyph_id, physical_font_size, &raw_variations),
     };
 
     // 尝试从缓存获取（raw 键直查）
@@ -809,8 +827,12 @@ fn draw_glyph_primitive(
 
     // 整形后的 glyph index 只在指定字体 face 内有效，不参与 Unicode 字体回退。
     if let Some(glyph_index) = glyph.font_glyph_index() {
-        if let Ok(bitmap) = font_loader.rasterize_glyph_index(raw_font_id, glyph_index, physical_font_size)
-            && bitmap.width > 0
+        if let Ok(bitmap) = font_loader.rasterize_glyph_index_with_variations(
+            raw_font_id,
+            glyph_index,
+            physical_font_size,
+            &raw_variations,
+        ) && bitmap.width > 0
             && bitmap.height > 0
         {
             let _ = glyph_cache.get_or_insert_with(key, || Ok(bitmap.clone()));
@@ -824,7 +846,8 @@ fn draw_glyph_primitive(
     // fallback 已解析映射 → resolved 键命中（避免每帧重光栅化：raw 键与插入键
     // 不一致会永久 miss，见 GlyphCache::resolved 注释）
     if let Some(resolved_id) = glyph_cache.resolved_font_id(&key) {
-        let rkey = GlyphKey::new(resolved_id, glyph.glyph_id, physical_font_size);
+        let resolved_variations = font_loader.resolved_font_variations(resolved_id, variations);
+        let rkey = GlyphKey::new_with_variations(resolved_id, glyph.glyph_id, physical_font_size, &resolved_variations);
         if let Some(cached) = glyph_cache.get(&rkey) {
             if cached.width > 0 && cached.height > 0 {
                 let color = glyph.color;
@@ -841,12 +864,15 @@ fn draw_glyph_primitive(
         return;
     };
 
-    if let Ok((resolved_id, bitmap)) = font_loader.rasterize_glyph_with_fallback(raw_font_id, ch, physical_font_size)
+    if let Ok((resolved_id, bitmap)) =
+        font_loader.rasterize_glyph_with_fallback_and_variations(raw_font_id, ch, physical_font_size, variations)
         && bitmap.width > 0
         && bitmap.height > 0
     {
         glyph_cache.record_resolution(&key, resolved_id);
-        let cache_key = GlyphKey::new(resolved_id, glyph.glyph_id, physical_font_size);
+        let resolved_variations = font_loader.resolved_font_variations(resolved_id, variations);
+        let cache_key =
+            GlyphKey::new_with_variations(resolved_id, glyph.glyph_id, physical_font_size, &resolved_variations);
         let _ = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap.clone()));
         let color = glyph.color;
         let x = glyph.x * scale;
@@ -940,16 +966,19 @@ fn resolve_glyph_bitmap(
     glyph_cache: &mut GlyphCache,
 ) -> Option<std::sync::Arc<crate::font::GlyphBitmap>> {
     let physical_font_size = glyph.font_size * scale;
+    let primary_variations = font_loader.resolved_font_variations(glyph.font_id, glyph.variations());
     let primary_key = match glyph.font_glyph_index {
-        Some(glyph_index) => GlyphKey::new_indexed(glyph.font_id, glyph_index, physical_font_size),
-        None => GlyphKey::new(glyph.font_id, glyph.ch as u32, physical_font_size),
+        Some(glyph_index) => {
+            GlyphKey::new_indexed_with_variations(glyph.font_id, glyph_index, physical_font_size, &primary_variations)
+        }
+        None => GlyphKey::new_with_variations(glyph.font_id, glyph.ch as u32, physical_font_size, &primary_variations),
     };
     if let Some(cached) = glyph_cache.get_shared(&primary_key) {
         return Some(cached);
     }
     if let Some(glyph_index) = glyph.font_glyph_index {
         let bitmap = font_loader
-            .rasterize_glyph_index(glyph.font_id, glyph_index, physical_font_size)
+            .rasterize_glyph_index_with_variations(glyph.font_id, glyph_index, physical_font_size, &primary_variations)
             .ok()?;
         glyph_cache
             .get_or_insert_with(primary_key.clone(), || Ok(bitmap))
@@ -958,17 +987,20 @@ fn resolve_glyph_bitmap(
     }
     // fallback 已解析映射 → resolved 键命中（同 draw_glyph_primitive）
     if let Some(resolved_id) = glyph_cache.resolved_font_id(&primary_key) {
-        let rkey = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
+        let resolved_variations = font_loader.resolved_font_variations(resolved_id, glyph.variations());
+        let rkey =
+            GlyphKey::new_with_variations(resolved_id, glyph.ch as u32, physical_font_size, &resolved_variations);
         if let Some(cached) = glyph_cache.get_shared(&rkey) {
             return Some(cached);
         }
     }
 
     let (resolved_id, bitmap) = font_loader
-        .rasterize_glyph_with_fallback(glyph.font_id, glyph.ch, physical_font_size)
+        .rasterize_glyph_with_fallback_and_variations(glyph.font_id, glyph.ch, physical_font_size, glyph.variations())
         .ok()?;
     glyph_cache.record_resolution(&primary_key, resolved_id);
-    let key = GlyphKey::new(resolved_id, glyph.ch as u32, physical_font_size);
+    let resolved_variations = font_loader.resolved_font_variations(resolved_id, glyph.variations());
+    let key = GlyphKey::new_with_variations(resolved_id, glyph.ch as u32, physical_font_size, &resolved_variations);
     // S4：命中路径免位图拷贝（Arc 共享）；miss 插入后经 get_shared 取共享句柄
     glyph_cache.get_or_insert_with(key.clone(), || Ok(bitmap)).ok()?;
     glyph_cache.get_shared(&key)

@@ -977,6 +977,7 @@ impl BrowserApp {
                 baseline_y: icon_cy + icon_size * 0.5,
                 color: self.chrome_palette.bookmarks_bar_icon,
                 font_id: crate::tab_favicon::FAVICON_FONT_ID,
+                font_variations: None,
                 font_size: icon_size,
                 rotation: 0.0,
             });

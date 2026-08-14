@@ -195,6 +195,7 @@ fn append_webview_primitives_translates_fills_and_glyphs() {
         font_glyph_index: Some(42),
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -2268,6 +2269,7 @@ fn transform_webview_primitives_applies_scale_and_offset_to_all_types() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -2403,6 +2405,7 @@ fn transform_webview_primitives_extra_skips_fills_glyphs_keeps_others() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -2498,6 +2501,7 @@ fn transform_webview_primitives_culls_primitives_outside_viewport() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -2545,6 +2549,7 @@ fn transform_webview_primitives_preserves_glyph_order() {
             font_glyph_index: None,
             source: None,
             font_id: FontId(fid),
+            font_variation_id: None,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -2859,9 +2864,11 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     app.ensure_webview(tab_id);
     app.set_legacy_frame_publish_for_test(tab_id);
     app.set_compositor_status_for_test(crate::compositor_client::CompositorStatus::Disconnected);
-    let html = include_str!("../../../examples/forms/form-interaction-test.html");
+    // 滚动断言必须自行保证文档高于视口，不能依赖平台字体或历史 renderer 的布局高度。
+    let html = include_str!("../../../examples/forms/form-interaction-test.html")
+        .replace("</body>", "<div style=\"height: 900px\"></div></body>");
     let before_load = app.snapshot_seq_for_test(tab_id);
-    app.load_webview_html_without_wait_for_test(tab_id, html, None);
+    app.load_webview_html_without_wait_for_test(tab_id, &html, None);
     assert!(
         wait_for_snapshot_after(&mut app, tab_id, before_load, false),
         "表单页应在 renderer 加载完成"

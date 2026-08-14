@@ -119,6 +119,7 @@ pub fn render_tab_favicon(
         baseline_y: cy + size_px * 0.5,
         color,
         font_id: FAVICON_FONT_ID,
+        font_variations: None,
         font_size: size_px,
         rotation: 0.0,
     });

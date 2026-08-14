@@ -58,6 +58,7 @@ impl BrowserApp {
                 baseline_y,
                 color,
                 font_id,
+                font_variations: None,
                 font_size,
                 rotation: 0.0,
             });

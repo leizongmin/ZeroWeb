@@ -5,11 +5,11 @@ use std::sync::Arc;
 use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
-    IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcGlyph,
-    IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
-    IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage,
-    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
-    IpcStroke, IpcTextControlBoundary, IpcTransform, PaintSnapshotParams,
+    IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind,
+    IpcFontVariation, IpcGlyph, IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace,
+    IpcGradientInterpolation, IpcGradientKind, IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode,
+    IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke,
+    IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTextControlBoundary, IpcTransform, PaintSnapshotParams,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -251,6 +251,7 @@ pub fn paint_snapshot_from_primitives(
                 end: source.end,
             }),
             font_id: g.font_id.0,
+            font_variation_id: g.font_variation_id.map(|id| id.0),
             color: color_to_ipc(g.color),
             rotation: g.rotation,
             synthetic_italic: g.synthetic_italic,
@@ -408,6 +409,19 @@ pub fn paint_snapshot_from_primitives(
             })
             .collect(),
         glyph_text_runs,
+        font_variations: primitives
+            .font_variations
+            .iter()
+            .map(|variations| {
+                variations
+                    .iter()
+                    .map(|variation| IpcFontVariation {
+                        tag: variation.tag,
+                        value: variation.value,
+                    })
+                    .collect()
+            })
+            .collect(),
         glyphs,
         draw_order: primitives.draw_order.iter().copied().map(draw_op_to_ipc).collect(),
         dirty_rects: dirty_rects
@@ -503,8 +517,10 @@ mod tests {
     }
 
     #[test]
-    fn paint_snapshot_preserves_synthetic_italic() {
+    fn paint_snapshot_preserves_glyph_raster_metadata() {
         let mut primitives = RenderPrimitives::new();
+        let font_variation_id =
+            primitives.intern_font_variations(&[zero_render_foundation::font::OpenTypeVariation::new(*b"wdth", 125.0)]);
         primitives.add_glyph(GlyphPrimitive {
             x: 1.0,
             y: 2.0,
@@ -514,6 +530,7 @@ mod tests {
             font_glyph_index: None,
             source: None,
             font_id: FontId(0),
+            font_variation_id,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -522,6 +539,9 @@ mod tests {
 
         let snapshot = paint_snapshot_from_primitives(10, 10, 10.0, &primitives, &[], vec![], None, 1, 2);
         assert!(snapshot.glyphs[0].synthetic_italic);
+        assert_eq!(snapshot.glyphs[0].font_variation_id, Some(0));
+        assert_eq!(snapshot.font_variations[0][0].tag, *b"wdth");
+        assert_eq!(snapshot.font_variations[0][0].value, 125.0);
         assert_eq!(snapshot.document_generation, 2);
     }
 }

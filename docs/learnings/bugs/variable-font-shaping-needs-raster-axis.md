@@ -17,4 +17,6 @@ Keep the production gate off until the same ordered axis vector is carried throu
 
 FreeType faces are mutable and cached across glyphs. Every raster call must therefore apply the requested full coordinate vector, including an explicit reset to axis defaults when the vector is empty. Glyph bitmap and GPU atlas keys must include the ordered `(tag, value.to_bits())` vector; otherwise two instances of the same font, glyph, and size alias even though their outlines differ.
 
+Store caller axes once per frame and let glyphs reference the deduplicated vector. Resolve `@font-face` descriptor defaults only after the final face is known, because fallback faces can own different defaults; cache keys must use that resolved per-face vector. IPC must validate printable four-byte tags and finite coordinates before forwarding them to FreeType.
+
 Chromium Oracle is the activation gate. A shaping-only implementation is infrastructure, not a completed visual implementation.

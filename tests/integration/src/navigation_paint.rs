@@ -87,6 +87,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
         filters: vec![],
         blend_modes: vec![],
         glyph_text_runs: vec![],
+        font_variations: vec![],
         glyphs: vec![],
         draw_order: vec![],
         dirty_rects: vec![],

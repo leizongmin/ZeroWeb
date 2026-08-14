@@ -35,7 +35,7 @@ pub fn set_text_shape_fn(f: TextShapeFn) {
 
 /// 是否启用 production variable-font axis 消费。
 ///
-/// 当前仅 shaping advance支持 axis；字形 raster/IPC 尚未携带坐标，因此默认关闭。
+/// Shaping、字形 raster 与 IPC 已携带同一坐标；默认仍关闭，等待 Chromium Oracle 裁决。
 pub fn font_variations_enabled() -> bool {
     std::env::var("ZW_FONT_VARIATIONS").as_deref() == Ok("1")
 }
@@ -110,6 +110,14 @@ pub(crate) fn font_variations(value: &zero_style_system::FontVariationSettingsVa
             .iter()
             .map(|setting| OpenTypeVariation::new(setting.tag, setting.value))
             .collect(),
+    }
+}
+
+pub(crate) fn paint_font_variations(value: &zero_style_system::FontVariationSettingsValue) -> Vec<OpenTypeVariation> {
+    if font_variations_enabled() {
+        font_variations(value)
+    } else {
+        Vec::new()
     }
 }
 

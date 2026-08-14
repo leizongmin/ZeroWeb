@@ -46,6 +46,8 @@ pub struct GlyphDraw {
     pub color: Color,
     /// 字体 ID
     pub font_id: u32,
+    /// 当前 glyph 使用的 OpenType axis vector；`None` 表示默认实例。
+    pub font_variations: Option<std::sync::Arc<[crate::font::OpenTypeVariation]>>,
     /// 字体大小（像素）
     pub font_size: f32,
     /// 字形旋转弧度（0.0 = 不旋转；FRAC_PI_2 = 顺时针 90°，用于 vertical-rl/lr Latin 文本）。
@@ -55,29 +57,52 @@ pub struct GlyphDraw {
 }
 
 impl GlyphDraw {
+    pub(crate) fn variations(&self) -> &[crate::font::OpenTypeVariation] {
+        self.font_variations.as_deref().unwrap_or(&[])
+    }
+
     fn rasterize(&self, font_loader: &FontLoader, size: f32) -> Option<(u32, crate::font::GlyphBitmap)> {
         match self.font_glyph_index {
             Some(glyph_index) => font_loader
-                .rasterize_glyph_index(self.font_id, glyph_index, size)
+                .rasterize_glyph_index_with_variations(self.font_id, glyph_index, size, self.variations())
                 .ok()
                 .map(|bitmap| (self.font_id, bitmap)),
             None => font_loader
-                .rasterize_glyph_with_fallback(self.font_id, self.ch, size)
+                .rasterize_glyph_with_fallback_and_variations(self.font_id, self.ch, size, self.variations())
                 .ok(),
         }
     }
 
-    fn cache_key(&self, resolved_font_id: u32, size: f32) -> crate::font::cache::GlyphKey {
+    fn cache_key(
+        &self,
+        resolved_font_id: u32,
+        size: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> crate::font::cache::GlyphKey {
         match self.font_glyph_index {
-            Some(glyph_index) => crate::font::cache::GlyphKey::new_indexed(resolved_font_id, glyph_index, size),
-            None => crate::font::cache::GlyphKey::new(resolved_font_id, self.ch as u32, size),
+            Some(glyph_index) => crate::font::cache::GlyphKey::new_indexed_with_variations(
+                resolved_font_id,
+                glyph_index,
+                size,
+                variations,
+            ),
+            None => {
+                crate::font::cache::GlyphKey::new_with_variations(resolved_font_id, self.ch as u32, size, variations)
+            }
         }
     }
 
-    fn atlas_key(&self, resolved_font_id: u32, size: f32) -> GlyphAtlasKey {
+    fn atlas_key(
+        &self,
+        resolved_font_id: u32,
+        size: f32,
+        variations: &[crate::font::OpenTypeVariation],
+    ) -> GlyphAtlasKey {
         match self.font_glyph_index {
-            Some(glyph_index) => GlyphAtlasKey::new_indexed(resolved_font_id, glyph_index, size),
-            None => GlyphAtlasKey::new(resolved_font_id, self.ch as u32, size),
+            Some(glyph_index) => {
+                GlyphAtlasKey::new_indexed_with_variations(resolved_font_id, glyph_index, size, variations)
+            }
+            None => GlyphAtlasKey::new_with_variations(resolved_font_id, self.ch as u32, size, variations),
         }
     }
 }
@@ -682,10 +707,11 @@ impl GpuRenderer {
             .filter_map(|gd| {
                 let physical_font_size = gd.font_size * scale;
                 let (resolved_id, bitmap) = gd.rasterize(font_loader, physical_font_size)?;
-                let cache_key = gd.cache_key(resolved_id, physical_font_size);
+                let resolved_variations = font_loader.resolved_font_variations(resolved_id, gd.variations());
+                let cache_key = gd.cache_key(resolved_id, physical_font_size, &resolved_variations);
                 let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
                 Some((
-                    gd.atlas_key(resolved_id, physical_font_size),
+                    gd.atlas_key(resolved_id, physical_font_size, &resolved_variations),
                     gd.x * scale,
                     gd.baseline_y * scale,
                     gd.color,
@@ -703,10 +729,11 @@ impl GpuRenderer {
                 .filter_map(|gd| {
                     let physical_font_size = gd.font_size * scale;
                     let (resolved_id, bitmap) = gd.rasterize(font_loader, physical_font_size)?;
-                    let cache_key = gd.cache_key(resolved_id, physical_font_size);
+                    let resolved_variations = font_loader.resolved_font_variations(resolved_id, gd.variations());
+                    let cache_key = gd.cache_key(resolved_id, physical_font_size, &resolved_variations);
                     let cached = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)).ok()?;
                     Some((
-                        gd.atlas_key(resolved_id, physical_font_size),
+                        gd.atlas_key(resolved_id, physical_font_size, &resolved_variations),
                         gd.x * scale,
                         gd.baseline_y * scale,
                         gd.color,
@@ -917,8 +944,7 @@ impl GpuRenderer {
         let path_fill_verts = self.collect_path_fill_vertices(&primitives.path_fills, scale);
         let path_stroke_verts = self.collect_path_stroke_vertices(&primitives.path_strokes, scale);
         // 9. Glyphs
-        let glyph_verts =
-            self.collect_glyph_vertices_from_primitives(&primitives.glyphs, font_loader, glyph_cache, scale);
+        let glyph_verts = self.collect_glyph_vertices_from_primitives(primitives, font_loader, glyph_cache, scale);
         // 10. Chrome / WebView 文字（GlyphDraw，在 overlay 之前）
         let ui_glyph_verts = self.collect_overlay_glyphs_data(ui_glyphs, font_loader, glyph_cache, scale);
         // 11. Overlay fills
@@ -2119,21 +2145,27 @@ impl GpuRenderer {
 
     fn collect_glyph_vertices_from_primitives(
         &mut self,
-        glyphs: &[crate::primitive::GlyphPrimitive],
+        primitives: &crate::primitive::RenderPrimitives,
         font_loader: &FontLoader,
         glyph_cache: &mut GlyphCache,
         scale: f32,
     ) -> Vec<Vec<f32>> {
         let mut batches: Vec<Vec<f32>> = Vec::new();
-        for gp in glyphs {
+        for gp in &primitives.glyphs {
             // Keep one vertex slot per primitive so DrawOp::Glyph indices remain valid
             // when a missing font or glyph cannot be rasterized.
             batches.push(Vec::new());
             let mut vertices: Vec<f32> = Vec::new();
             let physical_font_size = gp.font_size * scale;
             let font_id = gp.font_id.0;
+            let variations = primitives.glyph_font_variations(gp);
             let (resolved_id, bitmap) = if let Some(glyph_index) = gp.font_glyph_index() {
-                match font_loader.rasterize_glyph_index(font_id, glyph_index, physical_font_size) {
+                match font_loader.rasterize_glyph_index_with_variations(
+                    font_id,
+                    glyph_index,
+                    physical_font_size,
+                    variations,
+                ) {
                     Ok(bitmap) => (font_id, bitmap),
                     Err(_) => continue,
                 }
@@ -2141,24 +2173,48 @@ impl GpuRenderer {
                 let Some(code_point) = gp.code_point() else {
                     continue;
                 };
-                match font_loader.rasterize_glyph_with_fallback(font_id, code_point, physical_font_size) {
+                match font_loader.rasterize_glyph_with_fallback_and_variations(
+                    font_id,
+                    code_point,
+                    physical_font_size,
+                    variations,
+                ) {
                     Ok(result) => result,
                     Err(_) => continue,
                 }
             };
+            let resolved_variations = font_loader.resolved_font_variations(resolved_id, variations);
             let cache_key = match gp.font_glyph_index() {
-                Some(glyph_index) => {
-                    crate::font::cache::GlyphKey::new_indexed(resolved_id, glyph_index, physical_font_size)
-                }
-                None => crate::font::cache::GlyphKey::new(resolved_id, gp.glyph_id, physical_font_size),
+                Some(glyph_index) => crate::font::cache::GlyphKey::new_indexed_with_variations(
+                    resolved_id,
+                    glyph_index,
+                    physical_font_size,
+                    &resolved_variations,
+                ),
+                None => crate::font::cache::GlyphKey::new_with_variations(
+                    resolved_id,
+                    gp.glyph_id,
+                    physical_font_size,
+                    &resolved_variations,
+                ),
             };
             let cached = match glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
             let atlas_key = match gp.font_glyph_index() {
-                Some(glyph_index) => GlyphAtlasKey::new_indexed(resolved_id, glyph_index, physical_font_size),
-                None => GlyphAtlasKey::new(resolved_id, gp.glyph_id, physical_font_size),
+                Some(glyph_index) => GlyphAtlasKey::new_indexed_with_variations(
+                    resolved_id,
+                    glyph_index,
+                    physical_font_size,
+                    &resolved_variations,
+                ),
+                None => GlyphAtlasKey::new_with_variations(
+                    resolved_id,
+                    gp.glyph_id,
+                    physical_font_size,
+                    &resolved_variations,
+                ),
             };
             let placement = match self.upload_glyph_to_atlas(
                 atlas_key,
@@ -2223,12 +2279,13 @@ impl GpuRenderer {
             let Some((resolved_id, bitmap)) = gd.rasterize(font_loader, physical_font_size) else {
                 continue;
             };
-            let cache_key = gd.cache_key(resolved_id, physical_font_size);
+            let resolved_variations = font_loader.resolved_font_variations(resolved_id, gd.variations());
+            let cache_key = gd.cache_key(resolved_id, physical_font_size, &resolved_variations);
             let cached = match glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap)) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            let atlas_key = gd.atlas_key(resolved_id, physical_font_size);
+            let atlas_key = gd.atlas_key(resolved_id, physical_font_size, &resolved_variations);
             let placement = match self.upload_glyph_to_atlas(
                 atlas_key,
                 &cached.data,

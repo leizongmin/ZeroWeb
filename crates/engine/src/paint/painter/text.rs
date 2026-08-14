@@ -113,6 +113,8 @@ impl super::Painter {
 
         let color = super::super::color::color_value_to_render(&style.color);
         let (default_font_id, resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
+        let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
+        let font_variation_id = self.primitives.intern_font_variations(&variations);
         // R2497：font-style:italic/oblique 且 resolved face 非 italic → synthetic italic shear。
         // R3248：font-synthesis:style 为 false 时禁止合成斜体。
         let synthetic_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_))
@@ -133,6 +135,7 @@ impl super::Painter {
                 font_glyph_index: None,
                 source: None,
                 font_id: default_font_id,
+                font_variation_id,
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,
@@ -271,7 +274,8 @@ impl super::Painter {
             zero_style_system::DirectionValue::Rtl => TextDirection::RightToLeft,
         };
         let shape_features = style_open_type_features(style);
-        let shape_variations = crate::text_metrics::font_variations(&style.font_variation_settings);
+        let shape_variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
+        let font_variation_id = self.primitives.intern_font_variations(&shape_variations);
         let shape_adjustment = crate::text_metrics::font_size_adjustment(&style.font_size_adjust);
         let mut line_utf16_start = 0usize;
         let block_height = lines.len() as f32 * line_height;
@@ -351,6 +355,7 @@ impl super::Painter {
                         font_glyph_index: u16::try_from(glyph.glyph_id).ok(),
                         source,
                         font_id: glyph.font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -381,6 +386,7 @@ impl super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -568,6 +574,8 @@ impl super::Painter {
         let (tx, ty) = super::super::helpers::apply_transform_offset(style, abs_x, abs_y);
 
         let (default_font_id, default_resolved_italic) = self.resolve_style_font_id(&style.font_family, style);
+        let default_variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
+        let default_font_variation_id = self.primitives.intern_font_variations(&default_variations);
         // R2497：容器 font-style:italic/oblique → container_want_italic（macro 据 owner
         // per-fragment font_style 覆盖，缺省回落此值）。
         let container_want_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
@@ -1023,6 +1031,10 @@ impl super::Painter {
                                 };
                                 self.painted_inline_nodes.insert(owner_id);
                                 let owner_style = styles.and_then(|s| s.get(&owner_id));
+                                let owner_variations = crate::text_metrics::paint_font_variations(
+                                    &owner_style.unwrap_or(style).font_variation_settings,
+                                );
+                                let owner_font_variation_id = self.primitives.intern_font_variations(&owner_variations);
                                 let frag_color = owner_style
                                     .filter(|s| s.color != ColorValue::CurrentColor)
                                     .map(|s| color_value_to_render(&s.color))
@@ -1082,6 +1094,7 @@ impl super::Painter {
                                             font_glyph_index: None,
                                             source: None,
                                             font_id: default_font_id,
+                                            font_variation_id: owner_font_variation_id,
                                             bitmap_width: None,
                                             bitmap_height: None,
                                             rotation,
@@ -1098,6 +1111,7 @@ impl super::Painter {
                                         font_glyph_index: None,
                                         source: None,
                                         font_id: default_font_id,
+                                        font_variation_id: owner_font_variation_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1132,6 +1146,7 @@ impl super::Painter {
                                             font_glyph_index: None,
                                             source: None,
                                             font_id: default_font_id,
+                                            font_variation_id: owner_font_variation_id,
                                             bitmap_width: None,
                                             bitmap_height: None,
                                             rotation,
@@ -1182,6 +1197,7 @@ impl super::Painter {
                                                     font_glyph_index: None,
                                                     source: None,
                                                     font_id: default_font_id,
+                                                    font_variation_id: owner_font_variation_id,
                                                     bitmap_width: None,
                                                     bitmap_height: None,
                                                     rotation,
@@ -1248,6 +1264,10 @@ impl super::Painter {
 
                             // R1021：text-emphasis 取自片段 owner 样式（<span> 上设）。
                             let owner_style_opt = styles.and_then(|s| s.get(&owner_id));
+                            let shaping_style = owner_style_opt.unwrap_or(style);
+                            let variations =
+                                crate::text_metrics::paint_font_variations(&shaping_style.font_variation_settings);
+                            let font_variation_id = self.primitives.intern_font_variations(&variations);
                             // R2523：text-emphasis-color（CSS Text Decoration 3 §3.3）。
                             // 显式色覆盖 currentColor；默认 CurrentColor → 沿用 frag_color
                             //（标记随文字色，字节不变）。
@@ -1357,6 +1377,7 @@ impl super::Painter {
                                                 font_glyph_index: None,
                                                 source: None,
                                                 font_id: frag_font_id,
+                                                font_variation_id,
                                                 bitmap_width: None,
                                                 bitmap_height: None,
                                                 rotation,
@@ -1510,15 +1531,12 @@ impl super::Painter {
                             let generic_font = self.generic_font_ids.contains(&frag_font_id.0);
                             let shaped_advance_eligible =
                                 text_shaping::fragment_shaped_advance_eligible(generic_font, size_adjust);
-                            let shaping_style = owner_style_opt.unwrap_or(style);
                             let shaping_font_ids = self.fragment_shaping_font_ids(
                                 owner_style_opt,
                                 text_node_shaping_font_ids.get(&$frag_nid).map(Vec::as_slice),
                                 frag_font_id,
                             );
                             let open_type_features = style_open_type_features(shaping_style);
-                            let variations =
-                                crate::text_metrics::font_variations(&shaping_style.font_variation_settings);
                             let advance_trace = fragment_advance_trace(
                                 &shaping_font_ids,
                                 &transformed,
@@ -1560,6 +1578,7 @@ impl super::Painter {
                                         font_glyph_index: None,
                                         source: None,
                                         font_id: glyph_font_id,
+                                        font_variation_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1576,6 +1595,7 @@ impl super::Painter {
                                     font_glyph_index: glyph.font_glyph_index,
                                     source: glyph.source.clone(),
                                     font_id: glyph_font_id,
+                                    font_variation_id,
                                     bitmap_width: None,
                                     bitmap_height: None,
                                     rotation,
@@ -1628,6 +1648,7 @@ impl super::Painter {
                                         font_glyph_index: None,
                                         source: None,
                                         font_id: frag_font_id,
+                                        font_variation_id,
                                         bitmap_width: None,
                                         bitmap_height: None,
                                         rotation,
@@ -1801,6 +1822,7 @@ impl super::Painter {
                                 font_glyph_index: None,
                                 source: None,
                                 font_id: default_font_id,
+                                font_variation_id: default_font_variation_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
                                 rotation: 0.0,
@@ -1895,6 +1917,7 @@ impl super::Painter {
                             font_glyph_index: None,
                             source: None,
                             font_id: default_font_id,
+                            font_variation_id: default_font_variation_id,
                             bitmap_width: None,
                             bitmap_height: None,
                             rotation: 0.0,
@@ -1921,6 +1944,7 @@ impl super::Painter {
                 font_glyph_index: None,
                 source: None,
                 font_id: default_font_id,
+                font_variation_id: default_font_variation_id,
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,
@@ -1937,6 +1961,7 @@ impl super::Painter {
             font_glyph_index: None,
             source: None,
             font_id: default_font_id,
+            font_variation_id: default_font_variation_id,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -1977,6 +2002,8 @@ impl super::Painter {
 
         let color = color_value_to_render(&style.color);
         let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
+        let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
+        let font_variation_id = self.primitives.intern_font_variations(&variations);
         let content_x = abs_x;
         let content_y = abs_y;
 
@@ -2008,6 +2035,7 @@ impl super::Painter {
                 font_glyph_index: None,
                 source: None,
                 font_id: default_font_id,
+                font_variation_id,
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,

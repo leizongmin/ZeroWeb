@@ -515,6 +515,9 @@ impl super::super::Painter {
 
         let color = color_value_to_render(style.marker_pseudo.as_deref().map(|m| &m.color).unwrap_or(&style.color));
         let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
+        let variation_style = style.marker_pseudo.as_deref().unwrap_or(style);
+        let variations = crate::text_metrics::paint_font_variations(&variation_style.font_variation_settings);
+        let font_variation_id = self.primitives.intern_font_variations(&variations);
         let marker_size = font_size * 0.4;
         let marker_x = abs_x + box_node.border_left;
         let marker_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -550,6 +553,7 @@ impl super::super::Painter {
                                 font_glyph_index: None,
                                 source: None,
                                 font_id: default_font_id,
+                                font_variation_id,
                                 bitmap_width: None,
                                 bitmap_height: None,
                                 rotation: 0.0,
@@ -631,6 +635,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -667,6 +672,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -698,6 +704,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -772,6 +779,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -796,6 +804,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,
@@ -834,6 +843,7 @@ impl super::super::Painter {
                         font_glyph_index: None,
                         source: None,
                         font_id: default_font_id,
+                        font_variation_id,
                         bitmap_width: None,
                         bitmap_height: None,
                         rotation: 0.0,

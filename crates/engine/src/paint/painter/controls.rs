@@ -149,6 +149,8 @@ impl super::Painter {
         }
         let color = super::super::color::color_value_to_render(&style.color);
         let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
+        let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
+        let font_variation_id = self.primitives.intern_font_variations(&variations);
 
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
@@ -165,6 +167,7 @@ impl super::Painter {
                 font_glyph_index: None,
                 source: None,
                 font_id: default_font_id,
+                font_variation_id,
                 bitmap_width: None,
                 bitmap_height: None,
                 rotation: 0.0,

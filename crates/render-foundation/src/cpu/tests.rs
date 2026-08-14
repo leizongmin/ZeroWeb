@@ -40,6 +40,7 @@ fn indexed_glyph_renders_identically_to_unicode_code_point() {
             font_glyph_index,
             source: None,
             font_id: FontId(font_id),
+            font_variation_id: None,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -80,6 +81,76 @@ fn indexed_glyph_renders_identically_to_unicode_code_point() {
     );
 
     assert_eq!(indexed_frame.data, unicode_frame.data);
+}
+
+#[test]
+fn variable_glyph_primitives_change_pixels_and_isolate_shared_cache() {
+    const ROBOTO_EXTREMO: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/RobotoExtremo-VF.subset.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader
+        .load_font(ROBOTO_EXTREMO)
+        .expect("should load RobotoExtremo variable font");
+    let glyph_index = font_loader
+        .get(font_id)
+        .expect("font should remain loaded")
+        .lookup_glyph_index('e');
+    let make_primitives = |width: f32| {
+        let mut primitives = RenderPrimitives::new();
+        let font_variation_id =
+            primitives.intern_font_variations(&[crate::font::OpenTypeVariation::new(*b"wdth", width)]);
+        primitives.add_glyph(GlyphPrimitive {
+            x: 8.0,
+            y: 72.0,
+            font_size: 64.0,
+            color: Color::BLACK,
+            glyph_id: 'e' as u32,
+            font_glyph_index: Some(glyph_index),
+            source: None,
+            font_id: FontId(font_id),
+            font_variation_id,
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        primitives
+    };
+    let condensed = make_primitives(75.0);
+    let expanded = make_primitives(125.0);
+    let mut shared_cache = GlyphCache::new(8);
+
+    let condensed_frame = render_full_scene(
+        96,
+        88,
+        1.0,
+        &condensed,
+        &font_loader,
+        &mut shared_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let expanded_frame = render_full_scene(
+        96,
+        88,
+        1.0,
+        &expanded,
+        &font_loader,
+        &mut shared_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    assert_ne!(
+        condensed_frame.data, expanded_frame.data,
+        "different wdth coordinates must not alias in the shared glyph cache"
+    );
+    assert_eq!(shared_cache.len(), 2);
 }
 
 #[test]
@@ -1946,6 +2017,7 @@ fn render_full_scene_overlay_covers_ui_glyphs() {
                 baseline_y: row as f32 * 12.0 + 14.0,
                 color: Color::BLACK,
                 font_id,
+                font_variations: None,
                 font_size: 12.0,
                 rotation: 0.0,
             });

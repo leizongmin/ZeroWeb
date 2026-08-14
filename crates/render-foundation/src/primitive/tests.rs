@@ -55,6 +55,7 @@ fn test_draw_order_records_insertion_order() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -321,6 +322,7 @@ fn test_glyph_primitive_creation() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(1),
+        font_variation_id: None,
         bitmap_width: Some(12),
         bitmap_height: Some(16),
         rotation: 0.0,
@@ -329,6 +331,39 @@ fn test_glyph_primitive_creation() {
     assert_eq!(g.x, 10.0);
     assert_eq!(g.font_id, FontId(1));
     assert_eq!(g.bitmap_width, Some(12));
+}
+
+#[test]
+fn frame_font_variations_are_deduplicated_and_resolved_by_glyph() {
+    let mut primitives = RenderPrimitives::new();
+    let condensed = [crate::font::OpenTypeVariation::new(*b"wdth", 75.0)];
+    let first = primitives.intern_font_variations(&condensed);
+    let duplicate = primitives.intern_font_variations(&condensed);
+    let expanded = primitives.intern_font_variations(&[crate::font::OpenTypeVariation::new(*b"wdth", 125.0)]);
+
+    assert_eq!(first, duplicate);
+    assert_ne!(first, expanded);
+    assert_eq!(primitives.font_variations.len(), 2);
+
+    let glyph = GlyphPrimitive {
+        x: 0.0,
+        y: 0.0,
+        font_size: 16.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: FontId(1),
+        font_variation_id: expanded,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    };
+    assert_eq!(
+        primitives.glyph_font_variations(&glyph),
+        &[crate::font::OpenTypeVariation::new(*b"wdth", 125.0)]
+    );
 }
 
 #[test]
@@ -342,6 +377,7 @@ fn test_source_code_point_and_font_glyph_index_coexist() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(1),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -387,6 +423,7 @@ fn test_glyph_in_render_primitives() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -414,6 +451,7 @@ fn test_bounding_box_with_glyphs() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -498,6 +536,7 @@ fn test_render_primitives_mixed_types_count() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -593,6 +632,7 @@ fn test_len_all_primitive_types() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -689,6 +729,7 @@ fn test_bounding_box_glyph_with_bitmap_dims() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: Some(12),
         bitmap_height: Some(16),
         rotation: 0.0,
@@ -1098,6 +1139,7 @@ fn test_add_glyph_multiple() {
             font_glyph_index: None,
             source: None,
             font_id: FontId(0),
+            font_variation_id: None,
             bitmap_width: None,
             bitmap_height: None,
             rotation: 0.0,
@@ -1164,6 +1206,7 @@ fn test_stats_mixed_primitives() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -1178,6 +1221,7 @@ fn test_stats_mixed_primitives() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -1236,6 +1280,7 @@ fn test_batch_fills_preserves_other_primitives() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
@@ -1290,6 +1335,7 @@ fn test_cull_invisible_keeps_clips_and_glyphs() {
         font_glyph_index: None,
         source: None,
         font_id: FontId(0),
+        font_variation_id: None,
         bitmap_width: None,
         bitmap_height: None,
         rotation: 0.0,
