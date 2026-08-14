@@ -91,6 +91,8 @@ impl InlineFormattingContext {
                     } else {
                         BidiFragmentCursor::with_direction(&run.text, run.is_rtl, run.is_plaintext_bidi)
                     };
+                    let has_leading_collapsible_space = !self.preserve_whitespace
+                        && run.text.chars().next().is_some_and(is_collapsible_ws);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words(source_cursor.visual_text(), run.is_ahem_font);
 
@@ -141,6 +143,9 @@ impl InlineFormattingContext {
                             last_was_collapsible_ws = true;
                         }
                         continue;
+                    }
+                    if has_leading_collapsible_space && !current_line.runs.is_empty() && !last_was_collapsible_ws {
+                        current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font);
                     }
                     last_was_collapsible_ws = false;
 

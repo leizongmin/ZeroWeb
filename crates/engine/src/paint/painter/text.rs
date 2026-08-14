@@ -35,9 +35,10 @@ use text_multicol::compute_multicol_info_for_paint;
 use text_multicol::multicol_balance_target_height;
 use text_ruby::ruby_annotation_segments;
 use text_shaping::{
-    FragmentPaintWidths, ahem_uses_embox_position, configure_paint_ifc_advance as with_shaped_layout,
-    fragment_advance_trace, fragment_font_size_adjustment, fragment_glyphs, glyph_sources, is_cc_control_char,
-    logical_fragment_source, style_open_type_features,
+    FragmentPaintWidths, ahem_uses_embox_position, collect_atomic_inline_sizes,
+    configure_paint_ifc_advance as with_shaped_layout, fragment_advance_trace, fragment_font_size_adjustment,
+    fragment_glyphs, glyph_sources, is_cc_control_char, logical_fragment_source, paint_ifc_baseline_offset,
+    style_open_type_features,
 };
 
 impl super::Painter {
@@ -906,7 +907,8 @@ impl super::Painter {
                     .with_line_height_overrides(parent_line_heights)
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)
-                    .with_margin_overrides(margin_overrides);
+                    .with_margin_overrides(margin_overrides)
+                    .with_inline_block_sizes(collect_atomic_inline_sizes(box_node, styles));
                 ctx = with_shaped_layout(
                     ctx,
                     doc,
@@ -1730,20 +1732,12 @@ impl super::Painter {
                             // 如果无存储值，回退到 16px 默认值（保持原有行为）。
                             let stored_fs = box_node.text_node_font_sizes.get(&fragment.node_id).copied();
                             let baseline_fs = stored_fs.unwrap_or(fragment.font_size);
-                            // R953：非存储路径 glyph 定位修正。glyph 顶（行盒相对）= half-leading =
-                            // (line-height − font_size)/2（与 ascent 无关，字形按 em-box 在行盒内居中）。
-                            // frag.y = run 顶 = baseline_y − run.height；glyph 顶 = frag.y + offset，需
-                            // offset = run.height − ascent = line-height − 0.8·fs（ascent≈0.8·fs 启发式，
-                            // 与 apply_vertical_alignment 的 strut_ascent 一致）。旧 offset = font_size
-                            // 把 glyph 顶放在 frag.y + fs（基线位），致默认字体文本每行偏低约 9.6px。
-                            // A/B（R953）：css-text +60 / css-text-decor +27 / position +3 / tables +3 /
-                            // fonts +4 / multicol +4 / writing-modes +1 oracle-pass（≈ +102 case），
-                            // 零目录回归；welcome hero title 反而更准（ORA 104-135 / OFF 135-154 / ON 105-124）。
-                            // 残余 welcome 净 +0.77pp = 真字体 ascent≠0.8·fs 的字体墙噪声（trend-only，
-                            // 理想修须接 fontdue 真 ascent，font-metric 墙多会话）。
-                            // 仅文本运行（fs>0）；inline-block/原子盒（fs==0）保留旧 baseline_fs。
+                            // GlyphPrimitive.y is a baseline coordinate. The IFC fragment y is the
+                            // run top (`baseline_y - run.height`), so text adds the full fragment
+                            // height. Subtracting an estimated ascent here passes the em-box top as a
+                            // baseline and shifts every rasterized glyph upward by about 0.8em.
                             let baseline_offset = if fragment.font_size > 0.0 {
-                                fragment.height - 0.8 * fragment.font_size
+                                paint_ifc_baseline_offset(fragment.height)
                             } else {
                                 baseline_fs
                             };

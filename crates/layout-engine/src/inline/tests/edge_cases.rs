@@ -1773,6 +1773,32 @@ fn paint_ifc_text_node_consumes_ordered_author_advance() {
 }
 
 #[test]
+fn paint_ifc_restores_atomic_input_width_and_following_space_without_styles() {
+    let doc = zero_dom::parse_html("<label><input type=\"checkbox\"> 订阅</label>");
+    let html = doc.first_child(doc.root()).expect("html");
+    let body = doc.last_child(html).expect("body");
+    let label = doc.first_child(body).expect("label");
+    let input = doc.first_child(label).expect("input");
+    let mut ctx = InlineFormattingContext::new(200.0)
+        .with_default_font_metrics(16.0, 24.0)
+        .with_inline_block_sizes(HashMap::from([(input, (13.0, 14.0))]));
+
+    ctx.layout(&doc, label, &HashMap::new());
+
+    let fragments = ctx.all_fragments();
+    let input_fragment = fragments
+        .iter()
+        .find(|fragment| fragment.node_id == input)
+        .expect("atomic input fragment");
+    let text_fragment = fragments
+        .iter()
+        .find(|fragment| fragment.text == "订")
+        .expect("following text fragment");
+    assert_eq!(input_fragment.width, 13.0);
+    assert_eq!(text_fragment.x, 17.0);
+}
+
+#[test]
 fn ifc_advance_source_receives_ordered_font_ids() {
     struct OrderedAdvance;
     impl AdvanceSource for OrderedAdvance {

@@ -197,29 +197,35 @@ impl InlineFormattingContext {
 
                         // 检查该元素是否为原子行内级盒（inline-block / inline-flex / inline-grid / inline-table）。
                         // 这些元素参与行内格式化上下文，作为不可拆分的原子盒。
-                        let is_inline_block = style.is_some_and(|s| {
-                            matches!(
-                                s.display,
-                                DisplayValue::InlineBlock
-                                    | DisplayValue::InlineFlex
-                                    | DisplayValue::InlineGrid
-                                    | DisplayValue::InlineTable
-                            )
-                        });
+                        let stored_inline_size = self.inline_block_sizes.get(&child_id).copied();
+                        let is_inline_block = stored_inline_size.is_some()
+                            || style.is_some_and(|s| {
+                                matches!(
+                                    s.display,
+                                    DisplayValue::InlineBlock
+                                        | DisplayValue::InlineFlex
+                                        | DisplayValue::InlineGrid
+                                        | DisplayValue::InlineTable
+                                )
+                            });
 
                         if is_inline_block {
-                            let s = style.unwrap();
                             // 从 CSS 计算样式提取尺寸（仅支持绝对长度单位）
-                            let mut w = resolve_inline_block_dimension(&s.width, s, /* is_width */ true);
-                            let mut h = resolve_inline_block_dimension(&s.height, s, /* is_width */ false);
+                            let mut w = style
+                                .map(|s| resolve_inline_block_dimension(&s.width, s, /* is_width */ true))
+                                .unwrap_or(0.0);
+                            let mut h = style
+                                .map(|s| resolve_inline_block_dimension(&s.height, s, /* is_width */ false))
+                                .unwrap_or(0.0);
                             // IFC 中原子行内盒参与排版的是 used border-box。计算样式的 width/height
                             // 可能是 content-box，不能直接拿来推进下一项；优先使用已完成布局的盒尺寸。
-                            if let Some(&(lw, lh)) = self.inline_block_sizes.get(&child_id) {
+                            if let Some((lw, lh)) = stored_inline_size {
                                 w = lw;
                                 h = lh;
                             }
                             if w > 0.0 && h > 0.0 {
-                                let vertical_align = s.vertical_align.clone();
+                                let vertical_align =
+                                    style.map(|s| s.vertical_align.clone()).unwrap_or(VerticalAlignValue::Baseline);
                                 // 计算基线：
                                 // - inline-block：基线在底部边缘
                                 // - inline-flex/inline-grid：基线从第一个子元素合成
@@ -228,19 +234,21 @@ impl InlineFormattingContext {
                                 let baseline = if let Some(&b) = self.baseline_overrides.get(&child_id) {
                                     b
                                 } else {
-                                    match s.display {
-                                        DisplayValue::InlineFlex | DisplayValue::InlineGrid => h * 0.5,
-                                        DisplayValue::InlineBlock => {
+                                    match style.map(|s| &s.display) {
+                                        Some(DisplayValue::InlineFlex | DisplayValue::InlineGrid) => h * 0.5,
+                                        Some(DisplayValue::InlineBlock) => {
                                             // CSS §10.8.1：inline-block 基线 = 其最后 in-flow 行盒基线；
                                             // 但「无 in-flow 行盒」或 overflow != visible 时基线 = 底 margin edge
                                             // （h + margin-bottom）。adjust_inline_block_positions 早于
                                             // compute_final_inline_layouts，无法读 IB 自身行盒；「空元素（无 DOM
                                             // 子节点）」必无行盒可静态判定，overflow 值亦可从计算样式直接读取。
                                             let no_line_boxes = doc.first_child(child_id).is_none();
-                                            let clips = !matches!(s.overflow_x, OverflowValue::Visible)
-                                                || !matches!(s.overflow_y, OverflowValue::Visible);
+                                            let clips = style.is_some_and(|s| {
+                                                !matches!(s.overflow_x, OverflowValue::Visible)
+                                                    || !matches!(s.overflow_y, OverflowValue::Visible)
+                                            });
                                             if no_line_boxes || clips {
-                                                h + length_px(&s.margin_bottom)
+                                                h + style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0)
                                             } else {
                                                 h
                                             }
@@ -254,10 +262,16 @@ impl InlineFormattingContext {
                                     node_id: child_id,
                                     vertical_align,
                                     baseline,
-                                    margin_top: length_px(&s.margin_top),
-                                    margin_right: length_px(&s.margin_right),
-                                    margin_bottom: length_px(&s.margin_bottom),
-                                    margin_left: length_px(&s.margin_left),
+                                    margin_top: style.map(|s| length_px(&s.margin_top)).unwrap_or(0.0),
+                                    margin_right: style
+                                        .map(|s| length_px(&s.margin_right))
+                                        .or_else(|| self.margin_overrides.get(&child_id).map(|(_, right)| *right))
+                                        .unwrap_or(0.0),
+                                    margin_bottom: style.map(|s| length_px(&s.margin_bottom)).unwrap_or(0.0),
+                                    margin_left: style
+                                        .map(|s| length_px(&s.margin_left))
+                                        .or_else(|| self.margin_overrides.get(&child_id).map(|(left, _)| *left))
+                                        .unwrap_or(0.0),
                                 }));
                                 continue;
                             }

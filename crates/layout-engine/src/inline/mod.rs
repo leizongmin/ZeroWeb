@@ -1726,7 +1726,7 @@ impl InlineFormattingContext {
     ///
     /// split_into_words 的 normal 分支与 pre-line 分支（每个 `\n` 段）共用此逻辑。
     fn collapse_split_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
-        let cjk_contiguous = is_ahem || std::env::var("ZW_CJK_CONTIGUOUS").as_deref() == Ok("1");
+        let cjk_contiguous = is_ahem || std::env::var("ZW_CJK_CONTIGUOUS").as_deref() != Ok("0");
         self.collapse_split_words_with_mode(text, cjk_contiguous)
     }
 

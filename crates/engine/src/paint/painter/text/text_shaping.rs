@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use unicode_bidi::{BidiClass, bidi_class};
-use zero_css_parser::values::LengthValue;
+use zero_css_parser::values::{DisplayValue, LengthValue};
 use zero_dom::{Document, NodeId, NodeKind};
-use zero_layout_engine::{InlineFormattingContext, TextFragmentSource};
+use zero_layout_engine::{InlineFormattingContext, LayoutBox, TextFragmentSource};
 use zero_render_foundation::font::{OpenTypeFeature, ShapedGlyph, TextDirection};
 use zero_render_foundation::primitive::{FontId, GlyphSource};
 use zero_style_system::ComputedStyle;
@@ -14,6 +14,40 @@ pub(super) struct ResolvedTextNodeFonts {
     pub(super) primary: HashMap<NodeId, zero_render_foundation::primitive::FontId>,
     pub(super) shaping: HashMap<NodeId, Vec<u32>>,
     pub(super) italic: HashMap<NodeId, bool>,
+}
+
+pub(super) fn collect_atomic_inline_sizes(
+    layout: &LayoutBox,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+) -> HashMap<NodeId, (f32, f32)> {
+    fn visit(
+        layout: &LayoutBox,
+        styles: Option<&HashMap<NodeId, ComputedStyle>>,
+        sizes: &mut HashMap<NodeId, (f32, f32)>,
+    ) {
+        if let Some(node_id) = layout.node_id
+            && layout.width > 0.0
+            && layout.height > 0.0
+            && styles.and_then(|styles| styles.get(&node_id)).is_some_and(|style| {
+                matches!(
+                    style.display,
+                    DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            })
+        {
+            sizes.insert(node_id, (layout.width, layout.height));
+        }
+        for child in &layout.children {
+            visit(child, styles, sizes);
+        }
+    }
+
+    let mut sizes = HashMap::new();
+    visit(layout, styles, &mut sizes);
+    sizes
 }
 
 impl super::super::Painter {
@@ -911,6 +945,10 @@ pub(super) fn ahem_uses_embox_position(line_height: f32, font_size: f32) -> bool
     half_leading.abs() < 0.5
 }
 
+pub(super) fn paint_ifc_baseline_offset(fragment_height: f32) -> f32 {
+    fragment_height
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1274,5 +1312,11 @@ mod tests {
         let mut invalid = glyph();
         invalid.cluster = 1;
         assert!(!source_clusters_valid("אב", &[invalid]));
+    }
+
+    #[test]
+    fn paint_ifc_offset_places_glyph_at_fragment_baseline() {
+        assert_eq!(paint_ifc_baseline_offset(24.0), 24.0);
+        assert_eq!(paint_ifc_baseline_offset(48.0), 48.0);
     }
 }

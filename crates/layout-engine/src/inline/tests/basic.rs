@@ -64,9 +64,9 @@ fn test_r1214_cjk_per_char_contiguous_when_ahem() {
     // 真实空格分隔的两个 CJK 词：第一个词末尾加空格
     let words4 = ctx.split_into_words("水 水", true);
     assert_eq!(words4, vec!["水 ".to_string(), "水".to_string()]);
-    // is_ahem=false 默认保留旧 advance；连续模式仍可独立验证。
+    // 普通字体同样只建立断行机会，不合成源码中不存在的空格。
     let words5 = ctx.split_into_words("4水水", false);
-    assert_eq!(words5, vec!["4 ".to_string(), "水 ".to_string(), "水".to_string()]);
+    assert_eq!(words5, vec!["4".to_string(), "水".to_string(), "水".to_string()]);
     let words6 = ctx.collapse_split_words_with_mode("姓名 ", true);
     assert_eq!(words6, vec!["姓".to_string(), "名 ".to_string()]);
 }
