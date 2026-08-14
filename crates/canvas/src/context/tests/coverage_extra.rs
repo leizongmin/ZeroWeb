@@ -582,6 +582,7 @@ fn test_fill_text_real_font_rasterization() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     ctx.set_fill_style(CanvasStyle::Color(Color::rgb(0, 255, 0)));
     ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
@@ -616,6 +617,7 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         weight_value: None,
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     let m10 = ctx.measure_text("hello");
     assert!((m10.width - (5.0 * 6.0 + 10.0 * 5.0)).abs() < 0.01, "10px: 1em=10px");
@@ -628,7 +630,65 @@ fn test_letter_spacing_em_reresolves_on_font_change() {
         weight_value: None,
         letter_spacing: "1em".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     let m20 = ctx.measure_text("hello");
     assert!((m20.width - (5.0 * 12.0 + 20.0 * 5.0)).abs() < 0.01, "20px: 1em=20px");
+}
+
+// R34xx：fontKerning 'none' 关 kern 特征（2d.text.drawing.style.fontKerning 驱动——
+// 'TAWATAVA' 在 kerned 字体（Lato-Medium，GPOS kern）下 normal 宽度 < none）。
+// Lato 资产位于 tests/wpt-runner/fonts/。
+#[test]
+fn test_font_kerning_none_widens_measure() {
+    use std::sync::{Arc, Mutex};
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let bytes = std::fs::read(format!("{manifest}/../../tests/wpt-runner/fonts/Lato-Medium.ttf"))
+        .unwrap_or_else(|_| Vec::new());
+    if bytes.is_empty() {
+        return; // 资产缺失（非 wpt-runner 环境）→ 跳过。
+    }
+    let mut loader = zero_render_foundation::font::loader::FontLoader::new();
+    let fid = loader.load_font(&bytes).unwrap();
+    loader.register_family_alias("Lato", fid);
+    let loader = Arc::new(Mutex::new(loader));
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_font_loader(Some(loader));
+    ctx.set_font(FontDescriptor {
+        family: "Lato".to_string(),
+        size: 20.0,
+        weight: FontWeight::Normal,
+        style: FontStyle::Normal,
+        small_caps: false,
+        weight_value: None,
+        letter_spacing: "0px".to_string(),
+        word_spacing: "0px".to_string(),
+        kerning_none: false,
+    });
+    let kerned = ctx.measure_text("TAWATAVA").width;
+    ctx.set_font_kerning("none");
+    let none = ctx.measure_text("TAWATAVA").width;
+    assert!(
+        kerned < none,
+        "fontKerning normal ({kerned}) should be narrower than none ({none})"
+    );
+    // 'none' 状态不污染后续：恢复 normal 后宽度回到 kerned。
+    ctx.set_font_kerning("normal");
+    let back = ctx.measure_text("TAWATAVA").width;
+    assert_eq!(back, kerned);
+}
+
+// R34xx：fontKerning 状态往返（set_font_kerning → font() 描述符；'none' 置位，
+// 其他值清位——reset.fontKerning.none 的跨字体保持由 engine 桥 setFont op 继承实现）。
+#[test]
+fn test_font_kerning_state_roundtrip() {
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_font(FontDescriptor::default());
+    assert!(!ctx.font().kerning_none, "默认 kern 开");
+    ctx.set_font_kerning("none");
+    assert!(ctx.font().kerning_none, "'none' 置位");
+    ctx.set_font_kerning("normal");
+    assert!(!ctx.font().kerning_none, "'normal' 清位");
+    ctx.set_font_kerning("auto");
+    assert!(!ctx.font().kerning_none, "'auto' 清位");
 }

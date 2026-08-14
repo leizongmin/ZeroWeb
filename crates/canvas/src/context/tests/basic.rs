@@ -262,6 +262,7 @@ fn test_font_descriptor_custom() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     };
     assert_eq!(f.family, "monospace");
     assert!(matches!(f.weight, FontWeight::Bold));
@@ -280,6 +281,7 @@ fn test_canvas_set_font() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     };
     ctx.set_font(font);
     let metrics = ctx.measure_text("test");
@@ -498,6 +500,7 @@ fn test_canvas_save_restore_font() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     ctx.save();
     ctx.set_font(FontDescriptor {
@@ -509,6 +512,7 @@ fn test_canvas_save_restore_font() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     ctx.restore();
     let m = ctx.measure_text("x");

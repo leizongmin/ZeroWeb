@@ -645,6 +645,7 @@ fn test_measure_text_reflects_font_size_change() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     let m2 = ctx.measure_text("abc");
     let expected2 = 3.0 * 20.0 * 0.6; // 36.0
@@ -877,6 +878,7 @@ fn test_fill_text_glyph_offset_scales_with_font_size() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     ctx_large.fill_text("AB", 0.0, 0.0, None);
     let glyphs_large = &ctx_large.primitives().glyphs;

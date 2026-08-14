@@ -466,6 +466,10 @@ fn run_testharness_html_inner(
     });
     webview.prepare_document_state(&format!("https://wpt.test/{case_name}"));
     let page_url = format!("https://wpt.test/{case_name}");
+    // R34xx：canvas 默认字体（sans-serif）预载系统真字体（带 kern）——无 @font-face 的
+    // 页面（2d.text.drawing.style.fontKerning 等）默认字体度量/kerning 面依赖。需
+    // resolve_font_id 大小写不敏感修复配套（否则 CanvasTest 显式族 miss 回退 sans-serif）。
+    webview.load_canvas_system_sans_font();
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
     if let Err(error) = webview.run_page_scripts_strict() {

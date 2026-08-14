@@ -104,6 +104,7 @@ fn test_canvas_text_primitives_gpu_path() {
         weight_value: None,
         letter_spacing: "0px".to_string(),
         word_spacing: "0px".to_string(),
+        kerning_none: false,
     });
     ctx.set_fill_color(Color::GREEN);
     ctx.fill_text("AB", 0.0, 16.0, None);

@@ -380,6 +380,39 @@ impl WebView {
         external_css
     }
 
+    /// R34xx：把系统 sans-serif（DejaVu/Liberation 等带 kern 数据的真字体）预载入 canvas
+    /// 注册表共享 FontLoader 并注册为 'sans-serif'（canvas 默认字体的 kerning 面——
+    /// 2d.text.drawing.style.fontKerning 的 measure 宽度对比依赖默认字体有 kern 数据；
+    /// 镜像 reftest 路径的 load_system_fonts）。headless/testharness 专用；无匹配字体
+    /// 或浏览器路径（fetcher=None 场景同样走，无 fetcher 依赖）静默跳过。
+    pub fn load_canvas_system_sans_font(&mut self) {
+        const CANDIDATES: [&str; 5] = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ];
+        let Some(path) = CANDIDATES.iter().find(|p| std::path::Path::new(p).exists()) else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(path) else {
+            return;
+        };
+        let Ok(reg) = self.canvas_registry.lock() else {
+            return;
+        };
+        let Ok(mut loader) = reg.font_loader.lock() else {
+            return;
+        };
+        if let Ok(id) = loader.load_font(&bytes) {
+            loader.register_family_alias("sans-serif", id);
+            loader.register_family_alias("sans-serif:700", id);
+            loader.register_family_alias("serif", id);
+            loader.register_family_alias("monospace", id);
+        }
+    }
+
     /// resize / render 前把文档 URL 与图片固有尺寸同步回 pipeline。
     fn sync_pipeline_page_state(&mut self) {
         self.pipeline.set_document_url(self.current_url.as_deref());

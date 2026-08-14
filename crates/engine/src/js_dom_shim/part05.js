@@ -775,37 +775,121 @@
   DOMPoint.fromPoint = function (p) { return new DOMPoint(p && p.x, p && p.y, p && p.z, p && p.w); };
   globalThis.DOMPoint = globalThis.DOMPoint || DOMPoint;
 
-  // ImageData（R3297）——全局构造器（HTML ImageData spec）。两形式：
-  //   `new ImageData(width, height)` → 透明黑（全零 RGBA）像素数组。
-  //   `new ImageData(Uint8ClampedArray, width[, height])` → 包裹既有数据（高度由 数组长度/(width*4) 推导或显式）。
-  // 产物 `{width, height, data: Uint8ClampedArray, colorSpace: 'srgb'}`——与 `ctx.createImageData` 输出同构
-  //（putImageData/getImageData/Worker 内像素处理直消费此形状）。此前缺 → `new ImageData(...)` 抛 TypeError。
-  // spec 校验：data 须为 Uint8ClampedArray；width*4 须整除 data.length；非法 → lenient 返全零（headless 不中断脚本，
-  // real browser 抛 IndexSizeError，与 btoa/roundRect lenient 哲学一致）。colorSpace 仅 'srgb'（'display-p3' defer）。
+  // ImageData（R3297 + R34xx 修正）——HTML ImageData spec 构造器。三形式：
+  //   `new ImageData(sw, sh[, settings])` → 透明黑（全零）像素数组。
+  //   `new ImageData(data, sw[, sh][, settings])` → 包裹既有数据（sh 缺省时高度由
+  //     data.length/(4×sw) 推导）。
+  // settings: { colorSpace: 'srgb'|'display-p3', pixelFormat: 'rgba-unorm8'|'rgba-float16' }
+  // 产物 `{width, height, data, colorSpace, pixelFormat}`——data 存储随 pixelFormat：
+  // unorm8 → Uint8ClampedArray（0..255），float16 → Float16Array（0..1 归一化浮点，原生）。
+  // 校验（driving: 2d.imageData.object.ctor.*，Chromium 行为）：
+  //   - 非 new 调用 → TypeError（WebIDL Illegal constructor）
+  //   - data 非 Uint8ClampedArray/Float16Array → TypeError；data 类型与 pixelFormat 不匹配
+  //     → InvalidStateError；非法 pixelFormat/colorSpace 枚举 → TypeError（WebIDL enum）
+  //   - 宽或高为 0 → IndexSizeError
+  //   - data 长度与 4×w×h 不符（sh 缺省时长度须为 4×w 整数倍且非零）→ InvalidStateError；
+  //     sh 显式给出但长度不符 → IndexSizeError
   // https://html.spec.whatwg.org/multipage/canvas.html#imagedata
-  function ImageData(a, b, c) {
-    if (a != null && typeof a === 'object' && typeof a.length === 'number') {
-      // new ImageData(dataArray, width[, height])——dataArray 须 Uint8ClampedArray（real browser），lenient 接受类数组。
-      var data = (a instanceof Uint8ClampedArray) ? a : new Uint8ClampedArray(a);
-      var w = Math.abs(+b || 0) | 0;
-      if (w <= 0) w = 1; // 防 0 除
-      var h = (c != null) ? (Math.abs(+c || 0) | 0) : ((data.length / 4) / w) | 0;
-      this.colorSpace = 'srgb';
-      this.pixelFormat = 'uint8';
-      Object.defineProperty(this, 'width', { value: w, writable: false, enumerable: true, configurable: false });
-      Object.defineProperty(this, 'height', { value: h, writable: false, enumerable: true, configurable: false });
-      Object.defineProperty(this, 'data', { value: data, writable: false, enumerable: true, configurable: false });
-    } else {
-      // new ImageData(width, height)——透明黑全零。
-      var w2 = Math.abs(+a || 0) | 0;
-      var h2 = Math.abs(+b || 0) | 0;
-      var data2 = new Uint8ClampedArray(w2 * h2 * 4);
-      this.colorSpace = 'srgb';
-      this.pixelFormat = 'uint8';
-      Object.defineProperty(this, 'width', { value: w2, writable: false, enumerable: true, configurable: false });
-      Object.defineProperty(this, 'height', { value: h2, writable: false, enumerable: true, configurable: false });
-      Object.defineProperty(this, 'data', { value: data2, writable: false, enumerable: true, configurable: false });
+  function ImageData(a, b, c, d) {
+    if (!(this instanceof ImageData)) {
+      throw new TypeError('Illegal constructor');
     }
+    var F16Ctor = (typeof Float16Array !== 'undefined') ? Float16Array : null;
+    var settings = null;
+    var dataArg = null;
+    var w, h;
+    if (a != null && typeof a === 'object' && typeof a.length === 'number') {
+      // new ImageData(data, sw[, sh][, settings])——settings 在第 3 或第 4 参。
+      if (b === undefined) {
+        throw new TypeError('missing width');
+      }
+      dataArg = a;
+      w = Math.trunc(+b);
+      if (typeof c === 'number') {
+        h = Math.trunc(+c);
+        settings = (d != null && typeof d === 'object') ? d : null;
+      } else {
+        h = undefined;
+        settings = (c != null && typeof c === 'object') ? c : null;
+      }
+    } else {
+      // new ImageData(sw, sh[, settings])——sh 必参（缺省 → TypeError，WebIDL）。
+      if (b === undefined) {
+        throw new TypeError('missing height');
+      }
+      w = Math.trunc(+a);
+      h = Math.trunc(+b);
+      settings = (c != null && typeof c === 'object') ? c : null;
+    }
+    var fmt = 'rgba-unorm8';
+    var cs = 'srgb';
+    if (settings) {
+      if (settings.pixelFormat !== undefined) {
+        if (settings.pixelFormat !== 'rgba-unorm8' && settings.pixelFormat !== 'rgba-float16') {
+          throw new TypeError('invalid pixelFormat');
+        }
+        fmt = settings.pixelFormat;
+      }
+      if (settings.colorSpace !== undefined) {
+        if (settings.colorSpace !== 'srgb' && settings.colorSpace !== 'display-p3') {
+          throw new TypeError('invalid colorSpace');
+        }
+        cs = settings.colorSpace;
+      }
+    }
+    var isF16 = fmt === 'rgba-float16';
+    var data;
+    if (dataArg !== null) {
+      // 类型校验先于长度算法（Chromium 实际顺序）：
+      //   WebIDL union：非 Uint8ClampedArray/Float16Array → TypeError；
+      //   data 类型与 pixelFormat 不匹配 → InvalidStateError
+      //   （driving: 2d.imageData.object.ctor.array.bounds / pixelFormat）。
+      var isU8 = (dataArg instanceof Uint8ClampedArray);
+      var isF16a = (F16Ctor !== null && dataArg instanceof F16Ctor);
+      if (!isU8 && !isF16a) {
+        throw new TypeError('data must be Uint8ClampedArray or Float16Array');
+      }
+      if ((isF16 && !isF16a) || (!isF16 && !isU8)) {
+        throw _zwDomException('data type does not match pixelFormat', 'InvalidStateError');
+      }
+      // spec（imagebitmap-and-animations §ImageData constructor）：
+      //   1. bytesPerPixel = 4（unorm8）/ 8（float16）
+      //   2. length = data 的 byte length
+      //   3. length 非 bytesPerPixel 的非零整数倍 → InvalidStateError
+      //   4. length /= bytesPerPixel
+      //   5. length 非 sw 的整数倍（sw 为 0 亦在此抛）→ IndexSizeError
+      //   6. height = length / sw
+      //   7. sh 给出且 ≠ height → IndexSizeError
+      var bpp = isF16 ? 8 : 4;
+      var len = dataArg.byteLength;
+      if (len % bpp !== 0 || len === 0) {
+        throw _zwDomException('data length is not a nonzero multiple of bytesPerPixel', 'InvalidStateError');
+      }
+      len = len / bpp;
+      if (len % w !== 0) {
+        throw _zwDomException('data length is not a multiple of sw', 'IndexSizeError');
+      }
+      var height = len / w;
+      if (h !== undefined && h !== height) {
+        throw _zwDomException('sh does not match data length', 'IndexSizeError');
+      }
+      h = height;
+      data = dataArg;
+    } else {
+      // spec：one or both of sw and sh zero → IndexSizeError（NaN 经 WebIDL unsigned long
+      // 转换 → 0；分配溢出（1<<31 等）→ IndexSizeError 同 Chromium 守卫）。
+      if (w !== w) w = 0;
+      if (h !== h) h = 0;
+      if (w <= 0 || h <= 0 || w * h > 0x1fffffff) {
+        throw _zwDomException('zero or oversized dimension', 'IndexSizeError');
+      }
+      data = isF16 ? new F16Ctor(w * h * 4) : new Uint8ClampedArray(w * h * 4);
+    }
+    this.colorSpace = cs;
+    this.pixelFormat = fmt;
+    Object.defineProperty(this, 'width', { value: w, writable: false, enumerable: true, configurable: false });
+    Object.defineProperty(this, 'height', { value: h, writable: false, enumerable: true, configurable: false });
+    Object.defineProperty(this, 'data', { value: data, writable: false, enumerable: true, configurable: false });
   }
   globalThis.ImageData = globalThis.ImageData || ImageData;
 
@@ -1335,13 +1419,22 @@
   if (!globalThis.OffscreenCanvas) {
     globalThis.OffscreenCanvas = OffscreenCanvas;
   }
-  // R34xx：数值参数校验（missingargs——undefined/NaN → TypeError，spec 非有限拒绝）。
-  function _zwFiniteNum(v) {
-    var n = +v;
-    if (v === undefined || v === null || !isFinite(n)) {
-      throw new TypeError('non-finite argument');
+  // R34xx：WebIDL 参数语义——缺省（undefined/null）→ TypeError（missingargs：
+  // 2d.conformance.requirements.missingargs）；非有限（NaN/±Infinity）数值 → 方法忽略
+  //（spec：各方法 "If any of the arguments are infinite or NaN, then return"——
+  // 2d.fillRect.nonfinite / 2d.transformation.*.nonfinite 系列）。渐变创建等按 spec 抛
+  // TypeError 的方法不经此 helper（create*Gradient 自带校验）。
+  function _zwNumArg(v) {
+    if (v === undefined || v === null) {
+      throw new TypeError('missing argument');
     }
-    return n;
+    return +v;
+  }
+  function _zwAllFinite() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (!isFinite(arguments[i])) return false;
+    }
+    return true;
   }
   function _zwMakeCtx2d(h) {
     var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
@@ -1451,11 +1544,20 @@
     });
     ctx.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
     ctx.closePath = function () { __zw_canvas_op(h, 'closePath'); };
-    ctx.moveTo = function (x, y) { __zw_canvas_op(h, 'moveTo', String(_zwFiniteNum(x)), String(_zwFiniteNum(y))); };
-    ctx.lineTo = function (x, y) { __zw_canvas_op(h, 'lineTo', String(_zwFiniteNum(x)), String(_zwFiniteNum(y))); };
+    ctx.moveTo = function (x, y) {
+      x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(x, y)) return;
+      __zw_canvas_op(h, 'moveTo', String(x), String(y));
+    };
+    ctx.lineTo = function (x, y) {
+      x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(x, y)) return;
+      __zw_canvas_op(h, 'lineTo', String(x), String(y));
+    };
     ctx.arc = function (x, y, r, s, e, anticlockwise) {
       // R34xx：anticlockwise 第 6 参透传（spec：2d.line.cap.round 等 arc 填充用例依赖方向）。
-      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(r); _zwFiniteNum(s); _zwFiniteNum(e);
+      x = _zwNumArg(x); y = _zwNumArg(y); r = _zwNumArg(r); s = _zwNumArg(s); e = _zwNumArg(e);
+      if (!_zwAllFinite(x, y, r, s, e)) return;
       __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
@@ -1468,21 +1570,21 @@
       if (path && path._zwPath) __zw_canvas_op(h, 'strokePath', String(path._zwPath));
       else __zw_canvas_op(h, 'stroke');
     };
-    // R34xx：fillRect/strokeRect/clearRect 任一参数非有限（NaN/Infinity）→ 方法忽略
-    //（spec：上游 2d.fillRect.nonfinite / strokeRect.nonfinite / clearRect.nonfinite）。
-    var _zwRectFinite = function (x, y, w, h) {
-      return isFinite(+x) && isFinite(+y) && isFinite(+w) && isFinite(+h);
-    };
+    // R34xx：fillRect/strokeRect/clearRect 缺参 → TypeError（missingargs），任一参数
+    // 非有限（NaN/Infinity）→ 方法忽略（spec：2d.fillRect.nonfinite 系列）。
     ctx.fillRect = function (x, y, w, hh) {
-      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
+      x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
+      if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
     };
     ctx.strokeRect = function (x, y, w, hh) {
-      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
+      x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
+      if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'strokeRect', String(x), String(y), String(w), String(hh));
     };
     ctx.clearRect = function (x, y, w, hh) {
-      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
+      x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
+      if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'clearRect', String(x), String(y), String(w), String(hh));
     };
     // R3078：Canvas 2D 文本 API（fillText/strokeText/measureText）+ createImageData（blank）。
@@ -1490,9 +1592,14 @@
     // createImageData 返 blank ImageData（全透明 = 全 0，Uint8ClampedArray(w*h*4)，JS 构无需 host）。createImageData
     // 双形式：createImageData(w,h) / createImageData(imageData)（复制尺寸）。spec CanvasRenderingContext2D。
     ctx.fillText = function (text, x, y, maxWidth) {
-      // R34xx：maxWidth 透传 + 坐标非有限校验（missingargs）。
-      _zwFiniteNum(x); _zwFiniteNum(y);
-      __zw_canvas_op(h, 'fillText', String(text), String(+x), String(+y), String(maxWidth === undefined ? '' : +maxWidth));
+      // R34xx：maxWidth 透传 + 缺参 TypeError / 非有限忽略（spec：fillText 任一参数
+      // 非有限则 return——"If any of the arguments are infinite or NaN, then return"）。
+      // maxWidth ≤ 0 → return（不绘制——2d.text.draw.fill.maxWidth.zero/negative 期望
+      // 画布保持底色；text preparation algorithm 对非正 maxWidth 直接返回）。
+      x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(x, y) || (maxWidth !== undefined && !isFinite(+maxWidth))) return;
+      if (maxWidth !== undefined && +maxWidth <= 0) return;
+      __zw_canvas_op(h, 'fillText', String(text), String(x), String(y), String(maxWidth === undefined ? '' : +maxWidth));
     };
     // R34xx：fillTextCluster(cluster, x, y)——绘制单个字素簇（spec TextCluster；
     // 2d.text.measure.fillTextCluster-*.tentative）。簇对象经 measureText().getTextClusters()
@@ -1556,8 +1663,9 @@
         String(drawX), String(drawY));
     };
     ctx.strokeText = function (text, x, y) {
-      _zwFiniteNum(x); _zwFiniteNum(y);
-      __zw_canvas_op(h, 'strokeText', String(text), String(+x), String(+y));
+      x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(x, y)) return;
+      __zw_canvas_op(h, 'strokeText', String(text), String(x), String(y));
     };
     ctx.measureText = function (text) {
       if (text === undefined || text === null) throw new TypeError('measureText: missing text');
@@ -1940,23 +2048,27 @@
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
     ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
-      _zwFiniteNum(cpx); _zwFiniteNum(cpy); _zwFiniteNum(x); _zwFiniteNum(y);
+      cpx = _zwNumArg(cpx); cpy = _zwNumArg(cpy); x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(cpx, cpy, x, y)) return;
       __zw_canvas_op(h, 'quadraticCurveTo', String(cpx), String(cpy), String(x), String(y));
     };
     ctx.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) {
-      _zwFiniteNum(cp1x); _zwFiniteNum(cp1y); _zwFiniteNum(cp2x); _zwFiniteNum(cp2y);
-      _zwFiniteNum(x); _zwFiniteNum(y);
+      cp1x = _zwNumArg(cp1x); cp1y = _zwNumArg(cp1y); cp2x = _zwNumArg(cp2x); cp2y = _zwNumArg(cp2y);
+      x = _zwNumArg(x); y = _zwNumArg(y);
+      if (!_zwAllFinite(cp1x, cp1y, cp2x, cp2y, x, y)) return;
       __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
     };
     ctx.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
       __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
     };
     ctx.arcTo = function (x1, y1, x2, y2, r) {
-      _zwFiniteNum(x1); _zwFiniteNum(y1); _zwFiniteNum(x2); _zwFiniteNum(y2); _zwFiniteNum(r);
+      x1 = _zwNumArg(x1); y1 = _zwNumArg(y1); x2 = _zwNumArg(x2); y2 = _zwNumArg(y2); r = _zwNumArg(r);
+      if (!_zwAllFinite(x1, y1, x2, y2, r)) return;
       __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
     };
     ctx.rect = function (x, y, w, hh) {
-      _zwFiniteNum(x); _zwFiniteNum(y); _zwFiniteNum(w); _zwFiniteNum(hh);
+      x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
+      if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
     };
     // R3291：Canvas 2D roundRect（HTML Canvas `dom-context-2d-api` roundRect）。radii 可为 number 或
@@ -1998,7 +2110,8 @@
     ctx.isPointInPath = function (x, y /*, fillRule */) {
       // 首个参数缺失或为 Path2D 时跳过数值校验；否则校验（missingargs 的 () → TypeError）。
       if (x !== undefined && !(x && x._zwPath)) {
-        _zwFiniteNum(x); _zwFiniteNum(y);
+        x = _zwNumArg(x); y = _zwNumArg(y);
+        if (!_zwAllFinite(x, y)) return false;
       } else if (x !== undefined && x && x._zwPath) {
         // Path2D 形式：坐标参数不校验（可选）
       } else {
@@ -2034,15 +2147,36 @@
       var snap = st.pop();
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; this[k] = snap[k]; }
     };
-    ctx.translate = function (tx, ty) { __zw_canvas_op(h, 'translate', String(_zwFiniteNum(tx)), String(_zwFiniteNum(ty))); };
-    ctx.rotate = function (angle) { __zw_canvas_op(h, 'rotate', String(_zwFiniteNum(angle))); };
-    ctx.scale = function (sx, sy) { __zw_canvas_op(h, 'scale', String(_zwFiniteNum(sx)), String(_zwFiniteNum(sy))); };
+    ctx.translate = function (tx, ty) {
+      tx = _zwNumArg(tx); ty = _zwNumArg(ty);
+      if (!_zwAllFinite(tx, ty)) return;
+      __zw_canvas_op(h, 'translate', String(tx), String(ty));
+    };
+    ctx.rotate = function (angle) {
+      angle = _zwNumArg(angle);
+      if (!isFinite(angle)) return;
+      __zw_canvas_op(h, 'rotate', String(angle));
+    };
+    ctx.scale = function (sx, sy) {
+      sx = _zwNumArg(sx); sy = _zwNumArg(sy);
+      if (!_zwAllFinite(sx, sy)) return;
+      __zw_canvas_op(h, 'scale', String(sx), String(sy));
+    };
     ctx.setTransform = function (a, b, c, d, e, ff) {
-      _zwFiniteNum(a); _zwFiniteNum(b); _zwFiniteNum(c); _zwFiniteNum(d); _zwFiniteNum(e); _zwFiniteNum(ff);
+      // WebIDL 双重重载：0 参 → `optional DOMMatrix2DInit transform = {}` 重载（identity——
+      // 2d.transformation.setTransform.multiple 调 setTransform() 重置）；1-5 参 → 6 必参
+      // 重载 TypeError（missingargs）；非有限 → 忽略（setTransform.nonfinite）。
+      if (arguments.length === 0) {
+        __zw_canvas_op(h, 'setTransform', '1', '0', '0', '1', '0', '0');
+        return;
+      }
+      a = _zwNumArg(a); b = _zwNumArg(b); c = _zwNumArg(c); d = _zwNumArg(d); e = _zwNumArg(e); ff = _zwNumArg(ff);
+      if (!_zwAllFinite(a, b, c, d, e, ff)) return;
       __zw_canvas_op(h, 'setTransform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
     ctx.transform = function (a, b, c, d, e, ff) {
-      _zwFiniteNum(a); _zwFiniteNum(b); _zwFiniteNum(c); _zwFiniteNum(d); _zwFiniteNum(e); _zwFiniteNum(ff);
+      a = _zwNumArg(a); b = _zwNumArg(b); c = _zwNumArg(c); d = _zwNumArg(d); e = _zwNumArg(e); ff = _zwNumArg(ff);
+      if (!_zwAllFinite(a, b, c, d, e, ff)) return;
       __zw_canvas_op(h, 'transform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
     // R2985 getTransform：返当前变换矩阵为 DOMMatrix（host 'getTransform' 返 "a,b,c,d,e,f"）。
@@ -2141,7 +2275,23 @@
     ctx._font = '10px sans-serif';
     Object.defineProperty(ctx, 'font', {
       set: function (v) {
-        this._font = String(v);
+        v = String(v);
+        // R34xx：% 字号预解析（spec——解析基准为 canvas 元素 computed font-size：
+        // 2d.text.font.parse.size.percentage 内联 144px → 50% = '72px serif'；无样式
+        // canvas 默认 10px → 1000% = '100px serif'（.default）。斜杠行高后的 % 不属
+        // 字号（'10px/150%' 的 150% 是 line-height），以「% 前须为行首或空白」排除。
+        var m = /(?:^|\s)(\d+(?:\.\d+)?)%(?=\s|$)/.exec(v);
+        if (m) {
+          var base = 10;
+          try {
+            var fs = this.canvas && this.canvas.style && String(this.canvas.style.fontSize || '');
+            var fm = /^(\d+(?:\.\d+)?)px$/.exec(fs);
+            if (fm) base = parseFloat(fm[1]);
+          } catch (_e) {}
+          var px = Math.round(base * parseFloat(m[1]) / 100 * 100) / 100;
+          v = v.slice(0, m.index) + px + 'px' + v.slice(m.index + m[0].length);
+        }
+        this._font = v;
         __zw_canvas_op(h, 'setFont', String(v));
       },
       get: function () {

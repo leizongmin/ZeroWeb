@@ -72,15 +72,23 @@ impl CanvasContext {
             return;
         };
         let resolver = loader.build_font_resolver();
-        let family = self.font.family.to_ascii_lowercase();
-        self.font_id = resolver.get(&family).copied().or_else(|| {
-            // 未注册族 → 通用族回落（sans-serif 等）。
-            resolver
-                .get("sans-serif")
-                .or_else(|| resolver.get("serif"))
-                .or_else(|| resolver.get("monospace"))
-                .copied()
-        });
+        // R34xx：家族名大小写不敏感匹配——resolver 键为注册时原样（@font-face
+        // 'CanvasTest' → 键 "CanvasTest"），先按原串再按小写查（ctx.font='50px
+        // CanvasTest' 的 2d.text.draw.* 系列——先前仅小写查询 miss 后回退 sans-serif，
+        // 恰逢 sans-serif 落 id 0（首字体=CanvasTest）被掩盖；系统字体预载后暴露）。
+        let family = self.font.family.trim();
+        self.font_id = resolver
+            .get(family)
+            .copied()
+            .or_else(|| resolver.get(&family.to_ascii_lowercase()).copied())
+            .or_else(|| {
+                // 未注册族 → 通用族回落（sans-serif 等）。
+                resolver
+                    .get("sans-serif")
+                    .or_else(|| resolver.get("serif"))
+                    .or_else(|| resolver.get("monospace"))
+                    .copied()
+            });
     }
 
     // ── Rectangle drawing ──
@@ -248,14 +256,21 @@ impl CanvasContext {
             && let Some(loader) = self.font_loader.clone()
             && let Ok(loader) = loader.lock()
             && let Some(shaped) = if rtl {
-                loader.shape_text_cached_with_direction(
+                loader.shape_text_cached_with_features(
                     font_id,
                     text,
                     font_size,
                     zero_render_foundation::font::TextDirection::RightToLeft,
+                    kern_features(self.font.kerning_none),
                 )
             } else {
-                loader.shape_text_cached(font_id, text, font_size)
+                loader.shape_text_cached_with_features(
+                    font_id,
+                    text,
+                    font_size,
+                    zero_render_foundation::font::TextDirection::Auto,
+                    kern_features(self.font.kerning_none),
+                )
             }
         {
             let natural: f32 = shaped.iter().map(|g| g.advance_x).sum::<f32>().abs();
@@ -343,7 +358,19 @@ impl CanvasContext {
                 if let Ok(loader) = loader.lock() {
                     // R34xx：null 字符（U+0000）剥离（spec——width.nullCharacter 期望 0）。
                     let clean: String = text.chars().filter(|c| *c != '\0').collect();
-                    let shaped = loader.shape_text_cached(fid, &clean, size).unwrap_or_default();
+                    let shaped = if self.font.kerning_none {
+                        loader
+                            .shape_text_cached_with_features(
+                                fid,
+                                &clean,
+                                size,
+                                zero_render_foundation::font::TextDirection::Auto,
+                                &[zero_render_foundation::font::OpenTypeFeature::new(*b"kern", 0)],
+                            )
+                            .unwrap_or_default()
+                    } else {
+                        loader.shape_text_cached(fid, &clean, size).unwrap_or_default()
+                    };
                     let mut w: f32 = shaped.iter().map(|g| g.advance_x).sum();
                     // R34xx：letterSpacing（含末字符——WPT ×11 期望）与 wordSpacing。
                     let ls = parse_length_px(&self.font.letter_spacing, size).unwrap_or(0.0);
@@ -870,6 +897,12 @@ impl CanvasContext {
     /// R34xx：wordSpacing 原始 CSS 长度串。
     pub fn set_word_spacing(&mut self, raw: &str) {
         self.font.word_spacing = raw.to_string();
+    }
+
+    /// R34xx：fontKerning（'none' → shaping 关 kern 特征——2d.text.drawing.style.fontKerning
+    /// 的 measure 宽度对比；'auto'/'normal' 默认开）。
+    pub fn set_font_kerning(&mut self, v: &str) {
+        self.font.kerning_none = v.trim().eq_ignore_ascii_case("none");
     }
 
     /// 设置全局透明度。
@@ -2090,5 +2123,17 @@ impl CanvasContext {
     /// 返回渲染图元列表的引用。
     pub fn primitives(&self) -> &RenderPrimitives {
         &self.primitives
+    }
+}
+
+/// R34xx：fontKerning 'none' 时返回关 kern 的 feature 列表（否则空——默认开）。
+fn kern_features(none: bool) -> &'static [zero_render_foundation::font::OpenTypeFeature] {
+    use std::sync::OnceLock;
+    static NONE: OnceLock<Vec<zero_render_foundation::font::OpenTypeFeature>> = OnceLock::new();
+    static ON: [zero_render_foundation::font::OpenTypeFeature; 0] = [];
+    if none {
+        NONE.get_or_init(|| vec![zero_render_foundation::font::OpenTypeFeature::new(*b"kern", 0)])
+    } else {
+        &ON
     }
 }

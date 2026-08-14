@@ -46,6 +46,9 @@ pub struct FontDescriptor {
     pub letter_spacing: String,
     /// R34xx：wordSpacing 原始 CSS 长度串（每个词后附加间距）。
     pub word_spacing: String,
+    /// R34xx：fontKerning 'none'（spec CanvasTextDrawingStyles——shaping 关 kern 特征；
+    /// 'auto'/'normal' 默认开。2d.text.drawing.style.fontKerning 的 measure 宽度对比）。
+    pub kerning_none: bool,
 }
 
 impl Default for FontDescriptor {
@@ -59,6 +62,7 @@ impl Default for FontDescriptor {
             weight_value: None,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
+            kerning_none: false,
         }
     }
 }
@@ -201,6 +205,7 @@ impl FontDescriptor {
             weight_value,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
+            kerning_none: false,
         })
     }
 }
@@ -550,6 +555,9 @@ pub struct LinearGradient {
     pub y1: f32,
     /// 颜色停止点列表。
     pub stops: Vec<GradientStop>,
+    /// R34xx：OKLab 插值（driving: 2d.gradient.colormix/relativecolor——stop 含 CSS Color 4
+    /// 现代函数（color-mix/相对色）时 Chromium 按 OKLab 插值；纯 legacy 颜色按 sRGB）。
+    pub(crate) oklab_interpolation: bool,
 }
 
 impl LinearGradient {
@@ -561,7 +569,13 @@ impl LinearGradient {
             x1,
             y1,
             stops: Vec::new(),
+            oklab_interpolation: false,
         }
+    }
+
+    /// 设置 OKLab 插值（含 CSS Color 4 现代函数 stop 时由宿主置位）。
+    pub fn set_oklab_interpolation(&mut self, v: bool) {
+        self.oklab_interpolation = v;
     }
 
     /// 添加颜色停止点。
@@ -571,7 +585,7 @@ impl LinearGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset)
+        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
     }
 }
 
@@ -592,6 +606,8 @@ pub struct RadialGradient {
     pub r1: f32,
     /// 颜色停止点列表。
     pub stops: Vec<GradientStop>,
+    /// R34xx：OKLab 插值（同 `LinearGradient::oklab_interpolation`）。
+    pub(crate) oklab_interpolation: bool,
 }
 
 impl RadialGradient {
@@ -605,7 +621,13 @@ impl RadialGradient {
             y1,
             r1,
             stops: Vec::new(),
+            oklab_interpolation: false,
         }
+    }
+
+    /// 设置 OKLab 插值（同 `LinearGradient::set_oklab_interpolation`）。
+    pub fn set_oklab_interpolation(&mut self, v: bool) {
+        self.oklab_interpolation = v;
     }
 
     /// 添加颜色停止点。
@@ -615,7 +637,7 @@ impl RadialGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset)
+        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
     }
 }
 
@@ -630,6 +652,8 @@ pub struct ConicGradient {
     pub cy: f32,
     /// 颜色停止点列表。
     pub stops: Vec<GradientStop>,
+    /// R34xx：OKLab 插值（同 `LinearGradient::oklab_interpolation`）。
+    pub(crate) oklab_interpolation: bool,
 }
 
 impl ConicGradient {
@@ -640,7 +664,13 @@ impl ConicGradient {
             cx,
             cy,
             stops: Vec::new(),
+            oklab_interpolation: false,
         }
+    }
+
+    /// 设置 OKLab 插值（同 `LinearGradient::set_oklab_interpolation`）。
+    pub fn set_oklab_interpolation(&mut self, v: bool) {
+        self.oklab_interpolation = v;
     }
 
     /// 添加颜色停止点。
@@ -650,7 +680,7 @@ impl ConicGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset)
+        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
     }
 }
 
@@ -743,6 +773,17 @@ impl CanvasStyle {
         }
     }
 
+    /// R34xx：设置 OKLab 插值（stop 含 CSS Color 4 现代函数时由宿主置位——
+    /// 2d.gradient.colormix/relativecolor）。Color/Pattern 变体为 no-op。
+    pub fn set_oklab_interpolation(&mut self, v: bool) {
+        match self {
+            CanvasStyle::LinearGradient(g) => g.set_oklab_interpolation(v),
+            CanvasStyle::RadialGradient(g) => g.set_oklab_interpolation(v),
+            CanvasStyle::ConicGradient(g) => g.set_oklab_interpolation(v),
+            _ => {}
+        }
+    }
+
     /// 判断是否为渐变样式（光栅化路径分流用）。
     pub fn is_gradient(&self) -> bool {
         matches!(
@@ -779,13 +820,13 @@ impl CanvasStyle {
                     return Color::TRANSPARENT;
                 }
                 let t = ((x - g.x0) * dx + (y - g.y0) * dy) / len2;
-                sample_gradient_stops(&g.stops, t)
+                sample_gradient_stops(&g.stops, t, g.oklab_interpolation)
             }
             CanvasStyle::RadialGradient(g) => {
                 // R34xx：radial 全几何解（见 `radial_gradient_t`）——cone/相交/相切/退化
                 // 圆族全部经二次方程精确解；未覆盖点（cone 背后/判别式负）返透明不画。
                 match radial_gradient_t(g, x, y) {
-                    Some(t) => sample_gradient_stops(&g.stops, t),
+                    Some(t) => sample_gradient_stops(&g.stops, t, g.oklab_interpolation),
                     None => Color::TRANSPARENT,
                 }
             }
@@ -798,7 +839,7 @@ impl CanvasStyle {
                 while ang >= std::f32::consts::TAU {
                     ang -= std::f32::consts::TAU;
                 }
-                sample_gradient_stops(&g.stops, ang / std::f32::consts::TAU)
+                sample_gradient_stops(&g.stops, ang / std::f32::consts::TAU, g.oklab_interpolation)
             }
             CanvasStyle::Pattern(p) => sample_pattern_pixel(p, x, y),
         }
@@ -933,7 +974,7 @@ fn sample_pattern_pixel(pattern: &CanvasPattern, x: f32, y: f32) -> Color {
 /// 渐变停止点颜色采样辅助函数。
 ///
 /// 将偏移量限制在 [0.0, 1.0]，找到包围偏移量的两个停止点并线性插值。
-fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
+fn sample_gradient_stops(stops: &[GradientStop], offset: f32, oklab: bool) -> Color {
     // R34xx：无停止点 → 全透明（spec：渐变无 stops 时绘制无效果——2d.gradient.empty 期望
     // 保持背景；旧实现返 BLACK 污染像素）。
     if stops.is_empty() {
@@ -971,12 +1012,29 @@ fn sample_gradient_stops(stops: &[GradientStop], offset: f32) -> Color {
                 continue;
             }
             let frac = (t - o0) / span;
-            return Color::rgba(
-                lerp_u8(l0.r, f1.r, frac),
-                lerp_u8(l0.g, f1.g, frac),
-                lerp_u8(l0.b, f1.b, frac),
-                lerp_u8(l0.a, f1.a, frac),
-            );
+            // R34xx：CSS Color 4 premultiplied 插值（opaque 与旧逐通道 lerp 字节级一致；
+            // 半透明 premultiplied 修正——2d.gradient.interpolate.alpha）。OKLab 用于
+            // 含现代函数 stop 的渐变（2d.gradient.colormix/relativecolor——Chromium 行为）。
+            return if oklab {
+                // R34xx：OKLab 插值（stop 含 CSS Color 4 现代函数——2d.gradient.colormix/
+                // relativecolor，Chromium 行为）。premultiplied CSS Color 4 §12.3。
+                zero_render_foundation::color_space::interp_pair(
+                    l0,
+                    f1,
+                    frac as f64,
+                    zero_render_foundation::primitive::GradientColorSpace::Oklab,
+                    zero_render_foundation::primitive::HueMethod::Shorter,
+                )
+            } else {
+                // spec：sRGB 直插（"without premultiplying the alpha value"——HTML canvas
+                // CanvasGradient；2d.gradient.interpolate.coloralpha 期望直插值）。
+                Color::rgba(
+                    lerp_u8(l0.r, f1.r, frac),
+                    lerp_u8(l0.g, f1.g, frac),
+                    lerp_u8(l0.b, f1.b, frac),
+                    lerp_u8(l0.a, f1.a, frac),
+                )
+            };
         }
     }
     last.2
@@ -1216,6 +1274,7 @@ mod tests {
             weight_value: None,
             letter_spacing: "0px".to_string(),
             word_spacing: "0px".to_string(),
+            kerning_none: false,
         };
         let cloned = desc.clone();
         assert_eq!(cloned.family, "serif");
@@ -1468,6 +1527,74 @@ mod tests {
         assert_eq!(g.sample_color(-1.0), Color::rgb(255, 0, 0));
         // offset > 1 → clamped to last stop
         assert_eq!(g.sample_color(2.0), Color::rgb(0, 0, 255));
+    }
+
+    // R34xx：OKLab 插值——stop 含 CSS Color 4 现代函数（color-mix/相对色）时 Chromium 按
+    // OKLab 插值（driving: 2d.gradient.colormix/relativecolor 期望像素，容差 3）。
+    #[test]
+    fn test_gradient_oklab_interpolation_colormix() {
+        // 2d.gradient.colormix：stop0 #f00, stop1 color-mix(in srgb, #0f0, #00f) = (0,128,128)。
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 128, 128));
+        g.set_oklab_interpolation(true);
+        let approx = |got: Color, r: u8, gg: u8, b: u8| {
+            assert!(
+                (got.r as i16 - r as i16).abs() <= 3
+                    && (got.g as i16 - gg as i16).abs() <= 3
+                    && (got.b as i16 - b as i16).abs() <= 3,
+                "got {got:?} expected ~({r},{gg},{b})"
+            );
+        };
+        approx(g.sample_color(0.25), 212, 81, 61);
+        approx(g.sample_color(0.5), 167, 106, 88);
+        approx(g.sample_color(0.75), 113, 120, 109);
+        // 默认（legacy 颜色）仍 sRGB 直插：t=0.25 → (191,32,32)——与 OKLab 显著不同。
+        let mut plain = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        plain.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        plain.add_color_stop(1.0, Color::rgb(0, 128, 128));
+        let srgb = plain.sample_color(0.25);
+        assert_eq!(srgb, Color::rgb(191, 32, 32));
+    }
+
+    #[test]
+    fn test_gradient_oklab_interpolation_relativecolor() {
+        // 2d.gradient.relativecolor：stop1 'rgb(from red g r b)' = (0,255,0)。
+        let mut g = RadialGradient::new(0.0, 0.0, 0.0, 50.0, 50.0, 50.0);
+        g.add_color_stop(0.0, Color::rgb(255, 0, 0));
+        g.add_color_stop(1.0, Color::rgb(0, 255, 0));
+        g.set_oklab_interpolation(true);
+        let approx = |got: Color, r: u8, gg: u8, b: u8| {
+            assert!(
+                (got.r as i16 - r as i16).abs() <= 3
+                    && (got.g as i16 - gg as i16).abs() <= 3
+                    && (got.b as i16 - b as i16).abs() <= 3,
+                "got {got:?} expected ~({r},{gg},{b})"
+            );
+        };
+        approx(g.sample_color(0.25), 236, 116, 0);
+        approx(g.sample_color(0.5), 208, 170, 0);
+        approx(g.sample_color(0.75), 159, 214, 0);
+    }
+
+    // R34xx：premultiplied alpha 插值（spec CSS Color 4 §12.3）——半透明 stop 的 sRGB
+    // 插值须先 premultiply（driving: 2d.gradient.interpolate.alpha：rgba(0,0,255,0)→
+    // rgba(0,0,255,1) 在 t=0.25 应得 (0,0,255,64) 而非直插 (0,0,64,64)）。
+    #[test]
+    fn test_gradient_premultiplied_alpha_interpolation() {
+        let mut g = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g.add_color_stop(0.0, Color::rgba(0, 0, 255, 0));
+        g.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+        let c = g.sample_color(0.25);
+        assert_eq!(c.r, 0);
+        assert_eq!(c.g, 0);
+        assert_eq!(c.b, 255, "premultiplied: blue 分量不衰减（un-premultiply 恢复）");
+        assert_eq!(c.a, 64);
+        // 不透明 stop 与直插字节级一致（零回归）。
+        let mut g2 = LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+        g2.add_color_stop(0.0, Color::rgb(255, 255, 0));
+        g2.add_color_stop(1.0, Color::rgb(0, 0, 255));
+        assert_eq!(g2.sample_color(0.25), Color::rgb(191, 191, 64));
     }
 
     #[test]

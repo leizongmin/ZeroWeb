@@ -1,7 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（M1 扩展第 2-4 轮：9 目录 919 文件 657+ Pass——radial 全几何/文本真字体光栅/
-drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖率 89.28%）。
+**最后更新**: 2026-08-14（R34xx 续：colormix/relativecolor OKLab 插值、halftransparent alpha
+序列化、nonfinite 忽略 vs 缺参 TypeError、setTransform 双重重载、ImageData 构造器 spec 化、
+fontKerning/maxWidth、系统默认字体预载 + 族名大小写不敏感解析；text 100→115 Pass）。
 
 ---
 
@@ -64,6 +65,14 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 
 | 修复 | 驱动用例 |
 |------|----------|
+| stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值；legacy 直 sRGB（premultiplied 语义保持） | gradient.colormix / gradient.relativecolor |
+| alpha 序列化最短可回滚十进制（u8 量化 0.5→128 回读 '0.5'） | fillStyle.get.halftransparent / semitransparent |
+| 缺参 TypeError vs 非有限忽略分流（_zwNumArg/_zwAllFinite——570b552c 过度抛错修正） | fillRect.nonfinite / rotate.nonfinite / translate.nonfinite / scale.nonfinite / transform.nonfinite / setTransform.nonfinite / clearRect.nonfinite / strokeRect.nonfinite |
+| setTransform 双重重载（0 参 → DOMMatrix2DInit identity；1-5 参 → TypeError） | setTransform.multiple / conformance.requirements.missingargs |
+| ImageData 构造器 spec 化（WebIDL 缺参/类型 TypeError、长度 InvalidState/IndexSizeError 分步、pixelFormat rgba-unorm8/float16、Float16Array 原生存储） | imageData.object.ctor.*（basics 1 陈旧断言除外） |
+| fontKerning 'none' → shaping 关 kern；系统默认字体预载（DejaVu 带 kern）；resolve_font_id 族名大小写不敏感（潜在 bug：@font-face 'CanvasTest' miss 后回退首字体被掩盖） | drawing.style.fontKerning / reset.fontKerning.none / draw.* 全族 |
+| fillText maxWidth ≤ 0 → 不绘制（spec text preparation algorithm） | draw.fill.maxWidth.zero / maxWidth.negative |
+| ctx.font 二次设置保留 fontKerning（桥层 setFont 继承，同 letter/wordSpacing） | drawing.style.reset.fontKerning.none |
 | radial 二次方程全几何（f64 + 容差 + 有效根） | cone.behind/beside/bottom/front/shape1/touch*/equal/transform.* |
 | 渐变半径随 CTM 缩放 | radial.transform.1/2/3 |
 | drawImage 阴影 | shadow.image.* / shadow.canvas.* |
@@ -91,8 +100,8 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 | G3 | OffscreenCanvas Rust 桩 | ✅ 真实化 |
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
-| G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass：同 isolate 共享 canvas ops + importScripts 内联 + fetch_tests_from_worker 聚合 + worker FontFaceSet） |
-| G7 | 剩余失败聚类 | 🔄 text .tentative 新 API ~90 + gradient.colormix 插值空间 2 + halftransparent 1 + current.removed 1（js-dom 面） |
+| G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
+| G7 | 剩余失败聚类 | 🔄 text .tentative DOM 布局面 ~74（indexFromOffset/selectionRects/fillTextCluster——依赖 document.caretPositionFromPoint/Range.getClientRects）+ emHeight/基线字体度量深面 5 + float16 数据路径 2 + current.removed 1（js-dom 面移交）+ ctor.basics 陈旧子断言 1（Uint8Array 2 参 INDEX_SIZE 与同文件 3 参 TypeError 不可兼得，当前 spec WebIDL 行为） |
 
 ## 待用户决策清单
 
@@ -103,11 +112,13 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 
 ## 下一步计划
 
-1. **text .tentative 新 API 面**（~90 用例：TextMetrics.indexFromOffset/selectionRects/cluster 系列——2024+ spec 新增，依赖 DOM 布局面或需 shim TextMetrics 扩展）
-2. **gradient.colormix/relativecolor 插值空间**（2 用例：color-mix 渐变停止点的规范插值空间——深 CSS Color 4 特性）
-3. **G6 OffscreenCanvas Worker**（深结构，等点名）
+1. **text .tentative DOM 布局面**（~74 用例：TextMetrics.getIndexFromOffset/getSelectionRects 与
+   document.caretPositionFromPoint / Range.getClientRects 对照——DOM 布局深结构，记待决策）
+2. **emHeight/baseline 字体度量深面**（5 用例：OS/2 usWinAscent 与 em square 定位算法——需字体表
+   解析扩展 + Chromium 算法确认）
+3. **float16 ImageData 数据路径**（2 用例：getImageData/putImageData options + display-p3↔srgb 转换）
 4. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）
-5. halftransparent alpha 精度（u8 alpha 量化 vs Chromium 浮点保留——需 Color 结构改型，深面）
+5. **current.removed**（1）：同步脚本内 remove 后 host 快照未应用 mutation——js-dom 流共享面
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
@@ -121,6 +132,6 @@ drawImage 阴影/pattern 锚定/CSS Color 4 面/letterSpacing 全落地；覆盖
 
 ## 验证基线
 
-- 测试基线：canvas 759 全绿（覆盖率 89.28%）；WPT canvas 657+ Pass / ~138 Fail / 57 超时（超时多为 reftest 格式文件）
+- 测试基线：canvas 766 全绿（覆盖率 89.28% 基线，本轮 +9 单测）；WPT canvas 全量以最终运行 JSON 为准（evidence/ 存档）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test`
 - 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；CanvasTest.ttf/yellow*.png 已入脚本）

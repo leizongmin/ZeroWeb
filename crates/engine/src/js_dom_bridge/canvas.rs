@@ -76,9 +76,38 @@ fn color_to_canvas_css(c: &zero_render_foundation::color::Color) -> String {
     if c.a == 255 {
         format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
     } else {
-        let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
-        format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
+        format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, serialize_alpha(c.a))
     }
+}
+
+/// R34xx：alpha 序列化——最短十进制表示使 `round(d*255) == a`（u8 无法精确保存
+/// 0.5*255=127.5，短表示使 'rgba(255,255,255,0.5)' 回读 '0.5' 而非 '0.502'；
+/// driving: 2d.fillStyle.get.halftransparent/semitransparent）。0 特判为 '0'。
+fn serialize_alpha(a: u8) -> String {
+    if a == 0 {
+        return "0".to_string();
+    }
+    // round(n/10^p * 255) == a ⟺ n/10^p ∈ [(a-0.5)/255, (a+0.5)/255)。
+    for p in 1..=6 {
+        let scale = 10_u64.pow(p);
+        let lo = (((a as f64 - 0.5) / 255.0) * scale as f64).floor() as i64;
+        let hi = (((a as f64 + 0.5) / 255.0) * scale as f64).ceil() as i64;
+        for n in lo.max(0)..=hi.min(scale as i64) {
+            if ((n as f64 / scale as f64 * 255.0).round() as i64) == a as i64 {
+                // 首位 p 无尾零（更短的 p 已排除同值），直接按 p 位小数格式化。
+                let int = (n / scale as i64) as u64;
+                let frac = (n % scale as i64) as u64;
+                return if frac == 0 {
+                    int.to_string()
+                } else {
+                    format!("{int}.{frac:0p$}", p = p as usize)
+                };
+            }
+        }
+    }
+    // 兜底：3 位四舍五入（旧行为；实际不可能到达——p=6 已覆盖全部 u8）。
+    let alpha = ((a as f64 / 255.0) * 1000.0).round() / 1000.0;
+    alpha.to_string()
 }
 
 /// R34xx：CSS Color 4 颜色序列化（color-mix/相对色输入 → `color(srgb r g b[/ a])`——
@@ -807,8 +836,19 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "addColorStop" => {
             let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
             let offset = f(1).clamp(0.0, 1.0);
+            let color_str = arg(2);
             if let Some(style) = reg.gradients.get_mut(&gid) {
-                style.add_color_stop(offset, parse_canvas_color(arg(2)));
+                // R34xx：stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值
+                //（driving: 2d.gradient.colormix/relativecolor——Chromium 对现代颜色 stop
+                // 按 OKLab 插值，legacy 颜色按 sRGB）。
+                if matches!(
+                    zero_css_parser::values::parse_color(color_str.trim()),
+                    Some(zero_css_parser::values::ColorValue::Mix(_))
+                        | Some(zero_css_parser::values::ColorValue::RelativeColor(_))
+                ) {
+                    style.set_oklab_interpolation(true);
+                }
+                style.add_color_stop(offset, parse_canvas_color(color_str));
             }
             // R34xx：live 重放——引用该渐变 id 的 context 样式同步更新（2d.gradient.object.update：
             // 第二次 fill 前 addColorStop 新停止点须生效）。
@@ -893,14 +933,24 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R34xx：fontKerning（'none' → shaping 关 kern——2d.text.drawing.style.fontKerning
+        // 的 measure 宽度对比）。值集大小写在 shim 侧校验。
+        "setFontKerning" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                ctx.set_font_kerning(arg(0));
+            }
+            "ok".into()
+        }
         "setFont" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid())
                 && let Some(mut fd) = zero_canvas::FontDescriptor::parse_css_with_current(arg(0), ctx.font().size)
             {
-                // R34xx：letterSpacing/wordSpacing 跨字体变更保持（spec——change.font 用例；
-                // parse_css 新描述符默认 0，须继承现有值）。
+                // R34xx：letterSpacing/wordSpacing/fontKerning 跨字体变更保持（spec——
+                // change.font 用例；parse_css 新描述符默认 0/off，须继承现有值。
+                // reset.fontKerning.none：二次设置 ctx.font 后 kerning 状态保持）。
                 fd.letter_spacing = ctx.font().letter_spacing.clone();
                 fd.word_spacing = ctx.font().word_spacing.clone();
+                fd.kerning_none = ctx.font().kerning_none;
                 ctx.set_font(fd);
                 // 解析失败：spec 忽略非法 font 串，保持原值（返 ok 不报错）。
             }
@@ -1294,5 +1344,38 @@ fn parse_image_smoothing_quality(s: &str) -> zero_canvas::ImageSmoothingQuality 
         "low" => Q::Low,
         "medium" => Q::Medium,
         _ => Q::High, // high + 非法值 → High（headless 默认）
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // R34xx：alpha 最短可回滚序列化（driving: 2d.fillStyle.get.halftransparent）。
+    #[test]
+    fn test_serialize_alpha_roundtrip() {
+        // 0.5 → u8 128（127.5 四舍五入）→ 序列化回 '0.5' 而非 '0.502'。
+        assert_eq!(serialize_alpha(128), "0.5");
+        // 0.45 → 115（114.75 四舍五入）→ '0.45'（semitransparent 正则 0\.4\d+）。
+        assert_eq!(serialize_alpha(115), "0.45");
+        assert_eq!(serialize_alpha(0), "0");
+        assert_eq!(serialize_alpha(204), "0.8"); // 0.8*255=204 精确
+        assert_eq!(serialize_alpha(191), "0.75"); // 0.75*255=191.25 → 191
+        assert_eq!(serialize_alpha(3), "0.01"); // 0.01*255=2.55 → 3
+        // 任意 u8 都能找到 ≤6 位表示（兜底分支不可达）。
+        for a in 0u8..=255u8 {
+            let s = serialize_alpha(a);
+            assert!(!s.is_empty(), "a={a}");
+        }
+    }
+
+    #[test]
+    fn test_color_to_canvas_css_alpha() {
+        let c = zero_render_foundation::color::Color::rgba(255, 255, 255, 128);
+        assert_eq!(color_to_canvas_css(&c), "rgba(255, 255, 255, 0.5)");
+        let c = zero_render_foundation::color::Color::rgba(0, 255, 0, 0);
+        assert_eq!(color_to_canvas_css(&c), "rgba(0, 255, 0, 0)");
+        let c = zero_render_foundation::color::Color::rgb(255, 0, 0);
+        assert_eq!(color_to_canvas_css(&c), "#ff0000");
     }
 }
