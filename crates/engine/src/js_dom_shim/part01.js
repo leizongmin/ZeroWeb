@@ -453,6 +453,12 @@
   // prefix（`"p:l"`）/namespace。`tagName`/`nodeName`/`prefix`/`localName`/`namespaceURI` getter 先查此表，
   // 命中则返大小写敏感正确值（不经 `_realTag` 大写化）。与 _piHandles 对称的 handle 标识模式。
   var _nsHandles = {};
+  // js-dom M4 R19：DOMTokenList（classList）per-element 缓存。spec `dom-element-classlist`——`classList` 是
+  // accessor property，**每次访问返回同一 cached DOMTokenList 对象**（WPT `assert_equals(e.classList, expect)`
+  // 要求 identity 相等：`var expect=e.classList; e.classList="foo"; assert_equals(e.classList, expect)`）。
+  // 旧实现每次 `_classListProxy` 新建 Proxy → identity 不等（classList assignment no-op 后再读得新对象）。
+  // 经 `_clsProxyCache[key]` 缓存，同元素 get 始终返同一 proxy（与 `_proxyCache` 元素代理缓存同模式）。
+  var _clsProxyCache = {};
   // ── 浏览器运行时桩（定时器、navigator、location 等）──
   var _timerId = 1;
   // queueMicrotask——调度 microtask（高频：每个异步库 / polyfill / 框架都用）。本 V8 embed 未暴露

@@ -729,6 +729,8 @@
   // forEach 迭代 + replace + toggle(cond) 条件切换。Proxy 暴露动态 length + indexed 访问（每次读 live 列表）。
   function _classListProxy(sel, handle) {
     var key = _elKey(sel, handle);
+    // R19：per-element 缓存——spec classList accessor 每次返回同一 DOMTokenList 对象（WPT identity 断言）。
+    if (_clsProxyCache[key]) return _clsProxyCache[key];
     // 当前列表（缓存优先，反映同脚本内累积操作，非 stale snapshot）。
     // spec DOMTokenList：token 集合为**有序去重**（首个出现位置保留，后续重复丢弃）+ 按 ASCII 空白分隔。
     // `"a a a"` → `["a"]`（length 1）；`"\t\n\f\r a\t\n\f\r b\t\n\f\r "` → `["a","b"]`（R13 classlist 去重）。
@@ -742,13 +744,16 @@
       }
       return out;
     };
-    var write = function (arr) {
+    var write = function (arr, force) {
       // spec DOMTokenList runUpdate：比较「新 token 集合序列化（单空格分隔）」与「原 attribute 原始值」，
-      // 不同才 setAttribute（避免无谓 mutation；MutationObserver 检查依赖此）。add/remove/replace 总经此
+      // 不同才 setAttribute（避免无谓 mutation；MutationObserver 检查依赖此）。add/remove 总经此
       //（即使 token 集合不变，原值含尾空格/重复时仍规范化重写，WPT checkAdd("a b c ",["a","a"],"a b c")）。
       // toggle 的 force 分支无变化时直接 return 不调 write（spec toggle no-op，WPT checkToggle 保持原样）。
+      // **replace 例外**（R19）：spec `dom-domtokenlist-replace` 返 true 时**必触发 mutation**（即使规范化后
+      // attribute 值未变——WPT checkReplace("a","a","a",true,"a") 期望 mutation），故 replace 调 `write(p, true)`
+      // 强制 setAttribute + notify，绕过 runUpdate 的「值相同 return」。返 false（oldT 不存在）时不 write。
       var v = arr.join(' ');
-      if (v === _readClass(key, sel, handle)) return;
+      if (!force && v === _readClass(key, sel, handle)) return;
       _classCache[key] = v;
       if (handle) __zw_set_attr_handle(handle, 'class', v);
       else __zw_set_attr(sel, 'class', v);
@@ -824,24 +829,46 @@
       replace: function (oldT, newT) {
         oldT = String(oldT);
         newT = String(newT);
-        check(oldT);
-        check(newT);
-        // spec dom-domtokenlist-replace：oldT===newT 时若 oldT 存在返 true 且 runUpdate（规范化 attribute，
-        // WPT checkReplace("a","a") with "a a a  b" 期望 mutation）。无则返 false。
+        // spec `dom-domtokenlist-replace` 校验顺序**特殊**（区别 add/remove 的逐参先空后空白）：
+        // 先校验**两个** token 的空串（SyntaxError），再校验**两个**的 ASCII 空白（InvalidCharacterError）。
+        // 故 `replace(" ","")` → newT="" 先抛 SyntaxError（非 oldT=" " 的 InvalidCharacterError）。
+        // WPT checkReplace(null," ","",...,"SyntaxError")。用 globalThis.DOMException 保 identity（R6）。
+        var DOMEx = globalThis.DOMException;
+        if (oldT === '' || newT === '') {
+          throw new DOMEx("An invalid or illegal string was specified.", "SyntaxError");
+        }
+        if (/\s/.test(oldT) || /\s/.test(newT)) {
+          throw new DOMEx("An invalid or illegal string was specified.", "InvalidCharacterError");
+        }
+        // spec：oldT===newT 时若 oldT 存在返 true 且 runUpdate（规范化 attribute）。R19：返 true 必触发
+        // mutation（即使规范化后值未变，WPT checkReplace("a","a","a",true,"a") 期望 mutation）→ write(cur(), true)。
         if (oldT === newT) {
-          if (cur().indexOf(oldT) < 0) return false;
-          write(cur()); // runUpdate：规范化（去重/空白）attribute
+          var c0 = cur();
+          if (c0.indexOf(oldT) < 0) return false;
+          write(c0, true); // runUpdate + 强制 mutation
           return true;
         }
         var p = cur();
         var i = p.indexOf(oldT);
         if (i < 0) return false;
-        // spec：在 oldT 位置替换为 newT；若 newT 已存在别处，移除旧位置保留 newT 在 oldT 位置（有序去重）。
-        // WPT checkReplace("c b a","c","a")→expected "a b"（a 占 c 的 index 0，原 a 去重）。
+        // spec `dom-domtokenlist-replace`：在 oldT 首位置替换为 newT，结果保持有序去重（首个出现位置保留）。
+        // WPT checkReplace：
+        //   "a b c","c","a" → "a b"（c@2 换 a → [a,b,a] 去重保首个 a@0 → [a,b]）
+        //   "c b a","c","a" → "a b"（c@0 换 a → [a,b,a] 去重保首个 a@0 → [a,b]）
+        //   "a b c","b","d" → "a d c"（b@1 换 d，d 不在 → [a,d,c]）
+        // 算法：splice 替换 oldT 为 newT，然后全局有序去重（与 cur() 同款 seen 表，首个保留）。
+        var p = cur();
+        var i = p.indexOf(oldT);
+        if (i < 0) return false;
         p.splice(i, 1, newT);
-        // 移除 newT 在后续位置的重复（保留刚插入的 index i）。
-        for (var j = p.length - 1; j > i; j--) { if (p[j] === newT) p.splice(j, 1); }
-        write(p);
+        // 全局有序去重（保留每个 token 首次出现位置）。涵盖 newT 替换 oldT 后与其他位置的重复。
+        var seen = Object.create(null);
+        var out = [];
+        for (var k = 0; k < p.length; k++) {
+          if (!seen[p[k]]) { seen[p[k]] = 1; out.push(p[k]); }
+        }
+        // R19：返 true 必触发 mutation（强制 write，绕过 runUpdate「值相同 return」）。
+        write(out, true);
         return true;
       },
       item: function (i) {
@@ -873,6 +900,7 @@
       },
     });
     target[Symbol.iterator] = target.values;
+    _clsProxyCache[key] = proxy; // R19：缓存，同元素 get 始终返同一 DOMTokenList（spec identity）
     return proxy;
   }
 

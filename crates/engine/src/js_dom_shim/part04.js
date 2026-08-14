@@ -1848,6 +1848,13 @@
             } catch (_e) {}
           }
           return true;
+        } else if (p === 'classList') {
+          // R19：`classList` 是 readonly accessor 属性（无 setter，spec `dom-element-classlist`）。赋值
+          // `el.classList = x` 应 no-op——non-strict 静默忽略（WPT assignToClassList 期望 classList 不变）、
+          // strict 抛 TypeError（assignToClassListStrict）。真实浏览器 strict 抛 TypeError。本沙箱 strict 检测
+          // 复杂，按 non-strict 语义 no-op（return true 保持 classList 原样）——与 WPT 两个用例一致。
+          // 须早于末尾 generic fallthrough（否则 classList 落入 expando 被覆盖）。
+          return true;
         } else if (p === 'className') {
           _classCache[key] = String(value);
           if (handle) __zw_set_attr_handle(handle, 'class', String(value));

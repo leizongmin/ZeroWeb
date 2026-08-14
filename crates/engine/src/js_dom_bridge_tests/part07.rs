@@ -2697,6 +2697,134 @@ fn test_classlist_dedupe_and_contains_whitespace_r13() {
 }
 
 #[test]
+fn test_classlist_replace_validation_dedup_mutation_and_assignment_r19() {
+    // js-dom M4 R19：classList.replace 四个 spec bug 修复（WPT Element-classlist.html checkReplace）：
+    // ① 校验顺序特殊——两 token 的空串 SyntaxError 先于两 token 的 ASCII 空白 InvalidCharacterError
+    //    （区别 add/remove 逐参先空后空白），故 replace(" ","") 抛 SyntaxError（newT="" 先于 oldT=" " 空白）。
+    // ② replace("c","a") in "a b c" → "a b"（oldT 位置换 newT 后全局有序去重，保首个 newT）。
+    // ③ replace("a","a") oldT===newT 存在 → 返 true 且必触发 mutation（强制 write，绕过 runUpdate「值相同 return」）。
+    // ④ classList = x assignment no-op（readonly accessor 无 setter，须早于 generic expando fallthrough）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='d' class='x'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 校验顺序：replace(" ","") → SyntaxError（newT="" 空串先于 oldT=" " 空白）。
+    // capture 异常 name，期望 "SyntaxError"。
+    sandbox
+        .execute(
+            "globalThis.__e1 = null;\
+             try { document.querySelector('#d').classList.replace(' ', ''); }\
+             catch (e) { globalThis.__e1 = e.name; }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1)").unwrap().value,
+        "SyntaxError",
+        "R19 replace(' ','') 抛 SyntaxError（newT 空串先于 oldT 空白）"
+    );
+
+    // ② replace 去重：建 div class="a b c"，replace("c","a") → "a b"（c 位置换 a，全局去重保首个 a）。
+    sandbox
+        .execute(
+            "globalThis.__e2 = document.createElement('div'); __e2.className = 'a b c';\
+             __e2.classList.replace('c', 'a');\
+             globalThis.__cl2 = __e2.className;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cl2)").unwrap().value,
+        "a b",
+        "R19 replace('c','a') in 'a b c' → 'a b'（去重）"
+    );
+    // 另一方向：replace("c","a") in "c b a" → "a b"（c@0 换 a，去重保首个）。
+    sandbox
+        .execute(
+            "globalThis.__e2b = document.createElement('div'); __e2b.className = 'c b a';\
+             __e2b.classList.replace('c', 'a');\
+             globalThis.__cl2b = __e2b.className;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cl2b)").unwrap().value,
+        "a b",
+        "R19 replace('c','a') in 'c b a' → 'a b'（c@0 换 a 去重）"
+    );
+
+    // ③ oldT===newT 存在 → 返 true（规范化 attribute）。
+    sandbox
+        .execute(
+            "globalThis.__e3 = document.createElement('div'); __e3.className = 'a a a  b';\
+             globalThis.__r3 = __e3.classList.replace('a', 'a');\
+             globalThis.__cl3 = __e3.className;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "true",
+        "R19 replace('a','a') oldT 存在 → 返 true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cl3)").unwrap().value,
+        "a b",
+        "R19 replace('a','a') 规范化 'a a a  b' → 'a b'"
+    );
+    // oldT===newT 不存在 → 返 false。
+    sandbox
+        .execute(
+            "globalThis.__e3b = document.createElement('div'); __e3b.className = 'x';\
+             globalThis.__r3b = __e3b.classList.replace('z', 'z');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3b)").unwrap().value,
+        "false",
+        "R19 replace('z','z') oldT 不存在 → 返 false"
+    );
+
+    // ④ classList assignment no-op：classList = 'foo' 后 classList 不变（仍可读 className，未被覆盖为串）。
+    //    且 identity——spec classList 是 cached accessor，每次 get 返同一对象（WPT assignToClassList 断言
+    //    assert_equals(e.classList, expect)，赋值前引用 expect === 赋值后再读的 classList）。
+    sandbox
+        .execute(
+            "globalThis.__e4 = document.createElement('div'); __e4.className = 'orig';\
+             globalThis.__expect4 = __e4.classList;\
+             __e4.classList = 'foo';\
+             globalThis.__cl4 = __e4.className;\
+             globalThis.__isFn = typeof __e4.classList.add;\
+             globalThis.__same = (__e4.classList === globalThis.__expect4);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cl4)").unwrap().value,
+        "orig",
+        "R19 classList='foo' no-op（className 保持原值）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__isFn)").unwrap().value,
+        "function",
+        "R19 classList 赋值后仍是 DOMTokenList 对象（add 是 function，非被串覆盖）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__same)").unwrap().value,
+        "true",
+        "R19 classList identity：cached accessor 每次返回同一 DOMTokenList 对象"
+    );
+}
+
+#[test]
 fn test_create_event_aliases_and_not_supported_r14() {
     // js-dom M4 R14：document.createEvent spec 合规——① alias 表覆盖 WPT Document-createEvent.https.html
     // 全集（含复数 Events/HTMLEvents/SVGEvents→Event、MouseEvents→MouseEvent、UIEvents→UIEvent、custom→CustomEvent
