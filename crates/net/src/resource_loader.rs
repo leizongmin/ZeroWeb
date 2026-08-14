@@ -198,10 +198,25 @@ impl ResourceLoader {
     /// 无 body 的 GET 使用缓存和共享调度；其他方法 write-through，成功后使目标 URI
     /// 的全部缓存变体失效。
     pub fn submit_http(&self, request: HttpRequest, priority: FetchPriority) -> Receiver<FetchJobResult> {
+        self.submit_http_in_partition(request, priority, self.partition.clone())
+    }
+
+    /// 受理 HTTP 请求并显式指定顶级站点缓存分区。
+    pub fn submit_http_in_partition(
+        &self,
+        request: HttpRequest,
+        priority: FetchPriority,
+        partition: impl Into<String>,
+    ) -> Receiver<FetchJobResult> {
+        let partition = partition.into();
         if request.method == HttpMethod::Get && request.body.is_none() {
-            return self.submit(ResourceRequest::get(request.url, priority).with_headers(request.headers));
+            return self.submit(
+                ResourceRequest::get(request.url, priority)
+                    .with_headers(request.headers)
+                    .with_partition(partition),
+            );
         }
-        let cache = self.cache_for_partition(&self.partition);
+        let cache = self.cache_for_partition(&partition);
         let url = request.url.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
