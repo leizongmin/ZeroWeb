@@ -20,10 +20,12 @@ RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
 
 # 第一批：dom/nodes/ 核心 Node/Element/Document 主线程 .html 用例。
-# 后续 M4 切片按需追加 "dom/events" / "dom/collections" / "dom/lists" /
-# "dom/ranges" / "dom/traversal"。
+# R21：追加 dom/events/（81 .html——Event-dispatch 系列 / EventTarget / EventListener，直接测试
+# addEventListener/dispatchEvent/事件传播，是 JS↔DOM 事件桥核心能力面，高 ROI 缺口暴露）。
+# 后续 M4 切片按需追加 "dom/collections" / "dom/lists" / "dom/ranges" / "dom/traversal"。
 SUBDIRS=(
   "dom/nodes"
+  "dom/events"
 )
 
 fetch_raw() {

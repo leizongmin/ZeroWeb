@@ -43,7 +43,8 @@ const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 /// 由 `tests/wpt-runner/scripts/fetch-dom-subset.sh` 维护（wpt-data gitignored，
 /// 用例按需 fetch、不入库）；新子目录随 M4 切片扩展追加。dom 用例只需
 /// `resources/testharness.js`（runner 内联），不依赖 canvas-tests.js。
-pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes"];
+/// R21 追加 dom/events（Event-dispatch 系列 / EventTarget / EventListener——事件桥核心面）。
+pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes", "dom/events"];
 
 /// WPT subtest status.
 ///
