@@ -160,6 +160,8 @@ pub struct ImgResource {
     pub src: String,
     /// `loading=lazy`。
     pub lazy: bool,
+    /// HTML `fetchpriority` 提示（`high` / `low` / `auto`）。
+    pub fetchpriority: Option<String>,
 }
 
 /// 需要获取以提交基础加载状态的媒体/资源元素类型。
@@ -273,7 +275,11 @@ pub fn extract_img_resources(html: &str) -> Vec<ImgResource> {
         let lazy = doc
             .get_attribute(img_id, "loading")
             .is_some_and(|v| v.trim().eq_ignore_ascii_case("lazy"));
-        out.push(ImgResource { src, lazy });
+        out.push(ImgResource {
+            src,
+            lazy,
+            fetchpriority: doc.get_attribute(img_id, "fetchpriority"),
+        });
     }
     out
 }

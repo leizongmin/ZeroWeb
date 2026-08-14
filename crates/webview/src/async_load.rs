@@ -785,8 +785,15 @@ impl AsyncPageLoad {
                 continue;
             }
             let key = image_resource_key(&abs, None);
+            // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#attr-fetchpriority
+            let mut meta = ResourceFetchMeta::IMAGE;
+            match img.fetchpriority.as_deref().map(str::trim) {
+                Some(value) if value.eq_ignore_ascii_case("high") => meta.priority = 3,
+                Some(value) if value.eq_ignore_ascii_case("low") => meta.priority = 1,
+                _ => {}
+            }
             self.img_pending
-                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, ResourceFetchMeta::IMAGE)));
+                .push((abs.clone(), key, host.fetch_bytes_meta(&abs, meta)));
         }
         // R1795：CSS `url()` 图片引用（background-image / list-style-image /
         // border-image-source）一并异步抓取——与 sync 路径（webview.rs fetch_image_subresources）
