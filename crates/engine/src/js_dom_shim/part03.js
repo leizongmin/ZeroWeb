@@ -1537,7 +1537,17 @@
   // `el.parentNode` / `parentElement`：经 host `__zw_parent(sel)` 返真实元素父选择器
   //（修正旧 stub 对嵌套元素恒返 body 的 bug）。handle-only（detached）或无回调 → fallback stub
   //（detached 元素无真实 parent；html/body/head 用文档结构近似）。
+  // R34xx：本地已移除元素标记（sel → true）——同步脚本内 `el.remove()` 后 parentNode
+  // 须立即返 null（host mutation 异步应用，快照仍含该元素；2d.shadow.attributes.
+  // shadowColor.current.removed：remove 后 currentColor 解析为黑）。
+  var _zwRemovedSels = {};
+  function _zwMarkRemoved(sel) { if (sel) _zwRemovedSels[sel] = true; }
+  function _zwUnmarkRemoved(sel) { if (sel) delete _zwRemovedSels[sel]; }
+  function _zwIsRemoved(sel) { return !!(sel && _zwRemovedSels[sel]); }
+
   function _parentNodeFor(sel, handle) {
+    // R34xx：本地移除标记优先——remove() 后（mutation 未应用）parentNode 返 null。
+    if (_zwIsRemoved(sel)) return null;
     if (sel && typeof __zw_parent === 'function') {
       try {
         var p = __zw_parent(sel);

@@ -1219,6 +1219,9 @@
         }
         if (prop === 'appendChild') {
           return function(child) {
+            // R34xx：重新插入清除移除标记（append 后元素回到文档）。
+            if (sel) _zwUnmarkRemoved(sel);
+            if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
             if (child && child.__zwHandle) {
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子），供连接态传播。
               var ceAdded;
@@ -1344,9 +1347,10 @@
         if (prop === 'remove') {
           return function() {
             // R2994：移除自身（含 handle 子树）→ 断连（仅此前已连入的 custom element 分派 disconnectedCallback）。
+            // R34xx：本地移除标记（同步脚本内 parentNode 立即返 null——host mutation 异步应用）。
             var ceSelf = _makeProxy(sel, handle);
             if (handle) __zw_remove_handle(handle);
-            else __zw_remove(sel);
+            else { __zw_remove(sel); _zwMarkRemoved(sel); }
             _ceApplyConn(ceSelf, false);
           };
         }
