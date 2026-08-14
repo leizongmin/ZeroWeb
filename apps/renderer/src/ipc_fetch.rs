@@ -159,11 +159,37 @@ impl<'a> IpcAsyncFetchHost<'a> {
         self.inflight.pending.insert(request_id, InflightReply::Ignore);
         Ok(())
     }
+
+    fn issue_dns_prefetch(&mut self, origin: &str) -> Result<(), String> {
+        let request_id = *self.next_fetch_id;
+        *self.next_fetch_id += 1;
+        tracing::info!(request_id, url = origin, "renderer IPC DNS prefetch request");
+        let msg = IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id,
+                url: origin.to_string(),
+                // Internal browser-process signal; this is never an HTTP method sent to an origin.
+                method: "DNS-PREFETCH".into(),
+                headers: Vec::new(),
+                body: None,
+            }),
+        };
+        self.outbound
+            .send(msg)
+            .map_err(|e| format!("IPC DNS prefetch send failed: {e}"))?;
+        self.inflight.pending.insert(request_id, InflightReply::Ignore);
+        Ok(())
+    }
 }
 
 impl AsyncFetchHost for IpcAsyncFetchHost<'_> {
     fn preconnect(&mut self, origin: &str) {
         let _ = self.issue_preconnect(origin);
+    }
+
+    fn dns_prefetch(&mut self, origin: &str) {
+        let _ = self.issue_dns_prefetch(origin);
     }
 
     fn fetch_text_meta(&mut self, url: &str, meta: ResourceFetchMeta) -> Receiver<Result<String, String>> {
@@ -364,6 +390,33 @@ mod tests {
         };
         assert!(inflight.try_complete(&response));
         assert!(inflight.pending.is_empty());
+    }
+
+    #[test]
+    fn ipc_dns_prefetch_uses_internal_method_and_discards_response() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+        let mut next_id = 9_u64;
+        let mut inflight = InflightIpcFetches::new();
+        {
+            let mut host = IpcAsyncFetchHost::new(&mut outbound, &mut next_id, &mut inflight);
+            host.dns_prefetch("https://cdn.example.test");
+        }
+
+        let frame = buf.0.lock().unwrap();
+        let request = zero_protocol::deserialize(&frame[4..]).unwrap();
+        assert!(matches!(
+            request.kind,
+            IpcMessageKind::FetchRequest(FetchParams {
+                request_id: 9,
+                method,
+                headers,
+                body: None,
+                ..
+            }) if method == "DNS-PREFETCH" && headers.is_empty()
+        ));
+        drop(frame);
+        assert!(matches!(inflight.pending.get(&9), Some(InflightReply::Ignore)));
     }
 
     #[test]

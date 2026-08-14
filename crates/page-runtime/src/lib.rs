@@ -39,6 +39,9 @@ pub trait AsyncFetchHost {
     /// 异步预热连接；默认忽略，供不具备网络权限的宿主安全降级。
     fn preconnect(&mut self, _origin: &str) {}
 
+    /// 异步预解析 DNS；默认忽略，供不具备网络权限的宿主安全降级。
+    fn dns_prefetch(&mut self, _origin: &str) {}
+
     /// 抓取主文档请求。默认宿主仅支持无 body GET；支持表单 POST 的宿主必须显式覆盖。
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
         if method.eq_ignore_ascii_case("GET") && body.is_none() {

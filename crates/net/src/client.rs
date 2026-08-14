@@ -236,6 +236,40 @@ impl HttpClient {
         rx
     }
 
+    /// 异步预解析 HTTP(S) origin 的 DNS，不建立 HTTP 连接。
+    pub async fn dns_prefetch_async(&self, origin: &str) -> Result<(), NetError> {
+        let url = url::Url::parse(origin)?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return Err(NetError::UrlParse(format!(
+                "dns-prefetch requires an HTTP(S) origin: {origin}"
+            )));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(NetError::UrlParse(
+                "dns-prefetch origin must not contain credentials".to_string(),
+            ));
+        }
+        let host = url.host_str().expect("validated host").to_string();
+        let port = url.port_or_known_default().expect("HTTP(S) has a default port");
+        tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map_err(|error| NetError::Network(format!("DNS lookup failed: {error}")))?
+            .next()
+            .ok_or_else(|| NetError::Network("DNS lookup returned no addresses".to_string()))?;
+        Ok(())
+    }
+
+    /// 非阻塞提交 DNS 预取；接收端获得成功或网络错误。
+    pub fn dns_prefetch(&self, origin: impl Into<String>) -> Receiver<Result<(), NetError>> {
+        let client = self.clone();
+        let origin = origin.into();
+        let (tx, rx) = channel();
+        async_runtime().spawn(async move {
+            let _ = tx.send(client.dns_prefetch_async(&origin).await);
+        });
+        rx
+    }
+
     /// 不依赖 blocking client 状态的异步请求实现，可安全在 Tokio task 内调用。
     pub async fn send_async_with_timeout(timeout_secs: u64, request: HttpRequest) -> Result<HttpResponse, NetError> {
         Self::send_async_with_config(timeout_secs, 10, request).await
@@ -1931,6 +1965,29 @@ mod integration_tests {
         ));
         assert!(matches!(
             runtime.block_on(client.preconnect_async("https://user:pass@example.test")),
+            Err(NetError::UrlParse(_))
+        ));
+    }
+
+    #[test]
+    fn dns_prefetch_resolves_without_an_http_request() {
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        runtime
+            .block_on(client.dns_prefetch_async("http://localhost:9"))
+            .expect("resolve localhost without connecting to port 9");
+    }
+
+    #[test]
+    fn dns_prefetch_rejects_non_http_or_credentialed_origins() {
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        assert!(matches!(
+            runtime.block_on(client.dns_prefetch_async("file:///tmp/nope")),
+            Err(NetError::UrlParse(_))
+        ));
+        assert!(matches!(
+            runtime.block_on(client.dns_prefetch_async("https://user:pass@example.test")),
             Err(NetError::UrlParse(_))
         ));
     }

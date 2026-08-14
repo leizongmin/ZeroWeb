@@ -15,6 +15,11 @@ fn preconnecting_origins() -> &'static Mutex<HashSet<String>> {
     ORIGINS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+fn dns_prefetching_origins() -> &'static Mutex<HashSet<String>> {
+    static ORIGINS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    ORIGINS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
 /// 非阻塞预热连接；失败只记录日志，不影响页面加载。
 pub fn preconnect_async(origin: impl Into<String>) {
     let origin = origin.into();
@@ -34,6 +39,29 @@ pub fn preconnect_async(origin: impl Into<String>) {
         preconnecting_origins()
             .lock()
             .expect("preconnect origin mutex poisoned")
+            .remove(&origin);
+    });
+}
+
+/// 非阻塞预解析 DNS；失败只记录日志，不影响页面加载。
+pub fn dns_prefetch_async(origin: impl Into<String>) {
+    let origin = origin.into();
+    let mut origins = dns_prefetching_origins()
+        .lock()
+        .expect("DNS prefetch origin mutex poisoned");
+    if !origins.insert(origin.clone()) {
+        return;
+    }
+    drop(origins);
+
+    let rx = HttpClient::new().dns_prefetch(origin.clone());
+    zero_net::client::spawn_network_bridge(move || {
+        if let Ok(Err(error)) = rx.recv() {
+            tracing::debug!(%error, "DNS prefetch failed");
+        }
+        dns_prefetching_origins()
+            .lock()
+            .expect("DNS prefetch origin mutex poisoned")
             .remove(&origin);
     });
 }

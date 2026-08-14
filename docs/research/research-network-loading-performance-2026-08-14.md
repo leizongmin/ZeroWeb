@@ -9,8 +9,8 @@
 - 已完成：统一 `ResourceLoader` 入口，页面主文档、CSS/图片/脚本、生产 `fetch()` 与动态 `import()` 均经该入口；请求身份合并、全局与 origin 并发预算、同优先级 origin 轮转、等待队列容量上限、请求缓存指令、缓存分区、unsafe 请求的同源关联 URI 失效、浏览器页面 origin 分区传递、匿名加载生命周期事件（navigation/destination/origin/时序/字节/缓存结果/合并数）、`fetchpriority`（preload 与图片）及 lazy 图片低优先级。
 - 已完成：本地 TCP fixture 覆盖 fresh hit、身份/Vary 隔离、缓存分区、`no-store`、并发 ETag 304 元数据合并、关键资源拥塞优先及匿名加载指标；加载器提供 cache/revalidate/network/only-if-cached、字节数与等待时长聚合计数，结果桥接复用有上限的共享 Tokio blocking pool，避免按请求创建线程。
 - P2 已完成接缝：`HttpClient::send_async_stream` 提供不聚合响应体的异步 chunk 回调及与普通 async 请求一致的重定向/安全头语义；缓存加载器仍使用全量体路径以保证缓存写入原子性。
-- P2 已完成：`link rel=preconnect` 以无凭据 `HEAD` 异步预热共享 HTTP 客户端连接池；同进程与 renderer IPC 路径均已接线，且不写 HTTP 缓存。
-- 未完成：将流式消费者接入页面/解码器、`dns-prefetch`、HTTP/2 协商 telemetry 与 RFC 9218 `Priority`；这些仍按本文 P2 边界单独实施。
+- P2 已完成：`link rel=preconnect` 以无凭据 `HEAD` 异步预热共享 HTTP 客户端连接池；`link rel=dns-prefetch` 仅异步解析无凭据 HTTP(S) origin 的 DNS、不建立 HTTP 连接；两项均在同进程与 renderer→browser IPC 路径接线，且不读写 HTTP 缓存。
+- 未完成：将流式消费者接入页面/解码器、HTTP/2 协商 telemetry 与 RFC 9218 `Priority`；这些仍按本文 P2 边界单独实施。
 - **协议边界：HTTP/3/QUIC 当前明确不支持，也不属于 P2 待办。** 本专项只实现及验收 HTTP/1.1 与 HTTP/2；后续若要支持 HTTP/3，必须另立 RFC、评审依赖与安全/性能验收，不能由本计划隐式引入。
 
 ## 阅读指引：来源分级

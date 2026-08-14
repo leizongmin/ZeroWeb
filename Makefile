@@ -85,8 +85,8 @@ target/test-guard: scripts/test-guard.rs
 	@$(MKDIR_TARGET)
 	rustc -O scripts/test-guard.rs -o target/test-guard
 
-# 全量测试（被 test-guard 包裹）。无人值守 / rally / CI 请用此 target，
-# 不要裸跑 cargo test。可调阈值：./target/test-guard --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
+# 全量测试：先无内存上限编译，再由 test-guard 包裹已编译测试运行。无人值守 /
+# rally / CI 请用此 target，不要裸跑 cargo test。可调阈值：./target/test-guard --compile-first --per-proc-mem 8 --total-mem 20 -- cargo test --workspace
 # 2026-08-08：纳入 QuickJS 矩阵（v8/quickjs 接口一致性保证——此前 quickjs 只在 CI，
 # 本地提交门禁覆盖不到，编译/运行破坏 CI 才暴露；QuickJS_CRATES 为 CI quickjs 测试包列表）。
 QUICKJS_CLIPPY_CRATES = zero-dom zero-css-parser zero-style-system zero-layout-engine zero-engine zero-canvas zero-host-runtime zero-net zero-security zero-storage zero-protocol zero-wasm-sandbox zero-page-runtime zero-render-foundation
@@ -95,17 +95,17 @@ QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_C
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target/test-guard
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo build -p zero-renderer -p zero-compositor
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER))
-	.\target\test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
+	cargo build -p zero-renderer -p zero-compositor
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
+	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER))
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
 test: target/test-guard
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo build -p zero-renderer -p zero-compositor
+	cargo build -p zero-renderer -p zero-compositor
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
 	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程
@@ -114,23 +114,23 @@ test: target/test-guard
 	#   覆盖口径一致。历史评估（2026-08-07 nextest 1m29s vs cargo test 1m58s）
 	#   未计入字体缓存与「每测试进程」的相互作用，已被推翻。
 	# - adapter-only GPU 测试从 workspace 主矩阵剥离：headless probe 成功才执行，
-	#   无 adapter 的主机明确跳过 capability 分支；所有命令仍由 test-guard 兜底。
+	#   无 adapter 的主机明确跳过 capability 分支；测试运行仍由 test-guard 兜底。
 	# - 并行化：QuickJS clippy（编译型）与 v8 测试并行跑——clippy 编译的是
 	#   quickjs feature 组合产物（与 v8 产物不冲突），cargo 各自持锁；v8 测试
-	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。test-guard 两个实例
-	#   独立监控各自进程树（阈值各自生效，不叠加）。
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
-	./target/test-guard --per-proc-mem 10 --total-mem 28 -- cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
+	#   （~50s）时长覆盖 clippy 编译，总时长省一个编译段。cargo test 先无约束编译，
+	#   再由 test-guard 仅监管运行阶段；clippy 本身不受内存阈值限制。
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
-	@if ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
+	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
-		./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
-		./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation surface::tests::test_gpu_cpu_rendering_consistency_solid_fill -- --exact --test-threads=1; \
+		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \
+		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-render-foundation surface::tests::test_gpu_cpu_rendering_consistency_solid_fill -- --exact --test-threads=1; \
 	else \
 		echo "wgpu adapter unavailable; adapter-only GPU tests skipped"; \
 	fi
 	# QuickJS 运行测试（v8/quickjs 接口一致性保证）
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES))
 endif
 
 # M4 HTML behavior: selected upstream forms/focus/InputEvent testharness cases.
@@ -150,9 +150,10 @@ testharness-dom: fetch-wpt-dom target/test-guard
 testharness-dom-native: fetch-wpt-dom target/test-guard
 	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo run --release --bin zero-wpt-runner -- testharness-dom $(if $(FILTER),$(FILTER),)
 
-# WPT reftest（release 构建，约 4× 快于 debug；同样被 test-guard 包裹）。
+# WPT reftest：release 构建不受内存限制，已编译 runner 的执行由 test-guard 包裹。
 reftest: fetch-wpt-data target/test-guard
-	./target/test-guard -- cargo run --release --bin zero-wpt-runner -- reftest
+	cargo build --release --bin zero-wpt-runner
+	./target/test-guard -- ./target/release/zero-wpt-runner reftest
 
 # 上游 WPT reftest（wpt-data/，self-source 同源 ref）。test-guard 包裹（OOM 防护）。
 # 全量 ~16600 案（2026-08-07 @font-face loader 缓存后）实测 ~25s，远低于

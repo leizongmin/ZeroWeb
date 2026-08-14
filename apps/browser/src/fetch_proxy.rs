@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use zero_browser_shell::TabId;
 use zero_net::{
-    FetchPriority, HttpCache, HttpMethod, HttpRequest, HttpResponse, ResourceLoader, is_file_url, read_file_url,
+    FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse, ResourceLoader, is_file_url,
+    read_file_url,
 };
 use zero_protocol::message::FetchParams;
 use zero_security::{ResourceCheckResult, SecurityContext};
@@ -151,6 +152,16 @@ impl TabFetchProxy {
                 request_id: params.request_id,
                 url,
                 rx,
+            });
+            return;
+        }
+
+        if params.method.eq_ignore_ascii_case("DNS-PREFETCH") {
+            self.pending.push(PendingFetch {
+                tab_id,
+                request_id: params.request_id,
+                url: url.clone(),
+                rx: dns_prefetch(url),
             });
             return;
         }
@@ -300,6 +311,27 @@ fn immediate_err(msg: String) -> Receiver<Result<HttpResponse, String>> {
     rx
 }
 
+/// 在 browser 进程预解析 DNS；成功以空 204 响应回收 renderer 的内部请求槽。
+fn dns_prefetch(origin: String) -> Receiver<Result<HttpResponse, String>> {
+    let result = HttpClient::new().dns_prefetch(origin.clone());
+    let (tx, rx) = channel();
+    zero_net::client::spawn_network_bridge(move || {
+        let response = result
+            .recv()
+            .map_err(|error| error.to_string())
+            .and_then(|result| result.map_err(|error| error.to_string()))
+            .map(|()| HttpResponse {
+                status_code: 204,
+                headers: Vec::new(),
+                body: Vec::new(),
+                url: origin,
+                redirect_count: 0,
+            });
+        let _ = tx.send(response);
+    });
+    rx
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +419,26 @@ mod tests {
         assert_eq!(completed[0].body, b"<html><body>local file</body></html>");
 
         let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
+    fn dns_prefetch_completes_without_an_http_connection() {
+        let mut request = params(8, "http://localhost:9");
+        request.method = "DNS-PREFETCH".into();
+        let mut proxy = TabFetchProxy::new();
+        proxy.enqueue(TabId(1), &request);
+
+        let mut done = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while done.is_empty() && std::time::Instant::now() < deadline {
+            done.extend(proxy.drain());
+            if done.is_empty() {
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        }
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].request_id, 8);
+        assert_eq!(done[0].status, 204);
+        assert!(done[0].body.is_empty());
     }
 }

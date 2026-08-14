@@ -2,7 +2,7 @@
 Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要多轮推进的架构任务时，不要把“需要多会话/长期推进”当成需要用户决策的阻塞；应更新对应的状态文档/控制面（例如 goal 的 master.md），并在最终一行输出 `CONTINUE: <下一步>` 把明确下一步传给后续轮次。
 有阶段性进展时应该及时在当前的分支提交代码并推送到远端，也要及时拉取远端的更新并rebase。
 单个代码文件一般不要超过2000行，如果超过了应该考虑合理拆分成多个文件。
-跑测试或 WPT reftest 时必须用 `make test` / `make reftest`（release 构建 + scripts/test-guard.rs 包裹），禁止裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`：内存型 bug（如无限循环 realloc）只会被杀掉测试进程树，不会触发系统 OOM 连累整个 tmux session / rally 流程。阈值/兜底见 docs/rally/oom-guard.md。
+跑测试或 WPT reftest 时必须用 `make test` / `make reftest`，禁止裸跑 `cargo test` 或 `cargo run --bin zero-wpt-runner -- reftest`：入口会先在**不设内存阈值**的阶段完成编译，再以 `scripts/test-guard.rs` 包裹测试/runner 的执行阶段；内存型 bug（如无限循环 realloc）只会被杀掉测试进程树，不会触发系统 OOM 连累整个 tmux session / rally 流程。阈值/兜底见 docs/rally/oom-guard.md。
 涉及渲染/布局变更时建议额外跑 `make product-smoke`（DC-13 welcome.html vs chromium Oracle 回归门禁，diff>20% 退出 2）：`make test` + scoped reftest 不覆盖产品 fixture，曾致 R428 min-size:auto 的 welcome +7.65pp 回归藏了 14 轮未被发现（R541）。阈值可调：`make product-smoke MAX_DIFF=22`。
 - legacy HTML 产品 smoke（DC-13 Tier 1，HTML 3.2/4 + CSS1/2）：`make product-smoke-legacy`（42 fixture vs chrome-127 oracle，trend-only exit 0）。diff% 为 font-wall 趋势数据；**struct-check FAIL 是「待查清单」诊断入口，不阻 CI**——run-all.sh 现打印 issue 详情（sibling overlap / collapsed / text concatenation）。历史 known struct FAIL = 37-form-controls（Phase A 阻塞，**R2156 slice 1 + R2162 slice 2 default-on 后已 struct PASS 3.85%**，非再 FAIL；R2163 实测 legacy 51/51 struct PASS）。涉及 UA 样式 / 表单 / legacy 元素变更时跑，防结构性退化藏匿（曾抓到 R1651 center / R1653 caption / R1657 noframes / R1669 area+frame+keygen / R1675 datalist+source+track 等真 bug）。
 
@@ -19,4 +19,3 @@ Rally 本来就是跨轮次、跨 session 的长期执行循环。遇到需要�
 12. **性能门禁（perf-gate 体系，2026-08-08 落地）**：涉及性能关键路径（解析/样式/布局/绘制/Canvas/JS 桥/网络）的变更或代码量明显积累时，跑 `make bench-gate`（测量 + 门禁比较，退出码 0/1/2，全经 test-guard 包裹）。首次使用：`make bench-gate`（全 NEW/PASS）→ `make bench-capture JUSTIFICATION="初始基线"` → 再 `make bench-gate`（真比较）。新指标/新场景用 `record-bench-baseline.sh` 纳入基线；**禁止为通过门禁临时改测量配置或跳门禁**（config_hash 会暴露，政策见 docs/specs/performance-and-resource-budget.md）。
 
 13. **开工前先同步（2026-08-09 新增）**：每轮任务（含 cron job / query / 手动）开始执行前，先 `git pull --rebase` 拉取远端 main 最新代码（有未提交变更先 commit 或 stash），确认基线为最新后再开始分析与修改——避免基于旧代码跑一大轮后得出过时结论（并行双流场景下尤甚，配合第 8/10 条）。
-

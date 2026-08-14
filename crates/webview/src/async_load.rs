@@ -17,7 +17,9 @@ use zero_render_foundation::image_cache::{ImageKey, decode_data_uri, decode_data
 
 use crate::image_decoder::decode_image;
 
-use crate::net_pool::{fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta, preconnect_async};
+use crate::net_pool::{
+    dns_prefetch_async, fetch_bytes_async_meta, fetch_document_async, fetch_text_async_meta, preconnect_async,
+};
 use crate::webview::WebView;
 
 /// 图片抓取异步接收器（net_pool 线程 → 加载器轮询）。
@@ -112,6 +114,10 @@ pub struct InProcessFetchHost;
 impl AsyncFetchHost for InProcessFetchHost {
     fn preconnect(&mut self, origin: &str) {
         preconnect_async(origin.to_string());
+    }
+
+    fn dns_prefetch(&mut self, origin: &str) {
+        dns_prefetch_async(origin.to_string());
     }
 
     fn fetch_document(&mut self, url: &str, method: &str, body: Option<&[u8]>) -> Receiver<Result<String, String>> {
@@ -424,7 +430,10 @@ impl AsyncPageLoad {
                 Some(u) => u.to_string(),
                 None => hint.url.clone(),
             };
-            if hint.hint_type == ResourceHintType::Preconnect {
+            if matches!(
+                hint.hint_type,
+                ResourceHintType::Preconnect | ResourceHintType::DnsPrefetch
+            ) {
                 let origin = match url::Url::parse(&abs) {
                     Ok(url)
                         if matches!(url.scheme(), "http" | "https")
@@ -436,7 +445,11 @@ impl AsyncPageLoad {
                     }
                     _ => continue,
                 };
-                host.preconnect(&origin);
+                if hint.hint_type == ResourceHintType::Preconnect {
+                    host.preconnect(&origin);
+                } else {
+                    host.dns_prefetch(&origin);
+                }
                 count += 1;
                 continue;
             }
@@ -1213,6 +1226,7 @@ mod tests {
     struct MockFetchHost {
         calls: Vec<String>,
         preconnects: Vec<String>,
+        dns_prefetches: Vec<String>,
         text_body: Result<String, String>,
         bytes_body: Result<Vec<u8>, String>,
     }
@@ -1222,6 +1236,7 @@ mod tests {
             Self {
                 calls: Vec::new(),
                 preconnects: Vec::new(),
+                dns_prefetches: Vec::new(),
                 text_body: Ok(String::new()),
                 bytes_body: Ok(Vec::new()),
             }
@@ -1241,6 +1256,10 @@ mod tests {
     impl AsyncFetchHost for MockFetchHost {
         fn preconnect(&mut self, origin: &str) {
             self.preconnects.push(origin.to_string());
+        }
+
+        fn dns_prefetch(&mut self, origin: &str) {
+            self.dns_prefetches.push(origin.to_string());
         }
 
         fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
@@ -1266,6 +1285,20 @@ mod tests {
         load.begin_preload_hints(r#"<link rel="preconnect" href="https://cdn.example.test">"#, &mut host);
 
         assert_eq!(host.preconnects, ["https://cdn.example.test/"]);
+        assert!(host.calls.is_empty());
+    }
+
+    #[test]
+    fn dns_prefetch_hint_is_submitted_without_fetching_a_resource() {
+        let mut load = AsyncPageLoad::from_html("https://example.com/page", String::new());
+        let mut host = MockFetchHost::new();
+
+        load.begin_preload_hints(
+            r#"<link rel="dns-prefetch" href="https://cdn.example.test/path">"#,
+            &mut host,
+        );
+
+        assert_eq!(host.dns_prefetches, ["https://cdn.example.test/"]);
         assert!(host.calls.is_empty());
     }
 

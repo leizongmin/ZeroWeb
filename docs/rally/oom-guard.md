@@ -10,8 +10,8 @@ OOM，内核回收整个 `app-tmux.slice`（含 tmux session），rally 无人�
 
 ## 防护分层
 
-1. **L1 测试进程隔离（跨平台，主防线）**：`make test` / `make reftest` 通过
-   `scripts/test-guard.rs` 包裹，单进程 RSS > 6GB 或全树 > 16GB 或总时长
+1. **L1 测试进程隔离（跨平台，主防线）**：`make test` / `make reftest` 先完成不受
+   内存阈值限制的编译，再通过 `scripts/test-guard.rs` 包裹运行阶段；单进程 RSS > 6GB 或全树 > 16GB 或总时长
    > 1800s 即杀掉整棵进程树（退出 124）。macOS / Linux 通用，不依赖
    `ulimit -v`（macOS 无效）或 `timeout`（macOS 默认无）。
 2. **L2 Linux cgroup 兜底（本文件）**：把 rally 跑在限内存的 systemd scope
@@ -44,8 +44,8 @@ cat /proc/$(pgrep -f 'rally run')/cgroup   # 应含 rally-oom-guard.scope
 `test-guard` 阈值可按需覆盖（不改源码）：
 
 ```bash
-# 放宽（大测试 / 全量编译峰值高）
-./target/test-guard --per-proc-mem 12 --total-mem 32 -- cargo test --workspace
-# 收紧（更快拦截，可能误杀大编译）
-./target/test-guard --per-proc-mem 4 --total-mem 8 -- cargo test --workspace
+# 放宽（大测试）
+./target/test-guard --compile-first --per-proc-mem 12 --total-mem 32 -- cargo test --workspace
+# 收紧（更快拦截测试运行时内存异常；不会限制编译）
+./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 -- cargo test --workspace
 ```
