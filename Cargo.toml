@@ -88,7 +88,8 @@ arboard = "3"
 
 # 网络
 hyper = "1"
-reqwest = "0.12"
+reqwest = { version = "0.12", features = ["blocking"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # 字符编码（CSS Syntax §6.2 charset determination：@charset / BOM / Content-Type）
 encoding_rs = "0.8"
 

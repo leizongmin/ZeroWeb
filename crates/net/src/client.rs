@@ -39,6 +39,44 @@ impl HttpClient {
         Self::with_config(30, 10)
     }
 
+    /// 异步传输入口。
+    ///
+    /// P2 迁移的接缝：调用方在 Tokio runtime 中可避免为每个请求创建阻塞 worker。
+    pub async fn send_async(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
+        let mut builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent(Self::default_user_agent());
+        if crate::connect::no_proxy_enabled() {
+            builder = builder.no_proxy();
+        }
+        let client = builder.build().map_err(map_reqwest_error)?;
+        let method = request.method.to_reqwest();
+        let mut builder = client.request(method, &request.url);
+        for (name, value) in &request.headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(body) = request.body {
+            builder = builder.body(body);
+        }
+        let response = builder.send().await.map_err(map_reqwest_error)?;
+        let status_code = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| value.to_str().ok().map(|value| (name.to_string(), value.to_string())))
+            .collect();
+        let url = response.url().to_string();
+        let body = response.bytes().await.map_err(map_reqwest_error)?.to_vec();
+        Ok(HttpResponse {
+            status_code,
+            headers,
+            body,
+            url,
+            redirect_count: 0,
+        })
+    }
+
     /// 创建指定超时时间的 HTTP 客户端。
     pub fn with_timeout(timeout_secs: u64) -> Self {
         Self::with_config(timeout_secs, 10)
@@ -1566,5 +1604,21 @@ mod integration_tests {
         let resp = handle.join().expect("join");
         assert_eq!(resp.status_code, 200);
         assert!(!resp.body.is_empty());
+    }
+
+    #[test]
+    fn send_async_fetches_local_response() {
+        let (listener, url) = bind_server();
+        let server = std::thread::spawn(move || {
+            respond_once(&listener, 200, "Content-Type: text/plain\r\n", "async hello");
+        });
+        let client = HttpClient::new();
+        let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
+        let response = runtime
+            .block_on(client.send_async(HttpRequest::get(&url)))
+            .expect("async fetch");
+        assert_eq!(response.status_code, 200);
+        assert_eq!(response.body, b"async hello");
+        server.join().expect("join server");
     }
 }

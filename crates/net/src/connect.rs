@@ -71,7 +71,7 @@ fn http2_enabled() -> bool {
 }
 
 /// 默认尊重系统/环境代理；设 `ZERO_NOPROXY=1`（或 `true`，大小写不敏感）可完全绕过代理直连。
-fn no_proxy_enabled() -> bool {
+pub(crate) fn no_proxy_enabled() -> bool {
     match std::env::var("ZERO_NOPROXY").ok().as_deref() {
         Some("1") => true,
         Some(v) => v.eq_ignore_ascii_case("true"),
