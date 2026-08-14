@@ -699,8 +699,9 @@
     },
     {
       "id": "resource/peak_rss_mb",
-      "p95": 175.22265625,
-      "tier": "budget"
+      "p95": 151.75390625,
+      "tier": "budget",
+      "tightened_at": "2026-08-14T13:22:55Z"
     }
   ]
 }
