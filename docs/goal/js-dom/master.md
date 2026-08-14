@@ -3,7 +3,7 @@
 **入口文档**: [../js-dom.md](../js-dom.md)（长期 Mission / Done Criteria / 执行协议 / 文档治理规则）
 **关联 RFC**: [../../specs/p1b-v8-native-bindings-rfc.md](../../specs/p1b-v8-native-bindings-rfc.md)
 **创建日期**: 2026-08-13（goal 拆分 bootstrap）
-**本轮**: R24 — polyfill 事件子类 init 属性父链继承（`_defineEventSubclass` 构造器沿父链收集全部 props 设值——MouseEvent extends UIEvent 实例缺 view/detail 根因；`_eventSubclassProps` 注册表）；KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit + key/code/location/repeat/isComposing/charCode/keyCode/which）；Event-subclasses-constructors polyfill 0P→42P/49；dom/events polyfill 32.90%→42.58%（+30 pass）/ native 32.58%→36.13%（+11 pass，双路径差扩至 6.45pp——native dom_bindings event.rs 旧实现待 R25 对齐）
+**本轮**: R25 — native MouseEvent/KeyboardEvent `view` + KeyboardEvent `which` 补全（dom_bindings event.rs，经 runner 实测诊断确认 native_dom=1 下 `new MouseEvent()` 走 native 覆盖 polyfill，native 缺 UIEvent view 父链属性 + KeyboardEvent which legacy）；`set_ui_view` helper（缺省 null/init dict 对象）+ KeyboardEvent which（回退 keyCode）；native 正确性净正（单测验证，default-on 后合规），**双路径差未缩**（6.45pp 保持——WheelEvent 子类链断/SubclassedEvent class 语义等多点分散缺口，转高 ROI 切片）
 
 > **本文件由执行 agent 于 2026-08-13 按入口文档「首轮进入检查清单」逐项核实重写**，替换 bootstrap 占位符。
 > 所有状态带证据（commit hash / 文件路径 / 行号 / 测试命令）。并行双流下 main 随时漂移（run-rules §10），每轮开工先 `git pull --rebase`。
@@ -85,7 +85,8 @@
 - R22 已做：① 定位修复 native dom/events 死循环（**更正 R21 误报**：经诊断插桩 native dispatchEvent+polyfill __zw_parent 均 0 调用→用例走 polyfill dispatch；直接 binary 单用例 Event-dispatch-click 10P 正常；逐用例 timing 定位唯一真死循环 `Event-timestamp-safe-resolution`）② 根因 native `Event.timeStamp` 恒 0（event.rs 硬编码，注释「沙箱无 perf timer」）→ WPT `do-while(e2.timeStamp-e1.timeStamp==0)` 死循环（polyfill 用 `__zw_performance_now` 单调 timer 不 hang）③ 修复 native Event.timeStamp 改 `perf_now_ms()`（OnceLock<Instant> origin elapsed，DOMHighResTimeStamp，Number f64 保子毫秒精度）+ R22 单测（非0/有限 + 连续创建差值可收集非零）④ 建立 **native dom/events 基线 31.29%（97P/213F/9timeout，96s，从 570s 超时→96s）**，双路径对等差 0.32pp。dom_bindings v8 单测全绿，双矩阵 clippy 干净
 - R23 已做：① polyfill Event eventPhase 常量补全（part05：Event 构造器 + Event.prototype 各挂 NONE=0/CAPTURING_PHASE=1/AT_TARGET=2/BUBBLING_PHASE=3，Object.defineProperty enumerable:false，guard 幂等；实例经原型链继承，CustomEvent.prototype=Object.create(Event.prototype) 链继承）② R23 单测（4 对象 Event/Event.prototype/createEvent('Event')/createEvent('CustomEvent') × 4 常量 = "0,1,2,3"×4 + 不可枚举）。Event-constants.html 双路径 0P→4P/4（100%）；dom/events：polyfill 31.61%→32.90%（102P/208F）、native 31.29%→32.58%（101P/209F，双路径各 +4 pass，对等差 0.32pp 不变）。engine v8 单测全绿，双矩阵 clippy 干净
 - R24 已做：① polyfill `_defineEventSubclass` 父链继承（`_eventSubclassProps` 注册表记录 [ownProps, parentName]，构造器沿父链收集全部 props 设值——MouseEvent extends UIEvent 实例缺 view/detail 根因；子类先父类后，子类覆盖父类 spec 一致；null/undefined 用默认）② KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit + key/code/location/repeat/isComposing/charCode/keyCode/which + getModifierState 复用 MouseEvent）③ R24 单测（MouseEvent 默认/设定 + KeyboardEvent 默认含父链 + WheelEvent 三层父链）。Event-subclasses-constructors polyfill 0P→42P/49（native 24P/49）；dom/events：polyfill 32.90%→42.58%（132P/178F，+30 pass）、native 32.58%→36.13%（112P/198F，+11 pass，**双路径差扩至 6.45pp**——native dom_bindings event.rs 旧实现缺父链继承/KeyboardEvent which/MouseEvent instanceof/UIEvent view 校验，R25 对齐）。engine v8 单测全绿，双矩阵 clippy 干净
-- 剩余聚类（按 ROI，R24 后重排）：① **R25 native 事件构造器对齐**（dom_bindings event.rs：WheelEvent 父链 ctrlKey、KeyboardEvent which/key、MouseEvent instanceof 原型链、UIEvent view 校验——缩双路径差 6.45pp）② 三阶段分发 capture/bubble/stopPropagation（Event-dispatch 系列，polyfill 大块）③ EventListener handleEvent ④ Event-cancelBubble setter 语义 ⑤ SubclassedEvent（用户 class extends Event）native instanceof ⑥ iframe.contentDocument（深结构 html-compat 域）⑦ querySelector-mixed-case（selector 域）⑧ polyfill appendChild 闭环（M1 L2）⑨ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑩ 扩 DOM_TEST_SUBDIRS（dom/collections 等）
+- R25 已做：① 经 runner 实测诊断（`MouseEvent.toString()` 探 native/polyfill + forced-fail message 带属性状态）确认 native_dom=1 下 `new MouseEvent()` 走 native（覆盖 polyfill），native MouseEvent 缺 UIEvent `view` 父链属性 + KeyboardEvent 缺 `which` ② `set_ui_view` helper（设 view：缺省 null，init dict 对象原样）+ MouseEvent/KeyboardEvent 调之 ③ KeyboardEvent which（缺省回退 keyCode，spec legacy）④ R25 单测（MouseEvent view 缺省/设定 + KeyboardEvent view + which 缺省/显式）。**双路径差未缩**（6.45pp 保持，Event-subclasses native 仍 24P/49——剩余多点分散缺口：WheelEvent 子类链断[父 native MouseEvent 不在 polyfill 注册表]/SubclassedEvent class 语义/MouseEvent 属性细节/UIEvent view 校验）。R25 view/which 是 native 正确性净正（单测证明，default-on 后合规），转高 ROI 切片。dom_bindings v8 单测全绿，双矩阵 clippy 干净
+- 剩余聚类（按 ROI，R25 后重排）：① **polyfill 三阶段分发 capture/bubble/stopPropagation**（Event-dispatch 系列 ~44 个 0-pass 主力，R26 高 ROI）② EventListener handleEvent（listener 对象调 .handleEvent）③ Event-cancelBubble setter 语义 ④ 双路径差 6.45pp 收口（WheelEvent 子类链/SubclassedEvent class 语义/native MouseEvent 属性细节/UIEvent view 校验，分散低 ROI）⑤ iframe.contentDocument（深结构 html-compat 域）⑥ querySelector-mixed-case（selector 域）⑦ polyfill appendChild 闭环（M1 L2）⑧ native namespaceURI getter 独立化（dom/nodes 双路径差 0.65pp）⑨ 扩 DOM_TEST_SUBDIRS（dom/collections 等）
 
 **M0 首切片（R0）**: **polyfill vs native A/B 对照门骨架（must-complete 项 5）**
 - 理由：入口文档明列 must-complete；纯新增测试文件，零生产代码改动、零碰撞；为后续 M1(L2)/M6(QuickJS) 所有迁移切片提供「行为不退化」安全网（DC-4）；双 feature 可参数化设计为 M6 提前铺路。
@@ -161,6 +162,7 @@
 | 2026-08-14 | R22 | 定位修复 native Event.timeStamp 死循环（更正 R21 误报：诊断插桩+直接 binary+逐用例 timing 三步定位到 `Event-timestamp-safe-resolution` 的 do-while(timeStamp差==0) 死循环，根因 native timeStamp 恒 0）+ 修复 native timeStamp 改 perf_now_ms()（OnceLock<Instant>，DOMHighResTimeStamp）+ R22 单测；dom_bindings v8 全绿，双矩阵 clippy 干净 | **native dom/events 基线建立 31.29%**（97P/213F/9timeout，96s，从 570s 超时→96s）。双路径对等差 0.32pp（polyfill 31.61%）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R23 | polyfill Event eventPhase 常量（part05 Event 构造器+prototype 挂 NONE/CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE，enumerable:false，实例经原型链继承）+ R23 单测（4 对象×4 常量 + 不可枚举）；engine v8 全绿，双矩阵 clippy 干净 | **Event-constants.html 双路径 100%**（0P→4P/4）。dom/events：polyfill 31.61%→32.90%（102P/208F）、native 31.29%→32.58%（101P/209F，双路径各 +4 pass，对等差 0.32pp 不变）。完整 JSON 快照入 evidence |
 | 2026-08-14 | R24 | polyfill 事件子类 init 属性父链继承（_defineEventSubclass 沿父链收集 props，_eventSubclassProps 注册表）+ KeyboardEvent 改用工厂（extends UIEvent，补 EventModifierInit+key/code/location/repeat/isComposing/charCode/keyCode/which）+ R24 单测（MouseEvent 默认/设定 + KeyboardEvent 父链 + WheelEvent 三层）；engine v8 全绿，双矩阵 clippy 干净 | **Event-subclasses-constructors polyfill 0P→42P/49**（native 24P/49）。dom/events：polyfill 32.90%→42.58%（132P，+30 pass）/ native 32.58%→36.13%（112P，+11 pass）。**双路径差扩至 6.45pp**（native dom_bindings event.rs 待 R25 对齐）。完整 JSON 快照入 evidence |
+| 2026-08-14 | R25 | native MouseEvent/KeyboardEvent view（set_ui_view helper，缺省 null/init dict 对象）+ KeyboardEvent which（回退 keyCode）+ R25 单测；经 runner 实测诊断确认 native_dom=1 下 MouseEvent 走 native 覆盖 polyfill；dom_bindings v8 全绿，双矩阵 clippy 干净 | native 正确性净正（view/which，default-on 后合规）。**双路径差未缩**（6.45pp 保持——Event-subclasses native 仍 24P/49，剩余 WheelEvent 子类链/SubclassedEvent class 语义/MouseEvent 属性细节/UIEvent view 校验多点分散缺口，转高 ROI 切片）。dom/events 基线不变（polyfill 42.58% / native 36.13%） |
 
 **本轮勘误**（vs 入口文档基线块）：
 1. dom_bindings native API 面**比基线描述更完整**：除 S0–S5 基线外，`mod.rs:558-624` 已注册 querySelector 族 + createElement/Text/Comment/Fragment + documentElement/body/head 全套工厂（注释「R3098/R3131/R3136」）。入口文档「19 文件」清单未列全这些工厂——native 写能力实际比「读 ~15.6x」更广。
@@ -170,12 +172,12 @@
 
 ## 下一步计划
 
-1. **R24（本轮，已完成）**：polyfill 事件子类 init 属性父链继承 + KeyboardEvent 工厂化 → land（Event-subclasses polyfill 42P/49，dom/events polyfill 42.58% / native 36.13%，双路径差扩至 6.45pp）
-2. **下轮候选（按剩余 ROI，R24 后重排）**：
-   - **(a) R25 native 事件构造器对齐**（dom_bindings event.rs：WheelEvent 父链 ctrlKey、KeyboardEvent which/key 默认、MouseEvent instanceof 原型链、UIEvent view 非 window 抛 TypeError——缩双路径差 6.45pp，恢复对等）。
-   - **(b) 三阶段分发 capture/bubble/stopPropagation**（Event-dispatch 系列，polyfill 大块，~44 个 0-pass 用例主力）。
-   - **(c) EventListener handleEvent**（listener 是对象时调 .handleEvent）。
-   - **(d) Event-cancelBubble setter 语义**（独立小切片）。
+1. **R25（本轮，已完成）**：native MouseEvent/KeyboardEvent view + KeyboardEvent which 补全（native 正确性净正，双路径差未缩 6.45pp 保持，转高 ROI） → land
+2. **下轮候选（按剩余 ROI，R25 后重排）**：
+   - **(a) polyfill 三阶段分发 capture/bubble/stopPropagation**（Event-dispatch 系列 ~44 个 0-pass 主力，R26 高 ROI——DOM 事件桥核心能力，批量解锁）。
+   - **(b) EventListener handleEvent**（listener 是对象时调 .handleEvent）。
+   - **(c) Event-cancelBubble setter 语义**（独立小切片）。
+   - **(d) 双路径差 6.45pp 收口**（WheelEvent 子类链/SubclassedEvent class 语义/native MouseEvent 属性细节/UIEvent view 校验，分散低 ROI，按需）。
    - **(e) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
    - **(f) querySelector-mixed-case**（selector 域）。
    - **(g) iframe.contentDocument**（深结构 html-compat 域）。
@@ -245,3 +247,4 @@
 - R22：M4 native Event.timeStamp 死循环修复（更正 R21 误报，timeStamp 恒 0→perf_now_ms）+ native dom/events 基线 31.29%（96s，双路径对等差 0.32pp）→ archive/m4-slice-native-event-timestamp-hang.md
 - R23：M4 Event eventPhase 常量（NONE/CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE，Event-constants 双路径 100%，各 +4 pass）→ archive/m4-slice-event-phase-constants.md
 - R24：M4 事件子类 init 属性父链继承 + KeyboardEvent 工厂化（Event-subclasses polyfill 42P/49，dom/events polyfill 42.58% +30P / native 36.13% +11P，双路径差扩至 6.45pp）→ archive/m4-slice-event-subclass-parent-chain.md
+- R25：M4 native MouseEvent/KeyboardEvent view + KeyboardEvent which（native 正确性净正，双路径差 6.45pp 保持未缩——WheelEvent 子类链/SubclassedEvent 等多点分散，转高 ROI）→ archive/m4-slice-native-event-view-which.md

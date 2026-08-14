@@ -1117,6 +1117,35 @@ e.key+'/'+e.code+'/'+e.ctrlKey+'/'+e.shiftKey+'/'+e.repeat+'/'+(e.keyCode===0);}
     );
 }
 
+/// js-dom M4 R25：native MouseEvent/KeyboardEvent UIEvent.`view` + KeyboardEvent.`which` 补全。
+/// 旧实现缺 view（MouseEvent/KeyboardEvent extends UIEvent，WPT Event-subclasses-constructors assert_props
+/// 父链检查 `'view' in event` fail）+ KeyboardEvent.which（legacy 属性 = keyCode）。修：set_ui_view 设 view
+/// （缺省 null，init dict 对象原样），KeyboardEvent 设 which（缺省回退 keyCode）。
+#[test]
+fn native_event_view_and_which_r25() {
+    let html = r#"<div id="a"></div>"#;
+    // MouseEvent view：缺省 null（'view' in = true）+ init dict window 原样。
+    let script_m = "(()=>{\
+const m=new MouseEvent('click');\
+const m2=new MouseEvent('click',{view:globalThis});\
+return ('view' in m)+'/'+(m.view===null)+'/'+(m2.view===globalThis);})()";
+    assert_eq!(
+        run_script(html, script_m),
+        "true/true/true",
+        "R25 native MouseEvent view（缺省 null + init dict window）"
+    );
+    // KeyboardEvent view（同 UIEvent 父链）+ which（缺省 0，= keyCode 回退）。
+    let script_k = "(()=>{\
+const k=new KeyboardEvent('keydown');\
+const k2=new KeyboardEvent('keydown',{keyCode:13,which:42});\
+return ('view' in k)+'/'+(k.view===null)+'/'+('which' in k)+'/'+k.which+'/'+k2.which;})()";
+    assert_eq!(
+        run_script(html, script_k),
+        "true/true/true/0/42",
+        "R25 native KeyboardEvent view（父链）+ which（缺省 0 回退 keyCode，init dict 显式）"
+    );
+}
+
 /// MouseEvent 实例经继承原型具 stopPropagation——派发时止上溯（原型链可达，非每实例注入）。
 #[test]
 fn native_mouse_event_inherited_stop_r3129() {

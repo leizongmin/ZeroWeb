@@ -163,6 +163,27 @@ fn set_modifier_keys(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>, args:
     }
 }
 
+/// 设 UIEvent.`view` 属性（js-dom R25）。spec UIEvent view = WindowProxy 或 null（init dict `view` 字段，
+/// 缺省/undefined/null → null）。旧 native MouseEvent/KeyboardEvent 不设 view → WPT Event-subclasses-
+/// constructors `assert_props` 父链检查（MouseEvent extends UIEvent）`'view' in event` fail。从 init dict
+/// 读任意值（WPT 测 `view: window`），非对象值 → null。
+fn set_ui_view(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>, args: &v8::FunctionCallbackArguments) {
+    let view = match v8::Local::<v8::Object>::try_from(args.get(1)) {
+        Ok(opts) => {
+            let v = v8::String::new(scope, "view").and_then(|k| opts.get(scope, k.into()));
+            match v {
+                // 仅对象（window）/非 null/undefined 原样用；余（含 null/undefined）→ null。
+                Some(v) if v.is_object() => v,
+                _ => v8::null(scope).into(),
+            }
+        }
+        Err(_) => v8::null(scope).into(),
+    };
+    if let Some(k) = v8::String::new(scope, "view") {
+        let _ = obj.set(scope, k.into(), view);
+    }
+}
+
 /// 设整数属性（name → i32）。
 fn set_int(scope: &mut v8::PinScope, obj: v8::Local<v8::Object>, name: &str, val: i32) {
     if let Some(k) = v8::String::new(scope, name) {
@@ -284,6 +305,8 @@ fn native_mouse_event_constructor_invoke(
         let v = init_int(scope, &args, 1, name, 0);
         set_int(scope, this, name, v);
     }
+    // UIEvent.view（R25，缺省 null）——MouseEvent extends UIEvent，WPT 父链检查。
+    set_ui_view(scope, this, &args);
     // 修饰键（shiftKey/altKey/ctrlKey/metaKey）。
     set_modifier_keys(scope, this, &args);
     // relatedTarget（缺省 / undefined → null）。
@@ -324,6 +347,8 @@ fn native_keyboard_event_constructor_invoke(
     if let (Some(k), Some(v)) = (v8::String::new(scope, "code"), v8::String::new(scope, &code)) {
         let _ = this.set(scope, k.into(), v.into());
     }
+    // UIEvent.view（R25，缺省 null）——KeyboardEvent extends UIEvent，WPT 父链检查。
+    set_ui_view(scope, this, &args);
     // 修饰键。
     set_modifier_keys(scope, this, &args);
     // repeat / isComposing（缺省 false）。
@@ -334,10 +359,15 @@ fn native_keyboard_event_constructor_invoke(
         }
     }
     // keyCode/charCode/location（缺省 0）。
-    for name in ["keyCode", "charCode", "location"] {
+    let key_code = init_int(scope, &args, 1, "keyCode", 0);
+    set_int(scope, this, "keyCode", key_code);
+    for name in ["charCode", "location"] {
         let v = init_int(scope, &args, 1, name, 0);
         set_int(scope, this, name, v);
     }
+    // which（R25）：KeyboardEvent.which legacy 属性。缺省回退 keyCode（spec：which = keyCode 兼容）。
+    let which = init_int(scope, &args, 1, "which", key_code);
+    set_int(scope, this, "which", which);
 }
 
 /// `event.preventDefault()` 原型方法（spec `dom-event-prevent-default`）：仅当 `cancelable` 时设
