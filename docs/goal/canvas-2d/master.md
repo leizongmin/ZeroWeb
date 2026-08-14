@@ -1,8 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-14（R34xx 第三批：bbox 符号约定/whitespace 转换/em+lh 字号/亚像素
-墨迹/显式 undefined 语义/零长渐变文本/timer 触发；text 100→121 Pass；fill-and-stroke
-254 Pass 0 Fail；最终全量数字见 evidence/r34xx-batch2）。
+**最后更新**: 2026-08-14（R34xx 第四批：worker 全局构造器/OffscreenCanvas 零尺寸/
+small-caps 合成 shaping；worker fill-and-stroke 234/0。主线程 743 Pass / worker 690+；
+最终数字见 evidence/r34xx-batch2）。
 
 ---
 
