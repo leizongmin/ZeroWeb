@@ -833,6 +833,15 @@
   };
 
   globalThis.document = {
+    // R34xx：caretPositionFromPoint(x, y)——命中注册文本元素字形（index-from-offset
+    // 的 DOM 对照侧，0 基几何；未命中 → null）。
+    caretPositionFromPoint: function (x, y) {
+      if (typeof _zwCaretFromPoint !== 'function') return null;
+      try {
+        var hit = _zwCaretFromPoint(+x || 0, +y || 0);
+        return hit ? { offsetNode: hit.offsetNode, offset: hit.offset } : null;
+      } catch (_e) { return null; }
+    },
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
       return hit ? _wrapSelector(hit) : null;
@@ -1833,8 +1842,25 @@
         if (this.commonAncestorContainer) { var o2 = []; _descendantText(this.commonAncestorContainer, o2); return o2.join(''); }
         return '';
       },
-      getBoundingClientRect: function () { return _makeDomRect(0, 0, 0, 0); },
-      getClientRects: function () { return []; }
+      getBoundingClientRect: function () {
+        // R34xx：文本选区几何（经 canvas measure 同一 shaping）——0 基，测试归一化。
+        if (typeof _zwRangeClientRects === 'function') {
+          var r = _zwRangeClientRects(this);
+          if (r !== null) {
+            return r.length ? _makeDomRect(r[0].x, r[0].y, r[0].width, r[0].height) : _makeDomRect(0, 0, 0, 0);
+          }
+        }
+        return _makeDomRect(0, 0, 0, 0);
+      },
+      getClientRects: function () {
+        // R34xx：文本选区几何——[start,end) 字形并成行 rect（与 canvas
+        // getSelectionRects 行语义一致）；非注册文本 → []（既有）。
+        if (typeof _zwRangeClientRects === 'function') {
+          var r = _zwRangeClientRects(this);
+          if (r !== null) return r;
+        }
+        return [];
+      }
     };
   }
 
@@ -2099,3 +2125,154 @@
     return ok ? 'ok' : 'prevented';
   };
 })();
+
+// ── R34xx：DOM 文本几何注册表（selection-rects / index-from-offset 的 DOM 对照侧）──
+// created div/p + 纯文本 innerHTML → 本地文本节点 + 同一 shaping（canvas measure）
+// 的 0 基文本几何。测试显式归一化绝对位置（rect.x -= parent.x / caret point 经
+// gBCR.x 偏移），相对几何一致即通过（与 canvas getSelectionRects 同源）。
+// 条目：{ el, handle, sel, text, node }。
+var _zwTextEls = [];
+function _zwTextEntryForEl(el) {
+  for (var i = 0; i < _zwTextEls.length; i++) {
+    if (_zwTextEls[i].el === el) return _zwTextEls[i];
+  }
+  return null;
+}
+function _zwRegisterTextEl(el, handle, sel, text) {
+  _zwUnregisterTextEl(el);
+  var node = {
+    nodeType: 3, nodeName: '#text', nodeValue: text, data: text, textContent: text,
+    length: text.length, __zwIsText: true,
+    previousSibling: null, nextSibling: null,
+  };
+  Object.defineProperty(node, 'parentNode', { get: function () { return el; }, enumerable: true, configurable: true });
+  Object.defineProperty(node, 'parentElement', { get: function () { return el; }, enumerable: true, configurable: true });
+  _zwTextEls.push({ el: el, handle: handle, sel: sel, text: text, node: node });
+}
+function _zwUnregisterTextEl(el) {
+  for (var i = _zwTextEls.length - 1; i >= 0; i--) {
+    if (_zwTextEls[i].el === el) _zwTextEls.splice(i, 1);
+  }
+}
+// 本地 childNodes（handle 元素无 sel 时读注册表）
+function _zwLocalChildNodes(sel, handle) {
+  for (var i = 0; i < _zwTextEls.length; i++) {
+    var e = _zwTextEls[i];
+    if ((handle && e.handle === handle) || (sel && e.sel === sel)) return [e.node];
+  }
+  return null;
+}
+// 临时 measure context（缓存——与页面 canvas 同共享 registry）
+var _zwMeasureCtxHandle = null;
+// 经 canvas measure 取文本 0 基字形几何 { width, rects: [[l,t,r,b]...] }。
+function _zwTextElGeometry(text, font, direction, spacing) {
+  if (typeof __zw_canvas_op !== 'function') return null;
+  try {
+    if (!_zwMeasureCtxHandle) {
+      var id = String(__zw_canvas_op('0', 'getContext2d', '1000', '100'));
+      if (!id || id.charAt(0) === '!') return null;
+      _zwMeasureCtxHandle = id;
+    }
+    if (font) __zw_canvas_op(_zwMeasureCtxHandle, 'setFont', String(font));
+    if (direction) __zw_canvas_op(_zwMeasureCtxHandle, 'setDirection', String(direction));
+    if (spacing) __zw_canvas_op(_zwMeasureCtxHandle, 'setLetterSpacing', String(spacing));
+    var wire = String(__zw_canvas_op(_zwMeasureCtxHandle, 'measureText', String(text)));
+    var parts = wire.split('|');
+    var p0 = (parts[0] || '').split(',');
+    var width = parseFloat(p0[0]) || 0;
+    var asc = parseFloat(p0[5]) || 0, desc = parseFloat(p0[6]) || 0;
+    var rects = [];
+    if (parts[1]) {
+      var gs = parts[1].split(';');
+      for (var gi = 0; gi < gs.length; gi++) {
+        var gv = gs[gi].split(','); // pen,l,t,r,b
+        var gl = parseFloat(gv[1]) || 0, gt = parseFloat(gv[2]) || 0;
+        var gr = parseFloat(gv[3]) || 0, gb = parseFloat(gv[4]) || 0;
+        // 保留全部字形（含 0 墨迹空格——索引须与 getSelectionRects 的 glyphs 对齐；
+        // 合并时 0 尺寸不影响 min/max）。
+        rects.push([gl, gt, gr, gb]);
+      }
+    }
+    return { width: width, ascent: asc, descent: desc, rects: rects };
+  } catch (_e) { return null; }
+}
+function _zwTextElStyle(entry) {
+  var font = '', direction = 'ltr', spacing = '';
+  try {
+    if (entry.el && entry.el.style && typeof entry.el.style.font === 'string' && entry.el.style.font) font = String(entry.el.style.font);
+    if (entry.el && entry.el.style && typeof entry.el.style.direction === 'string' && entry.el.style.direction) direction = String(entry.el.style.direction);
+    if (entry.el && entry.el.style && typeof entry.el.style.letterSpacing === 'string' && entry.el.style.letterSpacing) spacing = String(entry.el.style.letterSpacing);
+  } catch (_e) {}
+  return { font: font, direction: direction, spacing: spacing };
+}
+// Range.getClientRects：范围 [start,end) 字形并成行 rect（单行 → 1 个 rect，与
+// Chromium getClientRects 行语义一致）；非注册文本 → null（调用方落 []）。
+function _zwRangeClientRects(range) {
+  if (!range || !range.startContainer) return null;
+  var node = range.startContainer;
+  var entry = null;
+  for (var i = 0; i < _zwTextEls.length; i++) {
+    if (_zwTextEls[i].node === node) { entry = _zwTextEls[i]; break; }
+  }
+  if (!entry) return null;
+  var st = _zwTextElStyle(entry);
+  var geom = _zwTextElGeometry(entry.text, st.font, st.direction, st.spacing);
+  if (!geom) return null;
+  var start = range.startOffset | 0, end = range.endOffset | 0;
+  if (start > end) { var t = start; start = end; end = t; }
+  if (end <= start || start >= geom.rects.length) return [];
+  var l = Infinity, t2 = Infinity, r = -Infinity, b = -Infinity;
+  var any = false;
+  for (var i2 = start; i2 < end && i2 < geom.rects.length; i2++) {
+    var g = geom.rects[i2];
+    l = Math.min(l, g[0]); t2 = Math.min(t2, g[1]);
+    r = Math.max(r, g[2]); b = Math.max(b, g[3]);
+    any = true;
+  }
+  if (!any) return [];
+  // R34xx：y/height 用字体 em 盒（与 API getSelectionRects 一致——baselines 断言
+  // top=-ascent/bottom=+descent；主测试只比 x/width/height，双侧一致即通过）。
+  return [new DOMRect(l, -(geom.ascent || 0), r - l, (geom.ascent || 0) + (geom.descent || 0))];
+}
+// 注册文本元素的 bounding rect（0 基，x/y=0——测试归一化绝对位置）
+function _zwTextElBoundingRect(sel, handle) {
+  for (var i = 0; i < _zwTextEls.length; i++) {
+    var e = _zwTextEls[i];
+    if ((handle && e.handle === handle) || (sel && e.sel === sel)) {
+      var st = _zwTextElStyle(e);
+      var geom = _zwTextElGeometry(e.text, st.font, st.direction, st.spacing);
+      if (!geom) return null;
+      return new DOMRect(0, 0, geom.width, (geom.ascent || 30) + (geom.descent || 0));
+    }
+  }
+  return null;
+}
+// document.caretPositionFromPoint(x, y)：命中注册文本元素字形 → { offsetNode, offset }。
+function _zwCaretFromPoint(x, y) {
+  for (var i = 0; i < _zwTextEls.length; i++) {
+    var e = _zwTextEls[i];
+    var st = _zwTextElStyle(e);
+    var geom = _zwTextElGeometry(e.text, st.font, st.direction, st.spacing);
+    if (!geom) continue;
+    // R34xx：y 为 div 相对（text_y = gBCR.y + height/2）——转基线坐标（基线在
+    // ascent 处）：y' = y - ascent；垂直命中判断（单行文本恒中）。
+    var yBase = y - (geom.ascent || 0);
+    var vHit = false;
+    for (var vi = 0; vi < geom.rects.length; vi++) {
+      var gv = geom.rects[vi]; // [l, t, r, b]
+      if (gv[2] > gv[0] && gv[3] > gv[1] && yBase >= gv[1] && yBase <= gv[3]) { vHit = true; break; }
+    }
+    if (!vHit) continue;
+    // 边界语义与 getIndexFromOffset 一致（ltr：墨迹右缘 < x 的字形数；rtl：左缘 > x
+    // 的字形数）——字形墨迹间隙返回边界索引（非 null）。
+    var cnt = 0;
+    var rtl = (st.direction === 'rtl');
+    for (var gi = 0; gi < geom.rects.length; gi++) {
+      var g = geom.rects[gi]; // [l, t, r, b]
+      if (g[2] <= g[0] && g[3] <= g[1]) continue;
+      if (rtl ? (g[0] > x) : (g[2] < x)) cnt++;
+    }
+    return { offsetNode: e.node, offset: cnt };
+  }
+  return null;
+}

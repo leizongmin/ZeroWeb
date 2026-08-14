@@ -2239,6 +2239,11 @@
         if (prop === Symbol.toPrimitive) {
           return function() { return sel ? sel : String(handle); };
         }
+        // R34xx：显式 toString（_valToString 等直接调 .toString()——canvas WPT 的
+        // assert 消息构建；与 Symbol.toPrimitive 同串化）。
+        if (prop === 'toString') {
+          return function() { return sel ? sel : String(handle); };
+        }
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
         if (prop === 'value') {

@@ -1694,8 +1694,10 @@
         var gs = parts[1].split(';');
         for (var gi = 0; gi < gs.length; gi++) {
           var gv = gs[gi].split(',');
+          // R34xx：wire 逐字形 5 字段（pen, l, t, r, b）——pen 为字形原点。
           glyphs.push([parseFloat(gv[0]) || 0, parseFloat(gv[1]) || 0,
-                       parseFloat(gv[2]) || 0, parseFloat(gv[3]) || 0]);
+                       parseFloat(gv[2]) || 0, parseFloat(gv[3]) || 0,
+                       parseFloat(gv[4]) || 0]);
         }
       }
       var tm = {
@@ -1717,7 +1719,9 @@
         //（相对文本原点；无字体栈/空区间 → 空矩形 {0,0,0,0}）。
         // R34xx：getSelectionRects(start, end)——[start, end) 字形墨迹矩形序列（spec
         // TextMetrics 新方法——selection-rects-exceptions.tentative 的索引校验；
-        // 与 DOM Range.getClientRects 对照的主测试依赖 DOM 文本几何，待 DOM 布局面）。
+        // 与 DOM Range.getClientRects 对照的主测试：字形按垂直重叠并成行 rect
+        //（单行 → 1 个 rect，与 DOM getClientRects 行语义一致——selection-rects 的
+        // 长度对比）。
         // 校验：负/非有限 → TypeError；越文本长度 → IndexSizeError；start>end（均在
         // 范围内）→ 空序列（与 DOM 反向 range 的 getClientRects()=[] 一致）。
         getSelectionRects: function (start, end) {
@@ -1732,27 +1736,76 @@
           if (start > text.length || end > text.length) {
             throw _zwDomException('getSelectionRects: out of range', 'IndexSizeError');
           }
-          var rects = [];
+          // R34xx：反向 range（start>end）交换——与 DOM Range.getClientRects 的
+          // 归一化语义一致（selection-rects 的 (3,2)/(1,0) 用例）。
+          if (start > end) { var tt = start; start = end; end = tt; }
+          // 行合并：范围字形并成一个行 rect（测试文本均单行——与 DOM
+          // Range.getClientRects 行语义一致）。x = 锚定偏移 + (范围首字形墨迹左缘 −
+          // 全文本首字形墨迹左缘)——与 DOM 侧经 parent.x 归一化后的约定一致
+          //（selection-rects 对照：DOM x = sub_ink_left − full_ink_left）。
+          var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+          var firstInkLeft = null;
+          var any = false;
           for (var i = start; i < end && i < glyphs.length; i++) {
-            var r = glyphs[i];
-            if (r[2] <= r[0] && r[3] <= r[1]) continue; // 空墨迹（空格等）
-            rects.push(_makeDomRect(r[0], r[1], r[2] - r[0], r[3] - r[1]));
+            var r5 = glyphs[i]; // [pen, l, t, r, b]
+            // R34xx：不跳过空墨迹字形（directional-override 的 RLO 首字形——
+            // 与 DOM 侧一致，范围覆盖即产出 rect）。
+            if (firstInkLeft === null) firstInkLeft = r5[1];
+            l = Math.min(l, r5[1]); t = Math.min(t, r5[2]);
+            r = Math.max(r, r5[3]); b = Math.max(b, r5[4]);
+            any = true;
           }
-          return rects;
+          if (!any) return [];
+          var baseInk = glyphs.length ? (glyphs[0][1] || 0) : 0; // 全文本首字形墨迹左缘
+          // R34xx：对齐偏移按**全范围合并宽**（min 墨迹左缘 → max 墨迹右缘——含 RLO 等
+          // 0 墨迹字形的前导 pen；DOM 侧 text_align_dx 取 Range rect 宽和，同源）。
+          var fullL = Infinity, fullR = -Infinity;
+          for (var fi = 0; fi < glyphs.length; fi++) {
+            fullL = Math.min(fullL, glyphs[fi][1]);
+            fullR = Math.max(fullR, glyphs[fi][3]);
+          }
+          var inkW = (fullL === Infinity) ? 0 : (fullR - fullL);
+          var dx = 0;
+          if (ctxTa === 'center') dx = inkW / 2;
+          else if (ctxTa === 'right') dx = inkW;
+          var x = (firstInkLeft - baseInk) - dx;
+          // R34xx：y/height 用字体 em 盒（top=-fontBoundingBoxAscent,
+          // bottom=+fontBoundingBoxDescent——selection-rects-baselines 断言）。
+          return [new DOMRect(x, -num(5), r - l, num(5) + num(6))];
         },
         // R34xx：getIndexFromOffset(x, y)——命中测试（spec TextMetrics 新方法——
         // index-from-offset 系列与 DOM caretPositionFromPoint 对照，待 DOM 布局面；
         // 本实现按字形墨迹矩形命中，返首个命中 glyph 的字符索引）。
         getIndexFromOffset: function (x, y) {
+          // R34xx：单参（仅 x）调用——index-from-offset 系列以 x 命中（y 缺省跳过
+          // 垂直检查；DOM caretPositionFromPoint 对照侧同样 1 参）。
           x = +x;
-          y = +y;
-          if (!isFinite(x) || !isFinite(y)) throw new TypeError('getIndexFromOffset: invalid point');
-          for (var i = 0; i < glyphs.length; i++) {
-            var r = glyphs[i];
-            if (r[2] <= r[0] && r[3] <= r[1]) continue;
-            if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]) return i;
+          if (!isFinite(x)) throw new TypeError('getIndexFromOffset: invalid point');
+          // R34xx：对齐锚定——caret 点转文本空间（center/right 文本原点在
+          // -width/2/-width：x=0 的 caret 应落文本中点/末尾）。
+          x -= anchor;
+          var useY = (y !== undefined && y !== null);
+          if (useY) { y = +y; if (!isFinite(y)) throw new TypeError('getIndexFromOffset: invalid point'); }
+          if (ctxDir === 'rtl') {
+            // R34xx：rtl 视觉→逻辑——caret 在 x → 位于 x 右侧的字形数（rtl 文本
+            // 自右向左，offset 0 在右缘：x=width → 0，x=0 → text.length）。
+            var cnt = 0;
+            for (var i = 0; i < glyphs.length; i++) {
+              var r = glyphs[i]; // [pen, l, t, r, b]
+              if (r[3] <= r[1] && r[4] <= r[2]) continue;
+              if (r[1] > x) cnt++;
+            }
+            return cnt;
           }
-          return glyphs.length;
+          // ltr：caret = 墨迹右缘 < x 的字形数（与 DOM caretPositionFromPoint 同语义——
+          // 字形墨迹间隙返回边界索引；index-from-offset 主测试 + edges 全过）。
+          var cnt = 0;
+          for (var i = 0; i < glyphs.length; i++) {
+            var r = glyphs[i]; // [pen, l, t, r, b]
+            if (r[3] <= r[1] && r[4] <= r[2]) continue;
+            if (r[3] < x) cnt++;
+          }
+          return cnt;
         },
         // R34xx：getTextClusters(start, end)——UAX#29 字素簇分段（GB9 ZWJ/Extend、
         // GB11 emoji ZWJ 序列近似——2d.text.measure.text-clusters-*.tentative）。
@@ -1872,13 +1925,13 @@
           var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
           var any = false;
           for (var i = start; i < end && i < glyphs.length; i++) {
-            var r = glyphs[i];
-            if (r[2] <= r[0] && r[3] <= r[1]) continue; // 空墨迹（空格等）
+            var r = glyphs[i]; // [pen, l, t, r, b]
+            if (r[3] <= r[1] && r[4] <= r[2]) continue; // 空墨迹（空格等）
             any = true;
-            if (r[0] < x0) x0 = r[0];
-            if (r[1] < y0) y0 = r[1];
-            if (r[2] > x1) x1 = r[2];
-            if (r[3] > y1) y1 = r[3];
+            if (r[1] < x0) x0 = r[1];
+            if (r[2] < y0) y0 = r[2];
+            if (r[3] > x1) x1 = r[3];
+            if (r[4] > y1) y1 = r[4];
           }
           // 无墨迹（无字体栈/全空格）→ 回落全文本 bbox（与 actualBoundingBox* 字段一致——
           // full-text.tentative 的 API rect vs full-bounds rect 须匹配）。

@@ -394,11 +394,11 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 // R34xx：`|` 后接逐字形墨迹（l,t,r,b 逗号分隔、分号分隔字形）——
                 // shim TextMetrics.getActualBoundingBox(start,end) 子串 bbox。
                 let mut glyphs = String::new();
-                for (i, (gl, gt, gr, gb)) in m.glyph_rects.iter().enumerate() {
+                for (i, (gpen, gl, gt, gr, gb)) in m.glyph_rects.iter().enumerate() {
                     if i > 0 {
                         glyphs.push(';');
                     }
-                    glyphs.push_str(&format!("{gl},{gt},{gr},{gb}"));
+                    glyphs.push_str(&format!("{gpen},{gl},{gt},{gr},{gb}"));
                 }
                 format!(
                     "{},{},{},{},{},{},{},{},{},{},{},{}|{}|{}",

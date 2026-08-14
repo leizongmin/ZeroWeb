@@ -1192,7 +1192,8 @@ pub struct TextMetrics {
     /// R34xx：逐字形墨迹矩形（相对基线原点，未含对齐锚定偏移），按字符序——
     /// `(left, top, right, bottom)`。供 `TextMetrics.getActualBoundingBox(start, end)`
     /// 子串 bbox（2d.text.measure.getActualBoundingBox.tentative）。无字体栈时空。
-    pub glyph_rects: Vec<(f32, f32, f32, f32)>,
+    /// R34xx：逐字形 (pen, l, t, r, b)——pen 为字形原点（选择矩形以原点为 x）。
+    pub glyph_rects: Vec<(f32, f32, f32, f32, f32)>,
 }
 
 /// 图像数据。

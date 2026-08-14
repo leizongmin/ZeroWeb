@@ -371,6 +371,11 @@
         if (prop === 'childNodes') {
           // R2927：容器 handle（shadow/fragment）从 registry 读子节点（无 selector，须 registry）。
           if (_isContainerHandle(handle)) return _handleChildNodes(handle);
+          // R34xx：注册的纯文本元素 → 本地文本节点（created handle 无 sel）。
+          if (typeof _zwLocalChildNodes === 'function') {
+            var _zwLocal = _zwLocalChildNodes(sel, handle);
+            if (_zwLocal) return _zwLocal;
+          }
           return _childNodeList(sel, handle);
         }
         if (prop === 'firstChild' || prop === 'lastChild') {
@@ -1259,6 +1264,8 @@
           return function(child) {
             if (child && child.__zwHandle) {
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
+              // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。
+              if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(child);
               __zw_remove_handle(child.__zwHandle);
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
@@ -1351,6 +1358,8 @@
             var ceSelf = _makeProxy(sel, handle);
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
+            // R34xx：移除注册的文本元素（DOM 对照侧几何清理）。
+            if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(ceSelf);
             _ceApplyConn(ceSelf, false);
           };
         }
@@ -1645,6 +1654,11 @@
         // offsetWidth/offsetHeight/clientWidth/Top/Left 等布局几何属性从同一 rect 派生（见 get trap 末段）。
         if (prop === 'getBoundingClientRect') {
           return function() {
+            // R34xx：注册的纯文本元素 → 本地 0 基几何（测试归一化绝对位置）。
+            if (typeof _zwTextElBoundingRect === 'function') {
+              var _zwR = _zwTextElBoundingRect(sel, handle);
+              if (_zwR) return _zwR;
+            }
             // identity = selector（querySelector/getElementById 元素）或 handle（createElement
             // 元素，path A）。sel 空时用 handle，host RectBridge handler 查持久 handle→selector map
             // 解析；map 未命中/未注册 → 空串 → 零 rect（= 旧行为，零回归）。
@@ -1858,6 +1872,17 @@
             var _ihVal = value === null ? '' : String(value);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
+            // R34xx：纯文本 innerHTML → 本地文本节点注册（selection-rects 的
+            // el.childNodes[0] 文本节点——created handle 元素无 sel，host 不可查）。
+            // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。
+            if (typeof _zwRegisterTextEl === 'function' && _ihVal.indexOf('<') < 0) {
+              _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ihVal);
+              if (typeof _zwTextEls !== 'undefined' && !_zwTextEls.length) {
+                throw new Error('REG-DEBUG: register no-op');
+              }
+            } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
+              _zwUnregisterTextEl(_makeProxy(sel, handle));
+            }
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
           } else {
             // R3027：textContent 变更 → emit characterData 记录（target=元素，pragmatic——文本节点无 selector

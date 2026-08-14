@@ -369,7 +369,7 @@ impl CanvasContext {
         // fontBoundingBox = 字体真实 ascent/descent；actualBoundingBox* = 逐字形墨迹真实
         // 边界（rasterize 位图——2d.text.measure.getActualBoundingBox.tentative）。
         // descent 为负值（fontdue）；无字体栈回落启发式（0.6em/字符、0.8/0.2em）。
-        let mut glyph_rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+        let mut glyph_rects: Vec<(f32, f32, f32, f32, f32)> = Vec::new();
         let (width, ascent, descent, ink_l, ink_t, ink_r, ink_b) = match (self.font_loader.clone(), self.font_id) {
             (Some(loader), Some(fid)) => {
                 if let Ok(loader) = loader.lock() {
@@ -440,9 +440,11 @@ impl CanvasContext {
                                 ir = ir.max(gr);
                                 ib = ib.max(gb);
                             }
-                            glyph_rects.push((gl, gt, gr, gb));
+                            // R34xx：glyph_rects 记 pen（字形原点）——getSelectionRects 的
+                            // 选区 rect 以字形原点为 x（与 DOM Range 归一化后对照一致）。
+                            glyph_rects.push((pen, gl, gt, gr, gb));
                         } else {
-                            glyph_rects.push((pen, 0.0, pen, 0.0));
+                            glyph_rects.push((pen, pen, 0.0, pen, 0.0));
                         }
                         pen += g.advance_x + ls;
                     }
@@ -493,7 +495,7 @@ impl CanvasContext {
         };
         // 墨迹 bbox（loader 路径）：ink 相对基线原点，经锚定偏移；无墨迹（fallback）回落
         // em 边界（anchor..anchor+width）。
-        let has_ink = glyph_rects.iter().any(|r| r.2 > r.0 || r.3 > r.1);
+        let has_ink = glyph_rects.iter().any(|r| r.3 > r.1 || r.4 > r.2); // (pen,l,t,r,b)
         let (bbox_l, bbox_r) = if has_ink {
             (anchor + ink_l, anchor + ink_r)
         } else {
