@@ -198,4 +198,18 @@ mod tests {
                 .all(|path| std::path::Path::new(path).is_absolute())
         );
     }
+
+    #[test]
+    fn platform_font_registration_does_not_expand_fontdue_outlines() {
+        let platform = load_platform_fonts();
+        assert_eq!(platform.loader.parsed_fontdue_count(), 0);
+
+        let _ = platform.loader.build_font_resolver();
+        let _ = platform.loader.build_line_metric_map();
+        assert_eq!(
+            platform.loader.parsed_fontdue_count(),
+            0,
+            "startup metadata must not eagerly parse CJK or Emoji glyph geometry"
+        );
+    }
 }

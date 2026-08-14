@@ -458,10 +458,9 @@ impl<'a> TextShaper<'a> {
         let glyph_infos = glyph_buffer.glyph_infos();
         let glyph_positions = glyph_buffer.glyph_positions();
 
-        let fd_font = self.font_loader.get(font_id.0)?;
         // rustybuzz 的 glyph_position 字段为字体设计单位（UPM 刻度），
         // 转换为像素须乘 font_size / units_per_em。
-        let upem = fd_font.units_per_em();
+        let upem = face.units_per_em() as f32;
         let px_per_unit = if upem > 0.0 { font_size / upem } else { 0.0 };
 
         // https://www.w3.org/TR/css-text-3/#text-shaping
@@ -628,10 +627,15 @@ impl<'a> TextShaper<'a> {
 
     /// 查询指定字符在字体中的 glyph 索引和前进宽度。
     fn query_glyph_metrics(&self, font_id: u32, code_point: char, font_size: f32) -> Option<(u32, f32)> {
-        let font = self.font_loader.get(font_id)?;
-        let metrics = font.metrics(code_point, font_size);
-        let glyph_index = font.lookup_glyph_index(code_point) as u32;
-        Some((glyph_index, metrics.advance_width))
+        let data = self.font_loader.get_font_data(font_id)?;
+        let face = rustybuzz::ttf_parser::Face::parse(data, self.font_loader.face_index(font_id)).ok()?;
+        let glyph_id = face.glyph_index(code_point).filter(|glyph_id| glyph_id.0 != 0)?;
+        let units_per_em = f32::from(face.units_per_em());
+        if units_per_em <= 0.0 {
+            return None;
+        }
+        let advance = f32::from(face.glyph_hor_advance(glyph_id)?) * font_size / units_per_em;
+        Some((u32::from(glyph_id.0), advance))
     }
 }
 

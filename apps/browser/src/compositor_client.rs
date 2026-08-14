@@ -89,6 +89,32 @@ impl SharedStatus {
     }
 }
 
+#[derive(Default)]
+struct FrameWatchdog {
+    last_progress: Option<std::time::Instant>,
+}
+
+impl FrameWatchdog {
+    fn begin(&mut self, now: std::time::Instant) {
+        self.last_progress = Some(now);
+    }
+
+    fn progress(&mut self, now: std::time::Instant) {
+        if self.last_progress.is_some() {
+            self.last_progress = Some(now);
+        }
+    }
+
+    fn complete(&mut self) {
+        self.last_progress = None;
+    }
+
+    fn is_stalled(&self, now: std::time::Instant) -> bool {
+        self.last_progress
+            .is_some_and(|progress| now.saturating_duration_since(progress) > std::time::Duration::from_secs(10))
+    }
+}
+
 struct PendingFrame {
     surface_id: u64,
     navigation_epoch: u64,
@@ -398,10 +424,8 @@ struct Client {
     status: Arc<SharedStatus>,
     child: Arc<Mutex<Option<Child>>>,
     worker: Option<JoinHandle<()>>,
-    /// R3254-F10：帧响应看门狗——worker 最近一次成功收到 compositor 响应的时间。
-    last_response: Arc<std::sync::Mutex<std::time::Instant>>,
-    /// R3254-F10：最近一次帧提交时间（发送侧）。
-    last_frame_sent: Arc<std::sync::Mutex<std::time::Instant>>,
+    /// 帧响应看门狗；仅由 IPC worker 在真实请求开始、推进和完成时更新。
+    frame_watchdog: Arc<Mutex<FrameWatchdog>>,
 }
 
 impl Client {
@@ -417,10 +441,8 @@ impl Client {
         let worker_present = Arc::clone(&present);
         let worker_status = Arc::clone(&status);
         let worker_child = Arc::clone(&child);
-        // R3254-F10：帧响应看门狗时间戳（worker 在每次成功响应后更新 last_response）。
-        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
-        let worker_last_response = Arc::clone(&last_response);
-        let last_frame_sent = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let frame_watchdog = Arc::new(Mutex::new(FrameWatchdog::default()));
+        let worker_frame_watchdog = Arc::clone(&frame_watchdog);
         let worker = thread::Builder::new()
             .name("compositor-client".to_string())
             .spawn(move || {
@@ -430,7 +452,7 @@ impl Client {
                     worker_completed,
                     worker_present,
                     worker_status,
-                    worker_last_response,
+                    worker_frame_watchdog,
                     || spawn_transport(connection_child),
                 );
                 reap_child(&worker_child);
@@ -447,8 +469,7 @@ impl Client {
             status,
             child,
             worker,
-            last_response,
-            last_frame_sent,
+            frame_watchdog,
         }
     }
 
@@ -459,18 +480,18 @@ impl Client {
         if self.status.load() == CompositorStatus::Disconnected {
             return;
         }
-        let now = std::time::Instant::now();
-        let sent = *self.last_frame_sent.lock().unwrap_or_else(|e| e.into_inner());
-        let responded = *self.last_response.lock().unwrap_or_else(|e| e.into_inner());
-        if sent > responded && now.duration_since(responded) > std::time::Duration::from_secs(10) {
+        if self
+            .frame_watchdog
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_stalled(std::time::Instant::now())
+        {
             tracing::warn!("compositor: 帧响应超时（10s 无响应），视为断连并回退 legacy");
             self.status.store(CompositorStatus::Disconnected);
         }
     }
 
     fn send(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64, paint: PaintSnapshotParams) {
-        // R3254-F10：记录帧提交时间（看门狗判定「发送后无响应」）。
-        *self.last_frame_sent.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
         if self.status.load() == CompositorStatus::Disconnected {
             return;
         }
@@ -649,7 +670,7 @@ fn worker_main<F>(
     completed: Arc<CompletedFrameChannel>,
     present: Arc<PresentFrameChannel>,
     status: Arc<SharedStatus>,
-    last_response: Arc<std::sync::Mutex<std::time::Instant>>,
+    frame_watchdog: Arc<Mutex<FrameWatchdog>>,
     connect: F,
 ) where
     F: FnOnce() -> Result<Box<dyn WorkerTransport>, String>,
@@ -678,7 +699,7 @@ fn worker_main<F>(
             &completed,
             &present,
             &mut next_message_id,
-            &last_response,
+            &frame_watchdog,
         ) {
             tracing::warn!("Compositor IPC disconnected: {error}");
             status.store(CompositorStatus::Disconnected);
@@ -696,7 +717,7 @@ fn process_batch(
     completed: &CompletedFrameChannel,
     present: &PresentFrameChannel,
     next_message_id: &mut u64,
-    last_response: &Arc<std::sync::Mutex<std::time::Instant>>,
+    frame_watchdog: &Arc<Mutex<FrameWatchdog>>,
 ) -> Result<(), ProtocolError> {
     for command in commands {
         let mut outstanding = HashMap::new();
@@ -712,6 +733,10 @@ fn process_batch(
                         key.frame_id
                     );
                 }
+                frame_watchdog
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .begin(std::time::Instant::now());
                 transport.send(IpcMessage {
                     id: message_id,
                     kind: IpcMessageKind::CompositorFrame {
@@ -800,14 +825,18 @@ fn process_batch(
         // 下一条，避免两个进程同时向对方写大帧、却都没有读取而形成管道背压死锁。
         while !outstanding.is_empty() {
             let response = transport.recv()?;
-            // R3254-F10：每次成功响应更新看门狗时间戳（卡在 recv 时无法更新 → 主线程判超时）。
-            *last_response.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
             let Some(expected) = outstanding.remove(&response.id) else {
                 return Err(ProtocolError::Channel(format!(
                     "unexpected compositor response id {}",
                     response.id
                 )));
             };
+            if matches!(&expected, ExpectedResponse::Result(_) | ExpectedResponse::Data(_)) {
+                frame_watchdog
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .progress(std::time::Instant::now());
+            }
             match (expected, response.kind) {
                 (
                     ExpectedResponse::Result(expected),
@@ -856,6 +885,10 @@ fn process_batch(
                         frame_id,
                     }) =>
                 {
+                    frame_watchdog
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .complete();
                     let resolved_frame = zero_protocol::resolve_compositor_frame_delivery_fenced(
                         width,
                         height,
@@ -1210,6 +1243,51 @@ mod tests {
         }
     }
 
+    fn frame_watchdog() -> Arc<Mutex<FrameWatchdog>> {
+        Arc::new(Mutex::new(FrameWatchdog::default()))
+    }
+
+    #[test]
+    fn frame_watchdog_ignores_idle_time_before_a_request_starts() {
+        let idle_start = std::time::Instant::now();
+        let request_start = idle_start + Duration::from_secs(20);
+        let mut watchdog = FrameWatchdog::default();
+
+        assert!(!watchdog.is_stalled(request_start));
+        watchdog.begin(request_start);
+        assert!(!watchdog.is_stalled(request_start));
+        assert!(watchdog.is_stalled(request_start + Duration::from_secs(11)));
+    }
+
+    #[test]
+    fn frame_watchdog_tracks_progress_and_clears_after_completion() {
+        let start = std::time::Instant::now();
+        let mut watchdog = FrameWatchdog::default();
+
+        watchdog.begin(start);
+        watchdog.progress(start + Duration::from_secs(5));
+        assert!(!watchdog.is_stalled(start + Duration::from_secs(11)));
+        watchdog.complete();
+        assert!(!watchdog.is_stalled(start + Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn queueing_a_frame_does_not_start_the_worker_watchdog() {
+        let frame_watchdog = frame_watchdog();
+        let client = Client {
+            commands: Arc::new(CommandChannel::new(1)),
+            completed: Arc::new(CompletedFrameChannel::new(1)),
+            present: Arc::new(PresentFrameChannel::new()),
+            status: Arc::new(SharedStatus::new(CompositorStatus::Healthy)),
+            child: Arc::new(Mutex::new(None)),
+            worker: None,
+            frame_watchdog: Arc::clone(&frame_watchdog),
+        };
+
+        client.send(1, 1, 1, PaintSnapshotParams::default());
+        assert!(frame_watchdog.lock().unwrap().last_progress.is_none());
+    }
+
     struct ScriptedTransport {
         sent: Arc<Mutex<Vec<IpcMessage>>>,
         responses: VecDeque<Result<IpcMessage, ProtocolError>>,
@@ -1300,14 +1378,14 @@ mod tests {
         let completed = CompletedFrameChannel::new(1);
         let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
-        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let frame_watchdog = frame_watchdog();
         process_batch(
             &mut transport,
             batch,
             &completed,
             &present,
             &mut next_message_id,
-            &last_response,
+            &frame_watchdog,
         )
         .unwrap();
 
@@ -1372,7 +1450,7 @@ mod tests {
         let present = PresentFrameChannel::new();
         let mut next_message_id = 1;
 
-        let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let frame_watchdog = frame_watchdog();
         process_batch(
             &mut transport,
             vec![
@@ -1382,11 +1460,12 @@ mod tests {
             &completed,
             &present,
             &mut next_message_id,
-            &last_response,
+            &frame_watchdog,
         )
         .unwrap();
 
         assert_eq!(sent.lock().unwrap().len(), 4);
+        assert!(frame_watchdog.lock().unwrap().last_progress.is_none());
         assert_eq!(completed.try_recv(10, 4, 1).unwrap().rgba[0], 11);
         assert_eq!(completed.try_recv(20, 7, 2).unwrap().rgba[0], 22);
     }
@@ -1421,14 +1500,15 @@ mod tests {
         let worker_completed = Arc::clone(&completed);
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
+        let frame_watchdog = frame_watchdog();
+        let worker_frame_watchdog = Arc::clone(&frame_watchdog);
         let worker = thread::spawn(move || {
-            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
             worker_main(
                 worker_commands,
                 worker_completed,
                 worker_present,
                 worker_status,
-                last_response,
+                worker_frame_watchdog,
                 || {
                     Ok(Box::new(BlockingTransport {
                         entered: Some(entered_tx),
@@ -1440,6 +1520,12 @@ mod tests {
 
         assert!(commands.send_frame(pending(1, 1, 1)));
         entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(
+            frame_watchdog
+                .lock()
+                .unwrap()
+                .is_stalled(std::time::Instant::now() + Duration::from_secs(11))
+        );
         let (done_tx, done_rx) = mpsc::sync_channel(1);
         let submit_commands = Arc::clone(&commands);
         thread::spawn(move || {
@@ -1477,13 +1563,12 @@ mod tests {
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
             worker_main(
                 worker_commands,
                 worker_completed,
                 worker_present,
                 worker_status,
-                last_response,
+                frame_watchdog(),
                 || {
                     Ok(Box::new(ScriptedTransport {
                         sent: Arc::new(Mutex::new(Vec::new())),
@@ -1510,13 +1595,12 @@ mod tests {
         let worker_status = Arc::clone(&status);
         let worker_present = Arc::new(PresentFrameChannel::new());
         let worker = thread::spawn(move || {
-            let last_response = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
             worker_main(
                 worker_commands,
                 worker_completed,
                 worker_present,
                 worker_status,
-                last_response,
+                frame_watchdog(),
                 || {
                     Ok(Box::new(ScriptedTransport {
                         sent: Arc::new(Mutex::new(Vec::new())),
@@ -1530,8 +1614,7 @@ mod tests {
             thread::yield_now();
         }
         let mut client = Client {
-            last_response: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
-            last_frame_sent: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
+            frame_watchdog: frame_watchdog(),
             commands,
             completed,
             present: Arc::new(PresentFrameChannel::new()),

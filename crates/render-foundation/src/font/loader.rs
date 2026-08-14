@@ -3,7 +3,7 @@
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::{HashMap, HashSet};
 use shaping::ShapeCache;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 mod metrics;
 mod shaping;
@@ -14,8 +14,8 @@ mod freetype_raster;
 
 /// 字体加载器 — 管理字体集合
 pub struct FontLoader {
-    /// 已加载的字体（fontdue 实例；Arc 共享使 `duplicate` 免深拷贝 19MB CJK 解析结果）
-    fonts: HashMap<u32, Arc<fontdue::Font>>,
+    /// 按需解析的 fontdue 实例；常规 shaping/FreeType 路径只读 `font_data`，不展开全量 glyph 轮廓。
+    fonts: HashMap<u32, Arc<OnceLock<Result<fontdue::Font, String>>>>,
     /// 字体原始字节数据（供 rustybuzz / freetype-raster 使用；Arc 共享同上）
     font_data: HashMap<u32, Arc<Vec<u8>>>,
     /// TTC/OTC collection face index；普通单字体文件为 0。
@@ -71,12 +71,10 @@ impl FontLoader {
         }
     }
 
-    /// 深拷贝全部已加载字体（含已解析的 fontdue 轮廓数据）。
+    /// 复制字体注册表；原始字节与已按需解析的 fontdue 实例通过 Arc 共享。
     ///
-    /// 用途：复用已解析的 base 字体集（系统 + CJK + Ahem）构造 fresh loader 追加
-    /// `@font-face` 自定义字体——避免对 19MB CJK 字体重复 `from_bytes` 解析
-    ///（~0.5s/次，reftest harness 每 distinct 键一次）。字体数据 Arc 共享
-    ///（引用计数 + 元数据映射拷贝），比重新解析快两个量级。
+    /// 用途：复用 base 字体集（系统 + CJK + Ahem）构造 fresh loader 追加
+    /// `@font-face` 自定义字体。未使用的字体保持未解析；已解析实例不会重复解析。
     pub fn duplicate(&self) -> Self {
         Self {
             fonts: self.fonts.clone(),
@@ -131,7 +129,7 @@ impl FontLoader {
 
     /// 从字节数据加载字体
     ///
-    /// 自动识别 WOFF / WOFF2 容器并先解码为 sfnt，再交给 fontdue。
+    /// 自动识别 WOFF / WOFF2 容器并先解码为 sfnt，再登记轻量字体元数据。
     /// `.ttf` / `.otf` 裸 sfnt 直接加载。
     pub fn load_font(&mut self, data: &[u8]) -> Result<u32, FontError> {
         self.load_font_at_index(data, 0)
@@ -139,8 +137,8 @@ impl FontLoader {
 
     /// 从 TTC/OTC collection 的指定 face 加载字体。
     pub fn load_font_at_index(&mut self, data: &[u8], face_index: u32) -> Result<u32, FontError> {
-        // Decode supported webfont containers. Decode failure falls through to fontdue,
-        // which returns the existing ParseFailed error at the trust boundary.
+        // Decode supported webfont containers. Decode failure falls through to the sfnt
+        // validator, which returns the existing ParseFailed error at the trust boundary.
         let decoded = if crate::font::woff::is_woff(data) {
             crate::font::woff::decode_woff(data)
         } else if crate::font::woff::is_woff2(data) && std::env::var("ZW_WOFF2").as_deref() != Ok("0") {
@@ -150,14 +148,8 @@ impl FontLoader {
         };
         let bytes: &[u8] = decoded.as_deref().unwrap_or(data);
 
-        let font = fontdue::Font::from_bytes(
-            bytes,
-            fontdue::FontSettings {
-                collection_index: face_index,
-                ..fontdue::FontSettings::default()
-            },
-        )
-        .map_err(|e| FontError::ParseFailed(e.to_string()))?;
+        rustybuzz::ttf_parser::Face::parse(bytes, face_index)
+            .map_err(|error| FontError::ParseFailed(error.to_string()))?;
 
         let id = self.next_id;
         self.next_id += 1;
@@ -175,7 +167,9 @@ impl FontLoader {
             self.family_map.entry(name).or_default().push(id);
         }
 
-        self.fonts.insert(id, Arc::new(font));
+        // OPTIMIZATION: fontdue 会在 `from_bytes` 中展开 face 的全部 glyph 轮廓；大型
+        // CJK/Emoji 字体单 face 可占数百 MB。这里只登记空槽，纯 Rust 回退真正需要时再解析。
+        self.fonts.insert(id, Arc::new(OnceLock::new()));
         self.font_data.insert(id, Arc::new(bytes.to_vec()));
         self.face_indices.insert(id, face_index);
         Ok(id)
@@ -191,9 +185,45 @@ impl FontLoader {
         self.family_aliases.insert(alias.to_string());
     }
 
-    /// 根据 ID 获取字体
+    /// 根据 ID 获取 fontdue 字体；首次调用时才展开该 face 的 glyph 轮廓。
     pub fn get(&self, id: u32) -> Option<&fontdue::Font> {
-        self.fonts.get(&id).map(|f| f.as_ref())
+        self.fontdue_font(id).ok()
+    }
+
+    fn fontdue_font(&self, id: u32) -> Result<&fontdue::Font, FontError> {
+        let slot = self
+            .fonts
+            .get(&id)
+            .ok_or_else(|| FontError::NotFound(format!("font_id={id}")))?;
+        let data = self
+            .font_data
+            .get(&id)
+            .ok_or_else(|| FontError::NotFound(format!("font_id={id}")))?;
+        slot.get_or_init(|| {
+            fontdue::Font::from_bytes(
+                data.as_slice(),
+                fontdue::FontSettings {
+                    collection_index: self.face_index(id),
+                    ..fontdue::FontSettings::default()
+                },
+            )
+            .map_err(str::to_string)
+        })
+        .as_ref()
+        .map_err(|error| FontError::ParseFailed(error.clone()))
+    }
+
+    fn font_has_glyph(&self, font_id: u32, code_point: char) -> bool {
+        self.font_data
+            .get(&font_id)
+            .and_then(|data| rustybuzz::ttf_parser::Face::parse(data, self.face_index(font_id)).ok())
+            .and_then(|face| face.glyph_index(code_point))
+            .is_some_and(|glyph_id| glyph_id.0 != 0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn parsed_fontdue_count(&self) -> usize {
+        self.fonts.values().filter(|slot| slot.get().is_some()).count()
     }
 
     /// 获取字体原始字节数据（供 rustybuzz 等 shaping 引擎使用）。
@@ -338,11 +368,7 @@ impl FontLoader {
         }
         // FreeType 失败（字形缺失等）→ 回退 fontdue 路径（下方 fontdue 代码）。
 
-        let font = self
-            .fonts
-            .get(&font_id)
-            .map(|f| f.as_ref())
-            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+        let font = self.fontdue_font(font_id)?;
 
         let (metrics, bitmap) = font.rasterize(code_point, size);
 
@@ -398,11 +424,7 @@ impl FontLoader {
             ));
         }
 
-        let font = self
-            .fonts
-            .get(&font_id)
-            .map(|font| font.as_ref())
-            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+        let font = self.fontdue_font(font_id)?;
         let (metrics, bitmap) = font.rasterize_indexed(glyph_index, size);
         Ok(GlyphBitmap {
             data: bitmap,
@@ -419,11 +441,7 @@ impl FontLoader {
     /// Ahem 是 WPT 标准测试字体，每个字符应渲染为边长 = font_size 的实心方块。
     /// fontdue 的光栅化结果与 Skia（Chrome）存在差异，直接生成方块可确保像素级对齐。
     fn rasterize_ahem_glyph(&self, font_id: u32, code_point: char, size: f32) -> Result<GlyphBitmap, FontError> {
-        let font = self
-            .fonts
-            .get(&font_id)
-            .map(|f| f.as_ref())
-            .ok_or_else(|| FontError::NotFound(format!("font_id={font_id}")))?;
+        let font = self.fontdue_font(font_id)?;
 
         // 使用字体的实际 ascent 来计算垂直偏移
         let line_metrics = font
@@ -480,10 +498,7 @@ impl FontLoader {
     pub(crate) fn resolve_font_for_code_point_in_chain(&self, chain: &[u32], code_point: char) -> Option<u32> {
         chain.iter().copied().find(|font_id| {
             self.font_allows_code_point(*font_id, code_point)
-                && self
-                    .fonts
-                    .get(font_id)
-                    .is_some_and(|font| code_point.is_whitespace() || font.has_glyph(code_point))
+                && (code_point.is_whitespace() || self.font_has_glyph(*font_id, code_point))
         })
     }
 
@@ -522,11 +537,11 @@ impl FontLoader {
             if !self.font_allows_code_point(font_id, code_point) {
                 continue;
             }
-            let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
+            if !self.fonts.contains_key(&font_id) {
                 continue;
-            };
+            }
             // 主字体缺字时会 rasterize .notdef 方块；须先检查字体是否包含该字符
-            if !code_point.is_whitespace() && !font.has_glyph(code_point) {
+            if !code_point.is_whitespace() && !self.font_has_glyph(font_id, code_point) {
                 continue;
             }
             let bitmap = self.rasterize_glyph_with_variations(font_id, code_point, size, variations)?;
@@ -543,9 +558,8 @@ impl FontLoader {
 
     /// 获取水平排版行 metrics：`(ascent, descent)`，其中 `descent` 通常为负值。
     pub fn line_metrics(&self, font_id: u32, size: f32) -> Option<(f32, f32)> {
-        let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
-        let metrics = font.horizontal_line_metrics(size)?;
-        Some((metrics.ascent, metrics.descent))
+        self.line_metrics_full(font_id, size)
+            .map(|(ascent, descent, _)| (ascent, descent))
     }
 
     /// 获取水平排版行 metrics 含 `line_gap`：`(ascent, descent, line_gap)`。
@@ -565,9 +579,18 @@ impl FontLoader {
     /// R834 谱系）。本方法供上述 line-height:normal 真实度量路径消费此前被 [`line_metrics`]
     /// 丢弃的 `line_gap`。
     pub fn line_metrics_full(&self, font_id: u32, size: f32) -> Option<(f32, f32, f32)> {
-        let font = self.fonts.get(&font_id).map(|f| f.as_ref())?;
-        let metrics = font.horizontal_line_metrics(size)?;
-        Some((metrics.ascent, metrics.descent, metrics.line_gap))
+        let data = self.font_data.get(&font_id)?;
+        let face = rustybuzz::ttf_parser::Face::parse(data, self.face_index(font_id)).ok()?;
+        let units_per_em = f32::from(face.units_per_em());
+        if units_per_em <= 0.0 {
+            return None;
+        }
+        let scale = size / units_per_em;
+        Some((
+            f32::from(face.ascender()) * scale,
+            f32::from(face.descender()) * scale,
+            f32::from(face.line_gap()) * scale,
+        ))
     }
 
     /// 测量字符 advance 宽度（含回退）
@@ -590,12 +613,12 @@ impl FontLoader {
             if !self.font_allows_code_point(font_id, code_point) {
                 continue;
             }
-            let Some(font) = self.fonts.get(&font_id).map(|f| f.as_ref()) else {
+            if !self.fonts.contains_key(&font_id) {
                 continue;
-            };
+            }
             // 与 rasterize_glyph_with_fallback 相同的缺字检查（空白字符跳过——
             // 空白在任意字体都视为可用，由 advance 决定实际宽度）
-            if !code_point.is_whitespace() && !font.has_glyph(code_point) {
+            if !code_point.is_whitespace() && !self.font_has_glyph(font_id, code_point) {
                 continue;
             }
             #[cfg(feature = "freetype-raster")]
@@ -607,6 +630,10 @@ impl FontLoader {
             }
             #[cfg(not(feature = "freetype-raster"))]
             {
+                let font = match self.fontdue_font(font_id) {
+                    Ok(font) => font,
+                    Err(_) => continue,
+                };
                 let metrics = font.metrics(code_point, size);
                 if metrics.advance_width > 0.0 {
                     return metrics.advance_width;
@@ -901,6 +928,41 @@ mod tests {
     fn test_font_loader_get_nonexistent() {
         let loader = FontLoader::new();
         assert!(loader.get(999).is_none());
+    }
+
+    #[test]
+    fn font_registration_and_normal_render_path_keep_fontdue_lazy() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+
+        assert_eq!(
+            loader.parsed_fontdue_count(),
+            0,
+            "registration must not expand glyph outlines"
+        );
+        assert!(loader.build_font_resolver().contains_key("sans-serif"));
+        assert!(loader.line_metrics_full(font_id, 16.0).is_some());
+        assert!(loader.shape_text_cached(font_id, "Hello", 16.0).is_some());
+        assert!(loader.rasterize_glyph(font_id, 'H', 16.0).is_ok());
+        #[cfg(feature = "freetype-raster")]
+        assert_eq!(
+            loader.parsed_fontdue_count(),
+            0,
+            "ttf-parser/rustybuzz/FreeType production paths must stay lightweight"
+        );
+        #[cfg(not(feature = "freetype-raster"))]
+        assert_eq!(
+            loader.parsed_fontdue_count(),
+            1,
+            "the pure Rust raster fallback should parse fontdue only on first use"
+        );
+
+        assert!(
+            loader.get(font_id).is_some(),
+            "legacy fontdue API remains available on demand"
+        );
+        assert_eq!(loader.parsed_fontdue_count(), 1);
     }
 
     #[test]

@@ -115,8 +115,7 @@ impl FontLoader {
                 }
                 let id = if self.family_aliases.contains(&family) {
                     self.family_map.get(&family)?.iter().copied().find(|font_id| {
-                        self.font_allows_code_point(*font_id, ' ')
-                            && self.fonts.get(font_id).is_some_and(|font| font.has_glyph(' '))
+                        self.font_allows_code_point(*font_id, ' ') && self.font_has_glyph(*font_id, ' ')
                     })?
                 } else {
                     base_id
