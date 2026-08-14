@@ -59,7 +59,9 @@ const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 /// 用例按需 fetch、不入库）；新子目录随 M4 切片扩展追加。dom 用例只需
 /// `resources/testharness.js`（runner 内联），不依赖 canvas-tests.js。
 /// R21 追加 dom/events（Event-dispatch 系列 / EventTarget / EventListener——事件桥核心面）。
-pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes", "dom/events"];
+/// R37 追加 dom/collections（HTMLCollection / NodeList / document.forms 等集合 API——纯 DOM API，
+/// 不依赖 document/window listener 深结构，根因清楚可按聚类驱动修复）。
+pub const DOM_TEST_SUBDIRS: &[&str] = &["dom/nodes", "dom/events", "dom/collections"];
 
 /// WPT subtest status.
 ///

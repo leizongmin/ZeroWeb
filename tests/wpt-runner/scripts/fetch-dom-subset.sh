@@ -26,6 +26,7 @@ API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
 SUBDIRS=(
   "dom/nodes"
   "dom/events"
+  "dom/collections"
 )
 
 fetch_raw() {

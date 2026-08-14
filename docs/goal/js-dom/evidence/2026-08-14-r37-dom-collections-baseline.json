@@ -1,0 +1,31 @@
+{
+  "round": "R37",
+  "date": "2026-08-14",
+  "milestone": "M4 / DC-3 (baseline expansion)",
+  "slice": "import dom/collections subdir + establish pass-rate baseline (asset-only, zero source logic change)",
+  "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+  "config_change": {
+    "testharness_rs_62": "DOM_TEST_SUBDIRS += \"dom/collections\"",
+    "fetch_dom_subset_sh": "SUBDIRS += \"dom/collections\""
+  },
+  "cases_fetched": "10 .html via jsdelivr CDN @master (HTMLCollection-as-prototype/delete/empty-name/iterator/own-props/supported-property-indices/supported-property-names + childnodes-messagechannel-crash + domstringmap-supported-property-names + namednodemap-supported-property-names)",
+  "results": {
+    "polyfill": { "pass": 11, "fail": 37, "timeout": 1, "rate": "22.9%", "subtests": 49, "cases": 10 },
+    "native": { "pass": 11, "fail": 37, "timeout": 1, "rate": "22.9%", "gap_pp": "0.0 (identical — case-side collection via polyfill, unresolved #9)" }
+  },
+  "failure_clusters": [
+    { "cluster": "HTMLCollection own-property enumeration (~19 fail, main)", "root_cause": "_makeProxy lacks getOwnPropertyNames/ownKeys trap — HTMLCollection polyfill proxy returns ['length','item','namedItem'] (proto methods only), not indexed ('0'..'N') + named (id/name attrs, HTML-namespace, dedup) + expando", "cases": ["HTMLCollection-own-props", "HTMLCollection-supported-property-names", "HTMLCollection-supported-property-indices"], "next_slice": "R38" },
+    { "cluster": "HTMLCollection indexed/named set+delete semantics (~5 fail)", "root_cause": "expando must not shadow indexed/named; indexed not deletable" },
+    { "cluster": "NamedAttributeMap own-property enumeration (3 fail)", "root_cause": "attributes getOwnPropertyNames should return indexed + named (attr names)" },
+    { "cluster": "HTMLCollection empty-name/delete/iterator edge (~9 fail)" },
+    { "cluster": "childnodes-messagechannel-crash (1 timeout)", "root_cause": "MessageChannel + childNodes (postMessage infra, not collections core)" }
+  ],
+  "fetch_note": "first fetch hit slow GitHub Contents API (make/script timed out); switched to jsdelivr CDN per-file fetch (0 fail); after cache, R32 idempotent fast-path 0.004s (3 dirs all skip API list).",
+  "ab_equivalence": true,
+  "regression": false,
+  "verification": {
+    "clippy_v8": "zero warnings",
+    "clippy_quickjs": "zero warnings",
+    "fmt": "no diff"
+  }
+}
