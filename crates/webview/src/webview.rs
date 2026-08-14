@@ -15,9 +15,7 @@ use zero_engine::{
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
 #[cfg(feature = "v8")]
 use zero_engine::script_dispatch_native_event;
-use zero_net::{
-    CacheLookup, FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url,
-};
+use zero_net::{FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
 
 use crate::image_decoder::decode_image;
@@ -835,79 +833,9 @@ impl WebView {
             }
         }
 
-        // 检查 HTTP 缓存（本地 file: 页面不缓存，避免磁盘变更后读到旧内容）
-        if !is_file_url(&effective_url) {
-            match zero_net::shared_http_cache()
-                .lock()
-                .unwrap()
-                .lookup(&effective_url, &[])
-            {
-                CacheLookup::Hit(cached) => {
-                    tracing::info!("HTTP cache hit for {effective_url}");
-                    let html = String::from_utf8(cached.body).map_err(|e| {
-                        self.loading = false;
-                        self.emit_event(&WebViewEvent::LoadFailed(
-                            effective_url.to_string(),
-                            format!("Cached response body is not valid UTF-8: {e}"),
-                        ));
-                        WebViewError::Navigation(format!("Cached response body is not valid UTF-8: {e}"))
-                    })?;
-                    let external_css = self.prepare_page_subresources(&html, &effective_url);
-                    let render_result = self.load_html(&html, Some(&external_css));
-                    self.loading = false;
-                    self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
-                    return Ok(render_result);
-                }
-                CacheLookup::Revalidate {
-                    conditional_headers, ..
-                } => match self.http_client.get_with_headers(&effective_url, &conditional_headers) {
-                    Ok(response) if response.status_code == 304 => {
-                        if let Some(cached) =
-                            zero_net::shared_http_cache()
-                                .lock()
-                                .unwrap()
-                                .not_modified(&effective_url, &[], &response)
-                        {
-                            let html = String::from_utf8(cached.body)
-                                .map_err(|e| WebViewError::Navigation(format!("Cached body invalid UTF-8: {e}")))?;
-                            tracing::info!("HTTP 304 revalidated for {effective_url}");
-                            let external_css = self.prepare_page_subresources(&html, &effective_url);
-                            let render_result = self.load_html(&html, Some(&external_css));
-                            self.loading = false;
-                            self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
-                            return Ok(render_result);
-                        }
-                    }
-                    Ok(response) if (200..300).contains(&response.status_code) => {
-                        let _ = zero_net::shared_http_cache()
-                            .lock()
-                            .unwrap()
-                            .put(&effective_url, &response);
-                        let html = response.text().map_err(|e| WebViewError::Navigation(e.to_string()))?;
-                        tracing::info!("Fetched {} bytes from {effective_url} (revalidate)", html.len());
-                        let external_css = self.prepare_page_subresources(&html, &effective_url);
-                        let render_result = self.load_html(&html, Some(&external_css));
-                        self.loading = false;
-                        self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
-                        return Ok(render_result);
-                    }
-                    Ok(_) | Err(_) => {}
-                },
-                CacheLookup::Miss => {}
-            }
-        }
-
-        // 发起 HTTP 请求
-        match self.http_client.get(&effective_url) {
+        // `ResourceLoader` 统一执行 private cache、条件再验证、在途合并和调度。
+        match self.resource_get(&effective_url, FetchPriority::CRITICAL, "document") {
             Ok(response) => {
-                if !is_file_url(&effective_url) {
-                    // 尝试将响应存入共享 HTTP 缓存（S6）
-                    let _ = zero_net::shared_http_cache()
-                        .lock()
-                        .unwrap()
-                        .put(&effective_url, &response);
-                }
-
                 let html = response.text().map_err(|e| {
                     self.loading = false;
                     self.emit_event(&WebViewEvent::LoadFailed(
@@ -1273,7 +1201,9 @@ impl WebView {
 
     /// 经统一资源加载器同步取得 HTTP 子资源；`file:` 保持本地读取语义。
     fn resource_get(&self, url: &str, priority: FetchPriority, destination: &str) -> Result<HttpResponse, NetError> {
-        if is_file_url(url) {
+        // `ResourceLoader` 当前共享默认 30 秒 transport timeout；保留宿主显式超时配置
+        // 的 API 语义，待 loader timeout 成为 request context 的一部分后再统一。
+        if is_file_url(url) || self.http_client.timeout_secs != 30 {
             return self.http_client.get(url);
         }
         ResourceLoader::shared()
