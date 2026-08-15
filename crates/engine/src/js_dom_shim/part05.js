@@ -1098,10 +1098,21 @@
         }
       }
     } else if (name === 'colorMatrix') {
-      var vals = dict.values;
-      if (!Array.isArray(vals) || vals.length !== 20) throw new TypeError('colorMatrix: requires 20 values');
-      for (var i = 0; i < 20; i++) {
-        if (typeof vals[i] !== 'number' || !isFinite(vals[i])) throw new TypeError('colorMatrix: invalid value');
+      // R34xx：values 按 type 分流（spec colorMatrix 字典）——'matrix'（默认）：
+      // 恰 20 有限数（可为 Float32Array 类数组——Array.isArray false → 按 length）；
+      // 'hueRotate'/'saturate'：单个数字（2d.filter.layers.colorMatrix 的
+      // {type:'hueRotate', values: 0}）；'luminanceToAlpha'：无 values。
+      var cmType = dict.type == null ? 'matrix' : String(dict.type);
+      if (cmType === 'matrix') {
+        var vals = dict.values;
+        if (vals === undefined || vals === null || typeof vals.length !== 'number' || vals.length !== 20) {
+          throw new TypeError('colorMatrix: requires 20 values');
+        }
+        for (var i = 0; i < 20; i++) {
+          if (typeof vals[i] !== 'number' || !isFinite(vals[i])) throw new TypeError('colorMatrix: invalid value');
+        }
+      } else if (cmType === 'hueRotate' || cmType === 'saturate') {
+        if (Object.prototype.hasOwnProperty.call(dict, 'values')) _zwFilterNumber(dict.values);
       }
     }
     // 其余 name（dropShadow/blur 等）按测试面宽松接受（dx/dy 数字/串/数组均接受）。
@@ -1881,6 +1892,11 @@
   // 复用 _zwMakeImageBitmap（持 _zwBitmapWire，drawImage 可消费）。canvas bitmap 清空对齐 spec（transfer 语义）。
   OffscreenCanvas.prototype.transferToImageBitmap = function () {
     if (typeof __zw_canvas_op !== 'function') return null;
+    // R34xx（layers 目录）：层打开期间 transferToImageBitmap 抛 InvalidStateError
+    //（2d.layer.malformed-operations.worker）。
+    if (this._ctx && this._ctx._inLayer) {
+      throw _zwDomException('transferToImageBitmap: not allowed while a layer is open', 'InvalidStateError');
+    }
     if (!this._ctx) this.getContext('2d');
     if (!this._ctx) return null;
     var wire = String(__zw_canvas_op(this._ctx._handle, 'getImageData', '0', '0', String(this.width), String(this.height)));
@@ -1891,6 +1907,26 @@
     // 连续 transfer 后 fillStyle/transform 等丢失）。
     __zw_canvas_op(this._ctx._handle, 'clearBitmap');
     return bm;
+  };
+  // R34xx（worker layers）：OffscreenCanvas.convertToBlob（spec——异步 PNG Blob
+  // 导出，镜像 toBlob 的 host 编码路径；层打开期间抛 InvalidStateError——
+  // malformed-operations-with-promises.worker）。
+  OffscreenCanvas.prototype.convertToBlob = function (options) {
+    var self = this;
+    return Promise.resolve().then(function () {
+      if (self._ctx && self._ctx._inLayer) {
+        throw _zwDomException('convertToBlob: not allowed while a layer is open', 'InvalidStateError');
+      }
+      if (typeof __zw_canvas_op !== 'function') return null;
+      if (!self._ctx) self.getContext('2d');
+      if (!self._ctx) return null;
+      var csv = String(__zw_canvas_op(self._ctx._handle, 'toDataURL'));
+      if (!csv) return null;
+      var nums = csv.split(',');
+      var bytes = new Uint8Array(nums.length);
+      for (var j = 0; j < nums.length; j++) bytes[j] = +nums[j];
+      return new Blob([bytes], { type: 'image/png' });
+    });
   };
   Object.defineProperty(OffscreenCanvas.prototype, Symbol.toStringTag, { value: 'OffscreenCanvas' });
   if (!globalThis.OffscreenCanvas) {
@@ -2815,7 +2851,17 @@
       if (options && typeof options === 'object' && options.filter !== undefined && options.filter !== null) {
         // R34xx（filters 目录）：层 filter 校验与 CanvasFilter 同规（gaussianBlur/
         // convolveMatrix/colorMatrix 深校验——2d.filter.layers.*.exceptions）。
-        _zwValidateFilterInput(options.filter);
+        // 数组（[] 等）按 CanvasFilter 列表语义逐元素校验；对象（filter 字典）校验；
+        // 其余（字符串/数字/布尔——DOMString 化）接受（beginLayer-options 的
+        // ''/0/1/true/false）。
+        var _lf = options.filter;
+        if (Array.isArray(_lf)) {
+          for (var _fi = 0; _fi < _lf.length; _fi++) {
+            _zwValidateFilterInput(_lf[_fi]);
+          }
+        } else if (typeof _lf === 'object') {
+          _zwValidateFilterInput(_lf);
+        }
       }
       this._inLayer = true;
       this._saveRaw();
