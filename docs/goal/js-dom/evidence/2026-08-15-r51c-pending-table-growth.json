@@ -1,0 +1,50 @@
+{
+ "round": "R51c",
+ "date": "2026-08-15",
+ "commit": "81ca25b5",
+ "before": {
+  "growth": "250-iter/5s -> 1250-iter/31s (linear O(n^2))",
+  "pa_per_subtest": "+19",
+  "textEls_per_subtest": "+5",
+  "append_path_ms_per_250": [
+   929,
+   942,
+   977
+  ]
+ },
+ "after": {
+  "append_path_ms_per_250": [
+   1827,
+   1801,
+   1850
+  ],
+  "note": "constant (no growth); absolute ~7ms/op remains (2 host round-trips + re-parse = M1 L2 target)"
+ },
+ "regressions": {
+  "dom/nodes": [
+   3049,
+   3096
+  ],
+  "dom/traversal": [
+   925,
+   953
+  ],
+  "dom/events": [
+   189,
+   189
+  ],
+  "dom/collections": [
+   48,
+   48
+  ],
+  "mutations_family_7files": [
+   586,
+   586
+  ]
+ },
+ "engine": {
+  "v8": 2140,
+  "quickjs": 1415
+ },
+ "notes": "zero-out semantics / parent-bucketed overlay / 512-compaction / querySelector pending-id fallback / registry+subtree-unregister fixes; dataChange full run still >560s (per-op cost, M1 L2); detached-container subtree residual slow growth (GC gap)"
+}
