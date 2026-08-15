@@ -1,0 +1,30 @@
+{
+  "date": "2026-08-16",
+  "round": "R60 + R60b",
+  "milestone": "M6 S2q — QuickJS 写入族（textContent setter + 子树 mutation 起步）",
+  "commits": ["be577323 (textContent setter)", "b807e5e9 (createElement + appendChild/removeChild)"],
+  "api_added": {
+    "textContent setter": "清空全部子节点（先收集 NodeId 防边遍历边改）+ 非空追加单 Text 节点；null → 空串（LegacyNullToEmptyString——setter 收 raw Value 手动判 null，Coerced 的 JS ToString 对 null 产出 'null' 字面量不可区分）",
+    "__zw_native_create_element(tag)": "全局工厂（与 V8 同名同 wire）；detached 元素入 arena，返回全套 native 对象；get_or_build_node_value 统一身份缓存入口（element_for_id 与 create_element 两工厂共享）",
+    "appendChild(child)": "child 须为 native 族对象（隐藏 __zwNodeFfi 标记）；spec 移动语义（zero_dom append_child 内建 reparent）；返回 child（spec 返回值）；DomError → null（DOMException 构造器基建延 S4q 对齐，注记在案）",
+    "removeChild(child)": "返回被移除 child；失配 → null"
+  },
+  "tests": {
+    "engine_quickjs": "1419 passed（PoC 扩展：textContent set/null-clear 闭环 + create→append→textContent 反映→remove→textContent 空 全链路）",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_quickjs_wiring": "2 passed",
+    "clippy": "quickjs 矩阵零警告（needless_borrow 修复：as_object 返 &Object）",
+    "fmt": "无 diff"
+  },
+  "api_findings": [
+    "Coerced<String> 的 JS ToString 对 null 产出 'null' 字面量——LegacyNull 语义 setter 须收 raw Value 手动判 null/undefined 再 coerce（textContent setter 实证）",
+    "Value::as_object() 返回 &Object（非 Object）——clippy needless_borrow 与类型对齐的平衡写法：let obj: &Object = v.as_object()?",
+    "with_dom_mut 包 Document::append_child 返 Option<Result<(), DomError>> 双层——match Some(Ok(())) 模式"
+  ],
+  "m6_cumulative": "S0q 骨架 + S1q 8 反射属性(5 setter) + S2q 4 属性方法 + textContent setter + create/append/remove mutation 族；元素对象面：3 构造 getter + 9 属性(6 setter) + 6 方法 + 2 全局工厂 + 身份缓存",
+  "next": [
+    "S2q 续：insertBefore/replaceChild + childNodes/parentNode getter（mutation 后的树读回）",
+    "S3q 查询：querySelector/getElementById 原生（消费 zero_dom 选择器）",
+    "S4q：EventTarget + DOMException 基建（appendChild DomError → DOMException 对齐）"
+  ]
+}
