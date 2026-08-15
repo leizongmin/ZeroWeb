@@ -570,149 +570,6 @@ impl CanvasContext {
     }
 
     /// 计算 arcTo 的几何信息：返回 (切点1x, 切点1y, 切点2x, 切点2y)。
-    /// 特殊情况（半径为 0、共线、点重合等）返回的切点会退化为直线。
-    pub(crate) fn compute_arc_to_geometry(
-        x0: f32,
-        y0: f32,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        radius: f32,
-    ) -> (f32, f32, f32, f32) {
-        // 方向向量：从当前点到控制点1，从控制点1到控制点2
-        let dx1 = x0 - x1;
-        let dy1 = y0 - y1;
-        let dx2 = x2 - x1;
-        let dy2 = y2 - y1;
-
-        let len1 = (dx1 * dx1 + dy1 * dy1).sqrt();
-        let len2 = (dx2 * dx2 + dy2 * dy2).sqrt();
-
-        // 退化为直线：半径为 0，或任一方向向量长度为 0
-        if radius < f32::EPSILON || len1 < f32::EPSILON || len2 < f32::EPSILON {
-            return (x1, y1, x1, y1);
-        }
-
-        // 单位方向向量
-        let ux1 = dx1 / len1;
-        let uy1 = dy1 / len1;
-        let ux2 = dx2 / len2;
-        let uy2 = dy2 / len2;
-
-        // 两条切线之间的夹角
-        let dot = ux1 * ux2 + uy1 * uy2;
-        // 夹角接近 ±1 表示共线或反平行
-        let one_minus_dot_sq = 1.0 - dot * dot;
-        if one_minus_dot_sq < f32::EPSILON {
-            // 共线情况：直接画线到控制点1
-            return (x1, y1, x1, y1);
-        }
-
-        // 圆弧圆心到控制点1的距离
-        let d = radius / one_minus_dot_sq.sqrt();
-
-        // 圆弧圆心坐标
-        let cx = x1 + d * (ux1 + ux2);
-        let cy = y1 + d * (uy1 + uy2);
-
-        // 切点1：圆心 + radius * 指向当前点方向的单位向量
-        let t1x = cx + radius * ux1;
-        let t1y = cy + radius * uy1;
-
-        // 切点2：圆心 + radius * 指向控制点2方向的单位向量
-        let t2x = cx + radius * ux2;
-        let t2y = cy + radius * uy2;
-
-        (t1x, t1y, t2x, t2y)
-    }
-
-    /// 将 arcTo 命令扁平化为线段顶点。
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn flatten_arc_to(
-        vertices: &mut Vec<f32>,
-        current_x: f32,
-        current_y: f32,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        radius: f32,
-        segments: usize,
-        has_subpath: bool,
-    ) {
-        let (t1x, t1y, t2x, t2y) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
-
-        // 从当前点画线到切点1。R56e：spec dom-context-2d-arcto——无任何子路径时
-        // 第一个控制点被加入（等同 moveTo，P1 成为起点），**不画** current→切点1
-        // 连线（2d.path.arcTo.ensuresubpath.1：beginPath 后 arcTo + stroke 中部保持底色）。
-        if has_subpath && ((current_x - t1x).abs() > f32::EPSILON || (current_y - t1y).abs() > f32::EPSILON) {
-            vertices.push(current_x);
-            vertices.push(current_y);
-            vertices.push(t1x);
-            vertices.push(t1y);
-        }
-
-        // 如果两个切点重合（退化情况），不需要画弧
-        if (t1x - t2x).abs() < f32::EPSILON && (t1y - t2y).abs() < f32::EPSILON {
-            return;
-        }
-
-        // 计算圆弧圆心和角度范围
-        let v1x = t1x - x1;
-        let v1y = t1y - y1;
-        let v2x = t2x - x1;
-        let v2y = t2y - y1;
-        let lv1 = (v1x * v1x + v1y * v1y).sqrt();
-        let lv2 = (v2x * v2x + v2y * v2y).sqrt();
-
-        if lv1 < f32::EPSILON || lv2 < f32::EPSILON {
-            return;
-        }
-
-        // 圆心在切点1沿远离控制点1方向偏移 radius 处
-        let cx = t1x + (radius / lv1) * v1x;
-        let cy = t1y + (radius / lv1) * v1y;
-
-        // 计算切点相对圆心的角度
-        let start_angle = (t1y - cy).atan2(t1x - cx);
-        let end_angle = (t2y - cy).atan2(t2x - cx);
-
-        // 确定弧线方向：从 t1 经过远离 (x1,y1) 的方向到 t2
-        // 使用叉积判断方向
-        let cross = v1x * v2y - v1y * v2x;
-        let mut angle_span = end_angle - start_angle;
-
-        // 根据叉积方向调整角度范围
-        if cross >= 0.0 {
-            // 逆时针：确保 angle_span > 0
-            if angle_span < 0.0 {
-                angle_span += std::f32::consts::TAU;
-            }
-        } else {
-            // 顺时针：确保 angle_span < 0
-            if angle_span > 0.0 {
-                angle_span -= std::f32::consts::TAU;
-            }
-        }
-
-        // 用线段近似弧线
-        let step = angle_span / segments as f32;
-        let mut px = t1x;
-        let mut py = t1y;
-        for i in 0..segments {
-            let angle = start_angle + step * (i + 1) as f32;
-            let nx = cx + radius * angle.cos();
-            let ny = cy + radius * angle.sin();
-            vertices.push(px);
-            vertices.push(py);
-            vertices.push(nx);
-            vertices.push(ny);
-            px = nx;
-            py = ny;
-        }
-    }
-
     /// 将当前路径命令扁平化为顶点列表（x, y 交替）。
     /// 对于圆弧，使用线性近似（固定 16 段细分）。
     /// `close_open_subpaths`：fill/clip/isPointInPath 需 **closepath-on-fill** 隐式
@@ -924,35 +781,65 @@ impl CanvasContext {
                     }
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
-                    // R34xx（arcTo）：无子路径 → moveTo 首控制点——**不画线段**
-                    //（"nothing is drawn up to it"，2d.path.arcTo.ensuresubpath.1）。
-                    if !has_any_subpath {
-                        current_x = x1;
-                        current_y = y1;
-                        has_any_subpath = true;
-                        continue;
-                    }
+                    // R56f（M8/DC-8）：arcTo 真切线弧（path.rs 共享几何——切点
+                    // T1/T2 + t = r/tan(φ/2) + 弧展平；旧 flatten_arc_to 线段近似
+                    // 对远切点/变换场景形状不准，2d.path.arcTo.shape.*/scale/
+                    // transformation 实证）。无子路径语义内含（moveTo 首控制点）。
+                    //
+                    // 角缩放 CTM（sx≠sy）：spec 弧是**用户空间的圆**经 CTM 变换
+                    // （= 设备空间椭圆）——切线几何须在用户空间构造后逐点正变换
+                    //（arcTo.scale 的 scale(0.1,1)：圆弧→扁椭圆弧）。控制点参数
+                    // 在追加时已变换到设备空间，先逆变换回用户空间做圆弧。
                     subpath_has_geometry = true;
-                    // R56e：先用旧值（无子路径 → 不画 current→切点1 连线），再置位。
                     let had_subpath = has_any_subpath;
                     has_any_subpath = true;
-                    Self::flatten_arc_to(
-                        &mut vertices,
-                        current_x,
-                        current_y,
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        radius,
-                        ARC_SEGMENTS,
-                        had_subpath,
-                    );
-                    // flatten_arc_to updates current_x/current_y via the returned value
-                    // We compute the final point directly
-                    let (_, _, nx, ny) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
-                    current_x = nx;
-                    current_y = ny;
+                    let sx = self.transform.a;
+                    let sy = self.transform.d;
+                    let anisotropic = (sx - sy).abs() > 1e-6 * sx.abs().max(sy.abs()).max(1.0);
+                    if anisotropic {
+                        let inv = self.transform.inverse();
+                        let (ux0, uy0) = inv.transform_point(current_x, current_y);
+                        let (ux1, uy1) = inv.transform_point(x1, y1);
+                        let (ux2, uy2) = inv.transform_point(x2, y2);
+                        let start = vertices.len();
+                        let (unx, uny) = crate::path::arc_to_tangent_segments(
+                            &mut vertices,
+                            ux0,
+                            uy0,
+                            ux1,
+                            uy1,
+                            ux2,
+                            uy2,
+                            radius,
+                            had_subpath,
+                        );
+                        // 输出段逐点正变换。
+                        for seg in vertices[start..].chunks_exact_mut(4) {
+                            let (ax, ay) = self.transform.transform_point(seg[0], seg[1]);
+                            let (bx, by) = self.transform.transform_point(seg[2], seg[3]);
+                            seg[0] = ax;
+                            seg[1] = ay;
+                            seg[2] = bx;
+                            seg[3] = by;
+                        }
+                        let (nx, ny) = self.transform.transform_point(unx, uny);
+                        current_x = nx;
+                        current_y = ny;
+                    } else {
+                        let (nx, ny) = crate::path::arc_to_tangent_segments(
+                            &mut vertices,
+                            current_x,
+                            current_y,
+                            x1,
+                            y1,
+                            x2,
+                            y2,
+                            radius,
+                            had_subpath,
+                        );
+                        current_x = nx;
+                        current_y = ny;
+                    }
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     subpath_has_geometry = true;
@@ -1135,9 +1022,10 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    // R56f：同 flatten_path_opts——共享真切线弧几何。
                     let had_subpath = has_any_subpath;
                     has_any_subpath = true;
-                    Self::flatten_arc_to(
+                    let (nx, ny) = crate::path::arc_to_tangent_segments(
                         &mut vertices,
                         current_x,
                         current_y,
@@ -1146,10 +1034,8 @@ impl CanvasContext {
                         x2,
                         y2,
                         radius,
-                        ARC_SEGMENTS,
                         had_subpath,
                     );
-                    let (_, _, nx, ny) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
                     current_x = nx;
                     current_y = ny;
                 }

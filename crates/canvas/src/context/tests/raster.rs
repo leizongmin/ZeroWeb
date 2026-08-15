@@ -364,96 +364,6 @@ fn test_flatten_round_rect_negative_radius_clamped() {
     assert_eq!(verts.len(), 4 * 4, "negative radius degenerates to rect");
 }
 
-// ── compute_arc_to_geometry 测试 ──
-
-#[test]
-fn test_compute_arc_to_geometry_zero_radius() {
-    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 0.0);
-    // 零半径 → 退化为控制点
-    assert_eq!(t1x, 50.0);
-    assert_eq!(t1y, 0.0);
-    assert_eq!(t2x, 50.0);
-    assert_eq!(t2y, 0.0);
-}
-
-#[test]
-fn test_compute_arc_to_geometry_collinear() {
-    // 三点共线 → 退化为直线
-    let (t1x, _t1y, t2x, _t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 0.0, 100.0, 0.0, 20.0);
-    assert_eq!(t1x, 50.0);
-    assert_eq!(t2x, 50.0);
-}
-
-#[test]
-fn test_compute_arc_to_geometry_normal() {
-    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0);
-    // 正常情况：切点不在控制点上
-    assert_ne!(
-        (t1x, t1y),
-        (50.0, 0.0),
-        "tangent point should differ from control for normal case"
-    );
-    assert_ne!((t2x, t2y), (50.0, 0.0), "tangent point 2 should differ from control");
-}
-
-#[test]
-fn test_compute_arc_to_geometry_coincident_points() {
-    // 起点和控制点重合 → len1=0 → 退化为控制点
-    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(50.0, 0.0, 50.0, 0.0, 100.0, 0.0, 20.0);
-    assert_eq!(t1x, 50.0);
-    assert_eq!(t1y, 0.0);
-    assert_eq!(t2x, 50.0);
-    assert_eq!(t2y, 0.0);
-}
-
-#[test]
-fn test_compute_arc_to_geometry_control2_coincident() {
-    // 控制点1和终点重合 → len2=0 → 退化为控制点
-    let (t1x, t1y, t2x, t2y) = CanvasContext::compute_arc_to_geometry(0.0, 0.0, 50.0, 50.0, 50.0, 50.0, 20.0);
-    assert_eq!(t1x, 50.0);
-    assert_eq!(t1y, 50.0);
-    assert_eq!(t2x, 50.0);
-    assert_eq!(t2y, 50.0);
-}
-
-// ── flatten_arc_to 测试 ──
-
-#[test]
-fn test_flatten_arc_to_normal() {
-    let mut verts = Vec::new();
-    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4, true);
-    assert!(!verts.is_empty(), "normal arc should produce vertices");
-    // 每个段 4 个 f32 (x1,y1,x2,y2)
-    assert!(
-        verts.len() >= 4 * 4,
-        "should have >= 4 arc segments + 1 connecting line"
-    );
-}
-
-#[test]
-fn test_flatten_arc_to_degenerate() {
-    // 零半径 → 切点重合，不产生弧线（可能有连接线到控制点）
-    let mut verts = Vec::new();
-    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 0.0, 4, true);
-    // 零半径 → t1==t2 → 在切点重合检查处直接返回（无连接线因为 current!=t1 也不满足）
-    // 或者只产生连接线但不产生弧线段
-    // 最多 4 floats (连接线), 不应有弧线段
-    assert!(
-        verts.len() <= 4,
-        "zero-radius arc should produce no arc segments, got {} floats",
-        verts.len()
-    );
-}
-
-#[test]
-fn test_flatten_arc_to_same_position() {
-    // 当前点已在切点位置 → 不画连接线
-    let mut verts = Vec::new();
-    // 使用共线点使切点在控制点上
-    CanvasContext::flatten_arc_to(&mut verts, 50.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4, true);
-    // 切点重合 → 直接返回
-}
-
 // ── flatten_path 测试（通过 CanvasContext 的 current_path）──
 
 #[test]
@@ -1948,15 +1858,18 @@ fn test_curve_no_subpath_first_control_point_r56e() {
 
 #[test]
 fn test_arcto_no_subpath_no_leading_line_r56e() {
-    // spec dom-context-2d-arcto：无子路径时第一控制点加入（P1 起点），不画
-    // current→切点1 连线——弧段本身仍输出。
+    // spec dom-context-2d-arcto：无子路径时第一控制点加入为起点（P1），
+    // **什么都不画**（"nothing is drawn up to it"——R56f 修正：R56e 版「弧仍画」
+    // 是误读，真浏览器该场景 stroke 输出为空；WPT ensuresubpath.1 期望图整片底色）。
     let mut ctx = CanvasContext::new(100, 50);
     ctx.begin_path();
     ctx.arc_to(100.0, 50.0, 200.0, 50.0, 0.1);
     let v = ctx.flatten_path_open();
-    assert!(!v.is_empty(), "arc itself is still drawn");
-    // 无 (0,0)→… 杂散段：首段起点应在 P1 切点附近（x≈100），不在 (0,0)。
-    assert!(v[0] > 90.0, "first seg starts near P1 tangent (x≈100), got x={}", v[0]);
+    assert!(v.is_empty(), "no-subpath arcTo draws nothing, got {} segs", v.len() / 4);
+    // 后续 lineTo 从 P1 起（P1 已是子路径起点）正常画。
+    ctx.line_to(50.0, 25.0);
+    let v2 = ctx.flatten_path_open();
+    assert_eq!(v2.len(), 4, "following lineTo draws one segment from P1");
 }
 
 #[test]
@@ -2011,4 +1924,51 @@ fn test_clip_empty_and_intersect_r56e() {
     let outside = ctx3.get_image_data(10, 25, 1, 1);
     assert_eq!(in_overlap.data[0], 255, "overlap region drawn");
     assert_eq!(outside.data[0], 0, "outside both clips culled");
+}
+
+// ── R56f：arcTo 真切线弧 + 变换语义 ──
+
+#[test]
+fn test_arcto_tangent_geometry_and_anisotropic_transform_r56f() {
+    // 2d.path.arcTo.transformation 场景：moveTo(0,50) + translate(100,0) +
+    // arcTo(50,50,50,0,50)——切线弧 T1=(100,50)、圆心 (100,0)、T2=(150,0)。
+    let mut ctx = CanvasContext::new(200, 50);
+    ctx.begin_path();
+    ctx.move_to(0.0, 50.0);
+    ctx.translate(100.0, 0.0);
+    ctx.arc_to(50.0, 50.0, 50.0, 0.0, 50.0);
+    let v = ctx.flatten_path();
+    // 首段 = P0(0,50)→T1(100,50)（切线连线）。
+    assert!(
+        (v[0] - 0.0).abs() < 1.0 && (v[1] - 50.0).abs() < 1.0 && (v[2] - 100.0).abs() < 1.5,
+        "leading tangent line P0->T1, got ({},{})",
+        v[0],
+        v[2]
+    );
+    // 末弧段终点 ≈ T2(150,0)（fill 语义 flatten 末尾是 closepath-on-fill 闭合段，
+    // 弧末取倒数第二段）。
+    let arc_end = &v[v.len() - 8..v.len() - 4];
+    assert!(
+        (arc_end[2] - 150.0).abs() < 1.5 && arc_end[3].abs() < 1.5,
+        "arc ends at T2(150,0), got ({},{})",
+        arc_end[2],
+        arc_end[3]
+    );
+
+    // 各向异性 CTM（2d.path.arcTo.scale 的 scale(0.1,1)）：弧在用户空间构造后
+    // 正变换——设备空间 x 压 0.1。切线 T1 用户空间 (0,50)+…，设备空间近似窄弧。
+    let mut ctx2 = CanvasContext::new(200, 50);
+    ctx2.begin_path();
+    ctx2.move_to(0.0, 50.0);
+    ctx2.translate(100.0, 0.0);
+    ctx2.scale(0.1, 1.0);
+    ctx2.arc_to(50.0, 50.0, 50.0, 0.0, 50.0);
+    let v2 = ctx2.flatten_path();
+    assert!(!v2.is_empty());
+    // 弧顶点 x 不应超过 ~100 + 50*0.1 + 容差（用户空间 r=50 经 sx=0.1 压到 5）。
+    let max_x = v2.chunks_exact(4).flat_map(|s| [s[0], s[2]]).fold(f32::MIN, f32::max);
+    assert!(
+        max_x < 115.0,
+        "anisotropic scale clamps arc x-extent (user-space r=50 -> device 5), max_x={max_x}"
+    );
 }

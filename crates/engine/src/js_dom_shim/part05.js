@@ -1598,7 +1598,12 @@
       if (+r < 0) throw _zwDomException('arc: negative radius', 'IndexSizeError');
       __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
     };
-    p.arcTo = function (x1, y1, x2, y2, r) { __zw_canvas_op(h, 'pathArcTo', pid, String(x1), String(y1), String(x2), String(y2), String(r)); };
+    p.arcTo = function (x1, y1, x2, y2, r) {
+      // R56f：Path2D.arcTo 负半径同 ctx 形式抛 IndexSizeError。
+      r = _zwNumArg(r);
+      if (r < 0) throw _zwDomException('arcTo: negative radius', 'IndexSizeError');
+      __zw_canvas_op(h, 'pathArcTo', pid, String(x1), String(y1), String(x2), String(y2), String(r));
+    };
     p.quadraticCurveTo = function (cpx, cpy, x, y) { __zw_canvas_op(h, 'pathQuadratic', pid, String(cpx), String(cpy), String(x), String(y)); };
     p.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) { __zw_canvas_op(h, 'pathBezier', pid, String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y)); };
     p.ellipse = function (x, y, rx, ry, rot, s, e) { __zw_canvas_op(h, 'pathEllipse', pid, String(x), String(y), String(rx), String(ry), String(rot), String(s), String(e)); };
@@ -2836,6 +2841,9 @@
     ctx._methods.arcTo = function (x1, y1, x2, y2, r) {
       x1 = _zwNumArg(x1); y1 = _zwNumArg(y1); x2 = _zwNumArg(x2); y2 = _zwNumArg(y2); r = _zwNumArg(r);
       if (!_zwAllFinite(x1, y1, x2, y2, r)) return;
+      // R56f：负半径 → IndexSizeError（spec dom-context-2d-arcto——
+      // 2d.path.arcTo.negative；76655cc4 提交说明提及但 shim 改动未随提交进入）。
+      if (r < 0) throw _zwDomException('arcTo: negative radius', 'IndexSizeError');
       __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
     };
     ctx._methods.rect = function (x, y, w, hh) {

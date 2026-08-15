@@ -431,116 +431,21 @@ impl Path2D {
                     current_y = py;
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
-                    let (x1, y1, x2, y2, radius) = (*x1, *y1, *x2, *y2, *radius);
-                    // R34xx：arcTo 真切线弧（spec dom-context-2d-arcto）——无子路径 →
-                    // moveTo 首控制点（2d.path.arcTo.ensuresubpath.*）；否则 P0→P1→P2
-                    // 的切线弧（半径 r）：切点 T1 = P1 − û1·t、T2 = P1 + û2·t
-                    //（t = r/tan(φ/2)）；共线/半径过大 → lineTo(P1)。
-                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arcto
-                    if !subpath_open {
-                        // 无子路径：moveTo 首控制点——**不画线段**（"nothing is
-                        // drawn up to it"，2d.path.arcTo.ensuresubpath.1）。
-                        current_x = x1;
-                        current_y = y1;
-                        subpath_open = true;
-                        continue;
-                    }
-                    let (x0, y0) = (current_x, current_y);
-                    let (v1x, v1y) = (x1 - x0, y1 - y0);
-                    let (v2x, v2y) = (x2 - x1, y2 - y1);
-                    let l1 = (v1x * v1x + v1y * v1y).sqrt();
-                    let l2 = (v2x * v2x + v2y * v2y).sqrt();
-                    if l1 < f32::EPSILON || l2 < f32::EPSILON || radius <= 0.0 {
-                        vertices.push(x0);
-                        vertices.push(y0);
-                        vertices.push(x1);
-                        vertices.push(y1);
-                        current_x = x1;
-                        current_y = y1;
-                        continue;
-                    }
-                    let a1 = v1y.atan2(v1x);
-                    let a2 = v2y.atan2(v2x);
-                    let mut phi = a2 - a1;
-                    while phi > std::f32::consts::PI {
-                        phi -= std::f32::consts::TAU;
-                    }
-                    while phi < -std::f32::consts::PI {
-                        phi += std::f32::consts::TAU;
-                    }
-                    if phi.abs() < 1e-4 {
-                        // 共线 → lineTo(P1)。
-                        vertices.push(x0);
-                        vertices.push(y0);
-                        vertices.push(x1);
-                        vertices.push(y1);
-                        current_x = x1;
-                        current_y = y1;
-                        continue;
-                    }
-                    let t = radius / (phi.abs() / 2.0).tan();
-                    if t > l1 || t > l2 {
-                        // 半径过大（切点超出线段）→ lineTo(P1)（spec）。
-                        vertices.push(x0);
-                        vertices.push(y0);
-                        vertices.push(x1);
-                        vertices.push(y1);
-                        current_x = x1;
-                        current_y = y1;
-                        continue;
-                    }
-                    let (u1x, u1y) = (v1x / l1, v1y / l1);
-                    let (u2x, u2y) = (v2x / l2, v2y / l2);
-                    let (t1x, t1y) = (x1 - u1x * t, y1 - u1y * t);
-                    let (t2x, t2y) = (x1 + u2x * t, y1 + u2y * t);
-                    // 圆心：T1 沿角平分线方向（T1 处入切向 −û1、出切向 û2 的平分）
-                    // × r——弧凹向 P1。
-                    let (bix, biy) = (u2x - u1x, u2y - u1y);
-                    let bil = (bix * bix + biy * biy).sqrt();
-                    let (cpx, cpy) = if bil > f32::EPSILON {
-                        let (ux, uy) = (bix / bil, biy / bil);
-                        (t1x + ux * radius, t1y + uy * radius)
-                    } else {
-                        (t1x, t1y)
-                    };
-                    let da1 = (t1y - cpy).atan2(t1x - cpx);
-                    let da2 = (t2y - cpy).atan2(t2x - cpx);
-                    let mut span = da2 - da1;
-                    while span > std::f32::consts::PI {
-                        span -= std::f32::consts::TAU;
-                    }
-                    while span < -std::f32::consts::PI {
-                        span += std::f32::consts::TAU;
-                    }
-                    // 弧转向须与 phi 一致（T1→T2）。
-                    if (span > 0.0) != (phi > 0.0) {
-                        span = if phi > 0.0 {
-                            span + std::f32::consts::TAU
-                        } else {
-                            span - std::f32::consts::TAU
-                        };
-                    }
-                    // 线段 P0→T1 + 弧 T1→T2。
-                    vertices.push(x0);
-                    vertices.push(y0);
-                    vertices.push(t1x);
-                    vertices.push(t1y);
-                    let steps = 16usize.max((span.abs() / 0.15) as usize);
-                    let step = span / steps as f32;
-                    let (mut px, mut py) = (t1x, t1y);
-                    for i in 0..steps {
-                        let ang = da1 + step * (i + 1) as f32;
-                        let (ax, ay) = (cpx + radius * ang.cos(), cpy + radius * ang.sin());
-                        vertices.push(px);
-                        vertices.push(py);
-                        vertices.push(ax);
-                        vertices.push(ay);
-                        px = ax;
-                        py = ay;
-                    }
-                    current_x = t2x;
-                    current_y = t2y;
-                    continue;
+                    let had_subpath = subpath_open;
+                    subpath_open = true;
+                    let (nx, ny) = arc_to_tangent_segments(
+                        &mut vertices,
+                        current_x,
+                        current_y,
+                        *x1,
+                        *y1,
+                        *x2,
+                        *y2,
+                        *radius,
+                        had_subpath,
+                    );
+                    current_x = nx;
+                    current_y = ny;
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     let (cx, cy, rx, ry, rotation, start_angle, end_angle) =
@@ -876,6 +781,119 @@ fn arc_to_center(
         end += std::f32::consts::TAU;
     }
     Some((cx, cy, rx, ry, phi, start, end))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn arc_to_tangent_segments(
+    vertices: &mut Vec<f32>,
+    current_x: f32,
+    current_y: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    radius: f32,
+    has_subpath: bool,
+) -> (f32, f32) {
+    // moveTo 首控制点（2d.path.arcTo.ensuresubpath.*）；否则 P0→P1→P2
+    // 的切线弧（半径 r）：切点 T1 = P1 − û1·t、T2 = P1 + û2·t
+    //（t = r/tan(φ/2)）；共线/半径过大 → lineTo(P1)。
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arcto
+    if !has_subpath {
+        // 无子路径：moveTo 首控制点——**不画线段**（"nothing is
+        // drawn up to it"，2d.path.arcTo.ensuresubpath.1）。
+        return (x1, y1);
+    }
+    let (x0, y0) = (current_x, current_y);
+    let (v1x, v1y) = (x1 - x0, y1 - y0);
+    let (v2x, v2y) = (x2 - x1, y2 - y1);
+    let l1 = (v1x * v1x + v1y * v1y).sqrt();
+    let l2 = (v2x * v2x + v2y * v2y).sqrt();
+    if l1 < f32::EPSILON || l2 < f32::EPSILON || radius <= 0.0 {
+        vertices.push(x0);
+        vertices.push(y0);
+        vertices.push(x1);
+        vertices.push(y1);
+        return (x1, y1);
+    }
+    let a1 = v1y.atan2(v1x);
+    let a2 = v2y.atan2(v2x);
+    let mut phi = a2 - a1;
+    while phi > std::f32::consts::PI {
+        phi -= std::f32::consts::TAU;
+    }
+    while phi < -std::f32::consts::PI {
+        phi += std::f32::consts::TAU;
+    }
+    if phi.abs() < 1e-4 {
+        // 共线 → lineTo(P1)。
+        vertices.push(x0);
+        vertices.push(y0);
+        vertices.push(x1);
+        vertices.push(y1);
+        return (x1, y1);
+    }
+    let t = radius / (phi.abs() / 2.0).tan();
+    if t > l1 || t > l2 {
+        // 半径过大（切点超出线段）→ lineTo(P1)（spec）。
+        vertices.push(x0);
+        vertices.push(y0);
+        vertices.push(x1);
+        vertices.push(y1);
+        return (x1, y1);
+    }
+    let (u1x, u1y) = (v1x / l1, v1y / l1);
+    let (u2x, u2y) = (v2x / l2, v2y / l2);
+    let (t1x, t1y) = (x1 - u1x * t, y1 - u1y * t);
+    let (t2x, t2y) = (x1 + u2x * t, y1 + u2y * t);
+    // R56f：圆心 = T1 + n·r，n 为 T1 处切线 u1 的法线（符号取弧凹侧）。
+    // 两个候选 ±n 取与 T2 距离恰为 r 的那个（规范几何恒等——切点
+    // 到圆心距离恒 r；旧「u2−u1 平分」方向不垂直 u1，圆心算错致弧
+    // 张角偏差，2d.path.arcTo.transformation/scale 实证）。
+    let (nx, ny) = (-u1y, u1x); // rot90(u1)
+    let d_plus = ((t2x - (t1x + nx * radius)).powi(2) + (t2y - (t1y + ny * radius)).powi(2)).sqrt();
+    let d_minus = ((t2x - (t1x - nx * radius)).powi(2) + (t2y - (t1y - ny * radius)).powi(2)).sqrt();
+    let (cpx, cpy) = if (d_plus - radius).abs() <= (d_minus - radius).abs() {
+        (t1x + nx * radius, t1y + ny * radius)
+    } else {
+        (t1x - nx * radius, t1y - ny * radius)
+    };
+    let da1 = (t1y - cpy).atan2(t1x - cpx);
+    let da2 = (t2y - cpy).atan2(t2x - cpx);
+    let mut span = da2 - da1;
+    while span > std::f32::consts::PI {
+        span -= std::f32::consts::TAU;
+    }
+    while span < -std::f32::consts::PI {
+        span += std::f32::consts::TAU;
+    }
+    // 弧转向须与 phi 一致（T1→T2）。
+    if (span > 0.0) != (phi > 0.0) {
+        span = if phi > 0.0 {
+            span + std::f32::consts::TAU
+        } else {
+            span - std::f32::consts::TAU
+        };
+    }
+    // 线段 P0→T1 + 弧 T1→T2。
+    vertices.push(x0);
+    vertices.push(y0);
+    vertices.push(t1x);
+    vertices.push(t1y);
+    let steps = 16usize.max((span.abs() / 0.15) as usize);
+    let step = span / steps as f32;
+    let (mut px, mut py) = (t1x, t1y);
+    for i in 0..steps {
+        let ang = da1 + step * (i + 1) as f32;
+        let (ax, ay) = (cpx + radius * ang.cos(), cpy + radius * ang.sin());
+        vertices.push(px);
+        vertices.push(py);
+        vertices.push(ax);
+        vertices.push(ay);
+        px = ax;
+        py = ay;
+    }
+    (t2x, t2y)
 }
 
 #[cfg(test)]
