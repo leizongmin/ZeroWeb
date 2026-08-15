@@ -318,6 +318,13 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
     if let Ok(f) = Function::new(ctx.clone(), native_element_for_id_entry) {
         let _ = ctx.globals().set("__zw_native_element_for_id", f);
     }
+
+    // 3. 全局工厂 `__zw_native_create_element(tag)`（与 V8 版同名同 wire——A/B 对照门
+    //    双引擎复用）。detached 元素入 arena（spec：createElement 产物无父、不在文档，
+    //    但 ownerDocument 可查——arena 即承载），返回带全套 getter/方法的 native 对象。
+    if let Ok(f) = Function::new(ctx.clone(), native_create_element_entry) {
+        let _ = ctx.globals().set("__zw_native_create_element", f);
+    }
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -333,6 +340,39 @@ fn native_element_for_id_entry<'js>(ctx: Ctx<'js>, id_str: Opt<rquickjs::Coerced
     match id_str.0 {
         Some(s) => native_element_for_id_impl(&ctx, &s.0),
         None => Value::new_null(ctx),
+    }
+}
+
+/// `__zw_native_create_element(tag)` 工厂入口（S2q mutation 族配套——detached 元素
+/// 经 appendChild 入树的 child 来源）。
+fn native_create_element_entry<'js>(ctx: Ctx<'js>, tag: Opt<rquickjs::Coerced<String>>) -> Value<'js> {
+    let Some(tag) = tag.0 else {
+        return Value::new_null(ctx);
+    };
+    let Some(node_id) = with_dom_mut(|d| d.create_element(&tag.0)) else {
+        return Value::new_null(ctx);
+    };
+    get_or_build_node_value(&ctx, node_id)
+}
+
+/// NodeId → native 对象（身份缓存命中或新建，带全套属性/方法面）。`get_or_create`
+/// 的 QuickJS 版共享入口——`element_for_id` 工厂与 `create_element` 工厂统一走此。
+fn get_or_build_node_value<'js>(ctx: &Ctx<'js>, node_id: NodeId) -> Value<'js> {
+    let ffi = encode_node_id(node_id);
+    if let Some(hit) = NODE_OBJECTS.with(|c| c.borrow().get(&ffi).cloned())
+        && let Ok(v) = hit.restore(ctx)
+    {
+        return v;
+    }
+    match build_element_object(ctx, ffi) {
+        Ok(obj) => {
+            NODE_OBJECTS.with(|c| {
+                let v: Value = obj.clone().into_value();
+                c.borrow_mut().insert(ffi, Persistent::save(ctx, v));
+            });
+            obj.into_value()
+        }
+        Err(_) => Value::new_null(ctx.clone()),
     }
 }
 
@@ -416,6 +456,9 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     obj.prop("setAttribute", Function::new(ctx.clone(), set_attribute_method)?)?;
     obj.prop("removeAttribute", Function::new(ctx.clone(), remove_attribute_method)?)?;
     obj.prop("hasAttribute", Function::new(ctx.clone(), has_attribute_method)?)?;
+    // S2q 子树 mutation 族（非 enumerable）。
+    obj.prop("appendChild", Function::new(ctx.clone(), append_child_method)?)?;
+    obj.prop("removeChild", Function::new(ctx.clone(), remove_child_method)?)?;
     Ok(obj)
 }
 
@@ -458,6 +501,49 @@ fn has_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<St
         return false;
     };
     with_dom(|d| d.has_attribute(id, &name.0)).unwrap_or(false)
+}
+
+// ── S2q 子树 mutation 族（appendChild/removeChild；insertBy 等后续切片）──
+
+/// 从 Value 读 native 对象的 NodeId（对象须为 `__zw_native_*` 工厂产物——隐藏
+/// `__zwNodeFfi` prop 标记）；非本族对象/缺失 → None。
+fn node_id_from_value(v: &Value) -> Option<NodeId> {
+    let obj: &Object = v.as_object()?;
+    node_id_of(obj)
+}
+
+/// `appendChild(child)`（spec `dom-node-appendchild`）：child 须为 native 对象
+///（`__zw_native_create_element` 产物）；DomError → JS TypeError（QuickJS 无
+/// DOMException 构造器基建，PoC 以 TypeError 承载错误路径——V8 侧 DomError→
+/// DOMException 映射见 dom_bindings/node.rs，QuickJS 版随 S4q 异常基建对齐）。
+/// spec 移动语义：child 已有父时自动 reparent（zero_dom append_child 内建）。
+/// 返回 child（spec appendChild 返回追加的节点）。
+fn append_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<Value<'js>>) -> Value<'js> {
+    let (Some(parent_id), Some(child_v)) = (node_id_of(&this.0), child.0) else {
+        return Value::new_null(ctx);
+    };
+    let Some(child_id) = node_id_from_value(&child_v) else {
+        return Value::new_null(ctx);
+    };
+    match with_dom_mut(|d| d.append_child(parent_id, child_id)) {
+        Some(Ok(())) => child_v,
+        _ => Value::new_null(ctx),
+    }
+}
+
+/// `removeChild(child)`（spec `dom-node-removechild`）：返回被移除的 child
+///（spec 返回值）；失配（非子节点/缺失）→ null（PoC 错误路径同 appendChild 注记）。
+fn remove_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<Value<'js>>) -> Value<'js> {
+    let (Some(parent_id), Some(child_v)) = (node_id_of(&this.0), child.0) else {
+        return Value::new_null(ctx);
+    };
+    let Some(child_id) = node_id_from_value(&child_v) else {
+        return Value::new_null(ctx);
+    };
+    match with_dom_mut(|d| d.remove_child(parent_id, child_id)) {
+        Some(Ok(_)) => child_v,
+        _ => Value::new_null(ctx),
+    }
 }
 
 #[cfg(test)]
@@ -579,6 +665,34 @@ mod tests {
 
             // 3. miss → null。
             assert_eq!(eval_str("__zw_native_element_for_id('nope')"), "null");
+
+            // S2q mutation 族：create（detached）→ append（入树 + textContent 反映）
+            // → remove（失配 null / 成功返 child）。
+            assert_eq!(
+                eval_str("globalThis.__el = __zw_native_create_element('p'); __el.nodeType"),
+                "1"
+            );
+            assert_eq!(eval_str("__el.tagName"), "P", "createElement 产物 tagName（HTML 大写）");
+            assert_eq!(
+                eval_str("(__el.textContent = 'added', __zw_native_element_for_id('main').appendChild(__el) === __el)"),
+                "true",
+                "appendChild 返回 child（spec 返回值）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').textContent"),
+                "added",
+                "append 后父 textContent 反映新子树（textContent setter 曾设 'new text' 后 null 清空，现子元素文本）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').removeChild(__el) === __el"),
+                "true",
+                "removeChild 返回被移除 child"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').textContent"),
+                "",
+                "remove 后父 textContent 空"
+            );
 
             // 4. id setter 写 live Document + getter 读回（原生读写闭环）。
             assert_eq!(eval_str("(__zw_native_element_for_id('main').id = 'renamed', 1)"), "1");
