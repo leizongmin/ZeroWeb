@@ -982,6 +982,30 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// 度量路径与 shaping 同源回归（ZRG-2026-08-15）：`measure_advance` 若带 hinting
+    /// （LoadFlag::DEFAULT），FreeType 会把 advance 取整到整像素，与 rustybuzz 的精确
+    /// hmtx 不一致（Liberation「Hello」差 4%，38.0 vs 36.46px）→ 字距与水平位置错乱。
+    /// NO_HINTING 后逐字符差 ≤ 1/64px（26.6 定点下限）。按文本求和断言，容差 =
+    /// 字符数/64 + ε（每个字符的 26.6 舍入上限）。
+    #[cfg(feature = "freetype-raster")]
+    #[test]
+    fn measure_advance_matches_shaping_hmtx_after_no_hinting() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+        for text in ["Hello", "WELCOME", "AVATAR", "The quick brown fox"] {
+            let measured: f32 = text.chars().map(|ch| loader.measure_advance(font_id, ch, 16.0)).sum();
+            let shaped = crate::font::TextShaper::new(&loader, Some(crate::primitive::FontId(font_id)))
+                .shape_single_line(text, 16.0);
+            let unshaped: f32 = shaped.iter().map(|g| g.unshaped_advance_x).sum();
+            let tolerance = text.chars().count() as f32 / 64.0 + 0.01;
+            assert!(
+                (measured - unshaped).abs() <= tolerance,
+                "measure({measured:.3}) 与 shaping hmtx({unshaped:.3}) 不一致（容差 {tolerance:.3}）: {text:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_rasterize_glyph_index_matches_code_point() {
         const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");

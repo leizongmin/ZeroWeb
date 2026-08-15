@@ -285,7 +285,12 @@ pub(crate) fn measure_advance(
             let glyph_index = face
                 .get_char_index(code_point as usize)
                 .ok_or_else(|| FontError::NotFound(format!("no glyph index for {code_point:?}")))?;
-            face.load_glyph(glyph_index, freetype::face::LoadFlag::DEFAULT)
+            // https://freetype.org/freetype2/docs/reference/freetype-base_interface.html#ft_load_flags
+            // 度量路径必须与 rustybuzz shaping 同源：DEFAULT（hinting）会把 advance 取整到
+            // 整像素（26.6 定点 64 的倍数），而 shaping 用精确 hmtx——「Hello」在 Liberation
+            // 下差 4%（38.0 vs 36.46px），逐字符累计即字距/水平位置错乱（ZRG-2026-08-15）。
+            // NO_HINTING 只影响 advance 取整，不动字形轮廓 hinting（光栅路径保持 DEFAULT）。
+            face.load_glyph(glyph_index, freetype::face::LoadFlag::NO_HINTING)
                 .map_err(|error| FontError::ParseFailed(format!("FreeType load_glyph: {error:?}")))?;
             Ok((face.glyph().advance().x as f64 / 64.0) as f32)
         })
