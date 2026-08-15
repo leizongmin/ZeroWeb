@@ -383,7 +383,9 @@ pub(super) fn configure_paint_ifc_advance(
         .with_font_id_overrides(std::rc::Rc::new(primary_ids))
         .with_font_ids_overrides(std::rc::Rc::new(shaping_ids))
         .with_font_size_adjust_overrides(std::rc::Rc::new(size_adjust))
-        .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource))
+        .with_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource::new(
+            generic_font_ids.clone(),
+        )))
 }
 
 /// 同一 shaping 输入的三种 advance，用于与 fragment/paint 宽度对账。

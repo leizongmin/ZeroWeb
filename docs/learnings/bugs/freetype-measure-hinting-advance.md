@@ -34,7 +34,34 @@
 - 修改字体度量代码时，用「measure 与 rustybuzz 一致性」断言做回归（`ZW_SHAPED_ADVANCE_TRACE=1` 可对比 layout/fragment/paint 三方宽度）。
 - FreeType `load_glyph` 的 `advance()` 受 hinting 影响；只读 advance 时用 `NO_HINTING`，渲染轮廓时才用 `DEFAULT`。
 
-## 附加发现（未修，留待专项）
+## 后续修复（2026-08-16，同一轮次完成）
 
-- **布局 estimate 启发式与真实宽度的长期错位**（`estimate_char_width`：字母 0.55em、em dash 0.5em 但实际 1em——差 2 倍）是换行点错误的放大因素，属于 font-stack 重建方向。
-- **webfont 页面的 fragment 主字体解析**：`@font-face` 字体可能未成为 fragment 的 primary（fallback 到 generic），paint 的 measure 上下文（thread-local primary font_id）与 shaping 的字体分离——多字体页面字距与 Chrome 仍可能差 ~1px/词，需单独排查。
+### 修复 B：paint 字符 advance 按字形实际字体测量
+
+measure 回调签名扩展为 `fn(font_id, ch, font_size, is_ahem)`（显式传字形实际解析的字体），
+`ShapedAdvanceSource` 的 paint_base 与 `generic_contextual` 的 paint_base 均按字形字体测量；
+painter 的 measure 缓存键加入 font_id（消除同帧跨字体污染）。多字体页面字距与 Chrome 一致。
+
+### 修复 A：布局 estimate → hmtx 真实宽度
+
+- `FontLoader::measure_text_hmtx`（ttf_parser 批量读 hmtx，face 缓存 + run 级缓存，
+  与 rustybuzz unshaped 同源）
+- `ShapedAdvanceSource` 增加 generic 判定：generic/系统字体 run 走 hmtx（替换 estimate
+  15-20% 偏差）；author run 维持 shaping（R3424-F）；复杂 shaping 文本（阿拉伯/印度系）
+  回退 shaping
+- 布局 run 的 font_id 解析放宽（generic 也解析）；paint Path B 的 IFC 注入 font resolver
+  与默认回退（sans-serif/0），使 paint-ifc 与布局引擎行断同源
+- env `ZW_HMTX_LAYOUT`（默认开，`"0"` 回退 estimate）
+
+**perf**：welcome layout 本机基线 5.5ms → 3.6-6.3ms（无回归；首版无缓存 43ms——
+run 级缓存解决，教训：批量测量必须有 run 级缓存，固定开销随调用次数线性放大）。
+
+**reftest 影响**：全量 16269 案净 +21 fail（0.13%）——换行临界用例（hanging-punctuation
+等）的 ref 是 chromium shaped（含 kerning），hmtx 无 kerning 差 1-2% 导致临界换行点不同；
+视觉上基本不可察觉，换取布局换行点从「偏 15-20%」到「差 1-2%」的正确性提升。
+
+**测试防线（browser 层端到端）**：
+- `text_glyph_positions_match_shaping_baseline`（T1）：独立 WebView + 双字体 loader，
+  断言 glyph 位置与 rustybuzz 基准一致（修复 B 回归）
+- `text_wrap_points_match_shaping_baseline`（T2）：固定宽度盒子换行点与 rustybuzz
+  基准一致（修复 A 回归）

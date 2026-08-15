@@ -493,12 +493,14 @@ impl RenderPipeline {
         if std::env::var("ZW_SHAPED_TEXT").as_deref() != Ok("0")
             // OPTIMIZATION: all-text shaping remains opt-in after its 37x layout
             // regression. Explicit author faces use the same source by default;
-            // layout-engine rejects generic/system runs before shaping them.
+            // generic/系统字体 run 走 hmtx 批量测量（ZRG-2026-08-15 修复 A）。
             && (std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1")
                 || std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0"))
         {
             self.layout_engine
-                .set_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource));
+                .set_advance_source(std::rc::Rc::new(crate::text_metrics::ShapedAdvanceSource::new(
+                    generic_font_ids_from_resolver(&resolver),
+                )));
         }
         self.font_resolver = resolver;
     }
@@ -1786,6 +1788,22 @@ pub(crate) fn inject_pseudo_text_nodes(doc: &mut Document, styles: &mut HashMap<
 }
 
 /// 收集样式表：外部 CSS 字符串 + 文档内 `<style>` 元素文本。
+/// 从 font resolver 提取 generic 族（sans-serif 等）映射的字体 id 集合，
+/// 供 ShapedAdvanceSource 区分「generic run 走 hmtx / author run 走 shaping」。
+fn generic_font_ids_from_resolver(resolver: &HashMap<String, u32>) -> std::collections::HashSet<u32> {
+    const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
+    resolver
+        .iter()
+        .filter(|(name, _)| {
+            let family = name.split(':').next().unwrap_or(name);
+            GENERIC_FAMILIES
+                .iter()
+                .any(|generic| family.eq_ignore_ascii_case(generic))
+        })
+        .map(|(_, &id)| id)
+        .collect()
+}
+
 pub(crate) fn collect_stylesheets(doc: &Document, css: &str) -> Vec<Stylesheet> {
     let mut stylesheets = Vec::new();
     // HTML presentational hint（HTML §4.2.5）：首个（树序）`<meta name="color-scheme"

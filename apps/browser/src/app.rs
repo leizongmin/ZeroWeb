@@ -233,6 +233,7 @@ impl BrowserApp {
 
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
+        zero_engine::set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
 
         let shell = BrowserShell::new_with_persisted_settings();
         let detected = detect_system_color_scheme();

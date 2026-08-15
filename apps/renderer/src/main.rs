@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use std::io;
 use zero_engine::{
     DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, selector_from_element_hit,
-    set_char_measure_fn, set_text_shape_fn,
+    set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -281,6 +281,7 @@ impl RendererRuntime {
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
+        set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
         let js_worker = RendererJsWorker::spawn(renderer_id);
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
         // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。

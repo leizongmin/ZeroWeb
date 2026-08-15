@@ -461,6 +461,16 @@ impl InlineFormattingContext {
     /// 注入后（U1b-wiring 激活）经 `FontMetricProvider::font_id_of` 真实解析。
     fn font_id_for_style(&self, style: Option<&zero_style_system::ComputedStyle>) -> Option<u32> {
         let s = style?;
+        if s.font_family.is_empty() {
+            // ZRG-2026-08-15 修复 A：默认样式（空 family）回退 generic sans-serif
+            // 或 id 0——与 paint 的 resolve_font_id 空 family 回退语义一致，否则
+            // 这些 run 的 font_id=None 永远走 estimate（hmtx 布局不生效）。
+            return self
+                .font_resolver
+                .as_ref()
+                .and_then(|resolver| resolver.get("sans-serif").copied())
+                .or(Some(0));
+        }
         s.font_family
             .iter()
             .find_map(|family| {
@@ -491,31 +501,18 @@ impl InlineFormattingContext {
         word_spacing: f32,
         is_ruby: bool,
     ) -> Option<u32> {
-        let author_only = std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0")
-            && std::env::var("ZW_SHAPED_LAYOUT").as_deref() != Ok("1");
-        let style_font_id = style.and_then(|style| {
-            if author_only {
-                self.font_resolver
-                    .as_deref()
-                    .and_then(|resolver| crate::font_resolution::resolve_author_font_id_for_style(resolver, style))
-            } else {
-                self.font_id_for_style(Some(style))
-            }
-        });
+        // ZRG-2026-08-15 修复 A：generic/系统字体 run 也解析 font_id——布局
+        // advance source 据此走 hmtx 测量（替换 estimate）；shaping 资格仍由
+        // font_ids_overrides（author-only）判定，generic run 不会落入 shaping。
+        let style_font_id = style.and_then(|style| self.font_id_for_style(Some(style)));
         if is_ahem
             || letter_spacing != 0.0
             || word_spacing != 0.0
             || is_ruby
             || !style.map_or_else(
-                || {
-                    override_node.is_some_and(|node| {
-                        self.font_id_overrides.contains_key(&node)
-                            || self
-                                .font_ids_overrides
-                                .get(&node)
-                                .is_some_and(|font_ids| !font_ids.is_empty())
-                    })
-                },
+                // ZRG-2026-08-15 修复 A：paint Path B（空 styles）run 允许继续——
+                // 无覆盖时经默认回退解析 font_id 走 hmtx（而非 estimate）。
+                || true,
                 |style| matches!(style.direction, zero_style_system::DirectionValue::Ltr),
             )
         {
@@ -533,6 +530,15 @@ impl InlineFormattingContext {
                         .and_then(|font_ids| font_ids.first())
                         .copied()
                 })
+            })
+            // ZRG-2026-08-15 修复 A：paint Path B（空 styles + 无覆盖）的 run 回退
+            // generic sans-serif / id 0——与 paint 的 resolve_font_id 空 family 语义
+            // 一致，使这些 run 走 hmtx 布局而非 estimate。
+            .or_else(|| {
+                self.font_resolver
+                    .as_ref()
+                    .and_then(|resolver| resolver.get("sans-serif").copied())
+                    .or(Some(0))
             })
     }
 

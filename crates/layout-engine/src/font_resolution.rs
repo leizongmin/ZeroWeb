@@ -72,25 +72,6 @@ pub fn resolve_font_ids_for_style(
     ids
 }
 
-/// Resolves the first available non-generic family for scoped author-font shaping.
-///
-/// https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
-pub(crate) fn resolve_author_font_id_for_style(resolver: &HashMap<String, u32>, style: &ComputedStyle) -> Option<u32> {
-    let want_bold = matches!(style.font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
-        || matches!(style.font_weight, FontWeightValue::Absolute(weight) if weight >= 600);
-    let want_italic = matches!(style.font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
-    for family in &style.font_family {
-        let name = family.trim_matches('"').trim_matches('\'');
-        if is_generic_family_name(name) {
-            continue;
-        }
-        if let Some((faces, _)) = resolve_font_faces(resolver, name, want_bold, want_italic, style.font_stretch) {
-            return faces.first().copied();
-        }
-    }
-    None
-}
-
 pub(crate) struct FontOverrides {
     pub(crate) ids: std::rc::Rc<HashMap<NodeId, Vec<u32>>>,
     pub(crate) size_adjust: std::rc::Rc<HashMap<NodeId, zero_style_system::FontSizeAdjustValue>>,
@@ -261,18 +242,6 @@ mod tests {
             ),
             vec![5]
         );
-    }
-
-    #[test]
-    fn resolves_only_explicit_author_face_for_scoped_layout_shaping() {
-        let resolver = HashMap::from([("Custom".to_string(), 7), ("sans-serif".to_string(), 0)]);
-        let mut author = ComputedStyle::default();
-        author.font_family = vec!["Custom".to_string(), "sans-serif".to_string()];
-        assert_eq!(resolve_author_font_id_for_style(&resolver, &author), Some(7));
-
-        let mut generic = ComputedStyle::default();
-        generic.font_family = vec!["sans-serif".to_string()];
-        assert_eq!(resolve_author_font_id_for_style(&resolver, &generic), None);
     }
 
     #[test]

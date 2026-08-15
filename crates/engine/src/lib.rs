@@ -66,8 +66,8 @@ pub use pipeline_budget::{BudgetAdvance, BudgetStep, BudgetedRenderSession};
 pub use preload::*;
 pub use rect_bridge::*;
 pub use text_metrics::{
-    TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_font, set_char_measure_fn,
-    set_text_shape_fn, shape_text_for_paint,
+    HmtxMeasureFn, TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_font,
+    measure_text_hmtx_for_layout, set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn, shape_text_for_paint,
 };
 pub use timer_bridge::*;
 /// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。

@@ -864,6 +864,9 @@ impl super::Painter {
                 let margin_overrides = box_node.inline_element_margins.clone();
 
                 let mut ctx = InlineFormattingContext::new(ifc_width)
+                    // ZRG-2026-08-15 修复 A：paint IFC 也注入 font resolver——否则
+                    // run.font_id=None，行断回退 estimate（布局↔绘制宽度错位）。
+                    .with_font_resolver(std::rc::Rc::new(self.font_resolver.clone()))
                     .with_text_align(text_align)
                     .with_text_align_last(text_align_last)
                     .with_bidi_override_direction(zero_layout_engine::bidi_override_direction(style))

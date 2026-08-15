@@ -51,6 +51,17 @@ pub fn measure_char(font_id: u32, ch: char, font_size: f32, is_ahem: bool) -> f3
     })
 }
 
+/// hmtx 批量测量（布局 estimate 替换，ZRG-2026-08-15 修复 A）：按字体链读
+/// hmtx 求和，与 rustybuzz unshaped 同源。无字体上下文返回 None（布局回 estimate）。
+pub fn measure_text_hmtx(font_ids: &[u32], text: &str, font_size: f32) -> Option<f32> {
+    MEASURE_CTX.with(|cell| {
+        let loader = cell.get()?;
+        font_ids.first()?;
+        // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
+        Some(unsafe { &*loader }.measure_text_hmtx(font_ids, text, font_size))
+    })
+}
+
 /// 在当前浏览器字体上下文中按指定 face 整形文本。
 pub fn shape_text(
     font_ids: &[u32],

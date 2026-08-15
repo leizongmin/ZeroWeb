@@ -239,6 +239,7 @@ fn tab_worker_main(
 ) {
     set_char_measure_fn(text_metrics::measure_char);
     set_text_shape_fn(text_metrics::shape_text);
+    zero_engine::set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
     let mut font_loader = FontLoader::new();
     let font_id = load_system_fonts_worker(&mut font_loader);
 

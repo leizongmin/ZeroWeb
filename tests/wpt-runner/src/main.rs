@@ -111,6 +111,7 @@ fn main() {
     // 测量用 estimate paint（'m'=0.584×fs）vs chromium 0.797×fs，font-wall 部分是测量 artifact。
     // 注册后经 with_measure_ctx（reftest.rs render 包裹）注入 fontdue measure_advance。
     zero_engine::set_char_measure_fn(runner_text_metrics::measure_char);
+    zero_engine::set_hmtx_measure_fn(runner_text_metrics::measure_text_hmtx);
     zero_engine::set_text_shape_fn(runner_text_metrics::shape_text);
 
     if args.len() < 2 {
