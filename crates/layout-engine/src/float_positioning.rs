@@ -1593,4 +1593,28 @@ pub(crate) fn adjust_float_positions_with_context(
             );
         }
     }
+
+    // https://www.w3.org/TR/CSS21/visudet.html#root-height
+    // A floated box (and every other flow root) establishes a block formatting
+    // context, so its auto height contains its floated descendants. Descendant
+    // float positions are finalized by the recursion above; recompute afterwards
+    // so an initially stacked row of floated navigation items does not leave its
+    // parent at the stale pre-float height.
+    if box_node.declared_height_auto
+        && (box_node.is_flow_root || matches!(box_node.float, FloatValue::Left | FloatValue::Right))
+    {
+        let content_bottom = box_node
+            .children
+            .iter()
+            .filter(|child| !child.is_absolute && !child.is_fixed)
+            .map(|child| child.y + child.height + child.margin_bottom)
+            .fold(0.0f32, f32::max);
+        let content_height = (content_bottom - content_y_offset).max(0.0);
+        box_node.content_height = content_height;
+        box_node.height = content_height
+            + box_node.padding_top
+            + box_node.padding_bottom
+            + box_node.border_top
+            + box_node.border_bottom;
+    }
 }

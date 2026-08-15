@@ -42,6 +42,11 @@ fn float_container_uses_combined_width_of_floated_children() {
         "float container should shrink to the combined item width, got {}",
         navigation_box.width
     );
+    assert!(
+        (navigation_box.height - 32.0).abs() < 0.5,
+        "float container should contain the single floated line, got {}",
+        navigation_box.height
+    );
     assert!((first_y - second_y).abs() < 0.5 && (second_y - third_y).abs() < 0.5);
 }
 
