@@ -688,7 +688,8 @@ mod tests {
                 "globalThis.__zw_pending.old_page_timer = function() {};\
                  globalThis.__zw_timer_trace = ['old'];\
                  globalThis.__zw_test_runner = { stale: true };\
-                 globalThis.old_page_global = 42;",
+                 globalThis.old_page_global = 42;\
+                 let document_scoped_score = 1;",
             )
             .unwrap();
 
@@ -721,6 +722,13 @@ mod tests {
                 .execute_script_direct("typeof globalThis.old_page_global")
                 .unwrap(),
             "undefined"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("let document_scoped_score = 1; document_scoped_score")
+                .unwrap(),
+            "1",
+            "a refreshed document must be able to redeclare its top-level lexical bindings"
         );
         worker.shutdown();
     }
