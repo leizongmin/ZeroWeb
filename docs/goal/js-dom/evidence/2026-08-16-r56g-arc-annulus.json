@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-16",
+  "round": "R56g",
+  "slice": "M8 path-objects 续作：弧自适应段数 + 真圆环带 + 非恒等 CTM 用户空间弧",
+  "commits": ["d0e93adc"],
+  "baseline": {
+    "commit": "a43a9e5e (R56f 归档 HEAD)",
+    "fails": 17,
+    "pass": 186,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "d0e93adc",
+    "fails": 11,
+    "pass": 192
+  },
+  "net": {
+    "fixed": ["2d.path.arc.shape.1", "2d.path.arc.shape.3", "2d.path.arc.shape.4", "2d.path.arc.shape.5", "2d.path.arc.scale.1", "2d.path.arc.scale.2"],
+    "regressions": [],
+    "note": "shape.2 过程回归两次均被切片内 A/B 捕获同轮修复（interior-clamp 方案被 selfintersect.1 回归否决 → annulus 方案；identity-CTM 判定 t.d==0 笔误由 debug trace 捕获）"
+  },
+  "changes": [
+    "弧折线段数自适应 N = min(512, 64·lw/r)（lw/r > 0.25 时）：粗 stroke 下弦切向偏差 δ=τ/2N 把 butt 端面投影翻正——shape.1/3 的距弧 40px 画布区被首弦斜段矩形覆盖；N∝lw/r 推导记录在注释",
+    "真圆环带后处理 blit_arc_annulus（ctx.stroke 纯色路径）：折线化弧在粗线下的原理性伪节点——超短弦（N=512 时 ~0.4px）的段投影几乎全落段外产生覆盖洞，lineJoin=Miter 不画伪节点圆盘（shape.2 的 (1,1) 距弧 18.6 < half 50 却 miss）。annulus 按 Arc 命令逐像素 |dist−r| ≤ half ∧ θ∈[span] 光栅化；butt 端面 = θ 窗自然截断；非恒等 CTM 经逆变换在用户空间判定",
+    "非恒等 CTM 弧改用户空间构造：arc() 只变换圆心，flatten 以用户半径绕设备圆心画圆（均匀大缩放同样错——scale.2 的 scale(100,100) r=0.6 应成 r=60，旧路径画 0.6px 小点）。逆变换控制点 → 用户空间圆弧 → 输出逐点正变换（同 R56f arcTo 模式）",
+    "identity-CTM 判定笔误修复：t.d 须 == 1（写成 == 0）——annulus 初版把恒等判为非恒等，逆变换把绝对坐标当相对（覆盖为零；debug trace 实证）",
+    "5 个旧弧段计数测试更新到自适应语义（细线 lw/r≤0.25 保持 16 段 → 计数不变回 68）"
+  ],
+  "tests": {
+    "canvas_unit": "+2（粗 stroke 掠入回归哨兵 shape.1 场景 + annulus 覆盖洞补齐 shape.2 场景）",
+    "wpt": "arc.shape.1/2/3/4/5 + arc.scale.1/2 全 Pass"
+  },
+  "gates": {
+    "canvas": "788 passed 0 failed",
+    "engine_v8": "2153 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles/clipping/compositing/transformations/fillrect/drawing-rectangles 全 0F"
+  },
+  "process_learnings": [
+    "弧 stroke 折线化有三类独立缺陷（端面投影翻正 / 伪节点覆盖洞 / CTM 半径未变换）——单一手段（加段数）只能修一个且引入另一个；正解是 annulus 直判 + 用户空间构造",
+    "interior-clamp 方案（段端点 t 放宽）被 selfintersect.1 否决——放宽折线首末段外区域等于改 butt 语义，A/B 门每次都抓到",
+    "identity 矩阵判定 t.d==1 写成 ==0 的笔误只表现为「覆盖为零」——debug trace（条件 eprintln + 计数）5 分钟定位，比推理快"
+  ],
+  "remaining_fails_11": "bezierCurveTo.shape/scaled + quadraticCurveTo.shape/scaled（~4）+ roundrect.closed/end.3 + isPointInStroke.scaleddashes + stroke.prune.arc/curve/line + stroke.skew（~6）"
+}
