@@ -621,6 +621,14 @@ fn spawn_transport(child_slot: Arc<Mutex<Option<Child>>>) -> Result<Box<dyn Work
     for argument in child_process_args(ProcessRole::Compositor, 0) {
         command.arg(argument);
     }
+    // Windows：阻止子进程分配控制台窗口（双保险：即使子系统是 CUI 也不弹窗；
+    // 同时不影响 stdin/stdout/stderr 管道继承）。与 zero-protocol spawn 同款。
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

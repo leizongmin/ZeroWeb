@@ -1,5 +1,9 @@
 //! ZeroWeb 图像解码进程（D1）— 独立进程解码 PNG/JPEG/WebP。
 //!
+// Windows：GUI 子系统。image-decoder 由 renderer 通过 stdin/stdout 管道 spawn，
+// 不需要控制台；不加此项 Windows 会为子进程分配一个控制台窗口。
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+//!
 //! 由渲染进程（apps/renderer 内 webview 的 ImageDecoderProxy）经
 //! stdin/stdout 管道 spawn（`--type=image-decoder --instance-id=N`，
 //! 与 renderer 同款零协议：bincode 序列化 IpcMessage）。职责：

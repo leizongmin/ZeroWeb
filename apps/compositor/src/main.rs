@@ -1,5 +1,9 @@
 //! ZeroWeb 合成器进程（C2 骨架）— 接收渲染进程的图元帧，BackingStore 双缓冲管理。
 //!
+// Windows：GUI 子系统。compositor 由 browser 通过 stdin/stdout 管道 spawn，
+// 不需要控制台；不加此项 Windows 会为子进程分配一个控制台窗口。
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+//!
 //! 对照 Ladybird 2026-05 合成器独立进程（调研报告 §3.3/§3.4）：合成与
 //! backing store 管理从渲染进程移出。本骨架实现：
 //!   - stdio 管道 + bincode IPC（与 image-decoder 同款）
@@ -570,7 +574,23 @@ fn main() {
             } => {
                 let page_pixels = surfaces.get(&page_surface_id).map(|s| {
                     let front = s.backing.front();
-                    (front.width, front.height, front.data.clone())
+                    // SCROLL_TRANSFORM 开时 present 路径与 GetCompositorFrame 一致地
+                    // 烘焙滚动：Browser 端 present blit 整窗替换、不应用本地偏移，
+                    // 页面像素必须自带滚动，否则出现"滚动条动而页面不动"。
+                    let pixels = if zero_protocol::compositor_scroll_transform_enabled()
+                        && (s.scroll_x != 0.0 || s.scroll_y != 0.0)
+                    {
+                        scroll_transform::bake_scroll_into_rgba(
+                            &front.data,
+                            front.width,
+                            front.height,
+                            s.scroll_x,
+                            s.scroll_y,
+                        )
+                    } else {
+                        front.data.clone()
+                    };
+                    (front.width, front.height, pixels)
                 });
                 let ui_pixels = ui_surfaces
                     .get(&ui_surface_id)

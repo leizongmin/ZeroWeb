@@ -872,6 +872,189 @@ fn compositor_present_composites_page_and_ui() {
     assert_eq!(&present.rgba[4..8], &[0, 0, 255, 255]);
 }
 
+/// RFC 4.2-S2：SCROLL_TRANSFORM 默认开时 present 帧也烘焙滚动
+/// （Browser 端 present blit 整窗替换、不应用本地偏移，页面像素必须自带滚动）。
+#[test]
+fn compositor_present_bakes_scroll() {
+    let (mut transport, _comp) = spawn_compositor();
+    let page_surface = 43u64;
+    let ui_surface = u64::MAX;
+    let w = 2u32;
+    let h = 2u32;
+
+    let frame = PaintSnapshotParams {
+        viewport_width: w,
+        viewport_height: h,
+        document_height: h as f32,
+        fills: vec![
+            IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: w as f32,
+                    height: 1.0,
+                },
+                color: IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+            },
+            IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 1.0,
+                    width: w as f32,
+                    height: 1.0,
+                },
+                color: IpcColor {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                    a: 255,
+                },
+            },
+        ],
+        ..Default::default()
+    };
+    assert_eq!(
+        submit_frame(&mut transport, 1, page_surface, 1, 1, frame),
+        (page_surface, 1, 1)
+    );
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorRegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+            }),
+        })
+        .expect("register ui");
+    let ack: IpcMessage = transport.recv().expect("register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    // 全透明 UI 帧：present 合成结果应等于 page 像素本身
+    transport
+        .send(IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+                rgba: vec![0u8; (w * h * 4) as usize],
+                shm_name: None,
+            },
+        })
+        .expect("ui frame");
+    let ack: IpcMessage = transport.recv().expect("ui frame ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: page_surface,
+                scroll_x: 0.0,
+                scroll_y: 1.0,
+            },
+        })
+        .expect("set scroll");
+    let _: IpcMessage = transport.recv().expect("scroll ack");
+
+    let present = get_present_frame(&mut transport, 5, w, h, page_surface, ui_surface);
+    // scroll_y=1：第 0 行（rgba[0..8]，两像素）采样原第 1 行（蓝），
+    // 第 1 行（rgba[8..16]）采样越界为透明
+    assert_eq!(&present.rgba[..4], &[0, 0, 255, 255]);
+    assert_eq!(&present.rgba[4..8], &[0, 0, 255, 255]);
+    assert_eq!(&present.rgba[8..12], &[0, 0, 0, 0]);
+    assert_eq!(&present.rgba[12..16], &[0, 0, 0, 0]);
+}
+
+/// 对照组：`ZW_COMPOSITOR_SCROLL_TRANSFORM=0` 时 present 帧不烘焙，页面像素保持原样。
+#[test]
+fn compositor_present_scroll_transform_disabled_keeps_pixels() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0")]);
+    let page_surface = 44u64;
+    let ui_surface = u64::MAX;
+    let w = 2u32;
+    let h = 2u32;
+
+    let frame = PaintSnapshotParams {
+        viewport_width: w,
+        viewport_height: h,
+        document_height: h as f32,
+        fills: vec![IpcFill {
+            rect: IpcRect {
+                x: 0.0,
+                y: 0.0,
+                width: w as f32,
+                height: h as f32,
+            },
+            color: IpcColor {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        submit_frame(&mut transport, 1, page_surface, 1, 1, frame),
+        (page_surface, 1, 1)
+    );
+
+    transport
+        .send(IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::CompositorRegisterUiSurface(zero_protocol::CompositorUiSurfaceInfo {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+            }),
+        })
+        .expect("register ui");
+    let ack: IpcMessage = transport.recv().expect("register ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::CompositorUiFrame {
+                surface_id: ui_surface,
+                width: w,
+                height: h,
+                rgba: vec![0u8; (w * h * 4) as usize],
+                shm_name: None,
+            },
+        })
+        .expect("ui frame");
+    let ack: IpcMessage = transport.recv().expect("ui frame ack");
+    assert!(matches!(ack.kind, IpcMessageKind::Ok));
+
+    transport
+        .send(IpcMessage {
+            id: 4,
+            kind: IpcMessageKind::CompositorSetScroll {
+                surface_id: page_surface,
+                scroll_x: 0.0,
+                scroll_y: 1.0,
+            },
+        })
+        .expect("set scroll");
+    let _: IpcMessage = transport.recv().expect("scroll ack");
+
+    let present = get_present_frame(&mut transport, 5, w, h, page_surface, ui_surface);
+    // 未烘焙：全部像素保持提交时的纯红
+    assert_eq!(&present.rgba[..4], &[255, 0, 0, 255]);
+    assert_eq!(&present.rgba[4..8], &[255, 0, 0, 255]);
+    assert_eq!(&present.rgba[8..12], &[255, 0, 0, 255]);
+    assert_eq!(&present.rgba[12..16], &[255, 0, 0, 255]);
+}
+
 /// RFC 4.5-S2：seccomp 启用时 compositor 帧链路仍可用。
 #[test]
 fn compositor_seccomp_allows_frame_ipc() {
