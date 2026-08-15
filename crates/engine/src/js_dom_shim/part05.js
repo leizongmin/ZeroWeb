@@ -2841,8 +2841,7 @@
     ctx._methods.arcTo = function (x1, y1, x2, y2, r) {
       x1 = _zwNumArg(x1); y1 = _zwNumArg(y1); x2 = _zwNumArg(x2); y2 = _zwNumArg(y2); r = _zwNumArg(r);
       if (!_zwAllFinite(x1, y1, x2, y2, r)) return;
-      // R56f：负半径 → IndexSizeError（spec dom-context-2d-arcto——
-      // 2d.path.arcTo.negative；76655cc4 提交说明提及但 shim 改动未随提交进入）。
+      // R56f：负半径 → IndexSizeError（spec dom-context-2d-arcto——2d.path.arcTo.negative）。
       if (r < 0) throw _zwDomException('arcTo: negative radius', 'IndexSizeError');
       __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
     };
