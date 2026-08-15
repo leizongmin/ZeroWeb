@@ -44,3 +44,9 @@ R51b 修复死循环后，Range-mutations-dataChange/insertBefore/replaceData �
 - **单 turn 批处理架构下的差量表必须有对冲/压实语义**——「add 无条件入账、remove 无条件入账」在 turn 内多轮 add/remove 的用例（testharness mega-case）下必爆炸；
 - **诊断探针要放在被测函数的「效应出口」**（本次两次被入口 diag 的时序骗过：读到过滤前值）；
 - **同 clone 双 rally 流**的 target/ 目录竞争（本轮 target/ 整目录消失一次，并行流清理）——再次验证 run-rules §8 独立 clone 的必要性。
+
+---
+
+# R52 附录 — per-op 恒定成本归因与修复（同文件后续，2026-08-15，commit `ca81a76f`）
+
+R51c 遗留的「~7ms/append」经微基准分解：**host 往返 0.4µs、已缓存查询 5.6µs 都无辜**；真凶是 DOM 遍历族回调（child_nodes/sibling_nodes/element_children/element_siblings/parent/contains 六族）**没接既有 QUERY_DOC_CACHE**——每调用全文档 `parse_html`（`body.firstChild` 1.2ms/次，insertBefore 内含 2-3 次此类读 → 2ms+ 由此而来）。六函数加 `_doc` 版 + callbacks 接 `with_query_doc` 后 5.3-27x；配合 `_zwTextEls` 三重 Map 索引（注册/注销旧全表扫）与 pending 惰性剔除，**setup 循环墙钟有界化**（1000-4000 次迭代全 ~90s）。消零节点清理 proxy/expando 强引用（V8 堆）；`_handleChildren`/`_zwNodeParent` 必须保留——CE 断连传播在 invalidate 之后仍走它们（R2994 测试拦住了第一版全清方案）。dataChange 全量仍 >560s：剩余成本在每 subtest 的 testFn（Range getter 断言族），setup 已非瓶颈——下轮入口。

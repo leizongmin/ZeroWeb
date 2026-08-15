@@ -1,0 +1,75 @@
+{
+ "round": "R52",
+ "date": "2026-08-15",
+ "commit": "ca81a76f",
+ "microbench_us_per_op": {
+  "raw_host_callback": [
+   0.4,
+   0.4
+  ],
+  "querySelector_cached": [
+   5.6,
+   5.3
+  ],
+  "body_firstChild": [
+   1171,
+   221
+  ],
+  "append_handle": [
+   1983,
+   74
+  ],
+  "append_then_remove": [
+   2212,
+   336
+  ]
+ },
+ "growth": {
+  "GR2_ap_segment_ms_per_500": [
+   [
+    460,
+    1160,
+    2075,
+    3033
+   ],
+   [
+    347,
+    712,
+    1323,
+    1964
+   ]
+  ],
+  "setup_wall_plateau": "1000/2000/3000/4000 iters all ~90s (bounded, not quadratic)"
+ },
+ "regressions": {
+  "dom/nodes": [
+   3096,
+   3096
+  ],
+  "dom/traversal": [
+   953,
+   953
+  ],
+  "dom/events": [
+   189,
+   189
+  ],
+  "dom/collections": [
+   48,
+   48
+  ],
+  "mutations_family": [
+   586,
+   586
+  ],
+  "engine_v8": 2140,
+  "engine_quickjs": 1415
+ },
+ "fixes": [
+  "doc-version helpers + with_query_doc wiring for 6 traversal callbacks (child_nodes/sibling_nodes/element_children/element_siblings/parent/contains)",
+  "_zwTextEls triple Map indexing (el/handle/sel)",
+  "lazy splice for pending-added removal",
+  "zero-out drops _proxyCache/_clsProxyCache/_expando (keeps _handleChildren/_zwNodeParent for CE disconnect propagation — R2994 test caught early-delete)"
+ ],
+ "remaining": "dataChange full >560s — residual is per-subtest testFn cost (Range getter assertions); setup loop no longer bottleneck"
+}
