@@ -1,0 +1,41 @@
+{
+  "round": "R55",
+  "date": "2026-08-15",
+  "slice": "childNodes 基底缓存 + 兄弟对缓存（同 turn 重复读消 host 往返 + 节点 identity 稳定）",
+  "fix": {
+    "part05_js": "_zwChildBaseCache（按 sel 键）——_childNodeList 无 handle 分支缓存 __zw_child_nodes 解析+包装后的基底数组；512 sel 软上限；_zwOverlayPendingChildNodes no-pending 快路径改返 out.slice() 防调用方原地写污染缓存本体；globalThis._zwChildBaseInvalidateAll 暴露失效入口",
+    "part05_js_sibling": "_zwSiblingBaseCache（按 sel 键 {p,n} 兄弟对包装缓存）+ globalThis._zwSiblingBaseInvalidateAll",
+    "part04_js": "previousSibling/nextSibling get trap 改读 _zwSiblingBaseCache（miss 时 __zw_sibling_nodes + 包装一次入缓存）；512 软上限",
+    "callbacks_rs": "register_dom_callbacks 开头注入失效脚本（注册即 dom_html 换代 → 两缓存全量失效；幂等 no-op——shim 未装的首注册静默）"
+  },
+  "cache_safety_rationale": "host 侧 dom_html Arc 在 register_dom_callbacks 时固化、脚本回合内不可变；本回合内基底快照恒定，pending 差异由 _zwOverlayPendingChildNodes 每读现算（语义不变）；跨回合换 Arc 必经重注册 → 失效脚本兜底",
+  "identity_gain": "缓存数组内文本/元素节点对象稳定——旧行为每次 _wrapNodeEntry 重包装 → childNodes[i] !== 上次读的同位置节点；dom/common.js indexOf 的 while (node != node.parentNode.childNodes[i]) identity 相等依赖此修复",
+  "verification": {
+    "unit_tests": {
+      "new": [
+        "r55_childnodes_base_cache_identity_and_freshness",
+        "r55_reregister_invalidates_base_cache"
+      ],
+      "engine_v8": "2145 passed (was 2143)",
+      "engine_quickjs": "1415 passed (unchanged; part18 v8-only)"
+    },
+    "wpt_mutations_ab": "同树 stash A/B（release runner 直跑，7 文件）",
+    "wpt_mutations_table": {
+      "appendChild": {"r54_s": 1.37, "r55_s": 0.50, "p": "34/34", "f": "36/36"},
+      "appendData": {"r54_s": 3.40, "r55_s": 2.05, "p": "160/160", "f": "224/224"},
+      "insertData": {"r54_s": 6.53, "r55_s": 6.52, "p": "134/134", "f": "248/248"},
+      "removeChild": {"r54_s": 0.31, "r55_s": 0.35, "p": "2/2", "f": "18/18"},
+      "replaceChild": {"r54_s": 0.50, "r55_s": 0.48, "p": "16/16", "f": "44/44"},
+      "splitText": {"r54_s": 0.70, "r55_s": 0.40, "p": "56/56", "f": "60/60"},
+      "deleteData": {"r54_s": 38.56, "r55_s": 32.55, "p": "184/184", "f": "380/380"}
+    },
+    "wpt_regression": {
+      "dom/nodes": "R54 3096P/4389F/6TO vs R55 3096P/4389F/6TO — per-case diff 逐字节一致（diff exit 0）",
+      "dom/collections": "48P/0F/1TO（与 R54 基线一致，唯一 TO 为 messagechannel 非 DOM 域）",
+      "dom/traversal": "953P/627F/0TO（与 R54 基线一致）",
+      "dom/events": "189P/139F/3TO（与 R54 基线一致）"
+    },
+    "gates": "fmt no diff; clippy clean (v8 + quickjs 矩阵); pre-commit-guard PASS"
+  },
+  "remaining": "Range-mutations-insertBefore/dataChange/replaceData 三文件 >90s 无输出（60s meta-long CASE_TIMEOUT 不足以覆盖整文件墙钟；两树相同非 R55 引入；R51c/R52/R53 已归因 per-subtest testFn 成本——M1 L2 正题）；replaceData 全文件 hang 待 M1 L2 后重评"
+}
