@@ -346,7 +346,11 @@ impl BrowserApp {
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
 
-        if compositor_controls_page(compositor_status) {
+        // compositor 回读位图仅覆盖未滚动视口（位图平移超过一帧高度即空白）；
+        // 滚动非零时回落全文档图元平移路径（process_backend 在 compositor 模式
+        // 同步解码 last_render 图元），任意滚动量渲染正确内容。
+        let page_scrolled = scroll.x != 0.0 || scroll.y != 0.0;
+        if compositor_controls_page(compositor_status) && !page_scrolled {
             if compositor_status != crate::compositor_client::CompositorStatus::Healthy {
                 return RenderPrimitives::new();
             }
@@ -1142,10 +1146,32 @@ impl BrowserApp {
                     .tabs
                     .compositor_frame(tab_id)
                     .is_some()
+                // 滚动非零时 compositor 位图不再覆盖视口内容——回落图元平移路径
+                // （extra 层见 get_webview_extra_primitives），fills/glyphs 同样
+                // 经 render_active_webview 平移混入，否则页面主内容缺失。
+                && !(scroll.x != 0.0 || scroll.y != 0.0)
             {
                 return;
             }
         } else if has_composite_paint
+            && self.render_active_webview(
+                fills,
+                glyphs,
+                layout.viewport_x,
+                layout.viewport_y,
+                fid,
+                scroll.x,
+                scroll.y,
+                layout.viewport_w,
+                layout.viewport_h,
+            )
+        {
+            return;
+        }
+        // compositor 模式滚动回落：has_composite_paint 依据 last_render（compositor
+        // 模式同步解码图元，见 process_backend）——与 legacy 同款平移渲染。
+        if compositor_controls_page(compositor_status)
+            && has_composite_paint
             && self.render_active_webview(
                 fills,
                 glyphs,

@@ -1000,9 +1000,9 @@ impl BrowserApp {
     /// 测试用：Tab 是否已有可滚动/可交互的页面内容。
     #[cfg(test)]
     fn is_tab_content_ready(&self, tab_id: TabId) -> bool {
-        // compositor 发布模式下页面经 compositor 进程位图显示，浏览器侧不重建
-        // primitives（last_render 恒 None，见 apply_compositor_paint_metadata）——
-        // 以已提交的 compositor 帧作为内容就绪判据。
+        // compositor 发布模式下页面经 compositor 进程位图显示；浏览器侧同时
+        // 解码全文档图元到 last_render（滚动回落路径用，见 process_backend）
+        // ——以已提交的 compositor 帧作为内容就绪判据。
         // R3254-C11：叠加 document_height>0 门槛（legacy 判据同款）——渐进式 publish 的
         // 过渡空白帧（加载中、脚本执行前）不应提前判就绪。
         if self.tabs.compositor_frame(tab_id).is_some() && self.tabs.document_height(tab_id).is_some_and(|h| h > 0.0) {

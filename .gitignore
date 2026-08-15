@@ -86,3 +86,7 @@ tests/wpt-runner/wpt-data
 # 测试崩溃 core dump（SIGTRAP/OOM 等）——绝不入库（曾因 SIGTRAP 产生 135MB core.NNNN）
 core
 core.*
+
+# Chrome parity 本地 Oracle 浏览器（npx @puppeteer/browsers install）
+tests/wpt-runner/scripts/chromium/
+tests/wpt-runner/scripts/chrome/

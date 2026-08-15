@@ -361,51 +361,6 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     snap.hit_test = params.hit_test.and_then(hit_test_cache_from_ipc);
 }
 
-/// 从 compositor 路径的绘制快照提取 Browser 交互与滚动所需元数据。
-///
-/// 本函数不构造 `RenderPrimitives`，页面像素仍只由 compositor 完成位图提供。
-pub(crate) fn apply_compositor_paint_metadata(snap: &mut TabSnapshot, params: &mut PaintSnapshotParams) {
-    let fill_max = params
-        .fills
-        .iter()
-        .map(|fill| fill.rect.x + fill.rect.width)
-        .fold(0.0f32, f32::max);
-    let glyph_max = params
-        .glyphs
-        .iter()
-        .filter(|glyph| glyph.glyph_id != 0 && glyph.font_size > 0.0)
-        .map(|glyph| glyph.x + glyph.font_size * 0.6)
-        .fold(0.0f32, f32::max);
-    let image_max = params
-        .images
-        .iter()
-        .filter_map(|image| match image.clip {
-            Some(clip) => {
-                let left = image.rect.x.max(clip.x);
-                let right = (image.rect.x + image.rect.width).min(clip.x + clip.width);
-                (right > left).then_some(right)
-            }
-            None => Some(image.rect.x + image.rect.width),
-        })
-        .fold(0.0f32, f32::max);
-
-    snap.document_height = Some(params.document_height);
-    snap.document_generation = params.document_generation;
-    snap.document_width = Some(fill_max.max(glyph_max).max(image_max));
-    snap.hit_test = params.hit_test.take().and_then(hit_test_cache_from_ipc);
-    snap.text_control_boundaries = params
-        .text_control_boundaries
-        .iter()
-        .map(|boundary| TextControlBoundary {
-            node_handle: boundary.node_handle,
-            utf16_offset: boundary.utf16_offset,
-            x: boundary.x,
-            y: boundary.y,
-            height: boundary.height,
-        })
-        .collect();
-}
-
 /// 从 IPC 命中测试快照还原成 engine 主线程可消费的 `HitTestCache`。
 ///
 /// 多进程模式下，渲染进程在每帧 `ViewPainted` 中携带 hit-test 缓存；
@@ -621,42 +576,5 @@ mod tests {
             snap.image_cache.get(&ImageKey::new(99)).is_some(),
             "newly injected image payload should remain available for immediate rendering"
         );
-    }
-
-    #[test]
-    fn compositor_metadata_does_not_create_legacy_render_primitives() {
-        let mut snap = TabSnapshot::default();
-        let mut params = PaintSnapshotParams {
-            document_height: 900.0,
-            text_control_boundaries: vec![IpcTextControlBoundary {
-                node_handle: 3,
-                utf16_offset: 2,
-                x: 44.0,
-                y: 12.0,
-                height: 18.0,
-            }],
-            fills: vec![zero_protocol::IpcFill {
-                rect: IpcRect {
-                    x: 5.0,
-                    y: 0.0,
-                    width: 120.0,
-                    height: 20.0,
-                },
-                color: zero_protocol::IpcColor {
-                    r: 1,
-                    g: 2,
-                    b: 3,
-                    a: 255,
-                },
-            }],
-            ..Default::default()
-        };
-
-        apply_compositor_paint_metadata(&mut snap, &mut params);
-
-        assert_eq!(snap.document_height, Some(900.0));
-        assert_eq!(snap.document_width, Some(125.0));
-        assert!(snap.last_render.is_none());
-        assert_eq!(snap.text_control_boundaries[0].utf16_offset, 2);
     }
 }

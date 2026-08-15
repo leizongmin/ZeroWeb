@@ -358,7 +358,7 @@ impl ProcessTabBackend {
                 surface_id,
                 navigation_epoch,
                 frame_id,
-                mut paint,
+                paint,
             } => {
                 if crate::compositor_client::status() == crate::compositor_client::CompositorStatus::Disconnected {
                     return;
@@ -387,7 +387,10 @@ impl ProcessTabBackend {
                     );
                     return;
                 }
-                crate::paint_ipc::apply_compositor_paint_metadata(snap, &mut paint);
+                // compositor 模式同时解码全文档图元到 last_render：compositor 回读位图
+                // 仅覆盖未滚动视口（位图平移超一帧高度即空白），滚动时显示侧回落
+                // 图元平移路径（app_render），任意滚动量渲染正确内容。
+                crate::paint_ipc::apply_paint_snapshot(snap, (*paint).clone());
                 crate::compositor_client::forward_frame(surface_id, navigation_epoch, frame_id, *paint);
             }
             _ => {}
@@ -1343,7 +1346,7 @@ mod navigation_contract_tests {
     }
 
     #[test]
-    fn compositor_frame_extracts_metadata_without_saving_legacy_primitives() {
+    fn compositor_frame_decodes_page_primitives_and_metadata() {
         let tab_id = TabId(4);
         let mut snap = TabSnapshot {
             navigation_epoch: 5,
@@ -1403,9 +1406,11 @@ mod navigation_contract_tests {
             })
         );
         assert_eq!(snap.document_height, Some(1200.0));
-        assert_eq!(snap.document_width, Some(100.0));
+        assert!(snap.document_width.is_some());
         assert!(snap.hit_test.is_some());
-        assert!(snap.last_render.is_none());
+        // compositor 模式同步解码全文档图元（滚动时显示侧回落图元平移路径）
+        let render = snap.last_render.as_ref().expect("compositor paint decodes primitives");
+        assert_eq!(render.primitives.fills.len(), 1, "page fills decoded from paint");
         assert!(snap.loading, "loading ends only after a completed compositor bitmap");
         assert!(pending_loaded.is_empty());
     }
