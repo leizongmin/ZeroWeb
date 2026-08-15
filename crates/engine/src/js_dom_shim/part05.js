@@ -3074,7 +3074,16 @@
       }
       // 源须为 canvas 元素（有 _ctx._handle + width/height）。未 getContext 则惰性建。
       // R34xx：缺坐标参数 → TypeError（missingargs 的 drawImage(canvas)）。
-      if (!image || typeof image.getContext !== 'function') {
+      // R34xx（drawing-images 目录）：img 元素未加载（naturalWidth=0——空 src/
+      // 加载中/失败）→ **no-op 不抛**（spec：incomplete image 不绘制——
+      // 2d.drawImage.incomplete.*/nonexistent/broken 的 canvas 保持原样断言）。
+      if (!image) {
+        throw new TypeError('drawImage: invalid image source');
+      }
+      if (typeof image.getContext !== 'function') {
+        // 非 canvas 源：img 元素（naturalWidth 存在）未加载 → no-op；其他（数字等）
+        // → TypeError（2d.drawImage.wrongtype）。
+        if (image && typeof image.naturalWidth === 'number') return;
         throw new TypeError('drawImage: invalid image source');
       }
       if (a.length < 3) {
