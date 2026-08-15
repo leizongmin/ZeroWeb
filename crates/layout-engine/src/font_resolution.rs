@@ -33,8 +33,8 @@ fn is_generic_family_name(name: &str) -> bool {
 /// Resolves one available face per CSS family while preserving declaration order.
 ///
 /// Weight and style variants use the same fallback order as the painter. If no
-/// declared family resolves, bold text falls back to `sans-serif:700`; all
-/// other text uses face ID `0`.
+/// declared family resolves, use the available `sans-serif` face before the
+/// final no-font sentinel.
 pub fn resolve_font_ids_for_style(
     resolver: &HashMap<String, u32>,
     font_family: &[String],
@@ -64,9 +64,8 @@ pub fn resolve_font_ids_for_style(
     }
     if ids.is_empty() {
         ids.push(
-            want_bold
-                .then(|| resolve_font_face(resolver, "sans-serif", true, false, font_stretch).map(|face| face.0))
-                .flatten()
+            resolve_font_face(resolver, "sans-serif", want_bold, want_italic, font_stretch)
+                .map(|face| face.0)
                 .unwrap_or(0),
         );
     }
@@ -224,10 +223,11 @@ mod tests {
     }
 
     #[test]
-    fn deduplicates_faces_and_uses_bold_generic_fallback() {
+    fn deduplicates_faces_and_uses_generic_fallback() {
         let resolver = HashMap::from([
             ("First".to_string(), 3),
             ("Second".to_string(), 3),
+            ("sans-serif".to_string(), 4),
             ("sans-serif:700".to_string(), 5),
         ]);
 
@@ -240,6 +240,16 @@ mod tests {
                 100.0,
             ),
             vec![3]
+        );
+        assert_eq!(
+            resolve_font_ids_for_style(
+                &resolver,
+                &["Missing".to_string()],
+                &FontWeightValue::Normal,
+                &FontStyleValue::Normal,
+                100.0,
+            ),
+            vec![4]
         );
         assert_eq!(
             resolve_font_ids_for_style(

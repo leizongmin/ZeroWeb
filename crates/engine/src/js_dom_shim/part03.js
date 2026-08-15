@@ -1712,6 +1712,12 @@
     };
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // Parsed local fragments must expose the same geometry API as live element
+    // proxies. They have no layout identity until inserted, so the spec fallback
+    // is a zero DOMRect rather than a missing method.
+    // https://drafts.csswg.org/cssom-view/#dom-element-getboundingclientrect
+    node.getBoundingClientRect = function () { return _makeDomRect(0, 0, 0, 0); };
+    node.getClientRects = function () { return []; };
     // R3019：hasChildNodes（DOMPurify _sanitizeElements mXSS 检查调 currentNode.hasChildNodes()）。
     node.hasChildNodes = function () { return node.childNodes.length > 0; };
     // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。

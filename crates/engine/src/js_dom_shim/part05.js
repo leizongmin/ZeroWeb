@@ -166,6 +166,16 @@
           // 故零回归风险（不会拦截 role/aria/class/value 等任何真属性 setter）。无 moAttr（expando 非内容属性，不发 attributes MO）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
+        } else if (p === 'src' && _realTag(sel, handle) === 'IMG') {
+          // Detached Image() resources have no renderer-owned fetch slot. Report the
+          // failed decode asynchronously so callers waiting on onerror can settle.
+          // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+          if (handle) __zw_set_attr_handle(handle, 'src', String(value));
+          else __zw_set_attr(sel, 'src', String(value));
+          moAttr = 'src';
+          _defer(function () {
+            _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+          });
         } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），

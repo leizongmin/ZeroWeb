@@ -41,6 +41,37 @@ fn test_tag_name_real_not_div_heuristic() {
 }
 
 #[test]
+fn parsed_fragment_elements_expose_geometry_api() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var parsed = new DOMParser().parseFromString('<div><span></span></div>', 'text/html');\
+             var element = parsed.body.firstChild.firstChild;\
+             globalThis.__parsedGeometry = typeof element.getBoundingClientRect + ',' + element.getBoundingClientRect().width;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__parsedGeometry").unwrap().value,
+        "function,0",
+        "parsed fragment elements provide a zero-rect geometry fallback"
+    );
+}
+
+#[test]
 fn test_event_bubbling_to_ancestor() {
     // R2692：事件冒泡。旧 dispatchEvent/__zw_dispatch_event 仅派发 target 自身 listener，
     // 不冒泡到祖先——事件委托（document/body 上注册的 listener 捕获子元素事件）失效。

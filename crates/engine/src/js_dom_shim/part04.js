@@ -2197,8 +2197,15 @@
         } else if (p === 'id') {
           // spec [LegacyNullToEmptyString]：null → 空串（非 "null"）。
           var idv = value === null ? '' : String(value);
+          // A node can be appended before its ID is assigned.  Keep the pending
+          // insertion index in sync so getElementById() observes that node in
+          // the same script turn, before the renderer publishes its next DOM
+          // snapshot.
+          // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+          if (typeof _zwPAIdRemove === 'function') _zwPAIdRemove(proxy);
           if (handle) __zw_set_attr_handle(handle, 'id', idv);
           else __zw_set_attr(sel, 'id', idv);
+          if (typeof _zwPAIdAdd === 'function') _zwPAIdAdd(proxy);
           moAttr = 'id';
         } else if (p === 'title' || p === 'lang' || p === 'dir') {
           // reflected 字符串属性 set——写同名 attribute + 同步客户端缓存（set 后 get 读缓存）。

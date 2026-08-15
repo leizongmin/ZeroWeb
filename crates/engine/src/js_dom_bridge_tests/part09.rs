@@ -1,4 +1,46 @@
 #[test]
+fn appended_node_id_is_visible_before_renderer_commit() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(
+        &mut sandbox,
+        &mutations,
+        &dom_html,
+        &page_url,
+        &canvas_registry,
+    );
+
+    sandbox
+        .execute(
+            "var row = document.createElement('tr');\
+             document.body.appendChild(row);\
+             row.id = 'row-created-after-append';\
+             globalThis.__samePendingRow = document.getElementById('row-created-after-append') === row;",
+        )
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__samePendingRow)")
+            .unwrap()
+            .value,
+        "true",
+        "getElementById must find an appended node whose ID was set in the same script turn"
+    );
+}
+
+#[test]
 fn test_document_collections_r2833() {
     // R2833：document 集合完整性 + 正确性——forms/scripts/images/links 已 land（_liveQueryCollection），
     // 本轮补缺 embeds/plugins/anchors + 修正 links（旧返全部 <a>，spec 仅 a[href]+area[href]）+ 加 has trap
@@ -157,20 +199,25 @@ fn test_image_constructor_r2834() {
         "new Image() 经 src 反射 + appendChild 挂入 body（旧 plain object 无效）\n{out}"
     );
 
-    // onload/onerror 可设不抛（headless 无真图片加载，handler 不触发——settable 不抛即可；on* 读回属
-    // element proxy 既有限制，非 Image 特有，不在本切片范围）。设后元素仍有效（tagName=IMG）。
+    // 无 renderer-owned fetch slot 的 detached Image() 必须异步派 error，避免依赖
+    // onerror 完成特性检测的页面永久等待。
     sandbox
         .execute(
             "globalThis.__img4 = new Image();\
-             globalThis.__img4.onload = function(){};\
-             globalThis.__img4.onerror = function(){};\
+             globalThis.__img4.onerror = function(){ globalThis.__img4Error = 'yes'; };\
+             globalThis.__img4.src = 'data:image/unsupported;base64,AA==';\
              globalThis.__tag4 = globalThis.__img4.tagName;",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__tag4)").unwrap().value,
         "IMG",
-        "new Image() 设 onload/onerror 后仍为 IMG 元素（set 不抛）"
+        "new Image() 设 onerror 后仍为 IMG 元素（set 不抛）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__img4Error)").unwrap().value,
+        "yes",
+        "detached Image() src failure asynchronously dispatches error"
     );
 
     // 无 new 调用亦返 img proxy。

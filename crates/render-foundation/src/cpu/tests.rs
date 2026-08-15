@@ -84,6 +84,54 @@ fn indexed_glyph_renders_identically_to_unicode_code_point() {
 }
 
 #[test]
+fn missing_renderer_local_font_falls_back_to_visible_unicode_glyph() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let primary_id = font_loader.load_font(LATO_TTF).expect("should load bundled Lato font");
+    assert_eq!(primary_id, 0, "first loaded font is the compositor fallback face");
+    let glyph_index = font_loader
+        .get(primary_id)
+        .expect("font should remain loaded")
+        .lookup_glyph_index('2');
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_glyph(GlyphPrimitive {
+        x: 8.0,
+        y: 28.0,
+        font_size: 20.0,
+        color: Color::BLACK,
+        glyph_id: '2' as u32,
+        font_glyph_index: Some(glyph_index),
+        source: None,
+        // This mirrors a renderer-local @font-face ID that the compositor has
+        // not received yet.
+        font_id: FontId(999),
+        font_variation_id: None,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+    let frame = render_full_scene(
+        40,
+        40,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut GlyphCache::new(8),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    assert!(
+        frame.data.chunks_exact(4).any(|pixel| pixel[..3] != [255, 255, 255]),
+        "unknown renderer font IDs must not make page text disappear in the compositor"
+    );
+}
+
+#[test]
 // 可变轴（wdth 等）渲染仅 freetype-raster 路径支持（fontdue 纯 Rust 路径无
 // variation 支持，loader.rs 在 variations 非空时直接返回
 // "variation-aware rasterization requires freetype-raster"）；`--no-default-features`

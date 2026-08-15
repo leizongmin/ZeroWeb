@@ -338,6 +338,20 @@ impl AsyncPageLoad {
         }
     }
 
+    /// 放弃仍未返回的非关键子资源，并完成当前文档的最终渲染。
+    ///
+    /// 文档和样式已经成功呈现后，卡住的图片或字体不应把可用页面替换为宿主错误页。
+    /// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fetching-resources
+    pub fn abandon_pending_subresources(&mut self) {
+        self.font_pending.clear();
+        self.img_pending.clear();
+        self.lazy_urls.clear();
+        self.lazy_img_pending.clear();
+        self.resource_pending.clear();
+        self.stage = PageLoadStage::Complete;
+        self.budget_pending = true;
+    }
+
     /// 取出并清空已就绪的 @font-face 字节 `(family, weight, bytes)`（drain pattern）。
     ///
     /// 宿主在 `tick` 返回后调用——`poll_fonts` 把 fetch 成功的字节收集到此处，不再丢弃。
@@ -629,6 +643,12 @@ impl AsyncPageLoad {
             *changed = true;
             let _ = self.advance_render(webview, budget_ms);
             self.begin_font_fetch(host);
+        }
+    }
+
+    /// 样式和阻塞脚本完成后才开始非关键图片抓取，避免其占满同源连接而饿死页面脚本。
+    pub fn begin_noncritical_fetches(&mut self, webview: &mut WebView, host: &mut dyn AsyncFetchHost) {
+        if self.stage == PageLoadStage::StyledPaint {
             self.begin_image_fetch(webview, host);
         }
     }
@@ -657,51 +677,69 @@ impl AsyncPageLoad {
         {
             let features = zero_engine::font_feature_settings_to_opentype(&feature_settings);
             let variations = zero_engine::font_variation_settings_to_opentype(&variation_settings);
-            for src in &sources {
-                if src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
-                    if std::env::var("ZW_DATA_FONT").as_deref() != Ok("0") {
-                        match decode_data_uri_bytes(src) {
-                            Ok(bytes) => {
-                                self.font_loaded.push((
-                                    family.clone(),
-                                    weight,
-                                    is_italic,
-                                    stretch,
-                                    size_adjust,
-                                    features.clone(),
-                                    variations.clone(),
-                                    unicode_ranges.clone(),
-                                    bytes,
-                                ));
-                                self.font_events.push((family.clone(), "loaded"));
-                            }
-                            Err(error) => {
-                                tracing::warn!(family, %error, "page load: data font decode failed");
-                                self.font_events.push((family.clone(), "error"));
-                            }
+            // 一个 @font-face 只请求最适合当前解码器的 source；并发抓取所有格式会占满
+            // 同源连接，阻塞 parser-discovered scripts。fontdue 优先支持 TrueType/OpenType。
+            let Some(src) = sources
+                .iter()
+                .find(|src| {
+                    src.to_ascii_lowercase()
+                        .split('?')
+                        .next()
+                        .is_some_and(|url| url.ends_with(".ttf") || url.ends_with(".otf"))
+                })
+                .or_else(|| {
+                    sources.iter().find(|src| {
+                        src.to_ascii_lowercase()
+                            .split('?')
+                            .next()
+                            .is_some_and(|url| url.ends_with(".woff"))
+                    })
+                })
+                .or_else(|| sources.first())
+            else {
+                continue;
+            };
+            if src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
+                if std::env::var("ZW_DATA_FONT").as_deref() != Ok("0") {
+                    match decode_data_uri_bytes(src) {
+                        Ok(bytes) => {
+                            self.font_loaded.push((
+                                family.clone(),
+                                weight,
+                                is_italic,
+                                stretch,
+                                size_adjust,
+                                features,
+                                variations,
+                                unicode_ranges,
+                                bytes,
+                            ));
+                            self.font_events.push((family, "loaded"));
+                        }
+                        Err(error) => {
+                            tracing::warn!(family, %error, "page load: data font decode failed");
+                            self.font_events.push((family, "error"));
                         }
                     }
-                    continue;
                 }
-                // 抓取所有非 data 源（woff2/woff/ttf）——fontdue 对 woff2 加载会失败被跳过，
-                // loader 跌代到可解码的源；保证 woff2-first 声明仍能注册（RFC §8.4）。
-                let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
-                    Some(u) => u.to_string(),
-                    None => src.clone(),
-                };
-                self.font_pending.push((
-                    family.clone(),
-                    weight,
-                    is_italic,
-                    stretch,
-                    size_adjust,
-                    features.clone(),
-                    variations.clone(),
-                    unicode_ranges.clone(),
-                    abs.clone(),
-                    host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT),
-                ));
+                continue;
             }
+            let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                Some(u) => u.to_string(),
+                None => src.clone(),
+            };
+            self.font_pending.push((
+                family,
+                weight,
+                is_italic,
+                stretch,
+                size_adjust,
+                features,
+                variations,
+                unicode_ranges,
+                abs.clone(),
+                host.fetch_bytes_meta(&abs, ResourceFetchMeta::FONT),
+            ));
         }
         if !self.font_pending.is_empty() {
             tracing::info!(url = %self.url, count = self.font_pending.len(), "page load: fetch fonts");
@@ -1280,6 +1318,18 @@ mod tests {
             let _ = tx.send(self.bytes_body.clone());
             rx
         }
+    }
+
+    #[test]
+    fn font_fetch_uses_one_decodable_source_per_face() {
+        let html = r#"<style>@font-face { font-family: Test; src: url(test.eot), url(test.woff), url(test.ttf), url(test.svg); }</style>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/page", html.to_string());
+        let mut host = MockFetchHost::new();
+
+        load.begin_font_fetch(&mut host);
+
+        assert_eq!(host.calls, ["https://example.com/test.ttf"]);
+        assert_eq!(load.font_pending.len(), 1);
     }
 
     #[test]

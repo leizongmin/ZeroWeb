@@ -483,9 +483,19 @@ impl FontLoader {
     /// 构建字形查找链：primary + 去重后的回退链（primary 缺失字形时按序尝试）。
     fn lookup_chain(&self, primary_id: u32) -> Vec<u32> {
         let mut chain = Vec::with_capacity(1 + self.fallback_chain.len());
-        chain.push(primary_id);
+        // Renderer-local webfont IDs are not necessarily present in the
+        // compositor's independent font loader.  Start with the requested
+        // face when it exists; otherwise use the platform primary face before
+        // trying the ordinary fallback chain, so text remains visible while a
+        // transferable webfont resource is unavailable.
+        // https://drafts.csswg.org/css-fonts-4/#font-matching-algorithm
+        if self.fonts.contains_key(&primary_id) {
+            chain.push(primary_id);
+        } else if self.fonts.contains_key(&0) {
+            chain.push(0);
+        }
         for &id in &self.fallback_chain {
-            if id != primary_id && !chain.contains(&id) {
+            if !chain.contains(&id) {
                 chain.push(id);
             }
         }

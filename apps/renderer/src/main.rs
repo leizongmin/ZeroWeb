@@ -26,7 +26,7 @@ use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 use crate::script_prefetch::PendingScriptPrefetch;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -223,6 +223,8 @@ struct RendererRuntime {
     pending_load: Option<PendingLoad>,
     /// 页面 HTML/CSS/图片加载完成后的非阻塞脚本预取。
     pending_script_prefetch: Option<PendingScriptPrefetch>,
+    /// 本文档中已经开始执行的外链脚本绝对 URL（含解析期与动态插入脚本）。
+    executed_external_scripts: HashSet<String>,
     /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
     inflight_fetches: InflightIpcFetches,
     /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
@@ -331,6 +333,7 @@ impl RendererRuntime {
             sent_image_keys: std::collections::HashSet::new(),
             pending_load: None,
             pending_script_prefetch: None,
+            executed_external_scripts: HashSet::new(),
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
             observer_tick_depth: 0,
@@ -400,6 +403,7 @@ impl RendererRuntime {
     }
 
     fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
+        self.executed_external_scripts.extend(fetch_cache.keys().cloned());
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let skip = page_scripts::should_skip_scripts(&current_url);
@@ -419,6 +423,7 @@ impl RendererRuntime {
             run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
         };
         if changed {
+            self.execute_new_dynamic_scripts();
             self.publish_webview(None, true)?;
         }
         // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
@@ -468,6 +473,55 @@ impl RendererRuntime {
         let cache = prefetch.finish();
         self.after_page_html_loaded_with_cache(cache)?;
         self.try_publish_progress(true)
+    }
+
+    /// 将定时器等异步页面任务产生的 DOM 变更提交到活文档。
+    fn drain_pending_script_mutations(&mut self) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::drain_pending_dom_mutations(&mut ctx)
+        };
+        if changed {
+            self.execute_new_dynamic_scripts();
+            self.try_publish_progress(true)?;
+        }
+        Ok(())
+    }
+
+    /// 启动由运行中页面插入的经典外链脚本。
+    ///
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-script-element
+    /// 脚本元素连入 document 后须取回并执行。当前多进程加载器只预取初始 HTML 中的
+    /// `<script>`，故这里复用页面 worker 已有的 fetch 宿主异步取回后在同一全局执行；其
+    /// 产生的 DOM 变更由下一轮 `drain_pending_script_mutations` 提交。
+    fn execute_new_dynamic_scripts(&mut self) {
+        let Some(base_url) = self.current_url.as_deref() else {
+            return;
+        };
+        for script in zero_engine::extract_page_scripts(&self.cached_html) {
+            let zero_engine::PageScript::External(src) = script else {
+                continue;
+            };
+            let url = zero_engine::resolve_document_url(base_url, &src);
+            if !self.executed_external_scripts.insert(url.clone()) {
+                continue;
+            }
+            let loader = format!(
+                "fetch({url:?}).then(function(response) {{ return response.text(); }}).then(function(source) {{ (0, eval)(source); }}).catch(function(error) {{ console.error('dynamic script load failed', error); }});"
+            );
+            if let Err(error) = self.js_worker.execute_script_direct(&loader) {
+                tracing::warn!(%url, "dynamic script loader setup failed: {error}");
+            }
+        }
     }
 
     /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
@@ -1397,8 +1451,14 @@ impl RendererRuntime {
         };
 
         if Instant::now() >= pending.deadline {
-            let url = pending.page_url;
-            return self.show_error_page(&url, "页面加载超时（分阶段加载未完成）");
+            if matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingImages) {
+                tracing::warn!(url = %pending.page_url, "非关键子资源加载超时，保留已呈现页面");
+                pending.load.abandon_pending_subresources();
+                pending.deadline = Instant::now() + PAGE_LOAD_DEADLINE;
+            } else {
+                let url = pending.page_url;
+                return self.show_error_page(&url, "页面加载超时（分阶段加载未完成）");
+            }
         }
 
         let publish_after = {
@@ -1467,6 +1527,40 @@ impl RendererRuntime {
             tracing::info!(url = %pending.page_url, stage = ?stage, "progressive paint publish");
             // 加载过程中仅用已解码 cache，避免同步 IPC fetch 阻塞 async 子资源。
             self.try_publish_progress(false)?;
+        }
+
+        // 脚本可在样式和首帧可用后执行；不能因与页面功能无关的图片/字体请求而延后。
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-end
+        if pending.run_scripts_after
+            && matches!(
+                stage,
+                zero_webview::PageLoadStage::StyledPaint
+                    | zero_webview::PageLoadStage::FetchingImages
+                    | zero_webview::PageLoadStage::Complete
+            )
+            && self.pending_script_prefetch.is_none()
+        {
+            pending.run_scripts_after = false;
+            if !page_scripts::should_skip_scripts(&pending.page_url) {
+                self.sync_cached_html_from_webview();
+                self.pending_script_prefetch =
+                    Some(PendingScriptPrefetch::from_html(&pending.page_url, &self.cached_html));
+            }
+        }
+
+        if stage == zero_webview::PageLoadStage::StyledPaint
+            && !pending.run_scripts_after
+            && self.pending_script_prefetch.is_none()
+        {
+            let webview = self.webview.as_mut().expect("webview");
+            if self.stub_network {
+                let mut host = StubAsyncFetchHost;
+                pending.load.begin_noncritical_fetches(webview, &mut host);
+            } else {
+                let mut host =
+                    IpcAsyncFetchHost::new(&mut self.outbound, &mut self.next_fetch_id, &mut self.inflight_fetches);
+                pending.load.begin_noncritical_fetches(webview, &mut host);
+            }
         }
 
         if pending.load.is_active() {
@@ -1708,6 +1802,7 @@ impl RendererRuntime {
         self.pending_frame_network_fetch = false;
         self.pending_load = None;
         self.pending_script_prefetch = None;
+        self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
         self.push_history(&params.url);
         self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
@@ -2244,20 +2339,6 @@ impl RendererRuntime {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
 
         loop {
-            if let Some(pending) = self.pending_load.as_ref()
-                && Instant::now() >= pending.deadline
-            {
-                let url = pending.page_url.clone();
-                if let Err(e) = self.show_error_page(&url, "页面加载超时（分阶段加载未完成）") {
-                    if browser_ipc_disconnected(&e) {
-                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
-                        return Ok(());
-                    }
-                    tracing::error!("加载超时处理失败: {e}");
-                }
-                continue;
-            }
-
             if self.pending_load.is_some() || self.pending_script_prefetch.is_some() {
                 self.drain_inflight_fetch_responses();
                 if self.pending_load.is_some()
@@ -2283,6 +2364,10 @@ impl RendererRuntime {
             // R2949 FontFace.load()：drain JS 投递的字体加载请求（任意时刻可来，故每轮检查）。
             // fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
             self.tick_font_face_loads();
+
+            // 异步页面脚本（例如 HTML5test 的后台检测）可在初始脚本边界之后改 DOM；每轮
+            // 原子取出并提交，避免结果节点滞留在 JS worker。
+            self.drain_pending_script_mutations()?;
 
             // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。

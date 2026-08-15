@@ -101,15 +101,13 @@ impl super::super::Painter {
                 return (FontId(id), resolved_italic);
             }
         }
-        if want_bold
-            && let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(
-                &self.font_resolver_lower,
-                "sans-serif",
-                true,
-                want_italic,
-                font_stretch,
-            )
-        {
+        if let Some((id, resolved_italic)) = zero_render_foundation::font::resolve_font_face(
+            &self.font_resolver_lower,
+            "sans-serif",
+            want_bold,
+            want_italic,
+            font_stretch,
+        ) {
             return (FontId(id), resolved_italic);
         }
         (FontId(0), false)

@@ -674,6 +674,20 @@ pub fn execute_automation_script(ctx: &mut PageScriptContext<'_>, script: &str) 
     Ok((value, changed))
 }
 
+/// 提交已经由异步页面任务写入的 DOM 变更。
+///
+/// `setTimeout`、Promise 和其他宿主回调会在首次页面脚本执行结束后继续运行；这些
+/// 变更没有新的同步脚本边界可供 `run_page_scripts` 收集，须由 renderer 事件循环主动
+/// 提交到活 DOM。
+pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
+    // `setTimeout` / fetch 等宿主完成会先投递到 worker 的命令队列；只有进入一次
+    // worker 执行边界时，回调才会在页面全局运行并记录 DOM mutation。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
+    let _ = ctx.js_worker.execute_script_direct("");
+    let html_snapshot = ctx.html.clone();
+    apply_recorded_mutations(ctx, &html_snapshot).is_some()
+}
+
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
@@ -721,7 +735,8 @@ fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &str) -> Opti
         .mutations()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .clone();
+        .drain(..)
+        .collect::<Vec<_>>();
     if recorded.is_empty() {
         return None;
     }
@@ -871,6 +886,48 @@ mod tests {
                 .iter()
                 .any(|glyph| glyph.glyph_id == '2' as u32),
             "nested score text must reach the renderer frame"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn async_script_mutation_is_committed_to_webview_frame() {
+        let html = r#"<html><body><div id="score"></div></body></html>"#;
+        let page_url = "https://zero.test/async-score";
+        let mut worker = RendererJsWorker::spawn(151);
+        worker.set_dom_snapshot(html, page_url);
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        webview.prepare_document_state(page_url);
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+
+        worker
+            .execute_script_direct(
+                "setTimeout(function() { document.querySelector('#score').innerHTML = '<strong>265</strong>'; }, 10);",
+            )
+            .expect("schedule score mutation");
+        // Timer expiry only queues a host callback; `drain_pending_dom_mutations`
+        // must enter the worker once to execute it.
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        assert!(drain_pending_dom_mutations(&mut ctx));
+        assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
+        assert!(
+            ctx.webview
+                .as_ref()
+                .expect("webview")
+                .last_render()
+                .expect("mutation render")
+                .primitives()
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.glyph_id == '2' as u32),
+            "asynchronously inserted score must reach the renderer frame"
         );
         worker.shutdown();
     }

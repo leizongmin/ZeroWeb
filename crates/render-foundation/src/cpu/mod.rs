@@ -825,21 +825,22 @@ fn draw_glyph_primitive(
         return;
     }
 
-    // 整形后的 glyph index 只在指定字体 face 内有效，不参与 Unicode 字体回退。
-    if let Some(glyph_index) = glyph.font_glyph_index() {
-        if let Ok(bitmap) = font_loader.rasterize_glyph_index_with_variations(
+    // 整形后的 glyph index 只在指定字体 face 内有效。若 compositor 没有该 renderer-local
+    // face（例如尚未传递的网页字体），改按 Unicode code point 回退，避免静默丢字。
+    if let Some(glyph_index) = glyph.font_glyph_index()
+        && let Ok(bitmap) = font_loader.rasterize_glyph_index_with_variations(
             raw_font_id,
             glyph_index,
             physical_font_size,
             &raw_variations,
-        ) && bitmap.width > 0
-            && bitmap.height > 0
-        {
-            let _ = glyph_cache.get_or_insert_with(key, || Ok(bitmap.clone()));
-            let x = glyph.x * scale;
-            let y = glyph.y * scale;
-            blit_glyph_bitmap(fb, &bitmap, x, y, glyph.color, glyph.rotation, glyph.synthetic_italic);
-        }
+        )
+        && bitmap.width > 0
+        && bitmap.height > 0
+    {
+        let _ = glyph_cache.get_or_insert_with(key, || Ok(bitmap.clone()));
+        let x = glyph.x * scale;
+        let y = glyph.y * scale;
+        blit_glyph_bitmap(fb, &bitmap, x, y, glyph.color, glyph.rotation, glyph.synthetic_italic);
         return;
     }
 
