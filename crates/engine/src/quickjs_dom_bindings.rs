@@ -141,6 +141,73 @@ fn id_setter<'js>(this: This<Object<'js>>, value: rquickjs::Coerced<String>) {
     with_dom_mut(|d| d.set_attribute(id_node, "id", &value.0));
 }
 
+/// `className` getter（spec `dom-element-classname`，`class` content 反射；缺省 ""）。
+/// S1q（镜像 V8 `native_class_name_getter` 的 `read_reflected_attr(scope,…,"class","")`）。
+fn class_name_getter<'js>(this: This<Object<'js>>) -> String {
+    reflected_attr_string_of(&this.0, "class").unwrap_or_default()
+}
+
+/// `className` setter（spec `dom-element-classname`：ToString 后写 `class` 内容属性）。
+fn class_name_setter<'js>(this: This<Object<'js>>, value: rquickjs::Coerced<String>) {
+    let Some(id_node) = node_id_of(&this.0) else {
+        return;
+    };
+    with_dom_mut(|d| d.set_attribute(id_node, "class", &value.0));
+}
+
+/// `namespaceURI` getter（spec `dom-node-namespaceuri`）：元素命名空间 URI 字符串；
+/// 空 namespace / 非元素 → JS null（镜像 V8 `native_namespace_uri_getter` 的
+/// Some(None)→null 分支——undefined 仅留给无 DOM 源的 stale 场景，此处简化返 null）。
+fn namespace_uri_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let ns = element_ns_of(&this.0);
+    match ns {
+        Some(uri) => match rquickjs::String::from_str(ctx.clone(), &uri) {
+            Ok(s) => s.into_value(),
+            Err(_) => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `localName` getter（spec `dom-element-localname`）：ASCII 小写化的 local name
+/// 只对 HTML 命名空间（`zero_dom::ElementData::local_name` 解析时已按 ns 处理大小写，
+/// 此处直接透传——HTML 元素 parser 产出小写 local，SVG/MathML 保留原样）。
+fn local_name_getter<'js>(this: This<Object<'js>>) -> String {
+    element_string_of(&this.0, |e| e.local_name().to_string()).unwrap_or_default()
+}
+
+/// `textContent` getter（spec `dom-node-textcontent`）：子树文本拼接
+/// （`Document::text_content` 递归收集后代 Text 节点）。空子树 → ""。
+/// S1q 只读版（setter 属 S2q 写入族）。
+fn text_content_getter<'js>(this: This<Object<'js>>) -> String {
+    let Some(id) = node_id_of(&this.0) else {
+        return String::new();
+    };
+    with_dom(|d| d.text_content(id)).flatten().unwrap_or_default()
+}
+
+/// 读元素的反射内容属性（attr_name effective——HTML 小写/SVG 原样由 dom 层处理）；
+/// 缺失/非元素/stale → None。
+fn reflected_attr_string_of(this: &Object, name: &str) -> Option<String> {
+    let id = node_id_of(this)?;
+    with_dom(|d| d.get_attribute(id, name)).flatten()
+}
+
+/// 读元素命名空间 URI（空 ns / 非元素 → None）。
+fn element_ns_of(this: &Object) -> Option<String> {
+    let id = node_id_of(this)?;
+    with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => {
+                let ns = e.namespace();
+                (!ns.is_empty()).then(|| ns.to_string())
+            }
+            _ => None,
+        })
+    })
+    .flatten()
+}
+
 /// 在元素的 ElementData 上计算字符串（stale/非元素 → None）。
 fn element_string_of(this: &Object, f: impl FnOnce(&zero_dom::ElementData) -> String) -> Option<String> {
     let id = node_id_of(this)?;
@@ -233,6 +300,17 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
         "id",
         Accessor::from(id_getter).set(id_setter).configurable().enumerable(),
     )?;
+    // S1q 只读属性族（镜像 V8 dom_bindings 既有面）。
+    obj.prop(
+        "className",
+        Accessor::from(class_name_getter)
+            .set(class_name_setter)
+            .configurable()
+            .enumerable(),
+    )?;
+    obj.prop("namespaceURI", Accessor::from(namespace_uri_getter).configurable())?;
+    obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
+    obj.prop("textContent", Accessor::from(text_content_getter).configurable())?;
     Ok(obj)
 }
 
@@ -283,6 +361,21 @@ mod tests {
             assert_eq!(eval_str("__zw_native_element_for_id('main').nodeName"), "DIV");
             assert_eq!(eval_str("__zw_native_element_for_id('main').id"), "main");
 
+            // S1q 只读属性族：className/namespaceURI/localName/textContent。
+            assert_eq!(eval_str("__zw_native_element_for_id('main').className"), "c");
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').namespaceURI"),
+                "http://www.w3.org/1999/xhtml"
+            );
+            assert_eq!(eval_str("__zw_native_element_for_id('main').localName"), "div");
+            assert_eq!(eval_str("__zw_native_element_for_id('main').textContent"), "hi");
+            // className setter 写 live Document + getter 读回（S1q 读写闭环）。
+            assert_eq!(
+                eval_str("(__zw_native_element_for_id('main').className = 'x y', 1)"),
+                "1"
+            );
+            assert_eq!(eval_str("__zw_native_element_for_id('main').className"), "x y");
+
             // 2. 身份缓存：同 NodeId 返同对象（spec identity）。
             assert_eq!(
                 eval_str("__zw_native_element_for_id('main') === __zw_native_element_for_id('main')"),
@@ -297,11 +390,44 @@ mod tests {
             assert_eq!(eval_str("__zw_native_element_for_id('renamed').tagName"), "DIV");
             assert_eq!(eval_str("__zw_native_element_for_id('main')"), "null");
 
-            // 5. 隐藏 ffi 不可枚举（Object.keys 只见 id）。
+            // 5. 隐藏 ffi 不可枚举（Object.keys 只见 id/className——S1q 后 enumerable 的反射属性）。
             assert_eq!(
                 eval_str("Object.keys(__zw_native_element_for_id('renamed')).join(',')"),
-                "id"
+                "id,className"
             );
+
+            reset_quickjs_state();
+        });
+    }
+
+    /// S1q namespaceURI 空命名空间 → null（镜像 V8 `native_namespace_uri_getter` 分支）。
+    /// SVG 元素（非 HTML ns）返回其真实命名空间；`create_element_ns("", …)` 空 ns → null。
+    #[test]
+    fn quickjs_namespace_uri_variants() {
+        let runtime = rquickjs::Runtime::new().expect("runtime");
+        let ctx = rquickjs::Context::full(&runtime).expect("context");
+        ctx.with(|ctx| {
+            let dom = Rc::new(RefCell::new(zero_dom::parse_html(
+                "<html><body><svg id='s'></svg><div id='d'></div></body></html>",
+            )));
+            install_dom_bindings_quickjs(&ctx, dom);
+
+            let eval_str = |code: &str| -> String {
+                ctx.eval::<rquickjs::Coerced<String>, _>(code)
+                    .map(|v| v.0)
+                    .unwrap_or_else(|e| format!("__ERR__:{e}"))
+            };
+
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('s').namespaceURI"),
+                "http://www.w3.org/2000/svg"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('d').namespaceURI"),
+                "http://www.w3.org/1999/xhtml"
+            );
+            assert_eq!(eval_str("__zw_native_element_for_id('d').localName"), "div");
+            assert_eq!(eval_str("__zw_native_element_for_id('s').localName"), "svg");
 
             reset_quickjs_state();
         });

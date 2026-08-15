@@ -680,7 +680,7 @@ fn test_native_dom_bindings_wiring_quickjs_s0q() {
     let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
     wv.load_html(
         "<html><body>\
-         <div id=\"a\"><span id=\"b\">x</span></div>\
+         <div id=\"a\" class=\"box main\"><span id=\"b\">x</span></div>\
          <script>\
            globalThis.__nt = __zw_native_element_for_id('a').nodeType;\
            globalThis.__tn = __zw_native_element_for_id('a').tagName;\
@@ -688,6 +688,10 @@ fn test_native_dom_bindings_wiring_quickjs_s0q() {
            globalThis.__tnB = __zw_native_element_for_id('b').tagName;\
            globalThis.__same = (__zw_native_element_for_id('a') === __zw_native_element_for_id('a'));\
            globalThis.__miss = (__zw_native_element_for_id('zz') === null);\
+           globalThis.__cls = __zw_native_element_for_id('a').className;\
+           globalThis.__ns = __zw_native_element_for_id('a').namespaceURI;\
+           globalThis.__ln = __zw_native_element_for_id('a').localName;\
+           globalThis.__tc = __zw_native_element_for_id('a').textContent;\
          </script>\
          </body></html>",
         None,
@@ -723,6 +727,27 @@ fn test_native_dom_bindings_wiring_quickjs_s0q() {
         wv.execute_script("String(globalThis.__miss)").unwrap(),
         "true",
         "QuickJS miss → null（与 V8 wire 语义一致）"
+    );
+    // S1q 只读属性族（镜像 V8 dom_bindings 面）。
+    assert_eq!(
+        wv.execute_script("String(globalThis.__cls)").unwrap(),
+        "box main",
+        "QuickJS native className（class 反射）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ns)").unwrap(),
+        "http://www.w3.org/1999/xhtml",
+        "QuickJS native namespaceURI（HTML ns）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ln)").unwrap(),
+        "div",
+        "QuickJS native localName（小写）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tc)").unwrap(),
+        "x",
+        "QuickJS native textContent（子树文本拼接）"
     );
 }
 
