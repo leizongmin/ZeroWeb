@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-16",
+  "round": "R56h",
+  "slice": "M8 path-objects 续作：曲线段数自适应 + stroke 像素方形覆盖",
+  "commits": ["e332878f (rebase over 3afbf842 并行流)"],
+  "baseline": {
+    "commit": "185c59ff (R56g 归档 HEAD)",
+    "fails": 11,
+    "pass": 192,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "e332878f",
+    "fails": 7,
+    "pass": 196
+  },
+  "net": {
+    "fixed": ["2d.path.bezierCurveTo.shape", "2d.path.bezierCurveTo.scaled", "2d.path.quadraticCurveTo.shape", "2d.path.quadraticCurveTo.scaled"],
+    "regressions": []
+  },
+  "changes": [
+    "曲线 flatten 段数自适应 N = clamp(控制点折线长/8, 8, 512)（quadratic + bezier 双分支）：固定 8 段对巨坐标曲线（shape 用例控制折线 ~13000px、画布内 t 窗口仅 ~2.4 段）弦偏差 48px；自适应后画布内 ~154 段（偏差 ~0.01px）",
+    "stroke 像素判定半径 half + 0.5（像素内切半径）：真实光栅是面积覆盖——中心距带 0.4px 外但像素方形与带相交的临界像素须着色（shape 的 (1,1)：中心距曲线 27.9 / half 27.5 / 方形最近角 27.2 相交）。应用于 solid + gradient 两个光栅化器",
+    "4 个旧曲线段计数测试更新到自适应语义（poly/8 公式）"
+  ],
+  "tests": {
+    "canvas_unit": "+1（巨坐标 bezier + quadratic 双场景：中点着色 + 临界像素着色）",
+    "wpt": "曲线族四用例全 Pass"
+  },
+  "gates": {
+    "canvas": "789 passed 0 failed",
+    "engine_v8": "2153 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles/clipping/compositing/transformations/fillrect/drawing-rectangles 全 0F"
+  },
+  "process_learnings": [
+    "曲线与弧的段数问题同构但参数不同：弧按 lw/r（端面精度驱动），曲线按控制折线长（弦偏差驱动）——各自独立推导而非套用同一公式",
+    "像素判定语义差（中心点 vs 面积覆盖）在临界用例暴露：像素中心距带 ≤0.7px（√2/2）的都可能是面积覆盖命中——half+0.5 是保守正确的近似",
+    "bezierCurveTo.scaled 与 shape 同构（scale(1000) 等比放大）——修一处自然双收，无需单独处理 CTM"
+  ],
+  "remaining_fails_7": "stroke.prune.arc/curve/line + stroke.skew（~4）+ roundrect.closed/end.3 + isPointInStroke.scaleddashes"
+}
