@@ -502,7 +502,8 @@ fn test_flatten_path_arc() {
     ctx.current_path
         .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0, false);
     let verts = ctx.flatten_path_open();
-    assert_eq!(verts.len(), 64, "arc = 16 segments × 4");
+    // R56：moveTo 后 arc 含 spec「current→弧首」连线段（+4）= 17 段。
+    assert_eq!(verts.len(), 68, "arc = 16 segments + line-to-arc-start");
 }
 
 #[test]
@@ -1022,7 +1023,9 @@ fn test_flatten_path_arc_full_circle() {
         .arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU, false);
     let vertices = ctx.flatten_path_open();
     // Full circle should still produce vertices
-    assert_eq!(vertices.len(), 64); // 16 segments × 4
+    // R56：moveTo(50,0) 恰为弧首（角 0）→ 连线段零长不 push？——非也：has_any_subpath
+    // 判定不看点重合，段仍 push（(50,0)→(50,0) 退化段，扫描线无穿越）→ 68。
+    assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
 #[test]
@@ -1043,7 +1046,8 @@ fn test_flatten_path_arc_negative_angles() {
         .arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0, false);
     let vertices = ctx.flatten_path_open();
     // Negative angles should still work
-    assert_eq!(vertices.len(), 64); // 16 segments × 4
+    // R56：+1 连线段（moveTo→弧首）。
+    assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
 #[test]
@@ -1053,7 +1057,8 @@ fn test_flatten_path_arc_start_greater_than_end() {
     ctx.current_path.arc(50.0, 50.0, 50.0, std::f32::consts::PI, 0.0, false);
     let vertices = ctx.flatten_path_open();
     // Start > end should still produce vertices
-    assert_eq!(vertices.len(), 64); // 16 segments × 4
+    // R56：+1 连线段（moveTo→弧首）；顺时针 start>end 归一化 span = +π（同向 mod）。
+    assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
 #[test]
@@ -1583,4 +1588,121 @@ fn test_flatten_round_rect_zero_radius_negative_h() {
     assert_eq!(hits.len(), 2, "2 crossings at y=12.5: {hits:?}");
     let (lo, hi) = (hits[0].min(hits[1]), hits[0].max(hits[1]));
     assert!(lo <= 0.5 && hi >= 99.5, "span full width: {hits:?}");
+}
+
+// ── R56（M8/DC-8）：arc 方向归一化 + 弧首连线 单测 ──
+
+#[test]
+fn test_arc_span_normalization_cw_negative_diff() {
+    // 2d.path.arc.angle.5：start=1023π、end=512.5π、顺时针（acw=false）。
+    // 旧 `raw % TAU` 得 −π/2（负）→ 弧走向反向翻到对侧象限；正确为同向 mod
+    // （span ∈ [0,2π)）= +3π/2。展平首段方向可判：从角 1023π（mod 2π = π）起
+    // 步进为正（顺时针增方向）。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.arc(
+        100.0,
+        0.0,
+        150.0,
+        (1024.0 - 1.0) as f32 * std::f32::consts::PI,
+        (512.0 + 0.5) as f32 * std::f32::consts::PI,
+        false,
+    );
+    let verts = ctx.flatten_path_open();
+    assert!(verts.len() >= 8, "arc segments emitted");
+    // 首段起点 = 弧起点（角 1023π mod 2π = π → (100−150, 0)）
+    assert!((verts[0] - (-50.0)).abs() < 1.0, "arc start x≈−50: {}", verts[0]);
+    assert!(verts[1].abs() < 1.0, "arc start y≈0: {}", verts[1]);
+    // 顺时针（角度增方向）：从角 π 出发 sin 减小（π→1.5π 区间）→ y 减小（屏幕
+    // 上方）。旧反向实现（span 负 + dir 双重取反前）弧翻到对侧象限。
+    assert!(
+        verts[5] < verts[1],
+        "clockwise arc from angle π proceeds with y decreasing: {} → {}",
+        verts[1],
+        verts[5]
+    );
+}
+
+#[test]
+fn test_arc_span_normalization_acw_positive_diff() {
+    // 2d.path.arc.angle.2：start=−3π/2、end=−π、逆时针（acw=true）。
+    // acw 归一化 span ∈ (−2π,0]：−π（从 −3π/2 减小到 −π−2π？否——同向 mod：
+    // start−end = −π/2 → |span| = π/2 → span = −π/2，从 −3π/2 走到 −2π）。
+    // 旧实现 raw % TAU = +π/2 再乘 dir=−1 恰为 −π/2——本例旧值相同，但整圆
+    // 边界（angle.3 的 raw=−510.5π）与顺时针负差（angle.5）都依赖新归一化。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.arc(
+        100.0,
+        0.0,
+        150.0,
+        -1.5 * std::f32::consts::PI,
+        -std::f32::consts::PI,
+        true,
+    );
+    let verts = ctx.flatten_path_open();
+    // 逆时针（角度减方向）从 −3π/2（点 (100,−150) 屏幕上方）向 −2π（点 (250,0)）
+    // 首段 y 应减小（屏幕向上）。
+    assert!(
+        verts[5] < verts[1],
+        "anticlockwise arc proceeds screen-upward (angle decreasing): {} → {}",
+        verts[1],
+        verts[5]
+    );
+}
+
+#[test]
+fn test_arc_line_to_arc_start_after_move_to() {
+    // 2d.path.arc.angle.4 / twopie.5：moveTo(圆心) + arc(整圆) + fill。
+    // spec dom-context-2d-arc：「If the context has any subpaths, add a straight
+    // line from the current point to the start point of the arc」。旧实现不 push
+    // 该段 → 扇形缺「圆心→弧首」边，扫描线在弧首角配对破裂。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.move_to(50.0, 25.0);
+    ctx.arc(50.0, 25.0, 60.0, 0.0, 5.0 * std::f32::consts::PI, false);
+    let verts = ctx.flatten_path();
+    // 首 4 值应为 (50,25)→弧首 的连线段（弧首 = 角 0 → (110,25)）。
+    assert!((verts[0] - 50.0).abs() < f32::EPSILON, "line-from-current x");
+    assert!((verts[1] - 25.0).abs() < f32::EPSILON, "line-from-current y");
+    assert!((verts[2] - 110.0).abs() < 1.0, "arc start x≈110: {}", verts[2]);
+    assert!((verts[3] - 25.0).abs() < 1.0, "arc start y≈25: {}", verts[3]);
+}
+
+#[test]
+fn test_arc_no_line_without_any_subpath() {
+    // 首命令是 arc（beginPath 后无 moveTo）：spec「no subpaths → 直接 moveTo 弧
+    // 起点」，不产生 (0,0)→弧首 的虚假连线段（虚假段会在 fill 扫描线引入杂边）。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.arc(50.0, 25.0, 60.0, 0.0, std::f32::consts::PI, false);
+    let verts = ctx.flatten_path();
+    // 首段起点 = 弧首点（角 0 → (110,25)），非 (0,0)。
+    assert!(
+        (verts[0] - 110.0).abs() < 1.0,
+        "first seg starts at arc start: {}",
+        verts[0]
+    );
+    assert!((verts[1] - 25.0).abs() < 1.0, "first seg y≈25: {}", verts[1]);
+}
+
+#[test]
+fn test_fill_rect_2x2_writes_pixels_r56() {
+    // R56 回归哨兵：pipeline canvas 桥测试（canvas_element_bridges_to_image_primitive）
+    // 的最小复现——2×2 画布 moveTo/lineTo×3/closePath + fill 必须写 pixel_buffer
+    // （snapshot_rgba 非全零才产出 ImagePrimitive）。
+    let mut ctx = CanvasContext::new(2, 2);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(2.0, 0.0);
+    ctx.line_to(2.0, 2.0);
+    ctx.line_to(0.0, 2.0);
+    ctx.close_path();
+    ctx.fill();
+    assert!(
+        ctx.pixel_buffer.iter().any(|&b| b != 0),
+        "2×2 fill 后 pixel_buffer 必须非全零（snapshot_rgba 依赖）: {:?}",
+        ctx.pixel_buffer
+    );
 }

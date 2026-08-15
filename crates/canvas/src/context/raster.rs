@@ -635,11 +635,16 @@ impl CanvasContext {
         let mut subpath_start_y = 0.0f32;
         // 子路径已有几何命令（区别「首个 MoveTo 前」——此时无子路径可闭合）。
         let mut subpath_has_geometry = false;
+        // R56：是否已有任何子路径（MoveTo 已发生）——spec arc 步骤「If the context
+        // has any subpaths, line to arc start」的判据（区别 subpath_has_geometry：
+        // moveTo 后 arc 前为 false，但 spec 语义应连线）。
+        let mut has_any_subpath = false;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in self.current_path.commands() {
             match *cmd {
                 PathCommand::MoveTo(x, y) => {
+                    has_any_subpath = true;
                     // 隐式闭合上一开放子路径（终点≠起点补闭合段）。
                     if close_open_subpaths
                         && subpath_has_geometry
@@ -718,22 +723,48 @@ impl CanvasContext {
                     subpath_has_geometry = true;
                     // R34xx：anticlockwise 方向（同 path.rs flatten）。
                     let dir = if anticlockwise { -1.0 } else { 1.0 };
-                    // R34xx：角度归一化（与 path.rs flatten 同——|span| ≥ 2π 整圆，
-                    // 否则 mod 2π；2d.path.arc.angle.*）。
+                    // R56（M8/DC-8）：角度归一化对齐 spec dom-context-2d-arc——
+                    // |span| ≥ 2π 整圆；否则按方向取**同向** mod 2π 弧：顺时针
+                    // （acw=false）span ∈ [0,2π)、逆时针 span ∈ (−2π,0]。
+                    // 旧 `raw % TAU` 对顺时针负差得负 span → 弧走向反向
+                    // （2d.path.arc.angle.5：start=1023π end=512.5π 顺时针，
+                    // 旧 span=−π/2 画成逆时针 π/2 弧，扇形翻到对侧）。
+                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arc
+                    let tau = std::f32::consts::TAU;
                     let raw_span = end_angle - start_angle;
-                    let span = if !anticlockwise && raw_span >= std::f32::consts::TAU {
-                        std::f32::consts::TAU
-                    } else if anticlockwise && raw_span <= -std::f32::consts::TAU {
-                        -std::f32::consts::TAU
+                    let span = if !anticlockwise {
+                        if raw_span >= tau {
+                            tau
+                        } else {
+                            ((raw_span % tau) + tau) % tau
+                        }
+                    } else if raw_span <= -tau {
+                        -tau
                     } else {
-                        raw_span % std::f32::consts::TAU
+                        -(((-raw_span) % tau + tau) % tau)
                     };
-                    let angle_span = span * dir;
+                    // R56：span 归一化已含方向（顺时针 ∈ [0,τ] / 逆时针 ∈ [−τ,0]），
+                    // 不再乘 dir（旧 span 为同号绝对值需 dir 定向——双重取反会翻弧）。
+                    let _ = dir;
+                    let angle_span = span;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut angle = start_angle;
                     let mut px = cx + radius * angle.cos();
                     let mut py = cy + radius * angle.sin();
-                    // 如果之前有 MoveTo，弧线的第一个点应该从当前点连线
+                    // R56（M8/DC-8）：spec dom-context-2d-arc——若已有子路径，从当前
+                    // 点直线连到弧起点（spec 步骤「add a straight line from the
+                    // current point to the start point of the arc」）。旧实现不 push
+                    // 该段，moveTo+arc 整圆 fill 的多边形缺这条边，扫描线在弧首角
+                    // 配对破裂（2d.path.arc.angle.4 的 (98,48) 缺口）。首个子路径的
+                    // 首个命令（无 current）不连。
+                    if has_any_subpath {
+                        vertices.push(current_x);
+                        vertices.push(current_y);
+                        vertices.push(px);
+                        vertices.push(py);
+                    } else {
+                        has_any_subpath = true;
+                    }
                     for i in 0..ARC_SEGMENTS {
                         angle = start_angle + step * (i + 1) as f32;
                         let nx = cx + radius * angle.cos();

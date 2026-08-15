@@ -385,18 +385,28 @@ impl Path2D {
                     let (cx, cy, radius, start_angle, end_angle) = (*cx, *cy, *radius, *start_angle, *end_angle);
                     // R34xx：anticlockwise 方向（canvas y 向下：角度递增 = 顺时针，递减 = 逆时针）。
                     let dir = if *anticlockwise { -1.0 } else { 1.0 };
-                    // R34xx：角度归一化（spec arc 算法）——|span| ≥ 2π → 整圆；
-                    // 否则 mod 2π。旧实现原样展平 >2π 角度 → 多边形自交多次包裹，
-                    // 非零填充规则下包裹区（偶绕数）成洞（2d.path.arc.angle.3-6）。
+                    // R56（M8/DC-8）：角度归一化对齐 spec dom-context-2d-arc——
+                    // |span| ≥ 2π → 整圆；否则按方向取**同向** mod 2π 弧（顺时针
+                    // span ∈ [0,2π)、逆时针 ∈ (−2π,0]）。旧 `raw % TAU` 对顺时针
+                    // 负差得负 span → 弧走向反向（2d.path.arc.angle.5 扇形翻侧）。
+                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arc
+                    let tau = std::f32::consts::TAU;
                     let raw_span = end_angle - start_angle;
-                    let span = if !*anticlockwise && raw_span >= std::f32::consts::TAU {
-                        std::f32::consts::TAU
-                    } else if *anticlockwise && raw_span <= -std::f32::consts::TAU {
-                        -std::f32::consts::TAU
+                    let span = if !*anticlockwise {
+                        if raw_span >= tau {
+                            tau
+                        } else {
+                            ((raw_span % tau) + tau) % tau
+                        }
+                    } else if raw_span <= -tau {
+                        -tau
                     } else {
-                        raw_span % std::f32::consts::TAU
+                        -(((-raw_span) % tau + tau) % tau)
                     };
-                    let angle_span = span * dir;
+                    // R56：span 归一化已含方向（顺时针 ∈ [0,τ] / 逆时针 ∈ [−τ,0]），
+                    // 不再乘 dir（旧 span 为同号绝对值需 dir 定向——双重取反会翻弧）。
+                    let _ = dir;
+                    let angle_span = span;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut px = cx + radius * start_angle.cos();
                     let mut py = cy + radius * start_angle.sin();

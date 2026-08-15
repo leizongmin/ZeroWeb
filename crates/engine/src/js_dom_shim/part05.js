@@ -805,7 +805,16 @@
   }
   globalThis.DOMMatrix = globalThis.DOMMatrix || DOMMatrix;
   // DOMPoint（R2985）——几何点（x/y/z/w），DOMMatrix.transformPoint 输入/输出。构造 + toJSON。
-  function DOMPoint(x, y, z, w) { this.x = +x || 0; this.y = +y || 0; this.z = +z || 0; this.w = (w == null) ? 1 : +w; }
+  // R56（M8/DC-8）：NaN/±Infinity 必须原样保留（spec DOMPointInit 成员是
+  // unrestricted double；roundRect 拿 DOMPoint(10,NaN) 须判非有限忽略整次调用）。
+  // 旧 `+x || 0` 把 NaN 吞成 0（NaN falsy），2d.path.roundrect.nonfinite 的
+  // DOMPoint(10,NaN) 变合法半径 (10,0) 圆角矩形画出。
+  function DOMPoint(x, y, z, w) {
+    this.x = (x == null) ? 0 : +x;
+    this.y = (y == null) ? 0 : +y;
+    this.z = (z == null) ? 0 : +z;
+    this.w = (w == null) ? 1 : +w;
+  }
   DOMPoint.prototype.toJSON = function () { return { x: this.x, y: this.y, z: this.z, w: this.w }; };
   DOMPoint.fromPoint = function (p) { return new DOMPoint(p && p.x, p && p.y, p && p.z, p && p.w); };
   globalThis.DOMPoint = globalThis.DOMPoint || DOMPoint;
@@ -2602,7 +2611,9 @@
       // R34xx：任一参数非有限（NaN/Infinity）→ 忽略（spec：2d.path.roundrect.nonfinite）。
       if (!isFinite(+x) || !isFinite(+y) || !isFinite(+w) || !isFinite(+hh)) return;
       // R56（M8/DC-8）：radii 归一化对齐 spec dom-context-2d-roundrect——
-      // 序列空或 >4 项 → RangeError；任一半径负 → RangeError；NaN → 0（不抛）；
+      // 序列空或 >4 项 → RangeError；任一半径负 → RangeError；任一半径非有限
+      // （NaN/±Infinity）→ **忽略整次调用**（与 x/y/w/h 非有限同款静默 return，
+      // spec 步骤：unrestricted double 收 NaN/Inf 但算法判「任一非有限 → 不画」）；
       // BigInt → TypeError（WebIDL unrestricted double 不收，unary + 原生抛）。
       // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
       function zwNormRadius(v) {
@@ -2612,8 +2623,7 @@
         } else {
           hx = hy = +v;           // 0n → 原生抛 TypeError
         }
-        if (isNaN(hx)) hx = 0;
-        if (isNaN(hy)) hy = 0;
+        if (!isFinite(hx) || !isFinite(hy)) return null; // 外层静默忽略整次调用
         if (hx < 0 || hy < 0) {
           throw new RangeError('The radius provided (' + hx + ',' + hy + ') is negative.');
         }
@@ -2624,6 +2634,7 @@
         r = '0';
       } else if (typeof radii === 'number' || typeof radii === 'bigint') {
         r = zwNormRadius(radii);
+        if (r === null) return; // 非有限半径 → 忽略整次调用
       } else if (typeof radii === 'object' &&
                  typeof radii.length === 'number' &&
                  radii.x === undefined && radii.y === undefined) {
@@ -2632,11 +2643,16 @@
           throw new RangeError('The radii provided (' + radii.length + ' items) must be 1 to 4.');
         }
         var parts = [];
-        for (var i = 0; i < radii.length; i++) parts.push(zwNormRadius(radii[i]));
+        for (var i = 0; i < radii.length; i++) {
+          var p = zwNormRadius(radii[i]);
+          if (p === null) return; // 非有限半径 → 忽略整次调用
+          parts.push(p);
+        }
         r = parts.join(',');
       } else if (typeof radii === 'object') {
-        // 单个 DOMPointInit（DOMPoint / {x,y} / 任意字典对象——缺失成员 NaN→0）。
+        // 单个 DOMPointInit（DOMPoint / {x,y} / 任意字典对象——非有限 → 忽略整次调用）。
         r = zwNormRadius(radii);
+        if (r === null) return;
       } else {
         r = '0';
       }

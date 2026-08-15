@@ -2307,3 +2307,86 @@ fn test_offscreen_canvas_resize_touches_host_c5() {
         "transferToImageBitmap 按当前尺寸 40×20"
     );
 }
+
+// R56（M8/DC-8）：roundRect 非有限半径忽略 + DOMPoint NaN/Inf 保留 + RangeError 语义。
+// driving WPT：2d.path.roundrect.nonfinite / badinput / radius.negative /
+// radius.toomany / radius.none（path-objects 接手首切片回归修复）。
+#[test]
+fn test_round_rect_nonfinite_and_dompoint_nan_r56() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① DOMPoint 构造器保留 NaN/±Infinity（spec DOMPointInit unrestricted double）。
+    //    旧 `+x || 0` 把 NaN 吞成 0 → DOMPoint(10,NaN) 变合法 (10,0)。
+    sandbox.execute(
+        "var p = new DOMPoint(10, NaN);\
+         globalThis.__dpNaN = String(isNaN(p.y));\
+         var q = new DOMPoint(10, Infinity);\
+         globalThis.__dpInf = String(q.y === Infinity);\
+         var z = new DOMPoint();\
+         globalThis.__dpDefault = String(z.x === 0 && z.y === 0 && z.z === 0 && z.w === 1);",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__dpNaN").unwrap().value, "true", "DOMPoint(10,NaN).y 保持 NaN（不被 || 0 吞掉）");
+    assert_eq!(sandbox.execute("globalThis.__dpInf").unwrap().value, "true", "DOMPoint(10,Infinity).y 保持 Infinity");
+    assert_eq!(sandbox.execute("globalThis.__dpDefault").unwrap().value, "true", "DOMPoint 缺省 (0,0,0,1) 不变");
+
+    // ② roundRect 非有限半径 → 静默忽略整次调用（spec：任一非有限不画不抛）。
+    //    验证路径不被破坏：忽略的 roundRect 后续 lineTo/fill 正常。
+    sandbox.execute(
+        "var cv = document.getElementById('cv');\
+         var ctx = cv.getContext('2d');\
+         var threw = '';\
+         try {\
+           ctx.roundRect(0, 0, 100, 100, [NaN]);\
+           ctx.roundRect(0, 0, 100, 100, [Infinity]);\
+           ctx.roundRect(0, 0, 100, 100, [-Infinity]);\
+           ctx.roundRect(0, 0, 100, 100, [new DOMPoint(10, NaN)]);\
+           ctx.roundRect(0, 0, 100, 100, [{x: NaN, y: 10}]);\
+         } catch(e){ threw = e.name; }\
+         globalThis.__nfThrew = threw;",
+    ).unwrap();
+    assert_eq!(sandbox.execute("globalThis.__nfThrew").unwrap().value, "", "roundRect 非有限半径静默忽略（不抛）");
+
+    // ③ 负半径 / 序列空 / >4 项 → RangeError（spec dom-context-2d-roundrect 校验）。
+    sandbox.execute(
+        "var errs = [];\
+         try { ctx.roundRect(0, 0, 100, 100, [-5]); } catch(e){ errs.push(e.name); }\
+         try { ctx.roundRect(0, 0, 100, 100, []); } catch(e){ errs.push(e.name); }\
+         try { ctx.roundRect(0, 0, 100, 100, [1,2,3,4,5]); } catch(e){ errs.push(e.name); }\
+         try { ctx.roundRect(0, 0, 100, 100, new DOMPoint(-5, 5)); } catch(e){ errs.push(e.name); }\
+         globalThis.__rrErrs = errs.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rrErrs").unwrap().value,
+        "RangeError,RangeError,RangeError,RangeError",
+        "负半径/空序列/5 项/负 DOMPoint 均 RangeError"
+    );
+
+    // ④ 路径完整性：忽略的 roundRect 不在路径留残段——fill 后像素与无 roundRect 等价。
+    //    用 isPointInPath 验证：lineTo 三角形 + 被忽略的 roundRect，(50,25) 在三角形内。
+    sandbox.execute(
+        "ctx.beginPath();\
+         ctx.moveTo(0, 0);\
+         ctx.lineTo(100, 0);\
+         ctx.roundRect(0, 0, 100, 100, [{x: NaN, y: 10}]);\
+         ctx.lineTo(100, 50);\
+         ctx.lineTo(0, 50);\
+         globalThis.__pipCenter = String(ctx.isPointInPath(50, 25));",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pipCenter").unwrap().value,
+        "true",
+        "被忽略的 roundRect 不破坏后续路径（(50,25) 仍在矩形路径内）"
+    );
+}

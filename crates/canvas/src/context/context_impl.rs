@@ -684,10 +684,7 @@ impl CanvasContext {
         // 子路径闭合」——rect() 自带 close 后接 lineTo 的末子路径是开放的，其末端点
         // 须画 line cap（2d.path.rect.end.2：lineCap=round 半径 225 圆盘覆盖全画布；
         // any(ClosePath) 误判闭合 → 不画 cap → 四角红）。
-        let closed = matches!(
-            self.current_path.commands().last(),
-            Some(PathCommand::ClosePath)
-        );
+        let closed = matches!(self.current_path.commands().last(), Some(PathCommand::ClosePath));
         if self.stroke_style.is_per_pixel_style() {
             // 渐变描边：逐像素光栅化（R3084，对称 fill 渐变 R3079）。primitives 用 midpoint 近似。
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
