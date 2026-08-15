@@ -28,6 +28,15 @@ pub fn register_dom_callbacks(
 ) {
     let counter = Arc::new(AtomicU64::new(0));
 
+    // js-dom M4 R55：注册即 dom_html 换代（dispatch_event 每次重注册拿最新 cached_html 的快照
+    // Arc）→ JS 侧基底缓存全量失效（childNodes `_zwChildBaseCache` / sibling `_zwSiblingBaseCache`，
+    // part05/part04）。幂等 no-op 脚本（函数不存在时静默——shim 未装的首注册先于 shim 执行，
+    // 此时尚无缓存可失效）。
+    let _ = sandbox.execute(
+        "if (typeof _zwChildBaseInvalidateAll === 'function') _zwChildBaseInvalidateAll();\
+         if (typeof _zwSiblingBaseInvalidateAll === 'function') _zwSiblingBaseInvalidateAll();",
+    );
+
     let url = Arc::clone(page_url);
     sandbox.register_callback(
         "__zw_get_page_url",

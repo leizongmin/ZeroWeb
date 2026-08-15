@@ -254,6 +254,13 @@
     return _makeProxy(null, handle);
   }
 
+  // js-dom M4 R55：兄弟对基底缓存（previousSibling/nextSibling 的 {p,n} 包装缓存，part04
+  // sibling 读消费）。生命周期同 _zwChildBaseCache（part05 下文声明）——dom_html Arc 回合内
+  // 不可变；register_dom_callbacks 重注册时经 globalThis._zwSiblingBaseInvalidateAll 失效。
+  // 挂此 hoisting 可达（part04 运行期引用，声明序无关）。
+  var _zwSiblingBaseCache = new Map();
+  globalThis._zwSiblingBaseInvalidateAll = function () { _zwSiblingBaseCache.clear(); };
+
   // R2926 Shadow DOM：抛 DOMException（无 DOMException 环境回落 Error + name）。
   function _throwDom(name, msg) {
     if (typeof DOMException === 'function') throw new DOMException(msg, name);
@@ -3299,8 +3306,29 @@
   function _wrapNodeEntryData(node) { return node.__localData != null ? node.__localData : node.nodeValue; }
 
   // `el.childNodes`（含文本/注释）：解析 __zw_child_nodes JSON 数组 → 节点数组（快照，非 live）。
+  // js-dom M4 R55：基底缓存（按 sel 键）——同 turn 内重复读 `el.childNodes` 不再每次 host 往返
+  //（WPT dom/common.js `indexOf` 的 `while (node != node.parentNode.childNodes[i])` 每 i 一次
+  // `__zw_child_nodes` + JSON.parse + **全子重包装**——Range-mutations testFn 每次 indexOf 数十读，
+  // per-subtest 数百次 host 往返是 insertBefore/dataChange >420s 的 per-op 主源，R52 诊断）。
+  // 缓存安全性：host 侧 `dom_html` Arc 在 register_dom_callbacks 时固化、脚本生命周期内不可变
+  //（mutation flush 写 WebView.cached_html，下一回合**重注册**才换 Arc——本回合内基底快照恒定，
+  // 派生 overlay（pending add/remove）在 _zwOverlayPendingChildNodes 每读现算，语义不变）。
+  // 附带 identity 收益：缓存数组里的文本节点对象稳定（旧行为每次重包装 → `childNodes[i] !==
+  // 上次读的同位置节点`，indexOf identity 循环依赖此相等）。失效点：① mutation 本回合不失效
+  //（overlay 管差异）② `_zwChildBaseInvalidateAll`（回调重注册/dom_html 换代时 host 侧全量失效，
+  // 防跨回合读到旧基底）③ remove 消零节点的 proxy 清理不动本缓存（缓存键是父 sel，子对象由父
+  // 生命周期持有）。容量守卫：512 sel 软上限（超限全清——单 turn 常见页数百容器级，防御性）。
+  var _zwChildBaseCache = new Map();
+  function _zwChildBaseInvalidateAll() { _zwChildBaseCache.clear(); }
+  // R55：暴露到 globalThis——host `register_dom_callbacks` 开头注入失效脚本（注册即 dom_html
+  // 换代），IIFE 内函数 host 侧不可达。
+  globalThis._zwChildBaseInvalidateAll = _zwChildBaseInvalidateAll;
   function _childNodeList(sel, handle) {
     if (!sel || typeof __zw_child_nodes !== 'function') return [];
+    if (!handle) {
+      var cached = _zwChildBaseCache.get(sel);
+      if (cached) return _zwOverlayPendingChildNodes(cached, sel, _wrapSelector(sel));
+    }
     try {
       var arr = JSON.parse(__zw_child_nodes(sel) || '[]');
       var parent = handle ? _wrapHandle(handle) : _wrapSelector(sel);
@@ -3310,6 +3338,10 @@
         if (n && n.__zwIsText) n.__zwChildIndex = i;
         return n;
       });
+      if (!handle) {
+        if (_zwChildBaseCache.size > 512) _zwChildBaseCache.clear();
+        _zwChildBaseCache.set(sel, out);
+      }
       return _zwOverlayPendingChildNodes(out, sel, parent);
     } catch (_e) { return []; }
   }
@@ -3319,7 +3351,9 @@
   // pending added（_zwNodeParent 反向链父 sel 匹配）按 nextSibling 定位插入；pending removed
   // 剔除。无匹配 nextSibling（append 到尾 / nextSibling 也是 pending）→ 尾部追加（保守）。
   function _zwOverlayPendingChildNodes(out, sel, parent) {
-    if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out;
+    // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
+    // 调用方 concat/原地写不得污染缓存。
+    if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out.slice();
     // js-dom M4 R51c：按 parentSel 分桶查询（桶在 _zwHCLiveInvalidate 记账时维护）——旧实现每次
     // childNodes 读全表扫 pending（testharness 单 turn 数千 subtest 全量重建 → 万级表 × 每读 O(n)
     // 线性增速，Range-mutations-dataChange 实测 250 次/5s → 1250 次/31s O(n²) 超时）。桶 miss 且

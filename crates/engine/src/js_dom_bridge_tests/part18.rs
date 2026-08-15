@@ -546,3 +546,115 @@ fn r54_build_time_pending_merge_skips_detached() {
         "R54：主文档 #s 下的 q2 正常入集"
     );
 }
+
+// js-dom M4 R55：childNodes 基底缓存（按 sel 键）——同 turn 重复读消 host 往返 + 文本节点
+// identity 稳定（旧行为每次 _wrapNodeEntry 重包装 → childNodes[i] !== 上次读的同位置节点，
+// indexOf identity 循环依赖此相等）。失效：register_dom_callbacks 重注册（dom_html 换代）经
+// globalThis._zwChildBaseInvalidateAll 全量失效。
+#[test]
+fn r55_childnodes_base_cache_identity_and_freshness() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><p id='t'>hello</p></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r55".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① 缓存命中：两次读同 sel childNodes，文本子 identity 稳定（缓存数组复用基底）。
+    // ② 缓存内文本节点可编辑（R48 方法仍可用——缓存不冻结行为）。
+    // ③ 本回合 append 的 pending 子经 overlay 可见（基底缓存不吞 pending）。
+    sandbox
+        .execute(
+            "var p = document.getElementById('t');\n\
+             var c1 = p.childNodes;\n\
+             var c2 = p.childNodes;\n\
+             globalThis.__ident = (c1[0] === c2[0]);\n\
+             globalThis.__len0 = c1.length;\n\
+             var span = document.createElement('span');\n\
+             p.appendChild(span);\n\
+             var c3 = p.childNodes;\n\
+             globalThis.__lenAfter = c3.length;\n\
+             globalThis.__hasSpan = Array.prototype.indexOf.call(c3, span);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ident").unwrap().value,
+        "true",
+        "R55：两次读 childNodes 的文本子 identity 稳定（基底缓存）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__len0").unwrap().value,
+        "1",
+        "R55：快照基底 len=1（文本子）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__lenAfter").unwrap().value,
+        "2",
+        "R55：本回合 append 经 overlay 可见（基底缓存不吞 pending）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasSpan").unwrap().value,
+        "1",
+        "R55：append 的 span 在 childNodes[1]（overlay 融合）"
+    );
+}
+
+// R55 场景 2：重注册（dom_html 换代）→ 基底缓存全量失效，读到新快照基底。
+#[test]
+fn r55_reregister_invalidates_base_cache() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><p id='t'>old</p></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r55b".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            "var p = document.getElementById('t');\n\
+             globalThis.__firstRead = p.childNodes[0].nodeValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__firstRead").unwrap().value,
+        "old",
+        "R55：首读基底 = 'old'"
+    );
+
+    // 模拟 dispatch_event 重注册：dom_html 换代为新快照（mutation 已 flush 的最新 HTML）。
+    let dom_html2 = Arc::new(Mutex::new(
+        "<html><body><p id='t'>new</p></body></html>".to_string(),
+    ));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html2, &page_url, &canvas_registry);
+    sandbox
+        .execute(
+            "var p2 = document.getElementById('t');\n\
+             globalThis.__secondRead = p2.childNodes[0].nodeValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__secondRead").unwrap().value,
+        "new",
+        "R55：重注册后基底缓存失效，读到新快照 'new'（旧缓存会返回 'old'）"
+    );
+}
