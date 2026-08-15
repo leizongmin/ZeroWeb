@@ -2321,11 +2321,12 @@
 // gBCR.x 偏移），相对几何一致即通过（与 canvas getSelectionRects 同源）。
 // 条目：{ el, handle, sel, text, node }。
 var _zwTextEls = [];
+// js-dom R52：el→entry Map 索引——`_zwTextEntryForEl`/`_zwUnregisterTextEl` 旧全表线性扫，
+// testharness 每 subtest 6 注册 + 6 注销 × O(表) → O(n²)（GR2 探针 ap 段 460→3033ms/500 线性
+// 增长根因）。数组保留顺序迭代（geometry 全表扫低频），增删查走 Map。
+var _zwTextElsByEl = new Map();
 function _zwTextEntryForEl(el) {
-  for (var i = 0; i < _zwTextEls.length; i++) {
-    if (_zwTextEls[i].el === el) return _zwTextEls[i];
-  }
-  return null;
+  return _zwTextElsByEl.get(el) || null;
 }
 function _zwRegisterTextEl(el, handle, sel, text) {
   _zwUnregisterTextEl(el);
@@ -2381,12 +2382,20 @@ function _zwRegisterTextEl(el, handle, sel, text) {
   };
   Object.defineProperty(node, 'parentNode', { get: function () { return el; }, enumerable: true, configurable: true });
   Object.defineProperty(node, 'parentElement', { get: function () { return el; }, enumerable: true, configurable: true });
-  _zwTextEls.push({ el: el, handle: handle, sel: sel, text: text, node: node });
+  var entry = { el: el, handle: handle, sel: sel, text: text, node: node };
+  _zwTextEls.push(entry);
+  _zwTextElsByEl.set(el, entry);
+  if (handle) _zwTextElsByHandle.set(handle, entry);
+  if (sel) _zwTextElsBySel.set(sel, entry);
 }
 function _zwUnregisterTextEl(el) {
-  for (var i = _zwTextEls.length - 1; i >= 0; i--) {
-    if (_zwTextEls[i].el === el) _zwTextEls.splice(i, 1);
-  }
+  var e = _zwTextElsByEl.get(el);
+  if (!e) return;
+  _zwTextElsByEl.delete(el);
+  if (e.handle && _zwTextElsByHandle.get(e.handle) === e) _zwTextElsByHandle.delete(e.handle);
+  if (e.sel && _zwTextElsBySel.get(e.sel) === e) _zwTextElsBySel.delete(e.sel);
+  var i = _zwTextEls.indexOf(e);
+  if (i >= 0) _zwTextEls.splice(i, 1);
 }
 // js-dom M4 R51c：**子树注销**——removeChild(el) 只注销 el 自身的注册文本，el 子树内元素
 //（textContent= 建的本地文本视图）泄漏：WPT testharness 每 subtest `setupRangeTests()` 全量
@@ -2405,12 +2414,13 @@ function _zwUnregisterTextSubtree(el) {
   } catch (_e) {}
 }
 // 本地 childNodes（handle 元素无 sel 时读注册表）
+// R52：handle/sel 双 Map 索引（同 _zwTextElsByEl——childNodes/firstChild/lastChild 每读全表
+// 扫的 O(n²) 修复）。注册/注销同步维护。
+var _zwTextElsByHandle = new Map();
+var _zwTextElsBySel = new Map();
 function _zwLocalChildNodes(sel, handle) {
-  for (var i = 0; i < _zwTextEls.length; i++) {
-    var e = _zwTextEls[i];
-    if ((handle && e.handle === handle) || (sel && e.sel === sel)) return [e.node];
-  }
-  return null;
+  var e = (handle && _zwTextElsByHandle.get(handle)) || (sel && _zwTextElsBySel.get(sel)) || null;
+  return e ? [e.node] : null;
 }
 // 临时 measure context（缓存——与页面 canvas 同共享 registry）
 var _zwMeasureCtxHandle = null;

@@ -1425,13 +1425,20 @@ fn node_entry_json(doc: &Document, id: NodeId) -> Option<String> {
 /// 供 `__zw_child_nodes` 回调 → shim `el.childNodes` / `firstChild` / `lastChild`。
 pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, elem_sel) else {
+    child_nodes_json_doc(&doc, elem_sel)
+}
+
+/// [`child_nodes_json`] 的 doc 版（调用方经 `with_query_doc` 缓存解析结果——js-dom R52：
+/// 每次 DOM 遍历读全文档 re-parse 是 testharness mega-case 的 per-op 主成本，
+/// `body.firstChild` 实测 1.2ms/次；缓存后纯遍历 ~µs 级）。
+pub fn child_nodes_json_doc(doc: &Document, elem_sel: &str) -> String {
+    let Some(node) = find_by_selector(doc, elem_sel) else {
         return "[]".to_string();
     };
     let entries: Vec<String> = doc
         .child_nodes(node)
         .into_iter()
-        .filter_map(|c| node_entry_json(&doc, c))
+        .filter_map(|c| node_entry_json(doc, c))
         .collect();
     format!("[{}]", entries.join(","))
 }
@@ -1440,9 +1447,15 @@ pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
 /// JSON `{"p":<entry|null>,"n":<entry|null>}`。供 `__zw_sibling_nodes` 回调 → shim
 /// `previousSibling` / `nextSibling`。
 pub fn sibling_nodes_json(html: &str, elem_sel: &str) -> String {
-    let empty = "{\"p\":null,\"n\":null}".to_string();
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, elem_sel) else {
+    sibling_nodes_json_doc(&doc, elem_sel)
+}
+
+/// [`sibling_nodes_json`] 的 doc 版（`with_query_doc` 缓存——js-dom R52 per-op 成本修复同
+/// [`child_nodes_json_doc`]）。
+pub fn sibling_nodes_json_doc(doc: &Document, elem_sel: &str) -> String {
+    let empty = "{\"p\":null,\"n\":null}".to_string();
+    let Some(node) = find_by_selector(doc, elem_sel) else {
         return empty;
     };
     let Some(parent) = doc.parent_node(node) else {
@@ -1453,12 +1466,12 @@ pub fn sibling_nodes_json(html: &str, elem_sel: &str) -> String {
         return empty;
     };
     let prev = if idx > 0 {
-        node_entry_json(&doc, sibs[idx - 1])
+        node_entry_json(doc, sibs[idx - 1])
     } else {
         None
     };
     let next = if idx + 1 < sibs.len() {
-        node_entry_json(&doc, sibs[idx + 1])
+        node_entry_json(doc, sibs[idx + 1])
     } else {
         None
     };
@@ -1473,10 +1486,15 @@ pub fn sibling_nodes_json(html: &str, elem_sel: &str) -> String {
 /// parent_node 链）。供 `__zw_contains` 回调 → shim `el.contains(other)`。
 pub fn element_contains(html: &str, container_sel: &str, other_sel: &str) -> bool {
     let doc = parse_html(html);
-    let Some(container) = find_by_selector(&doc, container_sel) else {
+    element_contains_doc(&doc, container_sel, other_sel)
+}
+
+/// [`element_contains`] 的 doc 版（`with_query_doc` 缓存——js-dom R52）。
+pub fn element_contains_doc(doc: &Document, container_sel: &str, other_sel: &str) -> bool {
+    let Some(container) = find_by_selector(doc, container_sel) else {
         return false;
     };
-    let Some(mut cur) = find_by_selector(&doc, other_sel) else {
+    let Some(mut cur) = find_by_selector(doc, other_sel) else {
         return false;
     };
     loop {

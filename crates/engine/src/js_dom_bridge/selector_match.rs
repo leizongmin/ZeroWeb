@@ -80,13 +80,19 @@ pub fn query_all_in_subtree(html: &str, elem_sel: &str, selector: &str) -> Strin
 /// 回调 → shim `el.children` / `firstElementChild` / `lastElementChild` / `childElementCount`。
 pub fn element_children_selectors(html: &str, elem_sel: &str) -> String {
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, elem_sel) else {
+    element_children_selectors_doc(&doc, elem_sel)
+}
+
+/// [`element_children_selectors`] 的 doc 版（`with_query_doc` 缓存——js-dom R52 per-op 成本：
+/// DOM 遍历族回调旧实现每次全文档 re-parse，`body.firstChild` 实测 1.2ms/次）。
+pub fn element_children_selectors_doc(doc: &Document, elem_sel: &str) -> String {
+    let Some(node) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
     doc.child_nodes(node)
         .into_iter()
         .filter(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
-        .filter_map(|c| unique_selector_for_node(&doc, c))
+        .filter_map(|c| unique_selector_for_node(doc, c))
         .collect::<Vec<_>>()
         .join("|")
 }
@@ -95,9 +101,14 @@ pub fn element_children_selectors(html: &str, elem_sel: &str) -> String {
 /// elem_sel 不解析返 `|`（两空）。供 `__zw_element_siblings` 回调 → shim `previousElementSibling`
 /// / `nextElementSibling`。
 pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
-    let empty = || String::from("|");
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, elem_sel) else {
+    element_sibling_selectors_doc(&doc, elem_sel)
+}
+
+/// [`element_sibling_selectors`] 的 doc 版（`with_query_doc` 缓存——js-dom R52）。
+pub fn element_sibling_selectors_doc(doc: &Document, elem_sel: &str) -> String {
+    let empty = || String::from("|");
+    let Some(node) = find_by_selector(doc, elem_sel) else {
         return empty();
     };
     let Some(parent) = doc.parent_node(node) else {
@@ -112,12 +123,12 @@ pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
         return empty();
     };
     let prev = if idx > 0 {
-        unique_selector_for_node(&doc, sibs[idx - 1]).unwrap_or_default()
+        unique_selector_for_node(doc, sibs[idx - 1]).unwrap_or_default()
     } else {
         String::new()
     };
     let next = if idx + 1 < sibs.len() {
-        unique_selector_for_node(&doc, sibs[idx + 1]).unwrap_or_default()
+        unique_selector_for_node(doc, sibs[idx + 1]).unwrap_or_default()
     } else {
         String::new()
     };
@@ -129,10 +140,15 @@ pub fn element_sibling_selectors(html: &str, elem_sel: &str) -> String {
 ///（修正旧 stub 对嵌套元素恒返 body 的 bug）。复用 [`element_parent`]。
 pub fn parent_selector_for(html: &str, elem_sel: &str) -> String {
     let doc = parse_html(html);
-    let Some(node) = find_by_selector(&doc, elem_sel) else {
+    parent_selector_for_doc(&doc, elem_sel)
+}
+
+/// [`parent_selector_for`] 的 doc 版（`with_query_doc` 缓存——js-dom R52）。
+pub fn parent_selector_for_doc(doc: &Document, elem_sel: &str) -> String {
+    let Some(node) = find_by_selector(doc, elem_sel) else {
         return String::new();
     };
-    element_parent(&doc, node)
-        .and_then(|p| unique_selector_for_node(&doc, p))
+    element_parent(doc, node)
+        .and_then(|p| unique_selector_for_node(doc, p))
         .unwrap_or_default()
 }

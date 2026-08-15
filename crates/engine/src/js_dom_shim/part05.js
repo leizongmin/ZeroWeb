@@ -3419,12 +3419,29 @@
       // childNodes 读全扫 → Range-mutations dataChange（~5000 subtest）O(n²) 超时。
       var _wasPA = [];
       for (var r2 = 0; r2 < remFlat.length; r2++) _wasPA.push(_zwPASet().has(remFlat[r2]));
-      var keep = [];
-      for (var e0 = 0; e0 < _zwPendingAdded.length; e0++) {
-        if (!remSet.has(_zwPendingAdded[e0])) keep.push(_zwPendingAdded[e0]);
-        else { _zwPASet().delete(_zwPendingAdded[e0]); _zwPAIdRemove(_zwPendingAdded[e0]); }
+      // R52：惰性剔除——旧全表 keep 过滤每 remove O(pa)（testharness 每 subtest +10 泄漏条目
+      // → O(n²) 残余增长根源）。改为 Set 命中才定点 splice（indexOf O(pa) 仅在命中时发生，
+      // 未命中零成本——多数 remove 的节点不在 pa 表）。
+      for (var r2b = 0; r2b < remFlat.length; r2b++) {
+        var _rv = remFlat[r2b];
+        if (!_zwPASet().has(_rv)) continue;
+        _zwPASet().delete(_rv);
+        _zwPAIdRemove(_rv);
+        var _ri = _zwPendingAdded.indexOf(_rv);
+        if (_ri >= 0) _zwPendingAdded.splice(_ri, 1);
+        // R52：消零节点（从未真入树、已从 pending 剔除）的 proxy 缓存同步清——`_proxyCache`
+        // 强引用旧 handle proxy 永不回收 → V8 堆随 subtest 线性涨 → GC 成本线性涨 → 总时间
+        // 二次（GR3 探针 tc/apc/ib 三段同涨的根源）。仅 handle 键（'@h'）可安全清：同 handle
+        // 不会再被访问（节点已消零）；sel 键保留（快照节点 identity 稳定语义）。
+        if (_rv && _rv.__zwHandle) {
+          // R52：消零节点的 proxy/expando 缓存清理（强引用泄漏 → V8 堆涨）。**仅清不参与子树
+          // 遍历的表**——`_handleChildren`/`_zwNodeParent` 保留（invalidate 后的 CE 断连传播
+          //（_ceApplyConn 子树展开）仍依赖它们，R2994 测试实证提前清破坏 disconnectedCallback）。
+          delete _proxyCache['@' + _rv.__zwHandle];
+          if (typeof _clsProxyCache !== 'undefined') delete _clsProxyCache['@' + _rv.__zwHandle];
+          if (typeof _expando !== 'undefined') delete _expando['@' + _rv.__zwHandle];
+        }
       }
-      _zwPendingAdded = keep;
       for (var r3 = 0; r3 < remFlat.length; r3++) {
         if (_wasPA[r3]) continue; // 曾 pending-added → 对冲消零，不记 removed
         var _rn = remFlat[r3];

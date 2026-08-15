@@ -340,7 +340,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            element_children_selectors(&snap, &elem_sel)
+            with_query_doc(&snap, |doc| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -350,7 +350,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            element_sibling_selectors(&snap, &elem_sel)
+            with_query_doc(&snap, |doc| element_sibling_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -362,7 +362,9 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            child_nodes_json(&snap, &elem_sel)
+            // js-dom R52：DOM 遍历族回调接 `with_query_doc` 缓存（旧每次全文档 re-parse，
+            // `body.firstChild` 实测 1.2ms/次——testharness mega-case per-op 主成本）。
+            with_query_doc(&snap, |doc| child_nodes_json_doc(doc, &elem_sel))
         }),
     );
 
@@ -372,7 +374,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            sibling_nodes_json(&snap, &elem_sel)
+            with_query_doc(&snap, |doc| sibling_nodes_json_doc(doc, &elem_sel))
         }),
     );
 
@@ -383,7 +385,7 @@ pub fn register_dom_callbacks(
             let container_sel = args.first().map(String::from).unwrap_or_default();
             let other_sel = args.get(1).map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            if element_contains(&snap, &container_sel, &other_sel) {
+            if with_query_doc(&snap, |doc| element_contains_doc(doc, &container_sel, &other_sel)) {
                 "1".into()
             } else {
                 "0".into()
@@ -398,7 +400,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            parent_selector_for(&snap, &elem_sel)
+            with_query_doc(&snap, |doc| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
 
