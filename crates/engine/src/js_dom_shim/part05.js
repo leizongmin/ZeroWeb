@@ -1001,6 +1001,60 @@
     return [_zwCsEncode(out[0]), _zwCsEncode(out[1]), _zwCsEncode(out[2])];
   }
 
+  // R34xx（filters 渲染）：CanvasFilter colorMatrix → 20 值矩阵（spec colorMatrix
+  // 滤镜——type: matrix 默认 20 值直用 / hueRotate θ / saturate s /
+  // luminanceToAlpha；2d.filter.canvasFilterObject.colorMatrix）。经
+  // __zw_canvas_op setFilterMatrix 传 host（空串清除）。
+  function _zwApplyCanvasFilter(ctx, filterObj) {
+    if (typeof __zw_canvas_op !== 'function') return;
+    var inputs = filterObj._inputs || [];
+    var m = null;
+    for (var i = 0; i < inputs.length; i++) {
+      var d = inputs[i];
+      if (!d || typeof d !== 'object') continue;
+      if (String(d.name) === 'colorMatrix') {
+        m = _zwColorMatrix(d);
+        break;
+      }
+    }
+    __zw_canvas_op(ctx._handle, 'setFilterMatrix', m ? m.join(',') : '');
+  }
+  function _zwColorMatrix(d) {
+    var type = d.type == null ? 'matrix' : String(d.type);
+    if (type === 'matrix') {
+      var vals = d.values;
+      if (!vals || vals.length !== 20) return null;
+      var out = [];
+      for (var i = 0; i < 20; i++) out.push(+vals[i]);
+      return out;
+    }
+    if (type === 'luminanceToAlpha') {
+      return [0,0,0,0,0, 0,0,0,0,0, 0,0,0,0,0, 0.2126,0.7152,0.0722,0,0];
+    }
+    if (type === 'hueRotate' || type === 'saturate') {
+      var v = +d.values;
+      if (!isFinite(v)) return null;
+      if (type === 'saturate') {
+        var s = v;
+        return [
+          0.213 + 0.787*s, 0.715 - 0.715*s, 0.072 - 0.072*s, 0, 0,
+          0.213 - 0.213*s, 0.715 + 0.285*s, 0.072 - 0.072*s, 0, 0,
+          0.213 - 0.213*s, 0.715 - 0.715*s, 0.072 + 0.928*s, 0, 0,
+          0, 0, 0, 1, 0
+        ];
+      }
+      var rad = v * Math.PI / 180;
+      var cos = Math.cos(rad), sin = Math.sin(rad);
+      return [
+        0.213 + cos*0.787 - sin*0.213, 0.715 - cos*0.715 - sin*0.715, 0.072 - cos*0.072 + sin*0.928, 0, 0,
+        0.213 - cos*0.213 + sin*0.143, 0.715 + cos*0.285 + sin*0.140, 0.072 - cos*0.072 - sin*0.283, 0, 0,
+        0.213 - cos*0.213 - sin*0.787, 0.715 - cos*0.715 + sin*0.715, 0.072 + cos*0.928 + sin*0.072, 0, 0,
+        0, 0, 0, 1, 0
+      ];
+    }
+    return null;
+  }
+
   // R34xx（filters 目录）：CSS filter list 字符串校验（'none' 或逗号分隔函数列表——
   // ctx.filter 非法串忽略保持旧值；'blur(5px)' 接受）。
   function _zwValidFilterList(s) {
@@ -2913,6 +2967,14 @@
         } else if (typeof _lf === 'object') {
           _zwValidateFilterInput(_lf);
         }
+        // R34xx（filters 渲染）：层 colorMatrix 滤镜 → host 矩阵（endLayer 恢复前值）。
+        if (_lf && typeof _lf === 'object' && !Array.isArray(_lf) && String(_lf.name) === 'colorMatrix') {
+          this._layerFilterMatrix = this._layerFilterMatrix || {};
+          this._layerFilterMatrix._prev = this._layerFilterMatrix._cur || null;
+          var _m = _zwColorMatrix(_lf);
+          this._layerFilterMatrix._cur = _m;
+          __zw_canvas_op(h, 'setFilterMatrix', _m ? _m.join(',') : '');
+        }
       }
       this._inLayer = true;
       this._saveRaw();
@@ -2944,6 +3006,12 @@
         throw _zwDomException('endLayer: save stack depth mismatch', 'InvalidStateError');
       }
       this._inLayer = false;
+      // R34xx（filters 渲染）：endLayer 恢复层前滤镜矩阵。
+      if (this._layerFilterMatrix) {
+        var _pm = this._layerFilterMatrix._prev || null;
+        this._layerFilterMatrix = null;
+        __zw_canvas_op(h, 'setFilterMatrix', _pm ? _pm.join(',') : '');
+      }
       this._restoreRaw();
     };
     ctx._methods.translate = function (tx, ty) {
@@ -3210,11 +3278,15 @@
       set: function (v) {
         if (v && typeof v === 'object' && v._zwCanvasFilter) {
           this._filter = v;
+          // R34xx（filters 渲染）：colorMatrix 滤镜 → host 矩阵（hueRotate/
+          // saturate/luminanceToAlpha/matrix 20 值）。
+          _zwApplyCanvasFilter(this, v);
           return;
         }
         if (typeof v !== 'string') return;
         if (v === 'none' || _zwValidFilterList(v)) {
           this._filter = v;
+          if (v === 'none') __zw_canvas_op(h, 'setFilterMatrix', '');
         }
       },
       get: function () { return this._filter; }

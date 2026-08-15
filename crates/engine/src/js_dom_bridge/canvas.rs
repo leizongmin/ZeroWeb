@@ -860,6 +860,23 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R34xx（filters 渲染）：colorMatrix 滤镜矩阵（20 值——shim 计算 hueRotate/
+        // saturate/luminanceToAlpha/matrix；空串清除）。
+        "setFilterMatrix" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                if arg(0).trim().is_empty() {
+                    ctx.set_filter_matrix(None);
+                } else {
+                    let v: Vec<f32> = arg(0).split(',').filter_map(|s| s.trim().parse::<f32>().ok()).collect();
+                    if v.len() == 20 {
+                        let mut m = [0.0f32; 20];
+                        m.copy_from_slice(&v);
+                        ctx.set_filter_matrix(Some(m));
+                    }
+                }
+            }
+            "ok".into()
+        }
         "validateColor" => {
             if try_parse_canvas_color(arg(0)).is_some() {
                 "1".to_string()

@@ -1328,6 +1328,8 @@ impl CanvasContext {
         gy: f32,
         color: Color,
     ) {
+        // R34xx（filters 渲染）：colorMatrix 滤镜作用于字形色。
+        let color = self.apply_filter_color(color);
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
         let (ix, iy) = (gx.floor() as i32, gy.floor() as i32);
@@ -1519,6 +1521,8 @@ impl CanvasContext {
 
     /// 将矩形区域的颜色写入像素缓冲区（光栅化填充），应用当前合成操作模式。
     pub(crate) fn blit_rect_to_pixels(&mut self, rect: &Rect, color: Color) {
+        // R34xx（filters 渲染）：colorMatrix 滤镜作用于源色。
+        let color = self.apply_filter_color(color);
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
         let x_start = rect.left().max(0.0) as usize;
@@ -1605,6 +1609,8 @@ impl CanvasContext {
 
     /// 将路径填充写入像素缓冲区（扫描线光栅化）。
     pub(crate) fn blit_path_to_pixels(&mut self, vertices: &[f32], color: Color) {
+        // R34xx（filters 渲染）：colorMatrix 滤镜作用于源色。
+        let color = self.apply_filter_color(color);
         if vertices.len() < 4 {
             return;
         }

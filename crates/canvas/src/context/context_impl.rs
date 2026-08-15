@@ -47,6 +47,7 @@ impl CanvasContext {
             float16: false,
             pixel_buffer_f32: Vec::new(),
             fill_color_f32: None,
+            filter_matrix: None,
             text_align: TextAlign::Start,
             text_baseline: TextBaseline::Alphabetic,
             miter_limit: 10.0,
@@ -149,6 +150,33 @@ impl CanvasContext {
                 let di = ((dy as usize) * (canvas_w as usize) + dx as usize) * 4;
                 self.pixel_buffer_f32[di..di + 4].copy_from_slice(&data[si..si + 4]);
             }
+        }
+    }
+
+    /// R34xx（filters 渲染）：colorMatrix 滤镜矩阵（20 值——ctx.filter 的
+    /// CanvasFilter colorMatrix；绘制源色经矩阵变换——2d.filter.canvasFilterObject.
+    /// colorMatrix / layers.colorMatrix 的 hueRotate/saturate/matrix）。
+    pub fn set_filter_matrix(&mut self, m: Option<[f32; 20]>) {
+        self.filter_matrix = m;
+    }
+
+    /// 源色经滤镜矩阵变换（RGBA [0,1] 通道 + 偏移列，clamp）。
+    pub fn apply_filter_color(&self, c: Color) -> Color {
+        let Some(m) = &self.filter_matrix else {
+            return c;
+        };
+        let (r, g, b, a) = (
+            c.r as f32 / 255.0,
+            c.g as f32 / 255.0,
+            c.b as f32 / 255.0,
+            c.a as f32 / 255.0,
+        );
+        let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        Color {
+            r: q(m[0] * r + m[1] * g + m[2] * b + m[3] * a + m[4]),
+            g: q(m[5] * r + m[6] * g + m[7] * b + m[8] * a + m[9]),
+            b: q(m[10] * r + m[11] * g + m[12] * b + m[13] * a + m[14]),
+            a: q(m[15] * r + m[16] * g + m[17] * b + m[18] * a + m[19]),
         }
     }
 
@@ -1693,6 +1721,8 @@ impl CanvasContext {
                 if skip_transparent_src && src.a == 0 {
                     continue;
                 }
+                // R34xx（filters 渲染）：colorMatrix 滤镜作用于图像源色。
+                let src = self.apply_filter_color(src);
                 let (pr, pg, pb, pa) = self.composite_pixel(
                     src,
                     self.pixel_buffer[dst_idx],
