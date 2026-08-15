@@ -833,18 +833,14 @@ mod tests {
 
     /// The renderer process must retain and paint nested content inserted by a page script.
     #[test]
-    fn page_script_nested_append_updates_webview_frame() {
-        let html = r#"<html><body><div id="score"></div><script>
-            var panel = document.createElement('div');
-            var heading = document.createElement('h2');
-            var prefix = document.createElement('span');
-            prefix.textContent = 'Your browser scores';
-            var score = document.createElement('strong');
-            score.textContent = '265';
-            heading.appendChild(prefix);
-            heading.appendChild(score);
-            panel.appendChild(heading);
-            document.querySelector('#score').appendChild(panel);
+    fn page_script_inner_html_updates_webview_frame() {
+        let html = r#"<html><head><style>
+            .pointsPanel h2 { font-size: 2.3em; color: #aaa; text-align: center; line-height: 40px; margin: 0; }
+            .pointsPanel h2 > strong, .pointsPanel h2 > span { display: inline-block; vertical-align: middle; transform: translateY(6px); }
+            .pointsPanel h2 > strong { font-family: 'League Gothic', Impact; font-size: 3.8em; color: #0092bf; line-height: 145px; }
+        </style></head><body><div id="score"></div><script>
+            document.querySelector('#score').innerHTML =
+                '<div class="pointsPanel"><h2><span>Your browser scores</span><strong>265</strong></h2></div>';
         </script></body></html>"#;
         let page_url = "https://zero.test/score";
         let mut worker = RendererJsWorker::spawn(150);
@@ -890,6 +886,7 @@ mod tests {
                 transform: translateY(6px);
             }
             .pointsPanel h2 > strong {
+                font-family: 'League Gothic', Impact;
                 font-weight: normal;
                 font-size: 3.8em;
                 color: #0092bf;
