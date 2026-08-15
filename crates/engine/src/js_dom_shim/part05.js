@@ -960,6 +960,160 @@
     return n >>> 0;
   }
 
+  // R34xx（filters 目录）：CSS filter list 字符串校验（'none' 或逗号分隔函数列表——
+  // ctx.filter 非法串忽略保持旧值；'blur(5px)' 接受）。
+  function _zwValidFilterList(s) {
+    if (!s || !s.trim()) return false;
+    var t = s.trim();
+    if (t === 'none') return true;
+    var parts = t.split(',');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      var m = /^([a-zA-Z-]+)\((.*)\)$/.exec(p);
+      if (!m) return false;
+      // blur 参数须 CSS <length>（单位或 0）——'blur(10)'（无单位）非法忽略
+      //（2d.filter.value）；'blur(5px)'/'blur(  5px)' 合法。
+      if (m[1] === 'blur' && m[2].trim() !== '0') {
+        if (!/^-?\d+(\.\d+)?(px|em|rem|ex|ch|cm|mm|in|pt|pc|q|%)$/.test(m[2].trim())) {
+          return false;
+        }
+      }
+      // 其余函数参数宽松接受。
+    }
+    return true;
+  }
+
+  // R34xx（filters 目录）：WebIDL double 转换（ToNumber 后须有限——null→0/
+  // true→1/[]→0/'30'→30 接受；NaN/±Infinity/undefined/'test'/{} → TypeError）。
+  function _zwFilterNumber(v) {
+    var n = +v;
+    if (!isFinite(n)) throw new TypeError('invalid filter number');
+    return n;
+  }
+
+  // R34xx（filters 目录）：(double or sequence<double>) 校验（gaussianBlur/dropShadow
+  // stdDeviation、turbulence baseFrequency——数字或 2 元有限数组）。
+  function _zwFilterNumberOrPair(v) {
+    if (Array.isArray(v)) {
+      // 长度 0 → 0（[] 合法——dropShadow.exceptions）；长度 1 → 单值（[20]→20）；
+      // 长度 2 → 双值；其余抛（spec sequence<double> 经 filter 字典算法归一）。
+      if (v.length === 0) return;
+      if (v.length === 1) { _zwFilterNumber(v[0]); return; }
+      if (v.length !== 2) throw new TypeError('invalid filter number pair');
+      for (var i = 0; i < 2; i++) _zwFilterNumber(v[i]);
+      return;
+    }
+    _zwFilterNumber(v);
+  }
+
+  // R34xx（filters 目录）：CanvasFilter 字典校验（spec canvas filters——测试面：
+  // gaussianBlur stdDeviation 必填有限数/2 元有限数组；convolveMatrix kernelMatrix
+  // 非空 2D 数组同长行有限数（[[]] 特例允许）；colorMatrix values 恰 20 有限数；
+  // dropShadow dx/dy/floodOpacity/stdDeviation + turbulence baseFrequency/numOctaves
+  // 经 WebIDL double 转换）。driving: 2d.filter.canvasFilterObject.*.exceptions。
+  function _zwValidateFilterInput(dict) {
+    if (!dict || typeof dict !== 'object' || Array.isArray(dict)) {
+      throw new TypeError('invalid CanvasFilter input');
+    }
+    var name = dict.name == null ? '' : String(dict.name);
+    if (name === 'gaussianBlur' && dict.stdDeviation === undefined) {
+      throw new TypeError('gaussianBlur: requires stdDeviation');
+    }
+    if (name === 'gaussianBlur' || (name === 'dropShadow' && Object.prototype.hasOwnProperty.call(dict, 'stdDeviation'))) {
+      if (dict.stdDeviation === undefined) throw new TypeError(name + ': requires stdDeviation');
+      _zwFilterNumberOrPair(dict.stdDeviation);
+    } else if (name === 'dropShadow') {
+      // 显式 undefined 属性也须校验（dropShadow.exceptions 的 dx: undefined 抛——
+      // hasOwnProperty 而非 !== undefined）。
+      if (Object.prototype.hasOwnProperty.call(dict, 'dx')) _zwFilterNumber(dict.dx);
+      if (Object.prototype.hasOwnProperty.call(dict, 'dy')) _zwFilterNumber(dict.dy);
+      if (Object.prototype.hasOwnProperty.call(dict, 'floodOpacity')) _zwFilterNumber(dict.floodOpacity);
+      if (Object.prototype.hasOwnProperty.call(dict, 'floodColor')) {
+        // floodColor：CSS 颜色串（host 真实解析器；'red' ✓、'test'/NaN 串 ✗；
+        // 非串 ✗）。host 不可用 → 宽松接受。
+        var _fc = dict.floodColor;
+        if (typeof _fc !== 'string' || typeof __zw_canvas_op !== 'function' ||
+            String(__zw_canvas_op('0', 'validateColor', _fc)) !== '1') {
+          throw new TypeError('dropShadow: invalid floodColor');
+        }
+      }
+    } else if (name === 'turbulence') {
+      // baseFrequency/numOctaves 非负（2d.filter.canvasFilterObject.turbulence.
+      // inputTypes：-1/[0,-1] → TypeError；[10] 单值合法）；seed 任意有限；
+      // stitchTiles/type 枚举（'stitch'/'noStitch'、'fractalNoise'/'turbulence'）。
+      // 显式 undefined 属性也须校验（turbulence.inputTypes 的 undefined 抛——
+      // hasOwnProperty 而非 !== undefined）。
+      if (Object.prototype.hasOwnProperty.call(dict, 'baseFrequency')) {
+        var bf = dict.baseFrequency;
+        if (Array.isArray(bf)) {
+          if (bf.length === 1) {
+            if (_zwFilterNumber(bf[0]) < 0) throw new TypeError('turbulence: baseFrequency must be >= 0');
+          } else {
+            _zwFilterNumberOrPair(bf);
+            if (+bf[0] < 0 || +bf[1] < 0) throw new TypeError('turbulence: baseFrequency must be >= 0');
+          }
+        } else if (_zwFilterNumber(bf) < 0) {
+          throw new TypeError('turbulence: baseFrequency must be >= 0');
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(dict, 'numOctaves')) {
+        if (_zwFilterNumber(dict.numOctaves) < 0) throw new TypeError('turbulence: numOctaves must be >= 0');
+      }
+      if (Object.prototype.hasOwnProperty.call(dict, 'seed')) _zwFilterNumber(dict.seed);
+      if (Object.prototype.hasOwnProperty.call(dict, 'stitchTiles')) {
+        var st = String(dict.stitchTiles);
+        if (st !== 'stitch' && st !== 'noStitch') throw new TypeError('turbulence: invalid stitchTiles');
+      }
+      if (Object.prototype.hasOwnProperty.call(dict, 'type')) {
+        var tp = String(dict.type);
+        if (tp !== 'fractalNoise' && tp !== 'turbulence') throw new TypeError('turbulence: invalid type');
+      }
+    } else if (name === 'convolveMatrix') {
+      var km = dict.kernelMatrix;
+      if (!Array.isArray(km) || km.length === 0) throw new TypeError('convolveMatrix: invalid kernelMatrix');
+      if (km[0].length === 0) {
+        // [[]] 特例允许（spec/Chromium）；其余首行空 → 抛。
+        if (km.length !== 1) throw new TypeError('convolveMatrix: invalid kernelMatrix');
+        return;
+      }
+      var cols = km[0].length;
+      for (var r = 0; r < km.length; r++) {
+        var row = km[r];
+        if (!Array.isArray(row) || row.length === 0 || row.length !== cols) {
+          throw new TypeError('convolveMatrix: rows must be non-empty same-length');
+        }
+        for (var c = 0; c < row.length; c++) {
+          if (typeof row[c] !== 'number' || !isFinite(row[c])) {
+            throw new TypeError('convolveMatrix: invalid kernel value');
+          }
+        }
+      }
+    } else if (name === 'colorMatrix') {
+      var vals = dict.values;
+      if (!Array.isArray(vals) || vals.length !== 20) throw new TypeError('colorMatrix: requires 20 values');
+      for (var i = 0; i < 20; i++) {
+        if (typeof vals[i] !== 'number' || !isFinite(vals[i])) throw new TypeError('colorMatrix: invalid value');
+      }
+    }
+    // 其余 name（dropShadow/blur 等）按测试面宽松接受（dx/dy 数字/串/数组均接受）。
+  }
+
+  // R34xx（filters 目录）：CanvasFilter 构造器（spec canvas filters——API 表面 +
+  // 校验；**渲染未实现**——ctx.filter = CanvasFilter 后的像素面记录）。输入：
+  // 单个 filter 字典或字典数组；空/undefined → 空 filter。
+  // https://drafts.fxtf.org/filter-effects-2/#CanvasFilter
+  function CanvasFilter(init) {
+    if (!(this instanceof CanvasFilter)) throw new TypeError('Illegal constructor');
+    var inputs = Array.isArray(init) ? init : (init === undefined || init === null ? [] : [init]);
+    for (var i = 0; i < inputs.length; i++) _zwValidateFilterInput(inputs[i]);
+    this._zwCanvasFilter = true;
+    this._inputs = inputs;
+  }
+  Object.defineProperty(CanvasFilter.prototype, Symbol.toStringTag, { value: 'CanvasFilter' });
+  if (!globalThis.CanvasFilter) {
+    globalThis.CanvasFilter = CanvasFilter;
+  }
+
   // R34xx（layers 目录）：beginLayer filter 选项校验（canvasFilter 字典——测试面：
   // colorMatrix values 为串 → TypeError；null/undefined/[]/{}/unknown name/
   // 数字布尔（DOMString 化）→ 接受）。
@@ -2544,7 +2698,9 @@
         throw new TypeError('beginLayer: options must be an object');
       }
       if (options && typeof options === 'object' && options.filter !== undefined && options.filter !== null) {
-        _zwValidateLayerFilter(options.filter);
+        // R34xx（filters 目录）：层 filter 校验与 CanvasFilter 同规（gaussianBlur/
+        // convolveMatrix/colorMatrix 深校验——2d.filter.layers.*.exceptions）。
+        _zwValidateFilterInput(options.filter);
       }
       this._inLayer = true;
       this._saveRaw();
@@ -2836,9 +2992,18 @@
     // 目录渲染面待 renderer 滤镜支持（记录，非本批）。
     ctx._filter = 'none';
     Object.defineProperty(ctx, 'filter', {
+      // R34xx（filters 目录）：CanvasFilter 对象 → 接受（getter 返对象本身——
+      // toString 断言）；字符串 → CSS filter list 校验（'none' / 函数列表；
+      // 非法串保持旧值——'this string is not a filter and should do nothing'）。
       set: function (v) {
-        v = String(v);
-        this._filter = v;
+        if (v && typeof v === 'object' && v._zwCanvasFilter) {
+          this._filter = v;
+          return;
+        }
+        if (typeof v !== 'string') return;
+        if (v === 'none' || _zwValidFilterList(v)) {
+          this._filter = v;
+        }
       },
       get: function () { return this._filter; }
     });
