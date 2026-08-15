@@ -379,29 +379,58 @@
         if (prop === 'childNodes') {
           // R2927：容器 handle（shadow/fragment）从 registry 读子节点（无 selector，须 registry）。
           if (_isContainerHandle(handle)) return _handleChildNodes(handle);
-          // R34xx：注册的纯文本元素 → 本地文本节点（created handle 无 sel）。
-          if (typeof _zwLocalChildNodes === 'function') {
-            var _zwLocal = _zwLocalChildNodes(sel, handle);
-            if (_zwLocal) return _zwLocal;
+          // R34xx/R51：注册的纯文本元素（textContent=/innerHTML= 建的本地文本视图）与 R2927
+          // registry 子（appendChild 建的元素/节点子）**融合**——WPT dom/common.js indexOf 等
+          // identity 循环要求「append 的子出现在 childNodes」：paras[0].textContent=... 后
+          // 再 appendChild(paras[1])，旧短路（_zwLocalChildNodes 命中即 return）使 append 的
+          // 子不可见 → indexOf 死循环（R51 修复）。文本子在前（textContent 视图建在先）。
+          if (!sel && handle) {
+            var _r51Local = (typeof _zwLocalChildNodes === 'function')
+              ? _zwLocalChildNodes(sel, handle)
+              : null;
+            var _r51Kids = (_handleChildren[handle] || []).slice();
+            if (_r51Local && _r51Local.length) return _r51Local.concat(_r51Kids);
+            if (_r51Kids.length) return _r51Kids;
+            if (_r51Local) return _r51Local;
+            return _childNodeList(sel, handle);
           }
           // R50：普通 handle 元素（createElement 后 append 子——mutation pending、无 selector）
           // 从 R2927 registry 读子（appendChild 对所有 handle 父都 _recordHandleChild）。
           // WPT case.js：`container.childNodes`（detached handle 容器）此前恒 [] → expected
           // 伪空（双缺陷与查询侧抵消）；live 集合修复后查询侧正确暴露 expected 侧缺陷。
-          if (!sel && handle && _handleChildren[handle] && _handleChildren[handle].length) {
-            return _handleChildren[handle].slice();
+          if (typeof _zwLocalChildNodes === 'function') {
+            var _zwLocal = _zwLocalChildNodes(sel, handle);
+            if (_zwLocal) return _zwLocal;
           }
           return _childNodeList(sel, handle);
         }
         if (prop === 'firstChild' || prop === 'lastChild') {
           // R49：firstChild/lastChild 同步消费 _zwLocalChildNodes（textContent=/innerHTML= 的本地
           // 文本视图——childNodes 已接，此处漏；WPT takeRecords `n.textContent='old'; n.firstChild.data=`）。
+          // R51：与 childNodes 同款融合（本地文本视图 + registry 子）——lastChild 须反映 append
+          // 的元素子（textContent 后 appendChild 的融合序：text 在前、handle 子在后）。
           var cn = _isContainerHandle(handle)
             ? _handleChildNodes(handle)
             : (function () {
+                if (!sel && handle) {
+                  var _fl = (typeof _zwLocalChildNodes === 'function')
+                    ? _zwLocalChildNodes(sel, handle)
+                    : null;
+                  var _fk = (_handleChildren[handle] || []).slice();
+                  if (_fl && _fl.length) return _fl.concat(_fk);
+                  if (_fk.length) return _fk;
+                  if (_fl) return _fl;
+                  return _childNodeList(sel, handle);
+                }
                 if (typeof _zwLocalChildNodes === 'function') {
                   var _loc = _zwLocalChildNodes(sel, handle);
                   if (_loc) return _loc;
+                }
+                // R51：普通 handle 元素（createElement 容器，mutation pending 无 sel）从 R2927
+                // registry 读子（与 childNodes R50 回落对称——WPT TreeWalker-basic
+                // createSampleDOM `root.lastChild.firstChild` 读 detached 容器子）。
+                if (!sel && handle && _handleChildren[handle] && _handleChildren[handle].length) {
+                  return _handleChildren[handle].slice();
                 }
                 return _childNodeList(sel, handle);
               })();
@@ -1315,6 +1344,23 @@
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
             if (child && child.__zwHandle) {
+              // js-dom M4 R51：spec appendChild 移动语义——child 已有父（sel 父经 __zw_parent /
+              // handle 父经 _zwNodeParent 反向链）时，先从旧位移除。host __zw_append_child 内部
+              // adopt，但 JS 侧旧父视图（_childNodeList overlay / _handleChildren registry）不知：
+              // ① 旧 handle 父 registry 剔除 + 发 removed record（_mo_notify 汇流点同步清 child
+              //   反向链并记新链）；② 旧 sel 父发 removed record（overlay 剔除旧位，WPT dom
+              //   indexOf 移动用例——不剔则旧父 childNodes 双份）。
+              var _r51OldLink = _zwNodeParent[child.__zwHandle];
+              if (_r51OldLink) {
+                if (_r51OldLink.parentHandle) {
+                  _unrecordHandleChild(_r51OldLink.parentHandle, child);
+                  _mo_notify(_r51OldLink.parentSel || null, _r51OldLink.parentHandle,
+                    { type: 'childList', addedNodes: [], removedNodes: [child] });
+                } else if (_r51OldLink.parentSel) {
+                  _mo_notify(_r51OldLink.parentSel, null,
+                    { type: 'childList', addedNodes: [], removedNodes: [child] });
+                }
+              }
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子），供连接态传播。
               var ceAdded;
               // DocumentFragment：flatten 子节点到 this（fragment 自身不入树），区别于 append 节点自身。

@@ -288,6 +288,10 @@ fn run_canvas_testharness_html(
 }
 
 /// Run one HTML testharness case with the declared click/send_keys adapter.
+/// WPT long-timeout 用例上限（`<meta name=timeout content=long>`，dom/ranges 等参数矩阵
+/// mega-case 数千 subtest 常态跑数十秒；上游标准 normal=10s / long=60s）。
+const CASE_TIMEOUT_LONG: Duration = Duration::from_secs(60);
+
 pub fn run_testharness_html(
     wpt_root: &Path,
     case_name: &str,
@@ -295,7 +299,22 @@ pub fn run_testharness_html(
     harness_source: &str,
     timeout: Duration,
 ) -> Vec<HarnessSubtestResult> {
-    run_testharness_html_inner(wpt_root, case_name, source, harness_source, &[], timeout)
+    // js-dom R51：尊重 WPT `<meta name=timeout content=long>`——调用方传入 normal 10s 时按
+    // 用例声明放宽到 60s（mega-case 不再被 CASE_TIMEOUT 截断为 Timeout 伪失败）。检测为
+    // 朴素子串匹配（meta 属性序/引号变体极少，上游用例均标准形态）。
+    let effective = if timeout == CASE_TIMEOUT && is_long_timeout_case(source) {
+        CASE_TIMEOUT_LONG
+    } else {
+        timeout
+    };
+    run_testharness_html_inner(wpt_root, case_name, source, harness_source, &[], effective)
+}
+
+/// 用例 HTML 是否声明 `<meta name=timeout content=long>`。
+fn is_long_timeout_case(source: &str) -> bool {
+    let lower = source.to_ascii_lowercase();
+    (lower.contains("name=\"timeout\"") && lower.contains("content=\"long\""))
+        || (lower.contains("name=timeout") && lower.contains("content=long"))
 }
 
 /// R34xx：headless 图片源获取器——`https://wpt.test/<path>`（wpt-data 相对路径）→

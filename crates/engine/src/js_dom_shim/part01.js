@@ -437,6 +437,12 @@
   // lastChild/firstElementChild/lastElementChild/childElementCount 读。仅 handle-append 模式覆盖
   //（innerHTML 设内容经 host parse 无 handle，未跟踪——follow-up）。导航清空。
   var _handleChildren = {};
+  // js-dom M4 R51：child→parent 反向链 registry——`childHandle → { parentSel, parentHandle }`。
+  // R50 只补了 parent→children（_handleChildren 供 childNodes 读）；反方向缺失使
+  // `_parentNodeFor(null, handle)` 走 fallback 恒猜 body（WPT dom/common.js indexOf 的
+  // `while (node != node.parentNode.childNodes[i])` 在假父快照上越界恒不等 → 死循环）。
+  // 记账挂 _mo_notify childList 汇流点（shim 全部 childList mutation 单一入口，R50 同款）。
+  var _zwNodeParent = {};
   // P1a Comment（R2816）：已创建的 comment handle 集合（nodeType=8 / nodeName '#comment' 标识）。
   // comment 为 create 句柄无 selector，故用此 set 区别于普通元素句柄（同 _fragmentHandles 模式）。
   var _commentHandles = {};
@@ -1086,6 +1092,25 @@
     // 在 part05 定义，同一 IIFE 作用域；hoisting 使前向引用安全）。
     if (baseRecord && baseRecord.type === 'childList') {
       _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes);
+      // js-dom M4 R51：同汇流点维护 child→parent 反向链（_zwNodeParent registry 声明于 part01）。
+      // added：记父（sel 或 handle，按 mutation 目标）；removed：清链（detached 后 parentNode=null）。
+      // fragment flatten 的 addedNodes 已是子节点列表（R47 ceAdded 语义），逐个记录正确。
+      var _npA = baseRecord.addedNodes;
+      if (_npA) {
+        for (var _npI = 0; _npI < _npA.length; _npI++) {
+          var _npC = _npA[_npI];
+          if (_npC && _npC.__zwHandle) {
+            _zwNodeParent[_npC.__zwHandle] = { parentSel: sel || null, parentHandle: handle || null, nextSibling: baseRecord.nextSibling || null };
+          }
+        }
+      }
+      var _npR = baseRecord.removedNodes;
+      if (_npR) {
+        for (var _npJ = 0; _npJ < _npR.length; _npJ++) {
+          var _npD = _npR[_npJ];
+          if (_npD && _npD.__zwHandle) delete _zwNodeParent[_npD.__zwHandle];
+        }
+      }
     }
   }
   function _mo_scheduleFlush() {

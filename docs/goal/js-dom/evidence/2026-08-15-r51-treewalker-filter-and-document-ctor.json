@@ -1,0 +1,55 @@
+{
+  "round": "R51",
+  "date": "2026-08-15",
+  "milestone": "M4 / DC-3 (traversal/ranges/nodes mega-case unlock)",
+  "slice": "TreeWalker NodeFilter callback semantics + lazy stepping + new Document() ctor unlocking dom/common.js",
+  "results": {
+    "dom_traversal_polyfill": {
+      "pass": 925,
+      "fail": 655,
+      "prev": "36P/19F",
+      "delta": "+889"
+    },
+    "dom_traversal_native": {
+      "pass": 893,
+      "prev": 8,
+      "delta": "+885"
+    },
+    "dom_nodes_polyfill": {
+      "pass": 2957,
+      "prev": 2508,
+      "delta": "+449"
+    },
+    "dom_ranges_non_mutations_43cases": {
+      "pass": 1847,
+      "prev": 39,
+      "delta": "+1808 (common.js unlock + createRange/ownerDocument)"
+    },
+    "dom_collections": {
+      "pass": 48,
+      "fail": 0,
+      "delta": "0"
+    },
+    "dom_events": {
+      "pass": 189,
+      "delta": "0"
+    },
+    "treewalker_acceptnode_filter": "5P/7F -> 12P/0F (100%)",
+    "unit_tests": {
+      "engine_v8": "2132 passed (R2803/R3257 updated to lazy semantics)",
+      "engine_quickjs": "1415 passed",
+      "clippy": "clean",
+      "fmt": "no diff"
+    }
+  },
+  "infrastructure": [
+    "WPT <meta name=timeout content=long> -> CASE_TIMEOUT 60s (upstream normal/long standard)",
+    "make testharness-dom TIME_LIMIT= passthrough for mega-case subdirs",
+    "new Document() ctor + detached-doc factories: createCDATASection/createProcessingInstruction/createComment/createDocumentFragment/createRange/appendChild + ownerDocument on products and parsed text nodes"
+  ],
+  "leftovers": [
+    "plain-object node append into handle container (CDATA fusion) = M1 L2 identity-bridge adjacent (isPointInRange 5697F, ranges bulk)",
+    "Range-mutations 4 cases >120s synchronous execution (no deadline during run_page_scripts_strict)",
+    "traversal cross-realm 5F (iframe realm), removal-during-filtering 4F"
+  ]
+}

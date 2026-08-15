@@ -2951,6 +2951,9 @@
       nextSibling: null,
       __zwIsText: true,
     };
+    // R51：spec ownerDocument——parsed 文本/注释节点属主文档（common.js rangeFromEndpoints
+    // 经 ownerDocument(node).createRange() 取 doc 再建 Range；缺此字段 → undefined 崩）。
+    node.ownerDocument = globalThis.document;
     Object.defineProperty(node, 'nodeValue', {
       get: function () { return node.__nv; },
       set: function (v) {
@@ -3014,12 +3017,49 @@
       var arr = JSON.parse(__zw_child_nodes(sel) || '[]');
       var parent = handle ? _wrapHandle(handle) : _wrapSelector(sel);
       // R48：parsed 文本/注释子带 __zwChildIndex（CharacterData 方法经「父 sel + 索引」写入）。
-      return arr.map(function(e, i) {
+      var out = arr.map(function(e, i) {
         var n = _wrapNodeEntry(e, parent);
         if (n && n.__zwIsText) n.__zwChildIndex = i;
         return n;
       });
+      return _zwOverlayPendingChildNodes(out, sel, parent);
     } catch (_e) { return []; }
+  }
+  // js-dom M4 R51：sel 父 childNodes 的 pending overlay——同步脚本内 mutation（insertBefore/
+  // appendChild/removeChild）经 host 异步 apply，快照（__zw_child_nodes）在脚本 turn 内是旧的。
+  // WPT dom/common.js indexOf 等 identity 循环依赖「parentNode.childNodes 含本节点」：
+  // pending added（_zwNodeParent 反向链父 sel 匹配）按 nextSibling 定位插入；pending removed
+  // 剔除。无匹配 nextSibling（append 到尾 / nextSibling 也是 pending）→ 尾部追加（保守）。
+  function _zwOverlayPendingChildNodes(out, sel, parent) {
+    if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out;
+    var res = out.slice();
+    // 剔除 pending removed（identity 匹配）。
+    for (var r = 0; r < _zwPendingRemoved.length; r++) {
+      var rm = _zwPendingRemoved[r];
+      for (var ri = res.length - 1; ri >= 0; ri--) {
+        if (res[ri] === rm) { res.splice(ri, 1); break; }
+      }
+    }
+    // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
+    for (var a = 0; a < _zwPendingAdded.length; a++) {
+      var nd = _zwPendingAdded[a];
+      if (!nd || !nd.__zwHandle) continue;
+      var link = _zwNodeParent[nd.__zwHandle];
+      if (!link || link.parentSel !== sel) continue;
+      var seen = false;
+      for (var s = 0; s < res.length; s++) { if (res[s] === nd) { seen = true; break; } }
+      if (seen) continue;
+      // nextSibling 定位（_mo_notify record 的 nextSibling 字段，R47）。ref 已在列表内 → 插其前；
+      // 否则（null=append / ref 也 pending）→ 尾部。
+      var pos = res.length;
+      if (link.nextSibling && link.nextSibling.__zwSelector) {
+        for (var q = 0; q < res.length; q++) {
+          if (res[q] === link.nextSibling) { pos = q; break; }
+        }
+      }
+      res.splice(pos, 0, nd);
+    }
+    return res;
   }
 
   // R3033：把元素数组包成 spec 集合——补 `.item(i)`（HTMLCollection/NodeList 共有），`htmlCollection=true`

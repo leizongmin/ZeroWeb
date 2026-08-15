@@ -147,8 +147,10 @@ testharness-html: fetch-wpt-html-testharness target/test-guard zero-wpt-runner-r
 fetch-wpt-dom:
 	bash tests/wpt-runner/scripts/fetch-dom-subset.sh
 
+# js-dom R51：TIME_LIMIT 可透传（默认 900s）。dom/ranges 等 mega-case 子目录
+#（Range-mutations 族 12 用例各 30-60s）需要更长墙钟。
 testharness-dom: fetch-wpt-dom target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
 
 # js-dom goal DC-3 native 路径对照：ZW_NATIVE_DOM=1 走原生绑定路径（非默认 polyfill）。
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。

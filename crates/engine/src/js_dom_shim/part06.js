@@ -197,21 +197,36 @@
       throw new globalThis.TypeError("Argument 1 of Document.createTreeWalker is not an object.");
     }
     var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow | 0);
-    var filterFn = null;
-    if (typeof filter === 'function') filterFn = filter;
-    else if (filter && typeof filter.acceptNode === 'function') filterFn = filter.acceptNode;
+    // R51：spec `document-createtreewalker` 步骤 4 + WebIDL §callback NodeFilter——filter 以
+    // **callback 对象**形态保存（不一次性解绑）：函数 → 直接调用（this=undefined）；对象 → 每次
+    // 遍历经 `Get(filter, "acceptNode")` 取 callable（getter 每次执行、抛错原样重抛、this=filter
+    // 对象）；acceptNode 缺失/非 callable → 调用时抛 TypeError（WPT TreeWalker-acceptNode-filter
+    // "lacking/non-function acceptNode"、"rethrows errors when getting acceptNode"、
+    // "performs Get on every traverse"、"this value and node argument"）。
+    var filterObj = (filter === null || filter === undefined) ? null : filter;
     function maskFor(node) {
       var nt = node && node.nodeType;
       // proxy 树仅含 element(1)/text(3)/comment(8)；其他 nodeType 不展示。
       return nt === 1 ? 0x1 : nt === 3 ? 0x4 : nt === 8 ? 0x80 : 0;
     }
+    function callFilter(node) {
+      if (typeof filterObj === 'function') return filterObj(node) | 0;
+      var fn = filterObj.acceptNode; // 每次 Get（getter 副作用/抛错按 spec 传播）
+      if (typeof fn !== 'function') {
+        throw new globalThis.TypeError("NodeFilter object has no acceptNode method");
+      }
+      return fn.call(filterObj, node) | 0;
+    }
     function check(node) {
       if ((wts & maskFor(node)) === 0) return 3; // 不在 whatToShow → SKIP（不入列，但仍遍历子树）
-      if (!filterFn) return 1; // 无 filter → ACCEPT
-      try { return filterFn(node) | 0; } catch (_e) { return 1; }
+      if (!filterObj) return 1; // 无 filter → ACCEPT
+      // R51：spec `callbackdef-nodefilter`——filter 抛错**原样重抛**（不吞、不默认 ACCEPT；
+      // WPT "filter function/object that throws" assert_throws_exactly + currentNode 不动）。
+      return callFilter(node);
     }
     var accepted = [];
     var parentAcceptedIdx = []; // R3257：每 accepted 节点的「最近 ACCEPTED 祖先」在 accepted 中的 idx（无=-1）
+    var walked = false;
     // 深度优先 pre-order：ACCEPT/SKIP 入子树，REJECT 剪子树。ancestorIdx = 当前子树的最近 ACCEPTED 祖先 idx。
     function walk(node, ancestorIdx) {
       if (!node) return;
@@ -228,7 +243,24 @@
         for (var i = 0; i < kids.length; i++) walk(kids[i], nextAncestor);
       }
     }
-    walk(root, -1);
+    // R51：spec TreeWalker filter 是 **lazy** 的——eager walk 延迟到首个遍历方法调用（物化）。
+    // WPT TreeWalker-acceptNode-filter：`createTreeWalker(root, wts, {})` 构造**不抛**，
+    // `walker.firstChild()` 才抛 TypeError（acceptNode 缺失）/ filter 抛错原样重抛——eager 构造
+    // 期执行会把异常提前到构造点，违反 spec 时序。物化失败（filter 抛错）清 accepted + walked，
+    // 使下一次 traverse 调用重新物化（WPT "filter that throws"：firstChild 抛后 nextNode 也抛，
+    // currentNode 保持 root）。
+    function materialize() {
+      if (walked) return;
+      walked = true;
+      try {
+        walk(root, -1);
+      } catch (_e) {
+        accepted = [];
+        parentAcceptedIdx = [];
+        walked = false;
+        throw _e;
+      }
+    }
     var idx = -1; // -1 = 尚未定位（fresh，currentNode=root）；nextNode 首调落到 root（若 accepted）→ R2803 语义
     // R3257：层级方法的「有效位置」。idx>=0 时为 idx；fresh（idx=-1，currentNode=root）时——若 root accepted
     //（accepted[0]===root）逻辑位置=0，否则虚拟 -1（root 不在 accepted，其 filtered-子以 -1 为最近祖先）。
@@ -236,7 +268,7 @@
       if (idx >= 0) return idx;
       return accepted.length > 0 && accepted[0] === root ? 0 : -1;
     }
-    function moveTo(i) { idx = i; currentNodeVal = accepted[i]; return accepted[i]; }
+    function moveTo(i) { idx = i; currentNodeVal = accepted[i]; syncOrderPosTo(currentNodeVal); return accepted[i]; }
     var walker = {};
     // R41：spec `treewalker` 接口——root/whatToShow/filter 为 readonly attribute（WPT TreeWalker-basic
     // assert_readonly）。经 defineProperty getter-only 实现（无 setter → writable:false 语义）。
@@ -257,22 +289,101 @@
         if (!v || typeof v.nodeType !== 'number') {
           throw new globalThis.TypeError("currentNode is not a Node");
         }
+        materialize();
         currentNodeVal = v;
         var at = accepted.indexOf(v);
         idx = at >= 0 ? at : -1;
+        syncOrderPosTo(v); // R51：lazy 步进游标随 currentNode 重定位
       },
       configurable: true
     });
     // R41：spec 接口 branding——WPT TreeWalker-basic 断言 `String(walker) === "[object TreeWalker]"`
     //（NodeIterator 同理 "[object NodeIterator]"）。普通 data 属性即可（String() 走 toString 优先）。
     walker.toString = function () { return isTreeWalker ? '[object TreeWalker]' : '[object NodeIterator]'; };
+    // R51：spec `nodeiterator` 专有属性——referenceNode（最近 accepted 节点）+
+    // pointerBeforeReferenceNode（游标在 referenceNode 前/后，nextNode 置前 true、previousNode
+    // 置后 false；WPT NodeIterator.html 全程断言）。TreeWalker 无此二属性。
+    if (!isTreeWalker) {
+      var refNodeVal = root;
+      var beforeRefVal = true;
+      Object.defineProperty(walker, 'referenceNode', { get: function () { return refNodeVal; }, configurable: true });
+      Object.defineProperty(walker, 'pointerBeforeReferenceNode', { get: function () { return beforeRefVal; }, configurable: true });
+      // 同步钩子：nextNode/previousNode 成功步进时更新 reference/before（闭包内经包装实现）。
+      var _rawNext = walker.nextNode, _rawPrev = walker.previousNode;
+      walker.nextNode = function () {
+        var r = _rawNext.apply(this, arguments);
+        if (r) { refNodeVal = r; beforeRefVal = false; }
+        return r;
+      };
+      walker.previousNode = function () {
+        var r = _rawPrev.apply(this, arguments);
+        if (r) { refNodeVal = r; beforeRefVal = true; }
+        return r;
+      };
+    }
+    // R51：nextNode/previousNode 改 **lazy 步进**（spec TreeWalker/NodeIterator 惰性遍历）。
+    // 模型：物化**结构序**（pre-order 全节点数组，只读 childNodes 无 filter 调用——构造零异常），
+    // 步进时才对候选节点调 filter（WPT "performs Get on every traverse"：两次 nextNode = 恰两次
+    // acceptNode Get；"this value and node argument"：首调 node=A1）。REJECT 剪子树 = 跳过该节点
+    // 的整个子树区间（orderEnd 预计算）。currentNode 经 setter/层级方法移动后，下次 nextNode 从
+    // currentNode 的结构序后继续。filter 抛错原样传播，currentNode 不动（仅成功步进更新）。
+    var order = null; // pre-order 全节点数组（含 root）
+    var orderEnd = null; // 每节点的子树 exclusive-end 索引（REJECT 剪枝用）
+    var orderPos = -1; // 结构序游标（-1 = 未定位，下次步进从头找 currentNode）
+    function nodeChildren(n) {
+      try { return (n && n.childNodes) ? Array.prototype.slice.call(n.childNodes) : []; } catch (_e) { return []; }
+    }
+    function orderInit() {
+      if (order) return;
+      order = [];
+      orderEnd = [];
+      collect2(root);
+    }
+    function collect2(n) {
+      var i = order.length;
+      order.push(n);
+      var kids = nodeChildren(n);
+      var end = i + 1;
+      for (var k = 0; k < kids.length; k++) { var e2 = collect2(kids[k]); if (e2 > end) end = e2; }
+      orderEnd[i] = end;
+      return end;
+    }
+    function syncOrderPosTo(node) {
+      orderInit(); // 层级方法路径可能先于 nextNode 触发（order 未建）
+      if (node === root) { orderPos = 0; return; }
+      for (var i = 0; i < order.length; i++) { if (order[i] === node) { orderPos = i; return; } }
+      orderPos = -1;
+    }
     walker.nextNode = function () {
-      if (idx < accepted.length - 1) { idx++; currentNodeVal = accepted[idx]; return accepted[idx]; }
+      orderInit();
+      // fresh（orderPos<0）：root 自身是首个候选（spec iteration order 含 root——WPT
+      // NodeIterator-removal-during-filtering "first nextNode() returns root"、R2803 单测 DIV
+      // 首位）。已定位（orderPos>=0，经层级方法/currentNode setter 移动过）则从其后继继续。
+      var i = orderPos < 0 ? 0 : orderPos + 1;
+      while (i < order.length) {
+        var node = order[i];
+        var r = check(node);
+        if (r === 1) { orderPos = i; idx = accepted.indexOf(node); currentNodeVal = node; return node; }
+        if (r === 2) { i = orderEnd[i]; continue; } // REJECT → 剪子树（跳到子树 exclusive-end）
+        i++; // SKIP → 下一节点（子树仍遍历）
+      }
+      orderPos = order.length;
       return null;
     };
     walker.previousNode = function () {
-      if (idx > 0) { idx--; currentNodeVal = accepted[idx]; return accepted[idx]; }
-      return null;
+      materialize();
+      // R51：from 以 **currentNode 实际位置**为准（lazy nextNode 步进时 accepted 可能未物化，
+      // idx=-1 误导 from——WPT/R2803：nextNode 到尾后 previousNode 须从倒数第二续起）。
+      var from = accepted.indexOf(currentNodeVal);
+      if (from < 0 && accepted.length > 0 && accepted[0] === root) from = 0;
+      var target = -1;
+      if (from < 0) { target = accepted.length - 1; } // currentNode 不在 accepted（root 外/被滤）→ 从尾
+      else if (from > 0) target = from - 1;
+      if (target < 0) return null;
+      idx = target;
+      currentNodeVal = accepted[target];
+      syncOrderPosTo(currentNodeVal);
+      return accepted[target];
     };
     if (isTreeWalker) {
       // DOM §4.2.6 TreeWalker 层级方法（R3257）。基于 accepted[]（pre-order）+ parentAcceptedIdx：
@@ -281,6 +392,7 @@
       // - nextSibling()/previousSibling(): 同 parentAcceptedIdx（= parentAcceptedIdx[effPos()]）的下一/上一 i。
       // ACCEPTED 节点的祖先必非 REJECT（REJECT 剪子树），故 parentAcceptedIdx 给出 spec 定义的「最近 accepted 祖先」。
       walker.parentNode = function () {
+        materialize();
         var p = effPos();
         if (p < 0) return null;
         var pi = parentAcceptedIdx[p];
@@ -288,6 +400,7 @@
         return moveTo(pi);
       };
       walker.firstChild = function () {
+        materialize();
         var p = effPos();
         for (var i = p + 1; i < accepted.length; i++) {
           if (parentAcceptedIdx[i] === p) return moveTo(i);
@@ -295,6 +408,7 @@
         return null;
       };
       walker.lastChild = function () {
+        materialize();
         var p = effPos();
         for (var i = accepted.length - 1; i > p; i--) {
           if (parentAcceptedIdx[i] === p) return moveTo(i);
@@ -302,6 +416,7 @@
         return null;
       };
       walker.nextSibling = function () {
+        materialize();
         var p = effPos();
         if (p < 0) return null;
         var par = parentAcceptedIdx[p];
@@ -311,6 +426,7 @@
         return null;
       };
       walker.previousSibling = function () {
+        materialize();
         var p = effPos();
         if (p < 0) return null;
         var par = parentAcceptedIdx[p];
@@ -2205,6 +2321,8 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     nodeType: 3, nodeName: '#text', __nv: text, textContent: text,
     length: text.length, __zwIsText: true,
     previousSibling: null, nextSibling: null,
+    // R51：spec ownerDocument（common.js rangeFromEndpoints 经 ownerDocument(node).createRange()）。
+    ownerDocument: globalThis.document,
   };
   // js-dom M4 R49：data/nodeValue 可写 + CharacterData 方法——textContent=/innerHTML= 建的本地
   // 文本节点须可继续编辑（WPT takeRecords `n.firstChild.data='new data'` 发 characterData record，

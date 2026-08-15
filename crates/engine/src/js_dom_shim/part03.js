@@ -103,6 +103,19 @@
   globalThis.Attr = globalThis.Attr || function Attr() {};
   globalThis.DocumentFragment = globalThis.DocumentFragment || function DocumentFragment() {};
   globalThis.DocumentFragment.prototype = Object.create(globalThis.Node.prototype);
+  // R51：`Document` 构造器（spec `interface-document`——`new Document()` 返独立空 XML Document）。
+  // WPT dom/common.js setupRangeTests 经 `new Document()` + createCDATASection 建 testNodes——
+  // 构造器缺失使 setup 中途崩 → testNodes undefined → dom/* 依赖 common.js 的 mega-case
+  //（NodeIterator.html 等）全体退化。以 `_makeDetachedDocument('')`（R2815 独立可变 doc）承载。
+  // prototype 挂 Node.prototype（instanceof Node 经原型链）。
+  globalThis.Document = globalThis.Document || function Document() {
+    return _makeDetachedDocument('');
+  };
+  try {
+    if (globalThis.Document.prototype) {
+      Object.setPrototypeOf(globalThis.Document.prototype, globalThis.Node.prototype);
+    }
+  } catch (_e) {}
   // js-dom M4：ProcessingInstruction 构造器占位（spec `dom-processinginstruction`，CharacterData : Node 子类）。
   // createProcessingInstruction 返 polyfill Proxy 节点（非构造器真实例），instanceof 恒 false（与
   // HTMLFormElement 占位同语义）；构造器须以 function 存在，使 `x instanceof ProcessingInstruction` 不抛
@@ -1576,6 +1589,25 @@
         return null; // html 根 / 未命中 → 无元素父
       } catch (_e) { return null; }
     }
+    // js-dom M4 R51：handle-only 节点先查 child→parent 反向链（_zwNodeParent，_mo_notify
+    // childList 汇流点记账）。命中 sel 父 → _wrapSelector（与快照查询同 proxy 缓存，identity
+    // 稳定）；命中 handle 父 → _wrapHandle。
+    if (handle) {
+      var _npl = _zwNodeParent[handle];
+      if (_npl) {
+        if (_npl.parentSel) return _wrapSelector(_npl.parentSel);
+        if (_npl.parentHandle) return _wrapHandle(_npl.parentHandle);
+      }
+      // R51：无链的纯 detached handle 节点（createElement 后未 append）→ null（spec：
+      // detached 节点 parentNode 为 null）。旧 fallback 猜 body 是 WPT dom/common.js
+      // indexOf 死循环根因（假父快照永不含该节点）。
+      if (typeof __zw_parent !== 'function') {
+        if (sel === 'html') return null;
+        if (sel === 'body' || sel === 'head') return _wrapSelector('html');
+        return _wrapSelector('body');
+      }
+      return null;
+    }
     // fallback（无 host 回调路径，如 polyfill）：文档结构近似。
     if (sel === 'html') return null;
     if (sel === 'body' || sel === 'head') return _wrapSelector('html');
@@ -1811,6 +1843,10 @@
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
+      // R51：detached doc 的 Range 工厂（common.js extractContents 模拟 `ownerDoc.createRange()`
+      //——detached/foreign document 此前缺 → Range-isPointInRange 等 mega-case 5700+ subtest
+      // "undefined.createRange" 崩）。_makeRange 在 part06（同一 IIFE，运行期调用时已定义）。
+      createRange: function () { return _makeRange(); },
       // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
       // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
       getElementById: function (id) { return queryOne('[id="' + String(id).replace(/"/g, '\\"') + '"]'); },
@@ -1830,6 +1866,33 @@
       head: { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', childNodes: [] },
       body: body,
       title: title != null ? String(title) : '',
+      // R51：detached doc 的文档级子列表（common.js setupRangeTests `xmlDoc.appendChild(...)`
+      // 建元素/PI/comment——detached 文档无渲染，纯本地列表即可支撑 testNodes 组装/遍历）。
+      childNodes: [],
+      children: [],
+      get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
+      get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+      hasChildNodes: function () { return this.childNodes.length > 0; },
+      appendChild: function (c) {
+        if (!c) return c;
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
+        c.parentNode = this;
+        this.childNodes.push(c);
+        if (c.nodeType === 1) this.children.push(c);
+        return c;
+      },
+      removeChild: function (c) {
+        for (var i = 0; i < this.childNodes.length; i++) {
+          if (this.childNodes[i] === c) {
+            this.childNodes.splice(i, 1);
+            var ci = this.children.indexOf(c);
+            if (ci >= 0) this.children.splice(ci, 1);
+            c.parentNode = null;
+            return c;
+          }
+        }
+        return c;
+      },
       querySelector: function (sel) { return queryOne(sel); },
       querySelectorAll: function (sel) { return queryAll(sel); },
       // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
@@ -1840,8 +1903,103 @@
       // R3018：createElement/createTextNode 返完整可变节点（_zwMEl/_zwMText），非 hollow stub。
       // DOMPurify / 模板引擎经 createElement 建替换节点后 insertBefore/appendChild 入树，须支持 parentNode/
       // sibling/childNodes/setAttribute/序列化全套语义。HTML 文档 tagName 大写、localName 小写。
-      createElement: function (t) { return _zwMEl({ tag: String(t).toLowerCase() }, null); },
-      createTextNode: function (t) { return _zwMText(String(t), null); },
+      // R51：产物补 ownerDocument=本 detached doc（spec ownerDocument 语义；common.js
+      // rangeFromEndpoints 经 ownerDocument(node).createRange()——缺此字段时 undefined 崩）。
+      createElement: function (t) { var e = _zwMEl({ tag: String(t).toLowerCase() }, null); e.ownerDocument = doc; return e; },
+      createTextNode: function (t) { var n = _zwMText(String(t), null); n.ownerDocument = doc; return n; },
+      // R51：spec `dom-document` CDATASection 工厂（XML 文档专有；WPT dom/common.js
+      // setupRangeTests 经 `new Document().createCDATASection(...)` 建 testNodes——缺它整个
+      // setup 中途崩 → testNodes undefined → dom/* mega-case 全体退化）。轻量节点对象
+      //（nodeType=4 / nodeName='#cdata-section' / data/nodeValue；不可 append 到 HTML 树）。
+      createCDATASection: function (d) {
+        var v = String(d == null ? '' : d);
+        return {
+          nodeType: 4,
+          nodeName: '#cdata-section',
+          data: v,
+          nodeValue: v,
+          textContent: v,
+          childNodes: [],
+          parentNode: null,
+          ownerDocument: doc,
+        };
+      },
+      // R51：detached doc 的 ProcessingInstruction/Comment 工厂（common.js setupRangeTests
+      // xmlDoc.createProcessingInstruction + createComment——同 createCDATASection 补齐，
+      // 轻 + spec 命名校验对齐主文档 R9/R3 语义）。
+      createProcessingInstruction: function (target, data) {
+        var t = String(target == null ? '' : target);
+        var v = String(data == null ? '' : data);
+        if (t === '' || /[ \t\n\r\f]/.test(t)) {
+          throw new (globalThis.DOMException || Error)('Invalid ProcessingInstruction target', 'InvalidCharacterError');
+        }
+        if (v.indexOf('?>') !== -1) {
+          throw new (globalThis.DOMException || Error)('Invalid ProcessingInstruction data', 'InvalidCharacterError');
+        }
+        return {
+          nodeType: 7,
+          nodeName: t,
+          target: t,
+          data: v,
+          nodeValue: v,
+          textContent: v,
+          childNodes: [],
+          parentNode: null,
+          ownerDocument: doc,
+        };
+      },
+      createComment: function (d) {
+        var v = String(d == null ? '' : d);
+        return {
+          nodeType: 8,
+          nodeName: '#comment',
+          data: v,
+          nodeValue: v,
+          textContent: v,
+          childNodes: [],
+          parentNode: null,
+          ownerDocument: doc,
+        };
+      },
+      // R51：detached doc 的 DocumentFragment 工厂（common.js setupRangeTests
+      // foreignDoc.createDocumentFragment——轻量可变容器：appendChild/childNodes/
+      // firstChild/lastChild 本地维护，够 testNodes 组装与遍历）。
+      createDocumentFragment: function () {
+        var frag = {
+          nodeType: 11,
+          nodeName: '#document-fragment',
+          childNodes: [],
+          children: [],
+          parentNode: null,
+          ownerDocument: doc,
+          get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
+          get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
+          hasChildNodes: function () { return this.childNodes.length > 0; },
+          appendChild: function (c) {
+            if (c && c.nodeType === 11 && c !== this) {
+              for (var i = 0; i < c.childNodes.length; i++) this.appendChild(c.childNodes[i]);
+              c.childNodes = [];
+              return c;
+            }
+            if (c && c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
+            if (c) { c.parentNode = this; this.childNodes.push(c); if (c.nodeType === 1) this.children.push(c); }
+            return c;
+          },
+          removeChild: function (c) {
+            for (var i = 0; i < this.childNodes.length; i++) {
+              if (this.childNodes[i] === c) {
+                this.childNodes.splice(i, 1);
+                var ci = this.children.indexOf(c);
+                if (ci >= 0) this.children.splice(ci, 1);
+                c.parentNode = null;
+                return c;
+              }
+            }
+            return c;
+          },
+        };
+        return frag;
+      },
       // R15：detached doc 的 implementation（用例 doTest(doc,...) 经 doc.implementation.createDocumentType）。
       // ownerDocument 指向此 detached doc（spec：doctype.ownerDocument === 创建它的 document）。
       implementation: {
