@@ -350,3 +350,163 @@ fn r51c_remove_after_append_zeroes_out_pending() {
         "R51c：remove 后 parentNode 为 null"
     );
 }
+
+// js-dom M4 R54：live collection 并入点过滤——detached/foreign 容器子树不进文档级集合
+//（R53 根因：getElementsByTagName('p') 的 els 每 setup 净 +2 泄漏 → 失效循环 O(els) 级联变慢）。
+// 判定从**挂载点**出发（mutSel → __zw_contains('html', sel)；mutHandle → _zwNodeParent
+// 逐跳上行），不从子节点上行（R53 两版教训：pending 树 sel 链断在未 apply 的容器上）。
+#[test]
+fn r54_detached_container_subtree_not_in_document_collection() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='a'></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r54".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // spec：getElementsByTagName 只返主文档节点。append 到 detached 容器（未挂主文档）的
+    // 元素不得出现在文档级集合里；同批 append 到主文档的元素正常进。
+    sandbox
+        .execute(
+            "var doc = document;\n\
+             var detachedDiv = doc.createElement('div');\n\
+             var p1 = doc.createElement('p');\n\
+             detachedDiv.appendChild(p1);\n\
+             var p2 = doc.createElement('p');\n\
+             doc.body.appendChild(p2);\n\
+             var ps = doc.getElementsByTagName('p');\n\
+             globalThis.__len = ps.length;\n\
+             globalThis.__hasDetached = Array.prototype.indexOf.call(ps, p1);\n\
+             globalThis.__hasInDoc = Array.prototype.indexOf.call(ps, p2);\n\
+             globalThis.__hasInDoc2 = Array.prototype.indexOf.call(ps, p2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__len").unwrap().value,
+        "1",
+        "R54：集合 = [p2]（主文档 append），detached 容器的 p 不进文档级集合"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasDetached").unwrap().value,
+        "-1",
+        "R54：detached 子 p1 不在集合（构建期并入过滤）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__hasInDoc").unwrap().value,
+        "0",
+        "R54：主文档 append 的 p2 正常入集（index 0）"
+    );
+}
+
+// R54 场景 2：集合先建（含快照基线），后续 append 到 detached 容器——失效循环 add 分支
+// 同样过滤（挂载点判定 false → 不并入）。R53 泄漏的精确模式。
+#[test]
+fn r54_invalidate_add_branch_filters_detached_growth() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><p id='base'>one</p></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r54b".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 集合先建（els=[#base] 快照基线），再向 detached 容器 append 多轮 <p>——集合长度
+    // 必须保持 1（旧实现每 append 并入 → els 净增长 → O(els) 失效级联）。
+    sandbox
+        .execute(
+            "var doc = document;\n\
+             var ps = doc.getElementsByTagName('p');\n\
+             var holder = doc.createElement('div');\n\
+             for (var i = 0; i < 5; i++) {\n\
+               var p = doc.createElement('p');\n\
+               holder.appendChild(p);\n\
+             }\n\
+             globalThis.__lenBefore = ps.length;\n\
+             doc.body.appendChild(holder);\n\
+             globalThis.__lenAfterMount = ps.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__lenBefore").unwrap().value,
+        "1",
+        "R54：detached append 期间集合长度不变（els 不泄漏增长）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__lenAfterMount").unwrap().value,
+        "6",
+        "R54：holder 挂入主文档后子树 <p> 全部可见（1 基线 + 5 新增）"
+    );
+}
+
+// R54 场景 3：构建期 pending 并入过滤——pending 表里的 detached 容器子树节点在
+// _zwMakeCollection 构建时不并入（_zwNodeParent 反链挂载点判定）。
+#[test]
+fn r54_build_time_pending_merge_skips_detached() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><section id='s'></section></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r54c".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 先 append 到 detached 容器（入 pending 表），再取集合——pending 并入须按挂载点过滤。
+    // 对照：同 tag 的主文档 append 正常并入。
+    sandbox
+        .execute(
+            "var doc = document;\n\
+             var foreign = doc.createElement('div');\n\
+             var q1 = doc.createElement('q');\n\
+             foreign.appendChild(q1);\n\
+             var q2 = doc.createElement('q');\n\
+             doc.getElementById('s').appendChild(q2);\n\
+             var qs = doc.getElementsByTagName('q');\n\
+             globalThis.__qlen = qs.length;\n\
+             globalThis.__qHasForeign = Array.prototype.indexOf.call(qs, q1);\n\
+             globalThis.__qHasInDoc = Array.prototype.indexOf.call(qs, q2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__qlen").unwrap().value,
+        "1",
+        "R54：构建期 pending 并入过滤——detached 容器的 <q> 不进集合"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__qHasForeign").unwrap().value,
+        "-1",
+        "R54：foreign 子 q1 不在集合"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__qHasInDoc").unwrap().value,
+        "0",
+        "R54：主文档 #s 下的 q2 正常入集"
+    );
+}

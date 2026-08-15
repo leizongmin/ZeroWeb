@@ -3226,6 +3226,9 @@
         }
         for (var _pa = 0; _pa < _zwPendingAdded.length; _pa++) {
           var _pnd = _zwPendingAdded[_pa];
+          // R54：构建期并入同款主文档过滤（走 `_zwNodeParent` 挂载记账链——append 当时写入，
+          // 不断链；detached/foreign 容器根无链 → false）。
+          if (_pnd && _pnd.__zwHandle && !_zwMutationInDoc(null, _pnd.__zwHandle)) continue;
           var _pm = false;
           try { _pm = liveSpec.matches(_pnd); } catch (_e) { _pm = false; }
           if (_pm) {
@@ -3495,6 +3498,34 @@
       for (var i = 0; i < kids.length; i++) _zwHCCollectSubtree(kids[i], out);
     }
   }
+  // js-dom M4 R54：本次 mutation 的挂载点是否在**主文档**内（live collection 并入过滤——
+  // 失效循环 add 分支与 _zwMakeCollection 构建期共用）。R53 教训：不能从子节点上行（pending 树
+  // sel 链断在未 apply 的容器上——两版尝试都误清快照基线）；本版从**挂载点**判定：
+  // ① mutSel 非空 → `__zw_contains('html', mutSel)`（host 快照一查，含自身）；
+  // ② mutHandle（handle 父）→ 沿 `_zwNodeParent` **一跳一跳**上行（每跳是挂载当时刚记账的
+  //    链，不会断），遇 parentSel 走 ①；无链（detachedDiv/foreignDoc 系容器根）→ false。
+  // 过滤只作用于**并入**（detached/foreign 容器子树不进文档级集合——spec：getElementsByTagName
+  // 只返主文档节点）；els 快照基线与 removed 剔除路径完全不动（R50 own-props 语义零影响）。
+  function _zwMutationInDoc(mutSel, mutHandle) {
+    var s = mutSel || null, h = mutHandle || null, guard = 0;
+    while (guard++ < 8) {
+      if (s) {
+        if (s === 'html' || s === 'body' || s === 'head') return true;
+        if (typeof __zw_contains === 'function') {
+          try { if (__zw_contains('html', s) === '1') return true; } catch (_e) {}
+        }
+        return false;
+      }
+      if (!h) return false;
+      var link = _zwNodeParent[h];
+      if (!link) return false;
+      if (link.parentSel) { s = link.parentSel; h = null; continue; }
+      if (link.parentHandle) { h = link.parentHandle; continue; }
+      return false;
+    }
+    return false;
+  }
+
   function _zwHCLiveInvalidate(addedNodes, removedNodes, mutSel, mutHandle) {
     // R51c：全局 removed 表软上限压实——无 __zwSelector 的条目是 handle-only 节点（host 快照
     // 结构上不可能含它们：快照条目皆有 selector），剔除恒 no-op，纯死数据。WPT testharness 每
@@ -3598,6 +3629,9 @@
         }
       }
     }
+    // R54：本批挂载点非主文档（detached/foreign 容器）→ 子树不并入文档级 live collection
+    //（els 泄漏源；els 快照基线与 removed 剔除路径不动）。
+    var _r54InDoc = _zwMutationInDoc(mutSel, mutHandle);
     for (var i = 0; i < _zwLiveCollections.length; i++) {
       var lc = _zwLiveCollections[i];
       if (remFlat.length) {
@@ -3610,7 +3644,7 @@
         }
         if (out.length !== els.length) lc.replace(out);
       }
-      if (addFlat.length) {
+      if (addFlat.length && _r54InDoc) {
         for (var a = 0; a < addFlat.length; a++) {
           var nd = addFlat[a];
           if (!nd) continue;
