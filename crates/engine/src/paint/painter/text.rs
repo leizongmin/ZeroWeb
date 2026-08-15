@@ -1234,7 +1234,12 @@ impl super::Painter {
                     // 宏化渲染逻辑，避免重复代码
                     macro_rules! render_fragment {
                         ($frag_x:expr, $frag_y:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr) => {{
-                            self.painted_inline_nodes.insert($frag_nid);
+                            // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
+                            // Its parent IFC emits an empty placeholder solely for positioning; the
+                            // inline-block's own box must still paint its text.
+                            if !$frag_text.is_empty() {
+                                self.painted_inline_nodes.insert($frag_nid);
+                            }
 
                             // R358：per-fragment color（带 abs-pos guard）。
                             // 非多列路径此前所有片段用容器 color（丢失 span 自身 color，

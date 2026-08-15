@@ -833,10 +833,17 @@ mod tests {
 
     /// The renderer process must retain and paint nested content inserted by a page script.
     #[test]
-    fn page_script_inner_html_append_updates_webview_frame() {
+    fn page_script_nested_append_updates_webview_frame() {
         let html = r#"<html><body><div id="score"></div><script>
             var panel = document.createElement('div');
-            panel.innerHTML = '<h2><span>Your browser scores</span><strong>265</strong></h2>';
+            var heading = document.createElement('h2');
+            var prefix = document.createElement('span');
+            prefix.textContent = 'Your browser scores';
+            var score = document.createElement('strong');
+            score.textContent = '265';
+            heading.appendChild(prefix);
+            heading.appendChild(score);
+            panel.appendChild(heading);
             document.querySelector('#score').appendChild(panel);
         </script></body></html>"#;
         let page_url = "https://zero.test/score";
@@ -870,6 +877,38 @@ mod tests {
             "nested score text must reach the renderer frame"
         );
         worker.shutdown();
+    }
+
+    #[test]
+    fn styled_inline_block_heading_paints_text() {
+        let css = r#"
+            .pointsPanel { background: #fff; min-height: 145px; padding: 0 155px 0 0; }
+            .pointsPanel h2 { font-size: 2.3em; color: #aaa; text-align: center; line-height: 40px; margin: 0; }
+            .pointsPanel h2 > strong, .pointsPanel h2 > span {
+                display: inline-block;
+                vertical-align: middle;
+                transform: translateY(6px);
+            }
+            .pointsPanel h2 > strong {
+                font-weight: normal;
+                font-size: 3.8em;
+                color: #0092bf;
+                line-height: 145px;
+                margin: 0 10px;
+            }
+        "#;
+        let html = r#"<html><body><div class="pointsPanel"><h2><span>Your browser scores</span><strong>265</strong><span>out of 586 points</span></h2></div></body></html>"#;
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        let result = webview.load_html(html, Some(css));
+
+        assert!(
+            result
+                .primitives
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.glyph_id == '2' as u32),
+            "inline-block heading score must produce a glyph"
+        );
     }
 
     fn set_checked_for_test(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) {
