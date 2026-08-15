@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use rquickjs::function::{Opt, This};
-use rquickjs::{Ctx, Function, Object, Persistent, Value};
+use rquickjs::{Ctx, FromJs, Function, Object, Persistent, Value};
 use slotmap::{Key, KeyData};
 use zero_dom::{Document, NodeId, NodeKind};
 
@@ -178,12 +178,43 @@ fn local_name_getter<'js>(this: This<Object<'js>>) -> String {
 
 /// `textContent` getter（spec `dom-node-textcontent`）：子树文本拼接
 /// （`Document::text_content` 递归收集后代 Text 节点）。空子树 → ""。
-/// S1q 只读版（setter 属 S2q 写入族）。
 fn text_content_getter<'js>(this: This<Object<'js>>) -> String {
     let Some(id) = node_id_of(&this.0) else {
         return String::new();
     };
     with_dom(|d| d.text_content(id)).flatten().unwrap_or_default()
+}
+
+/// `textContent` setter（spec `dom-node-textcontent`，S2q 写入族；镜像 V8
+/// `native_text_content_setter`）：值 ToString 后**清空全部子节点**，非空则追加单
+/// Text 节点。**null → 空串**（spec `LegacyNullToEmptyString`——`el.textContent=null`
+/// 清子，非写 "null" 文本）。Coerced<String> 的 JS ToString 对 null 产出 "null" 字面
+/// 量（不可区分），故 setter 收 `Value` 手动判 null/undefined 再 coerce。
+fn text_content_setter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, value: Value<'js>) {
+    let Some(id) = node_id_of(&this.0) else {
+        return;
+    };
+    // null/undefined → 空串（清子语义）；其余 → ToString（Coerced 转换，null 已被上面截获）。
+    let val: String = if value.is_null() || value.is_undefined() {
+        String::new()
+    } else {
+        match rquickjs::Coerced::<String>::from_js(&ctx, value) {
+            Ok(v) => v.0,
+            Err(_) => String::new(),
+        }
+    };
+    with_dom_mut(|d| {
+        // 移除全部子节点（先收集 NodeId 避免边遍历边改——同 V8 实现注记）。
+        let children = d.child_nodes(id);
+        for c in children {
+            let _ = d.remove_child(id, c);
+        }
+        // 非空 → 追加单 Text 节点。
+        if !val.is_empty() {
+            let text_id = d.create_text_node(&val);
+            let _ = d.append_child(id, text_id);
+        }
+    });
 }
 
 /// 读元素的反射内容属性（attr_name effective——HTML 小写/SVG 原样由 dom 层处理）；
@@ -354,7 +385,12 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     )?;
     obj.prop("namespaceURI", Accessor::from(namespace_uri_getter).configurable())?;
     obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
-    obj.prop("textContent", Accessor::from(text_content_getter).configurable())?;
+    obj.prop(
+        "textContent",
+        Accessor::from(text_content_getter)
+            .set(text_content_setter)
+            .configurable(),
+    )?;
     // S1q 字符串反射族（title/lang/accessKey）。
     obj.prop(
         "title",
@@ -479,6 +515,17 @@ mod tests {
             );
             assert_eq!(eval_str("__zw_native_element_for_id('main').localName"), "div");
             assert_eq!(eval_str("__zw_native_element_for_id('main').textContent"), "hi");
+            // S2q textContent setter：替换子树 + null 清子（LegacyNull 语义）+ 读回闭环。
+            assert_eq!(
+                eval_str("(__zw_native_element_for_id('main').textContent = 'new text', 1)"),
+                "1"
+            );
+            assert_eq!(eval_str("__zw_native_element_for_id('main').textContent"), "new text");
+            assert_eq!(
+                eval_str("(__zw_native_element_for_id('main').textContent = null, 1)"),
+                "1"
+            );
+            assert_eq!(eval_str("__zw_native_element_for_id('main').textContent"), "");
             // className setter 写 live Document + getter 读回（S1q 读写闭环）。
             assert_eq!(
                 eval_str("(__zw_native_element_for_id('main').className = 'x y', 1)"),
