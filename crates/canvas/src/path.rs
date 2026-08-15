@@ -111,6 +111,10 @@ impl Path2D {
         // 段把当前点拉进填充，2d.path.roundrect.* 的圆角外像素被误填）。
         self.commands.push(PathCommand::MoveTo(x, y));
         self.commands.push(PathCommand::RoundRect(x, y, w, h, radii));
+        // R56i（M8/DC-8）：spec roundRect 是**闭合子路径**——显式 ClosePath 标记
+        //（stroke 的环绕 join / cap 语义按此判定；flatten 的 ClosePath arm 有
+        // 距离守卫，末角终点 == 子路径起点时不 push 额外段，fill 无影响）。
+        self.commands.push(PathCommand::ClosePath);
     }
 
     /// 返回路径命令数量。

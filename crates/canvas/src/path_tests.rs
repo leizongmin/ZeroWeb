@@ -524,7 +524,7 @@ fn test_path_command_generation() {
 
     let commands = path.commands();
     // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
-    assert_eq!(commands.len(), 10);
+    assert_eq!(commands.len(), 11); // R56i: roundRect 自带 ClosePath
 
     // 验证每个命令的类型和参数
     match &commands[0] {
@@ -609,6 +609,12 @@ fn test_path_command_generation() {
     }
 
     match &commands[9] {
+        PathCommand::ClosePath => {}
+        _ => panic!("Expected ClosePath command"),
+    }
+
+    // R56i：roundRect 自带 ClosePath 后，用户 close_path 顺延到 [10]。
+    match &commands[10] {
         PathCommand::ClosePath => {}
         _ => panic!("Expected ClosePath command"),
     }

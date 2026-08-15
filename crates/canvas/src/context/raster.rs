@@ -1881,7 +1881,17 @@ impl CanvasContext {
         let half_lw = line_width / 2.0;
 
         // 将线段顶点列表转为 (x1,y1,x2,y2) 段列表
-        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        // R56i（M8/DC-8）：spec dom-context-2d-stroke——零长线段在 stroke 前**剪除**
+        //（2d.path.stroke.prune.*：moveTo(50,25)+lineTo(50,25) 的零长段不得画
+        // round cap 圆盘——剪除后段列表为空则无 cap/join）。
+        let segments: Vec<[f32; 4]> = vertices
+            .chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .filter(|seg| {
+                let len = (seg[2] - seg[0]).hypot(seg[3] - seg[1]);
+                len > f32::EPSILON
+            })
+            .collect();
         if segments.is_empty() {
             return;
         }
@@ -1945,9 +1955,15 @@ impl CanvasContext {
         // 矩形往返线端点的 180° 角不得覆盖端点外区域（zero.4）。join 形状按 lineJoin 真实
         // 几何（miter 尖角三角 / bevel 平切三角 / round 圆盘）——旧方块近似把 90° miter
         // 画成 400×400 方块，覆盖角点外大片区域（2d.line.cap.closed/join.open 等失败）。
-        for i in 0..segments.len().saturating_sub(1) {
+        // R56i：closed 时环绕 join（末段→首段——roundRect 闭合环的起点 join）。
+        let join_count = if closed {
+            segments.len()
+        } else {
+            segments.len().saturating_sub(1)
+        };
+        for i in 0..join_count {
             let seg_a = segments[i];
-            let seg_b = segments[i + 1];
+            let seg_b = segments[(i + 1) % segments.len()];
             if !self.join_visible(&seg_a, &seg_b) {
                 continue;
             }
@@ -2056,7 +2072,17 @@ impl CanvasContext {
             return;
         }
         let half_lw = line_width / 2.0;
-        let segments: Vec<[f32; 4]> = vertices.chunks_exact(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
+        // R56i（M8/DC-8）：spec dom-context-2d-stroke——零长线段在 stroke 前**剪除**
+        //（2d.path.stroke.prune.*：moveTo(50,25)+lineTo(50,25) 的零长段不得画
+        // round cap 圆盘——剪除后段列表为空则无 cap/join）。
+        let segments: Vec<[f32; 4]> = vertices
+            .chunks_exact(4)
+            .map(|c| [c[0], c[1], c[2], c[3]])
+            .filter(|seg| {
+                let len = (seg[2] - seg[0]).hypot(seg[3] - seg[1]);
+                len > f32::EPSILON
+            })
+            .collect();
         if segments.is_empty() {
             return;
         }
@@ -2106,9 +2132,15 @@ impl CanvasContext {
             }
         }
         // 连接点（R34xx：同 blit_stroke_to_pixels 真实 join 几何；共线角不画）
-        for i in 0..segments.len().saturating_sub(1) {
+        // R56i：closed 时环绕 join（末段→首段——roundRect 闭合环的起点 join）。
+        let join_count = if closed {
+            segments.len()
+        } else {
+            segments.len().saturating_sub(1)
+        };
+        for i in 0..join_count {
             let seg_a = segments[i];
-            let seg_b = segments[i + 1];
+            let seg_b = segments[(i + 1) % segments.len()];
             if !self.join_visible(&seg_a, &seg_b) {
                 continue;
             }

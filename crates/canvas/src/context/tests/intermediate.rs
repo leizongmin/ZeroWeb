@@ -322,7 +322,8 @@ fn test_path_round_rect_command() {
     let mut p = Path2D::new();
     p.round_rect(10.0, 20.0, 100.0, 50.0, vec![(5.0, 5.0)]);
     // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
-    assert_eq!(p.len(), 2);
+    // R56i：+显式 ClosePath（spec 闭合子路径标记）→ 3 命令。
+    assert_eq!(p.len(), 3);
     assert!(matches!(
         p.commands()[1],
         PathCommand::RoundRect(10.0, 20.0, 100.0, 50.0, ref r) if r == &vec![(5.0, 5.0)]
@@ -341,7 +342,8 @@ fn test_path_round_rect_different_radii() {
         vec![(5.0, 5.0), (10.0, 10.0), (15.0, 15.0), (20.0, 20.0)],
     );
     // R34xx：roundRect 含 MoveTo + RoundRect 两命令（新子路径）。
-    assert_eq!(p.len(), 2);
+    // R56i：+显式 ClosePath（spec 闭合子路径标记）→ 3 命令。
+    assert_eq!(p.len(), 3);
     if let PathCommand::RoundRect(x, y, w, h, ref radii) = p.commands()[1] {
         assert!((x).abs() < f32::EPSILON);
         assert!((y).abs() < f32::EPSILON);

@@ -2058,3 +2058,19 @@ fn test_curve_adaptive_segments_and_boundary_pixel_r56h() {
     assert_eq!(g2(50, 25), 255, "quad midpoint stroked");
     assert_eq!(g2(1, 1), 255, "quad boundary pixel (1,1) stroked");
 }
+
+// R56i（M8/DC-8）：roundRect 闭合环绕 join——退化矩形 4 段在画布外、
+// lineWidth 200 时起点 join（环绕）须覆盖画布中心。
+#[test]
+fn test_roundrect_closed_wraparound_join_r56i() {
+    let mut ctx = ctx_with_pixels(100, 50);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx.line_width = 200.0;
+    ctx.set_stroke_color(Color::rgba(0, 255, 0, 255));
+    ctx.begin_path();
+    ctx.round_rect(100.0, 50.0, 100.0, 100.0, vec![(0.0, 0.0)]);
+    ctx.stroke();
+    let g = |x: u32, y: u32| ctx.pixel_buffer[((y * 100) + x) as usize * 4 + 1];
+    assert_eq!(g(50, 25), 255, "wrap-around join covers canvas center");
+}
