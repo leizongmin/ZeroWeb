@@ -374,7 +374,54 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
             .configurable()
             .enumerable(),
     )?;
+    // S2q 属性方法族（spec `dom-element-getattribute` 家族；镜像 V8 factories 面）。
+    // Function prop 非 enumerable（与 V8 ObjectTemplate 方法一致——Object.keys 不受扰）。
+    obj.prop("getAttribute", Function::new(ctx.clone(), get_attribute_method)?)?;
+    obj.prop("setAttribute", Function::new(ctx.clone(), set_attribute_method)?)?;
+    obj.prop("removeAttribute", Function::new(ctx.clone(), remove_attribute_method)?)?;
+    obj.prop("hasAttribute", Function::new(ctx.clone(), has_attribute_method)?)?;
     Ok(obj)
+}
+
+// ── S2q 属性方法族（具名 fn + This<Object>；镜像 V8 dom_bindings 方法面）──
+
+/// `getAttribute(name)`（spec `dom-element-getattribute`）：missing → JS null
+///（区别空串值；V8 版同语义）。name 经 Coerced ToString；HTML 小写化由 dom 层
+/// `attr_name_effective` 处理。
+fn get_attribute_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, name: rquickjs::Coerced<String>) -> Value<'js> {
+    match reflected_attr_string_of(&this.0, &name.0) {
+        Some(v) => match rquickjs::String::from_str(ctx.clone(), &v) {
+            Ok(s) => s.into_value(),
+            Err(_) => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `setAttribute(name, value)`（spec `dom-element-setattribute`）。
+fn set_attribute_method<'js>(
+    this: This<Object<'js>>,
+    name: rquickjs::Coerced<String>,
+    value: rquickjs::Coerced<String>,
+) {
+    set_reflected_attr(&this.0, &name.0, &value.0);
+}
+
+/// `removeAttribute(name)`（spec `dom-element-removeattribute`）：真移除
+///（区别 set 空串——布尔属性 unset 语义；镜像 V8 RemoveAttr OnHandle 修正）。
+fn remove_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<String>) {
+    let Some(id) = node_id_of(&this.0) else {
+        return;
+    };
+    with_dom_mut(|d| d.remove_attribute(id, &name.0));
+}
+
+/// `hasAttribute(name)`（spec `dom-element-hasattribute`）。
+fn has_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<String>) -> bool {
+    let Some(id) = node_id_of(&this.0) else {
+        return false;
+    };
+    with_dom(|d| d.has_attribute(id, &name.0)).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -447,6 +494,35 @@ mod tests {
             assert_eq!(eval_str("__zw_native_element_for_id('main').lang"), "zh");
             assert_eq!(eval_str("(__zw_native_element_for_id('main').accessKey = 'k', 1)"), "1");
             assert_eq!(eval_str("__zw_native_element_for_id('main').accessKey"), "k");
+
+            // S2q 属性方法族：get/set/remove/hasAttribute（missing → null；remove 真移除）。
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').getAttribute('data-x')"),
+                "null"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').setAttribute('data-x', '1'), 1"),
+                "1"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').getAttribute('data-x')"),
+                "1"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').hasAttribute('data-x')"),
+                "true"
+            );
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').removeAttribute('data-x'), \
+                          __zw_native_element_for_id('main').hasAttribute('data-x')"
+                ),
+                "false"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').getAttribute('data-x')"),
+                "null"
+            );
 
             // 2. 身份缓存：同 NodeId 返同对象（spec identity）。
             assert_eq!(
