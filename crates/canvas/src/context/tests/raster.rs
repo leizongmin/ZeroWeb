@@ -1706,3 +1706,160 @@ fn test_fill_rect_2x2_writes_pixels_r56() {
         ctx.pixel_buffer
     );
 }
+
+// ── R56c：fill rule（nonzero/evenodd）+ 绕组方向 测试 ──
+
+/// 辅助：读 (x,y) 像素 alpha（不透明度 255 = 完全填充）。
+fn pixel_alpha(ctx: &CanvasContext, x: u32, y: u32) -> u8 {
+    ctx.pixel_buffer[((y * ctx.width) + x) as usize * 4 + 3]
+}
+
+#[test]
+fn test_fill_rule_nonzero_nested_same_direction_r56c() {
+    // 2d.path.fill.winding.add 语义：嵌套同向子路径（外大矩形 + 内小矩形同向），
+    // nonzero 下绕组 ±2 ≠ 0 → 全部填充；旧偶奇配对会把内矩形挖成假洞。
+    let mut ctx = ctx_with_pixels(20, 20);
+    // 外矩形 (2,2)→(18,2)→(18,18)→(2,18)（顺时针，屏幕 y 向下）+ 内矩形 (6,6)→(14,6)→(14,14)→(6,14) 同向
+    let verts = [
+        2.0, 2.0, 18.0, 2.0, // 外上
+        18.0, 2.0, 18.0, 18.0, // 外右
+        18.0, 18.0, 2.0, 18.0, // 外下
+        2.0, 18.0, 2.0, 2.0, // 外左（闭合）
+        6.0, 6.0, 14.0, 6.0, // 内上
+        14.0, 6.0, 14.0, 14.0, // 内右
+        14.0, 14.0, 6.0, 14.0, // 内下
+        6.0, 14.0, 6.0, 6.0, // 内左（闭合）
+    ];
+    ctx.blit_path_to_pixels_rule(&verts, Color::rgba(255, 0, 0, 255), FillRule::NonZero);
+    // 两矩形之间（绕组 1）与内矩形中心（绕组 2）都应填充
+    assert_eq!(pixel_alpha(&ctx, 4, 4), 255, "between rects: winding 1 filled");
+    assert_eq!(
+        pixel_alpha(&ctx, 10, 10),
+        255,
+        "inner center: winding 2 filled (nonzero)"
+    );
+}
+
+#[test]
+fn test_fill_rule_nonzero_opposite_direction_hole_r56c() {
+    // 2d.path.fill.winding.subtract 语义：反向内矩形（逆时针）绕组对消 → 挖洞；
+    // 两矩形之间绕组 1 → 填充。
+    let mut ctx = ctx_with_pixels(20, 20);
+    let verts = [
+        2.0, 2.0, 18.0, 2.0, //
+        18.0, 2.0, 18.0, 18.0, //
+        18.0, 18.0, 2.0, 18.0, //
+        2.0, 18.0, 2.0, 2.0, //
+        6.0, 6.0, 6.0, 14.0, // 内矩形逆时针
+        6.0, 14.0, 14.0, 14.0, //
+        14.0, 14.0, 14.0, 6.0, //
+        14.0, 6.0, 6.0, 6.0, //
+    ];
+    ctx.blit_path_to_pixels_rule(&verts, Color::rgba(255, 0, 0, 255), FillRule::NonZero);
+    assert_eq!(pixel_alpha(&ctx, 4, 4), 255, "between rects filled");
+    assert_eq!(pixel_alpha(&ctx, 10, 10), 0, "inner hole: winding cancels to 0");
+}
+
+#[test]
+fn test_fill_rule_evenodd_double_rect_unfilled_r56c() {
+    // 2d.path.fill.winding.evenodd.1/2 语义：同一矩形画两遍，evenodd 下穿越 2 次
+    // = 偶 → 不填充（保持底色）；nonzero 下绕组 2 → 填充。
+    let mut ctx = ctx_with_pixels(20, 20);
+    let rect = [
+        2.0, 2.0, 18.0, 2.0, //
+        18.0, 2.0, 18.0, 18.0, //
+        18.0, 18.0, 2.0, 18.0, //
+        2.0, 18.0, 2.0, 2.0, //
+    ];
+    let mut double = rect.to_vec();
+    double.extend_from_slice(&rect);
+    ctx.blit_path_to_pixels_rule(&double, Color::rgba(255, 0, 0, 255), FillRule::EvenOdd);
+    assert_eq!(pixel_alpha(&ctx, 10, 10), 0, "evenodd: two crossings = unfilled");
+    // nonzero 同路径应填
+    let mut ctx2 = ctx_with_pixels(20, 20);
+    ctx2.blit_path_to_pixels_rule(&double, Color::rgba(255, 0, 0, 255), FillRule::NonZero);
+    assert_eq!(pixel_alpha(&ctx2, 10, 10), 255, "nonzero: winding 2 = filled");
+}
+
+#[test]
+fn test_fill_rule_evenodd_nested_hole_r56c() {
+    // evenodd 嵌套（一外一内，方向无关）：内矩形中心穿越 2 次 → 洞（与 nonzero
+    // 同向嵌套的差别即在此——evenodd 与方向无关）。
+    let mut ctx = ctx_with_pixels(20, 20);
+    let verts = [
+        2.0, 2.0, 18.0, 2.0, //
+        18.0, 2.0, 18.0, 18.0, //
+        18.0, 18.0, 2.0, 18.0, //
+        2.0, 18.0, 2.0, 2.0, //
+        6.0, 6.0, 14.0, 6.0, // 内同向（evenodd 无视方向）
+        14.0, 6.0, 14.0, 14.0, //
+        14.0, 14.0, 6.0, 14.0, //
+        6.0, 14.0, 6.0, 6.0, //
+    ];
+    ctx.blit_path_to_pixels_rule(&verts, Color::rgba(255, 0, 0, 255), FillRule::EvenOdd);
+    assert_eq!(pixel_alpha(&ctx, 4, 4), 255, "between rects: 1 crossing filled");
+    assert_eq!(pixel_alpha(&ctx, 10, 10), 0, "inner: 2 crossings = hole");
+}
+
+#[test]
+fn test_fill_rule_overlap_rects_semitransparent_r56c() {
+    // 2d.path.fill.overlap 语义：两重叠子路径一次 fill —— nonzero 下重叠区绕组 2
+    // 仍是一次填充（同一次 fill 内部不叠加 alpha，输出 rgba(0,127,0) 而非 0,64）。
+    // 旧偶奇配对把重叠区挖空。用整型 alpha 通道近似验证。
+    let mut ctx = ctx_with_pixels(20, 20);
+    // rect A (2,2)-(12,12)，rect B (8,8)-(18,18)（重叠区 (8,8)-(12,12)）
+    let verts = [
+        2.0, 2.0, 12.0, 2.0, //
+        12.0, 2.0, 12.0, 12.0, //
+        12.0, 12.0, 2.0, 12.0, //
+        2.0, 12.0, 2.0, 2.0, //
+        8.0, 8.0, 18.0, 8.0, //
+        18.0, 8.0, 18.0, 18.0, //
+        18.0, 18.0, 8.0, 18.0, //
+        8.0, 18.0, 8.0, 8.0, //
+    ];
+    // 半透明绿（alpha 128）叠透明确色底过于琐碎——此处底为透明 0，验证 alpha 即写值
+    ctx.blit_path_to_pixels_rule(&verts, Color::rgba(0, 255, 0, 128), FillRule::NonZero);
+    let overlap = pixel_alpha(&ctx, 10, 10);
+    let only_a = pixel_alpha(&ctx, 4, 4);
+    assert_eq!(overlap, 128, "overlap region alpha 128 (single fill, not 2 layers)");
+    assert_eq!(only_a, 128, "non-overlap alpha 128");
+}
+
+#[test]
+fn test_roundrect_single_axis_mirror_winding_r56c() {
+    // 2d.path.roundrect.winding 语义：单轴镜像（负 h）的 roundRect 与正参数矩形
+    // 绕向相反（真浏览器沿参数边方向环绕——R56c reverse_subpath 实证）。
+    // roundRect(10,10,20,20) + roundRect(10,30,20,-20)（参数角 bl，归一化后
+    // 同区域垂直镜像反向）nonzero 绕组对消 → 不填充。旧偶奇光栅无方向语义，
+    // 且旧 flatten 不反转——同区域反向对会整片误填（winding 用例四角全红）。
+    // 同区域反向：roundRect(10,10,20,20)（顺时针）+ roundRect(30,30,-20,-20)
+    //（负 w/h 双负=180° 旋转同向；用单轴 roundRect(10,10,-20,20) 会偏到 x∈[-10,10]
+    // 不同区域——WPT winding 用例的配对方式是 (0,0,50,50) vs (100,50,-50,-50)？
+    // 不——实测 2d.path.roundrect.winding 用的是 (0,25,100,-25) 单轴镜像 vs
+    // (0,0,50,50)：同区域须让参数角落在同一对角。此处取 (10,30,-20,20)：参数角
+    // (10,30)（tl），归一化包围盒 (−10,10)-(10,30) 仍偏。正确配对：
+    // roundRect(10,10,20,20) 与 roundRect(10,30,20,-20)（负 h，参数角 (10,30)
+    // = bl，包围盒 (10,10)-(30,30) 同区域、垂直镜像反向）。
+    let mut ctx = ctx_with_pixels(40, 40);
+    ctx.begin_path();
+    ctx.round_rect(10.0, 10.0, 20.0, 20.0, vec![(5.0, 5.0)]);
+    ctx.round_rect(10.0, 30.0, 20.0, -20.0, vec![(5.0, 5.0)]);
+    ctx.fill_with_rule(FillRule::NonZero);
+    // 同区域绕组对消 → 不填
+    let filled = (12..28).any(|y| (12..28).any(|x| pixel_alpha(&ctx, x, y) != 0));
+    assert!(!filled, "opposite-winding roundrects cancel under nonzero");
+    // evenodd 同路径也**不填**（crossing 计数偶 → outside；evenodd 无方向语义，
+    // 同区域反向对在两规则下都不填——与 nonzero 的区别要靠**同向**双矩形区分，
+    // 见 test_fill_rule_evenodd_double_rect_unfilled_r56c / nonzero 同路径填）。
+    let mut ctx2 = ctx_with_pixels(40, 40);
+    ctx2.begin_path();
+    ctx2.round_rect(10.0, 10.0, 20.0, 20.0, vec![(5.0, 5.0)]);
+    ctx2.round_rect(10.0, 30.0, 20.0, -20.0, vec![(5.0, 5.0)]);
+    ctx2.fill_with_rule(FillRule::EvenOdd);
+    let filled2 = (12..28).any(|y| (12..28).any(|x| pixel_alpha(&ctx2, x, y) != 0));
+    assert!(
+        !filled2,
+        "evenodd: same-region opposite pair = even crossings, unfilled"
+    );
+}

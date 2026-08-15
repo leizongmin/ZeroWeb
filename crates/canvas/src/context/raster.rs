@@ -121,6 +121,78 @@ fn sat(c: Rgb) -> f32 {
     c[0].max(c[1]).max(c[2]) - c[0].min(c[1]).min(c[2])
 }
 
+/// R56c（M8/DC-8）：反转向量尾部 [start..] 的段序列环绕方向——每段 (a→b) 变
+/// (b→a) 且整体倒序（子路径几何不变、绕组符号翻转；roundRect 单轴镜像用）。
+fn reverse_subpath(vertices: &mut Vec<f32>, start: usize) {
+    let segs = (vertices.len() - start) / 4;
+    if segs == 0 {
+        return;
+    }
+    let mut out = Vec::with_capacity(segs * 4);
+    for i in (0..segs).rev() {
+        let s = start + i * 4;
+        // 段 (p1 → p2) 反转为 (p2 → p1)
+        out.push(vertices[s + 2]);
+        out.push(vertices[s + 3]);
+        out.push(vertices[s]);
+        out.push(vertices[s + 1]);
+    }
+    vertices.truncate(start);
+    vertices.extend_from_slice(&out);
+}
+
+/// R56c（M8/DC-8）：填充规则（spec dom-context-2d-fill 的 fillRule 参数）。
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FillRule {
+    /// 非零环绕数（默认）。
+    NonZero,
+    /// 奇偶规则。
+    EvenOdd,
+}
+
+/// R56c（M8/DC-8）：按填充规则求扫描行填充区间。
+/// flatten 段序列（x1,y1,x2,y2 × n）与扫描线 sy 的交点：
+/// - NonZero（默认）：交点带方向（段向下 = +1 / 向上 = −1，屏幕 y 向下），按 x
+///   排序后累计绕组，绕组非零区间填充。嵌套同向子路径（绕组 ±2）与对角连线
+///   杂散交点在偶奇两两配对下都会破裂（挖假洞/漏填）。
+/// - EvenOdd：交点计数，奇偶切换填充区间。
+fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<(f32, f32)> {
+    let mut crossings: Vec<(f32, i32)> = Vec::new();
+    for seg in vertices.chunks_exact(4) {
+        let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
+        if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
+            let t = (sy - y1) / (y2 - y1);
+            let dir = if y2 > y1 { 1 } else { -1 };
+            crossings.push((x1 + t * (x2 - x1), dir));
+        }
+    }
+    crossings.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut spans = Vec::new();
+    match rule {
+        FillRule::NonZero => {
+            let mut winding: i32 = 0;
+            let mut span_start: Option<f32> = None;
+            for &(x, d) in &crossings {
+                let was_zero = winding == 0;
+                winding += d;
+                if was_zero && winding != 0 {
+                    span_start = Some(x);
+                } else if !was_zero && winding == 0 && let Some(s) = span_start.take() {
+                    spans.push((s, x));
+                }
+            }
+        }
+        FillRule::EvenOdd => {
+            let xs: Vec<f32> = crossings.iter().map(|&(x, _)| x).collect();
+            for pair in xs.chunks_exact(2) {
+                spans.push((pair[0], pair[1]));
+            }
+        }
+    }
+    spans
+}
+
 /// §10.3 SetSat——设饱和度为 s（保持各通道大小序，min→0/mid→插值/max→s）。
 fn set_sat(c: Rgb, s: f32) -> Rgb {
     let mut idx = [0usize, 1, 2];
@@ -360,6 +432,12 @@ impl CanvasContext {
         // 垂直镜像（负 h）tl↔bl/tr↔br，水平镜像（负 w）tl↔tr/bl↔br，双向即 180° 旋转。
         // 注意：镜像换位须在「展开到 4 角」之后做（radii 可能只有 1-3 项——
         // [a,b] 展开序 tl,tr,br,bl = a,b,a,b，先换位再展开会错角）。
+        //
+        // R56c（M8/DC-8）：记录 emit 起始——单轴镜像（恰好一负）时输出段序在函数
+        // 末尾整体反转（环绕方向翻转）。真浏览器 roundRect 沿**参数边方向**环绕：
+        // 负 w/h 单轴镜像的矩形与正参数矩形**反向**（roundrect.winding 实证——
+        // 左半顺 × 下半反 同区域绕组对消不填，偶奇光栅无方向语义故旧实现不暴露）。
+        let emit_start = vertices.len();
         let mut r = [(0.0f32, 0.0f32); 4];
         match radii.len() {
             0 => {}
@@ -417,6 +495,9 @@ impl CanvasContext {
                 vertices.push(corners[i].1);
                 vertices.push(corners[next].0);
                 vertices.push(corners[next].1);
+            }
+            if w_was_neg != h_was_neg {
+                reverse_subpath(vertices, emit_start);
             }
             return (corners[0].0, corners[0].1);
         }
@@ -476,6 +557,10 @@ impl CanvasContext {
             vertices.push(py);
             vertices.push(next_x);
             vertices.push(next_y);
+        }
+        // R56c：单轴镜像 → 段序反转（环绕方向沿参数边，见函数头注释）。
+        if w_was_neg != h_was_neg {
+            reverse_subpath(vertices, emit_start);
         }
 
         (start_x, start_y)
@@ -1611,6 +1696,11 @@ impl CanvasContext {
     pub(crate) fn blit_path_to_pixels(&mut self, vertices: &[f32], color: Color) {
         // R34xx（filters 渲染）：colorMatrix 滤镜作用于源色。
         let color = self.apply_filter_color(color);
+        self.blit_path_to_pixels_rule(vertices, color, FillRule::NonZero)
+    }
+
+    /// R56c：带填充规则的路径填充（fill("evenodd") 透传；默认封装保持 NonZero）。
+    pub(crate) fn blit_path_to_pixels_rule(&mut self, vertices: &[f32], color: Color, rule: FillRule) {
         if vertices.len() < 4 {
             return;
         }
@@ -1636,24 +1726,16 @@ impl CanvasContext {
         let y_end = max_y.min(canvas_h as f32).ceil() as u32;
 
         for scan_y in y_start..y_end {
-            let mut intersections: Vec<f32> = Vec::new();
             let sy = scan_y as f32 + 0.5;
-            // R56（M8/DC-8）：flatten 输出是「独立段」序列（x1,y1,x2,y2 每段 4 值），
-            // 不是多边形顶点链——旧 `points[i]↔points[i+1]` 连边在多子路径间产生
-            // 跨子路径虚假边（末点→次段首点），扫描线交点数变奇数致配对错位，
-            // roundRect 多子路径填充整片翻色（2d.path.roundrect.negative 实证）。
-            // 逐段独立判定穿越；同值段（圆角扇形首末重合）不产生穿越（半开区间）。
-            for seg in vertices.chunks_exact(4) {
-                let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
-                if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
-                    let t = (sy - y1) / (y2 - y1);
-                    intersections.push(x1 + t * (x2 - x1));
-                }
-            }
-            intersections.sort_by(|a, b| a.total_cmp(b));
-            for pair in intersections.chunks_exact(2) {
-                let ix_start = pair[0].max(0.0) as u32;
-                let ix_end = pair[1].min(canvas_w as f32) as u32;
+            // R56c（M8/DC-8）：nonzero fill rule（spec dom-context-2d-fill 默认）——
+            // 交点带方向符号（段向下 = +1 / 向上 = −1，屏幕 y 向下），按 x 排序后
+            // 累计绕组，非零区间填充。旧偶奇配对（排序后两两成对）对嵌套同向
+            // 子路径（winding.add：外矩形+同向内矩形，中心绕组 ±2）和对角连线
+            // 杂散交点都会配对破裂（挖出假洞/漏填）。
+            // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
+            for (ix_start_f, ix_end_f) in fill_rule_spans(vertices, sy, rule) {
+                let ix_start = ix_start_f.max(0.0) as u32;
+                let ix_end = ix_end_f.min(canvas_w as f32) as u32;
                 for scan_x in ix_start..ix_end {
                     // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                     if !self.clip_applies(scan_x as f32, scan_y as f32) {
@@ -1685,6 +1767,11 @@ impl CanvasContext {
     /// 路径渐变填充：扫描线光栅化，每像素按设备坐标采样样式颜色，应用 global_alpha + 当前合成操作
     ///（与 `blit_path_to_pixels` 同语义——R3236 起消费合成操作）。供渐变样式的 `fill` 路径使用。
     pub(crate) fn blit_path_gradient(&mut self, vertices: &[f32], style: &CanvasStyle) {
+        self.blit_path_gradient_rule(vertices, style, FillRule::NonZero)
+    }
+
+    /// R56c：带填充规则的渐变填充（fill("evenodd") 透传）。
+    pub(crate) fn blit_path_gradient_rule(&mut self, vertices: &[f32], style: &CanvasStyle, rule: FillRule) {
         if vertices.len() < 4 {
             return;
         }
@@ -1706,24 +1793,16 @@ impl CanvasContext {
         let y_start = min_y.max(0.0).ceil() as u32;
         let y_end = max_y.min(canvas_h as f32).ceil() as u32;
         for scan_y in y_start..y_end {
-            let mut intersections: Vec<f32> = Vec::new();
             let sy = scan_y as f32 + 0.5;
-            // R56（M8/DC-8）：flatten 输出是「独立段」序列（x1,y1,x2,y2 每段 4 值），
-            // 不是多边形顶点链——旧 `points[i]↔points[i+1]` 连边在多子路径间产生
-            // 跨子路径虚假边（末点→次段首点），扫描线交点数变奇数致配对错位，
-            // roundRect 多子路径填充整片翻色（2d.path.roundrect.negative 实证）。
-            // 逐段独立判定穿越；同值段（圆角扇形首末重合）不产生穿越（半开区间）。
-            for seg in vertices.chunks_exact(4) {
-                let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
-                if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
-                    let t = (sy - y1) / (y2 - y1);
-                    intersections.push(x1 + t * (x2 - x1));
-                }
-            }
-            intersections.sort_by(|a, b| a.total_cmp(b));
-            for pair in intersections.chunks_exact(2) {
-                let ix_start = pair[0].max(0.0) as u32;
-                let ix_end = pair[1].min(canvas_w as f32) as u32;
+            // R56c（M8/DC-8）：nonzero fill rule（spec dom-context-2d-fill 默认）——
+            // 交点带方向符号（段向下 = +1 / 向上 = −1，屏幕 y 向下），按 x 排序后
+            // 累计绕组，非零区间填充。旧偶奇配对（排序后两两成对）对嵌套同向
+            // 子路径（winding.add：外矩形+同向内矩形，中心绕组 ±2）和对角连线
+            // 杂散交点都会配对破裂（挖出假洞/漏填）。
+            // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
+            for (ix_start_f, ix_end_f) in fill_rule_spans(vertices, sy, rule) {
+                let ix_start = ix_start_f.max(0.0) as u32;
+                let ix_end = ix_end_f.min(canvas_w as f32) as u32;
                 for scan_x in ix_start..ix_end {
                     // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                     if !self.clip_applies(scan_x as f32, scan_y as f32) {

@@ -779,6 +779,12 @@ impl CanvasContext {
 
     /// 填充路径。将路径命令扁平化为顶点列表，生成路径填充图元。
     pub fn fill(&mut self) {
+        // R56c：默认 nonzero（spec dom-context-2d-fill）。
+        self.fill_with_rule(super::raster::FillRule::NonZero);
+    }
+
+    /// R56c：带填充规则的路径填充（fill("evenodd") 透传）。
+    pub fn fill_with_rule(&mut self, rule: super::raster::FillRule) {
         let vertices = self.flatten_path();
         if vertices.is_empty() {
             return;
@@ -799,11 +805,11 @@ impl CanvasContext {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
             let style = self.transform_gradient(&self.fill_style);
-            self.blit_path_gradient(&vertices, &style);
+            self.blit_path_gradient_rule(&vertices, &style, rule);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), color);
-            self.blit_path_to_pixels(&vertices, color);
+            self.blit_path_to_pixels_rule(&vertices, color, rule);
         }
         // R34xx：source 独占类 composite 的未覆盖区域清除（path 外置透明）。
         if clear_uncovered {
@@ -849,6 +855,11 @@ impl CanvasContext {
 
     /// 使用指定 Path2D 填充路径。
     pub fn fill_with_path(&mut self, path: &Path2D) {
+        self.fill_path_with_rule(path, super::raster::FillRule::NonZero)
+    }
+
+    /// R56c：带填充规则的 Path2D 填充。
+    pub fn fill_path_with_rule(&mut self, path: &Path2D, rule: super::raster::FillRule) {
         let vertices = self.flatten_path_for(path);
         if vertices.is_empty() {
             return;
@@ -866,11 +877,11 @@ impl CanvasContext {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), approx);
             let style = self.transform_gradient(&self.fill_style);
-            self.blit_path_gradient(&vertices, &style);
+            self.blit_path_gradient_rule(&vertices, &style, rule);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_path_fill(vertices.clone(), color);
-            self.blit_path_to_pixels(&vertices, color);
+            self.blit_path_to_pixels_rule(&vertices, color, rule);
         }
     }
 

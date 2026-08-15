@@ -13,6 +13,8 @@ mod types;
 // Re-export all public items so `pub use context::*` in lib.rs works unchanged.
 pub use offscreen::*;
 pub use types::*;
+// R56c：fillRule 透传（fill("evenodd")）——engine host op 消费。
+pub use raster::FillRule;
 
 #[cfg(test)]
 mod tests;

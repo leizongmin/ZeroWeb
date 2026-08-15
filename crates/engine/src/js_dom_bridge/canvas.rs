@@ -548,8 +548,15 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             "ok".into()
         }
         "fill" => {
+            // R56c：fillRule 透传（spec dom-context-2d-fill——"evenodd" 奇偶 / 缺省 nonzero）。
+            // shim 无 path 形式把 rule 发 args[0]（有 path 的 fillPath 才是 args[1]）。
+            let rule = if arg(0).trim() == "evenodd" {
+                zero_canvas::FillRule::EvenOdd
+            } else {
+                zero_canvas::FillRule::NonZero
+            };
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.fill();
+                ctx.fill_with_rule(rule);
             }
             "ok".into()
         }
@@ -1536,8 +1543,14 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         // ctx.fill(path)/stroke(path)/clip(path)：path id 为 args[0]，ctx 来自 handle。
         "fillPath" => {
+            // R56c：fillRule 透传（fill(Path2D, fillRule)）。
+            let rule = if arg(1).trim() == "evenodd" {
+                zero_canvas::FillRule::EvenOdd
+            } else {
+                zero_canvas::FillRule::NonZero
+            };
             if let (Some(ctx), Some(path)) = (reg.contexts.get_mut(&hid()), reg.paths.get(&pid())) {
-                ctx.fill_path(path);
+                ctx.fill_path_with_rule(path, rule);
             }
             "ok".into()
         }

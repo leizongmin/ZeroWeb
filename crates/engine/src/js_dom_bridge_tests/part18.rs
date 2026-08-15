@@ -658,3 +658,114 @@ fn r55_reregister_invalidates_base_cache() {
         "R55：重注册后基底缓存失效，读到新快照 'new'（旧缓存会返回 'old'）"
     );
 }
+
+// R56c（M8/DC-8）：fill(fillRule) 透传端到端——evenodd/缺省 nonzero 两形式。
+// driving: 2d.path.fill.winding.evenodd.1（ctx.fill("evenodd")）/ .2（fill(path,"evenodd")）
+// / 2d.path.fill.winding.add（缺省 nonzero 嵌套同向叠加）。
+#[test]
+fn test_fill_rule_passthrough_r56c() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r56c".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // evenodd.1 场景：绿底 + 同一矩形两遍 + fill("evenodd") → 中心保持绿（不填红）。
+    sandbox.execute(
+        "var cv = document.getElementById('cv');\
+         var ctx = cv.getContext('2d');\
+         ctx.fillStyle = '#0f0';\
+         ctx.fillRect(0, 0, 100, 50);\
+         ctx.beginPath();\
+         ctx.rect(0, 0, 100, 50);\
+         ctx.rect(0, 0, 100, 50);\
+         ctx.fillStyle = '#f00';\
+         ctx.fill('evenodd');\
+         globalThis.__ee1 = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ee1").unwrap().value,
+        "0,255,0,255",
+        "fill('evenodd') 双矩形中心不填（保持绿底）——evenodd.1"
+    );
+
+    // evenodd.2 场景：Path2D 形式 fill(path, 'evenodd') 同语义。
+    sandbox.execute(
+        "ctx.fillStyle = '#0f0';\
+         ctx.fillRect(0, 0, 100, 50);\
+         var path = new Path2D();\
+         path.rect(0, 0, 100, 50);\
+         path.rect(0, 0, 100, 50);\
+         path.closePath();\
+         ctx.fillStyle = '#f00';\
+         ctx.fill(path, 'evenodd');\
+         globalThis.__ee2 = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ee2").unwrap().value,
+        "0,255,0,255",
+        "fill(path, 'evenodd') 双矩形中心不填——evenodd.2"
+    );
+
+    // winding.add 场景：缺省 nonzero 下嵌套同向矩形绕组 2 ≠ 0 → 全填（绿）。
+    sandbox.execute(
+        "ctx.fillStyle = '#f00';\
+         ctx.fillRect(0, 0, 100, 50);\
+         ctx.beginPath();\
+         ctx.moveTo(-10, -10);\
+         ctx.lineTo(110, -10);\
+         ctx.lineTo(110, 60);\
+         ctx.lineTo(-10, 60);\
+         ctx.lineTo(-10, -10);\
+         ctx.lineTo(0, 0);\
+         ctx.lineTo(100, 0);\
+         ctx.lineTo(100, 50);\
+         ctx.lineTo(0, 50);\
+         ctx.fillStyle = '#0f0';\
+         ctx.fill();\
+         globalThis.__add = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__add").unwrap().value,
+        "0,255,0,255",
+        "缺省 nonzero：嵌套同向绕组 2 仍填——winding.add"
+    );
+
+    // overlap 场景：半透明绿两重叠矩形一次 fill——重叠区单层 alpha 127（不叠加成 64）。
+    sandbox.execute(
+        "ctx.clearRect(0, 0, 100, 50);\
+         ctx.fillStyle = '#000';\
+         ctx.fillRect(0, 0, 100, 50);\
+         ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';\
+         ctx.beginPath();\
+         ctx.rect(0, 0, 100, 50);\
+         ctx.closePath();\
+         ctx.rect(10, 10, 80, 30);\
+         ctx.fill();\
+         globalThis.__ov = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    // WPT _assertPixelApprox 容差 1：0.5×255=127.5 的舍入取 127 或 128 都在容差内。
+    let ov = sandbox.execute("globalThis.__ov").unwrap().value;
+    let parts: Vec<i32> = ov.split(',').map(|v| v.parse().unwrap()).collect();
+    assert!(
+        parts == vec![0, 127, 0, 255] || parts == vec![0, 128, 0, 255],
+        "同次 fill 重叠区单层 alpha（~127 非 64）——fill.overlap，实际 {ov}"
+    );
+}
+
+
+
+
+
+

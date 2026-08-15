@@ -2195,9 +2195,19 @@
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
     //（用给定 Path2D 替代 ctx 当前路径）；无参走当前路径形式（既定）。
-    ctx._methods.fill = function (path) {
-      if (path && path._zwPath) __zw_canvas_op(h, 'fillPath', String(path._zwPath));
-      else __zw_canvas_op(h, 'fill');
+    ctx._methods.fill = function (path, fillRule) {
+      // R56c（M8/DC-8）：fillRule 透传（spec dom-context-2d-fill——fill(Path2D?, fillRule)，
+      // "evenodd" 奇偶 / 缺省 nonzero；非串值 ToString 后非 evenodd 按 spec 抛 TypeError——
+      // 现宽松回落 nonzero）。
+      // WebIDL 可选前置参省略：ctx.fill("evenodd") 时 fillRule 落在第一参位
+      //（2d.path.fill.winding.evenodd.1 的调用形式）——首参为字符串即嗅探为 rule。
+      if (typeof path === 'string' && fillRule === undefined) {
+        fillRule = path;
+        path = undefined;
+      }
+      var rule = (fillRule === undefined) ? '' : String(fillRule);
+      if (path && path._zwPath) __zw_canvas_op(h, 'fillPath', String(path._zwPath), rule);
+      else __zw_canvas_op(h, 'fill', rule);
     };
     ctx._methods.stroke = function (path) {
       if (path && path._zwPath) __zw_canvas_op(h, 'strokePath', String(path._zwPath));
