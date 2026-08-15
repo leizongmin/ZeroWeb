@@ -1101,7 +1101,7 @@ fn test_get_image_data_partially_out_of_bounds() {
 fn test_ellipse_via_context_generates_path_fills() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.begin_path();
-    ctx.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI);
+    ctx.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI, false);
     ctx.fill();
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
@@ -1114,7 +1114,7 @@ fn test_ellipse_via_context_generates_path_fills() {
 fn test_ellipse_identity_rotation() {
     let mut ctx = CanvasContext::new(200, 200);
     ctx.begin_path();
-    ctx.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU);
+    ctx.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU, false);
     ctx.fill();
     assert!(!ctx.primitives().path_fills.is_empty());
     let pf = &ctx.primitives().path_fills[0];
@@ -1130,7 +1130,7 @@ fn test_ellipse_identity_rotation() {
 fn test_ellipse_rotated_90_produces_different_vertices() {
     let mut ctx1 = CanvasContext::new(200, 200);
     ctx1.begin_path();
-    ctx1.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU);
+    ctx1.ellipse(100.0, 100.0, 40.0, 20.0, 0.0, 0.0, std::f32::consts::TAU, false);
     ctx1.fill();
     let v1 = ctx1.primitives().path_fills[0].vertices.clone();
 
@@ -1144,6 +1144,7 @@ fn test_ellipse_rotated_90_produces_different_vertices() {
         std::f32::consts::FRAC_PI_2,
         0.0,
         std::f32::consts::TAU,
+        false,
     );
     ctx2.fill();
     let v2 = ctx2.primitives().path_fills[0].vertices.clone();

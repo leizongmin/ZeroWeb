@@ -529,14 +529,15 @@ impl CanvasContext {
         // 2d.path.roundrect.* DOMPoint 用例 (20,1) 期望椭圆外）。
         const CORNER_SEGMENTS: usize = 16;
 
-        // R34xx：roundRect 是自包含子路径（round_rect 已 push MoveTo）——不连当前点；
-        // 首弧段由下方循环从 start 角开始输出（此处不额外 push，保持段对格式）。
-        let start_angle = corner_start[0];
-        let start_x = corner_cx[0] + r[0].0 * start_angle.cos();
-        let start_y = corner_cy[0] + r[0].1 * start_angle.sin();
-
-        // 遍历 4 个圆角（椭圆弧：x 用水平半径 r[c].0，y 用垂直半径 r[c].1）
-        for c in 0..4 {
+        // R34xx：roundRect 是自包含子路径（round_rect 已 push MoveTo）——不连当前点。
+        // R56h：子路径起点对齐 spec（dom-context-2d-roundrect）——subpath 从
+        // (x + tl, y)（上边左端）起环：顶边 → 右上角弧 → 右边 → 右下角弧 → 底边
+        // → 左下角弧 → 左边 → 左上角弧（闭合回起点）。旧实现从左上角弧的 π 角点
+        // (x, y+tl) 起环，roundRect 后 current 落在 (x, y+tl)——后续 lineTo 从错误
+        // 点出发（2d.path.roundrect.end.3 的 lineTo(-1,-1) 离画布像素 97px 漏覆盖）。
+        let start_x = x + r[0].0;
+        let start_y = y;
+        let emit_arc = |c: usize, vertices: &mut Vec<f32>| {
             let step = (corner_end[c] - corner_start[c]) / CORNER_SEGMENTS as f32;
             let mut px = corner_cx[c] + r[c].0 * corner_start[c].cos();
             let mut py = corner_cy[c] + r[c].1 * corner_start[c].sin();
@@ -560,6 +561,15 @@ impl CanvasContext {
             vertices.push(py);
             vertices.push(next_x);
             vertices.push(next_y);
+        };
+        // 顶边：(x + tl, y) → 右上角弧起点 (x + w − tr, y)。
+        vertices.push(start_x);
+        vertices.push(start_y);
+        vertices.push(x + w - r[1].0);
+        vertices.push(y);
+        // 遍历 4 个圆角（椭圆弧：x 用水平半径 r[c].0，y 用垂直半径 r[c].1）。
+        for c in 1..=4 {
+            emit_arc(c % 4, vertices);
         }
         // R56c：单轴镜像 → 段序反转（环绕方向沿参数边，见函数头注释）。
         if w_was_neg != h_was_neg {
@@ -641,8 +651,6 @@ impl CanvasContext {
                         subpath_start_y = cpy;
                         (cpx, cpy)
                     };
-                    current_x = sx0;
-                    current_y = sy0;
                     subpath_has_geometry = true;
                     // R56h（M8/DC-8）：段数自适应——控制点折线长 / 8px（[8,512]）。
                     // 固定 8 段对巨坐标曲线（bezierCurveTo.shape 控制折线 ~13000px）
@@ -926,6 +934,19 @@ impl CanvasContext {
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     subpath_has_geometry = true;
+                    // R56h：非恒等 CTM 同 Arc 模式——ellipse() 只变换圆心，用户半径/
+                    // 旋转/角度未经 CTM 缩放（scale(20,20) 的 rx=ry=5 椭圆在设备空间
+                    // 应成 r=100——旧路径画 5px 小圆，2d.path.isPointInStroke.
+                    // scaleddashes 的命中点距 100px 判负）。逆变换圆心 → 用户空间
+                    // 构造椭圆 → 输出逐点正变换。
+                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ellipse
+                    let t = &self.transform;
+                    let identity_ctm = (t.a - 1.0).abs() < 1e-9
+                        && (t.d - 1.0).abs() < 1e-9
+                        && t.b.abs() < 1e-9
+                        && t.c.abs() < 1e-9
+                        && t.e.abs() < 1e-9
+                        && t.f.abs() < 1e-9;
                     let cos_r = rotation.cos();
                     let sin_r = rotation.sin();
                     let angle_span = end_angle - start_angle;
@@ -937,6 +958,40 @@ impl CanvasContext {
                         let py = ry * sin_a;
                         (cx + px * cos_r - py * sin_r, cy + px * sin_r + py * cos_r)
                     };
+                    if !identity_ctm {
+                        let inv = self.transform.inverse();
+                        let (ucx, ucy) = inv.transform_point(cx, cy);
+                        let u_point = |angle: f32| -> (f32, f32) {
+                            let cos_a = angle.cos();
+                            let sin_a = angle.sin();
+                            let px = rx * cos_a;
+                            let py = ry * sin_a;
+                            (ucx + px * cos_r - py * sin_r, ucy + px * sin_r + py * cos_r)
+                        };
+                        let u_start = u_point(start_angle);
+                        if has_any_subpath {
+                            let (d_sx, d_sy) = self.transform.transform_point(u_start.0, u_start.1);
+                            vertices.push(current_x);
+                            vertices.push(current_y);
+                            vertices.push(d_sx);
+                            vertices.push(d_sy);
+                        } else {
+                            has_any_subpath = true;
+                        }
+                        let mut prev_dev = self.transform.transform_point(u_start.0, u_start.1);
+                        for i in 0..ARC_SEGMENTS {
+                            let u = u_point(start_angle + step * (i + 1) as f32);
+                            let dev = self.transform.transform_point(u.0, u.1);
+                            vertices.push(prev_dev.0);
+                            vertices.push(prev_dev.1);
+                            vertices.push(dev.0);
+                            vertices.push(dev.1);
+                            prev_dev = dev;
+                        }
+                        current_x = prev_dev.0;
+                        current_y = prev_dev.1;
+                        continue;
+                    }
                     let (mut px, mut py) = compute_point(start_angle);
                     for i in 0..ARC_SEGMENTS {
                         let angle = start_angle + step * (i + 1) as f32;
@@ -990,6 +1045,30 @@ impl CanvasContext {
             vertices.push(subpath_start_x);
             vertices.push(subpath_start_y);
         }
+        // R56h：stroke 语义零长段剪除（spec trace-a-path——零长线段不参与描边；
+        // round/butt 帽下退化子路径什么都不画，2d.path.stroke.prune.line/curve/arc）。
+        // fill 保持原样（零长段对扫描线填充无影响）。
+        if !close_open_subpaths {
+            let mut read = 0usize;
+            let mut write = 0usize;
+            while read + 3 < vertices.len() {
+                let (x0, y0, x1, y1) = (
+                    vertices[read],
+                    vertices[read + 1],
+                    vertices[read + 2],
+                    vertices[read + 3],
+                );
+                if (x1 - x0).abs() > f32::EPSILON || (y1 - y0).abs() > f32::EPSILON {
+                    vertices[write] = x0;
+                    vertices[write + 1] = y0;
+                    vertices[write + 2] = x1;
+                    vertices[write + 3] = y1;
+                    write += 4;
+                }
+                read += 4;
+            }
+            vertices.truncate(write);
+        }
         vertices
     }
 
@@ -1032,46 +1111,31 @@ impl CanvasContext {
                     current_y = y;
                 }
                 PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
-                    const SEGMENTS: usize = 8;
-                    let mut px = current_x;
-                    let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
-                        let mt = 1.0 - t;
-                        let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * x;
-                        let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * y;
-                        vertices.push(px);
-                        vertices.push(py);
-                        vertices.push(nx);
-                        vertices.push(ny);
-                        px = nx;
-                        py = ny;
-                    }
+                    // R56h：二次转三次 + 自适应细分（同 flatten_path_opts）。
+                    let (sx0, sy0) = (current_x, current_y);
+                    let c1x = sx0 + (cpx - sx0) * 2.0 / 3.0;
+                    let c1y = sy0 + (cpy - sy0) * 2.0 / 3.0;
+                    let c2x = x + (cpx - x) * 2.0 / 3.0;
+                    let c2y = y + (cpy - y) * 2.0 / 3.0;
+                    crate::path::flatten_bezier_adaptive(&mut vertices, sx0, sy0, c1x, c1y, c2x, c2y, x, y, 0.1, 0);
                     current_x = x;
                     current_y = y;
                 }
                 PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
-                    const SEGMENTS: usize = 8;
-                    let mut px = current_x;
-                    let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
-                        let mt = 1.0 - t;
-                        let nx = mt * mt * mt * current_x
-                            + 3.0 * mt * mt * t * cp1x
-                            + 3.0 * mt * t * t * cp2x
-                            + t * t * t * x;
-                        let ny = mt * mt * mt * current_y
-                            + 3.0 * mt * mt * t * cp1y
-                            + 3.0 * mt * t * t * cp2y
-                            + t * t * t * y;
-                        vertices.push(px);
-                        vertices.push(py);
-                        vertices.push(nx);
-                        vertices.push(ny);
-                        px = nx;
-                        py = ny;
-                    }
+                    // R56h：自适应细分（同 flatten_path_opts）。
+                    crate::path::flatten_bezier_adaptive(
+                        &mut vertices,
+                        current_x,
+                        current_y,
+                        cp1x,
+                        cp1y,
+                        cp2x,
+                        cp2y,
+                        x,
+                        y,
+                        0.1,
+                        0,
+                    );
                     current_x = x;
                     current_y = y;
                 }

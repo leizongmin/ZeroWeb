@@ -537,7 +537,7 @@ fn test_arc_to() {
 fn test_ellipse() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.begin_path();
-    ctx.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI * 2.0);
+    ctx.ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI * 2.0, false);
 }
 
 #[test]

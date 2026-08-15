@@ -659,7 +659,10 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "ellipse" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.ellipse(f(0), f(1), f(2), f(3), f(4), f(5), f(6));
+                // R56h：第 8 参 counterclockwise（spec dom-context-2d-ellipse——同
+                // arc 的 'true'/'false' 串约定；整椭圆走向依赖它）。
+                let ccw = matches!(arg(7).trim(), "true" | "1");
+                ctx.ellipse(f(0), f(1), f(2), f(3), f(4), f(5), f(6), ccw);
             }
             "ok".into()
         }
@@ -741,6 +744,18 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "isPointInStroke" => {
             if let Some(ctx) = reg.contexts.get(&hid()) {
                 return if ctx.is_point_in_stroke(f(0), f(1)) {
+                    "1".into()
+                } else {
+                    "0".into()
+                };
+            }
+            "0".into()
+        }
+        // R56h：Path2D 形式 isPointInStroke(path, x, y)（spec
+        // dom-context-2d-ispointinstroke——2d.path.isPointInStroke.basic.worker.js）。
+        "isPointInStrokePath" => {
+            if let (Some(ctx), Some(path)) = (reg.contexts.get(&hid()), reg.paths.get(&pid())) {
+                return if ctx.is_point_in_stroke_with_path(path, f(1), f(2)) {
                     "1".into()
                 } else {
                     "0".into()

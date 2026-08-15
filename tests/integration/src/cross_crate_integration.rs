@@ -191,7 +191,7 @@ fn test_canvas_ellipse_render_integration() {
 
     // 绘制椭圆：中心 (100, 100)，水平半径 60，垂直半径 40
     ctx.begin_path();
-    ctx.ellipse(100.0, 100.0, 60.0, 40.0, 0.0, 0.0, std::f32::consts::TAU);
+    ctx.ellipse(100.0, 100.0, 60.0, 40.0, 0.0, 0.0, std::f32::consts::TAU, false);
     ctx.fill();
 
     // 验证椭圆内部中心点有非零像素

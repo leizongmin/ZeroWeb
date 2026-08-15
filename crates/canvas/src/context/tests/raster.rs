@@ -437,7 +437,8 @@ fn test_flatten_path_close_already_at_start() {
     ctx.current_path.line_to(10.0, 10.0); // 回到起点
     ctx.current_path.close_path(); // 已在起点，不产生额外线段
     let verts = ctx.flatten_path_open();
-    assert_eq!(verts.len(), 4, "line back to start, close produces nothing extra");
+    // R56h：零长段剪除——lineTo(10,10) 为退化段，路径无几何。
+    assert_eq!(verts.len(), 0, "zero-length line pruned; close produces nothing extra");
 }
 
 #[test]
@@ -487,7 +488,8 @@ fn test_flatten_path_for_quadratic() {
     path.move_to(0.0, 0.0);
     path.quadratic_curve_to(50.0, 0.0, 50.0, 50.0);
     let verts = ctx.flatten_path_for(&path);
-    assert_eq!(verts.len(), 32, "path quadratic = 8×4");
+    // R56h：自适应细分。
+    assert!(verts.len() >= 32, "path quadratic = adaptive segments（≥8×4）");
 }
 
 #[test]
@@ -497,7 +499,8 @@ fn test_flatten_path_for_bezier() {
     path.move_to(0.0, 0.0);
     path.bezier_curve_to(25.0, 0.0, 50.0, 25.0, 50.0, 50.0);
     let verts = ctx.flatten_path_for(&path);
-    assert_eq!(verts.len(), 32, "path bezier = 8×4");
+    // R56h：自适应细分。
+    assert!(verts.len() >= 32, "path bezier = adaptive segments（≥8×4）");
 }
 
 #[test]
@@ -923,8 +926,8 @@ fn test_flatten_path_line_to_same_point() {
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.line_to(10.0, 10.0); // Same point
     let vertices = ctx.flatten_path_open();
-    // Degenerate line segment might be filtered or kept
-    assert_eq!(vertices.len(), 4);
+    // R56h：零长段剪除（spec trace-a-path）——退化 lineTo 不参与描边。
+    assert_eq!(vertices.len(), 0, "zero-length segment pruned");
 }
 
 #[test]

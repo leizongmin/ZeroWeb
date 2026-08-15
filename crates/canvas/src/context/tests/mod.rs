@@ -10,3 +10,4 @@ mod gpu_path;
 mod intermediate;
 mod path_coverage;
 mod raster;
+mod wpt_path_stroke;

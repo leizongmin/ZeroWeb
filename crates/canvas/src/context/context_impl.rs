@@ -752,10 +752,36 @@ impl CanvasContext {
         rotation: f32,
         start_angle: f32,
         end_angle: f32,
+        // R56h：spec dom-context-2d-ellipse 的第 8 参 counterclockwise——决定
+        // |end−start| ≥ 2π 整椭圆的走向（2d.path.isPointInStroke.scaleddashes
+        // 的 ellipse(6,10,5,5,0,2π,false)：|Δ|=2π 整圆，ccw=false → 顺时针
+        // （角度递增）——旧实现按 raw span 符号递减，dash 弧长沿反向累计）。
+        // 非整圆时方向由 span 符号承载（同 R56 arc 归一化）。
+        ccw: bool,
     ) {
         let (tx, ty) = self.transform.transform_point(x, y);
+        // R56h：span 归一化对齐 spec dom-context-2d-ellipse——|end−start| ≥ 2π
+        // 整椭圆（方向按 ccw：顺时针 +2π / 逆时针 −2π）；否则按方向取同向
+        // mod 2π 弧（顺时针 span ∈ [0,2π)、逆时针 ∈ (−2π,0]），与 R56 arc
+        // 归一化同构。旧实现 raw span 直通——(2π,0) 得 −2π 反向整圆。
+        // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ellipse
+        let tau = std::f32::consts::TAU;
+        let raw_span = end_angle - start_angle;
+        let (norm_start, norm_end) = if raw_span.abs() >= tau {
+            if ccw {
+                (start_angle, start_angle - tau)
+            } else {
+                (start_angle, start_angle + tau)
+            }
+        } else if !ccw {
+            (start_angle, start_angle + ((raw_span % tau) + tau) % tau)
+        } else {
+            let m = -(((-raw_span) % tau + tau) % tau);
+            let span = if m == 0.0 && raw_span != 0.0 { -tau } else { m };
+            (start_angle, start_angle + span)
+        };
         self.current_path
-            .ellipse(tx, ty, radius_x, radius_y, rotation, start_angle, end_angle);
+            .ellipse(tx, ty, radius_x, radius_y, rotation, norm_start, norm_end);
     }
 
     /// 画二次贝塞尔曲线。
@@ -933,7 +959,11 @@ impl CanvasContext {
         }
         // R56：closed = 末命令是否 ClosePath（同 stroke()——任一子路径闭合的旧判定
         // 会让 rect()+lineTo 的开放末子路径丢 line cap）。
-        let closed = matches!(path.commands().last(), Some(PathCommand::ClosePath));
+        // R56h：RoundRect 自闭合子路径同 stroke()（roundrect.closed 的 miter 角）。
+        let closed = matches!(
+            path.commands().last(),
+            Some(PathCommand::ClosePath) | Some(PathCommand::RoundRect(_, _, _, _, _))
+        );
         if self.stroke_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
@@ -1607,21 +1637,97 @@ impl CanvasContext {
 
     /// 判断点是否在当前路径的描边区域内。
     ///
-    /// 点坐标 (x, y) 为画布坐标空间，与描边中线顶点（追加时已按 CTM 变换到设备空间）同空间
-    /// 比对；检测点到各线段的距离是否小于 `line_width / 2`（设备空间度量）。
-    pub fn is_point_in_stroke(&self, x: f32, y: f32) -> bool {
-        let vertices = self.flatten_path_open();
+    /// R56h（M8/DC-8）：spec 判定在**用户空间**度量（isPointInStroke 的语义是
+    ///「该点是否落在描边几何上」——描边几何 = 用户空间路径经 CTM 的像；旧实现
+    /// 用设备空间顶点直接比设备距离，scale(20,20) 的椭圆（rx=ry=5 用户）只画了
+    /// 5px 小圆，距点 100px 判负——2d.path.isPointInStroke.scaleddashes）。
+    /// 查询点经逆变换回用户空间，顶点逐点逆变换后比较用户空间距离与
+    /// line_width/2。dash 激活时沿路径累计用户空间长度判定开段（spec
+    /// dom-context-2d-strokestyle lineDash——dash 长度按用户空间度量）。
+    /// R56h（M8/DC-8）：isPointInStroke 核心判定（顶点列表 + 查询点）。
+    /// 当前路径形式：顶点 = flatten_path_open（设备空间，逆变换回用户空间判定，
+    /// dash 按用户空间长度累计）。Path2D 形式：顶点 = flatten_path_for（路径
+    /// 空间，与 is_point_in_path_for_rule 同空间约定）。
+    fn is_point_in_stroke_vertices(&self, mut vertices: Vec<f32>, x: f32, y: f32) -> bool {
         if vertices.is_empty() {
             return false;
         }
-        let half_lw = self.line_width / 2.0;
-        for chunk in vertices.chunks_exact(4) {
-            let dist = point_to_segment_dist(x, y, chunk[0], chunk[1], chunk[2], chunk[3]);
-            if dist < half_lw {
-                return true;
+        let t = &self.transform;
+        let identity_ctm = (t.a - 1.0).abs() < 1e-9
+            && (t.d - 1.0).abs() < 1e-9
+            && t.b.abs() < 1e-9
+            && t.c.abs() < 1e-9
+            && t.e.abs() < 1e-9
+            && t.f.abs() < 1e-9;
+        let (qx, qy) = if identity_ctm {
+            (x, y)
+        } else {
+            let inv = t.inverse();
+            inv.transform_point(x, y)
+        };
+        if !identity_ctm {
+            for v in vertices.chunks_exact_mut(2) {
+                let (ux, uy) = t.inverse().transform_point(v[0], v[1]);
+                v[0] = ux;
+                v[1] = uy;
             }
         }
+        let half_lw = self.line_width / 2.0;
+        let dashed = !self.line_dash.is_empty();
+        if !dashed {
+            for chunk in vertices.chunks_exact(4) {
+                let dist = point_to_segment_dist(qx, qy, chunk[0], chunk[1], chunk[2], chunk[3]);
+                if dist < half_lw {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // dash 命中：段内 t ∈ [0,1] 且距离 < half 时，沿路径累计用户空间长度，
+        // 按 dash 周期判定开段（dash[偶数] = 开）。
+        let period: f32 = self.line_dash.iter().sum();
+        let mut walked = 0.0f32;
+        for chunk in vertices.chunks_exact(4) {
+            let (ax, ay, bx, by) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+            let (dx, dy) = (bx - ax, by - ay);
+            let len2 = dx * dx + dy * dy;
+            let mut t = 0.0f32;
+            if len2 > f32::EPSILON {
+                t = ((qx - ax) * dx + (qy - ay) * dy) / len2;
+            }
+            let dist = point_to_segment_dist(qx, qy, ax, ay, bx, by);
+            // R56h：段端点浮点噪声容差（t 微负——弧首点 cos/sin 的 ±1e-7 误差；
+            // scaleddashes 的 (11,10) 恰在路径起点）。
+            if t >= -1e-5 && t <= 1.0 + 1e-5 && dist < half_lw && period > 0.0 {
+                let at = walked + t.clamp(0.0, 1.0) * len2.sqrt();
+                let phase = (at + self.line_dash_offset).rem_euclid(period);
+                let mut acc = 0.0f32;
+                for (i, d) in self.line_dash.iter().enumerate() {
+                    acc += d;
+                    if phase < acc {
+                        if i % 2 == 0 {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+            }
+            walked += len2.sqrt();
+        }
         false
+    }
+
+    /// 判断点是否在当前路径的描边区域内（当前默认路径形式）。
+    pub fn is_point_in_stroke(&self, x: f32, y: f32) -> bool {
+        self.is_point_in_stroke_vertices(self.flatten_path_open(), x, y)
+    }
+
+    /// R56h：Path2D 形式 `isPointInStroke(path, x, y)`（spec
+    /// dom-context-2d-ispointinstroke）——与 is_point_in_path_for_rule 同空间
+    /// 约定（flatten_path_for 路径空间直比；2d.path.isPointInStroke.basic.worker.js
+    /// 的 path.rect(20,20,100,100) 命中点 (120,20) 在顶边端点）。
+    pub fn is_point_in_stroke_with_path(&self, path: &Path2D, x: f32, y: f32) -> bool {
+        self.is_point_in_stroke_vertices(self.flatten_path_for(path), x, y)
     }
 
     // ── Pixel data ──

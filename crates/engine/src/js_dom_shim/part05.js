@@ -2828,7 +2828,7 @@
       if (!_zwAllFinite(cp1x, cp1y, cp2x, cp2y, x, y)) return;
       __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
     };
-    ctx._methods.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
+    ctx._methods.ellipse = function (x, y, rx, ry, rotation, start, end, ccw) {
       // R56e：负半径 → IndexSizeError（spec dom-context-2d-ellipse——
       // 2d.path.ellipse.basics：rx/ry < 0 抛，-0 与 0 合法）。
       // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ellipse
@@ -2836,7 +2836,13 @@
       if (rx < 0 || ry < 0) {
         throw _zwDomException('ellipse: negative radius', 'IndexSizeError');
       }
-      __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
+      // R56h：**参数绑定修复**——旧签名 (x,y,rx,ry,rot,start,end) 把第 7 参当 end，
+      // 8 参调用（spec 含 ccw）时 end 收到布尔（String(false)="false"→host 解析 0），
+      // 弧角变成 (start, 0) 反向——2d.path.isPointInStroke.scaleddashes 的
+      // ellipse(6,10,5,5,0,2π,false) 存成 start=2π/end=0，命中点弧长沿反向累计。
+      // spec：ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle,
+      // counterclockwise)——ccw 透传 host（整椭圆走向）。
+      __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end), ccw ? 'true' : 'false');
     };
     ctx._methods.arcTo = function (x1, y1, x2, y2, r) {
       x1 = _zwNumArg(x1); y1 = _zwNumArg(y1); x2 = _zwNumArg(x2); y2 = _zwNumArg(y2); r = _zwNumArg(r);
@@ -2941,6 +2947,11 @@
     };
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
     ctx._methods.isPointInStroke = function (x, y /*, fillRule */) {
+      // R56h：Path2D 形式 isPointInStroke(path, x, y)（spec——首参为 Path2D 对象时
+      // 走 path 变体；2d.path.isPointInStroke.basic.worker.js 的 path.rect 命中）。
+      if (x && typeof x === 'object' && x._zwPath) {
+        return __zw_canvas_op(h, 'isPointInStrokePath', String(x._zwPath), String(y), String(arguments[2])) === '1';
+      }
       return __zw_canvas_op(h, 'isPointInStroke', String(x), String(y)) === '1';
     };
     ctx._methods.clip = function (path) {

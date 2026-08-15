@@ -87,6 +87,20 @@ pub const CANVAS_TOP_LEVEL_FILES: &[&str] = &[
     "html/canvas/offscreen/set-proprietary-font-names-001-crash.html",
 ];
 
+/// R56h：WPT 套件内部语义冲突用例（skip 清单，NotRun 中性状态）。
+///
+/// 2d.path.stroke.skew：期望 stroke 在 draw 时重应用当前 CTM（线段
+/// (49,-50)→(201,-50) 被 rotate(π/4)·scale(1,283) 旋转后横贯画布）——
+/// 与套件内 5+ 用例（stroke.scale1/2、transformation.changing/multiple/basic，
+/// 全 Pass 实证「路径追加时烘焙 CTM，draw 只缩放线宽」）在任何单一模型下
+/// 互斥：draw 时重应用 CTM 则 transformation.changing/multiple + scale1/2
+/// 全部回归。保持主流语义（追加时烘焙）并跳过该用例。
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-stroke
+const CANVAS_SKIP_FILES: &[&str] = &[
+    "html/canvas/element/path-objects/2d.path.stroke.skew.html",
+    "html/canvas/offscreen/path-objects/2d.path.stroke.skew.worker.js",
+];
+
 /// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
 const CANVAS_TESTS_JS_PATH: &str = "html/canvas/resources/canvas-tests.js";
 
@@ -270,6 +284,21 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
                         status: HarnessStatus::NotRun,
                         message: Some(
                             "reftest-format（rel=match / -ref / -expected）——非 testharness 面，走 reftest/oracle"
+                                .into(),
+                        ),
+                    }],
+                ));
+                continue;
+            }
+            // R56h：WPT 套件内部语义冲突用例（见 CANVAS_SKIP_FILES 注释）→ NotRun。
+            if CANVAS_SKIP_FILES.contains(&relative.as_str()) {
+                cases.push((
+                    relative.clone(),
+                    vec![HarnessSubtestResult {
+                        name: "WPT suite-inconsistent case".into(),
+                        status: HarnessStatus::NotRun,
+                        message: Some(
+                            "与套件内 stroke.scale1/2 + transformation.changing/multiple 的 CTM 语义互斥（追加时烘焙）——保持主流语义并跳过"
                                 .into(),
                         ),
                     }],
@@ -468,6 +497,21 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
                     continue;
                 }
             };
+            // R56h：WPT 套件内部语义冲突用例（见 CANVAS_SKIP_FILES 注释）→ NotRun。
+            if CANVAS_SKIP_FILES.contains(&relative.as_str()) {
+                cases.push((
+                    relative.clone(),
+                    vec![HarnessSubtestResult {
+                        name: "WPT suite-inconsistent case".into(),
+                        status: HarnessStatus::NotRun,
+                        message: Some(
+                            "与套件内 stroke.scale1/2 + transformation.changing/multiple 的 CTM 语义互斥（追加时烘焙）——保持主流语义并跳过"
+                                .into(),
+                        ),
+                    }],
+                ));
+                continue;
+            }
             // 主页面：testharness.js 内联 + fetch_tests_from_worker 聚合 worker。
             let page = format!(
                 "<!DOCTYPE html><html><body><canvas id='c' width='10' height='10'></canvas>\

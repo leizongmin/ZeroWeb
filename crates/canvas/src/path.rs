@@ -344,47 +344,32 @@ impl Path2D {
                 }
                 PathCommand::QuadraticCurveTo(cpx, cpy, qx, qy) => {
                     let (cpx, cpy, qx, qy) = (*cpx, *cpy, *qx, *qy);
-                    const SEGMENTS: usize = 8;
-                    let mut px = current_x;
-                    let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
-                        let mt = 1.0 - t;
-                        let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * qx;
-                        let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * qy;
-                        vertices.push(px);
-                        vertices.push(py);
-                        vertices.push(nx);
-                        vertices.push(ny);
-                        px = nx;
-                        py = ny;
-                    }
+                    // R56h：二次转三次 + 自适应细分（同 raster.rs flatten）。
+                    let (sx0, sy0) = (current_x, current_y);
+                    let c1x = sx0 + (cpx - sx0) * 2.0 / 3.0;
+                    let c1y = sy0 + (cpy - sy0) * 2.0 / 3.0;
+                    let c2x = qx + (cpx - qx) * 2.0 / 3.0;
+                    let c2y = qy + (cpy - qy) * 2.0 / 3.0;
+                    flatten_bezier_adaptive(&mut vertices, sx0, sy0, c1x, c1y, c2x, c2y, qx, qy, 0.1, 0);
                     current_x = qx;
                     current_y = qy;
                 }
                 PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, bx, by) => {
                     let (cp1x, cp1y, cp2x, cp2y, bx, by) = (*cp1x, *cp1y, *cp2x, *cp2y, *bx, *by);
-                    const SEGMENTS: usize = 8;
-                    let mut px = current_x;
-                    let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
-                        let mt = 1.0 - t;
-                        let nx = mt * mt * mt * current_x
-                            + 3.0 * mt * mt * t * cp1x
-                            + 3.0 * mt * t * t * cp2x
-                            + t * t * t * bx;
-                        let ny = mt * mt * mt * current_y
-                            + 3.0 * mt * mt * t * cp1y
-                            + 3.0 * mt * t * t * cp2y
-                            + t * t * t * by;
-                        vertices.push(px);
-                        vertices.push(py);
-                        vertices.push(nx);
-                        vertices.push(ny);
-                        px = nx;
-                        py = ny;
-                    }
+                    // R56h：自适应细分（同 raster.rs flatten）。
+                    flatten_bezier_adaptive(
+                        &mut vertices,
+                        current_x,
+                        current_y,
+                        cp1x,
+                        cp1y,
+                        cp2x,
+                        cp2y,
+                        bx,
+                        by,
+                        0.1,
+                        0,
+                    );
                     current_x = bx;
                     current_y = by;
                 }
@@ -898,6 +883,56 @@ pub(crate) fn arc_to_tangent_segments(
         py = ay;
     }
     (t2x, t2y)
+}
+
+/// 三次贝塞尔自适应细分（设备空间平直度 ε——控制点到弦线距离之和 ≤ ε 时以弦近似）。
+/// 旧固定 8 段对跨越大画布的曲线过粗（描边带漏外缘、scale 后弦长数百 px——
+/// 2d.path.bezierCurveTo.shape/scaled）；de Casteljau 中点分裂递归。
+/// 二次贝塞尔经标准转换（CP1 = P0 + 2/3(CP−P0)，CP2 = P1 + 2/3(CP−P1)）后同用本函数。
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-beziercurveto
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn flatten_bezier_adaptive(
+    vertices: &mut Vec<f32>,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    x3: f32,
+    y3: f32,
+    epsilon: f32,
+    depth: u32,
+) {
+    let dx = x3 - x0;
+    let dy = y3 - y0;
+    let len = (dx * dx + dy * dy).sqrt();
+    let flat = if len > f32::EPSILON {
+        // 控制点到弦线（P0→P3）距离之和（AGG 式平直度判据）。
+        ((dx * (y0 - y1) - dy * (x0 - x1)).abs() + (dx * (y0 - y2) - dy * (x0 - x2)).abs()) / len
+    } else {
+        0.0
+    };
+    if flat <= epsilon || depth >= 24 {
+        vertices.push(x0);
+        vertices.push(y0);
+        vertices.push(x3);
+        vertices.push(y3);
+        return;
+    }
+    // de Casteljau 中点分裂。
+    let (ax, ay) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+    let (bx, by) = ((x1 + x2) * 0.5, (y1 + y2) * 0.5);
+    let (cx, cy) = ((x2 + x3) * 0.5, (y2 + y3) * 0.5);
+    let (dx1, dy1) = ((ax + bx) * 0.5, (ay + by) * 0.5);
+    let (ex, ey) = ((bx + cx) * 0.5, (by + cy) * 0.5);
+    let (fx, fy) = ((dx1 + ex) * 0.5, (dy1 + ey) * 0.5);
+    // 左半段控制点 = (P0, A, D, F)——第二控制点须为 A（中点），非原 P1
+    // （笔误致左半段几何失真——2d.path.isPointInPath.bezier 的 (40,2) 被
+    // y=-30 的假段包进多边形）。
+    flatten_bezier_adaptive(vertices, x0, y0, ax, ay, dx1, dy1, fx, fy, epsilon, depth + 1);
+    // 右半段控制点 = (F, E, C, P3)——第三控制点须为 C（中点），非原 P2。
+    flatten_bezier_adaptive(vertices, fx, fy, ex, ey, cx, cy, x3, y3, epsilon, depth + 1);
 }
 
 #[cfg(test)]
