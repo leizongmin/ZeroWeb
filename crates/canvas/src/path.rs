@@ -317,6 +317,8 @@ impl Path2D {
         let mut current_y = 0.0f32;
         let mut subpath_start_x = 0.0f32;
         let mut subpath_start_y = 0.0f32;
+        // R34xx（arcTo）：当前子路径存在性（无子路径 → arcTo 先 moveTo 首控制点）。
+        let mut subpath_open = false;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in &self.commands {
@@ -326,6 +328,7 @@ impl Path2D {
                     subpath_start_y = *my;
                     current_x = *mx;
                     current_y = *my;
+                    subpath_open = true;
                 }
                 PathCommand::LineTo(lx, ly) => {
                     vertices.push(current_x);
@@ -427,17 +430,117 @@ impl Path2D {
                     current_x = px;
                     current_y = py;
                 }
-                PathCommand::ArcTo(x1, y1, _x2, _y2, _radius) => {
-                    let (x1, y1) = (*x1, *y1);
-                    // 简化：arcTo 退化为线段到控制点
-                    if (current_x - x1).abs() > f32::EPSILON || (current_y - y1).abs() > f32::EPSILON {
-                        vertices.push(current_x);
-                        vertices.push(current_y);
+                PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    let (x1, y1, x2, y2, radius) = (*x1, *y1, *x2, *y2, *radius);
+                    // R34xx：arcTo 真切线弧（spec dom-context-2d-arcto）——无子路径 →
+                    // moveTo 首控制点（2d.path.arcTo.ensuresubpath.*）；否则 P0→P1→P2
+                    // 的切线弧（半径 r）：切点 T1 = P1 − û1·t、T2 = P1 + û2·t
+                    //（t = r/tan(φ/2)）；共线/半径过大 → lineTo(P1)。
+                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arcto
+                    if !subpath_open {
+                        // 无子路径：moveTo 首控制点——**不画线段**（"nothing is
+                        // drawn up to it"，2d.path.arcTo.ensuresubpath.1）。
+                        current_x = x1;
+                        current_y = y1;
+                        subpath_open = true;
+                        continue;
+                    }
+                    let (x0, y0) = (current_x, current_y);
+                    let (v1x, v1y) = (x1 - x0, y1 - y0);
+                    let (v2x, v2y) = (x2 - x1, y2 - y1);
+                    let l1 = (v1x * v1x + v1y * v1y).sqrt();
+                    let l2 = (v2x * v2x + v2y * v2y).sqrt();
+                    if l1 < f32::EPSILON || l2 < f32::EPSILON || radius <= 0.0 {
+                        vertices.push(x0);
+                        vertices.push(y0);
                         vertices.push(x1);
                         vertices.push(y1);
+                        current_x = x1;
+                        current_y = y1;
+                        continue;
                     }
-                    current_x = x1;
-                    current_y = y1;
+                    let a1 = v1y.atan2(v1x);
+                    let a2 = v2y.atan2(v2x);
+                    let mut phi = a2 - a1;
+                    while phi > std::f32::consts::PI {
+                        phi -= std::f32::consts::TAU;
+                    }
+                    while phi < -std::f32::consts::PI {
+                        phi += std::f32::consts::TAU;
+                    }
+                    if phi.abs() < 1e-4 {
+                        // 共线 → lineTo(P1)。
+                        vertices.push(x0);
+                        vertices.push(y0);
+                        vertices.push(x1);
+                        vertices.push(y1);
+                        current_x = x1;
+                        current_y = y1;
+                        continue;
+                    }
+                    let t = radius / (phi.abs() / 2.0).tan();
+                    if t > l1 || t > l2 {
+                        // 半径过大（切点超出线段）→ lineTo(P1)（spec）。
+                        vertices.push(x0);
+                        vertices.push(y0);
+                        vertices.push(x1);
+                        vertices.push(y1);
+                        current_x = x1;
+                        current_y = y1;
+                        continue;
+                    }
+                    let (u1x, u1y) = (v1x / l1, v1y / l1);
+                    let (u2x, u2y) = (v2x / l2, v2y / l2);
+                    let (t1x, t1y) = (x1 - u1x * t, y1 - u1y * t);
+                    let (t2x, t2y) = (x1 + u2x * t, y1 + u2y * t);
+                    // 圆心：T1 沿角平分线方向（T1 处入切向 −û1、出切向 û2 的平分）
+                    // × r——弧凹向 P1。
+                    let (bix, biy) = (u2x - u1x, u2y - u1y);
+                    let bil = (bix * bix + biy * biy).sqrt();
+                    let (cpx, cpy) = if bil > f32::EPSILON {
+                        let (ux, uy) = (bix / bil, biy / bil);
+                        (t1x + ux * radius, t1y + uy * radius)
+                    } else {
+                        (t1x, t1y)
+                    };
+                    let da1 = (t1y - cpy).atan2(t1x - cpx);
+                    let da2 = (t2y - cpy).atan2(t2x - cpx);
+                    let mut span = da2 - da1;
+                    while span > std::f32::consts::PI {
+                        span -= std::f32::consts::TAU;
+                    }
+                    while span < -std::f32::consts::PI {
+                        span += std::f32::consts::TAU;
+                    }
+                    // 弧转向须与 phi 一致（T1→T2）。
+                    if (span > 0.0) != (phi > 0.0) {
+                        span = if phi > 0.0 {
+                            span + std::f32::consts::TAU
+                        } else {
+                            span - std::f32::consts::TAU
+                        };
+                    }
+                    // 线段 P0→T1 + 弧 T1→T2。
+                    vertices.push(x0);
+                    vertices.push(y0);
+                    vertices.push(t1x);
+                    vertices.push(t1y);
+                    let steps = 16usize.max((span.abs() / 0.15) as usize);
+                    let step = span / steps as f32;
+                    let (mut px, mut py) = (t1x, t1y);
+                    for i in 0..steps {
+                        let ang = da1 + step * (i + 1) as f32;
+                        let (ax, ay) = (cpx + radius * ang.cos(), cpy + radius * ang.sin());
+                        vertices.push(px);
+                        vertices.push(py);
+                        vertices.push(ax);
+                        vertices.push(ay);
+                        px = ax;
+                        py = ay;
+                    }
+                    current_x = t2x;
+                    current_y = t2y;
+                    continue;
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
                     let (cx, cy, rx, ry, rotation, start_angle, end_angle) =
@@ -499,6 +602,7 @@ impl Path2D {
                     }
                     current_x = subpath_start_x;
                     current_y = subpath_start_y;
+                    subpath_open = false;
                 }
             }
         }

@@ -889,6 +889,14 @@ impl CanvasContext {
                     }
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    // R34xx（arcTo）：无子路径 → moveTo 首控制点——**不画线段**
+                    //（"nothing is drawn up to it"，2d.path.arcTo.ensuresubpath.1）。
+                    if !has_any_subpath {
+                        current_x = x1;
+                        current_y = y1;
+                        has_any_subpath = true;
+                        continue;
+                    }
                     subpath_has_geometry = true;
                     Self::flatten_arc_to(
                         &mut vertices,
