@@ -1,6 +1,50 @@
 use super::*;
 use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue};
 
+/// A shrink-to-fit float containing floated navigation items must use their
+/// combined max-content width, so the items remain on one line.
+#[test]
+fn float_container_uses_combined_width_of_floated_children() {
+    let (mut doc, body) = make_doc_with_body();
+    let navigation = doc.create_element("ul");
+    doc.append_child(body, navigation).unwrap();
+    let first = doc.create_element("li");
+    let second = doc.create_element("li");
+    let third = doc.create_element("li");
+    doc.append_child(navigation, first).unwrap();
+    doc.append_child(navigation, second).unwrap();
+    doc.append_child(navigation, third).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut navigation_style = ComputedStyle::default();
+    navigation_style.display = DisplayValue::Block;
+    navigation_style.float = FloatValue::Left;
+    styles.insert(navigation, navigation_style);
+
+    for (node, width) in [(first, 80.0), (second, 100.0), (third, 120.0)] {
+        let mut item_style = ComputedStyle::default();
+        item_style.display = DisplayValue::Block;
+        item_style.float = FloatValue::Left;
+        item_style.width = LengthValue::Px(width);
+        item_style.height = LengthValue::Px(32.0);
+        styles.insert(node, item_style);
+    }
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    let navigation_box = find_child_by_node_id(&result.root, navigation).expect("navigation found");
+    let (_, first_y) = find_absolute_position_by_node_id(&result.root, first).expect("first item found");
+    let (_, second_y) = find_absolute_position_by_node_id(&result.root, second).expect("second item found");
+    let (_, third_y) = find_absolute_position_by_node_id(&result.root, third).expect("third item found");
+
+    assert!(
+        (navigation_box.width - 300.0).abs() < 0.5,
+        "float container should shrink to the combined item width, got {}",
+        navigation_box.width
+    );
+    assert!((first_y - second_y).abs() < 0.5 && (second_y - third_y).abs() < 0.5);
+}
+
 /// 测试 clear:both 将元素推到所有浮动元素下方。
 #[test]
 fn test_clear_both_after_floats() {

@@ -692,18 +692,32 @@ pub(crate) fn adjust_float_positions_with_context(
                 .map(|c| c.width)
                 .collect();
             let content_max_w = content_child_widths.iter().copied().fold(0.0f32, f32::max);
-            // 有块级或 replaced 子元素时收缩到内容宽度（content_max_w + padding + border）。
+            // https://www.w3.org/TR/CSS21/visudet.html#float-width
+            // In the max-content measurement used by shrink-to-fit, floated siblings may
+            // share a line.  Their combined outer widths therefore contribute to the
+            // containing float's preferred width; using only the widest child makes a
+            // floated navigation list wrap one item per line.
+            let floated_children_width = child
+                .children
+                .iter()
+                .filter(|c| !c.is_absolute && !c.is_fixed && !matches!(c.float, FloatValue::None))
+                .map(|c| c.margin_left + c.width + c.margin_right)
+                .sum::<f32>();
+            let content_max_w = content_max_w.max(floated_children_width);
+            // 有块级、replaced 或浮动子元素时，按首选内容宽度计算 used width。
             // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
             // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
             //（flexbox-collapsed-item-horiz-001 根因，R300）。改为「有内容子元素即收缩」：
             // 空内容 float 收缩到 padding+border（最小盒），仍比全宽更接近 shrink-to-fit 语义。
             // 纯文本 float（无 block 级/replaced 子元素）保持 taffy 宽度——其 shrink-to-fit
             // 需 IFC 测量，留后续。
-            if !content_child_widths.is_empty() {
-                let shrink_border_box =
+            if !content_child_widths.is_empty() || floated_children_width > 0.0 {
+                let preferred_border_box =
                     content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
-                if shrink_border_box < child.width {
-                    child.width = shrink_border_box;
+                let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
+                let used_border_box = preferred_border_box.min(available_border_box);
+                if used_border_box < child.width || floated_children_width > 0.0 {
+                    child.width = used_border_box;
                     child.content_width = content_max_w;
                 }
             }
