@@ -64,6 +64,9 @@ enum JsWorkerCommand {
     SetFetchHandler {
         handler: FetchHandler,
     },
+    ResetDocumentState {
+        reply: Sender<()>,
+    },
     Shutdown,
 }
 
@@ -198,6 +201,33 @@ impl RendererJsWorker {
             html: html.to_string(),
             url: url.to_string(),
         });
+    }
+
+    /// 清除前一 document 留下的异步页面状态。
+    ///
+    /// renderer 保持同一个 JS worker，但导航不能让旧 document 的 timer、DOM mutation 或
+    /// deferred navigation 在新 document 中继续执行。
+    pub fn reset_document_state(&self) {
+        if let Ok(mut mutations) = self.mutations.lock() {
+            mutations.clear();
+        }
+        if let Ok(mut loads) = self.font_loads.lock() {
+            loads.clear();
+        }
+        if let Ok(mut navigations) = self.navigations.lock() {
+            navigations.clear();
+        }
+        if let Ok(mut focus_changes) = self.focus_changes.lock() {
+            focus_changes.clear();
+        }
+        let (reply_tx, reply_rx) = mpsc::channel();
+        if self
+            .cmd_tx
+            .send(JsWorkerCommand::ResetDocumentState { reply: reply_tx })
+            .is_ok()
+        {
+            let _ = reply_rx.recv_timeout(TAB_JS_CHANNEL_TIMEOUT);
+        }
     }
 
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
@@ -398,6 +428,19 @@ fn js_worker_main(
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
                 fetch_bridge.set_handler(handler);
+            }
+            JsWorkerCommand::ResetDocumentState { reply } => {
+                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+                // A cross-document navigation creates a new global object. Keeping the
+                // renderer worker is an implementation detail, not page-visible state.
+                sandbox.reset_context();
+                if raf_frame_driven_enabled() {
+                    let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
+                }
+                if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
+                    tracing::error!("JS DOM shim reinit failed after document reset: {e}");
+                }
+                let _ = reply.send(());
             }
             JsWorkerCommand::Shutdown => break,
         }
@@ -635,6 +678,51 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn renderer_js_worker_document_reset_drops_old_async_page_state() {
+        let mut worker = RendererJsWorker::spawn(0);
+        worker
+            .execute_script_direct(
+                "globalThis.__zw_pending.old_page_timer = function() {};\
+                 globalThis.__zw_timer_trace = ['old'];\
+                 globalThis.__zw_test_runner = { stale: true };\
+                 globalThis.old_page_global = 42;",
+            )
+            .unwrap();
+
+        worker.reset_document_state();
+
+        assert_eq!(
+            worker.execute_script_direct("typeof globalThis.__zw_pending").unwrap(),
+            "object"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("Object.keys(globalThis.__zw_pending).length")
+                .unwrap(),
+            "0"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof globalThis.__zw_timer_trace")
+                .unwrap(),
+            "undefined"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof globalThis.__zw_test_runner")
+                .unwrap(),
+            "undefined"
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("typeof globalThis.old_page_global")
+                .unwrap(),
+            "undefined"
+        );
+        worker.shutdown();
     }
 
     #[test]

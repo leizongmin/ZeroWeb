@@ -1738,6 +1738,10 @@ impl RendererRuntime {
         push_history: bool,
         send_complete: bool,
     ) -> Result<(), String> {
+        self.pending_script_prefetch = None;
+        self.executed_external_scripts.clear();
+        self.inflight_fetches.clear();
+        self.js_worker.reset_document_state();
         if push_history {
             self.push_history(&page_url);
         }
@@ -1804,6 +1808,7 @@ impl RendererRuntime {
         self.pending_script_prefetch = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
+        self.js_worker.reset_document_state();
         self.push_history(&params.url);
         self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());

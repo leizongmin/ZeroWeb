@@ -364,9 +364,9 @@ impl QuickJSSandbox {
         self.config.timeout_ms = timeout_ms;
     }
 
-    /// 重置上下文（QuickJS 每次 execute 独立 Context，此方法清空回调列表）。
+    /// 重置持久上下文，保留宿主回调以便在下一个 document 中重新安装。
     pub fn reset_context(&mut self) {
-        self.callbacks.clear();
+        self.context = None;
     }
 
     /// 将已注册的回调重挂到当前 Context 的全局对象（每次 execute 前调用）。
@@ -476,6 +476,25 @@ mod tests {
     fn test_sandbox_default() {
         let sandbox = QuickJSSandbox::default();
         assert_eq!(sandbox.config().heap_limit, 0);
+    }
+
+    #[test]
+    fn test_reset_context_clears_persistent_page_state_but_keeps_callbacks() {
+        let config = SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = QuickJSSandbox::with_config(config).unwrap();
+        sandbox.register_callback("host_value", Box::new(|_| "ok".to_string()));
+        sandbox.execute("globalThis.old_page = 42; host_value()").unwrap();
+
+        sandbox.reset_context();
+
+        assert_eq!(
+            sandbox.execute("typeof globalThis.old_page").unwrap().value,
+            "undefined"
+        );
+        assert_eq!(sandbox.execute("host_value()").unwrap().value, "ok");
     }
 
     #[test]
