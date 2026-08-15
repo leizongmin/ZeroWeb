@@ -3292,19 +3292,22 @@ fn text_wrap_points_match_shaping_baseline() {
 
     // 基准：逐词宽度（词间空格宽）切行。词序列：以空格分词，每词宽 = hmtx advance 和
     // + 空格宽——与布局测量同源（measure_text_hmtx，ZRG-2026-08-15 修复 A 的 hmtx 路径，
-    // 非 rustybuzz shaped：kerning 差异使 Segoe/SFNS 等平台字体在 260px 边界翻转换行点，
-    // Linux Liberation kerning 小侥幸对齐）。
-    // 浏览器实际布局字体 = shared_system_fonts primary（与 BrowserApp 同源进程级缓存），
-    // 基准必须同源换行点才可比；跨平台可用（Linux Liberation/DejaVu、macOS SFNS/Helvetica、
-    // Windows Segoe/Arial），不再硬编码 Linux 字体路径。
-    let (baseline_loader, primary_id) = crate::app::shared_system_fonts();
-    let primary_id = primary_id.expect("系统字体存在");
+    // 非 rustybuzz shaped：kerning 差异会使平台字体在 260px 边界翻转换行点）。
+    // 浏览器实际布局字体 = resolver 的 sans-serif 解析（与 BrowserApp 同源进程级缓存；
+    // 注意 Windows/macOS 上 Arial 仅 Bold face 被加载作 bold，resolve_generic_family
+    // 把 sans-serif 解析为 Arial Bold 而非 primary——基准必须跟随解析结果，用 primary
+    // 会与布局字体不一致）。跨平台可用，不再硬编码 Linux 字体路径。
+    let (baseline_loader, _) = crate::app::shared_system_fonts();
+    let sans_id = *baseline_loader
+        .build_font_resolver()
+        .get("sans-serif")
+        .expect("sans-serif 解析存在");
     let words: Vec<&str> = sentence.split(' ').collect();
     let word_widths: Vec<f32> = words
         .iter()
-        .map(|w| baseline_loader.measure_text_hmtx(&[primary_id], w, 16.0))
+        .map(|w| baseline_loader.measure_text_hmtx(&[sans_id], w, 16.0))
         .collect();
-    let space_w = baseline_loader.measure_text_hmtx(&[primary_id], " ", 16.0);
+    let space_w = baseline_loader.measure_text_hmtx(&[sans_id], " ", 16.0);
     // 贪心切行：每行 ≤ 260px。
     let mut expected_lines: Vec<String> = Vec::new();
     let mut line = String::new();
