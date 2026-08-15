@@ -501,12 +501,207 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         decode_webp_bytes(bytes)
     } else if looks_like_svg(bytes) {
         decode_svg_bytes(bytes)
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        decode_gif_bytes(bytes)
     } else {
         Err(format!(
-            "unsupported image format (magic bytes: {:?}); only PNG/JPEG/WebP/SVG supported",
+            "unsupported image format (magic bytes: {:?}); only PNG/JPEG/WebP/SVG/GIF supported",
             bytes.get(..4).unwrap_or(&[])
         ))
     }
+}
+
+/// R34xx（drawing-images 目录）：GIF 首帧解码（2d.drawImage.animated.gif 的
+/// drawImage 画首帧——anim-gr.gif 首帧绿）。GIF89a：逻辑屏幕 + 全局色表 +
+/// 首个图像描述符 + LZW 压缩数据（多帧忽略——静态首帧）。
+/// https://www.w3.org/Graphics/GIF/spec-gif89a.txt
+fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    if bytes.len() < 13 {
+        return Err("GIF too short".into());
+    }
+    let w = u16::from_le_bytes([bytes[6], bytes[7]]) as u32;
+    let h = u16::from_le_bytes([bytes[8], bytes[9]]) as u32;
+    if w == 0 || h == 0 || w > 16384 || h > 16384 {
+        return Err("GIF invalid dimensions".into());
+    }
+    let flags = bytes[10];
+    let gct_flag = flags & 0x80 != 0;
+    let gct_size = if gct_flag {
+        2usize.pow((flags & 0x07) as u32 + 1)
+    } else {
+        0
+    };
+    // 全局色表（RGB 每项 3 字节）
+    let mut pos = 13usize;
+    let mut gct: Vec<[u8; 3]> = Vec::new();
+    if gct_flag {
+        if bytes.len() < pos + gct_size * 3 {
+            return Err("GIF truncated GCT".into());
+        }
+        for i in 0..gct_size {
+            gct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
+        }
+        pos += gct_size * 3;
+    }
+    // 扫描块到首个图像描述符（0x2C）
+    loop {
+        if pos >= bytes.len() {
+            return Err("GIF no image descriptor".into());
+        }
+        match bytes[pos] {
+            0x2C => break,
+            0x21 => {
+                // 扩展块：跳过标签 + 子块
+                pos += 2;
+                while pos < bytes.len() && bytes[pos] != 0 {
+                    pos += 1 + bytes[pos] as usize;
+                }
+                pos += 1; // 0 终止
+            }
+            0x3B => return Err("GIF no image".into()),
+            _ => return Err("GIF unexpected block".into()),
+        }
+    }
+    // 图像描述符
+    if bytes.len() < pos + 10 {
+        return Err("GIF truncated image descriptor".into());
+    }
+    let left = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]) as u32;
+    let top = u16::from_le_bytes([bytes[pos + 3], bytes[pos + 4]]) as u32;
+    let iw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
+    let ih = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
+    let iflags = bytes[pos + 9];
+    pos += 10;
+    // 局部色表
+    let mut lct: Vec<[u8; 3]> = Vec::new();
+    if iflags & 0x80 != 0 {
+        let lct_size = 2usize.pow((iflags & 0x07) as u32 + 1);
+        if bytes.len() < pos + lct_size * 3 {
+            return Err("GIF truncated LCT".into());
+        }
+        for i in 0..lct_size {
+            lct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
+        }
+        pos += lct_size * 3;
+    }
+    let use_lct = iflags & 0x80 != 0;
+    if pos >= bytes.len() {
+        return Err("GIF truncated LZW min code".into());
+    }
+    let min_code = bytes[pos] as usize;
+    pos += 1;
+    if min_code > 8 {
+        return Err("GIF invalid LZW min code".into());
+    }
+    // LZW 数据子块
+    let mut lzw: Vec<u8> = Vec::new();
+    while pos < bytes.len() && bytes[pos] != 0 {
+        let len = bytes[pos] as usize;
+        if pos + 1 + len > bytes.len() {
+            return Err("GIF truncated LZW data".into());
+        }
+        lzw.extend_from_slice(&bytes[pos + 1..pos + 1 + len]);
+        pos += 1 + len;
+    }
+    let indices = gif_lzw_decode(&lzw, min_code)?;
+    if indices.len() < (iw * ih) as usize {
+        return Err("GIF LZW output too short".into());
+    }
+    // 上采样到画布尺寸（左/上偏移 + 透明色索引）
+    let transparent = if iflags & 0x01 != 0 {
+        bytes.get(pos + 1).copied()
+    } else {
+        None
+    };
+    let mut data = vec![0u8; (w * h * 4) as usize];
+    let palette = if use_lct { &lct } else { &gct };
+    for y in 0..ih {
+        for x in 0..iw {
+            let si = (y * iw + x) as usize;
+            let idx = indices[si] as usize;
+            let (dx, dy) = (left + x, top + y);
+            if dx >= w || dy >= h {
+                continue;
+            }
+            let di = ((dy * w + dx) * 4) as usize;
+            if Some(idx as u8) == transparent {
+                data[di + 3] = 0;
+            } else if let Some(c) = palette.get(idx) {
+                data[di] = c[0];
+                data[di + 1] = c[1];
+                data[di + 2] = c[2];
+                data[di + 3] = 255;
+            }
+        }
+    }
+    Ok(ImageData {
+        width: w,
+        height: h,
+        pixels: data,
+        content_hash: 0,
+        solid_color: None,
+        intrinsic_ratio: None,
+        no_ratio: None,
+        computed_intrinsic: None,
+    })
+}
+
+/// GIF LZW 解码（spec gif89a LZW——clear/EOI 代码 + 变长码宽 + 字典增长）。
+fn gif_lzw_decode(data: &[u8], min_code: usize) -> Result<Vec<u8>, String> {
+    let clear_code = 1usize << min_code;
+    let eoi_code = clear_code + 1;
+    let mut code_width = min_code + 1;
+    let mut dict: Vec<Vec<u8>> = (0..clear_code).map(|i| vec![i as u8]).collect();
+    dict.push(Vec::new()); // clear
+    dict.push(Vec::new()); // eoi
+    let mut out: Vec<u8> = Vec::new();
+    let mut bit_pos = 0usize;
+    let mut prev: Option<Vec<u8>> = None;
+    loop {
+        // 读 code_width 位
+        if bit_pos + code_width > data.len() * 8 {
+            break;
+        }
+        let mut code = 0usize;
+        for i in 0..code_width {
+            let byte = data[(bit_pos + i) / 8] as usize;
+            let bit = (byte >> ((bit_pos + i) % 8)) & 1;
+            code |= bit << i;
+        }
+        bit_pos += code_width;
+        if code == eoi_code {
+            break;
+        }
+        if code == clear_code {
+            dict = (0..clear_code).map(|i| vec![i as u8]).collect();
+            dict.push(Vec::new());
+            dict.push(Vec::new());
+            code_width = min_code + 1;
+            prev = None;
+            continue;
+        }
+        let entry = if code < dict.len() {
+            dict[code].clone()
+        } else if let Some(p) = &prev {
+            // code == dict.len()：KwKwK 情形（前串 + 首字节）
+            let mut e = p.clone();
+            e.push(p[0]);
+            e
+        } else {
+            return Err("GIF LZW invalid code".into());
+        };
+        out.extend_from_slice(&entry);
+        if let Some(p) = &prev {
+            let mut np = p.clone();
+            np.push(entry[0]);
+            dict.push(np);
+            if dict.len() == (1usize << code_width) && code_width < 12 {
+                code_width += 1;
+            }
+        }
+        prev = Some(entry);
+    }
+    Ok(out)
 }
 
 /// WebP magic：`RIFF` (offset 0..4) + 文件大小 4 字节 + `WEBP` (offset 8..12)。
@@ -1004,8 +1199,12 @@ mod decode_tests {
         assert_eq!(img.width, 4);
         assert_eq!(img.height, 3);
 
-        // 未知魔数 → 错误（unsupported）
+        // GIF 现受支持（首帧解码——2d.drawImage.animated.gif）；残缺 GIF → 错误。
         let result = decode_image_bytes(b"GIF89a rest of gif");
+        assert!(result.is_err(), "残缺 GIF 应报错");
+
+        // 未知魔数 → 错误（unsupported）
+        let result = decode_image_bytes(b"UNKNOWNMAGIC123");
         assert!(result.is_err());
         assert!(
             result.unwrap_err().contains("unsupported"),
