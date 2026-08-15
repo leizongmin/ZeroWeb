@@ -580,11 +580,7 @@ impl BrowserApp {
         if !self.window_focused {
             return self.chrome_palette.chrome_inactive_bg;
         }
-        if cfg!(target_os = "windows") || uses_unified_titlebar() {
-            self.chrome_palette.toolbar_bg
-        } else {
-            self.chrome_palette.tab_bar_bg
-        }
+        self.chrome_palette.tab_bar_bg
     }
 
     /// 标签栏空白区可拖动窗口

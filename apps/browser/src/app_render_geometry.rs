@@ -256,6 +256,96 @@ fn draw_hollow_square(fills: &mut Vec<FillPrimitive>, x: f32, y: f32, size: f32,
     fills.push(rect_fill(x + size - thickness, y, thickness, size, color));
 }
 
+/// 绘制与 `assets/app-icon.svg` 一致的 ZeroWeb 三色环形标识。
+fn push_zero_web_icon(fills: &mut Vec<FillPrimitive>, cx: f32, cy: f32, diameter: f32, background: Color) {
+    let radius = diameter * 0.5;
+    let radius_sq = radius * radius;
+    let min_x = (cx - radius).floor() as i32;
+    let max_x = (cx + radius).ceil() as i32;
+    let min_y = (cy - radius).floor() as i32;
+    let max_y = (cy + radius).ceil() as i32;
+    let blue = Color { r: 74, g: 158, b: 255, a: 255 };
+    let teal = Color { r: 20, g: 184, b: 166, a: 255 };
+    let indigo = Color { r: 30, g: 79, b: 208, a: 255 };
+
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let dx = x as f32 + 0.5 - cx;
+            let dy = y as f32 + 0.5 - cy;
+            if dx * dx + dy * dy > radius_sq {
+                continue;
+            }
+            let angle = dy.atan2(dx).to_degrees();
+            let color = if (-90.0..30.0).contains(&angle) {
+                blue
+            } else if (30.0..150.0).contains(&angle) {
+                teal
+            } else {
+                indigo
+            };
+            fills.push(rect_fill(x as f32, y as f32, 1.0, 1.0, color));
+        }
+    }
+
+    push_circle_fill(fills, cx, cy, diameter * 0.39, background);
+    push_circle_fill(
+        fills,
+        cx,
+        cy,
+        diameter * 0.30,
+        Color { r: 24, g: 88, b: 200, a: 255 },
+    );
+}
+
+#[derive(Clone, Copy)]
+struct RoundedSquareStyle {
+    thickness: f32,
+    radius: f32,
+    color: Color,
+    background: Color,
+}
+
+fn draw_hollow_rounded_square(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    size: f32,
+    style: RoundedSquareStyle,
+) {
+    if style.radius <= f32::EPSILON {
+        draw_hollow_square(fills, x, y, size, style.thickness, style.color);
+        return;
+    }
+    push_rounded_rect_fill(fills, x, y, size, size, style.radius, style.color);
+    let inset = style.thickness.max(1.0);
+    push_rounded_rect_fill(
+        fills,
+        x + inset,
+        y + inset,
+        (size - 2.0 * inset).max(0.0),
+        (size - 2.0 * inset).max(0.0),
+        (style.radius - inset).max(0.0),
+        style.background,
+    );
+}
+
+fn draw_hollow_rounded_square_top_right_only(
+    fills: &mut Vec<FillPrimitive>,
+    x: f32,
+    y: f32,
+    size: f32,
+    style: RoundedSquareStyle,
+) {
+    if style.radius <= f32::EPSILON {
+        draw_hollow_square_top_right_only(fills, x, y, size, style.thickness, style.color);
+        return;
+    }
+    draw_hollow_rounded_square(fills, x, y, size, style);
+    let inset = style.thickness.max(1.0);
+    fills.push(rect_fill(x, y + size - inset, size, inset, style.background));
+    fills.push(rect_fill(x, y, inset, size, style.background));
+}
+
 /// 只画方框的上边和右边（用于还原图标中被前框遮挡的后框，露出右上角）。
 fn draw_hollow_square_top_right_only(
     fills: &mut Vec<FillPrimitive>,

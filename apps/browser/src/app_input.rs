@@ -1268,7 +1268,7 @@ impl BrowserApp {
         let inset = layout::ADDRESS_BAR_INPUT_V_INSET * s;
         let bar_y = layout::TAB_STRIP_HEIGHT * s + inset;
         let bar_h = layout::ADDRESS_BAR_HEIGHT * s - 2.0 * inset;
-        (bar_x, bar_y, bar_w, bar_h)
+        (bar_x.round(), bar_y.round(), bar_w.round(), bar_h.round())
     }
 
     fn address_bar_text_origin_x(&self) -> f32 {

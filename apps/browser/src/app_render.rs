@@ -76,9 +76,9 @@ impl BrowserApp {
         };
         fills.push(rect_fill(
             0.0,
-            addr_y,
+            addr_y - s,
             width as f32,
-            layout::ADDRESS_BAR_HEIGHT * s,
+            layout::ADDRESS_BAR_HEIGHT * s + s,
             toolbar_bg,
         ));
 
@@ -767,17 +767,39 @@ impl BrowserApp {
         for i in 0..3 {
             let bx = x0 + i as f32 * btn_w;
             let hovered = self.window_control_hover == Some(i);
-            let bg = if i == 2 && hovered {
+            let hover_bg = if i == 2 && hovered {
                 self.chrome_palette.window_control_close_hover
-            } else if hovered {
-                self.chrome_palette.window_control_hover
             } else {
-                self.chrome_palette.tab_bar_bg
+                self.chrome_palette.window_control_hover
             };
-            fills.push(rect_fill(bx, tab_y, btn_w, tab_bar_h, bg));
 
             let cx = bx + btn_w / 2.0;
             let cy = tab_y + tab_bar_h / 2.0;
+            let hover_size = layout::WINDOW_CONTROL_HOVER_SIZE * s;
+            let hover_x = cx - hover_size * 0.5;
+            let hover_y = cy - hover_size * 0.5;
+            if hovered {
+                push_rounded_rect_fill(
+                    fills,
+                    hover_x,
+                    hover_y,
+                    hover_size,
+                    hover_size,
+                    layout::WINDOW_CONTROL_HOVER_RADIUS * s,
+                    hover_bg,
+                );
+            }
+            let icon_bg = if hovered {
+                hover_bg
+            } else {
+                self.chrome_tab_strip_bg()
+            };
+            let rounded_icon = RoundedSquareStyle {
+                thickness,
+                radius: 2.0 * s,
+                color: icon,
+                background: icon_bg,
+            };
 
             match i {
                 0 => {
@@ -800,12 +822,14 @@ impl BrowserApp {
                     let back_top = cy - size / 2.0 - off / 2.0;
                     let front_left = cx - size / 2.0 - off / 2.0;
                     let front_top = cy - size / 2.0 + off / 2.0;
-                    draw_hollow_square_top_right_only(fills, back_left, back_top, size, thickness, icon);
-                    draw_hollow_square(fills, front_left, front_top, size, thickness, icon);
+                    draw_hollow_rounded_square_top_right_only(
+                        fills, back_left, back_top, size, rounded_icon,
+                    );
+                    draw_hollow_rounded_square(fills, front_left, front_top, size, rounded_icon);
                 }
                 1 => {
                     let size = 10.0 * s;
-                    draw_hollow_square(fills, cx - size / 2.0, cy - size / 2.0, size, thickness, icon);
+                    draw_hollow_rounded_square(fills, cx - size / 2.0, cy - size / 2.0, size, rounded_icon);
                 }
                 2 => {
                     let close_color = if hovered {

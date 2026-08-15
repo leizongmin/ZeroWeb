@@ -11,7 +11,7 @@ pub const TAB_BAR_TOP_INSET: f32 = 6.0;
 /// Total height of the tab strip including the top inset.
 pub const TAB_STRIP_HEIGHT: f32 = TAB_BAR_TOP_INSET + TAB_BAR_HEIGHT;
 /// Height of the address row.
-pub const ADDRESS_BAR_HEIGHT: f32 = 44.0;
+pub const ADDRESS_BAR_HEIGHT: f32 = 50.0;
 /// Horizontal padding around the address row.
 pub const ADDRESS_BAR_PADDING: f32 = 10.0;
 /// Vertical inset used to turn the address row into a pill control.
@@ -46,6 +46,10 @@ pub const NEW_TAB_BTN_WIDTH: f32 = 34.0;
 pub const WINDOW_CONTROL_BTN_WIDTH: f32 = 46.0;
 /// Total width reserved for custom window controls.
 pub const WINDOW_CONTROLS_WIDTH: f32 = WINDOW_CONTROL_BTN_WIDTH * 3.0;
+/// Size of the compact hover background behind a window control icon.
+pub const WINDOW_CONTROL_HOVER_SIZE: f32 = 28.0;
+/// Corner radius of the compact hover background behind a window control icon.
+pub const WINDOW_CONTROL_HOVER_RADIUS: f32 = 7.0;
 /// Width of one navigation button slot.
 pub const NAV_BUTTON_WIDTH: f32 = 36.0;
 /// Leading space before the first navigation button.
@@ -70,7 +74,7 @@ pub const TAB_MAX_WIDTH: f32 = 240.0;
 /// Close button icon box size inside a tab.
 pub const TAB_CLOSE_SIZE: f32 = 16.0;
 /// Top radius of a tab.
-pub const TAB_TOP_RADIUS: f32 = 7.0;
+pub const TAB_TOP_RADIUS: f32 = 12.0;
 /// Bottom foot radius of the active tab shape.
 pub const TAB_FOOT_RADIUS: f32 = 7.0;
 /// Favicon size inside a tab.

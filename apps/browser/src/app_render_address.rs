@@ -66,24 +66,24 @@ impl BrowserApp {
             let status_icon_size = 14.0 * s;
             let status_cx = inner_x + layout::ADDRESS_BAR_INNER_PAD_H * s + status_slot_w * 0.5;
             let status_cy = bar_y + bar_h * 0.5;
-            let slot_divider = if self.address_bar_focused {
-                self.chrome_palette.address_bar_border_focused
-            } else {
-                self.chrome_palette.separator
-            };
-            fills.push(rect_fill(
-                inner_x + layout::ADDRESS_BAR_INNER_PAD_H * s + status_slot_w,
-                inner_y + 6.0 * s,
-                s.max(1.0),
-                (inner_h - 12.0 * s).max(s.max(1.0)),
-                slot_divider,
-            ));
+            if !self.address_bar_focused {
+                fills.push(rect_fill(
+                    inner_x + layout::ADDRESS_BAR_INNER_PAD_H * s + status_slot_w,
+                    inner_y + 6.0 * s,
+                    s.max(1.0),
+                    (inner_h - 12.0 * s).max(s.max(1.0)),
+                    self.chrome_palette.separator,
+                ));
+            }
 
             let status_url = self.shell.active_tab().and_then(|tab| tab.url());
             let status_hint = Self::tab_html_hint(status_url);
             let page_kind = Self::address_bar_page_kind(status_url);
             let is_loading = self.shell.active_tab().is_some_and(|t| t.is_loading());
-            if is_loading && !self.address_bar_focused {
+            if self.address_bar_focused {
+                // 地址栏编辑态固定显示 ZeroWeb 标识，避免安全状态位留下空白。
+                push_zero_web_icon(fills, status_cx, status_cy, status_icon_size, self.chrome_palette.address_bar_bg_focused);
+            } else if is_loading {
                 let angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
                 crate::tab_chrome::push_loading_spinner(
                     fills,
@@ -203,7 +203,11 @@ impl BrowserApp {
                 );
             }
 
-            if self.address_bar_focused && !self.address_bar.has_selection() && self.address_bar_ime_preedit.is_empty()
+            let cursor_visible = (self.chrome_anim_start.elapsed().as_millis() / 500) & 1 == 0;
+            if self.address_bar_focused
+                && !self.address_bar.has_selection()
+                && self.address_bar_ime_preedit.is_empty()
+                && cursor_visible
             {
                 let before = Self::chars_slice(text, 0, self.address_bar.cursor());
                 let cursor_x = text_x + self.measure_ui_text_width(before, font_size);
@@ -214,6 +218,9 @@ impl BrowserApp {
                     text_ascent * 0.76,
                     self.chrome_palette.address_bar_text,
                 ));
+            }
+            if self.address_bar_focused {
+                self.needs_redraw = true;
             }
 
             let trailing_slots_w = layout::ADDRESS_BAR_TRAILING_SLOTS * s;

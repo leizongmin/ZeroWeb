@@ -102,19 +102,19 @@ impl ChromePalette {
     pub const fn light() -> Self {
         Self {
             background: rgb(241, 243, 244),
-            tab_bar_bg: rgb(222, 225, 230),
-            toolbar_bg: rgb(248, 249, 250),
+            tab_bar_bg: rgb(211, 227, 253),
+            toolbar_bg: rgb(255, 255, 255),
             tab_active_bg: rgb(255, 255, 255),
-            tab_hover_bg: rgb(232, 234, 237),
+            tab_hover_bg: rgb(232, 240, 254),
             tab_text: rgb(32, 33, 36),
             tab_close: rgb(95, 99, 104),
             tab_separator: rgb(148, 152, 160),
             tab_crashed: rgb(217, 48, 37),
             tab_attention: rgb(234, 134, 0),
-            address_bar_bg: rgb(248, 249, 250),
+            address_bar_bg: rgb(255, 255, 255),
             address_bar_bg_focused: rgb(255, 255, 255),
             address_bar_border: rgb(218, 220, 224),
-            address_bar_border_focused: rgb(138, 180, 248),
+            address_bar_border_focused: rgb(26, 115, 232),
             address_bar_text: rgb(32, 33, 36),
             address_bar_placeholder: rgb(128, 134, 139),
             address_bar_selection_bg: rgb(168, 199, 250),
@@ -145,7 +145,7 @@ impl ChromePalette {
             find_active_option_bg: rgb(26, 115, 232),
             find_active_option_text: rgb(255, 255, 255),
             new_tab_button: rgb(95, 99, 104),
-            window_control_hover: rgb(218, 220, 224),
+            window_control_hover: rgb(197, 213, 237),
             window_control_close_hover: rgb(196, 43, 28),
             window_control_icon: rgb(95, 99, 104),
             context_menu_bg: rgb(255, 255, 255),
@@ -253,6 +253,13 @@ mod tests {
         assert_ne!(light.tab_bar_bg, dark.tab_bar_bg);
         assert_ne!(light.tab_text, dark.tab_text);
         assert_ne!(light.background, dark.background);
+    }
+
+    #[test]
+    fn light_address_bar_connects_to_active_tab_surface() {
+        let light = ChromePalette::light();
+        assert_eq!(light.toolbar_bg, light.tab_active_bg);
+        assert_eq!(light.address_bar_bg, light.tab_active_bg);
     }
 
     #[test]

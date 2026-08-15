@@ -169,6 +169,13 @@ fn window_attributes_from_config(config: &WindowConfig) -> winit::window::Window
     if config.maximized {
         attrs = attrs.with_maximized(true);
     }
+    #[cfg(target_os = "windows")]
+    if !config.decorations {
+        // ZeroBrowser 自绘窗口控制按钮。保留原生最大化能力会让 Windows
+        // 将自绘命中区识别为标题栏按钮，从而在悬停时弹出 Snap Layout。
+        attrs =
+            attrs.with_enabled_buttons(winit::window::WindowButtons::MINIMIZE | winit::window::WindowButtons::CLOSE);
+    }
     #[cfg(target_os = "macos")]
     if config.unified_titlebar {
         use winit::platform::macos::WindowAttributesExtMacOS;
