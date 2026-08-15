@@ -36,7 +36,7 @@ switch there before consuming it in an application or library crate.
 | `ZW_BROWSER_GPU_DMABUF_IMPORT` | `0`/`false` disables | enabled on Linux | Browser GPU dma-buf import. |
 | `ZW_COMPOSITOR_SHM` | `0`/`false` disables | enabled on Linux | Linux POSIX shared-memory frame transport. |
 | `ZW_COMPOSITOR_GPU_ZERO_COPY` | `0`/`false` disables | enabled on Linux | Linux shared-image mmap zero-copy consumption. |
-| `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `0`/`false` disables | enabled | Apply scrolling in compositor. |
+| `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `1`/`true` enables | disabled | Apply scrolling in compositor (pixel bake; scrolls larger than one frame exceed the baked content). |
 | `ZW_RENDERER_SECCOMP` | `0`/`false` disables | enabled | Enable renderer seccomp sandbox hook. |
 | `ZW_COMPOSITOR_SANDBOX` | `0`/`false` disables | enabled | Enable compositor environment sanitization. |
 | `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |

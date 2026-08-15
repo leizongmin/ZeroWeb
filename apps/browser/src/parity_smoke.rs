@@ -393,6 +393,18 @@ impl ParitySmoke {
         let mut regions = HashMap::new();
         for (selector, rect) in &observation.geometry {
             let Some(rect) = rect else { continue };
+            // geometry 是视口坐标（getBoundingClientRect），与 Chrome 端一致地
+            // 原样记录（滚出视口可为负）——但区域截图只对与页面视口有交集的
+            // 元素生成，完全在视口外的跳过（Chrome 端无此裁剪产物）。
+            let page_width = f64::from(framebuffer.width.saturating_sub(page_region.x));
+            let page_height = f64::from(framebuffer.height.saturating_sub(page_region.y));
+            if f64::from(rect.x) >= page_width
+                || f64::from(rect.y) >= page_height
+                || f64::from(rect.x + rect.width) <= 0.0
+                || f64::from(rect.y + rect.height) <= 0.0
+            {
+                continue;
+            }
             let filename = format!("{}.region-{}.png", step.id, hex_name(selector));
             let region = PixelRegion {
                 x: page_region.x.saturating_add(rect.x.floor().max(0.0) as u32),

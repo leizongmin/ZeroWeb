@@ -388,10 +388,8 @@ impl BrowserApp {
     /// 滚动活动标签页到页面顶部（Home 键）。
     fn scroll_active_page_to_top(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
-            let entry = self.scroll.entry(tab_id).or_default();
-            entry.y = 0.0;
-            entry.x = 0.0;
-            self.needs_redraw = true;
+            let current = self.tab_scroll_state(tab_id);
+            self.apply_page_scroll_delta(tab_id, -current.x, -current.y);
         }
     }
 
@@ -399,9 +397,8 @@ impl BrowserApp {
     fn scroll_active_page_to_bottom(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
             let layout = self.page_scroll_layout(tab_id);
-            let entry = self.scroll.entry(tab_id).or_default();
-            entry.y = layout.max_scroll_y;
-            self.needs_redraw = true;
+            let current = self.tab_scroll_state(tab_id);
+            self.apply_page_scroll_delta(tab_id, layout.max_scroll_x - current.x, layout.max_scroll_y - current.y);
         }
     }
 

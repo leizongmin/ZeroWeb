@@ -155,7 +155,7 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SCROLL_TRANSFORM",
-        default: "enabled",
+        default: "disabled",
         description: "compositor 侧滚动变换",
     },
     EnvironmentVariable {

@@ -186,6 +186,14 @@ impl BrowserApp {
     }
 
     fn skip_local_composite_for_owned_present(&self) -> bool {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            let scroll = self.tab_scroll_state(tab_id);
+            // present 帧的页面像素来自 compositor 文档原点光栅化，不含滚动偏移；
+            // 滚动非零时必须回退本地合成（本地光栅偏移是唯一支持滚动的显示路径）。
+            if scroll.x != 0.0 || scroll.y != 0.0 {
+                return false;
+            }
+        }
         Self::should_skip_local_composite_for_owned_present(
             crate::compositor_client::owned_present_enabled(),
             crate::compositor_client::present_enabled(),
@@ -410,6 +418,14 @@ impl BrowserApp {
             return None;
         }
         let tab_id = self.shell.active_tab_id()?;
+        {
+            // present 帧的页面像素不含滚动偏移（见 skip_local_composite_for_owned_present），
+            // 滚动非零时回退本地光栅，避免 present blit 整窗替换掉滚动的页面内容。
+            let scroll = self.tab_scroll_state(tab_id);
+            if scroll.x != 0.0 || scroll.y != 0.0 {
+                return None;
+            }
+        }
         let (w, h, pixels) = self.tabs.compositor_present_pixels(tab_id)?;
         if w != width || h != height {
             return None;

@@ -574,23 +574,7 @@ fn main() {
             } => {
                 let page_pixels = surfaces.get(&page_surface_id).map(|s| {
                     let front = s.backing.front();
-                    // SCROLL_TRANSFORM 开时 present 路径与 GetCompositorFrame 一致地
-                    // 烘焙滚动：Browser 端 present blit 整窗替换、不应用本地偏移，
-                    // 页面像素必须自带滚动，否则出现"滚动条动而页面不动"。
-                    let pixels = if zero_protocol::compositor_scroll_transform_enabled()
-                        && (s.scroll_x != 0.0 || s.scroll_y != 0.0)
-                    {
-                        scroll_transform::bake_scroll_into_rgba(
-                            &front.data,
-                            front.width,
-                            front.height,
-                            s.scroll_x,
-                            s.scroll_y,
-                        )
-                    } else {
-                        front.data.clone()
-                    };
-                    (front.width, front.height, pixels)
+                    (front.width, front.height, front.data.clone())
                 });
                 let ui_pixels = ui_surfaces
                     .get(&ui_surface_id)
