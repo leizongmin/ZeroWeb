@@ -340,7 +340,8 @@ impl BrowserApp {
         } else {
             self.tab_scroll_state(tab_id)
         };
-        let s = self.scale_factor;
+        // 页面图元为 CSS 单位，按 device scale × 页面 zoom 换算物理像素。
+        let s = self.page_render_scale();
         let clip_viewport = ViewportClip::new(layout.viewport_x, layout.viewport_y, layout.viewport_w, layout.viewport_h);
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
@@ -353,11 +354,13 @@ impl BrowserApp {
             if compositor_status != crate::compositor_client::CompositorStatus::Healthy {
                 return RenderPrimitives::new();
             }
+            // 位图按 dsf=render_scale 光栅，物理尺寸已等于内容区——变换 scale 取 1
+            // 仅保留平移（沿用 ×s 会在 device scale≠1 时双重缩放）。
             return self
                 .tabs
                 .compositor_frame(tab_id)
                 .map_or_else(RenderPrimitives::new, |frame| {
-                    compositor_frame_primitives(frame, x_offset, y_offset, s, clip_viewport)
+                    compositor_frame_primitives(frame, x_offset, y_offset, 1.0, clip_viewport)
                 });
         }
 
@@ -1287,7 +1290,8 @@ impl BrowserApp {
         let clip_bottom = viewport_y + viewport_h;
         let content_y_draw = viewport_y - scroll_y;
         let content_x_draw = viewport_x - scroll_x;
-        let s = self.scale_factor;
+        // CSS 图元 × device scale × 页面 zoom。
+        let s = self.page_render_scale();
         let border = self.effective_page_frame_border();
         let radius = (self.effective_page_frame_radius() - border).max(0.0);
         let clip_rounded = Some((viewport_x, viewport_y, viewport_w, viewport_h, radius));

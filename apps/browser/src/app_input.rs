@@ -44,6 +44,7 @@ impl BrowserApp {
                 self.shell.zoom_out();
             }
             self.show_zoom_indicator();
+            self.apply_page_zoom_change();
             return;
         }
 
@@ -379,8 +380,9 @@ impl BrowserApp {
                 let (_, _, _, ch) = self.page_content_rect();
                 Some(-ch * 0.85)
             }
-            "ArrowDown" => Some(40.0 * self.scale_factor),
-            "ArrowUp" => Some(-40.0 * self.scale_factor),
+            // 方向键步长 40 CSS px（含页面 zoom 换算）。
+            "ArrowDown" => Some(40.0 * self.page_render_scale()),
+            "ArrowUp" => Some(-40.0 * self.page_render_scale()),
             _ => None,
         }
     }
@@ -424,6 +426,8 @@ impl BrowserApp {
         let target = ids[next];
         self.shell.switch_tab(target);
         self.shell.set_tab_needs_attention(target, false);
+        // zoom 按标签存储——切换后按新活动标签重推 CSS 视口。
+        self.sync_webview_viewport();
         self.needs_redraw = true;
     }
 
@@ -877,6 +881,8 @@ impl BrowserApp {
                             self.tabs.on_active_tab_changed(self.shell.active_tab_id());
                             self.set_hovered_link_url(None);
                             self.update_address_bar_from_active_tab();
+                            // zoom 按标签存储——切换后按新活动标签重推 CSS 视口。
+                            self.sync_webview_viewport();
                             self.needs_redraw = true;
                         }
                         return;
@@ -1222,7 +1228,8 @@ impl BrowserApp {
     }
 
     fn page_doc_point(&self, x_f: f32, y_f: f32) -> Option<(TabId, f32, f32)> {
-        let s = self.scale_factor;
+        // CSS 坐标换算含页面 zoom（device scale × zoom）。
+        let s = self.page_render_scale();
         let tab_id = self.shell.active_tab_id()?;
         if self.find_bar_hit_test(x_f, y_f) {
             return None;
