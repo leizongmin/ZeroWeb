@@ -460,11 +460,20 @@
         }
         if (prop === 'previousSibling' || prop === 'nextSibling') {
           if (!sel || typeof __zw_sibling_nodes !== 'function') return null;
-          try {
-            var pair = JSON.parse(__zw_sibling_nodes(sel) || '{"p":null,"n":null}');
-            var en = prop === 'previousSibling' ? pair.p : pair.n;
-            return _wrapNodeEntry(en, _parentNodeFor(sel, handle));
-          } catch (_e) { return null; }
+          // js-dom M4 R55：兄弟对缓存（与 _zwChildBaseCache 同款生命周期——dom_html Arc 回合内
+          // 不可变；重注册经 globalThis._zwSiblingBaseInvalidateAll 全量失效）。同 turn 内
+          // nextSibling/previousSibling 交替读（Range testFn 边界点遍历）不再每次双 host 往返
+          //（__zw_sibling_nodes + __zw_parent）+ 重包装。
+          var _sb = _zwSiblingBaseCache.get(sel);
+          if (!_sb) {
+            try {
+              var pair = JSON.parse(__zw_sibling_nodes(sel) || '{"p":null,"n":null}');
+            } catch (_e2) { return null; }
+            _sb = { p: _wrapNodeEntry(pair.p, null), n: _wrapNodeEntry(pair.n, null) };
+            if (_zwSiblingBaseCache.size > 512) _zwSiblingBaseCache.clear();
+            _zwSiblingBaseCache.set(sel, _sb);
+          }
+          return prop === 'previousSibling' ? _sb.p : _sb.n;
         }
         // `el.contains(other)`——other 是否为 el 的后代或 el 自身（沿 parent 链）。
         if (prop === 'contains') {
