@@ -2,3 +2,4 @@
 # date,mode,wpt_data_ref,total,passed,rate_pct,extra,git_sha,note
 2026-08-07,upstream,v1.10,16269,13296,81.7,failed=2973;skipped=0,c18555a,
 2026-08-08,upstream,v1.10,16269,13251,81.4,failed=3018;skipped=0,bad4b3b,
+2026-08-15,upstream,v1.10,16269,13265,81.5,failed=3004;skipped=0,238e1db,
