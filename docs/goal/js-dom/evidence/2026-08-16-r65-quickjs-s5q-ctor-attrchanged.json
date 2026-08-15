@@ -1,0 +1,31 @@
+{
+  "date": "2026-08-16",
+  "round": "R65",
+  "milestone": "M6 S5q 深化 — QuickJS 完整 ctor 执行 + attributeChangedCallback（js-dom goal DC-7）",
+  "commit": "7a486499",
+  "api_improved": {
+    "完整 ctor 执行": "registered ctor 以 native 元素为 this **普通调用**（Args::this + apply）——关键发现：JS_CallConstructor* 的 construct 语义会新建 this 对象（字段初始化落不到 native 元素，NaN 实证），this 绑定普通调用才是 V8 super() 注入链的 Rust 侧等价形态。字段初始化生效（this.count=41）+ 状态保持（greet ++count 42/43）。非 constructor 形态（箭头函数）退回纯原型挂载",
+    "attributeChangedCallback": "setAttribute 路径对 registry 命中元素派发（name, oldValue=null PoC 简化——写前捕获重排注记；observedAttributes 过滤延后）"
+  },
+  "poce2e": [
+    "ctor body this.count=41 字段初始化生效",
+    "greet() ++this.count 状态保持：42/43 连续断言",
+    "R64 路径回归：无字段 ctor 的 prototype 方法仍可达",
+    "setAttribute → 'attr:data-k:v1' 派发",
+    "conn|attr|disc ceLog 序贯集成"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_quickjs_wiring": "2 passed",
+    "clippy": "quickjs 矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "api_findings": [
+    "JS_CallConstructor2 传 this 仍走 construct 语义（新建 this 对象）——upgrade 场景须用 this 绑定普通调用（NaN 实证定位）",
+    "Constructor::from_value 需 JS_IsConstructor 标志（普通 function 声明有；箭头函数无）",
+    "Value::as_object() 返 Option<&Object>——Args::this 需 owned，.cloned() 转换"
+  ],
+  "m6_remaining": "S4q 完整化（capture/bubble 链 + Event 构造器族 + DOMException 基建）/ observedAttributes 过滤 + oldValue 写前捕获 / S0q weak/finalizer / S1q 复合对象 attributes·classList",
+  "session_total": "R57→R65 两轮十三切片：S0q 骨架 → S1q 反射 → S2q 方法/写入/mutation/树读回 → S3q 查询 → S4q EventTarget → S5q customElements+lifecycle+完整 ctor"
+}
