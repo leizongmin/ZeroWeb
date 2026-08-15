@@ -12,15 +12,18 @@ pub enum UiLanguage {
 impl UiLanguage {
     /// Detect the preferred UI language from common environment variables.
     pub fn detect_from_env() -> Self {
-        for key in ["ZERO_BROWSER_UI_LANG", "LC_ALL", "LC_MESSAGES", "LANG"] {
-            if let Ok(value) = std::env::var(key) {
-                let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
-                if normalized.starts_with("zh") {
-                    return Self::ZhCn;
-                }
-                if normalized.starts_with("en") {
-                    return Self::EnUs;
-                }
+        let configured = zero_runtime_config::optional_string("ZERO_BROWSER_UI_LANG");
+        for value in configured.into_iter().chain(
+            ["LC_ALL", "LC_MESSAGES", "LANG"]
+                .into_iter()
+                .filter_map(|key| std::env::var(key).ok()),
+        ) {
+            let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
+            if normalized.starts_with("zh") {
+                return Self::ZhCn;
+            }
+            if normalized.starts_with("en") {
+                return Self::EnUs;
             }
         }
         Self::EnUs

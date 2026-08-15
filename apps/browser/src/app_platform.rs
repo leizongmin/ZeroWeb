@@ -552,7 +552,7 @@ impl BrowserApp {
             }
         });
 
-        let blit_enabled = std::env::var("ZERO_SCROLL_BLIT").as_deref() != Ok("0");
+        let blit_enabled = zero_runtime_config::enabled_unless_zero("ZERO_SCROLL_BLIT");
         let dy = (scroll.y - self.fb_cache_scroll.1).round() as i32;
         let same_fraction = (scroll.y - scroll.y.floor()) == (self.fb_cache_scroll.1 - self.fb_cache_scroll.1.floor());
         // 页面内容与上一帧完全一致（无新快照、滚动未变、无选区/浮层/拖拽）→ 保留
@@ -1003,7 +1003,7 @@ pub(crate) fn shared_system_fonts() -> (FontLoader, Option<u32>) {
 
 /// 环境变量 `ZERO_BROWSER_COLOR_SCHEME` 覆盖（`dark` / `light`）。
 pub fn color_scheme_from_env() -> Option<PrefersColorSchemeValue> {
-    let val = std::env::var("ZERO_BROWSER_COLOR_SCHEME").ok()?;
+    let val = zero_runtime_config::optional_string("ZERO_BROWSER_COLOR_SCHEME")?;
     if val.eq_ignore_ascii_case("dark") {
         Some(PrefersColorSchemeValue::Dark)
     } else if val.eq_ignore_ascii_case("light") {

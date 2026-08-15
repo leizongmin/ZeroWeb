@@ -67,18 +67,12 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
 ///
 /// 供浏览器进程的流式 fetch 路径决定是否附加 RFC 9218 `Priority` 请求头。
 pub fn http2_enabled() -> bool {
-    std::env::var("ZERO_HTTP2")
-        .ok()
-        .is_none_or(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+    zero_runtime_config::enabled_by_default("ZERO_HTTP2")
 }
 
 /// 默认尊重系统/环境代理；设 `ZERO_NOPROXY=1`（或 `true`，大小写不敏感）可完全绕过代理直连。
 pub(crate) fn no_proxy_enabled() -> bool {
-    match std::env::var("ZERO_NOPROXY").ok().as_deref() {
-        Some("1") => true,
-        Some(v) => v.eq_ignore_ascii_case("true"),
-        None => false,
-    }
+    zero_runtime_config::enabled_when_true("ZERO_NOPROXY")
 }
 
 /// 将 reqwest 错误映射为 `NetError`；代理相关失败单独归类以便 UI/日志识别。

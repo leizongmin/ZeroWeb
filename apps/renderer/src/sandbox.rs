@@ -2,7 +2,7 @@
 
 /// 是否启用 renderer seccomp（`ZW_RENDERER_SECCOMP=1`）。
 pub fn renderer_seccomp_enabled() -> bool {
-    std::env::var("ZW_RENDERER_SECCOMP").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_RENDERER_SECCOMP")
 }
 
 /// 启动早期应用 renderer 沙箱（当前仅日志 + env 剥离）。

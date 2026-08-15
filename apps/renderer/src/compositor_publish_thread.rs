@@ -24,9 +24,10 @@ use zero_protocol::{IpcChannel, IpcMessage};
 
 /// 是否启用 compositor 发布线程（默认开；仅精确值 `0` 禁用）。
 pub fn compositor_publish_threading_enabled() -> bool {
-    compositor_publish_threading_enabled_from_env(std::env::var("ZW_RENDERER_COMPOSITOR_THREAD").ok().as_deref())
+    zero_runtime_config::enabled_when_true("ZW_RENDERER_COMPOSITOR_THREAD")
 }
 
+#[cfg(test)]
 fn compositor_publish_threading_enabled_from_env(value: Option<&str>) -> bool {
     value != Some("0")
 }

@@ -420,8 +420,8 @@ impl DiskCacheHit {
 
 /// 默认 HTTP 磁盘缓存目录。
 pub fn default_cache_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("ZERO_CACHE_DIR") {
-        return PathBuf::from(dir);
+    if let Some(dir) = zero_runtime_config::optional_path("ZERO_CACHE_DIR") {
+        return dir;
     }
     dirs::cache_dir()
         .map(|d| d.join("ZeroBrowser").join("HTTP Cache"))

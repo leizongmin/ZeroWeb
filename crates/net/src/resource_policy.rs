@@ -16,21 +16,13 @@ pub const DEFAULT_MAX_CONNECTIONS_TOTAL: usize = 24;
 
 /// 每 origin 最大并发连接数；可通过 [`ENV_MAX_CONNECTIONS_PER_ORIGIN`] 覆盖。
 pub fn max_connections_per_origin() -> usize {
-    std::env::var(ENV_MAX_CONNECTIONS_PER_ORIGIN)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or(DEFAULT_MAX_CONNECTIONS_PER_ORIGIN)
+    zero_runtime_config::positive_usize(ENV_MAX_CONNECTIONS_PER_ORIGIN, DEFAULT_MAX_CONNECTIONS_PER_ORIGIN)
 }
 
 /// 所有 origin 合计的最大并发 HTTP 请求数；可通过
 /// [`ENV_MAX_CONNECTIONS_TOTAL`] 覆盖。
 pub fn max_connections_total() -> usize {
-    std::env::var(ENV_MAX_CONNECTIONS_TOTAL)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or(DEFAULT_MAX_CONNECTIONS_TOTAL)
+    zero_runtime_config::positive_usize(ENV_MAX_CONNECTIONS_TOTAL, DEFAULT_MAX_CONNECTIONS_TOTAL)
 }
 
 /// 从 URL 提取 origin（scheme + host + port），用于 per-origin 限流。

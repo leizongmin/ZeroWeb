@@ -28,6 +28,7 @@ parking_lot = { workspace = true }
 pollster = { workspace = true }
 winit = { workspace = true }
 zero-protocol = { workspace = true }
+zero-runtime-config = { workspace = true }
 
 # FreeType（chromium Linux 同栈光栅化器）——经 `freetype-raster` feature 启用（R1159 起为 default）。
 # 默认构建即编译 FreeType2 C 源（`freetype-rs/bundled`），非-Ahem 字形优先 FreeType 光栅化。

@@ -275,7 +275,7 @@ fn parse_args_from(
         if single_process {
             return Err("GUI smoke requires the multi-process renderer".to_string());
         }
-        let gpu_dmabuf_smoke = std::env::var("ZERO_BROWSER_GPU_DMABUF_SMOKE").as_deref() == Ok("1");
+        let gpu_dmabuf_smoke = zero_runtime_config::enabled_when_true("ZERO_BROWSER_GPU_DMABUF_SMOKE");
         if gpu_dmabuf_smoke && render_mode == RenderMode::Cpu {
             return Err("GPU dma-buf smoke requires --renderer=gpu|auto --scale=1".to_string());
         }
@@ -787,7 +787,7 @@ fn main() {
                         presented_frame.as_ref(),
                         presented_source,
                     ) {
-                        let mode = if std::env::var("ZERO_BROWSER_GPU_DMABUF_SMOKE").as_deref() == Ok("1") {
+                        let mode = if zero_runtime_config::enabled_when_true("ZERO_BROWSER_GPU_DMABUF_SMOKE") {
                             "gpu-dmabuf"
                         } else if compositor_client::enabled() {
                             "compositor"

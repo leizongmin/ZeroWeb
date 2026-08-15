@@ -10,17 +10,17 @@ mod landlock_linux;
 
 /// 是否启用 compositor 沙箱钩子（环境变量剥离）。
 pub fn compositor_sandbox_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_SANDBOX").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SANDBOX")
 }
 
 /// 是否启用 compositor seccomp 过滤器（Linux；`ZW_COMPOSITOR_SECCOMP=1`）。
 pub fn compositor_seccomp_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_SECCOMP").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SECCOMP")
 }
 
 /// 是否启用 compositor Landlock（Linux；`ZW_COMPOSITOR_LANDLOCK=1`）。
 pub fn compositor_landlock_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_LANDLOCK").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_LANDLOCK")
 }
 
 /// 启动早期沙箱：env 剥离 + seccomp（须在任何子线程之前）。

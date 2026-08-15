@@ -6318,6 +6318,7 @@ dependencies = [
  "zero-product-version",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-runtime-config",
  "zero-script-sandbox",
  "zero-security",
  "zero-storage",
@@ -6335,6 +6336,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "zero-host-runtime",
+ "zero-runtime-config",
  "zero-webview",
 ]
 
@@ -6360,6 +6362,7 @@ dependencies = [
  "tracing-subscriber",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-runtime-config",
 ]
 
 [[package]]
@@ -6510,6 +6513,7 @@ dependencies = [
  "url",
  "zero-product-version",
  "zero-psl",
+ "zero-runtime-config",
 ]
 
 [[package]]
@@ -6535,6 +6539,7 @@ dependencies = [
  "serial_test",
  "thiserror 2.0.18",
  "windows-sys 0.59.0",
+ "zero-runtime-config",
 ]
 
 [[package]]
@@ -6571,6 +6576,7 @@ dependencies = [
  "winit",
  "wuff",
  "zero-protocol",
+ "zero-runtime-config",
 ]
 
 [[package]]
@@ -6592,11 +6598,16 @@ dependencies = [
  "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-runtime-config",
  "zero-script-sandbox",
  "zero-storage",
  "zero-style-system",
  "zero-webview",
 ]
+
+[[package]]
+name = "zero-runtime-config"
+version = "0.1.0"
 
 [[package]]
 name = "zero-script-sandbox"
@@ -6682,6 +6693,7 @@ dependencies = [
  "zero-page-runtime",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-runtime-config",
  "zero-script-sandbox",
  "zero-security",
  "zero-storage",

@@ -24,10 +24,7 @@ use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
 
 /// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
 pub fn use_multiprocess_backend() -> bool {
-    match std::env::var("ZERO_BROWSER_MULTIPROCESS") {
-        Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
-        Err(_) => true,
-    }
+    zero_runtime_config::enabled_by_default("ZERO_BROWSER_MULTIPROCESS")
 }
 
 /// 供 CLI 在解析参数后强制启用多进程。
@@ -61,8 +58,7 @@ fn renderer_binary_filename() -> &'static str {
 /// 4. `std::env::current_exe()` 所在目录（含测试二进制 `target/debug/deps/` 上溯 `target/debug/`）
 /// 5. `PATH`（系统级安装等兜底）
 fn resolve_renderer_binary() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("ZERO_RENDERER_PATH") {
-        let candidate = PathBuf::from(path);
+    if let Some(candidate) = zero_runtime_config::optional_path("ZERO_RENDERER_PATH") {
         if candidate.is_file() {
             return Some(candidate);
         }

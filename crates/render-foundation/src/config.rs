@@ -22,11 +22,7 @@ impl RenderMode {
     ///
     /// 环境变量未设置时返回 `Ok(None)`；设置为无效值时返回错误。
     pub fn from_env() -> Result<Option<Self>, String> {
-        match std::env::var(Self::ENV_VAR) {
-            Ok(value) => value.parse().map(Some),
-            Err(std::env::VarError::NotPresent) => Ok(None),
-            Err(err) => Err(format!("{} is not valid UTF-8: {err}", Self::ENV_VAR)),
-        }
+        zero_runtime_config::renderer_mode()?.map_or(Ok(None), |value| value.parse().map(Some))
     }
 
     /// 命令行帮助中展示的允许值。

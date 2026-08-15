@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+zero-runtime-config = { workspace = true }
 bincode = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -21,6 +21,7 @@ quickjs = ["zero-engine/quickjs", "zero-webview/quickjs", "zero-script-sandbox/q
 
 [dependencies]
 zero-product-version = { workspace = true }
+zero-runtime-config = { workspace = true }
 zero-browser-shell = { workspace = true }
 zero-webview = { workspace = true }
 zero-page-runtime = { workspace = true }

@@ -35,7 +35,8 @@ struct ImageDecoderProxy {
 
 impl ImageDecoderProxy {
     fn spawn() -> Option<Self> {
-        let bin = std::env::var("ZW_IMAGE_DECODER_BIN").unwrap_or_else(|_| "zero-image-decoder".to_string());
+        let bin =
+            zero_runtime_config::optional_path("ZW_IMAGE_DECODER_BIN").unwrap_or_else(|| "zero-image-decoder".into());
         let mut cmd = Command::new(&bin);
         for arg in child_process_args(ProcessRole::ImageDecoder, 0) {
             cmd.arg(arg);
@@ -105,7 +106,7 @@ static PROXY: Mutex<Option<ImageDecoderProxy>> = Mutex::new(None);
 
 /// 多进程解码是否启用（env `ZW_IMAGE_DECODER_PROCESS=1`）。
 fn proxy_enabled() -> bool {
-    std::env::var("ZW_IMAGE_DECODER_PROCESS").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_IMAGE_DECODER_PROCESS")
 }
 
 /// 解码图像字节（webview 侧统一入口；D1 分发）。

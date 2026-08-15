@@ -15,6 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 zero-render-foundation = { workspace = true }
+zero-runtime-config = { workspace = true }
 zero-protocol = { workspace = true }
 zero-engine = { workspace = true }
 zero-page-runtime = { workspace = true }

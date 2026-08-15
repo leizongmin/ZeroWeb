@@ -1,0 +1,6 @@
+[package]
+name = "zero-runtime-config"
+description = "ZeroWeb 运行时环境变量配置的唯一入口"
+version.workspace = true
+edition.workspace = true
+license.workspace = true

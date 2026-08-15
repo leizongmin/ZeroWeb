@@ -18,6 +18,7 @@ members = [
     "crates/storage",
     "crates/protocol",
     "crates/product-version",
+    "crates/runtime-config",
 
     # 脚本与沙箱
     "crates/script-sandbox",
@@ -152,6 +153,7 @@ zero-security = { path = "crates/security" }
 zero-storage = { path = "crates/storage" }
 zero-protocol = { path = "crates/protocol" }
 zero-product-version = { path = "crates/product-version" }
+zero-runtime-config = { path = "crates/runtime-config" }
 zero-script-sandbox = { path = "crates/script-sandbox", default-features = false }
 zero-wasm-sandbox = { path = "crates/wasm-sandbox" }
 zero-page-runtime = { path = "crates/page-runtime", default-features = false }

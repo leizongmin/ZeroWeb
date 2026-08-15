@@ -14,10 +14,7 @@ const SHM_PREFIX: &str = "zeroweb-cmp-";
 fn env_linux_default_on(name: &str) -> bool {
     #[cfg(target_os = "linux")]
     {
-        match std::env::var(name) {
-            Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
-            Err(_) => true,
-        }
+        zero_runtime_config::enabled_by_default(name)
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -35,7 +32,7 @@ pub fn compositor_gpu_enabled() -> bool {
 pub fn compositor_shm_enabled() -> bool {
     #[cfg(target_os = "linux")]
     {
-        std::env::var("ZW_COMPOSITOR_SHM").is_ok_and(|v| v == "1")
+        zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SHM")
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -46,7 +43,7 @@ pub fn compositor_shm_enabled() -> bool {
 
 /// 是否启用 compositor 侧 scroll 烘焙（RFC 4.2-S2；`ZW_COMPOSITOR_SCROLL_TRANSFORM=1`）。
 pub fn compositor_scroll_transform_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_SCROLL_TRANSFORM").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SCROLL_TRANSFORM")
 }
 
 /// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux 默认开；`ZW_COMPOSITOR_GPU_IMAGE=0` 禁用）。
@@ -60,7 +57,7 @@ pub fn compositor_gpu_image_enabled() -> bool {
 pub fn compositor_gpu_zero_copy_enabled() -> bool {
     #[cfg(target_os = "linux")]
     {
-        std::env::var("ZW_COMPOSITOR_GPU_ZERO_COPY").is_ok_and(|v| v == "1")
+        zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_GPU_ZERO_COPY")
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -81,18 +78,12 @@ pub fn browser_gpu_dmabuf_import_enabled() -> bool {
 
 /// 是否启用 compositor 拥有最终窗口 present（RFC 4.4-S4；默认开，`0` 禁用）。
 pub fn compositor_owned_present_enabled() -> bool {
-    !matches!(
-        std::env::var("ZW_COMPOSITOR_OWNED_PRESENT"),
-        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false")
-    )
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_OWNED_PRESENT")
 }
 
 /// 是否启用 compositor Viz present（page+UI 合成；默认开，`0` 禁用）。
 pub fn compositor_present_enabled() -> bool {
-    !matches!(
-        std::env::var("ZW_COMPOSITOR_PRESENT"),
-        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false")
-    )
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_PRESENT")
 }
 
 /// 期望 RGBA 字节数；`width`/`height` 为 0 时允许 0。

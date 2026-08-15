@@ -596,9 +596,9 @@ fn spawn_transport(child_slot: Arc<Mutex<Option<Child>>>) -> Result<Box<dyn Work
     // 此前 spawn 失败 → Disconnected → CompositorFrame 全被丢弃（测试与 CLI 直跑差异）。
     // 查找顺序：ZW_COMPOSITOR_BIN → CARGO_BIN_EXE_zero-compositor → current_exe 同目录
     // （测试二进制 target/debug/deps/ 上溯 target/debug/）→ PATH 兜底。
-    let bin = match std::env::var("ZW_COMPOSITOR_BIN") {
-        Ok(bin) => bin,
-        Err(_) => {
+    let bin = match zero_runtime_config::optional_path("ZW_COMPOSITOR_BIN") {
+        Some(bin) => bin.to_string_lossy().into_owned(),
+        None => {
             let mut candidate = std::env::var("CARGO_BIN_EXE_zero-compositor").ok().map(PathBuf::from);
             if candidate.as_ref().is_none_or(|p| !p.is_file())
                 && let Ok(exe) = std::env::current_exe()
@@ -1010,7 +1010,7 @@ fn enabled_from_env(value: Option<&str>) -> bool {
 
 /// 返回是否启用 compositor 模式。
 pub fn enabled() -> bool {
-    enabled_from_env(std::env::var("ZW_COMPOSITOR_PROCESS").ok().as_deref())
+    zero_runtime_config::enabled_unless_zero("ZW_COMPOSITOR_PROCESS")
 }
 
 /// 返回当前 compositor client 状态，不执行阻塞式 IPC。
@@ -1067,7 +1067,7 @@ pub fn set_scroll(surface_id: u64, scroll_x: f32, scroll_y: f32) {
 
 /// 是否启用 compositor 异步滚动（Browser 使用 compositor 回读 scroll 做位图变换）。
 pub fn async_scroll_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_ASYNC_SCROLL").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_ASYNC_SCROLL")
 }
 
 /// 是否启用 compositor 侧 scroll 烘焙（回读 scroll 为 0，Browser 不再偏移位图）。
@@ -1116,7 +1116,7 @@ pub fn forward_ui_frame(surface_id: u64, width: u32, height: u32, rgba: Vec<u8>)
 
 /// 是否向 compositor 提交 UI 位图（`ZW_COMPOSITOR_UI_FRAMES=1`）。
 pub fn ui_frames_enabled() -> bool {
-    std::env::var("ZW_COMPOSITOR_UI_FRAMES").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_UI_FRAMES")
 }
 
 /// 是否启用 GPU shared image mailbox（`ZW_COMPOSITOR_GPU_IMAGE=1`，Linux）。

@@ -12,6 +12,7 @@ quickjs = ["zero-webview/quickjs"]
 
 [dependencies]
 zero-webview = { workspace = true }
+zero-runtime-config = { workspace = true }
 zero-host-runtime = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

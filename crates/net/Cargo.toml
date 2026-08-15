@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 zero-product-version = { workspace = true }
+zero-runtime-config = { workspace = true }
 zero-psl = { workspace = true }
 hyper = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "gzip", "brotli", "deflate"] }

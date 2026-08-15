@@ -16,12 +16,12 @@ use crate::surface::FrameBuffer;
 
 /// 是否启用渲染线程（默认开；`ZW_RENDER_THREAD=0` 关闭）。
 pub fn render_threading_enabled() -> bool {
-    std::env::var("ZW_RENDER_THREAD").map(|v| v != "0").unwrap_or(true)
+    zero_runtime_config::enabled_unless_zero("ZW_RENDER_THREAD")
 }
 
 /// reftest/headless 专用：仅 `ZW_RENDER_THREAD=1` 时走线程路径（确定性默认单线程）。
 pub fn render_threading_enabled_for_tests() -> bool {
-    std::env::var("ZW_RENDER_THREAD").is_ok_and(|v| v == "1")
+    zero_runtime_config::enabled_when_true("ZW_RENDER_THREAD")
 }
 
 struct RenderJob {
