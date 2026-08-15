@@ -2094,6 +2094,13 @@
             // view for created elements so childNodes/firstChild/lastChild remain
             // observable within the script that assigned innerHTML.
             if (handle) _handleChildren[handle] = _ihAdded;
+            // js-dom M4 R56：sel 路径替换后丢弃 childNodes 基底缓存条目。R55 的 identity
+            // 稳定副作用 + 本行上方 _ihRemoved 读（把旧基底入缓存）→ 同回合内 `el.childNodes`
+            // 缓存命中旧基底，overlay 的 pending-removed 剔除 identity 命中清空列表；而 added
+            //（_zwFragmentAdded 的 _zwMEl 解析代理，无 __zwHandle）不并入 → length=0
+            //（security/xss/innerHTML-sanitization 全平台 FAIL）。删条目后回退 host 读
+            //（旧快照 + 每次新包装不命中剔除，R55 前语义），flush 重注册后自然换代。
+            if (!handle && typeof _zwChildBaseCache !== 'undefined') _zwChildBaseCache.delete(sel);
             // R34xx：纯文本 innerHTML → 本地文本节点注册（selection-rects 的
             // el.childNodes[0] 文本节点——created handle 元素无 sel，host 不可查）。
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。

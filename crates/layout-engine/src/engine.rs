@@ -1192,14 +1192,16 @@ impl LayoutEngine {
                 use zero_css_parser::values::types::LengthValue;
                 matches!(s.top, LengthValue::Auto) && matches!(s.bottom, LengthValue::Auto)
             });
-        // 替换元素（有固有尺寸）：img/video/iframe/embed/object/svg/canvas。
+        // 替换元素（有固有尺寸）：img/video/iframe/embed/object/svg/canvas/applet。
         // CSS §10.3.8/§10.6.6 对其 auto 尺寸按固有尺寸解析，不走 §10.3.18/§10.6.4
         // 全-inset stretch。标记供 abspos stretch 后处理跳过（避免覆写固有尺寸）。
+        // applet 与 embed/object 同族（R2091 固有尺寸语义），补入以免 float_positioning
+        // 的 BFC auto-height 重算把其属性固有高度压成 0（tests_10 断言 60px 实测 0）。
         let is_replaced = dom_id.is_some_and(|id| {
             doc.get(id).is_some_and(|n| match &n.kind {
                 zero_dom::NodeKind::Element(elem) => matches!(
                     elem.local_name(),
-                    "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas"
+                    "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas" | "applet"
                 ),
                 _ => false,
             })

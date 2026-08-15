@@ -1601,8 +1601,18 @@ pub(crate) fn adjust_float_positions_with_context(
     // so an initially stacked row of floated navigation items does not leave its
     // parent at the stale pre-float height.
     if box_node.declared_height_auto
+        && !box_node.is_absolute
+        && !box_node.is_fixed
+        && !box_node.is_replaced
         && (box_node.is_flow_root || matches!(box_node.float, FloatValue::Left | FloatValue::Right))
     {
+        // 本重算的语义是「BFC 的 auto height 包含其浮动后代」，仅适用于参与文档流的
+        // 普通容器，须排除两类盒子：
+        // ① absolute/fixed 定位（脱离文档流，高度由 inset stretch/内容决定——R1781
+        //    abspos input stretch 94px 被压成 8）；
+        // ② replaced 元素（canvas/img/video/iframe/embed/object/svg/applet 等）：auto
+        //    height 由固有尺寸或 CSS 决定，无子元素时 content_bottom fold 初始 0.0 会把
+        //    固有高度压成 0（R3268 canvas 显示链路全平台 FAIL）。
         let content_bottom = box_node
             .children
             .iter()
