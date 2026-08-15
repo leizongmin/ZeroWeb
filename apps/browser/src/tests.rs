@@ -3194,31 +3194,21 @@ fn owned_present_waits_for_present_pixels_before_skipping_local_composite() {
 fn text_glyph_positions_match_shaping_baseline() {
     use zero_engine::set_char_measure_fn;
     use zero_render_foundation::font::TextShaper;
-    use zero_render_foundation::font::loader::FontLoader;
     use zero_render_foundation::primitive::FontId;
     use zero_webview::{WebView, WebViewConfig};
 
     const LATO_TTF: &[u8] = include_bytes!("../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
-    let liberation_path = [
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    ]
-    .iter()
-    .find(|p| std::path::Path::new(p).exists())
-    .expect("系统 sans 字体存在");
 
     // 全局 measure/shape 回调：BrowserApp 启动时注册（browser 实现，走 MEASURE_CTX）。
     let _app = BrowserApp::new(RenderMode::Cpu);
 
-    // 测试字体 loader：Lato（@font-face 场景）+ 系统 sans（primary）。
-    let mut loader = FontLoader::new();
+    // 测试字体 loader：Lato（@font-face 场景）+ 系统 sans（primary）。与 BrowserApp
+    // 同源（shared_system_fonts 进程级缓存），跨平台可用（Linux Liberation/DejaVu、
+    // macOS SFNS/Helvetica、Windows Segoe/Arial），不再硬编码 Linux 字体路径。
+    let (mut loader, sans_id) = crate::app::shared_system_fonts();
+    let sans_id = sans_id.expect("系统 sans 字体存在");
     let lato_id = loader.load_font(LATO_TTF).expect("bundled Lato 可加载");
     loader.register_family_alias("Lato", lato_id);
-    let sans_id = loader
-        .load_font(&std::fs::read(liberation_path).expect("读系统字体"))
-        .expect("系统 sans 可加载");
     loader.register_family_alias("sans-serif", sans_id);
 
     let html = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -3302,21 +3292,14 @@ fn text_wrap_points_match_shaping_baseline() {
 
     // 基准：逐词宽度（词间空格宽 0.25em？——不，用 rustybuzz 精确）切行。
     // 词序列：以空格分词，每词宽 = shaped advance 和 + 空格宽。
-    let mut baseline_loader = zero_render_foundation::font::loader::FontLoader::new();
-    let primary_path = [
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    ]
-    .iter()
-    .find(|p| std::path::Path::new(p).exists())
-    .expect("系统字体存在");
-    let font_data = std::fs::read(primary_path).expect("读系统字体");
-    let font_id = baseline_loader.load_font(&font_data).expect("系统字体可加载");
+    // 浏览器实际布局字体 = shared_system_fonts primary（与 BrowserApp 同源进程级缓存），
+    // 基准必须同源换行点才可比；跨平台可用（Linux Liberation/DejaVu、macOS SFNS/Helvetica、
+    // Windows Segoe/Arial），不再硬编码 Linux 字体路径。
+    let (baseline_loader, primary_id) = crate::app::shared_system_fonts();
+    let primary_id = primary_id.expect("系统字体存在");
     let shaper = zero_render_foundation::font::TextShaper::new(
         &baseline_loader,
-        Some(zero_render_foundation::primitive::FontId(font_id)),
+        Some(zero_render_foundation::primitive::FontId(primary_id)),
     );
     let words: Vec<&str> = sentence.split(' ').collect();
     let word_widths: Vec<f32> = words

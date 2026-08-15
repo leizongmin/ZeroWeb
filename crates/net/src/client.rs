@@ -2055,14 +2055,35 @@ mod integration_tests {
     #[test]
     fn send_async_follows_relative_redirect() {
         let (listener, url) = bind_server();
+
+        // 路径幂等服务：/ → 302 /final，/final → 200 "redirected"（终端响应后线程退出）。
+        // 使 send_with_local_retry 在瞬态 connect 失败上重试整个请求时安全（每次从 / 重新开始，
+        // 服务端按路径响应，不依赖连接序号）——吸收并发负载下 bind_server accept 竞态
+        //（同 test_send_redirect_relative_url）。
         let server = std::thread::spawn(move || {
-            respond_once(&listener, 302, "Location: /final\r\n", "");
-            respond_once(&listener, 200, "Content-Type: text/plain\r\n", "redirected");
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 8192];
+                if stream.read(&mut buf).is_err() {
+                    continue;
+                }
+                let req = String::from_utf8_lossy(&buf);
+                if req.contains("/final") {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 10\r\n\r\nredirected",
+                    );
+                    let _ = stream.flush();
+                    return; // 终端响应后退出 → server.join() 不挂
+                } else {
+                    let _ = stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\n\r\n");
+                    let _ = stream.flush();
+                }
+            }
         });
         let client = HttpClient::new();
         let runtime = tokio::runtime::Runtime::new().expect("Tokio runtime");
-        let response = runtime
-            .block_on(client.send_async(HttpRequest::get(&url)))
+        let base = url.clone();
+        let response = send_with_local_retry(|| runtime.block_on(client.send_async(HttpRequest::get(&base))))
             .expect("async redirect");
         assert_eq!(response.status_code, 200);
         assert_eq!(response.body, b"redirected");
