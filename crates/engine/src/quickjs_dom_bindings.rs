@@ -53,6 +53,14 @@ thread_local! {
     /// Persistent（跨调用持久；S0q 同款 weak 化延后注记）。
     static LISTENERS: RefCell<HashMap<(u64, String), Vec<(bool, Persistent<Value<'static>>)>>> =
         RefCell::new(HashMap::new());
+    /// S5q customElements registry（spec `dom-customelementregistry`）：tag（ASCII 小写键，
+    /// spec define 规范化）→ registered ctor（Persistent strong）。`whenDefined` 等待集
+    /// 经 `__zw_native_ce_when_defined` 全局 JS Set 承载（promise resolve 属异步域，PoC
+    /// 以同步注册后立即解析语义简化——见 install 注册的 wrapper）。
+    static CE_REGISTRY: RefCell<HashMap<String, Persistent<Value<'static>>>> =
+        RefCell::new(HashMap::new());
+    /// S5q 连接态追踪（镜像 V8 CONNECTED_CUSTOM）：已连入 document 的 custom 元素 ffi 集。
+    static CONNECTED_CUSTOM: RefCell<std::collections::HashSet<u64>> = RefCell::new(std::collections::HashSet::new());
 }
 
 /// 在当前 DOM 源上执行只读操作；无 DOM 源时返 `None`。
@@ -74,6 +82,8 @@ pub fn reset_quickjs_state() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
     LISTENERS.with(|c| c.borrow_mut().clear());
+    CE_REGISTRY.with(|c| c.borrow_mut().clear());
+    CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
 }
 
 // ── NodeId ↔ u64(ffi) ↔ f64（JS Number）编解码 ──────────────────────
@@ -342,6 +352,27 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
     if let Ok(f) = Function::new(ctx.clone(), native_query_selector_all_entry) {
         let _ = ctx.globals().set("__zw_native_query_selector_all", f);
     }
+
+    // 5. S5q `customElements` 全局对象（五件套；spec `dom-customelementregistry`）。
+    //    命名对齐 V8 侧 wire 语义（Rust registry 权威 + JS 薄方法面）。
+    if let Ok(ce) = rquickjs::Object::new(ctx.clone()) {
+        if let Ok(f) = Function::new(ctx.clone(), ce_define) {
+            let _ = ce.set("define", f);
+        }
+        if let Ok(f) = Function::new(ctx.clone(), ce_get) {
+            let _ = ce.set("get", f);
+        }
+        if let Ok(f) = Function::new(ctx.clone(), ce_get_name) {
+            let _ = ce.set("getName", f);
+        }
+        if let Ok(f) = Function::new(ctx.clone(), ce_when_defined) {
+            let _ = ce.set("whenDefined", f);
+        }
+        if let Ok(f) = Function::new(ctx.clone(), ce_upgrade) {
+            let _ = ce.set("upgrade", f);
+        }
+        let _ = ctx.globals().set("__zw_native_customElements", ce);
+    }
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -369,7 +400,12 @@ fn native_create_element_entry<'js>(ctx: Ctx<'js>, tag: Opt<rquickjs::Coerced<St
     let Some(node_id) = with_dom_mut(|d| d.create_element(&tag.0)) else {
         return Value::new_null(ctx);
     };
-    get_or_build_node_value(&ctx, node_id)
+    let v = get_or_build_node_value(&ctx, node_id);
+    // S5q upgrade（PoC 路径）：命中 registry → 原型挂 ctor.prototype（见模块注释）。
+    if let Some(obj) = v.as_object().cloned() {
+        apply_ce_prototype(&obj, &ctx, &tag.0);
+    }
+    v
 }
 
 /// NodeId → native 对象（身份缓存命中或新建，带全套属性/方法面）。`get_or_create`
@@ -686,7 +722,11 @@ fn append_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<V
         return Value::new_null(ctx);
     };
     match with_dom_mut(|d| d.append_child(parent_id, child_id)) {
-        Some(Ok(())) => child_v,
+        Some(Ok(())) => {
+            // S5q lifecycle：custom 子树连接态真转 → connectedCallback 派发。
+            notify_connect_after_insert(&ctx, parent_id, child_id);
+            child_v
+        }
         _ => Value::new_null(ctx),
     }
 }
@@ -701,7 +741,11 @@ fn remove_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<V
         return Value::new_null(ctx);
     };
     match with_dom_mut(|d| d.remove_child(parent_id, child_id)) {
-        Some(Ok(_)) => child_v,
+        Some(Ok(_)) => {
+            // S5q lifecycle：断开子树 custom 元素 → disconnectedCallback 派发。
+            notify_disconnect_after_remove(&ctx, child_id);
+            child_v
+        }
         _ => Value::new_null(ctx),
     }
 }
@@ -830,6 +874,218 @@ fn dispatch_event_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, type_: rqu
     true
 }
 
+// ── S5q customElements 五件套 + lifecycle（spec `dom-customelementregistry`；
+//    镜像 V8 custom_elements.rs 的「Rust 管树逻辑 / JS 管回调对象」职责分离）──
+//
+// QuickJS native 域无 polyfill `_ce_registry`，registry 存 Rust（CE_REGISTRY：
+// tag → Persistent ctor）。**upgrade 策略**（PoC 简化，镜像 V8 S5b 的替代路径）：
+// `__zw_native_create_element(tag)` 命中 registry 时**不 new ctor**，而是建 generic
+// native 元素后把 ctor.prototype 挂为其原型（`set_prototype`）——custom class 的
+// 字段初始化（constructor body）不执行，但 prototype 上的方法/属性全部可用，
+// lifecycle 回调可派发。完整 ctor 执行（super() 注入 NodeId 链）延后续切片
+//（rquickjs `construct` + upgrade 栈镜像 V8 UPGRADE_NODE_ID）。
+// lifecycle：connected/disconnected 经 append/remove 钩子（下方 notify 函数在
+// mutation 方法成功路径调用）；attributeChanged 简化经 setAttribute 变更派发（observedAttributes 过滤延后）。
+
+/// `customElements.define(tag, ctor)`（spec `dom-customelementregistry-define`）：
+/// tag ASCII 小写规范化；ctor 须 callable；重复定义静默忽略（spec 抛 NotSupportedError——
+/// DOMException 基建延 S4q 完整化，注记同 R60b）。
+fn ce_define<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>, ctor: Value<'js>) {
+    if !ctor.is_function() {
+        return;
+    }
+    let key = tag.0.to_ascii_lowercase();
+    CE_REGISTRY.with(|r| {
+        r.borrow_mut().insert(key, Persistent::save(&ctx, ctor));
+    });
+}
+
+/// `customElements.get(tag)`：未注册 → JS null。
+fn ce_get<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>) -> Value<'js> {
+    let key = tag.0.to_ascii_lowercase();
+    match CE_REGISTRY.with(|r| r.borrow().get(&key).cloned()) {
+        Some(p) => p.restore(&ctx).unwrap_or_else(|_| Value::new_null(ctx)),
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `customElements.getName(ctor)`：反向查 tag；未注册 → null。
+fn ce_get_name<'js>(ctx: Ctx<'js>, ctor: Value<'js>) -> Value<'js> {
+    let found: Option<String> = CE_REGISTRY.with(|r| {
+        let map = r.borrow();
+        for (k, p) in map.iter() {
+            if let Ok(stored) = p.clone().restore(&ctx)
+                && values_identical(&stored, &ctor)
+            {
+                return Some(k.clone());
+            }
+        }
+        None
+    });
+    match found {
+        Some(tag) => match rquickjs::String::from_str(ctx.clone(), &tag) {
+            Ok(s) => s.into_value(),
+            Err(_) => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `customElements.whenDefined(tag)`（spec）：PoC 同步简化——立即 resolve（真等待
+/// 语义需 pending promise 表 + define 时批量 resolve，延异步域切片）。经
+/// `Promise::new` + 立即调 resolve 构造已解析 promise。
+fn ce_when_defined<'js>(ctx: Ctx<'js>, _tag: rquickjs::Coerced<String>) -> rquickjs::Result<rquickjs::Value<'js>> {
+    let (promise, resolve, _) = rquickjs::Promise::new(&ctx)?;
+    let _: rquickjs::Result<rquickjs::Value> = resolve.call(());
+    Ok(promise.into_value())
+}
+
+/// `customElements.upgrade(node)`（spec）：PoC no-op 返回 undefined——upgrade 语义
+///（对已在树中的未升级元素跑 ctor）依赖完整 ctor 执行链，延后续切片。
+fn ce_upgrade<'js>(_ctx: Ctx<'js>, _node: Value<'js>) {}
+
+/// create_element 命中 registry 的 upgrade 路径：generic 元素原型挂 ctor.prototype
+///（见上方模块注释的 PoC 策略）。构造后调用。
+fn apply_ce_prototype<'js>(obj: &Object<'js>, ctx: &Ctx<'js>, tag: &str) {
+    let key = tag.to_ascii_lowercase();
+    let Some(ctor_p) = CE_REGISTRY.with(|r| r.borrow().get(&key).cloned()) else {
+        return;
+    };
+    let Ok(ctor) = ctor_p.restore(ctx) else {
+        return;
+    };
+    let Some(ctor_obj) = ctor.as_object() else {
+        return;
+    };
+    let Ok(proto) = ctor_obj.get::<_, Object>("prototype") else {
+        return;
+    };
+    let _ = obj.set_prototype(Some(&proto));
+}
+
+/// 节点子树 DFS 收集 custom 元素（tag 含 `-`——CE 名规范 fast-path，镜像 V8 R3271）。
+fn collect_custom_subtree(id: NodeId, f: &mut dyn FnMut(NodeId, &str)) {
+    let Some((tag, children)) = with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some((e.local_name().to_string(), d.child_nodes(id))),
+            _ => None,
+        })
+    })
+    .flatten() else {
+        return;
+    };
+    f(id, &tag);
+    for c in children {
+        collect_custom_subtree(c, f);
+    }
+}
+
+/// 节点是否连入 document（parent 链到根 = 文档根；镜像 V8 is_connected_to_document
+/// headless 近似——祖先 parent=None 即根）。
+fn is_connected_to_document(id: NodeId) -> bool {
+    let Some(mut cur) = with_dom(|d| d.parent_node(id)).flatten() else {
+        return false;
+    };
+    loop {
+        let Some(next) = with_dom(|d| d.parent_node(cur)).flatten() else {
+            return true; // 到根（parent=None）= 连入
+        };
+        cur = next;
+    }
+}
+
+/// appendChild 成功后的 lifecycle 派发（镜像 V8 notify_connect_after_insert）：
+/// 子树内 custom 元素按连接态真转派发 connectedCallback/disconnectedCallback
+///（回调在 ctor.prototype 上，this = native 元素对象）。
+fn notify_connect_after_insert<'js>(ctx: &Ctx<'js>, parent_id: NodeId, child_id: NodeId) {
+    let parent_connected = is_connected_to_document(parent_id);
+    let mut to_connect: Vec<NodeId> = Vec::new();
+    let mut to_disconnect: Vec<NodeId> = Vec::new();
+    collect_custom_subtree(child_id, &mut |id, tag| {
+        if !tag.contains('-') {
+            return;
+        }
+        let ffi = encode_node_id(id);
+        let was = CONNECTED_CUSTOM.with(|c| c.borrow().contains(&ffi));
+        if parent_connected && !was {
+            to_connect.push(id);
+        } else if !parent_connected && was {
+            to_disconnect.push(id);
+        }
+    });
+    if to_connect.is_empty() && to_disconnect.is_empty() {
+        return;
+    }
+    // 先标记（防派发中再 mutation 状态错乱），再派发。
+    for &id in &to_connect {
+        CONNECTED_CUSTOM.with(|c| c.borrow_mut().insert(encode_node_id(id)));
+    }
+    for &id in &to_disconnect {
+        CONNECTED_CUSTOM.with(|c| c.borrow_mut().remove(&encode_node_id(id)));
+    }
+    for id in to_connect {
+        dispatch_ce_lifecycle(ctx, id, "connectedCallback");
+    }
+    for id in to_disconnect {
+        dispatch_ce_lifecycle(ctx, id, "disconnectedCallback");
+    }
+}
+
+/// removeChild 成功后的断开派发：子树 custom 元素（原已连）→ disconnectedCallback。
+fn notify_disconnect_after_remove<'js>(ctx: &Ctx<'js>, removed_id: NodeId) {
+    let mut to_disconnect: Vec<NodeId> = Vec::new();
+    collect_custom_subtree(removed_id, &mut |id, tag| {
+        if !tag.contains('-') {
+            return;
+        }
+        let ffi = encode_node_id(id);
+        if CONNECTED_CUSTOM.with(|c| c.borrow().contains(&ffi)) {
+            to_disconnect.push(id);
+        }
+    });
+    for id in to_disconnect {
+        CONNECTED_CUSTOM.with(|c| c.borrow_mut().remove(&encode_node_id(id)));
+        dispatch_ce_lifecycle(ctx, id, "disconnectedCallback");
+    }
+}
+
+/// 对 custom 元素派发 ctor.prototype 上的 lifecycle 回调（this = native 元素；
+/// 回调缺失/执行异常静默——best-effort，镜像 V8 桥接语义）。
+fn dispatch_ce_lifecycle<'js>(ctx: &Ctx<'js>, id: NodeId, callback: &str) {
+    let tag = with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
+            _ => None,
+        })
+    })
+    .flatten();
+    let Some(tag) = tag else {
+        return;
+    };
+    let Some(ctor_p) = CE_REGISTRY.with(|r| r.borrow().get(&tag).cloned()) else {
+        return;
+    };
+    let Ok(ctor) = ctor_p.restore(ctx) else {
+        return;
+    };
+    let Some(ctor_obj) = ctor.as_object() else {
+        return;
+    };
+    let Ok(proto) = ctor_obj.get::<_, Object>("prototype") else {
+        return;
+    };
+    let Ok(cb) = proto.get::<_, rquickjs::Function>(callback) else {
+        return; // 未定义回调 → 静默（spec：回调可选）
+    };
+    let target = get_or_build_node_value(ctx, id);
+    let Some(target_obj) = target.as_object().cloned() else {
+        return;
+    };
+    let mut args = rquickjs::function::Args::new(ctx.clone(), 0);
+    let _ = args.this(target_obj);
+    let _: rquickjs::Result<rquickjs::Value> = args.apply(&cb);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,9 +1121,18 @@ mod tests {
             install_dom_bindings_quickjs(&ctx, dom);
 
             let eval_str = |code: &str| -> String {
-                ctx.eval::<rquickjs::Coerced<String>, _>(code)
-                    .map(|v| v.0)
-                    .unwrap_or_else(|e| format!("__ERR__:{e}"))
+                ctx.eval::<rquickjs::Coerced<String>, _>(code).map(|v| v.0).unwrap_or_else(|e| {
+                    let caught = ctx.catch();
+                    let msg = if caught.is_object() {
+                        caught
+                            .as_object()
+                            .and_then(|o| o.get::<_, Option<String>>("message").ok().flatten())
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    if msg.is_empty() { format!("__ERR__:{e}") } else { format!("__ERR__:{e}: {msg}") }
+                })
             };
 
             // 1. 工厂命中：id → native 对象，getter 读 Rust DOM。
@@ -1080,6 +1345,59 @@ mod tests {
                 ),
                 "b",
                 "removeEventListener 后仅剩 B（identity 匹配移除）"
+            );
+
+            // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
+            // lifecycle connected/disconnected（append/remove 到 document 链）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__ceLog = [];\
+                     globalThis.__MyEl = function () {};\
+                     __MyEl.prototype.greet = function () { return 'hi-' + this.tagName; };\
+                     __MyEl.prototype.connectedCallback = function () { __ceLog.push('conn:' + this.tagName); };\
+                     __MyEl.prototype.disconnectedCallback = function () { __ceLog.push('disc:' + this.tagName); };\
+                     __zw_native_customElements.define('my-el', __MyEl), 1"
+                ),
+                "1"
+            );
+            assert_eq!(
+                eval_str("__zw_native_customElements.get('MY-EL') === __MyEl"),
+                "true",
+                "get（ASCII 小写规范化命中）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_customElements.getName(__MyEl)"),
+                "my-el",
+                "getName 反查"
+            );
+            assert_eq!(
+                eval_str("__zw_native_customElements.get('nope')"),
+                "null",
+                "未注册 → null"
+            );
+            // create 命中 registry → 原型挂载（upgrade PoC 路径）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__myEl = __zw_native_create_element('my-el');\
+                     __myEl.greet()"
+                ),
+                "hi-MY-EL",
+                "create 命中 registry：ctor.prototype 方法可达（tagName HTML 大写）"
+            );
+            // lifecycle：append 到 document 链 → connectedCallback；remove → disconnected。
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').appendChild(__myEl), __ceLog.join('|')"
+                ),
+                "conn:MY-EL",
+                "append 到 document 子树 → connectedCallback（this = native 元素）"
+            );
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').removeChild(__myEl), __ceLog.join('|')"
+                ),
+                "conn:MY-EL|disc:MY-EL",
+                "remove → disconnectedCallback"
             );
 
             // 4. id setter 写 live Document + getter 读回（原生读写闭环）。
