@@ -157,7 +157,7 @@ pub enum FillRule {
 ///   排序后累计绕组，绕组非零区间填充。嵌套同向子路径（绕组 ±2）与对角连线
 ///   杂散交点在偶奇两两配对下都会破裂（挖假洞/漏填）。
 /// - EvenOdd：交点计数，奇偶切换填充区间。
-fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<(f32, f32)> {
+pub(crate) fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<(f32, f32)> {
     let mut crossings: Vec<(f32, i32)> = Vec::new();
     for seg in vertices.chunks_exact(4) {
         let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
@@ -178,7 +178,10 @@ fn fill_rule_spans(vertices: &[f32], sy: f32, rule: FillRule) -> Vec<(f32, f32)>
                 winding += d;
                 if was_zero && winding != 0 {
                     span_start = Some(x);
-                } else if !was_zero && winding == 0 && let Some(s) = span_start.take() {
+                } else if !was_zero
+                    && winding == 0
+                    && let Some(s) = span_start.take()
+                {
                     spans.push((s, x));
                 }
             }
@@ -866,6 +869,24 @@ impl CanvasContext {
                     }
                     current_x = px;
                     current_y = py;
+                    // R56d：无 MoveTo 直接 arc（首个子路径）时 subpath_start 仍是
+                    // 初值 (0,0)——closepath-on-fill 末尾会补出弧末→(0,0) 的杂散
+                    // 对角线（bigarc 的 17 段）。弧自闭合（末角 ≡ 首角，浮点差
+                    // < 1e-4）时以弧起点为子路径起点。
+                    if (px - subpath_start_x).abs() > 1e-4 || (py - subpath_start_y).abs() > 1e-4 {
+                        // 末点未回到子路径起点：若子路径起点仍是初值且弧自身近闭合，
+                        // 视为弧自包含子路径——重置起点为弧首点。
+                        let arc_start_x = cx + radius * start_angle.cos();
+                        let arc_start_y = cy + radius * start_angle.sin();
+                        if subpath_start_x == 0.0
+                            && subpath_start_y == 0.0
+                            && (px - arc_start_x).abs() <= 1e-3
+                            && (py - arc_start_y).abs() <= 1e-3
+                        {
+                            subpath_start_x = arc_start_x;
+                            subpath_start_y = arc_start_y;
+                        }
+                    }
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
                     subpath_has_geometry = true;

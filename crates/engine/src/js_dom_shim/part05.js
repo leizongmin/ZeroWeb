@@ -2895,17 +2895,35 @@
     // R3291：Canvas 2D isPointInPath / isPointInStroke（hit-test 点在路径填充/描边区内）。返 bool。
     // spec isPointInPath(x,y[,fillRule])，fillRule 透传但 canvas crate 现用奇偶规则。无 ctx → false。
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
-    ctx._methods.isPointInPath = function (x, y /*, fillRule */) {
-      // 首个参数缺失或为 Path2D 时跳过数值校验；否则校验（missingargs 的 () → TypeError）。
-      if (x !== undefined && !(x && x._zwPath)) {
-        x = _zwNumArg(x); y = _zwNumArg(y);
-        if (!_zwAllFinite(x, y)) return false;
-      } else if (x !== undefined && x && x._zwPath) {
-        // Path2D 形式：坐标参数不校验（可选）
-      } else {
-        throw new TypeError('isPointInPath: missing arguments');
+    ctx._methods.isPointInPath = function (x, y, fillRule) {
+      // R56d：spec 三形式 isPointInPath(x,y[,fillRule]) / isPointInPath(path,x,y[,fillRule])，
+      // 默认 nonzero 绕组（dom-context-2d-ispointinpath）。WebIDL CanvasFillRule 枚举
+      // 校验：fillRule 缺省/undefined 合法（默认），非 ('nonzero'|'evenodd') → TypeError
+      //（isPointInpath.invalid 的 'gazonk'/null）；首参非 Path2D 非 number（null/undefined/
+      // []/{}/'string'）→ TypeError（WebIDL union (Path2D or double) 不匹配）。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
+      var isPath = !!(x && typeof x === 'object' && x._zwPath);
+      var px, py, rule;
+      if (isPath) {
+        // path 形式：arg0=path, arg1=x, arg2=y, arg3=fillRule。
+        px = _zwNumArg(y); py = _zwNumArg(fillRule);
+        rule = (arguments[3] === undefined) ? '' : String(arguments[3]);
+        if (arguments[3] !== undefined && arguments[3] !== 'nonzero' && arguments[3] !== 'evenodd') {
+          throw new TypeError('isPointInPath: invalid fillRule');
+        }
+        if (!isFinite(px) || !isFinite(py)) return false;
+        return __zw_canvas_op(h, 'isPointInPathPath', String(x._zwPath), String(px), String(py), rule) === '1';
       }
-      return __zw_canvas_op(h, 'isPointInPath', String(x), String(y)) === '1';
+      if (x === null || x === undefined || typeof x === 'object' || typeof x === 'string') {
+        throw new TypeError('isPointInPath: invalid argument');
+      }
+      if (fillRule !== undefined && fillRule !== 'nonzero' && fillRule !== 'evenodd') {
+        throw new TypeError('isPointInPath: invalid fillRule');
+      }
+      rule = (fillRule === undefined) ? '' : String(fillRule);
+      var nx = _zwNumArg(x), ny = _zwNumArg(y);
+      if (!isFinite(nx) || !isFinite(ny)) return false;
+      return __zw_canvas_op(h, 'isPointInPath', String(nx), String(ny), rule) === '1';
     };
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
     ctx._methods.isPointInStroke = function (x, y /*, fillRule */) {

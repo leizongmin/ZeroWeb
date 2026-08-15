@@ -1863,3 +1863,35 @@ fn test_roundrect_single_axis_mirror_winding_r56c() {
         "evenodd: same-region opposite pair = even crossings, unfilled"
     );
 }
+
+#[test]
+fn test_is_point_in_path_giant_scale_r56d() {
+    // 2d.path.isPointInPath.basic 巨 scale 场景：scale(MAX_VALUE) 后 rect(-10,-10,20,20)
+    // 顶点溢出 ±inf——收缩代理后 (0,0) 应在巨矩形内（真浏览器双精度仍有限）。
+    let mut ctx = CanvasContext::new(200, 200);
+    ctx.scale(f32::MAX, f32::MAX);
+    ctx.begin_path();
+    // host rect op 语义：moveTo+3×lineTo+closePath（顶点经 CTM 变换溢出 ±inf）。
+    ctx.move_to(-10.0, -10.0);
+    ctx.line_to(10.0, -10.0);
+    ctx.line_to(10.0, 10.0);
+    ctx.line_to(-10.0, 10.0);
+    ctx.close_path();
+    assert!(
+        ctx.is_point_in_path_rule(0.0, 0.0, crate::context::FillRule::NonZero),
+        "giant scale: (0,0) inside via inf-shrink proxy"
+    );
+    // 非可逆 CTM（scale(0,0)）：det=0，路径退化——不命中。
+    let mut ctx2 = CanvasContext::new(200, 200);
+    ctx2.scale(0.0, 0.0);
+    ctx2.begin_path();
+    ctx2.move_to(-10.0, -10.0);
+    ctx2.line_to(10.0, -10.0);
+    ctx2.line_to(10.0, 10.0);
+    ctx2.line_to(-10.0, 10.0);
+    ctx2.close_path();
+    assert!(
+        !ctx2.is_point_in_path_rule(0.0, 0.0, crate::context::FillRule::NonZero),
+        "non-invertible ctm: degenerate path misses"
+    );
+}

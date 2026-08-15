@@ -704,10 +704,32 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         // R3291：Canvas 2D isPointInPath（hit-test 点是否在当前路径填充区内）。返 "1"/"0"（JS 转 bool）。
         // spec 三形式：isPointInPath(x,y) / isPointInPath(x,y,fillRule) / isPointInPath(path,x,y[,fillRule])。
-        // 当前实现无 Path2D 参数形式（host 串参无 path 引用），仅 ctx 当前路径形式（最高频）。
+        // R56d：默认 nonzero 绕组规则（spec dom-context-2d-ispointinpath）；fillRule 为
+        // args[2]（"evenodd"）；Path2D 形式走独立 op `isPointInPathPath`（首参 path id）。
         "isPointInPath" => {
             if let Some(ctx) = reg.contexts.get(&hid()) {
-                return if ctx.is_point_in_path(f(0), f(1)) {
+                let rule = if arg(2).trim() == "evenodd" {
+                    zero_canvas::FillRule::EvenOdd
+                } else {
+                    zero_canvas::FillRule::NonZero
+                };
+                return if ctx.is_point_in_path_rule(f(0), f(1), rule) {
+                    "1".into()
+                } else {
+                    "0".into()
+                };
+            }
+            "0".into()
+        }
+        // R56d：isPointInPath(path, x, y[, fillRule])——给定 Path2D 的填充命中测试。
+        "isPointInPathPath" => {
+            if let (Some(ctx), Some(path)) = (reg.contexts.get(&hid()), reg.paths.get(&pid())) {
+                let rule = if arg(3).trim() == "evenodd" {
+                    zero_canvas::FillRule::EvenOdd
+                } else {
+                    zero_canvas::FillRule::NonZero
+                };
+                return if ctx.is_point_in_path_for_rule(path, f(1), f(2), rule) {
                     "1".into()
                 } else {
                     "0".into()
@@ -773,7 +795,11 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         }
         "scale" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                ctx.scale(f(0), f(1));
+                // R56d：±Inf 缩放钳到 ±f32::MAX——矩阵合成恒等元 0×Inf = NaN 会把
+                // 后续全部顶点变 NaN（isPointInPath.basic 的 scale(MAX_VALUE) 巨矩形；
+                // 真浏览器双精度下几何语义等价于「超大有限」，钳制无可观测差异）。
+                let clamp = |v: f32| if v.is_finite() { v } else { f32::MAX.copysign(v) };
+                ctx.scale(clamp(f(0)), clamp(f(1)));
             }
             "ok".into()
         }

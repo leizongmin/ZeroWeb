@@ -1445,6 +1445,43 @@ impl CanvasContext {
         point_in_polygon(x, y, &points)
     }
 
+    /// R56d（M8/DC-8）：按填充规则判断点是否在当前路径内（spec
+    /// `dom-context-2d-ispointinpath`——默认 **nonzero** 绕组规则）。
+    ///
+    /// 复用 [`super::raster::fill_rule_spans`] 的方向感知交点计数：对扫描线
+    /// `sy = y` 求 NonZero 绕组 / EvenOdd 计数，点在任一 span 内即命中。
+    /// **路径上点算 inside**（isPointInPath.edge：真浏览器把边界点算入）——span
+    /// 命中用闭区间；扫描线恰过角点时半开穿越计数可能漏（角点在两条边的闭端），
+    /// 补「点恰在某段上」（点到段距离为 0）兜底。非有限坐标（NaN/±Inf）恒 false。
+    pub fn is_point_in_path_rule(&self, x: f32, y: f32, rule: super::raster::FillRule) -> bool {
+        if !x.is_finite() || !y.is_finite() {
+            return false;
+        }
+        let vertices = self.flatten_path();
+        if vertices.is_empty() {
+            return false;
+        }
+        if spans_hit(&vertices, x, y, rule) {
+            return true;
+        }
+        point_on_any_segment(&vertices, x, y)
+    }
+
+    /// R56d：按填充规则判断点是否在给定 Path2D 内（`isPointInPath(path, x, y[, fillRule])`）。
+    pub fn is_point_in_path_for_rule(&self, path: &Path2D, x: f32, y: f32, rule: super::raster::FillRule) -> bool {
+        if !x.is_finite() || !y.is_finite() {
+            return false;
+        }
+        let vertices = self.flatten_path_for(path);
+        if vertices.is_empty() {
+            return false;
+        }
+        if spans_hit(&vertices, x, y, rule) {
+            return true;
+        }
+        point_on_any_segment(&vertices, x, y)
+    }
+
     /// R34xx：CPU 光栅路径的裁剪判定。clip 后绘制须裁剪到 clip_path 内——旧实现只把 clip
     /// 加入 primitives 图元层（GPU/合成路径生效），blit_* 直接写像素无视裁剪（上游
     /// 2d.fillRect.clip / clearRect.clip / strokeRect.clip 全失败）。clip 未设时零开销。
@@ -2553,4 +2590,58 @@ pub(crate) fn font_baselines_px(data: &[u8], face_index: u32, size: f32) -> Opti
         values.get(hang_idx).copied().map(|v| v * scale),
         values.get(ideo_idx).copied().map(|v| v * scale),
     ))
+}
+
+// ── R56d：isPointInPath 命中辅助（free functions）──
+
+/// R56d：扫描线 span 闭区间命中（点在任一 span 内即 inside，端点含入）。
+/// ±Inf 顶点（巨 scale CTM 把坐标放大溢出，isPointInPath.basic 的
+/// scale(MAX_VALUE) 矩形）收缩到 ±f32::MAX/4 代理——保持穿越方向与区间覆盖，
+/// 避免 inf/inf → NaN 交点把 span 算破（真浏览器双精度内部仍有限，(0,0) 在
+/// 巨矩形内为真）。
+fn spans_hit(vertices: &[f32], x: f32, y: f32, rule: super::raster::FillRule) -> bool {
+    const BIG: f32 = f32::MAX / 4.0;
+    let needs_shrink = vertices.iter().any(|v| !v.is_finite());
+    let shrunk: Vec<f32>;
+    let verts: &[f32] = if needs_shrink {
+        shrunk = vertices
+            .iter()
+            .map(|&v| {
+                if v.is_finite() {
+                    v
+                } else if v > 0.0 {
+                    BIG
+                } else {
+                    -BIG
+                }
+            })
+            .collect();
+        &shrunk
+    } else {
+        vertices
+    };
+    for (sx, ex) in super::raster::fill_rule_spans(verts, y, rule) {
+        if x >= sx && x <= ex {
+            return true;
+        }
+    }
+    false
+}
+
+/// R56d：点恰在路径某段上（isPointInPath.edge：路径上点算 inside——扫描线恰过
+/// 角点时半开穿越计数会漏，角点在两条边的闭端；点到段距离为 0 兜底）。
+fn point_on_any_segment(vertices: &[f32], x: f32, y: f32) -> bool {
+    for seg in vertices.chunks_exact(4) {
+        // 零长度退化段（非可逆 CTM 把全路径压成一点）不算路径上的有效边——
+        // spec 退化路径不命中（isPointInPath.basic 的 scale(0,0) 期望 false）。
+        let dx = seg[2] - seg[0];
+        let dy = seg[3] - seg[1];
+        if dx.abs() <= f32::EPSILON && dy.abs() <= f32::EPSILON {
+            continue;
+        }
+        if point_to_segment_dist(x, y, seg[0], seg[1], seg[2], seg[3]) <= f32::EPSILON {
+            return true;
+        }
+    }
+    false
 }
