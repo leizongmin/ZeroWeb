@@ -1133,6 +1133,25 @@
     }
   }
 
+  // R34xx：ctx 方法分发注册（_methods 包 → 实际原型薄转发器——幂等）。
+  function _zwRegisterCtxDispatchers(ctx) {
+    var _proto = Object.getPrototypeOf(ctx);
+    for (var _mk in ctx._methods) {
+      if (!(Object.prototype.hasOwnProperty.call(_proto, _mk) && _proto[_mk]._zwDispatch)) {
+        (function (name) {
+          var _disp = function () {
+            if (!this || this._handle === undefined || this === _proto) {
+              throw new TypeError('Illegal invocation');
+            }
+            return this._methods[name].apply(this, arguments);
+          };
+          _disp._zwDispatch = true;
+          _proto[name] = _disp;
+        })(_mk);
+      }
+    }
+  }
+
   // R34xx（reset 目录全族）：client 状态镜像复位默认——ctx.reset() 与 canvas
   // width/height setter（spec：设尺寸重置 bitmap + 全部绘图状态）共用。driving:
   // 2d.reset.state.* 全族 + 2d.canvas.host.initial.reset.2dstate。
@@ -1755,11 +1774,26 @@
     Object.defineProperty(this, 'width', {
       get: function () { return _w; },
       set: function (v) {
-        var nv = (typeof v === 'number' && v >= 0) ? (v | 0) : _w;
-        if (nv === _w) return;
+        // R34xx：WebIDL [EnforceRange] unsigned long（worker canvas-host——
+        // '100'→100/'+1.5e2'→150/'0x96'→150/301.999→301；'100em'→NaN→**TypeError**
+        // 而非保持旧值）。**同值也复位**（initial.reset.2dstate.worker.js）。
+        var _n = +v;
+        if (!isFinite(_n) || _n < 0 || _n > 4294967295) {
+          throw new TypeError('OffscreenCanvas width: invalid value');
+        }
+        var nv = Math.trunc(_n);
+        if (nv === _w) {
+          if (self._ctx && typeof __zw_canvas_op === 'function') {
+            __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+            _zwResetCtxMirrors(self._ctx);
+          }
+          return;
+        }
         _w = nv;
         if (self._ctx && typeof __zw_canvas_op === 'function') {
           __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+          // R34xx：设尺寸重置绘图状态（spec——与 canvas.width 同语义）。
+          _zwResetCtxMirrors(self._ctx);
         }
       },
       enumerable: true,
@@ -1768,11 +1802,24 @@
     Object.defineProperty(this, 'height', {
       get: function () { return _h; },
       set: function (v) {
-        var nv = (typeof v === 'number' && v >= 0) ? (v | 0) : _h;
-        if (nv === _h) return;
+        // R34xx：同上（[EnforceRange] unsigned long + 同值复位）。
+        var _n2 = +v;
+        if (!isFinite(_n2) || _n2 < 0 || _n2 > 4294967295) {
+          throw new TypeError('OffscreenCanvas height: invalid value');
+        }
+        var nv = Math.trunc(_n2);
+        if (nv === _h) {
+          if (self._ctx && typeof __zw_canvas_op === 'function') {
+            __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+            _zwResetCtxMirrors(self._ctx);
+          }
+          return;
+        }
         _h = nv;
         if (self._ctx && typeof __zw_canvas_op === 'function') {
           __zw_canvas_op(self._ctx._handle, 'resizeContext', String(_w), String(_h));
+          // R34xx：同上（宽高同值也复位——worker 变体）。
+          _zwResetCtxMirrors(self._ctx);
         }
       },
       enumerable: true,
@@ -1780,12 +1827,47 @@
     });
   }
   OffscreenCanvas.prototype.getContext = function (type) {
-    if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
+    // R34xx（worker canvas-context）：OffscreenCanvas.getContext 的 contextId 为
+    // WebIDL 枚举（OffscreenCanvasContextId）——缺参/未知值（'2D'/''）→ **TypeError**
+    //（worker 变体断言；与 HTMLCanvasElement 的 null 语义不同）。
+    if (arguments.length === 0 || String(type) !== '2d') {
+      throw new TypeError('OffscreenCanvas.getContext: unsupported context type');
+    }
     if (this._ctx) return this._ctx;
     if (typeof __zw_canvas_op !== 'function') return null;
     var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height));
     if (!id || String(id).charAt(0) === '!') return null;
     this._ctx = _zwMakeCtx2d(String(id));
+    // R34xx：OffscreenCanvasRenderingContext2D 独立接口（spec——worker 变体的
+    // self.OffscreenCanvasRenderingContext2D + 其 prototype 扩展/覆写生效）。
+    // 懒创建（CanvasRenderingContext2D 由 _zwMakeCtx2d 头部确保存在）；prototype
+    // 链到 CanvasRenderingContext2D.prototype（共享方法分发层）；prototype 属性
+    // 不可写/不可删（同 CanvasRenderingContext2D）。ctx 原型链 = 该 prototype
+    //（getPrototypeOf(ctx) 断言）。
+    if (!globalThis.OffscreenCanvasRenderingContext2D) {
+      globalThis.OffscreenCanvasRenderingContext2D = function OffscreenCanvasRenderingContext2D() {};
+      // spec：OffscreenCanvasRenderingContext2D 与 CanvasRenderingContext2D 为
+      // **兄弟接口**——其 prototype 的 [[Prototype]] 为 Object.prototype
+      //（prototype.worker 的 getPrototypeOf 断言）；方法分发器由 _zwMakeCtx2d
+      // 按 ctx 实际原型注册（下方分发循环）。
+      OffscreenCanvasRenderingContext2D.prototype = {};
+      Object.defineProperty(OffscreenCanvasRenderingContext2D, 'prototype', {
+        writable: false,
+        configurable: false
+      });
+    }
+    Object.setPrototypeOf(this._ctx, globalThis.OffscreenCanvasRenderingContext2D.prototype);
+    // R34xx：原型切换后重注册分发器（Offscreen 原型须有方法转发层——
+    // type.extend/replace.worker 的 fillRectGreen/fillRect 覆写）。
+    _zwRegisterCtxDispatchers(this._ctx);
+    // R34xx：ctx.canvas 只读指向 OffscreenCanvas 自身（worker canvas-host 的
+    // readonly/reference——ctx.canvas === canvas）。
+    Object.defineProperty(this._ctx, 'canvas', {
+      value: this,
+      writable: false,
+      enumerable: true,
+      configurable: false
+    });
     // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
     //（createImageBitmap.srgb.rgba.float16 越界值往返——OffscreenCanvas worker 变体同语义）。
     if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' &&
@@ -1810,6 +1892,7 @@
     __zw_canvas_op(this._ctx._handle, 'clearBitmap');
     return bm;
   };
+  Object.defineProperty(OffscreenCanvas.prototype, Symbol.toStringTag, { value: 'OffscreenCanvas' });
   if (!globalThis.OffscreenCanvas) {
     globalThis.OffscreenCanvas = OffscreenCanvas;
   }
@@ -3395,21 +3478,7 @@
     // 实例方法存 _methods（闭包持 handle），prototype 薄转发器按方法名注册（幂等）：
     // 原型扩展/覆写生效（fillRectGreen 扩展、fillRect 覆写），getPrototypeOf(ctx) ===
     // CanvasRenderingContext2D.prototype。非法调用（this 无 _handle）→ TypeError。
-    var _proto = globalThis.CanvasRenderingContext2D.prototype;
-    for (var _mk in ctx._methods) {
-      if (!(Object.prototype.hasOwnProperty.call(_proto, _mk) && _proto[_mk]._zwDispatch)) {
-        (function (name) {
-          var _disp = function () {
-            if (!this || this._handle === undefined || this === _proto) {
-              throw new TypeError('Illegal invocation');
-            }
-            return this._methods[name].apply(this, arguments);
-          };
-          _disp._zwDispatch = true;
-          _proto[name] = _disp;
-        })(_mk);
-      }
-    }
+    _zwRegisterCtxDispatchers(ctx);
 
     return ctx;
   }
@@ -4966,6 +5035,12 @@
     };
     // R34xx（G6）：worker 全局暴露（OffscreenCanvas 等 canvas 构造器——worker 测试用）。
     wctx.OffscreenCanvas = globalThis.OffscreenCanvas;
+    // R34xx：worker 暴露 OffscreenCanvasRenderingContext2D（self.OffscreenCanvas-
+    // RenderingContext2D 断言）——懒 getter（构造器在首次 getContext 时创建）。
+    Object.defineProperty(wctx, 'OffscreenCanvasRenderingContext2D', {
+      get: function () { return globalThis.OffscreenCanvasRenderingContext2D; },
+      configurable: true
+    });
     wctx.ImageBitmap = globalThis.ImageBitmap;
     wctx.ImageData = globalThis.ImageData;
     // R34xx：CanvasGradient/CanvasPattern/CanvasRenderingContext2D 全局（gradient.object.

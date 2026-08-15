@@ -385,28 +385,32 @@ impl Path2D {
                     let (cx, cy, radius, start_angle, end_angle) = (*cx, *cy, *radius, *start_angle, *end_angle);
                     // R34xx：anticlockwise 方向（canvas y 向下：角度递增 = 顺时针，递减 = 逆时针）。
                     let dir = if *anticlockwise { -1.0 } else { 1.0 };
-                    // R56（M8/DC-8）：角度归一化对齐 spec dom-context-2d-arc——
-                    // |span| ≥ 2π → 整圆；否则按方向取**同向** mod 2π 弧（顺时针
-                    // span ∈ [0,2π)、逆时针 ∈ (−2π,0]）。旧 `raw % TAU` 对顺时针
-                    // 负差得负 span → 弧走向反向（2d.path.arc.angle.5 扇形翻侧）。
-                    // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arc
-                    let tau = std::f32::consts::TAU;
+                    // R34xx：角度归一化（spec arc 算法）——|span| ≥ 2π → 整圆；
+                    // 否则 mod 2π。旧实现原样展平 >2π 角度 → 多边形自交多次包裹，
+                    // 非零填充规则下包裹区（偶绕数）成洞（2d.path.arc.angle.3-6）。
+                    // R34xx：角度归一化（spec arc 算法）——|span| ≥ 2π → 整圆；否则
+                    // |span| mod 2π；方向由 dir 决定。**幅度须取 abs**（round cap 的
+                    // arc(π,0,anticlockwise)：raw=-π → mag=π → span=-π → π→0 ✓；
+                    // 旧实现 raw 未取 abs → span=+π 方向反——2d.line.cap/join.round
+                    // 回归）。
                     let raw_span = end_angle - start_angle;
-                    let span = if !*anticlockwise {
-                        if raw_span >= tau {
-                            tau
-                        } else {
-                            ((raw_span % tau) + tau) % tau
-                        }
-                    } else if raw_span <= -tau {
-                        -tau
+                    // 角度归一化（spec arc 算法）：全圆 = clockwise raw≥2π /
+                    // anticlockwise raw≤-2π / |raw| mod 2π==0（arc(0,2π,true) 整圆）；
+                    // 其余 |raw| mod 2π——幅度取 abs（round cap/join 方向）+ wrap
+                    //（angle.3/5 的 510.5π → 0.5π）。
+                    let mag = if (!*anticlockwise && raw_span >= std::f32::consts::TAU)
+                        || (*anticlockwise && raw_span <= -std::f32::consts::TAU)
+                    {
+                        std::f32::consts::TAU
                     } else {
-                        -(((-raw_span) % tau + tau) % tau)
+                        let m = raw_span.abs() % std::f32::consts::TAU;
+                        if m == 0.0 && raw_span != 0.0 {
+                            std::f32::consts::TAU
+                        } else {
+                            m
+                        }
                     };
-                    // R56：span 归一化已含方向（顺时针 ∈ [0,τ] / 逆时针 ∈ [−τ,0]），
-                    // 不再乘 dir（旧 span 为同号绝对值需 dir 定向——双重取反会翻弧）。
-                    let _ = dir;
-                    let angle_span = span;
+                    let angle_span = mag * dir;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut px = cx + radius * start_angle.cos();
                     let mut py = cy + radius * start_angle.sin();
