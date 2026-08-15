@@ -3290,29 +3290,21 @@ fn text_wrap_points_match_shaping_baseline() {
     app.load_webview_html(tab_id, &html, None);
     app.sync_webview_viewport_and_poll(tab_id);
 
-    // 基准：逐词宽度（词间空格宽 0.25em？——不，用 rustybuzz 精确）切行。
-    // 词序列：以空格分词，每词宽 = shaped advance 和 + 空格宽。
+    // 基准：逐词宽度（词间空格宽）切行。词序列：以空格分词，每词宽 = hmtx advance 和
+    // + 空格宽——与布局测量同源（measure_text_hmtx，ZRG-2026-08-15 修复 A 的 hmtx 路径，
+    // 非 rustybuzz shaped：kerning 差异使 Segoe/SFNS 等平台字体在 260px 边界翻转换行点，
+    // Linux Liberation kerning 小侥幸对齐）。
     // 浏览器实际布局字体 = shared_system_fonts primary（与 BrowserApp 同源进程级缓存），
     // 基准必须同源换行点才可比；跨平台可用（Linux Liberation/DejaVu、macOS SFNS/Helvetica、
     // Windows Segoe/Arial），不再硬编码 Linux 字体路径。
     let (baseline_loader, primary_id) = crate::app::shared_system_fonts();
     let primary_id = primary_id.expect("系统字体存在");
-    let shaper = zero_render_foundation::font::TextShaper::new(
-        &baseline_loader,
-        Some(zero_render_foundation::primitive::FontId(primary_id)),
-    );
     let words: Vec<&str> = sentence.split(' ').collect();
     let word_widths: Vec<f32> = words
         .iter()
-        .map(|w| {
-            shaper
-                .shape_single_line(w, 16.0)
-                .iter()
-                .map(|g| g.advance_x)
-                .sum::<f32>()
-        })
+        .map(|w| baseline_loader.measure_text_hmtx(&[primary_id], w, 16.0))
         .collect();
-    let space_w = shaper.shape_single_line(" ", 16.0)[0].advance_x;
+    let space_w = baseline_loader.measure_text_hmtx(&[primary_id], " ", 16.0);
     // 贪心切行：每行 ≤ 260px。
     let mut expected_lines: Vec<String> = Vec::new();
     let mut line = String::new();
