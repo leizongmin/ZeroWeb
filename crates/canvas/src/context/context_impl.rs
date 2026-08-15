@@ -850,7 +850,32 @@ impl CanvasContext {
             self.primitives
                 .add_path_stroke(vertices.clone(), color, self.line_width, closed);
             self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
+            // R56g：弧命令真圆环带后处理（纯色路径）——折线伪节点覆盖洞的补齐；
+            // 半径经 CTM 有效缩放（均匀 scale 下用户半径 ≠ 设备半径）。
+            let arcs: Vec<(f32, f32, f32, f32, f32, bool)> = self
+                .current_path
+                .commands()
+                .iter()
+                .filter_map(|cmd| {
+                    if let PathCommand::Arc(cx, cy, r, sa, ea, acw) = *cmd {
+                        Some((cx, cy, r, sa, ea, acw))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let eff = self.transform_scale_factor();
+            for (cx, cy, r, sa, ea, acw) in arcs {
+                self.blit_arc_annulus(cx, cy, r * eff, sa, ea, acw, self.line_width * eff / 2.0, color);
+            }
         }
+    }
+
+    /// R56g：CTM 有效缩放因子（均匀 scale 时 = sx；用于弧环带的用户半径/半宽
+    /// 与设备几何换算——非均匀时取几何平均近似）。
+    fn transform_scale_factor(&self) -> f32 {
+        let t = &self.transform;
+        ((t.a * t.d - t.b * t.c).abs()).sqrt().max(1e-9)
     }
 
     /// 使用指定 Path2D 填充路径。
@@ -1486,6 +1511,84 @@ impl CanvasContext {
             return true;
         }
         point_on_any_segment(&vertices, x, y)
+    }
+
+    /// R56g（M8/DC-8）：真圆环带弧 stroke 后处理——折线化弧在粗线下有原理性
+    /// 伪节点（超短弦的段投影几乎全落段外 → 覆盖洞；lineJoin=Miter 不画伪节点
+    /// 圆盘，2d.path.arc.shape.2 的 (1,1) 距弧 18.6 < half 50 却 miss）。
+    /// 对 PathCommand::Arc 单独按「|dist(p,圆心)−r| ≤ half ∧ θ∈[start,end]」
+    /// 光栅化（butt 端面 = θ 范围自然截断，不额外延伸）。非恒等 CTM 时像素
+    /// 逆变换到用户空间判定（圆在用户空间）。
+    /// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-arc
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn blit_arc_annulus(
+        &mut self,
+        cx_dev: f32,
+        cy_dev: f32,
+        radius_user: f32,
+        start_angle: f32,
+        end_angle: f32,
+        anticlockwise: bool,
+        half_lw_user: f32,
+        color: Color,
+    ) {
+        let tau = std::f32::consts::TAU;
+        let raw_span = end_angle - start_angle;
+        let span = if !anticlockwise {
+            if raw_span >= tau {
+                tau
+            } else {
+                ((raw_span % tau) + tau) % tau
+            }
+        } else if raw_span <= -tau {
+            -tau
+        } else {
+            let m = -(((-raw_span) % tau + tau) % tau);
+            if m == 0.0 && raw_span != 0.0 { -tau } else { m }
+        };
+        let (lo, hi) = if span >= 0.0 {
+            (start_angle, start_angle + span)
+        } else {
+            (start_angle + span, start_angle)
+        };
+        let t = &self.transform;
+        let identity_ctm = (t.a - 1.0).abs() < 1e-9
+            && (t.d - 1.0).abs() < 1e-9
+            && t.b.abs() < 1e-9
+            && t.c.abs() < 1e-9
+            && t.e.abs() < 1e-9
+            && t.f.abs() < 1e-9;
+        let inv = if identity_ctm { None } else { Some(t.inverse()) };
+        let reach = radius_user * 4.0 + half_lw_user * 4.0;
+        for py in ((cy_dev - reach).floor() as i32).max(0)..((cy_dev + reach).ceil() as i32).min(self.height as i32) {
+            for px in ((cx_dev - reach).floor() as i32).max(0)..((cx_dev + reach).ceil() as i32).min(self.width as i32)
+            {
+                let (qx, qy) = (px as f32 + 0.5, py as f32 + 0.5);
+                let (ux, uy) = match &inv {
+                    Some(m) => m.transform_point(qx, qy),
+                    None => (qx - cx_dev, qy - cy_dev),
+                };
+                let d = (ux * ux + uy * uy).sqrt();
+                if (d - radius_user).abs() > half_lw_user {
+                    continue;
+                }
+                let theta = uy.atan2(ux);
+                let mut rel = theta;
+                while rel < lo - 1e-6 {
+                    rel += tau;
+                }
+                while rel > hi + 1e-6 {
+                    rel -= tau;
+                }
+                if rel < lo - 1e-6 || rel > hi + 1e-6 {
+                    continue;
+                }
+                if !self.clip_applies(qx, qy) {
+                    continue;
+                }
+                self.blit_pixel(px, py, color);
+            }
+        }
     }
 
     /// R34xx：CPU 光栅路径的裁剪判定。clip 后绘制须裁剪到 clip_path 内——旧实现只把 clip

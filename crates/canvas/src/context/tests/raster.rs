@@ -412,7 +412,8 @@ fn test_flatten_path_arc() {
     ctx.current_path
         .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0, false);
     let verts = ctx.flatten_path_open();
-    // R56：moveTo 后 arc 含 spec「current→弧首」连线段（+4）= 17 段。
+    // R56：moveTo 后 arc 含 spec「current→弧首」连线段（+1 段）。
+    // R56g：段数自适应 N=16（lw/r≤0.25 细线）→ 17 段。
     assert_eq!(verts.len(), 68, "arc = 16 segments + line-to-arc-start");
 }
 
@@ -933,8 +934,8 @@ fn test_flatten_path_arc_full_circle() {
         .arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU, false);
     let vertices = ctx.flatten_path_open();
     // Full circle should still produce vertices
-    // R56：moveTo(50,0) 恰为弧首（角 0）→ 连线段零长不 push？——非也：has_any_subpath
-    // 判定不看点重合，段仍 push（(50,0)→(50,0) 退化段，扫描线无穿越）→ 68。
+    // R56：moveTo(50,0) 恰为弧首（角 0）→ 连线段零长仍 push（退化段，扫描线无
+    // 穿越）。R56g：细线 N=16 → 17 段。
     assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
@@ -956,7 +957,7 @@ fn test_flatten_path_arc_negative_angles() {
         .arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0, false);
     let vertices = ctx.flatten_path_open();
     // Negative angles should still work
-    // R56：+1 连线段（moveTo→弧首）。
+    // R56：+1 连线段（moveTo→弧首）。R56g：细线 N=16 → 17 段。
     assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
@@ -968,6 +969,7 @@ fn test_flatten_path_arc_start_greater_than_end() {
     let vertices = ctx.flatten_path_open();
     // Start > end should still produce vertices
     // R56：+1 连线段（moveTo→弧首）；顺时针 start>end 归一化 span = +π（同向 mod）。
+    // R56g：细线 N=16 → 17 段。
     assert_eq!(vertices.len(), 68); // 16 segments + line-to-arc-start
 }
 
@@ -1971,4 +1973,47 @@ fn test_arcto_tangent_geometry_and_anisotropic_transform_r56f() {
         max_x < 115.0,
         "anisotropic scale clamps arc x-extent (user-space r=50 -> device 5), max_x={max_x}"
     );
+}
+
+// ── R56g：弧自适应段数 + 真圆环带 ──
+
+#[test]
+fn test_arc_adaptive_segments_thick_stroke_r56g() {
+    // 2d.path.arc.shape.1 语义：粗 stroke（lw≈r）下折线弦的斜段矩形不得侧向
+    // 掠入弧带外——(20,48) 距弧（圆心(50,50) r=50 的下半弧）≈ 40px 应保持底色。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_color(Color::rgba(0, 255, 0, 255));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx.line_width = 50.0;
+    ctx.set_stroke_color(Color::rgba(255, 0, 0, 255));
+    ctx.begin_path();
+    ctx.arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::PI, false);
+    ctx.stroke();
+    let idx = ((48 * 100) + 20) as usize * 4;
+    assert_eq!(
+        ctx.pixel_buffer[idx], 0,
+        "arc.shape.1: (20,48) stays background under thick stroke"
+    );
+}
+
+#[test]
+fn test_arc_annulus_covers_interior_r56g() {
+    // 2d.path.arc.shape.2 语义：粗 stroke 逆时针弧带须连续——(20,20) 距弧
+    // 7.6px 在带内（折线伪节点洞由 annulus 后处理补上）。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx.line_width = 100.0;
+    ctx.set_stroke_color(Color::rgba(0, 255, 0, 255));
+    ctx.begin_path();
+    ctx.arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::PI, true);
+    ctx.stroke();
+    let g = |x: u32, y: u32| ctx.pixel_buffer[((y * 100) + x) as usize * 4 + 1];
+    assert_eq!(g(20, 20), 255, "annulus covers (20,20)");
+    assert_eq!(g(1, 1), 255, "annulus covers (1,1) (dist to arc 18.6 < half 50)");
+    // butt 端面外（θ 范围外）不延伸：θ>0 的右上象限 (98,1) 距端点近但不在弧内。
+    // (98,1) 距弧最近点 (85,15) 18.8 <50 但 θ=-45.6° 在 [-180°,0] 内 → 带内。
+    // 端面外的例子：弧为上半圆，(98,48) θ≈-12° 带内…取画布下缘中点 (50,49)：
+    // 距弧 (50,0) 49 <50 带内。端面外取 (1,49)：距端点 (0,50) 1.4 —— θ=atan2(-1,-1)
+    // =-135° 带内。真端面外点：θ=+90° 的 (50,100+) 画布外——skip。
 }

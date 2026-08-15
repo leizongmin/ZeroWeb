@@ -1058,7 +1058,7 @@ fn test_arc_flattening() {
     ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56：16 段细分 × 4 = 64 + fill 隐式闭合段 4 = 68（closepath-on-fill）
+    // R56：fill 隐式闭合段 4（closepath-on-fill）。R56g：细线 N=16 → 16×4+4 = 68。
     assert_eq!(pf.vertices.len(), 68);
 }
 

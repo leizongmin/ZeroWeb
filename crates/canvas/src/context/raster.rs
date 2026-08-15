@@ -730,7 +730,83 @@ impl CanvasContext {
                     // 不再乘 dir（旧 span 为同号绝对值需 dir 定向——双重取反会翻弧）。
                     let _ = dir;
                     let angle_span = span;
-                    let step = angle_span / ARC_SEGMENTS as f32;
+                    // R56g（M8/DC-8）：弧折线段数自适应——粗 stroke（lineWidth/radius
+                    // 比大）下 16 段折线的斜段矩形会侧向掠入弧带外（2d.path.arc.shape.1：
+                    // r=50 lw=50 半圆，16 段首段矩形覆盖 (20,48) 距弧 40px 区域；
+                    // 掠深 ≈ half_lw·sin(Δθ)，Δθ=τ/N）。τ/16≈22.5° 在 lw≈r 时掠深
+                    // ≈ 9.5px 超容差；τ/64≈5.6° 掠深 ≈ 2.4px 消除。fill 侧扫描线
+                    // 逐像素判定不受段数影响（精度单调提升）。
+                    let arc_segments = if radius > 1e-6 {
+                        // R56g：粗线（lw/r > 0.25）时弦切向偏差 δ=τ/2N 把端面投影
+                        // 翻正——径向距离 d_r 的像素需要 d_r·sin(τ/2N) < d_t（端面
+                        // 外距离，最小 1px）→ N > τ/(2·asin(1/d_r))。d_r~画布尺度
+                        // ~150px → N~470；按 ratio 缩放取 N = min(512, 64·lw/r)。
+                        // 实证：lw/r=1（shape.1）→64 ✓；lw/r=2（shape.3）→128 ✓。
+                        let ratio = self.line_width / radius;
+                        if ratio > 0.25 {
+                            ((64.0 * ratio).round() as usize).min(512)
+                        } else {
+                            ARC_SEGMENTS
+                        }
+                    } else {
+                        ARC_SEGMENTS
+                    };
+                    // R56g（M8/DC-8）：各向异性 CTM（sx≠sy）——spec 弧是用户空间的
+                    // 圆经 CTM 变换（= 设备空间椭圆）。arc() 只变换了圆心，flatten
+                    // 时以未变换半径画**圆**（arc.scale.1 的 scale(2,0.5)：r=56 的
+                    // 圆应成 x 112/y 28 椭圆）。同 R56f arcTo 模式：控制点逆变换
+                    // 回用户空间 → 构造圆弧 → 输出点逐点正变换。
+                    let t = &self.transform;
+                    let identity_ctm = (t.a - 1.0).abs() < 1e-9
+                        && t.d.abs() < 1e-9
+                        && t.b.abs() < 1e-9
+                        && t.c.abs() < 1e-9
+                        && t.e.abs() < 1e-9
+                        && t.f.abs() < 1e-9;
+                    // R56g：非恒等 CTM 统一走用户空间构造——弧顶点 = 圆心(已变换)
+                    // + 用户半径·(cos,sin) 从未做 CTM 缩放（均匀大缩放同样错：
+                    // arc.scale.2 的 scale(100,100) r=0.6 应成 r=60 圆，旧路径画
+                    // 0.6px 小点——非恒等即改走逆变换→圆弧→正变换）。
+                    if !identity_ctm {
+                        let inv = self.transform.inverse();
+                        let (ucx, ucy) = inv.transform_point(cx, cy);
+                        let (u_px, u_py) = (ucx + radius * start_angle.cos(), ucy + radius * start_angle.sin());
+                        if has_any_subpath {
+                            vertices.push(current_x);
+                            vertices.push(current_y);
+                            let (d_px, d_py) = self.transform.transform_point(u_px, u_py);
+                            vertices.push(d_px);
+                            vertices.push(d_py);
+                        } else {
+                            has_any_subpath = true;
+                        }
+                        let mut prev_dev = self.transform.transform_point(u_px, u_py);
+                        for i in 0..arc_segments {
+                            let angle_i = start_angle + angle_span / arc_segments as f32 * (i + 1) as f32;
+                            let (u_nx, u_ny) = (ucx + radius * angle_i.cos(), ucy + radius * angle_i.sin());
+                            let dev = self.transform.transform_point(u_nx, u_ny);
+                            vertices.push(prev_dev.0);
+                            vertices.push(prev_dev.1);
+                            vertices.push(dev.0);
+                            vertices.push(dev.1);
+                            prev_dev = dev;
+                        }
+                        current_x = prev_dev.0;
+                        current_y = prev_dev.1;
+                        // 弧自闭合子路径起点重置（同 R56d 语义——用户空间起点
+                        // 正变换后与设备空间末点比较）。
+                        let (d_start_x, d_start_y) = self.transform.transform_point(u_px, u_py);
+                        if subpath_start_x == 0.0
+                            && subpath_start_y == 0.0
+                            && (prev_dev.0 - d_start_x).abs() <= 1e-3
+                            && (prev_dev.1 - d_start_y).abs() <= 1e-3
+                        {
+                            subpath_start_x = d_start_x;
+                            subpath_start_y = d_start_y;
+                        }
+                        continue;
+                    }
+                    let step = angle_span / arc_segments as f32;
                     let mut angle = start_angle;
                     let mut px = cx + radius * angle.cos();
                     let mut py = cy + radius * angle.sin();
@@ -748,7 +824,7 @@ impl CanvasContext {
                     } else {
                         has_any_subpath = true;
                     }
-                    for i in 0..ARC_SEGMENTS {
+                    for i in 0..arc_segments {
                         angle = start_angle + step * (i + 1) as f32;
                         let nx = cx + radius * angle.cos();
                         let ny = cy + radius * angle.sin();
