@@ -1,10 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R34xx 第十四批定稿：**色彩管理 + 滤镜渲染 + GIF 全过**——
+**最后更新**: 2026-08-16（R34xx 第十五批定稿：**arcTo 真切线弧 + 深项收口**——
 color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipulation
-71/71、drawing-images（GIF 全过）；f16 浮点存储/linear 色彩空间/colorMatrix
-渲染/GIF 首帧解码落地；剩余深项 = arc 几何 ~37（描边端帽/扇区形状——stroke
-几何深项）；证据见 evidence/r34xx-batch6-colors-gif）。
+71/71、path-objects 174/29（arcTo 全过——真切线弧/无子路径 moveTo/负半径）；
+剩余深项 = arc 形状 ~29（描边端帽/扇区/贝塞尔缩放——stroke 几何深项）；
+证据见 evidence/r34xx-batch6-colors-gif + r34xx-batch7-arcto）。
 
 ---
 
