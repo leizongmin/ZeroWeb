@@ -225,17 +225,21 @@
 ## 下一步计划
 
 1. **R51（本轮，已完成）**：TreeWalker NodeFilter 语义 + Document 构造器解锁 dom/common.js（traversal +889、nodes +449、ranges 非 mutations +1808）→ land（五子目录零回归，engine v8 2132 / quickjs 1415 全绿，clippy 干净，fmt 无 diff）
-2. **下轮候选（按剩余 ROI，R39 后重排）**：
-   - **(a) dom/ranges 导入或 Event-dispatch 剩余**（multiple-cancelBubble 已被 R40 顺带解锁[双路径 Pass]，剩 bubbles-true/false 各 3F 独立 Document 深结构）。
-   - **(b) 扩 DOM_TEST_SUBDIRS dom/ranges**（44 用例，纯资产导入零源码；R41 已落 dom/traversal）。
+2. **R51b（同轮 follow-up，已 land `aed92314`）**：**dom/ranges mutations 族死循环根因修复**——R51 的 `new Document()` 解锁 setupRangeTests 后，mutations 族首次真正执行即触三连锁死循环（common.js `indexOf` 的 `while (node != node.parentNode.childNodes[i])`）。三根因三修：① **child→parent 反向链缺失**（`_zwNodeParent` registry 挂 `_mo_notify` 汇流点 + `_parentNodeFor` handle 分支优先查反链、无链 detached 返 null 不再猜 body）② **sel 父 childNodes pending overlay**（`_childNodeList` 融合 `_zwPendingAdded/Removed`，nextSibling 定位插入）+ **textContent 视图与 registry 融合**（旧短路 append 的子不可见）③ **pre-insert HierarchyRequestError**（self-append 旧 shim 真执行 → registry 自环 → `_zwHCCollectSubtree` 栈溢出；ancestor-append → host「DOM 树循环」整批丢弃；`_zwIsAncestorOf` **从目标上行**判定）。mutations 族无限 spin→跑完（appendChild 2.5s 34P/36F、10 文件 586P/1010F）；四子目录回归全净（nodes 3049P/traversal 925P/collections 48P/events 189P）。单测 part18 六件。**遗留**：dataChange/insertBefore/replaceData >300s（次级性能/循环，下轮首查）+ mutations 语义面（Range 端点 identity）
+3. **下轮候选（按剩余 ROI，R39 后重排）**：
+   - **(a) R51b 遗留三文件**（dataChange/insertBefore/replaceData 超时——次级循环或 setup 重建成本，先 profile 定位）。
+   - **(a2) mutations 族语义对齐**（Range 端点 container identity：append 同位节点后 startContainer 期望旧 proxy——host 重挂后 handle 变 `__n17`→`__n33`，疑 proxy 缓存失效或 NodeId 重建）。
+   - **(b) Event-dispatch 剩余**（bubbles-true/false 各 3F 独立 Document 深结构）。
    - **(c) 双路径差 6.12pp 收口**（WheelEvent 子类链/SubclassedEvent，分散低 ROI）。
    - **(d) NamedAttributeMap own 枚举**（dom/collections 3 fail，轻量候选）。
    - **(e) native namespaceURI getter 独立化**（dom/nodes 双路径差 0.65pp）。
    - **(f) querySelector-mixed-case**（selector 域）。
    - **(g) iframe.contentDocument**（深结构 html-compat 域）。
    - **(h) dom_bindings coverage 剩余**（custom_elements 89.0%，剩 19 防御/OOM 行低 ROI）。
-   - **(i) 主线里程碑推进**：M1 L2 / M6 QuickJS native——均为深结构，评估切片化可能（M1 L2 最小只读子集已有 A/B 门就绪）。
-3. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
+   - **(i) 主线里程碑推进**：M1 L2 / M6 QuickJS native——均为深结构，评估切片化可能（M1 L2 最小只读子集已有 A/B 门就绪；R51b 反链+overlay 已是 L2 方向实质推进）。
+4. **后续主线**：M1 L2（polyfill-live 合一，解 polyfill appendChild 闭环限制）→ M2 S6 → M3 SPA/WC → M4 WPT dom 持续扩 → M5 V8 default-on（待用户决策）→ M6 QuickJS native → M7 双引擎 default-on + 收尾；M8 canvas path-objects 待 canvas 流告段落接手
+
+> **R51 轮碰头记录（run-rules §9）**：本轮 session 与并行 rally 流（另一 claude 实例）在同一 clone 上同时工作——并行流 08:18 提交 `b3d8feb2` 时把本 session 正在编辑的工作树（反链/overlay 初版）一并吸收提交。无代码丢失（增量以 `aed92314` 独立 land），但**双 rally 流跑同一 clone** 违反 run-rules §8（双独立 clone）——已由本记录显式标记；若再次发生，暂停一边。
 
 ---
 
@@ -326,3 +330,4 @@
 - R49：M4/DC-3 observe options 校验/隐含启用 + textContent childList 语义 + 注册文本可编辑（sanity/takeRecords/attributes/characterData 四用例 100%，childList 18P/1F，nodes 2579P；R45-R49 五轮 nodes +72）→ archive/m4-slice-mo-options-and-textcontent.md
 - R50：M4/DC-3 HTMLCollection Proxy 承载 + live overlay（collections 双路径 48P/0F 全灭、nodes +29、traversal +18；R37 聚类深结构主簇闭合）→ archive/m4-slice-htmlcollection-proxy.md
 - R51：M4/DC-3 TreeWalker NodeFilter 语义 + new Document() 解锁 dom/common.js（traversal +889/native 893P、nodes +449、ranges 非 mutations +1808；acceptNode-filter 100%）→ archive/m4-slice-treewalker-filter-document-ctor.md
+- R51b：M4/DC-3 dom/ranges mutations 族死循环三根因修复（child→parent 反向链 + childNodes pending overlay/视图融合 + pre-insert HierarchyRequestError；mutations 族无限 spin→跑完 586P，四子目录零回归；单测 part18 六件）→ archive/m4-slice-ranges-mutations-hang-roots.md

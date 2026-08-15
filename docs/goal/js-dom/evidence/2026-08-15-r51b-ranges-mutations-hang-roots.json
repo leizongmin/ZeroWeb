@@ -1,0 +1,23 @@
+{
+ "round": "R51b",
+ "date": "2026-08-15",
+ "commit": "aed92314",
+ "runs": [
+  {
+   "suite": "dom/ranges Range-mutations-* (10/12 files, 120s guard each)",
+   "pass": 586,
+   "fail": 1010
+  },
+  {
+   "suite": "dom/ranges non-mutations (34 files, 120s guard each)",
+   "pass": 1847,
+   "fail": 32453
+  },
+  {
+   "suite": "dom/nodes+events+collections+traversal regression",
+   "pass": 4211,
+   "fail": 5230
+  }
+ ],
+ "notes": "mutations 族无限 spin→跑完（R51b 三根因修复）；dataChange/insertBefore/replaceData >300s 遗留；non-mutations 大 Fail 主力为 compareBoundaryPoints/set/isPointInRange/comparePoint/intersectsNode 参数矩阵语义（R42 已知剩余，M1 L2）"
+}
