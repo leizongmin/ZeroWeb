@@ -35,13 +35,12 @@ pub fn resolve() -> Result<ProductVersion, String> {
     }
 }
 
-/// 通知 Cargo 每次构建都重新计算日期，并导出产品版本。
+/// 导出产品版本，并在显式版本或可复现时间戳变化时让 Cargo 重新构建。
 pub fn emit_cargo_env() {
     let version = resolve().unwrap_or_else(|error| panic!("invalid product version: {error}"));
     println!("cargo:rustc-env=ZERO_BUILD_VERSION={}", version.text);
     println!("cargo:rerun-if-env-changed=ZERO_BUILD_VERSION");
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
-    println!("cargo:rerun-if-changed=.zero-build-version-always-rerun");
 }
 
 /// 从 Unix 时间戳生成 UTC 日期版本。

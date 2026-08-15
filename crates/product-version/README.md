@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb Product Version` (`zero-product-version`) 提供 ZeroWeb 产品的版本号常量。版本号不从语义化版本号维护，而是从构建日期推导：格式为 `YY.M.D`（如 `25.8.9` 表示 2025 年 8 月 9 日构建），同时生成 Windows 兼容的 `VS_FIXEDFILEINFO` 数值（`0x0019_0008_0009_0000`）。版本解析与格式化逻辑由构建支持模块 `build-support/product_version.rs` 提供，本 crate 在编译期通过 `ZERO_BUILD_VERSION` 环境变量嵌入最终版本。
+`ZeroWeb Product Version` (`zero-product-version`) 提供 ZeroWeb 产品的版本号常量。版本号不从语义化版本号维护，而是从构建日期推导：格式为 `YY.M.D`（如 `25.8.9` 表示 2025 年 8 月 9 日构建），同时生成 Windows 兼容的 `VS_FIXEDFILEINFO` 数值（`0x0019_0008_0009_0000`）。版本解析与格式化逻辑由构建支持模块 `build-support/product_version.rs` 提供，本 crate 在编译期通过 `ZERO_BUILD_VERSION` 环境变量嵌入最终版本；发布构建可显式设置该变量或 `SOURCE_DATE_EPOCH`，以保证版本可复现。
 
 ## 主要功能
 

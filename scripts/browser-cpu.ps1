@@ -30,20 +30,21 @@ try {
         Write-Error "rusty_v8 setup failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "ZeroBrowser: building zero-browser, zero-renderer, and zero-compositor (release)..."
+    Write-Host "ZeroBrowser: checking release build cache (only changed targets will compile)..."
 
-    if ($env:CFLAGS -notmatch "zlib") {
-        $zlibPaths = @(
-            "C:\Strawberry\c\include",
-            "C:\Program Files\Git\mingw64\include",
-            "C:\vcpkg\installed\x64-windows-static-md\include"
-        )
-        foreach ($p in $zlibPaths) {
-            if (Test-Path "$p\zlib.h") {
-                $env:CFLAGS = "-I$p $env:CFLAGS".Trim()
+    $zlibPaths = @(
+        "C:\Strawberry\c\include",
+        "C:\Program Files\Git\mingw64\include",
+        "C:\vcpkg\installed\x64-windows-static-md\include"
+    )
+    foreach ($p in $zlibPaths) {
+        if (Test-Path "$p\zlib.h") {
+            $includeFlag = "-I$p"
+            if ($env:CFLAGS -notmatch [regex]::Escape($includeFlag)) {
+                $env:CFLAGS = "$includeFlag $env:CFLAGS".Trim()
                 Write-Host "  (auto-detected zlib.h at $p)"
-                break
             }
+            break
         }
     }
 

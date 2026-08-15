@@ -33,6 +33,5 @@ fn main() {
         println!("cargo:rerun-if-env-changed=ZERO_BUILD_VERSION");
         println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
         println!("cargo:rerun-if-changed=../../build-support/product_version.rs");
-        println!("cargo:rerun-if-changed=.zero-build-version-always-rerun");
     }
 }
