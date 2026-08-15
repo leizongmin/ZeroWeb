@@ -829,7 +829,7 @@ impl BrowserApp {
     /// 调整所有 Tab 视口尺寸
     pub fn resize_all_webviews(&mut self, w: u32, h: u32) {
         self.tabs.set_viewport(w, h);
-        self.tabs.resize_all(w, h);
+        self.tabs.resize_all(w, h, self.scale_factor);
     }
 
     /// 测试用：获取标签 WebView 的逻辑视口尺寸

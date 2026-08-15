@@ -49,6 +49,7 @@ pub struct TabManager {
     snapshot_seq: HashMap<TabId, u64>,
     process_backend: Option<ProcessTabBackend>,
     viewport: (u32, u32),
+    device_scale_factor: f32,
     color_scheme: PrefersColorSchemeValue,
     /// 当前渲染媒体类型（DC-12 @media print；transient 打印预览，非新 Tab 默认）。
     media_type: MediaType,
@@ -94,6 +95,7 @@ impl TabManager {
                 None
             },
             viewport,
+            device_scale_factor: 1.0,
             color_scheme,
             media_type: MediaType::Screen,
             pending_loaded: Vec::new(),
@@ -332,13 +334,14 @@ impl TabManager {
     }
 
     /// 调整所有 Tab 视口。
-    pub fn resize_all(&mut self, width: u32, height: u32) {
+    pub fn resize_all(&mut self, width: u32, height: u32, device_scale_factor: f32) {
         self.viewport = (width, height);
+        self.device_scale_factor = device_scale_factor;
         for worker in self.workers.values() {
             worker.send(TabWorkerCommand::Resize { width, height });
         }
         if let Some(ref mut backend) = self.process_backend {
-            backend.resize_all(width, height);
+            backend.resize_all(width, height, device_scale_factor);
         }
     }
 

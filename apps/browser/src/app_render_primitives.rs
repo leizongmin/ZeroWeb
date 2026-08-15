@@ -23,7 +23,14 @@ pub(crate) fn compositor_frame_primitives(
     }
     let mut source = RenderPrimitives::new();
     source.images.push(ImagePrimitive {
-        rect: Rect::new(0.0, 0.0, frame.width as f32, frame.height as f32),
+        // compositor 帧已按设备像素光栅化；先还原为 CSS 尺寸，再由下方
+        // 统一坐标变换映射回物理像素，保持纹理采样一对一。
+        rect: Rect::new(
+            0.0,
+            0.0,
+            frame.width as f32 / scale.max(f32::EPSILON),
+            frame.height as f32 / scale.max(f32::EPSILON),
+        ),
         image_key: frame.image_key.clone(),
         clip: None,
     });
@@ -590,7 +597,7 @@ mod compositor_frame_tests {
 
         assert_eq!(primitives.images.len(), 1);
         let image = &primitives.images[0];
-        assert_eq!(image.rect, Rect::new(20.0, -10.0, 200.0, 160.0));
+        assert_eq!(image.rect, Rect::new(20.0, -10.0, 100.0, 80.0));
         assert_eq!(image.clip, Some(Rect::new(25.0, 30.0, 100.0, 90.0)));
         assert_eq!(image.image_key, ImageKey::new(3));
     }

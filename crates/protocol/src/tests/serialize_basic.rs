@@ -241,6 +241,7 @@ fn test_roundtrip_all_message_types() {
         IpcMessageKind::SetViewport(SetViewportParams {
             width: 1024,
             height: 768,
+            device_scale_factor: 1.0,
         }),
         IpcMessageKind::SetColorScheme(SetColorSchemeParams {
             scheme: IpcColorScheme::Dark,

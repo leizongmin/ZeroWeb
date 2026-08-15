@@ -10,6 +10,22 @@ use zero_render_foundation::primitive::RenderPrimitives;
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 use zero_render_foundation::surface::FrameBuffer;
 
+pub fn device_scale_factor(paint: &PaintSnapshotParams) -> f32 {
+    if paint.device_scale_factor.is_finite() && paint.device_scale_factor > 0.0 {
+        paint.device_scale_factor
+    } else {
+        1.0
+    }
+}
+
+pub fn physical_viewport_size(paint: &PaintSnapshotParams) -> (u32, u32) {
+    let scale = device_scale_factor(paint);
+    (
+        ((paint.viewport_width.max(1) as f32 * scale).round() as u32).max(1),
+        ((paint.viewport_height.max(1) as f32 * scale).round() as u32).max(1),
+    )
+}
+
 fn ipc_dirty_rects(rects: &[IpcRect]) -> Vec<(f32, f32, f32, f32)> {
     rects.iter().map(|r| (r.x, r.y, r.width, r.height)).collect()
 }
@@ -26,15 +42,26 @@ pub fn rasterize_into_back(
     back: &mut FrameBuffer,
     copy_front: bool,
 ) {
-    let w = paint.viewport_width.max(1);
-    let h = paint.viewport_height.max(1);
+    let scale = device_scale_factor(paint);
+    let (w, h) = physical_viewport_size(paint);
+    let logical_w = paint.viewport_width.max(1);
+    let logical_h = paint.viewport_height.max(1);
     let dirty = ipc_dirty_rects(&paint.dirty_rects);
     let display_list = DisplayList::new(primitives.clone(), dirty);
-    let vw = w as f32;
-    let vh = h as f32;
+    let vw = paint.viewport_width.max(1) as f32;
+    let vh = paint.viewport_height.max(1) as f32;
 
     if display_list.is_full_viewport(vw, vh) {
-        *back = rasterize_full(w, h, primitives, font_loader, glyph_cache, render_thread, image_cache);
+        *back = rasterize_full(
+            logical_w,
+            logical_h,
+            scale,
+            primitives,
+            font_loader,
+            glyph_cache,
+            render_thread,
+            image_cache,
+        );
         return;
     }
 
@@ -48,12 +75,22 @@ pub fn rasterize_into_back(
         if *rw <= 0.0 || *rh <= 0.0 {
             continue;
         }
-        let region = Rect::new(*x, *y, *rw, *rh);
+        let region = Rect::new(*x * scale, *y * scale, *rw * scale, *rh * scale);
         if primitives.images.is_empty()
             && render_threading_enabled()
             && let Some(rt) = render_thread
         {
-            let patch = rt.rasterize_sync(w, h, 1.0, primitives, &[], &[], &[], &[], Some(region));
+            let patch = rt.rasterize_sync(
+                logical_w,
+                logical_h,
+                scale,
+                primitives,
+                &[],
+                &[],
+                &[],
+                &[],
+                Some(region),
+            );
             blit_region(back, &patch, w, h, region);
             continue;
         }
@@ -68,14 +105,16 @@ pub fn rasterize_into_back(
             &[],
             &[],
             Some(region),
-            1.0,
+            scale,
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)] // 光栅化需要 surface、缩放、图元和两类缓存。
 fn rasterize_full(
     w: u32,
     h: u32,
+    scale: f32,
     primitives: &RenderPrimitives,
     font_loader: &FontLoader,
     glyph_cache: &mut GlyphCache,
@@ -86,12 +125,12 @@ fn rasterize_full(
         && render_threading_enabled()
         && let Some(rt) = render_thread
     {
-        return rt.rasterize_sync(w, h, 1.0, primitives, &[], &[], &[], &[], None);
+        return rt.rasterize_sync(w, h, scale, primitives, &[], &[], &[], &[], None);
     }
     zero_render_foundation::cpu::render_full_scene(
         w,
         h,
-        1.0,
+        scale,
         primitives,
         font_loader,
         glyph_cache,

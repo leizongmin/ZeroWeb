@@ -77,6 +77,7 @@ impl Driver {
                 kind: IpcMessageKind::SetViewport(SetViewportParams {
                     width: 800,
                     height: 600,
+                    device_scale_factor: 1.0,
                 }),
             })
             .map_err(protocol_error)?;

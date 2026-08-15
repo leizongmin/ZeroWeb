@@ -226,6 +226,7 @@ where
 pub fn paint_snapshot_from_primitives(
     viewport_width: u32,
     viewport_height: u32,
+    device_scale_factor: f32,
     document_height: f32,
     primitives: &RenderPrimitives,
     dirty_rects: &[(f32, f32, f32, f32)],
@@ -260,6 +261,7 @@ pub fn paint_snapshot_from_primitives(
     PaintSnapshotParams {
         viewport_width,
         viewport_height,
+        device_scale_factor,
         document_height,
         navigation_epoch,
         document_generation,
@@ -537,7 +539,7 @@ mod tests {
             synthetic_italic: true,
         });
 
-        let snapshot = paint_snapshot_from_primitives(10, 10, 10.0, &primitives, &[], vec![], None, 1, 2);
+        let snapshot = paint_snapshot_from_primitives(10, 10, 1.0, 10.0, &primitives, &[], vec![], None, 1, 2);
         assert!(snapshot.glyphs[0].synthetic_italic);
         assert_eq!(snapshot.glyphs[0].font_variation_id, Some(0));
         assert_eq!(snapshot.font_variations[0][0].tag, *b"wdth");

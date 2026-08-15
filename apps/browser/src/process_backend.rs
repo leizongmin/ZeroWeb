@@ -139,6 +139,7 @@ pub struct ProcessTabBackend {
     tab_to_renderer: HashMap<TabId, u64>,
     renderer_bin: PathBuf,
     viewport: (u32, u32),
+    device_scale_factor: f32,
     javascript_enabled: bool,
     storage: StorageManager,
     pending_loaded: Vec<(TabId, String, String)>,
@@ -209,6 +210,7 @@ impl ProcessTabBackend {
             tab_to_renderer: HashMap::new(),
             renderer_bin,
             viewport: (800, 600),
+            device_scale_factor: 1.0,
             javascript_enabled: true,
             storage: StorageManager::new(),
             pending_loaded: Vec::new(),
@@ -736,6 +738,7 @@ impl ProcessTabBackend {
                     IpcMessageKind::SetViewport(SetViewportParams {
                         width: viewport.0,
                         height: viewport.1,
+                        device_scale_factor: self.device_scale_factor,
                     }),
                 );
                 self.send_to_renderer(tab_id, IpcMessageKind::SetJavascriptEnabled(self.javascript_enabled));
@@ -818,11 +821,19 @@ impl ProcessTabBackend {
     }
 
     /// 调整所有 live 渲染进程视口。
-    pub fn resize_all(&mut self, width: u32, height: u32) {
+    pub fn resize_all(&mut self, width: u32, height: u32, device_scale_factor: f32) {
         self.viewport = (width, height);
+        self.device_scale_factor = device_scale_factor;
         let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
         for tab_id in tabs {
-            self.send_to_renderer(tab_id, IpcMessageKind::SetViewport(SetViewportParams { width, height }));
+            self.send_to_renderer(
+                tab_id,
+                IpcMessageKind::SetViewport(SetViewportParams {
+                    width,
+                    height,
+                    device_scale_factor,
+                }),
+            );
         }
     }
 
@@ -1158,6 +1169,7 @@ mod navigation_contract_tests {
         PaintSnapshotParams {
             viewport_width: 800,
             viewport_height: 600,
+            device_scale_factor: 1.0,
             document_height: 400.0,
             navigation_epoch: epoch,
             document_generation: 1,

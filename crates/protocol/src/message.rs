@@ -419,6 +419,8 @@ pub struct SetViewportParams {
     pub width: u32,
     /// 视口高度（CSS 逻辑像素）。
     pub height: u32,
+    /// 设备缩放因子；仅影响 compositor 位图的光栅分辨率，不改变 CSS 视口。
+    pub device_scale_factor: f32,
 }
 
 /// IPC 颜色方案（对应 `prefers-color-scheme`）。

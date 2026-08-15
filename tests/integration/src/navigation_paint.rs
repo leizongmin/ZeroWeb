@@ -57,6 +57,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
     PaintSnapshotParams {
         viewport_width: 800,
         viewport_height: 600,
+        device_scale_factor: 1.0,
         document_height: 400.0,
         navigation_epoch: epoch,
         document_generation: 1,

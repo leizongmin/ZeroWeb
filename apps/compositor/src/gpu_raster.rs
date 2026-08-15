@@ -22,6 +22,7 @@ pub fn try_rasterize_fills_into_back(
     glyph_cache: &mut GlyphCache,
     image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
+    scale_factor: f32,
 ) -> bool {
     rasterize_gpu(
         gpu_renderer,
@@ -33,6 +34,7 @@ pub fn try_rasterize_fills_into_back(
         image_cache,
         back,
         None,
+        scale_factor,
     )
 }
 
@@ -48,6 +50,7 @@ pub fn try_rasterize_partial_into_back(
     image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     dirty_rects: &[(f32, f32, f32, f32)],
+    scale_factor: f32,
 ) -> bool {
     if dirty_rects.is_empty() {
         return false;
@@ -56,7 +59,7 @@ pub fn try_rasterize_partial_into_back(
         if rw <= 0.0 || rh <= 0.0 {
             continue;
         }
-        let region = Rect::new(x, y, rw, rh);
+        let region = Rect::new(x * scale_factor, y * scale_factor, rw * scale_factor, rh * scale_factor);
         if !rasterize_gpu(
             gpu_renderer,
             width,
@@ -67,6 +70,7 @@ pub fn try_rasterize_partial_into_back(
             image_cache,
             back,
             Some(region),
+            scale_factor,
         ) {
             return false;
         }
@@ -85,6 +89,7 @@ fn rasterize_gpu(
     image_cache: &mut ImageCache,
     back: &mut FrameBuffer,
     clip: Option<Rect>,
+    scale_factor: f32,
 ) -> bool {
     if recovery::take_simulated_device_lost(gpu_renderer) {
         return false;
@@ -104,7 +109,16 @@ fn rasterize_gpu(
         if !primitives.images.is_empty() {
             return false;
         }
-        gpu.render_scene_with_clip(&primitives.fills, font_loader, glyph_cache, &[], &[], Some(clip_rect));
+        gpu.render_scene_with_clip_scaled(
+            &primitives.fills,
+            font_loader,
+            glyph_cache,
+            &[],
+            &[],
+            &[],
+            Some(clip_rect),
+            scale_factor,
+        );
     } else {
         // P0-1：GPU 生产路径未实现的特性（clips/blend/半透明/带模糊阴影）时
         // render_full_scene_gpu 返回 false → 本函数返回 false → 调用方回退 CPU 栅格化。
@@ -117,7 +131,7 @@ fn rasterize_gpu(
             &[],
             &[],
             &[],
-            1.0,
+            scale_factor,
         ) {
             return false;
         }
@@ -181,6 +195,7 @@ mod tests {
             &mut glyph_cache,
             &mut image_cache,
             &mut gpu_back,
+            1.0,
         ) {
             return;
         }
@@ -212,6 +227,7 @@ mod tests {
             &mut image_cache,
             &mut back,
             &[(0.0, 0.0, 16.0, 16.0)],
+            1.0,
         ) {
             return;
         }

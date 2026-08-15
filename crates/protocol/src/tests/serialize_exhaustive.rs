@@ -68,6 +68,7 @@ fn test_roundtrip_all_message_kinds() {
             kind: IpcMessageKind::SetViewport(SetViewportParams {
                 width: 800,
                 height: 600,
+                device_scale_factor: 1.0,
             }),
         },
         IpcMessage {

@@ -36,6 +36,39 @@ mod tests {
     }
 
     #[test]
+    fn physical_viewport_size_uses_device_scale_factor() {
+        let mut paint = red_fill_snapshot(800, 600, Vec::new());
+        paint.device_scale_factor = 1.5;
+
+        assert_eq!(rasterize::physical_viewport_size(&paint), (1200, 900));
+    }
+
+    #[test]
+    fn full_rasterization_uses_device_pixel_dimensions() {
+        let mut paint = red_fill_snapshot(4, 3, Vec::new());
+        paint.device_scale_factor = 2.0;
+        let primitives = convert::to_render_primitives(&paint);
+        let loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+        let mut back = FrameBuffer::new(1, 1);
+
+        rasterize::rasterize_into_back(
+            &paint,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            false,
+        );
+
+        assert_eq!((back.width, back.height), (8, 6));
+        assert_eq!(&back.data[back.data.len() - 4..], &[255, 0, 0, 255]);
+    }
+
+    #[test]
     fn partial_dirty_preserves_pixels_outside_region() {
         let w = 20u32;
         let h = 10u32;

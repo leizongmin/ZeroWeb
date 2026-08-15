@@ -168,6 +168,8 @@ struct RendererRuntime {
     inbound_thread: Option<JoinHandle<()>>,
     /// 当前视口（CSS 逻辑像素），随 SetViewport 更新；publish 用。
     viewport: (u32, u32),
+    /// 当前窗口设备缩放因子，仅用于 compositor 位图的光栅分辨率。
+    device_scale_factor: f32,
     /// 页面运行时（B3：渲染/字体/脚本/hit-test 全经 WebView，与 tabworker 同一页面运行时）。
     webview: Option<zero_webview::WebView>,
     /// 字体加载器：为 paint 阶段提供真实字符 advance。
@@ -300,6 +302,7 @@ impl RendererRuntime {
             inbound_rx,
             inbound_thread: None,
             viewport: (1280, 800),
+            device_scale_factor: 1.0,
             webview: Some(webview),
             font_loader,
             font_id,
@@ -617,6 +620,7 @@ impl RendererRuntime {
             &mut self.next_msg_id,
             &mut self.frame_publish,
             &frame,
+            self.device_scale_factor,
             title,
             payloads,
             self.navigation_epoch,
@@ -1779,6 +1783,11 @@ impl RendererRuntime {
 
     fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
         self.viewport = (params.width, params.height);
+        self.device_scale_factor = if params.device_scale_factor.is_finite() && params.device_scale_factor > 0.0 {
+            params.device_scale_factor
+        } else {
+            1.0
+        };
         if let Some(wv) = self.webview.as_mut() {
             wv.resize(params.width, params.height);
         }
@@ -2326,6 +2335,7 @@ fn publish_render_with_layout(
     next_msg_id: &mut u64,
     publish_state: &mut FramePublishState,
     frame: &zero_page_runtime::FrameModel,
+    device_scale_factor: f32,
     title: Option<String>,
     image_payloads: Vec<zero_protocol::IpcImagePayload>,
     navigation_epoch: u64,
@@ -2339,6 +2349,7 @@ fn publish_render_with_layout(
     let paint = paint_export::paint_snapshot_from_primitives(
         frame.viewport.0,
         frame.viewport.1,
+        device_scale_factor,
         frame.document_height,
         &frame.primitives,
         &frame.dirty_rects,
@@ -2637,6 +2648,7 @@ mod runtime_smoke {
             kind: IpcMessageKind::SetViewport(SetViewportParams {
                 width: 1024,
                 height: 768,
+                device_scale_factor: 1.0,
             }),
         }]);
         tx.send(IpcMessage {
@@ -2665,7 +2677,8 @@ mod runtime_smoke {
             deferred.pop_front().map(|m| m.kind),
             Some(IpcMessageKind::SetViewport(SetViewportParams {
                 width: 1024,
-                height: 768
+                height: 768,
+                device_scale_factor: 1.0,
             }))
         ));
         assert!(deferred.is_empty());

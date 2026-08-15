@@ -156,8 +156,7 @@ fn main() {
                     continue;
                 }
 
-                let w = paint.viewport_width.max(1);
-                let h = paint.viewport_height.max(1);
+                let (w, h) = rasterize::physical_viewport_size(&paint);
 
                 // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
                 let primitives = convert::to_render_primitives(&paint);
@@ -166,8 +165,8 @@ fn main() {
                     .iter()
                     .map(|r| (r.x, r.y, r.width, r.height))
                     .collect();
-                let is_partial =
-                    !DisplayList::new(primitives.clone(), dirty_rects.clone()).is_full_viewport(w as f32, h as f32);
+                let is_partial = !DisplayList::new(primitives.clone(), dirty_rects.clone())
+                    .is_full_viewport(paint.viewport_width.max(1) as f32, paint.viewport_height.max(1) as f32);
 
                 let surface = surfaces.entry(surface_id).or_insert_with(|| SurfaceState {
                     navigation_epoch,
@@ -217,6 +216,7 @@ fn main() {
                             &mut surface.image_cache,
                             surface.backing.back_mut(),
                             &dirty_rects,
+                            rasterize::device_scale_factor(&paint),
                         )
                     } else {
                         gpu_raster::try_rasterize_fills_into_back(
@@ -228,6 +228,7 @@ fn main() {
                             &mut glyph_cache,
                             &mut surface.image_cache,
                             surface.backing.back_mut(),
+                            rasterize::device_scale_factor(&paint),
                         )
                     };
                     if !gpu_ok {

@@ -495,6 +495,10 @@ pub enum IpcDrawOp {
     Glyph(usize),
 }
 
+fn default_device_scale_factor() -> f32 {
+    1.0
+}
+
 /// 渲染进程输出的绘制快照。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaintSnapshotParams {
@@ -502,6 +506,9 @@ pub struct PaintSnapshotParams {
     pub viewport_width: u32,
     /// 视口高度（CSS 逻辑像素）。
     pub viewport_height: u32,
+    /// 生成 compositor 位图时使用的设备缩放因子。
+    #[serde(default = "default_device_scale_factor")]
+    pub device_scale_factor: f32,
     /// 文档高度（CSS 逻辑像素）。
     pub document_height: f32,
     /// 填充图元。
@@ -610,6 +617,7 @@ impl Default for PaintSnapshotParams {
         Self {
             viewport_width: 0,
             viewport_height: 0,
+            device_scale_factor: 1.0,
             document_height: 0.0,
             fills: Vec::new(),
             rounded_rects: Vec::new(),
