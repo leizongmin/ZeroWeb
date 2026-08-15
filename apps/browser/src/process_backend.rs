@@ -429,6 +429,22 @@ impl ProcessTabBackend {
             let committed = if let Some(dmabuf) = frame.dmabuf {
                 let use_gpu_import = zero_protocol::browser_gpu_dmabuf_import_enabled() && browser_gpu_present;
                 if use_gpu_import {
+                    use zero_render_foundation::gpu::{ExportedGpuFrame, map_linear_rgba};
+                    // CPU 影子供 headless GPU 捕获渲染器回退绘制（无导入纹理）；
+                    // 窗口渲染仍走 compositor_import。fd 经 try_clone 供映射用，
+                    // 原 fd 仍交给 pending 导入；映射失败仅损失捕获保底。
+                    let shadow = dmabuf.fd.try_clone().ok().and_then(|fd| {
+                        let export = ExportedGpuFrame {
+                            fd,
+                            width: frame.width,
+                            height: frame.height,
+                            stride: dmabuf.stride,
+                            drm_fourcc: dmabuf.drm_fourcc,
+                            drm_modifier: dmabuf.drm_modifier,
+                            sync_fd: None,
+                        };
+                        map_linear_rgba(&export).ok()
+                    });
                     snap.commit_compositor_dmabuf(
                         completed,
                         frame.width,
@@ -445,6 +461,7 @@ impl ProcessTabBackend {
                             dst_x: 0.0,
                             dst_y: 0.0,
                         },
+                        shadow,
                     )
                 } else {
                     use zero_render_foundation::gpu::{ExportedGpuFrame, map_linear_rgba};

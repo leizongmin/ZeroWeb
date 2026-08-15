@@ -320,9 +320,23 @@ impl BrowserApp {
         self.get_webview_extra_primitives_for_status(self.compositor_status())
     }
 
+    /// headless GPU 捕获（`render_full_scene_gpu_capture`）专用：允许 gpu_direct
+    /// 帧回退绘制 RGBA 影子（捕获渲染器没有 dmabuf 导入纹理）。
+    fn get_webview_extra_primitives_for_capture(&self) -> RenderPrimitives {
+        self.get_webview_extra_primitives_inner(self.compositor_status(), true)
+    }
+
     fn get_webview_extra_primitives_for_status(
         &self,
         compositor_status: crate::compositor_client::CompositorStatus,
+    ) -> RenderPrimitives {
+        self.get_webview_extra_primitives_inner(compositor_status, false)
+    }
+
+    fn get_webview_extra_primitives_inner(
+        &self,
+        compositor_status: crate::compositor_client::CompositorStatus,
+        allow_gpu_direct_shadow: bool,
     ) -> RenderPrimitives {
         let tab_id = match self.shell.active_tab_id() {
             Some(id) => id,
@@ -360,7 +374,7 @@ impl BrowserApp {
                 .tabs
                 .compositor_frame(tab_id)
                 .map_or_else(RenderPrimitives::new, |frame| {
-                    compositor_frame_primitives(frame, x_offset, y_offset, 1.0, clip_viewport)
+                    compositor_frame_primitives(frame, x_offset, y_offset, 1.0, clip_viewport, allow_gpu_direct_shadow)
                 });
         }
 
