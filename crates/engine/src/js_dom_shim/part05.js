@@ -3245,6 +3245,33 @@
   // 快照，脚本批末才回写——同步脚本内重查反而拿到旧结果冲掉 overlay，R48/R49 同款教训：
   // JS 本地视图优先）。同步脚本内 appendChild → c[0] 立即可见（WPT own-props
   // "Setting array index while indexed property doesn't exist"：append 后 c[0]===element）。
+  // js-dom M4 R51：child 是否为 (sel, handle) 目标的祖先（含目标自身语义由调用方补）——
+  // pre-insert HierarchyRequestError 校验用。**从目标上行**（child 是目标的祖先 ⟺ 目标的
+  // 祖先链含 child；从 child 上行方向相反——child 在目标之上，永远走不到目标）。handle 链：
+  // _zwNodeParent 反向链；sel 链：__zw_parent host 快照；guard 防环 64 层。
+  function _zwIsAncestorOf(child, targetSel, targetHandle) {
+    if (!child) return false;
+    var childSel = child.__zwSelector, childHandle = child.__zwHandle;
+    var h = targetHandle, s = targetSel, guard = 0;
+    while (guard++ < 64) {
+      if (!h && !s) return false;
+      if (childHandle && h === childHandle) return true;
+      if (childSel && s === childSel) return true;
+      var link = h ? _zwNodeParent[h] : null;
+      if (link) {
+        if (link.parentHandle) { h = link.parentHandle; s = null; continue; }
+        if (link.parentSel) { s = link.parentSel; h = null; continue; }
+      }
+      if (s && typeof __zw_parent === 'function') {
+        var p = '';
+        try { p = __zw_parent(s) || ''; } catch (_e) { p = ''; }
+        if (p) { s = p; h = null; continue; }
+      }
+      return false;
+    }
+    return false;
+  }
+
   // `_zwPendingAdded`：同步脚本内已 append 但 host 快照未含的元素（快照后取的新集合——
   // WPT own-props 先 append 再 getElementsByTagName 顺序——构建时按 matches 并入）。
   // added/removed 均展开 handle 子树（`_handleChildren` R2927 registry——WPT case.js 先建

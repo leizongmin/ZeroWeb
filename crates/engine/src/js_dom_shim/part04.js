@@ -1340,6 +1340,13 @@
         }
         if (prop === 'appendChild') {
           return function(child) {
+            // js-dom M4 R51：spec `dom-node-pre-insert` 校验——child 即 parent 自身 / 是 parent 的
+            // 祖先 → HierarchyRequestError（WPT Range-mutations "paras[0].appendChild(paras[0])"
+            // 非法用例段；旧 shim 不抛真执行 → JS registry 自环 → _zwHCCollectSubtree 无限递归）。
+            // 祖先判定：child 沿 _zwNodeParent 反向链（handle）/__zw_parent（sel）上行命中 parent。
+            if (child && (child === _makeProxy(sel, handle) || _zwIsAncestorOf(child, sel, handle))) {
+              throw _zwDomException('A Node cannot be appended to itself or its descendant.', 'HierarchyRequestError');
+            }
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
@@ -1421,6 +1428,10 @@
         }
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
+            // js-dom M4 R51：spec `dom-node-pre-insert` 同 appendChild 的自环/祖先校验。
+            if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
+              throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
+            }
             if (newNode && newNode.__zwHandle) {
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
               var ceAdded;
@@ -1472,6 +1483,11 @@
         //（selector-identity 子节点，作 insert ref）。返回 oldChild（spec）。
         if (prop === 'replaceChild') {
           return function(newChild, oldChild) {
+            // js-dom M4 R51：spec `dom-node-replace-child` 步骤 2——newChild 是 parent 祖先 →
+            // HierarchyRequestError（与 pre-insert 同族校验）。
+            if (newChild && _zwIsAncestorOf(newChild, sel, handle)) {
+              throw _zwDomException('A Node cannot replace its descendant.', 'HierarchyRequestError');
+            }
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwSelector) {
               // R2994：capture added/removed for connection 传播。
               var ceAdded = _fragmentHandles[newChild.__zwHandle]
