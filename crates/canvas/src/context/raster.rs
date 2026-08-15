@@ -655,15 +655,18 @@ impl CanvasContext {
                     // R56h（M8/DC-8）：段数自适应——控制点折线长 / 8px（[8,512]）。
                     // 固定 8 段对巨坐标曲线（bezierCurveTo.shape 控制折线 ~13000px）
                     // 弦偏差达 48px；按折线长缩放后画布内窗口获得足够段密度。
-                    let poly = ((cpx - current_x).hypot(cpy - current_y) + (x - cpx).hypot(y - cpy)).max(1.0);
+                    // R56i 修正：曲线起点用 sx0（无子路径时 = 第一控制点，spec
+                    // ensuresubpath.2——旧 current_x 在无子路径时仍为 (0,0)，曲线
+                    // 从原点错误出发）。
+                    let poly = ((cpx - sx0).hypot(cpy - sy0) + (x - cpx).hypot(y - cpy)).max(1.0);
                     let segments = ((poly / 8.0).ceil() as usize).clamp(8, 512);
-                    let mut px = current_x;
-                    let mut py = current_y;
+                    let mut px = sx0;
+                    let mut py = sy0;
                     for i in 1..=segments {
                         let t = i as f32 / segments as f32;
                         let mt = 1.0 - t;
-                        let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * x;
-                        let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * y;
+                        let nx = mt * mt * sx0 + 2.0 * mt * t * cpx + t * t * x;
+                        let ny = mt * mt * sy0 + 2.0 * mt * t * cpy + t * t * y;
                         vertices.push(px);
                         vertices.push(py);
                         vertices.push(nx);
