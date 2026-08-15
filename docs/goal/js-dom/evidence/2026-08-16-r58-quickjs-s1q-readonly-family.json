@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-16",
+  "round": "R58",
+  "milestone": "M6 S1q — QuickJS 只读属性族（js-dom goal DC-7）",
+  "commit": "84c76b25",
+  "scope": {
+    "modified": [
+      "crates/engine/src/quickjs_dom_bindings.rs（4 新 getter/setter + 注册 + 测试扩展）",
+      "crates/webview/src/tests/coverage.rs（wiring 测试 S1q 断言面扩展）"
+    ]
+  },
+  "api_added": {
+    "className": "getter（class 反射，缺省 \"\"）+ setter（ToString 写 class 内容属性）——镜像 V8 native_class_name_getter/setter 的 read_reflected_attr/write_reflected_attr",
+    "namespaceURI": "getter——空 ns / 非元素 → JS null（镜像 V8 native_namespace_uri_getter 的 Some(None)→null 分支）",
+    "localName": "getter——parser 产出 ns 感知大小写透传（HTML 小写 / SVG·MathML 原样）",
+    "textContent": "getter——子树文本拼接（Document::text_content）；setter 属 S2q 写入族"
+  },
+  "semantics_parity": [
+    "className 缺省 \"\"（V8 read_reflected_attr default 参数）",
+    "namespaceURI null-not-undefined（V8 同款分支语义）",
+    "enumerable 面：id/className enumerable（反射属性），nodeType/tagName/nodeName/namespaceURI/localName/textContent 非 enumerable（Object.keys 只见 id,className——与 V8 ObjectTemplate accessor 默认非枚举一致）"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed（quickjs_native_element_poc 扩展 S1q 断言 + 新 quickjs_namespace_uri_variants：SVG vs XHTML ns + localName 大小写）",
+    "webview_quickjs": "552 passed（wiring 测试扩展 className/namespaceURI/localName/textContent 断言——与 V8 侧同断言面）",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_v8": "599 passed（零回归）",
+    "clippy": "engine/webview × v8/quickjs 四矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "cumulative_s1q_gap_vs_v8": "V8 dom_bindings S1 面更大（title/lang/dir/hidden/tabIndex/contentEditable/spellcheck/accessKey 反射族 + attributes/classList/dataset 复合对象）——S1q 分片推进原则：先高频属性（本轮 4 项），复合对象（NamedNodeMap/DOMTokenList/DOMStringMap 的 rquickjs 承载）与反射族其余项是后续切片",
+  "next_slice_candidates": [
+    "S1q 续：title/lang/dir 等字符串反射族（V8 native_string_reflected_getter 对应的具名 fn 泛化）",
+    "S1q 续：attributes（NamedNodeMap）复合对象——需 rquickjs 对象身份缓存二级映射（owner ffi → NNM 对象）",
+    "S2q：textContent/innerHTML setter + setAttribute/removeAttribute 方法（写入族经 with_dom_mut）"
+  ]
+}
