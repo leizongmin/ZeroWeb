@@ -829,7 +829,8 @@ impl BrowserApp {
     /// 调整所有 Tab 视口尺寸
     pub fn resize_all_webviews(&mut self, w: u32, h: u32) {
         self.tabs.set_viewport(w, h);
-        self.tabs.resize_all(w, h, self.scale_factor);
+        // dsf 携带页面 zoom（CSS 视口已按 render_scale 缩小，光栅物理尺寸不变）。
+        self.tabs.resize_all(w, h, self.page_render_scale());
     }
 
     /// 测试用：获取标签 WebView 的逻辑视口尺寸
@@ -1163,8 +1164,32 @@ impl BrowserApp {
     }
 
     /// 文档内容尺寸（物理像素）。
+    /// 活动标签页的页面缩放系数（Chrome page zoom 语义：影响 CSS 布局视口与
+    /// 所有 CSS↔物理换算，不影响 chrome UI）。值域由 shell `set_zoom` 钳制。
+    fn page_zoom(&self) -> f32 {
+        self.shell.zoom().max(f32::EPSILON)
+    }
+
+    /// 页面渲染合成缩放——物理像素 ↔ CSS 像素的统一换算因子（device scale × 页面 zoom）。
+    ///
+    /// Chrome 模型：CSS 布局视口 = 内容物理尺寸 ÷ 本值；renderer 光栅 dsf = 本值
+    /// （位图物理尺寸恒等于内容区，合成 1:1，内容随 zoom 相对变大/变小）。
+    fn page_render_scale(&self) -> f32 {
+        self.scale_factor * self.page_zoom()
+    }
+
+    /// 页面 zoom 变化后的统一入口：钳制滚动 + 重推 CSS 视口（renderer 随新视口
+    /// 重布局出新帧）+ 重绘。zoom 键与 Ctrl+滚轮缩放共用。
+    fn apply_page_zoom_change(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.clamp_tab_scroll(tab_id);
+        }
+        self.sync_webview_viewport();
+        self.needs_redraw = true;
+    }
+
     fn document_size_physical(&self, tab_id: TabId) -> (f32, f32) {
-        let s = self.scale_factor;
+        let s = self.page_render_scale();
         let logical_h = self
             .tabs
             .document_height(tab_id)
@@ -1221,7 +1246,7 @@ impl BrowserApp {
     /// 高度用 `floor` 而非 `round`，保证 `logical_h * scale_factor` 不超过内容区物理高度，
     /// 避免页面背景在底部溢出并盖住圆角。
     pub fn content_logical_size(&self) -> (u32, u32) {
-        let s = self.scale_factor.max(f32::EPSILON);
+        let s = self.page_render_scale().max(f32::EPSILON);
         if let Some(tab_id) = self.shell.active_tab_id() {
             let layout = self.page_scroll_layout(tab_id);
             let logical_w = (layout.viewport_w / s).floor().max(1.0) as u32;

@@ -806,7 +806,7 @@ impl BrowserApp {
     ) -> Result<zero_render_foundation::surface::FrameBuffer, String> {
         let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) =
             self.build_scene(width, height);
-        let webview_extras = self.get_webview_extra_primitives();
+        let webview_extras = self.get_webview_extra_primitives_for_capture();
         let mut scene_primitives = webview_extras;
         scene_primitives.fills = [fills, scene_primitives.fills].concat();
         scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
@@ -883,10 +883,14 @@ mod ime_tests {
 pub fn is_wayland() -> bool {
     #[cfg(target_os = "linux")]
     {
-        std::env::var("WAYLAND_DISPLAY").is_ok()
-            || std::env::var("WINIT_UNIX_BACKEND")
-                .map(|v| v.eq_ignore_ascii_case("wayland"))
-                .unwrap_or(false)
+        match std::env::var("WINIT_UNIX_BACKEND").as_deref() {
+            // 显式指定 winit 后端时以其为准——WSLg 等环境 WAYLAND_DISPLAY 常驻，
+            // 强制 x11（调试/冒烟/parity）时误判为 Wayland 会禁用 GPU 窗口渲染
+            //（parity 生产门禁与 gpu-dmabuf 冒烟都要求 GPU 呈现路径）。
+            Ok("x11") => false,
+            Ok("wayland") => true,
+            _ => std::env::var("WAYLAND_DISPLAY").is_ok(),
+        }
     }
     #[cfg(not(target_os = "linux"))]
     {

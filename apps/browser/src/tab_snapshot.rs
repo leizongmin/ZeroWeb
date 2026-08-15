@@ -222,8 +222,13 @@ impl TabSnapshot {
         true
     }
 
-    /// Linux：接收 compositor dma-buf（GPU 导入路径，无 RGBA 拷贝）。
+    /// Linux：接收 compositor dma-buf（GPU 导入路径）。
+    ///
+    /// `shadow_rgba`：dmabuf 的 CPU 影子副本——headless GPU 捕获渲染器（冒烟/
+    /// parity 采集）没有导入纹理，需回退位图绘制；窗口渲染仍走 compositor_import，
+    /// 不双绘。`None` 时保留占位键（gpu_direct 帧在捕获场景外不消费位图）。
     #[cfg(target_os = "linux")]
+    #[allow(clippy::too_many_arguments)]
     pub fn commit_compositor_dmabuf(
         &mut self,
         submission: CompositorSubmission,
@@ -232,6 +237,7 @@ impl TabSnapshot {
         scroll_x: f32,
         scroll_y: f32,
         dmabuf: CompositorDmabufPending,
+        shadow_rgba: Option<Vec<u8>>,
     ) -> bool {
         if self.compositor_submission != Some(submission)
             || self.compositor_frame.as_ref().is_some_and(|current| {
@@ -243,6 +249,13 @@ impl TabSnapshot {
             return false;
         }
         self.image_cache.clear();
+        let image_key = shadow_rgba
+            .and_then(|rgba| {
+                zero_render_foundation::image_cache::ImageData::from_rgba(rgba, width, height)
+                    .ok()
+                    .map(|image| self.image_cache.insert(image))
+            })
+            .unwrap_or_else(|| ImageKey::new(0));
         self.compositor_present = None;
         self.compositor_frame = Some(CompositorFrame {
             surface_id: submission.surface_id,
@@ -250,7 +263,7 @@ impl TabSnapshot {
             frame_id: submission.frame_id,
             width,
             height,
-            image_key: ImageKey::new(0),
+            image_key,
             gpu_direct: true,
         });
         self.compositor_dmabuf = Some(dmabuf);
@@ -471,10 +484,16 @@ mod tests {
                 dst_x: 0.0,
                 dst_y: 0.0,
             },
+            // 影子路径：gpu_direct 帧的位图 key 指向缓存中的 RGBA 副本。
+            Some(vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]),
         ));
 
         let frame = snap.compositor_frame.as_ref().unwrap();
         assert!(frame.gpu_direct);
+        assert!(
+            snap.image_cache.get(&frame.image_key).is_some(),
+            "影子 RGBA 应以帧位图键入缓存（捕获路径回退绘制）"
+        );
         assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
         assert!(snap.compositor_dmabuf.is_some());
         assert!(snap.take_compositor_dmabuf().is_some());

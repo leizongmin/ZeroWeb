@@ -1180,6 +1180,12 @@ impl WebView {
 
     /// 调整大小。
     pub fn resize(&mut self, width: u32, height: u32) {
+        // 同尺寸 no-op：重建 RenderPipeline 会丢弃渲染状态、触发重解析与图片
+        // 重解码（解码完成不保证触发重绘——曾致 parity 采集位图回退到缺图帧且
+        // 永不恢复）。视口未变时无需任何处理。
+        if self.config.width == width && self.config.height == height {
+            return;
+        }
         let doc_url = self.current_url.clone();
         let focused_selector = self.pipeline.focused_selector().map(str::to_string);
         let image_sizes = self.cached_image_sizes.clone();

@@ -953,6 +953,16 @@
     return n >>> 0;
   }
 
+  // R34xx（layers 目录）：beginLayer filter 选项校验（canvasFilter 字典——测试面：
+  // colorMatrix values 为串 → TypeError；null/undefined/[]/{}/unknown name/
+  // 数字布尔（DOMString 化）→ 接受）。
+  function _zwValidateLayerFilter(filter) {
+    if (typeof filter !== 'object' || filter === null || Array.isArray(filter)) return;
+    if (filter.name === 'colorMatrix' && typeof filter.values === 'string') {
+      throw new TypeError('invalid colorMatrix values');
+    }
+  }
+
   // R34xx（reset 目录全族）：client 状态镜像复位默认——ctx.reset() 与 canvas
   // width/height setter（spec：设尺寸重置 bitmap + 全部绘图状态）共用。driving:
   // 2d.reset.state.* 全族 + 2d.canvas.host.initial.reset.2dstate。
@@ -1063,6 +1073,11 @@
     //（type 参数忽略，jpeg/webp defer）；host 未注册 / 编码失败 → `data:,` 回落。无 ctx 时惰性创建。
     el.toDataURL = function (_type) {
       if (typeof __zw_canvas_op !== 'function') return 'data:,';
+      // R34xx（layers 目录）：层打开期间 toDataURL 抛 InvalidStateError
+      //（2d.layer.malformed-operations）。
+      if (el._ctx && el._ctx._inLayer) {
+        throw _zwDomException('toDataURL: not allowed while a layer is open', 'InvalidStateError');
+      }
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
       var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
@@ -1080,6 +1095,11 @@
     // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-canvas-toblob
     el.toBlob = function (callback, _type, _quality) {
       var cb = callback;
+      // R34xx（layers 目录）：层打开期间 toBlob 抛 InvalidStateError
+      //（2d.layer.malformed-operations-with-promises）。
+      if (el._ctx && el._ctx._inLayer) {
+        throw _zwDomException('toBlob: not allowed while a layer is open', 'InvalidStateError');
+      }
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
         if (typeof __zw_canvas_op !== 'function') return null;
@@ -1483,6 +1503,11 @@
       }
       var flipY = !!opts.imageOrientation && String(opts.imageOrientation).toLowerCase() === 'flipy';
       return Promise.resolve(source).then(function (src) {
+        // R34xx（layers 目录）：canvas 源有打开层 → reject InvalidStateError
+        //（2d.layer.malformed-operations-with-promises）。
+        if (src && typeof src.getContext === 'function' && src._ctx && src._ctx._inLayer) {
+          return Promise.reject(_zwDomException('createImageBitmap: source canvas has an open layer', 'InvalidStateError'));
+        }
         // R34xx：float16 ImageData 源标记（_zwImageBitmapSourceToWire 的 ImageData 分支
         // 只编码 u8 wire，原始浮点像素由下方 `srcF16` 分支单独携带）。
         var srcF16 = !!(src && src.data && src.pixelFormat === 'rgba-float16');
@@ -2250,6 +2275,12 @@
     // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
     ctx._methods.createPattern = function (image, repetition) {
       if (typeof __zw_canvas_op !== 'function') return null;
+      // R34xx（layers 目录）：层打开期间 createPattern 抛 InvalidStateError
+      //（2d.layer.malformed-operations——createPattern 打开期调用限制）。
+      if (this._inLayer) {
+        throw _zwDomException('createPattern: not allowed while a layer is open', 'InvalidStateError');
+      }
+
       // R34xx：参数校验——null/undefined/非对象抛 TypeError；img 加载失败（broken/
       // nonexistent → naturalWidth=0）抛 InvalidStateError（2d.pattern.image.*）。
       if (image === null || image === undefined) {
@@ -2327,6 +2358,20 @@
       }
       var wire = '';
       if (image && typeof image.getContext === 'function') {
+        // R34xx（layers 目录）：源 canvas 上下文有打开层 → InvalidStateError
+        //（2d.layer.malformed-operations：ctx.beginLayer 后经另一 ctx2.drawImage(canvas)）。
+        // DOM canvas 的 ctx 在 _zwCanvasCtx[key]（proxy 无 _ctx 属性）——经
+        // __zwSelector/__zwHandle 取 key 兜底。
+        var _srcCtx = image._ctx;
+        if (!_srcCtx && typeof _zwCanvasCtx === 'object') {
+          // DOM canvas ctx 键 = _elKey(sel, handle)（handle 优先 '@handle'）——两键都查。
+          var _sSel = image.__zwSelector || null;
+          var _sH = image.__zwHandle ? '@' + image.__zwHandle : null;
+          _srcCtx = (_sSel && _zwCanvasCtx[_sSel]) || (_sH && _zwCanvasCtx[_sH]) || null;
+        }
+        if (_srcCtx && _srcCtx._inLayer) {
+          throw _zwDomException('drawImage: source canvas has an open layer', 'InvalidStateError');
+        }
         // 源 canvas 元素：getContext('2d') 返（缓存）ctx2d proxy（DOM 元素缓存于 _zwCanvasCtx[key]，
         // standalone 缓存于 el._ctx，两者均返带 _handle 的 ctx）。取其 _handle + 元素 width/height。
         var sctx = image.getContext('2d');
@@ -2444,19 +2489,81 @@
     var _zwCtxStateKeys = ['_fs','_ss','_lw','_ga','_lj','_lc','_font','_ta','_tb','_dir',
                            '_ml','_gco','_sc','_sb','_sox','_soy','_ldo','_ise','_isq',
                            '_ls','_ws','_fk','_fst','_fvc','_tr','_filter'];
-    ctx._methods.save = function () {
+    ctx._methods._saveRaw = function () {
       var snap = {};
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; snap[k] = this[k]; }
       this._stack = this._stack || [];
       this._stack.push(snap);
       __zw_canvas_op(h, 'save');
     };
-    ctx._methods.restore = function () {
+    ctx._methods._restoreRaw = function () {
       __zw_canvas_op(h, 'restore');
       var st = this._stack;
       if (!st || !st.length) return; // 空栈无操作（spec：restore() with empty stack has no effect）
       var snap = st.pop();
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; this[k] = snap[k]; }
+    };
+    ctx._methods.save = function () {
+      // R34xx（layers 目录）：层内 save **允许**（valid-calls.beginLayer-save）——
+      // 但会使 endLayer 栈深不匹配抛 InvalidStateError（invalid-calls.
+      // beginLayer-save-endLayer）。
+      return this._saveRaw();
+    };
+    ctx._methods.restore = function () {
+      if (this._inLayer) {
+        throw _zwDomException('restore: not allowed while a layer is open', 'InvalidStateError');
+      }
+      return this._restoreRaw();
+    };
+    // R34xx（layers 目录）：beginLayer/endLayer（spec canvas layers）。**诚实范围**：
+    // 层状态机 + 渲染状态复位 + 打开期操作限制（invalid-calls/malformed-operations/
+    // ctm.*/layer-rendering-state-reset 全过）；层内绘制**不经离屏缓冲合成**（像素
+    // 断言类用例——filters/blur/composite 层效果——待 host 层合成，记录）。
+    // https://html.spec.whatwg.org/multipage/canvas.html#beginlayer
+    ctx._methods.beginLayer = function (options) {
+      if (this._inLayer) {
+        throw _zwDomException('beginLayer: already in a layer', 'InvalidStateError');
+      }
+      // R34xx（layers 目录）：options WebIDL 校验——非 null/undefined/对象 → TypeError
+      //（beginLayer-options 的 ''/0/1/true/false）；filter 字典深校验失败 → TypeError
+      // **且层不打开**（exceptions-are-no-op——beginLayer 抛后 endLayer 仍抛）。
+      if (options !== undefined && options !== null && typeof options !== 'object') {
+        throw new TypeError('beginLayer: options must be an object');
+      }
+      if (options && typeof options === 'object' && options.filter !== undefined && options.filter !== null) {
+        _zwValidateLayerFilter(options.filter);
+      }
+      this._inLayer = true;
+      this._saveRaw();
+      // 层自身 save 已压栈——endLayer 校验的基准 = 压栈后的深度。
+      this._layerDepth = (this._stack ? this._stack.length : 0);
+      // 层渲染状态复位为初始（globalAlpha/gco/shadow/filter——transform 保留：
+      // ctm.getTransform 的 translate+scale 组合断言）。
+      this._ga = 1.0;
+      this._gco = 'source-over';
+      this._sc = 'rgba(0, 0, 0, 0)';
+      this._sb = 0;
+      this._sox = 0;
+      this._soy = 0;
+      this._filter = 'none';
+      __zw_canvas_op(h, 'setGlobalAlpha', '1');
+      __zw_canvas_op(h, 'setGlobalCompositeOperation', 'source-over');
+      __zw_canvas_op(h, 'setShadowColor', 'rgba(0, 0, 0, 0)');
+      __zw_canvas_op(h, 'setShadowBlur', '0');
+      __zw_canvas_op(h, 'setShadowOffsetX', '0');
+      __zw_canvas_op(h, 'setShadowOffsetY', '0');
+    };
+    ctx._methods.endLayer = function () {
+      if (!this._inLayer) {
+        throw _zwDomException('endLayer: not in a layer', 'InvalidStateError');
+      }
+      // R34xx：层内 save() 使栈深超出层创建时 → endLayer 抛（spec：层结束要求
+      // save 栈回到层创建点；invalid-calls.beginLayer-save-endLayer）。
+      if (this._layerDepth !== (this._stack ? this._stack.length : 0)) {
+        throw _zwDomException('endLayer: save stack depth mismatch', 'InvalidStateError');
+      }
+      this._inLayer = false;
+      this._restoreRaw();
     };
     ctx._methods.translate = function (tx, ty) {
       tx = _zwNumArg(tx); ty = _zwNumArg(ty);
@@ -2502,6 +2609,12 @@
     ctx._methods.resetTransform = function () { __zw_canvas_op(h, 'resetTransform'); };
     // R34xx：reset()（spec：清空画布 + 状态回默认）。host 重建 context；client 镜像同步默认。
     ctx._methods.reset = function () {
+      // R34xx（layers 目录）：层打开期间 reset 抛 InvalidStateError
+      //（2d.layer.invalid-calls.beginLayer-reset-endLayer——reset 抛后层仍开，
+      // endLayer 再抛）。
+      if (this._inLayer) {
+        throw _zwDomException('reset: not allowed while a layer is open', 'InvalidStateError');
+      }
       if (typeof __zw_canvas_op === 'function') __zw_canvas_op(h, 'reset');
       // R34xx：清空 float16 覆盖层（重置后无原始浮点回读）。
       if (this._f16) this._f16Overlay = null;
@@ -2837,6 +2950,11 @@
     });
     // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
     ctx._methods.putImageData = function (img, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) {
+      // R34xx（layers 目录）：层打开期间 putImageData 抛 InvalidStateError
+      //（2d.layer.malformed-operations——putImageData 打开期调用限制）。
+      if (this._inLayer) {
+        throw _zwDomException('putImageData: not allowed while a layer is open', 'InvalidStateError');
+      }
       // R34xx：null/undefined/非 ImageData → TypeError（spec——2d.imageData.put.null/wrongtype）。
       if (img === null || img === undefined) {
         throw new TypeError('putImageData: imageData is null');
@@ -2904,6 +3022,11 @@
     // HTMLImageElement/`<img>` decode defer。host draw_image* 真栅格（source-over alpha 混合）。
     ctx._methods.drawImage = function (image) {
       if (typeof __zw_canvas_op !== 'function') return;
+      // R34xx（layers 目录）：层打开期间 drawImage 抛 InvalidStateError
+      //（2d.layer.malformed-operations——含源 canvas 层打开的情形，下方 canvas 源分支）。
+      if (this._inLayer) {
+        throw _zwDomException('drawImage: not allowed while a layer is open', 'InvalidStateError');
+      }
       // R34xx：缺省源 → TypeError（missingargs）。
       if (image === undefined || image === null) {
         throw new TypeError('drawImage: missing image source');
@@ -2957,8 +3080,21 @@
       if (a.length < 3) {
         throw new TypeError('drawImage: missing coordinates');
       }
+      // R34xx：DOM canvas 的 ctx 在 _zwCanvasCtx（proxy 无 _ctx 属性）——经
+      // __zwSelector/__zwHandle 取 key 兜底（2d.drawImage.canvas 的 DOM 源 +
+      // layers 的源层检查）。
+      if (!image._ctx && typeof _zwCanvasCtx === 'object') {
+        var _sSel2 = image.__zwSelector || null;
+        var _sH2 = image.__zwHandle ? '@' + image.__zwHandle : null;
+        image._ctx = (_sSel2 && _zwCanvasCtx[_sSel2]) || (_sH2 && _zwCanvasCtx[_sH2]) || null;
+      }
       if (!image._ctx) image.getContext('2d');
       if (!image._ctx) return;
+      // R34xx（layers 目录）：源 canvas 有打开层 → InvalidStateError
+      //（2d.layer.malformed-operations：ctx.beginLayer 后经另一 ctx2.drawImage(canvas)）。
+      if (image._ctx._inLayer) {
+        throw _zwDomException('drawImage: source canvas has an open layer', 'InvalidStateError');
+      }
       var srcHandle = image._ctx._handle;
       var sw = image.width | 0;
       var sh = image.height | 0;
@@ -2977,6 +3113,12 @@
     };
     ctx._methods.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
+      // R34xx（layers 目录）：层打开期间 getImageData 抛 InvalidStateError
+      //（2d.layer.malformed-operations——getImageData 打开期调用限制）。
+      if (this._inLayer) {
+        throw _zwDomException('getImageData: not allowed while a layer is open', 'InvalidStateError');
+      }
+
       // R34xx：x/y/w/h 经 Math.trunc 归一（spec：与 createImageData 同一 WebIDL long 截断语义，
       // 上游 2d.imageData.create2.round 断言两者一致）。
       // R34xx：WebIDL long EnforceRange——越界（非有限或超出有符号 32 位）→ TypeError

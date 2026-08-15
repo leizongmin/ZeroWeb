@@ -226,13 +226,22 @@ fn load_skip_list(_wpt_data_dir: &Path) -> Vec<String> {
 /// 检查路径是否匹配 skip list。
 fn should_skip(relative_path: &str, skip_list: &[String]) -> bool {
     let path_lower = relative_path.to_lowercase();
+    // R34xx（canvas-2d goal M3）：canvas 专项的 reftest/oracle A/B 面——rendering-compat
+    // 的 skip list 把 html/canvas/ 排除（其 reftest 面归 canvas 专项）；REFTEST_INCLUDE_CANVAS=1
+    // 时忽略 canvas 相关 skip 模式（canvas 专项 oracle 测量用，不影响兄弟 goal 分母）。
+    let include_canvas = std::env::var("REFTEST_INCLUDE_CANVAS").as_deref() == Ok("1");
     for pattern in skip_list {
         // 跳过注释行和空行
         if pattern.starts_with('#') || pattern.is_empty() {
             continue;
         }
+        let pat_lower = pattern.to_lowercase();
+        if include_canvas && (pat_lower == "canvas/" || pat_lower == "html/canvas/" || pat_lower == "offscreencanvas/")
+        {
+            continue;
+        }
         // 支持简单的路径前缀匹配
-        if path_lower.contains(&pattern.to_lowercase()) {
+        if path_lower.contains(&pat_lower) {
             return true;
         }
     }

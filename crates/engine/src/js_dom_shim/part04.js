@@ -208,6 +208,10 @@
             return function (_type) {
               if (typeof __zw_canvas_op !== 'function') return 'data:,';
               var ctx = _zwCanvasCtx[key];
+              // R34xx（layers 目录）：层打开期间 toDataURL 抛 InvalidStateError。
+              if (ctx && ctx._inLayer) {
+                throw _zwDomException('toDataURL: not allowed while a layer is open', 'InvalidStateError');
+              }
               if (!ctx || !ctx._handle) return 'data:,'; // 未 getContext → 无 bitmap
               var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
               if (!csv) return 'data:,';
@@ -224,6 +228,10 @@
             return function (callback, _type, _quality) {
               var p = Promise.resolve().then(function () {
                 if (typeof __zw_canvas_op !== 'function') return null;
+                // R34xx（layers 目录）：层打开期间 toBlob 抛 InvalidStateError。
+                if (_zwCanvasCtx[key] && _zwCanvasCtx[key]._inLayer) {
+                  throw _zwDomException('toBlob: not allowed while a layer is open', 'InvalidStateError');
+                }
                 if (!_zwCanvasCtx[key] || !_zwCanvasCtx[key]._handle) {
                   // 惰性建 ctx（镜像 toDataURL getContext 调用）——经 proxy getContext get-trap 建 + 缓存。
                   var proxy = _makeProxy(sel, handle);

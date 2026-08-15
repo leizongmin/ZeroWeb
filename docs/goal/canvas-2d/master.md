@@ -1,9 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-15（R34xx 第十一批定稿：**G7 剩余失败聚类全灭**——主线程
-**832 Pass / 0 Fail / 65 Timeout**、worker **715 Pass / 0 Fail**（v6 828/4、713/2
-→ +4/+2，0 Fail）；65 Timeout 全为 reftest-format 文件（非 testharness 面）；
-canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
+**最后更新**: 2026-08-15（R34xx 第十二批定稿：**第二批导入 + layers 全绿 + M3 oracle
+基线**——11 新目录 559+ 用例导入；reset/canvas-host/canvas-context/layers/
+conformance-requirements testharness 面全绿；M3 Chromium oracle A/B 管线建立
+（1339 shots，基线 1.7% 真通过，差距=滤镜/层合成/颜色插值深项）；证据见
+evidence/r34xx-batch4-m3-oracle）。
 
 ---
 
@@ -62,7 +63,19 @@ canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 
 ## R34xx 修复记录（WPT 驱动，全部带 driving 用例）
 
-（前轮记录见 git log；第十一批（2026-08-15，G7 全灭）——按 driving 用例聚类）
+（前轮记录见 git log；第十二批（2026-08-15，第二批导入 + layers + M3 oracle）——按 driving 用例聚类）
+
+| 修复 | 驱动用例 |
+|------|----------|
+| 第二批导入（11 新目录 559+ 用例 + offscreen 变体 ~2000 文件）+ reftest-format 判定（NotRun） | fetch-canvas-subset.sh + runner 目录清单 |
+| ctx.reset() 全量状态复位（27 项镜像）+ ctx.filter 属性 + DOMMatrix isIdentity/is2D/is3D | 2d.reset.state.* 全族 |
+| canvas width/height WebIDL ToUint32 + standalone 尺寸 accessor + 固有尺寸双层注入 + MAX_CANVAS_DIM 钳制 + ctx.canvas 只读/同 identity + toStringTag + 缺参 TypeError | 2d.canvas.host.* 全族 |
+| ctx 原型链重构（_methods 包 + prototype 分发）+ 构造器 prototype 属性规则 | 2d.canvas.context.type.*/prototype/readonly |
+| beginLayer/endLayer 状态机 + 层渲染状态复位 + 打开期操作限制 + options 校验 | 2d.layer.*（invalid-calls/malformed/valid-calls/ctm/options/exceptions） |
+| drawImage 负坐标（f32 as usize 饱和为 0 → 显式负值跳过）+ DOM canvas 源 ctx 查找 | 2d.drawImage.3arg / 2d.drawImage.canvas |
+| M3 oracle：REFTEST_INCLUDE_CANVAS + 全量捕获 1339 shots + A/B 基线 | reftest-oracle html/canvas |
+
+（更早轮次记录见 git log）
 
 | 修复 | 驱动用例 |
 |------|----------|
@@ -117,6 +130,7 @@ canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
+| G8 | 第二批新目录 | 🔄 reset/canvas-host/canvas-context/layers/conformance-requirements testharness 面全绿；剩余 = filters 渲染（17）/layers 像素面/color-type+wide-gamut（display-p3）/drawing-images img 加载面——深项记录 |
 
 ## 待用户决策清单
 
@@ -128,13 +142,15 @@ canvas 覆盖率 **91.18%**；证据见 evidence/r34xx-batch3）。
 
 ## 下一步计划
 
-1. **M3**：Chromium 环境可用后补像素 oracle A/B（G2）——GPU 路径测试已就位（lavapipe 4 测试）
-2. reftest-format 超时（65）——canvas reftest 面走 reftest harness 才是正解（非 testharness 面，
-   与 rendering-compat 共享 harness 决策）
-3. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），浏览器流
-   （非 canvas 面）处理
-
-（emHeight/baseline 深面已在第十一批前完成——emHeights*/baselines 全 Pass，不再待办）
+1. **M3 冲刺**：oracle A/B 基线 1.7% → 按 worst-diff 聚类修复（filters dropShadow/
+   layers opaque-canvas/gradient 颜色插值）——每项修复经 oracle A/B 验证
+2. filters 目录（17 Fail）——CanvasFilter 渲染（blur/colorMatrix/dropShadow 等）——
+   深项，待决策
+3. layers 像素面（beginLayer 离屏缓冲合成）——深项，待决策
+4. color-type/wide-gamut-canvas（display-p3↔srgb 转换）——深项，待决策
+5. drawing-images img 加载面（svg/incomplete/broken）——img 元素状态机，待决策
+6. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），
+   浏览器流（非 canvas 面）处理
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 

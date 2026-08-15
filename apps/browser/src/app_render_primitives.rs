@@ -10,15 +10,20 @@ pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
 }
 
 /// 将 compositor 页面位图转换为现有页面 image primitive，并应用视口变换与裁剪。
+///
+/// `allow_gpu_direct_shadow`：gpu_direct 帧（dmabuf 导入路径）在窗口渲染中由
+/// compositor_import 纹理呈现（本函数返回空，避免双绘）；headless GPU 捕获
+/// 渲染器没有导入纹理，须回退绘制采纳时保留的 RGBA 影子。
 pub(crate) fn compositor_frame_primitives(
     frame: &crate::tab_snapshot::CompositorFrame,
     x_offset: f32,
     y_offset: f32,
     scale: f32,
     clip_viewport: ViewportClip,
+    allow_gpu_direct_shadow: bool,
 ) -> RenderPrimitives {
     #[cfg(target_os = "linux")]
-    if frame.gpu_direct {
+    if frame.gpu_direct && !allow_gpu_direct_shadow {
         return RenderPrimitives::new();
     }
     let mut source = RenderPrimitives::new();
@@ -593,6 +598,7 @@ mod compositor_frame_tests {
             -10.0, // viewport y - vertical scroll
             2.0,
             viewport,
+            false,
         );
 
         assert_eq!(primitives.images.len(), 1);

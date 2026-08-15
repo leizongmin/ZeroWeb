@@ -553,14 +553,17 @@ impl BrowserApp {
                 "+" | "=" => {
                     self.shell.zoom_in();
                     self.show_zoom_indicator();
+                    self.apply_page_zoom_change();
                 }
                 "-" => {
                     self.shell.zoom_out();
                     self.show_zoom_indicator();
+                    self.apply_page_zoom_change();
                 }
                 "0" => {
                     self.shell.zoom_reset();
                     self.show_zoom_indicator();
+                    self.apply_page_zoom_change();
                 }
                 "," => {
                     // Ctrl+, 打开设置页面
