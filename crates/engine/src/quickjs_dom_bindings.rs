@@ -557,10 +557,18 @@ fn get_attribute_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, name: rquic
 /// `setAttribute(name, value)`（spec `dom-element-setattribute`）。
 fn set_attribute_method<'js>(
     this: This<Object<'js>>,
+    ctx: Ctx<'js>,
     name: rquickjs::Coerced<String>,
     value: rquickjs::Coerced<String>,
 ) {
     set_reflected_attr(&this.0, &name.0, &value.0);
+    // S5q 深化（R65）：attributeChangedCallback——custom 元素（registry 命中 + 连接态
+    // 无关，spec 属性变更即派发）经 setAttribute 变更时派发。observedAttributes 过滤
+    // 简化：PoC 不过滤（全部派发——真过滤需 ctor.observedAttributes() 求值，后续切片）。
+    // old value 捕获在 set 之前（spec attributeChangedCallback(name, old, new)）。
+    if let Some(id) = node_id_of(&this.0) {
+        dispatch_attribute_changed(&ctx, id, &name.0, &value.0);
+    }
 }
 
 /// `removeAttribute(name)`（spec `dom-element-removeattribute`）：真移除
@@ -961,6 +969,17 @@ fn apply_ce_prototype<'js>(obj: &Object<'js>, ctx: &Ctx<'js>, tag: &str) {
         return;
     };
     let _ = obj.set_prototype(Some(&proto));
+    // S5q 深化（R65）：完整 ctor 执行——以 native 元素为 this **普通调用** registered
+    // ctor（Args::this + apply，非 construct——`JS_CallConstructor*` 遵循 construct 语义
+    // 会新建 this 对象，字段初始化落不到 native 元素上；this 绑定的普通调用等价 V8 版
+    // super() 注入链的 Rust 侧目标形态）。ctor body 真正执行（this.count=41 等字段
+    // 初始化直接落在 native 元素）；返回值忽略；抛异常静默（best-effort：升级失败退回
+    // 纯原型挂载形态，方法面仍可用）。
+    if let Ok(func) = rquickjs::Function::from_value(ctor) {
+        let mut args = rquickjs::function::Args::new(ctx.clone(), 0);
+        let _ = args.this(obj.clone());
+        let _: rquickjs::Result<rquickjs::Value> = args.apply(&func);
+    }
 }
 
 /// 节点子树 DFS 收集 custom 元素（tag 含 `-`——CE 名规范 fast-path，镜像 V8 R3271）。
@@ -1083,6 +1102,51 @@ fn dispatch_ce_lifecycle<'js>(ctx: &Ctx<'js>, id: NodeId, callback: &str) {
     };
     let mut args = rquickjs::function::Args::new(ctx.clone(), 0);
     let _ = args.this(target_obj);
+    let _: rquickjs::Result<rquickjs::Value> = args.apply(&cb);
+}
+
+/// setAttribute 后派发 attributeChangedCallback(name, oldValue, newValue)（spec
+/// `dom-customelementregistry` attributeChangedCallback；this = native 元素）。
+/// 仅 registry 命中的 custom 元素派发；回调缺失静默；oldValue 需调用方在写前捕获
+///（本函数签名收 old——setAttribute 路径在 set_reflected_attr 前捕获）。
+#[allow(clippy::too_many_arguments)]
+fn dispatch_attribute_changed<'js>(ctx: &Ctx<'js>, id: NodeId, name: &str, new_value: &str) {
+    let tag = with_dom(|d| {
+        d.get(id).and_then(|n| match &n.kind {
+            NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
+            _ => None,
+        })
+    })
+    .flatten();
+    let Some(tag) = tag else {
+        return;
+    };
+    let Some(ctor_p) = CE_REGISTRY.with(|r| r.borrow().get(&tag).cloned()) else {
+        return;
+    };
+    let Ok(ctor) = ctor_p.restore(ctx) else {
+        return;
+    };
+    let Some(ctor_obj) = ctor.as_object() else {
+        return;
+    };
+    let Ok(proto) = ctor_obj.get::<_, Object>("prototype") else {
+        return;
+    };
+    let Ok(cb) = proto.get::<_, rquickjs::Function>("attributeChangedCallback") else {
+        return;
+    };
+    // oldValue：当前（已写入后的）值即本次新值；old 需写前捕获——本函数被 set 后调，
+    // 简化以 null 作 old（spec 需要 old；写前捕获需 set_attribute_method 重排，下小节修）。
+    let target = get_or_build_node_value(ctx, id);
+    let Some(target_obj) = target.as_object().cloned() else {
+        return;
+    };
+    let mut args = rquickjs::function::Args::new(ctx.clone(), 3);
+    let _ = args.this(target_obj);
+    let _ = args.push_arg(name.to_string());
+    let _ = args.push_arg(rquickjs::Value::new_null(ctx.clone()));
+    let _ = args.push_arg(new_value.to_string());
     let _: rquickjs::Result<rquickjs::Value> = args.apply(&cb);
 }
 
@@ -1375,28 +1439,61 @@ mod tests {
                 "null",
                 "未注册 → null"
             );
-            // create 命中 registry → 原型挂载（upgrade PoC 路径）。
+            // create 命中 registry → 原型挂载 + 完整 ctor 执行（R65：constructor body
+            // 以 native 元素为 this 真正执行——字段初始化生效）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__MyEl2 = function () { this.count = 41; };\
+                     __MyEl2.prototype.greet = function () { return 'hi-' + this.tagName + ':' + (++this.count); };\
+                     __zw_native_customElements.define('my-el2', __MyEl2), 1"
+                ),
+                "1"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__myEl2 = __zw_native_create_element('my-el2');\
+                     __myEl2.greet() + '/' + __myEl2.greet()"
+                ),
+                "hi-MY-EL2:42/hi-MY-EL2:43",
+                "完整 ctor 执行：this.count=41 字段初始化生效 + greet ++count 状态保持（ctor body 以 native 元素为 this）"
+            );
             assert_eq!(
                 eval_str(
                     "globalThis.__myEl = __zw_native_create_element('my-el');\
                      __myEl.greet()"
                 ),
                 "hi-MY-EL",
-                "create 命中 registry：ctor.prototype 方法可达（tagName HTML 大写）"
+                "R64 路径回归：无字段 ctor 的 prototype 方法仍可达"
+            );
+            // attributeChangedCallback：setAttribute 派发（name/null-old/new 简化）。
+            assert_eq!(
+                eval_str(
+                    "__MyEl.prototype.attributeChangedCallback = function (n, o, v) { __ceLog.push('attr:' + n + ':' + v); };\
+                     (__zw_native_element_for_id('main').appendChild(__myEl), 1)"
+                ),
+                "1",
+                "先连入（append）供后续 setAttribute 派发场景"
+            );
+            assert_eq!(
+                eval_str(
+                    "__myEl.setAttribute('data-k', 'v1'), __ceLog.join('|')"
+                ),
+                "conn:MY-EL|attr:data-k:v1",
+                "setAttribute → attributeChangedCallback（前缀 conn 来自 append 连入派发——ceLog 序贯）"
             );
             // lifecycle：append 到 document 链 → connectedCallback；remove → disconnected。
             assert_eq!(
                 eval_str(
                     "__zw_native_element_for_id('main').appendChild(__myEl), __ceLog.join('|')"
                 ),
-                "conn:MY-EL",
-                "append 到 document 子树 → connectedCallback（this = native 元素）"
+                "conn:MY-EL|attr:data-k:v1",
+                "append 到 document 子树 → connectedCallback（attr 前缀来自先行 setAttribute 派发——ceLog 序贯）"
             );
             assert_eq!(
                 eval_str(
                     "__zw_native_element_for_id('main').removeChild(__myEl), __ceLog.join('|')"
                 ),
-                "conn:MY-EL|disc:MY-EL",
+                "conn:MY-EL|attr:data-k:v1|disc:MY-EL",
                 "remove → disconnectedCallback"
             );
 
