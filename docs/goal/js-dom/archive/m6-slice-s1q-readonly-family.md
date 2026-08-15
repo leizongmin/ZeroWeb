@@ -53,3 +53,16 @@ S0q 骨架上扩只读属性族（镜像 V8 dom_bindings S1 既有面），按�
 - namespaceURI 的 null 语义（区别 undefined）需 Value 返回形态 + ctx 构造
   String——String 返回形态的 getter 无此能力，混合返回形态（String vs Value）
   是 QuickJS 绑定的常规形态，V8 侧统一 ReturnValue 无此区分。
+
+---
+
+## R58b 补充（同切片追加，commit `b9136b38`）
+
+字符串反射族收口：title/lang/accessKey getter/setter。V8 侧 `native_string_reflected_*`
+按 accessor name 动态分发（name_to_content_attr 小写化）；QuickJS Accessor 无 name
+回调 → per-property 具名 fn + 共享 helper（`reflected_attr_string_of`/新增
+`set_reflected_attr`）+ 静态 IDL→content 映射（accessKey→accesskey）。语义等价：
+缺省 ""、ToString setter、LegacyNullToEmptyString 由 `Coerced<String>` 覆盖。
+
+PoC 断言扩展：三属性读写闭环 + Object.keys enumerable 面
+`id,className,title,lang,accessKey`。engine quickjs 1419 全绿。
