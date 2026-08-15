@@ -284,6 +284,8 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
         max_y = max_y.max(y);
     }
     // 逐 mask 行扫描：sy（canvas 坐标）在路径 y 范围内时求交、填充覆盖。
+    // R56：同 blit_path_to_pixels——vertices 是独立段序列，按段判定穿越（多子路径
+    // 跨界虚假边会破坏 clip mask 交点配对）。
     let rwi = rw as i32;
     for ly in 0..rh as i32 {
         let sy = (oy + ly) as f32 + 0.5;
@@ -291,9 +293,8 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
             continue;
         }
         let mut xs: Vec<f32> = Vec::new();
-        for i in 0..points.len() {
-            let (x1, y1) = points[i];
-            let (x2, y2) = points[(i + 1) % points.len()];
+        for seg in vertices.chunks_exact(4) {
+            let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
             if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
                 let t = (sy - y1) / (y2 - y1);
                 xs.push(x1 + t * (x2 - x1));
@@ -336,42 +337,58 @@ impl CanvasContext {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn flatten_round_rect(
         vertices: &mut Vec<f32>,
-        current_x: f32,
-        current_y: f32,
+        _current_x: f32,
+        _current_y: f32,
         x: f32,
         y: f32,
         w: f32,
         h: f32,
         radii: &[(f32, f32)],
     ) -> (f32, f32) {
-        // R34xx：解析圆角半径角对 [tl, tr, br, bl]（每角 (x, y)——DOMPoint 半径支持）。
+        // R56（M8/DC-8）：负 w/h 归一化——spec §roundrect 的角序 [tl,tr,br,bl] 相对
+        // **参数坐标系**（tl 恒贴 (x,y) 参数角），负 w/h 翻转边走向即镜像矩形，角随边
+        // 镜像到对侧（负 h：tl↔bl、tr↔br；负 w：tl↔tr、bl↔br）。归一到包围盒后把
+        // 半径数组按翻转换回几何角序（2d.path.roundrect.negative：roundRect(0,50,50,-25,[10,..])
+        // 的 tl 圆贴参数角 (0,50)，镜像后落在包围盒左下）。旧实现负 w/h 直接产出反向
+        // 多边形（扫描线偶填充翻外）。
+        // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+        let (w_was_neg, h_was_neg) = (w < 0.0, h < 0.0);
+        let (aw, ah) = (w.abs(), h.abs());
+        let (x, y) = (x + w.min(0.0), y + h.min(0.0));
+        let (w, h) = (aw, ah);
+        // radii 参数角序 → 包围盒几何角序：参数 tl 角经镜像落在包围盒的新角位。
+        // 垂直镜像（负 h）tl↔bl/tr↔br，水平镜像（负 w）tl↔tr/bl↔br，双向即 180° 旋转。
+        // 注意：镜像换位须在「展开到 4 角」之后做（radii 可能只有 1-3 项——
+        // [a,b] 展开序 tl,tr,br,bl = a,b,a,b，先换位再展开会错角）。
         let mut r = [(0.0f32, 0.0f32); 4];
         match radii.len() {
             0 => {}
             1 => {
-                r[0] = radii[0];
-                r[1] = radii[0];
-                r[2] = radii[0];
-                r[3] = radii[0];
+                r = [radii[0]; 4];
             }
             2 => {
-                r[0] = radii[0];
-                r[1] = radii[1];
-                r[2] = radii[0];
-                r[3] = radii[1];
+                r = [radii[0], radii[1], radii[0], radii[1]];
             }
             3 => {
-                r[0] = radii[0];
-                r[1] = radii[1];
-                r[2] = radii[2];
-                r[3] = radii[1];
+                r = [radii[0], radii[1], radii[2], radii[1]];
             }
             _ => {
-                r[0] = radii[0];
-                r[1] = radii[1];
-                r[2] = radii[2];
-                r[3] = radii[3];
+                r = [radii[0], radii[1], radii[2], radii[3]];
             }
+        }
+        if w_was_neg != h_was_neg {
+            // 单轴镜像：垂直（负 h）0↔3、1↔2；水平（负 w）0↔1、3↔2。
+            if h_was_neg {
+                r.swap(0, 3);
+                r.swap(1, 2);
+            } else {
+                r.swap(0, 1);
+                r.swap(3, 2);
+            }
+        } else if w_was_neg {
+            // 180° 旋转：0↔2、1↔3。
+            r.swap(0, 2);
+            r.swap(1, 3);
         }
         // R34xx：按比例缩放（spec §roundrect：scale = min(w/2/maxRx, h/2/maxRy, 1)，
         // 保持半径纵横比——旧 clamp 到短边/2 把 (40,20) 压成 (25,25)）。
@@ -391,21 +408,16 @@ impl CanvasContext {
 
         // 所有半径为 0 时退化为矩形
         if r.iter().all(|&(rx, ry)| rx < f32::EPSILON && ry < f32::EPSILON) {
+            // R56：自包含子路径——与圆角分支/path.rs 同语义，不连 current（旧连接段
+            // 在 current 恰等于 corner3 时与闭合边重合，段式扫描产生奇数交点）。
             let corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
-            vertices.push(current_x);
-            vertices.push(current_y);
-            vertices.push(corners[0].0);
-            vertices.push(corners[0].1);
-            for i in 0..3 {
+            for i in 0..4 {
+                let next = (i + 1) % 4;
                 vertices.push(corners[i].0);
                 vertices.push(corners[i].1);
-                vertices.push(corners[i + 1].0);
-                vertices.push(corners[i + 1].1);
+                vertices.push(corners[next].0);
+                vertices.push(corners[next].1);
             }
-            vertices.push(corners[3].0);
-            vertices.push(corners[3].1);
-            vertices.push(corners[0].0);
-            vertices.push(corners[0].1);
             return (corners[0].0, corners[0].1);
         }
 
@@ -612,21 +624,38 @@ impl CanvasContext {
 
     /// 将当前路径命令扁平化为顶点列表（x, y 交替）。
     /// 对于圆弧，使用线性近似（固定 16 段细分）。
-    pub(crate) fn flatten_path(&self) -> Vec<f32> {
+    /// `close_open_subpaths`：fill/clip/isPointInPath 需 **closepath-on-fill** 隐式
+    /// 闭合开放子路径（spec dom-context-2d-fill；R56 段式扫描线无隐式闭合会丢
+    /// 开放子路径的回边）；stroke/isPointInStroke 传 false（开放路径 stroke 不闭合）。
+    pub(crate) fn flatten_path_opts(&self, close_open_subpaths: bool) -> Vec<f32> {
         let mut vertices = Vec::new();
         let mut current_x = 0.0f32;
         let mut current_y = 0.0f32;
         let mut subpath_start_x = 0.0f32;
         let mut subpath_start_y = 0.0f32;
+        // 子路径已有几何命令（区别「首个 MoveTo 前」——此时无子路径可闭合）。
+        let mut subpath_has_geometry = false;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in self.current_path.commands() {
             match *cmd {
                 PathCommand::MoveTo(x, y) => {
+                    // 隐式闭合上一开放子路径（终点≠起点补闭合段）。
+                    if close_open_subpaths
+                        && subpath_has_geometry
+                        && ((current_x - subpath_start_x).abs() > f32::EPSILON
+                            || (current_y - subpath_start_y).abs() > f32::EPSILON)
+                    {
+                        vertices.push(current_x);
+                        vertices.push(current_y);
+                        vertices.push(subpath_start_x);
+                        vertices.push(subpath_start_y);
+                    }
                     subpath_start_x = x;
                     subpath_start_y = y;
                     current_x = x;
                     current_y = y;
+                    subpath_has_geometry = false;
                 }
                 PathCommand::LineTo(x, y) => {
                     vertices.push(current_x);
@@ -635,8 +664,10 @@ impl CanvasContext {
                     vertices.push(y);
                     current_x = x;
                     current_y = y;
+                    subpath_has_geometry = true;
                 }
                 PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
+                    subpath_has_geometry = true;
                     // 使用 8 段细分二次贝塞尔曲线
                     const SEGMENTS: usize = 8;
                     let mut px = current_x;
@@ -657,6 +688,7 @@ impl CanvasContext {
                     current_y = y;
                 }
                 PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
+                    subpath_has_geometry = true;
                     // 使用 8 段细分三次贝塞尔曲线
                     const SEGMENTS: usize = 8;
                     let mut px = current_x;
@@ -683,6 +715,7 @@ impl CanvasContext {
                     current_y = y;
                 }
                 PathCommand::Arc(cx, cy, radius, start_angle, end_angle, anticlockwise) => {
+                    subpath_has_geometry = true;
                     // R34xx：anticlockwise 方向（同 path.rs flatten）。
                     let dir = if anticlockwise { -1.0 } else { 1.0 };
                     // R34xx：角度归一化（与 path.rs flatten 同——|span| ≥ 2π 整圆，
@@ -716,6 +749,7 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    subpath_has_geometry = true;
                     Self::flatten_arc_to(
                         &mut vertices,
                         current_x,
@@ -734,6 +768,7 @@ impl CanvasContext {
                     current_y = ny;
                 }
                 PathCommand::Ellipse(cx, cy, rx, ry, rotation, start_angle, end_angle) => {
+                    subpath_has_geometry = true;
                     let cos_r = rotation.cos();
                     let sin_r = rotation.sin();
                     let angle_span = end_angle - start_angle;
@@ -760,7 +795,14 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::RoundRect(x, y, w, h, ref radii) => {
+                    subpath_has_geometry = true;
                     let (nx, ny) = Self::flatten_round_rect(&mut vertices, current_x, current_y, x, y, w, h, radii);
+                    // R56：roundRect 自包含子路径（path.rs 的 round_rect 同时 push
+                    // MoveTo）——隐式闭合须以子路径自身起点为基准，不受外部 MoveTo
+                    // 的原始参数坐标干扰（负 w/h 归一化后起点 ≠ MoveTo 参数点，
+                    // 隐式闭合会补出斜穿矩形的虚假边）。
+                    subpath_start_x = nx;
+                    subpath_start_y = ny;
                     current_x = nx;
                     current_y = ny;
                 }
@@ -776,10 +818,32 @@ impl CanvasContext {
                     }
                     current_x = subpath_start_x;
                     current_y = subpath_start_y;
+                    subpath_has_geometry = false; // 已显式闭合
                 }
             }
         }
+        // 命令流末尾的末个开放子路径隐式闭合（fill 的 closepath-on-fill 语义）。
+        if close_open_subpaths
+            && subpath_has_geometry
+            && ((current_x - subpath_start_x).abs() > f32::EPSILON
+                || (current_y - subpath_start_y).abs() > f32::EPSILON)
+        {
+            vertices.push(current_x);
+            vertices.push(current_y);
+            vertices.push(subpath_start_x);
+            vertices.push(subpath_start_y);
+        }
         vertices
+    }
+
+    /// fill/clip/hit-test 语义的扁平化（隐式闭合开放子路径——closepath-on-fill）。
+    pub(crate) fn flatten_path(&self) -> Vec<f32> {
+        self.flatten_path_opts(true)
+    }
+
+    /// stroke 语义的扁平化（开放子路径保持开放）。
+    pub(crate) fn flatten_path_open(&self) -> Vec<f32> {
+        self.flatten_path_opts(false)
     }
 
     /// 将指定 Path2D 的命令扁平化为顶点列表（x, y 交替）。
@@ -926,6 +990,9 @@ impl CanvasContext {
                     let (nx, ny) = Self::flatten_round_rect(&mut vertices, current_x, current_y, x, y, w, h, radii);
                     current_x = nx;
                     current_y = ny;
+                    // R56：同 flatten_path——子路径起点以 roundRect 自身边界为准。
+                    subpath_start_x = nx;
+                    subpath_start_y = ny;
                 }
                 PathCommand::ClosePath => {
                     if (current_x - subpath_start_x).abs() > f32::EPSILON
@@ -1085,18 +1152,32 @@ impl CanvasContext {
     /// Miter/Bevel 无可见延伸（上游 2d.strokeRect.zero.4：Nx0 闭合线端点 miter 不覆盖
     /// 端点外区域）；Round 总是画（圆连接，zero.5 lineJoin=round 期望端点外覆盖）。
     pub(crate) fn join_visible(&self, seg_a: &[f32; 4], seg_b: &[f32; 4]) -> bool {
+        self.join_shape_visible(seg_a, seg_b).is_some()
+    }
+
+    /// join 可见性 + 角向（R56）：返回 None = 不画；Some(convex) = 画（convex = 凸角）。
+    /// 凹角（reflex——路径右转，join 平切三角落在两段主体已覆盖区内再外溢到外角区，
+    /// 2d.line.join.bevel 的 (84,16) 凹角外不得涂）Miter/Bevel 不画；Round 仍画（圆盘
+    /// 与凸角同径，凹角侧圆盘被段主体覆盖语义不变，保持 R34xx zero.5 行为）。
+    pub(crate) fn join_shape_visible(&self, seg_a: &[f32; 4], seg_b: &[f32; 4]) -> Option<bool> {
         match self.line_join {
-            LineJoin::Round => true,
+            LineJoin::Round => Some(true),
             LineJoin::Miter | LineJoin::Bevel => {
                 let (ax, ay) = (seg_a[2] - seg_a[0], seg_a[3] - seg_a[1]);
                 let (bx, by) = (seg_b[2] - seg_b[0], seg_b[3] - seg_b[1]);
                 let la = (ax * ax + ay * ay).sqrt();
                 let lb = (bx * bx + by * by).sqrt();
                 if la < f32::EPSILON || lb < f32::EPSILON {
-                    return false; // 任一侧零长段 → 无可见连接
+                    return None; // 任一侧零长段 → 无可见连接
                 }
-                let dot = (ax * bx + ay * by).abs();
-                dot < la * lb * 0.9999 // 非共线才有角
+                let dot = ax * bx + ay * by;
+                if dot.abs() >= la * lb * 0.9999 {
+                    return None; // 共线 → 无角
+                }
+                // 叉积符号 = 转向：屏幕 y 向下，ax*by - ay*bx < 0 为左转（凸角，
+                // join 尖在外侧须画）；> 0 为右转（凹角，平切三角落在段主体已覆盖区
+                // 且外溢外角区——2d.line.join.bevel 的 (84,16) 凹角外不得涂）。
+                Some(ax * by - ay * bx < 0.0)
             }
         }
     }
@@ -1162,7 +1243,11 @@ impl CanvasContext {
                 }
             }
             LineJoin::Bevel => {
-                let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                // R56：段格式三边闭合三角（j→a / a→b / b→j）——blit_path_to_pixels 消费独立段序列
+                //（旧顶点链 8 floats 只 2 段缺 a→b 边，扫描线配对在部分行破裂）。
+                let verts = [
+                    jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, b_ext_x, b_ext_y, b_ext_x, b_ext_y, jx, jy,
+                ];
                 self.blit_path_to_pixels(&verts, color);
             }
             LineJoin::Miter => {
@@ -1179,12 +1264,20 @@ impl CanvasContext {
                 let miter_len = half_lw / sin_half;
                 if miter_len / half_lw > self.miter_limit {
                     // 超 miter limit → 降级 bevel 平切
-                    let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                    // R56：段格式三边闭合三角（j→a / a→b / b→j）——blit_path_to_pixels 消费独立段序列
+                    //（旧顶点链 8 floats 只 2 段缺 a→b 边，扫描线配对在部分行破裂）。
+                    let verts = [
+                        jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, b_ext_x, b_ext_y, b_ext_x, b_ext_y, jx, jy,
+                    ];
                     self.blit_path_to_pixels(&verts, color);
                 } else {
                     let (px, py) = (jx + dx * miter_len, jy + dy * miter_len);
                     // 扫掠四边形轮廓：{jx, a_ext, P, b_ext}
-                    let verts = [jx, jy, a_ext_x, a_ext_y, px, py, b_ext_x, b_ext_y, jx, jy];
+                    // R56：段格式四边闭合四边形（j→a→P→b→j）。
+                    let verts = [
+                        jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, px, py, px, py, b_ext_x, b_ext_y, b_ext_x, b_ext_y,
+                        jx, jy,
+                    ];
                     self.blit_path_to_pixels(&verts, color);
                 }
             }
@@ -1324,7 +1417,11 @@ impl CanvasContext {
                 }
             }
             LineJoin::Bevel => {
-                let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                // R56：段格式三边闭合三角（j→a / a→b / b→j）——blit_path_to_pixels 消费独立段序列
+                //（旧顶点链 8 floats 只 2 段缺 a→b 边，扫描线配对在部分行破裂）。
+                let verts = [
+                    jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, b_ext_x, b_ext_y, b_ext_x, b_ext_y, jx, jy,
+                ];
                 self.blit_path_gradient(&verts, style);
             }
             LineJoin::Miter => {
@@ -1336,11 +1433,19 @@ impl CanvasContext {
                 }
                 let miter_len = half_lw / sin_half;
                 if miter_len / half_lw > self.miter_limit {
-                    let verts = [jx, jy, a_ext_x, a_ext_y, b_ext_x, b_ext_y, jx, jy];
+                    // R56：段格式三边闭合三角（j→a / a→b / b→j）——blit_path_to_pixels 消费独立段序列
+                    //（旧顶点链 8 floats 只 2 段缺 a→b 边，扫描线配对在部分行破裂）。
+                    let verts = [
+                        jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, b_ext_x, b_ext_y, b_ext_x, b_ext_y, jx, jy,
+                    ];
                     self.blit_path_gradient(&verts, style);
                 } else {
                     let (px, py) = (jx + dx * miter_len, jy + dy * miter_len);
-                    let verts = [jx, jy, a_ext_x, a_ext_y, px, py, b_ext_x, b_ext_y, jx, jy];
+                    // R56：段格式四边闭合四边形（j→a→P→b→j）。
+                    let verts = [
+                        jx, jy, a_ext_x, a_ext_y, a_ext_x, a_ext_y, px, py, px, py, b_ext_x, b_ext_y, b_ext_x, b_ext_y,
+                        jx, jy,
+                    ];
                     self.blit_path_gradient(&verts, style);
                 }
             }
@@ -1473,9 +1578,13 @@ impl CanvasContext {
         for scan_y in y_start..y_end {
             let mut intersections: Vec<f32> = Vec::new();
             let sy = scan_y as f32 + 0.5;
-            for i in 0..points.len() {
-                let (x1, y1) = points[i];
-                let (x2, y2) = points[(i + 1) % points.len()];
+            // R56（M8/DC-8）：flatten 输出是「独立段」序列（x1,y1,x2,y2 每段 4 值），
+            // 不是多边形顶点链——旧 `points[i]↔points[i+1]` 连边在多子路径间产生
+            // 跨子路径虚假边（末点→次段首点），扫描线交点数变奇数致配对错位，
+            // roundRect 多子路径填充整片翻色（2d.path.roundrect.negative 实证）。
+            // 逐段独立判定穿越；同值段（圆角扇形首末重合）不产生穿越（半开区间）。
+            for seg in vertices.chunks_exact(4) {
+                let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
                 if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
                     let t = (sy - y1) / (y2 - y1);
                     intersections.push(x1 + t * (x2 - x1));
@@ -1537,9 +1646,13 @@ impl CanvasContext {
         for scan_y in y_start..y_end {
             let mut intersections: Vec<f32> = Vec::new();
             let sy = scan_y as f32 + 0.5;
-            for i in 0..points.len() {
-                let (x1, y1) = points[i];
-                let (x2, y2) = points[(i + 1) % points.len()];
+            // R56（M8/DC-8）：flatten 输出是「独立段」序列（x1,y1,x2,y2 每段 4 值），
+            // 不是多边形顶点链——旧 `points[i]↔points[i+1]` 连边在多子路径间产生
+            // 跨子路径虚假边（末点→次段首点），扫描线交点数变奇数致配对错位，
+            // roundRect 多子路径填充整片翻色（2d.path.roundrect.negative 实证）。
+            // 逐段独立判定穿越；同值段（圆角扇形首末重合）不产生穿越（半开区间）。
+            for seg in vertices.chunks_exact(4) {
+                let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
                 if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
                     let t = (sy - y1) / (y2 - y1);
                     intersections.push(x1 + t * (x2 - x1));
@@ -1901,7 +2014,8 @@ impl CanvasContext {
     /// 计算描边路径的顶点，包括 line_join 和 line_cap 产生的额外顶点。
     /// 返回一个包含 (x, y) 对的顶点列表，构成描边的轮廓多边形。
     pub fn stroke_outline_vertices(&self) -> Vec<f32> {
-        let path_vertices = self.flatten_path();
+        // R56：轮廓提取是 stroke 语义（开放子路径不闭合）。
+        let path_vertices = self.flatten_path_open();
         if path_vertices.len() < 4 {
             return Vec::new();
         }

@@ -890,8 +890,8 @@ fn test_fill_triangle_vertices() {
     ctx.line_to(25.0, 50.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // 2 条 LineTo 命令，每条生成 4 floats (x1,y1,x2,y2)
-    assert_eq!(pf.vertices.len(), 8);
+    // R56：fill 隐式闭合开放子路径（closepath-on-fill）——2 LineTo + 1 闭合段 = 3×4
+    assert_eq!(pf.vertices.len(), 12);
 }
 
 /// 测试 stroke() 的闭合标记。
@@ -1033,8 +1033,8 @@ fn test_quadratic_curve_flattening() {
     ctx.quadratic_curve_to(50.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // 8 段细分 × 4 floats = 32
-    assert_eq!(pf.vertices.len(), 32);
+    // R56：8 段细分 × 4 = 32 + fill 隐式闭合段 4 = 36（closepath-on-fill）
+    assert_eq!(pf.vertices.len(), 36);
 }
 
 /// 测试三次贝塞尔曲线填充生成正确的段数。
@@ -1046,8 +1046,8 @@ fn test_bezier_curve_flattening() {
     ctx.bezier_curve_to(25.0, 100.0, 75.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // 8 段细分 × 4 floats = 32
-    assert_eq!(pf.vertices.len(), 32);
+    // R56：8 段细分 × 4 = 32 + fill 隐式闭合段 4 = 36（closepath-on-fill）
+    assert_eq!(pf.vertices.len(), 36);
 }
 
 /// 测试圆弧填充生成正确的段数。
@@ -1058,8 +1058,8 @@ fn test_arc_flattening() {
     ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // 16 段细分 × 4 floats = 64
-    assert_eq!(pf.vertices.len(), 64);
+    // R56：16 段细分 × 4 = 64 + fill 隐式闭合段 4 = 68（closepath-on-fill）
+    assert_eq!(pf.vertices.len(), 68);
 }
 
 // ── clip() 测试 ──

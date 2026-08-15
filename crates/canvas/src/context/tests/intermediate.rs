@@ -590,8 +590,8 @@ fn test_round_rect_zero_radius_degrades_to_rect() {
     path.round_rect(10.0, 20.0, 100.0, 80.0, vec![(0.0, 0.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
-    // 零半径应退化为普通矩形：5 段 × 4 = 20 floats
-    assert_eq!(pf.vertices.len(), 20);
+    // R56：自包含子路径 4 边段（MoveTo 不产连接段）：4 × 4 = 16 floats
+    assert_eq!(pf.vertices.len(), 16);
 }
 
 /// 测试 roundRect 空半径列表退化为普通矩形。
@@ -602,7 +602,7 @@ fn test_round_rect_empty_radii_degrades_to_rect() {
     path.round_rect(10.0, 20.0, 100.0, 80.0, vec![]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
-    assert_eq!(pf.vertices.len(), 20);
+    assert_eq!(pf.vertices.len(), 16); // R56：4 边段
 }
 
 /// 测试 roundRect 四个不同圆角半径。
@@ -1103,8 +1103,8 @@ fn test_ellipse_via_context_generates_path_fills() {
     ctx.fill();
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
-    // 16 段细分 × 4 floats = 64
-    assert_eq!(pf.vertices.len(), 64);
+    // R56：16 段细分 × 4 = 64 + fill 隐式闭合段 4 = 68（closepath-on-fill）
+    assert_eq!(pf.vertices.len(), 68);
 }
 
 /// 测试 ellipse 使用单位旋转（rotation=0）时顶点与预期一致。
@@ -1255,8 +1255,8 @@ fn test_arc_to_zero_radius_degenerates_to_line() {
     assert!(!ctx.primitives().path_fills.is_empty());
     // 零半径时：从 (0,0) 画线到 (100,0)，不产生弧线
     let pf = &ctx.primitives().path_fills[0];
-    // 只有 1 条线段 = 4 floats（lineTo 到控制点1）
-    assert_eq!(pf.vertices.len(), 4, "零半径 arcTo 应退化为一条线段");
+    // R56：1 线段 + fill 隐式闭合段（终点≠起点）= 8 floats（closepath-on-fill）
+    assert_eq!(pf.vertices.len(), 8, "零半径 arcTo 应退化为一条线段+闭合");
 }
 
 /// 测试 arc_to 共线点（当前点、控制点1、控制点2 在一条线上）退化为直线。
@@ -1269,9 +1269,9 @@ fn test_arc_to_collinear_points_produces_line() {
     ctx.arc_to(50.0, 0.0, 100.0, 0.0, 10.0);
     ctx.fill();
     assert!(!ctx.primitives().path_fills.is_empty());
-    // 共线时退化为 lineTo(50, 0)，只有 1 条线段 = 4 floats
+    // 共线时退化为 lineTo(50, 0)：1 线段 + fill 隐式闭合段 = 8 floats（R56）
     let pf = &ctx.primitives().path_fills[0];
-    assert_eq!(pf.vertices.len(), 4, "共线 arcTo 应退化为一条线段");
+    assert_eq!(pf.vertices.len(), 8, "共线 arcTo 应退化为一条线段+闭合");
 }
 
 // ── line_join / line_cap 测试 ──

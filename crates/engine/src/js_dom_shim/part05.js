@@ -2601,26 +2601,42 @@
     ctx._methods.roundRect = function (x, y, w, hh, radii) {
       // R34xx：任一参数非有限（NaN/Infinity）→ 忽略（spec：2d.path.roundrect.nonfinite）。
       if (!isFinite(+x) || !isFinite(+y) || !isFinite(+w) || !isFinite(+hh)) return;
-      // R34xx：radii 元素可为 number 或 DOMPoint/DOMPointInit（x=水平半径, y=垂直半径）。
-      // 角对编码：DOMPoint → "p<x>,<y>"；标量 → "<v>"（host 解为 (v,v)）。
+      // R56（M8/DC-8）：radii 归一化对齐 spec dom-context-2d-roundrect——
+      // 序列空或 >4 项 → RangeError；任一半径负 → RangeError；NaN → 0（不抛）；
+      // BigInt → TypeError（WebIDL unrestricted double 不收，unary + 原生抛）。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+      function zwNormRadius(v) {
+        var hx, hy;
+        if (v && typeof v === 'object') {
+          hx = +v.x; hy = +v.y;   // {x:0n} → +0n 原生抛 TypeError
+        } else {
+          hx = hy = +v;           // 0n → 原生抛 TypeError
+        }
+        if (isNaN(hx)) hx = 0;
+        if (isNaN(hy)) hy = 0;
+        if (hx < 0 || hy < 0) {
+          throw new RangeError('The radius provided (' + hx + ',' + hy + ') is negative.');
+        }
+        return 'p' + hx + ',' + hy;
+      }
       var r;
       if (radii == null) {
         r = '0';
-      } else if (typeof radii === 'number') {
-        r = (radii >= 0) ? String(radii) : '0';
-      } else if (typeof radii === 'object' && radii !== null && typeof radii.length === 'number') {
-        var parts = [];
-        for (var i = 0; i < radii.length; i++) {
-          var v = radii[i];
-          if (v && typeof v === 'object') {
-            var hx = +v.x, hy = +v.y;
-            if (!isNaN(hx) && hx >= 0 && !isNaN(hy) && hy >= 0) parts.push('p' + hx + ',' + hy);
-          } else {
-            var n = +v;
-            if (!isNaN(n) && n >= 0) parts.push(String(n));
-          }
+      } else if (typeof radii === 'number' || typeof radii === 'bigint') {
+        r = zwNormRadius(radii);
+      } else if (typeof radii === 'object' &&
+                 typeof radii.length === 'number' &&
+                 radii.x === undefined && radii.y === undefined) {
+        // 序列形式（Array 或 array-like 且无 x/y 字典成员）：空 / >4 项抛 RangeError。
+        if (radii.length === 0 || radii.length > 4) {
+          throw new RangeError('The radii provided (' + radii.length + ' items) must be 1 to 4.');
         }
-        r = parts.length ? parts.join(',') : '0';
+        var parts = [];
+        for (var i = 0; i < radii.length; i++) parts.push(zwNormRadius(radii[i]));
+        r = parts.join(',');
+      } else if (typeof radii === 'object') {
+        // 单个 DOMPointInit（DOMPoint / {x,y} / 任意字典对象——缺失成员 NaN→0）。
+        r = zwNormRadius(radii);
       } else {
         r = '0';
       }

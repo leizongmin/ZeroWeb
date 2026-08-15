@@ -665,7 +665,8 @@ impl CanvasContext {
 
     /// 描边路径。将路径命令扁平化为顶点列表，生成路径描边图元。
     pub fn stroke(&mut self) {
-        let vertices = self.flatten_path();
+        // R56：stroke 语义不隐式闭合开放子路径（开放路径两端各有线帽）。
+        let vertices = self.flatten_path_open();
         if vertices.is_empty() {
             return;
         }
@@ -679,11 +680,14 @@ impl CanvasContext {
             let shape_alpha = self.style_alpha(&self.stroke_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
             self.draw_shadow_stroke(&vertices, self.line_width, shape_alpha);
         }
-        let closed = self
-            .current_path
-            .commands()
-            .iter()
-            .any(|c| matches!(c, PathCommand::ClosePath));
+        // R56：closed = **最后一个**子路径是否显式闭合（末命令 ClosePath），非「任一
+        // 子路径闭合」——rect() 自带 close 后接 lineTo 的末子路径是开放的，其末端点
+        // 须画 line cap（2d.path.rect.end.2：lineCap=round 半径 225 圆盘覆盖全画布；
+        // any(ClosePath) 误判闭合 → 不画 cap → 四角红）。
+        let closed = matches!(
+            self.current_path.commands().last(),
+            Some(PathCommand::ClosePath)
+        );
         if self.stroke_style.is_per_pixel_style() {
             // 渐变描边：逐像素光栅化（R3084，对称 fill 渐变 R3079）。primitives 用 midpoint 近似。
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
@@ -743,7 +747,9 @@ impl CanvasContext {
             let shape_alpha = self.style_alpha(&self.stroke_style, (min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
             self.draw_shadow_stroke(&vertices, self.line_width, shape_alpha);
         }
-        let closed = path.commands().iter().any(|c| matches!(c, PathCommand::ClosePath));
+        // R56：closed = 末命令是否 ClosePath（同 stroke()——任一子路径闭合的旧判定
+        // 会让 rect()+lineTo 的开放末子路径丢 line cap）。
+        let closed = matches!(path.commands().last(), Some(PathCommand::ClosePath));
         if self.stroke_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
             self.primitives
@@ -1273,7 +1279,7 @@ impl CanvasContext {
     /// 点坐标 (x, y) 为画布坐标空间，与描边中线顶点（追加时已按 CTM 变换到设备空间）同空间
     /// 比对；检测点到各线段的距离是否小于 `line_width / 2`（设备空间度量）。
     pub fn is_point_in_stroke(&self, x: f32, y: f32) -> bool {
-        let vertices = self.flatten_path();
+        let vertices = self.flatten_path_open();
         if vertices.is_empty() {
             return false;
         }

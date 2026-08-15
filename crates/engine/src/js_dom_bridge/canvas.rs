@@ -485,16 +485,21 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // 透传但当前 is_point_in_path 用奇偶规则（canvas crate 限制）。
         "roundRect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                // R34xx：radii 串支持角对——"p40,20"（DOMPoint x,y，'p' 前缀与后续数字成对）
-                // 与裸标量 "10"（(10,10)）。
+                // R34xx：radii 串支持角对——"p<x>,<y>"（DOMPoint x,y，JS join(',') 后
+                // host split(',') 会拆成 'p<x>' 与 '<y>' **两个相邻项**）与裸标量 "10"。
+                // R56：'p' 项与其后一项配对为 (x, y)——旧版 split_once(',') 在拆分后的
+                // 'p40' 上永远失败 → unwrap_or((pair,pair)) 把 DOMPoint(40,20) 解成 (40,40)。
                 let parts: Vec<&str> = arg(4).split(',').filter(|s| !s.trim().is_empty()).collect();
                 let mut radii: Vec<(f32, f32)> = Vec::new();
                 let mut i = 0;
                 while i < parts.len() {
-                    if let Some(pair) = parts[i].trim().strip_prefix('p') {
-                        let x = pair.trim().parse::<f32>().unwrap_or(0.0);
-                        let y = parts.get(i + 1).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(x);
-                        radii.push((x, y));
+                    if let Some(x) = parts[i].trim().strip_prefix('p') {
+                        let rx = x.trim().parse::<f32>().unwrap_or(0.0);
+                        let ry = parts
+                            .get(i + 1)
+                            .and_then(|v| v.trim().parse::<f32>().ok())
+                            .unwrap_or(rx);
+                        radii.push((rx, ry));
                         i += 2;
                     } else if let Ok(v) = parts[i].trim().parse::<f32>() {
                         radii.push((v, v));
@@ -534,11 +539,15 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // rect 路径命令：CanvasContext 无 rect() 方法，用 MoveTo+3 LineTo（匹配 Path2D::rect，不 auto-close）。
         "rect" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                // R56：rect 子路径闭合（spec dom-context-2d-rect —— Path2D::rect 带
+                // closePath；旧实现缺 close → fill 段式扫描线左边无边界段，单边交点
+                // 奇数配不出对 → 整个矩形填不出）。
                 let (x, y, w, h) = (f(0), f(1), f(2), f(3));
                 ctx.move_to(x, y);
                 ctx.line_to(x + w, y);
                 ctx.line_to(x + w, y + h);
                 ctx.line_to(x, y + h);
+                ctx.close_path();
             }
             "ok".into()
         }

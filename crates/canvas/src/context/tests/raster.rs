@@ -269,6 +269,56 @@ fn test_flatten_round_rect_three_radii() {
     assert!(!verts.is_empty(), "should produce vertices for 3-radii round rect");
 }
 
+// ── R56（M8/DC-8）：负 w/h 归一化 + 镜像角序 ──
+
+#[test]
+fn test_flatten_round_rect_negative_h_bbox() {
+    // 负 h：roundRect(0,25,100,-25) 归一到包围盒 (0,0)-(100,25)。
+    // 扫描线 y=12.5 交点配对后 (50,12) 应被覆盖（段计数为偶、含该 x）。
+    let mut verts = Vec::new();
+    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 0.0, 25.0, 100.0, -25.0, &[]);
+    let hits = scanline_hits(&verts, 12.5);
+    assert_eq!(hits.len() % 2, 0, "even crossings");
+    assert!(
+        hits.iter().any(|&x| x < 50.0) && hits.iter().any(|&x| x > 50.0),
+        "span covers x=50: {hits:?}"
+    );
+}
+
+#[test]
+fn test_flatten_round_rect_negative_h_corner_mirror() {
+    // 负 h + radii=[10,0,0,0]：参数 tl 圆角贴参数角 (0,50)，垂直镜像后落在包围盒
+    // **左下**（y=h 侧）；归一化包围盒左上 (0,0) 应是直角（顶点精确过角）。
+    let mut verts = Vec::new();
+    let _ = CanvasContext::flatten_round_rect(
+        &mut verts,
+        0.0,
+        0.0,
+        0.0,
+        25.0,
+        50.0,
+        -25.0,
+        &[(10.0, 10.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)],
+    );
+    // 左上角 (0,0) 直角：应存在顶点精确落在 (0,0)（直角边交点），且 (0,0) 附近
+    // 没有内凹圆弧（最近的弧点距角 > 半径的一半——左上无圆角）。
+    let exact_corner = verts.chunks_exact(2).any(|c| c[0].abs() < 0.01 && c[1].abs() < 0.01);
+    assert!(exact_corner, "square corner at (0,0) after mirror");
+}
+
+/// 统计扫描线 y=sy 与段序列的交点 x（段对 x1,y1,x2,y2 半开区间判定）。
+fn scanline_hits(verts: &[f32], sy: f32) -> Vec<f32> {
+    let mut xs = Vec::new();
+    for seg in verts.chunks_exact(4) {
+        let (x1, y1, x2, y2) = (seg[0], seg[1], seg[2], seg[3]);
+        if (y1 <= sy && y2 > sy) || (y2 <= sy && y1 > sy) {
+            let t = (sy - y1) / (y2 - y1);
+            xs.push(x1 + t * (x2 - x1));
+        }
+    }
+    xs
+}
+
 #[test]
 fn test_flatten_round_rect_four_radii() {
     let mut verts = Vec::new();
@@ -292,8 +342,9 @@ fn test_flatten_round_rect_zero_radius_degenerates() {
     let (cx, cy) = CanvasContext::flatten_round_rect(&mut verts, 5.0, 5.0, 10.0, 10.0, 50.0, 50.0, &[(0.0, 0.0)]);
     assert_eq!(cx, 10.0);
     assert_eq!(cy, 10.0);
-    // 应产生 5 条线段（4 边 + 起始连接线）
-    assert_eq!(verts.len(), 5 * 4, "degenerate round rect = 5 line segments");
+    // R56：自包含子路径（不连 current）——4 条边段；起始连接段移除（重复边在
+    // 段式扫描线下产生奇数交点，见 zero_radius_negative_h 测试）。
+    assert_eq!(verts.len(), 4 * 4, "degenerate round rect = 4 edge segments");
 }
 
 #[test]
@@ -309,8 +360,8 @@ fn test_flatten_round_rect_large_radius_clamped() {
 fn test_flatten_round_rect_negative_radius_clamped() {
     let mut verts = Vec::new();
     let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 10.0, 10.0, 50.0, 50.0, &[(-5.0, -5.0)]);
-    // 负半径被钳位到 0 → 退化为矩形
-    assert_eq!(verts.len(), 5 * 4, "negative radius degenerates to rect");
+    // 负半径被钳位到 0 → 退化为矩形（4 边段，R56 同上）
+    assert_eq!(verts.len(), 4 * 4, "negative radius degenerates to rect");
 }
 
 // ── compute_arc_to_geometry 测试 ──
@@ -408,7 +459,7 @@ fn test_flatten_arc_to_same_position() {
 #[test]
 fn test_flatten_path_empty() {
     let ctx = CanvasContext::new(100, 100);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert!(verts.is_empty(), "empty path should produce no vertices");
 }
 
@@ -417,7 +468,7 @@ fn test_flatten_path_line_to() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.line_to(50.0, 50.0);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert_eq!(verts.len(), 4, "single line segment = 4 floats");
     assert_eq!(verts[0], 10.0);
     assert_eq!(verts[1], 10.0);
@@ -430,7 +481,7 @@ fn test_flatten_path_quadratic_curve() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.quadratic_curve_to(50.0, 0.0, 50.0, 50.0);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     // 8 段细分 × 4 = 32 floats
     assert_eq!(verts.len(), 32, "quadratic curve = 8 segments × 4");
 }
@@ -440,7 +491,7 @@ fn test_flatten_path_bezier_curve() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.bezier_curve_to(25.0, 0.0, 50.0, 25.0, 50.0, 50.0);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert_eq!(verts.len(), 32, "cubic bezier = 8 segments × 4");
 }
 
@@ -450,7 +501,7 @@ fn test_flatten_path_arc() {
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path
         .arc(50.0, 50.0, 50.0, -std::f32::consts::FRAC_PI_2, 0.0, false);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert_eq!(verts.len(), 64, "arc = 16 segments × 4");
 }
 
@@ -461,7 +512,7 @@ fn test_flatten_path_close_path() {
     ctx.current_path.line_to(50.0, 10.0);
     ctx.current_path.line_to(50.0, 50.0);
     ctx.current_path.close_path();
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     // 2 line segments + 1 close segment = 3 × 4 = 12
     assert_eq!(verts.len(), 12, "triangle = 3 segments");
 }
@@ -472,7 +523,7 @@ fn test_flatten_path_close_already_at_start() {
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.line_to(10.0, 10.0); // 回到起点
     ctx.current_path.close_path(); // 已在起点，不产生额外线段
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert_eq!(verts.len(), 4, "line back to start, close produces nothing extra");
 }
 
@@ -482,7 +533,7 @@ fn test_flatten_path_ellipse_command() {
     ctx.current_path.move_to(50.0, 10.0);
     ctx.current_path
         .ellipse(50.0, 50.0, 40.0, 30.0, 0.0, -std::f32::consts::FRAC_PI_2, 0.0);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert_eq!(verts.len(), 64, "ellipse = 16 segments × 4");
 }
 
@@ -491,7 +542,7 @@ fn test_flatten_path_round_rect_command() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(8.0, 8.0)]);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert!(!verts.is_empty(), "round rect should produce vertices");
 }
 
@@ -500,7 +551,7 @@ fn test_flatten_path_arc_to_command() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.arc_to(50.0, 0.0, 50.0, 50.0, 20.0);
-    let verts = ctx.flatten_path();
+    let verts = ctx.flatten_path_open();
     assert!(!verts.is_empty(), "arc_to should produce vertices");
 }
 
@@ -602,8 +653,9 @@ fn test_blit_path_empty_vertices() {
 #[test]
 fn test_blit_path_triangle_fills_pixels() {
     let mut ctx = ctx_with_pixels(20, 20);
-    // 三角形：(5,5) → (15,5) → (10,15) → (5,5)
-    let vertices = [5.0, 5.0, 15.0, 5.0, 10.0, 15.0];
+    // 三角形：(5,5) → (15,5) → (10,15) → (5,5)。R56：blit 消费「独立段」序列
+    // （flatten 输出格式），补闭合段 (10,15)→(5,5)。
+    let vertices = [5.0, 5.0, 15.0, 5.0, 15.0, 5.0, 10.0, 15.0, 10.0, 15.0, 5.0, 5.0];
     let color = Color::rgba(255, 0, 0, 255);
     ctx.blit_path_to_pixels(&vertices, color);
     // 中心点 (10, 8) 应该被填充
@@ -936,7 +988,7 @@ fn test_blit_rect_full_canvas() {
 fn test_flatten_path_empty_path_with_close() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.close_path();
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Empty path with close should still be empty
     assert_eq!(vertices.len(), 0);
 }
@@ -947,7 +999,7 @@ fn test_flatten_path_single_line_with_close() {
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.line_to(20.0, 20.0);
     ctx.current_path.close_path();
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Should have line segment + close segment
     assert_eq!(vertices.len(), 8); // 2 segments × 4
 }
@@ -957,7 +1009,7 @@ fn test_flatten_path_line_to_same_point() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.line_to(10.0, 10.0); // Same point
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Degenerate line segment might be filtered or kept
     assert_eq!(vertices.len(), 4);
 }
@@ -968,7 +1020,7 @@ fn test_flatten_path_arc_full_circle() {
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path
         .arc(50.0, 50.0, 50.0, 0.0, std::f32::consts::TAU, false);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Full circle should still produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -978,7 +1030,7 @@ fn test_flatten_path_arc_zero_radius() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.arc(20.0, 20.0, 0.0, 0.0, std::f32::consts::PI, false);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Zero radius arc - just verify it doesn't panic
     let _ = vertices.len();
 }
@@ -989,7 +1041,7 @@ fn test_flatten_path_arc_negative_angles() {
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path
         .arc(50.0, 50.0, 50.0, -std::f32::consts::PI, 0.0, false);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Negative angles should still work
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -999,7 +1051,7 @@ fn test_flatten_path_arc_start_greater_than_end() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path.arc(50.0, 50.0, 50.0, std::f32::consts::PI, 0.0, false);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Start > end should still produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -1010,7 +1062,7 @@ fn test_flatten_path_ellipse_horizontal_stretch() {
     ctx.current_path.move_to(50.0, 0.0);
     ctx.current_path
         .ellipse(50.0, 50.0, 50.0, 10.0, 0.0, 0.0, std::f32::consts::PI);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Wide ellipse should produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -1021,7 +1073,7 @@ fn test_flatten_path_ellipse_vertical_stretch() {
     ctx.current_path.move_to(0.0, 50.0);
     ctx.current_path
         .ellipse(50.0, 50.0, 10.0, 50.0, 0.0, 0.0, std::f32::consts::PI);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Tall ellipse should produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -1039,7 +1091,7 @@ fn test_flatten_path_ellipse_rotated() {
         0.0,
         std::f32::consts::PI / 2.0,
     );
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Rotated ellipse should produce vertices
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -1050,7 +1102,7 @@ fn test_flatten_path_ellipse_zero_rotation() {
     ctx.current_path.move_to(50.0, 20.0);
     ctx.current_path
         .ellipse(50.0, 50.0, 30.0, 20.0, 0.0, 0.0, std::f32::consts::PI / 2.0);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Zero rotation should still work
     assert_eq!(vertices.len(), 64); // 16 segments × 4
 }
@@ -1059,18 +1111,19 @@ fn test_flatten_path_ellipse_zero_rotation() {
 fn test_flatten_path_round_rect_zero_radius() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(0.0, 0.0)]);
-    let vertices = ctx.flatten_path();
-    // Zero radius should degenerate to rectangle
-    assert_eq!(vertices.len(), 20); // 5 segments × 4
+    let vertices = ctx.flatten_path_open();
+    // Zero radius should degenerate to rectangle（R56：自包含子路径 4 边段，
+    // MoveTo 不产生连接段）
+    assert_eq!(vertices.len(), 16); // 4 segments × 4
 }
 
 #[test]
 fn test_flatten_path_round_rect_negative_radius() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.round_rect(10.0, 10.0, 50.0, 50.0, vec![(-5.0, -5.0)]);
-    let vertices = ctx.flatten_path();
-    // Negative radius should be clamped to 0, degenerate to rectangle
-    assert_eq!(vertices.len(), 20); // 5 segments × 4
+    let vertices = ctx.flatten_path_open();
+    // Negative radius should be clamped to 0, degenerate to rectangle（R56 同上）
+    assert_eq!(vertices.len(), 16); // 4 segments × 4
 }
 
 #[test]
@@ -1078,7 +1131,7 @@ fn test_flatten_path_round_rect_radii_too_large() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path
         .round_rect(10.0, 10.0, 20.0, 20.0, vec![(100.0, 100.0)]);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Radius larger than half size should be clamped - just verify no panic
     let _ = vertices.len();
 }
@@ -1088,7 +1141,7 @@ fn test_flatten_path_arc_to_with_zero_distance() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(10.0, 10.0);
     ctx.current_path.arc_to(10.0, 10.0, 20.0, 20.0, 5.0);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Points at same location - just verify no panic
     let _ = vertices.len();
 }
@@ -1098,7 +1151,7 @@ fn test_flatten_path_arc_to_collinear_with_radius() {
     let mut ctx = CanvasContext::new(100, 100);
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.arc_to(10.0, 0.0, 20.0, 0.0, 5.0);
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Collinear points should still produce some vertices
     assert!(!vertices.is_empty());
 }
@@ -1112,7 +1165,7 @@ fn test_flatten_path_multiple_commands() {
     ctx.current_path
         .arc(50.0, 50.0, 10.0, 0.0, std::f32::consts::PI / 2.0, false);
     ctx.current_path.close_path();
-    let vertices = ctx.flatten_path();
+    let vertices = ctx.flatten_path_open();
     // Multiple command types should produce many vertices
     assert!(vertices.len() > 64); // Should have many vertices
 }
@@ -1518,4 +1571,16 @@ fn test_fill_rect_pattern_no_repeat_rasterizes_r3085() {
     assert_eq!(px(2, 0), &[0, 0, 0, 0], "x=2 越界 no-repeat → 透明");
     assert_eq!(px(0, 2), &[0, 0, 0, 0], "y=2 越界 no-repeat → 透明");
     assert_eq!(px(5, 3), &[0, 0, 0, 0], "远端越界 → 透明");
+}
+
+#[test]
+fn test_flatten_round_rect_zero_radius_negative_h() {
+    // R56：零半径 + 负 h（winding 用例 r3=(0,25,100,-25,[0])）——退化矩形分支
+    // 必须在归一化包围盒 y∈[0,25] 产出闭合四边。
+    let mut verts = Vec::new();
+    let _ = CanvasContext::flatten_round_rect(&mut verts, 0.0, 0.0, 0.0, 25.0, 100.0, -25.0, &[(0.0, 0.0)]);
+    let hits = scanline_hits(&verts, 12.5);
+    assert_eq!(hits.len(), 2, "2 crossings at y=12.5: {hits:?}");
+    let (lo, hi) = (hits[0].min(hits[1]), hits[0].max(hits[1]));
+    assert!(lo <= 0.5 && hi >= 99.5, "span full width: {hits:?}");
 }
