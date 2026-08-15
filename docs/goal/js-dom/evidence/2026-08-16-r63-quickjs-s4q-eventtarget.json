@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-16",
+  "round": "R63",
+  "milestone": "M6 S4q — QuickJS EventTarget（js-dom goal DC-7）",
+  "commit": "21f6c4b2（rebase over 7a3be5cc CI-watchdog docs）",
+  "api_added": {
+    "addEventListener(type, callback, capture?)": "非 callable 回调静默忽略（spec）；capture 经第三参 truthiness（options 对象形态延后）；存 Persistent 到 LISTENERS 注册序 append",
+    "removeEventListener(type, callback, capture?)": "移除最早匹配（type + callback identity + capture）条目；空列表清键",
+    "dispatchEvent(type)": "target 站派发（无 capture/bubble 链——祖先虚站基建镜像 V8 R40 延后）；注册序触发；轻量 plain 事件对象（type/target/currentTarget）；listener this = target（Args::this + 低层 apply——rquickjs 无 call_with_this 高层封装）；回调异常吞掉不中断（spec 报告后继续）；返 true"
+  },
+  "storage": "线程局部 LISTENERS：`(ffi, type) → Vec<(capture, Persistent<Value>)>`——镜像 V8 gc.rs 模式，单列表保全局注册序；strong Persistent（weak 化同 S0q 延后注记）",
+  "poce2e": [
+    "注册 A/B → dispatch：按注册序触发（a 先 b 后）",
+    "事件对象 e.type === 'click'",
+    "listener this === target",
+    "removeEventListener(A) 后再 dispatch：仅 B 触发（identity 匹配移除）"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_quickjs_wiring": "2 passed",
+    "clippy": "quickjs 矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "m6_cumulative": "元素面 = 4 全局工厂 + 13 属性（6 setter）+ 11 方法（属性 4 + mutation 2 + 查询 2 + EventTarget 3）——事件交互能力落地",
+  "m6_remaining": "S5q customElements 五件套 + lifecycle → S0q 续 weak/finalizer → S1q 复合对象（attributes/classList）；capture/bubble 祖先链派发（镜像 V8 R40 虚站）+ Event 构造器族 + DOMException 基建为 S4q 完整化候选",
+  "session_total": "R57→R63 七轮十一切片：S0q 骨架 → S1q 反射属性 → S2q 方法/写入/mutation/树读回 → S3q 查询 → S4q EventTarget"
+}
