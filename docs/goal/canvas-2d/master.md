@@ -1,12 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-15（R34xx 第十三批定稿：**第二批全目录收口**——主线程
-reset 54/canvas-host 66/canvas-context 11/layers 25/filters 11/conformance 8/
-global-hdr 10/path-objects 166/drawing-images 36 全绿；worker 变体 text 146/
-fill-and-stroke 236/layers 29/canvas-context 14/canvas-host 46/filters 10 全绿；
-剩余 = arc 非均匀变换 3 + colorMatrix 像素渲染 2 + display-p3 8 + img 状态机 1
-——深项记录；M3 oracle 基线 1.7% 真通过（差距=滤镜/层合成/颜色插值深项）；
-证据见 evidence/r34xx-batch4-m3-oracle + r34xx-batch5-final）。
+**最后更新**: 2026-08-16（R34xx 第十四批定稿：**色彩管理 + 滤镜渲染 + GIF 全过**——
+color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipulation
+71/71、drawing-images（GIF 全过）；f16 浮点存储/linear 色彩空间/colorMatrix
+渲染/GIF 首帧解码落地；剩余深项 = arc 几何 ~37（描边端帽/扇区形状——stroke
+几何深项）；证据见 evidence/r34xx-batch6-colors-gif）。
 
 ---
 
