@@ -1,0 +1,53 @@
+{
+  "date": "2026-08-16",
+  "round": "R56f",
+  "slice": "M8 path-objects 续作：arcTo 切线弧中心修正 + 各向异性 CTM + shim 负半径守卫补齐",
+  "commits": ["9ef44a8d"],
+  "baseline": {
+    "commit": "c3ecb970 (R56e 归档后合并态，含并行流 76655cc4)",
+    "fails": 22,
+    "pass": 181,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "9ef44a8d",
+    "fails": 17,
+    "pass": 186
+  },
+  "net": {
+    "fixed": [
+      "2d.path.arcTo.negative",
+      "2d.path.arcTo.scale",
+      "2d.path.arcTo.shape.curve2",
+      "2d.path.arcTo.shape.start",
+      "2d.path.arcTo.transformation"
+    ],
+    "regressions": []
+  },
+  "changes": [
+    "arc_to_tangent_segments 提取为 path.rs pub(crate) 共享函数——flatten_path_opts（ctx.stroke/fill）与 flatten_path_for 统一消费真切线弧几何。并行流 76655cc4 只修了 path.rs flatten_to_vertices（Path2D hit-test 用），ctx 路径仍走旧 flatten_arc_to 线段近似",
+    "圆心计算修正：候选 T1 ± rot90(u1)·r，取与 T2 距离等于 r 的那个（规范几何恒等）。旧「u2−u1 平分」方向不垂直 u1 → 圆心错 → 弧张角偏差（transformation 用例：弧止于 (114,6) 而非 T2(150,0)，probe 实证）",
+    "各向异性 CTM（sx≠sy）：弧是**用户空间的圆**经 CTM 变换（设备空间椭圆）——逆变换 current/P1/P2 → 用户空间构造圆弧 → 输出点逐点正变换（scale 用例 scale(0.1,1)：用户空间 r=50 压到设备 x 半径 5）",
+    "shim ctx.arcTo + Path2D.arcTo 负半径 → IndexSizeError——76655cc4 提交说明声称已加但 shim hunk 未随提交进入（merged HEAD 上 arcTo.negative 仍 fail，归因后补齐）",
+    "死代码清理：flatten_arc_to + compute_arc_to_geometry 及其 10 个单测删除（被共享几何取代）",
+    "R56e 版 no-subpath arcTo 单测断言修正：期望「弧仍画」是误读——真浏览器该场景 stroke 输出为空（WPT ensuresubpath.1 期望图整片底色），共享函数 return (x1,y1) 不画语义正确"
+  ],
+  "tests": {
+    "canvas_unit": "+1（切线几何 T1/T2 + 各向异性 x 收缩）+ 1 断言修正（no-subpath 不画）- 10 死代码测试删除，净 786",
+    "wpt": "arcTo 五用例全 Pass"
+  },
+  "gates": {
+    "canvas": "786 passed 0 failed",
+    "engine_v8": "2153 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles/clipping/compositing/transformations/fillrect/drawing-rectangles 全 0F"
+  },
+  "process_learnings": [
+    "并行流提交可能丢 hunk：76655cc4 的 message 声称 shim 守卫已加但 diff 无 part05.js——合并态先跑 fail 集核对再归因（本轮 arcTo.negative 即此）",
+    "flatten 双实现漂移：path.rs（Path2D hit-test）与 raster.rs（ctx stroke/fill）各有一份 arcTo 几何，并行流只修一份——提取共享函数是根治",
+    "圆心几何用「候选法线 + 距离恒等验证」比「平分向量」推导更不易错：切点到圆心距离恒 r 是可靠判据"
+  ],
+  "remaining_fails_17": "arc.shape.1/3/4/5 + arc.scale.1/2（~6，arc 顶点变换/精度深项）+ bezierCurveTo.shape/scaled + quadraticCurveTo.shape/scaled（~4）+ roundrect.closed/end.3 + isPointInStroke.scaleddashes + stroke.prune.arc/curve/line + stroke.skew（~6）"
+}
