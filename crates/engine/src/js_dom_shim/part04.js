@@ -159,6 +159,8 @@
         if (_realTag(sel, handle) === 'CANVAS') {
           if (prop === 'getContext') {
             return function (type) {
+              // R34xx：缺参 → TypeError（WebIDL 必参——2d.canvas.context.invalid.args）。
+              if (arguments.length === 0) throw new TypeError('getContext: missing contextType');
               if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
               if (_zwCanvasCtx[key]) return _zwCanvasCtx[key];
               if (typeof __zw_canvas_op !== 'function') return null;
@@ -167,7 +169,18 @@
               var id = __zw_canvas_op('0', 'getContext2d', String(cw), String(ch));
               if (!id || String(id).charAt(0) === '!') return null;
               var ctx = _zwMakeCtx2d(String(id));
-              ctx.canvas = _makeProxy(sel, handle); // canvas back-ref → 元素 proxy（spec ctx.canvas）
+              // R34xx：ctx.canvas 与 getElementById 同 identity（_proxyCache 键 =
+              // sel（非 handle）——getElementById/querySelector 走 sel-only 键；
+              // 旧 (sel,handle) 键产第二 proxy → 2d.canvas.host.readonly 的
+              // ctx.canvas === d 失败）+ 只读（spec readonly——ctx.canvas = x 忽略；
+              // 2d.canvas.host.readonly 的赋值后仍 === d）。handle-only
+              //（createElement 未挂载）仍 handle 键。
+              Object.defineProperty(ctx, 'canvas', {
+                value: sel ? _makeProxy(sel, null) : _makeProxy(null, handle),
+                writable: false,
+                enumerable: true,
+                configurable: false
+              });
               _zwCanvasCtx[key] = ctx;
               // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
               //（createImageBitmap.srgb.rgba.float16 的越界值往返；DOM canvas 与 standalone

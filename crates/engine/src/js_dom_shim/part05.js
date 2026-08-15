@@ -87,12 +87,16 @@
             else { __zw_set_attr(sel, p, attrV); moAttr = p; }
           }
         } else if ((p === 'width' || p === 'height') && (_realTag(sel, handle) === 'IMG' || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'CANVAS')) {
-          // reflected unsigned-long 维度 setter（R2851）：parseInt 归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
+          // reflected unsigned-long 维度 setter（R2851）：归一（NaN/负 → 0）→ 缓存数值 + 写 width/height
           // 内容属性（getter 优先读缓存保 sync set→get）。R3077：CANVAS width/height 反射（保 set→get 一致）。
           // R3308：CANVAS 设 width/height 触发 bitmap resize（HTML spec §4.12.5.1——清空 bitmap + 重置绘图状态）。
           // 已 getContext 的 canvas，调 host resizeContext 清空像素 + 重置 context 状态到默认。
-          var wv = parseInt(value, 10);
-          if (isNaN(wv) || wv < 0) wv = 0;
+          // R34xx：CANVAS 走 WebIDL ToUint32（2d.canvas.host.size.invalid.attributes.idl——
+          // 200-2^32 → 200（mod 2^32）、'400x' → NaN → 0）；IMG/IFRAME 保持 parseInt（既有语义）。
+          var wv = (_realTag(sel, handle) === 'CANVAS') ? _zwToUint32(value) : (function () {
+            var pv = parseInt(value, 10);
+            return (isNaN(pv) || pv < 0) ? 0 : pv;
+          })();
           var wrc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
           wrc[p] = wv;
           if (handle) __zw_set_attr_handle(handle, p, String(wv));
@@ -114,6 +118,9 @@
               var _cw = (p === 'width') ? wv : (wrc.width != null ? wrc.width : (parseInt(_attrW, 10) || 300));
               var _chh = (p === 'height') ? wv : (wrc.height != null ? wrc.height : (parseInt(_attrH, 10) || 150));
               __zw_canvas_op(String(_ch), 'resizeContext', String(_cw), String(_chh));
+              // R34xx：设尺寸重置绘图状态——client 镜像同步默认（spec §4.12.5.1；
+              // 2d.canvas.host.initial.reset.2dstate 同值设置亦复位）。
+              _zwResetCtxMirrors(_cctx);
             }
           }
         } else if (p === 'scrollTop' || p === 'scrollLeft') {
@@ -707,6 +714,25 @@
   ['m11','m12','m13','m14','m21','m22','m23','m24','m31','m32','m33','m34','m41','m42','m43','m44'].forEach(function (name, i) {
     Object.defineProperty(DOMMatrix.prototype, name, { get: function () { return this._m[i]; }, set: function (v) { this._m[i] = +v; }, configurable: true });
   });
+  // R34xx：isIdentity/is2D/is3D（spec DOMMatrixReadOnly——2d.reset.state.
+  // transformation_matrix 的 ctx.getTransform().isIdentity 断言；此前缺失 → undefined）。
+  Object.defineProperty(DOMMatrix.prototype, 'isIdentity', {
+    get: function () {
+      return this._m[0] === 1 && this._m[1] === 0 && this._m[2] === 0 && this._m[3] === 0 &&
+             this._m[4] === 0 && this._m[5] === 1 && this._m[6] === 0 && this._m[7] === 0 &&
+             this._m[8] === 0 && this._m[9] === 0 && this._m[10] === 1 && this._m[11] === 0 &&
+             this._m[12] === 0 && this._m[13] === 0 && this._m[14] === 0 && this._m[15] === 1;
+    }
+  });
+  Object.defineProperty(DOMMatrix.prototype, 'is2D', {
+    get: function () {
+      // 2D iff 3D 行/列保持恒等（m13/m14/m23/m24/m31/m32/m34/m43 为 0，m33 为 1）。
+      return this._m[2] === 0 && this._m[3] === 0 && this._m[6] === 0 && this._m[7] === 0 &&
+             this._m[8] === 0 && this._m[9] === 0 && this._m[10] === 1 && this._m[11] === 0 &&
+             this._m[14] === 0;
+    }
+  });
+  Object.defineProperty(DOMMatrix.prototype, 'is3D', { get: function () { return !this.is2D; } });
   DOMMatrix.prototype.multiply = function (other) { return _domMatrixMultiply(this, other); };
   DOMMatrix.prototype.multiplySelf = function (other) { this._m = _domMatrixMultiply(this, other)._m; return this; };
   DOMMatrix.prototype.inverse = function () { return _domMatrixInverse(this); };
@@ -918,6 +944,48 @@
 
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
+  // R34xx：WebIDL ToUint32（canvas width/height IDL setter——mod 2^32、NaN/±Inf → 0、
+  // 字符串经 ToNumber：'400x' → NaN → 0。2d.canvas.host.size.invalid.attributes.idl）。
+  function _zwToUint32(v) {
+    var n = +v;
+    if (!isFinite(n)) return 0;
+    n = n < 0 ? -(-n % 4294967296) : (n % 4294967296);
+    return n >>> 0;
+  }
+
+  // R34xx（reset 目录全族）：client 状态镜像复位默认——ctx.reset() 与 canvas
+  // width/height setter（spec：设尺寸重置 bitmap + 全部绘图状态）共用。driving:
+  // 2d.reset.state.* 全族 + 2d.canvas.host.initial.reset.2dstate。
+  function _zwResetCtxMirrors(ctx) {
+    ctx._fs = '#000000';
+    ctx._ss = '#000000';
+    ctx._ga = 1.0;
+    ctx._gco = 'source-over';
+    ctx._sc = 'rgba(0, 0, 0, 0)';
+    ctx._sb = 0;
+    ctx._sox = 0;
+    ctx._soy = 0;
+    ctx._lw = 1;
+    ctx._lj = 'miter';
+    ctx._lc = 'butt';
+    ctx._ml = 10;
+    ctx._font = '10px sans-serif';
+    ctx._ta = 'start';
+    ctx._tb = 'alphabetic';
+    ctx._dir = 'inherit';
+    ctx._ldo = 0;
+    ctx._ise = true;
+    ctx._isq = 'high';
+    ctx._ls = '0px';
+    ctx._ws = '0px';
+    ctx._fk = 'auto';
+    ctx._fst = 'normal';
+    ctx._fvc = 'normal';
+    ctx._tr = 'auto';
+    ctx._filter = 'none';
+    if (ctx._f16) ctx._f16Overlay = null;
+  }
+
   // `__zw_canvas_op(handle, op, ...args)` 串参派发。`getContext('2d')` 首次调时创建 host 上下文（返 id），
   // 后续返回同一 proxy。host 未注册 → getContext 返 null（no-throw 回落）。width/height 默认 300×150（spec）。
   // **fillRect 经 path 实现**（host fill_rect 便捷法不写 pixel_buffer，path-based fill 经 blit 写）。
@@ -929,19 +997,52 @@
       tagName: 'CANVAS',
       nodeName: 'CANVAS',
       localName: 'canvas',
-      width: 300,
-      height: 150,
       style: {},
       _ctx: null
     };
+    // R34xx：standalone canvas width/height accessor——设值（**即使同值**，spec）重置
+    // bitmap（host resizeContext）+ 全部绘图状态（2d.canvas.host.initial.reset.2dstate
+    // 的 canvas.width= 同值复位断言）。旧为普通数据属性：赋值不触达 host，canvas-host
+    // 目录全族失败。归一化同 DOM set-trap（parseInt，NaN/负 → 0）。
+    var _cw = 300, _ch = 150;
+    var _zwSetCanvasDim = function (p, v) {
+      // R34xx：WebIDL ToUint32（size.invalid.attributes.idl 的 200-2^32 → 200）。
+      var nv = _zwToUint32(v);
+      if (p === 'width') _cw = nv; else _ch = nv;
+      if (el._ctx && typeof __zw_canvas_op === 'function') {
+        __zw_canvas_op(el._ctx._handle, 'resizeContext', String(_cw), String(_ch));
+        _zwResetCtxMirrors(el._ctx);
+      }
+    };
+    Object.defineProperty(el, 'width', {
+      get: function () { return _cw; },
+      set: function (v) { _zwSetCanvasDim('width', v); },
+      enumerable: true,
+      configurable: true
+    });
+    Object.defineProperty(el, 'height', {
+      get: function () { return _ch; },
+      set: function (v) { _zwSetCanvasDim('height', v); },
+      enumerable: true,
+      configurable: true
+    });
     el.getContext = function (type) {
+      // R34xx：缺参 → TypeError（WebIDL 必参——2d.canvas.context.invalid.args 的
+      // canvas.getContext()）。
+      if (arguments.length === 0) throw new TypeError('getContext: missing contextType');
       if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
       if (el._ctx) return el._ctx;
       if (typeof __zw_canvas_op !== 'function') return null;
       var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height));
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
-      el._ctx.canvas = el;
+      // R34xx：ctx.canvas 只读（spec——赋值忽略；2d.canvas.host.readonly）。
+      Object.defineProperty(el._ctx, 'canvas', {
+        value: el,
+        writable: false,
+        enumerable: true,
+        configurable: false
+      });
       // R34xx：colorType 'float16' 上下文——绘制 float16 位图时记录原始浮点像素覆盖层
       //（createImageBitmap.srgb.rgba.float16 的越界值往返）。
       if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' &&
@@ -1531,7 +1632,20 @@
     return true;
   }
   function _zwMakeCtx2d(h) {
-    var ctx = { _handle: h, canvas: null, _fs: '#000000', _ss: '#000000', _lw: 1.0 };
+    // R34xx：构造器须先于实例创建（原型链 Object.create；定义在函数体中部——
+    // 首调时提前确保存在；prototype 属性不可写/不可删，spec）。
+    if (!globalThis.CanvasRenderingContext2D) {
+      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+      Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
+        writable: false,
+        configurable: false
+      });
+    }
+    var ctx = Object.create(globalThis.CanvasRenderingContext2D.prototype);
+    ctx._handle = h;
+    ctx._methods = {};
+    ctx.canvas = null;
+    ctx._fs = '#000000'; ctx._ss = '#000000'; ctx._lw = 1.0;
     // R3079：fillStyle/strokeStyle 接受颜色串或 CanvasGradient 对象。spec — 设渐变后 getter 返回该渐变对象。
     // 渐变对象带 _zwGrad 标记（_zwMakeGradient）；命中走 setFillStyleGradient/setStrokeStyleGradient（host 查渐变
     // 注册表克隆到 context 样式），否则按颜色串解析。
@@ -1636,19 +1750,19 @@
       },
       get: function () { return this._lw; }
     });
-    ctx.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
-    ctx.closePath = function () { __zw_canvas_op(h, 'closePath'); };
-    ctx.moveTo = function (x, y) {
+    ctx._methods.beginPath = function () { __zw_canvas_op(h, 'beginPath'); };
+    ctx._methods.closePath = function () { __zw_canvas_op(h, 'closePath'); };
+    ctx._methods.moveTo = function (x, y) {
       x = _zwNumArg(x); y = _zwNumArg(y);
       if (!_zwAllFinite(x, y)) return;
       __zw_canvas_op(h, 'moveTo', String(x), String(y));
     };
-    ctx.lineTo = function (x, y) {
+    ctx._methods.lineTo = function (x, y) {
       x = _zwNumArg(x); y = _zwNumArg(y);
       if (!_zwAllFinite(x, y)) return;
       __zw_canvas_op(h, 'lineTo', String(x), String(y));
     };
-    ctx.arc = function (x, y, r, s, e, anticlockwise) {
+    ctx._methods.arc = function (x, y, r, s, e, anticlockwise) {
       // R34xx：anticlockwise 第 6 参透传（spec：2d.line.cap.round 等 arc 填充用例依赖方向）。
       x = _zwNumArg(x); y = _zwNumArg(y); r = _zwNumArg(r); s = _zwNumArg(s); e = _zwNumArg(e);
       if (!_zwAllFinite(x, y, r, s, e)) return;
@@ -1656,27 +1770,27 @@
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
     //（用给定 Path2D 替代 ctx 当前路径）；无参走当前路径形式（既定）。
-    ctx.fill = function (path) {
+    ctx._methods.fill = function (path) {
       if (path && path._zwPath) __zw_canvas_op(h, 'fillPath', String(path._zwPath));
       else __zw_canvas_op(h, 'fill');
     };
-    ctx.stroke = function (path) {
+    ctx._methods.stroke = function (path) {
       if (path && path._zwPath) __zw_canvas_op(h, 'strokePath', String(path._zwPath));
       else __zw_canvas_op(h, 'stroke');
     };
     // R34xx：fillRect/strokeRect/clearRect 缺参 → TypeError（missingargs），任一参数
     // 非有限（NaN/Infinity）→ 方法忽略（spec：2d.fillRect.nonfinite 系列）。
-    ctx.fillRect = function (x, y, w, hh) {
+    ctx._methods.fillRect = function (x, y, w, hh) {
       x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
       if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'fillRect', String(x), String(y), String(w), String(hh));
     };
-    ctx.strokeRect = function (x, y, w, hh) {
+    ctx._methods.strokeRect = function (x, y, w, hh) {
       x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
       if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'strokeRect', String(x), String(y), String(w), String(hh));
     };
-    ctx.clearRect = function (x, y, w, hh) {
+    ctx._methods.clearRect = function (x, y, w, hh) {
       x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
       if (!_zwAllFinite(x, y, w, hh)) return;
       // R34xx：写像素操作使 float16 覆盖层失效（避免陈旧原始浮点回读）。
@@ -1687,7 +1801,7 @@
     // fillText 经 host fill_text（canvas crate 写 pixel_buffer）；measureText 返 TextMetrics（width+bounding）；
     // createImageData 返 blank ImageData（全透明 = 全 0，Uint8ClampedArray(w*h*4)，JS 构无需 host）。createImageData
     // 双形式：createImageData(w,h) / createImageData(imageData)（复制尺寸）。spec CanvasRenderingContext2D。
-    ctx.fillText = function (text, x, y, maxWidth) {
+    ctx._methods.fillText = function (text, x, y, maxWidth) {
       // R34xx：maxWidth 透传 + 缺参 TypeError / 非有限忽略（spec：fillText 任一参数
       // 非有限则 return——"If any of the arguments are infinite or NaN, then return"）。
       // maxWidth ≤ 0 → return（不绘制——2d.text.draw.fill.maxWidth.zero/negative 期望
@@ -1700,7 +1814,7 @@
     // R34xx：fillTextCluster(cluster, x, y)——绘制单个字素簇（spec TextCluster；
     // 2d.text.measure.fillTextCluster-*.tentative）。簇对象经 measureText().getTextClusters()
     // 取得（含 x/y 相对文本原点偏移）。经 fillText 宿主路径（当前 font/baseline 生效）。
-    ctx.fillTextCluster = function (cluster, x, y, options) {
+    ctx._methods.fillTextCluster = function (cluster, x, y, options) {
       if (!cluster || typeof cluster !== 'object' || typeof cluster.text !== 'string') {
         throw new TypeError('fillTextCluster: invalid cluster');
       }
@@ -1730,7 +1844,7 @@
         String(drawX), String(drawY));
     };
     // R34xx：strokeTextCluster（spec TextCluster——与 fillTextCluster 对称，描边绘制）。
-    ctx.strokeTextCluster = function (cluster, x, y, options) {
+    ctx._methods.strokeTextCluster = function (cluster, x, y, options) {
       if (!cluster || typeof cluster !== 'object' || typeof cluster.text !== 'string') {
         throw new TypeError('strokeTextCluster: invalid cluster');
       }
@@ -1758,12 +1872,12 @@
       __zw_canvas_op(h, 'strokeText', String(cluster.text),
         String(drawX), String(drawY));
     };
-    ctx.strokeText = function (text, x, y) {
+    ctx._methods.strokeText = function (text, x, y) {
       x = _zwNumArg(x); y = _zwNumArg(y);
       if (!_zwAllFinite(x, y)) return;
       __zw_canvas_op(h, 'strokeText', String(text), String(x), String(y));
     };
-    ctx.measureText = function (text) {
+    ctx._methods.measureText = function (text) {
       if (text === undefined || text === null) throw new TypeError('measureText: missing text');
       // R3303：spec TextMetrics 全 10 字段（host 返 width,actualBoxAsc/Desc/Left/Right,
       // fontBoxAsc/Desc,alphabetic/hanging/ideographicBaseline csv；`|` 后逐字形墨迹
@@ -2081,26 +2195,25 @@
       }
       return new ImageData(w, h);
     }
-    ctx.createImageData = function (a, b) { return _zwCreateImageData(this, a, b); };
+    ctx._methods.createImageData = function (a, b) { return _zwCreateImageData(this, a, b); };
     // R34xx：CanvasRenderingContext2D 全局构造器（此前缺失 → WPT illegal-invocation 用例
     // `CanvasRenderingContext2D.prototype.createImageData.call(null)` 抛 ReferenceError 而非
     // 期望的 TypeError）。prototype 方法做 illegal-invocation 检查（sloppy mode 下 call(null)
     // this=globalThis）后委托共享实现。
-    if (!globalThis.CanvasRenderingContext2D) {
-      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
-      CanvasRenderingContext2D.prototype.createImageData = function (a, b) {
-        // illegal-invocation：this 须为 ctx proxy（持 _handle）。call(null) sloppy 下
-        // this=globalThis，call({}) 为普通对象——均无 _handle → TypeError（spec + WPT .this 用例）。
-        if (!this || this._handle === undefined || this === CanvasRenderingContext2D.prototype) {
-          throw new TypeError('Illegal invocation');
-        }
-        return _zwCreateImageData(this, a, b);
-      };
-    }
+    // R34xx：createImageData 原型方法（构造器已由函数头提前确保存在——此处无条件
+    // 覆写为当前实例闭包，幂等）。illegal-invocation：this 须为 ctx proxy（持
+    // _handle）。call(null) sloppy 下 this=globalThis，call({}) 为普通对象——均无
+    // _handle → TypeError（spec + WPT .this 用例）。
+    CanvasRenderingContext2D.prototype.createImageData = function (a, b) {
+      if (!this || this._handle === undefined || this === CanvasRenderingContext2D.prototype) {
+        throw new TypeError('Illegal invocation');
+      }
+      return _zwCreateImageData(this, a, b);
+    };
     // R3079：CanvasGradient（createLinearGradient/createRadialGradient/createConicGradient + addColorStop）。
     // host 持渐变注册表（独立 id 命名空间）；create* 返 host id，JS 包一层 proxy。addColorStop 经 host
     // 变更停止点。fillStyle/strokeStyle 设渐变对象走 setFillStyleGradient（host 查表克隆）。spec CanvasGradient。
-    ctx.createLinearGradient = function (x0, y0, x1, y1) {
+    ctx._methods.createLinearGradient = function (x0, y0, x1, y1) {
       // R34xx：任一参数非有限抛 TypeError（spec：
       // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-createlineargradient——
       // 2d.gradient.linear.nonfinite 断言 TypeError，非 NotSupportedError）。
@@ -2110,7 +2223,7 @@
       var gid = String(__zw_canvas_op(h, 'createLinearGradient', String(+x0 || 0), String(+y0 || 0), String(+x1 || 0), String(+y1 || 0)));
       return _zwMakeGradient(h, gid);
     };
-    ctx.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
+    ctx._methods.createRadialGradient = function (x0, y0, r0, x1, y1, r1) {
       // R34xx：非有限 → TypeError；负半径 → IndexSizeError（spec 2d.gradient.radial.nonfinite/negative）。
       if (!isFinite(+x0) || !isFinite(+y0) || !isFinite(+r0) || !isFinite(+x1) || !isFinite(+y1) || !isFinite(+r1)) {
         throw new TypeError('createRadialGradient: non-finite argument');
@@ -2121,7 +2234,7 @@
       var gid = String(__zw_canvas_op(h, 'createRadialGradient', String(+x0 || 0), String(+y0 || 0), String(+r0 || 0), String(+x1 || 0), String(+y1 || 0), String(+r1 || 0)));
       return _zwMakeGradient(h, gid);
     };
-    ctx.createConicGradient = function (startAngle, cx, cy) {
+    ctx._methods.createConicGradient = function (startAngle, cx, cy) {
       // R34xx：非有限 → TypeError（2d.gradient.conic.invalid.inputs）。
       if (!isFinite(+startAngle) || !isFinite(+cx) || !isFinite(+cy)) {
         throw new TypeError('createConicGradient: non-finite argument');
@@ -2135,7 +2248,7 @@
     // setStrokeStylePattern host 查表克隆）。源限 canvas 元素（经源 canvas getImageData 取全 RGBA wire）或
     // ImageData-like（含 data/width/height，手构 wire "w:h;r,g,b,a,..."，与 getImageData 对偶格式一致）。
     // repetition：spec repeat/repeat-x/repeat-y/no-repeat；空串/undefined → repeat（默认）；非法源 → null（spec）。
-    ctx.createPattern = function (image, repetition) {
+    ctx._methods.createPattern = function (image, repetition) {
       if (typeof __zw_canvas_op !== 'function') return null;
       // R34xx：参数校验——null/undefined/非对象抛 TypeError；img 加载失败（broken/
       // nonexistent → naturalWidth=0）抛 InvalidStateError（2d.pattern.image.*）。
@@ -2244,26 +2357,26 @@
       return cpat;
     };
     // ── slice 2：path 曲线 / 状态栈 / transforms / line 样式 / globalAlpha（R2796）──
-    ctx.quadraticCurveTo = function (cpx, cpy, x, y) {
+    ctx._methods.quadraticCurveTo = function (cpx, cpy, x, y) {
       cpx = _zwNumArg(cpx); cpy = _zwNumArg(cpy); x = _zwNumArg(x); y = _zwNumArg(y);
       if (!_zwAllFinite(cpx, cpy, x, y)) return;
       __zw_canvas_op(h, 'quadraticCurveTo', String(cpx), String(cpy), String(x), String(y));
     };
-    ctx.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) {
+    ctx._methods.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) {
       cp1x = _zwNumArg(cp1x); cp1y = _zwNumArg(cp1y); cp2x = _zwNumArg(cp2x); cp2y = _zwNumArg(cp2y);
       x = _zwNumArg(x); y = _zwNumArg(y);
       if (!_zwAllFinite(cp1x, cp1y, cp2x, cp2y, x, y)) return;
       __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
     };
-    ctx.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
+    ctx._methods.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
       __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
     };
-    ctx.arcTo = function (x1, y1, x2, y2, r) {
+    ctx._methods.arcTo = function (x1, y1, x2, y2, r) {
       x1 = _zwNumArg(x1); y1 = _zwNumArg(y1); x2 = _zwNumArg(x2); y2 = _zwNumArg(y2); r = _zwNumArg(r);
       if (!_zwAllFinite(x1, y1, x2, y2, r)) return;
       __zw_canvas_op(h, 'arcTo', String(x1), String(y1), String(x2), String(y2), String(r));
     };
-    ctx.rect = function (x, y, w, hh) {
+    ctx._methods.rect = function (x, y, w, hh) {
       x = _zwNumArg(x); y = _zwNumArg(y); w = _zwNumArg(w); hh = _zwNumArg(hh);
       if (!_zwAllFinite(x, y, w, hh)) return;
       __zw_canvas_op(h, 'rect', String(x), String(y), String(w), String(hh));
@@ -2273,7 +2386,7 @@
     //（canvas crate best-effort 退化矩形——角圆为 rendering 已知简化，几何/命中测试正确）。invalid radii
     //（负值/NaN）spec 抛 RangeError，lenient 过滤（headless 简化，避免中断脚本）。
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
-    ctx.roundRect = function (x, y, w, hh, radii) {
+    ctx._methods.roundRect = function (x, y, w, hh, radii) {
       // R34xx：任一参数非有限（NaN/Infinity）→ 忽略（spec：2d.path.roundrect.nonfinite）。
       if (!isFinite(+x) || !isFinite(+y) || !isFinite(+w) || !isFinite(+hh)) return;
       // R34xx：radii 元素可为 number 或 DOMPoint/DOMPointInit（x=水平半径, y=垂直半径）。
@@ -2304,7 +2417,7 @@
     // R3291：Canvas 2D isPointInPath / isPointInStroke（hit-test 点在路径填充/描边区内）。返 bool。
     // spec isPointInPath(x,y[,fillRule])，fillRule 透传但 canvas crate 现用奇偶规则。无 ctx → false。
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinpath
-    ctx.isPointInPath = function (x, y /*, fillRule */) {
+    ctx._methods.isPointInPath = function (x, y /*, fillRule */) {
       // 首个参数缺失或为 Path2D 时跳过数值校验；否则校验（missingargs 的 () → TypeError）。
       if (x !== undefined && !(x && x._zwPath)) {
         x = _zwNumArg(x); y = _zwNumArg(y);
@@ -2317,10 +2430,10 @@
       return __zw_canvas_op(h, 'isPointInPath', String(x), String(y)) === '1';
     };
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ispointinstroke
-    ctx.isPointInStroke = function (x, y /*, fillRule */) {
+    ctx._methods.isPointInStroke = function (x, y /*, fillRule */) {
       return __zw_canvas_op(h, 'isPointInStroke', String(x), String(y)) === '1';
     };
-    ctx.clip = function (path) {
+    ctx._methods.clip = function (path) {
       if (path && path._zwPath) __zw_canvas_op(h, 'clipPath', String(path._zwPath));
       else __zw_canvas_op(h, 'clip');
     };
@@ -2329,37 +2442,38 @@
     // 返回旧值（上游 2d.state.saverestore.* WPT 全族失败）。恢复仅改写 JS 缓存；
     // lineDash/clip/transform 无 JS 缓存（getLineDash/getTransform 读 host），随 host 回滚。
     var _zwCtxStateKeys = ['_fs','_ss','_lw','_ga','_lj','_lc','_font','_ta','_tb','_dir',
-                           '_ml','_gco','_sc','_sb','_sox','_soy','_ldo','_ise','_isq'];
-    ctx.save = function () {
+                           '_ml','_gco','_sc','_sb','_sox','_soy','_ldo','_ise','_isq',
+                           '_ls','_ws','_fk','_fst','_fvc','_tr','_filter'];
+    ctx._methods.save = function () {
       var snap = {};
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; snap[k] = this[k]; }
       this._stack = this._stack || [];
       this._stack.push(snap);
       __zw_canvas_op(h, 'save');
     };
-    ctx.restore = function () {
+    ctx._methods.restore = function () {
       __zw_canvas_op(h, 'restore');
       var st = this._stack;
       if (!st || !st.length) return; // 空栈无操作（spec：restore() with empty stack has no effect）
       var snap = st.pop();
       for (var i = 0; i < _zwCtxStateKeys.length; i++) { var k = _zwCtxStateKeys[i]; this[k] = snap[k]; }
     };
-    ctx.translate = function (tx, ty) {
+    ctx._methods.translate = function (tx, ty) {
       tx = _zwNumArg(tx); ty = _zwNumArg(ty);
       if (!_zwAllFinite(tx, ty)) return;
       __zw_canvas_op(h, 'translate', String(tx), String(ty));
     };
-    ctx.rotate = function (angle) {
+    ctx._methods.rotate = function (angle) {
       angle = _zwNumArg(angle);
       if (!isFinite(angle)) return;
       __zw_canvas_op(h, 'rotate', String(angle));
     };
-    ctx.scale = function (sx, sy) {
+    ctx._methods.scale = function (sx, sy) {
       sx = _zwNumArg(sx); sy = _zwNumArg(sy);
       if (!_zwAllFinite(sx, sy)) return;
       __zw_canvas_op(h, 'scale', String(sx), String(sy));
     };
-    ctx.setTransform = function (a, b, c, d, e, ff) {
+    ctx._methods.setTransform = function (a, b, c, d, e, ff) {
       // WebIDL 双重重载：0 参 → `optional DOMMatrix2DInit transform = {}` 重载（identity——
       // 2d.transformation.setTransform.multiple 调 setTransform() 重置）；1-5 参 → 6 必参
       // 重载 TypeError（missingargs）；非有限 → 忽略（setTransform.nonfinite）。
@@ -2371,38 +2485,29 @@
       if (!_zwAllFinite(a, b, c, d, e, ff)) return;
       __zw_canvas_op(h, 'setTransform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
-    ctx.transform = function (a, b, c, d, e, ff) {
+    ctx._methods.transform = function (a, b, c, d, e, ff) {
       a = _zwNumArg(a); b = _zwNumArg(b); c = _zwNumArg(c); d = _zwNumArg(d); e = _zwNumArg(e); ff = _zwNumArg(ff);
       if (!_zwAllFinite(a, b, c, d, e, ff)) return;
       __zw_canvas_op(h, 'transform', String(a), String(b), String(c), String(d), String(e), String(ff));
     };
     // R2985 getTransform：返当前变换矩阵为 DOMMatrix（host 'getTransform' 返 "a,b,c,d,e,f"）。
     // 读 hit-testing / transform-aware 绘制 / save-restore 矩阵快照高频。host 未注册 / 无 ctx → identity。
-    ctx.getTransform = function () {
+    ctx._methods.getTransform = function () {
       var raw = (typeof __zw_canvas_op === 'function') ? String(__zw_canvas_op(h, 'getTransform')) : '';
       var p = raw.split(',');
       var n = function (i, d) { var v = parseFloat(p[i]); return isNaN(v) ? d : v; };
       return new DOMMatrix([n(0, 1), n(1, 0), n(2, 0), n(3, 1), n(4, 0), n(5, 0)]);
     };
     // R2985 resetTransform：重置为单位矩阵（spec setTransform(identity)）。
-    ctx.resetTransform = function () { __zw_canvas_op(h, 'resetTransform'); };
+    ctx._methods.resetTransform = function () { __zw_canvas_op(h, 'resetTransform'); };
     // R34xx：reset()（spec：清空画布 + 状态回默认）。host 重建 context；client 镜像同步默认。
-    ctx.reset = function () {
+    ctx._methods.reset = function () {
       if (typeof __zw_canvas_op === 'function') __zw_canvas_op(h, 'reset');
       // R34xx：清空 float16 覆盖层（重置后无原始浮点回读）。
       if (this._f16) this._f16Overlay = null;
-      this._fs = '#000000';
-      this._ss = '#000000';
-      this._ga = 1.0;
-      this._gco = 'source-over';
-      this._sc = 'rgba(0, 0, 0, 0)';
-      this._sb = 0;
-      this._sox = 0;
-      this._soy = 0;
-      this._lw = 1;
-      this._lj = 'miter';
-      this._lc = 'butt';
-      this._ml = 10;
+      // R34xx（reset 目录全族）：spec reset() 复位**全部**绘图状态——client 镜像
+      // 全量同步默认（driving: 2d.reset.state.*——set 非默认后 reset 须回默认）。
+      _zwResetCtxMirrors(this);
     };
     // globalAlpha / lineDash / lineJoin / lineCap：getter+setter（client-side 存值 + push host）。
     ctx._ga = 1.0;
@@ -2416,13 +2521,13 @@
       },
       get: function () { return this._ga; }
     });
-    ctx.setLineDash = function (segs) {
+    ctx._methods.setLineDash = function (segs) {
       var s = (segs && segs.length != null) ? Array.prototype.join.call(segs, ',') : String(segs);
       __zw_canvas_op(h, 'setLineDash', s);
     };
     // R3305：getLineDash 返展开后偶长数组（spec：奇长输入被复制拼成偶长）。从 host 读（权威，
     // 客户端镜像存原值无法推断展开）。空串 → 空数组。
-    ctx.getLineDash = function () {
+    ctx._methods.getLineDash = function () {
       var raw = String(__zw_canvas_op(h, 'getLineDash'));
       if (!raw) return [];
       return raw.split(',').map(function (x) { return parseFloat(x) || 0; });
@@ -2599,6 +2704,18 @@
       },
       get: function () { return this._tr; }
     });
+    // R34xx：ctx.filter（spec CanvasRenderingContext2D.filter——reset 目录的
+    // 状态复位面 + filters 目录的 API 表面）。**诚实范围**：值接受 + 复位语义；
+    // 实际滤镜渲染（blur/colorMatrix 等）未实现（headless 光栅不应用），filters
+    // 目录渲染面待 renderer 滤镜支持（记录，非本批）。
+    ctx._filter = 'none';
+    Object.defineProperty(ctx, 'filter', {
+      set: function (v) {
+        v = String(v);
+        this._filter = v;
+      },
+      get: function () { return this._filter; }
+    });
     ctx._ta = 'start';
     Object.defineProperty(ctx, 'textAlign', {
       // R34xx：非法值忽略保持旧值（spec：2d.text.align.invalid）。
@@ -2719,7 +2836,7 @@
       get: function () { return this._soy; }
     });
     // putImageData(imagedata, dx, dy)：序列化 data → csv，dx/dy/w/h 串参派发。host 1:1 写 pixel_buffer。
-    ctx.putImageData = function (img, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) {
+    ctx._methods.putImageData = function (img, dx, dy, dirtyX, dirtyY, dirtyW, dirtyH) {
       // R34xx：null/undefined/非 ImageData → TypeError（spec——2d.imageData.put.null/wrongtype）。
       if (img === null || img === undefined) {
         throw new TypeError('putImageData: imageData is null');
@@ -2785,7 +2902,7 @@
     // **源限 canvas 元素**（canvas-to-canvas）：经源 canvas 既有 getImageData 取全 RGBA wire 串作源传 host；
     // R3309：ImageBitmap 源（持 _zwBitmapWire）直接用其 wire 串，跳过 canvas 源 getImageData。
     // HTMLImageElement/`<img>` decode defer。host draw_image* 真栅格（source-over alpha 混合）。
-    ctx.drawImage = function (image) {
+    ctx._methods.drawImage = function (image) {
       if (typeof __zw_canvas_op !== 'function') return;
       // R34xx：缺省源 → TypeError（missingargs）。
       if (image === undefined || image === null) {
@@ -2858,7 +2975,7 @@
           String(a[5]), String(a[6]), String(a[7]), String(a[8]));
       }
     };
-    ctx.getImageData = function (x, y, w, hh) {
+    ctx._methods.getImageData = function (x, y, w, hh) {
       if (typeof __zw_canvas_op !== 'function') return null;
       // R34xx：x/y/w/h 经 Math.trunc 归一（spec：与 createImageData 同一 WebIDL long 截断语义，
       // 上游 2d.imageData.create2.round 断言两者一致）。
@@ -2913,6 +3030,26 @@
       var img = new ImageData(arr, +dims[0], +dims[1], { colorSpace: cs, pixelFormat: f16 ? 'rgba-float16' : 'rgba-unorm8' });
       return img;
     };
+    // R34xx：prototype 方法分发层（2d.canvas.context.type.extend/replace/prototype——
+    // 实例方法存 _methods（闭包持 handle），prototype 薄转发器按方法名注册（幂等）：
+    // 原型扩展/覆写生效（fillRectGreen 扩展、fillRect 覆写），getPrototypeOf(ctx) ===
+    // CanvasRenderingContext2D.prototype。非法调用（this 无 _handle）→ TypeError。
+    var _proto = globalThis.CanvasRenderingContext2D.prototype;
+    for (var _mk in ctx._methods) {
+      if (!(Object.prototype.hasOwnProperty.call(_proto, _mk) && _proto[_mk]._zwDispatch)) {
+        (function (name) {
+          var _disp = function () {
+            if (!this || this._handle === undefined || this === _proto) {
+              throw new TypeError('Illegal invocation');
+            }
+            return this._methods[name].apply(this, arguments);
+          };
+          _disp._zwDispatch = true;
+          _proto[name] = _disp;
+        })(_mk);
+      }
+    }
+
     return ctx;
   }
 

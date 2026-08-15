@@ -197,6 +197,10 @@ fn parse_composite_operation(s: &str) -> zero_canvas::CompositeOperation {
     }
 }
 
+/// R34xx：host canvas bitmap 尺寸上限（16384²×4 ≈ 1GB）——巨尺寸（2^31-1 等）用例
+/// 只断言 IDL 属性反射；钳制防 CanvasContext::new 分配 ~2^62 字节 abort。
+const MAX_CANVAS_DIM: u32 = 16384;
+
 /// canvas ImageData 线串 `"w:h;r,g,b,a,..."`（getImageData 对偶格式）→ `ImageData`。
 /// 供 `drawImage` 系列桥接：shim 经源 canvas 的 getImageData 取全 RGBA wire 串，作为 drawImage 源传入。
 /// 解析失败（无 `;`/无 `:`）返空 ImageData（draw_image_sized 对 0×0 早退，安全）。
@@ -261,8 +265,11 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "getContext2d" => {
             let id = reg.next_ctx_id;
             reg.next_ctx_id += 1;
-            let w = arg(0).trim().parse::<u32>().unwrap_or(300);
-            let h = arg(1).trim().parse::<u32>().unwrap_or(150);
+            // R34xx：host bitmap 尺寸钳制——WPT 巨尺寸用例（2d.canvas.host.size.large
+            // 的 2^31-1）只断言 IDL 属性反射，不触碰 bitmap；未钳制则
+            // CanvasContext::new 分配 ~2^62 字节 abort。属性值由 JS 侧独立持有。
+            let w = arg(0).trim().parse::<u32>().unwrap_or(300).min(MAX_CANVAS_DIM);
+            let h = arg(1).trim().parse::<u32>().unwrap_or(150).min(MAX_CANVAS_DIM);
             let mut ctx = zero_canvas::CanvasContext::new(w, h);
             // R34xx：注入共享字体加载器（@font-face 字体真文本光栅）。
             ctx.set_font_loader(Some(reg.font_loader.clone()));
@@ -272,8 +279,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // R3308：canvas resize（spec 设 canvas.width/height 清空 bitmap + 重置绘图状态）。
         // handle = context id，args[0]/[1] = 新 width/height。调 CanvasContext::resize（重置全状态）。
         "resizeContext" => {
-            let w = arg(0).trim().parse::<u32>().unwrap_or(300);
-            let h = arg(1).trim().parse::<u32>().unwrap_or(150);
+            // R34xx：同 getContext2d 的尺寸钳制（巨尺寸 abort 防护）。
+            let w = arg(0).trim().parse::<u32>().unwrap_or(300).min(MAX_CANVAS_DIM);
+            let h = arg(1).trim().parse::<u32>().unwrap_or(150).min(MAX_CANVAS_DIM);
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.resize(w, h);
             }

@@ -17,6 +17,11 @@ API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
 
 # 第一批：核心 API 面主线程 .html 用例（与 test_cases_canvas.rs 既有 40 smoke 面一致）。
 # R34xx（G6）：OffscreenCanvas worker 变体目录面（html/canvas/offscreen/*）
+# R34xx（2026-08-15 第二批导入）：补全范围内子目录——drawing-images/path-objects/
+# reset/conformance-requirements/canvas-context/canvas-host/color-type/filters/
+# layers/global-hdr-headroom/wide-gamut-canvas（manual 交互面与 video 媒体面不在
+# 目标范围）。顶层文件（2d.conformance.requirements.*、2d.putImageData、
+# 2d.text-outside-of-the-flat-tree 等）单独 fetch_raw。
 OFFSCREEN_SUBDIRS=(
   "html/canvas/offscreen/the-canvas-state"
   "html/canvas/offscreen/drawing-rectangles-to-the-canvas"
@@ -28,6 +33,15 @@ OFFSCREEN_SUBDIRS=(
   "html/canvas/offscreen/fill-and-stroke-styles"
   "html/canvas/offscreen/text"
   "html/canvas/offscreen/conformance-requirements"
+  "html/canvas/offscreen/drawing-images-to-the-canvas"
+  "html/canvas/offscreen/path-objects"
+  "html/canvas/offscreen/reset"
+  "html/canvas/offscreen/canvas-context"
+  "html/canvas/offscreen/canvas-host"
+  "html/canvas/offscreen/color-type"
+  "html/canvas/offscreen/filters"
+  "html/canvas/offscreen/layers"
+  "html/canvas/offscreen/wide-gamut-canvas"
 )
 SUBDIRS=(
   "html/canvas/element/the-canvas-state"
@@ -39,6 +53,36 @@ SUBDIRS=(
   "html/canvas/element/compositing"
   "html/canvas/element/fill-and-stroke-styles"
   "html/canvas/element/text"
+  "html/canvas/element/conformance-requirements"
+  "html/canvas/element/drawing-images-to-the-canvas"
+  "html/canvas/element/path-objects"
+  "html/canvas/element/reset"
+  "html/canvas/element/canvas-context"
+  "html/canvas/element/canvas-host"
+  "html/canvas/element/color-type"
+  "html/canvas/element/filters"
+  "html/canvas/element/layers"
+  "html/canvas/element/global-hdr-headroom"
+  "html/canvas/element/wide-gamut-canvas"
+)
+# R34xx（2026-08-15）：element 顶层 testharness 用例（conformance-requirements
+# 顶层文件 + putImageData + text-outside-of-the-flat-tree——后者为 reftest 对，
+# 一并抓取供 reftest/oracle 面）。
+CANVAS_TOP_FILES=(
+  "html/canvas/element/2d.conformance.requirements.basics.html"
+  "html/canvas/element/2d.conformance.requirements.delete.html"
+  "html/canvas/element/2d.conformance.requirements.drawings.html"
+  "html/canvas/element/2d.conformance.requirements.missingargs.html"
+  "html/canvas/element/2d.putImageData.html"
+  "html/canvas/element/2d.putImageData-ref.html"
+  "html/canvas/element/2d.text-outside-of-the-flat-tree.html"
+  "html/canvas/element/2d.text-outside-of-the-flat-tree-ref.html"
+  "html/canvas/offscreen/2d.conformance.requirements.basics.html"
+  "html/canvas/offscreen/2d.conformance.requirements.basics.worker.js"
+  "html/canvas/offscreen/2d.conformance.requirements.missingargs.html"
+  "html/canvas/offscreen/2d.conformance.requirements.missingargs.worker.js"
+  "html/canvas/offscreen/OffscreenCanvas-ctx-font-sibling-index-invalid.tentative.html"
+  "html/canvas/offscreen/set-proprietary-font-names-001-crash.html"
 )
 
 fetch_raw() {
@@ -108,6 +152,11 @@ done
 # R34xx（G6）：offscreen worker 变体（.worker.js——fetch_tests_from_worker 聚合执行）
 for dir in "${OFFSCREEN_SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"
+done
+
+# R34xx（2026-08-15）：element/offscreen 顶层 testharness 用例。
+for f in "${CANVAS_TOP_FILES[@]}"; do
+  fetch_raw "${f}"
 done
 
 echo "Canvas testharness subset ready (${#SUBDIRS[@]} dirs, WPT ${WPT_REV})"

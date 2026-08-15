@@ -2421,6 +2421,13 @@
         }
         if (prop === '__zwHandle') return handle;
         if (prop === '__zwSelector') return sel;
+        // R34xx：Symbol.toStringTag 按元素 tag 返接口名（2d.canvas.host.type.name 的
+        // Object.prototype.toString.call(canvas) === '[object HTMLCanvasElement]'；
+        // 此前无 toStringTag → '[object Object]'。generic：全部元素受益）。
+        if (prop === Symbol.toStringTag) {
+          var _tagIf = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
+          return _tagIf || 'HTMLElement';
+        }
         if (prop === 'value') {
           // P1a select：<select>.value = 选中 option 的 value（HTML spec 语义，非 value 属性）。
           // selected 会随 host 设值变化，故不缓存（每次查 host 反映最新 dom_html）。

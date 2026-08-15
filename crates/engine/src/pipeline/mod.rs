@@ -396,6 +396,17 @@ impl RenderPipeline {
     }
 
     /// 一次 DOM 遍历同时构建三个 img 固有尺寸信号（旧实现 3 次全树遍历）。
+    /// R34xx：canvas width/height 内容属性 → 固有尺寸（spec "rules for parsing
+    /// non-negative integers"：可选前导 '+' + 前导 ASCII 数字，余忽略；'100.999' →
+    /// 100、'0x100' → 0、'+100' → 100、'100e1' → 100；空/无数字 → None）。
+    fn parse_nonnegative_int_attr(attr: Option<String>) -> Option<f32> {
+        let binding = attr?;
+        let s = binding.trim();
+        let s = s.strip_prefix('+').unwrap_or(s);
+        let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse::<f32>().ok()
+    }
+
     pub(crate) fn build_img_intrinsic_all(
         &self,
         doc: &Document,
@@ -420,6 +431,15 @@ impl RenderPipeline {
                     no_ratio.insert(img_id, dims);
                 }
             }
+        }
+        // R34xx：canvas 固有尺寸 = width/height 内容属性（HTML spec §4.8.11——
+        // "rules for parsing non-negative integers" 前导数字；缺省 300/150）。
+        // getComputedStyle(canvas).width === "100px" 断言
+        //（2d.canvas.host.size.attributes.parse.*——'100.999' → 100、'0x100' → 0）。
+        for canvas_id in doc.get_elements_by_tag_name("canvas") {
+            let w = Self::parse_nonnegative_int_attr(doc.get_attribute(canvas_id, "width")).unwrap_or(300.0);
+            let h = Self::parse_nonnegative_int_attr(doc.get_attribute(canvas_id, "height")).unwrap_or(150.0);
+            sizes.insert(canvas_id, (w, h));
         }
         (sizes, ratios, no_ratio)
     }

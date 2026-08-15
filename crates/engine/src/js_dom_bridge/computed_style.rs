@@ -104,14 +104,17 @@ fn apply_inline_style_overrides(doc: &mut Document, mutations: &[DomMutation]) {
                     apply_remove_style(doc, node, property);
                 }
             }
-            DomMutation::SetAttr { selector, name, value } if name.eq_ignore_ascii_case("style") => {
+            // R34xx：SetAttr/RemoveAttr 泛化应用（含 style——canvas setAttribute('width',
+            // '100.999') 后 getComputedStyle 须读到新属性：2d.canvas.host.size.attributes.
+            // setAttribute.*；旧仅 style 属性应用，canvas 固有尺寸读 stale 快照 50px）。
+            DomMutation::SetAttr { selector, name, value } => {
                 if let Some(node) = find_by_selector(doc, selector) {
-                    doc.set_attribute(node, "style", value);
+                    doc.set_attribute(node, name, value);
                 }
             }
-            DomMutation::RemoveAttr { selector, name } if name.eq_ignore_ascii_case("style") => {
+            DomMutation::RemoveAttr { selector, name } => {
                 if let Some(node) = find_by_selector(doc, selector) {
-                    doc.remove_attribute(node, "style");
+                    doc.remove_attribute(node, name);
                 }
             }
             _ => {}
@@ -131,8 +134,37 @@ pub fn compute_document_styles_with_inline_overrides(
 ) -> (Document, HashMap<NodeId, ComputedStyle>) {
     let mut doc = parse_html(html);
     apply_inline_style_overrides(&mut doc, mutations);
-    let styles = compute_styles_for_doc(&doc);
+    let mut styles = compute_styles_for_doc(&doc);
+    // R34xx：canvas 固有尺寸（width/height 内容属性，rules for parsing non-negative
+    // integers 前导数字）→ 计算样式 auto 侧覆盖——getComputedStyle(canvas).width ===
+    // "100px"（2d.canvas.host.size.attributes.parse.*：'100.999' → 100、'0x100' → 0、
+    // '100e1' → 100；无属性 → 300/150）。与 layout 的 replaced sizing 同源语义。
+    for canvas_id in doc.get_elements_by_tag_name("canvas") {
+        if let Some(style) = styles.get_mut(&canvas_id) {
+            if matches!(style.width, LengthValue::Auto)
+                && let Some(w) = parse_nonnegative_int_attr(doc.get_attribute(canvas_id, "width"))
+            {
+                style.width = LengthValue::Px(w.into());
+            }
+            if matches!(style.height, LengthValue::Auto)
+                && let Some(h) = parse_nonnegative_int_attr(doc.get_attribute(canvas_id, "height"))
+            {
+                style.height = LengthValue::Px(h.into());
+            }
+        }
+    }
     (doc, styles)
+}
+
+/// R34xx：非负整数解析（spec "rules for parsing non-negative integers"：可选前导
+/// '+'，前导 ASCII 数字，余忽略；空 → None。'100.999' → 100、'0x100' → 0、
+/// '+100' → 100、'100e1' → 100）。
+fn parse_nonnegative_int_attr(attr: Option<String>) -> Option<f32> {
+    let binding = attr?;
+    let s = binding.trim();
+    let s = s.strip_prefix('+').unwrap_or(s);
+    let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<f32>().ok()
 }
 
 /// 在已计算的 `(doc, styles)` 上按选择器查询单个属性并序列化。缓存命中路径仅此步

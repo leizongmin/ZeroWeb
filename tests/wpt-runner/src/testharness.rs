@@ -36,6 +36,16 @@ pub const CANVAS_OFFSCREEN_SUBDIRS: &[&str] = &[
     "html/canvas/offscreen/fill-and-stroke-styles",
     "html/canvas/offscreen/text",
     "html/canvas/offscreen/conformance-requirements",
+    // R34xx（2026-08-15 第二批导入）：与 fetch-canvas-subset.sh OFFSCREEN_SUBDIRS 同步。
+    "html/canvas/offscreen/drawing-images-to-the-canvas",
+    "html/canvas/offscreen/path-objects",
+    "html/canvas/offscreen/reset",
+    "html/canvas/offscreen/canvas-context",
+    "html/canvas/offscreen/canvas-host",
+    "html/canvas/offscreen/color-type",
+    "html/canvas/offscreen/filters",
+    "html/canvas/offscreen/layers",
+    "html/canvas/offscreen/wide-gamut-canvas",
 ];
 
 pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
@@ -48,6 +58,33 @@ pub const CANVAS_TEST_SUBDIRS: &[&str] = &[
     "html/canvas/element/compositing",
     "html/canvas/element/fill-and-stroke-styles",
     "html/canvas/element/text",
+    // R34xx（2026-08-15 第二批导入）：补全范围内子目录（与 fetch-canvas-subset.sh
+    // SUBDIRS 同步——manual 交互面与 video 媒体面不在目标范围）。
+    "html/canvas/element/conformance-requirements",
+    "html/canvas/element/drawing-images-to-the-canvas",
+    "html/canvas/element/path-objects",
+    "html/canvas/element/reset",
+    "html/canvas/element/canvas-context",
+    "html/canvas/element/canvas-host",
+    "html/canvas/element/color-type",
+    "html/canvas/element/filters",
+    "html/canvas/element/layers",
+    "html/canvas/element/global-hdr-headroom",
+    "html/canvas/element/wide-gamut-canvas",
+];
+
+/// R34xx（2026-08-15）：element 顶层 testharness 用例（目录扫描不覆盖——与
+/// fetch-canvas-subset.sh CANVAS_TOP_FILES 同步）。
+pub const CANVAS_TOP_LEVEL_FILES: &[&str] = &[
+    "html/canvas/element/2d.conformance.requirements.basics.html",
+    "html/canvas/element/2d.conformance.requirements.delete.html",
+    "html/canvas/element/2d.conformance.requirements.drawings.html",
+    "html/canvas/element/2d.conformance.requirements.missingargs.html",
+    "html/canvas/element/2d.putImageData.html",
+    "html/canvas/offscreen/2d.conformance.requirements.basics.html",
+    "html/canvas/offscreen/2d.conformance.requirements.missingargs.html",
+    "html/canvas/offscreen/OffscreenCanvas-ctx-font-sibling-index-invalid.tentative.html",
+    "html/canvas/offscreen/set-proprietary-font-names-001-crash.html",
 ];
 
 /// canvas-tests.js 的 WPT 内路径（prepare 时内联替换）。
@@ -176,17 +213,30 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
     };
 
     let mut cases = Vec::new();
-    for subdir in CANVAS_TEST_SUBDIRS {
+    for subdir in CANVAS_TEST_SUBDIRS.iter().chain(
+        // R34xx（2026-08-15）：顶层 testharness 用例（目录扫描不覆盖）。
+        ["html/canvas/element"].iter(),
+    ) {
         let dir = wpt_root.join(subdir);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries: Vec<_> = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries.flatten().collect(),
+            Err(_) => continue,
         };
-        for entry in entries.flatten() {
+        for entry in entries {
             let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
             if path.extension().is_none_or(|ext| ext != "html") {
                 continue;
             }
-            let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+            // 顶层文件只取 CANVAS_TOP_LEVEL_FILES 清单内（目录内其余为 reftest-format
+            // 对（-ref/expected）与范围外文件）。
+            if *subdir == "html/canvas/element" {
+                let relative = format!("{}/{}", subdir, name);
+                if !CANVAS_TOP_LEVEL_FILES.contains(&relative.as_str()) {
+                    continue;
+                }
+            }
+            let relative = format!("{}/{}", subdir, name);
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
@@ -204,6 +254,28 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
                     continue;
                 }
             };
+            // R34xx（2026-08-15）：reftest-format 文件 → 跳过（NotRun 中性状态），由
+            // reftest/oracle 面负责（此前误入 testharness 面全部 Timeout，污染分母）。
+            // 判定：① `rel="match"` 引用参考页的 test 文件；② `-ref.html`/`-expected.html`
+            // 后缀的参考页本体（无 testharness 也无 match 链接——2d.layer.*-expected 等）。
+            if source.contains("rel=\"match\"")
+                || source.contains("rel='match'")
+                || relative.ends_with("-ref.html")
+                || relative.ends_with("-expected.html")
+            {
+                cases.push((
+                    relative.clone(),
+                    vec![HarnessSubtestResult {
+                        name: "reftest-format file".into(),
+                        status: HarnessStatus::NotRun,
+                        message: Some(
+                            "reftest-format（rel=match / -ref / -expected）——非 testharness 面，走 reftest/oracle"
+                                .into(),
+                        ),
+                    }],
+                ));
+                continue;
+            }
             let results = run_canvas_testharness_html(
                 wpt_root,
                 &relative,

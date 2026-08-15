@@ -1519,9 +1519,15 @@ impl CanvasContext {
                 let a = image_data.data[src_idx + 3];
 
                 // 变换目标坐标
-                let (dst_x, dst_y) = self.transform.transform_point(dx + px as f32, dy + py as f32);
-                let dst_x = dst_x as usize;
-                let dst_y = dst_y as usize;
+                // R34xx：负坐标钳制——`f32 as usize` 对负数**饱和为 0**（Rust 浮点→
+                // 整型转换规则），dx=-100 的像素 dst=-1 → 0 → 整图错误画到 (0,0)
+                //（2d.drawImage.3arg 的 red(-100,0) 污染 (0,0)）。负数显式跳过。
+                let dst = self.transform.transform_point(dx + px as f32, dy + py as f32);
+                if dst.0 < 0.0 || dst.1 < 0.0 {
+                    continue;
+                }
+                let dst_x = dst.0 as usize;
+                let dst_y = dst.1 as usize;
                 if dst_x >= canvas_w || dst_y >= canvas_h {
                     continue;
                 }
