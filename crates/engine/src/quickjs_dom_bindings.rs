@@ -193,6 +193,50 @@ fn reflected_attr_string_of(this: &Object, name: &str) -> Option<String> {
     with_dom(|d| d.get_attribute(id, name)).flatten()
 }
 
+// ── S1q 字符串反射族（title/lang/accessKey——V8 侧经 native_string_reflected_*
+//    按 accessor name 泛化分发；QuickJS Accessor 无 name 回调，逐属性具名 fn 经共享
+//    helper 实现，语义等价：getter 缺省 ""，setter ToString 写 content 属性。
+//    IDL 名 → content 名映射：accessKey→accesskey，余 identity（V8 name_to_content_attr
+//    的小写化规则在此按静态映射展开）。spec HTML `dom-l10n`/`dom-lang`/`dom-accesskey`。──
+
+/// `title` getter（spec HTML `dom-title`，`title` 反射；缺省 ""）。
+fn title_getter<'js>(this: This<Object<'js>>) -> String {
+    reflected_attr_string_of(&this.0, "title").unwrap_or_default()
+}
+
+/// `title` setter（spec `dom-title`；`[LegacyNullToEmptyString]`——null→""，Coerced 已覆盖）。
+fn title_setter<'js>(this: This<Object<'js>>, value: rquickjs::Coerced<String>) {
+    set_reflected_attr(&this.0, "title", &value.0);
+}
+
+/// `lang` getter（spec HTML `dom-lang`，`lang` 反射；缺省 ""）。
+fn lang_getter<'js>(this: This<Object<'js>>) -> String {
+    reflected_attr_string_of(&this.0, "lang").unwrap_or_default()
+}
+
+/// `lang` setter（spec `dom-lang`；`[LegacyNullToEmptyString]`）。
+fn lang_setter<'js>(this: This<Object<'js>>, value: rquickjs::Coerced<String>) {
+    set_reflected_attr(&this.0, "lang", &value.0);
+}
+
+/// `accessKey` getter（spec HTML `dom-accesskey`，`accesskey` 反射；缺省 ""）。
+fn access_key_getter<'js>(this: This<Object<'js>>) -> String {
+    reflected_attr_string_of(&this.0, "accesskey").unwrap_or_default()
+}
+
+/// `accessKey` setter（IDL accessKey → content `accesskey`；`[LegacyNullToEmptyString]`）。
+fn access_key_setter<'js>(this: This<Object<'js>>, value: rquickjs::Coerced<String>) {
+    set_reflected_attr(&this.0, "accesskey", &value.0);
+}
+
+/// 写元素反射内容属性（stale/非元素 no-op）。
+fn set_reflected_attr(this: &Object, name: &str, value: &str) {
+    let Some(id) = node_id_of(this) else {
+        return;
+    };
+    with_dom_mut(|d| d.set_attribute(id, name, value));
+}
+
 /// 读元素命名空间 URI（空 ns / 非元素 → None）。
 fn element_ns_of(this: &Object) -> Option<String> {
     let id = node_id_of(this)?;
@@ -311,6 +355,25 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     obj.prop("namespaceURI", Accessor::from(namespace_uri_getter).configurable())?;
     obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
     obj.prop("textContent", Accessor::from(text_content_getter).configurable())?;
+    // S1q 字符串反射族（title/lang/accessKey）。
+    obj.prop(
+        "title",
+        Accessor::from(title_getter)
+            .set(title_setter)
+            .configurable()
+            .enumerable(),
+    )?;
+    obj.prop(
+        "lang",
+        Accessor::from(lang_getter).set(lang_setter).configurable().enumerable(),
+    )?;
+    obj.prop(
+        "accessKey",
+        Accessor::from(access_key_getter)
+            .set(access_key_setter)
+            .configurable()
+            .enumerable(),
+    )?;
     Ok(obj)
 }
 
@@ -376,6 +439,15 @@ mod tests {
             );
             assert_eq!(eval_str("__zw_native_element_for_id('main').className"), "x y");
 
+            // S1q 字符串反射族：title/lang/accessKey（缺省 "" + setter 读写闭环）。
+            assert_eq!(eval_str("__zw_native_element_for_id('main').title"), "");
+            assert_eq!(eval_str("(__zw_native_element_for_id('main').title = 'tip', 1)"), "1");
+            assert_eq!(eval_str("__zw_native_element_for_id('main').title"), "tip");
+            assert_eq!(eval_str("(__zw_native_element_for_id('main').lang = 'zh', 1)"), "1");
+            assert_eq!(eval_str("__zw_native_element_for_id('main').lang"), "zh");
+            assert_eq!(eval_str("(__zw_native_element_for_id('main').accessKey = 'k', 1)"), "1");
+            assert_eq!(eval_str("__zw_native_element_for_id('main').accessKey"), "k");
+
             // 2. 身份缓存：同 NodeId 返同对象（spec identity）。
             assert_eq!(
                 eval_str("__zw_native_element_for_id('main') === __zw_native_element_for_id('main')"),
@@ -390,10 +462,11 @@ mod tests {
             assert_eq!(eval_str("__zw_native_element_for_id('renamed').tagName"), "DIV");
             assert_eq!(eval_str("__zw_native_element_for_id('main')"), "null");
 
-            // 5. 隐藏 ffi 不可枚举（Object.keys 只见 id/className——S1q 后 enumerable 的反射属性）。
+            // 5. 隐藏 ffi 不可枚举（Object.keys 只见 enumerable 反射属性——S1q 后
+            //    id/className/title/lang/accessKey）。
             assert_eq!(
                 eval_str("Object.keys(__zw_native_element_for_id('renamed')).join(',')"),
-                "id,className"
+                "id,className,title,lang,accessKey"
             );
 
             reset_quickjs_state();
