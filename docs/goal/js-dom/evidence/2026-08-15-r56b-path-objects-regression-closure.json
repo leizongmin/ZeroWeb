@@ -1,0 +1,53 @@
+{
+  "date": "2026-08-15",
+  "round": "R56b",
+  "slice": "M8 path-objects 接手首切片的回归收口（arc 方向归一化 + line-to-arc-start + roundRect 非有限半径 + DOMPoint NaN 保留）",
+  "commits": [
+    "ac7240f5 (R56 first slice, 已 push)",
+    "b1446e9b (R56b regression closure, 本轮)"
+  ],
+  "baseline": {
+    "commit": "a749de94 (pre-R56)",
+    "fails": 62,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "b1446e9b",
+    "fails": 37,
+    "pass": 166
+  },
+  "net": {
+    "fixed": 25,
+    "regressions": 0
+  },
+  "fixed_list": [
+    "2d.path.arc.angle.1/2/3/4/5",
+    "2d.path.arc.default",
+    "2d.path.arc.twopie.5",
+    "2d.path.isPointInPath.subpath",
+    "2d.path.moveTo.basic",
+    "2d.path.rect.closed/end.1/negative/winding",
+    "2d.path.roundrect.1.radius.dompoint.single.argument",
+    "2d.path.roundrect.1.radius.dompointinit.single.argument",
+    "2d.path.roundrect.badinput/negative/radius.negative/radius.none/radius.toomany/winding",
+    "2d.path.stroke.prune.rect/scale1/scale2"
+  ],
+  "root_causes": [
+    "arc span 归一化方向感知缺失：raw % TAU 对顺时针负差得负 span → 弧反向；归一化结果已含方向又乘 dir → 双重取反翻弧（angle.2/3/5, shape.2, twopie.5）",
+    "flatten Arc 分支缺 spec「current→弧首」连线段：moveTo(圆心)+arc 整圆 fill 的扇形缺边，扫描线在弧首角配对破裂（angle.4/twopie.5 曾在 R56 首切片后 Fail）",
+    "roundRect 非有限半径（NaN/±Inf）被 zwNormRadius 抛 RangeError（spec 应静默忽略整次调用）",
+    "DOMPoint 构造器 +x || 0 把 NaN 吞成 0 → DOMPoint(10,NaN) 变合法半径 (10,0) 画出圆角矩形"
+  ],
+  "tests": {
+    "canvas_raster_unit": "+5（span 方向 cw/acw、line-to-arc-start 有/无、2x2 fill 哨兵）+ 4 个旧 arc 计数更新（+1 连线段）",
+    "engine_shim_unit": "+1 test_round_rect_nonfinite_and_dompoint_nan_r56（DOMPoint NaN/Inf 保留 + roundRect 非有限忽略 + RangeError 矩阵 + 路径完整性）"
+  },
+  "gates": {
+    "engine_v8": "2149 passed 0 failed（rebase 后含并行流 83fa7fbd 修复 canvas_element_bridges_to_image_primitive 预存红灯）",
+    "engine_quickjs": "1416 passed 0 failed",
+    "canvas": "782 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "cross_subdir": "line-styles 1 预存 Fail（2d.line.join.round，stash 验证 d3edff50 同 Fail 非本轮引入）；drawing-rectangles/reset/transformations 0 Fail"
+}
