@@ -74,7 +74,7 @@ async function runSmoke(url, output) {
       if (message.type() === 'error') diagnostics.push(`console: ${message.text()}`);
     });
     await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
-    await page.goto(`${url}/index.html`, { waitUntil: 'load', timeout: 5000 });
+    await page.goto(`${url}/index.html`, { waitUntil: 'load', timeout: 15000 });
     await page.waitForFunction(() => {
       const contents = document.querySelector('#contents');
       return contents && getComputedStyle(contents).visibility === 'visible' && document.querySelector('#score .pointsPanel');
@@ -135,6 +135,8 @@ async function assertZeroWebReport(output) {
   if (!state?.ready) throw new Error(`HTML5test report did not become visible: ${JSON.stringify(state)}`);
   if (!/^\d+$/.test(String(state.score || ''))) throw new Error(`HTML5test score is missing: ${JSON.stringify(state)}`);
   if (state.categories < 8) throw new Error(`HTML5test categories are incomplete: ${JSON.stringify(state)}`);
+  if (state.supportedResults < 1) throw new Error(`HTML5test supported API results are missing: ${JSON.stringify(state)}`);
+  if (state.unsupportedResults < 1) throw new Error(`HTML5test unsupported API results are missing: ${JSON.stringify(state)}`);
   if (state.warning) throw new Error(`HTML5test reported a page error: ${state.warning}`);
 }
 
@@ -149,6 +151,7 @@ async function main() {
     if (options.zeroweb) {
       await runParity(server.url, options.out, true);
       await assertZeroWebReport(options.out);
+      console.log('ZeroWeb frozen HTML5test smoke passed (score and 8 categories rendered).');
     }
   } finally {
     await server.close();

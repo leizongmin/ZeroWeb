@@ -20,10 +20,10 @@ pub(crate) fn compositor_frame_primitives(
     y_offset: f32,
     scale: f32,
     clip_viewport: ViewportClip,
-    allow_gpu_direct_shadow: bool,
+    _allow_gpu_direct_shadow: bool,
 ) -> RenderPrimitives {
     #[cfg(target_os = "linux")]
-    if frame.gpu_direct && !allow_gpu_direct_shadow {
+    if frame.gpu_direct && !_allow_gpu_direct_shadow {
         return RenderPrimitives::new();
     }
     let mut source = RenderPrimitives::new();
