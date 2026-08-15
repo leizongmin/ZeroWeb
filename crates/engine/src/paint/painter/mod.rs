@@ -38,7 +38,7 @@ pub struct Painter {
     /// (char, font_size, is_ahem) 只测量一次。measure 回调含 HashMap probe +
     /// 可能的位图光栅化，逐字符调用是 paint 占 83%（4400 元素页 1399ms）的主因之一。
     /// RefCell：热循环中常处于 `&mut self.primitives` 借用区，缓存须经 &self 访问。
-    pub(crate) measure_cache: std::cell::RefCell<std::collections::HashMap<(u32, u32, bool), f32>>,
+    pub(crate) measure_cache: std::cell::RefCell<std::collections::HashMap<(u32, u32, u32, bool), f32>>,
     /// 已由父级行内格式化上下文绘制过文本的节点。
     pub(crate) painted_inline_nodes: HashSet<NodeId>,
     /// R2197 Phase A slice 3：paint 期须跳过递归绘制的 orphan inline 元素 NodeId 集合。
@@ -361,15 +361,16 @@ impl Painter {
     /// 创建新的绘制命令生成器。
     /// 性能门禁优化 S7（2026-08-08）：paint 内逐字符测量缓存。
     ///
-    /// 键 = (char, font_size bits, is_ahem)；同一组合在 paint 阶段只测量一次
-    ///（measure 回调含 HashMap probe + 可能的光栅化，逐字符调用是 paint
-    /// 占 83% 的主因之一）。
-    pub(crate) fn measure_char_cached(&self, ch: char, font_size: f32, is_ahem: bool) -> f32 {
-        let key = (ch as u32, font_size.to_bits(), is_ahem);
+    /// 键 = (font_id, char, font_size bits, is_ahem)；同一组合在 paint 阶段只
+    /// 测量一次（measure 回调含 HashMap probe + 可能的光栅化，逐字符调用是
+    /// paint 占 83% 的主因之一）。font_id 进键（ZRG-2026-08-15）：同帧多字体
+    /// 同字号同字符不再跨字体污染。
+    pub(crate) fn measure_char_cached(&self, font_id: u32, ch: char, font_size: f32, is_ahem: bool) -> f32 {
+        let key = (font_id, ch as u32, font_size.to_bits(), is_ahem);
         if let Some(&w) = self.measure_cache.borrow().get(&key) {
             return w;
         }
-        let w = crate::measure_char_for_paint(ch, font_size, is_ahem);
+        let w = crate::measure_char_for_font(font_id, ch, font_size, is_ahem);
         self.measure_cache.borrow_mut().insert(key, w);
         w
     }

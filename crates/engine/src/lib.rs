@@ -66,7 +66,7 @@ pub use pipeline_budget::{BudgetAdvance, BudgetStep, BudgetedRenderSession};
 pub use preload::*;
 pub use rect_bridge::*;
 pub use text_metrics::{
-    TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_paint, set_char_measure_fn,
+    TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_font, set_char_measure_fn,
     set_text_shape_fn, shape_text_for_paint,
 };
 pub use timer_bridge::*;

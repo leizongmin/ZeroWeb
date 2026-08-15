@@ -694,6 +694,14 @@ impl BrowserApp {
     }
 
     #[cfg(test)]
+    pub fn last_render_primitives_for_test(
+        &self,
+        tab_id: TabId,
+    ) -> Option<&zero_render_foundation::primitive::RenderPrimitives> {
+        self.tabs.last_render(tab_id).map(|render| &render.primitives)
+    }
+
+    #[cfg(test)]
     pub fn last_render_text_for_test(&self, tab_id: TabId) -> Option<String> {
         self.tabs.last_render(tab_id).map(|render| {
             render

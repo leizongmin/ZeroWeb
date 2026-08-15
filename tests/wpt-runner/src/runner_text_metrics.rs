@@ -15,17 +15,18 @@ use zero_render_foundation::font::{
 };
 
 thread_local! {
-    static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
+    // ZRG-2026-08-15：仅保留 loader 指针——font_id 由 zero-engine 显式传入。
+    static MEASURE_CTX: Cell<Option<*const FontLoader>> = const { Cell::new(None) };
 }
 
 /// 全局 paint 测量回调（注册到 `zero-engine`）。读 thread-local `MEASURE_CTX`，
 /// 有则用 `FontLoader::measure_advance`（真实 fontdue advance），无则回退 estimate。
-pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
+pub fn measure_char(font_id: u32, ch: char, font_size: f32, is_ahem: bool) -> f32 {
     if is_ahem {
         return font_size;
     }
     MEASURE_CTX.with(|cell| {
-        if let Some((loader, font_id)) = cell.get() {
+        if let Some(loader) = cell.get() {
             // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效（runner 单线程渲染）。
             unsafe { (*loader).measure_advance(font_id, ch, font_size) }
         } else {
@@ -45,7 +46,7 @@ pub fn shape_text(
     adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
-        let (loader, _) = cell.get()?;
+        let loader = cell.get()?;
         font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
@@ -65,9 +66,9 @@ pub fn shape_text(
 }
 
 /// 在闭包执行期间启用真实字体测量（镜像 browser `with_measure_ctx`）。
-pub fn with_measure_ctx<R>(font_loader: &FontLoader, font_id: u32, f: impl FnOnce() -> R) -> R {
+pub fn with_measure_ctx<R>(font_loader: &FontLoader, _font_id: u32, f: impl FnOnce() -> R) -> R {
     MEASURE_CTX.with(|cell| {
-        cell.set(Some((font_loader as *const FontLoader, font_id)));
+        cell.set(Some(font_loader as *const FontLoader));
         let result = f();
         cell.set(None);
         result

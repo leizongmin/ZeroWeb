@@ -10,7 +10,7 @@ use zero_render_foundation::font::{
     FontSizeAdjustment, OpenTypeFeature, OpenTypeVariation, ShapedGlyph, TextDirection,
 };
 
-static CHAR_MEASURE: OnceLock<fn(char, f32, bool) -> f32> = OnceLock::new();
+static CHAR_MEASURE: OnceLock<fn(u32, char, f32, bool) -> f32> = OnceLock::new();
 /// 宿主提供的文本整形回调签名。
 pub type TextShapeFn = fn(
     &[u32],
@@ -24,7 +24,11 @@ pub type TextShapeFn = fn(
 static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
-pub fn set_char_measure_fn(f: fn(char, f32, bool) -> f32) {
+///
+/// 回调签名 `fn(font_id, ch, font_size, is_ahem)`：`font_id` 为字形实际解析的
+/// 字体（ZRG-2026-08-15 起显式传入——此前用 thread-local primary 字体测量，
+/// 与 @font-face webfont 字形脱节致字距错乱）。
+pub fn set_char_measure_fn(f: fn(u32, char, f32, bool) -> f32) {
     let _ = CHAR_MEASURE.set(f);
 }
 
@@ -40,15 +44,19 @@ pub fn font_variations_enabled() -> bool {
     std::env::var("ZW_FONT_VARIATIONS").as_deref() == Ok("1")
 }
 
-/// Paint 阶段测量单个字符 advance；Ahem 字体固定为 1em 方框宽。
-pub fn measure_char_for_paint(ch: char, font_size: f32, is_ahem: bool) -> f32 {
+/// Paint 阶段按字形实际字体测量单个字符 advance；Ahem 字体固定为 1em 方框宽。
+///
+/// `font_id` 为字形实际解析的字体（webfont/fallback），保证测量与 shaping 同源
+/// （ZRG-2026-08-15：此前用 thread-local primary 字体测所有字形，多字体页面
+/// 字距与 Chrome 差 ~1px/词）。
+pub fn measure_char_for_font(font_id: u32, ch: char, font_size: f32, is_ahem: bool) -> f32 {
     if is_ahem {
         return font_size;
     }
     CHAR_MEASURE
         .get()
         .copied()
-        .map(|measure| measure(ch, font_size, is_ahem))
+        .map(|measure| measure(font_id, ch, font_size, is_ahem))
         .unwrap_or_else(|| estimate_char_width(ch, font_size, is_ahem))
 }
 
@@ -225,9 +233,12 @@ impl AdvanceSource for ShapedAdvanceSource {
             return contextual;
         }
         let unshaped: f32 = shaped.iter().map(|glyph| glyph.unshaped_advance_x).sum();
+        // ZRG-2026-08-15：paint_base 按 shaping 实际字体（font_ids 首 face）测量，
+        // 与 glyph 字形同源——此前用 primary 字体测，webfont run 的布局↔绘制错位。
+        let paint_font_id = font_ids.first().copied().unwrap_or(0);
         let paint_base: f32 = text
             .chars()
-            .map(|ch| measure_char_for_paint(ch, font_size, false))
+            .map(|ch| measure_char_for_font(paint_font_id, ch, font_size, false))
             .sum();
         paint_base_with_contextual_delta(paint_base, contextual, unshaped)
     }
@@ -254,15 +265,15 @@ mod tests {
     #[test]
     fn test_measure_char_ahem_returns_font_size() {
         // Ahem: 任意字符（含 '.'）= font_size（1em 方块）。
-        assert_eq!(measure_char_for_paint('.', 100.0, true), 100.0);
-        assert_eq!(measure_char_for_paint('p', 100.0, true), 100.0);
-        assert_eq!(measure_char_for_paint('.', 16.0, true), 16.0);
+        assert_eq!(measure_char_for_font(0, '.', 100.0, true), 100.0);
+        assert_eq!(measure_char_for_font(0, 'p', 100.0, true), 100.0);
+        assert_eq!(measure_char_for_font(0, '.', 16.0, true), 16.0);
     }
 
     /// 非 Ahem：'.' 远窄于 font_size（真实点宽，非 1em 方块）。
     #[test]
     fn test_measure_char_non_ahem_dot_is_narrow() {
-        let dot_width = measure_char_for_paint('.', 100.0, false);
+        let dot_width = measure_char_for_font(0, '.', 100.0, false);
         assert!(
             dot_width < 100.0,
             "非 Ahem '.' 须窄于 1em（font_size），实际 {dot_width}"

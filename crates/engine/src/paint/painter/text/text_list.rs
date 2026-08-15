@@ -559,7 +559,7 @@ impl super::super::Painter {
                                 rotation: 0.0,
                                 synthetic_italic: false,
                             });
-                            char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                            char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                         }
                         return;
                     }
@@ -641,7 +641,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::LowerAlpha | ListStyleTypeValue::UpperAlpha => {
@@ -678,7 +678,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::LowerRoman | ListStyleTypeValue::UpperRoman => {
@@ -710,7 +710,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
             // R2445：lower-greek / persian 预定义计数器样式（CSS Counter Styles 3 §6）。
@@ -785,7 +785,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
             ListStyleTypeValue::None => {}
@@ -810,7 +810,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
             // R2392：自定义计数器样式（@counter-style）。查注册表 → 按 system 生成 body
@@ -849,7 +849,7 @@ impl super::super::Painter {
                         rotation: 0.0,
                         synthetic_italic: false,
                     });
-                    char_x += self.measure_char_cached(ch, font_size * 0.85, false);
+                    char_x += self.measure_char_cached(default_font_id.0, ch, font_size * 0.85, false);
                 }
             }
         }

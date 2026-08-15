@@ -12,7 +12,9 @@ use zero_render_foundation::font::{
 };
 
 thread_local! {
-    static MEASURE_CTX: Cell<Option<(*const FontLoader, u32)>> = const { Cell::new(None) };
+    // ZRG-2026-08-15：仅保留 loader 指针——font_id 现由 zero-engine 显式传入
+    // （measure_char 签名首参），不再依赖 primary 字体近似。
+    static MEASURE_CTX: Cell<Option<*const FontLoader>> = const { Cell::new(None) };
     /// 跨帧/跨 painter 的 advance 测量缓存（key = (font_id, char, size_bits)）。
     ///
     /// painter 的 measure_cache 随每帧新建清空——CJK 文本页每帧对每个
@@ -24,12 +26,15 @@ thread_local! {
 }
 
 /// 全局 paint 测量回调，由 `BrowserApp::new` 注册到 `zero-engine`。
-pub fn measure_char(ch: char, font_size: f32, is_ahem: bool) -> f32 {
+///
+/// `font_id` 为字形实际解析的字体（webfont/fallback 链成员），按它测量保证与
+/// shaping 同源（ZRG-2026-08-15）。
+pub fn measure_char(font_id: u32, ch: char, font_size: f32, is_ahem: bool) -> f32 {
     if is_ahem {
         return font_size;
     }
     MEASURE_CTX.with(|cell| {
-        if let Some((loader, font_id)) = cell.get() {
+        if let Some(loader) = cell.get() {
             let key = (font_id, ch as u32, font_size.to_bits());
             MEASURE_CACHE.with(|cache| {
                 if let Some(&w) = cache.borrow().get(&key) {
@@ -57,7 +62,7 @@ pub fn shape_text(
     adjustment: FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>> {
     MEASURE_CTX.with(|cell| {
-        let (loader, _) = cell.get()?;
+        let loader = cell.get()?;
         font_ids.first()?;
         // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
         let loader = unsafe { &*loader };
@@ -77,9 +82,9 @@ pub fn shape_text(
 }
 
 /// 在闭包执行期间启用真实字体测量。
-pub fn with_measure_ctx<R>(font_loader: &FontLoader, font_id: u32, f: impl FnOnce() -> R) -> R {
+pub fn with_measure_ctx<R>(font_loader: &FontLoader, _font_id: u32, f: impl FnOnce() -> R) -> R {
     MEASURE_CTX.with(|cell| {
-        cell.set(Some((font_loader as *const FontLoader, font_id)));
+        cell.set(Some(font_loader as *const FontLoader));
         let result = f();
         cell.set(None);
         result
@@ -89,7 +94,7 @@ pub fn with_measure_ctx<R>(font_loader: &FontLoader, font_id: u32, f: impl FnOnc
 /// 若已加载系统字体则在闭包内启用测量，否则直接执行。
 pub fn with_measure_ctx_opt<R>(font_loader: &FontLoader, font_id: Option<u32>, f: impl FnOnce() -> R) -> R {
     match font_id {
-        Some(id) => with_measure_ctx(font_loader, id, f),
+        Some(_) => with_measure_ctx(font_loader, 0, f),
         None => f(),
     }
 }

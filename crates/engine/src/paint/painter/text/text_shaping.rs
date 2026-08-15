@@ -752,7 +752,10 @@ pub(super) fn fragment_glyphs<'a>(
         let generic_contextual = simple_mapping && !advance_eligible && shaped_generic_paint_enabled();
         if generic_contextual {
             for glyph in &mut glyphs {
-                let paint_base = crate::measure_char_for_paint(glyph.code_point, glyph.font_size, false);
+                // ZRG-2026-08-15：paint_base 按字形实际字体测量（glyph.font_id），
+                // 保证与 shaping 同源——此前用 primary 字体测，webfont 字距错乱。
+                let paint_base =
+                    crate::measure_char_for_font(glyph.font_id.0, glyph.code_point, glyph.font_size, false);
                 glyph.advance_x = crate::text_metrics::paint_base_with_contextual_delta(
                     paint_base,
                     glyph.advance_x,

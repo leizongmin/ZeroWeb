@@ -173,7 +173,7 @@ impl super::Painter {
                 rotation: 0.0,
                 synthetic_italic: false,
             });
-            char_x += self.measure_char_cached(ch, font_size, false);
+            char_x += self.measure_char_cached(default_font_id.0, ch, font_size, false);
         }
 
         // R1680：下拉箭头（小灰色向下三角），填补 R1679 select 固有宽预留的 chrome 空间。

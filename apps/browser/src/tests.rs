@@ -3179,3 +3179,204 @@ fn owned_present_waits_for_present_pixels_before_skipping_local_composite() {
         "present 像素未就绪时必须保留本地合成，避免首帧空白"
     );
 }
+
+/// T1（布局↔绘制宽度防线，ZRG-2026-08-15）：paint glyph 位置与 rustybuzz shaping 基准一致。
+///
+/// 场景：独立 WebView + 手动字体 loader（Lato + Liberation 双字体），同一页面混排
+/// `font-family: "Lato"` 与 `sans-serif` 两段含 kerning 对（AVATAR）的文本。回归
+/// 背景：paint 的 per-char advance 经全局 measure 回调用 thread-local 的单一
+/// font_id 测量，与字形实际字体（另一 face）脱节 → 多字体页面字距与 Chrome
+/// （rustybuzz 精确 shaping）差 ~1px/词。断言 sans-serif 段 AVATAR run 的 glyph
+/// 相对 x 序列与测试内 rustybuzz 直算的 Liberation 基准一致（容差 = 索引 ×
+/// 1/64 + ε）。修复前必失败（paint 用 ctx font_id=Lato 测量 Liberation 字形）；
+/// 修复后 pass。
+#[test]
+fn text_glyph_positions_match_shaping_baseline() {
+    use zero_engine::set_char_measure_fn;
+    use zero_render_foundation::font::TextShaper;
+    use zero_render_foundation::font::loader::FontLoader;
+    use zero_render_foundation::primitive::FontId;
+    use zero_webview::{WebView, WebViewConfig};
+
+    const LATO_TTF: &[u8] = include_bytes!("../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let liberation_path = [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    .iter()
+    .find(|p| std::path::Path::new(p).exists())
+    .expect("系统 sans 字体存在");
+
+    // 全局 measure/shape 回调：BrowserApp 启动时注册（browser 实现，走 MEASURE_CTX）。
+    let _app = BrowserApp::new(RenderMode::Cpu);
+
+    // 测试字体 loader：Lato（@font-face 场景）+ 系统 sans（primary）。
+    let mut loader = FontLoader::new();
+    let lato_id = loader.load_font(LATO_TTF).expect("bundled Lato 可加载");
+    loader.register_family_alias("Lato", lato_id);
+    let sans_id = loader
+        .load_font(&std::fs::read(liberation_path).expect("读系统字体"))
+        .expect("系统 sans 可加载");
+    loader.register_family_alias("sans-serif", sans_id);
+
+    let html = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body { margin: 0; font-size: 16px; }
+          p { margin: 0; }
+          p.lato { font-family: "Lato"; }
+          p.sans { font-family: sans-serif; }
+        </style></head><body>
+          <p class="lato">AVATAR Hello World</p>
+          <p class="sans">AVATAR Hello World</p>
+        </body></html>"#;
+
+    let mut wv = WebView::new(WebViewConfig {
+        width: 800,
+        height: 200,
+        ..WebViewConfig::default()
+    });
+    wv.set_font_resolver(loader.build_font_resolver());
+    // 修复前语义：measure 回调的 thread-local ctx font_id 为 Lato——paint 用 Lato
+    // advance 摆所有字形（含 sans-serif 段）；修复后按 glyph.font_id 逐字形测量。
+    let result = crate::text_metrics::with_measure_ctx(&loader, lato_id, || wv.load_html(html, None));
+
+    // 基准：sans-serif 段字形（Liberation）的 rustybuzz shaping——用整段文本
+    // （paint 的 fragment shaping 输入是整段，词内 glyph 上下文与单独 "AVATAR" 不同）。
+    let shaped = TextShaper::new(&loader, Some(FontId(sans_id))).shape_single_line("AVATAR Hello World", 16.0);
+    let glyphs = &result.primitives().glyphs;
+    let text: String = glyphs.iter().filter_map(|g| char::from_u32(g.glyph_id)).collect();
+    let first = text.find("AVATAR").expect("页面应渲染 Lato 段 AVATAR");
+    let second = text[first + 7..].find("AVATAR").map(|p| first + 7 + p);
+    let run_start = second.expect("页面应渲染 sans-serif 段 AVATAR");
+    let run: Vec<&GlyphPrimitive> = glyphs.iter().skip(run_start).take(7).collect();
+    assert_eq!(run.len(), 7, "sans-serif AVATAR run 应有 7 个 glyph");
+    assert!(run.windows(2).all(|w| w[0].y == w[1].y), "sans-serif AVATAR run 应同行");
+    assert!(
+        run.iter().all(|g| g.font_id.0 == sans_id),
+        "sans-serif run 的字形应解析为系统 sans 字体（font_id={sans_id}），实际 {:?}",
+        run.iter().map(|g| g.font_id.0).collect::<Vec<_>>()
+    );
+    // 断言 AVATAR 自身 6 个 glyph 的 advance 与 rustybuzz shaped 累计一致
+    // （run 第 7 个 glyph 是下一 fragment 的首字符，受 fragment 边界 GPOS
+    // x_offset 影响，不属于本测试关注点）。前 6 个 glyph 的 x_offset 为 0。
+    let base_x = run[0].x;
+    let mut expected = 0.0f32;
+    for (i, g) in run.iter().enumerate().skip(1).take(5) {
+        expected += shaped[i - 1].advance_x;
+        let tolerance = 0.05 + 0.02 * i as f32; // 每字符 1/64px 取整上限 + ε
+        assert!(
+            (g.x - base_x - expected).abs() <= tolerance,
+            "sans-serif run glyph#{i} x={} 偏离 Liberation shaping 基准 {expected}（advance 未按字形字体测量）",
+            g.x
+        );
+    }
+}
+
+/// T2（布局↔绘制宽度防线，ZRG-2026-08-15）：换行点与 rustybuzz 基准一致。
+///
+/// 场景：固定宽度盒子内 sans-serif 长英文句。回归背景：布局文本宽度默认走
+/// estimate_char_width 启发式（字母 0.55em 等），与真实 advance 差 15-20% →
+/// 换行点系统性过早、行尾参差。断言每行起始词（按 glyph y 分组）与 rustybuzz
+/// 基准（累计宽度切行）一致。
+///
+/// 修复 A（布局真实 advance）前必失败；修复后 pass。
+#[test]
+fn text_wrap_points_match_shaping_baseline() {
+    let sentence = "The quick brown fox jumps over the lazy dog while the sun sets behind the hills.";
+    let html = format!(
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body {{ margin: 0; font-size: 16px; }}
+          div.box {{ width: 260px; }}
+        </style></head><body>
+          <div class="box"><p style="margin:0">{sentence}</p></div>
+        </body></html>"#
+    );
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (400, 400);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(tab_id);
+    app.load_webview_html(tab_id, &html, None);
+    app.sync_webview_viewport_and_poll(tab_id);
+
+    // 基准：逐词宽度（词间空格宽 0.25em？——不，用 rustybuzz 精确）切行。
+    // 词序列：以空格分词，每词宽 = shaped advance 和 + 空格宽。
+    let mut baseline_loader = zero_render_foundation::font::loader::FontLoader::new();
+    let primary_path = [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    .iter()
+    .find(|p| std::path::Path::new(p).exists())
+    .expect("系统字体存在");
+    let font_data = std::fs::read(primary_path).expect("读系统字体");
+    let font_id = baseline_loader.load_font(&font_data).expect("系统字体可加载");
+    let shaper = zero_render_foundation::font::TextShaper::new(
+        &baseline_loader,
+        Some(zero_render_foundation::primitive::FontId(font_id)),
+    );
+    let words: Vec<&str> = sentence.split(' ').collect();
+    let word_widths: Vec<f32> = words
+        .iter()
+        .map(|w| {
+            shaper
+                .shape_single_line(w, 16.0)
+                .iter()
+                .map(|g| g.advance_x)
+                .sum::<f32>()
+        })
+        .collect();
+    let space_w = shaper.shape_single_line(" ", 16.0)[0].advance_x;
+    // 贪心切行：每行 ≤ 260px。
+    let mut expected_lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    let mut line_w = 0.0f32;
+    for (i, w) in words.iter().enumerate() {
+        let w_w = word_widths[i];
+        let add = if line.is_empty() { 0.0 } else { space_w };
+        if line_w + add + w_w > 260.0 && !line.is_empty() {
+            expected_lines.push(line.clone());
+            line = String::new();
+            line_w = 0.0;
+        }
+        if !line.is_empty() {
+            line.push(' ');
+            line_w += space_w;
+        }
+        line.push_str(w);
+        line_w += w_w;
+    }
+    if !line.is_empty() {
+        expected_lines.push(line);
+    }
+
+    // 实际渲染：按 glyph y 分行的首词。
+    let primitives = app.last_render_primitives_for_test(tab_id).expect("页面已渲染");
+    let glyphs = primitives.glyphs.clone();
+    let mut rows: Vec<(f32, Vec<char>)> = Vec::new();
+    for g in &glyphs {
+        if let Some(ch) = char::from_u32(g.glyph_id) {
+            match rows.last_mut() {
+                Some((y, chars)) if (*y - g.y).abs() < 1.0 => chars.push(ch),
+                _ => rows.push((g.y, vec![ch])),
+            }
+        }
+    }
+    let actual_lines: Vec<String> = rows
+        .iter()
+        .map(|(_, chars)| chars.iter().collect::<String>())
+        .filter(|s| !s.is_empty())
+        .collect();
+    // paint 不输出空格 glyph（advance 计入）；基准行同样去空格后对比。
+    let expected_compact: Vec<String> = expected_lines
+        .iter()
+        .map(|line| line.chars().filter(|c| !c.is_whitespace()).collect())
+        .collect();
+    assert_eq!(
+        actual_lines, expected_compact,
+        "换行点应与 rustybuzz 基准一致（布局 estimate 偏宽导致换行过早）"
+    );
+}
