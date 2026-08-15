@@ -1,0 +1,56 @@
+{
+  "date": "2026-08-16",
+  "round": "R56e",
+  "slice": "M8 path-objects 续作：ensuresubpath 族语义 + clip 相交/空 + ellipse 负半径",
+  "commits": ["eab37ea1 (rebase over 10212c86 并行流)"],
+  "baseline": {
+    "commit": "16f0d885 (R56d HEAD)",
+    "fails": 31,
+    "pass": 172,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "eab37ea1",
+    "fails": 22,
+    "pass": 181
+  },
+  "net": {
+    "fixed": [
+      "2d.path.lineTo.ensuresubpath.1",
+      "2d.path.quadraticCurveTo.ensuresubpath.1/2",
+      "2d.path.bezierCurveTo.ensuresubpath.1/2",
+      "2d.path.arcTo.ensuresubpath.1",
+      "2d.path.clip.empty",
+      "2d.path.clip.intersect",
+      "2d.path.ellipse.basics"
+    ],
+    "regressions": []
+  },
+  "changes": [
+    "flatten_path_opts LineTo：无子路径 = moveTo 语义（不画隐含 (0,0)→目标 连线，spec dom-context-2d-lineto）",
+    "QuadraticCurveTo/BezierCurveTo 无子路径：第一控制点加入为子路径起点（current := (cp1)），曲线照画——初版误读为 no-op，WPT ensuresubpath.2 期望图（整片绿）纠正：退化直线横穿画布必须画",
+    "flatten_arc_to 加 has_subpath 参：无子路径时不画 current→切点1 连线（P1 加入为起点，弧照画）；两个 flatten 变体调用点捕获 pre-call 值（顺序 bug：先置位再传参使守卫恒真，probe 17 段捕获）",
+    "clip_paths: Vec<Path2D> 替换 clip_path: Option——spec 相交语义：clip_applies 全 AND；空路径 clip 交集为空全裁。旧实现空路径 early-return + 多次 clip 覆盖（intersect 泄漏第一区域）。save/restore 同步 clone 列表",
+    "shim ellipse：负半径 → IndexSizeError（-0/0 合法，spec dom-context-2d-ellipse）",
+    "test_clip_no_current_path_no_panic 旧断言「空 clip 后正常绘制」与 spec 相反，更新为全裁"
+  ],
+  "tests": {
+    "canvas_unit": "+4（lineTo moveTo 语义 / 曲线第一控制点起点 / arcTo 无前导线 / clip 空+相邻+重叠三态）",
+    "engine_e2e": "+1 test_ensuresubpath_clip_ellipse_r56e（四族场景）",
+    "updated": "test_clip_no_current_path_no_panic 反 spec 断言修正"
+  },
+  "gates": {
+    "canvas": "793 passed 0 failed",
+    "engine_v8": "2153 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "clipping/line-styles/fillrect/compositing/transformations/drawing-rectangles/reset/gradients/texts 全 0F；shadow 6F 基线既存"
+  },
+  "process_learnings": [
+    "ensuresubpath 语义读题陷阱：标题「first control point is added」初读以为是 no-op；WPT 期望图（.2 整片绿 = 曲线必须画）才是权威——语义拿不准先看期望图",
+    "守卫变量顺序：has_any_subpath = true 必须在 flatten_arc_to(...) 调用之后生效——先置位再传参使 has_subpath 恒 true，probe 输出 17 段（含杂散首段）暴露",
+    "clip 相交语义是 WPT 重点面：旧 Option<Path2D> 覆盖模型对 clip.intersect 必错；Vec + 全 AND 是最小正确模型，save/restore 沿列表 clone 即可"
+  ],
+  "remaining_fails_22": "arcTo 形状族（arcTo.negative/scale/shape.curve2/shape.start/transformation ~5）+ bezier/quadratic shape+scaled ~4 + arc.shape/scale ~4 + roundrect.closed/end.3 + isPointInStroke.scaleddashes + stroke.prune/skew 族"
+}
