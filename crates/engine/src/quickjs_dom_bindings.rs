@@ -47,6 +47,12 @@ thread_local! {
     /// S0q PoC：strong Persistent（GC/weak/finalizer 生命周期验证是后续切片）。
     static NODE_OBJECTS: RefCell<HashMap<u64, Persistent<Value<'static>>>> =
         RefCell::new(HashMap::new());
+    /// S4q EventTarget 监听器存储（镜像 V8 gc.rs LISTENERS 模式）：`(NodeId ffi, 事件类型)`
+    /// → `Vec<(capture 标志, Persistent<Value>)>`——单列表保**全局注册序**（spec 派发按
+    /// 注册序；capture/bubble 混合按 addEventListener 顺序）。监听回调存 strong
+    /// Persistent（跨调用持久；S0q 同款 weak 化延后注记）。
+    static LISTENERS: RefCell<HashMap<(u64, String), Vec<(bool, Persistent<Value<'static>>)>>> =
+        RefCell::new(HashMap::new());
 }
 
 /// 在当前 DOM 源上执行只读操作；无 DOM 源时返 `None`。
@@ -67,6 +73,7 @@ fn with_dom_mut<R>(f: impl FnOnce(&mut Document) -> R) -> Option<R> {
 pub fn reset_quickjs_state() {
     DOM_SOURCE.with(|c| *c.borrow_mut() = None);
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
+    LISTENERS.with(|c| c.borrow_mut().clear());
 }
 
 // ── NodeId ↔ u64(ffi) ↔ f64（JS Number）编解码 ──────────────────────
@@ -483,6 +490,16 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
         "querySelectorAll",
         Function::new(ctx.clone(), element_query_selector_all_method)?,
     )?;
+    // S4q EventTarget（非 enumerable）。
+    obj.prop(
+        "addEventListener",
+        Function::new(ctx.clone(), add_event_listener_method)?,
+    )?;
+    obj.prop(
+        "removeEventListener",
+        Function::new(ctx.clone(), remove_event_listener_method)?,
+    )?;
+    obj.prop("dispatchEvent", Function::new(ctx.clone(), dispatch_event_method)?)?;
     Ok(obj)
 }
 
@@ -687,6 +704,130 @@ fn remove_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<V
         Some(Ok(_)) => child_v,
         _ => Value::new_null(ctx),
     }
+}
+
+// ── S4q EventTarget（addEventListener/removeEventListener/dispatchEvent；镜像 V8 S4）──
+//
+// 派发语义（spec `concept-event-dispatch` PoC 子集）：target 站派发（无 capture/bubble
+// 链——祖先链派发需 R40 式虚站基建，延后续切片）；按注册序触发全部监听器；
+// stopPropagation 未实现（无传播链即无止点）；事件对象为**轻量 plain object**
+//（type/target/currentTarget 三字段——Event 构造器族属 S5q CE 域）。
+
+/// `addEventListener(type, callback, capture?)`（spec `dom-eventtarget-addeventlistener`）。
+/// callback 存 Persistent 到 LISTENERS（`(ffi, type)` 键，注册序 append）。
+/// capture 经第三参 truthiness（Opt<Value> 手动判——options 对象形态延后）。
+fn add_event_listener_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    type_: rquickjs::Coerced<String>,
+    callback: Value<'js>,
+    capture: Opt<Value<'js>>,
+) {
+    let Some(id) = node_id_of(&this.0) else {
+        return;
+    };
+    if !callback.is_function() {
+        return; // spec：callback 非 callable → 忽略（不抛）
+    }
+    let cap = capture.0.is_some_and(|v| v.as_bool() == Some(true));
+    let ffi = encode_node_id(id);
+    LISTENERS.with(|l| {
+        l.borrow_mut()
+            .entry((ffi, type_.0))
+            .or_default()
+            .push((cap, Persistent::save(&ctx, callback)));
+    });
+}
+
+/// `removeEventListener(type, callback, capture?)`（spec
+/// `dom-eventtarget-removeeventlistener`）：按 `(type, callback identity, capture)`
+/// 移除首个匹配（spec 移除「最早注册的等价监听器」；identity 经 JS === 语义近似——
+/// Persistent restore 后同对象比较）。
+fn remove_event_listener_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    type_: rquickjs::Coerced<String>,
+    callback: Value<'js>,
+    capture: Opt<Value<'js>>,
+) {
+    let Some(id) = node_id_of(&this.0) else {
+        return;
+    };
+    let cap = capture.0.is_some_and(|v| v.as_bool() == Some(true));
+    let ffi = encode_node_id(id);
+    LISTENERS.with(|l| {
+        let mut map = l.borrow_mut();
+        let Some(list) = map.get_mut(&(ffi, type_.0.clone())) else {
+            return;
+        };
+        // 首个 (capture 匹配, 同回调) 条目移除。同回调判定：restore 到当前 ctx 后
+        // JS 严格等（值恒等——Persistent 持同一 JS 对象）。
+        for i in 0..list.len() {
+            if list[i].0 == cap
+                && list[i]
+                    .1
+                    .clone()
+                    .restore(&ctx)
+                    .is_ok_and(|stored| values_identical(&stored, &callback))
+            {
+                list.remove(i);
+                break;
+            }
+        }
+        if list.is_empty() {
+            map.remove(&(ffi, type_.0));
+        }
+    });
+}
+
+/// JS 严格等（===）近似：对象恒等（rquickjs Value PartialEq 即 JS SameValue 语义的
+/// 引用等价——同 Persistent 来源恒等成立）。
+fn values_identical<'js>(a: &Value<'js>, b: &Value<'js>) -> bool {
+    a == b
+}
+
+/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatchevent` PoC 子集）：构造
+/// 轻量事件对象（type/target/currentTarget = target 自身）→ 按注册序调全部监听器
+///（回调 this = target；首参 = 事件对象）。返回 true（spec：非 cancelable / 未阻止）。
+/// 监听器执行异常**不中断**派发（spec：回调异常报告后继续后续监听器——此处吞掉，
+/// console 报告延 S5q 基建）。
+fn dispatch_event_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, type_: rquickjs::Coerced<String>) -> bool {
+    let Some(id) = node_id_of(&this.0) else {
+        return true;
+    };
+    let ffi = encode_node_id(id);
+    // 快照监听器（派发中 add/remove 不影响本轮——spec 派发快照语义）。
+    let listeners: Vec<Persistent<Value<'static>>> = LISTENERS
+        .with(|l| l.borrow().get(&(ffi, type_.0.clone())).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect();
+    // 事件对象：轻量 plain object（type/target/currentTarget）。
+    let event = match rquickjs::Object::new(ctx.clone()) {
+        Ok(o) => o,
+        Err(_) => return true,
+    };
+    let _ = event.set("type", type_.0.clone());
+    let target_v: Value = this.0.clone().into_value();
+    let _ = event.set("target", target_v.clone());
+    let _ = event.set("currentTarget", target_v);
+    let event_v: Value = event.into_value();
+    for p in listeners {
+        let Ok(cb) = p.restore(&ctx) else {
+            continue;
+        };
+        let Ok(func) = rquickjs::Function::from_value(cb) else {
+            continue;
+        };
+        // this = target（spec listener 调用 this 为 currentTarget）。Args::this 显式设
+        // this 后 push 事件对象参数，apply 低层 JS_Call（rquickjs 无 call_with_this 高层封装）。
+        let mut args = rquickjs::function::Args::new(ctx.clone(), 1);
+        let _ = args.this(this.0.clone());
+        let _ = args.push_arg(event_v.clone());
+        let _: rquickjs::Result<rquickjs::Value> = args.apply(&func);
+    }
+    true
 }
 
 #[cfg(test)]
@@ -912,6 +1053,33 @@ mod tests {
                 eval_str("__zw_native_element_for_id('main').querySelector('#main') !== null"),
                 "true",
                 "元素级 qs（自身子树作用域，含自身 id 命中）"
+            );
+
+            // S4q EventTarget：add → dispatch（注册序 + this/事件对象）→ remove → 再派发零触发。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__log = [];\
+                     globalThis.__fnA = function (e) { __log.push('a:' + e.type + ':' + (this === __zw_native_element_for_id('main'))); };\
+                     globalThis.__fnB = function (e) { __log.push('b'); };\
+                     __zw_native_element_for_id('main').addEventListener('click', __fnA);\
+                     __zw_native_element_for_id('main').addEventListener('click', __fnB);\
+                     __zw_native_element_for_id('main').dispatchEvent('click'), 1"
+                ),
+                "1"
+            );
+            assert_eq!(
+                eval_str("__log.join('|')"),
+                "a:click:true|b",
+                "注册序派发 + 事件对象 type + this === target"
+            );
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').removeEventListener('click', __fnA);\
+                     __log.length = 0;\
+                     __zw_native_element_for_id('main').dispatchEvent('click'), __log.join('|')"
+                ),
+                "b",
+                "removeEventListener 后仅剩 B（identity 匹配移除）"
             );
 
             // 4. id setter 写 live Document + getter 读回（原生读写闭环）。
