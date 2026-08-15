@@ -325,6 +325,16 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
     if let Ok(f) = Function::new(ctx.clone(), native_create_element_entry) {
         let _ = ctx.globals().set("__zw_native_create_element", f);
     }
+
+    // 4. S3q 全局查询工厂 `__zw_native_query_selector(sel)` / `__zw_native_query_selector_all(sel)`
+    //    （与 V8 版同名同 wire）。文档根下全量选择器引擎（zero_dom query_selector 族，
+    //    消费 tag/`*`/`#id`/.class/[attr]+运算符/伪类/组合器）。
+    if let Ok(f) = Function::new(ctx.clone(), native_query_selector_entry) {
+        let _ = ctx.globals().set("__zw_native_query_selector", f);
+    }
+    if let Ok(f) = Function::new(ctx.clone(), native_query_selector_all_entry) {
+        let _ = ctx.globals().set("__zw_native_query_selector_all", f);
+    }
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -464,6 +474,15 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     obj.prop("parentNode", Accessor::from(parent_node_getter).configurable())?;
     obj.prop("firstChild", Accessor::from(first_child_getter).configurable())?;
     obj.prop("lastChild", Accessor::from(last_child_getter).configurable())?;
+    // S3q 查询族（元素级，非 enumerable）。
+    obj.prop(
+        "querySelector",
+        Function::new(ctx.clone(), element_query_selector_method)?,
+    )?;
+    obj.prop(
+        "querySelectorAll",
+        Function::new(ctx.clone(), element_query_selector_all_method)?,
+    )?;
     Ok(obj)
 }
 
@@ -510,6 +529,70 @@ fn has_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<St
 
 // ── S2q 子树 mutation 族（appendChild/removeChild；insertBy 等后续切片）──
 
+// ── S3q 查询族（spec `dom-parentnode-queryselector` 家族；镜像 V8 factories.rs）──
+
+/// `__zw_native_query_selector(sel)` 入口：文档根下首个匹配 → native 对象；
+/// 无匹配/空/非法选择器 → null（parse 失败返 None 无 panic，V8 版同语义）。
+fn native_query_selector_entry<'js>(ctx: Ctx<'js>, sel: Opt<rquickjs::Coerced<String>>) -> Value<'js> {
+    let Some(sel) = sel.0 else {
+        return Value::new_null(ctx);
+    };
+    let Some(id) = with_dom(|d| d.query_selector(d.root(), sel.0.trim())).flatten() else {
+        return Value::new_null(ctx);
+    };
+    get_or_build_node_value(&ctx, id)
+}
+
+/// `__zw_native_query_selector_all(sel)` 入口：全部匹配 → Array of native 对象
+///（文档序）；空/非法 → 空 Array。
+fn native_query_selector_all_entry<'js>(
+    ctx: Ctx<'js>,
+    sel: Opt<rquickjs::Coerced<String>>,
+) -> rquickjs::Result<rquickjs::Array<'js>> {
+    let ids: Vec<NodeId> = match sel.0 {
+        Some(s) => with_dom(|d| d.query_selector_all(d.root(), s.0.trim())).unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let arr = rquickjs::Array::new(ctx.clone())?;
+    for (i, id) in ids.into_iter().enumerate() {
+        let v = get_or_build_node_value(&ctx, id);
+        arr.set(i, v)?;
+    }
+    Ok(arr)
+}
+
+/// 元素级 `querySelector(sel)` 方法（spec `dom-parentnode-queryselector`，元素子树作用域）。
+fn element_query_selector_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    sel: rquickjs::Coerced<String>,
+) -> Value<'js> {
+    let Some(scope_id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let Some(id) = with_dom(|d| d.query_selector(scope_id, sel.0.trim())).flatten() else {
+        return Value::new_null(ctx);
+    };
+    get_or_build_node_value(&ctx, id)
+}
+
+/// 元素级 `querySelectorAll(sel)` 方法（元素子树作用域，全部匹配 Array）。
+fn element_query_selector_all_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    sel: rquickjs::Coerced<String>,
+) -> rquickjs::Result<rquickjs::Array<'js>> {
+    let Some(scope_id) = node_id_of(&this.0) else {
+        return rquickjs::Array::new(ctx);
+    };
+    let ids: Vec<NodeId> = with_dom(|d| d.query_selector_all(scope_id, sel.0.trim())).unwrap_or_default();
+    let arr = rquickjs::Array::new(ctx.clone())?;
+    for (i, id) in ids.into_iter().enumerate() {
+        let v = get_or_build_node_value(&ctx, id);
+        arr.set(i, v)?;
+    }
+    Ok(arr)
+}
 // ── S2q 续：树读回 getter（childNodes/parentNode/firstChild/lastChild）──
 
 /// `childNodes` getter（spec `dom-node-childnodes`）：全子节点（含 Text/Comment）
@@ -795,6 +878,40 @@ mod tests {
                 eval_str("__el.parentNode === null"),
                 "true",
                 "detached 后 parentNode → null"
+            );
+
+            // S3q 查询族：全局工厂 + 元素级方法（全量选择器引擎）。
+            assert_eq!(eval_str("typeof __zw_native_query_selector"), "function");
+            assert_eq!(
+                eval_str("__zw_native_query_selector('#main') === __zw_native_element_for_id('main')"),
+                "true",
+                "全局 qs 命中身份与 element_for_id 一致（共享身份缓存）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_query_selector('.c') === null"),
+                "true",
+                "class 选择器（'main' 无 class——className setter 已改 'x y'）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_query_selector('div#main') !== null"),
+                "true",
+                "复合选择器（tag#id）"
+            );
+            assert_eq!(eval_str("__zw_native_query_selector('#nope')"), "null", "miss → null");
+            assert_eq!(
+                eval_str("__zw_native_query_selector_all('div').length >= 1"),
+                "true",
+                "qsa 返回 Array（文档序）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_query_selector_all('nope-x').length"),
+                "0",
+                "qsa miss → 空 Array"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').querySelector('#main') !== null"),
+                "true",
+                "元素级 qs（自身子树作用域，含自身 id 命中）"
             );
 
             // 4. id setter 写 live Document + getter 读回（原生读写闭环）。
