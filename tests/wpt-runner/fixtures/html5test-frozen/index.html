@@ -218,7 +218,7 @@
 
 				var pointsPanel = document.createElement('div');
 				pointsPanel.className = 'pointsPanel';
-				pointsPanel.textContent = 'Your browser scores ' + c.score + ' out of ' + c.maximum + ' points';
+				pointsPanel.innerHTML = '<h2><span>Your browser scores</span><strong>' + c.score + '</strong><span>out of ' + c.maximum + ' points</span></h2>';
 				container.appendChild(pointsPanel);
 
 				/* Show box for confirming useragent detection */

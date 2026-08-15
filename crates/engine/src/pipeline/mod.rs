@@ -1263,8 +1263,14 @@ impl RenderPipeline {
             self.cached_doc = Some(doc_rc);
             r
         } else {
-            self.cached_doc = Some(doc_rc);
-            self.repaint_cached_viewport(css)
+            // A structural mutation invalidates the retained layout tree. Repainting it would
+            // omit newly appended descendants, even though they are present in the live DOM.
+            // Rebuild from the post-mutation snapshot until the layout engine has a structural
+            // incremental-update path.
+            let snapshot = html_snapshot
+                .as_deref()
+                .expect("non-value DOM mutation must produce an HTML snapshot");
+            Some(self.render_html(snapshot, css))
         }
         .ok_or("repaint failed after mutations")?;
         Ok((result, html_snapshot, handle_selectors))

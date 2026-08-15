@@ -1431,6 +1431,43 @@ fn render_with_dom_mutations_text_uses_incremental_layout() {
     assert!(!result.layout.snapshot().is_empty(), "layout snapshot empty");
 }
 
+/// Structural DOM mutations must rebuild the layout tree so descendant text is painted.
+#[test]
+fn render_with_dom_mutations_structural_insert_paints_nested_text() {
+    use crate::js_dom_bridge::DomMutation;
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(r#"<html><body><div id="score"></div></body></html>"#, "");
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__score_panel".to_string(),
+            tag: "div".to_string(),
+        },
+        DomMutation::SetInnerHtmlOnHandle {
+            handle: "__score_panel".to_string(),
+            html: "<h2><span>Your browser scores</span><strong>265</strong></h2>".to_string(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#score".to_string(),
+            child_handle: "__score_panel".to_string(),
+        },
+    ];
+
+    let (result, snapshot, _) = pipeline
+        .render_with_dom_mutations(&mutations, "")
+        .expect("structural mutations applied");
+
+    assert!(snapshot.expect("structural mutation snapshot").contains("265"));
+    assert!(
+        result
+            .primitives()
+            .glyphs
+            .iter()
+            .any(|glyph| glyph.glyph_id == '2' as u32),
+        "newly inserted nested text must produce glyphs"
+    );
+}
+
 /// M3-S9：render_with_dom_mutations 的 paint-only 分层——布局无关样式变更
 ///（background-color）复用 cached_layout（不重布局），样式变更后绘制正确。
 #[test]
