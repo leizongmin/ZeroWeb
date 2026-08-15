@@ -831,6 +831,47 @@ mod tests {
         let _ = run_page_scripts(&mut ctx, true, |_u| Err::<String, String>("no external fetch".into()));
     }
 
+    /// The renderer process must retain and paint nested content inserted by a page script.
+    #[test]
+    fn page_script_inner_html_append_updates_webview_frame() {
+        let html = r#"<html><body><div id="score"></div><script>
+            var panel = document.createElement('div');
+            panel.innerHTML = '<h2><span>Your browser scores</span><strong>265</strong></h2>';
+            document.querySelector('#score').appendChild(panel);
+        </script></body></html>"#;
+        let page_url = "https://zero.test/score";
+        let mut worker = RendererJsWorker::spawn(150);
+        worker.set_dom_snapshot(html, page_url);
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig::default());
+        webview.prepare_document_state(page_url);
+        webview.load_html(html, None);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: Some(&mut webview),
+        };
+
+        assert!(run_page_scripts(&mut ctx, true, |_url| Err::<String, String>(
+            "no fetch".into()
+        )));
+        assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
+        assert!(
+            ctx.webview
+                .as_ref()
+                .expect("webview")
+                .last_render()
+                .expect("mutation render")
+                .primitives()
+                .glyphs
+                .iter()
+                .any(|glyph| glyph.glyph_id == '2' as u32),
+            "nested score text must reach the renderer frame"
+        );
+        worker.shutdown();
+    }
+
     fn set_checked_for_test(ctx: &mut PageScriptContext<'_>, selector: &str, dispatch_events: bool) {
         let previous = zero_engine::checked_radio_group_selector(ctx.html, selector);
         assert!(apply_set_checked_without_events(ctx, selector, true));
