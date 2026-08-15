@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-16",
+  "round": "R59",
+  "milestone": "M6 S2q — QuickJS 属性方法族（js-dom goal DC-7）",
+  "commit": "fe0a23d5",
+  "scope": {
+    "modified": ["crates/engine/src/quickjs_dom_bindings.rs（4 方法 + 注册 + PoC 断言）"]
+  },
+  "api_added": {
+    "getAttribute(name)": "missing → JS null（区别空串值——V8 同语义）；name 大小写化由 dom 层 attr_name_effective 处理",
+    "setAttribute(name, value)": "共享 set_reflected_attr（Coerced ToString）",
+    "removeAttribute(name)": "真移除（Document::remove_attribute）——布尔属性 unset 语义，区别 set 空串（镜像 V8 RemoveAttrOnHandle 修正）",
+    "hasAttribute(name)": "Document::has_attribute"
+  },
+  "form_notes": "方法以 Function prop 挂元素对象（非 enumerable——Object.keys 面不变，与 V8 ObjectTemplate 方法注册一致）；具名 fn + This<Object> 模式延续（S0q 经验第三次零摩擦复用）",
+  "tests": {
+    "engine_quickjs": "1419 passed（PoC 扩展全闭环：set → get/has true → remove → has false → get null）",
+    "webview_quickjs": "wiring 测试绿（方法族未加 wiring 断言——element 方法在生产 webview 路径经同一 build_element_object 注册，PoC 已覆盖）",
+    "clippy": "quickjs 矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "m6_cumulative_state": "S0q 骨架（R57）+ S1q 反射属性 8 项（R58/R58b）+ S2q 方法族 4 项（R59）；元素对象现有：3 构造 + 8 反射属性(5 带 setter) + 4 方法 + 工厂 + 身份缓存",
+  "next_slice_candidates": [
+    "S2q 续：textContent setter（清子 + 追加 Text——V8 native_text_content_setter 镜像）",
+    "S2q 续：子树 mutation 族 appendChild/insertBefore/removeChild（需 create_element 工厂配套：JS 侧 createElement 返回 handle-based native 对象）",
+    "S1q 复合对象：attributes（NamedNodeMap 二级身份缓存）",
+    "S0q 续：weak/finalizer 生命周期（rquickjs GC hook 调研）"
+  ]
+}
