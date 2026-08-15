@@ -1178,6 +1178,52 @@ fn test_gpu_full_scene_image() {
     );
 }
 
+/// 渐进绘制下的未就绪图片图元（image_cache 未命中）不得 panic 或索引错位——
+/// 修复前 `prepare_image_resources` 直接跳过缺失项，`DrawOp::Image(i)` 索引与
+/// 资源列表错位，`img_resources[i..i+1]` 越界 panic（compositor GPU 光栅崩溃）。
+/// 修复后占位 None + 绘制跳过；混合就绪/未就绪图元时后者可见、前者安全跳过。
+#[serial]
+#[test]
+fn test_gpu_full_scene_skips_image_primitive_without_cached_data() {
+    let mut renderer = GpuRenderer::new_headless(8, 8).expect("headless renderer");
+    let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
+    let ready_key = crate::image_cache::ImageKey::new(901);
+    image_cache.insert_with_key(
+        ready_key.clone(),
+        crate::image_cache::ImageData::from_rgba(vec![255, 0, 0, 255], 1, 1).unwrap(),
+    );
+    let mut primitives = RenderPrimitives::default();
+    // 未就绪（未命中缓存）图元在前、就绪图元在后——修复前前者使资源列表短 1，
+    // 后者的绘制索引越界。
+    primitives.images.push(crate::primitive::ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+        image_key: crate::image_cache::ImageKey::new(902),
+        clip: None,
+    });
+    primitives.images.push(crate::primitive::ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+        image_key: ready_key,
+        clip: None,
+    });
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(16);
+
+    let rendered = renderer.render_full_scene_gpu(
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        Some(&mut image_cache),
+        &[],
+        &[],
+        &[],
+        &[],
+        1.0,
+    );
+    assert!(rendered, "未就绪图片应跳过绘制而非 panic/整体回退");
+    let pixels = renderer.read_pixels().expect("read pixels");
+    assert_eq!(&pixels[..4], &[255, 0, 0, 255], "就绪图片应正常绘制");
+}
+
 /// Repeated frames reuse GPU image/uniform resources, while changed pixels under
 /// the same ImageKey allocate a new texture and become visible immediately.
 #[serial]

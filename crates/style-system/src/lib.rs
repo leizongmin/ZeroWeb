@@ -2189,10 +2189,8 @@ fn stylesheet_has_has_selector(rules: &[zero_css_parser::ast::Rule]) -> bool {
 
     for rule in rules {
         match rule {
-            zero_css_parser::ast::Rule::Style(style_rule) => {
-                if style_rule.selectors.iter().any(selector_has) {
-                    return true;
-                }
+            zero_css_parser::ast::Rule::Style(style_rule) if style_rule.selectors.iter().any(selector_has) => {
+                return true;
             }
             zero_css_parser::ast::Rule::At(at) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(nested) = &at.body

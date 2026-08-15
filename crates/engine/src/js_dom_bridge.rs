@@ -2019,10 +2019,8 @@ pub fn element_attribute_names_lw(html: &str, mutations: &[DomMutation], selecto
         .collect();
     for m in mutations {
         match m {
-            DomMutation::SetAttr { selector: s, name, .. } if s == selector => {
-                if !names.iter().any(|n| n == name) {
-                    names.push(name.clone());
-                }
+            DomMutation::SetAttr { selector: s, name, .. } if s == selector && !names.iter().any(|n| n == name) => {
+                names.push(name.clone());
             }
             DomMutation::RemoveAttr { selector: s, name } if s == selector => {
                 names.retain(|n| n != name);
@@ -2543,10 +2541,8 @@ pub fn attribute_names_from_mutations(mutations: &[DomMutation], handle: &str) -
     let mut names: Vec<String> = Vec::new();
     for m in mutations {
         match m {
-            DomMutation::SetAttrOnHandle { handle: h, name, .. } if h == handle => {
-                if !names.iter().any(|n| n == name) {
-                    names.push(name.clone());
-                }
+            DomMutation::SetAttrOnHandle { handle: h, name, .. } if h == handle && !names.iter().any(|n| n == name) => {
+                names.push(name.clone());
             }
             DomMutation::RemoveAttrOnHandle { handle: h, name } if h == handle => {
                 names.retain(|n| n != name);

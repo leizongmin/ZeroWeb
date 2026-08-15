@@ -1155,7 +1155,10 @@ impl GpuRenderer {
                     }
                     4 => {
                         for &i in indices {
-                            self.draw_image_pass(pass, uniform_bg, &device, &img_resources[i..i + 1]);
+                            // 纹理未就绪（占位 None）的图元跳过绘制，等下一帧 payload 到达。
+                            if let Some(resource) = img_resources.get(i).and_then(|entry| entry.as_ref()) {
+                                self.draw_image_pass(pass, uniform_bg, &device, std::slice::from_ref(resource));
+                            }
                         }
                     }
                     5 => {
@@ -1373,8 +1376,9 @@ impl GpuRenderer {
                 self.draw_gradient_pass(&mut pass, uniform_bg, &device, &grad_resources);
                 // 4b. Compositor GPU 导入 blit（P0）/ CPU 回退帧 blit（P0-1，跨平台）
                 self.draw_compositor_import_pass(&mut pass, uniform_bg, &device);
-                // 5. Images
-                self.draw_image_pass(&mut pass, uniform_bg, &device, &img_resources);
+                // 5. Images（未就绪占位过滤，见 prepare_image_resources）
+                let ready_image_resources: Vec<_> = img_resources.iter().flatten().cloned().collect();
+                self.draw_image_pass(&mut pass, uniform_bg, &device, &ready_image_resources);
                 // 6-8. Strokes + PathFills + PathStrokes
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &stroke_verts.concat(), "Stroke");
                 self.draw_fill_pass(&mut pass, uniform_bg, &device, &path_fill_verts.concat(), "PathFill");
@@ -1923,12 +1927,17 @@ impl GpuRenderer {
         resources
     }
 
+    /// 逐图元准备 GPU 资源；与 `images` **1:1 对齐**（未就绪图元占位 `None`）。
+    ///
+    /// 渐进绘制下图元可先于解码 payload 到达（image_cache 未命中）——若直接跳过
+    /// 会造成资源列表与 `DrawOp::Image(i)` 索引错位（曾致 `img_resources[i..i+1]`
+    /// 越界 panic）；占位 + 绘制时跳过保证索引恒对位。
     fn prepare_image_resources(
         &mut self,
         images: &[crate::primitive::ImagePrimitive],
         image_cache: Option<&mut ImageCache>,
         scale: f32,
-    ) -> Vec<(Arc<wgpu::BindGroup>, Vec<f32>)> {
+    ) -> Vec<Option<(Arc<wgpu::BindGroup>, Vec<f32>)>> {
         let ic = match image_cache {
             Some(c) => c,
             None => return Vec::new(),
@@ -1937,11 +1946,15 @@ impl GpuRenderer {
         for img in images {
             let image_data = match ic.get(&img.image_key) {
                 Some(d) => d,
-                None => continue,
+                None => {
+                    resources.push(None);
+                    continue;
+                }
             };
             let (iw, ih) = (image_data.width, image_data.height);
             if iw == 0 || ih == 0 {
                 ic.release(&img.image_key);
+                resources.push(None);
                 continue;
             }
 
@@ -1987,7 +2000,7 @@ impl GpuRenderer {
                 l, t, u0, v0, 1.0, 1.0, 1.0, right, t, u1, v0, 1.0, 1.0, 1.0, l, b, u0, v1, 1.0, 1.0, 1.0, right, t,
                 u1, v0, 1.0, 1.0, 1.0, right, b, u1, v1, 1.0, 1.0, 1.0, l, b, u0, v1, 1.0, 1.0, 1.0,
             ];
-            resources.push((bg, verts));
+            resources.push(Some((bg, verts)));
             ic.release(&img.image_key);
         }
         resources

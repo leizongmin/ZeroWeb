@@ -3162,10 +3162,20 @@ fn window_surface_present_smoke() {
 #[test]
 fn gpu_present_is_not_suppressed_by_compositor_owned_present() {
     assert!(BrowserApp::should_skip_local_composite_for_owned_present(
-        true, true, true, false,
+        true, true, true, false, true,
     ));
     assert!(
-        !BrowserApp::should_skip_local_composite_for_owned_present(true, true, true, true),
+        !BrowserApp::should_skip_local_composite_for_owned_present(true, true, true, true, true),
         "the compositor returns a bitmap but does not submit the browser GPU swapchain; GPU must keep presenting locally"
+    );
+}
+
+/// owned-present 跳过本地合成的前提：compositor present 像素已就绪。
+/// 首帧（present 往返未完成）跳过本地合成会整帧空白。
+#[test]
+fn owned_present_waits_for_present_pixels_before_skipping_local_composite() {
+    assert!(
+        !BrowserApp::should_skip_local_composite_for_owned_present(true, true, true, false, false),
+        "present 像素未就绪时必须保留本地合成，避免首帧空白"
     );
 }

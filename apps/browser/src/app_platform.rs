@@ -176,17 +176,26 @@ impl BrowserApp {
     }
 
     /// compositor 尚不能直接提交 browser 的 GPU swapchain；有本地 GPU 时必须继续 present。
+    ///
+    /// present 像素未就绪（首帧/尺寸变化后的 present 往返完成前）时不得跳过本地
+    /// 合成——否则窗口在拿到 compositor present 帧之前整帧空白。
     pub(crate) fn should_skip_local_composite_for_owned_present(
         owned_present: bool,
         present_enabled: bool,
         compositor_healthy: bool,
         local_gpu_present_available: bool,
+        present_pixels_available: bool,
     ) -> bool {
-        owned_present && present_enabled && compositor_healthy && !local_gpu_present_available
+        owned_present
+            && present_enabled
+            && compositor_healthy
+            && !local_gpu_present_available
+            && present_pixels_available
     }
 
-    fn skip_local_composite_for_owned_present(&self) -> bool {
-        if let Some(tab_id) = self.shell.active_tab_id() {
+    fn skip_local_composite_for_owned_present(&self, width: u32, height: u32) -> bool {
+        let active_tab = self.shell.active_tab_id();
+        if let Some(tab_id) = active_tab {
             let scroll = self.tab_scroll_state(tab_id);
             // present 帧的页面像素来自 compositor 文档原点光栅化，不含滚动偏移；
             // 滚动非零时必须回退本地合成（本地光栅偏移是唯一支持滚动的显示路径）。
@@ -194,11 +203,15 @@ impl BrowserApp {
                 return false;
             }
         }
+        let present_ready = active_tab
+            .and_then(|tab_id| self.tabs.compositor_present(tab_id))
+            .is_some_and(|present| present.width == width && present.height == height);
         Self::should_skip_local_composite_for_owned_present(
             crate::compositor_client::owned_present_enabled(),
             crate::compositor_client::present_enabled(),
             self.compositor_status() == crate::compositor_client::CompositorStatus::Healthy,
             self.gpu_renderer.is_some(),
+            present_ready,
         )
     }
 
@@ -252,7 +265,7 @@ impl BrowserApp {
             renderer.clear_image_texture_cache();
         }
         self.last_rendered_tab = active_tab;
-        if self.skip_local_composite_for_owned_present() {
+        if self.skip_local_composite_for_owned_present(width, height) {
             self.forward_compositor_chrome_ui(width, height);
             self.maybe_request_compositor_present(width, height);
             return;
@@ -363,7 +376,7 @@ impl BrowserApp {
             return Some(fb);
         }
 
-        if self.skip_local_composite_for_owned_present() {
+        if self.skip_local_composite_for_owned_present(width, height) {
             self.forward_compositor_chrome_ui(width, height);
             self.maybe_request_compositor_present(width, height);
             let mut fb = zero_render_foundation::surface::FrameBuffer::new(width, height);
