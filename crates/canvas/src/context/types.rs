@@ -1088,6 +1088,8 @@ pub(crate) struct CanvasState {
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
 pub struct CanvasContext {
+    /// R34xx：canvas 色彩空间（getContext({colorSpace})——put/getImageData 转换基准）。
+    pub(crate) color_space: CanvasColorSpace,
     /// 画布宽度。
     pub(crate) width: u32,
     /// 画布高度。
@@ -2009,5 +2011,99 @@ mod tests {
         // span ≈ 0 → should return first stop's color
         let c = g.sample_color(0.0);
         assert_eq!(c.r, 128);
+    }
+}
+
+/// R34xx（color-type/wide-gamut 目录）：canvas 色彩空间（spec CanvasColorSpace——
+/// getContext({colorSpace}) / ImageData({colorSpace}) / getImageData settings）。
+/// 缓冲区字节按 canvas 空间解释；put/get 跨空间转换（CSS Color 4 矩阵 + sRGB EOTF）。
+/// R34xx（color-type/wide-gamut 目录）：canvas 色彩空间。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CanvasColorSpace {
+    /// sRGB（默认）。
+    #[default]
+    Srgb,
+    /// Display P3。
+    DisplayP3,
+}
+
+/// sRGB ↔ Display P3（D65 白点）线性矩阵（CSS Color 4 §predefined color spaces）。
+const SRGB_TO_P3: [[f32; 3]; 3] = [
+    [0.822_462_1, 0.177_538, 0.0],
+    [0.033_194, 0.966_805_8, 0.0],
+    [0.017_083, 0.072_397, 0.910_52],
+];
+const P3_TO_SRGB: [[f32; 3]; 3] = [
+    [1.224_94, -0.224_94, 0.0],
+    [-0.042_057, 1.042_057, 0.0],
+    [-0.019_638, -0.078_636, 1.098_273],
+];
+
+fn srgb_eotf(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn srgb_eotf_inv(c: f32) -> f32 {
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn rgb_to_xyz_matrix(m: &[[f32; 3]; 3], rgb: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * rgb[0] + m[0][1] * rgb[1] + m[0][2] * rgb[2],
+        m[1][0] * rgb[0] + m[1][1] * rgb[1] + m[1][2] * rgb[2],
+        m[2][0] * rgb[0] + m[2][1] * rgb[1] + m[2][2] * rgb[2],
+    ]
+}
+
+impl CanvasColorSpace {
+    /// 解析 CSS 色彩空间名（'srgb'/'display-p3'；未知 → Srgb）。
+    pub fn parse_name(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "display-p3" => CanvasColorSpace::DisplayP3,
+            _ => CanvasColorSpace::Srgb,
+        }
+    }
+
+    /// 单像素 [0,255] RGB → 目标空间 [0,255] RGB（alpha 不变）。
+    pub fn convert_rgb(self, to: CanvasColorSpace, rgb: [u8; 3]) -> [u8; 3] {
+        if self == to {
+            return rgb;
+        }
+        let f = |c: u8| c as f32 / 255.0;
+        let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let decode = |c: f32| srgb_eotf(c);
+        let encode = |c: f32| srgb_eotf_inv(c);
+        let (linear, matrix) = match (self, to) {
+            (CanvasColorSpace::Srgb, CanvasColorSpace::DisplayP3) => {
+                ([decode(f(rgb[0])), decode(f(rgb[1])), decode(f(rgb[2]))], &SRGB_TO_P3)
+            }
+            (CanvasColorSpace::DisplayP3, CanvasColorSpace::Srgb) => {
+                ([decode(f(rgb[0])), decode(f(rgb[1])), decode(f(rgb[2]))], &P3_TO_SRGB)
+            }
+            _ => unreachable!(),
+        };
+        let out = rgb_to_xyz_matrix(matrix, linear);
+        [q(encode(out[0])), q(encode(out[1])), q(encode(out[2]))]
+    }
+
+    /// 整幅 ImageData 字节转换（RGBA 交错；alpha 不变）。
+    pub fn convert_buffer(self, to: CanvasColorSpace, data: &mut [u8]) {
+        if self == to {
+            return;
+        }
+        for px in data.chunks_exact_mut(4) {
+            let [r, g, b] = self.convert_rgb(to, [px[0], px[1], px[2]]);
+            px[0] = r;
+            px[1] = g;
+            px[2] = b;
+        }
     }
 }

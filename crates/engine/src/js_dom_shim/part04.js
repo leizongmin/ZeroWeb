@@ -166,9 +166,14 @@
               if (typeof __zw_canvas_op !== 'function') return null;
               var cw = _zwCanvasDim(sel, handle, 'width', 300);
               var ch = _zwCanvasDim(sel, handle, 'height', 150);
-              var id = __zw_canvas_op('0', 'getContext2d', String(cw), String(ch));
+              var id = __zw_canvas_op('0', 'getContext2d', String(cw), String(ch),
+                (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+                  ? arguments[1].colorSpace : 'srgb');
               if (!id || String(id).charAt(0) === '!') return null;
               var ctx = _zwMakeCtx2d(String(id));
+              // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 浮点转换基准）。
+              ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+                ? arguments[1].colorSpace : 'srgb';
               // R34xx：ctx.canvas 与 getElementById 同 identity（_proxyCache 键 =
               // sel（非 handle）——getElementById/querySelector 走 sel-only 键；
               // 旧 (sel,handle) 键产第二 proxy → 2d.canvas.host.readonly 的

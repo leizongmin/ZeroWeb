@@ -70,6 +70,48 @@ fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Colo
     zero_css_parser::values::parse_color(s.trim()).map(|cv| crate::color_value_to_render(&cv))
 }
 
+/// R34xx（wide-gamut 目录）：`color(display-p3 c1 c2 c3[/ alpha])` 直接取 p3 通道
+///（0-1 或 %；alpha 缺省 1）——p3 画布的 fillStyle 已处画布空间，免 sRGB 二次转换
+///（2d.color.space.p3.fillText 的 color(display-p3 100% 0 0) → (255,0,0)）。
+fn parse_p3_channels(s: &str) -> Option<zero_render_foundation::color::Color> {
+    let t = s.trim();
+    let inner = t.strip_prefix("color(")?.strip_suffix(')')?;
+    let mut parts = inner.split_whitespace();
+    let space = parts.next()?;
+    if !space.eq_ignore_ascii_case("display-p3") {
+        return None;
+    }
+    let mut comps = [0.0f64; 3];
+    let mut alpha = 255u8;
+    let mut i = 0usize;
+    for p in parts {
+        if p.starts_with('/') {
+            let a = p.trim_start_matches('/').trim();
+            if !a.is_empty() {
+                alpha = ((a.parse::<f64>().ok()? * 255.0).round().clamp(0.0, 255.0)) as u8;
+            }
+            continue;
+        }
+        if i >= 3 {
+            return None;
+        }
+        let is_pct = p.ends_with('%');
+        let num: f64 = p.trim_end_matches('%').parse().ok()?;
+        comps[i] = if is_pct { num / 100.0 } else { num };
+        i += 1;
+    }
+    if i < 3 {
+        return None;
+    }
+    let q = |c: f64| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some(zero_render_foundation::color::Color {
+        r: q(comps[0]),
+        g: q(comps[1]),
+        b: q(comps[2]),
+        a: alpha,
+    })
+}
+
 /// R34xx：Canvas 颜色属性 getter 的规范化序列化（spec：opaque → `#rrggbb`，alpha → `rgba(...)`——
 /// 2d.shadow.attributes.shadowColor.valid 断言 'lime' → '#00ff00'、'RGBA(0,255,0,0)' → 'rgba(0, 255, 0, 0)'）。
 fn color_to_canvas_css(c: &zero_render_foundation::color::Color) -> String {
@@ -271,6 +313,8 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             let w = arg(0).trim().parse::<u32>().unwrap_or(300).min(MAX_CANVAS_DIM);
             let h = arg(1).trim().parse::<u32>().unwrap_or(150).min(MAX_CANVAS_DIM);
             let mut ctx = zero_canvas::CanvasContext::new(w, h);
+            // R34xx（color-type 目录）：getContext({colorSpace})——缓冲区解释空间。
+            ctx.set_color_space(zero_canvas::CanvasColorSpace::parse_name(arg(2)));
             // R34xx：注入共享字体加载器（@font-face 字体真文本光栅）。
             ctx.set_font_loader(Some(reg.font_loader.clone()));
             reg.contexts.insert(id, ctx);
@@ -284,6 +328,9 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             let h = arg(1).trim().parse::<u32>().unwrap_or(150).min(MAX_CANVAS_DIM);
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 ctx.resize(w, h);
+                // R34xx：resize 重建 context 丢失字体加载器 → 重新注入（canvas
+                // width/height 设置后 fillText 不再绘制——2d.color.space.p3.fillText）。
+                ctx.set_font_loader(Some(reg.font_loader.clone()));
             }
             "ok".into()
         }
@@ -310,7 +357,13 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         "setFillStyle" => {
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 // R34xx：无效颜色忽略保持旧值（同 setStrokeStyle）。
-                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                // R34xx（wide-gamut）：p3 画布 + color(display-p3 …) → 直取 p3 通道
+                //（已处画布空间）；否则 sRGB 解析 → 画布空间转换。
+                if ctx.color_space_of() == zero_canvas::CanvasColorSpace::DisplayP3
+                    && let Some(c) = parse_p3_channels(arg(0))
+                {
+                    ctx.set_fill_color_raw(c);
+                } else if let Some(color) = try_parse_canvas_color(arg(0)) {
                     ctx.set_fill_color(color);
                 }
             }
@@ -320,7 +373,12 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 // R34xx：无效颜色忽略保持旧值（spec：2d.line.invalid.strokestyle 设
                 // 'nonsense' 后仍用原绿色）。旧实现 parse 失败回落黑色覆盖旧值。
-                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                // R34xx（wide-gamut）：同 setFillStyle 的 color(display-p3) 直取。
+                if ctx.color_space_of() == zero_canvas::CanvasColorSpace::DisplayP3
+                    && let Some(c) = parse_p3_channels(arg(0))
+                {
+                    ctx.set_stroke_color_raw(c);
+                } else if let Some(color) = try_parse_canvas_color(arg(0)) {
                     ctx.set_stroke_color(color);
                 }
             }
@@ -742,11 +800,15 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 .filter_map(|s| s.trim().parse::<u8>().ok())
                 .collect();
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
-                let img = zero_canvas::ImageData {
+                let mut img = zero_canvas::ImageData {
                     width: w,
                     height: h,
                     data,
                 };
+                // R34xx（color-type 目录）：源 ImageData 色彩空间 ≠ canvas → 转换
+                //（putImageData 的 colorSpace 参数——2d.color.type.u8srgb.to.u8p3）。
+                let src_cs = zero_canvas::CanvasColorSpace::parse_name(arg(5));
+                src_cs.convert_buffer(zero_canvas::CanvasContext::color_space_of(ctx), &mut img.data);
                 ctx.put_image_data(&img, dx, dy);
             }
             "ok".into()
@@ -756,17 +818,23 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
         // args[0] = 源 ImageData wire（shim 经源 canvas getImageData 取），后续为目标几何。
         // **已知限制**：固定 source-over（不消费 globalCompositeOperation）；源限 canvas（img decode defer）。
         "drawImage" => {
-            let img = parse_image_data_wire(arg(0));
+            let mut img = parse_image_data_wire(arg(0));
+            // R34xx（color-type 目录）：源位图色彩空间 ≠ canvas → 转换（p3 位图在
+            // srgb 画布——createImageBitmap.p3.rgba.unorm8 的 (255,0,0) → (234,51,35)）。
+            let src_cs = zero_canvas::CanvasColorSpace::parse_name(arg(3));
             let (dx, dy) = (f(1), f(2));
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                src_cs.convert_buffer(ctx.color_space_of(), &mut img.data);
                 ctx.draw_image(&img, dx, dy);
             }
             "ok".into()
         }
         "drawImageScaled" => {
-            let img = parse_image_data_wire(arg(0));
+            let mut img = parse_image_data_wire(arg(0));
+            let src_cs = zero_canvas::CanvasColorSpace::parse_name(arg(5));
             let (dx, dy, dw, dh) = (f(1), f(2), f(3), f(4));
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                src_cs.convert_buffer(ctx.color_space_of(), &mut img.data);
                 ctx.draw_image_with_size(&img, dx, dy, dw, dh);
             }
             "ok".into()
@@ -813,7 +881,11 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 arg(3).trim().parse::<i32>().unwrap_or(0),
             );
             if let Some(ctx) = reg.contexts.get(&hid()) {
-                let img = ctx.get_image_data(x, y, w, h);
+                let mut img = ctx.get_image_data(x, y, w, h);
+                // R34xx（color-type 目录）：请求 colorSpace ≠ canvas → 转换
+                //（getImageData settings.colorSpace——u8p3 画布 srgb 回读）。
+                let req_cs = zero_canvas::CanvasColorSpace::parse_name(arg(4));
+                zero_canvas::CanvasContext::color_space_of(ctx).convert_buffer(req_cs, &mut img.data);
                 let mut out = format!("{}:{};", img.width, img.height);
                 let mut first = true;
                 for b in &img.data {

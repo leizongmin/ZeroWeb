@@ -48,6 +48,7 @@ impl CanvasContext {
             text_baseline: TextBaseline::Alphabetic,
             miter_limit: 10.0,
             direction: TextDirection::Inherit,
+            color_space: CanvasColorSpace::Srgb,
             font_loader: None,
             font_id: None,
             stroke_dedup_mask: None,
@@ -55,6 +56,41 @@ impl CanvasContext {
     }
 
     /// R34xx：注入共享字体加载器（bridge 在 getContext2d 时设置；None = 无字体栈）。
+    /// R34xx（color-type 目录）：设置 canvas 色彩空间（getContext({colorSpace})——
+    /// put/getImageData 的跨空间转换基准；Srgb 默认）。
+    pub fn set_color_space(&mut self, cs: CanvasColorSpace) {
+        self.color_space = cs;
+    }
+
+    /// 直设填充色（不做画布空间转换——调用方已确保颜色处于画布空间；
+    /// color(display-p3 …) 的 p3 通道直取路径）。
+    pub fn set_fill_color_raw(&mut self, color: Color) {
+        self.fill_style = CanvasStyle::Color(color);
+    }
+
+    /// 直设描边色（同上）。
+    pub fn set_stroke_color_raw(&mut self, color: Color) {
+        self.stroke_style = CanvasStyle::Color(color);
+    }
+
+    /// R34xx（wide-gamut 目录）：sRGB 颜色 → 画布空间（fillStyle/strokeStyle/
+    /// shadow 的 CSS 颜色按 sRGB 解析——非 srgb 画布须转换；2d.color.space.p3.to.p3
+    /// 的 rgb(50,100,150) → (62,99,146)）。
+    fn canvas_color(&self, color: Color) -> Color {
+        if self.color_space == CanvasColorSpace::Srgb {
+            return color;
+        }
+        let [r, g, b] = CanvasColorSpace::Srgb.convert_rgb(CanvasColorSpace::DisplayP3, [color.r, color.g, color.b]);
+        Color { r, g, b, a: color.a }
+    }
+
+    /// 读取 canvas 色彩空间（bridge 层转换用）。
+    /// 读取 canvas 色彩空间（bridge 层转换用）。
+    pub fn color_space_of(&self) -> CanvasColorSpace {
+        self.color_space
+    }
+
+    /// 注入共享字体加载器（headless @font-face 真字体光栅）。
     pub fn set_font_loader(&mut self, loader: Option<Arc<Mutex<FontLoader>>>) {
         self.font_loader = loader;
         // 字体栈变化 → 重新解析当前字体。
@@ -926,12 +962,14 @@ impl CanvasContext {
 
     /// 设置填充颜色（便捷方法）。
     pub fn set_fill_color(&mut self, color: Color) {
-        self.fill_style = CanvasStyle::Color(color);
+        // R34xx（wide-gamut 目录）：非 srgb 画布把 sRGB 颜色转换到画布空间存储
+        //（fillStyle 的 CSS 颜色按 sRGB 解析——p3 画布上 rgb(50,100,150) → p3 值）。
+        self.fill_style = CanvasStyle::Color(self.canvas_color(color));
     }
 
     /// 设置描边颜色（便捷方法）。
     pub fn set_stroke_color(&mut self, color: Color) {
-        self.stroke_style = CanvasStyle::Color(color);
+        self.stroke_style = CanvasStyle::Color(self.canvas_color(color));
     }
 
     /// 设置线宽。
@@ -1102,8 +1140,13 @@ impl CanvasContext {
     /// clip/state-stack/style/dash/shadow/text 状态全回默认，等同新建 context 仅尺寸不同）。
     pub fn resize(&mut self, width: u32, height: u32) {
         // 复用 new() 的默认状态（单一权威来源），仅尺寸用入参。
+        // R34xx（wide-gamut 目录）：保留色彩空间（resize 重建后 fillStyle 的
+        // canvas_color 转换与 getImageData 回读仍按画布空间——p3.fillText 的
+        // canvas.width= 后文字颜色/回读正确）。
+        let cs = self.color_space;
         let fresh = CanvasContext::new(width, height);
         *self = fresh;
+        self.color_space = cs;
     }
 
     /// R3254-C8：仅清空 bitmap 像素（替换透明黑），**保留**绘图状态——transferToImageBitmap
@@ -1116,7 +1159,7 @@ impl CanvasContext {
 
     /// 设置阴影颜色。
     pub fn set_shadow_color(&mut self, color: Color) {
-        self.shadow_color = color;
+        self.shadow_color = self.canvas_color(color);
     }
 
     /// 设置阴影模糊半径。负值会被限制为 0。

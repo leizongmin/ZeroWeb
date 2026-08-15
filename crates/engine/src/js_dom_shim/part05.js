@@ -979,6 +979,27 @@
     return n >>> 0;
   }
 
+  // R34xx（color-type 目录）：f16 画布跨色彩空间转换（float 精度——u8 量化前的
+  // srgb↔display-p3；CSS Color 4 矩阵 + sRGB EOTF）。
+  var _zwCsM = {
+    srgbToP3: [[0.8224621, 0.177538, 0], [0.0331941, 0.9668058, 0], [0.0170827, 0.0723974, 0.9105199]],
+    p3ToSrgb: [[1.2249401, -0.2249404, 0], [-0.0420569, 1.0420571, 0], [-0.0196376, -0.0786361, 1.0982735]]
+  };
+  function _zwCsDecode(v) { return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+  function _zwCsEncode(v) { return v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; }
+  // rgb 为 [0,1] 三通道（伽马编码）→ 目标空间（伽马编码）。
+  function _zwCsConvert(csFrom, csTo, rgb) {
+    if (csFrom === csTo) return rgb;
+    var m = (csFrom === 'srgb' && csTo === 'display-p3') ? _zwCsM.srgbToP3 : _zwCsM.p3ToSrgb;
+    var lin = [_zwCsDecode(rgb[0]), _zwCsDecode(rgb[1]), _zwCsDecode(rgb[2])];
+    var out = [
+      m[0][0] * lin[0] + m[0][1] * lin[1] + m[0][2] * lin[2],
+      m[1][0] * lin[0] + m[1][1] * lin[1] + m[1][2] * lin[2],
+      m[2][0] * lin[0] + m[2][1] * lin[1] + m[2][2] * lin[2]
+    ];
+    return [_zwCsEncode(out[0]), _zwCsEncode(out[1]), _zwCsEncode(out[2])];
+  }
+
   // R34xx（filters 目录）：CSS filter list 字符串校验（'none' 或逗号分隔函数列表——
   // ctx.filter 非法串忽略保持旧值；'blur(5px)' 接受）。
   function _zwValidFilterList(s) {
@@ -1253,9 +1274,14 @@
       if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
       if (el._ctx) return el._ctx;
       if (typeof __zw_canvas_op !== 'function') return null;
-      var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height));
+      var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
+        (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+          ? arguments[1].colorSpace : 'srgb');
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
+      // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 画布的浮点转换基准）。
+      el._ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+        ? arguments[1].colorSpace : 'srgb';
       // R34xx：ctx.canvas 只读（spec——赋值忽略；2d.canvas.host.readonly）。
       Object.defineProperty(el._ctx, 'canvas', {
         value: el,
@@ -1769,6 +1795,11 @@
           }
           bm._zwBitmapF16 = raw;
         }
+        // R34xx（color-type 目录）：ImageData 源 → 记录其色彩空间（drawImage 的
+        // p3 位图在 srgb 画布上的转换基准——createImageBitmap.p3.rgba.unorm8）。
+        if (src && src.data && typeof src.colorSpace === 'string') {
+          bm._zwBitmapCs = src.colorSpace;
+        }
         return bm;
       });
     };
@@ -1856,9 +1887,14 @@
     }
     if (this._ctx) return this._ctx;
     if (typeof __zw_canvas_op !== 'function') return null;
-    var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height));
+    var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height),
+      (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+        ? arguments[1].colorSpace : 'srgb');
     if (!id || String(id).charAt(0) === '!') return null;
     this._ctx = _zwMakeCtx2d(String(id));
+    // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 浮点转换基准）。
+    this._ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
+      ? arguments[1].colorSpace : 'srgb';
     // R34xx：OffscreenCanvasRenderingContext2D 独立接口（spec——worker 变体的
     // self.OffscreenCanvasRenderingContext2D + 其 prototype 扩展/覆写生效）。
     // 懒创建（CanvasRenderingContext2D 由 _zwMakeCtx2d 头部确保存在）；prototype
@@ -3351,17 +3387,25 @@
       var chunks = [];
       var iw = img.width | 0;
       var _f16scale = _isF16 ? 255 : 1;
+      // R34xx（color-type 目录）：f16 画布 + 跨空间 ImageData → 浮点转换后 ×255
+      //（u8 量化前——2d.color.type.u8srgb.to.f16p3 的 5 保真往返）。
+      var _needCs = _isF16 && this._cs && img.colorSpace && this._cs !== img.colorSpace;
       for (var r = 0; r < sh; r++) {
         for (var c = 0; c < sw; c++) {
           var si = ((sy + r) * iw + (sx + c)) * 4;
           // R34xx：Float16Array data → 字节（×255，clamp 0-255——put.basic.rgba.float16）。
           var v0 = d[si] * _f16scale, v1 = d[si + 1] * _f16scale;
           var v2 = d[si + 2] * _f16scale, v3 = d[si + 3] * _f16scale;
+          if (_needCs) {
+            var _cv = _zwCsConvert(img.colorSpace, this._cs, [v0, v1, v2]);
+            v0 = _cv[0]; v1 = _cv[1]; v2 = _cv[2];
+          }
           chunks.push(Math.round(v0) + ',' + Math.round(v1) + ',' + Math.round(v2) + ',' + Math.round(v3));
         }
       }
       __zw_canvas_op(h, 'putImageData', String(ox), String(oy),
-        String(sw), String(sh), chunks.join(','));
+        String(sw), String(sh), chunks.join(','),
+        (img && typeof img.colorSpace === 'string') ? img.colorSpace : 'srgb');
     };
     // drawImage（R2799，canvas slice 5）：源 canvas → 本 ctx。3 spec 重载（arg 数 3/5/9）：
     //   drawImage(image, dx, dy) / drawImage(image, dx, dy, dw, dh) /
@@ -3387,7 +3431,8 @@
         var bmh = image.height | 0;
         if (bmw <= 0 || bmh <= 0) return;
         if (a.length === 3) {
-          __zw_canvas_op(h, 'drawImage', image._zwBitmapWire, String(a[1]), String(a[2]));
+          __zw_canvas_op(h, 'drawImage', image._zwBitmapWire, String(a[1]), String(a[2]),
+            image._zwBitmapCs || 'srgb');
           // R34xx：float16 上下文 + float16 位图 → 记录原始浮点像素覆盖层
           //（createImageBitmap.srgb.rgba.float16 越界值往返——u8 缓冲无法存 2/-1）。
           if (this._f16 && image._zwBitmapF16) {
@@ -3395,11 +3440,13 @@
           }
         } else if (a.length === 5) {
           __zw_canvas_op(h, 'drawImageScaled', image._zwBitmapWire,
-            String(a[1]), String(a[2]), String(a[3]), String(a[4]));
+            String(a[1]), String(a[2]), String(a[3]), String(a[4]),
+            image._zwBitmapCs || 'srgb');
         } else if (a.length === 9) {
           __zw_canvas_op(h, 'drawImageSliced', image._zwBitmapWire,
             String(a[1]), String(a[2]), String(a[3]), String(a[4]),
-            String(a[5]), String(a[6]), String(a[7]), String(a[8]));
+            String(a[5]), String(a[6]), String(a[7]), String(a[8]),
+            image._zwBitmapCs || 'srgb');
         }
         return;
       }
@@ -3493,17 +3540,18 @@
         throw _zwDomException('getImageData: zero dimension', 'IndexSizeError');
       }
       // R34xx：负 dims/坐标原样传 host（翻转/越界透明语义在 host）。
+      // R34xx：getImageData(x, y, w, h, settings)——settings（第 5 参）pixelFormat
+      // 'rgba-float16' → Float16Array 归一化值（字节/255）；colorSpace 透传 host
+      // 作跨空间转换（color-type 目录——display-p3 画布 srgb 回读）。
+      var _settings = arguments.length > 4 ? arguments[4] : null;
       var r = String(__zw_canvas_op(h, 'getImageData',
         String(Math.trunc(vx)), String(Math.trunc(vy)),
-        String(tw), String(th)));
+        String(tw), String(th),
+        (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string') ? _settings.colorSpace : 'srgb'));
       if (!r) return null;
       var parts = r.split(';');
       var dims = parts[0].split(':');
       var nums = parts[1] ? parts[1].split(',') : [];
-      // R34xx：getImageData(x, y, w, h, settings)——settings（第 5 参）pixelFormat
-      // 'rgba-float16' → Float16Array 归一化值（字节/255）；colorSpace 原样透传
-      //（像素为当前画布空间，与 raw 字节一致——put.basic.rgba.float16 的纯红往返）。
-      var _settings = arguments.length > 4 ? arguments[4] : null;
       var f16 = !!(_settings && typeof _settings === 'object' && _settings.pixelFormat === 'rgba-float16');
       var cs = (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string') ? _settings.colorSpace : 'srgb';
       var arr;
@@ -3511,6 +3559,9 @@
         arr = new Float16Array(nums.length);
         // R34xx：float16 上下文覆盖层（float16 位图绘制区）→ 原始浮点像素。
         var _ov = this._f16Overlay;
+        // R34xx（color-type 目录）：f16 画布跨空间回读 → 浮点转换（p3→srgb 等——
+        // u8 量化前；2d.color.type.u8p3.to.f16srgb 的 5 保真）。
+        var _needCs2 = this._cs && cs && this._cs !== cs;
         for (var i = 0; i < nums.length; i++) {
           var _px = i / 4 | 0;
           var _pxX = (_px % tw) + (Math.trunc(vx) | 0);
@@ -3521,6 +3572,12 @@
             if (_oi < _ov.data.length) _raw = _ov.data[_oi];
           }
           arr[i] = (_raw !== null) ? _raw : (+nums[i] / 255);
+        }
+        if (_needCs2) {
+          for (var j = 0; j + 3 < arr.length; j += 4) {
+            var _cv2 = _zwCsConvert(this._cs, cs, [arr[j], arr[j + 1], arr[j + 2]]);
+            arr[j] = _cv2[0]; arr[j + 1] = _cv2[1]; arr[j + 2] = _cv2[2];
+          }
         }
       } else {
         arr = new Uint8ClampedArray(nums.length);
