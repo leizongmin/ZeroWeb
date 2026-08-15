@@ -1,0 +1,53 @@
+{
+  "date": "2026-08-16",
+  "round": "R56d",
+  "slice": "M8 path-objects 续作：isPointInPath 族 nonzero 对齐 + fillRule/Path2D/边界/TypeError 语义",
+  "commits": ["16f0d885 (rebase over 6c8df115 并行流)"],
+  "baseline": {
+    "commit": "bd027c98 (R56c HEAD)",
+    "fails": 35,
+    "pass": 168,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "16f0d885",
+    "fails": 31,
+    "pass": 172
+  },
+  "net": {
+    "fixed": ["2d.path.isPointInPath.basic", "2d.path.isPointInPath.edge", "2d.path.isPointInpath.invalid", "2d.path.isPointInpath.multi.path"],
+    "regressions": [],
+    "note": "过程中 bigarc 曾回归（无 MoveTo 直接 arc 的杂散闭合对角线——首切片 A/B 捕获后同轮修复，最终零回归"
+  },
+  "changes": [
+    "is_point_in_path_rule / is_point_in_path_for_rule（CanvasContext）：复用 fill_rule_spans，默认 nonzero 绕组（spec dom-context-2d-ispointinpath）；路径上点算 inside（span 闭区间 + 点到段距离 0 兜底；零长度退化段排除——scale(0,0) 非可逆 CTM 退化路径不命中）",
+    "巨 scale CTM：±Inf 顶点收缩 ±MAX/4 代理（span 覆盖保持，避 inf/inf→NaN 交点）；host scale op 把 ±Inf 钳到 ±f32::MAX（矩阵合成恒等元 0×Inf=NaN 会毒化全部顶点——e2e 与单测差异的根因：单测 scale(f32::MAX) 有限、e2e scale(Number.MAX_VALUE→inf) 触发 NaN）",
+    "无 MoveTo 直接 arc：整圆弧自包含子路径——subpath_start 重置为弧首点（closepath-on-fill 末尾补出的弧末→(0,0) 杂散对角线是 bigarc 的第 17 段）",
+    "host op isPointInPath 加 fillRule（args[2]）；新增 isPointInPathPath op（path id + x,y + fillRule）",
+    "shim isPointInPath：WebIDL union 首参校验（null/undefined/object/string → TypeError）+ CanvasFillRule 枚举校验（'gazonk'/null → TypeError）+ path 形式参数位修正（arg1=x arg2=y arg3=fillRule——初版错把 fillRule 位当 y 坐标）"
+  ],
+  "root_causes": [
+    "旧 is_point_in_path 用 point_in_polygon 奇偶 ray-casting：嵌套同向双矩形（rect+rect）中心 2 穿越判外——spec 默认 nonzero 绕组应命中（basic/multi.path 首断言）",
+    "路径边界点（edge 用例角点/边中点）：扫描线半开穿越计数在角点两条边都取闭端时漏计——span 闭区间 + on-segment 兜底",
+    "scale(Number.MAX_VALUE)：f32 顶点 ±inf → 交点 inf/inf=NaN → span 破裂；且矩阵 multiply 恒等元 0×Inf=NaN 先把 b/f 分量毒化（顶点全 NaN）",
+    "arc 无前置子路径：flatten 初值 subpath_start=(0,0) + closepath-on-fill → 杂散对角线"
+  ],
+  "tests": {
+    "canvas_unit": "+1（test_is_point_in_path_giant_scale_r56d：巨 scale 命中 + 非可逆 CTM 退化不命中）",
+    "wpt": "isPointInPath.basic/winding/edge/invalid/multi.path/bigarc 全 Pass（winding 在 R56c nonzero 光栅后已过）"
+  },
+  "gates": {
+    "canvas": "789 passed 0 failed",
+    "engine_v8": "2152 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles/drawing-rectangles/transformations/reset/fillrect/compositing 全 0F；shadow 6F 基线既存"
+  },
+  "process_learnings": [
+    "矩阵合成恒等元 0×Inf=NaN 是 f32/f64 共同陷阱——单测用 f32::MAX（有限）与 e2e 用 Number.MAX_VALUE（→inf）的差异曾误导定位方向；scale 类 op 在边界钳制是低成本防御",
+    "A/B 对照（全目录 fail 集 diff）在切片内即捕获 bigarc 回归（R56c 基线 vs 当前），无需等跨目录回归——每切片必做",
+    "flatten 子路径起点初值 (0,0) 对「无 MoveTo 直接画」的命令（arc/roundRect）是隐性陷阱——roundRect R56 已修，arc R56d 补齐，模式：自闭合命令须重置 subpath_start 到自身起点"
+  ],
+  "remaining_fails_31": "arc 形状/精度族 ~10（arcTo.shape/scale、bezierCurveTo/quadraticCurveTo shape+scaled、ensuresubpath 族 ~7）+ clip.empty/intersect + roundrect.closed/end.3 + ellipse.basics + stroke.prune/skew 族 + isPointInStroke.scaleddashes"
+}
