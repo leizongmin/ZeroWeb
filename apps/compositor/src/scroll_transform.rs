@@ -1,68 +1,99 @@
-//! RFC 4.2-S2：compositor 侧滚动变换（默认开，`ZW_COMPOSITOR_SCROLL_TRANSFORM=0` 禁用）。
+//! RFC 4.2-S2：compositor 侧滚动变换。
 //!
-//! 在 `GetCompositorFrame` 时将 scroll 烘焙进 RGBA，回读 scroll 归零。
+//! 滚动必须在图元坐标系中完成：front buffer 只包含一个视口，直接平移它会使
+//! 滚动后新露出的区域越界为空。合成器保留最近的绘制快照，并以滚动后的坐标
+//! 重光栅化当前视口。
 
-/// 将 `scroll` 烘焙进 viewport 位图：输出像素 `(x,y)` 采样源 `(x+scroll_x, y+scroll_y)`。
-pub fn bake_scroll_into_rgba(rgba: &[u8], width: u32, height: u32, scroll_x: f32, scroll_y: f32) -> Vec<u8> {
-    let expected = (width as usize).saturating_mul(height as usize).saturating_mul(4);
-    if rgba.len() != expected || expected == 0 {
-        return rgba.to_vec();
-    }
-    if scroll_x == 0.0 && scroll_y == 0.0 {
-        return rgba.to_vec();
-    }
-    let sx = scroll_x.round() as i32;
-    let sy = scroll_y.round() as i32;
-    let w = width as i32;
-    let h = height as i32;
-    let mut out = vec![0u8; expected];
-    for oy in 0..h {
-        for ox in 0..w {
-            let ix = ox + sx;
-            let iy = oy + sy;
-            if ix < 0 || iy < 0 || ix >= w || iy >= h {
-                continue;
-            }
-            let src = ((iy * w + ix) * 4) as usize;
-            let dst = ((oy * w + ox) * 4) as usize;
-            out[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
-        }
-    }
-    out
+use zero_protocol::paint_snapshot::{IpcGradientKind, IpcRect, PaintSnapshotParams};
+
+fn translate_rect(rect: &mut IpcRect, x: f32, y: f32) {
+    rect.x += x;
+    rect.y += y;
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// 返回适用于当前视口的绘制快照。
+///
+/// `scroll_x`/`scroll_y` 是 CSS 像素；文档坐标向反方向平移，使滚动后的文档
+/// 内容落入固定的 viewport backing store。
+// https://drafts.csswg.org/cssom-view/#scrolling
+pub fn paint_for_viewport(paint: &PaintSnapshotParams, scroll_x: f32, scroll_y: f32) -> PaintSnapshotParams {
+    let mut out = paint.clone();
+    let x = -scroll_x;
+    let y = -scroll_y;
 
-    fn solid(w: u32, h: u32, color: [u8; 4]) -> Vec<u8> {
-        let mut v = Vec::with_capacity((w * h * 4) as usize);
-        for _ in 0..w * h {
-            v.extend_from_slice(&color);
+    for fill in &mut out.fills {
+        translate_rect(&mut fill.rect, x, y);
+    }
+    for rect in &mut out.rounded_rects {
+        translate_rect(&mut rect.rect, x, y);
+    }
+    for gradient in &mut out.gradients {
+        translate_rect(&mut gradient.rect, x, y);
+        match &mut gradient.kind {
+            IpcGradientKind::Linear { x0, y0, x1, y1 } => {
+                *x0 += x;
+                *y0 += y;
+                *x1 += x;
+                *y1 += y;
+            }
+            IpcGradientKind::Radial { cx, cy, .. } | IpcGradientKind::Conic { cx, cy, .. } => {
+                *cx += x;
+                *cy += y;
+            }
         }
-        v
     }
-
-    #[test]
-    fn zero_scroll_is_identity() {
-        let src = solid(2, 2, [1, 2, 3, 4]);
-        let out = bake_scroll_into_rgba(&src, 2, 2, 0.0, 0.0);
-        assert_eq!(out, src);
+    for shadow in &mut out.shadows {
+        translate_rect(&mut shadow.rect, x, y);
     }
-
-    #[test]
-    fn vertical_scroll_shifts_pixels_up() {
-        let mut src = solid(2, 4, [0, 0, 0, 255]);
-        // top row red
-        for x in 0..2 {
-            let i = (x * 4) as usize;
-            src[i..i + 4].copy_from_slice(&[255, 0, 0, 255]);
+    for image in &mut out.images {
+        translate_rect(&mut image.rect, x, y);
+        if let Some(clip) = &mut image.clip {
+            translate_rect(clip, x, y);
         }
-        let out = bake_scroll_into_rgba(&src, 2, 4, 0.0, 1.0);
-        // Positive scroll moves content up: old red row 0 leaves the viewport,
-        // output row 0 samples old black row 1, and the bottom row is cleared.
-        assert_eq!(&out[0..4], &[0, 0, 0, 255]);
-        let bottom = ((4 - 1) * 2 * 4) as usize;
-        assert_eq!(&out[bottom..bottom + 4], &[0, 0, 0, 0]);
     }
+    for stroke in &mut out.strokes {
+        stroke.x1 += x;
+        stroke.y1 += y;
+        stroke.x2 += x;
+        stroke.y2 += y;
+    }
+    for path in &mut out.path_fills {
+        for point in path.vertices.chunks_exact_mut(2) {
+            point[0] += x;
+            point[1] += y;
+        }
+    }
+    for path in &mut out.path_strokes {
+        for point in path.vertices.chunks_exact_mut(2) {
+            point[0] += x;
+            point[1] += y;
+        }
+    }
+    for clip in &mut out.clips {
+        translate_rect(&mut clip.rect, x, y);
+    }
+    for transform in &mut out.transforms {
+        translate_rect(&mut transform.rect, x, y);
+        transform.origin_x += x;
+        transform.origin_y += y;
+    }
+    for filter in &mut out.filters {
+        translate_rect(&mut filter.rect, x, y);
+    }
+    for blend in &mut out.blend_modes {
+        translate_rect(&mut blend.rect, x, y);
+    }
+    for glyph in &mut out.glyphs {
+        glyph.x += x;
+        glyph.y += y;
+    }
+
+    // 滚动会让任意文档区域进入视口，不能复用文档原坐标下的局部 dirty rect。
+    out.dirty_rects = vec![IpcRect {
+        x: 0.0,
+        y: 0.0,
+        width: out.viewport_width.max(1) as f32,
+        height: out.viewport_height.max(1) as f32,
+    }];
+    out
 }

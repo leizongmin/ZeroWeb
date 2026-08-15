@@ -196,8 +196,7 @@ impl TabSnapshot {
         if self.compositor_submission != Some(submission)
             || self.compositor_frame.as_ref().is_some_and(|current| {
                 current.surface_id == submission.surface_id
-                    && (current.navigation_epoch, current.frame_id)
-                        >= (submission.navigation_epoch, submission.frame_id)
+                    && (current.navigation_epoch, current.frame_id) > (submission.navigation_epoch, submission.frame_id)
             })
         {
             return false;
@@ -390,6 +389,26 @@ mod tests {
 
         let frame = snap.compositor_frame.as_ref().unwrap();
         assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
+        assert_eq!(snap.image_cache.get(&frame.image_key).unwrap().pixels, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn compositor_frame_accepts_refreshed_pixels_for_the_same_submission() {
+        let mut snap = TabSnapshot {
+            navigation_epoch: 3,
+            ..Default::default()
+        };
+        let submission = CompositorSubmission {
+            surface_id: 41,
+            navigation_epoch: 3,
+            frame_id: 8,
+        };
+        assert!(snap.record_compositor_submission(submission));
+        assert!(snap.commit_compositor_frame(submission, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
+
+        // 滚动不生成新的 renderer 帧；合成器重绘后须能替换相同 submission 的位图。
+        assert!(snap.commit_compositor_frame(submission, 1, 1, vec![0, 0, 255, 255], 0.0, 0.0));
+        let frame = snap.compositor_frame.as_ref().unwrap();
         assert_eq!(snap.image_cache.get(&frame.image_key).unwrap().pixels, [0, 0, 255, 255]);
     }
 

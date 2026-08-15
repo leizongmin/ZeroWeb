@@ -568,21 +568,21 @@ fn compositor_scroll_metadata_round_trips() {
     assert!((frame.scroll_y - 48.0).abs() < f32::EPSILON);
 }
 
-/// RFC 4.2-S2：scroll 烘焙后回读 scroll 归零且像素发生位移。
+/// RFC 4.2-S2：scroll 变换以文档图元重光栅化，不能平移首屏位图。
 #[test]
-fn compositor_scroll_transform_bakes_pixels() {
+fn compositor_scroll_transform_rasterizes_content_beyond_initial_viewport() {
     let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "1")]);
     let frame = PaintSnapshotParams {
         viewport_width: 2,
         viewport_height: 4,
-        document_height: 4.0,
+        document_height: 8.0,
         fills: vec![
             IpcFill {
                 rect: IpcRect {
                     x: 0.0,
                     y: 0.0,
                     width: 2.0,
-                    height: 1.0,
+                    height: 4.0,
                 },
                 color: IpcColor {
                     r: 255,
@@ -594,9 +594,9 @@ fn compositor_scroll_transform_bakes_pixels() {
             IpcFill {
                 rect: IpcRect {
                     x: 0.0,
-                    y: 1.0,
+                    y: 4.0,
                     width: 2.0,
-                    height: 3.0,
+                    height: 4.0,
                 },
                 color: IpcColor {
                     r: 0,
@@ -616,7 +616,7 @@ fn compositor_scroll_transform_bakes_pixels() {
             kind: IpcMessageKind::CompositorSetScroll {
                 surface_id: 3,
                 scroll_x: 0.0,
-                scroll_y: 1.0,
+                scroll_y: 4.0,
             },
         })
         .expect("set scroll");
@@ -625,9 +625,9 @@ fn compositor_scroll_transform_bakes_pixels() {
     let transformed = get_frame(&mut transport, 3, 3, 1, 1);
     assert!((transformed.scroll_x).abs() < f32::EPSILON);
     assert!((transformed.scroll_y).abs() < f32::EPSILON);
-    // scroll_y=1：第 0 行采样原第 1 行（蓝），末行采样越界为透明
+    // scroll_y=4：首屏位图完全越界；仍须重光栅化出文档第 4~7 行的蓝色内容。
     assert_eq!(&transformed.rgba[..4], &[0, 0, 255, 255]);
-    assert_eq!(&transformed.rgba[28..32], &[0, 0, 0, 0]);
+    assert_eq!(&transformed.rgba[28..32], &[0, 0, 255, 255]);
 }
 
 /// RFC 4.3-S2：gpu_image mailbox 经 shm 后端传递像素。
@@ -1182,10 +1182,9 @@ fn compositor_consumes_full_renderer_style_frame() {
     assert_eq!(&frame.rgba[..4], &[0, 128, 255, 255], "全字段帧应正确光栅化");
 }
 
-/// R3285：合成器 GPU 光栅路径的 scroll——readback 后 CPU bake 位移（GPU 光栅输出
-/// 与 CPU 同路径 bake），scroll 归零 + 像素位移正确。
+/// R3285：合成器 GPU 初始光栅后，滚动重绘的 RGBA 回读须正确反映文档坐标。
 #[test]
-fn compositor_gpu_scroll_transform_bakes_pixels() {
+fn compositor_gpu_scroll_transform_rasterizes_scrolled_viewport() {
     let (mut transport, _comp) = spawn_compositor_with_env(&[
         ("ZW_COMPOSITOR_GPU", "1"),
         ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "0"),
@@ -1208,16 +1207,15 @@ fn compositor_gpu_scroll_transform_bakes_pixels() {
     assert!(matches!(ack.kind, IpcMessageKind::Ok));
 
     let frame = get_frame(&mut transport, 3, 9, 4, 1);
-    // bake 后 scroll 归零
-    assert_eq!(frame.scroll_y, 0.0, "bake 后 scroll_y 应归零");
-    // 像素位移：内容上移 8px → (8,0) 处应为原 (0,0) 的内容色
+    assert_eq!(frame.scroll_y, 0.0, "图元重绘后 scroll_y 应归零");
+    // 文档第 8px 仍在原 fill 内，滚动后应位于视口顶端。
     let top = 8 * 4;
     assert_eq!(&frame.rgba[top..top + 3], &[128, 64, 32], "滚动后顶部应显示下方内容");
-    // 底部新露出的 8px 为黑（bake 黑底补，对齐 CPU 路径语义）
+    // 文档末尾后的区域使用正常页面底色，不能再是位图平移留下的透明/黑洞。
     let bottom = (23 * 32 + 16) * 4;
     assert_eq!(
         &frame.rgba[bottom..bottom + 3],
-        &[0, 0, 0],
-        "底部露出应为黑（bake 黑底）"
+        &[255, 255, 255],
+        "底部露出应为页面底色"
     );
 }

@@ -192,7 +192,13 @@ impl BrowserApp {
                 .and_then(|snap| snap.compositor_submission)
             {
                 let scroll = self.tab_scroll_state(tab_id);
-                crate::compositor_client::set_scroll(submission.surface_id, scroll.x, scroll.y);
+                crate::compositor_client::set_scroll(
+                    submission.surface_id,
+                    submission.navigation_epoch,
+                    submission.frame_id,
+                    scroll.x,
+                    scroll.y,
+                );
             }
         }
 

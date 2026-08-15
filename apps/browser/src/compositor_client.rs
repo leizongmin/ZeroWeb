@@ -127,6 +127,8 @@ enum WorkerCommand {
     ReleaseSurface(u64),
     SetScroll {
         surface_id: u64,
+        navigation_epoch: u64,
+        frame_id: u64,
         scroll_x: f32,
         scroll_y: f32,
     },
@@ -209,9 +211,11 @@ impl CommandChannel {
         self.send(WorkerCommand::ReleaseSurface(surface_id))
     }
 
-    fn set_scroll(&self, surface_id: u64, scroll_x: f32, scroll_y: f32) -> bool {
+    fn set_scroll(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64, scroll_x: f32, scroll_y: f32) -> bool {
         self.send(WorkerCommand::SetScroll {
             surface_id,
+            navigation_epoch,
+            frame_id,
             scroll_x,
             scroll_y,
         })
@@ -509,9 +513,11 @@ impl Client {
         }
     }
 
-    fn set_scroll(&self, surface_id: u64, scroll_x: f32, scroll_y: f32) {
+    fn set_scroll(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64, scroll_x: f32, scroll_y: f32) {
         if self.status.load() != CompositorStatus::Disconnected {
-            let _ = self.commands.set_scroll(surface_id, scroll_x, scroll_y);
+            let _ = self
+                .commands
+                .set_scroll(surface_id, navigation_epoch, frame_id, scroll_x, scroll_y);
         }
     }
 
@@ -669,6 +675,7 @@ fn reap_child(child_slot: &Mutex<Option<Child>>) {
 enum ExpectedResponse {
     Result(FrameKey),
     Data(FrameKey),
+    Scroll(FrameKey),
     ReleaseSurface,
     PresentData { page_surface_id: u64 },
 }
@@ -765,6 +772,8 @@ fn process_batch(
             }
             WorkerCommand::SetScroll {
                 surface_id,
+                navigation_epoch,
+                frame_id,
                 scroll_x,
                 scroll_y,
             } => {
@@ -776,7 +785,14 @@ fn process_batch(
                         scroll_y,
                     },
                 })?;
-                outstanding.insert(message_id, ExpectedResponse::ReleaseSurface);
+                outstanding.insert(
+                    message_id,
+                    ExpectedResponse::Scroll(FrameKey {
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                    }),
+                );
             }
             WorkerCommand::RegisterUiSurface(info) => {
                 transport.send(IpcMessage {
@@ -867,6 +883,18 @@ fn process_batch(
                             surface_id,
                             navigation_epoch,
                             frame_id,
+                        },
+                    })?;
+                    outstanding.insert(message_id, ExpectedResponse::Data(expected));
+                }
+                (ExpectedResponse::Scroll(expected), IpcMessageKind::Ok) => {
+                    let message_id = take_message_id(next_message_id);
+                    transport.send(IpcMessage {
+                        id: message_id,
+                        kind: IpcMessageKind::GetCompositorFrame {
+                            surface_id: expected.surface_id,
+                            navigation_epoch: expected.navigation_epoch,
+                            frame_id: expected.frame_id,
                         },
                     })?;
                     outstanding.insert(message_id, ExpectedResponse::Data(expected));
@@ -1063,14 +1091,14 @@ pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Optio
 }
 
 /// RFC 4.2：向 compositor 推送 surface 滚动偏移（异步滚动默认开，Browser 消费回读值）。
-pub fn set_scroll(surface_id: u64, scroll_x: f32, scroll_y: f32) {
+pub fn set_scroll(surface_id: u64, navigation_epoch: u64, frame_id: u64, scroll_x: f32, scroll_y: f32) {
     if !enabled() {
         return;
     }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client
         .get_or_insert_with(Client::start)
-        .set_scroll(surface_id, scroll_x, scroll_y);
+        .set_scroll(surface_id, navigation_epoch, frame_id, scroll_x, scroll_y);
 }
 
 /// 是否启用 compositor 异步滚动（默认开；`ZW_COMPOSITOR_ASYNC_SCROLL=0` 禁用。
@@ -1406,6 +1434,56 @@ mod tests {
                 kind: IpcMessageKind::ReleaseCompositorSurface { surface_id: 44 }
             }]
         ));
+    }
+
+    #[test]
+    fn scroll_ack_requests_and_delivers_the_refreshed_compositor_frame() {
+        let key = FrameKey {
+            surface_id: 44,
+            navigation_epoch: 3,
+            frame_id: 8,
+        };
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut transport = ScriptedTransport {
+            sent: Arc::clone(&sent),
+            responses: VecDeque::from([
+                Ok(IpcMessage {
+                    id: 1,
+                    kind: IpcMessageKind::Ok,
+                }),
+                Ok(data(2, key, 7)),
+            ]),
+        };
+        let completed = CompletedFrameChannel::new(1);
+        let present = PresentFrameChannel::new();
+        let mut next_message_id = 1;
+
+        process_batch(
+            &mut transport,
+            vec![WorkerCommand::SetScroll {
+                surface_id: key.surface_id,
+                navigation_epoch: key.navigation_epoch,
+                frame_id: key.frame_id,
+                scroll_x: 0.0,
+                scroll_y: 320.0,
+            }],
+            &completed,
+            &present,
+            &mut next_message_id,
+            &frame_watchdog(),
+        )
+        .unwrap();
+
+        let sent = sent.lock().unwrap();
+        assert!(matches!(sent[0].kind, IpcMessageKind::CompositorSetScroll { .. }));
+        assert!(matches!(sent[1].kind, IpcMessageKind::GetCompositorFrame { .. }));
+        assert_eq!(
+            completed
+                .try_recv(key.surface_id, key.navigation_epoch, key.frame_id)
+                .unwrap()
+                .rgba[0],
+            7
+        );
     }
 
     #[test]

@@ -55,6 +55,9 @@ struct SurfaceState {
     backing: BackingStoreManager,
     scroll_x: f32,
     scroll_y: f32,
+    rasterized_scroll_x: f32,
+    rasterized_scroll_y: f32,
+    paint: Option<zero_protocol::paint_snapshot::PaintSnapshotParams>,
     image_cache: zero_render_foundation::image_cache::ImageCache,
 }
 
@@ -159,21 +162,20 @@ fn main() {
                 let (w, h) = rasterize::physical_viewport_size(&paint);
 
                 // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
-                let primitives = convert::to_render_primitives(&paint);
                 let dirty_rects: Vec<(f32, f32, f32, f32)> = paint
                     .dirty_rects
                     .iter()
                     .map(|r| (r.x, r.y, r.width, r.height))
                     .collect();
-                let is_partial = !DisplayList::new(primitives.clone(), dirty_rects.clone())
-                    .is_full_viewport(paint.viewport_width.max(1) as f32, paint.viewport_height.max(1) as f32);
-
                 let surface = surfaces.entry(surface_id).or_insert_with(|| SurfaceState {
                     navigation_epoch,
                     frame_id,
                     backing: BackingStoreManager::new(w, h),
                     scroll_x: 0.0,
                     scroll_y: 0.0,
+                    rasterized_scroll_x: 0.0,
+                    rasterized_scroll_y: 0.0,
+                    paint: None,
                     image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
                 });
                 if surface.navigation_epoch != navigation_epoch {
@@ -199,6 +201,17 @@ fn main() {
                     );
                 }
                 surface.backing.resize(w, h);
+
+                let raster_paint = if zero_protocol::compositor_scroll_transform_enabled() {
+                    let scale = rasterize::device_scale_factor(&paint);
+                    scroll_transform::paint_for_viewport(&paint, surface.scroll_x / scale, surface.scroll_y / scale)
+                } else {
+                    (*paint).clone()
+                };
+                let primitives = convert::to_render_primitives(&raster_paint);
+                let is_partial = !zero_protocol::compositor_scroll_transform_enabled()
+                    && !DisplayList::new(primitives.clone(), dirty_rects.clone())
+                        .is_full_viewport(paint.viewport_width.max(1) as f32, paint.viewport_height.max(1) as f32);
 
                 if is_partial {
                     surface.backing.copy_front_to_back();
@@ -233,7 +246,7 @@ fn main() {
                     };
                     if !gpu_ok {
                         rasterize::rasterize_into_back(
-                            &paint,
+                            &raster_paint,
                             &primitives,
                             &font_loader,
                             &mut glyph_cache,
@@ -245,7 +258,7 @@ fn main() {
                     }
                 } else {
                     rasterize::rasterize_into_back(
-                        &paint,
+                        &raster_paint,
                         &primitives,
                         &font_loader,
                         &mut glyph_cache,
@@ -262,6 +275,9 @@ fn main() {
                 surface.image_cache.gc();
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
+                surface.rasterized_scroll_x = surface.scroll_x;
+                surface.rasterized_scroll_y = surface.scroll_y;
+                surface.paint = Some(*paint);
                 tracing::info!(
                     "compositor: surface {surface_id} 帧 #{frame_id} 已光栅化并合成\
                      （epoch={navigation_epoch}，{w}x{h}，fills={}）",
@@ -292,30 +308,48 @@ fn main() {
                 #[cfg(target_os = "linux")]
                 let mut fd_publish: Option<zero_protocol::CompositorFrameDelivery> = None;
                 let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y, gpu_image) =
-                    match surfaces.get(&surface_id) {
+                    match surfaces.get_mut(&surface_id) {
                         Some(surface) => {
+                            if zero_protocol::compositor_scroll_transform_enabled()
+                                && (surface.rasterized_scroll_x != surface.scroll_x
+                                    || surface.rasterized_scroll_y != surface.scroll_y)
+                                && let Some(paint) = surface.paint.clone()
+                            {
+                                let scale = rasterize::device_scale_factor(&paint);
+                                let viewport_paint = scroll_transform::paint_for_viewport(
+                                    &paint,
+                                    surface.scroll_x / scale,
+                                    surface.scroll_y / scale,
+                                );
+                                let primitives = convert::to_render_primitives(&viewport_paint);
+                                // 滚动后的可见区与旧 back buffer 没有可复用的坐标关系；全量重绘。
+                                rasterize::rasterize_into_back(
+                                    &viewport_paint,
+                                    &primitives,
+                                    &font_loader,
+                                    &mut glyph_cache,
+                                    render_thread.as_ref(),
+                                    &mut surface.image_cache,
+                                    surface.backing.back_mut(),
+                                    false,
+                                );
+                                surface.backing.swap();
+                                surface.rasterized_scroll_x = surface.scroll_x;
+                                surface.rasterized_scroll_y = surface.scroll_y;
+                            }
                             let front = surface.backing.front();
                             let mut scroll_x = surface.scroll_x;
                             let mut scroll_y = surface.scroll_y;
-                            let pixel_data = if zero_protocol::compositor_scroll_transform_enabled()
-                                && (scroll_x != 0.0 || scroll_y != 0.0)
-                            {
+                            if zero_protocol::compositor_scroll_transform_enabled() {
                                 scroll_x = 0.0;
                                 scroll_y = 0.0;
-                                scroll_transform::bake_scroll_into_rgba(
-                                    &front.data,
-                                    front.width,
-                                    front.height,
-                                    surface.scroll_x,
-                                    surface.scroll_y,
-                                )
-                            } else {
-                                front.data.clone()
-                            };
+                            }
+                            let pixel_data = front.data.clone();
 
                             #[cfg(target_os = "linux")]
                             let dma_frame: Option<DmaFrameTuple> = {
-                                if zero_protocol::compositor_gpu_texture_export_enabled()
+                                if !zero_protocol::compositor_scroll_transform_enabled()
+                                    && zero_protocol::compositor_gpu_texture_export_enabled()
                                     && zero_protocol::compositor_gpu_image_enabled()
                                     && gpu_enabled
                                     && let Some(gpu) = gpu_renderer.as_ref()
