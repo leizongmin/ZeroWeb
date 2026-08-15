@@ -130,7 +130,7 @@ evidence/r34xx-batch4-m3-oracle）。
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
-| G8 | 第二批新目录 | 🔄 reset/canvas-host/canvas-context/layers/conformance-requirements testharness 面全绿；剩余 = filters 渲染（17）/layers 像素面/color-type+wide-gamut（display-p3）/drawing-images img 加载面——深项记录 |
+| G8 | 第二批新目录 | 🔄 reset 54/canvas-host 66/canvas-context 11/layers 28/conformance 8/global-hdr 10/filters 11（API 表面全绿）/path-objects 141/drawing-images 36（img 面全过）全绿；剩余 = arc 几何 62 + filters colorMatrix 渲染 2 + color-type 2 + wide-gamut 6 + animated.gif 1——深项记录 |
 
 ## 待用户决策清单
 
