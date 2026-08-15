@@ -1,0 +1,52 @@
+{
+  "date": "2026-08-16",
+  "round": "R56c",
+  "slice": "M8 path-objects 续作：nonzero fill rule（方向感知扫描线）+ fillRule 透传 + roundRect 单轴镜像绕组翻转",
+  "commits": ["bd027c98 (rebase over 02eb6510/34df6510 并行流)"],
+  "baseline": {
+    "commit": "6fd7e285 (R56b HEAD)",
+    "fails": 37,
+    "pass": 166,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "bd027c98",
+    "fails": 35,
+    "pass": 168
+  },
+  "net": {
+    "fixed": ["2d.path.fill.overlap", "2d.path.fill.winding.add", "2d.path.fill.winding.evenodd.1"],
+    "regressions": 0,
+    "note": "evenodd.1 为 R56c 初版引入的 arg 索引 bug（shim 无 path 形式 rule 在 args[0]，host 误读 arg(1)），同轮修复后净 +2（37→35F）"
+  },
+  "changes": [
+    "raster.rs fill_rule_spans：交点带方向（段向下 +1 / 向上 −1，屏幕 y 向下），NonZero 按 x 排序累计绕组取非零区间；EvenOdd 保持奇偶配对。三个 fill 消费端（blit_path_to_pixels / blit_path_gradient / host fill）统一经此函数",
+    "FillRule enum pub 导出（context/mod.rs）；CanvasContext::fill_with_rule / fill_path_with_rule / blit_path_to_pixels_rule / blit_path_gradient_rule（默认封装 NonZero 保持兼容）",
+    "roundRect 单轴镜像（恰好一负 w/h）段序反转 reverse_subpath——真浏览器沿参数边方向环绕，镜像矩形与正参数矩形反向（roundrect.winding 实证）；旧偶奇光栅无方向语义不暴露",
+    "host op fill/fillPath 解析 fillRule 串参（\"evenodd\" → EvenOdd）；fill 分支读 args[0]（shim 无 path 形式 rule 在首位）、fillPath 读 args[1]（首参为 path id）",
+    "shim part05 fill(path, fillRule)：WebIDL 可选前置参省略嗅探——ctx.fill(\"evenodd\") 时 rule 落第一参位（typeof path === 'string' && fillRule === undefined → 交换）",
+    "rebase 合并并行流 02eb6520 colorMatrix filter（apply_filter_color 在 blit_path_to_pixels 包装层应用后传入 rule 变体）"
+  ],
+  "root_causes": [
+    "旧偶奇配对（排序后两两成对）对嵌套同向子路径（绕组 ±2）挖假洞：fill.winding.add 外矩形+同向内矩形中心被挖空、fill.overlap 重叠区被挖空且半透明单次 fill 语义破坏",
+    "evenodd.1 调用形式 ctx.fill(\"evenodd\") 经 WebIDL 可选前置参省略把 rule 放在第一参——shim 初版只查第二参 → rule 丢失回落 nonzero → 双矩形 nonzero 填红"
+  ],
+  "tests": {
+    "canvas_raster_unit": "+6（nonzero 嵌套同向/反向挖洞、evenodd 双矩形/嵌套、overlap 单层 alpha 127/128、roundrect 单轴镜像对消[evenodd 同区域反向对两规则都不填——分析修正]）",
+    "engine_shim_unit": "+1 test_fill_rule_passthrough_r56c（evenodd.1/.2 + winding.add + overlap 四场景 e2e，overlap 断言按 _assertPixelApprox 容差 ±1）"
+  },
+  "gates": {
+    "canvas": "788 passed 0 failed",
+    "engine_v8": "2152 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告（含 collapsible_if 修复合并）",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles 0F / drawing-rectangles 0F / transformations 0F / reset 0F / shadow 6F 基线既存（stash 验证 R56b HEAD 同败）"
+  },
+  "process_learnings": [
+    "shim↔host 参数索引需按「实际 wire 形式」核对：同一 op 的有 path / 无 path 两形式参数位不同（fillPath rule=args[1]、fill rule=args[0]），probe hook __zw_canvas_op 实参（join('|') 日志）是最快定位法",
+    "同区域反向矩形对在 nonzero（绕组对消）与 evenodd（穿越计数偶）下都不填——两者区别需用同向双矩形或嵌套对验证（初版测试期望错误，分析修正）",
+    "fill.length=0 是 dispatcher 转发器 function(){}.apply(this, arguments) 的正常 length，非参数丢失信号——定位时应直接 hook wire 层"
+  ],
+  "remaining_fails_35": "arc 形状/精度族 ~12（arcTo.shape/scale、bezierCurveTo.shape、quadraticCurveTo.shape、ensuresubpath 族）+ isPointInPath 族（basic/edge/multi.path——现奇偶规则，可续接 fill_rule_spans 对齐 nonzero）+ clip.empty/intersect + roundrect.closed/end.3 + stroke.prune/skew 族"
+}
