@@ -3032,17 +3032,23 @@
   // 剔除。无匹配 nextSibling（append 到尾 / nextSibling 也是 pending）→ 尾部追加（保守）。
   function _zwOverlayPendingChildNodes(out, sel, parent) {
     if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out;
+    // js-dom M4 R51c：按 parentSel 分桶查询（桶在 _zwHCLiveInvalidate 记账时维护）——旧实现每次
+    // childNodes 读全表扫 pending（testharness 单 turn 数千 subtest 全量重建 → 万级表 × 每读 O(n)
+    // 线性增速，Range-mutations-dataChange 实测 250 次/5s → 1250 次/31s O(n²) 超时）。桶 miss 且
+    // 全局表空则零成本快出。
+    var bucket = _zwPendingByParent.get(sel);
+    if (!bucket || (!bucket.added.length && !bucket.removed.length)) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
-    for (var r = 0; r < _zwPendingRemoved.length; r++) {
-      var rm = _zwPendingRemoved[r];
+    for (var r = 0; r < bucket.removed.length; r++) {
+      var rm = bucket.removed[r];
       for (var ri = res.length - 1; ri >= 0; ri--) {
         if (res[ri] === rm) { res.splice(ri, 1); break; }
       }
     }
     // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
-    for (var a = 0; a < _zwPendingAdded.length; a++) {
-      var nd = _zwPendingAdded[a];
+    for (var a = 0; a < bucket.added.length; a++) {
+      var nd = bucket.added[a];
       if (!nd || !nd.__zwHandle) continue;
       var link = _zwNodeParent[nd.__zwHandle];
       if (!link || link.parentSel !== sel) continue;
@@ -3280,39 +3286,162 @@
   var _zwLiveCollections = [];
   var _zwPendingAdded = [];
   var _zwPendingRemoved = [];
+  // js-dom M4 R51c：pending 表并行 Set——`_zwHCLiveInvalidate` 的 added 分支旧实现每条
+  // mutation 对 `_zwPendingRemoved` **全表 filter 重建**（O(removed) per mutation）；WPT
+  // testharness 单同步 turn 跑数千 subtest（Range-mutations-dataChange ~5000 test × 每 test
+  // setupRangeTests 重建 ~30 节点全入 removed 表）→ O(n²) 数组分配 churn 必然超时。Set 做
+  // O(1) 去重/剔除判定，数组保留作有序迭代（nextSibling 定位/顺序并集依赖序）。
+  var _zwPendingAddedSet = null;
+  var _zwPendingRemovedSet = null;
+  // R51c：pending 按 parentSel 分桶（childNodes overlay 查询用——见 _zwOverlayPendingChildNodes）。
+  // key 为 null（handle 父 mutation）时桶键 '_h:' + parentHandle。
+  var _zwPendingByParent = new Map();
+  // R51c：pending added 按 id 索引（querySelector('#id') host-miss 回落 O(1)；invalidate
+  // 记账时维护——added 入对桶、对冲剔除时同步删）。
+  var _zwPendingAddedById = new Map();
+  function _zwPAIdAdd(nd) {
+    var id = '';
+    try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }
+    if (!id) return;
+    var arr = _zwPendingAddedById.get(id);
+    if (!arr) { arr = []; _zwPendingAddedById.set(id, arr); }
+    if (arr.indexOf(nd) < 0) arr.push(nd);
+  }
+  function _zwPAIdRemove(nd) {
+    var id = '';
+    try { id = nd && nd.id != null ? String(nd.id) : ''; } catch (_e) { id = ''; }
+    if (!id) return;
+    var arr = _zwPendingAddedById.get(id);
+    if (!arr) return;
+    var i = arr.indexOf(nd);
+    if (i >= 0) arr.splice(i, 1);
+    if (!arr.length) _zwPendingAddedById.delete(id);
+  }
+  function _zwPendBucket(sel, handle) {
+    var key = sel ? sel : '_h:' + String(handle == null ? '' : handle);
+    var b = _zwPendingByParent.get(key);
+    // R51c：桶内并行 Set——记账 indexOf 在高频桶（body：每 setup insertBefore 累积）内 O(桶)
+    // 扫描，testharness 数千 iteration 线性增速的另一来源。Set 判重 + 数组保序。
+    if (!b) { b = { added: [], removed: [], addedSet: new Set(), removedSet: new Set() }; _zwPendingByParent.set(key, b); }
+    return b;
+  }
+  function _zwPASet() {
+    if (!_zwPendingAddedSet) {
+      _zwPendingAddedSet = new Set();
+      for (var i = 0; i < _zwPendingAdded.length; i++) _zwPendingAddedSet.add(_zwPendingAdded[i]);
+    }
+    return _zwPendingAddedSet;
+  }
+  function _zwPRSet() {
+    if (!_zwPendingRemovedSet) {
+      _zwPendingRemovedSet = new Set();
+      for (var i = 0; i < _zwPendingRemoved.length; i++) _zwPendingRemovedSet.add(_zwPendingRemoved[i]);
+    }
+    return _zwPendingRemovedSet;
+  }
   function _zwHCCollectSubtree(node, out) {
     if (!node) return;
     out.push(node);
     var h = node.__zwHandle;
     var kids = h ? (_handleChildren[h] || []) : null;
+    // R51c：registry 空（sel 父——appendChild 走 sel 分支不记 registry）→ 回落本 sel 的 pending
+    // 桶 added（identity 同源——同一批 proxy，对冲判定可靠）。递归展开使 remove 子树对冲全部
+    // pending-added（WPT testharness setupRangeTests 每子测试全量重建的 pa 表 O(n²) 膨胀根因）。
+    if ((!kids || !kids.length) && node.__zwSelector) {
+      var b = _zwPendingByParent.get(node.__zwSelector);
+      if (b && b.added.length) {
+        for (var j = 0; j < b.added.length; j++) _zwHCCollectSubtree(b.added[j], out);
+      }
+      return;
+    }
     if (kids) {
       for (var i = 0; i < kids.length; i++) _zwHCCollectSubtree(kids[i], out);
     }
   }
-  function _zwHCLiveInvalidate(addedNodes, removedNodes) {
+  function _zwHCLiveInvalidate(addedNodes, removedNodes, mutSel, mutHandle) {
+    // R51c：全局 removed 表软上限压实——无 __zwSelector 的条目是 handle-only 节点（host 快照
+    // 结构上不可能含它们：快照条目皆有 selector），剔除恒 no-op，纯死数据。WPT testharness 每
+    // subtest 全量重建（Range-mutations dataChange ~5000 subtest × ~30 节点）旧实现无界膨胀。
+    // 512 上限远离正常页面规模（单 turn 数百 mutation 级），溢出时一次性丢弃死条目（O(表)
+    // 摊销 O(1)/mutation）。sel 条目（快照真实节点）保留。
+    if (_zwPendingRemoved.length > 512) {
+      var _cmp = [];
+      for (var c0 = 0; c0 < _zwPendingRemoved.length; c0++) {
+        if (_zwPendingRemoved[c0] && _zwPendingRemoved[c0].__zwSelector) _cmp.push(_zwPendingRemoved[c0]);
+      }
+      _zwPendingRemoved = _cmp;
+      _zwPendingRemovedSet = null; // 惰性重建（_zwPRSet）
+    }
     var addFlat = [], remFlat = [];
     if (removedNodes) for (var r0 = 0; r0 < removedNodes.length; r0++) _zwHCCollectSubtree(removedNodes[r0], remFlat);
     if (addedNodes) for (var a0 = 0; a0 < addedNodes.length; a0++) _zwHCCollectSubtree(addedNodes[a0], addFlat);
+    // R51c：分桶入账（mutSel/mutHandle = mutation 目标父）。removed 先入（同批先删后加语义不变）。
+    if (mutSel != null || mutHandle != null) {
+      var _pb = _zwPendBucket(mutSel, mutHandle);
+      // R51c：桶 removed 压实（同全局表语义——handle-only 死条目丢弃，512 软上限）。
+      if (_pb.removed.length > 512) {
+        var _bc = [];
+        for (var bc = 0; bc < _pb.removed.length; bc++) {
+          if (_pb.removed[bc] && _pb.removed[bc].__zwSelector) _bc.push(_pb.removed[bc]);
+        }
+        _pb.removed = _bc;
+        _pb.removedSet = new Set(_bc);
+      }
+      for (var pb1 = 0; pb1 < remFlat.length; pb1++) {
+        var _pr = remFlat[pb1];
+        if (_pb.addedSet.has(_pr)) {
+          // R51c 消零：曾 pending-added → 对冲（同全局表语义），不记 removed。
+          _pb.addedSet.delete(_pr);
+          var _pai = _pb.added.indexOf(_pr);
+          if (_pai >= 0) _pb.added.splice(_pai, 1);
+          continue;
+        }
+        if (!_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
+      }
+      for (var pb2 = 0; pb2 < addFlat.length; pb2++) {
+        var _pa = addFlat[pb2];
+        if (!_pb.addedSet.has(_pa)) { _pb.added.push(_pa); _pb.addedSet.add(_pa); }
+        if (_pb.removedSet.has(_pa)) {
+          _pb.removedSet.delete(_pa);
+          var _pri = _pb.removed.indexOf(_pa);
+          if (_pri >= 0) _pb.removed.splice(_pri, 1);
+        }
+      }
+    }
     if (remFlat.length) {
+      // R51c：remFlat 局部 Set（remFlat 本身是本批小数组，但 pending 表大——seen 判定走 Set）。
+      var remSet = new Set();
+      for (var rs = 0; rs < remFlat.length; rs++) remSet.add(remFlat[rs]);
+      // R51c：**消零语义**（判定须在剔除 added 之前快照）——节点本是 pending-added（host 快照从未
+      // 见过：createElement 后 append 又 remove 的 handle 节点，WPT testharness 每 subtest 全量重建
+      // 即此模式）→ add+remove 对冲为零，**不入 removed 表**。旧无条件 push 使 removed 表随 subtest
+      // 数线性膨胀（每 subtest 重建丢弃 ~30 个旧 proxy，剔除 no-op 却永久占表）→ body 桶每次
+      // childNodes 读全扫 → Range-mutations dataChange（~5000 subtest）O(n²) 超时。
+      var _wasPA = [];
+      for (var r2 = 0; r2 < remFlat.length; r2++) _wasPA.push(_zwPASet().has(remFlat[r2]));
       var keep = [];
       for (var e0 = 0; e0 < _zwPendingAdded.length; e0++) {
-        var still = true;
-        for (var r1 = 0; r1 < remFlat.length; r1++) if (_zwPendingAdded[e0] === remFlat[r1]) { still = false; break; }
-        if (still) keep.push(_zwPendingAdded[e0]);
+        if (!remSet.has(_zwPendingAdded[e0])) keep.push(_zwPendingAdded[e0]);
+        else { _zwPASet().delete(_zwPendingAdded[e0]); _zwPAIdRemove(_zwPendingAdded[e0]); }
       }
       _zwPendingAdded = keep;
-      for (var r2 = 0; r2 < remFlat.length; r2++) _zwPendingRemoved.push(remFlat[r2]);
+      for (var r3 = 0; r3 < remFlat.length; r3++) {
+        if (_wasPA[r3]) continue; // 曾 pending-added → 对冲消零，不记 removed
+        var _rn = remFlat[r3];
+        if (!_zwPRSet().has(_rn)) { _zwPendingRemoved.push(_rn); _zwPendingRemovedSet.add(_rn); }
+      }
     }
     if (addFlat.length) {
       for (var a1 = 0; a1 < addFlat.length; a1++) {
         var nd0 = addFlat[a1];
         if (!nd0) continue;
-        var seen = false;
-        for (var s0 = 0; s0 < _zwPendingAdded.length; s0++) if (_zwPendingAdded[s0] === nd0) { seen = true; break; }
-        if (!seen) _zwPendingAdded.push(nd0);
-        var rk = [];
-        for (var k0 = 0; k0 < _zwPendingRemoved.length; k0++) if (_zwPendingRemoved[k0] !== nd0) rk.push(_zwPendingRemoved[k0]);
-        _zwPendingRemoved = rk;
+        if (!_zwPASet().has(nd0)) { _zwPendingAdded.push(nd0); _zwPendingAddedSet.add(nd0); _zwPAIdAdd(nd0); }
+        // R51c：removed 剔除不再全表重建——Set 命中才 splice（多数 mutation 不命中，零分配）。
+        if (_zwPendingRemovedSet && _zwPendingRemovedSet.has(nd0)) {
+          var ri = _zwPendingRemoved.indexOf(nd0);
+          if (ri >= 0) _zwPendingRemoved.splice(ri, 1);
+          _zwPendingRemovedSet.delete(nd0);
+        }
       }
     }
     for (var i = 0; i < _zwLiveCollections.length; i++) {
@@ -3584,16 +3713,24 @@
         if (_fragmentHandles[item.__zwHandle] && typeof __zw_append_fragment_children === 'function') {
           if (handle) __zw_append_fragment_children_handle(handle, item.__zwHandle);
           else __zw_append_fragment_children(sel, item.__zwHandle);
+          if (handle) _recordHandleChild(handle, item);
         } else if (handle) {
           __zw_append_child_handle(handle, item.__zwHandle);
+          _recordHandleChild(handle, item);
         } else {
           __zw_append_child(sel, item.__zwHandle);
         }
         added.push(item);
       } else {
         var tn = __zw_create_text(String(item));
-        if (handle) __zw_append_child_handle(handle, tn);
-        else __zw_append_child(sel, tn);
+        if (handle) {
+          __zw_append_child_handle(handle, tn);
+          // R51c：registry 记账（collectSubtree 展开 + childNodes 融合视图依赖）；record 的
+          // addedNodes 保持裸对象形态（原语义，MO identity 不变）。
+          _recordHandleChild(handle, _wrapHandle(tn));
+        } else {
+          __zw_append_child(sel, tn);
+        }
         added.push({ __zwHandle: tn, __zwSelector: '' });
       }
     }

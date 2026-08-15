@@ -960,7 +960,19 @@
     },
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
-      return hit ? _wrapSelector(hit) : null;
+      if (hit) return _wrapSelector(hit);
+      // js-dom M4 R51c：host 快照未命中 → 回落 pending added 扫描（同步 turn 内 append/insert 的
+      // 节点对查询不可见是 testharness mega-case 的系统性破损源：WPT dom/common.js
+      // setupRangeTests 每次开头 `querySelector('#test')` 取旧树 removeChild 重建——pending 旧树
+      // 查不到 → 跳过 remove → 旧 proxy 泄漏进 pending 表 → O(n²)（Range-mutations dataChange
+      // 超时根因）。保守语义：仅 host miss 时回落；`#id` 精确形式（getElementById 同源）。
+      var m = /^#[A-Za-z_][\w-]*$/.exec(String(sel || ''));
+      if (m) {
+        var want = String(sel).slice(1);
+        var arr = _zwPendingAddedById.get(want);
+        if (arr && arr.length) return arr[arr.length - 1];
+      }
+      return null;
     },
     // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
     // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
@@ -2375,6 +2387,22 @@ function _zwUnregisterTextEl(el) {
   for (var i = _zwTextEls.length - 1; i >= 0; i--) {
     if (_zwTextEls[i].el === el) _zwTextEls.splice(i, 1);
   }
+}
+// js-dom M4 R51c：**子树注销**——removeChild(el) 只注销 el 自身的注册文本，el 子树内元素
+//（textContent= 建的本地文本视图）泄漏：WPT testharness 每 subtest `setupRangeTests()` 全量
+//重建（remove testDiv + 重 createElement 6 paras），旧实现每 subtest 泄漏 6 条 `_zwTextEls`
+//条目 → `_zwLocalChildNodes` 全表线性扫 → Range-mutations dataChange（~5000 subtest）O(n²)
+//超时。子树经 el.childNodes 融合视图递归（本函数在 part06 顶层全局作用域，IIFE 私有的
+// _handleChildren 不可达——proxy childNodes getter 已含 registry/overlay 合成）。
+function _zwUnregisterTextSubtree(el) {
+  if (!el) return;
+  _zwUnregisterTextEl(el);
+  try {
+    var kids = el.childNodes;
+    if (kids && kids.length) {
+      for (var i = 0; i < kids.length; i++) _zwUnregisterTextSubtree(kids[i]);
+    }
+  } catch (_e) {}
 }
 // 本地 childNodes（handle 元素无 sel 时读注册表）
 function _zwLocalChildNodes(sel, handle) {

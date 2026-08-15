@@ -258,3 +258,95 @@ fn r51_moved_node_leaves_old_parent_childnodes() {
         "R51：移动后旧父 childNodes 不含（-1）、新父含（0）"
     );
 }
+
+#[test]
+fn r51c_query_selector_falls_back_to_pending_added_by_id() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='real'>R</div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r51c".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // R51c：host 快照未命中（同步 turn 内 append 的节点）→ pending added 按 id 回落。
+    // WPT dom/common.js setupRangeTests 每次开头 querySelector('#test') 取旧树 removeChild——
+    // 无回落则跳过 remove → 旧 proxy 泄漏 → pending 表 O(n²)（dataChange 超时根因）。
+    sandbox
+        .execute(
+            "var el = document.createElement('div');\n\
+             el.id = 'fresh';\n\
+             document.body.appendChild(el);\n\
+             globalThis.__hit = document.querySelector('#fresh') === el;\n\
+             globalThis.__real = document.querySelector('#real') !== null;\n\
+             globalThis.__miss = document.querySelector('#nope') === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hit").unwrap().value,
+        "true",
+        "R51c：同步 turn 内 append 的 #fresh 可被 querySelector 查到（pending 回落）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__real").unwrap().value,
+        "true",
+        "R51c：host 快照命中的 #real 优先（回落不抢占）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__miss").unwrap().value,
+        "true",
+        "R51c：不存在的 id 仍返 null"
+    );
+}
+
+#[test]
+fn r51c_remove_after_append_zeroes_out_pending() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='z'></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r51c2".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // R51c：add→remove 对冲消零——remove 后同 id 查询不应回落到已移除节点（WPT setup 重建
+    // 模式的核心语义：remove 的旧树不得再被 querySelector 捞回）。
+    sandbox
+        .execute(
+            "var el = document.createElement('div');\n\
+             el.id = 'temp';\n\
+             document.body.appendChild(el);\n\
+             document.body.removeChild(el);\n\
+             globalThis.__gone = document.querySelector('#temp') === null;\n\
+             globalThis.__orphan = el.parentNode === null;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__gone").unwrap().value,
+        "true",
+        "R51c：remove 后 pending 对冲——同 id 查询返 null（不复活已移除节点）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__orphan").unwrap().value,
+        "true",
+        "R51c：remove 后 parentNode 为 null"
+    );
+}

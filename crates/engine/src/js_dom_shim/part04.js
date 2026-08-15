@@ -1415,7 +1415,9 @@
             if (child && child.__zwHandle) {
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。
-              if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(child);
+              // R51c：子树注销（child 内元素 textContent= 建的注册文本随整树摘除——防泄漏）。
+              if (typeof _zwUnregisterTextSubtree === 'function') _zwUnregisterTextSubtree(child);
+              else if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(child);
               __zw_remove_handle(child.__zwHandle);
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);

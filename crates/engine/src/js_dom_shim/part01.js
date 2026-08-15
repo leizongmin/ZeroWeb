@@ -1091,7 +1091,7 @@
     // insertAdjacent/textContent= 等 13 处均经此）。集合下次读取时 lazy 重查（_zwHCLiveInvalidate
     // 在 part05 定义，同一 IIFE 作用域；hoisting 使前向引用安全）。
     if (baseRecord && baseRecord.type === 'childList') {
-      _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes);
+      _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes, sel, handle);
       // js-dom M4 R51：同汇流点维护 child→parent 反向链（_zwNodeParent registry 声明于 part01）。
       // added：记父（sel 或 handle，按 mutation 目标）；removed：清链（detached 后 parentNode=null）。
       // fragment flatten 的 addedNodes 已是子节点列表（R47 ceAdded 语义），逐个记录正确。
