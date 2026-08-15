@@ -1,0 +1,31 @@
+{
+  "date": "2026-08-16",
+  "round": "R61",
+  "milestone": "M6 S2q 续 — QuickJS 树读回 getter（js-dom goal DC-7）",
+  "commit": "784aab22",
+  "api_added": {
+    "childNodes": "getter——Array 返回形态（rquickjs Array::new + set(idx, value)；live NodeList/indexed props 语义延 S1q 复合对象域，快照数组与 V8 tests 断言面一致）；children 经 get_or_build_node_value 共享身份缓存包装",
+    "parentNode": "getter——detached/根 → null",
+    "firstChild": "getter——共用 first_last_child_getter helper",
+    "lastChild": "getter——同上"
+  },
+  "poce2e": [
+    "append 后 childNodes.length === 1 且 [0] === appendChild 的 child（身份缓存双向一致）",
+    "child.parentNode === parent（树双向读回一致）",
+    "firstChild/lastChild（单子时同对象）",
+    "remove 后 firstChild → null + child.parentNode → null（detached 语义）"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_quickjs_wiring": "2 passed",
+    "clippy": "quickjs 矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "m6_cumulative": "元素面 = 2 全局工厂 + 13 属性（6 setter：id/className/title/lang/accessKey/textContent）+ 7 getter-only（nodeType/tagName/nodeName/namespaceURI/localName/childNodes/parentNode/firstChild/lastChild）+ 6 方法（get/set/remove/hasAttribute + appendChild/removeChild）；树构建 + 树读回闭环完成",
+  "next": [
+    "S3q 查询族：querySelector/querySelectorAll/getElementById 原生（消费 zero_dom 选择器引擎）——元素可达性大增",
+    "S4q EventTarget + DOMException 基建（补 appendChild DomError→DOMException 对齐）",
+    "S1q 复合对象 attributes/classList（二级身份缓存）"
+  ]
+}
