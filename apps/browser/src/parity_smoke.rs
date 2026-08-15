@@ -302,12 +302,35 @@ impl ParitySmoke {
                 let baseline_frame_id = app.parity_compositor_frame_id(tab_id);
                 app.sync_webview_viewport();
                 let settle_deadline = Instant::now() + Duration::from_secs(2);
+                // 先等至少一帧推进（视口重推触发缓存重发布）。
                 while app.parity_compositor_frame_id(tab_id) <= baseline_frame_id {
                     if Instant::now() > settle_deadline {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(5));
                     app.poll_tab_fetch();
+                }
+                // 再等帧序列静止：缓存重发布是「解码前」的过渡帧，渐进解码的
+                // final render（含图片 payload）会继续推进帧号——捕获第一个
+                // 推进帧会拍到缺图过渡帧（#pic 全白竞态）。帧号连续三次采样
+                // （每次 ~100ms）不再前进才算稳定（skill 稳定帧契约：加载完成
+                // + 采样一致；宽窗口吸收 resize 触发的重新布局/重解码管线）。
+                let mut quiescent_polls = 0;
+                while quiescent_polls < 3 {
+                    std::thread::sleep(Duration::from_millis(50));
+                    app.poll_tab_fetch();
+                    let before = app.parity_compositor_frame_id(tab_id);
+                    std::thread::sleep(Duration::from_millis(50));
+                    app.poll_tab_fetch();
+                    let after = app.parity_compositor_frame_id(tab_id);
+                    if before == after {
+                        quiescent_polls += 1;
+                    } else {
+                        quiescent_polls = 0;
+                    }
+                    if Instant::now() > settle_deadline {
+                        break;
+                    }
                 }
                 let candidate = app.render_full_scene_gpu_capture(app.physical_size.0, app.physical_size.1)?;
                 if visible_page(&candidate, page_region(app, &candidate))? {

@@ -73,3 +73,25 @@
   `bash tests/wpt-runner/scripts/sync-imported-resources.sh`（幂等补缺）。
 - 无人值守长命令一律走 `make test`/`make reftest`/test-guard 包裹（OOM 防护）。
 - 冒烟/parity 在 WSLg 需 `WINIT_UNIX_BACKEND=x11`（Wayland CSD/sctk_adwaita 会挂启动）。
+
+## 追加（2026-08-15 下午）：parity #pic 缺图的完整根因链与部分修复
+
+parity 采集（basic-function 场景）`#pic` 区域 100% diff 的逐层排查结论：
+
+1. **不是**最初假设的「过期采纳位图」——settle 循环帧号正常推进、采纳位图为最新。
+2. 采纳位图内容**竞态**：约半数运行含图片、半数缺图（转储位图像素证实）。
+3. 竞态源头：`sync_webview_viewport` → renderer `SetViewport` →
+   `try_republish_cached()` 立即重发布——该帧是「解码前」过渡帧；图片 final render
+   随后到达与否取决于时序，且 `WebView::resize` 同尺寸也会**重建 RenderPipeline**
+   （重解析+图片重解码，解码完成不保证触发重绘）——一旦回归到缺图帧可能永久停留。
+4. 捕获侧 settle 判据「等第一个推进帧」恰好拍到过渡帧。
+
+已落地修复（将 0% 通过率提升到 ~50%，且都属原则正确）：
+
+- `parity_smoke.rs` settle 判据改为**帧序列静止**（帧号连续 3 次采样不前进，每次
+  ~100ms 窗口），符合 skill 证据契约的「加载完成 + 采样一致」。
+- `webview.rs` `resize` **同尺寸 no-op**：消除同视口重推导致的 Pipeline 重建回归。
+
+**残余竞态（renderer 图片管线，待独立立项）**：load 期「图片解码完成 → 触发重绘」
+的时序仍不确定——卡死运行中图片帧从不落地。需要 renderer 侧探针定位解码完成事件
+与 repaint 触发链（导航流的 image batch 机制 vs resize/republish 路径）。
