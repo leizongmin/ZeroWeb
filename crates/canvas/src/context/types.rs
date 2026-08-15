@@ -989,7 +989,7 @@ fn sample_gradient_stops(stops: &[GradientStop], offset: f32, oklab: bool) -> Co
     // R34xx：先按 offset 稳定排序（spec：color stops sorted by offset——添加序可能乱序，
     // 0.75 插在 0.5 中间会破坏同 offset 组连续性）；同 offset 保持添加序（稳定排序）。
     let mut sorted: Vec<&GradientStop> = stops.iter().collect();
-    sorted.sort_by(|a, b| a.offset.partial_cmp(&b.offset).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| a.offset.total_cmp(&b.offset));
     // R34xx：同 offset 组（spec：同 offset 多个 stop，最后添加者生效）——插值对 =
     // (前组最后, 后组第一)（2d.gradient.interpolate.overlap：t=0.245 用 0.25 组第一蓝、
     // t=0.255 用 0.25 组最后黄——Skia 相邻对语义）。

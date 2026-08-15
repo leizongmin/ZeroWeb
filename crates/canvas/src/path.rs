@@ -385,7 +385,18 @@ impl Path2D {
                     let (cx, cy, radius, start_angle, end_angle) = (*cx, *cy, *radius, *start_angle, *end_angle);
                     // R34xx：anticlockwise 方向（canvas y 向下：角度递增 = 顺时针，递减 = 逆时针）。
                     let dir = if *anticlockwise { -1.0 } else { 1.0 };
-                    let angle_span = (end_angle - start_angle).abs() * dir;
+                    // R34xx：角度归一化（spec arc 算法）——|span| ≥ 2π → 整圆；
+                    // 否则 mod 2π。旧实现原样展平 >2π 角度 → 多边形自交多次包裹，
+                    // 非零填充规则下包裹区（偶绕数）成洞（2d.path.arc.angle.3-6）。
+                    let raw_span = end_angle - start_angle;
+                    let span = if !*anticlockwise && raw_span >= std::f32::consts::TAU {
+                        std::f32::consts::TAU
+                    } else if *anticlockwise && raw_span <= -std::f32::consts::TAU {
+                        -std::f32::consts::TAU
+                    } else {
+                        raw_span % std::f32::consts::TAU
+                    };
+                    let angle_span = span * dir;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut px = cx + radius * start_angle.cos();
                     let mut py = cy + radius * start_angle.sin();

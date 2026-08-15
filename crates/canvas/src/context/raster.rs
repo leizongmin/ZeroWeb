@@ -124,7 +124,7 @@ fn sat(c: Rgb) -> f32 {
 /// §10.3 SetSat——设饱和度为 s（保持各通道大小序，min→0/mid→插值/max→s）。
 fn set_sat(c: Rgb, s: f32) -> Rgb {
     let mut idx = [0usize, 1, 2];
-    idx.sort_by(|&a, &b| c[a].partial_cmp(&c[b]).unwrap_or(std::cmp::Ordering::Equal));
+    idx.sort_by(|&a, &b| c[a].total_cmp(&c[b]));
     let (imin, imid, imax) = (idx[0], idx[1], idx[2]);
     let (cmin, cmid, cmax) = (c[imin], c[imid], c[imax]);
     let mut out = c;
@@ -299,7 +299,7 @@ pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usi
                 xs.push(x1 + t * (x2 - x1));
             }
         }
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        xs.sort_by(|a, b| a.total_cmp(b));
         for pair in xs.chunks_exact(2) {
             let ix_start = ((pair[0] - ox as f32).max(0.0) as i32).max(0);
             let ix_end = ((pair[1] - ox as f32).min(rw as f32) as i32).min(rwi);
@@ -685,7 +685,17 @@ impl CanvasContext {
                 PathCommand::Arc(cx, cy, radius, start_angle, end_angle, anticlockwise) => {
                     // R34xx：anticlockwise 方向（同 path.rs flatten）。
                     let dir = if anticlockwise { -1.0 } else { 1.0 };
-                    let angle_span = (end_angle - start_angle).abs() * dir;
+                    // R34xx：角度归一化（与 path.rs flatten 同——|span| ≥ 2π 整圆，
+                    // 否则 mod 2π；2d.path.arc.angle.*）。
+                    let raw_span = end_angle - start_angle;
+                    let span = if !anticlockwise && raw_span >= std::f32::consts::TAU {
+                        std::f32::consts::TAU
+                    } else if anticlockwise && raw_span <= -std::f32::consts::TAU {
+                        -std::f32::consts::TAU
+                    } else {
+                        raw_span % std::f32::consts::TAU
+                    };
+                    let angle_span = span * dir;
                     let step = angle_span / ARC_SEGMENTS as f32;
                     let mut angle = start_angle;
                     let mut px = cx + radius * angle.cos();
@@ -1471,7 +1481,7 @@ impl CanvasContext {
                     intersections.push(x1 + t * (x2 - x1));
                 }
             }
-            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            intersections.sort_by(|a, b| a.total_cmp(b));
             for pair in intersections.chunks_exact(2) {
                 let ix_start = pair[0].max(0.0) as u32;
                 let ix_end = pair[1].min(canvas_w as f32) as u32;
@@ -1535,7 +1545,7 @@ impl CanvasContext {
                     intersections.push(x1 + t * (x2 - x1));
                 }
             }
-            intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            intersections.sort_by(|a, b| a.total_cmp(b));
             for pair in intersections.chunks_exact(2) {
                 let ix_start = pair[0].max(0.0) as u32;
                 let ix_end = pair[1].min(canvas_w as f32) as u32;

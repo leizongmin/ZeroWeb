@@ -1307,7 +1307,11 @@
     p.moveTo = function (x, y) { __zw_canvas_op(h, 'pathMoveTo', pid, String(x), String(y)); };
     p.lineTo = function (x, y) { __zw_canvas_op(h, 'pathLineTo', pid, String(x), String(y)); };
     p.closePath = function () { __zw_canvas_op(h, 'pathClose', pid); };
-    p.arc = function (x, y, r, s, e, anticlockwise) { __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false'); };
+    p.arc = function (x, y, r, s, e, anticlockwise) {
+      // R34xx：负半径 → IndexSizeError（spec——2d.path.arc.negative 的 path.arc）。
+      if (+r < 0) throw _zwDomException('arc: negative radius', 'IndexSizeError');
+      __zw_canvas_op(h, 'pathArc', pid, String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
+    };
     p.arcTo = function (x1, y1, x2, y2, r) { __zw_canvas_op(h, 'pathArcTo', pid, String(x1), String(y1), String(x2), String(y2), String(r)); };
     p.quadraticCurveTo = function (cpx, cpy, x, y) { __zw_canvas_op(h, 'pathQuadratic', pid, String(cpx), String(cpy), String(x), String(y)); };
     p.bezierCurveTo = function (cp1x, cp1y, cp2x, cp2y, x, y) { __zw_canvas_op(h, 'pathBezier', pid, String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y)); };
@@ -1798,6 +1802,8 @@
       // R34xx：anticlockwise 第 6 参透传（spec：2d.line.cap.round 等 arc 填充用例依赖方向）。
       x = _zwNumArg(x); y = _zwNumArg(y); r = _zwNumArg(r); s = _zwNumArg(s); e = _zwNumArg(e);
       if (!_zwAllFinite(x, y, r, s, e)) return;
+      // R34xx：负半径 → IndexSizeError（spec——2d.path.arc.negative）。
+      if (r < 0) throw _zwDomException('arc: negative radius', 'IndexSizeError');
       __zw_canvas_op(h, 'arc', String(x), String(y), String(r), String(s), String(e), anticlockwise ? 'true' : 'false');
     };
     // R3306：fill/stroke/clip 可选首参 Path2D（spec ctx.fill(path)），命中走 fillPath/strokePath/clipPath
