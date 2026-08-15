@@ -330,14 +330,13 @@ impl BrowserApp {
         };
 
         let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
+        // 显示偏移统一用本地滚动状态：fills/glyphs 层（render_page_content）与
+        // extra 层（本函数）必须同源，否则两层用不同滚动值会同时绘制
+        // 「未滚动位图 + 平移图元」产生叠加。compositor 回读值（compositor_scroll）
+        // 是异步滞后的（滚动后 renderer 不提交新帧时回读停滞在旧值），不可作显示源。
         let scroll = if crate::compositor_client::scroll_transform_enabled() {
+            // SCROLL_TRANSFORM 显式开启时 compositor 已把滚动烘焙进位图像素
             crate::page_scroll::TabScrollState::default()
-        } else if crate::compositor_client::async_scroll_enabled() {
-            self.tabs
-                .snapshot(tab_id)
-                .and_then(|snap| snap.compositor_scroll)
-                .map(|(x, y)| crate::page_scroll::TabScrollState { x, y })
-                .unwrap_or_else(|| self.tab_scroll_state(tab_id))
         } else {
             self.tab_scroll_state(tab_id)
         };
