@@ -1,0 +1,34 @@
+{
+ "round": "R53",
+ "date": "2026-08-15",
+ "outcome": "diagnosis-only (no code landed — both fix attempts regressed, reverted clean)",
+ "attribution": {
+  "testfn_primitives": "all µs-level (data read/write, parentNode, Range getters, createRange) — innocent",
+  "dirty_state_effect": "clean setup 1.5ms -> 334ms/setup (220x) after testFn data writes mixed in",
+  "dirty_decomposition": "ce segment (createElement+appendChild) 2ms/op (was 74µs at R52)",
+  "root_cause_chain": "getElementsByTagName('p') live collection els +2/setup (old detached/foreign paras linger) -> els grows to thousands -> _zwHCLiveInvalidate loops O(els) per mutation -> every append slows"
+ },
+ "probe_data": {
+  "R53J": "live collection 8 -> 208 after 100 setup+testFn cycles",
+  "R53K": "lingering entries are ALIVE detached/foreign paras (parent=DIV, handle-based), not dead zero-out nodes",
+  "R53B": "withFn200=19s vs setupOnly200=0.29s; withSel200=90s",
+  "R53D": "per-group gradient paras_0:34ms/20 .. detachedXmlComment:4947ms/20 (position effect, not node type)"
+ },
+ "fix_attempts": [
+  {
+   "attempt": "zero-out sync removal from live collections + _zwPendingConnected overlay filter (reverse-chain walk)",
+   "result": "REGRESSION: snapshot baseline 8 <p> cleared (len=0) — snapshot-element removal and pending-leak removal are two independent problems, cannot share one remFlat loop",
+   "action": "reverted"
+  },
+  {
+   "attempt": "conservative fallback (break-chain passthrough)",
+   "result": "still len=0",
+   "action": "reverted"
+  }
+ ],
+ "next_direction": "filter at MERGE time (not removal time): skip pending-added subtrees whose mutation target (mutSel) is not in the host snapshot (= detached/foreign container) — they should never enter document-scoped collections; snapshot baseline elements untouched",
+ "baseline_verified_after_revert": {
+  "engine_v8": 2140,
+  "dom_collections": "48P/0F"
+ }
+}
