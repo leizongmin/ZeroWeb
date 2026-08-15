@@ -421,7 +421,7 @@ fn test_compute_arc_to_geometry_control2_coincident() {
 #[test]
 fn test_flatten_arc_to_normal() {
     let mut verts = Vec::new();
-    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4);
+    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4, true);
     assert!(!verts.is_empty(), "normal arc should produce vertices");
     // 每个段 4 个 f32 (x1,y1,x2,y2)
     assert!(
@@ -434,7 +434,7 @@ fn test_flatten_arc_to_normal() {
 fn test_flatten_arc_to_degenerate() {
     // 零半径 → 切点重合，不产生弧线（可能有连接线到控制点）
     let mut verts = Vec::new();
-    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 0.0, 4);
+    CanvasContext::flatten_arc_to(&mut verts, 0.0, 0.0, 50.0, 0.0, 50.0, 50.0, 0.0, 4, true);
     // 零半径 → t1==t2 → 在切点重合检查处直接返回（无连接线因为 current!=t1 也不满足）
     // 或者只产生连接线但不产生弧线段
     // 最多 4 floats (连接线), 不应有弧线段
@@ -450,7 +450,7 @@ fn test_flatten_arc_to_same_position() {
     // 当前点已在切点位置 → 不画连接线
     let mut verts = Vec::new();
     // 使用共线点使切点在控制点上
-    CanvasContext::flatten_arc_to(&mut verts, 50.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4);
+    CanvasContext::flatten_arc_to(&mut verts, 50.0, 0.0, 50.0, 0.0, 50.0, 50.0, 20.0, 4, true);
     // 切点重合 → 直接返回
 }
 
@@ -1894,4 +1894,121 @@ fn test_is_point_in_path_giant_scale_r56d() {
         !ctx2.is_point_in_path_rule(0.0, 0.0, crate::context::FillRule::NonZero),
         "non-invertible ctm: degenerate path misses"
     );
+}
+
+// ── R56e：ensuresubpath 语义 + clip 相交/空 测试 ──
+
+#[test]
+fn test_lineto_no_subpath_is_moveto_r56e() {
+    // spec dom-context-2d-lineto：无子路径 lineTo 等同 moveTo（不画隐含连线）。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.line_to(100.0, 50.0);
+    let v = ctx.flatten_path_open();
+    // 无子路径 → 无段（只设起点，曲线/线不画）。
+    assert!(
+        v.is_empty(),
+        "lineTo no-subpath must not emit segments, got {} segs",
+        v.len() / 4
+    );
+    // 有子路径（先 moveTo）后 lineTo 正常画 1 段。
+    let mut ctx2 = CanvasContext::new(100, 50);
+    ctx2.begin_path();
+    ctx2.move_to(0.0, 0.0);
+    ctx2.line_to(100.0, 50.0);
+    assert_eq!(ctx2.flatten_path_open().len(), 4, "moveTo+lineTo = 1 segment");
+}
+
+#[test]
+fn test_curve_no_subpath_first_control_point_r56e() {
+    // spec dom-context-2d-quadraticcurveto / beziercurveto：无子路径时第一控制点
+    // 被加入为起点，曲线照画（quadratic(0,25,100,25) 退化直线 (0,25)→(100,25)）。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.quadratic_curve_to(0.0, 25.0, 100.0, 25.0);
+    let v = ctx.flatten_path_open();
+    assert!(!v.is_empty(), "quadratic no-subpath draws from first control point");
+    // 首段起点 = 第一控制点 (0,25)。
+    assert!(
+        (v[0] - 0.0).abs() < 1.0 && (v[1] - 25.0).abs() < 1.0,
+        "first seg starts at first control point (0,25), got ({},{})",
+        v[0],
+        v[1]
+    );
+    // bezier 同语义：current := cp1。
+    let mut ctx2 = CanvasContext::new(100, 50);
+    ctx2.begin_path();
+    ctx2.bezier_curve_to(0.0, 25.0, 100.0, 25.0, 100.0, 25.0);
+    let v2 = ctx2.flatten_path_open();
+    assert!(
+        !v2.is_empty() && (v2[1] - 25.0).abs() < 1.0,
+        "bezier no-subpath starts at cp1"
+    );
+}
+
+#[test]
+fn test_arcto_no_subpath_no_leading_line_r56e() {
+    // spec dom-context-2d-arcto：无子路径时第一控制点加入（P1 起点），不画
+    // current→切点1 连线——弧段本身仍输出。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.arc_to(100.0, 50.0, 200.0, 50.0, 0.1);
+    let v = ctx.flatten_path_open();
+    assert!(!v.is_empty(), "arc itself is still drawn");
+    // 无 (0,0)→… 杂散段：首段起点应在 P1 切点附近（x≈100），不在 (0,0)。
+    assert!(v[0] > 90.0, "first seg starts near P1 tangent (x≈100), got x={}", v[0]);
+}
+
+#[test]
+fn test_clip_empty_and_intersect_r56e() {
+    // spec dom-context-2d-clip：clip 与既有 clip 相交；空路径 clip = 交集空全裁。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.clip(); // 空路径
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let px = ctx.get_image_data(50, 25, 1, 1);
+    assert_eq!(px.data[0], 0, "empty clip: nothing drawn");
+    // 相邻两矩形依次 clip → 交集空 → 全裁。
+    let mut ctx2 = CanvasContext::new(100, 50);
+    ctx2.begin_path();
+    ctx2.move_to(0.0, 0.0);
+    ctx2.line_to(50.0, 0.0);
+    ctx2.line_to(50.0, 50.0);
+    ctx2.line_to(0.0, 50.0);
+    ctx2.close_path();
+    ctx2.clip();
+    ctx2.begin_path();
+    ctx2.move_to(50.0, 0.0);
+    ctx2.line_to(100.0, 0.0);
+    ctx2.line_to(100.0, 50.0);
+    ctx2.line_to(50.0, 50.0);
+    ctx2.close_path();
+    ctx2.clip();
+    ctx2.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx2.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let px2 = ctx2.get_image_data(50, 25, 1, 1);
+    assert_eq!(px2.data[0], 0, "adjacent clips intersect to empty");
+    // 重叠两矩形 clip → 交集 = 重叠区可画。
+    let mut ctx3 = CanvasContext::new(100, 50);
+    ctx3.begin_path();
+    ctx3.move_to(0.0, 0.0);
+    ctx3.line_to(60.0, 0.0);
+    ctx3.line_to(60.0, 50.0);
+    ctx3.line_to(0.0, 50.0);
+    ctx3.close_path();
+    ctx3.clip();
+    ctx3.begin_path();
+    ctx3.move_to(40.0, 0.0);
+    ctx3.line_to(100.0, 0.0);
+    ctx3.line_to(100.0, 50.0);
+    ctx3.line_to(40.0, 50.0);
+    ctx3.close_path();
+    ctx3.clip();
+    ctx3.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx3.fill_rect(0.0, 0.0, 100.0, 50.0);
+    let in_overlap = ctx3.get_image_data(50, 25, 1, 1);
+    let outside = ctx3.get_image_data(10, 25, 1, 1);
+    assert_eq!(in_overlap.data[0], 255, "overlap region drawn");
+    assert_eq!(outside.data[0], 0, "outside both clips culled");
 }

@@ -1083,7 +1083,7 @@ pub(crate) struct CanvasState {
     /// R34xx：裁剪路径（drawing state 的一部分，spec：save/restore 管理 clip——上游
     /// 2d.state.saverestore.clip：restore 后 clip 须回滚）。此前缺失致 restore 后 clip
     /// 残留裁剪后续绘制。
-    pub(crate) clip_path: Option<Path2D>,
+    pub(crate) clip_paths: Vec<Path2D>,
 }
 
 /// Canvas 2D 渲染上下文 — 实现 CanvasRenderingContext2D API。
@@ -1125,8 +1125,9 @@ pub struct CanvasContext {
     pub(crate) pixel_buffer: Vec<u8>,
     /// 当前合成操作模式。
     pub(crate) composite_operation: CompositeOperation,
-    /// 当前裁剪路径（如果有）。
-    pub(crate) clip_path: Option<Path2D>,
+    /// 当前裁剪路径列表（R56e：spec clip 语义 = 与既有 clip **相交**——多次 clip
+    /// 逐区域 AND；空路径 clip 使交集为空，后续绘制全裁）。
+    pub(crate) clip_paths: Vec<Path2D>,
     /// 阴影颜色。
     pub(crate) shadow_color: Color,
     /// 阴影模糊半径。

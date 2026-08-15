@@ -2824,6 +2824,13 @@
       __zw_canvas_op(h, 'bezierCurveTo', String(cp1x), String(cp1y), String(cp2x), String(cp2y), String(x), String(y));
     };
     ctx._methods.ellipse = function (x, y, rx, ry, rotation, start, end /*, ccw */) {
+      // R56e：负半径 → IndexSizeError（spec dom-context-2d-ellipse——
+      // 2d.path.ellipse.basics：rx/ry < 0 抛，-0 与 0 合法）。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-ellipse
+      rx = +rx; ry = +ry;
+      if (rx < 0 || ry < 0) {
+        throw _zwDomException('ellipse: negative radius', 'IndexSizeError');
+      }
       __zw_canvas_op(h, 'ellipse', String(x), String(y), String(rx), String(ry), String(rotation), String(start), String(end));
     };
     ctx._methods.arcTo = function (x1, y1, x2, y2, r) {

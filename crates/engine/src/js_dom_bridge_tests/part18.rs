@@ -763,3 +763,82 @@ fn test_fill_rule_passthrough_r56c() {
         "同次 fill 重叠区单层 alpha（~127 非 64）——fill.overlap，实际 {ov}"
     );
 }
+
+// R56e（M8/DC-8）：ensuresubpath 族 + clip 相交/空 + ellipse 负半径 e2e。
+// driving: 2d.path.lineTo/arcTo/bezierCurveTo/quadraticCurveTo.ensuresubpath.1/2
+// + 2d.path.clip.empty/intersect + 2d.path.ellipse.basics。
+#[test]
+fn test_ensuresubpath_clip_ellipse_r56e() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><canvas id='cv' width='100' height='50'></canvas></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r56e".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① lineTo 无子路径 = moveTo（stroke 不画，画布保持底色）。
+    sandbox.execute(
+        "var cv = document.getElementById('cv');\
+         var ctx = cv.getContext('2d');\
+         ctx.fillStyle = '#0f0'; ctx.fillRect(0, 0, 100, 50);\
+         ctx.strokeStyle = '#f00'; ctx.lineWidth = 50;\
+         ctx.beginPath(); ctx.lineTo(100, 50); ctx.stroke();\
+         globalThis.__lt = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__lt").unwrap().value,
+        "0,255,0,255",
+        "lineTo no-subpath: canvas stays green (moveTo semantics)"
+    );
+
+    // ② quadratic 无子路径：第一控制点为起点，退化直线照画（绿线覆盖）。
+    sandbox.execute(
+        "ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, 100, 50);\
+         ctx.strokeStyle = '#0f0'; ctx.lineWidth = 50;\
+         ctx.beginPath(); ctx.quadraticCurveTo(0, 25, 100, 25); ctx.stroke();\
+         globalThis.__qc = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__qc").unwrap().value,
+        "0,255,0,255",
+        "quadratic no-subpath draws from first control point"
+    );
+
+    // ③ clip 空 + 相邻相交：全裁。
+    sandbox.execute(
+        "ctx.fillStyle = '#0f0'; ctx.fillRect(0, 0, 100, 50);\
+         ctx.beginPath(); ctx.clip();\
+         ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, 100, 50);\
+         globalThis.__ce = ctx.getImageData(50, 25, 1, 1).data.join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ce").unwrap().value,
+        "0,255,0,255",
+        "empty clip culls everything"
+    );
+
+    // ④ ellipse 负半径 → IndexSizeError；-0 与 0 合法。
+    sandbox.execute(
+        "var errs = [];\
+         try { ctx.ellipse(10, 10, -2, 5, 0, 0, 1, false); } catch(e){ errs.push(e.name); }\
+         try { ctx.ellipse(10, 10, 0, -1.5, 0, 0, 1, false); } catch(e){ errs.push(e.name); }\
+         var okNegZero = true;\
+         try { ctx.ellipse(10, 10, -0, 5, 0, 0, 1, false); } catch(e){ okNegZero = false; }\
+         globalThis.__el = errs.join(',') + ';' + String(okNegZero);",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__el").unwrap().value,
+        "IndexSizeError,IndexSizeError;true",
+        "ellipse negative radii throw, -0 accepted"
+    );
+}

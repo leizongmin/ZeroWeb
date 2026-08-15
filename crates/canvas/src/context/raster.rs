@@ -639,11 +639,14 @@ impl CanvasContext {
         y2: f32,
         radius: f32,
         segments: usize,
+        has_subpath: bool,
     ) {
         let (t1x, t1y, t2x, t2y) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
 
-        // 从当前点画线到切点1
-        if (current_x - t1x).abs() > f32::EPSILON || (current_y - t1y).abs() > f32::EPSILON {
+        // 从当前点画线到切点1。R56e：spec dom-context-2d-arcto——无任何子路径时
+        // 第一个控制点被加入（等同 moveTo，P1 成为起点），**不画** current→切点1
+        // 连线（2d.path.arcTo.ensuresubpath.1：beginPath 后 arcTo + stroke 中部保持底色）。
+        if has_subpath && ((current_x - t1x).abs() > f32::EPSILON || (current_y - t1y).abs() > f32::EPSILON) {
             vertices.push(current_x);
             vertices.push(current_y);
             vertices.push(t1x);
@@ -751,15 +754,38 @@ impl CanvasContext {
                     subpath_has_geometry = false;
                 }
                 PathCommand::LineTo(x, y) => {
-                    vertices.push(current_x);
-                    vertices.push(current_y);
-                    vertices.push(x);
-                    vertices.push(y);
+                    // R56e（M8/DC-8）：spec dom-context-2d-lineto——无任何子路径时
+                    // lineTo 等同 moveTo（只设起点，不画隐含 (0,0)→目标 连线——
+                    // 2d.path.lineTo.ensuresubpath.1：beginPath 后 lineTo(100,50)
+                    // + stroke 期望画布保持底色）。
+                    if has_any_subpath {
+                        vertices.push(current_x);
+                        vertices.push(current_y);
+                        vertices.push(x);
+                        vertices.push(y);
+                        subpath_has_geometry = true;
+                    } else {
+                        has_any_subpath = true;
+                        subpath_start_x = x;
+                        subpath_start_y = y;
+                    }
                     current_x = x;
                     current_y = y;
-                    subpath_has_geometry = true;
                 }
                 PathCommand::QuadraticCurveTo(cpx, cpy, x, y) => {
+                    // R56e：spec dom-context-2d-quadraticcurveto——无任何子路径时
+                    // 第一控制点被加入（current := (cpx,cpy) 成子路径起点），曲线
+                    // 从该点照画（ensuresubpath.2 期望退化直线横穿画布）。
+                    let (sx0, sy0) = if has_any_subpath {
+                        (current_x, current_y)
+                    } else {
+                        has_any_subpath = true;
+                        subpath_start_x = cpx;
+                        subpath_start_y = cpy;
+                        (cpx, cpy)
+                    };
+                    current_x = sx0;
+                    current_y = sy0;
                     subpath_has_geometry = true;
                     // 使用 8 段细分二次贝塞尔曲线
                     const SEGMENTS: usize = 8;
@@ -781,6 +807,15 @@ impl CanvasContext {
                     current_y = y;
                 }
                 PathCommand::BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) => {
+                    // R56e：spec dom-context-2d-beziercurveto——无任何子路径时第一
+                    // 控制点被加入（current := (cp1x,cp1y) 成子路径起点），曲线照画。
+                    if !has_any_subpath {
+                        has_any_subpath = true;
+                        subpath_start_x = cp1x;
+                        subpath_start_y = cp1y;
+                        current_x = cp1x;
+                        current_y = cp1y;
+                    }
                     subpath_has_geometry = true;
                     // 使用 8 段细分三次贝塞尔曲线
                     const SEGMENTS: usize = 8;
@@ -898,6 +933,9 @@ impl CanvasContext {
                         continue;
                     }
                     subpath_has_geometry = true;
+                    // R56e：先用旧值（无子路径 → 不画 current→切点1 连线），再置位。
+                    let had_subpath = has_any_subpath;
+                    has_any_subpath = true;
                     Self::flatten_arc_to(
                         &mut vertices,
                         current_x,
@@ -908,6 +946,7 @@ impl CanvasContext {
                         y2,
                         radius,
                         ARC_SEGMENTS,
+                        had_subpath,
                     );
                     // flatten_arc_to updates current_x/current_y via the returned value
                     // We compute the final point directly
@@ -1001,11 +1040,14 @@ impl CanvasContext {
         let mut current_y = 0.0f32;
         let mut subpath_start_x = 0.0f32;
         let mut subpath_start_y = 0.0f32;
+        // R56e：子路径存在标志（arcTo 无子路径连线守卫用）。
+        let mut has_any_subpath = false;
         const ARC_SEGMENTS: usize = 16;
 
         for cmd in path.commands() {
             match *cmd {
                 PathCommand::MoveTo(x, y) => {
+                    has_any_subpath = true;
                     subpath_start_x = x;
                     subpath_start_y = y;
                     current_x = x;
@@ -1093,6 +1135,8 @@ impl CanvasContext {
                     current_y = py;
                 }
                 PathCommand::ArcTo(x1, y1, x2, y2, radius) => {
+                    let had_subpath = has_any_subpath;
+                    has_any_subpath = true;
                     Self::flatten_arc_to(
                         &mut vertices,
                         current_x,
@@ -1103,6 +1147,7 @@ impl CanvasContext {
                         y2,
                         radius,
                         ARC_SEGMENTS,
+                        had_subpath,
                     );
                     let (_, _, nx, ny) = Self::compute_arc_to_geometry(current_x, current_y, x1, y1, x2, y2, radius);
                     current_x = nx;

@@ -33,7 +33,7 @@ impl CanvasContext {
             current_path: Path2D::new(),
             pixel_buffer: vec![0u8; buffer_size],
             composite_operation: CompositeOperation::default(),
-            clip_path: None,
+            clip_paths: Vec::new(),
             shadow_color: Color::TRANSPARENT,
             shadow_blur: 0.0,
             shadow_offset_x: 0.0,
@@ -938,7 +938,8 @@ impl CanvasContext {
         if min_x < max_x && min_y < max_y {
             let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
             self.primitives.add_clip(rect);
-            self.clip_path = Some(path.clone());
+            // R56e：追加（相交语义，同 clip()）。
+            self.clip_paths.push(path.clone());
         }
     }
 
@@ -997,7 +998,7 @@ impl CanvasContext {
             text_baseline: self.text_baseline,
             miter_limit: self.miter_limit,
             direction: self.direction,
-            clip_path: self.clip_path.clone(),
+            clip_paths: self.clip_paths.clone(),
         });
     }
 
@@ -1025,7 +1026,7 @@ impl CanvasContext {
             self.text_baseline = state.text_baseline;
             self.miter_limit = state.miter_limit;
             self.direction = state.direction;
-            self.clip_path = state.clip_path;
+            self.clip_paths = state.clip_paths;
         }
     }
 
@@ -1344,8 +1345,13 @@ impl CanvasContext {
     /// 从当前路径设置裁剪区域。后续绘制操作将被限制在裁剪区域内。
     /// 调用后当前路径不会被清除（与浏览器行为一致）。
     pub fn clip(&mut self) {
+        // R56e：spec dom-context-2d-clip——clip 与既有 clip 相交（非替换）。
+        // 空路径 clip 使交集为空：clip_paths 追加空 Path2D（其 point-in-path
+        // 恒 false → 后续绘制全裁，2d.path.clip.empty）。旧实现空路径 early-return
+        // 不改 clip 状态，且多次 clip **覆盖**而非相交（clip.intersect 泄漏第一区域）。
         let vertices = self.flatten_path();
         if vertices.is_empty() {
+            self.clip_paths.push(Path2D::new());
             return;
         }
         // 计算路径包围盒作为裁剪矩形
@@ -1362,8 +1368,8 @@ impl CanvasContext {
         if min_x < max_x && min_y < max_y {
             let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
             self.primitives.add_clip(rect);
-            // 保存裁剪路径的副本用于 isPointInPath 等后续判断
-            self.clip_path = Some(self.current_path.clone());
+            // R56e：追加到 clip 列表（clip_applies 全 AND = 相交语义）。
+            self.clip_paths.push(self.current_path.clone());
         }
     }
 
@@ -1487,10 +1493,10 @@ impl CanvasContext {
     /// 2d.fillRect.clip / clearRect.clip / strokeRect.clip 全失败）。clip 未设时零开销。
     /// 点坐标 (x, y) 为画布像素坐标（device space），与 clip_path 顶点同空间。
     pub(crate) fn clip_applies(&self, x: f32, y: f32) -> bool {
-        match &self.clip_path {
-            Some(path) => path.is_point_in_path(x + 0.5, y + 0.5),
-            None => true,
-        }
+        // R56e：全部 clip 区域 AND（spec 相交语义）；列表空 = 无裁剪。
+        self.clip_paths
+            .iter()
+            .all(|path| path.is_point_in_path(x + 0.5, y + 0.5))
     }
 
     /// 判断点是否在当前路径的描边区域内。

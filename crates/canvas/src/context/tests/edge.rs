@@ -1176,15 +1176,21 @@ fn test_radial_gradient_negative_radius_degenerate_no_panic() {
 #[test]
 fn test_clip_no_current_path_no_panic() {
     let mut ctx = CanvasContext::new(100, 100);
-    // 没有构建任何路径，直接 clip — 不应 panic
+    // 没有构建任何路径，直接 clip — 不应 panic。
+    // R56e（语义更新）：spec dom-context-2d-clip——空路径 clip 使交集为空，
+    // 后续绘制全被裁掉（WPT 2d.path.clip.empty 实证；旧断言「正常绘制」与 spec
+    // 相反）。不 panic 仍是本测试核心。
     ctx.clip();
     ctx.clip();
-    // 后续绘制操作应正常执行（裁剪区域未被设置）
     ctx.set_fill_color(Color::RED);
     ctx.fill_rect(0.0, 0.0, 10.0, 10.0);
-    // 画布内像素应有正常绘制结果
+    // 空 clip 交集 → 像素保持透明（全裁）。
     let pixel = ctx.get_image_data(5, 5, 1, 1);
-    assert_eq!(pixel.data[0..4], [255, 0, 0, 255], "空 clip 后 fill_rect 应正常绘制");
+    assert_eq!(
+        pixel.data[0..4],
+        [0, 0, 0, 0],
+        "空 clip 后 fill_rect 全裁（spec 交集空）"
+    );
 }
 
 // ── 新增边界条件测试（5 个） ──
