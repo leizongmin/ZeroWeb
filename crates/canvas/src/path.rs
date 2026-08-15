@@ -395,6 +395,9 @@ impl Path2D {
                     let span = if !*anticlockwise {
                         if raw_span >= tau {
                             tau
+                        } else if raw_span < 0.0 {
+                            // R34xx（shape 调试）：负 raw 的顺时针——试负 span。
+                            -(((-raw_span) % tau + tau) % tau)
                         } else {
                             ((raw_span % tau) + tau) % tau
                         }
