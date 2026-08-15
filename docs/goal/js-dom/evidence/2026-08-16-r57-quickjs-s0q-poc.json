@@ -1,0 +1,56 @@
+{
+  "date": "2026-08-16",
+  "round": "R57",
+  "milestone": "M6 S0q — QuickJS 原生绑定骨架 PoC（js-dom goal DC-7）",
+  "commit": "b781252f",
+  "scope": {
+    "new_files": ["crates/engine/src/quickjs_dom_bindings.rs"],
+    "modified": [
+      "crates/engine/Cargo.toml (quickjs feature + optional rquickjs dep)",
+      "crates/engine/src/lib.rs (pub mod quickjs_dom_bindings, cfg quickjs)",
+      "crates/script-sandbox/src/lib.rs (Sandbox::install_native_bindings_quickjs trait method)",
+      "crates/script-sandbox/src/quickjs_runtime.rs (QuickJSSandbox impl)",
+      "crates/webview/src/webview.rs (QuickJS install_native_dom_bindings + Drop reset + call-site cfg)",
+      "crates/webview/src/tests/coverage.rs (wiring test)"
+    ]
+  },
+  "capability": {
+    "factory": "__zw_native_element_for_id(idStr) — 同名同 wire 形态与 V8 版一致（A/B 对照门可双引擎复用同一脚本）",
+    "native_getters": ["nodeType", "tagName", "nodeName", "id(+setter)"],
+    "nodeid_carrier": "隐藏非枚举非可写 own property __zwNodeFfi（f64 Number 承载 slotmap KeyData::as_ffi u64；version < 2^21 时 f64 无损，单测 ffi_f64_round_trip 断言）",
+    "identity": "NodeId(ffi) → Persistent<Value> strong 缓存（同 NodeId 返同对象）",
+    "dom_source": "线程局部 Rc<RefCell<Document>>（镜像 V8 dom_bindings/gc.rs 模式）",
+    "escape_hatch": "Sandbox::install_native_bindings_quickjs（QuickJSSandbox 进持久 Context；非持久返 false）",
+    "webview_wiring": "native_dom=true 时 run_page_scripts/execute_script 经 escape-hatch 安装；Drop 时 reset_quickjs_state（镜像 V8 R3334 disposed-runtime 防护）"
+  },
+  "api_findings_rquickjs": [
+    "闭包「Ctx 参数 + 'js 值返回」组合有 HRP 生命周期困难（闭包两生命周期不合 + Value 对 'js invariant）→ 具名 fn 签名统一 'js 解决",
+    "Accessor getter/setter 的 this 经 This<Object> 参数接收（FromParam，不占 JS 实参位）",
+    "Persistent::save/restore 消耗 self（clone 后 restore）；rt 不匹配返 UnrelatedRuntime",
+    "Property builder flag 无参形态（.configurable()/.enumerable() 打开；默认关）",
+    "slotmap KeyData::from_ffi(0).as_ffi() = 2^32（version 强制 odd 的 |1）——任意值不自等，只对真 NodeId 的 as_ffi 产出值恒可逆"
+  ],
+  "tests": {
+    "engine_quickjs": "1418 passed（+2：ffi_f64_round_trip / quickjs_native_element_poc）",
+    "webview_quickjs": "552 passed（+2：test_native_dom_bindings_wiring_quickjs_s0q + 默认关 disabled 测试 quickjs 矩阵首跑）",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_v8": "599 passed（零回归）",
+    "script_sandbox_quickjs": "76 passed",
+    "clippy": "双矩阵（v8 + quickjs）engine/webview/script-sandbox 零警告",
+    "fmt": "cargo fmt --all -- --check 无 diff",
+    "make_test": "全 workspace 经 test-guard 跑完；唯一失败 default_actions_work_without_javascript 为并行流既存（clean HEAD c220b746 同败，表单导航域，run-rules §9 不硬解）"
+  },
+  "poc_e2e_assertions": [
+    "typeof __zw_native_element_for_id === 'function'",
+    "element('main').nodeType === 1 / .tagName === 'DIV' / .nodeName === 'DIV' / .id === 'main'",
+    "identity: element('main') === element('main')",
+    "miss → null",
+    "id setter 写 live Document 后按新 id 命中、旧 id → null",
+    "Object.keys 只见 id（隐藏 ffi 不可枚举）"
+  ],
+  "next_slice_candidates": [
+    "S0q 续：weak/finalizer 生命周期验证（镜像 V8 R3133 Weak + guaranteed finalizer；当前 strong Persistent 会泄漏已 GC 节点条目）",
+    "S1q 只读属性族扩展（className/classList/attributes 等镜像 V8 S1）",
+    "bench 对照：native getter vs polyfill __zw_* 字符串桥（镜像 RFC §4 S0 gate 215ns vs 3.36µs）"
+  ]
+}
