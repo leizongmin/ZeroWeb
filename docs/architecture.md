@@ -21,7 +21,7 @@
 
 ## 工作区分层
 
-整个工作区共 28 个 workspace member：19 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 29 个 workspace member：20 个库 crate、6 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
@@ -63,6 +63,7 @@
 | `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表 |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
 | `crates/product-version` | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
+| `crates/runtime-config` | 运行时环境变量配置的唯一入口：集中定义并解析渲染后端、多进程、沙箱、compositor 等开关（`ENVIRONMENT_VARIABLES` 权威清单 + 统一解析函数），业务 crate 不直接读环境变量 |
 | `crates/psl` | 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取，接入 site-isolation（R3380） |
 | `crates/wasm-sandbox` | 受控 WASM 执行环境（wasmi），host function 导入、fuel / 执行限制、错误传播 |
 | `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（`v8` crate，原 rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |

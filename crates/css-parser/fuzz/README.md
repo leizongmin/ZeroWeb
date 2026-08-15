@@ -26,4 +26,4 @@ cargo +nightly fuzz run fuzz_css_tokenizer artifacts/fuzz_css_tokenizer/crash-*
 
 - fuzz crate 独立于 workspace（cargo-fuzz 惯例），不参与 `cargo test --workspace`。
 - 正则回归（panic 修复）方式：修复后把崩溃样本加入
-  `crates/css-parser/tests/` 作为回归用例。
+  `crates/css-parser/src/tests/` 作为回归用例。

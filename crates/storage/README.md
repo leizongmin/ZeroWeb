@@ -11,6 +11,8 @@
 - **Web Storage** — localStorage（持久）和 sessionStorage（会话），支持配额限制、按键索引、容量估算
 - **IndexedDB** — 结构化数据库，支持 Object Store 的创建/删除、记录的增删改查、自增主键、复合键排序
 - **存储管理器** — 按源（origin）隔离管理多个 localStorage/sessionStorage 实例，支持按源清除和批量清除
+- **Cache API** — 缓存 Request/Response 对，支持按方法（GET、POST 等）与 URL 匹配、缓存命中查询和删除
+- **Service Worker 注册表** — 管理 Service Worker 的注册与生命周期状态机（Registered → Installing → Installed → Activating → Activated → Redundant），支持 Fetch 拦截
 - **错误处理** — 统一的 `StorageError` 枚举，涵盖配额超限、无效键、仓库不存在、序列化失败等场景
 
 ## 使用示例

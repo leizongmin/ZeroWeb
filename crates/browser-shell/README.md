@@ -23,12 +23,12 @@ use zero_webview::WebViewBuilder;
 // 创建浏览器 Shell 实例
 let mut shell = BrowserShell::new();
 
-// 创建新标签页并导航
-shell.new_tab("https://example.com");
+// 创建新标签页并导航，返回标签页 ID
+let tab_id = shell.new_tab(Some("https://example.com"));
 
-// 添加到收藏夹
-shell.add_bookmark("https://example.com", "Example Site");
+// 将当前页面添加到收藏夹
+shell.add_bookmark();
 
 // 切换标签页
-shell.switch_tab(0);
+shell.switch_tab(tab_id);
 ```

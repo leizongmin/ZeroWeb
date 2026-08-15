@@ -53,7 +53,7 @@ ctx.set_font(FontDescriptor {
     weight: FontWeight::Bold,
     ..Default::default()
 });
-ctx.fill_text("Hello, ZeroWeb!", 50.0, 50.0);
+ctx.fill_text("Hello, ZeroWeb!", 50.0, 50.0, None);
 let metrics = ctx.measure_text("Hello, ZeroWeb!");
 
 // 获取渲染图元，交由渲染器处理

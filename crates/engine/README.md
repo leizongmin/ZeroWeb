@@ -28,7 +28,7 @@ let css = r#"div { background-color: red; width: 200px; height: 100px; }"#;
 let result = pipeline.render_html(html, css);
 
 // 获取渲染图元和各阶段耗时
-println!("填充图元数量: {}", result.primitives.fills.len());
+println!("填充图元数量: {}", result.primitives().fills.len());
 println!("布局耗时: {:.2} ms", result.timings.layout_ms);
 println!("总耗时: {:.2} ms", result.timings.total_ms);
 ```

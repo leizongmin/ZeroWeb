@@ -1,57 +1,40 @@
-# ZeroWebView Demo (`zero-webview-demo`)
+# ZeroWeb WebView Demo (`zero-webview-demo`)
 
-> WebView 嵌入示例应用
+> wgpu「Hello ZeroWeb」文本渲染演示 — 渲染管线 M1 里程碑示例
 
 ## 概述
 
-`ZeroWebViewDemo` 是 ZeroWeb WebView 嵌入 API 的演示应用，展示如何在自定义应用中嵌入 `zero-webview` 来加载和渲染网页内容。
+`zero-webview-demo`（bin 名 `webview-demo`）是 ZeroWeb 渲染管线的 M1 里程碑演示：创建桌面窗口，使用 wgpu GPU 渲染静态文本「Hello ZeroWeb!」。它演示 `zero-host-runtime` 的窗口管理（`HostRuntime` / `WindowConfig`）与 `zero-render-foundation` 的 GPU/CPU 渲染器集成。本 demo 不依赖 `zero-webview` 的 WebViewBuilder / WebViewEvent 嵌入 API，是渲染栈（而非 WebView 嵌入）的最小示例。
 
-## 运行
+## 主要功能
+
+- **GPU 渲染** — 经 `GpuRenderer` 使用 wgpu 渲染「Hello ZeroWeb!」文本（32px 深灰字、白色背景、水平居中）
+- **CPU 后备** — GPU 不可用时自动降级为 softbuffer 软件渲染；同时将渲染结果输出到 `demo_output.ppm`
+- **渲染模式切换** — `--renderer auto|gpu|cpu` 命令行参数（或 `ZEROWEB_RENDERER` 环境变量），默认 `auto`（优先 GPU，失败降级 CPU）
+- **字体管线** — 加载系统字体并光栅化 glyph；未找到系统字体时回退到内置 5x7 点阵字体
+
+## 使用示例
 
 ```bash
-cargo run --bin zero-webview-demo
+# 运行 demo（默认 auto：优先 GPU，失败降级 CPU）
+cargo run --bin webview-demo
+
+# 强制 GPU / CPU 渲染
+cargo run --bin webview-demo -- --renderer gpu
+cargo run --bin webview-demo -- --renderer cpu
 ```
 
-## 功能演示
+## 源码导航
 
-- 创建 WebView 实例（通过 `WebViewBuilder` 配置）
-- 加载 URL 并渲染 HTML 页面
-- 执行 JavaScript 脚本
-- 处理事件回调
-- 展示 GPU 渲染输出到窗口
-
-## 依赖
+`src/main.rs`（单文件）：
 
 ```
-zero-webview-demo
-├── zero-webview           — WebView 嵌入 API
-├── zero-host-runtime      — 窗口和事件循环
-└── zero-render-foundation — GPU 渲染基础设施
-```
-
-## 嵌入示例代码
-
-```rust
-use zero_webview::{WebViewBuilder, WebViewEvent};
-use zero_host_runtime::WindowBuilder;
-
-// 创建 WebView
-let mut webview = WebViewBuilder::new()
-    .viewport_size(800, 600)
-    .build();
-
-// 加载页面
-webview.load_html("<html><body><h1>Hello ZeroWeb</h1></body></html>", "");
-
-// 执行脚本
-let result = webview.execute_script("1 + 1").unwrap();
-
-// 注册事件回调
-webview.on_event(|event| {
-    match event {
-        WebViewEvent::LoadComplete => println!("页面加载完成"),
-        WebViewEvent::TitleChanged(title) => println!("标题: {}", title),
-        _ => {}
-    }
-});
+main                        — 入口：解析渲染模式、CPU 后备 PPM 输出、创建 HostRuntime 窗口并进入事件循环
+parse_render_mode_from_args — 解析 --renderer 参数（支持 --renderer=value 与 --renderer value 两种写法）
+DemoState                   — 应用状态：GPU 渲染器 / CPU surface / 字体与 glyph 缓存
+build_scene                 — 构建静态场景（背景填充 + 居中文本 glyph 序列）
+render_gpu / render_cpu     — GPU（wgpu）与 CPU（softbuffer）双后端渲染
+load_system_font            — 加载系统字体（Linux/macOS/Windows 候选路径）
+get_font5x7 / render_text_fallback — 5x7 点阵后备字体
+logical_size_from_window    — 窗口逻辑尺寸与缩放因子换算
 ```

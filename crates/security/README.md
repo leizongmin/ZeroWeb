@@ -39,7 +39,7 @@ assert!(result.allowed);
 let csp = ContentSecurityPolicy::parse(
     "default-src 'self'; script-src https://cdn.example.com; style-src 'unsafe-inline'"
 );
-assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js"));
-assert!(!csp.is_resource_allowed("script", "https://evil.com/bad.js"));
-assert!(csp.is_inline_style_allowed());
+assert!(csp.is_resource_allowed("script", "https://cdn.example.com/app.js", None));
+assert!(!csp.is_resource_allowed("script", "https://evil.com/bad.js", None));
+assert!(csp.is_inline_style_allowed(None, None));
 ```

@@ -40,10 +40,16 @@
 - **渲染兼容性度量**：导入上游真实 WPT reftest（约 9967 个）、`make reftest-oracle` Chromium Oracle 像素一致率（诚实通过率）、`make product-smoke` / `make product-smoke-legacy` 产品回归门禁、`make import-wpt` 测试资产化流程。
 - **性能预算体系**：`make bench-gate` / `make bench-capture`（测量 + 门禁比较 + 趋势，perf-gate）。
 - **工程**：ci-watchdog 夜间 CI 任务、QuickJS 矩阵纳入 `make test`（v8/quickjs 接口一致性门禁）、QuickJS 后端完整化（Sandbox trait 抽象，aarch64 release 以 QuickJS 替代 V8）。
+- **运行时配置集中化**：新增 `zero-runtime-config` crate（工作区 28→29 member）——`ENVIRONMENT_VARIABLES` 权威清单 + 统一解析函数（`enabled_when_true` / `enabled_by_default` / `enabled_unless_zero` / `positive_usize` 等），业务 crate 不再直接读环境变量。
+- **Canvas 色彩管理**：f16 浮点像素存储 + linear 色彩空间（color-type 4/4）、display-p3 色彩管理（wide-gamut 9→12/12）——色彩空间经 GPU 管线贯通。
+- **Canvas 滤镜与 GIF**：colorMatrix 滤镜渲染（filters 目录 13/13 全绿）、GIF 首帧解码（drawImage.animated.gif + pattern.animated.gif 全过）。
+- **Canvas 路径几何（R34xx + js-dom M8 path-objects）**：arcTo 真切线弧（含无子路径 moveTo、负半径 IndexSizeError）、arc 归一化全圆/幅度语义 + anticlockwise 整圆特例、isPointInPath/fill 的 nonzero 绕组 + fillRule/Path2D 形式、ensuresubpath 语义 + clip 相交/空交集、椭圆负半径校验、曲线/弧段数自适应 + stroke 像素方形覆盖、stroke 零长段剪除 + roundRect 显式闭合 + 环绕 join、worker OffscreenCanvas 接口面——path-objects 用例 62F → 3F。
+- **布局与文本测量（ZRG-2026-08-15）**：布局文本宽度改 hmtx 真实测量（替换 estimate 启发式）、paint 字符 advance 按字形实际字体测量（engine/browser 双端）、FreeType measure_advance hinting 取整致英文文本字距错乱修复——跨平台换行点一致（CI watchdog 同步修 shaping 基线跨平台字体 + net async redirect deflake）。
+- **多进程与渲染**：renderer JS 状态跨文档加载隔离（lexical state 测试覆盖）、html5test.co 分数在多进程浏览器中正确渲染、compositor scrolling viewport repaint 修复、browser 构建缓存跨启动保留。
 
 ### 变更
 
-- 工作区从 20 个 member 扩展到 28 个（新增 `renderer` / `page-runtime` / `product-version` / `psl` / `image-decoder` / `compositor` / `webdriver` / `icon-gen`）。
+- 工作区从 20 个 member 扩展到 29 个（新增 `renderer` / `page-runtime` / `product-version` / `psl` / `image-decoder` / `compositor` / `webdriver` / `icon-gen` / `runtime-config`）。
 - 测试规模从约 1,000 增长到约 14,281（v8 feature 全量全绿，R3126 记录）。
 - 跨平台打包：macOS `.app` bundle + zip、Linux AppImage / .deb、Windows .zip / NSIS 安装器，配套 CI release 工作流（`v*` tag 触发）；release zip 按平台分装、macOS 打包版本号按构建日期推导。
 - 渲染兼容性：`freetype-raster` feature 默认开启（FreeType 替代 fontdue 光栅化，broad 一致率显著提升）；WPT reftest 对齐 Chromium Oracle（self-source 约 77%、oracle 真一致约 47.5%）；2026-08-09 字体栈重建 RFC v0.2.3 获批，恢复主动实施。

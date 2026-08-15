@@ -48,7 +48,7 @@ macOS 的 `.icns` 必须在 macOS 上额外执行（依赖系统自带 `iconutil
 iconutil -c icns <out>/iconset -o <out>/zero-browser.icns
 ```
 
-封装脚本见 `apps/browser/scripts/package-macos.sh`。
+封装脚本见 `scripts/package-macos.sh`。
 
 ## 渲染质量
 

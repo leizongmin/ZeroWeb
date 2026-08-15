@@ -20,7 +20,7 @@
 ## 使用示例
 
 ```bash
-# 启动 WebDriver 服务（默认端口见 --help）
+# 启动 WebDriver 服务（默认端口 9515）
 cargo run --bin zero-webdriver -- --port 9515
 
 # 配合 wdspec / Selenium 等工具链使用

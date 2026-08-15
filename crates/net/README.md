@@ -15,7 +15,7 @@
 ## 主要功能
 
 - **URL 解析** — 基于 `url` crate，解析 scheme、host、port、path、query、fragment、认证信息，支持同源判断和安全性检查
-- **HTTP 客户端** — 封装 reqwest blocking 客户端，支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 方法，可配置超时时间和最大重定向次数
+- **HTTP 客户端** — 封装 reqwest blocking 客户端，提供 `get` / `get_with_headers` / `post` 便捷方法，其余方法（PUT/DELETE/PATCH/HEAD/OPTIONS 等）经 `HttpRequest` 构造后由 `send` 发送，可配置超时时间和最大重定向次数
 - **请求与响应类型** — `HttpRequest` 支持链式添加请求头，`HttpResponse` 提供状态码判断、Content-Type 获取和 UTF-8 文本解码
 - **导航历史** — 浏览器风格的双向历史栈，支持 navigate/go_back/go_forward/replace_current，超出容量时自动淘汰最早条目
 - **Cookie 管理** — 解析 Set-Cookie 头，支持 Secure、HttpOnly、SameSite、Domain、Path、Expires/Max-Age 属性，按域名（含子域名）和路径匹配
@@ -23,7 +23,8 @@
 ## 使用示例
 
 ```rust
-use zero_net::{HttpClient, parse_url, CookieStore, NavigationHistory};
+use zero_net::url_parser::parse_url;
+use zero_net::{HttpClient, CookieStore, NavigationHistory};
 
 // 发送 HTTP GET 请求
 let client = HttpClient::new();

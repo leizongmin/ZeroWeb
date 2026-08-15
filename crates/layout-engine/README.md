@@ -54,7 +54,7 @@ for id in [item1, item2] {
 }
 
 // 执行布局
-let engine = LayoutEngine::new(800.0, 600.0); // 视口 800x600
+let mut engine = LayoutEngine::new(800.0, 600.0); // 视口 800x600
 let result = engine.compute(&doc, &styles);
 
 // 访问布局结果

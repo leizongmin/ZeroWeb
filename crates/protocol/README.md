@@ -29,6 +29,7 @@ let msg = IpcMessage {
     kind: IpcMessageKind::Navigate(NavigateParams {
         url: "https://example.com".into(),
         referrer: None,
+        navigation_epoch: 0,
     }),
 };
 
