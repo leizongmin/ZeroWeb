@@ -459,6 +459,11 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     // S2q 子树 mutation 族（非 enumerable）。
     obj.prop("appendChild", Function::new(ctx.clone(), append_child_method)?)?;
     obj.prop("removeChild", Function::new(ctx.clone(), remove_child_method)?)?;
+    // S2q 续：树读回 getter（非 enumerable）。
+    obj.prop("childNodes", Accessor::from(child_nodes_getter).configurable())?;
+    obj.prop("parentNode", Accessor::from(parent_node_getter).configurable())?;
+    obj.prop("firstChild", Accessor::from(first_child_getter).configurable())?;
+    obj.prop("lastChild", Accessor::from(last_child_getter).configurable())?;
     Ok(obj)
 }
 
@@ -504,6 +509,61 @@ fn has_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<St
 }
 
 // ── S2q 子树 mutation 族（appendChild/removeChild；insertBy 等后续切片）──
+
+// ── S2q 续：树读回 getter（childNodes/parentNode/firstChild/lastChild）──
+
+/// `childNodes` getter（spec `dom-node-childnodes`）：全子节点（含 Text/Comment）
+/// native 对象数组。**Array 返回形态**（非 NodeList——collection 语义的 live 性/
+/// indexed props 属 S1q 复合对象域；PoC 快照数组，与 V8 版 tests 断言面一致）。
+fn child_nodes_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let children = with_dom(|d| d.child_nodes(id)).unwrap_or_default();
+    match rquickjs::Array::new(ctx.clone()) {
+        Ok(arr) => {
+            for (i, c) in children.iter().enumerate() {
+                let v = get_or_build_node_value(&ctx, *c);
+                let _ = arr.set(i, v);
+            }
+            arr.into_value()
+        }
+        Err(_) => Value::new_null(ctx),
+    }
+}
+
+/// `parentNode` getter（spec `dom-node-parentnode`）：无父（detached/根）→ null。
+fn parent_node_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    match with_dom(|d| d.parent_node(id)).flatten() {
+        Some(p) => get_or_build_node_value(&ctx, p),
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `firstChild` / `lastChild` getter 共用（spec `dom-node-firstchild`/`lastchild`）。
+fn first_last_child_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, last: bool) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let child = with_dom(|d| if last { d.last_child(id) } else { d.first_child(id) }).flatten();
+    match child {
+        Some(c) => get_or_build_node_value(&ctx, c),
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `firstChild` getter。
+fn first_child_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    first_last_child_getter(this, ctx, false)
+}
+
+/// `lastChild` getter。
+fn last_child_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    first_last_child_getter(this, ctx, true)
+}
 
 /// 从 Value 读 native 对象的 NodeId（对象须为 `__zw_native_*` 工厂产物——隐藏
 /// `__zwNodeFfi` prop 标记）；非本族对象/缺失 → None。
@@ -692,6 +752,49 @@ mod tests {
                 eval_str("__zw_native_element_for_id('main').textContent"),
                 "",
                 "remove 后父 textContent 空"
+            );
+
+            // S2q 续：树读回 getter——childNodes/parentNode/firstChild/lastChild。
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').appendChild(__el), \
+                          __zw_native_element_for_id('main').childNodes.length"
+                ),
+                "1",
+                "append 后 childNodes 反映（Array 形态）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').childNodes[0] === __el"),
+                "true",
+                "childNodes[0] 身份 === appendChild 的 child（身份缓存）"
+            );
+            assert_eq!(
+                eval_str("__el.parentNode === __zw_native_element_for_id('main')"),
+                "true",
+                "child 的 parentNode 指回父（双向一致）"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').firstChild === __el"),
+                "true",
+                "firstChild"
+            );
+            assert_eq!(
+                eval_str("__zw_native_element_for_id('main').lastChild === __el"),
+                "true",
+                "lastChild（单子时同 firstChild）"
+            );
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').removeChild(__el), \
+                     __zw_native_element_for_id('main').firstChild === null"
+                ),
+                "true",
+                "remove 后 firstChild → null（空子树）"
+            );
+            assert_eq!(
+                eval_str("__el.parentNode === null"),
+                "true",
+                "detached 后 parentNode → null"
             );
 
             // 4. id setter 写 live Document + getter 读回（原生读写闭环）。
