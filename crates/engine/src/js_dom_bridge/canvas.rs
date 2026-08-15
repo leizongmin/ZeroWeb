@@ -70,6 +70,117 @@ fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Colo
     zero_css_parser::values::parse_color(s.trim()).map(|cv| crate::color_value_to_render(&cv))
 }
 
+/// R34xx（wide-gamut linear）：`color(srgb-linear/display-p3-linear …)` 在对应
+/// linear 画布直取线性通道（0-1 或 %；alpha 缺省 1——2d.color.space.*-linear）。
+fn parse_linear_color_in_space(
+    s: &str,
+    cs: zero_canvas::CanvasColorSpace,
+) -> Option<zero_render_foundation::color::Color> {
+    let space_name = match cs {
+        zero_canvas::CanvasColorSpace::SrgbLinear => "srgb-linear",
+        zero_canvas::CanvasColorSpace::DisplayP3Linear => "display-p3-linear",
+        _ => return None,
+    };
+    let t = s.trim();
+    let inner = t.strip_prefix("color(")?.strip_suffix(')')?;
+    let mut parts = inner.split_whitespace();
+    let space = parts.next()?;
+    if !space.eq_ignore_ascii_case(space_name) {
+        return None;
+    }
+    let mut comps = [0.0f64; 3];
+    let mut alpha = 255u8;
+    let mut i = 0usize;
+    for p in parts {
+        if p.starts_with('/') {
+            let a = p.trim_start_matches('/').trim();
+            if !a.is_empty() {
+                alpha = ((a.parse::<f64>().ok()? * 255.0).round().clamp(0.0, 255.0)) as u8;
+            }
+            continue;
+        }
+        if i >= 3 {
+            return None;
+        }
+        let is_pct = p.ends_with('%');
+        let num: f64 = p.trim_end_matches('%').parse().ok()?;
+        comps[i] = if is_pct { num / 100.0 } else { num };
+        i += 1;
+    }
+    if i < 3 {
+        return None;
+    }
+    let q = |c: f64| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some(zero_render_foundation::color::Color {
+        r: q(comps[0]),
+        g: q(comps[1]),
+        b: q(comps[2]),
+        a: alpha,
+    })
+}
+
+/// R34xx（f16 存储）：`color(display-p3 …)` → p3→sRGB 浮点（越界值保留——
+/// f16 画布的 fillStyle 精确颜色；put.basic.rgba.float16 的 (1.2249, −0.042, …)）。
+fn parse_p3_to_srgb_f32(s: &str) -> Option<[f32; 4]> {
+    let t = s.trim();
+    let inner = t.strip_prefix("color(")?.strip_suffix(')')?;
+    let mut parts = inner.split_whitespace();
+    let space = parts.next()?;
+    if !space.eq_ignore_ascii_case("display-p3") {
+        return None;
+    }
+    let mut comps = [0.0f64; 3];
+    let mut alpha = 1.0f64;
+    let mut i = 0usize;
+    for p in parts {
+        if p.starts_with('/') {
+            let a = p.trim_start_matches('/').trim();
+            if !a.is_empty() {
+                alpha = a.parse().ok()?;
+            }
+            continue;
+        }
+        if i >= 3 {
+            return None;
+        }
+        let is_pct = p.ends_with('%');
+        let num: f64 = p.trim_end_matches('%').parse().ok()?;
+        comps[i] = if is_pct { num / 100.0 } else { num };
+        i += 1;
+    }
+    if i < 3 {
+        return None;
+    }
+    // p3 线性 → XYZ → sRGB 线性（CSS Color 4 P3_TO_XYZ + XYZ_TO_SRGB，D65）。
+    let eotf = |c: f64| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let lin = [eotf(comps[0]), eotf(comps[1]), eotf(comps[2])];
+    // P3 → XYZ
+    let (x, y, z) = (
+        0.486_570_948_648_362_1 * lin[0] + 0.265_667_693_169_082_2 * lin[1] + 0.198_217_285_234_756_2 * lin[2],
+        0.228_974_564_069_748_8 * lin[0] + 0.691_738_521_836_456_4 * lin[1] + 0.079_286_914_093_795 * lin[2],
+        0.0 * lin[0] + 0.045_113_381_858_902_6 * lin[1] + 1.043_971_368_523_176_4 * lin[2],
+    );
+    // XYZ → sRGB 线性
+    let r_lin = 3.240_969_941_904_522_6 * x - 1.537_383_177_570_094 * y - 0.498_610_760_293_003_4 * z;
+    let g_lin = -0.969_243_636_280_879_6 * x + 1.875_967_501_507_720_2 * y + 0.041_555_057_407_560_59 * z;
+    let b_lin = 0.055_630_079_696_993_93 * x - 0.203_976_958_888_976_52 * y + 1.056_971_514_242_878_6 * z;
+    // sRGB 编码（不 clamp——越界值保留）
+    let enc = |c: f64| {
+        if c <= 0.003_130_8 {
+            c * 12.92
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    Some([enc(r_lin) as f32, enc(g_lin) as f32, enc(b_lin) as f32, alpha as f32])
+}
+
 /// R34xx（wide-gamut 目录）：`color(display-p3 c1 c2 c3[/ alpha])` 直接取 p3 通道
 ///（0-1 或 %；alpha 缺省 1）——p3 画布的 fillStyle 已处画布空间，免 sRGB 二次转换
 ///（2d.color.space.p3.fillText 的 color(display-p3 100% 0 0) → (255,0,0)）。
@@ -315,6 +426,10 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             let mut ctx = zero_canvas::CanvasContext::new(w, h);
             // R34xx（color-type 目录）：getContext({colorSpace})——缓冲区解释空间。
             ctx.set_color_space(zero_canvas::CanvasColorSpace::parse_name(arg(2)));
+            // R34xx（f16 存储）：getContext({colorType:'float16'})——f32 像素缓冲。
+            if arg(3).trim().eq_ignore_ascii_case("float16") {
+                ctx.set_float16(true);
+            }
             // R34xx：注入共享字体加载器（@font-face 字体真文本光栅）。
             ctx.set_font_loader(Some(reg.font_loader.clone()));
             reg.contexts.insert(id, ctx);
@@ -359,7 +474,17 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 // R34xx：无效颜色忽略保持旧值（同 setStrokeStyle）。
                 // R34xx（wide-gamut）：p3 画布 + color(display-p3 …) → 直取 p3 通道
                 //（已处画布空间）；否则 sRGB 解析 → 画布空间转换。
-                if ctx.color_space_of() == zero_canvas::CanvasColorSpace::DisplayP3
+                if zero_canvas::CanvasContext::is_float16_of(ctx)
+                    && let Some(f) = parse_p3_to_srgb_f32(arg(0))
+                {
+                    // f16 画布：color(display-p3 …) → p3→srgb 浮点（越界值保留）。
+                    ctx.set_fill_color_f32(f);
+                } else if let Some(c) =
+                    parse_linear_color_in_space(arg(0), zero_canvas::CanvasContext::color_space_of(ctx))
+                {
+                    // linear 画布：color(srgb-linear/display-p3-linear …) 直取线性通道。
+                    ctx.set_fill_color_raw(c);
+                } else if ctx.color_space_of() == zero_canvas::CanvasColorSpace::DisplayP3
                     && let Some(c) = parse_p3_channels(arg(0))
                 {
                     ctx.set_fill_color_raw(c);
@@ -724,7 +849,12 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             if let Some(ctx) = reg.contexts.get_mut(&hid()) {
                 // R34xx：无效颜色忽略保持旧值（同 setStrokeStyle——2d.shadow.attributes
                 // shadowColor.invalid 设 'bogus' 应保持原值）。
-                if let Some(color) = try_parse_canvas_color(arg(0)) {
+                // R34xx（wide-gamut）：p3 画布 + color(display-p3 …) 直取 p3 通道。
+                if ctx.color_space_of() == zero_canvas::CanvasColorSpace::DisplayP3
+                    && let Some(c) = parse_p3_channels(arg(0))
+                {
+                    ctx.set_shadow_color_raw(c);
+                } else if let Some(color) = try_parse_canvas_color(arg(0)) {
                     ctx.set_shadow_color(color);
                 }
             }
@@ -809,7 +939,19 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 //（putImageData 的 colorSpace 参数——2d.color.type.u8srgb.to.u8p3）。
                 let src_cs = zero_canvas::CanvasColorSpace::parse_name(arg(5));
                 src_cs.convert_buffer(zero_canvas::CanvasContext::color_space_of(ctx), &mut img.data);
-                ctx.put_image_data(&img, dx, dy);
+                // R34xx（f16 存储）：float16 画布 → f32 缓冲（越界/浮点精度——
+                // 源 wire 经 i32 解析，归一化 /255）。
+                if zero_canvas::CanvasContext::is_float16_of(ctx) {
+                    let f32data: Vec<f32> = arg(4)
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .filter_map(|s| s.trim().parse::<i32>().ok())
+                        .map(|v| v as f32 / 255.0)
+                        .collect();
+                    ctx.put_image_data_f32(&f32data, dx, dy, w, h);
+                } else {
+                    ctx.put_image_data(&img, dx, dy);
+                }
             }
             "ok".into()
         }
@@ -881,6 +1023,29 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 arg(3).trim().parse::<i32>().unwrap_or(0),
             );
             if let Some(ctx) = reg.contexts.get(&hid()) {
+                // R34xx（f16 存储）：float16 画布 → f32 读（×255 wire——越界值保留，
+                // shim /255 还原）。
+                let (w2, h2, f32data) = if zero_canvas::CanvasContext::is_float16_of(ctx) {
+                    ctx.get_image_data_f32(x, y, w, h)
+                } else {
+                    (0, 0, Vec::new())
+                };
+                // R34xx（f16 存储）：float16 画布 → wire 直接序列化 ×255 的 i32
+                //（越界值 312/−11 原样保留——shim /255 还原；u8 ImageData 会回绕）。
+                if !f32data.is_empty() {
+                    // R34xx（color-type）：f16 回读的颜色空间转换在 shim 侧浮点完成
+                    //（_zwCsConvert——u8 量化前）。
+                    let mut out = format!("{w2}:{h2};");
+                    let mut first = true;
+                    for v in &f32data {
+                        if !first {
+                            out.push(',');
+                        }
+                        first = false;
+                        out.push_str(&((v * 255.0).round() as i32).to_string());
+                    }
+                    return out;
+                }
                 let mut img = ctx.get_image_data(x, y, w, h);
                 // R34xx（color-type 目录）：请求 colorSpace ≠ canvas → 转换
                 //（getImageData settings.colorSpace——u8p3 画布 srgb 回读）。

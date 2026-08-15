@@ -168,7 +168,9 @@
               var ch = _zwCanvasDim(sel, handle, 'height', 150);
               var id = __zw_canvas_op('0', 'getContext2d', String(cw), String(ch),
                 (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-                  ? arguments[1].colorSpace : 'srgb');
+                  ? arguments[1].colorSpace : 'srgb',
+                (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorType === 'string')
+                  ? arguments[1].colorType : 'unorm8');
               if (!id || String(id).charAt(0) === '!') return null;
               var ctx = _zwMakeCtx2d(String(id));
               // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 浮点转换基准）。

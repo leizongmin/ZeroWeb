@@ -44,6 +44,9 @@ impl CanvasContext {
             line_cap: LineCap::default(),
             image_smoothing_enabled: true,
             image_smoothing_quality: ImageSmoothingQuality::default(),
+            float16: false,
+            pixel_buffer_f32: Vec::new(),
+            fill_color_f32: None,
             text_align: TextAlign::Start,
             text_baseline: TextBaseline::Alphabetic,
             miter_limit: 10.0,
@@ -75,12 +78,12 @@ impl CanvasContext {
 
     /// R34xx（wide-gamut 目录）：sRGB 颜色 → 画布空间（fillStyle/strokeStyle/
     /// shadow 的 CSS 颜色按 sRGB 解析——非 srgb 画布须转换；2d.color.space.p3.to.p3
-    /// 的 rgb(50,100,150) → (62,99,146)）。
+    /// 的 rgb(50,100,150) → (62,99,146)；linear 画布 → 线性传输）。
     fn canvas_color(&self, color: Color) -> Color {
         if self.color_space == CanvasColorSpace::Srgb {
             return color;
         }
-        let [r, g, b] = CanvasColorSpace::Srgb.convert_rgb(CanvasColorSpace::DisplayP3, [color.r, color.g, color.b]);
+        let [r, g, b] = CanvasColorSpace::Srgb.convert_rgb(self.color_space, [color.r, color.g, color.b]);
         Color { r, g, b, a: color.a }
     }
 
@@ -88,6 +91,77 @@ impl CanvasContext {
     /// 读取 canvas 色彩空间（bridge 层转换用）。
     pub fn color_space_of(&self) -> CanvasColorSpace {
         self.color_space
+    }
+
+    /// float16 画布（bridge 层 f32 路径判定）。
+    pub fn is_float16_of(&self) -> bool {
+        self.float16
+    }
+
+    /// R34xx（f16 存储）：float16 画布的 f32 像素读取（归一化值——u8 缓冲的
+    /// 浮点精度并行存储；越界值原样返回）。
+    pub fn get_image_data_f32(&self, x: i32, y: i32, width: i32, height: i32) -> (u32, u32, Vec<f32>) {
+        let (w, h) = (width.unsigned_abs(), height.unsigned_abs());
+        let canvas_w = self.width as i32;
+        let canvas_h = self.height as i32;
+        let mut data = vec![0.0f32; (w as usize) * (h as usize) * 4];
+        if self.pixel_buffer_f32.is_empty() {
+            return (w, h, data);
+        }
+        for row in 0..h {
+            let src_row = y + row as i32;
+            if src_row < 0 || src_row >= canvas_h {
+                continue;
+            }
+            let col0 = x.max(0) as usize;
+            let col1 = (x + width).min(canvas_w).max(0) as usize;
+            if col1 <= col0 {
+                continue;
+            }
+            let src_start = src_row as usize * canvas_w as usize * 4 + col0 * 4;
+            let src_end = src_row as usize * canvas_w as usize * 4 + col1 * 4;
+            let dst_col0 = (col0 as i32 - x) as usize;
+            let dst_start = row as usize * w as usize * 4 + dst_col0 * 4;
+            let dst_len = (col1 - col0) * 4;
+            data[dst_start..dst_start + dst_len].copy_from_slice(&self.pixel_buffer_f32[src_start..src_end]);
+        }
+        (w, h, data)
+    }
+
+    /// R34xx（f16 存储）：float16 画布的 f32 像素写入（归一化值，不 clamp）。
+    pub fn put_image_data_f32(&mut self, data: &[f32], x: i32, y: i32, w: u32, h: u32) {
+        if self.pixel_buffer_f32.is_empty() {
+            return;
+        }
+        let canvas_w = self.width as i32;
+        let canvas_h = self.height as i32;
+        for row in 0..h as i32 {
+            let dy = y + row;
+            if dy < 0 || dy >= canvas_h {
+                continue;
+            }
+            for col in 0..w as i32 {
+                let dx = x + col;
+                if dx < 0 || dx >= canvas_w {
+                    continue;
+                }
+                let si = ((row as usize) * (w as usize) + col as usize) * 4;
+                let di = ((dy as usize) * (canvas_w as usize) + dx as usize) * 4;
+                self.pixel_buffer_f32[di..di + 4].copy_from_slice(&data[si..si + 4]);
+            }
+        }
+    }
+
+    /// R34xx（f16 存储）：float16 画布的 fillStyle 精确浮点颜色（u8 量化前——
+    /// color(display-p3 …) 的越界转换值）。
+    pub fn set_fill_color_f32(&mut self, color: [f32; 4]) {
+        self.fill_color_f32 = Some(color);
+        self.fill_style = CanvasStyle::Color(Color {
+            r: (color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            g: (color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            b: (color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+            a: (color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+        });
     }
 
     /// 注入共享字体加载器（headless @font-face 真字体光栅）。
@@ -335,6 +409,16 @@ impl CanvasContext {
                         pen_x + g.x_offset * scale + bmp.x_offset as f32,
                         ty - bmp.y_offset as f32 - bmp.height as f32,
                     );
+                    // R34xx：文本阴影（2d.color.space.p3.fillText.shadow——shadowColor
+                    // + offset + blur 的 glyph 位图先画，再画正文）。
+                    if self.has_shadow() {
+                        self.blit_glyph_bitmap(
+                            &bmp,
+                            gx + self.shadow_offset_x,
+                            gy + self.shadow_offset_y,
+                            self.shadow_color,
+                        );
+                    }
                     self.blit_glyph_bitmap(&bmp, gx, gy, color);
                 }
                 self.primitives
@@ -1144,9 +1228,23 @@ impl CanvasContext {
         // canvas_color 转换与 getImageData 回读仍按画布空间——p3.fillText 的
         // canvas.width= 后文字颜色/回读正确）。
         let cs = self.color_space;
+        let f16 = self.float16;
         let fresh = CanvasContext::new(width, height);
         *self = fresh;
         self.color_space = cs;
+        // R34xx（f16 存储）：resize 保留 float16 模式（像素随尺寸重置）。
+        if f16 {
+            self.set_float16(true);
+        }
+    }
+
+    /// R34xx（f16 存储）：float16 画布模式——启用 f32 像素缓冲（越界值/浮点精度
+    /// 存储；put.basic.rgba.float16 与 color-type f16 用例）。
+    pub fn set_float16(&mut self, enabled: bool) {
+        self.float16 = enabled;
+        if enabled {
+            self.pixel_buffer_f32 = vec![0.0; (self.width as usize) * (self.height as usize) * 4];
+        }
     }
 
     /// R3254-C8：仅清空 bitmap 像素（替换透明黑），**保留**绘图状态——transferToImageBitmap
@@ -1160,6 +1258,11 @@ impl CanvasContext {
     /// 设置阴影颜色。
     pub fn set_shadow_color(&mut self, color: Color) {
         self.shadow_color = self.canvas_color(color);
+    }
+
+    /// 直设阴影色（画布空间——color(display-p3 …) 直取路径）。
+    pub fn set_shadow_color_raw(&mut self, color: Color) {
+        self.shadow_color = color;
     }
 
     /// 设置阴影模糊半径。负值会被限制为 0。
@@ -1601,6 +1704,19 @@ impl CanvasContext {
                 self.pixel_buffer[dst_idx + 1] = pg;
                 self.pixel_buffer[dst_idx + 2] = pb;
                 self.pixel_buffer[dst_idx + 3] = pa;
+                // R34xx（f16 存储）：float16 画布并行 f32 写（图像源按 u8 量化）。
+                if !self.pixel_buffer_f32.is_empty() {
+                    let [r, g, b, a] = self.fill_color_f32.unwrap_or([
+                        pr as f32 / 255.0,
+                        pg as f32 / 255.0,
+                        pb as f32 / 255.0,
+                        pa as f32 / 255.0,
+                    ]);
+                    self.pixel_buffer_f32[dst_idx] = r;
+                    self.pixel_buffer_f32[dst_idx + 1] = g;
+                    self.pixel_buffer_f32[dst_idx + 2] = b;
+                    self.pixel_buffer_f32[dst_idx + 3] = a;
+                }
             }
         }
         // R34xx：source 独占类 composite（copy/source-in 等）的未覆盖区域清除——

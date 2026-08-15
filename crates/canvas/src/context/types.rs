@@ -1090,6 +1090,13 @@ pub(crate) struct CanvasState {
 pub struct CanvasContext {
     /// R34xx：canvas 色彩空间（getContext({colorSpace})——put/getImageData 转换基准）。
     pub(crate) color_space: CanvasColorSpace,
+    /// R34xx（f16 存储）：float16 画布（getContext({colorType:'float16'})——f32 像素
+    /// 缓冲存越界值/浮点精度）。
+    pub(crate) float16: bool,
+    /// float16 画布的 f32 像素缓冲（RGBA 交错，归一化值——u8 缓冲并行）。
+    pub(crate) pixel_buffer_f32: Vec<f32>,
+    /// float16 画布 fillStyle 的精确浮点颜色（u8 量化前——越界值 1.2249 等）。
+    pub(crate) fill_color_f32: Option<[f32; 4]>,
     /// 画布宽度。
     pub(crate) width: u32,
     /// 画布高度。
@@ -2025,9 +2032,14 @@ pub enum CanvasColorSpace {
     Srgb,
     /// Display P3。
     DisplayP3,
+    /// sRGB 线性（CSS Color 4 srgb-linear——2d.color.space.srgb-linear）。
+    SrgbLinear,
+    /// Display P3 线性。
+    DisplayP3Linear,
 }
 
 /// sRGB ↔ Display P3（D65 白点）线性矩阵（CSS Color 4 §predefined color spaces）。
+const IDENTITY: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 const SRGB_TO_P3: [[f32; 3]; 3] = [
     [0.822_462_1, 0.177_538, 0.0],
     [0.033_194, 0.966_805_8, 0.0],
@@ -2068,30 +2080,59 @@ impl CanvasColorSpace {
     pub fn parse_name(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "display-p3" => CanvasColorSpace::DisplayP3,
+            "srgb-linear" => CanvasColorSpace::SrgbLinear,
+            "display-p3-linear" => CanvasColorSpace::DisplayP3Linear,
             _ => CanvasColorSpace::Srgb,
         }
     }
 
-    /// 单像素 [0,255] RGB → 目标空间 [0,255] RGB（alpha 不变）。
+    /// 单像素 [0,255] RGB → 目标空间 [0,255] RGB（alpha 不变）。linear 变体：
+    /// 解码/编码跳过 gamma（线性存储）；矩阵按原色对（同原色 → 单位）。
     pub fn convert_rgb(self, to: CanvasColorSpace, rgb: [u8; 3]) -> [u8; 3] {
         if self == to {
             return rgb;
         }
         let f = |c: u8| c as f32 / 255.0;
         let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let decode = |c: f32| srgb_eotf(c);
-        let encode = |c: f32| srgb_eotf_inv(c);
-        let (linear, matrix) = match (self, to) {
-            (CanvasColorSpace::Srgb, CanvasColorSpace::DisplayP3) => {
-                ([decode(f(rgb[0])), decode(f(rgb[1])), decode(f(rgb[2]))], &SRGB_TO_P3)
+        // 源解码（gamma 或恒等）
+        let src_gamma = matches!(self, CanvasColorSpace::Srgb | CanvasColorSpace::DisplayP3);
+        let src_lin = |c: f32| if src_gamma { srgb_eotf(c) } else { c };
+        let (lin, matrix) = match (self, to) {
+            // 同原色（srgb ↔ srgb-linear）：矩阵单位。
+            (CanvasColorSpace::Srgb, CanvasColorSpace::SrgbLinear)
+            | (CanvasColorSpace::DisplayP3, CanvasColorSpace::DisplayP3Linear) => {
+                ([src_lin(f(rgb[0])), src_lin(f(rgb[1])), src_lin(f(rgb[2]))], &IDENTITY)
             }
-            (CanvasColorSpace::DisplayP3, CanvasColorSpace::Srgb) => {
-                ([decode(f(rgb[0])), decode(f(rgb[1])), decode(f(rgb[2]))], &P3_TO_SRGB)
+            (CanvasColorSpace::Srgb, CanvasColorSpace::DisplayP3)
+            | (CanvasColorSpace::Srgb, CanvasColorSpace::DisplayP3Linear) => (
+                [src_lin(f(rgb[0])), src_lin(f(rgb[1])), src_lin(f(rgb[2]))],
+                &SRGB_TO_P3,
+            ),
+            (CanvasColorSpace::DisplayP3, CanvasColorSpace::Srgb)
+            | (CanvasColorSpace::DisplayP3, CanvasColorSpace::SrgbLinear) => (
+                [src_lin(f(rgb[0])), src_lin(f(rgb[1])), src_lin(f(rgb[2]))],
+                &P3_TO_SRGB,
+            ),
+            (CanvasColorSpace::SrgbLinear, CanvasColorSpace::Srgb)
+            | (CanvasColorSpace::DisplayP3Linear, CanvasColorSpace::DisplayP3) => {
+                ([f(rgb[0]), f(rgb[1]), f(rgb[2])], &IDENTITY)
             }
-            _ => unreachable!(),
+            (CanvasColorSpace::SrgbLinear, CanvasColorSpace::DisplayP3)
+            | (CanvasColorSpace::SrgbLinear, CanvasColorSpace::DisplayP3Linear) => {
+                ([f(rgb[0]), f(rgb[1]), f(rgb[2])], &SRGB_TO_P3)
+            }
+            (CanvasColorSpace::DisplayP3Linear, CanvasColorSpace::Srgb)
+            | (CanvasColorSpace::DisplayP3Linear, CanvasColorSpace::SrgbLinear) => {
+                ([f(rgb[0]), f(rgb[1]), f(rgb[2])], &P3_TO_SRGB)
+            }
+            // 同空间已在上方 early-return（枚举完整性兜底）。
+            _ => unreachable!("equal spaces returned early"),
         };
-        let out = rgb_to_xyz_matrix(matrix, linear);
-        [q(encode(out[0])), q(encode(out[1])), q(encode(out[2]))]
+        let out = rgb_to_xyz_matrix(matrix, lin);
+        // 目标编码（gamma 或恒等）
+        let dst_gamma = matches!(to, CanvasColorSpace::Srgb | CanvasColorSpace::DisplayP3);
+        let enc = |c: f32| if dst_gamma { srgb_eotf_inv(c) } else { c };
+        [q(enc(out[0])), q(enc(out[1])), q(enc(out[2]))]
     }
 
     /// 整幅 ImageData 字节转换（RGBA 交错；alpha 不变）。

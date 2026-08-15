@@ -891,7 +891,8 @@
         fmt = settings.pixelFormat;
       }
       if (settings.colorSpace !== undefined) {
-        if (settings.colorSpace !== 'srgb' && settings.colorSpace !== 'display-p3') {
+        if (settings.colorSpace !== 'srgb' && settings.colorSpace !== 'display-p3' &&
+            settings.colorSpace !== 'srgb-linear' && settings.colorSpace !== 'display-p3-linear') {
           throw new TypeError('invalid colorSpace');
         }
         cs = settings.colorSpace;
@@ -1276,7 +1277,9 @@
       if (typeof __zw_canvas_op !== 'function') return null;
       var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
         (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-          ? arguments[1].colorSpace : 'srgb');
+          ? arguments[1].colorSpace : 'srgb',
+        (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorType === 'string')
+          ? arguments[1].colorType : 'unorm8');
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
       // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 画布的浮点转换基准）。
@@ -1889,7 +1892,9 @@
     if (typeof __zw_canvas_op !== 'function') return null;
     var id = __zw_canvas_op('0', 'getContext2d', String(this.width), String(this.height),
       (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-        ? arguments[1].colorSpace : 'srgb');
+        ? arguments[1].colorSpace : 'srgb',
+      (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorType === 'string')
+        ? arguments[1].colorType : 'unorm8');
     if (!id || String(id).charAt(0) === '!') return null;
     this._ctx = _zwMakeCtx2d(String(id));
     // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 浮点转换基准）。
@@ -3544,16 +3549,20 @@
       // 'rgba-float16' → Float16Array 归一化值（字节/255）；colorSpace 透传 host
       // 作跨空间转换（color-type 目录——display-p3 画布 srgb 回读）。
       var _settings = arguments.length > 4 ? arguments[4] : null;
+      // R34xx（wide-gamut）：getImageData 缺省 colorSpace = canvas 色彩空间
+      //（spec——srgb-linear 画布缺省读返 srgb-linear）。
+      var _reqCs = (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string')
+        ? _settings.colorSpace : (this._cs || 'srgb');
       var r = String(__zw_canvas_op(h, 'getImageData',
         String(Math.trunc(vx)), String(Math.trunc(vy)),
-        String(tw), String(th),
-        (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string') ? _settings.colorSpace : 'srgb'));
+        String(tw), String(th), _reqCs));
       if (!r) return null;
       var parts = r.split(';');
       var dims = parts[0].split(':');
       var nums = parts[1] ? parts[1].split(',') : [];
       var f16 = !!(_settings && typeof _settings === 'object' && _settings.pixelFormat === 'rgba-float16');
-      var cs = (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string') ? _settings.colorSpace : 'srgb';
+      var cs = (_settings && typeof _settings === 'object' && typeof _settings.colorSpace === 'string')
+        ? _settings.colorSpace : (this._cs || 'srgb');
       var arr;
       if (f16) {
         arr = new Float16Array(nums.length);

@@ -1545,8 +1545,28 @@ impl CanvasContext {
                 self.pixel_buffer[idx + 1] = g;
                 self.pixel_buffer[idx + 2] = b;
                 self.pixel_buffer[idx + 3] = a;
+                // R34xx（f16 存储）：float16 画布并行写 f32 缓冲（精确浮点颜色）。
+                self.blit_pixel_f32(idx, color);
             }
         }
+    }
+
+    /// R34xx（f16 存储）：float16 画布的 f32 并行像素写（color 的精确浮点——
+    /// fill_color_f32 优先，否则 u8/255）。
+    pub(crate) fn blit_pixel_f32(&mut self, idx: usize, color: Color) {
+        if self.pixel_buffer_f32.is_empty() {
+            return;
+        }
+        let [r, g, b, a] = self.fill_color_f32.unwrap_or([
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        ]);
+        self.pixel_buffer_f32[idx] = r;
+        self.pixel_buffer_f32[idx + 1] = g;
+        self.pixel_buffer_f32[idx + 2] = b;
+        self.pixel_buffer_f32[idx + 3] = a;
     }
 
     /// 矩形渐变填充：每像素按设备坐标采样样式颜色，应用 global_alpha + 当前合成操作。
@@ -1648,6 +1668,8 @@ impl CanvasContext {
                         self.pixel_buffer[idx + 1] = g;
                         self.pixel_buffer[idx + 2] = b;
                         self.pixel_buffer[idx + 3] = a;
+                        // R34xx（f16 存储）：float16 画布并行 f32 写。
+                        self.blit_pixel_f32(idx, color);
                     }
                 }
             }
