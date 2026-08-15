@@ -1,0 +1,49 @@
+{
+  "round": "R54",
+  "date": "2026-08-15",
+  "commit": "ba775545",
+  "slice": "live-collection els growth filter at merge point (R53 follow-up)",
+  "fix": {
+    "mechanism": "_zwMutationInDoc(mutSel, mutHandle): mount-point based in-document check — sel via __zw_contains('html', sel); handle via _zwNodeParent reverse chain hop-by-hop (link recorded at append time, never broken); guard 8 hops",
+    "applied_at": [
+      "_zwHCLiveInvalidate add branch (addFlat && r54InDoc)",
+      "_zwMakeCollection build-time pending merge (skip _pnd whose mount chain is not in document)"
+    ],
+    "explicitly_untouched": [
+      "els snapshot baseline",
+      "removed-pruning path (remFlat loop) — R53 regression lesson",
+      "_handleChildren / _zwNodeParent registries (CE disconnectedCallback propagation)"
+    ]
+  },
+  "why_mount_point_not_child_walk": "R53 two failed attempts walked up from children; pending-tree sel chains break at un-applied containers, which cleared snapshot baselines (len=0). Mount point is recorded at append time inside the same _mo_notify flow that feeds _zwNodeParent, so the chain is complete at query time.",
+  "verification": {
+    "unit_tests": {
+      "new": [
+        "r54_detached_container_subtree_not_in_document_collection",
+        "r54_invalidate_add_branch_filters_detached_growth",
+        "r54_build_time_pending_merge_skips_detached"
+      ],
+      "engine_v8": "2143 passed (was 2140)",
+      "engine_quickjs": "1415 passed"
+    },
+    "wpt_timing_ab": {
+      "deleteData": { "baseline_s": 71, "r54_s": 35, "speedup": "2.0x", "subtests": 564 },
+      "insertData": { "baseline_s": 31, "r54_s": 23, "subtests": 382 },
+      "appendChild": { "baseline_s": 18, "r54_s": 18, "subtests": 70 },
+      "appendData": { "baseline_s": 19, "r54_s": 19, "subtests": 384 },
+      "replaceChild": { "baseline_s": 18, "r54_s": 18, "subtests": 60 },
+      "removeChild": { "r54_s": 17, "subtests": 20 }
+    },
+    "wpt_regression": {
+      "dom/nodes": { "baseline": "3006P/4154F", "r54": "3006P/4155F", "note": "name-validation diff only in full-dir run; isolated reruns identical (5F both trees) — timing jitter at 60s case boundary" },
+      "dom/collections": "48P/0F unchanged (R50 own-props preserved)",
+      "dom/traversal": "953P unchanged",
+      "dom/events": "189P unchanged"
+    },
+    "gates": "fmt no diff; clippy clean (v8 + quickjs matrices); pre-commit-guard PASS"
+  },
+  "remaining": {
+    "insertBefore_dataChange": "still >420s both trees — pre-existing R51c/R52 attribution: per-subtest testFn cost (Range getter assertion family + per-op host round trips), M1 L2 territory (polyfill-live unification removes re-parse)",
+    "detached_container_strong_refs": "foreignDoc/xmlDoc subtrees never removed by test semantics (browser relies on GC; we hold strong refs) — residual slow growth, TBD WeakRef"
+  }
+}
