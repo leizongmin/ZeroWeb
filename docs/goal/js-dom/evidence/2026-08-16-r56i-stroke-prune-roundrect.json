@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-16",
+  "round": "R56i",
+  "slice": "M8 path-objects 续作：stroke 零长段剪除 + roundRect 显式闭合 + 环绕 join",
+  "commits": ["c218f196"],
+  "baseline": {
+    "commit": "8584c942 (R56h 归档 HEAD)",
+    "fails": 7,
+    "pass": 196,
+    "command": "zero-wpt-runner testharness-canvas path-objects"
+  },
+  "after": {
+    "commit": "c218f196",
+    "fails": 3,
+    "pass": 200
+  },
+  "net": {
+    "fixed": ["2d.path.stroke.prune.line", "2d.path.stroke.prune.arc", "2d.path.stroke.prune.curve", "2d.path.roundrect.closed"],
+    "regressions": [],
+    "note": "line-styles 2F 过程回归（cap.open/join.open）被跨目录 A/B 捕获同轮修复——几何闭合探测方案被否决，改命令层 ClosePath 标记"
+  },
+  "changes": [
+    "stroke 零长段剪除（spec dom-context-2d-stroke：zero-length segments removed BEFORE stroking）——moveTo(p)+lineTo(p) 不得画 round cap 圆盘；剪除在段列表构造处，空列表则 cap/join 全不画",
+    "Path2D::round_rect 追加显式 ClosePath：roundRect 是 spec 闭合子路径——闭合环的环绕 join（末段→首段）此前缺失（roundrect.closed：退化矩形 4 段在画布外、lw 200，起点 join 缺口致 (50,25) 漏画）",
+    "join 循环闭合时环绕（(i+1) % len，solid + gradient 双光栅化器）",
+    "过程方案否决记录：几何闭合探测（末段终点≈首段起点）会把「lineTo 显式回到起点」的开放子路径误判闭合 → 丢 square cap（2d.line.cap.open 的 A/B 捕获）——命令层 ClosePath 才是正确判据",
+    "4 个旧 roundRect 命令计数测试更新（+ClosePath）"
+  ],
+  "tests": {
+    "canvas_unit": "+1（roundrect.closed 环绕 join 哨兵）",
+    "wpt": "prune 三用例 + roundrect.closed 全 Pass"
+  },
+  "gates": {
+    "canvas": "790 passed 0 failed",
+    "engine_v8": "2153 passed 0 failed",
+    "engine_quickjs": "1416 passed 0 failed",
+    "clippy": "v8+quickjs 双矩阵零警告",
+    "fmt": "无 diff",
+    "cross_subdir": "line-styles/clipping/compositing/transformations/fillrect/drawing-rectangles 全 0F（line-styles 过程回归同轮修复）"
+  },
+  "process_learnings": [
+    "闭合判定的正确判据在命令层（ClosePath）不在几何层（首尾相接）——lineTo 回到起点的开放子路径画 cap、roundRect 闭合环画环绕 join，几何上无法区分",
+    "跨目录 A/B（不只本目录）每次都抓到过程回归：line-styles 2F 在 path-objects 零回归时仍被捕获",
+    "prune 语义在段列表构造处剪除最干净——在 cap/join 消费端过滤会漏（空路径仍走 cap 分支）"
+  ],
+  "remaining_fails_3": "stroke.skew（斜切 CTM 平行四边形端面深项）/ roundrect.end.3（miter-limit 角部边缘）/ isPointInStroke.scaleddashes（dash 相位命中测试）——记录为 M8 深项清单，非轻量切片"
+}
