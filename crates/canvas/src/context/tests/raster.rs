@@ -392,8 +392,8 @@ fn test_flatten_path_quadratic_curve() {
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.quadratic_curve_to(50.0, 0.0, 50.0, 50.0);
     let verts = ctx.flatten_path_open();
-    // 8 段细分 × 4 = 32 floats
-    assert_eq!(verts.len(), 32, "quadratic curve = 8 segments × 4");
+    // R56h：段数自适应 = 控制折线 100/8 → 13 段 × 4 = 52。
+    assert_eq!(verts.len(), 52, "quadratic curve = 13 adaptive segments × 4");
 }
 
 #[test]
@@ -402,7 +402,8 @@ fn test_flatten_path_bezier_curve() {
     ctx.current_path.move_to(0.0, 0.0);
     ctx.current_path.bezier_curve_to(25.0, 0.0, 50.0, 25.0, 50.0, 50.0);
     let verts = ctx.flatten_path_open();
-    assert_eq!(verts.len(), 32, "cubic bezier = 8 segments × 4");
+    // R56h：段数自适应 = 控制折线 85.4/8 → 11 段 × 4 = 44。
+    assert_eq!(verts.len(), 44, "cubic bezier = 11 adaptive segments × 4");
 }
 
 #[test]
@@ -2016,4 +2017,44 @@ fn test_arc_annulus_covers_interior_r56g() {
     // 端面外的例子：弧为上半圆，(98,48) θ≈-12° 带内…取画布下缘中点 (50,49)：
     // 距弧 (50,0) 49 <50 带内。端面外取 (1,49)：距端点 (0,50) 1.4 —— θ=atan2(-1,-1)
     // =-135° 带内。真端面外点：θ=+90° 的 (50,100+) 画布外——skip。
+}
+
+// ── R56h：曲线段数自适应 + 像素方形覆盖 ──
+
+#[test]
+fn test_curve_adaptive_segments_and_boundary_pixel_r56h() {
+    // 2d.path.bezierCurveTo.shape 语义：巨坐标曲线（控制折线 ~13000px）的
+    // 固定 8 段弦偏差 48px；自适应后 (1,1) 临界像素（中心距曲线 27.9、
+    // half 27.5、方形最近角 27.2 < 27.5 相交）须着色。
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx.line_width = 55.0;
+    ctx.set_stroke_color(Color::rgba(0, 255, 0, 255));
+    ctx.begin_path();
+    ctx.move_to(-2000.0, 3100.0);
+    ctx.bezier_curve_to(-2000.0, -1000.0, 2100.0, -1000.0, 2100.0, 3100.0);
+    ctx.stroke();
+    let g = |x: u32, y: u32| ctx.pixel_buffer[((y * 100) + x) as usize * 4 + 1];
+    assert_eq!(g(50, 25), 255, "curve midpoint (50,25) stroked");
+    assert_eq!(
+        g(1, 1),
+        255,
+        "boundary pixel (1,1): square intersects band (27.2 < 27.5)"
+    );
+    assert_eq!(g(98, 48), 255, "boundary pixel (98,48) stroked");
+
+    // quadratic 同构（中点 (50,25)）。
+    let mut ctx2 = CanvasContext::new(100, 50);
+    ctx2.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx2.fill_rect(0.0, 0.0, 100.0, 50.0);
+    ctx2.line_width = 55.0;
+    ctx2.set_stroke_color(Color::rgba(0, 255, 0, 255));
+    ctx2.begin_path();
+    ctx2.move_to(-1000.0, 1050.0);
+    ctx2.quadratic_curve_to(0.0, -1000.0, 1200.0, 1050.0);
+    ctx2.stroke();
+    let g2 = |x: u32, y: u32| ctx2.pixel_buffer[((y * 100) + x) as usize * 4 + 1];
+    assert_eq!(g2(50, 25), 255, "quad midpoint stroked");
+    assert_eq!(g2(1, 1), 255, "quad boundary pixel (1,1) stroked");
 }

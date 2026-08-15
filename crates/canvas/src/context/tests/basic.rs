@@ -1033,8 +1033,8 @@ fn test_quadratic_curve_flattening() {
     ctx.quadratic_curve_to(50.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56：8 段细分 × 4 = 32 + fill 隐式闭合段 4 = 36（closepath-on-fill）
-    assert_eq!(pf.vertices.len(), 36);
+    // R56h：段数自适应 = 控制折线 223.6/8 → 28 段 × 4 + fill 隐式闭合 4 = 116。
+    assert_eq!(pf.vertices.len(), 116);
 }
 
 /// 测试三次贝塞尔曲线填充生成正确的段数。
@@ -1046,8 +1046,8 @@ fn test_bezier_curve_flattening() {
     ctx.bezier_curve_to(25.0, 100.0, 75.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56：8 段细分 × 4 = 32 + fill 隐式闭合段 4 = 36（closepath-on-fill）
-    assert_eq!(pf.vertices.len(), 36);
+    // R56h：段数自适应 = 控制折线 256.2/8 → 33 段 × 4 + fill 隐式闭合 4 = 136。
+    assert_eq!(pf.vertices.len(), 136);
 }
 
 /// 测试圆弧填充生成正确的段数。

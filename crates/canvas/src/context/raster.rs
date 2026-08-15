@@ -644,12 +644,15 @@ impl CanvasContext {
                     current_x = sx0;
                     current_y = sy0;
                     subpath_has_geometry = true;
-                    // 使用 8 段细分二次贝塞尔曲线
-                    const SEGMENTS: usize = 8;
+                    // R56h（M8/DC-8）：段数自适应——控制点折线长 / 8px（[8,512]）。
+                    // 固定 8 段对巨坐标曲线（bezierCurveTo.shape 控制折线 ~13000px）
+                    // 弦偏差达 48px；按折线长缩放后画布内窗口获得足够段密度。
+                    let poly = ((cpx - current_x).hypot(cpy - current_y) + (x - cpx).hypot(y - cpy)).max(1.0);
+                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 512);
                     let mut px = current_x;
                     let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
+                    for i in 1..=segments {
+                        let t = i as f32 / segments as f32;
                         let mt = 1.0 - t;
                         let nx = mt * mt * current_x + 2.0 * mt * t * cpx + t * t * x;
                         let ny = mt * mt * current_y + 2.0 * mt * t * cpy + t * t * y;
@@ -674,12 +677,16 @@ impl CanvasContext {
                         current_y = cp1y;
                     }
                     subpath_has_geometry = true;
-                    // 使用 8 段细分三次贝塞尔曲线
-                    const SEGMENTS: usize = 8;
+                    // R56h：段数自适应（同 quadratic——控制折线长 / 8px，[8,512]）。
+                    let poly = ((cp1x - current_x).hypot(cp1y - current_y)
+                        + (cp2x - cp1x).hypot(cp2y - cp1y)
+                        + (x - cp2x).hypot(y - cp2y))
+                    .max(1.0);
+                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 512);
                     let mut px = current_x;
                     let mut py = current_y;
-                    for i in 1..=SEGMENTS {
-                        let t = i as f32 / SEGMENTS as f32;
+                    for i in 1..=segments {
+                        let t = i as f32 / segments as f32;
                         let mt = 1.0 - t;
                         let nx = mt * mt * mt * current_x
                             + 3.0 * mt * mt * t * cp1x
@@ -1912,7 +1919,12 @@ impl CanvasContext {
             let x1 = (max_x.min(self.width as f32).ceil() as i32).min(self.width as i32);
             let y1 = (max_y.min(self.height as f32).ceil() as i32).min(self.height as i32);
             let len2 = len * len;
-            let h2 = seg_half * seg_half;
+            // R56h（M8/DC-8）：像素方形 vs 带相交（非中心点判定）——判定半径
+            // half + 0.5（像素内切半径）。真实光栅是面积覆盖：临界像素（中心
+            // 距中心线 half+0.4px 内，方形与带相交）须着色（2d.path.bezierCurveTo.
+            // shape/scaled 的 (1,1)：像素中心距曲线 27.9、half 27.5，方形最近角
+            // 27.2 < 27.5 相交——旧中心点判定 miss）。
+            let h2 = (seg_half + 0.5) * (seg_half + 0.5);
             for py in y0..y1 {
                 for px in x0..x1 {
                     let (qx, qy) = (px as f32 + 0.5 - ax, py as f32 + 0.5 - ay);
@@ -2072,7 +2084,12 @@ impl CanvasContext {
             let x1 = (max_x.min(self.width as f32).ceil() as i32).min(self.width as i32);
             let y1 = (max_y.min(self.height as f32).ceil() as i32).min(self.height as i32);
             let len2 = len * len;
-            let h2 = seg_half * seg_half;
+            // R56h（M8/DC-8）：像素方形 vs 带相交（非中心点判定）——判定半径
+            // half + 0.5（像素内切半径）。真实光栅是面积覆盖：临界像素（中心
+            // 距中心线 half+0.4px 内，方形与带相交）须着色（2d.path.bezierCurveTo.
+            // shape/scaled 的 (1,1)：像素中心距曲线 27.9、half 27.5，方形最近角
+            // 27.2 < 27.5 相交——旧中心点判定 miss）。
+            let h2 = (seg_half + 0.5) * (seg_half + 0.5);
             for py in y0..y1 {
                 for px in x0..x1 {
                     let (qx, qy) = (px as f32 + 0.5 - ax, py as f32 + 0.5 - ay);
