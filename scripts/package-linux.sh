@@ -74,13 +74,14 @@ mkdir -p "$PACKAGE_DIR"
 
 # ── 编译 release 二进制 ──
 build_binary() {
-    info "编译 release 二进制 zero-browser、zero-renderer 与 zero-compositor..."
+    info "编译 release 二进制 zero-browser、zero-renderer、zero-compositor 与 zero-image-decoder..."
     cd "$PROJECT_ROOT"
-    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor
+    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
 
     local binary="$PROJECT_ROOT/target/release/zero-browser"
     local renderer="$PROJECT_ROOT/target/release/zero-renderer"
     local compositor="$PROJECT_ROOT/target/release/zero-compositor"
+    local image_decoder="$PROJECT_ROOT/target/release/zero-image-decoder"
     if [[ ! -f "$binary" ]]; then
         error "编译失败：未找到 $binary"
     fi
@@ -90,11 +91,15 @@ build_binary() {
     if [[ ! -f "$compositor" ]]; then
         error "编译失败：未找到 $compositor"
     fi
+    if [[ ! -f "$image_decoder" ]]; then
+        error "编译失败：未找到 $image_decoder"
+    fi
 
     # strip 减小体积
     strip --strip-unneeded "$binary" 2>/dev/null || warn "strip zero-browser 失败（可忽略）"
     strip --strip-unneeded "$renderer" 2>/dev/null || warn "strip zero-renderer 失败（可忽略）"
     strip --strip-unneeded "$compositor" 2>/dev/null || warn "strip zero-compositor 失败（可忽略）"
+    strip --strip-unneeded "$image_decoder" 2>/dev/null || warn "strip zero-image-decoder 失败（可忽略）"
     local size
     size=$(du -h "$binary" | cut -f1)
     info "zero-browser 大小: $size"
@@ -138,10 +143,11 @@ build_appimage() {
     mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
     mkdir -p "$appdir/usr/share/icons/hicolor/scalable/apps"
 
-    # 复制二进制（多进程：renderer 与 browser 同目录）
+    # 复制二进制（多进程：renderer/compositor/image-decoder 与 browser 同目录）
     cp "$PROJECT_ROOT/target/release/zero-browser" "$appdir/usr/bin/"
     cp "$PROJECT_ROOT/target/release/zero-renderer" "$appdir/usr/bin/"
     cp "$PROJECT_ROOT/target/release/zero-compositor" "$appdir/usr/bin/"
+    cp "$PROJECT_ROOT/target/release/zero-image-decoder" "$appdir/usr/bin/"
 
     # 创建 .desktop 文件
     cat > "$appdir/zero-browser.desktop" << 'EOF'
@@ -215,13 +221,15 @@ build_deb() {
     mkdir -p "$debroot/usr/share/icons/hicolor/scalable/apps"
     mkdir -p "$debroot/usr/share/doc/zero-browser"
 
-    # 复制二进制（多进程：renderer 与 browser 同目录）
+    # 复制二进制（多进程：renderer/compositor/image-decoder 与 browser 同目录）
     cp "$PROJECT_ROOT/target/release/zero-browser" "$debroot/usr/bin/"
     cp "$PROJECT_ROOT/target/release/zero-renderer" "$debroot/usr/bin/"
     cp "$PROJECT_ROOT/target/release/zero-compositor" "$debroot/usr/bin/"
+    cp "$PROJECT_ROOT/target/release/zero-image-decoder" "$debroot/usr/bin/"
     chmod 755 "$debroot/usr/bin/zero-browser"
     chmod 755 "$debroot/usr/bin/zero-renderer"
     chmod 755 "$debroot/usr/bin/zero-compositor"
+    chmod 755 "$debroot/usr/bin/zero-image-decoder"
 
     # control 文件
     local installed_size

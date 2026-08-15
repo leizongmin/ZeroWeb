@@ -90,12 +90,13 @@ if ($env:CFLAGS -notmatch "zlib") {
 }
 
 Push-Location $ProjectRoot
-cargo build --release -p zero-browser -p zero-renderer -p zero-compositor
+cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
 Pop-Location
 
 $BrowserBin = Join-Path $ProjectRoot "target\release\zero-browser.exe"
 $RendererBin = Join-Path $ProjectRoot "target\release\zero-renderer.exe"
 $CompositorBin = Join-Path $ProjectRoot "target\release\zero-compositor.exe"
+$ImageDecoderBin = Join-Path $ProjectRoot "target\release\zero-image-decoder.exe"
 if (-not (Test-Path $BrowserBin)) {
     Write-Host "[ERROR] 编译失败: zero-browser" -ForegroundColor Red
     exit 1
@@ -106,6 +107,10 @@ if (-not (Test-Path $RendererBin)) {
 }
 if (-not (Test-Path $CompositorBin)) {
     Write-Host "[ERROR] 编译失败: zero-compositor" -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-Path $ImageDecoderBin)) {
+    Write-Host "[ERROR] 编译失败: zero-image-decoder" -ForegroundColor Red
     exit 1
 }
 
@@ -119,10 +124,11 @@ New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
 $DistDir = Join-Path $PackageDir "ZeroBrowser-$Version-win64"
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-# 复制二进制（多进程：renderer 与 browser 同目录）
+# 复制二进制（多进程：renderer/compositor/image-decoder 与 browser 同目录）
 Copy-Item $BrowserBin (Join-Path $DistDir "ZeroBrowser.exe")
 Copy-Item $RendererBin (Join-Path $DistDir "zero-renderer.exe")
 Copy-Item $CompositorBin (Join-Path $DistDir "zero-compositor.exe")
+Copy-Item $ImageDecoderBin (Join-Path $DistDir "zero-image-decoder.exe")
 
 # 创建 README
 $readme = @"

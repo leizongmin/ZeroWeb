@@ -295,7 +295,9 @@ jobs:
           # 专属实现（worker 仅镜像 keydown），4 个 R3254 多进程 GUI 测试全挂（60s 超时）。
           # 必须带 if v8_runtime——quickjs job 无 v8 预编译库（下载步骤被跳过），
           # default features 构建必失败；quickjs 矩阵走下方自带 features 的步骤。
-          cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer
+          # zero-image-decoder 同目录放置：webview 图像解码进程默认启用，缺失时
+          # 测试静默回退进程内解码（覆盖不到真实多进程解码路径）。
+          cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
 
       - name: Run app tests
         if: matrix.v8_runtime != false
@@ -367,7 +369,8 @@ jobs:
         run: |
           # 同 v8 job 说明：带 --target 输出到测试二进制上溯路径；quickjs 矩阵
           # 需带 features（ARM64 Windows 无 v8 预编译库，default features 构建会失败）。
-          cargo build ${{ matrix.features }} --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer
+          # zero-image-decoder 无 JS 引擎依赖，quickjs features 下同目录构建。
+          cargo build ${{ matrix.features }} --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
 
       - name: Run QuickJS-backed tests
         if: matrix.v8_runtime == false

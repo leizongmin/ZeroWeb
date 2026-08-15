@@ -89,7 +89,7 @@ pub struct TabSnapshot {
     pub compositor_frame: Option<CompositorFrame>,
     /// compositor 合成的全窗口 present 位图（RFC 4.4-S3；`ZW_COMPOSITOR_PRESENT=1`）。
     pub compositor_present: Option<CompositorFrame>,
-    /// compositor 回读的滚动偏移（RFC 4.2；`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时用于显示）。
+    /// compositor 回读的滚动偏移（RFC 4.2；异步滚动默认开时用于显示）。
     pub compositor_scroll: Option<(f32, f32)>,
     /// Linux：待 Browser GPU 导入的 compositor dma-buf。
     #[cfg(target_os = "linux")]

@@ -163,7 +163,7 @@ pub enum IpcMessageKind {
     },
     /// 已合成帧数据（合成器 → 显示消费方）：front 缓冲像素。
     ///
-    /// 默认内联 `rgba`；Linux `ZW_COMPOSITOR_SHM=1` 时 `shm_name` 非空且 `rgba` 为空，
+    /// 默认内联 `rgba`；Linux shm 传输（默认开）时 `shm_name` 非空且 `rgba` 为空，
     /// 像素在 `/dev/shm/zeroweb-cmp-{shm_name}`（RFC 4.3 S1）。
     CompositorFrameData {
         /// 页面 surface 的稳定标识。

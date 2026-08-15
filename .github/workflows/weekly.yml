@@ -251,7 +251,7 @@ jobs:
       - name: Build release binaries
         run: |
           cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
-          cargo build --release --bin zero-compositor --target ${{ matrix.target }}
+          cargo build --release --bin zero-compositor --bin zero-image-decoder --target ${{ matrix.target }}
 
       - name: Import Developer ID certificate
         if: runner.os == 'macOS'
@@ -286,6 +286,7 @@ jobs:
           cp target/${{ matrix.target }}/release/zero-browser${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/zero-renderer${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/zero-compositor${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/zero-image-decoder${{ matrix.ext }} dist/
 
       - name: Build macOS app archive
         if: runner.os == 'macOS'
@@ -303,6 +304,7 @@ jobs:
             --browser "target/${{ matrix.target }}/release/zero-browser"
             --renderer "target/${{ matrix.target }}/release/zero-renderer"
             --compositor "target/${{ matrix.target }}/release/zero-compositor"
+            --decoder "target/${{ matrix.target }}/release/zero-image-decoder"
             --output-dir package
             --version "$VERSION"
             --archive "dist/${{ matrix.artifact }}.zip"

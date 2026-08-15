@@ -6,8 +6,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\browser.ps1 -- --scale=2
 #
 # 默认 --renderer=gpu。WPT 对齐（CPU + scale 1.0）请用 browser-cpu.ps1 / make browser-cpu。
-# 会先下载 rusty_v8，再 release 编译 browser、renderer 与 compositor，最后运行已构建的二进制
-# （不用 cargo run，确保三个进程的可执行文件同目录）。
+# 会先下载 rusty_v8，再 release 编译 browser、renderer、compositor 与 image-decoder，最后运行已构建的二进制
+# （不用 cargo run，确保四个进程的可执行文件同目录）。
 
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -30,7 +30,7 @@ try {
         Write-Error "rusty_v8 setup failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "ZeroBrowser: building zero-browser, zero-renderer, and zero-compositor (release)..."
+    Write-Host "ZeroBrowser: building zero-browser, zero-renderer, zero-compositor, and zero-image-decoder (release)..."
 
     # 确保 freetype-sys 编译 libpng 时能找到 zlib.h。Windows 上 cc crate 传递
     # 的相对路径 -I "libz-sys/src/zlib" 可能无法正确解析，通过 CFLAGS 提供系统
@@ -53,7 +53,7 @@ try {
 
     # 启用 windows-console feature：让 zero-browser 走 console 子系统，
     # tracing 日志输出到当前控制台、Ctrl+C 可终止；打包构建默认 GUI 子系统。
-    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor --features zero-browser/windows-console
+    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder --features zero-browser/windows-console
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

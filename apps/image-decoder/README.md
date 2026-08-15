@@ -25,6 +25,19 @@
 cargo run --bin zero-image-decoder -- --type=image-decoder --instance-id=1
 ```
 
+## 部署要求
+
+多进程解码默认启用（`ZW_IMAGE_DECODER_PROCESS=0` 可禁用，回退渲染进程内解码）。
+webview 按以下顺序定位本二进制（与 zero-renderer / zero-compositor 的发现模式一致）：
+
+1. 环境变量 `ZW_IMAGE_DECODER_BIN`
+2. `current_exe`（即 zero-renderer）所在目录
+3. 测试二进制目录上溯（`target/debug/deps/` → `target/debug/`）
+4. `PATH` 兜底
+
+因此**发布产物必须把 `zero-image-decoder` 与 `zero-renderer` 放在同一目录**
+（各平台打包脚本已内置）；缺失时渲染进程自动回退进程内解码（fail-open）。
+
 ## 相关文档
 
 - D1 目标：`docs/goal/` 图像解码独立进程切片

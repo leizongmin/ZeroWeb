@@ -1,8 +1,8 @@
-//! Renderer 进程沙箱钩子（RFC §六 P3 切片：env-gated seccomp 占位）。
+//! Renderer 进程沙箱钩子（RFC §六 P3 切片：默认启用的 env 剥离 + seccomp 占位）。
 
-/// 是否启用 renderer seccomp（`ZW_RENDERER_SECCOMP=1`）。
+/// 是否启用 renderer seccomp（默认开；`ZW_RENDERER_SECCOMP=0` 禁用）。
 pub fn renderer_seccomp_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_RENDERER_SECCOMP")
+    zero_runtime_config::enabled_by_default("ZW_RENDERER_SECCOMP")
 }
 
 /// 启动早期应用 renderer 沙箱（当前仅日志 + env 剥离）。
@@ -25,6 +25,14 @@ mod tests {
 
     #[test]
     fn renderer_seccomp_env_gate() {
-        assert!(!renderer_seccomp_enabled() || std::env::var("ZW_RENDERER_SECCOMP").is_ok());
+        // 默认启用；显式 0 禁用（kill-switch 语义）。
+        unsafe {
+            std::env::set_var("ZW_RENDERER_SECCOMP", "0");
+        }
+        assert!(!renderer_seccomp_enabled());
+        unsafe {
+            std::env::remove_var("ZW_RENDERER_SECCOMP");
+        }
+        assert!(renderer_seccomp_enabled());
     }
 }

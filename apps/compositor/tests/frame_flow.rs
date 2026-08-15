@@ -470,7 +470,7 @@ fn compositor_gpu_blur_shadow_falls_back_to_cpu() {
     );
 }
 
-/// 4.3 S1：Linux `ZW_COMPOSITOR_SHM=1` 时帧像素经 POSIX shm 传输（非 Linux 跳过）。
+/// 4.3 S1：Linux 默认经 POSIX shm 传输帧像素（`ZW_COMPOSITOR_SHM=0` 回退内联；非 Linux 跳过）。
 #[test]
 #[cfg(target_os = "linux")]
 fn compositor_shm_path_produces_expected_fill() {
@@ -544,9 +544,12 @@ fn compositor_isolates_surfaces_rejects_old_frames_resizes_and_releases() {
 }
 
 /// RFC 4.2：CompositorSetScroll 更新 surface 元数据并在 GetCompositorFrame 回读。
+///
+/// 显式关闭 scroll 烘焙（默认开）——本测试验证元数据 round-trip 原样回读；
+/// 烘焙路径由 `compositor_scroll_transform_bakes_pixels` 覆盖。
 #[test]
 fn compositor_scroll_metadata_round_trips() {
-    let (mut transport, _comp) = spawn_compositor();
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0")]);
     let frame = make_frame(32, 24, [128, 64, 32, 255]);
     assert_eq!(submit_frame(&mut transport, 1, 9, 1, 1, frame), (9, 1, 1));
 

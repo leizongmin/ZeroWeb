@@ -24,7 +24,7 @@ pub struct GpuSharedImageDescriptor {
     /// 同步代际（fence；单调递增，Browser 须 ≥ 期望 frame_id）。
     #[serde(default)]
     pub sync_token: u64,
-    /// 是否经 mmap 零拷贝路径发布（`ZW_COMPOSITOR_GPU_ZERO_COPY=1`）。
+    /// 是否经 mmap 零拷贝路径发布（Linux 默认开）。
     #[serde(default)]
     pub zero_copy: bool,
     /// 传输方式（默认 shm RGBA）。

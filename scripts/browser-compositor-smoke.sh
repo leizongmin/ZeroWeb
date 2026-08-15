@@ -9,6 +9,7 @@ RAW_BROWSER_BIN="$ROOT/target/release/zero-browser"
 RAW_RENDERER_BIN="$ROOT/target/release/zero-renderer"
 BIN="$RAW_BROWSER_BIN"
 COMPOSITOR_BIN="$ROOT/target/release/zero-compositor"
+DECODER_BIN="$ROOT/target/release/zero-image-decoder"
 
 mkdir -p "$OUT_DIR"
 
@@ -16,7 +17,7 @@ echo "browser-compositor-smoke: preparing rusty_v8"
 bash "$ROOT/scripts/download-rusty-v8.sh"
 echo "browser-compositor-smoke: building product processes"
 cargo build --manifest-path "$ROOT/Cargo.toml" --release \
-    -p zero-browser -p zero-renderer -p zero-compositor
+    -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
 
 if test "$(uname -s)" = "Darwin"; then
     echo "browser-compositor-smoke: assembling macOS product bundle"
@@ -24,6 +25,7 @@ if test "$(uname -s)" = "Darwin"; then
         --browser "$RAW_BROWSER_BIN" \
         --renderer "$RAW_RENDERER_BIN" \
         --compositor "$COMPOSITOR_BIN" \
+        --decoder "$DECODER_BIN" \
         --output-dir "$OUT_DIR/package" \
         --archive "$OUT_DIR/package/zero-browser-smoke.zip"
     BIN="$OUT_DIR/package/ZeroBrowser.app/Contents/MacOS/ZeroBrowser"

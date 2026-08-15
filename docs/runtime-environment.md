@@ -22,25 +22,25 @@ switch there before consuming it in an application or library crate.
 | `ZERO_BROWSER_UI_LANG` | locale beginning `zh` or `en` | locale, then English | Override browser UI language. |
 | `ZERO_SCROLL_BLIT` | `0` disables | enabled | Disable retained-frame scroll blitting. |
 | `ZW_RENDER_THREAD` | `0` disables | enabled | Disable the persistent CPU rendering worker. |
-| `ZW_IMAGE_DECODER_PROCESS` | `1`/`true` enables | disabled | Decode raster images in `zero-image-decoder`. |
-| `ZW_IMAGE_DECODER_BIN` | executable path | `zero-image-decoder` | Override the image-decoder executable. |
+| `ZW_IMAGE_DECODER_PROCESS` | `0`/`false` disables | enabled | Decode raster images in `zero-image-decoder`. |
+| `ZW_IMAGE_DECODER_BIN` | executable path | auto-discovery | Override the image-decoder executable. |
 | `ZW_COMPOSITOR_PROCESS` | `0` disables | enabled | Enable the compositor client process path. |
 | `ZW_COMPOSITOR_BIN` | executable path | auto-discovery | Override the compositor executable. |
-| `ZW_COMPOSITOR_ASYNC_SCROLL` | `1`/`true` enables | disabled | Enable compositor asynchronous scrolling. |
-| `ZW_COMPOSITOR_UI_FRAMES` | `1`/`true` enables | disabled | Submit browser UI frames to compositor. |
+| `ZW_COMPOSITOR_ASYNC_SCROLL` | `0`/`false` disables | enabled | Enable compositor asynchronous scrolling. |
+| `ZW_COMPOSITOR_UI_FRAMES` | `0`/`false` disables | enabled | Submit browser UI frames to compositor. |
 | `ZW_COMPOSITOR_PRESENT` | `0`/`false` disables | enabled | Disable compositor Viz present. |
 | `ZW_COMPOSITOR_OWNED_PRESENT` | `0`/`false` disables | enabled | Disable compositor-owned final window present. |
 | `ZW_COMPOSITOR_GPU` | `0`/`false` disables | enabled on Linux | Compositor headless GPU rasterization. |
 | `ZW_COMPOSITOR_GPU_IMAGE` | `0`/`false` disables | enabled on Linux | GPU shared-image metadata channel. |
 | `ZW_COMPOSITOR_GPU_TEXTURE_EXPORT` | `0`/`false` disables | enabled on Linux | GPU dma-buf texture export. |
 | `ZW_BROWSER_GPU_DMABUF_IMPORT` | `0`/`false` disables | enabled on Linux | Browser GPU dma-buf import. |
-| `ZW_COMPOSITOR_SHM` | `1`/`true` enables | disabled | Linux POSIX shared-memory frame transport. |
-| `ZW_COMPOSITOR_GPU_ZERO_COPY` | `1`/`true` enables | disabled | Linux shared-image mmap zero-copy consumption. |
-| `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `1`/`true` enables | disabled | Apply scrolling in compositor. |
-| `ZW_RENDERER_SECCOMP` | `1`/`true` enables | disabled | Enable renderer seccomp sandbox hook. |
-| `ZW_COMPOSITOR_SANDBOX` | `1`/`true` enables | disabled | Enable compositor environment sanitization. |
-| `ZW_COMPOSITOR_SECCOMP` | `1`/`true` enables | disabled | Enable compositor seccomp filtering on Linux. |
-| `ZW_COMPOSITOR_LANDLOCK` | `1`/`true` enables | disabled | Enable compositor Landlock on Linux. |
+| `ZW_COMPOSITOR_SHM` | `0`/`false` disables | enabled on Linux | Linux POSIX shared-memory frame transport. |
+| `ZW_COMPOSITOR_GPU_ZERO_COPY` | `0`/`false` disables | enabled on Linux | Linux shared-image mmap zero-copy consumption. |
+| `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `0`/`false` disables | enabled | Apply scrolling in compositor. |
+| `ZW_RENDERER_SECCOMP` | `0`/`false` disables | enabled | Enable renderer seccomp sandbox hook. |
+| `ZW_COMPOSITOR_SANDBOX` | `0`/`false` disables | enabled | Enable compositor environment sanitization. |
+| `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |
+| `ZW_COMPOSITOR_LANDLOCK` | `0`/`false` disables | enabled | Enable compositor Landlock on Linux. |
 
 ## Compatibility and test switches
 

@@ -85,7 +85,7 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     },
     EnvironmentVariable {
         name: "ZW_IMAGE_DECODER_PROCESS",
-        default: "disabled",
+        default: "enabled",
         description: "独立图像解码进程",
     },
     EnvironmentVariable {
@@ -105,22 +105,22 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_ASYNC_SCROLL",
-        default: "disabled",
+        default: "enabled",
         description: "compositor 异步滚动",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_UI_FRAMES",
-        default: "disabled",
+        default: "enabled",
         description: "compositor UI 帧",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SHM",
-        default: "disabled",
+        default: "enabled on Linux",
         description: "Linux POSIX 共享内存帧",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_GPU_ZERO_COPY",
-        default: "disabled",
+        default: "enabled on Linux",
         description: "Linux GPU 零拷贝消费",
     },
     EnvironmentVariable {
@@ -155,27 +155,27 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SCROLL_TRANSFORM",
-        default: "disabled",
+        default: "enabled",
         description: "compositor 侧滚动变换",
     },
     EnvironmentVariable {
         name: "ZW_RENDERER_SECCOMP",
-        default: "disabled",
+        default: "enabled",
         description: "renderer seccomp 沙箱",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SANDBOX",
-        default: "disabled",
+        default: "enabled",
         description: "compositor 环境沙箱",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SECCOMP",
-        default: "disabled",
+        default: "enabled",
         description: "compositor seccomp 沙箱",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_LANDLOCK",
-        default: "disabled",
+        default: "enabled",
         description: "compositor Landlock 沙箱",
     },
 ];

@@ -1,14 +1,13 @@
 //! 图像解码进程代理（D1）— webview 侧的解码分发。
 //!
-//! 多进程模式（env `ZW_IMAGE_DECODER_PROCESS=1`）下，PNG/JPEG/WebP 解码
-//! 转发到独立 `zero-image-decoder` 进程（stdin/stdout 管道 + bincode IPC），
-//! 隔离编解码器漏洞（对照 Ladybird ImageDecoder 进程）。
+//! 多进程模式（默认启用，env `ZW_IMAGE_DECODER_PROCESS=0` 关闭）下，
+//! PNG/JPEG/WebP 解码转发到独立 `zero-image-decoder` 进程（stdin/stdout
+//! 管道 + bincode IPC），隔离编解码器漏洞（对照 Ladybird ImageDecoder 进程）。
 //!
 //! 降级路径：
-//!   - 未启用 env → 进程内解码（现状，零行为变更）
-//!   - 非栅格字节（SVG 等）→ 进程内解码（SVG 依赖资源加载）
+//!   - env 关闭 / 非栅格字节（SVG 等）→ 进程内解码（SVG 依赖资源加载）
 //!   - 代理 spawn 失败或解码中进程崩溃 → 进程内解码回退（fail-open，
-//!     保证图像加载不被多进程实验阻断）
+//!     保证图像加载不被多进程路径阻断）
 
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -24,6 +23,51 @@ fn decode_inline(bytes: &[u8]) -> Result<ImageData, String> {
     decode_image_bytes(bytes)
 }
 
+/// image-decoder 二进制文件名（平台后缀）。
+fn image_decoder_binary_filename() -> &'static str {
+    #[cfg(windows)]
+    {
+        "zero-image-decoder.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "zero-image-decoder"
+    }
+}
+
+/// 解析 zero-image-decoder 可执行文件路径。
+///
+/// 与 renderer（process_backend）/ compositor（compositor_client）同模式——
+/// 打包产物中子进程与宿主二进制同目录，裸名走 PATH 找不到：
+/// 查找顺序：`ZW_IMAGE_DECODER_BIN` → `CARGO_BIN_EXE_zero-image-decoder` →
+/// current_exe 同目录（测试二进制 `target/debug/deps/` 上溯 `target/debug/`）→
+/// PATH 兜底。
+fn resolve_image_decoder_bin() -> std::path::PathBuf {
+    if let Some(bin) = zero_runtime_config::optional_path("ZW_IMAGE_DECODER_BIN") {
+        return bin;
+    }
+    if let Ok(path) = std::env::var("CARGO_BIN_EXE_zero-image-decoder")
+        && std::path::Path::new(&path).is_file()
+    {
+        return std::path::PathBuf::from(path);
+    }
+    let name = image_decoder_binary_filename();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        let candidate = parent.join(name);
+        if candidate.is_file() {
+            return candidate;
+        }
+        if let Some(grandparent) = parent.parent()
+            && grandparent.join(name).is_file()
+        {
+            return grandparent.join(name);
+        }
+    }
+    std::path::PathBuf::from(name)
+}
+
 /// image-decoder 子进程代理。
 struct ImageDecoderProxy {
     _child: Child,
@@ -35,8 +79,7 @@ struct ImageDecoderProxy {
 
 impl ImageDecoderProxy {
     fn spawn() -> Option<Self> {
-        let bin =
-            zero_runtime_config::optional_path("ZW_IMAGE_DECODER_BIN").unwrap_or_else(|| "zero-image-decoder".into());
+        let bin = resolve_image_decoder_bin();
         let mut cmd = Command::new(&bin);
         for arg in child_process_args(ProcessRole::ImageDecoder, 0) {
             cmd.arg(arg);
@@ -104,35 +147,55 @@ impl ImageDecoderProxy {
 
 static PROXY: Mutex<Option<ImageDecoderProxy>> = Mutex::new(None);
 
-/// 多进程解码是否启用（env `ZW_IMAGE_DECODER_PROCESS=1`）。
+/// spawn 已失败（如宿主环境无 zero-image-decoder 可执行文件）——不再重试，
+/// 后续请求直接进程内解码，避免每次栅格图解码都重复 spawn 尝试与告警。
+static SPAWN_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 多进程解码是否启用（默认开；env `ZW_IMAGE_DECODER_PROCESS=0`/`false` 关闭）。
 fn proxy_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_IMAGE_DECODER_PROCESS")
+    // 单测默认关闭（仅显式 `=1` 启用，与 ZW_RENDER_THREAD 的测试语义一致）：
+    // 测试进程无法保证 zero-image-decoder 二进制已构建，保持既有测试确定性。
+    #[cfg(not(test))]
+    {
+        zero_runtime_config::enabled_by_default("ZW_IMAGE_DECODER_PROCESS")
+    }
+    #[cfg(test)]
+    {
+        zero_runtime_config::enabled_when_true("ZW_IMAGE_DECODER_PROCESS")
+    }
 }
 
 /// 解码图像字节（webview 侧统一入口；D1 分发）。
 ///
-/// - 默认：进程内解码（与改造前完全一致）
-/// - `ZW_IMAGE_DECODER_PROCESS=1`：栅格图像走 image-decoder 进程，
-///   SVG/data URI/降级路径回退进程内
+/// - 默认：栅格图像走 image-decoder 进程
+/// - `ZW_IMAGE_DECODER_PROCESS=0`：进程内解码
+/// - SVG/data URI/降级路径回退进程内
 pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
     if !proxy_enabled() || !is_raster_image_bytes(bytes) {
+        return decode_inline(bytes);
+    }
+    if SPAWN_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
         return decode_inline(bytes);
     }
 
     let mut guard = PROXY.lock().unwrap_or_else(|e| e.into_inner());
     if guard.is_none() {
-        *guard = ImageDecoderProxy::spawn();
-    }
-    match guard.as_mut() {
-        Some(proxy) => proxy.decode(bytes).or_else(|e| {
-            tracing::warn!("image-decoder 进程解码失败，回退进程内: {e}");
-            decode_inline(bytes)
-        }),
-        None => {
-            tracing::warn!("image-decoder 进程 spawn 失败，回退进程内");
-            decode_inline(bytes)
+        match ImageDecoderProxy::spawn() {
+            Some(proxy) => *guard = Some(proxy),
+            None => {
+                SPAWN_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+                tracing::warn!("image-decoder 进程 spawn 失败，后续图像回退进程内解码");
+                return decode_inline(bytes);
+            }
         }
     }
+    let Some(proxy) = guard.as_mut() else {
+        return decode_inline(bytes);
+    };
+    proxy.decode(bytes).or_else(|e| {
+        tracing::warn!("image-decoder 进程解码失败，回退进程内: {e}");
+        decode_inline(bytes)
+    })
 }
 
 #[cfg(test)]
@@ -149,6 +212,9 @@ mod tests {
     }
 
     fn set_env_process(on: bool, bin: Option<&std::path::Path>) {
+        // 重置 spawn 失败缓存，保证本测试的代理路径不被先前测试的
+        // spawn 失败短路（真实子进程优先，失败则回退进程内）。
+        SPAWN_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
         // edition 2024：env 修改为 unsafe（测试单线程环境无并发，安全）
         unsafe {
             if on {
@@ -189,7 +255,7 @@ mod tests {
         if let Some(bin) = exe
             .parent()
             .and_then(|p| p.parent())
-            .map(|p| p.join("zero-image-decoder"))
+            .map(|p| p.join(image_decoder_binary_filename()))
             .filter(|p| p.exists())
         {
             set_env_process(true, Some(&bin));
@@ -205,7 +271,7 @@ mod tests {
 
     #[test]
     fn env_off_uses_inline_decode() {
-        // 默认路径：env 关闭 → 进程内解码（零行为变更验证）
+        // 单测构建默认关闭（cfg(test) 语义）；env 未设置 → 进程内解码
         set_env_process(false, None);
         let img = decode_image(&test_png()).expect("进程内解码成功");
         assert_eq!(img.width, 1);

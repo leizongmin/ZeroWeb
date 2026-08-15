@@ -675,9 +675,9 @@ fn request_accepts_fresh(policy: &RequestCacheControl, ttl_secs: u64, current_ag
     if policy.max_age.is_some_and(|max_age| current_age_secs > max_age) {
         return false;
     }
-    !policy
+    policy
         .min_fresh
-        .is_some_and(|min_fresh| ttl_secs.saturating_sub(current_age_secs) < min_fresh)
+        .is_none_or(|min_fresh| ttl_secs.saturating_sub(current_age_secs) >= min_fresh)
 }
 
 fn request_accepts_stale(policy: &RequestCacheControl, must_revalidate: bool, stale_secs: u64) -> bool {

@@ -1054,7 +1054,7 @@ pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Optio
         .try_recv(surface_id, navigation_epoch, frame_id)
 }
 
-/// RFC 4.2：向 compositor 推送 surface 滚动偏移（`ZW_COMPOSITOR_ASYNC_SCROLL=1` 时 Browser 消费回读值）。
+/// RFC 4.2：向 compositor 推送 surface 滚动偏移（异步滚动默认开，Browser 消费回读值）。
 pub fn set_scroll(surface_id: u64, scroll_x: f32, scroll_y: f32) {
     if !enabled() {
         return;
@@ -1065,9 +1065,10 @@ pub fn set_scroll(surface_id: u64, scroll_x: f32, scroll_y: f32) {
         .set_scroll(surface_id, scroll_x, scroll_y);
 }
 
-/// 是否启用 compositor 异步滚动（Browser 使用 compositor 回读 scroll 做位图变换）。
+/// 是否启用 compositor 异步滚动（默认开；`ZW_COMPOSITOR_ASYNC_SCROLL=0` 禁用。
+/// Browser 使用 compositor 回读 scroll 做位图变换）。
 pub fn async_scroll_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_ASYNC_SCROLL")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_ASYNC_SCROLL")
 }
 
 /// 是否启用 compositor 侧 scroll 烘焙（回读 scroll 为 0，Browser 不再偏移位图）。
@@ -1114,9 +1115,9 @@ pub fn forward_ui_frame(surface_id: u64, width: u32, height: u32, rgba: Vec<u8>)
         .forward_ui_frame(surface_id, width, height, rgba);
 }
 
-/// 是否向 compositor 提交 UI 位图（`ZW_COMPOSITOR_UI_FRAMES=1`）。
+/// 是否向 compositor 提交 UI 位图（默认开；`ZW_COMPOSITOR_UI_FRAMES=0` 禁用）。
 pub fn ui_frames_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_UI_FRAMES")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_UI_FRAMES")
 }
 
 /// 是否启用 GPU shared image mailbox（`ZW_COMPOSITOR_GPU_IMAGE=1`，Linux）。

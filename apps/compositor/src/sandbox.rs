@@ -8,19 +8,19 @@ mod seccomp_linux;
 #[path = "landlock_linux.rs"]
 mod landlock_linux;
 
-/// 是否启用 compositor 沙箱钩子（环境变量剥离）。
+/// 是否启用 compositor 沙箱钩子（环境变量剥离；默认开，`0` 禁用）。
 pub fn compositor_sandbox_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SANDBOX")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_SANDBOX")
 }
 
-/// 是否启用 compositor seccomp 过滤器（Linux；`ZW_COMPOSITOR_SECCOMP=1`）。
+/// 是否启用 compositor seccomp 过滤器（Linux；默认开，`0` 禁用）。
 pub fn compositor_seccomp_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SECCOMP")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_SECCOMP")
 }
 
-/// 是否启用 compositor Landlock（Linux；`ZW_COMPOSITOR_LANDLOCK=1`）。
+/// 是否启用 compositor Landlock（Linux；默认开，`0` 禁用）。
 pub fn compositor_landlock_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_LANDLOCK")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_LANDLOCK")
 }
 
 /// 启动早期沙箱：env 剥离 + seccomp（须在任何子线程之前）。
@@ -37,7 +37,7 @@ fn compositor_gpu_enabled() -> bool {
     zero_protocol::compositor_gpu_enabled()
 }
 
-/// 字体加载完成后应用 Landlock（`ZW_COMPOSITOR_LANDLOCK=1`）。
+/// 字体加载完成后应用 Landlock（默认开；`ZW_COMPOSITOR_LANDLOCK=0` 禁用）。
 pub fn apply_landlock_after_init() {
     if !compositor_landlock_enabled() {
         return;
@@ -57,7 +57,7 @@ pub fn apply_landlock_after_init() {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        tracing::warn!("compositor: landlock 仅 Linux 可用，已跳过");
+        tracing::info!("compositor: landlock 仅 Linux 可用，已跳过");
     }
 }
 
@@ -80,7 +80,7 @@ fn apply_seccomp_if_enabled() {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        tracing::warn!("compositor: seccomp 仅 Linux 可用，已跳过");
+        tracing::info!("compositor: seccomp 仅 Linux 可用，已跳过");
     }
 }
 

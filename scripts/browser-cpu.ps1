@@ -6,8 +6,8 @@
 #
 # 默认 --wpt-parity（CPU + scale 1.0，与 WPT/product-smoke 肉眼对齐）。
 # 显式 --renderer / --scale 可覆盖。
-# 会先下载 rusty_v8，再 release 编译 browser、renderer 与 compositor，最后运行已构建的二进制
-# （不用 cargo run，确保三个进程的可执行文件同目录）。
+# 会先下载 rusty_v8，再 release 编译 browser、renderer、compositor 与 image-decoder，最后运行已构建的二进制
+# （不用 cargo run，确保四个进程的可执行文件同目录）。
 
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -49,7 +49,7 @@ try {
 
     # 启用 windows-console feature：让 zero-browser 走 console 子系统，
     # tracing 日志输出到当前控制台、Ctrl+C 可终止；打包构建默认 GUI 子系统。
-    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor --features zero-browser/windows-console
+    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder --features zero-browser/windows-console
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

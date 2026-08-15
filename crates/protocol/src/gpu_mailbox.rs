@@ -1,7 +1,7 @@
 //! Compositor GPU mailbox 二进制头（RFC 4.3-S4）。
 //!
 //! `gpu_image` 路径在 shm 前缀写入 magic/sync_token，Browser 侧做 fence 校验；
-//! `ZW_COMPOSITOR_GPU_ZERO_COPY=1` 时用 mmap 读取 payload。
+//! Linux 默认经 mmap 读取 payload（`ZW_COMPOSITOR_GPU_ZERO_COPY=0` 时回退 read）。
 
 /// Mailbox magic `ZWCM`.
 pub const GPU_MAILBOX_MAGIC: u32 = 0x5A57_434D;

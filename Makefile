@@ -33,7 +33,7 @@ BROWSER_BIN = ./target/release/zero-browser
 BROWSER_RUN = $(BROWSER_BIN)
 
 browser-build: setup-rusty-v8
-	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor
+	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
 
 browser: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
@@ -100,7 +100,7 @@ QUICKJS_TEST_CRATES_WITHOUT_BROWSER = $(filter-out zero-browser,$(QUICKJS_TEST_C
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target/test-guard
-	cargo build -p zero-renderer -p zero-compositor
+	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test --workspace --exclude zero-browser
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 10 --total-mem 28 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
@@ -110,7 +110,7 @@ else
 test: target/test-guard
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
-	cargo build -p zero-renderer -p zero-compositor
+	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
 	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程
@@ -215,7 +215,7 @@ form-visual-browser-gpu-smoke: target/test-guard
 	@test -n "$(DISPLAY)" || (echo "Error: DISPLAY is required for the real browser GPU smoke"; exit 2)
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
-	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-wpt-runner
+	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-wpt-runner
 	rm -rf $(FORM_VISUAL_GPU_DIR)
 	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1

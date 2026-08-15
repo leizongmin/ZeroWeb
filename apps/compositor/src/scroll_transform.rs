@@ -1,4 +1,4 @@
-//! RFC 4.2-S2：compositor 侧滚动变换（`ZW_COMPOSITOR_SCROLL_TRANSFORM=1`）。
+//! RFC 4.2-S2：compositor 侧滚动变换（默认开，`ZW_COMPOSITOR_SCROLL_TRANSFORM=0` 禁用）。
 //!
 //! 在 `GetCompositorFrame` 时将 scroll 烘焙进 RGBA，回读 scroll 归零。
 

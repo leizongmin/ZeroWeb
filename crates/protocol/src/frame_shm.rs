@@ -1,8 +1,8 @@
 //! Compositor 帧像素 POSIX 共享内存传输（RFC 4.3 切片 S1）。
 //!
 //! Linux 上经 `/dev/shm/zeroweb-cmp-*` 传递 front 缓冲，IPC 消息只带元数据，
-//! 避免 PipeTransport bincode 内联巨大 `rgba` Vec。`ZW_COMPOSITOR_SHM=1` 启用；
-//! 非 Linux 或未设置时由调用方回退内联 `rgba`。
+//! 避免 PipeTransport bincode 内联巨大 `rgba` Vec。Linux 默认启用
+//! （`ZW_COMPOSITOR_SHM=0` 禁用）；非 Linux 时由调用方回退内联 `rgba`。
 
 use crate::ProtocolError;
 use crate::gpu_mailbox::{GpuMailboxHeader, decode_gpu_mailbox, encode_gpu_mailbox};
@@ -28,22 +28,17 @@ pub fn compositor_gpu_enabled() -> bool {
     env_linux_default_on("ZW_COMPOSITOR_GPU")
 }
 
-/// 是否启用 compositor POSIX shm 帧传输（Linux + `ZW_COMPOSITOR_SHM=1`）。
+/// 是否启用 compositor POSIX shm 帧传输（Linux 默认开；`ZW_COMPOSITOR_SHM=0` 禁用）。
 pub fn compositor_shm_enabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SHM")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = std::env::var("ZW_COMPOSITOR_SHM");
-        false
-    }
+    env_linux_default_on("ZW_COMPOSITOR_SHM")
 }
 
-/// 是否启用 compositor 侧 scroll 烘焙（RFC 4.2-S2；`ZW_COMPOSITOR_SCROLL_TRANSFORM=1`）。
+/// 是否启用 compositor 侧 scroll 烘焙（RFC 4.2-S2；默认开，`0` 禁用）。
+///
+/// 依赖 `ZW_COMPOSITOR_ASYNC_SCROLL` 同时开启——Browser 仅在异步滚动开启时
+/// 才经 `CompositorSetScroll` 推送滚动值，单独开启本开关会导致烘焙无数据。
 pub fn compositor_scroll_transform_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SCROLL_TRANSFORM")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_SCROLL_TRANSFORM")
 }
 
 /// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux 默认开；`ZW_COMPOSITOR_GPU_IMAGE=0` 禁用）。
@@ -53,17 +48,9 @@ pub fn compositor_gpu_image_enabled() -> bool {
     env_linux_default_on("ZW_COMPOSITOR_GPU_IMAGE")
 }
 
-/// 是否启用 gpu_image mmap 零拷贝 consume（Linux + `ZW_COMPOSITOR_GPU_ZERO_COPY=1`）。
+/// 是否启用 gpu_image mmap 零拷贝 consume（Linux 默认开；`ZW_COMPOSITOR_GPU_ZERO_COPY=0` 禁用）。
 pub fn compositor_gpu_zero_copy_enabled() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_GPU_ZERO_COPY")
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = std::env::var("ZW_COMPOSITOR_GPU_ZERO_COPY");
-        false
-    }
+    env_linux_default_on("ZW_COMPOSITOR_GPU_ZERO_COPY")
 }
 
 /// 是否启用 GPU 纹理 dma-buf fd 导出（Linux 默认开；`ZW_COMPOSITOR_GPU_TEXTURE_EXPORT=0` 禁用）。
