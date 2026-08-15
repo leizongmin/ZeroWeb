@@ -1,0 +1,32 @@
+{
+  "date": "2026-08-16",
+  "round": "R62",
+  "milestone": "M6 S3q — QuickJS 查询族（js-dom goal DC-7）",
+  "commit": "e438af32",
+  "api_added": {
+    "__zw_native_query_selector(sel)": "全局工厂（与 V8 同名同 wire）——文档根下全量选择器引擎（zero_dom query_selector：tag/*/\\#id/.class/[attr]+运算符/伪类/组合器）；miss/空/非法 → null",
+    "__zw_native_query_selector_all(sel)": "全局工厂——全部匹配 Array（文档序）；miss → 空 Array",
+    "querySelector(sel) 元素方法": "元素子树作用域首个匹配",
+    "querySelectorAll(sel) 元素方法": "元素子树作用域全部匹配 Array"
+  },
+  "identity_note": "查询结果经共享身份缓存包装——qs('#main') === element_for_id('main')（跨工厂 spec identity）",
+  "poce2e": [
+    "typeof 工厂 function",
+    "qs('#main') === element_for_id('main')（跨工厂身份一致）",
+    "qs('.c') null（className setter 已改值——class 选择器跟随 live 状态）",
+    "qs('div#main') 复合选择器命中",
+    "qs('#nope') → null miss 语义",
+    "qsa('div').length >= 1 Array 文档序",
+    "qsa('nope-x').length === 0 空 Array",
+    "元素级 qs 自身子树作用域命中"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed",
+    "engine_v8": "2153 passed（零回归）",
+    "clippy": "quickjs 矩阵零警告（needless_question_mark 修复）",
+    "fmt": "无 diff"
+  },
+  "m6_cumulative": "元素面 = 4 全局工厂（element_for_id/create_element/query_selector/query_selector_all）+ 13 属性（6 setter）+ 8 方法（4 属性 + 2 mutation + 2 查询）——元素可达性经查询族大增",
+  "m6_remaining": "S4q EventTarget（addEventListener/dispatchEvent + DOMException 基建补 appendChild 错误路径）→ S5q customElements 五件套 + lifecycle → S0q 续 weak/finalizer → S1q 复合对象（attributes/classList）",
+  "session_summary": "本轮 session 连续 7 切片：R58/R58b（S1q 反射属性）→ R59（S2q 属性方法）→ R60/R60b（S2q 写入+mutation）→ R61（S2q 树读回）→ R62（S3q 查询）；M6 从骨架到可用元素面"
+}
