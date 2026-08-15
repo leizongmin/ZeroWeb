@@ -2072,6 +2072,11 @@
             var _ihVal = value === null ? '' : String(value);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
+            // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+            // Host mutations are applied asynchronously. Keep a parsed local child
+            // view for created elements so childNodes/firstChild/lastChild remain
+            // observable within the script that assigned innerHTML.
+            if (handle) _handleChildren[handle] = _ihAdded;
             // R34xx：纯文本 innerHTML → 本地文本节点注册（selection-rects 的
             // el.childNodes[0] 文本节点——created handle 元素无 sel，host 不可查）。
             // _makeProxy 经 _proxyCache 返同一 proxy 对象（parentNode===el 成立）。

@@ -15,7 +15,10 @@ use crate::app::BrowserApp;
 use crate::smoke_capture::{self, PixelRegion};
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(30);
-const OBSERVATION_TIMEOUT: Duration = Duration::from_secs(5);
+// A parity observation evaluates against the live renderer. Complex legacy
+// pages can still be assembling their report when the first observation is
+// requested, so match the scenario step deadline instead of failing early.
+const OBSERVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 一致性场景配置。
 #[derive(Clone, Debug)]

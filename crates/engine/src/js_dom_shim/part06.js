@@ -949,6 +949,10 @@
   };
 
   globalThis.document = {
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-location
+    // The final Document object is installed in this module; expose the live
+    // Window Location here rather than on the bootstrap placeholder.
+    get location() { return globalThis.location; },
     // R34xx：caretPositionFromPoint(x, y)——命中注册文本元素字形（index-from-offset
     // 的 DOM 对照侧，0 基几何；未命中 → null）。
     caretPositionFromPoint: function (x, y) {
@@ -977,7 +981,35 @@
     // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
     // 解析错误（点号被当类）→ 改用属性选择器（[id="..."] 精确匹配）。
     getElementById: function(id) {
-      return globalThis.document.querySelector('[id="' + String(id).replace(/"/g, '\\"') + '"]');
+      var idText = String(id);
+      var hit = globalThis.document.querySelector('[id="' + idText.replace(/"/g, '\\"') + '"]');
+      // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+      // The host snapshot may lag appendChild/innerHTML within a running script.
+      // Reuse the pending-ID index so synchronous document lookups see inserted
+      // nodes before the queued mutation reaches the renderer DOM.
+      if (hit) return hit;
+      var pending = _zwPendingAddedById.get(idText);
+      if (pending && pending.length) return pending[pending.length - 1];
+      // A newly attached handle can contain a parsed innerHTML subtree whose
+      // descendants have no handle of their own. Scan that small pending tree
+      // until the renderer publishes its next DOM snapshot.
+      function findPendingId(node) {
+        if (!node) return null;
+        try { if (node.id === idText) return node; } catch (_e) {}
+        var children = null;
+        try { children = node.childNodes; } catch (_e2) { children = null; }
+        if (!children) return null;
+        for (var i = 0; i < children.length; i++) {
+          var found = findPendingId(children[i]);
+          if (found) return found;
+        }
+        return null;
+      }
+      for (var i = _zwPendingAdded.length - 1; i >= 0; i--) {
+        var found = findPendingId(_zwPendingAdded[i]);
+        if (found) return found;
+      }
+      return null;
     },
     // R3067：`document.getAnimations()`（Web Animations API）——返文档内全部动画（所有元素，cancelled/idle 排除；
     // finished 含）。_elementAnimations per-element 注册表 flat + filter。headless 瞬间完成 → finished 动画可查询/commitStyles。

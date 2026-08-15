@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "html5test-frozen",
+  "url": "http://127.0.0.1:0/index.html",
+  "viewport": { "width": 1280, "height": 900, "dpr": 1 },
+  "environment": {
+    "locale": "en-US",
+    "colorScheme": "light",
+    "reducedMotion": "no-preference"
+  },
+  "thresholds": {
+    "maxDiffPercent": 3,
+    "maxRegionDiffPercent": 5,
+    "channelDiff": 8,
+    "pixelRadius": 1,
+    "maxGeometryDiffPx": 2
+  },
+  "observe": {
+    "selectors": ["#score", "#score strong", "#results .category"],
+    "stateExpression": "(() => { const contents = document.querySelector('#contents'); const results = document.querySelector('#results'); const scoreText = document.querySelector('#score').textContent || ''; const scoreMatch = /scores\\s+(\\d+)/i.exec(scoreText); return { ready: getComputedStyle(contents).visibility === 'visible', contentsSelector: contents.__zwSelector || '', inlineVisibility: contents.style.visibility, styleAttribute: contents.getAttribute('style') || '', computedVisibility: getComputedStyle(contents).visibility, score: scoreMatch ? scoreMatch[1] : '', categories: document.querySelectorAll('#results .category').length, resultChildren: results.childNodes.length, warning: document.querySelector('#warning').textContent, locationType: typeof location, locationProtocol: location?.protocol || '', documentLocationType: typeof document.location, documentLocationProtocol: document.location?.protocol || '' }; })()",
+    "eventTypes": ["mousedown", "mouseup", "click"]
+  },
+  "steps": [
+    { "id": "warmup", "action": { "type": "wait", "milliseconds": 5000 } },
+    { "id": "results", "action": { "type": "snapshot" } }
+  ]
+}

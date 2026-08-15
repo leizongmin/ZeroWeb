@@ -3484,6 +3484,12 @@
     out.push(node);
     var h = node.__zwHandle;
     var kids = h ? (_handleChildren[h] || []) : null;
+    // Parsed innerHTML children are lightweight local nodes, not handles. They
+    // still belong to a pending inserted subtree and must participate in the
+    // synchronous ID/query indexes until the host publishes a new snapshot.
+    if ((!kids || !kids.length) && !h && !node.__zwSelector) {
+      try { kids = node.childNodes || null; } catch (_e) { kids = null; }
+    }
     // R51c：registry 空（sel 父——appendChild 走 sel 分支不记 registry）→ 回落本 sel 的 pending
     // 桶 added（identity 同源——同一批 proxy，对冲判定可靠）。递归展开使 remove 子树对冲全部
     // pending-added（WPT testharness setupRangeTests 每子测试全量重建的 pa 表 O(n²) 膨胀根因）。

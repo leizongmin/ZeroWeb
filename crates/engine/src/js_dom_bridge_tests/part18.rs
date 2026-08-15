@@ -2,6 +2,42 @@
 // + pre-insert HierarchyRequestError——WPT dom/common.js indexOf 死循环根因修复）。
 
 #[test]
+fn html5test_inner_html_is_synchronously_observable_on_created_element() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/html5test".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
+    // html5test performs this probe before queued host mutations are applied.
+    sandbox
+        .execute(
+            "var element = document.createElement('div');\n\
+             element.innerHTML = '<form id=\"form\"></form><input form=\"form\">';\n\
+             document.body.appendChild(element);\n\
+             globalThis.__html5testSyncInnerHtml = element.childNodes.length === 2 &&\n\
+               element.lastChild.form === element.firstChild &&\n\
+               document.getElementById('form') === element.firstChild;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__html5testSyncInnerHtml").unwrap().value,
+        "true",
+        "created elements expose parsed innerHTML children and their synchronous form owner"
+    );
+}
+
+#[test]
 fn r51_handle_child_parent_node_reflects_real_parent() {
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};

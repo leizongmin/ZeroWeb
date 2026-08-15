@@ -1751,6 +1751,33 @@
     Object.defineProperty(node, 'children', { get: function () { return node.childNodes.filter(function (c) { return c.nodeType === 1; }); }, configurable: true });
     Object.defineProperty(node, 'firstChild', { get: function () { return node.childNodes.length ? node.childNodes[0] : null; }, configurable: true });
     Object.defineProperty(node, 'lastChild', { get: function () { return node.childNodes.length ? node.childNodes[node.childNodes.length - 1] : null; }, configurable: true });
+    // https://html.spec.whatwg.org/multipage/forms.html#association-of-controls-and-forms
+    // Detached HTML fragments still need synchronous form-owner lookup: feature
+    // probes commonly set innerHTML and inspect input.form before the host applies
+    // its queued DOM mutation.
+    Object.defineProperty(node, 'form', { get: function () {
+      var formAssociated = { button: 1, fieldset: 1, input: 1, object: 1, output: 1, select: 1, textarea: 1 };
+      if (!formAssociated[tag]) return null;
+      var formId = node.getAttribute('form');
+      var root = node;
+      while (root.parentNode) root = root.parentNode;
+      function findForm(current) {
+        if (!current) return null;
+        if (current.nodeType === 1 && current.localName === 'form' &&
+            (!formId || current.getAttribute('id') === formId)) return current;
+        var children = current.childNodes || [];
+        for (var i = 0; i < children.length; i++) {
+          var found = findForm(children[i]);
+          if (found) return found;
+        }
+        return null;
+      }
+      if (formId) return findForm(root);
+      for (var ancestor = node.parentNode; ancestor; ancestor = ancestor.parentNode) {
+        if (ancestor.nodeType === 1 && ancestor.localName === 'form') return ancestor;
+      }
+      return null;
+    }, configurable: true });
     _zwMDefineSiblings(node);
     attrs.item = function (i) { return attrs[i] ? _zwMakeAttr(attrs[i].name, attrs[i].value, node) : null; };
     attrs.getNamedItem = function (n) { var v = node.getAttribute(n); return v === null ? null : _zwMakeAttr(n, v, node); };
