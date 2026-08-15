@@ -1,0 +1,46 @@
+{
+  "round": "R56",
+  "date": "2026-08-15",
+  "slice": "M8/DC-8 首切片：path-objects 用例导入（205）+ roundRect 批量 panic 修复 + roundRect 语义/几何对齐 + 扫描线段式迭代重构",
+  "case_import": {
+    "dir": "tests/wpt-runner/wpt-data/html/canvas/element/path-objects/",
+    "count_html": 205,
+    "roundrect_cases": 56,
+    "note": "fetch-canvas-subset.sh 整跑 5min 超时（GitHub API 逐目录列慢）；用例列表单列后逐文件 raw 拉取 205/205 成功（pinned WPT_REV 315976933870b）"
+  },
+  "fix": {
+    "panic_root": "4 处 sort_by(partial_cmp.unwrap_or(Equal)) 在 NaN 输入下违反全序传递性 → Rust driftsort panic（user-provided comparison function does not correctly implement a total order）→ wpt-runner 整目录 abort。backtrace 实证栈：blit_path_to_pixels / rasterize_path_coverage / blit_path_gradient / set_sat",
+    "panic_fix": "全部改 f32::total_cmp（NaN 全序）",
+    "parallel_overlap": "并行 canvas 流同轮 land afd8ec08 做了同款 total_cmp 修复（5 处，多覆盖 path.rs）+ arc 角度归一化；rebase 冲突仅两处注释级（代码行相同），取并行流版。main 终态 = 双流叠加",
+    "shim_roundrect_semantics": "zwNormRadius：序列空/>4 项 → RangeError；负半径 → RangeError；NaN → 0 不抛；BigInt → TypeError（unary + 原生抛）；单个 DOMPointInit（DOMPoint/{x,y}/字典）走 p<x>,<y> 编码（旧版落 r='0' 丢失）",
+    "bridge_pair_parse": "JS join(',') 产生的 'p40,20' 被 host split(',') 拆成相邻两项 'p40'+'20'——旧 split_once(',') 在 'p40' 上失败 → unwrap_or((x,x)) 把 DOMPoint(40,20) 解成 (40,40)；改为 'p<x>' 项与下一项配对 (x,y)",
+    "negative_wh": "flatten_round_rect 负 w/h 归一化到包围盒 + 角半径镜像换位（参数坐标系 tl 恒贴 (x,y)；垂直/水平/180° 三态 swap，在 1-4 项 radii 展开后做）；零半径退化分支改自包含 4 边（删 current→corner0 连接段——该段在 current==corner3 时与闭合边重复致奇数交点）",
+    "scanline_segments": "blit_path_to_pixels / blit_path_gradient / rasterize_path_coverage 三处消费端改按独立段（chunks_exact(4)）迭代——旧顶点链环绕 points[i]↔points[i+1] 在多子路径间产生跨子路径虚假边（扫描线交点奇数 → 配对错位 → roundRect 多子路径整片翻色，2d.path.roundrect.negative 逐步 probe 实证：2 子路径正常、加第 3 个不接触的子路径后翻转）",
+    "closepath_on_fill": "flatten_path_opts(close_open_subpaths)：fill/clip/isPointInPath 隐式闭合开放子路径（spec closepath-on-fill；隐式闭合段在 MoveTo 边界与命令流末尾两处，判定 dx>EPS || dy>EPS——初版 && 笔误致垂直/水平回归，probe 定位后修正）；stroke/isPointInStroke/stroke_outline_vertices 走 flatten_path_open 保持开放",
+    "rect_close": "bridge 'rect' 补 ctx.close_path()（spec：rect 子路径闭合；旧缺 close → 左边界无段 → 单边交点奇数配不出 → 矩形整体填不出）",
+    "join_geometry": "blit_join bevel/miter 三角与 miter 四边形改闭合段扇（3/4 边）——旧顶点链 8 floats 在段式消费下缺 a→b 边"
+  },
+  "verification": {
+    "unit": "zero-canvas 777→783 passed（新增 negative-h bbox/mirror/zero-radius 3 单测 + 计数断言语义更新 11 处；诊断 zz_dbg 已删）",
+    "wpt_path_objects": {
+      "baseline_first_run": "139 Pass / 64 Fail + panic abort（首跑在 ~140 用例后 abort）",
+      "after_r56": "156 Pass / 47 Fail（panic 消除全程跑完；含并行流 arc 修复叠加）",
+      "fixed_families": [
+        "roundrect 语义 6：badinput / radius.negative / radius.none / radius.toomany / 1.radius.dompoint.single.argument / 1.radius.dompointinit.single.argument",
+        "roundrect 几何：negative / winding（负 w/h 镜像 + 多子路径扫描线）",
+        "rect 族：basic / closed / end.1 / negative / winding（closePath 修复）",
+        "isPointInPath.subpath / stroke.prune.rect / stroke.scale1 / scale2 / transformation.basic / arc.shape.2"
+      ],
+      "new_failures_5": [
+        "arc.shape.5 / arcTo.shape.curve2（arc 精度边缘——lineWidth 200 巨 stroke 端点覆盖）",
+        "fill.overlap / fill.winding.add（需 nonzero fill rule——canvas 光栅现纯偶奇，嵌套同向矩形挖洞；独立切片）",
+        "rect.end.2（closePath+lineTo 边缘组合；同族 end.1 已过）"
+      ]
+    },
+    "wpt_canvas_full": "全 canvas testharness 449 Pass / 53 Fail（shadows 6 个 HEAD 既存失败与本切片无关，clean-tree 验证）",
+    "make_test": "default_actions_work_without_javascript 1 失败为并行流既存（clean HEAD 同失败，表单提交导航域 error:// URL），非本切片引入",
+    "gates": "cargo fmt 无 diff；clippy v8 + quickjs 双矩阵零警告；pre-commit-guard PASS"
+  },
+  "commits": ["6f5ee7d1 (pre-rebase)", "ac7240f5 (rebased over afd8ec08)"],
+  "remaining": "arc/arcTo 形状精度族（~14 fail）；nonzero fill rule（fill.overlap/winding.add/add 族）；stroke.cap/join 边缘（closed/end.3/prune 3）；isPointIn* scaleddashes；rect.end.2"
+}
