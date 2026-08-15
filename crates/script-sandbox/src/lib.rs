@@ -170,6 +170,16 @@ pub trait Sandbox {
     ) -> bool {
         false
     }
+
+    /// js-dom goal M6 S0q：QuickJS 版原生绑定 escape-hatch（镜像 `install_native_bindings`
+    /// 的 rquickjs 形态，DC-7 双引擎对等）。进入沙箱持久 QuickJS Context，在 `Ctx` 内调用
+    /// `installer`（宿主侧经此安装 `Accessor`/`Function` 等原生绑定，不经 String 桥）。
+    ///
+    /// **默认 no-op**：非 QuickJS 后端或未实现时返 `false`（零回归）。
+    #[cfg(feature = "quickjs")]
+    fn install_native_bindings_quickjs(&mut self, _installer: Box<dyn FnOnce(&rquickjs::Ctx)>) -> bool {
+        false
+    }
 }
 
 #[cfg(not(any(feature = "v8", feature = "quickjs")))]

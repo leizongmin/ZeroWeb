@@ -34,6 +34,7 @@ pub mod dom_bridge;
 // P1b S1 原生 DOM 绑定（feature-gated v8；替换 polyfill 字符串桥，RFC p1b-v8-native-bindings）。
 #[cfg(feature = "v8")]
 pub mod dom_bindings;
+// js-dom goal M6 S0q：QuickJS（rquickjs）原生 DOM 绑定骨架（镜像 V8 dom_bindings，DC-7 双引擎对等）。
 pub mod element_from_point;
 pub mod fetch_bridge;
 pub mod font_load_bridge;
@@ -44,6 +45,8 @@ pub mod paint;
 pub mod pipeline;
 mod pipeline_budget;
 pub mod preload;
+#[cfg(feature = "quickjs")]
+pub mod quickjs_dom_bindings;
 pub mod rect_bridge;
 pub mod text_metrics;
 pub mod timer_bridge;

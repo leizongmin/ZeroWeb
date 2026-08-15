@@ -6399,6 +6399,7 @@ dependencies = [
  "flate2",
  "getrandom 0.3.4",
  "png 0.18.1",
+ "rquickjs",
  "sha1",
  "sha2",
  "slotmap",

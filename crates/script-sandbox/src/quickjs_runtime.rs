@@ -441,6 +441,26 @@ impl crate::Sandbox for QuickJSSandbox {
     fn config(&self) -> &SandboxConfig {
         &self.config
     }
+    /// js-dom goal M6 S0q：QuickJS 原生绑定 escape-hatch（镜像 V8 `install_native_bindings`）。
+    ///
+    /// 进入持久 Context（`persistent_context: true` 时与 `execute` 共享同一 Context，
+    /// installer 安装的全局工厂/Accessor 对后续 `execute` 可见；false 时新建临时 Context
+    /// ——与 V8 版「无持久 context 返 false」语义一致，绑定不可见即报 false）。
+    fn install_native_bindings_quickjs(&mut self, installer: Box<dyn FnOnce(&rquickjs::Ctx)>) -> bool {
+        if !self.config.persistent_context {
+            // 非持久模式：临时 Context 安装即丢（execute 会新建）→ 绑定不可见，如实报 false。
+            return false;
+        }
+        if self.context.is_none() {
+            let Ok(ctx) = rquickjs::Context::full(&self.runtime) else {
+                return false;
+            };
+            self.context = Some(ctx);
+        }
+        let persistent = self.context.as_ref().expect("context created above");
+        persistent.with(|ctx| installer(&ctx));
+        true
+    }
 }
 
 impl Default for QuickJSSandbox {

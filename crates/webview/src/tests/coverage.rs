@@ -670,6 +670,62 @@ fn test_native_dom_bindings_wiring_r3097() {
     );
 }
 
+// js-dom goal M6 S0q：QuickJS 版原生 DOM 绑定生产接线（与上方 V8 版 R3097 同断言面——
+// 双引擎对等，DC-7）。native_dom=true 时 QuickJS 沙箱经 install_native_bindings_quickjs
+// escape-hatch 装 quickjs_dom_bindings（工厂 + nodeType/tagName/nodeName/id 原生 getter）。
+// 仅 quickjs feature 测。
+#[cfg(feature = "quickjs")]
+#[test]
+fn test_native_dom_bindings_wiring_quickjs_s0q() {
+    let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
+    wv.load_html(
+        "<html><body>\
+         <div id=\"a\"><span id=\"b\">x</span></div>\
+         <script>\
+           globalThis.__nt = __zw_native_element_for_id('a').nodeType;\
+           globalThis.__tn = __zw_native_element_for_id('a').tagName;\
+           globalThis.__nn = __zw_native_element_for_id('a').nodeName;\
+           globalThis.__tnB = __zw_native_element_for_id('b').tagName;\
+           globalThis.__same = (__zw_native_element_for_id('a') === __zw_native_element_for_id('a'));\
+           globalThis.__miss = (__zw_native_element_for_id('zz') === null);\
+         </script>\
+         </body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "QuickJS native_dom 接线无异常, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__nt)").unwrap(),
+        "1",
+        "QuickJS native nodeType"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tn)").unwrap(),
+        "DIV",
+        "QuickJS native tagName（HTML 大写）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__nn)").unwrap(),
+        "DIV",
+        "QuickJS native nodeName"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__tnB)").unwrap(),
+        "SPAN",
+        "QuickJS native tagName 多元素不串扰"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__same)").unwrap(),
+        "true",
+        "QuickJS NodeId↔对象身份映射（同 id 返同对象）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__miss)").unwrap(),
+        "true",
+        "QuickJS miss → null（与 V8 wire 语义一致）"
+    );
+}
+
 #[test]
 fn test_native_dom_disabled_by_default_r3097() {
     // 默认关：__zw_native_element_for_id 未安装 → typeof 'undefined'（polyfill 桥不受影响）。

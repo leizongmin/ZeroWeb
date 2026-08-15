@@ -8,7 +8,7 @@ license.workspace = true
 [features]
 default = ["v8"]
 v8 = ["zero-script-sandbox/v8", "dep:v8"]
-quickjs = ["zero-script-sandbox/quickjs"]
+quickjs = ["zero-script-sandbox/quickjs", "dep:rquickjs"]
 
 [dependencies]
 zero-product-version = { workspace = true }
@@ -39,6 +39,13 @@ unicode-bidi = { workspace = true }
 version = "150.2.0"
 default-features = false
 optional = true
+
+# js-dom goal M6 S0q：QuickJS 原生 DOM 绑定（feature-gated quickjs）。与 script-sandbox
+# 同版本同 feature 对齐（bindgen），Cargo 去重同一 rquickjs crate 实例。v8 模式下不启用。
+[dependencies.rquickjs]
+version = "0.7"
+optional = true
+features = ["bindgen"]
 
 [dev-dependencies]
 criterion = { workspace = true }

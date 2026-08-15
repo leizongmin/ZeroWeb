@@ -1353,7 +1353,8 @@ impl WebView {
         self.ensure_sandbox()?;
         // P1b L1b（R3108）：执行前安装/刷新原生 DOM 绑定（native_dom=true 时），确保脚本
         // 可用 `__zw_native_element_for_id` 且 DOM 源为当前 live Document。
-        #[cfg(feature = "v8")]
+        // js-dom M6 S0q：quickjs feature 下走 QuickJS 原生绑定（quickjs_dom_bindings）。
+        #[cfg(any(feature = "v8", feature = "quickjs"))]
         self.install_native_dom_bindings();
         // R3295：确保 DOM shim（`window`/`document`/`addEventListener`/`__zw_user_scroll` 等）
         // 已注入。此前仅 `run_page_scripts_impl` / `dispatch_event` 装 shim，**独立 `execute_script`
@@ -1438,6 +1439,36 @@ impl WebView {
             }
         }));
         tracing::debug!(live = live_some, "native DOM bindings installed (native_dom=true)");
+    }
+
+    /// js-dom goal M6 S0q：QuickJS 版 [`Self::install_native_dom_bindings`]（镜像 V8 逻辑，
+    /// kill-switch `native_dom` 默认关 → 零回归）。经 `install_native_bindings_quickjs`
+    /// escape-hatch 在持久 QuickJS Context 安装 `quickjs_dom_bindings`（`__zw_native_element_for_id`
+    /// 工厂 + nodeType/tagName/nodeName/id 原生 getter，S0q PoC 面）。
+    #[cfg(feature = "quickjs")]
+    fn install_native_dom_bindings(&mut self) {
+        if !self.config.native_dom {
+            return;
+        }
+        let Some(sandbox) = self.js_sandbox.as_mut() else {
+            return;
+        };
+        let live = self.pipeline.cached_doc_shared();
+        let html = self.cached_html.clone();
+        let live_some = live.is_some();
+        let installed = sandbox.install_native_bindings_quickjs(Box::new(move |ctx| {
+            if let Some(doc) = live {
+                zero_engine::quickjs_dom_bindings::install_dom_bindings_quickjs(ctx, doc);
+            } else {
+                zero_engine::quickjs_dom_bindings::install_dom_bindings_quickjs_from_html(ctx, &html);
+            }
+        }));
+        if installed {
+            tracing::debug!(
+                live = live_some,
+                "QuickJS native DOM bindings installed (native_dom=true)"
+            );
+        }
     }
 
     /// 幂等确保 DOM shim（[`generate_js_dom_shim`]）已注入进程内沙箱。
@@ -1548,7 +1579,8 @@ impl WebView {
         // P1b L1b（R3108）：原生 DOM 绑定安装抽到 `install_native_dom_bindings`（与
         // `execute_script` 路径共用；每次刷新 live Document 源）。须在下方 `sandbox` 长
         // 借用前调用（helper 内部短暂借 js_sandbox 后释放）。kill-switch 默认关 → 零回归。
-        #[cfg(feature = "v8")]
+        // js-dom M6 S0q：quickjs feature 下走 QuickJS 原生绑定（quickjs_dom_bindings）。
+        #[cfg(any(feature = "v8", feature = "quickjs"))]
         self.install_native_dom_bindings();
         let sandbox = self
             .js_sandbox
@@ -2697,6 +2729,19 @@ impl Drop for WebView {
     fn drop(&mut self) {
         if self.config.native_dom {
             zero_engine::dom_bindings::reset_native_state();
+        }
+    }
+}
+
+// js-dom goal M6 S0q：QuickJS 版 Drop reset（镜像 V8 侧 R3334 语义）。QuickJS Runtime 随
+// WebView 销毁，但 quickjs_dom_bindings 的线程局部（DOM 源 / Persistent 对象身份缓存）仍持
+// 指向**已销毁 Runtime** 的 Persistent 值；同线程建第二个 native WebView 时 restore 读旧值
+// → UnrelatedRuntime/悬垂。Drop 时清空使下一 WebView 干净启动。默认关路径不触（零回归）。
+#[cfg(feature = "quickjs")]
+impl Drop for WebView {
+    fn drop(&mut self) {
+        if self.config.native_dom {
+            zero_engine::quickjs_dom_bindings::reset_quickjs_state();
         }
     }
 }
