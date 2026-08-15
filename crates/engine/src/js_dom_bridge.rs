@@ -2386,8 +2386,42 @@ pub fn query_text_from_html(html: &str, selector: &str) -> String {
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn query_text_from_html_doc(doc: &Document, selector: &str) -> String {
     find_by_selector(doc, selector)
-        .map(|n| doc.inner_html(n))
+        .and_then(|n| doc.text_content(n))
         .unwrap_or_default()
+}
+
+/// 从包含结构性 pending 变更的当前 DOM 状态查询 textContent。
+///
+/// 脚本执行期间，`createElement()` 后追加的子树尚未写回 HTML 快照。对发生了直接结构性
+/// 变更的父元素，先将同一批变更应用到快照再查询，避免 `parent.textContent` 忽略已追加
+/// 的子节点。
+pub fn query_text_from_pending_mutations(html: &str, mutations: &[DomMutation], selector: &str) -> Option<String> {
+    let has_direct_structural_mutation = mutations.iter().any(|mutation| {
+        matches!(
+            mutation,
+            DomMutation::AppendChild {
+                parent_selector,
+                ..
+            } | DomMutation::InsertBefore {
+                parent_selector,
+                ..
+            } | DomMutation::AppendFragmentChildren {
+                parent_selector,
+                ..
+            } | DomMutation::InsertFragmentBefore {
+                parent_selector,
+                ..
+            } if parent_selector == selector
+        )
+    });
+    if !has_direct_structural_mutation {
+        return None;
+    }
+
+    let mut doc = parse_html(html);
+    apply_dom_mutations(&mut doc, mutations)
+        .ok()
+        .map(|_| query_text_from_html_doc(&doc, selector))
 }
 
 /// 从已记录变更中查询 create 句柄上的属性（脚本执行期间只读）。

@@ -694,8 +694,11 @@ pub fn register_dom_callbacks(
             if let Some(t) = sel_text_override(&list, &sel) {
                 return t;
             }
-            drop(list);
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(text) = query_text_from_pending_mutations(&snap, &list, &sel) {
+                return text;
+            }
+            drop(list);
             with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );

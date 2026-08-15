@@ -296,6 +296,42 @@ fn test_parent_selector_for_nested() {
 }
 
 #[test]
+fn text_query_includes_pending_appended_child() {
+    let mutations = vec![
+        DomMutation::CreateElement {
+            handle: "__panel".into(),
+            tag: "div".into(),
+        },
+        DomMutation::SetTextOnHandle {
+            handle: "__panel".into(),
+            text: "Your browser scores 265 out of 586 points".into(),
+        },
+        DomMutation::AppendChild {
+            parent_selector: "#score".into(),
+            child_handle: "__panel".into(),
+        },
+    ];
+
+    assert_eq!(
+        query_text_from_pending_mutations(
+            "<html><body><div id=\"score\"></div></body></html>",
+            &mutations,
+            "#score",
+        ),
+        Some("Your browser scores 265 out of 586 points".into()),
+    );
+    assert_eq!(
+        query_text_from_pending_mutations(
+            "<html><body><div id=\"score\"></div></body></html>",
+            &mutations,
+            "body",
+        ),
+        None,
+        "unaffected elements keep the snapshot fast path",
+    );
+}
+
+#[test]
 fn test_query_tag_from_mutations() {
     // query_tag_from_mutations：从 CreateElement 记录取真实 tag（detached 元素无 selector，
     // shim _tagFromSel 恒猜 DIV）。命中 → tag；非该句柄 → 空串。
