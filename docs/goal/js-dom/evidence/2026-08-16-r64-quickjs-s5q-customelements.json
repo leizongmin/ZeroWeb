@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-16",
+  "round": "R64",
+  "milestone": "M6 S5q — QuickJS customElements 五件套 + lifecycle（js-dom goal DC-7）",
+  "commit": "243811c6",
+  "api_added": {
+    "__zw_native_customElements 全局对象": "五件套：define（ASCII 小写规范化 + ctor Persistent 入 Rust CE_REGISTRY——QuickJS native 域无 polyfill registry）/get（未注册 null）/getName（反向 identity 查）/whenDefined（PoC 立即 resolve 经 Promise::new + resolve 调用；真 pending 语义延异步域）/upgrade（PoC no-op——完整 ctor 执行延后）",
+    "create 命中 registry 的 upgrade": "set_prototype(ctor.prototype)——prototype 方法可达 + lifecycle 可派发；完整 ctor 执行（super() NodeId 注入链，镜像 V8 UPGRADE_NODE_ID 栈）延后续切片",
+    "lifecycle": "connected/disconnectedCallback 从 appendChild/removeChild 成功路径派发——子树 DFS（tag 含 '-' fast-path，V8 R3271 镜像）+ CONNECTED_CUSTOM 状态追踪（V8 镜像）+ 先标记后派发 + this = native 元素 + 回调缺失静默（spec 可选）"
+  },
+  "poce2e": [
+    "define('my-el', ctor) + get('MY-EL') === ctor（小写规范化）",
+    "getName(ctor) === 'my-el' 反查",
+    "get('nope') → null",
+    "create_element('my-el') 命中 → greet() === 'hi-MY-EL'（prototype 方法 + native tagName）",
+    "append 到 document 子树 → connectedCallback('conn:MY-EL')",
+    "remove → disconnectedCallback 追加（'conn:MY-EL|disc:MY-EL'）"
+  ],
+  "tests": {
+    "engine_quickjs": "1419 passed",
+    "engine_v8": "2153 passed（零回归）",
+    "webview_quickjs_wiring": "2 passed",
+    "clippy": "quickjs 矩阵零警告",
+    "fmt": "无 diff"
+  },
+  "api_findings": [
+    "rquickjs Promise::new(&ctx) 返 (promise, resolve, reject) 三元——立即 resolve 构造已解析 promise（whenDefined PoC）",
+    "HashSet::new 非 const fn——thread_local 不能用 const 块（HashMap::new 可以，HashSet 不行）",
+    "Object::as_object() 返 Option<&Object>（引用），cloned() 才得 Object"
+  ],
+  "m6_state": "S0q–S5q 全部有 land 实现（S5q 为 PoC 深度：完整 ctor 执行/upgrade 语义/attributeChangedCallback 延后）。元素面 = 4 工厂 + customElements 五件套 + 13 属性（6 setter）+ 11 方法 + lifecycle 派发。M6 剩余 = PoC→生产深度补齐（ctor 执行链、capture/bubble、DOMException、weak/finalizer、S1q 复合对象）",
+  "next": [
+    "S5q 深化：完整 ctor 执行（construct + upgrade NodeId 注入栈，镜像 V8 S5b）+ attributeChangedCallback（observedAttributes 过滤）",
+    "S4q 完整化：capture/bubble 祖先链虚站（镜像 V8 R40）+ Event 构造器族 + DOMException 基建",
+    "S0q 续 weak/finalizer；S1q 复合对象 attributes/classList"
+  ]
+}
