@@ -551,7 +551,9 @@ fn windows_browser_scripts_build_required_child_processes() {
 #[test]
 fn browser_build_and_release_entries_include_compositor() {
     let makefile = include_str!("../../../Makefile");
-    assert!(makefile.contains("-p zero-browser -p zero-renderer -p zero-compositor"));
+    // 627afe21d 起 browser 与 renderer/compositor 拆为独立行构建（isolate release feature resolution）
+    assert!(makefile.contains("-p zero-browser"));
+    assert!(makefile.contains("-p zero-renderer -p zero-compositor"));
 
     for script in [
         include_str!("../../../scripts/package-linux.sh"),

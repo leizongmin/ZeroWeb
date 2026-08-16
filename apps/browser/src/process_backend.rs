@@ -1518,8 +1518,10 @@ mod compositor_fallback_tests {
             .into_owned()
     }
 
+    /// 7533e9d90 重构（强制隔离进程管线）后：compositor 断线不再触发 legacy 回退——
+    /// observe 仅记录状态，不清 compositor 提交态，也不发 SetFramePublishMode(Legacy)/RequestFrame。
     #[test]
-    fn compositor_crash_triggers_legacy_fallback_messages() {
+    fn compositor_disconnect_keeps_publish_state() {
         let _ = take_test_renderer_outbound();
 
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
@@ -1536,25 +1538,26 @@ mod compositor_fallback_tests {
             frame_id: 1,
         });
 
-        assert!(backend.observe_compositor_status_for_test(
+        assert!(!backend.observe_compositor_status_for_test(
             CompositorStatus::Disconnected,
             &mut snapshots,
             &mut snapshot_seq
         ));
+        assert_eq!(backend.compositor_status, CompositorStatus::Disconnected);
         let snap = snapshots.get(&tab_id).unwrap();
-        assert!(snap.compositor_submission.is_none());
+        assert!(snap.compositor_submission.is_some(), "compositor 断线不再清除提交态");
         assert!(snap.compositor_frame.is_none());
 
         let outbound = take_test_renderer_outbound();
         assert!(
-            outbound
+            !outbound
                 .iter()
                 .any(|kind| matches!(kind, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy))),
-            "expected SetFramePublishMode(Legacy), got {outbound:?}"
+            "重构后断线不再发 SetFramePublishMode(Legacy)，got {outbound:?}"
         );
         assert!(
-            outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
-            "expected RequestFrame, got {outbound:?}"
+            !outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
+            "重构后断线不再发 RequestFrame，got {outbound:?}"
         );
     }
 
