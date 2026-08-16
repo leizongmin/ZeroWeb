@@ -168,3 +168,33 @@ IFC 行内定位偏移使区域对比失准。
 | reset miter_limit/after-rasterization | 2 | 1.4-2% | stroke/AA 边 |
 | drop-shadow-globalAlpha | 1 | 4.8% | AA 边 |
 | text-outside-of-the-flat-tree | 1 | 0.58% | 退化 oracle |
+
+## R57 batch-3 探索记录（2026-08-16 深夜，否定结果——避免未来重复探索）
+
+### 1px 格子/元素偏移（composite.grid 12 项 + drop-shadow 4.8% + reset 边残差的主因）
+
+- 现象：canvas 元素 y 差 1px（ref 114 vs 我们 115，drop-shadow；composite.grid 每格
+  累积 1px）。实测 ref 的 canvas_y=114（阴影顶 129 = 15+114 精确）、紫色矩形
+  y[124,153] = 10+114 精确。
+- 尝试 1（NORMAL_LINE_HEIGHT_RATIO 1.164 → generic 1.15）：R1185 实测 chromium
+  generic = 1.150 + Liberation Serif hhea = 1.1499 双证。但 canvas 从 +1 变 -1
+  （113 vs 114）——无净改善（h1 行盒走 IFC strut 1.2 近似，不受 resolve 影响；
+  组合浮点 113.64 vs ref 114.4 取整差）。
+- 尝试 2（ZW_PERFONT_LINEHEIGHT=1 + FontMetricMap 空族 fallback）：p.desc 18.4
+  生效但 canvas 113（取整向下）——仍差 1；composite.grid 反变差（24→28）。
+- 尝试 3（直接改 strut 1.2）：未实施——R834 记录 strut 真实化是深结构（welcome
+  +0.44pp 风险，net 负先例）。
+- 结论：1px = h1/p.desc 行盒（IFC strut 1.2 近似）+ 系统字体行高差（R631 域）
+  + 浮点取整的组合——R834/R631 深项，canvas 专项无法轻量修复。
+
+### AA 边（drop-shadow 阴影边、reset 边、composite.grid 旋转边）
+
+- 整数坐标矩形（drop-shadow 紫色/阴影）：ref 边在整数像素（123 白/124 紫）——
+  **无 AA 混合**——硬边即正确。
+- 需要 AA 的仅非轴对齐/亚像素形状（composite.grid 的旋转边）——但 1px 格子偏移
+  主导 composite.grid 的 24-38%（旋转边仅 ~25px/cell coverage 差）。
+- 结论：AA 修复无法单独使 composite.grid < 1%（须 1px + AA 组合）——深项组合。
+
+### reset.render.text 0.68% 近通过
+
+- 差异 = 画布内文本字形像素差（y=116-123 文本行，1088 超容差）——字体度量域。
