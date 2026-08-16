@@ -336,11 +336,15 @@
         if (!v || typeof v.nodeType !== 'number') {
           throw new globalThis.TypeError("currentNode is not a Node");
         }
-        materialize();
+        // R89：spec TreeWalker.currentNode setter 是**纯赋值**——不跑 filter（WPT
+        // "Recursive filters need to throw"：filter 在 setter 期间重入不抛、首个遍历
+        // 方法才因 active flag 抛）。旧 setter eager materialize 让 filter 提前执行，
+        // 既消耗 filter 副作用窗口又把重入异常从 setter 泄漏。改惰性：只记录节点，
+        // accepted 定位（idx）延迟到下次遍历方法物化后按需重算（materialize 后
+        // effPos 走 relocated 分支自然正确）。
         currentNodeVal = v;
-        var at = accepted.indexOf(v);
-        idx = at >= 0 ? at : -1;
         relocated = true; // R84：重定位标记（effPos 区分 fresh vs 被滤节点）
+        idx = -1; // 物化后由 effPos/accepted 按需定位（setter 不再 eager 查表）
         syncOrderPosTo(v); // R51：lazy 步进游标随 currentNode 重定位
       },
       configurable: true
@@ -476,7 +480,14 @@
             while (sibling && inner++ < 100000) {
               node = sibling;
               var r = check(node);
-              if (r === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+              if (r === 1) {
+                // R89：ACCEPT 且有子 → 先入子树尾继续找「filtered 序前驱」（WebKit/
+                // Blink 的 previousNode = 前一个可见节点——WPT previousNodeLastChild
+                // Reject：cur=B2、sibling=B1 ACCEPT 但 B1 有子 → 期望 C1 非 B1；
+                // childless 才返）。traversal-reject 的 B2（childless）两模型同果。
+                if (node.lastChild) { sibling = node.lastChild; continue; }
+                currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node;
+              }
               if (r === 2) {
                 sibling = node.previousSibling; // REJECT → 跳过子树
               } else {

@@ -1565,3 +1565,62 @@ fn r88_filter_removes_ancestor_in_flight_previous() {
         "R88：previousNode 的 filter 内移除祖先——返回 b1、reference retarget a1、指针翻 false"
     );
 }
+
+// js-dom M4 R89：TreeWalker currentNode setter 纯赋值（不跑 filter）+ previousNode
+// ACCEPT 有子先入子树尾（filtered 序前驱——WPT previousNodeLastChildReject /
+// TreeWalker "Recursive filters need to throw"）。
+
+#[test]
+fn r89_setter_does_not_run_filter_recursive_throws_on_traverse() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var depth = 0;\n\
+         var walker;\n\
+         var setterThrew = false;\n\
+         walker = document.createTreeWalker(document, 0xFFFFFFFF, function () {\n\
+         \x20 if (depth === 0) { depth++; try { walker.firstChild(); } catch (e) { globalThis.__inner = e.name; } }\n\
+         \x20 return 1;\n\
+         });\n\
+         try { walker.currentNode = document.body; } catch (e) { setterThrew = true; }\n\
+         var innerName = globalThis.__inner || 'none';\n\
+         // setter 后首个遍历方法：filter 重入（depth 已 1 不重入——真浏览器 filter 从未跑过；\n\
+         // 本实现物化窗口在首遍历方法内，重入检测经 active flag 生效）。\n\
+         var depthAfterSet = depth;\n\
+         globalThis.__r89a = [String(setterThrew), innerName, String(depthAfterSet)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r89a").unwrap().value,
+        "false|none|0",
+        "R89：currentNode setter 纯赋值——不跑 filter（depth 0）、不抛异常"
+    );
+}
+
+#[test]
+fn r89_previous_node_accept_with_children_digs_last() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var root = document.createElement('div');\n\
+         host.appendChild(root);\n\
+         var a1 = document.createElement('div'); a1.id = 'A1';\n\
+         var b1 = document.createElement('div'); b1.id = 'B1';\n\
+         var b2 = document.createElement('div'); b2.id = 'B2';\n\
+         var c1 = document.createElement('div'); c1.id = 'C1';\n\
+         var c2 = document.createElement('div'); c2.id = 'C2';\n\
+         root.appendChild(a1); a1.appendChild(b1); a1.appendChild(b2);\n\
+         b1.appendChild(c1); b1.appendChild(c2);\n\
+         var walker = document.createTreeWalker(root, 1, function (n) { return n.id === 'C2' ? 2 : 1; });\n\
+         walker.firstChild();                 // A1\n\
+         walker.nextNode();                   // B1\n\
+         walker.nextNode();                   // C1\n\
+         walker.nextNode();                   // B2（C2 被拒跳过）\n\
+         var pv = walker.previousNode();      // 期望 C1（B1 ACCEPT 有子 → 先入子树尾；C2 拒 → C1）\n\
+         globalThis.__r89b = (pv && pv.id) + '|' + walker.currentNode.id;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r89b").unwrap().value,
+        "C1|C1",
+        "R89：previousNode 的 ACCEPT 有子先 dig 子树尾（filtered 序前驱），childless 才返"
+    );
+}
