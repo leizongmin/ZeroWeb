@@ -907,48 +907,201 @@ fn values_identical<'js>(a: &Value<'js>, b: &Value<'js>) -> bool {
     a == b
 }
 
-/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatchevent` PoC 子集）：构造
-/// 轻量事件对象（type/target/currentTarget = target 自身）→ 按注册序调全部监听器
-///（回调 this = target；首参 = 事件对象）。返回 true（spec：非 cancelable / 未阻止）。
-/// 监听器执行异常**不中断**派发（spec：回调异常报告后继续后续监听器——此处吞掉，
-/// console 报告延 S5q 基建）。
-fn dispatch_event_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, type_: rquickjs::Coerced<String>) -> bool {
+/// `event.stopPropagation()` 注入体（R67，spec `dom-event-stoppropagation`）：置内部
+/// `__zw_stop` flag——止后续**节点**（当前节点剩余监听器仍触发，spec「inner invoke」全尽）。
+/// 具名 fn 收 `This<Object>` = 事件对象，直接写 this 的 flag 属性（rquickjs 闭包 HRP 见模块注释）。
+fn event_stop_propagation<'js>(this: This<Object<'js>>) {
+    let _ = this.0.set("__zw_stop", true);
+}
+
+/// `event.stopImmediatePropagation()` 注入体（R67，spec `dom-event-stopimmediatepropagation`）：
+/// 置 `__zw_stop_immediate`——立即止当前节点剩余监听器 + 后续节点。
+fn event_stop_immediate_propagation<'js>(this: This<Object<'js>>) {
+    let _ = this.0.set("__zw_stop_immediate", true);
+}
+
+/// 事件对象读 bool 属性（缺失/非 bool → false）。
+fn event_bool_of(event: &Object, key: &str) -> bool {
+    event.get::<_, bool>(key).unwrap_or(false)
+}
+
+/// `dispatchEvent(event)`（spec `dom-eventtarget-dispatchevent`，R67 三阶段完整化——
+/// 镜像 V8 R3128/R3135 `dispatch_event_impl`）：event 为对象读 `.type`，或直接 type
+/// 字符串（包成 `{type}` 对象——R63 PoC 形态兼容）。三阶段派发：capture（祖先 root→parent
+/// 倒序，CAPTURING_PHASE=1，仅 capture 监听器）→ target（AT_TARGET=2，全部监听器注册序）
+/// → bubble（祖先 parent→root 正序，BUBBLING_PHASE=3，仅 bubble 监听器，仅 `bubbles:true`）。
+/// `currentTarget`/`eventPhase` 随传播更新，派发后复位（currentTarget=null/eventPhase=NONE）。
+/// stopPropagation/stopImmediatePropagation 缺失时注入（fresh flag 复位，同 event 可重派发）。
+/// 返回 `!(cancelable && defaultPrevented)`（spec 返值语义；preventDefault 注入延 Event
+/// 构造器域）。监听器执行异常**不中断**派发（spec：回调异常报告后继续——此处吞掉）。
+fn dispatch_event_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, event: Opt<Value<'js>>) -> bool {
     let Some(id) = node_id_of(&this.0) else {
         return true;
     };
-    let ffi = encode_node_id(id);
-    // 快照监听器（派发中 add/remove 不影响本轮——spec 派发快照语义）。
-    let listeners: Vec<Persistent<Value<'static>>> = LISTENERS
-        .with(|l| l.borrow().get(&(ffi, type_.0.clone())).cloned())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, p)| p)
-        .collect();
-    // 事件对象：轻量 plain object（type/target/currentTarget）。
-    let event = match rquickjs::Object::new(ctx.clone()) {
-        Ok(o) => o,
-        Err(_) => return true,
+    // 事件对象标准化：对象原样；字符串 → 包 `{type}`（spec dispatchEvent 收 Event，此处
+    // 轻量 plain object 形态——Event 构造器族属后续切片）。
+    let event_obj = match event.0 {
+        Some(v) if v.is_object() => match v.into_object() {
+            Some(o) => o,
+            None => return true,
+        },
+        Some(v) if v.is_string() => {
+            let s: String = rquickjs::Coerced::<String>::from_js(&ctx, v.clone())
+                .map(|c| c.0)
+                .unwrap_or_default();
+            let Ok(o) = rquickjs::Object::new(ctx.clone()) else {
+                return true;
+            };
+            let _ = o.set("type", s);
+            o
+        }
+        _ => return true,
     };
-    let _ = event.set("type", type_.0.clone());
+    // event.type（listener 键）。
+    let Ok(type_) = event_obj.get::<_, String>("type") else {
+        return true;
+    };
+    // spec：event.target = 派发目标（固定）；currentTarget 随传播。
     let target_v: Value = this.0.clone().into_value();
-    let _ = event.set("target", target_v.clone());
-    let _ = event.set("currentTarget", target_v);
-    let event_v: Value = event.into_value();
-    for p in listeners {
-        let Ok(cb) = p.restore(&ctx) else {
-            continue;
-        };
-        let Ok(func) = rquickjs::Function::from_value(cb) else {
-            continue;
-        };
-        // this = target（spec listener 调用 this 为 currentTarget）。Args::this 显式设
-        // this 后 push 事件对象参数，apply 低层 JS_Call（rquickjs 无 call_with_this 高层封装）。
-        let mut args = rquickjs::function::Args::new(ctx.clone(), 1);
-        let _ = args.this(this.0.clone());
-        let _ = args.push_arg(event_v.clone());
-        let _: rquickjs::Result<rquickjs::Value> = args.apply(&func);
+    let _ = event_obj.set("target", target_v.clone());
+    let _ = event_obj.set("currentTarget", target_v);
+    // stop flag 复位（fresh 派发语义，支持同 event 重派发）。
+    let _ = event_obj.set("__zw_stop", false);
+    let _ = event_obj.set("__zw_stop_immediate", false);
+    // stop 方法注入（仅缺失时，不覆盖既有）。
+    inject_missing_stop_method(&ctx, &event_obj, "stopPropagation", event_stop_propagation);
+    inject_missing_stop_method(
+        &ctx,
+        &event_obj,
+        "stopImmediatePropagation",
+        event_stop_immediate_propagation,
+    );
+    let bubbles = event_bool_of(&event_obj, "bubbles");
+    // 沿 parent 链收集 [target, parent, ..., root]（bubble 序）。with_dom 闭包内纯读收集
+    // NodeId，释放 borrow 后再逐层派发（派发可能再入 mutation/listener 存储）。
+    let chain: Vec<NodeId> = with_dom(|d| {
+        let mut chain = vec![id];
+        let mut cur = d.parent_node(id);
+        while let Some(p) = cur {
+            chain.push(p);
+            cur = d.parent_node(p);
+        }
+        chain
+    })
+    .unwrap_or_default();
+    // (node, phase) 访问列表：capture 祖先倒序 → target → bubble 祖先正序。
+    let mut visits: Vec<(NodeId, i32)> = Vec::with_capacity(chain.len() * 2);
+    for &n in chain[1..].iter().rev() {
+        visits.push((n, 1)); // CAPTURING_PHASE
     }
-    true
+    visits.push((id, 2)); // AT_TARGET
+    for &n in chain[1..].iter() {
+        visits.push((n, 3)); // BUBBLING_PHASE
+    }
+    let event_v: Value = event_obj.clone().into_value();
+    let mut halted = false;
+    for (node_id, phase) in visits {
+        if halted {
+            break;
+        }
+        // 非 bubbles 事件：bubble 阶段整体跳过（capture + target 仍派发）。
+        if phase == 3 && !bubbles {
+            break;
+        }
+        // 当前层 native 元素（currentTarget + listener this）。get_or_build 对任意 NodeId
+        // 返包装（Document 等非 Element 亦得包装，currentTarget 可观测）。
+        let curr = get_or_build_node_value(&ctx, node_id);
+        let Some(curr_obj) = curr.as_object().cloned() else {
+            continue;
+        };
+        let _ = event_obj.set("currentTarget", curr.clone());
+        let _ = event_obj.set("eventPhase", phase);
+        let ffi = encode_node_id(node_id);
+        // 快照监听器（注册序，含 capture 标志；派发中 remove 的存活检查经 listener_present
+        // ——镜像 V8 R3170 spec「inner invoke」步骤 5）。
+        let listeners: Vec<(bool, Persistent<Value<'static>>)> = LISTENERS
+            .with(|l| l.borrow().get(&(ffi, type_.clone())).cloned())
+            .unwrap_or_default();
+        for (cap, p) in listeners {
+            // phase 过滤（spec invoke）：capture 阶段仅 capture；target 阶段全部；bubble 仅 bubble。
+            let invoke = match phase {
+                1 => cap,
+                2 => true,
+                _ => !cap,
+            };
+            if !invoke {
+                continue;
+            }
+            // 派发期间被 removeEventListener 的监听器 skip。
+            if !listener_present(&ctx, ffi, &type_, cap, &p) {
+                continue;
+            }
+            let Ok(cb) = p.restore(&ctx) else {
+                continue;
+            };
+            let Ok(func) = rquickjs::Function::from_value(cb) else {
+                continue;
+            };
+            // this = currentTarget（spec listener 调用 this）。Args::this 显式设 this 后
+            // push 事件对象，apply 低层 JS_Call（rquickjs 无 call_with_this 高层封装）。
+            let mut args = rquickjs::function::Args::new(ctx.clone(), 1);
+            let _ = args.this(curr_obj.clone());
+            let _ = args.push_arg(event_v.clone());
+            let _: rquickjs::Result<rquickjs::Value> = args.apply(&func);
+            // stopImmediatePropagation：立即止（当前节点剩余 + 后续节点）。
+            if event_bool_of(&event_obj, "__zw_stop_immediate") {
+                halted = true;
+                break;
+            }
+        }
+        if halted {
+            break;
+        }
+        // stopPropagation：当前节点监听器全尽，止后续节点（spec：止后续非当前剩余）。
+        if event_bool_of(&event_obj, "__zw_stop") {
+            halted = true;
+        }
+    }
+    // 派发结束：currentTarget=null、eventPhase=NONE（spec：派发后 currentTarget 为 null）。
+    let _ = event_obj.set("currentTarget", Value::new_null(ctx.clone()));
+    let _ = event_obj.set("eventPhase", 0);
+    // 返值 `!(cancelable && defaultPrevented)`（spec；plain object 无 preventDefault
+    // 注入时 defaultPrevented 恒 false → true）。
+    let cancelable = event_bool_of(&event_obj, "cancelable");
+    let default_prevented = event_bool_of(&event_obj, "defaultPrevented");
+    !(cancelable && default_prevented)
+}
+
+/// 事件对象缺失 stop 方法注入（不覆盖既有——原生 Event 实例经原型链已有则跳过）。
+/// 只注入无参具名 fn（`fn(This<Object>)`）——rquickjs Function::new 对该签名直接可用。
+fn inject_missing_stop_method<'js>(ctx: &Ctx<'js>, event: &Object<'js>, name: &str, f: fn(This<Object<'js>>)) {
+    let has = event.get::<_, Value>(name).is_ok_and(|v| v.is_function());
+    if !has {
+        let Ok(func) = Function::new(ctx.clone(), f) else {
+            return;
+        };
+        let _ = event.set(name, func);
+    }
+}
+
+/// 监听器存活检查（派发期间 removeEventListener 后 skip——spec「inner invoke」步骤 5）。
+/// 快照条目与 map 现存条目做 Persistent 值恒等（同 JS 对象）。
+fn listener_present<'js>(
+    ctx: &Ctx<'js>,
+    ffi: u64,
+    type_: &str,
+    cap: bool,
+    stored: &Persistent<Value<'static>>,
+) -> bool {
+    let Some(stored_v) = stored.clone().restore(ctx).ok() else {
+        return false;
+    };
+    LISTENERS.with(|l| {
+        l.borrow().get(&(ffi, type_.to_string())).is_some_and(|list| {
+            list.iter()
+                .any(|(c, p)| *c == cap && p.clone().restore(ctx).is_ok_and(|v| values_identical(&v, &stored_v)))
+        })
+    })
 }
 
 // ── S5q customElements 五件套 + lifecycle（spec `dom-customelementregistry`；
@@ -1503,6 +1656,60 @@ mod tests {
                 ),
                 "b",
                 "removeEventListener 后仅剩 B（identity 匹配移除）"
+            );
+
+            // R67 三阶段派发（镜像 V8 R3128/R3135）：capture 祖先倒序(1，仅 capture
+            // 监听器) → target 注册序全监听器(2) → bubble 祖先正序(3，仅 bubble)。
+            // 链 = document > html > body > div#main；__p=body（capture 监听器），
+            // __p2=html（bubble 监听器）——html 监听器不触发 capture（cap=false），
+            // body 监听器不触发 bubble（cap=true），phase 过滤即 spec invoke 语义。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__pLog = [];\
+                     var __p = __zw_native_element_for_id('main').parentNode;\
+                     var __p2 = __p.parentNode;\
+                     __p.addEventListener('ping', function (e) { __pLog.push('p:' + e.eventPhase + ':' + (e.currentTarget===__p ? 'P' : '?')); }, true);\
+                     __p2.addEventListener('ping', function (e) { __pLog.push('g:' + e.eventPhase + ':' + (e.currentTarget===__p2 ? 'G' : '?')); });\
+                     __zw_native_element_for_id('main').addEventListener('ping', function (e) { __pLog.push('m:' + e.eventPhase + ':' + (e.currentTarget===e.target ? 'T' : '?')); });\
+                     __zw_native_element_for_id('main').dispatchEvent({type:'ping', bubbles:true}), __pLog.join('|')"
+                ),
+                "p:1:P|m:2:T|g:3:G",
+                "三阶段：body capture 监听器(1) → target(2) → html bubble 监听器(3)；\
+                 capture 标志双向过滤（p 不入 bubble 站、g 不入 capture 站）"
+            );
+            // 非 bubbles 事件：bubble 阶段跳过（capture + target 仍派发）。
+            assert_eq!(
+                eval_str(
+                    "__pLog.length = 0;\
+                     __zw_native_element_for_id('main').dispatchEvent({type:'ping', bubbles:false}), __pLog.join('|')"
+                ),
+                "p:1:P|m:2:T",
+                "bubbles:false 不上溯（capture + target 照派）"
+            );
+            // stopPropagation：capture 站止后续节点（target/bubble 全不触发）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__sLog = [];\
+                     __p.addEventListener('stop', function (e) { __sLog.push('cap'); e.stopPropagation(); }, true);\
+                     __p2.addEventListener('stop', function (e) { __sLog.push('g-bub'); });\
+                     __zw_native_element_for_id('main').addEventListener('stop', function (e) { __sLog.push('m'); });\
+                     __zw_native_element_for_id('main').dispatchEvent({type:'stop', bubbles:true}), __sLog.join('|')"
+                ),
+                "cap",
+                "capture 站 stopPropagation 止后续节点（spec：当前节点剩余监听器全尽）"
+            );
+            // 派发后复位：currentTarget=null / eventPhase=NONE(0)；事件对象直传形态。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__after = null;\
+                     __zw_native_element_for_id('main').addEventListener('after', function (e) { __after = [e.eventPhase, e.currentTarget === e.target ? 'T' : 'A']; });\
+                     globalThis.__evA = {type:'after'};\
+                     __zw_native_element_for_id('main').dispatchEvent(__evA);\
+                     var __r = __after.join(',') + ';' + __evA.eventPhase + ';' + (__evA.currentTarget === null ? 'null' : 'obj');\
+                     globalThis.__evA = null; __r"
+                ),
+                "2,T;0;null",
+                "派发期 eventPhase=2/currentTarget=target；派发后复位 0/null"
             );
 
             // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
