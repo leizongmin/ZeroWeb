@@ -2018,6 +2018,45 @@ impl CanvasContext {
                 let ix_end_f = ex.min(canvas_w as f32);
                 let full_start = ix_start_f.ceil() as u32;
                 let full_end = ix_end_f.floor() as u32;
+                // R57（M3）：亚像素 span（宽 < 1px）——join 三角尖角顶的四边形
+                // 在尖角处宽 0.5px，floor 截断 span [10.39,10.39] → [10,10) 空 →
+                // 尖角顶丢失（2d.reset.render.miter_limit 的 miter 尖角 vs
+                // Chromium 差 5px）。像素与 span 相交（k < ex && k+1 > sx）即
+                // 硬边填——floor(sx) 恒相交（sx < ex 且 floor(sx) ≤ sx）；
+                // floor(ex) 当 ex 非整数且 ≠ floor(sx)（Chromium AA 半色调近似）。
+                if full_start >= full_end && ix_start_f < ix_end_f {
+                    // 相交像素 = floor(sx)（恒交）+ floor(ex)（ex 非整数且不同时）
+                    let k0 = ix_start_f.floor() as u32;
+                    let k1 = ix_end_f.floor() as u32;
+                    for k in [k0, k1] {
+                        let hit = if k == k0 {
+                            true
+                        } else {
+                            (k as f32) < ix_end_f && (k as f32 + 1.0) > ix_start_f
+                        };
+                        if !hit || k >= canvas_w {
+                            continue;
+                        }
+                        if !self.clip_applies(k as f32, scan_y as f32) {
+                            continue;
+                        }
+                        let idx = ((scan_y * canvas_w + k) * 4) as usize;
+                        if idx + 3 < self.pixel_buffer.len() {
+                            let (r, g, b, a) = self.composite_pixel(
+                                color,
+                                self.pixel_buffer[idx],
+                                self.pixel_buffer[idx + 1],
+                                self.pixel_buffer[idx + 2],
+                                self.pixel_buffer[idx + 3],
+                            );
+                            self.pixel_buffer[idx] = r;
+                            self.pixel_buffer[idx + 1] = g;
+                            self.pixel_buffer[idx + 2] = b;
+                            self.pixel_buffer[idx + 3] = a;
+                            self.blit_pixel_f32(idx, color);
+                        }
+                    }
+                }
                 for scan_x in full_start..full_end {
                     // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                     if !self.clip_applies(scan_x as f32, scan_y as f32) {
@@ -2233,10 +2272,42 @@ impl CanvasContext {
                         continue;
                     }
                     let (rx, ry) = (qx - t * dx, qy - t * dy);
-                    if rx * rx + ry * ry > h2 {
+                    let d2 = rx * rx + ry * ry;
+                    if d2 > h2 {
                         continue;
                     }
-                    self.blit_pixel(px, py, color);
+                    if d2 <= seg_half * seg_half {
+                        // 中心命中带内 → 满色（现有语义）。
+                        self.blit_pixel(px, py, color);
+                        continue;
+                    }
+                    // R57（M3）：描边边界像素 AA——中心 miss（距中心线 ∈
+                    // (seg_half, seg_half+0.5]，h2 像素方形补偿命中）的斜线边像素
+                    // 4×4 超采样覆盖率（子采样点距中心线 ≤ seg_half 且投影 ∈
+                    // [0,1]）→ 源 alpha × coverage 半色调（Chromium/Skia 对临界
+                    // 像素按覆盖面积混合；中心命中仍满色——WPT 断言满色的
+                    // 临界像素（bezierCurveTo.shape 的 (1,1) 等）中心距真曲线
+                    // < half（clamp 4096 后弦偏差 0.29px）不落入此分支）。
+                    let mut hit = 0u32;
+                    for i in 0..4 {
+                        for j in 0..4 {
+                            let (sx, sy) = (px as f32 + (i as f32 + 0.5) / 4.0, py as f32 + (j as f32 + 0.5) / 4.0);
+                            let (qx2, qy2) = (sx - ax, sy - ay);
+                            let t2 = (qx2 * dx + qy2 * dy) / len2;
+                            if t2 >= 0.0 && t2 <= 1.0 {
+                                let (rx2, ry2) = (qx2 - t2 * dx, qy2 - t2 * dy);
+                                if rx2 * rx2 + ry2 * ry2 <= seg_half * seg_half {
+                                    hit += 1;
+                                }
+                            }
+                        }
+                    }
+                    let coverage = hit as f32 / 16.0;
+                    if coverage > 0.0 {
+                        let mut c = color;
+                        c.a = (c.a as f32 * coverage).round() as u8;
+                        self.blit_pixel(px, py, c);
+                    }
                 }
             }
         }

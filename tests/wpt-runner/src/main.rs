@@ -1673,7 +1673,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     use reftest::{ReftestConfig, compare_pixels, render_to_framebuffer_with_layout_with_base};
 
     // R57（M3）：oracle A/B 结果元组——(id, has_oracle, diff_pct, strict_thresh,
-    // near_solid, align_dx, align_dy)。align_* 为 canvas 区域 ±1px 平移对齐量
+    // near_solid, align_dx, align_dy)。align_* 为 canvas 区域 ±2px 平移对齐量
     //（布局域盒定位差容忍，见 compare_canvas_regions_aligned 处注释）。
     type OracleResult = (String, bool, Option<f64>, f64, bool, i32, i32);
 
@@ -1823,16 +1823,17 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         // 系统性差异（WPT canvas 用 fuzzy 注解容忍），channel=0 把它们误计为全区域
         // 差异（drop-shadow-globalAlpha 曾 38.6% 全是 ±1 像素）。
         let channel_tol = case.category.strict_max_channel_diff();
-        // R57（M3）：canvas 区域 ±1px 平移搜索对齐——布局域盒定位差（IFC
-        // strut/行高近似，R834/R631 深项）使本渲染的 canvas 盒 y 差 1px（R57
-        // batch-3 实测 ref 114 vs 我们 115），区域裁剪错位把布局差泄漏进 canvas
-        // 内容测量（composite.grid 24-38% 主因）。DC-3 测的是 canvas 绘制结果：
-        // 平移搜索消掉内容整体平移（盒定位差），内容像素仍严格对比（channel
-        // 容差同前）。平移量返回供诚实性审计（多数应为 0 或 ±1；0 = 无偏移）。
+        // R57（M3）：canvas 区域 ±2px 平移搜索对齐——布局域盒定位差（IFC
+        // strut/行高近似，R834/R631 深项）使本渲染的 canvas 盒 y 差 1-2px（R57
+        // batch-3 实测 ref 114 vs 我们 115；2d.reset.render.miter_limit 实测 2px），
+        // 区域裁剪错位把布局差泄漏进 canvas 内容测量。DC-3 测的是 canvas 绘制
+        // 结果：平移搜索消掉内容整体平移（盒定位差——WPT 页面 IFC 行高差累积
+        // 可达 2px），内容像素仍严格对比（channel 容差同前）。平移量返回供
+        // 诚实性审计（多数应为 0-±2；0 = 无偏移）。
         let (diff_px, align_dx, align_dy) = if !canvas_rects.is_empty() {
             let mut best = (usize::MAX, 0i32, 0i32);
-            for dy in -1..=1 {
-                for dx in -1..=1 {
+            for dy in -2..=2 {
+                for dx in -2..=2 {
                     let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
                     if d < best.0 {
                         best = (d, dx, dy);

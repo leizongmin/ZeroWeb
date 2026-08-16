@@ -2266,3 +2266,69 @@ fn test_fill_path_axis_aligned_hard_edge() {
     let inside = ctx.get_image_data(10, 10, 1, 1);
     assert_eq!(&inside.data[..4], &[0, 0, 255, 255], "整数矩形路径内部应满色");
 }
+
+/// R57（M3）：描边边界像素 AA——中心 miss（距中心线 ∈ (half, half+0.5]）的
+/// 斜线边像素 4×4 超采样半色调；中心命中（≤ half）仍满色（WPT 满色契约——
+/// bezierCurveTo.shape 的 (1,1) 等临界像素）。
+#[test]
+fn test_stroke_edge_aa_supersampling() {
+    let mut ctx = CanvasContext::new(60, 40);
+    // 45° 斜线（half=20）：边界像素中心距线 20-20.5 之间出现（线跨像素网格）
+    ctx.set_line_width(40.0);
+    ctx.set_stroke_color(Color::rgba(0, 0, 255, 255));
+    ctx.begin_path();
+    ctx.move_to(-20.0, 30.0);
+    ctx.line_to(80.0, -30.0);
+    ctx.stroke();
+    // 线的内部（距中心线 < half）满色
+    let inner = ctx.get_image_data(20, 20, 1, 1);
+    assert_eq!(
+        &inner.data[..4],
+        &[0, 0, 255, 255],
+        "描边内部应满色蓝: {:?}",
+        &inner.data[..4]
+    );
+    // 存在半色调边界像素（alpha ∈ (0,255)）——AA 边
+    let mut found_edge = false;
+    for y in 0..40 {
+        for x in 0..60 {
+            let p = ctx.get_image_data(x, y, 1, 1);
+            if p.data[3] > 0 && p.data[3] < 255 {
+                found_edge = true;
+                break;
+            }
+        }
+        if found_edge {
+            break;
+        }
+    }
+    assert!(found_edge, "斜线描边边应存在半色调像素（超采样覆盖率）");
+}
+
+/// R57（M3）：miter 尖角顶的亚像素 span 填充——join 三角四边形在尖角处宽
+/// < 1px，floor 截断曾丢尖角顶（2d.reset.render.miter_limit 尖角 vs Chromium
+/// 差 5px）。尖角顶（内容 y≈2）应着色。
+#[test]
+fn test_miter_spike_top_subpixel_span() {
+    let mut ctx = CanvasContext::new(60, 40);
+    ctx.set_line_width(10.0);
+    ctx.set_stroke_color(Color::rgba(0, 0, 255, 255));
+    ctx.begin_path();
+    // 对称 V 形（i=4 角同款：两段关于 y 轴对称，miter 尖角垂直向上）
+    ctx.move_to(0.0, 40.0);
+    ctx.line_to(10.0, 0.0);
+    ctx.line_to(20.0, 40.0);
+    ctx.stroke();
+    // 尖角顶：miter_len = 5/sin(θ/2)——θ=36.9°（两段方向 (10,-40)/(10,40)）
+    // → sin(18.4°)=0.316 → miter_len=15.8——顶 y = 0 - 15.8×cos(...)？
+    // 平分向上：顶在 (10, 0-15.8) 附近——亚像素宽四边形从 (10,0) 向上——
+    // 至少 y=2 处（理论顶附近）应着色
+    let spike = ctx.get_image_data(10, 1, 1, 1);
+    assert!(
+        spike.data[3] > 0,
+        "miter 尖角顶（y=1）应着色（亚像素 span 填充）: {:?}",
+        &spike.data[..4]
+    );
+    let spike2 = ctx.get_image_data(10, 2, 1, 1);
+    assert!(spike2.data[3] > 0, "miter 尖角顶（y=2）应着色");
+}
