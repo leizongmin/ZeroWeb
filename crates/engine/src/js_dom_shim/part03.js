@@ -1028,7 +1028,10 @@
           }
           if (diff != null) {
             var rem = diff % st;
-            if (Math.abs(rem) > 1e-6 && Math.abs(rem - st) > 1e-6) stepMismatch = true;
+            // R57（FV M1）：容差相对 step（"very small floating step"——step
+            // 0.0000001 的 rem 浮点误差 vs 绝对 1e-6 容差）
+            var tol = Math.max(1e-9, Math.abs(st) * 1e-6);
+            if (Math.abs(rem) > tol && Math.abs(rem - st) > tol) stepMismatch = true;
           }
         }
       }

@@ -1592,7 +1592,7 @@
           }
           var wvTag = _realTag(sel, handle);
           var wvTy = '';
-          if (wvTag === 'INPUT') {
+          if (wvTag === 'INPUT' || wvTag === 'BUTTON') {
             try { wvTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { wvTy = ''; }
             wvTy = String(wvTy || '').toLowerCase();
           }
