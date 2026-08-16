@@ -1,0 +1,24 @@
+{
+  "date": "2026-08-16",
+  "round": "R68",
+  "milestone": "M6 S5q 完整化（observedAttributes 过滤 + oldValue 写前捕获）",
+  "commit": "d6dc00d5",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 74,
+    "deletions": 15
+  },
+  "changes": [
+    "setAttribute：old value 写前捕获（spec attributeChangedCallback(name, old, new)——old 为变更前值，缺失 → JS null；R65 此前恒 null）",
+    "removeAttribute 派发 attributeChangedCallback（newValue=null；spec 属性变更含移除）；缺失属性移除 no-op 不派发（spec 仅已存在属性的移除才是变更）",
+    "observedAttributes 过滤（spec dom-customelementregistry）：ctor 的 observedAttributes 数组求值（get 泛型调用，静态属性/getter 均可），name ∈ 数组才派发；缺失/非数组声明 → observe-all（保持 R65 行为兼容）",
+    "同值 setAttribute 仍派发（spec 无值变化短路——与 MutationObserver 的 same-value 语义不同）"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R68 断言：data-k:v1:v2 二次 set old 捕获 + 同值 set 仍派发 + remove → new:null + 缺失 remove 不派发 + observedAttributes miss/hit 过滤）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "attributeChangedCallback 语义与 V8 dom_bindings custom_elements.rs 对齐（observedAttributes 过滤 + (name, old, new) 三参 + remove 路径派发）"
+}
