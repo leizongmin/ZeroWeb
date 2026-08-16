@@ -1383,3 +1383,62 @@ fn r85_html_sibling_doctype() {
         "R85：html.previousSibling=doctype(10)、nextSibling=null；doctype.nextSibling=HTML（真浏览器语义，oracle expected 一致性前提）"
     );
 }
+
+// js-dom M4 R86：detached 子树保留其子 + NodeIterator 移除 retarget（WPT
+// NodeIterator-removal 簇 driving 单测——remove 后 firstChild 可读 + 引用重定位）。
+
+#[test]
+fn r86_detached_subtree_children_and_iterator_retarget() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.createElement('p');\n\
+         host.appendChild(p);\n\
+         var t = document.createTextNode('inner');\n\
+         p.appendChild(t);\n\
+         var iter = document.createNodeIterator(p);\n\
+         iter.nextNode(); iter.nextNode(); // root + text，ref=text、before=false\n\
+         var refBefore = iter.referenceNode.nodeName;\n\
+         var refIsText = iter.referenceNode === t;\n\
+         // remove t（root=p 的子，ref===removed）：retarget 前驱 = t 的父 p（spec\n\
+         // nodeiterator-remove：指针后置 → reference = removed 的树序前驱）。\n\
+         p.removeChild(t);\n\
+         var fcAfter = p.firstChild ? p.firstChild.nodeName : 'null';\n\
+         var refAfter = iter.referenceNode ? iter.referenceNode.nodeName : 'null';\n\
+         var refIsP = iter.referenceNode === p;\n\
+         globalThis.__r86a = [refBefore, String(refIsText), fcAfter, refAfter, String(refIsP)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r86a").unwrap().value,
+        "#text|true|null|P|true",
+        "R86：remove 子 text 后 p.firstChild=null + 迭代器 ref 从被移除 text retarget 到前驱（父 p）"
+    );
+}
+
+#[test]
+fn r86_reappend_clears_removed_marker() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var c1 = document.createElement('span'); c1.id = 'k1';\n\
+         var c2 = document.createElement('span'); c2.id = 'k2';\n\
+         var c3 = document.createElement('span'); c3.id = 'k3';\n\
+         host.appendChild(c1); host.appendChild(c2); host.appendChild(c3);\n\
+         function count() {\n\
+           var it = document.createNodeIterator(host);\n\
+           var cnt = 0; var n; while ((n = it.nextNode())) cnt++;\n\
+           return cnt;\n\
+         }\n\
+         var cnt1 = count();\n\
+         host.removeChild(c2);\n\
+         var cnt2 = count();\n\
+         host.appendChild(c2);\n\
+         var cnt3 = count();\n\
+         globalThis.__r86b = [String(cnt1), String(cnt2), String(cnt3)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r86b").unwrap().value,
+        "6|5|6",
+        "R86：移除后迭代器跳过该节点（6→5），re-append 清标记恢复（→6）"
+    );
+}

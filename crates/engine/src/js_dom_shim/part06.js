@@ -401,6 +401,14 @@
         var i = orderPos < 0 ? (isTreeWalker ? 1 : 0) : orderPos + 1;
         while (i < order.length) {
           var node = order[i];
+          // R86：live 迭代集合——已移除节点（含子树）退出集合（spec `nodeiterator`：
+          // 移除的节点从 iterator list 剔除；WPT NodeIterator-removal 全簇）。order 是
+          // 构造期快照，读时按移除标记跳过（子树节点经 _zwIsRemovedNode 沿父链上行
+          // 命中被移除祖先）。
+          if ((typeof _zwIsRemovedNode === 'function') && _zwIsRemovedNode(node)) {
+            i = orderEnd[i] > i ? orderEnd[i] : i + 1; // 整子树跳过（子随父移除）
+            continue;
+          }
           var r = check(node);
           if (r === 1) { orderPos = i; idx = accepted.indexOf(node); currentNodeVal = node; return node; }
           if (isTreeWalker) {
@@ -460,13 +468,14 @@
           return null;
         }
         // NodeIterator previousNode：结构序逆向 scan（迭代集合结构性——不剪枝，
-        // REJECT/SKIP/0 都只排除自身）。
+        // REJECT/SKIP/0 都只排除自身）。R86：移除节点（含子树）退出集合。
         syncOrderPosTo(currentNodeVal);
         var i = orderPos;
         if (i < 0) return null;
         i -= 1;
         while (i >= 0) {
           var nd = order[i];
+          if ((typeof _zwIsRemovedNode === 'function') && _zwIsRemovedNode(nd)) { i--; continue; }
           var r2 = check(nd);
           if (r2 === 1) { orderPos = i; idx = accepted.indexOf(nd); currentNodeVal = nd; return nd; }
           i--;
@@ -589,9 +598,88 @@
         if (r) { refNodeVal = r; beforeRefVal = true; }
         return r;
       };
+      // R86：NodeIterator 移除 retarget（spec `nodeiterator-remove`——迭代集合 live：
+      // 节点移除时，reference 在被移除节点/子树内 → 指针后置取 removed 的树序前驱、
+      // 指针前置取后继）。注册到全局表，remove 路径（_zwNotifyIteratorsRemove）遍历。
+      globalThis._zwIterRegistry.push({
+        root: root,
+        getRef: function () { return refNodeVal; },
+        getBefore: function () { return beforeRefVal; },
+        retarget: function (newRef, newBefore) { refNodeVal = newRef; beforeRefVal = newBefore; },
+        dead: false,
+      });
     }
     return walker;
   }
+  // R86：全局迭代器注册表 + 移除通知（512 软上限防泄漏——迭代器随 GC 语义上失效，
+  // 这里无 finalizer，靠容量压实的近似；retarget 对已耗尽/无关迭代器幂等 no-op）。
+  globalThis._zwIterRegistry = globalThis._zwIterRegistry || [];
+  globalThis._zwNotifyIteratorsRemove = function (removedNode) {
+    var reg = globalThis._zwIterRegistry;
+    if (!reg || !reg.length || !removedNode) return;
+    if (reg.length > 512) reg.length = 0;
+    // removed 的树序前驱/后继（限 removed 所属文档序；root 边界由 retarget 后集合
+    // 自然约束——前驱超 root 时回落到后继，spec 步骤 3 的「first node preceding」边界）。
+    var pred = null, succ = null;
+    // 树序前驱：有子不算（removed 的子在其后）——previousSibling 的最深最右 / 父。
+    try {
+      if (removedNode.previousSibling) {
+        var p = removedNode.previousSibling;
+        while (p && p.lastChild) p = p.lastChild;
+        pred = p;
+      } else {
+        pred = removedNode.parentNode || null;
+      }
+    } catch (_e2) { pred = null; }
+    try {
+      if (removedNode.parentNode) {
+        var s = removedNode.nextSibling;
+        if (s) { succ = s; }
+        else {
+          var c = removedNode.parentNode;
+          while (c && !c.nextSibling) c = c.parentNode;
+          succ = c ? c.nextSibling : null;
+        }
+      }
+    } catch (_e3) { succ = null; }
+    function inSubtree(node) {
+      // node 是否在 removedNode 子树内（含 removed 自身）——沿 parentNode 上行。
+      try {
+        var cur = node, guard = 0;
+        while (cur && guard++ < 128) {
+          if (cur === removedNode) return true;
+          cur = cur.parentNode;
+        }
+      } catch (_e) {}
+      return false;
+    }
+    function isAnc(node) {
+      // removedNode 是否是 node（root）的 inclusive ancestor（spec「toBeRemoved is an
+      // inclusive ancestor of root → no-op」）——沿 root 的父链上行找 removed。
+      try {
+        var cur = node, guard = 0;
+        while (cur && guard++ < 128) {
+          if (cur === removedNode) return true;
+          cur = cur.parentNode;
+        }
+      } catch (_e) {}
+      return false;
+    }
+    for (var i = 0; i < reg.length; i++) {
+      var it = reg[i];
+      if (!it || it.dead) continue;
+      var ref = it.getRef();
+      if (isAnc(it.root)) continue; // removed 是 root 的祖先 → no-op
+      if (!inSubtree(ref)) continue; // reference 不在 removed 子树内 → no-op
+      if (it.getBefore()) {
+        // 指针前置 → reference = removed 后继（保持 before=true）。
+        it.retarget(succ, true);
+      } else {
+        // 指针后置 → reference = removed 前驱；前驱为 null（root 前）→ 后继。
+        it.retarget(pred || succ, pred ? false : true);
+      }
+    }
+  };
 
   // ── XPath（document.evaluate，R2981）─────────────────────────────────────
   // 实用 XPath 1.0 子集求值器。headless 测试/抓取/遗留代码经 `document.evaluate('//div[@id]',
@@ -2884,6 +2972,27 @@ function _zwUnregisterTextSubtree(el) {
       for (var i = 0; i < kids.length; i++) _zwUnregisterTextSubtree(kids[i]);
     }
   } catch (_e) {}
+}
+// js-dom M4 R86：**移除子树的子节点物化缓存**——removeChild/remove 把注册文本视图注销
+//（R51c 防泄漏）后，被移除元素的 firstChild/childNodes 须仍可读（spec：detached 子树保留
+// 其子——WPT NodeIterator-removal：remove paras[0] 后 `paras[0].firstChild` 期望 #text，
+// 旧注销后 null → 用例 setup 直接崩 "Cannot read properties of null"）。注销前把融合视图
+// 快照入 _zwDetachedChildren（handle 键），childNodes/firstChild/lastChild 读路径在
+// 注册表 miss 后回落此缓存。防泄漏：512 软上限（与 _zwChildBaseCache 同款）。
+var _zwDetachedChildren = new Map();
+function _zwMaterializeDetachedChildren(el) {
+  try {
+    var kids = el.childNodes;
+    if (!kids || !kids.length) return;
+    var key = el.__zwHandle;
+    if (!key) return;
+    if (_zwDetachedChildren.size > 512) _zwDetachedChildren.clear();
+    _zwDetachedChildren.set(key, Array.prototype.slice.call(kids));
+  } catch (_e) {}
+}
+function _zwDetachedChildrenOf(handle) {
+  if (!handle) return null;
+  return _zwDetachedChildren.get(handle) || null;
 }
 // 本地 childNodes（handle 元素无 sel 时读注册表）
 // R52：handle/sel 双 Map 索引（同 _zwTextElsByEl——childNodes/firstChild/lastChild 每读全表

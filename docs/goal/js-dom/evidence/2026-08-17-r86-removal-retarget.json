@@ -1,0 +1,39 @@
+{
+  "date": "2026-08-17",
+  "round": "R86",
+  "milestone": "M4",
+  "slice": "detached 子树保留其子 + NodeIterator 移除 retarget（WPT NodeIterator-removal 簇从整文件崩溃到部分通过）",
+  "baseline_commit": "e337f8db (R85 后)",
+  "summary": {
+    "dom/traversal": { "before": "1565P/15F（removal.html 整文件崩溃 0 子测试执行）", "after_polyfill": "1575P/29F（removal.html 10P/15F 执行）", "net_pass": "+10" },
+    "dom/nodes": { "before": "6650P", "after": "6650P", "net_pass": "0" },
+    "dom/events": "189P 零回归",
+    "dom/collections": "48P/0F 零回归",
+    "engine_tests": { "v8": "2181 passed (+2 R86)", "quickjs": "1427 (=)" }
+  },
+  "root_causes": [
+    "① removeChild/remove 注销注册文本视图（R51c 防泄漏）后，被移除元素的 firstChild/childNodes 不可读——spec 要求 detached 子树保留其子（WPT NodeIterator-removal 的 setup 在 remove paras[0] 后读 paras[0].firstChild 直接崩 null.parentNode，整文件 0 执行）",
+    "② 迭代器 order 快照对移除节点不感知——spec 迭代集合是 live 的，移除节点（含子树）退出集合",
+    "③ referenceNode 移除 retarget 缺失——spec nodeiterator-remove：removed 是 reference 的 inclusive ancestor 时，指针后置 → reference=removed 前驱、指针前置 → reference=removed 后继（root 的 inclusive ancestor 场景 no-op）",
+    "④ 通知点不全：_zwMEl.removeChild（createElement 产物）、detached-doc 的 doc/body/_tree 三族 removeChild 都不通知"
+  ],
+  "fixes": [
+    "part06: _zwMaterializeDetachedChildren——注销注册文本前把融合子视图快照入 _zwDetachedChildren（handle 键，512 软上限）；childNodes/firstChild/lastChild 读路径注册表 miss 后回落",
+    "part03: _zwMarkRemovedHandle/_zwIsRemovedNode（sel+handle 双标记 + 沿父链上行的子树判定）；appendChild 成功清标记（re-append 移动语义）",
+    "part06: nextNode/previousNode order 扫描跳过移除节点（前向整子树跳、逆向逐节点跳）",
+    "part06: _zwIterRegistry（512 软上限）+ _zwNotifyIteratorsRemove——pred/succ 树序计算（通知先于树状态变化）+ inSubtree/isAnc 判定 + 双指针分支 retarget；isAnc 方向 = removed 是 root 的 inclusive ancestor（沿 root 父链找 removed）",
+    "part03/part04: 五个 removeChild 形态（proxy handle-child/proxy remove/_zwMEl/detached-doc doc/body _tree）全部接通知——通知先于 splice/parentNode 清理"
+  ],
+  "regression_check": {
+    "dom/nodes": "6650P 持平零回归",
+    "dom/events / collections": "189P / 48P-0F 零回归",
+    "engine": "v8 2181 / quickjs 1427 全绿（R82-R85 旧 walker 测试零回归）",
+    "fmt / clippy": "无 diff / workspace 默认 + quickjs 矩阵零警告"
+  },
+  "remaining_failures": {
+    "NodeIterator-removal_15F": "root=document 迭代器跨多 k 推进的树序细节（expected __n2 got [object Object] 族——移除前后迭代器序数与真浏览器分叉，需逐 k probe；M1 L2 live-iterator 邻域）",
+    "removal-during-filtering_2F": "filtering 中途移除的 in-flight retarget（filter 内 remove 的重入时序）",
+    "其他 12F": "cross-realm 7F + currentNode 2F + walking-outside 1F + Recursive-filters 1F + previousNodeLastChildReject 1F（R85 已记清单）"
+  },
+  "note": "removal.html 从整文件崩溃（0 信号）到 10P/15F 执行——traversal 目录 P 数 +10、F 数因执行暴露 +14（与 R8 基线真实化同型的「执行解锁」；后续轮次按聚类继续修，不是回归）"
+}

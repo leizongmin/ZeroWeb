@@ -2196,6 +2196,29 @@
   function _zwMarkRemoved(sel) { if (sel) _zwRemovedSels[sel] = true; }
   function _zwUnmarkRemoved(sel) { if (sel) delete _zwRemovedSels[sel]; }
   function _zwIsRemoved(sel) { return !!(sel && _zwRemovedSels[sel]); }
+  // js-dom M4 R86：handle 移除标记（sel 版同款语义）——removeChild/remove 的 handle 节点
+  // 标记已移除，NodeIterator/TreeWalker 的 order 快照扫描跳过（spec：迭代集合是 live 的，
+  // 移除节点退出集合；WPT NodeIterator-removal：remove 后迭代器不再命中该节点/子树）。
+  var _zwRemovedHandles = {};
+  function _zwMarkRemovedHandle(h) { if (h) _zwRemovedHandles[h] = true; }
+  function _zwUnmarkRemovedHandle(h) { if (h) delete _zwRemovedHandles[h]; }
+  function _zwIsRemovedNode(node) {
+    if (!node) return false;
+    if (node.__zwSelector && _zwRemovedSels[node.__zwSelector]) return true;
+    if (node.__zwHandle && _zwRemovedHandles[node.__zwHandle]) return true;
+    // 子树判定：任一祖先被移除（沿 parentNode 上行——handle 反链在移除后由
+    // _mo_notify 清理，但 parentNode getter 读融合视图，removed 父的子列表可能
+    // 已物化缓存——需沿链上行查标记）。
+    try {
+      var p = node.parentNode, guard = 0;
+      while (p && guard++ < 64) {
+        if (p.__zwSelector && _zwRemovedSels[p.__zwSelector]) return true;
+        if (p.__zwHandle && _zwRemovedHandles[p.__zwHandle]) return true;
+        p = p.parentNode;
+      }
+    } catch (_e) {}
+    return false;
+  }
 
   function _parentNodeFor(sel, handle) {
     // R34xx：本地移除标记优先——remove() 后（mutation 未应用）parentNode 返 null。
@@ -2366,7 +2389,8 @@
       for (var i = attrs.length - 1; i >= 0; i--) { if (attrs[i].name === n) attrs.splice(i, 1); }
       _zwMReflectIdl(node, n);
     };
-    node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
+    // R86：迭代器 retarget 通知（先于树状态变化——pred/succ 读移除前兄弟/父链）。
+    node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} } node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
     // R57（FV M1）：createElement 路径的 Constraint Validation API（validator.js
     // 的 ctl 经 document.createElement——R2825 只覆盖 selector-based 的
     // _makeProxy）。node-based 约束计算（getAttribute + value 字段——与
@@ -2705,7 +2729,7 @@
       // R81：appendChild 后子的 parentNode 重指 body 自身（_tree 是内部代理树，子挂上去
       // parentNode=_tree ≠ foreignDoc.body——WPT Node-properties foreignPara1.parentNode 期望
       // body 对象 identity）。removeChild 同步清理。
-      removeChild: function (c) { ensureTree(); var r = _tree.removeChild(c); if (c && c.parentNode === _tree) c.parentNode = null; return r; },
+      removeChild: function (c) { ensureTree(); if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} } var r = _tree.removeChild(c); if (c && c.parentNode === _tree) c.parentNode = null; return r; },
       appendChild: function (c) { ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body; return r; },
       // R81：body 的 firstChild/lastChild getter 补齐（WPT Node-properties 经 body 子导航；
       // 旧只有 firstChild）。lastChild 同 childNodes 末端。
@@ -2787,6 +2811,10 @@
       removeChild: function (c) {
         for (var i = 0; i < this.childNodes.length; i++) {
           if (this.childNodes[i] === c) {
+            // R86：迭代器 retarget 通知（先于树状态变化——pred/succ 读移除前链）。
+            if (globalThis._zwNotifyIteratorsRemove) {
+              try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86) {}
+            }
             this.childNodes.splice(i, 1);
             var ci = this.children.indexOf(c);
             if (ci >= 0) this.children.splice(ci, 1);
@@ -2989,6 +3017,10 @@
           removeChild: function (c) {
             for (var i = 0; i < this.childNodes.length; i++) {
               if (this.childNodes[i] === c) {
+                // R86：迭代器 retarget 通知（先于树状态变化）。
+                if (globalThis._zwNotifyIteratorsRemove) {
+                  try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86b) {}
+                }
                 this.childNodes.splice(i, 1);
                 var ci = this.children.indexOf(c);
                 if (ci >= 0) this.children.splice(ci, 1);

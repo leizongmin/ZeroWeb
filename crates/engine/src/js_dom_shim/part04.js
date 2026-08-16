@@ -543,6 +543,12 @@
             if (_r51Local && _r51Local.length) return _r51Local.concat(_r51Kids);
             if (_r51Kids.length) return _r51Kids;
             if (_r51Local) return _r51Local;
+            // R86：注册表 miss + registry 空 → 移除物化缓存（detached 子树保留其子；
+            // WPT NodeIterator-removal：remove 后 paras[0].firstChild 期望 #text）。
+            var _r86det = (typeof _zwDetachedChildrenOf === 'function')
+              ? _zwDetachedChildrenOf(handle)
+              : null;
+            if (_r86det && _r86det.length) return _r86det.slice();
             return _childNodeList(sel, handle);
           }
           // R50：普通 handle 元素（createElement 后 append 子——mutation pending、无 selector）
@@ -571,6 +577,11 @@
                   if (_fl && _fl.length) return _fl.concat(_fk);
                   if (_fk.length) return _fk;
                   if (_fl) return _fl;
+                  // R86：移除物化缓存回落（detached 子树保留其子）。
+                  var _fl86 = (typeof _zwDetachedChildrenOf === 'function')
+                    ? _zwDetachedChildrenOf(handle)
+                    : null;
+                  if (_fl86 && _fl86.length) return _fl86.slice();
                   return _childNodeList(sel, handle);
                 }
                 if (typeof _zwLocalChildNodes === 'function') {
@@ -583,6 +594,11 @@
                 if (!sel && handle && _handleChildren[handle] && _handleChildren[handle].length) {
                   return _handleChildren[handle].slice();
                 }
+                // R86：移除物化缓存回落（同上）。
+                var _loc86 = (typeof _zwDetachedChildrenOf === 'function')
+                  ? _zwDetachedChildrenOf(handle)
+                  : null;
+                if (_loc86 && _loc86.length) return _loc86.slice();
                 return _childNodeList(sel, handle);
               })();
           if (!cn.length) return null;
@@ -1847,6 +1863,14 @@
                 if (_kidsBefore.length) _apPrev = _kidsBefore[_kidsBefore.length - 1];
               } catch (_e) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded, removedNodes: [], previousSibling: _apPrev, nextSibling: null });
+              // R86：append 即入树——清除移除标记（re-append 移动语义；迭代器重新命中）。
+              if (typeof _zwUnmarkRemovedHandle === 'function') {
+                for (var ci86 = 0; ci86 < ceAdded.length; ci86++) {
+                  var ca86 = ceAdded[ci86];
+                  if (ca86 && ca86.__zwHandle) _zwUnmarkRemovedHandle(ca86.__zwHandle);
+                  if (ca86 && ca86.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ca86.__zwSelector);
+                }
+              }
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
               var cePconn = _ceParentConnected(sel, handle);
               for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
@@ -1860,9 +1884,20 @@
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。
               // R51c：子树注销（child 内元素 textContent= 建的注册文本随整树摘除——防泄漏）。
+              // R86：注销前物化子视图（detached 子树保留其子——WPT NodeIterator-removal）。
+              if (typeof _zwMaterializeDetachedChildren === 'function') {
+                _zwMaterializeDetachedChildren(child);
+              }
               if (typeof _zwUnregisterTextSubtree === 'function') _zwUnregisterTextSubtree(child);
               else if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(child);
+              // R86：迭代器 retarget 通知——**先于**任何树状态变化（pred/succ 计算读
+              // 移除前的兄弟/父链）。
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(child); } catch (_e86n) {}
+              }
               __zw_remove_handle(child.__zwHandle);
+              // R86：handle 移除标记（迭代器 order 扫描跳过）。
+              if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(child.__zwHandle);
               // R2927/R2928：handle 父同步从 registry 移除子节点（保持 querySelector 子树一致）。
               if (handle) _unrecordHandleChild(handle, child);
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
@@ -1981,7 +2016,16 @@
             } catch (_e) {}
             if (handle) __zw_remove_handle(handle);
             else { __zw_remove(sel); _zwMarkRemoved(sel); }
+            // R86：handle 移除标记（迭代器 order 扫描跳过）+ 迭代器 retarget 通知。
+            if (handle && typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
+            if (globalThis._zwNotifyIteratorsRemove) {
+              try { globalThis._zwNotifyIteratorsRemove(ceSelf); } catch (_e86m) {}
+            }
             // R34xx：移除注册的文本元素（DOM 对照侧几何清理）。
+            // R86：注销前物化子视图（detached 子树保留其子）。
+            if (typeof _zwMaterializeDetachedChildren === 'function') {
+              _zwMaterializeDetachedChildren(ceSelf);
+            }
             if (typeof _zwUnregisterTextEl === 'function') _zwUnregisterTextEl(ceSelf);
             _ceApplyConn(ceSelf, false);
             // R47：_zwSuppressRemoveRecord——组合操作（surroundContents 等）需要自定义 record
