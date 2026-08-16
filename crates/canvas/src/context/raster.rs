@@ -1735,7 +1735,12 @@ impl CanvasContext {
     /// 的包围盒含旋转矩形角外三角区（composite.grid 的 rotate(90°)+scale 变换后
     /// fillRect 边界差 ~8px——oracle A/B 24%）。orig = 未变换矩形 (x,y,w,h)；
     /// 轴对齐 CTM 下 `pixel_in_transformed_rect` 恒 true（零回归）。
-    pub(crate) fn blit_rect_to_pixels_checked(&mut self, rect: &Rect, color: Color, orig: Option<(f32, f32, f32, f32)>) {
+    pub(crate) fn blit_rect_to_pixels_checked(
+        &mut self,
+        rect: &Rect,
+        color: Color,
+        orig: Option<(f32, f32, f32, f32)>,
+    ) {
         // R34xx（filters 渲染）：colorMatrix 滤镜作用于源色。
         let color = self.apply_filter_color(color);
         let canvas_w = self.width as usize;
@@ -1801,7 +1806,12 @@ impl CanvasContext {
     }
 
     /// R57（M3）：渐变矩形填充的逆变换判定版（同 blit_rect_to_pixels_checked）。
-    pub(crate) fn blit_rect_gradient_checked(&mut self, rect: &Rect, style: &CanvasStyle, orig: Option<(f32, f32, f32, f32)>) {
+    pub(crate) fn blit_rect_gradient_checked(
+        &mut self,
+        rect: &Rect,
+        style: &CanvasStyle,
+        orig: Option<(f32, f32, f32, f32)>,
+    ) {
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
         let x_start = rect.left().max(0.0) as usize;
