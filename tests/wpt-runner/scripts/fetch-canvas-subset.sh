@@ -129,6 +129,10 @@ fetch_raw "images/green-100x50.png"
 fetch_raw "images/red.png"
 fetch_raw "images/yellow.png"
 fetch_raw "images/yellow75.png"
+# R56h：drawing-images 的 SVG 驱动用例（2d.drawImage.svg / zerosource.image——
+# green.svg 全绿 100x50；red-zerosize.svg 零尺寸）。
+fetch_raw "images/green.svg"
+fetch_raw "images/red-zerosize.svg"
 
 # text 目录像素用例的 @font-face 测试字体（2d.text.draw.*——canvas 文本像素光栅）
 fetch_raw "fonts/CanvasTest.ttf"

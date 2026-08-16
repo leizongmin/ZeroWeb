@@ -147,3 +147,35 @@ fn test_canvas_draw_image_shadow_pixels_and_primitives() {
     let prims = ctx.into_primitives();
     assert!(!prims.fills.is_empty(), "drawImage 后应有图元");
 }
+
+/// R56h：自适应贝塞尔描边 + 零长段剪除的 GPU 路径图元覆盖（path_strokes
+/// 顶点 = CPU/GPU 共享的 flatten 输出——bezier 自适应细分顶点数远大于旧 8 段，
+/// 零长段剪除后图元为空）。
+#[test]
+fn test_canvas_bezier_stroke_prune_gpu_path() {
+    let mut ctx = CanvasContext::new(32, 32);
+    ctx.set_stroke_color(Color::BLUE);
+    ctx.set_line_width(2.0);
+    ctx.begin_path();
+    ctx.move_to(4.0, 4.0);
+    ctx.bezier_curve_to(8.0, -8.0, 24.0, 40.0, 28.0, 28.0);
+    ctx.stroke();
+    let stroked = ctx.primitives().path_strokes.clone();
+    assert!(!stroked.is_empty(), "bezier stroke 产生 GPU 图元");
+    assert!(
+        stroked[0].vertices.len() > 8 * 4,
+        "自适应细分顶点数 > 旧 8 段（{}）",
+        stroked[0].vertices.len()
+    );
+
+    // 零长段剪除：退化路径不产生描边图元（GPU 侧同 CPU 侧空几何）。
+    ctx.begin_path();
+    ctx.move_to(16.0, 16.0);
+    ctx.line_to(16.0, 16.0);
+    ctx.stroke();
+    assert_eq!(
+        ctx.primitives().path_strokes.len(),
+        stroked.len(),
+        "零长段剪除——退化路径无新图元"
+    );
+}

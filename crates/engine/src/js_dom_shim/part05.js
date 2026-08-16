@@ -167,15 +167,57 @@
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
         } else if (p === 'src' && _realTag(sel, handle) === 'IMG') {
-          // Detached Image() resources have no renderer-owned fetch slot. Report the
-          // failed decode asynchronously so callers waiting on onerror can settle.
+          // R56h：运行时 img 加载——`new Image().src = url` → __zw_fetch 同步抓取 +
+          // createImageBitmap 解码 → naturalWidth（_zwSettleResourceSelector 置 resourceState）
+          // + load/error 事件（2d.drawImage.svg / zerosource.image 的 loadImage await onload——
+          // 旧实现恒派发 error：detached Image() 无渲染器 fetch 槽，运行时 img 恒 naturalWidth=0）。
+          // fetch/decode 失败回落异步 error 事件（原语义）。
           // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
           if (handle) __zw_set_attr_handle(handle, 'src', String(value));
           else __zw_set_attr(sel, 'src', String(value));
           moAttr = 'src';
-          _defer(function () {
-            _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
-          });
+          var _imSrc = String(value == null ? '' : value);
+          var _imFail = function () {
+            _defer(function () {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+            });
+          };
+          if (_imSrc && typeof fetch === 'function') {
+            try {
+              fetch(_imSrc).then(function (resp) {
+                if (!resp.ok) { _imFail(); return; }
+                resp.blob().then(function (blob) {
+                  createImageBitmap(blob).then(function (bm) {
+                    // R56h：手动 settle（handle 元素）——_zwSettleResourceSelector 只收
+                    // sel（new Image() 的 handle-based 元素 sel 为 null → key 不匹配
+                    // listener 槽位，onload 不触发）。resourceState 用 _elKey(sel, handle)
+                    // 与 naturalWidth getter 同 key；事件经 _dispatchWithBubble 同 key 派发。
+                    var _imKey = _elKey(sel, handle);
+                    if (_resourceStates[_imKey]) { _imFail(); return; }
+                    _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: bm.width, height: bm.height, error: null };
+                    _dispatchWithBubble(_imKey, sel, handle, _makeEvent('load', { bubbles: false, cancelable: false }));
+                  }, function (e) {
+                    // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
+                    // 0，drawImage no-op——2d.drawImage.zerosource.image 期望 onload 且
+                    // 不绘制）；真解码失败（broken）→ error 事件。
+                    if (e && e.name === 'InvalidStateError') {
+                      var _zk = _elKey(sel, handle);
+                      if (!_resourceStates[_zk]) {
+                        _resourceStates[_zk] = { url: _imSrc, outcome: 'loaded', width: 0, height: 0, error: null };
+                        _dispatchWithBubble(_zk, sel, handle, _makeEvent('load', { bubbles: false, cancelable: false }));
+                      }
+                    } else {
+                      _imFail();
+                    }
+                  });
+                }, _imFail);
+              }, _imFail);
+            } catch (_e) {
+              _imFail();
+            }
+          } else {
+            _imFail();
+          }
         } else if (_reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label') {
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
@@ -1841,7 +1883,9 @@
         }
         var bm = _zwMakeImageBitmap(wire);
         if (bm.width <= 0 || bm.height <= 0) {
-          return Promise.reject(new TypeError('createImageBitmap: 解码失败（零尺寸）'));
+          // R56h：spec 解码失败 → InvalidStateError DOMException（2d.drawImage.broken 的
+          // promise_rejects_dom("InvalidStateError")——旧 TypeError 缺 DOMException code）。
+          return Promise.reject(_zwDomException('createImageBitmap: 解码失败（零尺寸）', 'InvalidStateError'));
         }
         // R34xx：float16 ImageData 源 → 携带原始浮点像素（drawImage 覆盖层回读越界值）。
         // 裁剪/翻转与 wire 变换同步（sw/sh 此处已规范化：负值翻转矩形）。
@@ -3633,7 +3677,12 @@
       var srcHandle = image._ctx._handle;
       var sw = image.width | 0;
       var sh = image.height | 0;
-      if (sw <= 0 || sh <= 0) return;
+      // R56h：源 canvas 位图零尺寸 → InvalidStateError（spec dom-context-2d-drawimage——
+      // 2d.drawImage.zerocanvas：width=0 或 height=0 的源 canvas 抛 INVALID_STATE_ERR；
+      // 旧实现 no-op 不抛）。
+      if (sw <= 0 || sh <= 0) {
+        throw _zwDomException('drawImage: source canvas has zero dimension', 'InvalidStateError');
+      }
       var wire = String(__zw_canvas_op(srcHandle, 'getImageData', '0', '0', String(sw), String(sh)));
       if (a.length === 3) {
         __zw_canvas_op(h, 'drawImage', wire, String(a[1]), String(a[2]));

@@ -1897,15 +1897,38 @@ impl CanvasContext {
     fn draw_image_sized(
         &mut self,
         image_data: &ImageData,
-        sx: f32,
-        sy: f32,
-        sw: f32,
-        sh: f32,
-        dx: f32,
-        dy: f32,
-        dw: f32,
-        dh: f32,
+        mut sx: f32,
+        mut sy: f32,
+        mut sw: f32,
+        mut sh: f32,
+        mut dx: f32,
+        mut dy: f32,
+        mut dw: f32,
+        mut dh: f32,
     ) {
+        // R56h：负维度翻转矩形（spec dom-context-2d-drawimage——2d.drawImage.negativedest/
+        // negativedir/negativesource：dw<0 → 目标矩形水平翻转（dx+=dw）且源矩形镜像
+        // （sx+=sw, sw=−sw）；dh<0 同垂直；sw/sh<0 仅源矩形翻转——图像方向不变）。
+        if dw < 0.0 {
+            dx += dw;
+            dw = -dw;
+            sx += sw;
+            sw = -sw;
+        }
+        if dh < 0.0 {
+            dy += dh;
+            dh = -dh;
+            sy += sh;
+            sh = -sh;
+        }
+        if sw < 0.0 {
+            sx += sw;
+            sw = -sw;
+        }
+        if sh < 0.0 {
+            sy += sh;
+            sh = -sh;
+        }
         let img_w = image_data.width as usize;
         let img_h = image_data.height as usize;
         if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {
@@ -2229,15 +2252,38 @@ impl CanvasContext {
     fn draw_shadow_image(
         &mut self,
         image_data: &ImageData,
-        sx: f32,
-        sy: f32,
-        sw: f32,
-        sh: f32,
-        dx: f32,
-        dy: f32,
-        dw: f32,
-        dh: f32,
+        mut sx: f32,
+        mut sy: f32,
+        mut sw: f32,
+        mut sh: f32,
+        mut dx: f32,
+        mut dy: f32,
+        mut dw: f32,
+        mut dh: f32,
     ) {
+        // R56h：负维度翻转矩形（spec dom-context-2d-drawimage——2d.drawImage.negativedest/
+        // negativedir/negativesource：dw<0 → 目标矩形水平翻转（dx+=dw）且源矩形镜像
+        // （sx+=sw, sw=−sw）；dh<0 同垂直；sw/sh<0 仅源矩形翻转——图像方向不变）。
+        if dw < 0.0 {
+            dx += dw;
+            dw = -dw;
+            sx += sw;
+            sw = -sw;
+        }
+        if dh < 0.0 {
+            dy += dh;
+            dh = -dh;
+            sy += sh;
+            sh = -sh;
+        }
+        if sw < 0.0 {
+            sx += sw;
+            sw = -sw;
+        }
+        if sh < 0.0 {
+            sy += sh;
+            sh = -sh;
+        }
         let img_w = image_data.width as usize;
         let img_h = image_data.height as usize;
         if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {

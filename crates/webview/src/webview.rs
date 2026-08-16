@@ -1601,6 +1601,10 @@ impl WebView {
         // 按 src 查 image_cache 快照 → 编码 canvas ImageData wire（"w:h;r,g,b,a,..."）。
         let image_data_snapshot = self.image_cache.snapshot_entries();
         let page_url_wire = page_url.clone();
+        // R56h：运行时 img（`new Image().src`）——快照 miss 时现场抓取 + 解码
+        //（2d.drawImage.svg / zerosource.image 的 loadImage 运行时加载；fetch 经
+        // 同一 fetch_handler——wpt-data 本地映射，无网络）。
+        let fetch_handler_for_wire = self.fetch_handler.clone();
         sandbox.register_callback(
             "__zw_get_image_wire",
             Box::new(move |args| {
@@ -1612,8 +1616,28 @@ impl WebView {
                 let abs = zero_engine::resolve_document_url(&base, src);
                 let key = zero_engine::image_resource_key(&abs, None);
                 let img = match image_data_snapshot.get(&key) {
-                    Some(img) => img,
-                    None => return String::new(),
+                    Some(img) => img.clone(),
+                    None => {
+                        // R56h：运行时图片快照 miss → fetch handler 现场抓取 + 解码。
+                        drop(base);
+                        let fetched = fetch_handler_for_wire.as_ref().and_then(|handler| {
+                            let req = zero_engine::fetch_bridge::FetchRequest {
+                                method: "GET".into(),
+                                url: abs.clone(),
+                                headers: Vec::new(),
+                                body: None,
+                                body_bytes: None,
+                            };
+                            handler(&req).ok()
+                        });
+                        match fetched.and_then(|resp| resp.body_bytes) {
+                            Some(bytes) => match zero_render_foundation::image_cache::decode_image_bytes(&bytes) {
+                                Ok(img) => img,
+                                Err(_) => return String::new(),
+                            },
+                            None => return String::new(),
+                        }
+                    }
                 };
                 let mut out = format!("{}:{};", img.width, img.height);
                 let mut first = true;
