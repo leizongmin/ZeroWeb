@@ -51,7 +51,8 @@ mod text_input;
 mod text_metrics;
 mod ui_icons;
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -64,6 +65,11 @@ use zero_render_foundation::config::RenderMode;
 use app::BrowserApp;
 use app::WindowChromeAction;
 use process_backend::set_multiprocess_enabled;
+
+/// 单个 Browser 日志文件的最大大小；达到后轮转，避免 GUI 版日志无限增长。
+const BROWSER_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+/// 保留的历史 Browser 日志数量（`.1` 最新，`.5` 最旧）。
+const BROWSER_LOG_BACKUP_COUNT: usize = 5;
 
 // --- CLI 参数 ---
 
@@ -560,6 +566,71 @@ fn browser_log_path() -> Option<PathBuf> {
         .map(|base| base.join("ZeroWeb").join("logs").join("zero-browser.log"))
 }
 
+struct RollingLogWriter {
+    path: PathBuf,
+    file: Option<File>,
+    max_bytes: u64,
+    backup_count: usize,
+}
+
+impl RollingLogWriter {
+    fn open(path: PathBuf, max_bytes: u64, backup_count: usize) -> io::Result<Self> {
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        Ok(Self {
+            path,
+            file: Some(file),
+            max_bytes,
+            backup_count,
+        })
+    }
+
+    fn backup_path(&self, index: usize) -> PathBuf {
+        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
+        name.push(format!(".{index}"));
+        self.path.with_file_name(name)
+    }
+
+    fn rotate(&mut self) -> io::Result<()> {
+        if let Some(mut file) = self.file.take() {
+            file.flush()?;
+        }
+
+        if self.backup_count > 0 {
+            for index in (1..=self.backup_count).rev() {
+                let source = if index == 1 {
+                    self.path.clone()
+                } else {
+                    self.backup_path(index - 1)
+                };
+                let destination = self.backup_path(index);
+                if source.exists() {
+                    if destination.exists() {
+                        fs::remove_file(&destination)?;
+                    }
+                    fs::rename(source, destination)?;
+                }
+            }
+        }
+
+        self.file = Some(OpenOptions::new().create(true).append(true).open(&self.path)?);
+        Ok(())
+    }
+}
+
+impl Write for RollingLogWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let current_size = self.file.as_ref().expect("log file is open").metadata()?.len();
+        if current_size > 0 && current_size.saturating_add(buffer.len() as u64) > self.max_bytes {
+            self.rotate()?;
+        }
+        self.file.as_mut().expect("log file is open").write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.as_mut().expect("log file is open").flush()
+    }
+}
+
 fn init_logging() {
     let Some(path) = browser_log_path() else {
         tracing_subscriber::fmt().init();
@@ -574,7 +645,7 @@ fn init_logging() {
         tracing_subscriber::fmt().init();
         return;
     }
-    match OpenOptions::new().create(true).append(true).open(&path) {
+    match RollingLogWriter::open(path.clone(), BROWSER_LOG_MAX_BYTES, BROWSER_LOG_BACKUP_COUNT) {
         Ok(file) => tracing_subscriber::fmt()
             .with_ansi(false)
             .with_writer(std::sync::Mutex::new(file))

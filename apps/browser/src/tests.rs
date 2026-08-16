@@ -18,6 +18,40 @@ use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
 
+#[test]
+fn rolling_log_writer_rotates_and_limits_history() {
+    let dir = std::env::temp_dir().join(format!(
+        "zero-browser-log-rotation-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp log directory");
+    let path = dir.join("zero-browser.log");
+    let mut writer = RollingLogWriter::open(path.clone(), 4, 2).expect("open rolling log");
+
+    writer.write_all(b"AAAA").expect("write first log");
+    writer.write_all(b"B").expect("rotate first log");
+    writer.write_all(b"CCCC").expect("rotate second log");
+    writer.write_all(b"D").expect("rotate third log");
+    writer.flush().expect("flush rolling log");
+
+    assert_eq!(std::fs::read(&path).expect("read current log"), b"D");
+    assert_eq!(
+        std::fs::read(dir.join("zero-browser.log.1")).expect("read newest backup"),
+        b"CCCC"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("zero-browser.log.2")).expect("read oldest backup"),
+        b"B"
+    );
+    assert!(!dir.join("zero-browser.log.3").exists());
+
+    std::fs::remove_dir_all(dir).expect("remove temp log directory");
+}
+
 fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, gpu_present: bool) -> bool {
     // R3254-F10：重负载（make test 全量并行）下 renderer spawn + 渲染可超 60s——
     // 预算放宽到 120s（多进程 GUI 测试的等待容忍）。
