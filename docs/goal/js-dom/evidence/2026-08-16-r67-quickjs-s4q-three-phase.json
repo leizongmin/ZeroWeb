@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-16",
+  "round": "R67",
+  "milestone": "M6 S4q 完整化（capture/bubble 三阶段派发）",
+  "commit": "a8fa85b5",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 240,
+    "deletions": 33
+  },
+  "changes": [
+    "dispatchEvent 从 target 站单段升级三阶段（镜像 V8 R3128/R3135 dispatch_event_impl）：capture 祖先 root→parent 倒序（CAPTURING_PHASE=1，仅 capture 监听器）→ target（AT_TARGET=2，全部监听器注册序）→ bubble 祖先 parent→root 正序（BUBBLING_PHASE=3，仅 bubble 监听器，仅 bubbles:true）",
+    "parent 链 with_dom 闭包内纯读收集 NodeId，释放 borrow 后逐层派发（派发可能再入 mutation/listener 存储）",
+    "currentTarget/eventPhase 随传播逐站更新，派发后复位 currentTarget=null/eventPhase=NONE(0)",
+    "stopPropagation/stopImmediatePropagation 缺失时注入（具名 fn This<Object> 写 flag 属性——闭包 HRP 绕行）；fresh flag 每次派发复位（同 event 可重派发）；immediate 变体止当前节点剩余 + 后续节点，普通变体当前节点全尽后止后续",
+    "listener_present 存活检查：派发期间 removeEventListener 的监听器 skip（spec inner-invoke 步骤 5，镜像 V8 R3170）",
+    "返值 !(cancelable && defaultPrevented)（spec dispatchEvent 返值语义）",
+    "dispatchEvent('type') 字符串形态保留兼容（包成 {type} 对象——R63 PoC 形态）"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R67 新断言：全链三阶段序 p:1|m:2|g:3、bubbles:false 跳 bubble、capture 站 stopPropagation 止后续、派发后复位 0/null）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/event_target.rs dispatch_event_impl 三阶段语义对齐（同 visits (node,phase) 模型、同 phase 过滤规则、同 stop 语义、同复位行为）",
+  "notes": "过程曲折：初版测试期望值写错（capture 监听器期望在 bubble 站触发等 spec 语义误读）触发 assert 失败 → panic 跳过 Persistent 清理 → QuickJS JS_FreeRuntime gc_obj_list 断言 SIGABRT。一度误判为生产代码泄漏，中途 git checkout 误清工作树（本应 stash），从上下文完整重建。最小复现 + 链打印定位后确认生产代码自始正确，SIGABRT 仅是失败断言的下游效应（panic 路径不跑清理）。教训：rquickjs Persistent 悬空在测试 panic 时的 JS_FreeRuntime 断言是断言失败的放大器，不是独立 bug；期望值必须按 spec invoke 规则（capture 阶段仅 capture 监听器）推导，不能凭直觉写全序"
+}
