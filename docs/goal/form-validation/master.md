@@ -34,9 +34,15 @@
 - ✅ 45 用例导入（fetch-constraints-subset.sh + `testharness-constraints` 子命令）
 - 基线：27 文件有子测试、**Pass 3 / Fail 909**（permissive valid——约束位全缺失）；
   证据 evidence/m1-constraints-baseline-2026-08-16.md
-- **M1 切片 2 进展（2026-08-16）**：**Pass 688 / Fail 221**——约束位首修完成
-  （valueMissing/patternMismatch/typeMismatch/range/willValidate 排除/
-  form.checkValidity + disabled 语义）——证据 evidence/m1-constraints-baseline 追加
+- **M1 完成（2026-08-16）**：**Pass 907 / Fail 2**——约束位全系落地
+  （valueMissing/patternMismatch/typeMismatch/range/step/willValidate/
+  customError/form.checkValidity/radio 组/disabled 语义/click 默认动作/
+  matches+:invalid/execCommand InsertHTML/:invalid 查询/回溯守卫）——
+  证据 evidence/m1-constraints-baseline 追加
+- **剩余 2 Fail（引擎级限制）**：stepMismatch 3e-15（浮点取模精度——
+  diff/st 5.67e15 的 IEEE 舍入——shim 层不可靠）；infinite_backtracking
+  （V8 无 RegExp 超时——无限回溯 pattern 卡死——守卫跳过匹配但用例期望
+  invalid——tentative）
 
 ## 缺口清单
 
