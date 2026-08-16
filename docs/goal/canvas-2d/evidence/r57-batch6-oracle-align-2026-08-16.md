@@ -43,3 +43,20 @@ DC-3 测的是 **canvas 绘制结果**，页面家具的布局差不应计入。
 - clippy 零警告（type_complexity 用 OracleResult 别名解决）；fmt 无 diff
 - canvas 809 / wpt-runner 172 全绿；CSS reftest 面零行为变化（非 canvas 页面
   走原全页对比路径）
+
+## 追加：composite.grid 残留根因（像素级分析，2026-08-16）
+
+±1px 平移对齐后 composite.grid 仍 23-37.5%——像素级 dump 分析（REFTEST_DUMP
++ 绿 over 蓝/蓝平坦区 bbox 对比）：
+
+- **canvas 内容光栅精确**：本地验证旋转矩形 = (7,8)-(43,38) 轴对齐（CTM 数学
+  f32 误差 ~1e-8；x=20 列绿色像素 y∈[8,37] 精确）——canvas 域无偏移。
+- **grid 行定位非均匀差**：蓝平坦区行带 test [(114,143),(351,380),(429,458),
+  (588,599)] vs ref [(113,142),(359,388),(441,470)]——行 1 差 1px、行 2 差 8px、
+  行 3 差 12px；每带高度一致（30px）——**grid 行高渲染兼容性差**（span>div+
+  canvas 的 grid item 高度：div 标题行高 + canvas 盒——rendering-compat 域）。
+- 每格内容形态一致（绿 over 蓝/绿 over 白/蓝平坦区结构相同），仅行位置不同。
+
+**结论**：composite.grid ×12 = grid 行高布局差（非 canvas 绘制）——±1px 对齐
+只能消包围盒级统一偏移（行 1），行 2/3 的 8-12px 相对差在 canvas 专项域内无解，
+归 rendering-compat 域（grid 行高渲染兼容性）。

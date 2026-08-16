@@ -89,7 +89,7 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（batch-6 对齐后 25 项） | 🔄 聚类：composite.grid ×12（23-37.5%——**格子内相对布局差** + 旋转边 AA，±1px 整体对齐后仍主导）/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.58%（退化 oracle） |
+| G10 | oracle A/B 不一致（batch-6 对齐后 25 项） | 🔄 聚类：composite.grid ×12（23-37.5%——**grid 行高布局差**：行 1 差 1px、行 2 差 8px、行 3 差 12px 非均匀（蓝平坦区行带实测），grid 行高渲染兼容性——rendering-compat 域；canvas 内容光栅验证精确（旋转矩形 y∈[8,37]））/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.57%（退化 oracle） |
 
 ## 待用户决策清单
 
