@@ -231,15 +231,11 @@
       if (!filterObj) return 1; // 无 filter → ACCEPT
       // R51：spec `callbackdef-nodefilter`——filter 抛错**原样重抛**（不吞、不默认 ACCEPT；
       // WPT "filter function/object that throws" assert_throws_exactly + currentNode 不动）。
-      var rv = callFilter(node);
-      // R84：**TreeWalker** 的非 1/3 返回值（含 false→0）按 REJECT 剪枝语义——WPT
-      // TreeWalker.html oracle filterNode 对 `return false`：非 ACCEPT 非 SKIP → 落兄弟
-      // 横向循环不 dig 子（= REJECT 剪枝；"expected null but got #text" 根因）。
-      // **NodeIterator 不剪**——spec 迭代集合是结构性的，REJECT/SKIP 对 NodeIterator 等
-      // 价（都只排除该节点、子树照访；WPT NodeIterator oracle `filter(node)!=ACCEPT →
-      // continue` 无剪枝）。故按 walker 类型归一。
-      if (isTreeWalker) return (rv === 1 || rv === 3) ? rv : 2;
-      return rv === 1 ? 1 : 3;
+      // R85：返回**原始值**（含 false→0）——0 的遍历语义**按方法分叉**（WPT TreeWalker.html
+      // oracle 实证）：firstChild/lastChild 的 children 循环对 0 不 dig 子（类 REJECT），
+      // nextSibling/previousSibling 的 sibling 循环对 0 经 firstChild dig（类 SKIP），
+      // NodeIterator 恒不剪。消费方按各自算法解释（R84 的统一归一是过度概化）。
+      return callFilter(node);
     }
     var accepted = [];
     var parentAcceptedIdx = []; // R3257：每 accepted 节点的「最近 ACCEPTED 祖先」在 accepted 中的 idx（无=-1）
@@ -248,6 +244,8 @@
     // R84：**root 永不 filter**（spec：iteration collection 含 root，filter 只作用于遍历步进的
     // 候选节点；WPT paras[0]+#filter 的 firstChild 期望 #text——旧对 root 也 check 使 REJECT
     // 剪掉整棵子树全 null）。walk 入口对 root 直接递归子树。
+    // R85：0（filter 返 false）在 walk 物化（firstChild/lastChild 消费的 accepted 表）按
+    // REJECT 剪——oracle children 循环对 0 只横移不 dig。
     function walk(node, ancestorIdx) {
       if (!node) return;
       var r = check(node);
@@ -257,8 +255,9 @@
         accepted.push(node);
         parentAcceptedIdx.push(ancestorIdx);
         nextAncestor = myIdx; // ACCEPT → 我成为子树的最近 ACCEPTED 祖先
-      } // SKIP(3) → 不入列，子树沿用 ancestorIdx；REJECT(2) → 不入列且剪子树（下方不递归）
-      if (r !== 2 && node.childNodes) {
+      }
+      // SKIP(3) → 不入列，子树沿用 ancestorIdx；REJECT(2) 与 0 → 不入列且剪子树（不递归）。
+      if ((r === 1 || r === 3) && node.childNodes) {
         var kids = node.childNodes;
         for (var i = 0; i < kids.length; i++) walk(kids[i], nextAncestor);
       }
@@ -404,8 +403,12 @@
           var node = order[i];
           var r = check(node);
           if (r === 1) { orderPos = i; idx = accepted.indexOf(node); currentNodeVal = node; return node; }
-          if (r === 2) { i = orderEnd[i]; continue; } // REJECT → 剪子树（跳到子树 exclusive-end）
-          i++; // SKIP → 下一节点（子树仍遍历）
+          if (isTreeWalker) {
+            // R85：TreeWalker nextNode——显式 REJECT(2) 与 0（false）都剪子树（WPT TreeWalker
+            // nextNode 期望树与 oracle 一致：document 序下一步跳过被拒节点整个子树）。
+            if (r === 2 || r === 0) { i = orderEnd[i]; continue; }
+          } else if (r === 2) { i = orderEnd[i]; continue; } // NodeIterator：仅显式 REJECT 剪（0 不剪）
+          i++; // SKIP/0 → 下一节点（子树仍遍历）
         }
         orderPos = order.length;
         return null;
@@ -421,22 +424,52 @@
       }
       active = true;
       try {
-        // R83：previousNode 改**结构序 lazy 逆向步进**（与 nextNode 对称）——从 currentNode
-        // 的结构序位置向前找上一个可接受节点。旧 materialize+accepted-index 模型对
-        // currentNode 不在 accepted（root 被滤/TreeWalker fresh）回落「从尾」错误（WPT
-        // nodeiterator-previous-node：pointer 在首节点前 previousNode 期望 null）。
+        if (isTreeWalker) {
+          // R85：TreeWalker previousNode 改**导航式逆向树序步进**（nextNode 的精确镜像，
+          // WPT NodeIterator.html previousNode oracle 算法）：候选 = currentNode 的前驱
+          //（有子 → lastChild 最深；无 → previousSibling；兄弟尽 → 父的前兄弟）。
+          // REJECT 剪子树 = 越过该候选时直接步进到其结构前驱（不进入其子树——逆向
+          // 天然不进入）。旧 order-scan 逆向对「被拒子树内节点先于被拒祖先命中」无法
+          // 排除（WPT traversal-reject previousNode：B3→B2 期望 A1，B1 REJECT 后 C1
+          // 仍在候选序内错返）。
+          // R85：TreeWalker previousNode —— DOM 规范算法（旧版 DOM Traversal previousNode
+          // 的镜像 nextNode）：sibling = node.previousSibling；REJECT → sibling = 其
+          // previousSibling（跳子树）；SKIP/0 → sibling = lastChild || previousSibling
+          //（先入子树尾）；兄弟尽 → node = parentNode（root 止 null）→ filter 续循环。
+          var node = currentNodeVal;
+          var guard = 0;
+          while (node && guard++ < 100000) {
+            var sibling = node.previousSibling;
+            var inner = 0;
+            while (sibling && inner++ < 100000) {
+              node = sibling;
+              var r = check(node);
+              if (r === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+              if (r === 2) {
+                sibling = node.previousSibling; // REJECT → 跳过子树
+              } else {
+                sibling = node.lastChild || node.previousSibling; // SKIP/0 → 先入子树尾
+              }
+            }
+            node = node.parentNode;
+            if (!node || node === root) return null;
+            var rp = check(node);
+            if (rp === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+            // rp 非 ACCEPT → 回 sibling 循环（node 的 previousSibling 起）
+          }
+          return null;
+        }
+        // NodeIterator previousNode：结构序逆向 scan（迭代集合结构性——不剪枝，
+        // REJECT/SKIP/0 都只排除自身）。
         syncOrderPosTo(currentNodeVal);
         var i = orderPos;
-        // TreeWalker fresh（currentNode=root，已位于 root）→ 从 root 前一位起；NodeIterator
-        //（root 在集合、指针在 root 前）→ previousNode 无前驱 → null。统一：从 currentNode
-        // 结构序**前一位**起（exclusive）。
-        if (i < 0) return null; // currentNode 不在树内（理论上不发生——root 至少含自身）
+        if (i < 0) return null;
         i -= 1;
         while (i >= 0) {
-          var node = order[i];
-          var r = check(node);
-          if (r === 1) { orderPos = i; idx = accepted.indexOf(node); currentNodeVal = node; return node; }
-          i--; // REJECT/SKIP 逆向无需剪枝（子树整体已在区间内，逐节点 check 语义同 spec）
+          var nd = order[i];
+          var r2 = check(nd);
+          if (r2 === 1) { orderPos = i; idx = accepted.indexOf(nd); currentNodeVal = nd; return nd; }
+          i--;
         }
         return null;
       } finally {
@@ -462,85 +495,82 @@
           finally { active = false; }
         };
       }
-      walker.parentNode = _guarded(function () {
-        materialize();
-        var p = effPos();
-        if (p < 0) return null;
-        var pi = parentAcceptedIdx[p];
-        if (pi < 0) return null;
-        return moveTo(pi);
-      });
-      walker.firstChild = _guarded(function () {
-        materialize();
-        var p = effPos();
-        for (var i = p + 1; i < accepted.length; i++) {
-          if (parentAcceptedIdx[i] === p) return moveTo(i);
-        }
-        return null;
-      });
-      walker.lastChild = _guarded(function () {
-        materialize();
-        var p = effPos();
-        for (var i = accepted.length - 1; i > p; i--) {
-          if (parentAcceptedIdx[i] === p) return moveTo(i);
-        }
-        return null;
-      });
-      walker.nextSibling = _guarded(function () {
-        materialize();
-        var p = effPos();
-        // R81：currentNode 不在 accepted（被 whatToShow 滤掉——如 document.firstChild=
-        // doctype 对 SHOW_ELEMENT）→ **结构序 lazy 找后续首个同级可接受节点**（spec §4.2.6
-        // nextSibling 对 currentNode 起算而非 accepted 位置；WPT TreeWalker
-        // createTreeWalker(document, SHOW_ELEMENT) currentNode=doctype 期望 nextSibling=
-        // html——document.childNodes 含 doctype 后的新形态）。回落：accepted 同父扫描。
-        if (p < 0) return _siblingByOrder(1);
-        var par = parentAcceptedIdx[p];
-        for (var i = p + 1; i < accepted.length; i++) {
-          if (parentAcceptedIdx[i] === par) return moveTo(i);
-        }
-        return null;
-      });
-      walker.previousSibling = _guarded(function () {
-        materialize();
-        var p = effPos();
-        if (p < 0) return _siblingByOrder(-1);
-        var par = parentAcceptedIdx[p];
-        for (var i = p - 1; i >= 0; i--) {
-          if (parentAcceptedIdx[i] === par) return moveTo(i);
-        }
-        return null;
-      });
-      // R81：结构序 sibling 步进——从 currentNode 在 order 中的位置向 dir 方向找与
-      // currentNode **同父**的节点，逐个 check（ACCEPT 返回；REJECT 跳子树；SKIP 继续）。
-      function _siblingByOrder(dir) {
-        orderInit();
-        syncOrderPosTo(currentNodeVal);
-        var i = orderPos;
-        if (i < 0) return null;
-        var _par = null;
-        try { _par = currentNodeVal.parentNode; } catch (_e) { _par = null; }
-        while (dir > 0 ? (i + 1 < order.length) : (i - 1 >= 0)) {
-          i += dir;
-          var nd = order[i];
-          var np = null;
-          try { np = nd.parentNode; } catch (_e2) { np = null; }
-          if (np !== _par) {
-            // 越过子树（深度不同）——跳到该子树区间外。
-            if (dir > 0) { if (orderEnd[i] > i) i = orderEnd[i] - 1; }
-            else { /* 向前无子树跳跃（前向按序扫） */ }
-            continue;
+      // R85：四个层级方法 + parentNode 改 **导航式 oracle 循环**（WPT TreeWalker.html
+      // testTraverseChildren/testTraverseSiblings 的精确算法镜像——经真实 firstChild/
+      // lastChild/nextSibling/previousSibling/parentNode getter 步进，R84 兄弟链修复后
+      // 导航可靠）。旧 accepted/parentAcceptedIdx 扫描模型无法表达「0（filter 返 false）
+      // 按方法分叉」语义：children 循环对 0 只横移不 dig；sibling 循环对 0 经 firstChild
+      // dig（类 SKIP）；父站真值即止（含 3/2/1，仅 0 续走）。check() 保持原始返回值。
+      function navKids(type) { // type: 'first' | 'last'
+        var cur = currentNodeVal;
+        var node = type === 'first' ? cur.firstChild : cur.lastChild;
+        var guard = 0;
+        while (node && guard++ < 100000) {
+          var result = check(node);
+          if (result === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+          if (result === 3) { // SKIP → dig child
+            var child = type === 'first' ? node.firstChild : node.lastChild;
+            if (child) { node = child; continue; }
           }
-          var r = check(nd);
-          if (r === 1) { orderPos = i; idx = accepted.indexOf(nd); currentNodeVal = nd; return nd; }
-          if (r === 2) {
-            if (dir > 0 && orderEnd[i] > i) i = orderEnd[i] - 1;
-            continue;
+          // 横移循环（result 0/2/或 SKIP 无 child）：沿 next/prevSibling 找有 child 的下站。
+          var stepped = false;
+          while (node) {
+            var sib = type === 'first' ? node.nextSibling : node.previousSibling;
+            if (sib) { node = sib; stepped = true; break; }
+            var parent = node.parentNode;
+            if (!parent || parent === root || parent === cur) return null;
+            if (filterNodeTruthy(parent)) return null;
+            node = parent;
           }
-          if (dir > 0 && orderEnd[i] > i + 1) i = orderEnd[i] - 1; // SKIP 也跳过其子树内的非同级
+          if (!stepped && !node) return null;
         }
         return null;
       }
+      function filterNodeTruthy(node) {
+        // R85：爬升父站仅 **ACCEPT(1) 止**（DOM spec traverse-siblings 步骤「Filter node and
+        // if the return value is FILTER_ACCEPT then return null」——被接受的父是 nextNode
+        // 的下一目标，与 sibling 竞争；SKIP/REJECT/0 续爬）。WPT traversal-skip-most 实证：
+        // B2(Skip) 父站不止单步，B1→B3 期望（truthy 止会 null）。
+        return check(node) === 1;
+      }
+      function navSiblings(type) { // type: 'next' | 'previous'
+        var node = currentNodeVal;
+        if (node === root) return null;
+        var guard = 0;
+        do {
+          var sibling = type === 'next' ? node.nextSibling : node.previousSibling;
+          var inner = 0;
+          while (sibling && inner++ < 100000) {
+            node = sibling;
+            var result = check(node);
+            if (result === 1) { currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node; }
+            sibling = type === 'next' ? node.firstChild : node.lastChild;
+            if (result === 2 || !sibling) {
+              sibling = type === 'next' ? node.nextSibling : node.previousSibling;
+            }
+          }
+          node = node.parentNode;
+          if (!node || node === root) return null;
+          if (filterNodeTruthy(node)) return null;
+        } while (guard++ < 100000);
+        return null;
+      }
+      walker.parentNode = _guarded(function () {
+        materialize();
+        var node = currentNodeVal;
+        var guard = 0;
+        while (node && node !== root && guard++ < 100000) {
+          node = node.parentNode;
+          if (node && node !== root && check(node) === 1) {
+            currentNodeVal = node; syncOrderPosTo(node); idx = accepted.indexOf(node); return node;
+          }
+        }
+        return null;
+      });
+      walker.firstChild = _guarded(function () { materialize(); return navKids('first'); });
+      walker.lastChild = _guarded(function () { materialize(); return navKids('last'); });
+      walker.nextSibling = _guarded(function () { materialize(); return navSiblings('next'); });
+      walker.previousSibling = _guarded(function () { materialize(); return navSiblings('previous'); });
     }
     // R82：NodeIterator 的 referenceNode/pointerBeforeReferenceNode 同步钩子——**必须在
     // lazy nextNode/previousNode 定义之后**包装（R51 重赋值覆盖了 R2981 前的旧 wrapper，

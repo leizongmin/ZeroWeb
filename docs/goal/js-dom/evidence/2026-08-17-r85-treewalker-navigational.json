@@ -1,0 +1,42 @@
+{
+  "date": "2026-08-17",
+  "round": "R85",
+  "milestone": "M4",
+  "slice": "TreeWalker 层级方法导航式重写 + previousNode 规范镜像 + html 兄弟（WPT TreeWalker-basic/skip/reject/skip-most + TreeWalker.html 簇）",
+  "baseline_commit": "18efabae (R84 后)",
+  "summary": {
+    "dom/traversal": { "before": "1556P/24F", "after_polyfill": "1565P/15F", "net_pass": "+9" },
+    "dom/nodes": { "before": "6643P", "after": "6650P", "net_pass": "+7" },
+    "dom/events": { "before": "189P", "after": "189P", "net_pass": "0" },
+    "dom/collections": { "before": "48P/0F", "after": "48P/0F", "net_pass": "0" },
+    "engine_tests": { "v8": "2179 passed (was 2176, +3 new R85)", "quickjs": "1427 passed (=)" }
+  },
+  "root_causes": [
+    "① TreeWalker 层级方法（firstChild/lastChild/nextSibling/previousSibling）旧用 accepted[]/parentAcceptedIdx 扫描模型——无法表达 WPT oracle 的「0（filter 返 false）按方法分叉」语义：children 循环对 0 只横移不 dig；sibling 循环对 0 经 firstChild dig（类 SKIP）；父站判定 truthy 即止",
+    "② TreeWalker previousNode 旧 order-scan 逆向对「被拒（REJECT）子树内节点先于被拒祖先命中」无法排除（WPT traversal-reject：B3→B2 期望 A1，B1 REJECT 后 C1 仍在候选序内错返）",
+    "③ html.previousSibling 恒 null（host __zw_sibling_nodes 对 html 无父）——真浏览器为 doctype；WPT oracle 的 expected 计算在我们引擎里也走同一导航链 → expected null 与 walker 返 doctype 分歧（'expected null but got DocumentType' 根因）",
+    "④ R84 的 check() 统一归一（TreeWalker 非 1/3 → 2）是过度概化——filter 返回 0 的语义随遍历方法分叉（nextNode 剪 / sibling dig / children 横移）"
+  ],
+  "fixes": [
+    "part06: 四层级方法 + parentNode 改导航式（navKids/navSiblings——WPT oracle 循环精确镜像，经真实 firstChild/lastChild/nextSibling/previousSibling/parentNode getter 步进，R84 兄弟链修复后导航可靠）；check() 保持原始返回值，消费方按方法解释",
+    "part06: nextNode 的 TreeWalker 分支显式 REJECT(2)+0 剪枝、NodeIterator 仅 2 剪（保持 R84 通过集）；previousNode 拆两态——TreeWalker 用 DOM 规范算法镜像（sibling=previousSibling；REJECT→sibling=prev；SKIP/0→sibling=lastChild||prev；兄弟尽→parent 续），NodeIterator 保持结构序逆向 scan（迭代集合结构性不剪）",
+    "part06: filterNodeTruthy 改「仅 ACCEPT(1) 止」——DOM spec traverse-siblings 步骤「Filter node and if the return value is FILTER_ACCEPT then return null」（SKIP/REJECT/0 续爬；WPT traversal-skip-most 实证：B2(Skip) 父站不止单步，B1→B3 期望）",
+    "part04: html 兄弟走 document.childNodes 派生（previousSibling=doctype、nextSibling=null；host 对 html 无父的特例）"
+  ],
+  "regression_check": {
+    "dom/nodes": "+7 净 pass",
+    "dom/events / collections": "零回归",
+    "fmt": "无 diff",
+    "clippy": "workspace 默认（v8+union）+ quickjs 矩阵零警告",
+    "engine": "v8 2179 / quickjs 1427 全绿（R82/R83/R84 旧 walker 测试零回归）"
+  },
+  "remaining_failures": {
+    "dom/traversal_15F": [
+      "TreeWalker-acceptNode-filter-cross-realm 5F + TreeWalker-realm 2F（跨 realm 深结构）",
+      "TreeWalker-currentNode 2F + walking-outside-a-tree 1F（root 外重定位/嫁接 lazy-resume，M1 L2 域）",
+      "NodeIterator-removal-during-filtering 2F + removal 1F（live 集合移除跟踪）",
+      "TreeWalker.html 1F（Recursive filters parentNode 的 active flag 在 set currentNode 后状态机）",
+      "previousNodeLastChildReject 1F"
+    ]
+  }
+}

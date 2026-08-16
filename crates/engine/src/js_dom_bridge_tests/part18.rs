@@ -1287,3 +1287,99 @@ fn r84_treewalker_filter_false_rejects_and_root_unfiltered() {
         "R84：filter 返 false 按 REJECT 剪枝（firstChild null 且 currentNode 不动）；root 不被 filter（#filter 可达子树文本）；重定位被滤节点 effPos=-1 走结构序"
     );
 }
+
+// js-dom M4 R85：TreeWalker 层级方法导航式重写 + previousNode 规范镜像 +
+// html.previousSibling=doctype（WPT TreeWalker-basic/traversal-skip/reject/skip-most
+// + TreeWalker.html previousSibling document 簇的 driving 单测）。
+
+#[test]
+fn r85_treewalker_navigational_hierarchy_and_prevnode() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var root = document.createElement('div');\n\
+         var a = document.createElement('div'); a.id = 'a';\n\
+         root.appendChild(a);\n\
+         var b = document.createTextNode('b'); a.appendChild(b);\n\
+         var c = document.createElement('div'); c.id = 'c'; a.appendChild(c);\n\
+         var d = document.createElement('div'); d.id = 'd'; c.appendChild(d);\n\
+         var e = document.createTextNode('e'); d.appendChild(e);\n\
+         var j = document.createComment('j'); c.appendChild(j);\n\
+         // WPT TreeWalker-basic: walker root = a div, not the outer container.\n\
+         var w = document.createTreeWalker(a);\n\
+         var pn0 = w.parentNode();\n\
+         var fc = w.firstChild();\n\
+         var ns = w.nextSibling();\n\
+         var lc = w.lastChild();\n\
+         var ps = w.previousSibling();\n\
+         var nn = w.nextNode();\n\
+         var pn = w.parentNode();\n\
+         var prevN = w.previousNode();\n\
+         var ns2 = w.nextSibling();\n\
+         function s(n) { return n === null ? 'null' : (n.nodeType + ':' + (n.id || n.nodeValue)); }\n\
+         globalThis.__r85a = [s(pn0), s(fc), s(ns), s(lc), s(ps), s(nn), s(pn), s(prevN), s(ns2)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r85a").unwrap().value,
+        "null|3:b|1:c|8:j|1:d|3:e|1:d|1:c|null",
+        "R85：TreeWalker-basic Walk over nodes 全序列（导航式层级方法 + previousNode 规范镜像）"
+    );
+}
+
+#[test]
+fn r85_treewalker_reject_prunes_prevnode_and_sibling_climb() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var root = document.createElement('div'); root.id = 'root';\n\
+         var a1 = document.createElement('div'); a1.id = 'A1';\n\
+         var b1 = document.createElement('div'); b1.id = 'B1';\n\
+         var c1 = document.createElement('div'); c1.id = 'C1';\n\
+         var b2 = document.createElement('div'); b2.id = 'B2';\n\
+         var b3 = document.createElement('div'); b3.id = 'B3';\n\
+         root.appendChild(a1); a1.appendChild(b1); b1.appendChild(c1);\n\
+         a1.appendChild(b2); a1.appendChild(b3);\n\
+         var rejB1 = { acceptNode: function(n) { return n.id === 'B1' ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } };\n\
+         var w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, rejB1);\n\
+         w.currentNode = b3;\n\
+         var p1 = w.previousNode();\n\
+         var p2 = w.previousNode();\n\
+         // skip-most：SKIP 的父站不止单步爬升（B1→B3 期望）。\n\
+         var root2 = document.createElement('div');\n\
+         var x1 = document.createElement('div'); x1.id = 'X1';\n\
+         var y1 = document.createElement('div'); y1.id = 'Y1'; y1.className = 'keep';\n\
+         var y2 = document.createElement('div'); y2.id = 'Y2';\n\
+         var y2t = document.createTextNode('matters');\n\
+         var y3 = document.createElement('div'); y3.id = 'Y3'; y3.className = 'keep';\n\
+         root2.appendChild(x1); x1.appendChild(y1); x1.appendChild(y2); y2.appendChild(y2t); x1.appendChild(y3);\n\
+         var keep = { acceptNode: function(n) { return n.className === 'keep' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP; } };\n\
+         var w2 = document.createTreeWalker(root2, NodeFilter.SHOW_ELEMENT, keep);\n\
+         w2.currentNode = root2;\n\
+         var f1 = w2.firstChild();\n\
+         var f1next = f1 ? w2.nextSibling() : null;\n\
+         function s(n) { return n === null || n === undefined ? 'null' : (n.id || n.nodeValue || n.nodeName); }\n\
+         globalThis.__r85b = [s(p1), s(p2), s(f1), s(f1next)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r85b").unwrap().value,
+        "B2|A1|Y1|Y3",
+        "R85：REJECT 剪 previousNode 子树（B3→B2→A1 跳过 B1/C1）；skip-most nextSibling 父站仅 ACCEPT 止（Y1→Y3）"
+    );
+}
+
+#[test]
+fn r85_html_sibling_doctype() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var htmlEl = document.documentElement;\n\
+         var prev = htmlEl.previousSibling;\n\
+         var prevType = prev ? prev.nodeType : 'null';\n\
+         var next = htmlEl.nextSibling;\n\
+         var dt = document.doctype;\n\
+         var dtNext = dt && dt.nextSibling ? dt.nextSibling.nodeName : 'null';\n\
+         globalThis.__r85c = [String(prevType), next === null ? 'null' : next.nodeName, dtNext].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r85c").unwrap().value,
+        "10|null|HTML",
+        "R85：html.previousSibling=doctype(10)、nextSibling=null；doctype.nextSibling=HTML（真浏览器语义，oracle expected 一致性前提）"
+    );
+}

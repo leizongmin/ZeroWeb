@@ -615,6 +615,18 @@
             }
             return null;
           }
+          // js-dom M4 R85：html 的兄弟走 document.childNodes（真浏览器 html.previousSibling
+          // = doctype、nextSibling=null——host __zw_sibling_nodes 对 html 无父返 null，
+          // 使 WPT oracle 的 expected 计算与 walker 实现分歧：oracle expected null、
+          // walker 返 doctype → "expected null but got DocumentType" 根因）。
+          if (sel === 'html' && globalThis.document) {
+            var _dk = globalThis.document.childNodes || [];
+            var _di = _dk.indexOf(_makeProxy(sel, handle));
+            if (_di >= 0) {
+              return prop === 'previousSibling' ? (_di > 0 ? _dk[_di - 1] : null)
+                : (_di + 1 < _dk.length ? _dk[_di + 1] : null);
+            }
+          }
           if (!sel || typeof __zw_sibling_nodes !== 'function') return null;
           // js-dom M4 R55：兄弟对缓存（与 _zwChildBaseCache 同款生命周期——dom_html Arc 回合内
           // 不可变；重注册经 globalThis._zwSiblingBaseInvalidateAll 全量失效）。同 turn 内
