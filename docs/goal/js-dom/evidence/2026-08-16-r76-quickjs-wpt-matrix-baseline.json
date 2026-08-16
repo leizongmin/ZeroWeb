@@ -2,7 +2,7 @@
   "date": "2026-08-16",
   "round": "R76",
   "milestone": "M4 WPT dom 基线 quickjs 矩阵双 feature 对照（DC-7 验证面直接证据）",
-  "commit": "TBD-at-land",
+  "commit": "68f09748",
   "infrastructure": {
     "quickjs_release_runner": "cargo build --release --no-default-features --features quickjs --bin zero-wpt-runner --target-dir target/quickjs-release（v8 release 二进制不受覆盖）",
     "entry": "ZW_NATIVE_DOM=1 经 run_testharness_html_inner 读 env → WebViewConfig.native_dom → quickjs 构建走 R57 install_native_dom_bindings 接线——管线首次全量验证贯通"
