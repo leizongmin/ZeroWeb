@@ -1,10 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R34xx 第十五批定稿：**arcTo 真切线弧 + 深项收口**——
-color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipulation
-71/71、path-objects 174/29（arcTo 全过——真切线弧/无子路径 moveTo/负半径）；
-剩余深项 = arc 形状 ~29（描边端帽/扇区/贝塞尔缩放——stroke 几何深项）；
-证据见 evidence/r34xx-batch6-colors-gif + r34xx-batch7-arcto）。
+**最后更新**: 2026-08-16（R56h 第十六批定稿：**path-objects 29 项全灭 + drawing-images
+7 项**——自适应贝塞尔/零长段剪除/roundRect 起点/ellipse CTM+ccw/dash 命中 + img
+运行时加载/负维度矩形/错误类型；path-objects 202/0、drawing-images 7 项修复后
+剩 2（nonexistent/nonfinite，见缺口清单）；其余目录全 0 Fail；证据见
+evidence/r34xx-batch8-r56h-2026-08-16.md）。
 
 ---
 
@@ -130,7 +130,8 @@ color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipul
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
-| G8 | 第二批新目录 | 🔄 reset 54/canvas-host 66/canvas-context 11/layers 28/conformance 8/global-hdr 10/filters 11（API 表面全绿）/path-objects 141/drawing-images 36（img 面全过）全绿；剩余 = arc 几何 62 + filters colorMatrix 渲染 2 + color-type 2 + wide-gamut 6 + animated.gif 1——深项记录 |
+| G8 | 第二批新目录 | ✅ 全绿（reset 56/canvas-host 67/canvas-context 11/layers 30/conformance 4/global-hdr 10/filters 13/color-type 4/wide-gamut 12/path-objects 202/0/drawing-images 修复 7 项） |
+| G9 | drawing-images 剩余 2 项 | 🔄 nonexistent（drawImage 失败态 img 应抛 InvalidStateError——需 img 状态机区分 broken/loading，与 incomplete.* 的 no-op 语义配套）+ nonfinite（Infinity 参数致 runner 挂起）——下轮深项 |
 
 ## 待用户决策清单
 
@@ -142,14 +143,13 @@ color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipul
 
 ## 下一步计划
 
-1. **M3 冲刺**：oracle A/B 基线 1.7% → 按 worst-diff 聚类修复（filters dropShadow/
+1. drawing-images 剩余 2 项（G9）：nonexistent（img 失败态抛 InvalidStateError——
+   img 状态机区分 broken/loading）+ nonfinite（Infinity 参数致 runner 挂起——
+   先定位 runner 挂起点）
+2. **M3 冲刺**：oracle A/B 基线 1.7% → 按 worst-diff 聚类修复（filters dropShadow/
    layers opaque-canvas/gradient 颜色插值）——每项修复经 oracle A/B 验证
-2. filters 目录（17 Fail）——CanvasFilter 渲染（blur/colorMatrix/dropShadow 等）——
-   深项，待决策
-3. layers 像素面（beginLayer 离屏缓冲合成）——深项，待决策
-4. color-type/wide-gamut-canvas（display-p3↔srgb 转换）——深项，待决策
-5. drawing-images img 加载面（svg/incomplete/broken）——img 元素状态机，待决策
-6. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），
+3. filters/layers/color-type 像素面深项（R56h 后 API 表面已全绿，剩余为像素级）
+4. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），
    浏览器流（非 canvas 面）处理
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
@@ -164,7 +164,11 @@ color-type 4/4、wide-gamut 12/12、filters 13/13、layers 30/30、pixel-manipul
 
 ## 验证基线
 
-- 测试基线：canvas **774** 全绿（+1 presentation fallback）；render-foundation **640**（+1 VS cmap14）；engine **2129**（+1 float16 overlay）；wpt-runner 171；行覆盖率 **91.18%**（≥70% 达标）
-- WPT canvas 主线程 **832 Pass / 0 Fail / 65 Timeout**（全 reftest-format）/ worker **715 Pass / 0 Fail**（evidence/r34xx-batch3 存档）
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` + `make test` 全过
-- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；CanvasTest.ttf/yellow*.png/vs/*.ttf 已入脚本）；VS subset ×2 提交 tests/wpt-runner/fonts/ 供单测
+- 测试基线：canvas **797** 全绿；engine **2153**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
+- WPT canvas 主线程：path-objects **202 Pass / 0 Fail / 1 NotRun**（skew WPT 套件
+  内部不一致 skip）；worker path-objects **203 Pass / 0 Fail / 1 NotRun**；其余
+  目录逐目录全 0 Fail（compositing/fill-and-stroke-styles/text/filters/layers/reset
+  的 NotRun 均为 reftest-format 文件，非 canvas 面）
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；
+  CanvasTest.ttf/yellow*.png/green.svg/red-zerosize.svg/vs/*.ttf 已入脚本）
