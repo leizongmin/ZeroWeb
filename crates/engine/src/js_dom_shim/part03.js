@@ -826,11 +826,29 @@
         var pv = _controlValue(sel, handle, key);
         if (pv !== '') {
           // R57（FV M1）：spec 的 pattern 匹配是**完全匹配**（anchored——
-          // "ABC123" 对 "[A-Z]+" mismatch——subset 用例）；u flag 支持
-          // \u{10FFFF} 等 Unicode 特性。
-          try {
-            if (!new RegExp('^(?:' + String(patAttr) + ')$', 'u').test(pv)) patternMismatch = true;
-          } catch (_e) { /* 非法正则——约束忽略 */ }
+          // "ABC123" 对 "[A-Z]+" mismatch——subset 用例）；HTML 的 pattern 编译
+          // 用 **v flag**（spec §4.10.5.2.5——"[(" 等 v 模式非法 → 忽略；
+          // "a)(b" 逃逸组非法 → 忽略）；不支持 v 的引擎回退 u。
+          var _re = null;
+          if (!_isVInvalidPattern(String(patAttr))) {
+            try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'v'); } catch (_e) {
+              try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'u'); } catch (_e2) { _re = null; }
+            }
+          }
+          if (_re) {
+            // multiple（email/url）——逗号分割逐项校验（"Commas should be
+            // stripped from regex input"）。
+            var _multi2 = null;
+            try { _multi2 = handle ? __zw_has_attr_handle(handle, 'multiple') : __zw_has_attr(sel, 'multiple'); } catch (_e3) {}
+            if (_multi2 === '1' && (ty === 'email' || ty === 'url')) {
+              var _parts = pv.split(',');
+              for (var _pi = 0; _pi < _parts.length; _pi++) {
+                if (!_re.test(_parts[_pi].trim())) { patternMismatch = true; break; }
+              }
+            } else if (!_re.test(pv)) {
+              patternMismatch = true;
+            }
+          }
         }
       }
     }
@@ -1757,6 +1775,20 @@
   // FV（M1）：非 text 类型的值有效格式判定（valueMissing 的「有效值集合」——
   // date/month/week/time/datetime-local 的 ISO 格式近似；number 的 parseFloat）。
   var _DATE_TYPES = { date: 1, month: 1, week: 1, time: 1, 'datetime-local': 1 };
+  // FV（M1）：HTML pattern 编译的 v 模式非法近似（V8 无 v flag 支持——
+  // spec §4.10.5.2.5：v 模式非法正则被忽略）。字符类内未转义特殊字符
+  //（"[(" 等）+ 未配对组（"a)(b"）→ v 非法。
+  function _isVInvalidPattern(pat) {
+    var s = String(pat);
+    if (/\[[^\]\\]*[\(\[\{\/]/.test(s)) return true;
+    var depth = 0;
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] === '\\') { i++; continue; }
+      if (s[i] === '(') depth++;
+      else if (s[i] === ')') { depth--; if (depth < 0) return true; }
+    }
+    return depth !== 0;
+  }
   function _isValidDateString(v, ty) {
     if (ty === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v);
     if (ty === 'month') return /^\d{4}-\d{2}$/.test(v);
@@ -2118,7 +2150,22 @@
         if (tag === 'textarea' || _PATTERN_TYPES[ty] === 1) {
           var pat = node.getAttribute('pattern');
           if (pat != null && pat !== '' && rawValue !== '') {
-            try { if (!new RegExp('^(?:' + String(pat) + ')$', 'u').test(rawValue)) patternMismatch = true; } catch (_e) {}
+            var _re2 = null;
+            if (!_isVInvalidPattern(String(pat))) {
+              try { _re2 = new RegExp('^(?:' + String(pat) + ')$', 'v'); } catch (_e) {
+                try { _re2 = new RegExp('^(?:' + String(pat) + ')$', 'u'); } catch (_e2) { _re2 = null; }
+              }
+            }
+            if (_re2) {
+              if (node.hasAttribute('multiple') && (ty === 'email' || ty === 'url')) {
+                var _parts2 = rawValue.split(',');
+                for (var _pi2 = 0; _pi2 < _parts2.length; _pi2++) {
+                  if (!_re2.test(_parts2[_pi2].trim())) { patternMismatch = true; break; }
+                }
+              } else if (!_re2.test(rawValue)) {
+                patternMismatch = true;
+              }
+            }
           }
         }
         var rangeUnderflow = false, rangeOverflow = false;
