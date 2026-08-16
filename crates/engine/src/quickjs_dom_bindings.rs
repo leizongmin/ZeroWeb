@@ -472,6 +472,47 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
         CustomEvent.prototype = Object.create(Event.prototype);
         CustomEvent.prototype.constructor = CustomEvent;"#,
     );
+
+    // 8. S4q 完整化（R73）：`DOMException` 构造器（spec `webidl-domexception`）——
+    //    JS 胶水（R72 模式三次复用）+ legacy code 常量映射（name → code，spec 表）。
+    //    throw_dom_exception 升级为经此构造器 new 实例（instanceof 面可达）。
+    let _: rquickjs::Result<rquickjs::Coerced<String>> = ctx.eval(
+        r#"globalThis.DOMException = function DOMException(message, name) {
+            if (new.target === undefined) { throw new TypeError("Failed to construct 'DOMException': Please use the 'new' operator"); }
+            this.message = (message === undefined) ? '' : String(message);
+            this.name = (name === undefined) ? 'Error' : String(name);
+            var code = ({
+                IndexSizeError: 1, HierarchyRequestError: 3, WrongDocumentError: 4,
+                InvalidCharacterError: 5, NoModificationAllowedError: 7, NotFoundError: 8,
+                NotSupportedError: 9, InUseAttributeError: 10, InvalidStateError: 11,
+                SyntaxError: 12, InvalidModificationError: 13, NamespaceError: 14,
+                InvalidAccessError: 15, TypeMismatchError: 17, SecurityError: 18,
+                NetworkError: 19, AbortError: 20, URLMismatchError: 21,
+                QuotaExceededError: 22, TimeoutError: 23, InvalidNodeTypeError: 24,
+                DataCloneError: 25
+            })[this.name];
+            this.code = (code === undefined) ? 0 : code;
+            this.stack = 'DOMException: ' + this.message;
+        };
+        DOMException.prototype = Object.create(Error.prototype);
+        DOMException.prototype.constructor = DOMException;
+        DOMException.prototype.toString = function () {
+            return this.name === 'Error' ? this.message : this.name + ': ' + this.message;
+        };
+        Object.defineProperties(DOMException, {
+            INDEX_SIZE_ERR: { value: 1 }, HIERARCHY_REQUEST_ERR: { value: 3 },
+            WRONG_DOCUMENT_ERR: { value: 4 }, INVALID_CHARACTER_ERR: { value: 5 },
+            NO_MODIFICATION_ALLOWED_ERR: { value: 7 }, NOT_FOUND_ERR: { value: 8 },
+            NOT_SUPPORTED_ERR: { value: 9 }, INUSE_ATTRIBUTE_ERR: { value: 10 },
+            INVALID_STATE_ERR: { value: 11 }, SYNTAX_ERR: { value: 12 },
+            INVALID_MODIFICATION_ERR: { value: 13 }, NAMESPACE_ERR: { value: 14 },
+            INVALID_ACCESS_ERR: { value: 15 }, TYPE_MISMATCH_ERR: { value: 17 },
+            SECURITY_ERR: { value: 18 }, NETWORK_ERR: { value: 19 },
+            ABORT_ERR: { value: 20 }, URL_MISMATCH_ERR: { value: 21 },
+            QUOTA_EXCEEDED_ERR: { value: 22 }, TIMEOUT_ERR: { value: 23 },
+            INVALID_NODE_TYPE_ERR: { value: 24 }, DATA_CLONE_ERR: { value: 25 }
+        });"#,
+    );
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -1356,10 +1397,20 @@ fn dom_error_name(err: &zero_dom::DomError) -> (&'static str, String) {
     }
 }
 
-/// 抛 DOMException 形态错误（name + message 属性的 Error 对象经 `Ctx::throw`）。
-/// 调用方须在 native fn 内 return 该返回值（Err 状态已装在 ctx，函数返什么都会被
-/// 异常取代——返 null 占位）。
+/// 抛 DOMException 错误（R73 升级：经全局 `DOMException` 构造器 new 实例——instanceof
+/// 面可达；构造器未装时回落 R66 plain 对象形态）。调用方须在 native fn 内 return 该
+/// 返回值（Err 状态已装在 ctx）。
 fn throw_dom_exception(ctx: &Ctx, name: &str, message: &str) -> rquickjs::Error {
+    // 构造器可达 → new DOMException(message, name)（胶水定义见 install）。
+    if let Ok(ctor) = ctx.globals().get::<_, rquickjs::function::Constructor>("DOMException") {
+        let mut args = rquickjs::function::Args::new(ctx.clone(), 2);
+        let _ = args.push_arg(message.to_string());
+        let _ = args.push_arg(name.to_string());
+        if let Ok(instance) = ctor.construct_args::<Value>(args) {
+            return ctx.throw(instance);
+        }
+    }
+    // 回落：plain 对象（R66 形态——install 前的早期调用路径）。
     let err = match rquickjs::Object::new(ctx.clone()) {
         Ok(o) => {
             let _ = o.set("name", name.to_string());
@@ -2610,6 +2661,34 @@ mod tests {
                 ),
                 "true,false",
                 "R72 preventDefault：cancelable gate（非 cancelable 不置 defaultPrevented）"
+            );
+            // R73 DOMException 构造器：new + instanceof + code 映射 + toString + legacy
+            // 常量 + throw_dom_exception 升级（native 错误路径抛构造器实例）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__de = new DOMException('msg here', 'SyntaxError');\
+                     [__de instanceof DOMException, __de instanceof Error, __de.name,\
+                      __de.message, __de.code, __de.toString()].join(',')"
+                ),
+                "true,true,SyntaxError,msg here,12,SyntaxError: msg here",
+                "R73 new DOMException：instanceof 双面 + name/message + legacy code 映射 + toString"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__de2 = new DOMException();\
+                     [__de2.name, __de2.message, __de2.code, DOMException.SYNTAX_ERR, DOMException.NOT_FOUND_ERR].join(',')"
+                ),
+                "Error,,0,12,8",
+                "R73 缺省参（name=Error/message=''）+ code 0 + legacy 常量"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__r73err = null;\
+                     try { __zw_native_create_element('<bad>'); } catch (e) { __r73err = [e.name, e instanceof DOMException].join(':'); }\
+                     __r73err"
+                ),
+                "InvalidCharacterError:true",
+                "R73 throw_dom_exception 升级：native 错误路径抛构造器实例（instanceof 可观测）"
             );
 
             // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
