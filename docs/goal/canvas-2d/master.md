@@ -89,7 +89,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（batch-6 对齐后 25 项） | 🔄 聚类：composite.grid ×12（23-37.5%——**grid 行高布局差**：行 1 差 1px、行 2 差 8px、行 3 差 12px 非均匀（蓝平坦区行带实测），grid 行高渲染兼容性——rendering-compat 域；canvas 内容光栅验证精确（旋转矩形 y∈[8,37]））/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.57%（退化 oracle） |
+| G10 | oracle A/B 不一致（batch-9 后 25 项） | 🔄 聚类：composite.grid ×12（**~21-24%**——batch-9 导入 canvas-grid-reftest.css（grid 布局从对角线错 → 正确 2 行 6 列）+ fallback 排除 display 放宽（.grid-cell-content display:block 时 fallback p 不建盒——span 撑高修复）；剩余 = **头部布局差 38px**（h1 行盒 24 vs 28、p.desc 空 margin、div 行盒、gap/outline——rendering-compat UA 样式域，像素级归因））/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.57%（退化 oracle） |
 
 ## 待用户决策清单
 

@@ -48,3 +48,25 @@
 - clippy 零警告；fmt 无 diff
 - 与前轮关系：batch-6 clamp 4096（弦偏差前提）→ batch-7 描边 AA 落地
   （中心命中模型不破坏 (1,1)——(1,1) 覆盖来自 join，不在段矩形判定内）
+
+## 追加（batch-9）：canvas-grid 资产导入 + fallback 排除（2026-08-16）
+
+**修复 1：canvas-grid-reftest.css 导入**——fetch-canvas-subset.sh 遗漏该文件
+（grid 用例 link 的样式——display:grid/gap 4px/max-content 列）——缺失时
+grid 布局失效（块流堆叠）。导入后 grid 布局生效。
+
+**修复 2：fallback 排除 display 放宽**——is_replaced_with_fallback 的 display
+匹配 InlineBlock → Block|InlineBlock——`.grid-cell-content { display:block }`
+使 canvas 为 block 时 fallback 子（p.fallback）仍建盒（撑高 span → grid
+行高错）。HTML §4.8.10：fallback 仅在元素不支持时显示。
+
+**效果**：grid 布局从「对角线错」（每个 span 的 div/canvas 垂直堆叠 + 列偏移
+——canvas y 递增 13px）→ **正确 2 行 6 列**（canvas 行 y 对齐 67/146）。
+
+**剩余 oracle ~21% 归因**（像素级）：test 的 div 标题 y 58-64 vs ref 86-92
+（差 28）+ div→canvas 间隙 3 vs 13（差 10）——**头部布局差 38px** 多因素：
+h1 行盒（24 vs 28）、p.desc 空元素 margin、div 行盒、gap/outline——rendering-
+compat UA 样式域（±2px 对齐消不了 38px）。
+
+**验证**：layout 1382 全绿（+1：display:block canvas 的 fallback p 不建盒）；
+grid 布局单测 r57_canvas_grid_wrapper_position 保持。
