@@ -833,7 +833,8 @@
         } catch (_e) {}
         valueMissing = (groupRequired || selfRequired) && !curChecked && !checkedAny;
       }
-    } else if (reqAttr === '1' && (_dis !== '1' || ty === 'checkbox' || ty === 'radio')) {
+    } else if (reqAttr === '1'
+        && (_dis !== '1' || ty === 'checkbox' || ty === 'radio' || ty === 'file' || tag === 'SELECT')) {
       if (ty === 'checkbox') {
         var checked = null;
         try {
@@ -850,7 +851,11 @@
       } else {
         var vmVal = _controlValue(sel, handle, key);
         if (vmVal.trim() === '') valueMissing = true;
-        else if (ty === 'number') valueMissing = !isFinite(parseFloat(vmVal));
+        else if (ty === 'number') {
+          // R57（FV M1）：number 的有效浮点数串（spec——无空白——" 123 " 无效
+          // → missing；parseFloat 太宽松）
+          valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(vmVal.trim()) || !isFinite(parseFloat(vmVal));
+        }
         else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(vmVal.trim(), ty);
       }
     }
@@ -2259,13 +2264,17 @@
         var rawValue = node.value != null ? String(node.value)
           : (node.hasAttribute('value') ? String(node.getAttribute('value') || '') : '');
         var valueMissing = false;
-        if (required && (!node.hasAttribute('disabled') || ty === 'checkbox' || ty === 'radio')) {
+        var isSelectTag = String(node.tagName).toLowerCase() === 'select';
+        if (required && (!node.hasAttribute('disabled') || ty === 'checkbox' || ty === 'radio'
+            || ty === 'file' || isSelectTag)) {
           if (ty === 'checkbox' || ty === 'radio') valueMissing = !node.hasAttribute('checked');
           else if (tag === 'select') valueMissing = rawValue === '';
           else if (ty === 'file') valueMissing = true;
           else {
             if (rawValue.trim() === '') valueMissing = true;
-            else if (ty === 'number') valueMissing = !isFinite(parseFloat(rawValue));
+            else if (ty === 'number') {
+              valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(rawValue.trim()) || !isFinite(parseFloat(rawValue));
+            }
             else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(rawValue.trim(), ty);
           }
         }

@@ -1547,7 +1547,20 @@
           };
         }
         if (prop === 'validity') return _validityState(key, sel, handle);
+        // R57（FV M1）：validationMessage 的 barred 判定（disabled/非 submittable
+        // → 空消息）——submittable 元素（button/input/select/textarea/等）+ 非 disabled。
+        function _wvSubmittable(sl, hd) {
+          var _t = _realTag(sl, hd);
+          if (_t !== 'INPUT' && _t !== 'SELECT' && _t !== 'TEXTAREA' && _t !== 'BUTTON') return false;
+          var _d = null;
+          try { _d = hd ? __zw_has_attr_handle(hd, 'disabled') : __zw_has_attr(sl, 'disabled'); } catch (_e) {}
+          return _d !== '1';
+        }
         if (prop === 'validationMessage') {
+          // R57（FV M1）：barred（disabled/非 submittable）控件——validationMessage
+          // 空（spec §4.10.5.2.2——customError 也 barred——"when control is
+          // disabled" 的断言）。
+          if (!_wvSubmittable(sel, handle)) return '';
           var validity = _validityState(key, sel, handle);
           if (validity.customError) return _customValidity[key];
           if (validity.tooShort) return 'Please lengthen this text.';
