@@ -393,19 +393,31 @@ fn native_element_for_id_entry<'js>(ctx: Ctx<'js>, id_str: Opt<rquickjs::Coerced
 
 /// `__zw_native_create_element(tag)` 工厂入口（S2q mutation 族配套——detached 元素
 /// 经 appendChild 入树的 child 来源）。
-fn native_create_element_entry<'js>(ctx: Ctx<'js>, tag: Opt<rquickjs::Coerced<String>>) -> Value<'js> {
+fn native_create_element_entry<'js>(
+    ctx: Ctx<'js>,
+    tag: Opt<rquickjs::Coerced<String>>,
+) -> rquickjs::Result<Value<'js>> {
     let Some(tag) = tag.0 else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
+    // S4q 完整化（R66）：非法 tag → InvalidCharacterError（spec `dom-document-createelement`
+    // validate；镜像 V8 is_valid_qualified_name 路径——空/首字符非 name-start/含 `<`/`>`/空白）。
+    if !is_valid_tag_name(&tag.0) {
+        return Err(throw_dom_exception(
+            &ctx,
+            "InvalidCharacterError",
+            "The tag name provided is not a valid name.",
+        ));
+    }
     let Some(node_id) = with_dom_mut(|d| d.create_element(&tag.0)) else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
     let v = get_or_build_node_value(&ctx, node_id);
     // S5q upgrade（PoC 路径）：命中 registry → 原型挂 ctor.prototype（见模块注释）。
     if let Some(obj) = v.as_object().cloned() {
         apply_ce_prototype(&obj, &ctx, &tag.0);
     }
-    v
+    Ok(v)
 }
 
 /// NodeId → native 对象（身份缓存命中或新建，带全套属性/方法面）。`get_or_create`
@@ -588,6 +600,47 @@ fn has_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<St
     with_dom(|d| d.has_attribute(id, &name.0)).unwrap_or(false)
 }
 
+// ── S4q 完整化（R66）：DOMException 基建 ──────────────────────────────
+//
+// QuickJS 侧形态：抛**带 name 属性的 Error 对象**（rquickjs `Ctx::throw(value)`——
+// JS 侧 catch 得到 e.name/e.message，与 DOMException 的可观测面等价；DOMException
+// 全局构造器基建（instanceof 面）延后——V8 侧 R6 的 identity 三重根因教训在案）。
+// name 映射镜像 V8 dom_bindings/node.rs `dom_error_exception`。
+
+/// DomError → (DOMException name, message)（镜像 V8 `dom_error_exception`）。
+fn dom_error_name(err: &zero_dom::DomError) -> (&'static str, String) {
+    match err {
+        zero_dom::DomError::WouldCreateCycle | zero_dom::DomError::CannotInsertDocumentRoot => (
+            "HierarchyRequestError",
+            "The new child is an ancestor of the parent.".into(),
+        ),
+        zero_dom::DomError::NotAChild { .. } => (
+            "NotFoundError",
+            "The child to be replaced is not a child of this node.".into(),
+        ),
+        zero_dom::DomError::NodeNotFound(_) => ("HierarchyRequestError", "The node does not exist.".into()),
+        zero_dom::DomError::NotAnElement | zero_dom::DomError::AlreadyHasShadowRoot => {
+            ("InvalidStateError", err.to_string())
+        }
+    }
+}
+
+/// 抛 DOMException 形态错误（name + message 属性的 Error 对象经 `Ctx::throw`）。
+/// 调用方须在 native fn 内 return 该返回值（Err 状态已装在 ctx，函数返什么都会被
+/// 异常取代——返 null 占位）。
+fn throw_dom_exception(ctx: &Ctx, name: &str, message: &str) -> rquickjs::Error {
+    let err = match rquickjs::Object::new(ctx.clone()) {
+        Ok(o) => {
+            let _ = o.set("name", name.to_string());
+            let _ = o.set("message", message.to_string());
+            let _ = o.set("stack", format!("DOMException: {message}"));
+            o.into_value()
+        }
+        Err(e) => return e,
+    };
+    ctx.throw(err)
+}
+
 // ── S2q 子树 mutation 族（appendChild/removeChild；insertBy 等后续切片）──
 
 // ── S3q 查询族（spec `dom-parentnode-queryselector` 家族；镜像 V8 factories.rs）──
@@ -722,39 +775,55 @@ fn node_id_from_value(v: &Value) -> Option<NodeId> {
 /// DOMException 映射见 dom_bindings/node.rs，QuickJS 版随 S4q 异常基建对齐）。
 /// spec 移动语义：child 已有父时自动 reparent（zero_dom append_child 内建）。
 /// 返回 child（spec appendChild 返回追加的节点）。
-fn append_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<Value<'js>>) -> Value<'js> {
+fn append_child_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    child: Opt<Value<'js>>,
+) -> rquickjs::Result<Value<'js>> {
     let (Some(parent_id), Some(child_v)) = (node_id_of(&this.0), child.0) else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
     let Some(child_id) = node_id_from_value(&child_v) else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
     match with_dom_mut(|d| d.append_child(parent_id, child_id)) {
         Some(Ok(())) => {
             // S5q lifecycle：custom 子树连接态真转 → connectedCallback 派发。
             notify_connect_after_insert(&ctx, parent_id, child_id);
-            child_v
+            Ok(child_v)
         }
-        _ => Value::new_null(ctx),
+        // S4q 完整化（R66）：DomError → DOMException（镜像 V8 R4；此前 null 吞错）。
+        // `Ctx::throw` 返 Err 须**返回给调用方**才生效——忽略返回值 = 异常被丢弃。
+        Some(Err(e)) => {
+            let (name, msg) = dom_error_name(&e);
+            Err(throw_dom_exception(&ctx, name, &msg))
+        }
+        None => Ok(Value::new_null(ctx)),
     }
 }
 
 /// `removeChild(child)`（spec `dom-node-removechild`）：返回被移除的 child
 ///（spec 返回值）；失配（非子节点/缺失）→ null（PoC 错误路径同 appendChild 注记）。
-fn remove_child_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, child: Opt<Value<'js>>) -> Value<'js> {
+fn remove_child_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    child: Opt<Value<'js>>,
+) -> rquickjs::Result<Value<'js>> {
     let (Some(parent_id), Some(child_v)) = (node_id_of(&this.0), child.0) else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
     let Some(child_id) = node_id_from_value(&child_v) else {
-        return Value::new_null(ctx);
+        return Ok(Value::new_null(ctx));
     };
     match with_dom_mut(|d| d.remove_child(parent_id, child_id)) {
         Some(Ok(_)) => {
             // S5q lifecycle：断开子树 custom 元素 → disconnectedCallback 派发。
             notify_disconnect_after_remove(&ctx, child_id);
-            child_v
+            Ok(child_v)
         }
-        _ => Value::new_null(ctx),
+        // S4q 完整化（R66）：非子节点 → NotFoundError（spec；此前 null 吞错）。
+        Some(Err(e)) => Err(throw_dom_exception(&ctx, dom_error_name(&e).0, &dom_error_name(&e).1)),
+        None => Ok(Value::new_null(ctx)),
     }
 }
 
@@ -898,14 +967,39 @@ fn dispatch_event_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, type_: rqu
 /// `customElements.define(tag, ctor)`（spec `dom-customelementregistry-define`）：
 /// tag ASCII 小写规范化；ctor 须 callable；重复定义静默忽略（spec 抛 NotSupportedError——
 /// DOMException 基建延 S4q 完整化，注记同 R60b）。
-fn ce_define<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>, ctor: Value<'js>) {
+fn ce_define<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>, ctor: Value<'js>) -> rquickjs::Result<()> {
+    // S4q 完整化（R66）：非 callable ctor → TypeError（spec「callback」型校验）。
     if !ctor.is_function() {
-        return;
+        let e = rquickjs::Exception::from_message(ctx.clone(), "The callback is not a function.")?;
+        return Err(e.throw());
     }
     let key = tag.0.to_ascii_lowercase();
+    // 重复定义 → NotSupportedError（spec；此前静默覆盖）。
+    if CE_REGISTRY.with(|r| r.borrow().contains_key(&key)) {
+        return Err(throw_dom_exception(
+            &ctx,
+            "NotSupportedError",
+            "An element definition already exists with this name.",
+        ));
+    }
     CE_REGISTRY.with(|r| {
         r.borrow_mut().insert(key, Persistent::save(&ctx, ctor));
     });
+    Ok(())
+}
+
+/// 标签名合法性（spec Name production 简化检查；镜像 V8 `is_valid_qualified_name` 的
+/// QuickJS 版：非空 + 首字符 name-start（字母/`_`）+ 不含 `<`/`>`/空白/`/`）。
+fn is_valid_tag_name(tag: &str) -> bool {
+    if tag.is_empty() {
+        return false;
+    }
+    let first = tag.chars().next().expect("non-empty checked");
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    !tag.chars()
+        .any(|c| c == '<' || c == '>' || c.is_whitespace() || c == '/')
 }
 
 /// `customElements.get(tag)`：未注册 → JS null。
@@ -1501,6 +1595,39 @@ mod tests {
             assert_eq!(eval_str("(__zw_native_element_for_id('main').id = 'renamed', 1)"), "1");
             assert_eq!(eval_str("__zw_native_element_for_id('renamed').tagName"), "DIV");
             assert_eq!(eval_str("__zw_native_element_for_id('main')"), "null");
+
+            // S4q 完整化（R66）：DOMException 错误路径——self-append cycle / 非法 tag /
+            // 重复 define（catch 得 e.name）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__err = null;\
+                     try { var __self = __zw_native_element_for_id('renamed'); __self.appendChild(__self); }\
+                     catch (e) { __err = (e && e.name) ? e.name : ('raw:' + e); }\
+                     __err"
+                ),
+                "HierarchyRequestError",
+                "appendChild 自环 → HierarchyRequestError（镜像 V8 R4）"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__err2 = null;\
+                     try { __zw_native_create_element('<bad>'); }\
+                     catch (e) { __err2 = e.name; }\
+                     __err2"
+                ),
+                "InvalidCharacterError",
+                "createElement 非法 tag → InvalidCharacterError（镜像 V8 R3）"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__err3 = null;\
+                     try { __zw_native_customElements.define('my-el', __MyEl); }\
+                     catch (e) { __err3 = e.name; }\
+                     __err3"
+                ),
+                "NotSupportedError",
+                "重复 define → NotSupportedError（spec；此前静默覆盖）"
+            );
 
             // 5. 隐藏 ffi 不可枚举（Object.keys 只见 enumerable 反射属性——S1q 后
             //    id/className/title/lang/accessKey）。
