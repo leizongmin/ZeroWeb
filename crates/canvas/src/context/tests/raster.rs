@@ -2129,3 +2129,140 @@ fn test_fill_rect_axis_aligned_hard_edge() {
     let inside = ctx.get_image_data(10, 10, 1, 1);
     assert_eq!(&inside.data[..4], &[0, 0, 255, 255], "整数矩形内部应满色");
 }
+
+/// R57（M3）：旋转 CTM 下路径 fill() 的边界覆盖率混合（4×4 超采样 AA）——
+/// 与 fillRect 的 rect_coverage 同模式：内部满色、外部透明、边界半色调。
+#[test]
+fn test_fill_path_rotated_coverage_aa() {
+    let mut ctx = CanvasContext::new(20, 20);
+    // 30° 旋转（cos30=0.866, sin30=0.5）+ 平移（与 fillRect 测试同变换）。
+    let (c30, s30) = (0.866f32, 0.5f32);
+    ctx.set_transform(c30, s30, -s30, c30, 6.0, -3.0);
+    ctx.set_fill_color(Color::rgba(0, 0, 255, 255));
+    ctx.begin_path();
+    ctx.move_to(5.0, 5.0);
+    ctx.line_to(15.0, 5.0);
+    ctx.line_to(15.0, 15.0);
+    ctx.line_to(5.0, 15.0);
+    ctx.close_path();
+    ctx.fill();
+    // 矩形中心 (10,10) → (9.66, 10.66)——内部满色
+    let inner = ctx.get_image_data(10, 11, 1, 1);
+    assert_eq!(
+        &inner.data[..4],
+        &[0, 0, 255, 255],
+        "旋转路径内部应满色蓝: {:?}",
+        &inner.data[..4]
+    );
+    // 变换后远离路径的像素 (2,2) 应透明
+    let outside = ctx.get_image_data(2, 2, 1, 1);
+    assert_eq!(outside.data[3], 0, "旋转路径外应透明");
+    // 边界像素半色调（覆盖率混合）——扫描全画布
+    let mut found_edge = false;
+    for y in 0..20 {
+        for x in 0..20 {
+            let p = ctx.get_image_data(x, y, 1, 1);
+            if p.data[3] > 0 && p.data[3] < 255 {
+                found_edge = true;
+                break;
+            }
+        }
+        if found_edge {
+            break;
+        }
+    }
+    assert!(found_edge, "旋转路径边应存在半色调像素（覆盖率混合）");
+}
+
+/// R57（M3）：旋转 CTM + evenodd 挖洞路径填充——边界半色调与洞内透明共存。
+#[test]
+fn test_fill_path_evenodd_rotated_aa() {
+    let mut ctx = CanvasContext::new(24, 24);
+    let (c30, s30) = (0.866f32, 0.5f32);
+    ctx.set_transform(c30, s30, -s30, c30, 8.0, -4.0);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.begin_path();
+    ctx.move_to(4.0, 4.0);
+    ctx.line_to(16.0, 4.0);
+    ctx.line_to(16.0, 16.0);
+    ctx.line_to(4.0, 16.0);
+    ctx.close_path();
+    ctx.move_to(7.0, 7.0);
+    ctx.line_to(13.0, 7.0);
+    ctx.line_to(13.0, 13.0);
+    ctx.line_to(7.0, 13.0);
+    ctx.close_path(); // evenodd 内洞
+    ctx.fill_with_rule(crate::context::FillRule::EvenOdd);
+    // evenodd 外环：环带内应存在满色红像素 + 旋转边半色调像素共存。
+    let mut found_full = false;
+    let mut found_edge = false;
+    for y in 0..24 {
+        for x in 0..24 {
+            let p = ctx.get_image_data(x, y, 1, 1);
+            if p.data[3] == 255 && p.data[0] == 255 {
+                found_full = true;
+            }
+            if p.data[3] > 0 && p.data[3] < 255 {
+                found_edge = true;
+            }
+        }
+    }
+    assert!(found_full, "evenodd 外环应存在满色红像素");
+    assert!(found_edge, "evenodd 旋转路径边应存在半色调像素");
+}
+
+/// R57（M3）：旋转 CTM 下渐变路径填充边界——AA 覆盖率作用于渐变采样色。
+#[test]
+fn test_fill_path_gradient_rotated_aa() {
+    let mut ctx = CanvasContext::new(20, 20);
+    let (c30, s30) = (0.866f32, 0.5f32);
+    ctx.set_transform(c30, s30, -s30, c30, 6.0, -3.0);
+    let mut grad = LinearGradient::new(0.0, 0.0, 20.0, 20.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 0, 255, 255));
+    ctx.set_fill_style(CanvasStyle::LinearGradient(grad));
+    ctx.begin_path();
+    ctx.move_to(5.0, 5.0);
+    ctx.line_to(15.0, 5.0);
+    ctx.line_to(15.0, 15.0);
+    ctx.line_to(5.0, 15.0);
+    ctx.close_path();
+    ctx.fill();
+    // 内部满 alpha（渐变红→蓝）
+    let inner = ctx.get_image_data(10, 11, 1, 1);
+    assert_eq!(inner.data[3], 255, "渐变路径内部应满 alpha: {:?}", &inner.data[..4]);
+    // 边界半色调
+    let mut found_edge = false;
+    for y in 0..20 {
+        for x in 0..20 {
+            let p = ctx.get_image_data(x, y, 1, 1);
+            if p.data[3] > 0 && p.data[3] < 255 {
+                found_edge = true;
+                break;
+            }
+        }
+        if found_edge {
+            break;
+        }
+    }
+    assert!(found_edge, "旋转渐变路径边应存在半色调像素");
+}
+
+/// R57（M3）：轴对齐 CTM 下路径 fill 硬边——旋转 AA 零回归守护
+///（整数坐标矩形路径边界满色、外透明，与 fillRect 同语义）。
+#[test]
+fn test_fill_path_axis_aligned_hard_edge() {
+    let mut ctx = CanvasContext::new(20, 20);
+    ctx.set_fill_color(Color::rgba(0, 0, 255, 255));
+    ctx.begin_path();
+    ctx.move_to(10.0, 10.0);
+    ctx.line_to(15.0, 10.0);
+    ctx.line_to(15.0, 15.0);
+    ctx.line_to(10.0, 15.0);
+    ctx.close_path();
+    ctx.fill();
+    let edge = ctx.get_image_data(9, 10, 1, 1);
+    assert_eq!(edge.data[3], 0, "整数矩形路径左侧外应透明");
+    let inside = ctx.get_image_data(10, 10, 1, 1);
+    assert_eq!(&inside.data[..4], &[0, 0, 255, 255], "整数矩形路径内部应满色");
+}

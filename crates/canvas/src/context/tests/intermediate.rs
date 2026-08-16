@@ -531,8 +531,9 @@ fn test_ellipse_flattening_via_fill_with_path() {
     ctx.fill_with_path(&path);
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
-    // 16 段细分 × 4 floats = 64
-    assert_eq!(pf.vertices.len(), 64);
+    // R57：点序列契约——16 段取起点去重（首点 = moveTo 点） = 16 点 × 2 = 32
+    //（旧段格式 16 段 × 4 = 64 已废弃）。
+    assert_eq!(pf.vertices.len(), 32);
 }
 
 // ── roundRect 扁平化测试 ──
@@ -592,8 +593,8 @@ fn test_round_rect_zero_radius_degrades_to_rect() {
     path.round_rect(10.0, 20.0, 100.0, 80.0, vec![(0.0, 0.0)]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
-    // R56：自包含子路径 4 边段（MoveTo 不产连接段）：4 × 4 = 16 floats
-    assert_eq!(pf.vertices.len(), 16);
+    // R57：点序列契约——矩形 4 角点 × 2 = 8（旧段格式 4 × 4 = 16 已废弃）
+    assert_eq!(pf.vertices.len(), 8);
 }
 
 /// 测试 roundRect 空半径列表退化为普通矩形。
@@ -604,7 +605,7 @@ fn test_round_rect_empty_radii_degrades_to_rect() {
     path.round_rect(10.0, 20.0, 100.0, 80.0, vec![]);
     ctx.fill_with_path(&path);
     let pf = &ctx.primitives().path_fills[0];
-    assert_eq!(pf.vertices.len(), 16); // R56：4 边段
+    assert_eq!(pf.vertices.len(), 8); // R57：点序列契约——矩形 4 角点 × 2（旧段格式 4 段 × 4 = 16 已废弃）
 }
 
 /// 测试 roundRect 四个不同圆角半径。
@@ -1105,8 +1106,9 @@ fn test_ellipse_via_context_generates_path_fills() {
     ctx.fill();
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
-    // R56：16 段细分 × 4 = 64 + fill 隐式闭合段 4 = 68（closepath-on-fill）
-    assert_eq!(pf.vertices.len(), 68);
+    // R57：点序列契约——16 段起点去重（首点 = moveTo 点）+ fill 隐式闭合段起点
+    // = 17 点 × 2 = 34（closepath-on-fill；旧段格式 68 已废弃）。
+    assert_eq!(pf.vertices.len(), 34);
 }
 
 /// 测试 ellipse 使用单位旋转（rotation=0）时顶点与预期一致。
@@ -1258,8 +1260,8 @@ fn test_arc_to_zero_radius_degenerates_to_line() {
     assert!(!ctx.primitives().path_fills.is_empty());
     // 零半径时：从 (0,0) 画线到 (100,0)，不产生弧线
     let pf = &ctx.primitives().path_fills[0];
-    // R56：1 线段 + fill 隐式闭合段（终点≠起点）= 8 floats（closepath-on-fill）
-    assert_eq!(pf.vertices.len(), 8, "零半径 arcTo 应退化为一条线段+闭合");
+    // R57：点序列契约——(0,0)→(100,0) 2 点 = 4 floats（旧段格式 2 段 × 4 = 8 已废弃）
+    assert_eq!(pf.vertices.len(), 4, "零半径 arcTo 应退化为一条线段+闭合");
 }
 
 /// 测试 arc_to 共线点（当前点、控制点1、控制点2 在一条线上）退化为直线。
@@ -1272,9 +1274,9 @@ fn test_arc_to_collinear_points_produces_line() {
     ctx.arc_to(50.0, 0.0, 100.0, 0.0, 10.0);
     ctx.fill();
     assert!(!ctx.primitives().path_fills.is_empty());
-    // 共线时退化为 lineTo(50, 0)：1 线段 + fill 隐式闭合段 = 8 floats（R56）
+    // 共线时退化为 lineTo(50, 0)：2 点 = 4 floats（R57 点序列契约；旧段格式 8 已废弃）
     let pf = &ctx.primitives().path_fills[0];
-    assert_eq!(pf.vertices.len(), 8, "共线 arcTo 应退化为一条线段+闭合");
+    assert_eq!(pf.vertices.len(), 4, "共线 arcTo 应退化为一条线段+闭合");
 }
 
 // ── line_join / line_cap 测试 ──

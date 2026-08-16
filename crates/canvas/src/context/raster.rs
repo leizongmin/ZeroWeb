@@ -345,6 +345,26 @@ pub(crate) fn fill_rect_into_mask(mask: &mut [u8], rw: usize, rh: usize, ox: i32
     }
 }
 
+/// R57（M3）：flatten 段序列（每 4 个 f32 = 一段 (x1,y1,x2,y2)）→ 图元点序列
+///（每 2 个 f32 = 一个顶点，闭合多边形）。RenderPrimitives 的 PathFill/PathStroke
+/// 契约是点序列（mesh.rs push_path_fill_mesh / push_path_stroke_mesh 按每 2 个
+/// f32 解析）——段序列的段间相邻重复点（A→B→C→A 环的 B、C 各出现两次）会生成
+/// 退化三角形/零长线（R57 gpu_path 实测旋转三角形全白）。取每段起点并去重相邻
+/// 重复，环 A→B→C→A → [A,B,C]。
+pub(crate) fn segs_to_point_verts(segments: &[f32]) -> Vec<f32> {
+    let mut out: Vec<f32> = Vec::with_capacity(segments.len() / 2 + 2);
+    for seg in segments.chunks_exact(4) {
+        let (x, y) = (seg[0], seg[1]);
+        let n = out.len();
+        if n >= 2 && (out[n - 2] - x).abs() <= f32::EPSILON && (out[n - 1] - y).abs() <= f32::EPSILON {
+            continue;
+        }
+        out.push(x);
+        out.push(y);
+    }
+    out
+}
+
 /// R3240：把路径顶点（canvas 坐标）扫描线光栅化为 alpha 覆盖 mask（region 局部）——
 /// 覆盖像素写 255，其余 0。`ox/oy` 为 region 左上角 canvas 坐标（mask-local = canvas - origin）。
 pub(crate) fn rasterize_path_coverage(vertices: &[f32], mask: &mut [u8], rw: usize, rh: usize, ox: i32, oy: i32) {
@@ -416,6 +436,61 @@ impl CanvasContext {
             }
         }
         hit as f32 / 16.0
+    }
+
+    /// R57（M3）：路径边界像素的 AA 覆盖率——4×4 超采样 + 点内测试
+    ///（`spans_hit`：与填充光栅化同一非零/偶奇判定，边界像素与内部像素
+    /// 同一「扫描线 span 覆盖」语义）。轴对齐 CTM 恒 1（整数矩形硬边零回归）；
+    /// 非轴对齐 CTM 下旋转路径边像素半色调（与 [`Self::rect_coverage`] 同模式）。
+    fn path_pixel_coverage(&self, vertices: &[f32], px: f32, py: f32, rule: FillRule) -> f32 {
+        if self.transform.b.abs() < 1e-6 && self.transform.c.abs() < 1e-6 {
+            return 1.0;
+        }
+        let mut hit = 0u32;
+        for i in 0..4 {
+            for j in 0..4 {
+                let (sx, sy) = (px + (i as f32 + 0.5) / 4.0, py + (j as f32 + 0.5) / 4.0);
+                if super::context_impl::spans_hit(vertices, sx, sy, rule) {
+                    hit += 1;
+                }
+            }
+        }
+        hit as f32 / 16.0
+    }
+
+    /// R57（M3）：路径 span 边界像素合成——coverage ∈ (0,1) 时源 alpha × coverage
+    ///（AA 边半色调；全覆盖像素走调用方原逻辑）。clip + composite + f32 并行写
+    /// 与内部像素一致（仅 alpha 缩放）。
+    fn blit_path_edge_pixel(&mut self, scan_x: u32, scan_y: u32, color: Color, coverage: f32) {
+        // 双写防护：coverage ≥ 1 的边界像素已被全覆盖循环写入（整数边界硬边）。
+        if coverage <= 0.0 || coverage >= 1.0 {
+            return;
+        }
+        // R34xx：clip 区域裁剪（与全覆盖像素同语义）。
+        if !self.clip_applies(scan_x as f32, scan_y as f32) {
+            return;
+        }
+        let canvas_w = self.width as usize;
+        let idx = (scan_y as usize * canvas_w + scan_x as usize) * 4;
+        if idx + 3 >= self.pixel_buffer.len() {
+            return;
+        }
+        let mut c = color;
+        c.a = (c.a as f32 * coverage).round() as u8;
+        let (r, g, b, a) = self.composite_pixel(
+            c,
+            self.pixel_buffer[idx],
+            self.pixel_buffer[idx + 1],
+            self.pixel_buffer[idx + 2],
+            self.pixel_buffer[idx + 3],
+        );
+        self.pixel_buffer[idx] = r;
+        self.pixel_buffer[idx + 1] = g;
+        self.pixel_buffer[idx + 2] = b;
+        self.pixel_buffer[idx + 3] = a;
+        // R34xx（f16 存储）：float16 画布并行 f32 写（与 blit_rect_to_pixels_checked
+        // 同模式——coverage 只缩放 u8 主缓冲）。
+        self.blit_pixel_f32(idx, color);
     }
 
     pub(crate) fn transform_rect(&self, x: f32, y: f32, width: f32, height: f32) -> Rect {
@@ -1919,6 +1994,9 @@ impl CanvasContext {
         let canvas_h = self.height;
         let y_start = min_y.max(0.0).ceil() as u32;
         let y_end = max_y.min(canvas_h as f32).ceil() as u32;
+        // R57（M3）：非轴对齐 CTM 下 span 边界像素 AA（4×4 超采样点内测试——
+        // 旋转路径边半色调，与 rect_coverage 同模式；轴对齐恒硬边零回归）。
+        let rotated = self.transform.b.abs() > 1e-6 || self.transform.c.abs() > 1e-6;
 
         for scan_y in y_start..y_end {
             let sy = scan_y as f32 + 0.5;
@@ -1928,10 +2006,12 @@ impl CanvasContext {
             // 子路径（winding.add：外矩形+同向内矩形，中心绕组 ±2）和对角连线
             // 杂散交点都会配对破裂（挖出假洞/漏填）。
             // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
-            for (ix_start_f, ix_end_f) in fill_rule_spans(vertices, sy, rule) {
-                let ix_start = ix_start_f.max(0.0) as u32;
-                let ix_end = ix_end_f.min(canvas_w as f32) as u32;
-                for scan_x in ix_start..ix_end {
+            for (sx, ex) in fill_rule_spans(vertices, sy, rule) {
+                let ix_start_f = sx.max(0.0);
+                let ix_end_f = ex.min(canvas_w as f32);
+                let full_start = ix_start_f.ceil() as u32;
+                let full_end = ix_end_f.floor() as u32;
+                for scan_x in full_start..full_end {
                     // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                     if !self.clip_applies(scan_x as f32, scan_y as f32) {
                         continue;
@@ -1953,6 +2033,29 @@ impl CanvasContext {
                         self.pixel_buffer[idx + 3] = a;
                         // R34xx（f16 存储）：float16 画布并行 f32 写。
                         self.blit_pixel_f32(idx, color);
+                    }
+                }
+                // R57（M3）：span 边界像素 AA——起点/终点非整数时所在像素部分覆盖
+                //（sx<0 时画布左缘像素 0 兜底——coverage 超采样自动判定；整数边界
+                // 硬边，与 Chromium 整数坐标矩形一致）。
+                if rotated {
+                    if sx - sx.floor() > 1e-6 {
+                        let b = sx.floor().max(0.0) as u32;
+                        if b < canvas_w {
+                            let cov = self.path_pixel_coverage(vertices, b as f32, scan_y as f32, rule);
+                            if cov > 0.0 && cov < 1.0 {
+                                self.blit_path_edge_pixel(b, scan_y, color, cov);
+                            }
+                        }
+                    }
+                    if ex - ex.floor() > 1e-6 {
+                        let b = ex.floor().max(0.0) as u32;
+                        if b < canvas_w {
+                            let cov = self.path_pixel_coverage(vertices, b as f32, scan_y as f32, rule);
+                            if cov > 0.0 && cov < 1.0 {
+                                self.blit_path_edge_pixel(b, scan_y, color, cov);
+                            }
+                        }
                     }
                 }
             }
@@ -1987,6 +2090,8 @@ impl CanvasContext {
         let canvas_h = self.height;
         let y_start = min_y.max(0.0).ceil() as u32;
         let y_end = max_y.min(canvas_h as f32).ceil() as u32;
+        // R57（M3）：非轴对齐 CTM 下 span 边界像素 AA（与 blit_path_to_pixels_rule 同模式）。
+        let rotated = self.transform.b.abs() > 1e-6 || self.transform.c.abs() > 1e-6;
         for scan_y in y_start..y_end {
             let sy = scan_y as f32 + 0.5;
             // R56c（M8/DC-8）：nonzero fill rule（spec dom-context-2d-fill 默认）——
@@ -1995,10 +2100,12 @@ impl CanvasContext {
             // 子路径（winding.add：外矩形+同向内矩形，中心绕组 ±2）和对角连线
             // 杂散交点都会配对破裂（挖出假洞/漏填）。
             // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-fill
-            for (ix_start_f, ix_end_f) in fill_rule_spans(vertices, sy, rule) {
-                let ix_start = ix_start_f.max(0.0) as u32;
-                let ix_end = ix_end_f.min(canvas_w as f32) as u32;
-                for scan_x in ix_start..ix_end {
+            for (sx, ex) in fill_rule_spans(vertices, sy, rule) {
+                let ix_start_f = sx.max(0.0);
+                let ix_end_f = ex.min(canvas_w as f32);
+                let full_start = ix_start_f.ceil() as u32;
+                let full_end = ix_end_f.floor() as u32;
+                for scan_x in full_start..full_end {
                     // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                     if !self.clip_applies(scan_x as f32, scan_y as f32) {
                         continue;
@@ -2018,6 +2125,30 @@ impl CanvasContext {
                         self.pixel_buffer[idx + 1] = g;
                         self.pixel_buffer[idx + 2] = b;
                         self.pixel_buffer[idx + 3] = a;
+                    }
+                }
+                // R57（M3）：span 边界像素 AA（渐变采样位置 = 像素中心，与全覆盖
+                // 像素同 scan_y 扫描线；coverage 超采样判定与纯色路径一致）。
+                if rotated {
+                    if sx - sx.floor() > 1e-6 {
+                        let b = sx.floor().max(0.0) as u32;
+                        if b < canvas_w {
+                            let cov = self.path_pixel_coverage(vertices, b as f32, scan_y as f32, rule);
+                            if cov > 0.0 && cov < 1.0 {
+                                let color = self.apply_alpha(style.sample_at(b as f32 + 0.5, sy));
+                                self.blit_path_edge_pixel(b, scan_y, color, cov);
+                            }
+                        }
+                    }
+                    if ex - ex.floor() > 1e-6 {
+                        let b = ex.floor().max(0.0) as u32;
+                        if b < canvas_w {
+                            let cov = self.path_pixel_coverage(vertices, b as f32, scan_y as f32, rule);
+                            if cov > 0.0 && cov < 1.0 {
+                                let color = self.apply_alpha(style.sample_at(b as f32 + 0.5, sy));
+                                self.blit_path_edge_pixel(b, scan_y, color, cov);
+                            }
+                        }
                     }
                 }
             }

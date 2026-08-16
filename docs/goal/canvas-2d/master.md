@@ -1,10 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R57 第九批定稿：**grid 22px 偏移根因 + drawImage CTM 逆映射
-+ canvas 文本字体注入**——22px 偏移全灭（R1286 strut 只给真 br），composite.grid
-45%→24-38%、gradient 从空白到渲染；oracle A/B 真通过 7（17.1%，2 个文本缺失假通过
-被纠正）、不一致 27（剩余 = AA 边 + 字体度量两类）；证据见
-evidence/r57-m3-oracle-honest-2026-08-16.md）。
+**最后更新**: 2026-08-16（R57 batch-5 定稿：**路径填充边界 AA + RenderPrimitives
+顶点格式契约修复 + GPU 测试扩展**——fill() 旋转边半色调（与 fillRect rect_coverage
+同模式）、PathFill/Stroke 段序列→点序列契约修复（GPU 旋转三角形全白根因）、
+gpu_path 5→8 测试 + 串行锁；canvas 809 全绿。证据见
+evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 
 ---
 
@@ -28,7 +28,11 @@ evidence/r57-m3-oracle-honest-2026-08-16.md）。
 
 ### Rust 层（crates/canvas）
 
-- ✅ 800 测试全绿；**行覆盖率 91.18%**（≥70% 目标达成）
+- ✅ 809 测试全绿；**行覆盖率 91.18%**（≥70% 目标达成）
+- ✅ R57 batch-5：路径填充边界 AA（非轴对齐 CTM span 边界像素 4×4 超采样——
+  fill() 旋转边半色调，与 fillRect rect_coverage 同模式；轴对齐恒硬边零回归）；
+  **RenderPrimitives PathFill/Stroke 顶点格式契约修复**（段序列→点序列——
+  GPU 旋转三角形全白根因，8 处调用 + 11 处断言更新）；GPU 测试 5→8 + 串行锁
 - ✅ R57：渐变插值空间补全 CSS Color 4 全 16 空间（+DisplayP3/DisplayP3Linear/
   A98Rgb/Rec2020/XyzD50，矩阵+EOTF）；CanvasStyle set_color_interpolation 直通
 - （前轮记录见 git log：径向渐变全几何、文本真字体光栅、TextCluster 系列等）
@@ -122,7 +126,7 @@ evidence/r57-m3-oracle-honest-2026-08-16.md）。
 
 ## 验证基线
 
-- 测试基线：canvas **800** 全绿；layout **1380**；engine **2156**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
+- 测试基线：canvas **809** 全绿；layout **1381**；engine **2158**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
 - WPT canvas testharness 面：全目录 0 Fail（含 path-objects 202/0、drawing-images 37/37）
 - oracle A/B：147 可测（221 环境不支持排除）——真通过 9（20.9%）、近似 7、不一致 27
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过（零警告）

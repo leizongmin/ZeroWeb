@@ -325,13 +325,21 @@ impl CanvasContext {
         let closed = true;
         if self.stroke_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                approx,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
         } else {
             let color = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                color,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
         }
     }
@@ -831,12 +839,14 @@ impl CanvasContext {
         }
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
-            self.primitives.add_path_fill(vertices.clone(), approx);
+            self.primitives
+                .add_path_fill(super::raster::segs_to_point_verts(&vertices), approx);
             let style = self.transform_gradient(&self.fill_style);
             self.blit_path_gradient_rule(&vertices, &style, rule);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
-            self.primitives.add_path_fill(vertices.clone(), color);
+            self.primitives
+                .add_path_fill(super::raster::segs_to_point_verts(&vertices), color);
             self.blit_path_to_pixels_rule(&vertices, color, rule);
         }
         // R34xx：source 独占类 composite 的未覆盖区域清除（path 外置透明）。
@@ -873,13 +883,21 @@ impl CanvasContext {
         if self.stroke_style.is_per_pixel_style() {
             // 渐变描边：逐像素光栅化（R3084，对称 fill 渐变 R3079）。primitives 用 midpoint 近似。
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                approx,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
         } else {
             let color = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                color,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
             // R56g：弧命令真圆环带后处理（纯色路径）——折线伪节点覆盖洞的补齐；
             // 半径经 CTM 有效缩放（均匀 scale 下用户半径 ≠ 设备半径）。
@@ -931,12 +949,14 @@ impl CanvasContext {
         }
         if self.fill_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
-            self.primitives.add_path_fill(vertices.clone(), approx);
+            self.primitives
+                .add_path_fill(super::raster::segs_to_point_verts(&vertices), approx);
             let style = self.transform_gradient(&self.fill_style);
             self.blit_path_gradient_rule(&vertices, &style, rule);
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
-            self.primitives.add_path_fill(vertices.clone(), color);
+            self.primitives
+                .add_path_fill(super::raster::segs_to_point_verts(&vertices), color);
             self.blit_path_to_pixels_rule(&vertices, color, rule);
         }
     }
@@ -968,13 +988,21 @@ impl CanvasContext {
         );
         if self.stroke_style.is_per_pixel_style() {
             let approx = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), approx, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                approx,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels_gradient(&vertices, &self.stroke_style.clone(), self.line_width, closed);
         } else {
             let color = self.apply_alpha(self.stroke_style.resolve_color());
-            self.primitives
-                .add_path_stroke(vertices.clone(), color, self.line_width, closed);
+            self.primitives.add_path_stroke(
+                super::raster::segs_to_point_verts(&vertices),
+                color,
+                self.line_width,
+                closed,
+            );
             self.blit_stroke_to_pixels(&vertices, color, self.line_width, closed);
         }
     }
@@ -2946,7 +2974,7 @@ pub(crate) fn font_baselines_px(data: &[u8], face_index: u32, size: f32) -> Opti
 /// scale(MAX_VALUE) 矩形）收缩到 ±f32::MAX/4 代理——保持穿越方向与区间覆盖，
 /// 避免 inf/inf → NaN 交点把 span 算破（真浏览器双精度内部仍有限，(0,0) 在
 /// 巨矩形内为真）。
-fn spans_hit(vertices: &[f32], x: f32, y: f32, rule: super::raster::FillRule) -> bool {
+pub(crate) fn spans_hit(vertices: &[f32], x: f32, y: f32, rule: super::raster::FillRule) -> bool {
     const BIG: f32 = f32::MAX / 4.0;
     let needs_shrink = vertices.iter().any(|v| !v.is_finite());
     let shrunk: Vec<f32>;

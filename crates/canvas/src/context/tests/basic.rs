@@ -856,9 +856,10 @@ fn test_fill_emits_path_fill_primitive() {
     assert_eq!(ctx.primitives().fills.len(), 0);
     assert_eq!(ctx.primitives().path_fills.len(), 1);
     let pf = &ctx.primitives().path_fills[0];
-    // 三角形路径：2 条线段 = 4 个顶点对 (x1,y1,x2,y2)
+    // R57：RenderPrimitives PathFill 契约为点序列（每 2 个 f32 = 顶点，闭合多边形）——
+    // 2 线段 + 隐式闭合 = 3 点 = 6 floats（旧段格式 2 段 × 4 已废弃）。
     // line_to(10,10)->(100,10) 和 (100,10)->(100,100)
-    assert!(pf.vertices.len() >= 8); // 至少 2 段 × 4 floats
+    assert!(pf.vertices.len() >= 6);
     assert_eq!(pf.color, Color::BLACK);
 }
 
@@ -890,8 +891,9 @@ fn test_fill_triangle_vertices() {
     ctx.line_to(25.0, 50.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56：fill 隐式闭合开放子路径（closepath-on-fill）——2 LineTo + 1 闭合段 = 3×4
-    assert_eq!(pf.vertices.len(), 12);
+    // R57：点序列契约——fill 隐式闭合开放子路径（closepath-on-fill）：
+    // 3 段取起点去重 = 3 点 = 6 floats（旧段格式 3×4 = 12 已废弃）。
+    assert_eq!(pf.vertices.len(), 6);
 }
 
 /// 测试 stroke() 的闭合标记。
@@ -1033,8 +1035,9 @@ fn test_quadratic_curve_flattening() {
     ctx.quadratic_curve_to(50.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56h：段数自适应 = 控制折线 223.6/8 → 28 段 × 4 + fill 隐式闭合 4 = 116。
-    assert_eq!(pf.vertices.len(), 116);
+    // R57：点序列契约——段数自适应 28 段 + fill 隐式闭合段 = 29 点 × 2 = 58
+    //（旧段格式 28×4 + 闭合 4 = 116 已废弃）。
+    assert_eq!(pf.vertices.len(), 58);
 }
 
 /// 测试三次贝塞尔曲线填充生成正确的段数。
@@ -1046,8 +1049,9 @@ fn test_bezier_curve_flattening() {
     ctx.bezier_curve_to(25.0, 100.0, 75.0, 100.0, 100.0, 0.0);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56h：段数自适应 = 控制折线 256.2/8 → 33 段 × 4 + fill 隐式闭合 4 = 136。
-    assert_eq!(pf.vertices.len(), 136);
+    // R57：点序列契约——段数自适应 33 段 + fill 隐式闭合段 = 34 点 × 2 = 68
+    //（旧段格式 33×4 + 闭合 4 = 136 已废弃）。
+    assert_eq!(pf.vertices.len(), 68);
 }
 
 /// 测试圆弧填充生成正确的段数。
@@ -1058,8 +1062,9 @@ fn test_arc_flattening() {
     ctx.arc(50.0, 50.0, 25.0, 0.0, std::f32::consts::PI, false);
     ctx.fill();
     let pf = &ctx.primitives().path_fills[0];
-    // R56：fill 隐式闭合段 4（closepath-on-fill）。R56g：细线 N=16 → 16×4+4 = 68。
-    assert_eq!(pf.vertices.len(), 68);
+    // R57：点序列契约——R56g 细线 N=16 段 + fill 隐式闭合段 = 17 点 × 2 = 34
+    //（旧段格式 16×4 + 4 = 68 已废弃）。
+    assert_eq!(pf.vertices.len(), 34);
 }
 
 // ── clip() 测试 ──
