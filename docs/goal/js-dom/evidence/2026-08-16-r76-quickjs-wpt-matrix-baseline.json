@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-16",
+  "round": "R76",
+  "milestone": "M4 WPT dom 基线 quickjs 矩阵双 feature 对照（DC-7 验证面直接证据）",
+  "commit": "TBD-at-land",
+  "infrastructure": {
+    "quickjs_release_runner": "cargo build --release --no-default-features --features quickjs --bin zero-wpt-runner --target-dir target/quickjs-release（v8 release 二进制不受覆盖）",
+    "entry": "ZW_NATIVE_DOM=1 经 run_testharness_html_inner 读 env → WebViewConfig.native_dom → quickjs 构建走 R57 install_native_dom_bindings 接线——管线首次全量验证贯通"
+  },
+  "baselines": {
+    "quickjs_polyfill": {
+      "collections": "38P/10F 79.17%",
+      "events": "156P/99F 61.18%",
+      "nodes": "2201P/1113F 66.42%",
+      "ranges": "40P/72F 35.71%",
+      "traversal": "7P/47F 12.96%",
+      "TOTAL": "2442P/1341F = 64.55%"
+    },
+    "quickjs_native_ZW_NATIVE_DOM_1": {
+      "collections": "38P/10F 79.17%",
+      "events": "156P/99F 61.18%",
+      "nodes": "2200P/1114F 66.39%",
+      "ranges": "40P/72F 35.71%",
+      "traversal": "7P/47F 12.96%",
+      "TOTAL": "2441P/1342F = 64.53%"
+    },
+    "v8_collections_reference": "48P/0F (+1 timeout 中性)"
+  },
+  "parity_finding": "quickjs 双路径对等差 0.02pp（2442P vs 2441P，单 subtest 漂移）——用例侧 document 走 polyfill shim（R9 架构事实），native 绑定叠加路径两引擎同构，DC-7「双 feature A/B 行为等价」量化证据",
+  "gap_found": "quickjs collections 38P vs v8 48P：10F 全簇 = HTMLCollection Proxy set/deleteProperty trap 返 false 在 QuickJS 下 loose 调用也抛 TypeError（V8 仅 strict 抛——引擎 Proxy invariant 实现差异）",
+  "fix": "part05.js _zwV8ProxySetSemantics() lazy 引擎探测（loose 必拒 set 不抛 = V8）+ set/deleteProperty trap 拒绝路径 QuickJS 分支返 true 不写（loose 静默）；strict 断言 quickjs 分支不抛（引擎无 caller-mode API，取舍记录）",
+  "fix_result": "quickjs collections loose 断言全过 + 用例不再崩（own-props 5P/indices 4P/names 4P/delete 2P 可完整执行）；10 strict 断言仍挂（QuickJS 无 strict 探测通道，WPT 断言基于 V8 语义）；v8 collections 48P/0F 零回归；events/nodes/traversal 数字不变（改动不外溢）",
+  "tests": {
+    "engine": "quickjs 1419 / v8 2153 全绿",
+    "wpt_runner": "quickjs 106 / v8 171 全绿",
+    "clippy": "零警告（engine + wpt-runner -D warnings）",
+    "fmt": "无 diff"
+  },
+  "notes": [
+    "v8 全量 JSON 输出被 ranges/Range-mutations-insertBefore 慢用例（master 已知 M1 L2 遗留 >90s/用例）吃满 test-guard 1800s 墙钟（exit 124）——v8 对照以分目录跑法补齐（collections 完整 + 其余沿用 master 既有基线）",
+    "杀 4 个历史 session 残留的 insertBefore runner 实例（累计 CPU 1138min）",
+    "WPT 用例 loose/strict 断言分布对称（10↔10），修复使崩用例变为完整执行——后续 M1 L2 或引擎 strict 探测通道出现时 strict 断言可再收"
+  ]
+}

@@ -4193,6 +4193,25 @@
 
   // WebIDL `an array index` is a canonical numeric string: 0 ≤ n < 2^32−1（"0".."4294967294"）。
   // "-2"/"4294967295"+ 非规范索引 → 落 named getter（WPT supported-property-indices）。
+  // js-dom R76：QuickJS Proxy set-trap 拒绝语义差异探测（lazy 单次）。V8 对 set trap
+  // 返 false：loose 调用静默 no-op、strict 抛 TypeError（spec Proxy invariant 标准
+  // 行为，WPT HTMLCollection own-props 各 loose/strict 断言据此写）。QuickJS 对返
+  // false **loose 也抛** TypeError（"proxy: cannot set property"——引擎实现更严），
+  // 同 shim 在 quickjs 下 10 个 loose 断言炸（R76 quickjs collections 基线 38P/10F
+  // vs v8 48P/0F 实证）。探测：loose 调一个必拒的 set，不抛 = V8 语义。
+  var __zwV8ProxySetSemantics = null;
+  function _zwV8ProxySetSemantics() {
+    if (__zwV8ProxySetSemantics !== null) return __zwV8ProxySetSemantics;
+    try {
+      var p = new Proxy({}, { set: function () { return false; } });
+      p.x = 1; // loose——V8 静默，QuickJS 抛
+      __zwV8ProxySetSemantics = true;
+    } catch (_e) {
+      __zwV8ProxySetSemantics = false;
+    }
+    return __zwV8ProxySetSemantics;
+  }
+
   function _zwIsCanonicalIndex(s) {
     if (!/^(0|[1-9][0-9]*)$/.test(s)) return false;
     return s.length < 10 || (s.length === 10 && s <= '4294967294');
@@ -4563,14 +4582,18 @@
         }
         // spec：indexed/named setter 不存在——已有元素不可覆盖。trap 返 false：loose 静默
         // no-op、strict 由引擎抛 TypeError（WPT own-props 各 "strict" 断言）。
-        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return false;
+        // R76 QuickJS 差异：返 false 在 QuickJS 下 loose 也抛（见 _zwV8ProxySetSemantics
+        // 探测注释）——QuickJS 分支改返 true 不写（loose 静默 ✓；strict 断言丢——数量
+        // 少且 quickjs 矩阵 strict 断言本无引擎侧抛错通道，两害取轻）。
+        var _qjs = !_zwV8ProxySetSemantics();
+        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return _qjs ? true : false;
         var d = Object.getOwnPropertyDescriptor(t, s);
-        if (d && d.configurable === false) return false;
+        if (d && d.configurable === false) return _qjs ? true : false;
         // 已有 named（元素存在）：拒绝（WPT "Setting non-array index while named property exists"）。
-        if (namedFor(s) !== undefined) return false;
+        if (namedFor(s) !== undefined) return _qjs ? true : false;
         // 越界 indexed（无元素）：同样拒绝（WPT "Setting array index while indexed property
         // doesn't exist"：赋值后仍 undefined；strict 抛）。
-        if (_zwIsCanonicalIndex(s)) return false;
+        if (_zwIsCanonicalIndex(s)) return _qjs ? true : false;
         t[s] = v;
         return true;
       },
@@ -4595,16 +4618,19 @@
         // own expando 优先删除（WPT "shadows a named property that gets added later"：
         // delete expando 后 named getter 重新可见）。non-configurable expando 不可删（Proxy
         // invariant：trap 返 false；WPT "non-configurable expando" strict delete 抛）。
+        // R76 QuickJS：返 false 在 QuickJS loose 也抛（同 set trap 差异）——_qjs 分支
+        // 返 true 不删（loose 静默）。
+        var _qjs = !_zwV8ProxySetSemantics();
         if (Object.prototype.hasOwnProperty.call(t, s)) {
           var dd = Object.getOwnPropertyDescriptor(t, s);
-          if (dd && dd.configurable === false) return false;
+          if (dd && dd.configurable === false) return _qjs ? true : false;
           delete t[s];
           return true;
         }
         // spec：indexed/named 不可删除——trap 返 false：loose 静默 no-op、strict 抛 TypeError
         //（WPT HTMLCollection-delete "Strict id"/"Strict name"）。
-        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return false;
-        if (namedFor(s) !== undefined) return false;
+        if (_zwIsCanonicalIndex(s) && Number(s) < current().length) return _qjs ? true : false;
+        if (namedFor(s) !== undefined) return _qjs ? true : false;
         delete t[s];
         return true;
       },
