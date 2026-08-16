@@ -444,8 +444,13 @@ impl Painter {
         if container_w <= 0.0 || container_h <= 0.0 {
             return;
         }
-        let content_x = abs_x + box_node.border_left + box_node.padding_left;
-        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        // R57（M3）：canvas 内容显示对齐整数像素网格——布局浮点 y（IFC 行高
+        // 近似累积）使内容绘制跨像素边界 → 线带边缘半色调 vs Chromium 整数
+        // 布局的硬边（2d.reset.render.miter_limit 1.40% 的亚像素相位差根因，
+        // ±2px 平移对齐消不了亚像素）。round 到最近整数——对齐 Chromium 整数
+        // 布局语义（oracle A/B 的 ±2 平移容忍残余整数差）。
+        let content_x = (abs_x + box_node.border_left + box_node.padding_left).round();
+        let content_y = (abs_y + box_node.border_top + box_node.padding_top).round();
         self.primitives
             .add_image(zero_render_foundation::primitive::ImagePrimitive {
                 rect: zero_render_foundation::geometry::Rect::new(content_x, content_y, container_w, container_h),
