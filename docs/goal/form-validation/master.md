@@ -46,7 +46,7 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | V1 | WPT constraints 用例覆盖为零 | ✅ M1 切片 1 完成（45 导入 + 基线 3/909） |
-| V2 | 原生约束位计算缺失（permissive valid） | 🔄 M2 |
+| V2 | 原生约束位计算缺失（permissive valid） | ✅ M2 完成（约束位全系 + validityState 联动 + validationMessage 标准消息 + willValidate） |
 | V3 | 提交阻断缺失（interactive validation） | 🔄 M3 |
 | V4 | willValidate 真实化 | 🔄 M2 |
 | V5 | validationMessage 约束消息 | 🔄 M2 |
@@ -67,9 +67,9 @@
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT constraints 基线建立 | 🔄 进行中（切片 1 未开工） |
-| M2 — 约束计算完整化 | 未开始 |
-| M3 — 提交阻断与事件序列 | 未开始 |
+| M1 — WPT constraints 基线建立 | ✅ 完成（909/0 全灭——45 用例、约束位全系） |
+| M2 — 约束计算完整化 | ✅ 完成（validationMessage 标准消息 + requestSubmit interactive validation） |
+| M3 — 提交阻断与事件序列 | 🔄 进行中（requestSubmit 阻断已做——button click/host submit 的 validation 剩余） |
 
 ## 验证基线
 
