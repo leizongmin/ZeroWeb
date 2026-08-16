@@ -281,8 +281,10 @@
         // 节点类型判定：PI/fragment/comment/text 经 handle set；element 为默认（无 set 的 selector/handle 节点）。
         if (handle && _piHandles[handle] && _gp.ProcessingInstruction) return _gp.ProcessingInstruction.prototype;
         if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
-        if (handle && _commentHandles[handle] && _gp.Node) return _gp.Node.prototype;
-        if (handle && _textHandles[handle] && _gp.Node) return _gp.Node.prototype;
+        // R81：text/comment 节点的 instanceof 面对齐构造器（WPT Node-textContent
+        // `firstChild instanceof Text`——旧返 Node.prototype 使 instanceof Text false）。
+        if (handle && _commentHandles[handle] && _gp.Comment) return _gp.Comment.prototype;
+        if (handle && _textHandles[handle] && _gp.Text) return _gp.Text.prototype;
         // js-dom M4 R80：非 HTML 命名空间的 createElementNS 元素（SVG/MathML/自定义 ns）不是
         // HTMLElement（spec：接口由 namespace 决定——非 HTML ns 的元素只 instanceof Element；
         // WPT Document-createElementNS "Should not be an HTMLElement" 断言族）。回落 Element.prototype
@@ -4908,6 +4910,7 @@
         added.push(item);
       } else {
         var tn = __zw_create_text(String(item));
+        if (tn) _textHandles[tn] = true;
         if (handle) {
           __zw_append_child_handle(handle, tn);
           // R51c：registry 记账（collectSubtree 展开 + childNodes 融合视图依赖）；record 的

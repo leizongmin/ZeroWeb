@@ -975,13 +975,13 @@ fn r80_create_element_ns_html_uppercase_and_validation() {
            _exc(function(){ document.createElementNS(null, 'foo:'); }, 'InvalidCharacterError'),\n\
            _exc(function(){ document.createElementNS('http://example.com/', 'xml:foo'); }, 'NamespaceError'),\n\
            _exc(function(){ document.createElementNS('http://example.com/', 'xmlns:foo'); }, 'NamespaceError'),\n\
-           _exc(function(){ document.createElementNS('http://example.com/', 'f:o:o'); }, 'NamespaceError'),\n\
+           _exc(function(){ document.createElementNS('http://example.com/', 'f:o:o'); }, 'no-throw'),\n\
          ].join(',');",
     ).unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r80a").unwrap().value,
-        "SPAN,span,true,HTML:SPAN,span,html,SPAN,SPAN,span,false,true,NamespaceError,InvalidCharacterError,InvalidCharacterError,NamespaceError,NamespaceError,NamespaceError",
-        "R80：HTML ns createElementNS tagName 大写 / prefix·localName 原值 / 非 HTML ns 非 HTMLElement / validate-and-extract 全规则"
+        "SPAN,span,true,HTML:SPAN,span,html,SPAN,SPAN,span,false,true,NamespaceError,InvalidCharacterError,InvalidCharacterError,NamespaceError,NamespaceError,no-throw",
+        "R80/R81：HTML ns createElementNS tagName 大写 / prefix·localName 原值 / 非 HTML ns 非 HTMLElement / validate-and-extract（f:o:o 有 ns 合法——R81 spec 纠正）"
     );
 }
 
@@ -1004,5 +1004,100 @@ fn r80_node_constants_and_node_value() {
         sandbox.execute("globalThis.__r80b").unwrap().value,
         "true,true,true,true,4,3",
         "R80：Node 常量经实例原型链可见 + createElementNS HTML ns 接口按 localName + Element.nodeValue=null"
+    );
+}
+
+// js-dom M4 R81：Document-createElement-namespace 簇 + Node-textContent 簇（contentType/ns 派生、
+// Document textContent 恒 null、PI textContent=data、textContent 融合视图读 + 替换全部子语义）。
+
+#[test]
+fn r81_create_element_namespace_by_document_type() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var HTMLNS = 'http://www.w3.org/1999/xhtml';\n\
+         var htmlDoc = document.implementation.createHTMLDocument('t');\n\
+         var xhtmlDoc = document.implementation.createDocument(HTMLNS, 'html', null);\n\
+         var xmlDoc = document.implementation.createDocument(null, 'root', null);\n\
+         var svgDoc = document.implementation.createDocument('http://www.w3.org/2000/svg', 'svg', null);\n\
+         var newDoc = new Document();\n\
+         var parsed = new DOMParser().parseFromString('<root/>', 'text/xml');\n\
+         var parsedHtml = new DOMParser().parseFromString('<html><body>x</body></html>', 'text/html');\n\
+         globalThis.__r81a = [\n\
+           htmlDoc.contentType, htmlDoc.createElement('p').namespaceURI,\n\
+           xhtmlDoc.contentType, xhtmlDoc.createElement('p').namespaceURI,\n\
+           xmlDoc.contentType, xmlDoc.createElement('p').namespaceURI === null,\n\
+           svgDoc.contentType, svgDoc.createElement('p').namespaceURI === null,\n\
+           newDoc.contentType, newDoc.createElement('p').namespaceURI === null,\n\
+           parsed.contentType, parsed.createElement('p').namespaceURI === null,\n\
+           parsedHtml.contentType, parsedHtml.createElement('p').namespaceURI,\n\
+         ].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r81a").unwrap().value,
+        "text/html,http://www.w3.org/1999/xhtml,application/xhtml+xml,http://www.w3.org/1999/xhtml,application/xml,true,image/svg+xml,true,application/xml,true,text/xml,true,text/html,http://www.w3.org/1999/xhtml",
+        "R81：createElement ns 由文档类型派生（HTML/XHTML doc → HTML ns；XML/SVG/MathML/new Document/DOMParser-xml → null）"
+    );
+}
+
+#[test]
+fn r81_document_text_content_null_and_pi_text_content() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var pi = document.createProcessingInstruction('tgt', 'dat');\n\
+         var host = document.querySelector('#host');\n\
+         var oldTc = host.textContent;\n\
+         document.textContent = 'x';\n\
+         globalThis.__r81b = [\n\
+           document.nodeValue === null,\n\
+           document.textContent === null,\n\
+           pi.textContent,\n\
+           typeof Text, typeof Comment, typeof CharacterData,\n\
+           oldTc,\n\
+         ].join(',');\n\
+         pi.textContent = 'newdat';\n\
+         globalThis.__r81b2 = pi.textContent + ',' + pi.data;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r81b").unwrap().value,
+        "true,true,dat,function,function,function,A",
+        "R81：Document nodeValue/textContent 恒 null + setter no-op；PI textContent=data；CharacterData 族构造器存在"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r81b2").unwrap().value,
+        "newdat,newdat",
+        "R81：PI textContent= 写 data（spec CharacterData 同源）"
+    );
+}
+
+#[test]
+fn r81_text_content_fused_read_and_replace_children() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var p = document.querySelector('#a');\n\
+         var t1 = p.textContent;\n\
+         var host = document.querySelector('#host');\n\
+         var sub = document.createElement('span');\n\
+         sub.textContent = 'DEF';\n\
+         host.appendChild(sub);\n\
+         var t2 = host.textContent;\n\
+         var empty = document.createElement('div');\n\
+         empty.appendChild(document.createTextNode(''));\n\
+         empty.textContent = null;\n\
+         var eKids = empty.childNodes.length;\n\
+         var eFirst = empty.firstChild === null ? 'null' : String(empty.firstChild);\n\
+         host.textContent = null;\n\
+         var hKids = host.childNodes.length;\n\
+         var subParent = sub.parentNode === null ? 'null' : String(sub.parentNode);\n\
+         var literal = document.createElement('div');\n\
+         literal.textContent = '<b>xyz</b>';\n\
+         var litKids = literal.childNodes.length;\n\
+         var litData = literal.firstChild ? literal.firstChild.data : 'null';\n\
+         var litText = literal.textContent;\n\
+         globalThis.__r81c = [t1, t2, eKids, eFirst, hKids, subParent, litKids, litData, litText].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r81c").unwrap().value,
+        "A,ADEF,0,null,0,null,1,<b>xyz</b>,<b>xyz</b>",
+        "R81：textContent 融合 childNodes 拼接读（pending 子可见）+ setter 替换全部子（空文本子也清、子 parentNode 脱钩）+ 不解析 markup"
     );
 }

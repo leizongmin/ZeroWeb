@@ -52,7 +52,8 @@ fn test_text_content_null_clears_production_r3184() {
 
 #[test]
 fn test_text_content_undefined_is_string_production_r3184() {
-    // spec：仅 null 特判，undefined 仍 ToString → "undefined"（锁定 null/undefined 区别）。
+    // js-dom M4 R81 spec 纠正：undefined 与 null 同归空串（WPT Node-textContent "set to
+    // undefined" 期望 ""——WebIDL nullable DOMString 缺省语义；R3184 旧记录为错误语义）。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -84,8 +85,8 @@ fn test_text_content_undefined_is_string_production_r3184() {
         .collect();
     assert_eq!(
         texts,
-        vec!["undefined".to_string()],
-        "textContent=undefined 不特判 → ToString='undefined'（仅 null 清子）"
+        vec!["".to_string()],
+        "R81：textContent=undefined 与 null 同归空串（WPT Node-textContent spec 语义）"
     );
 }
 

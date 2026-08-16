@@ -268,6 +268,20 @@
     }
     return true;
   }
+  // js-dom M4 R81：HTML createElement 的校验面（WPT Document-createElement valid 列表）——
+  // 比 QName 宽：Name production（HTML any-name——`'}'`、`'<'`、`'\uffff'` 等在**非首字符**
+  // 合法；首字符限制同 NameStartChar）。区别：QName 校验（createElementNS）拒绝这些；HTML
+  // createElement 只要求整体是 Name（浏览器 HTML parser 的宽容性）。首字符仍须 NameStartChar
+  // （"1foo"/"}foo"/"<foo" invalid）。
+  function _zwIsValidHtmlElementName(name) {
+    if (name === '') return false;
+    // R81 修正：空白（"fo o"）与 '>'（"foo>"——invalid 列表）拒绝；'}'/'<'/'\uffff' 在非首
+    // 字符合法（valid 列表实测）。首字符 NameStartChar。
+    if (/[\s>]/.test(name)) return false;
+    var chars = Array.from(name);
+    if (!_zwIsNameStartChar(chars[0])) return false;
+    return true;
+  }
 
   // atob/btoa——Base64 编解码（Web 平台高频：data: URL / JWT / 二进制载荷）。纯 JS（ZW 无 base64
   // crate 在 engine，复用 fetch _b64decode 同款算法）。btoa 对 >255（非 Latin-1）抛 InvalidCharacterError

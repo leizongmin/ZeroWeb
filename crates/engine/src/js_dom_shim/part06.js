@@ -418,7 +418,12 @@
       walker.nextSibling = function () {
         materialize();
         var p = effPos();
-        if (p < 0) return null;
+        // R81：currentNode 不在 accepted（被 whatToShow 滤掉——如 document.firstChild=
+        // doctype 对 SHOW_ELEMENT）→ **结构序 lazy 找后续首个同级可接受节点**（spec §4.2.6
+        // nextSibling 对 currentNode 起算而非 accepted 位置；WPT TreeWalker
+        // createTreeWalker(document, SHOW_ELEMENT) currentNode=doctype 期望 nextSibling=
+        // html——document.childNodes 含 doctype 后的新形态）。回落：accepted 同父扫描。
+        if (p < 0) return _siblingByOrder(1);
         var par = parentAcceptedIdx[p];
         for (var i = p + 1; i < accepted.length; i++) {
           if (parentAcceptedIdx[i] === par) return moveTo(i);
@@ -428,13 +433,43 @@
       walker.previousSibling = function () {
         materialize();
         var p = effPos();
-        if (p < 0) return null;
+        if (p < 0) return _siblingByOrder(-1);
         var par = parentAcceptedIdx[p];
         for (var i = p - 1; i >= 0; i--) {
           if (parentAcceptedIdx[i] === par) return moveTo(i);
         }
         return null;
       };
+      // R81：结构序 sibling 步进——从 currentNode 在 order 中的位置向 dir 方向找与
+      // currentNode **同父**的节点，逐个 check（ACCEPT 返回；REJECT 跳子树；SKIP 继续）。
+      function _siblingByOrder(dir) {
+        orderInit();
+        syncOrderPosTo(currentNodeVal);
+        var i = orderPos;
+        if (i < 0) return null;
+        var _par = null;
+        try { _par = currentNodeVal.parentNode; } catch (_e) { _par = null; }
+        while (dir > 0 ? (i + 1 < order.length) : (i - 1 >= 0)) {
+          i += dir;
+          var nd = order[i];
+          var np = null;
+          try { np = nd.parentNode; } catch (_e2) { np = null; }
+          if (np !== _par) {
+            // 越过子树（深度不同）——跳到该子树区间外。
+            if (dir > 0) { if (orderEnd[i] > i) i = orderEnd[i] - 1; }
+            else { /* 向前无子树跳跃（前向按序扫） */ }
+            continue;
+          }
+          var r = check(nd);
+          if (r === 1) { orderPos = i; idx = accepted.indexOf(nd); currentNodeVal = nd; return nd; }
+          if (r === 2) {
+            if (dir > 0 && orderEnd[i] > i) i = orderEnd[i] - 1;
+            continue;
+          }
+          if (dir > 0 && orderEnd[i] > i + 1) i = orderEnd[i] - 1; // SKIP 也跳过其子树内的非同级
+        }
+        return null;
+      }
     }
     return walker;
   }
@@ -1125,10 +1160,12 @@
     },
     createElement: function(tag) {
       tag = String(tag);
-      // spec `dom-document-createelement` validate：非法标签名（空/首字符非 name-start/含
-      // <>空白等）→ 抛 InvalidCharacterError DOMException。与 native dom_bindings
-      // is_valid_qualified_name 逻辑对齐（A/B 等价）。createElement(undefined)→"undefined" 合法通过。
-      if (!_zwIsValidQualifiedName(tag)) {
+      // spec `dom-document-createelement` validate：非法标签名（空/首字符非 name-start）→
+      // 抛 InvalidCharacterError DOMException。R81 spec 纠正：HTML createElement 用 Name
+      // production（`_zwIsValidHtmlElementName`——非首字符宽容，`'f}oo'`/`'f<oo'` 合法；
+      // WPT Document-createElement valid 列表），区别 createElementNS 的 QName 校验。
+      // createElement(undefined)→"undefined" 合法通过。
+      if (!_zwIsValidHtmlElementName(tag)) {
         // 用 globalThis.DOMException（native_dom=true 叠加路径下 = 原生 DOMException；纯 polyfill 下 =
         // part01b 的）——保证 e.constructor === self.DOMException（WPT assert_throws_dom "wrong global"
         // 要求，R6 定位）。裸 new DOMException 走词法作用域，叠加路径下 wrong global。
@@ -1157,28 +1194,67 @@
       // https://dom.spec.whatwg.org/#validate-and-extract
       var _XML_NS = 'http://www.w3.org/XML/1998/namespace';
       var _XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+      // R81 spec 对齐（WPT Document-createElementNS 全期望表）：**整个 qualifiedName** 须是
+      // XML Name（首字符 NameStartChar；'}'/'<'/'\uffff' 等非首字符合法——XML 1.0 第五版
+      // NameChar 宽集合）；带冒号时 prefix = 首冒号前、localName = 其余（localName 内可再含
+      // 冒号——'f:o:o' 有 ns 时合法、无 ns 时 NamespaceError；'a:0' 因 '0' 破坏整名 Name 首字符
+      // 规则外——注意 'a:0' 期望 INVALID：localName '0' 非法；'0:a' 期望合法——真浏览器
+      // 仅校验整体 Name？实测表为准：整体通过 Name 校验 + localName 段也须 Name，prefix 段
+      // 从宽（'0:a' 的 prefix '0' 不校验）。以 WPT 期望表逐条对齐：
+      //   非法（InvalidCharacterError）：空名 / ':foo'（空前缀）/ 'foo:'（空 localName）/
+      //     首/任意段首字符非 NameStartChar（'}foo'/'1foo'/'.foo'/'-foo'/'fo o'/'a:0'）
+      //   非法（NamespaceError）：prefix 存在但 ns 空 / prefix 或 localName 为 'xmlns' 相关
+      //     保留绑定违规 / localName 'xmlns' 且 ns 非 XMLNS ns
+      //   合法：'f:o:o'（ns 非空）/ 'f::oo' / '0:a'（prefix 从宽）
       var _colon1 = _q.indexOf(':');
       var _pre = _colon1 >= 0 ? _q.slice(0, _colon1) : null;
       var _loc = _colon1 >= 0 ? _q.slice(_colon1 + 1) : _q;
       var _throwDom = function (name, msg) {
         throw new (globalThis.DOMException || Error)(msg, name);
       };
-      if (!_zwIsValidQualifiedName(_q) || (_colon1 === 0) || (_colon1 === _q.length - 1)) {
+      // 整名 Name 校验（首字符 NameStartChar——'_'/':'/字母/≥0x80；'0:a' 首字符 '0' 按表应
+      // 合法，故整名校验仅当**无 prefix** 时对首字符严格；有 prefix 时放宽为首段（prefix 段
+      // 从宽，localName 段首字符严格）。
+      if (_q === '' || _colon1 === 0 || _colon1 === _q.length - 1) {
         _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
       }
+      // R81 对 WPT 期望表逐条对齐（XML 1.0 5th ed NameChar 宽集合——'}'/'<'/'\uffff' 等
+      // 非 NameStart 字符在**非首位置**合法；禁止的是空白与 '>'）：
+      // ① 无 prefix：首字符 NameStartChar + 全名无空白/'>'（'foo>'/'fo o' Invalid；'f}oo' Valid）
+      // ② 有 prefix：localName 段首字符 NameStartChar + 段内无空白/'>'（'a:0' Invalid；
+      //    'namespaceURI:a ' 尾空白 Invalid）；prefix 段不校验（'0:a' Valid）
+      // ③ ns = XMLNS ns：localName 恰为 'xmlns' 或 prefix 'xmlns' → 合法；其余 → NamespaceError
+      //    （spec：XMLNS ns 仅允许 xmlns 元素）
+      if (/[\s>]/.test(_q)) {
+        _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
+      }
+      if (_pre === null) {
+        if (!_zwIsNameStartChar(Array.from(_q)[0])) {
+          _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
+        }
+      } else {
+        var _locChars = Array.from(_loc);
+        if (!_locChars.length || !_zwIsNameStartChar(_locChars[0])) {
+          _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
+        }
+      }
+      if (_nsStr === _XMLNS_NS) {
+        var _xmlnsOk = (_loc === 'xmlns' && _pre === null) || (_pre === 'xmlns');
+        if (!_xmlnsOk) {
+          _throwDom('NamespaceError', 'The xmlns namespace is not allowed for elements.');
+        }
+      }
       if (_pre !== null) {
-        // prefix 存在：ns 须非空；prefix/localName 内不得再含冒号；xml/xmlns 保留绑定。
+        // prefix 存在：ns 须非空（'f:o:o' 无 ns → NamespaceError）；xml/xmlns prefix 保留绑定
+        //（'xmlns' prefix 仅在 ns = XMLNS ns 时合法——上面 XMLNS 分支放行，其余 ns → Error）。
         if (_nsStr === '') {
           _throwDom('NamespaceError', 'Namespace prefix provided but no namespace.');
-        }
-        if (_pre.indexOf(':') >= 0 || _loc.indexOf(':') >= 0) {
-          _throwDom('NamespaceError', 'Malformed qualified name.');
         }
         if (_pre === 'xml' && _nsStr !== _XML_NS) {
           _throwDom('NamespaceError', "Prefix 'xml' must be bound to the XML namespace.");
         }
-        if (_pre === 'xmlns') {
-          _throwDom('NamespaceError', "Prefix 'xmlns' is not allowed for elements.");
+        if (_pre === 'xmlns' && _nsStr !== _XMLNS_NS) {
+          _throwDom('NamespaceError', "Prefix 'xmlns' requires the XMLNS namespace.");
         }
       } else if (_loc === 'xmlns' && _nsStr !== _XMLNS_NS) {
         _throwDom('NamespaceError', "Local name 'xmlns' requires the XMLNS namespace.");
@@ -1368,12 +1444,36 @@
       // xmlDoc 树）。spec：createDocument(namespace, qualifiedName, doctype) 步骤 8 附 doctype。
       createDocument: function(_ns, _qn, doctype) {
         var d = _makeDetachedDocument('');
-        if (doctype && doctype.nodeType === 10) d.appendChild(doctype);
+        // js-dom M4 R81：spec DOMImplementation.createDocument —— 返回 XML Document（contentType
+        // 'application/xml'，createElement 的 ns 恒 null——除非 XHTML/SVG ns 调用）。ns 参数为
+        // 文档的默认 ns，但 spec createElement 的元素 ns 由 **document 类型**派生（XML → null，
+        // XHTML ns 调用 → HTML ns）；WPT Document-createElement-namespace 期望 'application/xhtml+xml'
+        //（XHTML ns 调用）→ HTML ns，SVG/MathML/XML → null。
+        var nsStr = (_ns == null) ? '' : String(_ns);
+        d.contentType = nsStr === 'http://www.w3.org/1999/xhtml'
+          ? 'application/xhtml+xml'
+          : (nsStr === 'http://www.w3.org/2000/svg' ? 'image/svg+xml' : 'application/xml');
+        d._docNS = nsStr === 'http://www.w3.org/1999/xhtml' ? 'http://www.w3.org/1999/xhtml' : null;
+        if (doctype && doctype.nodeType === 10) {
+          // R81：doctype 归属重指（spec：append 时 adopt——createDocumentType 的 ownerDocument
+          // 在主文档创建，append 进 xmlDoc 后属 xmlDoc；WPT Node-properties
+          // xmlDoctype.ownerDocument 期望 xmlDoc（4 children））。
+          try { delete doctype.ownerDocument; } catch (_eDt) {}
+          Object.defineProperty(doctype, 'ownerDocument', { get: function () { return d; }, configurable: true });
+          d.appendChild(doctype);
+        }
         return d;
       },
       createHTMLDocument: function(title) {
         var d = _makeDetachedDocument(title);
         d.appendChild(d.implementation.createDocumentType('html', '', ''));
+        // R81：spec —— createHTMLDocument 的树 = [doctype, html(含 head+body)]。documentElement
+        // 须入 doc.childNodes（WPT Node-properties foreignDoc.childNodes.length 期望 3 =
+        // [doctype, html, foreignComment]；旧只有 doctype + 后续 append 的节点）。
+        d.appendChild(d.documentElement);
+        // R81：spec —— HTML Document：contentType 'text/html'，createElement ns = HTML ns。
+        d.contentType = 'text/html';
+        d._docNS = 'http://www.w3.org/1999/xhtml';
         return d;
       },
       // `createDocumentType(qualifiedName, publicId, systemId)`（spec `dom-domimplementation-createdocumenttype`，
@@ -1389,13 +1489,33 @@
           publicId: String(publicId == null ? '' : publicId),
           systemId: String(systemId == null ? '' : systemId),
           ownerDocument: owner,
-          nodeValue: null,
-          textContent: null,
+          get nodeValue() { return null; },
+          set nodeValue(_v) {},
+          // R81：DocumentType textContent 恒 null + setter no-op（spec；WPT "created by script"）。
+          get textContent() { return null; },
+          set textContent(_v) {},
           // js-dom M4 R79：Node.contains / compareDocumentPosition（testNodes 的 doctype 族）。
           childNodes: [],
           hasChildNodes: function () { return false; },
           contains: function (other) { return _zwNodeContains(dt, other); },
           compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
+          // js-dom M4 R81：导航面补齐（WPT Node-properties doctype.previousSibling/nextSibling/
+          // parentElement/firstChild/lastChild——旧全 undefined ≠ null）。
+          get firstChild() { return null; },
+          get lastChild() { return null; },
+          get parentElement() { var p = this.parentNode; return p && p.nodeType === 1 ? p : null; },
+          get previousSibling() {
+            var p = this.parentNode;
+            if (!p) return null;
+            var i = p.childNodes.indexOf(this);
+            return i > 0 ? p.childNodes[i - 1] : null;
+          },
+          get nextSibling() {
+            var p = this.parentNode;
+            if (!p) return null;
+            var i = p.childNodes.indexOf(this);
+            return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
+          },
           parentNode: null,
         };
         return dt;
@@ -1424,12 +1544,23 @@
         systemId: '',
         get ownerDocument() { return globalThis.document; },
         get parentNode() { return globalThis.document; },
-        nodeValue: null,
-        textContent: null,
+        get nodeValue() { return null; },
+        set nodeValue(_v) {},
+        // R81：DocumentType 的 textContent 恒 null + setter no-op（spec；WPT "For DocumentType
+        // created by parser/script, setting textContent should do nothing"——旧普通属性被赋值覆盖）。
+        get textContent() { return null; },
+        set textContent(_v) {},
         childNodes: [],
         hasChildNodes: function () { return false; },
         contains: function (other) { return _zwNodeContains(dt, other); },
         compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
+        // R81：主文档 doctype 导航面（WPT Node-properties doctype.nextSibling 期望 html——
+        // document.childNodes = [doctype, html]；firstChild/lastChild/parentElement 恒 null）。
+        get firstChild() { return null; },
+        get lastChild() { return null; },
+        get parentElement() { return null; },
+        get previousSibling() { return null; },
+        get nextSibling() { return (globalThis.document && globalThis.document.documentElement) || null; },
       };
       return dt;
     })(),
@@ -1439,6 +1570,21 @@
     nodeName: '#document',
     isConnected: true,
     hasChildNodes: function () { return true; },
+    // js-dom M4 R81：Document 的 textContent/nodeValue 恒 null（spec dom-node-textcontent：
+    // Document/DocumentType 的 textContent 为 null——无 Text 子拼接语义）。旧缺 → undefined。
+    // setter no-op（spec：Document 的 textContent 设置不产生效果——WPT "setting textContent
+    // should do nothing"；getter-only accessor 使赋值静默失败/忽略）。
+    get nodeValue() { return null; },
+    set nodeValue(_v) { /* no-op */ },
+    get textContent() { return null; },
+    set textContent(_v) { /* spec：Document textContent setter 不生效 */ },
+    // R81：Document 导航面（WPT Node-properties document.parentNode/parentElement/
+    // nextSibling/previousSibling/ownerDocument 恒 null——spec：Document 是树根）。
+    get parentNode() { return null; },
+    get parentElement() { return null; },
+    get nextSibling() { return null; },
+    get previousSibling() { return null; },
+    get ownerDocument() { return null; },
     // js-dom M4 R79：Node.contains / compareDocumentPosition 在 document 上（WPT testNodes 含
     // "document"——`paras[0].compareDocumentPosition(document)` 等）。spec：document.contains(x)
     // = x 在 document 子树（一切 connected 节点）；document.compareDocumentPosition 是 LCA 判定
@@ -1450,18 +1596,21 @@
     contains: function (other) { return _zwNodeContains(globalThis.document, other); },
     compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(globalThis.document, other); },
     get childNodes() {
-      // R79：**不含 doctype**——与 WPT oracle 的 previousNode 遍历世界一致（html.previousSibling
-      // 经 __zw_sibling_nodes 快照对 doctype 恒 null——快照不追踪 document 子序；若此处含
-      // doctype，LCA 序判定与 oracle 的树序推导矛盾：`paras[0].compareDocumentPosition(doctype)`
-      // oracle=4（previousNode 遍历经 html.previousSibling=null 跳到 document，不可达 doctype）。
-      // doctype 经自身 parentNode=doc 进链参与 contains/ancestor 判定即可。
-      return [_wrapSelector('html')];
+      // R79 注记：曾「不含 doctype」与 WPT oracle previousNode 遍历世界对齐（html.previousSibling
+      // 快照恒 null）。R81 spec 纠正：真浏览器 document.childNodes = [doctype, html]（WPT
+      // Node-properties document.childNodes.length 期望 2、childNodes[0] 为 DocumentType）。
+      // html.previousSibling 仍走 __zw_sibling_nodes 快照（R80 后 R79 的遍历一致性问题已由
+      // JS 侧 _zwCompareDocumentPosition 链式判定取代，不依赖该子序）。
+      return [this.doctype, _wrapSelector('html')];
     },
-    get firstChild() { return _wrapSelector('html'); },
+    get firstChild() { return this.doctype; },
     get lastChild() { return _wrapSelector('html'); },
     compatMode: 'CSS1Compat',
     characterSet: 'UTF-8',
     charset: 'UTF-8',
+    // R81：inputEncoding（WPT Node-properties document.inputEncoding 期望 "UTF-8"；spec
+    // DOM Document.inputEncoding = characterSet 别名，readonly）。
+    get inputEncoding() { return 'UTF-8'; },
     contentType: 'text/html',
     readyState: 'complete',
     // fullscreen（R2817 stub → R2938 spec-alike 状态追踪 + 事件）。headless 无真 OS 全屏，但 fullscreenElement
@@ -2479,6 +2628,11 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     contains: function (other) { return _zwNodeContains(node, other); },
     compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(node, other); },
   };
+  // R81：原型挂 Text.prototype（instanceof Text / CharacterData / Node——WPT Node-textContent
+  // `firstChild instanceof Text` 断言；own 字段优先，原型链只补构造器身份）。
+  if (globalThis.Text && globalThis.Text.prototype) {
+    try { Object.setPrototypeOf(node, globalThis.Text.prototype); } catch (_eTextProto) {}
+  }
   // js-dom M4 R49：data/nodeValue 可写 + CharacterData 方法——textContent=/innerHTML= 建的本地
   // 文本节点须可继续编辑（WPT takeRecords `n.firstChild.data='new data'` 发 characterData record，
   // spec target=文本节点）。写经「父 sel + child 索引 0」（SetChildText，同 R48 _wrapNodeEntry 模式）；
@@ -2523,7 +2677,9 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     return node.__nv.slice(a, a + b);
   };
   Object.defineProperty(node, 'parentNode', { get: function () { return el; }, enumerable: true, configurable: true });
-  Object.defineProperty(node, 'parentElement', { get: function () { return el; }, enumerable: true, configurable: true });
+  // R81：parentElement 仅当父为 Element（spec Node.parentElement——父非元素（document 等）→
+  // null；WPT Node-properties 文本节点 parentElement 族）。
+  Object.defineProperty(node, 'parentElement', { get: function () { try { return (el && el.nodeType === 1) ? el : null; } catch (_e) { return null; } }, enumerable: true, configurable: true });
   var entry = { el: el, handle: handle, sel: sel, text: text, node: node };
   _zwTextEls.push(entry);
   _zwTextElsByEl.set(el, entry);

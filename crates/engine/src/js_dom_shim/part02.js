@@ -1600,6 +1600,42 @@
     var html = str == null ? '' : String(str);
     var d = new _zwParsedDoc(html);
     d.mimeType = mimeType || 'text/html';
+    // js-dom M4 R81：spec DOMParser —— Document.contentType = 解析 MIME；createElement 的
+    // namespaceURI 由 contentType 派生（text/html 与 application/xhtml+xml → HTML ns；XML/SVG
+    // → null——spec 元素 ns 由文档类型决定，WPT Document-createElement-namespace）。
+    d.contentType = d.mimeType;
+    var _HTML_NS = 'http://www.w3.org/1999/xhtml';
+    d._htmlDoc = (d.mimeType === 'text/html' || d.mimeType === 'application/xhtml+xml');
+    d._defaultNS = d._htmlDoc ? _HTML_NS : null;
+    // createElement：轻量节点（tagName 大写 + localName 小写 + namespaceURI + parentNode null）。
+    d.createElement = function (t) {
+      var tag = String(t);
+      var n = {
+        nodeType: 1,
+        tagName: tag.toUpperCase(),
+        nodeName: tag.toUpperCase(),
+        localName: tag.toLowerCase(),
+        namespaceURI: d._defaultNS,
+        prefix: null,
+        nodeValue: null,
+        childNodes: [],
+        children: [],
+        parentNode: null,
+        ownerDocument: d,
+        hasChildNodes: function () { return false; },
+        contains: function (other) { return globalThis._zwNodeContains ? globalThis._zwNodeContains(n, other) : other === n; },
+        compareDocumentPosition: function (other) { return globalThis._zwCompareDocumentPosition ? globalThis._zwCompareDocumentPosition(n, other) : 1 | 32; },
+      };
+      return n;
+    };
+    d.createElementNS = function (ns, q) {
+      var n = d.createElement(q);
+      var _nsStr = (ns == null) ? '' : String(ns);
+      n.namespaceURI = _nsStr || null;
+      var c = String(q).indexOf(':');
+      if (c > 0) { n.prefix = String(q).slice(0, c); n.localName = String(q).slice(c + 1); n.tagName = String(q); n.nodeName = String(q); }
+      return n;
+    };
     return d;
   };
 

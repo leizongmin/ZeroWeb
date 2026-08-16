@@ -324,12 +324,52 @@
           return function (init) { return _attachShadow(sel, handle, init); };
         }
         if (prop === 'textContent' || prop === 'innerText') {
+          // R81：PI 的 textContent = data（早于下方通用分支——通用 host 路径对 PI 读错误值）。
+          if (handle && _piHandles[handle] && prop === 'textContent') {
+            return _piHandles[handle].data;
+          }
           // `innerText`（R3260）≈ textContent 近似——real innerText 是 layout/CSS-aware（排除 hidden 元素、
           // `<br>`/block →换行、white-space 处理）；headless 无 layout 透出到 JS，best-effort 返 textContent。
           // 高频读元素渲染文本（`el.innerText` 此前返 undefined）；setter 同 textContent（替换全部子为文本节点）。
           // R3028：sel-based 走 latest-wins（consult 变更列表，闭合 `textContent=` 后 getter stale 旧值）；
           // 回调未注册（polyfill/其它环境）→ fallback 纯快照 `__zw_get_text`。
-          if (handle) return __zw_get_text_handle(handle);
+          // js-dom M4 R81：textContent = 子树全部 Text 后代 data 拼接（spec dom-node-textcontent——
+          // comment/PI 不计入，元素递归）。旧 handle 元素读 host 注册文本（pending 子不可见 → ''，WPT
+          // Node-textContent "Element with children/descendants" 簇）；改 JS 侧沿**融合 childNodes 视图**
+          // 递归拼接（pending 自然正确，host 回调仍作无子回落）。innerText best-effort 同源（近似语义维持）。
+          if (handle) {
+            var _tcKids = (function () {
+              // R81：容器 handle（fragment/shadow）只读 registry（textContent= 的文本子已入
+              // registry——本地注册 + registry 融合会双份）。
+              if (_isContainerHandle(handle)) return _handleChildNodes(handle);
+              if (!sel && handle) {
+                var _tcL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+                var _tcK = (_handleChildren[handle] || []).slice();
+                if (_tcL && _tcL.length) return _tcL.concat(_tcK);
+                if (_tcK.length) return _tcK;
+                if (_tcL) return _tcL;
+                return _childNodeList(sel, handle);
+              }
+              return _childNodeList(sel, handle);
+            })();
+            var _tcOut = '';
+            for (var _tci = 0; _tci < _tcKids.length; _tci++) {
+              var _tcn = _tcKids[_tci];
+              if (!_tcn) continue;
+              // R81：CDATA（nodeType 4）与 PI（7）的 textContent 也是 data（spec CharacterData +
+              // ProcessingInstruction 的 textContent 语义；WPT Node-properties testDiv.textContent
+              // 期望 CDATA 内容计入拼接——spec dom-node-textcontent 对 CDATA/PI 子节点取其 data）。
+              if (_tcn.nodeType === 3 || _tcn.nodeType === 4) _tcOut += String(_tcn.nodeValue != null ? _tcn.nodeValue : (_tcn.data != null ? _tcn.data : ''));
+              else if (_tcn.nodeType === 7) _tcOut += String(_tcn.data != null ? _tcn.data : '');
+              else if (_tcn.nodeType === 1 && typeof _tcn.textContent === 'string') _tcOut += _tcn.textContent;
+            }
+            if (_tcOut !== '' || _tcKids.length > 0) return _tcOut;
+            // R81：textContent= 的 JS 侧写入值优先于 host 变更重放（旧 AppendChild 文本残留）。
+            if (typeof _zwTextWritten !== 'undefined' && _zwTextWritten && Object.prototype.hasOwnProperty.call(_zwTextWritten, handle)) {
+              return _zwTextWritten[handle];
+            }
+            return __zw_get_text_handle(handle);
+          }
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
         if (prop === 'innerHTML') {
@@ -374,6 +414,19 @@
           // item/namedItem + indexed/named properties）。旧返纯数组缺 namedItem（WPT HTMLCollection-empty-name
           // "Element.children" fail：`c.namedItem("")` 抛 TypeError）。经 _zwMakeCollection(true) 包成
           // HTMLCollection（含 R38 namedItem 空串守卫）。_splitSelectors 已 .map(_wrapSelector) 返 proxy 数组。
+          // js-dom M4 R81：handle 元素（createElement 容器）从融合 childNodes 过滤元素子（pending
+          // 子可见——WPT Node-properties testDiv.children[0..5]；host 回调只对 sel-based 有意义）。
+          if (!sel && handle) {
+            var _r81Kids = (function () {
+              var _cl = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+              var _ck = (_handleChildren[handle] || []).slice();
+              if (_cl && _cl.length) return _cl.concat(_ck);
+              if (_ck.length) return _ck;
+              if (_cl) return _cl;
+              return [];
+            })();
+            return _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true);
+          }
           return sel && typeof __zw_element_children === 'function'
             ? _zwMakeCollection(_splitSelectors(__zw_element_children(sel)), true) : _zwMakeCollection([], true);
         }
@@ -385,6 +438,22 @@
             if (!ek.length) return null;
             return prop === 'firstElementChild' ? ek[0] : ek[ek.length - 1];
           }
+          // js-dom M4 R81：handle 元素（createElement 容器，mutation pending）从**融合
+          // childNodes 视图**过滤元素子——WPT Node-properties testDiv.children[0]（setup 建
+          // div 挂 body 后 append 6 paras，host 快照无 pending 子）旧恒 null/0。
+          if (!sel && handle) {
+            var _fecKids = (function () {
+              var _fl2 = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+              var _fk2 = (_handleChildren[handle] || []).slice();
+              if (_fl2 && _fl2.length) return _fl2.concat(_fk2);
+              if (_fk2.length) return _fk2;
+              if (_fl2) return _fl2;
+              return [];
+            })().filter(function (k) { return k && k.nodeType === 1; });
+            if (prop === 'childElementCount') return _fecKids.length;
+            if (!_fecKids.length) return null;
+            return prop === 'firstElementChild' ? _fecKids[0] : _fecKids[_fecKids.length - 1];
+          }
           if (!sel || typeof __zw_element_children !== 'function') {
             return prop === 'childElementCount' ? 0 : null;
           }
@@ -394,6 +463,29 @@
           return prop === 'firstElementChild' ? kids[0] : kids[kids.length - 1];
         }
         if (prop === 'previousElementSibling' || prop === 'nextElementSibling') {
+          // js-dom M4 R81：handle 元素经父融合 childNodes 过滤元素子定位（host 回调只对 sel 有效；
+          // WPT Node-properties paras[0].nextElementSibling——setup 建的 pending 子旧恒 null）。
+          if (!sel && handle) {
+            var _plink = _zwNodeParent ? _zwNodeParent[handle] : null;
+            var _pk = null;
+            if (_plink && _plink.parentSel) {
+              var _ppx = _makeProxy(_plink.parentSel, null);
+              _pk = _ppx.childNodes;
+            } else if (_plink && _plink.parentHandle) {
+              _pk = _makeProxy(null, _plink.parentHandle).childNodes;
+            }
+            if (_pk) {
+              var _pkEls = [];
+              for (var _pki = 0; _pki < _pk.length; _pki++) {
+                if (_pk[_pki] && _pk[_pki].nodeType === 1) _pkEls.push(_pk[_pki]);
+              }
+              var _pidx = -1;
+              for (var _pj = 0; _pj < _pkEls.length; _pj++) { if (_pkEls[_pj] === _makeProxy(sel, handle)) { _pidx = _pj; break; } }
+              if (prop === 'previousElementSibling') return _pidx > 0 ? _pkEls[_pidx - 1] : null;
+              return _pidx >= 0 && _pidx < _pkEls.length - 1 ? _pkEls[_pidx + 1] : null;
+            }
+            return null;
+          }
           if (!sel || typeof __zw_element_siblings !== 'function') return null;
           try {
             var parts = __zw_element_siblings(sel).split('|');
@@ -629,10 +721,18 @@
         if (prop === 'localName') {
           if (isFrag || isShadow || isComment || isText || isPI) return null;
           if (isNs) return _nsLocal(_nsHandles[handle].qualifiedName);
+          // R81 spec 纠正：HTML createElement 对**非法**限定名（含冒号——Name production 允许
+          // ':' 但 HTML 元素名不允许）**不解析 prefix**——localName = 全名 ASCII 小写（WPT
+          // Document-createElement `createElement(":")` 期望 localName ":"；`"f:oo"` 期望
+          // "f:oo"——HTML parser 不拆 NS，冒号是普通字符）。ASCII-only 小写（spec
+          // ASCII-lowercase——'İ'/'K' 等 Unicode 大写不变，JS toLowerCase 会错误转换）。
           var _ln = _realTag(sel, handle);
-          var _colon = _ln.indexOf(':');
-          if (_colon >= 0) _ln = _ln.slice(_colon + 1);
-          return _ln.toLowerCase();
+          var _lnOut = '';
+          for (var _lni = 0; _lni < _ln.length; _lni++) {
+            var _lnc = _ln.charAt(_lni);
+            _lnOut += (_lnc >= 'A' && _lnc <= 'Z') ? String.fromCharCode(_lnc.charCodeAt(0) + 32) : _lnc;
+          }
+          return _lnOut;
         }
         // `element.prefix`（spec `dom-node-prefix`，R12）：限定名冒号前部分；无冒号 → null。非 Element → null。
         // createElementNS handle（isNs）：从原 qualifiedName 冒号前取，大小写敏感（spec createElementNS
@@ -641,9 +741,9 @@
         if (prop === 'prefix') {
           if (isFrag || isShadow || isComment || isText || isPI) return null;
           if (isNs) return _nsPrefix(_nsHandles[handle].qualifiedName);
-          var _pfTag = _realTag(sel, handle);
-          var _pfColon = _pfTag.indexOf(':');
-          return _pfColon >= 0 ? _pfTag.slice(0, _pfColon) : null;
+          // R81 spec 纠正：HTML createElement 的含冒号名**无 prefix**（localName = 全名小写，
+          // WPT `createElement("f:oo")` 期望 prefix null——HTML 元素不经 NS 解析）。
+          return null;
         }
         if (prop === 'nodeName') {
           if (isShadow) return '#shadow-root';
@@ -683,11 +783,51 @@
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
           return handle ? __zw_get_text_handle(handle) : '';
         }
+        // js-dom M4 R81：Text/Comment 的 textContent = data（spec dom-node-textcontent——
+        // CharacterData 的 textContent 与 data 同源；旧落到 undefined）。PI 分支在上方已处理。
+        if ((isText || isComment) && prop === 'textContent') {
+          return handle ? __zw_get_text_handle(handle) : '';
+        }
+        // js-dom M4 R81：Text 的 wholeText = 同父相邻文本节点 data 拼接（spec dom-text-wholetext；
+        // 无父/无兄弟即自身 data——WPT Node-properties detachedTextNode.wholeText）+ length
+        // = data 长度（spec CharacterData.length）。
+        if (isText && prop === 'wholeText') {
+          var _wtData = handle ? __zw_get_text_handle(handle) : '';
+          var _wtParent = _parentNodeFor(sel, handle);
+          if (!_wtParent || !_wtParent.childNodes) return _wtData;
+          var _wtOut = '';
+          for (var _wti = 0; _wti < _wtParent.childNodes.length; _wti++) {
+            var _wtc = _wtParent.childNodes[_wti];
+            if (_wtc && _wtc.nodeType === 3) _wtOut += String(_wtc.data != null ? _wtc.data : '');
+          }
+          return _wtOut || _wtData;
+        }
+        // js-dom M4 R81：Text/Comment/PI 节点无子（spec——CharacterData/PI 为叶子节点）：
+        // firstChild/lastChild/childNodes 恒 null/[]。旧落入元素分支读 host 子列表（对叶子
+        // 无意义且可能返回 undefined ≠ null）。WPT Node-textContent `emptyText.firstChild===null`。
+        if ((isText || isComment || isPI) && (prop === 'firstChild' || prop === 'lastChild')) {
+          return null;
+        }
         // js-dom M4 R80：Element 节点的 nodeValue = null（spec dom-node-nodevalue——Attr/Document/
         // DocumentFragment/Element 恒 null；旧缺此分支返 undefined，WPT Document-createElementNS
         // `assert_equals(element.nodeValue, null)` 85F 簇）。textContent setter 另有分支（下方）。
-        if (prop === 'nodeValue' && !isFrag && !isShadow) {
+        // R81：fragment/shadow 的 nodeValue 也恒 null（spec——DocumentFragment 无 nodeValue）。
+        if (prop === 'nodeValue') {
           return null;
+        }
+        // js-dom M4 R81：fragment/shadow 的 textContent = 子树文本拼接（spec dom-node-textcontent
+        // 对 DocumentFragment 与 Element 同构；WPT Node-properties xmlDocfrag.textContent 期望 ""
+        // 非 undefined）。
+        if ((isFrag || isShadow) && prop === 'textContent') {
+          var _fkIds = _handleChildNodes(handle);
+          var _fkOut = '';
+          for (var _fki = 0; _fki < _fkIds.length; _fki++) {
+            var _fkn = _fkIds[_fki];
+            if (!_fkn) continue;
+            if (_fkn.nodeType === 3 || _fkn.nodeType === 4) _fkOut += String(_fkn.nodeValue != null ? _fkn.nodeValue : (_fkn.data != null ? _fkn.data : ''));
+            else if (_fkn.nodeType === 1 && typeof _fkn.textContent === 'string') _fkOut += _fkn.textContent;
+          }
+          return _fkOut;
         }
         // ProcessingInstruction 节点（js-dom M4）：`.target` = PI target，`.data`/`.nodeValue` = PI data
         //（spec `dom-processinginstruction`：data 即 CharacterData.data；nodeName = target 见上）。读自 _piHandles。
@@ -696,6 +836,9 @@
           if (prop === 'target') return _pi ? _pi.target : '';
           if (prop === 'data' || prop === 'nodeValue') return _pi ? _pi.data : '';
           if (prop === 'length') return _pi ? _pi.data.length : 0;
+          // R81：PI 的 textContent = data（spec CharacterData：textContent 与 data 同源；WPT
+          // "For a ProcessingInstruction, textContent should set the data"）。
+          if (prop === 'textContent') return _pi ? _pi.data : '';
         }
         // CharacterData 数据编辑方法（R2823，text/comment 节点）+ Text.splitText。仅 handle-based
         // 文本/注释节点（createTextNode/createComment 所建——parsed DOM 文本节点为 _wrapNodeEntry 静态
@@ -1462,6 +1605,13 @@
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
+            // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
+            // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
+            // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。
+            if (child && !child.__zwHandle && handle && child.nodeType) {
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              _handleChildren[handle].push(child);
+            }
             if (child && child.__zwHandle) {
               // js-dom M4 R51：spec appendChild 移动语义——child 已有父（sel 父经 __zw_parent /
               // handle 父经 _zwNodeParent 反向链）时，先从旧位移除。host __zw_append_child 内部
@@ -2172,6 +2322,12 @@
           return true;
         }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
+          // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
+          // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。
+          if (p === 'textContent' && handle && _piHandles[handle]) {
+            _piHandles[handle].data = (value === null || value === undefined) ? '' : String(value);
+            return true;
+          }
           if (p === 'innerHTML') {
             // R3029：innerHTML = 整体替换子树（childList 类）。emit childList 记录，闭合「innerHTML 不 emit
             // childList」gap（R3028 已知限制④）。removedNodes = 替换前旧子（snapshot 读，_childNodeList 对
@@ -2211,8 +2367,10 @@
             // R3028：characterDataOldValue——有 observer 请求时 mutate 前捕获 old 文本（latest-wins，反映同批前序 textContent=）。
             var _charMoId = _mo_id(handle, sel);
             var _charMoOld = _mo_any_wants_char_old(_charMoId) ? _mo_read_text(sel, handle) : null;
-            // spec `LegacyNullToEmptyString`：null → 空串（清子）。
-            var _tcVal = value === null ? '' : String(value);
+            // spec `LegacyNullToEmptyString`：null/undefined（optional DOMString 缺省）→ 空串（清子）。
+            // R81 spec 纠正：WPT Node-textContent "set to undefined" 期望 ""（旧 R3184 记 undefined
+            // → 'undefined' 是错误语义——WebIDL nullable DOMString? 的 undefined 映射空串）。
+            var _tcVal = (value === null || value === undefined) ? '' : String(value);
             if (_realTag(sel, handle) === 'OUTPUT') {
               // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
               // Replacing descendants updates defaultValue. In default mode value follows it;
@@ -2224,9 +2382,15 @@
             // **写前**读当前值（写后 latest-wins 已含新值，恒同值——takeRecords 回归根因）。
             // 本地注册文本优先（firstChild.data= 编辑只改本地 __nv + SetChildText pending，lw 元素级
             // 读不到 → 误判异值多发 record）。无本地注册才读 host lw。
+            // js-dom M4 R81：handle 元素的同值判定改用 **getter 同源值**（融合 childNodes 拼接）——
+            // 旧只查本地注册/host 文本，appendChild 的子（'\tDEF\t'）不在其中 → `textContent=null`
+            // 误判同值（''==''）跳过写入与清子 → 子残留（WPT "set to null" 簇根因）。
             var _tcCur = '';
             var _tcHasLocal = false;
-            if (typeof _zwLocalChildNodes === 'function') {
+            if (handle) {
+              _tcCur = String(_makeProxy(sel, handle).textContent != null ? _makeProxy(sel, handle).textContent : '');
+              _tcHasLocal = true; // 融合视图已是权威（同值判定用）
+            } else if (typeof _zwLocalChildNodes === 'function') {
               var _tcLocal = _zwLocalChildNodes(sel, handle);
               if (_tcLocal && _tcLocal[0]) {
                 _tcHasLocal = true;
@@ -2237,9 +2401,41 @@
               _tcCur = (handle ? __zw_get_text_handle(handle) : (typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel))) || '';
             }
             var _tcSame = _tcVal === _tcCur;
+            // R81：**清子不受同值短路**——spec textContent setter 恒「替换全部子」：同值（如旧子是
+            // 空文本节点、新值 ''——融合 getter 读到的当前值已是 ''）也须清空 registry 子 + 反链
+            //（WPT "Element with empty text node as child set to null/undefined"：旧子残留
+            // childNodes 非空 + parentNode 仍指父）。同值不写 host、不发 record（R49 语义保持）。
+            if (_tcSame && handle && _handleChildren[handle] && _handleChildren[handle].length) {
+              for (var _tcs = 0; _tcs < _handleChildren[handle].length; _tcs++) {
+                var _tcsn = _handleChildren[handle][_tcs];
+                if (_tcsn && _tcsn.__zwHandle && _zwNodeParent) delete _zwNodeParent[_tcsn.__zwHandle];
+              }
+              _handleChildren[handle] = [];
+            }
             if (!_tcSame) {
               if (handle) __zw_set_text_handle(handle, _tcVal);
               else __zw_set_text(sel, _tcVal);
+              // js-dom M4 R81：textContent= 替换全部子——**清空 handle 元素的 registry 子**（R2927
+              // _handleChildren 记录的 appendChild 子在融合 childNodes 视图仍可见 → `el.textContent=null`
+              // 后 childNodes 非空、firstChild 残留，WPT Node-textContent "set to null" 簇）。spec
+              // string replace algorithm：移除全部旧子（含元素子），再插入单文本节点。
+              // 同步记录 JS 侧写入值（`_zwTextWritten`）：host 变更重放（query_text_from_mutations
+              // 仍见旧 AppendChild 文本子）不得覆盖此后 getter——空值清子后 firstChild/textContent
+              // 须立即反映 null/''。
+              if (handle) {
+                // R81：被移除子的 parentNode 置 null（spec string replace：旧子脱离树——WPT
+                // "Preexisting Text should have been removed" 断言 text.parentNode === null）。
+                // 删除子 handle 的 `_zwNodeParent` 反链（_parentNodeFor 的 handle 分支查不到 → null）。
+                if (_handleChildren[handle]) {
+                  for (var _tcr = 0; _tcr < _handleChildren[handle].length; _tcr++) {
+                    var _tcrn = _handleChildren[handle][_tcr];
+                    if (_tcrn && _tcrn.__zwHandle && _zwNodeParent) delete _zwNodeParent[_tcrn.__zwHandle];
+                  }
+                  _handleChildren[handle] = [];
+                }
+                if (typeof _zwTextWritten === 'undefined') { globalThis._zwTextWritten = {}; }
+                _zwTextWritten[handle] = _tcVal;
+              }
               // js-dom M4 R49：本地文本子视图——textContent= 替换全部子为单文本节点，host 延迟 apply
               // 期间 firstChild/childNodes 须立即可见（WPT takeRecords `n.textContent='old data';
               // n.firstChild.data='new data'`）。复用 canvas 的 _zwRegisterTextEl 注册表（_zwLocalChildNodes
@@ -2248,12 +2444,37 @@
               // added=[新文本节点]；R3027 的 characterData-only 记录不完整——characterData record 仅由
               // 文本节点自身编辑发）。
               var _tcRemoved = _childNodeList(sel, handle);
-              if (typeof _zwRegisterTextEl === 'function' && _tcVal.indexOf('<') < 0) {
-                _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _tcVal);
+              // R81：空值（null/''）不注册空文本节点——spec string replace 对空串「移除全部旧子且不插入
+              // 新子」→ firstChild 应为 null（WPT "Element with empty text node as child set to null"
+              // 期望 el.firstChild === null；旧注册空文本节点残留 __n28）。
+              // R81：textContent **不解析 markup**（区别 innerHTML——spec dom-node-textcontent 把值整体
+              // 作为单文本节点的 data；`textContent='<b>xyz</b>'` 是字面文本，WPT "set to <b>xyz</b>"
+              // 期望 childNodes.length===1 + instanceof Text + data 原样）。移除旧 `<` 守卫。
+              if (typeof _zwRegisterTextEl === 'function' && _tcVal !== '') {
+                // R81：容器 handle（fragment/shadow——childNodes 走 `_handleChildNodes` registry，
+                // 不查 `_zwLocalChildNodes`）**只入 registry**（本地注册 + registry 会在融合视图
+                // 双份 → textContent "4242"）；普通元素走本地注册表。
+                if (handle && _fragmentHandles[handle]) {
+                  _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _tcVal);
+                  var _tcReg = _zwLocalChildNodes(sel, handle);
+                  _handleChildren[handle] = _tcReg && _tcReg[0] ? [_tcReg[0]] : [];
+                  if (_tcReg && _tcReg[0] && _zwNodeParent) {
+                    _zwNodeParent[_tcReg[0].__zwHandle || ''] = { parentHandle: handle, nextSibling: null };
+                  }
+                } else {
+                  _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _tcVal);
+                }
               } else if (typeof _zwUnregisterTextEl === 'function') {
                 _zwUnregisterTextEl(_makeProxy(sel, handle));
               }
-              _mo_notify(sel, handle, { type: 'childList', addedNodes: _tcVal !== '' ? [_zwLocalChildNodes(sel, handle)[0]] : [], removedNodes: _tcRemoved, previousSibling: null, nextSibling: null });
+              var _tcAdded = [];
+              if (_tcVal !== '') {
+                var _tcAddedList = (handle && _fragmentHandles[handle])
+                  ? (_handleChildren[handle] || [])[0]
+                  : (typeof _zwLocalChildNodes === 'function' ? _zwLocalChildNodes(sel, handle) : [])[0];
+                if (_tcAddedList) _tcAdded = [_tcAddedList];
+              }
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _tcAdded, removedNodes: _tcRemoved, previousSibling: null, nextSibling: null });
             }
             void _charMoOld;
             // R49 修正：textContent= 只发 childList（spec `dom-node-textcontent` 替换子树）；
