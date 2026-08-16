@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-16",
+  "round": "R75",
+  "milestone": "M6 S5q 完整化（whenDefined 真 pending）——M6 全量收口",
+  "commit": "4bfa87e3",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 98,
+    "deletions": 9
+  },
+  "changes": [
+    "whenDefined(tag) 真 pending 语义（spec dom-customelementregistry-whendefined）：已定义 → 立即 resolve(ctor) 的 promise；未定义 → pending promise，resolve 函数存 CE_WHEN_DEFINED 等待列表（tag → Vec<Persistent>）",
+    "ce_define 成功注册后 flush 该 tag 等待者（resolve(ctor)；取走清列表——resolve 一次性）",
+    "reset_quickjs_state 清 CE_WHEN_DEFINED",
+    "测试形态：Promise job queue 须显式 drain（rquickjs eval 不自动跑 jobs——生产 quickjs_runtime.rs 同款 drain 循环）；execute_pending_job 不能在 Ctx 借用存活时调用（RefCell 重入 panic，safe_ref 实证）——测试在 ctx.with 块间驱动 jobs（镜像生产事件循环职责）"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R75 四组断言：未定义 tag pending + 已定义 tag then 排队 / drain 后 already:true / define 触发 flush / drain 后 resolved:true 双值序贯）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 custom_elements.rs whenDefined 语义对齐（pending→define flush→resolve(ctor)；微任务时序一致）",
+  "rquickjs_lessons": [
+    "execute_pending_job 在 Ctx 借用中调用 → RefCell 重入 panic（须在 ctx.with 块外 drain）",
+    "长 PoC 测试断言用全新 tag（前序切片已注册的 tag 会让 whenDefined 走已定义分支且 resolve 旧 ctor）"
+  ],
+  "milestone_note": "M6 全量收口：S0q（weak 以 R74 结论关闭）/S1q（复合对象三件套）/S2q/S3q/S4q（错误路径+三阶段+Event/DOMException 构造器）/S5q（五件套+ctor 执行+observed+whenDefined pending）全部落地。QuickJS native 具备与 V8 对等的元素面生产能力"
+}
