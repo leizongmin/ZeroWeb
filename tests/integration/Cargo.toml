@@ -22,7 +22,7 @@ zero-webview = { workspace = true }
 zero-render-foundation = { workspace = true }
 zero-script-sandbox = { workspace = true, default-features = false }
 zero-browser-shell = { workspace = true }
-zero-browser = { path = "../../apps/browser", default-features = false }
+zero-browser = { path = "../../apps/browser", default-features = false, features = ["test-support"] }
 zero-renderer = { path = "../../apps/renderer", default-features = false }
 serde_json = { workspace = true }
 

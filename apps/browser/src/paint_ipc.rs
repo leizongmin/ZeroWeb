@@ -2,9 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use zero_engine::{
-    HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, PipelineTimings, node_id_from_u64,
-};
+use zero_engine::{HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, node_id_from_u64};
 use zero_protocol::{
     IpcBlendMode, IpcColor, IpcDrawOp, IpcFilterKind, IpcGlyphSource, IpcGlyphTextRun, IpcGradientColorSpace,
     IpcGradientInterpolation, IpcGradientKind, IpcHitTestCache, IpcHitTestLayoutNode, IpcHueMethod, IpcLineCap,
@@ -24,9 +22,8 @@ use zero_render_foundation::primitive::{
     PathStrokePrimitive, RenderPrimitives, RoundedRectPrimitive, ShadowPrimitive, StrokePrimitive, TextControlBoundary,
     TransformPrimitive,
 };
-use zero_webview::WebViewRenderResult;
 
-use crate::tab_snapshot::TabSnapshot;
+use crate::tab_snapshot::{PageRenderResult, TabSnapshot};
 
 fn ipc_rect_to_rect(r: IpcRect) -> Rect {
     Rect::new(r.x, r.y, r.width, r.height)
@@ -356,7 +353,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
         params.viewport_height as f32,
     );
     snap.text_control_boundaries = primitives.text_control_boundaries.clone();
-    snap.last_render = Some(WebViewRenderResult {
+    snap.last_render = Some(PageRenderResult {
         primitives,
         // S3：保留本帧脏区域（IpcRect → (x,y,w,h)），与 engine→webview 的 render_result_to_webview
         // 对齐；browser 侧当前未消费，但保持数据通路完整以便后续增量重绘接入。
@@ -365,7 +362,6 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
             .iter()
             .map(|r| (r.x, r.y, r.width, r.height))
             .collect(),
-        timings: PipelineTimings::default(),
     });
     snap.document_height = Some(params.document_height);
     snap.document_generation = params.document_generation;
@@ -539,7 +535,7 @@ mod tests {
 
         apply_paint_snapshot(&mut snap, params);
 
-        let primitives = snap.last_render.as_ref().expect("render result").primitives();
+        let primitives = &snap.last_render.as_ref().expect("render result").primitives;
         let glyphs = &primitives.glyphs;
         let first = glyphs[0].source.as_ref().expect("first source");
         let second = glyphs[1].source.as_ref().expect("second source");
@@ -555,7 +551,7 @@ mod tests {
             snap.last_render
                 .as_ref()
                 .expect("render result")
-                .primitives()
+                .primitives
                 .text_control_boundaries[0]
                 .utf16_offset,
             2

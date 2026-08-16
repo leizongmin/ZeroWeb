@@ -43,7 +43,7 @@ fn renderer_binary_filename() -> &'static str {
 /// 3. macOS `ZeroBrowser Helper (Renderer).app`
 /// 4. `std::env::current_exe()` 所在目录（含测试二进制 `target/debug/deps/` 上溯 `target/debug/`）
 /// 5. `PATH`（系统级安装等兜底）
-fn resolve_renderer_binary() -> Option<PathBuf> {
+pub(crate) fn resolve_renderer_binary() -> Option<PathBuf> {
     if let Some(candidate) = zero_runtime_config::optional_path("ZERO_RENDERER_PATH") {
         if candidate.is_file() {
             return Some(candidate);
@@ -1119,7 +1119,7 @@ mod renderer_path_tests {
 mod navigation_contract_tests {
     use super::ProcessTabBackend;
     use crate::paint_ipc::apply_paint_snapshot;
-    use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
+    use crate::tab_snapshot::{CompositorSubmission, PageRenderResult, TabSnapshot};
     use zero_browser_shell::TabId;
     use zero_protocol::message::IpcMessageKind;
     use zero_protocol::{
@@ -1128,7 +1128,6 @@ mod navigation_contract_tests {
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
     use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
-    use zero_webview::WebViewRenderResult;
 
     fn paint_with_red_fill(epoch: u64) -> PaintSnapshotParams {
         PaintSnapshotParams {
@@ -1174,8 +1173,8 @@ mod navigation_contract_tests {
         }
     }
 
-    fn legacy_blue_render() -> WebViewRenderResult {
-        WebViewRenderResult {
+    fn legacy_blue_render() -> PageRenderResult {
+        PageRenderResult {
             primitives: RenderPrimitives {
                 fills: vec![FillPrimitive {
                     rect: Rect::new(0.0, 0.0, 50.0, 50.0),
@@ -1184,7 +1183,6 @@ mod navigation_contract_tests {
                 ..RenderPrimitives::new()
             },
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         }
     }
 

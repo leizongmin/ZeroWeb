@@ -9,11 +9,12 @@ use zero_protocol::message::{
     AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, ImeEventParams,
 };
 use zero_render_foundation::image_cache::ImageCache;
-use zero_webview::WebViewRenderResult;
 
 use crate::process_backend::ProcessTabBackend;
-use crate::tab_snapshot::{CompositorFrame, TabSnapshot};
-use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
+use crate::tab_snapshot::{CompositorFrame, PageRenderResult, TabSnapshot};
+#[cfg(any(test, feature = "test-support"))]
+use crate::tab_worker::TabWorkerMessage;
+use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle};
 
 /// 异步派发 DOM 事件后，由 `TabManager` 在收到渲染进程回执时入队的后续动作。
 ///
@@ -371,6 +372,7 @@ impl TabManager {
                 }
             }
         }
+        #[cfg(any(test, feature = "test-support"))]
         for (tab_id, worker) in &self.workers {
             let is_active = active_tab == Some(*tab_id);
             if !is_active && !poll_background {
@@ -491,7 +493,7 @@ impl TabManager {
     }
 
     /// 活跃 Tab 最近一次渲染。
-    pub fn last_render(&self, tab_id: TabId) -> Option<&WebViewRenderResult> {
+    pub fn last_render(&self, tab_id: TabId) -> Option<&PageRenderResult> {
         self.snapshots.get(&tab_id)?.last_render.as_ref()
     }
 

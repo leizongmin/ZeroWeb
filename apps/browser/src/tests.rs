@@ -213,7 +213,7 @@ fn compositor_active_tab_uses_its_own_surface_image() {
 #[test]
 fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
     use crate::compositor_client::CompositorStatus;
-    use zero_webview::WebViewRenderResult;
+    use crate::tab_snapshot::PageRenderResult;
 
     let mut app = BrowserApp::new(RenderMode::Cpu);
     let tab_id = app.shell.active_tab_id().unwrap();
@@ -221,10 +221,9 @@ fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
     legacy.add_fill(Rect::new(0.0, 0.0, 300.0, 200.0), Color::rgb(255, 0, 0));
     app.inject_tab_render_for_test(
         tab_id,
-        WebViewRenderResult {
+        PageRenderResult {
             primitives: legacy,
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         },
         200.0,
     );
@@ -243,7 +242,7 @@ fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
 #[test]
 fn compositor_scroll_uses_document_primitives_until_the_viewport_frame_is_confirmed() {
     use crate::compositor_client::CompositorStatus;
-    use zero_webview::WebViewRenderResult;
+    use crate::tab_snapshot::PageRenderResult;
 
     assert!(crate::compositor_client::scroll_transform_enabled());
     let mut app = BrowserApp::new(RenderMode::Cpu);
@@ -254,10 +253,9 @@ fn compositor_scroll_uses_document_primitives_until_the_viewport_frame_is_confir
     primitives.add_fill(Rect::new(0.0, 160.0, 200.0, 100.0), document_fill);
     app.inject_tab_render_for_test(
         tab_id,
-        WebViewRenderResult {
+        PageRenderResult {
             primitives,
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         },
         1_000.0,
     );
@@ -358,18 +356,17 @@ fn compositor_scroll_requires_confirmation_of_both_axes() {
 #[test]
 fn compositor_scroll_stops_at_document_end_and_uses_confirmed_viewport() {
     use crate::compositor_client::CompositorStatus;
+    use crate::tab_snapshot::PageRenderResult;
     use zero_host_runtime::event::MouseScrollDelta;
-    use zero_webview::WebViewRenderResult;
 
     let mut app = BrowserApp::new(RenderMode::Cpu);
     app.physical_size = (800, 600);
     let tab_id = app.shell.active_tab_id().unwrap();
     app.inject_tab_render_for_test(
         tab_id,
-        WebViewRenderResult {
+        PageRenderResult {
             primitives: RenderPrimitives::new(),
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         },
         1_400.0,
     );
@@ -397,7 +394,7 @@ fn compositor_scroll_stops_at_document_end_and_uses_confirmed_viewport() {
 
 #[test]
 fn scroll_range_does_not_exceed_painted_document_content() {
-    use zero_webview::WebViewRenderResult;
+    use crate::tab_snapshot::PageRenderResult;
 
     let mut app = BrowserApp::new(RenderMode::Cpu);
     app.physical_size = (800, 600);
@@ -406,10 +403,9 @@ fn scroll_range_does_not_exceed_painted_document_content() {
     primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 600.0), Color::WHITE);
     app.inject_tab_render_for_test(
         tab_id,
-        WebViewRenderResult {
+        PageRenderResult {
             primitives,
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         },
         1_400.0,
     );

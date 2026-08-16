@@ -2,8 +2,19 @@
 
 use zero_engine::HitTestCache;
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
-use zero_render_foundation::primitive::TextControlBoundary;
-use zero_webview::WebViewRenderResult;
+use zero_render_foundation::primitive::{RenderPrimitives, TextControlBoundary};
+
+/// Browser 进程从 renderer IPC 还原的页面绘制结果。
+///
+/// 这不是 `WebViewRenderResult` 的别名：Browser 只消费跨进程绘制快照，页面
+/// pipeline 及其计时数据只存在于 `zero-renderer` 中。
+#[derive(Debug, Clone)]
+pub struct PageRenderResult {
+    /// 本帧图元。
+    pub primitives: RenderPrimitives,
+    /// 本帧脏区域；空值表示完整帧。
+    pub dirty_rects: Vec<(f32, f32, f32, f32)>,
+}
 
 /// Browser 已接收并提交给 compositor 的最新页面帧标识。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,7 +65,7 @@ pub struct CompositorDmabufPending {
 #[derive(Default)]
 pub struct TabSnapshot {
     /// 最近一次渲染图元。
-    pub last_render: Option<WebViewRenderResult>,
+    pub last_render: Option<PageRenderResult>,
     /// 文本控件 caret 边界交互元数据（compositor 模式也保留）。
     pub text_control_boundaries: Vec<TextControlBoundary>,
     /// 图片子资源缓存（绘制 `<img>` 时消费）。
@@ -100,7 +111,8 @@ pub struct TabSnapshot {
 }
 
 impl TabSnapshot {
-    /// 从 WebView 状态构建快照（worker 线程内调用）。
+    /// 从 WebView 状态构建快照（仅保留给进程内 worker 测试）。
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_webview(wv: &zero_webview::WebView) -> Self {
         let html = wv.html_content();
         let last_render = wv.last_render().cloned();
@@ -115,7 +127,10 @@ impl TabSnapshot {
             painted_content_height: last_render
                 .as_ref()
                 .map(|r| crate::page_scroll::primitives_content_height(&r.primitives)),
-            last_render,
+            last_render: last_render.map(|render| PageRenderResult {
+                primitives: render.primitives,
+                dirty_rects: render.dirty_rects,
+            }),
             text_control_boundaries,
             image_cache: wv.snapshot_image_cache(),
             document_height: wv.document_height(),
@@ -320,10 +335,9 @@ mod tests {
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
     use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
-    use zero_webview::WebViewRenderResult;
 
-    fn blue_render() -> WebViewRenderResult {
-        WebViewRenderResult {
+    fn blue_render() -> PageRenderResult {
+        PageRenderResult {
             primitives: RenderPrimitives {
                 fills: vec![FillPrimitive {
                     rect: Rect::new(0.0, 0.0, 10.0, 10.0),
@@ -332,7 +346,6 @@ mod tests {
                 ..RenderPrimitives::new()
             },
             dirty_rects: Vec::new(),
-            timings: Default::default(),
         }
     }
 

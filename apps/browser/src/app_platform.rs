@@ -1304,10 +1304,9 @@ mod tests {
 
         app.tabs.ensure_tab(tab_id);
         if let Some(snap) = app.tabs.snapshot_mut(tab_id) {
-            snap.last_render = Some(zero_webview::WebViewRenderResult {
+            snap.last_render = Some(crate::tab_snapshot::PageRenderResult {
                 primitives: result.primitives().clone(),
                 dirty_rects: result.display_list.dirty_rects.clone(),
-                timings: zero_engine::PipelineTimings::default(),
             });
             snap.document_height = pipeline.document_height();
         }
@@ -1364,10 +1363,9 @@ mod tests {
 
         app.inject_tab_render_for_test(
             tab_id,
-            zero_webview::WebViewRenderResult {
+            crate::tab_snapshot::PageRenderResult {
                 primitives: result.primitives().clone(),
                 dirty_rects: result.display_list.dirty_rects.clone(),
-                timings: zero_engine::PipelineTimings::default(),
             },
             pipeline.document_height().unwrap_or(ch),
         );

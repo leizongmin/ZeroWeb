@@ -42,10 +42,16 @@ mod shutdown_signal;
 mod smoke_capture;
 mod tab_chrome;
 mod tab_favicon;
+#[cfg(any(test, feature = "test-support"))]
 mod tab_js_worker;
 mod tab_manager;
+#[cfg(any(test, feature = "test-support"))]
 mod tab_scripts;
 mod tab_snapshot;
+#[cfg(any(test, feature = "test-support"))]
+mod tab_worker;
+#[cfg(not(any(test, feature = "test-support")))]
+#[path = "tab_worker_stub.rs"]
 mod tab_worker;
 mod text_input;
 mod text_metrics;

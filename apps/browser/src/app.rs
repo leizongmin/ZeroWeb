@@ -940,7 +940,7 @@ impl BrowserApp {
     pub fn inject_tab_render_for_test(
         &mut self,
         tab_id: TabId,
-        render: zero_webview::WebViewRenderResult,
+        render: crate::tab_snapshot::PageRenderResult,
         document_height: f32,
     ) {
         self.tabs.ensure_snapshot_for_test(tab_id);

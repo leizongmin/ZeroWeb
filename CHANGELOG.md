@@ -9,6 +9,7 @@
 ### 变更
 
 - **浏览器进程模型固定化**：`zero-browser` 不再支持 `--single-process` / `--multi-process` 或相应环境变量开关；tab 固定使用 `zero-renderer`，页面帧固定经 `zero-compositor`，栅格图像固定由 renderer 启动 `zero-image-decoder`。`ZeroWebView` 仍保持进程内嵌入实现。
+- **浏览器二进制瘦身**：发布版 `zero-browser` 不再编译进程内 `tab_worker`、页面脚本 worker 和页面脚本调度；headless 的导航、内联 HTML、脚本执行及截图改由 `zero-renderer` IPC 驱动，browser 只保留宿主、网络代理、绘制快照导入和 chrome 呈现职责。
 
 ### 新增
 
