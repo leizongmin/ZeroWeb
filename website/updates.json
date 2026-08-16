@@ -48,8 +48,8 @@
   {
     "date": "2026-08-09",
     "type": "weekly",
-    "title": {"en": "Native DOM bindings gain a live document path", "zh": "原生 DOM 绑定迈向 live Document 路径"},
-    "summary": {"en": "The native DOM bindings expanded from read-only access into document sharing, tree mutation, node collections, and text content behavior.", "zh": "原生 DOM 绑定从只读能力继续扩展到文档共享、树变异、节点集合与 textContent 行为。"},
+    "title": {"en": "Native DOM bindings gain a live document path", "zh": "原生 DOM 绑定新增 live Document 路径"},
+    "summary": {"en": "The native DOM bindings expanded from read-only access into document sharing, tree mutation, node collections, and text content behavior.", "zh": "原生 DOM 绑定在只读能力之外，又覆盖了文档共享、树变异、节点集合与 textContent 行为。"},
     "completed": {"en": ["Added native tree mutation operations and child collections.", "Added native textContent and node-value behavior.", "Implemented the shared live-Document design and the cached document refactor."], "zh": ["加入原生树变异操作与子节点集合。", "加入原生 textContent 与 nodeValue 行为。", "落地 shared live-Document 设计与缓存文档重构。"]},
     "inProgress": {"en": "The broader DOM/Web API compatibility effort continues; production wiring and behavior coverage are added in slices.", "zh": "更完整的 DOM/Web API 兼容性仍在持续推进，生产接线与行为覆盖会继续按切片完成。"},
     "sources": [{"label": "Live document refactor", "url": "https://github.com/leizongmin/ZeroWeb/commit/bcc362ef5"}, {"label": "Native tree mutation", "url": "https://github.com/leizongmin/ZeroWeb/commit/88e726d2c"}, {"label": "Native textContent", "url": "https://github.com/leizongmin/ZeroWeb/commit/320ccc2d4"}]
@@ -58,17 +58,17 @@
     "date": "2026-08-02",
     "type": "weekly",
     "title": {"en": "Targeted CSS fixes for rendering compatibility", "zh": "渲染兼容性的针对性 CSS 修复"},
-    "summary": {"en": "Compatibility work delivered targeted CSS fixes this week. It also recorded, with evidence, the deeper rendering constraints that remain.", "zh": "本周兼容性工作落地了针对性的 CSS 修复，并把仍未解决的深层渲染约束连同证据记录在案。"},
+    "summary": {"en": "Compatibility work delivered targeted CSS fixes this week. It also recorded, with evidence, the deeper rendering constraints that remain.", "zh": "本周兼容性工作落地了针对性的 CSS 修复，并把仍未解决的深层渲染约束连同依据记录在案。"},
     "completed": {"en": ["Implemented CSS overflow-clip-margin across parsing and paint paths.", "Canonicalized the logical sizing cascade and measured the compatibility gains.", "Kept legacy product smoke checks free of structural regressions."], "zh": ["在解析与绘制链路实现 CSS overflow-clip-margin。", "规范化逻辑尺寸层叠行为，并取得可测的兼容性收益。", "保持 legacy 产品 smoke 检查无结构性回归。"]},
-    "inProgress": {"en": "The remaining compatibility gaps are concentrated in structural and font-metric work rather than small isolated switches.", "zh": "剩余兼容性缺口集中在结构性与字体度量工作，而不是零散的单点开关。"},
+    "inProgress": {"en": "The remaining compatibility gaps are concentrated in structural and font-metric work rather than small isolated switches.", "zh": "剩余兼容性缺口集中在结构性与字体度量工作，而不是零散的小开关。"},
     "sources": [{"label": "overflow-clip-margin", "url": "https://github.com/leizongmin/ZeroWeb/commit/51a684068"}, {"label": "Logical sizing cascade", "url": "https://github.com/leizongmin/ZeroWeb/commit/03736364b"}, {"label": "Legacy smoke review", "url": "https://github.com/leizongmin/ZeroWeb/commit/a34768b5d"}]
   },
   {
     "date": "2026-07-19",
     "type": "weekly",
-    "title": {"en": "Font metrics and rendering evidence point to the next steps", "zh": "字体度量与渲染证据指向下一步方向"},
-    "summary": {"en": "Rendering investigations improved measurement consistency and made it clearer where broad compatibility work is held back by complex text and metric behavior.", "zh": "渲染调研提升了测量一致性，并进一步厘清广泛兼容性工作受复杂文本与度量行为制约的位置。"},
-    "completed": {"en": ["Registered fontdue measurement to align the browser path with rendering expectations.", "Confirmed full product smoke coverage for the current fixture set.", "Recorded fresh CSS Grid measurements and updated the compatibility evidence."], "zh": ["注册 fontdue 测量，使浏览器路径与渲染预期保持一致。", "确认当前 fixture 集的产品 smoke 全部通过。", "记录新的 CSS Grid 测量结果并更新兼容性证据。"]},
+    "title": {"en": "Font metrics and rendering evidence point to the next steps", "zh": "字体度量与渲染数据为下一步指明方向"},
+    "summary": {"en": "Rendering investigations improved measurement consistency and made it clearer where broad compatibility work is held back by complex text and metric behavior.", "zh": "渲染调研提升了测量一致性，也进一步明确了广泛兼容性工作在哪里受复杂文本与度量行为制约。"},
+    "completed": {"en": ["Registered fontdue measurement to align the browser path with rendering expectations.", "Confirmed full product smoke coverage for the current fixture set.", "Recorded fresh CSS Grid measurements and updated the compatibility evidence."], "zh": ["注册 fontdue 测量，使浏览器路径与渲染预期保持一致。", "确认当前 fixture 集的产品 smoke 全部通过。", "记录新的 CSS Grid 测量结果并更新兼容性数据。"]},
     "inProgress": {"en": "The next compatibility work focuses on text metrics and structural rendering paths that need coordinated, rather than isolated, changes.", "zh": "下一阶段兼容性工作聚焦于需要协同改动的文本度量与结构性渲染路径。"},
     "sources": [{"label": "Font measurement registration", "url": "https://github.com/leizongmin/ZeroWeb/commit/bad506536"}, {"label": "Product smoke evidence", "url": "https://github.com/leizongmin/ZeroWeb/commit/fa79ae984"}, {"label": "CSS Grid measurement", "url": "https://github.com/leizongmin/ZeroWeb/commit/b7671a120"}]
   }
