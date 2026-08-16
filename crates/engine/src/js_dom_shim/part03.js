@@ -807,6 +807,11 @@
           var allR = globalThis.document.querySelectorAll(q);
           for (var ri = 0; ri < allR.length; ri++) {
             var rp = allR.item ? allR.item(ri) : allR[ri];
+            // R57（FV M1）：排除已 remove 的（mutation 未应用——host 查询仍含
+            // ——radio-group 的 "checked member is removed"）。
+            try {
+              if (rp.__zwSelector && typeof _zwIsRemoved === 'function' && _zwIsRemoved(rp.__zwSelector)) continue;
+            } catch (_e) {}
             try { if (rp.required) groupRequired = true; } catch (_e) {}
             try { if (rp.checked) checkedAny = true; } catch (_e) {}
           }

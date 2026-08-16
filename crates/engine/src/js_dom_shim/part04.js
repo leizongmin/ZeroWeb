@@ -1463,9 +1463,48 @@
           return function() {
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
             var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
-            // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
-            // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
-            if (notPrevented) _zwPopoverTargetActivate(key, sel, handle);
+            if (notPrevented) {
+              // R57（FV M1）：click 默认动作——checkbox/radio 的 checked 切换
+              //（spec §4.10.5.2.4 的 radio 组语义——radio-group-valueMissing 的
+              // fourth.click()）。属性层面（shim 的 checked 读取 = 属性存在性）。
+              var _tagC = _realTag(sel, handle);
+              if (_tagC === 'INPUT') {
+                var _tyC = '';
+                try { _tyC = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { _tyC = ''; }
+                _tyC = String(_tyC || '').toLowerCase();
+                var _curC = null;
+                try { _curC = handle ? __zw_has_attr_handle(handle, 'checked') : __zw_has_attr(sel, 'checked'); } catch (_e) {}
+                if (_tyC === 'checkbox') {
+                  if (_curC === '1') {
+                    if (sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(sel, 'checked'); } catch (_e2) {} }
+                  } else if (sel && typeof __zw_set_attr === 'function') {
+                    try { __zw_set_attr(sel, 'checked', ''); } catch (_e2) {}
+                  }
+                } else if (_tyC === 'radio') {
+                  // 组内互斥：勾选当前 + 同 name 其他取消
+                  if (sel && typeof __zw_set_attr === 'function') { try { __zw_set_attr(sel, 'checked', ''); } catch (_e2) {} }
+                  var _nmC = null;
+                  try { _nmC = handle ? __zw_get_attr_handle(handle, 'name') : __zw_get_attr(sel, 'name'); } catch (_e3) {}
+                  if (_nmC != null && String(_nmC) !== '') {
+                    try {
+                      var _qC = 'input[type="radio"][name="' + String(_nmC).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+                      var _allC = globalThis.document.querySelectorAll(_qC);
+                      for (var _ci = 0; _ci < _allC.length; _ci++) {
+                        var _rc = _allC.item ? _allC.item(_ci) : _allC[_ci];
+                        try {
+                          if (_rc.__zwSelector && _rc.__zwSelector !== sel && typeof __zw_remove_attr === 'function') {
+                            __zw_remove_attr(_rc.__zwSelector, 'checked');
+                          }
+                        } catch (_e4) {}
+                      }
+                    } catch (_e5) {}
+                  }
+                }
+              }
+              // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
+              // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
+              _zwPopoverTargetActivate(key, sel, handle);
+            }
             return notPrevented;
           };
         }
