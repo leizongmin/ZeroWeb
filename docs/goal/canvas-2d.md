@@ -2,7 +2,9 @@
 
 **版本**: v1.0
 **日期**: 2026-08-13
-**状态**: Active
+**状态**: ✅ Completed（2026-08-16——DC-1~4 全部满足，Mission 中期 80% 达成；
+oracle-pass 100%、不一致 0；里程碑归档见 [archive/](canvas-2d/archive/)，终态
+证据见 [evidence/](canvas-2d/evidence/)，运行时面板见 [master.md](canvas-2d/master.md)）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（ZeroWeb 总体目标）
 

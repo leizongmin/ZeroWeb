@@ -1,9 +1,11 @@
 # Canvas 2D 运行时控制面板
 
+**状态**: ✅ **已完成**（2026-08-16——DC-1~4 全部满足）
 **最后更新**: 2026-08-16（R57 终态：**oracle 不一致归零**——逐格独立对齐
 （grid ×12 全灭）+ TextCluster 字体锁定（font-change ×2 全灭）；oracle-pass
 41/41（100%）、真通过 34（82.9%）——**Mission 中期 80% 达成、DC-3 完成**；
-canvas 812 全绿。证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.md）。
+canvas 812 全绿。证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.md；
+里程碑归档见 archive/m3-pixel-correctness-complete-2026-08-16.md）。
 
 ---
 
@@ -131,9 +133,17 @@ canvas 812 全绿。证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿） |
-| M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭） |
-| M3 — 像素正确性冲刺 | ✅ 完成（R57）：oracle-pass **100%**（41/41）、真通过 **82.9%**（Mission 中期 80% 达成）、**不一致 0**——AA 全系/细分/亚像素/测量法三阶段/逐格对齐/grid 资产/font-change 字体锁定 |
+| M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿）——已归档 |
+| M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭）——已归档 |
+| M3 — 像素正确性冲刺 | ✅ 完成（R57）：oracle-pass **100%**（41/41）、真通过 **82.9%**（Mission 中期 80% 达成）、**不一致 0**——AA 全系/细分/亚像素/测量法三阶段/逐格对齐/grid 资产/font-change 字体锁定——已归档（archive/m3-pixel-correctness-complete-2026-08-16.md） |
+
+## 专项完成（2026-08-16）
+
+**DC-1~4 全部满足**：WPT 919 文件导入 + 通过率报告（DC-1）；Path2D/
+OffscreenCanvas/ImageBitmap/API 语义完整（DC-2）；oracle-pass 100%、真通过
+82.9%、不一致 0（DC-3）；canvas 812 全绿、覆盖率 87.67%、每项修复带单测
+（DC-4）。Mission 中期 80% 达成。剩余 7 项近似（<0.6%）为字体度量/线几何
+残差（rendering-compat 域），随字体栈对齐流一并落地。
 
 ## 验证基线
 
