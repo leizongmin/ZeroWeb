@@ -85,6 +85,7 @@ pub fn reset_quickjs_state() {
     CE_REGISTRY.with(|c| c.borrow_mut().clear());
     CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
     ATTR_MAP_OBJECTS.with(|c| c.borrow_mut().clear());
+    CLASS_LIST_OBJECTS.with(|c| c.borrow_mut().clear());
 }
 
 // ── NodeId ↔ u64(ffi) ↔ f64（JS Number）编解码 ──────────────────────
@@ -492,6 +493,8 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     obj.prop("namespaceURI", Accessor::from(namespace_uri_getter).configurable())?;
     // S1q 复合对象（R69）：attributes NamedNodeMap 面（缓存保身份）。
     obj.prop("attributes", Accessor::from(attributes_getter).configurable())?;
+    // S1q 复合对象（R70）：classList DOMTokenList 面（缓存保身份）。
+    obj.prop("classList", Accessor::from(class_list_getter).configurable())?;
     obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
     obj.prop(
         "textContent",
@@ -582,6 +585,282 @@ thread_local! {
     /// `el.attributes === el.attributes`；同 NODE_OBJECTS 模式的二级缓存）。
     static ATTR_MAP_OBJECTS: RefCell<HashMap<u64, Persistent<Value<'static>>>> =
         RefCell::new(HashMap::new());
+    /// owner element ffi → classList 包装对象身份缓存（R70，spec：
+    /// `el.classList === el.classList`；同 ATTR_MAP_OBJECTS 模式）。
+    static CLASS_LIST_OBJECTS: RefCell<HashMap<u64, Persistent<Value<'static>>>> =
+        RefCell::new(HashMap::new());
+}
+
+// ── S1q 复合对象（R70）：`classList` DOMTokenList 面 ─────────────────
+//
+// 镜像 V8 dom_token_list.rs（token 读写经 class 属性 + split_whitespace；token 校验
+// 抛 DOMException——空 → SyntaxError、含 ASCII 空白 → InvalidCharacterError，复用
+// R66 throw_dom_exception）。方法面：length/item/contains/add/remove/toggle/replace/
+// value(+setter)/toString。
+
+/// 读 owner 元素当前 token 列表（class 属性 split_whitespace；缺失 → 空）。
+fn dtl_current_tokens(id: NodeId) -> Vec<String> {
+    with_dom(|d| {
+        d.get_attribute(id, "class")
+            .map(|s| s.split_whitespace().map(String::from).collect())
+    })
+    .flatten()
+    .unwrap_or_default()
+}
+
+/// token 列表 join 单空格写回 class 属性（空列表 → class=""，spec：移除全部 token 后
+/// 属性为空串非删除属性）。派发 attributeChangedCallback（R68 old 语义）。
+fn dtl_write_tokens<'js>(ctx: &Ctx<'js>, id: NodeId, tokens: &[String]) {
+    let joined = tokens.join(" ");
+    let old: Option<String> = with_dom(|d| d.get_attribute(id, "class")).flatten();
+    with_dom_mut(|d| d.set_attribute(id, "class", &joined));
+    dispatch_attribute_changed(ctx, id, "class", old.as_deref(), Some(&joined));
+}
+
+/// spec DOMTokenList token 校验（`dom-domtokenlist-validation`）：空 → SyntaxError；
+/// 含 ASCII 空白 → InvalidCharacterError。非法时 Err 装好异常（调用方直接 return Err）。
+fn dtl_validate_token<'js>(ctx: &Ctx<'js>, token: &str) -> rquickjs::Result<()> {
+    if token.is_empty() {
+        return Err(throw_dom_exception(
+            ctx,
+            "SyntaxError",
+            "An invalid or illegal string was specified.",
+        ));
+    }
+    if token.chars().any(|c| c.is_whitespace()) {
+        return Err(throw_dom_exception(
+            ctx,
+            "InvalidCharacterError",
+            "An invalid or illegal string was specified.",
+        ));
+    }
+    Ok(())
+}
+
+/// `classList` getter（spec `dom-element-classlist`）：返 DOMTokenList 形包装（缓存保身份）。
+fn class_list_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let ffi = encode_node_id(id);
+    if let Some(hit) = CLASS_LIST_OBJECTS.with(|c| c.borrow().get(&ffi).cloned())
+        && let Ok(v) = hit.restore(&ctx)
+    {
+        return v;
+    }
+    let Ok(obj) = build_class_list_object(&ctx, ffi) else {
+        return Value::new_null(ctx);
+    };
+    let v: Value = obj.into_value();
+    CLASS_LIST_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, Persistent::save(&ctx, v.clone()));
+    });
+    v
+}
+
+/// 构建 classList 包装对象（owner ffi 隐藏属性 + length/value getter + 方法面）。
+fn build_class_list_object<'js>(ctx: &Ctx<'js>, owner_ffi: u64) -> rquickjs::Result<Object<'js>> {
+    let obj = Object::new(ctx.clone())?;
+    use rquickjs::object::Property;
+    obj.prop(NODE_FFI_PROP, Property::from(owner_ffi as f64).configurable())?;
+    use rquickjs::object::Accessor;
+    obj.prop("length", Accessor::from(dtl_length_getter).configurable())?;
+    obj.prop(
+        "value",
+        Accessor::from(dtl_value_getter).set(dtl_value_setter).configurable(),
+    )?;
+    obj.prop("item", Function::new(ctx.clone(), dtl_item_method)?)?;
+    obj.prop("contains", Function::new(ctx.clone(), dtl_contains_method)?)?;
+    obj.prop("add", Function::new(ctx.clone(), dtl_add_method)?)?;
+    obj.prop("remove", Function::new(ctx.clone(), dtl_remove_method)?)?;
+    obj.prop("toggle", Function::new(ctx.clone(), dtl_toggle_method)?)?;
+    obj.prop("replace", Function::new(ctx.clone(), dtl_replace_method)?)?;
+    obj.prop("toString", Function::new(ctx.clone(), dtl_to_string_method)?)?;
+    Ok(obj)
+}
+
+/// 从 classList 包装对象读 owner NodeId（同 nnm_owner_of——隐藏属性共享 NODE_FFI_PROP）。
+fn dtl_owner_of(this: &Object) -> Option<NodeId> {
+    nnm_owner_of(this)
+}
+
+/// `classList.length` getter（spec `dom-domtokenlist-length`）：token 数。
+fn dtl_length_getter<'js>(this: This<Object<'js>>) -> i32 {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return 0;
+    };
+    dtl_current_tokens(id).len() as i32
+}
+
+/// `classList.value` getter（spec `dom-domtokenlist-value`）：序列化 token 串。
+fn dtl_value_getter<'js>(this: This<Object<'js>>) -> String {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return String::new();
+    };
+    dtl_current_tokens(id).join(" ")
+}
+
+/// `classList.value` setter：覆盖写（无 token 校验——value 是原始串，split_whitespace 解析）。
+fn dtl_value_setter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, value: rquickjs::Coerced<String>) {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return;
+    };
+    let tokens: Vec<String> = value.0.split_whitespace().map(String::from).collect();
+    dtl_write_tokens(&ctx, id, &tokens);
+}
+
+/// `classList.item(i)`（spec `dom-domtokenlist-item`）：越界 → null。
+fn dtl_item_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, index: rquickjs::Coerced<f64>) -> Value<'js> {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let tokens = dtl_current_tokens(id);
+    match tokens.get(index.0 as usize) {
+        Some(t) => match rquickjs::String::from_str(ctx.clone(), t) {
+            Ok(s) => s.into_value(),
+            Err(_) => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `classList.contains(token)`（spec `dom-domtokenlist-contains`）：空/含空白 token →
+/// false **不抛**（spec contains 例外——区别 add/remove/toggle/replace 的 check 抛）。
+fn dtl_contains_method<'js>(this: This<Object<'js>>, token: rquickjs::Coerced<String>) -> bool {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return false;
+    };
+    if token.0.is_empty() || token.0.chars().any(|c| c.is_whitespace()) {
+        return false;
+    }
+    dtl_current_tokens(id).contains(&token.0)
+}
+
+/// `classList.add(...tokens)`（spec `dom-domtokenlist-add`）：全部校验后统一写
+///（部分非法全不落——spec add 是单序列步骤）；已有 token 幂等跳过。
+fn dtl_add_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    tokens: rquickjs::function::Rest<rquickjs::Coerced<String>>,
+) -> rquickjs::Result<()> {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return Ok(());
+    };
+    // 先全量校验（任一非法抛，整次不写）。
+    for t in tokens.iter() {
+        dtl_validate_token(&ctx, &t.0)?;
+    }
+    let mut list = dtl_current_tokens(id);
+    for t in tokens.iter() {
+        if !list.contains(&t.0) {
+            list.push(t.0.clone());
+        }
+    }
+    dtl_write_tokens(&ctx, id, &list);
+    Ok(())
+}
+
+/// `classList.remove(...tokens)`（spec `dom-domtokenlist-remove`）：同 add 全量校验；
+/// 不在的 token 忽略。
+fn dtl_remove_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    tokens: rquickjs::function::Rest<rquickjs::Coerced<String>>,
+) -> rquickjs::Result<()> {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return Ok(());
+    };
+    for t in tokens.iter() {
+        dtl_validate_token(&ctx, &t.0)?;
+    }
+    let list: Vec<String> = dtl_current_tokens(id)
+        .into_iter()
+        .filter(|x| !tokens.iter().any(|t| *x == t.0))
+        .collect();
+    dtl_write_tokens(&ctx, id, &list);
+    Ok(())
+}
+
+/// `classList.toggle(token, force?)`（spec `dom-domtokenlist-toggle`）：force 模式按
+/// force 加/移除；切换模式在→移除返 false / 不在→加返 true。
+fn dtl_toggle_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    token: rquickjs::Coerced<String>,
+    force: Opt<Value<'js>>,
+) -> rquickjs::Result<bool> {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return Ok(false);
+    };
+    dtl_validate_token(&ctx, &token.0)?;
+    let force_defined = force.0.is_some();
+    let force_on = force.0.is_some_and(|v| v.as_bool().unwrap_or(false));
+    let mut list = dtl_current_tokens(id);
+    let pos = list.iter().position(|t| *t == token.0);
+    let result = if force_defined {
+        match (force_on, pos) {
+            (true, None) => {
+                list.push(token.0.clone());
+                true
+            }
+            (false, Some(p)) => {
+                list.remove(p);
+                false
+            }
+            _ => force_on,
+        }
+    } else {
+        match pos {
+            Some(p) => {
+                list.remove(p);
+                false
+            }
+            None => {
+                list.push(token.0.clone());
+                true
+            }
+        }
+    };
+    dtl_write_tokens(&ctx, id, &list);
+    Ok(result)
+}
+
+/// `classList.replace(oldT, newT)`（spec `dom-domtokenlist-replace`）：oldT==newT →
+/// contains(oldT)；oldT 不在 → false 不写；否则原位替换返 true。
+fn dtl_replace_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    old_token: rquickjs::Coerced<String>,
+    new_token: rquickjs::Coerced<String>,
+) -> rquickjs::Result<bool> {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return Ok(false);
+    };
+    dtl_validate_token(&ctx, &old_token.0)?;
+    dtl_validate_token(&ctx, &new_token.0)?;
+    if old_token.0 == new_token.0 {
+        return Ok(dtl_current_tokens(id).contains(&old_token.0));
+    }
+    let mut list = dtl_current_tokens(id);
+    let Some(pos) = list.iter().position(|t| *t == old_token.0) else {
+        return Ok(false);
+    };
+    // 已有 newT → 移除 oldT（dedupe 语义）。
+    if list.contains(&new_token.0) {
+        list.remove(pos);
+    } else {
+        list[pos] = new_token.0.clone();
+    }
+    dtl_write_tokens(&ctx, id, &list);
+    Ok(true)
+}
+
+/// `classList.toString()`（spec：与 value 同——序列化 token 串）。
+fn dtl_to_string_method<'js>(this: This<Object<'js>>) -> String {
+    let Some(id) = dtl_owner_of(&this.0) else {
+        return String::new();
+    };
+    dtl_current_tokens(id).join(" ")
 }
 
 /// `attributes` getter（spec `dom-element-attributes`）：返 NamedNodeMap 形包装
@@ -1901,6 +2180,62 @@ mod tests {
                 ),
                 "2,T;0;null",
                 "派发期 eventPhase=2/currentTarget=target；派发后复位 0/null"
+            );
+
+            // R70 classList DOMTokenList：身份缓存 + 读写闭环 + toggle/replace 语义 +
+            // token 校验抛错（e.name 可观测）+ contains 例外不抛 + value 反射。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__clEl = __zw_native_create_element('section');\
+                     __clEl.classList === __clEl.classList"
+                ),
+                "true",
+                "R70 身份缓存：el.classList === el.classList"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__cl = __clEl.classList;\
+                     __cl.add('a', 'b');\
+                     [__cl.length, __cl.item(0), __cl.contains('a'), __cl.contains('z'), __cl.value].join(',')"
+                ),
+                "2,a,true,false,a b",
+                "R70 add（多参 + 幂等）+ length/item/contains/value 闭环"
+            );
+            assert_eq!(
+                eval_str(
+                    "__cl.remove('a');\
+                     __cl.toggle('b') + ',' + __cl.toggle('c') + ',' + __cl.toggle('c', true) + ',' + __cl.toggle('c', false) + ',' + __cl.value"
+                ),
+                "false,true,true,false,",
+                "R70 remove + toggle 切换模式与 force 模式（在→移除 false / 不在→加 true / force 加 true / force 移除 false；末尾空 = 全移除后 value 空串）"
+            );
+            assert_eq!(
+                eval_str(
+                    "__cl.add('x', 'y');\
+                     __cl.replace('x', 'z') + ',' + __cl.replace('nope', 'q') + ',' + __cl.replace('y','y') + ',' + __cl.value + ',' + (__clEl.className === __cl.value)"
+                ),
+                "true,false,true,z y,true",
+                "R70 replace：原位 true / oldT 不在 false / 同名返 contains / className 反射一致"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__clErr = null;\
+                     try { __cl.add('bad token'); } catch (e) { __clErr = e.name; }\
+                     __clErr + '/' + __cl.value + '/' + __cl.contains('bad token')"
+                ),
+                "InvalidCharacterError/z y/false",
+                "R70 token 校验：含空白 → InvalidCharacterError，整次 add 不落（z y 保持）"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__clErr2 = null;\
+                     try { __cl.add(''); } catch (e) { __clErr2 = e.name; }\
+                     globalThis.__clErr3 = null;\
+                     try { __cl.remove('a b'); } catch (e) { __clErr3 = e.name; }\
+                     __clErr2 + '/' + __clErr3 + '/' + __cl.contains('') + '/' + __cl.contains('a b')"
+                ),
+                "SyntaxError/InvalidCharacterError/false/false",
+                "R70 空 token → SyntaxError；remove 空白 token 同抛；contains 空/空白不抛返 false（spec 例外）"
             );
 
             // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
