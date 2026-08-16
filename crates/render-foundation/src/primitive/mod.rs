@@ -191,8 +191,18 @@ pub enum GradientColorSpace {
     Hwb,
     /// XYZ（D65，`in xyz`——CSS 默认 xyz-d65）。
     Xyz,
+    /// XYZ-D50（`in xyz-d50`，Bradford 适应自 D65）。
+    XyzD50,
     /// ProPhoto RGB（D50，`in prophoto-rgb`）。
     ProphotoRgb,
+    /// Display-P3（`in display-p3`，gamma 编码，EOTF 同 sRGB）。
+    DisplayP3,
+    /// Display-P3 线性光（`in display-p3-linear`）。
+    DisplayP3Linear,
+    /// Adobe RGB (1998)（`in a98-rgb`，gamma 563/256）。
+    A98Rgb,
+    /// Rec.2020（`in rec2020`，BT.2020 EOTF）。
+    Rec2020,
 }
 
 /// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。

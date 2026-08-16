@@ -1752,7 +1752,13 @@ pub(crate) fn remeasure_inline_only_containers(
     let needs_dom_text_remeasure =
         has_dom_text && box_node.content_height < 1.0 && box_node.children.iter().all(|c| c.is_absolute || c.is_fixed);
 
+    // R57（M3）：R109 匿名块片段（node_id = split inline，内容由 fragment_registry
+    // 决定）不参与本 remeasure——按 span 全量 DOM 内容（div + canvas + 空白）测量
+    // 会把纯空白/原子片段高度膨胀（ws 片段 0→721px、canvas 片段 50→442px，
+    // canvas-grid reftest 的 2d.gradient.colorInterpolationMethod）。其高度由
+    // R109_BACKFILL 专项处理。
     if !has_floats
+        && !box_node.is_r109_split
         && (has_inline_children || needs_dom_text_remeasure)
         && let Some(dom_id) = box_node.node_id
         && let Some(style) = styles.get(&dom_id)

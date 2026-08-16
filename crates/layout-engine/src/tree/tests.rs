@@ -1594,3 +1594,46 @@ fn test_build_with_nested_shadow_slots() {
         "shadow wrapper should be in layout tree"
     );
 }
+
+/// R57（M3）：canvas width/height 属性 → taffy 固有尺寸 + 1:1 aspect ratio
+///（2d.reset.render.global_composite_operation oracle A/B 曾因 inline-block
+/// shrink-to-fit 把 canvas 压成 fallback 文本宽 188x400——内容横向压缩 0.47）。
+/// build_layout_tree 不跑 taffy compute，断言 style 层（length 400 + aspect 1）。
+#[test]
+fn test_canvas_attr_intrinsic_size() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let canvas = doc.create_element("canvas");
+    doc.set_attribute(canvas, "width", "400");
+    doc.set_attribute(canvas, "height", "400");
+    doc.append_child(body, canvas).unwrap();
+
+    let styles = HashMap::new();
+    let (tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    let canvas_taffy = find_taffy_for_dom(&taffy_to_dom, canvas);
+    let style = tree.style(canvas_taffy).unwrap();
+    assert_eq!(
+        style.size.width,
+        taffy::style::Dimension::length(400.0),
+        "canvas 固有宽应 400: {:?}",
+        style.size.width
+    );
+    assert_eq!(
+        style.size.height,
+        taffy::style::Dimension::length(400.0),
+        "canvas 固有高应 400: {:?}",
+        style.size.height
+    );
+    assert_eq!(style.aspect_ratio, Some(1.0), "canvas aspect 应 1:1");
+}

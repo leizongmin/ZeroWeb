@@ -1112,11 +1112,25 @@
 
   // R34xx（filters 目录）：CSS filter list 字符串校验（'none' 或逗号分隔函数列表——
   // ctx.filter 非法串忽略保持旧值；'blur(5px)' 接受）。
+  // R57（M3）：顶层逗号分割（不拆括号内逗号）——drop-shadow(… rgb(255, 165, 0))
+  // 的 rgb() 内逗号曾把函数拆断 → 校验 false → 字符串 filter 整体忽略。
+  function _zwSplitFilterList(t) {
+    var out = [], depth = 0, cur = '';
+    for (var i = 0; i < t.length; i++) {
+      var ch = t[i];
+      if (ch === '(') depth++;
+      if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
   function _zwValidFilterList(s) {
     if (!s || !s.trim()) return false;
     var t = s.trim();
     if (t === 'none') return true;
-    var parts = t.split(',');
+    var parts = _zwSplitFilterList(t);
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i].trim();
       var m = /^([a-zA-Z-]+)\((.*)\)$/.exec(p);
@@ -1647,7 +1661,12 @@
       get: function () { return _interp; },
       set: function (v) {
         var s2 = String(v);
-        var VALID = ['srgb', 'srgb-linear', 'lab', 'lch', 'oklab', 'oklch', 'hsl', 'hwb', 'xyz', 'prophoto-rgb'];
+        // R57（M3）：补全 CSS Color 4 全部预定义空间（display-p3/display-p3-linear/
+        // a98-rgb/rec2020/xyz-d50/xyz-d65——2d.gradient.colorInterpolationMethod 的
+        // 14 格曾 6 格因校验缺名 TypeError 中止 → 格子空白）。
+        var VALID = ['srgb', 'srgb-linear', 'lab', 'lch', 'oklab', 'oklch', 'hsl', 'hwb', 'xyz',
+                     'xyz-d50', 'xyz-d65', 'prophoto-rgb', 'display-p3', 'display-p3-linear',
+                     'a98-rgb', 'rec2020'];
         if (VALID.indexOf(s2) < 0) {
           throw new TypeError('invalid colorInterpolationMethod: ' + s2);
         }
@@ -3431,7 +3450,59 @@
         if (typeof v !== 'string') return;
         if (v === 'none' || _zwValidFilterList(v)) {
           this._filter = v;
-          if (v === 'none') __zw_canvas_op(h, 'setFilterMatrix', '');
+          // R56h（M3）：'none' 须清全量 host 滤镜状态（colorMatrix + dropShadow）——
+          // 只清 matrix 会让 dropShadow 残留到后续绘制（filter 回 none 后仍有阴影）。
+          if (v === 'none') {
+            __zw_canvas_op(h, 'setFilterMatrix', '');
+            __zw_canvas_op(h, 'setFilterDropShadow', '');
+          }
+          // R57（M3）：CSS filter 列表字符串的 drop-shadow() 函数 → host shadow 机制
+          //（与 CanvasFilter 对象同路）。'blur(5px)' 等其余函数不产生 shadow——清空。
+          // 2d.filter.drop-shadow-globalAlpha（oracle A/B 47%——字符串形式从未接线）。
+          // 语法：drop-shadow( <length>{2,3} <color>? )——offset 可为负、blur ≥ 0。
+          var _ds = '';
+          if (v !== 'none') {
+            var _m = /drop-shadow\(([\s\S]*)\)/.exec(v);
+            if (_m) {
+              // 括号深度扫描取 drop-shadow 参数（rgb() 内括号不拆），
+              // 深度 0 空白分词（rgb(255, 165, 0) 的逗号+空格整体为一个颜色 token）。
+              var _arg = _m[1], _depth = 0, _end = _arg.length;
+              for (var _i = 0; _i < _arg.length; _i++) {
+                var _ch = _arg[_i];
+                if (_ch === '(') _depth++;
+                if (_ch === ')') { if (_depth === 0) { _end = _i; break; } _depth--; }
+              }
+              var _toks = [];
+              var _cur = '';
+              for (var _k = 0; _k < _end; _k++) {
+                var _ch2 = _arg[_k];
+                if (/\s/.test(_ch2) && _depth === 0) {
+                  if (_cur) { _toks.push(_cur); _cur = ''; }
+                } else {
+                  if (_ch2 === '(') _depth++;
+                  if (_ch2 === ')') _depth--;
+                  _cur += _ch2;
+                }
+              }
+              if (_cur) _toks.push(_cur);
+              var _nums = [];
+              var _color = 'black';
+              for (var _j = 0; _j < _toks.length; _j++) {
+                var _p = _toks[_j];
+                if (/^-?\d*\.?\d+(px|em|rem|ex|ch|cm|mm|in|pt|pc|q|%)?$/.test(_p)) {
+                  var _n = parseFloat(_p);
+                  if (!isNaN(_n)) { _nums.push(_n); continue; }
+                }
+                _color = _p; // 其余 token 视为颜色
+              }
+              if (_nums.length >= 2) {
+                var _dx = _nums[0], _dy = _nums[1];
+                var _blur = _nums.length >= 3 ? Math.abs(_nums[2]) : 0;
+                _ds = [_dx, _dy, _blur, _color, 1].join('\x1f');
+              }
+            }
+          }
+          __zw_canvas_op(h, 'setFilterDropShadow', _ds);
         }
       },
       get: function () { return this._filter; }

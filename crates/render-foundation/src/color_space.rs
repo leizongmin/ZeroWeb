@@ -309,6 +309,71 @@ pub fn interp_pair(c0: Color, c1: Color, t: f64, space: GradientColorSpace, hue:
             );
             prophoto_to_srgb_u8(x, y, z)
         }
+        // R57：Display-P3（gamma 编码，EOTF 同 sRGB）。
+        GradientColorSpace::DisplayP3 => {
+            let (p0, p1, p2) = srgb_u8_to_p3(c0.r, c0.g, c0.b);
+            let (q0, q1, q2) = srgb_u8_to_p3(c1.r, c1.g, c1.b);
+            let (x, y, z) = unmulp3(
+                lerp(p0 * a0, q0 * a1, t),
+                lerp(p1 * a0, q1 * a1, t),
+                lerp(p2 * a0, q2 * a1, t),
+                a_f,
+            );
+            p3_to_srgb_u8(x, y, z)
+        }
+        // Display-P3 线性光（无 EOTF，直用线性分量）。
+        GradientColorSpace::DisplayP3Linear => {
+            let (p0, p1, p2) = srgb_u8_to_xyz_d65(c0.r, c0.g, c0.b);
+            let (q0, q1, q2) = srgb_u8_to_xyz_d65(c1.r, c1.g, c1.b);
+            let (x, y, z) = mat3_mul(XYZ_TO_P3, p0, p1, p2);
+            let (x2, y2, z2) = mat3_mul(XYZ_TO_P3, q0, q1, q2);
+            let (i, j, k) = unmulp3(
+                lerp(x * a0, x2 * a1, t),
+                lerp(y * a0, y2 * a1, t),
+                lerp(z * a0, z2 * a1, t),
+                a_f,
+            );
+            p3_to_srgb_u8(i, j, k)
+        }
+        // Adobe RGB (1998)（gamma 563/256）。
+        GradientColorSpace::A98Rgb => {
+            let (a0c, a1c, a2c) = srgb_u8_to_a98(c0.r, c0.g, c0.b);
+            let (b0c, b1c, b2c) = srgb_u8_to_a98(c1.r, c1.g, c1.b);
+            let (x, y, z) = unmulp3(
+                lerp(a0c * a0, b0c * a1, t),
+                lerp(a1c * a0, b1c * a1, t),
+                lerp(a2c * a0, b2c * a1, t),
+                a_f,
+            );
+            a98_to_srgb_u8(x, y, z)
+        }
+        // Rec.2020（BT.2020 EOTF）。
+        GradientColorSpace::Rec2020 => {
+            let (r0c, r1c, r2c) = srgb_u8_to_rec2020(c0.r, c0.g, c0.b);
+            let (s0c, s1c, s2c) = srgb_u8_to_rec2020(c1.r, c1.g, c1.b);
+            let (x, y, z) = unmulp3(
+                lerp(r0c * a0, s0c * a1, t),
+                lerp(r1c * a0, s1c * a1, t),
+                lerp(r2c * a0, s2c * a1, t),
+                a_f,
+            );
+            rec2020_to_srgb_u8(x, y, z)
+        }
+        // XYZ-D50：sRGB → XYZ(D65) → Bradford D50 → lerp → D65 → sRGB。
+        GradientColorSpace::XyzD50 => {
+            let (x0, y0, z0) = srgb_u8_to_xyz_d65(c0.r, c0.g, c0.b);
+            let (x1, y1, z1) = srgb_u8_to_xyz_d65(c1.r, c1.g, c1.b);
+            let (x50a, y50a, z50a) = mat3_mul(XYZ_D65_TO_D50, x0, y0, z0);
+            let (x50b, y50b, z50b) = mat3_mul(XYZ_D65_TO_D50, x1, y1, z1);
+            let (x, y, z) = unmulp3(
+                lerp(x50a * a0, x50b * a1, t),
+                lerp(y50a * a0, y50b * a1, t),
+                lerp(z50a * a0, z50b * a1, t),
+                a_f,
+            );
+            let (x65, y65, z65) = mat3_mul(XYZ_D50_TO_D65, x, y, z);
+            xyz_d65_to_srgb_u8(x65, y65, z65)
+        }
     };
     Color::rgba(r, g, b, a_u8)
 }
@@ -512,6 +577,134 @@ fn prophoto_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
     let (r50, g50, b50) = mat3_mul(PROPHOTO_TO_XYZ_D50, x, y, z);
     let (r65, g65, b65) = mat3_mul(XYZ_D50_TO_D65, r50, g50, b50);
     xyz_d65_to_srgb_u8(r65, g65, b65)
+}
+
+// ── Display-P3 / Adobe RGB (1998) / Rec.2020（R57：canvas colorInterpolationMethod
+//    完整 CSS Color 4 空间；数学与 css-parser color_math.rs 同源，层规则不跨依赖）────
+
+/// Display-P3 线性 → XYZ(D65)。
+const P3_TO_XYZ: [f64; 9] = [
+    0.48657095, 0.26566769, 0.19821729, 0.22897456, 0.69173852, 0.07928691, 0.0, 0.04511338, 1.04394437,
+];
+/// XYZ(D65) → Display-P3 线性。
+const XYZ_TO_P3: [f64; 9] = [
+    2.49349691,
+    -0.93138362,
+    -0.40271078,
+    -0.82948897,
+    1.76266406,
+    0.02362469,
+    0.03584583,
+    -0.07617239,
+    0.95688452,
+];
+/// Adobe RGB (1998) 线性 → XYZ(D65)。
+const A98_TO_XYZ: [f64; 9] = [
+    0.57666904, 0.18555837, 0.18822865, 0.29734498, 0.62736357, 0.07529146, 0.02703136, 0.07068885, 0.99133754,
+];
+/// XYZ(D65) → Adobe RGB (1998) 线性。
+const XYZ_TO_A98: [f64; 9] = [
+    2.0415879,
+    -0.56500697,
+    -0.34473135,
+    -0.96924326,
+    1.87596752,
+    0.04155506,
+    0.01344428,
+    -0.11836239,
+    1.01517499,
+];
+/// Rec.2020 线性 → XYZ(D65)。
+const REC2020_TO_XYZ: [f64; 9] = [
+    0.63695805, 0.1446169, 0.16888097, 0.26270021, 0.67799807, 0.05930172, 0.0, 0.02807269, 1.06098506,
+];
+/// XYZ(D65) → Rec.2020 线性。
+const XYZ_TO_REC2020: [f64; 9] = [
+    1.71665119,
+    -0.35567078,
+    -0.25336628,
+    -0.66668435,
+    1.61648124,
+    0.01576855,
+    0.01763986,
+    -0.04277061,
+    0.94210312,
+];
+
+/// 安全幂（负分量 → 0，powf 对负数 NaN）。
+fn safe_powf(c: f64, g: f64) -> f64 {
+    c.max(0.0).powf(g)
+}
+
+/// BT.2020 传递函数（分量 → 线性光）。α/β 为 BT.2020 常数。
+fn rec2020_decode(c: f64) -> f64 {
+    const ALPHA: f64 = 1.09929682680944;
+    const BETA: f64 = 0.018053968510807;
+    if c < BETA * 4.5 {
+        c / 4.5
+    } else {
+        safe_powf((c + ALPHA - 1.0) / ALPHA, 1.0 / 0.45)
+    }
+}
+
+/// BT.2020 传递函数逆（线性光 → 分量）。
+fn rec2020_encode(lin: f64) -> f64 {
+    const ALPHA: f64 = 1.09929682680944;
+    const BETA: f64 = 0.018053968510807;
+    if lin < BETA {
+        lin * 4.5
+    } else {
+        ALPHA * safe_powf(lin, 0.45) - ALPHA + 1.0
+    }
+}
+
+/// a98-rgb 传递函数逆（线性光 → 分量）：正向 gamma 563/256，逆 = 256/563。
+fn a98_encode(c: f64) -> f64 {
+    safe_powf(c, 256.0 / 563.0)
+}
+
+/// a98-rgb 传递函数（分量 → 线性光）。
+fn a98_decode(c: f64) -> f64 {
+    safe_powf(c, 563.0 / 256.0)
+}
+
+/// sRGB u8 → Display-P3 gamma 分量（sRGB EOTF → XYZ(D65) → 逆 p3 矩阵 → p3 EOTF）。
+fn srgb_u8_to_p3(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (x, y, z) = srgb_u8_to_xyz_d65(r, g, b);
+    let (p0, p1, p2) = mat3_mul(XYZ_TO_P3, x, y, z);
+    (srgb_encode(p0), srgb_encode(p1), srgb_encode(p2))
+}
+
+/// Display-P3 gamma 分量 → sRGB u8。
+fn p3_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (p0, p1, p2) = mat3_mul(P3_TO_XYZ, srgb_decode(x), srgb_decode(y), srgb_decode(z));
+    xyz_d65_to_srgb_u8(p0, p1, p2)
+}
+
+/// sRGB u8 → Adobe RGB (1998) 分量。
+fn srgb_u8_to_a98(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (x, y, z) = srgb_u8_to_xyz_d65(r, g, b);
+    let (a0, a1, a2) = mat3_mul(XYZ_TO_A98, x, y, z);
+    (a98_encode(a0), a98_encode(a1), a98_encode(a2))
+}
+
+/// Adobe RGB (1998) 分量 → sRGB u8。
+fn a98_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (a0, a1, a2) = mat3_mul(A98_TO_XYZ, a98_decode(x), a98_decode(y), a98_decode(z));
+    xyz_d65_to_srgb_u8(a0, a1, a2)
+}
+
+/// sRGB u8 → Rec.2020 分量。
+fn srgb_u8_to_rec2020(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (x, y, z) = srgb_u8_to_xyz_d65(r, g, b);
+    let (q0, q1, q2) = mat3_mul(XYZ_TO_REC2020, x, y, z);
+    (rec2020_encode(q0), rec2020_encode(q1), rec2020_encode(q2))
+}
+
+/// Rec.2020 分量 → sRGB u8。
+fn rec2020_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (q0, q1, q2) = mat3_mul(REC2020_TO_XYZ, rec2020_decode(x), rec2020_decode(y), rec2020_decode(z));
+    xyz_d65_to_srgb_u8(q0, q1, q2)
 }
 
 #[cfg(test)]

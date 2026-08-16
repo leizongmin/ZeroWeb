@@ -223,6 +223,34 @@ impl InlineFormattingContext {
                                 w = lw;
                                 h = lh;
                             }
+                            // R57（M3）：replaced 元素（canvas/video/iframe/embed/object）的
+                            // HTML width/height 属性固有尺寸回退（同下方 img 分支语义）——
+                            // CSS 为 auto 时 `resolve_inline_block_dimension` 返 0，且主
+                            // inline_finalization 的 inline_block_sizes 仅收集 CSS 非 auto
+                            // 尺寸，canvas 曾落空降级为 inline 文本（fallback 内容
+                            // "FAIL (fallback content)" 文本宽 ~188px 覆盖 taffy 固有 400px，
+                            // 2d.reset.render.global_composite_operation oracle A/B 6.7%）。
+                            if w <= 0.0 || h <= 0.0 {
+                                if matches!(
+                                    elem_data.local_name(),
+                                    "canvas" | "video" | "iframe" | "embed" | "object" | "applet"
+                                ) {
+                                    if w <= 0.0 {
+                                        w = elem_data
+                                            .get_attribute("width")
+                                            .and_then(|v| v.parse::<f32>().ok())
+                                            .unwrap_or(0.0)
+                                            .max(0.0);
+                                    }
+                                    if h <= 0.0 {
+                                        h = elem_data
+                                            .get_attribute("height")
+                                            .and_then(|v| v.parse::<f32>().ok())
+                                            .unwrap_or(0.0)
+                                            .max(0.0);
+                                    }
+                                }
+                            }
                             if w > 0.0 && h > 0.0 {
                                 let vertical_align =
                                     style.map(|s| s.vertical_align.clone()).unwrap_or(VerticalAlignValue::Baseline);

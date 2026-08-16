@@ -857,6 +857,21 @@ impl CanvasStyle {
         }
     }
 
+    /// R57（M3）：显式插值色彩空间 + 色相法（colorInterpolationMethod /
+    /// hueInterpolationMethod）——桥接 setGradientInterpolation op 的直通。
+    pub fn set_color_interpolation(
+        &mut self,
+        space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+        hue: zero_render_foundation::primitive::HueMethod,
+    ) {
+        match self {
+            CanvasStyle::LinearGradient(g) => g.set_color_interpolation(space, hue),
+            CanvasStyle::RadialGradient(g) => g.set_color_interpolation(space, hue),
+            CanvasStyle::ConicGradient(g) => g.set_color_interpolation(space, hue),
+            _ => {}
+        }
+    }
+
     /// 判断是否为渐变样式（光栅化路径分流用）。
     pub fn is_gradient(&self) -> bool {
         matches!(

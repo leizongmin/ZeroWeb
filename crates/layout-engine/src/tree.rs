@@ -1003,6 +1003,20 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
 /// content:url() 的普通元素应**自身**变 replaced（element-becomes-replaced）：抑制其全部真实
 /// 子节点（含匿名文本），元素盒自身按 image 固有尺寸 sizing + paint 渲染图片（绕 R109 IFC
 /// 不测 inline replaced 的阻塞，见 R2438 child-injection 证伪）。kill-switch `ZW_CONTENT_REPLACE=0`。
+/// R57（M3）：replaced 元素（canvas/video/audio/iframe/embed/object/applet）受支持时
+/// 抑制 fallback 子内容参与布局（HTML §4.8.10）。display 判定用 InlineBlock（UA 表
+/// 中这些元素的内联块映射；非 replaced 的 InlineBlock 不受影响）。
+fn is_replaced_with_fallback(computed: &ComputedStyle, doc: &Document, dom_id: NodeId) -> bool {
+    matches!(computed.display, DisplayValue::InlineBlock)
+        && doc.get(dom_id).is_some_and(|n| match &n.kind {
+            NodeKind::Element(e) => matches!(
+                e.local_name(),
+                "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet"
+            ),
+            _ => false,
+        })
+}
+
 fn is_content_url_element(computed: &ComputedStyle) -> bool {
     matches!(
         computed.content,
@@ -1325,17 +1339,24 @@ fn build_subtree(
         // R2439：`content:url()` 普通元素（element-becomes-replaced）→ 抑制**全部**真实子节点
         //（含匿名文本）；元素盒自身渲染图片（pipeline pre-layout sizing + paint_img_element
         // 扩展，绕 R109 IFC，见 R2438）。kill-switch `ZW_CONTENT_REPLACE=0`。
-        let children_dom: Vec<NodeId> =
-            if std::env::var("ZW_CONTENT_REPLACE").as_deref() != Ok("0") && is_content_url_element(&computed) {
-                Vec::new()
-            } else if is_closed_details(doc, dom_id) {
-                children_dom
-                    .into_iter()
-                    .filter(|&c| is_summary_element(doc, c))
-                    .collect()
-            } else {
-                children_dom
-            };
+        // R57（M3）：canvas/video/audio/iframe/embed/object/applet（replaced + fallback 内容）
+        // 受支持时不布局 fallback 子——HTML §4.8.10 fallback 仅在元素不支持时显示；子盒会
+        // 引入 margin collapse（fallback `<p>` 的 16px 上边距塌穿 canvas → canvas 盒下移 16px）
+        // 与多余盒（painter 曾叠绘 "FAIL (fallback content)" 文本）。canvas-grid reftest
+        // 2d.gradient.colorInterpolationMethod 的格子 38px 偏移即此（oracle A/B）。
+        let children_dom: Vec<NodeId> = if (std::env::var("ZW_CONTENT_REPLACE").as_deref() != Ok("0")
+            && is_content_url_element(&computed))
+            || is_replaced_with_fallback(&computed, doc, dom_id)
+        {
+            Vec::new()
+        } else if is_closed_details(doc, dom_id) {
+            children_dom
+                .into_iter()
+                .filter(|&c| is_summary_element(doc, c))
+                .collect()
+        } else {
+            children_dom
+        };
 
         // 检测是否为 flex/grid 容器 — 在这些容器中，文本节点成为匿名 flex/grid 项
         let is_flex_or_grid = matches!(
@@ -1452,16 +1473,45 @@ fn build_subtree(
                                 .copied()
                                 .find(|&nid| doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
                                 .unwrap_or(dom_id);
-                            let anon_taffy = if is_block_mixed {
+                            // R57（M3）：片段内非纯 inline display 的元素（img/canvas/
+                            // inline-block 等原子行内级）建独立 taffy 子树作为匿名块子盒
+                            // ——否则原子 inline 无 LayoutBox，painter 无法绘制（canvas-grid
+                            // reftest `<span><div>srgb</div><canvas></canvas></span>` 的 canvas
+                            // 曾无盒 → 格子全空白，2d.gradient.colorInterpolationMethod
+                            // oracle A/B 10.7%）。纯 inline 元素与文本仍走 IFC（fragment
+                            // 收集），此处只补需要盒子的原子项。
+                            let atomic_children: Vec<taffy::NodeId> = item_node_ids
+                                .iter()
+                                .copied()
+                                .filter(|&nid| {
+                                    doc.get(nid).is_some_and(|n| {
+                                        matches!(&n.kind, NodeKind::Element(_))
+                                            && styles
+                                                .get(&nid)
+                                                .is_some_and(|s| !matches!(s.display, DisplayValue::Inline))
+                                    })
+                                })
+                                .map(|nid| {
+                                    build_subtree(
+                                        ctx,
+                                        doc,
+                                        styles,
+                                        nid,
+                                        grid_areas.as_ref(),
+                                        false,
+                                        own_writing_mode.clone(),
+                                        viewport_w,
+                                        viewport_h,
+                                    )
+                                })
+                                .collect();
+                            let anon_style = if is_block_mixed {
                                 // block 容器匿名块：plain Block（不继承容器盒模型，容器
                                 // 自身的 bg/border/padding 仍由容器盒绘制）。
-                                let anon_style = taffy::Style {
+                                taffy::Style {
                                     display: taffy::style::Display::Block,
                                     ..taffy::Style::default()
-                                };
-                                ctx.taffy
-                                    .new_leaf_with_context(anon_style, ctx_node)
-                                    .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap())
+                                }
                             } else {
                                 // inline 元素匿名块：继承 split inline 的盒模型（border/
                                 // padding/background），使其 border/background 经 shrink
@@ -1477,9 +1527,19 @@ fn build_subtree(
                                     top: taffy::style::LengthPercentageAuto::AUTO,
                                     bottom: taffy::style::LengthPercentageAuto::AUTO,
                                 };
+                                anon_style
+                            };
+                            let anon_taffy = if atomic_children.is_empty() {
                                 ctx.taffy
                                     .new_leaf_with_context(anon_style, ctx_node)
                                     .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap())
+                            } else {
+                                let node = ctx
+                                    .taffy
+                                    .new_with_children(anon_style, &atomic_children)
+                                    .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+                                let _ = ctx.taffy.set_node_context(node, Some(ctx_node));
+                                node
                             };
                             ctx.taffy_to_dom.insert(anon_taffy, dom_id);
                             ctx.r109.fragment_registry.insert(anon_taffy, item_node_ids);
@@ -1670,6 +1730,17 @@ fn build_subtree(
                                 && !crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant(
                                     doc, styles, child_dom,
                                 )
+                                // R57（M3）：含 in-flow block-level 子元素的 inline 不跳过——
+                                // 该 inline 须经 R109 §9.2.1.1 拆分（block 子独立 taffy 子树）。
+                                // canvas-grid reftest 的 `<span><div>srgb</div><canvas></canvas></span>`
+                                // 曾整棵被丢出 taffy 树（canvas 盒缺失 → 格子全空白，
+                                // 2d.gradient.colorInterpolationMethod oracle A/B 10.7%）。
+                                && !doc.child_nodes(child_dom).iter().any(|&gc| {
+                                    doc.get(gc).is_some_and(|gn| {
+                                        matches!(&gn.kind, NodeKind::Element(_))
+                                            && styles.get(&gc).is_some_and(|gs| is_block_level_in_flow(&gs.display, &gs.position))
+                                    })
+                                })
                             {
                                 continue;
                             }

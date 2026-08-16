@@ -77,7 +77,18 @@ pub(super) fn apply_scripted_dom_mutations(
             continue;
         }
         // module 语义需要编译管线；reftest 视角下按经典脚本 best-effort 执行。
-        let full = format!("__zw_begin_script && __zw_begin_script();\n{code}");
+        // R57（M3）：module 脚本按**块作用域**包裹——真 module 每个文件独立作用域，
+        // 经典脚本同全局作用域会让多个 module 脚本的顶层 `const canvas = ...`
+        // 重声明互撞（canvas-grid 用例 10 格 canvas 各一个 module 脚本，第 2 格起
+        // 全 SyntaxError 中止 → 格子全空白，2d.gradient.colorInterpolationMethod
+        // oracle A/B 10.7%）。块包裹近似 module 隔离（import/export 仍不支持——
+        // best-effort，parse 失败按既有 warning 流程）。
+        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
+        let full = if is_module {
+            format!("__zw_begin_script && __zw_begin_script();\n{{\n{code}\n}}")
+        } else {
+            format!("__zw_begin_script && __zw_begin_script();\n{code}")
+        };
         if let Err(e) = sandbox.execute(&full) {
             eprintln!("  [reftest JS] Script execution warning: {e}");
         }

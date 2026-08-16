@@ -298,6 +298,29 @@ fn parse_pattern_repetition(s: &str) -> zero_canvas::PatternRepetition {
     }
 }
 
+/// R57：CanvasGradient colorInterpolationMethod 空间名 → GradientColorSpace
+///（CSS Color 4 全部预定义空间；未知回落 Srgb——shim 已校验，防御性回落）。
+fn parse_gradient_color_space(s: &str) -> zero_render_foundation::primitive::GradientColorSpace {
+    use zero_render_foundation::primitive::GradientColorSpace as G;
+    match s.trim() {
+        "srgb-linear" => G::SrgbLinear,
+        "lab" => G::Lab,
+        "oklab" => G::Oklab,
+        "lch" => G::Lch,
+        "oklch" => G::Oklch,
+        "hsl" => G::Hsl,
+        "hwb" => G::Hwb,
+        "xyz" | "xyz-d65" => G::Xyz,
+        "xyz-d50" => G::XyzD50,
+        "prophoto-rgb" => G::ProphotoRgb,
+        "display-p3" => G::DisplayP3,
+        "display-p3-linear" => G::DisplayP3Linear,
+        "a98-rgb" => G::A98Rgb,
+        "rec2020" => G::Rec2020,
+        _ => G::Srgb,
+    }
+}
+
 /// canvas `lineCap` 串 → LineCap（spec: butt/round/square；未知回落 Butt = 默认）。
 fn parse_line_cap(s: &str) -> zero_canvas::LineCap {
     match s.trim().to_ascii_lowercase().as_str() {
@@ -925,6 +948,32 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             "ok".into()
         }
+        // R56h（M3）：CanvasFilter dropShadow 渲染接线——shim 串参
+        // `dx\x1fdy\x1fblur\x1ffloodColor\x1ffloodOpacity`（floodOpacity 乘入
+        // alpha；spec：shadow color = floodColor × floodOpacity）。空串清除。
+        // 2d.filter.canvasFilterObject.dropShadow（oracle A/B 27% 聚类的缺失环节——
+        // 此前 Rust 侧已实现但 bridge 未分发，真实页面路径静默丢失）。
+        "setFilterDropShadow" => {
+            if let Some(ctx) = reg.contexts.get_mut(&hid()) {
+                let s = arg(0);
+                if s.trim().is_empty() {
+                    ctx.set_filter_drop_shadow(None);
+                } else {
+                    let parts: Vec<&str> = s.split('\x1f').collect();
+                    if parts.len() == 5 {
+                        let dx: f32 = parts[0].parse().unwrap_or(0.0);
+                        let dy: f32 = parts[1].parse().unwrap_or(0.0);
+                        let blur: f32 = parts[2].parse().unwrap_or(0.0);
+                        let opacity: f32 = parts[4].parse::<f32>().unwrap_or(1.0).clamp(0.0, 1.0);
+                        if let Some(mut color) = try_parse_canvas_color(parts[3]) {
+                            color.a = ((color.a as f32) * opacity).round().clamp(0.0, 255.0) as u8;
+                            ctx.set_filter_drop_shadow(Some((dx, dy, blur, color)));
+                        }
+                    }
+                }
+            }
+            "ok".into()
+        }
         "validateColor" => {
             if try_parse_canvas_color(arg(0)).is_some() {
                 "1".to_string()
@@ -1194,6 +1243,36 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
             }
             // R34xx：记录引用（addColorStop live 重放用）。
             reg.grad_refs.entry(gid).or_default().push((hid(), 0));
+            "ok".into()
+        }
+        // R57（M3）：setGradientInterpolation 接线（colorInterpolationMethod /
+        // hueInterpolationMethod）——shim 已发 op、Rust `set_color_interpolation` API
+        // 已有，bridge 曾漏分发（与 setFilterDropShadow 同模式；R56h 只经 Rust 单测
+        // 验证）。2d.gradient.colorInterpolationMethod 的插值空间/色相法因此从未生效。
+        "setGradientInterpolation" => {
+            let gid = arg(0).trim().parse::<u64>().unwrap_or(0);
+            let space = parse_gradient_color_space(arg(1));
+            let hue = match arg(2).trim() {
+                "longer" => zero_render_foundation::primitive::HueMethod::Longer,
+                "increasing" => zero_render_foundation::primitive::HueMethod::Increasing,
+                "decreasing" => zero_render_foundation::primitive::HueMethod::Decreasing,
+                _ => zero_render_foundation::primitive::HueMethod::Shorter,
+            };
+            if let Some(style) = reg.gradients.get_mut(&gid) {
+                style.set_color_interpolation(Some(space), hue);
+            }
+            if let Some(style) = reg.gradients.get(&gid)
+                && let Some(refs) = reg.grad_refs.get(&gid).cloned()
+            {
+                for (ctx_id, slot) in refs {
+                    if let Some(ctx) = reg.contexts.get_mut(&ctx_id) {
+                        match slot {
+                            0 => ctx.set_fill_style(style.clone()),
+                            _ => ctx.set_stroke_style(style.clone()),
+                        }
+                    }
+                }
+            }
             "ok".into()
         }
         "setStrokeStyleGradient" => {
@@ -1712,5 +1791,209 @@ mod tests {
         assert_eq!(color_to_canvas_css(&c), "rgba(0, 255, 0, 0)");
         let c = zero_render_foundation::color::Color::rgb(255, 0, 0);
         assert_eq!(color_to_canvas_css(&c), "#ff0000");
+    }
+
+    /// R57（M3）：setFilterDropShadow op 全链路接线——shim 的
+    /// `__zw_canvas_op(handle, 'setFilterDropShadow', 'dx\x1fdy\x1fblur\x1fcolor\x1fopacity')`
+    /// 须真实到达 host context（R56h 曾只实现 Rust API + JS shim，bridge 漏分发，
+    /// oracle A/B 的 2d.filter.canvasFilterObject.dropShadow 27% 差异即此断裂）。
+    #[test]
+    fn test_set_filter_drop_shadow_op_reaches_context() {
+        let mut reg = CanvasRegistry::new();
+        let h = canvas_context_op(&mut reg, "0", "getContext2d", &["100".into(), "100".into()]);
+        // dropShadow：dx=9, dy=12, blur=0, floodColor=purple, floodOpacity=0.7
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "setFilterDropShadow",
+            &["9\x1f12\x1f0\x1fpurple\x1f0.7".into()],
+        );
+        canvas_context_op(&mut reg, &h, "setFillStyle", &["#ff0000".into()]);
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "fillRect",
+            &["10".into(), "10".into(), "50".into(), "50".into()],
+        );
+        // 阴影在源外延伸位 (61,22)：purple 128 × 0.7 → alpha 179（round），
+        // 源 rect 覆盖区域内的阴影不可见（shadow 先绘、形状后绘）
+        let d = canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["61".into(), "22".into(), "1".into(), "1".into()],
+        );
+        let px = |wire: &str| -> Vec<u8> {
+            wire.split_once(';')
+                .unwrap()
+                .1
+                .split(',')
+                .map(|v| v.parse().unwrap())
+                .collect()
+        };
+        let shadow = px(&d);
+        assert_eq!(&shadow[..4], &[128, 0, 128, 179], "shadow pixel: {shadow:?}");
+        // 源 rect 本体保留红色（shadow 在形状之前绘制）
+        let d2 = canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["10".into(), "10".into(), "1".into(), "1".into()],
+        );
+        let src = px(&d2);
+        assert_eq!(&src[..4], &[255, 0, 0, 255], "source pixel: {src:?}");
+        // 空串清除 → 后续绘制无阴影
+        canvas_context_op(&mut reg, &h, "setFilterDropShadow", &[String::new()]);
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "fillRect",
+            &["60".into(), "60".into(), "10".into(), "10".into()],
+        );
+        let d3 = canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["69".into(), "72".into(), "1".into(), "1".into()],
+        );
+        let clear = px(&d3);
+        assert_eq!(&clear[..4], &[0, 0, 0, 0], "cleared shadow pixel: {clear:?}");
+    }
+
+    /// R57（M3）：reset 后 fillRect 双矩形（2d.reset.render.global_composite_operation
+    /// oracle A/B）——页面路径 bitmap 曾整片全黑（reset 重建后 fillRect 未按 L 形
+    /// 绘制）。bridge 层复现：xor → reset → fillRect×2 应得 L 形（合成回 source-over）。
+    #[test]
+    fn test_reset_then_fill_rects_bridge() {
+        let mut reg = CanvasRegistry::new();
+        let h = canvas_context_op(&mut reg, "0", "getContext2d", &["400".into(), "400".into()]);
+        canvas_context_op(&mut reg, &h, "setCompositeOperation", &["xor".into()]);
+        canvas_context_op(&mut reg, &h, "reset", &[]);
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "fillRect",
+            &["10".into(), "10".into(), "100".into(), "100".into()],
+        );
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "fillRect",
+            &["50".into(), "50".into(), "100".into(), "100".into()],
+        );
+        let px = |wire: &str| -> Vec<u8> {
+            wire.split_once(';')
+                .unwrap()
+                .1
+                .split(',')
+                .map(|v| v.parse().unwrap())
+                .collect()
+        };
+        for (x, y, expect) in [(30, 30, 0), (60, 60, 0), (140, 60, 0)] {
+            let d = canvas_context_op(
+                &mut reg,
+                &h,
+                "getImageData",
+                &[x.to_string(), y.to_string(), "1".into(), "1".into()],
+            );
+            let p = px(&d);
+            assert_eq!(p[0], 0, "({x},{y}) R got {}", p[0]);
+            assert_eq!(p[3], 255, "({x},{y}) A got {}", p[3]);
+        }
+        for (x, y) in [(160, 160), (5, 5), (110, 10), (150, 50)] {
+            let d = canvas_context_op(
+                &mut reg,
+                &h,
+                "getImageData",
+                &[x.to_string(), y.to_string(), "1".into(), "1".into()],
+            );
+            let p = px(&d);
+            assert_eq!(p[3], 0, "({x},{y}) 应透明 got {:?}", &p[..4]);
+        }
+    }
+
+    /// R57（M3）：渐变 fillRect 页面路径（2d.gradient.colorInterpolationMethod 第一格曾
+    /// 全白——op 序列正确但 bridge 缺 setGradientInterpolation 分发）。此处先锁定
+    /// 「渐变绘制本身」（无插值 op）与「显式插值 op」两条路径。
+    #[test]
+    fn test_gradient_fill_rect_bridge() {
+        let mut reg = CanvasRegistry::new();
+        let h = canvas_context_op(&mut reg, "0", "getContext2d", &["100".into(), "50".into()]);
+        let gid = canvas_context_op(
+            &mut reg,
+            &h,
+            "createLinearGradient",
+            &["0".into(), "0".into(), "100".into(), "0".into()],
+        );
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "addColorStop",
+            &[gid.clone(), "0".into(), "color(srgb 1 0 0)".into()],
+        );
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "addColorStop",
+            &[gid.clone(), "1".into(), "color(srgb 0 1 0)".into()],
+        );
+        canvas_context_op(&mut reg, &h, "setFillStyleGradient", std::slice::from_ref(&gid));
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "fillRect",
+            &["0".into(), "0".into(), "100".into(), "50".into()],
+        );
+        let px = |wire: &str| -> Vec<u8> {
+            wire.split_once(';')
+                .unwrap()
+                .1
+                .split(',')
+                .map(|v| v.parse().unwrap())
+                .collect()
+        };
+        let p0 = px(&canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["0".into(), "10".into(), "1".into(), "1".into()],
+        ));
+        let pm = px(&canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["50".into(), "10".into(), "1".into(), "1".into()],
+        ));
+        let p1 = px(&canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["99".into(), "10".into(), "1".into(), "1".into()],
+        ));
+        assert_eq!(&p0[..3], &[255, 0, 0], "起点应红: {p0:?}");
+        // x=99 → t=0.99 → 99% 绿（非纯绿）
+        assert!(p1[1] > 200 && p1[0] < 30 && p1[2] < 30, "终点应近绿: {p1:?}");
+        assert!(pm[0] > 0 && pm[1] > 0 && pm[2] < 100, "中点应黄绿过渡: {pm:?}");
+        // 显式插值 op（R56h 曾缺 bridge 分发——JS 已发、Rust API 已有）
+        canvas_context_op(
+            &mut reg,
+            &h,
+            "setGradientInterpolation",
+            &[gid.clone(), "srgb".into(), "shorter".into()],
+        );
+        let p0b = px(&canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["0".into(), "40".into(), "1".into(), "1".into()],
+        ));
+        let pmb = px(&canvas_context_op(
+            &mut reg,
+            &h,
+            "getImageData",
+            &["50".into(), "40".into(), "1".into(), "1".into()],
+        ));
+        assert_eq!(&p0b[..3], &[255, 0, 0], "插值后起点仍红: {p0b:?}");
+        assert!(pmb[0] > 0 && pmb[1] > 0 && pmb[2] < 100, "插值后中点仍黄绿: {pmb:?}");
     }
 }

@@ -326,30 +326,45 @@ pub(crate) fn shrink_inline_blocks_to_content(
         // （仅 width 维度；元素仍是 block 堆叠——完整 inline-box 模型属 Phase A 多会话）。
         // 仅对有 background 的 inline 触发，避免影响纯文本 inline span（其文本经 IFC 收集，
         // 无盒装饰，收缩无意义且可能干扰）。
-        let is_shrinkable = box_node.node_id.is_some_and(|id| {
-            styles.get(&id).is_some_and(|s| match s.display {
-                // R783：inline-flex / inline-grid 同 inline-block 一样是 inline-level 容器，
-                // width:auto 应 shrink-to-fit（CSS §10.3.10/§10.3.11），但 taffy 0.7 把它们
-                // 当 block 拉伸到可用宽（满宽）。此前仅 inline-block 收缩，inline-flex/inline-grid
-                // 漏处理→aspect-ratio-intrinsic-size-001/003/006/008 等内联弹性盒被拉到 784px。
-                // 多 item flex-row 的 main-axis 求和语义此处用 max 近似（单 item 等价；多 item
-                // 罕见且满宽→max 仍优于 784px 拉伸）。
-                DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid => true,
-                DisplayValue::Inline => {
-                    // R372：带非默认 background 的 inline shrink-to-fit。R1480（R109 增量）：
-                    // 带 border 的 inline（如 WPT border-width-applies-to-008：display:inline +
-                    // border-width:90px）亦应 shrink——否则 inline→taffy::Block 拉满宽，border
-                    // 画在满宽 box（应 content-width = 内容 + 左右 border）。
-                    let has_bg = s.background_color != ColorValue::Transparent;
-                    let has_border = matches!(&s.border_top_width, LengthValue::Px(v) if *v > 0.0)
-                        || matches!(&s.border_bottom_width, LengthValue::Px(v) if *v > 0.0)
-                        || matches!(&s.border_left_width, LengthValue::Px(v) if *v > 0.0)
-                        || matches!(&s.border_right_width, LengthValue::Px(v) if *v > 0.0);
-                    has_bg || has_border
-                }
+        // R57（M3）：replaced 元素（canvas/video/audio/iframe/embed/object/applet/img）的
+        // width:auto 固有尺寸来自 HTML 属性（taffy 已解析为固有尺寸，如 canvas 400×400），
+        // 其 DOM 子内容只是 fallback（canvas 的 `<p class="fallback">`）——此处按内容宽收缩
+        // 会把 canvas 压到 fallback 文本宽（~188px），位图被横向压缩 0.47
+        // （2d.reset.render.global_composite_operation oracle A/B 6.7%）。
+        let is_replaced = box_node.node_id.is_some_and(|id| {
+            doc.get(id).is_some_and(|n| match &n.kind {
+                zero_dom::NodeKind::Element(e) => matches!(
+                    e.local_name(),
+                    "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet" | "img"
+                ),
                 _ => false,
             })
         });
+        let is_shrinkable = !is_replaced
+            && box_node.node_id.is_some_and(|id| {
+                styles.get(&id).is_some_and(|s| match s.display {
+                    // R783：inline-flex / inline-grid 同 inline-block 一样是 inline-level 容器，
+                    // width:auto 应 shrink-to-fit（CSS §10.3.10/§10.3.11），但 taffy 0.7 把它们
+                    // 当 block 拉伸到可用宽（满宽）。此前仅 inline-block 收缩，inline-flex/inline-grid
+                    // 漏处理→aspect-ratio-intrinsic-size-001/003/006/008 等内联弹性盒被拉到 784px。
+                    // 多 item flex-row 的 main-axis 求和语义此处用 max 近似（单 item 等价；多 item
+                    // 罕见且满宽→max 仍优于 784px 拉伸）。
+                    DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid => true,
+                    DisplayValue::Inline => {
+                        // R372：带非默认 background 的 inline shrink-to-fit。R1480（R109 增量）：
+                        // 带 border 的 inline（如 WPT border-width-applies-to-008：display:inline +
+                        // border-width:90px）亦应 shrink——否则 inline→taffy::Block 拉满宽，border
+                        // 画在满宽 box（应 content-width = 内容 + 左右 border）。
+                        let has_bg = s.background_color != ColorValue::Transparent;
+                        let has_border = matches!(&s.border_top_width, LengthValue::Px(v) if *v > 0.0)
+                            || matches!(&s.border_bottom_width, LengthValue::Px(v) if *v > 0.0)
+                            || matches!(&s.border_left_width, LengthValue::Px(v) if *v > 0.0)
+                            || matches!(&s.border_right_width, LengthValue::Px(v) if *v > 0.0);
+                        has_bg || has_border
+                    }
+                    _ => false,
+                })
+            });
         let width_auto = box_node
             .node_id
             .is_some_and(|id| styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)));

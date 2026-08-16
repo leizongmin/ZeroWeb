@@ -1611,6 +1611,55 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
     }
 }
 
+/// R57（M3）：收集布局树中 canvas 元素的内容矩形（绝对坐标，与 painter 的
+/// paint_canvas_element 同偏移累计——content origin = Σ(祖先 x + border + padding)）。
+/// canvas oracle A/B 用它裁剪对比区域（DC-3 测 canvas 绘制结果）。
+fn collect_canvas_content_rects(
+    b: &zero_layout_engine::types::LayoutBox,
+    off_x: f32,
+    off_y: f32,
+    doc: &zero_dom::Document,
+    out: &mut Vec<(f32, f32, f32, f32)>,
+) {
+    let abs_x = off_x + b.x;
+    let abs_y = off_y + b.y;
+    let content_x = abs_x + b.border_left + b.padding_left;
+    let content_y = abs_y + b.border_top + b.padding_top;
+    if let Some(nid) = b.node_id
+        && let Some(n) = doc.get(nid)
+        && let zero_dom::NodeKind::Element(e) = &n.kind
+        && e.local_name() == "canvas"
+    {
+        out.push((content_x, content_y, b.content_width, b.content_height));
+    }
+    for c in &b.children {
+        collect_canvas_content_rects(c, content_x, content_y, doc, out);
+    }
+}
+
+/// 裁剪帧缓冲到 (x, y, w, h)（clamp 到缓冲边界；空区域返空缓冲——diff 0 无害）。
+fn crop_framebuffer(
+    fb: &zero_render_foundation::surface::FrameBuffer,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+) -> zero_render_foundation::surface::FrameBuffer {
+    let fbw = fb.width as usize;
+    let fbh = fb.height as usize;
+    let x = x.min(fbw);
+    let y = y.min(fbh);
+    let w = w.min(fbw - x);
+    let h = h.min(fbh - y);
+    let mut out = zero_render_foundation::surface::FrameBuffer::new(w as u32, h as u32);
+    for row in 0..h {
+        let src = ((y + row) * fbw + x) * 4;
+        let dst = row * w * 4;
+        out.data[dst..dst + w * 4].copy_from_slice(&fb.data[src..src + w * 4]);
+    }
+    out
+}
+
 /// `reftest-oracle` 子命令（DC-14 独立 Oracle）— 渲染上游 WPT reftest 的 test 页，
 /// 与 chromium Oracle 截图（`oracle-shots/{safe_id}.png`）对比，报告 chromium-Oracle
 /// 一致率（DC-14 真通过指标，替代 ZeroWeb self-ref 的 ~46.5% 假通过）。
@@ -1621,7 +1670,7 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
 ///        ORACLE_PASS_RATIO=<f>（默认 0.01=1%，z_vs_chr < 此值判 oracle-pass）
 ///        --wpt-data <dir>、--viewport、--jobs 等通用选项
 fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
-    use reftest::{ReftestConfig, compare_pixels, render_to_framebuffer_with_base};
+    use reftest::{ReftestConfig, compare_pixels, render_to_framebuffer_with_layout_with_base};
 
     let wpt_data_dir = match &options.wpt_data {
         Some(p) => std::path::PathBuf::from(p),
@@ -1664,6 +1713,21 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         })
         .collect();
 
+    // R57（M3）：oracle 捕获环境（Chromium 150）不支持的 API 依赖用例排除——
+    // ① tentative CanvasFilter（`typeof CanvasFilter === 'undefined'`）；② beginLayer/
+    // endLayer（实测 Chromium 150 `beginLayer()` 抛 TypeError）。捕获时脚本在调用处
+    // 中止，oracle 帧为半渲染/空白，A/B 对比无意义。排除并计数（同 testharness 面
+    // reftest-format 的 NotRun 语义：canvasFilterObject 37 用例 + beginLayer 103 用例）。
+    let (env_excluded, filtered): (Vec<_>, Vec<_>) = filtered
+        .into_iter()
+        .partition(|case| case.test_html.contains("CanvasFilter") || case.test_html.contains("beginLayer"));
+    if !env_excluded.is_empty() {
+        eprintln!(
+            "oracle 环境不支持排除: {} cases（Chromium 150 无 CanvasFilter/beginLayer，oracle 帧无效）",
+            env_excluded.len()
+        );
+    }
+
     eprintln!(
         "reftest-oracle: {} cases, oracle_dir={}, pass_ratio={:.2}%",
         filtered.len(),
@@ -1692,15 +1756,65 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             media_type: options.media_type,
             ..Default::default()
         };
-        let test_fb = render_to_framebuffer_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
+        let (test_fb, layout_root, mutated_html) =
+            render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
+        // R57（M3）：canvas oracle A/B 的 canvas 区域对比——DC-3 测的是 canvas 绘制结果，
+        // 而 canvas WPT 页面头部 h1/p.desc 文本的字体渲染差异主导全页 diff（~4% 地板，
+        // 2d.reset.render.global_composite_operation 实证）。页面含 canvas 元素时，主指标
+        // = canvas 内容矩形区域（本渲染布局定位）的 diff；CSS reftest 页面无 canvas →
+        // 保持全页对比（零行为变化）。
+        let mut canvas_rects = Vec::new();
+        collect_canvas_content_rects(
+            &layout_root,
+            0.0,
+            0.0,
+            &zero_dom::parse_html(&mutated_html),
+            &mut canvas_rects,
+        );
+        // R57（M3 debug）：oracle A/B 失败用例 dump PNG（与 reftest 的 REFTEST_DUMP 同语义）。
+        if std::env::var("REFTEST_DUMP").is_ok() && std::env::var("REFTEST_DUMP_ORACLE").is_ok() {
+            let dump_dir = std::path::Path::new("target/reftest-dump");
+            let _ = std::fs::create_dir_all(dump_dir);
+            reftest::save_fb_as_png(&test_fb, &dump_dir.join(format!("{safe_id}-oracle-test.png")));
+            if let Ok(ofb) = load_png_to_framebuffer(&oracle_path.to_string_lossy()) {
+                reftest::save_fb_as_png(&ofb, &dump_dir.join(format!("{safe_id}-oracle-ref.png")));
+            }
+        }
         let oracle_fb = match load_png_to_framebuffer(&oracle_path.to_string_lossy()) {
             Ok(fb) => fb,
             Err(_) => return (case.id.clone(), false, None, strict_thresh_pct, false),
         };
         let near_solid = reftest::frame_is_near_solid(&oracle_fb);
-        let (diff_px, _max_diff) = compare_pixels(&test_fb, &oracle_fb, 0);
-        let w = test_fb.width.min(oracle_fb.width) as usize;
-        let h = test_fb.height.min(oracle_fb.height) as usize;
+        // 多 canvas 页面（canvas-grid reftest：2d.gradient.colorInterpolationMethod 14 格）——
+        // 取全部 canvas 矩形的最小包围盒（单个取首项等价）。
+        let (test_region, oracle_region) = if !canvas_rects.is_empty() {
+            let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
+            let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
+            for &(rx, ry, rw, rh) in &canvas_rects {
+                min_x = min_x.min(rx);
+                min_y = min_y.min(ry);
+                max_x = max_x.max(rx + rw);
+                max_y = max_y.max(ry + rh);
+            }
+            let cx = min_x.max(0.0) as usize;
+            let cy = min_y.max(0.0) as usize;
+            let cw = ((max_x - min_x).max(0.0) as usize).min(test_fb.width as usize - cx);
+            let ch = ((max_y - min_y).max(0.0) as usize).min(test_fb.height as usize - cy);
+            (
+                crop_framebuffer(&test_fb, cx, cy, cw, ch),
+                crop_framebuffer(&oracle_fb, cx, cy, cw, ch),
+            )
+        } else {
+            (test_fb, oracle_fb)
+        };
+        // R57（M3）：channel 容差用 DC-14 严格定义（布局 ≤2 / 文字 ≤5）而非 0——
+        // ±1 的预乘/浮点合成舍入差（Skia u8 整数管线 vs 我们的 float 管线）是跨引擎
+        // 系统性差异（WPT canvas 用 fuzzy 注解容忍），channel=0 把它们误计为全区域
+        // 差异（drop-shadow-globalAlpha 曾 38.6% 全是 ±1 像素）。
+        let channel_tol = case.category.strict_max_channel_diff();
+        let (diff_px, _max_diff) = compare_pixels(&test_region, &oracle_region, channel_tol);
+        let w = test_region.width.min(oracle_region.width) as usize;
+        let h = test_region.height.min(oracle_region.height) as usize;
         let total = (w * h).max(1) as f64;
         (
             case.id.clone(),

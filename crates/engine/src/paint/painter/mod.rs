@@ -1139,11 +1139,21 @@ impl Painter {
         }
 
         // steps 3/4/5：in-flow / float（仅非 positioned 子元素；positioned 由 scope flush 处理）
+        // R57（M3）：canvas 元素受支持时 fallback 内容不渲染（HTML §4.8.10——canvas 内容
+        // 仅在不支持 canvas 的 UA 显示；Chromium 不绘 fallback，oracle A/B 实证）。跳过
+        // canvas 子盒绘制（fallback 文本曾叠绘在画布位图上）。
+        let is_canvas_box = box_node
+            .node_id
+            .and_then(|id| doc.and_then(|d| d.get(id)))
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "canvas"));
         for child_idx in ordered_child_indices(&box_node.children, |child| {
             (!paint_as_multicol || child.column_span_offsets.is_empty())
                 && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
                 && !is_positioned_child(child)
         }) {
+            if is_canvas_box {
+                continue;
+            }
             let child = &box_node.children[child_idx];
             self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
         }

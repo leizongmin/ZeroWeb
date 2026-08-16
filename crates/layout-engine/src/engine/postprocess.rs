@@ -908,11 +908,24 @@ pub(super) fn shift_siblings_after_ifc_grow(
             // 重叠（test_block_negative_margin_*），非 R1492 长高重叠，不应下移。
             // R1502：next 用 is_shiftable_next（含 Flex/Grid 作 shiftee），prev 仍用
             // is_plain_real_block（Flex/Grid 不作 prev，避 height 误估回归）。
+            // R57（M3）：next 为 inline-level（IFC 定位不含块级 margin）时，prev 的
+            // margin-bottom 计入重叠目标（canvas 跟在 p 后：p 底 78 + mb 16 → canvas
+            // 应在 94 而非 78，2d.reset.render.global_composite_operation oracle A/B）。
+            // block-level next 不加——其 margin_bottom 字段可能是塌穿/泄漏的折叠值
+            //（r1316 clearance containment 的 140px 泄漏 margin），已计入自身位置。
+            // 重叠目标统一为 `pb + margin_target`（无论是否重叠都按此目标移位——
+            // 独立 else-if 会在首分支已移过时被跳过，margin 丢失）。
+            let next_inline_level = !child.is_block_level && !child.is_absolute && !child.is_fixed;
+            let margin_target = if next_inline_level {
+                prev_margin_bottom.max(0.0)
+            } else {
+                0.0
+            };
             if prev_plain && is_shiftable_next(child) && prev_margin_bottom >= 0.0 && child.margin_top >= 0.0 {
                 if let Some(pb) = prev_bottom
-                    && child.y < pb - 0.5
+                    && child.y < pb + margin_target - 0.5
                 {
-                    let overlap = pb - child.y;
+                    let overlap = pb + margin_target - child.y;
                     cumulative_shift += overlap;
                     child.y += overlap;
                 }
