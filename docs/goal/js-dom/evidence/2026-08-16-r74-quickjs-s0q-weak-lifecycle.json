@@ -1,0 +1,27 @@
+{
+  "date": "2026-08-16",
+  "round": "R74",
+  "milestone": "M6 S0q 续（weak/finalizer 生命周期实验 + 结论）",
+  "commit": "4efd76aa",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 64,
+    "deletions": 0
+  },
+  "changes": [
+    "可用性锚点：JS WeakRef/FinalizationRegistry intrinsic 在 Context::full 下工作（QuickJS C API 无 JS_NewWeakRef 导出、rquickjs sys 层未绑 JSWeakRef 记录——Rust 侧无 weak 句柄）",
+    "实验 1（已回退）：NODE_OBJECTS 条目改 JS WeakRef 包装——两次 eval 间 GC 回收树内节点包装 → 同 NodeId 重建新对象 → el.parentNode === el2 identity 断裂（spec 违背）",
+    "实验 2（已回退）：removeChild 时机 evict 子树缓存——JS 持旧引用 + re-append 重建 → childNodes[0] === held 断裂（spec remove→re-append 须同 identity）",
+    "结论（代码注释归档）：strong Persistent + reset_quickjs_state 导航换代全清是当前唯一正确形态；有界泄漏面 = 单文档生命周期内 detached 节点包装（页面级，导航即释放）",
+    "根本阻塞：V8 侧 Weak 方案依赖 finalizer 回调清理 Rust 侧 map——QuickJS/rquickjs 缺该钩子（上游 TBD）",
+    "正向证据 PoC：WeakRef 持有期 deref 命中 / 无引用对象 eval 间被 GC 回收（collected@N）/ strong 缓存树内节点跨调用 identity 稳定"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R74 五组断言：intrinsic 可用性 / WeakRef deref 命中 / GC 回收无引用 / strong identity 稳定 / 既有全量零回归）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "outcome": "负结果切片（实验-回退-归档，同 R43/R53 模式）：S0q weak/finalizer 项以「strong + reset 换代清」为终态结论关闭；rquickjs finalizer 钩子缺失记 TBD（上游暴露后可重启 weak 方案）",
+  "notes": "QuickJS GC 比 V8 激进——eval 语句间即回收无引用对象（V8 需显式 GC 或内存压力）；这使 weak 承载对 identity 语义的破坏在 QuickJS 下更早暴露"
+}
