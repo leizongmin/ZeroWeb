@@ -1,0 +1,51 @@
+{
+  "date": "2026-08-16",
+  "round": "R81",
+  "milestone": "M4 WPT dom 按聚类驱动修复（Document/Element 导航面 + createElementNS 校验 + textContent 语义）",
+  "commit": "322cf584",
+  "context": "接手 429 中断的 R81 工作树遗留（part02-06 未提交 shim 改动）——上一轮已完成 Document-createElement-namespace 簇与 Node-textContent 簇的主体实现，本轮补齐单测、修复过程中暴露的回归、按 WPT 期望表逐条对齐校验语义后 land",
+  "root_cause": [
+    "createElement 的元素 ns 无文档类型派生（HTML doc 应 HTML ns、XML doc 应 null）；DOMParser/createDocument/createHTMLDocument/new Document 的 contentType 全缺",
+    "Document/DocumentType 的 nodeValue/textContent 返 undefined（spec 恒 null）+ setter 应 no-op；fragment 的 textContent 无子树拼接；CDATA/PI 内容不计入父 textContent 拼接",
+    "textContent setter 旧只写 host 文本，不替换子（appendChild 的子残留 → childNodes 非空/firstChild 残留）；同值判定源与 getter 不同源（融合视图缺失）",
+    "textContent=undefined 被旧 R3184 特判为 'undefined' 字符串（WPT Node-textContent 期望空串——WebIDL nullable DOMString 缺省语义）",
+    "JS toUpperCase/toLowerCase 是 Unicode 全量（'ı'→'I'、'K'(U+212A)→'k'）——spec 要求 ASCII-only 转换",
+    "HTML createElement 校验用 QName 规则（拒 'f}oo'/'f<oo'）——WPT valid 列表明 Name production 宽容（非首字符）；含冒号名不应解析 prefix（localName=全名 ASCII 小写）",
+    "createElementNS validate-and-extract 旧拒 'f:o:o'（带 ns 时 WPT 期望合法）；XMLNS ns 只允许 xmlns 元素；xmlns prefix 仅 XMLNS ns 合法",
+    "导航面大缺口：doctype/fragment/CDATA/PI/comment/text 的 firstChild/lastChild/sibling/parentElement/length/wholeText；document.childNodes 应为 [doctype, html]（R79 曾故意不含 doctype 与 oracle 对齐——R80 后 JS 侧链式判定取代该依赖）",
+    "detached doc 元数据（URL/compatMode/characterSet/inputEncoding）全 undefined；XML doc createElement 错误大写 tagName",
+    "TreeWalker nextSibling/previousSibling 对不在 accepted 的 currentNode（被 whatToShow 滤掉，如 doctype 对 SHOW_ELEMENT）恒 null——spec 应从 currentNode 结构序 lazy 找后续同级可接受节点"
+  ],
+  "implementation": [
+    "contentType/_docNS 派生链：createDocument（XHTML ns 调用 → 'application/xhtml+xml'+HTML ns；SVG/MathML/XML → null ns）、createHTMLDocument（'text/html'+HTML ns）、new Document（'application/xml'）、DOMParser（按 MIME）；createElement 产物 namespaceURI 按 _docNS；XML doc createElement preserveCase（tagName 原样）",
+    "Document/DocumentType nodeValue/textContent null + setter no-op（主文档 + detached + createDocumentType 三处）；fragment textContent 子树 Text/CDATA 拼接 + nodeValue null；Text/Comment/PI 的 textContent=data（get trap + _zwMText/_zwMComment/_zwMEl 工厂）；CDATA(4)/PI(7) 计入父 textContent 拼接",
+    "textContent getter 改融合 childNodes 递归拼接（pending 子可见）；setter 替换全部子（清 _handleChildren registry + 删 _zwNodeParent 反链 → 子 parentNode=null）、不解析 markup（移除 '<' 守卫）、空值不注册空文本节点、JS 写入值 _zwTextWritten 优先于 host 重放；undefined 与 null 同归空串",
+    "_zwAsciiUpper（_realTag 消费）+ localName getter 内联 ASCII 小写循环——Unicode 大小写不再被错误转换",
+    "HTML createElement 校验换 _zwIsValidHtmlElementName（Name production：首字符 NameStartChar + 拒空白/'>'；'}'/'<'/'\\uffff' 非首合法）；localName=全名 ASCII 小写、prefix=null（含冒号名不拆）",
+    "createElementNS 校验按 WPT 期望表重写：全名拒 [\\s>]；无 prefix 首字符 NameStartChar；有 prefix 时 localName 段首字符 NameStartChar（prefix 段从宽——'0:a' 合法）；ns=XMLNS ns 时仅 localName 'xmlns'/prefix 'xmlns' 合法；xml prefix 绑定；空 ns 带 prefix NamespaceError",
+    "导航面补齐：主文档 doctype（firstChild/lastChild/parentElement/previousSibling=null + nextSibling=documentElement）；detached createDocumentType 同款；document.parentNode/parentElement/nextSibling/previousSibling/ownerDocument null + inputEncoding 'UTF-8'；document.childNodes=[doctype, html]；fragment/CDATA/PI/comment parentElement/length/firstChild/lastChild/nextSibling/previousSibling；_zwMText/_zwMComment length/wholeText/parentElement；_zwMEl firstElementChild/lastElementChild/childElementCount/previousElementSibling/nextElementSibling/parentElement；handle 元素 children/firstElementChild 族融合视图；handle 元素 previousElementSibling/nextElementSibling 经 _zwNodeParent 反链父的融合 childNodes 定位；detached doc 元数据（URL/documentURI/compatMode CSS1Compat/characterSet/charset/inputEncoding）+ 导航 null 族；docEl/headEl hasChildNodes/firstChild/lastChild；body hasChildNodes + parentNode/parentElement→docEl + appendChild 后子 parentNode 重指 body（_tree 代理 identity 修正）",
+    "createHTMLDocument 树补 documentElement 入 childNodes（[doctype, html]）；createDocument doctype 归属重指（ownerDocument→新 doc）；无 handle 轻量节点（CDATA）append 入 _handleChildren registry；_appendVariadic 文本句柄注册 _textHandles（nodeType 正确为 3）",
+    "TreeWalker nextSibling/previousSibling：effPos<0（currentNode 被滤）时 _siblingByOrder——结构序（order/orderEnd）向 dir 找同父节点逐个 check（ACCEPT 返回/REJECT 剪子树/SKIP 跳子树内非同级）",
+    "process：R3184 旧断言按 spec 纠正（undefined→''）；R80 断言 'f:o:o' 期望 no-throw（R81 spec 纠正）"
+  ],
+  "wpt_results": {
+    "Document-createElement-namespace": "0P → 11P/11（100%）",
+    "Node-textContent": "~30P → 81P/0F（100%）",
+    "Node-properties": "595P/163F → 726P/0F（100%）",
+    "Document-createElement": "HTML-document 变体全通过（含冒号名/Unicode 名/Name 宽容校验）；剩 98F 全为 iframe XML/XHTML document 深结构（既存 #13）",
+    "Document-createElementNS": "187P → 195P（HTML-document 变体 195/195 全通过）；剩 390F 全为 iframe 深结构",
+    "nodes_dir": "6294P/1943F（R80）→ 6596P/1626F（+302 净 pass；对照重建的 clean-HEAD 二进制 stash A/B）",
+    "traversal": "1188P/392F → 1195P/385F（+7 净；过程回归 -21（body 缺 hasChildNodes + walker sibling 滤节点）同轮定位修复转净增）",
+    "cross_dir": "events 189P/139F 不变、collections 48P/0F 不变（零回归）"
+  },
+  "tests": {
+    "new_units": "part18 +3：r81_create_element_namespace_by_document_type（7 文档形态 ns 派生）/ r81_document_text_content_null_and_pi_text_content（Document null + PI data + 构造器存在）/ r81_text_content_fused_read_and_replace_children（融合读 + 清子 + parentNode 脱钩 + 字面 markup）",
+    "suites": "engine v8 2166 / quickjs 1424 / wpt-runner 172 全绿；fmt 无 diff；clippy v8+quickjs 双矩阵零警告；pre-commit-guard PASS"
+  },
+  "lessons": [
+    "JS String.prototype.toUpperCase/toLowerCase 是 Unicode 全量映射——DOM spec 的 ASCII-lowercase/uppercase 语义必须手写 ASCII 循环（'ı'/'K' 破坏 WPT non-ASCII 用例）",
+    "WPT 期望表是最终权威：'f:o:o' 有 ns 合法、'0:a' 合法而 'a:0' 非法——按表逐条对齐比按记忆中的 spec 算法可靠",
+    "document.childNodes 加入 doctype 会波及 walker accepted 模型（滤掉的 currentNode 无 accepted 位置）——结构序 lazy 步进是通用解",
+    "shim 内部代理树（_tree）与公开对象（body）的 identity 分裂会在 parentNode 断言暴露——appendChild 后重指 parentNode"
+  ]
+}
