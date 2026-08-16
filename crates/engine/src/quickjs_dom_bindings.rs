@@ -431,6 +431,47 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
             });
         };"#,
     );
+
+    // 7. S4q 完整化（R72）：`Event` / `CustomEvent` 构造器（spec `dom-event-constructor` /
+    //    `dom-customevent-constructor`）。**JS 侧构造器胶水**（R71 dataset 同模式）：
+    //    rquickjs 裸 Function 即使 set_constructor(true) 也不把 this 绑到 new 的实例
+    //    （QuickJS 构造器协议需 JS_CallConstructor2 路径）——Rust 提供 init 属性面原语
+    //    （event_init_prim 收 this）+ JS 定义真构造器（this 初始化 + 原型方法 + 常量）。
+    if let Ok(f) = Function::new(ctx.clone(), event_init_prim) {
+        let _ = ctx.globals().set("__zw_native_event_init", f);
+    }
+    if let Ok(f) = Function::new(ctx.clone(), event_prevent_default_prim) {
+        let _ = ctx.globals().set("__zw_native_event_prevent_default", f);
+    }
+    let _: rquickjs::Result<rquickjs::Coerced<String>> = ctx.eval(
+        r#"globalThis.Event = function Event(type, init) {
+            __zw_native_event_init(this, type, !!(init && init.bubbles), !!(init && init.cancelable));
+            this.stopPropagation = function () { this.__zw_stop = true; this.cancelBubble = true; };
+            this.stopImmediatePropagation = function () {
+                this.__zw_stop = true; this.__zw_stop_immediate = true; this.cancelBubble = true;
+            };
+            this.preventDefault = function () { __zw_native_event_prevent_default(this); };
+            this.initEvent = function (t, b, c) {
+                __zw_native_event_init(this, t, !!b, !!c);
+                this.__zw_stop = false; this.__zw_stop_immediate = false;
+            };
+        };
+        Object.defineProperties(Event, {
+            NONE: { value: 0 }, CAPTURING_PHASE: { value: 1 },
+            AT_TARGET: { value: 2 }, BUBBLING_PHASE: { value: 3 }
+        });
+        globalThis.CustomEvent = function CustomEvent(type, init) {
+            __zw_native_event_init(this, type, !!(init && init.bubbles), !!(init && init.cancelable));
+            this.stopPropagation = function () { this.__zw_stop = true; this.cancelBubble = true; };
+            this.stopImmediatePropagation = function () {
+                this.__zw_stop = true; this.__zw_stop_immediate = true; this.cancelBubble = true;
+            };
+            this.preventDefault = function () { __zw_native_event_prevent_default(this); };
+            this.detail = (init && 'detail' in init) ? init.detail : null;
+        };
+        CustomEvent.prototype = Object.create(Event.prototype);
+        CustomEvent.prototype.constructor = CustomEvent;"#,
+    );
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -1049,6 +1090,63 @@ fn ds_keys_prim<'js>(ctx: Ctx<'js>, ffi: f64) -> rquickjs::Result<rquickjs::Arra
         }
     }
     Ok(arr)
+}
+
+// ── S4q 完整化（R72）：Event / CustomEvent 构造器 ────────────────────
+//
+// 镜像 V8 event.rs（set_event_init 属性面 + preventDefault/stopPropagation 原型方法 +
+// 常量 NONE/1/2/3）。**QuickJS 形态：JS 构造器胶水 + Rust 原语**（R71 dataset 同模式）——
+// rquickjs 裸 Function 即使 `set_constructor(true)` 也不把 this 绑到 new 实例（QuickJS
+// 构造器协议需 JS_CallConstructor2 路径，rquickjs 高层 API 不暴露）。Rust 原语两件：
+// event_init_prim（init 属性面设于 this）+ event_prevent_default_prim（cancelable gate）。
+
+/// 单调 perf 时间戳（ms，DOMHighResTimeStamp；镜像 V8 perf_now_ms——R22 教训：
+/// 恒 0 会导致 WPT timeStamp do-while(==0) 死循环）。
+fn event_perf_now_ms() -> f64 {
+    use std::sync::OnceLock;
+    use std::time::Instant;
+    static ORIGIN: OnceLock<Instant> = OnceLock::new();
+    let origin = ORIGIN.get_or_init(Instant::now);
+    origin.elapsed().as_secs_f64() * 1000.0
+}
+
+/// 原语 `__zw_native_event_init(ev, type, bubbles, cancelable)`：init 属性面设于 ev
+///（spec `dom-event-constructor` dict 缺省 false + 派发态默认——target/currentTarget
+/// 由 dispatchEvent 派发期设，此处预置 null；timeStamp=创建时刻单调 ms）。
+/// ev 收**普通 Object 参**（JS 胶水显式传 this——rquickjs This 参在 glue 调用形态下
+/// 收不到绑定）。
+fn event_init_prim<'js>(
+    ctx: Ctx<'js>,
+    ev: Opt<Object<'js>>,
+    event_type: rquickjs::Coerced<String>,
+    bubbles: bool,
+    cancelable: bool,
+) {
+    let Some(ev) = ev.0 else {
+        return;
+    };
+    let _ = ev.set("type", event_type.0.clone());
+    let _ = ev.set("bubbles", bubbles);
+    let _ = ev.set("cancelable", cancelable);
+    let _ = ev.set("composed", false);
+    let _ = ev.set("defaultPrevented", false);
+    let _ = ev.set("isTrusted", false);
+    let _ = ev.set("eventPhase", 0);
+    let _ = ev.set("timeStamp", event_perf_now_ms());
+    let _ = ev.set("target", Value::new_null(ctx.clone()));
+    let _ = ev.set("currentTarget", Value::new_null(ctx));
+}
+
+/// 原语 `__zw_native_event_prevent_default(ev)`（spec `dom-event-preventdefault`）：
+/// 仅 cancelable 时置 defaultPrevented=true（镜像 V8 native_prevent_default_invoke）。
+fn event_prevent_default_prim(ev: Opt<Object>) {
+    let Some(ev) = ev.0 else {
+        return;
+    };
+    let cancelable = ev.get::<_, bool>("cancelable").unwrap_or(false);
+    if cancelable {
+        let _ = ev.set("defaultPrevented", true);
+    }
 }
 
 /// `attributes` getter（spec `dom-element-attributes`）：返 NamedNodeMap 形包装
@@ -2460,6 +2558,58 @@ mod tests {
                 ),
                 "true,true,false,true,w",
                 "R71 删除：camel 键删 data 属性（元素侧同步）+ miss 删 no-op 成功（spec DOMStringMap 语义，Proxy invariant）+ 其余属性保持"
+            );
+            // R72 Event/CustomEvent 构造器：init 属性 + 原型方法 + instanceof + 常量 +
+            // dispatchEvent 集成（真构造器实例经 R67 三阶段派发）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__ev = new Event('ping', {bubbles: true, cancelable: true});\
+                     [__ev.type, __ev.bubbles, __ev.cancelable, __ev.composed, __ev.eventPhase,\
+                      __ev.defaultPrevented, __ev.isTrusted, typeof __ev.timeStamp].join(',')"
+                ),
+                "ping,true,true,false,0,false,false,number",
+                "R72 new Event init 属性面（dict 缺省 false + 派发态默认）"
+            );
+            assert_eq!(
+                eval_str(
+                    "[__ev instanceof Event, __ev instanceof CustomEvent,\
+                      Event.CAPTURING_PHASE, Event.AT_TARGET, Event.BUBBLING_PHASE,\
+                      typeof __ev.preventDefault, typeof __ev.stopPropagation].join(',')"
+                ),
+                "true,false,1,2,3,function,function",
+                "R72 instanceof + 原型常量 + 原型方法可达"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__cev = new CustomEvent('zap', {detail: {k: 42}});\
+                     [__cev instanceof CustomEvent, __cev instanceof Event, __cev.detail.k].join(',')"
+                ),
+                "true,true,42",
+                "R72 CustomEvent detail + 原型链挂 Event.prototype"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__r72log = [];\
+                     __clEl.addEventListener('zap', function (e) {\
+                         __r72log.push(e.type + ':' + (e instanceof Event) + ':' + (e.detail ? e.detail.k : 'none'));\
+                         e.preventDefault();\
+                     });\
+                     __clEl.dispatchEvent(__cev);\
+                     __r72log.join('|') + ';' + __clEl.dispatchEvent(new Event('nada'))"
+                ),
+                "zap:true:42;true",
+                "R72 dispatchEvent 集成：真构造器实例派发（type/instanceof/detail 经 init 保留）+ 非 cancelable 派发返 true"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__pd = new Event('pd', {cancelable: true});\
+                     __pd.preventDefault();\
+                     globalThis.__pd2 = new Event('pd2');\
+                     __pd2.preventDefault();\
+                     [__pd.defaultPrevented, __pd2.defaultPrevented].join(',')"
+                ),
+                "true,false",
+                "R72 preventDefault：cancelable gate（非 cancelable 不置 defaultPrevented）"
             );
 
             // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
