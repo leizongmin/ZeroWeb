@@ -267,6 +267,22 @@ jobs:
             -p zero-page-runtime \
             --target ${{ matrix.target }}
 
+      - name: Build zero-renderer (bin required by browser multiprocess tests)
+        if: matrix.v8_runtime != false
+        shell: bash
+        run: |
+          # 带 --target：测试二进制位于 target/<triple>/debug/deps/，resolve_renderer_binary
+          # 上溯到 target/<triple>/debug/ 查找（与 compositor 的硬编码 target/debug 不同）。
+          # `cargo nextest run -p zero-renderer` 只产测试 harness 不产该 bin——缺失时
+          # try_new() 静默回退 in-process worker，而 click/checkbox 等默认动作是 renderer
+          # 专属实现（worker 仅镜像 keydown），4 个 R3254 多进程 GUI 测试全挂（60s 超时）。
+          # 必须带 if v8_runtime——quickjs job 无 v8 预编译库（下载步骤被跳过），
+          # default features 构建必失败；quickjs 矩阵走下方自带 features 的步骤。
+          # zero-image-decoder 同目录放置：7533e9d90 起隔离解码为 fail-closed（spawn
+          # 失败即报错不回退），V8-backed core tests 的 proxy_mode_decodes_png_correctly
+          # 依赖该 bin 已就位——必须先于 core tests 构建（此前置后该测试在 CI 必失败）。
+          cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
+
       - name: Run V8-backed core tests
         if: matrix.v8_runtime != false && runner.os != 'Windows'
         timeout-minutes: 20
@@ -283,21 +299,6 @@ jobs:
           # 不带 --target/--features：browser 测试 fallback 路径硬编码
           # target/debug/zero-compositor；compositor 无 features 定义
           cargo build -p zero-compositor --bin zero-compositor
-
-      - name: Build zero-renderer (bin required by browser multiprocess tests)
-        if: matrix.v8_runtime != false
-        shell: bash
-        run: |
-          # 带 --target：测试二进制位于 target/<triple>/debug/deps/，resolve_renderer_binary
-          # 上溯到 target/<triple>/debug/ 查找（与 compositor 的硬编码 target/debug 不同）。
-          # `cargo nextest run -p zero-renderer` 只产测试 harness 不产该 bin——缺失时
-          # try_new() 静默回退 in-process worker，而 click/checkbox 等默认动作是 renderer
-          # 专属实现（worker 仅镜像 keydown），4 个 R3254 多进程 GUI 测试全挂（60s 超时）。
-          # 必须带 if v8_runtime——quickjs job 无 v8 预编译库（下载步骤被跳过），
-          # default features 构建必失败；quickjs 矩阵走下方自带 features 的步骤。
-          # zero-image-decoder 同目录放置：webview 图像解码进程默认启用，缺失时
-          # 测试静默回退进程内解码（覆盖不到真实多进程解码路径）。
-          cargo build --target ${{ matrix.target }} -p zero-renderer --bin zero-renderer -p zero-image-decoder --bin zero-image-decoder
 
       - name: Run app tests
         if: matrix.v8_runtime != false
