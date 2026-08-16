@@ -673,9 +673,12 @@ impl ProcessTabBackend {
                 .unwrap_or(0);
             self.ensure_renderer(tab_id, self.viewport);
             self.navigate(tab_id, &url, epoch);
-            tracing::info!(
-                "Renderer {rid} for tab {} lost ({reason}); respawned and navigating {url}",
-                tab_id.0
+            tracing::error!(
+                renderer_id = rid,
+                tab_id = tab_id.0,
+                %reason,
+                %url,
+                "Renderer crashed; respawning and navigating the tab"
             );
             return;
         }
@@ -686,7 +689,7 @@ impl ProcessTabBackend {
         if let Some(snap) = snapshots.get_mut(&tab_id) {
             snap.loading = false;
         }
-        tracing::info!("Renderer {rid} for tab {} disconnected: {reason}", tab_id.0);
+        tracing::error!(renderer_id = rid, tab_id = tab_id.0, %reason, "Renderer disconnected");
     }
 
     fn ipc_recv_disconnected(err: &ProtocolError) -> bool {

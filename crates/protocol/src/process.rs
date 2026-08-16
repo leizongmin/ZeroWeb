@@ -9,11 +9,12 @@
 //!
 //! 子进程通过 `Command::spawn` + stdin/stdout 管道 IPC 创建，**不是** fork 后与父进程 CoW 共享 DOM。
 
-use std::collections::HashSet;
-use std::io;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::collections::{HashSet, VecDeque};
+use std::io::{self, Read};
+use std::process::{Child, ChildStderr, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -30,9 +31,56 @@ pub type RendererId = u64;
 /// 心跳超时时间。
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PENDING_AUTOMATION_REQUESTS: usize = 64;
+/// 保留 renderer stderr 的最后部分，既避免子进程因管道写满而阻塞，也让 browser 能报告崩溃原因。
+const STDERR_TAIL_LIMIT: usize = 16 * 1024;
 
 /// 全局渲染进程 ID 计数器。
 static NEXT_RENDERER_ID: AtomicU64 = AtomicU64::new(1);
+
+fn spawn_stderr_reader(
+    id: RendererId,
+    mut stderr: ChildStderr,
+    tail: Arc<Mutex<VecDeque<u8>>>,
+) -> Result<JoinHandle<()>, ProtocolError> {
+    std::thread::Builder::new()
+        .name(format!("renderer-{id}-stderr"))
+        .spawn(move || {
+            let mut buffer = [0; 4096];
+            loop {
+                match stderr.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => append_stderr_tail(&tail, &buffer[..read]),
+                }
+            }
+        })
+        .map_err(|e| ProtocolError::Process(format!("启动 stderr 读线程失败: {e}")))
+}
+
+fn append_stderr_tail(tail: &Arc<Mutex<VecDeque<u8>>>, chunk: &[u8]) {
+    let Ok(mut tail) = tail.lock() else {
+        return;
+    };
+    tail.extend(chunk.iter().copied());
+    while tail.len() > STDERR_TAIL_LIMIT {
+        tail.pop_front();
+    }
+}
+
+fn stderr_tail_text(tail: &Arc<Mutex<VecDeque<u8>>>) -> String {
+    let Ok(tail) = tail.lock() else {
+        return String::new();
+    };
+    let bytes: Vec<u8> = tail.iter().copied().collect();
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+fn format_renderer_exit(status: &str, stderr_tail: &str) -> String {
+    if stderr_tail.is_empty() {
+        format!("renderer exited: {status}")
+    } else {
+        format!("renderer exited: {status}; stderr tail: {stderr_tail}")
+    }
+}
 
 /// 渲染进程状态。
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +107,10 @@ pub struct RendererHandle {
     inbound_rx: Receiver<IpcMessage>,
     /// stdout 读线程（子进程退出后 join）。
     reader_thread: Option<JoinHandle<()>>,
+    /// stderr 读线程（子进程退出后 join）。
+    stderr_thread: Option<JoinHandle<()>>,
+    /// renderer 最近写入的 stderr；只保留有界尾部。
+    stderr_tail: Arc<Mutex<VecDeque<u8>>>,
     /// 进程状态。
     state: RendererState,
     /// 上次心跳时间。
@@ -103,7 +155,7 @@ impl RendererHandle {
         let mut child = child
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| ProtocolError::Process(format!("启动渲染进程失败: {e}")))?;
 
@@ -120,6 +172,10 @@ impl RendererHandle {
             .stdin
             .take()
             .ok_or_else(|| ProtocolError::Process("无法获取 stdin 管道".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ProtocolError::Process("无法获取 stderr 管道".into()))?;
 
         let (inbound_tx, inbound_rx) = std::sync::mpsc::channel();
         let recv_transport = PipeTransport::new(stdout, io::empty());
@@ -135,6 +191,9 @@ impl RendererHandle {
             })
             .map_err(|e| ProtocolError::Process(format!("启动 IPC 读线程失败: {e}")))?;
 
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LIMIT)));
+        let stderr_thread = spawn_stderr_reader(id, stderr, Arc::clone(&stderr_tail))?;
+
         let send_transport = PipeTransport::new(io::empty(), stdin);
 
         Ok(Self {
@@ -143,6 +202,8 @@ impl RendererHandle {
             send_transport: Some(send_transport),
             inbound_rx,
             reader_thread: Some(reader_thread),
+            stderr_thread: Some(stderr_thread),
+            stderr_tail,
             state: RendererState::Starting,
             last_heartbeat: Instant::now(),
             current_url: None,
@@ -357,17 +418,26 @@ impl RendererHandle {
         self.last_heartbeat.elapsed() > HEARTBEAT_TIMEOUT
     }
 
-    /// 检查子进程是否仍在运行。
-    pub fn is_alive(&mut self) -> bool {
-        if let Some(ref mut child) = self.child {
-            match child.try_wait() {
-                Ok(None) => true,     // 仍在运行
-                Ok(Some(_)) => false, // 已退出
-                Err(_) => false,
-            }
-        } else {
-            false
+    /// 检查子进程退出原因；`None` 表示仍在运行。
+    fn exit_reason(&mut self) -> Option<String> {
+        let Some(child) = self.child.as_mut() else {
+            return Some("renderer process handle is unavailable".into());
+        };
+        match child.try_wait() {
+            Ok(None) => None,
+            Ok(Some(status)) => Some(format_renderer_exit(
+                &status.to_string(),
+                &stderr_tail_text(&self.stderr_tail),
+            )),
+            Err(error) => Some(format!("无法检查 renderer 进程状态: {error}")),
         }
+    }
+
+    /// 检查子进程是否仍在运行。
+    ///
+    /// 崩溃管理器应使用 [`Self::exit_reason`] 取得诊断信息；该方法保留给只需存活状态的调用方。
+    pub fn is_alive(&mut self) -> bool {
+        self.exit_reason().is_none()
     }
 
     /// 关闭渲染进程。
@@ -386,6 +456,9 @@ impl RendererHandle {
         self.pending_automation.clear();
 
         if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.stderr_thread.take() {
             let _ = handle.join();
         }
 
@@ -407,6 +480,9 @@ impl RendererHandle {
         if let Some(handle) = self.reader_thread.take() {
             let _ = handle.join();
         }
+        if let Some(handle) = self.stderr_thread.take() {
+            let _ = handle.join();
+        }
         self.state = RendererState::Closed;
         Ok(())
     }
@@ -421,6 +497,9 @@ impl RendererHandle {
             self.send_transport = None;
             self.pending_automation.clear();
             if let Some(handle) = self.reader_thread.take() {
+                let _ = handle.join();
+            }
+            if let Some(handle) = self.stderr_thread.take() {
                 let _ = handle.join();
             }
             self.state = RendererState::Crashed("test kill".into());
@@ -522,10 +601,10 @@ impl ProcessManager {
         let mut to_remove = Vec::new();
 
         for (i, renderer) in self.renderers.iter_mut().enumerate() {
-            if !renderer.is_alive() {
-                renderer.state = RendererState::Crashed("进程已退出".into());
+            if let Some(reason) = renderer.exit_reason() {
+                renderer.state = RendererState::Crashed(reason.clone());
                 to_remove.push(i);
-                crashed.push((renderer.id, "进程已退出".to_string()));
+                crashed.push((renderer.id, reason));
             }
         }
 
@@ -560,6 +639,8 @@ mod tests {
                 send_transport: None,
                 inbound_rx,
                 reader_thread: None,
+                stderr_thread: None,
+                stderr_tail: Arc::new(Mutex::new(VecDeque::new())),
                 state: RendererState::Running,
                 last_heartbeat: Instant::now(),
                 current_url: None,
@@ -581,6 +662,19 @@ mod tests {
         }
         assert_eq!(renderer.pending_automation.len(), MAX_PENDING_AUTOMATION_REQUESTS);
         assert!(renderer.register_automation_request(65).is_err());
+    }
+
+    #[test]
+    fn renderer_exit_reason_includes_bounded_stderr_tail() {
+        let tail = Arc::new(Mutex::new(VecDeque::new()));
+        append_stderr_tail(&tail, b"first line\n");
+        append_stderr_tail(&tail, b"thread 'main' has overflowed its stack\n");
+        let reason = format_renderer_exit("exit code: 134", &stderr_tail_text(&tail));
+        assert!(reason.contains("exit code: 134"));
+        assert!(reason.contains("overflowed its stack"));
+
+        append_stderr_tail(&tail, &vec![b'x'; STDERR_TAIL_LIMIT + 1]);
+        assert!(tail.lock().expect("tail lock").len() <= STDERR_TAIL_LIMIT);
     }
 
     #[test]

@@ -112,6 +112,9 @@ const RENDER_FRAME_BUDGET_MS: f64 = 16.0;
 const PAGE_LOAD_DEADLINE: Duration = Duration::from_secs(120);
 /// 无 IPC 消息时推进 pending load 的轮询间隔。
 const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
+/// renderer 的 parse/style/layout/paint 调用链在 Windows GUI 入口线程的默认栈上会溢出。
+/// 使用固定的独立运行栈，保留 multi-process/compositor 路径，不因复杂页面退化为单进程。
+const RENDERER_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 /// 单个 renderer surface 的帧发布状态。
 struct FramePublishState {
@@ -2661,6 +2664,25 @@ fn parse_renderer_launch() -> (ProcessRole, u64) {
     (role, instance_id)
 }
 
+#[cfg(not(target_os = "macos"))]
+fn run_on_renderer_stack<T: Send + 'static>(
+    renderer_id: u64,
+    task: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    thread::Builder::new()
+        .name(format!("renderer-runtime-{renderer_id}"))
+        .stack_size(RENDERER_RUNTIME_STACK_SIZE)
+        .spawn(task)
+        .map_err(|error| format!("无法启动 renderer 运行线程: {error}"))?
+        .join()
+        .map_err(|_| "renderer 运行线程异常终止".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn run_renderer_runtime(renderer_id: u64) -> Result<(), String> {
+    run_on_renderer_stack(renderer_id, move || RendererRuntime::new(renderer_id).run())?
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_writer(io::stderr)
@@ -2682,7 +2704,7 @@ fn main() {
         RendererRuntime::new(renderer_id).run()
     };
     #[cfg(not(target_os = "macos"))]
-    let result = RendererRuntime::new(renderer_id).run();
+    let result = run_renderer_runtime(renderer_id);
 
     if let Err(e) = result {
         tracing::error!("渲染进程错误退出: {e}");
@@ -2702,6 +2724,22 @@ mod keyboard_input_tests;
 mod runtime_smoke {
     use super::*;
     use std::io::Write;
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn renderer_runtime_stack_handles_deep_render_call_chain() {
+        fn consume_stack(depth: usize) -> usize {
+            let frame = [0u8; 1024];
+            if depth == 0 {
+                std::hint::black_box(frame[0] as usize)
+            } else {
+                std::hint::black_box(frame[0] as usize) + consume_stack(depth - 1)
+            }
+        }
+
+        let result = run_on_renderer_stack(0, || consume_stack(4_096));
+        assert_eq!(result.expect("renderer stack thread"), 0);
+    }
 
     #[test]
     fn read_input_value_for_change_textarea_uses_content() {

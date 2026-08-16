@@ -51,6 +51,7 @@ mod text_input;
 mod text_metrics;
 mod ui_icons;
 
+use std::fs::{self, OpenOptions};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -552,8 +553,41 @@ fn sync_window_title(app: &mut BrowserApp, window: &winit::window::Window) {
     }
 }
 
+fn browser_log_path() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .map(PathBuf::from)
+        .map(|base| base.join("ZeroWeb").join("logs").join("zero-browser.log"))
+}
+
+fn init_logging() {
+    let Some(path) = browser_log_path() else {
+        tracing_subscriber::fmt().init();
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        tracing_subscriber::fmt().init();
+        return;
+    };
+    if let Err(error) = fs::create_dir_all(parent) {
+        eprintln!("无法创建浏览器日志目录: {error}");
+        tracing_subscriber::fmt().init();
+        return;
+    }
+    match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(file) => tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .init(),
+        Err(error) => {
+            eprintln!("无法打开浏览器日志文件 {}: {error}", path.display());
+            tracing_subscriber::fmt().init();
+        }
+    }
+}
+
 fn main() {
-    tracing_subscriber::fmt().init();
+    init_logging();
 
     // 注册 Ctrl+C handler：把信号转成 flag，事件循环检测到后走
     // shutdown_child_processes 正常退出路径，避免孤儿 renderer 锁住 exe。
