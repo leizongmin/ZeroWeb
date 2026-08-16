@@ -22,8 +22,8 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 
 | 目录 | 状态 |
 |------|------|
-| testharness 面（全部目录） | ✅ 全 0 Fail（path-objects 202/0、drawing-images 37/37 等） |
-| oracle A/B 141 可测 | ✅ 真通过 **7（17.1%）** / 近似 7（17.1%）/ 不一致 27 |
+| testharness 面（全部目录） | ✅ 全 0 Fail（element 1253 + worker 1082——R57 batch-5 后复测零回归） |
+| oracle A/B 141 可测 | ✅ 真通过 **7（17.1%）** / 近似 7（17.1%）/ 不一致 27（batch-5 复测与 batch-4 持平——AA/契约修复零回归；剩余 = 1px 偏移深项组合 + 字体度量他域 + 描边 AA） |
 | oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
@@ -99,20 +99,27 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 - [x] index-from-offset 边界约定 — ✅ 完成
 - [x] R56h 遗留 bridge 接线缺口（setFilterDropShadow/setGradientInterpolation）— ✅ R57 补齐
 - [x] grid 结构用例 22px IFC 偏移（~15 项）— ✅ R57 batch-2 全灭（R1286 strut 只给真 br）
+- [ ] **描边 AA**（reset miter_limit/after-rasterization 1.4-2%——**轴对齐 CTM 的斜线段**
+  亦需 AA：Chromium 对任何非轴对齐几何 AA；我们硬边+像素补偿。实测用例为轴对齐
+  折线——「非轴对齐 CTM 门禁」不覆盖；全量描边超采样会扰动 1253 testharness
+  描边断言（风险高收益低），归入抗锯齿深项）
 - [ ] **抗锯齿光栅**（AA 边差 180-280px 级——composite.grid 24-38%/drop-shadow 4.8%/
-  reset 边 1.4-2%——无 AA 光栅 vs Chromium AA，深项）
+  reset 边 1.4-2%——无 AA 光栅 vs Chromium AA，深项；R57 batch-5 已完成 fillRect +
+  路径 fill 旋转边 AA，剩余描边/阴影边）
 - [ ] **字体度量对齐**（TextCluster 6.5-12.8%/fontKerning 10.1%——serif/emoji 字形
   像素差，rendering-compat 域）
 
 ## 下一步计划
 
-1. **AA 光栅**（G10 最大聚类——composite.grid 12 项 + drop-shadow + reset 边）：
-   边缘抗锯齿（矩形/路径边界的 1-2px 混合）——深项，待决策后开工
+1. **描边 AA**（reset miter_limit/after-rasterization 1.4-2%——轴对齐斜线段亦需
+   AA；全量超采样扰动描边断言风险高，待决策后以「仅斜边像素」窄化方案开工）
 2. **字体度量对齐**（TextCluster/fontKerning——serif/emoji 字形像素差，
    rendering-compat 域）：canvas 文本与 CSS 文本共用字体栈后对齐
 3. oracle A/B 持续回归门：每轮 canvas 改动跑 `REFTEST_INCLUDE_CANVAS=1 make
-   reftest-oracle canvas`（测量法已诚实，数值可追踪）
+   reftest-oracle canvas`（R57 batch-5 复测：真通过 7/17.1% 持平，零回归）
 4. 浏览器 app form/input 快照测试（4）——本环境既有失败，浏览器流（非 canvas 面）处理
+5. 覆盖率口径记录：canvas 87.67%（-p zero-canvas llvm-cov，≥70% 达标；
+   与 R57 91.18% 的差为测量口径/新增 AA 代码，raster.rs 89.57%）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
