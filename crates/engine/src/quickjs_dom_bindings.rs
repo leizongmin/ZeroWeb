@@ -84,6 +84,7 @@ pub fn reset_quickjs_state() {
     LISTENERS.with(|c| c.borrow_mut().clear());
     CE_REGISTRY.with(|c| c.borrow_mut().clear());
     CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
+    ATTR_MAP_OBJECTS.with(|c| c.borrow_mut().clear());
 }
 
 // ── NodeId ↔ u64(ffi) ↔ f64（JS Number）编解码 ──────────────────────
@@ -489,6 +490,8 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
             .enumerable(),
     )?;
     obj.prop("namespaceURI", Accessor::from(namespace_uri_getter).configurable())?;
+    // S1q 复合对象（R69）：attributes NamedNodeMap 面（缓存保身份）。
+    obj.prop("attributes", Accessor::from(attributes_getter).configurable())?;
     obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
     obj.prop(
         "textContent",
@@ -562,6 +565,161 @@ fn get_attribute_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, name: rquic
             Ok(s) => s.into_value(),
             Err(_) => Value::new_null(ctx),
         },
+        None => Value::new_null(ctx),
+    }
+}
+
+// ── S1q 复合对象（R69）：`attributes` NamedNodeMap 面 ─────────────────
+//
+// 镜像 V8 namednodemap.rs（缓存保身份 `el.attributes === el.attributes`）。QuickJS 侧
+// 形态：**每次读快照重建 plain object 的 Array-lite**，身份经二级缓存 ATTR_MAP_OBJECTS
+//（owner ffi → Persistent）保同对象。条目为 `{name, value}` plain object（Attr 节点
+// instanceof 面延后——V8 侧 _zwMakeAttr 同域问题）。方法面：length getter / item(i) /
+// getNamedItem(name) / setNamedItem({name,value} 或 Attr 形) / removeNamedItem(name)。
+
+thread_local! {
+    /// owner element ffi → attributes 包装对象身份缓存（spec identity：
+    /// `el.attributes === el.attributes`；同 NODE_OBJECTS 模式的二级缓存）。
+    static ATTR_MAP_OBJECTS: RefCell<HashMap<u64, Persistent<Value<'static>>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// `attributes` getter（spec `dom-element-attributes`）：返 NamedNodeMap 形包装
+///（缓存保身份）。动态 length——经 getter 读 live DOM（快照对象但 length/方法即时读）。
+fn attributes_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let ffi = encode_node_id(id);
+    if let Some(hit) = ATTR_MAP_OBJECTS.with(|c| c.borrow().get(&ffi).cloned())
+        && let Ok(v) = hit.restore(&ctx)
+    {
+        return v;
+    }
+    let Ok(obj) = build_attributes_map_object(&ctx, ffi) else {
+        return Value::new_null(ctx);
+    };
+    let v: Value = obj.into_value();
+    ATTR_MAP_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, Persistent::save(&ctx, v.clone()));
+    });
+    v
+}
+
+/// 构建 attributes 包装对象（owner ffi 隐藏属性 + length getter + 方法面）。
+fn build_attributes_map_object<'js>(ctx: &Ctx<'js>, owner_ffi: u64) -> rquickjs::Result<Object<'js>> {
+    let obj = Object::new(ctx.clone())?;
+    use rquickjs::object::Property;
+    obj.prop(NODE_FFI_PROP, Property::from(owner_ffi as f64).configurable())?;
+    use rquickjs::object::Accessor;
+    obj.prop("length", Accessor::from(nnm_length_getter).configurable())?;
+    obj.prop("item", Function::new(ctx.clone(), nnm_item_method)?)?;
+    obj.prop("getNamedItem", Function::new(ctx.clone(), nnm_get_named_item_method)?)?;
+    obj.prop("setNamedItem", Function::new(ctx.clone(), nnm_set_named_item_method)?)?;
+    obj.prop(
+        "removeNamedItem",
+        Function::new(ctx.clone(), nnm_remove_named_item_method)?,
+    )?;
+    Ok(obj)
+}
+
+/// 从 attributes 包装对象读 owner NodeId。
+fn nnm_owner_of(this: &Object) -> Option<NodeId> {
+    let num: f64 = this.get(NODE_FFI_PROP).ok()?;
+    let id = decode_node_id(num as u64);
+    node_exists(id).then_some(id)
+}
+
+/// `attributes.length` getter（spec `dom-namednodemap-length`）：owner 元素属性数。
+fn nnm_length_getter<'js>(this: This<Object<'js>>) -> i32 {
+    let Some(id) = nnm_owner_of(&this.0) else {
+        return 0;
+    };
+    with_dom(|d| d.attribute_names(id)).map(|v| v.len() as i32).unwrap_or(0)
+}
+
+/// 属性条目 → `{name, value}` plain object（Attr 节点形态延后）。
+fn nnm_attr_entry<'js>(ctx: &Ctx<'js>, id: NodeId, name: &str) -> Option<Object<'js>> {
+    let value = with_dom(|d| d.get_attribute(id, name)).flatten()?;
+    let obj = Object::new(ctx.clone()).ok()?;
+    let _ = obj.set("name", name.to_string());
+    let _ = obj.set("value", value);
+    Some(obj)
+}
+
+/// `attributes.item(i)`（spec `dom-namednodemap-item`）：越界/非数字 → null。
+fn nnm_item_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, index: rquickjs::Coerced<f64>) -> Value<'js> {
+    let Some(id) = nnm_owner_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let names = with_dom(|d| d.attribute_names(id)).unwrap_or_default();
+    let i = index.0 as usize;
+    match names.get(i) {
+        Some(name) => match nnm_attr_entry(&ctx, id, name) {
+            Some(o) => o.into_value(),
+            None => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `attributes.getNamedItem(name)`（spec `dom-namednodemap-getnameditem`）：miss → null。
+fn nnm_get_named_item_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    name: rquickjs::Coerced<String>,
+) -> Value<'js> {
+    let Some(id) = nnm_owner_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    match nnm_attr_entry(&ctx, id, &name.0) {
+        Some(o) => o.into_value(),
+        None => Value::new_null(ctx),
+    }
+}
+
+/// `attributes.setNamedItem(attr)`（spec `dom-namednodemap-setnameditem`）：从入参对象
+/// 读 name/value 写 owner（兼容 plain 对象与 Attr 形态——镜像 V8 read_str_prop）。
+fn nnm_set_named_item_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, attr: Opt<Value<'js>>) {
+    let Some(id) = nnm_owner_of(&this.0) else {
+        return;
+    };
+    let Some(obj) = attr.0.and_then(|v| v.into_object()) else {
+        return;
+    };
+    let Ok(name) = obj.get::<_, String>("name") else {
+        return;
+    };
+    let value = obj.get::<_, String>("value").unwrap_or_default();
+    let old: Option<String> = with_dom(|d| d.get_attribute(id, &name)).flatten();
+    with_dom_mut(|d| d.set_attribute(id, &name, &value));
+    dispatch_attribute_changed(&ctx, id, &name, old.as_deref(), Some(&value));
+}
+
+/// `attributes.removeNamedItem(name)`（spec `dom-namednodemap-removenameditem`）：
+/// 移除并返被移除条目 `{name, value}`；缺失 → null（spec 抛 NotFoundError——错误路径
+/// 基建已有，此处 PoC 宽松 null；对齐待 DOMException 构造器域）。
+fn nnm_remove_named_item_method<'js>(
+    this: This<Object<'js>>,
+    ctx: Ctx<'js>,
+    name: rquickjs::Coerced<String>,
+) -> Value<'js> {
+    let Some(id) = nnm_owner_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    // 先捕获 old value（构造返回条目 + 派发共用），再移除。
+    let Some(old_value) = with_dom(|d| d.get_attribute(id, &name.0)).flatten() else {
+        return Value::new_null(ctx);
+    };
+    with_dom_mut(|d| d.remove_attribute(id, &name.0));
+    dispatch_attribute_changed(&ctx, id, &name.0, Some(old_value.as_str()), None);
+    let entry = Object::new(ctx.clone()).ok();
+    match entry {
+        Some(o) => {
+            let _ = o.set("name", name.0.clone());
+            let _ = o.set("value", old_value);
+            o.into_value()
+        }
         None => Value::new_null(ctx),
     }
 }
@@ -1840,6 +1998,50 @@ mod tests {
                 ),
                 "data-obs:null:y",
                 "R68 observedAttributes 过滤：不命中（data-skip）不派发，命中（data-obs）才派发（old=null 首次）"
+            );
+            // R69 attributes 复合对象：身份缓存 + length/item/getNamedItem/setNamedItem/
+            // removeNamedItem 全闭环 + live 跟随。用 detached 新建元素（零初始属性，
+            // 断言不与 #main 前序脚本累积的属性耦合）。
+            assert_eq!(
+                eval_str(
+                    "__zw_native_element_for_id('main').attributes === __zw_native_element_for_id('main').attributes"
+                ),
+                "true",
+                "R69 身份缓存：el.attributes === el.attributes"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__nnmEl = __zw_native_create_element('section');\
+                     globalThis.__nnm = __nnmEl.attributes;\
+                     [__nnm.length, __nnm.item(0) === null].join(',')"
+                ),
+                "0,true",
+                "R69 新建元素零属性"
+            );
+            assert_eq!(
+                eval_str(
+                    "__nnm.setNamedItem({name:'data-a', value:'1'});\
+                     [__nnm.length, __nnm.getNamedItem('data-a').value, __nnm.item(0).name].join(',')"
+                ),
+                "1,1,data-a",
+                "R69 setNamedItem 写入 + length/getNamedItem/item 读回"
+            );
+            assert_eq!(
+                eval_str(
+                    "__nnm.getNamedItem('data-missing') === null && __nnm.item(9) === null"
+                ),
+                "true",
+                "R69 miss 语义：getNamedItem/item 越界 → null"
+            );
+            assert_eq!(
+                eval_str(
+                    "__nnm.setNamedItem({name:'data-b', value:'2'});\
+                     __nnm.removeNamedItem('data-a').value + '/' + __nnm.length + '/' +\
+                     (__nnm.removeNamedItem('data-a') === null) + '/' +\
+                     __nnmEl.getAttribute('data-b')"
+                ),
+                "1/1/true/2",
+                "R69 removeNamedItem 返被移除条目 + 再移除 null + 元素 getAttribute live 跟随"
             );
             // lifecycle：append 到 document 链 → connectedCallback；remove → disconnected。
             assert_eq!(
