@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-16",
+  "round": "R70",
+  "milestone": "M6 S1q 复合对象（classList DOMTokenList 面）",
+  "commit": "7e4c63c4",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 335,
+    "deletions": 0
+  },
+  "changes": [
+    "classList getter + 二级身份缓存 CLASS_LIST_OBJECTS（el.classList === el.classList；复用 R69 ATTR_MAP_OBJECTS 模式）",
+    "方法面：length / item(i) 越界 null / contains / add(...tokens) / remove(...tokens) / toggle(token, force?) / replace(oldT, newT) / value getter+setter / toString",
+    "token 校验（spec dom-domtokenlist-validation）：空 → SyntaxError、ASCII 空白 → InvalidCharacterError——复用 R66 throw_dom_exception（e.name catch 可观测）；add/remove 全量校验后统一写（all-or-nothing）",
+    "contains 空/空白 token 返 false 不抛（spec 例外——区别 add/remove/toggle/replace 的 check 抛）",
+    "toggle force 模式（force=true 不在加 / force=false 在移除 / 状态一致 no-op）与切换模式（在→移除返 false / 不在→加返 true）",
+    "replace 四路语义：原位 true / oldT 不在 false 不写 / 同名返 contains / newT 已在 dedupe 移除 oldT",
+    "写路径派发 attributeChangedCallback（R68 old 写前捕获语义）",
+    "reset_quickjs_state 清 CLASS_LIST_OBJECTS"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R70 六组断言：身份缓存 / add 多参幂等+读写闭环 / toggle 双模式 / replace 四路+className 反射 / token 校验 all-or-nothing / contains 例外不抛）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings；4 处 manual_contains 修复）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/dom_token_list.rs 语义对齐（同 current_tokens/write_tokens 模型 + 同校验抛错 + 同 toggle/replace 分支）"
+}
