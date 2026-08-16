@@ -50,6 +50,8 @@ mod tab_worker;
 mod text_input;
 mod text_metrics;
 mod ui_icons;
+#[cfg(target_os = "windows")]
+mod windows_titlebar;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -454,8 +456,7 @@ fn run_headless(cli: CliArgs) {
 /// 按平台调整窗口配置。
 ///
 /// - Wayland：禁用 CSD，避免失焦时 subsurface commit 导致 compositor 断开
-/// - Windows：禁用系统装饰，改用自绘标题栏（控制按钮 + 拖拽区），
-///   依赖 winit 0.30 对无边框窗口的 Aero Snap 支持（WS_THICKFRAME 保留）
+/// - Windows：使用自绘 caption buttons；最大化命中区交由系统显示 Snap Layout
 /// - macOS：使用一体化标题栏（系统 traffic lights 与标签栏同排）
 fn browser_window_config(app: &BrowserApp, smoke_viewport: Option<(u32, u32)>) -> WindowConfig {
     let mut config = WindowConfig::new("ZeroBrowser")
@@ -472,7 +473,7 @@ fn browser_window_config(app: &BrowserApp, smoke_viewport: Option<(u32, u32)>) -
         tracing::warn!("Wayland: disabling client-side decorations (CSD subsurface crash on focus switch)");
         config = config.with_decorations(false);
     } else if cfg!(target_os = "windows") {
-        tracing::info!("Windows: using custom titlebar (system decorations disabled, Aero Snap retained via winit)");
+        tracing::info!("Windows: using Chrome-style custom caption buttons with system Snap Layout hit testing");
         config = config.with_decorations(false);
     } else if app::uses_unified_titlebar() {
         config = config.with_unified_titlebar(true);
@@ -773,6 +774,8 @@ fn main() {
 
     // CPU surface 由 main 管理生命周期
     let mut cpu_surface: Option<softbuffer::Surface<Arc<winit::window::Window>, Arc<winit::window::Window>>> = None;
+    #[cfg(target_os = "windows")]
+    let mut windows_caption_hit_test_installed = false;
     let poll_active = Arc::new(AtomicBool::new(true));
 
     if let Err(e) = runtime.run_with_window_polling(Duration::from_millis(16), poll_active, move |event, window| {
@@ -801,6 +804,8 @@ fn main() {
 
         app.poll_tab_fetch();
         app.expire_scrollbar_overlay();
+        #[cfg(target_os = "windows")]
+        app.sync_windows_caption_hover();
         match event {
             AppEvent::RedrawRequested => {
                 if !app.window_focused && smoke_capture_path.is_none() && gui_smoke.is_none() && parity_smoke.is_none()
@@ -841,6 +846,20 @@ fn main() {
                                 app.ensure_startup_tab();
                                 sync_window_chrome_icon(&mut app, win);
                                 app.sync_webview_viewport();
+                                #[cfg(target_os = "windows")]
+                                if !windows_caption_hit_test_installed {
+                                    match windows_titlebar::install(win) {
+                                        Ok(()) => {
+                                            windows_caption_hit_test_installed = true;
+                                            tracing::info!("Windows: native maximize hit testing installed");
+                                        }
+                                        Err(error) => {
+                                            tracing::error!(
+                                                "Windows: cannot install native maximize hit testing: {error}"
+                                            );
+                                        }
+                                    }
+                                }
                                 if let Some(smoke) = gui_smoke.as_mut() {
                                     smoke.start(&mut app);
                                 }

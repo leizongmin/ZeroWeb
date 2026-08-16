@@ -643,13 +643,22 @@ fn browser_window_config_starts_maximized_not_fullscreen() {
     let config = super::browser_window_config(&app, None);
     assert!(!config.fullscreen);
     assert!(config.maximized);
-    // 无装饰平台：Wayland（规避 CSD 崩溃）+ Windows（自绘标题栏）
+    // 无装饰平台：Wayland（规避 CSD 崩溃）+ Windows（Chrome 风格自绘标题栏）。
     let undecorated = crate::app::is_wayland() || cfg!(target_os = "windows");
     if undecorated {
         assert!(!config.decorations, "应禁用系统装饰");
     } else {
         assert!(config.decorations, "应保留系统装饰");
     }
+}
+
+#[test]
+fn windows_chrome_style_titlebar_uses_browser_controls() {
+    let app = BrowserApp::new(RenderMode::Cpu);
+    #[cfg(target_os = "windows")]
+    assert!(app.uses_custom_window_controls());
+    #[cfg(not(target_os = "windows"))]
+    assert_eq!(app.uses_custom_window_controls(), crate::app::is_wayland());
 }
 
 #[test]

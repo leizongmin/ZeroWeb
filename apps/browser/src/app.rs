@@ -560,7 +560,7 @@ impl BrowserApp {
     /// 是否需要自绘窗口控制按钮（最小化/最大化/关闭）。
     ///
     /// - Wayland：无系统装饰
-    /// - Windows：禁用了系统标题栏，改用自绘
+    /// - Windows：Chrome 风格无边框标题栏，改用浏览器自绘按钮
     /// - macOS：使用系统 traffic lights，无需自绘
     pub fn uses_custom_window_controls(&self) -> bool {
         is_wayland() || cfg!(target_os = "windows")
@@ -805,6 +805,19 @@ impl BrowserApp {
             });
         if hover != self.window_control_hover {
             self.window_control_hover = hover;
+            self.needs_redraw = true;
+        }
+    }
+
+    /// 将 Windows 非客户区的最大化按钮悬停状态同步到自绘控制按钮。
+    #[cfg(target_os = "windows")]
+    pub fn sync_windows_caption_hover(&mut self) {
+        let maximize_hovered = crate::windows_titlebar::maximize_hovered();
+        if maximize_hovered && self.window_control_hover != Some(1) {
+            self.window_control_hover = Some(1);
+            self.needs_redraw = true;
+        } else if !maximize_hovered && self.window_control_hover == Some(1) {
+            self.window_control_hover = None;
             self.needs_redraw = true;
         }
     }
