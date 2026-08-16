@@ -51,6 +51,10 @@
 - **Canvas 路径几何（R34xx + js-dom M8 path-objects）**：arcTo 真切线弧（含无子路径 moveTo、负半径 IndexSizeError）、arc 归一化全圆/幅度语义 + anticlockwise 整圆特例、isPointInPath/fill 的 nonzero 绕组 + fillRule/Path2D 形式、ensuresubpath 语义 + clip 相交/空交集、椭圆负半径校验、曲线/弧段数自适应 + stroke 像素方形覆盖、stroke 零长段剪除 + roundRect 显式闭合 + 环绕 join、worker OffscreenCanvas 接口面——path-objects 用例 62F → 3F。
 - **布局与文本测量（ZRG-2026-08-15）**：布局文本宽度改 hmtx 真实测量（替换 estimate 启发式）、paint 字符 advance 按字形实际字体测量（engine/browser 双端）、FreeType measure_advance hinting 取整致英文文本字距错乱修复——跨平台换行点一致（CI watchdog 同步修 shaping 基线跨平台字体 + net async redirect deflake）。
 - **多进程与渲染**：renderer JS 状态跨文档加载隔离（lexical state 测试覆盖）、html5test.co 分数在多进程浏览器中正确渲染、compositor scrolling viewport repaint 修复、browser 构建缓存跨启动保留。
+- **Canvas 2D goal 完成（R57 终态）**：路径填充边界 AA（非轴对齐 CTM 4×4 超采样）、渐变插值空间补全 CSS Color 4 全 16 空间（+DisplayP3/DisplayP3Linear 等）、setFilterDropShadow/setGradientInterpolation bridge op、逐格独立对齐 + TextCluster 字体锁定——Chromium Oracle 不一致归零（41/41 100%），Mission 中期 80% 达成、DC-1~4 全部满足。
+- **表单验证（form-validation M1-M3）**：validationMessage 标准消息、requestSubmit 交互验证、提交阻断全链路（form-requestsubmit 全灭）、:invalid/:valid 匹配、BUTTON type 读取、step/pattern/date/time 校验矩阵、radio 组级 required、ValidityState——WPT 919/0 全灭。
+- **js-dom M4 遍历 API 完整化（R82-R86）**：whatToShow unsigned + referenceNode 同步（R82）、walker full-nodeType mask + fresh-start + handle before/after（R83）、traversal 兄弟链同 identity + NodeIterator detach/重入守卫 + TreeWalker filter 剪枝（R84）、TreeWalker 导航式重写 + previousNode 规范镜像（R85）、detached 子树保留 + NodeIterator 移除 retarget（R86）——traversal 1527→1575P。
+- **浏览器多进程重构**：require isolated process pipeline、release 二进制移除 page runtime（script runtime optional）、Windows caption button 行为恢复、空白标签页地址栏 ZeroWeb 图标、renderer 空闲 JS 轮询移除。
 
 ### 变更
 

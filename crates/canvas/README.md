@@ -13,7 +13,10 @@
 - **文本渲染** — `fill_text`、`stroke_text`、`measure_text`，支持字体族、大小、粗细和样式配置
 - **仿射变换** — 2D 矩阵（`Transform2D`）支持平移、缩放、旋转，以及 `set_transform` / `reset_transform`
 - **状态管理** — `save` / `restore` 栈，完整保存和恢复填充色、描边色、线宽、字体、透明度与变换矩阵
-- **像素数据** — `ImageData` 及 `get_image_data` / `put_image_data` 接口
+- **像素数据** — `ImageData` 及 `get_image_data` / `put_image_data` 接口；f32 版 `get_image_data_f32` / `put_image_data_f32`（HDR 数据路径）
+- **渐变** — `create_linear_gradient` / `create_radial_gradient` / `create_conic_gradient`，支持 CSS Color 4 `colorInterpolationMethod` 多色彩空间插值（含 OKLab 等）与色相法
+- **滤镜** — `ctx.filter` 的 colorMatrix（20 值）与 dropShadow 滤镜（`set_filter_drop_shadow`）
+- **色彩管理** — `CanvasColorSpace`（srgb / display-p3 / srgb-linear / display-p3-linear）与 `set_color_space`，f16 浮点像素存储 + linear 色彩空间贯通
 - **渲染输出** — 通过 `into_primitives()` 消费上下文，输出 `RenderPrimitives` 供渲染管线使用
 
 ## 使用示例
