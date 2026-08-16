@@ -80,9 +80,9 @@ impl BrowserApp {
             let status_hint = Self::tab_html_hint(status_url);
             let page_kind = Self::address_bar_page_kind(status_url);
             let is_loading = self.shell.active_tab().is_some_and(|t| t.is_loading());
-            if self.address_bar_focused {
-                // 地址栏编辑态固定显示 ZeroWeb 标识，避免安全状态位留下空白。
-                push_zero_web_icon(fills, status_cx, status_cy, status_icon_size, self.chrome_palette.address_bar_bg_focused);
+            if self.address_bar_focused || status_url.is_none() {
+                // 地址栏编辑态及空白标签页固定显示 ZeroWeb 标识，避免安全状态位留下空白。
+                push_zero_web_icon(fills, status_cx, status_cy, status_icon_size, bg);
             } else if is_loading {
                 let angle = self.chrome_anim_start.elapsed().as_secs_f32() * 3.5;
                 crate::tab_chrome::push_loading_spinner(

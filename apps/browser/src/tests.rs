@@ -950,6 +950,54 @@ fn address_bar_renders_lock_icon_for_https() {
     );
 }
 
+/// 空白标签页地址栏 leading slot 应绘制 ZeroWeb 标识，而非内部页信息字符。
+#[test]
+fn blank_tab_address_bar_renders_zero_web_icon() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let (fills, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    let (bar_x, bar_y, _, bar_h) = app.address_bar_layout_for_test();
+    let status_cx = bar_x + 1.0 + layout::ADDRESS_BAR_INNER_PAD_H + layout::ADDRESS_BAR_LEADING_SLOT_WIDTH * 0.5;
+    let status_cy = bar_y + bar_h * 0.5;
+    let in_status_slot = |x: f32, y: f32| (x - status_cx).abs() <= 8.0 && (y - status_cy).abs() <= 8.0;
+
+    assert!(
+        !glyphs
+            .iter()
+            .any(|glyph| glyph.ch == 'i' && in_status_slot(glyph.x, glyph.baseline_y)),
+        "blank tab should not render the internal-page info character"
+    );
+    for color in [
+        Color {
+            r: 74,
+            g: 158,
+            b: 255,
+            a: 255,
+        },
+        Color {
+            r: 20,
+            g: 184,
+            b: 166,
+            a: 255,
+        },
+        Color {
+            r: 30,
+            g: 79,
+            b: 208,
+            a: 255,
+        },
+    ] {
+        assert!(
+            fills
+                .iter()
+                .any(|fill| { fill.color == color && in_status_slot(fill.rect.origin.x, fill.rect.origin.y) }),
+            "blank tab should render every ZeroWeb icon color"
+        );
+    }
+}
+
 /// 地址栏内右侧只应保留星标与盾牌两个图标，不再有页面操作三点菜单
 /// （避免与地址栏外的全局菜单三点重复）。
 #[test]
