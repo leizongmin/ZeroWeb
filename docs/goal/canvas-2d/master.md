@@ -24,7 +24,7 @@
 | 目录 | 状态 |
 |------|------|
 | testharness 面（全部目录） | ✅ 全 0 Fail（element 1253 + worker 1082——R57 batch-5 后复测零回归） |
-| oracle A/B 141 可测 | ✅ 真通过 **17（41.5%）** / 近似 4（9.8%）/ 不一致 20（两阶段平移对齐——±2 快搜 + 头部高度差 ±40 细搜（h1/p UA 样式 38px——batch-9 grid 归因）；fontKerning 8.56→0.00%、TextCluster-baseline 12.57→0.05%；剩余 = composite.grid 内容级（旋转矩形位置差 5px）+ 字体度量他域 + miter 线几何） |
+| oracle A/B 141 可测 | ✅ 真通过 **34（82.9%）** / 近似 5（12.2%）/ 不一致 **2**（逐格独立对齐——grid ×12 全灭（每格内容 diff=0 实证，列宽差累积残差消除）；miter_limit 1.40→0.47%；**Mission 中期 80% 目标达成**；剩余 2 项 = TextCluster-font-change ×2（1.13%——字体度量，rendering-compat 域）） |
 | oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
@@ -89,7 +89,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（两阶段对齐后 20 项） | 🔄 聚类：composite.grid ×12（**17.8-21.3%**——canvas0（source-over）对齐后 diff=0 实证内容一致；差异 = 每格平移（y 头部差 31 已消；x 列宽差 -24 起、canvas1-5 累积 -94+——span max-content = max(div 标题文本宽 94.4, canvas 80)——max 语义正确（单测守护），列宽差 = div 标题文本宽差（94.4 vs Chromium ~75——**字体度量，rendering-compat 域**））/ text 残余 ×6（TextCluster-font-change 7.0%/drawing-styles 4.1%/writingmode 4.0%——字体度量，rendering-compat 域）/ miter_limit 1.40%（线几何亚像素+背景图）/ mode.alpha 1.12% / text-outside 0.57%（退化 oracle） |
+| G10 | oracle A/B 不一致（逐格对齐后 2 项） | 🔄 聚类：TextCluster-font-change ×2（1.13%——fillText 后改字体的 measure 差——字体度量，rendering-compat 域）；其余全部 <0.5%（miter_limit 0.47% 近似、reset 0.22-0.25%、fontVariantCaps 0.25%、mode.alpha 0.21%、text-outside 退化排除） |
 
 ## 待用户决策清单
 

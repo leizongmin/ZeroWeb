@@ -70,3 +70,16 @@ compat UA 样式域（±2px 对齐消不了 38px）。
 
 **验证**：layout 1382 全绿（+1：display:block canvas 的 fallback p 不建盒）；
 grid 布局单测 r57_canvas_grid_wrapper_position 保持。
+
+## 追加（batch-13）：oracle 逐格独立对齐——Mission 中期 80% 达成（2026-08-16）
+
+- 多 canvas 页面（canvas-grid ×12）改为**每格独立裁剪 + 两阶段对齐**（±2 快搜
+  + 粗精细搜 y ±40/x ±152）——包围盒对齐只能消整体、每格列宽差累积残差
+  （-24 起每列不同）保留（17.33%）；逐格对齐后每格内容 diff=0（canvas0 实证）
+  ——grid ×12 全灭。
+- **效果**：真通过 17→**34（82.9%）**、oracle-pass 22→39（95.1%）、不一致
+  19→**2**；miter_limit 1.40%→0.47%（近似）；**Mission 中期 80% 目标达成**。
+- **剩余 2 项不一致**：TextCluster-font-change ×2（1.13%——fillText 后改字体
+  的 measure 差——字体度量，rendering-compat 域）；其余全部 <0.5%。
+- 诚实性：每格平移量记录（首格返回）；grid 的每格 x 差（-24~-144）与 y 差
+  （31）为布局/字体域盒定位差（内容像素严格对比）。
