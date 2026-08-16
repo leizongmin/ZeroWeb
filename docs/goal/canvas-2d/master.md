@@ -131,7 +131,7 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
 | G8 | 第二批新目录 | ✅ 全绿（reset 56/canvas-host 67/canvas-context 11/layers 30/conformance 4/global-hdr 10/filters 13/color-type 4/wide-gamut 12/path-objects 202/0/drawing-images 修复 7 项） |
-| G9 | drawing-images 剩余 2 项 | 🔄 nonexistent（drawImage 失败态 img 应抛 InvalidStateError——需 img 状态机区分 broken/loading，与 incomplete.* 的 no-op 语义配套）+ nonfinite（Infinity 参数致 runner 挂起）——下轮深项 |
+| G9 | drawing-images 剩余 1 项 | 🔄 nonexistent（drawImage 失败态 img 应抛 InvalidStateError——需 img 状态机区分 broken/loading，与 incomplete.* 的 no-op 语义配套）——下轮深项；nonfinite 已修复（Infinity as usize 饱和 usize::MAX 致像素循环挂死——非有限参数 no-op） |
 
 ## 待用户决策清单
 
@@ -143,9 +143,8 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 
 ## 下一步计划
 
-1. drawing-images 剩余 2 项（G9）：nonexistent（img 失败态抛 InvalidStateError——
-   img 状态机区分 broken/loading）+ nonfinite（Infinity 参数致 runner 挂起——
-   先定位 runner 挂起点）
+1. drawing-images 剩余 1 项（G9）：nonexistent（img 失败态抛 InvalidStateError——
+   img 状态机区分 broken/loading）
 2. **M3 冲刺**：oracle A/B 基线 1.7% → 按 worst-diff 聚类修复（filters dropShadow/
    layers opaque-canvas/gradient 颜色插值）——每项修复经 oracle A/B 验证
 3. filters/layers/color-type 像素面深项（R56h 后 API 表面已全绿，剩余为像素级）
