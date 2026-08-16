@@ -1365,6 +1365,13 @@
       style: {},
       _ctx: null
     };
+    // R57（M3）：createElement('canvas') 的 DOM 集成——standalone 对象原无 __zwHandle，
+    // appendChild 静默跳过（mutation 未记录 → 布局无 canvas 盒 → 渲染空白，
+    // 2d.composite.full.mode.alpha 的 createElement+append 画布全缺，oracle A/B 5.8%）。
+    // 创建时同步 host 元素 handle，使 append 可记录 mutation；getContext 写
+    // data-zw-canvas-ctx（painter 桥接），width/height 同步属性（重解析尺寸正确）。
+    var _handle = (typeof __zw_create_element === 'function') ? __zw_create_element('canvas') : '';
+    if (_handle) el.__zwHandle = _handle;
     // R34xx：standalone canvas width/height accessor——设值（**即使同值**，spec）重置
     // bitmap（host resizeContext）+ 全部绘图状态（2d.canvas.host.initial.reset.2dstate
     // 的 canvas.width= 同值复位断言）。旧为普通数据属性：赋值不触达 host，canvas-host
@@ -1374,6 +1381,10 @@
       // R34xx：WebIDL ToUint32（size.invalid.attributes.idl 的 200-2^32 → 200）。
       var nv = _zwToUint32(v);
       if (p === 'width') _cw = nv; else _ch = nv;
+      // R57：同步 host 元素属性（append 后重解析的 canvas 尺寸正确）。
+      if (_handle && typeof __zw_set_attr_handle === 'function') {
+        __zw_set_attr_handle(_handle, p, String(nv));
+      }
       if (el._ctx && typeof __zw_canvas_op === 'function') {
         __zw_canvas_op(el._ctx._handle, 'resizeContext', String(_cw), String(_ch));
         _zwResetCtxMirrors(el._ctx);
@@ -1405,6 +1416,11 @@
           ? arguments[1].colorType : 'unorm8');
       if (!id || String(id).charAt(0) === '!') return null;
       el._ctx = _zwMakeCtx2d(String(id));
+      // R57：写 data-zw-canvas-ctx（painter 桥接 canvas 像素为页面图元——DOM canvas
+      // 路径 part04 同语义；standalone 此前缺此属性，append 后 painter 找不到 ctx）。
+      if (_handle && typeof __zw_set_attr_handle === 'function') {
+        __zw_set_attr_handle(_handle, 'data-zw-canvas-ctx', String(id));
+      }
       // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 画布的浮点转换基准）。
       el._ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
         ? arguments[1].colorSpace : 'srgb';

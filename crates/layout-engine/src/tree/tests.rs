@@ -1637,3 +1637,47 @@ fn test_canvas_attr_intrinsic_size() {
     );
     assert_eq!(style.aspect_ratio, Some(1.0), "canvas aspect 应 1:1");
 }
+
+/// R57（M3）：span > div + canvas（canvas-grid reftest 结构）——span 含 block 子时
+/// 不被 R2156 门跳过（曾整棵丢出 taffy → canvas 无盒 → 格子空白），R109 拆分后
+/// canvas 须有独立 taffy 节点（2d.gradient.colorInterpolationMethod oracle A/B）。
+#[test]
+fn test_canvas_in_span_grid_structure() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let grid = doc.create_element("div");
+    doc.append_child(body, grid).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(grid, span).unwrap();
+    let label = doc.create_element("div");
+    doc.append_child(span, label).unwrap();
+    let canvas = doc.create_element("canvas");
+    doc.set_attribute(canvas, "width", "100");
+    doc.set_attribute(canvas, "height", "50");
+    doc.append_child(span, canvas).unwrap();
+
+    let styles = HashMap::new();
+    let (tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+    // span 与 canvas 都须在 taffy 树中（R2156 守卫：含 block 子的 inline 不跳过；
+    // R109 拆分后 canvas 建独立子盒——painter 依赖 canvas 盒桥接位图）。
+    assert!(taffy_to_dom.values().any(|id| *id == span), "span 应保留在 taffy 树");
+    assert!(
+        taffy_to_dom.values().any(|id| *id == canvas),
+        "canvas 应有独立 taffy 节点"
+    );
+    let canvas_taffy = find_taffy_for_dom(&taffy_to_dom, canvas);
+    let style = tree.style(canvas_taffy).unwrap();
+    assert_eq!(style.size.width, taffy::style::Dimension::length(100.0));
+    assert_eq!(style.size.height, taffy::style::Dimension::length(50.0));
+}
