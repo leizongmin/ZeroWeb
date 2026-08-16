@@ -564,6 +564,12 @@ fn native_create_element_entry<'js>(
 /// 的 QuickJS 版共享入口——`element_for_id` 工厂与 `create_element` 工厂统一走此。
 fn get_or_build_node_value<'js>(ctx: &Ctx<'js>, node_id: NodeId) -> Value<'js> {
     let ffi = encode_node_id(node_id);
+    // R74 生命周期结论（实验归档）：weak 化破坏 spec identity——两次独立 eval 间 JS 无
+    // 引用即回收，同 NodeId 重建新对象致 `el.parentNode === el2` 断言失败。真浏览器中
+    // 文档树内节点有 document→tree→node 强链永不回收；故**树内节点保持 strong**，
+    // 生命周期治理改为「detached 时机清理」：removeChild 成功后子树条目出缓存（见
+    // notify_disconnect_after_remove），页面 JS 若仍持旧引用则旧对象自然随 JS 引用
+    // 存活（stale 校验已有——node_id_of 查 arena）。
     if let Some(hit) = NODE_OBJECTS.with(|c| c.borrow().get(&ffi).cloned())
         && let Ok(v) = hit.restore(ctx)
     {
@@ -581,6 +587,18 @@ fn get_or_build_node_value<'js>(ctx: &Ctx<'js>, node_id: NodeId) -> Value<'js> {
     }
 }
 
+/// R74 生命周期实验（已回退，结论归档）：
+/// ① WeakRef 承载 NODE_OBJECTS——两次独立 eval 间 GC 回收树内节点包装 → 同 NodeId
+///   重建新对象 → `el.parentNode === el2` identity 断裂（spec 违背）。QuickJS C API
+///   无 JS_NewWeakRef 导出、rquickjs sys 层未绑 JSWeakRef 记录，Rust 侧无 finalizer
+///   回调可用（V8 R3133 Weak + guaranteed finalizer 无 rquickjs 对等物）。
+/// ② removeChild 时机 evict 子树——JS 持旧引用 + re-append 重建新对象 →
+///   `childNodes[0] === held` 断裂（spec remove→re-append 须同 identity）。
+/// **结论**：strong Persistent + reset_quickjs_state 导航换代全清是当前唯一正确形态；
+/// 有界泄漏面 = 单文档生命周期内的 detached 节点包装（页面级，导航即释放）。V8 侧
+/// 的 Weak 方案依赖 finalizer 回调清理 Rust 侧 map——QuickJS 缺该钩子是根本阻塞，
+/// 待 rquickjs 上游暴露（TBD 记 master.md）。
+///
 /// 工厂实现：`get_element_by_id` → NodeId → native 对象（身份缓存命中或新建）。
 fn native_element_for_id_impl<'js>(ctx: &Ctx<'js>, id_str: &str) -> Value<'js> {
     let Some(node_id) = with_dom(|d| d.get_element_by_id(id_str)).flatten() else {
@@ -2091,6 +2109,11 @@ fn notify_disconnect_after_remove<'js>(ctx: &Ctx<'js>, removed_id: NodeId) {
             to_disconnect.push(id);
         }
     });
+    // R74 生命周期结论（实验归档）：removeChild 时机 evict 子树缓存会破坏
+    // remove→re-append 的 spec identity（JS 持旧引用 + 重建新对象 → `===` 断裂，
+    // PoC 实证）。树内 strong / detached weak 两段式亦有同类问题（两次 eval 间 GC
+    // 断链）。**strong 缓存 + reset_quickjs_state 导航换代全清是当前唯一正确形态**
+    //（真浏览器：树内节点 document 强链保活，GC 不触碰）。
     for id in to_disconnect {
         CONNECTED_CUSTOM.with(|c| c.borrow_mut().remove(&encode_node_id(id)));
         dispatch_ce_lifecycle(ctx, id, "disconnectedCallback");
@@ -2252,6 +2275,47 @@ mod tests {
                     if msg.is_empty() { format!("__ERR__:{e}") } else { format!("__ERR__:{e}: {msg}") }
                 })
             };
+
+            // R74 S0q 续·前置探索：JS 侧 WeakRef/FinalizationRegistry intrinsic 可用性
+            //（QuickJS C API 无 JS_NewWeakRef 导出，rquickjs sys 层未绑——weak 化只能经
+            // JS 内置；此断言组是后续 NODE_OBJECTS weak 改造的可行性锚点）。
+            assert_eq!(
+                eval_str("typeof WeakRef + ',' + typeof FinalizationRegistry"),
+                "function,function",
+                "R74 前置：WeakRef/FinalizationRegistry intrinsic 可用（Context::full）"
+            );
+            // R74 生命周期正向证据：① JS WeakRef 语义正常（持有期间 deref 命中、无引用
+            // GC 后 undefined——QuickJS 语句间即回收，比预期激进）② strong 缓存下树内
+            // 节点跨 GC 稳定（identity 不因 GC 断裂——两方案实验归档见
+            // notify_disconnect_after_remove 注释）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__tgt = {a: 1};\
+                     globalThis.__wr = new WeakRef(__tgt);\
+                     var __r1 = __wr.deref().a;\
+                     globalThis.__tgt = null;\
+                     'pre:' + __r1"
+                ),
+                "pre:1",
+                "R74 WeakRef 语义正常（持有期间 deref 命中）"
+            );
+            assert!(
+                eval_str(
+                    "globalThis.__gcRounds = 0;\
+                     while (__gcRounds < 30 && __wr.deref() !== undefined) { __gcRounds++; }\
+                     __wr.deref() === undefined ? 'collected@' + __gcRounds : 'alive'"
+                )
+                .starts_with("collected@"),
+                "R74 GC 确实回收无引用对象（JS 弱引用机制正常；QuickJS eval 间隙自动回收）"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__idA = __zw_native_element_for_id('main');\
+                     (typeof __idA.tagName) + ':' + (__zw_native_element_for_id('main') === __idA)"
+                ),
+                "string:true",
+                "R74 strong 缓存：树内节点跨调用 identity 稳定（正确性根基）"
+            );
 
             // 1. 工厂命中：id → native 对象，getter 读 Rust DOM。
             assert_eq!(eval_str("typeof __zw_native_element_for_id"), "function");
