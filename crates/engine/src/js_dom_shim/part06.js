@@ -227,8 +227,23 @@
       return fn.call(filterObj, node) | 0;
     }
     function check(node) {
-      if ((wts & maskFor(node)) === 0) return 3; // 不在 whatToShow → SKIP（不入列，但仍遍历子树）
+      if ((wts & maskFor(node)) === 0) return 3; // 不在 whatToShow → SKIP（不入列，但仍遍历子树)
       if (!filterObj) return 1; // 无 filter → ACCEPT
+      // R88：filter 执行期登记 in-flight 候选 + 方向指针态（filter 内移除节点时
+      // _zwNotifyIteratorsRemove 消费——WPT removal-during-filtering）。方向由调用方
+      // 经 checkFlight 约定（nextNode → before=false / previousNode → before=true）。
+      var _r88PrevFlight = (typeof inFlightVal !== 'undefined') ? inFlightVal : null;
+      var _r88PrevFlightB = (typeof inFlightBeforeVal !== 'undefined') ? inFlightBeforeVal : false;
+      if (typeof inFlightVal !== 'undefined') { inFlightVal = node; }
+      try {
+        return _checkFiltered(node);
+      } finally {
+        if (typeof inFlightVal !== 'undefined') { inFlightVal = _r88PrevFlight; inFlightBeforeVal = _r88PrevFlightB; }
+        // R88 注：flightRetargeted 不在此清——遍历方法 wrapper 须先读到它才能跳过 ref
+        // 回写（check finally 先于 wrapper 运行；清理在 wrapper 返回路径完成）。
+      }
+    }
+    function _checkFiltered(node) {
       // R51：spec `callbackdef-nodefilter`——filter 抛错**原样重抛**（不吞、不默认 ACCEPT；
       // WPT "filter function/object that throws" assert_throws_exactly + currentNode 不动）。
       // R85：返回**原始值**（含 false→0）——0 的遍历语义**按方法分叉**（WPT TreeWalker.html
@@ -339,6 +354,11 @@
     if (!isTreeWalker) {
       var refNodeVal = root;
       var beforeRefVal = true;
+      // R88：in-flight 遍历状态——nextNode/previousNode 的 filter 执行期间登记候选节点
+      // 与方向语义的指针态（nextNode 候选 → before=false；previousNode 候选 → before=true），
+      // filter 返回后清空（非 filter 期间的移除不受影响）。
+      var inFlightVal = null;
+      var inFlightBeforeVal = false;
       Object.defineProperty(walker, 'referenceNode', { get: function () { return refNodeVal; }, configurable: true });
       Object.defineProperty(walker, 'pointerBeforeReferenceNode', { get: function () { return beforeRefVal; }, configurable: true });
       // R82：同步钩子后移——wrapper 原定义在此处，被下方 R51 lazy nextNode/previousNode
@@ -393,6 +413,8 @@
       }
       active = true;
       try {
+        // R88：nextNode 的 in-flight 方向指针态——候选在指针后侧（before=false）。
+        if (typeof inFlightBeforeVal !== 'undefined') inFlightBeforeVal = false;
         // R83：fresh 起点按 walker 类型区分——NodeIterator 的迭代集合**含 root**（指针初始
         // 在 root 前 → 首个 nextNode 返 root；WPT NodeIterator-removal-during-filtering /
         // R2803 单测 DIV 首位）；TreeWalker 的 currentNode=root 表示**已位于 root**（visited）
@@ -432,6 +454,8 @@
       }
       active = true;
       try {
+        // R88：previousNode 的 in-flight 方向指针态——候选在指针前侧（before=true）。
+        if (typeof inFlightBeforeVal !== 'undefined') inFlightBeforeVal = true;
         if (isTreeWalker) {
           // R85：TreeWalker previousNode 改**导航式逆向树序步进**（nextNode 的精确镜像，
           // WPT NodeIterator.html previousNode oracle 算法）：候选 = currentNode 的前驱
@@ -478,9 +502,12 @@
           // 翻指针由外层 R82 wrapper 完成（previousNode 成功 → beforeRefVal=true）；
           // 此处返当前 ref 前仍须过 filter（spec previousNode 步骤 4-5：referenceNode
           // 非 ACCEPT 则继续前驱——WPT "Recursive filters need to throw" 对
-          // previousNode 的断言在此触发）。
-          if (check(refNodeVal) === 1) {
-            return refNodeVal;
+          // previousNode 的断言在此触发）。R88：先取 ref 快照——filter 内移除会把
+          // refNodeVal retarget 到存活节点，返回值须仍是被 filter 的 ref（WPT
+          // removal-during-filtering「returns the filtered node」）。
+          var _r88Ref = refNodeVal;
+          if (check(_r88Ref) === 1) {
+            return _r88Ref;
           }
         }
         syncOrderPosTo(currentNodeVal);
@@ -602,14 +629,22 @@
     // 实证：立即耗尽的迭代器 before 保持 true——「after nextNode() 1 time(s)」期望 true）。
     if (!isTreeWalker) {
       var _rawNext2 = walker.nextNode, _rawPrev2 = walker.previousNode;
+      // R88：filter 内 retarget 后，遍历方法的成功返回不再回写 ref（retarget 已把
+      // reference 落到存活节点——WPT removal-during-filtering：filter(b) 内 b.remove()
+      // → retarget(a,false)，nextNode 返 b 但 reference 须留 a）。flightRetargeted 由
+      // retarget() 在 in-flight 窗口内置位、check() finally 清零。
+      var flightRetargeted = false;
       walker.nextNode = function () {
         var r = _rawNext2.apply(this, arguments);
-        if (r) { refNodeVal = r; beforeRefVal = false; }
+        // R88：filter 内 retarget 已生效 → 不回写 ref（返回值仍是被 filter 节点）。
+        if (r && !flightRetargeted) { refNodeVal = r; beforeRefVal = false; }
+        flightRetargeted = false;
         return r;
       };
       walker.previousNode = function () {
         var r = _rawPrev2.apply(this, arguments);
-        if (r) { refNodeVal = r; beforeRefVal = true; }
+        if (r && !flightRetargeted) { refNodeVal = r; beforeRefVal = true; }
+        flightRetargeted = false;
         return r;
       };
       // R86：NodeIterator 移除 retarget（spec `nodeiterator-remove`——迭代集合 live：
@@ -619,7 +654,21 @@
         root: root,
         getRef: function () { return refNodeVal; },
         getBefore: function () { return beforeRefVal; },
-        retarget: function (newRef, newBefore) { refNodeVal = newRef; beforeRefVal = newBefore; },
+        // R88：in-flight 候选（filter 正在执行的节点）+ 遍历方向指针态——filter 内
+        // 移除时 pre-remove 步骤对 in-flight 位置生效（WPT removal-during-filtering）。
+        getInFlight: function () { return inFlightVal || null; },
+        getInFlightBefore: function () { return inFlightBeforeVal; },
+        retarget: function (newRef, newBefore) {
+          refNodeVal = newRef; beforeRefVal = newBefore;
+        },
+        // R88：in-flight 路径的 retarget（仅当 in-flight 候选自身在 removed 子树内时
+        // 由 notify 调用）——置 flightRetargeted 使遍历方法返回时不回写 ref；常规
+        // retarget（referenceNode 命中但 in-flight 无关，如 filter 内移除已访问节点）
+        // 不抑制——spec 期望 filter 返回后 ref 落新 accepted（WPT "already-visited"）。
+        retargetInFlight: function (newRef, newBefore) {
+          refNodeVal = newRef; beforeRefVal = newBefore;
+          if (inFlightVal) flightRetargeted = true;
+        },
         dead: false,
       });
     }
@@ -698,22 +747,39 @@
       if (!it || it.dead) continue;
       var ref = it.getRef();
       if (isAnc(it.root)) continue; // removed 是 root 的祖先 → no-op
-      if (!inSubtree(ref)) continue; // reference 不在 removed 子树内 → no-op
+      // R88：filter 执行中的 in-flight 遍历——pre-remove 步骤对「正在被 filter 的候选
+      // 位置」生效（spec concept-nodeiterator-traverse：filter 内移除时 in-flight 指针
+      // 同步 retarget，返回值仍是被 filter 节点）。in-flight candidate 在 removed 子树
+      // 内（filter 的就是 removed 或其后代）→ 以 candidate 代替 referenceNode 参与判定
+      //（WPT removal-during-filtering：filter(b) 内 b.remove() → in-flight=b 在 b 子树
+      // 内 → retarget 到 a；filter(b1) 内 remove(b) → in-flight=b1 在 b 子树内 →
+      // 「pointer before + root 内无后继」分支翻 false 落 a1）。
+      var inFlight = it.getInFlight && it.getInFlight();
+      var subj = (inFlight && inSubtree(inFlight)) ? inFlight : null;
+      if (!subj && !inSubtree(ref)) continue; // reference/in-flight 均不在 removed 子树内 → no-op
       // R87：succ 须在 root 子树内（spec「first node following... within root」——
       // 跨出 root 边界的后继不算；用 inRoot 判定）。
       var succInRoot = succ && inRootOf(succ, it.root);
-      if (it.getBefore()) {
+      // R88：in-flight 的指针态取遍历方向（nextNode → before=false / previousNode →
+      // before=true——candidate 尚未被接受，指针在语义上位于 candidate 的下一/上一侧）。
+      var effBefore = subj ? (it.getInFlightBefore ? it.getInFlightBefore() : it.getBefore()) : it.getBefore();
+      // R88：retarget 目标计算对 in-flight 与常规一致（pred/succ 分支同 spec），但
+      // in-flight 路径经 retargetInFlight（置 flightRetargeted 抑制遍历返回时的 ref
+      // 回写——返回值仍是被 filter 节点，reference 已落存活节点）。
+      var fire = subj ? it.retargetInFlight : it.retarget;
+      if (!fire) fire = it.retarget;
+      if (effBefore) {
         // 指针前置 → reference = removed 后继（保持 before=true）；root 内无后继 →
         // spec 步骤 3：pointer 翻 false + reference = removed 前驱（其前兄弟的
         // last inclusive descendant——即 pred）。
         if (succInRoot) {
-          it.retarget(succ, true);
+          fire(succ, true);
         } else {
-          it.retarget(pred || it.root, pred ? false : true);
+          fire(pred || it.root, pred ? false : true);
         }
       } else {
         // 指针后置 → reference = removed 前驱；前驱为 null（root 前）→ 后继。
-        it.retarget(pred || succ, pred ? false : true);
+        fire(pred || succ, pred ? false : true);
       }
     }
   };

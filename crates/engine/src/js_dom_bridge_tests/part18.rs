@@ -1503,3 +1503,65 @@ fn r87_previous_node_before_false_returns_ref_via_filter() {
         "R87：previousNode 的 before=false 半边返当前 ref 并翻指针；再前返 root、耗尽 null"
     );
 }
+
+// js-dom M4 R88：filter 执行中移除节点——pre-remove 步骤对 in-flight 遍历位置生效
+//（WPT NodeIterator-removal-during-filtering：返回被 filter 节点 + reference retarget）。
+
+#[test]
+fn r88_filter_removes_candidate_retargets_reference() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var root = document.createElement('div');\n\
+         var a = document.createElement('a-el');\n\
+         var b = document.createElement('b-el');\n\
+         var c = document.createElement('c-el');\n\
+         host.appendChild(root);\n\
+         root.appendChild(a); root.appendChild(b); root.appendChild(c);\n\
+         var it = document.createNodeIterator(root, 0x1, {\n\
+         \x20 acceptNode: function (node) { if (node === b) b.remove(); return 1; }\n\
+         });\n\
+         it.nextNode(); it.nextNode(); // root, a\n\
+         var returned = it.nextNode();   // filter(b) 内 remove(b)\n\
+         var returnedIsB = returned === b;\n\
+         var refIsA = it.referenceNode === a;\n\
+         var nextIsC = it.nextNode() === c;\n\
+         globalThis.__r88a = [String(returnedIsB), String(refIsA), String(nextIsC)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r88a").unwrap().value,
+        "true|true|true",
+        "R88：filter 内移除候选——返回被 filter 节点 b、reference retarget 到 a、遍历继续到 c"
+    );
+}
+
+#[test]
+fn r88_filter_removes_ancestor_in_flight_previous() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var root = document.createElement('div');\n\
+         var a = document.createElement('a-el');\n\
+         var a1 = document.createElement('a1-el');\n\
+         var b = document.createElement('b-el');\n\
+         var b1 = document.createElement('b1-el');\n\
+         a.appendChild(a1); b.appendChild(b1);\n\
+         host.appendChild(root); root.appendChild(a); root.appendChild(b);\n\
+         var armed = false;\n\
+         var it = document.createNodeIterator(root, 0x1, {\n\
+         \x20 acceptNode: function (node) { if (armed && node === b1) b.remove(); return 1; }\n\
+         });\n\
+         for (var i = 0; i < 5; i++) it.nextNode(); // ref=b1、before=false\n\
+         armed = true;\n\
+         var returned = it.previousNode(); // filter(b1) 内 remove(b)——in-flight=b1 在 b 子树\n\
+         var returnedIsB1 = returned === b1;\n\
+         var refIsA1 = it.referenceNode === a1;\n\
+         var beforeNow = it.pointerBeforeReferenceNode;\n\
+         globalThis.__r88b = [String(returnedIsB1), String(refIsA1), String(beforeNow)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r88b").unwrap().value,
+        "true|true|false",
+        "R88：previousNode 的 filter 内移除祖先——返回 b1、reference retarget a1、指针翻 false"
+    );
+}
