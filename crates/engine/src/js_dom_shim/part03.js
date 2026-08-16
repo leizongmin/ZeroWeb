@@ -798,11 +798,54 @@
         }
       }
     }
+    // R57（FV M1）：rangeUnderflow/rangeOverflow——min/max 约束（number/range
+    // 类型、value 可解析时比较；date/month/week/time 的日期比较归 M2——字典序
+    // 比较近似留 M2 深化）。spec §4.10.5.2.9/10。
+    var rangeUnderflow = false, rangeOverflow = false;
+    if (ty === 'number' || ty === 'range') {
+      var rv = parseFloat(_controlValue(sel, handle, key));
+      if (!isNaN(rv)) {
+        var minA = null, maxA = null;
+        try {
+          minA = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min');
+          maxA = handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max');
+        } catch (_e) {}
+        if (minA != null && String(minA) !== '') {
+          var mn = parseFloat(String(minA));
+          if (!isNaN(mn) && rv < mn) rangeUnderflow = true;
+        }
+        if (maxA != null && String(maxA) !== '') {
+          var mx = parseFloat(String(maxA));
+          if (!isNaN(mx) && rv > mx) rangeOverflow = true;
+        }
+      }
+    }
+    // R57（FV M1）：typeMismatch——type=email/url 的值格式校验（spec
+    // §4.10.5.2.6；近似正则——email `local@domain`、url 需 scheme；空白清洗；
+    // multiple 逗号分割逐项）。number/date 等的不可解析值归 badInput（M2）。
+    var typeMismatch = false;
+    if (ty === 'email' || ty === 'url') {
+      var tmVal = _controlValue(sel, handle, key).trim();
+      if (tmVal !== '') {
+        var multi = null;
+        try { multi = handle ? __zw_has_attr_handle(handle, 'multiple') : __zw_has_attr(sel, 'multiple'); } catch (_e) {}
+        var items = (multi === '1' && ty === 'email') ? tmVal.split(',') : [tmVal];
+        for (var ti = 0; ti < items.length; ti++) {
+          var it = items[ti].trim();
+          if (it === '') { typeMismatch = true; break; }
+          var ok = ty === 'email'
+            ? /^[^\s@]+@[^\s@]+$/.test(it)
+            : /^[a-z][a-z0-9+.-]*:/i.test(it);
+          if (!ok) { typeMismatch = true; break; }
+        }
+      }
+    }
     return {
-      valueMissing: valueMissing, typeMismatch: false, patternMismatch: patternMismatch,
-      tooLong: tooLong, tooShort: tooShort, rangeUnderflow: false, rangeOverflow: false,
+      valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
+      tooLong: tooLong, tooShort: tooShort, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
       stepMismatch: false, badInput: false, customError: hasCustom,
-      valid: !hasCustom && !valueMissing && !patternMismatch && !tooLong && !tooShort,
+      valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
+        && !rangeOverflow && !tooLong && !tooShort,
     };
   }
 
@@ -1960,11 +2003,44 @@
             try { if (!new RegExp(String(pat)).test(rawValue)) patternMismatch = true; } catch (_e) {}
           }
         }
+        var rangeUnderflow = false, rangeOverflow = false;
+        if (ty === 'number' || ty === 'range') {
+          var rv = parseFloat(rawValue);
+          if (!isNaN(rv)) {
+            var minA = node.getAttribute('min');
+            var maxA = node.getAttribute('max');
+            if (minA != null && String(minA) !== '') {
+              var mn = parseFloat(String(minA));
+              if (!isNaN(mn) && rv < mn) rangeUnderflow = true;
+            }
+            if (maxA != null && String(maxA) !== '') {
+              var mx = parseFloat(String(maxA));
+              if (!isNaN(mx) && rv > mx) rangeOverflow = true;
+            }
+          }
+        }
+        var typeMismatch = false;
+        if (ty === 'email' || ty === 'url') {
+          var tmVal = rawValue.trim();
+          if (tmVal !== '') {
+            var items = (node.hasAttribute('multiple') && ty === 'email') ? tmVal.split(',') : [tmVal];
+            for (var ti = 0; ti < items.length; ti++) {
+              var it = items[ti].trim();
+              if (it === '' || !(ty === 'email'
+                  ? /^[^\s@]+@[^\s@]+$/.test(it)
+                  : /^[a-z][a-z0-9+.-]*:/i.test(it))) {
+                typeMismatch = true;
+                break;
+              }
+            }
+          }
+        }
         return {
-          valueMissing: valueMissing, typeMismatch: false, patternMismatch: patternMismatch,
-          tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+          valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
+          tooLong: false, tooShort: false, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
           stepMismatch: false, badInput: false, customError: hasCustom,
-          valid: !hasCustom && !valueMissing && !patternMismatch,
+          valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
+            && !rangeOverflow,
         };
       },
       configurable: true,
@@ -1995,7 +2071,21 @@
       return node.validity.valid;
     };
     node.reportValidity = function () { return node.checkValidity(); };
-    node.willValidate = true;
+    // R57（FV M1）：node-based willValidate 排除（disabled/readonly/type barred——
+    // 与 part04 的 proxy 版同语义；datalist 祖先 M2）。
+    Object.defineProperty(node, 'willValidate', {
+      get: function () {
+        if (node.hasAttribute('disabled')) return false;
+        var nty = node.hasAttribute('type') ? String(node.getAttribute('type') || '').toLowerCase() : '';
+        if (nty === 'hidden' || nty === 'button' || nty === 'reset') return false;
+        if (String(node.tagName).toLowerCase() === 'textarea'
+            || (String(node.tagName).toLowerCase() === 'input' && _PATTERN_TYPES[nty] === 1)) {
+          if (node.hasAttribute('readonly')) return false;
+        }
+        return true;
+      },
+      configurable: true,
+    });
     Object.defineProperty(node, 'validationMessage', {
       get: function () {
         if (node._customValidity != null && node._customValidity !== '') return node._customValidity;

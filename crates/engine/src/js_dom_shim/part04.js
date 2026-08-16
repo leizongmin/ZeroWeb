@@ -1341,7 +1341,34 @@
           if (validity.tooLong) return 'Please shorten this text.';
           return '';
         }
-        if (prop === 'willValidate') return true;
+        if (prop === 'willValidate') {
+          // R57（FV M1）：willValidate 排除（barred from constraint validation——
+          // spec §4.10.5.2.2）：disabled、readonly（text 类）、type ∈ {hidden,
+          // button, reset}。datalist 祖先归 M2（willValidate-datalist）。
+          if (handle) {
+            try { if (__zw_has_attr_handle(handle, 'disabled') === '1') return false; } catch (_e) {}
+          } else if (sel) {
+            try {
+              if ((typeof __zw_has_attr_lw === 'function' && __zw_has_attr_lw(sel, 'disabled') === '1')
+                  || (typeof __zw_has_attr === 'function' && __zw_has_attr(sel, 'disabled') === '1')) return false;
+            } catch (_e) {}
+          }
+          var wvTag = _realTag(sel, handle);
+          var wvTy = '';
+          if (wvTag === 'INPUT') {
+            try { wvTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { wvTy = ''; }
+            wvTy = String(wvTy || '').toLowerCase();
+          }
+          if (wvTy === 'hidden' || wvTy === 'button' || wvTy === 'reset') return false;
+          if (wvTag === 'INPUT' || wvTag === 'TEXTAREA') {
+            if (_isTextControl(sel, handle)) {
+              var ro = null;
+              try { ro = handle ? __zw_has_attr_handle(handle, 'readonly') : __zw_has_attr(sel, 'readonly'); } catch (_e) {}
+              if (ro === '1') return false;
+            }
+          }
+          return true;
+        }
         // `el.select()`（HTMLInputElement/TextArea，R2826/R2844）——选中文本（legacy copy 模式
         // `el.select(); document.execCommand('copy')` 配对，及自动全选场景）。headless 无真文本选择渲染，
         // 但 text control（R2844）须更新 _textSelection 使后续 selectionStart/End 反映全选（Chromium 150
