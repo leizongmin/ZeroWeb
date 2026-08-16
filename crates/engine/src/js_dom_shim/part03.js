@@ -792,8 +792,29 @@
         : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'required')
            : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'required') : null));
     } catch (_e) {}
-    if (reqAttr === '1' && (_dis !== '1' || ty === 'checkbox' || ty === 'radio')) {
-      if (ty === 'checkbox' || ty === 'radio') {
+    if (ty === 'radio') {
+      // R57（FV M1）：radio 组 valueMissing——**组级 required**（组内任一 radio
+      // 有 required + 组内无 checked → **全部组员** missing——radio4（无 required）
+      // 也 missing——spec §4.10.5.2.4；name 空不成组（不 missing）。
+      var nm = null;
+      try { nm = handle ? __zw_get_attr_handle(handle, 'name') : __zw_get_attr(sel, 'name'); } catch (_e) {}
+      if (nm == null || String(nm) === '') {
+        valueMissing = false;
+      } else {
+        var groupRequired = false, checkedAny = false;
+        try {
+          var q = 'input[type="radio"][name="' + String(nm).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+          var allR = globalThis.document.querySelectorAll(q);
+          for (var ri = 0; ri < allR.length; ri++) {
+            var rp = allR.item ? allR.item(ri) : allR[ri];
+            try { if (rp.required) groupRequired = true; } catch (_e) {}
+            try { if (rp.checked) checkedAny = true; } catch (_e) {}
+          }
+        } catch (_e) {}
+        valueMissing = groupRequired && !checkedAny;
+      }
+    } else if (reqAttr === '1' && (_dis !== '1' || ty === 'checkbox' || ty === 'radio')) {
+      if (ty === 'checkbox') {
         var checked = null;
         try {
           checked = handle
@@ -950,13 +971,17 @@
         }
       }
     }
-    return {
+    var _vs = {
       valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
       stepMismatch: stepMismatch, badInput: false, customError: hasCustom,
       valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
         && !rangeOverflow && !stepMismatch && !tooLong && !tooShort,
     };
+    // R57（FV M1）：ValidityState 实例标识（radio-valueMissing 的
+    // assert_class_string——Object.prototype.toString 须 [object ValidityState]）。
+    try { _vs[Symbol.toStringTag] = 'ValidityState'; } catch (_e) {}
+    return _vs;
   }
 
   // Web Animations Animation 对象（el.animate，R2827 stub → R2965 真关键帧应用）。headless 无真时间轴
@@ -2269,13 +2294,15 @@
             }
           }
         }
-        return {
+        var _vs2 = {
           valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
           tooLong: false, tooShort: false, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
           stepMismatch: false, badInput: false, customError: hasCustom,
           valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
             && !rangeOverflow,
         };
+        try { _vs2[Symbol.toStringTag] = 'ValidityState'; } catch (_e) {}
+        return _vs2;
       },
       configurable: true,
     });
