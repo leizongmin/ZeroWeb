@@ -9,7 +9,8 @@ const translations = {
     principlesKicker: 'Engineering method', principlesTitle: 'AI output is checked like engineering work.', principle1Title: 'Browser code in Rust', principle1Text: 'The browser core, host layers, and product code are written in Rust. External crates provide bounded low-level capabilities.', principle2Title: 'Standards-driven', principle2Text: 'Web behavior is verified against WPT, CSSWG reftests, and browser comparisons.', principle3Title: 'Checks are required', principle3Text: 'Formatting, static analysis, unit tests, integration tests, and platform CI guard the repository.', principle4Title: 'Progress has sources', principle4Text: 'Updates link to commits and roadmap items so the experiment can be inspected rather than taken on trust.',
     roadmapKicker: 'Current status', roadmapTitle: 'Useful as an experiment, incomplete as a browser.', roadmapText: 'Core subsystems and runnable entrypoints exist. Real-site compatibility, complete DOM and Web APIs, and everyday browser behavior remain active work.', seeRoadmap: 'See the detailed roadmap <span aria-hidden="true">→</span>', complete: 'Implemented foundations', completeText: 'DOM, CSS, style, layout, rendering, network and security basics', progress: 'In progress', progressText: 'Browser shell, rendering compatibility, DOM and Web API coverage', planned: 'Not yet complete', plannedText: 'WebGL / WebGPU, SVG documents, animation fidelity and real-site behavior',
     quickstartKicker: 'Run the code', quickstartTitle: 'Start with a local build.', quickstartText: 'The repository includes a desktop browser entrypoint and a smaller WebView rendering demo. Platform prerequisites are documented in the README.', browserCommandText: 'Launch the desktop browser entrypoint.', webviewCommandText: 'Run the smallest rendering pipeline demo.', quickstartNote: 'These commands build experimental software; see the README for platform prerequisites and V8 setup.',
-    contributeKicker: 'Inspect the experiment', contributeTitle: 'Read the code.<br />Check the evidence.', contributeText: 'The repository, development history, tests, roadmap, and weekly updates are public. Contributions are expected to meet the same verification rules.', visitGithub: 'Visit GitHub <span aria-hidden="true">↗</span>', readContributing: 'Read contributing guide', footer: 'An AI-autonomous software engineering experiment built around a Rust browser.'
+    contributeKicker: 'Inspect the experiment', contributeTitle: 'Read the code.<br />Check the evidence.', contributeText: 'The repository, development history, tests, roadmap, and weekly updates are public. Contributions are expected to meet the same verification rules.', visitGithub: 'Visit GitHub <span aria-hidden="true">↗</span>', readContributing: 'Read contributing guide', footer: 'An AI-autonomous software engineering experiment built around a Rust browser.',
+    updatesKicker: 'Project journal', updatesTitle: 'Progress, with sources.', updatesText: 'A running record of what changed, what remains in motion, and where each update comes from.', viewAllUpdates: 'View all updates <span aria-hidden="true">→</span>'
   },
   zh: {
     skip: '跳至主要内容', navExperiment: '实验', navProducts: '运行入口', navArchitecture: '架构', navRoadmap: '现状', navUpdates: '最新进展', navContribute: '参与贡献', github: 'GitHub',
@@ -21,7 +22,8 @@ const translations = {
     principlesKicker: '工程方法', principlesTitle: 'AI 产出的代码按工程标准验收。', principle1Title: '浏览器代码使用 Rust', principle1Text: '浏览器核心、宿主层和产品代码使用 Rust 编写；外部 crate 只提供边界清楚的底层能力。', principle2Title: '规范驱动', principle2Text: '通过 WPT、CSSWG reftest 和浏览器对比验证 Web 行为。', principle3Title: '检查不可省略', principle3Text: '格式化、静态检查、单元测试、集成测试和多平台 CI 共同守住代码库。', principle4Title: '进展附带来源', principle4Text: '更新记录链接到具体 commit 和路线图，让实验进展可以被检查，而不是只靠项目自述。',
     roadmapKicker: '当前状态', roadmapTitle: '实验已经可运行，浏览器仍不完整。', roadmapText: '核心子系统和运行入口已经存在；真实网站兼容性、完整 DOM 与 Web API，以及日常浏览器行为仍在开发。', seeRoadmap: '查看详细路线图 <span aria-hidden="true">→</span>', complete: '已有基础', completeText: 'DOM、CSS、样式、布局、渲染、网络与安全基础', progress: '进行中', progressText: '浏览器壳、渲染兼容性、DOM 与 Web API 覆盖', planned: '尚未完成', plannedText: 'WebGL / WebGPU、SVG 文档、动画一致性与真实网站行为',
     quickstartKicker: '运行代码', quickstartTitle: '从本地构建开始。', quickstartText: '仓库提供桌面浏览器入口和更小的 WebView 渲染演示，平台前置条件见 README。', browserCommandText: '启动桌面浏览器入口。', webviewCommandText: '运行最小渲染管线演示。', quickstartNote: '这些命令构建的是实验性软件；平台依赖和 V8 设置方法见 README。',
-    contributeKicker: '检查这项实验', contributeTitle: '阅读代码。<br />核对证据。', contributeText: '代码仓库、开发历史、测试、路线图和每周进展均公开。贡献代码需要遵守相同的验证规则。', visitGithub: '访问 GitHub <span aria-hidden="true">↗</span>', readContributing: '阅读贡献指南', footer: '一项以 Rust 浏览器为实验对象的 AI 自主软件工程实验。'
+    contributeKicker: '检查这项实验', contributeTitle: '阅读代码。<br />核对证据。', contributeText: '代码仓库、开发历史、测试、路线图和每周进展均公开。贡献代码需要遵守相同的验证规则。', visitGithub: '访问 GitHub <span aria-hidden="true">↗</span>', readContributing: '阅读贡献指南', footer: '一项以 Rust 浏览器为实验对象的 AI 自主软件工程实验。',
+    updatesKicker: '项目日志', updatesTitle: '进展，且有来源可查。', updatesText: '持续记录项目发生的变化、正在推进的工作，以及每条更新的事实来源。', viewAllUpdates: '查看全部更新 <span aria-hidden="true">→</span>'
   }
 };
 
@@ -33,8 +35,17 @@ function setLanguage(language, persist = true) {
   document.querySelectorAll('[data-i18n-html]').forEach((element) => { element.innerHTML = translations[selected][element.dataset.i18nHtml]; });
   document.querySelectorAll('[data-language]').forEach((button) => { button.setAttribute('aria-pressed', String(button.dataset.language === selected)); });
   if (persist) localStorage.setItem('zeroweb-language', selected);
+  renderLatestUpdates();
 }
 
+const latestUpdates = [];
+function renderLatestUpdates() {
+  const list = document.getElementById('home-update-list');
+  if (!list || !latestUpdates.length) return;
+  const lang = document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
+  list.innerHTML = latestUpdates.map((item) => `<article class="update-summary"><span class="update-date">${item.date}</span><h3>${item.title[lang]}</h3><p>${item.summary[lang]}</p></article>`).join('');
+}
+fetch('updates.json').then((response) => { if (!response.ok) throw new Error('unavailable'); return response.json(); }).then((data) => { latestUpdates.push(...data.slice(0, 3)); renderLatestUpdates(); }).catch(() => {});
 const savedLanguage = localStorage.getItem('zeroweb-language');
 const detectedLanguage = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
 setLanguage(savedLanguage || detectedLanguage, false);

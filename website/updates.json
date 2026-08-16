@@ -1,5 +1,28 @@
 [
   {
+    "date": "2026-08-16",
+    "type": "weekly",
+    "title": {"en": "Canvas compatibility sweep, QuickJS DOM bindings milestone", "zh": "Canvas 兼容性冲刺与 QuickJS 原生 DOM 绑定里程碑"},
+    "summary": {
+      "en": "This week the Canvas 2D WPT sweep cleared the last path-objects failures and most drawing-images gaps, while the QuickJS native DOM binding line landed all of M6 S0q-S5q and closed the S1q composite objects. The new HTML behavior compatibility track completed M0-M4, and the browser product layer gained page zoom and device-DPI compositor frames.",
+      "zh": "本周 Canvas 2D WPT 兼容性冲刺清除了 path-objects 的全部剩余失败与大部分 drawing-images 缺口；QuickJS 原生 DOM 绑定线落地 M6 S0q–S5q 全部切片并收口 S1q 复合对象。新的 HTML 行为兼容赛道完成 M0–M4，浏览器产品层新增页面缩放与设备 DPI 合成帧。"
+    },
+    "completed": {
+      "en": ["Canvas: path-objects reached 202/0 (adaptive bezier subdivision, zero-length stroke pruning, roundRect spec start point, arc annulus, nonzero/evenodd fill rules); drawing-images narrowed to 1 remaining; f16 pixel storage + linear color space, display-p3 management, CanvasFilter (filters 13/13), GIF first-frame decoding, colorMatrix filter.", "QuickJS native DOM bindings: M6 S0q-S5q all landed — EventTarget with three-phase capture/bubble, DOMException error paths, customElements five-piece with lifecycle, observedAttributes; S1q closed with attributes/classList/dataset composite objects.", "HTML behavior compatibility track (launched 08-12): M0-M4 completed — shared action transaction core, single-process form POST navigation, anchor navigation intents, live renderer WebDriver + WPT testdriver.", "Browser product layer: Chrome-style page zoom, compositor frames at device DPI, chrome controls and address bar polish, frozen HTML5test browser smoke coverage."],
+      "zh": ["Canvas：path-objects 达到 202/0（自适应贝塞尔细分、stroke 零长段剪除、roundRect 起点对齐 spec、圆弧环带、nonzero/evenodd 填充规则）；drawing-images 仅剩 1 项；f16 浮点存储 + 线性色彩空间、display-p3 色彩管理、CanvasFilter（filters 13/13）、GIF 首帧解码、colorMatrix 滤镜。", "QuickJS 原生 DOM 绑定：M6 S0q–S5q 全部落地——EventTarget 三阶段捕获/冒泡、DOMException 错误路径、customElements 五件套 + lifecycle、observedAttributes；S1q 复合对象（attributes/classList/dataset）收口。", "HTML 行为兼容赛道（08-12 启动）：M0–M4 完成——共享动作事务核心、单进程表单 POST 导航、a/area 导航意图、live renderer WebDriver + WPT testdriver。", "浏览器产品层：Chrome 式页面缩放、设备 DPI 合成帧、chrome 控件与地址栏打磨、冻结 HTML5test 浏览器 smoke 覆盖。"]
+    },
+    "inProgress": {
+      "en": "Canvas drawing-images has one failure left (nonexistent); QuickJS M6 depth items remain (weak/finalizer GC, Event/DOMException constructor instanceof, whenDefined pending); V8 native bindings default-on awaits a user decision; rendering/font stack slices and browser-shell productization continue.",
+      "zh": "Canvas drawing-images 剩 1 项失败（nonexistent）；QuickJS M6 深度项待补齐（weak/finalizer GC、Event/DOMException 构造器 instanceof、whenDefined 真 pending）；V8 原生绑定 default-on 等待用户拍板；渲染/字体栈切片与 browser-shell 产品化持续推进。"
+    },
+    "sources": [
+      {"label": "Canvas path-objects 202/0", "url": "https://github.com/leizongmin/ZeroWeb/commit/855ed210b"},
+      {"label": "QuickJS S1q composite objects close", "url": "https://github.com/leizongmin/ZeroWeb/commit/93eccce42"},
+      {"label": "HTML shared action core", "url": "https://github.com/leizongmin/ZeroWeb/commit/8cb3e919a"},
+      {"label": "Roadmap", "url": "https://github.com/leizongmin/ZeroWeb/blob/main/ROADMAP.md"}
+    ]
+  },
+  {
     "date": "2026-08-11",
     "type": "weekly",
     "title": {"en": "Compositor safety and presentation advance", "zh": "合成器安全与呈现链路推进"},
