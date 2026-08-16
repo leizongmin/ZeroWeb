@@ -106,5 +106,10 @@
 - 测试基线：canvas **800** 全绿；layout **1380**；engine **2156**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
 - WPT canvas testharness 面：全目录 0 Fail（含 path-objects 202/0、drawing-images 37/37）
 - oracle A/B：147 可测（221 环境不支持排除）——真通过 9（20.9%）、近似 7、不一致 27
-- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过（零警告）
+- **既有失败（非 canvas 面，a08d3064 复测确认）**：browser 4 个 form/input 快照测试
+  （default_actions_work_without_javascript / form_fixture_complete_multiprocess_semantics /
+  gpu_compositor_path_dispatches_input_events_to_form_controls /
+  local_composite_cpu_gpu_matrix_for_form_interactions——表单提交导航/multiprocess/GPU
+  输入路径，浏览器流处理；本环境既有，canvas 改动 A/B 无影响）
 - 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored）
