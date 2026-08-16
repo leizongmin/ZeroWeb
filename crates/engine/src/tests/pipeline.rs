@@ -5,6 +5,43 @@ use zero_layout_engine::types::OverflowClip;
 use zero_render_foundation::geometry::Rect;
 
 use crate::pipeline::RenderPipeline;
+
+/// A fixed-position box is anchored to the viewport and must not extend the
+/// root scrolling area.
+/// https://drafts.csswg.org/css-position-3/#fixed-pos
+#[test]
+fn fixed_positioned_box_does_not_extend_document_height() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(
+        "<div style='position:fixed;top:2000px;width:20px;height:20px'></div>",
+        "",
+    );
+
+    let document_height = pipeline.document_height().expect("layout height");
+    assert!(
+        document_height <= 600.0,
+        "a fixed box must not create scrollable overflow (got {document_height})"
+    );
+}
+
+/// Absolute-positioned descendants, unlike fixed descendants, still contribute
+/// to the root scrollable overflow area.
+/// https://drafts.csswg.org/css-position-3/#abspos-containing-block
+#[test]
+fn absolute_positioned_box_extends_document_height() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(
+        "<div style='position:absolute;top:2000px;width:20px;height:20px'></div>",
+        "",
+    );
+
+    let document_height = pipeline.document_height().expect("layout height");
+    assert!(
+        document_height >= 2020.0,
+        "an absolute box must remain reachable by root scrolling (got {document_height})"
+    );
+}
+
 /// 测试渲染管线在样式变化后重新计算样式，脏标记触发重新计算。
 #[test]
 fn test_pipeline_recompute_style() {

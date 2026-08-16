@@ -876,6 +876,11 @@ impl TabManager {
         self.snapshots.get(&tab_id)?.document_height
     }
 
+    /// 已绘制内容高度估计（快照到达时缓存，避免每次滚动扫描图元）。
+    pub fn painted_content_height(&self, tab_id: TabId) -> Option<f32> {
+        self.snapshots.get(&tab_id)?.painted_content_height
+    }
+
     /// 文档内容宽度估计（快照缓存，性能门禁优化 S3，2026-08-08）。
     pub fn document_width(&self, tab_id: TabId) -> Option<f32> {
         self.snapshots.get(&tab_id)?.document_width

@@ -61,6 +61,11 @@ pub struct TabSnapshot {
     pub image_cache: ImageCache,
     /// 文档布局高度（CSS 逻辑像素）。
     pub document_height: Option<f32>,
+    /// 已绘制内容的高度估计（CSS 逻辑像素）。
+    ///
+    /// 布局树可能包含尚未被当前绘制管线输出的定位后代；浏览器用该值限制
+    /// 根滚动范围，避免滚进没有任何可呈现图元的空白区域。
+    pub painted_content_height: Option<f32>,
     /// 文档内容宽度估计（CSS 逻辑像素，图元下界）。
     ///
     /// 性能门禁优化 S3（2026-08-08）：在快照到达时计算一次并缓存，
@@ -107,6 +112,9 @@ impl TabSnapshot {
             document_width: last_render
                 .as_ref()
                 .map(|r| crate::page_scroll::primitives_content_width(&r.primitives)),
+            painted_content_height: last_render
+                .as_ref()
+                .map(|r| crate::page_scroll::primitives_content_height(&r.primitives)),
             last_render,
             text_control_boundaries,
             image_cache: wv.snapshot_image_cache(),

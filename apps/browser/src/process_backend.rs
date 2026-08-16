@@ -1342,6 +1342,7 @@ mod navigation_contract_tests {
         apply_paint_snapshot(&mut snap, paint_with_red_fill(0));
         let fill = &snap.last_render.as_ref().unwrap().primitives.fills[0];
         assert_eq!(fill.color.r, 255);
+        assert_eq!(snap.painted_content_height, Some(100.0));
     }
 
     #[test]

@@ -1621,6 +1621,12 @@ impl RenderPipeline {
 fn layout_extent_y(b: &zero_layout_engine::LayoutBox, offset_y: f32) -> f32 {
     let mut max_y = offset_y + b.y + b.height;
     for child in &b.children {
+        // Fixed-position descendants are anchored to the viewport and are not
+        // part of the root scrollable overflow area.
+        // https://drafts.csswg.org/css-position-3/#fixed-pos
+        if child.is_fixed {
+            continue;
+        }
         max_y = max_y.max(layout_extent_y(child, offset_y + b.y));
     }
     max_y

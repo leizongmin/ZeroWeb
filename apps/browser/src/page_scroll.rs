@@ -224,6 +224,46 @@ pub fn primitives_content_height(primitives: &RenderPrimitives) -> f32 {
     fill_max.max(glyph_max).max(image_max)
 }
 
+/// 从图元估算根滚动范围的内容高度。
+///
+/// 根背景可覆盖整张文档，却不代表存在可滚动的页面内容；将它计入高度会使
+/// 尚未被绘制管线输出的定位元素留下整段空白滚动区域。
+/// https://drafts.csswg.org/css-overflow-3/#scrollable
+pub fn primitives_scrollable_content_height(
+    primitives: &RenderPrimitives,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> f32 {
+    let fill_max = primitives
+        .fills
+        .iter()
+        .filter(|fill| {
+            let covers_root_background = fill.rect.origin.x <= 0.0
+                && fill.rect.origin.y <= 0.0
+                && fill.rect.right() >= viewport_width
+                && fill.rect.bottom() > viewport_height;
+            !covers_root_background
+        })
+        .map(|fill| fill.rect.bottom())
+        .fold(0.0f32, f32::max);
+    let glyph_max = primitives
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.glyph_id != 0 && glyph.font_size > 0.0)
+        .map(|glyph| glyph.y + glyph.font_size)
+        .fold(0.0f32, f32::max);
+    let image_max = primitives
+        .images
+        .iter()
+        .filter_map(|image| match image.clip {
+            Some(clip) => image.rect.intersection(&clip).map(|visible| visible.bottom()),
+            None => Some(image.rect.bottom()),
+        })
+        .fold(0.0f32, f32::max);
+
+    fill_max.max(glyph_max).max(image_max)
+}
+
 /// 计算视口布局与滚动上限。
 pub fn compute_page_scroll_layout(
     content_x: f32,
@@ -467,6 +507,23 @@ mod tests {
         });
 
         assert_eq!(primitives_content_width(&primitives), 100.0);
+    }
+
+    #[test]
+    fn root_background_does_not_extend_scrollable_content_height() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 1_400.0), Color::rgb(50, 50, 50));
+
+        assert_eq!(primitives_scrollable_content_height(&primitives, 800.0, 600.0), 0.0);
+    }
+
+    #[test]
+    fn content_below_viewport_extends_scrollable_content_height() {
+        let mut primitives = RenderPrimitives::new();
+        primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 1_400.0), Color::rgb(50, 50, 50));
+        primitives.add_fill(Rect::new(80.0, 900.0, 400.0, 120.0), Color::rgb(255, 255, 255));
+
+        assert_eq!(primitives_scrollable_content_height(&primitives, 800.0, 600.0), 1_020.0);
     }
 
     #[test]

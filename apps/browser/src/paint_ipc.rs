@@ -350,6 +350,11 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     }
 
     let document_width = crate::page_scroll::primitives_content_width(&primitives);
+    let painted_content_height = crate::page_scroll::primitives_scrollable_content_height(
+        &primitives,
+        params.viewport_width as f32,
+        params.viewport_height as f32,
+    );
     snap.text_control_boundaries = primitives.text_control_boundaries.clone();
     snap.last_render = Some(WebViewRenderResult {
         primitives,
@@ -367,6 +372,7 @@ pub fn apply_paint_snapshot(snap: &mut TabSnapshot, params: PaintSnapshotParams)
     // 性能门禁优化 S3（2026-08-08）：快照到达时缓存内容宽度（每快照一次 O(P) 扫描，
     // 替代旧实现的每 mousemove/wheel 扫描）
     snap.document_width = Some(document_width);
+    snap.painted_content_height = Some(painted_content_height);
     snap.hit_test = params.hit_test.and_then(hit_test_cache_from_ipc);
 }
 

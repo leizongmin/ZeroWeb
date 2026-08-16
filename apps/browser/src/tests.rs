@@ -300,6 +300,32 @@ fn compositor_scroll_stops_at_document_end_and_uses_confirmed_viewport() {
 }
 
 #[test]
+fn scroll_range_does_not_exceed_painted_document_content() {
+    use zero_webview::WebViewRenderResult;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let tab_id = app.shell.active_tab_id().expect("active tab");
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 600.0), Color::WHITE);
+    app.inject_tab_render_for_test(
+        tab_id,
+        WebViewRenderResult {
+            primitives,
+            dirty_rects: Vec::new(),
+            timings: Default::default(),
+        },
+        1_400.0,
+    );
+
+    let layout = app.page_scroll_layout(tab_id);
+    assert_eq!(
+        layout.max_scroll_y, 0.0,
+        "layout-only overflow without drawable primitives must not create blank scroll space"
+    );
+}
+
+#[test]
 fn append_webview_primitives_translates_fills_and_glyphs() {
     let mut primitives = RenderPrimitives::new();
     primitives.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));

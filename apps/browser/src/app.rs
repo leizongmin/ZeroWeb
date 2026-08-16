@@ -1213,15 +1213,27 @@ impl BrowserApp {
 
     fn document_size_physical(&self, tab_id: TabId) -> (f32, f32) {
         let s = self.page_render_scale();
-        let logical_h = self
-            .tabs
-            .document_height(tab_id)
-            .or_else(|| {
-                self.tabs
-                    .last_render(tab_id)
-                    .map(|r| page_scroll::primitives_content_height(&r.primitives))
+        let layout_h = self.tabs.document_height(tab_id).filter(|height| *height > 0.0);
+        // Root scrolling must stop at the last drawable document primitive. A
+        // layout-only extent can include unsupported positioned descendants;
+        // letting it win creates a scrollbar into blank compositor frames.
+        // https://drafts.csswg.org/css-overflow-3/#scrollable
+        let painted_h = self.tabs.painted_content_height(tab_id).or_else(|| {
+            let (_, _, content_w, content_h) = self.page_content_rect();
+            self.tabs.last_render(tab_id).map(|r| {
+                page_scroll::primitives_scrollable_content_height(
+                    &r.primitives,
+                    content_w / s.max(f32::EPSILON),
+                    content_h / s.max(f32::EPSILON),
+                )
             })
-            .unwrap_or(0.0);
+        });
+        let logical_h = match (layout_h, painted_h) {
+            (Some(layout), Some(painted)) => layout.min(painted),
+            (Some(layout), None) => layout,
+            (None, Some(painted)) => painted,
+            (None, None) => 0.0,
+        };
         // 性能门禁优化 S3（2026-08-08）：宽度已随快照缓存（每快照一次 O(P) 扫描），
         // 不再在每次 mousemove/wheel 上扫全部图元；缓存缺失（旧快照/异常路径）回退扫描
         let logical_w = self
