@@ -962,6 +962,14 @@
           } else if (ty === 'date') {
             var dvp = Date.parse(sVal.trim());
             if (!isNaN(dvp)) diff = (dvp - Date.UTC(1970, 0, 1)) / 86400000;
+          } else if (ty === 'datetime-local') {
+            // R57（FV M1）：datetime-local step——秒差（step 单位秒）
+            var dlp = Date.parse(sVal.trim().replace(' ', 'T'));
+            if (!isNaN(dlp)) diff = (dlp - Date.UTC(1970, 0, 1)) / 1000;
+          } else if (ty === 'week') {
+            // week step——周差（base 1970-W01；近似 53 周/年）
+            var wm = sVal.trim().match(/^(\d{4,})-W(\d{2})$/);
+            if (wm) diff = ((+wm[1]) - 1970) * 53 + ((+wm[2]) - 1);
           } else if (ty === 'month') {
             var mm = sVal.trim().match(/^(\d{4})-(\d{2})$/);
             if (mm) diff = ((+mm[1]) - 1970) * 12 + ((+mm[2]) - 1);
