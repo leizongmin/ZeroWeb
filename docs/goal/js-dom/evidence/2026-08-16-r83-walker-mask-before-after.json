@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-16",
+  "round": "R83",
+  "milestone": "M4 WPT dom 按聚类驱动修复（walker 全 nodeType 掩码 + ChildNode before/after）",
+  "commit": "d38a9081",
+  "root_cause": [
+    "maskFor 仅覆盖 element/text/comment 三类 nodeType → doctype(10)/fragment(11)/PI(7)/document(9)/CDATA(4) 全被掩掉（WPT NodeIterator 'expected DocumentType/DocumentFragment but got null' 族）",
+    "TreeWalker 与 NodeIterator 的 fresh 起点混同：TreeWalker 的 currentNode=root 表示已位于 root（visited）→ 首个 nextNode 应越过 root；NodeIterator 的迭代集合含 root（指针初始在 root 前）→ 首个 nextNode 返 root。旧实现两者都返 root（R2803 旧断言固化了错误语义）",
+    "previousNode 用 materialize+accepted-index 模型：currentNode 不在 accepted（root 被滤/TreeWalker fresh）时回落「从尾」——错误（WPT pointer 在首节点前 previousNode 期望 null）",
+    "WebIDL optional 语义第二态：undefined 也应取缺省 SHOW_ALL（仅显式 null → ToUint32(null)=0）；R82 只修了省略形态",
+    "handle 元素 before()/after()：_insertAdjacentVariadic 仅支持 sel-based（host 无 by-handle 兄弟插入 mutation）→ createElement 容器内的子调 before 静默 no-op（WPT ChildNode-before/after 84F 整簇）",
+    "handle 元素 innerHTML getter 只反映 host SetInnerHtmlOnHandle——appendChild 建的子树不可见"
+  ],
+  "implementation": [
+    "maskFor：nodeType 1..13 → (1 << (nt-1)) >>> 0 全表",
+    "fresh 起点区分：`orderPos < 0 ? (isTreeWalker ? 1 : 0) : orderPos + 1`（TreeWalker 越过 root）；R2803 两条断言按 spec 纠正（walker 不含 root DIV / iterator 含）",
+    "previousNode 重写为结构序 lazy 逆向步进（与 nextNode 对称）：从 currentNode 结构序前一位起逐节点 check（REJECT/SKIP 逆向无需剪枝）",
+    "createTreeWalker/createNodeIterator：undefined（或省略）→ 0xFFFFFFFF；显式 null → 0",
+    "handle before/after：JS 侧经父 _handleChildren 定位自身 splice 插入（字符串经 __zw_create_text + _textHandles 注册）+ _zwNodeParent 反链 + childList notify；sel-based 路径不变",
+    "handle innerHTML：融合 childNodes 序列化（text 转义/comment/元素经 outerHTML），有子时优先、无子回落 host 值",
+    "单测 +2：r83_walker_mask_fresh_start_and_optional_semantics（walker/iterator 序 + filter 首参 + undefined/null）/ r83_handle_element_before_after_and_innerhtml"
+  ],
+  "wpt_results": {
+    "nodes_dir": "6596P/1626F → **6635P/1587F（+39 净）**（ChildNode-before/after 大簇解锁）",
+    "traversal": "1486P/94F → **1527P/53F（+41 净）**（doctype/docfrag 掩码 + fresh 起点 + previousNode 逆向）",
+    "cross_dir": "events 189P / collections 48P 不变（零回归）"
+  },
+  "tests": {
+    "suites": "engine v8 **2172**（+2，R2803 两断言 spec 纠正）/ quickjs **1427** 全绿；fmt 无 diff；clippy v8+quickjs 双矩阵零警告；pre-commit-guard PASS"
+  },
+  "lessons": [
+    "TreeWalker 与 NodeIterator 的 root 语义天然分叉（currentNode 位置 vs 迭代集合指针）——同一 walk 引擎须按类型区分 fresh 起点",
+    "旧实现自洽的断言（R2803）可能固化了错误语义——WPT 上游期望表是最终仲裁",
+    "previousNode 与 nextNode 对称性是正确性的结构证据——两种模型（accepted-index vs 结构序 lazy）混用必出边角",
+    "WebIDL optional 三态：省略 = undefined → 缺省值；显式 null → ToUint32(null)=0——R82 修了省略，R83 补 undefined"
+  ]
+}
