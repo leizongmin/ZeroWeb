@@ -1,0 +1,38 @@
+{
+  "slice": "R89 — traversal 分散失败修复：TreeWalker 惰性 currentNode setter + previousNode dig-on-accept",
+  "date": "2026-08-17",
+  "commit": "2d58d788",
+  "summary": {
+    "dom/traversal": {
+      "before": "1591P/13F（R88 后）",
+      "after": "1593P/11F（净 +2；TreeWalker.html Recursive filters 修 + previousNodeLastChildReject 修）",
+      "pass_rate": "99.31%"
+    },
+    "regressions": {
+      "dom/nodes": "per-case 一致（name-validation flake 1 条波动）",
+      "dom/events": "per-case 逐字节一致",
+      "dom/collections": "per-case 逐字节一致",
+      "dom/ranges": "本轮未跑全量（既有 >420s 慢用例 M1 L2 归因在案，10min 墙钟不够）；变更面限于 walker 工厂（range 用例不消费 TreeWalker）"
+    },
+    "unit_tests": {
+      "engine_v8": "2187 passed（+2 R89）",
+      "engine_quickjs": "1427 passed"
+    }
+  },
+  "root_causes": [
+    "① TreeWalker.currentNode setter eager materialize 让 filter 提前执行——既消耗 filter 副作用窗口（WPT 期望 setter 纯赋值），又把 filter 内重入的 InvalidStateError 从 setter 泄漏（首个遍历方法才应抛）",
+    "② previousNode 的 ACCEPT 分支立即返回节点——对有子的 accepted 节点应先入子树尾（filtered 序前驱语义）：cur=B2、sibling=B1（ACCEPT 有子 C1/C2-rejected）期望 C1 非 B1；childless accepted 立即返回使 traversal-reject 期望（B2→A1）两模型同果不变"
+  ],
+  "deferred": {
+    "deep_structure_4F": [
+      "TreeWalker-currentNode 2F：currentNode 在 root 外时遍历方法应从 currentNode 文档序位置继续（非 root order 快照起点）——「currentNode 位置优先于 root 快照」的 order 模型本体重构",
+      "walking-outside-a-tree 1F：root 被移除/regraft 后 root 身份跟随 currentNode（Acid3 006a 语义）",
+      "NodeIterator-removal 1F：paras[5].firstChild CDATA 边角",
+      "cross-realm 7F：iframe 深结构（html-compat 域）"
+    ]
+  },
+  "method_notes": [
+    "语义拿不准时交叉验证两个 WPT 用例的期望——dig-on-accept 模型同时满足 previousNodeLastChildReject（dig）与 traversal-reject（childless 直返），纸面推演后再实现",
+    "Rust 字符串字面量里裸换行符（\\n 丢失）导致 ReferenceError——单测先跑再 land"
+  ]
+}
