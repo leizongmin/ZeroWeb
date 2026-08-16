@@ -1,0 +1,30 @@
+{
+  "date": "2026-08-16",
+  "round": "R82",
+  "milestone": "M4 WPT dom 按聚类驱动修复（traversal NodeIterator/TreeWalker walker 语义）",
+  "commit": "8a8d458e",
+  "root_cause": [
+    "whatToShow 经 `| 0`（ToInt32）符号位截断——0xFFFFFFFF 读回 -1（spec WebIDL unsigned long 须 ToUint32 = 4294967295；WPT 152 subtest 断言 .whatToShow）",
+    "缺省与显式 null 语义混同：`whatToShow == null → 0xFFFFFFFF` 把显式传 null 也当 SHOW_ALL（spec：optional 参数省略才缺省 SHOW_ALL，显式 null 走 ToUint32(null)=0——须 arguments.length 区分）",
+    "**referenceNode/pointerBeforeReferenceNode 同步 wrapper 被 R51 lazy 重赋值静默覆盖**：wrapper 定义在 `walker.nextNode = function`（lazy 版）之前，后者直接覆盖前者 → 任何步进后 reference/pointer 恒不更新（WPT 40+ subtest pointerBeforeReferenceNode 失败的根因）"
+  ],
+  "implementation": [
+    "`whatToShow >>> 0`（ToUint32；位掩码行为旧实现侥幸正确——-1 补码全 1）",
+    "createTreeWalker/createNodeIterator 经 arguments.length 区分：省略（<2 参）→ 0xFFFFFFFF；显式 null/undefined → 0；其余 ToUint32",
+    "wrapper 移到工厂尾部（lazy nextNode/previousNode 定义之后统一包装）；语义：nextNode 命中 → reference=node + before=false；**耗尽返 null 不动**（WPT 实证「立即耗尽的迭代器 before 保持 true」——首版 null→false 被全量跑出 -306P 否决后修正）",
+    "单测 r82_whattoshow_unsigned_and_pointer_semantics：0xFFFFFFFF 读回 4294967295 + nextNode 命中 pointer=false + SHOW_COMMENT 耗尽 pointer 保持 true"
+  ],
+  "wpt_results": {
+    "traversal": "1195P/385F → **1486P/94F（+291 净）**（whatToShow 152 + pointerBeforeReferenceNode 40 + nextNode reference 序列族）",
+    "nodes_dir": "6596P/1626F 不变（零回归）",
+    "events": "189P/139F 不变；collections 48P/0F 不变"
+  },
+  "tests": {
+    "suites": "engine v8 **2170**（+1）/ quickjs **1427** 全绿；fmt 无 diff；clippy v8+quickjs 双矩阵零警告；pre-commit-guard PASS"
+  },
+  "lessons": [
+    "工厂内多次重赋值同名方法（R2981 eager → R51 lazy）会静默覆盖此前的 wrapper——wrapper 一律放工厂尾部（全部定义之后）",
+    "WPT 期望值的两种形态（expected true / expected false）对应「耗尽 vs 命中」两态——首版按直觉「到尾也翻 false」被 597 个 fail 否决，全量 A/B 是语义仲裁者",
+    "WebIDL optional 参数的「省略 vs 显式 null」必须经 arguments.length 区分（== null 混同两态）"
+  ]
+}
