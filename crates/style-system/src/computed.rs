@@ -451,8 +451,8 @@ pub fn resolve_computed_style_with_font_metrics(
     // 将 font-size 解析为绝对值
     resolved.font_size = LengthValue::Px(font_size_px);
 
-    // 解析 line-height 中的长度值（em/rem 等需要相对于元素自身的 font-size）
-    // CSS 规范：line-height 的 em 单位相对于元素自身的 font-size
+    // 解析 line-height 中的长度值（em/rem/百分比等需要相对于元素自身的 font-size）。
+    // https://drafts.csswg.org/css-inline-3/#line-height-property
     if let LineHeightValue::Length(ref len) = resolved.line_height {
         match len {
             LengthValue::Em(v) => {
@@ -461,6 +461,9 @@ pub fn resolve_computed_style_with_font_metrics(
             LengthValue::Rem(v) => {
                 let rem_px = viewport_width.map(|_| 16.0).unwrap_or(16.0);
                 resolved.line_height = LineHeightValue::Length(LengthValue::Px(v * rem_px));
+            }
+            LengthValue::Percentage(v) => {
+                resolved.line_height = LineHeightValue::Length(LengthValue::Px(v / 100.0 * font_size_px));
             }
             LengthValue::Ex(v) => {
                 let px = v * font_size_px * font_metrics.map_or(0.8, |metrics| metrics.ex_height);
@@ -852,6 +855,21 @@ mod tests {
 
         assert_eq!(resolved.margin_top, LengthValue::Px(40.0)); // 2em * 20px
         assert_eq!(resolved.padding_left, LengthValue::Px(16.0)); // 1rem * 16px
+    }
+
+    #[test]
+    fn test_resolve_computed_style_line_height_percentage() {
+        let mut style = ComputedStyle::default();
+        style.font_size = LengthValue::Px(13.2);
+        style.line_height = LineHeightValue::Length(LengthValue::Percentage(165.0));
+
+        let resolved = resolve_computed_style(&style, &HashMap::new(), None, None, None);
+
+        assert!(
+            matches!(resolved.line_height, LineHeightValue::Length(LengthValue::Px(value)) if (value - 21.78).abs() < 1e-9),
+            "line-height:165% must resolve against the element font size, got {:?}",
+            resolved.line_height
+        );
     }
 
     #[test]
