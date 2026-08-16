@@ -2077,3 +2077,55 @@ fn test_roundrect_closed_wraparound_join_r56i() {
     let g = |x: u32, y: u32| ctx.pixel_buffer[((y * 100) + x) as usize * 4 + 1];
     assert_eq!(g(50, 25), 255, "wrap-around join covers canvas center");
 }
+
+/// R57（M3）：旋转 CTM 下 fillRect 的边界覆盖率混合（4×4 超采样 AA）——
+/// 轴对齐恒 1（零回归）；旋转矩形边像素应半色调（ref Chromium AA）。
+#[test]
+fn test_fill_rect_rotated_coverage_aa() {
+    let mut ctx = CanvasContext::new(20, 20);
+    // 30° 旋转（cos30=0.866, sin30=0.5）+ 平移：矩形 (5,5,10,10) 的斜边跨像素
+    // 网格——边界像素覆盖率 ∈ (0,1)（4×4 超采样半色调）。
+    let (c30, s30) = (0.866f32, 0.5f32);
+    ctx.set_transform(c30, s30, -s30, c30, 6.0, -3.0);
+    ctx.set_fill_color(Color::rgba(255, 0, 0, 255));
+    ctx.fill_rect(5.0, 5.0, 10.0, 10.0);
+    // 矩形中心 (10,10) → 变换后 (0.866·10−0.5·10+6, 0.5·10+0.866·10−3) = (9.66, 10.66)
+    // ——内部满色
+    let inner = ctx.get_image_data(10, 11, 1, 1);
+    assert_eq!(
+        &inner.data[..4],
+        &[255, 0, 0, 255],
+        "旋转矩形内部应满色红: {:?}",
+        &inner.data[..4]
+    );
+    // 变换后远离矩形的像素 (2,2) 应透明
+    let outside = ctx.get_image_data(2, 2, 1, 1);
+    assert_eq!(outside.data[3], 0, "旋转矩形外应透明: {:?}", &outside.data[..4]);
+    // 边界像素覆盖率 ∈ (0,1)：源 alpha 被混合（半色调）——扫描全画布
+    let mut found_edge = false;
+    for y in 0..20 {
+        for x in 0..20 {
+            let p = ctx.get_image_data(x, y, 1, 1);
+            if p.data[3] > 0 && p.data[3] < 255 {
+                found_edge = true;
+                break;
+            }
+        }
+        if found_edge {
+            break;
+        }
+    }
+    assert!(found_edge, "旋转矩形边应存在半色调像素（覆盖率混合）");
+}
+
+/// R57（M3）：轴对齐 fillRect 覆盖率恒 1——整数矩形硬边（零回归守护）。
+#[test]
+fn test_fill_rect_axis_aligned_hard_edge() {
+    let mut ctx = CanvasContext::new(20, 20);
+    ctx.set_fill_color(Color::rgba(0, 0, 255, 255));
+    ctx.fill_rect(10.0, 10.0, 5.0, 5.0);
+    let edge = ctx.get_image_data(9, 10, 1, 1);
+    assert_eq!(edge.data[3], 0, "整数矩形左侧外应透明");
+    let inside = ctx.get_image_data(10, 10, 1, 1);
+    assert_eq!(&inside.data[..4], &[0, 0, 255, 255], "整数矩形内部应满色");
+}

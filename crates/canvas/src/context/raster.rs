@@ -390,16 +390,32 @@ impl CanvasContext {
     // ── Private helpers ──
 
     /// 对矩形应用当前变换。
-    /// R57（M3）：像素 (px, py)（像素中心）是否在变换后的矩形 (x,y,w,h) 内——
-    /// 非轴对齐 CTM 下 `transform_rect` 的包围盒含旋转矩形角外区域；轴对齐时恒
-    /// true（包围盒 == 矩形，零回归）。composite.grid 的 rotate(90°)+scale 变换后
-    /// fillRect 边界差 ~8px（oracle A/B 24%）。
+    /// R57（M3）：像素 (px, py) 的覆盖分数——非轴对齐 CTM 下旋转矩形边界像素的
+    /// 亚像素覆盖率（4×4 超采样，ref Chromium AA 边的半色调）。轴对齐时恒 1.0
+    ///（包围盒 == 矩形，零回归——整数矩形硬边正确）。composite.grid 的
+    /// rotate(90°)+scale 变换后 fillRect 旋转边差（oracle A/B 24% 之一）。
     pub(crate) fn pixel_in_transformed_rect(&self, px: f32, py: f32, x: f32, y: f32, w: f32, h: f32) -> bool {
+        self.rect_coverage(px, py, x, y, w, h) > 0.0
+    }
+
+    /// 像素 (px, py) 相对变换后矩形 (x,y,w,h) 的覆盖率 [0,1]。轴对齐恒 1（零回归）；
+    /// 非轴对齐 4×4 子像素中心采样（覆盖率 = 子像素命中比例）。
+    pub(crate) fn rect_coverage(&self, px: f32, py: f32, x: f32, y: f32, w: f32, h: f32) -> f32 {
         if self.transform.b.abs() < 1e-6 && self.transform.c.abs() < 1e-6 {
-            return true;
+            return 1.0;
         }
-        let (ux, uy) = self.transform.inverse().transform_point(px + 0.5, py + 0.5);
-        ux >= x && uy >= y && ux < x + w && uy < y + h
+        let inv = self.transform.inverse();
+        let mut hit = 0u32;
+        // 4×4 超采样：子像素中心偏移 (i+0.5)/4, (j+0.5)/4
+        for i in 0..4 {
+            for j in 0..4 {
+                let (ux, uy) = inv.transform_point(px + (i as f32 + 0.5) / 4.0, py + (j as f32 + 0.5) / 4.0);
+                if ux >= x && uy >= y && ux < x + w && uy < y + h {
+                    hit += 1;
+                }
+            }
+        }
+        hit as f32 / 16.0
     }
 
     pub(crate) fn transform_rect(&self, x: f32, y: f32, width: f32, height: f32) -> Rect {
@@ -1753,10 +1769,13 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32).ceil() as usize).min(canvas_h);
         for y in y_start..y_end {
             for x in x_start..x_end {
-                // R57：非轴对齐 CTM 下排除包围盒角外区域（像素中心逆变换判定）。
-                if let Some((ox, oy, ow, oh)) = orig
-                    && !self.pixel_in_transformed_rect(x as f32, y as f32, ox, oy, ow, oh)
-                {
+                // R57：非轴对齐 CTM 下排除包围盒角外区域 + 边界覆盖率混合
+                //（4×4 超采样——旋转矩形边 AA，ref Chromium 半色调）。
+                let coverage = match orig {
+                    Some((ox, oy, ow, oh)) => self.rect_coverage(x as f32, y as f32, ox, oy, ow, oh),
+                    None => 1.0,
+                };
+                if coverage <= 0.0 {
                     continue;
                 }
                 // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
@@ -1764,13 +1783,27 @@ impl CanvasContext {
                     continue;
                 }
                 let idx = (y * canvas_w + x) * 4;
-                let (r, g, b, a) = self.composite_pixel(
-                    color,
-                    self.pixel_buffer[idx],
-                    self.pixel_buffer[idx + 1],
-                    self.pixel_buffer[idx + 2],
-                    self.pixel_buffer[idx + 3],
-                );
+                let (r, g, b, a) = if coverage >= 1.0 {
+                    self.composite_pixel(
+                        color,
+                        self.pixel_buffer[idx],
+                        self.pixel_buffer[idx + 1],
+                        self.pixel_buffer[idx + 2],
+                        self.pixel_buffer[idx + 3],
+                    )
+                } else {
+                    // 边界像素：源 alpha × coverage（source-over 近似；其余合成模式
+                    // 亦乘 coverage——AA 边的主要场景为 source-over）。
+                    let mut c = color;
+                    c.a = (c.a as f32 * coverage).round() as u8;
+                    self.composite_pixel(
+                        c,
+                        self.pixel_buffer[idx],
+                        self.pixel_buffer[idx + 1],
+                        self.pixel_buffer[idx + 2],
+                        self.pixel_buffer[idx + 3],
+                    )
+                };
                 self.pixel_buffer[idx] = r;
                 self.pixel_buffer[idx + 1] = g;
                 self.pixel_buffer[idx + 2] = b;
@@ -1822,17 +1855,22 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32).ceil() as usize).min(canvas_h);
         for y in y_start..y_end {
             for x in x_start..x_end {
-                // R57：非轴对齐 CTM 下排除包围盒角外区域。
-                if let Some((ox, oy, ow, oh)) = orig
-                    && !self.pixel_in_transformed_rect(x as f32, y as f32, ox, oy, ow, oh)
-                {
+                // R57：非轴对齐 CTM 下排除包围盒角外区域 + 边界覆盖率混合。
+                let coverage = match orig {
+                    Some((ox, oy, ow, oh)) => self.rect_coverage(x as f32, y as f32, ox, oy, ow, oh),
+                    None => 1.0,
+                };
+                if coverage <= 0.0 {
                     continue;
                 }
                 // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                 if !self.clip_applies(x as f32, y as f32) {
                     continue;
                 }
-                let color = self.apply_alpha(style.sample_at(x as f32, y as f32));
+                let mut color = self.apply_alpha(style.sample_at(x as f32, y as f32));
+                if coverage < 1.0 {
+                    color.a = (color.a as f32 * coverage).round() as u8;
+                }
                 let idx = (y * canvas_w + x) * 4;
                 let (r, g, b, a) = self.composite_pixel(
                     color,
