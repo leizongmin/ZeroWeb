@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-16",
+  "round": "R71",
+  "milestone": "M6 S1q 复合对象收口（dataset DOMStringMap）",
+  "commit": "93eccce4",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 224,
+    "deletions": 0
+  },
+  "changes": [
+    "dataset getter + DATASET_OBJECTS 二级身份缓存（R69 模式第三次复用——模式已验证可复制）",
+    "动态键拦截：JS Proxy 胶水（rquickjs 无 Rust 侧 named-property-handler 等价物）——install 注入一次性工厂脚本 __zw_native_ds_make，get/set/deleteProperty/ownKeys/getOwnPropertyDescriptor/has 六 trap；非 string 键 fallthrough target（对象协议保持，镜像 V8 reserved 名语义）",
+    "Rust 原语四件：ds_get/ds_set/ds_delete/ds_keys（收 owner ffi + camelCase 键）",
+    "驼峰↔kebab 转换：ds_prop_to_attr/ds_attr_to_prop（镜像 V8 dataset.rs；kebab 直访经 prop_to_attr 恒等往返同属性）",
+    "set/delete 派发 attributeChangedCallback（R68 old 语义）",
+    "delete miss 键 no-op 成功（spec DOMStringMap；Proxy invariant 要求 trap 返 true 否则 TypeError）",
+    "reset_quickjs_state 清 DATASET_OBJECTS"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R71 四组断言：身份缓存 / camel 写 → data-kebab 元素侧可见 / kebab 读回 camel + ownKeys + has / 删除同步 + miss no-op 成功）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/dataset.rs 语义对齐（同驼峰转换 + 同 reserved/非 string fallthrough + 同 miss 删除 no-op）；实现形态差异：V8 named-property-handler vs QuickJS JS Proxy 胶水 + Rust 原语（行为等价）",
+  "milestone_note": "S1q 复合对象三件套（attributes/classList/dataset）全部落地，S1q 收口。M6 剩余：S0q 续 weak/finalizer → Event 构造器 → DOMException 构造器 instanceof 面 → whenDefined 真 pending"
+}
