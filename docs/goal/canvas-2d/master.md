@@ -1,10 +1,8 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R56h 第十六批定稿：**path-objects 29 项全灭 + drawing-images
-7 项**——自适应贝塞尔/零长段剪除/roundRect 起点/ellipse CTM+ccw/dash 命中 + img
-运行时加载/负维度矩形/错误类型；path-objects 202/0、drawing-images 7 项修复后
-剩 2（nonexistent/nonfinite，见缺口清单）；其余目录全 0 Fail；证据见
-evidence/r34xx-batch8-r56h-2026-08-16.md）。
+**最后更新**: 2026-08-16（R57 第八批定稿：**oracle A/B 诚实化**——canvas 区域对比
++ DC-14 channel 容差 + 环境不支持排除；真通过 2（假测量）→ **9（20.9%）**，不一致
+117→27；证据见 evidence/r57-m3-oracle-honest-2026-08-16.md）。
 
 ---
 
@@ -16,137 +14,82 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 - rendering-compat（CSS 渲染/字体/布局）— 零工作重叠
 - zero-web 父目标（JS/DOM 桥主线）— 仅 `js_dom_shim` part04/05.js canvas 段共享，run-rules §9 碰头管理（本轮碰头核对：part05.js 近 7 天无活跃编辑，安全修改）
 
-## 实测基线（R56h 终态，2026-08-16）
+## 实测基线（R57 终态，2026-08-16）
 
-### WPT 面（element 20 目录 + 顶层，逐目录验证全 0 Fail）
+### WPT 面（testharness 全绿；oracle A/B 诚实基线）
 
 | 目录 | 状态 |
 |------|------|
-| the-canvas-state 68 / drawing-rectangles 32 / transformations 22 / pixel-manipulation 71 / line-styles 33 / shadows 61 | ✅ 全 0 Fail |
-| compositing 98 / fill-and-stroke-styles 255 / text 221（NotRun 均为 reftest-format，非 canvas 面） | ✅ 全 0 Fail |
-| path-objects **202/0**（R56h 29 项全灭）+ 1 NotRun（skew——WPT 套件内部语义互斥 skip） | ✅ |
-| drawing-images **37/37 全绿**（R56h 12 项修复——含 img 失败态判定） | ✅ |
-| conformance 4 / canvas-context 11 / canvas-host 67 / color-type 4 / filters 13 / layers 30 / reset 56 / global-hdr 10 / wide-gamut 12 | ✅ 全 0 Fail |
-| offscreen worker 变体（path-objects 203/0 + 各目录逐目录验证 0 Fail） | ✅ |
+| testharness 面（全部目录） | ✅ 全 0 Fail（path-objects 202/0、drawing-images 37/37 等） |
+| oracle A/B 147 可测 | ✅ 真通过 **9（20.9%）** / 近似 7（16.3%）/ 不一致 27 |
+| oracle 环境不支持排除 | 221 用例（Chromium 150 无 CanvasFilter/beginLayer——tentative API 未实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
 
-- ✅ 774 测试全绿；**行覆盖率 91.18%**（≥70% 目标达成）
-- ✅ radial 渐变全几何：线性插值圆族二次方程（f64 精度 + 相对容差 + 半径穿零伪根过滤 +
-  较大有效根）——cone.behind/beside/bottom/front/shape1/touch*/equal/transform.* 全族
-- ✅ drawImage 阴影（源 alpha mask + blur）；pattern 平铺锚定 fill 空间（tile_transform）
-- ✅ 文本真字体光栅：@font-face FontLoader 注入 → shape（rustybuzz，rtl 方向）→ glyph
-  位图 blit；基线偏移真实 ascent/descent（fontdue descent 为负）；maxWidth 缩放；
-  letterSpacing/wordSpacing（原始串 + em/% 随字号重解析）；measureText 真度量 +
-  actualBoundingBox 按 align/direction 锚定 + 真实墨迹边界
-- ✅ TextCluster 系列：getTextClusters（UAX#29 字素分段 + options 定位）、
-  fillTextCluster/strokeTextCluster（options align/baseline/x/y）；stroke_text 真字体路径；
-  TextMetrics emHeightAscent/Descent
-- ✅ 空 stops 渐变透明；stroke 单次调用去重 mask（段/join/cap 重叠只合成一次）
-- ✅ Transform2D::inverse；TextBaseline 补 Hanging/Ideographic
+- ✅ 800 测试全绿；**行覆盖率 91.18%**（≥70% 目标达成）
+- ✅ R57：渐变插值空间补全 CSS Color 4 全 16 空间（+DisplayP3/DisplayP3Linear/
+  A98Rgb/Rec2020/XyzD50，矩阵+EOTF）；CanvasStyle set_color_interpolation 直通
+- （前轮记录见 git log：径向渐变全几何、文本真字体光栅、TextCluster 系列等）
 
 ### JS 接线层（js_dom_shim + engine canvas.rs）
 
-- ✅ fetch 同步返回契约（headless __zw_fetch 直返 wire）+ wpt-data fetch handler
-- ✅ CSS Typed OM 最小面（CSSRGB/CSSHSL/CSS.percent/degs + color object duck-typing
-  `a:`/`alpha:` 双键）；'currentColor' 设值时解析（内联 style + style 属性串；remove 后黑）
-- ✅ 渐变构造 TypeError/负半径 IndexSizeError/addColorStop 非有限 TypeError（spec）
-- ✅ drawing.style 面：letterSpacing/wordSpacing/fontKerning/fontStretch/fontVariantCaps/
-  textRendering（值大小写敏感 + 归一化）
-- ✅ grad_refs live 重放（addColorStop 后引用 context 更新）；ctx.reset()；SVG <image>
-  元素 createPattern + fetch 提取（pipeline extract_img_srcs）
+- ✅ R57：**setFilterDropShadow + setGradientInterpolation bridge op 补齐**（R56h
+  漏分发的同模式 2 处——shim 已发 + Rust API 已有 ≠ 链路通）；dropShadow 字符串
+  filter 形式接线（`ctx.filter='drop-shadow(...)'`）+ filter 列表顶层逗号分割；
+  **createElement('canvas') DOM 集成**（standalone canvas 同步 host handle +
+  data-zw-canvas-ctx + 属性同步——append 可进布局）
 
-## R34xx 修复记录（WPT 驱动，全部带 driving 用例）
+## R34xx/R57 修复记录（WPT 驱动，全部带 driving 用例）
 
-（前轮记录见 git log；第十二批（2026-08-15，第二批导入 + layers + M3 oracle）——按 driving 用例聚类）
+（R57 批次）
 
 | 修复 | 驱动用例 |
 |------|----------|
-| 第二批导入（11 新目录 559+ 用例 + offscreen 变体 ~2000 文件）+ reftest-format 判定（NotRun） | fetch-canvas-subset.sh + runner 目录清单 |
-| ctx.reset() 全量状态复位（27 项镜像）+ ctx.filter 属性 + DOMMatrix isIdentity/is2D/is3D | 2d.reset.state.* 全族 |
-| canvas width/height WebIDL ToUint32 + standalone 尺寸 accessor + 固有尺寸双层注入 + MAX_CANVAS_DIM 钳制 + ctx.canvas 只读/同 identity + toStringTag + 缺参 TypeError | 2d.canvas.host.* 全族 |
-| ctx 原型链重构（_methods 包 + prototype 分发）+ 构造器 prototype 属性规则 | 2d.canvas.context.type.*/prototype/readonly |
-| beginLayer/endLayer 状态机 + 层渲染状态复位 + 打开期操作限制 + options 校验 | 2d.layer.*（invalid-calls/malformed/valid-calls/ctm/options/exceptions） |
-| drawImage 负坐标（f32 as usize 饱和为 0 → 显式负值跳过）+ DOM canvas 源 ctx 查找 | 2d.drawImage.3arg / 2d.drawImage.canvas |
-| M3 oracle：REFTEST_INCLUDE_CANVAS + 全量捕获 1339 shots + A/B 基线 | reftest-oracle html/canvas |
+| oracle A/B 诚实化：canvas 区域对比 + channel 容差（DC-14 ≤2/≤5）+ CanvasFilter/beginLayer 环境排除 | reftest-oracle 测量重构 |
+| setFilterDropShadow bridge op + 字符串 drop-shadow 解析 + 顶层逗号分割 | 2d.filter.drop-shadow-globalAlpha（47.2%→4.8%） |
+| setGradientInterpolation bridge op + 4 新插值空间 + JS VALID 补 6 名 | 2d.gradient.colorInterpolationMethod |
+| shrink_inline_blocks 排除 replaced + shift-pass inline-level margin + R2156 守卫 + R109 原子子盒 + remeasure gate + fallback 布局抑制 | 2d.reset.render.global_composite_operation（6.68%→0.17% 近似） |
+| module 脚本块作用域 | canvas-grid 多 module 脚本重声明互撞 |
+| createElement('canvas') DOM 集成 | 2d.composite.full.mode.alpha（5.76%→1.25%） |
 
 （更早轮次记录见 git log）
-
-| 修复 | 驱动用例 |
-|------|----------|
-| float16 覆盖层补全（DOM canvas/OffscreenCanvas getContext `_f16` 标记 + `_zwBitmapF16` 原始浮点 + drawImage 记录/getImageData 回读 + 写像素失效） | createImageBitmap.srgb.rgba.float16（主+worker） |
-| 外链样式表 url() 按样式表 URL 绝对化 + headless 本地提供 | variationSelectors（variation-sequences.css 字体引用） |
-| 呈现感知字体选择（VS15 text 呈现 → 回落 sans-serif；VS16 保持 emoji 字体） | variationSelectors（⚓+FE0E vs ⚓+FE0F 宽度差） |
-| ImageData 构造器 WebIDL 重载回退（data union 失败 → (sw,sh) 重载；settings 非对象 → TypeError） | ctor.basics（Uint8Array 2 参 INDEX_SIZE_ERR + (self,4,4) TypeError） |
-| getIndexFromOffset/caretPositionFromPoint 字形中点边界语义（相邻原点中点，严格 <） | index-from-offset-edge-cases（主+worker） |
-| VS 字体资产（wpt-data ×7 + fonts/ ×2 subset 提交） | variationSelectors @font-face 族 |
-
-（更早轮次记录见 git log）
-
-| 修复 | 驱动用例 |
-|------|----------|
-| stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值；legacy 直 sRGB | gradient.colormix / gradient.relativecolor |
-| alpha 序列化最短可回滚十进制（u8 量化 0.5→128 回读 '0.5'） | fillStyle.get.halftransparent / semitransparent |
-| 缺参 TypeError vs 非有限忽略分流（_zwNumArg/_zwAllFinite） | 8 个 .nonfinite 系列 |
-| setTransform 双重重载（0 参 → DOMMatrix2DInit identity） | setTransform.multiple / missingargs |
-| ImageData 构造器 spec 化（WebIDL union/长度算法/pixelFormat float16） | imageData.object.ctor.* |
-| fontKerning 'none' → shaping 关 kern；系统默认字体预载；resolve_font_id 大小写不敏感 | drawing.style.fontKerning / reset.fontKerning.none |
-| fillText maxWidth ≤ 0 不绘制；ctx.font 保留 fontKerning；% / em / lh 字号（canvas 元素样式基准） | maxWidth.zero/negative / reset.fontKerning.none / percentage* / parent-style-relative-units |
-| 显式 undefined vs 缺参（DOMString 转换语义） | gradient.object.invalidcolor / pattern.repeat.undefined |
-| 文本路径 sample_at（零长渐变不绘制） | gradient.interpolate.zerosize.fillText/strokeText |
-| bbox 符号约定去钳制（Left 正值=向左）；ASCII whitespace → U+0020；亚像素墨迹（轮廓 bbox） | actualBoundingBox.whitespace / getActualBoundingBox*.tentative / small-font / space.* 全族 |
-| testharness 定时器记录式触发（t.step_timeout 回调最终执行） | draw.fontface.repeat |
-| radial 二次方程全几何（f64 + 容差 + 有效根） | cone.behind/beside/bottom/front/shape1/touch*/equal/transform.* |
-| 渐变半径随 CTM 缩放 | radial.transform.1/2/3 |
-| drawImage 阴影 | shadow.image.* / shadow.canvas.* |
-| pattern 平铺锚定 fill 空间 | pattern.paint.repeat.coord1/3 等 |
-| 空 stops 透明 | gradient.empty |
-| 文本真字体光栅 + 基线/对齐/maxWidth/rtl | text.draw.baseline.*/align.*/maxWidth.*/rtl |
-| letterSpacing/wordSpacing 全语义 | drawing.style.letterSpacing.*/wordSpacing.*/spacing.* |
-| drawing.style 属性面 | fontKerning/fontStretch/fontVariantCaps/textRendering.settings |
-| measureText 真度量 + bbox 锚定 | measure.width.*/fontBoundingBox*/measure.direction/textAlign |
-| fetch 同步契约 + 相对 URL | composite.image.*/canvas.*（62→98） |
-| drawImage source 独占未覆盖清除 | uncovered.image.* |
-| stroke 去重 mask | strokeStyle.colorObject.transparency |
-| CSS 颜色 NaN/尾点/混合 % 拒绝 + 溢出钳制 | parse.invalid.*/rgb-clamp-5 |
-| 0 尺寸 SVG 解码兜底 | pattern.image.zerowidth/zeroheight |
-| SVG <image> 元素源 + href 提取 | svgimage.zerowidth/zeroheight/nonexistent |
-| color object `a:` 键 | colorObject.transparency |
-| 'currentColor' 设时解析 + style 属性串 | fillStyle.parse.current.*/shadowColor.current.* |
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | G1 | WPT html/canvas 真实用例覆盖为零 | ✅ M1 完成（919 文件导入，657+ Pass） |
-| G2 | 像素级 canvas 验证 | 🔄 GPU 路径测试就位（lavapipe 5 测试）；Chromium oracle 已可用——A/B 复测基线 2/117（1.7%），深项聚类记录（见 M3） |
+| G2 | 像素级 canvas 验证 | 🔄 oracle A/B 诚实化完成（R57：真通过 9/20.9%，不一致 27）；剩余聚类见 M3 |
 | G3 | OffscreenCanvas Rust 桩 | ✅ 真实化 |
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
 | G6 | OffscreenCanvas × Web Worker | ✅ 集成（offscreen worker 变体 630 Pass） |
-| G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail）——float16 覆盖层/variationSelectors 呈现感知/ctor.basics 重载回退/edge-cases 中点边界；65 Timeout 全为 reftest-format 文件（非 canvas 面） |
-| G8 | 第二批新目录 | ✅ 全绿（reset 56/canvas-host 67/canvas-context 11/layers 30/conformance 4/global-hdr 10/filters 13/color-type 4/wide-gamut 12/path-objects 202/0/drawing-images 修复 7 项） |
-| G9 | drawing-images 剩余失败 | ✅ 全灭（R56h 12 项修复——img 运行时加载/负维度矩形/错误类型/clip/亚像素源/非有限 no-op/detached transfer/失败态判定） |
+| G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
+| G8 | 第二批新目录 | ✅ 全绿 |
+| G9 | drawing-images 剩余失败 | ✅ 全灭 |
+| G10 | oracle A/B 不一致 27 项 | 🔄 聚类：grid 结构 ~15 项（22px IFC 偏移，深项）/ fontKerning 8.5%（字体度量，rendering-compat 域）/ drop-shadow AA 4.8%（无抗锯齿）/ text-outside 0.55%（退化 oracle） |
 
 ## 待用户决策清单
 
-- [x] G5 DOM img 源（drawImage/createPattern）— ✅ 完成（headless 图片加载链路 + img 元素状态机 + shadow/composite/pattern 全解锁）
-- [x] ImageBitmap 全源类型 — ✅ 完成（img/canvas/ImageBitmap/ImageData 源全通）
-- [x] shadowColor 'currentColor' — ✅ 完成（设值时解析 + 元素 style 属性串）
-- [x] OffscreenCanvas × Web Worker 集成（G6）— ✅ 完成（.worker.js 变体全通，715 Pass；真独立 worker 线程运行时 OffscreenCanvas 为浏览器架构面，非 WPT 通过率分母）
-- [x] index-from-offset 边界约定 — ✅ 完成（字形中点规则，主+worker edge-cases 全过）
-- [ ] M3 深项聚类（oracle A/B 复测后，Chromium 已可用）——filters dropShadow 27% /
-  layers opaque-canvas filter 15% / gradient colorInterpolationMethod 10.8%（含
-  colorInterpolationMethod 属性 + 多色彩空间插值）/ reset render composite 6.7%——
-  深结构项，待用户点名
+- [x] G5 DOM img 源 — ✅ 完成
+- [x] ImageBitmap 全源类型 — ✅ 完成
+- [x] shadowColor 'currentColor' — ✅ 完成
+- [x] OffscreenCanvas × Web Worker 集成（G6）— ✅ 完成
+- [x] index-from-offset 边界约定 — ✅ 完成
+- [x] R56h 遗留 bridge 接线缺口（setFilterDropShadow/setGradientInterpolation）— ✅ R57 补齐
+- [ ] **grid 结构用例 22px IFC 偏移**（gradient/composite.grid/TextCluster ~15 项）——
+  canvas 盒在 R109 匿名片段内 y 偏移 22px（IFC 行内定位深层问题；探针证实 IFC
+  run.y=0 正确但最终盒 y=20）——深结构项，待用户点名
+- [ ] 抗锯齿光栅（AA 边差 280px 级——drop-shadow 4.8%/reset 0.17% 的近似残差）
+- [ ] serif 字体度量对齐（fontKerning.none2 8.5%——rendering-compat 域）
 
 ## 下一步计划
 
-2. **M3 冲刺**：oracle A/B 基线 1.7% → 按 worst-diff 聚类修复（filters dropShadow/
-   layers opaque-canvas/gradient 颜色插值）——每项修复经 oracle A/B 验证
-3. filters/layers/color-type 像素面深项（R56h 后 API 表面已全绿，剩余为像素级）
-4. 浏览器 app form/input 快照测试（7）——本环境既有失败（a08d3064 复测确认），
-   浏览器流（非 canvas 面）处理
+1. **grid 结构 22px 偏移**（G10 最大聚类）：IFC sync/valign 链深挖——canvas 盒在
+   R109 匿名片段内最终 y=20（IFC run.y=0 正确）——待决策后开工
+2. oracle A/B 持续回归门：每轮 canvas 改动跑 `REFTEST_INCLUDE_CANVAS=1 make
+   reftest-oracle canvas`（测量法已诚实，数值可追踪）
+3. 浏览器 app form/input 快照测试（7）——本环境既有失败，浏览器流（非 canvas 面）处理
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
@@ -156,15 +99,12 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 |--------|------|
 | M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿） |
 | M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭） |
-| M3 — 像素正确性冲刺 | 🔄 oracle A/B 复测：2/117（1.7%）真通过；worst-diff 聚类 = filters dropShadow 27%/layers opaque-canvas filter 15%/gradient colorInterpolation 10.8%/layers global-states filter 6.7%——深项待决策（R56h 后 API 表面已全绿，剩余为像素面） |
+| M3 — 像素正确性冲刺 | 🔄 oracle A/B 诚实化完成（R57）：canvas 区域对比基线 真通过 9（20.9%）/ 不一致 27；剩余聚类 = grid 22px 偏移（~15 项，深项待决策）+ 字体/AA 残差 |
 
 ## 验证基线
 
-- 测试基线：canvas **797** 全绿；engine **2153**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
-- WPT canvas 主线程：path-objects **202 Pass / 0 Fail / 1 NotRun**（skew WPT 套件
-  内部不一致 skip）；worker path-objects **203 Pass / 0 Fail / 1 NotRun**；其余
-  目录逐目录全 0 Fail（compositing/fill-and-stroke-styles/text/filters/layers/reset
-  的 NotRun 均为 reftest-format 文件，非 canvas 面）
+- 测试基线：canvas **800** 全绿；layout **1380**；engine **2156**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
+- WPT canvas testharness 面：全目录 0 Fail（含 path-objects 202/0、drawing-images 37/37）
+- oracle A/B：147 可测（221 环境不支持排除）——真通过 9（20.9%）、近似 7、不一致 27
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
-- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored；
-  CanvasTest.ttf/yellow*.png/green.svg/red-zerosize.svg/vs/*.ttf 已入脚本）
+- 资产化：修复经 fetch-canvas-subset.sh 资产化（wpt-data 独立 repo 机制，gitignored）
