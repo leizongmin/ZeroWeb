@@ -34,6 +34,9 @@
 - ✅ 45 用例导入（fetch-constraints-subset.sh + `testharness-constraints` 子命令）
 - 基线：27 文件有子测试、**Pass 3 / Fail 909**（permissive valid——约束位全缺失）；
   证据 evidence/m1-constraints-baseline-2026-08-16.md
+- **M1 切片 2 进展（2026-08-16）**：**Pass 688 / Fail 221**——约束位首修完成
+  （valueMissing/patternMismatch/typeMismatch/range/willValidate 排除/
+  form.checkValidity + disabled 语义）——证据 evidence/m1-constraints-baseline 追加
 
 ## 缺口清单
 
@@ -47,9 +50,11 @@
 
 ## 下一步计划
 
-1. **M1 切片 2（进行中）**：约束位计算首修——required/valueMissing 起步
-   （Fail 78+19 子测试）——host 层约束计算入口 + shim 反射
-2. **M1 切片 3**：pattern/mismatch（85 Fail）
+1. **M1 切片 2（进行中）**：约束位首修已完成（Pass 688）——剩余 = date/time
+   格式位（checkValidity/reportValidity 32×2）、willValidate 剩余（31+datalist
+   17）、pattern "Invalid v"（19）、weekmonth range（13×2）、step（8）、
+   radio 组（6+6）
+2. **M1 切片 3**：date/time 格式位 + stepMismatch
 3. **M2**：全约束位 + validityState 联动 + validationMessage + willValidate
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`

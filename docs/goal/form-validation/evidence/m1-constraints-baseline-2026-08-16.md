@@ -37,3 +37,23 @@ checkValidity 恒 true）——原生约束位全未计算。Fail 即约束计�
 
 - wpt-runner 172 全绿（新增 constraints runner 无回归）
 - clippy 零警告；fmt 无 diff
+
+## 追加：M1 切片 2——约束位首修（2026-08-16 晚）
+
+**Pass 3 → 688 / Fail 909 → 221**。修复清单：
+
+| 约束位/面 | 实现 |
+|-----------|------|
+| pre_check 基础 | _makeProxy target 预置约束校验属性（webview 页面脚本路径的 `in` 不调 has trap——实测；get 仍走 trap 实时计算） |
+| valueMissing | required + 值缺失：text 类/checkbox/radio/select/file/date/number（ISO 格式 + isFinite） |
+| patternMismatch | anchored（^(?:pattern)$——spec 完全匹配）+ u flag（Unicode 特性） |
+| typeMismatch | email/url 格式（近似正则 + multiple 逗号分割） |
+| rangeUnderflow/Overflow | min/max 数值比较（number/range） |
+| willValidate | disabled/readonly（text 类）/type ∈ {hidden,button,reset} 排除 |
+| form.checkValidity | 遍历控件（proxy querySelectorAll + 本地 _zwMEl 树 _collectControls） |
+| disabled 语义 | barred 仅对 valueMissing（TEXT/date expectedImmutable false）；checkbox/radio 组状态例外；pattern/range 等 disabled 仍校验（expectedImmutable 缺省） |
+
+**剩余 221 Fail 聚类**：date/time 格式位（checkValidity/reportValidity 32×2——
+badInput 面）、willValidate 剩余（31+datalist 17）、pattern "Invalid v"（19——
+v flag 正则）、weekmonth range（13×2——日期比较）、stepMismatch（8）、
+radio 组（6+6）、valid 联动（12+6）。
