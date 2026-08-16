@@ -89,7 +89,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（两阶段对齐后 20 项） | 🔄 聚类：composite.grid ×12（**17.8-21.3%**——内容级：旋转矩形位置差 5px（test 内容 y=8 起 vs ref y=3）+ 合成模式差——dump 分析中）/ text 残余 ×6（TextCluster-font-change 7.0%/drawing-styles 4.1%/writingmode 4.0%——字体度量，rendering-compat 域）/ miter_limit 1.40%（线几何亚像素+背景图）/ mode.alpha 1.12% / text-outside 0.57%（退化 oracle） |
+| G10 | oracle A/B 不一致（两阶段对齐后 20 项） | 🔄 聚类：composite.grid ×12（**17.8-21.3%**——canvas0（source-over）对齐后 diff=0 实证内容一致；差异 = 每格平移（y 头部差 31 已消；x 列宽差 -24 起、canvas1-5 累积 -94+——span max-content = max(div 标题文本宽 94.4, canvas 80)——max 语义正确（单测守护），列宽差 = div 标题文本宽差（94.4 vs Chromium ~75——**字体度量，rendering-compat 域**））/ text 残余 ×6（TextCluster-font-change 7.0%/drawing-styles 4.1%/writingmode 4.0%——字体度量，rendering-compat 域）/ miter_limit 1.40%（线几何亚像素+背景图）/ mode.alpha 1.12% / text-outside 0.57%（退化 oracle） |
 
 ## 待用户决策清单
 
