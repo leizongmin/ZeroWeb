@@ -1,0 +1,45 @@
+{
+  "slice": "R88 — NodeIterator filter 执行中移除的 in-flight retarget（WPT dom/traversal NodeIterator-removal-during-filtering 收口）",
+  "date": "2026-08-17",
+  "commit": "aa368299",
+  "summary": {
+    "dom/traversal": {
+      "before": "1589P/15F（R87 后；removal-during-filtering 2F）",
+      "after": "1591P/13F（净 +2；removal-during-filtering 4P/0F 100%）",
+      "pass_rate": "99.19%"
+    },
+    "regressions": {
+      "dom/nodes": "per-case 一致（name-validation flake 波动 1 条，非回归）",
+      "dom/events": "per-case 逐字节一致",
+      "dom/collections": "per-case 逐字节一致"
+    },
+    "unit_tests": {
+      "engine_v8": "2185 passed（+2 R88）",
+      "engine_quickjs": "1427 passed"
+    }
+  },
+  "root_causes": [
+    "① filter 内移除时 pre-remove 步骤只作用于 referenceNode——spec concept-nodeiterator-traverse 要求对 in-flight（正在被 filter 的候选）位置生效",
+    "② 遍历 wrapper 在 filter 返回后无条件回写 refNodeVal=返回值——把 retarget 已落好的存活节点又覆盖回被移除节点",
+    "③ 抑制回写在「移除已访问节点」（in-flight 无关）场景是错的——spec 期望 filter 返回后 ref 落新 accepted（already-visited 用例）",
+    "④ previousNode 的 before=false 早返分支返回 refNodeVal——filter 内 retarget 把 refNodeVal 改掉后返回值成了 retarget 目标而非被 filter 节点",
+    "⑤ 清理时序：check finally 若先清 flightRetargeted，wrapper 读到的是已清零值（顺序 bug 首版实测复现）"
+  ],
+  "implementation": [
+    "registry entry 增 getInFlight/getInFlightBefore（工厂闭包 inFlightVal/inFlightBeforeVal，check() 执行 filter 前后登记/恢复）",
+    "notify 循环：in-flight 在 removed 子树内 → 以 inFlight 参与 effBefore 判定并经 retargetInFlight（置 flightRetargeted）；常规 reference 命中仍走 retarget（不抑制回写）",
+    "nextNode/previousNode wrapper：flightRetargeted 时跳过 ref 回写（返回值=被 filter 节点，reference=存活节点）；清理在 wrapper 读后",
+    "previousNode before=false 半边：ref 快照先于 check()，返回快照"
+  ],
+  "method_notes": [
+    "「ref 被谁覆盖」类 bug 用 notify hook 打印 entry 状态即可分离「retarget 没执行」vs「执行后被覆盖」——本轮一次 probe 定位②",
+    "抑制回写是双刃：already-visited 场景（移除的是无关已访问节点）必须回写——按「retarget 是否因 in-flight 而起」分 fire 路径（retargetInFlight vs retarget）",
+    "spec 断言「returns the filtered node」+「reference retargeted」是两个独立观察面——返回值与 reference 状态可合法分叉"
+  ],
+  "remaining": {
+    "dom/traversal_13F": [
+      "cross-realm 7F（TreeWalker-acceptNode-filter-cross-realm 5F + TreeWalker-realm 2F——iframe 深结构）",
+      "TreeWalker-currentNode 2F / TreeWalker 1F / walking-outside-a-tree 1F / previousNodeLastChildReject 1F / NodeIterator-removal 1F（paras[5].firstChild CDATA 边角）"
+    ]
+  }
+}
