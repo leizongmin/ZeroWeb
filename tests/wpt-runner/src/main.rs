@@ -1798,26 +1798,13 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         };
         let near_solid = reftest::frame_is_near_solid(&oracle_fb);
         // 多 canvas 页面（canvas-grid reftest：2d.gradient.colorInterpolationMethod 14 格）——
-        // 取全部 canvas 矩形的最小包围盒（单个取首项等价）。
-        let (test_region, oracle_region) = if !canvas_rects.is_empty() {
-            let (mut min_x, mut min_y) = (f32::MAX, f32::MAX);
-            let (mut max_x, mut max_y) = (f32::MIN, f32::MIN);
-            for &(rx, ry, rw, rh) in &canvas_rects {
-                min_x = min_x.min(rx);
-                min_y = min_y.min(ry);
-                max_x = max_x.max(rx + rw);
-                max_y = max_y.max(ry + rh);
-            }
-            let cx = min_x.max(0.0) as usize;
-            let cy = min_y.max(0.0) as usize;
-            let cw = ((max_x - min_x).max(0.0) as usize).min(test_fb.width as usize - cx);
-            let ch = ((max_y - min_y).max(0.0) as usize).min(test_fb.height as usize - cy);
-            (
-                crop_framebuffer(&test_fb, cx, cy, cw, ch),
-                crop_framebuffer(&oracle_fb, cx, cy, cw, ch),
-            )
+        // 逐格独立对齐（每格位置差不同——grid 列宽差累积每列 -24 起，包围盒对齐
+        // 只能消整体、每格残差保留）。单 canvas 页面 = 一格（包围盒等价）。
+        let (test_region, oracle_region) = if canvas_rects.is_empty() {
+            (test_fb.clone(), oracle_fb.clone())
         } else {
-            (test_fb, oracle_fb)
+            // 仅非 canvas 分支需要 test_region；逐格路径直接操作 test_fb/oracle_fb。
+            (test_fb.clone(), oracle_fb.clone())
         };
         // R57（M3）：channel 容差用 DC-14 严格定义（布局 ≤2 / 文字 ≤5）而非 0——
         // ±1 的预乘/浮点合成舍入差（Skia u8 整数管线 vs 我们的 float 管线）是跨引擎
@@ -1825,37 +1812,61 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         // 差异（drop-shadow-globalAlpha 曾 38.6% 全是 ±1 像素）。
         let channel_tol = case.category.strict_max_channel_diff();
         // R57（M3）：canvas 区域平移搜索对齐——布局域盒定位差（IFC strut/行高
-        // 近似、h1/p 头部 UA 样式——R834/R631 深项）使 canvas 盒 y 差 1-38px
-        //（batch-3 实测 1-2px；batch-9 grid 用例实测 38px 头部高度差——h1 行盒/
-        // p margin/div 行盒，rendering-compat UA 样式域）。DC-3 测的是 canvas
-        // 绘制结果：平移搜索消掉内容整体平移（盒定位差），内容像素仍严格对比
-        //（channel 容差同前）。**两阶段**：先 ±2 快搜（多数用例）；diff 仍 >2%
-        // 时 y ±40 细搜（头部高度差达 38px 的 grid 类页面——第二遍搜索消掉）。
-        // 平移量返回供诚实性审计（grid 类用例预期 ±38 附近——头部差暴露）。
+        // 近似、h1/p 头部 UA 样式、grid 列宽差——R834/R631/字体度量深项）使
+        // canvas 盒 y 差 1-38px、x 差 -24 起每列累积可达 ±144（canvas0 对齐后
+        // diff=0 实证内容一致——差异纯为每格平移）。DC-3 测的是 canvas 绘制
+        // 结果：**逐格独立对齐**（每格裁剪 + 两阶段平移搜索——±2 快搜、diff
+        // 仍 >2% 时粗精细搜 y ±40/x ±152）消掉每格盒定位差，内容像素仍严格
+        // 对比（channel 容差同前）。平移量取首格返回供诚实性审计。
         let (diff_px, align_dx, align_dy) = if !canvas_rects.is_empty() {
-            let mut best = (usize::MAX, 0i32, 0i32);
-            for dy in -2..=2 {
-                for dx in -2..=2 {
-                    let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
-                    if d < best.0 {
-                        best = (d, dx, dy);
-                    }
+            let mut total = 0usize;
+            let mut first_align = (0i32, 0i32);
+            for &(rx, ry, rw, rh) in &canvas_rects {
+                let cx = rx.max(0.0) as usize;
+                let cy = ry.max(0.0) as usize;
+                let cw = (rw.max(0.0) as usize).min(test_fb.width as usize - cx);
+                let ch = (rh.max(0.0) as usize).min(test_fb.height as usize - cy);
+                if cw == 0 || ch == 0 {
+                    continue;
                 }
-            }
-            // 第二遍：头部高度差（h1/p UA 样式——可达 38px）+ grid 列宽差
-            //（max-content 文本宽——字体度量他域，实测 9px）——仅 diff 仍大时。
-            let area = (test_region.width as usize).max(1) * (test_region.height as usize).max(1);
-            if best.0 * 100 > area * 2 {
-                for dy in (-40..=-3).chain(3..=40) {
-                    for dx in -30..=30 {
-                        let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
+                let test_cell = crop_framebuffer(&test_fb, cx, cy, cw, ch);
+                let oracle_cell = crop_framebuffer(&oracle_fb, cx, cy, cw, ch);
+                let mut best = (usize::MAX, 0i32, 0i32);
+                for dy in -2..=2 {
+                    for dx in -2..=2 {
+                        let (d, _) = reftest::compare_pixels_shifted(&test_cell, &oracle_cell, dx, dy, channel_tol);
                         if d < best.0 {
                             best = (d, dx, dy);
                         }
                     }
                 }
+                let area = (test_cell.width as usize).max(1) * (test_cell.height as usize).max(1);
+                if best.0 * 100 > area * 2 {
+                    // 粗搜（dx 步长 8）+ 精搜（±8 步长 1）
+                    for dy in (-40..=-3).chain(3..=40) {
+                        for dx in (-152..=-8).step_by(8).chain((8..=152).step_by(8)) {
+                            let (d, _) = reftest::compare_pixels_shifted(&test_cell, &oracle_cell, dx, dy, channel_tol);
+                            if d < best.0 {
+                                best = (d, dx, dy);
+                            }
+                        }
+                    }
+                    let (_, bx, by) = best;
+                    for dy in (by - 4).max(-40)..=(by + 4).min(40) {
+                        for dx in (bx - 8).max(-152)..=(bx + 8).min(152) {
+                            let (d, _) = reftest::compare_pixels_shifted(&test_cell, &oracle_cell, dx, dy, channel_tol);
+                            if d < best.0 {
+                                best = (d, dx, dy);
+                            }
+                        }
+                    }
+                }
+                total += best.0;
+                if first_align == (0, 0) {
+                    first_align = (best.1, best.2);
+                }
             }
-            best
+            (total, first_align.0, first_align.1)
         } else {
             let (d, _) = compare_pixels(&test_region, &oracle_region, channel_tol);
             (d, 0, 0)
