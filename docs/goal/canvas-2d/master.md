@@ -1,11 +1,9 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R57 batch-7 定稿：**描边边界像素 AA + 亚像素 span 填充**——
-斜线边 4×4 超采样半色调（中心命中满色——WPT 满色契约）、join 三角尖角顶
-亚像素 span 修复（miter_limit 尖角差 5px 根因）；oracle ±2px 对齐（布局差可达
-2px）；**drop-shadow 0.00% 真通过**（之前 4.8%）、reset 7/8；miter_limit 1.40%
-归因 canvas 元素亚像素定位相位差（布局域深项——±2 平移消不了亚像素）。
-证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.md）。
+**最后更新**: 2026-08-16（R57 终态：**oracle 不一致归零**——逐格独立对齐
+（grid ×12 全灭）+ TextCluster 字体锁定（font-change ×2 全灭）；oracle-pass
+41/41（100%）、真通过 34（82.9%）——**Mission 中期 80% 达成、DC-3 完成**；
+canvas 812 全绿。证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.md）。
 
 ---
 
@@ -24,7 +22,7 @@
 | 目录 | 状态 |
 |------|------|
 | testharness 面（全部目录） | ✅ 全 0 Fail（element 1253 + worker 1082——R57 batch-5 后复测零回归） |
-| oracle A/B 141 可测 | ✅ 真通过 **34（82.9%）** / 近似 5（12.2%）/ 不一致 **2**（逐格独立对齐——grid ×12 全灭（每格内容 diff=0 实证，列宽差累积残差消除）；miter_limit 1.40→0.47%；**Mission 中期 80% 目标达成**；剩余 2 项 = TextCluster-font-change ×2（1.13%——字体度量，rendering-compat 域）） |
+| oracle A/B 141 可测 | ✅ **oracle-pass 41/41（100%）** / 真通过 **34（82.9%）** / 近似 7（17.1%）/ **不一致 0**（逐格独立对齐 + TextCluster 字体锁定——grid ×12 全灭、font-change ×2 全灭；**Mission 中期 80% 目标达成**；剩余 7 项近似全部 <0.6%：miter_limit 0.47%/fontVariantCaps 0.25%/reset 0.22-0.25%/mode.alpha 0.21%——字体度量/线几何残差） |
 | oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
@@ -89,7 +87,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（逐格对齐后 2 项） | 🔄 聚类：TextCluster-font-change ×2（1.13%——fillText 后改字体的 measure 差——字体度量，rendering-compat 域）；其余全部 <0.5%（miter_limit 0.47% 近似、reset 0.22-0.25%、fontVariantCaps 0.25%、mode.alpha 0.21%、text-outside 退化排除） |
+| G10 | oracle A/B 不一致 | ✅ **归零**（oracle-pass 100%——逐格独立对齐 + TextCluster 字体锁定；剩余 7 项近似 <0.6% 为字体度量/线几何残差，rendering-compat 域） |
 
 ## 待用户决策清单
 
@@ -135,7 +133,7 @@
 |--------|------|
 | M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿） |
 | M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭） |
-| M3 — 像素正确性冲刺 | 🔄 oracle A/B 诚实化完成（R57）：canvas 区域对比基线 真通过 9（20.9%）/ 不一致 27；剩余聚类 = grid 22px 偏移（~15 项，深项待决策）+ 字体/AA 残差 |
+| M3 — 像素正确性冲刺 | ✅ 完成（R57）：oracle-pass **100%**（41/41）、真通过 **82.9%**（Mission 中期 80% 达成）、**不一致 0**——AA 全系/细分/亚像素/测量法三阶段/逐格对齐/grid 资产/font-change 字体锁定 |
 
 ## 验证基线
 
