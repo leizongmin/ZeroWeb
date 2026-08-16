@@ -2433,8 +2433,15 @@
         else if (useBaseline === 'hanging') oy = asc * (2 / 3);
         drawY += oy - asc;
       }
+      // R57（M3）：spec TextCluster——簇用 measure 时字体渲染（即使 ctx.font
+      // 已改——fillTextCluster-font-change.tentative）；绘制后恢复。
+      var savedFont = ctx.font;
+      if (cluster.font) {
+        ctx.font = cluster.font;
+      }
       __zw_canvas_op(h, 'fillText', String(cluster.text),
         String(drawX), String(drawY));
+      ctx.font = savedFont;
     };
     // R34xx：strokeTextCluster（spec TextCluster——与 fillTextCluster 对称，描边绘制）。
     ctx._methods.strokeTextCluster = function (cluster, x, y, options) {
@@ -2462,8 +2469,15 @@
         else if (useBaseline === 'hanging') oy = asc * (2 / 3);
         drawY += oy - asc;
       }
+      // R57（M3）：spec TextCluster——簇用 measure 时字体渲染（fillTextCluster
+      // 同——strokeTextCluster-font-change.tentative）；绘制后恢复。
+      var savedFont = ctx.font;
+      if (cluster.font) {
+        ctx.font = cluster.font;
+      }
       __zw_canvas_op(h, 'strokeText', String(cluster.text),
         String(drawX), String(drawY));
+      ctx.font = savedFont;
     };
     ctx._methods.strokeText = function (text, x, y) {
       x = _zwNumArg(x); y = _zwNumArg(y);
@@ -2497,6 +2511,9 @@
         }
       }
       var tm = {
+        // R57（M3）：ctx 引用——getTextClusters 的簇对象须记录 measure 时的
+        // font（fillTextCluster-font-change.tentative：簇用 measure 时字体渲染）。
+        _ctx: ctx,
         width: num(0),
         actualBoundingBoxAscent: num(1),
         actualBoundingBoxDescent: num(2),
@@ -2701,7 +2718,12 @@
               advance: adv,
               asc: asc,
               desc: -desc, // fontdue 约定（负值——oy 计算用 (asc+desc)/2、bottom=desc）
-              offsetInText: i
+              offsetInText: i,
+              // R57（M3）：measure 时的字体快照——fillTextCluster 须用 measure 时
+              // 字体渲染（spec TextCluster：即使 ctx.font 已改，簇仍按原字体——
+              // fillTextCluster-font-change.tentative）。measureText 对象持 ctx
+              // 引用（this._ctx——getTextClusters 经 this 访问）。
+              font: this._ctx && this._ctx.font !== undefined ? String(this._ctx.font) : ''
             });
             i = j;
           }
