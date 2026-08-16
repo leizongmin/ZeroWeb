@@ -296,9 +296,12 @@ jobs:
       - name: Build zero-compositor (bin required by browser compositor tests)
         shell: bash
         run: |
-          # 不带 --target/--features：browser 测试 fallback 路径硬编码
-          # target/debug/zero-compositor；compositor 无 features 定义
-          cargo build -p zero-compositor --bin zero-compositor
+          # 必须带 --target：测试二进制位于 target/<triple>/debug/deps/，compositor_client
+          # spawn_transport 按 current_exe 上溯到 target/<triple>/debug/ 查找；7533e9d90
+          # 起 compositor 断线不再回退 legacy 帧发布（无 ViewPainted 快照），缺失时
+          # form_fixture_physical_clicks 等 4 个 R3254 多进程 GUI 测试 12s 轮询全挂。
+          # compositor 无 features 定义，quickjs 矩阵同款构建。
+          cargo build --target ${{ matrix.target }} -p zero-compositor --bin zero-compositor
 
       - name: Run app tests
         if: matrix.v8_runtime != false
@@ -360,9 +363,9 @@ jobs:
         if: matrix.v8_runtime == false
         shell: bash
         run: |
-          # 不带 --target/--features：browser 测试 fallback 路径硬编码
-          # target/debug/zero-compositor；compositor 无 features 定义
-          cargo build -p zero-compositor --bin zero-compositor
+          # 同 v8 job 说明：必须带 --target（compositor_client 按 current_exe 上溯
+          # target/<triple>/debug/ 查找；7533e9d90 起缺失即无 legacy 回退，GUI 测试全挂）。
+          cargo build --target ${{ matrix.target }} -p zero-compositor --bin zero-compositor
 
       - name: Build zero-renderer (bin required by browser multiprocess tests)
         if: matrix.v8_runtime == false
