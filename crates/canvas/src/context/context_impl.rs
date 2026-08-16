@@ -1929,6 +1929,21 @@ impl CanvasContext {
             sy += sh;
             sh = -sh;
         }
+        // R56h：非有限参数 → no-op（spec dom-context-2d-drawimage——「If any of the
+        // arguments are infinite or NaN, then return」；2d.drawImage.nonfinite 的
+        // Infinity dw/dh 若直入像素循环 `0..(dw as usize)` 会 0..usize::MAX 挂死
+        // runner——f32 Infinity as usize 饱和为 usize::MAX）。
+        if !(sx.is_finite()
+            && sy.is_finite()
+            && sw.is_finite()
+            && sh.is_finite()
+            && dx.is_finite()
+            && dy.is_finite()
+            && dw.is_finite()
+            && dh.is_finite())
+        {
+            return;
+        }
         let img_w = image_data.width as usize;
         let img_h = image_data.height as usize;
         if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {
@@ -1953,14 +1968,16 @@ impl CanvasContext {
         if sx >= img_w || sy >= img_h {
             return;
         }
-        let sw = sw.min((img_w - sx) as f32) as usize;
-        let sh = sh.min((img_h - sy) as f32) as usize;
-        if sw == 0 || sh == 0 {
+        // R56h：亚像素源矩形（2d.drawImage.floatsource 的 0.1×0.1 源）——sw/sh 保
+        // 留 f32 供采样缩放，循环界用 ceil（旧 `as usize` 截断 0.1→0 → 提前返回不绘制）。
+        let sw_f = sw.min((img_w - sx) as f32);
+        let sh_f = sh.min((img_h - sy) as f32);
+        if sw_f <= 0.0 || sh_f <= 0.0 {
             return;
         }
 
-        let x_scale = sw as f32 / dw;
-        let y_scale = sh as f32 / dh;
+        let x_scale = sw_f / dw;
+        let y_scale = sh_f / dh;
         // R3238：source-over + 全透源像素为 no-op（保 drawImage 热路径性能——跳逐像素 composite_pixel）；
         // 非 source-over 透源有定义行为（source-in/destination-in/copy 须清除 dst），不跳。
         let skip_transparent_src = self.composite_operation == CompositeOperation::SourceOver;
@@ -1999,6 +2016,11 @@ impl CanvasContext {
                 }
 
                 let dst_idx = (dst_y * canvas_w + dst_x) * 4;
+                // R56h：clip 区域裁剪（与 fill/stroke blit 一致——drawImage 像素写此前
+                // 绕过 clip_applies，2d.drawImage.clip 的离屏 clip 矩形内仍画图）。
+                if !self.clip_applies(dst_x as f32, dst_y as f32) {
+                    continue;
+                }
                 // R3238：drawImage 消费 globalCompositeOperation（与 fill/fillRect/stroke 一致经 composite_pixel）。
                 // 旧实现固定 source-over 内联 alpha 混合，无视 composite_operation。
                 let src = Color {
@@ -2283,6 +2305,21 @@ impl CanvasContext {
         if sh < 0.0 {
             sy += sh;
             sh = -sh;
+        }
+        // R56h：非有限参数 → no-op（spec dom-context-2d-drawimage——「If any of the
+        // arguments are infinite or NaN, then return」；2d.drawImage.nonfinite 的
+        // Infinity dw/dh 若直入像素循环 `0..(dw as usize)` 会 0..usize::MAX 挂死
+        // runner——f32 Infinity as usize 饱和为 usize::MAX）。
+        if !(sx.is_finite()
+            && sy.is_finite()
+            && sw.is_finite()
+            && sh.is_finite()
+            && dx.is_finite()
+            && dy.is_finite()
+            && dw.is_finite()
+            && dh.is_finite())
+        {
+            return;
         }
         let img_w = image_data.width as usize;
         let img_h = image_data.height as usize;

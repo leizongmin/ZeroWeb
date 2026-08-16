@@ -3656,6 +3656,11 @@
         if (image && typeof image.naturalWidth === 'number') return;
         throw new TypeError('drawImage: invalid image source');
       }
+      // R56h：位图已转移（postMessage transfer 的 OffscreenCanvas）→ InvalidStateError
+      //（spec dom-context-2d-drawimage——2d.drawImage.detachedcanvas）。
+      if (image._detached) {
+        throw _zwDomException('drawImage: source canvas bitmap has been transferred', 'InvalidStateError');
+      }
       if (a.length < 3) {
         throw new TypeError('drawImage: missing coordinates');
       }
@@ -5557,8 +5562,17 @@
   }
   MessagePort.prototype = Object.create(EventTarget.prototype);
   MessagePort.prototype.constructor = MessagePort;
-  MessagePort.prototype.postMessage = function (message) {
+  MessagePort.prototype.postMessage = function (message, transfer) {
     if (this._closed || !this._other) return;
+    // R56h：transferable 语义——transfer 列表中的 OffscreenCanvas 位图被转移
+    //（detached），后续 drawImage 抛 InvalidStateError（2d.drawImage.detachedcanvas）。
+    if (transfer && typeof transfer.forEach === 'function') {
+      transfer.forEach(function (item) {
+        if (item && typeof item === 'object') {
+          item._detached = true;
+        }
+      });
+    }
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var other = this._other;
     if (typeof queueMicrotask === 'function') {
