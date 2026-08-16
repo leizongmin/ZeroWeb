@@ -24,7 +24,7 @@
 | 目录 | 状态 |
 |------|------|
 | testharness 面（全部目录） | ✅ 全 0 Fail（element 1253 + worker 1082——R57 batch-5 后复测零回归） |
-| oracle A/B 141 可测 | ✅ 真通过 **12（29.3%）** / 近似 4（9.8%）/ 不一致 25（batch-6 测量法 ±1px 平移对齐——布局域盒定位差泄漏修正，平移分布 41/41 全 ±1；剩余 = composite.grid 格子内布局差 + AA 边深项 + 字体度量他域） |
+| oracle A/B 141 可测 | ✅ 真通过 **17（41.5%）** / 近似 4（9.8%）/ 不一致 20（两阶段平移对齐——±2 快搜 + 头部高度差 ±40 细搜（h1/p UA 样式 38px——batch-9 grid 归因）；fontKerning 8.56→0.00%、TextCluster-baseline 12.57→0.05%；剩余 = composite.grid 内容级（旋转矩形位置差 5px）+ 字体度量他域 + miter 线几何） |
 | oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
@@ -89,7 +89,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致（batch-9 后 25 项） | 🔄 聚类：composite.grid ×12（**~21-24%**——batch-9 导入 canvas-grid-reftest.css（grid 布局从对角线错 → 正确 2 行 6 列）+ fallback 排除 display 放宽（.grid-cell-content display:block 时 fallback p 不建盒——span 撑高修复）；剩余 = **头部布局差 38px**（h1 行盒 24 vs 28、p.desc 空 margin、div 行盒、gap/outline——rendering-compat UA 样式域，像素级归因））/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.57%（退化 oracle） |
+| G10 | oracle A/B 不一致（两阶段对齐后 20 项） | 🔄 聚类：composite.grid ×12（**17.8-21.3%**——内容级：旋转矩形位置差 5px（test 内容 y=8 起 vs ref y=3）+ 合成模式差——dump 分析中）/ text 残余 ×6（TextCluster-font-change 7.0%/drawing-styles 4.1%/writingmode 4.0%——字体度量，rendering-compat 域）/ miter_limit 1.40%（线几何亚像素+背景图）/ mode.alpha 1.12% / text-outside 0.57%（退化 oracle） |
 
 ## 待用户决策清单
 
