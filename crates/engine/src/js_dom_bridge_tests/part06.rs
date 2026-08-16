@@ -761,8 +761,8 @@ fn test_document_tree_walker_r2803() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__tags)").unwrap().value,
-        "DIV,P,SPAN,I",
-        "SHOW_ELEMENT 须深度优先文档序（含 root DIV）"
+        "P,SPAN,I",
+        "SHOW_ELEMENT 须深度优先文档序（R83 spec 纠正：TreeWalker 首步越过 root——currentNode=root 已位于 root）"
     );
 
     // SHOW_TEXT：文本节点序（trim 空白保安全）。
@@ -844,7 +844,7 @@ fn test_document_tree_walker_r2803() {
     assert_eq!(
         sandbox.execute("String(globalThis.__itags)").unwrap().value,
         "DIV,P,SPAN,I",
-        "NodeIterator 须与 TreeWalker 同序"
+        "NodeIterator 迭代集合含 root（区别 TreeWalker——R83 spec 区分：iterator 指针初始在 root 前首步返 root；walker currentNode=root 已位于 root 首步越过）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__back.length > 0)").unwrap().value,

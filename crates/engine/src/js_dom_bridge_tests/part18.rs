@@ -1124,3 +1124,75 @@ fn r82_whattoshow_unsigned_and_pointer_semantics() {
         "R82：whatToShow 无符号（0xFFFFFFFF=4294967295 非 -1）+ nextNode 命中后 pointer=false / 耗尽（null）保持 true"
     );
 }
+
+// js-dom M4 R83：walker maskFor 全 nodeType 位掩码 + TreeWalker/NodeIterator fresh 起点区分
+// + previousNode 结构序逆向 + WebIDL optional undefined/null 语义 + handle 元素 before/after
+// + handle 元素 innerHTML 融合序列化（WPT ChildNode-before/after、TreeWalker-acceptNode-filter
+// "this value and node argument"、NodeIterator undefined/null 形态的 driving 单测）。
+
+#[test]
+fn r83_walker_mask_fresh_start_and_optional_semantics() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var root = document.createElement('div');\n\
+         root.id = 'root';\n\
+         var a1 = document.createElement('div'); a1.id = 'A1';\n\
+         var b1 = document.createElement('div'); b1.id = 'B1';\n\
+         root.appendChild(a1); a1.appendChild(b1);\n\
+         // TreeWalker fresh（currentNode=root）首个 nextNode 越过 root——filter 收 A1。\n\
+         var wIds = []; var wArgIds = [];\n\
+         var w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {\n\
+           acceptNode: function(node) { wArgIds.push(node.id); return NodeFilter.FILTER_ACCEPT; }\n\
+         });\n\
+         var wn; while ((wn = w.nextNode())) wIds.push(wn.id);\n\
+         // NodeIterator：迭代集合含 root（DIV 首位）。\n\
+         var it = document.createNodeIterator(root, NodeFilter.SHOW_ELEMENT, null);\n\
+         var iIds = []; var inn; while ((inn = it.nextNode())) iIds.push(inn.id || inn.tagName);\n\
+         // optional undefined/null 语义。\n\
+         var wU = document.createTreeWalker(root, undefined, undefined);\n\
+         var wN = document.createTreeWalker(root, null, null);\n\
+         globalThis.__r83a = [wIds.join('>'), wArgIds[0], iIds.join('>'), wU.whatToShow, wN.whatToShow].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r83a").unwrap().value,
+        "A1>B1|A1|root>A1>B1|4294967295|0",
+        "R83：TreeWalker fresh 首步越过 root（filter 收 A1）；NodeIterator 含 root；undefined→SHOW_ALL、null→0"
+    );
+}
+
+#[test]
+fn r83_handle_element_before_after_and_innerhtml() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var parent = document.createElement('div');\n\
+         var child = document.createElement('x');\n\
+         parent.appendChild(child);\n\
+         child.before();\n\
+         globalThis.__r83b1 = parent.innerHTML;\n\
+         var p2 = document.createElement('div');\n\
+         var c2 = document.createElement('x');\n\
+         p2.appendChild(c2);\n\
+         c2.before('text');\n\
+         globalThis.__r83b2 = p2.innerHTML;\n\
+         var p3 = document.createElement('div');\n\
+         var c3 = document.createElement('x');\n\
+         p3.appendChild(c3);\n\
+         c3.after('A', 'B');\n\
+         globalThis.__r83b3 = p3.innerHTML;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r83b1").unwrap().value,
+        "<x></x>",
+        "R83：before() 无参 no-op + handle 父 innerHTML 反映子"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r83b2").unwrap().value,
+        "text<x></x>",
+        "R83：before('text') 插前兄弟文本"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r83b3").unwrap().value,
+        "<x></x>AB",
+        "R83：after('A','B') 插后兄弟文本（保参数序）"
+    );
+}

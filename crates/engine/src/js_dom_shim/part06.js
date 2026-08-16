@@ -211,8 +211,12 @@
     var filterObj = (filter === null || filter === undefined) ? null : filter;
     function maskFor(node) {
       var nt = node && node.nodeType;
-      // proxy 树仅含 element(1)/text(3)/comment(8)；其他 nodeType 不展示。
-      return nt === 1 ? 0x1 : nt === 3 ? 0x4 : nt === 8 ? 0x80 : 0;
+      // R83：全 nodeType 位掩码（spec dom-nodefilter SHOW_* 表——nodeType N 对应位
+      // 1 << (N-1)）。旧仅 element/text/comment 三类 → doctype(10)/fragment(11)/PI(7)/
+      // document(9)/CDATA(4) 全被掩掉（WPT NodeIterator "expected DocumentType/Document
+      // Fragment but got null" 族）。document(9) 是 walker root 时 accepted 必含（spec
+      // iteration 含 root——SHOW_ALL 下 root 全型可见）。
+      return nt >= 1 && nt <= 13 ? (1 << (nt - 1)) >>> 0 : 0;
     }
     function callFilter(node) {
       if (typeof filterObj === 'function') return filterObj(node) | 0;
@@ -354,10 +358,12 @@
     }
     walker.nextNode = function () {
       orderInit();
-      // fresh（orderPos<0）：root 自身是首个候选（spec iteration order 含 root——WPT
-      // NodeIterator-removal-during-filtering "first nextNode() returns root"、R2803 单测 DIV
-      // 首位）。已定位（orderPos>=0，经层级方法/currentNode setter 移动过）则从其后继继续。
-      var i = orderPos < 0 ? 0 : orderPos + 1;
+      // R83：fresh 起点按 walker 类型区分——NodeIterator 的迭代集合**含 root**（指针初始
+      // 在 root 前 → 首个 nextNode 返 root；WPT NodeIterator-removal-during-filtering /
+      // R2803 单测 DIV 首位）；TreeWalker 的 currentNode=root 表示**已位于 root**（visited）
+      // → nextNode 越过 root 从其后继开始（WPT TreeWalker-acceptNode-filter "this value
+      // and node argument" 期望首个 nextNode 的 filter 收 A1 非 root）。
+      var i = orderPos < 0 ? (isTreeWalker ? 1 : 0) : orderPos + 1;
       while (i < order.length) {
         var node = order[i];
         var r = check(node);
@@ -369,19 +375,25 @@
       return null;
     };
     walker.previousNode = function () {
-      materialize();
-      // R51：from 以 **currentNode 实际位置**为准（lazy nextNode 步进时 accepted 可能未物化，
-      // idx=-1 误导 from——WPT/R2803：nextNode 到尾后 previousNode 须从倒数第二续起）。
-      var from = accepted.indexOf(currentNodeVal);
-      if (from < 0 && accepted.length > 0 && accepted[0] === root) from = 0;
-      var target = -1;
-      if (from < 0) { target = accepted.length - 1; } // currentNode 不在 accepted（root 外/被滤）→ 从尾
-      else if (from > 0) target = from - 1;
-      if (target < 0) return null;
-      idx = target;
-      currentNodeVal = accepted[target];
+      orderInit();
+      // R83：previousNode 改**结构序 lazy 逆向步进**（与 nextNode 对称）——从 currentNode
+      // 的结构序位置向前找上一个可接受节点。旧 materialize+accepted-index 模型对
+      // currentNode 不在 accepted（root 被滤/TreeWalker fresh）回落「从尾」错误（WPT
+      // nodeiterator-previous-node：pointer 在首节点前 previousNode 期望 null）。
       syncOrderPosTo(currentNodeVal);
-      return accepted[target];
+      var i = orderPos;
+      // TreeWalker fresh（currentNode=root，已位于 root）→ 从 root 前一位起；NodeIterator
+      //（root 在集合、指针在 root 前）→ previousNode 无前驱 → null。统一：从 currentNode
+      // 结构序**前一位**起（exclusive）。
+      if (i < 0) return null; // currentNode 不在树内（理论上不发生——root 至少含自身）
+      i -= 1;
+      while (i >= 0) {
+        var node = order[i];
+        var r = check(node);
+        if (r === 1) { orderPos = i; idx = accepted.indexOf(node); currentNodeVal = node; return node; }
+        i--; // REJECT/SKIP 逆向无需剪枝（子树整体已在区间内，逐节点 check 语义同 spec）
+      }
+      return null;
     };
     if (isTreeWalker) {
       // DOM §4.2.6 TreeWalker 层级方法（R3257）。基于 accepted[]（pre-order）+ parentAcceptedIdx：
@@ -1427,14 +1439,14 @@
     // dom-document-createtreewalker 与 R41 断言「显式 null → 0」）。经 arguments.length
     // 区分省略与显式传值。
     createTreeWalker: function (root, whatToShow, filter) {
-      var wtsArg = arguments.length >= 2 ? whatToShow : undefined;
-      // undefined 经 ToUint32 语义（WebIDL optional 未传 = 缺省 SHOW_ALL）。
-      if (arguments.length < 2) return _makeNodeWalker(root, 0xFFFFFFFF, filter, true);
-      return _makeNodeWalker(root, (wtsArg == null ? 0 : wtsArg), filter, true);
+      // R83：WebIDL §optional-arg——**省略或 undefined** 都取缺省 SHOW_ALL（0xFFFFFFFF）；
+      // 仅显式 null 走 ToUint32(null)=0（WPT "with undefined as arguments" 期望 4294967295、"with null" 期望 0）。
+      if (whatToShow === undefined) return _makeNodeWalker(root, 0xFFFFFFFF, filter, true);
+      return _makeNodeWalker(root, (whatToShow === null ? 0 : whatToShow), filter, true);
     },
     createNodeIterator: function (root, whatToShow, filter) {
-      if (arguments.length < 2) return _makeNodeWalker(root, 0xFFFFFFFF, filter, false);
-      return _makeNodeWalker(root, (whatToShow == null ? 0 : whatToShow), filter, false);
+      if (whatToShow === undefined) return _makeNodeWalker(root, 0xFFFFFFFF, filter, false);
+      return _makeNodeWalker(root, (whatToShow === null ? 0 : whatToShow), filter, false);
     },
     // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
     createRange: function () {

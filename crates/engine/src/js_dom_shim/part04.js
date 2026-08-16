@@ -373,7 +373,38 @@
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
         if (prop === 'innerHTML') {
-          return handle ? __zw_get_inner_html_handle(handle) : __zw_get_inner_html(sel);
+          // js-dom M4 R83：handle 元素（createElement 容器）——host 回调只反映
+          // SetInnerHtmlOnHandle，appendChild 建的子树不可见（WPT ChildNode-before/after：
+          // `parent.innerHTML` 期望含子）。改 JS 侧融合 childNodes 视图序列化（同 R81
+          // textContent 模式）；无子回落 host 值（textContent= 写入）。
+          if (handle) {
+            var _ihKids = (function () {
+              if (_isContainerHandle(handle)) return _handleChildNodes(handle);
+              var _ihL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+              var _ihK = (_handleChildren[handle] || []).slice();
+              if (_ihL && _ihL.length) return _ihL.concat(_ihK);
+              if (_ihK.length) return _ihK;
+              if (_ihL) return _ihL;
+              return [];
+            })();
+            if (_ihKids.length) {
+              var _ihOut = '';
+              for (var _ihi = 0; _ihi < _ihKids.length; _ihi++) {
+                var _ihn = _ihKids[_ihi];
+                if (!_ihn) continue;
+                if (_ihn.nodeType === 3) _ihOut += _zwMEscapeText(_ihn.nodeValue != null ? _ihn.nodeValue : (_ihn.data != null ? _ihn.data : ''));
+                else if (_ihn.nodeType === 8) _ihOut += '<!--' + (_ihn.nodeValue != null ? _ihn.nodeValue : _ihn.data) + '-->';
+                else if (_ihn.nodeType === 1 && _ihn.__zwHandle) {
+                  _ihOut += _makeProxy(null, _ihn.__zwHandle).outerHTML || '';
+                } else if (_ihn.nodeType === 1 && typeof _ihn.outerHTML === 'string') {
+                  _ihOut += _ihn.outerHTML;
+                }
+              }
+              if (_ihOut !== '') return _ihOut;
+            }
+            return __zw_get_inner_html_handle(handle);
+          }
+          return __zw_get_inner_html(sel);
         }
         // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
         // `__zw_get_outer_html` 真实序列化（含 void 元素 + 属性转义）。R3201：handle-only（createElement 未挂载）
@@ -1884,16 +1915,50 @@
           };
         }
         // `element.before(...nodesOrStrings)`：插为元素**前兄弟**（保持参数序）。beforebegin 正序。
-        if (prop === 'before') {
+        if (prop === 'before' || prop === 'after') {
           return function() {
-            _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
-            return undefined;
-          };
-        }
-        // `element.after(...nodesOrStrings)`：插为元素**后兄弟**（保持参数序）。afterend 反序。
-        if (prop === 'after') {
-          return function() {
-            _insertAdjacentVariadic(sel, 'afterend', arguments, true);
+            // R83：handle 元素（createElement 容器内的子）——_insertAdjacentVariadic 仅支持
+            // sel-based（host 无 by-handle 兄弟插入 mutation）；JS 侧经父 _handleChildren
+            // 定位自身插入（WPT ChildNode-before/after：parent=createElement('div')）。
+            // 字符串/null/undefined 参数经 __zw_create_text 建文本节点（spec：null→'null'）。
+            var _baParent = (handle && _zwNodeParent && _zwNodeParent[handle]) ? _zwNodeParent[handle] : null;
+            if (!sel && handle && _baParent && _baParent.parentHandle) {
+              var _baKids = _handleChildren[_baParent.parentHandle];
+              if (_baKids) {
+                var _baIdx = -1;
+                for (var _bi = 0; _bi < _baKids.length; _bi++) {
+                  if (_baKids[_bi] && _baKids[_bi].__zwHandle === handle) { _baIdx = _bi; break; }
+                }
+                if (_baIdx >= 0) {
+                  var _baNew = [];
+                  for (var _ai = 0; _ai < arguments.length; _ai++) {
+                    var _av = arguments[_ai];
+                    if (typeof _av === 'object' && _av && _av.__zwHandle) {
+                      _baNew.push(_av);
+                    } else {
+                      var _atn = (typeof __zw_create_text === 'function') ? __zw_create_text(String(_av)) : '';
+                      if (_atn) {
+                        _textHandles[_atn] = true;
+                        _baNew.push(_wrapHandle(_atn));
+                      }
+                    }
+                  }
+                  var _pos = prop === 'before' ? _baIdx : _baIdx + 1;
+                  var _ins = _baNew.slice();
+                  Array.prototype.splice.apply(_baKids, [_pos, 0].concat(_ins));
+                  // 反链 + childList record（父 registry 变化）。
+                  for (var _ri2 = 0; _ri2 < _ins.length; _ri2++) {
+                    var _rn2 = _ins[_ri2];
+                    if (_rn2 && _rn2.__zwHandle && _zwNodeParent) {
+                      _zwNodeParent[_rn2.__zwHandle] = { parentHandle: _baParent.parentHandle, nextSibling: null };
+                    }
+                  }
+                  _mo_notify(null, _baParent.parentHandle, { type: 'childList', addedNodes: _ins, removedNodes: [] });
+                  return undefined;
+                }
+              }
+            }
+            _insertAdjacentVariadic(sel, prop === 'before' ? 'beforebegin' : 'afterend', arguments, prop === 'after');
             return undefined;
           };
         }
