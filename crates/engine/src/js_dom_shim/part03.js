@@ -797,18 +797,33 @@
       // 有 required + 组内无 checked → **全部组员** missing——radio4（无 required）
       // 也 missing——spec §4.10.5.2.4；name 空不成组（不 missing）。
       var nm = null;
-      try { nm = handle ? __zw_get_attr_handle(handle, 'name') : __zw_get_attr(sel, 'name'); } catch (_e) {}
+      try {
+        nm = handle
+          ? __zw_get_attr_handle(handle, 'name')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'name') : __zw_get_attr(sel, 'name'));
+      } catch (_e) {}
       if (nm == null || String(nm) === '') {
         valueMissing = false;
       } else {
         var groupRequired = false, checkedAny = false;
+        // 当前 radio 自身 required/勾选（latest-wins——set_conditions 的
+        // .required=/.checked= 同批 mutation 未应用时 host 组查询 stale——
+        // 自身兜底）。
+        var selfRequired = false;
+        try {
+          var sr = handle ? __zw_has_attr_handle(handle, 'required') : __zw_has_attr_lw(sel, 'required');
+          if (sr === '1') selfRequired = true;
+        } catch (_e) {}
+        var curChecked = false;
+        try {
+          var cc = handle ? __zw_has_attr_handle(handle, 'checked') : __zw_has_attr_lw(sel, 'checked');
+          if (cc === '1') curChecked = true;
+        } catch (_e) {}
         try {
           var q = 'input[type="radio"][name="' + String(nm).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
           var allR = globalThis.document.querySelectorAll(q);
           for (var ri = 0; ri < allR.length; ri++) {
             var rp = allR.item ? allR.item(ri) : allR[ri];
-            // R57（FV M1）：排除已 remove 的（mutation 未应用——host 查询仍含
-            // ——radio-group 的 "checked member is removed"）。
             try {
               if (rp.__zwSelector && typeof _zwIsRemoved === 'function' && _zwIsRemoved(rp.__zwSelector)) continue;
             } catch (_e) {}
@@ -816,7 +831,7 @@
             try { if (rp.checked) checkedAny = true; } catch (_e) {}
           }
         } catch (_e) {}
-        valueMissing = groupRequired && !checkedAny;
+        valueMissing = (groupRequired || selfRequired) && !curChecked && !checkedAny;
       }
     } else if (reqAttr === '1' && (_dis !== '1' || ty === 'checkbox' || ty === 'radio')) {
       if (ty === 'checkbox') {
