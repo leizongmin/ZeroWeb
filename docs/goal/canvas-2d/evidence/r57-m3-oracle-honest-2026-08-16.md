@@ -114,3 +114,57 @@ IFC 行内定位偏移使区域对比失准。
   「canvas 绘制结果」——区域对比让测量与目标对齐
 - **±1 舍入差是跨引擎系统性差异**：Skia 预乘 u8 整数管线 vs float 管线，WPT
   用 fuzzy 注解容忍——oracle A/B 的 channel 容差应与其一致（DC-14 定义 ≤2）
+
+## R57 batch-2 追加（2026-08-16 晚）
+
+### grid 22px 偏移根因（R1286 strut 只给真 br）
+
+- 现象：canvas-grid 结构（span > div + canvas）的 canvas 盒在 R109 匿名片段内
+  y 偏移 22px（extract1 时 taffy y=0 正确，adjust_inline_block_positions 后 y=20）
+- 根因链：① block 子（label div）在 IFC 中产生代理断行 → ② 断行前被折叠的空白
+  文本行获 R1286 strut 高度（20px）→ ③ canvas 被推到第 2 行
+- 修复：`InlineItem::BlockBreak` 变体（in-flow block 子代理断行，无 strut）；
+  **float 保留 Br**（r1733 float-avoidance 依赖旧 strut 语义定位可用宽——单测守护）；
+  纯空白文本 run 行盒 0 高（CSS §10.8.1）
+- 效果：composite.grid 45%→24-38%、gradient 从空白到正确渲染（22px 归零）
+
+### drawImage CTM 逆映射
+
+- 现象：composite.grid 的 rotate(90°)+scale(0.6,1.2) 变换后绿矩形覆盖差 2.6 倍
+  （436 vs 164 像素）
+- 根因：draw_image_sized 沿**未变换**的 px/py 网格采样源——旋转/缩放下源采样
+  方向错误（源坐标 = 网格索引而非逆映射位置）
+- 修复：遍历变换后矩形包围盒 + 逆变换映射回目标矩形空间 → 源坐标
+  （轴对齐下逐点等价零回归）；修复后覆盖 411（ref 436，残差为 AA 边）
+
+### modern 颜色函数 stop → OKLab 默认插值
+
+- oracle 实证：2d.gradient.colorInterpolationMethod 各格（srgb/hsl/hwb）中点均为
+  (208,170,1) = OKLab 红→绿中点 (208,168,0)——Chromium 150 忽略 tentative 的
+  colorInterpolationMethod 属性（srgb/hsl/hwb 接受但无效、srgb-linear 等抛
+  TypeError 中止脚本）
+- R56h 只覆盖 Mix/RelativeColor stop；补 color()/lab()/lch()/oklab()/oklch()/hwb()
+- 该用例（colorInterpolationMethod + hueInterpolationMethod ×2）加入 oracle 环境
+  不支持排除（Chromium 150 无法作 tentative API 的参考）
+
+### canvas 文本真字体光栅（reftest 路径）
+
+- 现象：TextCluster/fontKerning 等 canvas 文本用例 blank（9-10% 差异为「空白 vs
+  文本」而非字形差）
+- 根因：CanvasRegistry 默认 FontLoader::new() 为空——reftest 路径的 getContext2d
+  `set_font_loader(reg 的空 loader)` → resolve_font_id None → draw_text_glyphs 只入
+  primitives 不写像素 → canvas 快照（snapshot_rgba = pixel buffer）无文本
+- 修复：reftest 注入 base 字体集（create_font_loader——系统 + CJK + Ahem + 泛型键）
+- 效果：canvas 文本真正渲染（R56h 意图达成）；剩余差异为字体度量对齐
+  （rendering-compat 域：serif/emoji 字形像素差）
+- 注：2 个「真通过」用例系文本缺失的假通过，注入后被纠正（数字下降是诚实化）
+
+### 剩余 27 项聚类
+
+| 聚类 | 项数 | 值 | 类 |
+|------|------|-----|-----|
+| composite.grid | 12 | 24-38% | AA 边 + 合成边界舍入 |
+| TextCluster/fontKerning/fontVariantCaps | 7 | 3.3-12.8% | 字体度量（rendering-compat 域） |
+| reset miter_limit/after-rasterization | 2 | 1.4-2% | stroke/AA 边 |
+| drop-shadow-globalAlpha | 1 | 4.8% | AA 边 |
+| text-outside-of-the-flat-tree | 1 | 0.58% | 退化 oracle |

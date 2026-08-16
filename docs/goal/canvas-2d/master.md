@@ -1,8 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R57 第八批定稿：**oracle A/B 诚实化**——canvas 区域对比
-+ DC-14 channel 容差 + 环境不支持排除；真通过 2（假测量）→ **9（20.9%）**，不一致
-117→27；证据见 evidence/r57-m3-oracle-honest-2026-08-16.md）。
+**最后更新**: 2026-08-16（R57 第九批定稿：**grid 22px 偏移根因 + drawImage CTM 逆映射
++ canvas 文本字体注入**——22px 偏移全灭（R1286 strut 只给真 br），composite.grid
+45%→24-38%、gradient 从空白到渲染；oracle A/B 真通过 7（17.1%，2 个文本缺失假通过
+被纠正）、不一致 27（剩余 = AA 边 + 字体度量两类）；证据见
+evidence/r57-m3-oracle-honest-2026-08-16.md）。
 
 ---
 
@@ -21,8 +23,8 @@
 | 目录 | 状态 |
 |------|------|
 | testharness 面（全部目录） | ✅ 全 0 Fail（path-objects 202/0、drawing-images 37/37 等） |
-| oracle A/B 147 可测 | ✅ 真通过 **9（20.9%）** / 近似 7（16.3%）/ 不一致 27 |
-| oracle 环境不支持排除 | 221 用例（Chromium 150 无 CanvasFilter/beginLayer——tentative API 未实现，捕获帧无效，同 NotRun 语义） |
+| oracle A/B 141 可测 | ✅ 真通过 **7（17.1%）** / 近似 7（17.1%）/ 不一致 27 |
+| oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
 
@@ -37,7 +39,22 @@
   漏分发的同模式 2 处——shim 已发 + Rust API 已有 ≠ 链路通）；dropShadow 字符串
   filter 形式接线（`ctx.filter='drop-shadow(...)'`）+ filter 列表顶层逗号分割；
   **createElement('canvas') DOM 集成**（standalone canvas 同步 host handle +
-  data-zw-canvas-ctx + 属性同步——append 可进布局）
+  data-zw-canvas-ctx + 属性同步——append 可进布局）；
+  **modern 颜色函数 stop → OKLab 默认插值**（R56h 只覆盖 Mix/RelativeColor——
+  color()/lab()/lch()/oklab()/oklch()/hwb() 补全，oracle 实证 Chromium 全用 OKLab）；
+  **drawImage CTM 逆映射**（旋转/缩放变换下源采样方向错误——遍历变换后包围盒 +
+  逆变换映射源坐标）
+
+### 布局/IFC 层（R57 batch-2）
+
+- ✅ **grid 22px 偏移根因**：R1286 空行 strut 只给真 `<br>`——block 子代理断行
+  （InlineItem::BlockBreak 变体）不赋 strut（canvas-grid ~15 用例的空白行曾撑出
+  20px）；float 保留 Br（r1733 float-avoidance 依赖旧语义）；纯空白文本 run 行盒
+  0 高
+- ✅ **canvas 文本真字体光栅（reftest 路径）**：registry 默认空字体 loader 使
+  fillText font_id=None → 文本只入 primitives 不写像素；注入 base 字体集
+  （系统+CJK+Ahem+泛型键）——TextCluster/fontKerning 等 canvas 文本真正渲染
+  （剩余差异为字体度量对齐，rendering-compat 域）
 
 ## R34xx/R57 修复记录（WPT 驱动，全部带 driving 用例）
 
@@ -67,7 +84,7 @@
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致 27 项 | 🔄 聚类：grid 结构 ~15 项（22px IFC 偏移，深项）/ fontKerning 8.5%（字体度量，rendering-compat 域）/ drop-shadow AA 4.8%（无抗锯齿）/ text-outside 0.55%（退化 oracle） |
+| G10 | oracle A/B 不一致 27 项 | 🔄 聚类：composite.grid ×12（24-38%——AA 边 + 合成边界舍入）/ 文本 ×7（TextCluster 6.5-12.8% + fontKerning/fontVariantCaps——字体度量，rendering-compat 域）/ reset 边 ×2（1.4-2%——stroke/AA）/ drop-shadow 4.8%（AA 边）/ text-outside 0.58%（退化 oracle） |
 
 ## 待用户决策清单
 
@@ -77,19 +94,21 @@
 - [x] OffscreenCanvas × Web Worker 集成（G6）— ✅ 完成
 - [x] index-from-offset 边界约定 — ✅ 完成
 - [x] R56h 遗留 bridge 接线缺口（setFilterDropShadow/setGradientInterpolation）— ✅ R57 补齐
-- [ ] **grid 结构用例 22px IFC 偏移**（gradient/composite.grid/TextCluster ~15 项）——
-  canvas 盒在 R109 匿名片段内 y 偏移 22px（IFC 行内定位深层问题；探针证实 IFC
-  run.y=0 正确但最终盒 y=20）——深结构项，待用户点名
-- [ ] 抗锯齿光栅（AA 边差 280px 级——drop-shadow 4.8%/reset 0.17% 的近似残差）
-- [ ] serif 字体度量对齐（fontKerning.none2 8.5%——rendering-compat 域）
+- [x] grid 结构用例 22px IFC 偏移（~15 项）— ✅ R57 batch-2 全灭（R1286 strut 只给真 br）
+- [ ] **抗锯齿光栅**（AA 边差 180-280px 级——composite.grid 24-38%/drop-shadow 4.8%/
+  reset 边 1.4-2%——无 AA 光栅 vs Chromium AA，深项）
+- [ ] **字体度量对齐**（TextCluster 6.5-12.8%/fontKerning 10.1%——serif/emoji 字形
+  像素差，rendering-compat 域）
 
 ## 下一步计划
 
-1. **grid 结构 22px 偏移**（G10 最大聚类）：IFC sync/valign 链深挖——canvas 盒在
-   R109 匿名片段内最终 y=20（IFC run.y=0 正确）——待决策后开工
-2. oracle A/B 持续回归门：每轮 canvas 改动跑 `REFTEST_INCLUDE_CANVAS=1 make
+1. **AA 光栅**（G10 最大聚类——composite.grid 12 项 + drop-shadow + reset 边）：
+   边缘抗锯齿（矩形/路径边界的 1-2px 混合）——深项，待决策后开工
+2. **字体度量对齐**（TextCluster/fontKerning——serif/emoji 字形像素差，
+   rendering-compat 域）：canvas 文本与 CSS 文本共用字体栈后对齐
+3. oracle A/B 持续回归门：每轮 canvas 改动跑 `REFTEST_INCLUDE_CANVAS=1 make
    reftest-oracle canvas`（测量法已诚实，数值可追踪）
-3. 浏览器 app form/input 快照测试（7）——本环境既有失败，浏览器流（非 canvas 面）处理
+4. 浏览器 app form/input 快照测试（4）——本环境既有失败，浏览器流（非 canvas 面）处理
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/ crates/engine/src/js_dom_bridge/canvas.rs` 核对 html-compat 流活跃面。
 
