@@ -124,7 +124,7 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 | # | 缺口 | 状态 |
 |---|------|------|
 | G1 | WPT html/canvas 真实用例覆盖为零 | ✅ M1 完成（919 文件导入，657+ Pass） |
-| G2 | 像素级 canvas 验证 | 🔄 GPU 路径测试就位；Chromium oracle 待环境 |
+| G2 | 像素级 canvas 验证 | 🔄 GPU 路径测试就位（lavapipe 5 测试）；Chromium oracle 已可用——A/B 复测基线 2/117（1.7%），深项聚类记录（见 M3） |
 | G3 | OffscreenCanvas Rust 桩 | ✅ 真实化 |
 | G4 | createImageBitmap options | ✅ flipY + premultiplyAlpha 接受 |
 | G5 | ImageBitmap 源类型 | ✅ DOM img/canvas/ImageBitmap/ImageData 源全通 |
@@ -160,7 +160,7 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 |--------|------|
 | M1 — WPT canvas 基线建立 | ✅ 完成（919 文件导入，testharness 面 832/832 全绿） |
 | M2 — API 语义补齐 | ✅ 完成（Path2D/OffscreenCanvas 主线程+worker/ImageBitmap/drawing.style/text 全系；G7 全灭） |
-| M3 — 像素正确性冲刺 | 🔄 GPU 路径测试就位（lavapipe 4 测试）；Chromium oracle 待环境 |
+| M3 — 像素正确性冲刺 | 🔄 oracle A/B 复测：2/117（1.7%）真通过；worst-diff 聚类 = filters dropShadow 27%/layers opaque-canvas filter 15%/gradient colorInterpolation 10.8%/layers global-states filter 6.7%——深项待决策（R56h 后 API 表面已全绿，剩余为像素面） |
 
 ## 验证基线
 
