@@ -89,6 +89,24 @@
     globalThis.Node.prototype = {};
     globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
     globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+    // js-dom M4 R80：Node 接口常量（spec dom-node —— 实例经原型链读 `element.ELEMENT_NODE` 等；
+    // WPT Document-createElementNS 断言 `element.nodeType === element.ELEMENT_NODE`，缺失 →
+    // undefined ≠ 1）。构造器上的静态常量（Node.ELEMENT_NODE）同步定义。
+    var _zwNodeConsts = {
+      ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4,
+      ENTITY_REFERENCE_NODE: 5, ENTITY_NODE: 6, PROCESSING_INSTRUCTION_NODE: 7,
+      COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10, DOCUMENT_FRAGMENT_NODE: 11,
+      NOTATION_NODE: 12,
+      DOCUMENT_POSITION_DISCONNECTED: 1, DOCUMENT_POSITION_PRECEDING: 2,
+      DOCUMENT_POSITION_FOLLOWING: 4, DOCUMENT_POSITION_CONTAINS: 8,
+      DOCUMENT_POSITION_CONTAINED_BY: 16, DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
+    };
+    for (var _zwnc in _zwNodeConsts) {
+      if (Object.prototype.hasOwnProperty.call(_zwNodeConsts, _zwnc)) {
+        Object.defineProperty(globalThis.Node.prototype, _zwnc, { value: _zwNodeConsts[_zwnc], enumerable: false });
+        Object.defineProperty(globalThis.Node, _zwnc, { value: _zwNodeConsts[_zwnc], enumerable: false });
+      }
+    }
   }
   // R3019：DOM 接口构造器占位——库（DOMPurify 等）常做 `x instanceof HTMLFormElement` /
   // `el.attributes instanceof NamedNodeMap` / `node.content instanceof DocumentFragment` 校验。

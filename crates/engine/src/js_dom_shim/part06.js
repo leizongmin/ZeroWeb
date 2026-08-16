@@ -1148,10 +1148,52 @@
     createElementNS: function(ns, qualifiedName) {
       var _nsStr = (ns == null) ? '' : String(ns);
       var _q = String(qualifiedName);
+      // js-dom M4 R80：spec validate-and-extract（dom-document-createelementns 步骤 2-3）——
+      // ① qualifiedName 须匹配 QName 语法：空前缀段（':foo'）/空 localName 段（'foo:'）/
+      //    非 Name 字符（'^^'/'fo o'/'-foo'/'.foo'）→ InvalidCharacterError
+      // ② 命名空间绑定规则：ns 空/null 时带 prefix（'f:oo'）、prefix 或 localName 含第二个
+      //    冒号（'f:o:o'）、prefix 'xml' 且 ns ≠ XML ns、prefix 'xmlns'、localName 'xmlns' 且
+      //    ns ≠ XMLNS ns → NamespaceError（WPT Document-createElementNS 110F throw 簇）
+      // https://dom.spec.whatwg.org/#validate-and-extract
+      var _XML_NS = 'http://www.w3.org/XML/1998/namespace';
+      var _XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+      var _colon1 = _q.indexOf(':');
+      var _pre = _colon1 >= 0 ? _q.slice(0, _colon1) : null;
+      var _loc = _colon1 >= 0 ? _q.slice(_colon1 + 1) : _q;
+      var _throwDom = function (name, msg) {
+        throw new (globalThis.DOMException || Error)(msg, name);
+      };
+      if (!_zwIsValidQualifiedName(_q) || (_colon1 === 0) || (_colon1 === _q.length - 1)) {
+        _throwDom('InvalidCharacterError', 'The string contains invalid characters.');
+      }
+      if (_pre !== null) {
+        // prefix 存在：ns 须非空；prefix/localName 内不得再含冒号；xml/xmlns 保留绑定。
+        if (_nsStr === '') {
+          _throwDom('NamespaceError', 'Namespace prefix provided but no namespace.');
+        }
+        if (_pre.indexOf(':') >= 0 || _loc.indexOf(':') >= 0) {
+          _throwDom('NamespaceError', 'Malformed qualified name.');
+        }
+        if (_pre === 'xml' && _nsStr !== _XML_NS) {
+          _throwDom('NamespaceError', "Prefix 'xml' must be bound to the XML namespace.");
+        }
+        if (_pre === 'xmlns') {
+          _throwDom('NamespaceError', "Prefix 'xmlns' is not allowed for elements.");
+        }
+      } else if (_loc === 'xmlns' && _nsStr !== _XMLNS_NS) {
+        _throwDom('NamespaceError', "Local name 'xmlns' requires the XMLNS namespace.");
+      }
       var handle = (typeof __zw_create_element_ns === 'function')
         ? __zw_create_element_ns(_nsStr, _q)
         : __zw_create_element(_q);
-      if (handle) _nsHandles[handle] = { qualifiedName: _q, namespace: (_nsStr || null) };
+      // js-dom M4 R80：HTML 文档 + HTML 命名空间 → tagName/nodeName 为 qualifiedName 的 ASCII 大写
+      //（spec dom-document-createelementns 步骤「If document is an HTML document and namespace is
+      // the HTML namespace, set qualifiedName to qualifiedName in ASCII uppercase」——大小写转换只
+      // 作用于 qualified name（tagName），prefix/localName 仍从原值解析：`createElementNS(HTMLNS,
+      // 'html:span')` → prefix 'html' / localName 'span' / tagName 'HTML:SPAN'）。非 HTML 命名空间
+      // 或 detached doc（XML 语义）不转换。
+      var _htmlUpper = _nsStr === 'http://www.w3.org/1999/xhtml';
+      if (handle) _nsHandles[handle] = { qualifiedName: _q, namespace: (_nsStr || null), htmlUpper: _htmlUpper };
       return _wrapHandle(handle);
     },
     // R3023：`document.createAttribute(name)`——建 Attr 节点（nodeType 2，value=''）。供 setAttributeNode /

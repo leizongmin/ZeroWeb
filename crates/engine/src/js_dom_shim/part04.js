@@ -613,7 +613,13 @@
         // tagName/nodeName/prefix/localName 经 `_nsHandles` 原值读回，不经 `_realTag`（强制大写）。
         var isNs = handle && _nsHandles[handle];
         if (prop === 'tagName') {
-          if (isNs) return _nsQualified(_nsHandles[handle].qualifiedName);
+          // js-dom M4 R80：HTML 文档 + HTML 命名空间的 createElementNS 元素 tagName 为 ASCII 大写
+          // qualifiedName（spec dom-document-createelementns；`createElementNS(HTMLNS,'span')` →
+          // 'SPAN'）；否则原值大小写敏感（XML 语义）。
+          if (isNs) {
+            var _nsh = _nsHandles[handle];
+            return _nsh.htmlUpper ? _nsh.qualifiedName.toUpperCase() : _nsh.qualifiedName;
+          }
           return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
         }
         // `element.localName`（spec `dom-element-localname`，R11）：HTML 元素 = tagName 小写；
@@ -645,7 +651,11 @@
           if (isComment) return '#comment';
           if (isText) return '#text';
           if (isPI) return _piHandles[handle].target;
-          if (isNs) return _nsQualified(_nsHandles[handle].qualifiedName); // createElementNS 大小写敏感
+          // R80：HTML 命名空间 createElementNS 的 nodeName 与 tagName 同（ASCII 大写 qualifiedName）。
+          if (isNs) {
+            var _nsn = _nsHandles[handle];
+            return _nsn.htmlUpper ? _nsn.qualifiedName.toUpperCase() : _nsn.qualifiedName;
+          }
           return _realTag(sel, handle);
         }
         if (prop === 'nodeType') {
@@ -672,6 +682,12 @@
         // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
           return handle ? __zw_get_text_handle(handle) : '';
+        }
+        // js-dom M4 R80：Element 节点的 nodeValue = null（spec dom-node-nodevalue——Attr/Document/
+        // DocumentFragment/Element 恒 null；旧缺此分支返 undefined，WPT Document-createElementNS
+        // `assert_equals(element.nodeValue, null)` 85F 簇）。textContent setter 另有分支（下方）。
+        if (prop === 'nodeValue' && !isFrag && !isShadow) {
+          return null;
         }
         // ProcessingInstruction 节点（js-dom M4）：`.target` = PI target，`.data`/`.nodeValue` = PI data
         //（spec `dom-processinginstruction`：data 即 CharacterData.data；nodeName = target 见上）。读自 _piHandles。
@@ -2035,9 +2051,22 @@
           return _rbHit === '1';
         }
         // R3042：expando 属性读（非原始值 setter 存于 per-element _expando map）。命中 → 返存储值（function/object
-        // 等，real browser expando 语义）。仅 hasOwnProperty 命中才返（避免原型链污染）；未命中 fall through undefined。
+        // 等，real browser expando 语义）。仅 hasOwnProperty 命中才返（避免原型链污染）；未命中 fall through。
         var _exStore = _expando[key];
         if (_exStore && Object.prototype.hasOwnProperty.call(_exStore, prop)) return _exStore[prop];
+        // js-dom M4 R80：未知属性回落**原型链**（getPrototypeOf trap 决定的链——target {} 的真实原型
+        // 是 Object.prototype，Reflect.get 不可见 HTML*Element 链，故手动沿链查找）——旧恒返 undefined
+        // 使 Node 接口常量（element.ELEMENT_NODE 等）不可见（WPT Document-createElementNS
+        // `assert_equals(element.nodeType, element.ELEMENT_NODE)` 596F 簇根因之一）。
+        if (typeof prop === 'string' && prop.length > 0 && /^[A-Z][A-Z_]+$/.test(prop)) {
+          var _pchain = Object.getPrototypeOf(_makeProxy(sel, handle));
+          var _pguard = 0;
+          while (_pchain && _pguard < 8) {
+            if (Object.prototype.hasOwnProperty.call(_pchain, prop)) return _pchain[prop];
+            _pchain = Object.getPrototypeOf(_pchain);
+            _pguard++;
+          }
+        }
         return undefined;
       },
       set: function(_t, prop, value) {

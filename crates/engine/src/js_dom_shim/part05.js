@@ -283,12 +283,38 @@
         if (handle && _fragmentHandles[handle] && _gp.DocumentFragment) return _gp.DocumentFragment.prototype;
         if (handle && _commentHandles[handle] && _gp.Node) return _gp.Node.prototype;
         if (handle && _textHandles[handle] && _gp.Node) return _gp.Node.prototype;
+        // js-dom M4 R80：非 HTML 命名空间的 createElementNS 元素（SVG/MathML/自定义 ns）不是
+        // HTMLElement（spec：接口由 namespace 决定——非 HTML ns 的元素只 instanceof Element；
+        // WPT Document-createElementNS "Should not be an HTMLElement" 断言族）。回落 Element.prototype
+        //（链 Node；instanceof HTMLElement=false、Element=true）。
+        if (handle && _nsHandles[handle]) {
+          var _nsgp = _nsHandles[handle].namespace;
+          if (_nsgp !== 'http://www.w3.org/1999/xhtml' && _gp.Element && _gp.Element.prototype) {
+            return _gp.Element.prototype;
+          }
+        }
         // element（含 selector-based 与 createElement handle）：按 tag 查 __zwHtmlTagIface 返对应
         // HTML*Element 子类 prototype（R11，使 `el instanceof HTMLDivElement` 等为 true）；无映射/构造器
         // 缺失回落 HTMLElement.prototype（链 Element → Node）。
         if (_gp.HTMLElement && _gp.HTMLElement.prototype) {
-          var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
+          // js-dom M4 R80：createElementNS handle（HTML ns）的 iface 查找用 localName **原样**（spec：
+          // HTML 命名空间元素的接口按 localName 定——`createElementNS(HTMLNS,'html:span')` 是
+          // HTMLSpanElement；`'SPAN'`（大写 localName）不映射（HTML 元素表全小写）→ HTMLUnknownElement，
+          // 与真浏览器一致）。createElement（无 NS）仍走 _realTag 小写。
+          var _ifaceTag;
+          if (handle && _nsHandles[handle] && _nsHandles[handle].namespace === 'http://www.w3.org/1999/xhtml') {
+            var _nsl = _nsHandles[handle].qualifiedName;
+            var _nsc = _nsl.indexOf(':');
+            _ifaceTag = _nsc >= 0 ? _nsl.slice(_nsc + 1) : _nsl;
+          } else {
+            _ifaceTag = _realTag(sel, handle).toLowerCase();
+          }
+          var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_ifaceTag];
           if (_iface && _gp[_iface] && _gp[_iface].prototype) return _gp[_iface].prototype;
+          // 无映射：HTML ns 大写/未知 localName → HTMLUnknownElement（spec HTML 元素表外）。
+          if (handle && _nsHandles[handle] && _gp.HTMLUnknownElement && _gp.HTMLUnknownElement.prototype) {
+            return _gp.HTMLUnknownElement.prototype;
+          }
           return _gp.HTMLElement.prototype;
         }
         return Object.prototype;

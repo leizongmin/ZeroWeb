@@ -950,3 +950,59 @@ fn r79_handle_element_sibling_navigation() {
         "R79：handle 元素（pending 节点）previousSibling/nextSibling 经父 childNodes 融合视图派生 + hasChildNodes 与 firstChild 视图一致"
     );
 }
+
+// js-dom M4 R80：createElementNS HTML ns 大写 tagName + validate-and-extract + 接口按 localName
+// + Node 常量经原型链 + Element.nodeValue=null（WPT Document-createElementNS 0P→187P 的 driving 单测；
+// 剩余 409F 全为 iframe contentDocument 深结构既存）。
+
+#[test]
+fn r80_create_element_ns_html_uppercase_and_validation() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var HTMLNS = 'http://www.w3.org/1999/xhtml';\n\
+         var e1 = document.createElementNS(HTMLNS, 'span');\n\
+         var e2 = document.createElementNS(HTMLNS, 'html:span');\n\
+         var e3 = document.createElementNS(HTMLNS, 'SPAN');\n\
+         var e4 = document.createElementNS('test', 'span');\n\
+         var _exc = function(f, name) { try { f(); return 'no-throw'; } catch (e) { return e.name === name ? name : ('wrong:' + e.name); } };\n\
+         globalThis.__r80a = [\n\
+           e1.tagName, e1.localName, e1.prefix === null,\n\
+           e2.tagName, e2.localName, e2.prefix,\n\
+           e3.tagName, e3.localName,\n\
+           e4.tagName, e4 instanceof HTMLElement, e4 instanceof Element,\n\
+           _exc(function(){ document.createElementNS(null, 'f:oo'); }, 'NamespaceError'),\n\
+           _exc(function(){ document.createElementNS(null, ':foo'); }, 'InvalidCharacterError'),\n\
+           _exc(function(){ document.createElementNS(null, 'foo:'); }, 'InvalidCharacterError'),\n\
+           _exc(function(){ document.createElementNS('http://example.com/', 'xml:foo'); }, 'NamespaceError'),\n\
+           _exc(function(){ document.createElementNS('http://example.com/', 'xmlns:foo'); }, 'NamespaceError'),\n\
+           _exc(function(){ document.createElementNS('http://example.com/', 'f:o:o'); }, 'NamespaceError'),\n\
+         ].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r80a").unwrap().value,
+        "SPAN,span,true,HTML:SPAN,span,html,SPAN,SPAN,span,false,true,NamespaceError,InvalidCharacterError,InvalidCharacterError,NamespaceError,NamespaceError,NamespaceError",
+        "R80：HTML ns createElementNS tagName 大写 / prefix·localName 原值 / 非 HTML ns 非 HTMLElement / validate-and-extract 全规则"
+    );
+}
+
+#[test]
+fn r80_node_constants_and_node_value() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var e = document.createElement('div');\n\
+         var ns = document.createElementNS('http://www.w3.org/1999/xhtml', 'span');\n\
+         globalThis.__r80b = [\n\
+           e.nodeType === e.ELEMENT_NODE,\n\
+           ns.nodeType === ns.ELEMENT_NODE,\n\
+           ns instanceof HTMLSpanElement,\n\
+           ns.nodeValue === null,\n\
+           Node.DOCUMENT_POSITION_FOLLOWING,\n\
+           e.TEXT_NODE,\n\
+         ].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r80b").unwrap().value,
+        "true,true,true,true,4,3",
+        "R80：Node 常量经实例原型链可见 + createElementNS HTML ns 接口按 localName + Element.nodeValue=null"
+    );
+}
