@@ -10,6 +10,7 @@
 # （不用 cargo run，确保四个进程的可执行文件同目录）。
 
 param(
+    [switch]$BuildOnly,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$BrowserArgs
 )
@@ -67,6 +68,9 @@ try {
     }
     if (-not (Test-Path -LiteralPath $CompositorBin)) {
         Write-Error "zero-compositor not found at $CompositorBin (required for compositor mode)"
+    }
+    if ($BuildOnly) {
+        exit 0
     }
 
     Write-Host "ZeroBrowser: starting $BrowserBin (GPU renderer)"

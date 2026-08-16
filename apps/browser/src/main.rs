@@ -631,6 +631,33 @@ impl Write for RollingLogWriter {
     }
 }
 
+/// 将浏览器日志同时写到持久化日志和启动它的控制台。
+///
+/// GUI 子系统没有关联控制台时，标准错误输出会失败；这不应影响文件日志。
+struct TeeLogWriter<W> {
+    file: RollingLogWriter,
+    console: W,
+}
+
+impl<W> TeeLogWriter<W> {
+    fn new(file: RollingLogWriter, console: W) -> Self {
+        Self { file, console }
+    }
+}
+
+impl<W: Write> Write for TeeLogWriter<W> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let _ = self.console.write_all(buffer);
+        self.file.write_all(buffer)?;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let _ = self.console.flush();
+        self.file.flush()
+    }
+}
+
 fn init_logging() {
     let Some(path) = browser_log_path() else {
         tracing_subscriber::fmt().init();
@@ -648,7 +675,7 @@ fn init_logging() {
     match RollingLogWriter::open(path.clone(), BROWSER_LOG_MAX_BYTES, BROWSER_LOG_BACKUP_COUNT) {
         Ok(file) => tracing_subscriber::fmt()
             .with_ansi(false)
-            .with_writer(std::sync::Mutex::new(file))
+            .with_writer(std::sync::Mutex::new(TeeLogWriter::new(file, io::stderr())))
             .init(),
         Err(error) => {
             eprintln!("无法打开浏览器日志文件 {}: {error}", path.display());

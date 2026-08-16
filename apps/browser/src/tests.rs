@@ -52,6 +52,30 @@ fn rolling_log_writer_rotates_and_limits_history() {
     std::fs::remove_dir_all(dir).expect("remove temp log directory");
 }
 
+#[test]
+fn tee_log_writer_writes_to_console_and_persistent_log() {
+    let dir = std::env::temp_dir().join(format!(
+        "zero-browser-tee-log-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp log directory");
+    let path = dir.join("zero-browser.log");
+    let file = RollingLogWriter::open(path.clone(), 1024, 1).expect("open rolling log");
+    let mut writer = TeeLogWriter::new(file, Vec::new());
+
+    writer.write_all(b"browser log\n").expect("write tee log");
+    writer.flush().expect("flush tee log");
+
+    assert_eq!(writer.console, b"browser log\n");
+    assert_eq!(std::fs::read(&path).expect("read persistent log"), b"browser log\n");
+
+    std::fs::remove_dir_all(dir).expect("remove temp log directory");
+}
+
 fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, gpu_present: bool) -> bool {
     // R3254-F10：重负载（make test 全量并行）下 renderer spawn + 渲染可超 60s——
     // 预算放宽到 120s（多进程 GUI 测试的等待容忍）。

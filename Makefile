@@ -32,6 +32,19 @@ build: setup-rusty-v8
 BROWSER_BIN = ./target/release/zero-browser
 BROWSER_RUN = $(BROWSER_BIN)
 
+ifeq ($(OS),Windows_NT)
+browser-build:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser.ps1 -BuildOnly
+
+browser:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser.ps1
+
+# 与 browser-cpu 相同（保留别名）
+browser-wpt-parity: browser-cpu
+
+browser-cpu:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser-cpu.ps1
+else
 browser-build: setup-rusty-v8
 	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
 
@@ -43,6 +56,7 @@ browser-wpt-parity: browser-cpu
 
 browser-cpu: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --wpt-parity
+endif
 
 browser-debug: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
