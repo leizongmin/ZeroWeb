@@ -877,16 +877,16 @@
       // R57（FV M1）：date 类 range——ISO 字符串字典序比较（min/max 无效格式
       // 忽略——"2001/01/01" 对 date 无效 → 不比较）。
       var dv = _controlValue(sel, handle, key).trim();
-      if (dv !== '' && _isValidDateString(dv, ty)) {
+      if (dv !== '' && _isDateRangeComparable(dv, ty)) {
         var minA2 = null, maxA2 = null;
         try {
           minA2 = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min');
           maxA2 = handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max');
         } catch (_e) {}
-        if (minA2 != null && _isValidDateString(String(minA2).trim(), ty) && dv < String(minA2).trim()) {
+        if (minA2 != null && _isDateRangeComparable(String(minA2).trim(), ty) && dv < String(minA2).trim()) {
           rangeUnderflow = true;
         }
-        if (maxA2 != null && _isValidDateString(String(maxA2).trim(), ty) && dv > String(maxA2).trim()) {
+        if (maxA2 != null && _isDateRangeComparable(String(maxA2).trim(), ty) && dv > String(maxA2).trim()) {
           rangeOverflow = true;
         }
       }
@@ -1788,6 +1788,37 @@
       else if (s[i] === ')') { depth--; if (depth < 0) return true; }
     }
     return depth !== 0;
+  }
+  // FV（M1）：date 类 range 的宽松比较判定（WPT 怪用例——date 的 value/max
+  // 含时间部分 "2000-01-01T12:00:00"——只要求日期前缀匹配即可比较（字典序）；
+  // 无效格式（"abc"）不比较）。
+  function _isDateRangeComparable(v, ty) {
+    // 宽松格式（date 可含时间部分——WPT 怪用例）**+ 范围校验**（无效月/日/时
+    // 不比较——"2000-02-30" 期望不触发 range）。
+    var m;
+    if (ty === 'date' || ty === 'datetime-local') {
+      m = v.match(/^(\d{4,})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+      if (!m) return false;
+      if (m[4] != null && (+m[4] > 23 || +m[5] > 59)) return false;
+    } else if (ty === 'month') {
+      m = v.match(/^(\d{4,})-(\d{2})/);
+      if (!m) return false;
+      if (+m[2] < 1 || +m[2] > 12) return false;
+      return true;
+    } else if (ty === 'week') {
+      var mw = v.match(/^(\d{4,})-W(\d{2})/);
+      if (!mw) return false;
+      return +mw[2] >= 1 && +mw[2] <= 53;
+    } else {
+      var mt = v.match(/^(\d{2}):(\d{2})/);
+      if (!mt) return false;
+      return +mt[1] <= 23 && +mt[2] <= 59;
+    }
+    var y = +m[1], mo = +m[2], d = +m[3];
+    if (mo < 1 || mo > 12 || d < 1) return false;
+    var dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28,
+               31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return d <= dim[mo - 1];
   }
   function _isValidDateString(v, ty) {
     // R57（FV M1）：范围校验（月/日/时/周）——"9999-99-99"（月 99）无效；
