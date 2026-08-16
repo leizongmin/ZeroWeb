@@ -883,10 +883,12 @@
           minA2 = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min');
           maxA2 = handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max');
         } catch (_e) {}
-        if (minA2 != null && _isDateRangeComparable(String(minA2).trim(), ty) && dv < String(minA2).trim()) {
+        if (minA2 != null && _isDateRangeComparable(String(minA2).trim(), ty)
+            && _dateCmp(dv, String(minA2).trim()) < 0) {
           rangeUnderflow = true;
         }
-        if (maxA2 != null && _isDateRangeComparable(String(maxA2).trim(), ty) && dv > String(maxA2).trim()) {
+        if (maxA2 != null && _isDateRangeComparable(String(maxA2).trim(), ty)
+            && _dateCmp(dv, String(maxA2).trim()) > 0) {
           rangeOverflow = true;
         }
       }
@@ -1810,15 +1812,25 @@
       if (!mw) return false;
       return +mw[2] >= 1 && +mw[2] <= 53;
     } else {
-      var mt = v.match(/^(\d{2}):(\d{2})/);
+      var mt = v.match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
       if (!mt) return false;
-      return +mt[1] <= 23 && +mt[2] <= 59;
+      return +mt[1] <= 23 && +mt[2] <= 59 && (+mt[3] || 0) <= 59;
     }
     var y = +m[1], mo = +m[2], d = +m[3];
     if (mo < 1 || mo > 12 || d < 1) return false;
     var dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28,
                31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     return d <= dim[mo - 1];
+  }
+  // FV（M1）：date 类字符串比较——年部分数值比较（"10000-01-01" > "2000-01-01"
+  // ——变长数字的字典序错误："1" < "2"）+ 其余部分字典序（固定宽度 ✓）。
+  function _dateCmp(a, b) {
+    var ma = String(a).match(/^(\d+)/), mb = String(b).match(/^(\d+)/);
+    if (ma && mb && ma[1].length !== mb[1].length) {
+      var ya = +ma[1], yb = +mb[1];
+      if (ya !== yb) return ya > yb ? 1 : -1;
+    }
+    return a > b ? 1 : (a < b ? -1 : 0);
   }
   function _isValidDateString(v, ty) {
     // R57（FV M1）：范围校验（月/日/时/周）——"9999-99-99"（月 99）无效；
