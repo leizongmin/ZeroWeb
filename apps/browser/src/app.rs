@@ -679,11 +679,6 @@ impl BrowserApp {
 
     /// R3254 测试 helper：强制 renderer legacy 帧发布（本地合成像素测试需要 last_render）。
     #[cfg(test)]
-    pub fn set_legacy_frame_publish_for_test(&mut self, tab_id: TabId) {
-        self.tabs.set_legacy_frame_publish_for_test(tab_id);
-    }
-
-    #[cfg(test)]
     pub fn set_compositor_status_for_test(&mut self, status: crate::compositor_client::CompositorStatus) {
         self.compositor_status_override = Some(status);
     }

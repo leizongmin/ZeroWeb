@@ -27,7 +27,7 @@ cargo run --bin zero-image-decoder -- --type=image-decoder --instance-id=1
 
 ## 部署要求
 
-多进程解码默认启用（`ZW_IMAGE_DECODER_PROCESS=0` 可禁用，回退渲染进程内解码）。
+由 `zero-renderer` 固定使用；解码器不可用时资源加载失败，不会回退到 renderer 进程内解码。
 webview 按以下顺序定位本二进制（与 zero-renderer / zero-compositor 的发现模式一致）：
 
 1. 环境变量 `ZW_IMAGE_DECODER_BIN`

@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb Renderer` (`zero-renderer`) 是 ZeroWeb 多进程架构中的独立渲染进程（bin），由浏览器主进程通过 stdin/stdout 管道 spawn，Windows 下以 GUI 子系统运行（不弹控制台）。renderer 内部持有 `zero-webview` 的 `WebView` 作为统一页面运行时（B3：渲染 / 字体 / 脚本 / hit-test 全经 WebView，与浏览器内 tabworker 同一页面运行时），处理导航、分阶段页面加载、脚本执行、表单交互，并把绘制帧经 IPC 发布给浏览器（默认发布到 compositor 进程；`ZW_COMPOSITOR_PROCESS=0` 时回退 legacy 直发路径）。同 crate 也暴露 `zero_renderer` lib，供 in-process 测试复用运行时 wiring。
+`ZeroWeb Renderer` (`zero-renderer`) 是 ZeroWeb 多进程架构中的独立渲染进程（bin），由浏览器主进程通过 stdin/stdout 管道 spawn，Windows 下以 GUI 子系统运行（不弹控制台）。renderer 内部持有 `zero-webview` 的 `WebView` 作为统一页面运行时（B3：渲染 / 字体 / 脚本 / hit-test 全经 WebView），处理导航、分阶段页面加载、脚本执行、表单交互，并把绘制帧经 IPC 固定发布给 compositor 进程。同 crate 也暴露 `zero_renderer` lib，供进程内测试复用运行时 wiring。
 
 ## 主要功能
 
@@ -24,6 +24,4 @@
 # 手动启动仅用于调试（正常由 zero-browser 经 stdin/stdout 管道 spawn）
 cargo run --bin zero-renderer
 
-# 帧发布模式选择：默认 compositor；=0 回退 legacy 直发
-ZW_COMPOSITOR_PROCESS=1 cargo run --bin zero-browser
 ```

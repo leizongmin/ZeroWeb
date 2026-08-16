@@ -12,28 +12,14 @@ use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
-    FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
-    StorageType,
+    ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
 use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
-
-/// 是否启用多进程后端（环境变量 `ZERO_BROWSER_MULTIPROCESS`；默认启用）。
-pub fn use_multiprocess_backend() -> bool {
-    zero_runtime_config::enabled_by_default("ZERO_BROWSER_MULTIPROCESS")
-}
-
-/// 供 CLI 在解析参数后强制启用多进程。
-pub fn set_multiprocess_enabled(enabled: bool) {
-    // SAFETY: 在 main 启动早期、单线程环境下设置进程环境变量。
-    unsafe {
-        std::env::set_var("ZERO_BROWSER_MULTIPROCESS", if enabled { "1" } else { "0" });
-    }
-}
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -172,6 +158,14 @@ pub fn take_test_renderer_outbound() -> Vec<IpcMessageKind> {
 }
 
 impl ProcessTabBackend {
+    #[cfg(test)]
+    fn enters_compositor_fallback(
+        _previous: crate::compositor_client::CompositorStatus,
+        _current: crate::compositor_client::CompositorStatus,
+    ) -> bool {
+        false
+    }
+
     /// 暂存最新绘制帧，避免 UI 线程逐个转换 renderer 积压的完整页面快照。
     fn defer_latest_paint(latest_paint: &mut Option<IpcMessageKind>, kind: IpcMessageKind) -> Option<IpcMessageKind> {
         if matches!(
@@ -185,23 +179,11 @@ impl ProcessTabBackend {
         }
     }
 
-    /// 创建多进程后端；若找不到 `zero-renderer` 则返回 `None`（由调用方回退单进程 worker）。
-    pub fn try_new() -> Option<Self> {
+    /// 创建多进程后端。缺失的 renderer binary 会在创建 tab 时作为启动错误报告。
+    pub fn try_new() -> Self {
         let renderer_bin = resolve_renderer_binary().unwrap_or_else(|| PathBuf::from(renderer_binary_filename()));
-        if !renderer_bin.is_file() {
-            let expected = std::env::current_exe()
-                .ok()
-                .and_then(|exe| renderer_candidates_near_executable(&exe).into_iter().next())
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| renderer_binary_filename().to_string());
-            tracing::warn!(
-                "未找到 zero-renderer（预期路径: {expected}）。\
-                 将使用进程内 tab worker。请一并安装/编译两个二进制，或设置 ZERO_RENDERER_PATH，或使用 --single-process。"
-            );
-            return None;
-        }
         tracing::info!("Multi-process renderer binary: {}", renderer_bin.display());
-        Some(Self::with_renderer_bin(renderer_bin))
+        Self::with_renderer_bin(renderer_bin)
     }
 
     fn with_renderer_bin(renderer_bin: PathBuf) -> Self {
@@ -229,16 +211,6 @@ impl ProcessTabBackend {
         self.browser_gpu_present = present;
     }
 
-    fn enters_compositor_fallback(
-        previous: crate::compositor_client::CompositorStatus,
-        current: crate::compositor_client::CompositorStatus,
-    ) -> bool {
-        matches!(
-            previous,
-            crate::compositor_client::CompositorStatus::Starting | crate::compositor_client::CompositorStatus::Healthy
-        ) && current == crate::compositor_client::CompositorStatus::Disconnected
-    }
-
     fn observe_compositor_status(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
@@ -251,26 +223,11 @@ impl ProcessTabBackend {
     fn observe_compositor_status_value(
         &mut self,
         current: crate::compositor_client::CompositorStatus,
-        snapshots: &mut HashMap<TabId, TabSnapshot>,
-        snapshot_seq: &mut HashMap<TabId, u64>,
+        _snapshots: &mut HashMap<TabId, TabSnapshot>,
+        _snapshot_seq: &mut HashMap<TabId, u64>,
     ) -> bool {
-        let fallback = Self::enters_compositor_fallback(self.compositor_status, current);
         self.compositor_status = current;
-        if !fallback {
-            return false;
-        }
-
-        for (tab_id, snapshot) in snapshots {
-            snapshot.clear_compositor_state();
-            *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
-        }
-        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
-        for tab_id in tabs {
-            self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
-            self.send_to_renderer(tab_id, IpcMessageKind::RequestFrame);
-        }
-        tracing::warn!("Compositor disconnected; switched all renderers to legacy frame publishing");
-        true
+        false
     }
 
     fn send_fetch_response_now(
@@ -696,13 +653,6 @@ impl ProcessTabBackend {
         err.is_disconnected() || format!("{err}").contains("IPC 通道已关闭")
     }
 
-    /// R3254 测试用：强制 renderer 走 legacy 帧发布（ViewPainted → snapshot.last_render
-    /// 含页面主体——本地合成像素测试需要）。compositor 模式下 browser 不重建 primitives。
-    #[cfg(test)]
-    pub fn set_legacy_frame_publish_for_test(&mut self, tab_id: TabId) {
-        self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
-    }
-
     fn send_to_renderer(&mut self, tab_id: TabId, kind: IpcMessageKind) {
         #[cfg(test)]
         TEST_RENDERER_OUTBOUND.with(|log| log.borrow_mut().push(kind.clone()));
@@ -714,7 +664,7 @@ impl ProcessTabBackend {
         }
     }
 
-    /// 测试：观察 compositor 状态并触发 legacy 回退。
+    /// 测试：观察 compositor 状态。
     #[cfg(test)]
     pub fn observe_compositor_status_for_test(
         &mut self,
@@ -748,9 +698,6 @@ impl ProcessTabBackend {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
-                if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
-                    self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
-                }
                 self.send_to_renderer(
                     tab_id,
                     IpcMessageKind::SetViewport(SetViewportParams {
@@ -1491,7 +1438,7 @@ mod compositor_fallback_tests {
         let mut previous = CompositorStatus::Starting;
         let current = CompositorStatus::Disconnected;
 
-        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
+        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
         previous = current;
         assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
     }
@@ -1501,7 +1448,7 @@ mod compositor_fallback_tests {
         let mut previous = CompositorStatus::Healthy;
         let current = CompositorStatus::Disconnected;
 
-        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
+        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
         previous = current;
         assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
     }

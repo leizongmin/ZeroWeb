@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **浏览器进程模型固定化**：`zero-browser` 不再支持 `--single-process` / `--multi-process` 或相应环境变量开关；tab 固定使用 `zero-renderer`，页面帧固定经 `zero-compositor`，栅格图像固定由 renderer 启动 `zero-image-decoder`。`ZeroWebView` 仍保持进程内嵌入实现。
+
 ### 新增
 
 - **页面 JavaScript 运行时**：`script-sandbox` 提供 V8（`v8` crate，rusty_v8 更名）/ QuickJS 双后端 feature gate（V8 持久化 Context 复用；QuickJS 全矩阵 parity，136 个失败清零）、Web Worker、ES Modules、WebAssembly JS API 到 `wasm-sandbox` 的自动桥接。

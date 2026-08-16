@@ -23,6 +23,7 @@ pub use async_load::{
     AsyncPageLoad, FailedResource, InProcessFetchHost, PageLoadStage, ResourceElementEvent, ResourceElementOutcome,
     live_fontface_enabled,
 };
+pub use image_decoder::enable_isolated_image_decoder;
 pub use net_pool::{fetch_bytes_async, fetch_text_async};
 pub use webview::*;
 pub use webview_builder::*;

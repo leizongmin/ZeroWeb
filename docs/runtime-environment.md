@@ -10,7 +10,6 @@ switch there before consuming it in an application or library crate.
 | Variable | Values | Default | Effect |
 | --- | --- | --- | --- |
 | `ZEROWEB_RENDERER` | `auto`, `gpu`, `cpu` | `auto` | Select the rendering backend; auto prefers GPU then falls back to CPU. |
-| `ZERO_BROWSER_MULTIPROCESS` | `0`/`false` disables | enabled | Run each tab in the renderer process. |
 | `ZERO_RENDERER_PATH` | executable path | auto-discovery | Override the `zero-renderer` executable. |
 | `ZERO_PRIVATE` | `1`/`true` enables | disabled | Do not write the HTTP disk cache. |
 | `ZERO_CACHE_DIR` | directory path | platform cache directory | Override the HTTP disk-cache directory. |
@@ -22,9 +21,7 @@ switch there before consuming it in an application or library crate.
 | `ZERO_BROWSER_UI_LANG` | locale beginning `zh` or `en` | locale, then English | Override browser UI language. |
 | `ZERO_SCROLL_BLIT` | `0` disables | enabled | Disable retained-frame scroll blitting. |
 | `ZW_RENDER_THREAD` | `0` disables | enabled | Disable the persistent CPU rendering worker. |
-| `ZW_IMAGE_DECODER_PROCESS` | `0`/`false` disables | enabled | Decode raster images in `zero-image-decoder`. |
 | `ZW_IMAGE_DECODER_BIN` | executable path | auto-discovery | Override the image-decoder executable. |
-| `ZW_COMPOSITOR_PROCESS` | `0` disables | enabled | Enable the compositor client process path. |
 | `ZW_COMPOSITOR_BIN` | executable path | auto-discovery | Override the compositor executable. |
 | `ZW_COMPOSITOR_ASYNC_SCROLL` | `0`/`false` disables | enabled | Enable compositor asynchronous scrolling. |
 | `ZW_COMPOSITOR_UI_FRAMES` | `0`/`false` disables | enabled | Submit browser UI frames to compositor. |

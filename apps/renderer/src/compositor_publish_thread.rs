@@ -1,4 +1,4 @@
-//! RFC 4.1：renderer compositor 帧 IPC 发布线程（默认启用；`ZW_RENDERER_COMPOSITOR_THREAD=0` 禁用）。
+//! RFC 4.1：renderer compositor 帧 IPC 发布线程。
 //!
 //! 主线程录制完成后将 `CompositorFrame` 提交到队列，由专用线程执行 PipeTransport
 //! 写入，避免大图元序列化阻塞 layout/JS 路径。
@@ -22,14 +22,9 @@ use zero_protocol::message::IpcMessageKind;
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, IpcMessage};
 
-/// 是否启用 compositor 发布线程（默认开；仅精确值 `0` 禁用）。
+/// renderer 始终使用 compositor 发布线程。
 pub fn compositor_publish_threading_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_RENDERER_COMPOSITOR_THREAD")
-}
-
-#[cfg(test)]
-fn compositor_publish_threading_enabled_from_env(value: Option<&str>) -> bool {
-    value != Some("0")
+    true
 }
 
 /// 共享 stdout/pipe writer（主线程与发布线程各持一个 `PipeTransport`）。
@@ -260,11 +255,8 @@ mod tests {
     }
 
     #[test]
-    fn publish_thread_defaults_on_and_exact_zero_disables_it() {
-        for value in [None, Some(""), Some("1"), Some("true"), Some("01")] {
-            assert!(compositor_publish_threading_enabled_from_env(value));
-        }
-        assert!(!compositor_publish_threading_enabled_from_env(Some("0")));
+    fn publish_thread_is_always_enabled() {
+        assert!(compositor_publish_threading_enabled());
     }
 
     #[test]

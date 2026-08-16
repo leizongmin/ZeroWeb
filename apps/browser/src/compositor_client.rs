@@ -1039,21 +1039,13 @@ fn validate_frame_data(width: u32, height: u32, rgba: &[u8]) -> Result<(), Proto
 
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
-/// 根据环境变量值判断是否启用 compositor；默认启用，仅精确值 `0` 禁用。
-fn enabled_from_env(value: Option<&str>) -> bool {
-    value != Some("0")
-}
-
-/// 返回是否启用 compositor 模式。
+/// 浏览器始终使用独立 compositor 进程。
 pub fn enabled() -> bool {
-    zero_runtime_config::enabled_unless_zero("ZW_COMPOSITOR_PROCESS")
+    true
 }
 
 /// 返回当前 compositor client 状态，不执行阻塞式 IPC。
 pub fn status() -> CompositorStatus {
-    if !enabled() {
-        return CompositorStatus::Disabled;
-    }
     let guard = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     // R3254-F10：帧响应看门狗——有帧发送但 10s 无响应 → 断连（回退 legacy 的触发源）。
     if let Some(client) = guard.as_ref() {
@@ -1066,9 +1058,6 @@ pub fn status() -> CompositorStatus {
 
 /// 非阻塞提交 renderer 发布的指定 surface 帧；队列繁忙时以该 surface 的新帧替换旧帧。
 pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, paint: PaintSnapshotParams) {
-    if !enabled() {
-        return;
-    }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client
         .get_or_insert_with(Client::start)
@@ -1080,9 +1069,6 @@ pub fn forward_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64, pain
 /// 仅返回相同 `navigation_epoch` 且帧序号不小于 `frame_id` 的缓存，结果格式为
 /// `(surface_id, navigation_epoch, frame_id, width, height, rgba, scroll_x, scroll_y)`。
 pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompositorFrameResult> {
-    if !enabled() {
-        return None;
-    }
     CLIENT
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -1092,9 +1078,6 @@ pub fn get_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Optio
 
 /// RFC 4.2：向 compositor 推送 surface 滚动偏移（异步滚动默认开，Browser 消费回读值）。
 pub fn set_scroll(surface_id: u64, navigation_epoch: u64, frame_id: u64, scroll_x: f32, scroll_y: f32) {
-    if !enabled() {
-        return;
-    }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client
         .get_or_insert_with(Client::start)
@@ -1114,9 +1097,6 @@ pub fn scroll_transform_enabled() -> bool {
 
 /// RFC 4.4：向 compositor 注册 Chrome UI surface（元数据登记；present 为后续切片）。
 pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
-    if !enabled() {
-        return;
-    }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     let client = client.get_or_insert_with(Client::start);
     let surface_id = info.surface_id;
@@ -1128,9 +1108,6 @@ pub fn register_ui_surface(info: zero_protocol::CompositorUiSurfaceInfo) {
 
 /// RFC 4.4-S4：向 compositor 登记最终窗口 surface。
 pub fn register_window_surface(info: zero_protocol::CompositorWindowSurfaceInfo) {
-    if !enabled() {
-        return;
-    }
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client.get_or_insert_with(Client::start).register_window_surface(info);
 }
@@ -1722,10 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn compositor_is_enabled_by_default_and_only_exact_zero_disables_it() {
-        for value in [None, Some(""), Some("1"), Some("true"), Some("01")] {
-            assert!(enabled_from_env(value));
-        }
-        assert!(!enabled_from_env(Some("0")));
+    fn compositor_is_always_enabled() {
+        assert!(enabled());
     }
 }

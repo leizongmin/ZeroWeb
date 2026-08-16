@@ -1,13 +1,12 @@
 //! 图像解码进程代理（D1）— webview 侧的解码分发。
 //!
-//! 多进程模式（默认启用，env `ZW_IMAGE_DECODER_PROCESS=0` 关闭）下，
+//! Browser renderer 显式启用隔离模式时，
 //! PNG/JPEG/WebP 解码转发到独立 `zero-image-decoder` 进程（stdin/stdout
 //! 管道 + bincode IPC），隔离编解码器漏洞（对照 Ladybird ImageDecoder 进程）。
 //!
 //! 降级路径：
-//!   - env 关闭 / 非栅格字节（SVG 等）→ 进程内解码（SVG 依赖资源加载）
-//!   - 代理 spawn 失败或解码中进程崩溃 → 进程内解码回退（fail-open，
-//!     保证图像加载不被多进程路径阻断）
+//!   - 未启用隔离模式 / 非栅格字节（SVG 等）→ 进程内解码（SVG 依赖资源加载）
+//!   - 隔离进程不可用或崩溃 → 返回资源加载错误；不得绕过隔离边界。
 
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -158,32 +157,32 @@ static PROXY: Mutex<Option<ImageDecoderProxy>> = Mutex::new(None);
 /// spawn 已失败（如宿主环境无 zero-image-decoder 可执行文件）——不再重试，
 /// 后续请求直接进程内解码，避免每次栅格图解码都重复 spawn 尝试与告警。
 static SPAWN_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PROCESS_ISOLATION_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// 多进程解码是否启用（默认开；env `ZW_IMAGE_DECODER_PROCESS=0`/`false` 关闭）。
+/// 为 browser renderer 启用独立图像解码进程。
+///
+/// 嵌入式 WebView 默认在宿主进程内工作；该函数只应由受控的 browser renderer
+/// 调用，且一旦启用不会在进程生命周期内关闭。
+pub fn enable_isolated_image_decoder() {
+    PROCESS_ISOLATION_ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 是否由 browser renderer 启用独立图像解码进程。
 fn proxy_enabled() -> bool {
-    // 单测默认关闭（仅显式 `=1` 启用，与 ZW_RENDER_THREAD 的测试语义一致）：
-    // 测试进程无法保证 zero-image-decoder 二进制已构建，保持既有测试确定性。
-    #[cfg(not(test))]
-    {
-        zero_runtime_config::enabled_by_default("ZW_IMAGE_DECODER_PROCESS")
-    }
-    #[cfg(test)]
-    {
-        zero_runtime_config::enabled_when_true("ZW_IMAGE_DECODER_PROCESS")
-    }
+    PROCESS_ISOLATION_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// 解码图像字节（webview 侧统一入口；D1 分发）。
 ///
-/// - 默认：栅格图像走 image-decoder 进程
-/// - `ZW_IMAGE_DECODER_PROCESS=0`：进程内解码
-/// - SVG/data URI/降级路径回退进程内
+/// - renderer 隔离模式：栅格图像走 image-decoder 进程
+/// - 嵌入式 WebView：进程内解码
+/// - SVG/data URI 始终进程内解码
 pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
     if !proxy_enabled() || !is_raster_image_bytes(bytes) {
         return decode_inline(bytes);
     }
     if SPAWN_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
-        return decode_inline(bytes);
+        return Err("image-decoder 进程不可用".to_string());
     }
 
     let mut guard = PROXY.lock().unwrap_or_else(|e| e.into_inner());
@@ -192,18 +191,15 @@ pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
             Some(proxy) => *guard = Some(proxy),
             None => {
                 SPAWN_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
-                tracing::warn!("image-decoder 进程 spawn 失败，后续图像回退进程内解码");
-                return decode_inline(bytes);
+                tracing::warn!("image-decoder 进程 spawn 失败");
+                return Err("无法启动 image-decoder 进程".to_string());
             }
         }
     }
     let Some(proxy) = guard.as_mut() else {
-        return decode_inline(bytes);
+        return Err("image-decoder 进程不可用".to_string());
     };
-    proxy.decode(bytes).or_else(|e| {
-        tracing::warn!("image-decoder 进程解码失败，回退进程内: {e}");
-        decode_inline(bytes)
-    })
+    proxy.decode(bytes)
 }
 
 #[cfg(test)]
@@ -219,17 +215,13 @@ mod tests {
         base64_decode(ONE_PX_RED_PNG_B64).expect("测试 PNG 解码")
     }
 
-    fn set_env_process(on: bool, bin: Option<&std::path::Path>) {
+    fn set_process_isolation(on: bool, bin: Option<&std::path::Path>) {
         // 重置 spawn 失败缓存，保证本测试的代理路径不被先前测试的
         // spawn 失败短路（真实子进程优先，失败则回退进程内）。
         SPAWN_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
         // edition 2024：env 修改为 unsafe（测试单线程环境无并发，安全）
         unsafe {
-            if on {
-                std::env::set_var("ZW_IMAGE_DECODER_PROCESS", "1");
-            } else {
-                std::env::remove_var("ZW_IMAGE_DECODER_PROCESS");
-            }
+            PROCESS_ISOLATION_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
             match bin {
                 Some(b) => std::env::set_var("ZW_IMAGE_DECODER_BIN", b),
                 None => std::env::remove_var("ZW_IMAGE_DECODER_BIN"),
@@ -240,25 +232,23 @@ mod tests {
     #[test]
     fn non_raster_svg_goes_inline() {
         // SVG（依赖资源加载）不启代理，进程内解码（C4 分发验证）
-        set_env_process(true, None);
+        set_process_isolation(true, None);
         let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'/>";
         let img = decode_image(svg).expect("SVG 应进程内解码成功");
         assert_eq!(img.width, 2);
         assert_eq!(img.height, 2);
-        set_env_process(false, None);
+        set_process_isolation(false, None);
     }
 
     #[test]
     fn proxy_mode_decodes_png_correctly() {
         // 代理模式（env 开）下 decode_image 全链路像素正确。
         // 注意：PROXY 为进程级 static（跨测试共享），本测试不依赖
-        // spawn 成功/失败的具体路径——核心验证是「代理模式启用时
-        // 解码结果仍正确」；fail-open 回退由代码路径（match None →
-        // decode_inline）保证，并有 apps/image-decoder 集成测试兜底。
-        set_env_process(true, None);
+        // 核心验证是隔离模式下的端到端像素正确性；进程不可用不会回退到
+        // 进程内解码。
+        set_process_isolation(true, None);
 
-        // 真实二进制（同 target 目录）优先走代理；未构建时 spawn 失败
-        // 回退进程内——两条路径都应产出正确像素。
+        // 真实二进制（同 target 目录）优先走代理。
         let exe = std::env::current_exe().expect("current_exe");
         if let Some(bin) = exe
             .parent()
@@ -266,7 +256,7 @@ mod tests {
             .map(|p| p.join(image_decoder_binary_filename()))
             .filter(|p| p.exists())
         {
-            set_env_process(true, Some(&bin));
+            set_process_isolation(true, Some(&bin));
         }
 
         let img = decode_image(&test_png()).expect("代理模式解码成功");
@@ -274,13 +264,12 @@ mod tests {
         assert_eq!(img.height, 1);
         // 1x1 红色 PNG（alpha=127）：红色通道 255 即像素正确
         assert_eq!(img.pixels[0], 255, "R 通道应为 255");
-        set_env_process(false, None);
+        set_process_isolation(false, None);
     }
 
     #[test]
-    fn env_off_uses_inline_decode() {
-        // 单测构建默认关闭（cfg(test) 语义）；env 未设置 → 进程内解码
-        set_env_process(false, None);
+    fn embedded_webview_uses_inline_decode() {
+        set_process_isolation(false, None);
         let img = decode_image(&test_png()).expect("进程内解码成功");
         assert_eq!(img.width, 1);
         assert_eq!(img.pixels[0], 255, "R 通道应为 255");

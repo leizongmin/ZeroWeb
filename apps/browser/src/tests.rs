@@ -3096,8 +3096,7 @@ fn wait_composite_changed_or_missing_glyph(
     }
 }
 
-/// R3254：本地合成 CPU/GPU 双参数矩阵——多进程 renderer（完整 shim/焦点/输入）+
-/// legacy 帧发布（ViewPainted → last_render 含页面主体，本地合成可渲染页面内容）。
+/// R3254：本地合成 CPU/GPU 双参数矩阵（历史 legacy 路径测试）。
 /// 依次交互（点击聚焦 + 输入 / IME 中文 / 滚动），每步用 CPU（rasterize_full_scene）
 /// 与 GPU（headless wgpu）两个通道渲染合成帧，断言：① 页面内容像素存在（非纯白）；
 /// ② 交互引起合成帧变化；③ 两通道输出一致（parity——同输入同渲染）。
@@ -3110,8 +3109,6 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     app.scale_factor = 1.0;
     let tab_id = app.shell.active_tab_id().unwrap();
     app.ensure_webview(tab_id);
-    app.set_legacy_frame_publish_for_test(tab_id);
-    app.set_compositor_status_for_test(crate::compositor_client::CompositorStatus::Disconnected);
     // 滚动断言必须自行保证文档高于视口，不能依赖平台字体或历史 renderer 的布局高度。
     // 注意：spacer 必须有绘制内容（背景色）——b12f9b676 后根滚动范围被钳制到
     // painted 内容高度（min(layout, painted)，防滚进空白帧）；空 div 不产生图元、

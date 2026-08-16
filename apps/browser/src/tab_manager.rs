@@ -11,7 +11,7 @@ use zero_protocol::message::{
 use zero_render_foundation::image_cache::ImageCache;
 use zero_webview::WebViewRenderResult;
 
-use crate::process_backend::{ProcessTabBackend, use_multiprocess_backend};
+use crate::process_backend::ProcessTabBackend;
 use crate::tab_snapshot::{CompositorFrame, TabSnapshot};
 use crate::tab_worker::{TabWorkerCommand, TabWorkerHandle, TabWorkerMessage};
 
@@ -89,10 +89,8 @@ impl TabManager {
             // 的测试显式调 `enable_multiprocess_for_test`。
             process_backend: if cfg!(test) {
                 None
-            } else if use_multiprocess_backend() {
-                ProcessTabBackend::try_new()
             } else {
-                None
+                Some(ProcessTabBackend::try_new())
             },
             viewport,
             device_scale_factor: 1.0,
@@ -111,9 +109,7 @@ impl TabManager {
             pending_navigations: Vec::new(),
             next_dispatch_id: 1,
         };
-        if use_multiprocess_backend() && manager.process_backend.is_none() {
-            tracing::info!("Tab runtime: in-process workers (zero-renderer not available)");
-        } else if manager.process_backend.is_some() {
+        if manager.process_backend.is_some() {
             tracing::info!("Tab runtime: multi-process (zero-renderer child processes)");
         }
         manager
@@ -134,15 +130,7 @@ impl TabManager {
     /// 二进制不可用时回退 worker——`try_new` 返 None）。
     #[cfg(test)]
     pub fn enable_multiprocess_for_test(&mut self) {
-        self.process_backend = ProcessTabBackend::try_new();
-    }
-
-    /// R3254 测试用：强制 renderer legacy 帧发布（本地合成像素测试需要 last_render）。
-    #[cfg(test)]
-    pub fn set_legacy_frame_publish_for_test(&mut self, tab_id: TabId) {
-        if let Some(backend) = self.process_backend.as_mut() {
-            backend.set_legacy_frame_publish_for_test(tab_id);
-        }
+        self.process_backend = Some(ProcessTabBackend::try_new());
     }
 
     /// 显式终止所有渲染子进程。

@@ -29,8 +29,8 @@
 |------|------|
 | `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `webview` + `host-runtime`，提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
-| `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：PNG/JPEG/WebP 在独立进程解码（隔离编解码器漏洞），由渲染进程内 webview 经管道 spawn；默认启用（env `ZW_IMAGE_DECODER_PROCESS=0` 关闭），关闭/SVG/降级路径回退进程内解码 |
-| `apps/compositor` | 合成器进程（`zero-compositor`，C2）：RFC v2.1 五切片全部落地——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退、crash E2E legacy 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
+| `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：renderer 对 PNG/JPEG/WebP 固定经此进程解码，以隔离不可信编解码器；SVG 仍由 WebView 的资源加载路径处理 |
+| `apps/compositor` | 合成器进程（`zero-compositor`，C2）：Browser 固定经此进程合成——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
 | `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议骨架（wdspec 第一步） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
 
@@ -94,7 +94,7 @@
 7. `render-foundation` 把图元输出到 GPU/CPU 渲染后端。
 8. `host-runtime` 管理窗口和 surface，把帧显示到平台宿主。
 9. `webview` 把这条链路包装成嵌入式 API，供 `apps/browser` 或第三方应用调用。
-10. 多进程形态下，`apps/renderer` 作为独立渲染进程承担步骤 2–7，通过 `protocol` IPC 与浏览器主进程交互；`page-runtime` 让这条加载链路在「进程内」和「IPC」两种宿主下走同一套契约。
+10. `zero-browser` 固定由 `apps/renderer` 独立进程承担步骤 2–7，经 `protocol` IPC 与浏览器主进程交互，并配合 image-decoder 与 compositor 子进程；`page-runtime` 让 browser IPC 宿主与嵌入式 `ZeroWebView` 的进程内宿主共享同一套页面加载契约。
 
 这条链路已经能在测试、demo 和浏览器应用里跑起来，并且有大量单元 / 集成测试与 WPT 用例兜底；但离「真实网页 + 完整 JavaScript + 完整浏览器 UI」的成熟度仍有距离。当前主线是 P1b V8 原生 DOM 绑定（P1a DOM/JS Bridge 原生化已主体落地），渲染兼容性（reftest 对齐 Chromium）自 2026-08-09 字体栈重建获批后恢复主动实施。
 

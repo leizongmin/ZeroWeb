@@ -144,15 +144,6 @@ impl FramePublishState {
     }
 }
 
-/// 从环境变量的已解析值选择发布模式；默认使用 compositor，仅精确值 `0` 使用 legacy。
-fn frame_publish_mode_from_env(value: Option<&str>) -> FramePublishMode {
-    if value == Some("0") {
-        FramePublishMode::Legacy
-    } else {
-        FramePublishMode::Compositor
-    }
-}
-
 /// 进行中的分阶段页面加载（异步 tick，不阻塞 IPC 消息循环）。
 struct PendingLoad {
     load: AsyncPageLoad,
@@ -257,9 +248,14 @@ struct RendererRuntime {
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     fn new(renderer_id: u64) -> Self {
+        zero_webview::enable_isolated_image_decoder();
         let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
-        let frame_publish_mode = frame_publish_mode_from_env(std::env::var("ZW_COMPOSITOR_PROCESS").ok().as_deref());
-        let mut rt = Self::with_io(renderer_id, frame_publish_mode, Box::new(io::stdout()), inbound_rx);
+        let mut rt = Self::with_io(
+            renderer_id,
+            FramePublishMode::Compositor,
+            Box::new(io::stdout()),
+            inbound_rx,
+        );
         rt.inbound_thread = Some(inbound_thread);
         rt
     }
@@ -434,7 +430,7 @@ impl RendererRuntime {
         }
         // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
         // window 'error' + img/link 元素级 load/error。与 browser tab_scripts::PageScriptRunner::finish 对齐，
-        // 使默认多进程路径具备事件 API parity（此前仅 --single-process 路径派发）。JS 关 / view-source 跳过。
+        // 使 renderer 路径具备事件 API parity。JS 关 / view-source 跳过。
         // 无脚本但 JS 启用的页面（仅 `<body onload>`）也派发——finish_page_load 内 lifecycle 无条件执行。
         if js_enabled && !skip {
             let resource_errors = std::mem::take(&mut self.pending_resource_errors);

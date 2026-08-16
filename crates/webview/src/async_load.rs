@@ -141,7 +141,7 @@ impl AsyncFetchHost for InProcessFetchHost {
 /// 生产 @font-face 异步加载是否启用（env `ZW_LIVE_FONTFACE`；默认启用，`0`/`false` 关闭）。
 ///
 /// kill-switch：关闭后宿主跳过 drain→load→register→resolver 刷新，行为退回 R2406 前
-///（字节抓取后丢弃）。读取方式对齐既有 env 模式（如 `ZERO_BROWSER_MULTIPROCESS`）。
+///（字节抓取后丢弃）。读取方式与其他运行时配置保持一致。
 pub fn live_fontface_enabled() -> bool {
     match std::env::var("ZW_LIVE_FONTFACE") {
         Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),

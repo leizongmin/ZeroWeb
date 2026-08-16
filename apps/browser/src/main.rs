@@ -66,7 +66,6 @@ use zero_render_foundation::config::RenderMode;
 
 use app::BrowserApp;
 use app::WindowChromeAction;
-use process_backend::set_multiprocess_enabled;
 
 /// 单个 Browser 日志文件的最大大小；达到后轮转，避免 GUI 版日志无限增长。
 const BROWSER_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
@@ -82,7 +81,6 @@ struct CliArgs {
     remote_debugging_port: u16,
     viewport_width: f32,
     viewport_height: f32,
-    single_process: bool,
     /// 与 WPT reftest 对齐：CPU 光栅化 + 1.0 缩放（便于肉眼对比 product-smoke）。
     wpt_parity: bool,
     /// 显式启用真实窗口最终帧产品 smoke，并在成功呈现后写入 PNG。
@@ -113,7 +111,6 @@ fn parse_args_from(
     let mut remote_debugging_port = 0u16;
     let mut viewport_width = 800.0f32;
     let mut viewport_height = 600.0f32;
-    let mut single_process = false;
     let mut wpt_parity = false;
     let mut smoke_capture = None;
     let mut gui_smoke_url = None;
@@ -122,6 +119,12 @@ fn parse_args_from(
     let mut parity_output_dir = None;
 
     while let Some(arg) = args.next() {
+        if arg == "--single-process" || arg == "--multi-process" {
+            return Err(format!(
+                "{arg} is no longer supported; ZeroBrowser always uses isolated renderer processes"
+            ));
+        }
+
         if let Some(value) = arg.strip_prefix("--renderer=") {
             render_mode = Some(value.parse()?);
             continue;
@@ -155,14 +158,6 @@ fn parse_args_from(
                 .next()
                 .ok_or_else(|| "--remote-debugging-port requires a port number".to_string())?;
             remote_debugging_port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
-        }
-
-        if arg == "--multi-process" {
-            // 默认已启用；保留该开关以兼容旧脚本。
-        }
-
-        if arg == "--single-process" {
-            single_process = true;
         }
 
         if arg == "--wpt-parity" {
@@ -281,9 +276,6 @@ fn parse_args_from(
         if headless {
             return Err("GUI smoke requires a real window".to_string());
         }
-        if single_process {
-            return Err("GUI smoke requires the multi-process renderer".to_string());
-        }
         let gpu_dmabuf_smoke = zero_runtime_config::enabled_when_true("ZERO_BROWSER_GPU_DMABUF_SMOKE");
         if gpu_dmabuf_smoke && render_mode == RenderMode::Cpu {
             return Err("GPU dma-buf smoke requires --renderer=gpu|auto --scale=1".to_string());
@@ -299,7 +291,6 @@ fn parse_args_from(
         remote_debugging_port,
         viewport_width,
         viewport_height,
-        single_process,
         wpt_parity,
         smoke_capture,
         gui_smoke,
@@ -318,8 +309,6 @@ Options:
   --remote-debugging-port=<port> WebSocket port for remote debugging (default: 9222)
   --viewport-width=<px>          Headless/GUI smoke page viewport width (default: 800)
   --viewport-height=<px>         Headless/GUI smoke page viewport height (default: 600)
-  --single-process               Run tabs in browser process threads (disable renderer isolation)
-  --multi-process                Use zero-renderer child processes per tab (default)
   --wpt-parity                   Match WPT/product-smoke: CPU renderer and 1.0 scale (make browser-cpu default)
   --smoke-capture=<png>          Capture the real presented window frame, emit region stats, then exit
   --gui-smoke-url=<url>          Run compositor GUI actions against a real HTTP(S) website
@@ -705,13 +694,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let multiprocess = !cli.single_process;
-    set_multiprocess_enabled(multiprocess);
-    if multiprocess {
-        tracing::info!("Multi-process mode: tabs use zero-renderer child processes");
-    } else {
-        tracing::info!("Single-process mode: tabs use in-process tab workers");
-    }
+    tracing::info!("Tabs use zero-renderer child processes");
     if cli.wpt_parity {
         tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");
     }

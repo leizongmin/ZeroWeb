@@ -24,11 +24,6 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "渲染后端：auto、gpu 或 cpu",
     },
     EnvironmentVariable {
-        name: "ZERO_BROWSER_MULTIPROCESS",
-        default: "enabled",
-        description: "renderer 子进程",
-    },
-    EnvironmentVariable {
         name: "ZERO_RENDERER_PATH",
         default: "automatic discovery",
         description: "renderer 可执行文件路径",
@@ -84,19 +79,9 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "持久 CPU 渲染工作线程",
     },
     EnvironmentVariable {
-        name: "ZW_IMAGE_DECODER_PROCESS",
-        default: "enabled",
-        description: "独立图像解码进程",
-    },
-    EnvironmentVariable {
         name: "ZW_IMAGE_DECODER_BIN",
         default: "zero-image-decoder",
         description: "图像解码器路径",
-    },
-    EnvironmentVariable {
-        name: "ZW_COMPOSITOR_PROCESS",
-        default: "enabled",
-        description: "独立 compositor 进程",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_BIN",
