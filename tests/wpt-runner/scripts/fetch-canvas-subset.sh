@@ -123,6 +123,10 @@ fetch_dir_html() {
 fetch_raw "resources/testharness.js"
 fetch_raw "html/canvas/resources/canvas-tests.js"
 fetch_raw "html/canvas/resources/canvas-tests.css"
+# R57（M3）：canvas-grid reftest 的 grid 布局样式（2d.composite.grid.* 用例的
+# grid-container/grid-cell-content——缺失致 display:grid 失效，行高布局错——
+# composite.grid oracle 23-37.5% 根因之一）。
+fetch_raw "html/canvas/resources/canvas-grid-reftest.css"
 # 用例引用的测试图片（drawImage 驱动用例）
 fetch_raw "images/clear-100x50.png"
 fetch_raw "images/green-100x50.png"

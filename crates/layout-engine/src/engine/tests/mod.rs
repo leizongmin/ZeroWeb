@@ -224,3 +224,38 @@ fn r57_canvas_grid_wrapper_position() {
         panic!("canvas box 不存在");
     }
 }
+
+/// R57（M3）：canvas display:block 时 fallback 子（<p>）不建盒——HTML §4.8.10
+/// fallback 仅在元素不支持时显示。is_replaced_with_fallback 的 display 匹配
+/// Block | InlineBlock（canvas-grid reftest 的 .grid-cell-content { display:block }
+/// 使旧 InlineBlock 条件失效——fallback p 撑高 span → grid 行高错，canvas-grid
+/// oracle 对角线布局 12.86% 之一）。
+#[test]
+fn r57_canvas_block_display_fallback_excluded() {
+    let html = r#"<html><body style="margin:0"><div style="display:grid">
+<span><canvas width="80" height="60" style="display:block"><p>fallback</p></canvas></span>
+</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let canvas_id = doc
+        .get_elements_by_tag_name("canvas")
+        .into_iter()
+        .next()
+        .expect("canvas");
+    let p_id = doc.get_elements_by_tag_name("p").into_iter().next().expect("p");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(b: &LayoutBox, id: NodeId) -> bool {
+        if b.node_id == Some(id) {
+            return true;
+        }
+        b.children.iter().any(|c| find(c, id))
+    }
+    assert!(find(&result.root, canvas_id), "canvas 应有盒");
+    assert!(
+        !find(&result.root, p_id),
+        "canvas display:block 的 fallback 子（p）不应建盒"
+    );
+}

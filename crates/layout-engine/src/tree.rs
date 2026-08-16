@@ -1007,7 +1007,12 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
 /// 抑制 fallback 子内容参与布局（HTML §4.8.10）。display 判定用 InlineBlock（UA 表
 /// 中这些元素的内联块映射；非 replaced 的 InlineBlock 不受影响）。
 fn is_replaced_with_fallback(computed: &ComputedStyle, doc: &Document, dom_id: NodeId) -> bool {
-    matches!(computed.display, DisplayValue::InlineBlock)
+    // R57（M3）：display 匹配放宽 InlineBlock → Block | InlineBlock——canvas-grid
+    // reftest 的 .grid-cell-content { display: block } 使 canvas 为 block，旧条件
+    // 下 fallback 子（<p class="fallback">）仍建盒（撑高 span → grid 行高错——
+    // composite.grid 对角线布局 12.86% 之一）。HTML §4.8.10：fallback 仅在元素
+    // 不支持时显示——canvas 渲染时任何 display 都应排除 fallback 子。
+    matches!(computed.display, DisplayValue::Block | DisplayValue::InlineBlock)
         && doc.get(dom_id).is_some_and(|n| match &n.kind {
             NodeKind::Element(e) => matches!(
                 e.local_name(),

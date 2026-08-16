@@ -1625,6 +1625,7 @@ fn collect_canvas_content_rects(
     let abs_y = off_y + b.y;
     let content_x = abs_x + b.border_left + b.padding_left;
     let content_y = abs_y + b.border_top + b.padding_top;
+
     if let Some(nid) = b.node_id
         && let Some(n) = doc.get(nid)
         && let zero_dom::NodeKind::Element(e) = &n.kind
