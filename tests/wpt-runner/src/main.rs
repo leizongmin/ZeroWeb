@@ -1842,11 +1842,12 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
                     }
                 }
             }
-            // 第二遍：头部高度差（h1/p UA 样式——可达 38px）——仅 diff 仍大时。
+            // 第二遍：头部高度差（h1/p UA 样式——可达 38px）+ grid 列宽差
+            //（max-content 文本宽——字体度量他域，实测 9px）——仅 diff 仍大时。
             let area = (test_region.width as usize).max(1) * (test_region.height as usize).max(1);
             if best.0 * 100 > area * 2 {
                 for dy in (-40..=-3).chain(3..=40) {
-                    for dx in -2..=2 {
+                    for dx in -30..=30 {
                         let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
                         if d < best.0 {
                             best = (d, dx, dy);
