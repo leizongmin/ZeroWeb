@@ -259,3 +259,46 @@ fn r57_canvas_block_display_fallback_excluded() {
         "canvas display:block 的 fallback 子（p）不应建盒"
     );
 }
+
+/// R57（M3）：grid item（span > div + canvas）的 max-content 宽——canvas-grid
+/// reftest 的列宽差（test span 128 vs Chromium ~80——canvas0 左缘 32 vs 8，
+/// margin 0 auto 居中偏移 24）。span 宽应 = max(div 文本, canvas 固有 80)，
+/// 非求和（div 文本宽 48 + canvas 80 = 128 是求和语义——IFC 水平排列错）。
+#[test]
+fn r57_grid_span_max_content_width() {
+    let html = r#"<html><body style="margin:0"><div style="display:grid;grid-template-columns:repeat(2,max-content)">
+<span><div>source-over</div><canvas width="80" height="60"></canvas></span>
+<span><div>source-in</div><canvas width="80" height="60"></canvas></span>
+</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find_spans(b: &LayoutBox, doc: &zero_dom::Document, out: &mut Vec<f32>) {
+        if b.content_width > 0.0
+            && b.node_id.is_some_and(|id| {
+                doc.get(id)
+                    .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "span"))
+            })
+        {
+            out.push(b.content_width);
+        }
+        for c in &b.children {
+            find_spans(c, doc, out);
+        }
+    }
+    let mut spans = Vec::new();
+    find_spans(&result.root, &doc, &mut spans);
+    assert!(!spans.is_empty(), "grid span 盒应存在");
+    for w in &spans {
+        // max-content = max(div 文本宽, canvas 固有 80)——**非求和**（IFC 水平
+        // 排列语义 128=80+48 是错）。div 文本「source-over」13px ≈ 94.4（字体
+        // 度量差 vs Chromium ~75 属 rendering-compat 域——列宽差来源）。
+        assert!(
+            *w >= 80.0 && *w < 160.0,
+            "span max-content 宽 = max(div 文本, canvas 80)（实测 {w} ∈ [80,160)）——求和语义回归"
+        );
+    }
+}
