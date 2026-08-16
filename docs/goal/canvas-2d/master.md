@@ -1,11 +1,11 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R57 batch-6 定稿：**oracle 测量法 ±1px 平移对齐**——
-布局域盒定位差（R834/R631）系统性 1px 泄漏进 canvas 内容测量，平移搜索消掉
-整体盒定位差（平移分布 41/41 全 ±1 实证），真通过 7→12（29.3%）、reset 6/8→7/8；
-composite.grid 对齐后仍 23-37.5% = 格子内相对布局差 + AA 边（深项）。证据见
-evidence/r57-batch6-oracle-align-2026-08-16.md；batch-5 见
-evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
+**最后更新**: 2026-08-16（R57 batch-7 定稿：**描边边界像素 AA + 亚像素 span 填充**——
+斜线边 4×4 超采样半色调（中心命中满色——WPT 满色契约）、join 三角尖角顶
+亚像素 span 修复（miter_limit 尖角差 5px 根因）；oracle ±2px 对齐（布局差可达
+2px）；**drop-shadow 0.00% 真通过**（之前 4.8%）、reset 7/8；miter_limit 1.40%
+归因 canvas 元素亚像素定位相位差（布局域深项——±2 平移消不了亚像素）。
+证据见 evidence/r57-batch7-stroke-aa-subpixel-2026-08-16.md）。
 
 ---
 
