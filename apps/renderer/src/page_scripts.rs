@@ -527,7 +527,11 @@ pub fn apply_form_reset_without_events(ctx: &mut PageScriptContext<'_>, form_sel
         .js_worker
         .execute_script_direct(&script_reset_form_controls(form_selector));
     let html_snap = ctx.html.clone();
-    apply_recorded_mutations(ctx, &html_snap).is_some()
+    let changed = apply_recorded_mutations(ctx, &html_snap).is_some();
+    if changed {
+        ctx.js_worker.set_dom_snapshot(ctx.html, ctx.url);
+    }
+    changed
 }
 
 /// 开始宿主默认动作事务，暂缓 listener 排入的 microtask。

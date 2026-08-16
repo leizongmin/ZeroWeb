@@ -1230,6 +1230,16 @@ impl RenderPipeline {
             let snapshot = (!all_form_value_only).then(|| doc.outer_html(doc.root()));
             (hs, snapshot)
         };
+        let retained_form_values = (!all_form_value_only).then(|| {
+            let doc = doc_rc.borrow();
+            self.form_control_values
+                .iter()
+                .filter_map(|(node, value)| {
+                    crate::js_dom_bridge::unique_selector_for_node(&doc, *node)
+                        .map(|selector| (selector, value.clone()))
+                })
+                .collect::<HashMap<_, _>>()
+        });
         if html_snapshot.is_some() {
             // DOM 已变（<style>/meta 内容可能变）：CSS 解析缓存失效。
             self.cached_css_text = None;
@@ -1272,10 +1282,28 @@ impl RenderPipeline {
             let snapshot = html_snapshot
                 .as_deref()
                 .expect("non-value DOM mutation must produce an HTML snapshot");
-            Some(self.render_html(snapshot, css))
+            let result = self.render_html(snapshot, css);
+            if let Some(values) = retained_form_values {
+                self.restore_form_control_values(values);
+            }
+            Some(result)
         }
         .ok_or("repaint failed after mutations")?;
         Ok((result, html_snapshot, handle_selectors))
+    }
+
+    /// 在因其他 DOM 变更重建文档后，保留未受影响控件的 live value。
+    ///
+    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-value
+    fn restore_form_control_values(&mut self, values: HashMap<String, String>) {
+        let Some(doc) = self.cached_doc.as_ref() else {
+            return;
+        };
+        let doc = doc.borrow();
+        self.form_control_values = values
+            .into_iter()
+            .filter_map(|(selector, value)| doc.query_selector(doc.root(), &selector).map(|node| (node, value)))
+            .collect();
     }
 
     /// mutation 是否为纯文本变更（SetText 的 CSS-selector 变体——handle 变体无法

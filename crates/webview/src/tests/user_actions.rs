@@ -183,6 +183,46 @@ fn checked_reset_and_submit_actions_preserve_transactions() {
 }
 
 #[test]
+fn checkbox_mutation_preserves_other_control_live_value() {
+    let html = r#"<html><body>
+        <form action="https://zero.test/submitted" method="get">
+          <input id="name" name="name">
+          <input id="check" name="subscribe" value="yes" type="checkbox">
+          <button id="submit" type="submit">Submit</button>
+        </form>
+    </body></html>"#;
+    let mut webview = WebView::new(WebViewConfig::default());
+    webview.prepare_document_state("https://zero.test/form");
+    webview.load_html(html, None);
+    let name = webview.page_node_ref_for_selector("#name").expect("name ref");
+    let check = webview.page_node_ref_for_selector("#check").expect("check ref");
+    let submit = webview.page_node_ref_for_selector("#submit").expect("submit ref");
+
+    webview
+        .dispatch_user_action(request(name, HtmlUserAction::InsertText { text: "B".to_string() }))
+        .expect("insert text");
+    webview
+        .dispatch_user_action(request(check, HtmlUserAction::Activate))
+        .expect("activate checkbox");
+
+    assert_eq!(
+        webview.form_control_value_overrides().get("#name").map(String::as_str),
+        Some("B")
+    );
+    let result = webview
+        .dispatch_user_action(request(submit, HtmlUserAction::Submit))
+        .expect("submit");
+    assert_eq!(
+        result.effects,
+        [PageEffect::Navigate(zero_page_runtime::FormNavigationIntent {
+            url: "https://zero.test/submitted?name=B&subscribe=yes".to_string(),
+            method: "GET".to_string(),
+            body: None,
+        })]
+    );
+}
+
+#[test]
 fn text_actions_enforce_readonly_and_maxlength() {
     // https://html.spec.whatwg.org/multipage/input.html#attr-input-readonly
     // https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength
