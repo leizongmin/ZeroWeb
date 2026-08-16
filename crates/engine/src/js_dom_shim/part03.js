@@ -754,6 +754,14 @@
       try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
       ty = String(ty || '').toLowerCase();
     }
+    // R57（FV M1）：disabled barred 仅对 valueMissing——validator.js 的
+    // iterate_over disabled 变体（expectedImmutable）：valueMissing 的 TEXT/date
+    // 数据显式 expectedImmutable: false（disabled 时不校验）；checkbox/radio 的
+    // valueMissing 是组状态（expectedImmutable 缺省 = expected——不因 disabled
+    // 变）；pattern/range/typeMismatch 等 expectedImmutable 缺省 = expected
+    //（disabled 时**仍校验**——WPT 断言 "should be true, when disabled"）。
+    var _dis = null;
+    try { _dis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled'); } catch (_e) {}
     var valueMissing = false;
     var reqAttr = null;
     try {
@@ -762,7 +770,7 @@
         : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'required')
            : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'required') : null));
     } catch (_e) {}
-    if (reqAttr === '1') {
+    if (reqAttr === '1' && (_dis !== '1' || ty === 'checkbox' || ty === 'radio')) {
       if (ty === 'checkbox' || ty === 'radio') {
         var checked = null;
         try {
@@ -2006,7 +2014,7 @@
         var rawValue = node.value != null ? String(node.value)
           : (node.hasAttribute('value') ? String(node.getAttribute('value') || '') : '');
         var valueMissing = false;
-        if (required) {
+        if (required && (!node.hasAttribute('disabled') || ty === 'checkbox' || ty === 'radio')) {
           if (ty === 'checkbox' || ty === 'radio') valueMissing = !node.hasAttribute('checked');
           else if (tag === 'select') valueMissing = rawValue === '';
           else if (ty === 'file') valueMissing = true;
