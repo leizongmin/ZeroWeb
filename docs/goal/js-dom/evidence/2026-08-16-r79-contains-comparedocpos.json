@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-16",
+  "round": "R79",
+  "milestone": "M4 WPT dom 按聚类驱动修复（nodes 最大双 fail 簇）",
+  "commit": "3214d883",
+  "root_cause": {
+    "what": "旧 contains/compareDocumentPosition 走 host sel 快照查询（__zw_contains / _ancestorChain + __zw_element_children）——WPT setupRangeTests 的 testNodes 全是 createElement+appendChild 建的 pending 节点（快照不可见）；text/comment/document/doctype/fragment 节点完全没有 contains/compareDocumentPosition/hasChildNodes 方法",
+    "evidence": "Node-contains 1002F（'reference.contains is not a function' + pending 恒 false）+ Node-compareDocumentPosition 1444F（DISCONNECTED|IMPL=33 / 'not a function'），两引擎共有"
+  },
+  "implementation": {
+    "core": "JS 侧统一实现（与 WPT oracle 同构算法）：_zwNodeContains（沿 other.parentNode 链 identity 上行）+ _zwCompareDocumentPosition（双链 + LCA + childNodes 序），挂 part03 全局",
+    "wiring": "element proxy get trap / _wrapNodeEntry 文本注释 / _zwRegisterTextEl 文本节点 / document proxy / detached 工厂族（_zwMEl/_zwMText/_zwMComment/PI/CDATA/doctype/fragment）",
+    "infrastructure_fixes": [
+      "html.parentNode 返 document（spec：documentElement 父为 Document）——document 进链前提",
+      "document.doctype + createDocument(ns,qn,doctype) 附接 + createHTMLDocument 预置 doctype；detached doc 树链接（head/body→documentElement→doc）",
+      "handle 元素 previousSibling/nextSibling 经父 childNodes 融合视图派生（旧恒 null——oracle previousNode 断链）",
+      "hasChildNodes 与 firstChild/lastChild 融合视图对齐（旧自相矛盾：false 而 firstChild 非 null）",
+      "跨树 DISCONNECTED 带方向位（35/37，WPT assert_in_array）——root-sort key 反对称",
+      "detached 工厂节点补 _zwMDefineSiblings"
+    ]
+  },
+  "wpt_results": {
+    "Node-contains": "480P/1002F → 1482P/0F（100%）",
+    "Node-compareDocumentPosition": "144P/1300F → 1444P/0F（100%）",
+    "parity": "v8 = quickjs = v8-native = quickjs-native 四路一致（ZW_NATIVE_DOM=1 双引擎实测）",
+    "nodes_dir": "3115P/4396F → 5568P/1943F（+2453 净 pass，对照重建的 clean-HEAD 基线二进制实测，零回归）",
+    "collateral": "traversal 953P → 1188P（+235，siblings/hasChildNodes 修复解锁）；collections 48P/0F 不变；events 189P 不变"
+  },
+  "tests": {
+    "new_units": "part18 +3：r79_contains_self_descendant_and_document_chain / r79_compare_document_position_bitmask_family / r79_handle_element_sibling_navigation",
+    "updated_assertions": "2 处 spec 纠正：html.parentNode=null → ===document（part02 test_parent_node_nested_e2e）；detached body.parentNode=null → documentElement（part12 test_detached_mutable_tree_r3017）",
+    "suites": "engine v8 2161 全绿 / quickjs 1424 全绿；wpt-runner v8 171 / quickjs 106；integration 765P/2F（html_compat default_actions 既存）；make test 除 zero-compositor dmabuf（clean HEAD 同败，并行流 GPU 域）全绿",
+    "gates": "cargo fmt 无 diff；clippy -D warnings 零警告；pre-commit-guard PASS"
+  },
+  "lesson": "oracle 的期望值与实现的文档序必须同源——WPT 用例 oracle 本身用 previousSibling/hasChildNodes/childNodes 遍历推导期望，shim 的这些导航面不一致（hasChildNodes≠firstChild 视图 / handle sibling 恒 null）会使「正确的实现」也 fail。修导航面即修期望一致性"
+}
