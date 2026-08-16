@@ -1513,13 +1513,17 @@
             try { wvTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { wvTy = ''; }
             wvTy = String(wvTy || '').toLowerCase();
           }
+          if (wvTag === 'BUTTON') {
+            if (wvTy === 'button' || wvTy === 'reset') return false;
+          }
           if (wvTy === 'hidden' || wvTy === 'button' || wvTy === 'reset') return false;
           if (wvTag === 'INPUT' || wvTag === 'TEXTAREA') {
-            if (_isTextControl(sel, handle)) {
-              var ro = null;
-              try { ro = handle ? __zw_has_attr_handle(handle, 'readonly') : __zw_has_attr(sel, 'readonly'); } catch (_e) {}
-              if (ro === '1') return false;
-            }
+            // readonly 属性存在（任何类型）→ barred——即使 readonly 不适用
+            //（date/color/file 等——用例 "readonly attribute does not apply,
+            // however we should still bar"）。
+            var ro = null;
+            try { ro = handle ? __zw_has_attr_handle(handle, 'readonly') : __zw_has_attr(sel, 'readonly'); } catch (_e) {}
+            if (ro === '1') return false;
           }
           return true;
         }

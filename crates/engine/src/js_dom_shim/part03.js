@@ -2201,9 +2201,10 @@
         }
         if (node.hasAttribute('disabled')) return false;
         var nty = node.hasAttribute('type') ? String(node.getAttribute('type') || '').toLowerCase() : '';
+        if (String(node.tagName).toLowerCase() === 'button' && (nty === 'button' || nty === 'reset')) return false;
         if (nty === 'hidden' || nty === 'button' || nty === 'reset') return false;
-        if (String(node.tagName).toLowerCase() === 'textarea'
-            || (String(node.tagName).toLowerCase() === 'input' && _PATTERN_TYPES[nty] === 1)) {
+        var ntag = String(node.tagName).toLowerCase();
+        if (ntag === 'textarea' || ntag === 'input') {
           if (node.hasAttribute('readonly')) return false;
         }
         return true;
