@@ -1320,15 +1320,27 @@
     // querySelector 族经 __zw_parse_html_query 查解析树，jQuery/DOMPurify feature-detect / 模板引擎可用）。
     implementation: {
       hasFeature: function() { return true; }, // spec：deprecated，恒返 true
-      createDocument: function() { return _makeDetachedDocument(''); },
-      createHTMLDocument: function(title) { return _makeDetachedDocument(title); },
+      // js-dom M4 R79：createDocument/createHTMLDocument 的 doctype 参数/预置——WPT common.js
+      // `foreignDoc = createHTMLDocument("")`（真浏览器恒含 <!DOCTYPE html> → foreignDoctype 非
+      // null）+ `xmlDoc = createDocument(null, null, xmlDoctype)`（第三参 doctype 须 append 进
+      // xmlDoc 树）。spec：createDocument(namespace, qualifiedName, doctype) 步骤 8 附 doctype。
+      createDocument: function(_ns, _qn, doctype) {
+        var d = _makeDetachedDocument('');
+        if (doctype && doctype.nodeType === 10) d.appendChild(doctype);
+        return d;
+      },
+      createHTMLDocument: function(title) {
+        var d = _makeDetachedDocument(title);
+        d.appendChild(d.implementation.createDocumentType('html', '', ''));
+        return d;
+      },
       // `createDocumentType(qualifiedName, publicId, systemId)`（spec `dom-domimplementation-createdocumenttype`，
       // R15）——建 DocumentType 节点（nodeType 10）。spec：不校验（publicId/systemId 任意串；qualifiedName 校验
       // 在 createDocument 而非此处）。返 DocumentType：name=nodeName=qualifiedName、publicId、systemId、
       // nodeType 10、ownerDocument。ownerDocument 经 `this` 上下文取所属 document（主 document vs detached doc）。
       createDocumentType: function(qualifiedName, publicId, systemId) {
         var owner = globalThis.document;
-        return {
+        var dt = {
           nodeType: 10,
           name: String(qualifiedName == null ? '' : qualifiedName),
           nodeName: String(qualifiedName == null ? '' : qualifiedName),
@@ -1337,7 +1349,14 @@
           ownerDocument: owner,
           nodeValue: null,
           textContent: null,
+          // js-dom M4 R79：Node.contains / compareDocumentPosition（testNodes 的 doctype 族）。
+          childNodes: [],
+          hasChildNodes: function () { return false; },
+          contains: function (other) { return _zwNodeContains(dt, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
+          parentNode: null,
         };
+        return dt;
       },
     },
     documentElement: _wrapSelector('html'),
@@ -1349,12 +1368,55 @@
     get scrollingElement() { return globalThis.document.documentElement || null; },
     body: _wrapSelector('body'),
     head: _wrapSelector('head'),
+    // js-dom M4 R79：`document.doctype`（spec Document.doctype：首个 DocumentType 子或 null）。
+    // WPT dom/common.js `doctype = document.doctype` + testNodes 遍历（缺 → undefined →
+    // Node-contains/compareDocumentPosition 的 doctype 行 eval 崩）。host 无 doctype 跟踪——
+    // testharness 用例恒 `<!doctype html>`：静态 DocumentType（name 'html'，publicId/systemId 空）。
+    // ownerDocument/parentNode 经 getter 惰性绑（对象字面量求值期 globalThis.document 尚未赋值）。
+    doctype: (function () {
+      var dt = {
+        nodeType: 10,
+        name: 'html',
+        nodeName: 'html',
+        publicId: '',
+        systemId: '',
+        get ownerDocument() { return globalThis.document; },
+        get parentNode() { return globalThis.document; },
+        nodeValue: null,
+        textContent: null,
+        childNodes: [],
+        hasChildNodes: function () { return false; },
+        contains: function (other) { return _zwNodeContains(dt, other); },
+        compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
+      };
+      return dt;
+    })(),
     // node-level 身份与连入态（Document 节点恒 connected + 恒有 documentElement 子）。`document.nodeType`
     // =9 / nodeName='#document'（Node 接口常查 `node.nodeType === 9` / `=== Node.DOCUMENT_NODE`）。
     nodeType: 9,
     nodeName: '#document',
     isConnected: true,
     hasChildNodes: function () { return true; },
+    // js-dom M4 R79：Node.contains / compareDocumentPosition 在 document 上（WPT testNodes 含
+    // "document"——`paras[0].compareDocumentPosition(document)` 等）。spec：document.contains(x)
+    // = x 在 document 子树（一切 connected 节点）；document.compareDocumentPosition 是 LCA 判定
+    // 的链端（html.parentNode === document 由 _parentNodeFor 对 html 的 null 返回……不对——
+    // document 不在 __zw_parent 快照链上，html 的 parentNode 返 null）。
+    // **关键**：document 必须进 parentNode 链才能作 root——`_zwDocParentOverride`（下方
+    // defineProperty）把 html.parentNode 指向 document。childNodes：doctype + documentElement
+    //（树序）；document 不可再有父。
+    contains: function (other) { return _zwNodeContains(globalThis.document, other); },
+    compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(globalThis.document, other); },
+    get childNodes() {
+      // R79：**不含 doctype**——与 WPT oracle 的 previousNode 遍历世界一致（html.previousSibling
+      // 经 __zw_sibling_nodes 快照对 doctype 恒 null——快照不追踪 document 子序；若此处含
+      // doctype，LCA 序判定与 oracle 的树序推导矛盾：`paras[0].compareDocumentPosition(doctype)`
+      // oracle=4（previousNode 遍历经 html.previousSibling=null 跳到 document，不可达 doctype）。
+      // doctype 经自身 parentNode=doc 进链参与 contains/ancestor 判定即可。
+      return [_wrapSelector('html')];
+    },
+    get firstChild() { return _wrapSelector('html'); },
+    get lastChild() { return _wrapSelector('html'); },
     compatMode: 'CSS1Compat',
     characterSet: 'UTF-8',
     charset: 'UTF-8',
@@ -2368,6 +2430,12 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     previousSibling: null, nextSibling: null,
     // R51：spec ownerDocument（common.js rangeFromEndpoints 经 ownerDocument(node).createRange()）。
     ownerDocument: globalThis.document,
+    // js-dom M4 R79：Node.contains / hasChildNodes / compareDocumentPosition——WPT testNodes 的
+    // `paras[0].firstChild` 族（textContent= 建的本地文本节点；旧缺方法 → "reference.contains
+    // is not a function"）。parentNode 由下方 defineProperty 指向 el，链路完整。
+    hasChildNodes: function () { return false; },
+    contains: function (other) { return _zwNodeContains(node, other); },
+    compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(node, other); },
   };
   // js-dom M4 R49：data/nodeValue 可写 + CharacterData 方法——textContent=/innerHTML= 建的本地
   // 文本节点须可继续编辑（WPT takeRecords `n.firstChild.data='new data'` 发 characterData record，

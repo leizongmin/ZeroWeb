@@ -466,6 +466,32 @@
           return prop === 'firstChild' ? cn[0] : cn[cn.length - 1];
         }
         if (prop === 'previousSibling' || prop === 'nextSibling') {
+          // js-dom M4 R79：handle 元素（createElement+appendChild 建的 pending 节点）的兄弟
+          // 导航——旧仅 sel-based（快照查询），handle 元素恒 null → WPT oracle previousNode
+          // 遍历断链（Node-compareDocumentPosition 25F 尾簇：previousSibling=null 使 backward
+          // 树序跳过兄弟，期望值与文档序矛盾）。经 `_zwNodeParent[handle]` 反链取父，父的
+          // childNodes 融合视图（registry + overlay）定位 index ±1。
+          if (!sel && handle) {
+            var _r79link = _zwNodeParent[handle];
+            var _r79parent = null;
+            if (_r79link) {
+              if (_r79link.parentSel) _r79parent = _wrapSelector(_r79link.parentSel);
+              else if (_r79link.parentHandle) _r79parent = _wrapHandle(_r79link.parentHandle);
+            }
+            if (_r79parent && _r79parent.childNodes) {
+              try {
+                var _r79kids = _r79parent.childNodes;
+                var _r79self = _makeProxy(sel, handle);
+                for (var _r79i = 0; _r79i < _r79kids.length; _r79i++) {
+                  if (_r79kids[_r79i] === _r79self) {
+                    if (prop === 'previousSibling') return _r79i > 0 ? _r79kids[_r79i - 1] : null;
+                    return _r79i + 1 < _r79kids.length ? _r79kids[_r79i + 1] : null;
+                  }
+                }
+              } catch (_e79) {}
+            }
+            return null;
+          }
           if (!sel || typeof __zw_sibling_nodes !== 'function') return null;
           // js-dom M4 R55：兄弟对缓存（与 _zwChildBaseCache 同款生命周期——dom_html Arc 回合内
           // 不可变；重注册经 globalThis._zwSiblingBaseInvalidateAll 全量失效）。同 turn 内
@@ -483,12 +509,13 @@
           return prop === 'previousSibling' ? _sb.p : _sb.n;
         }
         // `el.contains(other)`——other 是否为 el 的后代或 el 自身（沿 parent 链）。
+        // js-dom M4 R79：改 JS 侧 `_zwNodeContains`（parentNode 链 identity 上行）——旧走
+        // host `__zw_contains`（sel 快照）对 pending 节点（setupRangeTests createElement 建）
+        // 恒 false（WPT Node-contains 1002F 整簇根因）；WPT 用例 oracle 同构算法，pending
+        // 自然正确（R51b 反链 + proxy 缓存 identity）。
         if (prop === 'contains') {
           return function(other) {
-            if (!sel || typeof __zw_contains !== 'function') return false;
-            var otherSel = other && other.__zwSelector;
-            if (!otherSel) return false;
-            try { return __zw_contains(sel, otherSel) === '1'; } catch (_e) { return false; }
+            return _zwNodeContains(_makeProxy(sel, handle), other);
           };
         }
         // `el.getRootNode()`——沿 parent 链到根（通常 html），返根 proxy。sel 缺失 → 返自身。
@@ -524,11 +551,25 @@
           return false;
         }
         // `el.hasChildNodes()`（spec Node.hasChildNodes：是否有任意子节点含文本/注释）——树遍历 / diff /
-        // 子节点存在性检查高频。经既有 `_childNodeList`（元素查 `__zw_child_nodes`；handle-only 返 []）取
-        // length>0。text/comment 节点本身无子（spec）；DocumentFragment 子节点经 host flatten 跟踪，
-        // handle-only _childNodeList 暂返 [] → 报 false（detached fragment 检查少见，documented）。
+        // 子节点存在性检查高频。js-dom M4 R79：改用与 firstChild/lastChild **同款融合视图**
+        //（_zwLocalChildNodes 文本视图 + _handleChildren registry + _childNodeList 快照）——旧仅
+        // `_childNodeList` 对 handle 元素（textContent= 后 append 的 pending 节点）漏本地文本子
+        // → hasChildNodes=false 而 firstChild 非 null 自相矛盾（WPT Node-compareDocumentPosition
+        // oracle 的 previousNode 下降依赖 hasChildNodes，17F 尾簇根因）。
         if (prop === 'hasChildNodes') {
-          return function() { return _childNodeList(sel, handle).length > 0; };
+          return function() {
+            if (_isContainerHandle(handle)) return _handleChildNodes(handle).length > 0;
+            if (!sel && handle) {
+              var _hnL = (typeof _zwLocalChildNodes === 'function')
+                ? _zwLocalChildNodes(sel, handle)
+                : null;
+              var _hnK = (_handleChildren[handle] || []).slice();
+              if (_hnL && _hnL.length) return true;
+              if (_hnK.length) return true;
+              if (_hnL) return false;
+            }
+            return _childNodeList(sel, handle).length > 0;
+          };
         }
         // `el.isSameNode(other)`——节点身份相等（deprecated，等价 ===；proxy 缓存使同节点同 proxy，
         // 但经 _elKey 比较更鲁棒：sel/handle 一致即同节点）。
@@ -552,41 +593,13 @@
           };
         }
         // `el.compareDocumentPosition(other)`——bitmask 描述 other 相对 el 的文档位置（树算法 / 库排序高频）。
-        // 经 `_ancestorChain`（self/other→root）+ LCA + `__zw_element_children` 子序比较。已知限制：仅 sel-based
-        // element（text/comment 节点无 sel → DISCONNECTED 兜底）；不同树 → DISCONNECTED|IMPL。
+        // js-dom M4 R79：改 JS 侧 `_zwCompareDocumentPosition`（parentNode 链 + LCA + childNodes 序）——
+        // 旧走 `_ancestorChain`（host sel 快照）+ `__zw_element_children` 对 pending 节点恒
+        // DISCONNECTED|IMPL(33)（WPT Node-compareDocumentPosition 1444F 整簇根因），且 text/comment
+        // 节点无 sel 直接兜底错。新实现全节点形态（element/text/comment/document）统一。
         if (prop === 'compareDocumentPosition') {
           return function(other) {
-            var FOLLOWING = 4, PRECEDING = 2, CONTAINS = 8, CONTAINED_BY = 16, DISCONNECTED = 1, IMPL = 32;
-            var otherSel = other && other.__zwSelector;
-            if (!sel || !otherSel) return DISCONNECTED | IMPL;
-            if (sel === otherSel) return 0;
-            var aChain = _ancestorChain(sel);
-            var bChain = _ancestorChain(otherSel);
-            if (!aChain.length || !bChain.length) return DISCONNECTED | IMPL;
-            if (aChain[aChain.length - 1] !== bChain[bChain.length - 1]) return DISCONNECTED | IMPL;
-            // other 是 this 的祖先 → other contains this + other precedes this（doc 序）。
-            if (aChain.indexOf(otherSel) >= 0) return CONTAINS | PRECEDING;
-            // this 是 other 的祖先 → this contains other + other follows this。
-            if (bChain.indexOf(sel) >= 0) return CONTAINED_BY | FOLLOWING;
-            // 共同祖先非直系：root→node 反转链找 LCA；扫描 LCA element children 的**原始 selector 串**
-            //（_splitSelectors 会包成 proxy，故直接 split '|'），经 `__zw_contains`（节点包含，selector-format
-            // 无关）定位含 this / other 的子，序比较。
-            var ra = aChain.slice().reverse(), rb = bChain.slice().reverse();
-            var i = 0;
-            while (i < ra.length && i < rb.length && ra[i] === rb[i]) i++;
-            var lca = ra[i - 1];
-            if (lca && typeof __zw_element_children === 'function' && typeof __zw_contains === 'function') {
-              try {
-                var kids = String(__zw_element_children(lca) || '').split('|').filter(Boolean);
-                var ti = -1, oi = -1;
-                for (var k = 0; k < kids.length && (ti < 0 || oi < 0); k++) {
-                  if (ti < 0 && __zw_contains(kids[k], sel) === '1') ti = k;
-                  if (oi < 0 && __zw_contains(kids[k], otherSel) === '1') oi = k;
-                }
-                if (ti >= 0 && oi >= 0) return ti < oi ? FOLLOWING : PRECEDING;
-              } catch (_e) {}
-            }
-            return FOLLOWING; // 兜底
+            return _zwCompareDocumentPosition(_makeProxy(sel, handle), other);
           };
         }
         // DocumentFragment handle（nodeType 11 / '#document-fragment'）/ Comment（nodeType 8 / '#comment'）/

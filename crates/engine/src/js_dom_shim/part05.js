@@ -3968,6 +3968,15 @@
       previousSibling: null,
       nextSibling: null,
       __zwIsText: true,
+      // js-dom M4 R79：Node.contains / hasChildNodes / compareDocumentPosition——WPT
+      // Node-contains/compareDocumentPosition 的 testNodes 含 paras[0].firstChild 等文本节点
+      //（旧为普通 data 字段无方法 → "reference.contains is not a function" 1002F 簇）。spec：
+      // CharacterData 节点无子 → hasChildNodes false；contains 仅 other === 自身命中；
+      // compareDocumentPosition 经 `_zwCompareDocumentPosition`（parentNode 字段已由本构造
+      // 指向父 proxy，链路完整）。
+      hasChildNodes: function () { return false; },
+      contains: function (other) { return _zwNodeContains(node, other); },
+      compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(node, other); },
     };
     // R51：spec ownerDocument——parsed 文本/注释节点属主文档（common.js rangeFromEndpoints
     // 经 ownerDocument(node).createRange() 取 doc 再建 Range；缺此字段 → undefined 崩）。

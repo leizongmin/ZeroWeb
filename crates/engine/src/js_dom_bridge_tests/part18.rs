@@ -842,3 +842,111 @@ fn test_ensuresubpath_clip_ellipse_r56e() {
         "ellipse negative radii throw, -0 accepted"
     );
 }
+
+// js-dom M4 R79：Node.contains / compareDocumentPosition 全节点形态 + document 进链 +
+// handle 元素兄弟导航 + 跨树 DISCONNECTED 方向位（WPT Node-contains/Node-compareDocumentPosition
+// 2446F→0 双 100% 的 driving 单测）。
+
+fn r79_sandbox() -> (zero_script_sandbox::V8Sandbox, std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>) {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::V8Sandbox;
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='host'><p id='a'>A</p></div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r79".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    (sandbox, mutations)
+}
+
+#[test]
+fn r79_contains_self_descendant_and_document_chain() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.querySelector('#a');\n\
+         var text = p.firstChild;\n\
+         var created = document.createElement('span');\n\
+         p.appendChild(created);\n\
+         globalThis.__r79a = [\n\
+           host.contains(host),\n\
+           host.contains(p),\n\
+           host.contains(text),\n\
+           host.contains(created),\n\
+           p.contains(host),\n\
+           host.contains(null),\n\
+           document.contains(p),\n\
+           document.contains(created),\n\
+           html_contains(),\n\
+         ].join(',');\n\
+         function html_contains() { return document.documentElement.contains(p); }",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r79a").unwrap().value,
+        "true,true,true,true,false,false,true,true,true",
+        "contains: self/descendant/text/pending-null/document 链（html.parentNode=doc R79）"
+    );
+}
+
+#[test]
+fn r79_compare_document_position_bitmask_family() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.querySelector('#a');\n\
+         var text = p.firstChild;\n\
+         var created = document.createElement('span');\n\
+         p.appendChild(created);\n\
+         var foreign = document.implementation.createHTMLDocument('');\n\
+         var fp = foreign.createElement('p');\n\
+         foreign.body.appendChild(fp);\n\
+         var P = 2, F = 4, C = 8, CB = 16;\n\
+         globalThis.__r79b = [\n\
+           p.compareDocumentPosition(p),\n\
+           p.compareDocumentPosition(text) - CB - F,\n\
+           text.compareDocumentPosition(p) - C - P,\n\
+           host.compareDocumentPosition(p) - CB - F,\n\
+           document.compareDocumentPosition(p) - CB - F,\n\
+           (function(){ var r = p.compareDocumentPosition(fp); return r - 1 - 32 === P || r - 1 - 32 === F; })(),\n\
+           (function(){ var r1 = p.compareDocumentPosition(fp), r2 = fp.compareDocumentPosition(p); return (r1 & 2) !== (r2 & 2); })(),\n\
+         ].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r79b").unwrap().value,
+        "0,0,0,0,0,true,true",
+        "compareDocumentPosition: same=0 / 祖先=CONTAINS|PRECEDING / 后代=CONTAINED_BY|FOLLOWING / 跨树带方向位且反对称"
+    );
+}
+
+#[test]
+fn r79_handle_element_sibling_navigation() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p1 = document.createElement('p'); p1.textContent = 'one';\n\
+         var p2 = document.createElement('p'); p2.textContent = 'two';\n\
+         var p3 = document.createElement('p'); p3.textContent = 'three';\n\
+         host.appendChild(p1); host.appendChild(p2); host.appendChild(p3);\n\
+         globalThis.__r79c = [\n\
+           p2.previousSibling === p1,\n\
+           p2.nextSibling === p3,\n\
+           p1.previousSibling && p1.previousSibling.id,\n\
+           p3.nextSibling === null,\n\
+           p2.previousSibling.textContent,\n\
+           p1.hasChildNodes(),\n\
+           p1.firstChild.nodeValue,\n\
+         ].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r79c").unwrap().value,
+        "true,true,a,true,one,true,one",
+        "R79：handle 元素（pending 节点）previousSibling/nextSibling 经父 childNodes 融合视图派生 + hasChildNodes 与 firstChild 视图一致"
+    );
+}

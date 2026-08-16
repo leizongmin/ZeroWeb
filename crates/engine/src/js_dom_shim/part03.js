@@ -528,6 +528,117 @@
     return handle ? ('@' + handle) : sel;
   }
 
+  // ── js-dom M4 R79：Node.contains / compareDocumentPosition 的 JS 侧统一实现 ──────────
+  // 根因：旧 contains/compareDocumentPosition 走 host `__zw_contains`/`__zw_element_children`
+  //（sel 快照查询），WPT dom/nodes Node-contains/Node-compareDocumentPosition 的 testNodes 全是
+  // setupRangeTests 用 createElement+appendChild 建的 **pending 节点**（mutation 异步 apply，
+  // 快照不含）→ DISCONNECTED|IMPL(33) / contains false 整簇失败（两引擎共有，nodes 子目录
+  // 最大 fail 簇 1444F+1002F）。spec https://dom.spec.whatwg.org/#dom-node-contains 的定义
+  // 本就是「沿 other 的 parent 链上行找 ref」——R51b 后 parentNode 对全节点形态（sel 快照 /
+  // handle 反链 / 文本节点 parentNode 字段）都正确，故在 JS 侧直接实现（与 WPT 用例 oracle
+  // 同构的算法），host 零改动、pending 自然正确。
+  // 节点身份比较：proxy 缓存保证同节点同 proxy（_proxyCache / _wrapNodeEntry 静态对象），
+  // 严格 === 即可；document（part06 单例对象）/detached document（_makeDetachedDocument）
+  // 亦为稳定单例。null/undefined（contains(null) 用例）恒 false。
+  function _zwSameNode(a, b) {
+    return a === b;
+  }
+  // `ref.contains(other)`——spec：沿 other 的 parent 链上行（含 other 自身），identity 命中 ref
+  // 即 true。guard 防环（异常树/自环防御，正常 ≤ 树深）。
+  function _zwNodeContains(ref, other) {
+    if (!ref || !other || typeof other !== 'object') return false;
+    var cur = other, guard = 0;
+    while (cur && guard < 4096) {
+      if (_zwSameNode(cur, ref)) return true;
+      cur = cur.parentNode;
+      guard++;
+    }
+    return false;
+  }
+  // `ref.compareDocumentPosition(other)`——bitmask 描述 other 相对 ref 的文档位置。
+  // https://dom.spec.whatwg.org/#dom-node-comparedocumentposition
+  // ① 不同树（各自 root 不同 identity）→ DISCONNECTED(1) | IMPLEMENTATION_SPECIFIC(32)
+  // ② other 是 ref 祖先 → CONTAINS(8) | PRECEDING(2)
+  // ③ other 是 ref 后代 → CONTAINED_BY(16) | FOLLOWING(4)
+  // ④ 同父（或 LCA）下树序：LCA 的 childNodes 里 indexOf 比较 → FOLLOWING(4)/PRECEDING(2)
+  // root 判定：沿 parentNode 上行到 null 的最末节点。childNodes 读经各节点自身 getter
+  //（元素 proxy / 文本对象 / document），pending overlay 已在 _childNodeList 内建。
+  function _zwCompareDocumentPosition(ref, other) {
+    var DISCONNECTED = 1, PRECEDING = 2, FOLLOWING = 4, CONTAINS = 8, CONTAINED_BY = 16, IMPL = 32;
+    if (!other || typeof other !== 'object') {
+      // spec：参数非 Node → TypeError（step 1）。WPT 无此断言形态，防御性抛。
+      throw new TypeError("Argument 1 ('otherNode') to Node.compareDocumentPosition must be an object.");
+    }
+    if (_zwSameNode(ref, other)) return 0;
+    var ra = _zwRootOf(ref), rb = _zwRootOf(other);
+    if (!ra || !rb || !_zwSameNode(ra, rb)) {
+      // 不同树：现代浏览器（Chromium/Firefox 约定）除 DISCONNECTED|IMPL 外还带一致的方向位
+      //（WPT `assert_in_array(result, [DISCONNECTED|PRECEDING|IMPL, DISCONNECTED|FOLLOWING|IMPL])`
+      // = [35, 37]）。方向判据须**反对称**（交换参数得反向）——按两节点各自的 root key 字符串
+      // 序比较（root 同 key 不可能——同 root 已在上面返回）。字符串比较全序确定，交换参数翻转。
+      var ka = _zwNodeSortKey(ref), kb = _zwNodeSortKey(other);
+      var order = ka < kb ? PRECEDING : FOLLOWING;
+      return DISCONNECTED | IMPL | order;
+    }
+    if (_zwNodeContains(other, ref)) return CONTAINS | PRECEDING;       // other 是 ref 祖先
+    if (_zwNodeContains(ref, other)) return CONTAINED_BY | FOLLOWING;   // other 是 ref 后代
+    // 最近公共祖先：两链（root→node）从尾比对，分歧前的最末公共节点。
+    var ca = _zwChainOf(ref), cb = _zwChainOf(other);
+    var i = 0;
+    while (i < ca.length && i < cb.length && _zwSameNode(ca[i], cb[i])) i++;
+    var lca = ca[i - 1];
+    if (!lca) return DISCONNECTED | IMPL;
+    // LCA 的 childNodes 里比较两链下一步节点的序（树序 = 祖先链首个分歧兄弟的文档序）。
+    var aNext = ca[i], bNext = cb[i];
+    var kids = (lca.childNodes || []);
+    var ai = -1, bi = -1;
+    for (var k = 0; k < kids.length && (ai < 0 || bi < 0); k++) {
+      if (ai < 0 && _zwSameNode(kids[k], aNext)) ai = k;
+      if (bi < 0 && _zwSameNode(kids[k], bNext)) bi = k;
+    }
+    if (ai >= 0 && bi >= 0) return ai < bi ? FOLLOWING : PRECEDING;
+    return FOLLOWING; // 防御兜底（identity 失配不应发生）
+  }
+  // 沿 parentNode 上行到 root（返 root 节点；guard 防环）。
+  function _zwRootOf(node) {
+    var cur = node, guard = 0;
+    while (cur && cur.parentNode && guard < 4096) { cur = cur.parentNode; guard++; }
+    return cur || null;
+  }
+  // 祖先链（root→node 顺序，含两端）。
+  function _zwChainOf(node) {
+    var chain = [];
+    var cur = node, guard = 0;
+    while (cur && guard < 4096) { chain.push(cur); cur = cur.parentNode; guard++; }
+    return chain.reverse();
+  }
+  // 跨树 DISCONNECTED 方向位的排序 key：root key + 节点自身 key（字符串全序，反对称）。
+  // root/节点 key = sel（parsed 元素）/ '@'+handle（handle 节点）/ '#doc' 等（无标识对象）。
+  function _zwNodeSortKey(node) {
+    var root = _zwRootOf(node);
+    var k = function (n) {
+      if (!n) return '#null';
+      if (n.__zwHandle) return '@' + n.__zwHandle;
+      if (n.__zwSelector) return n.__zwSelector;
+      if (n.nodeType === 9) return '#doc:' + (n.title || '') + ':' + _zwObjSeq(n);
+      return '#obj:' + _zwObjSeq(n);
+    };
+    return k(root) + '|' + k(node);
+  }
+  // 无标识对象的稳定序号（WeakMap 分配，创建序 = 首访问序——同一节点恒同号，跨节点互异）。
+  var _zwObjSeqMap = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var _zwObjSeqNext = 1;
+  function _zwObjSeq(obj) {
+    if (!_zwObjSeqMap || !obj || typeof obj !== 'object') return String(obj);
+    var s = _zwObjSeqMap.get(obj);
+    if (s === undefined) { s = _zwObjSeqNext++; _zwObjSeqMap.set(obj, s); }
+    return String(s);
+  }
+  // R79 挂全局（part04/05/06 get trap 与节点工厂消费；命名空间内 hoisting 已可达，显式导出
+  // 便于跨 part 引用与单测直接 poke）。
+  globalThis._zwNodeContains = _zwNodeContains;
+  globalThis._zwCompareDocumentPosition = _zwCompareDocumentPosition;
+
   // ── custom element lifecycle slice（R2994）：connectedCallback / disconnectedCallback ──────────
   // spec HTML §4.13：custom element 连入 document 树时调 connectedCallback，断开时调 disconnectedCallback
   //（双向，可重复触发——再连再调）。element 为 generic Proxy 非 ctor 实例（upgrade/ctor 调用仍 defer），
@@ -1582,11 +1693,16 @@
   function _parentNodeFor(sel, handle) {
     // R34xx：本地移除标记优先——remove() 后（mutation 未应用）parentNode 返 null。
     if (_zwIsRemoved(sel)) return null;
+    // js-dom M4 R79：html 的 parentNode 是 document（spec Node.parentNode：documentElement
+    // 的父为 Document——`__zw_parent` 只返元素父，对 html 返空）。document 进链是
+    // contains/compareDocumentPosition 以 document 为 root 的前提（WPT Node-contains 的
+    // `paras[0].contains(document)` oracle 沿 parentNode 上行须命中 document）。
+    if (sel === 'html') return globalThis.document || null;
     if (sel && typeof __zw_parent === 'function') {
       try {
         var p = __zw_parent(sel);
         if (p) return _wrapSelector(p);
-        return null; // html 根 / 未命中 → 无元素父
+        return null; // 未命中 → 无元素父
       } catch (_e) { return null; }
     }
     // js-dom M4 R51：handle-only 节点先查 child→parent 反向链（_zwNodeParent，_mo_notify
@@ -1720,6 +1836,12 @@
     node.getClientRects = function () { return []; };
     // R3019：hasChildNodes（DOMPurify _sanitizeElements mXSS 检查调 currentNode.hasChildNodes()）。
     node.hasChildNodes = function () { return node.childNodes.length > 0; };
+    // js-dom M4 R79：Node.contains / compareDocumentPosition（WPT Node-contains/
+    // Node-compareDocumentPosition 的 detached 树 testNodes——foreignPara1/xmlElement 等经
+    // _makeDetachedDocument.createElement 建）。经共享 `_zwNodeContains`/
+    // `_zwCompareDocumentPosition`（parentNode/childNodes 字段本地维护，链路完整）。
+    node.contains = function (other) { return _zwNodeContains(node, other); };
+    node.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(node, other); };
     // R3018：属性 mutation 入树（setAttribute/removeAttribute 改 attrs 数组，序列化反映）。
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {
@@ -1811,8 +1933,8 @@
     if (attrName === 'id') node.id = node.getAttribute('id') || '';
     else if (attrName === 'class') node.className = node.getAttribute('class') || '';
   }
-  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
-  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
+  function _zwMText(v, parent) { var t = String(v); var n = { nodeType: 3, nodeName: '#text', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
+  function _zwMComment(v, parent) { var t = String(v); var n = { nodeType: 8, nodeName: '#comment', nodeValue: t, textContent: t, data: t, childNodes: [], children: [], hasChildNodes: function () { return false; }, contains: function (other) { return _zwNodeContains(n, other); }, compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n, other); }, parentNode: parent || null }; _zwMDefineSiblings(n); return n; }
   // 递归建子树：entry = {k:'E',s:sel}/{k:'T',v}/{k:'C',v}（__zw_parse_html_child_nodes）。元素取快照 + 递归子。
   function _zwMBuildNode(html, entry, parent) {
     if (entry.k === 'T') return _zwMText(entry.v, parent);
@@ -1892,13 +2014,24 @@
       removeChild: function (c) { ensureTree(); return _tree.removeChild(c); },
       appendChild: function (c) { ensureTree(); return _tree.appendChild(c); }
     };
+    var docEl = { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', localName: 'html', childNodes: [] };
+    var headEl = { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', localName: 'head', childNodes: [] };
     var doc = {
       nodeType: 9,
       nodeName: '#document',
-      documentElement: { nodeType: 1, tagName: 'HTML', nodeName: 'HTML', childNodes: [] },
-      head: { nodeType: 1, tagName: 'HEAD', nodeName: 'HEAD', childNodes: [] },
+      documentElement: docEl,
+      head: headEl,
       body: body,
       title: title != null ? String(title) : '',
+      // js-dom M4 R79：`doc.doctype`（WPT common.js `foreignDoctype = foreignDoc.doctype`——
+      // createHTMLDocument 的 doctype 缺省 html；appendChild(doctype) 后 parentNode=doc 进链）。
+      // 惰性绑定（字面量求值期 doc 未赋值完毕）。
+      get doctype() {
+        for (var i = 0; i < this.childNodes.length; i++) {
+          if (this.childNodes[i] && this.childNodes[i].nodeType === 10) return this.childNodes[i];
+        }
+        return null;
+      },
       // R51：detached doc 的文档级子列表（common.js setupRangeTests `xmlDoc.appendChild(...)`
       // 建元素/PI/comment——detached 文档无渲染，纯本地列表即可支撑 testNodes 组装/遍历）。
       childNodes: [],
@@ -1906,6 +2039,9 @@
       get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
       get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
       hasChildNodes: function () { return this.childNodes.length > 0; },
+      // js-dom M4 R79：Node.contains / compareDocumentPosition（detached doc 作 root 进链）。
+      contains: function (other) { return _zwNodeContains(doc, other); },
+      compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(doc, other); },
       appendChild: function (c) {
         if (!c) return c;
         if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e) {} }
@@ -1946,16 +2082,20 @@
       //（nodeType=4 / nodeName='#cdata-section' / data/nodeValue；不可 append 到 HTML 树）。
       createCDATASection: function (d) {
         var v = String(d == null ? '' : d);
-        return {
+        var n4 = {
           nodeType: 4,
           nodeName: '#cdata-section',
           data: v,
           nodeValue: v,
           textContent: v,
           childNodes: [],
+          hasChildNodes: function () { return false; },
+          contains: function (other) { return _zwNodeContains(n4, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n4, other); },
           parentNode: null,
           ownerDocument: doc,
         };
+        return n4;
       },
       // R51：detached doc 的 ProcessingInstruction/Comment 工厂（common.js setupRangeTests
       // xmlDoc.createProcessingInstruction + createComment——同 createCDATASection 补齐，
@@ -1969,7 +2109,7 @@
         if (v.indexOf('?>') !== -1) {
           throw new (globalThis.DOMException || Error)('Invalid ProcessingInstruction data', 'InvalidCharacterError');
         }
-        return {
+        var n7 = {
           nodeType: 7,
           nodeName: t,
           target: t,
@@ -1977,22 +2117,31 @@
           nodeValue: v,
           textContent: v,
           childNodes: [],
+          hasChildNodes: function () { return false; },
+          contains: function (other) { return _zwNodeContains(n7, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n7, other); },
           parentNode: null,
           ownerDocument: doc,
         };
+        _zwMDefineSiblings(n7);
+        return n7;
       },
       createComment: function (d) {
         var v = String(d == null ? '' : d);
-        return {
+        var n8 = {
           nodeType: 8,
           nodeName: '#comment',
           data: v,
           nodeValue: v,
           textContent: v,
           childNodes: [],
+          hasChildNodes: function () { return false; },
+          contains: function (other) { return _zwNodeContains(n8, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(n8, other); },
           parentNode: null,
           ownerDocument: doc,
         };
+        return n8;
       },
       // R51：detached doc 的 DocumentFragment 工厂（common.js setupRangeTests
       // foreignDoc.createDocumentFragment——轻量可变容器：appendChild/childNodes/
@@ -2005,6 +2154,10 @@
           children: [],
           parentNode: null,
           ownerDocument: doc,
+          // js-dom M4 R79：Node.contains / compareDocumentPosition（WPT testNodes 的
+          // docfrag/foreignDocfrag/xmlDocfrag 族——旧缺方法）。
+          contains: function (other) { return _zwNodeContains(frag, other); },
+          compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(frag, other); },
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
@@ -2038,7 +2191,7 @@
       implementation: {
         hasFeature: function () { return true; },
         createDocumentType: function (qualifiedName, publicId, systemId) {
-          return {
+          var dt = {
             nodeType: 10,
             name: String(qualifiedName == null ? '' : qualifiedName),
             nodeName: String(qualifiedName == null ? '' : qualifiedName),
@@ -2047,11 +2200,46 @@
             ownerDocument: doc,
             nodeValue: null,
             textContent: null,
+            childNodes: [],
+            hasChildNodes: function () { return false; },
+            contains: function (other) { return _zwNodeContains(dt, other); },
+            compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(dt, other); },
+            parentNode: null,
           };
+          return dt;
         },
       },
     };
+    // js-dom M4 R79 尾簇：detached 工厂节点缺 `_zwMDefineSiblings`（WPT Node-compareDocumentPosition
+    // oracle 的 previousNode 经 previousSibling 后向树序遍历——PI/doctype 的 previousSibling 恒 null
+    // 使期望值与文档序矛盾）。上述 createDocumentType/createCDATASection/createComment/
+    // createProcessingInstruction 均为普通对象，在此统一补齐。
+    (function () {
+      var wire = function (factory) {
+        return function () {
+          var n = factory.apply(this, arguments);
+          if (n && typeof n === 'object' && n.nodeType !== 10) _zwMDefineSiblings(n);
+          return n;
+        };
+      };
+      doc.createComment = wire(doc.createComment);
+      doc.createProcessingInstruction = wire(doc.createProcessingInstruction);
+    })();
     body.ownerDocument = doc;
+    headEl.ownerDocument = doc;
+    docEl.ownerDocument = doc;
+    // js-dom M4 R79：html/head/body 树链接（spec Document 结构：documentElement 含 head+body，
+    // 其父为 doc）。WPT common.js `foreignDoc.body.appendChild(foreignPara1)` 后
+    // `foreignDoc.contains(foreignPara1)` 沿 parentNode 链上行须命中 foreignDoc。body.parentNode
+    // 原 null（R3017 detached root 注释——DOMPurify walk 用 parentNode 向上只多一级，不影响）。
+    headEl.parentNode = docEl;
+    body.parentNode = docEl;
+    docEl.childNodes = [headEl, body];
+    docEl.children = [headEl, body];
+    docEl.hasChildNodes = function () { return true; };
+    docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
+    docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };
+    docEl.parentNode = doc;
     return doc;
   }
 

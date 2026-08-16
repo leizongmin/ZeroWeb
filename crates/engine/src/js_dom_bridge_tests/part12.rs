@@ -895,8 +895,10 @@ fn test_detached_mutable_tree_r3017() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__spanParentTag)").unwrap().value, "DIV", "span.parentNode.tagName=DIV");
-    // body 的 parentNode 为 null（detached root）。
-    assert_eq!(sandbox.execute("String(doc.body.parentNode)").unwrap().value, "null", "body.parentNode=null（detached root）");
+    // js-dom M4 R79：body.parentNode 现为 detached doc 的 documentElement（spec Document
+    // 结构：body 的父是 html；旧断言 null 是 detached 简化——R79 contains/compareDocumentPosition
+    // 需完整树链接）。
+    assert_eq!(sandbox.execute("String(doc.body.parentNode.nodeName)").unwrap().value, "HTML", "body.parentNode=documentElement（R79 树链接）");
 
     // removeChild：从 div 移除 span → div.childNodes 不含 span + body.innerHTML 序列化反映移除。
     sandbox

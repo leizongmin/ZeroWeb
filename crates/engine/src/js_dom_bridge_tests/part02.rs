@@ -2339,9 +2339,10 @@ fn test_parent_node_nested_e2e() {
         .execute("globalThis.__op = document.querySelector('#outer').parentNode.tagName;")
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__op").unwrap().value, "BODY");
-    // html 根 parentNode === null。
+    // js-dom M4 R79：html.parentNode 现为 document（spec Node.parentNode：documentElement 的
+    // 父是 Document——旧断言 null；contains/compareDocumentPosition 的树链前提）。
     sandbox
-        .execute("globalThis.__hp = document.querySelector('html').parentNode === null;")
+        .execute("globalThis.__hp = document.querySelector('html').parentNode === document;")
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__hp").unwrap().value, "true");
 }
