@@ -1,0 +1,30 @@
+{
+  "date": "2026-08-16",
+  "round": "R72",
+  "milestone": "M6 S4q 完整化（Event/CustomEvent 构造器）",
+  "commit": "1a1d8227",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 150,
+    "deletions": 0
+  },
+  "changes": [
+    "Event/CustomEvent 全局构造器（spec dom-event-constructor / dom-customevent-constructor），镜像 V8 event.rs set_event_init 属性面",
+    "形态：JS 构造器胶水 + Rust 原语（R71 dataset 同模式）——rquickjs 裸 Function 即使 set_constructor(true) 也不把 this 绑到 new 实例（QuickJS ctor 协议需 JS_CallConstructor2，rquickjs 高层 API 不暴露）；This<Object> 参数在 glue 调用形态下也收不到绑定，原语改收普通 Object 参",
+    "Rust 原语两件：__zw_native_event_init（type/bubbles/cancelable/composed/defaultPrevented/isTrusted/eventPhase/timeStamp 单调 perf ms——R22 恒 0 死循环教训 + target/currentTarget 预置 null）+ __zw_native_event_prevent_default（cancelable gate）",
+    "JS 胶水：实例方法 stopPropagation/stopImmediatePropagation（__zw_stop flags，R67 dispatchEvent 消费）/preventDefault/initEvent + Event 常量 NONE/CAPTURING_PHASE/AT_TARGET/BUBBLING_PHASE + CustomEvent.prototype 链挂 Event.prototype + detail（init dict 缺省 null）",
+    "构造器实例经 R67 三阶段派发（type/instanceof/detail 保留；dispatch 返值 !(cancelable && defaultPrevented) 生效）"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R72 五组断言：init 属性面 / instanceof+常量+方法 / CustomEvent detail+原型链 / dispatchEvent 集成 / preventDefault cancelable gate）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/event.rs 语义对齐（同 init 属性面 + 同 preventDefault gate + 同常量）；构造形态差异：V8 FunctionTemplate vs QuickJS JS 胶水 + Rust 原语（观察语义等价）",
+  "rquickjs_lessons": [
+    "set_constructor(true) 不绑定 this 到 new 实例——QuickJS 构造器协议需 JS_CallConstructor2 路径",
+    "This<Object> 参数在 JS glue 显式传 this 的调用形态下收不到（undefined 转换错误）——原语收普通 Object 参",
+    "JS 胶水 + Rust 原语模式第二次复用（R71 dataset 后），确立为 named-property/构造器域的 QuickJS 标准形态"
+  ]
+}
