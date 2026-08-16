@@ -3653,7 +3653,22 @@
       if (typeof image.getContext !== 'function') {
         // 非 canvas 源：img 元素（naturalWidth 存在）未加载 → no-op；其他（数字等）
         // → TypeError（2d.drawImage.wrongtype）。
-        if (image && typeof image.naturalWidth === 'number') return;
+        // R56h：naturalWidth=0 的 img 镜像 createPattern 的失败态判定——静态
+        //（HTML 中带 id）失败 img → InvalidStateError（spec——2d.drawImage.nonexistent）；
+        // 动态创建/空 src/重载中（'../' 上跳）→ no-op（2d.drawImage.incomplete.*）。
+        if (image && typeof image.naturalWidth === 'number') {
+          if (image.naturalWidth <= 0) {
+            var _diSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
+            if (!_diSrc || _diSrc.indexOf('../') === 0) return;
+            var _diId = (image.getAttribute ? String(image.getAttribute('id') || '') : '') || '';
+            var _inDoc = _diId ? !!(globalThis.document && globalThis.document.getElementById(_diId)) : false;
+            if (_inDoc) {
+              throw _zwDomException('drawImage: source image failed to load', 'InvalidStateError');
+            }
+            return;
+          }
+          return;
+        }
         throw new TypeError('drawImage: invalid image source');
       }
       // R56h：位图已转移（postMessage transfer 的 OffscreenCanvas）→ InvalidStateError
