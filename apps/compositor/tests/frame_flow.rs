@@ -348,7 +348,7 @@ fn assert_compositor_retains_image_payload(extra_env: &[(&str, &str)]) {
 /// S3：部分 dirty 帧经 compositor 进程 copy_front + 区域重绘，区外像素保留。
 #[test]
 fn compositor_partial_dirty_preserves_pixels_outside_region() {
-    let (mut transport, _comp) = spawn_compositor();
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0")]);
     let w = 100u32;
     let h = 80u32;
 
@@ -546,7 +546,7 @@ fn compositor_isolates_surfaces_rejects_old_frames_resizes_and_releases() {
 /// RFC 4.2：CompositorSetScroll 更新 surface 元数据并在 GetCompositorFrame 回读。
 #[test]
 fn compositor_scroll_metadata_round_trips() {
-    let (mut transport, _comp) = spawn_compositor();
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0")]);
     let frame = make_frame(32, 24, [128, 64, 32, 255]);
     assert_eq!(submit_frame(&mut transport, 1, 9, 1, 1, frame), (9, 1, 1));
 
@@ -571,7 +571,9 @@ fn compositor_scroll_metadata_round_trips() {
 /// RFC 4.2-S2：scroll 变换以文档图元重光栅化，不能平移首屏位图。
 #[test]
 fn compositor_scroll_transform_rasterizes_content_beyond_initial_viewport() {
-    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "1")]);
+    // 默认路径必须保留 compositor 侧视口重绘；否则 Browser 会在滚动时退回
+    // 本地图元/标题 URL 占位路径。
+    let (mut transport, _comp) = spawn_compositor_with_env(&[]);
     let frame = PaintSnapshotParams {
         viewport_width: 2,
         viewport_height: 4,
@@ -624,7 +626,7 @@ fn compositor_scroll_transform_rasterizes_content_beyond_initial_viewport() {
 
     let transformed = get_frame(&mut transport, 3, 3, 1, 1);
     assert!((transformed.scroll_x).abs() < f32::EPSILON);
-    assert!((transformed.scroll_y).abs() < f32::EPSILON);
+    assert!((transformed.scroll_y - 4.0).abs() < f32::EPSILON);
     // scroll_y=4：首屏位图完全越界；仍须重光栅化出文档第 4~7 行的蓝色内容。
     assert_eq!(&transformed.rgba[..4], &[0, 0, 255, 255]);
     assert_eq!(&transformed.rgba[28..32], &[0, 0, 255, 255]);
@@ -1207,7 +1209,7 @@ fn compositor_gpu_scroll_transform_rasterizes_scrolled_viewport() {
     assert!(matches!(ack.kind, IpcMessageKind::Ok));
 
     let frame = get_frame(&mut transport, 3, 9, 4, 1);
-    assert_eq!(frame.scroll_y, 0.0, "图元重绘后 scroll_y 应归零");
+    assert_eq!(frame.scroll_y, 8.0, "回读应标记图元已重绘到的文档偏移");
     // 文档第 8px 仍在原 fill 内，滚动后应位于视口顶端。
     let top = 8 * 4;
     assert_eq!(&frame.rgba[top..top + 3], &[128, 64, 32], "滚动后顶部应显示下方内容");

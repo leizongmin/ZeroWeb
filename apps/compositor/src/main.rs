@@ -338,12 +338,10 @@ fn main() {
                                 surface.rasterized_scroll_y = surface.scroll_y;
                             }
                             let front = surface.backing.front();
-                            let mut scroll_x = surface.scroll_x;
-                            let mut scroll_y = surface.scroll_y;
-                            if zero_protocol::compositor_scroll_transform_enabled() {
-                                scroll_x = 0.0;
-                                scroll_y = 0.0;
-                            }
+                            // 返回此位图已烘焙的文档偏移。Browser 用它计算仍在
+                            // 飞行中的本地滚动差值，避免滚动条和页面像素脱节。
+                            let scroll_x = surface.scroll_x;
+                            let scroll_y = surface.scroll_y;
                             let pixel_data = front.data.clone();
 
                             #[cfg(target_os = "linux")]

@@ -33,14 +33,13 @@ pub fn compositor_shm_enabled() -> bool {
     env_linux_default_on("ZW_COMPOSITOR_SHM")
 }
 
-/// 是否启用 compositor 侧 scroll 烘焙（`ZW_COMPOSITOR_SCROLL_TRANSFORM=1`）。
+/// 是否启用 compositor 侧 scroll 视口重绘（默认开，`0` 禁用）。
 ///
-/// 默认关闭：bake 是 front 帧的像素平移，超过帧高的滚动采样越界产生空白
-/// （compositor 图元按文档原点光栅化，不含滚动后视口内容）；默认配置下
-/// 滚动视觉由 Browser 本地光栅偏移路径负责。依赖 ASYNC_SCROLL 同时开启
+/// 合成器保留最近的绘制快照，并在滚动时按当前视口重光栅化；这避免了只平移
+/// 首屏 front buffer 时，滚入首屏外内容变为空白。依赖 ASYNC_SCROLL 同时开启
 /// （Browser 仅在异步滚动开启时经 `CompositorSetScroll` 推送滚动值）。
 pub fn compositor_scroll_transform_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_SCROLL_TRANSFORM")
+    zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_SCROLL_TRANSFORM")
 }
 
 /// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux 默认开；`ZW_COMPOSITOR_GPU_IMAGE=0` 禁用）。

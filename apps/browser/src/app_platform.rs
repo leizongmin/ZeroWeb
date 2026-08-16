@@ -197,8 +197,9 @@ impl BrowserApp {
         let active_tab = self.shell.active_tab_id();
         if let Some(tab_id) = active_tab {
             let scroll = self.tab_scroll_state(tab_id);
-            // present 帧的页面像素来自 compositor 文档原点光栅化，不含滚动偏移；
-            // 滚动非零时必须回退本地合成（本地光栅偏移是唯一支持滚动的显示路径）。
+            // Owned-present 没有滚动世代：即使页面 compositor 已重绘，也不能让
+            // 旧的整窗 present 覆盖当前滚动视口。滚动期间回到页面 compositor 帧
+            // + Browser UI 的本地合成，直至 present 协议携带可验证的 scroll 序号。
             if scroll.x != 0.0 || scroll.y != 0.0 {
                 return false;
             }
@@ -432,8 +433,6 @@ impl BrowserApp {
         }
         let tab_id = self.shell.active_tab_id()?;
         {
-            // present 帧的页面像素不含滚动偏移（见 skip_local_composite_for_owned_present），
-            // 滚动非零时回退本地光栅，避免 present blit 整窗替换掉滚动的页面内容。
             let scroll = self.tab_scroll_state(tab_id);
             if scroll.x != 0.0 || scroll.y != 0.0 {
                 return None;
@@ -557,7 +556,12 @@ impl BrowserApp {
         overlay_rounded_rects: &[RoundedRectPrimitive],
     ) -> zero_render_foundation::surface::FrameBuffer {
         let tab_id = self.shell.active_tab_id();
-        let scroll = tab_id.map(|id| self.tab_scroll_state(id)).unwrap_or_default();
+        let scroll = if crate::compositor_client::scroll_transform_enabled() {
+            // 页面像素由 compositor 重绘；CPU 保留帧不得再平移旧视口位图。
+            page_scroll::TabScrollState::default()
+        } else {
+            tab_id.map(|id| self.tab_scroll_state(id)).unwrap_or_default()
+        };
         let epoch = (
             tab_id.map(|id| self.tabs.snapshot_seq(id)).unwrap_or(0),
             width,

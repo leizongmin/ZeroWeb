@@ -1167,6 +1167,20 @@ impl BrowserApp {
         self.scroll.get(&tab_id).map(|s| s.y).unwrap_or(0.0)
     }
 
+    /// 测试用：设置标签页的本地滚动状态。
+    #[cfg(test)]
+    pub fn set_tab_scroll_for_test(&mut self, tab_id: TabId, scroll: TabScrollState) {
+        self.scroll.insert(tab_id, scroll);
+    }
+
+    /// 测试用：标记当前 compositor 位图已烘焙的文档滚动偏移。
+    #[cfg(test)]
+    pub fn set_compositor_scroll_for_test(&mut self, tab_id: TabId, scroll: TabScrollState) {
+        if let Some(snapshot) = self.tabs.snapshot_mut(tab_id) {
+            snapshot.compositor_scroll = Some((scroll.x, scroll.y));
+        }
+    }
+
     /// 当前标签页滚动状态。
     pub fn tab_scroll_state(&self, tab_id: TabId) -> TabScrollState {
         self.scroll.get(&tab_id).copied().unwrap_or_default()

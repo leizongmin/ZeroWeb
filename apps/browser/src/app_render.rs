@@ -349,8 +349,17 @@ impl BrowserApp {
         // 「未滚动位图 + 平移图元」产生叠加。compositor 回读值（compositor_scroll）
         // 是异步滞后的（滚动后 renderer 不提交新帧时回读停滞在旧值），不可作显示源。
         let scroll = if crate::compositor_client::scroll_transform_enabled() {
-            // SCROLL_TRANSFORM 显式开启时 compositor 已把滚动烘焙进位图像素
-            crate::page_scroll::TabScrollState::default()
+            let desired = self.tab_scroll_state(tab_id);
+            let presented = self
+                .tabs
+                .snapshot(tab_id)
+                .and_then(|snapshot| snapshot.compositor_scroll)
+                .unwrap_or_default();
+            // compositor 返回的位图已包含 presented 偏移；仅平移尚未回执的差值。
+            crate::page_scroll::TabScrollState {
+                x: desired.x - presented.0,
+                y: desired.y - presented.1,
+            }
         } else {
             self.tab_scroll_state(tab_id)
         };
@@ -360,11 +369,12 @@ impl BrowserApp {
         let y_offset = layout.viewport_y - scroll.y;
         let x_offset = layout.viewport_x - scroll.x;
 
-        // compositor 回读位图仅覆盖未滚动视口（位图平移超过一帧高度即空白）；
-        // 滚动非零时回落全文档图元平移路径（process_backend 在 compositor 模式
-        // 同步解码 last_render 图元），任意滚动量渲染正确内容。
+        // 合成器启用 scroll transform 时，回读位图已是当前滚动视口，不能再由
+        // Browser 平移，也不能因为本地滚动值非零而回退到标题/URL 占位绘制。
         let page_scrolled = scroll.x != 0.0 || scroll.y != 0.0;
-        if compositor_controls_page(compositor_status) && !page_scrolled {
+        if compositor_controls_page(compositor_status)
+            && (!page_scrolled || crate::compositor_client::scroll_transform_enabled())
+        {
             if compositor_status != crate::compositor_client::CompositorStatus::Healthy {
                 return RenderPrimitives::new();
             }
@@ -1173,7 +1183,7 @@ impl BrowserApp {
 
         let mut y = page_y + content_y_offset;
 
-        // 获取当前标签的滚动偏移
+        // compositor 页面帧负责已确认的偏移；额外图元层处理尚未确认的差值。
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
@@ -1186,10 +1196,6 @@ impl BrowserApp {
                     .tabs
                     .compositor_frame(tab_id)
                     .is_some()
-                // 滚动非零时 compositor 位图不再覆盖视口内容——回落图元平移路径
-                // （extra 层见 get_webview_extra_primitives），fills/glyphs 同样
-                // 经 render_active_webview 平移混入，否则页面主内容缺失。
-                && !(scroll.x != 0.0 || scroll.y != 0.0)
             {
                 return;
             }
@@ -1208,8 +1214,7 @@ impl BrowserApp {
         {
             return;
         }
-        // compositor 模式滚动回落：has_composite_paint 依据 last_render（compositor
-        // 模式同步解码图元，见 process_backend）——与 legacy 同款平移渲染。
+        // scroll transform 被显式关闭时，才以 legacy 图元平移作为回退。
         if compositor_controls_page(compositor_status)
             && has_composite_paint
             && self.render_active_webview(

@@ -183,6 +183,65 @@ fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
 }
 
 #[test]
+fn default_compositor_scroll_keeps_using_the_compositor_viewport_frame() {
+    use crate::compositor_client::CompositorStatus;
+
+    assert!(crate::compositor_client::scroll_transform_enabled());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.inject_compositor_frame_for_test(tab_id, 404, 0, 1, (320, 240), [0, 0, 255, 255].repeat(320 * 240));
+    app.set_tab_scroll_for_test(tab_id, page_scroll::TabScrollState { x: 0.0, y: 80.0 });
+
+    let scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert_eq!(scene.images.len(), 1, "scroll must not fall back to the title/URL page");
+    assert_eq!(
+        scene.images[0].rect.origin.y,
+        app.page_scroll_layout(tab_id).viewport_y - 80.0
+    );
+}
+
+#[test]
+fn compositor_scroll_stops_at_document_end_and_uses_confirmed_viewport() {
+    use crate::compositor_client::CompositorStatus;
+    use zero_host_runtime::event::MouseScrollDelta;
+    use zero_webview::WebViewRenderResult;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.inject_tab_render_for_test(
+        tab_id,
+        WebViewRenderResult {
+            primitives: RenderPrimitives::new(),
+            dirty_rects: Vec::new(),
+            timings: Default::default(),
+        },
+        1_400.0,
+    );
+    app.inject_compositor_frame_for_test(tab_id, 405, 0, 1, (320, 240), [0, 0, 255, 255].repeat(320 * 240));
+
+    let layout = app.page_scroll_layout(tab_id);
+    let (x, y, width, height) = app.page_content_rect();
+    app.handle_scroll(
+        MouseScrollDelta::LineDelta(0.0, -100.0),
+        f64::from(x + width / 2.0),
+        f64::from(y + height / 2.0),
+    );
+
+    let bottom = app.tab_scroll_state(tab_id);
+    assert_eq!(bottom.y, layout.max_scroll_y, "scroll must clamp at the document end");
+    app.set_compositor_scroll_for_test(tab_id, bottom);
+
+    let scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert_eq!(scene.images.len(), 1);
+    assert_eq!(
+        scene.images[0].rect.origin.y, layout.viewport_y,
+        "a compositor frame confirmed at the document end must not be shifted into blank space"
+    );
+}
+
+#[test]
 fn append_webview_primitives_translates_fills_and_glyphs() {
     let mut primitives = RenderPrimitives::new();
     primitives.add_fill(Rect::new(1.0, 2.0, 10.0, 20.0), Color::rgb(255, 0, 0));
