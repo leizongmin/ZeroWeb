@@ -931,11 +931,29 @@
         } catch (_e) {}
         if (minA2 != null && _isDateRangeComparable(String(minA2).trim(), ty)
             && _dateCmp(dv, String(minA2).trim()) < 0) {
-          rangeUnderflow = true;
+          // time reversed（min > max）：value 在 [00:00, max] 内不 underflow
+          var _revU = false;
+          if (ty === 'time' && maxA2 != null && _isDateRangeComparable(String(maxA2).trim(), ty)
+              && _dateCmp(String(minA2).trim(), String(maxA2).trim()) > 0) {
+            _revU = true;
+          }
+          if (!_revU || _dateCmp(dv, String(maxA2).trim()) > 0) {
+            rangeUnderflow = true;
+          }
         }
         if (maxA2 != null && _isDateRangeComparable(String(maxA2).trim(), ty)
             && _dateCmp(dv, String(maxA2).trim()) > 0) {
-          rangeOverflow = true;
+          // R57（FV M1）：time 的 reversed range（min > max）——value 在
+          // [min, 24:00) ∪ [00:00, max] 内不 overflow（spec——"inside the
+          // accepted range for reversed range"）。
+          var _rev = false;
+          if (ty === 'time' && minA2 != null && _isDateRangeComparable(String(minA2).trim(), ty)
+              && _dateCmp(String(minA2).trim(), String(maxA2).trim()) > 0) {
+            _rev = true;
+          }
+          if (!_rev || _dateCmp(dv, String(minA2).trim()) < 0) {
+            rangeOverflow = true;
+          }
         }
       }
     }
@@ -965,11 +983,22 @@
     var stepMismatch = false;
     var stepA = null;
     try { stepA = handle ? __zw_get_attr_handle(handle, 'step') : __zw_get_attr(sel, 'step'); } catch (_e) {}
+    // R57（FV M1）：step 缺省（number/range → 1；date/month/week → 1；time/
+    // datetime-local → 60 秒）——"step not set and floating value"（value 浮点
+    // 对缺省 step 1 → mismatch）。
+    var effStep = null;
     if (stepA != null && String(stepA) !== '' && String(stepA).toLowerCase() !== 'any') {
+      var _ps = parseFloat(String(stepA));
+      if (!isNaN(_ps) && _ps > 0) effStep = _ps;
+    } else if (stepA == null || String(stepA) === '') {
+      if (ty === 'time' || ty === 'datetime-local') effStep = 60;
+      else if (ty === 'number' || ty === 'range' || ty === 'date' || ty === 'month' || ty === 'week') effStep = 1;
+    }
+    if (effStep != null) {
       var sVal = _controlValue(sel, handle, key);
       if (sVal.trim() !== '') {
-        var st = parseFloat(String(stepA));
-        if (!isNaN(st) && st > 0) {
+        var st = effStep;
+        if (st > 0) {
           var diff = null;
           if (ty === 'number' || ty === 'range') {
             var numV = parseFloat(sVal);
@@ -1856,10 +1885,17 @@
     // 宽松格式（date 可含时间部分——WPT 怪用例）**+ 范围校验**（无效月/日/时
     // 不比较——"2000-02-30" 期望不触发 range）。
     var m;
-    if (ty === 'date' || ty === 'datetime-local') {
-      m = v.match(/^(\d{4,})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if (ty === 'date') {
+      m = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
       if (!m) return false;
-      if (m[4] != null && (+m[4] > 23 || +m[5] > 59)) return false;
+      y = +m[1]; mo = +m[2]; d = +m[3];
+    } else if (ty === 'datetime-local') {
+      // 完整匹配（含时间部分——"2000-01-01  12:00"（双空格）无效——前缀匹配
+      // 的 bug）
+      m = v.match(/^(\d{4,})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?$/);
+      if (!m) return false;
+      if (m[4] != null && (+m[4] > 23 || +m[5] > 59 || (+m[6] || 0) > 59)) return false;
+      y = +m[1]; mo = +m[2]; d = +m[3];
     } else if (ty === 'month') {
       m = v.match(/^(\d{4,})-(\d{2})/);
       if (!m) return false;
