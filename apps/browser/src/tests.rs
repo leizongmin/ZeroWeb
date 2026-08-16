@@ -241,21 +241,117 @@ fn healthy_compositor_scene_never_contains_same_page_legacy_primitives() {
 }
 
 #[test]
-fn default_compositor_scroll_keeps_using_the_compositor_viewport_frame() {
+fn compositor_scroll_uses_document_primitives_until_the_viewport_frame_is_confirmed() {
     use crate::compositor_client::CompositorStatus;
+    use zero_webview::WebViewRenderResult;
 
     assert!(crate::compositor_client::scroll_transform_enabled());
     let mut app = BrowserApp::new(RenderMode::Cpu);
     app.physical_size = (800, 600);
     let tab_id = app.shell.active_tab_id().unwrap();
+    let document_fill = Color::rgb(255, 0, 0);
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_fill(Rect::new(0.0, 160.0, 200.0, 100.0), document_fill);
+    app.inject_tab_render_for_test(
+        tab_id,
+        WebViewRenderResult {
+            primitives,
+            dirty_rects: Vec::new(),
+            timings: Default::default(),
+        },
+        1_000.0,
+    );
     app.inject_compositor_frame_for_test(tab_id, 404, 0, 1, (320, 240), [0, 0, 255, 255].repeat(320 * 240));
     app.set_tab_scroll_for_test(tab_id, page_scroll::TabScrollState { x: 0.0, y: 80.0 });
 
     let scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
-    assert_eq!(scene.images.len(), 1, "scroll must not fall back to the title/URL page");
+    assert!(
+        scene.images.is_empty(),
+        "an unconfirmed compositor viewport must not be shifted as page content"
+    );
+    let (fills, _, _, _, _, _) = app.build_scene_for_test(800, 600);
+    let expected_y = app.page_scroll_layout(tab_id).viewport_y + 80.0;
+    let document_fill_positions: Vec<_> = fills
+        .iter()
+        .filter(|fill| fill.color == document_fill)
+        .map(|fill| (fill.rect.origin.y, fill.rect.size.height))
+        .collect();
+    assert!(
+        document_fill_positions
+            .iter()
+            .any(|(y, _)| (*y - expected_y).abs() < f32::EPSILON),
+        "the unconfirmed scroll position must render the document fallback at its visible position; expected y={expected_y}, document fills={document_fill_positions:?}"
+    );
+
+    app.set_compositor_scroll_for_test(tab_id, page_scroll::TabScrollState { x: 0.0, y: 80.0 });
+    let scene = app.compositor_primitives_for_test(CompositorStatus::Healthy);
+    assert_eq!(
+        scene.images.len(),
+        1,
+        "the confirmed compositor viewport should be used"
+    );
     assert_eq!(
         scene.images[0].rect.origin.y,
-        app.page_scroll_layout(tab_id).viewport_y - 80.0
+        app.page_scroll_layout(tab_id).viewport_y,
+        "a confirmed viewport bitmap must stay anchored at the page viewport"
+    );
+}
+
+#[test]
+fn compositor_scroll_falls_back_again_for_each_new_unconfirmed_offset() {
+    use crate::compositor_client::CompositorStatus;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.inject_compositor_frame_for_test(tab_id, 406, 0, 1, (320, 240), [0, 0, 255, 255].repeat(320 * 240));
+
+    let first = page_scroll::TabScrollState { x: 0.0, y: 80.0 };
+    app.set_tab_scroll_for_test(tab_id, first);
+    app.set_compositor_scroll_for_test(tab_id, first);
+    assert_eq!(
+        app.compositor_primitives_for_test(CompositorStatus::Healthy)
+            .images
+            .len(),
+        1,
+        "the matching compositor viewport should be displayed"
+    );
+
+    app.set_tab_scroll_for_test(tab_id, page_scroll::TabScrollState { x: 0.0, y: 160.0 });
+    assert!(
+        app.compositor_primitives_for_test(CompositorStatus::Healthy)
+            .images
+            .is_empty(),
+        "the previous compositor viewport must not be translated for a later scroll offset"
+    );
+}
+
+#[test]
+fn compositor_scroll_requires_confirmation_of_both_axes() {
+    use crate::compositor_client::CompositorStatus;
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    let tab_id = app.shell.active_tab_id().unwrap();
+    app.inject_compositor_frame_for_test(tab_id, 407, 0, 1, (320, 240), [0, 0, 255, 255].repeat(320 * 240));
+
+    let target = page_scroll::TabScrollState { x: 24.0, y: 80.0 };
+    app.set_tab_scroll_for_test(tab_id, target);
+    app.set_compositor_scroll_for_test(tab_id, page_scroll::TabScrollState { x: 0.0, y: 80.0 });
+    assert!(
+        app.compositor_primitives_for_test(CompositorStatus::Healthy)
+            .images
+            .is_empty(),
+        "a viewport frame with only one matching axis must not be displayed"
+    );
+
+    app.set_compositor_scroll_for_test(tab_id, target);
+    assert_eq!(
+        app.compositor_primitives_for_test(CompositorStatus::Healthy)
+            .images
+            .len(),
+        1,
+        "the compositor viewport should be used only after both axes match"
     );
 }
 

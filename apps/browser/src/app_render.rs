@@ -346,35 +346,32 @@ impl BrowserApp {
         let layout = self.page_scroll_layout_for(tab_id, self.physical_size.0, self.physical_size.1);
         // 显示偏移统一用本地滚动状态：fills/glyphs 层（render_page_content）与
         // extra 层（本函数）必须同源，否则两层用不同滚动值会同时绘制
-        // 「未滚动位图 + 平移图元」产生叠加。compositor 回读值（compositor_scroll）
-        // 是异步滞后的（滚动后 renderer 不提交新帧时回读停滞在旧值），不可作显示源。
-        let scroll = if crate::compositor_client::scroll_transform_enabled() {
-            let desired = self.tab_scroll_state(tab_id);
-            let presented = self
-                .tabs
-                .snapshot(tab_id)
-                .and_then(|snapshot| snapshot.compositor_scroll)
-                .unwrap_or_default();
-            // compositor 返回的位图已包含 presented 偏移；仅平移尚未回执的差值。
-            crate::page_scroll::TabScrollState {
-                x: desired.x - presented.0,
-                y: desired.y - presented.1,
-            }
+        // 「未滚动位图 + 平移图元」产生叠加。
+        let scroll = self.tab_scroll_state(tab_id);
+        let compositor_scroll_confirmed = self
+            .tabs
+            .snapshot(tab_id)
+            .and_then(|snapshot| snapshot.compositor_scroll)
+            .is_some_and(|(x, y)| x == scroll.x && y == scroll.y);
+        let page_scrolled = scroll.x != 0.0 || scroll.y != 0.0;
+        let use_compositor_viewport = !page_scrolled
+            || (crate::compositor_client::scroll_transform_enabled() && compositor_scroll_confirmed);
+        let display_scroll = if use_compositor_viewport && crate::compositor_client::scroll_transform_enabled() {
+            crate::page_scroll::TabScrollState::default()
         } else {
-            self.tab_scroll_state(tab_id)
+            scroll
         };
         // 页面图元为 CSS 单位，按 device scale × 页面 zoom 换算物理像素。
         let s = self.page_render_scale();
         let clip_viewport = ViewportClip::new(layout.viewport_x, layout.viewport_y, layout.viewport_w, layout.viewport_h);
-        let y_offset = layout.viewport_y - scroll.y;
-        let x_offset = layout.viewport_x - scroll.x;
+        let y_offset = layout.viewport_y - display_scroll.y;
+        let x_offset = layout.viewport_x - display_scroll.x;
 
-        // 合成器启用 scroll transform 时，回读位图已是当前滚动视口，不能再由
-        // Browser 平移，也不能因为本地滚动值非零而回退到标题/URL 占位绘制。
-        let page_scrolled = scroll.x != 0.0 || scroll.y != 0.0;
-        if compositor_controls_page(compositor_status)
-            && (!page_scrolled || crate::compositor_client::scroll_transform_enabled())
-        {
+        // 合成器帧是固定大小的视口位图。滚动尚未得到 compositor 确认时，不能
+        // 平移旧帧来伪造新视口；改用已有全文档图元即时绘制。确认后再切回
+        // compositor 帧，避免拉伸/回弹式的假滚动。
+        // https://drafts.csswg.org/cssom-view/#scrolling
+        if compositor_controls_page(compositor_status) && use_compositor_viewport {
             if compositor_status != crate::compositor_client::CompositorStatus::Healthy {
                 return RenderPrimitives::new();
             }
@@ -1165,10 +1162,9 @@ impl BrowserApp {
         font_size: f32,
         s: f32,
     ) {
-        let fid = match self.font_id {
-            Some(id) => id,
-            None => return,
-        };
+        // 字体未就绪时仍必须绘制页面的非文字图元；否则 compositor 帧尚未确认的
+        // 滚动回退会变成空白页。缺失字体仅影响 glyph 的 fallback face。
+        let fid = self.font_id.unwrap_or_default();
 
         let content_y_offset = 0.0;
 
@@ -1183,15 +1179,23 @@ impl BrowserApp {
 
         let mut y = page_y + content_y_offset;
 
-        // compositor 页面帧负责已确认的偏移；额外图元层处理尚未确认的差值。
+        // compositor 页面帧只负责已确认的偏移；尚未确认时必须绘制全文档图元。
         let tab_id = self.shell.active_tab_id().unwrap();
         let scroll = self.tab_scroll_state(tab_id);
         let layout = self.page_scroll_layout(tab_id);
         let has_composite_paint = self.tabs.snapshot(tab_id).is_some_and(|s| s.should_composite_paint());
         let compositor_status = self.compositor_status();
+        let compositor_scroll_confirmed = self
+            .tabs
+            .snapshot(tab_id)
+            .and_then(|snapshot| snapshot.compositor_scroll)
+            .is_some_and(|(x, y)| x == scroll.x && y == scroll.y);
+        let use_compositor_viewport = (scroll.x == 0.0 && scroll.y == 0.0)
+            || (crate::compositor_client::scroll_transform_enabled() && compositor_scroll_confirmed);
 
         if compositor_controls_page(compositor_status) {
             if compositor_status == crate::compositor_client::CompositorStatus::Healthy
+                && use_compositor_viewport
                 && self
                     .tabs
                     .compositor_frame(tab_id)
