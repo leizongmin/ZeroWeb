@@ -16,23 +16,18 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 - rendering-compat（CSS 渲染/字体/布局）— 零工作重叠
 - zero-web 父目标（JS/DOM 桥主线）— 仅 `js_dom_shim` part04/05.js canvas 段共享，run-rules §9 碰头管理（本轮碰头核对：part05.js 近 7 天无活跃编辑，安全修改）
 
-## 实测基线（2026-08-14）
+## 实测基线（R56h 终态，2026-08-16）
 
-### WPT 面（9 目录 919 文件全量）
+### WPT 面（element 20 目录 + 顶层，逐目录验证全 0 Fail）
 
-| 目录 | 用例数 | 状态 |
-|------|--------|------|
-| the-canvas-state | 23 文件 / 68 subtest | ✅ 68/68 全绿 |
-| drawing-rectangles-to-the-canvas | 32 | ✅ 32/32 |
-| transformations | 22 | ✅ 21 Pass（1 = reftest 格式文件超时，非 canvas 面） |
-| pixel-manipulation | 14 | ✅ **71/71**（float16 覆盖层 + ctor.basics 重载回退） |
-| line-styles | 33 | ✅ 33/33 |
-| shadows | 61 | ✅ 61/61 |
-| compositing | 124 | ✅ 98 Pass / **0 Fail**（26 = reftest 格式 grid 文件超时，非 canvas 面） |
-| fill-and-stroke-styles | 261 | ✅ 254 Pass / **0 Fail** / 7 超时（既有） |
-| text | 144 | ✅ **193 Pass / 0 Fail**（variationSelectors 呈现感知 + edge-cases 中点边界）/ 19 超时（reftest 格式） |
-| offscreen worker 变体 | 662 文件 | ✅ **715 Pass / 0 Fail**（G6——OffscreenCanvas × Web Worker 集成：importScripts 内联 + fetch_tests_from_worker 聚合 + worker 字体面） |
-| **合计** | **1634 文件** | **testharness 面 0 Fail**（65 Timeout 全为 reftest-format 文件，非 canvas 面） |
+| 目录 | 状态 |
+|------|------|
+| the-canvas-state 68 / drawing-rectangles 32 / transformations 22 / pixel-manipulation 71 / line-styles 33 / shadows 61 | ✅ 全 0 Fail |
+| compositing 98 / fill-and-stroke-styles 255 / text 221（NotRun 均为 reftest-format，非 canvas 面） | ✅ 全 0 Fail |
+| path-objects **202/0**（R56h 29 项全灭）+ 1 NotRun（skew——WPT 套件内部语义互斥 skip） | ✅ |
+| drawing-images **36/37**（R56h 11 项修复；剩 nonexistent——img 失败态状态机，G9） | 🔄 |
+| conformance 4 / canvas-context 11 / canvas-host 67 / color-type 4 / filters 13 / layers 30 / reset 56 / global-hdr 10 / wide-gamut 12 | ✅ 全 0 Fail |
+| offscreen worker 变体（path-objects 203/0 + 各目录逐目录验证 0 Fail） | ✅ |
 
 ### Rust 层（crates/canvas）
 
