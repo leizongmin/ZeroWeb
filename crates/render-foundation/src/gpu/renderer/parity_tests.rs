@@ -342,6 +342,35 @@ fn parity_cpu_fallback_upload_blit_roundtrip() {
     renderer.clear_compositor_import();
 }
 
+/// #8b：compositor 导入纹理的目标偏移回归——set_compositor_import 的
+/// `dst_x/dst_y` 必须把页面位图放到内容区原点（Linux GPU 窗口路径），
+/// 硬编码 (0,0) 会让页面覆盖标签栏/地址栏（ZRG-2026-08-16）。
+#[serial]
+#[test]
+fn parity_compositor_import_respects_dst_offset() {
+    let mut renderer = GpuRenderer::new_headless(16, 16).expect("headless renderer");
+    // 页面位图：8x8 全红
+    let cpu_fb = FrameBuffer::new_filled(8, 8, 255, 0, 0, 255);
+    let texture = renderer.upload_frame(cpu_fb.width, cpu_fb.height, &cpu_fb.data);
+    // 内容区原点 (4,4)：chrome 高 4px 的窗口
+    renderer.set_compositor_import(texture, cpu_fb.width, cpu_fb.height, 4.0, 4.0);
+    let empty = RenderPrimitives::default();
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    assert!(renderer.render_full_scene_gpu(&empty, &font_loader, &mut glyph_cache, None, &[], &[], &[], &[], 1.0));
+    let pixels = renderer.read_pixels().expect("read_pixels");
+    let px = |x: u32, y: u32| {
+        let off = ((y * 16 + x) * 4) as usize;
+        (pixels[off], pixels[off + 1], pixels[off + 2])
+    };
+    assert_eq!(px(6, 6), (255, 0, 0), "位图应按 dst 偏移绘制在 (4,4) 起");
+    assert_eq!(px(4, 4), (255, 0, 0), "位图左上角应位于 dst");
+    assert_eq!(px(11, 11), (255, 0, 0), "位图右下角 (4+7,4+7) 应仍在位图内");
+    assert_eq!(px(0, 0), (255, 255, 255), "原点应保持清屏白——位图不得画在 (0,0)");
+    assert_eq!(px(15, 15), (255, 255, 255), "位图外应保持清屏白");
+    renderer.clear_compositor_import();
+}
+
 /// #9：多渲染器交替渲染（模拟多标签各自独立渲染器）——GPU_CREATE_MUTEX 序列化
 /// 创建后各 device 独立渲染，结果互不串扰。
 #[serial]

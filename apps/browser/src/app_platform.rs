@@ -216,9 +216,33 @@ impl BrowserApp {
         )
     }
 
+    /// dma-buf 页面纹理的目标位置（物理像素）。
+    ///
+    /// 与 fills/glyphs 层及 extra 层同源：compositor 位图以文档原点光栅化，
+    /// 目标 = 内容区原点 - 滚动偏移。`scroll_transform_enabled` 时 compositor
+    /// 已把滚动烘焙进位图像素（回读 scroll 为 0），无需再偏移；滚动非零时
+    /// 位图仅覆盖未滚动视口（平移超出一帧高度即空白），返回 `None` 表示
+    /// 不应绘制导入位图（页面内容由 last_render 全文档图元平移路径绘制）。
+    fn compositor_import_dst(
+        content_x: f32,
+        content_y: f32,
+        scroll: TabScrollState,
+        scroll_transform_enabled: bool,
+    ) -> Option<(f32, f32)> {
+        let scroll = if scroll_transform_enabled {
+            TabScrollState::default()
+        } else {
+            scroll
+        };
+        if scroll.x != 0.0 || scroll.y != 0.0 {
+            return None;
+        }
+        Some((content_x - scroll.x, content_y - scroll.y))
+    }
+
     /// Linux：将 tab 上 pending dma-buf 导入 GPU 纹理。
     #[cfg(target_os = "linux")]
-    fn apply_compositor_dmabuf_import(&mut self, _width: u32, _height: u32) {
+    fn apply_compositor_dmabuf_import(&mut self, width: u32, height: u32) {
         use zero_render_foundation::gpu::{ExportedGpuFrame, try_import_linear_dmabuf};
 
         let Some(tab_id) = self.shell.active_tab_id() else {
@@ -227,7 +251,25 @@ impl BrowserApp {
         let Some(dmabuf) = self.tabs.snapshot_mut(tab_id).and_then(|s| s.take_compositor_dmabuf()) else {
             return;
         };
+        // 显示偏移与 fills/glyphs 层（render_page_content）及 extra 层
+        // （get_webview_extra_primitives）同源：compositor 位图以文档原点
+        // 光栅化，目标位置 = 内容区原点 - 滚动偏移。
+        let (content_x, content_y, _, _) = self.page_content_rect_for(width, height);
+        let scroll = self.tab_scroll_state(tab_id);
         let Some(gpu) = self.gpu_renderer_as_mut() else {
+            return;
+        };
+        let Some((dst_x, dst_y)) = Self::compositor_import_dst(
+            content_x,
+            content_y,
+            scroll,
+            crate::compositor_client::scroll_transform_enabled(),
+        ) else {
+            // 滚动非零：位图仅覆盖未滚动视口（平移超出一帧高度即空白），
+            // 页面内容由 last_render 全文档图元平移路径绘制（同 extra 层
+            // page_scrolled 回退）——清除过期导入位图，避免「固定首屏 +
+            // 滚动内容」双图层叠加。
+            gpu.clear_compositor_import();
             return;
         };
         let export = ExportedGpuFrame {
@@ -241,7 +283,7 @@ impl BrowserApp {
         };
         match try_import_linear_dmabuf(gpu.device(), gpu.queue(), &export) {
             Ok(texture) => {
-                gpu.set_compositor_import(texture, dmabuf.width, dmabuf.height, dmabuf.dst_x, dmabuf.dst_y);
+                gpu.set_compositor_import(texture, dmabuf.width, dmabuf.height, dst_x, dst_y);
             }
             Err(error) => {
                 tracing::warn!("compositor dma-buf 导入失败，回退 RGBA: {error}");
@@ -878,6 +920,40 @@ mod ime_tests {
         assert!(needs_ime_enabled(true, false, false, true));
         assert!(!needs_ime_enabled(false, false, false, true));
         assert!(!needs_ime_enabled(true, false, false, false));
+    }
+}
+
+#[cfg(test)]
+mod compositor_import_dst_tests {
+    use super::BrowserApp;
+
+    fn dst(scroll_y: f32, transform: bool) -> Option<(f32, f32)> {
+        BrowserApp::compositor_import_dst(
+            1.0,
+            91.0,
+            crate::page_scroll::TabScrollState { x: 0.0, y: scroll_y },
+            transform,
+        )
+    }
+
+    #[test]
+    fn unview_scrolled_returns_content_origin() {
+        // 未滚动：目标 = 内容区原点（scale=1 时 1024x768 窗口的 chrome 下沿）
+        assert_eq!(dst(0.0, false), Some((1.0, 91.0)));
+    }
+
+    #[test]
+    fn scrolled_without_transform_returns_none() {
+        // 滚动非零（scroll_transform 关闭）：位图仅覆盖未滚动视口，
+        // 平移会露白——不绘制导入位图，回落 last_render 图元平移路径
+        assert_eq!(dst(42.0, false), None);
+    }
+
+    #[test]
+    fn scroll_transform_bakes_scroll_returns_content_origin() {
+        // scroll_transform 开启：compositor 已把滚动烘焙进位图像素，
+        // 回读 scroll 为 0——即使本地滚动非零也按内容区原点绘制
+        assert_eq!(dst(42.0, true), Some((1.0, 91.0)));
     }
 }
 

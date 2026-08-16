@@ -48,8 +48,6 @@ pub struct CompositorDmabufPending {
     pub stride: u32,
     pub drm_fourcc: u32,
     pub drm_modifier: u64,
-    pub dst_x: f32,
-    pub dst_y: f32,
 }
 
 /// 标签页在 UI 线程上的只读快照。
@@ -500,8 +498,6 @@ mod tests {
                 stride: 8,
                 drm_fourcc: 0x3432_4241,
                 drm_modifier: 0,
-                dst_x: 0.0,
-                dst_y: 0.0,
             },
             // 影子路径：gpu_direct 帧的位图 key 指向缓存中的 RGBA 副本。
             Some(vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]),

@@ -458,8 +458,6 @@ impl ProcessTabBackend {
                             stride: dmabuf.stride,
                             drm_fourcc: dmabuf.drm_fourcc,
                             drm_modifier: dmabuf.drm_modifier,
-                            dst_x: 0.0,
-                            dst_y: 0.0,
                         },
                         shadow,
                     )
