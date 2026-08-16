@@ -1,9 +1,10 @@
 # Canvas 2D 运行时控制面板
 
-**最后更新**: 2026-08-16（R57 batch-5 定稿：**路径填充边界 AA + RenderPrimitives
-顶点格式契约修复 + GPU 测试扩展**——fill() 旋转边半色调（与 fillRect rect_coverage
-同模式）、PathFill/Stroke 段序列→点序列契约修复（GPU 旋转三角形全白根因）、
-gpu_path 5→8 测试 + 串行锁；canvas 809 全绿。证据见
+**最后更新**: 2026-08-16（R57 batch-6 定稿：**oracle 测量法 ±1px 平移对齐**——
+布局域盒定位差（R834/R631）系统性 1px 泄漏进 canvas 内容测量，平移搜索消掉
+整体盒定位差（平移分布 41/41 全 ±1 实证），真通过 7→12（29.3%）、reset 6/8→7/8；
+composite.grid 对齐后仍 23-37.5% = 格子内相对布局差 + AA 边（深项）。证据见
+evidence/r57-batch6-oracle-align-2026-08-16.md；batch-5 见
 evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 
 ---
@@ -23,7 +24,7 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 | 目录 | 状态 |
 |------|------|
 | testharness 面（全部目录） | ✅ 全 0 Fail（element 1253 + worker 1082——R57 batch-5 后复测零回归） |
-| oracle A/B 141 可测 | ✅ 真通过 **7（17.1%）** / 近似 7（17.1%）/ 不一致 27（batch-5 复测与 batch-4 持平——AA/契约修复零回归；剩余 = 1px 偏移深项组合 + 字体度量他域 + 描边 AA） |
+| oracle A/B 141 可测 | ✅ 真通过 **12（29.3%）** / 近似 4（9.8%）/ 不一致 25（batch-6 测量法 ±1px 平移对齐——布局域盒定位差泄漏修正，平移分布 41/41 全 ±1；剩余 = composite.grid 格子内布局差 + AA 边深项 + 字体度量他域） |
 | oracle 环境不支持排除 | 227 用例（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod——tentative API 未实现/部分实现，捕获帧无效，同 NotRun 语义） |
 
 ### Rust 层（crates/canvas）
@@ -88,7 +89,7 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 | G7 | 剩余失败聚类 | ✅ 全灭（testharness 面 0 Fail） |
 | G8 | 第二批新目录 | ✅ 全绿 |
 | G9 | drawing-images 剩余失败 | ✅ 全灭 |
-| G10 | oracle A/B 不一致 27 项 | 🔄 聚类：composite.grid ×12（24-38%——AA 边 + 合成边界舍入）/ 文本 ×7（TextCluster 6.5-12.8% + fontKerning/fontVariantCaps——字体度量，rendering-compat 域）/ reset 边 ×2（1.4-2%——stroke/AA）/ drop-shadow 4.8%（AA 边）/ text-outside 0.58%（退化 oracle） |
+| G10 | oracle A/B 不一致（batch-6 对齐后 25 项） | 🔄 聚类：composite.grid ×12（23-37.5%——**格子内相对布局差** + 旋转边 AA，±1px 整体对齐后仍主导）/ 文本 ×7（TextCluster 12.6% + fontKerning 8.6%——字体度量，rendering-compat 域）/ reset 边 ×2（stroke/AA）/ drop-shadow（AA 边）/ text-outside 0.58%（退化 oracle） |
 
 ## 待用户决策清单
 

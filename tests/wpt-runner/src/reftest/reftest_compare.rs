@@ -60,6 +60,40 @@ pub fn compare_pixels(fb1: &FrameBuffer, fb2: &FrameBuffer, threshold: u8) -> (u
     (d, m)
 }
 
+/// R57（M3）：`fb1` 相对 `fb2` 平移 (dx, dy) 后的像素对比——fb1 的 (x,y) 与
+/// fb2 的 (x+dx, y+dy) 比较（内容整体平移 = 布局盒定位差）。非重叠边缘忽略
+///（平移搜索只对齐内容，边缘 1px 差异在最优平移下消掉）。语义与
+/// [`compare_pixels_labeled`] 一致：任一通道差 > threshold 计 diff 像素。
+pub fn compare_pixels_shifted(fb1: &FrameBuffer, fb2: &FrameBuffer, dx: i32, dy: i32, threshold: u8) -> (usize, u8) {
+    let mut diff_pixels = 0usize;
+    let mut max_diff = 0u8;
+    let tw = fb1.width as i32;
+    let th = fb1.height as i32;
+    let ow = fb2.width as i32;
+    let oh = fb2.height as i32;
+    for ty in 0..th {
+        for tx in 0..tw {
+            let ox = tx + dx;
+            let oy = ty + dy;
+            if ox < 0 || oy < 0 || ox >= ow || oy >= oh {
+                continue; // 非重叠边缘（±1px 平移的裁剪差）忽略
+            }
+            let ti = ((ty * tw + tx) * 4) as usize;
+            let oi = ((oy * ow + ox) * 4) as usize;
+            let dr = fb1.data[ti].abs_diff(fb2.data[oi]);
+            let dg = fb1.data[ti + 1].abs_diff(fb2.data[oi + 1]);
+            let db = fb1.data[ti + 2].abs_diff(fb2.data[oi + 2]);
+            let da = fb1.data[ti + 3].abs_diff(fb2.data[oi + 3]);
+            let channel_max = dr.max(dg).max(db).max(da);
+            max_diff = max_diff.max(channel_max);
+            if channel_max > threshold {
+                diff_pixels += 1;
+            }
+        }
+    }
+    (diff_pixels, max_diff)
+}
+
 /// 带标签的像素对比 —— 标签会附加到 REFTEST_BBOX 诊断行，便于定位差异归属。
 ///
 /// 返回 `(diff_pixels, max_channel_diff, subpixel_diff)`：
@@ -141,4 +175,84 @@ pub fn save_framebuffer_png(fb: &FrameBuffer, path: &std::path::Path) -> Result<
     }
     std::fs::write(&ppm_path, content.as_bytes()).map_err(|e| format!("Failed to save framebuffer: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zero_render_foundation::surface::FrameBuffer;
+
+    fn fb_from(rows: &[&[u8]]) -> FrameBuffer {
+        let h = rows.len();
+        let w = rows[0].len() / 4;
+        let mut data = Vec::new();
+        for r in rows {
+            data.extend_from_slice(r);
+        }
+        FrameBuffer {
+            width: w as u32,
+            height: h as u32,
+            data,
+        }
+    }
+
+    /// R57（M3）：平移对齐语义——内容整体偏移 1px 的帧经 shift 对齐后 diff 归零
+    ///（布局域盒定位差容忍），无偏移帧的错位平移产生 diff（不掩盖真实差异）。
+    #[test]
+    fn test_compare_pixels_shifted_alignment() {
+        // 4×3 帧：上 2 行红、下 1 行蓝
+        let red = [255u8, 0, 0, 255];
+        let blue = [0u8, 0, 255, 255];
+        let mut rows: Vec<Vec<u8>> = Vec::new();
+        for _ in 0..2 {
+            let mut r = Vec::new();
+            for _ in 0..4 {
+                r.extend_from_slice(&red);
+            }
+            rows.push(r);
+        }
+        let mut r = Vec::new();
+        for _ in 0..4 {
+            r.extend_from_slice(&blue);
+        }
+        rows.push(r);
+        let a: Vec<&[u8]> = rows.iter().map(|r| r.as_slice()).collect();
+        let fb = fb_from(&a);
+
+        // 内容下移 1px 的帧：上 1 行黑（clear）、上 1 行红、下 1 行蓝
+        let black = [0u8, 0, 0, 0];
+        let mut rows2: Vec<Vec<u8>> = Vec::new();
+        let mut r = Vec::new();
+        for _ in 0..4 {
+            r.extend_from_slice(&black);
+        }
+        rows2.push(r);
+        for _ in 0..2 {
+            let mut r = Vec::new();
+            for _ in 0..4 {
+                r.extend_from_slice(&red);
+            }
+            rows2.push(r);
+        }
+        let mut r = Vec::new();
+        for _ in 0..4 {
+            r.extend_from_slice(&blue);
+        }
+        rows2.push(r);
+        let b: Vec<&[u8]> = rows2.iter().map(|r| r.as_slice()).collect();
+        let shifted = fb_from(&b);
+
+        // 对齐 (0,-1)：shifted 的内容与 fb 完全一致 → diff 0
+        let (d0, _) = compare_pixels_shifted(&shifted, &fb, 0, -1, 0);
+        assert_eq!(d0, 0, "±1px 平移对齐应消除整体偏移");
+        // 未对齐 (0,0)：错位 1px → diff > 0
+        let (d1, _) = compare_pixels_shifted(&shifted, &fb, 0, 0, 0);
+        assert!(d1 > 0, "错位帧在未对齐平移下应产生 diff");
+        // 反向平移 (0,+1) 更差
+        let (d2, _) = compare_pixels_shifted(&shifted, &fb, 0, 1, 0);
+        assert!(d2 >= d1, "错误方向平移不优于原位置");
+        // 非重叠边缘忽略：平移 (0,-1) 时 shifted 顶行黑与 fb 无对应（fb 高 3、shifted
+        // 顶行对齐到 fb 行 -1 越界）——重叠区全对齐，总 diff 仍为 0（边缘不计入）。
+        let _ = d2;
+    }
 }

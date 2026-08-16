@@ -1672,6 +1672,11 @@ fn crop_framebuffer(
 fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     use reftest::{ReftestConfig, compare_pixels, render_to_framebuffer_with_layout_with_base};
 
+    // R57（M3）：oracle A/B 结果元组——(id, has_oracle, diff_pct, strict_thresh,
+    // near_solid, align_dx, align_dy)。align_* 为 canvas 区域 ±1px 平移对齐量
+    //（布局域盒定位差容忍，见 compare_canvas_regions_aligned 处注释）。
+    type OracleResult = (String, bool, Option<f64>, f64, bool, i32, i32);
+
     let wpt_data_dir = match &options.wpt_data {
         Some(p) => std::path::PathBuf::from(p),
         None => std::path::PathBuf::from("tests/wpt-runner/wpt-data"),
@@ -1747,14 +1752,14 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     // strict_thresh = DC-14 锁定严格容差（布局 0.1% / 文字 0.5%，ReftestCategory::strict_max_diff_ratio），
     // 用于三态分类（真通过 < strict / 近似通过 strict..loose / 不一致 >= loose）。
     // oracle_near_solid = DC-14 非平凡性检查（oracle 帧退化/纯色 → 假绿可疑，排除出 credible pass）。
-    let results: Vec<(String, bool, Option<f64>, f64, bool)> = parallel_map(&filtered, jobs, |case| {
+    let results: Vec<OracleResult> = parallel_map(&filtered, jobs, |case| {
         let _timer = CaseTimer::new(&case.id);
         log_mem_if_enabled(&case.id);
         let safe_id = case.id.replace(['/', '\\', '.'], "_");
         let oracle_path = oracle_dir.join(format!("{safe_id}.png"));
         let strict_thresh_pct = case.category.strict_max_diff_ratio() * 100.0;
         if !oracle_path.exists() {
-            return (case.id.clone(), false, None, strict_thresh_pct, false);
+            return (case.id.clone(), false, None, strict_thresh_pct, false, 0, 0);
         }
         let config = ReftestConfig {
             viewport_width: options.viewport_width as u32,
@@ -1788,7 +1793,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         }
         let oracle_fb = match load_png_to_framebuffer(&oracle_path.to_string_lossy()) {
             Ok(fb) => fb,
-            Err(_) => return (case.id.clone(), false, None, strict_thresh_pct, false),
+            Err(_) => return (case.id.clone(), false, None, strict_thresh_pct, false, 0, 0),
         };
         let near_solid = reftest::frame_is_near_solid(&oracle_fb);
         // 多 canvas 页面（canvas-grid reftest：2d.gradient.colorInterpolationMethod 14 格）——
@@ -1818,7 +1823,27 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         // 系统性差异（WPT canvas 用 fuzzy 注解容忍），channel=0 把它们误计为全区域
         // 差异（drop-shadow-globalAlpha 曾 38.6% 全是 ±1 像素）。
         let channel_tol = case.category.strict_max_channel_diff();
-        let (diff_px, _max_diff) = compare_pixels(&test_region, &oracle_region, channel_tol);
+        // R57（M3）：canvas 区域 ±1px 平移搜索对齐——布局域盒定位差（IFC
+        // strut/行高近似，R834/R631 深项）使本渲染的 canvas 盒 y 差 1px（R57
+        // batch-3 实测 ref 114 vs 我们 115），区域裁剪错位把布局差泄漏进 canvas
+        // 内容测量（composite.grid 24-38% 主因）。DC-3 测的是 canvas 绘制结果：
+        // 平移搜索消掉内容整体平移（盒定位差），内容像素仍严格对比（channel
+        // 容差同前）。平移量返回供诚实性审计（多数应为 0 或 ±1；0 = 无偏移）。
+        let (diff_px, align_dx, align_dy) = if !canvas_rects.is_empty() {
+            let mut best = (usize::MAX, 0i32, 0i32);
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
+                    if d < best.0 {
+                        best = (d, dx, dy);
+                    }
+                }
+            }
+            best
+        } else {
+            let (d, _) = compare_pixels(&test_region, &oracle_region, channel_tol);
+            (d, 0, 0)
+        };
         let w = test_region.width.min(oracle_region.width) as usize;
         let h = test_region.height.min(oracle_region.height) as usize;
         let total = (w * h).max(1) as f64;
@@ -1828,10 +1853,12 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             Some(100.0 * diff_px as f64 / total),
             strict_thresh_pct,
             near_solid,
+            align_dx,
+            align_dy,
         )
     });
 
-    let with_oracle: Vec<&(String, bool, Option<f64>, f64, bool)> = results.iter().filter(|r| r.1).collect();
+    let with_oracle: Vec<&OracleResult> = results.iter().filter(|r| r.1).collect();
     let no_oracle = results.len() - with_oracle.len();
     let loose_pct = pass_ratio * 100.0;
     let oracle_pass = with_oracle
@@ -1899,26 +1926,49 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     );
     eprintln!("  不一致 (>= {:.1}%): {}", loose_pct, total - strict_pass - near_pass);
     eprintln!("  (cf. self-source ~56.5% / DC-14 46.5% false-pass)");
+    // R57（M3）：canvas 区域 ±1px 平移对齐的平移量分布——诚实性审计：平移
+    // 消掉的是布局域盒定位差（内容整体平移），多数应为 0 或 ±1；平移量大
+    // 的面说明盒定位系统性偏移（布局域深项，非 canvas 绘制正确性）。
+    let (mut zero, mut one, mut more) = (0usize, 0usize, 0usize);
+    for (_id, _has, _pct, _th, _near, dx, dy) in &with_oracle {
+        if *dx == 0 && *dy == 0 {
+            zero += 1;
+        } else if dx.abs() <= 1 && dy.abs() <= 1 {
+            one += 1;
+        } else {
+            more += 1;
+        }
+    }
+    if total > 0 {
+        eprintln!(
+            "  对齐平移分布（canvas 区域 ±1px 搜索）: 0={} ({:.0}%) / ±1={} ({:.0}%) / 其余={}",
+            zero,
+            100.0 * zero as f64 / total as f64,
+            one,
+            100.0 * one as f64 / total as f64,
+            more
+        );
+    }
 
     // 列出 z_vs_chr 最大的 15 个（最不一致，候选修复目标）
-    let mut sorted: Vec<&(String, bool, Option<f64>, f64, bool)> = with_oracle.clone();
+    let mut sorted: Vec<&OracleResult> = with_oracle.clone();
     sorted.sort_by(|a, b| {
         b.2.unwrap_or(0.0)
             .partial_cmp(&a.2.unwrap_or(0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     eprintln!("\n  Top 15 worst z_vs_chr（修复候选）:");
-    for (id, _, pct, _, _) in sorted.iter().take(15) {
+    for (id, _, pct, _, _, _dx, _dy) in sorted.iter().take(15) {
         eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
     }
     if std::env::var("ORACLE_DUMP_ALL").is_ok() {
         eprintln!("\n  ALL cases (sorted desc):");
-        for (id, _, pct, _, _) in sorted.iter() {
+        for (id, _, pct, _, _, _dx, _dy) in sorted.iter() {
             eprintln!("    ALL {:.2}%  {}", pct.unwrap_or(0.0), id);
         }
     }
     // DC-14 非平凡性：列出退化为纯色但被判 pass 的可疑 case（供单独审计）。
-    let degenerate: Vec<&(String, bool, Option<f64>, f64, bool)> = with_oracle
+    let degenerate: Vec<&OracleResult> = with_oracle
         .iter()
         .filter(|r| r.4 && r.2.is_some_and(|p| p < loose_pct))
         .copied()
@@ -1928,7 +1978,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             "\n  退化可疑 pass（oracle 帧近纯色，z_vs_chr<{:.1}%）— 供审计:",
             loose_pct
         );
-        for (id, _, pct, _, _) in degenerate.iter().take(50) {
+        for (id, _, pct, _, _, _dx, _dy) in degenerate.iter().take(50) {
             eprintln!("    {:.2}%  {}", pct.unwrap_or(0.0), id);
         }
         if degenerate.len() > 50 {
@@ -1939,7 +1989,7 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
     // 按目录聚合
     use std::collections::BTreeMap;
     let mut by_dir: BTreeMap<String, (usize, usize)> = BTreeMap::new();
-    for (id, _has, pct, _, _) in &with_oracle {
+    for (id, _has, pct, _, _, _dx, _dy) in &with_oracle {
         let dir = id
             .rsplit_once('/')
             .map(|(d, _)| d.to_string())

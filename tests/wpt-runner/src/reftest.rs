@@ -40,7 +40,8 @@ use resources::*;
 // 重新导出会触发 unused_imports，此处一并 allow 以保持公共 API surface 零变化。
 #[allow(unused_imports)]
 pub use reftest_compare::{
-    compare_pixels, compare_pixels_labeled, frame_is_near_solid, save_fb_as_png, save_framebuffer_png,
+    compare_pixels, compare_pixels_labeled, compare_pixels_shifted, frame_is_near_solid, save_fb_as_png,
+    save_framebuffer_png,
 };
 use reftest_fonts::*;
 use reftest_scripts::*;
