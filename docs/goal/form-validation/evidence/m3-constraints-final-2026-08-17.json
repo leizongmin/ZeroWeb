@@ -1,0 +1,147 @@
+{
+ "suite": "testharness-constraints",
+ "date": "2026-08-17",
+ "total_subtests": 935,
+ "status_counts": {
+  "Pass": 919,
+  "Timeout": 16
+ },
+ "files_with_subtests": 45,
+ "per_file": {
+  "html/semantics/forms/constraints/form-validation-checkValidity.html": {
+   "Pass": 130
+  },
+  "html/semantics/forms/constraints/form-validation-reportValidity.html": {
+   "Pass": 130
+  },
+  "html/semantics/forms/constraints/form-validation-validity-badInput.html": {
+   "Pass": 11
+  },
+  "html/semantics/forms/constraints/form-validation-validity-customError.html": {
+   "Pass": 8
+  },
+  "html/semantics/forms/constraints/form-validation-validity-patternMismatch.html": {
+   "Pass": 85
+  },
+  "html/semantics/forms/constraints/form-validation-validity-rangeOverflow-weekmonth.html": {
+   "Pass": 19
+  },
+  "html/semantics/forms/constraints/form-validation-validity-rangeOverflow.html": {
+   "Pass": 49
+  },
+  "html/semantics/forms/constraints/form-validation-validity-rangeUnderflow-weekmonth.html": {
+   "Pass": 19
+  },
+  "html/semantics/forms/constraints/form-validation-validity-rangeUnderflow.html": {
+   "Pass": 47
+  },
+  "html/semantics/forms/constraints/form-validation-validity-stepMismatch.html": {
+   "Pass": 28
+  },
+  "html/semantics/forms/constraints/form-validation-validity-textarea-defaultValue.html": {
+   "Pass": 2
+  },
+  "html/semantics/forms/constraints/form-validation-validity-tooLong.html": {
+   "Pass": 63
+  },
+  "html/semantics/forms/constraints/form-validation-validity-tooShort.html": {
+   "Pass": 63
+  },
+  "html/semantics/forms/constraints/form-validation-validity-typeMismatch.html": {
+   "Pass": 11
+  },
+  "html/semantics/forms/constraints/form-validation-validity-valid-weekmonth.html": {
+   "Pass": 8
+  },
+  "html/semantics/forms/constraints/form-validation-validity-valid.html": {
+   "Pass": 35
+  },
+  "html/semantics/forms/constraints/form-validation-validity-valueMissing-weekmonth.html": {
+   "Pass": 19
+  },
+  "html/semantics/forms/constraints/form-validation-validity-valueMissing.html": {
+   "Pass": 78
+  },
+  "html/semantics/forms/constraints/form-validation-willValidate-datalist.html": {
+   "Pass": 17
+  },
+  "html/semantics/forms/constraints/form-validation-willValidate.html": {
+   "Pass": 73
+  },
+  "html/semantics/forms/constraints/infinite_backtracking.tentative.html": {
+   "Pass": 1
+  },
+  "html/semantics/forms/constraints/input-maxlength-emoji.html": {
+   "Pass": 1
+  },
+  "html/semantics/forms/constraints/input-number-validity-dynamic-value-no-change.html": {
+   "Pass": 1
+  },
+  "html/semantics/forms/constraints/input-pattern-dynamic-value.html": {
+   "Pass": 1
+  },
+  "html/semantics/forms/constraints/inputwillvalidate.html": {
+   "Pass": 2
+  },
+  "html/semantics/forms/constraints/number-input-lang-validationMessage-crash.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/radio-group-valueMissing.html": {
+   "Pass": 2
+  },
+  "html/semantics/forms/constraints/radio-valueMissing.html": {
+   "Pass": 6
+  },
+  "html/semantics/forms/constraints/reportValidity-crash.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-email-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-password-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-search-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-tel-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-text-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-input-url-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooLong-textarea-delete-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-email-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-password-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-search-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-tel-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-text-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-input-url-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/constraints/tooShort-textarea-add-manual.html": {
+   "Timeout": 1
+  },
+  "html/semantics/forms/the-form-element/form-checkvalidity.html": {
+   "Pass": 1
+  },
+  "html/semantics/forms/the-form-element/form-requestsubmit.html": {
+   "Pass": 9
+  }
+ }
+}
