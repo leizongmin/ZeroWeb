@@ -163,6 +163,13 @@ pub struct HarnessSubtestResult {
 /// 运行 `html/semantics/forms/constraints` testharness 用例（Form Validation goal M1）。
 ///
 /// 目录扫描顶层 .html（support/ 资源目录排除——resources 经 fetch 脚本独立拉取）。
+/// FV M2/M3：interactive validation 的 forms 用例（constraints 目录外——
+/// the-form-element 的 requestSubmit/checkValidity——validation 面）。
+const CONSTRAINTS_EXTRA_FILES: &[&str] = &[
+    "html/semantics/forms/the-form-element/form-requestsubmit.html",
+    "html/semantics/forms/the-form-element/form-checkvalidity.html",
+];
+
 pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -218,6 +225,20 @@ pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
         };
         let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
         cases.push((relative, results));
+    }
+    // FV M2/M3：interactive validation 的 forms 用例（静态列表——the-form-element）
+    for relative in CONSTRAINTS_EXTRA_FILES {
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let path = wpt_root.join(relative);
+        match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                let results = run_testharness_html(wpt_root, relative, &source, &harness_source, CASE_TIMEOUT);
+                cases.push(((*relative).to_string(), results));
+            }
+            Err(_) => continue, // 未拉取（网络/资产缺失）——不阻断
+        }
     }
     cases
 }

@@ -4999,6 +4999,10 @@
   // `form=id` 与后代显式改归属；无 host 时回退子树遍历。
   // https://html.spec.whatwg.org/multipage/forms.html#category-listed
   var _formControlTags = { INPUT: 1, BUTTON: 1, FIELDSET: 1, OBJECT: 1, OUTPUT: 1, SELECT: 1, TEXTAREA: 1 };
+  // R57（FV M3）：form 提交重入守卫（IIFE 作用域——初始化一次；part04 的 _zwRunFormSubmit
+  // 引用。不能放 part04 顶部——那在 get trap 内，每属性访问会重置）。
+  var _zwSubmitBusy = false;
+
   function _formControls(sel) {
     var controls = [];
     if (!sel) return controls;

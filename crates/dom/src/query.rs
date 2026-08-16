@@ -476,6 +476,38 @@ pub fn parse_selector_chain(selector: &str) -> Option<SelectorChain> {
     Some(SelectorChain { parts, combinators })
 }
 
+/// 顶层逗号拆分选择器列表（spec `querySelector(All)` 接受逗号分隔列表——
+/// `input, button`；旧实现把整串当单选择器解析失败 → 空结果）。忽略 `[]`/`()`
+/// 内逗号（属性值 / `:not(a,b)`）。返回 `None` 表示无顶层逗号（单选择器）。
+pub(crate) fn split_top_level_selector_list(s: &str) -> Option<Vec<&str>> {
+    let mut out: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut found = false;
+    let bytes = s.as_bytes();
+    for (idx, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            b',' if depth == 0 => {
+                out.push(s[start..idx].trim());
+                start = idx + 1;
+                found = true;
+            }
+            _ => {}
+        }
+    }
+    if !found {
+        return None;
+    }
+    out.push(s[start..].trim());
+    Some(out)
+}
+
 /// 扫描选择器，按组合器边界（`>`/`+`/`~`/空白，忽略 `()`/`[]` 内）切分为
 /// `(段文本, 指向下一段的组合器)` 序列。末段的组合器无意义（填占位 `Descendant`，调用方不读）。
 /// 多个连续边界压缩为显式符号优先（`>`/`+`/`~` 优先于空白后代）。

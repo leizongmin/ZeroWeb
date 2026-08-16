@@ -1088,6 +1088,35 @@
         }
       }
     }
+    // R57（FV M3）：FORM 元素的 :invalid/:valid 匹配——聚合表单内候选控件
+    //（spec：form 的 invalid 态 = 存在 invalid 的候选控件——form-requestsubmit 的
+    // `form.matches(':invalid')`；submit/reset/button/image/hidden 非候选，disabled 排除）。
+    if (tag === 'FORM') {
+      var _allV = true;
+      try {
+        var _fcsF = _formControls(sel);
+        for (var _fiF = 0; _fcsF && _fiF < _fcsF.length; _fiF++) {
+          var _fcF = _fcsF[_fiF];
+          try {
+            var _ftF = '';
+            try { _ftF = String(_fcF.type || '').toLowerCase(); } catch (_e2) {}
+            var _fgF = '';
+            try { _fgF = String(_fcF.tagName || '').toUpperCase(); } catch (_e3) {}
+            if (_fgF === 'BUTTON' || _ftF === 'submit' || _ftF === 'reset' || _ftF === 'button'
+                || _ftF === 'image' || _ftF === 'hidden') continue;
+            try { if (_fcF.disabled) continue; } catch (_e4) {}
+            if (_fcF.validity && !_fcF.validity.valid) { _allV = false; break; }
+          } catch (_e5) {}
+        }
+      } catch (_e6) {}
+      var _vs = {
+        valueMissing: !_allV, typeMismatch: false, patternMismatch: false,
+        tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+        stepMismatch: false, badInput: false, customError: hasCustom,
+        valid: _allV,
+      };
+      return _vs;
+    }
     var _vs = {
       valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
@@ -2117,9 +2146,17 @@
     }
     return '';
   }
+  // R57（FV M3）：值缓存仅对**稳定身份**键生效——`#id`（id 唯一稳定）与 `@handle`
+  //（create 句柄，单 execute 内唯一）。位置选择器（`form:nth-child(1) > input:nth-child(1)`
+  // 等）随同批 DOM mutation 指向**不同元素**——跨批缓存碰撞（form-requestsubmit：
+  // test 7 首表单首 input 缓存 "v1"，test 9 首表单首 input（同选择器串）误读 "v1"——
+  // 实际 value 属性空）。位置键跳过缓存直接读 host（applied view 正确）。
+  function _stableValueKey(key) {
+    return key.charAt(0) === '#' || key.charAt(0) === '@';
+  }
   // text control 当前 value 串（mirror value getter 的 lazy-init 逻辑，仅读不改缓存——选区 clamp 须 length）。
   function _controlValue(sel, handle, key) {
-    if (_inputValues[key] != null) return String(_inputValues[key]);
+    if (_inputValues[key] != null && (_inputValuesSet[key] === true || _stableValueKey(key))) return String(_inputValues[key]);
     var v = '';
     if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
       try { v = __zw_get_text(sel) || ''; } catch (_e) {}
@@ -3564,15 +3601,24 @@
           }
           // P1a form input：value get——per-element 缓存，lazy-init。
           // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
-          if (_inputValues[key] == null) {
+          // R57（FV M3）：缓存读——setter 写入（_inputValuesSet 标记——JS-set 值/typed 值，
+          // SetFormValue 在 applied view no-op，只能从缓存读回）始终可用；lazy-init 条目仅
+          // 稳定身份键（#id/@handle）可用——位置选择器跨批指向不同元素，lazy-init 缓存碰撞
+          //（见 _controlValue 注），位置键 lazy-init 跳过、每次直读 host。
+          if (_inputValues[key] != null && (_inputValuesSet[key] === true || _stableValueKey(key))) {
+            return _inputValues[key];
+          }
+          if (_inputValues[key] == null && _stableValueKey(key)) {
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
               _inputValues[key] = __zw_get_text(sel) || '';
             } else {
               var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
               _inputValues[key] = (va == null) ? '' : va;
             }
+            return _inputValues[key];
           }
-          return _inputValues[key];
+          var vaF = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+          return (vaF == null) ? '' : vaF;
         }
         // `input.valueAsNumber`（HTMLInputElement，R2836）——number/range 输入值↔数值转换（计算器/数量输入/
         // 校验库读 NaN 判非法）。type=number/range：parseFloat(value)（空/无效→NaN，parseFloat 对 '12px'

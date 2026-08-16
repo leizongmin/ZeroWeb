@@ -12,6 +12,11 @@
   // `.value` set 更新缓存 + 记 value 属性 mutation（供 render）。跨 execute 存活（typing 多键），
   // 导航（URL 变化）经 `__zw_reset_form_state` 清空防跨页 stale value。
   var _inputValues = {};
+  // R57（FV M3）：`_inputValues` 中由 **setter 写入**（.value=/setAttribute('value')/typed）的
+  // 键标记——位置选择器（`form:nth-child(1)` 等）键的 lazy-init 缓存跨批碰撞（同一选择器串
+  // 指向不同元素），但 setter 写入的值（SetFormValue 在 applied view no-op）必须可读回——
+  // 双源区分：set 标记条目始终可用，lazy-init 条目仅稳定键（#id/@handle）可用。
+  var _inputValuesSet = {};
   // R2996 input.defaultValue 独立追踪（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=初始 value 属性）。
   // shim 的 `.value=` 仍写 value 属性供 render（paint_input_value 读属性），故属性被「污染」；为使 defaultValue
   // 不被污染，单独追踪「真默认值」：首次 `.value=` 前捕获当前 value 属性（=真默认），setAttribute('value')/
@@ -1670,7 +1675,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

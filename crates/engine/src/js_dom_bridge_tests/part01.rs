@@ -1404,6 +1404,7 @@ fn test_form_reset_submit_methods_r3048() {
            <input id='c' type='checkbox' checked>\
            <select id='s'><option>a</option><option id='o2' selected>b</option></select>\
            <textarea id='ta'>default-area</textarea>\
+           <button id='sb' type='submit'>s</button>\
          </form>\
          </body></html>"
             .to_string(),
@@ -1462,14 +1463,15 @@ fn test_form_reset_submit_methods_r3048() {
     assert_eq!(sandbox.execute("globalThis.__pdT").unwrap().value, "keep-this", "preventDefault('reset') → 控件不重置");
 
     // ④ requestSubmit() 派发 submit 事件（cancelable，含 submitter）——headless 无导航（不抛即可）。
+    // FV M3：submitter 须有 form owner（spec §4.10.5.5——detached submitter 抛 NotFoundError，
+    // WPT form-requestsubmit 用例）——用 form 内 sel-based submit 按钮作 submitter。
     sandbox
         .execute(
             "globalThis.__submitFired = 'no';\
              globalThis.__submitter = 'none';\
              var f4 = document.getElementById('f');\
              f4.addEventListener('submit', function(e){ globalThis.__submitFired = 'yes'; globalThis.__submitter = (e.submitter && e.submitter.id) || 'null'; });\
-             var btn = document.createElement('button'); btn.id = 'sb'; btn.type = 'submit';\
-             f4.requestSubmit(btn);\
+             f4.requestSubmit(document.getElementById('sb'));\
              globalThis.__rsType = 'ok';",
         )
         .unwrap();

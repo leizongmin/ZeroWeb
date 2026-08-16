@@ -39,6 +39,9 @@ pub fn summary_activation_snapshot(html: &str, selector: &str) -> Option<Summary
 
 /// 返回 owner 为指定 form 的 listed controls 唯一选择器，保持文档序。
 /// https://html.spec.whatwg.org/multipage/forms.html#category-listed
+///
+/// FV M3：`input[type=image]` 排除（WPT form-requestsubmit 的 oracle——
+/// "<input type=image> is not in form.elements"，与 Chromium 一致）。
 pub fn form_control_selectors(html: &str, form_selector: &str) -> Vec<String> {
     let doc = parse_html(html);
     let Some(form) = find_by_selector(&doc, form_selector) else {
@@ -50,10 +53,15 @@ pub fn form_control_selectors(html: &str, form_selector: &str) -> Vec<String> {
     doc.collect_descendants(doc.root())
         .into_iter()
         .filter(|node| {
+            let tag = element_local_name(&doc, *node);
             matches!(
-                element_local_name(&doc, *node),
+                tag,
                 "button" | "fieldset" | "input" | "object" | "output" | "select" | "textarea"
             ) && form_owner_node(&doc, *node) == Some(form)
+                && !(tag == "input"
+                    && doc
+                        .get_attribute(*node, "type")
+                        .is_some_and(|value| value.eq_ignore_ascii_case("image")))
         })
         .filter_map(|node| unique_selector_for_node(&doc, node))
         .collect()

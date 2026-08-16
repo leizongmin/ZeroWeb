@@ -110,3 +110,6 @@ css/css-fonts/font-variation-settings-descriptor-04.html css/css-fonts/font-vari
 css/css-fonts/font-size-adjust-009.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance
 css/css-fonts/font-size-adjust-010.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance
 css/css-fonts/font-size-adjust-011.html css/css-fonts/font-size-adjust-009-ref.html == 2026-08-14 R3424-F author font layout advance
+html/semantics/forms/constraints/* 2026-08-16 R57-FV M1 constraints 约束校验全套（fetch-constraints-subset.sh 45 用例）
+html/semantics/forms/the-form-element/form-requestsubmit.html 2026-08-17 R57-FV M3 interactive validation/submitter 校验/重入守卫/click 提交
+html/semantics/forms/the-form-element/form-checkvalidity.html 2026-08-17 R57-FV M3 form.checkValidity 聚合

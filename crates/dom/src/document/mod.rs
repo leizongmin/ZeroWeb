@@ -945,8 +945,20 @@ impl Document {
 
     /// 在指定节点的子树中查找第一个匹配选择器的元素。
     ///
-    /// 支持简单选择器及后代（空格）、子（`>`）组合器。
+    /// 支持简单选择器及后代（空格）、子（`>`）组合器，以及**逗号分隔的选择器列表**
+    ///（spec `querySelector` 接受列表——R57 FV M3：`form.querySelectorAll('input, button')`
+    /// 等子树/文档级列表查询；旧实现把列表当单选择器解析失败 → 空结果）。
     pub fn query_selector(&self, root: NodeId, selector: &str) -> Option<NodeId> {
+        if let Some(parts) = crate::query::split_top_level_selector_list(selector.trim())
+            && parts.len() > 1
+        {
+            // 列表：单次 DFS 文档序，首个命中任一段（chain 解析失败的段跳过）。
+            let chains: Vec<crate::query::SelectorChain> = parts
+                .iter()
+                .filter_map(|p| crate::query::parse_selector_chain(p))
+                .collect();
+            return self.find_first_matching_chains(root, &chains);
+        }
         let chain = crate::query::parse_selector_chain(selector.trim())?;
         if chain.parts.len() == 1 {
             return self.find_first_matching(root, &chain.parts[0]);
@@ -955,7 +967,20 @@ impl Document {
     }
 
     /// 在指定节点的子树中查找所有匹配选择器的元素。
+    ///
+    /// 支持逗号分隔的选择器列表（spec 语义；文档序、去重——每个节点只判一次）。
     pub fn query_selector_all(&self, root: NodeId, selector: &str) -> Vec<NodeId> {
+        if let Some(parts) = crate::query::split_top_level_selector_list(selector.trim())
+            && parts.len() > 1
+        {
+            let chains: Vec<crate::query::SelectorChain> = parts
+                .iter()
+                .filter_map(|p| crate::query::parse_selector_chain(p))
+                .collect();
+            let mut result = Vec::new();
+            self.collect_matching_chains(root, &chains, &mut result);
+            return result;
+        }
         let chain = match crate::query::parse_selector_chain(selector.trim()) {
             Some(c) => c,
             None => return vec![],
@@ -1565,6 +1590,23 @@ impl Document {
         None
     }
 
+    /// 选择器列表：单次 DFS 文档序，首个命中任一段（R57 FV M3——逗号列表支持）。
+    fn find_first_matching_chains(&self, id: NodeId, chains: &[crate::query::SelectorChain]) -> Option<NodeId> {
+        let node_data = self.nodes.get(id)?;
+        if let NodeKind::Element(_) = &node_data.kind
+            && chains.iter().any(|c| self.node_matches_selector_chain(id, c))
+        {
+            return Some(id);
+        }
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
+            if let Some(found) = self.find_first_matching_chains(child, chains) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     fn node_matches_selector_chain(&self, node: NodeId, chain: &crate::query::SelectorChain) -> bool {
         let parts = &chain.parts;
         if parts.is_empty() {
@@ -1900,6 +1942,25 @@ impl Document {
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
             self.collect_matching(child, selector, result);
+        }
+    }
+
+    /// 选择器列表：单次 DFS 文档序收集命中任一段的节点（天然去重，R57 FV M3）。
+    fn collect_matching_chains(&self, id: NodeId, chains: &[crate::query::SelectorChain], result: &mut Vec<NodeId>) {
+        let node_data = match self.nodes.get(id) {
+            Some(n) => n,
+            None => return,
+        };
+
+        if let NodeKind::Element(_) = &node_data.kind
+            && chains.iter().any(|c| self.node_matches_selector_chain(id, c))
+        {
+            result.push(id);
+        }
+
+        let children: Vec<NodeId> = node_data.children.to_vec();
+        for child in children {
+            self.collect_matching_chains(child, chains, result);
         }
     }
 

@@ -50,3 +50,6 @@ fetch_dir_files() {
 # constraints 顶层用例 + support 资源
 fetch_dir_files "html/semantics/forms/constraints"
 fetch_dir_files "html/semantics/forms/constraints/support"
+# FV M2/M3：interactive validation 的 forms 用例（requestSubmit/checkValidity）
+fetch_raw "html/semantics/forms/the-form-element/form-requestsubmit.html"
+fetch_raw "html/semantics/forms/the-form-element/form-checkvalidity.html"

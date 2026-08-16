@@ -7,6 +7,74 @@
 
 use super::*;
 
+/// 查询视图缓存：(源快照串, 队列长度) → applied 视图。队列不变且快照不变 → 命中
+///（同一脚本批内大量查询只 parse+apply 一次——FV M3 的 fresh-copy 方案每查询全量
+/// re-parse 曾致 engine 单测 10min+ 超时）。快照/队列任一变化 → 重算（host 每
+/// execute 换新 dom_html Arc，队列清空/增长均触发）。
+type QueryViewCache = std::sync::Arc<std::sync::Mutex<Option<(String, usize, String)>>>;
+
+/// R57（FV M3）：查询前把 pending mutations 应用到**快照副本**——同批 mutation
+///（insertAdjacentHTML 等）未应用时查询快照 stale（form-requestsubmit 的
+/// insertAdjacentHTML 后 querySelector 返回 null）。**不修改存储快照、不清队列**：
+/// 队列由 host 在脚本运行结束后统一读取+清空并应用到活 DOM（查询时清空会丢失
+/// latest-wins 兜底数据——radio 组 valueMissing 的 .checked= 同批查询回归）；
+/// apply 失败回落未应用快照（当前元素属性由 `__zw_has_attr_lw` latest-wins 兜底）。
+///
+/// **应用范围 = 结构级 mutation only**（InsertAdjacentHtml/SetInnerHtml/SetOuterHtml/
+/// Remove）：
+/// - 属性级（SetAttr/RemoveAttr/SetStyle/SetFormValue/SetAttrOnHandle…）**不应用**——
+///   属性读取经 latest-wins 队列（`__zw_has_attr_lw`/`__zw_get_attr_lw`）已覆盖，且
+///   部分既有测试断言「查询反映 pending 前」语义（R3190 `[data-x]` 存在性选择器）；
+/// - handle 链（CreateElement/AppendChild/SetAttrOnHandle…）**不应用**——pending 元素
+///   由 shim 侧本地 registry 回落（R51c：querySelector('#fresh') === el 须同一 proxy
+///   身份——host 命中会包成 sel-based proxy 破坏 `===`）。
+fn apply_pending_query_html(
+    html: &Arc<std::sync::Mutex<String>>,
+    mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    cache: &QueryViewCache,
+) -> String {
+    let count = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
+    // 缓存命中：队列长度一致 + 源快照未变（host 换新 dom_html 时快照内容变）。
+    {
+        let cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((src, c, applied)) = cache_guard.as_ref()
+            && *c == count
+        {
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            if *src == *snap {
+                return applied.clone();
+            }
+        }
+    }
+    let snap = html.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+    if count == 0 {
+        let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        *cache_guard = Some((snap.clone(), 0, snap.clone()));
+        return snap;
+    }
+    // 结构级 mutation 子集（见函数文档——属性级/handle 链/Remove/SetInnerHtml 不应用）。
+    // Remove 排除：被移除元素的 proxy 属性读取（old.id / removedNodes[].tagName——
+    // R3029/replace_child_e2e）须回落快照；且 R47 断言 remove 后 querySelector 仍命中。
+    // SetInnerHtml/SetOuterHtml 排除同理（R3029：innerHTML= 替换后 removedNodes[] 的
+    // tagName 读旧子——应用后旧子消失回落启发式错值）；form-requestsubmit 的需求
+    //（同批 insertAdjacentHTML 后 querySelector 命中）由 InsertAdjacentHtml 覆盖。
+    let structural: Vec<DomMutation> = mut_guard
+        .iter()
+        .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+        .cloned()
+        .collect();
+    let applied = if structural.is_empty() {
+        snap.clone()
+    } else {
+        apply_mutations_to_html(&snap, &structural).unwrap_or_else(|_| snap.clone())
+    };
+    drop(mut_guard);
+    let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    *cache_guard = Some((snap, count, applied.clone()));
+    applied
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -27,6 +95,8 @@ pub fn register_dom_callbacks(
     canvas_registry: &Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>,
 ) {
     let counter = Arc::new(AtomicU64::new(0));
+    // R57（FV M3）：查询视图缓存（同一 execute 内共享——dom_html Arc + 队列同源）。
+    let view_cache: QueryViewCache = Arc::new(Mutex::new(None));
 
     // js-dom M4 R55：注册即 dom_html 换代（dispatch_event 每次重注册拿最新 cached_html 的快照
     // Arc）→ JS 侧基底缓存全量失效（childNodes `_zwChildBaseCache` / sibling `_zwSiblingBaseCache`，
@@ -126,21 +196,25 @@ pub fn register_dom_callbacks(
     );
 
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_match_selector_doc(doc, &sel))
         }),
     );
 
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_all_selector_list_doc(doc, &sel))
         }),
     );
@@ -309,34 +383,40 @@ pub fn register_dom_callbacks(
     // `element.querySelector(selector)` / `element.querySelectorAll(selector)`——元素**子树**作用域
     // （spec：仅后代，不含元素自身）。elem_sel = 元素唯一选择器，区别于文档作用域的 query_match/all。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_match_sub",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             query_match_in_subtree(&snap, &elem_sel, &sel)
         }),
     );
 
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_query_all_sub",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             query_all_in_subtree(&snap, &elem_sel, &sel)
         }),
     );
 
     // Form-associated listed controls，按 form owner 过滤并保持文档序。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             form_control_selectors(&snap, &form).join("|")
         }),
     );
@@ -344,11 +424,13 @@ pub fn register_dom_callbacks(
     // 元素遍历/导航 API：children/firstElementChild/lastElementChild/childElementCount（子列表）、
     // previousElementSibling/nextElementSibling（兄弟对）、contains（后代判定）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_element_children",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
@@ -404,11 +486,13 @@ pub fn register_dom_callbacks(
 
     // `element.parentNode` / `parentElement`——元素父唯一选择器（修正旧 stub 恒返 body）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_parent",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
@@ -426,23 +510,30 @@ pub fn register_dom_callbacks(
     );
 
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_attr",
         Box::new(move |args| {
             if args.len() < 2 {
                 return String::new();
             }
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
+            // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
+            // .value= 不脏污 defaultValue 语义保持）。
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
     // R2995：sel-based `getAttribute` 专用 latest-wins 变体。区别于 `__zw_get_attr`（纯快照，供 defaultValue /
-    // role / aria / value 懒初始化等反射 getter，须稳定读快照避免 .value= 脏污 defaultValue），本回调先 consult
-    // 变更列表（同批 setAttribute/removeAttribute 在 render apply 前不入快照），命中 SetAttr→新值 /
-    // RemoveAttr→空串（absent）；无命中回落快照。闭合 removeAttribute 后 getAttribute 仍返旧值的 stale gap（R2993）。
+    // role / aria / value 懒初始化等反射 getter，须稳定读快照避免 .value= 脏污 defaultValue——SetFormValue 在
+    // apply 中 no-op，applied view 同样稳定），本回调先 consult 变更列表（同批 setAttribute/removeAttribute
+    // 在 render apply 前不入快照），命中 SetAttr→新值 / RemoveAttr→空串（absent）；无命中回落 **applied view**
+    //（R57 FV M3：同批插入元素的结构属性可见）。闭合 removeAttribute 后 getAttribute 仍返旧值的 stale gap（R2993）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_attr_lw",
         Box::new(move |args| {
@@ -454,7 +545,7 @@ pub fn register_dom_callbacks(
                 return ov.unwrap_or_default();
             }
             drop(list);
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
@@ -462,11 +553,13 @@ pub fn register_dom_callbacks(
     // P1a form input：真实 tag 名查询（shim `_tagFromSel` 对 id-only 选择器等仅启发式猜测，
     // `__zw_text_input` 需真实 tag 判 INPUT/TEXTAREA）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_tag",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_tag_from_html_doc(doc, &sel))
         }),
     );
@@ -524,16 +617,19 @@ pub fn register_dom_callbacks(
     );
 
     // P1a checkbox：属性存在性查询（boolean 属性 checked/disabled 靠存在性；getAttribute 返空串
-    // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。纯快照读——
-    // 反射 getter（checked/defaultChecked）须稳定，故 latest-wins 见 `__zw_has_attr_lw`（hasAttribute 专用）。
+    // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。applied view
+    // 读（R57 FV M3：同批插入元素的属性存在性可见；checked/defaultChecked 的稳定语义同
+    // __zw_get_attr——SetFormValue no-op），latest-wins 见 `__zw_has_attr_lw`（hasAttribute 专用）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_has_attr",
         Box::new(move |args| {
             if args.len() < 2 {
                 return "0".to_string();
             }
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             if has_attribute(&snap, &args[0], &args[1]) {
                 "1".into()
             } else {
@@ -543,10 +639,12 @@ pub fn register_dom_callbacks(
     );
 
     // R2995：sel-based `hasAttribute` 专用 latest-wins 变体（区别于纯快照 `__zw_has_attr`，理由同
-    // `__zw_get_attr_lw`）。先 consult 变更列表：命中 SetAttr→"1" / RemoveAttr→"0"；无命中回落快照。
-    // 闭合 removeAttribute 后 hasAttribute 恒 true 的 stale gap（R2993 latent）。
+    // `__zw_get_attr_lw`）。先 consult 变更列表：命中 SetAttr→"1" / RemoveAttr→"0"；无命中回落
+    // **applied view**（R57 FV M3：同批插入元素的属性存在性可见）。闭合 removeAttribute 后
+    // hasAttribute 恒 true 的 stale gap（R2993 latent）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_has_attr_lw",
         Box::new(move |args| {
@@ -558,7 +656,7 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            let snap = apply_pending_query_html(&html, &m, &qv);
             if has_attribute(&snap, &args[0], &args[1]) {
                 "1".into()
             } else {
@@ -670,11 +768,14 @@ pub fn register_dom_callbacks(
     );
 
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_text",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            // R57（FV M3）：applied view——同批插入元素的结构文本可见。
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
@@ -686,6 +787,7 @@ pub fn register_dom_callbacks(
     // MutationObserver characterDataOldValue mutate 前 old-value 读（镜像 `__zw_get_attr_lw`）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
+    let qv = Arc::clone(&view_cache);
     sandbox.register_callback(
         "__zw_get_text_lw",
         Box::new(move |args| {
@@ -694,11 +796,18 @@ pub fn register_dom_callbacks(
             if let Some(t) = sel_text_override(&list, &sel) {
                 return t;
             }
-            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(text) = query_text_from_pending_mutations(&snap, &list, &sel) {
-                return text;
+            {
+                // 作用域收窄：snap guard（html 锁）须在 apply_pending_query_html 前释放——
+                // 该函数内部会再锁 html（std Mutex 非重入，持锁调用即自死锁——FV M3 实测
+                // textContent= 后 getter 挂起）。
+                let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(text) = query_text_from_pending_mutations(&snap, &list, &sel) {
+                    return text;
+                }
             }
             drop(list);
+            // R57（FV M3）：applied view——同批插入元素的结构文本可见。
+            let snap = apply_pending_query_html(&html, &m, &qv);
             with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );

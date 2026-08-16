@@ -1054,7 +1054,7 @@
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
-            else if (n === 'value') { _inputValues[key] = v; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
+            else if (n === 'value') { _inputValues[key] = v; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
@@ -1088,7 +1088,7 @@
             // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
             // 同步客户端缓存（class/value），使后续 classList/.value 反映移除。
             if (n === 'class') _classCache[key] = '';
-            else if (n === 'value') { _inputValues[key] = ''; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
+            else if (n === 'value') { _inputValues[key] = ''; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：removeAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             if (nLower === 'popover') delete _zwTopLayer[key];
             if (nLower === 'open' && targetTag === 'DIALOG') {
@@ -1553,6 +1553,36 @@
                     } catch (_e5) {}
                   }
                 }
+              }
+              // R57（FV M3）：submit 按钮 click 默认动作——表单提交（spec §4.10.5.4 的
+              // submit button activation behavior：form owner 为 null → no-op；经共享
+              // _zwRunFormSubmit（interactive validation + submit 派发 + 重入守卫）——
+              // form-requestsubmit 的 click()+requestSubmit() 重入用例）。
+              var _subFrm = null;
+              var _subTag = _realTag(sel, handle);
+              if (_subTag === 'INPUT' || _subTag === 'BUTTON') {
+                var _subTy = '';
+                try {
+                  _subTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+                } catch (_e6) { _subTy = ''; }
+                _subTy = String(_subTy || '').toLowerCase();
+                var _subIsBtn = (_subTag === 'BUTTON' && (_subTy === 'submit' || _subTy === ''))
+                  || (_subTag === 'INPUT' && (_subTy === 'submit' || _subTy === 'image'));
+                if (_subIsBtn) {
+                  // disabled 表单控件无激活行为（spec：click() 对 disabled form control 直接 return）。
+                  try {
+                    var _subDis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled');
+                    if (_subDis === '1') _subIsBtn = false;
+                  } catch (_e7) {}
+                }
+                if (_subIsBtn) {
+                  try { _subFrm = _makeProxy(sel, handle).form; } catch (_e8) { _subFrm = null; }
+                }
+              }
+              if (_subFrm) {
+                var _subFrmSel = _subFrm.__zwSelector || null;
+                var _subFrmH = _subFrm.__zwHandle || null;
+                _zwRunFormSubmit(_elKey(_subFrmSel, _subFrmH), _subFrmSel, _subFrmH, _makeProxy(sel, handle));
               }
               // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
               // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
@@ -2310,6 +2340,65 @@
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
           return _formControls(sel).length;
         }
+        // R57（FV M3）：form 提交共享路径（requestSubmit + submit 按钮 click 默认动作共用）——
+        // spec §4.10.5.4 的 submit 算法：novalidate 属性 / submitter 的 formnovalidate 跳过
+        // interactive validation；invalid 时首个控件派发 invalid 事件 + 中止提交（headless
+        // 聚焦 no-op）；valid 派发 cancelable submit（SubmitEvent，含 submitter）。
+        // 重入守卫：submit/invalid 事件处理中的重入 requestSubmit/click 直接返回（spec 的
+        // "submit event is firing" 标志语义——form-requestsubmit 的 reentrant 用例——
+        // requestSubmit()+requestSubmit() 只派发一次）。flag 声明在 part05（IIFE 作用域，
+        // 初始化一次；此处若 var 声明会被 get trap 每属性访问重置）。
+        function _zwRunFormSubmit(fKey, fSel, fHandle, submitter) {
+          if (_zwSubmitBusy) return;
+          _zwSubmitBusy = true;
+          try {
+            // spec：form 未连入文档（detached createElement / removed 子树）→ 不提交
+            //（form-requestsubmit 的 disconnected 用例——submit 事件不派发）。
+            var _conn = true;
+            try {
+              if (globalThis.document && typeof globalThis.document.contains === 'function') {
+                _conn = !!globalThis.document.contains(_makeProxy(fSel, fHandle));
+              }
+            } catch (_e) {}
+            if (!_conn) return;
+            var _doValidate = true;
+            try {
+              var _nv = fHandle ? __zw_has_attr_handle(fHandle, 'novalidate') : __zw_has_attr(fSel, 'novalidate');
+              if (_nv === '1') _doValidate = false;
+            } catch (_e) {}
+            if (_doValidate && submitter) {
+              try {
+                var _fnv = (typeof submitter.getAttribute === 'function') ? submitter.getAttribute('formnovalidate') : null;
+                if (_fnv != null) _doValidate = false;
+              } catch (_e) {}
+            }
+            if (_doValidate) {
+              var _firstInv = null;
+              try {
+                var _fcs2 = _formControls(fSel);
+                for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
+                  var _c2 = _fcs2[_ci2];
+                  try {
+                    if (_c2.validity && !_c2.validity.valid) {
+                      if (typeof _c2.dispatchEvent === 'function') {
+                        try { _c2.dispatchEvent(new Event('invalid', { cancelable: true, bubbles: false })); } catch (_e2) {}
+                      }
+                      if (_firstInv == null) _firstInv = _c2;
+                    }
+                  } catch (_e3) {}
+                }
+              } catch (_e4) {}
+              if (_firstInv != null) return; // 中止提交（interactive validation 失败）
+            }
+            // dispatch submit SubmitEvent（cancelable，含 submitter）；headless 无导航（documented）。
+            var _sev;
+            try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
+            catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
+            _dispatchWithBubble(fKey, fSel, fHandle, _sev);
+          } finally {
+            _zwSubmitBusy = false;
+          }
+        }
         // R3048：HTMLFormElement 方法——reset/requestSubmit/submit。旧缺（get trap 未拦 → `form.reset()` 抛
         // not-a-function 中断脚本）。reset：dispatch cancelable 'reset' 事件，未 preventDefault 则把控件恢复
         // defaultValue/defaultChecked/defaultSelected（经既有 setter，revert 表单状态）。requestSubmit：dispatch
@@ -2344,44 +2433,47 @@
             };
           } else if (prop === 'requestSubmit') {
             return function (submitter) {
-              // R57（FV M2）：interactive validation——requestSubmit 先检查表单
-              // 控件 validity（novalidate 属性 / submitter 的 formnovalidate 跳过
-              // ——spec §4.10.5.4）；invalid 时第一个控件派发 invalid 事件 +
-              // 中止提交（headless 聚焦 no-op）。
-              var _doValidate = true;
-              try {
-                var _nv = handle ? __zw_has_attr_handle(handle, 'novalidate') : __zw_has_attr(sel, 'novalidate');
-                if (_nv === '1') _doValidate = false;
-              } catch (_e) {}
-              if (_doValidate && submitter) {
+              // R57（FV M2/M3）：submitter 校验——非 submit button（BUTTON 默认/
+              // type=submit、INPUT type=submit/image）→ TypeError；非本 form 的
+              // submitter → NotFoundError（spec §4.10.5.5 requestSubmit(submitter)）。
+              if (submitter != null && submitter !== undefined) {
+                var _isSubBtn = false;
                 try {
-                  var _fnv = (typeof submitter.getAttribute === 'function') ? submitter.getAttribute('formnovalidate') : null;
-                  if (_fnv != null) _doValidate = false;
+                  var _st = String(submitter.tagName || '').toUpperCase();
+                  var _sty = '';
+                  try { _sty = String(submitter.type || '').toLowerCase(); } catch (_e2) {}
+                  _isSubBtn = (_st === 'BUTTON' && (_sty === 'submit' || _sty === ''))
+                    || (_st === 'INPUT' && (_sty === 'submit' || _sty === 'image'));
                 } catch (_e) {}
-              }
-              if (_doValidate) {
-                var _firstInv = null;
+                if (!_isSubBtn) {
+                  var _te = new TypeError('The provided element is not a submit button.');
+                  _te.name = 'TypeError';
+                  throw _te;
+                }
+                // form 归属：submitter 的 form owner ≠ 当前 form → NotFoundError（spec
+                // §4.10.5.5——detached submitter（form owner null）同样 NotFoundError——
+                // form-requestsubmit 用例；sel/handle 两身份路径比较）。
                 try {
-                  var _fcs2 = _formControls(sel);
-                  for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
-                    var _c2 = _fcs2[_ci2];
-                    try {
-                      if (_c2.validity && !_c2.validity.valid) {
-                        if (typeof _c2.dispatchEvent === 'function') {
-                          try { _c2.dispatchEvent(new Event('invalid', { cancelable: true, bubbles: false })); } catch (_e2) {}
-                        }
-                        if (_firstInv == null) _firstInv = _c2;
-                      }
-                    } catch (_e3) {}
+                  var _owner = submitter.form;
+                  var _owned = false;
+                  try {
+                    if (_owner) {
+                      var _os = _owner.__zwSelector;
+                      var _oh = _owner.__zwHandle;
+                      if (sel && _os && _os === sel) _owned = true;
+                      else if (handle && _oh && _oh === handle) _owned = true;
+                    }
+                  } catch (_e4) {}
+                  if (!_owned) {
+                    // 真实 DOMException（assert_throws_dom 须 instanceof DOMException + code=8）。
+                    _throwDom('NotFoundError', 'The provided element is not owned by this form.');
                   }
-                } catch (_e4) {}
-                if (_firstInv != null) return; // 中止提交（interactive validation 失败）
+                } catch (_e3) {
+                  if (_e3 && _e3.name === 'NotFoundError') throw _e3;
+                }
               }
-              // dispatch submit SubmitEvent（cancelable，含 submitter）；headless 无导航（documented）。
-              var _sev;
-              try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
-              catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
-              _dispatchWithBubble(key, sel, handle, _sev);
+              // R57（FV M2/M3）：共享提交路径（interactive validation + submit 派发 + 重入守卫）。
+              _zwRunFormSubmit(key, sel, handle, submitter);
             };
           } else { // submit
             return function () {}; // spec form.submit() 不发事件直接导航；headless 无导航 → no-op（防抛错）
@@ -2925,7 +3017,7 @@
             if (handle) __zw_set_text_handle(handle, _ov);
             else __zw_set_text(sel, _ov);
           } else {
-            _inputValues[key] = String(value);
+            _inputValues[key] = String(value); _inputValuesSet[key] = true;
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
             // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
             // R2996/R3049：首次写前仍捕获 defaultValue，供 getter + form.reset。
@@ -2949,7 +3041,7 @@
             var vsT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
             if (vsT.toLowerCase() === 'number' || vsT.toLowerCase() === 'range') {
               var vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
-              _inputValues[key] = vsS;
+              _inputValues[key] = vsS; _inputValuesSet[key] = true;
               _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
               if (handle) __zw_set_attr_handle(handle, 'value', vsS);
               else __zw_set_form_value(sel, vsS);
@@ -2965,7 +3057,7 @@
             vadTs = vadTs.toLowerCase();
             if (vadTs === 'date' || vadTs === 'month' || vadTs === 'week' || vadTs === 'time') {
               var vadStr = _formatHtmlDateValue(value, vadTs);
-              _inputValues[key] = vadStr;
+              _inputValues[key] = vadStr; _inputValuesSet[key] = true;
               _captureInputDefault(key, sel, handle);
               if (handle) __zw_set_attr_handle(handle, 'value', vadStr);
               else __zw_set_form_value(sel, vadStr);
