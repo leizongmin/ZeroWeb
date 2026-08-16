@@ -1,0 +1,26 @@
+{
+  "date": "2026-08-16",
+  "round": "R69",
+  "milestone": "M6 S1q 复合对象（attributes NamedNodeMap 面）",
+  "commit": "18843344",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 202,
+    "deletions": 0
+  },
+  "changes": [
+    "attributes getter + 二级身份缓存 ATTR_MAP_OBJECTS（owner ffi → Persistent；spec el.attributes === el.attributes，镜像 V8 namednodemap.rs cached_namednodemap）",
+    "方法面：length getter（attribute_names live 计数）/ item(i) 越界 null / getNamedItem miss null / setNamedItem（入参对象读 name/value——兼容 plain 与 Attr 形，镜像 V8 read_str_prop）/ removeNamedItem（返被移除 {name,value} 条目，miss null；spec NotFoundError 对齐延 DOMException 构造器域）",
+    "setNamedItem/removeNamedItem 派发 attributeChangedCallback（R68 old 写前捕获语义扩展到 map 面）",
+    "条目形态 {name, value} plain object（Attr 节点 instanceof 面延后）",
+    "reset_quickjs_state 清 ATTR_MAP_OBJECTS"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R69 断言：身份缓存 / 新建元素零属性 / set+length+getNamedItem+item 闭环 / miss 语义 / remove 返条目+再移除 null+getAttribute live 跟随）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/namednodemap.rs 语义对齐（身份缓存 + 五方法面）；条目 plain-object 形态差异注记（Attr instanceof 面两侧同为延后项）",
+  "notes": "测试断言初版用 #main（前序脚本累积 6 属性）导致 item(0) 期望错位——改用 detached 新建元素隔离属性序，断言与执行历史解耦"
+}
