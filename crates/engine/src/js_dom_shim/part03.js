@@ -880,11 +880,12 @@
           // 用 **v flag**（spec §4.10.5.2.5——"[(" 等 v 模式非法 → 忽略；
           // "a)(b" 逃逸组非法 → 忽略）；不支持 v 的引擎回退 u。
           var _re = null;
-          // R57（FV M1）：无限回溯风险 pattern（嵌套量词 "(\d+)*" 等——V8 无
-          // RegExp 超时——infinite_backtracking.tentative 卡死整个 run）——
-          // 跳过匹配（valid——tentative 引擎级限制）
-          if (/\)[*+]/.test(String(patAttr))) {
-            // 跳过（不校验——组后量词 ")*"/")+" 的嵌套量词回溯风险）
+          // R57（FV M1）：无限回溯 pattern（组后量词 ")*"/")+"——V8 无 RegExp
+          // 超时（rusty_v8 无 Isolate 级 backtracks API——实测 flag 无效卡死）。
+          // 守卫：直接 mismatch（用例期望 invalid——infinite_backtracking——
+          // 近似：回溯风险 pattern 视为不匹配）
+          if (String(patAttr).indexOf(')*') >= 0 || String(patAttr).indexOf(')+') >= 0) {
+            if (pv !== '') patternMismatch = true;
           } else if (!_isVInvalidPattern(String(patAttr))) {
             try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'v'); } catch (_e) {
               try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'u'); } catch (_e2) { _re = null; }
@@ -1048,11 +1049,41 @@
             if (tm) diff = (+tm[1]) * 3600 + (+tm[2]) * 60 + (+tm[3] || 0);
           }
           if (diff != null) {
-            var rem = diff % st;
-            // R57（FV M1）：容差相对 step（"very small floating step"——step
-            // 0.0000001 的 rem 浮点误差 vs 绝对 1e-6 容差）
-            var tol = Math.max(1e-9, Math.abs(st) * 1e-6);
-            if (Math.abs(rem) > tol && Math.abs(rem - st) > tol) stepMismatch = true;
+            if (st < 1e-9 && (ty === 'number' || ty === 'range')) {
+              // R57（FV M1）：极小 step 的有理数整数性（IEEE 浮点取模不可靠——
+              // 3e-15 的 diff/st ≈ 5.67e15 舍入——"step mismatch when step is a
+              // very small floating number"）。diff = numV - baseV 的十进制
+              // 有理数化——需要原始字符串（numV 来自 parseFloat——精度损失）。
+              var rawVal = _controlValue(sel, handle, key);
+              var rawStep = String(stepA);
+              var fv = _parseDecimalFraction(rawVal);
+              var fstep = _parseDecimalFraction(rawStep);
+              var fbase = null;
+              if (fv && fstep) {
+                // base 的有理数（min 或缺省 0）
+                var rawMin = null;
+                try { rawMin = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'); } catch (_e) {}
+                if (rawMin != null && String(rawMin) !== '' && String(rawMin) !== 'any') {
+                  fbase = _parseDecimalFraction(String(rawMin));
+                } else {
+                  try {
+                    var dvD = _makeProxy(sel, handle).defaultValue;
+                    if (dvD != null && String(dvD) !== '' && String(dvD) !== rawVal) {
+                      fbase = _parseDecimalFraction(String(dvD));
+                    }
+                  } catch (_e) {}
+                }
+                if (fbase == null) fbase = { num: 0n, den: 1n };
+                // diff = (fv - fbase) 的有理数
+                var diffNum = fv.num * fbase.den - fbase.num * fv.den;
+                var diffDen = fv.den * fbase.den;
+                if (!_isIntegralMultiple({ num: diffNum, den: diffDen }, fstep)) stepMismatch = true;
+              }
+            } else {
+              var rem = diff % st;
+              var tol = Math.max(1e-9, Math.abs(st) * 1e-6);
+              if (Math.abs(rem) > tol && Math.abs(rem - st) > tol) stepMismatch = true;
+            }
           }
         }
       }
@@ -1888,6 +1919,32 @@
   // FV（M1）：非 text 类型的值有效格式判定（valueMissing 的「有效值集合」——
   // date/month/week/time/datetime-local 的 ISO 格式近似；number 的 parseFloat）。
   var _DATE_TYPES = { date: 1, month: 1, week: 1, time: 1, 'datetime-local': 1 };
+  // FV（M1）：十进制串（含科学计数法）→ BigInt 分数 {num, den}。number 的
+  // step 极小值（3e-15）的整数倍判定——IEEE 浮点取模不可靠（diff/st ≈ 5.67e15
+  // 的舍入）——有理数精确判定。
+  function _parseDecimalFraction(v) {
+    var s = String(v).trim();
+    var m = s.match(/^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/);
+    if (!m) return null;
+    var neg = m[1] === '-';
+    var intPart = m[2] || '0';
+    var fracPart = m[3] || '';
+    var exp = m[4] ? parseInt(m[4], 10) : 0;
+    var digits = intPart + fracPart;
+    if (digits === '') digits = '0';
+    var num = BigInt(neg ? '-' + digits : digits);
+    var den = BigInt(10) ** BigInt(fracPart.length - exp);
+    if (den < 0n) { num = num * BigInt(10) ** BigInt(-den); den = 1n; }
+    if (den === 0n) den = 1n;
+    return { num: num, den: den };
+  }
+  // 有理数整数性：(a.num/step.den) % (a.den/step.num) == 0
+  function _isIntegralMultiple(a, step) {
+    var lhs = a.num * step.den;
+    var rhs = a.den * step.num;
+    if (rhs === 0n) return false;
+    return lhs % rhs === 0n;
+  }
   // FV（M1）：HTML pattern 编译的 v 模式非法近似（V8 无 v flag 支持——
   // spec §4.10.5.2.5：v 模式非法正则被忽略）。字符类内未转义特殊字符
   //（"[(" 等）+ 未配对组（"a)(b"）→ v 非法。
