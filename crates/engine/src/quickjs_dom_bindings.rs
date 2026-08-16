@@ -54,10 +54,12 @@ thread_local! {
     static LISTENERS: RefCell<HashMap<(u64, String), Vec<(bool, Persistent<Value<'static>>)>>> =
         RefCell::new(HashMap::new());
     /// S5q customElements registry（spec `dom-customelementregistry`）：tag（ASCII 小写键，
-    /// spec define 规范化）→ registered ctor（Persistent strong）。`whenDefined` 等待集
-    /// 经 `__zw_native_ce_when_defined` 全局 JS Set 承载（promise resolve 属异步域，PoC
-    /// 以同步注册后立即解析语义简化——见 install 注册的 wrapper）。
+    /// spec define 规范化）→ registered ctor（Persistent strong）。
     static CE_REGISTRY: RefCell<HashMap<String, Persistent<Value<'static>>>> =
+        RefCell::new(HashMap::new());
+    /// R75 whenDefined 等待列表：tag → Vec<resolve fn Persistent>（define 时刻 flush，
+    /// resolve 一次性取走清列表）。
+    static CE_WHEN_DEFINED: RefCell<HashMap<String, Vec<Persistent<Value<'static>>>>> =
         RefCell::new(HashMap::new());
     /// S5q 连接态追踪（镜像 V8 CONNECTED_CUSTOM）：已连入 document 的 custom 元素 ffi 集。
     static CONNECTED_CUSTOM: RefCell<std::collections::HashSet<u64>> = RefCell::new(std::collections::HashSet::new());
@@ -83,6 +85,7 @@ pub fn reset_quickjs_state() {
     NODE_OBJECTS.with(|c| c.borrow_mut().clear());
     LISTENERS.with(|c| c.borrow_mut().clear());
     CE_REGISTRY.with(|c| c.borrow_mut().clear());
+    CE_WHEN_DEFINED.with(|c| c.borrow_mut().clear());
     CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
     ATTR_MAP_OBJECTS.with(|c| c.borrow_mut().clear());
     CLASS_LIST_OBJECTS.with(|c| c.borrow_mut().clear());
@@ -1918,8 +1921,8 @@ fn listener_present<'js>(
 // mutation 方法成功路径调用）；attributeChanged 简化经 setAttribute 变更派发（observedAttributes 过滤延后）。
 
 /// `customElements.define(tag, ctor)`（spec `dom-customelementregistry-define`）：
-/// tag ASCII 小写规范化；ctor 须 callable；重复定义静默忽略（spec 抛 NotSupportedError——
-/// DOMException 基建延 S4q 完整化，注记同 R60b）。
+/// tag ASCII 小写规范化；ctor 须 callable；重复定义 → NotSupportedError（R66）。
+/// R75：成功注册后 flush 该 tag 的 whenDefined 等待者（resolve 排微任务）。
 fn ce_define<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>, ctor: Value<'js>) -> rquickjs::Result<()> {
     // S4q 完整化（R66）：非 callable ctor → TypeError（spec「callback」型校验）。
     if !ctor.is_function() {
@@ -1936,8 +1939,21 @@ fn ce_define<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>, ctor: Value<'js
         ));
     }
     CE_REGISTRY.with(|r| {
-        r.borrow_mut().insert(key, Persistent::save(&ctx, ctor));
+        r.borrow_mut().insert(key.clone(), Persistent::save(&ctx, ctor.clone()));
     });
+    // R75：flush 该 tag 的 whenDefined 等待 resolve（spec define 步骤：resolve 等待的
+    // promise，值 = ctor）。取出后清列表（resolve 一次性）。
+    let waiters: Vec<Persistent<Value<'static>>> =
+        CE_WHEN_DEFINED.with(|w| w.borrow_mut().remove(&key).unwrap_or_default());
+    for w in waiters {
+        if let Ok(v) = w.restore(&ctx)
+            && let Ok(resolve) = rquickjs::Function::from_value(v)
+        {
+            // resolve(ctor)——Promise then 回调经微任务天然排队（spec whenDefined 的
+            // promise 在 define 返回后才 settle，观察语义一致）。
+            let _: rquickjs::Result<rquickjs::Value> = resolve.call((&ctor.clone(),));
+        }
+    }
     Ok(())
 }
 
@@ -1989,9 +2005,26 @@ fn ce_get_name<'js>(ctx: Ctx<'js>, ctor: Value<'js>) -> Value<'js> {
 /// `customElements.whenDefined(tag)`（spec）：PoC 同步简化——立即 resolve（真等待
 /// 语义需 pending promise 表 + define 时批量 resolve，延异步域切片）。经
 /// `Promise::new` + 立即调 resolve 构造已解析 promise。
-fn ce_when_defined<'js>(ctx: Ctx<'js>, _tag: rquickjs::Coerced<String>) -> rquickjs::Result<rquickjs::Value<'js>> {
+/// `customElements.whenDefined(tag)`（spec `dom-customelementregistry-whendefined`）：
+/// R75 真 pending 语义——已定义 → 立即 resolve(ctor) 的 promise；未定义 → pending
+/// promise，resolve 函数存 CE_WHEN_DEFINED 等待列表（define 时刻 flush）。
+fn ce_when_defined<'js>(ctx: Ctx<'js>, tag: rquickjs::Coerced<String>) -> rquickjs::Result<rquickjs::Value<'js>> {
+    let key = tag.0.to_ascii_lowercase();
     let (promise, resolve, _) = rquickjs::Promise::new(&ctx)?;
-    let _: rquickjs::Result<rquickjs::Value> = resolve.call(());
+    if let Some(ctor_p) = CE_REGISTRY.with(|r| r.borrow().get(&key).cloned())
+        && let Ok(ctor) = ctor_p.restore(&ctx)
+    {
+        // 已定义：立即 resolve（then 回调仍微任务排队——spec 观察语义）。
+        let _: rquickjs::Result<rquickjs::Value> = resolve.call((&ctor,));
+    } else {
+        // 未定义：resolve 入等待列表，define 时 flush。
+        CE_WHEN_DEFINED.with(|w| {
+            w.borrow_mut()
+                .entry(key)
+                .or_default()
+                .push(Persistent::save(&ctx, resolve.into_value()));
+        });
+    }
     Ok(promise.into_value())
 }
 
@@ -2255,6 +2288,12 @@ mod tests {
     fn quickjs_native_element_poc() {
         let runtime = rquickjs::Runtime::new().expect("runtime");
         let ctx = rquickjs::Context::full(&runtime).expect("context");
+        // R75：Promise 微任务 drain（rquickjs eval 不自动跑 job queue；生产 webview
+        // 事件循环同职）。runtime() 在 Context（owner）上，须在 ctx.with 外捕获。
+        let rt = ctx.runtime();
+        let drain_jobs = || {
+            while rt.execute_pending_job().unwrap_or(false) {}
+        };
         ctx.with(|ctx| {
             let dom = Rc::new(RefCell::new(zero_dom::parse_html(
                 "<html><body><div id='main' class='c'>hi</div></body></html>",
@@ -2956,8 +2995,58 @@ mod tests {
                 "id,className,title,lang,accessKey"
             );
 
-            reset_quickjs_state();
+            // R75 whenDefined 断言移至下一个 ctx.with 块（execute_pending_job 不能在
+            // Ctx 借用中调用——RefCell 重入 panic；闭包结束释放借用后驱动）。
+            // 注意：reset_quickjs_state 延后到 R75 块之后（registry/globalThis 状态跨块保留）。
         });
+
+        // R75 whenDefined 真 pending：未定义 tag → pending promise（then 未跑）；define
+        // 时刻 resolve（ctor 为值）；then 微任务经 Context::runtime().execute_pending_job
+        // 驱动（rquickjs eval 不自动跑 job queue——生产 quickjs_runtime.rs eval 后同款
+        // drain 循环，webview 事件循环同职）。**drain 须在 ctx.with 闭包外**——Ctx 借用
+        // 未释放时调用会 RefCell 重入 panic（safe_ref 实证）。
+        let ev = |code: &str| -> String {
+            ctx.with(|ctx| {
+                ctx.eval::<rquickjs::Coerced<String>, _>(code)
+                    .map(|v| v.0)
+                    .unwrap_or_else(|e| format!("__ERR__:{e}"))
+            })
+        };
+        let drain = || {
+            while ctx.runtime().execute_pending_job().unwrap_or(false) {}
+        };
+        assert_eq!(
+            ev("globalThis.__wdLog = [];\
+                 globalThis.__MyEl2 = function () {};\
+                 __zw_native_customElements.whenDefined('my-wd-el').then(function (c) {\
+                     __wdLog.push('resolved:' + (c === __MyEl2));\
+                 });\
+                 __zw_native_customElements.whenDefined('my-el').then(function (c) {\
+                     __wdLog.push('already:' + (c === __MyEl));\
+                 });\
+                 __wdLog.join('|')"),
+            "",
+            "R75 whenDefined 未定义 tag pending（then 未同步跑）+ 已定义 tag then 也微任务排队"
+        );
+        drain();
+        assert_eq!(
+            ev("__wdLog.join('|')"),
+            "already:true",
+            "R75 已定义 tag 的 then 在 job drain 后 flush（resolve 值 === ctor）"
+        );
+        assert_eq!(
+            ev("__zw_native_customElements.define('my-wd-el', __MyEl2), 1"),
+            "1",
+            "define my-wd-el（触发等待者 flush——全新 tag 无前序注册）"
+        );
+        drain();
+        assert_eq!(
+            ev("__wdLog.join('|')"),
+            "already:true|resolved:true",
+            "R75 pending promise 在 define 后 resolve（drain 后 then flush，值 === ctor）"
+        );
+
+        reset_quickjs_state();
     }
 
     /// S1q namespaceURI 空命名空间 → null（镜像 V8 `native_namespace_uri_getter` 分支）。
