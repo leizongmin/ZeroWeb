@@ -833,6 +833,23 @@
           if (!isNaN(mx) && rv > mx) rangeOverflow = true;
         }
       }
+    } else if (_DATE_TYPES[ty] === 1) {
+      // R57（FV M1）：date 类 range——ISO 字符串字典序比较（min/max 无效格式
+      // 忽略——"2001/01/01" 对 date 无效 → 不比较）。
+      var dv = _controlValue(sel, handle, key).trim();
+      if (dv !== '' && _isValidDateString(dv, ty)) {
+        var minA2 = null, maxA2 = null;
+        try {
+          minA2 = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min');
+          maxA2 = handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max');
+        } catch (_e) {}
+        if (minA2 != null && _isValidDateString(String(minA2).trim(), ty) && dv < String(minA2).trim()) {
+          rangeUnderflow = true;
+        }
+        if (maxA2 != null && _isValidDateString(String(maxA2).trim(), ty) && dv > String(maxA2).trim()) {
+          rangeOverflow = true;
+        }
+      }
     }
     // R57（FV M1）：typeMismatch——type=email/url 的值格式校验（spec
     // §4.10.5.2.6；近似正则——email `local@domain`、url 需 scheme；空白清洗；
@@ -854,12 +871,49 @@
         }
       }
     }
+    // R57（FV M1）：stepMismatch——value 有效且非空 + step 属性（非 any 非空）+
+    // (value - base) % step != 0（spec §4.10.5.2.11；base：number → min 或 0、
+    // date → 1970-01-01（天）、month → 1970-01（月）、time → 00:00（秒））。
+    var stepMismatch = false;
+    var stepA = null;
+    try { stepA = handle ? __zw_get_attr_handle(handle, 'step') : __zw_get_attr(sel, 'step'); } catch (_e) {}
+    if (stepA != null && String(stepA) !== '' && String(stepA).toLowerCase() !== 'any') {
+      var sVal = _controlValue(sel, handle, key);
+      if (sVal.trim() !== '') {
+        var st = parseFloat(String(stepA));
+        if (!isNaN(st) && st > 0) {
+          var diff = null;
+          if (ty === 'number' || ty === 'range') {
+            var numV = parseFloat(sVal);
+            if (isFinite(numV)) {
+              var minS = null;
+              try { minS = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'); } catch (_e) {}
+              var baseV = (minS != null && String(minS) !== '') ? parseFloat(String(minS)) : 0;
+              diff = isFinite(baseV) ? numV - baseV : null;
+            }
+          } else if (ty === 'date') {
+            var dvp = Date.parse(sVal.trim());
+            if (!isNaN(dvp)) diff = (dvp - Date.UTC(1970, 0, 1)) / 86400000;
+          } else if (ty === 'month') {
+            var mm = sVal.trim().match(/^(\d{4})-(\d{2})$/);
+            if (mm) diff = ((+mm[1]) - 1970) * 12 + ((+mm[2]) - 1);
+          } else if (ty === 'time') {
+            var tm = sVal.trim().match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
+            if (tm) diff = (+tm[1]) * 3600 + (+tm[2]) * 60 + (+tm[3] || 0);
+          }
+          if (diff != null) {
+            var rem = diff % st;
+            if (Math.abs(rem) > 1e-6 && Math.abs(rem - st) > 1e-6) stepMismatch = true;
+          }
+        }
+      }
+    }
     return {
       valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
-      stepMismatch: false, badInput: false, customError: hasCustom,
+      stepMismatch: stepMismatch, badInput: false, customError: hasCustom,
       valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
-        && !rangeOverflow && !tooLong && !tooShort,
+        && !rangeOverflow && !stepMismatch && !tooLong && !tooShort,
     };
   }
 
