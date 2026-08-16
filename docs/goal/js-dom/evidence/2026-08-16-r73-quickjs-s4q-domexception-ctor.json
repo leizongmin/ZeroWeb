@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-16",
+  "round": "R73",
+  "milestone": "M6 S4q 完整化（DOMException 构造器 + instanceof 面）",
+  "commit": "be431968",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 82,
+    "deletions": 3
+  },
+  "changes": [
+    "全局 DOMException 构造器（spec webidl-domexception）——JS 胶水（R71/R72 模式第三次复用）",
+    "new DOMException(message?, name?)：缺省 ''/'Error'（R31 V8 parity）+ legacy code 映射（name→code spec 表，SyntaxError=12 等，未知 0）+ stack 字符串 + prototype 链挂 Error.prototype + toString 'name: message'（name=Error 时只 message）",
+    "21 个 legacy *_ERR 常量挂构造器（INDEX_SIZE_ERR..DATA_CLONE_ERR）",
+    "new.target 守卫：无 new 调用抛 TypeError",
+    "throw_dom_exception 升级：经全局构造器 new 实例（instanceof 可观测——R66 的 plain Error 形态闭合），install 前早期路径回落 plain 对象",
+    "全部 R66 错误路径（appendChild cycle/createElement 非法 tag/ce.define 重复等）现抛真构造器实例"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 R73 三组断言：instanceof 双面+code 映射+toString / 缺省参+legacy 常量 / native 错误路径 instanceof 可观测）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "与 V8 dom_bindings/dom_exception.rs 对齐（R31 缺省参修正 + R6 identity 教训——QuickJS 经单一全局构造器天然保 identity，无 V8 的 wrong-global 三重根因）",
+  "rquickjs_lessons": [
+    "Constructor::construct 的 IntoArgs 对 tuple + 泛型 R 组合易碰 trait 界——Args::new + push_arg + construct_args 是稳定形态"
+  ]
+}
