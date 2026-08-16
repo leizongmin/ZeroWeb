@@ -5,15 +5,15 @@
     "title": {"en": "Canvas compatibility sweep, QuickJS DOM bindings", "zh": "Canvas 兼容性冲刺与 QuickJS 原生 DOM 绑定"},
     "summary": {
       "en": "The Canvas 2D WPT sweep cleared the last path-objects failures and most of the drawing-images gaps. The QuickJS native DOM binding line finished M6 S0q-S5q and closed the S1q composite objects. The HTML behavior compatibility track, started this week, completed M0-M4, and browser product work added page zoom and device-DPI compositor frames.",
-      "zh": "本周 Canvas 2D WPT 兼容性冲刺清除了 path-objects 的全部剩余失败与大部分 drawing-images 缺口；QuickJS 原生 DOM 绑定线落地 M6 S0q–S5q 全部切片并收口 S1q 复合对象。新的 HTML 行为兼容赛道完成 M0–M4，浏览器产品层新增页面缩放与设备 DPI 合成帧。"
+      "zh": "本周 Canvas 2D WPT 兼容性清扫清除了 path-objects 的全部剩余失败与大部分 drawing-images 缺口；QuickJS 原生 DOM 绑定线完成 M6 S0q–S5q 全部切片，S1q 复合对象收尾。新的 HTML 行为兼容专项完成 M0–M4，浏览器产品层新增页面缩放与设备 DPI 合成帧。"
     },
     "completed": {
       "en": ["Canvas: path-objects reached 202/0 (adaptive bezier subdivision, zero-length stroke pruning, roundRect spec start point, arc annulus, nonzero/evenodd fill rules). drawing-images is down to one failure left. f16 pixel storage with linear color space, display-p3 management, CanvasFilter (13/13 filters), GIF first-frame decoding, and colorMatrix filter went in too.", "QuickJS native DOM bindings: M6 S0q-S5q all landed — EventTarget with three-phase capture/bubble, DOMException error paths, customElements five-piece with lifecycle, observedAttributes; S1q closed with attributes/classList/dataset composite objects.", "HTML behavior compatibility track (launched 08-12): M0-M4 completed — shared action transaction core, single-process form POST navigation, anchor navigation intents, live renderer WebDriver + WPT testdriver.", "Browser product layer: Chrome-style page zoom, compositor frames at device DPI, chrome controls and address bar polish, frozen HTML5test browser smoke coverage."],
-      "zh": ["Canvas：path-objects 达到 202/0（自适应贝塞尔细分、stroke 零长段剪除、roundRect 起点对齐 spec、圆弧环带、nonzero/evenodd 填充规则）；drawing-images 仅剩 1 项；f16 浮点存储 + 线性色彩空间、display-p3 色彩管理、CanvasFilter（filters 13/13）、GIF 首帧解码、colorMatrix 滤镜。", "QuickJS 原生 DOM 绑定：M6 S0q–S5q 全部落地——EventTarget 三阶段捕获/冒泡、DOMException 错误路径、customElements 五件套 + lifecycle、observedAttributes；S1q 复合对象（attributes/classList/dataset）收口。", "HTML 行为兼容赛道（08-12 启动）：M0–M4 完成——共享动作事务核心、单进程表单 POST 导航、a/area 导航意图、live renderer WebDriver + WPT testdriver。", "浏览器产品层：Chrome 式页面缩放、设备 DPI 合成帧、chrome 控件与地址栏打磨、冻结 HTML5test 浏览器 smoke 覆盖。"]
+      "zh": ["Canvas：path-objects 达到 202/0（自适应贝塞尔细分、零长描边段剪除、roundRect 起点对齐 spec、圆弧环带、nonzero/evenodd 填充规则）；drawing-images 仅剩 1 项；f16 浮点存储与线性色彩空间、display-p3 色彩管理、CanvasFilter（filters 13/13）、GIF 首帧解码、colorMatrix 滤镜。", "QuickJS 原生 DOM 绑定：M6 S0q–S5q 全部完成——EventTarget 三阶段捕获/冒泡、DOMException 错误路径、customElements 五件套（含 lifecycle）、observedAttributes；S1q 复合对象（attributes/classList/dataset）收尾。", "HTML 行为兼容专项（8 月 12 日启动）：M0–M4 完成——共享动作事务核心、单进程表单 POST 导航、a/area 导航意图、live renderer WebDriver 与 WPT testdriver。", "浏览器产品层：Chrome 式页面缩放、设备 DPI 合成帧、浏览器外壳（chrome）控件与地址栏打磨、锁定 HTML5test 浏览器 smoke 覆盖。"]
     },
     "inProgress": {
       "en": "Canvas drawing-images has one failure left (nonexistent). QuickJS M6 depth items remain: weak/finalizer GC, Event/DOMException constructor instanceof, and whenDefined pending. Turning V8 native bindings on by default still awaits a user decision. Rendering and font stack slices plus browser-shell productization continue.",
-      "zh": "Canvas drawing-images 剩 1 项失败（nonexistent）；QuickJS M6 深度项待补齐（weak/finalizer GC、Event/DOMException 构造器 instanceof、whenDefined 真 pending）；V8 原生绑定 default-on 等待用户拍板；渲染/字体栈切片与 browser-shell 产品化持续推进。"
+      "zh": "Canvas drawing-images 剩 1 项失败（nonexistent）；QuickJS M6 尚有深层遗留（weak/finalizer GC、Event/DOMException 构造器 instanceof、whenDefined 的 pending 行为）；V8 原生绑定是否默认开启仍待用户决定；渲染/字体栈切片与 browser-shell 产品化持续推进。"
     },
     "sources": [
       {"label": "Canvas path-objects 202/0", "url": "https://github.com/leizongmin/ZeroWeb/commit/855ed210b"},
@@ -28,11 +28,11 @@
     "title": {"en": "Compositor safety and presentation advance", "zh": "合成器安全与呈现链路推进"},
     "summary": {
       "en": "The compositor moved toward a safer, more direct presentation path this week: shared GPU mailbox transport, owned window surfaces, and Linux sandboxing.",
-      "zh": "本周的工作围绕更安全、更直接的合成器呈现路径推进：共享 GPU mailbox 传输、独占窗口呈现 surface 与 Linux 沙箱同步落地。"
+      "zh": "本周的工作围绕更安全、更直接的合成器呈现路径推进：共享 GPU mailbox 传输、自有窗口呈现 surface 与 Linux 沙箱同步完成。"
     },
     "completed": {
       "en": ["Added GPU mailbox fencing and mmap-based zero-copy transport.", "Added an owned window presentation surface for the compositor.", "Added Linux seccomp and Landlock sandboxing for compositor isolation."],
-      "zh": ["补齐 GPU mailbox fence 与基于 mmap 的零拷贝传输。", "为合成器加入独占窗口呈现 surface。", "为合成器隔离加入 Linux seccomp 与 Landlock 沙箱。"]
+      "zh": ["补齐 GPU mailbox fence 与基于 mmap 的零拷贝传输。", "为合成器加入自有窗口呈现 surface。", "为合成器隔离加入 Linux seccomp 与 Landlock 沙箱。"]
     },
     "inProgress": {
       "en": "Browser product integration, rendering compatibility, and complete DOM/Web API coverage are still in progress.",
@@ -49,16 +49,16 @@
     "date": "2026-08-09",
     "type": "weekly",
     "title": {"en": "Native DOM bindings gain a live document path", "zh": "原生 DOM 绑定新增 live Document 路径"},
-    "summary": {"en": "The native DOM bindings expanded from read-only access into document sharing, tree mutation, node collections, and text content behavior.", "zh": "原生 DOM 绑定在只读能力之外，又覆盖了文档共享、树变异、节点集合与 textContent 行为。"},
-    "completed": {"en": ["Added native tree mutation operations and child collections.", "Added native textContent and node-value behavior.", "Implemented the shared live-Document design and the cached document refactor."], "zh": ["加入原生树变异操作与子节点集合。", "加入原生 textContent 与 nodeValue 行为。", "落地 shared live-Document 设计与缓存文档重构。"]},
-    "inProgress": {"en": "The broader DOM/Web API compatibility effort continues; production wiring and behavior coverage are added in slices.", "zh": "更完整的 DOM/Web API 兼容性仍在持续推进，生产接线与行为覆盖会继续按切片完成。"},
+    "summary": {"en": "The native DOM bindings expanded from read-only access into document sharing, tree mutation, node collections, and text content behavior.", "zh": "原生 DOM 绑定从只读访问扩展到文档共享、树变更、节点集合与 textContent 行为。"},
+    "completed": {"en": ["Added native tree mutation operations and child collections.", "Added native textContent and node-value behavior.", "Implemented the shared live-Document design and the cached document refactor."], "zh": ["加入原生树变更操作与子节点集合。", "加入原生 textContent 与 nodeValue 行为。", "实现了 shared live-Document 设计与缓存文档重构。"]},
+    "inProgress": {"en": "The broader DOM/Web API compatibility effort continues; production wiring and behavior coverage are added in slices.", "zh": "更完整的 DOM/Web API 兼容工作仍在持续推进，生产接入与行为覆盖会继续按切片完成。"},
     "sources": [{"label": "Live document refactor", "url": "https://github.com/leizongmin/ZeroWeb/commit/bcc362ef5"}, {"label": "Native tree mutation", "url": "https://github.com/leizongmin/ZeroWeb/commit/88e726d2c"}, {"label": "Native textContent", "url": "https://github.com/leizongmin/ZeroWeb/commit/320ccc2d4"}]
   },
   {
     "date": "2026-08-02",
     "type": "weekly",
     "title": {"en": "Targeted CSS fixes for rendering compatibility", "zh": "渲染兼容性的针对性 CSS 修复"},
-    "summary": {"en": "Compatibility work delivered targeted CSS fixes this week. It also recorded, with evidence, the deeper rendering constraints that remain.", "zh": "本周兼容性工作落地了针对性的 CSS 修复，并把仍未解决的深层渲染约束连同依据记录在案。"},
+    "summary": {"en": "Compatibility work delivered targeted CSS fixes this week. It also recorded, with evidence, the deeper rendering constraints that remain.", "zh": "本周兼容性工作完成了针对性的 CSS 修复，并把仍未解决的深层渲染约束连同依据记录在案。"},
     "completed": {"en": ["Implemented CSS overflow-clip-margin across parsing and paint paths.", "Canonicalized the logical sizing cascade and measured the compatibility gains.", "Kept legacy product smoke checks free of structural regressions."], "zh": ["在解析与绘制链路实现 CSS overflow-clip-margin。", "规范化逻辑尺寸层叠行为，并取得可测的兼容性收益。", "保持 legacy 产品 smoke 检查无结构性回归。"]},
     "inProgress": {"en": "The remaining compatibility gaps are concentrated in structural and font-metric work rather than small isolated switches.", "zh": "剩余兼容性缺口集中在结构性与字体度量工作，而不是零散的小开关。"},
     "sources": [{"label": "overflow-clip-margin", "url": "https://github.com/leizongmin/ZeroWeb/commit/51a684068"}, {"label": "Logical sizing cascade", "url": "https://github.com/leizongmin/ZeroWeb/commit/03736364b"}, {"label": "Legacy smoke review", "url": "https://github.com/leizongmin/ZeroWeb/commit/a34768b5d"}]
@@ -67,7 +67,7 @@
     "date": "2026-07-19",
     "type": "weekly",
     "title": {"en": "Font metrics and rendering evidence point to the next steps", "zh": "字体度量与渲染数据为下一步指明方向"},
-    "summary": {"en": "Rendering investigations improved measurement consistency and made it clearer where broad compatibility work is held back by complex text and metric behavior.", "zh": "渲染调研提升了测量一致性，也进一步明确了广泛兼容性工作在哪里受复杂文本与度量行为制约。"},
+    "summary": {"en": "Rendering investigations improved measurement consistency and made it clearer where broad compatibility work is held back by complex text and metric behavior.", "zh": "渲染调研提升了测量一致性，也进一步明确了整体兼容性工作在哪里受复杂文本与度量行为制约。"},
     "completed": {"en": ["Registered fontdue measurement to align the browser path with rendering expectations.", "Confirmed full product smoke coverage for the current fixture set.", "Recorded fresh CSS Grid measurements and updated the compatibility evidence."], "zh": ["注册 fontdue 测量，使浏览器路径与渲染预期保持一致。", "确认当前 fixture 集的产品 smoke 全部通过。", "记录新的 CSS Grid 测量结果并更新兼容性数据。"]},
     "inProgress": {"en": "The next compatibility work focuses on text metrics and structural rendering paths that need coordinated, rather than isolated, changes.", "zh": "下一阶段兼容性工作聚焦于需要协同改动的文本度量与结构性渲染路径。"},
     "sources": [{"label": "Font measurement registration", "url": "https://github.com/leizongmin/ZeroWeb/commit/bad506536"}, {"label": "Product smoke evidence", "url": "https://github.com/leizongmin/ZeroWeb/commit/fa79ae984"}, {"label": "CSS Grid measurement", "url": "https://github.com/leizongmin/ZeroWeb/commit/b7671a120"}]
