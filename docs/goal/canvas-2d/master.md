@@ -140,6 +140,10 @@ evidence/r34xx-batch8-r56h-2026-08-16.md）。
 - [x] shadowColor 'currentColor' — ✅ 完成（设值时解析 + 元素 style 属性串）
 - [x] OffscreenCanvas × Web Worker 集成（G6）— ✅ 完成（.worker.js 变体全通，715 Pass；真独立 worker 线程运行时 OffscreenCanvas 为浏览器架构面，非 WPT 通过率分母）
 - [x] index-from-offset 边界约定 — ✅ 完成（字形中点规则，主+worker edge-cases 全过）
+- [ ] M3 深项聚类（oracle A/B 复测后，Chromium 已可用）——filters dropShadow 27% /
+  layers opaque-canvas filter 15% / gradient colorInterpolationMethod 10.8%（含
+  colorInterpolationMethod 属性 + 多色彩空间插值）/ reset render composite 6.7%——
+  深结构项，待用户点名
 
 ## 下一步计划
 
