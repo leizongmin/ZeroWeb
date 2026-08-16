@@ -243,8 +243,18 @@ pub enum IpcGradientColorSpace {
     Hwb,
     /// XYZ（D65）。
     Xyz,
+    /// XYZ（D50）。
+    XyzD50,
     /// ProPhoto RGB（D50）。
     ProphotoRgb,
+    /// Display-P3。
+    DisplayP3,
+    /// 线性光 Display-P3。
+    DisplayP3Linear,
+    /// Adobe RGB (1998)。
+    A98Rgb,
+    /// Rec.2020。
+    Rec2020,
 }
 
 /// IPC 极坐标色相插值法（镜像 render-foundation HueMethod）。

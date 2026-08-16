@@ -85,7 +85,12 @@ fn ipc_interpolation_to_interpolation(i: IpcGradientInterpolation) -> GradientIn
         IpcGradientColorSpace::Hsl => GradientColorSpace::Hsl,
         IpcGradientColorSpace::Hwb => GradientColorSpace::Hwb,
         IpcGradientColorSpace::Xyz => GradientColorSpace::Xyz,
+        IpcGradientColorSpace::XyzD50 => GradientColorSpace::XyzD50,
         IpcGradientColorSpace::ProphotoRgb => GradientColorSpace::ProphotoRgb,
+        IpcGradientColorSpace::DisplayP3 => GradientColorSpace::DisplayP3,
+        IpcGradientColorSpace::DisplayP3Linear => GradientColorSpace::DisplayP3Linear,
+        IpcGradientColorSpace::A98Rgb => GradientColorSpace::A98Rgb,
+        IpcGradientColorSpace::Rec2020 => GradientColorSpace::Rec2020,
     };
     let hue = match i.hue {
         IpcHueMethod::Shorter => HueMethod::Shorter,

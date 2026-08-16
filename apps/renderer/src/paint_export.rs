@@ -311,7 +311,12 @@ pub fn paint_snapshot_from_primitives(
                         GradientColorSpace::Hsl => IpcGradientColorSpace::Hsl,
                         GradientColorSpace::Hwb => IpcGradientColorSpace::Hwb,
                         GradientColorSpace::Xyz => IpcGradientColorSpace::Xyz,
+                        GradientColorSpace::XyzD50 => IpcGradientColorSpace::XyzD50,
                         GradientColorSpace::ProphotoRgb => IpcGradientColorSpace::ProphotoRgb,
+                        GradientColorSpace::DisplayP3 => IpcGradientColorSpace::DisplayP3,
+                        GradientColorSpace::DisplayP3Linear => IpcGradientColorSpace::DisplayP3Linear,
+                        GradientColorSpace::A98Rgb => IpcGradientColorSpace::A98Rgb,
+                        GradientColorSpace::Rec2020 => IpcGradientColorSpace::Rec2020,
                     },
                     hue: match g.interpolation.hue {
                         HueMethod::Shorter => IpcHueMethod::Shorter,
