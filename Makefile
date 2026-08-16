@@ -9,14 +9,15 @@ WPT_DATA_REPO ?= https://github.com/leizongmin/zeroweb-wpt-data.git
 WPT_DATA_REF  ?= v1.10
 WPT_DATA_DIR  ?= tests/wpt-runner/wpt-data
 ifeq ($(OS),Windows_NT)
-# Windows 的 make recipe 由 cmd.exe 执行；WPT 脚本需明确使用 Git Bash，不能落到 WSL bash。
+# Windows 的 make recipe 可能落到 cmd.exe（本机）或 Git Bash（GitHub Actions runner）——
+# 统一显式走 Git Bash，避免 cmd 语法在 bash 下解析失败（2026-08-16 CI 实测）。
 WPT_BASH ?= "C:/Program Files/Git/bin/bash.exe"
 else
 WPT_BASH ?= bash
 endif
 fetch-wpt-data:
 ifeq ($(OS),Windows_NT)
-	@if exist "$(WPT_DATA_DIR)\*" (echo wpt-data already exists: $(WPT_DATA_DIR)) else (echo fetch wpt-data $(WPT_DATA_REF) to $(WPT_DATA_DIR) & git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)" & rmdir /s /q "$(WPT_DATA_DIR)\.git")
+	@$(WPT_BASH) -c 'if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi'
 else
 	@if [ -d "$(WPT_DATA_DIR)" ] && [ -n "$$(ls -A $(WPT_DATA_DIR) 2>/dev/null)" ]; then echo "wpt-data 已存在 ($(WPT_DATA_DIR), ref=$(WPT_DATA_REF))；刷新请先 rm -rf 该目录"; else echo "fetch wpt-data $(WPT_DATA_REF) → $(WPT_DATA_DIR)"; git clone --depth=1 --branch $(WPT_DATA_REF) $(WPT_DATA_REPO) "$(WPT_DATA_DIR)"; rm -rf "$(WPT_DATA_DIR)/.git"; fi
 endif
