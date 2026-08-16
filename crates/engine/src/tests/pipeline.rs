@@ -1076,6 +1076,40 @@ fn test_pipeline_multicol_remeasures_paragraph_height_after_column_narrowing() {
         "paragraphs sharing a column must not overlap after rewrapping: positions={positions:?}"
     );
 }
+
+#[test]
+fn test_pipeline_balanced_multicol_text_stays_within_container() {
+    let mut pipeline = RenderPipeline::new(980.0, 900.0);
+    let html = r#"
+        <html><body><div class="paper"><div class="text">
+            <p>A HTML5test is dead. It's been dead for a while. In fact it hasn't been updated since 2016.</p>
+            <p>B And that is fine. This website has served its purpose and helped popularise HTML5 with a general audience and developers. It pushed companies to invest in their browsers and it kept them honest.</p>
+            <p>C The goal of this website was always to push browsers to adopt HTML5. To make HTML5 available for users and developers in all browsers. And if just one feature is now available to developers in all browsers thanks to HTML5test, this website has served its purpose.</p>
+            <p>D I'll try to keep this page online as a snapshot of the original test, and there is an unofficial updated version available at html5test.co.</p>
+            <p>E It was fun to work on this project while it lasted. I have some awesome memories of talking to the people at the W3C, Apple, Mozilla, Google and Microsoft.</p>
+            <p>F Niels Leenheer</p>
+        </div></div></body></html>
+    "#;
+    let css = r#"
+        body { margin: 0; }
+        .paper { width: 900px; font-size: 13px; line-height: 165%; }
+        .text { column-count: 3; column-gap: 16px; }
+        p { margin: 0 0 0.5em; }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    let farthest_glyph = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.glyph_id != 0)
+        .map(|glyph| glyph.x + glyph.font_size)
+        .fold(0.0_f32, f32::max);
+    assert!(
+        farthest_glyph <= 900.0,
+        "balanced multicol text must remain inside its container: farthest_glyph={farthest_glyph}"
+    );
+}
 /// 测试渲染管线处理深嵌套 HTML 不 panic。
 #[test]
 fn test_pipeline_deeply_nested_html() {

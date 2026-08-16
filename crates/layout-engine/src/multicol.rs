@@ -908,7 +908,18 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         // row_height=0（下方 position_multicol_children 调用），溢出列落 col_idx×(col_w+gap)
         // 的 x（容器右外侧）。同 R1074 spanner 路径的 inline-overflow 语义。
         let total_child_height: f32 = child_info.iter().map(|&(_, h)| h).sum();
-        let col_height = container.content_height;
+        // `content_height` 对 height:auto 只是当前内容测量结果，并不是列高上限。
+        // 只有 CSS 给出明确高度时，超出 column-count × 列高的内容才应产生行内溢出列。
+        // https://drafts.csswg.org/css-multicol/#column-height
+        let has_definite_height = container
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(is_explicit_height);
+        let col_height = if has_definite_height {
+            container.content_height
+        } else {
+            0.0
+        };
         // monolithic（overflow≠visible）子元素不可分（CSS Fragmentation）——multirow 会拆分
         // 超高子元素，对 monolithic（如 overflow-unsplittable 的 overflow:scroll 滚动容器）是错的；
         // 有 monolithic 子元素时退回 balanced（balanced 的 R1037 gate 不拆 auto-height/monolithic）。

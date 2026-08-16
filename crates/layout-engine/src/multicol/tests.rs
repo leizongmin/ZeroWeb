@@ -121,6 +121,44 @@ fn test_assign_children_balanced_auto_height_no_break() {
     assert_eq!(cols[1].len(), 0); // col1 空，未拆分
 }
 
+/// 自动高度的 balance 多列没有固定列高，内容不得生成容器右侧的溢出列。
+#[test]
+fn test_auto_height_balanced_multicol_does_not_create_overflow_columns() {
+    let mut doc = zero_dom::Document::new();
+    let container_id = doc.create_element("div");
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    style.column_gap = LengthValue::Px(10.0);
+    let styles = HashMap::from([(container_id, style)]);
+    let mut container = LayoutBox {
+        node_id: Some(container_id),
+        content_width: 320.0,
+        content_height: 100.0,
+        children: (0..5)
+            .map(|_| LayoutBox {
+                width: 100.0,
+                content_width: 100.0,
+                height: 100.0,
+                content_height: 100.0,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
+
+    layout_multicol(&mut container, &info, &styles);
+
+    assert!(
+        container
+            .children
+            .iter()
+            .flat_map(|child| &child.column_span_offsets)
+            .all(|(_, _, col_x, col_w, _, _)| { col_x + col_w <= container.content_width + 0.01 }),
+        "height:auto balance must use only the configured columns"
+    );
+}
+
 #[test]
 fn test_assign_children_with_breaking() {
     // 4 children, each 100px high, 3 columns, 150px height limit
