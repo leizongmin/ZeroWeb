@@ -390,6 +390,18 @@ impl CanvasContext {
     // ── Private helpers ──
 
     /// 对矩形应用当前变换。
+    /// R57（M3）：像素 (px, py)（像素中心）是否在变换后的矩形 (x,y,w,h) 内——
+    /// 非轴对齐 CTM 下 `transform_rect` 的包围盒含旋转矩形角外区域；轴对齐时恒
+    /// true（包围盒 == 矩形，零回归）。composite.grid 的 rotate(90°)+scale 变换后
+    /// fillRect 边界差 ~8px（oracle A/B 24%）。
+    pub(crate) fn pixel_in_transformed_rect(&self, px: f32, py: f32, x: f32, y: f32, w: f32, h: f32) -> bool {
+        if self.transform.b.abs() < 1e-6 && self.transform.c.abs() < 1e-6 {
+            return true;
+        }
+        let (ux, uy) = self.transform.inverse().transform_point(px + 0.5, py + 0.5);
+        ux >= x && uy >= y && ux < x + w && uy < y + h
+    }
+
     pub(crate) fn transform_rect(&self, x: f32, y: f32, width: f32, height: f32) -> Rect {
         let (x1, y1) = self.transform.transform_point(x, y);
         let (x2, y2) = self.transform.transform_point(x + width, y + height);
@@ -1716,6 +1728,14 @@ impl CanvasContext {
 
     /// 将矩形区域的颜色写入像素缓冲区（光栅化填充），应用当前合成操作模式。
     pub(crate) fn blit_rect_to_pixels(&mut self, rect: &Rect, color: Color) {
+        self.blit_rect_to_pixels_checked(rect, color, None)
+    }
+
+    /// R57（M3）：带原始矩形逆变换判定的矩形填充——非轴对齐 CTM 下 `transform_rect`
+    /// 的包围盒含旋转矩形角外三角区（composite.grid 的 rotate(90°)+scale 变换后
+    /// fillRect 边界差 ~8px——oracle A/B 24%）。orig = 未变换矩形 (x,y,w,h)；
+    /// 轴对齐 CTM 下 `pixel_in_transformed_rect` 恒 true（零回归）。
+    pub(crate) fn blit_rect_to_pixels_checked(&mut self, rect: &Rect, color: Color, orig: Option<(f32, f32, f32, f32)>) {
         // R34xx（filters 渲染）：colorMatrix 滤镜作用于源色。
         let color = self.apply_filter_color(color);
         let canvas_w = self.width as usize;
@@ -1728,6 +1748,12 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32).ceil() as usize).min(canvas_h);
         for y in y_start..y_end {
             for x in x_start..x_end {
+                // R57：非轴对齐 CTM 下排除包围盒角外区域（像素中心逆变换判定）。
+                if let Some((ox, oy, ow, oh)) = orig
+                    && !self.pixel_in_transformed_rect(x as f32, y as f32, ox, oy, ow, oh)
+                {
+                    continue;
+                }
                 // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                 if !self.clip_applies(x as f32, y as f32) {
                     continue;
@@ -1771,6 +1797,11 @@ impl CanvasContext {
     /// 矩形渐变填充：每像素按设备坐标采样样式颜色，应用 global_alpha + 当前合成操作。
     /// 与 `blit_rect_to_pixels` 对偶，供渐变样式（linear/radial/conic）的 `fill_rect` 路径使用。
     pub(crate) fn blit_rect_gradient(&mut self, rect: &Rect, style: &CanvasStyle) {
+        self.blit_rect_gradient_checked(rect, style, None)
+    }
+
+    /// R57（M3）：渐变矩形填充的逆变换判定版（同 blit_rect_to_pixels_checked）。
+    pub(crate) fn blit_rect_gradient_checked(&mut self, rect: &Rect, style: &CanvasStyle, orig: Option<(f32, f32, f32, f32)>) {
         let canvas_w = self.width as usize;
         let canvas_h = self.height as usize;
         let x_start = rect.left().max(0.0) as usize;
@@ -1781,6 +1812,12 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32).ceil() as usize).min(canvas_h);
         for y in y_start..y_end {
             for x in x_start..x_end {
+                // R57：非轴对齐 CTM 下排除包围盒角外区域。
+                if let Some((ox, oy, ow, oh)) = orig
+                    && !self.pixel_in_transformed_rect(x as f32, y as f32, ox, oy, ow, oh)
+                {
+                    continue;
+                }
                 // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                 if !self.clip_applies(x as f32, y as f32) {
                     continue;

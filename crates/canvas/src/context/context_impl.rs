@@ -246,6 +246,11 @@ impl CanvasContext {
         let y_end = (rect.bottom().min(self.height as f32) as usize).min(canvas_h);
         for py in y_start..y_end {
             for px in x_start..x_end {
+                // R57：非轴对齐 CTM 下排除包围盒角外区域（clear_rect 同 fill_rect
+                // 语义——旋转矩形角外不清除）。
+                if !self.pixel_in_transformed_rect(px as f32, py as f32, x, y, width, height) {
+                    continue;
+                }
                 // R34xx：clip 区域裁剪（clip_path 未设时零开销）。
                 if !self.clip_applies(px as f32, py as f32) {
                     continue;
@@ -272,11 +277,11 @@ impl CanvasContext {
             let approx = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_fill(rect, approx);
             let style = self.transform_gradient(&self.fill_style);
-            self.blit_rect_gradient(&rect, &style);
+            self.blit_rect_gradient_checked(&rect, &style, Some((x, y, width, height)));
         } else {
             let color = self.apply_alpha(self.fill_style.resolve_color());
             self.primitives.add_fill(rect, color);
-            self.blit_rect_to_pixels(&rect, color);
+            self.blit_rect_to_pixels_checked(&rect, color, Some((x, y, width, height)));
         }
         // R34xx：source 独占类 composite 的未覆盖区域清除（矩形外置透明——
         // 2d.composite.uncovered.fill.* / solid.*）。
