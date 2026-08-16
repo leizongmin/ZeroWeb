@@ -1,0 +1,40 @@
+{
+  "date": "2026-08-16",
+  "round": "R78",
+  "milestone": "M4 quickjs WPT dom 矩阵缺口修复（DC-7 双引擎对等）",
+  "commit": "d4eb0641",
+  "root_cause": {
+    "what": "QuickJSSandbox::execute 以 JS 包装 String(eval(code)) 执行页面脚本——JS 层直接 eval 在 QuickJS 下 function/var 声明落临时词法环境而非全局对象，跨 execute（跨页面 <script>）全部丢失。V8 经 Script::compile+run 是全局代码语义——两引擎行为分歧。",
+    "evidence": "quickjs WPT dom/traversal 47F 整簇 'assert_node is not defined'（内联 support/assert-node.js 的声明在第二个 <script> 不可见）；最小复现：裸 String(eval('function f(){}')) 后 typeof f === 'undefined'",
+    "c_level": "QuickJS quickjs.c js_parse_program: fd->is_global_var = (eval_type == JS_EVAL_TYPE_GLOBAL) || (eval_type == JS_EVAL_TYPE_MODULE) || !fd->is_strict_mode —— JS 层直接/间接 eval 都不是 GLOBAL 类型"
+  },
+  "fix": {
+    "change": "eval_in_ctx 改用 C API JS_Eval + JS_EVAL_TYPE_GLOBAL（不加强制 STRICT），结果经 JS_ToString + JS_ToCStringLen2 字符串化（execute 返回值契约不变）",
+    "rejected_alternative": "JS 间接 eval (0,eval)(code)——probe 实测对 'use strict' 脚本体声明仍落临时环境（跨 eval 不可见），否决",
+    "worker_path": "quickjs_worker.rs 本就用裸 ctx.eval（rquickjs GLOBAL 模式）——主 execute 路径现与其一致"
+  },
+  "matrix_results": {
+    "quickjs_polyfill": {
+      "traversal": "7P/47F -> 953P/627F (subtest) = v8 基线 953P 对齐",
+      "collections": "38P/10F -> 48P/0F/1T (= v8 48P)",
+      "nodes": "2201P/1113F -> 3113P/4398F/7T",
+      "events": "156P/99F -> 185P/144F/4T",
+      "ranges_sampled": "Range-attribute-nodes 15P/11F 与 v8 逐字节一致；StaticRange-constructor 14P/3F 一致（全量被 insertBefore 慢用例吃满 test-guard 2400s——M1 L2 已知遗留，v8 同样）"
+    },
+    "quickjs_native_ZW_NATIVE_DOM_1": {
+      "traversal": "953P/627F（与 polyfill 完全一致，R76 对等性保持）"
+    },
+    "v8_regression": "v8 代码路径零改动（全部编辑在 #[cfg(feature=\"quickjs\")] 内）；script-sandbox v8 155 全绿；抽样 v8 用例数字不变"
+  },
+  "tests": {
+    "new_regression": "crates/script-sandbox/tests/quickjs_scope_repro_r78.rs（qjs_execute_indirect_eval_globals：裸声明跨 execute 存活 + classic try/finally 包装 + strict 脚本体声明全局 + 返回值契约）",
+    "suites": "script-sandbox quickjs 76+1 全绿；engine quickjs 1424；wpt-runner quickjs 106；script-sandbox v8 155；integration quickjs 747P/2F（html_compat default_actions 两失败 clean HEAD 同败，并行流既存）",
+    "gates": "clippy（script-sandbox quickjs 双 target）零警告；cargo fmt 无 diff；pre-commit-guard PASS"
+  },
+  "case_level_traversal": {
+    "clean_pass": 4,
+    "all_fail": 5,
+    "mixed": 7,
+    "note": "NodeIterator.html 356P/410F（compareDocumentPosition 等 DOM 语义缺口两引擎一致）；TreeWalker.html 564P/197F"
+  }
+}
