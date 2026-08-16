@@ -817,10 +817,7 @@ fn draw_glyph_primitive(
     // 尝试从缓存获取（raw 键直查）
     if let Some(cached) = glyph_cache.get(&key) {
         if cached.width > 0 && cached.height > 0 {
-            let color = glyph.color;
-            let x = glyph.x * scale;
-            let y = glyph.y * scale;
-            blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation, glyph.synthetic_italic);
+            blit_glyph_primitive(fb, glyph, cached, scale);
         }
         return;
     }
@@ -838,9 +835,7 @@ fn draw_glyph_primitive(
         && bitmap.height > 0
     {
         let _ = glyph_cache.get_or_insert_with(key, || Ok(bitmap.clone()));
-        let x = glyph.x * scale;
-        let y = glyph.y * scale;
-        blit_glyph_bitmap(fb, &bitmap, x, y, glyph.color, glyph.rotation, glyph.synthetic_italic);
+        blit_glyph_primitive(fb, glyph, &bitmap, scale);
         return;
     }
 
@@ -851,10 +846,7 @@ fn draw_glyph_primitive(
         let rkey = GlyphKey::new_with_variations(resolved_id, glyph.glyph_id, physical_font_size, &resolved_variations);
         if let Some(cached) = glyph_cache.get(&rkey) {
             if cached.width > 0 && cached.height > 0 {
-                let color = glyph.color;
-                let x = glyph.x * scale;
-                let y = glyph.y * scale;
-                blit_glyph_bitmap(fb, cached, x, y, color, glyph.rotation, glyph.synthetic_italic);
+                blit_glyph_primitive(fb, glyph, cached, scale);
             }
             return;
         }
@@ -875,11 +867,25 @@ fn draw_glyph_primitive(
         let cache_key =
             GlyphKey::new_with_variations(resolved_id, glyph.glyph_id, physical_font_size, &resolved_variations);
         let _ = glyph_cache.get_or_insert_with(cache_key, || Ok(bitmap.clone()));
-        let color = glyph.color;
-        let x = glyph.x * scale;
-        let y = glyph.y * scale;
-        blit_glyph_bitmap(fb, &bitmap, x, y, color, glyph.rotation, glyph.synthetic_italic);
+        blit_glyph_primitive(fb, glyph, &bitmap, scale);
     }
+}
+
+/// 将 display-list 字形从基线坐标转换为位图左上角后再绘制。
+fn blit_glyph_primitive(
+    fb: &mut FrameBuffer,
+    glyph: &crate::primitive::GlyphPrimitive,
+    bitmap: &crate::font::GlyphBitmap,
+    scale: f32,
+) {
+    let (x, y) = glyph_top_left(
+        glyph.x * scale,
+        glyph.y * scale,
+        bitmap.x_offset,
+        bitmap.y_offset,
+        bitmap.height,
+    );
+    blit_glyph_bitmap(fb, bitmap, x, y, glyph.color, glyph.rotation, glyph.synthetic_italic);
 }
 
 /// 将字形位图合成到帧缓冲。

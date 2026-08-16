@@ -21,6 +21,69 @@ fn glyph_top_left_converts_fontdue_y_up_metrics_to_screen_y_down() {
 }
 
 #[test]
+fn display_list_glyph_uses_the_same_baseline_as_glyph_draw() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("load Lato");
+    let glyph = GlyphPrimitive {
+        x: 12.0,
+        y: 50.0,
+        font_size: 24.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: FontId(font_id),
+        font_variation_id: None,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    };
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_glyph(glyph);
+
+    let primitive_frame = render_full_scene(
+        64,
+        64,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut GlyphCache::new(8),
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let draw_frame = render_full_scene(
+        64,
+        64,
+        1.0,
+        &RenderPrimitives::new(),
+        &font_loader,
+        &mut GlyphCache::new(8),
+        None,
+        &[GlyphDraw {
+            ch: 'A',
+            font_glyph_index: None,
+            x: 12.0,
+            baseline_y: 50.0,
+            color: Color::BLACK,
+            font_id,
+            font_variations: None,
+            font_size: 24.0,
+            rotation: 0.0,
+        }],
+        &[],
+        &[],
+        &[],
+    );
+
+    assert_eq!(primitive_frame.data, draw_frame.data);
+}
+
+#[test]
 fn indexed_glyph_renders_identically_to_unicode_code_point() {
     const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
     let mut font_loader = FontLoader::new();
