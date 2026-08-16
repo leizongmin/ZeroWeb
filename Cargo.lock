@@ -6337,7 +6337,6 @@ dependencies = [
  "tracing",
  "zero-host-runtime",
  "zero-runtime-config",
- "zero-webview",
 ]
 
 [[package]]

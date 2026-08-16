@@ -6,12 +6,11 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["v8"]
-v8 = ["zero-webview/v8"]
-quickjs = ["zero-webview/quickjs"]
+default = []
+v8 = []
+quickjs = []
 
 [dependencies]
-zero-webview = { workspace = true }
 zero-runtime-config = { workspace = true }
 zero-host-runtime = { workspace = true }
 thiserror = { workspace = true }

@@ -14,11 +14,12 @@ name = "zero_browser"
 path = "src/lib.rs"
 
 [features]
-default = ["windows-console", "v8"]
+default = ["windows-console", "browser-runtime", "quickjs"]
 windows-console = []
+browser-runtime = ["zero-engine/quickjs"]
 test-support = ["dep:zero-webview", "dep:zero-script-sandbox"]
-v8 = ["zero-engine/v8", "zero-page-runtime/v8", "zero-browser-shell/v8", "zero-webview?/v8", "zero-script-sandbox?/v8"]
-quickjs = ["zero-engine/quickjs", "zero-page-runtime/quickjs", "zero-browser-shell/quickjs", "zero-webview?/quickjs", "zero-script-sandbox?/quickjs"]
+v8 = ["zero-engine/v8", "zero-webview?/v8", "zero-script-sandbox?/v8"]
+quickjs = ["zero-engine/quickjs", "zero-webview?/quickjs", "zero-script-sandbox?/quickjs"]
 
 [dependencies]
 zero-product-version = { workspace = true }
@@ -53,8 +54,8 @@ ico = "0.5.0"
 serial_test = { workspace = true }
 # P1a gBCR driving test：解析 html 取 NodeId 填 rect snapshot（与渲染管线确定性一致）。
 zero-dom = { workspace = true }
-zero-webview = { workspace = true }
-zero-script-sandbox = { workspace = true, default-features = false }
+zero-webview = { workspace = true, features = ["quickjs"] }
+zero-script-sandbox = { workspace = true, default-features = false, features = ["quickjs"] }
 
 # Windows：注册 SetConsoleCtrlHandler，让 Ctrl+C 走 shutdown_child_processes
 # 而不是被默认 handler 直接 TerminateProcess（跳过 Drop，孤儿 renderer 锁住 exe）。
