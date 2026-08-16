@@ -390,7 +390,9 @@ jobs:
       - name: Build release
         if: matrix.release_build != false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true
         timeout-minutes: 20
-        run: cargo build ${{ matrix.features }} --release --workspace --target ${{ matrix.target }}
+        run: |
+          cargo build ${{ matrix.features }} --release --workspace --exclude zero-browser --target ${{ matrix.target }}
+          cargo build --release -p zero-browser --target ${{ matrix.target }}
 
       - name: Note unsupported release build
         if: matrix.release_build == false && github.event_name == 'workflow_dispatch' && inputs.run_release_builds == true

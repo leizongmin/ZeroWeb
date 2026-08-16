@@ -250,7 +250,8 @@ jobs:
 
       - name: Build release binaries
         run: |
-          cargo build ${{ matrix.features }} --release --bin zero-browser --bin zero-renderer --target ${{ matrix.target }}
+          cargo build --release --bin zero-browser --target ${{ matrix.target }}
+          cargo build ${{ matrix.features }} --release --bin zero-renderer --target ${{ matrix.target }}
           cargo build --release --bin zero-compositor --bin zero-image-decoder --target ${{ matrix.target }}
 
       - name: Import Developer ID certificate

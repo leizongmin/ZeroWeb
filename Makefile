@@ -1,7 +1,12 @@
 .PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native
 
+ifeq ($(OS),Windows_NT)
+setup-rusty-v8:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\download-rusty-v8.ps1
+else
 setup-rusty-v8:
 	bash scripts/download-rusty-v8.sh
+endif
 
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，独立 repo）。
 # reftest / reftest-oracle 会自动前置触发；目录已存在则跳过，刷新需先 rm -rf。
@@ -35,7 +40,8 @@ update-wpt-data:
 	bash scripts/update-wpt-data.sh $(if $(CHECK),--check,$(REF))
 
 build: setup-rusty-v8
-	cargo build --workspace
+	cargo build --workspace --exclude zero-browser
+	cargo build -p zero-browser
 
 # WAYLAND_DEBUG and WINIT_UNIX_BACKEND=x11 are separate targets because they
 # debug different backends and should not be combined in one run.
@@ -57,7 +63,8 @@ browser-cpu:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts\browser-cpu.ps1
 else
 browser-build: setup-rusty-v8
-	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
+	cargo build --release -p zero-browser
+	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
 
 browser: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
@@ -240,7 +247,8 @@ form-visual-browser-gpu-smoke: target/test-guard
 	@test -n "$(DISPLAY)" || (echo "Error: DISPLAY is required for the real browser GPU smoke"; exit 2)
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
-	cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-wpt-runner
+	cargo build --release -p zero-browser
+	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-wpt-runner
 	rm -rf $(FORM_VISUAL_GPU_DIR)
 	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1

@@ -90,7 +90,8 @@ if ($env:CFLAGS -notmatch "zlib") {
 }
 
 Push-Location $ProjectRoot
-cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
+cargo build --release -p zero-browser
+cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
 Pop-Location
 
 $BrowserBin = Join-Path $ProjectRoot "target\release\zero-browser.exe"

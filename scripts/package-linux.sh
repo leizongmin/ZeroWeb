@@ -76,7 +76,8 @@ mkdir -p "$PACKAGE_DIR"
 build_binary() {
     info "编译 release 二进制 zero-browser、zero-renderer、zero-compositor 与 zero-image-decoder..."
     cd "$PROJECT_ROOT"
-    cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
+    cargo build --release -p zero-browser
+    cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
 
     local binary="$PROJECT_ROOT/target/release/zero-browser"
     local renderer="$PROJECT_ROOT/target/release/zero-renderer"

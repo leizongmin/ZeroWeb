@@ -140,7 +140,8 @@ else
     info "Building release binaries"
     (
         cd "$PROJECT_ROOT"
-        cargo build --release -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
+        cargo build --release -p zero-browser
+        cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
     )
     BROWSER_BINARY="$PROJECT_ROOT/target/release/zero-browser"
     RENDERER_BINARY="$PROJECT_ROOT/target/release/zero-renderer"

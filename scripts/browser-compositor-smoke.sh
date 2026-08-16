@@ -16,8 +16,9 @@ mkdir -p "$OUT_DIR"
 echo "browser-compositor-smoke: preparing rusty_v8"
 bash "$ROOT/scripts/download-rusty-v8.sh"
 echo "browser-compositor-smoke: building product processes"
+cargo build --manifest-path "$ROOT/Cargo.toml" --release -p zero-browser
 cargo build --manifest-path "$ROOT/Cargo.toml" --release \
-    -p zero-browser -p zero-renderer -p zero-compositor -p zero-image-decoder
+    -p zero-renderer -p zero-compositor -p zero-image-decoder
 
 if test "$(uname -s)" = "Darwin"; then
     echo "browser-compositor-smoke: assembling macOS product bundle"
