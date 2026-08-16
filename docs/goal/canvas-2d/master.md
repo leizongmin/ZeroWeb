@@ -100,9 +100,11 @@ evidence/r57-batch5-path-aa-gpu-contract-2026-08-16.md）。
 - [x] R56h 遗留 bridge 接线缺口（setFilterDropShadow/setGradientInterpolation）— ✅ R57 补齐
 - [x] grid 结构用例 22px IFC 偏移（~15 项）— ✅ R57 batch-2 全灭（R1286 strut 只给真 br）
 - [ ] **描边 AA**（reset miter_limit/after-rasterization 1.4-2%——**轴对齐 CTM 的斜线段**
-  亦需 AA：Chromium 对任何非轴对齐几何 AA；我们硬边+像素补偿。实测用例为轴对齐
-  折线——「非轴对齐 CTM 门禁」不覆盖；全量描边超采样会扰动 1253 testharness
-  描边断言（风险高收益低），归入抗锯齿深项）
+  亦需 AA：Chromium 对任何非轴对齐几何 AA；我们硬边+像素补偿。R57 batch-5 尝试
+  斜线段 4×4 超采样：WPT 断言满色（2d.path.bezierCurveTo.shape 的 (1,1)=255）而
+  超采样给 75% 半色调——**根因是曲线细分弦偏差 ~0.7px**（8px 弦长细分；Chromium
+  用真曲线判定，中心命中 → 满色；弦判定中心 miss）。正确路径 = 自适应细分按
+  弦偏差收敛（<0.25px）+ 超采样——深项，已回退）
 - [ ] **抗锯齿光栅**（AA 边差 180-280px 级——composite.grid 24-38%/drop-shadow 4.8%/
   reset 边 1.4-2%——无 AA 光栅 vs Chromium AA，深项；R57 batch-5 已完成 fillRect +
   路径 fill 旋转边 AA，剩余描边/阴影边）
