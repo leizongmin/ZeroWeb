@@ -1,0 +1,46 @@
+{
+  "date": "2026-08-17",
+  "round": "R84",
+  "milestone": "M4",
+  "slice": "traversal 兄弟链断链 + walker 语义四重修复（NodeIterator/TreeWalker 剩余簇）",
+  "baseline_commit": "203c9d2d (pre-slice)",
+  "summary": {
+    "dom/traversal": { "before": "1527P/53F", "after_polyfill": "1556P/24F", "after_native": "1531P/49F", "net_pass": "+29" },
+    "dom/nodes": { "before": "6635P", "after_polyfill": "6643P", "net_pass": "+8" },
+    "dom/events": { "before": "189P", "after": "189P", "net_pass": "0" },
+    "dom/collections": { "before": "48P/0F", "after": "48P/0F", "net_pass": "0" },
+    "engine_tests": { "v8": "2176 passed (was 2172, +4 net incl. 5 new R84 tests minus 1 updated)", "quickjs": "1427 passed (=)" }
+  },
+  "root_causes": [
+    "① sibling 对 text 节点 _wrapNodeEntry(pair, null)：parentNode=null + nextSibling/previousSibling 静态 null —— oracle nextNode() 树序遍历（firstChild/nextSibling/parentNode 链）在首个 text 断链（NodeIterator/TreeWalker document root 整簇 expected-null-but-got-object）",
+    "② CDATA（handle-less 轻量节点）append 入 _handleChildren 但不接 parentNode/兄弟 getter —— common.js paras[5] CDATA 处断链",
+    "③ detached doc（createHTMLDocument/createDocument）headEl/docEl 无兄弟 getter —— foreignDoc/xmlDoc root 遍历只到 HEAD 即停",
+    "④ NodeIterator detach() 缺失（spec 历史 no-op 方法）+ filter 重入无 active flag 守卫（spec InvalidStateError）",
+    "⑤ TreeWalker filter 返 false(→0) 旧按 SKIP dig 子树（应按 REJECT 剪枝）；且 walk() 对 root 也 filter（root 被拒剪整树——spec：iteration collection 含 root 不 filter）；currentNode setter 重定位被滤节点后 effPos 误走 fresh 分支返 0"
+  ],
+  "fixes": [
+    "part04: sibling 对统一经 _childNodeList(parentSel) 取——与 head.childNodes[i] 同 identity（_zwChildBaseCache 缓存）；回落 pair+_sbParent",
+    "part04: CDATA 等 handle-less 子 append 时 defineProperty 接 parentNode/parentElement/兄弟 getter（_handleChildren 定位，R3018 同款）",
+    "part03: headEl.nextSibling=body / docEl 兄弟经 doc.childNodes 定位 getter",
+    "part05: _wrapNodeEntry 的 text/comment 子兄弟 getter（parentNode.childNodes.indexOf 自身定位；无父保持静态 null）",
+    "part06: NodeIterator detach() no-op + nextNode/previousNode/五层级方法 active flag 重入守卫（InvalidStateError）+ TreeWalker filter 返回值归一（非 1/3 → 2 REJECT 剪枝；NodeIterator 保持 0→3 不剪——两接口 REJECT 语义分叉）+ walkRoot() root 不 filter + relocated 标记区分 effPos fresh vs 重定位被滤节点",
+    "附带（unblock make test，并行流 a8d5a22d 的 v8+quickjs 组合态编译断）：script-sandbox worker.rs quickjs 死分支调错签名 / es_module.rs config 双 move / lib.rs quickjs_worker re-export ambiguous / webview.rs 重复 Drop+install_native_dom_bindings+js_config 双 move / tab_js_worker.rs js_config 双 move——统一 not(v8) 门控 quickjs 分支 + clone"
+  ],
+  "regression_check": {
+    "dom/nodes": "+8 净 pass（sibling getter 修复顺带）",
+    "dom/events": "零回归",
+    "dom/collections": "零回归（48P/0F 维持）",
+    "fmt": "无 diff",
+    "clippy": "workspace 默认（v8+union）+ quickjs 矩阵 + webview/browser/script-sandbox 零警告",
+    "known_env_failures": "compositor dmabuf（无 GPU，HEAD 同败）+ zero-browser 3 测试（compositor fallback/snapshot，HEAD 同败，并行流 browser 重构域）"
+  },
+  "remaining_failures": {
+    "dom/traversal_24F": [
+      "TreeWalker.html 8F：document.lastChild 系 doctype/html 边角的 sibling oracle 分歧（WPT 真浏览器 document.lastChild 行为差异）",
+      "cross-realm 5F + realm 2F（跨 realm 深结构）",
+      "traversal-reject 2F / currentNode 2F（root 外重定位 lazy-resume 语义，M1 L2 域）",
+      "removal-during-filtering 2F + removal 1F（live 集合移除跟踪）",
+      "walking-outside-a-tree 1F / previousNodeLastChildReject 1F"
+    ]
+  }
+}

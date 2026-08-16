@@ -1398,12 +1398,15 @@ impl WebView {
             initial_heap_size: 128 * 1024 * 1024,
             ..Default::default()
         };
+        // js-dom R84：v8+quickjs 组合态（workspace 单 cargo 调用 feature 并集）下双分支
+        // 都编译 → `js_config` 被 move 两次（E0382）。v8 分支 clone 持有；单 feature
+        // 语义不变。
         #[cfg(feature = "v8")]
         let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
-            zero_script_sandbox::V8Sandbox::with_config(js_config)
+            zero_script_sandbox::V8Sandbox::with_config(js_config.clone())
                 .map_err(|e| WebViewError::Script(format!("V8 sandbox init: {e}")))?,
         );
-        #[cfg(feature = "quickjs")]
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
         let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
             zero_script_sandbox::QuickJSSandbox::with_config(js_config)
                 .map_err(|e| WebViewError::Script(format!("QuickJS sandbox init: {e}")))?,
@@ -1445,7 +1448,9 @@ impl WebView {
     /// kill-switch `native_dom` 默认关 → 零回归）。经 `install_native_bindings_quickjs`
     /// escape-hatch 在持久 QuickJS Context 安装 `quickjs_dom_bindings`（`__zw_native_element_for_id`
     /// 工厂 + nodeType/tagName/nodeName/id 原生 getter，S0q PoC 面）。
-    #[cfg(feature = "quickjs")]
+    /// js-dom R84：v8+quickjs 组合态同名方法重复定义（E0592）——not(v8) 门控，quickjs-only
+    /// 构建不变。
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     fn install_native_dom_bindings(&mut self) {
         if !self.config.native_dom {
             return;
@@ -2753,6 +2758,10 @@ impl Drop for WebView {
     fn drop(&mut self) {
         if self.config.native_dom {
             zero_engine::dom_bindings::reset_native_state();
+            // js-dom R84：v8+quickjs 组合态时 QuickJS reset 并入此处（独立 quickjs Drop
+            // impl 会重复定义）。
+            #[cfg(feature = "quickjs")]
+            zero_engine::quickjs_dom_bindings::reset_quickjs_state();
         }
     }
 }
@@ -2761,7 +2770,9 @@ impl Drop for WebView {
 // WebView 销毁，但 quickjs_dom_bindings 的线程局部（DOM 源 / Persistent 对象身份缓存）仍持
 // 指向**已销毁 Runtime** 的 Persistent 值；同线程建第二个 native WebView 时 restore 读旧值
 // → UnrelatedRuntime/悬垂。Drop 时清空使下一 WebView 干净启动。默认关路径不触（零回归）。
-#[cfg(feature = "quickjs")]
+// js-dom R84：v8+quickjs 组合态 Drop 重复实现（E0119）——并入 v8 版 Drop（两 reset 都调，
+// feature 各自 gate），quickjs-only 构建保留独立 Drop。
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
 impl Drop for WebView {
     fn drop(&mut self) {
         if self.config.native_dom {

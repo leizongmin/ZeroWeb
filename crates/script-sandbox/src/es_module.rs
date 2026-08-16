@@ -81,9 +81,12 @@ pub struct EsModuleSandbox {
 impl EsModuleSandbox {
     /// 创建新的 ES Module 沙箱。
     pub fn new() -> Result<Self, ScriptError> {
+        // js-dom R84：v8+quickjs 组合态（workspace feature 并集）双分支都编译 → 变量重复
+        // 绑定 + move 冲突。quickjs 分支 not(v8) 门控（v8 优先，与 lib.rs re-export 门控
+        // 一致）；单 feature 语义不变。
         #[cfg(feature = "v8")]
         let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::V8Sandbox::new()?);
-        #[cfg(feature = "quickjs")]
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
         let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::QuickJSSandbox::new()?);
 
         Ok(Self {
@@ -96,7 +99,7 @@ impl EsModuleSandbox {
     pub fn with_config(config: SandboxConfig) -> Result<Self, ScriptError> {
         #[cfg(feature = "v8")]
         let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::V8Sandbox::with_config(config)?);
-        #[cfg(feature = "quickjs")]
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
         let sandbox: Box<dyn crate::Sandbox> = Box::new(crate::QuickJSSandbox::with_config(config)?);
 
         Ok(Self {

@@ -625,7 +625,27 @@
             try {
               var pair = JSON.parse(__zw_sibling_nodes(sel) || '{"p":null,"n":null}');
             } catch (_e2) { return null; }
-            _sb = { p: _wrapNodeEntry(pair.p, null), n: _wrapNodeEntry(pair.n, null) };
+            // js-dom M4 R84：sibling 对的 text/comment 子统一走 `_childNodeList(parentSel)`
+            // 取——与 head.childNodes[i] **同 identity**（_zwChildBaseCache 缓存保证），使
+            // sibling text 节点与 childNodes 视图合一（oracle nextNode() 树序遍历靠
+            // parentNode.childNodes.indexOf 定位兄弟；旧 _wrapNodeEntry(pair, null) 独立
+            // 包装 → parentNode=null + 兄弟静态 null → 遍历断链，NodeIterator/TreeWalker
+            // 整簇 fail 的根因之一）。父 selector 经 __zw_parent；元素子仍走 pair（selector
+            // identity 由 _proxyCache 保证）。
+            var _sbParentSel = (typeof __zw_parent === 'function') ? __zw_parent(sel) : null;
+            var _sbParent = _sbParentSel ? _wrapSelector(_sbParentSel) : null;
+            var _sbByPos = null;
+            if (_sbParentSel) {
+              try {
+                var _sbKids = _childNodeList(_sbParentSel, null);
+                var _sbIdx = _sbKids.indexOf(_makeProxy(sel, handle));
+                if (_sbIdx >= 0) _sbByPos = { p: _sbKids[_sbIdx - 1] || null, n: _sbKids[_sbIdx + 1] || null };
+              } catch (_e3) {}
+            }
+            _sb = _sbByPos || {
+              p: _wrapNodeEntry(pair.p, _sbParent),
+              n: _wrapNodeEntry(pair.n, _sbParent),
+            };
             if (_zwSiblingBaseCache.size > 512) _zwSiblingBaseCache.clear();
             _zwSiblingBaseCache.set(sel, _sb);
           }
@@ -1740,9 +1760,27 @@
             // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
             // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
             // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。
+            // js-dom M4 R84：同步接 parentNode 反链 + 兄弟 getter（R3018 同款）——旧只入
+            // registry 不接链，oracle nextNode() 树序遍历在该子断链（parentNode=null →
+            // climb 提前终止，NodeIterator/TreeWalker expected-null-but-got-object 根因）。
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
               _handleChildren[handle].push(child);
+              try {
+                var _r84Parent = _makeProxy(null, handle);
+                Object.defineProperty(child, 'parentNode', { get: function () { return _r84Parent; }, configurable: true });
+                Object.defineProperty(child, 'parentElement', { get: function () { return _r84Parent; }, configurable: true });
+                Object.defineProperty(child, 'previousSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(child);
+                  return i > 0 ? kids[i - 1] : null;
+                }, configurable: true });
+                Object.defineProperty(child, 'nextSibling', { get: function () {
+                  var kids = _handleChildren[handle] || [];
+                  var i = kids.indexOf(child);
+                  return i >= 0 && i < kids.length - 1 ? kids[i + 1] : null;
+                }, configurable: true });
+              } catch (_e84) {}
             }
             if (child && child.__zwHandle) {
               // js-dom M4 R51：spec appendChild 移动语义——child 已有父（sel 父经 __zw_parent /

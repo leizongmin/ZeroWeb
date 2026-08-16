@@ -3068,6 +3068,23 @@
     // R81：body.parentNode 已由上方 getter 承载（docEl），此处不再赋值（赋值会覆盖 getter 报错或失效）。
     docEl.childNodes = [headEl, body];
     docEl.children = [headEl, body];
+    // js-dom M4 R84：headEl/docEl 兄弟导航 getter（R3018 _zwMDefineSiblings 同款）——
+    // WPT dom/traversal oracle nextNode() 树序遍历经 nextNodeDescendants climb 依赖
+    // head.nextSibling=body / docEl.nextSibling（doc 子列表定位）；旧缺失（undefined falsy
+    // 恰似 null 但 climb 在 head 停住 → foreignDoc 遍历只到 HEAD，NodeIterator foreignDoc
+    // 整簇 expected-null-but-got-object）。
+    Object.defineProperty(headEl, 'nextSibling', { get: function () { return body; }, configurable: true });
+    Object.defineProperty(headEl, 'previousSibling', { get: function () { return null; }, configurable: true });
+    Object.defineProperty(docEl, 'nextSibling', { get: function () {
+      var kids = doc.childNodes || [];
+      var i = kids.indexOf(docEl);
+      return i >= 0 && i < kids.length - 1 ? kids[i + 1] : null;
+    }, configurable: true });
+    Object.defineProperty(docEl, 'previousSibling', { get: function () {
+      var kids = doc.childNodes || [];
+      var i = kids.indexOf(docEl);
+      return i > 0 ? kids[i - 1] : null;
+    }, configurable: true });
     docEl.hasChildNodes = function () { return true; };
     docEl.contains = function (other) { return _zwNodeContains(docEl, other); };
     docEl.compareDocumentPosition = function (other) { return _zwCompareDocumentPosition(docEl, other); };

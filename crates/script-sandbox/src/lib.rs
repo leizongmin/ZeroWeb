@@ -18,9 +18,7 @@ mod dom_bindings;
 #[cfg(feature = "v8")]
 mod worker;
 
-#[cfg(feature = "quickjs")]
-mod quickjs_worker;
-
+// js-dom R84：模块声明移至下方 not(v8) 门控区（union 态 dead-code）。
 #[cfg(any(feature = "v8", feature = "quickjs"))]
 mod es_module;
 
@@ -30,7 +28,15 @@ pub use v8_runtime::*;
 #[cfg(feature = "v8")]
 pub use worker::*;
 
-#[cfg(feature = "quickjs")]
+// js-dom R84：quickjs 的 WorkerRuntime/WorkerEvent 与 v8 worker.rs 同名——v8+quickjs
+// 组合态（workspace 单 cargo 调用 feature 并集）`pub use` 两份同名类型 = ambiguous
+// name 编译断（a8d5a22d 引入，阻 make test）。消费方（webview worker 接线）用 v8
+// 语义；quickjs-only 构建不受影响（not(v8) 才编译本模块——门控 re-export 在 union
+// 态会留 dead code 告警）。
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
+mod quickjs_worker;
+
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
 pub use quickjs_worker::*;
 
 #[cfg(any(feature = "v8", feature = "quickjs"))]
@@ -39,6 +45,9 @@ pub use es_module::*;
 #[cfg(feature = "quickjs")]
 mod quickjs_runtime;
 
+// js-dom R84：QuickJSSandbox 等沙箱类型无 v8 同名冲突（es_module 经 crate::QuickJSSandbox
+// 消费），保持无条件 re-export；仅 quickjs_worker（WorkerRuntime/WorkerEvent 同名）按
+// not(v8) 门控。
 #[cfg(feature = "quickjs")]
 pub use quickjs_runtime::*;
 

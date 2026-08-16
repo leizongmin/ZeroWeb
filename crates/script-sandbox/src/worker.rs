@@ -202,7 +202,11 @@ impl WorkerRuntime {
         let handle = thread::Builder::new()
             .name("zero-worker".to_string())
             .spawn(move || {
-                #[cfg(feature = "v8")]
+                // js-dom R84：本模块整文件 cfg(feature = "v8")（lib.rs `#[cfg(feature = "v8")]
+                // mod worker`），QuickJS 走 quickjs_worker.rs 的独立 spawn 路径——旧
+                // `#[cfg(feature = "quickjs")]` 分支只在 v8+quickjs 同时启用时编译，
+                // 调 8 参 v8 签名却传 5 参（a8d5a22d 引入，workspace 组合态编译断，
+                // 阻 make test）。v8-only 语义不变：直接调 v8 变体。
                 worker_thread_fn(
                     script,
                     config,
@@ -213,12 +217,6 @@ impl WorkerRuntime {
                     timeout_ms,
                     worker_terminate_flag,
                 );
-                #[cfg(feature = "quickjs")]
-                worker_thread_fn(script, config, cmd_receiver, event_sender, worker_terminate_flag);
-                #[cfg(not(any(feature = "v8", feature = "quickjs")))]
-                {
-                    let _ = (script, config, cmd_receiver, event_sender, worker_terminate_flag);
-                }
             })
             .map_err(|e| ScriptError::EngineUnavailable(format!("Failed to spawn worker thread: {e}")))?;
 

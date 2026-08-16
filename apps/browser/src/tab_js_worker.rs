@@ -272,8 +272,11 @@ fn js_worker_main(
     };
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
-        Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
-    #[cfg(any(feature = "quickjs", test))]
+        Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config.clone()).expect("V8 sandbox init"));
+    // js-dom R84：v8+quickjs 组合态（workspace feature 并集）下 `js_config` 双 move——
+    // v8 分支 clone；`test` cfg 分支（v8 矩阵单测用 QuickJS sandbox）排除 v8 组合态防
+    // sandbox 双定义。
+    #[cfg(any(all(feature = "quickjs", not(feature = "v8")), all(test, not(feature = "v8"))))]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));

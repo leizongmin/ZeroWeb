@@ -1196,3 +1196,94 @@ fn r83_handle_element_before_after_and_innerhtml() {
         "R83：after('A','B') 插后兄弟文本（保参数序）"
     );
 }
+
+// js-dom M4 R84：sibling/CDATA 兄弟导航断链修复 + NodeIterator detach/重入守卫 +
+// TreeWalker filter 返回值归一（false→REJECT 剪枝）/root 不 filter/currentNode 重定位
+// effPos 区分（WPT dom/traversal NodeIterator/TreeWalker 整簇 driving 单测）。
+
+#[test]
+fn r84_sibling_text_node_navigation_chain() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.querySelector('#a');\n\
+         // p 的前一兄弟：host 内 <p id=a> 前无节点（首个子）。\n\
+         var prev = p.previousSibling;\n\
+         // 建带文本的容器：h<div>text</div> 尾插注释 → 各节点兄弟链完整。\n\
+         var c = document.createElement('div');\n\
+         c.appendChild(document.createTextNode('T1'));\n\
+         c.appendChild(document.createComment('C1'));\n\
+         var t1 = c.firstChild;\n\
+         var t1Next = t1.nextSibling;\n\
+         var t1NextPrev = t1Next ? t1Next.previousSibling : null;\n\
+         globalThis.__r84a = [prev === null ? 'null' : prev.nodeName,\n\
+             t1.nodeName, t1.parentNode ? t1.parentNode.nodeName : 'null',\n\
+             t1Next ? t1Next.nodeName : 'null',\n\
+             t1NextPrev === t1 ? 'same' : 'diff'].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r84a").unwrap().value,
+        "null|#text|DIV|#comment|same",
+        "R84：首个子 previousSibling=null；text 节点 parentNode 指父 + 兄弟链双向可达（R3018 同款语义）"
+    );
+}
+
+#[test]
+fn r84_cdata_parent_link_and_iterator_detach_reentrancy() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.createElement('p');\n\
+         var xmlDocument = new Document();\n\
+         var cd = xmlDocument.createCDATASection('xyz');\n\
+         p.appendChild(cd);\n\
+         var cdParent = cd.parentNode ? cd.parentNode.nodeName : 'null';\n\
+         var cdNext = cd.nextSibling;\n\
+         // detach() 恒 no-op（spec：历史方法）。\n\
+         var it = document.createNodeIterator(host, 0xFFFFFFFF, null);\n\
+         var det = it.detach();\n\
+         var detOk = det === undefined;\n\
+         // filter 重入抛 InvalidStateError。\n\
+         var reentered = 'no';\n\
+         var it2 = document.createNodeIterator(host, NodeFilter.SHOW_ALL, function(node) {\n\
+           if (reentered === 'no') { reentered = 'try'; try { it2.nextNode(); } catch (e) { reentered = e.name; } }\n\
+           return NodeFilter.FILTER_ACCEPT;\n\
+         });\n\
+         it2.nextNode(); it2.nextNode();\n\
+         globalThis.__r84b = [cdParent, cdNext === null ? 'null' : cdNext.nodeName, detOk, reentered].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r84b").unwrap().value,
+        "P|null|true|InvalidStateError",
+        "R84：CDATA append 后 parentNode=P + 无兄弟 null；detach no-op 返 undefined；filter 重入抛 InvalidStateError"
+    );
+}
+
+#[test]
+fn r84_treewalker_filter_false_rejects_and_root_unfiltered() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         // filter 返 false（→0，归一 REJECT）：root 的 firstChild 深入受 REJECT 剪枝。\n\
+         var w1 = document.createTreeWalker(host, NodeFilter.SHOW_ALL, function() { return false; });\n\
+         var fc1 = w1.firstChild();\n\
+         var after1 = w1.currentNode === host ? 'host' : (w1.currentNode ? w1.currentNode.nodeName : 'null');\n\
+         // root 不 filter：filter 只拒非 # 节点时 firstChild 深入到首个 # 文本。\n\
+         var para = document.querySelector('#a');\n\
+         var w2 = document.createTreeWalker(para, NodeFilter.SHOW_ALL, function(n) { return n.nodeName[0] === '#'; });\n\
+         var fc2 = w2.firstChild();\n\
+         // 重定位到被滤节点（show ELEMENT 但 currentNode 指向文本）→ nextSibling 走结构序。\n\
+         var w3 = document.createTreeWalker(host, NodeFilter.SHOW_ELEMENT, null);\n\
+         var txt = document.querySelector('#a').firstChild;\n\
+         w3.currentNode = txt;\n\
+         var ns3raw = w3.nextSibling();\n\
+         var ns3 = ns3raw ? String(ns3raw.nodeName) : 'null';\n\
+         globalThis.__r84c = [fc1 === null ? 'null' : fc1.nodeName, after1,\n\
+             fc2 ? fc2.nodeName : 'null', ns3].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r84c").unwrap().value,
+        "null|host|#text|null",
+        "R84：filter 返 false 按 REJECT 剪枝（firstChild null 且 currentNode 不动）；root 不被 filter（#filter 可达子树文本）；重定位被滤节点 effPos=-1 走结构序"
+    );
+}

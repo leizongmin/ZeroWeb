@@ -4028,8 +4028,6 @@
       length: text.length,
       parentNode: parentProxy,
       parentElement: parentProxy,
-      previousSibling: null,
-      nextSibling: null,
       __zwIsText: true,
       // js-dom M4 R79：Node.contains / hasChildNodes / compareDocumentPosition——WPT
       // Node-contains/compareDocumentPosition 的 testNodes 含 paras[0].firstChild 等文本节点
@@ -4094,6 +4092,31 @@
         configurable: true, enumerable: true,
       });
       node.__zwWriteChildText = _write;
+    }
+    // js-dom M4 R84：兄弟导航 getter（previousSibling/nextSibling）经 parentNode.childNodes
+    // 动态求值（R3018 _zwMDefineSiblings 同款——静态 null 是 WPT dom/traversal NodeIterator/
+    // TreeWalker 整簇 fail 的根因：oracle nextNode()/previousNode() 树序遍历走
+    // firstChild/nextSibling/parentNode 链，text.nextSibling=null 使遍历在首个 text 处断链，
+    // 而迭代器（childNodes 递归）走完整树 → 两侧序列分歧「expected null but got object」）。
+    // 有 parentProxy 时兄弟经父 childNodes 定位（元素子为 _proxyCache 稳定 identity，
+    // text/comment 子经 _zwChildBaseCache 稳定——indexOf 命中）；无父（sibling_pairs
+    // 构造形态）保持 null。
+    if (parentProxy) {
+      Object.defineProperty(node, 'previousSibling', { get: function () {
+        var p = node.parentNode;
+        if (!p || !p.childNodes) return null;
+        var i = p.childNodes.indexOf(node);
+        return i > 0 ? p.childNodes[i - 1] : null;
+      }, configurable: true });
+      Object.defineProperty(node, 'nextSibling', { get: function () {
+        var p = node.parentNode;
+        if (!p || !p.childNodes) return null;
+        var i = p.childNodes.indexOf(node);
+        return i >= 0 && i < p.childNodes.length - 1 ? p.childNodes[i + 1] : null;
+      }, configurable: true });
+    } else {
+      node.previousSibling = null;
+      node.nextSibling = null;
     }
     return node;
   }
