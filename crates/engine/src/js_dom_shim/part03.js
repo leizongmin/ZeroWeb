@@ -748,6 +748,12 @@
     //（checked 属性缺失——.checked= 经 shim 写属性 latest-wins）、select 无
     // 选中（value 空）、file 无文件（headless 恒空）、text 类/textarea 空值。
     // date/time 等非 text 的无效值格式归 badInput/typeMismatch 面（M2 深化）。
+    var tag = _realTag(sel, handle);
+    var ty = '';
+    if (tag === 'INPUT') {
+      try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+      ty = String(ty || '').toLowerCase();
+    }
     var valueMissing = false;
     var reqAttr = null;
     try {
@@ -757,12 +763,6 @@
            : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'required') : null));
     } catch (_e) {}
     if (reqAttr === '1') {
-      var tag = _realTag(sel, handle);
-      var ty = '';
-      if (tag === 'INPUT') {
-        try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
-        ty = String(ty || '').toLowerCase();
-      }
       if (ty === 'checkbox' || ty === 'radio') {
         var checked = null;
         try {
@@ -780,11 +780,29 @@
         valueMissing = _controlValue(sel, handle, key).trim() === '';
       }
     }
+    // R57（FV M1）：patternMismatch——pattern 属性存在、值非空、值不匹配
+    //（spec §4.10.5.2.5——匹配 = RegExp.test 部分匹配语义；非法正则忽略；
+    // 空值不触发（valueMissing 管）。pattern 仅适用于 text 类
+    //（text/search/tel/url/email/password——number/date/checkbox 等无 pattern
+    // 约束）。
+    var patternMismatch = false;
+    if (tag === 'TEXTAREA' || _PATTERN_TYPES[ty] === 1) {
+      var patAttr = null;
+      try { patAttr = handle ? __zw_get_attr_handle(handle, 'pattern') : __zw_get_attr(sel, 'pattern'); } catch (_e) {}
+      if (patAttr != null && String(patAttr) !== '') {
+        var pv = _controlValue(sel, handle, key);
+        if (pv !== '') {
+          try {
+            if (!new RegExp(String(patAttr)).test(pv)) patternMismatch = true;
+          } catch (_e) { /* 非法正则——约束忽略 */ }
+        }
+      }
+    }
     return {
-      valueMissing: valueMissing, typeMismatch: false, patternMismatch: false,
+      valueMissing: valueMissing, typeMismatch: false, patternMismatch: patternMismatch,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: false, rangeOverflow: false,
       stepMismatch: false, badInput: false, customError: hasCustom,
-      valid: !hasCustom && !valueMissing && !tooLong && !tooShort,
+      valid: !hasCustom && !valueMissing && !patternMismatch && !tooLong && !tooShort,
     };
   }
 
@@ -1589,6 +1607,9 @@
   // {text, search, url, tel, password, 空}（Chromium 150 oracle：这些 type selectionStart/End 返数值；
   // number/email/date/range/color/checkbox 等 → null，非 text control）。无 type 属性 / 无效 type 归 text。
   var _TEXT_SEL_TYPES = { '': 1, text: 1, search: 1, url: 1, tel: 1, password: 1 };
+  // FV（M1）：pattern 约束适用的 text 类（spec §4.10.5.2.5——含 email，选区语义
+  // 的 _TEXT_SEL_TYPES 不含）。
+  var _PATTERN_TYPES = { '': 1, text: 1, search: 1, tel: 1, url: 1, email: 1, password: 1 };
   function _isTextControl(sel, handle) {
     var tag = _realTag(sel, handle);
     if (tag === 'TEXTAREA') return true;
@@ -1912,6 +1933,76 @@
       _zwMReflectIdl(node, n);
     };
     node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
+    // R57（FV M1）：createElement 路径的 Constraint Validation API（validator.js
+    // 的 ctl 经 document.createElement——R2825 只覆盖 selector-based 的
+    // _makeProxy）。node-based 约束计算（getAttribute + value 字段——与
+    // _validityState 同语义；customError 经 setCustomValidity）。
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-constraint-validation-api
+    node.setCustomValidity = function (m) { node._customValidity = m == null ? '' : String(m); };
+    Object.defineProperty(node, 'validity', {
+      get: function () {
+        var hasCustom = node._customValidity != null && node._customValidity !== '';
+        var required = node.hasAttribute('required');
+        var ty = node.hasAttribute('type') ? String(node.getAttribute('type') || '').toLowerCase() : '';
+        var rawValue = node.value != null ? String(node.value)
+          : (node.hasAttribute('value') ? String(node.getAttribute('value') || '') : '');
+        var valueMissing = false;
+        if (required) {
+          if (ty === 'checkbox' || ty === 'radio') valueMissing = !node.hasAttribute('checked');
+          else if (tag === 'select') valueMissing = rawValue === '';
+          else if (ty === 'file') valueMissing = true;
+          else valueMissing = rawValue.trim() === '';
+        }
+        var patternMismatch = false;
+        if (tag === 'textarea' || _PATTERN_TYPES[ty] === 1) {
+          var pat = node.getAttribute('pattern');
+          if (pat != null && pat !== '' && rawValue !== '') {
+            try { if (!new RegExp(String(pat)).test(rawValue)) patternMismatch = true; } catch (_e) {}
+          }
+        }
+        return {
+          valueMissing: valueMissing, typeMismatch: false, patternMismatch: patternMismatch,
+          tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false,
+          stepMismatch: false, badInput: false, customError: hasCustom,
+          valid: !hasCustom && !valueMissing && !patternMismatch,
+        };
+      },
+      configurable: true,
+    });
+    // R57（FV M1）：FORM 的 checkValidity/reportValidity——遍历本地子树控件
+    //（_zwMEl 树——createElement + cloneNode + appendChild 的本地对象，
+    // validator.js 的 "(in a form)" 变体——host 未注册无法 __zw_query_all_sub）。
+    function _collectControls(n, out) {
+      if (!n || !n.childNodes) return;
+      for (var k = 0; k < n.childNodes.length; k++) {
+        var c = n.childNodes[k];
+        if (c && c.nodeType === 1) {
+          var ct = String(c.tagName || '').toLowerCase();
+          if (ct === 'input' || ct === 'select' || ct === 'textarea' || ct === 'button') out.push(c);
+          _collectControls(c, out);
+        }
+      }
+    }
+    node.checkValidity = function () {
+      if (String(node.tagName).toLowerCase() === 'form') {
+        var ctrls = [];
+        _collectControls(node, ctrls);
+        for (var k = 0; k < ctrls.length; k++) {
+          if (ctrls[k].checkValidity && !ctrls[k].checkValidity()) return false;
+        }
+        return true;
+      }
+      return node.validity.valid;
+    };
+    node.reportValidity = function () { return node.checkValidity(); };
+    node.willValidate = true;
+    Object.defineProperty(node, 'validationMessage', {
+      get: function () {
+        if (node._customValidity != null && node._customValidity !== '') return node._customValidity;
+        return '';
+      },
+      configurable: true,
+    });
     node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; return c; };
     // R3018：insertBefore/replaceChild（DOMPurify 重定位节点、替换用）。ref=null 等价 append。
     node.insertBefore = function (c, ref) {
@@ -2680,7 +2771,24 @@
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
-    var proxy = new Proxy({}, {
+    // R57（FV M1）：约束校验 API 属性存在性——validator.js 的 pre_check 用
+    // `"validity" in ctl`。has trap 返回 true（V8 直接 execute 生效）+ **target
+    // 预置属性**（webview 页面脚本路径的 `in` 不调 has trap——实测——走 target
+    // 默认；get 仍走 trap 返回实时计算值）。
+    var _fvTarget = {};
+    var _fvProps = ['validity', 'validationMessage', 'willValidate', 'checkValidity',
+                    'reportValidity', 'setCustomValidity'];
+    for (var _vi = 0; _vi < _fvProps.length; _vi++) {
+      try { Object.defineProperty(_fvTarget, _fvProps[_vi], { configurable: true, value: undefined }); } catch (_e) {}
+    }
+    var proxy = new Proxy(_fvTarget, {
+      has: function(_t, prop) {
+        if (prop === 'validity' || prop === 'validationMessage' || prop === 'willValidate' ||
+            prop === 'checkValidity' || prop === 'reportValidity' || prop === 'setCustomValidity') {
+          return true;
+        }
+        return false;
+      },
       get: function(_t, prop) {
         // QuickJS Proxy ToPrimitive 差异（2026-08-08）：V8 对 get(Symbol.toPrimitive)
         // 返回 undefined 时回退默认 valueOf/toString；QuickJS 直接抛 TypeError: toPrimitive

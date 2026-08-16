@@ -1301,6 +1301,25 @@
         // 事件（cancelable，非 bubble，经 _dispatchWithBubble）。
         if (prop === 'checkValidity' || prop === 'reportValidity') {
           return function() {
+            // R57（FV M1）：FORM 元素的 checkValidity/reportValidity——遍历 form
+            // 内控件（input/select/textarea/button），任一 invalid → false
+            //（spec §4.10.5.4 interactive validation 的 form 级检查——
+            // form-validation-checkValidity/reportValidity 的 "(in a form)" 变体）。
+            if (_realTag(sel, handle) === 'FORM') {
+              // 控件查询经 form proxy 的 querySelectorAll（sel/handle 两路径——
+              // __zw_query_all_sub / _handleQueryAll）；本地 _zwMEl 树（未 host
+              // 注册）走 node.checkValidity 的 _collectControls。
+              var ctrls = [];
+              try {
+                var all = _makeProxy(sel, handle).querySelectorAll('input,select,textarea,button');
+                for (var ci = 0; ci < all.length; ci++) ctrls.push(all.item ? all.item(ci) : all[ci]);
+              } catch (_e) {}
+              for (var cj = 0; cj < ctrls.length; cj++) {
+                var cv = ctrls[cj].checkValidity ? ctrls[cj].checkValidity() : true;
+                if (!cv) return false;
+              }
+              return true;
+            }
             var v = _validityState(key, sel, handle);
             if (!v.valid) {
               _dispatchWithBubble(key, sel, handle, _makeEvent('invalid', { cancelable: true, bubbles: false }));
