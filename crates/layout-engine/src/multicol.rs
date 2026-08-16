@@ -949,6 +949,18 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
 
     // 定位子元素（y_base=0：单区域，整个 multicol 内容在一行列内）
     let region_height = position_multicol_children(container, &assignments, info, 0.0, 0.0);
+    let container_explicit = container
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(is_explicit_height);
+    // `column-fill: balance` 的 height:auto 容器高是最高列的高度，而非 taffy
+    // 在分列前测得的单列高度。若不回写，文字虽被正确分列，父块仍会过早结束。
+    // https://drafts.csswg.org/css-multicol/#column-height
+    if !container_explicit && !info.sequential_fill && region_height > container.content_height + 0.5 {
+        let delta = region_height - container.content_height;
+        container.content_height = region_height;
+        container.height += delta;
+    }
     // R1820：auto-height column-fill:auto 容器高度重算。主路径此前丢弃 region_height（let _），
     // 容器高保持 taffy 预算的自然高度和，对 forced-break / 跨列分配给出错误（过高）容器高
     //（multicol-fill-auto-005：160px 自然和 vs chromium 100px max 列高）。仅当
@@ -959,10 +971,6 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         && region_height > 0.0
         && region_height < container.content_height
     {
-        let container_explicit = container
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .is_some_and(is_explicit_height);
         if !container_explicit {
             let delta = container.content_height - region_height;
             container.content_height = region_height;

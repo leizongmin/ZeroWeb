@@ -159,6 +159,42 @@ fn test_auto_height_balanced_multicol_does_not_create_overflow_columns() {
     );
 }
 
+/// balance + height:auto 的容器高度应为最高列，供外层块盒继续排布后续内容。
+#[test]
+fn test_auto_height_balanced_multicol_uses_tallest_column_height() {
+    let mut doc = zero_dom::Document::new();
+    let container_id = doc.create_element("div");
+    let mut style = ComputedStyle::default();
+    style.column_count = ColumnCountComputedValue::Number(3);
+    let styles = HashMap::from([(container_id, style)]);
+    let mut container = LayoutBox {
+        node_id: Some(container_id),
+        content_width: 300.0,
+        content_height: 100.0,
+        height: 100.0,
+        children: (0..5)
+            .map(|_| LayoutBox {
+                width: 100.0,
+                content_width: 100.0,
+                height: 100.0,
+                content_height: 100.0,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let info = compute_column_info(styles.get(&container_id).unwrap(), container.content_width).unwrap();
+
+    layout_multicol(&mut container, &info, &styles);
+
+    assert!(
+        (container.content_height - 200.0).abs() < 0.01,
+        "height={}",
+        container.content_height
+    );
+    assert!((container.height - 200.0).abs() < 0.01, "height={}", container.height);
+}
+
 #[test]
 fn test_assign_children_with_breaking() {
     // 4 children, each 100px high, 3 columns, 150px height limit

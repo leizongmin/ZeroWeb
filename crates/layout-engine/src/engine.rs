@@ -689,6 +689,8 @@ impl LayoutEngine {
         let inline_fonts = self.inline_font_context(&font_overrides);
         if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
             crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+            // 多列实际高度变化不会由 taffy 自动传播；同步 auto-height 祖先并下移后续兄弟。
+            shift_siblings_after_ifc_grow(&mut root_box, styles, false);
         }
 
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素

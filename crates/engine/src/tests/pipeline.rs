@@ -1110,6 +1110,57 @@ fn test_pipeline_balanced_multicol_text_stays_within_container() {
         "balanced multicol text must remain inside its container: farthest_glyph={farthest_glyph}"
     );
 }
+
+/// 平衡多列在收窄后增长时，外层 auto-height 块和后续兄弟必须随之下移。
+/// https://drafts.csswg.org/css-multicol/#column-height
+#[test]
+fn test_pipeline_balanced_multicol_growth_pushes_following_content_down() {
+    use zero_render_foundation::color::Color;
+
+    let mut pipeline = RenderPipeline::new(980.0, 1_200.0);
+    let html = r#"
+        <html><body>
+            <div class="paper"><div class="text">
+                <p>Alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha.</p>
+                <p>Bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo.</p>
+                <p>Charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie.</p>
+                <p>Delta delta delta delta delta delta delta delta delta delta delta delta delta delta delta delta.</p>
+                <p>Echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo.</p>
+                <p>Foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot.</p>
+            </div></div>
+            <p class="after">Z following content</p>
+        </body></html>
+    "#;
+    let css = r#"
+        body { margin: 0; }
+        .paper { width: 900px; color: rgb(1, 2, 3); font-size: 13px; line-height: 165%; }
+        .text { column-count: 3; column-gap: 16px; }
+        .paper p { margin: 0 0 0.5em; }
+        .after { color: rgb(4, 5, 6); font-size: 16px; }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    let paper_bottom = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.color == Color::rgba(1, 2, 3, 255))
+        .map(|glyph| glyph.y + glyph.font_size)
+        .fold(0.0_f32, f32::max);
+    let following_y = result
+        .primitives()
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.color == Color::rgba(4, 5, 6, 255) && char::from_u32(glyph.glyph_id) == Some('Z'))
+        .map(|glyph| glyph.y)
+        .expect("following content marker should exist");
+
+    assert!(
+        following_y > paper_bottom,
+        "following content must begin after the balanced columns: paper_bottom={paper_bottom}, following_y={following_y}"
+    );
+}
+
 /// 测试渲染管线处理深嵌套 HTML 不 panic。
 #[test]
 fn test_pipeline_deeply_nested_html() {
