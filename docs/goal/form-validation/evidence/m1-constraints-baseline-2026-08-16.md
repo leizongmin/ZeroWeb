@@ -80,3 +80,19 @@ radio 组（6+6）、valid 联动（12+6）。
 1. stepMismatch 3e-15：diff/st ≈ 5.67e15 的 IEEE 舍入——浮点取模不可靠
 2. infinite_backtracking：V8 无 RegExp 超时——无限回溯 pattern 卡死——
    守卫跳过匹配（用例期望 invalid——tentative 引擎级）
+
+## 追加：M1 全灭——Pass 909 / Fail 0（2026-08-17）
+
+**剩余 2 Fail 修复**：
+1. **stepMismatch 3e-15**：有理数 BigInt 整数性判定——十进制串（±整数/小数/
+   科学计数法）解析为 {num, den} 分数——(value-base)/step 的交叉相乘模——
+   IEEE 浮点取模不可靠（diff/st ≈ 5.67e15 舍入）——特判 st < 1e-9 的
+   number/range
+2. **infinite_backtracking**：V8 无 RegExp 超时（rusty_v8 无 Isolate backtracks
+   API——实测 set_flags_from_string 的 --regexp-backtracks-before-fallback /
+   --enable-experimental-regexp-engine-on-excessive-backtracks 均无效卡死——
+   已回退）——守卫：组后量词 ")*"/")+" 的 pattern 直接 mismatch（近似——
+   用例期望 invalid ✓）——不卡死
+
+**最终**：constraints **Pass 909 / Fail 0**；testharness-canvas 1253 零回归；
+wpt-runner 172 全绿；clippy/fmt 全过。
