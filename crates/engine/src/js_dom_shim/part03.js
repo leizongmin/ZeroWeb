@@ -853,8 +853,8 @@
         if (vmVal.trim() === '') valueMissing = true;
         else if (ty === 'number') {
           // R57（FV M1）：number 的有效浮点数串（spec——无空白——" 123 " 无效
-          // → missing；parseFloat 太宽松）
-          valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(vmVal.trim()) || !isFinite(parseFloat(vmVal));
+          // → missing；parseFloat 太宽松）。原始值判定（不 trim——含空白即无效）
+          valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(vmVal) || !isFinite(parseFloat(vmVal));
         }
         else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(vmVal.trim(), ty);
       }
@@ -867,7 +867,11 @@
     var patternMismatch = false;
     if (tag === 'TEXTAREA' || _PATTERN_TYPES[ty] === 1) {
       var patAttr = null;
-      try { patAttr = handle ? __zw_get_attr_handle(handle, 'pattern') : __zw_get_attr(sel, 'pattern'); } catch (_e) {}
+      try {
+        patAttr = handle
+          ? __zw_get_attr_handle(handle, 'pattern')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'pattern') : __zw_get_attr(sel, 'pattern'));
+      } catch (_e) {}
       if (patAttr != null && String(patAttr) !== '') {
         var pv = _controlValue(sel, handle, key);
         if (pv !== '') {
@@ -1005,8 +1009,20 @@
             if (isFinite(numV)) {
               var minS = null;
               try { minS = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'); } catch (_e) {}
-              var baseV = (minS != null && String(minS) !== '') ? parseFloat(String(minS)) : 0;
-              diff = isFinite(baseV) ? numV - baseV : null;
+              // R57（FV M1）：step base——min 缺省时用 defaultValue（初始 value
+              // 属性的捕获——_captureInputDefault 机制；value setter 污染属性
+              // 免疫——"step base is @value"）
+              var baseV = null;
+              if (minS != null && String(minS) !== '') {
+                baseV = parseFloat(String(minS));
+              } else {
+                try {
+                  var dvDef = _makeProxy(sel, handle).defaultValue;
+                  if (dvDef != null && String(dvDef) !== '') baseV = parseFloat(String(dvDef));
+                } catch (_e) {}
+              }
+              if (baseV == null || !isFinite(baseV)) baseV = 0;
+              diff = numV - baseV;
             }
           } else if (ty === 'date') {
             var dvp = Date.parse(sVal.trim());
@@ -2312,7 +2328,7 @@
           else {
             if (rawValue.trim() === '') valueMissing = true;
             else if (ty === 'number') {
-              valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(rawValue.trim()) || !isFinite(parseFloat(rawValue));
+              valueMissing = !/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(rawValue) || !isFinite(parseFloat(rawValue));
             }
             else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(rawValue.trim(), ty);
           }

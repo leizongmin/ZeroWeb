@@ -1399,8 +1399,13 @@
         // `__zw_matches` 全匹配集判定）。handle（未挂载 DOM 的 createElement）无 sel → false。
         if (prop === 'matches' || prop === 'matchesSelector' || prop === 'webkitMatchesSelector') {
           return function(selector) {
+            // R57（FV M1）：:invalid/:valid 伪类——约束校验联动（host 样式引擎
+            // 未实现——pattern-dynamic/number-validity-dynamic 用例）。
+            var q = String(selector);
+            if (q === ':invalid') return !_validityState(key, sel, handle).valid;
+            if (q === ':valid') return _validityState(key, sel, handle).valid;
             if (!sel || typeof __zw_matches !== 'function') return false;
-            try { return __zw_matches(sel, String(selector)) === '1'; } catch (_e) { return false; }
+            try { return __zw_matches(sel, q) === '1'; } catch (_e) { return false; }
           };
         }
         // `el.closest(selector)`——自身或最近祖先首个匹配元素（proxy），无匹配 null。经 host

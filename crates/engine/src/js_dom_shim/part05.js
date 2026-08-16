@@ -7,6 +7,19 @@
             _clearInputDefault(key);
             if (handle) __zw_set_attr_handle(handle, 'value', String(value));
             else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
+          } else if (_realTag(sel, handle) === 'TEXTAREA') {
+            // R57（FV M1）：textarea.defaultValue 设置——默认值 + value 联动
+            //（当前值未编辑时——**不算用户编辑**（_userEdited 不置——validity
+            // 自动 valid——"Programmatically setting defaultValue is not a user
+            // edit"）
+            try {
+              if (handle) __zw_set_text_handle(handle, String(value));
+              else __zw_set_text(sel, String(value));
+            } catch (_e) {}
+            try { _textareaDefault[key] = String(value); } catch (_e) {}
+            // R57（FV M1）：本地 value 状态同步（_controlValue 优先读
+            // _inputValues——mutation 未应用时 value 读取不 stale）
+            try { _inputValues[key] = String(value); } catch (_e) {}
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
             var _odv = String(value);
