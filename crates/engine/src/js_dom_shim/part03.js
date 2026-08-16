@@ -777,7 +777,10 @@
       } else if (ty === 'file') {
         valueMissing = true; // headless 无真文件
       } else {
-        valueMissing = _controlValue(sel, handle, key).trim() === '';
+        var vmVal = _controlValue(sel, handle, key);
+        if (vmVal.trim() === '') valueMissing = true;
+        else if (ty === 'number') valueMissing = !isFinite(parseFloat(vmVal));
+        else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(vmVal.trim(), ty);
       }
     }
     // R57（FV M1）：patternMismatch——pattern 属性存在、值非空、值不匹配
@@ -792,8 +795,11 @@
       if (patAttr != null && String(patAttr) !== '') {
         var pv = _controlValue(sel, handle, key);
         if (pv !== '') {
+          // R57（FV M1）：spec 的 pattern 匹配是**完全匹配**（anchored——
+          // "ABC123" 对 "[A-Z]+" mismatch——subset 用例）；u flag 支持
+          // \u{10FFFF} 等 Unicode 特性。
           try {
-            if (!new RegExp(String(patAttr)).test(pv)) patternMismatch = true;
+            if (!new RegExp('^(?:' + String(patAttr) + ')$', 'u').test(pv)) patternMismatch = true;
           } catch (_e) { /* 非法正则——约束忽略 */ }
         }
       }
@@ -1653,6 +1659,16 @@
   // FV（M1）：pattern 约束适用的 text 类（spec §4.10.5.2.5——含 email，选区语义
   // 的 _TEXT_SEL_TYPES 不含）。
   var _PATTERN_TYPES = { '': 1, text: 1, search: 1, tel: 1, url: 1, email: 1, password: 1 };
+  // FV（M1）：非 text 类型的值有效格式判定（valueMissing 的「有效值集合」——
+  // date/month/week/time/datetime-local 的 ISO 格式近似；number 的 parseFloat）。
+  var _DATE_TYPES = { date: 1, month: 1, week: 1, time: 1, 'datetime-local': 1 };
+  function _isValidDateString(v, ty) {
+    if (ty === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v);
+    if (ty === 'month') return /^\d{4}-\d{2}$/.test(v);
+    if (ty === 'week') return /^\d{4}-W\d{2}$/.test(v);
+    if (ty === 'time') return /^\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v);
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v);
+  }
   function _isTextControl(sel, handle) {
     var tag = _realTag(sel, handle);
     if (tag === 'TEXTAREA') return true;
@@ -1994,13 +2010,17 @@
           if (ty === 'checkbox' || ty === 'radio') valueMissing = !node.hasAttribute('checked');
           else if (tag === 'select') valueMissing = rawValue === '';
           else if (ty === 'file') valueMissing = true;
-          else valueMissing = rawValue.trim() === '';
+          else {
+            if (rawValue.trim() === '') valueMissing = true;
+            else if (ty === 'number') valueMissing = !isFinite(parseFloat(rawValue));
+            else if (_DATE_TYPES[ty] === 1) valueMissing = !_isValidDateString(rawValue.trim(), ty);
+          }
         }
         var patternMismatch = false;
         if (tag === 'textarea' || _PATTERN_TYPES[ty] === 1) {
           var pat = node.getAttribute('pattern');
           if (pat != null && pat !== '' && rawValue !== '') {
-            try { if (!new RegExp(String(pat)).test(rawValue)) patternMismatch = true; } catch (_e) {}
+            try { if (!new RegExp('^(?:' + String(pat) + ')$', 'u').test(rawValue)) patternMismatch = true; } catch (_e) {}
           }
         }
         var rangeUnderflow = false, rangeOverflow = false;
