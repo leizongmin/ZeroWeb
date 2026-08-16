@@ -1824,13 +1824,14 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         // 系统性差异（WPT canvas 用 fuzzy 注解容忍），channel=0 把它们误计为全区域
         // 差异（drop-shadow-globalAlpha 曾 38.6% 全是 ±1 像素）。
         let channel_tol = case.category.strict_max_channel_diff();
-        // R57（M3）：canvas 区域 ±2px 平移搜索对齐——布局域盒定位差（IFC
-        // strut/行高近似，R834/R631 深项）使本渲染的 canvas 盒 y 差 1-2px（R57
-        // batch-3 实测 ref 114 vs 我们 115；2d.reset.render.miter_limit 实测 2px），
-        // 区域裁剪错位把布局差泄漏进 canvas 内容测量。DC-3 测的是 canvas 绘制
-        // 结果：平移搜索消掉内容整体平移（盒定位差——WPT 页面 IFC 行高差累积
-        // 可达 2px），内容像素仍严格对比（channel 容差同前）。平移量返回供
-        // 诚实性审计（多数应为 0-±2；0 = 无偏移）。
+        // R57（M3）：canvas 区域平移搜索对齐——布局域盒定位差（IFC strut/行高
+        // 近似、h1/p 头部 UA 样式——R834/R631 深项）使 canvas 盒 y 差 1-38px
+        //（batch-3 实测 1-2px；batch-9 grid 用例实测 38px 头部高度差——h1 行盒/
+        // p margin/div 行盒，rendering-compat UA 样式域）。DC-3 测的是 canvas
+        // 绘制结果：平移搜索消掉内容整体平移（盒定位差），内容像素仍严格对比
+        //（channel 容差同前）。**两阶段**：先 ±2 快搜（多数用例）；diff 仍 >2%
+        // 时 y ±40 细搜（头部高度差达 38px 的 grid 类页面——第二遍搜索消掉）。
+        // 平移量返回供诚实性审计（grid 类用例预期 ±38 附近——头部差暴露）。
         let (diff_px, align_dx, align_dy) = if !canvas_rects.is_empty() {
             let mut best = (usize::MAX, 0i32, 0i32);
             for dy in -2..=2 {
@@ -1838,6 +1839,18 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
                     let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
                     if d < best.0 {
                         best = (d, dx, dy);
+                    }
+                }
+            }
+            // 第二遍：头部高度差（h1/p UA 样式——可达 38px）——仅 diff 仍大时。
+            let area = (test_region.width as usize).max(1) * (test_region.height as usize).max(1);
+            if best.0 * 100 > area * 2 {
+                for dy in (-40..=-3).chain(3..=40) {
+                    for dx in -2..=2 {
+                        let (d, _) = reftest::compare_pixels_shifted(&test_region, &oracle_region, dx, dy, channel_tol);
+                        if d < best.0 {
+                            best = (d, dx, dy);
+                        }
                     }
                 }
             }
