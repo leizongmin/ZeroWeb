@@ -193,3 +193,30 @@ fn test_gradient_color_interpolation_spaces() {
     assert!(mid_hsl.r > 200 && mid_hsl.g > 200, "HSL 中点偏黄: {mid_hsl:?}");
     assert!(mid_srgb.r < 200 || mid_srgb.g < 200, "sRGB 中点暗: {mid_srgb:?}");
 }
+
+/// R56h（M3）：reset 后 fillRect 双矩形——合成操作回默认 source-over，
+/// 重叠区不因 xor 清空，形状外保持透明（2d.reset.render.global_composite_operation）。
+/// reset 语义 = JS 桥 `CanvasContext::new` 重建（js_dom_bridge/canvas.rs "reset"）。
+#[test]
+fn test_reset_then_fill_rects() {
+    let mut ctx = CanvasContext::new(400, 400);
+    ctx.set_composite_operation(CompositeOperation::Xor);
+    // reset：重建（全状态默认——composite 回 source-over）
+    let (w, h) = (ctx.width(), ctx.height());
+    ctx = CanvasContext::new(w, h);
+    ctx.set_fill_color(Color::BLACK);
+    ctx.fill_rect(10.0, 10.0, 100.0, 100.0);
+    ctx.fill_rect(50.0, 50.0, 100.0, 100.0);
+    // L 形：矩形内黑（重叠区 (60,60) 黑——source-over 非 xor 清空），
+    // 形状外透明（spec 默认画布透明，非白）。
+    for (x, y, _) in [(30, 30, 0), (60, 60, 0), (140, 60, 0)] {
+        let p = ctx.get_image_data(x, y, 1, 1);
+        assert_eq!(p.data[0], 0, "({x},{y}) R 通道 got {}", p.data[0]);
+        assert_eq!(p.data[3], 255, "({x},{y}) A 通道");
+    }
+    let outside: [(i32, i32); 5] = [(160, 160), (5, 5), (110, 10), (150, 50), (150, 150)];
+    for (x, y) in outside {
+        let p = ctx.get_image_data(x, y, 1, 1);
+        assert_eq!(p.data[3], 0, "({x},{y}) 应透明，got {:?}", &p.data[..4]);
+    }
+}
