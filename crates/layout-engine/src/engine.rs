@@ -683,16 +683,6 @@ impl LayoutEngine {
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
-        // 多列将 block 子元素约束到列宽后，段落可能需要更多行。先同步这些文本盒高度，
-        // 再重跑列分配，使后续段落按重排后的高度定位。
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
-        let inline_fonts = self.inline_font_context(&font_overrides);
-        if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
-            crate::multicol::adjust_multicol_layout(&mut root_box, styles);
-            // 多列实际高度变化不会由 taffy 自动传播；同步 auto-height 祖先并下移后续兄弟。
-            shift_siblings_after_ifc_grow(&mut root_box, styles, false);
-        }
-
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
         adjust_inline_block_positions(&mut root_box, doc, styles);
 
@@ -800,6 +790,15 @@ impl LayoutEngine {
             &mut paint_skip_set,
             inline_fonts,
         );
+
+        // 最终 IFC 会确定多列内文本的实际行数；在它之前回写高度会被覆盖，令父块背景
+        // 过早结束。故在最终行盒确定后重测并重分列，随后由下方的祖先回填/兄弟位移统一传播。
+        // https://drafts.csswg.org/css-multicol/#column-height
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
+            crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+        }
 
         // 12.1 后处理（R109 §9.2.1.1 匿名块盒高度回填，env R109_BACKFILL 默认开）：
         // compute_final 存了 inline_layout 但不回填 box height；taffy 经 ctx_node（片段

@@ -1120,20 +1120,25 @@ fn test_pipeline_balanced_multicol_growth_pushes_following_content_down() {
     let mut pipeline = RenderPipeline::new(980.0, 1_200.0);
     let html = r#"
         <html><body>
-            <div class="paper"><div class="text">
-                <p>Alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha.</p>
-                <p>Bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo.</p>
-                <p>Charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie charlie.</p>
-                <p>Delta delta delta delta delta delta delta delta delta delta delta delta delta delta delta delta.</p>
-                <p>Echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo echo.</p>
-                <p>Foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot foxtrot.</p>
+            <div class="paper"><div class="paper-content">
+                <h2>HTML5test is dead</h2>
+                <div class="text">
+                    <p>HTML5test is dead. It's been dead for a while. In fact it hasn't been updated since 2016.</p>
+                    <p><b>And that is fine.</b> This website has served it's purpose and helped popularise HTML5 with a general audience and developers. It pushed companies to invest in their browsers and it kept them honest. And from talking to people working for those companies over the years it worked. It helped convince people higher up to invest more resources, because nobody wants their browser to look bad.</p>
+                    <p>The goal of this website was always to push browsers to adopt HTML5. To make HTML5 available for users and developers in <b>all browsers</b>. And if just one feature is now available to developers in all browsers thanks to HTML5test, this website has served it's purpose. And I know for sure that it has served it's purpose. HTML5 is now generally supported and there aren't any truly bad browsers anymore.</p>
+                    <p>I'll try to keep this page online as a snapshot of the original test, and there is an unofficial updated version available at html5test.co.</p>
+                    <p>It was fun to work on this project while it lasted. I have some awesome memories of talking to the people at the W3C, Apple, Mozilla, Google and Microsoft. Thanks for all the support over the years!</p>
+                    <p><b>Niels Leenheer</b></p>
+                </div>
             </div></div>
             <p class="after">Z following content</p>
         </body></html>
     "#;
     let css = r#"
         body { margin: 0; }
-        .paper { width: 900px; color: rgb(1, 2, 3); font-size: 13px; line-height: 165%; }
+        h2 { font-size: 3.8em; line-height: 100%; margin-bottom: 10px; }
+        .paper { width: 900px; background: rgb(9, 10, 11); color: rgb(1, 2, 3); font-size: 0.75em; line-height: 165%; margin-bottom: 60px; }
+        .paper-content { padding: 20px; }
         .text { column-count: 3; column-gap: 16px; }
         .paper p { margin: 0 0 0.5em; }
         .after { color: rgb(4, 5, 6); font-size: 16px; }
@@ -1154,10 +1159,21 @@ fn test_pipeline_balanced_multicol_growth_pushes_following_content_down() {
         .find(|glyph| glyph.color == Color::rgba(4, 5, 6, 255) && char::from_u32(glyph.glyph_id) == Some('Z'))
         .map(|glyph| glyph.y)
         .expect("following content marker should exist");
+    let paper_background_bottom = result
+        .primitives()
+        .fills
+        .iter()
+        .find(|fill| fill.color == Color::rgba(9, 10, 11, 255))
+        .map(|fill| fill.rect.origin.y + fill.rect.size.height)
+        .expect("paper background should exist");
 
     assert!(
         following_y > paper_bottom,
         "following content must begin after the balanced columns: paper_bottom={paper_bottom}, following_y={following_y}"
+    );
+    assert!(
+        paper_background_bottom >= paper_bottom,
+        "paper background must contain every multicol glyph: background_bottom={paper_background_bottom}, paper_bottom={paper_bottom}"
     );
 }
 
