@@ -1910,6 +1910,34 @@
         }
         if (prop === 'removeChild') {
           return function(child) {
+            // R87：注册文本子（textContent= 建的静态包装节点，无 __zwHandle）——旧直接
+            // 静默 no-op（WPT NodeIterator-removal 的 `paras[0].parentNode.removeChild(
+            // paras[0].firstChild)`：移除不生效 + 迭代器不 retarget）。经注册表注销
+            // + 物化 + 通知（与 handle 路径同语义）。注册键是**父 el**（_zwRegisterTextEl
+            // 以 _makeProxy(sel,handle) 为键——R87 首版误用 child 查恒 miss）。
+            var _r87Self = _makeProxy(sel, handle);
+            // R87b：guard 放宽——注册条目可能在父元素先前的 remove/restore 周期中被
+            // _zwUnregisterTextSubtree 注销（此时子视图来自物化缓存）。文本子 +
+            // 物化缓存含该子时同样走通知路径（WPT NodeIterator-removal 恢复段的
+            // 二次 remove——旧 guard 恒 miss → 静默 no-op → 迭代器不 retarget）。
+            var _r87Cached = handle && typeof _zwDetachedChildrenOf === 'function'
+              ? _zwDetachedChildrenOf(handle) : null;
+            var _r87InCache = !!(_r87Cached && _r87Cached.indexOf(child) >= 0);
+            if (child && !child.__zwHandle && child.__zwIsText && typeof _zwUnregisterTextEl === 'function'
+                && ((_zwTextElsByEl && _zwTextElsByEl.get(_r87Self)) || _r87InCache)) {
+              // 物化后剔除被移除子（spec：移除后父的 childNodes 不含 removed——物化的是
+              // 移除前视图，直接缓存会把 removed 一并保留）。
+              if (typeof _zwMaterializeDetachedChildren === 'function') {
+                _zwMaterializeDetachedChildren(_r87Self);
+                if (handle && typeof _zwDetachChildFromCache === 'function') _zwDetachChildFromCache(handle, child);
+              }
+              if (globalThis._zwNotifyIteratorsRemove) {
+                try { globalThis._zwNotifyIteratorsRemove(child); } catch (_e87f) {}
+              }
+              _zwUnregisterTextEl(_r87Self);
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              return child;
+            }
             if (child && child.__zwHandle) {
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。
@@ -1942,6 +1970,15 @@
             // js-dom M4 R51：spec `dom-node-pre-insert` 同 appendChild 的自环/祖先校验。
             if (newNode && (newNode === _makeProxy(sel, handle) || _zwIsAncestorOf(newNode, sel, handle))) {
               throw _zwDomException('A Node cannot be inserted before itself or its descendant.', 'HierarchyRequestError');
+            }
+            // R87：注册文本子恢复（removeChild 注销后 oldParent.insertBefore(node,
+            // oldSibling) 重新入树——WPT NodeIterator-removal 恢复段；旧无 handle
+            // 直接静默 no-op → firstChild 恒 null、后续子测试 setup 全断）。重注册
+            // 同 _zwRegisterTextEl（el 键 = 本 proxy）。
+            if (newNode && !newNode.__zwHandle && newNode.__zwIsText
+                && typeof _zwRegisterTextEl === 'function' && typeof _zwLocalChildNodes === 'function'
+                && !_zwLocalChildNodes(sel, handle)) {
+              _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
             }
             if (newNode && newNode.__zwHandle) {
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
@@ -1980,6 +2017,17 @@
                 if (refNode && refNode.previousSibling) _ibPrev = refNode.previousSibling;
               } catch (_e) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: ceAdded || [newNode], removedNodes: [], previousSibling: _ibPrev, nextSibling: refNode || null });
+              // R87：insertBefore 即入树——清除移除标记（恢复段 oldParent.insertBefore；
+              // 只 appendChild 清除会使恢复后的节点仍被迭代器当移除跳过——WPT
+              // NodeIterator-removal 跨子测试树序分叉根因）。
+              if (typeof _zwUnmarkRemovedHandle === 'function') {
+                var _ibAdd = ceAdded || [newNode];
+                for (var ci87 = 0; ci87 < _ibAdd.length; ci87++) {
+                  var ia87 = _ibAdd[ci87];
+                  if (ia87 && ia87.__zwHandle) _zwUnmarkRemovedHandle(ia87.__zwHandle);
+                  if (ia87 && ia87.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ia87.__zwSelector);
+                }
+              }
               // R2994 connectedCallback：子树按父连接态传播。
               if (ceAdded) {
                 var cePconn = _ceParentConnected(sel, handle);

@@ -469,6 +469,20 @@
         }
         // NodeIterator previousNode：结构序逆向 scan（迭代集合结构性——不剪枝，
         // REJECT/SKIP/0 都只排除自身）。R86：移除节点（含子树）退出集合。
+        // R87：spec「pointer-before=false → 仅翻 before=true、节点不动、返当前 ref」
+        //（nextNode 对 before=true 的对称半边——WPT NodeIterator-removal
+        // "backed-up reference" 断言：advance 到 (b1,false) 后 previousNode 期望
+        // 返 b1 自身而非树序前驱）。before 的读/改经 R82 wrapper 的 refNodeVal/
+        // beforeRefVal（本函数在 wrapper 内层）。
+        if (typeof beforeRefVal !== 'undefined' && beforeRefVal === false) {
+          // 翻指针由外层 R82 wrapper 完成（previousNode 成功 → beforeRefVal=true）；
+          // 此处返当前 ref 前仍须过 filter（spec previousNode 步骤 4-5：referenceNode
+          // 非 ACCEPT 则继续前驱——WPT "Recursive filters need to throw" 对
+          // previousNode 的断言在此触发）。
+          if (check(refNodeVal) === 1) {
+            return refNodeVal;
+          }
+        }
         syncOrderPosTo(currentNodeVal);
         var i = orderPos;
         if (i < 0) return null;
@@ -617,7 +631,10 @@
   globalThis._zwNotifyIteratorsRemove = function (removedNode) {
     var reg = globalThis._zwIterRegistry;
     if (!reg || !reg.length || !removedNode) return;
-    if (reg.length > 512) reg.length = 0;
+    // R87：容量压实改「保尾」——旧版 `reg.length = 0` 全清会在大用例中途（~500
+    // iterator/子测试 × 多子测试）把**在档**迭代器一并清掉 → retarget 静默丢失
+    //（WPT NodeIterator-removal doctype 子测试根因）。65536 上限 + 保最近 1024。
+    if (reg.length > 65536) reg.splice(0, reg.length - 1024);
     // removed 的树序前驱/后继（限 removed 所属文档序；root 边界由 retarget 后集合
     // 自然约束——前驱超 root 时回落到后继，spec 步骤 3 的「first node preceding」边界）。
     var pred = null, succ = null;
@@ -665,15 +682,35 @@
       } catch (_e) {}
       return false;
     }
+    function inRootOf(node, rootNode) {
+      // node 是否在 rootNode 的 inclusive 子树内——沿 node 父链上行找 rootNode。
+      try {
+        var cur = node, guard = 0;
+        while (cur && guard++ < 128) {
+          if (cur === rootNode) return true;
+          cur = cur.parentNode;
+        }
+      } catch (_e) {}
+      return false;
+    }
     for (var i = 0; i < reg.length; i++) {
       var it = reg[i];
       if (!it || it.dead) continue;
       var ref = it.getRef();
       if (isAnc(it.root)) continue; // removed 是 root 的祖先 → no-op
       if (!inSubtree(ref)) continue; // reference 不在 removed 子树内 → no-op
+      // R87：succ 须在 root 子树内（spec「first node following... within root」——
+      // 跨出 root 边界的后继不算；用 inRoot 判定）。
+      var succInRoot = succ && inRootOf(succ, it.root);
       if (it.getBefore()) {
-        // 指针前置 → reference = removed 后继（保持 before=true）。
-        it.retarget(succ, true);
+        // 指针前置 → reference = removed 后继（保持 before=true）；root 内无后继 →
+        // spec 步骤 3：pointer 翻 false + reference = removed 前驱（其前兄弟的
+        // last inclusive descendant——即 pred）。
+        if (succInRoot) {
+          it.retarget(succ, true);
+        } else {
+          it.retarget(pred || it.root, pred ? false : true);
+        }
       } else {
         // 指针后置 → reference = removed 前驱；前驱为 null（root 前）→ 后继。
         it.retarget(pred || succ, pred ? false : true);
@@ -1863,10 +1900,40 @@
       // Node-properties document.childNodes.length 期望 2、childNodes[0] 为 DocumentType）。
       // html.previousSibling 仍走 __zw_sibling_nodes 快照（R80 后 R79 的遍历一致性问题已由
       // JS 侧 _zwCompareDocumentPosition 链式判定取代，不依赖该子序）。
+      // R87：_docDtorRemoved（removeChild(doctype) 本地标记）时剔除 doctype（恢复段
+      // insertBefore 还原）。
+      if (this._docDtorRemoved) return [_wrapSelector('html')];
       return [this.doctype, _wrapSelector('html')];
     },
-    get firstChild() { return this.doctype; },
+    // R87 修复回归：firstChild/lastChild getter 曾被 R87 注释块误删（oracle
+    // nextNode(document) 助手无法下行 → NodeIterator.html document root 变体 8F）。
+    get firstChild() { return this._docDtorRemoved ? _wrapSelector('html') : this.doctype; },
     get lastChild() { return _wrapSelector('html'); },
+    // js-dom M4 R87：主文档的 removeChild/insertBefore（WPT NodeIterator-removal 的
+    // doctype 子测试经 oldParent= document remove/恢复——旧缺方法 TypeError 崩用例）。
+    // host DOM 无 doctype 移除能力——JS 侧本地标记（_zwDocDtorRemoved）：移除后
+    // childNodes 视图剔除 doctype、恢复后还原。html 的移除仍不支持（返自身，罕见路径）。
+    removeChild: function (c) {
+      if (c === this.doctype) {
+        if (globalThis._zwNotifyIteratorsRemove) {
+          try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e87d) {}
+        }
+        this._docDtorRemoved = true;
+        return c;
+      }
+      if (c && c.__zwSelector && typeof __zw_remove === 'function') {
+        if (globalThis._zwNotifyIteratorsRemove) {
+          try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e87e) {}
+        }
+        try { __zw_remove(c.__zwSelector); } catch (_e2) {}
+        if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(c.__zwSelector);
+      }
+      return c;
+    },
+    insertBefore: function (c, ref) {
+      if (c === this.doctype) { this._docDtorRemoved = false; return c; }
+      return c;
+    },
     compatMode: 'CSS1Compat',
     characterSet: 'UTF-8',
     charset: 'UTF-8',
@@ -2993,6 +3060,14 @@ function _zwMaterializeDetachedChildren(el) {
 function _zwDetachedChildrenOf(handle) {
   if (!handle) return null;
   return _zwDetachedChildren.get(handle) || null;
+}
+// R87：物化缓存剔除单个子（removeChild 文本子路径——物化的移除前视图含 removed，
+// spec 要求父视图不再含；handle 节点的本地 childNodes 读路径回落此缓存）。
+function _zwDetachChildFromCache(handle, child) {
+  var kids = _zwDetachedChildren.get(handle);
+  if (!kids || !kids.length) return;
+  var i = kids.indexOf(child);
+  if (i >= 0) kids.splice(i, 1);
 }
 // 本地 childNodes（handle 元素无 sel 时读注册表）
 // R52：handle/sel 双 Map 索引（同 _zwTextElsByEl——childNodes/firstChild/lastChild 每读全表

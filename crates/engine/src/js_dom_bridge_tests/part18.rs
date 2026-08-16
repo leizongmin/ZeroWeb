@@ -1442,3 +1442,64 @@ fn r86_reappend_clears_removed_marker() {
         "R86：移除后迭代器跳过该节点（6→5），re-append 清标记恢复（→6）"
     );
 }
+
+// js-dom M4 R87：文本子 remove/restore 二次周期（WPT NodeIterator-removal 恢复段——
+// 元素 remove/restore 后其 text 子再 remove 仍须 retarget；旧 guard 查注册表恒 miss 静默 no-op）。
+
+#[test]
+fn r87_text_child_second_removal_cycle_retargets() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.createElement('p');\n\
+         host.appendChild(p);\n\
+         p.textContent = 'inner';\n\
+         // 第一周期：remove/restore 元素 p（子树注销——textContent 注册文本随之消失，\n\
+         // 恢复后子视图来自物化缓存）。\n\
+         var op = p.parentNode, os = p.nextSibling;\n\
+         op.removeChild(p);\n\
+         op.insertBefore(p, os);\n\
+         // 第二周期：remove p 的 text 子（无注册条目——须走物化缓存路径）。\n\
+         var t = p.firstChild;\n\
+         var iter = document.createNodeIterator(p);\n\
+         iter.nextNode(); iter.nextNode(); // ref=text、before=false\n\
+         var refIsText = iter.referenceNode === t;\n\
+         p.removeChild(t);\n\
+         var fcAfter = p.firstChild ? p.firstChild.nodeName : 'null';\n\
+         var refIsP = iter.referenceNode === p;\n\
+         globalThis.__r87a = [String(refIsText), fcAfter, String(refIsP)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r87a").unwrap().value,
+        "true|null|true",
+        "R87：restore 后二次 remove text 子仍 retarget（ref→父 p）且父视图剔除 removed"
+    );
+}
+
+#[test]
+fn r87_previous_node_before_false_returns_ref_via_filter() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var host = document.querySelector('#host');\n\
+         var p = document.createElement('p');\n\
+         host.appendChild(p);\n\
+         var t = document.createTextNode('inner');\n\
+         p.appendChild(t);\n\
+         var iter = document.createNodeIterator(p);\n\
+         iter.nextNode(); iter.nextNode(); // ref=text、before=false\n\
+         // spec previousNode：pointer-before=false → 翻 before=true、返当前 ref（过 filter）。\n\
+         var back = iter.previousNode();\n\
+         var backIsText = back === t;\n\
+         var beforeNow = iter.pointerBeforeReferenceNode;\n\
+         // before=true 后再 previousNode → 树序前驱（text 前是 root p → 返 p；再前 null）。\n\
+         var back2 = iter.previousNode();\n\
+         var back2IsP = back2 === p;\n\
+         var back3 = iter.previousNode();\n\
+         globalThis.__r87b = [String(backIsText), String(beforeNow), String(back2IsP), String(back3 === null)].join('|');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r87b").unwrap().value,
+        "true|true|true|true",
+        "R87：previousNode 的 before=false 半边返当前 ref 并翻指针；再前返 root、耗尽 null"
+    );
+}

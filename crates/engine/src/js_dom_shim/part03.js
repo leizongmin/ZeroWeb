@@ -2579,7 +2579,7 @@
       },
       configurable: true,
     });
-    node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; return c; };
+    node.appendChild = function (c) { if (c && c.parentNode) c.parentNode.removeChild(c); node.childNodes.push(c); c.parentNode = node; if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle); return c; };
     // js-dom M4 R81：firstChild/lastChild getter（WPT Node-textContent "set to null" 期望
     // el.firstChild === null——轻量元素缺 getter 使 firstChild 读 undefined）。与上面 textContent
     // getter 同款本地 childNodes 维护。
@@ -2590,7 +2590,10 @@
       if (c && c.parentNode) c.parentNode.removeChild(c);
       if (ref == null) { node.childNodes.push(c); }
       else { var i = node.childNodes.indexOf(ref); if (i < 0) node.childNodes.push(c); else node.childNodes.splice(i, 0, c); }
-      c.parentNode = node; return c;
+      c.parentNode = node;
+      // R87：入树清移除标记（恢复段 insertBefore 后迭代器重新命中）。
+      if (c && c.__zwHandle && typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(c.__zwHandle);
+      return c;
     };
     node.replaceChild = function (n, o) {
       // spec 顺序：先 adopt（从原父移除 newChild），再定位 oldChild 当前 index（移除可能前移 oldChild）。
@@ -2768,6 +2771,10 @@
       // body 对象 identity）。removeChild 同步清理。
       removeChild: function (c) { ensureTree(); if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86c) {} } var r = _tree.removeChild(c); if (c && c.parentNode === _tree) c.parentNode = null; return r; },
       appendChild: function (c) { ensureTree(); var r = _tree.appendChild(c); if (c && c.parentNode === _tree) c.parentNode = body; return r; },
+      // js-dom M4 R87：body 的 insertBefore（WPT NodeIterator-removal 恢复段经
+      // oldParent.insertBefore——foreignPara 的父是 body 代理）。ref=null 等价 append；
+      // _tree.insertBefore（R3018）已支持定位插入。
+      insertBefore: function (c, ref) { ensureTree(); var r = _tree.insertBefore(c, ref); if (c && c.parentNode === _tree) c.parentNode = body; return r; },
       // R81：body 的 firstChild/lastChild getter 补齐（WPT Node-properties 经 body 子导航；
       // 旧只有 firstChild）。lastChild 同 childNodes 末端。
       get lastChild() { ensureTree(); return _tree.childNodes.length ? _tree.childNodes[_tree.childNodes.length - 1] : null; },
@@ -2857,6 +2864,33 @@
             if (ci >= 0) this.children.splice(ci, 1);
             c.parentNode = null;
             return c;
+          }
+        }
+        return c;
+      },
+      // js-dom M4 R87：detached doc 的 insertBefore（spec dom-node-pre-insert；WPT
+      // NodeIterator-removal 的恢复段 `oldParent.insertBefore(node, oldSibling)`——
+      // xmlDoc/foreignDoc 缺此方法直接 TypeError 崩用例）。ref=null 等价 append。
+      insertBefore: function (c, ref) {
+        if (!c) return c;
+        if (c.parentNode && c.parentNode.removeChild) { try { c.parentNode.removeChild(c); } catch (_e87) {} }
+        if (ref == null) {
+          c.parentNode = this;
+          this.childNodes.push(c);
+          if (c.nodeType === 1) this.children.push(c);
+        } else {
+          var i = this.childNodes.indexOf(ref);
+          if (i < 0) {
+            c.parentNode = this;
+            this.childNodes.push(c);
+            if (c.nodeType === 1) this.children.push(c);
+          } else {
+            c.parentNode = this;
+            this.childNodes.splice(i, 0, c);
+            if (c.nodeType === 1) {
+              var ri = this.children.indexOf(ref);
+              this.children.splice(ri < 0 ? this.children.length : ri, 0, c);
+            }
           }
         }
         return c;
