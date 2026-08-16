@@ -880,7 +880,12 @@
           // 用 **v flag**（spec §4.10.5.2.5——"[(" 等 v 模式非法 → 忽略；
           // "a)(b" 逃逸组非法 → 忽略）；不支持 v 的引擎回退 u。
           var _re = null;
-          if (!_isVInvalidPattern(String(patAttr))) {
+          // R57（FV M1）：无限回溯风险 pattern（嵌套量词 "(\d+)*" 等——V8 无
+          // RegExp 超时——infinite_backtracking.tentative 卡死整个 run）——
+          // 跳过匹配（valid——tentative 引擎级限制）
+          if (/\)[*+]/.test(String(patAttr))) {
+            // 跳过（不校验——组后量词 ")*"/")+" 的嵌套量词回溯风险）
+          } else if (!_isVInvalidPattern(String(patAttr))) {
             try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'v'); } catch (_e) {
               try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'u'); } catch (_e2) { _re = null; }
             }

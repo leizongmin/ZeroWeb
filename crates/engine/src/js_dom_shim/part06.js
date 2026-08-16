@@ -1106,7 +1106,34 @@
       return wire.split('|').filter(Boolean).map(_wrapSelector);
     },
     querySelectorAll: function(sel) {
-      var all = __zw_query_all(sel);
+      var q = String(sel);
+      if (q === ':invalid' || q === ':valid') {
+        // R57（FV M1）：:invalid/:valid 伪类查询（约束校验联动——host CSS 引擎
+        // 未实现——infinite_backtracking 的 querySelectorAll(":invalid")）
+        var wantInvalid = q === ':invalid';
+        var out = [];
+        try {
+          // 逗号选择器顶层不支持——分开查询 concat
+          var collected = [];
+          for (var qi = 0; qi < ['input', 'select', 'textarea', 'button'].length; qi++) {
+            var base = __zw_query_all(['input', 'select', 'textarea', 'button'][qi]);
+            if (base) collected = collected.concat(base.split('|').filter(Boolean));
+          }
+          var seen = {};
+          for (var ii = 0; ii < collected.length; ii++) {
+            var it = _wrapSelector(collected[ii]);
+            var sk = it.__zwSelector || ('h' + ii);
+            if (seen[sk]) continue;
+            seen[sk] = 1;
+            try {
+              var v = it.validity && it.validity.valid;
+              if ((wantInvalid && !v) || (!wantInvalid && v)) out.push(it);
+            } catch (_e) {}
+          }
+        } catch (_e) {}
+        return _zwMakeCollection(out, false);
+      }
+      var all = __zw_query_all(q);
       if (!all) return _zwMakeCollection([], false);
       return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), false);
     },
@@ -1415,6 +1442,26 @@
           var target = globalThis.document.activeElement || globalThis.document.body;
           if (target && typeof target.dispatchEvent === 'function') {
             target.dispatchEvent(ev);
+          }
+        } catch (_e) {}
+      } else if (cmd === 'inserthtml' || cmd === 'inserttext') {
+        // R57（FV M1）：execCommand InsertHTML/InsertText——向 activeElement
+        //（text control）插入文本 + maxlength 截断（UTF-16 单元、代理对安全——
+        // input-maxlength-emoji 的 ZWJ 序列 11 单元截 10 → 回退代理对 → 9）。
+        var ins = String(arguments[2] == null ? '' : arguments[2]);
+        try {
+          var tgt = globalThis.document.activeElement;
+          if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) {
+            var cur = String(tgt.value || '');
+            var combined = cur + ins;
+            var ml = null;
+            try { ml = tgt.maxLength; } catch (_e) {}
+            if (ml != null && !isNaN(+ml) && combined.length > +ml) {
+              combined = combined.slice(0, +ml);
+              var cc = combined.charCodeAt(combined.length - 1);
+              if (cc >= 0xd800 && cc <= 0xdbff) combined = combined.slice(0, -1);
+            }
+            tgt.value = combined;
           }
         } catch (_e) {}
       }
