@@ -1101,3 +1101,26 @@ fn r81_text_content_fused_read_and_replace_children() {
         "R81：textContent 融合 childNodes 拼接读（pending 子可见）+ setter 替换全部子（空文本子也清、子 parentNode 脱钩）+ 不解析 markup"
     );
 }
+
+#[test]
+fn r82_whattoshow_unsigned_and_pointer_semantics() {
+    let (mut sandbox, _mutations) = r79_sandbox();
+    sandbox.execute(
+        "var p = document.querySelector('#a');\n\
+         var it1 = document.createNodeIterator(p, 0xFFFFFFFF, null);\n\
+         var it2 = document.createNodeIterator(p, NodeFilter.SHOW_ELEMENT, null);\n\
+         var n1 = it1.nextNode();\n\
+         var pb1 = it1.pointerBeforeReferenceNode;\n\
+         var n2 = it2.nextNode();\n\
+         var pb2 = it2.pointerBeforeReferenceNode;\n\
+         var it3 = document.createNodeIterator(p, NodeFilter.SHOW_COMMENT, null);\n\
+         var n3 = it3.nextNode();\n\
+         var pb3 = it3.pointerBeforeReferenceNode;\n\
+         globalThis.__r82a = [it1.whatToShow, n1 ? n1.nodeName : 'null', pb1, it2.whatToShow, n2 ? n2.nodeName : 'null', pb2, n3 === null ? 'null' : n3, pb3].join(',');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r82a").unwrap().value,
+        "4294967295,P,false,1,P,false,null,true",
+        "R82：whatToShow 无符号（0xFFFFFFFF=4294967295 非 -1）+ nextNode 命中后 pointer=false / 耗尽（null）保持 true"
+    );
+}

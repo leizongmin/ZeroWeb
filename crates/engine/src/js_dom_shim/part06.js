@@ -196,7 +196,12 @@
     if (!root || typeof root.nodeType !== 'number') {
       throw new globalThis.TypeError("Argument 1 of Document.createTreeWalker is not an object.");
     }
-    var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow | 0);
+    // R82：whatToShow 无符号语义（WebIDL unsigned long——ToUint32）。`| 0` 是 ToInt32
+    //（0xFFFFFFFF → -1），WPT NodeIterator/TreeWalker `whatToShow=0xFFFFFFFF` 期望
+    // 4294967295；且 -1 的位掩码 `(-1 & 0x1)===1` 恰好仍全通过（补码），故 mask 行为
+    // 旧实现侥幸正确——可见缺陷在 getter 读回值。`>>> 0` 保 ToUint32。null 语义由
+    // 调用方（createTreeWalker/Iterator）按 arguments.length 区分后传入。
+    var wts = (whatToShow == null) ? 0xFFFFFFFF : (whatToShow >>> 0);
     // R51：spec `document-createtreewalker` 步骤 4 + WebIDL §callback NodeFilter——filter 以
     // **callback 对象**形态保存（不一次性解绑）：函数 → 直接调用（this=undefined）；对象 → 每次
     // 遍历经 `Get(filter, "acceptNode")` 取 callable（getter 每次执行、抛错原样重抛、this=filter
@@ -274,7 +279,9 @@
     // assert_readonly）。经 defineProperty getter-only 实现（无 setter → writable:false 语义）。
     // whatToShow：**显式传 null** 按 0 处理（spec ToUint32(null)=0，区别缺省 undefined → SHOW_ALL；
     // WPT "root, null, null" 断言 whatToShow===0）。
-    var wtsStored = (whatToShow === null) ? 0 : wts;
+    // R82：whatToShow 显式 null → ToUint32(null)=0（spec WebIDL 缺省才 0xFFFFFFFF——本
+    // 工厂把 null 视作「缺省 SHOW_ALL」是 R41 既有语义，保持；读回值与 wts 同源无符号）。
+    var wtsStored = wts;
     Object.defineProperty(walker, 'root', { get: function () { return root; }, configurable: true });
     Object.defineProperty(walker, 'whatToShow', { get: function () { return wtsStored; }, configurable: true });
     Object.defineProperty(walker, 'filter', { get: function () { return filter || null; }, configurable: true });
@@ -308,18 +315,9 @@
       var beforeRefVal = true;
       Object.defineProperty(walker, 'referenceNode', { get: function () { return refNodeVal; }, configurable: true });
       Object.defineProperty(walker, 'pointerBeforeReferenceNode', { get: function () { return beforeRefVal; }, configurable: true });
-      // 同步钩子：nextNode/previousNode 成功步进时更新 reference/before（闭包内经包装实现）。
-      var _rawNext = walker.nextNode, _rawPrev = walker.previousNode;
-      walker.nextNode = function () {
-        var r = _rawNext.apply(this, arguments);
-        if (r) { refNodeVal = r; beforeRefVal = false; }
-        return r;
-      };
-      walker.previousNode = function () {
-        var r = _rawPrev.apply(this, arguments);
-        if (r) { refNodeVal = r; beforeRefVal = true; }
-        return r;
-      };
+      // R82：同步钩子后移——wrapper 原定义在此处，被下方 R51 lazy nextNode/previousNode
+      // 重赋值覆盖（reference/before 恒不更新——WPT pointerBeforeReferenceNode 40F 根因）。
+      // 现移至工厂尾部（lazy 定义之后）统一包装。
     }
     // R51：nextNode/previousNode 改 **lazy 步进**（spec TreeWalker/NodeIterator 惰性遍历）。
     // 模型：物化**结构序**（pre-order 全节点数组，只读 childNodes 无 filter 调用——构造零异常），
@@ -470,6 +468,24 @@
         }
         return null;
       }
+    }
+    // R82：NodeIterator 的 referenceNode/pointerBeforeReferenceNode 同步钩子——**必须在
+    // lazy nextNode/previousNode 定义之后**包装（R51 重赋值覆盖了 R2981 前的旧 wrapper，
+    // reference/before 恒不更新——WPT NodeIterator pointerBeforeReferenceNode 40F 根因）。
+    // 语义：nextNode 成功命中 → reference=node + before=false；到尾返 null → 不动（WPT
+    // 实证：立即耗尽的迭代器 before 保持 true——「after nextNode() 1 time(s)」期望 true）。
+    if (!isTreeWalker) {
+      var _rawNext2 = walker.nextNode, _rawPrev2 = walker.previousNode;
+      walker.nextNode = function () {
+        var r = _rawNext2.apply(this, arguments);
+        if (r) { refNodeVal = r; beforeRefVal = false; }
+        return r;
+      };
+      walker.previousNode = function () {
+        var r = _rawPrev2.apply(this, arguments);
+        if (r) { refNodeVal = r; beforeRefVal = true; }
+        return r;
+      };
     }
     return walker;
   }
@@ -1406,11 +1422,19 @@
     // `document.createTreeWalker(root, whatToShow, filter)` / `createNodeIterator(...)`——DOM 子树遍历器
     //（库 / sanitizer / a11y tree walker 高频）。whatToShow 掩码 + acceptNode FILTER_ACCEPT/REJECT/SKIP。
     // 经 `_makeNodeWalker`（eager pre-order via childNodes 递归）。两者共用工厂（接口同：nextNode/previousNode）。
+    // R82：spec WebIDL optional unsigned long whatToShow——**省略**才缺省 SHOW_ALL
+    // (0xFFFFFFFF)；**显式 null/undefined** 走 ToUint32(null)=0（WPT TreeWalker-basic
+    // dom-document-createtreewalker 与 R41 断言「显式 null → 0」）。经 arguments.length
+    // 区分省略与显式传值。
     createTreeWalker: function (root, whatToShow, filter) {
-      return _makeNodeWalker(root, whatToShow, filter, true);
+      var wtsArg = arguments.length >= 2 ? whatToShow : undefined;
+      // undefined 经 ToUint32 语义（WebIDL optional 未传 = 缺省 SHOW_ALL）。
+      if (arguments.length < 2) return _makeNodeWalker(root, 0xFFFFFFFF, filter, true);
+      return _makeNodeWalker(root, (wtsArg == null ? 0 : wtsArg), filter, true);
     },
     createNodeIterator: function (root, whatToShow, filter) {
-      return _makeNodeWalker(root, whatToShow, filter, false);
+      if (arguments.length < 2) return _makeNodeWalker(root, 0xFFFFFFFF, filter, false);
+      return _makeNodeWalker(root, (whatToShow == null ? 0 : whatToShow), filter, false);
     },
     // `document.createRange()`——新建 Range（R2804，Selection/Range）。详见 `_makeRange`。
     createRange: function () {
