@@ -1586,6 +1586,12 @@
           if (wvTag === 'BUTTON') {
             if (wvTy === 'button' || wvTy === 'reset') return false;
           }
+          // R57（FV M1）：非 submittable 元素（fieldset/output/object 等）——
+          // willValidate 恒 false（spec §4.10.5.2.2）。
+          if (wvTag === 'FIELDSET' || wvTag === 'OUTPUT' || wvTag === 'OBJECT'
+              || wvTag === 'LEGEND' || wvTag === 'FIELDSET') {
+            return false;
+          }
           if (wvTy === 'hidden' || wvTy === 'button' || wvTy === 'reset') return false;
           if (wvTag === 'INPUT' || wvTag === 'TEXTAREA') {
             // readonly 属性存在（任何类型）→ barred——即使 readonly 不适用

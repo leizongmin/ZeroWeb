@@ -1874,14 +1874,15 @@
     // R57（FV M1）：范围校验（月/日/时/周）——"9999-99-99"（月 99）无效；
     // 年 4+ 位（10000 年合法）；datetime-local 接受 T 或空格分隔。
     var y, mo, d;
-    if (ty === 'date' || ty === 'datetime-local') {
-      var sep = ty === 'date' ? '' : '(?:T| )';
-      var m = v.match(new RegExp('^(\\d{4,})-(\\d{2})-(\\d{2})' + sep + '(\\d{2}):(\\d{2})(?::(\\d{2})(\\.\\d+)?)?$'));
+    if (ty === 'date') {
+      var m = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
       if (!m) return false;
       y = +m[1]; mo = +m[2]; d = +m[3];
-      if (ty === 'datetime-local') {
-        if (+m[4] > 23 || +m[5] > 59 || (+m[6] || 0) > 59) return false;
-      }
+    } else if (ty === 'datetime-local') {
+      var m = v.match(/^(\d{4,})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?$/);
+      if (!m) return false;
+      y = +m[1]; mo = +m[2]; d = +m[3];
+      if (+m[4] > 23 || +m[5] > 59 || (+m[6] || 0) > 59) return false;
     } else if (ty === 'month') {
       var m2 = v.match(/^(\d{4,})-(\d{2})$/);
       if (!m2) return false;
@@ -2357,7 +2358,9 @@
         }
         if (node.hasAttribute('disabled')) return false;
         var nty = node.hasAttribute('type') ? String(node.getAttribute('type') || '').toLowerCase() : '';
-        if (String(node.tagName).toLowerCase() === 'button' && (nty === 'button' || nty === 'reset')) return false;
+        var ntg2 = String(node.tagName).toLowerCase();
+        if (ntg2 === 'fieldset' || ntg2 === 'output' || ntg2 === 'object' || ntg2 === 'legend') return false;
+        if (ntg2 === 'button' && (nty === 'button' || nty === 'reset')) return false;
         if (nty === 'hidden' || nty === 'button' || nty === 'reset') return false;
         var ntag = String(node.tagName).toLowerCase();
         if (ntag === 'textarea' || ntag === 'input') {
