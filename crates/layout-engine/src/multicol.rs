@@ -762,6 +762,12 @@ fn layout_multicol(container: &mut LayoutBox, info: &ColumnInfo, styles: &HashMa
         return;
     }
 
+    // 本函数可在列宽收窄后的文本重测量后再次运行。旧的 fragment offsets
+    // 已不再对应新的列分配，必须先清除，避免 painter 重复绘制过期片段。
+    for child in &mut container.children {
+        child.column_span_offsets.clear();
+    }
+
     // R1340：嵌套 spanner 检测（multicol wrapper-fragmentation 基础）。
     // layout_multicol 主循环只检测直接子 column-span:all；嵌套 spanner（multicol >
     // 非 multicol wrapper > spanner）当前未实现 fragmentation（R1336 诊断：wrapper 被

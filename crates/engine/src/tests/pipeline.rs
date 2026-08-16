@@ -1037,6 +1037,45 @@ fn test_pipeline_text_blocks_have_distinct_baselines() {
         "second paragraph should render below first paragraph: first_y={first_y}, second_y={second_y}"
     );
 }
+
+/// 多列会收窄段落；重排后的段落高度必须参与列内定位，不能让后一个段落覆盖前一个。
+#[test]
+fn test_pipeline_multicol_remeasures_paragraph_height_after_column_narrowing() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"
+        <html><body><div class="columns">
+            <p>A alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha</p>
+            <p>B bravo bravo bravo bravo bravo bravo bravo bravo bravo bravo</p>
+            <p>C charlie charlie charlie charlie charlie charlie charlie charlie</p>
+            <p>D delta delta delta delta delta delta delta delta delta delta</p>
+            <p>E echo echo echo echo echo echo echo echo echo echo</p>
+        </div></body></html>
+    "#;
+    let css = r#"
+        body { margin: 0; }
+        .columns { width: 180px; column-count: 2; column-gap: 20px; font-size: 16px; line-height: 1.5; }
+        .columns p { margin: 0 0 8px; }
+    "#;
+
+    let result = pipeline.render_html(html, css);
+    let glyph_position = |needle| {
+        result
+            .primitives()
+            .glyphs
+            .iter()
+            .find(|glyph| char::from_u32(glyph.glyph_id) == Some(needle))
+            .map(|glyph| (glyph.x, glyph.y))
+            .unwrap_or_else(|| panic!("{needle} glyph should exist"))
+    };
+    let positions: Vec<_> = ['A', 'B', 'C', 'D', 'E'].into_iter().map(glyph_position).collect();
+
+    assert!(
+        positions
+            .windows(2)
+            .any(|pair| pair[0].0 == pair[1].0 && pair[1].1 - pair[0].1 >= 160.0),
+        "paragraphs sharing a column must not overlap after rewrapping: positions={positions:?}"
+    );
+}
 /// 测试渲染管线处理深嵌套 HTML 不 panic。
 #[test]
 fn test_pipeline_deeply_nested_html() {

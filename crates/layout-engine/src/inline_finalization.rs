@@ -1899,6 +1899,77 @@ pub(crate) fn remeasure_inline_only_containers(
     }
 }
 
+/// 多列后处理收窄 block 子元素后，重新测量其直接文本高度。
+///
+/// Taffy 在多列后处理之前按容器全宽测量段落；`multicol::layout_multicol`
+/// 随后将段落约束到单列宽度。若不在该宽度重新测量，最终 IFC 会正确换行，
+/// 但列分配仍使用旧的矮盒高度，造成相邻段落的文字重叠。
+///
+/// https://drafts.csswg.org/css-multicol/#column-box
+pub(crate) fn remeasure_multicol_text_blocks(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+) -> bool {
+    fn remeasure_inner(
+        box_node: &mut LayoutBox,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+        inline_fonts: InlineFontContext<'_>,
+        inside_multicol: bool,
+    ) -> bool {
+        let is_multicol = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|style| crate::multicol::compute_column_info(style, box_node.content_width))
+            .is_some_and(|info| info.count >= 2);
+        let inside_multicol = inside_multicol || is_multicol;
+        let mut changed = false;
+
+        for child in &mut box_node.children {
+            changed |= remeasure_inner(child, doc, styles, img_intrinsic_sizes, inline_fonts, inside_multicol);
+        }
+
+        let Some(node_id) = box_node.node_id else {
+            return changed;
+        };
+        let Some(style) = styles.get(&node_id) else {
+            return changed;
+        };
+        if !inside_multicol || !has_direct_text(doc, node_id) || !matches!(style.height, LengthValue::Auto) {
+            return changed;
+        }
+
+        let measured = measure_text_content(
+            doc,
+            styles,
+            node_id,
+            Size {
+                width: Some(box_node.content_width),
+                height: None,
+            },
+            Size {
+                width: AvailableSpace::Definite(box_node.content_width),
+                height: AvailableSpace::MaxContent,
+            },
+            img_intrinsic_sizes,
+            inline_fonts,
+        );
+        if measured.height > box_node.content_height + 0.5 {
+            let delta = measured.height - box_node.content_height;
+            box_node.content_height = measured.height;
+            box_node.height += delta;
+            changed = true;
+        }
+        changed
+    }
+
+    remeasure_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::resolve_text_indent;

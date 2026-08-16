@@ -683,6 +683,14 @@ impl LayoutEngine {
         // 9. 后处理：对 column-count/column-width 容器执行多列布局
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
+        // 多列将 block 子元素约束到列宽后，段落可能需要更多行。先同步这些文本盒高度，
+        // 再重跑列分配，使后续段落按重排后的高度定位。
+        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
+            crate::multicol::adjust_multicol_layout(&mut root_box, styles);
+        }
+
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
         adjust_inline_block_positions(&mut root_box, doc, styles);
 
