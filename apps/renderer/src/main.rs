@@ -114,6 +114,8 @@ const PAGE_LOAD_DEADLINE: Duration = Duration::from_secs(120);
 const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
 /// renderer 的 parse/style/layout/paint 调用链在 Windows GUI 入口线程的默认栈上会溢出。
 /// 使用固定的独立运行栈，保留 multi-process/compositor 路径，不因复杂页面退化为单进程。
+/// 仅非 macOS 平台使用（macOS 上 run_on_renderer_stack 被 cfg 排除，避免 clippy 未使用告警）。
+#[cfg(not(target_os = "macos"))]
 const RENDERER_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 /// 单个 renderer surface 的帧发布状态。

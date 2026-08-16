@@ -3104,8 +3104,13 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
     app.set_legacy_frame_publish_for_test(tab_id);
     app.set_compositor_status_for_test(crate::compositor_client::CompositorStatus::Disconnected);
     // 滚动断言必须自行保证文档高于视口，不能依赖平台字体或历史 renderer 的布局高度。
-    let html = include_str!("../../../examples/forms/form-interaction-test.html")
-        .replace("</body>", "<div style=\"height: 900px\"></div></body>");
+    // 注意：spacer 必须有绘制内容（背景色）——b12f9b676 后根滚动范围被钳制到
+    // painted 内容高度（min(layout, painted)，防滚进空白帧）；空 div 不产生图元、
+    // 不撑高 painted 高度，视口 780px 下滚动范围会被钳为 0（无 CJK 字形平台必现）。
+    let html = include_str!("../../../examples/forms/form-interaction-test.html").replace(
+        "</body>",
+        "<div style=\"height: 900px; background: #f5f5f5\"></div></body>",
+    );
     let before_load = app.snapshot_seq_for_test(tab_id);
     app.load_webview_html_without_wait_for_test(tab_id, &html, None);
     assert!(
