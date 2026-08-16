@@ -1054,6 +1054,24 @@ fn test_bezier_curve_flattening() {
     assert_eq!(pf.vertices.len(), 68);
 }
 
+/// R57（M3）：巨坐标曲线（2d.path.bezierCurveTo.shape 同款——控制折线
+/// ~13000px）的 flatten 段数不再被旧 clamp(512) 截断——8px 弦偏差 0.29px
+/// 达标（旧 512 段 = 25px 弦 = 2.8px 偏差，弦判定中心 miss 依赖 h2 +0.5
+/// 补偿）。段数 = ceil(13000/8) ≈ 1625 > 512。
+#[test]
+fn test_bezier_giant_curve_segments_over_512() {
+    let mut ctx = CanvasContext::new(100, 50);
+    ctx.begin_path();
+    ctx.move_to(-2000.0, 3100.0);
+    ctx.bezier_curve_to(-2000.0, -1000.0, 2100.0, -1000.0, 2100.0, 3100.0);
+    ctx.fill();
+    let pf = &ctx.primitives().path_fills[0];
+    // 点序列：段数 ≈ 折线长/8 + 闭合段
+    let segs = pf.vertices.len() / 2;
+    assert!(segs > 512, "巨坐标曲线段数应突破旧 clamp 512（实测 {segs} 段）");
+    assert!(segs <= 4096, "段数不超过新 clamp 上限 4096（实测 {segs}）");
+}
+
 /// 测试圆弧填充生成正确的段数。
 #[test]
 fn test_arc_flattening() {

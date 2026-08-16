@@ -762,7 +762,12 @@ impl CanvasContext {
                     // ensuresubpath.2——旧 current_x 在无子路径时仍为 (0,0)，曲线
                     // 从原点错误出发）。
                     let poly = ((cpx - sx0).hypot(cpy - sy0) + (x - cpx).hypot(y - cpy)).max(1.0);
-                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 512);
+                    // R57（M3）：clamp 上限 512 → 4096——巨坐标曲线（bezierCurveTo.
+                    // shape 控制折线 ~13000px）曾被压到 25px 弦（偏差 2.8px，r≈28 弯曲
+                    // 区），弦判定中心 miss 依赖 h2 +0.5 补偿（R56h）。8px 弦偏差
+                    // 0.29px 达标；普通曲线 poly < 4096 段不变（零回归）。弦偏差
+                    // 估计自适应（按偏差收敛而非折线长）留作后续深项。
+                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 4096);
                     let mut px = sx0;
                     let mut py = sy0;
                     for i in 1..=segments {
@@ -796,7 +801,9 @@ impl CanvasContext {
                         + (cp2x - cp1x).hypot(cp2y - cp1y)
                         + (x - cp2x).hypot(y - cp2y))
                     .max(1.0);
-                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 512);
+                    // R57（M3）：clamp 上限 512 → 4096（同 quadratic——巨坐标曲线
+                    // 弦偏差修复，普通曲线零回归）。
+                    let segments = ((poly / 8.0).ceil() as usize).clamp(8, 4096);
                     let mut px = current_x;
                     let mut py = current_y;
                     for i in 1..=segments {
