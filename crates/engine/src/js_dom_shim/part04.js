@@ -1568,6 +1568,29 @@
           if (!_wvSubmittable(sel, handle)) return '';
           var validity = _validityState(key, sel, handle);
           if (validity.customError) return _customValidity[key];
+          // R57（FV M2）：约束位的 Chromium 标准消息（spec §4.10.5.2.3——
+          // validationMessage 的 UA 定义消息；WPT constraints 不断言内容——
+          // 对齐 Chromium 固定串）
+          if (validity.valueMissing) return 'Please fill out this field.';
+          if (validity.typeMismatch) {
+            var _tmTy = '';
+            try { _tmTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) {}
+            if (String(_tmTy).toLowerCase() === 'email') return 'Please enter an email address.';
+            if (String(_tmTy).toLowerCase() === 'url') return 'Please enter a URL.';
+            return 'Please enter a valid value.';
+          }
+          if (validity.patternMismatch) return 'Please match the requested format.';
+          if (validity.rangeOverflow) {
+            var _mx = null;
+            try { _mx = handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max'); } catch (_e) {}
+            return _mx != null && String(_mx) !== '' ? 'Value must be less than or equal to ' + String(_mx) + '.' : 'Please enter a valid value.';
+          }
+          if (validity.rangeUnderflow) {
+            var _mn = null;
+            try { _mn = handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'); } catch (_e) {}
+            return _mn != null && String(_mn) !== '' ? 'Value must be greater than or equal to ' + String(_mn) + '.' : 'Please enter a valid value.';
+          }
+          if (validity.stepMismatch) return 'Please enter a valid value.';
           if (validity.tooShort) return 'Please lengthen this text.';
           if (validity.tooLong) return 'Please shorten this text.';
           return '';
@@ -2227,6 +2250,39 @@
             };
           } else if (prop === 'requestSubmit') {
             return function (submitter) {
+              // R57（FV M2）：interactive validation——requestSubmit 先检查表单
+              // 控件 validity（novalidate 属性 / submitter 的 formnovalidate 跳过
+              // ——spec §4.10.5.4）；invalid 时第一个控件派发 invalid 事件 +
+              // 中止提交（headless 聚焦 no-op）。
+              var _doValidate = true;
+              try {
+                var _nv = handle ? __zw_has_attr_handle(handle, 'novalidate') : __zw_has_attr(sel, 'novalidate');
+                if (_nv === '1') _doValidate = false;
+              } catch (_e) {}
+              if (_doValidate && submitter) {
+                try {
+                  var _fnv = (typeof submitter.getAttribute === 'function') ? submitter.getAttribute('formnovalidate') : null;
+                  if (_fnv != null) _doValidate = false;
+                } catch (_e) {}
+              }
+              if (_doValidate) {
+                var _firstInv = null;
+                try {
+                  var _fcs2 = _formControls(sel);
+                  for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
+                    var _c2 = _fcs2[_ci2];
+                    try {
+                      if (_c2.validity && !_c2.validity.valid) {
+                        if (typeof _c2.dispatchEvent === 'function') {
+                          try { _c2.dispatchEvent(new Event('invalid', { cancelable: true, bubbles: false })); } catch (_e2) {}
+                        }
+                        if (_firstInv == null) _firstInv = _c2;
+                      }
+                    } catch (_e3) {}
+                  }
+                } catch (_e4) {}
+                if (_firstInv != null) return; // 中止提交（interactive validation 失败）
+              }
               // dispatch submit SubmitEvent（cancelable，含 submitter）；headless 无导航（documented）。
               var _sev;
               try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }

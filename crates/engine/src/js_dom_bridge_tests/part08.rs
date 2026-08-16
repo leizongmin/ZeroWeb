@@ -1968,3 +1968,59 @@ fn test_element_get_animations_r3067() {
         "无动画元素 getAnimations() 返空数组"
     );
 }
+
+/// R57（FV M2）：requestSubmit 的 interactive validation——invalid 控件时中止
+/// 提交（invalid 事件派发 + submit 不触发）；novalidate 跳过；valid 时正常派发。
+#[test]
+fn test_request_submit_interactive_validation_fv_m2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='f'><input id='i' required></form></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ① invalid（required 空）→ requestSubmit 中止 + invalid 事件
+    sandbox
+        .execute(
+            "globalThis.__submitted = 0;\
+             document.getElementById('f').addEventListener('submit', function(){ globalThis.__submitted = 1; });\
+             globalThis.__invCount = 0;\
+             document.getElementById('i').addEventListener('invalid', function(){ globalThis.__invCount++; });\
+             document.getElementById('f').requestSubmit();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__submitted)").unwrap().value,
+        "0",
+        "invalid 控件时 requestSubmit 应中止（submit 不触发）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__invCount)").unwrap().value,
+        "1",
+        "invalid 事件应派发 1 次"
+    );
+
+    // ② 填值后 valid → 正常提交
+    sandbox
+        .execute(
+            "document.getElementById('i').value = 'x';\
+             document.getElementById('f').requestSubmit();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__submitted)").unwrap().value,
+        "1",
+        "valid 时 requestSubmit 应触发 submit"
+    );
+}
