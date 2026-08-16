@@ -1,0 +1,43 @@
+{
+  "slice": "R87 — NodeIterator removal 恢复段二次周期 retarget + previousNode before-flip（WPT dom/traversal NodeIterator-removal 簇收口续）",
+  "date": "2026-08-17",
+  "commit": "237a6d7e",
+  "summary": {
+    "dom/traversal": {
+      "before": "1575P/29F（R86 后；removal.html 10P/15F）",
+      "after": "1589P/15F（net +14 pass，removal.html 23P/1F）",
+      "pass_rate": "99.06%"
+    },
+    "regressions": {
+      "dom/nodes": "per-case 逐字节一致（6560P；name-validation 3F/5F 波动为既存 flake，standalone 双态同 5F）",
+      "dom/events": "per-case 逐字节一致（190P/138F/3TO）",
+      "dom/collections": "per-case 逐字节一致（48P/1TO）"
+    },
+    "unit_tests": {
+      "engine_v8": "2183 passed（+2 R87）",
+      "engine_quickjs": "1427 passed"
+    }
+  },
+  "root_causes": [
+    "① 恢复段 insertBefore 不清移除标记——只 appendChild 清，恢复后的节点仍被迭代器当移除跳过（跨子测试树序分叉）",
+    "② detached doc / body / 主 document 缺 insertBefore（removeChild(doctype) 主文档缺方法）——恢复段直接 TypeError 崩子测试",
+    "③ 文本子 removeChild 的 R87 首版 guard 以 child 查注册表恒 miss（注册键是父 el proxy）→ 静默 no-op → 迭代器不 retarget",
+    "④ 元素 remove/restore 周期后注册文本被 _zwUnregisterTextSubtree 注销——二次 remove 时子视图来自物化缓存，guard 须放宽到缓存路径",
+    "⑤ previousNode 的 pointer-before=false 半边直接返 ref 不过 filter——Recursive filters need to throw 断言失效",
+    "⑥ 迭代器注册表容量压实 reg.length=0 全清把在档迭代器一并清掉（大用例中途 retarget 静默丢失）",
+    "⑦ retarget 后继未约束在 root 子树内（spec「first node following... within root」）；主文档 firstChild/lastChild getter 被 R87 编辑误删（A/B 重建二进制捕获的 8F 真回归）"
+  ],
+  "method_notes": [
+    "A/B 对照必须重建二进制（JS shim 嵌入二进制——R79 教训第三次验证：stash 前后同二进制假一致）",
+    "R87 编辑过程引入的 firstChild/lastChild getter 误删由 clean-HEAD 重建对照捕获（766P→758P），同轮修复后 766P 恢复",
+    "standalone 与全量 suite 的 removal.html 结果差异来自跨子测试状态（恢复段把 setup 树逐渐破坏）——probe 必须复现完整前序周期才能定位"
+  ],
+  "remaining": {
+    "dom/traversal_15F": [
+      "TreeWalker-acceptNode-filter-cross-realm 5F + TreeWalker-realm 2F（cross-realm iframe，深结构）",
+      "NodeIterator-removal-during-filtering 2F（filter 内移除 in-flight 位置）",
+      "TreeWalker-currentNode 2F / TreeWalker 1F / walking-outside-a-tree 1F / previousNodeLastChildReject 1F（分散）",
+      "NodeIterator-removal 1F（paras[5].firstChild CDATA 边角）"
+    ]
+  }
+}
