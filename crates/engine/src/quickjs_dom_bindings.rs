@@ -86,6 +86,7 @@ pub fn reset_quickjs_state() {
     CONNECTED_CUSTOM.with(|c| c.borrow_mut().clear());
     ATTR_MAP_OBJECTS.with(|c| c.borrow_mut().clear());
     CLASS_LIST_OBJECTS.with(|c| c.borrow_mut().clear());
+    DATASET_OBJECTS.with(|c| c.borrow_mut().clear());
 }
 
 // ── NodeId ↔ u64(ffi) ↔ f64（JS Number）编解码 ──────────────────────
@@ -375,6 +376,61 @@ pub fn install_dom_bindings_quickjs<'js>(ctx: &Ctx<'js>, dom: Rc<RefCell<Documen
         }
         let _ = ctx.globals().set("__zw_native_customElements", ce);
     }
+
+    // 6. S1q 复合对象（R71）：dataset DOMStringMap。rquickjs 无 V8 named-property-handler
+    //    等价物（Rust 侧不暴露 JS_NewProxy），动态键拦截经 **JS Proxy 胶水**：Rust 原语
+    //    四件（dsGet/dsSet/dsDelete/dsKeys，收 owner ffi + 驼峰键）+ 一次性 JS 工厂脚本
+    //    建 Proxy。dataset_getter 调工厂（缓存保身份，同 R69/R70 模式）。
+    if let Ok(f) = Function::new(ctx.clone(), ds_get_prim) {
+        let _ = ctx.globals().set("__zw_native_ds_get", f);
+    }
+    if let Ok(f) = Function::new(ctx.clone(), ds_set_prim) {
+        let _ = ctx.globals().set("__zw_native_ds_set", f);
+    }
+    if let Ok(f) = Function::new(ctx.clone(), ds_delete_prim) {
+        let _ = ctx.globals().set("__zw_native_ds_delete", f);
+    }
+    if let Ok(f) = Function::new(ctx.clone(), ds_keys_prim) {
+        let _ = ctx.globals().set("__zw_native_ds_keys", f);
+    }
+    // JS Proxy 工厂：__zw_native_ds_make(ownerFfi) → Proxy（get/set/deleteProperty/ownKeys）。
+    // 只拦截 string 键（symbol/原型名 fallthrough target——保对象协议，镜像 V8 reserved 名语义）。
+    let _: rquickjs::Result<rquickjs::Coerced<String>> = ctx.eval(
+        r#"globalThis.__zw_native_ds_make = function (ffi) {
+            var target = {};
+            return new Proxy(target, {
+                get: function (t, k) {
+                    if (typeof k !== 'string') { return t[k]; }
+                    var v = __zw_native_ds_get(ffi, k);
+                    return v === null ? undefined : v;
+                },
+                set: function (t, k, v) {
+                    if (typeof k !== 'string') { t[k] = v; return true; }
+                    __zw_native_ds_set(ffi, k, String(v));
+                    return true;
+                },
+                deleteProperty: function (t, k) {
+                    if (typeof k !== 'string') { return delete t[k]; }
+                    // spec DOMStringMap：miss 删除为 no-op 成功（Proxy invariant 要求
+                    // trap 返 true 否则抛 TypeError——观察语义与 Web 一致）。
+                    __zw_native_ds_delete(ffi, k);
+                    return true;
+                },
+                ownKeys: function (t) {
+                    return __zw_native_ds_keys(ffi);
+                },
+                getOwnPropertyDescriptor: function (t, k) {
+                    if (typeof k !== 'string') { return Object.getOwnPropertyDescriptor(t, k); }
+                    var v = __zw_native_ds_get(ffi, k);
+                    return v === null ? undefined : { value: v, writable: true, enumerable: true, configurable: true };
+                },
+                has: function (t, k) {
+                    if (typeof k !== 'string') { return k in t; }
+                    return __zw_native_ds_get(ffi, k) !== null;
+                }
+            });
+        };"#,
+    );
 }
 
 /// 从 HTML 文本解析 `Document` + 安装 QuickJS 原生绑定（webview 接线封装 parse，
@@ -495,6 +551,8 @@ fn build_element_object<'js>(ctx: &Ctx<'js>, ffi: u64) -> rquickjs::Result<Objec
     obj.prop("attributes", Accessor::from(attributes_getter).configurable())?;
     // S1q 复合对象（R70）：classList DOMTokenList 面（缓存保身份）。
     obj.prop("classList", Accessor::from(class_list_getter).configurable())?;
+    // S1q 复合对象（R71）：dataset DOMStringMap（Proxy 胶水 + 缓存保身份）。
+    obj.prop("dataset", Accessor::from(dataset_getter).configurable())?;
     obj.prop("localName", Accessor::from(local_name_getter).configurable())?;
     obj.prop(
         "textContent",
@@ -861,6 +919,136 @@ fn dtl_to_string_method<'js>(this: This<Object<'js>>) -> String {
         return String::new();
     };
     dtl_current_tokens(id).join(" ")
+}
+
+// ── S1q 复合对象（R71）：`dataset` DOMStringMap ──────────────────────
+//
+// 镜像 V8 dataset.rs（camelCase ↔ `data-`kebab 反射 + named-property 动态键）。
+// QuickJS 侧：Rust 原语四件 + JS Proxy 胶水（见 install 注入的
+// `__zw_native_ds_make` 工厂）+ DATASET_OBJECTS 二级身份缓存（R69 模式三次复用）。
+
+thread_local! {
+    /// owner element ffi → dataset Proxy 身份缓存（spec：`el.dataset === el.dataset`）。
+    static DATASET_OBJECTS: RefCell<HashMap<u64, Persistent<Value<'static>>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// camelCase → `data-`kebab 属性名（`fooBar`→`data-foo-bar`；镜像 V8 prop_to_attr）。
+fn ds_prop_to_attr(prop: &str) -> String {
+    let mut out = String::from("data-");
+    for c in prop.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('-');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `data-`kebab 属性名 → camelCase 键（`data-foo-bar`→`fooBar`；镜像 V8 attr_to_prop）。
+fn ds_attr_to_prop(attr: &str) -> String {
+    let rest = attr.strip_prefix("data-").unwrap_or(attr);
+    let mut out = String::new();
+    let mut up = false;
+    for c in rest.chars() {
+        if c == '-' {
+            up = true;
+        } else if up {
+            out.push(c.to_ascii_uppercase());
+            up = false;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `dataset` getter（spec `dom-dataset`）：返 DOMStringMap Proxy（缓存保身份）。
+fn dataset_getter<'js>(this: This<Object<'js>>, ctx: Ctx<'js>) -> Value<'js> {
+    let Some(id) = node_id_of(&this.0) else {
+        return Value::new_null(ctx);
+    };
+    let ffi = encode_node_id(id);
+    if let Some(hit) = DATASET_OBJECTS.with(|c| c.borrow().get(&ffi).cloned())
+        && let Ok(v) = hit.restore(&ctx)
+    {
+        return v;
+    }
+    // 调 JS Proxy 工厂（install 注入）；非持久/脚本失败 → null。
+    let Ok(make) = ctx.globals().get::<_, Function>("__zw_native_ds_make") else {
+        return Value::new_null(ctx.clone());
+    };
+    let Ok(proxy): Result<Value<'js>, _> = make.call((ffi as f64,)) else {
+        return Value::new_null(ctx.clone());
+    };
+    let v: Value = proxy;
+    DATASET_OBJECTS.with(|c| {
+        c.borrow_mut().insert(ffi, Persistent::save(&ctx, v.clone()));
+    });
+    v
+}
+
+/// 原语 `__zw_native_ds_get(ffi, camelProp)` → 属性值字符串 / null（miss）。
+fn ds_get_prim<'js>(ctx: Ctx<'js>, ffi: f64, prop: rquickjs::Coerced<String>) -> Value<'js> {
+    let node = decode_node_id(ffi as u64);
+    if !node_exists(node) {
+        return Value::new_null(ctx);
+    }
+    match with_dom(|d| d.get_attribute(node, &ds_prop_to_attr(&prop.0))).flatten() {
+        Some(v) => match rquickjs::String::from_str(ctx.clone(), &v) {
+            Ok(s) => s.into_value(),
+            Err(_) => Value::new_null(ctx),
+        },
+        None => Value::new_null(ctx),
+    }
+}
+
+/// 原语 `__zw_native_ds_set(ffi, camelProp, value)`：写 `data-*` 属性（派发 attrChanged）。
+fn ds_set_prim<'js>(ctx: Ctx<'js>, ffi: f64, prop: rquickjs::Coerced<String>, value: rquickjs::Coerced<String>) {
+    let node = decode_node_id(ffi as u64);
+    if !node_exists(node) {
+        return;
+    }
+    let attr = ds_prop_to_attr(&prop.0);
+    let old: Option<String> = with_dom(|d| d.get_attribute(node, &attr)).flatten();
+    with_dom_mut(|d| d.set_attribute(node, &attr, &value.0));
+    dispatch_attribute_changed(&ctx, node, &attr, old.as_deref(), Some(&value.0));
+}
+
+/// 原语 `__zw_native_ds_delete(ffi, camelProp)` → bool（移除 `data-*` 属性）。
+fn ds_delete_prim<'js>(ctx: Ctx<'js>, ffi: f64, prop: rquickjs::Coerced<String>) -> bool {
+    let node = decode_node_id(ffi as u64);
+    if !node_exists(node) {
+        return false;
+    }
+    let attr = ds_prop_to_attr(&prop.0);
+    let old: Option<String> = with_dom(|d| d.get_attribute(node, &attr)).flatten();
+    let Some(old) = old else {
+        return false;
+    };
+    with_dom_mut(|d| d.remove_attribute(node, &attr));
+    dispatch_attribute_changed(&ctx, node, &attr, Some(old.as_str()), None);
+    true
+}
+
+/// 原语 `__zw_native_ds_keys(ffi)` → camelCase 键 Array（owner 全部 `data-*` 属性）。
+fn ds_keys_prim<'js>(ctx: Ctx<'js>, ffi: f64) -> rquickjs::Result<rquickjs::Array<'js>> {
+    let arr = rquickjs::Array::new(ctx.clone())?;
+    let node = decode_node_id(ffi as u64);
+    if !node_exists(node) {
+        return Ok(arr);
+    }
+    let names = with_dom(|d| d.attribute_names(node)).unwrap_or_default();
+    let mut i = 0usize;
+    for name in names {
+        if name.starts_with("data-") {
+            let _ = arr.set(i, ds_attr_to_prop(&name));
+            i += 1;
+        }
+    }
+    Ok(arr)
 }
 
 /// `attributes` getter（spec `dom-element-attributes`）：返 NamedNodeMap 形包装
@@ -2236,6 +2424,42 @@ mod tests {
                 ),
                 "SyntaxError/InvalidCharacterError/false/false",
                 "R70 空 token → SyntaxError；remove 空白 token 同抛；contains 空/空白不抛返 false（spec 例外）"
+            );
+            // R71 dataset DOMStringMap：身份缓存 + 驼峰↔kebab 反射 + 读写删/枚举/has +
+            // 元素属性侧一致性。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__dsEl = __zw_native_create_element('section');\
+                     __dsEl.dataset === __dsEl.dataset"
+                ),
+                "true",
+                "R71 身份缓存：el.dataset === el.dataset"
+            );
+            assert_eq!(
+                eval_str(
+                    "globalThis.__ds = __dsEl.dataset;\
+                     __ds.fooBar = 'hello';\
+                     [__ds.fooBar, __dsEl.getAttribute('data-foo-bar')].join(',')"
+                ),
+                "hello,hello",
+                "R71 写：camelCase 键 → data-kebab 属性（元素侧可见）"
+            );
+            assert_eq!(
+                eval_str(
+                    "__dsEl.setAttribute('data-x-y-z', 'w');\
+                     [__ds.xYZ, __ds['x-y-z'], Object.keys(__ds).join('|'), 'fooBar' in __ds, 'nope' in __ds].join(',')"
+                ),
+                "w,w,fooBar|xYZ,true,false",
+                "R71 读回：kebab 属性 → camelCase 键（xYZ）+ kebab 直访经 prop_to_attr 恒等往返（x-y-z→data-x-y-z 同属性）+ ownKeys 枚举 + has"
+            );
+            assert_eq!(
+                eval_str(
+                    "(delete __ds.fooBar) + ',' + (__ds.fooBar === undefined) + ',' +\
+                     (__dsEl.hasAttribute('data-foo-bar')) + ',' +\
+                     (delete __ds.nope) + ',' + __dsEl.getAttribute('data-x-y-z')"
+                ),
+                "true,true,false,true,w",
+                "R71 删除：camel 键删 data 属性（元素侧同步）+ miss 删 no-op 成功（spec DOMStringMap 语义，Proxy invariant）+ 其余属性保持"
             );
 
             // S5q customElements：define/get/getName + create 命中 upgrade（原型挂载）+
