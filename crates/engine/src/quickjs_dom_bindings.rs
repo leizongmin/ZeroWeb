@@ -573,23 +573,31 @@ fn set_attribute_method<'js>(
     name: rquickjs::Coerced<String>,
     value: rquickjs::Coerced<String>,
 ) {
+    // R68：old value 写前捕获（spec attributeChangedCallback(name, old, new)——old 为
+    // 变更前值，缺失 → None → JS null）。
+    let old: Option<String> = node_id_of(&this.0).and_then(|id| with_dom(|d| d.get_attribute(id, &name.0)).flatten());
     set_reflected_attr(&this.0, &name.0, &value.0);
-    // S5q 深化（R65）：attributeChangedCallback——custom 元素（registry 命中 + 连接态
-    // 无关，spec 属性变更即派发）经 setAttribute 变更时派发。observedAttributes 过滤
-    // 简化：PoC 不过滤（全部派发——真过滤需 ctor.observedAttributes() 求值，后续切片）。
-    // old value 捕获在 set 之前（spec attributeChangedCallback(name, old, new)）。
+    // S5q 深化（R65）+ R68 完整化：attributeChangedCallback——custom 元素（registry
+    // 命中）经 setAttribute 变更时派发；observedAttributes 过滤 + oldValue 在
+    // dispatch_attribute_changed 内做。
     if let Some(id) = node_id_of(&this.0) {
-        dispatch_attribute_changed(&ctx, id, &name.0, &value.0);
+        dispatch_attribute_changed(&ctx, id, &name.0, old.as_deref(), Some(&value.0));
     }
 }
 
 /// `removeAttribute(name)`（spec `dom-element-removeattribute`）：真移除
 ///（区别 set 空串——布尔属性 unset 语义；镜像 V8 RemoveAttr OnHandle 修正）。
-fn remove_attribute_method<'js>(this: This<Object<'js>>, name: rquickjs::Coerced<String>) {
+fn remove_attribute_method<'js>(this: This<Object<'js>>, ctx: Ctx<'js>, name: rquickjs::Coerced<String>) {
     let Some(id) = node_id_of(&this.0) else {
         return;
     };
+    // R68：removeAttribute 也派发 attributeChangedCallback（spec 属性变更含移除，
+    // newValue = null）。缺失属性 no-op 不派发（spec 仅已存在属性的移除才是变更）。
+    let old: Option<String> = with_dom(|d| d.get_attribute(id, &name.0)).flatten();
     with_dom_mut(|d| d.remove_attribute(id, &name.0));
+    if let Some(old) = old {
+        dispatch_attribute_changed(&ctx, id, &name.0, Some(old.as_str()), None);
+    }
 }
 
 /// `hasAttribute(name)`（spec `dom-element-hasattribute`）。
@@ -1352,12 +1360,13 @@ fn dispatch_ce_lifecycle<'js>(ctx: &Ctx<'js>, id: NodeId, callback: &str) {
     let _: rquickjs::Result<rquickjs::Value> = args.apply(&cb);
 }
 
-/// setAttribute 后派发 attributeChangedCallback(name, oldValue, newValue)（spec
+/// 属性变更后派发 attributeChangedCallback(name, oldValue, newValue)（spec
 /// `dom-customelementregistry` attributeChangedCallback；this = native 元素）。
-/// 仅 registry 命中的 custom 元素派发；回调缺失静默；oldValue 需调用方在写前捕获
-///（本函数签名收 old——setAttribute 路径在 set_reflected_attr 前捕获）。
-#[allow(clippy::too_many_arguments)]
-fn dispatch_attribute_changed<'js>(ctx: &Ctx<'js>, id: NodeId, name: &str, new_value: &str) {
+/// 仅 registry 命中的 custom 元素派发；**observedAttributes 过滤（R68）**——ctor 的
+/// `observedAttributes`（数组/getter，一次性求值）不含 name 则不派发（spec：仅 observed
+/// 属性触发）；回调缺失静默。`old`/`new_value` 由调用方给（setAttribute 写前捕获 old、
+/// removeAttribute 传 old + new=None → newValue null）。
+fn dispatch_attribute_changed<'js>(ctx: &Ctx<'js>, id: NodeId, name: &str, old: Option<&str>, new_value: Option<&str>) {
     let tag = with_dom(|d| {
         d.get(id).and_then(|n| match &n.kind {
             NodeKind::Element(e) => Some(e.local_name().to_ascii_lowercase()),
@@ -1377,23 +1386,47 @@ fn dispatch_attribute_changed<'js>(ctx: &Ctx<'js>, id: NodeId, name: &str, new_v
     let Some(ctor_obj) = ctor.as_object() else {
         return;
     };
+    // R68 observedAttributes 过滤（spec `dom-customelementregistry-observedattributes`）：
+    // ctor.observedAttributes 求值（静态数组属性或 getter 均可——get 泛型调用），缺失
+    // 或非数组 → 不过滤（PoC 宽松：无声明视为全观察，保持 R65 行为兼容）；命中数组则
+    // 仅 name ∈ 数组（字符串比较）时派发。
+    if let Ok(observed) = ctor_obj.get::<_, rquickjs::Array>("observedAttributes") {
+        let mut hit = false;
+        for i in 0..observed.len() {
+            if let Ok(s) = observed.get::<String>(i)
+                && s == name
+            {
+                hit = true;
+                break;
+            }
+        }
+        if !hit {
+            return;
+        }
+    }
     let Ok(proto) = ctor_obj.get::<_, Object>("prototype") else {
         return;
     };
     let Ok(cb) = proto.get::<_, rquickjs::Function>("attributeChangedCallback") else {
         return;
     };
-    // oldValue：当前（已写入后的）值即本次新值；old 需写前捕获——本函数被 set 后调，
-    // 简化以 null 作 old（spec 需要 old；写前捕获需 set_attribute_method 重排，下小节修）。
     let target = get_or_build_node_value(ctx, id);
     let Some(target_obj) = target.as_object().cloned() else {
         return;
     };
+    let old_v: Value = old
+        .and_then(|s| rquickjs::String::from_str(ctx.clone(), s).ok())
+        .map(Value::from)
+        .unwrap_or_else(|| Value::new_null(ctx.clone()));
+    let new_v: Value = new_value
+        .and_then(|s| rquickjs::String::from_str(ctx.clone(), s).ok())
+        .map(Value::from)
+        .unwrap_or_else(|| Value::new_null(ctx.clone()));
     let mut args = rquickjs::function::Args::new(ctx.clone(), 3);
     let _ = args.this(target_obj);
     let _ = args.push_arg(name.to_string());
-    let _ = args.push_arg(rquickjs::Value::new_null(ctx.clone()));
-    let _ = args.push_arg(new_value.to_string());
+    let _ = args.push_arg(old_v);
+    let _ = args.push_arg(new_v);
     let _: rquickjs::Result<rquickjs::Value> = args.apply(&cb);
 }
 
@@ -1781,6 +1814,32 @@ mod tests {
                 ),
                 "conn:MY-EL|attr:data-k:v1",
                 "setAttribute → attributeChangedCallback（前缀 conn 来自 append 连入派发——ceLog 序贯）"
+            );
+            // R68：oldValue 写前捕获（二次 set 传旧值）+ removeAttribute 派发（new=null）
+            // + observedAttributes 过滤（不命中不派发）。
+            assert_eq!(
+                eval_str(
+                    "globalThis.__attrR68 = [];\
+                     __MyEl.prototype.attributeChangedCallback = function (n, o, v) {\
+                         __attrR68.push(n + ':' + (o === null ? 'null' : o) + ':' + (v === null ? 'null' : v));\
+                     };\
+                     __myEl.setAttribute('data-k', 'v2');\
+                     __myEl.setAttribute('data-k', 'v2');\
+                     __myEl.removeAttribute('data-k');\
+                     __myEl.removeAttribute('data-k'), __attrR68.join('|')"
+                ),
+                "data-k:v1:v2|data-k:v2:v2|data-k:v2:null",
+                "R68：oldValue 写前捕获（v1→v2）+ 同值 set 仍派发（spec 无值变化短路）+ removeAttribute new=null + 缺失 remove 不派发"
+            );
+            assert_eq!(
+                eval_str(
+                    "__attrR68.length = 0;\
+                     __MyEl.observedAttributes = ['data-obs'];\
+                     __myEl.setAttribute('data-skip', 'x');\
+                     __myEl.setAttribute('data-obs', 'y'), __attrR68.join('|')"
+                ),
+                "data-obs:null:y",
+                "R68 observedAttributes 过滤：不命中（data-skip）不派发，命中（data-obs）才派发（old=null 首次）"
             );
             // lifecycle：append 到 document 链 → connectedCallback；remove → disconnected。
             assert_eq!(
