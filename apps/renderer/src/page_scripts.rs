@@ -687,6 +687,9 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
     // `setTimeout` / fetch 等宿主完成会先投递到 worker 的命令队列；只有进入一次
     // worker 执行边界时，回调才会在页面全局运行并记录 DOM mutation。
     // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
+    if !ctx.js_worker.take_pending_async_callbacks() {
+        return false;
+    }
     let _ = ctx.js_worker.execute_script_direct("");
     let html_snapshot = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snapshot).is_some()
@@ -911,6 +914,13 @@ mod tests {
             webview: Some(&mut webview),
         };
 
+        // 空闲 drain 不得为探测异步任务而进入 JS worker；否则 renderer 会以主循环频率
+        // 反复编译空脚本并引发 V8 堆增长。
+        for _ in 0..16 {
+            assert!(!drain_pending_dom_mutations(&mut ctx));
+        }
+        assert_eq!(worker.execution_count_for_test(), 0);
+
         worker
             .execute_script_direct(
                 "setTimeout(function() { document.querySelector('#score').innerHTML = '<strong>265</strong>'; }, 10);",
@@ -920,6 +930,7 @@ mod tests {
         // must enter the worker once to execute it.
         std::thread::sleep(std::time::Duration::from_millis(25));
         assert!(drain_pending_dom_mutations(&mut ctx));
+        assert_eq!(worker.execution_count_for_test(), 2);
         assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
         assert!(
             ctx.webview

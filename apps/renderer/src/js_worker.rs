@@ -2,6 +2,9 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -95,6 +98,10 @@ pub struct RendererJsWorker {
     /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列——`apply_recorded_mutations` 从 mutations
     /// 分离后 push（主线程），renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
+    /// 已由 JS worker resolve、等待 renderer 执行 microtask checkpoint 的异步回调。
+    async_callbacks_ready: Arc<AtomicBool>,
+    #[cfg(test)]
+    execution_count: Arc<AtomicU64>,
 }
 
 impl RendererJsWorker {
@@ -111,6 +118,9 @@ impl RendererJsWorker {
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        let async_callbacks_ready = Arc::new(AtomicBool::new(false));
+        #[cfg(test)]
+        let execution_count = Arc::new(AtomicU64::new(0));
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -119,6 +129,9 @@ impl RendererJsWorker {
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
         let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
         let element_from_point_cache_for_worker = Arc::clone(&element_from_point_cache);
+        let async_callbacks_ready_for_worker = Arc::clone(&async_callbacks_ready);
+        #[cfg(test)]
+        let execution_count_for_worker = Arc::clone(&execution_count);
 
         let join = thread::Builder::new()
             .name(format!("renderer-js-{}", renderer_id))
@@ -132,6 +145,9 @@ impl RendererJsWorker {
                     element_from_point_cache_for_worker,
                     font_bridge,
                     nav_bridge,
+                    async_callbacks_ready_for_worker,
+                    #[cfg(test)]
+                    execution_count_for_worker,
                 )
             })
             .expect("spawn renderer js worker");
@@ -176,6 +192,9 @@ impl RendererJsWorker {
             font_loads,
             navigations,
             focus_changes,
+            async_callbacks_ready,
+            #[cfg(test)]
+            execution_count,
         }
     }
 
@@ -220,6 +239,7 @@ impl RendererJsWorker {
         if let Ok(mut focus_changes) = self.focus_changes.lock() {
             focus_changes.clear();
         }
+        self.async_callbacks_ready.store(false, Ordering::Release);
         let (reply_tx, reply_rx) = mpsc::channel();
         if self
             .cmd_tx
@@ -285,6 +305,19 @@ impl RendererJsWorker {
         })
     }
 
+    /// 领取一次已就绪异步回调的 microtask checkpoint 执行机会。
+    ///
+    /// JS worker 仅在实际处理 `ResolveAsyncCallback` 后置位，避免 renderer 在空闲时反复
+    /// 编译空脚本。worker 串行执行命令，因此 checkpoint 执行期间新处理的回调会重新置位。
+    pub fn take_pending_async_callbacks(&self) -> bool {
+        self.async_callbacks_ready.swap(false, Ordering::AcqRel)
+    }
+
+    #[cfg(test)]
+    pub fn execution_count_for_test(&self) -> u64 {
+        self.execution_count.load(Ordering::Acquire)
+    }
+
     /// P1b S3：注入 fetch handler（renderer 在 WebView 初始化后调用；测试用合成实现）。
     /// `__zw_fetch` 回调读此 handler 抓取后 resolve Promise。
     pub fn set_fetch_handler(&self, handler: FetchHandler) {
@@ -316,6 +349,8 @@ fn js_worker_main(
     element_from_point_cache: ElementFromPointCache,
     font_bridge: zero_engine::FontLoadBridge,
     nav_bridge: zero_engine::NavigationBridge,
+    async_callbacks_ready: Arc<AtomicBool>,
+    #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
     let js_config = SandboxConfig {
         persistent_context: true,
@@ -386,6 +421,8 @@ fn js_worker_main(
     while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
             JsWorkerCommand::Execute { script, reply } => {
+                #[cfg(test)]
+                execution_count.fetch_add(1, Ordering::Relaxed);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
                 let result = sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string());
                 let _ = reply.send(result);
@@ -424,6 +461,7 @@ fn js_worker_main(
                 // P1b S1：跨线程 marshal 到此——在 JS worker 线程调 resolve_async_callback
                 // （执行 shim 的 __zwResolveCallback resolve Promise）。
                 sandbox.resolve_async_callback(&id, &result);
+                async_callbacks_ready.store(true, Ordering::Release);
             }
             JsWorkerCommand::SetFetchHandler { handler } => {
                 // P1b S3：注入 fetch handler（renderer 在 WebView 初始化后发送）。
@@ -440,6 +478,7 @@ fn js_worker_main(
                 if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
                     tracing::error!("JS DOM shim reinit failed after document reset: {e}");
                 }
+                async_callbacks_ready.store(false, Ordering::Release);
                 let _ = reply.send(());
             }
             JsWorkerCommand::Shutdown => break,
@@ -756,6 +795,25 @@ mod tests {
             worker.execute_script_direct("globalThis.__result").unwrap(),
             "delivered!"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_marks_resolved_async_callbacks_for_renderer_drain() {
+        let mut worker = RendererJsWorker::spawn(2);
+        assert!(!worker.take_pending_async_callbacks());
+
+        worker.async_resolver().resolve("unknown-id", "value");
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !worker.take_pending_async_callbacks() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        assert!(
+            std::time::Instant::now() < deadline,
+            "resolved callback should wake the renderer drain"
+        );
+        assert!(!worker.take_pending_async_callbacks(), "wake is consumed once");
         worker.shutdown();
     }
 
