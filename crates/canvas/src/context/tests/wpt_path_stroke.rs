@@ -161,3 +161,19 @@ fn test_wpt_is_point_in_stroke_scaleddashes() {
         "2.04 rad 超出 dash 开段"
     );
 }
+
+/// R56h（M3）：CanvasFilter dropShadow 渲染——shadow 机制（offset+blur+floodColor）。
+#[test]
+fn test_filter_drop_shadow_renders() {
+    let mut ctx = CanvasContext::new(100, 60);
+    ctx.set_filter_drop_shadow(Some((5.0, 5.0, 0.0, Color::rgba(0, 0, 0, 255))));
+    ctx.set_fill_color(Color::RED);
+    ctx.fill_rect(10.0, 10.0, 10.0, 10.0);
+    // 阴影在源矩形外 (21,15)（源 x∈[10,20] + offset (5,5)）——黑色。
+    let p = ctx.get_image_data(21, 15, 1, 1);
+    assert_eq!(p.data[0], 0, "阴影 R=0");
+    assert_eq!(p.data[3], 255, "阴影 A=255");
+    // 源矩形本身仍画红。
+    let src = ctx.get_image_data(10, 10, 1, 1);
+    assert_eq!(src.data[0], 255, "源 R=255");
+}

@@ -1051,6 +1051,7 @@
     if (typeof __zw_canvas_op !== 'function') return;
     var inputs = filterObj._inputs || [];
     var m = null;
+    var ds = '';
     for (var i = 0; i < inputs.length; i++) {
       var d = inputs[i];
       if (!d || typeof d !== 'object') continue;
@@ -1058,8 +1059,20 @@
         m = _zwColorMatrix(d);
         break;
       }
+      // R56h（M3）：dropShadow 渲染——dx/dy/stdDeviation/floodColor/floodOpacity →
+      // host shadow 机制（2d.filter.canvasFilterObject.dropShadow 的 fillRect 阴影）。
+      if (String(d.name) === 'dropShadow') {
+        var dx = isFinite(+d.dx) ? +d.dx : 0;
+        var dy = isFinite(+d.dy) ? +d.dy : 0;
+        var sd = d.stdDeviation == null ? 0 : (Array.isArray(d.stdDeviation) ? +d.stdDeviation[0] : +d.stdDeviation);
+        if (!isFinite(sd)) sd = 0;
+        var fc = d.floodColor == null ? 'black' : String(d.floodColor);
+        var fo = isFinite(+d.floodOpacity) ? +d.floodOpacity : 1;
+        ds = [dx, dy, Math.abs(sd), fc, fo].join('\x1f');
+      }
     }
     __zw_canvas_op(ctx._handle, 'setFilterMatrix', m ? m.join(',') : '');
+    __zw_canvas_op(ctx._handle, 'setFilterDropShadow', ds);
   }
   function _zwColorMatrix(d) {
     var type = d.type == null ? 'matrix' : String(d.type);

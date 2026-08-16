@@ -1064,6 +1064,7 @@ pub(crate) struct CanvasState {
     pub(crate) shadow_blur: f32,
     pub(crate) shadow_offset_x: f32,
     pub(crate) shadow_offset_y: f32,
+    pub(crate) filter_drop_shadow: Option<(f32, f32, f32, Color)>,
     pub(crate) line_dash: Vec<f32>,
     pub(crate) line_dash_offset: f32,
     pub(crate) line_join: LineJoin,
@@ -1097,6 +1098,9 @@ pub struct CanvasContext {
     pub(crate) pixel_buffer_f32: Vec<f32>,
     /// colorMatrix 滤镜矩阵（20 值——ctx.filter 的 CanvasFilter colorMatrix）。
     pub(crate) filter_matrix: Option<[f32; 20]>,
+    /// R56h：CanvasFilter dropShadow（dx, dy, blur, floodColor）——渲染走 shadow
+    /// 机制（offset+blur+color），非 filter_matrix 的逐源色变换。
+    pub(crate) filter_drop_shadow: Option<(f32, f32, f32, Color)>,
     /// float16 画布 fillStyle 的精确浮点颜色（u8 量化前——越界值 1.2249 等）。
     pub(crate) fill_color_f32: Option<[f32; 4]>,
     /// 画布宽度。

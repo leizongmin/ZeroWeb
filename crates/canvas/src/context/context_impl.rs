@@ -38,6 +38,7 @@ impl CanvasContext {
             shadow_blur: 0.0,
             shadow_offset_x: 0.0,
             shadow_offset_y: 0.0,
+            filter_drop_shadow: None,
             line_dash: Vec::new(),
             line_dash_offset: 0.0,
             line_join: LineJoin::default(),
@@ -440,12 +441,8 @@ impl CanvasContext {
                     // R34xx：文本阴影（2d.color.space.p3.fillText.shadow——shadowColor
                     // + offset + blur 的 glyph 位图先画，再画正文）。
                     if self.has_shadow() {
-                        self.blit_glyph_bitmap(
-                            &bmp,
-                            gx + self.shadow_offset_x,
-                            gy + self.shadow_offset_y,
-                            self.shadow_color,
-                        );
+                        let (s_ox, s_oy, _s_blur, s_color) = self.shadow_geom();
+                        self.blit_glyph_bitmap(&bmp, gx + s_ox, gy + s_oy, s_color);
                     }
                     self.blit_glyph_bitmap(&bmp, gx, gy, color);
                 }
@@ -1046,6 +1043,7 @@ impl CanvasContext {
             shadow_blur: self.shadow_blur,
             shadow_offset_x: self.shadow_offset_x,
             shadow_offset_y: self.shadow_offset_y,
+            filter_drop_shadow: self.filter_drop_shadow,
             line_dash: self.line_dash.clone(),
             line_dash_offset: self.line_dash_offset,
             line_join: self.line_join,
@@ -1074,6 +1072,7 @@ impl CanvasContext {
             self.shadow_blur = state.shadow_blur;
             self.shadow_offset_x = state.shadow_offset_x;
             self.shadow_offset_y = state.shadow_offset_y;
+            self.filter_drop_shadow = state.filter_drop_shadow;
             self.line_dash = state.line_dash;
             self.line_dash_offset = state.line_dash_offset;
             self.line_join = state.line_join;
@@ -2196,15 +2195,36 @@ impl CanvasContext {
     }
 
     fn has_shadow(&self) -> bool {
-        self.shadow_color.a > 0
-            && (self.shadow_blur > 0.0 || self.shadow_offset_x != 0.0 || self.shadow_offset_y != 0.0)
+        self.filter_drop_shadow.is_some()
+            || (self.shadow_color.a > 0
+                && (self.shadow_blur > 0.0 || self.shadow_offset_x != 0.0 || self.shadow_offset_y != 0.0))
+    }
+
+    /// R56h：生效阴影几何——CanvasFilter dropShadow（若设）覆盖 ctx.shadow* 属性
+    ///（spec：filter 的 dropShadow 与 shadow* 属性互斥，filter 优先）。
+    fn shadow_geom(&self) -> (f32, f32, f32, Color) {
+        match self.filter_drop_shadow {
+            Some((dx, dy, blur, color)) => (dx, dy, blur, color),
+            None => (
+                self.shadow_offset_x,
+                self.shadow_offset_y,
+                self.shadow_blur,
+                self.shadow_color,
+            ),
+        }
+    }
+
+    /// R56h：设置 CanvasFilter dropShadow（dx, dy, blur, floodColor）——None 清除。
+    pub fn set_filter_drop_shadow(&mut self, s: Option<(f32, f32, f32, Color)>) {
+        self.filter_drop_shadow = s;
     }
 
     /// R3240：为矩形绘制阴影——region alpha mask（矩形覆盖）+ box blur（shadowBlur）+ 经
     /// composite_shadow_mask 合成（消费 globalCompositeOperation，与 fill/stroke 一致）。
     /// 旧实现仅画偏移硬边矩形、alpha 按 `1/(1+blur·0.1)` 衰减（无 blur）。
     fn draw_shadow_rect(&mut self, rect: &Rect, style: &CanvasStyle) {
-        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        let (geom_ox, geom_oy, geom_blur, geom_color) = self.shadow_geom();
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(geom_blur);
         let cw = self.width as i32;
         let ch = self.height as i32;
         // R34xx：region 用 rect 原始坐标（不提前钳到画布）——画布外矩形（如 y=-50..0）若
@@ -2219,10 +2239,10 @@ impl CanvasContext {
         // R34xx：region 裁剪到阴影可见范围（画布 − offset）——阴影只可能在 offset 后落入
         // 画布的区域出现；旧实现不裁剪 + mask 封顶（4×画布）会截断画布外大偏移阴影
         //（2d.shadow.stroke.join.2：offsetX=100 的阴影 y∈[-200,50] 被 4×50=200 封顶截断）。
-        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
-        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
-        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
-        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let vis_x0 = (-geom_ox).floor() as i32;
+        let vis_y0 = (-geom_oy).floor() as i32;
+        let vis_x1 = (self.width as f32 - geom_ox).ceil() as i32;
+        let vis_y1 = (self.height as f32 - geom_oy).ceil() as i32;
         let rx0 = rx0.max(vis_x0);
         let ry0 = ry0.max(vis_y0);
         let rx1 = rx1.min(vis_x1);
@@ -2259,9 +2279,9 @@ impl CanvasContext {
             ry0,
             rw,
             rh,
-            self.shadow_offset_x,
-            self.shadow_offset_y,
-            self.shadow_color,
+            geom_ox,
+            geom_oy,
+            geom_color,
             self.global_alpha,
             1.0, // mask 已逐像素乘形状 alpha（R34xx）
         );
@@ -2326,7 +2346,8 @@ impl CanvasContext {
         if img_w == 0 || img_h == 0 || sw <= 0.0 || sh <= 0.0 || dw <= 0.0 || dh <= 0.0 {
             return;
         }
-        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        let (geom_ox, geom_oy, geom_blur, geom_color) = self.shadow_geom();
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(geom_blur);
         // 变换后目标矩形的 device bbox（旋转/非轴对齐四边形取角点包围盒）。
         let corners = [
             self.transform.transform_point(dx, dy),
@@ -2347,10 +2368,10 @@ impl CanvasContext {
         let ry0 = (t.floor() as i32).saturating_sub(pad);
         let rx1 = (rr.ceil() as i32).saturating_add(pad);
         let ry1 = (bb.ceil() as i32).saturating_add(pad);
-        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
-        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
-        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
-        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let vis_x0 = (-geom_ox).floor() as i32;
+        let vis_y0 = (-geom_oy).floor() as i32;
+        let vis_x1 = (self.width as f32 - geom_ox).ceil() as i32;
+        let vis_y1 = (self.height as f32 - geom_oy).ceil() as i32;
         let rx0 = rx0.max(vis_x0);
         let ry0 = ry0.max(vis_y0);
         let rx1 = rx1.min(vis_x1);
@@ -2405,9 +2426,9 @@ impl CanvasContext {
             ry0,
             rw,
             rh,
-            self.shadow_offset_x,
-            self.shadow_offset_y,
-            self.shadow_color,
+            geom_ox,
+            geom_oy,
+            geom_color,
             self.global_alpha,
             1.0, // mask 已逐像素乘形状 alpha（源 alpha 直接作 mask 值）
         );
@@ -2418,7 +2439,8 @@ impl CanvasContext {
         if vertices.len() < 4 {
             return;
         }
-        let (radius, pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        let (geom_ox, geom_oy, geom_blur, geom_color) = self.shadow_geom();
+        let (radius, pad, passes) = super::raster::shadow_blur_geom(geom_blur);
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -2443,10 +2465,10 @@ impl CanvasContext {
         // 下 mask 封顶到 4×画布（如 201×201）+ 朴素 box_blur O(w·h·r) → 单测 33s、
         // macos-x86_64 CI 120s 超时（test_shadow_path_huge_blur_no_overflow_panic_r3355）。
         // 裁剪后 mask ≈ 画布尺寸，耗时降 ~16×，渲染结果不变（composite_shadow_mask 钳位兜底）。
-        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
-        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
-        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
-        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let vis_x0 = (-geom_ox).floor() as i32;
+        let vis_y0 = (-geom_oy).floor() as i32;
+        let vis_x1 = (self.width as f32 - geom_ox).ceil() as i32;
+        let vis_y1 = (self.height as f32 - geom_oy).ceil() as i32;
         let rx0 = rx0.max(vis_x0);
         let ry0 = ry0.max(vis_y0);
         let rx1 = rx1.min(vis_x1);
@@ -2470,9 +2492,9 @@ impl CanvasContext {
             ry0,
             rw,
             rh,
-            self.shadow_offset_x,
-            self.shadow_offset_y,
-            self.shadow_color,
+            geom_ox,
+            geom_oy,
+            geom_color,
             self.global_alpha,
             shape_alpha,
         );
@@ -2489,7 +2511,8 @@ impl CanvasContext {
             return;
         }
         let half_lw = line_width / 2.0;
-        let (radius, blur_pad, passes) = super::raster::shadow_blur_geom(self.shadow_blur);
+        let (geom_ox, geom_oy, geom_blur, geom_color) = self.shadow_geom();
+        let (radius, blur_pad, passes) = super::raster::shadow_blur_geom(geom_blur);
         let pad = blur_pad as f32 + half_lw;
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
@@ -2510,10 +2533,10 @@ impl CanvasContext {
         let rx1 = (max_x + pad).ceil() as i32;
         let ry1 = (max_y + pad).ceil() as i32;
         // R34xx：region 裁剪到阴影可见范围（同 draw_shadow_rect）。
-        let vis_x0 = (-self.shadow_offset_x).floor() as i32;
-        let vis_y0 = (-self.shadow_offset_y).floor() as i32;
-        let vis_x1 = (self.width as f32 - self.shadow_offset_x).ceil() as i32;
-        let vis_y1 = (self.height as f32 - self.shadow_offset_y).ceil() as i32;
+        let vis_x0 = (-geom_ox).floor() as i32;
+        let vis_y0 = (-geom_oy).floor() as i32;
+        let vis_x1 = (self.width as f32 - geom_ox).ceil() as i32;
+        let vis_y1 = (self.height as f32 - geom_oy).ceil() as i32;
         let rx0 = rx0.max(vis_x0);
         let ry0 = ry0.max(vis_y0);
         let rx1 = rx1.min(vis_x1);
@@ -2678,9 +2701,9 @@ impl CanvasContext {
             ry0,
             rw,
             rh,
-            self.shadow_offset_x,
-            self.shadow_offset_y,
-            self.shadow_color,
+            geom_ox,
+            geom_oy,
+            geom_color,
             self.global_alpha,
             shape_alpha,
         );
