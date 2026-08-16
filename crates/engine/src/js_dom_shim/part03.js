@@ -1790,11 +1790,37 @@
     return depth !== 0;
   }
   function _isValidDateString(v, ty) {
-    if (ty === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v);
-    if (ty === 'month') return /^\d{4}-\d{2}$/.test(v);
-    if (ty === 'week') return /^\d{4}-W\d{2}$/.test(v);
-    if (ty === 'time') return /^\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v);
-    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v);
+    // R57（FV M1）：范围校验（月/日/时/周）——"9999-99-99"（月 99）无效；
+    // 年 4+ 位（10000 年合法）；datetime-local 接受 T 或空格分隔。
+    var y, mo, d;
+    if (ty === 'date' || ty === 'datetime-local') {
+      var sep = ty === 'date' ? '' : '(?:T| )';
+      var m = v.match(new RegExp('^(\\d{4,})-(\\d{2})-(\\d{2})' + sep + '(\\d{2}):(\\d{2})(?::(\\d{2})(\\.\\d+)?)?$'));
+      if (!m) return false;
+      y = +m[1]; mo = +m[2]; d = +m[3];
+      if (ty === 'datetime-local') {
+        if (+m[4] > 23 || +m[5] > 59 || (+m[6] || 0) > 59) return false;
+      }
+    } else if (ty === 'month') {
+      var m2 = v.match(/^(\d{4,})-(\d{2})$/);
+      if (!m2) return false;
+      y = +m2[1]; mo = +m2[2]; d = 1;
+    } else if (ty === 'week') {
+      var mw = v.match(/^(\d{4,})-W(\d{2})$/);
+      if (!mw) return false;
+      var wk = +mw[2];
+      return wk >= 1 && wk <= 53;
+    } else if (ty === 'time') {
+      var m3 = v.match(/^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?$/);
+      if (!m3) return false;
+      return +m3[1] <= 23 && +m3[2] <= 59 && (+m3[3] || 0) <= 59;
+    } else {
+      return false;
+    }
+    if (mo < 1 || mo > 12 || d < 1) return false;
+    var dim = [31, (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 29 : 28,
+               31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return d <= dim[mo - 1];
   }
   function _isTextControl(sel, handle) {
     var tag = _realTag(sel, handle);
