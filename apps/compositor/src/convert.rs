@@ -74,6 +74,10 @@ fn ipc_interpolation_to_interpolation(i: IpcGradientInterpolation) -> GradientIn
         IpcGradientColorSpace::Oklab => GradientColorSpace::Oklab,
         IpcGradientColorSpace::Lch => GradientColorSpace::Lch,
         IpcGradientColorSpace::Oklch => GradientColorSpace::Oklch,
+        IpcGradientColorSpace::Hsl => GradientColorSpace::Hsl,
+        IpcGradientColorSpace::Hwb => GradientColorSpace::Hwb,
+        IpcGradientColorSpace::Xyz => GradientColorSpace::Xyz,
+        IpcGradientColorSpace::ProphotoRgb => GradientColorSpace::ProphotoRgb,
     };
     let hue = match i.hue {
         IpcHueMethod::Shorter => HueMethod::Shorter,

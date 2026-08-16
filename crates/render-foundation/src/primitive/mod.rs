@@ -185,6 +185,14 @@ pub enum GradientColorSpace {
     Lch,
     /// OKLCH（`in oklch`，极坐标，需色相插值法）。
     Oklch,
+    /// HSL（`in hsl`，极坐标，需色相插值法）。
+    Hsl,
+    /// HWB（`in hwb`，极坐标，需色相插值法）。
+    Hwb,
+    /// XYZ（D65，`in xyz`——CSS 默认 xyz-d65）。
+    Xyz,
+    /// ProPhoto RGB（D50，`in prophoto-rgb`）。
+    ProphotoRgb,
 }
 
 /// 极坐标色彩空间（LCH/OKLCH）的色相插值法（CSS Color 4 §13.5）。

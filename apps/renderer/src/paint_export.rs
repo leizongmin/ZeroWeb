@@ -308,6 +308,10 @@ pub fn paint_snapshot_from_primitives(
                         GradientColorSpace::Oklab => IpcGradientColorSpace::Oklab,
                         GradientColorSpace::Lch => IpcGradientColorSpace::Lch,
                         GradientColorSpace::Oklch => IpcGradientColorSpace::Oklch,
+                        GradientColorSpace::Hsl => IpcGradientColorSpace::Hsl,
+                        GradientColorSpace::Hwb => IpcGradientColorSpace::Hwb,
+                        GradientColorSpace::Xyz => IpcGradientColorSpace::Xyz,
+                        GradientColorSpace::ProphotoRgb => IpcGradientColorSpace::ProphotoRgb,
                     },
                     hue: match g.interpolation.hue {
                         HueMethod::Shorter => IpcHueMethod::Shorter,

@@ -237,6 +237,14 @@ pub enum IpcGradientColorSpace {
     Lch,
     /// OKLCH（极坐标）。
     Oklch,
+    /// HSL（极坐标）。
+    Hsl,
+    /// HWB（极坐标）。
+    Hwb,
+    /// XYZ（D65）。
+    Xyz,
+    /// ProPhoto RGB（D50）。
+    ProphotoRgb,
 }
 
 /// IPC 极坐标色相插值法（镜像 render-foundation HueMethod）。

@@ -1637,6 +1637,41 @@
       __zw_canvas_op(h, 'addColorStop', gid, String(offset), String(color));
     }
     var g = { _zwGrad: gid, addColorStop: addColorStop };
+    // R56h：colorInterpolationMethod / hueInterpolationMethod（spec CanvasGradient——
+    // 2d.gradient.colorInterpolationMethod 的多画布 reftest）。setter 校验枚举值并
+    // 经 host setGradientInterpolation 传插值空间 + 色相法。
+    var _interp = 'srgb';
+    var _hue = 'shorter';
+    Object.defineProperty(g, 'colorInterpolationMethod', {
+      enumerable: true, configurable: true,
+      get: function () { return _interp; },
+      set: function (v) {
+        var s2 = String(v);
+        var VALID = ['srgb', 'srgb-linear', 'lab', 'lch', 'oklab', 'oklch', 'hsl', 'hwb', 'xyz', 'prophoto-rgb'];
+        if (VALID.indexOf(s2) < 0) {
+          throw new TypeError('invalid colorInterpolationMethod: ' + s2);
+        }
+        _interp = s2;
+        if (typeof __zw_canvas_op === 'function') {
+          __zw_canvas_op(h, 'setGradientInterpolation', gid, s2, _hue);
+        }
+      }
+    });
+    Object.defineProperty(g, 'hueInterpolationMethod', {
+      enumerable: true, configurable: true,
+      get: function () { return _hue; },
+      set: function (v) {
+        var s2 = String(v);
+        var VALID = ['shorter', 'longer', 'increasing', 'decreasing'];
+        if (VALID.indexOf(s2) < 0) {
+          throw new TypeError('invalid hueInterpolationMethod: ' + s2);
+        }
+        _hue = s2;
+        if (typeof __zw_canvas_op === 'function') {
+          __zw_canvas_op(h, 'setGradientInterpolation', gid, _interp, s2);
+        }
+      }
+    });
     Object.setPrototypeOf(g, CanvasGradient.prototype);
     return g;
   }

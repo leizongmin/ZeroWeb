@@ -177,3 +177,19 @@ fn test_filter_drop_shadow_renders() {
     let src = ctx.get_image_data(10, 10, 1, 1);
     assert_eq!(src.data[0], 255, "源 R=255");
 }
+
+/// R56h（M3）：渐变 colorInterpolationMethod 色彩空间插值。
+#[test]
+fn test_gradient_color_interpolation_spaces() {
+    use zero_render_foundation::primitive::{GradientColorSpace, HueMethod};
+    // LinearGradient: red → lime 中点
+    let mut grad = crate::context::types::LinearGradient::new(0.0, 0.0, 100.0, 0.0);
+    grad.add_color_stop(0.0, Color::rgba(255, 0, 0, 255));
+    grad.add_color_stop(1.0, Color::rgba(0, 255, 0, 255));
+    let mid_srgb = grad.sample_color(0.5);
+    grad.set_color_interpolation(Some(GradientColorSpace::Hsl), HueMethod::Shorter);
+    let mid_hsl = grad.sample_color(0.5);
+    // HSL 中点偏黄（H 插值）；sRGB 中点暗黄。
+    assert!(mid_hsl.r > 200 && mid_hsl.g > 200, "HSL 中点偏黄: {mid_hsl:?}");
+    assert!(mid_srgb.r < 200 || mid_srgb.g < 200, "sRGB 中点暗: {mid_srgb:?}");
+}

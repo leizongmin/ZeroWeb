@@ -563,6 +563,11 @@ pub struct LinearGradient {
     /// R34xx：OKLab 插值（driving: 2d.gradient.colormix/relativecolor——stop 含 CSS Color 4
     /// 现代函数（color-mix/相对色）时 Chromium 按 OKLab 插值；纯 legacy 颜色按 sRGB）。
     pub(crate) oklab_interpolation: bool,
+    /// R56h：colorInterpolationMethod 显式色彩空间（Some = CSS Color 4 插值——
+    /// 覆盖 oklab 自动判定；None = legacy）。
+    pub(crate) interp_space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+    /// R56h：极坐标空间的色相插值法（hueInterpolationMethod）。
+    pub(crate) interp_hue: zero_render_foundation::primitive::HueMethod,
 }
 
 impl LinearGradient {
@@ -575,12 +580,25 @@ impl LinearGradient {
             y1,
             stops: Vec::new(),
             oklab_interpolation: false,
+            interp_space: None,
+            interp_hue: zero_render_foundation::primitive::HueMethod::default(),
         }
     }
 
     /// 设置 OKLab 插值（含 CSS Color 4 现代函数 stop 时由宿主置位）。
     pub fn set_oklab_interpolation(&mut self, v: bool) {
         self.oklab_interpolation = v;
+    }
+
+    /// R56h：设置显式插值色彩空间 + 色相法（colorInterpolationMethod /
+    /// hueInterpolationMethod——None 回落 legacy/oklab 自动判定）。
+    pub fn set_color_interpolation(
+        &mut self,
+        space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+        hue: zero_render_foundation::primitive::HueMethod,
+    ) {
+        self.interp_space = space;
+        self.interp_hue = hue;
     }
 
     /// 添加颜色停止点。
@@ -590,7 +608,13 @@ impl LinearGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
+        sample_gradient_stops(
+            &self.stops,
+            offset,
+            self.oklab_interpolation,
+            self.interp_space,
+            self.interp_hue,
+        )
     }
 }
 
@@ -613,6 +637,10 @@ pub struct RadialGradient {
     pub stops: Vec<GradientStop>,
     /// R34xx：OKLab 插值（同 `LinearGradient::oklab_interpolation`）。
     pub(crate) oklab_interpolation: bool,
+    /// R56h：显式插值色彩空间（colorInterpolationMethod）。
+    pub(crate) interp_space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+    /// R56h：色相插值法。
+    pub(crate) interp_hue: zero_render_foundation::primitive::HueMethod,
 }
 
 impl RadialGradient {
@@ -627,12 +655,24 @@ impl RadialGradient {
             r1,
             stops: Vec::new(),
             oklab_interpolation: false,
+            interp_space: None,
+            interp_hue: zero_render_foundation::primitive::HueMethod::default(),
         }
     }
 
     /// 设置 OKLab 插值（同 `LinearGradient::set_oklab_interpolation`）。
     pub fn set_oklab_interpolation(&mut self, v: bool) {
         self.oklab_interpolation = v;
+    }
+
+    /// R56h：显式插值色彩空间 + 色相法（同 LinearGradient）。
+    pub fn set_color_interpolation(
+        &mut self,
+        space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+        hue: zero_render_foundation::primitive::HueMethod,
+    ) {
+        self.interp_space = space;
+        self.interp_hue = hue;
     }
 
     /// 添加颜色停止点。
@@ -642,7 +682,13 @@ impl RadialGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
+        sample_gradient_stops(
+            &self.stops,
+            offset,
+            self.oklab_interpolation,
+            self.interp_space,
+            self.interp_hue,
+        )
     }
 }
 
@@ -659,6 +705,10 @@ pub struct ConicGradient {
     pub stops: Vec<GradientStop>,
     /// R34xx：OKLab 插值（同 `LinearGradient::oklab_interpolation`）。
     pub(crate) oklab_interpolation: bool,
+    /// R56h：显式插值色彩空间（colorInterpolationMethod）。
+    pub(crate) interp_space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+    /// R56h：色相插值法。
+    pub(crate) interp_hue: zero_render_foundation::primitive::HueMethod,
 }
 
 impl ConicGradient {
@@ -670,12 +720,24 @@ impl ConicGradient {
             cy,
             stops: Vec::new(),
             oklab_interpolation: false,
+            interp_space: None,
+            interp_hue: zero_render_foundation::primitive::HueMethod::default(),
         }
     }
 
     /// 设置 OKLab 插值（同 `LinearGradient::set_oklab_interpolation`）。
     pub fn set_oklab_interpolation(&mut self, v: bool) {
         self.oklab_interpolation = v;
+    }
+
+    /// R56h：显式插值色彩空间 + 色相法（同 LinearGradient）。
+    pub fn set_color_interpolation(
+        &mut self,
+        space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+        hue: zero_render_foundation::primitive::HueMethod,
+    ) {
+        self.interp_space = space;
+        self.interp_hue = hue;
     }
 
     /// 添加颜色停止点。
@@ -685,7 +747,13 @@ impl ConicGradient {
 
     /// 在指定偏移量处采样颜色（线性插值）。
     pub fn sample_color(&self, offset: f32) -> Color {
-        sample_gradient_stops(&self.stops, offset, self.oklab_interpolation)
+        sample_gradient_stops(
+            &self.stops,
+            offset,
+            self.oklab_interpolation,
+            self.interp_space,
+            self.interp_hue,
+        )
     }
 }
 
@@ -825,13 +893,13 @@ impl CanvasStyle {
                     return Color::TRANSPARENT;
                 }
                 let t = ((x - g.x0) * dx + (y - g.y0) * dy) / len2;
-                sample_gradient_stops(&g.stops, t, g.oklab_interpolation)
+                sample_gradient_stops(&g.stops, t, g.oklab_interpolation, g.interp_space, g.interp_hue)
             }
             CanvasStyle::RadialGradient(g) => {
                 // R34xx：radial 全几何解（见 `radial_gradient_t`）——cone/相交/相切/退化
                 // 圆族全部经二次方程精确解；未覆盖点（cone 背后/判别式负）返透明不画。
                 match radial_gradient_t(g, x, y) {
-                    Some(t) => sample_gradient_stops(&g.stops, t, g.oklab_interpolation),
+                    Some(t) => sample_gradient_stops(&g.stops, t, g.oklab_interpolation, g.interp_space, g.interp_hue),
                     None => Color::TRANSPARENT,
                 }
             }
@@ -844,7 +912,13 @@ impl CanvasStyle {
                 while ang >= std::f32::consts::TAU {
                     ang -= std::f32::consts::TAU;
                 }
-                sample_gradient_stops(&g.stops, ang / std::f32::consts::TAU, g.oklab_interpolation)
+                sample_gradient_stops(
+                    &g.stops,
+                    ang / std::f32::consts::TAU,
+                    g.oklab_interpolation,
+                    g.interp_space,
+                    g.interp_hue,
+                )
             }
             CanvasStyle::Pattern(p) => sample_pattern_pixel(p, x, y),
         }
@@ -979,7 +1053,13 @@ fn sample_pattern_pixel(pattern: &CanvasPattern, x: f32, y: f32) -> Color {
 /// 渐变停止点颜色采样辅助函数。
 ///
 /// 将偏移量限制在 [0.0, 1.0]，找到包围偏移量的两个停止点并线性插值。
-fn sample_gradient_stops(stops: &[GradientStop], offset: f32, oklab: bool) -> Color {
+fn sample_gradient_stops(
+    stops: &[GradientStop],
+    offset: f32,
+    oklab: bool,
+    interp_space: Option<zero_render_foundation::primitive::GradientColorSpace>,
+    interp_hue: zero_render_foundation::primitive::HueMethod,
+) -> Color {
     // R34xx：无停止点 → 全透明（spec：渐变无 stops 时绘制无效果——2d.gradient.empty 期望
     // 保持背景；旧实现返 BLACK 污染像素）。
     if stops.is_empty() {
@@ -1020,16 +1100,17 @@ fn sample_gradient_stops(stops: &[GradientStop], offset: f32, oklab: bool) -> Co
             // R34xx：CSS Color 4 premultiplied 插值（opaque 与旧逐通道 lerp 字节级一致；
             // 半透明 premultiplied 修正——2d.gradient.interpolate.alpha）。OKLab 用于
             // 含现代函数 stop 的渐变（2d.gradient.colormix/relativecolor——Chromium 行为）。
-            return if oklab {
+            // R56h：colorInterpolationMethod 显式空间优先；否则 oklab 自动判定（color-mix
+            // stop）；否则 legacy 直插。
+            let interp = |space: zero_render_foundation::primitive::GradientColorSpace| {
+                zero_render_foundation::color_space::interp_pair(l0, f1, frac as f64, space, interp_hue)
+            };
+            return if let Some(space) = interp_space {
+                interp(space)
+            } else if oklab {
                 // R34xx：OKLab 插值（stop 含 CSS Color 4 现代函数——2d.gradient.colormix/
                 // relativecolor，Chromium 行为）。premultiplied CSS Color 4 §12.3。
-                zero_render_foundation::color_space::interp_pair(
-                    l0,
-                    f1,
-                    frac as f64,
-                    zero_render_foundation::primitive::GradientColorSpace::Oklab,
-                    zero_render_foundation::primitive::HueMethod::Shorter,
-                )
+                interp(zero_render_foundation::primitive::GradientColorSpace::Oklab)
             } else {
                 // spec：sRGB 直插（"without premultiplying the alpha value"——HTML canvas
                 // CanvasGradient；2d.gradient.interpolate.coloralpha 期望直插值）。

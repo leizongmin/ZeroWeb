@@ -269,6 +269,46 @@ pub fn interp_pair(c0: Color, c1: Color, t: f64, space: GradientColorSpace, hue:
             let (l, c) = unmulp2(lerp(l0 * a0, l1 * a1, t), lerp(c0c * a0, c1c * a1, t), a_f);
             oklch_to_srgb_u8_via_oklab(l, c, h)
         }
+        // HSL：H 不 premultiply（hue method），L/S premultiply ×alpha。
+        GradientColorSpace::Hsl => {
+            let (h0, s0, l0) = srgb_u8_to_hsl(c0.r, c0.g, c0.b);
+            let (h1, s1, l1) = srgb_u8_to_hsl(c1.r, c1.g, c1.b);
+            let h = interp_hue(h0, h1, t, hue);
+            let (s, l) = unmulp2(lerp(s0 * a0, s1 * a1, t), lerp(l0 * a0, l1 * a1, t), a_f);
+            hsl_to_srgb_u8(h, s, l)
+        }
+        // HWB：H 不 premultiply，W/B premultiply ×alpha。
+        GradientColorSpace::Hwb => {
+            let (h0, w0, b0) = srgb_u8_to_hwb(c0.r, c0.g, c0.b);
+            let (h1, w1, b1) = srgb_u8_to_hwb(c1.r, c1.g, c1.b);
+            let h = interp_hue(h0, h1, t, hue);
+            let (w, b) = unmulp2(lerp(w0 * a0, w1 * a1, t), lerp(b0 * a0, b1 * a1, t), a_f);
+            hwb_to_srgb_u8(h, w, b)
+        }
+        // XYZ（D65）：线性 sRGB → XYZ premultiply ×alpha → lerp → 逆变换。
+        GradientColorSpace::Xyz => {
+            let (x0, y0, z0) = srgb_u8_to_xyz_d65(c0.r, c0.g, c0.b);
+            let (x1, y1, z1) = srgb_u8_to_xyz_d65(c1.r, c1.g, c1.b);
+            let (x, y, z) = unmulp3(
+                lerp(x0 * a0, x1 * a1, t),
+                lerp(y0 * a0, y1 * a1, t),
+                lerp(z0 * a0, z1 * a1, t),
+                a_f,
+            );
+            xyz_d65_to_srgb_u8(x, y, z)
+        }
+        // ProPhoto RGB（D50）：sRGB → XYZ(D65) → Bradford D50 → prophoto EOTF。
+        GradientColorSpace::ProphotoRgb => {
+            let (p0, p1, p2) = srgb_u8_to_prophoto(c0.r, c0.g, c0.b);
+            let (q0, q1, q2) = srgb_u8_to_prophoto(c1.r, c1.g, c1.b);
+            let (x, y, z) = unmulp3(
+                lerp(p0 * a0, q0 * a1, t),
+                lerp(p1 * a0, q1 * a1, t),
+                lerp(p2 * a0, q2 * a1, t),
+                a_f,
+            );
+            prophoto_to_srgb_u8(x, y, z)
+        }
     };
     Color::rgba(r, g, b, a_u8)
 }
@@ -321,6 +361,157 @@ fn lch_to_srgb_u8_via_lab(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
 fn oklch_to_srgb_u8_via_oklab(l: f64, c: f64, h: f64) -> (u8, u8, u8) {
     let h_rad = h.to_radians();
     oklab_to_srgb_u8(l, c * h_rad.cos(), c * h_rad.sin())
+}
+
+// ── HSL / HWB（sRGB 圆柱坐标，CSS Color 4）──────────────────────────
+
+/// sRGB u8 → HSL（h 0..360 度；s/l 0..1）。
+fn srgb_u8_to_hsl(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    let s = if d > 0.0 {
+        d / (1.0 - (2.0 * l - 1.0).abs())
+    } else {
+        0.0
+    };
+    let h = if d <= 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    (h, s, l)
+}
+
+fn hsl_to_srgb_u8(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h.rem_euclid(360.0) / 60.0;
+    let x = c * (1.0 - (hp.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = match hp as i64 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    (
+        (255.0 * (r1 + m)).round().clamp(0.0, 255.0) as u8,
+        (255.0 * (g1 + m)).round().clamp(0.0, 255.0) as u8,
+        (255.0 * (b1 + m)).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// sRGB u8 → HWB（h 0..360 度；w/b 0..1）。
+fn srgb_u8_to_hwb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let d = max - min;
+    let h = if d <= 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    (h, min, 1.0 - max)
+}
+
+fn hwb_to_srgb_u8(h: f64, w: f64, b: f64) -> (u8, u8, u8) {
+    let (w, b) = (w.clamp(0.0, 1.0), b.clamp(0.0, 1.0));
+    if w + b >= 1.0 {
+        let v = w / (w + b);
+        let x = (255.0 * v).round().clamp(0.0, 255.0) as u8;
+        return (x, x, x);
+    }
+    let (r1, g1, b1) = hsl_to_srgb_components(h.rem_euclid(360.0) / 60.0);
+    let scale = 1.0 - w - b;
+    (
+        (255.0 * (r1 * scale + w)).round().clamp(0.0, 255.0) as u8,
+        (255.0 * (g1 * scale + w)).round().clamp(0.0, 255.0) as u8,
+        (255.0 * (b1 * scale + w)).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// HSL 色相段分量（无 m 偏移——HWB 用）。
+fn hsl_to_srgb_components(hp: f64) -> (f64, f64, f64) {
+    let c = 1.0;
+    let x = c * (1.0 - (hp.rem_euclid(2.0) - 1.0).abs());
+    match hp as i64 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    }
+}
+
+// ── XYZ（D65）/ ProPhoto RGB（D50）──────────────────────────────────
+
+/// 线性 sRGB u8 → XYZ（D65）。
+fn srgb_u8_to_xyz_d65(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    mat3_mul(
+        SRGB_TO_XYZ,
+        srgb_decode(r as f64 / 255.0),
+        srgb_decode(g as f64 / 255.0),
+        srgb_decode(b as f64 / 255.0),
+    )
+}
+
+/// XYZ（D65）→ 线性 sRGB u8（clamp——插值可能越出 sRGB 色域）。
+fn xyz_d65_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (r, g, b) = mat3_mul(XYZ_TO_SRGB, x, y, z);
+    (linear_srgb_to_u8(r), linear_srgb_to_u8(g), linear_srgb_to_u8(b))
+}
+
+/// ProPhoto RGB（D50）矩阵（CSS Color 4 §8.2）：prophoto 线性 → XYZ(D50)。
+const PROPHOTO_TO_XYZ_D50: [f64; 9] = [
+    0.797_760_489_672_302_7,
+    0.135_185_837_175_740_3,
+    0.031_349_349_581_435_8,
+    0.288_071_128_229_293_4,
+    0.711_843_217_810_101_4,
+    0.000_085_653_960_605_259_2,
+    0.0,
+    0.0,
+    0.825_104_602_510_460_1,
+];
+/// XYZ(D50) → ProPhoto RGB 线性。
+const XYZ_D50_TO_PROPHOTO: [f64; 9] = [
+    1.345_798_973_102_906_6,
+    -0.255_580_100_079_975_3,
+    -0.051_106_285_686_021_8,
+    -0.544_622_493_449_452_8,
+    1.508_232_741_313_938_6,
+    0.020_536_032_391_437_5,
+    0.0,
+    0.0,
+    1.211_967_545_638_945_4,
+];
+
+/// sRGB u8 → ProPhoto 线性分量（sRGB 线性 → XYZ(D65) → Bradford D50 → prophoto 矩阵）。
+fn srgb_u8_to_prophoto(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let (x65, y65, z65) = srgb_u8_to_xyz_d65(r, g, b);
+    let (x50, y50, z50) = mat3_mul(XYZ_D65_TO_D50, x65, y65, z65);
+    mat3_mul(XYZ_D50_TO_PROPHOTO, x50, y50, z50)
+}
+
+/// ProPhoto 线性分量 → sRGB u8（逆 EOTF + XYZ(D50)→D65 → 线性 sRGB）。
+fn prophoto_to_srgb_u8(x: f64, y: f64, z: f64) -> (u8, u8, u8) {
+    let (r50, g50, b50) = mat3_mul(PROPHOTO_TO_XYZ_D50, x, y, z);
+    let (r65, g65, b65) = mat3_mul(XYZ_D50_TO_D65, r50, g50, b50);
+    xyz_d65_to_srgb_u8(r65, g65, b65)
 }
 
 #[cfg(test)]
@@ -450,5 +641,52 @@ mod tests {
         let dec = interp_hue(10.0, 30.0, 0.5, HueMethod::Decreasing);
         // dec 方向：10 + (-340)*0.5 = -160 → rem_euclid 200
         assert!((dec - 200.0).abs() < 1.0, "decreasing mid should be ~200: {}", dec);
+    }
+}
+
+#[cfg(test)]
+mod r56h_tests {
+    use super::*;
+
+    fn approx(a: u8, b: u8) -> bool {
+        (a as i16 - b as i16).abs() <= 3
+    }
+
+    /// HSL 中点：red↔lime 的 H 插值（shorter）→ 黄。
+    #[test]
+    fn test_hsl_midpoint() {
+        let red = Color::rgba(255, 0, 0, 255);
+        let lime = Color::rgba(0, 255, 0, 255);
+        let c = interp_pair(red, lime, 0.5, GradientColorSpace::Hsl, HueMethod::Shorter);
+        // H=60°（黄）——sRGB 逐通道中点则是 128,128,0 的暗黄。
+        assert!(c.r > 200 && c.g > 200, "HSL 中点应偏黄: {c:?}");
+        assert!(c.b < 50, "B 通道低: {c:?}");
+    }
+
+    /// HWB 往返：red 的 H=0, W=0, B=0 → 还原红。
+    #[test]
+    fn test_hwb_roundtrip_red() {
+        let (h, w, b) = srgb_u8_to_hwb(255, 0, 0);
+        assert!(h.abs() < 1e-6 && w.abs() < 1e-6 && b.abs() < 1e-6, "{h} {w} {b}");
+        let (r, g, b2) = hwb_to_srgb_u8(h, w, b);
+        assert!(approx(r, 255) && approx(g, 0) && approx(b2, 0), "{r} {g} {b2}");
+    }
+
+    /// XYZ 中点：red↔lime → 线性空间的暗黄（与 sRGB 逐通道不同）。
+    #[test]
+    fn test_xyz_midpoint_differs_from_srgb() {
+        let red = Color::rgba(255, 0, 0, 255);
+        let lime = Color::rgba(0, 255, 0, 255);
+        let xyz = interp_pair(red, lime, 0.5, GradientColorSpace::Xyz, HueMethod::Shorter);
+        let srgb = interp_pair(red, lime, 0.5, GradientColorSpace::Srgb, HueMethod::Shorter);
+        assert!(xyz.r != srgb.r || xyz.g != srgb.g, "XYZ 与 sRGB 中点应不同");
+    }
+
+    /// ProPhoto 往返：红在 prophoto 空间插值自身。
+    #[test]
+    fn test_prophoto_roundtrip_red() {
+        let (x, y, z) = srgb_u8_to_prophoto(255, 0, 0);
+        let (r, g, b) = prophoto_to_srgb_u8(x, y, z);
+        assert!(approx(r, 255) && approx(g, 0) && approx(b, 0), "{r} {g} {b}");
     }
 }
