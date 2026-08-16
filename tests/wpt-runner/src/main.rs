@@ -35,6 +35,7 @@ Commands:
   reftest           Run WPT reftest suite (rendering comparison tests)
   reftest-upstream  Run upstream WPT reftest files from wpt-data/
   testharness-html  Run selected media/forms/focus/input-event testharness cases
+  testharness-constraints  Run imported html/semantics/forms/constraints testharness cases (Form Validation goal M1)
   testharness-canvas  Run imported html/canvas testharness cases (Canvas 2D goal M1)
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   layout-dump [filter]  B1: dump layout tree for upstream test pages (golden compare,
@@ -219,6 +220,7 @@ fn main() {
         "reftest" => cmd_reftest(&options, filter.as_deref()),
         "reftest-upstream" => cmd_reftest_upstream(&options, filter.as_deref()),
         "testharness-html" => cmd_testharness_html(&options, filter.as_deref()),
+        "testharness-constraints" => cmd_testharness_constraints(&options, filter.as_deref()),
         "testharness-canvas" => cmd_testharness_canvas(&options, filter.as_deref()),
         "testharness-canvas-worker" => cmd_testharness_canvas_worker(&options, filter.as_deref()),
         "testharness-dom" => cmd_testharness_dom(&options, filter.as_deref()),
@@ -333,6 +335,42 @@ fn pad_framebuffer(
             .copy_from_slice(&source.data[source_start..source_end]);
     }
     padded
+}
+
+fn cmd_testharness_constraints(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_constraints_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
 }
 
 fn cmd_testharness_html(options: &CliOptions, filter: Option<&str>) {

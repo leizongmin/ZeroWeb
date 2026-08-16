@@ -29,15 +29,17 @@
 - ⚠️ 提交阻断（interactive validation）未实现
 - ⚠️ willValidate 排除（disabled/hidden/readonly）未实现
 
-### WPT 面
+### WPT 面（M1 基线 2026-08-16）
 
-- `html/semantics/forms/constraints` 未导入（wpt-data 无 forms 目录）——零基线
+- ✅ 45 用例导入（fetch-constraints-subset.sh + `testharness-constraints` 子命令）
+- 基线：27 文件有子测试、**Pass 3 / Fail 909**（permissive valid——约束位全缺失）；
+  证据 evidence/m1-constraints-baseline-2026-08-16.md
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| V1 | WPT constraints 用例覆盖为零 | 🔄 M1 切片 1（导入 + 基线报告） |
+| V1 | WPT constraints 用例覆盖为零 | ✅ M1 切片 1 完成（45 导入 + 基线 3/909） |
 | V2 | 原生约束位计算缺失（permissive valid） | 🔄 M2 |
 | V3 | 提交阻断缺失（interactive validation） | 🔄 M3 |
 | V4 | willValidate 真实化 | 🔄 M2 |
@@ -45,10 +47,9 @@
 
 ## 下一步计划
 
-1. **M1 切片 1**：WPT `html/semantics/forms/constraints` 导入 + 分类通过率报告
-   （零源码改动，纯资产——fetch 脚本扩展 + 基线测量）
-2. **M1 切片 2**：失败聚类分析 → 首个轻量修复队列（约束位计算——required/pattern
-   起步）
+1. **M1 切片 2（进行中）**：约束位计算首修——required/valueMissing 起步
+   （Fail 78+19 子测试）——host 层约束计算入口 + shim 反射
+2. **M1 切片 3**：pattern/mismatch（85 Fail）
 3. **M2**：全约束位 + validityState 联动 + validationMessage + willValidate
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`

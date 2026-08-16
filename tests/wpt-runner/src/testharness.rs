@@ -160,6 +160,68 @@ pub struct HarnessSubtestResult {
 }
 
 /// Run the selected upstream HTML interaction cases under `wpt_root`.
+/// 运行 `html/semantics/forms/constraints` testharness 用例（Form Validation goal M1）。
+///
+/// 目录扫描顶层 .html（support/ 资源目录排除——resources 经 fetch 脚本独立拉取）。
+pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let dir = wpt_root.join("html/semantics/forms/constraints");
+    let entries: Vec<_> = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries.flatten().collect(),
+        Err(error) => {
+            return vec![(
+                dir.display().to_string(),
+                vec![HarnessSubtestResult {
+                    name: "scan constraints dir".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut cases = Vec::new();
+    for entry in entries {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if path.extension().is_none_or(|ext| ext != "html") {
+            continue;
+        }
+        let relative = format!("html/semantics/forms/constraints/{name}");
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                cases.push((
+                    relative,
+                    vec![HarnessSubtestResult {
+                        name: "load WPT case".into(),
+                        status: HarnessStatus::Fail,
+                        message: Some(error.to_string()),
+                    }],
+                ));
+                continue;
+            }
+        };
+        let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+    cases
+}
+
 pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_path = wpt_root.join("resources/testharness.js");
     let harness_source = match std::fs::read_to_string(&harness_path) {
