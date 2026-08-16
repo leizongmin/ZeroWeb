@@ -71,5 +71,164 @@
     "completed": {"en": ["Registered fontdue measurement to align the browser path with rendering expectations.", "Confirmed full product smoke coverage for the current fixture set.", "Recorded fresh CSS Grid measurements and updated the compatibility evidence."], "zh": ["注册 fontdue 测量，使浏览器路径与渲染预期保持一致。", "确认当前 fixture 集的产品 smoke 全部通过。", "记录新的 CSS Grid 测量结果并更新兼容性数据。"]},
     "inProgress": {"en": "The next compatibility work focuses on text metrics and structural rendering paths that need coordinated, rather than isolated, changes.", "zh": "下一阶段兼容性工作聚焦于需要协同改动的文本度量与结构性渲染路径。"},
     "sources": [{"label": "Font measurement registration", "url": "https://github.com/leizongmin/ZeroWeb/commit/bad506536"}, {"label": "Product smoke evidence", "url": "https://github.com/leizongmin/ZeroWeb/commit/fa79ae984"}, {"label": "CSS Grid measurement", "url": "https://github.com/leizongmin/ZeroWeb/commit/b7671a120"}]
+  },
+  {
+    "date": "2026-07-12",
+    "type": "weekly",
+    "title": {"en": "FreeType default-on and the taffy upgrade lift WPT reftest compatibility", "zh": "FreeType 默认开启与 taffy 升级：WPT 兼容性继续爬坡"},
+    "summary": {
+      "en": "FreeType rasterization became the default renderer and the default fonts were aligned with Chromium's font wall, which alone gained about +200 CSS2 WPT passes on retest. The vendored taffy layout engine was upgraded from 0.7.7 to 0.12.1, and a steady stream of zero-regression layout fixes landed across floats, br, grid and clearance handling.",
+      "zh": "FreeType 光栅化改为默认渲染路径，默认字体与 Chromium 字体墙对齐，仅 CSS2 目录重测即净增约 +200 通过；vendored taffy 布局引擎从 0.7.7 升级到 0.12.1，另有大批零回归的布局修复在 float、br、grid、clearance 等方向落地。"
+    },
+    "completed": {
+      "en": ["Flipped the FreeType rasterizer on by default (+232 oracle passes, zero regressions); aligning the initial/sans-serif fonts with Chromium (Liberation Serif/Sans) then gained about +200 CSS2 passes on retest.", "Vendored taffy upgraded 0.7.7 → 0.12.1 (M1–M5) with native float coexistence, a fresh Chromium-150 oracle baseline, and oracle capture against non-headless Chromium.", "Landed a batch of zero-regression layout fixes: br line-height struts (+28), CSS Grid default justify-content: stretch (+10), CSS2.1 §8.3.1 clearance containment, IFC skipping out-of-flow boxes, width:min-content intrinsic sizing, and position:fixed bottom/right viewport insets.", "Shipped the first vertical-mode table slices (axis transpose, colspan/rowspan, row-extras, vrl caps) and the first multicol nested-spanner wrapper fragmentation (+3 flips), plus text-autospace and font-size-adjust property support."],
+      "zh": ["FreeType 光栅化默认开启（+232 oracle 通过、零回归）；随后把初始与 sans-serif 字体跟 Chromium 对齐（Liberation Serif/Sans），CSS2 目录重测净增约 +200 通过。", "vendored taffy 从 0.7.7 升级到 0.12.1（M1–M5，原生 float 共存），启用 Chromium-150 新 oracle 基线，并支持对非 headless Chromium 抓取 oracle。", "一批零回归布局修复落地：<br> line-height strut（+28）、CSS Grid 默认 justify-content: stretch（+10）、CSS2.1 §8.3.1 clearance 包含、IFC 跳过脱离文档流盒、width:min-content 固有尺寸、position:fixed bottom/right 视口 inset。", "vertical-mode 表格布局首批切片（轴转置、colspan/rowspan、row-extras、vrl 上限）与 multicol 嵌套 spanner wrapper 分段首版（+3 flip）落地，text-autospace 与 font-size-adjust 属性也已实现。"]
+    },
+    "inProgress": {
+      "en": "Multicol is the main open front — the first nested-spanner fragmentation landed and the section-height model is being re-derived from fresh ground truth, while the L2 clearance/collapse-through cluster follows a multi-session roadmap and floats-006 Phase A (five-way coordination) is queued.",
+      "zh": "multicol 仍是主战场：嵌套 spanner 分段首版落地后，section-height 模型正基于新 ground truth 重新推导；L2 clearance/collapse-through 簇按多 session 路线图推进，floats-006 的 Phase A 五路协调方案也已排队。"
+    },
+    "sources": [
+      {"label": "FreeType rasterizer default-on", "url": "https://github.com/leizongmin/ZeroWeb/commit/479c6d01"},
+      {"label": "Chromium-aligned default font", "url": "https://github.com/leizongmin/ZeroWeb/commit/e1eccf7d"},
+      {"label": "taffy 0.7.7 → 0.12.1 (M5)", "url": "https://github.com/leizongmin/ZeroWeb/commit/4d30365e"},
+      {"label": "Multicol nested-spanner fragmentation", "url": "https://github.com/leizongmin/ZeroWeb/commit/34535c82"}
+    ]
+  },
+  {
+    "date": "2026-07-05",
+    "type": "weekly",
+    "title": {"en": "The font-metric wall gives: +138 reftest passes", "zh": "字体度量墙告破：一周净增 138 项通过"},
+    "summary": {
+      "en": "A dense compatibility week (R781–R1057): the long-standing font-metric wall finally gave ground with an Ahem-gated ascent-ratio fix worth 138 oracle passes, while multi-column layout, flex/grid intrinsic sizing and logical properties each closed out long campaigns. Outside the oracle, the browser gained overlay scrollbars, keyboard page scrolling, a find bar and tab conveniences, and @font-face picked up WOFF 1.0 support.",
+      "zh": "兼容性冲刺最密集的一周（R781–R1057）：长期瓶颈字体度量墙首次告破（+138 项通过），多列布局、flex/grid 固有尺寸与逻辑属性三条长线各自收官。产品侧同步落地悬浮式滚动条、键盘页面滚动、查找栏与标签页便利操作，@font-face 也补上 WOFF 1.0 支持。"
+    },
+    "completed": {
+      "en": ["Landed an Ahem-gated Phase-A ascent-ratio fix — the first substantive break through the font-metric wall — adding 138 passes to the full WPT reftest oracle with zero regressions.", "Pushed multi-column layout from 120 to 146 oracle passes: column-span:all spanners, balance-mode column breaking, column-gap:normal and fragment clipping all landed.", "Finished the flex/grid/float intrinsic-sizing campaign: aspect-ratio transferred sizes, bare fit-content, inline-flex/inline-grid/float shrink-to-fit, and the flex/grid item text-collapse fix (css-flexbox to 295).", "Landed writing-mode-aware logical properties for border and margin/padding/inset (CSS Logical Properties §3) with zero regression."],
+      "zh": ["Ahem 门控的 Phase-A ascent-ratio 修复落地——字体度量墙的首次实质突破，全量 WPT reftest oracle 净增 138 项通过、零回归。", "多列布局从 120 推进到 146：column-span:all spanner、balance-mode 断列、column-gap:normal 与分栏裁剪均落地。", "flex/grid/float 固有尺寸系列收官：aspect-ratio transferred sizes、裸 fit-content、inline-flex/grid/float shrink-to-fit，以及 flex/grid 项文本塌缩修复（css-flexbox 至 295）。", "writing-mode 感知的逻辑属性（border 与 margin/padding/inset，CSS Logical Properties §3）零回归落地。"]
+    },
+    "inProgress": {
+      "en": "The vertical writing-mode track is next: the root cause of vertical inline layout is pinned down (zero IFC container width, not a missing axis swap) and the multi-session implementation handoff is ready. CJK fonts remain blocked by the font-metric wall, and clean single-session levers are confirmed exhausted across directories.",
+      "zh": "下一步是竖排（writing-mode）布局主线：竖排 inline 布局根因已锁定（IFC 容器宽度为零，而非缺轴交换），多 session 实施 handoff 文档已就绪；CJK 字体仍被字体度量墙阻塞，各目录单 session 干净杠杆确证耗尽。"
+    },
+    "sources": [
+      {"label": "Phase-A ascent ratio, +138 oracle passes", "url": "https://github.com/leizongmin/ZeroWeb/commit/aa48d6a1"},
+      {"label": "column-span:all spanner layout", "url": "https://github.com/leizongmin/ZeroWeb/commit/892daed9"},
+      {"label": "flex/grid item collapse fix", "url": "https://github.com/leizongmin/ZeroWeb/commit/3f415fec"},
+      {"label": "Logical margin/padding/inset properties", "url": "https://github.com/leizongmin/ZeroWeb/commit/a7aeaf00"}
+    ]
+  },
+  {
+    "date": "2026-06-28",
+    "type": "weekly",
+    "title": {"en": "A shared page runtime and a near-complete chrome redesign", "zh": "页面运行时统一，界面翻新接近收官"},
+    "summary": {
+      "en": "The renderer, TabWorker, and the WPT runner now converge on one shared page runtime through WebView, replacing three parallel implementations. Around it, the browser chrome got a near-complete redesign pass — theming, persistent settings, tab management, a new app icon — while the oracle-measured rendering compatibility campaign landed another batch of CSS and layout fixes.",
+      "zh": "渲染进程、TabWorker 与 WPT runner 现统一走同一套基于 WebView 的页面运行时，三份平行实现就此归一。同期浏览器界面完成一轮接近收官的翻新（主题、设置持久化、标签管理、新应用图标），渲染兼容性在独立 oracle 测量下又落地了一批 CSS 与布局修复。"
+    },
+    "completed": {
+      "en": ["Runtime unification: a new page-runtime crate now serves WPT runner, TabWorker, and the renderer through one WebView-based path, with loading, script-executor, and frame contracts unified; the renderer cut over to WebView+AsyncPageLoad and WPT renders through the shared runtime behind an engine-direct consistency gate.", "Nearly all of the browser chrome redesign landed: light/dark/auto theming with OS detection, a settings page, persisted bookmarks and settings, tab context actions, Ctrl+Shift+T restore, and a Windows native title bar that keeps Aero Snap. A new Chrome-style app icon ships with multi-platform build integration.", "The oracle-measured compatibility campaign kept landing fixes: SEA fallback line-breaking, control-character placeholders, per-fragment inline backgrounds, missing inherit-keyword branches, calc() in insets and max-lengths, table shrink-to-fit and cell intrinsic sizing, visibility:collapse table rows, caption-side:bottom, and anonymous block boxes for mixed text-plus-block content. A new reftest-oracle subcommand provides an independent reference.", "Networking: HTTP/2 is on by default (ZERO_HTTP2=0 opts back to HTTP/1.1), a persistent disk cache with memory and disk tiers, Vary-aware keys, no-cache revalidation and per-origin quota backs page loads, and incognito tabs plus a ZERO_NOPROXY proxy bypass are in."],
+      "zh": ["完成页面运行时统一：新增 page-runtime crate，WPT runner、TabWorker 与渲染进程共用 WebView 渲染路径，加载、脚本执行、帧三套契约统一；渲染进程切换到 WebView+AsyncPageLoad，WPT 经共享运行时渲染并保留 engine-direct 一致性门禁。", "浏览器界面翻新大部分落地：浅色/深色/跟随系统主题、设置页、书签与设置持久化、标签右键操作、Ctrl+Shift+T 恢复关闭标签、保留 Aero Snap 的 Windows 原生标题栏；全新 Chrome 风格应用图标随多平台构建集成发布。", "实测导向的兼容性修复持续落地：SEA 回退换行、控制字符占位符、多行行内背景分段绘制、缺失的 inherit 关键字分支、inset 与 max-length 的 calc() 求值、表格 shrink-to-fit 与单元格固有尺寸、visibility:collapse 表行、caption-side:bottom、以及文本与块级内容混合的匿名块盒；新增 reftest-oracle 子命令提供独立参照验证。", "网络层：HTTP/2 默认开启（ZERO_HTTP2=0 回退 HTTP/1.1），页面加载接入持久磁盘缓存（内存+磁盘两级、Vary 感知缓存键、no-cache 重验证、按源配额），并新增无痕标签页与 ZERO_NOPROXY 代理旁路。"]
+    },
+    "inProgress": {
+      "en": "The compatibility campaign reconfirmed the same plateau a fourth time — the isolated fixable points are spent, and what remains is structural rendering work that needs coordinated, rather than isolated, changes. The chrome redesign is near-complete with the last polish gaps still open.",
+      "zh": "兼容性工作第四次确认同一平台期——可独立修复的点已耗尽，剩余为需要协同改动的结构性渲染工作。界面翻新接近完成，最后一批打磨缺口仍在收尾。"
+    },
+    "sources": [
+      {"label": "Runtime unification merge", "url": "https://github.com/leizongmin/ZeroWeb/commit/0f515062"},
+      {"label": "ZeroBrowser app icon", "url": "https://github.com/leizongmin/ZeroWeb/commit/9c606c7a"},
+      {"label": "Independent reftest oracle", "url": "https://github.com/leizongmin/ZeroWeb/commit/57f55c70"},
+      {"label": "HTTP/2 by default", "url": "https://github.com/leizongmin/ZeroWeb/commit/3bd674c2"}
+    ]
+  },
+  {
+    "date": "2026-06-21",
+    "type": "weekly",
+    "title": {"en": "Rendering compatibility is now measured against a real Chrome oracle", "zh": "渲染兼容性改以真实 Chrome 为对照度量"},
+    "summary": {
+      "en": "The compatibility program rebuilt its measurement: every reftest is now pixel-compared against real Chrome screenshots instead of ZeroWeb's own output. The full upstream WPT CSS corpus — all ten directories, ending with the huge CSS2 — was imported, and the first results already steered a new wave of rendering fixes.",
+      "zh": "兼容性计划重建了度量方式：每个 reftest 现在都与真实 Chrome 截图逐像素对照，而不是与 ZeroWeb 自己的输出比较。上游 WPT CSS 套件十个目录已全部导入（以体量最大的 CSS2 收尾），首批结果随即引导出一波渲染修复。"
+    },
+    "completed": {
+      "en": ["Built a Chromium screenshot oracle: every reftest is pixel-compared against real Chrome output, replacing self-referential pass rates with honest cross-browser numbers — the first full sweep found 46.5% of previously self-passing tests disagreed with Chrome.", "Imported the entire upstream WPT CSS reftest corpus — grid, position, tables, text-decor, fonts, flexbox, multicol, writing-modes, text, and finally CSS2, the largest directory at ~13k files and over 6,000 test/reference pairs — with recursive discovery and per-directory oracle capture tooling.", "Landed a wave of oracle-driven rendering fixes: min-width/min-height initial value auto, type-aware flex shorthand parsing, table-layout:fixed and colspan column widths, multicol crash guards, and image clip crop semantics.", "The reftest path now loads @font-face custom fonts, and the browser's URL-navigation path picks up external stylesheets and <img> subresources, with JPEG/SVG decoding unified into render-foundation."],
+      "zh": ["搭建 Chromium 截图 Oracle：全部 reftest 与真实 Chrome 输出逐像素比较，取代以往自测自评的通过率——首次全量扫描发现此前自测通过的用例中有 46.5% 实际与 Chrome 不一致。", "完整导入上游 WPT CSS reftest 套件：grid、position、tables、text-decor、fonts、flexbox、multicol、writing-modes、text，再到体量最大的 CSS2（约 1.3 万个文件、6300+ 测试/参照对），并配套子目录递归发现与逐目录 Oracle 捕获工具。", "落地一批由 Oracle 差异驱动的渲染修复：min-width/min-height 初始值改为 auto、flex 简写类型感知解析、table-layout:fixed 与 colspan 列宽、multicol 崩溃防护、图片 clip 改为裁剪语义等。", "reftest 路径开始加载 @font-face 自定义字体；浏览器 URL 导航路径接入外部样式表与 <img> 子资源，JPEG/SVG 解码统一收口到 render-foundation。"]
+    },
+    "inProgress": {
+      "en": "The oracle capture for CSS2 — the last and largest directory — was still running as this was written, due to finish the same evening; its cross-validate will close the first full ten-directory baseline, with the aggregate agreement expected to land around 30%. The earlier css-text results already point at precision-sensitive text layout (white-space/text-align) as the next known lever.",
+      "zh": "本周结束时，最后一个也是最大的目录 CSS2 的 Oracle 捕获仍在进行，按进度当晚会完成；随后的交叉验证将收口十个目录的全量基线，预估整体一致率约 30%。更早的 css-text 结果已指明下一个已知抓手：white-space/text-align 这类对精度敏感的文本布局。"
+    },
+    "sources": [
+      {"label": "Chromium Oracle cross-validation baseline", "url": "https://github.com/leizongmin/ZeroWeb/commit/2da3c1c3"},
+      {"label": "WPT full-import campaign begins with css-grid", "url": "https://github.com/leizongmin/ZeroWeb/commit/79c83c3d"},
+      {"label": "CSS2, the largest directory, imported", "url": "https://github.com/leizongmin/ZeroWeb/commit/e878c4d0"},
+      {"label": "min-width/min-height initial auto fix", "url": "https://github.com/leizongmin/ZeroWeb/commit/82ab42c1"}
+    ]
+  },
+  {
+    "date": "2026-06-14",
+    "type": "weekly",
+    "title": {"en": "Reftest pass rate crosses 85% as remaining failures map to structural targets", "zh": "reftest 通过率超过 85%，剩余失败全部归入结构性目标"},
+    "summary": {
+      "en": "Upstream reftest pass rate climbed from 76.7% to 420/490 (85.7%), with a table-layout milestone — row-height distribution, border-collapse sync, column visibility:collapse — breaking the 81.0% plateau. Incremental wins are now exhausted: the 71 remaining failures were re-scanned and mapped to structural targets, led by nested multicol collapse and the large-font paint fallback deadlock.",
+      "zh": "本周上游 reftest 通过率从 76.7% 提升至 420/490（85.7%）：行高分配、border-collapse 同步、列 visibility:collapse 等表格修复带过了 81.0% 平台期。增量式修复已近枯竭，剩余 71 个失败用例全部重新扫描并归入结构性目标，以嵌套多列塌缩与大字号绘制回退死锁为代表。"
+    },
+    "completed": {
+      "en": ["Upstream reftest pass rate up from 76.7% to 420/490 (85.7%): float and clearance refinements, table row-height distribution and border-collapse sync, viewport units and percentage max-height, absolute positioning against the initial containing block, CSS absolute length units, flexbox order.", "Table milestone R87–R91 broke the 81.0% plateau: row-height distribution (CSS 2.1 §17.5.3), IFC skip for table cells preserving vertical-align, bilateral border-collapse sync, table-column visibility:collapse, pushing the pass rate to 405/490.", "Phase A Final Inline Layout Pass infrastructure enabled: layout now emits inline geometry (font sizes, baselines, letter-spacing, margins) that paint consumes instead of re-running the inline formatting context.", "Failure landscape fully mapped (R118, 419/490): all remaining failures are structural — nested multicol collapse traced to zero-height inline children (R121), large-font cluster confirmed as a three-way deadlock between storage box, paint box, and font metrics (R125)."],
+      "zh": ["上游 reftest 通过率从 76.7% 提升至 420/490（85.7%）：浮点与清除精修、表格行高分配与 border-collapse 同步、视口单位与百分比 max-height、无定位祖先时的绝对定位、CSS 绝对长度单位、flexbox order 等一批修复落地。", "表格里程碑（R87–R91）带过 81.0% 平台期：行高分配（CSS 2.1 §17.5.3）、表格单元格 IFC 跳过以保留 vertical-align、border-collapse 双侧同步、表格列 visibility:collapse，推进至 405/490。", "Phase A 最终行内布局通道基础设施启用：布局阶段输出字体尺寸、基线、字距、外边距等行内几何，绘制阶段直接消费，不再重跑行内格式化上下文。", "剩余失败清点完成（R118，419/490）：全部为结构性——嵌套多列塌缩定位到行内子节点零高度（R121），大字号簇确认是存储盒、绘制盒与字体度量三方互锁的死锁（R125）。"]
+    },
+    "inProgress": {
+      "en": "Next round pivots to a structural target: the R113 two-pass multicol rework (writing IFC per-line heights back into LayoutBox before column distribution), writing-mode vertical-axis float/clearance parameterization, or the large-font deadlock through Phase A IFC path unification.",
+      "zh": "下一轮将转向结构性攻坚：R113 多列两遍改造（列分配前把 IFC 每行高度回写进 LayoutBox）、书写模式垂直轴的浮点/清除参数化，或通过 Phase A 统一 IFC 路径解开大字号死锁。"
+    },
+    "sources": [
+      {"label": "Week-start M10 baseline (76.7%)", "url": "https://github.com/leizongmin/ZeroWeb/commit/079db855"},
+      {"label": "Table milestone R91 (405/490)", "url": "https://github.com/leizongmin/ZeroWeb/commit/cd0f6e1d"},
+      {"label": "Failure landscape rescan (419/490)", "url": "https://github.com/leizongmin/ZeroWeb/commit/2a3dc884"},
+      {"label": "Large-font deadlock diagnosis", "url": "https://github.com/leizongmin/ZeroWeb/commit/e9dccd3d"}
+    ]
+  },
+  {
+    "date": "2026-06-07",
+    "type": "weekly",
+    "title": {"en": "ZeroWeb launches — first week ships the browser core and imports 514 upstream reftests", "zh": "ZeroWeb 启动：首周交付浏览器核心，导入 514 个上游 reftest"},
+    "summary": {
+      "en": "The project went from its first commit on May 30 to a working browser core in one week: CSS parsing through layout to a 13-primitive CPU and GPU render pipeline, V8-backed script execution, and a browser shell app. Mid-week the milestone plan was reworked around rendering compatibility — the new M1-M6 finished at 100% reftest pass, and M10 ended the week with 514 upstream WPT reftests imported at a 76.3% pass rate.",
+      "zh": "项目于 5 月 30 日提交首个代码，一周内从零搭出可运行的浏览器核心：从 CSS 解析、布局到 13 种图元类型的 CPU/GPU 渲染管线，V8 脚本执行与浏览器外壳应用齐备。周中里程碑计划重写为以渲染兼容性为主线，新版 M1-M6 以 100% reftest 通过收官，M10 在周末把 514 个上游 WPT reftest 导入内置套件，通过率 76.3%。"
+    },
+    "completed": {
+      "en": ["Launch: first commit on May 30, and the whole original plan (M1-M13) completed within the week — V8 scripting in the WebView, a WASM sandbox with Wasmtime/QuickJS backends, multi-process IPC, a CDP-compatible headless protocol, and a Chrome-style browser shell app.", "Rendering core: all 13 primitive types implemented in both CPU and GPU renderers and consumed by the browser; the 685 in-house reftests pass 100% on both paths, including the GPU headless path.", "Layout and text: quirks mode, table and multi-column layout, floats with BFC, Grid/Flexbox edge cases; CJK line breaking, rustybuzz OpenType shaping and unicode-bidi RTL text.", "Milestone plan reworked and extended: M1-M6 finished at 100% reftest pass, then M7-M10 added GPU rendering, <img> intrinsic sizing, scroll-container paint offsets, clip-path/backdrop-filter/mask-image, and the first upstream WPT reftest imports — 514 tests at a 76.3% pass rate."],
+      "zh": ["项目启动：5 月 30 日首个提交，原计划 M1-M13 在一周内全部完成——WebView 内 V8 脚本执行、WASM 沙箱（Wasmtime/QuickJS 双后端）、多进程 IPC、兼容 CDP 的无头协议，以及 Chrome 风格的浏览器外壳应用。", "渲染核心：13 种图元类型在 CPU 与 GPU 两条渲染路径上全部实现并被浏览器消费；685 个自有 reftest 在两条路径（含 GPU 无头路径）上 100% 通过。", "布局与文本：quirks 模式、表格与多栏布局、float 与 BFC、Grid/Flexbox 边界用例；CJK 断行、rustybuzz OpenType 塑形与 unicode-bidi RTL 文本。", "里程碑计划重写并扩展：新版 M1-M6 以 100% reftest 通过收官，随后 M7-M10 补上 GPU 渲染、<img> 固有尺寸、滚动容器绘制偏移、clip-path/backdrop-filter/mask-image，并完成首批上游 WPT reftest 导入——514 个用例、76.3% 通过率。"]
+    },
+    "inProgress": {
+      "en": "M10 — upstream reftest compatibility — is the active milestone: 514 tests are in at a 76.3% pass rate, and the week's closing commits were still expanding background shorthand, UA default styles and float positioning. The next step is importing more upstream cases and pushing the pass rate up toward M10 completion.",
+      "zh": "当前主线是 M10 上游 reftest 兼容性：已导入 514 个用例、通过率 76.3%，周内收尾的几个提交仍在扩充背景简写、UA 默认样式与 float 定位；下一步是继续导入上游用例，把通过率推向 M10 完成。"
+    },
+    "sources": [
+      {"label": "Project first commit", "url": "https://github.com/leizongmin/ZeroWeb/commit/28fe984b"},
+      {"label": "GPU renderer, all 13 primitives (M7)", "url": "https://github.com/leizongmin/ZeroWeb/commit/c1421c22"},
+      {"label": "OpenType shaping and RTL text", "url": "https://github.com/leizongmin/ZeroWeb/commit/13214a68"},
+      {"label": "M10 upstream reftests: 514 at 76.3%", "url": "https://github.com/leizongmin/ZeroWeb/commit/0f0d8543"}
+    ]
+  },
+  {
+    "date": "2026-06-01",
+    "type": "launch",
+    "title": {"en": "ZeroWeb goes public", "zh": "ZeroWeb 项目启动"},
+    "summary": {
+      "en": "An experimental browser written from scratch in Rust — DOM, CSS, layout and rendering all built in-house — is now public on GitHub under the MIT license.",
+      "zh": "一个用 Rust 从零构建的实验性浏览器——DOM、CSS、布局、渲染全部自研——在 GitHub 上以 MIT 协议公开。"
+    },
+    "completed": {
+      "en": ["The repository opened with the core pipeline already in place: HTML parsing, style computation, layout, an early CPU renderer, and the WebView embed boundary, alongside networking, storage, and sandboxing crates."],
+      "zh": ["仓库公开时核心管线已经就位：HTML 解析、样式计算、布局、初版 CPU 渲染与 WebView 嵌入边界，另有网络、存储与沙箱等 crate。"]
+    },
+    "inProgress": {
+      "en": "Next on the list: a reftest suite to verify rendering, a usable browser shell, and keeping the test count climbing.",
+      "zh": "接下来的计划：用 reftest 套件验证渲染、做出可用的浏览器外壳，并继续扩大测试规模。"
+    },
+    "sources": [
+      {"label": "Repository", "url": "https://github.com/leizongmin/ZeroWeb"},
+      {"label": "Initial commit", "url": "https://github.com/leizongmin/ZeroWeb/commit/1902fada"}
+    ]
   }
 ]
