@@ -1385,7 +1385,7 @@ impl InlineFormattingContext {
                         .height
                         .max(box_col_width + box_info.margin_left + box_info.margin_right);
                 }
-                InlineItem::Br => {
+                InlineItem::Br | InlineItem::BlockBreak => {
                     self.lines.push(current_column);
                     current_column = LineBox {
                         y: 0.0,

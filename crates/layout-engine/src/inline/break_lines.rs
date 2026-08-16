@@ -487,7 +487,7 @@ impl InlineFormattingContext {
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
                 }
-                InlineItem::Br => {
+                InlineItem::Br | InlineItem::BlockBreak => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
                     last_was_collapsible_ws = false;
@@ -502,7 +502,10 @@ impl InlineFormattingContext {
                     // est_height 已是 strut（default_line_height）；非空行（含文本，height>0）
                     // 不受影响。与 R1285（br 在 block 间的 taffy min-height）正交——本处管
                     // br 在 IFC 内（p>br 等）的空行。kill-switch `ZW_BR_IFC_LINE=0`（default-on）。
-                    if current_line.height <= 0.0 && std::env::var("ZW_BR_IFC_LINE").as_deref() != Ok("0") {
+                    if matches!(item, InlineItem::Br)
+                        && current_line.height <= 0.0
+                        && std::env::var("ZW_BR_IFC_LINE").as_deref() != Ok("0")
+                    {
                         current_line.height = est_height;
                     }
                     self.lines.push(current_line);
@@ -545,6 +548,24 @@ impl InlineFormattingContext {
                     .iter()
                     .all(|f| f.text.is_empty() && f.width == 0.0 && f.margin_left == 0.0 && f.margin_right == 0.0);
             if all_bare_empty {
+                line.height = 0.0;
+            }
+
+            // R57（M3）：仅含「可折叠空白文本 run」的行盒为零高（CSS 2.1 §10.8.1——
+            // 无文本/无保留空白/无内容的行盒 0 高）。canvas-grid reftest 的
+            // `<span>\n  <div>…</div>\n  <canvas>`——div 前的空白文本在 adjust IFC
+            // 中独占一行（高 18.6px），canvas 被推到第 2 行 y≈19（oracle A/B 22px
+            // 偏移的根因：2d.gradient.colorInterpolationMethod 等 ~15 用例）。
+            // 空白 run 判定：trim 后为空 + 文本 run（font_size>0）+ 无水平 margin。
+            // 同行有 canvas/文字等显著内容时保留高度（下方逐 run 累积不受影响）。
+            let all_collapsible_ws = !line.runs.is_empty()
+                && line.runs.iter().all(|f| {
+                    (f.text.is_empty() || f.text.trim().is_empty())
+                        && f.font_size > 0.0
+                        && f.margin_left == 0.0
+                        && f.margin_right == 0.0
+                });
+            if all_collapsible_ws {
                 line.height = 0.0;
             }
         }
@@ -592,7 +613,7 @@ fn plaintext_paragraph_directions(items: &[InlineItem]) -> HashMap<NodeId, bool>
                 paragraph.push_str(&run.text);
                 nodes.push(run.node_id);
             }
-            InlineItem::Br => flush(&mut paragraph, &mut nodes, &mut directions),
+            InlineItem::Br | InlineItem::BlockBreak => flush(&mut paragraph, &mut nodes, &mut directions),
             _ => {}
         }
     }

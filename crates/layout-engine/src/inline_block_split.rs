@@ -46,7 +46,7 @@ fn is_block_level_display(display: &DisplayValue) -> bool {
 /// 元素被移出流（由 converter 的 abspos/float 定位路径处理），不参与 inline 拆分。
 /// 否则 `<span>text<div style="position:absolute">abs</div></span>` 这类「inline
 /// 仅含 abspos『block』子元素」会被误拆分，破坏 `position-absolute-in-inline-*`。
-fn is_out_of_flow(style: &ComputedStyle) -> bool {
+pub(crate) fn is_out_of_flow(style: &ComputedStyle) -> bool {
     matches!(style.position, PositionValue::Absolute | PositionValue::Fixed) || !matches!(style.float, FloatValue::None)
 }
 

@@ -1211,11 +1211,19 @@ pub fn canvas_context_op(reg: &mut CanvasRegistry, handle: &str, op: &str, args:
                 // R34xx：stop 含 CSS Color 4 现代函数（color-mix/相对色）→ 渐变 OKLab 插值
                 //（driving: 2d.gradient.colormix/relativecolor——Chromium 对现代颜色 stop
                 // 按 OKLab 插值，legacy 颜色按 sRGB）。
+                // R57（M3）：补全 color()/lab()/lch()/oklab()/oklch()/hwb() 函数 stop——
+                // R56h 只覆盖 Mix/RelativeColor（2d.gradient.colorInterpolationMethod 的
+                // color(srgb …) stop 曾落 legacy sRGB 直插；oracle 实证 Chromium 对全部
+                // modern 函数 stop 用 OKLab 默认插值）。
+                let modern_fn = ["color(", "lab(", "lch(", "oklab(", "oklch(", "hwb(", "color-mix("]
+                    .iter()
+                    .any(|p| color_str.trim_start().to_ascii_lowercase().starts_with(p));
                 if matches!(
                     zero_css_parser::values::parse_color(color_str.trim()),
                     Some(zero_css_parser::values::ColorValue::Mix(_))
                         | Some(zero_css_parser::values::ColorValue::RelativeColor(_))
-                ) {
+                ) || modern_fn
+                {
                     style.set_oklab_interpolation(true);
                 }
                 style.add_color_stop(offset, parse_canvas_color(color_str));
@@ -1971,8 +1979,9 @@ mod tests {
             &["99".into(), "10".into(), "1".into(), "1".into()],
         ));
         assert_eq!(&p0[..3], &[255, 0, 0], "起点应红: {p0:?}");
-        // x=99 → t=0.99 → 99% 绿（非纯绿）
-        assert!(p1[1] > 200 && p1[0] < 30 && p1[2] < 30, "终点应近绿: {p1:?}");
+        // R57：modern color() stop → OKLab 默认插值（Chromium 行为）——x=99 → t=0.99
+        // → OKLab 近绿（R 残留 33——OKLab 路径的非线性，非 sRGB 直插的 3）
+        assert!(p1[1] > 200 && p1[0] < 60 && p1[2] < 30, "终点应近绿(OKLab): {p1:?}");
         assert!(pm[0] > 0 && pm[1] > 0 && pm[2] < 100, "中点应黄绿过渡: {pm:?}");
         // 显式插值 op（R56h 曾缺 bridge 分发——JS 已发、Rust API 已有）
         canvas_context_op(

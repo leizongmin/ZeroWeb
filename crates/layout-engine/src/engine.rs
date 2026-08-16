@@ -414,6 +414,7 @@ impl LayoutEngine {
             doc,
             &r109,
         );
+
         // 3.1 两趟固有宽度布局：width:max-content/min-content 的 flex/grid 容器
         // 在第一趟已塌缩为 ~0（converter MaxContent→length(0)）。此处测量其 intrinsic
         // 宽度，对可测且大于当前宽度的容器，把对应 taffy 节点宽度设为 intrinsic 并
@@ -685,6 +686,8 @@ impl LayoutEngine {
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
         adjust_inline_block_positions(&mut root_box, doc, styles);
 
+        // R57 DEBUG: canvas y@step
+
         // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
         fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
 
@@ -806,6 +809,8 @@ impl LayoutEngine {
         // kill-switch =0 关闭。
         if std::env::var("ZW_IFC_GROW_SHIFT").as_deref() != Ok("0") {
             shift_siblings_after_ifc_grow(&mut root_box, styles, false);
+
+            // R57 DEBUG: canvas y@step
         }
         crate::form_layout::shrink_mixed_control_forms(&mut root_box, doc, styles);
 

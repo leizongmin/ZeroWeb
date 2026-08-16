@@ -1715,15 +1715,21 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
 
     // R57（M3）：oracle 捕获环境（Chromium 150）不支持的 API 依赖用例排除——
     // ① tentative CanvasFilter（`typeof CanvasFilter === 'undefined'`）；② beginLayer/
-    // endLayer（实测 Chromium 150 `beginLayer()` 抛 TypeError）。捕获时脚本在调用处
-    // 中止，oracle 帧为半渲染/空白，A/B 对比无意义。排除并计数（同 testharness 面
-    // reftest-format 的 NotRun 语义：canvasFilterObject 37 用例 + beginLayer 103 用例）。
-    let (env_excluded, filtered): (Vec<_>, Vec<_>) = filtered
-        .into_iter()
-        .partition(|case| case.test_html.contains("CanvasFilter") || case.test_html.contains("beginLayer"));
+    // endLayer（实测 Chromium 150 `beginLayer()` 抛 TypeError）；③ colorInterpolationMethod/
+    // hueInterpolationMethod（实测 Chromium 150 部分支持：srgb/hsl/hwb 接受但**无效**
+    // （oracle 帧全 OKLab 默认），srgb-linear 等直接抛 TypeError 中止脚本——tentative
+    // API 未完整实现，oracle 帧无法作为该 API 的参考）。捕获时脚本在调用处中止或
+    // 渲染非预期，A/B 对比无意义。排除并计数（同 testharness 面 reftest-format 的
+    // NotRun 语义：canvasFilterObject 37 + beginLayer 103 + 渐变插值 2）。
+    let (env_excluded, filtered): (Vec<_>, Vec<_>) = filtered.into_iter().partition(|case| {
+        case.test_html.contains("CanvasFilter")
+            || case.test_html.contains("beginLayer")
+            || case.test_html.contains("colorInterpolationMethod")
+            || case.test_html.contains("hueInterpolationMethod")
+    });
     if !env_excluded.is_empty() {
         eprintln!(
-            "oracle 环境不支持排除: {} cases（Chromium 150 无 CanvasFilter/beginLayer，oracle 帧无效）",
+            "oracle 环境不支持排除: {} cases（Chromium 150 无 CanvasFilter/beginLayer/colorInterpolationMethod，oracle 帧无效）",
             env_excluded.len()
         );
     }

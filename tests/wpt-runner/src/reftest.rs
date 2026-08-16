@@ -598,6 +598,14 @@ fn render_with_layout_inner(
     // canvas 像素经 painter 桥接为图元 + canvas_images 注入 image_cache）。
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+    // R57（M3）：canvas 文本真字体光栅需要字体加载器——registry 默认空 loader 使
+    // fillText 的 font_id 解析 None → 文本只入 primitives 不写像素 → canvas 快照
+    // 无文本（2d.text.measure.fillTextCluster-* oracle A/B 9.4%）。注入 base 字体集
+    //（系统 + CJK + Ahem + serif/sans-serif 泛型键，与 reftest 文本渲染一致）。
+    {
+        let reg = canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
+        *reg.font_loader.lock().unwrap_or_else(|e| e.into_inner()) = create_font_loader();
+    }
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let _zw_t1 = std::time::Instant::now();
@@ -897,6 +905,10 @@ pub fn render_via_webview_to_framebuffer_with_base(
 ) -> FrameBuffer {
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+    {
+        let reg = canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
+        *reg.font_loader.lock().unwrap_or_else(|e| e.into_inner()) = create_font_loader();
+    }
     let mutated_html = apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,

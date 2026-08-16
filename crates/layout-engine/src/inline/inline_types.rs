@@ -167,6 +167,11 @@ pub enum InlineItem {
     InlineBlock(InlineBlockBox),
     /// 强制换行 — 由 `<br>` 元素产生。
     Br,
+    /// R57（M3）：block-level 子元素的代理断行（inline 元素含 block 子 → R109 拆分）——
+    /// 与真 `<br>` 的区别：**不触发** R1286 空行 strut 高度（block 前被折叠的空白行
+    /// 不应获得 line-height——canvas-grid reftest 的 span>div+canvas 中 div 前的空白
+    /// 曾撑出 20px 行，canvas 被推到第 2 行，oracle A/B 22px 偏移根因）。
+    BlockBreak,
 }
 
 /// 行盒 — 一行中的所有行内内容。

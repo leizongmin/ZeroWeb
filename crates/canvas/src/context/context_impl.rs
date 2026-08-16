@@ -1981,12 +1981,44 @@ impl CanvasContext {
         // 非 source-over 透源有定义行为（source-in/destination-in/copy 须清除 dst），不跳。
         let skip_transparent_src = self.composite_operation == CompositeOperation::SourceOver;
 
-        // 应用变换后的目标矩形用于逐像素计算
-        for py in 0..(dh as usize) {
-            for px in 0..(dw as usize) {
+        // R57（M3）：drawImage 的 CTM 逆映射——旧实现沿**未变换**的 px/py 网格采样源，
+        // 旋转/倾斜变换下源采样方向错误（2d.composite.grid.* 的 rotate(90°)+scale(0.6,1.2)
+        // 变换后绿矩形覆盖差 2.6 倍——oracle A/B 30%）。新：遍历变换后矩形的包围盒，
+        // 每像素经逆变换映射回目标矩形空间 → 源坐标（spec：图像画入目标矩形后整体
+        // 变换）。轴对齐变换下逆映射与旧网格逐点等价（零回归）。
+        let corners = [
+            self.transform.transform_point(dx, dy),
+            self.transform.transform_point(dx + dw, dy),
+            self.transform.transform_point(dx, dy + dh),
+            self.transform.transform_point(dx + dw, dy + dh),
+        ];
+        let (mut l, mut t) = (f32::INFINITY, f32::INFINITY);
+        let (mut rr, mut bb) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+        for (cx, cy) in corners {
+            l = l.min(cx);
+            rr = rr.max(cx);
+            t = t.min(cy);
+            bb = bb.max(cy);
+        }
+        // 非有限变换（退化/NaN 矩阵）→ 无操作。
+        if !(l.is_finite() && t.is_finite() && rr.is_finite() && bb.is_finite()) {
+            return;
+        }
+        let inv = self.transform.inverse();
+        let x0 = l.floor().max(0.0) as usize;
+        let y0 = t.floor().max(0.0) as usize;
+        let x1 = (rr.ceil().min(canvas_w as f32) as usize).min(canvas_w);
+        let y1 = (bb.ceil().min(canvas_h as f32) as usize).min(canvas_h);
+        for dst_y in y0..y1 {
+            for dst_x in x0..x1 {
+                // 逆变换回目标矩形空间（像素角点，与旧网格逐点语义一致）
+                let (ux, uy) = inv.transform_point(dst_x as f32, dst_y as f32);
+                if ux < dx || uy < dy || ux >= dx + dw || uy >= dy + dh {
+                    continue;
+                }
                 // 源像素坐标（最近邻采样）
-                let src_x = sx + (px as f32 * x_scale) as usize;
-                let src_y = sy + (py as f32 * y_scale) as usize;
+                let src_x = sx + ((ux - dx) * x_scale) as usize;
+                let src_y = sy + ((uy - dy) * y_scale) as usize;
                 if src_x >= img_w || src_y >= img_h {
                     continue;
                 }
@@ -1999,20 +2031,6 @@ impl CanvasContext {
                 let g = image_data.data[src_idx + 1];
                 let b = image_data.data[src_idx + 2];
                 let a = image_data.data[src_idx + 3];
-
-                // 变换目标坐标
-                // R34xx：负坐标钳制——`f32 as usize` 对负数**饱和为 0**（Rust 浮点→
-                // 整型转换规则），dx=-100 的像素 dst=-1 → 0 → 整图错误画到 (0,0)
-                //（2d.drawImage.3arg 的 red(-100,0) 污染 (0,0)）。负数显式跳过。
-                let dst = self.transform.transform_point(dx + px as f32, dy + py as f32);
-                if dst.0 < 0.0 || dst.1 < 0.0 {
-                    continue;
-                }
-                let dst_x = dst.0 as usize;
-                let dst_y = dst.1 as usize;
-                if dst_x >= canvas_w || dst_y >= canvas_h {
-                    continue;
-                }
 
                 let dst_idx = (dst_y * canvas_w + dst_x) * 4;
                 // R56h：clip 区域裁剪（与 fill/stroke blit 一致——drawImage 像素写此前

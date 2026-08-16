@@ -190,8 +190,15 @@ impl InlineFormattingContext {
                             )
                         });
                         if is_block_level {
-                            // 强制换行：inline 内容在此中断
-                            items.push(InlineItem::Br);
+                            // R57（M3）：in-flow block 子 → BlockBreak（无 R1286 空行 strut——
+                            // block 前被折叠的空白行不应获得 line-height，canvas-grid 22px 偏移
+                            // 根因）；**浮动元素保留 Br**（r1733 float-avoidance 依赖旧 strut
+                            // 语义定位 inline-block 与 float 的可用宽）。
+                            if style.is_some_and(crate::inline_block_split::is_out_of_flow) {
+                                items.push(InlineItem::Br);
+                            } else {
+                                items.push(InlineItem::BlockBreak);
+                            }
                             continue;
                         }
 

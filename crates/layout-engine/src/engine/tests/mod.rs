@@ -4,7 +4,7 @@ use zero_css_parser::values::DisplayValue;
 use zero_css_parser::values::LengthValue;
 use zero_dom::Document;
 use zero_dom::NodeId;
-use zero_style_system::ComputedStyle;
+use zero_style_system::{ComputedStyle, StyleSystem};
 
 pub(super) fn make_style_with_display(display: DisplayValue, width: f64, height: f64) -> ComputedStyle {
     let mut style = ComputedStyle::default();
@@ -182,3 +182,45 @@ mod tests_7;
 mod tests_8;
 mod tests_9;
 mod writing_mode_tests;
+
+/// R57（M3）：canvas-grid 结构全管线复现——span > div + canvas 的最终 canvas 盒位置
+///（oracle A/B 22px 偏移：IFC run.y=0 正确但最终盒 y=20，定位移动来源）。
+#[test]
+fn r57_canvas_grid_wrapper_position() {
+    let html = r#"<html><body style="margin:0"><div id="grid">
+<span><div>label</div><canvas width="100" height="50"><p>fallback</p></canvas></span>
+</div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let canvas_id = doc
+        .get_elements_by_tag_name("canvas")
+        .into_iter()
+        .next()
+        .expect("canvas");
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    fn find(b: &LayoutBox, id: NodeId, off_y: f32) -> Option<(f32, f32)> {
+        let abs_y = off_y + b.y;
+        if b.node_id == Some(id) {
+            return Some((abs_y, b.y));
+        }
+        for c in &b.children {
+            if let Some(v) = find(c, id, abs_y) {
+                return Some(v);
+            }
+        }
+        None
+    }
+    if let Some((abs_y, _rel_y)) = find(&result.root, canvas_id, 0.0) {
+        // oracle 期望：grid 顶 0（body margin 0）+ label div 底 + ~0 → canvas abs_y ≈ 18-20
+        //（R57 修复前 = 39——R1286 空行 strut 给 block 代理断行前的空白行 20px 高度）
+        assert!(
+            abs_y < 40.0,
+            "canvas 应紧跟 label（<40px），got {abs_y}（22px 偏移回归）"
+        );
+    } else {
+        panic!("canvas box 不存在");
+    }
+}
