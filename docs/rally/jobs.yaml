@@ -29,7 +29,7 @@ jobs:
     command: "rally"
     args:
       - "query"
-      - "维护 ZeroWeb 官网的最新进展。先 git pull --rebase 同步 main；以本周新增提交、ROADMAP.md、docs/goal/*/master.md、docs/monthly/、WPT 与性能趋势为唯一事实来源。首次运行时，建立最小的网站更新区：首页显示最新 3 条、独立更新归档页，并使用可版本控制的数据文件承载内容；之后每周只追加一条中英双语周报。每条必须包含日期、摘要、已完成项、进行中项、来源链接；没有可验证事实时不要编造，改为输出 DONE。不得改 Rust 源码、Cargo 配置、路线图 Mission/Done Criteria 或 GitHub Actions；不要修改既有更新的事实内容。完成后按 docs/rally/run-rules.md 执行适用检查、lei-pre-commit-guard，提交并推送 main，触发 GitHub Pages 发布。"
+      - "维护 ZeroWeb 官网的最新进展。先 git pull --rebase 同步 main；以本周新增提交、ROADMAP.md、docs/goal/*/master.md、docs/monthly/、WPT 与性能趋势为唯一事实来源。首次运行时，建立最小的网站更新区：首页显示最新 3 条、独立更新归档页，并使用可版本控制的数据文件承载内容；之后每周只追加一条中英双语周报。每条必须包含日期、摘要、已完成项、进行中项、来源链接；没有可验证事实时不要编造，改为输出 DONE。不得改 Rust 源码、Cargo 配置、路线图 Mission/Done Criteria 或 GitHub Actions；不要修改既有更新的事实内容。新增周报的中英文文案在定稿后、提交前，必须调用 /lei-humanizer skill 做人性化处理（去除 AI 写作痕迹，如公式化句式、三段式列举、宣传腔、金句），处理时不得改动事实、数字与来源链接。完成后按 docs/rally/run-rules.md 执行适用检查、lei-pre-commit-guard，提交并推送 main，触发 GitHub Pages 发布。"
       - "-w"
       - "."
       - "--agent-command"
