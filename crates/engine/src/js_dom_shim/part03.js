@@ -743,11 +743,48 @@
       tooLong = maxLength !== null && value.length > maxLength;
       tooShort = value.length > 0 && minLength !== null && value.length < minLength;
     }
+    // R57（FV M1）：valueMissing——required 属性存在且值缺失
+    //（spec §4.10.5.2.4 suffering-from-being-missing）。checkbox/radio 未勾选
+    //（checked 属性缺失——.checked= 经 shim 写属性 latest-wins）、select 无
+    // 选中（value 空）、file 无文件（headless 恒空）、text 类/textarea 空值。
+    // date/time 等非 text 的无效值格式归 badInput/typeMismatch 面（M2 深化）。
+    var valueMissing = false;
+    var reqAttr = null;
+    try {
+      reqAttr = handle
+        ? (typeof __zw_has_attr_handle === 'function' ? __zw_has_attr_handle(handle, 'required') : null)
+        : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'required')
+           : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'required') : null));
+    } catch (_e) {}
+    if (reqAttr === '1') {
+      var tag = _realTag(sel, handle);
+      var ty = '';
+      if (tag === 'INPUT') {
+        try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+        ty = String(ty || '').toLowerCase();
+      }
+      if (ty === 'checkbox' || ty === 'radio') {
+        var checked = null;
+        try {
+          checked = handle
+            ? (typeof __zw_has_attr_handle === 'function' ? __zw_has_attr_handle(handle, 'checked') : null)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'checked')
+               : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'checked') : null));
+        } catch (_e) {}
+        valueMissing = checked !== '1';
+      } else if (tag === 'SELECT') {
+        valueMissing = _controlValue(sel, handle, key).trim() === '';
+      } else if (ty === 'file') {
+        valueMissing = true; // headless 无真文件
+      } else {
+        valueMissing = _controlValue(sel, handle, key).trim() === '';
+      }
+    }
     return {
-      valueMissing: false, typeMismatch: false, patternMismatch: false,
+      valueMissing: valueMissing, typeMismatch: false, patternMismatch: false,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: false, rangeOverflow: false,
       stepMismatch: false, badInput: false, customError: hasCustom,
-      valid: !hasCustom && !tooLong && !tooShort,
+      valid: !hasCustom && !valueMissing && !tooLong && !tooShort,
     };
   }
 
