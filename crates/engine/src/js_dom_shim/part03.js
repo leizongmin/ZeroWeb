@@ -2193,6 +2193,12 @@
     // 与 part04 的 proxy 版同语义；datalist 祖先 M2）。
     Object.defineProperty(node, 'willValidate', {
       get: function () {
+        // datalist 祖先 → barred（willValidate-datalist）
+        var _dlp = node.parentNode;
+        while (_dlp) {
+          if (_dlp.nodeType === 1 && String(_dlp.tagName).toLowerCase() === 'datalist') return false;
+          _dlp = _dlp.parentNode;
+        }
         if (node.hasAttribute('disabled')) return false;
         var nty = node.hasAttribute('type') ? String(node.getAttribute('type') || '').toLowerCase() : '';
         if (nty === 'hidden' || nty === 'button' || nty === 'reset') return false;

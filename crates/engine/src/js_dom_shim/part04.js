@@ -1487,7 +1487,18 @@
         if (prop === 'willValidate') {
           // R57（FV M1）：willValidate 排除（barred from constraint validation——
           // spec §4.10.5.2.2）：disabled、readonly（text 类）、type ∈ {hidden,
-          // button, reset}。datalist 祖先归 M2（willValidate-datalist）。
+          // button, reset}、**datalist 祖先**（willValidate-datalist——spec
+          // §4.10.5.2.2：datalist 元素的后代被 barred）。
+          // datalist 祖先：parentNode 链（sel/handle 两路径——_parentNodeFor；
+          // 经 proxy 的 parentNode getter 统一）。
+          var _wv = _makeProxy(sel, handle);
+          var _wp = _wv.parentNode;
+          var _guard = 0;
+          while (_wp && _guard < 64) {
+            try { if (String(_wp.tagName).toLowerCase() === 'datalist') return false; } catch (_e) {}
+            try { _wp = _wp.parentNode; } catch (_e) { break; }
+            _guard++;
+          }
           if (handle) {
             try { if (__zw_has_attr_handle(handle, 'disabled') === '1') return false; } catch (_e) {}
           } else if (sel) {
