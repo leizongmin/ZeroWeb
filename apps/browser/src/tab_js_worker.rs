@@ -273,7 +273,7 @@ fn js_worker_main(
     #[cfg(feature = "v8")]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::V8Sandbox::with_config(js_config).expect("V8 sandbox init"));
-    #[cfg(feature = "quickjs")]
+    #[cfg(any(feature = "quickjs", test))]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));

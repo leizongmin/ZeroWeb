@@ -27,6 +27,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod animation;
+#[cfg(feature = "script-runtime")]
 pub mod async_resolver;
 pub mod composite;
 pub mod dirty;
@@ -36,10 +37,13 @@ pub mod dom_bridge;
 pub mod dom_bindings;
 // js-dom goal M6 S0q：QuickJS（rquickjs）原生 DOM 绑定骨架（镜像 V8 dom_bindings，DC-7 双引擎对等）。
 pub mod element_from_point;
+#[cfg(feature = "script-runtime")]
 pub mod fetch_bridge;
+#[cfg(feature = "script-runtime")]
 pub mod font_load_bridge;
 pub mod hit_test;
 pub mod js_dom_bridge;
+#[cfg(feature = "script-runtime")]
 pub mod navigation_bridge;
 pub mod paint;
 pub mod pipeline;
@@ -49,19 +53,24 @@ pub mod preload;
 pub mod quickjs_dom_bindings;
 pub mod rect_bridge;
 pub mod text_metrics;
+#[cfg(feature = "script-runtime")]
 pub mod timer_bridge;
 pub mod transition;
 
 pub use animation::*;
+#[cfg(feature = "script-runtime")]
 pub use async_resolver::*;
 pub use composite::*;
 pub use dirty::*;
 pub use dom_bridge::*;
 pub use element_from_point::*;
+#[cfg(feature = "script-runtime")]
 pub use fetch_bridge::*;
+#[cfg(feature = "script-runtime")]
 pub use font_load_bridge::*;
 pub use hit_test::*;
 pub use js_dom_bridge::*;
+#[cfg(feature = "script-runtime")]
 pub use navigation_bridge::*;
 pub use paint::*;
 pub use pipeline::*;
@@ -72,6 +81,7 @@ pub use text_metrics::{
     HmtxMeasureFn, TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_font,
     measure_text_hmtx_for_layout, set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn, shape_text_for_paint,
 };
+#[cfg(feature = "script-runtime")]
 pub use timer_bridge::*;
 /// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。
 pub use zero_css_parser::media_query::MediaType;

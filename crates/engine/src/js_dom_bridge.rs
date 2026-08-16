@@ -5,12 +5,16 @@
 //! [`apply_dom_mutations`] 并序列化回 HTML。
 
 use std::collections::HashMap;
+#[cfg(feature = "script-runtime")]
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "script-runtime")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "script-runtime")]
 use zero_style_system::ComputedStyle;
 
 use zero_dom::{Document, FocusManager, NodeId, NodeKind, parse_html, parse_html_fragment};
+#[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
 // getComputedStyle 计算与序列化（R2709 从本文件拆出，控制主文件行数）。
@@ -42,7 +46,9 @@ mod form_activation;
 pub use form_activation::*;
 
 // `register_dom_callbacks` —— 全部 `__zw_*` 回调注册（R2976 从本文件拆出，控制主文件行数）。最大单体函数。
+#[cfg(feature = "script-runtime")]
 mod callbacks;
+#[cfg(feature = "script-runtime")]
 pub use callbacks::*;
 
 // V8 shim 调用串 / 页面脚本包装生成（R3001 从本文件拆出，控制主文件行数）。纯字符串构造，无 DOM/CSS 依赖。
@@ -2632,6 +2638,7 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
 /// 委托 `url` crate（spec-correct：base 解析 / percent-encoding / IDNA / 默认端口归一）。成功返
 /// JSON 串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）；
 /// 失败（含 base 无效）返空串（shim 抛 TypeError，spec 一致）。提取为纯函数便于单测复用。
+#[cfg(feature = "script-runtime")]
 pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     let result = match base.filter(|b| !b.is_empty()) {
         Some(base_str) => match url::Url::parse(base_str) {
@@ -2648,6 +2655,7 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
 
 /// `Url` → JSON 组件串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）。
 /// `parse_url_to_json` 与 [`set_url_part`] 共用——后者 mutate `Url` 后同样序列化。
+#[cfg(feature = "script-runtime")]
 fn serialize_url(url: &url::Url) -> String {
     let scheme = url.scheme();
     let hostname = url.host_str().unwrap_or("");
@@ -2678,6 +2686,7 @@ fn serialize_url(url: &url::Url) -> String {
 /// 委托 `url` crate 的 `Url` setters（spec-correct：set_scheme/set_host/set_path/set_query 等，
 /// 含 percent-encoding / IDNA / 默认端口归一）。`prev_href` 为当前 href；`part` 标识组件（href 时
 /// 忽略 prev_href，整体重解析 value）；成功返新 JSON 串，失败返空串（shim 抛 TypeError，spec）。
+#[cfg(feature = "script-runtime")]
 pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
     let mut url = if part == "href" {
         match url::Url::parse(value) {
@@ -2719,6 +2728,7 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
 }
 
 /// `host` setter 辅助：`host[:port]` 拆分（仅当 `:` 后全数字视为端口），分别 set_host + set_port。
+#[cfg(feature = "script-runtime")]
 fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
     let (host, port) = match value.rfind(':') {
         Some(i) if !value[i + 1..].is_empty() && value[i + 1..].chars().all(|c| c.is_ascii_digit()) => {
@@ -2741,6 +2751,7 @@ fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
 /// prefers-color-scheme 等）。逗号分隔的 query list 取**或**（任一 match 即 matches=true）。返回
 /// `{"matches":bool,"media":<query>}`。viewport 宽高由 JS 侧传入（innerWidth/innerHeight，生产由
 /// host 更新为真 viewport）。提取为纯函数便于单测复用。
+#[cfg(feature = "script-runtime")]
 pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> String {
     let ctx = zero_css_parser::media_query::MediaContext::new(width, height);
     let matches = zero_css_parser::media_query::parse_media_query(query)
@@ -2757,6 +2768,7 @@ pub(crate) fn match_media_to_json(query: &str, width: f64, height: f64) -> Strin
 /// 两参形式 `supports(prop, val)`：ZW 是否 apply 该声明（known-property gate + [`apply_property_value_with_quirks`]）。
 /// 单参形式 `supports(text)`：supports-condition 求值（`not`/括号/声明 `prop: val`；`and`/`or` 深嵌套 defer）。
 /// 语义近似「ZW 能 apply」≈「支持」，对 ZW 解析但部分实现的特性偏乐观（优于假阴性）。
+#[cfg(feature = "script-runtime")]
 pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
     let mut style = zero_style_system::ComputedStyle::default();
     match value {
@@ -2766,6 +2778,7 @@ pub(crate) fn css_supports(prop_or_text: &str, value: Option<&str>) -> bool {
 }
 
 /// 声明是否被 ZW 支持（已知属性 + 值可 apply）。
+#[cfg(feature = "script-runtime")]
 fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val: &str) -> bool {
     zero_style_system::PropertyRegistry::known_properties().contains(&prop)
         && zero_style_system::apply_property_value_with_quirks(style, prop, val, false, false)
@@ -2775,6 +2788,7 @@ fn decl_supported(style: &mut zero_style_system::ComputedStyle, prop: &str, val:
 /// `and`/`or`/`not`/嵌套/`selector()`，返 [`SupportsCondition`] AST），按 AST 求值；parser 失败时
 /// 回退裸声明 `prop: val`（浏览器兼容：`CSS.supports('display:grid')` 无括号形式，parser 要求括号）。
 /// https://drafts.csswg.org/css-conditional-3/#supports-condition
+#[cfg(feature = "script-runtime")]
 fn eval_supports_condition(text: &str, style: &mut zero_style_system::ComputedStyle) -> bool {
     if let Some(cond) = zero_css_parser::parse_supports_condition(text) {
         return eval_supports_cond_ast(&cond, style);
@@ -2795,6 +2809,7 @@ fn eval_supports_condition(text: &str, style: &mut zero_style_system::ComputedSt
 ///   [`SupportsCondition::Not`] → 取反。
 /// - [`SupportsCondition::Selector`] → headless permissive true（ZW 支持选择器，含 :has() 等已实现）。
 /// - [`SupportsCondition::GeneralEnclosed`] → false（spec：general-enclosed 恒 false）。
+#[cfg(feature = "script-runtime")]
 fn eval_supports_cond_ast(
     cond: &zero_css_parser::SupportsCondition,
     style: &mut zero_style_system::ComputedStyle,

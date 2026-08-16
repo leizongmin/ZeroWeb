@@ -7,8 +7,9 @@ license.workspace = true
 
 [features]
 default = ["v8"]
-v8 = ["zero-script-sandbox/v8", "dep:v8"]
-quickjs = ["zero-script-sandbox/quickjs", "dep:rquickjs"]
+script-runtime = ["dep:zero-script-sandbox"]
+v8 = ["script-runtime", "zero-script-sandbox/v8", "dep:v8"]
+quickjs = ["script-runtime", "zero-script-sandbox/quickjs", "dep:rquickjs"]
 
 [dependencies]
 zero-product-version = { workspace = true }
@@ -20,7 +21,7 @@ zero-render-foundation = { workspace = true }
 zero-canvas = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
-zero-script-sandbox = { workspace = true }
+zero-script-sandbox = { workspace = true, optional = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }

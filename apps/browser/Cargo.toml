@@ -14,9 +14,8 @@ name = "zero_browser"
 path = "src/lib.rs"
 
 [features]
-default = ["windows-console", "browser-runtime", "quickjs"]
+default = ["windows-console"]
 windows-console = []
-browser-runtime = ["zero-engine/quickjs"]
 test-support = ["dep:zero-webview", "dep:zero-script-sandbox"]
 v8 = ["zero-engine/v8", "zero-webview?/v8", "zero-script-sandbox?/v8"]
 quickjs = ["zero-engine/quickjs", "zero-webview?/quickjs", "zero-script-sandbox?/quickjs"]

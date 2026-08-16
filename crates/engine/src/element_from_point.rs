@@ -15,6 +15,7 @@
 
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
 use crate::hit_test::{HitTestCache, selector_from_element_hit};
@@ -64,6 +65,7 @@ fn lookup_in_cell(cache_cell: &ElementFromPointCache, x: f32, y: f32) -> Option<
 
 /// 锁内 clone `Arc<HitTestCache>` 出 → `selectors_at_point`（R2925 `elementsFromPoint`）。
 /// NaN 坐标 / 未注入 cache → 空向量。`register` 的 `__zw_elementsFromPoint` 回调共用。
+#[cfg(feature = "script-runtime")]
 fn selectors_in_cell(cache_cell: &ElementFromPointCache, x: f32, y: f32) -> Vec<String> {
     if x.is_nan() || y.is_nan() {
         return Vec::new();
@@ -94,6 +96,7 @@ impl ElementFromPointBridge {
     /// 返稳定选择器串（命中）；未注入 cache / 坐标非法 / 无命中 → 空串（shim 返 `null`）。
     /// 同时注册 `__zw_elementsFromPoint(x, y)`（R2925）——返 `|` 分隔选择器串（最前在前；空命中 →
     /// 空串 → shim 返空数组）。两回调共享同一 `cache_cell`。
+    #[cfg(feature = "script-runtime")]
     pub fn register(&self, sandbox: &mut dyn Sandbox) {
         let cache_cell = Arc::clone(&self.cache_cell);
         sandbox.register_callback(

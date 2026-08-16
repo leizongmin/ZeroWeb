@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
 use crate::hit_test::{HitTestLayoutSnapshot, node_id_to_u64};
@@ -63,6 +64,7 @@ impl RectBridge {
 
     /// 注册 `__zw_getBoundingClientRect(identity)` 同步回调——shim 的 `getBoundingClientRect` 调此。
     /// 返回 `"x,y,w,h"`；handler 未注入或未命中 → 空串（shim 回落零 rect，零回归）。
+    #[cfg(feature = "script-runtime")]
     pub fn register(&self, sandbox: &mut dyn Sandbox) {
         let handler_cell = Arc::clone(&self.handler_cell);
         sandbox.register_callback(
