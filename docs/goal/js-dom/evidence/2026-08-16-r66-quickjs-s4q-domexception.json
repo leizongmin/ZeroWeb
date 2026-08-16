@@ -1,0 +1,26 @@
+{
+  "date": "2026-08-16",
+  "round": "R66",
+  "milestone": "M6 S4q 完整化（DOMException 基建）",
+  "commit": "4024e525",
+  "scope": {
+    "file": "crates/engine/src/quickjs_dom_bindings.rs",
+    "insertions": 143,
+    "deletions": 16
+  },
+  "changes": [
+    "throw_dom_exception helper：Error 对象带 name/message/stack 属性经 Ctx::throw（JS 侧 catch 得 e.name/e.message，与 DOMException 可观测面等价；DOMException 全局构造器 instanceof 面延后——V8 R6 identity 三重根因教训在案）",
+    "dom_error_name：zero_dom::DomError → (DOMException name, message) 映射，镜像 V8 dom_bindings/node.rs dom_error_exception（WouldCreateCycle/CannotInsertDocumentRoot→HierarchyRequestError、NotAChild→NotFoundError、NodeNotFound→HierarchyRequestError、NotAnElement/AlreadyHasShadowRoot→InvalidStateError）",
+    "appendChild/insertBefore 失败路径：Some(Err(e)) → throw_dom_exception（此前 null 吞错）；removeChild 非子节点 → NotFoundError",
+    "__zw_native_create_element 非法 tag → InvalidCharacterError（is_valid_tag_name：非空 + 首字符 name-start + 不含 </> 空白 /，镜像 V8 R3 is_valid_qualified_name 的 QuickJS 版）",
+    "customElements.define：非 callable ctor → TypeError（rquickjs Exception::from_message）；重复定义 → NotSupportedError（此前静默覆盖）"
+  ],
+  "tests": {
+    "engine_quickjs_lib": "1419 passed / 0 failed（含 PoC 新增断言：self-append→HierarchyRequestError、createElement('<bad>')→InvalidCharacterError、重复 define→NotSupportedError，catch 得 e.name）",
+    "engine_v8_lib": "2153 passed / 0 failed",
+    "clippy": "零警告（quickjs + v8 双矩阵 -D warnings）",
+    "fmt": "cargo fmt --all -- --check 无 diff"
+  },
+  "parity": "错误路径语义与 V8 dom_bindings R3（createElement 校验）/R4（mutation DomError→DOMException）/R6（DOMException identity）对齐；QuickJS 侧形态为带 name 的 Error 对象（rquickjs 无 V8 ObjectTemplate internal-slot 构造器基建，instanceof DOMException 面延后）",
+  "notes": "上一轮（R65 后）429 限流中断本切片 WIP；本轮 stash → rebase over 并行 canvas 流 R56h（5 commits）→ pop 零冲突恢复 → fmt 修复 → 验证 land"
+}
