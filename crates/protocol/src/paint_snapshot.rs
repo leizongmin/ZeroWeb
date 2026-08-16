@@ -243,13 +243,13 @@ pub enum IpcGradientColorSpace {
     Hwb,
     /// XYZ（D65）。
     Xyz,
-    /// XYZ（D50）。
+    /// XYZ-D50。
     XyzD50,
     /// ProPhoto RGB（D50）。
     ProphotoRgb,
     /// Display-P3。
     DisplayP3,
-    /// 线性光 Display-P3。
+    /// Display-P3 线性光。
     DisplayP3Linear,
     /// Adobe RGB (1998)。
     A98Rgb,
