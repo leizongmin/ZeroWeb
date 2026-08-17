@@ -1,0 +1,35 @@
+{
+  "slice": "R90 — M3 Web Components 端到端验收首切片（DC-2）：常驻资产 + 基线暴露缺口三修",
+  "date": "2026-08-17",
+  "commit": "dc7775c9",
+  "asset": {
+    "path": "tests/integration/src/e2e_web_components.rs",
+    "groups": [
+      "1 define/createElement 升级/lifecycle connected+disconnected + isConnected",
+      "2 observedAttributes + attributeChangedCallback（null->gold / gold->null + connectedCallback 属性反射渲染）",
+      "3 Shadow DOM attachShadow(open) + shadowRoot 读 + shadow 子树 querySelector/textContent",
+      "4 registry get/getName 反查 + get-miss + whenDefined",
+      "5 CustomEvent dispatch + 自身 listener detail 传递（bubbles: true）"
+    ],
+    "runs_in": "make test（zero-integration-tests --lib，772 全绿含 5 新增）"
+  },
+  "baseline_exposed_gaps_fixed": [
+    "① createElement 不查 customElements registry——返回 generic proxy，升级路径断（ctor 日志缺 + instanceof false）。修：命中注册 tag 时 setPrototypeOf(ctor.prototype) 立即升级（与 manual upgrade(root) 同型）",
+    "② getPrototypeOf trap 动态派发把 setPrototypeOf 覆盖——instanceof 仍 false。修：trap 先查 CE registry（tag 命中返 ctor.prototype，先于 __zwHtmlTagIface 查表）——parser 建元素与 createElement 升级元素同源",
+    "③ handle 元素 isConnected 在 connectedCallback 时刻读 false——旧实现依赖 getBoundingClientRect（layout 后才有值，host mutation 异步应用前为空）。修：先沿 _zwNodeParent 反链上行（到 sel 节点即 connected），rect 探测降为回落"
+  ],
+  "known_limitations": [
+    "class ctor 体无法在既有 proxy 上重执行（B.call(el) 抛 cannot be invoked without 'new'；Reflect.construct 新建 this 而非复用 el）——升级 = setPrototypeOf + connectedCallback 承载初始化（imperative WC 模式；lit/stencil 的 constructor 内初始化面受限，后续可探索 Proxy-ctor 桥）",
+    "shadow 树内 isConnected false（_zwNodeParent 反链未串过 shadow 容器→host 边界——Node-isConnected-shadow-dom 2F 既有 + 新暴露，后续切片）",
+    "断言组 4 的 whenDefined resolve 断言未闭环（promise 微任务 checkpoint 时序——页面内 __futureResolved 探针未断言，下轮补 flush 后读）"
+  ],
+  "verification": {
+    "integration": "772 passed（+5 WC）",
+    "engine_v8": "2187 passed",
+    "engine_quickjs": "1427 passed",
+    "dom/traversal": "per-case 不变（1593P/11F）",
+    "dom/nodes": "净 +1（Node-isConnected ordinary-child 修复；name-validation flake 波动；shadow-tree 2F 记档）",
+    "dom/events / dom/collections": "per-case 逐字节一致",
+    "fmt_clippy": "双矩阵零警告"
+  }
+}
