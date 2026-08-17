@@ -1,0 +1,64 @@
+# IndexedDB 真实化 — 运行时控制面板（master.md）
+
+**入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
+**创建日期**: 2026-08-17（goal 拆分 bootstrap）
+**最后更新**: 2026-08-17（立项——M1 待启动）
+
+---
+
+## 当前状态
+
+**专项定位**：从 zero-web 父目标拆出的存储方向三拆之一（另两个：storage-cache-api /
+service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-storage 真实引擎（~10k 行）
+并补持久化，WPT `IndexedDB` 真实用例驱动。
+
+**与兄弟 goal 的边界**：
+- storage-cache-api — Cache API/CacheStorage 归其管；本目标不碰 `caches`
+- service-workers — SW 环境的 IDB 使用（self.indexedDB）归其集成验收；本目标只保证
+  window 面 `indexedDB` 真实
+- js-dom（DOM API 反射面）— 仅 host 回调注册段可能共享，run-rules §9 碰头管理
+
+## 实测基线（2026-08-17 立项时）
+
+### 现有实现
+
+- ✅ Rust 引擎：`crates/storage/src/indexed_db/`（~10k 行）——IdbKey/IdbKeyRange/
+  IdbCursor/事务/object store CRUD 全 API 面 + 单测（types_coverage 5 轮 +
+  tests_basic/advanced/edge）
+- ✅ JS 近似：part02.js:2564 `globalThis.indexedDB` in-memory 实现（为 5 个 storage
+  WPT smoke 不抛 not defined）
+- ⚠️ 页面零接线：JS 近似与 Rust 引擎零关联
+- ⚠️ 无持久化：indexed_db 无落盘路径
+- ⚠️ WPT `IndexedDB` 目录未导入，无基线
+
+## 缺口清单
+
+| # | 缺口 | 状态 |
+|---|------|------|
+| I1 | WPT IndexedDB 用例覆盖为零 | ⬜ M1 |
+| I2 | 页面→Rust 引擎零接线 | ⬜ M2 |
+| I3 | 无持久化（重启即失） | ⬜ M3 |
+| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ⬜ M2/M3 |
+
+## 下一步计划
+
+1. **M1 切片 1**：WPT `IndexedDB` 用例导入（目录大，按子目录分批）+ 分类通过率基线
+2. **M1 切片 2**：失败聚类 → in-memory 近似已覆盖面 vs 缺失面清单
+3. **M2**：JS↔Rust 接线（open/事务/store CRUD/cursor 先行）
+
+**碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
+核对 js-dom 流活跃面。
+
+## 里程碑状态
+
+| 里程碑 | 状态 |
+|--------|------|
+| M1 — WPT IndexedDB 基线建立 | ⬜ 待启动 |
+| M2 — JS↔Rust 接线（核心通路） | ⬜ |
+| M3 — 索引 + 事件模型 + 持久化 | ⬜ |
+
+## 验证基线
+
+- 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
+- WPT IndexedDB 面：无基线（未导入）
+- 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
