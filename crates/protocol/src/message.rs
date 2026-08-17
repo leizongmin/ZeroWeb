@@ -230,6 +230,10 @@ pub enum IpcMessageKind {
     AutomationRequest(AutomationRequest),
     /// 自动化响应（live renderer → WebDriver/testdriver）。
     AutomationResponse(AutomationResponse),
+    /// IndexedDB 请求（renderer → browser storage owner）。
+    IndexedDbRequest(IndexedDbRequestParams),
+    /// IndexedDB 响应（browser storage owner → renderer）。
+    IndexedDbResponse(IndexedDbResponseParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -531,6 +535,22 @@ pub struct StorageOpParams {
     pub value: Option<String>,
     /// 来源。
     pub origin: String,
+}
+
+/// IndexedDB 同步 host 请求。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedDbRequestParams {
+    /// 页面产生的 IndexedDB JSON wire；origin 由 browser 根据 tab URL 推导。
+    pub request: String,
+}
+
+/// IndexedDB 同步 host 响应。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedDbResponseParams {
+    /// 成功时的 JSON wire。
+    pub response: Option<String>,
+    /// 失败时的具名错误。
+    pub error: Option<String>,
 }
 
 /// 存储类型。

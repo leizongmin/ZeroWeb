@@ -54,7 +54,8 @@ fn invoke_handler(handler: &IndexedDbHandler, page_url: &Mutex<String>, request:
     serialize_result(handler(&origin, request))
 }
 
-fn indexed_db_origin(page_url: &str) -> String {
+/// 从宿主管理的页面 URL 推导 IndexedDB origin。
+pub fn indexed_db_origin(page_url: &str) -> String {
     url::Url::parse(page_url)
         .map(|url| url.origin().ascii_serialization())
         .unwrap_or_else(|_| "null".to_string())

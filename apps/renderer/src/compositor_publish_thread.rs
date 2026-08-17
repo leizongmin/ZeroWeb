@@ -49,7 +49,7 @@ impl SharedWriter {
         (Self::from_arc(Arc::clone(&arc)), arc)
     }
 
-    fn from_arc(inner: Arc<Mutex<Box<dyn Write + Send>>>) -> Self {
+    pub(crate) fn from_arc(inner: Arc<Mutex<Box<dyn Write + Send>>>) -> Self {
         Self {
             inner,
             frame: Vec::new(),

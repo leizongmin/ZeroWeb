@@ -6639,11 +6639,13 @@ name = "zero-storage"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "dirs",
  "indexmap",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
+ "zero-runtime-config",
 ]
 
 [[package]]

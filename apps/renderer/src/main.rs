@@ -8,6 +8,7 @@ mod automation;
 mod compositor_publish_thread;
 mod error_page;
 mod ipc_fetch;
+mod ipc_indexed_db;
 mod js_worker;
 #[cfg(target_os = "macos")]
 mod macos_app;
@@ -21,13 +22,17 @@ use zero_page_runtime::{FormControlStateStore, FrameInvalidation, FrameTransacti
 use zero_webview::AsyncPageLoad;
 
 use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
+use crate::ipc_indexed_db::IndexedDbResponseRouter;
 
 use crate::js_worker::RendererJsWorker;
 use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
 use crate::script_prefetch::PendingScriptPrefetch;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -81,29 +86,6 @@ fn read_input_value_for_change(html: &str, selector: &str) -> String {
     }
 }
 
-fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
-    let (tx, rx) = mpsc::channel();
-    let join = thread::Builder::new()
-        .name("renderer-ipc-in".into())
-        .spawn(move || {
-            let mut transport = PipeTransport::new(io::stdin(), io::empty());
-            loop {
-                match transport.recv() {
-                    Ok(msg) => {
-                        if tx.send(msg).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Renderer stdin IPC reader stopped: {e}");
-                        break;
-                    }
-                }
-            }
-        })
-        .expect("spawn renderer ipc inbound reader");
-    (rx, join)
-}
 use zero_render_foundation::font::loader::FontLoader;
 
 /// 单帧渲染预算（ms）——与 tab_worker 对齐，每 tick 推进一小步后归还 IPC 循环。
@@ -159,9 +141,9 @@ struct RendererRuntime {
     outbound: IpcOutbound,
     /// 浏览器 → 渲染进程消息（stdin 读线程填充）。
     inbound_rx: Receiver<IpcMessage>,
-    /// 持有 IPC 读线程 JoinHandle（仅保活，不被读；drop 即分离线程）。
+    /// 持有 IPC reader/router 线程 JoinHandle（仅保活，不被读；drop 即分离线程）。
     #[allow(dead_code)]
-    inbound_thread: Option<JoinHandle<()>>,
+    inbound_threads: Vec<JoinHandle<()>>,
     /// 当前视口（CSS 逻辑像素），随 SetViewport 更新；publish 用。
     viewport: (u32, u32),
     /// 当前窗口设备缩放因子，仅用于 compositor 位图的光栅分辨率。
@@ -249,14 +231,14 @@ impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     fn new(renderer_id: u64) -> Self {
         zero_webview::enable_isolated_image_decoder();
-        let (inbound_rx, inbound_thread) = spawn_browser_ipc_inbound();
+        let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_browser_ipc_inbound();
         let mut rt = Self::with_io(
             renderer_id,
             FramePublishMode::Compositor,
             Box::new(io::stdout()),
             inbound_rx,
         );
-        rt.inbound_thread = Some(inbound_thread);
+        rt.inbound_threads.push(inbound_thread);
         rt
     }
 
@@ -268,22 +250,27 @@ impl RendererRuntime {
         outbound: Box<dyn io::Write + Send>,
         inbound_rx: Receiver<IpcMessage>,
     ) -> Self {
-        let (compositor_publish, outbound_writer) = if compositor_publish_thread::compositor_publish_threading_enabled()
-        {
-            let (shared, arc) = compositor_publish_thread::SharedWriter::new(outbound);
-            (
-                Some(compositor_publish_thread::CompositorPublishThread::spawn(arc)),
-                Box::new(shared) as Box<dyn io::Write + Send>,
-            )
+        let indexed_db_responses = IndexedDbResponseRouter::new();
+        let (inbound_rx, inbound_thread) =
+            ipc_indexed_db::route_browser_ipc_inbound(inbound_rx, Arc::clone(&indexed_db_responses));
+        let (shared_writer, writer) = compositor_publish_thread::SharedWriter::new(outbound);
+        let compositor_publish = if compositor_publish_thread::compositor_publish_threading_enabled() {
+            Some(compositor_publish_thread::CompositorPublishThread::spawn(Arc::clone(
+                &writer,
+            )))
         } else {
-            (None, outbound)
+            None
         };
-        let outbound = PipeTransport::new(io::empty(), outbound_writer);
+        let outbound = PipeTransport::new(io::empty(), Box::new(shared_writer) as Box<dyn io::Write + Send>);
+        let indexed_db_handler = ipc_indexed_db::indexed_db_handler(
+            compositor_publish_thread::SharedWriter::from_arc(writer),
+            indexed_db_responses,
+        );
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
-        let js_worker = RendererJsWorker::spawn(renderer_id);
+        let js_worker = RendererJsWorker::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler);
         // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
         // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
         // test 构建不注入（renderer runtime 单测用合成 handler）。
@@ -304,7 +291,7 @@ impl RendererRuntime {
         Self {
             outbound,
             inbound_rx,
-            inbound_thread: None,
+            inbound_threads: vec![inbound_thread],
             viewport: (1280, 800),
             device_scale_factor: 1.0,
             webview: Some(webview),
@@ -2334,6 +2321,8 @@ impl RendererRuntime {
             | IpcMessageKind::DispatchDomEventResult(_)
             | IpcMessageKind::FocusOwnerChanged(_)
             | IpcMessageKind::AutomationResponse(_)
+            | IpcMessageKind::IndexedDbRequest(_)
+            | IpcMessageKind::IndexedDbResponse(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

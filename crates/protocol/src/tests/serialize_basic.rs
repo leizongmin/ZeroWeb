@@ -1577,3 +1577,35 @@ fn test_deserialize_truncated_valid_data() {
     let result = deserialize(&bytes);
     assert!(result.is_err(), "Expected error for truncated data");
 }
+
+#[test]
+fn test_indexed_db_request_response_roundtrip() {
+    let request = IpcMessage {
+        id: 41,
+        kind: IpcMessageKind::IndexedDbRequest(IndexedDbRequestParams {
+            request: r#"{"op":"databases"}"#.to_string(),
+        }),
+    };
+    let request = deserialize(&serialize(&request).unwrap()).unwrap();
+    assert!(matches!(
+        request.kind,
+        IpcMessageKind::IndexedDbRequest(IndexedDbRequestParams { request })
+            if request == r#"{"op":"databases"}"#
+    ));
+
+    let response = IpcMessage {
+        id: 41,
+        kind: IpcMessageKind::IndexedDbResponse(IndexedDbResponseParams {
+            response: None,
+            error: Some("UnknownError: disk full".to_string()),
+        }),
+    };
+    let response = deserialize(&serialize(&response).unwrap()).unwrap();
+    assert!(matches!(
+        response.kind,
+        IpcMessageKind::IndexedDbResponse(IndexedDbResponseParams {
+            response: None,
+            error: Some(error),
+        }) if error == "UnknownError: disk full"
+    ));
+}

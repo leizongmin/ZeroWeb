@@ -11,8 +11,9 @@ switch there before consuming it in an application or library crate.
 | --- | --- | --- | --- |
 | `ZEROWEB_RENDERER` | `auto`, `gpu`, `cpu` | `auto` | Select the rendering backend; auto prefers GPU then falls back to CPU. |
 | `ZERO_RENDERER_PATH` | executable path | auto-discovery | Override the `zero-renderer` executable. |
-| `ZERO_PRIVATE` | `1`/`true` enables | disabled | Do not write the HTTP disk cache. |
+| `ZERO_PRIVATE` | `1`/`true` enables | disabled | Do not write the HTTP disk cache or IndexedDB. |
 | `ZERO_CACHE_DIR` | directory path | platform cache directory | Override the HTTP disk-cache directory. |
+| `ZERO_STORAGE_DIR` | directory path | platform data directory | Override the IndexedDB data directory. |
 | `ZERO_HTTP2` | `0`/`false` disables | enabled | Force HTTP/1.1 and omit HTTP/2 priority behaviour. |
 | `ZERO_NOPROXY` | `1`/`true` enables | disabled | Bypass system and `HTTP[S]_PROXY` environment proxies. |
 | `ZERO_MAX_CONNECTIONS_PER_ORIGIN` | positive integer | `6` | Per-origin connection limit. |

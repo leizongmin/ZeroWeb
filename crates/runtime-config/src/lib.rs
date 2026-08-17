@@ -31,12 +31,17 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     EnvironmentVariable {
         name: "ZERO_PRIVATE",
         default: "disabled",
-        description: "隐私浏览（不写 HTTP 磁盘缓存）",
+        description: "隐私浏览（不写 HTTP 磁盘缓存或 IndexedDB）",
     },
     EnvironmentVariable {
         name: "ZERO_CACHE_DIR",
         default: "platform cache directory",
         description: "HTTP 磁盘缓存目录",
+    },
+    EnvironmentVariable {
+        name: "ZERO_STORAGE_DIR",
+        default: "platform data directory",
+        description: "IndexedDB data directory",
     },
     EnvironmentVariable {
         name: "ZERO_HTTP2",

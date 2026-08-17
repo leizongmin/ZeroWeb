@@ -106,7 +106,17 @@ pub struct RendererJsWorker {
 
 impl RendererJsWorker {
     /// 启动 JS 专用线程。
+    #[allow(dead_code)] // 独立 worker 测试使用本地 owner；生产 renderer 注入 browser IPC handler。
     pub fn spawn(renderer_id: u64) -> Self {
+        let indexed_db_handler =
+            zero_page_runtime::indexed_db_handler(Arc::new(std::sync::Mutex::new(zero_storage::StorageManager::new())));
+        Self::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler)
+    }
+
+    pub(crate) fn spawn_with_indexed_db_handler(
+        renderer_id: u64,
+        indexed_db_handler: zero_engine::IndexedDbHandler,
+    ) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
@@ -145,6 +155,7 @@ impl RendererJsWorker {
                     element_from_point_cache_for_worker,
                     font_bridge,
                     nav_bridge,
+                    indexed_db_handler,
                     async_callbacks_ready_for_worker,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -349,6 +360,7 @@ fn js_worker_main(
     element_from_point_cache: ElementFromPointCache,
     font_bridge: zero_engine::FontLoadBridge,
     nav_bridge: zero_engine::NavigationBridge,
+    indexed_db_handler: zero_engine::IndexedDbHandler,
     async_callbacks_ready: Arc<AtomicBool>,
     #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
@@ -368,9 +380,7 @@ fn js_worker_main(
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
-    let indexed_db_bridge = zero_engine::IndexedDbBridge::new(zero_page_runtime::indexed_db_handler(Arc::new(
-        std::sync::Mutex::new(zero_storage::StorageManager::new()),
-    )));
+    let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_handler);
     indexed_db_bridge.register(&mut *sandbox, &page_url);
     register_module_compile_callback(&mut *sandbox);
     // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。

@@ -1,0 +1,48 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 browser-owned IndexedDB for production renderers",
+  "capabilities": [
+    "append-only IndexedDB request-response IPC variants",
+    "renderer-side synchronous waiter with dedicated inbound response routing",
+    "browser-process single persistent storage owner",
+    "per-renderer transaction registries and crash cleanup",
+    "browser-derived request origin",
+    "private-tab in-memory owner isolation",
+    "ZERO_STORAGE_DIR product override",
+    "ZERO_PRIVATE disk-write suppression"
+  ],
+  "tests": {
+    "protocol_round_trip": "pass",
+    "renderer_waiter_router": "pass",
+    "cross_renderer_same_origin_readback": "pass",
+    "cross_origin_isolation": "pass",
+    "private_owner_isolation": "pass",
+    "private_owner_after_persistent_init_failure": "pass",
+    "imported_wpt": {
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess_owner_smoke": "pass"
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "embedded WebView host-level persistent and private owner injection",
+    "full cross-connection scheduling and blocked/versionchange events",
+    "browser navigation-commit storage-key authority",
+    "database versions above u32"
+  ]
+}

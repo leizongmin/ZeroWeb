@@ -12,7 +12,7 @@ use html_scenario::{BrowserScenarioHost, HtmlScenario, StateExpectation};
 /// R3254：多进程 GUI 测试串行化——并行 spawn 多个 renderer 子进程（每个约 582MB 二进制
 /// 加字体加载）、叠加共享进程内 compositor client，会资源竞争导致快照轮询超时
 /// （form_fixture / typing 并行即挂）。多进程测试须先持锁。
-static MULTIPROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static MULTIPROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use zero_browser_shell::TabId;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;

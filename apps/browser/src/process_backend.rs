@@ -2,25 +2,30 @@
 //!
 //! 网络请求由本进程代理（Chromium 式 browser-hosted network）；渲染进程仅通过 `FetchRequest` IPC 访问网络。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::TabId;
-use zero_engine::PrefersColorSchemeValue;
+use zero_engine::{IndexedDbHandler, PrefersColorSchemeValue};
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
-    FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
-    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
-    StorageType,
+    FramePublishMode, ImeEventParams, IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType,
+    IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
 
 use crate::fetch_proxy::TabFetchProxy;
 use crate::tab_snapshot::{CompositorSubmission, TabSnapshot};
+
+#[cfg(test)]
+#[path = "process_backend/indexed_db_owner_tests.rs"]
+mod indexed_db_owner_tests;
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -30,6 +35,14 @@ fn renderer_binary_filename() -> &'static str {
     #[cfg(not(windows))]
     {
         "zero-renderer"
+    }
+}
+
+fn browser_storage_manager() -> Result<StorageManager, zero_storage::StorageError> {
+    if cfg!(test) || zero_runtime_config::enabled_when_true("ZERO_PRIVATE") {
+        Ok(StorageManager::new())
+    } else {
+        StorageManager::with_indexed_db_persistence(zero_storage::default_indexed_db_dir())
     }
 }
 
@@ -128,7 +141,11 @@ pub struct ProcessTabBackend {
     viewport: (u32, u32),
     device_scale_factor: f32,
     javascript_enabled: bool,
-    storage: StorageManager,
+    storage: Arc<Mutex<StorageManager>>,
+    private_storage: Arc<Mutex<StorageManager>>,
+    private_tabs: HashSet<TabId>,
+    indexed_db_handlers: HashMap<u64, IndexedDbHandler>,
+    indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
     fetch_proxy: TabFetchProxy,
@@ -180,6 +197,12 @@ impl ProcessTabBackend {
     }
 
     fn with_renderer_bin(renderer_bin: PathBuf) -> Self {
+        let storage = browser_storage_manager();
+        let (storage, storage_error) = match storage {
+            Ok(storage) => (storage, None),
+            Err(error) => (StorageManager::new(), Some(error.to_string())),
+        };
+        let storage = Arc::new(Mutex::new(storage));
         Self {
             manager: ProcessManager::new(renderer_bin.to_string_lossy().as_ref()),
             tab_to_renderer: HashMap::new(),
@@ -187,7 +210,11 @@ impl ProcessTabBackend {
             viewport: (800, 600),
             device_scale_factor: 1.0,
             javascript_enabled: true,
-            storage: StorageManager::new(),
+            storage,
+            private_storage: Arc::new(Mutex::new(StorageManager::new())),
+            private_tabs: HashSet::new(),
+            indexed_db_handlers: HashMap::new(),
+            indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
@@ -592,9 +619,13 @@ impl ProcessTabBackend {
     }
 
     fn handle_storage_op(&mut self, tab_id: TabId, params: StorageOpParams) {
+        let Ok(mut storage) = self.storage.lock() else {
+            tracing::warn!("Storage manager lock poisoned");
+            return;
+        };
         let store = match params.storage_type {
-            StorageType::Local => self.storage.local_storage(&params.origin),
-            StorageType::Session => self.storage.session_storage(&params.origin),
+            StorageType::Local => storage.local_storage(&params.origin),
+            StorageType::Session => storage.session_storage(&params.origin),
         };
         let _result = match params.operation {
             StorageOperation::Get => store.get(&params.key).map(|s| s.to_string()),
@@ -613,6 +644,61 @@ impl ProcessTabBackend {
         };
         let _ = tab_id;
         // 渲染进程当前不等待 Storage 响应；后续可扩展 StorageResponse IPC。
+    }
+
+    fn handle_indexed_db_request(
+        &mut self,
+        tab_id: TabId,
+        request_id: u64,
+        page_url: Option<&str>,
+        params: IndexedDbRequestParams,
+    ) {
+        const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+        let private = self.private_tabs.contains(&tab_id);
+        let result = if params.request.len() > MAX_REQUEST_BYTES {
+            Err("UnknownError: IndexedDB request exceeds 8 MiB".to_string())
+        } else if !private && let Some(error) = &self.indexed_db_init_error {
+            Err(format!(
+                "UnknownError: IndexedDB storage initialization failed: {error}"
+            ))
+        } else {
+            let origin = page_url
+                .map(zero_engine::indexed_db_origin)
+                .unwrap_or_else(|| "null".to_string());
+            let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
+                return;
+            };
+            let storage = if private {
+                Arc::clone(&self.private_storage)
+            } else {
+                Arc::clone(&self.storage)
+            };
+            let handler = Arc::clone(
+                self.indexed_db_handlers
+                    .entry(renderer_id)
+                    .or_insert_with(|| zero_page_runtime::indexed_db_handler(storage)),
+            );
+            handler(&origin, &params.request)
+        };
+        let params = match result {
+            Ok(response) => IndexedDbResponseParams {
+                response: Some(response),
+                error: None,
+            },
+            Err(error) => IndexedDbResponseParams {
+                response: None,
+                error: Some(error),
+            },
+        };
+        let Some(renderer) = self.renderer_mut(tab_id) else {
+            return;
+        };
+        if let Err(error) = renderer.send(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::IndexedDbResponse(params),
+        }) {
+            tracing::warn!("IndexedDbResponse send failed tab {}: {error}", tab_id.0);
+        }
     }
 
     fn handle_crashes(&mut self, snapshots: &mut HashMap<TabId, TabSnapshot>) {
@@ -636,6 +722,7 @@ impl ProcessTabBackend {
         if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
             self.tab_to_renderer.remove(&tab_id);
         }
+        self.indexed_db_handlers.remove(&rid);
         self.fetch_proxy.remove_tab(tab_id);
         let _ = self.manager.shutdown_renderer(rid);
         // R3254-F10：renderer 意外退出自动重启（一次）并按快照 URL 重新导航——此前
@@ -711,6 +798,7 @@ impl ProcessTabBackend {
                 return;
             }
             self.tab_to_renderer.remove(&tab_id);
+            self.indexed_db_handlers.remove(&rid);
         }
         match self.manager.spawn_renderer() {
             Ok(rid) => {
@@ -739,7 +827,9 @@ impl ProcessTabBackend {
     /// 关闭 Tab 对应渲染进程。
     pub fn remove_renderer(&mut self, tab_id: TabId) {
         self.fetch_proxy.remove_tab(tab_id);
+        self.private_tabs.remove(&tab_id);
         if let Some(rid) = self.tab_to_renderer.remove(&tab_id) {
+            self.indexed_db_handlers.remove(&rid);
             crate::compositor_client::release_surface(rid);
             let _ = self.manager.shutdown_renderer(rid);
         }
@@ -748,6 +838,14 @@ impl ProcessTabBackend {
     /// 标记 Tab 为无痕（fetch 使用仅内存缓存）。
     pub fn set_tab_private(&mut self, tab_id: TabId, private: bool) {
         self.fetch_proxy.set_tab_private(tab_id, private);
+        if private {
+            self.private_tabs.insert(tab_id);
+        } else {
+            self.private_tabs.remove(&tab_id);
+        }
+        if let Some(renderer_id) = self.tab_to_renderer.get(&tab_id) {
+            self.indexed_db_handlers.remove(renderer_id);
+        }
     }
 
     /// Tab 是否仍有 live 渲染进程。
@@ -933,6 +1031,10 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::StorageOp(params) => {
                         self.handle_storage_op(tab_id, params);
+                    }
+                    IpcMessageKind::IndexedDbRequest(params) => {
+                        let page_url = snapshots.get(&tab_id).and_then(|snapshot| snapshot.url.clone());
+                        self.handle_indexed_db_request(tab_id, msg.id, page_url.as_deref(), params);
                     }
                     IpcMessageKind::DispatchDomEventResult(result) => {
                         self.pending_dispatch_results.push((msg.id, result.default_allowed));

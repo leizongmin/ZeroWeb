@@ -15,6 +15,16 @@ mod persistence_tests;
 /// localStorage 默认最大容量（5 MB）。
 const DEFAULT_MAX_SIZE: usize = 5 * 1024 * 1024;
 
+/// 默认 IndexedDB 数据目录（`ZERO_STORAGE_DIR` 或平台 data directory）。
+pub fn default_indexed_db_dir() -> PathBuf {
+    if let Some(path) = zero_runtime_config::optional_path("ZERO_STORAGE_DIR") {
+        return path;
+    }
+    dirs::data_dir()
+        .map(|path| path.join("ZeroBrowser").join("Storage").join("IndexedDB"))
+        .unwrap_or_else(|| PathBuf::from(".zero-browser-storage").join("IndexedDB"))
+}
+
 /// IndexedDB 数据库摘要。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexedDbInfo {
