@@ -16,14 +16,22 @@ pub type NodeIdMap<V> = HashMap<NodeId, V, NodeIdBuildHasher>;
 pub type NodeIdSet = HashSet<NodeId, NodeIdBuildHasher>;
 
 /// Selects fast `NodeId` mixing or the standard randomized fallback.
+///
+/// Must stay ≤ 8 bytes: `NodeIdMap` fields live inside every `LayoutBox`, and an
+/// oversized hasher inflates `LayoutBox`, slowing the compositing walk by ~25%
+/// (R3441-F regression, ZRG-2026-08-18-01). Kept to a mode tag only — the FNV
+/// seed is a constant and the fallback `RandomState` is shared.
 #[derive(Clone)]
 pub struct NodeIdBuildHasher(BuildHasherMode);
 
 #[derive(Clone)]
 enum BuildHasherMode {
     Fast,
-    Random(RandomState),
+    Random,
 }
+
+/// Shared randomized state for the fallback mode (avoids per-map allocation).
+static RANDOM_STATE: LazyLock<RandomState> = LazyLock::new(RandomState::new);
 
 impl Default for NodeIdBuildHasher {
     fn default() -> Self {
@@ -31,7 +39,7 @@ impl Default for NodeIdBuildHasher {
         if *DIRECT {
             Self(BuildHasherMode::Fast)
         } else {
-            Self(BuildHasherMode::Random(RandomState::new()))
+            Self(BuildHasherMode::Random)
         }
     }
 }
@@ -42,7 +50,7 @@ impl BuildHasher for NodeIdBuildHasher {
     fn build_hasher(&self) -> Self::Hasher {
         match &self.0 {
             BuildHasherMode::Fast => NodeIdHasher(NodeIdHasherMode::Fast(FNV_OFFSET)),
-            BuildHasherMode::Random(state) => NodeIdHasher(NodeIdHasherMode::Random(state.build_hasher())),
+            BuildHasherMode::Random => NodeIdHasher(NodeIdHasherMode::Random(RANDOM_STATE.build_hasher())),
         }
     }
 }
@@ -93,8 +101,9 @@ fn mix_node_id(value: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeIdMap, NodeIdSet};
-    use zero_dom::Document;
+    use super::{NodeIdBuildHasher, NodeIdMap, NodeIdSet};
+    use std::collections::HashMap;
+    use zero_dom::{Document, NodeId};
 
     #[test]
     fn specialized_collections_distinguish_and_overwrite_node_ids() {
@@ -111,5 +120,19 @@ mod tests {
 
         let set = NodeIdSet::from_iter([first, second, first]);
         assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn hasher_size_does_not_inflate_layoutbox() {
+        // ZRG-2026-08-18-01: R3441-F's oversized hasher (24 B) grew every
+        // LayoutBox by 80 B and slowed the compositing walk ~25%. The hasher
+        // must stay small enough that NodeIdMap is no larger than a plain
+        // HashMap, which is what layout performance was measured against.
+        use std::collections::hash_map::RandomState;
+        assert!(std::mem::size_of::<NodeIdBuildHasher>() <= std::mem::size_of::<RandomState>());
+        assert!(
+            std::mem::size_of::<NodeIdMap<f32>>() <= std::mem::size_of::<HashMap<NodeId, f32, RandomState>>(),
+            "NodeIdMap must not be larger than a plain HashMap"
+        );
     }
 }
