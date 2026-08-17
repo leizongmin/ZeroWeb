@@ -1,5 +1,10 @@
 # 表单校验（Form Validation）— WPT 驱动的 HTML 约束校验正确性目标
 
+> **已归档（2026-08-17）**：目标 Done Criteria 全部满足（M1-M3 完成——
+> constraints Pass 919 / Fail 0）。本入口文档移入归档区（只追加不修改）；
+> 运行时状态见同目录 `master.md`，验证证据见 `evidence/`，里程碑过程见
+> `archive/m1-m3-milestones-2026-08-17.md`。
+
 **版本**: v1.0
 **日期**: 2026-08-16
 **状态**: Active
