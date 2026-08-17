@@ -428,6 +428,11 @@ pub enum TxMutation {
         /// 主键。
         key: IdbKey,
     },
+    /// 清空 object store。
+    Clear {
+        /// 目标 store 名称。
+        store: String,
+    },
 }
 
 /// 事务模式。
@@ -1225,6 +1230,15 @@ impl IdbDatabase {
         Ok(found)
     }
 
+    /// 在事务范围内清空 store（缓冲，提交时生效）。
+    pub fn tx_clear(&mut self, tx: &IdbTransaction, store_name: &str) -> Result<(), StorageError> {
+        tx.check_active(store_name)?;
+        tx.mutations.borrow_mut().push(TxMutation::Clear {
+            store: store_name.to_string(),
+        });
+        Ok(())
+    }
+
     /// 在事务范围内获取记录（包含缓冲区的未提交变更）。
     pub fn tx_get(
         &self,
@@ -1237,6 +1251,7 @@ impl IdbDatabase {
         let mutations = tx.mutations.borrow();
         for m in mutations.iter().rev() {
             match m {
+                TxMutation::Clear { store } if store == store_name => return Ok(None),
                 TxMutation::Delete { store, key: k } if store == store_name && k == key => {
                     return Ok(None);
                 }
@@ -1256,6 +1271,42 @@ impl IdbDatabase {
         }
         // 缓冲区没有相关变更，从 store 读取
         Ok(self.get(store_name, key).cloned())
+    }
+
+    /// 获取事务可见的全部记录，按主键排序。
+    pub fn tx_get_all(&self, tx: &IdbTransaction, store_name: &str) -> Result<Vec<IdbRecord>, StorageError> {
+        tx.check_active(store_name)?;
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        let mut records = store
+            .records
+            .iter()
+            .map(|record| (record.key.clone(), record.value.clone()))
+            .collect::<HashMap<_, _>>();
+        for mutation in tx.mutations.borrow().iter() {
+            match mutation {
+                TxMutation::Add { store, key, value } | TxMutation::Put { store, key, value }
+                    if store == store_name =>
+                {
+                    records.insert(key.clone(), value.clone());
+                }
+                TxMutation::Delete { store, key } if store == store_name => {
+                    records.remove(key);
+                }
+                TxMutation::Clear { store } if store == store_name => {
+                    records.clear();
+                }
+                _ => {}
+            }
+        }
+        let mut records = records
+            .into_iter()
+            .map(|(key, value)| IdbRecord { key, value })
+            .collect::<Vec<_>>();
+        records.sort_by(|a, b| a.key.cmp(&b.key));
+        Ok(records)
     }
 
     /// 提交事务，将缓冲的变更应用到 store。
@@ -1278,6 +1329,9 @@ impl IdbDatabase {
                 }
                 TxMutation::Delete { store, key } => {
                     self.delete(&store, &key)?;
+                }
+                TxMutation::Clear { store } => {
+                    self.clear_store(&store)?;
                 }
             }
         }
@@ -1306,6 +1360,7 @@ impl IdbDatabase {
         let mut per_store: StdMap<String, StdMap<IdbKey, serde_json::Value>> = StdMap::new();
         // 标记被 buffered Delete/Put 覆盖的 live key，避免重复计入。
         let mut deleted_keys: StdMap<String, std::collections::HashSet<IdbKey>> = StdMap::new();
+        let mut cleared_stores = std::collections::HashSet::new();
 
         for m in mutations {
             match m {
@@ -1327,6 +1382,11 @@ impl IdbDatabase {
                     per_store.entry(store.clone()).or_default().remove(key);
                     deleted_keys.entry(store.clone()).or_default().insert(key.clone());
                 }
+                TxMutation::Clear { store } => {
+                    per_store.entry(store.clone()).or_default().clear();
+                    deleted_keys.entry(store.clone()).or_default().clear();
+                    cleared_stores.insert(store.clone());
+                }
             }
         }
 
@@ -1339,11 +1399,13 @@ impl IdbDatabase {
             // commit 后记录集 = live 记录（排除被 buffered Put/Delete 覆盖的）∪ buffered Add/Put。
             // 收集 (primary_key, value) 对。
             let mut committed: Vec<(IdbKey, serde_json::Value)> = Vec::new();
-            for r in &store.records {
-                if let Some(true) = deleted.map(|d| d.contains(&r.key)) {
-                    continue;
+            if !cleared_stores.contains(store_name) {
+                for r in &store.records {
+                    if let Some(true) = deleted.map(|d| d.contains(&r.key)) {
+                        continue;
+                    }
+                    committed.push((r.key.clone(), r.value.clone()));
                 }
-                committed.push((r.key.clone(), r.value.clone()));
             }
             for (k, v) in buffered {
                 committed.push((k.clone(), v.clone()));

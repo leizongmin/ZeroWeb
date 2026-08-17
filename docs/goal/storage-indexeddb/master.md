@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M2 transaction wire）
+**最后更新**: 2026-08-17（M2 object-store routing）
 
 ---
 
@@ -39,25 +39,24 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Object Store getAll/getAllKeys：2 文件、34 subtest，34 Pass / 0 Fail（100.00%）
 - ✅ Index get/getKey/count：3 文件、20 subtest，20 Pass / 0 Fail（100.00%）
 - ✅ Index cursor continue：1 文件、8 subtest，8 Pass / 0 Fail（100.00%）
-- 🟨 M2 页面接线：factory 与 object-store schema 已走 Rust；records CRUD/index/cursor 待迁移
+- 🟨 M2 页面接线：factory/schema 与 object-store CRUD/query 已走 Rust；index/cursor 待迁移
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
-- 🟨 M2 transaction：Rust begin/add/put/get/delete/commit/abort wire 已完成；JS 路由待接
+- ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1 已导入 21 文件 |
-| I2 | 页面→Rust 引擎零接线 | 🟨 factory/schema 已接，records 仍在 JS |
+| I2 | 页面→Rust 引擎零接线 | 🟨 factory/schema/store 已接，index/cursor 仍在 JS |
 | I3 | 无持久化（重启即失） | ⬜ M3 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ⬜ M2/M3 |
 
 ## 下一步计划
 
-1. **M2**：将 JS transaction/store CRUD 绑定 Rust transaction wire
-2. **M2**：补 clear/count/getAll transaction view
-3. **M2**：把 index/cursor 切到 Rust backend
-4. **M3**：接入 per-origin 落盘与跨会话读回
+1. **M2**：把 index schema/query/cursor 切到 Rust backend
+2. **M2**：补 cyclic structured-clone graph wire
+3. **M3**：接入跨进程 ownership、per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -67,7 +66,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 166/166 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 Rust transaction wire ready |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 object-store routed |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
@@ -100,7 +99,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m2-three-host-registration.{md,json}`、
   `evidence/2026-08-17-m2-factory-schema-routing.{md,json}`、
   `evidence/2026-08-17-m2-date-key-wire.{md,json}`、
-  `evidence/2026-08-17-m2-transaction-wire.{md,json}`
+  `evidence/2026-08-17-m2-transaction-wire.{md,json}`、
+  `evidence/2026-08-17-m2-object-store-routing.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

@@ -2588,6 +2588,170 @@
     throw new globalThis.DOMException('Invalid IndexedDB host response.', 'UnknownError');
   }
 
+  function _zwIDBKeyToWire(value, seen) {
+    seen = seen || [];
+    if (typeof value === 'number') {
+      if (value !== value) throw new globalThis.DOMException('Invalid IndexedDB key.', 'DataError');
+      return { type: 'number', value: String(value) };
+    }
+    if (value instanceof Date) {
+      var time = value.getTime();
+      if (!isFinite(time)) throw new globalThis.DOMException('Invalid IndexedDB Date key.', 'DataError');
+      return { type: 'date', value: String(time) };
+    }
+    if (typeof value === 'string') return { type: 'string', value: value };
+    if (typeof ArrayBuffer !== 'undefined') {
+      if (value instanceof ArrayBuffer) {
+        if (value._detached) throw new globalThis.DOMException('Detached IndexedDB key.', 'DataError');
+        return { type: 'binary', value: Array.prototype.slice.call(new Uint8Array(value)) };
+      }
+      if (ArrayBuffer.isView(value)) {
+        if (value._detached || value.buffer._detached) {
+          throw new globalThis.DOMException('Detached IndexedDB key.', 'DataError');
+        }
+        return {
+          type: 'binary',
+          value: Array.prototype.slice.call(
+            new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
+          )
+        };
+      }
+    }
+    if (Array.isArray(value)) {
+      if (seen.indexOf(value) !== -1) {
+        throw new globalThis.DOMException('Cyclic IndexedDB key.', 'DataError');
+      }
+      seen.push(value);
+      var entries = value.map(function (entry) { return _zwIDBKeyToWire(entry, seen); });
+      seen.pop();
+      return { type: 'array', value: entries };
+    }
+    throw new globalThis.DOMException('Invalid IndexedDB key.', 'DataError');
+  }
+
+  function _zwIDBKeyFromWire(wire) {
+    if (!wire) return undefined;
+    if (wire.type === 'number') return Number(wire.value);
+    if (wire.type === 'date') return new Date(Number(wire.value));
+    if (wire.type === 'string') return wire.value;
+    if (wire.type === 'binary') return new Uint8Array(wire.value || []).buffer;
+    if (wire.type === 'array') {
+      return (wire.value || []).map(function (entry) { return _zwIDBKeyFromWire(entry); });
+    }
+    throw new globalThis.DOMException('Invalid IndexedDB key response.', 'UnknownError');
+  }
+
+  function _zwIDBValueToWire(value, seen) {
+    seen = seen || [];
+    if (value === undefined) return { __zwIdbType: 'undefined' };
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return { __zwIdbType: 'number', value: String(value) };
+    if (value instanceof Date) {
+      return { __zwIdbType: 'date', value: String(value.getTime()) };
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+      return {
+        __zwIdbType: 'blob',
+        type: value.type || '',
+        value: Array.prototype.slice.call(_zw_blobBytes(value))
+      };
+    }
+    if (typeof ArrayBuffer !== 'undefined') {
+      if (value instanceof ArrayBuffer) {
+        if (value._detached) throw new globalThis.DOMException('Detached value.', 'DataCloneError');
+        return {
+          __zwIdbType: 'arraybuffer',
+          value: Array.prototype.slice.call(new Uint8Array(value))
+        };
+      }
+      if (ArrayBuffer.isView(value)) {
+        if (value._detached || value.buffer._detached) {
+          throw new globalThis.DOMException('Detached value.', 'DataCloneError');
+        }
+        return {
+          __zwIdbType: 'view',
+          name: value.constructor && value.constructor.name || 'Uint8Array',
+          value: Array.prototype.slice.call(
+            new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
+          )
+        };
+      }
+    }
+    if (typeof value !== 'object') {
+      throw new globalThis.DOMException('Value cannot be cloned.', 'DataCloneError');
+    }
+    if (seen.indexOf(value) !== -1) {
+      throw new globalThis.DOMException('Cyclic values are not supported.', 'DataCloneError');
+    }
+    seen.push(value);
+    var wire;
+    if (Array.isArray(value)) {
+      wire = {
+        __zwIdbType: 'array',
+        value: value.map(function (entry) { return _zwIDBValueToWire(entry, seen); })
+      };
+    } else {
+      wire = {
+        __zwIdbType: 'object',
+        value: Object.keys(value).map(function (key) {
+          return [key, _zwIDBValueToWire(value[key], seen)];
+        })
+      };
+    }
+    seen.pop();
+    return wire;
+  }
+
+  function _zwIDBValueFromWire(wire) {
+    if (wire === null || typeof wire !== 'object' || !wire.__zwIdbType) return wire;
+    if (wire.__zwIdbType === 'undefined') return undefined;
+    if (wire.__zwIdbType === 'number') return Number(wire.value);
+    if (wire.__zwIdbType === 'date') return new Date(Number(wire.value));
+    if (wire.__zwIdbType === 'blob') {
+      return new Blob([new Uint8Array(wire.value || [])], { type: wire.type || '' });
+    }
+    if (wire.__zwIdbType === 'arraybuffer') return new Uint8Array(wire.value || []).buffer;
+    if (wire.__zwIdbType === 'view') {
+      var View = globalThis[wire.name] || Uint8Array;
+      try { return new View(new Uint8Array(wire.value || []).buffer); }
+      catch (_) { return new Uint8Array(wire.value || []); }
+    }
+    if (wire.__zwIdbType === 'array') {
+      return (wire.value || []).map(function (entry) { return _zwIDBValueFromWire(entry); });
+    }
+    if (wire.__zwIdbType === 'object') {
+      var object = {};
+      (wire.value || []).forEach(function (entry) {
+        object[entry[0]] = _zwIDBValueFromWire(entry[1]);
+      });
+      return object;
+    }
+    throw new globalThis.DOMException('Invalid IndexedDB value response.', 'UnknownError');
+  }
+
+  function _zwIDBQueryToWire(query) {
+    if (_zwIDBIsKeyRange(query)) {
+      var range = {
+        lowerOpen: query.lowerOpen,
+        upperOpen: query.upperOpen
+      };
+      if (query.lower !== undefined) range.lower = _zwIDBKeyToWire(query.lower);
+      if (query.upper !== undefined) range.upper = _zwIDBKeyToWire(query.upper);
+      return { type: 'range', value: range };
+    }
+    return { type: 'key', value: _zwIDBKeyToWire(query) };
+  }
+
+  function _zwIDBRequestHostError(request, error) {
+    request.error = error;
+    var event = new _zwIDBEvent('error', request);
+    event.bubbles = true;
+    event.cancelable = true;
+    event._requestError = error;
+    _zwIDBDispatch(request, 'error', undefined, event);
+    return request;
+  }
+
   function _zwIDBStateFromHost(database) {
     var stores = {};
     (database.stores || []).forEach(function (store) {
@@ -2818,7 +2982,8 @@
       if (!_zwIDBKey(candidate, [])) return false;
       var conflict = false;
       store._records.forEach(function (record, recordKey) {
-        if (conflict || _zwIDBCompareValues(recordKey, primaryKey) === 0) return;
+        if (conflict
+            || (primaryKey !== undefined && _zwIDBCompareValues(recordKey, primaryKey) === 0)) return;
         var existing = store._indexKey(record, index.keyPath);
         if (_zwIDBKey(existing, []) && _zwIDBCompareValues(existing, candidate) === 0) {
           conflict = true;
@@ -2842,6 +3007,49 @@
   _zwIDBStore.prototype._mutate = function (op, value, key, keyProvided) {
     this._assertUsable(true);
     var storedValue = globalThis.structuredClone(value);
+    var hostTransaction = this.transaction && this.transaction._hostId !== null;
+    if (hostTransaction) {
+      if (this.keyPath && keyProvided) {
+        throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
+      }
+      var candidate = this.keyPath ? this._keyOf(storedValue) : key;
+      if (candidate === undefined && !this.autoIncrement) {
+        throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
+      }
+      if (candidate !== undefined && !_zwIDBKey(candidate, [])) {
+        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+      }
+      var req = new _zwIDBRequest(this);
+      req.transaction = this.transaction;
+      var localKey = candidate === undefined ? undefined : this._recordKey(candidate);
+      if ((op === 'add' && localKey !== undefined)
+          || this._hasUniqueConflict(storedValue, candidate)) {
+        return this._constraintError(req);
+      }
+      var hostRequest = {
+        op: op === 'add' ? 'transaction_add' : 'transaction_put',
+        transaction: this.transaction._hostId,
+        store: this.name,
+        value: _zwIDBValueToWire(storedValue)
+      };
+      if (candidate !== undefined) hostRequest.key = _zwIDBKeyToWire(candidate);
+      var response;
+      try {
+        response = _zwIDBHostCall(hostRequest);
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+      var k = _zwIDBKeyFromWire(response.key);
+      if (candidate === undefined && this.keyPath) this._setKeyPath(storedValue, k);
+      if (this.autoIncrement && typeof k === 'number') {
+        var next = Math.floor(k) + 1;
+        if (!this._metadata.nextKey || next > this._metadata.nextKey) this._metadata.nextKey = next;
+      }
+      var existingKey = this._recordKey(k);
+      this._records.set(existingKey === undefined ? k : existingKey, storedValue);
+      _zwIDBDispatch(req, 'success', k);
+      return req;
+    }
     var k = this._resolveKey(storedValue, key, keyProvided);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
@@ -2867,6 +3075,37 @@
     }
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
+    if (this.transaction && this.transaction._hostId !== null) {
+      try {
+        var response;
+        if (_zwIDBIsKeyRange(key)) {
+          response = _zwIDBHostCall({
+            op: 'transaction_get_all',
+            transaction: this.transaction._hostId,
+            store: this.name,
+            query: _zwIDBQueryToWire(key),
+            count: 1
+          });
+          var first = response.records && response.records[0];
+          _zwIDBDispatch(req, 'success', first ? _zwIDBValueFromWire(first.value) : undefined);
+        } else {
+          response = _zwIDBHostCall({
+            op: 'transaction_get',
+            transaction: this.transaction._hostId,
+            store: this.name,
+            key: _zwIDBKeyToWire(key)
+          });
+          _zwIDBDispatch(
+            req,
+            'success',
+            response.record ? _zwIDBValueFromWire(response.record.value) : undefined
+          );
+        }
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+      return req;
+    }
     var result;
     if (_zwIDBIsKeyRange(key)) {
       var matches = [];
@@ -2887,6 +3126,23 @@
     this._assertUsable(true);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
+    if (this.transaction && this.transaction._hostId !== null) {
+      try {
+        _zwIDBHostCall(_zwIDBIsKeyRange(key) ? {
+          op: 'transaction_delete_range',
+          transaction: this.transaction._hostId,
+          store: this.name,
+          range: _zwIDBQueryToWire(key).value
+        } : {
+          op: 'transaction_delete',
+          transaction: this.transaction._hostId,
+          store: this.name,
+          key: _zwIDBKeyToWire(key)
+        });
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+    }
     if (_zwIDBIsKeyRange(key)) {
       var records = this._records;
       var keys = [];
@@ -2908,6 +3164,17 @@
     this._assertUsable(true);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
+    if (this.transaction && this.transaction._hostId !== null) {
+      try {
+        _zwIDBHostCall({
+          op: 'transaction_clear',
+          transaction: this.transaction._hostId,
+          store: this.name
+        });
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+    }
     this._records.clear();
     _zwIDBDispatch(req, 'success', undefined);
     return req;
@@ -2916,6 +3183,21 @@
     this._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
+    if (this.transaction && this.transaction._hostId !== null) {
+      var hostRequest = {
+        op: 'transaction_count',
+        transaction: this.transaction._hostId,
+        store: this.name
+      };
+      if (arguments.length >= 1) hostRequest.query = _zwIDBQueryToWire(query);
+      try {
+        var hosted = _zwIDBHostCall(hostRequest);
+        _zwIDBDispatch(req, 'success', hosted.count);
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+      return req;
+    }
     var count = 0;
     if (arguments.length === 0) {
       count = this._records.size;
@@ -2937,6 +3219,30 @@
       if (!valid) {
         throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
       }
+    }
+    if (this.transaction && this.transaction._hostId !== null) {
+      var request = new _zwIDBRequest(this);
+      request.transaction = this.transaction;
+      var hostRequest = {
+        op: 'transaction_get_all',
+        transaction: this.transaction._hostId,
+        store: this.name,
+        keys_only: !!keysOnly
+      };
+      if (queryProvided && query !== undefined) hostRequest.query = _zwIDBQueryToWire(query);
+      if (count !== undefined) hostRequest.count = Math.max(0, Number(count));
+      try {
+        var hosted = _zwIDBHostCall(hostRequest);
+        var hostedResult = (hosted.records || []).map(function (record) {
+          return keysOnly
+            ? _zwIDBKeyFromWire(record.key)
+            : _zwIDBValueFromWire(record.value);
+        });
+        _zwIDBDispatch(request, 'success', hostedResult);
+      } catch (hostError) {
+        return _zwIDBRequestHostError(request, hostError);
+      }
+      return request;
     }
     var entries = [];
     this._records.forEach(function (value, key) {
@@ -3137,6 +3443,23 @@
     return req;
   };
 
+  function _zwIDBRestoreTransactionSnapshot(transaction) {
+    if (!transaction._snapshot) return;
+    transaction._db._state.stores = transaction._snapshot;
+    transaction._db._stores = transaction._snapshot;
+  }
+
+  function _zwIDBFailHostTransaction(transaction, error) {
+    transaction._hostError = error;
+    transaction._aborted = true;
+    _zwIDBRestoreTransactionSnapshot(transaction);
+    var errorEvent = new _zwIDBEvent('error', transaction);
+    errorEvent.bubbles = true;
+    errorEvent.cancelable = true;
+    _zwIDBEmit(transaction, 'error', errorEvent);
+    _zwIDBEmit(transaction, 'abort', new _zwIDBEvent('abort', transaction));
+  }
+
   function _zwIDBTransaction(db, names, mode, deferCompletion) {
     this._db = db;
     this.db = db;
@@ -3148,6 +3471,21 @@
     this._aborted = false;
     this._finished = false;
     this._pending = 0;
+    this._hostId = null;
+    this._snapshot = null;
+    if (!deferCompletion && this.mode !== 'versionchange') {
+      var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
+      var begun = _zwIDBHostCall({
+        op: 'begin_transaction',
+        database: db.name,
+        stores: storeNames,
+        mode: this.mode
+      });
+      if (begun !== undefined) {
+        this._hostId = begun.transaction;
+        this._snapshot = _zwIDBCloneStores(db._stores);
+      }
+    }
     var self = this;
     if (!deferCompletion && typeof queueMicrotask === 'function') {
       var completeWhenIdle = function () {
@@ -3155,6 +3493,16 @@
         if (self._pending > 0) {
           queueMicrotask(completeWhenIdle);
           return;
+        }
+        if (self._hostId !== null) {
+          try {
+            _zwIDBHostCall({ op: 'commit_transaction', transaction: self._hostId });
+          } catch (hostError) {
+            _zwIDBFailHostTransaction(self, hostError);
+            self._finished = true;
+            return;
+          }
+          self._hostId = null;
         }
         self._finished = true;
         _zwIDBEmit(self, 'complete', new _zwIDBEvent('complete', self));
@@ -3171,7 +3519,14 @@
   };
   _zwIDBTransaction.prototype.abort = function () {
     if (!this._finished) {
+      if (this._hostId !== null) {
+        try {
+          _zwIDBHostCall({ op: 'abort_transaction', transaction: this._hostId });
+        } catch (_) {}
+        this._hostId = null;
+      }
       this._aborted = true;
+      _zwIDBRestoreTransactionSnapshot(this);
       if (this.mode === 'versionchange') {
         Object.keys(this._db._stores).forEach(function (storeName) {
           var store = this._db._stores[storeName];
@@ -3294,6 +3649,38 @@
     return cloned;
   }
 
+  function _zwIDBSeedHostRecords(db, state) {
+    if (typeof globalThis.__zw_idb !== 'function') return;
+    var storeNames = Object.keys(state.stores);
+    if (!storeNames.length) return;
+    var begun = _zwIDBHostCall({
+      op: 'begin_transaction',
+      database: db.name,
+      stores: storeNames,
+      mode: 'readwrite'
+    });
+    if (begun === undefined) return;
+    try {
+      storeNames.forEach(function (storeName) {
+        state.stores[storeName].records.forEach(function (value, key) {
+          _zwIDBHostCall({
+            op: 'transaction_put',
+            transaction: begun.transaction,
+            store: storeName,
+            value: _zwIDBValueToWire(value),
+            key: _zwIDBKeyToWire(key)
+          });
+        });
+      });
+      _zwIDBHostCall({ op: 'commit_transaction', transaction: begun.transaction });
+    } catch (error) {
+      try {
+        _zwIDBHostCall({ op: 'abort_transaction', transaction: begun.transaction });
+      } catch (_) {}
+      throw error;
+    }
+  }
+
   function _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created) {
     if (transaction._pending > 0) {
       var retry = function () {
@@ -3306,6 +3693,7 @@
     if (!transaction._aborted) {
       try {
         _zwIDBHostCall(_zwIDBSchemaForHost(db.name, state));
+        _zwIDBSeedHostRecords(db, state);
       } catch (hostError) {
         transaction._aborted = true;
         transaction._hostError = hostError;

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use zero_engine::IndexedDbHandler;
-use zero_storage::{IdbKey, IdbTransaction, IdbTransactionMode, StorageError, StorageManager};
+use zero_storage::{IdbKey, IdbKeyRange, IdbTransaction, IdbTransactionMode, StorageError, StorageManager};
 
 /// IndexedDB key 的 JSON wire 表示。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +152,31 @@ enum IndexedDbRequest {
         store: String,
         key: IndexedDbKeyWire,
     },
+    TransactionDeleteRange {
+        transaction: u64,
+        store: String,
+        range: IndexedDbKeyRangeWire,
+    },
+    TransactionClear {
+        transaction: u64,
+        store: String,
+    },
+    TransactionCount {
+        transaction: u64,
+        store: String,
+        #[serde(default)]
+        query: Option<IndexedDbQueryWire>,
+    },
+    TransactionGetAll {
+        transaction: u64,
+        store: String,
+        #[serde(default)]
+        query: Option<IndexedDbQueryWire>,
+        #[serde(default)]
+        count: Option<usize>,
+        #[serde(default)]
+        keys_only: bool,
+    },
     CommitTransaction {
         transaction: u64,
     },
@@ -165,6 +190,30 @@ enum IndexedDbRequest {
 enum IndexedDbTransactionMode {
     Readonly,
     Readwrite,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "lowercase")]
+enum IndexedDbQueryWire {
+    Key(IndexedDbKeyWire),
+    Range(IndexedDbKeyRangeWire),
+}
+
+#[derive(Debug, Deserialize)]
+struct IndexedDbKeyRangeWire {
+    #[serde(default)]
+    lower: Option<IndexedDbKeyWire>,
+    #[serde(default)]
+    upper: Option<IndexedDbKeyWire>,
+    #[serde(default, rename = "lowerOpen")]
+    lower_open: bool,
+    #[serde(default, rename = "upperOpen")]
+    upper_open: bool,
+}
+
+enum IndexedDbQuery {
+    Key(IdbKey),
+    Range(IdbKeyRange),
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,6 +302,7 @@ fn dispatch_request(
             }))
         }
         IndexedDbRequest::DeleteDatabase { name } => {
+            abort_database_transactions(transactions, origin, &name);
             let old_version = storage
                 .indexed_db(origin, &name)
                 .map(|database| database.version)
@@ -395,6 +445,81 @@ fn dispatch_request(
                 .map_err(storage_error)?;
             Ok(json!({"deleted": deleted}))
         }
+        IndexedDbRequest::TransactionDeleteRange {
+            transaction,
+            store,
+            range,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            require_write_transaction(active)?;
+            let database = active_database_mut(storage, active)?;
+            let range = range.into_storage_range()?;
+            let keys = database
+                .tx_get_all(&active.transaction, &store)
+                .map_err(storage_error)?
+                .into_iter()
+                .filter(|record| range.contains(&record.key))
+                .map(|record| record.key)
+                .collect::<Vec<_>>();
+            for key in &keys {
+                database
+                    .tx_delete(&active.transaction, &store, key)
+                    .map_err(storage_error)?;
+            }
+            Ok(json!({"deleted": keys.len()}))
+        }
+        IndexedDbRequest::TransactionClear { transaction, store } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            require_write_transaction(active)?;
+            let database = active_database_mut(storage, active)?;
+            database.tx_clear(&active.transaction, &store).map_err(storage_error)?;
+            Ok(json!({"cleared": true}))
+        }
+        IndexedDbRequest::TransactionCount {
+            transaction,
+            store,
+            query,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            let database = active_database_mut(storage, active)?;
+            let query = query.map(IndexedDbQueryWire::into_storage_query).transpose()?;
+            let count = database
+                .tx_get_all(&active.transaction, &store)
+                .map_err(storage_error)?
+                .iter()
+                .filter(|record| query.as_ref().is_none_or(|query| query.matches(&record.key)))
+                .count();
+            Ok(json!({"count": count}))
+        }
+        IndexedDbRequest::TransactionGetAll {
+            transaction,
+            store,
+            query,
+            count,
+            keys_only,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            let database = active_database_mut(storage, active)?;
+            let query = query.map(IndexedDbQueryWire::into_storage_query).transpose()?;
+            let records = database
+                .tx_get_all(&active.transaction, &store)
+                .map_err(storage_error)?
+                .into_iter()
+                .filter(|record| query.as_ref().is_none_or(|query| query.matches(&record.key)))
+                .take(count.unwrap_or(usize::MAX))
+                .map(|record| {
+                    if keys_only {
+                        json!({"key": IndexedDbKeyWire::from(&record.key)})
+                    } else {
+                        json!({
+                            "key": IndexedDbKeyWire::from(&record.key),
+                            "value": record.value,
+                        })
+                    }
+                })
+                .collect::<Vec<_>>();
+            Ok(json!({"records": records}))
+        }
         IndexedDbRequest::CommitTransaction { transaction } => {
             let mut active = remove_active_transaction(transactions, origin, transaction)?;
             let database = active_database_mut(storage, &active)?;
@@ -405,6 +530,51 @@ fn dispatch_request(
             let mut active = remove_active_transaction(transactions, origin, transaction)?;
             active.transaction.abort().map_err(storage_error)?;
             Ok(json!({"aborted": true}))
+        }
+    }
+}
+
+fn abort_database_transactions(transactions: &mut IndexedDbTransactionRegistry, origin: &str, database: &str) {
+    let ids = transactions
+        .active
+        .iter()
+        .filter(|(_, active)| active.origin == origin && active.database == database)
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    for id in ids {
+        if let Some(mut active) = transactions.active.remove(&id) {
+            let _ = active.transaction.abort();
+        }
+    }
+}
+
+impl IndexedDbQueryWire {
+    fn into_storage_query(self) -> Result<IndexedDbQuery, String> {
+        match self {
+            Self::Key(key) => Ok(IndexedDbQuery::Key(key.into_storage_key()?)),
+            Self::Range(range) => Ok(IndexedDbQuery::Range(range.into_storage_range()?)),
+        }
+    }
+}
+
+impl IndexedDbKeyRangeWire {
+    fn into_storage_range(self) -> Result<IdbKeyRange, String> {
+        let lower = self.lower.map(IndexedDbKeyWire::into_storage_key).transpose()?;
+        let upper = self.upper.map(IndexedDbKeyWire::into_storage_key).transpose()?;
+        match (lower, upper) {
+            (Some(lower), Some(upper)) => Ok(IdbKeyRange::bound(lower, upper, self.lower_open, self.upper_open)),
+            (Some(lower), None) => Ok(IdbKeyRange::lower_bound(lower, self.lower_open)),
+            (None, Some(upper)) => Ok(IdbKeyRange::upper_bound(upper, self.upper_open)),
+            (None, None) => Err("DataError: IndexedDB key range has no bounds".to_string()),
+        }
+    }
+}
+
+impl IndexedDbQuery {
+    fn matches(&self, key: &IdbKey) -> bool {
+        match self {
+            Self::Key(query) => query == key,
+            Self::Range(range) => range.contains(key),
         }
     }
 }
@@ -534,7 +704,22 @@ fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Val
 }
 
 fn storage_error(error: StorageError) -> String {
-    format!("UnknownError: {error}")
+    match error {
+        StorageError::QuotaExceeded(message) => format!("QuotaExceededError: {message}"),
+        StorageError::InvalidKey(message) => format!("DataError: {message}"),
+        StorageError::StoreNotFound(store) => format!("NotFoundError: object store '{store}' does not exist"),
+        StorageError::KeyNotFound(key) => format!("NotFoundError: key '{key}' does not exist"),
+        StorageError::Serialization(message) => format!("DataCloneError: {message}"),
+        StorageError::Database(message)
+            if message.contains("Key already exists") || message.contains("Unique index") =>
+        {
+            format!("ConstraintError: {message}")
+        }
+        StorageError::Database(message) if message.contains("Transaction") => {
+            format!("TransactionInactiveError: {message}")
+        }
+        StorageError::Database(message) => format!("UnknownError: {message}"),
+    }
 }
 
 #[cfg(test)]
@@ -880,6 +1065,214 @@ mod tests {
             .unwrap_err()
             .starts_with("ReadOnlyError:")
         );
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": read}),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn transaction_query_and_clear_use_buffered_view() {
+        let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 1,
+                "stores": [{"name": "items", "keyPath": null, "autoIncrement": false}]
+            }),
+        )
+        .unwrap();
+        let write = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        for key in 1..=3 {
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_add",
+                    "transaction": write,
+                    "store": "items",
+                    "value": {"value": key},
+                    "key": {"type": "number", "value": key.to_string()}
+                }),
+            )
+            .unwrap();
+        }
+        let range = json!({
+            "lower": {"type": "number", "value": "2"},
+            "upper": {"type": "number", "value": "3"},
+            "lowerOpen": false,
+            "upperOpen": false
+        });
+        let count = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_count",
+                "transaction": write,
+                "store": "items",
+                "query": {"type": "range", "value": range.clone()}
+            }),
+        )
+        .unwrap();
+        assert_eq!(count["count"], 2);
+        let records = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_get_all",
+                "transaction": write,
+                "store": "items",
+                "query": {"type": "range", "value": range.clone()},
+                "count": 1,
+                "keys_only": false
+            }),
+        )
+        .unwrap();
+        assert_eq!(records["records"].as_array().unwrap().len(), 1);
+        assert_eq!(records["records"][0]["value"]["value"], 2);
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_delete_range",
+                "transaction": write,
+                "store": "items",
+                "range": range
+            }),
+        )
+        .unwrap();
+        let after_delete = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_count",
+                "transaction": write,
+                "store": "items"
+            }),
+        )
+        .unwrap();
+        assert_eq!(after_delete["count"], 1);
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_clear",
+                "transaction": write,
+                "store": "items"
+            }),
+        )
+        .unwrap();
+        let after_clear = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_count",
+                "transaction": write,
+                "store": "items"
+            }),
+        )
+        .unwrap();
+        assert_eq!(after_clear["count"], 0);
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "abort_transaction", "transaction": write}),
+        )
+        .unwrap();
+
+        let seed = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_add",
+                "transaction": seed,
+                "store": "items",
+                "value": {"value": "kept"},
+                "key": {"type": "string", "value": "key"}
+            }),
+        )
+        .unwrap();
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": seed}),
+        )
+        .unwrap();
+        let clear = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "transaction_clear", "transaction": clear, "store": "items"}),
+        )
+        .unwrap();
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": clear}),
+        )
+        .unwrap();
+        let read = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readonly"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        let final_count = call(
+            &handler,
+            "https://app.example",
+            json!({"op": "transaction_count", "transaction": read, "store": "items"}),
+        )
+        .unwrap();
+        assert_eq!(final_count["count"], 0);
         call(
             &handler,
             "https://app.example",

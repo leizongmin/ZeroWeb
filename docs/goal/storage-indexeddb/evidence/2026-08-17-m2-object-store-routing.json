@@ -1,0 +1,62 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 object-store CRUD and query routing",
+  "operations": [
+    "add",
+    "put",
+    "get",
+    "delete",
+    "range delete",
+    "clear",
+    "count",
+    "getAll",
+    "getAllKeys"
+  ],
+  "transaction_invariants": [
+    "mutations buffered until Rust commit",
+    "abort restores the JS mirror",
+    "readonly rejects writes",
+    "clear participates in rollback",
+    "transaction views include buffered mutations",
+    "upgrade records seed after schema commit"
+  ],
+  "value_wire": [
+    "undefined",
+    "special number",
+    "date",
+    "arraybuffer",
+    "typed view",
+    "blob",
+    "array",
+    "object"
+  ],
+  "tests": {
+    "page_runtime_handler": {
+      "pass": 7,
+      "fail": 0
+    },
+    "renderer_cross_document": {
+      "pass": 2,
+      "fail": 0
+    },
+    "engine_fallback": {
+      "pass": 13,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 21,
+      "pass": 166,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "index schema and query routing",
+    "cursor routing",
+    "cyclic structured-clone graph",
+    "cross-process ownership",
+    "persistence"
+  ]
+}

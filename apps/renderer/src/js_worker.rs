@@ -788,7 +788,12 @@ mod tests {
             .execute_script_direct(
                 r#"var created = indexedDB.open("app", 2);
                    created.onupgradeneeded = function () {
-                     created.result.createObjectStore("items", {keyPath:"id"});
+                     var store = created.result.createObjectStore("items", {keyPath:"id"});
+                     store.put({
+                       id: new Date(10),
+                       label: "stored",
+                       bytes: new Uint8Array([1, 2, 3])
+                     });
                    };
                    created.onsuccess = function () { globalThis.__created = true; };"#,
             )
@@ -804,14 +809,20 @@ mod tests {
             .execute_script_direct(
                 r#"var reopened = indexedDB.open("app");
                    reopened.onsuccess = function () {
-                     globalThis.__restored =
-                       reopened.result.version + ":" + reopened.result.objectStoreNames.contains("items");
+                     var read = reopened.result.transaction("items").objectStore("items").get(new Date(10));
+                     read.onsuccess = function () {
+                       globalThis.__restored =
+                         reopened.result.version + ":" +
+                         reopened.result.objectStoreNames.contains("items") + ":" +
+                         read.result.label + ":" + read.result.id.getTime() + ":" +
+                         read.result.bytes[2];
+                     };
                    };"#,
             )
             .unwrap();
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
-            "2:true"
+            "2:true:stored:10:3"
         );
         worker.shutdown();
     }
