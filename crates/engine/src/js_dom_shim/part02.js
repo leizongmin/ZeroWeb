@@ -2671,13 +2671,14 @@
     else fire();
   }
 
-  function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes) {
+  function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction) {
     this._db = db;
     this.name = name;
     this.keyPath = keyPath || null;
     this.autoIncrement = !!autoIncrement;
     this._records = records; // Map<key, value>
     this._indexes = indexes; // {indexName: {keyPath, unique}}
+    this.transaction = transaction || null;
     var idxNames = indexes;
     this.indexNames = {
       contains: function (n) { return Object.prototype.hasOwnProperty.call(idxNames, n); },
@@ -2693,6 +2694,7 @@
   _zwIDBStore.prototype._mutate = function (op, value, key) {
     var k = key !== undefined ? key : this._keyOf(value);
     var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
     this._records.set(k, value); // 同步内存变更（后续 get 可见）
     _zwIDBDispatch(req, 'success', k); // 异步 success（result = key）
     return req;
@@ -2701,71 +2703,122 @@
   _zwIDBStore.prototype.put = function (value, key) { return this._mutate('put', value, key); };
   _zwIDBStore.prototype.get = function (key) {
     var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
     _zwIDBDispatch(req, 'success', this._records.get(key));
     return req;
   };
   _zwIDBStore.prototype.delete = function (key) {
     var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
     this._records.delete(key);
     _zwIDBDispatch(req, 'success', undefined);
     return req;
   };
   _zwIDBStore.prototype.clear = function () {
     var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
     this._records.clear();
     _zwIDBDispatch(req, 'success', undefined);
     return req;
   };
   _zwIDBStore.prototype.count = function () {
     var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
     _zwIDBDispatch(req, 'success', this._records.size);
     return req;
   };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
-    this._indexes[name] = { keyPath: keyPath, unique: !!((opts || {}).unique) };
-    return new _zwIDBIndex(this, name, keyPath);
+    var unique = !!((opts || {}).unique);
+    this._indexes[name] = { keyPath: keyPath, unique: unique };
+    if (unique && this.transaction) {
+      var seen = [];
+      this._records.forEach(function (value) {
+        var indexKey = value;
+        String(keyPath).split('.').forEach(function (part) {
+          indexKey = indexKey == null ? undefined : indexKey[part];
+        });
+        if (indexKey !== undefined) {
+          if (seen.indexOf(indexKey) !== -1) this.transaction.abort();
+          seen.push(indexKey);
+        }
+      }, this);
+    }
+    return new _zwIDBIndex(this, name, keyPath, unique);
   };
   _zwIDBStore.prototype.index = function (name) {
     var idx = this._indexes[name];
-    return idx ? new _zwIDBIndex(this, name, idx.keyPath) : null;
+    return idx ? new _zwIDBIndex(this, name, idx.keyPath, idx.unique) : null;
+  };
+  _zwIDBStore.prototype.openCursor = function (_query, direction) {
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
+    var entries = [];
+    this._records.forEach(function (value, key) { entries.push({ key: key, value: value }); });
+    entries.sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });
+    if (direction === 'prev' || direction === 'prevunique') entries.reverse();
+    _zwIDBDispatch(req, 'success', entries.length ? entries[0] : null);
+    return req;
   };
 
-  function _zwIDBIndex(store, name, keyPath) {
+  function _zwIDBIndex(store, name, keyPath, unique) {
     this.objectStore = store;
     this.name = name;
     this.keyPath = keyPath;
-    this.unique = false;
+    this.unique = !!unique;
   }
   _zwIDBIndex.prototype.get = function (key) { return this.objectStore.get(key); };
   _zwIDBIndex.prototype.count = function () { return this.objectStore.count(); };
+  _zwIDBIndex.prototype.getKey = function (key) {
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.objectStore.transaction;
+    var result;
+    var keyPath = this.keyPath;
+    this.objectStore._records.forEach(function (value, primaryKey) {
+      if (result !== undefined) return;
+      var indexKey = value;
+      String(keyPath).split('.').forEach(function (part) {
+        indexKey = indexKey == null ? undefined : indexKey[part];
+      });
+      if (indexKey === key) result = primaryKey;
+    });
+    _zwIDBDispatch(req, 'success', result);
+    return req;
+  };
   _zwIDBIndex.prototype.openCursor = function () {
     var req = new _zwIDBRequest(this);
     _zwIDBDispatch(req, 'success', null); // headless 简化：不返真 cursor
     return req;
   };
 
-  function _zwIDBTransaction(db, names, mode) {
+  function _zwIDBTransaction(db, names, mode, deferCompletion) {
     this._db = db;
     this.db = db;
     this.mode = mode || 'readonly';
     this.oncomplete = null;
     this.onerror = null;
     this.onabort = null;
+    this._listeners = {};
+    this._aborted = false;
+    this._finished = false;
     var self = this;
-    if (typeof queueMicrotask === 'function') {
+    if (!deferCompletion && typeof queueMicrotask === 'function') {
       queueMicrotask(function () {
-        if (typeof self.oncomplete === 'function') {
-          try { self.oncomplete.call(self, new _zwIDBEvent('complete', self)); } catch (_) {}
-        }
+        if (self._aborted || self._finished) return;
+        self._finished = true;
+        _zwIDBEmit(self, 'complete', new _zwIDBEvent('complete', self));
       });
     }
   }
+  _zwIDBTransaction.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
+  _zwIDBTransaction.prototype.removeEventListener = _zwIDBRequest.prototype.removeEventListener;
   _zwIDBTransaction.prototype.objectStore = function (name) {
     var s = this._db._stores[name];
     if (!s) return null; // headless lenient（spec 抛 NotFoundError）
-    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes);
+    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this);
   };
-  _zwIDBTransaction.prototype.abort = function () {};
+  _zwIDBTransaction.prototype.abort = function () {
+    if (!this._finished) this._aborted = true;
+  };
 
   function _zwIDBDatabase(name, state) {
     this.name = name;
@@ -2790,7 +2843,7 @@
       this._stores[name] = { keyPath: opts.keyPath || null, autoIncrement: !!opts.autoIncrement, records: new Map(), indexes: {} };
     }
     var s = this._stores[name];
-    return new _zwIDBStore(this, name, s.keyPath, s.autoIncrement, s.records, s.indexes);
+    return new _zwIDBStore(this, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this._upgradeTransaction);
   };
   _zwIDBDatabase.prototype.deleteObjectStore = function (name) { delete this._stores[name]; };
   _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
@@ -2818,6 +2871,57 @@
       if (typeof queueMicrotask === 'function') queueMicrotask(fire);
       else fire();
     });
+  }
+
+  function _zwIDBCloneStores(stores) {
+    var cloned = {};
+    Object.keys(stores).forEach(function (name) {
+      var source = stores[name];
+      var records = new Map();
+      source.records.forEach(function (value, key) { records.set(key, value); });
+      var indexes = {};
+      Object.keys(source.indexes).forEach(function (indexName) {
+        var index = source.indexes[indexName];
+        indexes[indexName] = { keyPath: index.keyPath, unique: !!index.unique };
+      });
+      cloned[name] = {
+        keyPath: source.keyPath,
+        autoIncrement: source.autoIncrement,
+        records: records,
+        indexes: indexes
+      };
+    });
+    return cloned;
+  }
+
+  function _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created) {
+    db._upgradeTransaction = null;
+    transaction._finished = true;
+    if (transaction._aborted) {
+      state.version = snapshot.version;
+      state.stores = snapshot.stores;
+      db.version = snapshot.version;
+      db._stores = state.stores;
+      var connectionIndex = state.connections.indexOf(db);
+      if (connectionIndex !== -1) state.connections.splice(connectionIndex, 1);
+      if (created) delete _idb_databases[db.name];
+      _zwIDBEmit(transaction, 'abort', new _zwIDBEvent('abort', transaction));
+      _zwIDBEmit(db, 'abort', new _zwIDBEvent('abort', db));
+      req.result = undefined;
+      req.error = new globalThis.DOMException('The version change transaction was aborted.', 'AbortError');
+      req.transaction = null;
+      var errorEvent = new _zwIDBEvent('error', req);
+      errorEvent.bubbles = true;
+      errorEvent.cancelable = true;
+      _zwIDBEmit(req, 'error', errorEvent);
+      return;
+    }
+    _zwIDBEmit(transaction, 'complete', new _zwIDBEvent('complete', transaction));
+    req.transaction = null;
+    var successEvent = new _zwIDBEvent('success', req);
+    req.readyState = 'done';
+    req.result = db;
+    _zwIDBEmit(req, 'success', successEvent);
   }
 
   // https://w3c.github.io/IndexedDB/#compare-two-keys
@@ -2893,6 +2997,7 @@
       version = _zwIDBOpenVersion(version, arguments.length >= 2);
       var req = new _zwIDBRequest(null);
       var state = _idb_databases[name];
+      var created = !state;
       var oldVersion = state ? state.version : 0;
       var requestedVersion = version === undefined ? (oldVersion || 1) : version;
       if (oldVersion > 0 && requestedVersion < oldVersion) {
@@ -2911,16 +3016,39 @@
       if (needsUpgrade && oldVersion > 0) {
         _zwIDBNotifyConnections(state, oldVersion, requestedVersion);
       }
+      var snapshot = needsUpgrade ? {
+        version: oldVersion,
+        stores: _zwIDBCloneStores(state.stores)
+      } : null;
       if (needsUpgrade) state.version = requestedVersion;
       var db = new _zwIDBDatabase(name, state);
       state.connections.push(db);
       if (needsUpgrade) {
-        _zwIDBDispatch(
-          req,
-          'upgradeneeded',
+        var transaction = new _zwIDBTransaction(
           db,
-          _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
+          Object.keys(state.stores),
+          'versionchange',
+          true
         );
+        db._upgradeTransaction = transaction;
+        req.transaction = transaction;
+        var upgrade = function () {
+          req.readyState = 'done';
+          req.result = db;
+          _zwIDBEmit(
+            req,
+            'upgradeneeded',
+            _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
+          );
+          var finish = function () {
+            _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created);
+          };
+          if (typeof queueMicrotask === 'function') queueMicrotask(finish);
+          else finish();
+        };
+        if (typeof queueMicrotask === 'function') queueMicrotask(upgrade);
+        else upgrade();
+        return req;
       }
       var success = function () {
         var ev = new _zwIDBEvent('success', req);

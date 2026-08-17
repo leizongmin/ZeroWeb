@@ -1751,6 +1751,53 @@ fn test_indexeddb_version_lifecycle_and_events() {
 }
 
 #[test]
+fn test_indexeddb_versionchange_transaction_commit_and_abort() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var commitOrder = [];\
+             var commitRequest = indexedDB.open('commit-transaction', 2);\
+             commitRequest.onupgradeneeded = function () {\
+               commitOrder.push('upgrade');\
+               commitRequest.transaction.oncomplete = function () { commitOrder.push('complete'); };\
+               commitRequest.result.createObjectStore('committed').add('value', 1);\
+             };\
+             commitRequest.onsuccess = function () { commitOrder.push('success'); };\
+             var abortOrder = [];\
+             var abortRequest = indexedDB.open('abort-transaction', 3);\
+             abortRequest.onupgradeneeded = function () {\
+               abortOrder.push('upgrade');\
+               abortRequest.result.createObjectStore('rolled-back');\
+               abortRequest.transaction.onabort = function () { abortOrder.push('abort'); };\
+               abortRequest.transaction.abort();\
+             };\
+             abortRequest.onsuccess = function () { abortOrder.push('unexpected-success'); };\
+             abortRequest.onerror = function () {\
+               abortOrder.push('error:' + abortRequest.error.name + ':' + (abortRequest.result === undefined));\
+               var reopened = indexedDB.open('abort-transaction');\
+               reopened.onupgradeneeded = function () {\
+                 abortOrder.push('recreated:' + !reopened.result.objectStoreNames.contains('rolled-back'));\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(sandbox.execute("commitOrder.join('|')").unwrap().value, "upgrade|complete|success");
+    assert_eq!(
+        sandbox.execute("abortOrder.join('|')").unwrap().value,
+        "upgrade|abort|error:AbortError:true|recreated:true"
+    );
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。

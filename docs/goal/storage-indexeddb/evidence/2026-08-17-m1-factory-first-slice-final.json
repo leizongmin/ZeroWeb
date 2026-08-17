@@ -1,0 +1,33 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB factory/global/event first slice after versionchange transaction fix",
+  "files": 9,
+  "subtests": 50,
+  "status": {
+    "pass": 50,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 100.0,
+  "delta_from_previous": {
+    "pass": 9,
+    "fail": -9,
+    "pass_rate_percentage_points": 18.0
+  },
+  "delta_from_baseline": {
+    "pass": 44,
+    "fail": -44,
+    "pass_rate_percentage_points": 88.0
+  },
+  "driving_cases": [
+    {"path": "IndexedDB/idbfactory_open.any.js", "pass": 29, "total": 29},
+    {"path": "IndexedDB/idbfactory-open-error-properties.any.js", "pass": 1, "total": 1},
+    {"path": "IndexedDB/idbfactory-open-request-error.any.js", "pass": 1, "total": 1},
+    {"path": "IndexedDB/idbfactory-open-request-success.any.js", "pass": 1, "total": 1}
+  ],
+  "remaining_failures": []
+}
