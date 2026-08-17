@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="WPT and performance results recorded by ZeroWeb's scheduled CI runs." />
+    <meta name="theme-color" content="#f7fbff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#08182e" media="(prefers-color-scheme: dark)" />
+    <title>Test results — ZeroWeb</title>
+    <link rel="icon" href="app-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="responsive.css" />
+    <link rel="stylesheet" href="progress.css" />
+    <link rel="stylesheet" href="theme.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="ZeroWeb home"><img src="app-icon.svg" alt="" width="38" height="38" /><span>Zero<span>Web</span></span></a>
+      <nav aria-label="Primary navigation"><a href="index.html#experiment" data-i18n="experiment">Experiment</a><a href="index.html#architecture" data-i18n="architecture">Architecture</a><a href="progress.html" aria-current="page" data-i18n="progress">Data</a><a href="updates.html" data-i18n="updates">Updates</a></nav>
+      <div class="header-actions"><div class="language-switcher" role="group" aria-label="Language"><button type="button" data-language="en" aria-pressed="true">EN</button><button type="button" data-language="zh" aria-pressed="false">中文</button></div><a class="github-link" href="https://github.com/leizongmin/ZeroWeb" data-i18n="github">GitHub</a></div>
+    </header>
+    <main class="progress-page" id="main">
+      <section class="progress-hero" data-screen-label="Metrics overview"><p class="section-kicker" data-i18n="kicker">CI test results</p><h1 data-i18n="title">How is ZeroWeb doing?</h1><p class="intro" data-i18n="intro">Scheduled CI runs the same compatibility and performance checks over time. This page reads the results committed to the repository.</p><p class="data-freshness" id="data-freshness" aria-live="polite" data-i18n="loading">Loading the latest results…</p></section>
+      <section class="metric-summary" aria-label="Latest measurements" id="metric-summary"></section>
+      <section class="chart-section" data-screen-label="WPT trend"><div class="chart-heading"><div><p class="section-kicker" data-i18n="wptKicker">Web compatibility</p><h2 data-i18n="wptTitle">WPT tests passed</h2><p data-i18n="wptDescription">Each point is the latest upstream WPT run for that month. The suite version is included because the test set can change.</p></div><a href="https://github.com/leizongmin/ZeroWeb/blob/main/docs/goal/rendering-compat/evidence/wpt-trends/trend.csv" data-i18n="source">See the raw data ↗</a></div><div class="chart-frame" id="wpt-chart" aria-live="polite"></div><div class="chart-table" id="wpt-table"></div></section>
+      <section class="chart-section" data-screen-label="Performance trend"><div class="chart-heading"><div><p class="section-kicker" data-i18n="perfKicker">Weekly performance run</p><h2 data-i18n="perfTitle">Performance at p95</h2><p data-i18n="perfDescription">All results come from the same class of GitHub runner, so changes in hardware do not distort the trend. Lower is better.</p></div><a href="https://github.com/leizongmin/ZeroWeb/blob/main/docs/perf/trends/benchmark-trend.csv" data-i18n="source">See the raw data ↗</a></div><label class="metric-picker"><span data-i18n="chooseMetric">Choose a metric</span><select id="metric-select"></select></label><div class="chart-frame" id="performance-chart" aria-live="polite"></div><div class="chart-table" id="performance-table"></div></section>
+      <p class="method-note" data-i18n="method">Data notes: WPT uses the last upstream run of each month. Performance uses the last p95 result recorded on each date for github-ubuntu-latest. Results from other hardware are not mixed into the chart.</p>
+    </main>
+    <footer><a class="brand" href="index.html"><img src="app-icon.svg" alt="" width="28" height="28" /><span>Zero<span>Web</span></span></a><p data-i18n="footer">An AI-autonomous software engineering experiment built around a Rust browser.</p><a href="https://github.com/leizongmin/ZeroWeb">GitHub ↗</a></footer>
+    <script src="progress.js"></script>
+  </body>
+</html>

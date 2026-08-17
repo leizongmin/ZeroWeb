@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "latest_data_date": "2026-08-16",
+  "wpt": [
+    {
+      "period": "2026-08",
+      "date": "2026-08-15",
+      "total": 16269,
+      "passed": 13265,
+      "rate": 81.5,
+      "ref": "v1.10",
+      "sha": "238e1db"
+    }
+  ],
+  "performance": {
+    "platform_class": "github-ubuntu-latest",
+    "metrics": [
+      {
+        "id": "page/welcome/total_ms",
+        "label": {
+          "en": "Welcome page",
+          "zh": "欢迎页总耗时"
+        },
+        "unit": "ms",
+        "lower_is_better": true,
+        "points": [
+          {
+            "date": "2026-08-08",
+            "value": 9.176914,
+            "sha": "bad4b3b"
+          },
+          {
+            "date": "2026-08-10",
+            "value": 5.810163,
+            "sha": "57957db"
+          },
+          {
+            "date": "2026-08-13",
+            "value": 18.572647,
+            "sha": "286bd2c"
+          },
+          {
+            "date": "2026-08-14",
+            "value": 19.655495,
+            "sha": "a989fe0"
+          },
+          {
+            "date": "2026-08-16",
+            "value": 18.916102000000002,
+            "sha": "b6b7128"
+          }
+        ]
+      },
+      {
+        "id": "page/medium/total_ms",
+        "label": {
+          "en": "Medium page",
+          "zh": "中型页面总耗时"
+        },
+        "unit": "ms",
+        "lower_is_better": true,
+        "points": [
+          {
+            "date": "2026-08-08",
+            "value": 229.875786,
+            "sha": "bad4b3b"
+          },
+          {
+            "date": "2026-08-10",
+            "value": 142.075753,
+            "sha": "57957db"
+          },
+          {
+            "date": "2026-08-13",
+            "value": 318.966179,
+            "sha": "286bd2c"
+          },
+          {
+            "date": "2026-08-14",
+            "value": 388.760233,
+            "sha": "a989fe0"
+          },
+          {
+            "date": "2026-08-16",
+            "value": 1036.453199,
+            "sha": "b6b7128"
+          }
+        ]
+      },
+      {
+        "id": "page/morning/total_ms",
+        "label": {
+          "en": "Morning test page",
+          "zh": "Morning 测试页总耗时"
+        },
+        "unit": "ms",
+        "lower_is_better": true,
+        "points": [
+          {
+            "date": "2026-08-08",
+            "value": 22.588928000000003,
+            "sha": "bad4b3b"
+          },
+          {
+            "date": "2026-08-10",
+            "value": 17.45835,
+            "sha": "57957db"
+          },
+          {
+            "date": "2026-08-13",
+            "value": 85.124768,
+            "sha": "286bd2c"
+          },
+          {
+            "date": "2026-08-14",
+            "value": 98.125454,
+            "sha": "a989fe0"
+          },
+          {
+            "date": "2026-08-16",
+            "value": 78.85687800000001,
+            "sha": "b6b7128"
+          }
+        ]
+      },
+      {
+        "id": "startup_ms",
+        "label": {
+          "en": "Browser startup",
+          "zh": "浏览器启动耗时"
+        },
+        "unit": "ms",
+        "lower_is_better": true,
+        "points": [
+          {
+            "date": "2026-08-08",
+            "value": 341.405658,
+            "sha": "bad4b3b"
+          },
+          {
+            "date": "2026-08-10",
+            "value": 110.336726,
+            "sha": "57957db"
+          },
+          {
+            "date": "2026-08-13",
+            "value": 147.586293,
+            "sha": "286bd2c"
+          },
+          {
+            "date": "2026-08-14",
+            "value": 157.18157599999998,
+            "sha": "a989fe0"
+          },
+          {
+            "date": "2026-08-16",
+            "value": 92.198441,
+            "sha": "b6b7128"
+          }
+        ]
+      },
+      {
+        "id": "resource/peak_rss_mb",
+        "label": {
+          "en": "Peak memory",
+          "zh": "峰值内存"
+        },
+        "unit": "MB",
+        "lower_is_better": true,
+        "points": [
+          {
+            "date": "2026-08-08",
+            "value": 175.22265625,
+            "sha": "bad4b3b"
+          },
+          {
+            "date": "2026-08-10",
+            "value": 180.5078125,
+            "sha": "57957db"
+          },
+          {
+            "date": "2026-08-13",
+            "value": 187.37890625,
+            "sha": "286bd2c"
+          },
+          {
+            "date": "2026-08-14",
+            "value": 152.74609375,
+            "sha": "a989fe0"
+          },
+          {
+            "date": "2026-08-16",
+            "value": 167.61328125,
+            "sha": "b6b7128"
+          }
+        ]
+      }
+    ]
+  }
+}

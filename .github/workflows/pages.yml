@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'scripts/generate-website-metrics.py'
+      - 'docs/perf/trends/benchmark-trend.csv'
+      - 'docs/goal/rendering-compat/evidence/wpt-trends/trend.csv'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -25,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Generate website metrics
+        run: python scripts/generate-website-metrics.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
