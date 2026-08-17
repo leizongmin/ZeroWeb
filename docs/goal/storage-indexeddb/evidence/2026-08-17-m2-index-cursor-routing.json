@@ -1,0 +1,46 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 index schema, query, and cursor entry routing",
+  "capabilities": [
+    "index schema synchronization",
+    "unique index prevalidation",
+    "string and compound key paths",
+    "multiEntry",
+    "transaction-visible index entries",
+    "index get/getKey/count/getAll/getAllKeys",
+    "object-store and index cursor entries",
+    "empty key-path extraction"
+  ],
+  "ordering": [
+    "index key",
+    "primary key"
+  ],
+  "tests": {
+    "zero_storage": {
+      "pass": 671,
+      "fail": 0
+    },
+    "page_runtime_handler": {
+      "pass": 8,
+      "fail": 0
+    },
+    "renderer_cross_document": {
+      "pass": 2,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 21,
+      "pass": 166,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "Rust-backed cursor stepping and request event timing",
+    "cyclic structured-clone graph",
+    "cross-process ownership",
+    "persistence"
+  ]
+}

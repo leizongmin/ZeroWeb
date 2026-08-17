@@ -789,10 +789,19 @@ mod tests {
                 r#"var created = indexedDB.open("app", 2);
                    created.onupgradeneeded = function () {
                      var store = created.result.createObjectStore("items", {keyPath:"id"});
+                     store.createIndex("by_label", "label");
+                     store.createIndex("by_identity", ["profile.first", "profile.last"]);
                      store.put({
                        id: new Date(10),
                        label: "stored",
+                       profile: {first: "Ada", last: "Lovelace"},
                        bytes: new Uint8Array([1, 2, 3])
+                     });
+                     store.put({
+                       id: new Date(20),
+                       label: "alpha",
+                       profile: {first: "Grace", last: "Hopper"},
+                       bytes: new Uint8Array([4])
                      });
                    };
                    created.onsuccess = function () { globalThis.__created = true; };"#,
@@ -809,20 +818,39 @@ mod tests {
             .execute_script_direct(
                 r#"var reopened = indexedDB.open("app");
                    reopened.onsuccess = function () {
-                     var read = reopened.result.transaction("items").objectStore("items").get(new Date(10));
+                     var tx = reopened.result.transaction("items");
+                     var index = tx.objectStore("items").index("by_label");
+                     var read = index.get("stored");
+                     var compoundRead =
+                       tx.objectStore("items").index("by_identity").get(["Ada", "Lovelace"]);
+                     var labels = [];
                      read.onsuccess = function () {
-                       globalThis.__restored =
+                       globalThis.__restoredRecord =
                          reopened.result.version + ":" +
                          reopened.result.objectStoreNames.contains("items") + ":" +
                          read.result.label + ":" + read.result.id.getTime() + ":" +
                          read.result.bytes[2];
+                     };
+                     compoundRead.onsuccess = function () {
+                       globalThis.__compound = compoundRead.result.label;
+                     };
+                     var cursor = index.openCursor();
+                     cursor.onsuccess = function () {
+                       if (cursor.result) {
+                         labels.push(cursor.result.key);
+                         cursor.result.continue();
+                       } else {
+                         globalThis.__restored =
+                           globalThis.__restoredRecord + ":" + labels.join(",") + ":" +
+                           globalThis.__compound;
+                       }
                      };
                    };"#,
             )
             .unwrap();
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
-            "2:true:stored:10:3"
+            "2:true:stored:10:3:alpha,stored:stored"
         );
         worker.shutdown();
     }

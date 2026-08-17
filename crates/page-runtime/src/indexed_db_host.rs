@@ -177,6 +177,15 @@ enum IndexedDbRequest {
         #[serde(default)]
         keys_only: bool,
     },
+    TransactionIndexGetAll {
+        transaction: u64,
+        store: String,
+        index: String,
+        #[serde(default)]
+        query: Option<IndexedDbQueryWire>,
+        #[serde(default)]
+        count: Option<usize>,
+    },
     CommitTransaction {
         transaction: u64,
     },
@@ -223,6 +232,26 @@ struct IndexedDbStoreSchema {
     key_path: Option<String>,
     #[serde(default, rename = "autoIncrement")]
     auto_increment: bool,
+    #[serde(default)]
+    indexes: Vec<IndexedDbIndexSchema>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IndexedDbIndexSchema {
+    name: String,
+    #[serde(rename = "keyPath")]
+    key_path: IndexedDbIndexKeyPath,
+    #[serde(default)]
+    unique: bool,
+    #[serde(default, rename = "multiEntry")]
+    multi_entry: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+enum IndexedDbIndexKeyPath {
+    String(String),
+    Sequence(Vec<String>),
 }
 
 #[derive(Default)]
@@ -520,6 +549,32 @@ fn dispatch_request(
                 .collect::<Vec<_>>();
             Ok(json!({"records": records}))
         }
+        IndexedDbRequest::TransactionIndexGetAll {
+            transaction,
+            store,
+            index,
+            query,
+            count,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            let database = active_database_mut(storage, active)?;
+            let query = query.map(IndexedDbQueryWire::into_storage_query).transpose()?;
+            let entries = database
+                .tx_get_all_from_index(&active.transaction, &store, &index)
+                .map_err(storage_error)?
+                .into_iter()
+                .filter(|entry| query.as_ref().is_none_or(|query| query.matches(&entry.index_key)))
+                .take(count.unwrap_or(usize::MAX))
+                .map(|entry| {
+                    json!({
+                        "key": IndexedDbKeyWire::from(&entry.index_key),
+                        "primaryKey": IndexedDbKeyWire::from(&entry.primary_key),
+                        "value": entry.value,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Ok(json!({"entries": entries}))
+        }
         IndexedDbRequest::CommitTransaction { transaction } => {
             let mut active = remove_active_transaction(transactions, origin, transaction)?;
             let database = active_database_mut(storage, &active)?;
@@ -636,6 +691,29 @@ fn sync_schema(
     if requested_names.len() != stores.len() {
         return Err("ConstraintError: duplicate object store name in schema".to_string());
     }
+    for store in &stores {
+        let index_names = store
+            .indexes
+            .iter()
+            .map(|index| index.name.as_str())
+            .collect::<HashSet<_>>();
+        if index_names.len() != store.indexes.len() {
+            return Err(format!(
+                "ConstraintError: duplicate index name in object store '{}'",
+                store.name
+            ));
+        }
+        if store
+            .indexes
+            .iter()
+            .any(|index| index.multi_entry && matches!(&index.key_path, IndexedDbIndexKeyPath::Sequence(_)))
+        {
+            return Err(format!(
+                "InvalidAccessError: multiEntry index in object store '{}' cannot use a compound key path",
+                store.name
+            ));
+        }
+    }
 
     let mut replaced_names = HashSet::new();
     if let Some(database) = storage.indexed_db(origin, name) {
@@ -657,9 +735,45 @@ fn sync_schema(
             || current_stores
                 .iter()
                 .any(|current| !requested_names.contains(current.name.as_str()))
+            || current_stores.iter().any(|current| {
+                stores
+                    .iter()
+                    .find(|store| store.name == current.name)
+                    .is_some_and(|requested| !index_schemas_match(&current.indexes, &requested.indexes))
+            })
             || !replaced_names.is_empty();
         if schema_changed && version == database.version {
             return Err("InvalidStateError: object store schema changes require a version upgrade".to_string());
+        }
+        for requested_store in &stores {
+            if replaced_names.contains(&requested_store.name) {
+                continue;
+            }
+            let Some(current_store) = current_stores
+                .iter()
+                .find(|current| current.name == requested_store.name)
+            else {
+                continue;
+            };
+            for requested_index in &requested_store.indexes {
+                let unchanged = current_store.indexes.iter().any(|current| {
+                    current.name == requested_index.name
+                        && index_key_paths_match(&current.key_path, &requested_index.key_path)
+                        && current.unique == requested_index.unique
+                        && current.multi_entry == requested_index.multi_entry
+                });
+                if !unchanged {
+                    database
+                        .validate_index_with_key_path(
+                            &requested_store.name,
+                            &requested_index.name,
+                            storage_index_key_path(&requested_index.key_path),
+                            requested_index.unique,
+                            requested_index.multi_entry,
+                        )
+                        .map_err(storage_error)?;
+                }
+            }
         }
     }
 
@@ -674,14 +788,84 @@ fn sync_schema(
             database.delete_object_store(&existing).map_err(storage_error)?;
         }
     }
-    for requested in stores {
+    for requested in &stores {
         if !database.has_store(&requested.name) {
             database
                 .create_object_store(&requested.name, requested.key_path.as_deref(), requested.auto_increment)
                 .map_err(storage_error)?;
         }
     }
+    for requested_store in &stores {
+        let current_store = database
+            .store_info()
+            .into_iter()
+            .find(|store| store.name == requested_store.name)
+            .ok_or_else(|| "NotFoundError: IndexedDB object store does not exist".to_string())?;
+        for current_index in &current_store.indexes {
+            let unchanged = requested_store.indexes.iter().any(|requested| {
+                requested.name == current_index.name
+                    && index_key_paths_match(&current_index.key_path, &requested.key_path)
+                    && requested.unique == current_index.unique
+                    && requested.multi_entry == current_index.multi_entry
+            });
+            if !unchanged {
+                database
+                    .delete_index(&requested_store.name, &current_index.name)
+                    .map_err(storage_error)?;
+            }
+        }
+        let current_names = database
+            .index_names(&requested_store.name)
+            .map_err(storage_error)?
+            .into_iter()
+            .map(str::to_string)
+            .collect::<HashSet<_>>();
+        for requested_index in &requested_store.indexes {
+            if !current_names.contains(&requested_index.name) {
+                database
+                    .create_index_with_key_path(
+                        &requested_store.name,
+                        &requested_index.name,
+                        storage_index_key_path(&requested_index.key_path),
+                        requested_index.unique,
+                        requested_index.multi_entry,
+                    )
+                    .map_err(storage_error)?;
+            }
+        }
+    }
     Ok(json!({"database": database_schema_json(database)}))
+}
+
+fn index_schemas_match(current: &[zero_storage::IdbIndexInfo], requested: &[IndexedDbIndexSchema]) -> bool {
+    current.len() == requested.len()
+        && current.iter().all(|current| {
+            requested.iter().any(|requested| {
+                requested.name == current.name
+                    && index_key_paths_match(&current.key_path, &requested.key_path)
+                    && requested.unique == current.unique
+                    && requested.multi_entry == current.multi_entry
+            })
+        })
+}
+
+fn storage_index_key_path(key_path: &IndexedDbIndexKeyPath) -> zero_storage::IdbIndexKeyPath {
+    match key_path {
+        IndexedDbIndexKeyPath::String(value) => zero_storage::IdbIndexKeyPath::String(value.clone()),
+        IndexedDbIndexKeyPath::Sequence(values) => zero_storage::IdbIndexKeyPath::Sequence(values.clone()),
+    }
+}
+
+fn index_key_paths_match(current: &zero_storage::IdbIndexKeyPath, requested: &IndexedDbIndexKeyPath) -> bool {
+    match (current, requested) {
+        (zero_storage::IdbIndexKeyPath::String(current), IndexedDbIndexKeyPath::String(requested)) => {
+            current == requested
+        }
+        (zero_storage::IdbIndexKeyPath::Sequence(current), IndexedDbIndexKeyPath::Sequence(requested)) => {
+            current == requested
+        }
+        _ => false,
+    }
 }
 
 fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Value {
@@ -689,10 +873,27 @@ fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Val
         .store_info()
         .into_iter()
         .map(|store| {
+            let indexes = store
+                .indexes
+                .into_iter()
+                .map(|index| {
+                    let key_path = match index.key_path {
+                        zero_storage::IdbIndexKeyPath::String(value) => json!(value),
+                        zero_storage::IdbIndexKeyPath::Sequence(values) => json!(values),
+                    };
+                    json!({
+                        "name": index.name,
+                        "keyPath": key_path,
+                        "unique": index.unique,
+                        "multiEntry": index.multi_entry,
+                    })
+                })
+                .collect::<Vec<_>>();
             json!({
                 "name": store.name,
                 "keyPath": store.key_path,
                 "autoIncrement": store.auto_increment,
+                "indexes": indexes,
             })
         })
         .collect::<Vec<_>>();
@@ -821,8 +1022,8 @@ mod tests {
         assert_eq!(
             inspected["database"]["stores"],
             json!([
-                {"name": "items", "keyPath": "id", "autoIncrement": true},
-                {"name": "logs", "keyPath": null, "autoIncrement": false}
+                {"name": "items", "keyPath": "id", "autoIncrement": true, "indexes": []},
+                {"name": "logs", "keyPath": null, "autoIncrement": false, "indexes": []}
             ])
         );
 
@@ -1277,6 +1478,152 @@ mod tests {
             &handler,
             "https://app.example",
             json!({"op": "commit_transaction", "transaction": read}),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn transaction_index_view_uses_buffered_records_and_typed_keys() {
+        let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 1,
+                "stores": [{
+                    "name": "items",
+                    "keyPath": null,
+                    "autoIncrement": false,
+                    "indexes": [
+                        {"name": "by_group", "keyPath": "group"},
+                        {"name": "by_tags", "keyPath": "tags", "multiEntry": true},
+                        {"name": "by_when", "keyPath": "when"},
+                        {"name": "by_compound", "keyPath": ["first", "last"]}
+                    ]
+                }]
+            }),
+        )
+        .unwrap();
+        let write = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        for (key, value) in [
+            (
+                "1",
+                json!({
+                    "group": "b",
+                    "first": "Ada",
+                    "last": "Lovelace",
+                    "tags": ["x", "y"],
+                    "when": {"__zwIdbType": "date", "value": "20"}
+                }),
+            ),
+            (
+                "2",
+                json!({
+                    "group": "a",
+                    "first": "Grace",
+                    "last": "Hopper",
+                    "tags": ["y"],
+                    "when": {"__zwIdbType": "date", "value": "10"}
+                }),
+            ),
+        ] {
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_add",
+                    "transaction": write,
+                    "store": "items",
+                    "value": value,
+                    "key": {"type": "number", "value": key}
+                }),
+            )
+            .unwrap();
+        }
+        let groups = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_index_get_all",
+                "transaction": write,
+                "store": "items",
+                "index": "by_group"
+            }),
+        )
+        .unwrap();
+        assert_eq!(groups["entries"][0]["key"], json!({"type": "string", "value": "a"}));
+        assert_eq!(
+            groups["entries"][0]["primaryKey"],
+            json!({"type": "number", "value": "2"})
+        );
+        assert_eq!(groups["entries"][1]["key"], json!({"type": "string", "value": "b"}));
+
+        let tags = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_index_get_all",
+                "transaction": write,
+                "store": "items",
+                "index": "by_tags",
+                "query": {"type": "key", "value": {"type": "string", "value": "y"}}
+            }),
+        )
+        .unwrap();
+        assert_eq!(tags["entries"].as_array().unwrap().len(), 2);
+
+        let dates = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_index_get_all",
+                "transaction": write,
+                "store": "items",
+                "index": "by_when"
+            }),
+        )
+        .unwrap();
+        assert_eq!(dates["entries"][0]["key"], json!({"type": "date", "value": "10"}));
+        assert_eq!(dates["entries"][1]["key"], json!({"type": "date", "value": "20"}));
+        let compounds = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_index_get_all",
+                "transaction": write,
+                "store": "items",
+                "index": "by_compound"
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            compounds["entries"][0]["key"],
+            json!({
+                "type": "array",
+                "value": [
+                    {"type": "string", "value": "Ada"},
+                    {"type": "string", "value": "Lovelace"}
+                ]
+            })
+        );
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": write}),
         )
         .unwrap();
     }

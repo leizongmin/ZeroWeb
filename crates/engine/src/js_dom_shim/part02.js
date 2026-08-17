@@ -2645,7 +2645,10 @@
     seen = seen || [];
     if (value === undefined) return { __zwIdbType: 'undefined' };
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-    if (typeof value === 'number') return { __zwIdbType: 'number', value: String(value) };
+    if (typeof value === 'number') {
+      if (isFinite(value) && !(value === 0 && 1 / value < 0)) return value;
+      return { __zwIdbType: 'number', value: String(value) };
+    }
     if (value instanceof Date) {
       return { __zwIdbType: 'date', value: String(value.getTime()) };
     }
@@ -2686,10 +2689,12 @@
     seen.push(value);
     var wire;
     if (Array.isArray(value)) {
-      wire = {
-        __zwIdbType: 'array',
-        value: value.map(function (entry) { return _zwIDBValueToWire(entry, seen); })
-      };
+      wire = value.map(function (entry) { return _zwIDBValueToWire(entry, seen); });
+    } else if (!Object.prototype.hasOwnProperty.call(value, '__zwIdbType')) {
+      wire = {};
+      Object.keys(value).forEach(function (key) {
+        wire[key] = _zwIDBValueToWire(value[key], seen);
+      });
     } else {
       wire = {
         __zwIdbType: 'object',
@@ -2703,7 +2708,17 @@
   }
 
   function _zwIDBValueFromWire(wire) {
-    if (wire === null || typeof wire !== 'object' || !wire.__zwIdbType) return wire;
+    if (wire === null || typeof wire !== 'object') return wire;
+    if (Array.isArray(wire)) {
+      return wire.map(function (entry) { return _zwIDBValueFromWire(entry); });
+    }
+    if (!wire.__zwIdbType) {
+      var plain = {};
+      Object.keys(wire).forEach(function (key) {
+        plain[key] = _zwIDBValueFromWire(wire[key]);
+      });
+      return plain;
+    }
     if (wire.__zwIdbType === 'undefined') return undefined;
     if (wire.__zwIdbType === 'number') return Number(wire.value);
     if (wire.__zwIdbType === 'date') return new Date(Number(wire.value));
@@ -2755,11 +2770,21 @@
   function _zwIDBStateFromHost(database) {
     var stores = {};
     (database.stores || []).forEach(function (store) {
+      var indexes = {};
+      (store.indexes || []).forEach(function (index) {
+        indexes[index.name] = {
+          keyPath: index.keyPath,
+          unique: !!index.unique,
+          multiEntry: !!index.multiEntry,
+          deleted: false,
+          createdInUpgrade: false
+        };
+      });
       stores[store.name] = {
         keyPath: store.keyPath === undefined ? null : store.keyPath,
         autoIncrement: !!store.autoIncrement,
         records: new Map(),
-        indexes: {},
+        indexes: indexes,
         nextKey: 1,
         deleted: false,
         createdInUpgrade: false
@@ -2782,7 +2807,16 @@
         return {
           name: storeName,
           keyPath: store.keyPath,
-          autoIncrement: !!store.autoIncrement
+          autoIncrement: !!store.autoIncrement,
+          indexes: Object.keys(store.indexes).sort().map(function (indexName) {
+            var index = store.indexes[indexName];
+            return {
+              name: indexName,
+              keyPath: index.keyPath,
+              unique: !!index.unique,
+              multiEntry: !!index.multiEntry
+            };
+          })
         };
       })
     };
@@ -2967,6 +3001,12 @@
   };
   _zwIDBStore.prototype._indexKey = function (value, keyPath) {
     if (keyPath === '') return value;
+    if (Array.isArray(keyPath)) {
+      var compound = keyPath.map(function (path) {
+        return this._indexKey(value, path);
+      }, this);
+      return compound.some(function (key) { return key === undefined; }) ? undefined : compound;
+    }
     var key = value;
     String(keyPath).split('.').forEach(function (part) {
       key = key == null ? undefined : key[part];
@@ -3269,10 +3309,20 @@
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
     this._assertUsable(true);
     var unique = !!((opts || {}).unique);
+    var multiEntry = !!((opts || {}).multiEntry);
+    if (Object.prototype.hasOwnProperty.call(this._indexes, name)) {
+      throw new globalThis.DOMException('The index already exists.', 'ConstraintError');
+    }
+    if (multiEntry && Array.isArray(keyPath)) {
+      throw new globalThis.DOMException(
+        'A multiEntry index cannot use a compound key path.',
+        'InvalidAccessError'
+      );
+    }
     var metadata = {
       keyPath: keyPath,
       unique: unique,
-      multiEntry: !!((opts || {}).multiEntry),
+      multiEntry: multiEntry,
       deleted: false,
       createdInUpgrade: !!(this.transaction && this.transaction.mode === 'versionchange')
     };
@@ -3280,14 +3330,15 @@
     if (unique && this.transaction) {
       var seen = [];
       this._records.forEach(function (value) {
-        var indexKey = value;
-        String(keyPath).split('.').forEach(function (part) {
-          indexKey = indexKey == null ? undefined : indexKey[part];
-        });
-        if (indexKey !== undefined) {
-          if (seen.indexOf(indexKey) !== -1) this.transaction.abort();
-          seen.push(indexKey);
-        }
+        var indexKey = this._indexKey(value, keyPath);
+        var keys = multiEntry && Array.isArray(indexKey) ? indexKey : [indexKey];
+        keys.forEach(function (candidate) {
+          if (!_zwIDBKey(candidate, [])) return;
+          if (seen.some(function (existing) {
+            return _zwIDBCompareValues(existing, candidate) === 0;
+          })) this.transaction.abort();
+          seen.push(candidate);
+        }, this);
       }, this);
     }
     return new _zwIDBIndex(this, name, metadata);
@@ -3350,11 +3401,30 @@
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var entries = [];
-    this._records.forEach(function (value, key) {
-      if (query == null || _zwIDBQueryMatches(query, key)) {
-        entries.push({ key: key, primaryKey: key, value: value });
+    if (this.transaction && this.transaction._hostId !== null) {
+      var hostRequest = {
+        op: 'transaction_get_all',
+        transaction: this.transaction._hostId,
+        store: this.name,
+        keys_only: false
+      };
+      if (query != null) hostRequest.query = _zwIDBQueryToWire(query);
+      try {
+        var hosted = _zwIDBHostCall(hostRequest);
+        entries = (hosted.records || []).map(function (record) {
+          var key = _zwIDBKeyFromWire(record.key);
+          return { key: key, primaryKey: key, value: _zwIDBValueFromWire(record.value) };
+        });
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
       }
-    });
+    } else {
+      this._records.forEach(function (value, key) {
+        if (query == null || _zwIDBQueryMatches(query, key)) {
+          entries.push({ key: key, primaryKey: key, value: value });
+        }
+      });
+    }
     entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
     if (direction === 'prev' || direction === 'prevunique') entries.reverse();
     var cursor = entries.length ? new _zwIDBCursor(this, this, req, entries, direction) : null;
@@ -3386,6 +3456,23 @@
       if (!valid) {
         throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
       }
+    }
+    if (this.objectStore.transaction && this.objectStore.transaction._hostId !== null) {
+      var hostRequest = {
+        op: 'transaction_index_get_all',
+        transaction: this.objectStore.transaction._hostId,
+        store: this.objectStore.name,
+        index: this.name
+      };
+      if (queryProvided) hostRequest.query = _zwIDBQueryToWire(query);
+      var hosted = _zwIDBHostCall(hostRequest);
+      return (hosted.entries || []).map(function (entry) {
+        return {
+          key: _zwIDBKeyFromWire(entry.key),
+          primaryKey: _zwIDBKeyFromWire(entry.primaryKey),
+          value: _zwIDBValueFromWire(entry.value)
+        };
+      });
     }
     var entries = [];
     var index = this;
@@ -3431,16 +3518,52 @@
     _zwIDBDispatch(req, 'success', entries.length);
     return req;
   };
-  _zwIDBIndex.prototype.openCursor = function (query, direction) {
-    var entries = this._entries(query, query != null);
+  _zwIDBIndex.prototype.getAll = function (query, count) {
+    var entries = this._entries(query, arguments.length >= 1 && query !== undefined);
+    if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
     var req = new _zwIDBRequest(this);
     req.transaction = this.objectStore.transaction;
+    _zwIDBDispatch(req, 'success', entries.map(function (entry) {
+      return globalThis.structuredClone(entry.value);
+    }));
+    return req;
+  };
+  _zwIDBIndex.prototype.getAllKeys = function (query, count) {
+    var entries = this._entries(query, arguments.length >= 1 && query !== undefined);
+    if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.objectStore.transaction;
+    _zwIDBDispatch(req, 'success', entries.map(function (entry) {
+      return globalThis.structuredClone(entry.primaryKey);
+    }));
+    return req;
+  };
+  function _zwIDBOpenIndexCursor(index, query, direction, keyOnly) {
+    var entries = index._entries(query, query != null);
+    var req = new _zwIDBRequest(index);
+    req.transaction = index.objectStore.transaction;
     if (direction === 'prev' || direction === 'prevunique') entries.reverse();
+    if (direction === 'nextunique' || direction === 'prevunique') {
+      entries = entries.filter(function (entry, position) {
+        return position === 0 || _zwIDBCompareValues(entries[position - 1].key, entry.key) !== 0;
+      });
+    }
+    if (keyOnly) {
+      entries = entries.map(function (entry) {
+        return { key: entry.key, primaryKey: entry.primaryKey, value: undefined };
+      });
+    }
     var cursor = entries.length
-      ? new _zwIDBCursor(this, this.objectStore, req, entries, direction)
+      ? new _zwIDBCursor(index, index.objectStore, req, entries, direction)
       : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;
+  }
+  _zwIDBIndex.prototype.openCursor = function (query, direction) {
+    return _zwIDBOpenIndexCursor(this, query, direction, false);
+  };
+  _zwIDBIndex.prototype.openKeyCursor = function (query, direction) {
+    return _zwIDBOpenIndexCursor(this, query, direction, true);
   };
 
   function _zwIDBRestoreTransactionSnapshot(transaction) {

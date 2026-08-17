@@ -228,6 +228,17 @@ pub struct IdbRecord {
     pub value: serde_json::Value,
 }
 
+/// 事务可见的 index entry。
+#[derive(Debug, Clone, PartialEq)]
+pub struct IdbIndexRecord {
+    /// Index key。
+    pub index_key: IdbKey,
+    /// Object store primary key。
+    pub primary_key: IdbKey,
+    /// Record value。
+    pub value: serde_json::Value,
+}
+
 /// 索引记录条目，存储索引键到主键的映射。
 #[derive(Debug, Clone)]
 struct IndexEntry {
@@ -242,7 +253,7 @@ pub struct IdbIndex {
     /// 索引名称。
     pub name: String,
     /// 索引键路径（用于从记录值中提取索引键）。
-    pub key_path: String,
+    pub key_path: IdbIndexKeyPath,
     /// 是否唯一索引。
     pub unique: bool,
     /// 是否支持多条目（multiEntry）。
@@ -251,12 +262,21 @@ pub struct IdbIndex {
     entries: Vec<IndexEntry>,
 }
 
+/// Index key path。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdbIndexKeyPath {
+    /// 单 key path。
+    String(String),
+    /// Compound key path。
+    Sequence(Vec<String>),
+}
+
 impl IdbIndex {
     /// 创建新的索引。
-    fn new(name: &str, key_path: &str, unique: bool, multi_entry: bool) -> Self {
+    fn new(name: &str, key_path: IdbIndexKeyPath, unique: bool, multi_entry: bool) -> Self {
         Self {
             name: name.to_string(),
-            key_path: key_path.to_string(),
+            key_path,
             unique,
             multi_entry,
             entries: Vec::new(),
@@ -265,19 +285,28 @@ impl IdbIndex {
 
     /// 从 JSON 值中提取索引键，支持 multiEntry。
     fn extract_keys(&self, value: &serde_json::Value) -> Vec<IdbKey> {
-        let val = match value.pointer(&format!("/{}", self.key_path.replace('.', "/"))) {
-            Some(v) => v,
-            None => return Vec::new(),
-        };
-
-        if self.multi_entry {
-            if let serde_json::Value::Array(arr) = val {
-                arr.iter().filter_map(json_value_to_idb_key).collect()
-            } else {
-                json_value_to_idb_key(val).into_iter().collect()
+        match &self.key_path {
+            IdbIndexKeyPath::String(key_path) => {
+                let Some(value) = value_at_key_path(value, key_path) else {
+                    return Vec::new();
+                };
+                if self.multi_entry {
+                    if let serde_json::Value::Array(values) = value {
+                        values.iter().filter_map(json_value_to_idb_key).collect()
+                    } else {
+                        json_value_to_idb_key(value).into_iter().collect()
+                    }
+                } else {
+                    json_value_to_idb_key(value).into_iter().collect()
+                }
             }
-        } else {
-            json_value_to_idb_key(val).into_iter().collect()
+            IdbIndexKeyPath::Sequence(key_paths) => {
+                let key = key_paths
+                    .iter()
+                    .map(|key_path| value_at_key_path(value, key_path).and_then(json_value_to_idb_key))
+                    .collect::<Option<Vec<_>>>();
+                key.map(IdbKey::Array).into_iter().collect()
+            }
         }
     }
 
@@ -371,6 +400,15 @@ impl IdbIndex {
     }
 }
 
+// https://w3c.github.io/IndexedDB/#extract-key-from-value-using-key-path
+fn value_at_key_path<'a>(value: &'a serde_json::Value, key_path: &str) -> Option<&'a serde_json::Value> {
+    if key_path.is_empty() {
+        Some(value)
+    } else {
+        value.pointer(&format!("/{}", key_path.replace('.', "/")))
+    }
+}
+
 /// 将 serde_json::Value 转换为 IdbKey。
 fn json_value_to_idb_key(val: &serde_json::Value) -> Option<IdbKey> {
     match val {
@@ -380,7 +418,42 @@ fn json_value_to_idb_key(val: &serde_json::Value) -> Option<IdbKey> {
             let keys: Option<Vec<IdbKey>> = arr.iter().map(json_value_to_idb_key).collect();
             keys.map(IdbKey::Array)
         }
+        serde_json::Value::Object(object) => {
+            let wire_type = object.get("__zwIdbType")?.as_str()?;
+            let value = object.get("value")?;
+            match wire_type {
+                "number" => parse_wire_f64(value.as_str()?)
+                    .filter(|number| !number.is_nan())
+                    .map(IdbKey::Number),
+                "date" => parse_wire_f64(value.as_str()?)
+                    .filter(|milliseconds| milliseconds.is_finite())
+                    .map(IdbKey::Date),
+                "arraybuffer" | "view" => value.as_array().and_then(|bytes| {
+                    bytes
+                        .iter()
+                        .map(|byte| byte.as_u64().and_then(|byte| u8::try_from(byte).ok()))
+                        .collect::<Option<Vec<_>>>()
+                        .map(IdbKey::Binary)
+                }),
+                "array" => value.as_array().and_then(|items| {
+                    items
+                        .iter()
+                        .map(json_value_to_idb_key)
+                        .collect::<Option<Vec<_>>>()
+                        .map(IdbKey::Array)
+                }),
+                _ => None,
+            }
+        }
         _ => None,
+    }
+}
+
+fn parse_wire_f64(value: &str) -> Option<f64> {
+    match value {
+        "Infinity" => Some(f64::INFINITY),
+        "-Infinity" => Some(f64::NEG_INFINITY),
+        _ => value.parse().ok(),
     }
 }
 
@@ -485,6 +558,21 @@ pub struct IdbObjectStoreInfo {
     pub key_path: Option<String>,
     /// 是否启用 key generator。
     pub auto_increment: bool,
+    /// 索引 schema，按名称排序。
+    pub indexes: Vec<IdbIndexInfo>,
+}
+
+/// IndexedDB index schema 摘要。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdbIndexInfo {
+    /// Index 名称。
+    pub name: String,
+    /// Index key path。
+    pub key_path: IdbIndexKeyPath,
+    /// 是否为 unique index。
+    pub unique: bool,
+    /// 是否启用 multiEntry。
+    pub multi_entry: bool,
 }
 
 impl IdbDatabase {
@@ -561,10 +649,24 @@ impl IdbDatabase {
         let mut stores = self
             .stores
             .values()
-            .map(|store| IdbObjectStoreInfo {
-                name: store.name.clone(),
-                key_path: store.key_path.clone(),
-                auto_increment: store.auto_increment,
+            .map(|store| {
+                let mut indexes = store
+                    .indexes
+                    .values()
+                    .map(|index| IdbIndexInfo {
+                        name: index.name.clone(),
+                        key_path: index.key_path.clone(),
+                        unique: index.unique,
+                        multi_entry: index.multi_entry,
+                    })
+                    .collect::<Vec<_>>();
+                indexes.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+                IdbObjectStoreInfo {
+                    name: store.name.clone(),
+                    key_path: store.key_path.clone(),
+                    auto_increment: store.auto_increment,
+                    indexes,
+                }
             })
             .collect::<Vec<_>>();
         stores.sort_unstable_by(|a, b| a.name.cmp(&b.name));
@@ -780,11 +882,64 @@ impl IdbDatabase {
     }
 
     /// 在指定 store 上创建索引。
+    pub fn validate_index(
+        &self,
+        store_name: &str,
+        index_name: &str,
+        key_path: &str,
+        unique: bool,
+        multi_entry: bool,
+    ) -> Result<(), StorageError> {
+        self.validate_index_with_key_path(
+            store_name,
+            index_name,
+            IdbIndexKeyPath::String(key_path.to_string()),
+            unique,
+            multi_entry,
+        )
+    }
+
+    /// 校验 index schema，不修改数据库。
+    pub fn validate_index_with_key_path(
+        &self,
+        store_name: &str,
+        index_name: &str,
+        key_path: IdbIndexKeyPath,
+        unique: bool,
+        multi_entry: bool,
+    ) -> Result<(), StorageError> {
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        let mut index = IdbIndex::new(index_name, key_path, unique, multi_entry);
+        index.rebuild(&store.records)
+    }
+
+    /// 在指定 store 上创建索引。
     pub fn create_index(
         &mut self,
         store_name: &str,
         index_name: &str,
         key_path: &str,
+        unique: bool,
+        multi_entry: bool,
+    ) -> Result<(), StorageError> {
+        self.create_index_with_key_path(
+            store_name,
+            index_name,
+            IdbIndexKeyPath::String(key_path.to_string()),
+            unique,
+            multi_entry,
+        )
+    }
+
+    /// 在指定 store 上创建支持 compound key path 的索引。
+    pub fn create_index_with_key_path(
+        &mut self,
+        store_name: &str,
+        index_name: &str,
+        key_path: IdbIndexKeyPath,
         unique: bool,
         multi_entry: bool,
     ) -> Result<(), StorageError> {
@@ -1307,6 +1462,39 @@ impl IdbDatabase {
             .collect::<Vec<_>>();
         records.sort_by(|a, b| a.key.cmp(&b.key));
         Ok(records)
+    }
+
+    /// 获取事务可见的全部 index entries，按 `(index key, primary key)` 排序。
+    pub fn tx_get_all_from_index(
+        &self,
+        tx: &IdbTransaction,
+        store_name: &str,
+        index_name: &str,
+    ) -> Result<Vec<IdbIndexRecord>, StorageError> {
+        let records = self.tx_get_all(tx, store_name)?;
+        let store = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        let index = store
+            .indexes
+            .get(index_name)
+            .ok_or_else(|| StorageError::Database(format!("Index '{index_name}' not found")))?;
+        let mut entries = Vec::new();
+        for record in records {
+            for index_key in index.extract_keys(&record.value) {
+                entries.push(IdbIndexRecord {
+                    index_key,
+                    primary_key: record.key.clone(),
+                    value: record.value.clone(),
+                });
+            }
+        }
+        entries.sort_unstable_by(|a, b| match a.index_key.cmp(&b.index_key) {
+            Ordering::Equal => a.primary_key.cmp(&b.primary_key),
+            other => other,
+        });
+        Ok(entries)
     }
 
     /// 提交事务，将缓冲的变更应用到 store。
