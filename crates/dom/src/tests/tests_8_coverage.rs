@@ -406,3 +406,13 @@ fn test_node_count() {
     let count = doc.node_count();
     assert!(count > 0); // at least the root node
 }
+
+#[test]
+fn test_element_count_excludes_non_elements() {
+    let mut doc = Document::new();
+    doc.create_element("div");
+    doc.create_element("span");
+    doc.create_text_node("text");
+    doc.create_comment("comment");
+    assert_eq!(doc.element_count(), 2);
+}

@@ -9,6 +9,7 @@ use slotmap::SlotMap;
 mod form_state;
 mod lang_dir;
 mod shadow;
+mod stats;
 mod target;
 mod validation;
 

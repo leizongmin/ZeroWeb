@@ -363,7 +363,11 @@ impl StyleSystem {
     ///
     /// 返回一个 HashMap，键为元素 NodeId，值为对应的 ComputedStyle。
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
-        let mut styles = HashMap::new();
+        let mut styles = if std::env::var("ZW_STYLE_MAP_EXACT_CAPACITY").as_deref() == Ok("0") {
+            HashMap::new()
+        } else {
+            HashMap::with_capacity(doc.element_count())
+        };
         self.root_x_height = None;
         self.root_cap_height = None;
         self.root_ch_width = None;
