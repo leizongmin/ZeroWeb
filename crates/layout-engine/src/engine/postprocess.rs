@@ -16,6 +16,7 @@ use zero_dom::{Document, NodeId};
 
 use zero_style_system::{ComputedStyle, WhiteSpaceValue};
 
+use crate::NodeIdSet;
 use crate::types::{LayoutBox, OverflowClip};
 
 // R965：经 glob 引入 inline_finalization 的 resolve_text_align / store_font_sizes_from_ifc
@@ -42,15 +43,19 @@ pub(super) fn adjust_inline_block_positions(
     root: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    positioned_inline_blocks: &NodeIdSet,
 ) {
     // 先递归处理子元素
     for child in &mut root.children {
-        adjust_inline_block_positions(child, doc, styles);
+        adjust_inline_block_positions(child, doc, styles, positioned_inline_blocks);
     }
 
     let Some(container_node_id) = root.node_id else {
         return;
     };
+    if positioned_inline_blocks.contains(&container_node_id) {
+        return;
+    }
 
     // 跳过 flex/grid 容器——它们的子元素由 flex/grid 布局定位
     // 跳过表格单元格——position_cells 已处理 vertical-align 定位，IFC 重新定位会覆盖

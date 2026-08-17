@@ -10,10 +10,10 @@ use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAli
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
-use crate::NodeIdMap;
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
+use crate::{NodeIdMap, NodeIdSet};
 use zero_style_system::WritingModeValue;
 
 /// 行内布局使用的字体相关依赖。
@@ -593,6 +593,56 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         child.border_bottom = metrics.border_bottom;
         child.border_left = metrics.border_left;
     }
+}
+
+fn sync_inline_block_positions_from_ifc(
+    box_node: &mut LayoutBox,
+    inline_ctx: &InlineFormattingContext,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    let fragments = inline_ctx.all_fragments_with_line_y();
+    let mut matched_any = false;
+
+    for child in &mut box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        let Some(child_id) = child.node_id else {
+            continue;
+        };
+        let is_image = doc
+            .get(child_id)
+            .is_some_and(|node| matches!(&node.kind, NodeKind::Element(element) if element.local_name() == "img"));
+        let display = styles.get(&child_id).map(|style| &style.display);
+        let is_atomic = is_image
+            || display.is_some_and(|display| {
+                matches!(
+                    display,
+                    DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            });
+        if !is_atomic {
+            continue;
+        }
+        if !matches!(display, Some(DisplayValue::InlineBlock)) {
+            return false;
+        }
+        let Some(fragment) = fragments
+            .iter()
+            .find(|fragment| fragment.node_id == child_id && fragment.font_size == 0.0 && fragment.width > 0.0)
+        else {
+            return false;
+        };
+        child.x = fragment.x;
+        child.y = fragment.y;
+        matched_any = true;
+    }
+
+    matched_any
 }
 
 /// 为含有直接文本子节点的容器计算最终行内布局并存储 IFC 片段结果。
@@ -1638,7 +1688,9 @@ pub(crate) fn remeasure_inline_only_containers(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    positioned_inline_blocks: &mut NodeIdSet,
 ) {
+    let mut position_reuse: Option<(NodeId, InlineFormattingContext)> = None;
     // flex/grid 容器不走 IFC 重算——它们的子元素是 flex/grid item，
     // 尺寸由 taffy 决定，不应被 IFC 片段覆盖。
     // table 容器仅在有 table-internal 子元素时跳过（如 tbody/tr/td）；
@@ -1668,7 +1720,7 @@ pub(crate) fn remeasure_inline_only_containers(
         if !is_table_without_internals {
             // 仍然递归处理子容器
             for child in &mut box_node.children {
-                remeasure_inline_only_containers(child, doc, styles, img_intrinsic_sizes);
+                remeasure_inline_only_containers(child, doc, styles, img_intrinsic_sizes, positioned_inline_blocks);
             }
             return;
         }
@@ -1730,6 +1782,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 Some((node_id, (c.width, c.height)))
             })
             .collect();
+        let has_inline_blocks = !ib_sizes.is_empty();
         let ib_sizes_for_mc = ib_sizes.clone();
         let mut inline_ctx = InlineFormattingContext::new(container_width)
             .with_vertical(is_vertical)
@@ -1746,11 +1799,14 @@ pub(crate) fn remeasure_inline_only_containers(
         sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
 
         let full_height = inline_ctx.total_height();
+        let balance_geometry = crate::multicol::balance_column_geometry(style, container_width);
+        // OPTIMIZATION: retain this IFC until child sizes finalize, then reuse it for positions.
+        static REUSE_INLINE_BLOCK_POSITIONS: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_IFC_REUSE_INLINE_BLOCK_POSITIONS").as_deref() != Ok("0"));
         // balance 模式多列容器：按列宽单独测量，计算均衡分布后的高度
         // （tallest column = ceil(num_lines / col_count) 行），使容器高度匹配
         // 分配后的列内容，而非全宽 IFC 的较短高度。
-        let content_height = if let Some((cw, cols)) = crate::multicol::balance_column_geometry(style, container_width)
-        {
+        let content_height = if let Some((cw, cols)) = balance_geometry {
             let mut col_ctx = InlineFormattingContext::new(cw)
                 .with_vertical(is_vertical)
                 .with_vertical_rtl(is_vertical_rtl)
@@ -1798,6 +1854,9 @@ pub(crate) fn remeasure_inline_only_containers(
                 box_node.height += diff;
             }
         }
+        if *REUSE_INLINE_BLOCK_POSITIONS && has_inline_blocks && balance_geometry.is_none() {
+            position_reuse = Some((dom_id, inline_ctx));
+        }
     }
 
     // 递归处理子容器，并在 inline-only 容器收缩后把后续普通流兄弟一并上移。
@@ -1805,7 +1864,13 @@ pub(crate) fn remeasure_inline_only_containers(
     while idx < box_node.children.len() {
         let old_height = box_node.children[idx].height;
         let old_content_height = box_node.children[idx].content_height;
-        remeasure_inline_only_containers(&mut box_node.children[idx], doc, styles, img_intrinsic_sizes);
+        remeasure_inline_only_containers(
+            &mut box_node.children[idx],
+            doc,
+            styles,
+            img_intrinsic_sizes,
+            positioned_inline_blocks,
+        );
         let height_delta = box_node.children[idx].height - old_height;
         let content_height_delta = box_node.children[idx].content_height - old_content_height;
         let shrink_delta = height_delta.min(content_height_delta);
@@ -1837,6 +1902,26 @@ pub(crate) fn remeasure_inline_only_containers(
             }
         }
         idx += 1;
+    }
+    if let Some((dom_id, mut inline_ctx)) = position_reuse {
+        let final_sizes: HashMap<NodeId, (f32, f32)> = box_node
+            .children
+            .iter()
+            .filter(|child| !child.is_absolute && !child.is_fixed)
+            .filter_map(|child| {
+                let node_id = child.node_id?;
+                styles
+                    .get(&node_id)
+                    .is_some_and(|style| matches!(style.display, DisplayValue::InlineBlock))
+                    .then_some((node_id, (child.width, child.height)))
+            })
+            .collect();
+        if inline_ctx.refresh_reused_inline_block_metrics(doc, styles, &final_sizes)
+            && sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles)
+        {
+            store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
+            positioned_inline_blocks.insert(dom_id);
+        }
     }
 }
 

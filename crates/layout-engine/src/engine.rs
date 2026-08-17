@@ -659,7 +659,14 @@ impl LayoutEngine {
 
         // 6.5 后处理：为仅包含 inline 子元素的容器重新测量内容高度
         // 空 inline 元素的 line-height 贡献需要通过 IFC 正确计算
-        remeasure_inline_only_containers(&mut root_box, doc, styles, &intrinsic_for_r695);
+        let mut positioned_inline_blocks = crate::NodeIdSet::default();
+        remeasure_inline_only_containers(
+            &mut root_box,
+            doc,
+            styles,
+            &intrinsic_for_r695,
+            &mut positioned_inline_blocks,
+        );
 
         // 7. 后处理：CSS margin 折叠 — taffy 0.7 已内置块级 margin 折叠（CollapsibleMarginSet）
         // 不需要额外后处理
@@ -680,7 +687,7 @@ impl LayoutEngine {
         crate::multicol::adjust_multicol_layout(&mut root_box, styles);
 
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
-        adjust_inline_block_positions(&mut root_box, doc, styles);
+        adjust_inline_block_positions(&mut root_box, doc, styles, &positioned_inline_blocks);
 
         // R57 DEBUG: canvas y@step
 

@@ -1439,6 +1439,80 @@ impl InlineFormattingContext {
         // 垂直模式下不应用水平文本对齐和 vertical-align
     }
 
+    /// Refreshes ordinary inline-block heights after their nested layout finalization.
+    ///
+    /// This is intentionally fail-closed: it only accepts horizontal baseline-aligned
+    /// lines whose widths and line heights remain unchanged, so line breaking and float
+    /// exclusion geometry stay valid.
+    pub(crate) fn refresh_reused_inline_block_metrics(
+        &mut self,
+        doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        sizes: &HashMap<NodeId, (f32, f32)>,
+    ) -> bool {
+        if self.vertical || sizes.is_empty() {
+            return false;
+        }
+
+        let mut matched = 0usize;
+        for line in &self.lines {
+            if !line
+                .runs
+                .iter()
+                .all(|run| matches!(run.vertical_align, VerticalAlignValue::Baseline))
+            {
+                return false;
+            }
+            for run in &line.runs {
+                let Some(&(width, height)) = sizes.get(&run.node_id) else {
+                    continue;
+                };
+                let Some(style) = styles.get(&run.node_id) else {
+                    return false;
+                };
+                if run.font_size != 0.0
+                    || !matches!(style.display, DisplayValue::InlineBlock)
+                    || (run.width - width).abs() > 0.01
+                    || height + 0.01 < run.height
+                {
+                    return false;
+                }
+                matched += 1;
+            }
+        }
+        if matched != sizes.len() {
+            return false;
+        }
+
+        for line in &mut self.lines {
+            for run in &mut line.runs {
+                let Some(&(_, height)) = sizes.get(&run.node_id) else {
+                    continue;
+                };
+                let style = &styles[&run.node_id];
+                let no_line_boxes = doc.first_child(run.node_id).is_none();
+                let clips = !matches!(style.overflow_x, OverflowValue::Visible)
+                    || !matches!(style.overflow_y, OverflowValue::Visible);
+                run.height = height;
+                run.baseline = if no_line_boxes || clips {
+                    height + length_px(&style.margin_bottom)
+                } else {
+                    height
+                };
+                line.height = line
+                    .height
+                    .max(height + length_px(&style.margin_top) + length_px(&style.margin_bottom));
+            }
+        }
+        let mut line_y = 0.0;
+        for line in &mut self.lines {
+            line.y = line_y;
+            line_y += line.height;
+        }
+        self.apply_vertical_alignment();
+        true
+    }
+
     /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。
     ///
     /// 对齐规则（基于行盒高度 line_height 和片段高度 fragment_height）：

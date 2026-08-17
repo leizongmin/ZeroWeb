@@ -1,8 +1,10 @@
 use super::{
-    ComputedStyle, TextAlign, resolve_text_align, resolve_text_align_last, resolve_text_indent,
-    vertical_decoration_free_with_mode,
+    ComputedStyle, InlineFormattingContext, LayoutBox, TextAlign, resolve_text_align, resolve_text_align_last,
+    resolve_text_indent, sync_inline_block_positions_from_ifc, vertical_decoration_free_with_mode,
 };
-use zero_css_parser::values::LengthValue;
+use std::collections::HashMap;
+use zero_css_parser::values::{DisplayValue, LengthValue};
+use zero_dom::Document;
 use zero_style_system::property::{DirectionValue, TextAlignLastValue, TextAlignValue};
 
 #[test]
@@ -83,4 +85,54 @@ fn horizontal_decoration_gate_skips_subtree_scan() {
         true
     }));
     assert_eq!(scans.get(), 1);
+}
+
+#[test]
+fn inline_block_position_reuse_is_complete_and_fail_closed() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let text = doc.create_text_node("prefix");
+    let inline_block = doc.create_element("span");
+    doc.append_child(container, text).unwrap();
+    doc.append_child(container, inline_block).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut inline_block_style = ComputedStyle::default();
+    inline_block_style.display = DisplayValue::InlineBlock;
+    styles.insert(inline_block, inline_block_style);
+
+    let mut sizes = HashMap::new();
+    sizes.insert(inline_block, (40.0, 2.0));
+    let mut context = InlineFormattingContext::new(200.0).with_inline_block_sizes(sizes);
+    context.layout(&doc, container, &styles);
+    let stale_y = context
+        .all_fragments_with_line_y()
+        .into_iter()
+        .find(|fragment| fragment.node_id == inline_block)
+        .unwrap()
+        .y;
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(inline_block),
+            width: 40.0,
+            height: 25.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+    let mut final_sizes = HashMap::new();
+    final_sizes.insert(inline_block, (40.0, 25.0));
+    assert!(context.refresh_reused_inline_block_metrics(&doc, &styles, &final_sizes));
+    assert!(sync_inline_block_positions_from_ifc(&mut root, &context, &doc, &styles));
+    assert!(root.children[0].x > 0.0);
+    assert!(root.children[0].y < stale_y);
+
+    styles.get_mut(&inline_block).unwrap().display = DisplayValue::InlineFlex;
+    assert!(!context.refresh_reused_inline_block_metrics(&doc, &styles, &final_sizes));
+    assert!(!sync_inline_block_positions_from_ifc(
+        &mut root, &context, &doc, &styles
+    ));
 }
