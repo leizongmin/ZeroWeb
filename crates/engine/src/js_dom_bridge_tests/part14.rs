@@ -1835,6 +1835,50 @@ fn test_indexeddb_key_range_queries() {
 }
 
 #[test]
+fn test_indexeddb_object_store_lifecycle_guards() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var guardResults = [];\
+             var deletedRequest = indexedDB.open('deleted-store-guards');\
+             deletedRequest.onupgradeneeded = function () {\
+               var db = deletedRequest.result;\
+               var store = db.createObjectStore('store');\
+               db.deleteObjectStore('store');\
+               ['add', 'put', 'delete', 'clear', 'count'].forEach(function (method) {\
+                 try { store[method]('value', 1); } catch (error) { guardResults.push(error.name); }\
+               });\
+             };\
+             var readonlyRequest = indexedDB.open('transaction-guards');\
+             readonlyRequest.onupgradeneeded = function () { readonlyRequest.result.createObjectStore('store'); };\
+             readonlyRequest.onsuccess = function () {\
+               var transaction = readonlyRequest.result.transaction('store', 'readonly');\
+               var store = transaction.objectStore('store');\
+               ['add', 'put', 'delete', 'clear'].forEach(function (method) {\
+                 try { store[method]('value', 1); } catch (error) { guardResults.push(error.name); }\
+               });\
+               transaction.abort();\
+               try { store.get(1); } catch (error) { guardResults.push(error.name); }\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("guardResults.join('|')").unwrap().value,
+        "InvalidStateError|InvalidStateError|InvalidStateError|InvalidStateError|InvalidStateError|\
+         ReadOnlyError|ReadOnlyError|ReadOnlyError|ReadOnlyError|TransactionInactiveError"
+    );
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。

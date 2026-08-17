@@ -2674,7 +2674,7 @@
     else fire();
   }
 
-  function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction) {
+  function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction, metadata) {
     this._db = db;
     this.name = name;
     this.keyPath = keyPath || null;
@@ -2682,12 +2682,24 @@
     this._records = records; // Map<key, value>
     this._indexes = indexes; // {indexName: {keyPath, unique}}
     this.transaction = transaction || null;
+    this._metadata = metadata;
     var idxNames = indexes;
     this.indexNames = {
       contains: function (n) { return Object.prototype.hasOwnProperty.call(idxNames, n); },
       get length() { return Object.keys(idxNames).length; },
     };
   }
+  _zwIDBStore.prototype._assertUsable = function (write) {
+    if (this._metadata && this._metadata.deleted) {
+      throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
+    }
+    if (this.transaction && (this.transaction._aborted || this.transaction._finished)) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+    if (write && this.transaction && this.transaction.mode === 'readonly') {
+      throw new globalThis.DOMException('The transaction is read-only.', 'ReadOnlyError');
+    }
+  };
   _zwIDBStore.prototype._keyOf = function (value) {
     if (!this.keyPath) return null;
     var k = value;
@@ -2695,6 +2707,7 @@
     return k;
   };
   _zwIDBStore.prototype._mutate = function (op, value, key) {
+    this._assertUsable(true);
     var k = key !== undefined ? key : this._keyOf(value);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
@@ -2705,6 +2718,7 @@
   _zwIDBStore.prototype.add = function (value, key) { return this._mutate('add', value, key); };
   _zwIDBStore.prototype.put = function (value, key) { return this._mutate('put', value, key); };
   _zwIDBStore.prototype.get = function (key) {
+    this._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var result;
@@ -2722,6 +2736,7 @@
     return req;
   };
   _zwIDBStore.prototype.delete = function (key) {
+    this._assertUsable(true);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     if (_zwIDBIsKeyRange(key)) {
@@ -2738,6 +2753,7 @@
     return req;
   };
   _zwIDBStore.prototype.clear = function () {
+    this._assertUsable(true);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     this._records.clear();
@@ -2745,6 +2761,7 @@
     return req;
   };
   _zwIDBStore.prototype.count = function (query) {
+    this._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var count = 0;
@@ -2759,6 +2776,7 @@
     return req;
   };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
+    this._assertUsable(true);
     var unique = !!((opts || {}).unique);
     this._indexes[name] = { keyPath: keyPath, unique: unique };
     if (unique && this.transaction) {
@@ -2777,10 +2795,12 @@
     return new _zwIDBIndex(this, name, keyPath, unique);
   };
   _zwIDBStore.prototype.index = function (name) {
+    this._assertUsable(false);
     var idx = this._indexes[name];
     return idx ? new _zwIDBIndex(this, name, idx.keyPath, idx.unique) : null;
   };
   _zwIDBStore.prototype.openCursor = function (_query, direction) {
+    this._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var entries = [];
@@ -2800,6 +2820,7 @@
   _zwIDBIndex.prototype.get = function (key) { return this.objectStore.get(key); };
   _zwIDBIndex.prototype.count = function () { return this.objectStore.count(); };
   _zwIDBIndex.prototype.getKey = function (key) {
+    this.objectStore._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.objectStore.transaction;
     var result;
@@ -2816,6 +2837,7 @@
     return req;
   };
   _zwIDBIndex.prototype.openCursor = function () {
+    this.objectStore._assertUsable(false);
     var req = new _zwIDBRequest(this);
     _zwIDBDispatch(req, 'success', null); // headless 简化：不返真 cursor
     return req;
@@ -2851,7 +2873,7 @@
   _zwIDBTransaction.prototype.objectStore = function (name) {
     var s = this._db._stores[name];
     if (!s) return null; // headless lenient（spec 抛 NotFoundError）
-    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this);
+    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
   };
   _zwIDBTransaction.prototype.abort = function () {
     if (!this._finished) this._aborted = true;
@@ -2877,12 +2899,31 @@
   _zwIDBDatabase.prototype.createObjectStore = function (name, opts) {
     opts = opts || {};
     if (!this._stores[name]) {
-      this._stores[name] = { keyPath: opts.keyPath || null, autoIncrement: !!opts.autoIncrement, records: new Map(), indexes: {} };
+      this._stores[name] = {
+        keyPath: opts.keyPath || null,
+        autoIncrement: !!opts.autoIncrement,
+        records: new Map(),
+        indexes: {},
+        deleted: false
+      };
     }
     var s = this._stores[name];
-    return new _zwIDBStore(this, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this._upgradeTransaction);
+    return new _zwIDBStore(
+      this,
+      name,
+      s.keyPath,
+      s.autoIncrement,
+      s.records,
+      s.indexes,
+      this._upgradeTransaction,
+      s
+    );
   };
-  _zwIDBDatabase.prototype.deleteObjectStore = function (name) { delete this._stores[name]; };
+  _zwIDBDatabase.prototype.deleteObjectStore = function (name) {
+    var store = this._stores[name];
+    if (store) store.deleted = true;
+    delete this._stores[name];
+  };
   _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
   _zwIDBDatabase.prototype.close = function () {
     if (this._closed) return;

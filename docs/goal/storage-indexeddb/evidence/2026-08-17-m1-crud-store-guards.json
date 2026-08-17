@@ -1,0 +1,27 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB object store CRUD first slice after lifecycle guards",
+  "files": 6,
+  "subtests": 54,
+  "status": {
+    "pass": 32,
+    "fail": 22,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 59.26,
+  "delta_from_previous": {
+    "pass": 10,
+    "fail": -10,
+    "pass_rate_percentage_points": 18.52
+  },
+  "failure_clusters": [
+    {"name": "key and DataError validation", "count": 11},
+    {"name": "invalid index key handling", "count": 2},
+    {"name": "unique constraint handling", "count": 3},
+    {"name": "autoIncrement keyPath and cursor continuation", "count": 6}
+  ]
+}
