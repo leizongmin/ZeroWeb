@@ -1,0 +1,37 @@
+{
+  "slice": "R91 — M3 续作：shadow 树 isConnected（容器反链 + 边界穿越）+ whenDefined 断言闭环",
+  "date": "2026-08-17",
+  "commit": "6fa0a6df（rebase over 并行流 85985f40）",
+  "summary": {
+    "dom/nodes": {
+      "delta": "Node-isConnected-shadow-dom 2F→2P（open+closed 双修，净 +2）",
+      "note": "name-validation flake 波动 1 条（既存）"
+    },
+    "wc_asset": "断言组 4 whenDefined 闭环（define 触发 pending resolve → 第二次 execute 读回 __futureResolved==='yes'）",
+    "regressions": {
+      "dom/traversal": "1593P/11F per-case 与 R89/R90 完全一致",
+      "dom/events": "per-case 逐字节一致",
+      "dom/collections": "per-case 逐字节一致"
+    },
+    "suites": {
+      "integration": "772 passed（含 5 WC + whenDefined 强化）",
+      "engine_v8": "2187 passed",
+      "engine_quickjs": "1427 passed"
+    }
+  },
+  "root_causes": [
+    "① handle 容器 appendChild 不记 _zwNodeParent 反链——shadow root/fragment/handle 宿主三种容器的子在反链上断（isConnected 上行到容器即停）",
+    "② isConnected 反链即使到达容器 handle，也无 shadow→host 边界穿越路径（spec connected：shadow 树随 host 连入文档即 connected）",
+    "③ WC 资产断言组 4 的 whenDefined 只在页面内挂探针未读回——微任务 checkpoint 后未验证"
+  ],
+  "implementation": [
+    "_recordHandleChild（part05）同步记反链 { parentSel: null, parentHandle }——覆盖 shadow/fragment/handle 宿主全容器 append；_unrecordHandleChild 对称清（parentHandle 匹配才删，防误删他源记录）",
+    "isConnected 反链循环（part04 R90 分支扩展）：到达容器 handle 时查 _shadowHandleMeta → hostSel 直返 true / hostHandle 续链 / handle host 回落 rect 探测",
+    "反链 miss 时经 target.parentNode 读容器再跳 host（isConnected 分支内 target 是 _fvTarget 空 object——此路不可用，实际由①的记账修复覆盖）",
+    "WC 断言组 4 重构：页面挂 __futureResolved 探针 + define 触发 + 第二次 execute_script_with_dom 读回断言"
+  ],
+  "notes": [
+    "_makeProxy 的 target 是 _fvTarget（form validity 预置空对象）非节点——isConnected 内不能经 target.parentNode 取父；容器侧记账（_recordHandleChild 反链）是正解",
+    "spec 依据 https://dom.spec.whatwg.org/#connected：shadow-including root 是 document 时 connected——host 在文档内即整棵 shadow 树 connected"
+  ]
+}
