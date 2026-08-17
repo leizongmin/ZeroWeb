@@ -96,6 +96,26 @@ fn wait_for_snapshot_after(app: &mut BrowserApp, tab_id: TabId, sequence: u64, g
     }
 }
 
+fn wait_for_compositor_frame(
+    app: &mut BrowserApp,
+    tab_id: TabId,
+    target_frame_id: u64,
+    timeout: std::time::Duration,
+) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        app.poll_tab_fetch();
+        let (_, displayed) = app.compositor_frame_ids_for_test(tab_id);
+        if displayed >= target_frame_id {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn smoke_capture_cli_requires_real_multiprocess_window_at_scale_one() {
     let parsed = parse_args_from(
@@ -3152,7 +3172,7 @@ fn wait_composite_changed_or_missing_glyph(
     }
 }
 
-/// R3254：本地合成 CPU/GPU 双参数矩阵（历史 legacy 路径测试）。
+/// R3254：生产 compositor 路径的本地合成 CPU/GPU 双参数矩阵。
 /// 依次交互（点击聚焦 + 输入 / IME 中文 / 滚动），每步用 CPU（rasterize_full_scene）
 /// 与 GPU（headless wgpu）两个通道渲染合成帧，断言：① 页面内容像素存在（非纯白）；
 /// ② 交互引起合成帧变化；③ 两通道输出一致（parity——同输入同渲染）。
@@ -3256,7 +3276,7 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
         }
         assert!(
             std::time::Instant::now() < settle_deadline,
-            "首屏 legacy 快照应在 10s 内稳定"
+            "首屏 compositor 快照应在 10s 内稳定"
         );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -3325,6 +3345,13 @@ fn local_composite_cpu_gpu_matrix_for_form_interactions() {
         );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    let (target_frame_id, _) = app.compositor_frame_ids_for_test(tab_id);
+    assert!(target_frame_id > 0, "包含 abc 的 renderer 帧必须已提交给 compositor");
+    assert!(
+        wait_for_compositor_frame(&mut app, tab_id, target_frame_id, std::time::Duration::from_secs(10)),
+        "Browser 必须采用包含 abc 的 compositor 帧（target={target_frame_id}, displayed={}）",
+        app.compositor_frame_ids_for_test(tab_id).1
+    );
     let (cpu1, gpu1) = composite(&mut app);
     let cpu_bounds = diff_bounds(&cpu0, &cpu1);
     let gpu_bounds = diff_bounds(&gpu0, &gpu1);

@@ -891,6 +891,16 @@ impl TabManager {
             .unwrap_or(0)
     }
 
+    /// 测试用：renderer 最新提交给 compositor 的页面帧序号。
+    #[cfg(test)]
+    pub fn compositor_submission_frame_id(&self, tab_id: TabId) -> u64 {
+        self.snapshots
+            .get(&tab_id)
+            .and_then(|snapshot| snapshot.compositor_submission)
+            .map(|submission| submission.frame_id)
+            .unwrap_or(0)
+    }
+
     /// 在多进程 live renderer 的当前页面上下文执行一致性观察脚本。
     pub fn execute_script_for_parity(
         &mut self,

@@ -1086,6 +1086,15 @@ impl BrowserApp {
         self.tabs.snapshot_seq(tab_id)
     }
 
+    /// 测试用：读取 renderer 最新提交和 Browser 最新采用的 compositor 帧序号。
+    #[cfg(test)]
+    pub fn compositor_frame_ids_for_test(&self, tab_id: TabId) -> (u64, u64) {
+        (
+            self.tabs.compositor_submission_frame_id(tab_id),
+            self.tabs.compositor_frame_id(tab_id),
+        )
+    }
+
     /// 测试用：读取标签页最近快照中的 HTML。
     #[cfg(test)]
     pub fn page_html_for_test(&self, tab_id: TabId) -> Option<String> {

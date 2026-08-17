@@ -19,3 +19,9 @@
 - Legacy 本地合成测试同时固定 compositor 状态为 `Disconnected`。
 - 交互前等待首屏快照 quiet period；输入后等待 legacy glyph 快照明确包含目标文本，再比较 CPU/GPU 像素。
 - 区域视觉断言与全屏 parity 分开，避免小控件变化被全屏面积稀释。
+
+## 2026-08-17：强制 compositor 后的时序更新
+
+浏览器切为强制 compositor 后，renderer 的 `CompositorFrame` 到达 Browser 时会先解码到 `last_render`，再异步转发给 compositor。测试看到 `last_render` 已包含输入文字，只能证明 renderer 提交已到达，不能证明 compositor 已完成光栅化并由 Browser 采用。此时立即截图会稳定读取旧位图。
+
+修复方式是记录包含目标文字的最新 compositor submission frame id，并轮询到 Browser 已采用的 compositor frame id 不小于该值，再比较 CPU/GPU 像素。等待任意 snapshot sequence 或固定 sleep 都不可靠：前者可能被更早的 click/caret 帧满足，后者不提供完成关系。
