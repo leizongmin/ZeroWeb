@@ -83,7 +83,23 @@
   var _zwBuiltNodeChain = !globalThis.HTMLElement; // polyfill 是否自建三者（native 已注册则 false）
   if (!globalThis.Node) globalThis.Node = function Node() {};
   if (!globalThis.Element) globalThis.Element = function Element() {};
-  if (!globalThis.HTMLElement) globalThis.HTMLElement = function HTMLElement() {};
+  // js-dom M3 R94：HTMLElement 装载 **ctor 桥 hook**（仅 polyfill 自建路径——native_dom 模式 native
+  // HTMLElement 已在全局，走 native S5b upgrade slot，本桥不参与）。derived class 的 `super()` 调本
+  // ctor 时：若 `_zwCeExisting` 已设（createElement/upgrade 正在把既有元素升级为 custom 实例），
+  // **返回该元素**（spec derived-ctor 语义：base ctor 返回对象 → 成为整条 ctor 链的 this）→ 用户
+  // ctor 体以 this=既有元素继续执行（`this.state=5` 落在元素 proxy 上）。未设 → 普通空对象（旧
+  // stub 行为）。这闭合 R90 已知限制「class ctor 体不可重放」——不是重放，是经 super() 返回值
+  // 注入 this（探针实证：inst === el、方法/instanceof/嵌套 create/异常消费 全部正确）。
+  var _zwCeExisting = null; // createElement/upgrade 在途的既有元素（消费即清，单发）
+  if (!globalThis.HTMLElement) {
+    globalThis.HTMLElement = function HTMLElement() {
+      if (_zwCeExisting) {
+        var _zwCeEl = _zwCeExisting;
+        _zwCeExisting = null;
+        return _zwCeEl;
+      }
+    };
+  }
   // prototype 链仅当 polyfill 自建三者时设（native 已注册则不重设——避免破坏 native prototype）。
   if (_zwBuiltNodeChain) {
     globalThis.Node.prototype = {};
@@ -303,6 +319,30 @@
   var _ce_registry = {};       // name → { ctor, options }
   var _ce_byCtor = new Map();  // ctor → name（getName 反查）
   var _ce_pending = {};        // name → [resolve]（whenDefined 挂起，define 时触发）
+  // js-dom M3 R94：对既有元素执行用户 ctor 体（Proxy-ctor 桥）。设 `_zwCeExisting = el`（HTMLElement
+  // hook 的 super() 返回它 → this=el）→ `new ctor()` → finally 清（ctor 抛错防泄漏到后续 new）。
+  // derived ctor（`class X extends HTMLElement`）：super() 消费 existing，用户体以 this=el 执行——
+  // spec「upgrade a custom element」的 JS 层等价物。function ctor：`new` 建 fresh this 不经 super()，
+  // hook 不消费 → 对 function ctor 回落 `ctor.call(el)`（非 class 可 .call 注入 this）。两者都
+  // try/catch 吞异常（升级失败不中断页面脚本，与既有 best-effort 升级语义一致）。返回 el（无论
+  // 哪条路径，升级目标都是 el 本身）。
+  function _ceRunCtor(ctor, el) {
+    // 原型先挂（ctor 体内 this.bump() 等方法访问经原型链可达——探针实证 chain-set-before-body）。
+    try { Object.setPrototypeOf(el, ctor.prototype); } catch (_e) {}
+    // class/function 判别：`class` 语法的 toString() 恒以 'class' 字面开头（语法关键字，minifier 不可
+    // 改名）。class ctor 走 new + super() 返回值注入；function ctor 直接 .call(el)（this 注入，旧
+    // `B.call(el)` 对 function 本就合法）。不以 .call 抛错作判别——function ctor 体自身抛错会误判
+    // 成 class 再经 new 二次执行（双副作用）。
+    var src = '';
+    try { src = Function.prototype.toString.call(ctor); } catch (_eTs) {}
+    if (/^\s*class[\s{]/.test(src)) {
+      _zwCeExisting = el;
+      try { new ctor(); } catch (_eNew) {} finally { _zwCeExisting = null; }
+    } else {
+      try { ctor.call(el); } catch (_eCall) {}
+    }
+    return el;
+  }
   var _CE_RESERVED = {
     'annotation-xml': 1, 'color-profile': 1, 'font-face': 1, 'font-face-src': 1,
     'font-face-uri': 1, 'font-face-format': 1, 'font-face-name': 1, 'missing-glyph': 1,
@@ -377,7 +417,11 @@
     if (tag) {
       var entry = _ce_registry[tag.toLowerCase()];
       if (entry && entry.ctor) {
-        try { Object.setPrototypeOf(el, entry.ctor.prototype); } catch (_e) {}
+        // js-dom M3 R94：升级 = 原型挂接 + **用户 ctor 体执行**（`_ceRunCtor`——super() 返回值注入
+        // this，闭合 R90「ctor 体不可重放」限制；spec `custom-elements-upgrades` upgrade step 的
+        // ctor 执行）。旧版仅 setPrototypeOf，lit 的 constructor 内初始化面（attachShadow/属性初
+        // 始化）不可达。ctor 异常吞（`_ceRunCtor` 内 try/catch，升级失败不中断子树遍历）。
+        _ceRunCtor(entry.ctor, el);
         // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
         // 元素升级前可能已设属性（parser 建 / createElement + setAttribute 未注册时），升级后组件须能响应
         // 这些既有属性（lit/stencil 等框架依赖此初始化路径）。spec `custom-elements-upgrades`「upgrade a

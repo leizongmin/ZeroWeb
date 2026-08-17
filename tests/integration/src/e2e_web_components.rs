@@ -309,4 +309,66 @@ globalThis.__wcReport = log.join('|');
             "CE 原型方法/ getter 须经 proxy 派发可达且 this 绑定正确，got: {report}"
         );
     }
+
+    /// 断言组 8（R94）：Proxy-ctor 桥——custom element 用户 class constructor 体真正
+    /// 执行（lit/stencil 的 constructor 内初始化面）。R90 已知限制「class ctor 体不可
+    /// 重放（B.call 抛 without 'new'；Reflect.construct 新建 this）」的闭合：不是重放，
+    /// 是经 base ctor 返回值注入 this——shim 的 polyfill HTMLElement 在 `_zwCeExisting`
+    /// 已设时返回既有元素，derived ctor 的 super() 把它作为整条 ctor 链的 this，用户
+    /// ctor 体以 this=元素 proxy 继续。
+    #[test]
+    fn wc_ctor_body_runs_on_element() {
+        let report = run_wc_page(
+            r#"
+var log = [];
+class InitEl extends HTMLElement {
+  constructor() {
+    super();
+    this._ctorRan = true;
+    this._phase = 'constructed';
+  }
+  phase() { return this._phase; }
+}
+customElements.define('init-el', InitEl);
+// 路径 1：createElement 升级——ctor 体以新元素为 this 执行：
+var el = document.createElement('init-el');
+log.push('ctor-ran:' + (el._ctorRan === true));
+log.push('phase:' + el.phase());
+log.push('instanceof:' + (el instanceof InitEl));
+// 路径 2：ctor 内 expando 写入持久（经 set trap 落 _expando，读回同值）：
+el._ctorRan = false;
+log.push('expando-rw:' + (el._ctorRan === false));
+// 路径 3：连入 document 触发 connectedCallback（this 同为该元素）：
+class FullEl extends HTMLElement {
+  constructor() { super(); this._seen = ['ctor']; }
+  connectedCallback() { this._seen.push('conn'); }
+}
+customElements.define('full-el', FullEl);
+var f = document.createElement('full-el');
+document.getElementById('host').appendChild(f);
+log.push('lifecycle:' + f._seen.join(','));
+// 路径 4：function ctor（非 class）同样以元素为 this 执行（.call 注入）：
+function FnEl() { this._fnRan = true; }
+FnEl.prototype = Object.create(HTMLElement.prototype);
+customElements.define('fn-el', FnEl);
+var fe = document.createElement('fn-el');
+log.push('fn-ctor:' + (fe._fnRan === true));
+// 路径 5：ctor 抛错不中断页面（best-effort 吞异常，后续元素照常）：
+class BadEl extends HTMLElement { constructor() { super(); throw new Error('boom'); } }
+customElements.define('bad-el', BadEl);
+var be = document.createElement('bad-el');
+log.push('bad-survived:' + (be !== undefined && be.tagName === 'BAD-EL'));
+// 路径 6：普通元素不受桥影响（_zwCeExisting 无泄漏）：
+var plain = document.createElement('span');
+log.push('plain-tag:' + plain.tagName + ',proto-ok:' + (plain instanceof HTMLElement));
+globalThis.__wcReport = log.join('|');
+"#,
+        );
+        let expected = "ctor-ran:true|phase:constructed|instanceof:true|expando-rw:true|\
+lifecycle:ctor,conn|fn-ctor:true|bad-survived:true|plain-tag:SPAN,proto-ok:true";
+        assert_eq!(
+            report, expected,
+            "Proxy-ctor 桥须让用户 ctor 体以元素为 this 执行（class 经 super() 返回值、function 经 .call），got: {report}"
+        );
+    }
 }
