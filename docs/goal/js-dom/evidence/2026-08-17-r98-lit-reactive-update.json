@@ -1,0 +1,53 @@
+{
+  "round": "R98",
+  "milestone": "M3",
+  "date": "2026-08-17",
+  "commit": "d90be269d",
+  "title": "lit 响应式更新链落地（define observedAttributes + CE accessor 派发）",
+  "summary": "首渲染（R97）之后 lit 响应式更新闭环：`el.name = 'Updated!'` → accessor setter → requestUpdate → 二次 render → ChildPart 文本 commit。验收（三段式 post-drain）：MID[t1:Hello, ZeroWeb!|uc-changed:true|pending-at-set:true] POST[t2:Hello, Updated!!|pending:false]。",
+  "root_causes": [
+    {
+      "id": 1,
+      "issue": "customElements.define 不读 ctor.observedAttributes",
+      "detail": "spec custom-element-registration define step 5 须 Get(ctor, 'observedAttributes')。lit 的静态 getter 内调 this.finalize() → createProperty 在用户类 prototype 上 defineProperty get/set（响应式触发器）。旧 define 不读 → finalize 不跑 → accessor 从未安装（实证 getOwnPropertyDescriptor(GreetingEl.prototype,'name') === undefined）。",
+      "fix": "part03 define 注册后 `try { void ctor.observedAttributes; } catch {}`（getter 抛错吞，best-effort 与注册解耦）。"
+    },
+    {
+      "id": 2,
+      "issue": "set trap 不派发原型链 accessor setter",
+      "detail": "R93 给 get trap 加了原型链回落，set trap 恒落 expando → lit setter 内 this.requestUpdate 永不执行（uc-changed:false）。",
+      "fix": "part04 set trap 顶部 CE-scoped accessor-setter 派发（沿 getPrototypeOf 链 own 命中 8 层，this=元素 proxy）。"
+    },
+    {
+      "id": 3,
+      "issue": "symbol-keyed 写丢失 + 首层 accessor getter 优先级",
+      "detail": "lit accessor fallback `this[s] = v`（s=Symbol）经 set trap 落 generic fallthrough 把 String(symbol) 当属性名写 host attr → 值丢（首渲染插值空）。且 el.name 读被 shim 反射属性分支先吞（真实 DOM 原型链序：用户 prototype accessor 先于 HTMLElement 反射 getter）。",
+      "fix": "set trap symbol prop 直入 _expando（R3042 读侧已覆盖 symbol key）；get trap 顶部 CE 元素首层原型 accessor getter 优先（先于 shim 反射分支）。"
+    }
+  ],
+  "regression_caught_and_fixed": {
+    "issue": "accessor 派发过宽破坏非 CE 元素",
+    "detail": "首版对全部元素派发：Element-getElementsByTagNameNS('*','body') 在普通 div 上破坏（方法读取路径变化）+ HTMLCollection expando 1 例",
+    "fix": "CE-only 收窄：首层原型的 constructor 须在 customElements registry（getName 命中）才派发——非 CE 元素零路径变化"
+  },
+  "verification": {
+    "lit_e2e": {
+      "lit_reactive_update_lands_new": "Pass（MID + POST 三段式断言）",
+      "all_other_groups": "5/5 全绿（component_chain/template_content/first_render/render_direct/reactive_update）"
+    },
+    "wpt_dom_ab": {
+      "nodes": { "base": "6673P", "after": "6673P", "delta": "per-case 一致（收窄后）；name-validation 4F flake 消退" },
+      "collections": { "base": "48P", "after": "48P", "delta": "per-case 一致（初版 1F 回归收窄后归零）" },
+      "traversal": { "after": "1595P", "delta": "=R97 基线" },
+      "events": { "after": "236P", "delta": "=基线" }
+    },
+    "unit": { "engine_v8": "2205 passed", "engine_quickjs": "1431 passed", "integration": "780 passed", "make_test": "exit 0" },
+    "quality": { "fmt": "clean", "clippy_v8": "clean", "clippy_quickjs": "clean", "pre_commit_guard": "PASS" }
+  },
+  "process_notes": [
+    "get/set trap 的原型链派发必须 CE-scoped——非 CE 元素的原型链是 shim 自建（全 data property），但过宽派发仍改变方法读取路径（A/B 捕获两处回归后收窄）",
+    "lit 响应式链分两段验证：set 时点（uc-changed/pending-at-set）与 post-drain（t2 文本 + pending:false）——同步与异步观察面分开断言",
+    "customElements.define 的 observedAttributes Get 是 lit finalize 的唯一触发点（本仓 CE 桥此前从未读过）"
+  ],
+  "next": "M3 SPA 面评估（React/Vue 之一代表性页：hydration + 事件 + reconciliation）；或 lit 事件链（click → handler → state 更新 → 响应式重渲染）"
+}
