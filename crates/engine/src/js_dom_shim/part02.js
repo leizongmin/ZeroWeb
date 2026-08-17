@@ -2820,12 +2820,26 @@
     return a.value.length < b.value.length ? -1 : (a.value.length > b.value.length ? 1 : 0);
   }
 
+  // https://w3c.github.io/IndexedDB/#dom-idbfactory-open
+  // WebIDL [EnforceRange] unsigned long long, additionally restricted to JS safe integers.
+  function _zwIDBOpenVersion(value, supplied) {
+    if (!supplied || value === undefined) return undefined;
+    var number = Number(value);
+    if (!isFinite(number)) throw new TypeError('IDBFactory.open version is outside the accepted range');
+    number = number < 0 ? Math.ceil(number) : Math.floor(number);
+    if (number <= 0 || number > Number.MAX_SAFE_INTEGER) {
+      throw new TypeError('IDBFactory.open version is outside the accepted range');
+    }
+    return number;
+  }
+
   globalThis.indexedDB = {
     // open(name, version)：建/取 db，异步派发 onupgradeneeded（version change，建 store 窗口）→ onsuccess。
     open: function (name, version) {
+      version = _zwIDBOpenVersion(version, arguments.length >= 2);
       var stores = _idb_databases[name] || (_idb_databases[name] = {});
       var db = new _zwIDBDatabase(name, stores);
-      db.version = version || 1;
+      db.version = version === undefined ? 1 : version;
       var req = new _zwIDBRequest(null);
       _zwIDBDispatch(req, 'upgradeneeded', db);
       // onsuccess 链在 onupgradeneeded 后（microtask FIFO）

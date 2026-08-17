@@ -1,0 +1,31 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB factory/global/event first slice after open version conversion fix",
+  "files": 9,
+  "subtests": 50,
+  "status": {
+    "pass": 34,
+    "fail": 16,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 68.0,
+  "delta_from_previous": {
+    "pass": 15,
+    "fail": -15,
+    "pass_rate_percentage_points": 30.0
+  },
+  "driving_case": {
+    "path": "IndexedDB/idbfactory_open.any.js",
+    "before": {"pass": 4, "fail": 25},
+    "after": {"pass": 19, "fail": 10}
+  },
+  "failure_clusters": [
+    {"name": "missing upgrade transaction", "count": 9},
+    {"name": "missing IDBVersionChangeEvent constructor or fields", "count": 4},
+    {"name": "incorrect version upgrade lifecycle", "count": 3}
+  ]
+}

@@ -1657,6 +1657,43 @@ fn test_indexeddb_request_event_target_surface() {
 }
 
 #[test]
+fn test_indexeddb_open_version_webidl_conversion() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var invalid = [-1, -0.5, 0, 0.5, 0.8, Number.MAX_SAFE_INTEGER + 1,\
+               NaN, Infinity, -Infinity, 'foo', null, false,\
+               { toString: function () { throw new Error('wrong conversion'); }, valueOf: function () { return 0; } },\
+               { toString: function () { return 0; }, valueOf: function () { return {}; } },\
+               { toString: function () { return {}; }, valueOf: function () { return {}; } }];\
+             globalThis.__invalidVersions = 0;\
+             invalid.forEach(function (version) {\
+               try { indexedDB.open('invalid-version', version); }\
+               catch (error) { if (error instanceof TypeError) globalThis.__invalidVersions++; }\
+             });\
+             indexedDB.open('fractional-version', 1.5).onupgradeneeded = function (event) {\
+               globalThis.__fractionalVersion = event.target.result.version;\
+             };\
+             indexedDB.open('default-version', undefined).onupgradeneeded = function (event) {\
+               globalThis.__defaultVersion = event.target.result.version;\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(sandbox.execute("String(globalThis.__invalidVersions)").unwrap().value, "15");
+    assert_eq!(sandbox.execute("String(globalThis.__fractionalVersion)").unwrap().value, "1");
+    assert_eq!(sandbox.execute("String(globalThis.__defaultVersion)").unwrap().value, "1");
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
