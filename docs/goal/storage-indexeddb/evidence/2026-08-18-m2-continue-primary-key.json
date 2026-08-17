@@ -1,0 +1,46 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 cursor continuePrimaryKey and cursor class identity",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "capabilities": [
+    "transaction-bound continuePrimaryKey host wire",
+    "forward and reverse index-primary-key pair stepping",
+    "spec exception ordering",
+    "object-store and unique-direction rejection",
+    "prevunique primary-key selection",
+    "IDBCursorWithValue inheritance and class identity"
+  ],
+  "tests": {
+    "page_runtime_cursor_pair_stepping": "pass",
+    "new_continue_primary_key_wpt": {
+      "files": 3,
+      "pass": 18,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass"
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "cross-connection and cross-process scheduling",
+    "database versions above u32",
+    "cross-process storage ownership",
+    "per-origin persistence and restart recovery"
+  ]
+}

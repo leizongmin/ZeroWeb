@@ -180,6 +180,18 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/idbcursor-advance-continue-async.any.js",
         &["resources/support.js"],
     ),
+    (
+        "IndexedDB/idbcursor-continuePrimaryKey.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-continuePrimaryKey-exceptions.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/idbcursor-continuePrimaryKey-exception-order.any.js",
+        &["resources/support.js"],
+    ),
     ("IndexedDB/idbrequest_result.any.js", &["resources/support.js"]),
     ("IndexedDB/idbrequest_error.any.js", &["resources/support.js"]),
     (

@@ -3642,6 +3642,11 @@
     this._gotValue = false;
     this._sync();
   }
+  function _zwIDBCursorWithValue(source, store, request, entries, direction, hostId) {
+    _zwIDBCursor.call(this, source, store, request, entries, direction, hostId, false);
+  }
+  _zwIDBCursorWithValue.prototype = Object.create(_zwIDBCursor.prototype);
+  _zwIDBCursorWithValue.prototype.constructor = _zwIDBCursorWithValue;
   _zwIDBCursor.prototype._sync = function () {
     var entry = this._entries[this._position];
     this.key = entry.key;
@@ -3709,6 +3714,77 @@
     if (this._position < this._entries.length) {
       result = this;
     }
+    this._gotValue = false;
+    this._request.readyState = 'pending';
+    this._request.result = undefined;
+    _zwIDBDispatch(this._request, 'success', result);
+  };
+  _zwIDBCursor.prototype.continuePrimaryKey = function (key, primaryKey) {
+    // https://w3c.github.io/IndexedDB/#dom-idbcursor-continueprimarykey
+    var transaction = this._store.transaction;
+    if (transaction
+        && (!transaction._active
+            || transaction._aborted
+            || transaction._finished
+            || transaction._committing)) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+    this.source._assertUsable(false);
+    if (!(this.source instanceof _zwIDBIndex)) {
+      throw new globalThis.DOMException('The cursor source is not an index.', 'InvalidAccessError');
+    }
+    if (this.direction !== 'next' && this.direction !== 'prev') {
+      throw new globalThis.DOMException(
+        'The cursor direction must not be unique.',
+        'InvalidAccessError'
+      );
+    }
+    if (!this._gotValue) {
+      throw new globalThis.DOMException('The cursor is not positioned on a value.', 'InvalidStateError');
+    }
+    if (!_zwIDBKey(key, []) || !_zwIDBKey(primaryKey, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+    }
+    var keyComparison = _zwIDBCompareValues(key, this.key);
+    var primaryComparison = _zwIDBCompareValues(primaryKey, this.primaryKey);
+    var reverse = this.direction === 'prev';
+    var valid = reverse
+      ? keyComparison < 0 || (keyComparison === 0 && primaryComparison < 0)
+      : keyComparison > 0 || (keyComparison === 0 && primaryComparison > 0);
+    if (!valid) {
+      throw new globalThis.DOMException('The keys do not move the cursor forward.', 'DataError');
+    }
+    if (this._hostId !== null) {
+      var hosted = _zwIDBHostCall({
+        op: 'transaction_cursor_continue_primary_key',
+        transaction: transaction._hostId,
+        cursor: this._hostId,
+        key: _zwIDBKeyToWire(key),
+        primary_key: _zwIDBKeyToWire(primaryKey)
+      });
+      var hostedResult = null;
+      if (hosted.entry) {
+        this._pendingEntry = _zwIDBCursorEntryFromHost(hosted.entry, this._keyOnly);
+        hostedResult = this;
+      }
+      this._gotValue = false;
+      this._request.readyState = 'pending';
+      this._request.result = undefined;
+      _zwIDBDispatch(this._request, 'success', hostedResult);
+      return;
+    }
+    var next = this._position + 1;
+    while (next < this._entries.length) {
+      var entry = this._entries[next];
+      var comparedKey = _zwIDBCompareValues(entry.key, key);
+      var comparedPrimary = _zwIDBCompareValues(entry.primaryKey, primaryKey);
+      if (reverse
+          ? comparedKey < 0 || (comparedKey === 0 && comparedPrimary <= 0)
+          : comparedKey > 0 || (comparedKey === 0 && comparedPrimary >= 0)) break;
+      next++;
+    }
+    this._position = next;
+    var result = this._position < this._entries.length ? this : null;
     this._gotValue = false;
     this._request.readyState = 'pending';
     this._request.result = undefined;
@@ -3798,7 +3874,7 @@
     }
     var hostId = hosted && hosted.cursor !== null ? hosted.cursor : undefined;
     var cursor = entries.length
-      ? new _zwIDBCursor(store, store, req, entries, direction, hostId, keyOnly)
+      ? new _zwIDBCursorWithValue(store, store, req, entries, direction, hostId)
       : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;
@@ -3938,12 +4014,12 @@
       }
     } else {
       entries = index._entries(query, query != null);
-      if (direction === 'prev' || direction === 'prevunique') entries.reverse();
       if (direction === 'nextunique' || direction === 'prevunique') {
         entries = entries.filter(function (entry, position) {
           return position === 0 || _zwIDBCompareValues(entries[position - 1].key, entry.key) !== 0;
         });
       }
+      if (direction === 'prev' || direction === 'prevunique') entries.reverse();
       if (keyOnly) {
         entries = entries.map(function (entry) {
           return { key: entry.key, primaryKey: entry.primaryKey, value: undefined };
@@ -3952,7 +4028,9 @@
     }
     var hostId = hosted && hosted.cursor !== null ? hosted.cursor : undefined;
     var cursor = entries.length
-      ? new _zwIDBCursor(index, index.objectStore, req, entries, direction, hostId, keyOnly)
+      ? keyOnly
+        ? new _zwIDBCursor(index, index.objectStore, req, entries, direction, hostId, true)
+        : new _zwIDBCursorWithValue(index, index.objectStore, req, entries, direction, hostId)
       : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;
@@ -4572,6 +4650,19 @@
   globalThis.IDBRequest = _zwIDBRequest;
   globalThis.IDBOpenDBRequest = _zwIDBRequest;
   globalThis.IDBCursor = _zwIDBCursor;
+  globalThis.IDBCursorWithValue = _zwIDBCursorWithValue;
+  if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+    Object.defineProperty(
+      _zwIDBCursor.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBCursor' }
+    );
+    Object.defineProperty(
+      _zwIDBCursorWithValue.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBCursorWithValue' }
+    );
+  }
   globalThis.IDBDatabase = _zwIDBDatabase;
   globalThis.IDBObjectStore = _zwIDBStore;
   globalThis.IDBTransaction = _zwIDBTransaction;

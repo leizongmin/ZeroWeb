@@ -28,6 +28,7 @@ impl IndexedDbCursorDirection {
 
 pub(super) struct ActiveIndexedDbCursor {
     direction: IndexedDbCursorDirection,
+    index_cursor: bool,
     entries: Vec<IndexedDbCursorEntry>,
     position: usize,
 }
@@ -40,6 +41,7 @@ struct IndexedDbCursorEntry {
 
 pub(super) enum CursorStep {
     Continue(Option<IdbKey>),
+    ContinuePrimaryKey(IdbKey, IdbKey),
     Advance(usize),
 }
 
@@ -84,11 +86,11 @@ pub(super) fn open_transaction_cursor(
             })
             .collect::<Vec<_>>()
     };
-    if direction.is_reverse() {
-        entries.reverse();
-    }
     if direction.is_unique() {
         entries.dedup_by(|next, current| next.key == current.key);
+    }
+    if direction.is_reverse() {
+        entries.reverse();
     }
     if entries.is_empty() {
         return Ok(json!({"cursor": null, "entry": null}));
@@ -104,6 +106,7 @@ pub(super) fn open_transaction_cursor(
         cursor_id,
         ActiveIndexedDbCursor {
             direction,
+            index_cursor: index.is_some(),
             entries,
             position: 0,
         },
@@ -152,6 +155,36 @@ pub(super) fn step_transaction_cursor(
                         entry.key <= key
                     } else {
                         entry.key >= key
+                    }
+                })
+                .map_or(cursor.entries.len(), |(position, _)| position)
+        }
+        CursorStep::ContinuePrimaryKey(key, primary_key) => {
+            if !cursor.index_cursor || cursor.direction.is_unique() {
+                return Err("InvalidAccessError: continuePrimaryKey requires a non-unique index cursor".to_string());
+            }
+            let current = &cursor.entries[cursor.position];
+            let target = (&key, &primary_key);
+            let current_pair = (&current.key, &current.primary_key);
+            let valid = if cursor.direction.is_reverse() {
+                target < current_pair
+            } else {
+                target > current_pair
+            };
+            if !valid {
+                return Err("DataError: cursor continue primary key must move in its direction".to_string());
+            }
+            cursor
+                .entries
+                .iter()
+                .enumerate()
+                .skip(cursor.position.saturating_add(1))
+                .find(|(_, entry)| {
+                    let pair = (&entry.key, &entry.primary_key);
+                    if cursor.direction.is_reverse() {
+                        pair <= target
+                    } else {
+                        pair >= target
                     }
                 })
                 .map_or(cursor.entries.len(), |(position, _)| position)

@@ -12,6 +12,9 @@ use zero_engine::IndexedDbHandler;
 use zero_storage::{IdbKey, IdbKeyRange, IdbTransaction, IdbTransactionMode, StorageError, StorageManager};
 
 mod cursor;
+#[cfg(test)]
+#[path = "indexed_db_host/cursor_tests.rs"]
+mod cursor_tests;
 
 use cursor::{
     ActiveIndexedDbCursor, CursorStep, IndexedDbCursorDirection, open_transaction_cursor, step_transaction_cursor,
@@ -208,6 +211,12 @@ enum IndexedDbRequest {
         cursor: u64,
         #[serde(default)]
         key: Option<IndexedDbKeyWire>,
+    },
+    TransactionCursorContinuePrimaryKey {
+        transaction: u64,
+        cursor: u64,
+        key: IndexedDbKeyWire,
+        primary_key: IndexedDbKeyWire,
     },
     TransactionCursorAdvance {
         transaction: u64,
@@ -635,6 +644,18 @@ fn dispatch_request(
             transaction,
             cursor,
             CursorStep::Continue(key.map(IndexedDbKeyWire::into_storage_key).transpose()?),
+        ),
+        IndexedDbRequest::TransactionCursorContinuePrimaryKey {
+            transaction,
+            cursor,
+            key,
+            primary_key,
+        } => step_transaction_cursor(
+            transactions,
+            origin,
+            transaction,
+            cursor,
+            CursorStep::ContinuePrimaryKey(key.into_storage_key()?, primary_key.into_storage_key()?),
         ),
         IndexedDbRequest::TransactionCursorAdvance {
             transaction,
@@ -1826,7 +1847,7 @@ mod tests {
         assert_eq!(unique_next["entry"]["key"], json!({"type": "string", "value": "b"}));
         assert_eq!(
             unique_next["entry"]["primaryKey"],
-            json!({"type": "number", "value": "3"})
+            json!({"type": "number", "value": "2"})
         );
 
         assert!(
