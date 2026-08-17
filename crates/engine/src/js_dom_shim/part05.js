@@ -311,6 +311,15 @@
         // element（含 selector-based 与 createElement handle）：按 tag 查 __zwHtmlTagIface 返对应
         // HTML*Element 子类 prototype（R11，使 `el instanceof HTMLDivElement` 等为 true）；无映射/构造器
         // 缺失回落 HTMLElement.prototype（链 Element → Node）。
+        // js-dom M3 R90：**custom element 优先**——tag 命中 customElements registry 时返
+        // 用户 ctor.prototype（spec `custom-elements-upgrades`：升级后的元素原型链顶端是
+        // 自定义类；instanceof MyEl / prototype 方法可达）。查表键 = createElement 的原 tag
+        //（registry define 小写键）。
+        if (globalThis.customElements && typeof globalThis.customElements.get === 'function') {
+          var _r90Tag = _realTag(sel, handle).toLowerCase();
+          var _r90Ctor = globalThis.customElements.get(_r90Tag);
+          if (typeof _r90Ctor === 'function' && _r90Ctor.prototype) return _r90Ctor.prototype;
+        }
         if (_gp.HTMLElement && _gp.HTMLElement.prototype) {
           // js-dom M4 R80：createElementNS handle（HTML ns）的 iface 查找用 localName **原样**（spec：
           // HTML 命名空间元素的接口按 localName 定——`createElementNS(HTMLNS,'html:span')` 是

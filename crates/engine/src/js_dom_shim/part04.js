@@ -716,6 +716,20 @@
             }
             return true;
           }
+          // js-dom M3 R90：handle 元素先查父反链（append 后 host mutation 异步应用前
+          // getBoundingClientRect 尚空——WC 组件 connectedCallback 内 isConnected 读
+          // false 与 spec 相悖）。沿 _zwNodeParent 上行到宿主 sel 节点即 connected；
+          // 无链且无 rect → false。记录形态 { parentSel, parentHandle }（part01 汇流点）。
+          if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+            try {
+              var _r90p = _zwNodeParent[handle];
+              var _r90hops = 0;
+              while (_r90p && _r90hops++ < 64) {
+                if (_r90p.parentSel) return true; // 挂到 sel 节点（html/body/容器）→ 在档
+                _r90p = _zwNodeParent[_r90p.parentHandle];
+              }
+            } catch (_e90) {}
+          }
           if (handle && typeof __zw_getBoundingClientRect === 'function') {
             try { return __zw_getBoundingClientRect(handle) !== ''; } catch (_e) { return false; }
           }

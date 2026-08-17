@@ -67,6 +67,10 @@ mod browser_shell_integration;
 #[cfg(test)]
 mod e2e_canvas_dom;
 
+// js-dom M3（R90）：Web Components 端到端验收资产（DC-2 WC 首切片）。
+#[cfg(test)]
+mod e2e_web_components;
+
 #[cfg(test)]
 mod e2e_rendering;
 

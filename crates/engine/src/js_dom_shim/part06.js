@@ -1521,7 +1521,22 @@
       }
       if (tag.toLowerCase() === 'canvas') return _zwMakeCanvas();
       var handle = __zw_create_element(tag);
-      return _wrapHandle(handle);
+      var el = _wrapHandle(handle);
+      // js-dom M3 R90：createElement 命中已注册 custom element → 立即升级（spec
+      // `custom-elements-upgrades`：创建即 upgrade）。与 manual upgrade(root) 同型：
+      // setPrototypeOf 原型挂接（instanceof / 原型方法可达）+ observedAttributes 初始
+      // 派发。**用户 ctor 体不重跑**——JS 层无法对既有对象执行 class constructor
+      //（`B.call(el)` 抛 "cannot be invoked without 'new'"；Reflect.construct 会新建
+      // this 而非复用 el）。组件初始化面由 connectedCallback 承载（imperative WC 模式
+      // 与 lit 兼容）；getPrototypeOf trap（part05 R90）对 registry tag 动态返
+      // ctor.prototype，此处 setPrototypeOf 使 Object.getPrototypeOf 同源。
+      if (globalThis.customElements && typeof globalThis.customElements.get === 'function') {
+        var _r90Ctor = globalThis.customElements.get(String(tag).toLowerCase());
+        if (typeof _r90Ctor === 'function' && _r90Ctor.prototype) {
+          try { Object.setPrototypeOf(el, _r90Ctor.prototype); } catch (_e90) {}
+        }
+      }
+      return el;
     },
     // `createElementNS(ns, qualifiedName)`（js-dom M4 / spec `dom-document-createelementns`）：
     // 大小写敏感创建（spec createElementNS **不**小写 localName，`"Abc"` → localName `"Abc"`，区别
