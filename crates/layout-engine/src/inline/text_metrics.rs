@@ -60,7 +60,7 @@ pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     // https://www.unicode.org/reports/tr53/
     // Nonspacing marks are positioned relative to a base glyph by shaping and do not
     // contribute an independent inline advance.
-    if *ZERO_WIDTH_NSM && bidi_class(c) == BidiClass::NSM {
+    if *ZERO_WIDTH_NSM && is_nonspacing_mark(c) {
         return 0.0;
     }
     if is_ahem {
@@ -89,6 +89,11 @@ pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
         // 其他 Unicode 字符（非 CJK）：默认宽度
         font_size * 0.5
     }
+}
+
+fn is_nonspacing_mark(c: char) -> bool {
+    static ASCII_FAST: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_NSM_ASCII_FAST").as_deref() != Ok("0"));
+    (!*ASCII_FAST || !c.is_ascii()) && bidi_class(c) == BidiClass::NSM
 }
 
 /// 字符 advance 宽度源（依赖反转，解耦 layout-engine 与字体光栅化层）。
@@ -804,10 +809,21 @@ impl BidiFragmentCursor {
 mod tests {
     use std::sync::Arc;
 
-    use super::{BidiFragmentCursor, BidiReorderedText, bidi_reorder_with_direction, identity_bidi_mapping};
+    use super::{
+        BidiFragmentCursor, BidiReorderedText, bidi_reorder_with_direction, identity_bidi_mapping, is_nonspacing_mark,
+    };
 
     fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
         bidi_reorder_with_direction(text, true, false)
+    }
+
+    #[test]
+    fn ascii_characters_are_never_nonspacing_marks() {
+        for byte in 0_u8..=127 {
+            assert!(!is_nonspacing_mark(char::from(byte)), "ASCII byte {byte:#04x}");
+        }
+        assert!(is_nonspacing_mark('\u{0654}'));
+        assert!(is_nonspacing_mark('\u{0670}'));
     }
 
     /// R2019：纯 ASCII（无 RTL 脚本字符、无 bidi 控制码）须原样返回（早返 fast-path）。

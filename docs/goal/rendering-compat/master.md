@@ -7,6 +7,8 @@
 
 > **📍 当前 rally 进度态（R3428-F·2026-08-17）=【hmtx 字符缓存·medium layout/total p95 再降16%】**：R3427 的 run cache 以 `(instance ids,size,String)` 为键，8,000 文本节点页面为每次查询复制字体链和原文，4096 项整表清空又使跨 pass 复用失效；键还遗漏隐式 fallback chain，fallback/range 更新不会失效。现改为有界 `(完整 font_id 链,size,char)` 加法缓存，不同 run 共享字符宽度；`set_fallback_chain` / `register_unicode_ranges` 同步清缓存，`ZW_HMTX_CHAR_CACHE=0` 回退同语义无缓存路径。hmtx 实现与 5 条机制/同源测试抽至 `loader/hmtx.rs`，`loader.rs` 恢复 2000 行。**同一 release 二进制 off/on A/B**：medium layout p95 `485→406ms`（-16%）、total p95 `777→653ms`（-16%）、layout p50 `442→358ms`（-19%）、RSS `160.4→155.5MiB`；完整 `make bench-gate` 16/16 microbench、页面绝对预算、RSS、form-input PASS，满负载 medium layout/total p95 `498/811ms`，异构硬件相对门仅 WARN，`≤141ms` 残余继续打开。**正确性**：browser 换行基准、reftest `687/687`、可信 strict `552`、0 mismatch；welcome `16.61%` 与全 viewport struct PASS。
 
+> **📍 当前 rally 进度态（R3429-F·2026-08-17）=【ASCII NSM 快路·estimate 热循环约4倍】**：perf 显示 `unicode_bidi::bsearch_range_value_table` 占 medium 全帧约2.35%；根因是 `estimate_char_width` 为判断 nonspacing mark，对不可能属于 NSM 的 ASCII 字母/数字/空格/标点仍逐字符查完整 Unicode BiDi 表。现 `is_nonspacing_mark` 在 `ZW_NSM_ASCII_FAST` 默认开启时先排除 ASCII，非 ASCII 继续按原表查询，`=0` 回退旧路径。穷举 128 个 ASCII 与 Arabic U+0654/U+0670 测试守语义。**隔离 release 微基准三轮交替 A/B**：旧路径 `4.74–5.61s`，快路 `1.18–1.25s`，checksum 完全一致，函数热点约4倍；medium 首组 layout/total p95 `490/806→474/784ms`（约-3.4%/-2.7%），反序页面受共享主机 20%+ 漂移影响不作为主证据。IFC env 快照候选同期两组综合净零，已完整回退。经验见 [`ascii-before-unicode-property-lookup.md`](../../learnings/performance/ascii-before-unicode-property-lookup.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >
