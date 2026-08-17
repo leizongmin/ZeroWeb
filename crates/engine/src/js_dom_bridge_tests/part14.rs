@@ -1817,6 +1817,10 @@ fn test_indexeddb_key_range_queries() {
              };\
              request.onsuccess = function () {\
                var store = request.result.transaction('store', 'readwrite').objectStore('store');\
+               rangeResults.push(IDBKeyRange.lowerBound(7).includes(7));\
+               rangeResults.push(IDBKeyRange.lowerBound(7, true).includes(7));\
+               rangeResults.push(IDBKeyRange.upperBound(2).includes(2));\
+               rangeResults.push(IDBKeyRange.upperBound(2, true).includes(2));\
                store.get(IDBKeyRange.bound(3, 6)).onsuccess = function (event) {\
                  rangeResults.push(event.target.result);\
                };\
@@ -1831,7 +1835,54 @@ fn test_indexeddb_key_range_queries() {
         .unwrap();
     sandbox.execute("1;").unwrap();
 
-    assert_eq!(sandbox.execute("rangeResults.join('|')").unwrap().value, "data3|5|1|6");
+    assert_eq!(
+        sandbox.execute("rangeResults.join('|')").unwrap().value,
+        "true|false|true|false|data3|5|1|6"
+    );
+}
+
+#[test]
+fn test_indexeddb_object_store_get_all_queries() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var allResults = [];\
+             var request = indexedDB.open('get-all-queries');\
+             request.onupgradeneeded = function () {\
+               var store = request.result.createObjectStore('store');\
+               store.add({ value: 'c' }, 'c');\
+               store.add({ value: 'a' }, 'a');\
+               store.add({ value: 'b' }, 'b');\
+             };\
+             request.onsuccess = function () {\
+               var transaction = request.result.transaction('store');\
+               var store = transaction.objectStore('store');\
+               store.getAll(IDBKeyRange.bound('a', 'c'), 2).onsuccess = function (event) {\
+                 event.target.result[0].value = 'changed';\
+                 allResults.push(event.target.result.map(function (value) { return value.value; }).join(','));\
+               };\
+               store.getAllKeys(IDBKeyRange.lowerBound('b')).onsuccess = function (event) {\
+                 allResults.push(event.target.result.join(','));\
+               };\
+               store.get('a').onsuccess = function (event) { allResults.push(event.target.result.value); };\
+               try { store.getAll([{}]); } catch (error) { allResults.push(error.name); }\
+               transaction.commit();\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("allResults.join('|')").unwrap().value,
+        "DataError|changed,b|b,c|a"
+    );
 }
 
 #[test]

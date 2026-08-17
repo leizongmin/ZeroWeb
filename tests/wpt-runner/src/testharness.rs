@@ -124,31 +124,56 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
 ///
 /// Each case is run in its window variant with the META-declared support script.
 /// https://web-platform-tests.org/writing-tests/testharness.html#multi-global-tests
-pub const INDEXEDDB_CASES: &[(&str, &str)] = &[
-    ("IndexedDB/globalscope-indexedDB-SameObject.any.js", ""),
-    ("IndexedDB/idbfactory_cmp.any.js", "resources/support-promises.js"),
-    ("IndexedDB/idbfactory_deleteDatabase.any.js", "resources/support.js"),
+pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
+    ("IndexedDB/globalscope-indexedDB-SameObject.any.js", &[]),
+    ("IndexedDB/idbfactory_cmp.any.js", &["resources/support-promises.js"]),
+    ("IndexedDB/idbfactory_deleteDatabase.any.js", &["resources/support.js"]),
     (
         "IndexedDB/idbfactory-deleteDatabase-request-success.any.js",
-        "resources/support.js",
+        &["resources/support.js"],
     ),
-    ("IndexedDB/idbfactory_open.any.js", "resources/support.js"),
+    ("IndexedDB/idbfactory_open.any.js", &["resources/support.js"]),
     (
         "IndexedDB/idbfactory-open-error-properties.any.js",
-        "resources/support.js",
+        &["resources/support.js"],
     ),
-    ("IndexedDB/idbfactory-open-request-error.any.js", "resources/support.js"),
+    (
+        "IndexedDB/idbfactory-open-request-error.any.js",
+        &["resources/support.js"],
+    ),
     (
         "IndexedDB/idbfactory-open-request-success.any.js",
-        "resources/support.js",
+        &["resources/support.js"],
     ),
-    ("IndexedDB/idbversionchangeevent.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_add.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_put.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_get.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_delete.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_clear.any.js", "resources/support.js"),
-    ("IndexedDB/idbobjectstore_count.any.js", "resources/support.js"),
+    ("IndexedDB/idbversionchangeevent.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_delete.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_clear.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_count.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbobjectstore_getAll.any.js",
+        &[
+            "resources/nested-cloning-common.js",
+            "resources/support.js",
+            "resources/support-get-all.js",
+            "resources/support-promises.js",
+        ],
+    ),
+    (
+        "IndexedDB/idbobjectstore_getAllKeys.any.js",
+        &[
+            "resources/nested-cloning-common.js",
+            "resources/support.js",
+            "resources/support-get-all.js",
+            "resources/support-promises.js",
+        ],
+    ),
+    ("IndexedDB/idbindex_get.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbindex_getKey.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbindex_count.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-continue.any.js", &["resources/support.js"]),
 ];
 
 /// WPT subtest status.
@@ -509,25 +534,59 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         .iter()
         .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
         .map(|(path, support)| {
-            let html = indexeddb_window_wrapper(path, support);
+            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load IndexedDB case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
+            let mut support_sources = Vec::with_capacity(support.len());
+            for script in *support {
+                match std::fs::read_to_string(wpt_root.join(case_dir).join(script)) {
+                    Ok(source) => support_sources.push((*script, source)),
+                    Err(error) => {
+                        return (
+                            (*path).to_string(),
+                            vec![HarnessSubtestResult {
+                                name: format!("load IndexedDB support {script}"),
+                                status: HarnessStatus::Fail,
+                                message: Some(error.to_string()),
+                            }],
+                        );
+                    }
+                }
+            }
+            let support_refs = support_sources
+                .iter()
+                .map(|(name, source)| (*name, source.as_str()))
+                .collect::<Vec<_>>();
+            let html = indexeddb_window_wrapper(path, &support_refs, &case_source);
             let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
             ((*path).to_string(), results)
         })
         .collect()
 }
 
-fn indexeddb_window_wrapper(path: &str, support: &str) -> String {
-    let support_script = if support.is_empty() {
-        String::new()
-    } else {
-        format!("<script src=\"{support}\"></script>")
-    };
-    let file = path.rsplit('/').next().unwrap_or(path);
+fn indexeddb_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
+    let mut source = String::new();
+    for (name, script) in support {
+        source.push_str(&format!("// source: {name}\n{script}\n"));
+    }
+    source.push_str(&format!("// source: {path}\n{case_source}"));
+    let source = source.replace("</script", "<\\/script");
     format!(
         "<!doctype html><meta charset=\"utf-8\">\
          <script src=\"/resources/testharness.js\"></script>\
          <script src=\"/resources/testharnessreport.js\"></script>\
-         {support_script}<script src=\"{file}\"></script>"
+         <script>{source}</script>"
     )
 }
 
@@ -1322,11 +1381,20 @@ promise_test(async function() {
 
     #[test]
     fn indexeddb_any_wrapper_loads_support_before_case() {
-        let html = indexeddb_window_wrapper("IndexedDB/idbfactory_open.any.js", "resources/support.js");
-        let support = html.find("resources/support.js").unwrap();
+        let html = indexeddb_window_wrapper(
+            "IndexedDB/idbfactory_open.any.js",
+            &[
+                ("resources/first.js", "globalThis.first = true;"),
+                ("resources/second.js", "globalThis.second = true;"),
+            ],
+            "globalThis.caseLoaded = true;",
+        );
+        let first = html.find("// source: resources/first.js").unwrap();
+        let second = html.find("// source: resources/second.js").unwrap();
         let case = html.find("idbfactory_open.any.js").unwrap();
         assert!(html.contains("/resources/testharness.js"));
-        assert!(support < case);
+        assert!(first < second);
+        assert!(second < case);
     }
 
     #[test]

@@ -14,6 +14,8 @@ FILES=(
   "resources/testharnessreport.js"
   "IndexedDB/resources/support.js"
   "IndexedDB/resources/support-promises.js"
+  "IndexedDB/resources/nested-cloning-common.js"
+  "IndexedDB/resources/support-get-all.js"
   "IndexedDB/globalscope-indexedDB-SameObject.any.js"
   "IndexedDB/idbfactory_cmp.any.js"
   "IndexedDB/idbfactory_deleteDatabase.any.js"
@@ -29,6 +31,12 @@ FILES=(
   "IndexedDB/idbobjectstore_delete.any.js"
   "IndexedDB/idbobjectstore_clear.any.js"
   "IndexedDB/idbobjectstore_count.any.js"
+  "IndexedDB/idbobjectstore_getAll.any.js"
+  "IndexedDB/idbobjectstore_getAllKeys.any.js"
+  "IndexedDB/idbindex_get.any.js"
+  "IndexedDB/idbindex_getKey.any.js"
+  "IndexedDB/idbindex_count.any.js"
+  "IndexedDB/idbcursor-continue.any.js"
 )
 
 fetch_raw() {
@@ -88,4 +96,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (15 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (21 cases, WPT ${WPT_REV})"

@@ -382,6 +382,18 @@ fn test_message_channel_r2782() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__got").unwrap().value, "42");
+    assert_eq!(
+        sandbox
+            .execute(
+                "var transferred = new Uint8Array([1, 2, 3, 4]);\
+                 ch.port1.postMessage('', [transferred.buffer]);\
+                 String(transferred.byteLength)"
+            )
+            .unwrap()
+            .value,
+        "0",
+        "ArrayBuffer transfer detaches the sender buffer"
+    );
     // structuredClone 深拷贝：postMessage 时克隆，后续 mutate 原对象不影响收到的（R2773 验证）。
     sandbox
         .execute(

@@ -1,0 +1,32 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB getAll, index, and cursor expansion",
+  "new_files": 6,
+  "new_subtests": 62,
+  "new_status": {
+    "pass": 42,
+    "fail": 20,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "new_pass_rate_percent": 67.74,
+  "groups": [
+    {"name": "object store getAll and getAllKeys", "files": 2, "pass": 34, "fail": 0},
+    {"name": "index get, getKey, and count", "files": 3, "pass": 8, "fail": 12},
+    {"name": "index cursor continue", "files": 1, "pass": 0, "fail": 8}
+  ],
+  "imported_total": {
+    "files": 21,
+    "subtests": 166,
+    "pass": 146,
+    "fail": 20,
+    "pass_rate_percent": 87.95
+  },
+  "failure_clusters": [
+    {"name": "index query and deleted state", "count": 12},
+    {"name": "index cursor and continue", "count": 8}
+  ]
+}

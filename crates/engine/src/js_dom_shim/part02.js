@@ -2873,6 +2873,39 @@
     _zwIDBDispatch(req, 'success', count);
     return req;
   };
+  _zwIDBStore.prototype._getAll = function (query, count, keysOnly, queryProvided) {
+    this._assertUsable(false);
+    if (queryProvided && query !== undefined) {
+      var valid = false;
+      try {
+        valid = _zwIDBIsKeyRange(query) || !!_zwIDBKey(query, []);
+      } catch (_) {}
+      if (!valid) {
+        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+      }
+    }
+    var entries = [];
+    this._records.forEach(function (value, key) {
+      if (!queryProvided || query === undefined || _zwIDBQueryMatches(query, key)) {
+        entries.push({ key: key, value: value });
+      }
+    });
+    entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
+    if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
+    var result = entries.map(function (entry) {
+      return globalThis.structuredClone(keysOnly ? entry.key : entry.value);
+    });
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
+    _zwIDBDispatch(req, 'success', result);
+    return req;
+  };
+  _zwIDBStore.prototype.getAll = function (query, count) {
+    return this._getAll(query, count, false, arguments.length >= 1);
+  };
+  _zwIDBStore.prototype.getAllKeys = function (query, count) {
+    return this._getAll(query, count, true, arguments.length >= 1);
+  };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
     this._assertUsable(true);
     var unique = !!((opts || {}).unique);
@@ -3010,6 +3043,11 @@
   };
   _zwIDBTransaction.prototype.abort = function () {
     if (!this._finished) this._aborted = true;
+  };
+  _zwIDBTransaction.prototype.commit = function () {
+    if (this._aborted || this._finished) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'InvalidStateError');
+    }
   };
 
   function _zwIDBDatabase(name, state) {
@@ -3159,9 +3197,11 @@
     if (typeof value === 'string') return { rank: 3, value: value };
     if (typeof ArrayBuffer !== 'undefined') {
       if (value instanceof ArrayBuffer) {
+        if (value._detached) return null;
         return { rank: 4, value: new Uint8Array(value) };
       }
       if (ArrayBuffer.isView(value)) {
+        if (value._detached || value.buffer._detached) return null;
         return {
           rank: 4,
           value: new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
@@ -3222,16 +3262,27 @@
     this._zwIDBKeyRange = true;
   }
   _zwIDBKeyRange.prototype.includes = function (key) {
-    var lower = _zwIDBCompareValues(key, this.lower);
-    var upper = _zwIDBCompareValues(key, this.upper);
-    return (this.lowerOpen ? lower > 0 : lower >= 0)
-      && (this.upperOpen ? upper < 0 : upper <= 0);
+    if (this.lower !== undefined) {
+      var lower = _zwIDBCompareValues(key, this.lower);
+      if (this.lowerOpen ? lower <= 0 : lower < 0) return false;
+    }
+    if (this.upper !== undefined) {
+      var upper = _zwIDBCompareValues(key, this.upper);
+      if (this.upperOpen ? upper >= 0 : upper > 0) return false;
+    }
+    return true;
   };
   _zwIDBKeyRange.bound = function (lower, upper, lowerOpen, upperOpen) {
     return new _zwIDBKeyRange(lower, upper, lowerOpen, upperOpen);
   };
   _zwIDBKeyRange.only = function (value) {
     return new _zwIDBKeyRange(value, value, false, false);
+  };
+  _zwIDBKeyRange.lowerBound = function (lower, open) {
+    return new _zwIDBKeyRange(lower, undefined, open, false);
+  };
+  _zwIDBKeyRange.upperBound = function (upper, open) {
+    return new _zwIDBKeyRange(undefined, upper, false, open);
   };
 
   // https://w3c.github.io/IndexedDB/#dom-idbfactory-open

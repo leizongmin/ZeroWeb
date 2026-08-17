@@ -5914,8 +5914,9 @@
   // MessagePort——消息端口（MessageChannel 双端口之一，部分库经此做结构化通信）。extends EventTarget
   //（R2779）。postMessage 经 structuredClone（R2773）深拷贝消息 + queueMicrotask（R2774）**异步**派发
   // 'message' 事件到配对端口（spec 为 task；sandbox 经 execute 末 microtask checkpoint 派发，下 execute
-  // 可读）。onmessage 属性 setter 内部走 addEventListener('message')。**已知限制**：无 transfer 列表
-  //（Transferable 移植，罕见用法）；同执行上下文端口对（跨 worker/进程通信需 host 接线，defer）。
+  // 可读）。onmessage 属性 setter 内部走 addEventListener('message')。ArrayBuffer transfer 优先用
+  // 原生 `transfer()` 真正 detach，其他 transferable 保留 `_detached` 标记；同执行上下文端口对
+  //（跨 worker/进程通信需 host 接线，defer）。
   function MessagePort() {
     this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
     this._other = null; // 配对端口（MessageChannel 构造时互连）
@@ -5931,7 +5932,11 @@
     if (transfer && typeof transfer.forEach === 'function') {
       transfer.forEach(function (item) {
         if (item && typeof item === 'object') {
-          item._detached = true;
+          if (item instanceof ArrayBuffer && typeof item.transfer === 'function') {
+            item.transfer();
+          } else {
+            item._detached = true;
+          }
         }
       });
     }
