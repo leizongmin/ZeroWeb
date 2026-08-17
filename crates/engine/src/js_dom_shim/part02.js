@@ -2656,6 +2656,8 @@
 
   // 异步派发（经 microtask，使调用方先注册 handler 再触发——spec task 语义）。type ∈ success/error/upgradeneeded。
   function _zwIDBDispatch(req, type, result, event) {
+    var transaction = req.transaction;
+    if (transaction) transaction._pending++;
     var fire = function () {
       req.readyState = 'done';
       if (result !== undefined) req.result = result;
@@ -2666,6 +2668,7 @@
       ev.target = req;
       ev.currentTarget = req;
       _zwIDBEmit(req, ev.type, ev);
+      if (transaction) transaction._pending--;
     };
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
     else fire();
@@ -2704,13 +2707,33 @@
   _zwIDBStore.prototype.get = function (key) {
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    _zwIDBDispatch(req, 'success', this._records.get(key));
+    var result;
+    if (_zwIDBIsKeyRange(key)) {
+      var matches = [];
+      this._records.forEach(function (value, recordKey) {
+        if (key.includes(recordKey)) matches.push({ key: recordKey, value: value });
+      });
+      matches.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
+      result = matches.length ? matches[0].value : undefined;
+    } else {
+      result = this._records.get(key);
+    }
+    _zwIDBDispatch(req, 'success', result);
     return req;
   };
   _zwIDBStore.prototype.delete = function (key) {
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    this._records.delete(key);
+    if (_zwIDBIsKeyRange(key)) {
+      var records = this._records;
+      var keys = [];
+      records.forEach(function (_value, recordKey) {
+        if (key.includes(recordKey)) keys.push(recordKey);
+      });
+      keys.forEach(function (recordKey) { records.delete(recordKey); });
+    } else {
+      this._records.delete(key);
+    }
     _zwIDBDispatch(req, 'success', undefined);
     return req;
   };
@@ -2721,10 +2744,18 @@
     _zwIDBDispatch(req, 'success', undefined);
     return req;
   };
-  _zwIDBStore.prototype.count = function () {
+  _zwIDBStore.prototype.count = function (query) {
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    _zwIDBDispatch(req, 'success', this._records.size);
+    var count = 0;
+    if (arguments.length === 0) {
+      count = this._records.size;
+    } else {
+      this._records.forEach(function (_value, recordKey) {
+        if (_zwIDBQueryMatches(query, recordKey)) count++;
+      });
+    }
+    _zwIDBDispatch(req, 'success', count);
     return req;
   };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
@@ -2800,13 +2831,19 @@
     this._listeners = {};
     this._aborted = false;
     this._finished = false;
+    this._pending = 0;
     var self = this;
     if (!deferCompletion && typeof queueMicrotask === 'function') {
-      queueMicrotask(function () {
+      var completeWhenIdle = function () {
         if (self._aborted || self._finished) return;
+        if (self._pending > 0) {
+          queueMicrotask(completeWhenIdle);
+          return;
+        }
         self._finished = true;
         _zwIDBEmit(self, 'complete', new _zwIDBEvent('complete', self));
-      });
+      };
+      queueMicrotask(completeWhenIdle);
     }
   }
   _zwIDBTransaction.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
@@ -2895,6 +2932,14 @@
   }
 
   function _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created) {
+    if (transaction._pending > 0) {
+      var retry = function () {
+        _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created);
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(retry);
+      else retry();
+      return;
+    }
     db._upgradeTransaction = null;
     transaction._finished = true;
     if (transaction._aborted) {
@@ -2976,6 +3021,41 @@
     }
     return a.value.length < b.value.length ? -1 : (a.value.length > b.value.length ? 1 : 0);
   }
+
+  function _zwIDBCompareValues(a, b) {
+    var first = _zwIDBKey(a, []);
+    var second = _zwIDBKey(b, []);
+    if (!first || !second) return 0;
+    return _zwIDBCompareKeys(first, second);
+  }
+
+  function _zwIDBIsKeyRange(value) {
+    return !!(value && value._zwIDBKeyRange === true);
+  }
+
+  function _zwIDBQueryMatches(query, key) {
+    return _zwIDBIsKeyRange(query) ? query.includes(key) : _zwIDBCompareValues(query, key) === 0;
+  }
+
+  function _zwIDBKeyRange(lower, upper, lowerOpen, upperOpen) {
+    this.lower = lower;
+    this.upper = upper;
+    this.lowerOpen = !!lowerOpen;
+    this.upperOpen = !!upperOpen;
+    this._zwIDBKeyRange = true;
+  }
+  _zwIDBKeyRange.prototype.includes = function (key) {
+    var lower = _zwIDBCompareValues(key, this.lower);
+    var upper = _zwIDBCompareValues(key, this.upper);
+    return (this.lowerOpen ? lower > 0 : lower >= 0)
+      && (this.upperOpen ? upper < 0 : upper <= 0);
+  };
+  _zwIDBKeyRange.bound = function (lower, upper, lowerOpen, upperOpen) {
+    return new _zwIDBKeyRange(lower, upper, lowerOpen, upperOpen);
+  };
+  _zwIDBKeyRange.only = function (value) {
+    return new _zwIDBKeyRange(value, value, false, false);
+  };
 
   // https://w3c.github.io/IndexedDB/#dom-idbfactory-open
   // WebIDL [EnforceRange] unsigned long long, additionally restricted to JS safe integers.
@@ -3091,12 +3171,11 @@
     },
   };
   // IDB 构造器占位（feature-detection / instanceof 用，rare）。
+  globalThis.IDBKeyRange = _zwIDBKeyRange;
   ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction', 'IDBRequest',
-   'IDBOpenDBRequest', 'IDBIndex', 'IDBCursor', 'IDBKeyRange'].forEach(function (n) {
+   'IDBOpenDBRequest', 'IDBIndex', 'IDBCursor'].forEach(function (n) {
     if (typeof globalThis[n] === 'undefined') globalThis[n] = function () {};
   });
-  if (typeof globalThis.IDBKeyRange !== 'function') globalThis.IDBKeyRange = function () {};
-  if (!globalThis.IDBKeyRange.only) globalThis.IDBKeyRange.only = function (v) { return { lower: v, upper: v }; };
 
   globalThis.XMLHttpRequest = function() {
     var self = this;

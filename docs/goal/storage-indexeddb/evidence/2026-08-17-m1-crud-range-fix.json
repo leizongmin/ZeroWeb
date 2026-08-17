@@ -1,0 +1,32 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB object store CRUD first slice after key range fix",
+  "files": 6,
+  "subtests": 54,
+  "status": {
+    "pass": 22,
+    "fail": 32,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 40.74,
+  "delta_from_previous": {
+    "subtests": 3,
+    "pass": 7,
+    "fail": -4,
+    "pass_rate_percentage_points": 11.33
+  },
+  "denominator_note": "pending request tracking unlocked three previously unreported delete subtests",
+  "failure_clusters": [
+    {"name": "key and DataError validation", "count": 11},
+    {"name": "invalid index key handling", "count": 2},
+    {"name": "deleted object store InvalidStateError", "count": 5},
+    {"name": "readonly transaction ReadOnlyError", "count": 4},
+    {"name": "inactive transaction TransactionInactiveError", "count": 1},
+    {"name": "unique constraint handling", "count": 3},
+    {"name": "autoIncrement keyPath and cursor continuation", "count": 6}
+  ]
+}

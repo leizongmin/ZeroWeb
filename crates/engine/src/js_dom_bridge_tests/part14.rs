@@ -1798,6 +1798,43 @@ fn test_indexeddb_versionchange_transaction_commit_and_abort() {
 }
 
 #[test]
+fn test_indexeddb_key_range_queries() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var rangeResults = [];\
+             var request = indexedDB.open('range-queries');\
+             request.onupgradeneeded = function () {\
+               var store = request.result.createObjectStore('store');\
+               for (var i = 0; i < 10; i++) store.add('data' + i, i);\
+             };\
+             request.onsuccess = function () {\
+               var store = request.result.transaction('store', 'readwrite').objectStore('store');\
+               store.get(IDBKeyRange.bound(3, 6)).onsuccess = function (event) {\
+                 rangeResults.push(event.target.result);\
+               };\
+               store.count(IDBKeyRange.bound(5, 20)).onsuccess = function (event) {\
+                 rangeResults.push(event.target.result);\
+               };\
+               store.count(2).onsuccess = function (event) { rangeResults.push(event.target.result); };\
+               store.delete(IDBKeyRange.bound(3, 6));\
+               store.count().onsuccess = function (event) { rangeResults.push(event.target.result); };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(sandbox.execute("rangeResults.join('|')").unwrap().value, "data3|5|1|6");
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
