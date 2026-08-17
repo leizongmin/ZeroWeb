@@ -168,7 +168,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - **已实现核心能力**：HTML 解析/DOM（html5ever，含 Shadow DOM 基础、MutationObserver、Range/TreeWalker、FocusManager 等）、完全自建 CSS parser + 样式系统（100+ 属性）、taffy 布局、GPU/CPU 双渲染管线（全 13 种图元）、V8 JS 引擎（DOM polyfill 桥接 + ES Modules + Web Workers + WASM 自动桥接）、多进程架构实际运行（IPC + 独立渲染进程二进制）、真实 WebSocket（tungstenite）、CSP 完整实现 + SecurityContext（HSTS/混合内容）、Top 55+ 真实网站兼容性测试、WPT 1341 用例（23 分类 100% 通过率）、可访问性基础、跨平台打包脚本
 - **当前主要缺口**（详见 master.md「下一步优先级」）：① DOM/JS Bridge 为 polyfill 字符串桥接模式——Observer（Mutation/Intersection/Resize）为 stub 不触发回调、fetch() 为 stub 返回空 Response、事件循环为简化版非 spec-compliant（**P1a 修复中 = 当前活跃主线**）；② 渲染兼容性 chromium-Oracle 真一致 ~47.5%（属 rendering-compat 独立目标，深结构等用户点名）
 - **渲染兼容性赛道**：已拆分为独立目标 `docs/goal/rendering-compat.md`（WPT reftest 驱动）
-- **Canvas 2D 赛道**：已拆分为独立目标 `docs/goal/canvas-2d.md`（WPT html/canvas 驱动；Rust 层 ~90 方法 + Path2D 完整、JS 侧三大件已接线，剩余 OffscreenCanvas Rust 桩/WPT 导入为零/像素验证缺失）
+- **Canvas 2D 赛道**：独立目标已完成（2026-08-16，DC-1~4 全部满足：WPT 919 文件导入、testharness 全绿、oracle-pass 100%/不一致 0、Mission 中期 80% 达成）——入口文档与运行时面板已归档至 `docs/goal/archive/canvas-2d.md` + `docs/goal/archive/canvas-2d/`
 
 ---
 

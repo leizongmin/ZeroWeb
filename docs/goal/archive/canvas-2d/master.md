@@ -147,9 +147,9 @@ OffscreenCanvas/ImageBitmap/API 语义完整（DC-2）；oracle-pass 100%、真�
 
 ## 验证基线
 
-- 测试基线：canvas **809** 全绿；layout **1381**；engine **2158**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
+- 测试基线：canvas **812** 全绿（终态 R57；早期轮次 809）；layout **1381**；engine **2158**；webview **599**；wpt-runner 171；行覆盖率 ≥70% 达标
 - WPT canvas testharness 面：全目录 0 Fail（含 path-objects 202/0、drawing-images 37/37）
-- oracle A/B：147 可测（221 环境不支持排除）——真通过 9（20.9%）、近似 7、不一致 27
+- oracle A/B（终态 R57，2026-08-16）：141 可测（227 环境不支持排除）——**oracle-pass 41/41（100%）、真通过 34（82.9%）、近似 7（<0.6%）、不一致 0**（早期批次「真通过 9/不一致 27」为 R57 诚实化过程中间态，已被 batch-5~7 逐格对齐收口取代——见顶部终态与 evidence/r57-batch7）
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过（零警告）
 - **既有失败（非 canvas 面，a08d3064 复测确认）**：browser 4 个 form/input 快照测试
   （default_actions_work_without_javascript / form_fixture_complete_multiprocess_semantics /
