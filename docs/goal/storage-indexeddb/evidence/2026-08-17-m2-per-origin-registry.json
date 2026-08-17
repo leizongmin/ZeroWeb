@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 per-origin IndexedDB registry",
+  "backend": "zero-storage::StorageManager",
+  "capabilities": [
+    "same-origin reopen",
+    "cross-origin isolation",
+    "version validation and upgrade",
+    "database deletion",
+    "origin-scoped clearing",
+    "global IndexedDB clearing",
+    "stable database name ordering"
+  ],
+  "tests": {
+    "targeted": 2,
+    "pass": 2,
+    "fail": 0
+  },
+  "remaining": [
+    "engine wire contract",
+    "WebView/browser/renderer handler registration",
+    "page API routing",
+    "persistence"
+  ]
+}

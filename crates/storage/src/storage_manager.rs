@@ -1,18 +1,22 @@
-//! 存储管理器 — 管理多个源的 localStorage/sessionStorage。
+//! 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
 
 use std::collections::HashMap;
 
+use crate::StorageError;
+use crate::indexed_db::IdbDatabase;
 use crate::local_storage::{StorageType, WebStorage};
 
 /// localStorage 默认最大容量（5 MB）。
 const DEFAULT_MAX_SIZE: usize = 5 * 1024 * 1024;
 
-/// 存储管理器 — 管理多个源的 localStorage/sessionStorage。
+/// 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
 pub struct StorageManager {
     /// localStorage 实例（按 origin 分组）。
     local_stores: HashMap<String, WebStorage>,
     /// sessionStorage 实例（按 origin 分组）。
     session_stores: HashMap<String, WebStorage>,
+    /// IndexedDB 数据库（按 origin、数据库名分组）。
+    indexed_databases: HashMap<String, HashMap<String, IdbDatabase>>,
     /// 每个源的最大容量。
     default_max_size: usize,
 }
@@ -28,6 +32,7 @@ impl StorageManager {
         Self {
             local_stores: HashMap::new(),
             session_stores: HashMap::new(),
+            indexed_databases: HashMap::new(),
             default_max_size,
         }
     }
@@ -46,6 +51,57 @@ impl StorageManager {
             .or_insert_with(|| WebStorage::new_with_max_size(StorageType::Session, origin, self.default_max_size))
     }
 
+    /// 打开指定源的 IndexedDB 数据库。
+    ///
+    /// 数据库不存在时按 `version` 创建；已存在时拒绝降级，升级版本会保留现有 schema 与数据。
+    pub fn open_indexed_db(
+        &mut self,
+        origin: &str,
+        name: &str,
+        version: u32,
+    ) -> Result<&mut IdbDatabase, StorageError> {
+        if version == 0 {
+            return Err(StorageError::Database(
+                "IndexedDB version must be greater than zero".to_string(),
+            ));
+        }
+        let databases = self.indexed_databases.entry(origin.to_string()).or_default();
+        let database = databases
+            .entry(name.to_string())
+            .or_insert_with(|| IdbDatabase::new(name, version));
+        if version < database.version {
+            return Err(StorageError::Database(format!(
+                "Requested version {version} is lower than current version {}",
+                database.version
+            )));
+        }
+        database.version = version;
+        Ok(database)
+    }
+
+    /// 删除指定源的 IndexedDB 数据库，返回数据库是否存在。
+    pub fn delete_indexed_db(&mut self, origin: &str, name: &str) -> bool {
+        let Some(databases) = self.indexed_databases.get_mut(origin) else {
+            return false;
+        };
+        let removed = databases.remove(name).is_some();
+        if databases.is_empty() {
+            self.indexed_databases.remove(origin);
+        }
+        removed
+    }
+
+    /// 返回指定源的 IndexedDB 数据库名称。
+    pub fn indexed_db_names(&self, origin: &str) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .indexed_databases
+            .get(origin)
+            .map(|databases| databases.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        names.sort_unstable();
+        names
+    }
+
     /// 清除指定源的所有存储。
     pub fn clear_origin(&mut self, origin: &str) {
         if let Some(store) = self.local_stores.get_mut(origin) {
@@ -54,6 +110,7 @@ impl StorageManager {
         if let Some(store) = self.session_stores.get_mut(origin) {
             store.clear();
         }
+        self.indexed_databases.remove(origin);
     }
 
     /// 清除所有 localStorage。
@@ -69,6 +126,11 @@ impl StorageManager {
             store.clear();
         }
     }
+
+    /// 删除所有源的 IndexedDB 数据库。
+    pub fn clear_all_indexed_db(&mut self) {
+        self.indexed_databases.clear();
+    }
 }
 
 impl Default for StorageManager {
@@ -80,6 +142,7 @@ impl Default for StorageManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::indexed_db::IdbKey;
 
     #[test]
     fn test_manager_local_storage() {
@@ -247,5 +310,51 @@ mod tests {
         assert_eq!(manager.session_storage(origin).len(), 2);
         assert_eq!(manager.session_storage(origin).get("draft"), Some("unsaved"));
         assert_eq!(manager.session_storage(origin).get("tab"), Some("editor"));
+    }
+
+    #[test]
+    fn test_manager_indexed_db_reopen_version_and_origin_isolation() {
+        let mut manager = StorageManager::new();
+        let key = IdbKey::String("item-1".to_string());
+        {
+            let database = manager.open_indexed_db("https://a.example", "app", 1).unwrap();
+            database.create_object_store("items", None, false).unwrap();
+            database
+                .put("items", serde_json::json!({"value": "a"}), Some(key.clone()))
+                .unwrap();
+        }
+
+        let reopened = manager.open_indexed_db("https://a.example", "app", 1).unwrap();
+        assert_eq!(reopened.get("items", &key).unwrap().value["value"], "a");
+
+        let isolated = manager.open_indexed_db("https://b.example", "app", 1).unwrap();
+        assert!(!isolated.has_store("items"));
+
+        assert!(manager.open_indexed_db("https://a.example", "app", 0).is_err());
+        let upgraded = manager.open_indexed_db("https://a.example", "app", 2).unwrap();
+        assert_eq!(upgraded.version, 2);
+        assert_eq!(upgraded.get("items", &key).unwrap().value["value"], "a");
+        assert!(manager.open_indexed_db("https://a.example", "app", 1).is_err());
+    }
+
+    #[test]
+    fn test_manager_indexed_db_delete_and_clear_are_origin_scoped() {
+        let mut manager = StorageManager::new();
+        manager.open_indexed_db("https://a.example", "one", 1).unwrap();
+        manager.open_indexed_db("https://a.example", "two", 1).unwrap();
+        manager.open_indexed_db("https://b.example", "one", 1).unwrap();
+
+        assert_eq!(manager.indexed_db_names("https://a.example"), vec!["one", "two"]);
+        assert!(manager.delete_indexed_db("https://a.example", "one"));
+        assert!(!manager.delete_indexed_db("https://a.example", "missing"));
+        assert_eq!(manager.indexed_db_names("https://a.example"), vec!["two"]);
+        assert_eq!(manager.indexed_db_names("https://b.example"), vec!["one"]);
+
+        manager.clear_origin("https://a.example");
+        assert!(manager.indexed_db_names("https://a.example").is_empty());
+        assert_eq!(manager.indexed_db_names("https://b.example"), vec!["one"]);
+
+        manager.clear_all_indexed_db();
+        assert!(manager.indexed_db_names("https://b.example").is_empty());
     }
 }
