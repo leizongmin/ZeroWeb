@@ -865,3 +865,51 @@ fn test_open_cursor_on_index_not_found() {
     let result = db.open_cursor_on_index("store", "nope", None);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_graph_wire_indexes_use_projection() {
+    let mut db = IdbDatabase::new("test", 1);
+    db.create_object_store("store", None, false).unwrap();
+    db.create_index("store", "label", "label", false, false).unwrap();
+    db.create_index_with_key_path(
+        "store",
+        "identity",
+        IdbIndexKeyPath::Sequence(vec!["profile.first".into(), "profile.last".into()]),
+        false,
+        false,
+    )
+    .unwrap();
+
+    let graph = json!({
+        "__zwIdbType": "graph",
+        "root": {"__zwIdbType": "ref", "value": 0},
+        "nodes": [{
+            "kind": "object",
+            "value": [["self", {"__zwIdbType": "ref", "value": 0}]]
+        }],
+        "indexProjection": {
+            "label": "graph",
+            "profile": {"first": "Katherine", "last": "Johnson"},
+            "self": {"__zwIdbType": "unindexable"}
+        }
+    });
+    db.add("store", graph.clone(), Some(IdbKey::Number(1.0))).unwrap();
+
+    let by_label = db
+        .get_from_index("store", "label", &IdbKey::String("graph".into()))
+        .unwrap();
+    assert_eq!(by_label.len(), 1);
+    assert_eq!(by_label[0].value, graph);
+
+    let by_identity = db
+        .get_from_index(
+            "store",
+            "identity",
+            &IdbKey::Array(vec![
+                IdbKey::String("Katherine".into()),
+                IdbKey::String("Johnson".into()),
+            ]),
+        )
+        .unwrap();
+    assert_eq!(by_identity.len(), 1);
+}

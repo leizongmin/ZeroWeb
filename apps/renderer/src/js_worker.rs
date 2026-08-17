@@ -803,6 +803,16 @@ mod tests {
                        profile: {first: "Grace", last: "Hopper"},
                        bytes: new Uint8Array([4])
                      });
+                     var shared = {value: 7};
+                     var graph = {
+                       id: new Date(30),
+                       label: "graph",
+                       profile: {first: "Katherine", last: "Johnson"},
+                       left: shared,
+                       right: shared
+                     };
+                     graph.self = graph;
+                     store.put(graph);
                    };
                    created.onsuccess = function () { globalThis.__created = true; };"#,
             )
@@ -823,6 +833,9 @@ mod tests {
                      var read = index.get("stored");
                      var compoundRead =
                        tx.objectStore("items").index("by_identity").get(["Ada", "Lovelace"]);
+                     var graphRead = index.get("graph");
+                     var graphCompoundRead =
+                       tx.objectStore("items").index("by_identity").get(["Katherine", "Johnson"]);
                      var labels = [];
                      read.onsuccess = function () {
                        globalThis.__restoredRecord =
@@ -834,6 +847,15 @@ mod tests {
                      compoundRead.onsuccess = function () {
                        globalThis.__compound = compoundRead.result.label;
                      };
+                     graphRead.onsuccess = function () {
+                       globalThis.__graph =
+                         (graphRead.result.self === graphRead.result) + ":" +
+                         (graphRead.result.left === graphRead.result.right) + ":" +
+                         graphRead.result.left.value;
+                     };
+                     graphCompoundRead.onsuccess = function () {
+                       globalThis.__graphCompound = graphCompoundRead.result.label;
+                     };
                      var cursor = index.openCursor();
                      cursor.onsuccess = function () {
                        if (cursor.result) {
@@ -842,7 +864,8 @@ mod tests {
                        } else {
                          globalThis.__restored =
                            globalThis.__restoredRecord + ":" + labels.join(",") + ":" +
-                           globalThis.__compound;
+                           globalThis.__compound + ":" + globalThis.__graph + ":" +
+                           globalThis.__graphCompound;
                        }
                      };
                    };"#,
@@ -850,7 +873,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
-            "2:true:stored:10:3:alpha,stored:stored"
+            "2:true:stored:10:3:alpha,graph,stored:stored:true:true:7:graph"
         );
         worker.shutdown();
     }

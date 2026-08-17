@@ -402,6 +402,15 @@ impl IdbIndex {
 
 // https://w3c.github.io/IndexedDB/#extract-key-from-value-using-key-path
 fn value_at_key_path<'a>(value: &'a serde_json::Value, key_path: &str) -> Option<&'a serde_json::Value> {
+    let value = if let serde_json::Value::Object(object) = value {
+        if object.get("__zwIdbType").and_then(|value| value.as_str()) == Some("graph") {
+            object.get("indexProjection")?
+        } else {
+            value
+        }
+    } else {
+        value
+    };
     if key_path.is_empty() {
         Some(value)
     } else {

@@ -2641,8 +2641,86 @@
     throw new globalThis.DOMException('Invalid IndexedDB key response.', 'UnknownError');
   }
 
+  function _zwIDBNeedsGraph(value, seen) {
+    if (value === null || typeof value !== 'object') return false;
+    if (seen.has(value)) return true;
+    seen.add(value);
+    if (value instanceof Date
+        || (typeof Blob !== 'undefined' && value instanceof Blob)
+        || (typeof ArrayBuffer !== 'undefined'
+            && (value instanceof ArrayBuffer || ArrayBuffer.isView(value)))) return false;
+    var keys = Object.keys(value);
+    for (var i = 0; i < keys.length; i++) {
+      if (_zwIDBNeedsGraph(value[keys[i]], seen)) return true;
+    }
+    return false;
+  }
+
+  function _zwIDBGraphProjection(value, stack) {
+    if (value === null || typeof value !== 'object') return _zwIDBValueToWire(value, []);
+    if (value instanceof Date
+        || (typeof Blob !== 'undefined' && value instanceof Blob)
+        || (typeof ArrayBuffer !== 'undefined'
+            && (value instanceof ArrayBuffer || ArrayBuffer.isView(value)))) {
+      return _zwIDBValueToWire(value, []);
+    }
+    if (stack.indexOf(value) !== -1) return { __zwIdbType: 'unindexable' };
+    stack.push(value);
+    var projection;
+    if (Array.isArray(value)) {
+      projection = value.map(function (entry) {
+        return _zwIDBGraphProjection(entry, stack);
+      });
+    } else {
+      projection = {};
+      Object.keys(value).forEach(function (key) {
+        projection[key] = _zwIDBGraphProjection(value[key], stack);
+      });
+    }
+    stack.pop();
+    return projection;
+  }
+
+  function _zwIDBValueToGraphWire(value) {
+    var seen = new Map();
+    var nodes = [];
+    function encode(entry) {
+      if (entry === null || typeof entry !== 'object') return _zwIDBValueToWire(entry, []);
+      if (seen.has(entry)) return { __zwIdbType: 'ref', value: seen.get(entry) };
+      var id = nodes.length;
+      seen.set(entry, id);
+      var node = {};
+      nodes.push(node);
+      if (Array.isArray(entry)) {
+        node.kind = 'array';
+        node.value = entry.map(encode);
+      } else if (entry instanceof Date
+          || (typeof Blob !== 'undefined' && entry instanceof Blob)
+          || (typeof ArrayBuffer !== 'undefined'
+              && (entry instanceof ArrayBuffer || ArrayBuffer.isView(entry)))) {
+        node.kind = 'value';
+        node.value = _zwIDBValueToWire(entry, []);
+      } else {
+        node.kind = 'object';
+        node.value = Object.keys(entry).map(function (key) {
+          return [key, encode(entry[key])];
+        });
+      }
+      return { __zwIdbType: 'ref', value: id };
+    }
+    return {
+      __zwIdbType: 'graph',
+      root: encode(value),
+      nodes: nodes,
+      indexProjection: _zwIDBGraphProjection(value, [])
+    };
+  }
+
   function _zwIDBValueToWire(value, seen) {
-    seen = seen || [];
+    if (!seen) {
+      if (_zwIDBNeedsGraph(value, new Set())) return _zwIDBValueToGraphWire(value);
+      seen = [];
+    }
     if (value === undefined) return { __zwIdbType: 'undefined' };
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
     if (typeof value === 'number') {
@@ -2707,6 +2785,36 @@
     return wire;
   }
 
+  function _zwIDBValueFromGraphWire(wire) {
+    var graphNodes = wire.nodes || [];
+    var values = graphNodes.map(function (node) {
+      if (node.kind === 'array') return [];
+      if (node.kind === 'object') return {};
+      if (node.kind === 'value') return _zwIDBValueFromWire(node.value);
+      throw new globalThis.DOMException('Invalid IndexedDB graph node.', 'UnknownError');
+    });
+    function decode(entry) {
+      if (entry && entry.__zwIdbType === 'ref') {
+        var id = Number(entry.value);
+        if (id < 0 || id >= values.length || Math.floor(id) !== id) {
+          throw new globalThis.DOMException('Invalid IndexedDB graph reference.', 'UnknownError');
+        }
+        return values[id];
+      }
+      return _zwIDBValueFromWire(entry);
+    }
+    graphNodes.forEach(function (node, id) {
+      if (node.kind === 'array') {
+        (node.value || []).forEach(function (entry) { values[id].push(decode(entry)); });
+      } else if (node.kind === 'object') {
+        (node.value || []).forEach(function (entry) {
+          values[id][entry[0]] = decode(entry[1]);
+        });
+      }
+    });
+    return decode(wire.root);
+  }
+
   function _zwIDBValueFromWire(wire) {
     if (wire === null || typeof wire !== 'object') return wire;
     if (Array.isArray(wire)) {
@@ -2731,6 +2839,7 @@
       try { return new View(new Uint8Array(wire.value || []).buffer); }
       catch (_) { return new Uint8Array(wire.value || []); }
     }
+    if (wire.__zwIdbType === 'graph') return _zwIDBValueFromGraphWire(wire);
     if (wire.__zwIdbType === 'array') {
       return (wire.value || []).map(function (entry) { return _zwIDBValueFromWire(entry); });
     }

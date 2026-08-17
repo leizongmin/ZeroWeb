@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M2 index/cursor-entry routing）
+**最后更新**: 2026-08-17（M2 cyclic structured-clone graph wire）
 
 ---
 
@@ -42,6 +42,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - 🟨 M2 页面接线：factory/store/index/query 与 cursor entries 已走 Rust；cursor event/stepping 待迁移
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
 - ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
+- ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
 
 ## 缺口清单
 
@@ -55,8 +56,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 ## 下一步计划
 
 1. **M2**：把 cursor stepping 与 request event 时序切到 Rust-backed 状态
-2. **M2**：补 cyclic structured-clone graph wire
-3. **M3**：接入跨进程 ownership、per-origin 落盘与跨会话读回
+2. **M3**：接入跨进程 ownership、per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -66,7 +66,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 166/166 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 index/query + cursor entries routed |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 graph wire complete；cursor event/stepping pending |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
@@ -101,7 +101,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m2-date-key-wire.{md,json}`、
   `evidence/2026-08-17-m2-transaction-wire.{md,json}`、
   `evidence/2026-08-17-m2-object-store-routing.{md,json}`、
-  `evidence/2026-08-17-m2-index-cursor-routing.{md,json}`
+  `evidence/2026-08-17-m2-index-cursor-routing.{md,json}`、
+  `evidence/2026-08-17-m2-structured-clone-graph.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

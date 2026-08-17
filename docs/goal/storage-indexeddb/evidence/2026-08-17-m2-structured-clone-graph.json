@@ -1,0 +1,35 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 cyclic and shared-reference structured-clone graph wire",
+  "capabilities": [
+    "graph node and reference encoding",
+    "two-phase graph decoding",
+    "cyclic object identity",
+    "shared object identity",
+    "index projection",
+    "string and compound index extraction"
+  ],
+  "tests": {
+    "rust_graph_projection": "pass",
+    "renderer_cross_document_graph": "pass",
+    "imported_wpt": {
+      "files": 21,
+      "pass": 166,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass",
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_budgets": "pass"
+    }
+  },
+  "remaining": [
+    "Rust-backed cursor stepping and request event timing",
+    "database versions above u32",
+    "cross-process ownership",
+    "persistence"
+  ]
+}
