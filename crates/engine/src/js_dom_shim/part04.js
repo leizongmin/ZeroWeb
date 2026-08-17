@@ -372,6 +372,24 @@
           }
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
+        // js-dom M3 R95：`<template>`.content（HTMLTemplateElement，spec `the-template-element`：
+        // 模板内容放 inert DocumentFragment）。lit-html 的 Template.createElement 路径：
+        // `createElement('template'); t.innerHTML = html; return t`，随后 `t.content` 取解析
+        // 子树 + TreeWalker 走 parts——content 缺失则 lit render 管线死寂。实现：惰性轻量
+        // fragment 视图——childNodes 直读 `_handleChildren[handle]`（innerHTML= setter 已存
+        // `_zwFragmentAdded` 解析树，与 R83 childNodes 融合视图同源）；firstChild/lastChild
+        // 派生；nodeType=11。
+        if (prop === 'content' && handle && _realTag(sel, handle) === 'TEMPLATE') {
+          var _tplContent = {
+            nodeType: 11,
+            nodeName: '#document-fragment',
+            get childNodes() { return _handleChildren[handle] || []; },
+            get firstChild() { var k = _handleChildren[handle] || []; return k.length ? k[0] : null; },
+            get lastChild() { var k = _handleChildren[handle] || []; return k.length ? k[k.length - 1] : null; },
+            hasChildNodes: function () { return (_handleChildren[handle] || []).length > 0; },
+          };
+          return _tplContent;
+        }
         if (prop === 'innerHTML') {
           // js-dom M4 R83：handle 元素（createElement 容器）——host 回调只反映
           // SetInnerHtmlOnHandle，appendChild 建的子树不可见（WPT ChildNode-before/after：

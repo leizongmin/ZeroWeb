@@ -3642,6 +3642,22 @@
         return false;
       },
       get: function(_t, prop) {
+        // js-dom M3 R95：`constructor` 顶部短路（原型链 own 命中，限 8 层）。真实 DOM 中
+        // `el.constructor` 沿原型链命中（custom element 返用户类）——lit ReactiveElement 的
+        // 实例方法 `_$E_` 读 `this.constructor.elementProperties`（e2e 实证：旧 get trap 对
+        // 'constructor' 落到中间分支返 undefined → `undefined.elementProperties` TypeError，
+        // ctor 链中断、用户 ctor 体不执行）。放顶部（先于一切属性分支）——中间分支会先吞掉
+        // 该名（R93 通用回落太靠后，赶不上）。
+        if (prop === 'constructor') {
+          var _cChain = Object.getPrototypeOf(_makeProxy(sel, handle));
+          var _cGuard = 0;
+          while (_cChain && _cGuard < 8) {
+            var _cDesc = Object.getOwnPropertyDescriptor(_cChain, 'constructor');
+            if (_cDesc) return _cDesc.value;
+            _cChain = Object.getPrototypeOf(_cChain);
+            _cGuard++;
+          }
+        }
         // QuickJS Proxy ToPrimitive 差异（2026-08-08）：V8 对 get(Symbol.toPrimitive)
         // 返回 undefined 时回退默认 valueOf/toString；QuickJS 直接抛 TypeError: toPrimitive
         //（createElement handle proxy 被隐式字符串化——appendChild/observer id 等——
