@@ -2723,7 +2723,12 @@
         // R3038/R3041：reflected unsigned-long（numeric）属性读（colSpan/rowSpan/maxLength/minLength/cols/rows/start）。
         // parseInt 内容属性 → number；缺省/不可解析 → entry.d（spec default）；colSpan/rowSpan <1 → 1（min）。
         // 注：TABLE/THEAD/TBODY/TFOOT 的 `.rows` 在更早分支（part03）返行集合——此处仅对 textarea 命中（table 已 return）。
-        var _ruEntry = _REFLECTED_UINT[prop];
+        // js-dom M3 R96：查表改 own-property 判定——裸 `_REFLECTED_UINT[prop]` 对 Object.prototype 继承名
+        //（hasOwnProperty/valueOf/toLocaleString/isPrototypeOf/propertyIsEnumerable/constructor）返回 truthy
+        // 函数 → `if (_ruEntry)` 误入 → `parseInt(_ruEntry.a=undefined)`=NaN → `return undefined` 提前吞掉
+        // 这些名字，R93 原型链回落不可达（lit `this.enableUpdating.call(this)` 前的 hasOwnProperty 探测、
+        // 任何 `el.valueOf` 读全部返 undefined）。
+        var _ruEntry = Object.prototype.hasOwnProperty.call(_REFLECTED_UINT, prop) ? _REFLECTED_UINT[prop] : null;
         if (_ruEntry) {
           var _ruRaw = handle
             ? __zw_get_attr_handle(handle, _ruEntry.a)

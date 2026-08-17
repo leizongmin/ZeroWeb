@@ -2472,6 +2472,85 @@
       for (var i = attrs.length - 1; i >= 0; i--) { if (attrs[i].name === n) attrs.splice(i, 1); }
       _zwMReflectIdl(node, n);
     };
+    // js-dom M3 R96：setAttributeNS（WPT attributes.html 非 HTML 文档变体在 detached doc 元素上
+    // 调 `el.setAttributeNS(ns, qn, v)`——旧缺方法抛 TypeError 整 subtest 崩）。最小语义：忽略 ns 按
+    // qualifiedName 存（与元素 proxy NS 族 `_nsQualName` 的「忽略 ns 按限定名」既有近似一致）。
+    node.setAttributeNS = function (_ns, qn, v) { node.setAttribute(qn, v); };
+    // js-dom M3 R96：`.attributes` NamedNodeMap 视图（WPT attributes.html "include all qualified
+    // names"——`Object.getOwnPropertyNames(el.attributes)` 期望 [indices…, qualified names…]，
+    // 旧裸 attrs 数组把方法名（length/item/…）当 own keys + named getter 语义全无）。Lazy
+    // accessor（每次读返新 Proxy，live 反映 attrs 数组）：length/item/getNamedItem/索引读/named
+    // getter/ownKeys（indices+names）/gOPD。Attr 条目经 `_zwMakeAttr`（instanceof Attr 断言面）。
+    // 内部 `node.attributes` 数组消费点（2401 序列化 / 285 deepClone）改读 `_zwAttrsRaw()`。
+    var _zwAttrsRaw = function () { return attrs; };
+    Object.defineProperty(node, 'attributes', {
+      get: function () {
+        return new Proxy({}, {
+          get: function (_t, p) {
+            if (p === 'length') return attrs.length;
+            if (p === 'item') return function (i) { var k = i | 0; return k >= 0 && k < attrs.length ? _zwMakeAttr(attrs[k].name, attrs[k].value, node) : null; };
+            if (p === 'getNamedItem') return function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return _zwMakeAttr(attrs[i].name, attrs[i].value, node); return null; };
+            // R3022/R3023 mutable tree：set/removeNamedItem 经 node.setAttribute/removeAttribute
+            //（attrs 数组真变 + IDL 反射），返旧 Attr（_zwMakeAttr 真实例）。
+            if (p === 'setNamedItem') return function (a) {
+              if (!a || a.name == null) return null;
+              var n = String(a.name);
+              var old = null;
+              for (var si = 0; si < attrs.length; si++) if (attrs[si].name === n) { old = _zwMakeAttr(n, attrs[si].value, node); break; }
+              node.setAttribute(n, a.value != null ? String(a.value) : '');
+              return old;
+            };
+            if (p === 'removeNamedItem') return function (n) {
+              n = String(n);
+              var ex = null;
+              for (var ri = 0; ri < attrs.length; ri++) if (attrs[ri].name === n) { ex = _zwMakeAttr(n, attrs[ri].value, node); break; }
+              node.removeAttribute(n);
+              return ex;
+            };
+            var idx = parseInt(p, 10);
+            if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length) {
+              return _zwMakeAttr(attrs[idx].name, attrs[idx].value, node);
+            }
+            if (typeof p === 'string') {
+              for (var j = 0; j < attrs.length; j++) if (attrs[j].name === p) return _zwMakeAttr(attrs[j].name, attrs[j].value, node);
+              // Object.prototype 方法回落（R96 同款——for-in own 过滤的 hasOwnProperty 可用）。
+              if (p !== 'constructor') {
+                var _zwOd = Object.getOwnPropertyDescriptor(Object.prototype, p);
+                if (_zwOd) return _zwOd.value;
+              }
+            }
+            return undefined;
+          },
+          ownKeys: function () {
+            var keys = [];
+            for (var i = 0; i < attrs.length; i++) keys.push(String(i));
+            for (var j = 0; j < attrs.length; j++) keys.push(attrs[j].name);
+            return keys;
+          },
+          // R3018 域：Array 泛型方法（slice/forEach）经 `k in O`（HasProperty）判 hole——缺 has
+          // trap 落 target {} 恒 false，索引被当空洞跳过（slice 出稀疏数组，ac[j] undefined）。
+          // 与 _attributesProxy 的 has trap 同语义（length + 有效索引）。
+          has: function (_t, p) {
+            if (p === 'length') return true;
+            var idx = parseInt(p, 10);
+            return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length;
+          },
+          getOwnPropertyDescriptor: function (_t, p) {
+            var idx = parseInt(p, 10);
+            if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length) {
+              return { value: _zwMakeAttr(attrs[idx].name, attrs[idx].value, node), writable: false, enumerable: true, configurable: true };
+            }
+            if (typeof p === 'string') {
+              for (var j = 0; j < attrs.length; j++) if (attrs[j].name === p) {
+                return { value: _zwMakeAttr(attrs[j].name, attrs[j].value, node), writable: false, enumerable: false, configurable: true };
+              }
+            }
+            return undefined;
+          }
+        });
+      },
+      configurable: true
+    });
     // R86：迭代器 retarget 通知（先于树状态变化——pred/succ 读移除前兄弟/父链）。
     node.removeChild = function (c) { var i = node.childNodes.indexOf(c); if (i >= 0) { if (globalThis._zwNotifyIteratorsRemove) { try { globalThis._zwNotifyIteratorsRemove(c); } catch (_e86d) {} } node.childNodes.splice(i, 1); c.parentNode = null; } return c; };
     // R57（FV M1）：createElement 路径的 Constraint Validation API（validator.js
@@ -3370,6 +3449,32 @@
         return n ? n.split('|').filter(Boolean) : [];
       } catch (_e) { return []; }
     };
+    // js-dom M3 R96：supported property names 的 HTML 文档规则（WPT attributes.html "only include
+    // all-lowercase qualified names"）——**HTML 文档 + HTML 命名空间元素**的 named keys（ownKeys 的
+    // 名字段 / named getter / gOPD）仅含全小写 qualified name；**索引语义不变**（length/item/索引读
+    // 仍覆盖全部属性——期望数组 ["0".."5","g:h","j"] 索引 0-5 全可达）。非 HTML 文档（detached XML
+    // doc）或非 HTML ns 元素（createElementNS(""/其它 ns)，即使主文档）保留全部原名（"include all
+    // qualified names" 两变体）。HTML-ns 判定：仅 createElementNS 元素带 `_nsHandles` 条目——无条目
+    // = 主文档 createElement（隐式 HTML ns）；文档 HTML-ness 经 ownerDocument.contentType。
+    var supportedNames = function() {
+      var names = readNames();
+      var _apDoc = null;
+      try { _apDoc = _makeProxy(sel, handle).ownerDocument; } catch (_eD) {}
+      var _apDocHtml = !(_apDoc && typeof _apDoc.contentType === 'string'
+        && _apDoc.contentType.indexOf('html') < 0);
+      var _apNs = handle && _nsHandles[handle] ? _nsHandles[handle].namespace
+        : 'http://www.w3.org/1999/xhtml'; // 无 NS 条目 = createElement（HTML ns）
+      if (_apDocHtml && _apNs === 'http://www.w3.org/1999/xhtml') {
+        names = names.filter(function (nm) {
+          for (var ci = 0; ci < nm.length; ci++) {
+            var cc = nm.charAt(ci);
+            if (cc >= 'A' && cc <= 'Z') return false;
+          }
+          return true;
+        });
+      }
+      return names;
+    };
     var attrObj = function(name) {
       // R3003：sel 用 latest-wins（`__zw_get_attr_lw`）反映同批 setAttribute（旧 `__zw_get_attr` 纯快照 → Attr.value
       // stale）；handle 用 `__zw_get_attr_handle`（latest-wins from mutations）。
@@ -3441,9 +3546,19 @@
         }
         // js-dom M4 R44：named getter（spec supported property names）——`attrs.id` 返对应
         // Attr 节点（与 ownKeys/getOwnPropertyDescriptor 枚举一致；WPT namednodemap +
-        // attrs.id.value 访问模式）。
-        if (typeof p === 'string' && names.indexOf(p) >= 0) {
+        // attrs.id.value 访问模式）。R96：named 集合用 supportedNames()（HTML 文档只含全小写
+        // qualified name）。
+        if (typeof p === 'string' && supportedNames().indexOf(p) >= 0) {
           return attrObj(p);
+        }
+        // js-dom M3 R96：Object.prototype 方法回落（hasOwnProperty/valueOf/isPrototypeOf 等）。
+        // real NamedNodeMap 经原型链继承 Object.prototype——`obj.hasOwnProperty(prop)`（WPT
+        // attributes.html getEnumerableOwnProps1 的 for-in own 过滤）可用。Proxy target {}
+        // 的真实原型即 Object.prototype，miss 名直接沿 target 原型链查（不经元素 getPrototypeOf
+        // trap——NamedNodeMap 无 per-node 链语义）。
+        if (typeof p === 'string' && p !== 'constructor') {
+          var _anDesc = Object.getOwnPropertyDescriptor(Object.prototype, p);
+          if (_anDesc) return _anDesc.value;
         }
         return undefined;
       },
@@ -3462,9 +3577,10 @@
       // 键须存在可描述）——descriptor 返 {enumerable, configurable: true} 数据属性近似。
       ownKeys: function() {
         var names = readNames();
+        var supported = supportedNames();
         var keys = [];
         for (var i = 0; i < names.length; i++) keys.push(String(i));
-        for (var j = 0; j < names.length; j++) keys.push(names[j]);
+        for (var j = 0; j < supported.length; j++) keys.push(supported[j]);
         return keys;
       },
       getOwnPropertyDescriptor: function(_t, p) {
@@ -3476,8 +3592,12 @@
         if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
           return { value: attrObj(names[idx]), writable: false, enumerable: true, configurable: true };
         }
-        if (names.indexOf(String(p)) >= 0) {
-          return { value: attrObj(String(p)), writable: false, enumerable: true, configurable: true };
+        if (supportedNames().indexOf(String(p)) >= 0) {
+          // js-dom M3 R96：named 属性 descriptor 改 enumerable:false（spec named properties 的
+          // 平台对象枚举语义——WPT attributes.html getEnumerableOwnProps1 的 for-in own 过滤期望
+          // 只见数值索引 ["0","1"]，named（"a","b"）不进 for-in 枚举）。getOwnPropertyNames 顺序
+          // （R44 用例面）不依赖 enumerability，保持 3/3 pass。
+          return { value: attrObj(String(p)), writable: false, enumerable: false, configurable: true };
         }
         return undefined;
       }

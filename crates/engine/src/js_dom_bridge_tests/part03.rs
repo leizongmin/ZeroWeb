@@ -2871,8 +2871,10 @@ fn test_namednodemap_own_enumeration_r44() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__o3").unwrap().value,
-        "0,1,2,id,class,data-x",
-        "③ for-in 枚举到全部（descriptor enumerable）"
+        "0,1,2",
+        "③ for-in 只枚举数值索引（R96：named 属性 descriptor enumerable:false——spec named \
+        properties 平台对象枚举语义，WPT attributes.html getEnumerableOwnProps1 仲裁；\
+        getOwnPropertyNames ① 仍含 named，不依赖 enumerability）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__o4").unwrap().value,

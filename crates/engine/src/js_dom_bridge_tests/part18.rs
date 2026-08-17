@@ -1681,3 +1681,72 @@ fn r79_parent_element_of_document_element_is_null_but_parent_node_is_document() 
         "parentElement 链从 body 上行止于 html（不进 document），selectorFor 类遍历不再崩溃"
     );
 }
+
+
+// js-dom M3 R96：`_REFLECTED_UINT[prop]` 裸下标查表把 Object.prototype 继承名
+//（hasOwnProperty/valueOf/toLocaleString/isPrototypeOf/propertyIsEnumerable）当命中
+//（truthy 函数）→ `parseInt(entry.a=undefined)`=NaN → `return entry.d=undefined` 提前
+// 返回，R93 原型链回落不可达——CE 升级元素上 `el.hasOwnProperty`/`el.valueOf` 等读
+// undefined（lit ReactiveElement 的 hasOwnProperty 探测、Object.prototype 方法以元素为
+// receiver 的调用全部中断）。修复：own-property 判定。本测试断言修复后六名全可达
+//（typeof function + 调用语义正确 + expando 读写不受扰）。
+#[test]
+fn test_object_prototype_methods_reachable_on_element_r96() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='host'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    sandbox
+        .execute(
+            r#"
+class MyEl extends HTMLElement {
+  constructor() { super(); this._mark = 'ctor'; }
+  bump() { return 42; }
+}
+customElements.define('my-el', MyEl);
+var el = document.createElement('my-el');
+// 六个 Object.prototype 继承名 + valueOf 调用语义（返元素自身非 undefined→字符串化走 toString 分支）。
+globalThis.__r1 = typeof el.hasOwnProperty;
+globalThis.__r2 = typeof el.propertyIsEnumerable;
+globalThis.__r3 = typeof el.valueOf;
+globalThis.__r4 = typeof el.toLocaleString;
+globalThis.__r5 = typeof el.isPrototypeOf;
+globalThis.__r6 = String(el.hasOwnProperty('_mark'));
+globalThis.__r7 = String(el.hasOwnProperty('nope'));
+// expando（ctor 内赋值）读写不受扰。
+globalThis.__r8 = el._mark;
+el.enableUpdating = function() {};
+globalThis.__r9 = typeof el.enableUpdating;
+// reflected-uint 真命中不受扰（colSpan 缺省 1，spec default）。
+var td = document.createElement('td');
+globalThis.__r10 = String(td.colSpan);
+"#,
+        )
+        .unwrap();
+    let out = sandbox
+        .execute(
+            r#"['__r1','__r2','__r3','__r4','__r5','__r6','__r7','__r8','__r9','__r10']
+.map(function(n){ return String(globalThis[n]); }).join('|')"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "function|function|function|function|function|true|false|ctor|function|1",
+        "R96：Object.prototype 继承名经 get trap 原型链回落可达（own-property 查表修复），\
+        hasOwnProperty 调用语义正确，expando 与 reflected-uint 真命中不受扰"
+    );
+}
