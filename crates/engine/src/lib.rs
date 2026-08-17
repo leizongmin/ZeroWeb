@@ -42,6 +42,8 @@ pub mod fetch_bridge;
 #[cfg(feature = "script-runtime")]
 pub mod font_load_bridge;
 pub mod hit_test;
+#[cfg(feature = "script-runtime")]
+pub mod indexed_db_bridge;
 pub mod js_dom_bridge;
 #[cfg(feature = "script-runtime")]
 pub mod navigation_bridge;
@@ -69,6 +71,8 @@ pub use fetch_bridge::*;
 #[cfg(feature = "script-runtime")]
 pub use font_load_bridge::*;
 pub use hit_test::*;
+#[cfg(feature = "script-runtime")]
+pub use indexed_db_bridge::*;
 pub use js_dom_bridge::*;
 #[cfg(feature = "script-runtime")]
 pub use navigation_bridge::*;

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M2 per-origin registry）
+**最后更新**: 2026-08-17（M2 engine wire + shared handler）
 
 ---
 
@@ -39,22 +39,23 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Object Store getAll/getAllKeys：2 文件、34 subtest，34 Pass / 0 Fail（100.00%）
 - ✅ Index get/getKey/count：3 文件、20 subtest，20 Pass / 0 Fail（100.00%）
 - ✅ Index cursor continue：1 文件、8 subtest，8 Pass / 0 Fail（100.00%）
-- 🟨 M2 后端基础：StorageManager 已按 origin/name 持有真实 IdbDatabase；页面 wire 待接
+- 🟨 M2 接线基础：engine wire 与 page-runtime 共享 handler 已完成；三宿主注册与页面路由待接
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1 已导入 21 文件 |
-| I2 | 页面→Rust 引擎零接线 | 🟨 per-origin registry 已完成，wire 待接 |
+| I2 | 页面→Rust 引擎零接线 | 🟨 wire/handler 已完成，宿主注册与页面路由待接 |
 | I3 | 无持久化（重启即失） | ⬜ M3 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ⬜ M2/M3 |
 
 ## 下一步计划
 
-1. **M2**：实现 engine wire 契约与 WebView/browser/renderer 三宿主注册
-2. **M2**：把 open/schema/store CRUD 切到 Rust backend
-3. **M3**：接入 per-origin 落盘与跨会话读回
+1. **M2**：在 WebView/browser/renderer 三宿主注册共享 IndexedDB handler
+2. **M2**：把 open/schema 操作切到 Rust backend
+3. **M2**：补 Rust Date key 后把 store CRUD/cursor 切到 Rust backend
+4. **M3**：接入 per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -64,7 +65,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 166/166 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 per-origin registry |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 engine wire + shared handler |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
@@ -92,7 +93,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m1-getall-index-cursor-expansion.{md,json}`、
   `evidence/2026-08-17-m1-index-queries.{md,json}`、
   `evidence/2026-08-17-m1-second-slice-final.{md,json}`、
-  `evidence/2026-08-17-m2-per-origin-registry.{md,json}`
+  `evidence/2026-08-17-m2-per-origin-registry.{md,json}`、
+  `evidence/2026-08-17-m2-engine-wire-handler.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

@@ -9,6 +9,15 @@ use crate::local_storage::{StorageType, WebStorage};
 /// localStorage 默认最大容量（5 MB）。
 const DEFAULT_MAX_SIZE: usize = 5 * 1024 * 1024;
 
+/// IndexedDB 数据库摘要。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedDbInfo {
+    /// 数据库名称。
+    pub name: String,
+    /// 数据库版本。
+    pub version: u32,
+}
+
 /// 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
 pub struct StorageManager {
     /// localStorage 实例（按 origin 分组）。
@@ -79,6 +88,16 @@ impl StorageManager {
         Ok(database)
     }
 
+    /// 获取已存在的指定源 IndexedDB 数据库。
+    pub fn indexed_db(&self, origin: &str, name: &str) -> Option<&IdbDatabase> {
+        self.indexed_databases.get(origin)?.get(name)
+    }
+
+    /// 获取已存在的指定源 IndexedDB 数据库的可变引用。
+    pub fn indexed_db_mut(&mut self, origin: &str, name: &str) -> Option<&mut IdbDatabase> {
+        self.indexed_databases.get_mut(origin)?.get_mut(name)
+    }
+
     /// 删除指定源的 IndexedDB 数据库，返回数据库是否存在。
     pub fn delete_indexed_db(&mut self, origin: &str, name: &str) -> bool {
         let Some(databases) = self.indexed_databases.get_mut(origin) else {
@@ -100,6 +119,25 @@ impl StorageManager {
             .unwrap_or_default();
         names.sort_unstable();
         names
+    }
+
+    /// 返回指定源的 IndexedDB 数据库摘要，按名称排序。
+    pub fn indexed_db_info(&self, origin: &str) -> Vec<IndexedDbInfo> {
+        let mut info = self
+            .indexed_databases
+            .get(origin)
+            .map(|databases| {
+                databases
+                    .values()
+                    .map(|database| IndexedDbInfo {
+                        name: database.name.clone(),
+                        version: database.version,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        info.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        info
     }
 
     /// 清除指定源的所有存储。
@@ -341,10 +379,35 @@ mod tests {
     fn test_manager_indexed_db_delete_and_clear_are_origin_scoped() {
         let mut manager = StorageManager::new();
         manager.open_indexed_db("https://a.example", "one", 1).unwrap();
-        manager.open_indexed_db("https://a.example", "two", 1).unwrap();
+        manager.open_indexed_db("https://a.example", "two", 2).unwrap();
         manager.open_indexed_db("https://b.example", "one", 1).unwrap();
 
         assert_eq!(manager.indexed_db_names("https://a.example"), vec!["one", "two"]);
+        assert_eq!(
+            manager.indexed_db_info("https://a.example"),
+            vec![
+                IndexedDbInfo {
+                    name: "one".to_string(),
+                    version: 1,
+                },
+                IndexedDbInfo {
+                    name: "two".to_string(),
+                    version: 2,
+                },
+            ]
+        );
+        assert_eq!(manager.indexed_db("https://a.example", "two").unwrap().version, 2);
+        manager
+            .indexed_db_mut("https://a.example", "two")
+            .unwrap()
+            .create_object_store("items", None, false)
+            .unwrap();
+        assert!(
+            manager
+                .indexed_db("https://a.example", "two")
+                .unwrap()
+                .has_store("items")
+        );
         assert!(manager.delete_indexed_db("https://a.example", "one"));
         assert!(!manager.delete_indexed_db("https://a.example", "missing"));
         assert_eq!(manager.indexed_db_names("https://a.example"), vec!["two"]);

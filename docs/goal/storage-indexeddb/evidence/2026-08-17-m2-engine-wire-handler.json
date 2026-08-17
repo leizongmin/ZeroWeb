@@ -1,0 +1,45 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 engine wire and shared storage handler",
+  "wire": "zero-engine::__zw_idb",
+  "handler": "zero-page-runtime::indexed_db_handler",
+  "operations": [
+    "open",
+    "delete_database",
+    "databases",
+    "create_object_store",
+    "delete_object_store",
+    "store_names"
+  ],
+  "invariants": [
+    "origin derived from host page URL",
+    "opaque origins rejected",
+    "request size limited to 8 MiB",
+    "same-origin schema reuse",
+    "cross-origin isolation",
+    "version downgrade rejected"
+  ],
+  "tests": {
+    "storage_manager": {
+      "pass": 17,
+      "fail": 0
+    },
+    "engine_bridge": {
+      "pass": 3,
+      "fail": 0
+    },
+    "page_runtime_handler": {
+      "pass": 3,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "WebView/browser/renderer handler registration",
+    "page factory and schema routing",
+    "transaction and CRUD routing",
+    "persistence"
+  ]
+}
