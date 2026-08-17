@@ -197,6 +197,12 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ),
     ("IndexedDB/error-attributes.any.js", &["resources/support.js"]),
     ("IndexedDB/idbtransaction-oncomplete.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/transaction-deactivation-timing.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/event-dispatch-active-flag.any.js", &["resources/support.js"]),
+    ("IndexedDB/transaction-lifetime-empty.any.js", &["resources/support.js"]),
 ];
 
 /// WPT subtest status.
@@ -976,15 +982,14 @@ add_completion_callback(function() {
         var timers = globalThis.__zw_timers || [];\n\
         if (!timers.length) return;\n\
         var now = Date.now();\n\
-        var due = [], rest = [];\n\
+        var due = null, rest = [];\n\
         for (var i = 0; i < timers.length; i++) {\n\
-          if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
+          if (due === null && timers[i].at <= now) due = timers[i]; else rest.push(timers[i]);\n\
         }\n\
         globalThis.__zw_timers = rest;\n\
-        for (var j = 0; j < due.length; j++) {\n\
-          var fn = globalThis.__zw_pending[due[j].id];\n\
-          if (fn) { delete globalThis.__zw_pending[due[j].id]; try { fn(); } catch (_e) {} }\n\
-        }\n\
+        if (due === null) return;\n\
+        var fn = globalThis.__zw_pending[due.id];\n\
+        if (fn) { delete globalThis.__zw_pending[due.id]; try { fn(); } catch (_e) {} }\n\
       };\n";
     let harness = format!("<script>\n{timer_stub}{harness_source}\n{reporter}\n</script>");
     let mut html = replace_script_source(source, "/resources/testharness.js", &harness);

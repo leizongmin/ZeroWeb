@@ -48,6 +48,9 @@ FILES=(
   "IndexedDB/transaction-abort-request-error.any.js"
   "IndexedDB/error-attributes.any.js"
   "IndexedDB/idbtransaction-oncomplete.any.js"
+  "IndexedDB/transaction-deactivation-timing.any.js"
+  "IndexedDB/event-dispatch-active-flag.any.js"
+  "IndexedDB/transaction-lifetime-empty.any.js"
 )
 
 fetch_raw() {
@@ -113,7 +116,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (32 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (35 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -130,4 +133,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (32 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (35 cases, WPT ${WPT_REV})"

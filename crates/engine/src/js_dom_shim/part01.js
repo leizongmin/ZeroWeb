@@ -876,7 +876,14 @@
     var handle = _timerId++;
     if (typeof fn !== 'function') return handle;
     var id = _timerIdKey(handle);
-    globalThis.__zw_pending[id] = function() { try { fn(); } catch (_e) {} };
+    globalThis.__zw_pending[id] = function() {
+      try {
+        if (typeof globalThis.__zwBeforeTimerTask === 'function') {
+          globalThis.__zwBeforeTimerTask();
+        }
+        fn();
+      } catch (_e) {}
+    };
     if (typeof __zw_setTimeout === 'function') {
       try { __zw_setTimeout(id, delay | 0); return handle; }
       catch (_e) { delete globalThis.__zw_pending[id]; }
@@ -895,7 +902,12 @@
       // host 路径：回调内 re-arm 实现重复触发（host 仅实现单次定时器）。
       var arm = function() {
         globalThis.__zw_pending[id] = function() {
-          try { fn(); } catch (_e) {}
+          try {
+            if (typeof globalThis.__zwBeforeTimerTask === 'function') {
+              globalThis.__zwBeforeTimerTask();
+            }
+            fn();
+          } catch (_e) {}
           arm();
         };
         try { __zw_setTimeout(id, ms); }

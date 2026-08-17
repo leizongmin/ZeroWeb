@@ -2562,12 +2562,30 @@
 
   // R3081/M2：IndexedDB 页面表面。factory 与 object-store schema 经 `__zw_idb` 接 zero-storage；
   // CRUD/index/cursor records 暂留 JS，供后续按 key 类型逐步迁移。无宿主 callback 的低层 sandbox
-  // 测试保留 in-memory fallback。factory.open（异步 onupgradeneeded→onsuccess 经 microtask 派发）、
+  // 测试保留 in-memory fallback。factory.open（异步 onupgradeneeded→onsuccess 派发）、
   // db.createObjectStore/objectStoreNames/transaction/close、store.add/put/get/delete/clear/count/createIndex、
   // tx.objectStore/oncomplete/abort、index.get/openCursor。records 存内存 Map。
   // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：records 尚无持久化。
   // name → {version, stores, connections}
   var _idb_databases = {};
+  var _zwIDBTransactions = [];
+
+  function _zwIDBDeactivateTransactions(except) {
+    _zwIDBTransactions.forEach(function (transaction) {
+      if (transaction !== except) transaction._active = false;
+    });
+  }
+  function _zwIDBUntrackTransaction(transaction) {
+    var globalIndex = _zwIDBTransactions.indexOf(transaction);
+    if (globalIndex !== -1) _zwIDBTransactions.splice(globalIndex, 1);
+    var databaseIndex = transaction._db._transactions.indexOf(transaction);
+    if (databaseIndex !== -1) transaction._db._transactions.splice(databaseIndex, 1);
+  }
+  var _zwPreviousBeforeTimerTask = globalThis.__zwBeforeTimerTask;
+  globalThis.__zwBeforeTimerTask = function () {
+    if (typeof _zwPreviousBeforeTimerTask === 'function') _zwPreviousBeforeTimerTask();
+    _zwIDBDeactivateTransactions(null);
+  };
 
   function _zwIDBHostCall(request) {
     if (typeof globalThis.__zw_idb !== 'function') return undefined;
@@ -3056,30 +3074,64 @@
     _zwIDBInvoke(target, type, event, false);
   }
 
-  function _zwIDBDispatchRequestEvent(request, transaction, event) {
+  function _zwIDBRequestEventSteps(request, transaction, event) {
     var database = transaction && transaction.db;
+    var steps = [];
+    function addListeners(target, capture, group) {
+      var listeners = ((target && target._listeners && target._listeners[event.type]) || []).slice();
+      listeners.forEach(function (listener) {
+        if (listener.capture === capture) {
+          steps.push({ target: target, callback: listener.callback, group: group });
+        }
+      });
+    }
+    function addBubble(target, group) {
+      if (!target) return;
+      var handler = target['on' + event.type];
+      if (typeof handler === 'function') {
+        steps.push({ target: target, callback: handler, group: group });
+      }
+      addListeners(target, false, group);
+    }
+    if (database) addListeners(database, true, 0);
+    if (transaction) addListeners(transaction, true, 1);
+    addListeners(request, true, 2);
+    addBubble(request, 2);
+    if (event.bubbles) {
+      addBubble(transaction, 3);
+      addBubble(database, 4);
+    }
+    return steps;
+  }
+
+  function _zwIDBDispatchRequestEvent(request, transaction, event, done) {
+    var steps = _zwIDBRequestEventSteps(request, transaction, event);
+    var position = 0;
+    var currentGroup = -1;
+    var invoked = false;
     event.target = request;
-    if (database) {
-      event.currentTarget = database;
-      _zwIDBInvoke(database, event.type, event, true);
+    function next() {
+      if (invoked) _zwIDBDeactivateTransactions(transaction);
+      while (position < steps.length) {
+        var step = steps[position++];
+        if (event._immediatePropagationStopped) break;
+        if (event._propagationStopped && step.group !== currentGroup) break;
+        currentGroup = step.group;
+        event.currentTarget = step.target;
+        try {
+          if (typeof step.callback === 'function') step.callback.call(step.target, event);
+          else if (step.callback && typeof step.callback.handleEvent === 'function') {
+            step.callback.handleEvent(event);
+          }
+        } catch (_) {}
+        invoked = true;
+        event.currentTarget = null;
+        queueMicrotask(next);
+        return;
+      }
+      done();
     }
-    if (transaction && !event._propagationStopped) {
-      event.currentTarget = transaction;
-      _zwIDBInvoke(transaction, event.type, event, true);
-    }
-    if (!event._propagationStopped) {
-      event.currentTarget = request;
-      _zwIDBInvoke(request, event.type, event, true);
-      _zwIDBInvoke(request, event.type, event, false);
-    }
-    if (event.bubbles && transaction && !event._propagationStopped) {
-      event.currentTarget = transaction;
-      _zwIDBInvoke(transaction, event.type, event, false);
-    }
-    if (event.bubbles && database && !event._propagationStopped) {
-      event.currentTarget = database;
-      _zwIDBInvoke(database, event.type, event, false);
-    }
+    next();
   }
 
   function _zwIDBEmitTransactionEvent(transaction, type, bubbles) {
@@ -3101,7 +3153,7 @@
     }
   }
 
-  // 异步派发（经 microtask，使调用方先注册 handler 再触发——spec task 语义）。type ∈ success/error/upgradeneeded。
+  // Request 经 timer task 派发；每个 listener callback 之间保留 microtask checkpoint。
   function _zwIDBDispatch(req, type, result, event) {
     var transaction = req.transaction;
     if (transaction) transaction._pending++;
@@ -3127,19 +3179,22 @@
         req
       );
       if (ev._requestError) req.error = ev._requestError;
-      _zwIDBDispatchRequestEvent(req, transaction, ev);
-      dispatch.settled = true;
-      if (ev.type === 'error' && transaction && !ev.defaultPrevented && !transaction._aborted) {
-        transaction._requestError = req.error;
-        transaction.abort();
-      }
-      if (transaction) {
-        transaction._pending--;
-        var position = transaction._requestQueue.indexOf(dispatch);
-        if (position !== -1) transaction._requestQueue.splice(position, 1);
-      }
+      if (transaction) transaction._active = true;
+      _zwIDBDispatchRequestEvent(req, transaction, ev, function () {
+        dispatch.settled = true;
+        if (ev.type === 'error' && transaction && !ev.defaultPrevented && !transaction._aborted) {
+          transaction._requestError = req.error;
+          transaction.abort();
+        }
+        if (transaction) {
+          transaction._active = false;
+          transaction._pending--;
+          var position = transaction._requestQueue.indexOf(dispatch);
+          if (position !== -1) transaction._requestQueue.splice(position, 1);
+        }
+      });
     };
-    if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    if (typeof setTimeout === 'function') setTimeout(fire, 0);
     else fire();
   }
 
@@ -3163,7 +3218,10 @@
       throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
     }
     if (this.transaction
-        && (this.transaction._aborted || this.transaction._finished || this.transaction._committing)) {
+        && (!this.transaction._active
+            || this.transaction._aborted
+            || this.transaction._finished
+            || this.transaction._committing)) {
       throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
     }
     if (write && this.transaction && this.transaction.mode === 'readonly') {
@@ -3923,10 +3981,19 @@
     _zwIDBEmit(transaction, 'abort', new _zwIDBEvent('abort', transaction));
   }
 
+  function _zwIDBTransactionsConflict(first, second) {
+    if (first.mode === 'readonly' && second.mode === 'readonly') return false;
+    return first._scope.some(function (name) { return second._scope.indexOf(name) !== -1; });
+  }
+
   function _zwIDBTransaction(db, names, mode, deferCompletion) {
+    var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     this._db = db;
     this.db = db;
     this.mode = mode || 'readonly';
+    this._scope = storeNames.filter(function (name, index, all) {
+      return all.indexOf(name) === index;
+    }).sort();
     this.oncomplete = null;
     this.onerror = null;
     this.onabort = null;
@@ -3934,14 +4001,16 @@
     this._aborted = false;
     this._finished = false;
     this._committing = false;
+    this._active = true;
     this._pending = 0;
     this._requestQueue = [];
     this._requestError = null;
     this.error = null;
     this._hostId = null;
     this._snapshot = null;
+    _zwIDBTransactions.push(this);
+    db._transactions.push(this);
     if (!deferCompletion && this.mode !== 'versionchange') {
-      var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
       var begun = _zwIDBHostCall({
         op: 'begin_transaction',
         database: db.name,
@@ -3954,28 +4023,37 @@
       }
     }
     var self = this;
-    if (!deferCompletion && typeof queueMicrotask === 'function') {
+    if (!deferCompletion) {
       var completeWhenIdle = function () {
+        self._active = false;
         if (self._aborted || self._finished) return;
-        if (self._pending > 0) {
-          queueMicrotask(completeWhenIdle);
+        var position = self._db._transactions.indexOf(self);
+        var earlierActive = self._db._transactions.slice(0, position).some(function (transaction) {
+          return !transaction._aborted
+            && !transaction._finished
+            && _zwIDBTransactionsConflict(transaction, self);
+        });
+        if (self._pending > 0 || earlierActive) {
+          setTimeout(completeWhenIdle, 0);
           return;
         }
+        self._committing = true;
         if (self._hostId !== null) {
-          self._committing = true;
           try {
             _zwIDBHostCall({ op: 'commit_transaction', transaction: self._hostId });
           } catch (hostError) {
             _zwIDBFailHostTransaction(self, hostError);
             self._finished = true;
+            _zwIDBUntrackTransaction(self);
             return;
           }
           self._hostId = null;
         }
         self._finished = true;
+        _zwIDBUntrackTransaction(self);
         _zwIDBEmit(self, 'complete', new _zwIDBEvent('complete', self));
       };
-      queueMicrotask(completeWhenIdle);
+      setTimeout(completeWhenIdle, 0);
     }
   }
   _zwIDBTransaction.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
@@ -4028,6 +4106,7 @@
       }, this);
     } else {
       this._finished = true;
+      _zwIDBUntrackTransaction(this);
       var transaction = this;
       var fireAbort = function () {
         _zwIDBEmitTransactionEvent(transaction, 'abort', true);
@@ -4048,6 +4127,7 @@
     this.version = state.version;
     this._state = state;
     this._stores = state.stores; // name → {keyPath, autoIncrement, records: Map, indexes: {}}
+    this._transactions = [];
     this._closed = false;
     this.onversionchange = null;
     this.onabort = null;
@@ -4187,7 +4267,7 @@
       var retry = function () {
         _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created);
       };
-      if (typeof queueMicrotask === 'function') queueMicrotask(retry);
+      if (typeof setTimeout === 'function') setTimeout(retry, 0);
       else retry();
       return;
     }
@@ -4202,6 +4282,7 @@
     }
     db._upgradeTransaction = null;
     transaction._finished = true;
+    _zwIDBUntrackTransaction(transaction);
     if (transaction._aborted) {
       state.version = snapshot.version;
       state.stores = snapshot.stores;

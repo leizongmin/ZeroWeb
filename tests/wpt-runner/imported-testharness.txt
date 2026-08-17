@@ -39,3 +39,6 @@ IndexedDB/request_bubble-and-capture.any.js 315976933870b34d6ea30e3f6643403edae6
 IndexedDB/transaction-abort-request-error.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
 IndexedDB/error-attributes.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
 IndexedDB/idbtransaction-oncomplete.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/transaction-deactivation-timing.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation
+IndexedDB/event-dispatch-active-flag.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation
+IndexedDB/transaction-lifetime-empty.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation

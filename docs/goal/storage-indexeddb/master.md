@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M2 request core event model）
+**最后更新**: 2026-08-18（M2 transaction task deactivation）
 
 ---
 
@@ -40,7 +40,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Index get/getKey/count：3 文件、20 subtest，20 Pass / 0 Fail（100.00%）
 - ✅ Index cursor continue：1 文件、8 subtest，8 Pass / 0 Fail（100.00%）
 - ✅ M2 request core：pending getter、capture/bubble、abort queue、error/complete 顺序已对齐
-- 🟨 M2 页面接线：factory/store/index/query/cursor stepping 已走 Rust；task-bound deactivation 待实现
+- ✅ M2 transaction task：active flag、task/microtask deactivation、request task dispatch 已对齐
+- 🟨 M2 页面接线：factory/store/index/query/cursor stepping 已走 Rust；advanced scheduling 待扩面
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
 - ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
 - ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
@@ -49,14 +50,14 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 32 文件 |
+| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 35 文件 |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping 已接 |
 | I3 | 无持久化（重启即失） | ⬜ M3 |
-| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core events 完成；task deactivation 待实现 |
+| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active 完成；跨 connection scheduling 待扩面 |
 
 ## 下一步计划
 
-1. **M2/M3**：实现 transaction active flag 与 task/microtask deactivation 时序
+1. **M2**：实现 index cursor `continuePrimaryKey()` 与异常顺序
 2. **M3**：接入跨进程 ownership、per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -66,8 +67,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | 🟨 imported 192/192 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 request core complete；task deactivation pending |
+| M1 — WPT IndexedDB 基线建立 | 🟨 imported 204/204 |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 request task model complete；advanced scheduling pending |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
@@ -79,8 +80,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - WPT Index get/getKey/count：3 文件 / 20 subtest / 20 Pass / 0 Fail / 100.00%
 - WPT Index cursor continue：1 文件 / 8 subtest / 8 Pass / 0 Fail / 100.00%
 - WPT Request/Transaction event core：8 文件 / 10 subtest / 10 Pass / 0 Fail / 100.00%
-- imported 合计：32 文件 / 192 subtest / 192 Pass / 0 Fail / 100.00%
-- 当前 100% 仅覆盖 imported 32 文件，不代表上游 IndexedDB 目录整体通过率
+- WPT Transaction deactivation/lifetime：3 文件 / 11 subtest / 11 Pass / 0 Fail / 100.00%
+- imported 合计：35 文件 / 204 subtest / 204 Pass / 0 Fail / 100.00%
+- 当前 100% 仅覆盖 imported 35 文件，不代表上游 IndexedDB 目录整体通过率
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
   `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
   `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`、
@@ -106,7 +108,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m2-index-cursor-routing.{md,json}`、
   `evidence/2026-08-17-m2-structured-clone-graph.{md,json}`、
   `evidence/2026-08-18-m2-rust-cursor-stepping.{md,json}`、
-  `evidence/2026-08-18-m2-request-event-model.{md,json}`
+  `evidence/2026-08-18-m2-request-event-model.{md,json}`、
+  `evidence/2026-08-18-m2-transaction-deactivation.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

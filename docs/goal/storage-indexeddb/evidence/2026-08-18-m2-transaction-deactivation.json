@@ -1,0 +1,39 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 transaction active flag and task deactivation",
+  "capabilities": [
+    "request task dispatch",
+    "transaction active flag",
+    "task and microtask deactivation",
+    "event callback reactivation",
+    "auto-commit after request queue drain",
+    "scope-aware transaction completion ordering",
+    "completed transaction registry cleanup"
+  ],
+  "tests": {
+    "new_deactivation_lifetime_wpt": {
+      "files": 3,
+      "pass": 11,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 35,
+      "pass": 204,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass",
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_budgets": "pass"
+    }
+  },
+  "remaining": [
+    "cross-connection and cross-process scheduling",
+    "continuePrimaryKey",
+    "database versions above u32",
+    "persistence"
+  ]
+}

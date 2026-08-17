@@ -778,6 +778,18 @@ mod tests {
 
     #[test]
     fn renderer_js_worker_registers_indexed_db_host() {
+        fn wait_for_value(worker: &RendererJsWorker, expression: &str) -> String {
+            let mut value = String::new();
+            for _ in 0..200 {
+                value = worker.execute_script_direct(expression).unwrap();
+                if value != "undefined" {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            value
+        }
+
         let mut worker = RendererJsWorker::spawn(45);
         worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/page");
 
@@ -817,10 +829,7 @@ mod tests {
                    created.onsuccess = function () { globalThis.__created = true; };"#,
             )
             .unwrap();
-        assert_eq!(
-            worker.execute_script_direct("String(globalThis.__created)").unwrap(),
-            "true"
-        );
+        assert_eq!(wait_for_value(&worker, "String(globalThis.__created)"), "true");
 
         worker.reset_document_state();
         worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/next");
@@ -890,7 +899,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
+            wait_for_value(&worker, "String(globalThis.__restored)"),
             "2:true:stored:10:3:alpha,graph,stored:stored:true:true:7:graph:30:InvalidStateError"
         );
         worker.shutdown();
