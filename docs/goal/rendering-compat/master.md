@@ -11,6 +11,8 @@
 
 > **📍 当前 rally 进度态（R3430-F·2026-08-17）=【horizontal decoration 子树扫描短路·layout p95约降3%】**：`compute_final_inline_layouts` 的 `subtree_has_text_decoration` 占 medium 全帧约1.46%，但结果只服务 vertical writing-mode 的宽度兼容 gate；旧代码对所有 horizontal 文本容器也递归扫描子树，嵌套页面重复访问后代。现 `vertical_decoration_free` 在 `ZW_DECORATION_SCAN_VERTICAL_ONLY` 默认开启时先判断 writing mode：horizontal 直接跳过，vertical 完整保留原扫描，`=0` 回退。闭包计数测试锁定 horizontal 0 次、vertical 1 次。**两组反序 A/B**：medium layout p95 `411→399ms`、`417→401ms`，均改善约3%；p50/total 受共享主机 paint 波动影响不作为主证据。经验见 [`gate-expensive-scan-by-consuming-mode.md`](../../learnings/performance/gate-expensive-scan-by-consuming-mode.md)。
 
+> **📍 当前 rally 进度态（R3431-F·2026-08-17）=【ComputedStyle 只读借用·medium total p95降20%+】**：`build_subtree` 对每个 DOM 节点 clone 完整 `ComputedStyle`，但后续仅只读生成 taffy style；perf 中 clone/drop 本体约2.6%，实际还放大 8.55% `memmove` 与 allocator/free。现 `computed_style_for_layout` 使用 `Cow`：存在样式直接 `Borrowed`，仅缺失时构造 owned default；`ZW_LAYOUT_STYLE_BORROW=0` 回退旧 clone。helper/测试置于 `tree/style_borrow.rs`，`tree.rs` 保持1993行。**两组反序 A/B**：medium layout p95 `510→389ms`（-23.8%）、`462→412ms`（-10.8%）；total p95 `842→629ms`（-25.4%）、`852→676ms`（-20.7%），RSS 反序仅 +0.4MiB。Borrowed/Owned/missing fallback 测试通过；reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`borrow-readonly-computed-style.md`](../../learnings/performance/borrow-readonly-computed-style.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >

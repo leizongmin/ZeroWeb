@@ -14,6 +14,9 @@ use crate::inline_block_split::{
     InlineBlockSegment, block_container_has_mixed_content, compute_block_container_split, compute_inline_block_split,
     inline_has_block_child, is_whitespace_only_inline_segment,
 };
+use style_borrow::computed_style_for_layout;
+
+mod style_borrow;
 
 /// R1311b：判断 `<br>` 元素是否处于「纯 inline 上下文」——br 且无 block-level in-flow
 /// 同胞。此类 br 由父容器 IFC 作 InlineItem::Br 处理（inline/mod.rs:1122），不需要独立
@@ -1069,7 +1072,7 @@ fn build_subtree(
     }
 
     // 获取计算样式（或使用默认值）
-    let computed = styles.get(&dom_id).cloned().unwrap_or_default();
+    let computed = computed_style_for_layout(styles, dom_id);
 
     // 解析此元素的 grid-template-areas（如果有）
     let grid_areas = computed
