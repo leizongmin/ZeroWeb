@@ -6,10 +6,88 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use zero_engine::IndexedDbHandler;
-use zero_storage::{StorageError, StorageManager};
+use zero_storage::{IdbKey, StorageError, StorageManager};
+
+/// IndexedDB key 的 JSON wire 表示。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "lowercase")]
+pub enum IndexedDbKeyWire {
+    /// Number key；字符串编码保留 Infinity 与负零。
+    Number(String),
+    /// Date key；值为 Unix epoch 毫秒的字符串编码。
+    Date(String),
+    /// String key。
+    String(String),
+    /// Binary key。
+    Binary(Vec<u8>),
+    /// Array key。
+    Array(Vec<IndexedDbKeyWire>),
+}
+
+impl IndexedDbKeyWire {
+    /// 转换为 storage key，并校验非法 Number/Date。
+    pub fn into_storage_key(self) -> Result<IdbKey, String> {
+        let key = match self {
+            Self::Number(value) => IdbKey::Number(parse_wire_number(&value)?),
+            Self::Date(value) => {
+                let milliseconds = parse_wire_number(&value)?;
+                if !milliseconds.is_finite() {
+                    return Err("DataError: Date key must be finite".to_string());
+                }
+                IdbKey::Date(milliseconds)
+            }
+            Self::String(value) => IdbKey::String(value),
+            Self::Binary(value) => IdbKey::Binary(value),
+            Self::Array(values) => IdbKey::Array(
+                values
+                    .into_iter()
+                    .map(Self::into_storage_key)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        };
+        if !key.is_valid_key() {
+            return Err("DataError: invalid IndexedDB key".to_string());
+        }
+        Ok(key)
+    }
+}
+
+impl From<&IdbKey> for IndexedDbKeyWire {
+    fn from(key: &IdbKey) -> Self {
+        match key {
+            IdbKey::Number(value) => Self::Number(format_wire_number(*value)),
+            IdbKey::Date(value) => Self::Date(format_wire_number(*value)),
+            IdbKey::String(value) => Self::String(value.clone()),
+            IdbKey::Binary(value) => Self::Binary(value.clone()),
+            IdbKey::Array(values) => Self::Array(values.iter().map(Self::from).collect()),
+        }
+    }
+}
+
+fn parse_wire_number(value: &str) -> Result<f64, String> {
+    match value {
+        "Infinity" => Ok(f64::INFINITY),
+        "-Infinity" => Ok(f64::NEG_INFINITY),
+        _ => value
+            .parse::<f64>()
+            .map_err(|_| "DataError: invalid numeric IndexedDB key".to_string()),
+    }
+}
+
+fn format_wire_number(value: f64) -> String {
+    if value == f64::INFINITY {
+        "Infinity".to_string()
+    } else if value == f64::NEG_INFINITY {
+        "-Infinity".to_string()
+    } else if value == 0.0 && value.is_sign_negative() {
+        "-0".to_string()
+    } else {
+        value.to_string()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -250,6 +328,35 @@ fn storage_error(error: StorageError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_wire_preserves_date_type_and_non_json_numbers() {
+        let keys = [
+            IdbKey::Number(f64::INFINITY),
+            IdbKey::Number(-0.0),
+            IdbKey::Date(1_700_000_000_000.0),
+            IdbKey::Array(vec![IdbKey::Date(0.0), IdbKey::String("x".to_string())]),
+        ];
+        for key in keys {
+            let wire = IndexedDbKeyWire::from(&key);
+            let json = serde_json::to_string(&wire).unwrap();
+            let decoded: IndexedDbKeyWire = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded.into_storage_key().unwrap(), key);
+        }
+
+        assert!(
+            IndexedDbKeyWire::Date("Infinity".to_string())
+                .into_storage_key()
+                .unwrap_err()
+                .starts_with("DataError:")
+        );
+        assert!(
+            IndexedDbKeyWire::Number("NaN".to_string())
+                .into_storage_key()
+                .unwrap_err()
+                .starts_with("DataError:")
+        );
+    }
 
     fn call(handler: &IndexedDbHandler, origin: &str, request: Value) -> Result<Value, String> {
         handler(origin, &request.to_string()).and_then(|response| {

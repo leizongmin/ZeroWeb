@@ -793,7 +793,10 @@ mod tests {
                    created.onsuccess = function () { globalThis.__created = true; };"#,
             )
             .unwrap();
-        assert_eq!(worker.execute_script_direct("String(globalThis.__created)").unwrap(), "true");
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__created)").unwrap(),
+            "true"
+        );
 
         worker.reset_document_state();
         worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/next");

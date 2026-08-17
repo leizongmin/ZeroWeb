@@ -1,0 +1,50 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 Date key and key wire",
+  "key_order": [
+    "number",
+    "date",
+    "string",
+    "binary",
+    "array"
+  ],
+  "wire": {
+    "tag": "type",
+    "content": "value",
+    "numeric_encoding": "string",
+    "supports": [
+      "Infinity",
+      "-Infinity",
+      "-0",
+      "recursive arrays"
+    ]
+  },
+  "tests": {
+    "zero_storage_unit": {
+      "pass": 671,
+      "fail": 0
+    },
+    "zero_storage_integration": {
+      "pass": 20,
+      "fail": 0
+    },
+    "page_runtime_wire": {
+      "pass": 1,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 21,
+      "pass": 166,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "transaction-scoped CRUD routing",
+    "index and cursor routing",
+    "cross-process ownership",
+    "persistence"
+  ]
+}

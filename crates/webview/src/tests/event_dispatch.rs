@@ -44,11 +44,7 @@ fn indexed_db_factory_and_schema_route_to_host() {
     );
 
     wv.run_page_scripts_strict().unwrap();
-    assert_eq!(
-        wv.execute_script("String(globalThis.__idbOpened)")
-            .unwrap(),
-        "true"
-    );
+    assert_eq!(wv.execute_script("String(globalThis.__idbOpened)").unwrap(), "true");
     assert_eq!(
         wv.execute_script(
             r#"JSON.parse(__zw_idb(JSON.stringify({op:"inspect",name:"app"}))
@@ -78,7 +74,7 @@ fn indexed_db_factory_and_schema_route_to_host() {
             r#"String(JSON.parse(__zw_idb(JSON.stringify({op:"inspect",name:"app"}))
                .slice("__zw_idb_ok:".length)).database)"#,
         )
-            .unwrap(),
+        .unwrap(),
         "null"
     );
 }

@@ -212,9 +212,10 @@ fn test_idb_key_range_only() {
 
 #[test]
 fn test_idb_key_cmp_cross_type() {
-    // Number < String < Binary < Array
+    // Number < Date < String < Binary < Array
+    assert_eq!(IdbKey::Number(1.0).cmp(&IdbKey::Date(0.0)), std::cmp::Ordering::Less);
     assert_eq!(
-        IdbKey::Number(1.0).cmp(&IdbKey::String("a".to_string())),
+        IdbKey::Date(0.0).cmp(&IdbKey::String("a".to_string())),
         std::cmp::Ordering::Less
     );
     assert_eq!(
@@ -225,6 +226,27 @@ fn test_idb_key_cmp_cross_type() {
         IdbKey::Binary(vec![1]).cmp(&IdbKey::Array(vec![])),
         std::cmp::Ordering::Less
     );
+}
+
+#[test]
+fn test_idb_date_key_validity_hash_and_lookup() {
+    use std::collections::HashSet;
+
+    assert!(IdbKey::Date(0.0).is_valid_key());
+    assert!(!IdbKey::Date(f64::NAN).is_valid_key());
+    assert!(!IdbKey::Date(f64::INFINITY).is_valid_key());
+
+    let mut keys = HashSet::new();
+    keys.insert(IdbKey::Date(-0.0));
+    keys.insert(IdbKey::Date(0.0));
+    assert_eq!(keys.len(), 1);
+
+    let mut db = IdbDatabase::new("dates", 1);
+    db.create_object_store("items", None, false).unwrap();
+    db.add("items", json!("number"), Some(IdbKey::Number(10.0))).unwrap();
+    db.add("items", json!("date"), Some(IdbKey::Date(10.0))).unwrap();
+    assert_eq!(db.get("items", &IdbKey::Date(10.0)).unwrap().value, "date");
+    assert_eq!(db.get("items", &IdbKey::Number(10.0)).unwrap().value, "number");
 }
 
 #[test]

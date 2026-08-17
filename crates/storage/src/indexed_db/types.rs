@@ -12,6 +12,8 @@ use crate::StorageError;
 pub enum IdbKey {
     /// 数值键。
     Number(f64),
+    /// Date 键，值为 Unix epoch 毫秒。
+    Date(f64),
     /// 字符串键。
     String(String),
     /// 二进制键。
@@ -129,6 +131,7 @@ impl IdbKey {
     pub fn is_valid_key(&self) -> bool {
         match self {
             IdbKey::Number(n) => !n.is_nan(),
+            IdbKey::Date(milliseconds) => milliseconds.is_finite(),
             IdbKey::String(_) | IdbKey::Binary(_) => true,
             IdbKey::Array(ks) => ks.iter().all(|k| k.is_valid_key()),
         }
@@ -138,21 +141,31 @@ impl IdbKey {
     fn cmp_key(&self, other: &Self) -> Ordering {
         match (self, other) {
             (IdbKey::Number(a), IdbKey::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (IdbKey::Number(_), IdbKey::Date(_)) => Ordering::Less,
             (IdbKey::Number(_), IdbKey::String(_)) => Ordering::Less,
             (IdbKey::Number(_), IdbKey::Binary(_)) => Ordering::Less,
             (IdbKey::Number(_), IdbKey::Array(_)) => Ordering::Less,
 
+            (IdbKey::Date(_), IdbKey::Number(_)) => Ordering::Greater,
+            (IdbKey::Date(a), IdbKey::Date(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (IdbKey::Date(_), IdbKey::String(_)) => Ordering::Less,
+            (IdbKey::Date(_), IdbKey::Binary(_)) => Ordering::Less,
+            (IdbKey::Date(_), IdbKey::Array(_)) => Ordering::Less,
+
             (IdbKey::String(_), IdbKey::Number(_)) => Ordering::Greater,
+            (IdbKey::String(_), IdbKey::Date(_)) => Ordering::Greater,
             (IdbKey::String(a), IdbKey::String(b)) => a.cmp(b),
             (IdbKey::String(_), IdbKey::Binary(_)) => Ordering::Less,
             (IdbKey::String(_), IdbKey::Array(_)) => Ordering::Less,
 
             (IdbKey::Binary(_), IdbKey::Number(_)) => Ordering::Greater,
+            (IdbKey::Binary(_), IdbKey::Date(_)) => Ordering::Greater,
             (IdbKey::Binary(_), IdbKey::String(_)) => Ordering::Greater,
             (IdbKey::Binary(a), IdbKey::Binary(b)) => a.cmp(b),
             (IdbKey::Binary(_), IdbKey::Array(_)) => Ordering::Less,
 
             (IdbKey::Array(_), IdbKey::Number(_)) => Ordering::Greater,
+            (IdbKey::Array(_), IdbKey::Date(_)) => Ordering::Greater,
             (IdbKey::Array(_), IdbKey::String(_)) => Ordering::Greater,
             (IdbKey::Array(_), IdbKey::Binary(_)) => Ordering::Greater,
             (IdbKey::Array(a), IdbKey::Array(b)) => {
@@ -187,6 +200,10 @@ impl std::hash::Hash for IdbKey {
             // 归一化后与 Eq 一致，且符合 JS Set/Map「-0 与 +0 为同一键」语义。
             IdbKey::Number(n) => {
                 let normalized = if *n == 0.0 { 0.0_f64 } else { *n };
+                normalized.to_bits().hash(state);
+            }
+            IdbKey::Date(milliseconds) => {
+                let normalized = if *milliseconds == 0.0 { 0.0_f64 } else { *milliseconds };
                 normalized.to_bits().hash(state);
             }
             IdbKey::String(s) => s.hash(state),
