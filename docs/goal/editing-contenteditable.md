@@ -4,7 +4,7 @@
 **日期**: 2026-08-17
 **状态**: Active
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
-**父目标**: `docs/goal/html-compat.md`（HTML 行为兼容——本专项为其编辑面延伸）
+**父目标**: `docs/goal/archive/html-compat.md`（HTML 行为兼容——M0-M4 已完成并于 2026-08-17 归档，本专项为其编辑面延伸）
 
 > **说明**
 > 本文档是 ZeroWeb「编辑与 contenteditable」专项目标执行契约。目标是把 `contenteditable`

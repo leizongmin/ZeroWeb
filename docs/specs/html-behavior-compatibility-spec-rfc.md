@@ -439,13 +439,13 @@ ZeroWeb 已具备 HTML 解析、DOM、页面脚本、retained 表单状态、多
   假设一个 HTML 行为切片准备合入
   当检查该切片的测试清单
   那么至少存在一个正常路径和一个失败/取消/边界路径自有测试；用户可见动作另有一个跨层测试
-  验证: docs/goal/html-compat/test-matrix.md 对应条目 + make test
+  验证: docs/goal/archive/html-compat/test-matrix.md 对应条目 + make test
 
 场景: 仅新增 WPT 用例
   假设变更只导入或启用 WPT，而没有仓内自有基础测试
   当执行里程碑验收
   那么该功能点不得标记完成，必须补齐自有测试或记录经用户批准的豁免
-  验证: docs/goal/html-compat/test-matrix.md 的 local_unit/local_integration 字段非空
+  验证: docs/goal/archive/html-compat/test-matrix.md 的 local_unit/local_integration 字段非空
 ```
 
 ## 4. 非功能需求
@@ -453,7 +453,7 @@ ZeroWeb 已具备 HTML 解析、DOM、页面脚本、retained 表单状态、多
 ### NFR-001：自有测试完整性
 
 - **描述**：每个行为点至少包含 2 个仓内自有基础测试：1 个正常路径，1 个失败、取消或边界路径。用户可见交互还必须包含 1 个跨层测试。
-- **测量标准**：`docs/goal/html-compat/test-matrix.md` 每行的 `local_unit` 和 `local_integration` 非空；WPT 列不能代替这两列。
+- **测量标准**：`docs/goal/archive/html-compat/test-matrix.md` 每行的 `local_unit` 和 `local_integration` 非空；WPT 列不能代替这两列。
 - **优先级**：必须
 
 ### NFR-002：宿主一致性
@@ -610,7 +610,7 @@ pub struct HarnessSubtestResult {
 ### IF-005：HTML 兼容测试矩阵
 
 - **类型**：项目控制面
-- **权威位置**：`docs/goal/html-compat/test-matrix.md`
+- **权威位置**：`docs/goal/archive/html-compat/test-matrix.md`
 - **规格**：
 
 | 字段 | 含义 |
@@ -722,7 +722,7 @@ pub struct HarnessSubtestResult {
 - `tests/integration/**`
 - `tests/wpt-runner/**`
 - `examples/forms/**`
-- `docs/goal/html-compat/**`
+- `docs/goal/archive/html-compat/**`
 - 本文档与对应 learning 文档
 
 禁止修改：
@@ -778,7 +778,7 @@ M3 分片：
 
 | 路径/模块 | 动作 | 目的 | 风险/注意事项 |
 |---|---|---|---|
-| `docs/goal/html-compat/` | 新增 | master、test matrix、WPT 账本 | 不复制 Spec 全文 |
+| `docs/goal/archive/html-compat/` | 新增 | master、test matrix、WPT 账本 | 不复制 Spec 全文 |
 | `apps/browser/src/tests.rs` | 修改 | M0/M1 产品场景 | 多进程锁、先构建 bin |
 | `apps/browser/src/tests/html_scenario.rs` | 新增 | typed M0 步骤与逐步诊断 | helper 自身须有失败路径测试 |
 | `apps/renderer/src/page_scripts.rs` | 修改 | 组件行为与事件测试 | 后续逻辑迁往 runtime |
@@ -808,7 +808,7 @@ M3 分片：
 
 ### 7.5 推荐修改顺序
 
-1. 创建 `docs/goal/html-compat/master.md` 和 `test-matrix.md`，登记 M0 行为点。
+1. 创建 `docs/goal/archive/html-compat/master.md` 和 `test-matrix.md`，登记 M0 行为点。
 2. 完成 M0 自有测试，不修改生产语义；记录每个失败步骤。
 3. M1 先做 `PageNodeRef` identity spike，再接 `pressed_target` capture。
 4. 按 M1 P0 顺序修 JS-disabled、beforeinput/input、键盘入口；每项先加正常+边界测试。
