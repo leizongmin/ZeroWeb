@@ -17,8 +17,8 @@ path = "src/lib.rs"
 default = ["windows-console"]
 windows-console = []
 test-support = ["dep:zero-webview", "dep:zero-script-sandbox"]
-v8 = ["zero-engine/v8", "zero-webview?/v8", "zero-script-sandbox?/v8"]
-quickjs = ["zero-engine/quickjs", "zero-webview?/quickjs", "zero-script-sandbox?/quickjs"]
+v8 = ["zero-engine/v8", "zero-page-runtime/v8", "zero-webview?/v8", "zero-script-sandbox?/v8"]
+quickjs = ["zero-engine/quickjs", "zero-page-runtime/quickjs", "zero-webview?/quickjs", "zero-script-sandbox?/quickjs"]
 
 [dependencies]
 zero-product-version = { workspace = true }

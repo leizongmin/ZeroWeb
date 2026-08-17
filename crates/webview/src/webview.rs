@@ -243,6 +243,10 @@ pub struct WebView {
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
     js_sandbox: Option<Box<dyn zero_script_sandbox::Sandbox>>,
+    /// IndexedDB 同步宿主桥（进程内 sandbox 路径）。
+    indexed_db_bridge: zero_engine::IndexedDbBridge,
+    /// IndexedDB origin 的可信页面 URL 来源。
+    page_url_wire: std::sync::Arc<std::sync::Mutex<String>>,
     /// DOM shim（generate_js_dom_shim）是否已注入沙箱（M2：幂等保护——
     /// 重复执行会重置 _nodeMap 丢失监听器，故只注入一次）。
     js_shim_initialized: bool,
@@ -337,6 +341,10 @@ impl WebView {
         let script_source_fetcher = config.script_source_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
         let fetch_handler = config.fetch_handler.clone();
+        let indexed_db_bridge = zero_engine::IndexedDbBridge::new(zero_page_runtime::indexed_db_handler(
+            std::sync::Arc::new(std::sync::Mutex::new(zero_storage::StorageManager::new())),
+        ));
+        let page_url_wire = std::sync::Arc::new(std::sync::Mutex::new(String::from("about:blank")));
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存
         // （RSS ~0.2G/实例）；首次执行脚本时才有初始化成本，行为等价。
@@ -347,6 +355,8 @@ impl WebView {
             canvas_registry,
             http_client,
             js_sandbox,
+            indexed_db_bridge,
+            page_url_wire,
             js_shim_initialized: false,
             external_script,
             script_source_fetcher,
@@ -866,6 +876,7 @@ impl WebView {
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
+        self.set_page_url_wire(url);
         self.loading = true;
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
 
@@ -882,6 +893,7 @@ impl WebView {
             ResourceCheckResult::Upgraded(https_url) => {
                 tracing::info!("Security upgrade: {url} → {https_url}");
                 self.current_url = Some(https_url.clone());
+                self.set_page_url_wire(&https_url);
                 https_url
             }
             ResourceCheckResult::Blocked(reason) => {
@@ -976,6 +988,7 @@ impl WebView {
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
+        self.set_page_url_wire(url);
         self.loading = true;
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
         if old_url.as_deref() != Some(url) {
@@ -990,6 +1003,7 @@ impl WebView {
         // R3176：referrer = 导航前的页面 URL（document.referrer 读）。
         self.referrer = self.current_url.clone();
         self.current_url = Some(page_url.to_string());
+        self.set_page_url_wire(page_url);
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));
         self.loading = false;
@@ -1058,6 +1072,7 @@ impl WebView {
         self.cached_image_no_ratio.clear();
         self.image_cache.clear();
         self.current_url = Some(page_url.to_string());
+        self.set_page_url_wire(page_url);
         self.loading = true;
         self.pipeline.set_document_url(Some(page_url));
         self.security_context.set_page_origin(page_url);
@@ -1402,17 +1417,24 @@ impl WebView {
         // 都编译 → `js_config` 被 move 两次（E0382）。v8 分支 clone 持有；单 feature
         // 语义不变。
         #[cfg(feature = "v8")]
-        let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
+        let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
             zero_script_sandbox::V8Sandbox::with_config(js_config.clone())
                 .map_err(|e| WebViewError::Script(format!("V8 sandbox init: {e}")))?,
         );
         #[cfg(all(feature = "quickjs", not(feature = "v8")))]
-        let sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
+        let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = Box::new(
             zero_script_sandbox::QuickJSSandbox::with_config(js_config)
                 .map_err(|e| WebViewError::Script(format!("QuickJS sandbox init: {e}")))?,
         );
+        self.indexed_db_bridge.register(&mut *sandbox, &self.page_url_wire);
         self.js_sandbox = Some(sandbox);
         Ok(())
+    }
+
+    fn set_page_url_wire(&self, page_url: &str) {
+        if let Ok(mut current) = self.page_url_wire.lock() {
+            *current = page_url.to_string();
+        }
     }
 
     /// P1b L1b（R3108）：在持久 V8 Context 安装/刷新原生 DOM 绑定（kill-switch `native_dom`
@@ -1596,8 +1618,7 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
-        let page_url: std::sync::Arc<std::sync::Mutex<String>> =
-            std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+        let page_url = self.page_url_wire.clone();
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
@@ -1962,8 +1983,7 @@ impl WebView {
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
-        let page_url: std::sync::Arc<std::sync::Mutex<String>> =
-            std::sync::Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+        let page_url = self.page_url_wire.clone();
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）

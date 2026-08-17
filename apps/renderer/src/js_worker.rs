@@ -368,6 +368,10 @@ fn js_worker_main(
     let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    let indexed_db_bridge = zero_engine::IndexedDbBridge::new(zero_page_runtime::indexed_db_handler(Arc::new(
+        std::sync::Mutex::new(zero_storage::StorageManager::new()),
+    )));
+    indexed_db_bridge.register(&mut *sandbox, &page_url);
     register_module_compile_callback(&mut *sandbox);
     // P1a gBCR（Slice 1）：RectBridge 注 `__zw_getBoundingClientRect(identity)` 同步回调。
     // handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
@@ -769,6 +773,19 @@ mod tests {
             "1",
             "a refreshed document must be able to redeclare its top-level lexical bindings"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_registers_indexed_db_host() {
+        let mut worker = RendererJsWorker::spawn(45);
+        worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/page");
+
+        let response = worker
+            .execute_script_direct(r#"__zw_idb(JSON.stringify({op:"open",name:"app",version:1}))"#)
+            .unwrap();
+        assert!(response.starts_with("__zw_idb_ok:"));
+        assert!(response.contains(r#""name":"app""#));
         worker.shutdown();
     }
 

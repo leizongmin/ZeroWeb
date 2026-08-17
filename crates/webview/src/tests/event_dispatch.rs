@@ -29,6 +29,30 @@ fn run_page_scripts_registers_listeners_and_applies_mutations() {
 }
 
 #[test]
+fn run_page_scripts_registers_indexed_db_host() {
+    let mut wv = new_webview();
+    wv.prepare_document_state("https://storage.example/page");
+    wv.load_html(
+        r#"<html><body><script>
+        globalThis.__idbWire = __zw_idb(JSON.stringify({op:"open",name:"app",version:1}));
+        </script></body></html>"#,
+        None,
+    );
+
+    wv.run_page_scripts_strict().unwrap();
+    assert_eq!(
+        wv.execute_script("globalThis.__idbWire.startsWith('__zw_idb_ok:')")
+            .unwrap(),
+        "true"
+    );
+    assert_eq!(
+        wv.execute_script("globalThis.__idbWire.includes('\"name\":\"app\"')")
+            .unwrap(),
+        "true"
+    );
+}
+
+#[test]
 fn dispatch_event_triggers_listener_and_applies_mutations() {
     let mut wv = new_webview();
     let _ = wv.load_html(PAGE_WITH_LISTENER, None);

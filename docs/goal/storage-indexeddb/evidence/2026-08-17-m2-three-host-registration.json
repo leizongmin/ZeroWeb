@@ -1,0 +1,38 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 three-host IndexedDB bridge registration",
+  "handler": "zero-page-runtime::indexed_db_handler",
+  "hosts": [
+    "zero-webview in-process sandbox",
+    "zero-browser Tab JS worker",
+    "zero-renderer JS worker"
+  ],
+  "invariants": [
+    "host-owned page URL supplies origin",
+    "one StorageManager per WebView or worker lifecycle",
+    "navigation does not recreate WebView storage"
+  ],
+  "tests": {
+    "webview_quickjs": {
+      "pass": 1,
+      "fail": 0
+    },
+    "browser_worker_quickjs": {
+      "pass": 2,
+      "fail": 0
+    },
+    "renderer_worker_quickjs": {
+      "pass": 2,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "page factory and schema routing",
+    "cross-process storage ownership",
+    "transaction and CRUD routing",
+    "persistence"
+  ]
+}
