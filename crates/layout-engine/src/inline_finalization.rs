@@ -11,6 +11,7 @@ use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
+pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
 use zero_style_system::WritingModeValue;
 
@@ -490,86 +491,6 @@ fn store_inline_multicol_columns(
     // inline_layout_width = 容器内容宽（使 paint width_matches → use_stored=true，按列渲染）
     root.inline_layout_width = root.content_width;
     true
-}
-
-/// 从 IFC 片段中提取各文本节点的 font_size、is_ahem 标志、letter-spacing 和 line-height 并存储到 LayoutBox。
-///
-/// paint 系统在运行空 styles IFC 时无法获取正确的 font_size、字体信息、letter-spacing 和 line-height，
-/// 导致基线偏移、字符宽度、间距和行盒高度计算错误。通过此函数存储 layout IFC 的相关值，
-/// paint 可以在渲染时使用正确的值。
-///
-/// `doc` + `styles` 用于 R1012 text-transform 覆盖：按片段的文本节点 NodeId 查父元素
-/// computed text-transform 存入 `text_node_text_transform`，paint Path B 据此在空 styles
-/// 下应用 transform（行断用转换后宽度）。
-pub(crate) fn store_font_sizes_from_ifc(
-    inline_ctx: &crate::inline::InlineFormattingContext,
-    box_node: &mut LayoutBox,
-    doc: &Document,
-    styles: &HashMap<NodeId, ComputedStyle>,
-) {
-    for line in &inline_ctx.lines {
-        for frag in &line.runs {
-            box_node.text_node_font_sizes.insert(frag.node_id, frag.font_size);
-            // R1464：per-fragment font-family（key = frag.node_id，element 或 text node）。
-            // owner 元素 = frag.node_id（若 element）或其父（若 text node）。Path B 空 styles
-            // 无 per-fragment font-family → 非-Ahem webfont/跨字体 inline 回落容器字体。
-            let font_owner = if doc
-                .get(frag.node_id)
-                .is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
-            {
-                Some(frag.node_id)
-            } else {
-                doc.parent_node(frag.node_id)
-            };
-            let font_style = font_owner.and_then(|oid| styles.get(&oid));
-            let family = font_style.map(|s| s.font_family.clone()).unwrap_or_default();
-            box_node.text_node_font_families.insert(frag.node_id, family);
-            if let Some(style) = font_style {
-                box_node
-                    .text_node_font_size_adjust
-                    .insert(frag.node_id, style.font_size_adjust);
-                if matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                    && let Some(owner) = font_owner
-                {
-                    box_node.plaintext_bidi_nodes.insert(owner);
-                }
-            }
-            box_node.text_node_is_ahem.insert(frag.node_id, frag.is_ahem);
-            box_node
-                .text_node_letter_spacing
-                .insert(frag.node_id, frag.letter_spacing);
-            // line-height 不影响行断（仅影响垂直定位），传递到 paint IFC 是安全的。
-            // 使用片段的 height 作为行盒高度贡献（已含 line-height + padding + border）。
-            box_node.text_node_line_heights.insert(frag.node_id, frag.height);
-            // R1012：存 text-transform（按文本节点 NodeId）。paint Path B 重跑 IFC 时
-            // styles 为空，据此映射构造 text_transform_overrides 让 collect_inline_items
-            // 在空 styles 下应用 transform。仅对真正的文本节点存（其父元素 style 携带
-            // 继承的 text-transform）；inline 元素片段跳过（无对应 DOM 文本节点父链）。
-            if doc
-                .get(frag.node_id)
-                .is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
-            {
-                if let Some(pid) = doc.parent_node(frag.node_id) {
-                    let transform = styles
-                        .get(&pid)
-                        .map(|s| s.text_transform)
-                        .unwrap_or(zero_style_system::TextTransformValue::None);
-                    box_node.text_node_text_transform.insert(frag.node_id, transform);
-                }
-            }
-            // 内联元素片段（node_id 是元素 NodeId 而非文本节点 NodeId）：
-            // 存储其 (font_size, line_height) 供 paint IFC 使用。
-            // 内联元素在 paint IFC 中无法获取自己的样式，导致使用默认值。
-            // line_height 近似使用 height（对文本片段来说等于 run.line_height）。
-            box_node
-                .inline_element_metrics
-                .insert(frag.node_id, (frag.font_size, frag.height));
-            // 内联元素的水平 margin 不影响行断（仅影响水平偏移），传递到 paint IFC 是安全的。
-            box_node
-                .inline_element_margins
-                .insert(frag.node_id, (frag.margin_left, frag.margin_right));
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

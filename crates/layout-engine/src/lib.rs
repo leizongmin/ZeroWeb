@@ -25,6 +25,7 @@ mod form_layout;
 pub mod inline;
 pub mod inline_block_split;
 pub mod inline_finalization;
+mod inline_metric_storage;
 pub mod intrinsic_sizing;
 pub mod margin_collapse;
 pub mod multicol;
