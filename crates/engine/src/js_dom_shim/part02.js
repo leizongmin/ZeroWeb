@@ -2664,9 +2664,13 @@
         type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'),
         req
       );
+      if (ev._requestError) req.error = ev._requestError;
       ev.target = req;
       ev.currentTarget = req;
       _zwIDBEmit(req, ev.type, ev);
+      if (ev.type === 'error' && transaction && !ev.defaultPrevented) {
+        transaction.abort();
+      }
       if (transaction) transaction._pending--;
     };
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
@@ -2737,13 +2741,62 @@
     }
     return resolved;
   };
+  _zwIDBStore.prototype._recordKey = function (key) {
+    var matched;
+    this._records.forEach(function (_value, recordKey) {
+      if (matched === undefined && _zwIDBCompareValues(recordKey, key) === 0) matched = recordKey;
+    });
+    return matched;
+  };
+  _zwIDBStore.prototype._indexKey = function (value, keyPath) {
+    var key = value;
+    String(keyPath).split('.').forEach(function (part) {
+      key = key == null ? undefined : key[part];
+    });
+    return key;
+  };
+  _zwIDBStore.prototype._hasUniqueConflict = function (value, primaryKey) {
+    var store = this;
+    return Object.keys(this._indexes).some(function (name) {
+      var index = store._indexes[name];
+      if (!index.unique) return false;
+      var candidate = store._indexKey(value, index.keyPath);
+      if (!_zwIDBKey(candidate, [])) return false;
+      var conflict = false;
+      store._records.forEach(function (record, recordKey) {
+        if (conflict || _zwIDBCompareValues(recordKey, primaryKey) === 0) return;
+        var existing = store._indexKey(record, index.keyPath);
+        if (_zwIDBKey(existing, []) && _zwIDBCompareValues(existing, candidate) === 0) {
+          conflict = true;
+        }
+      });
+      return conflict;
+    });
+  };
+  _zwIDBStore.prototype._constraintError = function (request) {
+    var error = new globalThis.DOMException(
+      'A record with the same key already exists.',
+      'ConstraintError'
+    );
+    var event = new _zwIDBEvent('error', request);
+    event.bubbles = true;
+    event.cancelable = true;
+    event._requestError = error;
+    _zwIDBDispatch(request, 'error', undefined, event);
+    return request;
+  };
   _zwIDBStore.prototype._mutate = function (op, value, key, keyProvided) {
     this._assertUsable(true);
     var storedValue = globalThis.structuredClone(value);
     var k = this._resolveKey(storedValue, key, keyProvided);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    this._records.set(k, storedValue); // 同步内存变更（后续 get 可见）
+    var existingKey = this._recordKey(k);
+    if ((op === 'add' && existingKey !== undefined)
+        || this._hasUniqueConflict(storedValue, k)) {
+      return this._constraintError(req);
+    }
+    this._records.set(existingKey === undefined ? k : existingKey, storedValue);
     _zwIDBDispatch(req, 'success', k); // 异步 success（result = key）
     return req;
   };

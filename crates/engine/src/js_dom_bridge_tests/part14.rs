@@ -1881,6 +1881,60 @@ fn test_indexeddb_object_store_cursor_continuation() {
 }
 
 #[test]
+fn test_indexeddb_object_store_constraint_errors() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var constraintResults = [];\
+             var request = indexedDB.open('constraint-errors');\
+             request.onupgradeneeded = function () {\
+               request.transaction.oncomplete = function () { constraintResults.push('complete'); };\
+               function observe(label, operation) {\
+                 var failed = operation();\
+                 constraintResults.push(label + ':request:' + (failed instanceof IDBRequest));\
+                 constraintResults.push(label + ':pending:' + failed.readyState + ':' + failed.error);\
+                 failed.onsuccess = function () { constraintResults.push(label + ':unexpected-success'); };\
+                 failed.onerror = function (event) {\
+                   constraintResults.push(label + ':error:' + failed.error.name + ':' + event.cancelable);\
+                   event.preventDefault();\
+                   event.stopPropagation();\
+                 };\
+               }\
+               var primary = request.result.createObjectStore('primary', { keyPath: 'id' });\
+               primary.add({ id: 1 });\
+               observe('primary', function () { return primary.add({ id: 1 }); });\
+               var uniqueAdd = request.result.createObjectStore('unique-add', { autoIncrement: true });\
+               uniqueAdd.createIndex('name', 'name', { unique: true });\
+               uniqueAdd.add({ name: 'same' });\
+               observe('unique-add', function () { return uniqueAdd.add({ name: 'same' }); });\
+               var uniquePut = request.result.createObjectStore('unique-put', { autoIncrement: true });\
+               uniquePut.createIndex('name', 'name', { unique: true });\
+               uniquePut.put({ name: 'same' });\
+               observe('unique-put', function () { return uniquePut.put({ name: 'same' }); });\
+             };\
+             request.onsuccess = function () { constraintResults.push('success'); };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("constraintResults.join('|')").unwrap().value,
+        "primary:request:true|primary:pending:pending:null|\
+         unique-add:request:true|unique-add:pending:pending:null|\
+         unique-put:request:true|unique-put:pending:pending:null|\
+         primary:error:ConstraintError:true|unique-add:error:ConstraintError:true|\
+         unique-put:error:ConstraintError:true|complete|success"
+    );
+}
+
+#[test]
 fn test_indexeddb_object_store_key_constraints_and_generation() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

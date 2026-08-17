@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB object store CRUD first slice final",
+  "files": 6,
+  "subtests": 54,
+  "status": {
+    "pass": 54,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 100.0,
+  "delta_from_previous": {
+    "pass": 3,
+    "fail": -3,
+    "pass_rate_percentage_points": 5.56
+  },
+  "imported_total": {
+    "files": 15,
+    "subtests": 104,
+    "pass": 104,
+    "fail": 0,
+    "pass_rate_percent": 100.0
+  },
+  "scope_note": "The result covers only the imported first slice, not the full upstream IndexedDB directory."
+}
