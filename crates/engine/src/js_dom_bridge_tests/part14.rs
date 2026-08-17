@@ -1835,6 +1835,52 @@ fn test_indexeddb_key_range_queries() {
 }
 
 #[test]
+fn test_indexeddb_object_store_cursor_continuation() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var cursorResults = [];\
+             var request = indexedDB.open('cursor-continuation');\
+             request.onupgradeneeded = function () {\
+               var store = request.result.createObjectStore('store');\
+               store.add({ id: 3 }, 3);\
+               store.add({ id: 1 }, 1);\
+               store.add({ id: 2 }, 2);\
+             };\
+             request.onsuccess = function () {\
+               var cursorRequest = request.result.transaction('store')\
+                 .objectStore('store').openCursor();\
+               var firstCursor;\
+               cursorRequest.onsuccess = function (event) {\
+                 var cursor = event.target.result;\
+                 if (!cursor) { cursorResults.push('end'); return; }\
+                 if (!firstCursor) firstCursor = cursor;\
+                 cursorResults.push(\
+                   (cursor instanceof IDBCursor) + ':' +\
+                   (cursorRequest.source === cursor.source) + ':' +\
+                   (firstCursor === cursor) + ':' + cursor.key + ':' + cursor.value.id\
+                 );\
+                 cursor.continue();\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("cursorResults.join('|')").unwrap().value,
+        "true:true:true:1:1|true:true:true:2:2|true:true:true:3:3|end"
+    );
+}
+
+#[test]
 fn test_indexeddb_object_store_key_constraints_and_generation() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

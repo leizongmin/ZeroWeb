@@ -2844,15 +2844,50 @@
     var idx = this._indexes[name];
     return idx ? new _zwIDBIndex(this, name, idx.keyPath, idx.unique) : null;
   };
-  _zwIDBStore.prototype.openCursor = function (_query, direction) {
+
+  function _zwIDBCursor(store, request, entries, direction) {
+    this.source = store;
+    this.direction = direction || 'next';
+    this._store = store;
+    this._request = request;
+    this._entries = entries;
+    this._position = 0;
+    this._sync();
+  }
+  _zwIDBCursor.prototype._sync = function () {
+    var entry = this._entries[this._position];
+    this.key = entry.key;
+    this.primaryKey = entry.key;
+    this.value = entry.value;
+  };
+  _zwIDBCursor.prototype.continue = function () {
+    // https://w3c.github.io/IndexedDB/#dom-idbcursor-continue
+    this._store._assertUsable(false);
+    this._position++;
+    var result = null;
+    if (this._position < this._entries.length) {
+      this._sync();
+      result = this;
+    }
+    this._request.readyState = 'pending';
+    this._request.result = undefined;
+    _zwIDBDispatch(this._request, 'success', result);
+  };
+
+  _zwIDBStore.prototype.openCursor = function (query, direction) {
     this._assertUsable(false);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var entries = [];
-    this._records.forEach(function (value, key) { entries.push({ key: key, value: value }); });
-    entries.sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });
+    this._records.forEach(function (value, key) {
+      if (query == null || _zwIDBQueryMatches(query, key)) {
+        entries.push({ key: key, value: value });
+      }
+    });
+    entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
     if (direction === 'prev' || direction === 'prevunique') entries.reverse();
-    _zwIDBDispatch(req, 'success', entries.length ? entries[0] : null);
+    var cursor = entries.length ? new _zwIDBCursor(this, req, entries, direction) : null;
+    _zwIDBDispatch(req, 'success', cursor);
     return req;
   };
 
@@ -3263,8 +3298,9 @@
   globalThis.IDBKeyRange = _zwIDBKeyRange;
   globalThis.IDBRequest = _zwIDBRequest;
   globalThis.IDBOpenDBRequest = _zwIDBRequest;
+  globalThis.IDBCursor = _zwIDBCursor;
   ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction',
-   'IDBIndex', 'IDBCursor'].forEach(function (n) {
+   'IDBIndex'].forEach(function (n) {
     if (typeof globalThis[n] === 'undefined') globalThis[n] = function () {};
   });
 
