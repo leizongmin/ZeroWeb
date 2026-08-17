@@ -8,6 +8,7 @@
 //!   - 未启用隔离模式 / 非栅格字节（SVG 等）→ 进程内解码（SVG 依赖资源加载）
 //!   - 隔离进程不可用或崩溃 → 返回资源加载错误；不得绕过隔离边界。
 
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -34,37 +35,57 @@ fn image_decoder_binary_filename() -> &'static str {
     }
 }
 
+fn image_decoder_candidates_near_executable(exe: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    for contents_dir in exe
+        .ancestors()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("Contents"))
+    {
+        candidates.push(
+            contents_dir
+                .join("Frameworks")
+                .join("ZeroBrowser Helper (Image Decoder).app")
+                .join("Contents")
+                .join("MacOS")
+                .join("ZeroBrowser Helper (Image Decoder)"),
+        );
+    }
+
+    if let Some(parent) = exe.parent() {
+        candidates.push(parent.join(image_decoder_binary_filename()));
+        if let Some(grandparent) = parent.parent() {
+            candidates.push(grandparent.join(image_decoder_binary_filename()));
+        }
+    }
+    candidates
+}
+
 /// 解析 zero-image-decoder 可执行文件路径。
 ///
 /// 与 renderer（process_backend）/ compositor（compositor_client）同模式——
-/// 打包产物中子进程与宿主二进制同目录，裸名走 PATH 找不到：
+/// macOS 发布包优先使用独立 Helper app，其他平台及本地构建使用宿主同目录：
 /// 查找顺序：`ZW_IMAGE_DECODER_BIN` → `CARGO_BIN_EXE_zero-image-decoder` →
-/// current_exe 同目录（测试二进制 `target/debug/deps/` 上溯 `target/debug/`）→
-/// PATH 兜底。
-fn resolve_image_decoder_bin() -> std::path::PathBuf {
+/// macOS Helper app → current_exe 同目录（测试二进制 `target/debug/deps/` 上溯
+/// `target/debug/`）→ PATH 兜底。
+fn resolve_image_decoder_bin() -> PathBuf {
     if let Some(bin) = zero_runtime_config::optional_path("ZW_IMAGE_DECODER_BIN") {
         return bin;
     }
     if let Ok(path) = std::env::var("CARGO_BIN_EXE_zero-image-decoder")
-        && std::path::Path::new(&path).is_file()
+        && Path::new(&path).is_file()
     {
-        return std::path::PathBuf::from(path);
+        return PathBuf::from(path);
     }
-    let name = image_decoder_binary_filename();
     if let Ok(exe) = std::env::current_exe()
-        && let Some(parent) = exe.parent()
+        && let Some(candidate) = image_decoder_candidates_near_executable(&exe)
+            .into_iter()
+            .find(|path| path.is_file())
     {
-        let candidate = parent.join(name);
-        if candidate.is_file() {
-            return candidate;
-        }
-        if let Some(grandparent) = parent.parent()
-            && grandparent.join(name).is_file()
-        {
-            return grandparent.join(name);
-        }
+        return candidate;
     }
-    std::path::PathBuf::from(name)
+    PathBuf::from(image_decoder_binary_filename())
 }
 
 /// image-decoder 子进程代理。
@@ -72,7 +93,7 @@ struct ImageDecoderProxy {
     _child: Child,
     transport: PipeTransport<std::process::ChildStdout, std::process::ChildStdin>,
     next_id: u64,
-    /// 进程已失效（崩溃/通道断开）——不再尝试，直接回退进程内。
+    /// 进程已失效（崩溃/通道断开）——不再尝试，直接返回资源加载错误。
     failed: bool,
 }
 
@@ -213,6 +234,30 @@ mod tests {
 
     fn test_png() -> Vec<u8> {
         base64_decode(ONE_PX_RED_PNG_B64).expect("测试 PNG 解码")
+    }
+
+    #[test]
+    fn local_build_uses_sibling_image_decoder() {
+        let executable = Path::new("/workspace/target/release/zero-renderer");
+        let candidates = image_decoder_candidates_near_executable(executable);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from("/workspace/target/release").join(image_decoder_binary_filename()))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_renderer_finds_image_decoder_helper_in_outer_app() {
+        let executable = Path::new(
+            "/Applications/ZeroBrowser.app/Contents/Frameworks/ZeroBrowser Helper (Renderer).app/Contents/MacOS/ZeroBrowser Helper (Renderer)",
+        );
+        let candidates = image_decoder_candidates_near_executable(executable);
+
+        assert!(candidates.contains(&PathBuf::from(
+            "/Applications/ZeroBrowser.app/Contents/Frameworks/ZeroBrowser Helper (Image Decoder).app/Contents/MacOS/ZeroBrowser Helper (Image Decoder)"
+        )));
     }
 
     fn set_process_isolation(on: bool, bin: Option<&std::path::Path>) {

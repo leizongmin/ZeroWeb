@@ -563,6 +563,16 @@ fn browser_build_and_release_entries_include_compositor() {
         assert!(script.contains("zero-compositor"));
     }
 
+    let macos_script = include_str!("../../../scripts/package-macos.sh");
+    for helper_name in [
+        "ZeroBrowser Helper (Renderer)",
+        "ZeroBrowser Helper (Compositor)",
+        "ZeroBrowser Helper (Image Decoder)",
+    ] {
+        assert!(macos_script.contains(helper_name));
+    }
+    assert!(macos_script.contains("write_helper_info_plist"));
+
     for workflow in [
         include_str!("../../../.github/workflows/weekly.yml"),
         include_str!("../../../.github/workflows/release.yml"),

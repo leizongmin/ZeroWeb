@@ -8,7 +8,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 APP_NAME="ZeroBrowser"
 BUNDLE_ID="com.zeroweb.browser"
-HELPER_NAME="ZeroBrowser Helper (Renderer)"
+RENDERER_HELPER_NAME="ZeroBrowser Helper (Renderer)"
+COMPOSITOR_HELPER_NAME="ZeroBrowser Helper (Compositor)"
+DECODER_HELPER_NAME="ZeroBrowser Helper (Image Decoder)"
 OUTPUT_DIR="$PROJECT_ROOT/target/packages"
 BROWSER_BINARY=""
 RENDERER_BINARY=""
@@ -169,8 +171,12 @@ fi
 mkdir -p "$(dirname "$ARCHIVE_PATH")"
 
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
-HELPER_BUNDLE="$APP_BUNDLE/Contents/Frameworks/$HELPER_NAME.app"
-HELPER_EXECUTABLE="$HELPER_BUNDLE/Contents/MacOS/$HELPER_NAME"
+RENDERER_HELPER_BUNDLE="$APP_BUNDLE/Contents/Frameworks/$RENDERER_HELPER_NAME.app"
+COMPOSITOR_HELPER_BUNDLE="$APP_BUNDLE/Contents/Frameworks/$COMPOSITOR_HELPER_NAME.app"
+DECODER_HELPER_BUNDLE="$APP_BUNDLE/Contents/Frameworks/$DECODER_HELPER_NAME.app"
+RENDERER_HELPER_EXECUTABLE="$RENDERER_HELPER_BUNDLE/Contents/MacOS/$RENDERER_HELPER_NAME"
+COMPOSITOR_HELPER_EXECUTABLE="$COMPOSITOR_HELPER_BUNDLE/Contents/MacOS/$COMPOSITOR_HELPER_NAME"
+DECODER_HELPER_EXECUTABLE="$DECODER_HELPER_BUNDLE/Contents/MacOS/$DECODER_HELPER_NAME"
 ENTITLEMENTS_PATH="$OUTPUT_DIR/.ZeroBrowser.entitlements.plist"
 ICONSET_SOURCE="$PROJECT_ROOT/apps/browser/assets/icons-gen/iconset"
 ICONSET_DIR="$OUTPUT_DIR/.ZeroBrowser.iconset"
@@ -179,15 +185,17 @@ rm -rf "$APP_BUNDLE"
 mkdir -p \
     "$APP_BUNDLE/Contents/MacOS" \
     "$APP_BUNDLE/Contents/Resources" \
-    "$HELPER_BUNDLE/Contents/MacOS" \
-    "$HELPER_BUNDLE/Contents/Resources"
+    "$RENDERER_HELPER_BUNDLE/Contents/MacOS" \
+    "$RENDERER_HELPER_BUNDLE/Contents/Resources" \
+    "$COMPOSITOR_HELPER_BUNDLE/Contents/MacOS" \
+    "$COMPOSITOR_HELPER_BUNDLE/Contents/Resources" \
+    "$DECODER_HELPER_BUNDLE/Contents/MacOS" \
+    "$DECODER_HELPER_BUNDLE/Contents/Resources"
 
 install -m 755 "$BROWSER_BINARY" "$APP_BUNDLE/Contents/MacOS/ZeroBrowser"
-install -m 755 "$COMPOSITOR_BINARY" "$APP_BUNDLE/Contents/MacOS/zero-compositor"
-install -m 755 "$RENDERER_BINARY" "$HELPER_EXECUTABLE"
-# image-decoder 由 renderer 进程内的 webview spawn，与 renderer 同目录
-# （current_exe 同目录发现），放入 Helper bundle 的 MacOS。
-install -m 755 "$DECODER_BINARY" "$HELPER_BUNDLE/Contents/MacOS/zero-image-decoder"
+install -m 755 "$RENDERER_BINARY" "$RENDERER_HELPER_EXECUTABLE"
+install -m 755 "$COMPOSITOR_BINARY" "$COMPOSITOR_HELPER_EXECUTABLE"
+install -m 755 "$DECODER_BINARY" "$DECODER_HELPER_EXECUTABLE"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -213,18 +221,22 @@ EOF
 printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"
 plutil -lint "$APP_BUNDLE/Contents/Info.plist"
 
-cat > "$HELPER_BUNDLE/Contents/Info.plist" <<EOF
+write_helper_info_plist() {
+    local bundle="$1"
+    local name="$2"
+    local identifier_suffix="$3"
+    cat > "$bundle/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleDisplayName</key><string>${HELPER_NAME}</string>
-    <key>CFBundleExecutable</key><string>${HELPER_NAME}</string>
+    <key>CFBundleDisplayName</key><string>${name}</string>
+    <key>CFBundleExecutable</key><string>${name}</string>
     <key>CFBundleIconFile</key><string>${APP_NAME}</string>
-    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.helper.renderer</string>
+    <key>CFBundleIdentifier</key><string>${BUNDLE_ID}.helper.${identifier_suffix}</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>${HELPER_NAME}</string>
+    <key>CFBundleName</key><string>${name}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${BUNDLE_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
@@ -233,8 +245,13 @@ cat > "$HELPER_BUNDLE/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
-printf 'APPL????' > "$HELPER_BUNDLE/Contents/PkgInfo"
-plutil -lint "$HELPER_BUNDLE/Contents/Info.plist"
+    printf 'APPL????' > "$bundle/Contents/PkgInfo"
+    plutil -lint "$bundle/Contents/Info.plist"
+}
+
+write_helper_info_plist "$RENDERER_HELPER_BUNDLE" "$RENDERER_HELPER_NAME" "renderer"
+write_helper_info_plist "$COMPOSITOR_HELPER_BUNDLE" "$COMPOSITOR_HELPER_NAME" "compositor"
+write_helper_info_plist "$DECODER_HELPER_BUNDLE" "$DECODER_HELPER_NAME" "image-decoder"
 
 [[ -d "$ICONSET_SOURCE" ]] || fail "iconset not found: $ICONSET_SOURCE"
 rm -rf "$ICONSET_DIR"
@@ -242,7 +259,9 @@ cp -R "$ICONSET_SOURCE" "$ICONSET_DIR"
 sips -s format png -z 1024 1024 "$PROJECT_ROOT/apps/browser/assets/app-icon.svg" \
     --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns"
-cp "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns" "$HELPER_BUNDLE/Contents/Resources/ZeroBrowser.icns"
+for helper_bundle in "$RENDERER_HELPER_BUNDLE" "$COMPOSITOR_HELPER_BUNDLE" "$DECODER_HELPER_BUNDLE"; do
+    cp "$APP_BUNDLE/Contents/Resources/ZeroBrowser.icns" "$helper_bundle/Contents/Resources/ZeroBrowser.icns"
+done
 
 cat > "$ENTITLEMENTS_PATH" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -257,21 +276,27 @@ EOF
 if [[ -n "$SIGN_IDENTITY" ]]; then
     info "Signing app with Developer ID identity: $SIGN_IDENTITY"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-        --entitlements "$ENTITLEMENTS_PATH" "$HELPER_EXECUTABLE"
+        --entitlements "$ENTITLEMENTS_PATH" "$RENDERER_HELPER_EXECUTABLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-        --entitlements "$ENTITLEMENTS_PATH" "$HELPER_BUNDLE/Contents/MacOS/zero-image-decoder"
+        --entitlements "$ENTITLEMENTS_PATH" "$COMPOSITOR_HELPER_EXECUTABLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-        --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE/Contents/MacOS/zero-compositor"
+        --entitlements "$ENTITLEMENTS_PATH" "$DECODER_HELPER_EXECUTABLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-        --entitlements "$ENTITLEMENTS_PATH" "$HELPER_BUNDLE"
+        --entitlements "$ENTITLEMENTS_PATH" "$RENDERER_HELPER_BUNDLE"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$COMPOSITOR_HELPER_BUNDLE"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements "$ENTITLEMENTS_PATH" "$DECODER_HELPER_BUNDLE"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
         --entitlements "$ENTITLEMENTS_PATH" "$APP_BUNDLE"
 else
     info "No Developer ID identity provided; applying ad-hoc signature"
-    codesign --force --sign - "$HELPER_EXECUTABLE"
-    codesign --force --sign - "$HELPER_BUNDLE/Contents/MacOS/zero-image-decoder"
-    codesign --force --sign - "$APP_BUNDLE/Contents/MacOS/zero-compositor"
-    codesign --force --sign - "$HELPER_BUNDLE"
+    codesign --force --sign - "$RENDERER_HELPER_EXECUTABLE"
+    codesign --force --sign - "$COMPOSITOR_HELPER_EXECUTABLE"
+    codesign --force --sign - "$DECODER_HELPER_EXECUTABLE"
+    codesign --force --sign - "$RENDERER_HELPER_BUNDLE"
+    codesign --force --sign - "$COMPOSITOR_HELPER_BUNDLE"
+    codesign --force --sign - "$DECODER_HELPER_BUNDLE"
     codesign --force --sign - "$APP_BUNDLE"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"

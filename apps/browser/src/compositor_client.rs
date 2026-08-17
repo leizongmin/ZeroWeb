@@ -4,7 +4,7 @@
 //! 有界命令队列提交最新帧，并从有界完成缓存非阻塞读取结果。
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -596,26 +596,49 @@ fn compositor_binary_filename() -> &'static str {
     }
 }
 
+fn compositor_candidates_near_executable(exe: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    for contents_dir in exe
+        .ancestors()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("Contents"))
+    {
+        candidates.push(
+            contents_dir
+                .join("Frameworks")
+                .join("ZeroBrowser Helper (Compositor).app")
+                .join("Contents")
+                .join("MacOS")
+                .join("ZeroBrowser Helper (Compositor)"),
+        );
+    }
+
+    if let Some(parent) = exe.parent() {
+        candidates.push(parent.join(compositor_binary_filename()));
+        if let Some(grandparent) = parent.parent() {
+            candidates.push(grandparent.join(compositor_binary_filename()));
+        }
+    }
+    candidates
+}
+
 #[allow(clippy::zombie_processes)]
 fn spawn_transport(child_slot: Arc<Mutex<Option<Child>>>) -> Result<Box<dyn WorkerTransport>, String> {
     // R3254：与 renderer 二进制解析同模式——cargo test / 开发环境 PATH 不含 target/debug，
     // 此前 spawn 失败 → Disconnected → CompositorFrame 全被丢弃（测试与 CLI 直跑差异）。
-    // 查找顺序：ZW_COMPOSITOR_BIN → CARGO_BIN_EXE_zero-compositor → current_exe 同目录
-    // （测试二进制 target/debug/deps/ 上溯 target/debug/）→ PATH 兜底。
+    // 查找顺序：ZW_COMPOSITOR_BIN → CARGO_BIN_EXE_zero-compositor → macOS Helper app
+    // → current_exe 同目录（测试二进制 target/debug/deps/ 上溯 target/debug/）→ PATH 兜底。
     let bin = match zero_runtime_config::optional_path("ZW_COMPOSITOR_BIN") {
         Some(bin) => bin.to_string_lossy().into_owned(),
         None => {
             let mut candidate = std::env::var("CARGO_BIN_EXE_zero-compositor").ok().map(PathBuf::from);
             if candidate.as_ref().is_none_or(|p| !p.is_file())
                 && let Ok(exe) = std::env::current_exe()
-                && let Some(parent) = exe.parent()
             {
-                candidate = Some(parent.join(compositor_binary_filename()));
-                if !candidate.as_ref().is_some_and(|p| p.is_file())
-                    && let Some(grandparent) = parent.parent()
-                {
-                    candidate = Some(grandparent.join(compositor_binary_filename()));
-                }
+                candidate = compositor_candidates_near_executable(&exe)
+                    .into_iter()
+                    .find(|path| path.is_file());
             }
             candidate
                 .filter(|p| p.is_file())
@@ -1212,8 +1235,34 @@ pub fn reset_client_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn local_build_uses_sibling_compositor() {
+        let executable = Path::new("/workspace/target/release/zero-browser");
+        let candidates = compositor_candidates_near_executable(executable);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from("/workspace/target/release").join(compositor_binary_filename()))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_app_prefers_compositor_helper_bundle() {
+        let executable = Path::new("/Applications/ZeroBrowser.app/Contents/MacOS/ZeroBrowser");
+        let candidates = compositor_candidates_near_executable(executable);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&PathBuf::from(
+                "/Applications/ZeroBrowser.app/Contents/Frameworks/ZeroBrowser Helper (Compositor).app/Contents/MacOS/ZeroBrowser Helper (Compositor)"
+            ))
+        );
+    }
 
     fn pending(surface_id: u64, navigation_epoch: u64, frame_id: u64) -> PendingFrame {
         PendingFrame {
