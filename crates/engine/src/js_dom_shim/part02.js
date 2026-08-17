@@ -2569,9 +2569,14 @@
   // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：① 无持久化（内存 Map，跨页重载丢）；
   // ② 值引用存储非结构化克隆（headless 简化）；③ cursor 简化（openCursor 返 null result，非真迭代）；
   // ④ 约束错误（unique 冲突 / key 缺失）不抛（lenient，仅记内存）。
-  var _idb_databases = {}; // name → stores map（name → {keyPath, autoIncrement, records: Map, indexes: {}}）
+  // name → {version, stores, connections}
+  var _idb_databases = {};
 
   function _zwIDBEvent(type, target) {
+    if (typeof globalThis.Event === 'function'
+        && Object.getPrototypeOf(_zwIDBEvent.prototype) !== globalThis.Event.prototype) {
+      Object.setPrototypeOf(_zwIDBEvent.prototype, globalThis.Event.prototype);
+    }
     this.type = type;
     this.target = target;
     this.currentTarget = target;
@@ -2581,10 +2586,23 @@
     this._propagationStopped = false;
     this.timestamp = 0;
   }
+  _zwIDBEvent.prototype = Object.create((globalThis.Event || Object).prototype);
+  _zwIDBEvent.prototype.constructor = _zwIDBEvent;
   _zwIDBEvent.prototype.preventDefault = function () {
     if (this.cancelable) this.defaultPrevented = true;
   };
   _zwIDBEvent.prototype.stopPropagation = function () { this._propagationStopped = true; };
+
+  function IDBVersionChangeEvent(type, init) {
+    init = init || {};
+    _zwIDBEvent.call(this, String(type), null);
+    this.oldVersion = Number(init.oldVersion || 0);
+    this.newVersion = init.newVersion === null ? null
+      : (init.newVersion === undefined ? null : Number(init.newVersion));
+  }
+  IDBVersionChangeEvent.prototype = Object.create(_zwIDBEvent.prototype);
+  IDBVersionChangeEvent.prototype.constructor = IDBVersionChangeEvent;
+  globalThis.IDBVersionChangeEvent = IDBVersionChangeEvent;
 
   function _zwIDBRequest(source) {
     this.readyState = 'pending';
@@ -2625,7 +2643,7 @@
     if (typeof handler === 'function') {
       try { handler.call(target, event); } catch (_) {}
     }
-    var listeners = (target._listeners[type] || []).slice();
+    var listeners = ((target._listeners && target._listeners[type]) || []).slice();
     for (var i = 0; i < listeners.length; i++) {
       if (event._propagationStopped) break;
       var listener = listeners[i];
@@ -2637,11 +2655,16 @@
   }
 
   // 异步派发（经 microtask，使调用方先注册 handler 再触发——spec task 语义）。type ∈ success/error/upgradeneeded。
-  function _zwIDBDispatch(req, type, result) {
+  function _zwIDBDispatch(req, type, result, event) {
     var fire = function () {
       req.readyState = 'done';
       if (result !== undefined) req.result = result;
-      var ev = new _zwIDBEvent(type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'), req);
+      var ev = event || new _zwIDBEvent(
+        type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'),
+        req
+      );
+      ev.target = req;
+      ev.currentTarget = req;
       _zwIDBEmit(req, ev.type, ev);
     };
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
@@ -2744,15 +2767,21 @@
   };
   _zwIDBTransaction.prototype.abort = function () {};
 
-  function _zwIDBDatabase(name, stores) {
+  function _zwIDBDatabase(name, state) {
     this.name = name;
-    this.version = 1;
-    this._stores = stores; // name → {keyPath, autoIncrement, records: Map, indexes: {}}
-    var storesRef = stores;
+    this.version = state.version;
+    this._state = state;
+    this._stores = state.stores; // name → {keyPath, autoIncrement, records: Map, indexes: {}}
+    this._closed = false;
+    this.onversionchange = null;
+    this.onabort = null;
+    this.onerror = null;
+    this._listeners = {};
+    var self = this;
     this.objectStoreNames = {
-      contains: function (n) { return Object.prototype.hasOwnProperty.call(storesRef, n); },
-      get length() { return Object.keys(storesRef).length; },
-      item: function (i) { return Object.keys(storesRef)[i] || null; },
+      contains: function (n) { return Object.prototype.hasOwnProperty.call(self._stores, n); },
+      get length() { return Object.keys(self._stores).length; },
+      item: function (i) { return Object.keys(self._stores)[i] || null; },
     };
   }
   _zwIDBDatabase.prototype.createObjectStore = function (name, opts) {
@@ -2765,7 +2794,31 @@
   };
   _zwIDBDatabase.prototype.deleteObjectStore = function (name) { delete this._stores[name]; };
   _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
-  _zwIDBDatabase.prototype.close = function () {};
+  _zwIDBDatabase.prototype.close = function () {
+    if (this._closed) return;
+    this._closed = true;
+    var index = this._state.connections.indexOf(this);
+    if (index !== -1) this._state.connections.splice(index, 1);
+  };
+
+  function _zwIDBVersionEvent(type, target, oldVersion, newVersion) {
+    var event = new IDBVersionChangeEvent(type, { oldVersion: oldVersion, newVersion: newVersion });
+    event.target = target;
+    event.currentTarget = target;
+    return event;
+  }
+
+  function _zwIDBNotifyConnections(state, oldVersion, newVersion) {
+    state.connections.slice().forEach(function (connection) {
+      if (connection._closed) return;
+      var fire = function () {
+        _zwIDBEmit(connection, 'versionchange',
+          _zwIDBVersionEvent('versionchange', connection, oldVersion, newVersion));
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+      else fire();
+    });
+  }
 
   // https://w3c.github.io/IndexedDB/#compare-two-keys
   // Key type order: Number < Date < String < Binary < Array.
@@ -2836,31 +2889,68 @@
   globalThis.indexedDB = {
     // open(name, version)：建/取 db，异步派发 onupgradeneeded（version change，建 store 窗口）→ onsuccess。
     open: function (name, version) {
+      name = String(name);
       version = _zwIDBOpenVersion(version, arguments.length >= 2);
-      var stores = _idb_databases[name] || (_idb_databases[name] = {});
-      var db = new _zwIDBDatabase(name, stores);
-      db.version = version === undefined ? 1 : version;
       var req = new _zwIDBRequest(null);
-      _zwIDBDispatch(req, 'upgradeneeded', db);
-      // onsuccess 链在 onupgradeneeded 后（microtask FIFO）
-      if (typeof queueMicrotask === 'function') {
-        queueMicrotask(function () {
-          var ev = new _zwIDBEvent('success', req);
-          req.readyState = 'done';
-          req.result = db;
-          _zwIDBEmit(req, 'success', ev);
-        });
+      var state = _idb_databases[name];
+      var oldVersion = state ? state.version : 0;
+      var requestedVersion = version === undefined ? (oldVersion || 1) : version;
+      if (oldVersion > 0 && requestedVersion < oldVersion) {
+        req.error = new globalThis.DOMException('The requested version is lower than the current version.', 'VersionError');
+        var errorEvent = new _zwIDBEvent('error', req);
+        errorEvent.bubbles = true;
+        errorEvent.cancelable = true;
+        _zwIDBDispatch(req, 'error', undefined, errorEvent);
+        return req;
       }
+      if (!state) {
+        state = { version: 0, stores: {}, connections: [] };
+        _idb_databases[name] = state;
+      }
+      var needsUpgrade = requestedVersion > oldVersion;
+      if (needsUpgrade && oldVersion > 0) {
+        _zwIDBNotifyConnections(state, oldVersion, requestedVersion);
+      }
+      if (needsUpgrade) state.version = requestedVersion;
+      var db = new _zwIDBDatabase(name, state);
+      state.connections.push(db);
+      if (needsUpgrade) {
+        _zwIDBDispatch(
+          req,
+          'upgradeneeded',
+          db,
+          _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
+        );
+      }
+      var success = function () {
+        var ev = new _zwIDBEvent('success', req);
+        req.readyState = 'done';
+        req.result = db;
+        _zwIDBEmit(req, 'success', ev);
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(success);
+      else success();
       return req;
     },
     deleteDatabase: function (name) {
+      name = String(name);
+      var state = _idb_databases[name];
+      var oldVersion = state ? state.version : 0;
+      if (state) _zwIDBNotifyConnections(state, oldVersion, null);
       delete _idb_databases[name];
       var req = new _zwIDBRequest(null);
-      _zwIDBDispatch(req, 'success', undefined);
+      _zwIDBDispatch(
+        req,
+        'success',
+        undefined,
+        _zwIDBVersionEvent('success', req, oldVersion, null)
+      );
       return req;
     },
     databases: function () {
-      return Object.keys(_idb_databases).map(function (n) { return { name: n, version: 1 }; });
+      return Object.keys(_idb_databases).map(function (n) {
+        return { name: n, version: _idb_databases[n].version };
+      });
     },
     cmp: function (a, b) {
       if (arguments.length < 2) throw new TypeError('IDBFactory.cmp requires two keys');

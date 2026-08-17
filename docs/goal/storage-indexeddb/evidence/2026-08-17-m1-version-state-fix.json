@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB factory/global/event first slice after version state fix",
+  "files": 9,
+  "subtests": 50,
+  "status": {
+    "pass": 41,
+    "fail": 9,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 82.0,
+  "delta_from_previous": {
+    "pass": 7,
+    "fail": -7,
+    "pass_rate_percentage_points": 14.0
+  },
+  "driving_cases": [
+    {"path": "IndexedDB/idbfactory_open.any.js", "before": {"pass": 19, "fail": 10}, "after": {"pass": 23, "fail": 6}},
+    {"path": "IndexedDB/idbfactory_deleteDatabase.any.js", "before": {"pass": 1, "fail": 2}, "after": {"pass": 3, "fail": 0}},
+    {"path": "IndexedDB/idbversionchangeevent.any.js", "before": {"pass": 0, "fail": 1}, "after": {"pass": 1, "fail": 0}}
+  ],
+  "failure_clusters": [
+    {"name": "missing versionchange transaction", "count": 9}
+  ]
+}

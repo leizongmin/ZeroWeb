@@ -1694,6 +1694,63 @@ fn test_indexeddb_open_version_webidl_conversion() {
 }
 
 #[test]
+fn test_indexeddb_version_lifecycle_and_events() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var versionCalls = [];\
+             indexedDB.deleteDatabase('version-lifecycle');\
+             var first = indexedDB.open('version-lifecycle', 3);\
+             first.onupgradeneeded = function (event) {\
+               versionCalls.push('upgrade:' + event.oldVersion + ':' + event.newVersion + ':' +\
+                 (event instanceof IDBVersionChangeEvent));\
+             };\
+             first.onsuccess = function (event) {\
+               var db = event.target.result;\
+               versionCalls.push('success:' + db.version + ':' + (event instanceof Event));\
+               db.onversionchange = function (change) {\
+                 versionCalls.push('change:' + change.oldVersion + ':' + change.newVersion);\
+                 db.close();\
+               };\
+               var same = indexedDB.open(db.name);\
+               same.onupgradeneeded = function () { versionCalls.push('unexpected-upgrade'); };\
+               same.onsuccess = function (sameEvent) {\
+                 versionCalls.push('same:' + sameEvent.target.result.version);\
+                 sameEvent.target.result.close();\
+                 var lower = indexedDB.open(db.name, 2);\
+                 lower.onerror = function (errorEvent) {\
+                   versionCalls.push('lower:' + errorEvent.target.error.name);\
+                   var higher = indexedDB.open(db.name, 4);\
+                   higher.onupgradeneeded = function (upgradeEvent) {\
+                     versionCalls.push('higher:' + upgradeEvent.oldVersion + ':' + upgradeEvent.newVersion);\
+                   };\
+                   higher.onsuccess = function (higherEvent) {\
+                     higherEvent.target.result.close();\
+                     indexedDB.deleteDatabase(db.name).onsuccess = function (deleteEvent) {\
+                       versionCalls.push('delete:' + deleteEvent.oldVersion + ':' + deleteEvent.newVersion);\
+                     };\
+                   };\
+                 };\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("versionCalls.join('|')").unwrap().value,
+        "upgrade:0:3:true|success:3:true|same:3|lower:VersionError|change:3:4|higher:3:4|delete:4:null"
+    );
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
