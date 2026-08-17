@@ -46,6 +46,9 @@ pub enum StorageError {
     /// 数据库错误。
     #[error("Database error: {0}")]
     Database(String),
+    /// 持久化 I/O 错误。
+    #[error("I/O error: {0}")]
+    Io(String),
 }
 
 #[cfg(test)]

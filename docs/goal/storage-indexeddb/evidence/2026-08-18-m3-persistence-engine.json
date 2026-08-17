@@ -1,0 +1,49 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 single-owner IndexedDB persistence engine",
+  "capabilities": [
+    "per-origin hashed storage layout with identity validation",
+    "lossless key, schema, record, index, and key-generator snapshots",
+    "temporary file, fsync, atomic replacement, and directory sync",
+    "interrupted backup recovery and orphan temporary cleanup",
+    "candidate database commit before live-state replacement",
+    "page-runtime restart readback",
+    "persistence error propagation without live-state mutation"
+  ],
+  "tests": {
+    "storage_round_trip": "pass",
+    "origin_isolation": "pass",
+    "index_rebuild": "pass",
+    "key_generator_restore": "pass",
+    "corrupt_file_rejection": "pass",
+    "interrupted_write_recovery": "pass",
+    "io_failure_live_state_rollback": "pass",
+    "page_runtime_restart_readback": "pass",
+    "page_runtime_io_error": "pass",
+    "imported_wpt": {
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass"
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "browser-process storage ownership and renderer request-response IPC",
+    "cross-connection and cross-renderer transaction scheduling",
+    "default product data directory and private-mode policy",
+    "database versions above u32"
+  ]
+}

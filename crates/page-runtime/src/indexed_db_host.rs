@@ -15,6 +15,9 @@ mod cursor;
 #[cfg(test)]
 #[path = "indexed_db_host/cursor_tests.rs"]
 mod cursor_tests;
+#[cfg(test)]
+#[path = "indexed_db_host/persistence_tests.rs"]
+mod persistence_tests;
 
 use cursor::{
     ActiveIndexedDbCursor, CursorStep, IndexedDbCursorDirection, open_transaction_cursor, step_transaction_cursor,
@@ -376,7 +379,7 @@ fn dispatch_request(
                 .map(|database| database.version)
                 .unwrap_or(0);
             Ok(json!({
-                "deleted": storage.delete_indexed_db(origin, &name),
+                "deleted": storage.try_delete_indexed_db(origin, &name).map_err(storage_error)?,
                 "oldVersion": old_version,
             }))
         }
@@ -394,25 +397,29 @@ fn dispatch_request(
             key_path,
             auto_increment,
         } => {
-            let database = storage
-                .indexed_db_mut(origin, &database)
+            let database_ref = storage
+                .indexed_db(origin, &database)
                 .ok_or_else(|| "NotFoundError: IndexedDB database does not exist".to_string())?;
-            if database.has_store(&name) {
+            if database_ref.has_store(&name) {
                 return Err(format!("ConstraintError: object store '{name}' already exists"));
             }
-            database
-                .create_object_store(&name, key_path.as_deref(), auto_increment)
+            storage
+                .mutate_indexed_db(origin, &database, |candidate| {
+                    candidate.create_object_store(&name, key_path.as_deref(), auto_increment)
+                })
                 .map_err(storage_error)?;
             Ok(json!({"created": true}))
         }
         IndexedDbRequest::DeleteObjectStore { database, name } => {
-            let database = storage
-                .indexed_db_mut(origin, &database)
+            let database_ref = storage
+                .indexed_db(origin, &database)
                 .ok_or_else(|| "NotFoundError: IndexedDB database does not exist".to_string())?;
-            if !database.has_store(&name) {
+            if !database_ref.has_store(&name) {
                 return Err(format!("NotFoundError: object store '{name}' does not exist"));
             }
-            database.delete_object_store(&name).map_err(storage_error)?;
+            storage
+                .mutate_indexed_db(origin, &database, |candidate| candidate.delete_object_store(&name))
+                .map_err(storage_error)?;
             Ok(json!({"deleted": true}))
         }
         IndexedDbRequest::StoreNames { database } => {
@@ -675,8 +682,9 @@ fn dispatch_request(
         }
         IndexedDbRequest::CommitTransaction { transaction } => {
             let mut active = remove_active_transaction(transactions, origin, transaction)?;
-            let database = active_database_mut(storage, &active)?;
-            database.commit_tx(&mut active.transaction).map_err(storage_error)?;
+            storage
+                .commit_indexed_db_transaction(&active.origin, &active.database, &mut active.transaction)
+                .map_err(storage_error)?;
             Ok(json!({"committed": true}))
         }
         IndexedDbRequest::AbortTransaction { transaction } => {
@@ -875,7 +883,11 @@ fn sync_schema(
         }
     }
 
-    let database = storage.open_indexed_db(origin, name, version).map_err(storage_error)?;
+    let mut database = storage
+        .indexed_db(origin, name)
+        .cloned()
+        .unwrap_or_else(|| zero_storage::IdbDatabase::new(name, version));
+    database.version = version;
     let existing_names = database
         .store_names()
         .into_iter()
@@ -932,7 +944,9 @@ fn sync_schema(
             }
         }
     }
-    Ok(json!({"database": database_schema_json(database)}))
+    let schema = database_schema_json(&database);
+    storage.replace_indexed_db(origin, database).map_err(storage_error)?;
+    Ok(json!({"database": schema}))
 }
 
 fn index_schemas_match(current: &[zero_storage::IdbIndexInfo], requested: &[IndexedDbIndexSchema]) -> bool {
@@ -1009,6 +1023,7 @@ fn storage_error(error: StorageError) -> String {
         StorageError::StoreNotFound(store) => format!("NotFoundError: object store '{store}' does not exist"),
         StorageError::KeyNotFound(key) => format!("NotFoundError: key '{key}' does not exist"),
         StorageError::Serialization(message) => format!("DataCloneError: {message}"),
+        StorageError::Io(message) => format!("UnknownError: IndexedDB persistence failed: {message}"),
         StorageError::Database(message)
             if message.contains("Key already exists") || message.contains("Unique index") =>
         {

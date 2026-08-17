@@ -249,6 +249,7 @@ struct IndexEntry {
 }
 
 /// Object Store 索引。
+#[derive(Clone)]
 pub struct IdbIndex {
     /// 索引名称。
     pub name: String,
@@ -467,6 +468,7 @@ fn parse_wire_f64(value: &str) -> Option<f64> {
 }
 
 /// Object Store（对象仓库）。
+#[derive(Clone)]
 pub struct IdbObjectStore {
     /// 仓库名称。
     pub name: String,
@@ -549,6 +551,7 @@ fn advance_generator_for_explicit_key(current: u64, explicit: &IdbKey) -> u64 {
 }
 
 /// IndexedDB 数据库。
+#[derive(Clone)]
 pub struct IdbDatabase {
     /// 数据库名称。
     pub name: String,
@@ -680,6 +683,27 @@ impl IdbDatabase {
             .collect::<Vec<_>>();
         stores.sort_unstable_by(|a, b| a.name.cmp(&b.name));
         stores
+    }
+
+    pub(crate) fn key_generator(&self, store_name: &str) -> Result<u64, StorageError> {
+        self.stores
+            .get(store_name)
+            .map(|store| store.next_key)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))
+    }
+
+    pub(crate) fn restore_key_generator(&mut self, store_name: &str, next_key: u64) -> Result<(), StorageError> {
+        let store = self
+            .stores
+            .get_mut(store_name)
+            .ok_or_else(|| StorageError::StoreNotFound(store_name.to_string()))?;
+        if next_key == 0 {
+            return Err(StorageError::Serialization(
+                "IndexedDB key generator must be greater than zero".to_string(),
+            ));
+        }
+        store.next_key = next_key;
+        Ok(())
     }
 
     /// 是否包含指定 Object Store。

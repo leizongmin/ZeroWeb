@@ -1,10 +1,16 @@
 //! 存储管理器 — 管理多个源的 localStorage、sessionStorage 与 IndexedDB。
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::StorageError;
-use crate::indexed_db::IdbDatabase;
+use crate::indexed_db::persistence::IndexedDbPersistence;
+use crate::indexed_db::{IdbDatabase, IdbTransaction};
 use crate::local_storage::{StorageType, WebStorage};
+
+#[cfg(test)]
+#[path = "storage_manager/persistence_tests.rs"]
+mod persistence_tests;
 
 /// localStorage 默认最大容量（5 MB）。
 const DEFAULT_MAX_SIZE: usize = 5 * 1024 * 1024;
@@ -26,6 +32,8 @@ pub struct StorageManager {
     session_stores: HashMap<String, WebStorage>,
     /// IndexedDB 数据库（按 origin、数据库名分组）。
     indexed_databases: HashMap<String, HashMap<String, IdbDatabase>>,
+    /// IndexedDB 持久化 owner；`None` 表示纯内存 manager。
+    indexed_db_persistence: Option<IndexedDbPersistence>,
     /// 每个源的最大容量。
     default_max_size: usize,
 }
@@ -42,8 +50,21 @@ impl StorageManager {
             local_stores: HashMap::new(),
             session_stores: HashMap::new(),
             indexed_databases: HashMap::new(),
+            indexed_db_persistence: None,
             default_max_size,
         }
+    }
+
+    /// 创建启用 IndexedDB 持久化的 manager，并加载目录中的全部数据库。
+    pub fn with_indexed_db_persistence(root: impl Into<PathBuf>) -> Result<Self, StorageError> {
+        let (persistence, indexed_databases) = IndexedDbPersistence::open(root)?;
+        Ok(Self {
+            local_stores: HashMap::new(),
+            session_stores: HashMap::new(),
+            indexed_databases,
+            indexed_db_persistence: Some(persistence),
+            default_max_size: DEFAULT_MAX_SIZE,
+        })
     }
 
     /// 获取指定源的 localStorage（如不存在则创建）。
@@ -74,18 +95,25 @@ impl StorageManager {
                 "IndexedDB version must be greater than zero".to_string(),
             ));
         }
-        let databases = self.indexed_databases.entry(origin.to_string()).or_default();
-        let database = databases
-            .entry(name.to_string())
-            .or_insert_with(|| IdbDatabase::new(name, version));
-        if version < database.version {
+        let current = self.indexed_db(origin, name);
+        if current.is_some_and(|database| version < database.version) {
             return Err(StorageError::Database(format!(
                 "Requested version {version} is lower than current version {}",
-                database.version
+                current.map(|database| database.version).unwrap_or_default()
             )));
         }
-        database.version = version;
-        Ok(database)
+        let changed = current.is_none_or(|database| version != database.version);
+        if changed {
+            let mut candidate = current.cloned().unwrap_or_else(|| IdbDatabase::new(name, version));
+            candidate.version = version;
+            self.persist_database(origin, &candidate)?;
+            self.indexed_databases
+                .entry(origin.to_string())
+                .or_default()
+                .insert(name.to_string(), candidate);
+        }
+        self.indexed_db_mut(origin, name)
+            .ok_or_else(|| StorageError::Database("IndexedDB database was not opened".to_string()))
     }
 
     /// 获取已存在的指定源 IndexedDB 数据库。
@@ -98,8 +126,60 @@ impl StorageManager {
         self.indexed_databases.get_mut(origin)?.get_mut(name)
     }
 
+    /// 在候选副本上修改数据库；持久化成功后才替换 live state。
+    pub fn mutate_indexed_db<T>(
+        &mut self,
+        origin: &str,
+        name: &str,
+        mutation: impl FnOnce(&mut IdbDatabase) -> Result<T, StorageError>,
+    ) -> Result<T, StorageError> {
+        let mut candidate = self
+            .indexed_db(origin, name)
+            .cloned()
+            .ok_or_else(|| StorageError::Database(format!("IndexedDB database '{name}' does not exist")))?;
+        let result = mutation(&mut candidate)?;
+        self.replace_indexed_db(origin, candidate)?;
+        Ok(result)
+    }
+
+    /// 提交 transaction 到候选数据库；落盘失败时 live database 保持不变。
+    pub fn commit_indexed_db_transaction(
+        &mut self,
+        origin: &str,
+        name: &str,
+        transaction: &mut IdbTransaction,
+    ) -> Result<(), StorageError> {
+        self.mutate_indexed_db(origin, name, |database| database.commit_tx(transaction))
+    }
+
+    /// 用完整候选数据库替换现有数据库；写盘先于 live state 切换。
+    pub fn replace_indexed_db(&mut self, origin: &str, database: IdbDatabase) -> Result<(), StorageError> {
+        let name = database.name.clone();
+        self.persist_database(origin, &database)?;
+        self.indexed_databases
+            .entry(origin.to_string())
+            .or_default()
+            .insert(name, database);
+        Ok(())
+    }
+
+    /// 删除指定源的 IndexedDB 数据库，并传播持久化错误。
+    pub fn try_delete_indexed_db(&mut self, origin: &str, name: &str) -> Result<bool, StorageError> {
+        if self.indexed_db(origin, name).is_none() {
+            return Ok(false);
+        }
+        if let Some(persistence) = &self.indexed_db_persistence {
+            persistence.delete(origin, name)?;
+        }
+        Ok(self.remove_indexed_db(origin, name))
+    }
+
     /// 删除指定源的 IndexedDB 数据库，返回数据库是否存在。
     pub fn delete_indexed_db(&mut self, origin: &str, name: &str) -> bool {
+        self.try_delete_indexed_db(origin, name).unwrap_or(false)
+    }
+
+    fn remove_indexed_db(&mut self, origin: &str, name: &str) -> bool {
         let Some(databases) = self.indexed_databases.get_mut(origin) else {
             return false;
         };
@@ -108,6 +188,13 @@ impl StorageManager {
             self.indexed_databases.remove(origin);
         }
         removed
+    }
+
+    fn persist_database(&self, origin: &str, database: &IdbDatabase) -> Result<(), StorageError> {
+        if let Some(persistence) = &self.indexed_db_persistence {
+            persistence.write(origin, database)?;
+        }
+        Ok(())
     }
 
     /// 返回指定源的 IndexedDB 数据库名称。

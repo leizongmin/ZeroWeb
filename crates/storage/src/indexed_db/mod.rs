@@ -3,6 +3,7 @@
 //! 提供 IndexedDB 的核心数据结构：数据库、对象仓库、索引、游标、事务。
 
 pub mod cursor;
+pub(crate) mod persistence;
 pub mod types;
 
 pub use cursor::*;
