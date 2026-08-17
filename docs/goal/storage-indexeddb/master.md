@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M1 CRUD store guards）
+**最后更新**: 2026-08-17（M1 CRUD key validation）
 
 ---
 
@@ -35,21 +35,21 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ `indexedDB.open` version 转换：15 个同步校验 WPT 全绿
 - ✅ 版本状态与 `IDBVersionChangeEvent`：delete/versionchange WPT 全绿，净增 7 Pass
 - ✅ versionchange transaction：complete/abort/error 顺序与回滚，最后 9 Fail 全灭
-- 🟨 Object Store CRUD 首批：6 文件、54 subtest，32 Pass / 22 Fail（59.26%）
+- 🟨 Object Store CRUD 首批：6 文件、54 subtest，45 Pass / 9 Fail（83.33%）
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1 首批 9 文件已导入 |
+| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1 首批 15 文件已导入 |
 | I2 | 页面→Rust 引擎零接线 | ⬜ M2 |
 | I3 | 无持久化（重启即失） | ⬜ M3 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ⬜ M2/M3 |
 
 ## 下一步计划
 
-1. **M1 轻量修复 8**：add/put/get key 与 DataError 校验（11 Fail）
-2. **M1 CRUD 修复**：unique、autoIncrement/cursor
+1. **M1 轻量修复 9**：object store cursor continuation（6 Fail）
+2. **M1 CRUD 修复**：duplicate primary key 与 unique index（3 Fail）
 3. **M2**：JS↔Rust 接线（open/事务/store CRUD/cursor 先行）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -59,7 +59,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | 🟨 factory 50/50 + CRUD 基线 15/51 |
+| M1 — WPT IndexedDB 基线建立 | 🟨 factory 50/50 + CRUD 45/54 |
 | M2 — JS↔Rust 接线（核心通路） | ⬜ |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
@@ -67,9 +67,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
 - WPT IndexedDB factory 首批：9 文件 / 50 subtest / 50 Pass / 0 Fail / 100.00%
-- WPT Object Store CRUD 首批：6 文件 / 54 subtest / 32 Pass / 22 Fail / 59.26%
-- imported 合计：15 文件 / 104 subtest / 82 Pass / 22 Fail / 78.85%
-- CRUD 失败聚类：key/DataError 11、非法 index key 2、unique 3、autoIncrement/cursor 6
+- WPT Object Store CRUD 首批：6 文件 / 54 subtest / 45 Pass / 9 Fail / 83.33%
+- imported 合计：15 文件 / 104 subtest / 95 Pass / 9 Fail / 91.35%
+- CRUD 失败聚类：duplicate/unique 3、cursor continuation 6
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
   `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
   `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`、
@@ -78,7 +78,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m1-factory-first-slice-final.{md,json}`、
   `evidence/2026-08-17-m1-crud-baseline.{md,json}`、
   `evidence/2026-08-17-m1-crud-range-fix.{md,json}`、
-  `evidence/2026-08-17-m1-crud-store-guards.{md,json}`
+  `evidence/2026-08-17-m1-crud-store-guards.{md,json}`、
+  `evidence/2026-08-17-m1-crud-key-validation.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

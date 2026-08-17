@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB object store CRUD first slice after key validation",
+  "files": 6,
+  "subtests": 54,
+  "status": {
+    "pass": 45,
+    "fail": 9,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 83.33,
+  "delta_from_previous": {
+    "pass": 13,
+    "fail": -13,
+    "pass_rate_percentage_points": 24.07
+  },
+  "failure_clusters": [
+    {"name": "duplicate primary key and unique index handling", "count": 3},
+    {"name": "cursor continuation", "count": 6}
+  ]
+}

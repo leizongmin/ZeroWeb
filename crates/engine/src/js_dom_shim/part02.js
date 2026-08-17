@@ -2567,8 +2567,7 @@
   // tx.objectStore/oncomplete/abort、index.get/openCursor。数据存内存 Map（同 db 名跨 open 实例持久；
   // 跨页面重载不持久——defer 接 storage crate 真 IDB + host bridge）。
   // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：① 无持久化（内存 Map，跨页重载丢）；
-  // ② 值引用存储非结构化克隆（headless 简化）；③ cursor 简化（openCursor 返 null result，非真迭代）；
-  // ④ 约束错误（unique 冲突 / key 缺失）不抛（lenient，仅记内存）。
+  // ② cursor 简化（openCursor 仅返首条，非真迭代）；③ unique 约束错误未完整实现。
   // name → {version, stores, connections}
   var _idb_databases = {};
 
@@ -2706,19 +2705,59 @@
     String(this.keyPath).split('.').forEach(function (p) { k = k == null ? undefined : k[p]; });
     return k;
   };
-  _zwIDBStore.prototype._mutate = function (op, value, key) {
+  _zwIDBStore.prototype._setKeyPath = function (value, key) {
+    var parts = String(this.keyPath).split('.');
+    var target = value;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (target[parts[i]] == null) target[parts[i]] = {};
+      target = target[parts[i]];
+    }
+    target[parts[parts.length - 1]] = key;
+  };
+  _zwIDBStore.prototype._resolveKey = function (value, key, keyProvided) {
+    // https://w3c.github.io/IndexedDB/#store-a-record-into-an-object-store
+    if (this.keyPath && keyProvided) {
+      throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
+    }
+    var resolved = this.keyPath ? this._keyOf(value) : key;
+    if (resolved === undefined) {
+      if (!this.autoIncrement) {
+        throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
+      }
+      resolved = this._metadata.nextKey || 1;
+      this._metadata.nextKey = resolved + 1;
+      if (this.keyPath) this._setKeyPath(value, resolved);
+    }
+    if (!_zwIDBKey(resolved, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+    }
+    if (this.autoIncrement && typeof resolved === 'number') {
+      var next = Math.floor(resolved) + 1;
+      if (!this._metadata.nextKey || next > this._metadata.nextKey) this._metadata.nextKey = next;
+    }
+    return resolved;
+  };
+  _zwIDBStore.prototype._mutate = function (op, value, key, keyProvided) {
     this._assertUsable(true);
-    var k = key !== undefined ? key : this._keyOf(value);
+    var storedValue = globalThis.structuredClone(value);
+    var k = this._resolveKey(storedValue, key, keyProvided);
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    this._records.set(k, value); // 同步内存变更（后续 get 可见）
+    this._records.set(k, storedValue); // 同步内存变更（后续 get 可见）
     _zwIDBDispatch(req, 'success', k); // 异步 success（result = key）
     return req;
   };
-  _zwIDBStore.prototype.add = function (value, key) { return this._mutate('add', value, key); };
-  _zwIDBStore.prototype.put = function (value, key) { return this._mutate('put', value, key); };
+  _zwIDBStore.prototype.add = function (value, key) {
+    return this._mutate('add', value, key, arguments.length >= 2);
+  };
+  _zwIDBStore.prototype.put = function (value, key) {
+    return this._mutate('put', value, key, arguments.length >= 2);
+  };
   _zwIDBStore.prototype.get = function (key) {
     this._assertUsable(false);
+    if (!_zwIDBIsKeyRange(key) && !_zwIDBKey(key, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+    }
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
     var result;
@@ -2730,7 +2769,9 @@
       matches.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
       result = matches.length ? matches[0].value : undefined;
     } else {
-      result = this._records.get(key);
+      this._records.forEach(function (value, recordKey) {
+        if (result === undefined && _zwIDBCompareValues(recordKey, key) === 0) result = value;
+      });
     }
     _zwIDBDispatch(req, 'success', result);
     return req;
@@ -2747,7 +2788,11 @@
       });
       keys.forEach(function (recordKey) { records.delete(recordKey); });
     } else {
-      this._records.delete(key);
+      var matchingKey;
+      this._records.forEach(function (_value, recordKey) {
+        if (matchingKey === undefined && _zwIDBCompareValues(recordKey, key) === 0) matchingKey = recordKey;
+      });
+      if (matchingKey !== undefined) this._records.delete(matchingKey);
     }
     _zwIDBDispatch(req, 'success', undefined);
     return req;
@@ -2904,6 +2949,7 @@
         autoIncrement: !!opts.autoIncrement,
         records: new Map(),
         indexes: {},
+        nextKey: 1,
         deleted: false
       };
     }
@@ -2966,7 +3012,9 @@
         keyPath: source.keyPath,
         autoIncrement: source.autoIncrement,
         records: records,
-        indexes: indexes
+        indexes: indexes,
+        nextKey: source.nextKey || 1,
+        deleted: false
       };
     });
     return cloned;
@@ -3213,8 +3261,10 @@
   };
   // IDB 构造器占位（feature-detection / instanceof 用，rare）。
   globalThis.IDBKeyRange = _zwIDBKeyRange;
-  ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction', 'IDBRequest',
-   'IDBOpenDBRequest', 'IDBIndex', 'IDBCursor'].forEach(function (n) {
+  globalThis.IDBRequest = _zwIDBRequest;
+  globalThis.IDBOpenDBRequest = _zwIDBRequest;
+  ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction',
+   'IDBIndex', 'IDBCursor'].forEach(function (n) {
     if (typeof globalThis[n] === 'undefined') globalThis[n] = function () {};
   });
 

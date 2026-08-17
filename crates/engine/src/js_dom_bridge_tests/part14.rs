@@ -1835,6 +1835,76 @@ fn test_indexeddb_key_range_queries() {
 }
 
 #[test]
+fn test_indexeddb_object_store_key_constraints_and_generation() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var keyResults = [];\
+             var request = indexedDB.open('key-constraints');\
+             keyResults.push(request instanceof IDBRequest);\
+             keyResults.push(request instanceof IDBOpenDBRequest);\
+             request.onupgradeneeded = function () {\
+               var db = request.result;\
+               var inlineStore = db.createObjectStore('inline', { keyPath: 'key' });\
+               var outlineStore = db.createObjectStore('outline');\
+               function errorName(callback) {\
+                 try { callback(); return 'none'; } catch (error) { return error.name; }\
+               }\
+               keyResults.push(errorName(function () { inlineStore.add({ key: 1 }, 1); }));\
+               keyResults.push(errorName(function () { inlineStore.put({ key: 1 }, undefined); }));\
+               keyResults.push(errorName(function () { inlineStore.add({}); }));\
+               keyResults.push(errorName(function () { inlineStore.put({ key: {} }); }));\
+               keyResults.push(errorName(function () { outlineStore.add({}); }));\
+               keyResults.push(errorName(function () { outlineStore.put({}, {}); }));\
+               keyResults.push(errorName(function () { inlineStore.get(null); }));\
+               var generated = db.createObjectStore('generated', { keyPath: 'key', autoIncrement: true });\
+               var original = { value: 'same' };\
+               for (var i = 0; i < 4; i++) generated.put(original);\
+               keyResults.push(original.key === undefined);\
+               var nested = db.createObjectStore('nested', { keyPath: 'path.key', autoIncrement: true });\
+               var nestedOriginal = { value: 'nested' };\
+               nested.add(nestedOriginal);\
+               keyResults.push(nestedOriginal.path === undefined);\
+               var indexed = db.createObjectStore('indexed', { keyPath: 'key' });\
+               indexed.createIndex('index', 'invalid');\
+               keyResults.push(indexed.add({ key: 1, invalid: {} }) instanceof IDBRequest);\
+               var dates = db.createObjectStore('dates', { keyPath: 'key' });\
+               dates.add({ key: new Date(1234), value: 'date' });\
+             };\
+             request.onsuccess = function () {\
+               var db = request.result;\
+               var generated = db.transaction('generated').objectStore('generated');\
+               [1, 2, 3, 4].forEach(function (key) {\
+                 generated.get(key).onsuccess = function (event) {\
+                   keyResults.push(event.target.result.key);\
+                 };\
+               });\
+               db.transaction('nested').objectStore('nested').get(1).onsuccess = function (event) {\
+                 keyResults.push(event.target.result.path.key);\
+               };\
+               db.transaction('dates').objectStore('dates').get(new Date(1234)).onsuccess = function (event) {\
+                 keyResults.push(event.target.result.value);\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("keyResults.join('|')").unwrap().value,
+        "true|true|DataError|DataError|DataError|DataError|DataError|DataError|DataError|\
+         true|true|true|1|2|3|4|1|date"
+    );
+}
+
+#[test]
 fn test_indexeddb_object_store_lifecycle_guards() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
