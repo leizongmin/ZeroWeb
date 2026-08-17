@@ -1,0 +1,43 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 embedded WebView IndexedDB storage ownership",
+  "capabilities": [
+    "shareable in-memory IndexedDbOwner",
+    "path-configured persistent IndexedDbOwner",
+    "WebView constructor injection",
+    "WebViewBuilder owner injection",
+    "per-WebView transaction registry isolation",
+    "explicit storage initialization errors"
+  ],
+  "tests": {
+    "shared_owner_cross_webview_readback": "pass",
+    "separate_in_memory_owner_isolation": "pass",
+    "persistent_owner_rebuild_readback": "pass",
+    "zero_webview_test_compile": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess": "pass"
+    },
+    "workspace_clippy": "pass",
+    "imported_wpt": {
+      "revision": "315976933870b34d6ea30e3f6643403edae678ba",
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "full cross-connection scheduling and blocked/versionchange events",
+    "browser navigation-commit storage-key authority",
+    "database versions above u32"
+  ]
+}

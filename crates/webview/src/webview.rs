@@ -25,7 +25,7 @@ use zero_security::{ResourceCheckResult, SecurityContext};
 use zero_storage::{CacheRequest, FetchInterceptResult, ServiceWorkerRegistry};
 use zero_wasm_sandbox::WasmInstance;
 
-use crate::WebViewError;
+use crate::{IndexedDbOwner, WebViewError};
 
 mod user_actions;
 pub use user_actions::WebViewUserActionResult;
@@ -323,6 +323,14 @@ pub struct WebView {
 impl WebView {
     /// 创建新的 WebView。
     pub fn new(config: WebViewConfig) -> Self {
+        Self::new_with_indexed_db_owner(config, IndexedDbOwner::in_memory())
+    }
+
+    /// 使用宿主提供的 IndexedDB owner 创建 WebView。
+    ///
+    /// 同一 browsing context 的 WebView 可共享一个 owner；private context 应使用独立的
+    /// [`IndexedDbOwner::in_memory`] owner。
+    pub fn new_with_indexed_db_owner(config: WebViewConfig, indexed_db_owner: IndexedDbOwner) -> Self {
         let mut pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
             std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
@@ -341,9 +349,7 @@ impl WebView {
         let script_source_fetcher = config.script_source_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
         let fetch_handler = config.fetch_handler.clone();
-        let indexed_db_bridge = zero_engine::IndexedDbBridge::new(zero_page_runtime::indexed_db_handler(
-            std::sync::Arc::new(std::sync::Mutex::new(zero_storage::StorageManager::new())),
-        ));
+        let indexed_db_bridge = zero_engine::IndexedDbBridge::new(indexed_db_owner.handler());
         let page_url_wire = std::sync::Arc::new(std::sync::Mutex::new(String::from("about:blank")));
         // 懒创建：js_sandbox 延后到首次实际执行脚本时初始化（见 ensure_sandbox）。
         // 无脚本页面（多数 WebView 页面）不创建 V8 isolate，显著降低常驻内存

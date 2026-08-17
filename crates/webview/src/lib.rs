@@ -15,6 +15,7 @@
 
 mod async_load;
 mod image_decoder;
+mod indexed_db_owner;
 mod net_pool;
 pub mod webview;
 pub mod webview_builder;
@@ -24,6 +25,7 @@ pub use async_load::{
     live_fontface_enabled,
 };
 pub use image_decoder::enable_isolated_image_decoder;
+pub use indexed_db_owner::IndexedDbOwner;
 pub use net_pool::{fetch_bytes_async, fetch_text_async};
 pub use webview::*;
 pub use webview_builder::*;
@@ -40,6 +42,9 @@ pub enum WebViewError {
     /// 脚本错误。
     #[error("Script error: {0}")]
     Script(String),
+    /// IndexedDB owner 初始化错误。
+    #[error("Storage error: {0}")]
+    Storage(String),
     /// 未实现。
     #[error("Not implemented: {0}")]
     NotImplemented(String),

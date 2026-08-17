@@ -1,10 +1,12 @@
 //! WebView 构建器 — Builder pattern 创建 WebView。
 
+use crate::IndexedDbOwner;
 use crate::webview::{WebView, WebViewConfig};
 
 /// WebView 构建器。
 pub struct WebViewBuilder {
     config: WebViewConfig,
+    indexed_db_owner: Option<IndexedDbOwner>,
 }
 
 impl WebViewBuilder {
@@ -12,6 +14,7 @@ impl WebViewBuilder {
     pub fn new() -> Self {
         Self {
             config: WebViewConfig::default(),
+            indexed_db_owner: None,
         }
     }
 
@@ -81,12 +84,21 @@ impl WebViewBuilder {
         self
     }
 
+    /// 使用宿主提供的 IndexedDB owner。
+    pub fn indexed_db_owner(mut self, owner: IndexedDbOwner) -> Self {
+        self.indexed_db_owner = Some(owner);
+        self
+    }
+
     /// 构建 WebView 实例。
     ///
     /// 如果 `config.url` 已设置，会自动调用 `load_url` 将 WebView
     /// 置为加载状态（但不会同步发起网络请求）。
     pub fn build(self) -> WebView {
-        let mut wv = WebView::new(self.config);
+        let mut wv = match self.indexed_db_owner {
+            Some(owner) => WebView::new_with_indexed_db_owner(self.config, owner),
+            None => WebView::new(self.config),
+        };
         if let Some(ref url) = wv.config().url {
             let url = url.clone();
             wv.load_url(&url);

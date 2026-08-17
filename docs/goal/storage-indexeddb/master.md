@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M3 browser storage owner）
+**最后更新**: 2026-08-18（M3 embedded WebView storage owner）
 
 ---
 
@@ -46,7 +46,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
 - ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
 - ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
-- 🟨 M3 persistence：browser/renderer 单写 owner、IPC、默认目录和 private 隔离已完成；embedded WebView owner 待接
+- ✅ M3 persistence：browser/renderer 单写 owner、embedded WebView owner 注入、private 隔离和跨会话恢复已完成
 
 ## 缺口清单
 
@@ -54,13 +54,13 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 |---|------|------|
 | I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 38 文件 |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping/continuePrimaryKey 已接 |
-| I3 | 无持久化（重启即失） | 🟨 browser/renderer production path 完成；embedded WebView 待接 |
+| I3 | 无持久化（重启即失） | ✅ browser/renderer 与 embedded WebView production paths 完成 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + per-renderer registry 完成；跨 connection scheduling 待扩面 |
 
 ## 下一步计划
 
-1. **M3**：为 embedded WebView 提供宿主级 persistent/private owner 注入
-2. **M2/M3**：扩展跨 connection transaction scheduling 与 blocked/versionchange 事件
+1. **M2/M3**：扩展跨 connection transaction scheduling 与 blocked/versionchange 事件
+2. **M2**：由 browser navigation commit 独立确定 storage key，消除 snapshot URL 时序窗口
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -71,7 +71,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 222/222 |
 | M2 — JS↔Rust 接线（核心通路） | 🟨 request task model complete；advanced scheduling pending |
-| M3 — 索引 + 事件模型 + 持久化 | 🟨 browser/renderer complete；embedded WebView owner pending |
+| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage ownership complete；cross-connection scheduling pending |
 
 ## 验证基线
 
@@ -115,7 +115,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m2-transaction-deactivation.{md,json}`、
   `evidence/2026-08-18-m2-continue-primary-key.{md,json}`、
   `evidence/2026-08-18-m3-persistence-engine.{md,json}`、
-  `evidence/2026-08-18-m3-browser-storage-owner.{md,json}`
+  `evidence/2026-08-18-m3-browser-storage-owner.{md,json}`、
+  `evidence/2026-08-18-m3-embedded-webview-owner.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

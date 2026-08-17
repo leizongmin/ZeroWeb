@@ -9,6 +9,7 @@ mod edge;
 mod even_more_coverage;
 mod event_dispatch;
 mod final_coverage;
+mod indexed_db_owner;
 mod integration;
 mod more_coverage;
 mod uncovered_paths;
