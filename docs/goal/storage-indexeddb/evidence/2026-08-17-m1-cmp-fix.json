@@ -1,0 +1,33 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB factory/global/event first slice after IDBFactory.cmp fix",
+  "files": 9,
+  "subtests": 50,
+  "status": {
+    "pass": 14,
+    "fail": 36,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 28.0,
+  "delta_from_baseline": {
+    "pass": 8,
+    "fail": -8,
+    "pass_rate_percentage_points": 16.0
+  },
+  "driving_case": {
+    "path": "IndexedDB/idbfactory_cmp.any.js",
+    "before": {"pass": 4, "fail": 8},
+    "after": {"pass": 12, "fail": 0}
+  },
+  "failure_clusters": [
+    {"name": "missing WebIDL TypeError validation in open", "count": 15},
+    {"name": "missing IDBRequest EventTarget surface", "count": 14},
+    {"name": "missing upgrade transaction", "count": 5},
+    {"name": "incorrect open version conversion", "count": 1},
+    {"name": "missing IDBVersionChangeEvent fields", "count": 1}
+  ]
+}

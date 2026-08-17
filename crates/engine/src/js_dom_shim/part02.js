@@ -2725,6 +2725,59 @@
   _zwIDBDatabase.prototype.transaction = function (_names, mode) { return new _zwIDBTransaction(this, _names, mode); };
   _zwIDBDatabase.prototype.close = function () {};
 
+  // https://w3c.github.io/IndexedDB/#compare-two-keys
+  // Key type order: Number < Date < String < Binary < Array.
+  function _zwIDBKey(value, seen) {
+    if (typeof value === 'number') {
+      return value === value ? { rank: 1, value: value } : null;
+    }
+    if (value instanceof Date) {
+      var time = value.getTime();
+      return time === time ? { rank: 2, value: time } : null;
+    }
+    if (typeof value === 'string') return { rank: 3, value: value };
+    if (typeof ArrayBuffer !== 'undefined') {
+      if (value instanceof ArrayBuffer) {
+        return { rank: 4, value: new Uint8Array(value) };
+      }
+      if (ArrayBuffer.isView(value)) {
+        return {
+          rank: 4,
+          value: new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
+        };
+      }
+    }
+    if (Array.isArray(value)) {
+      if (seen.indexOf(value) !== -1) return null;
+      seen.push(value);
+      var entries = [];
+      for (var i = 0; i < value.length; i++) {
+        var entry = _zwIDBKey(value[i], seen);
+        if (!entry) {
+          seen.pop();
+          return null;
+        }
+        entries.push(entry);
+      }
+      seen.pop();
+      return { rank: 5, value: entries };
+    }
+    return null;
+  }
+
+  function _zwIDBCompareKeys(a, b) {
+    if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
+    if (a.rank <= 3) return a.value < b.value ? -1 : (a.value > b.value ? 1 : 0);
+    var limit = Math.min(a.value.length, b.value.length);
+    for (var i = 0; i < limit; i++) {
+      var av = a.value[i];
+      var bv = b.value[i];
+      var compared = a.rank === 5 ? _zwIDBCompareKeys(av, bv) : (av < bv ? -1 : (av > bv ? 1 : 0));
+      if (compared !== 0) return compared;
+    }
+    return a.value.length < b.value.length ? -1 : (a.value.length > b.value.length ? 1 : 0);
+  }
+
   globalThis.indexedDB = {
     // open(name, version)：建/取 db，异步派发 onupgradeneeded（version change，建 store 窗口）→ onsuccess。
     open: function (name, version) {
@@ -2752,7 +2805,15 @@
     databases: function () {
       return Object.keys(_idb_databases).map(function (n) { return { name: n, version: 1 }; });
     },
-    cmp: function (a, b) { return a < b ? -1 : (a > b ? 1 : 0); },
+    cmp: function (a, b) {
+      if (arguments.length < 2) throw new TypeError('IDBFactory.cmp requires two keys');
+      var first = _zwIDBKey(a, []);
+      var second = _zwIDBKey(b, []);
+      if (!first || !second) {
+        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+      }
+      return _zwIDBCompareKeys(first, second);
+    },
   };
   // IDB 构造器占位（feature-detection / instanceof 用，rare）。
   ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction', 'IDBRequest',

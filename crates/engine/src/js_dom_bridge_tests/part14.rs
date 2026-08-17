@@ -1588,6 +1588,41 @@ fn test_indexeddb_in_memory_surface_r3081() {
 }
 
 #[test]
+fn test_indexeddb_cmp_key_order_and_validation() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+
+    let result = sandbox
+        .execute(
+            "var errors = [];\
+             try { indexedDB.cmp(); } catch (e) { errors.push(e instanceof TypeError ? e.name : 'wrong'); }\
+             try { indexedDB.cmp(null, 1); } catch (e) { errors.push(e.name); }\
+             try { indexedDB.cmp(NaN, 1); } catch (e) { errors.push(e.name); }\
+             [\
+               indexedDB.cmp(1, 2),\
+               indexedDB.cmp(new Date(0), 0),\
+               indexedDB.cmp('', new Date(0)),\
+               indexedDB.cmp(new Uint8Array([0]), '0'),\
+               indexedDB.cmp([0], new Uint8Array([0])),\
+               indexedDB.cmp(new Int8Array([-1]), new Uint8Array([0])),\
+               indexedDB.cmp(new Uint8Array([1, 2]), new Uint8Array([1, 2, 0])),\
+               indexedDB.cmp([1, 2], [1, 2, 0]),\
+               errors.join(',')\
+             ].join('|');",
+        )
+        .unwrap()
+        .value;
+
+    assert_eq!(result, "-1|1|1|1|1|1|-1|-1|TypeError,DataError,DataError");
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
