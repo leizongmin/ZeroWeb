@@ -1,0 +1,26 @@
+{
+  "slice": "R92 — M3 续作：lit 风格模板渲染进 shadow root（WC 资产断言组 6 + 嵌套解析查询修复）",
+  "date": "2026-08-17",
+  "commit": "f59a4be7",
+  "summary": {
+    "wc_asset": "断言组 6 wc_lit_style_template_render——innerHTML 模板（含插值）写 shadow root，断言 tag/class/id 查询 + 后代组合器（.nested em，depth-3）+ childNodes 计数 + 二次渲染覆盖",
+    "dom/nodes": "净 +3 per-case（Node-parentElement document-parent 变体修复 + 2 条 name-validation flake 消退）",
+    "regressions": {
+      "dom/traversal": "1593P/11F per-case 不变",
+      "dom/events": "逐字节一致",
+      "dom/collections": "逐字节一致"
+    },
+    "suites": {
+      "integration": "773 passed（+1 lit 组）",
+      "engine_v8": "2188 passed",
+      "engine_quickjs": "1427 passed"
+    }
+  },
+  "root_cause": "innerHTML= 在 handle 容器（shadow root）上的解析子树是 _zwMEl 快照代理（无 __zwHandle）——只有 depth-1 子落入 _handleChildren registry，_handleSubtreeNodes 的 registry DFS 收不到嵌套层节点 → shadow 根查询 h2/#t/.v 全 miss（.card 命中是 depth-1 自身）",
+  "implementation": "_handleSubtreeNodes（part05）对 handle-less 解析节点直接沿其 childNodes 展开：元素子入 result + 保文档序 + 兄弟上下文（prevSibling/prevSiblings 填充）+ infoByProxy 对象 identity 登记 + expandDeep 递归嵌套层（组合器链回溯可用）",
+  "probe_notes": [
+    "selector-kind 分解 probe（div:1 / h2:0 / #t:0 + card.childNodes 可见 H2）一次定位「depth-1 在 registry、嵌套层不在」——可见性差比计数差更快锁定层级边界",
+    "手动 appendChild 对照 probe（manual-h2:1）排除选择器匹配器本身——纯数据源问题"
+  ],
+  "ctor_bridge_eval": "Proxy-ctor 桥（new 捕获 this 移植到升级 proxy）本轮未做——断言组 6 落地优先；下轮候选（若 V8 Reflect.construct + new.target 桥允许 this 挂到 Proxy 上）"
+}
