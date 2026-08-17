@@ -836,6 +836,7 @@ mod tests {
                      var graphRead = index.get("graph");
                      var graphCompoundRead =
                        tx.objectStore("items").index("by_identity").get(["Katherine", "Johnson"]);
+                     var storeCursor = tx.objectStore("items").openCursor();
                      var labels = [];
                      read.onsuccess = function () {
                        globalThis.__restoredRecord =
@@ -856,6 +857,22 @@ mod tests {
                      graphCompoundRead.onsuccess = function () {
                        globalThis.__graphCompound = graphCompoundRead.result.label;
                      };
+                     storeCursor.onsuccess = function () {
+                       if (!storeCursor.result) return;
+                       if (storeCursor.result.key.getTime() === 10) {
+                         var currentCursor = storeCursor.result;
+                         currentCursor.advance(2);
+                         try {
+                           currentCursor.continue();
+                           globalThis.__cursorPending = "missing";
+                         } catch (error) {
+                           globalThis.__cursorPending = error.name;
+                         }
+                       } else {
+                         globalThis.__cursorAdvance = storeCursor.result.key.getTime();
+                         storeCursor.result.continue();
+                       }
+                     };
                      var cursor = index.openCursor();
                      cursor.onsuccess = function () {
                        if (cursor.result) {
@@ -865,7 +882,8 @@ mod tests {
                          globalThis.__restored =
                            globalThis.__restoredRecord + ":" + labels.join(",") + ":" +
                            globalThis.__compound + ":" + globalThis.__graph + ":" +
-                           globalThis.__graphCompound;
+                           globalThis.__graphCompound + ":" + globalThis.__cursorAdvance + ":" +
+                           globalThis.__cursorPending;
                        }
                      };
                    };"#,
@@ -873,7 +891,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
-            "2:true:stored:10:3:alpha,graph,stored:stored:true:true:7:graph"
+            "2:true:stored:10:3:alpha,graph,stored:stored:true:true:7:graph:30:InvalidStateError"
         );
         worker.shutdown();
     }

@@ -174,6 +174,12 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/idbindex_getKey.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_count.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-continue.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-advance.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbcursor-advance-invalid.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbcursor-advance-continue-async.any.js",
+        &["resources/support.js"],
+    ),
 ];
 
 /// WPT subtest status.

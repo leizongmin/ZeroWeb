@@ -3019,6 +3019,10 @@
     if (transaction) transaction._pending++;
     var fire = function () {
       req.readyState = 'done';
+      if (result && result._isIDBCursor) {
+        result._applyPendingPosition();
+        result._gotValue = true;
+      }
       if (result !== undefined) req.result = result;
       var ev = event || new _zwIDBEvent(
         type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'),
@@ -3464,13 +3468,17 @@
     return idx ? new _zwIDBIndex(this, name, idx) : null;
   };
 
-  function _zwIDBCursor(source, store, request, entries, direction) {
+  function _zwIDBCursor(source, store, request, entries, direction, hostId, keyOnly) {
+    this._isIDBCursor = true;
     this.source = source;
     this.direction = direction || 'next';
     this._store = store;
     this._request = request;
     this._entries = entries;
     this._position = 0;
+    this._hostId = hostId === undefined ? null : hostId;
+    this._keyOnly = !!keyOnly;
+    this._gotValue = false;
     this._sync();
   }
   _zwIDBCursor.prototype._sync = function () {
@@ -3479,14 +3487,55 @@
     this.primaryKey = entry.primaryKey;
     this.value = entry.value;
   };
+  _zwIDBCursor.prototype._applyPendingPosition = function () {
+    if (this._pendingEntry) {
+      this._entries = [this._pendingEntry];
+      this._position = 0;
+      this._pendingEntry = null;
+    }
+    this._sync();
+  };
+  _zwIDBCursor.prototype._assertCanIterate = function () {
+    this._store._assertUsable(false);
+    if (!this._gotValue) {
+      throw new globalThis.DOMException('The cursor is not positioned on a value.', 'InvalidStateError');
+    }
+  };
   _zwIDBCursor.prototype.continue = function (key) {
     // https://w3c.github.io/IndexedDB/#dom-idbcursor-continue
-    this._store._assertUsable(false);
-    var next = this._position + 1;
-    if (arguments.length >= 1) {
+    this._assertCanIterate();
+    var keyProvided = arguments.length >= 1;
+    if (keyProvided) {
       if (!_zwIDBKey(key, [])) {
         throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
       }
+      var comparedToCurrent = _zwIDBCompareValues(key, this.key);
+      var reverseDirection = this.direction === 'prev' || this.direction === 'prevunique';
+      if (reverseDirection ? comparedToCurrent >= 0 : comparedToCurrent <= 0) {
+        throw new globalThis.DOMException('The key does not move the cursor forward.', 'DataError');
+      }
+    }
+    if (this._hostId !== null) {
+      var hostRequest = {
+        op: 'transaction_cursor_continue',
+        transaction: this._store.transaction._hostId,
+        cursor: this._hostId
+      };
+      if (keyProvided) hostRequest.key = _zwIDBKeyToWire(key);
+      var hosted = _zwIDBHostCall(hostRequest);
+      var hostedResult = null;
+      if (hosted.entry) {
+        this._pendingEntry = _zwIDBCursorEntryFromHost(hosted.entry, this._keyOnly);
+        hostedResult = this;
+      }
+      this._gotValue = false;
+      this._request.readyState = 'pending';
+      this._request.result = undefined;
+      _zwIDBDispatch(this._request, 'success', hostedResult);
+      return;
+    }
+    var next = this._position + 1;
+    if (keyProvided) {
       var reverse = this.direction === 'prev' || this.direction === 'prevunique';
       while (next < this._entries.length) {
         var compared = _zwIDBCompareValues(this._entries[next].key, key);
@@ -3497,48 +3546,104 @@
     this._position = next;
     var result = null;
     if (this._position < this._entries.length) {
-      this._sync();
       result = this;
     }
+    this._gotValue = false;
+    this._request.readyState = 'pending';
+    this._request.result = undefined;
+    _zwIDBDispatch(this._request, 'success', result);
+  };
+  _zwIDBCursor.prototype.advance = function (count) {
+    // https://w3c.github.io/IndexedDB/#dom-idbcursor-advance
+    this._assertCanIterate();
+    count = Number(count);
+    if (!isFinite(count)) {
+      throw new TypeError('The cursor advance count must be an unsigned long greater than zero.');
+    }
+    count = count < 0 ? Math.ceil(count) : Math.floor(count);
+    if (count <= 0 || count > 4294967295) {
+      throw new TypeError('The cursor advance count must be an unsigned long greater than zero.');
+    }
+    if (this._hostId !== null) {
+      var hosted = _zwIDBHostCall({
+        op: 'transaction_cursor_advance',
+        transaction: this._store.transaction._hostId,
+        cursor: this._hostId,
+        count: count
+      });
+      var hostedResult = null;
+      if (hosted.entry) {
+        this._pendingEntry = _zwIDBCursorEntryFromHost(hosted.entry, this._keyOnly);
+        hostedResult = this;
+      }
+      this._gotValue = false;
+      this._request.readyState = 'pending';
+      this._request.result = undefined;
+      _zwIDBDispatch(this._request, 'success', hostedResult);
+      return;
+    }
+    this._position = Math.min(this._entries.length, this._position + count);
+    var result = null;
+    if (this._position < this._entries.length) {
+      result = this;
+    }
+    this._gotValue = false;
     this._request.readyState = 'pending';
     this._request.result = undefined;
     _zwIDBDispatch(this._request, 'success', result);
   };
 
-  _zwIDBStore.prototype.openCursor = function (query, direction) {
-    this._assertUsable(false);
-    var req = new _zwIDBRequest(this);
-    req.transaction = this.transaction;
+  function _zwIDBCursorEntryFromHost(entry, keyOnly) {
+    return {
+      key: _zwIDBKeyFromWire(entry.key),
+      primaryKey: _zwIDBKeyFromWire(entry.primaryKey),
+      value: keyOnly ? undefined : _zwIDBValueFromWire(entry.value)
+    };
+  }
+
+  function _zwIDBOpenStoreCursor(store, query, direction, keyOnly) {
+    store._assertUsable(false);
+    direction = direction || 'next';
+    var req = new _zwIDBRequest(store);
+    req.transaction = store.transaction;
     var entries = [];
-    if (this.transaction && this.transaction._hostId !== null) {
+    if (store.transaction && store.transaction._hostId !== null) {
       var hostRequest = {
-        op: 'transaction_get_all',
-        transaction: this.transaction._hostId,
-        store: this.name,
-        keys_only: false
+        op: 'transaction_open_cursor',
+        transaction: store.transaction._hostId,
+        store: store.name,
+        direction: direction,
+        key_only: !!keyOnly
       };
       if (query != null) hostRequest.query = _zwIDBQueryToWire(query);
       try {
         var hosted = _zwIDBHostCall(hostRequest);
-        entries = (hosted.records || []).map(function (record) {
-          var key = _zwIDBKeyFromWire(record.key);
-          return { key: key, primaryKey: key, value: _zwIDBValueFromWire(record.value) };
-        });
+        if (hosted.entry) entries.push(_zwIDBCursorEntryFromHost(hosted.entry, keyOnly));
       } catch (hostError) {
         return _zwIDBRequestHostError(req, hostError);
       }
     } else {
-      this._records.forEach(function (value, key) {
+      store._records.forEach(function (value, key) {
         if (query == null || _zwIDBQueryMatches(query, key)) {
-          entries.push({ key: key, primaryKey: key, value: value });
+          entries.push({
+            key: key,
+            primaryKey: key,
+            value: keyOnly ? undefined : value
+          });
         }
       });
+      entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
+      if (direction === 'prev' || direction === 'prevunique') entries.reverse();
     }
-    entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
-    if (direction === 'prev' || direction === 'prevunique') entries.reverse();
-    var cursor = entries.length ? new _zwIDBCursor(this, this, req, entries, direction) : null;
+    var hostId = hosted && hosted.cursor !== null ? hosted.cursor : undefined;
+    var cursor = entries.length
+      ? new _zwIDBCursor(store, store, req, entries, direction, hostId, keyOnly)
+      : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;
+  }
+  _zwIDBStore.prototype.openCursor = function (query, direction) {
+    return _zwIDBOpenStoreCursor(this, query, direction, false);
   };
 
   function _zwIDBIndex(store, name, metadata) {
@@ -3648,22 +3753,45 @@
     return req;
   };
   function _zwIDBOpenIndexCursor(index, query, direction, keyOnly) {
-    var entries = index._entries(query, query != null);
+    index._assertUsable();
+    direction = direction || 'next';
     var req = new _zwIDBRequest(index);
     req.transaction = index.objectStore.transaction;
-    if (direction === 'prev' || direction === 'prevunique') entries.reverse();
-    if (direction === 'nextunique' || direction === 'prevunique') {
-      entries = entries.filter(function (entry, position) {
-        return position === 0 || _zwIDBCompareValues(entries[position - 1].key, entry.key) !== 0;
-      });
+    var entries = [];
+    var hosted;
+    if (index.objectStore.transaction && index.objectStore.transaction._hostId !== null) {
+      var hostRequest = {
+        op: 'transaction_open_cursor',
+        transaction: index.objectStore.transaction._hostId,
+        store: index.objectStore.name,
+        index: index.name,
+        direction: direction,
+        key_only: !!keyOnly
+      };
+      if (query != null) hostRequest.query = _zwIDBQueryToWire(query);
+      try {
+        hosted = _zwIDBHostCall(hostRequest);
+        if (hosted.entry) entries.push(_zwIDBCursorEntryFromHost(hosted.entry, keyOnly));
+      } catch (hostError) {
+        return _zwIDBRequestHostError(req, hostError);
+      }
+    } else {
+      entries = index._entries(query, query != null);
+      if (direction === 'prev' || direction === 'prevunique') entries.reverse();
+      if (direction === 'nextunique' || direction === 'prevunique') {
+        entries = entries.filter(function (entry, position) {
+          return position === 0 || _zwIDBCompareValues(entries[position - 1].key, entry.key) !== 0;
+        });
+      }
+      if (keyOnly) {
+        entries = entries.map(function (entry) {
+          return { key: entry.key, primaryKey: entry.primaryKey, value: undefined };
+        });
+      }
     }
-    if (keyOnly) {
-      entries = entries.map(function (entry) {
-        return { key: entry.key, primaryKey: entry.primaryKey, value: undefined };
-      });
-    }
+    var hostId = hosted && hosted.cursor !== null ? hosted.cursor : undefined;
     var cursor = entries.length
-      ? new _zwIDBCursor(index, index.objectStore, req, entries, direction)
+      ? new _zwIDBCursor(index, index.objectStore, req, entries, direction, hostId, keyOnly)
       : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;

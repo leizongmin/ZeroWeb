@@ -37,6 +37,9 @@ FILES=(
   "IndexedDB/idbindex_getKey.any.js"
   "IndexedDB/idbindex_count.any.js"
   "IndexedDB/idbcursor-continue.any.js"
+  "IndexedDB/idbcursor-advance.any.js"
+  "IndexedDB/idbcursor-advance-invalid.any.js"
+  "IndexedDB/idbcursor-advance-continue-async.any.js"
 )
 
 fetch_raw() {
@@ -83,6 +86,29 @@ fetch_from_git() {
   done
 }
 
+fetch_from_checkout() {
+  local checkout="${WPT_SOURCE:?WPT_SOURCE is required}"
+  local revision
+  revision="$(git -C "${checkout}" rev-parse HEAD)"
+  if [[ "${revision}" != "${WPT_REV}" ]]; then
+    echo "WPT_SOURCE revision ${revision} does not match pinned ${WPT_REV}" >&2
+    return 1
+  fi
+  for relative in "${FILES[@]}"; do
+    local source="${checkout}/${relative}"
+    local target="${WPT_DATA}/${relative}"
+    test -s "${source}"
+    mkdir -p "$(dirname "${target}")"
+    cp "${source}" "${target}"
+  done
+}
+
+if [[ -n "${WPT_SOURCE:-}" ]]; then
+  fetch_from_checkout
+  echo "IndexedDB testharness subset ready (24 cases, WPT ${WPT_REV})"
+  exit 0
+fi
+
 raw_failed=0
 for file in "${FILES[@]}"; do
   if ! fetch_raw "${file}"; then
@@ -96,4 +122,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (21 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (24 cases, WPT ${WPT_REV})"

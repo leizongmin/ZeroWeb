@@ -11,6 +11,12 @@ use serde_json::{Value, json};
 use zero_engine::IndexedDbHandler;
 use zero_storage::{IdbKey, IdbKeyRange, IdbTransaction, IdbTransactionMode, StorageError, StorageManager};
 
+mod cursor;
+
+use cursor::{
+    ActiveIndexedDbCursor, CursorStep, IndexedDbCursorDirection, open_transaction_cursor, step_transaction_cursor,
+};
+
 /// IndexedDB key 的 JSON wire 表示。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "lowercase")]
@@ -186,6 +192,28 @@ enum IndexedDbRequest {
         #[serde(default)]
         count: Option<usize>,
     },
+    TransactionOpenCursor {
+        transaction: u64,
+        store: String,
+        #[serde(default)]
+        index: Option<String>,
+        #[serde(default)]
+        query: Option<IndexedDbQueryWire>,
+        direction: IndexedDbCursorDirection,
+        #[serde(default)]
+        key_only: bool,
+    },
+    TransactionCursorContinue {
+        transaction: u64,
+        cursor: u64,
+        #[serde(default)]
+        key: Option<IndexedDbKeyWire>,
+    },
+    TransactionCursorAdvance {
+        transaction: u64,
+        cursor: u64,
+        count: u32,
+    },
     CommitTransaction {
         transaction: u64,
     },
@@ -264,6 +292,8 @@ struct ActiveIndexedDbTransaction {
     origin: String,
     database: String,
     transaction: IdbTransaction,
+    next_cursor_id: u64,
+    cursors: HashMap<u64, ActiveIndexedDbCursor>,
 }
 
 /// 构造由页面运行路径共享的 IndexedDB handler。
@@ -407,6 +437,8 @@ fn dispatch_request(
                     origin: origin.to_string(),
                     database,
                     transaction,
+                    next_cursor_id: 0,
+                    cursors: HashMap::new(),
                 },
             );
             Ok(json!({"transaction": transaction_id}))
@@ -574,6 +606,51 @@ fn dispatch_request(
                 })
                 .collect::<Vec<_>>();
             Ok(json!({"entries": entries}))
+        }
+        IndexedDbRequest::TransactionOpenCursor {
+            transaction,
+            store,
+            index,
+            query,
+            direction,
+            key_only,
+        } => open_transaction_cursor(
+            storage,
+            transactions,
+            origin,
+            transaction,
+            &store,
+            index.as_deref(),
+            query,
+            direction,
+            key_only,
+        ),
+        IndexedDbRequest::TransactionCursorContinue {
+            transaction,
+            cursor,
+            key,
+        } => step_transaction_cursor(
+            transactions,
+            origin,
+            transaction,
+            cursor,
+            CursorStep::Continue(key.map(IndexedDbKeyWire::into_storage_key).transpose()?),
+        ),
+        IndexedDbRequest::TransactionCursorAdvance {
+            transaction,
+            cursor,
+            count,
+        } => {
+            if count == 0 {
+                return Err("TypeError: cursor advance count must be greater than zero".to_string());
+            }
+            step_transaction_cursor(
+                transactions,
+                origin,
+                transaction,
+                cursor,
+                CursorStep::Advance(count as usize),
+            )
         }
         IndexedDbRequest::CommitTransaction { transaction } => {
             let mut active = remove_active_transaction(transactions, origin, transaction)?;
@@ -1626,6 +1703,165 @@ mod tests {
             json!({"op": "commit_transaction", "transaction": write}),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn transaction_cursors_own_and_step_buffered_entries() {
+        let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 1,
+                "stores": [{
+                    "name": "items",
+                    "keyPath": null,
+                    "autoIncrement": false,
+                    "indexes": [{"name": "by_group", "keyPath": "group"}]
+                }]
+            }),
+        )
+        .unwrap();
+        let transaction = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        for (key, group) in [(1, "a"), (2, "b"), (3, "b"), (4, "c")] {
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_add",
+                    "transaction": transaction,
+                    "store": "items",
+                    "value": {"group": group, "key": key},
+                    "key": {"type": "number", "value": key.to_string()}
+                }),
+            )
+            .unwrap();
+        }
+
+        let opened = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_open_cursor",
+                "transaction": transaction,
+                "store": "items",
+                "index": "by_group",
+                "direction": "next",
+                "key_only": false
+            }),
+        )
+        .unwrap();
+        let cursor = opened["cursor"].as_u64().unwrap();
+        assert_eq!(opened["entry"]["key"], json!({"type": "string", "value": "a"}));
+        assert_eq!(opened["entry"]["value"]["key"], 1);
+
+        let continued = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_cursor_continue",
+                "transaction": transaction,
+                "cursor": cursor,
+                "key": {"type": "string", "value": "b"}
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            continued["entry"]["primaryKey"],
+            json!({"type": "number", "value": "2"})
+        );
+        let advanced = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_cursor_advance",
+                "transaction": transaction,
+                "cursor": cursor,
+                "count": 2
+            }),
+        )
+        .unwrap();
+        assert_eq!(advanced["entry"]["key"], json!({"type": "string", "value": "c"}));
+
+        let unique = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_open_cursor",
+                "transaction": transaction,
+                "store": "items",
+                "index": "by_group",
+                "direction": "prevunique",
+                "key_only": true
+            }),
+        )
+        .unwrap();
+        assert_eq!(unique["entry"]["key"], json!({"type": "string", "value": "c"}));
+        assert!(unique["entry"].get("value").is_none());
+        let unique_cursor = unique["cursor"].as_u64().unwrap();
+        let unique_next = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_cursor_continue",
+                "transaction": transaction,
+                "cursor": unique_cursor
+            }),
+        )
+        .unwrap();
+        assert_eq!(unique_next["entry"]["key"], json!({"type": "string", "value": "b"}));
+        assert_eq!(
+            unique_next["entry"]["primaryKey"],
+            json!({"type": "number", "value": "3"})
+        );
+
+        assert!(
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_cursor_continue",
+                    "transaction": transaction,
+                    "cursor": cursor,
+                    "key": {"type": "string", "value": "c"}
+                }),
+            )
+            .unwrap_err()
+            .starts_with("DataError:")
+        );
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": transaction}),
+        )
+        .unwrap();
+        assert!(
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_cursor_continue",
+                    "transaction": transaction,
+                    "cursor": cursor
+                }),
+            )
+            .unwrap_err()
+            .starts_with("TransactionInactiveError:")
+        );
     }
 
     #[test]

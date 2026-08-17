@@ -28,3 +28,6 @@ IndexedDB/idbindex_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-1
 IndexedDB/idbindex_getKey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbindex_count.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbcursor-continue.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
+IndexedDB/idbcursor-advance.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
+IndexedDB/idbcursor-advance-invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
+IndexedDB/idbcursor-advance-continue-async.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping

@@ -1,0 +1,42 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 transaction-bound Rust cursor stepping",
+  "capabilities": [
+    "transaction-scoped cursor ownership",
+    "object store and index cursors",
+    "continue and continue with key",
+    "advance",
+    "forward, reverse, and unique directions",
+    "key-only cursor responses",
+    "asynchronous cursor position publication"
+  ],
+  "tests": {
+    "page_runtime_cursor": "pass",
+    "renderer_cross_document_cursor": "pass",
+    "imported_wpt": {
+      "files": 24,
+      "pass": 182,
+      "fail": 0
+    },
+    "new_cursor_wpt": {
+      "files": 3,
+      "pass": 16,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass",
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_budgets": "pass"
+    }
+  },
+  "remaining": [
+    "complete request event timing",
+    "continuePrimaryKey",
+    "database versions above u32",
+    "cross-process ownership",
+    "persistence"
+  ]
+}
