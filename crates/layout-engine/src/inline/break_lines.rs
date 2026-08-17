@@ -15,7 +15,7 @@ impl InlineFormattingContext {
     /// 和 `InlineItem::Br`（强制换行）。浮动排除区域会缩小每行的可用宽度。
     pub fn break_items_into_lines(&mut self, items: Vec<InlineItem>) {
         self.lines.clear();
-        let plaintext_enabled = std::env::var("ZW_PLAINTEXT_LINE_DIRECTION").as_deref() != Ok("0")
+        let plaintext_enabled = runtime_flags::plaintext_line_direction()
             && items
                 .iter()
                 .any(|item| matches!(item, InlineItem::Text(run) if run.is_plaintext_bidi));
@@ -28,7 +28,7 @@ impl InlineFormattingContext {
         // 诊断（R2027）：`ZW_DEBUG_IFC=1` 时对含 inline-block item 的容器 dump 条目构成 +
         // 各 inline-block 的 (w, h, baseline) + 最终行盒高度。Phase A IFC 调试用（line-box
         // 高度贡献 / inline-block 度量是否 stale）。零默认开销（env 未设即跳过）。
-        let debug_ifc = std::env::var("ZW_DEBUG_IFC").is_ok();
+        let debug_ifc = runtime_flags::debug_ifc();
         if debug_ifc {
             let n_text = items.iter().filter(|i| matches!(i, InlineItem::Text(_))).count();
             let n_ib = items
@@ -504,7 +504,7 @@ impl InlineFormattingContext {
                     // br 在 IFC 内（p>br 等）的空行。kill-switch `ZW_BR_IFC_LINE=0`（default-on）。
                     if matches!(item, InlineItem::Br)
                         && current_line.height <= 0.0
-                        && std::env::var("ZW_BR_IFC_LINE").as_deref() != Ok("0")
+                        && runtime_flags::br_ifc_line()
                     {
                         current_line.height = est_height;
                     }

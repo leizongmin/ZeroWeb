@@ -705,7 +705,7 @@ pub(crate) fn plaintext_base_is_rtl(text: &str) -> bool {
 impl BidiFragmentCursor {
     /// 创建不做视觉重排的逻辑顺序游标。
     pub(crate) fn logical(text: &str) -> Self {
-        let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
+        let enabled = super::runtime_flags::bidi_fragment_source();
         Self {
             source_text: enabled.then(|| Arc::<str>::from(text)),
             reordered: identity_bidi_mapping(text),
@@ -720,7 +720,7 @@ impl BidiFragmentCursor {
     /// 使 BiDi 算法按 RTL 基方向重排序视觉文本。
     /// UAX #9 HL4: `is_plaintext = true` → 忽略 CSS direction，强制 auto-detect。
     pub(crate) fn with_direction(text: &str, is_rtl: bool, is_plaintext: bool) -> Self {
-        let enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
+        let enabled = super::runtime_flags::bidi_fragment_source();
         // unicode-bidi: plaintext → paragraph level auto-detect (CSS Writing Modes §2.2)
         let effective_rtl = is_rtl && !is_plaintext;
         let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl);
@@ -740,8 +740,8 @@ impl BidiFragmentCursor {
 
     /// 为 CSS `unicode-bidi:bidi-override` 创建指定方向的视觉游标。
     pub(crate) fn with_override(text: &str, is_rtl: bool) -> Self {
-        let source_enabled = std::env::var("ZW_BIDI_FRAGMENT_SOURCE").as_deref() != Ok("0");
-        let mirror_glyphs = std::env::var("ZW_BIDI_MIRRORING").as_deref() != Ok("0");
+        let source_enabled = super::runtime_flags::bidi_fragment_source();
+        let mirror_glyphs = super::runtime_flags::bidi_mirroring();
         let reordered = bidi_override_mapping(text, is_rtl, mirror_glyphs);
         let identity = reordered.visual_text == text
             && reordered

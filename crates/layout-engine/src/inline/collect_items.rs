@@ -166,7 +166,7 @@ impl InlineFormattingContext {
                         // IFC 内测量（writing_mode_tests），且 vertical 是 R1043 已知结构性缺口。
                         let style = styles.get(&child_id);
                         if !self.vertical
-                            && std::env::var("ZW_IFC_SKIP_OOF").as_deref() != Ok("0")
+                            && runtime_flags::skip_oof()
                             && style
                                 .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
                         {

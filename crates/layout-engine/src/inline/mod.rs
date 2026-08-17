@@ -8,6 +8,8 @@
 mod text_metrics;
 pub use text_metrics::*;
 
+mod runtime_flags;
+
 // R830：行内布局核心数据类型抽出（2000 行规则 + Phase A IFC 统一 Phase 5 准备），
 // 通过 glob 再导出保持 `crate::inline::TextRun` 等 API 路径不变（纯移动，零行为变化）。
 mod inline_types;
@@ -838,7 +840,7 @@ impl InlineFormattingContext {
         self.break_items_into_lines(items);
         // R2431 line-clamp（CSS Overflow 4）：容器声明 `line-clamp: Count(n)` 时，把行夹到 N。
         if !self.vertical
-            && std::env::var("ZW_LINE_CLAMP").as_deref() != Ok("0")
+            && runtime_flags::line_clamp()
             && let Some(style) = styles.get(&container)
             && let Some(n) = match &style.line_clamp {
                 zero_style_system::property::types::LineClampComputedValue::Count(n) => Some(*n as usize),
@@ -889,7 +891,7 @@ impl InlineFormattingContext {
     /// R1576 inline-box-model 递归开关：inline 元素含嵌套 inline-block 后代时递归收集。
     /// default-on（`ZW_INLINE_BOX_RECURSE=0` 关闭）。
     fn inline_box_model_recurse() -> bool {
-        !matches!(std::env::var("ZW_INLINE_BOX_RECURSE").as_deref(), Ok("0"))
+        runtime_flags::inline_box_recurse()
     }
 
     /// R1578 img 固有宽高比推导开关：img 分支在恰一侧维度已知时按固有比推导缺失侧。
@@ -1045,7 +1047,7 @@ impl InlineFormattingContext {
         }
 
         // R1338：pre-wrap 行尾保留空格 hang（default-on，kill-switch ZW_PREWRAP_HANG=0 关闭）。
-        let hang_prewrap = self.preserve_whitespace && std::env::var("ZW_PREWRAP_HANG").as_deref() != Ok("0");
+        let hang_prewrap = self.preserve_whitespace && runtime_flags::prewrap_hang();
 
         // 预计算每行的有效内容区域（避免在 iter_mut 中借用 self）
         let line_areas: Vec<(f32, f32)> = self
@@ -1726,7 +1728,7 @@ impl InlineFormattingContext {
     ///
     /// split_into_words 的 normal 分支与 pre-line 分支（每个 `\n` 段）共用此逻辑。
     fn collapse_split_words(&self, text: &str, is_ahem: bool) -> Vec<String> {
-        let cjk_contiguous = is_ahem || std::env::var("ZW_CJK_CONTIGUOUS").as_deref() == Ok("1");
+        let cjk_contiguous = is_ahem || runtime_flags::cjk_contiguous();
         self.collapse_split_words_with_mode(text, cjk_contiguous)
     }
 
@@ -1873,7 +1875,7 @@ fn plaintext_logical_text(runs: &[TextFragment]) -> String {
 /// 返回容器级 CSS BiDi override 的指定方向；`ZW_BIDI_OVERRIDE=0` 回退旧行为。
 pub fn bidi_override_direction(style: &zero_style_system::ComputedStyle) -> Option<bool> {
     // https://drafts.csswg.org/css-writing-modes-3/#valdef-unicode-bidi-bidi-override
-    if std::env::var("ZW_BIDI_OVERRIDE").as_deref() == Ok("0")
+    if !runtime_flags::bidi_override()
         || !matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::BidiOverride)
     {
         return None;
