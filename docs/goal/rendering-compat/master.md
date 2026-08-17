@@ -17,6 +17,8 @@
 
 > **📍 当前 rally 进度态（R3433-F·2026-08-17）=【停录无消费方 node_map·layout p95再降2–7%】**：post-R3432 perf 中 NodeId SipHash + sip write 占 medium 全帧约4.2%；审计发现 `BuildContext.node_map` 只有初始化与两处 insert，全仓零读取，且不在返回值中，真实 `taffy_to_dom` 为独立字段。现默认不创建/写入 dead map，`ZW_TREE_NODE_MAP_RECORD=1` 恢复旧诊断记录。**两组反序 A/B**：medium layout p95 `407→378ms`（-7.2%）、`382→373ms`（-2.2%）；total p95 `703→626ms`（-10.9%）、`644→618ms`（-4.0%）；RSS 方向不一致不作收益证据。构树测试、reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`disable-unconsumed-hot-map.md`](../../learnings/performance/disable-unconsumed-hot-map.md)。
 
+> **📍 当前 rally 进度态（R3434-F·2026-08-17）=【默认字体上下文稀疏存储·layout/total p95再降6–7%】**：post-R3433 perf 中 `collect_font_overrides` 占 medium 全帧约2.3%；它为每个元素和文本节点向两张 NodeId map 写入 `font-size-adjust: none` 与 `font-variation-settings: normal`，而唯一消费边界缺键时已分别回退这两个 CSS 初始值。现只记录非默认上下文，`ZW_SPARSE_FONT_OVERRIDES=0` 恢复旧全量记录；ordered face IDs 保持完整。**两组反序 A/B**：medium layout p95 `387→365ms`（-5.7%）、`419→392ms`（-6.5%）；total p95 `648→608ms`（-6.1%）、`716→664ms`（-7.1%）；RSS `155.22→153.50MiB`、`155.63→152.93MiB`。默认缺省与非默认保留测试、reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。完整 `make bench-gate` 16/16 microbench，medium layout/total p95 `373/611ms`、RSS `172.96MiB`，绝对页面与表单预算 PASS；异构硬件相对门仅 WARN，`≤141ms` 残余继续打开。经验见 [`sparse-default-font-context.md`](../../learnings/performance/sparse-default-font-context.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >

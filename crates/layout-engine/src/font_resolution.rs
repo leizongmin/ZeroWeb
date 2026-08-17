@@ -134,10 +134,23 @@ pub(crate) fn collect_font_overrides(
                 })
                 .clone();
             collector.ids.insert(node_id, ids_resolved);
-            collector.size_adjust.insert(node_id, style.font_size_adjust);
-            collector
-                .variations
-                .insert(node_id, style.font_variation_settings.clone());
+            // OPTIMIZATION: consumers already interpret missing entries as the
+            // CSS initial values, so only materialize non-default contexts.
+            if !collector.sparse_defaults
+                || !matches!(style.font_size_adjust, zero_style_system::FontSizeAdjustValue::None)
+            {
+                collector.size_adjust.insert(node_id, style.font_size_adjust);
+            }
+            if !collector.sparse_defaults
+                || !matches!(
+                    style.font_variation_settings,
+                    zero_style_system::FontVariationSettingsValue::Normal
+                )
+            {
+                collector
+                    .variations
+                    .insert(node_id, style.font_variation_settings.clone());
+            }
         }
         for child in doc.child_nodes(node_id) {
             visit(doc, styles, child, resolver, collector);
@@ -149,12 +162,14 @@ pub(crate) fn collect_font_overrides(
         size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
         variations: HashMap<NodeId, zero_style_system::FontVariationSettingsValue>,
         resolve_cache: HashMap<ResolveKey, Vec<u32>>,
+        sparse_defaults: bool,
     }
     let mut collector = Collector {
         ids: HashMap::new(),
         size_adjust: HashMap::new(),
         variations: HashMap::new(),
         resolve_cache: HashMap::new(),
+        sparse_defaults: std::env::var("ZW_SPARSE_FONT_OVERRIDES").as_deref() != Ok("0"),
     };
     visit(doc, styles, root, resolver, &mut collector);
     FontOverrides {
@@ -260,13 +275,33 @@ mod tests {
         let overrides = collect_font_overrides(&doc, &styles, root, &resolver);
         assert_eq!(overrides.ids.get(&root), Some(&vec![7, 9]));
         assert_eq!(overrides.ids.get(&text), Some(&vec![7, 9]));
-        assert_eq!(
-            overrides.size_adjust.get(&text),
-            Some(&zero_style_system::FontSizeAdjustValue::None)
-        );
-        assert_eq!(
-            overrides.variations.get(&text),
-            Some(&zero_style_system::FontVariationSettingsValue::Normal)
-        );
+        assert_eq!(overrides.size_adjust.get(&text), None);
+        assert_eq!(overrides.variations.get(&text), None);
+    }
+
+    #[test]
+    fn preserves_non_default_font_context_overrides() {
+        let mut doc = Document::new();
+        let root = doc.create_element("div");
+        doc.append_child(doc.root(), root).unwrap();
+        let text = doc.create_text_node("x");
+        doc.append_child(root, text).unwrap();
+
+        let mut style = ComputedStyle::default();
+        style.font_size_adjust = zero_style_system::FontSizeAdjustValue::Adjust {
+            metric: None,
+            basis: zero_style_system::FontSizeAdjustBasis::FromFont,
+        };
+        style.font_variation_settings = zero_style_system::FontVariationSettingsValue::Settings(vec![
+            zero_css_parser::values::FontVariationSetting {
+                tag: *b"wght",
+                value: 650.0,
+            },
+        ]);
+        let styles = HashMap::from([(root, style.clone())]);
+
+        let overrides = collect_font_overrides(&doc, &styles, root, &HashMap::new());
+        assert_eq!(overrides.size_adjust.get(&text), Some(&style.font_size_adjust));
+        assert_eq!(overrides.variations.get(&text), Some(&style.font_variation_settings));
     }
 }
