@@ -1,0 +1,52 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 factory and object-store schema routing",
+  "backend": "zero-storage",
+  "operations": [
+    "inspect",
+    "sync_schema",
+    "delete_database",
+    "databases"
+  ],
+  "capabilities": [
+    "restore database version and object-store schema",
+    "commit schema only after successful versionchange",
+    "preserve Rust schema on upgrade abort",
+    "replace a same-name store during a version upgrade",
+    "reject same-version schema mutation",
+    "restore schema after renderer document reset"
+  ],
+  "tests": {
+    "page_runtime_handler": {
+      "pass": 4,
+      "fail": 0
+    },
+    "webview_e2e": {
+      "pass": 1,
+      "fail": 0
+    },
+    "renderer_reset": {
+      "pass": 2,
+      "fail": 0
+    },
+    "engine_fallback": {
+      "pass": 13,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 21,
+      "pass": 166,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "Rust Date key support",
+    "transaction-scoped CRUD routing",
+    "index and cursor routing",
+    "cross-process ownership",
+    "persistence"
+  ]
+}

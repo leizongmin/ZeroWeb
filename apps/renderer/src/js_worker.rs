@@ -781,11 +781,35 @@ mod tests {
         let mut worker = RendererJsWorker::spawn(45);
         worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/page");
 
-        let response = worker
+        worker
             .execute_script_direct(r#"__zw_idb(JSON.stringify({op:"open",name:"app",version:1}))"#)
             .unwrap();
-        assert!(response.starts_with("__zw_idb_ok:"));
-        assert!(response.contains(r#""name":"app""#));
+        worker
+            .execute_script_direct(
+                r#"var created = indexedDB.open("app", 2);
+                   created.onupgradeneeded = function () {
+                     created.result.createObjectStore("items", {keyPath:"id"});
+                   };
+                   created.onsuccess = function () { globalThis.__created = true; };"#,
+            )
+            .unwrap();
+        assert_eq!(worker.execute_script_direct("String(globalThis.__created)").unwrap(), "true");
+
+        worker.reset_document_state();
+        worker.set_dom_snapshot("<html><body></body></html>", "https://storage.example/next");
+        worker
+            .execute_script_direct(
+                r#"var reopened = indexedDB.open("app");
+                   reopened.onsuccess = function () {
+                     globalThis.__restored =
+                       reopened.result.version + ":" + reopened.result.objectStoreNames.contains("items");
+                   };"#,
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__restored)").unwrap(),
+            "2:true"
+        );
         worker.shutdown();
     }
 

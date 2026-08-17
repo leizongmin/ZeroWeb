@@ -2560,16 +2560,69 @@
   globalThis.localStorage = _createStorage();
   globalThis.sessionStorage = _createStorage();
 
-  // R3081：IndexedDB 内存表面（headless in-memory）。storage crate 有真 IDB 实现但未接 JS bridge
-  //（globalThis.indexedDB 未定义 → 5 storage 用例 `indexedDB is not defined`）。本切片提供完整 in-memory
-  // IDB 表面：factory.open（异步 onupgradeneeded→onsuccess 经 queueMicrotask 派发——handler 先注册后触发）、
+  // R3081/M2：IndexedDB 页面表面。factory 与 object-store schema 经 `__zw_idb` 接 zero-storage；
+  // CRUD/index/cursor records 暂留 JS，供后续按 key 类型逐步迁移。无宿主 callback 的低层 sandbox
+  // 测试保留 in-memory fallback。factory.open（异步 onupgradeneeded→onsuccess 经 microtask 派发）、
   // db.createObjectStore/objectStoreNames/transaction/close、store.add/put/get/delete/clear/count/createIndex、
-  // tx.objectStore/oncomplete/abort、index.get/openCursor。数据存内存 Map（同 db 名跨 open 实例持久；
-  // 跨页面重载不持久——defer 接 storage crate 真 IDB + host bridge）。
-  // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：① 无持久化（内存 Map，跨页重载丢）；
-  // ② cursor 简化（openCursor 仅返首条，非真迭代）；③ unique 约束错误未完整实现。
+  // tx.objectStore/oncomplete/abort、index.get/openCursor。records 存内存 Map。
+  // spec https://w3c.github.io/IndexedDB/ 。**已知限制**：records 尚无持久化。
   // name → {version, stores, connections}
   var _idb_databases = {};
+
+  function _zwIDBHostCall(request) {
+    if (typeof globalThis.__zw_idb !== 'function') return undefined;
+    var wire = String(globalThis.__zw_idb(JSON.stringify(request)));
+    var okPrefix = '__zw_idb_ok:';
+    var errorPrefix = '__zw_idb_error:';
+    if (wire.indexOf(okPrefix) === 0) {
+      return JSON.parse(wire.slice(okPrefix.length));
+    }
+    if (wire.indexOf(errorPrefix) === 0) {
+      var detail = wire.slice(errorPrefix.length);
+      var separator = detail.indexOf(':');
+      var name = separator === -1 ? 'UnknownError' : detail.slice(0, separator);
+      var message = separator === -1 ? detail : detail.slice(separator + 1).trim();
+      if (name === 'TypeError') throw new TypeError(message);
+      throw new globalThis.DOMException(message, name);
+    }
+    throw new globalThis.DOMException('Invalid IndexedDB host response.', 'UnknownError');
+  }
+
+  function _zwIDBStateFromHost(database) {
+    var stores = {};
+    (database.stores || []).forEach(function (store) {
+      stores[store.name] = {
+        keyPath: store.keyPath === undefined ? null : store.keyPath,
+        autoIncrement: !!store.autoIncrement,
+        records: new Map(),
+        indexes: {},
+        nextKey: 1,
+        deleted: false,
+        createdInUpgrade: false
+      };
+    });
+    return {
+      version: Number(database.version),
+      stores: stores,
+      connections: []
+    };
+  }
+
+  function _zwIDBSchemaForHost(name, state) {
+    return {
+      op: 'sync_schema',
+      name: name,
+      version: state.version,
+      stores: Object.keys(state.stores).sort().map(function (storeName) {
+        var store = state.stores[storeName];
+        return {
+          name: storeName,
+          keyPath: store.keyPath,
+          autoIncrement: !!store.autoIncrement
+        };
+      })
+    };
+  }
 
   function _zwIDBEvent(type, target) {
     if (typeof globalThis.Event === 'function'
@@ -3250,6 +3303,14 @@
       else retry();
       return;
     }
+    if (!transaction._aborted) {
+      try {
+        _zwIDBHostCall(_zwIDBSchemaForHost(db.name, state));
+      } catch (hostError) {
+        transaction._aborted = true;
+        transaction._hostError = hostError;
+      }
+    }
     db._upgradeTransaction = null;
     transaction._finished = true;
     if (transaction._aborted) {
@@ -3263,7 +3324,8 @@
       _zwIDBEmit(transaction, 'abort', new _zwIDBEvent('abort', transaction));
       _zwIDBEmit(db, 'abort', new _zwIDBEvent('abort', db));
       req.result = undefined;
-      req.error = new globalThis.DOMException('The version change transaction was aborted.', 'AbortError');
+      req.error = transaction._hostError
+        || new globalThis.DOMException('The version change transaction was aborted.', 'AbortError');
       req.transaction = null;
       var errorEvent = new _zwIDBEvent('error', req);
       errorEvent.bubbles = true;
@@ -3407,6 +3469,22 @@
       version = _zwIDBOpenVersion(version, arguments.length >= 2);
       var req = new _zwIDBRequest(null);
       var state = _idb_databases[name];
+      if (!state) {
+        try {
+          var inspected = _zwIDBHostCall({ op: 'inspect', name: name });
+          if (inspected !== undefined && inspected.database) {
+            state = _zwIDBStateFromHost(inspected.database);
+            _idb_databases[name] = state;
+          }
+        } catch (hostError) {
+          req.error = hostError;
+          var hostErrorEvent = new _zwIDBEvent('error', req);
+          hostErrorEvent.bubbles = true;
+          hostErrorEvent.cancelable = true;
+          _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
+          return req;
+        }
+      }
       var created = !state;
       var oldVersion = state ? state.version : 0;
       var requestedVersion = version === undefined ? (oldVersion || 1) : version;
@@ -3472,11 +3550,24 @@
     },
     deleteDatabase: function (name) {
       name = String(name);
+      var req = new _zwIDBRequest(null);
+      var hostDeletion;
+      try {
+        hostDeletion = _zwIDBHostCall({ op: 'delete_database', name: name });
+      } catch (hostError) {
+        req.error = hostError;
+        var hostErrorEvent = new _zwIDBEvent('error', req);
+        hostErrorEvent.bubbles = true;
+        hostErrorEvent.cancelable = true;
+        _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
+        return req;
+      }
       var state = _idb_databases[name];
-      var oldVersion = state ? state.version : 0;
+      var oldVersion = state
+        ? state.version
+        : (hostDeletion && Number(hostDeletion.oldVersion || 0));
       if (state) _zwIDBNotifyConnections(state, oldVersion, null);
       delete _idb_databases[name];
-      var req = new _zwIDBRequest(null);
       _zwIDBDispatch(
         req,
         'success',
@@ -3486,9 +3577,15 @@
       return req;
     },
     databases: function () {
-      return Object.keys(_idb_databases).map(function (n) {
-        return { name: n, version: _idb_databases[n].version };
-      });
+      try {
+        var hosted = _zwIDBHostCall({ op: 'databases' });
+        if (hosted !== undefined) return Promise.resolve(hosted.databases || []);
+        return Promise.resolve(Object.keys(_idb_databases).map(function (n) {
+          return { name: n, version: _idb_databases[n].version };
+        }));
+      } catch (hostError) {
+        return Promise.reject(hostError);
+      }
     },
     cmp: function (a, b) {
       if (arguments.length < 2) throw new TypeError('IDBFactory.cmp requires two keys');

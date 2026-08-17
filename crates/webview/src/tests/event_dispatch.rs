@@ -29,26 +29,57 @@ fn run_page_scripts_registers_listeners_and_applies_mutations() {
 }
 
 #[test]
-fn run_page_scripts_registers_indexed_db_host() {
+fn indexed_db_factory_and_schema_route_to_host() {
     let mut wv = new_webview();
     wv.prepare_document_state("https://storage.example/page");
     wv.load_html(
         r#"<html><body><script>
-        globalThis.__idbWire = __zw_idb(JSON.stringify({op:"open",name:"app",version:1}));
+        var openRequest = indexedDB.open("app", 1);
+        openRequest.onupgradeneeded = function () {
+          openRequest.result.createObjectStore("items", {keyPath:"id", autoIncrement:true});
+        };
+        openRequest.onsuccess = function () { globalThis.__idbOpened = true; };
         </script></body></html>"#,
         None,
     );
 
     wv.run_page_scripts_strict().unwrap();
     assert_eq!(
-        wv.execute_script("globalThis.__idbWire.startsWith('__zw_idb_ok:')")
+        wv.execute_script("String(globalThis.__idbOpened)")
             .unwrap(),
         "true"
     );
     assert_eq!(
-        wv.execute_script("globalThis.__idbWire.includes('\"name\":\"app\"')")
+        wv.execute_script(
+            r#"JSON.parse(__zw_idb(JSON.stringify({op:"inspect",name:"app"}))
+               .slice("__zw_idb_ok:".length)).database.stores[0].name"#,
+        )
+        .unwrap(),
+        "items"
+    );
+
+    wv.execute_script(
+        r#"var aborted = indexedDB.open("app", 2);
+           aborted.onupgradeneeded = function () { aborted.transaction.abort(); };"#,
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script(
+            r#"String(JSON.parse(__zw_idb(JSON.stringify({op:"inspect",name:"app"}))
+               .slice("__zw_idb_ok:".length)).database.version)"#,
+        )
+        .unwrap(),
+        "1"
+    );
+
+    wv.execute_script(r#"indexedDB.deleteDatabase("app");"#).unwrap();
+    assert_eq!(
+        wv.execute_script(
+            r#"String(JSON.parse(__zw_idb(JSON.stringify({op:"inspect",name:"app"}))
+               .slice("__zw_idb_ok:".length)).database)"#,
+        )
             .unwrap(),
-        "true"
+        "null"
     );
 }
 

@@ -3,6 +3,7 @@
 //! 本模块解析 `zero-engine` 同步 wire 请求，并在共享 [`StorageManager`] 上执行
 //! per-origin 数据库与 schema 操作。
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
@@ -13,6 +14,14 @@ use zero_storage::{StorageError, StorageManager};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 enum IndexedDbRequest {
+    Inspect {
+        name: String,
+    },
+    SyncSchema {
+        name: String,
+        version: u32,
+        stores: Vec<IndexedDbStoreSchema>,
+    },
     Open {
         name: String,
         version: u32,
@@ -38,6 +47,15 @@ enum IndexedDbRequest {
     },
 }
 
+#[derive(Debug, Deserialize)]
+struct IndexedDbStoreSchema {
+    name: String,
+    #[serde(default, rename = "keyPath")]
+    key_path: Option<String>,
+    #[serde(default, rename = "autoIncrement")]
+    auto_increment: bool,
+}
+
 /// 构造由页面运行路径共享的 IndexedDB handler。
 pub fn indexed_db_handler(storage: Arc<Mutex<StorageManager>>) -> IndexedDbHandler {
     Arc::new(move |origin, request| handle_request(&storage, origin, request))
@@ -59,6 +77,11 @@ fn handle_request(storage: &Mutex<StorageManager>, origin: &str, request: &str) 
 
 fn dispatch_request(storage: &mut StorageManager, origin: &str, request: IndexedDbRequest) -> Result<Value, String> {
     match request {
+        IndexedDbRequest::Inspect { name } => {
+            let database = storage.indexed_db(origin, &name).map(database_schema_json);
+            Ok(json!({"database": database}))
+        }
+        IndexedDbRequest::SyncSchema { name, version, stores } => sync_schema(storage, origin, &name, version, stores),
         IndexedDbRequest::Open { name, version } => {
             let old_version = storage
                 .indexed_db(origin, &name)
@@ -139,6 +162,87 @@ fn dispatch_request(storage: &mut StorageManager, origin: &str, request: Indexed
     }
 }
 
+fn sync_schema(
+    storage: &mut StorageManager,
+    origin: &str,
+    name: &str,
+    version: u32,
+    stores: Vec<IndexedDbStoreSchema>,
+) -> Result<Value, String> {
+    if version == 0 {
+        return Err("TypeError: IndexedDB version must be greater than zero".to_string());
+    }
+    let requested_names = stores.iter().map(|store| store.name.clone()).collect::<HashSet<_>>();
+    if requested_names.len() != stores.len() {
+        return Err("ConstraintError: duplicate object store name in schema".to_string());
+    }
+
+    let mut replaced_names = HashSet::new();
+    if let Some(database) = storage.indexed_db(origin, name) {
+        if version < database.version {
+            return Err(format!(
+                "VersionError: requested version {version} is lower than current version {}",
+                database.version
+            ));
+        }
+        let current_stores = database.store_info();
+        for current in &current_stores {
+            if let Some(requested) = stores.iter().find(|store| store.name == current.name)
+                && (requested.key_path != current.key_path || requested.auto_increment != current.auto_increment)
+            {
+                replaced_names.insert(current.name.clone());
+            }
+        }
+        let schema_changed = current_stores.len() != stores.len()
+            || current_stores
+                .iter()
+                .any(|current| !requested_names.contains(current.name.as_str()))
+            || !replaced_names.is_empty();
+        if schema_changed && version == database.version {
+            return Err("InvalidStateError: object store schema changes require a version upgrade".to_string());
+        }
+    }
+
+    let database = storage.open_indexed_db(origin, name, version).map_err(storage_error)?;
+    let existing_names = database
+        .store_names()
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for existing in existing_names {
+        if !requested_names.contains(existing.as_str()) || replaced_names.contains(&existing) {
+            database.delete_object_store(&existing).map_err(storage_error)?;
+        }
+    }
+    for requested in stores {
+        if !database.has_store(&requested.name) {
+            database
+                .create_object_store(&requested.name, requested.key_path.as_deref(), requested.auto_increment)
+                .map_err(storage_error)?;
+        }
+    }
+    Ok(json!({"database": database_schema_json(database)}))
+}
+
+fn database_schema_json(database: &zero_storage::indexed_db::IdbDatabase) -> Value {
+    let stores = database
+        .store_info()
+        .into_iter()
+        .map(|store| {
+            json!({
+                "name": store.name,
+                "keyPath": store.key_path,
+                "autoIncrement": store.auto_increment,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "name": database.name,
+        "version": database.version,
+        "stores": stores,
+    })
+}
+
 fn storage_error(error: StorageError) -> String {
     format!("UnknownError: {error}")
 }
@@ -186,6 +290,82 @@ mod tests {
         assert_eq!(reopened["oldVersion"], 1);
         assert_eq!(reopened["upgradeNeeded"], false);
         assert_eq!(reopened["stores"], json!(["items"]));
+    }
+
+    #[test]
+    fn sync_schema_commits_only_the_supplied_snapshot() {
+        let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+        let empty = call(&handler, "https://app.example", json!({"op": "inspect", "name": "app"})).unwrap();
+        assert!(empty["database"].is_null());
+
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 1,
+                "stores": [
+                    {"name": "items", "keyPath": "id", "autoIncrement": true},
+                    {"name": "logs", "keyPath": null, "autoIncrement": false}
+                ]
+            }),
+        )
+        .unwrap();
+        let inspected = call(&handler, "https://app.example", json!({"op": "inspect", "name": "app"})).unwrap();
+        assert_eq!(inspected["database"]["version"], 1);
+        assert_eq!(
+            inspected["database"]["stores"],
+            json!([
+                {"name": "items", "keyPath": "id", "autoIncrement": true},
+                {"name": "logs", "keyPath": null, "autoIncrement": false}
+            ])
+        );
+
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 2,
+                "stores": [{"name": "items", "keyPath": "id", "autoIncrement": true}]
+            }),
+        )
+        .unwrap();
+        let upgraded = call(&handler, "https://app.example", json!({"op": "inspect", "name": "app"})).unwrap();
+        assert_eq!(upgraded["database"]["version"], 2);
+        assert_eq!(upgraded["database"]["stores"].as_array().unwrap().len(), 1);
+
+        let same_version_change = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 2,
+                "stores": [
+                    {"name": "items", "keyPath": "id", "autoIncrement": true},
+                    {"name": "extra", "keyPath": null, "autoIncrement": false}
+                ]
+            }),
+        )
+        .unwrap_err();
+        assert!(same_version_change.starts_with("InvalidStateError:"));
+
+        let replaced = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 3,
+                "stores": [{"name": "items", "keyPath": "slug", "autoIncrement": false}]
+            }),
+        )
+        .unwrap();
+        assert_eq!(replaced["database"]["version"], 3);
+        assert_eq!(replaced["database"]["stores"][0]["keyPath"], "slug");
     }
 
     #[test]

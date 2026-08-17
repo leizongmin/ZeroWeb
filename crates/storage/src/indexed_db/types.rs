@@ -454,6 +454,17 @@ pub struct IdbDatabase {
     stores: HashMap<String, IdbObjectStore>,
 }
 
+/// IndexedDB object store schema 摘要。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdbObjectStoreInfo {
+    /// Object store 名称。
+    pub name: String,
+    /// Inline key path；`None` 表示 out-of-line key。
+    pub key_path: Option<String>,
+    /// 是否启用 key generator。
+    pub auto_increment: bool,
+}
+
 impl IdbDatabase {
     /// 创建新的 IndexedDB 数据库。
     pub fn new(name: &str, version: u32) -> Self {
@@ -521,6 +532,21 @@ impl IdbDatabase {
     /// 获取 Object Store 名称列表。
     pub fn store_names(&self) -> Vec<&str> {
         self.stores.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// 获取 object store schema 摘要，按名称排序。
+    pub fn store_info(&self) -> Vec<IdbObjectStoreInfo> {
+        let mut stores = self
+            .stores
+            .values()
+            .map(|store| IdbObjectStoreInfo {
+                name: store.name.clone(),
+                key_path: store.key_path.clone(),
+                auto_increment: store.auto_increment,
+            })
+            .collect::<Vec<_>>();
+        stores.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        stores
     }
 
     /// 是否包含指定 Object Store。
