@@ -4,7 +4,34 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// hmtx 字符测量缓存键：完整字体链 + 字号 bits + 字符。
 type HmtxCacheKey = (Arc<[u32]>, u32, char);
-pub(super) type HmtxCache = Arc<Mutex<HashMap<HmtxCacheKey, f32>>>;
+type HmtxGroupKey = (Arc<[u32]>, u32);
+
+#[derive(Default)]
+pub(super) struct HmtxCacheState {
+    flat: HashMap<HmtxCacheKey, f32>,
+    grouped: HashMap<HmtxGroupKey, HashMap<char, f32>>,
+    grouped_entries: usize,
+}
+
+impl HmtxCacheState {
+    fn clear(&mut self) {
+        self.flat.clear();
+        self.grouped.clear();
+        self.grouped_entries = 0;
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.flat.len() + self.grouped_entries
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.flat.is_empty() && self.grouped_entries == 0
+    }
+}
+
+pub(super) type HmtxCache = Arc<Mutex<HmtxCacheState>>;
 
 impl FontLoader {
     /// 批量测量整段文本的 hmtx advance（无 shaping 上下文）。
@@ -29,19 +56,46 @@ impl FontLoader {
                 .map(|ch| measure_hmtx_char(self, &chain, ch, font_size))
                 .sum();
         }
-        let chain_key: Arc<[u32]> = chain.clone().into();
         let mut cache = self.hmtx_cache.lock().expect("hmtx cache poisoned");
+        if grouped_cache_enabled() {
+            if cache.grouped_entries >= HMTX_CACHE_MAX {
+                cache.grouped.clear();
+                cache.grouped_entries = 0;
+            }
+            let chain_key: Arc<[u32]> = chain.into();
+            let HmtxCacheState {
+                grouped,
+                grouped_entries,
+                ..
+            } = &mut *cache;
+            let widths = grouped.entry((chain_key.clone(), font_size.to_bits())).or_default();
+            return text
+                .chars()
+                .map(|ch| {
+                    if let Some(&width) = widths.get(&ch) {
+                        return width;
+                    }
+                    let width = measure_hmtx_char(self, &chain_key, ch, font_size);
+                    if *grouped_entries < HMTX_CACHE_MAX {
+                        widths.insert(ch, width);
+                        *grouped_entries += 1;
+                    }
+                    width
+                })
+                .sum();
+        }
+        let chain_key: Arc<[u32]> = chain.clone().into();
         text.chars()
             .map(|ch| {
                 let key = (Arc::clone(&chain_key), font_size.to_bits(), ch);
-                if let Some(&width) = cache.get(&key) {
+                if let Some(&width) = cache.flat.get(&key) {
                     return width;
                 }
                 let width = measure_hmtx_char(self, &chain, ch, font_size);
-                if cache.len() >= HMTX_CACHE_MAX {
-                    cache.clear();
+                if cache.flat.len() >= HMTX_CACHE_MAX {
+                    cache.flat.clear();
                 }
-                cache.insert(key, width);
+                cache.flat.insert(key, width);
                 width
             })
             .sum()
@@ -69,6 +123,11 @@ const HMTX_CACHE_MAX: usize = 4096;
 fn character_cache_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_HMTX_CHAR_CACHE").as_deref() != Ok("0"))
+}
+
+fn grouped_cache_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_HMTX_GROUPED_CACHE").as_deref() != Ok("0"))
 }
 
 fn measure_hmtx_char(loader: &FontLoader, font_ids: &[u32], ch: char, size: f32) -> f32 {
@@ -131,6 +190,15 @@ mod tests {
             2,
             "reordered text should reuse per-character widths"
         );
+    }
+
+    #[test]
+    fn grouped_character_cache_stays_within_entry_limit() {
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+        let text: String = (0..=HMTX_CACHE_MAX as u32).filter_map(char::from_u32).collect();
+        loader.measure_text_hmtx(&[font_id], &text, 16.0);
+        assert!(loader.hmtx_cache.lock().unwrap().len() <= HMTX_CACHE_MAX);
     }
 
     #[test]
