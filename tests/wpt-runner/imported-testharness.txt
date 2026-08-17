@@ -31,3 +31,11 @@ IndexedDB/idbcursor-continue.any.js 315976933870b34d6ea30e3f6643403edae678ba 202
 IndexedDB/idbcursor-advance.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
 IndexedDB/idbcursor-advance-invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
 IndexedDB/idbcursor-advance-continue-async.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
+IndexedDB/idbrequest_result.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/idbrequest_error.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/idbtransaction-objectStore-finished.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/idbtransaction_abort.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/request_bubble-and-capture.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/transaction-abort-request-error.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/error-attributes.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model
+IndexedDB/idbtransaction-oncomplete.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-request-event-model

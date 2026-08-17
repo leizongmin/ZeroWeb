@@ -1,0 +1,41 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IDBRequest and IDBTransaction core event model",
+  "capabilities": [
+    "pending result and error accessors",
+    "request capture and bubble propagation",
+    "cancelable request errors",
+    "transaction abort request queue",
+    "transaction error cause",
+    "finished transaction guards",
+    "request and transaction completion ordering",
+    "real IndexedDB constructor prototypes"
+  ],
+  "tests": {
+    "new_request_transaction_wpt": {
+      "files": 8,
+      "pass": 10,
+      "fail": 0
+    },
+    "imported_wpt": {
+      "files": 32,
+      "pass": 192,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass",
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_budgets": "pass"
+    }
+  },
+  "remaining": [
+    "transaction active flag and task deactivation",
+    "continuePrimaryKey",
+    "database versions above u32",
+    "cross-process ownership",
+    "persistence"
+  ]
+}

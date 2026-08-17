@@ -180,6 +180,23 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/idbcursor-advance-continue-async.any.js",
         &["resources/support.js"],
     ),
+    ("IndexedDB/idbrequest_result.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbrequest_error.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbtransaction-objectStore-finished.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbtransaction_abort.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/request_bubble-and-capture.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-abort-request-error.any.js",
+        &["resources/support-promises.js", "resources/support.js"],
+    ),
+    ("IndexedDB/error-attributes.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbtransaction-oncomplete.any.js", &["resources/support.js"]),
 ];
 
 /// WPT subtest status.

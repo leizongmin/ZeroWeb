@@ -2943,6 +2943,7 @@
     this.cancelable = false;
     this.defaultPrevented = false;
     this._propagationStopped = false;
+    this._immediatePropagationStopped = false;
     this.timestamp = 0;
   }
   _zwIDBEvent.prototype = Object.create((globalThis.Event || Object).prototype);
@@ -2951,6 +2952,10 @@
     if (this.cancelable) this.defaultPrevented = true;
   };
   _zwIDBEvent.prototype.stopPropagation = function () { this._propagationStopped = true; };
+  _zwIDBEvent.prototype.stopImmediatePropagation = function () {
+    this._propagationStopped = true;
+    this._immediatePropagationStopped = true;
+  };
 
   function IDBVersionChangeEvent(type, init) {
     init = init || {};
@@ -2965,8 +2970,8 @@
 
   function _zwIDBRequest(source) {
     this.readyState = 'pending';
-    this.result = undefined;
-    this.error = null;
+    this._result = undefined;
+    this._error = null;
     this.source = source || null;
     this.transaction = null;
     this.onsuccess = null;
@@ -2975,16 +2980,44 @@
     this.onblocked = null;
     this._listeners = {};
   }
-  _zwIDBRequest.prototype.addEventListener = function (type, callback) {
+  Object.defineProperties(_zwIDBRequest.prototype, {
+    result: {
+      configurable: true,
+      get: function () {
+        if (this.readyState === 'pending') {
+          throw new globalThis.DOMException('The request is still pending.', 'InvalidStateError');
+        }
+        return this._result;
+      },
+      set: function (value) { this._result = value; }
+    },
+    error: {
+      configurable: true,
+      get: function () {
+        if (this.readyState === 'pending') {
+          throw new globalThis.DOMException('The request is still pending.', 'InvalidStateError');
+        }
+        return this._error;
+      },
+      set: function (value) { this._error = value; }
+    }
+  });
+  _zwIDBRequest.prototype.addEventListener = function (type, callback, options) {
     if (callback == null) return;
     type = String(type);
     var listeners = this._listeners[type] || (this._listeners[type] = []);
-    if (listeners.indexOf(callback) === -1) listeners.push(callback);
+    var capture = options === true || !!(options && options.capture);
+    if (!listeners.some(function (listener) {
+      return listener.callback === callback && listener.capture === capture;
+    })) listeners.push({ callback: callback, capture: capture });
   };
-  _zwIDBRequest.prototype.removeEventListener = function (type, callback) {
+  _zwIDBRequest.prototype.removeEventListener = function (type, callback, options) {
     var listeners = this._listeners[String(type)];
     if (!listeners) return;
-    var index = listeners.indexOf(callback);
+    var capture = options === true || !!(options && options.capture);
+    var index = listeners.findIndex(function (listener) {
+      return listener.callback === callback && listener.capture === capture;
+    });
     if (index !== -1) listeners.splice(index, 1);
   };
   _zwIDBRequest.prototype.dispatchEvent = function (event) {
@@ -2997,19 +3030,74 @@
     return !event.defaultPrevented;
   };
 
-  function _zwIDBEmit(target, type, event) {
-    var handler = target['on' + type];
-    if (typeof handler === 'function') {
-      try { handler.call(target, event); } catch (_) {}
-    }
+  function _zwIDBInvoke(target, type, event, capture) {
     var listeners = ((target._listeners && target._listeners[type]) || []).slice();
+    if (!capture && !event._immediatePropagationStopped) {
+      var handler = target['on' + type];
+      if (typeof handler === 'function') {
+        try { handler.call(target, event); } catch (_) {}
+      }
+    }
     for (var i = 0; i < listeners.length; i++) {
-      if (event._propagationStopped) break;
+      if (event._immediatePropagationStopped) break;
       var listener = listeners[i];
+      if (listener.capture !== capture) continue;
+      var callback = listener.callback;
       try {
-        if (typeof listener === 'function') listener.call(target, event);
-        else if (listener && typeof listener.handleEvent === 'function') listener.handleEvent(event);
+        if (typeof callback === 'function') callback.call(target, event);
+        else if (callback && typeof callback.handleEvent === 'function') callback.handleEvent(event);
       } catch (_) {}
+    }
+  }
+
+  function _zwIDBEmit(target, type, event) {
+    event.currentTarget = target;
+    _zwIDBInvoke(target, type, event, true);
+    _zwIDBInvoke(target, type, event, false);
+  }
+
+  function _zwIDBDispatchRequestEvent(request, transaction, event) {
+    var database = transaction && transaction.db;
+    event.target = request;
+    if (database) {
+      event.currentTarget = database;
+      _zwIDBInvoke(database, event.type, event, true);
+    }
+    if (transaction && !event._propagationStopped) {
+      event.currentTarget = transaction;
+      _zwIDBInvoke(transaction, event.type, event, true);
+    }
+    if (!event._propagationStopped) {
+      event.currentTarget = request;
+      _zwIDBInvoke(request, event.type, event, true);
+      _zwIDBInvoke(request, event.type, event, false);
+    }
+    if (event.bubbles && transaction && !event._propagationStopped) {
+      event.currentTarget = transaction;
+      _zwIDBInvoke(transaction, event.type, event, false);
+    }
+    if (event.bubbles && database && !event._propagationStopped) {
+      event.currentTarget = database;
+      _zwIDBInvoke(database, event.type, event, false);
+    }
+  }
+
+  function _zwIDBEmitTransactionEvent(transaction, type, bubbles) {
+    var event = new _zwIDBEvent(type, transaction);
+    event.bubbles = !!bubbles;
+    event.target = transaction;
+    if (transaction.db) {
+      event.currentTarget = transaction.db;
+      _zwIDBInvoke(transaction.db, type, event, true);
+    }
+    if (!event._propagationStopped) {
+      event.currentTarget = transaction;
+      _zwIDBInvoke(transaction, type, event, true);
+      _zwIDBInvoke(transaction, type, event, false);
+    }
+    if (bubbles && transaction.db && !event._propagationStopped) {
+      event.currentTarget = transaction.db;
+      _zwIDBInvoke(transaction.db, type, event, false);
     }
   }
 
@@ -3017,25 +3105,39 @@
   function _zwIDBDispatch(req, type, result, event) {
     var transaction = req.transaction;
     if (transaction) transaction._pending++;
+    var dispatch = {
+      request: req,
+      type: type,
+      result: result,
+      event: event,
+      firing: false,
+      settled: false
+    };
+    if (transaction) transaction._requestQueue.push(dispatch);
     var fire = function () {
+      dispatch.firing = true;
       req.readyState = 'done';
-      if (result && result._isIDBCursor) {
-        result._applyPendingPosition();
-        result._gotValue = true;
+      if (dispatch.result && dispatch.result._isIDBCursor) {
+        dispatch.result._applyPendingPosition();
+        dispatch.result._gotValue = true;
       }
-      if (result !== undefined) req.result = result;
-      var ev = event || new _zwIDBEvent(
-        type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'),
+      if (dispatch.result !== undefined) req.result = dispatch.result;
+      var ev = dispatch.event || new _zwIDBEvent(
+        dispatch.type === 'error' ? 'error' : (dispatch.type === 'upgradeneeded' ? 'upgradeneeded' : 'success'),
         req
       );
       if (ev._requestError) req.error = ev._requestError;
-      ev.target = req;
-      ev.currentTarget = req;
-      _zwIDBEmit(req, ev.type, ev);
-      if (ev.type === 'error' && transaction && !ev.defaultPrevented) {
+      _zwIDBDispatchRequestEvent(req, transaction, ev);
+      dispatch.settled = true;
+      if (ev.type === 'error' && transaction && !ev.defaultPrevented && !transaction._aborted) {
+        transaction._requestError = req.error;
         transaction.abort();
       }
-      if (transaction) transaction._pending--;
+      if (transaction) {
+        transaction._pending--;
+        var position = transaction._requestQueue.indexOf(dispatch);
+        if (position !== -1) transaction._requestQueue.splice(position, 1);
+      }
     };
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
     else fire();
@@ -3060,7 +3162,8 @@
     if (this._metadata && this._metadata.deleted) {
       throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
     }
-    if (this.transaction && (this.transaction._aborted || this.transaction._finished)) {
+    if (this.transaction
+        && (this.transaction._aborted || this.transaction._finished || this.transaction._committing)) {
       throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
     }
     if (write && this.transaction && this.transaction.mode === 'readonly') {
@@ -3830,7 +3933,11 @@
     this._listeners = {};
     this._aborted = false;
     this._finished = false;
+    this._committing = false;
     this._pending = 0;
+    this._requestQueue = [];
+    this._requestError = null;
+    this.error = null;
     this._hostId = null;
     this._snapshot = null;
     if (!deferCompletion && this.mode !== 'versionchange') {
@@ -3855,6 +3962,7 @@
           return;
         }
         if (self._hostId !== null) {
+          self._committing = true;
           try {
             _zwIDBHostCall({ op: 'commit_transaction', transaction: self._hostId });
           } catch (hostError) {
@@ -3872,37 +3980,67 @@
   }
   _zwIDBTransaction.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
   _zwIDBTransaction.prototype.removeEventListener = _zwIDBRequest.prototype.removeEventListener;
+  _zwIDBTransaction.prototype.dispatchEvent = _zwIDBRequest.prototype.dispatchEvent;
   _zwIDBTransaction.prototype.objectStore = function (name) {
+    if (this._aborted || this._finished || this._committing) {
+      throw new globalThis.DOMException('The transaction is finished.', 'InvalidStateError');
+    }
     var s = this._db._stores[name];
-    if (!s) return null; // headless lenient（spec 抛 NotFoundError）
+    if (!s) {
+      throw new globalThis.DOMException('The object store is not in this transaction.', 'NotFoundError');
+    }
     return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
   };
   _zwIDBTransaction.prototype.abort = function () {
-    if (!this._finished) {
-      if (this._hostId !== null) {
-        try {
-          _zwIDBHostCall({ op: 'abort_transaction', transaction: this._hostId });
-        } catch (_) {}
-        this._hostId = null;
-      }
-      this._aborted = true;
-      _zwIDBRestoreTransactionSnapshot(this);
-      if (this.mode === 'versionchange') {
-        Object.keys(this._db._stores).forEach(function (storeName) {
-          var store = this._db._stores[storeName];
-          if (store.createdInUpgrade) store.deleted = true;
-          Object.keys(store.indexes).forEach(function (indexName) {
-            var index = store.indexes[indexName];
-            if (index.createdInUpgrade) index.deleted = true;
-          });
-        }, this);
-      }
+    if (this._aborted || this._finished || this._committing) {
+      throw new globalThis.DOMException('The transaction is finished.', 'InvalidStateError');
+    }
+    if (this._hostId !== null) {
+      try {
+        _zwIDBHostCall({ op: 'abort_transaction', transaction: this._hostId });
+      } catch (_) {}
+      this._hostId = null;
+    }
+    this._aborted = true;
+    this.error = this._requestError
+      || new globalThis.DOMException('The transaction was aborted.', 'AbortError');
+    this._requestError = null;
+    this._requestQueue.forEach(function (dispatch) {
+      if (dispatch.settled || dispatch.firing) return;
+      var requestError = new globalThis.DOMException('The transaction was aborted.', 'AbortError');
+      var requestEvent = new _zwIDBEvent('error', dispatch.request);
+      requestEvent.bubbles = true;
+      requestEvent.cancelable = true;
+      requestEvent._requestError = requestError;
+      dispatch.type = 'error';
+      dispatch.result = undefined;
+      dispatch.event = requestEvent;
+    });
+    _zwIDBRestoreTransactionSnapshot(this);
+    if (this.mode === 'versionchange') {
+      Object.keys(this._db._stores).forEach(function (storeName) {
+        var store = this._db._stores[storeName];
+        if (store.createdInUpgrade) store.deleted = true;
+        Object.keys(store.indexes).forEach(function (indexName) {
+          var index = store.indexes[indexName];
+          if (index.createdInUpgrade) index.deleted = true;
+        });
+      }, this);
+    } else {
+      this._finished = true;
+      var transaction = this;
+      var fireAbort = function () {
+        _zwIDBEmitTransactionEvent(transaction, 'abort', true);
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(fireAbort);
+      else fireAbort();
     }
   };
   _zwIDBTransaction.prototype.commit = function () {
-    if (this._aborted || this._finished) {
+    if (this._aborted || this._finished || this._committing) {
       throw new globalThis.DOMException('The transaction is inactive.', 'InvalidStateError');
     }
+    this._committing = true;
   };
 
   function _zwIDBDatabase(name, state) {
@@ -3922,6 +4060,9 @@
       item: function (i) { return Object.keys(self._stores)[i] || null; },
     };
   }
+  _zwIDBDatabase.prototype.addEventListener = _zwIDBRequest.prototype.addEventListener;
+  _zwIDBDatabase.prototype.removeEventListener = _zwIDBRequest.prototype.removeEventListener;
+  _zwIDBDatabase.prototype.dispatchEvent = _zwIDBRequest.prototype.dispatchEvent;
   _zwIDBDatabase.prototype.createObjectStore = function (name, opts) {
     opts = opts || {};
     if (!this._stores[name]) {
@@ -4350,10 +4491,14 @@
   globalThis.IDBRequest = _zwIDBRequest;
   globalThis.IDBOpenDBRequest = _zwIDBRequest;
   globalThis.IDBCursor = _zwIDBCursor;
-  ['IDBFactory', 'IDBDatabase', 'IDBObjectStore', 'IDBTransaction',
-   'IDBIndex'].forEach(function (n) {
-    if (typeof globalThis[n] === 'undefined') globalThis[n] = function () {};
-  });
+  globalThis.IDBDatabase = _zwIDBDatabase;
+  globalThis.IDBObjectStore = _zwIDBStore;
+  globalThis.IDBTransaction = _zwIDBTransaction;
+  globalThis.IDBIndex = _zwIDBIndex;
+  globalThis.IDBFactory = globalThis.IDBFactory || function IDBFactory() {};
+  if (Object.getPrototypeOf(globalThis.indexedDB) !== globalThis.IDBFactory.prototype) {
+    Object.setPrototypeOf(globalThis.indexedDB, globalThis.IDBFactory.prototype);
+  }
 
   globalThis.XMLHttpRequest = function() {
     var self = this;

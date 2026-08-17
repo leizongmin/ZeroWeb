@@ -1640,6 +1640,9 @@ fn test_indexeddb_request_event_target_surface() {
              request.addEventListener('upgradeneeded', function (event) {\
                calls.push('upgrade:' + (event.target === request));\
              });\
+             request.addEventListener('success', function (event) {\
+               calls.push('stopping:' + event.type); event.stopPropagation();\
+             });\
              request.addEventListener('success', {\
                handleEvent: function (event) { calls.push('listener:' + event.type); }\
              });\
@@ -1652,7 +1655,7 @@ fn test_indexeddb_request_event_target_surface() {
 
     assert_eq!(
         sandbox.execute("calls.join('|')").unwrap().value,
-        "upgrade:true|handler:success|listener:success"
+        "upgrade:true|handler:success|stopping:success|listener:success"
     );
 }
 
@@ -2009,7 +2012,9 @@ fn test_indexeddb_object_store_constraint_errors() {
                function observe(label, operation) {\
                  var failed = operation();\
                  constraintResults.push(label + ':request:' + (failed instanceof IDBRequest));\
-                 constraintResults.push(label + ':pending:' + failed.readyState + ':' + failed.error);\
+                 try { failed.error; } catch (error) {\
+                   constraintResults.push(label + ':pending:' + failed.readyState + ':' + error.name);\
+                 }\
                  failed.onsuccess = function () { constraintResults.push(label + ':unexpected-success'); };\
                  failed.onerror = function (event) {\
                    constraintResults.push(label + ':error:' + failed.error.name + ':' + event.cancelable);\
@@ -2036,9 +2041,9 @@ fn test_indexeddb_object_store_constraint_errors() {
 
     assert_eq!(
         sandbox.execute("constraintResults.join('|')").unwrap().value,
-        "primary:request:true|primary:pending:pending:null|\
-         unique-add:request:true|unique-add:pending:pending:null|\
-         unique-put:request:true|unique-put:pending:pending:null|\
+        "primary:request:true|primary:pending:pending:InvalidStateError|\
+         unique-add:request:true|unique-add:pending:pending:InvalidStateError|\
+         unique-put:request:true|unique-put:pending:pending:InvalidStateError|\
          primary:error:ConstraintError:true|unique-add:error:ConstraintError:true|\
          unique-put:error:ConstraintError:true|complete|success"
     );
