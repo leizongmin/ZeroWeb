@@ -1622,6 +1622,9 @@ fn r89_previous_node_accept_with_children_digs_last() {
         sandbox.execute("globalThis.__r89b").unwrap().value,
         "C1|C1",
         "R89：previousNode 的 ACCEPT 有子先 dig 子树尾（filtered 序前驱），childless 才返"
+    );
+}
+
 #[test]
 fn r79_parent_element_of_document_element_is_null_but_parent_node_is_document() {
     use std::sync::{Arc, Mutex};
