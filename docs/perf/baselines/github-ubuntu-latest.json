@@ -546,45 +546,45 @@
     },
     {
       "id": "mb/zero-webview/webview_builder_create",
-      "p95": 24911320.727272727,
+      "p95": 5716.801809885152,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_complex_page",
-      "p95": 25283412.85,
+      "p95": 680568.0631313132,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_inject_css",
-      "p95": 26644706.214285713,
+      "p95": 288923.5927272727,
       "tier": "budget",
-      "tightened_at": "2026-08-13T15:58:39Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_load_html_simple",
-      "p95": 24920580.92857143,
+      "p95": 137830.5264069264,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_load_html_with_css",
-      "p95": 26239492.470588237,
+      "p95": 171712.3231292517,
       "tier": "budget",
-      "tightened_at": "2026-08-13T15:58:39Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_render",
-      "p95": 26218120.166666668,
+      "p95": 278244.3596153846,
       "tier": "budget",
-      "tightened_at": "2026-08-13T15:58:39Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "mb/zero-webview/webview_resize_and_render",
-      "p95": 25032589.333333332,
+      "p95": 289590.155,
       "tier": "budget",
-      "tightened_at": "2026-08-10T21:36:43Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "page/welcome/parse_ms",
@@ -625,9 +625,9 @@
     },
     {
       "id": "page/medium/style_ms",
-      "p95": 22.732365,
+      "p95": 22.597114,
       "tier": "budget",
-      "tightened_at": "2026-08-13T15:58:39Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     },
     {
       "id": "page/medium/layout_ms",
@@ -699,9 +699,9 @@
     },
     {
       "id": "resource/peak_rss_mb",
-      "p95": 151.75390625,
+      "p95": 131.43359375,
       "tier": "budget",
-      "tightened_at": "2026-08-14T13:22:55Z"
+      "tightened_at": "2026-08-17T14:42:36Z"
     }
   ]
 }
