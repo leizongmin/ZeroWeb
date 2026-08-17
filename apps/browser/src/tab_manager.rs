@@ -901,6 +901,15 @@ impl TabManager {
             .unwrap_or(0)
     }
 
+    /// 测试用：当前仍有进程映射的 renderer 数量。
+    #[cfg(test)]
+    pub fn live_renderer_count_for_test(&self) -> usize {
+        self.process_backend
+            .as_ref()
+            .map(ProcessTabBackend::live_renderer_count)
+            .unwrap_or(0)
+    }
+
     /// 在多进程 live renderer 的当前页面上下文执行一致性观察脚本。
     pub fn execute_script_for_parity(
         &mut self,

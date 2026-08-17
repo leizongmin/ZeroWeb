@@ -1095,6 +1095,12 @@ impl BrowserApp {
         )
     }
 
+    /// 测试用：当前 live renderer 数量。
+    #[cfg(test)]
+    pub fn live_renderer_count_for_test(&self) -> usize {
+        self.tabs.live_renderer_count_for_test()
+    }
+
     /// 测试用：读取标签页最近快照中的 HTML。
     #[cfg(test)]
     pub fn page_html_for_test(&self, tab_id: TabId) -> Option<String> {

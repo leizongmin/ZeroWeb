@@ -1095,6 +1095,35 @@ fn crowded_tabs_compress_tab_width() {
     );
 }
 
+#[test]
+fn repeated_new_tabs_keep_live_renderers_and_page_frames() {
+    let _mp_guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.enable_multiprocess_for_test();
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+
+    let mut tab_ids = Vec::new();
+    for index in 0..8 {
+        app.new_tab(None);
+        let tab_id = app.shell.active_tab_id().expect("new tab must be active");
+        assert!(
+            wait_for_snapshot_after(&mut app, tab_id, 0, false),
+            "tab {index} did not publish its welcome-page frame; live renderers={}",
+            app.live_renderer_count_for_test()
+        );
+        tab_ids.push(tab_id);
+    }
+
+    assert_eq!(app.live_renderer_count_for_test(), tab_ids.len());
+    for (index, tab_id) in tab_ids.into_iter().enumerate() {
+        assert!(
+            app.snapshot_seq_for_test(tab_id) > 0,
+            "tab {index} lost its rendered snapshot"
+        );
+    }
+}
+
 /// open_history_page 应导航到 zero://history。
 #[test]
 fn open_history_page_sets_url() {

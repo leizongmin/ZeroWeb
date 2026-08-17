@@ -492,6 +492,7 @@ impl Client {
         {
             tracing::warn!("compositor: 帧响应超时（10s 无响应），视为断连并回退 legacy");
             self.status.store(CompositorStatus::Disconnected);
+            kill_child(&self.child);
         }
     }
 

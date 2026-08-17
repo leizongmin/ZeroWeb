@@ -12,8 +12,9 @@ use zero_engine::PrefersColorSchemeValue;
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
-    ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    FramePublishMode, ImeEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, LoadHtmlParams,
+    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation,
+    StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -158,14 +159,6 @@ pub fn take_test_renderer_outbound() -> Vec<IpcMessageKind> {
 }
 
 impl ProcessTabBackend {
-    #[cfg(test)]
-    fn enters_compositor_fallback(
-        _previous: crate::compositor_client::CompositorStatus,
-        _current: crate::compositor_client::CompositorStatus,
-    ) -> bool {
-        false
-    }
-
     /// 暂存最新绘制帧，避免 UI 线程逐个转换 renderer 积压的完整页面快照。
     fn defer_latest_paint(latest_paint: &mut Option<IpcMessageKind>, kind: IpcMessageKind) -> Option<IpcMessageKind> {
         if matches!(
@@ -211,6 +204,16 @@ impl ProcessTabBackend {
         self.browser_gpu_present = present;
     }
 
+    fn enters_compositor_fallback(
+        previous: crate::compositor_client::CompositorStatus,
+        current: crate::compositor_client::CompositorStatus,
+    ) -> bool {
+        matches!(
+            previous,
+            crate::compositor_client::CompositorStatus::Starting | crate::compositor_client::CompositorStatus::Healthy
+        ) && current == crate::compositor_client::CompositorStatus::Disconnected
+    }
+
     fn observe_compositor_status(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
@@ -223,11 +226,26 @@ impl ProcessTabBackend {
     fn observe_compositor_status_value(
         &mut self,
         current: crate::compositor_client::CompositorStatus,
-        _snapshots: &mut HashMap<TabId, TabSnapshot>,
-        _snapshot_seq: &mut HashMap<TabId, u64>,
+        snapshots: &mut HashMap<TabId, TabSnapshot>,
+        snapshot_seq: &mut HashMap<TabId, u64>,
     ) -> bool {
+        let fallback = Self::enters_compositor_fallback(self.compositor_status, current);
         self.compositor_status = current;
-        false
+        if !fallback {
+            return false;
+        }
+
+        for (tab_id, snapshot) in snapshots {
+            snapshot.clear_compositor_state();
+            *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+        }
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+            self.send_to_renderer(tab_id, IpcMessageKind::RequestFrame);
+        }
+        tracing::warn!("Compositor disconnected; switched isolated renderers to legacy frame publishing");
+        true
     }
 
     fn send_fetch_response_now(
@@ -698,6 +716,9 @@ impl ProcessTabBackend {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
+                if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
+                    self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+                }
                 self.send_to_renderer(
                     tab_id,
                     IpcMessageKind::SetViewport(SetViewportParams {
@@ -847,17 +868,33 @@ impl ProcessTabBackend {
     /// 避免单个 renderer 持续吐 `ViewPainted` 把 UI 主线程吃满。
     const POLL_BUDGET: Duration = Duration::from_millis(4);
 
+    fn renderer_poll_order(
+        mut mapping: Vec<(TabId, u64)>,
+        active_tab: Option<TabId>,
+        poll_background: bool,
+    ) -> Vec<(TabId, u64)> {
+        if let Some(active_tab) = active_tab {
+            mapping.retain(|(tab_id, _)| *tab_id == active_tab || poll_background);
+            mapping.sort_unstable_by_key(|(tab_id, _)| *tab_id != active_tab);
+        }
+        mapping
+    }
+
     pub fn poll(
         &mut self,
         snapshots: &mut HashMap<TabId, TabSnapshot>,
         snapshot_seq: &mut HashMap<TabId, u64>,
-        _active_tab: Option<TabId>,
-        _poll_background: bool,
+        active_tab: Option<TabId>,
+        poll_background: bool,
     ) -> bool {
         self.drain_pending_fetches();
         let mut changed = self.observe_compositor_status(snapshots, snapshot_seq);
         self.handle_crashes(snapshots);
-        let mapping: Vec<(TabId, u64)> = self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect();
+        let mapping = Self::renderer_poll_order(
+            self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect(),
+            active_tab,
+            poll_background,
+        );
         let mut disconnected = Vec::new();
         let poll_deadline = Instant::now() + Self::POLL_BUDGET;
         for (tab_id, rid) in mapping {
@@ -1187,6 +1224,19 @@ mod navigation_contract_tests {
     }
 
     #[test]
+    fn renderer_poll_order_prioritizes_active_tab_and_throttles_background_tabs() {
+        let mapping = vec![(TabId(1), 11), (TabId(2), 22), (TabId(3), 33)];
+
+        assert_eq!(
+            ProcessTabBackend::renderer_poll_order(mapping.clone(), Some(TabId(3)), false),
+            vec![(TabId(3), 33)]
+        );
+        let with_background = ProcessTabBackend::renderer_poll_order(mapping, Some(TabId(3)), true);
+        assert_eq!(with_background[0], (TabId(3), 33));
+        assert_eq!(with_background.len(), 3);
+    }
+
+    #[test]
     fn begin_navigation_discards_previous_paint() {
         let mut snap = TabSnapshot {
             last_render: Some(legacy_blue_render()),
@@ -1436,7 +1486,7 @@ mod compositor_fallback_tests {
         let mut previous = CompositorStatus::Starting;
         let current = CompositorStatus::Disconnected;
 
-        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
+        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
         previous = current;
         assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
     }
@@ -1446,7 +1496,7 @@ mod compositor_fallback_tests {
         let mut previous = CompositorStatus::Healthy;
         let current = CompositorStatus::Disconnected;
 
-        assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
+        assert!(ProcessTabBackend::enters_compositor_fallback(previous, current));
         previous = current;
         assert!(!ProcessTabBackend::enters_compositor_fallback(previous, current));
     }
@@ -1518,10 +1568,8 @@ mod compositor_fallback_tests {
             .into_owned()
     }
 
-    /// 7533e9d90 重构（强制隔离进程管线）后：compositor 断线不再触发 legacy 回退——
-    /// observe 仅记录状态，不清 compositor 提交态，也不发 SetFramePublishMode(Legacy)/RequestFrame。
     #[test]
-    fn compositor_disconnect_keeps_publish_state() {
+    fn compositor_disconnect_switches_isolated_renderers_to_legacy_frames() {
         let _ = take_test_renderer_outbound();
 
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
@@ -1538,26 +1586,26 @@ mod compositor_fallback_tests {
             frame_id: 1,
         });
 
-        assert!(!backend.observe_compositor_status_for_test(
+        assert!(backend.observe_compositor_status_for_test(
             CompositorStatus::Disconnected,
             &mut snapshots,
             &mut snapshot_seq
         ));
         assert_eq!(backend.compositor_status, CompositorStatus::Disconnected);
         let snap = snapshots.get(&tab_id).unwrap();
-        assert!(snap.compositor_submission.is_some(), "compositor 断线不再清除提交态");
+        assert!(snap.compositor_submission.is_none(), "compositor 断线应清除过期提交态");
         assert!(snap.compositor_frame.is_none());
 
         let outbound = take_test_renderer_outbound();
         assert!(
-            !outbound
+            outbound
                 .iter()
                 .any(|kind| matches!(kind, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy))),
-            "重构后断线不再发 SetFramePublishMode(Legacy)，got {outbound:?}"
+            "断线后应发 SetFramePublishMode(Legacy)，got {outbound:?}"
         );
         assert!(
-            !outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
-            "重构后断线不再发 RequestFrame，got {outbound:?}"
+            outbound.iter().any(|kind| matches!(kind, IpcMessageKind::RequestFrame)),
+            "断线后应发 RequestFrame，got {outbound:?}"
         );
     }
 
