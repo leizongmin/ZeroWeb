@@ -41,7 +41,7 @@ impl Resolve for Ipv4OnlyResolver {
 }
 
 /// 构建 blocking HTTP 客户端（与 `HttpClient` 配置一致）。
-pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Client {
+pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Result<Client, NetError> {
     let mut builder = Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .redirect(reqwest::redirect::Policy::none())
@@ -60,7 +60,7 @@ pub(crate) fn build_blocking_client(user_agent: &str, timeout_secs: u64) -> Clie
         builder = builder.no_proxy();
         tracing::info!("proxy disabled (ZERO_NOPROXY=1)");
     }
-    builder.build().expect("failed to build HTTP client")
+    builder.build().map_err(map_reqwest_error)
 }
 
 /// 默认启用 HTTP/2；设 `ZERO_HTTP2=0` 可退回 HTTP/1.1。

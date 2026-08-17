@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
+use tokio::sync::Semaphore;
 
 use zero_browser_shell::TabId;
 use zero_net::{
@@ -46,6 +47,7 @@ pub struct TabFetchProxy {
     stream_tx: Sender<CompletedFetch>,
     stream_rx: Receiver<CompletedFetch>,
     stream_pending: HashSet<(TabId, u64)>,
+    stream_limiter: Arc<Semaphore>,
     tab_epochs: HashMap<TabId, u64>,
     security: HashMap<TabId, SecurityContext>,
 }
@@ -62,6 +64,7 @@ impl TabFetchProxy {
             stream_tx,
             stream_rx,
             stream_pending: HashSet::new(),
+            stream_limiter: Arc::new(Semaphore::new(zero_net::max_connections_total())),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
         }
@@ -339,10 +342,30 @@ impl TabFetchProxy {
         request_headers: Vec<(String, String)>,
         priority: FetchPriority,
     ) {
+        let max_pending = zero_net::max_connections_total().saturating_mul(16).clamp(64, 1024);
+        if self.stream_pending.len() >= max_pending {
+            self.pending.push(PendingFetch {
+                tab_id,
+                request_id,
+                url,
+                rx: immediate_err("image stream queue is full".to_string()),
+            });
+            return;
+        }
         self.stream_pending.insert((tab_id, request_id));
         let tx = self.stream_tx.clone();
-        let client = HttpClient::new();
+        let limiter = Arc::clone(&self.stream_limiter);
         zero_net::client::spawn_network_task(async move {
+            let Ok(_permit) = limiter.acquire_owned().await else {
+                let _ = tx.send(CompletedFetch {
+                    tab_id,
+                    request_id,
+                    status: 0,
+                    headers: Vec::new(),
+                    body: b"network request failed: image stream scheduler closed".to_vec(),
+                });
+                return;
+            };
             let mut headers: Vec<_> = request_headers
                 .into_iter()
                 .filter(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"))
@@ -353,27 +376,27 @@ impl TabFetchProxy {
                 headers.push(("Priority".into(), priority.rfc9218_header_value().into()));
             }
             let chunk_tx = tx.clone();
-            let result = client
-                .send_async_stream(
-                    HttpRequest {
-                        method: HttpMethod::Get,
-                        url: url.clone(),
-                        headers,
-                        body: None,
-                    },
-                    move |chunk| {
-                        for part in chunk.chunks(MAX_IPC_STREAM_CHUNK_BYTES) {
-                            let _ = chunk_tx.send(CompletedFetch {
-                                tab_id,
-                                request_id,
-                                status: 200,
-                                headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
-                                body: part.to_vec(),
-                            });
-                        }
-                    },
-                )
-                .await;
+            let result = HttpClient::send_async_stream_with_timeout(
+                30,
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: url.clone(),
+                    headers,
+                    body: None,
+                },
+                move |chunk| {
+                    for part in chunk.chunks(MAX_IPC_STREAM_CHUNK_BYTES) {
+                        let _ = chunk_tx.send(CompletedFetch {
+                            tab_id,
+                            request_id,
+                            status: 200,
+                            headers: vec![("X-Zero-Stream-Chunk".into(), "1".into())],
+                            body: part.to_vec(),
+                        });
+                    }
+                },
+            )
+            .await;
             let completed = match result {
                 Ok(head) => CompletedFetch {
                     tab_id,
@@ -415,13 +438,11 @@ fn immediate_err(msg: String) -> Receiver<Result<HttpResponse, String>> {
 
 /// 在 browser 进程预解析 DNS；成功以空 204 响应回收 renderer 的内部请求槽。
 fn dns_prefetch(origin: String) -> Receiver<Result<HttpResponse, String>> {
-    let result = HttpClient::new().dns_prefetch(origin.clone());
     let (tx, rx) = channel();
-    zero_net::client::spawn_network_bridge(move || {
-        let response = result
-            .recv()
+    zero_net::client::spawn_network_task(async move {
+        let response = HttpClient::dns_prefetch_origin_async(&origin)
+            .await
             .map_err(|error| error.to_string())
-            .and_then(|result| result.map_err(|error| error.to_string()))
             .map(|()| HttpResponse {
                 status_code: 204,
                 headers: Vec::new(),
@@ -544,6 +565,80 @@ mod tests {
         assert_eq!(done[0].request_id, 8);
         assert_eq!(done[0].status, 204);
         assert!(done[0].body.is_empty());
+    }
+
+    #[test]
+    fn image_stream_waits_for_global_connection_permit() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/queued.png", listener.local_addr().unwrap());
+        let limiter = Arc::new(Semaphore::new(1));
+        let permit = Arc::clone(&limiter).try_acquire_owned().unwrap();
+        let mut proxy = TabFetchProxy::new();
+        proxy.stream_limiter = limiter;
+        let mut request = params(16, &url);
+        request.headers = vec![
+            ("X-Zero-Resource-Type".into(), "image".into()),
+            ("X-Zero-Stream-Image".into(), "1".into()),
+        ];
+
+        proxy.enqueue(TabId(3), &request);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+            "stream must not open a socket before acquiring a permit"
+        );
+
+        drop(permit);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(std::time::Instant::now() < deadline, "stream did not acquire permit");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept failed: {error}"),
+            }
+        };
+        let mut incoming = [0_u8; 1024];
+        let _ = stream.read(&mut incoming).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx")
+            .unwrap();
+
+        let mut completed = Vec::new();
+        while std::time::Instant::now() < deadline {
+            completed.extend(proxy.drain());
+            if completed.iter().any(|item| !is_stream_chunk(&item.headers)) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(completed.iter().any(|item| item.status == 200));
+    }
+
+    #[test]
+    fn image_stream_queue_rejects_requests_above_bound() {
+        let mut proxy = TabFetchProxy::new();
+        let max_pending = zero_net::max_connections_total().saturating_mul(16).clamp(64, 1024);
+        for request_id in 0..max_pending as u64 {
+            proxy.stream_pending.insert((TabId(1), request_id));
+        }
+
+        proxy.start_image_stream(
+            TabId(1),
+            max_pending as u64,
+            "http://127.0.0.1/overflow.png".to_string(),
+            Vec::new(),
+            FetchPriority::MEDIUM,
+        );
+
+        let completed = proxy.drain();
+        assert_eq!(proxy.stream_pending.len(), max_pending);
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].status, 0);
+        assert!(String::from_utf8_lossy(&completed[0].body).contains("queue is full"));
     }
 
     #[test]

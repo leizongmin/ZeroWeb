@@ -14,6 +14,7 @@ use crate::{HttpRequest, HttpResponse, NetError};
 const ASYNC_NETWORK_WORKERS: usize = 4;
 const MAX_BLOCKING_NETWORK_TASKS: usize = 32;
 type AsyncClientCache = HashMap<(u64, bool, bool), reqwest::Client>;
+type BlockingClientCache = HashMap<(u64, bool, bool), Client>;
 
 /// 共享异步网络 runtime，避免资源调度器为每个请求创建线程或 runtime。
 pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
@@ -70,9 +71,25 @@ fn async_client(timeout_secs: u64) -> Result<reqwest::Client, NetError> {
     Ok(client)
 }
 
+fn blocking_client(timeout_secs: u64) -> Result<Client, NetError> {
+    static CLIENTS: OnceLock<Mutex<BlockingClientCache>> = OnceLock::new();
+    let no_proxy = crate::connect::no_proxy_enabled();
+    let http2 = crate::connect::http2_enabled();
+    let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut clients = clients
+        .lock()
+        .map_err(|_| NetError::Network("blocking HTTP client cache lock poisoned".to_string()))?;
+    if let Some(client) = clients.get(&(timeout_secs, no_proxy, http2)) {
+        return Ok(client.clone());
+    }
+    let client = build_blocking_client(&HttpClient::default_user_agent(), timeout_secs)?;
+    clients.insert((timeout_secs, no_proxy, http2), client.clone());
+    Ok(client)
+}
+
 /// HTTP 客户端 — 封装 reqwest。
 pub struct HttpClient {
-    client: Client,
+    client: Result<Client, String>,
     /// 最大重定向次数。
     pub max_redirects: usize,
     /// 超时时间（秒）。
@@ -136,15 +153,35 @@ impl HttpClient {
     ///
     /// 回调在 async runtime 线程执行，应快速处理或自行转交数据。重定向、方法转换与敏感
     /// 头剥离语义与 [`Self::send_async`] 保持一致。
-    pub async fn send_async_stream<F>(
-        &self,
+    pub async fn send_async_stream<F>(&self, request: HttpRequest, on_chunk: F) -> Result<HttpResponseHead, NetError>
+    where
+        F: FnMut(&[u8]),
+    {
+        Self::send_async_stream_with_config(self.timeout_secs, self.max_redirects, request, on_chunk).await
+    }
+
+    /// 使用共享异步连接池流式发送请求，不构建 blocking client。
+    pub async fn send_async_stream_with_timeout<F>(
+        timeout_secs: u64,
+        request: HttpRequest,
+        on_chunk: F,
+    ) -> Result<HttpResponseHead, NetError>
+    where
+        F: FnMut(&[u8]),
+    {
+        Self::send_async_stream_with_config(timeout_secs, 10, request, on_chunk).await
+    }
+
+    async fn send_async_stream_with_config<F>(
+        timeout_secs: u64,
+        max_redirects: usize,
         request: HttpRequest,
         mut on_chunk: F,
     ) -> Result<HttpResponseHead, NetError>
     where
         F: FnMut(&[u8]),
     {
-        let client = async_client(self.timeout_secs)?;
+        let client = async_client(timeout_secs)?;
         let mut current_url = request.url.clone();
         let mut method = request.method.clone();
         let mut body = request.body.clone();
@@ -163,7 +200,7 @@ impl HttpClient {
             let status_code = response.status().as_u16();
             if matches!(status_code, 301 | 302 | 303 | 307 | 308) {
                 redirect_count += 1;
-                if redirect_count > self.max_redirects {
+                if redirect_count > max_redirects {
                     return Err(NetError::TooManyRedirects);
                 }
                 let Some(location) = response
@@ -260,6 +297,11 @@ impl HttpClient {
 
     /// 异步预解析 HTTP(S) origin 的 DNS，不建立 HTTP 连接。
     pub async fn dns_prefetch_async(&self, origin: &str) -> Result<(), NetError> {
+        Self::dns_prefetch_origin_async(origin).await
+    }
+
+    /// 异步预解析 HTTP(S) origin 的 DNS，不构建 blocking client。
+    pub async fn dns_prefetch_origin_async(origin: &str) -> Result<(), NetError> {
         let url = url::Url::parse(origin)?;
         if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
             return Err(NetError::UrlParse(format!(
@@ -425,8 +467,7 @@ impl HttpClient {
 
     /// 使用完整配置创建 HTTP 客户端。
     fn with_config(timeout_secs: u64, max_redirects: usize) -> Self {
-        let user_agent = Self::default_user_agent();
-        let client = build_blocking_client(&user_agent, timeout_secs);
+        let client = blocking_client(timeout_secs).map_err(|error| error.to_string());
 
         Self {
             client,
@@ -449,6 +490,10 @@ impl HttpClient {
     /// 支持 301/302/303/307/308 重定向，跟踪重定向次数并在响应中记录。
     /// 超过最大重定向次数时返回 `NetError::TooManyRedirects`。
     pub fn send(&self, request: HttpRequest) -> Result<HttpResponse, NetError> {
+        let client = self
+            .client
+            .as_ref()
+            .map_err(|error| NetError::Network(format!("HTTP client unavailable: {error}")))?;
         let mut current_url = request.url.clone();
         let mut method = request.method.clone();
         let mut body = request.body.clone();
@@ -468,9 +513,8 @@ impl HttpClient {
                 header_map.append(header_name, header_value);
             }
 
-            let response =
-                send_with_ipv4_fallback(&self.client, reqwest_method, &current_url, &header_map, body.as_ref())
-                    .map_err(map_reqwest_error)?;
+            let response = send_with_ipv4_fallback(client, reqwest_method, &current_url, &header_map, body.as_ref())
+                .map_err(map_reqwest_error)?;
 
             let status_code = response.status().as_u16();
 
@@ -604,6 +648,19 @@ mod tests {
         let client = HttpClient::new();
         assert_eq!(client.timeout_secs, 30);
         assert_eq!(client.max_redirects, 10);
+    }
+
+    #[test]
+    fn blocking_client_build_failure_is_returned_without_panic() {
+        let client = HttpClient {
+            client: Err("Too many open files".to_string()),
+            max_redirects: 10,
+            timeout_secs: 30,
+        };
+        let error = client
+            .send(HttpRequest::get("https://example.com"))
+            .expect_err("unavailable client must return an error");
+        assert!(error.to_string().contains("Too many open files"));
     }
 
     #[test]

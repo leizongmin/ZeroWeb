@@ -6302,6 +6302,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "softbuffer",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "tungstenite",
