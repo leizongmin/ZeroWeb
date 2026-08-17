@@ -3,12 +3,9 @@
 use crate::font::{FontDesc, FontError, GlyphBitmap};
 use hashbrown::{HashMap, HashSet};
 use shaping::ShapeCache;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
-/// hmtx 批量测量缓存键：字体 instance id 序列 + 字号 bits + 文本。
-type HmtxCacheKey = (Vec<u64>, u32, String);
-type HmtxCache = Arc<Mutex<HashMap<HmtxCacheKey, f32>>>;
-
+mod hmtx;
 mod metrics;
 mod shaping;
 mod unicode_range;
@@ -52,7 +49,7 @@ pub struct FontLoader {
     /// instance ID 不同而隔离。
     shape_cache: ShapeCache,
     /// 有界 hmtx 批量测量缓存（ZRG-2026-08-15 修复 A）。
-    hmtx_cache: HmtxCache,
+    hmtx_cache: hmtx::HmtxCache,
 }
 
 impl FontLoader {
@@ -74,7 +71,7 @@ impl FontLoader {
             bitmap_glyphs: HashMap::new(),
             ahem_font_id: None,
             shape_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            hmtx_cache: HmtxCache::default(),
+            hmtx_cache: hmtx::HmtxCache::default(),
         }
     }
 
@@ -99,7 +96,7 @@ impl FontLoader {
             bitmap_glyphs: self.bitmap_glyphs.clone(),
             ahem_font_id: self.ahem_font_id,
             shape_cache: self.shape_cache.clone(),
-            hmtx_cache: HmtxCache::default(),
+            hmtx_cache: hmtx::HmtxCache::default(),
         }
     }
 
@@ -123,6 +120,7 @@ impl FontLoader {
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;
         self.shape_cache.lock().expect("shape cache poisoned").clear();
+        self.clear_hmtx_cache();
     }
 
     /// 获取回退字体链
@@ -239,19 +237,9 @@ impl FontLoader {
         self.font_data.get(&id).map(|v| v.as_ref().as_slice())
     }
 
-    /// 返回字体原始字节的 Arc 持有（hmtx face 缓存保活用；与 `get_font_data`
-    /// 同源，借用方持有 Arc 保证字节不被释放）。
-    pub(crate) fn font_data_arc(&self, id: u32) -> Option<Arc<Vec<u8>>> {
-        self.font_data.get(&id).cloned()
-    }
-
     /// 返回字体实例在 TTC/OTC collection 中的 face index。
     pub fn face_index(&self, id: u32) -> u32 {
         self.face_indices.get(&id).copied().unwrap_or(0)
-    }
-
-    fn font_instance_id(&self, id: u32) -> Option<u64> {
-        self.font_instance_ids.get(&id).copied()
     }
 
     /// 根据字体描述查找最佳匹配字体 ID
@@ -674,47 +662,6 @@ impl FontLoader {
             .unwrap_or(size * 0.5)
     }
 
-    /// 批量测量整段文本的 hmtx advance（无 shaping 上下文）。
-    ///
-    /// 与 rustybuzz 的 `unshaped_advance_x` 同源（同一 hmtx 表 × size/upem），
-    /// 用于布局侧 estimate 启发式的替换（ZRG-2026-08-15 修复 A：布局宽度与
-    /// 绘制宽度错位 15-20% 的根源）。逐字符在 `font_ids` 链上找第一个有该
-    /// glyph 的 face 读 hmtx advance；全链缺字回退 0.5em。face 解析有
-    /// thread_local 缓存（大 TTC 免每字符重复 parse）。
-    pub fn measure_text_hmtx(&self, font_ids: &[u32], text: &str, font_size: f32) -> f32 {
-        if font_size <= 0.0 || text.is_empty() {
-            return 0.0;
-        }
-        // run 级缓存（与 shape_cache 同模式）：布局测量同词在首帧内被 intrinsic/
-        // 行断/定位多次调用，跨帧文本不变——避免每调用重建 chain 的固定开销
-        // （perf 实测 welcome layout 1.6ms → 43ms 的根源）。key 用字体 instance id
-        //（R3254 教训：font_id 跨 loader 复用）。
-        let cache_key = (
-            font_ids
-                .iter()
-                .filter_map(|id| self.font_instance_ids.get(id).copied())
-                .collect::<Vec<_>>(),
-            font_size.to_bits(),
-            text.to_string(),
-        );
-        if let Some(&w) = self.hmtx_cache.lock().expect("hmtx cache poisoned").get(&cache_key) {
-            return w;
-        }
-        let mut chain: Vec<u32> = font_ids.to_vec();
-        for &id in &self.fallback_chain {
-            if !chain.contains(&id) {
-                chain.push(id);
-            }
-        }
-        let total = measure_hmtx_run(self, &chain, text, font_size);
-        let mut cache = self.hmtx_cache.lock().expect("hmtx cache poisoned");
-        if cache.len() >= HMTX_CACHE_MAX {
-            cache.clear();
-        }
-        cache.insert(cache_key, total);
-        total
-    }
-
     fn glyph_has_coverage(code_point: char, bitmap: &GlyphBitmap) -> bool {
         if code_point.is_whitespace() {
             return bitmap.advance > 0.0;
@@ -737,71 +684,6 @@ impl Default for FontLoader {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// hmtx 测量用的 face 缓存：ttf_parser::Face 借用 `bytes`，条目内 Arc 保活字节，
-/// 条目删除（LRU 清空）前 Face 不失效。
-struct HmtxCachedFace {
-    // bytes 保活 Face 借用的字体数据（条目删除前 Face 不失效）。
-    _bytes: Arc<Vec<u8>>,
-    face: rustybuzz::ttf_parser::Face<'static>,
-}
-
-thread_local! {
-    static HMTX_FACE_CACHE: std::cell::RefCell<std::collections::HashMap<u64, HmtxCachedFace>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-const HMTX_FACE_CACHE_MAX: usize = 16;
-const HMTX_CACHE_MAX: usize = 4096;
-
-/// 批量读取整段文本的 hmtx advance。字体 face 按进程唯一 instance id 缓存，
-/// 一次 run 只借用一次 thread-local cache，避免逐字符重复哈希字体字节和 clone Arc。
-fn measure_hmtx_run(loader: &FontLoader, font_ids: &[u32], text: &str, size: f32) -> f32 {
-    HMTX_FACE_CACHE.with(|cache_cell| {
-        let mut cache = cache_cell.borrow_mut();
-        for &font_id in font_ids {
-            let Some(key) = loader.font_instance_id(font_id) else {
-                continue;
-            };
-            if cache.contains_key(&key) {
-                continue;
-            }
-            if cache.len() >= HMTX_FACE_CACHE_MAX {
-                cache.clear();
-            }
-            let Some(bytes) = loader.font_data_arc(font_id) else {
-                continue;
-            };
-            // SAFETY: Face 借用 bytes；bytes 在本缓存条目内保活（Arc），条目
-            // 被 LRU 清空时 Face 与 bytes 一并 drop，借用不悬垂。
-            let slice: &[u8] = &bytes[..];
-            let static_bytes: &'static [u8] = unsafe { std::mem::transmute(slice) };
-            let Ok(face) = rustybuzz::ttf_parser::Face::parse(static_bytes, loader.face_index(font_id)) else {
-                continue;
-            };
-            cache.insert(key, HmtxCachedFace { _bytes: bytes, face });
-        }
-
-        text.chars()
-            .map(|ch| {
-                font_ids
-                    .iter()
-                    .filter(|&&font_id| loader.font_allows_code_point(font_id, ch))
-                    .find_map(|&font_id| {
-                        let cached = cache.get(&loader.font_instance_id(font_id)?)?;
-                        let upem = f32::from(cached.face.units_per_em());
-                        if upem <= 0.0 {
-                            return None;
-                        }
-                        let glyph_id = cached.face.glyph_index(ch)?;
-                        let advance = f32::from(cached.face.glyph_hor_advance(glyph_id)?);
-                        Some(advance * size / upem)
-                    })
-                    .unwrap_or(size * 0.5)
-            })
-            .sum()
-    })
 }
 
 /// 从 OpenType/TrueType 字体字节中解析字体族名称。
@@ -1104,80 +986,6 @@ mod tests {
         let loader = FontLoader::new();
         let result = loader.rasterize_glyph(999, 'A', 16.0);
         assert!(result.is_err());
-    }
-
-    /// hmtx 批量测量与 rustybuzz unshaped 同源（ZRG-2026-08-15 修复 A）：布局侧
-    /// estimate 替换为 hmtx 后，布局宽度与绘制（shaping）宽度应一致。
-    #[test]
-    fn measure_text_hmtx_matches_shaping_unshaped() {
-        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
-        let mut loader = FontLoader::new();
-        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
-        for text in ["Hello world", "AVATAR", "The quick brown fox"] {
-            let measured = loader.measure_text_hmtx(&[font_id], text, 16.0);
-            let shaped = crate::font::TextShaper::new(&loader, Some(crate::primitive::FontId(font_id)))
-                .shape_single_line(text, 16.0);
-            let unshaped: f32 = shaped.iter().map(|g| g.unshaped_advance_x).sum();
-            let tolerance = text.chars().count() as f32 / 64.0 + 0.01;
-            assert!(
-                (measured - unshaped).abs() <= tolerance,
-                "hmtx({measured:.3}) 与 shaping unshaped({unshaped:.3}) 不一致: {text:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn hmtx_face_cache_uses_font_instance_identity() {
-        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
-        HMTX_FACE_CACHE.with(|cache| cache.borrow_mut().clear());
-
-        let mut loader = FontLoader::new();
-        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
-        let duplicate = loader.duplicate();
-        loader.measure_text_hmtx(&[font_id], "first run", 16.0);
-        duplicate.measure_text_hmtx(&[font_id], "duplicate run", 16.0);
-        HMTX_FACE_CACHE.with(|cache| {
-            assert_eq!(
-                cache.borrow().len(),
-                1,
-                "duplicate loader should reuse the same font instance"
-            );
-        });
-
-        let mut independent = FontLoader::new();
-        let independent_id = independent.load_font(LATO_TTF).expect("register independent Lato font");
-        independent.measure_text_hmtx(&[independent_id], "independent run", 16.0);
-        HMTX_FACE_CACHE.with(|cache| {
-            assert_eq!(
-                cache.borrow().len(),
-                2,
-                "independent loader should use a distinct font instance"
-            );
-        });
-    }
-
-    /// 度量路径与 shaping 同源回归（ZRG-2026-08-15）：`measure_advance` 若带 hinting
-    /// （LoadFlag::DEFAULT），FreeType 会把 advance 取整到整像素，与 rustybuzz 的精确
-    /// hmtx 不一致（Liberation「Hello」差 4%，38.0 vs 36.46px）→ 字距与水平位置错乱。
-    /// NO_HINTING 后逐字符差 ≤ 1/64px（26.6 定点下限）。按文本求和断言，容差 =
-    /// 字符数/64 + ε（每个字符的 26.6 舍入上限）。
-    #[cfg(feature = "freetype-raster")]
-    #[test]
-    fn measure_advance_matches_shaping_hmtx_after_no_hinting() {
-        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
-        let mut loader = FontLoader::new();
-        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
-        for text in ["Hello", "WELCOME", "AVATAR", "The quick brown fox"] {
-            let measured: f32 = text.chars().map(|ch| loader.measure_advance(font_id, ch, 16.0)).sum();
-            let shaped = crate::font::TextShaper::new(&loader, Some(crate::primitive::FontId(font_id)))
-                .shape_single_line(text, 16.0);
-            let unshaped: f32 = shaped.iter().map(|g| g.unshaped_advance_x).sum();
-            let tolerance = text.chars().count() as f32 / 64.0 + 0.01;
-            assert!(
-                (measured - unshaped).abs() <= tolerance,
-                "measure({measured:.3}) 与 shaping hmtx({unshaped:.3}) 不一致（容差 {tolerance:.3}）: {text:?}"
-            );
-        }
     }
 
     #[test]

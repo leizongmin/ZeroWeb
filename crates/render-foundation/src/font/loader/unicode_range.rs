@@ -9,6 +9,7 @@ impl FontLoader {
             self.font_unicode_ranges.insert(font_id, ranges);
         }
         self.shape_cache.lock().expect("shape cache poisoned").clear();
+        self.clear_hmtx_cache();
     }
 
     pub(super) fn font_allows_code_point(&self, font_id: u32, code_point: char) -> bool {
