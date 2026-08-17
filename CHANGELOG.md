@@ -55,6 +55,10 @@
 - **表单验证（form-validation M1-M3）**：validationMessage 标准消息、requestSubmit 交互验证、提交阻断全链路（form-requestsubmit 全灭）、:invalid/:valid 匹配、BUTTON type 读取、step/pattern/date/time 校验矩阵、radio 组级 required、ValidityState——WPT 919/0 全灭。
 - **js-dom M4 遍历 API 完整化（R82-R86）**：whatToShow unsigned + referenceNode 同步（R82）、walker full-nodeType mask + fresh-start + handle before/after（R83）、traversal 兄弟链同 identity + NodeIterator detach/重入守卫 + TreeWalker filter 剪枝（R84）、TreeWalker 导航式重写 + previousNode 规范镜像（R85）、detached 子树保留 + NodeIterator 移除 retarget（R86）——traversal 1527→1575P。
 - **浏览器多进程重构**：require isolated process pipeline、release 二进制移除 page runtime（script runtime optional）、Windows caption button 行为恢复、空白标签页地址栏 ZeroWeb 图标、renderer 空闲 JS 轮询移除。
+- **IndexedDB Rust 原生路由**：IndexedDB 工厂 schema / 事务 wire / object store / index / index cursor / Date key / graph 值保留 / continuePrimaryKey / 引擎请求事件对齐 + 事务任务生命周期 / per-origin 注册表 / 数据库持久化——storage/engine 双端接线，cursor 步进路由到 Rust（storage 696 测试）。
+- **布局/样式/绘制性能（R3437-F–R3442-F）**：paint/IFC/构树 feature 开关进程级快照（getenv 热循环移除）、ComputedStyle 只读借用 + 父样式 owned 借用、style map 精确预留、连续 IFC 度量写入去重、字体 alias 精确查找、trusted NodeId SplitMix64 快哈希、post-order inline-block IFC 复用——medium layout/style/paint p95 多项降 3–41%，bench-gate 16/16 全 PASS。
+- **js-dom lit 框架端到端（R97-R99）**：lit 首渲染落地（walker 跨树重定位 + fragment 视图插入展开）、lit 响应式更新链（define observedAttributes + CE accessor 派发）、lit 事件链（_zwMEl 事件面 + 惰性 fonts.ready fallback）——Web Components 渲染/响应式/事件交互三段全通，WC 端到端闭环。
+- **官网**：新增 WPT 与性能趋势页（GitHub Pages 趋势可视化）。
 
 ### 变更
 
