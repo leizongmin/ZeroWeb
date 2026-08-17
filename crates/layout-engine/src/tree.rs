@@ -14,8 +14,10 @@ use crate::inline_block_split::{
     InlineBlockSegment, block_container_has_mixed_content, compute_block_container_split, compute_inline_block_split,
     inline_has_block_child, is_whitespace_only_inline_segment,
 };
+use runtime_flags::TreeRuntimeFlags;
 use style_borrow::computed_style_for_layout;
 
+mod runtime_flags;
 mod style_borrow;
 
 /// R1311b：判断 `<br>` 元素是否处于「纯 inline 上下文」——br 且无 block-level in-flow
@@ -228,6 +230,7 @@ struct BuildContext {
     img_intrinsic_no_ratio: HashMap<NodeId, (Option<f32>, Option<f32>)>,
     /// R109 接线产物（仅 R109_WIRE=1 时填充）。
     r109: R109Wiring,
+    flags: TreeRuntimeFlags,
 }
 
 impl BuildContext {
@@ -241,6 +244,7 @@ impl BuildContext {
             img_intrinsic_ratios: HashMap::new(),
             img_intrinsic_no_ratio: HashMap::new(),
             r109: R109Wiring::default(),
+            flags: TreeRuntimeFlags::from_env(),
         }
     }
 }
@@ -1091,7 +1095,7 @@ fn build_subtree(
     // inline` 不裁剪块级子的 inline 边距）；flex/grid/multicol 容器有独立语义（defer）；自折叠 /
     // 嵌套深案（block-container-block-*-self-collapsing-*）defer。kill-switch `ZW_MARGIN_TRIM=0`
     // （default-on）。driving: css/css-box/margin-trim/block-container-block-001 等。
-    if std::env::var("ZW_MARGIN_TRIM").as_deref() != Ok("0")
+    if ctx.flags.margin_trim()
         && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
         && let Some(parent_id) = doc.parent_node(dom_id)
         && let Some(ps) = styles.get(&parent_id)
@@ -1132,7 +1136,7 @@ fn build_subtree(
     // 多行（wrap）逐行首末——均需 taffy 行信息或方向映射，暂不处理（driving tests 皆 LTR 单行）。
     // kill-switch 同 block 分支 `ZW_MARGIN_TRIM=0`（default-on）。driving: css/css-box/margin-trim/
     // flex-row-grow / flex-row-shrink / flex-column-grow / flex-column-shrink。
-    if std::env::var("ZW_MARGIN_TRIM").as_deref() != Ok("0")
+    if ctx.flags.margin_trim()
         && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
         && let Some(parent_id) = doc.parent_node(dom_id)
         && let Some(ps) = styles.get(&parent_id)
@@ -1184,7 +1188,7 @@ fn build_subtree(
     // **仅当 br 有 block-level in-flow 同胞时应用**——否则 br 在 inline 内容中（如
     // `<p>a<br>b</p>`）由父 IFC 的 InlineItem::Br 处理，加 min-height 会双计（taffy 子 +
     // IFC 行）致回归（css-text -7 实证）。kill-switch `ZW_BR_LINEHEIGHT=0`（default-on）。
-    if std::env::var("ZW_BR_LINEHEIGHT").as_deref() != Ok("0")
+    if ctx.flags.br_lineheight()
         && doc
             .get(dom_id)
             .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br")))
@@ -1303,8 +1307,7 @@ fn build_subtree(
     // auto 尺寸取 padding/border，content=0）。元素直属文本的尺寸抑制与绘制跳过分别在
     // measure_text_content（inline_finalization.rs）与 painter paint_text 门控处理。
     // driving: css/css-contain/content-visibility/content-visibility-001/003/005.. 等。
-    let content_visibility_hidden =
-        std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0") && computed.content_visibility_hidden_effective();
+    let content_visibility_hidden = ctx.flags.content_visibility() && computed.content_visibility_hidden_effective();
 
     if content_visibility_hidden {
         // 跳过子树收集：child_taffy_ids 保持空 → 元素作 leaf 创建（见下方 new_leaf_with_context）。
@@ -1352,8 +1355,7 @@ fn build_subtree(
         // 引入 margin collapse（fallback `<p>` 的 16px 上边距塌穿 canvas → canvas 盒下移 16px）
         // 与多余盒（painter 曾叠绘 "FAIL (fallback content)" 文本）。canvas-grid reftest
         // 2d.gradient.colorInterpolationMethod 的格子 38px 偏移即此（oracle A/B）。
-        let children_dom: Vec<NodeId> = if (std::env::var("ZW_CONTENT_REPLACE").as_deref() != Ok("0")
-            && is_content_url_element(&computed))
+        let children_dom: Vec<NodeId> = if (ctx.flags.content_replace() && is_content_url_element(&computed))
             || is_replaced_with_fallback(&computed, doc, dom_id)
         {
             Vec::new()
@@ -1653,7 +1655,7 @@ fn build_subtree(
                     //   （orphan 丢 LayoutBox 破 hit-test + struct item-tag:0）；**R2197 slice 3 external-set**
                     //   （orphan LayoutBox 回填 + paint_skip）修 hit-test/struct，**R2198 struct-check
                     //   paint_skip-aware**（修窄屏 multi-line `<a>` 假阳性）后 default-on 复开。
-                    let phasea_multi_inline_on = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
+                    let phasea_multi_inline_on = ctx.flags.phasea_multi_inline()
                         && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
                         && !container_in_multicol_context(doc, styles, dom_id)
                         && !container_has_balancing_text_wrap(styles, dom_id);
@@ -1703,7 +1705,7 @@ fn build_subtree(
                             // 跳过无益反引发容器高度连锁重排（welcome p.tagline），故要求「有后续
                             // in-flow 兄弟」精确 gate。br-between-blocks（R1285 strut）仍建节点。
                             // kill-switch ZW_BR_INLINE_NO_NODE=0 关闭（重建 br 节点=旧行为）。
-                            if std::env::var("ZW_BR_INLINE_NO_NODE").as_deref() != Ok("0")
+                            if ctx.flags.br_inline_no_node()
                                 && br_is_inline_only(doc, styles, child_dom)
                                 && br_parent_has_following_inflow_sibling(doc, styles, child_dom)
                             {
@@ -1726,7 +1728,7 @@ fn build_subtree(
                             // abspos-child 簇：`<div class=inline-content>` 同时 inline-block + absolute，
                             // 跳过外层 span 会把整棵子树丢出 taffy）。gate ON 无守卫 css-position -2；
                             // 加守卫后 83=83 零回归。限 horizontal-tb（vertical = R109-blocked）。
-                            if std::env::var("ZW_INLINE_BOX_MODEL_COHERENCE").as_deref() != Ok("0")
+                            if ctx.flags.inline_box_model_coherence()
                                 && matches!(own_writing_mode, WritingModeValue::HorizontalTb)
                                 && styles.get(&child_dom).is_some_and(|s| {
                                     matches!(s.display, DisplayValue::Inline)

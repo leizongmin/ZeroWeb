@@ -13,6 +13,8 @@
 
 > **📍 当前 rally 进度态（R3431-F·2026-08-17）=【ComputedStyle 只读借用·medium total p95降20%+】**：`build_subtree` 对每个 DOM 节点 clone 完整 `ComputedStyle`，但后续仅只读生成 taffy style；perf 中 clone/drop 本体约2.6%，实际还放大 8.55% `memmove` 与 allocator/free。现 `computed_style_for_layout` 使用 `Cow`：存在样式直接 `Borrowed`，仅缺失时构造 owned default；`ZW_LAYOUT_STYLE_BORROW=0` 回退旧 clone。helper/测试置于 `tree/style_borrow.rs`，`tree.rs` 保持1993行。**两组反序 A/B**：medium layout p95 `510→389ms`（-23.8%）、`462→412ms`（-10.8%）；total p95 `842→629ms`（-25.4%）、`852→676ms`（-20.7%），RSS 反序仅 +0.4MiB。Borrowed/Owned/missing fallback 测试通过；reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`borrow-readonly-computed-style.md`](../../learnings/performance/borrow-readonly-computed-style.md)。
 
+> **📍 当前 rally 进度态（R3432-F·2026-08-17）=【构树运行开关按 layout 快照·getenv 热循环移除】**：post-R3431 perf 中 `getenv` 占 medium 全帧8.75%；`build_subtree` 每个 DOM 节点重复读取 margin-trim（两次）、BR line-height、content-visibility/replacement、Phase-A multi-inline、BR node 和 inline coherence 共七个开关。现 `BuildContext` 创建时构造 `TreeRuntimeFlags`，每次 layout 只读取一次环境，递归节点读 bool；跨 layout 动态切换仍保留，`ZW_TREE_ENV_SNAPSHOT=0` 回退逐节点查询，原子开关语义不变。helper/测试独立于 `tree/runtime_flags.rs`，`tree.rs` 1995行。**两组反序 A/B**：medium layout p95 `418→374ms`（-10.6%）、`384→376ms`（-1.9%）；total p95 `669→614ms`（-8.3%）、`632→608ms`（-3.8%）；RSS 降1.9/4.9MiB。闭包计数、构树测试、reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`snapshot-hot-runtime-flags-per-layout.md`](../../learnings/performance/snapshot-hot-runtime-flags-per-layout.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >
