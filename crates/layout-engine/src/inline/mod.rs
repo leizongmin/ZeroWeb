@@ -30,7 +30,7 @@ pub use column_fragmentation::*;
 mod column_fragmentation_flow;
 pub use column_fragmentation_flow::*;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, PositionValue, VerticalAlignValue};
@@ -38,6 +38,8 @@ use zero_css_parser::values::{DisplayValue, LengthValue, OverflowValue, Position
 use zero_dom::{Document, NodeId, NodeKind};
 
 use zero_style_system::{ComputedStyle, TextAutospaceValue, TextTransformValue};
+
+use crate::{NodeIdMap, NodeIdSet};
 
 /// 读取已解析的 LengthValue（Px）为 f32，非 Px（Auto/Percentage/Calc…）返回 0。
 /// 用于 inline-block margin 读取（margin 已在 compute_style 解析为 Px）。
@@ -62,7 +64,7 @@ pub struct InlineFormattingContext {
     /// paint IFC 无 style map 时使用的容器级 `unicode-bidi: plaintext` 覆盖。
     pub plaintext_bidi_override: bool,
     /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
-    pub plaintext_bidi_overrides: HashSet<NodeId>,
+    pub plaintext_bidi_overrides: NodeIdSet,
     /// 末行对齐方式（CSS text-align-last）。None 表示跟随 text-align。
     pub text_align_last: Option<TextAlign>,
     /// 是否允许在单词内断行（overflow-wrap: break-word / anywhere）。
@@ -152,7 +154,7 @@ pub struct InlineFormattingContext {
     /// 查找的是文本节点的父元素样式）。
     /// 当 styles 中找不到父元素样式且此映射有对应条目时，使用映射中的
     /// font_size 而非 16px 默认值，使字符宽度计算更准确。
-    pub font_size_overrides: HashMap<NodeId, f32>,
+    pub font_size_overrides: NodeIdMap<f32>,
     /// paint IFC 的父元素/inline 元素到已解析字体 ID 映射。
     pub font_id_overrides: std::rc::Rc<HashMap<NodeId, u32>>,
     /// 文本/inline owner 到有序 CSS face ID 列表的映射。
@@ -167,13 +169,13 @@ pub struct InlineFormattingContext {
     /// 导致所有文本使用 0.55×font_size 的 ASCII 字符宽度估算。
     /// 当文本实际使用 Ahem 字体时，字符宽度应为 1.0×font_size，
     /// 此覆盖确保 paint IFC 使用正确的字符宽度。
-    pub is_ahem_overrides: HashMap<NodeId, bool>,
+    pub is_ahem_overrides: NodeIdMap<bool>,
     /// 逐文本节点的 letter-spacing 覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法获取 letter-spacing，
     /// 导致所有字符使用 0 的默认间距。此覆盖确保 paint IFC 使用正确的
     /// letter-spacing 值进行字符宽度和行断计算。
-    pub letter_spacing_overrides: HashMap<NodeId, f32>,
+    pub letter_spacing_overrides: NodeIdMap<f32>,
     /// 逐文本节点的 line-height 覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法获取 line-height，
@@ -181,14 +183,14 @@ pub struct InlineFormattingContext {
     /// 近似值导致行盒高度与 layout IFC 不一致，进而影响垂直定位。
     /// line-height 仅影响垂直定位（行盒高度），不影响行断（水平宽度），
     /// 因此传递此覆盖不会改变行断行为。
-    pub line_height_overrides: HashMap<NodeId, f32>,
+    pub line_height_overrides: NodeIdMap<f32>,
     /// 内联元素的 (font_size, line_height) 覆盖（key = 元素自身的 NodeId）。
     ///
     /// 与 font_size_overrides/line_height_overrides 不同（以文本节点的父元素为键），
     /// 此映射以内联元素自身的 NodeId 为键。供 collect_inline_items 中
     /// 处理内联元素（非文本节点）时使用。
     /// 这些属性仅影响垂直定位（行盒高度），不影响行断（水平宽度）。
-    pub inline_element_metrics: HashMap<NodeId, (f32, f32)>,
+    pub inline_element_metrics: NodeIdMap<(f32, f32)>,
     /// 行内级盒的基线覆盖（key = 元素 NodeId）。
     ///
     /// 用于 inline-flex/inline-grid 等元素，其基线应从第一个子元素的布局位置
@@ -200,7 +202,7 @@ pub struct InlineFormattingContext {
     /// paint IFC 传入空的 styles HashMap，无法获取 inline 元素的水平 margin，
     /// 导致所有 margin 回退为 0。此覆盖确保 paint IFC 使用正确的 margin 值。
     /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖不会改变行断行为。
-    pub margin_overrides: HashMap<NodeId, (f32, f32)>,
+    pub margin_overrides: NodeIdMap<(f32, f32)>,
     /// R109 §9.2.1.1 匿名块盒的片段文本节点覆盖。
     ///
     /// 当此 IFC 为匿名块盒（inline 元素被 block 子元素拆分后的一个片段）服务时，
@@ -244,7 +246,7 @@ pub struct InlineFormattingContext {
     /// `LayoutBox.text_node_text_transform`（key = 文本节点）re-key 到父元素后
     /// 填充本 map，`collect_inline_items` 据此在空 styles 下应用 transform。
     /// 空 map（默认）= None = 原文，零回归。
-    pub text_transform_overrides: HashMap<NodeId, TextTransformValue>,
+    pub text_transform_overrides: NodeIdMap<TextTransformValue>,
     ///
     /// `None`（默认）= IFC 行盒不碎片化（当前行为，零回归）。
     /// `Some` = step-2 在 `break_items_into_lines` 后按本上下文把行盒分配到列
@@ -264,7 +266,7 @@ impl InlineFormattingContext {
             plaintext_auto_align: false,
             bidi_override_direction: None,
             plaintext_bidi_override: false,
-            plaintext_bidi_overrides: HashSet::new(),
+            plaintext_bidi_overrides: NodeIdSet::default(),
             text_align_last: None,
             break_word: false,
             no_wrap: false,
@@ -285,23 +287,23 @@ impl InlineFormattingContext {
             img_intrinsic_sizes: HashMap::new(),
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
-            font_size_overrides: HashMap::new(),
+            font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_ids_overrides: std::rc::Rc::new(HashMap::new()),
             font_size_adjust_overrides: std::rc::Rc::new(HashMap::new()),
             font_variation_overrides: std::rc::Rc::new(HashMap::new()),
-            is_ahem_overrides: HashMap::new(),
-            letter_spacing_overrides: HashMap::new(),
-            line_height_overrides: HashMap::new(),
-            inline_element_metrics: HashMap::new(),
+            is_ahem_overrides: NodeIdMap::default(),
+            letter_spacing_overrides: NodeIdMap::default(),
+            line_height_overrides: NodeIdMap::default(),
+            inline_element_metrics: NodeIdMap::default(),
             baseline_overrides: HashMap::new(),
-            margin_overrides: HashMap::new(),
+            margin_overrides: NodeIdMap::default(),
             fragment_node_ids: None,
             font_metric_provider: None,
             advance_source: None,
             font_resolver: None,
             ascent_ratio_overrides: HashMap::new(),
-            text_transform_overrides: HashMap::new(),
+            text_transform_overrides: NodeIdMap::default(),
             column_fragmentation: None,
         }
     }
@@ -334,7 +336,7 @@ impl InlineFormattingContext {
     }
 
     /// 注入 paint Path B 的 per-inline plaintext owner。
-    pub fn with_plaintext_bidi_overrides(mut self, overrides: HashSet<NodeId>) -> Self {
+    pub fn with_plaintext_bidi_overrides(mut self, overrides: NodeIdSet) -> Self {
         self.plaintext_bidi_overrides = overrides;
         self
     }
@@ -610,7 +612,7 @@ impl InlineFormattingContext {
     /// `LayoutBox.text_node_text_transform` re-key 到父元素后填充本 map，
     /// `collect_inline_items` 据此在空 styles 下应用 transform，使行断用
     /// 转换后文本宽度（与 layout IFC 一致）。
-    pub fn with_text_transform_overrides(mut self, overrides: HashMap<NodeId, TextTransformValue>) -> Self {
+    pub fn with_text_transform_overrides(mut self, overrides: NodeIdMap<TextTransformValue>) -> Self {
         self.text_transform_overrides = overrides;
         self
     }
@@ -639,19 +641,19 @@ impl InlineFormattingContext {
     /// key 为文本节点的父元素 NodeId，value 为 layout IFC 计算的 font_size。
     /// 当 styles HashMap 中找不到父元素样式时，使用此映射中的 font_size
     /// 替代 16px 默认值，使字符宽度计算更准确。
-    pub fn with_font_size_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+    pub fn with_font_size_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
         self.font_size_overrides = overrides;
         self
     }
 
     /// 设置 Ahem 字体标志覆盖（paint IFC 使用）。
-    pub fn with_is_ahem_overrides(mut self, overrides: HashMap<NodeId, bool>) -> Self {
+    pub fn with_is_ahem_overrides(mut self, overrides: NodeIdMap<bool>) -> Self {
         self.is_ahem_overrides = overrides;
         self
     }
 
     /// 设置 letter-spacing 覆盖（paint IFC 使用）。
-    pub fn with_letter_spacing_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+    pub fn with_letter_spacing_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
         self.letter_spacing_overrides = overrides;
         self
     }
@@ -661,7 +663,7 @@ impl InlineFormattingContext {
     /// key 为文本节点的父元素 NodeId，value 为 layout IFC 计算的 line-height。
     /// line-height 仅影响行盒高度（垂直定位），不影响行断（水平宽度），
     /// 因此传递此覆盖是安全的。
-    pub fn with_line_height_overrides(mut self, overrides: HashMap<NodeId, f32>) -> Self {
+    pub fn with_line_height_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
         self.line_height_overrides = overrides;
         self
     }
@@ -670,7 +672,7 @@ impl InlineFormattingContext {
     ///
     /// key 为内联元素自身的 NodeId，value 为 (font_size, line_height)。
     /// 这些属性仅影响垂直定位（行盒高度），不影响行断。
-    pub fn with_inline_element_metrics(mut self, metrics: HashMap<NodeId, (f32, f32)>) -> Self {
+    pub fn with_inline_element_metrics(mut self, metrics: NodeIdMap<(f32, f32)>) -> Self {
         self.inline_element_metrics = metrics;
         self
     }
@@ -678,7 +680,7 @@ impl InlineFormattingContext {
     ///
     /// key 为内联元素自身的 NodeId，value 为 (margin_left, margin_right)。
     /// margin 不影响行断（仅影响水平偏移），因此传递此覆盖是安全的。
-    pub fn with_margin_overrides(mut self, margins: HashMap<NodeId, (f32, f32)>) -> Self {
+    pub fn with_margin_overrides(mut self, margins: NodeIdMap<(f32, f32)>) -> Self {
         self.margin_overrides = margins;
         self
     }

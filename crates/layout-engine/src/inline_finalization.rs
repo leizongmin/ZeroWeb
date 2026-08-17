@@ -10,6 +10,7 @@ use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAli
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
+use crate::NodeIdMap;
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, WordBreakMode};
 pub(crate) use crate::inline_metric_storage::store_font_sizes_from_ifc;
 use crate::types::LayoutBox;
@@ -221,7 +222,7 @@ pub fn resolve_word_break_mode(style: &ComputedStyle) -> WordBreakMode {
 /// 提取为共享 helper 消除 7 处重复（同 R2187/R2188 text-align / text-indent DRY 谱系）。
 /// 注：Path B 的 `is_ahem`（multicol flatten 元素自键 else 分支）与 `text_transforms`（None 过滤）
 /// 逻辑不同，未走此 helper，仍各自内联。
-pub fn build_text_parent_override_map<T: Copy>(doc: &Document, source: &HashMap<NodeId, T>) -> HashMap<NodeId, T> {
+pub fn build_text_parent_override_map<T: Copy>(doc: &Document, source: &NodeIdMap<T>) -> NodeIdMap<T> {
     source
         .iter()
         .filter_map(|(&tn, &v)| {
@@ -842,11 +843,10 @@ pub(crate) fn compute_final_inline_layouts(
     // 构造 override maps（文本节点 → 父元素重键，过滤混入的内联元素片段防 last-write-wins
     // 非确定性）。R2189：此 4 map 与 paint Path B 三 map 逻辑字节一致，走共享 helper
     // build_text_parent_override_map（详见该 fn 文档）。
-    let parent_font_sizes: HashMap<NodeId, f32> = build_text_parent_override_map(doc, &root.text_node_font_sizes);
-    let parent_is_ahem: HashMap<NodeId, bool> = build_text_parent_override_map(doc, &root.text_node_is_ahem);
-    let parent_letter_spacing: HashMap<NodeId, f32> =
-        build_text_parent_override_map(doc, &root.text_node_letter_spacing);
-    let parent_line_heights: HashMap<NodeId, f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
+    let parent_font_sizes: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_font_sizes);
+    let parent_is_ahem: NodeIdMap<bool> = build_text_parent_override_map(doc, &root.text_node_is_ahem);
+    let parent_letter_spacing: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_letter_spacing);
+    let parent_line_heights: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
 
     // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
     let exclusions: Vec<crate::inline::FloatExclusion> = own_floats

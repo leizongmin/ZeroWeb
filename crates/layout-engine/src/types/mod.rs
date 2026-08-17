@@ -3,12 +3,14 @@
 //! 定义 [`LayoutBox`] 和 [`LayoutResult`] 作为布局引擎的输出格式，
 //! 描述元素在页面上的几何位置和大小。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 pub use zero_css_parser::values::ClearValue;
 use zero_css_parser::values::{FloatValue, OverflowClipMarginBox};
 use zero_dom::NodeId;
 use zero_style_system::WritingModeValue;
+
+use crate::{NodeIdMap, NodeIdSet};
 
 /// 溢出处理方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -285,25 +287,25 @@ pub struct LayoutBox {
     ///
     /// paint 系统在运行空 styles IFC 后，使用这些正确的 font_size 值
     /// 计算基线偏移，避免 16px 默认值导致的字形定位错误。
-    pub text_node_font_sizes: HashMap<NodeId, f32>,
+    pub text_node_font_sizes: NodeIdMap<f32>,
     /// 文本节点是否使用 Ahem 字体的映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法检测 Ahem 字体（无 style 信息），
     /// 使用此映射正确设置 is_ahem 标志，使字符宽度计算使用 1.0×font_size
     /// 而非默认的 0.55×font_size。
-    pub text_node_is_ahem: HashMap<NodeId, bool>,
+    pub text_node_is_ahem: NodeIdMap<bool>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
     /// 使用此映射正确设置字符间间距。
-    pub text_node_letter_spacing: HashMap<NodeId, f32>,
+    pub text_node_letter_spacing: NodeIdMap<f32>,
     /// 文本节点的 line-height 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 line-height（无 style 信息），
     /// 回退为 font_size * 1.2 近似值。对于使用自定义 line-height（如 line-height: 2）
     /// 的元素，近似值会导致行盒高度与 layout IFC 不一致。
     /// 使用此映射确保 paint IFC 的行盒高度与 layout IFC 一致。
-    pub text_node_line_heights: HashMap<NodeId, f32>,
+    pub text_node_line_heights: NodeIdMap<f32>,
     /// 文本节点的 text-transform 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// **R1012 Phase A IFC 统一首切**：text-transform 须在行断前应用，使 layout
@@ -312,16 +314,16 @@ pub struct LayoutBox {
     /// 节点 NodeId）由 `store_font_sizes_from_ifc` 在 layout 期填充，paint Path B
     /// 据此构造 `text_transform_overrides`（re-key 到父元素），让 `collect_inline_items`
     /// 在空 styles 下也能应用 transform。空 map（默认）= None = 原文，零回归。
-    pub text_node_text_transform: HashMap<NodeId, zero_style_system::TextTransformValue>,
+    pub text_node_text_transform: NodeIdMap<zero_style_system::TextTransformValue>,
     /// paint Path B 空 styles IFC 中需要恢复 `unicode-bidi: plaintext` 的 inline owner。
-    pub plaintext_bidi_nodes: HashSet<NodeId>,
+    pub plaintext_bidi_nodes: NodeIdSet,
     /// R1464：文本节点的 font-family 映射（key = 文本节点 NodeId，value = 父元素的
     /// font_family 列表）。paint Path B 空 styles 下无法读 per-fragment font-family，
     /// 导致非-Ahem webfont/跨字体 inline 全回落容器字体（R1464 root cause）。layout 期
     /// 存父元素 font_family，paint 据此解析 per-fragment FontId。
-    pub text_node_font_families: HashMap<NodeId, Vec<String>>,
+    pub text_node_font_families: NodeIdMap<Vec<String>>,
     /// 文本/inline run 的 `font-size-adjust` 计算值，供 paint Path B 恢复。
-    pub text_node_font_size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+    pub text_node_font_size_adjust: NodeIdMap<zero_style_system::FontSizeAdjustValue>,
     /// 内联元素的 (font_size, line_height) 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// 与 text_node_font_sizes/line_heights 不同，此映射以元素自身的 NodeId 为键，
@@ -329,14 +331,14 @@ pub struct LayoutBox {
     /// 内联元素在 paint IFC 中无法获取自己的样式（styles 为空），
     /// 导致 font_size 和 line_height 回退到默认值。
     /// 此映射确保 paint IFC 的内联元素使用正确的字体度量和行高。
-    pub inline_element_metrics: HashMap<NodeId, (f32, f32)>,
+    pub inline_element_metrics: NodeIdMap<(f32, f32)>,
     /// 内联元素的 (margin_left, margin_right) 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint IFC 传入空的 styles HashMap，无法获取 inline 元素的水平 margin，
     /// 导致所有 margin 回退为 0。此映射以元素自身的 NodeId 为键，
     /// 供 paint IFC 在处理内联元素时使用正确的 margin 值。
     /// margin 不影响行断（仅影响水平偏移），因此传递到 paint IFC 是安全的。
-    pub inline_element_margins: HashMap<NodeId, (f32, f32)>,
+    pub inline_element_margins: NodeIdMap<(f32, f32)>,
     /// 从 taffy 布局缓存中提取的 first_baseline（y 分量）。
     ///
     /// 仅对 flex/inline-flex/grid/inline-grid 容器有值。
@@ -480,16 +482,16 @@ impl Default for LayoutBox {
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
-            text_node_font_sizes: HashMap::new(),
-            text_node_is_ahem: HashMap::new(),
-            text_node_letter_spacing: HashMap::new(),
-            text_node_line_heights: HashMap::new(),
-            text_node_text_transform: HashMap::new(),
-            plaintext_bidi_nodes: HashSet::new(),
-            text_node_font_families: HashMap::new(),
-            text_node_font_size_adjust: HashMap::new(),
-            inline_element_metrics: HashMap::new(),
-            inline_element_margins: HashMap::new(),
+            text_node_font_sizes: NodeIdMap::default(),
+            text_node_is_ahem: NodeIdMap::default(),
+            text_node_letter_spacing: NodeIdMap::default(),
+            text_node_line_heights: NodeIdMap::default(),
+            text_node_text_transform: NodeIdMap::default(),
+            plaintext_bidi_nodes: NodeIdSet::default(),
+            text_node_font_families: NodeIdMap::default(),
+            text_node_font_size_adjust: NodeIdMap::default(),
+            inline_element_metrics: NodeIdMap::default(),
+            inline_element_margins: NodeIdMap::default(),
             taffy_baseline: None,
             fragment_node_ids: None,
             is_r109_split: false,

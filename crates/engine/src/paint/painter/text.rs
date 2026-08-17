@@ -9,7 +9,7 @@ use zero_layout_engine::inline_finalization::{
     build_text_parent_override_map, resolve_text_align, resolve_text_align_last, resolve_text_indent,
     resolve_word_break_mode, subtree_has_text_decoration,
 };
-use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox};
+use zero_layout_engine::{FloatExclusion, InlineFormattingContext, LayoutBox, NodeIdMap};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::font::TextDirection;
 use zero_render_foundation::geometry::Rect;
@@ -820,10 +820,10 @@ impl super::Painter {
                 // 结果随 HashMap 迭代顺序（每进程随机）变化 → 渲染非确定性（flaky reftest）。
                 // 过滤为纯文本节点后，同一父元素的文本节点继承一致的字号/行高，结果确定。
                 let is_text = |tn: zero_dom::NodeId| matches!(doc.get(tn).map(|n| &n.kind), Some(NodeKind::Text(_)));
-                let parent_font_sizes: HashMap<zero_dom::NodeId, f32> =
+                let parent_font_sizes: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_font_sizes);
 
-                let parent_is_ahem: HashMap<zero_dom::NodeId, bool> = box_node
+                let parent_is_ahem: NodeIdMap<bool> = box_node
                     .text_node_is_ahem
                     .iter()
                     .filter_map(|(&tn, &is_ahem)| {
@@ -840,16 +840,16 @@ impl super::Painter {
                     })
                     .collect();
 
-                let parent_letter_spacing: HashMap<zero_dom::NodeId, f32> =
+                let parent_letter_spacing: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
 
-                let parent_line_heights: HashMap<zero_dom::NodeId, f32> =
+                let parent_line_heights: NodeIdMap<f32> =
                     build_text_parent_override_map(doc, &box_node.text_node_line_heights);
 
                 // R1012：text-transform 覆盖（re-key 文本节点 → 父元素），让 paint Path B
                 // 空 styles IFC 也能在 collect_inline_items 期应用 transform，使行断用
                 // 转换后文本宽度（与 layout IFC / chromium 一致）。None 不插入（保持默认）。
-                let parent_text_transforms: HashMap<zero_dom::NodeId, TextTransformValue> = box_node
+                let parent_text_transforms: NodeIdMap<TextTransformValue> = box_node
                     .text_node_text_transform
                     .iter()
                     .filter_map(|(&tn, &tt)| {

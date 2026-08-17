@@ -2046,6 +2046,7 @@ fn test_r1012_text_transform_applied_via_style() {
 /// 模拟 Path B：styles 为空，但 override map 携带父元素 transform → collect 仍转换文本。
 #[test]
 fn test_r1012_text_transform_applied_via_override_map() {
+    use crate::NodeIdMap;
     use std::collections::HashMap;
     use zero_dom::parse_html;
     use zero_style_system::TextTransformValue;
@@ -2056,7 +2057,7 @@ fn test_r1012_text_transform_applied_via_override_map() {
     let p = doc.first_child(body).unwrap();
 
     // 空 styles（模拟 paint Path B），但 override map 携带 p 的 transform。
-    let mut overrides = HashMap::new();
+    let mut overrides = NodeIdMap::default();
     overrides.insert(p, TextTransformValue::Uppercase);
     let mut ctx = InlineFormattingContext::new(800.0).with_text_transform_overrides(overrides);
     ctx.layout(&doc, p, &HashMap::new());

@@ -1,6 +1,7 @@
 //! Paint 文本整形的受限接入与旧逐字符回退。
 
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 use std::sync::Arc;
 use unicode_bidi::{BidiClass, bidi_class};
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -326,13 +327,13 @@ pub(super) fn fragment_shaped_advance_eligible(
     )
 }
 
-pub(super) fn configure_paint_ifc_advance(
+pub(super) fn configure_paint_ifc_advance<S: BuildHasher>(
     context: InlineFormattingContext,
     doc: &Document,
     styles: Option<&HashMap<NodeId, ComputedStyle>>,
     text_node_font_ids: &HashMap<NodeId, FontId>,
     text_node_shaping_font_ids: &HashMap<NodeId, Vec<u32>>,
-    text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
+    text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue, S>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
     let shaped_layout = shaped_layout_enabled();
@@ -403,8 +404,11 @@ pub(super) fn configure_paint_ifc_advance(
             !font_ids.is_empty() && font_ids.iter().all(|font_id| !generic_font_ids.contains(font_id))
         });
     }
-    let mut size_adjust = if !shaped_fallback_enabled() {
-        text_node_font_size_adjust.clone()
+    let mut size_adjust: HashMap<NodeId, zero_style_system::FontSizeAdjustValue> = if !shaped_fallback_enabled() {
+        text_node_font_size_adjust
+            .iter()
+            .map(|(&node_id, &value)| (node_id, value))
+            .collect()
     } else {
         HashMap::new()
     };

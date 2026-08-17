@@ -31,6 +31,7 @@ pub mod margin_collapse;
 pub mod multicol;
 #[allow(dead_code)] // R1350 Phase 1 dormant：empirical balancing 模型，Phase 2 wiring 待定
 pub mod multicol_balancing;
+mod node_id_map;
 pub mod print_pagination;
 pub mod r109;
 pub mod table;
@@ -51,6 +52,7 @@ pub use engine::*;
 pub use inline::*;
 pub use margin_collapse::*;
 pub use multicol::*;
+pub use node_id_map::{NodeIdBuildHasher, NodeIdHasher, NodeIdMap, NodeIdSet};
 pub use table::*;
 pub use tree::*;
 pub use types::*;
