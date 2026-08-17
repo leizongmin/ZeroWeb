@@ -1,0 +1,43 @@
+{
+  "round": "R99",
+  "milestone": "M3",
+  "date": "2026-08-17",
+  "commit": "bfb64b2aa",
+  "title": "lit 事件链落地（_zwMEl 事件面）+ fonts.ready 惰性化（CI flake 池 ⑤ 修复）",
+  "summary": "lit @click 事件绑定全链闭环：EventPart addEventListener on 解析节点 → dispatch → handler → state 更新 → 响应式重渲染（counter button 文本 0→1）。附带修复 CI flake 池长期项（renderer reset 竞态）。",
+  "root_causes": [
+    {
+      "id": 1,
+      "issue": "_zwMEl 解析节点缺 addEventListener/removeEventListener/dispatchEvent",
+      "detail": "lit EventPart 的 _$AI commit 调 this.element.addEventListener(name, this, t)——缺方法使 commit 抛 TypeError、整次首渲染中止（e2e 实证 renderRoot 仅 marker、hasUpdated:false）。",
+      "fix": "part03 _zwMEl 补本地事件面：listener 数组 + spec EventListener handleEvent 协议 + capture/once 选项（boolean|object 双形态）+ 注册序派发 + cancelable/defaultPrevented 返回语义。"
+    },
+    {
+      "id": 2,
+      "issue": "part06 顶层无条件 setTimeout(0)（fonts settle fallback）与 renderer reset 断言竞态",
+      "detail": "每次 shim 注入（含 reset_document_state 重注入）经 part01 setTimeout polyfill 在 __zw_pending 注册瞬时 _t_ 键，CI 负载下 resolve 晚于断言 → renderer_js_worker_document_reset_... flake（8/16 起 3+ CI 轮次，CI 守护已完整归因）。",
+      "fix": "fallback 惰性化：fonts.ready 改 thenable 包装（then/catch/finally 首调时 arm 一次 fallback 定时器 + 委托底层 Promise）——无 font 消费的页面零注册；消费页面 settle 语义不变（幂等守卫）。"
+    }
+  ],
+  "verification": {
+    "lit_e2e": {
+      "lit_event_chain_lands_new": "Pass（btn:BUTTON|t0:0|dispatch:true → t1:1|count:1）",
+      "all_groups": "6/6 全绿"
+    },
+    "flake_check": "renderer reset 测试本地 20/20 通过（修复前 make test 偶发失败）",
+    "wpt_dom_ab": {
+      "nodes": { "base": "6673P", "after": "6673P", "delta": "per-case 0 新增 fail + 22 条既存 flake 消退" },
+      "collections": { "after": "48P", "delta": "=基线" },
+      "traversal": { "after": "1595P", "delta": "=R97 后基线" },
+      "events": { "after": "236P", "delta": "=基线" }
+    },
+    "unit": { "engine_v8": "2205 passed", "engine_quickjs": "1431 passed", "integration": "781 passed", "renderer": "134 passed", "fonts_unit": "27 passed", "make_test": "exit 0（含修复前失败的 renderer 套件）" },
+    "quality": { "fmt": "clean", "clippy_v8": "clean", "clippy_quickjs": "clean", "pre_commit_guard": "PASS" }
+  },
+  "process_notes": [
+    "lit EventPart 把 listener 对象（this = part 自身，handleEvent 协议）注册到解析节点——_zwMEl 事件面须支持对象 listener（不只 function）",
+    "shim 顶层无条件宏任务注册是 reset/断言类测试的系统性竞态源——惰性化（消费时 arm）是通用修复模式，零语义损失",
+    "createEvent legacy 工厂在部分 execute 上下文不可用——e2e 探针统一用 new Event()（modern 构造器）"
+  ],
+  "next": "M3 SPA 面评估（Vue 3 runtime-only CDN 快照，规避 JSX/构建链：createApp + 模板编译 + 响应式 + patch）；或 lit 综合验收页（多组件 + 属性反射 + 事件 + 列表渲染）作 DC-2 资产化收口"
+}
