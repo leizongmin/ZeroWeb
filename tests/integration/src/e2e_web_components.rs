@@ -269,4 +269,44 @@ globalThis.__wcReport = log.join('|');
             "lit 风格模板渲染 + shadow 子树查询 + 二次渲染，got: {report}"
         );
     }
+
+    /// 断言组 7（R93）：CE 原型方法可达——custom element 的用户 prototype 方法
+    /// （`MyEl.prototype.bump`，lit/stencil 组件形态）经 proxy 派发可调用且 this 绑定
+    /// 正确。R90 的 getPrototypeOf trap CE registry 分支已把链顶换成 ctor.prototype，
+    /// 但 get trap 对方法名恒返 undefined 使方法不可达（`el.bump is not a function`）；
+    /// R93 把 get trap 的原型链回落从仅 SCREAMING_SNAKE 常量放宽到全部未命中属性
+    /// （沿链只取 own 命中，限 8 层）。
+    #[test]
+    fn wc_prototype_method_dispatch() {
+        let report = run_wc_page(
+            r#"
+var log = [];
+class MyCounter extends HTMLElement {
+  bump(step) { this._count += (step || 1); return this._count; }
+  get doubled() { return this._count * 2; }
+}
+customElements.define('my-counter', MyCounter);
+var el = document.createElement('my-counter');
+el._count = 0;
+log.push('method:' + (typeof el.bump));
+log.push('call:' + el.bump());
+log.push('call-arg:' + el.bump(5));
+// 原型方法内 this 为元素自身（写 expando 经 setter 持久化、getter 读回）：
+log.push('this-ok:' + (el._count === 6));
+// 原型 getter（accessor）沿链命中：
+log.push('getter:' + el.doubled);
+// instance 方法重写（per-instance expando 优先于原型）：
+el.bump = function () { return 'overridden'; };
+log.push('override:' + el.bump());
+// 未定义成员仍是 undefined（不误报）：
+log.push('miss:' + (el.noSuchMethod === undefined));
+globalThis.__wcReport = log.join('|');
+"#,
+        );
+        let expected = "method:function|call:1|call-arg:6|this-ok:true|getter:12|override:overridden|miss:true";
+        assert_eq!(
+            report, expected,
+            "CE 原型方法/ getter 须经 proxy 派发可达且 this 绑定正确，got: {report}"
+        );
+    }
 }

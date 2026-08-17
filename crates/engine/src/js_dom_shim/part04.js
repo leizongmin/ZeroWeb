@@ -2732,11 +2732,23 @@
         // 是 Object.prototype，Reflect.get 不可见 HTML*Element 链，故手动沿链查找）——旧恒返 undefined
         // 使 Node 接口常量（element.ELEMENT_NODE 等）不可见（WPT Document-createElementNS
         // `assert_equals(element.nodeType, element.ELEMENT_NODE)` 596F 簇根因之一）。
-        if (typeof prop === 'string' && prop.length > 0 && /^[A-Z][A-Z_]+$/.test(prop)) {
+        // js-dom M3 R93：回落放宽到**全部未命中属性**（旧仅 SCREAMING_SNAKE 常量）——custom
+        // element 的原型方法（`MyEl.prototype.bump` 等，lit/stencil 组件形态）经 getPrototypeOf
+        // trap 的 CE registry 分支（R90）派发到用户 prototype，但 get trap 对方法名恒返
+        // undefined 使方法不可达（WPT e2e：bridge ctor 后 `el.bump is not a function`）。
+        // 沿链只取 own 命中，限 8 层。accessor getter 以**元素 proxy** 为 this 求值
+        //（spec 原型 getter 语义；直接 `_pchain[prop]` 会让 this 落在 prototype 对象上，
+        // 读 `this._count` 得 undefined——WC e2e 组 7 `doubled` NaN 实证）；data property
+        //（方法引用等）直接取值，this 在调用期自然绑定到 proxy。
+        if (typeof prop === 'string' && prop.length > 0) {
           var _pchain = Object.getPrototypeOf(_makeProxy(sel, handle));
           var _pguard = 0;
           while (_pchain && _pguard < 8) {
-            if (Object.prototype.hasOwnProperty.call(_pchain, prop)) return _pchain[prop];
+            var _pdesc = Object.getOwnPropertyDescriptor(_pchain, prop);
+            if (_pdesc) {
+              if (_pdesc.get) return _pdesc.get.call(_makeProxy(sel, handle));
+              return _pdesc.value;
+            }
             _pchain = Object.getPrototypeOf(_pchain);
             _pguard++;
           }
