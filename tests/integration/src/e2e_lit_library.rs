@@ -317,4 +317,75 @@ return out.join('|');
             "lit 响应式二次 render 落地（ChildPart 文本 commit）, got: {post}"
         );
     }
+
+    /// R99 断言组 F：**lit 事件链**——`@click` 绑定（EventPart 对解析节点调
+    /// addEventListener）→ dispatch → handler → state 更新 → 响应式重渲染。
+    /// R99 修复：`_zwMEl` 解析节点（template.content 子树）缺
+    /// addEventListener/removeEventListener/dispatchEvent——lit EventPart 的
+    /// `_$AI` commit 调 `this.element.addEventListener(name, this, t)`，缺方法
+    /// 使整次 render 中止（e2e 实证 renderRoot 仅 marker、hasUpdated:false）。
+    /// 补本地 listener 数组 + 同步派发（handleEvent 协议 + capture/once 选项 +
+    /// 派发序 = 注册序 + cancelable/defaultPrevented 返回语义）。
+    #[test]
+    fn lit_event_chain_lands() {
+        let html_doc = format!(
+            r#"<html><head><title>Lit E2E</title></head><body><div id="host"></div><script>
+{}
+</script><script>
+const {{ LitElement, html }} = globalThis.lit;
+class CounterEl extends LitElement {{
+  static get properties() {{ return {{ count: {{ type: Number }} }}; }}
+  constructor() {{ super(); this.count = 0; }}
+  render() {{ return html`<button @click=${{this._inc}}>${{this.count}}</button>`; }}
+  _inc() {{ this.count = this.count + 1; }}
+}}
+customElements.define('counter-el', CounterEl);
+var el = document.createElement('counter-el');
+document.getElementById('host').appendChild(el);
+globalThis.__elForLater = el;
+</script></body></html>"#,
+            include_str!("../fixtures/lit/lit.bundle.js")
+        );
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        wv.load_html(&html_doc, None);
+        let _ = wv.run_page_scripts_strict();
+        // 第一段：首渲染（button 落地）+ click 派发（本段末 checkpoint 排水重渲染微任务）。
+        let post = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var el = globalThis.__elForLater;
+var out = [];
+var rr = el.renderRoot;
+var btn = rr ? rr.querySelector('button') : null;
+out.push('btn:' + (btn ? btn.tagName : 'null'));
+out.push('t0:' + (btn ? String(btn.textContent) : 'null'));
+var ev = new Event('click', { bubbles: true, cancelable: true });
+out.push('dispatch:' + String(btn.dispatchEvent(ev)));
+return out.join('|');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            post, "btn:BUTTON|t0:0|dispatch:true",
+            "lit @click 绑定落地（EventPart addEventListener on 解析节点）+ dispatch 成功, got: {post}"
+        );
+        // 第二段：post-drain 读重渲染结果（click -> _inc -> count+1 -> 二次 render）。
+        let post2 = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var el = globalThis.__elForLater;
+var btn = el.renderRoot ? el.renderRoot.querySelector('button') : null;
+return 't1:' + (btn ? String(btn.textContent) : 'null') + '|count:' + String(el.count);
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            post2, "t1:1|count:1",
+            "lit 事件驱动重渲染落地（click → handler → state → 响应式 commit）, got: {post2}"
+        );
+    }
 }

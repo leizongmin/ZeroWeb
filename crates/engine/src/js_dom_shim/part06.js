@@ -2363,13 +2363,34 @@
   // https://drafts.csswg.org/css-font-loading/#FontFaceSet-interface
   var _fontsListeners = {};
   // R34xx：宏任务 fallback settle（宿主反射未在同步期 resolve 时兜底）。
-  setTimeout(function () { if (globalThis.document && globalThis.document.fonts && globalThis.document.fonts.__zwSettle) globalThis.document.fonts.__zwSettle(); }, 0);
+  // js-dom R99：注册条件化——顶层无条件 setTimeout(0) 在每次 shim 注入（含 renderer
+  // `reset_document_state` 重注入）时经 part01 setTimeout polyfill 在 `__zw_pending`
+  // 注册瞬时 `_t_` 键，与 host TimerBridge resolve 线程竞态（CI 负载下 resolve 晚于
+  // reset 断言 → `renderer_js_worker_document_reset_...` flake，8/16 起多轮 CI 守护
+  // 归因记录）。改为**惰性**：`.ready` 被消费时（then 首次调用）才注册一次 fallback
+  // ——无 font 需求的页面（绝大多数）零注册；有消费的页面注册语义不变（settle 兜底
+  // 仍在一个宏任务内到达）。幂等守卫防多路径重复注册。
+  var _fontsFallbackArmed = false;
+  function _armFontsFallback() {
+    if (_fontsFallbackArmed) return;
+    _fontsFallbackArmed = true;
+    setTimeout(function () { if (globalThis.document && globalThis.document.fonts && globalThis.document.fonts.__zwSettle) globalThis.document.fonts.__zwSettle(); }, 0);
+  }
   var _fontsReadyResolve = null;
   var _fontFaceSetFaces = []; // FontFace 对象列表（add/delete 管理；values/forEach/size/迭代反映）
   var _fontFaceSet = {
     status: 'loaded', // 'loading' | 'loaded'（headless 简化：初始即 loaded，settle 时不改）
     onloading: null, onloadingdone: null, onloadingerror: null,
-    ready: new Promise(function (resolve) { _fontsReadyResolve = resolve; }),
+    // R99：ready 惰性化——thenable 包装（then 首调时 arm fallback 定时器 + 委托底层
+    // Promise）。无消费则零注册（闭合 reset 断言竞态 flake，见 _armFontsFallback 注释）。
+    ready: (function () {
+      var _p = new Promise(function (resolve) { _fontsReadyResolve = resolve; });
+      return {
+        then: function (onF, onR) { _armFontsFallback(); return _p.then(onF, onR); },
+        'catch': function (onR) { _armFontsFallback(); return _p.catch(onR); },
+        'finally': function (cb) { _armFontsFallback(); return _p.finally(cb); },
+      };
+    })(),
     // R34xx：无宿主字体反射（wpt-runner/testharness 环境无 @font-face 加载事件）时
     // ready 仍 resolve（spec：无加载任务时 ready settle）——await document.fonts.ready
     // 的 WPT 用例（2d.text.draw.align.*）不再挂起。宿主反射（R2950）先于宏任务完成时

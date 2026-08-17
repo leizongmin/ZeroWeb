@@ -2458,6 +2458,45 @@
     // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
     node.hasAttributes = function () { return attrs.length > 0; };
     node.getAttributeNames = function () { var out = []; for (var i = 0; i < attrs.length; i++) out.push(attrs[i].name); return out; };
+    // js-dom M3 R99：addEventListener/removeEventListener/dispatchEvent（lit EventPart 的
+    // `@click` 绑定对解析节点调 addEventListener/removeEventListener——缺方法使 commit 抛
+    // TypeError、整次 render 中止[e2e 实证 renderRoot 仅 marker、hasUpdated:false]）。listener
+    // 存本地数组；dispatchEvent 同步派发（listener.call(node, ev) 或 handleEvent 协议，spec
+    // EventListener callback）；捕获选项 record（listener 对象 capture/passive/once 字段——
+    // lit 传 boolean | object 两种形态）。once 派发后移除。派发序 = 注册序。返回值 = ev 的
+    // cancelable?defaultPrevented 反相（spec dispatchEvent）。
+    var _mEvListeners = [];
+    node.addEventListener = function (type, listener, opts) {
+      if (typeof listener !== 'function' && !(listener && typeof listener.handleEvent === 'function')) return;
+      var cap = !!(opts && (typeof opts === 'object' ? opts.capture : opts));
+      var once = !!(opts && typeof opts === 'object' && opts.once);
+      _mEvListeners.push({ type: String(type), fn: listener, capture: cap, once: once });
+    };
+    node.removeEventListener = function (type, listener, opts) {
+      var cap = !!(opts && (typeof opts === 'object' ? opts.capture : opts));
+      var t = String(type);
+      for (var i = _mEvListeners.length - 1; i >= 0; i--) {
+        var l = _mEvListeners[i];
+        if (l.type === t && l.fn === listener && l.capture === cap) { _mEvListeners.splice(i, 1); return; }
+      }
+    };
+    node.dispatchEvent = function (ev) {
+      var t = String(ev && ev.type);
+      var idx = [];
+      for (var i = 0; i < _mEvListeners.length; i++) if (_mEvListeners[i].type === t) idx.push(i);
+      for (var j = 0; j < idx.length; j++) {
+        var l = _mEvListeners[idx[j]];
+        try {
+          if (typeof l.fn === 'function') l.fn.call(node, ev);
+          else if (l.fn && typeof l.fn.handleEvent === 'function') l.fn.handleEvent(ev);
+        } catch (_e99d) {}
+        if (l.once) {
+          var at = _mEvListeners.indexOf(l);
+          if (at >= 0) _mEvListeners.splice(at, 1);
+        }
+      }
+      return !(ev && ev.cancelable && ev.defaultPrevented);
+    };
     // Parsed local fragments must expose the same geometry API as live element
     // proxies. They have no layout identity until inserted, so the spec fallback
     // is a zero DOMRect rather than a missing method.
