@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-17",
+  "round": "R93",
+  "milestone": "M3 Web Components e2e (DC-2)",
+  "commit": "7469a804",
+  "slice": "CE prototype method dispatch via widened get-trap fallback",
+  "root_cause": [
+    "R90 getPrototypeOf trap CE-registry branch puts ctor.prototype at chain top for registered tags",
+    "but part04 get trap only fell back along the prototype chain for SCREAMING_SNAKE constants (Node.ELEMENT_NODE family)",
+    "method-name lookups returned undefined -> user prototype methods unreachable (el.bump is not a function)",
+    "also: accessor getters taken as raw _pchain[prop] evaluate with this on the prototype object, reading element state (this._count) as undefined"
+  ],
+  "fix": [
+    "part04 get trap: fallback widened to all unresolved string props (getOwnPropertyDescriptor own-hit only, 8-level chain cap)",
+    "accessor: _pdesc.get.call(_makeProxy(sel, handle)) — element proxy as this (spec prototype-getter semantics)",
+    "data property: return _pdesc.value (this binds naturally at call time)",
+    "per-instance expando still wins (fallback only reached when expando/shim surface missed)"
+  ],
+  "test_asset": "tests/integration/src/e2e_web_components.rs assertion group 7 wc_prototype_method_dispatch (method typeof/call±arg/this-persistence/prototype getter/override precedence/undefined miss)",
+  "verification": {
+    "integration_wc": "7 passed (incl. new group 7), make-test scope",
+    "engine_v8": "2188 passed",
+    "engine_quickjs": "1427 passed",
+    "wpt_dom_regression": {
+      "traversal": "1593P/11F (byte-identical to R92; 12th fail in fresh run was a leftover zz-probe-r93.html probe artifact in ignored wpt-data, removed)",
+      "collections": "48P/0F/1neutral (identical to R92)",
+      "nodes": "6654P/1568F/13neutral",
+      "nodes_ab_vs_clean_r92_binary": [
+        "Node-textContent.html 77P/4F IDENTICAL on clean R92 binary -> pre-existing (master.md R81 entry '81P/0F' stale; PI nodes not concatenated into textContent is the known gap)",
+        "Document-createElementNS.html 206P/390F IDENTICAL on clean R92 binary -> pre-existing (master.md R80 entry '187P/409F' superseded by later rounds' gains)"
+      ],
+      "spot_checks_identical": [
+        "Element-classlist 1420P/0F",
+        "Node-contains 1482P/0F",
+        "Node-compareDocumentPosition 1444P/0F",
+        "Node-properties 726P/0F",
+        "MutationObserver-attributes 40P/0F",
+        "Node-isConnected-shadow-dom 2P/0F"
+      ]
+    },
+    "fmt": "clean",
+    "clippy": "zero warnings (engine + integration, v8 default features)",
+    "pre_commit_guard": "PASS"
+  },
+  "probe_artifact_note": "zz-probe-r93.html was a diagnostic probe left in ignored wpt-data dir by the interrupted prior session; captured its assertion output (bridge ctor runs, setPrototypeOf takes effect, user ctor body executes with state=5/bump()=6 via direct new) then deleted it",
+  "deferred": "Proxy-ctor bridge (lit constructor-init surface) remains next-round candidate; lit real-lib e2e after that"
+}
