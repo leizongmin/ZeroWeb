@@ -1,6 +1,7 @@
 //! CSS font face alias registration and width matching.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// CSS `font-stretch: normal` percentage.
 pub const NORMAL_FONT_STRETCH: f32 = 100.0;
@@ -39,6 +40,25 @@ pub fn font_face_aliases(family: &str, weight: Option<u16>, italic: bool, stretc
 }
 
 fn lookup_faces(resolver: &HashMap<String, u32>, key: &str) -> Vec<u32> {
+    static DIRECT_LOOKUP: LazyLock<bool> =
+        LazyLock::new(|| std::env::var("ZW_FONT_FACE_DIRECT_LOOKUP").as_deref() != Ok("0"));
+    lookup_faces_with_policy(resolver, key, *DIRECT_LOOKUP)
+}
+
+fn lookup_faces_with_policy(resolver: &HashMap<String, u32>, key: &str, direct_lookup: bool) -> Vec<u32> {
+    // OPTIMIZATION: FontLoader registers exact base aliases and contiguous
+    // `:face=N` aliases; avoid two case-insensitive full-map scans on that path.
+    if direct_lookup && let Some(&base_id) = resolver.get(key) {
+        let mut indexed = Vec::new();
+        for index in 0.. {
+            let Some(&id) = resolver.get(&format!("{key}:face={index}")) else {
+                break;
+            };
+            indexed.push(id);
+        }
+        return if indexed.is_empty() { vec![base_id] } else { indexed };
+    }
+
     let Some((matched_key, &base_id)) = resolver.iter().find(|(name, _)| name.eq_ignore_ascii_case(key)) else {
         return Vec::new();
     };
@@ -174,6 +194,20 @@ mod tests {
             font_face_aliases("Demo", Some(700), true, Some(100.0)),
             vec!["Demo:stretch=1000:700:italic", "Demo:700:italic"]
         );
+    }
+
+    #[test]
+    fn direct_lookup_matches_legacy_faces_and_keeps_case_insensitive_fallback() {
+        let resolver = HashMap::from([
+            ("Demo".to_string(), 7),
+            ("Demo:face=0".to_string(), 7),
+            ("Demo:face=1".to_string(), 9),
+        ]);
+        assert_eq!(
+            lookup_faces_with_policy(&resolver, "Demo", true),
+            lookup_faces_with_policy(&resolver, "Demo", false)
+        );
+        assert_eq!(lookup_faces_with_policy(&resolver, "demo", true), vec![7, 9]);
     }
 
     #[test]
