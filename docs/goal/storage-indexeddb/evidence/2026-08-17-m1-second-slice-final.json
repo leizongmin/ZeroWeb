@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB imported second slice final",
+  "files": 21,
+  "subtests": 166,
+  "status": {
+    "pass": 166,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 100.0,
+  "delta_from_previous": {
+    "pass": 8,
+    "fail": -8,
+    "pass_rate_percentage_points": 4.82
+  },
+  "completed_group": {
+    "name": "index cursor continue",
+    "files": 1,
+    "subtests": 8,
+    "pass": 8,
+    "fail": 0
+  },
+  "scope_note": "The result covers only the 21 imported files, not the full upstream IndexedDB directory."
+}

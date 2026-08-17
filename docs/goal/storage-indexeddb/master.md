@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M1 index queries complete）
+**最后更新**: 2026-08-17（M1 second slice complete）
 
 ---
 
@@ -38,7 +38,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Object Store CRUD 首批：6 文件、54 subtest，54 Pass / 0 Fail（100.00%）
 - ✅ Object Store getAll/getAllKeys：2 文件、34 subtest，34 Pass / 0 Fail（100.00%）
 - ✅ Index get/getKey/count：3 文件、20 subtest，20 Pass / 0 Fail（100.00%）
-- 🟨 Index cursor continue：1 文件、8 subtest，0 Pass / 8 Fail（0.00%）
+- ✅ Index cursor continue：1 文件、8 subtest，8 Pass / 0 Fail（100.00%）
 
 ## 缺口清单
 
@@ -51,9 +51,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 ## 下一步计划
 
-1. **M1 轻量修复 12**：index cursor 与 continue(key)（8 Fail）
-2. **M1 扩面**：继续导入 index/getAll/cursor 边界 WPT
-3. **M2**：JS↔Rust 接线（open/事务/store CRUD/cursor 先行）
+1. **M1 扩面**：继续导入 index/getAll/cursor 边界 WPT
+2. **M2**：设计并实现 JS↔Rust open/transaction/store CRUD bridge
+3. **M3**：接入 per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -62,7 +62,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | 🟨 imported 158/166 |
+| M1 — WPT IndexedDB 基线建立 | 🟨 imported 166/166 |
 | M2 — JS↔Rust 接线（核心通路） | ⬜ |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
@@ -73,9 +73,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - WPT Object Store CRUD 首批：6 文件 / 54 subtest / 54 Pass / 0 Fail / 100.00%
 - WPT Object Store getAll：2 文件 / 34 subtest / 34 Pass / 0 Fail / 100.00%
 - WPT Index get/getKey/count：3 文件 / 20 subtest / 20 Pass / 0 Fail / 100.00%
-- WPT Index cursor continue：1 文件 / 8 subtest / 0 Pass / 8 Fail / 0.00%
-- imported 合计：21 文件 / 166 subtest / 158 Pass / 8 Fail / 95.18%
-- 失败聚类：index cursor/continue 8
+- WPT Index cursor continue：1 文件 / 8 subtest / 8 Pass / 0 Fail / 100.00%
+- imported 合计：21 文件 / 166 subtest / 166 Pass / 0 Fail / 100.00%
+- 当前 100% 仅覆盖 imported 21 文件，不代表上游 IndexedDB 目录整体通过率
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
   `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
   `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`、
@@ -89,7 +89,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m1-crud-cursor-continuation.{md,json}`、
   `evidence/2026-08-17-m1-crud-first-slice-final.{md,json}`、
   `evidence/2026-08-17-m1-getall-index-cursor-expansion.{md,json}`、
-  `evidence/2026-08-17-m1-index-queries.{md,json}`
+  `evidence/2026-08-17-m1-index-queries.{md,json}`、
+  `evidence/2026-08-17-m1-second-slice-final.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

@@ -1917,6 +1917,15 @@ fn test_indexeddb_index_queries_and_lifecycle() {
                  indexResults.push(event.target.result);\
                };\
                index.count('a').onsuccess = function (event) { indexResults.push(event.target.result); };\
+               var cursorRequest = index.openCursor();\
+               var cursorStep = 0;\
+               cursorRequest.onsuccess = function (event) {\
+                 var cursor = event.target.result;\
+                 if (!cursor) { indexResults.push('end'); return; }\
+                 indexResults.push(cursor.key + ':' + cursor.primaryKey);\
+                 if (cursorStep++ === 0) cursor.continue('b');\
+                 else cursor.continue();\
+               };\
              };\
              var aborted = indexedDB.open('aborted-index');\
              aborted.onupgradeneeded = function () {\
@@ -1931,7 +1940,7 @@ fn test_indexeddb_index_queries_and_lifecycle() {
 
     assert_eq!(
         sandbox.execute("indexResults.join('|')").unwrap().value,
-        "InvalidStateError|InvalidStateError|DataError|1|1|2"
+        "InvalidStateError|InvalidStateError|DataError|1|1|2|a:1|b:4|end"
     );
 }
 

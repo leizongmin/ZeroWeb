@@ -1164,14 +1164,18 @@ struct TestdriverCommand {
 }
 
 fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
+    // Keep short step_timeout callbacks observable without waiting for the
+    // harness's own 10-second watchdog after completion.
     let value = webview
         .execute_script(
             "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();\
              JSON.stringify({\
              complete:(function(){\
                var timers = globalThis.__zw_timers || [];\
+               var graceDeadline = Date.now() + 1000;\
                for (var i = 0; i < timers.length; i++) {\
-                 if (globalThis.__zw_pending && globalThis.__zw_pending[timers[i].id]) return false;\
+                 if (timers[i].at <= graceDeadline && globalThis.__zw_pending\
+                     && globalThis.__zw_pending[timers[i].id]) return false;\
                }\
                if (globalThis.__zw_harness_complete) return true;\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\

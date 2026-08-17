@@ -2749,6 +2749,7 @@
     return matched;
   };
   _zwIDBStore.prototype._indexKey = function (value, keyPath) {
+    if (keyPath === '') return value;
     var key = value;
     String(keyPath).split('.').forEach(function (part) {
       key = key == null ? undefined : key[part];
@@ -2944,8 +2945,8 @@
     return idx ? new _zwIDBIndex(this, name, idx) : null;
   };
 
-  function _zwIDBCursor(store, request, entries, direction) {
-    this.source = store;
+  function _zwIDBCursor(source, store, request, entries, direction) {
+    this.source = source;
     this.direction = direction || 'next';
     this._store = store;
     this._request = request;
@@ -2956,13 +2957,25 @@
   _zwIDBCursor.prototype._sync = function () {
     var entry = this._entries[this._position];
     this.key = entry.key;
-    this.primaryKey = entry.key;
+    this.primaryKey = entry.primaryKey;
     this.value = entry.value;
   };
-  _zwIDBCursor.prototype.continue = function () {
+  _zwIDBCursor.prototype.continue = function (key) {
     // https://w3c.github.io/IndexedDB/#dom-idbcursor-continue
     this._store._assertUsable(false);
-    this._position++;
+    var next = this._position + 1;
+    if (arguments.length >= 1) {
+      if (!_zwIDBKey(key, [])) {
+        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+      }
+      var reverse = this.direction === 'prev' || this.direction === 'prevunique';
+      while (next < this._entries.length) {
+        var compared = _zwIDBCompareValues(this._entries[next].key, key);
+        if (reverse ? compared <= 0 : compared >= 0) break;
+        next++;
+      }
+    }
+    this._position = next;
     var result = null;
     if (this._position < this._entries.length) {
       this._sync();
@@ -2980,12 +2993,12 @@
     var entries = [];
     this._records.forEach(function (value, key) {
       if (query == null || _zwIDBQueryMatches(query, key)) {
-        entries.push({ key: key, value: value });
+        entries.push({ key: key, primaryKey: key, value: value });
       }
     });
     entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
     if (direction === 'prev' || direction === 'prevunique') entries.reverse();
-    var cursor = entries.length ? new _zwIDBCursor(this, req, entries, direction) : null;
+    var cursor = entries.length ? new _zwIDBCursor(this, this, req, entries, direction) : null;
     _zwIDBDispatch(req, 'success', cursor);
     return req;
   };
@@ -3059,10 +3072,15 @@
     _zwIDBDispatch(req, 'success', entries.length);
     return req;
   };
-  _zwIDBIndex.prototype.openCursor = function () {
-    this.objectStore._assertUsable(false);
+  _zwIDBIndex.prototype.openCursor = function (query, direction) {
+    var entries = this._entries(query, query != null);
     var req = new _zwIDBRequest(this);
-    _zwIDBDispatch(req, 'success', null); // headless 简化：不返真 cursor
+    req.transaction = this.objectStore.transaction;
+    if (direction === 'prev' || direction === 'prevunique') entries.reverse();
+    var cursor = entries.length
+      ? new _zwIDBCursor(this, this.objectStore, req, entries, direction)
+      : null;
+    _zwIDBDispatch(req, 'success', cursor);
     return req;
   };
 
