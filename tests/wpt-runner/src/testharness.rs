@@ -120,6 +120,31 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom/ranges",
 ];
 
+/// IndexedDB goal M1 first upstream `.any.js` slice.
+///
+/// Each case is run in its window variant with the META-declared support script.
+/// https://web-platform-tests.org/writing-tests/testharness.html#multi-global-tests
+pub const INDEXEDDB_CASES: &[(&str, &str)] = &[
+    ("IndexedDB/globalscope-indexedDB-SameObject.any.js", ""),
+    ("IndexedDB/idbfactory_cmp.any.js", "resources/support-promises.js"),
+    ("IndexedDB/idbfactory_deleteDatabase.any.js", "resources/support.js"),
+    (
+        "IndexedDB/idbfactory-deleteDatabase-request-success.any.js",
+        "resources/support.js",
+    ),
+    ("IndexedDB/idbfactory_open.any.js", "resources/support.js"),
+    (
+        "IndexedDB/idbfactory-open-error-properties.any.js",
+        "resources/support.js",
+    ),
+    ("IndexedDB/idbfactory-open-request-error.any.js", "resources/support.js"),
+    (
+        "IndexedDB/idbfactory-open-request-success.any.js",
+        "resources/support.js",
+    ),
+    ("IndexedDB/idbversionchangeevent.any.js", "resources/support.js"),
+];
+
 /// WPT subtest status.
 ///
 /// 映射上游 testharness subtest status 数字编码（`testharness.js` 的 `Test.status`）：
@@ -456,6 +481,48 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
         }
     }
     cases
+}
+
+/// Run the first upstream IndexedDB factory/global/event `.any.js` slice.
+pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                "resources/testharness.js".to_string(),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+
+    INDEXEDDB_CASES
+        .iter()
+        .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|(path, support)| {
+            let html = indexeddb_window_wrapper(path, support);
+            let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
+}
+
+fn indexeddb_window_wrapper(path: &str, support: &str) -> String {
+    let support_script = if support.is_empty() {
+        String::new()
+    } else {
+        format!("<script src=\"{support}\"></script>")
+    };
+    let file = path.rsplit('/').next().unwrap_or(path);
+    format!(
+        "<!doctype html><meta charset=\"utf-8\">\
+         <script src=\"/resources/testharness.js\"></script>\
+         <script src=\"/resources/testharnessreport.js\"></script>\
+         {support_script}<script src=\"{file}\"></script>"
+    )
 }
 
 /// Run one canvas testharness case with `canvas-tests.js` inlined.
@@ -1245,6 +1312,15 @@ promise_test(async function() {
             Duration::from_millis(10),
         );
         assert_eq!(results[0].status, HarnessStatus::Timeout);
+    }
+
+    #[test]
+    fn indexeddb_any_wrapper_loads_support_before_case() {
+        let html = indexeddb_window_wrapper("IndexedDB/idbfactory_open.any.js", "resources/support.js");
+        let support = html.find("resources/support.js").unwrap();
+        let case = html.find("idbfactory_open.any.js").unwrap();
+        assert!(html.contains("/resources/testharness.js"));
+        assert!(support < case);
     }
 
     #[test]

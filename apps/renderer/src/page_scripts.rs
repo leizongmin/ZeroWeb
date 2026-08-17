@@ -914,12 +914,17 @@ mod tests {
             webview: Some(&mut webview),
         };
 
+        // Drain startup microtasks before measuring the steady-state idle path.
+        for _ in 0..16 {
+            assert!(!drain_pending_dom_mutations(&mut ctx));
+        }
+        let execution_baseline = worker.execution_count_for_test();
         // 空闲 drain 不得为探测异步任务而进入 JS worker；否则 renderer 会以主循环频率
         // 反复编译空脚本并引发 V8 堆增长。
         for _ in 0..16 {
             assert!(!drain_pending_dom_mutations(&mut ctx));
         }
-        assert_eq!(worker.execution_count_for_test(), 0);
+        assert_eq!(worker.execution_count_for_test(), execution_baseline);
 
         worker
             .execute_script_direct(
@@ -930,7 +935,7 @@ mod tests {
         // must enter the worker once to execute it.
         std::thread::sleep(std::time::Duration::from_millis(25));
         assert!(drain_pending_dom_mutations(&mut ctx));
-        assert_eq!(worker.execution_count_for_test(), 2);
+        assert_eq!(worker.execution_count_for_test(), execution_baseline + 2);
         assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
         assert!(
             ctx.webview

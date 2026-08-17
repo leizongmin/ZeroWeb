@@ -7,3 +7,12 @@ html/semantics/forms/the-output-element/output.html 315976933870b34d6ea30e3f6643
 html/semantics/forms/the-input-element/input-whitespace.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
 html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/focus-tabindex-default-value.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
 uievents/constructors/inputevent-constructor.html 315976933870b34d6ea30e3f6643403edae678ba 2026-08-13 FR-011
+IndexedDB/globalscope-indexedDB-SameObject.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory_cmp.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory_deleteDatabase.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory-deleteDatabase-request-success.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory_open.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory-open-error-properties.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory-open-request-error.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbfactory-open-request-success.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory
+IndexedDB/idbversionchangeevent.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-factory

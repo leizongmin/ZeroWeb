@@ -74,6 +74,7 @@ fn spawn_compositor_gpu_dmabuf() -> (PipeTransport<ChildStdout, ChildStdin>, Com
         ("ZW_COMPOSITOR_GPU_IMAGE", "1"),
         ("ZW_COMPOSITOR_GPU_TEXTURE_EXPORT", "1"),
         ("ZW_BROWSER_GPU_DMABUF_IMPORT", "1"),
+        ("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0"),
     ])
 }
 

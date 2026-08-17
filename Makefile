@@ -1,4 +1,4 @@
-.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native
+.PHONY: setup-rusty-v8 fetch-wpt-data fetch-wpt-html-testharness update-wpt-data build browser-build browser browser-cpu browser-wpt-parity browser-debug browser-debug-wayland browser-debug-wayland-log browser-debug-x11 browser-compositor-smoke browser-compositor-real-site-smoke test testharness-html reftest reftest-oracle capture-oracle product-smoke-oracle product-smoke form-visual-smoke form-visual-browser-gpu-smoke product-smoke-legacy import-wpt audit-imported-font-resources reftest-trend reftest-trend-oracle reftest-smoke layout-golden layout-golden-update monthly-report bench bench-gate bench-capture bench-trend fetch-wpt-dom testharness-dom testharness-dom-native fetch-wpt-indexeddb testharness-indexeddb
 
 ifeq ($(OS),Windows_NT)
 setup-rusty-v8:
@@ -188,6 +188,14 @@ testharness-dom: fetch-wpt-dom target/test-guard zero-wpt-runner-release
 # 用于建立 native 通过率基线，对照 R2/R3/R4 native 修复（classList/createElement/node mutation）。
 testharness-dom-native: fetch-wpt-dom target/test-guard zero-wpt-runner-release
 	ZW_NATIVE_DOM=1 ./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit 900 -- ./target/release/zero-wpt-runner testharness-dom $(if $(FILTER),$(FILTER),)
+
+# IndexedDB goal M1：上游 IndexedDB factory/global/event 首批 testharness 基线。
+# `.any.js` 用例由 runner 包装为 window test；filter 按文件路径子串透传。
+fetch-wpt-indexeddb:
+	bash tests/wpt-runner/scripts/fetch-indexeddb-subset.sh
+
+testharness-indexeddb: fetch-wpt-indexeddb target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 10 --total-mem 28 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-indexeddb $(if $(FILTER),$(FILTER),)
 
 # WPT reftest：release 构建不受内存限制，已编译 runner 的执行由 test-guard 包裹。
 reftest: fetch-wpt-data target/test-guard zero-wpt-runner-release

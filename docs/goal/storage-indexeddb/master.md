@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（立项——M1 待启动）
+**最后更新**: 2026-08-17（M1 首批 factory 基线完成）
 
 ---
 
@@ -29,21 +29,21 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   WPT smoke 不抛 not defined）
 - ⚠️ 页面零接线：JS 近似与 Rust 引擎零关联
 - ⚠️ 无持久化：indexed_db 无落盘路径
-- ⚠️ WPT `IndexedDB` 目录未导入，无基线
+- ✅ WPT 首批基线：factory/global/event 9 文件、50 subtest，6 Pass / 44 Fail（12.00%）
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| I1 | WPT IndexedDB 用例覆盖为零 | ⬜ M1 |
+| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1 首批 9 文件已导入 |
 | I2 | 页面→Rust 引擎零接线 | ⬜ M2 |
 | I3 | 无持久化（重启即失） | ⬜ M3 |
 | I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ⬜ M2/M3 |
 
 ## 下一步计划
 
-1. **M1 切片 1**：WPT `IndexedDB` 用例导入（目录大，按子目录分批）+ 分类通过率基线
-2. **M1 切片 2**：失败聚类 → in-memory 近似已覆盖面 vs 缺失面清单
+1. **M1 轻量修复 1**：修复 `IDBFactory.cmp` 参数校验与 key 类型排序（当前 4/12）
+2. **M1 扩面**：导入 object store CRUD 首批 `.any.js`，补第二分类分母
 3. **M2**：JS↔Rust 接线（open/事务/store CRUD/cursor 先行）
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -53,12 +53,17 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | ⬜ 待启动 |
+| M1 — WPT IndexedDB 基线建立 | 🟨 首批 factory 基线完成 |
 | M2 — JS↔Rust 接线（核心通路） | ⬜ |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT IndexedDB 面：无基线（未导入）
+- WPT IndexedDB 首批：9 文件 / 50 subtest / 6 Pass / 44 Fail / 12.00%
+- 失败聚类：WebIDL TypeError 16、IDBRequest EventTarget 14、升级事务 5、key 排序 5、
+  DataError 2、version 转换 1、VersionChangeEvent 字段 1
+- 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`
+- 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
+  renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

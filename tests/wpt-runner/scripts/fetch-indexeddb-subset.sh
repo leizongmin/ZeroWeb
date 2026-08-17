@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Fetch the pinned first IndexedDB testharness slice used by storage-indexeddb M1.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
+WPT_REV="315976933870b34d6ea30e3f6643403edae678ba"
+RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
+
+FILES=(
+  "resources/testharness.js"
+  "resources/testharnessreport.js"
+  "IndexedDB/resources/support.js"
+  "IndexedDB/resources/support-promises.js"
+  "IndexedDB/globalscope-indexedDB-SameObject.any.js"
+  "IndexedDB/idbfactory_cmp.any.js"
+  "IndexedDB/idbfactory_deleteDatabase.any.js"
+  "IndexedDB/idbfactory-deleteDatabase-request-success.any.js"
+  "IndexedDB/idbfactory_open.any.js"
+  "IndexedDB/idbfactory-open-error-properties.any.js"
+  "IndexedDB/idbfactory-open-request-error.any.js"
+  "IndexedDB/idbfactory-open-request-success.any.js"
+  "IndexedDB/idbversionchangeevent.any.js"
+)
+
+fetch_raw() {
+  local relative="$1"
+  local target="${WPT_DATA}/${relative}"
+  if [[ -s "${target}" && "${FORCE:-0}" != "1" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "${target}")"
+  local temporary="${target}.tmp"
+  if ! curl --fail --location --silent --show-error --retry 1 \
+    --connect-timeout 8 --max-time 20 \
+    "${RAW_ROOT}/${relative}" -o "${temporary}"; then
+    rm -f "${temporary}"
+    return 1
+  fi
+  test -s "${temporary}"
+  mv "${temporary}" "${target}"
+}
+
+fetch_from_git() {
+  local checkout
+  checkout="$(mktemp -d "${TMPDIR:-/tmp}/zeroweb-wpt-indexeddb.XXXXXX")"
+  trap "rm -rf -- '${checkout}'" EXIT
+  git -C "${checkout}" init --quiet
+  git -C "${checkout}" remote add origin https://github.com/web-platform-tests/wpt.git
+  git -C "${checkout}" config core.sparseCheckout true
+  printf '%s\n' "${FILES[@]}" > "${checkout}/.git/info/sparse-checkout"
+  local attempt
+  for attempt in 1 2 3; do
+    if git -C "${checkout}" fetch --quiet --depth=1 --filter=blob:none origin "${WPT_REV}"; then
+      break
+    fi
+    if [[ "${attempt}" == "3" ]]; then
+      return 1
+    fi
+    sleep 2
+  done
+  git -C "${checkout}" checkout --quiet FETCH_HEAD
+  for relative in "${FILES[@]}"; do
+    local target="${WPT_DATA}/${relative}"
+    mkdir -p "$(dirname "${target}")"
+    cp "${checkout}/${relative}" "${target}"
+  done
+}
+
+raw_failed=0
+for file in "${FILES[@]}"; do
+  if ! fetch_raw "${file}"; then
+    raw_failed=1
+    break
+  fi
+done
+
+if [[ "${raw_failed}" == "1" ]]; then
+  echo "Raw WPT download unavailable; using pinned sparse Git fetch"
+  fetch_from_git
+fi
+
+echo "IndexedDB testharness subset ready (9 cases, WPT ${WPT_REV})"

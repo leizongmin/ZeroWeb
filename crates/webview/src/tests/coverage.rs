@@ -673,8 +673,8 @@ fn test_native_dom_bindings_wiring_r3097() {
 // js-dom goal M6 S0q：QuickJS 版原生 DOM 绑定生产接线（与上方 V8 版 R3097 同断言面——
 // 双引擎对等，DC-7）。native_dom=true 时 QuickJS 沙箱经 install_native_bindings_quickjs
 // escape-hatch 装 quickjs_dom_bindings（工厂 + nodeType/tagName/nodeName/id 原生 getter）。
-// 仅 quickjs feature 测。
-#[cfg(feature = "quickjs")]
+// 仅 quickjs-only feature 测；v8+quickjs feature union 时 WebView 后端走 V8。
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
 #[test]
 fn test_native_dom_bindings_wiring_quickjs_s0q() {
     let mut wv = crate::WebViewBuilder::new().native_dom(true).build();
