@@ -132,4 +132,108 @@ globalThis.__litReport = log.join('|');
             "template.content 须为 fragment 视图（lit-html Template 前置原语），got: {report}"
         );
     }
+
+    /// R97 断言组 C：**lit 首渲染落地**（R95 诊断的异步 update 链阻塞全链打通）——
+    /// 真实 LitElement 组件（properties + html`` 插值 + shadow root）经
+    /// `performUpdate → render → lit-html render() → Template 构建 → importNode →
+    /// TreeWalker parts 提取 → insertBefore commit` 全链，首渲染 DOM 落地到
+    /// renderRoot。读数在第二次 execute（post-drain——第一次 execute 末
+    /// microtask checkpoint 排水后，`await this._$ES` 已 resume）。
+    ///
+    /// R97 修复的四个缺口（探针实证定位）：
+    /// 1. TreeWalker `currentNode` 跨树重定位（lit-html 单全局 walker 经
+    ///    `P.currentNode = fragment` 遍历 template parts——旧 order 快照不含 root
+    ///    外节点，重定位后 nextNode 仍从 document 头走）
+    /// 2. `insertBefore(node, null)` handle 父不记 registry（marker 插入后容器
+    ///    childNodes 视图漏子）
+    /// 3. 无 handle fragment 视图（template.content 派生）插入 no-op
+    ///    （imported fragment 无 `__zwHandle` 落到静默分支）
+    /// 4. `_zwMEl` 解析子缺 `hasAttributes()`/`getAttributeNames()`
+    ///    （lit Template 属性 parts 提取直接 TypeError）
+    #[test]
+    fn lit_first_render_lands() {
+        let html_doc = format!(
+            r#"<html><head><title>Lit E2E</title></head><body><div id="host"></div><script>
+{}
+</script><script>
+const {{ LitElement, html }} = globalThis.lit;
+class GreetingEl extends LitElement {{
+  constructor() {{ super(); this._built = 'ctor'; }}
+  static get properties() {{ return {{ name: {{ type: String }} }}; }}
+  render() {{ return html`<p class="greet">Hello, ${{this.name}}!</p>`; }}
+}}
+customElements.define('greeting-el', GreetingEl);
+var el = document.createElement('greeting-el');
+el.name = 'ZeroWeb';
+document.getElementById('host').appendChild(el);
+globalThis.__elForLater = el;
+</script></body></html>"#,
+            include_str!("../fixtures/lit/lit.bundle.js")
+        );
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        wv.load_html(&html_doc, None);
+        let _ = wv.run_page_scripts_strict();
+        let post = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var el = globalThis.__elForLater;
+var rr = el.renderRoot;
+var out = [];
+out.push('pending:' + String(el.isUpdatePending));
+out.push('hasUpdated:' + String(el.hasUpdated));
+out.push('rr-kids:' + (rr && rr.childNodes ? rr.childNodes.length : 'no-rr'));
+var p = rr ? rr.querySelector('p') : null;
+out.push('p-tag:' + (p ? p.tagName : 'null'));
+out.push('p-class:' + (p ? String(p.className) : 'null'));
+out.push('p-text:' + (p ? String(p.textContent) : 'null'));
+return out.join('|');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        let expected = "pending:false|hasUpdated:true|rr-kids:2|p-tag:P|p-class:greet|p-text:Hello, ZeroWeb!";
+        assert_eq!(
+            post, expected,
+            "lit 首渲染须落地到 renderRoot（R95 异步 update 链阻塞全链打通后的验收）, got: {post}"
+        );
+    }
+
+    /// R97 断言组 D：lit-html `render()` 直测——不经 LitElement，直接
+    /// `render(html`…`, container)`，验证 Template 构建 + importNode +
+    /// TreeWalker parts 提取 + insertBefore commit 全链在普通容器上的行为
+    /// （与组 C 的 shadow root 路径互补）。
+    #[test]
+    fn lit_html_render_direct() {
+        let report = run_lit_page(
+            r#"
+var log = [];
+const { html, render } = globalThis.lit;
+var container = document.createElement('div');
+try {
+  var result = html`<p class="greet">Hello, World!</p>`;
+  render(result, container);
+  log.push('kids:' + container.childNodes.length);
+  var p = container.querySelector('p');
+  log.push('p:' + (p ? p.tagName : 'null'));
+  log.push('text:' + (p ? String(p.textContent) : 'null'));
+} catch (e) {
+  log.push('ERR:' + e);
+}
+// marker/insertBefore 基础面（lit ChildPart commit 原语）。
+var m = document.createComment('m');
+var c2 = document.createElement('div');
+var ins = c2.insertBefore(m, null);
+log.push('ins:' + [c2.childNodes.length, String(ins === m), String(m.parentNode === c2)].join(','));
+globalThis.__litReport = log.join('|');
+"#,
+        );
+        let expected = "kids:2|p:P|text:Hello, World!|ins:1,true,true";
+        assert_eq!(
+            report, expected,
+            "lit-html render() 直测（Template/TreeWalker/insertBefore commit 全链）, got: {report}"
+        );
+    }
 }

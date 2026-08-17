@@ -1875,6 +1875,29 @@
             if (child && (child === _makeProxy(sel, handle) || _zwIsAncestorOf(child, sel, handle))) {
               throw _zwDomException('A Node cannot be appended to itself or its descendant.', 'HierarchyRequestError');
             }
+            // js-dom M3 R97：无 handle 的 fragment 形态节点（`<template>`.content 视图 /
+            // importNode 后的克隆视图，nodeType 11 + childNodes 可读但无 __zwHandle）——
+            // lit-html TemplateInstance.u() 返回的 imported fragment 即此形态，随后
+            // `marker.parentNode.insertBefore(fragment, …)` 落到 insertBefore 的 no-op 分支
+            // （首渲染不落地的最终根因）。spec `dom-node-pre-insert`：fragment 插入 = 子节点
+            // 展开插入、fragment 自身不入树。这里对 handle 父做 registry 展开追加：handle 子
+            // 走 _recordHandleChild（反链记账），_zwMEl 解析子（innerHTML= 存入 content 的
+            // 形态）直接入 registry（childNodes 视图可见，子树查询经 R92 展开工作）。
+            if (child && !child.__zwHandle && child.nodeType === 11 && handle) {
+              var _r97Fk = [];
+              try { _r97Fk = Array.prototype.slice.call(child.childNodes || []); } catch (_e97f) {}
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              for (var _r97i = 0; _r97i < _r97Fk.length; _r97i++) {
+                var _r97c = _r97Fk[_r97i];
+                if (_r97c && _r97c.__zwHandle) _recordHandleChild(handle, _r97c);
+                else if (_r97c && _r97c.nodeType) _handleChildren[handle].push(_r97c);
+              }
+              var _r97Added = _r97Fk.slice();
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Added, removedNodes: [], previousSibling: null, nextSibling: null });
+              var _r97Pc = _ceParentConnected(sel, handle);
+              for (var _r97j = 0; _r97j < _r97Added.length; _r97j++) _ceApplyConn(_r97Added[_r97j], _r97Pc);
+              return child;
+            }
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
@@ -2043,7 +2066,43 @@
                 && !_zwLocalChildNodes(sel, handle)) {
               _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, String(newNode.data != null ? newNode.data : (newNode.__nv || '')));
             }
+            // js-dom M3 R97：无 handle fragment 视图插入（appendChild 同款分支的带位变体）——
+            // lit-html commit 的 `marker.parentNode.insertBefore(importedFragment, endNode)`：
+            // imported 无 __zwHandle（template.content 派生视图），子节点展开到 refNode 前
+            // （refNode 无 selector 时按 registry 位置 splice；null 时 append）。handle 子记
+            // 反链；_zwMEl 解析子直接入 registry（同 appendChild 分支）。
+            if (newNode && !newNode.__zwHandle && newNode.nodeType === 11 && handle) {
+              var _r97Fb = [];
+              try { _r97Fb = Array.prototype.slice.call(newNode.childNodes || []); } catch (_e97g) {}
+              if (!_handleChildren[handle]) _handleChildren[handle] = [];
+              var _r97Kb = _handleChildren[handle];
+              var _r97Pos = (refNode && refNode.__zwHandle) ? _r97Kb.indexOf(refNode) : -1;
+              for (var _r97k = _r97Fb.length - 1; _r97k >= 0; _r97k--) {
+                var _r97cc = _r97Fb[_r97k];
+                if (_r97cc && _r97cc.__zwHandle) {
+                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
+                  else _r97Kb.push(_r97cc);
+                  try {
+                    if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                      _zwNodeParent[_r97cc.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                    }
+                  } catch (_e97h) {}
+                } else if (_r97cc && _r97cc.nodeType) {
+                  if (_r97Pos >= 0) _r97Kb.splice(_r97Pos, 0, _r97cc);
+                  else _r97Kb.push(_r97cc);
+                }
+              }
+              _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
+              var _r97Pb = _ceParentConnected(sel, handle);
+              for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
+              return newNode;
+            }
             if (newNode && newNode.__zwHandle) {
+              // js-dom M3 R97：spec `dom-node-pre-insert`「node === child 时 no-op」
+              //（WPT Node-insertBefore "Inserting a node before itself should not move
+              // the node"：insertBefore(b, b) 返 b 且子列表不变——旧 R97 registry 分支
+              // 会把 b 重复 splice 进 registry）。
+              if (newNode === refNode) return newNode;
               // R2994：捕获实际入树的顶层节点（fragment flatten 前取其子）。
               var ceAdded;
               // DocumentFragment：flatten 子节点（refNode 非 null 时插到 ref 前，null 时 append）。
@@ -2065,12 +2124,34 @@
                 ceAdded = [newNode];
                 if (handle) __zw_append_child_handle(handle, newNode.__zwHandle);
                 else __zw_append_child(sel, newNode.__zwHandle);
+                // js-dom M3 R97：appendChild 路径（1869 行起）有 _recordHandleChild，本分支
+                // 旧缺——host 记账后 JS 侧 registry 不含 newNode，容器 childNodes 视图漏子
+                //（lit-html render 的 marker 插入即此形态：container.insertBefore(marker, null)
+                // 后 container.childNodes.length 仍 0）。对齐 appendChild 补记。
+                if (handle) _recordHandleChild(handle, newNode);
               } else if (refNode.__zwSelector) {
                 ceAdded = [newNode];
                 if (handle) __zw_insert_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);
                 else __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwSelector);
+              } else if (handle && refNode.__zwHandle) {
+                // js-dom M3 R97：refNode 为 create 句柄节点（comment marker / detached 元素，
+                // 无 selector）但父是 handle 容器——host 无对应 wire，JS 侧 registry 插入
+                // （appendChild R84 路径的带位变体：按 refNode 在 registry 中的位置 splice）。
+                // lit-html 的 renderRoot.insertBefore(marker, firstChild) 精确命中此形态
+                // （renderRoot = shadow root 容器，marker/firstChild 均无 selector）。
+                ceAdded = [newNode];
+                if (!_handleChildren[handle]) _handleChildren[handle] = [];
+                var _r97Kids = _handleChildren[handle];
+                var _r97At = _r97Kids.indexOf(refNode);
+                if (_r97At >= 0) _r97Kids.splice(_r97At, 0, newNode);
+                else _r97Kids.push(newNode);
+                try {
+                  if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                    _zwNodeParent[newNode.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                  }
+                } catch (_e97p) {}
               }
-              // refNode 为 create 句柄（无 selector）时不支持（罕见）。
+              // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，
               // spec insertBefore(fragment) record 不含 fragment 自身）。nextSibling=refNode
               //（spec record 字段：插入位置的后继）+ previousSibling（refNode 的前兄弟；WPT

@@ -2444,6 +2444,11 @@
     };
     node.getAttribute = function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return attrs[i].value; return null; };
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
+    // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
+    // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
+    node.hasAttributes = function () { return attrs.length > 0; };
+    node.getAttributeNames = function () { var out = []; for (var i = 0; i < attrs.length; i++) out.push(attrs[i].name); return out; };
     // Parsed local fragments must expose the same geometry API as live element
     // proxies. They have no layout identity until inserted, so the spec fallback
     // is a zero DOMRect rather than a missing method.

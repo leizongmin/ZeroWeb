@@ -406,6 +406,60 @@
     // 恒 no-op，WPT "detach() should be a no-op"——iter.detach 可调用且无副作用）。
     var active = false;
     if (!isTreeWalker) walker.detach = function () { return undefined; };
+    // js-dom M3 R97：跨树重定位步进——currentNode 被赋值为 root 快照外的节点（detached
+    // fragment / template content / 另一棵树）时，spec `treewalker` 语义是后续遍历从
+    // currentNode 的位置继续（currentNode 不受 root 限制；lit-html 用单个全局 TreeWalker
+    // 经 `P.currentNode = fragment` 重定位遍历 template parts——这正是其 Template/
+    // TemplateInstance 的核心机制）。order 快照不含 root 外节点 → orderPos=-1 旧逻辑
+    // 从 root 头遍历（探针实证 walk:HTML>HEAD>BODY...）。此函数以 currentNode 为起点
+    // 沿真实 getter 导航（firstChild/nextSibling/parentNode）找结构序后继，对每候选
+    // check（TreeWalker REJECT/0 剪子树 = 不入其 firstChild；NodeIterator 不剪）。
+    // 终点：候选链上行到 currentNode 的根（root 外树的顶）即 null → 遍历耗尽返 null
+    //（spec：TreeWalker 越过根后 nextNode 返 null 且 currentNode 不动）。
+    function nextNodeOffOrder() {
+      var start = currentNodeVal;
+      if (!start) return null;
+      // 状态机：descend（尝试 node.firstChild）vs advance（横移 node.nextSibling）。
+      // 上行到祖先后**只横移不重入子**（祖先的 firstChild 半边已在前序中过——重入会
+      // 死循环：EM→text(SKIP)→上行 EM→又 firstChild=text）。
+      var descend = true;
+      var node = start;
+      var guard = 0;
+      while (node && guard++ < 100000) {
+        if (descend) {
+          var kid = node.firstChild;
+          if (kid) {
+            var r = check(kid);
+            if (r === 1) { currentNodeVal = kid; return kid; }
+            if (isTreeWalker && (r === 2 || r === 0)) {
+              // REJECT/0 剪子树：不 descend 进 kid，横移 kid 的 nextSibling。
+              var ks = kid.nextSibling;
+              if (ks) {
+                var rk = check(ks);
+                if (rk === 1) { currentNodeVal = ks; return ks; }
+                if (isTreeWalker && (rk === 2 || rk === 0)) { node = ks; descend = false; continue; }
+                node = ks; descend = true; continue;
+              }
+            } else {
+              node = kid; descend = true; continue; // SKIP / NodeIterator-REJECT：入其子树
+            }
+          }
+        }
+        // 横移本层 nextSibling。
+        var sib = node.nextSibling;
+        if (sib) {
+          var r2 = check(sib);
+          if (r2 === 1) { currentNodeVal = sib; return sib; }
+          if (isTreeWalker && (r2 === 2 || r2 === 0)) { node = sib; descend = false; continue; }
+          node = sib; descend = true; continue;
+        }
+        // 兄弟尽 → 上行（只横移：descend=false）。
+        node = node.parentNode;
+        descend = false;
+        // 上行到 start 所在树的顶（parentNode null）即耗尽（spec：越根返 null）。
+      }
+      return null;
+    }
     walker.nextNode = function () {
       orderInit();
       // R84：spec NodeIterator/TreeWalker「recursive filters need to throw」——遍历方法
@@ -419,6 +473,13 @@
       try {
         // R88：nextNode 的 in-flight 方向指针态——候选在指针后侧（before=false）。
         if (typeof inFlightBeforeVal !== 'undefined') inFlightBeforeVal = false;
+        // R97：currentNode 被重定位到 root 快照外（orderPos<0 且非 fresh——relocated）→
+        // order 快照不含该子树，改导航式步进（见 nextNodeOffOrder 注释）。
+        if (orderPos < 0 && relocated) {
+          var off = nextNodeOffOrder();
+          if (off) { idx = accepted.indexOf(off); if (idx < 0) idx = -1; }
+          return off;
+        }
         // R83：fresh 起点按 walker 类型区分——NodeIterator 的迭代集合**含 root**（指针初始
         // 在 root 前 → 首个 nextNode 返 root；WPT NodeIterator-removal-during-filtering /
         // R2803 单测 DIV 首位）；TreeWalker 的 currentNode=root 表示**已位于 root**（visited）
