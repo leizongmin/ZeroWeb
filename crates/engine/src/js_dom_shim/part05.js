@@ -784,6 +784,66 @@
         if (ph) {
           // 递归：本节点成为子层的 parentInfo；ancestors 链含本节点（根→…→父）。
           visit(ph, info, ancestors.concat([info]));
+        } else {
+          // js-dom M3 R92：innerHTML= 解析的 _zwMEl 快照子（无 __zwHandle，子不在
+          // _handleChildren registry）——直接沿其 childNodes 展开（元素子入 result，
+          // 保文档序与兄弟上下文）。lit 模板渲染进 shadow root 的查询路径。
+          try {
+            var mk = _hSafe(function () { return p.childNodes; }, null);
+            if (mk && mk.length) {
+              var melem = [];
+              for (var r92i = 0; r92i < mk.length; r92i++) {
+                var r92k = mk[r92i];
+                if (r92k && _hSafe(function () { return r92k.nodeType; }, 0) === 1) melem.push(r92k);
+              }
+              for (var r92j = 0; r92j < melem.length; r92j++) {
+                var r92p = melem[r92j];
+                var r92info = {
+                  proxy: r92p,
+                  parent: p,
+                  parentInfo: info,
+                  prevSibling: r92j > 0 ? melem[r92j - 1] : null,
+                  prevSiblingInfo: null,
+                  prevSiblings: [],
+                  ancestors: ancestors.concat([info]),
+                };
+                if (r92info.prevSibling) {
+                  // _zwMEl 无 handle → infoByProxy 按对象 identity 命中（同 proxy 引用）。
+                  r92info.prevSiblingInfo = nodeInfoOf(r92info.prevSibling);
+                }
+                infoByProxy.set(r92p, r92info);
+                result.push({ proxy: r92p, nodeInfo: r92info });
+                // 深层 _zwMEl 递归展开（嵌套模板）。
+                var r92kids = _hSafe(function () { return r92p.childNodes; }, null);
+                (function expandDeep(dp, dparentInfo, danc) {
+                  if (!dp) return;
+                  var dk = _hSafe(function () { return dp.childNodes; }, null);
+                  if (!dk || !dk.length) return;
+                  var de = [];
+                  for (var di = 0; di < dk.length; di++) {
+                    var ddk = dk[di];
+                    if (ddk && _hSafe(function () { return ddk.nodeType; }, 0) === 1) de.push(ddk);
+                  }
+                  for (var dj = 0; dj < de.length; dj++) {
+                    var dnode = de[dj];
+                    var dinfo = {
+                      proxy: dnode,
+                      parent: dp,
+                      parentInfo: dparentInfo,
+                      prevSibling: dj > 0 ? de[dj - 1] : null,
+                      prevSiblingInfo: null,
+                      prevSiblings: [],
+                      ancestors: danc,
+                    };
+                    if (dinfo.prevSibling) dinfo.prevSiblingInfo = nodeInfoOf(dinfo.prevSibling);
+                    infoByProxy.set(dnode, dinfo);
+                    result.push({ proxy: dnode, nodeInfo: dinfo });
+                    expandDeep(dnode, dinfo, danc.concat([dinfo]));
+                  }
+                })(r92p, r92info, ancestors.concat([info, r92info]));
+              }
+            }
+          } catch (_e92) {}
         }
       }
     }

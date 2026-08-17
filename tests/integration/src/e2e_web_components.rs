@@ -222,4 +222,51 @@ globalThis.__wcReport = log.join('|');
             "connectedCallback 内 dispatch CustomEvent 须被自身 listener 收到 detail，got: {report}"
         );
     }
+
+    /// 断言组 6（R92）：lit 风格模板渲染——innerHTML 模板（含插值结果）写入 shadow
+    /// root，子树查询（tag/class/id）+ 二次渲染覆盖 + 嵌套层可达。
+    #[test]
+    fn wc_lit_style_template_render() {
+        let report = run_wc_page(
+            r#"
+var log = [];
+function render(root, title, val) {
+  root.innerHTML = '<style>:host { display: block; }</style>'
+    + '<div class="card"><h2 id="t">' + title + '</h2><p class="v">' + val + '</p>'
+    + '<span class="nested"><em>deep</em></span></div>';
+}
+class MyView extends HTMLElement {
+  connectedCallback() {
+    render(this.attachShadow({ mode: 'open' }), 'Title-42', 'val-x');
+  }
+}
+customElements.define('my-view', MyView);
+var el = document.createElement('my-view');
+document.getElementById('host').appendChild(el);
+var root = el.shadowRoot;
+log.push('has-root:' + !!root);
+var h2 = root.querySelector('h2');
+log.push('h2:' + (h2 ? h2.textContent : 'null'));
+log.push('byId:' + (root.querySelector('#t') ? root.querySelector('#t').textContent : 'null'));
+log.push('cls:' + (root.querySelector('.v') ? root.querySelector('.v').textContent : 'null'));
+// 嵌套层（depth-2/3）+ 组合器：
+var em = root.querySelector('.nested em');
+log.push('deep:' + (em ? em.textContent : 'null'));
+var cardKids = root.querySelector('.card').childNodes.length;
+log.push('cardKids:' + cardKids);
+var style = root.querySelector('style');
+log.push('style:' + (style ? 'found' : 'null'));
+// 二次渲染（re-render 覆盖）：
+render(root, 'Title-99', 'val-y');
+log.push('re-h2:' + (root.querySelector('h2') ? root.querySelector('h2').textContent : 'null'));
+globalThis.__wcReport = log.join('|');
+"#,
+        );
+        let expected =
+            "has-root:true|h2:Title-42|byId:Title-42|cls:val-x|deep:deep|cardKids:3|style:found|re-h2:Title-99";
+        assert_eq!(
+            report, expected,
+            "lit 风格模板渲染 + shadow 子树查询 + 二次渲染，got: {report}"
+        );
+    }
 }
