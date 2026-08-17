@@ -8,7 +8,7 @@
 // `globalThis.lit` 消费（LitElement/html/svg/render/...），与真实页面 `import {
 // LitElement, html } from 'lit'` 等价（模块解析层是 bundle 形态差异，组件代码面不变）。
 //
-// 已验收面（本切片）：
+// 已验收面（R95 首切片 → R97 首渲染落地）：
 // - 真实 lit bundle 在 shim 环境完整求值（无语法/求值错误，LitElement/html 可用）
 // - LitElement 子类 define + createElement 升级 + constructor 体以元素为 this 执行
 //   （R94 Proxy-ctor 桥 + R95 `constructor` 短路——lit 实例方法读
@@ -16,14 +16,15 @@
 // - LitElement/HTMLElement instanceof + lit 内部状态（_$ES Promise / renderRoot）
 // - connectedCallback → createRenderRoot → attachShadow（shadow root 建立）
 // - `<template>`.content（R95 新增面，lit-html Template 管线前置原语）
+// - **首渲染落地（R97）**：performUpdate → render → lit-html render() → Template
+//   构建 → importNode → TreeWalker parts 提取 → insertBefore commit 全链贯通，
+//   插值内容真实出现在 shadow root（组 C）；lit-html render() 直测容器路径（组 D）。
+//   R97 修复的四个缺口见组 C doc comment（walker 跨树重定位 / insertBefore
+//   registry / 无 handle fragment 插入 / _zwMEl hasAttributes）。
 //
-// 已知剩余（下一切片，R95 诊断记录在 master.md）：
-// - 异步 update 链：lit 的 `await this._$ES` 恢复依赖 `this.enableUpdating` 实例
-//   属性（Promise executor 内赋值）能正确读回——e2e 实证该 expando 读被 get trap
-//   中间分支遮蔽（读到原型 noop）→ 首渲染不落地（shadow root 恒空）。expando
-//   优先化（own-shadow 语义）与 define 期 observedAttributes→finalize 触发是
-//   下一步（后者会暴露 `hasOwnProperty` 在 get trap 长链上的可达性缺口——
-//   bisect 已定位控制流在 part03→part04 中途被吞，具体分支待查）。
+// 已知剩余（后续切片）：
+// - lit 响应式更新链：property set → requestUpdate → 二次 render 的 diff commit
+//   （首渲染后的增量更新面）；M3 SPA 面（React/Vue 之一）评估。
 
 #[cfg(test)]
 mod lit_e2e {

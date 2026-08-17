@@ -1,0 +1,61 @@
+{
+  "round": "R97",
+  "milestone": "M3",
+  "date": "2026-08-17",
+  "commit": "42f303db2",
+  "title": "lit 首渲染落地（R95 异步 update 链阻塞全链打通）",
+  "summary": "真实 lit 库 LitElement 组件首渲染 DOM 落地到 shadow root：performUpdate → render → lit-html render() → Template 构建 → importNode → TreeWalker parts 提取 → insertBefore commit 全链贯通。post-drain 验收：pending:false|hasUpdated:true|rr-kids:2|p-tag:P|p-class:greet|p-text:Hello, ZeroWeb!",
+  "root_causes": [
+    {
+      "id": 1,
+      "issue": "TreeWalker currentNode 跨树重定位失效",
+      "detail": "lit-html 用单个全局 TreeWalker（root=document）经 P.currentNode = fragment 重定位遍历 template parts。shim 的 order 快照不含 root 外节点 → orderPos=-1 → nextNode 从 document 头走（探针实证 walk:HTML>HEAD>BODY>DIV>SCRIPT）。spec treewalker：currentNode 不受 root 限制。",
+      "fix": "part06 nextNodeOffOrder()：orderPos<0 && relocated 时改导航式步进（firstChild/nextSibling/parentNode 状态机；上行后 descend=false 防重入子树死循环；TreeWalker REJECT/0 剪子树，NodeIterator 不剪）。修复后 walk:P>EM>#comment 精确。"
+    },
+    {
+      "id": 2,
+      "issue": "insertBefore(node, null) handle 父不记 registry",
+      "detail": "appendChild 路径有 _recordHandleChild，insertBefore refNode==null 分支旧缺——lit ChildPart 的 marker 插入后容器 childNodes 视图漏子（探针 ins:0）。",
+      "fix": "part04 insertBefore refNode==null 分支补 _recordHandleChild（对齐 appendChild）。"
+    },
+    {
+      "id": 3,
+      "issue": "无 handle fragment 视图插入静默 no-op",
+      "detail": "template.content 派生的 imported fragment（nodeType 11 无 __zwHandle）落到 insertBefore 的 if(newNode.__zwHandle) 之外的 no-op——lit commit 的 marker.parentNode.insertBefore(fragment, endNode) 永不落地（首渲染最终根因，探针 kids:0→仅 marker）。其子节点为 _zwMEl 解析对象（同样无 handle）。",
+      "fix": "part04 appendChild/insertBefore 各加无 handle fragment 分支：子节点展开入 registry（handle 子走 _recordHandleChild 记反链；_zwMEl 解析子直接 push；带 refNode 位时按 registry 位置 splice）。"
+    },
+    {
+      "id": 4,
+      "issue": "_zwMEl 解析节点缺 hasAttributes/getAttributeNames",
+      "detail": "lit Template 属性 parts 提取调 r.hasAttributes()/r.getAttributeNames()——缺方法抛 TypeError 使整条 update 链 reject（探针 update:ERR:update 链中断）。",
+      "fix": "part03 _zwMEl 补两方法（attrs 数组本地维护，与元素 proxy R3197 语义一致）。"
+    }
+  ],
+  "regression_caught_and_fixed": {
+    "issue": "insertBefore(b, b) 自引用应 no-op（spec dom-node-pre-insert）",
+    "detail": "新 registry 分支把 b 重复 splice 进 registry（WPT Node-insertBefore 'before itself' A/B 捕获：expected [b,c] got [b,b,c]）",
+    "fix": "insertBefore 入口 newNode === refNode 早退返回 newNode"
+  },
+  "verification": {
+    "lit_e2e": {
+      "lit_component_chain": "Pass",
+      "template_content_fragment_view": "Pass",
+      "lit_first_render_lands_new": "Pass（rr-kids:2|p-tag:P|p-class:greet|p-text:Hello, ZeroWeb!）",
+      "lit_html_render_direct_new": "Pass（kids:2|p:P|text:Hello, World!|ins:1,true,true）"
+    },
+    "wpt_dom_ab": {
+      "traversal": { "base": "1593P/11F", "after": "1595P/9F", "delta": "+2 净（TreeWalker-currentNode ×2 转 Pass；cross-realm/outside-a-tree 既存深结构不变）" },
+      "nodes": { "base": "6673P", "after": "6673P", "delta": "0 净 pass + fail -24（getElementsByClassName-whitespace 22F + name-validation 2F 消退——flake 或顺带）；'before itself' 真回归 A/B 捕获同轮修复" },
+      "events": { "base": "236P", "after": "236P", "delta": "0" },
+      "collections": { "base": "48P", "after": "48P", "delta": "0" }
+    },
+    "unit": { "engine_v8": "2205 passed", "engine_quickjs": "1431 passed", "integration": "779 passed", "make_test": "65 suites / 18086 passed / exit 0" },
+    "quality": { "fmt": "clean", "clippy_v8": "clean", "clippy_quickjs": "clean", "pre_commit_guard": "PASS" }
+  },
+  "process_notes": [
+    "post-drain 读数时机：探针在第二次 execute 读（第一次末 perform_microtask_checkpoint 排水后）——同步快照读会误判 rr-kids:0",
+    "A/B 必须 clean-HEAD 二进制对照（make test 首跑的 product-version 失败为跨午夜陈旧 rlib（build.rs 未声明日期 rerun），cargo clean -p 后恢复——独立缺陷留档，非本切片回归）",
+    "lit-html 全局单 TreeWalker 重定位是框架级 TreeWalker 消费模式——WPT 之外的真实框架路径"
+  ],
+  "next": "lit 响应式更新链（property set → requestUpdate → 二次 render diff）；M3 SPA 面评估（React/Vue 之一）"
+}
