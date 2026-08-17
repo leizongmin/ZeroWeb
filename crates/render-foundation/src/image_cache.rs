@@ -272,6 +272,11 @@ impl ImageCache {
         }
     }
 
+    /// 立即删除指定图片，返回该键是否存在。
+    pub fn remove(&mut self, key: &ImageKey) -> bool {
+        self.entries.remove(key).is_some()
+    }
+
     /// 执行垃圾回收
     ///
     /// 移除以下条目：
@@ -1528,6 +1533,19 @@ mod tests {
         cache.gc();
         assert!(cache.ref_count(&key).is_none());
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_cache_remove_deletes_only_requested_image() {
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let removed = cache.insert(make_image(2, 2, 100));
+        let retained = cache.insert(make_image(1, 1, 200));
+
+        assert!(cache.remove(&removed));
+        assert!(!cache.remove(&removed));
+        assert!(cache.ref_count(&removed).is_none());
+        assert!(cache.ref_count(&retained).is_some());
+        assert_eq!(cache.total_bytes(), 4);
     }
 
     #[test]

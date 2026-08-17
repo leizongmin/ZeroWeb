@@ -314,6 +314,9 @@ impl TabSnapshot {
         let Ok(image) = ImageData::from_rgba(rgba, width, height) else {
             return false;
         };
+        if let Some(previous) = self.compositor_present.take() {
+            self.image_cache.remove(&previous.image_key);
+        }
         let image_key = self.image_cache.insert(image);
         self.compositor_present = Some(CompositorFrame {
             surface_id: page_surface_id,
@@ -429,6 +432,53 @@ mod tests {
         assert!(snap.commit_compositor_frame(submission, 1, 1, vec![0, 0, 255, 255], 0.0, 0.0));
         let frame = snap.compositor_frame.as_ref().unwrap();
         assert_eq!(snap.image_cache.get(&frame.image_key).unwrap().pixels, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn compositor_present_replacement_keeps_pixel_memory_bounded() {
+        const PAGE_WIDTH: u32 = 1280;
+        const PAGE_HEIGHT: u32 = 720;
+        const PRESENT_WIDTH: u32 = 1920;
+        const PRESENT_HEIGHT: u32 = 1080;
+        const REPLACEMENTS: u8 = 8;
+
+        let mut snap = TabSnapshot {
+            navigation_epoch: 3,
+            ..Default::default()
+        };
+        let submission = CompositorSubmission {
+            surface_id: 41,
+            navigation_epoch: 3,
+            frame_id: 8,
+        };
+        assert!(snap.record_compositor_submission(submission));
+        assert!(snap.commit_compositor_frame(
+            submission,
+            PAGE_WIDTH,
+            PAGE_HEIGHT,
+            vec![0; PAGE_WIDTH as usize * PAGE_HEIGHT as usize * 4],
+            0.0,
+            0.0,
+        ));
+
+        for pixel in 0..REPLACEMENTS {
+            assert!(snap.commit_compositor_present_frame(
+                submission.surface_id,
+                PRESENT_WIDTH,
+                PRESENT_HEIGHT,
+                vec![pixel; PRESENT_WIDTH as usize * PRESENT_HEIGHT as usize * 4],
+            ));
+        }
+
+        let retained_limit =
+            (PAGE_WIDTH as usize * PAGE_HEIGHT as usize + PRESENT_WIDTH as usize * PRESENT_HEIGHT as usize) * 4;
+        assert_eq!(snap.image_cache.len(), 2, "只应保留页面帧和最新 present 帧");
+        assert_eq!(snap.image_cache.total_bytes(), retained_limit);
+        let present = snap.compositor_present.as_ref().unwrap();
+        assert_eq!(
+            snap.image_cache.get(&present.image_key).unwrap().pixels[0],
+            REPLACEMENTS - 1
+        );
     }
 
     #[test]
