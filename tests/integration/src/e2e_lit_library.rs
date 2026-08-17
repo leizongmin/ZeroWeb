@@ -237,4 +237,84 @@ globalThis.__litReport = log.join('|');
             "lit-html render() 直测（Template/TreeWalker/insertBefore commit 全链）, got: {report}"
         );
     }
+
+    /// R98 断言组 E：**lit 响应式更新链**——首渲染后 `el.name = 'Updated!'` 触发
+    /// requestUpdate → 二次 render → ChildPart 文本 commit（真实响应式闭环）。
+    /// 三段式：① 首渲染 + 诊断 accessor 安装；② property set（本段末 checkpoint
+    /// 排水 _$EP 微任务）；③ post-drain 读二次 render 结果。
+    ///
+    /// R98 修复的三个缺口：
+    /// 1. `customElements.define` 不读 `ctor.observedAttributes`（spec define step 5
+    ///    Get）——lit 的静态 getter 内调 `finalize()` → `createProperty` 装 prototype
+    ///    accessor；不读则 accessor 从未安装，property set 不触发 requestUpdate
+    /// 2. set trap 不派发原型链 accessor setter——lit setter 内调
+    ///    `this.requestUpdate`；旧恒落 expando 存储（uc-changed:false）
+    /// 3. symbol-keyed 写丢失（lit accessor fallback `this[s] = v` 以 Symbol 存值）
+    ///    与首层原型 accessor getter 优先级（旧被 shim 反射属性分支先吞——首渲染
+    ///    插值空串）
+    #[test]
+    fn lit_reactive_update_lands() {
+        let html_doc = format!(
+            r#"<html><head><title>Lit E2E</title></head><body><div id="host"></div><script>
+{}
+</script><script>
+const {{ LitElement, html }} = globalThis.lit;
+class GreetingEl extends LitElement {{
+  static get properties() {{ return {{ name: {{ type: String }} }}; }}
+  render() {{ return html`<p class="greet">Hello, ${{this.name}}!</p>`; }}
+}}
+customElements.define('greeting-el', GreetingEl);
+var el = document.createElement('greeting-el');
+el.name = 'ZeroWeb';
+document.getElementById('host').appendChild(el);
+globalThis.__elForLater = el;
+</script></body></html>"#,
+            include_str!("../fixtures/lit/lit.bundle.js")
+        );
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        wv.load_html(&html_doc, None);
+        let _ = wv.run_page_scripts_strict();
+        // 第二段：触发响应式更新。本段末 checkpoint 排水 update 微任务。
+        let mid = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var el = globalThis.__elForLater;
+var out = [];
+var p1 = el.renderRoot ? el.renderRoot.querySelector('p') : null;
+out.push('t1:' + (p1 ? String(p1.textContent) : 'null'));
+var uc = el.updateComplete;
+el.name = 'Updated!';
+var uc2 = el.updateComplete;
+out.push('uc-changed:' + String(uc !== uc2));
+out.push('pending-at-set:' + String(el.isUpdatePending));
+return out.join('|');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            mid, "t1:Hello, ZeroWeb!|uc-changed:true|pending-at-set:true",
+            "lit 首渲染正确 + property set 触发 requestUpdate（accessor setter 派发）, got: {mid}"
+        );
+        // 第三段：post-drain 读二次 render 结果。
+        let post = wv
+            .execute_script_with_dom(
+                r#"(function(){
+var el = globalThis.__elForLater;
+var out = [];
+var p = el.renderRoot ? el.renderRoot.querySelector('p') : null;
+out.push('t2:' + (p ? String(p.textContent) : 'null'));
+out.push('pending:' + String(el.isUpdatePending));
+return out.join('|');
+})()"#,
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            post, "t2:Hello, Updated!!|pending:false",
+            "lit 响应式二次 render 落地（ChildPart 文本 commit）, got: {post}"
+        );
+    }
 }

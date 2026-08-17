@@ -369,6 +369,15 @@
       }
       _ce_registry[name] = { ctor: ctor, options: options || {} };
       _ce_byCtor.set(ctor, name);
+      // js-dom M3 R98：spec `custom-element-registration` define step 5——Get(ctor,
+      // 'observedAttributes')。真浏览器在 define 时读该静态 getter：lit 的
+      // observedAttributes getter 内调 `this.finalize()` → createProperty 在
+      // prototype 上 defineProperty get/set（setter 内 this.requestUpdate——响应式
+      // 更新链的触发器）。旧 define 不读 → finalize 不跑 → accessor 从未装（e2e
+      // 实证 GreetingEl.prototype 无 'name' descriptor，property set 不触发
+      // requestUpdate）。Get 本身还驱动 polyfill 组件（非 lit）的静态初始化面。
+      // getter 抛错吞（spec 是 rethrow，但 polyfill best-effort 与注册解耦）。
+      try { void ctor.observedAttributes; } catch (_eObs) {}
       var waiters = _ce_pending[name];
       if (waiters) {
         delete _ce_pending[name];
@@ -3781,6 +3790,35 @@
             if (_cDesc) return _cDesc.value;
             _cChain = Object.getPrototypeOf(_cChain);
             _cGuard++;
+          }
+        }
+        // js-dom M3 R98：CE 用户类**首层原型** accessor getter 优先（先于 shim 反射属性分支）。
+        // 真实 DOM 原型链序：用户类 prototype（lit createProperty 装的 get/set——响应式属性）
+        // → … → HTMLElement.prototype（反射 getter）。shim 的反射 getter 是 get trap 中间分支
+        // 而非原型 accessor——若分支先于用户 accessor，`el.name` 读反射属性空值（e2e 实证首
+        // 渲染插值空：lit getter this[s] 拿不到 R98 set 分支存的 symbol expando 值——被 'name'
+        // 反射分支先吞）。限定 **CE 元素**（tag 命中 customElements registry，getPrototypeOf
+        // trap 首层即用户 ctor.prototype）的**首层** own accessor——lit/stencil 的响应式属性
+        // 全装首层；非 CE 元素零路径变化（WPT A/B：Element-getElementsByTagNameNS div 元素
+        // 'getElementsByTagNameNS' 读被过宽 accessor 派发破坏的回归教训）。symbol key 不入
+        //（R98 set 的 symbol expando 走 R3042 读）。getter 异常吞返 undefined（loose，与 R93
+        // 链回落行为一致）。
+        if (typeof prop === 'string' && prop.length > 0) {
+          var _r98Proto = Object.getPrototypeOf(_makeProxy(sel, handle));
+          if (_r98Proto) {
+            var _r98IsCE = false;
+            try {
+              var _r98Ctor = _r98Proto.constructor;
+              if (globalThis.customElements && typeof globalThis.customElements.getName === 'function'
+                  && _r98Ctor && globalThis.customElements.getName(_r98Ctor)) _r98IsCE = true;
+            } catch (_e98ce) {}
+            if (_r98IsCE) {
+              var _r98GDesc;
+              try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98Proto, prop); } catch (_e98g) { _r98GDesc = undefined; }
+              if (_r98GDesc && typeof _r98GDesc.get === 'function') {
+                try { return _r98GDesc.get.call(_makeProxy(sel, handle)); } catch (_e98gc) { return undefined; }
+              }
+            }
           }
         }
         // QuickJS Proxy ToPrimitive 差异（2026-08-08）：V8 对 get(Symbol.toPrimitive)

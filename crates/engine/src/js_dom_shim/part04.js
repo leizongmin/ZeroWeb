@@ -2861,6 +2861,56 @@
       },
       set: function(_t, prop, value) {
         var p = String(prop);
+        // js-dom M3 R98：symbol-keyed 写直入 expando（普通对象语义——symbol 永不映射内容
+        // 属性）。lit createProperty 的 accessor fallback `set(t){this[s]=t}`（s = Symbol()）
+        // 经 R98 accessor-setter 派发后以 symbol key 写回本 proxy——旧 generic fallthrough
+        // 把 String(symbol) 当属性名写 host attr，值丢失（首渲染插值空串实证）。get trap 的
+        // R3042 expando 读（_exStore[prop]，symbol key 经 hasOwnProperty 命中）已覆盖读回。
+        if (typeof prop === 'symbol') {
+          var _exSym = _expando[key] || (_expando[key] = {});
+          _exSym[prop] = value;
+          return true;
+        }
+        // js-dom M3 R98：原型链 accessor setter 派发（R93 get 回落的 set 镜像）。真实 DOM
+        // 元素是普通对象——`el.name = v` 当原型链上有 accessor（lit createProperty 在
+        // 用户类 prototype 上 defineProperty 的 get/set，setter 内调 this.requestUpdate）
+        // 时走 setter 而非 expando。我们的元素是 Proxy：set trap 全权拦截，旧实现恒落
+        // expando 存储 → lit 响应式更新链断（property set 不触发 requestUpdate，e2e 实证
+        // uc-changed:false + shadow root 文本不更新）。沿 getPrototypeOf trap 声明的链查
+        // own descriptor（8 层上限，与 R93 get 回落同参数），命中 **setter-only accessor**
+        //（get+set 成对时也走 set——spec 普通对象语义：有 setter 即调用；无 setter 的
+        // getter-only 抛 TypeError in strict / 静默拒绝，这里保 loose 静默返 true）时以
+        // 元素 proxy 为 this 调用。须在一切 shim 自有分支（id/className/innerHTML/表单/
+        // expando fallthrough）**之前**——否则先被吞。CE 元素才可能命中（普通元素的原型
+        // 链是 shim 自建 HTMLElement.prototype，其属性均为数据属性/方法，accessor 命中
+        // 面趋零——回归风险最小化，但保持通用以覆盖未来 accessor 形态）。
+        if (typeof prop === 'string' && prop.length > 0) {
+          var _r98Chain = Object.getPrototypeOf(_makeProxy(sel, handle));
+          // 与 get trap 的 R98 派发同款收窄：仅 CE 元素（首层原型 constructor 在 registry
+          // 中）才走 accessor 派发——非 CE 元素（WPT 大多数用例）零路径变化。
+          var _r98SetCE = false;
+          try {
+            var _r98SetCtor = _r98Chain && _r98Chain.constructor;
+            if (globalThis.customElements && typeof globalThis.customElements.getName === 'function'
+                && _r98SetCtor && globalThis.customElements.getName(_r98SetCtor)) _r98SetCE = true;
+          } catch (_e98ce2) {}
+          if (_r98SetCE) {
+            var _r98Guard = 0;
+            while (_r98Chain && _r98Guard < 8) {
+              var _r98Desc;
+              try { _r98Desc = Object.getOwnPropertyDescriptor(_r98Chain, prop); } catch (_e98d) { _r98Desc = undefined; }
+              if (_r98Desc) {
+                if (typeof _r98Desc.set === 'function') {
+                  try { _r98Desc.set.call(_makeProxy(sel, handle), value); } catch (_e98s) {}
+                  return true;
+                }
+                break; // getter-only / data property → 交回 shim 分支处理（data 属性写按 proxy 语义仍可 expando）
+              }
+              _r98Chain = Object.getPrototypeOf(_r98Chain);
+              _r98Guard++;
+            }
+          }
+        }
         var moAttr = null;
         // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
