@@ -3,13 +3,13 @@
 //! 本模块解析 `zero-engine` 同步 wire 请求，并在共享 [`StorageManager`] 上执行
 //! per-origin 数据库与 schema 操作。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use zero_engine::IndexedDbHandler;
-use zero_storage::{IdbKey, StorageError, StorageManager};
+use zero_storage::{IdbKey, IdbTransaction, IdbTransactionMode, StorageError, StorageManager};
 
 /// IndexedDB key 的 JSON wire 表示。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +123,48 @@ enum IndexedDbRequest {
     StoreNames {
         database: String,
     },
+    BeginTransaction {
+        database: String,
+        stores: Vec<String>,
+        mode: IndexedDbTransactionMode,
+    },
+    TransactionAdd {
+        transaction: u64,
+        store: String,
+        value: Value,
+        #[serde(default)]
+        key: Option<IndexedDbKeyWire>,
+    },
+    TransactionPut {
+        transaction: u64,
+        store: String,
+        value: Value,
+        #[serde(default)]
+        key: Option<IndexedDbKeyWire>,
+    },
+    TransactionGet {
+        transaction: u64,
+        store: String,
+        key: IndexedDbKeyWire,
+    },
+    TransactionDelete {
+        transaction: u64,
+        store: String,
+        key: IndexedDbKeyWire,
+    },
+    CommitTransaction {
+        transaction: u64,
+    },
+    AbortTransaction {
+        transaction: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum IndexedDbTransactionMode {
+    Readonly,
+    Readwrite,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,12 +176,30 @@ struct IndexedDbStoreSchema {
     auto_increment: bool,
 }
 
-/// 构造由页面运行路径共享的 IndexedDB handler。
-pub fn indexed_db_handler(storage: Arc<Mutex<StorageManager>>) -> IndexedDbHandler {
-    Arc::new(move |origin, request| handle_request(&storage, origin, request))
+#[derive(Default)]
+struct IndexedDbTransactionRegistry {
+    next_id: u64,
+    active: HashMap<u64, ActiveIndexedDbTransaction>,
 }
 
-fn handle_request(storage: &Mutex<StorageManager>, origin: &str, request: &str) -> Result<String, String> {
+struct ActiveIndexedDbTransaction {
+    origin: String,
+    database: String,
+    transaction: IdbTransaction,
+}
+
+/// 构造由页面运行路径共享的 IndexedDB handler。
+pub fn indexed_db_handler(storage: Arc<Mutex<StorageManager>>) -> IndexedDbHandler {
+    let transactions = Arc::new(Mutex::new(IndexedDbTransactionRegistry::default()));
+    Arc::new(move |origin, request| handle_request(&storage, &transactions, origin, request))
+}
+
+fn handle_request(
+    storage: &Mutex<StorageManager>,
+    transactions: &Mutex<IndexedDbTransactionRegistry>,
+    origin: &str,
+    request: &str,
+) -> Result<String, String> {
     if origin == "null" {
         return Err("SecurityError: IndexedDB is unavailable for opaque origins".to_string());
     }
@@ -149,11 +209,19 @@ fn handle_request(storage: &Mutex<StorageManager>, origin: &str, request: &str) 
     let mut storage = storage
         .lock()
         .map_err(|_| "UnknownError: IndexedDB storage lock is poisoned".to_string())?;
-    let response = dispatch_request(&mut storage, origin, request)?;
+    let mut transactions = transactions
+        .lock()
+        .map_err(|_| "UnknownError: IndexedDB transaction lock is poisoned".to_string())?;
+    let response = dispatch_request(&mut storage, &mut transactions, origin, request)?;
     serde_json::to_string(&response).map_err(|error| format!("UnknownError: failed to serialize response: {error}"))
 }
 
-fn dispatch_request(storage: &mut StorageManager, origin: &str, request: IndexedDbRequest) -> Result<Value, String> {
+fn dispatch_request(
+    storage: &mut StorageManager,
+    transactions: &mut IndexedDbTransactionRegistry,
+    origin: &str,
+    request: IndexedDbRequest,
+) -> Result<Value, String> {
     match request {
         IndexedDbRequest::Inspect { name } => {
             let database = storage.indexed_db(origin, &name).map(database_schema_json);
@@ -237,7 +305,151 @@ fn dispatch_request(storage: &mut StorageManager, origin: &str, request: Indexed
             stores.sort_unstable();
             Ok(json!({"stores": stores}))
         }
+        IndexedDbRequest::BeginTransaction { database, stores, mode } => {
+            let database_ref = storage
+                .indexed_db_mut(origin, &database)
+                .ok_or_else(|| "NotFoundError: IndexedDB database does not exist".to_string())?;
+            let store_refs = stores.iter().map(String::as_str).collect::<Vec<_>>();
+            let storage_mode = match mode {
+                IndexedDbTransactionMode::Readonly => IdbTransactionMode::ReadOnly,
+                IndexedDbTransactionMode::Readwrite => IdbTransactionMode::ReadWrite,
+            };
+            let transaction = database_ref
+                .transaction(&store_refs, storage_mode)
+                .map_err(storage_error)?;
+            transactions.next_id = transactions
+                .next_id
+                .checked_add(1)
+                .ok_or_else(|| "UnknownError: IndexedDB transaction id overflow".to_string())?;
+            let transaction_id = transactions.next_id;
+            transactions.active.insert(
+                transaction_id,
+                ActiveIndexedDbTransaction {
+                    origin: origin.to_string(),
+                    database,
+                    transaction,
+                },
+            );
+            Ok(json!({"transaction": transaction_id}))
+        }
+        IndexedDbRequest::TransactionAdd {
+            transaction,
+            store,
+            value,
+            key,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            require_write_transaction(active)?;
+            let database = active_database_mut(storage, active)?;
+            let key = key.map(IndexedDbKeyWire::into_storage_key).transpose()?;
+            let key = database
+                .tx_add(&active.transaction, &store, value, key)
+                .map_err(storage_error)?;
+            Ok(json!({"key": IndexedDbKeyWire::from(&key)}))
+        }
+        IndexedDbRequest::TransactionPut {
+            transaction,
+            store,
+            value,
+            key,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            require_write_transaction(active)?;
+            let database = active_database_mut(storage, active)?;
+            let key = key.map(IndexedDbKeyWire::into_storage_key).transpose()?;
+            let key = database
+                .tx_put(&active.transaction, &store, value, key)
+                .map_err(storage_error)?;
+            Ok(json!({"key": IndexedDbKeyWire::from(&key)}))
+        }
+        IndexedDbRequest::TransactionGet {
+            transaction,
+            store,
+            key,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            let database = active_database_mut(storage, active)?;
+            let key = key.into_storage_key()?;
+            let record = database
+                .tx_get(&active.transaction, &store, &key)
+                .map_err(storage_error)?
+                .map(|record| {
+                    json!({
+                        "key": IndexedDbKeyWire::from(&record.key),
+                        "value": record.value,
+                    })
+                });
+            Ok(json!({"record": record}))
+        }
+        IndexedDbRequest::TransactionDelete {
+            transaction,
+            store,
+            key,
+        } => {
+            let active = active_transaction_mut(transactions, origin, transaction)?;
+            require_write_transaction(active)?;
+            let database = active_database_mut(storage, active)?;
+            let key = key.into_storage_key()?;
+            let deleted = database
+                .tx_delete(&active.transaction, &store, &key)
+                .map_err(storage_error)?;
+            Ok(json!({"deleted": deleted}))
+        }
+        IndexedDbRequest::CommitTransaction { transaction } => {
+            let mut active = remove_active_transaction(transactions, origin, transaction)?;
+            let database = active_database_mut(storage, &active)?;
+            database.commit_tx(&mut active.transaction).map_err(storage_error)?;
+            Ok(json!({"committed": true}))
+        }
+        IndexedDbRequest::AbortTransaction { transaction } => {
+            let mut active = remove_active_transaction(transactions, origin, transaction)?;
+            active.transaction.abort().map_err(storage_error)?;
+            Ok(json!({"aborted": true}))
+        }
     }
+}
+
+fn active_transaction_mut<'a>(
+    transactions: &'a mut IndexedDbTransactionRegistry,
+    origin: &str,
+    transaction: u64,
+) -> Result<&'a mut ActiveIndexedDbTransaction, String> {
+    let active = transactions
+        .active
+        .get_mut(&transaction)
+        .ok_or_else(|| "TransactionInactiveError: IndexedDB transaction does not exist".to_string())?;
+    if active.origin != origin {
+        return Err("SecurityError: IndexedDB transaction belongs to another origin".to_string());
+    }
+    Ok(active)
+}
+
+fn remove_active_transaction(
+    transactions: &mut IndexedDbTransactionRegistry,
+    origin: &str,
+    transaction: u64,
+) -> Result<ActiveIndexedDbTransaction, String> {
+    active_transaction_mut(transactions, origin, transaction)?;
+    transactions
+        .active
+        .remove(&transaction)
+        .ok_or_else(|| "TransactionInactiveError: IndexedDB transaction does not exist".to_string())
+}
+
+fn require_write_transaction(active: &ActiveIndexedDbTransaction) -> Result<(), String> {
+    if active.transaction.mode() == IdbTransactionMode::ReadOnly {
+        return Err("ReadOnlyError: IndexedDB transaction is read-only".to_string());
+    }
+    Ok(())
+}
+
+fn active_database_mut<'a>(
+    storage: &'a mut StorageManager,
+    active: &ActiveIndexedDbTransaction,
+) -> Result<&'a mut zero_storage::IdbDatabase, String> {
+    storage
+        .indexed_db_mut(&active.origin, &active.database)
+        .ok_or_else(|| "NotFoundError: IndexedDB database does not exist".to_string())
 }
 
 fn sync_schema(
@@ -473,6 +685,207 @@ mod tests {
         .unwrap();
         assert_eq!(replaced["database"]["version"], 3);
         assert_eq!(replaced["database"]["stores"][0]["keyPath"], "slug");
+    }
+
+    #[test]
+    fn transaction_wire_commits_aborts_and_isolates_origins() {
+        let handler = indexed_db_handler(Arc::new(Mutex::new(StorageManager::new())));
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "sync_schema",
+                "name": "app",
+                "version": 1,
+                "stores": [{"name": "items", "keyPath": null, "autoIncrement": true}]
+            }),
+        )
+        .unwrap();
+
+        let write = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        let date_key = json!({"type": "date", "value": "10"});
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_add",
+                "transaction": write,
+                "store": "items",
+                "value": {"kind": "date"},
+                "key": date_key.clone()
+            }),
+        )
+        .unwrap();
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_put",
+                "transaction": write,
+                "store": "items",
+                "value": {"kind": "updated"},
+                "key": date_key.clone()
+            }),
+        )
+        .unwrap();
+        let buffered = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_get",
+                "transaction": write,
+                "store": "items",
+                "key": date_key.clone()
+            }),
+        )
+        .unwrap();
+        assert_eq!(buffered["record"]["value"]["kind"], "updated");
+        call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_delete",
+                "transaction": write,
+                "store": "items",
+                "key": date_key.clone()
+            }),
+        )
+        .unwrap();
+        let deleted = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_get",
+                "transaction": write,
+                "store": "items",
+                "key": date_key.clone()
+            }),
+        )
+        .unwrap();
+        assert!(deleted["record"].is_null());
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "abort_transaction", "transaction": write}),
+        )
+        .unwrap();
+
+        let committed_write = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readwrite"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        let generated = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_add",
+                "transaction": committed_write,
+                "store": "items",
+                "value": {"kind": "generated"}
+            }),
+        )
+        .unwrap();
+        assert_eq!(generated["key"], json!({"type": "number", "value": "1"}));
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": committed_write}),
+        )
+        .unwrap();
+
+        let read = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "begin_transaction",
+                "database": "app",
+                "stores": ["items"],
+                "mode": "readonly"
+            }),
+        )
+        .unwrap()["transaction"]
+            .as_u64()
+            .unwrap();
+        let aborted_record = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_get",
+                "transaction": read,
+                "store": "items",
+                "key": date_key
+            }),
+        )
+        .unwrap();
+        assert!(aborted_record["record"].is_null());
+        let committed_record = call(
+            &handler,
+            "https://app.example",
+            json!({
+                "op": "transaction_get",
+                "transaction": read,
+                "store": "items",
+                "key": {"type": "number", "value": "1"}
+            }),
+        )
+        .unwrap();
+        assert_eq!(committed_record["record"]["value"]["kind"], "generated");
+        assert!(
+            call(
+                &handler,
+                "https://other.example",
+                json!({
+                    "op": "transaction_get",
+                    "transaction": read,
+                    "store": "items",
+                    "key": {"type": "number", "value": "1"}
+                }),
+            )
+            .unwrap_err()
+            .starts_with("SecurityError:")
+        );
+        assert!(
+            call(
+                &handler,
+                "https://app.example",
+                json!({
+                    "op": "transaction_put",
+                    "transaction": read,
+                    "store": "items",
+                    "value": {},
+                    "key": {"type": "number", "value": "1"}
+                }),
+            )
+            .unwrap_err()
+            .starts_with("ReadOnlyError:")
+        );
+        call(
+            &handler,
+            "https://app.example",
+            json!({"op": "commit_transaction", "transaction": read}),
+        )
+        .unwrap();
     }
 
     #[test]

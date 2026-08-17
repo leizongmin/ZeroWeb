@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M2 Date key + key wire）
+**最后更新**: 2026-08-17（M2 transaction wire）
 
 ---
 
@@ -41,6 +41,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ Index cursor continue：1 文件、8 subtest，8 Pass / 0 Fail（100.00%）
 - 🟨 M2 页面接线：factory 与 object-store schema 已走 Rust；records CRUD/index/cursor 待迁移
 - ✅ M2 key 基础：Rust Date key 与递归 JSON key wire 已完成
+- 🟨 M2 transaction：Rust begin/add/put/get/delete/commit/abort wire 已完成；JS 路由待接
 
 ## 缺口清单
 
@@ -53,9 +54,10 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 ## 下一步计划
 
-1. **M2**：把 transaction/store CRUD 切到 Rust backend
-2. **M2**：把 index/cursor 切到 Rust backend
-3. **M3**：接入 per-origin 落盘与跨会话读回
+1. **M2**：将 JS transaction/store CRUD 绑定 Rust transaction wire
+2. **M2**：补 clear/count/getAll transaction view
+3. **M2**：把 index/cursor 切到 Rust backend
+4. **M3**：接入 per-origin 落盘与跨会话读回
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -65,7 +67,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | 🟨 imported 166/166 |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 factory/schema + Date key wire |
+| M2 — JS↔Rust 接线（核心通路） | 🟨 Rust transaction wire ready |
 | M3 — 索引 + 事件模型 + 持久化 | ⬜ |
 
 ## 验证基线
@@ -97,7 +99,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-17-m2-engine-wire-handler.{md,json}`、
   `evidence/2026-08-17-m2-three-host-registration.{md,json}`、
   `evidence/2026-08-17-m2-factory-schema-routing.{md,json}`、
-  `evidence/2026-08-17-m2-date-key-wire.{md,json}`
+  `evidence/2026-08-17-m2-date-key-wire.{md,json}`、
+  `evidence/2026-08-17-m2-transaction-wire.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

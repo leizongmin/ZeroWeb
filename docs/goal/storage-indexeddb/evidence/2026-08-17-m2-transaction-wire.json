@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-17",
+  "scope": "M2 transaction-scoped CRUD wire",
+  "operations": [
+    "begin_transaction",
+    "transaction_add",
+    "transaction_put",
+    "transaction_get",
+    "transaction_delete",
+    "commit_transaction",
+    "abort_transaction"
+  ],
+  "invariants": [
+    "transaction ids are handler-local and monotonic",
+    "transaction ids are origin-bound",
+    "readonly transactions reject writes",
+    "mutations remain buffered until commit",
+    "abort discards mutations and generated keys",
+    "commit uses zero-storage atomic precheck"
+  ],
+  "tests": {
+    "page_runtime_handler": {
+      "pass": 6,
+      "fail": 0
+    },
+    "cargo_fmt": "pass",
+    "workspace_clippy": "pass",
+    "make_test": "pass"
+  },
+  "remaining": [
+    "JS transaction id binding",
+    "object-store CRUD page routing",
+    "clear count and getAll transaction views",
+    "index and cursor routing",
+    "persistence"
+  ]
+}
