@@ -250,6 +250,10 @@ impl FontLoader {
         self.face_indices.get(&id).copied().unwrap_or(0)
     }
 
+    fn font_instance_id(&self, id: u32) -> Option<u64> {
+        self.font_instance_ids.get(&id).copied()
+    }
+
     /// 根据字体描述查找最佳匹配字体 ID
     pub fn find(&self, desc: &FontDesc) -> Option<u32> {
         self.family_map.get(&desc.family).and_then(|ids| ids.first().copied())
@@ -702,22 +706,7 @@ impl FontLoader {
                 chain.push(id);
             }
         }
-        let mut total = 0.0f32;
-        for ch in text.chars() {
-            let mut measured = None;
-            for &font_id in &chain {
-                if !self.font_allows_code_point(font_id, ch) {
-                    continue;
-                }
-                // hmtx_advance 内部查 glyph_index（缺字 → None）→ 下一 face；
-                // 不做 font_has_glyph 预检查（其内部每次 Face::parse，是热路径慢点）。
-                if let Some(adv) = hmtx_advance(self, font_id, ch, font_size) {
-                    measured = Some(adv);
-                    break;
-                }
-            }
-            total += measured.unwrap_or(font_size * 0.5);
-        }
+        let total = measure_hmtx_run(self, &chain, text, font_size);
         let mut cache = self.hmtx_cache.lock().expect("hmtx cache poisoned");
         if cache.len() >= HMTX_CACHE_MAX {
             cache.clear();
@@ -766,48 +755,53 @@ thread_local! {
 const HMTX_FACE_CACHE_MAX: usize = 16;
 const HMTX_CACHE_MAX: usize = 4096;
 
-/// 读单个字符的 hmtx advance（像素，size 缩放）。face 按字节 hash 缓存。
-fn hmtx_advance(loader: &FontLoader, font_id: u32, ch: char, size: f32) -> Option<f32> {
-    let data = loader.font_data_arc(font_id)?;
-    let face_index = loader.face_index(font_id);
-    let key = hmtx_bytes_hash(&data, face_index);
+/// 批量读取整段文本的 hmtx advance。字体 face 按进程唯一 instance id 缓存，
+/// 一次 run 只借用一次 thread-local cache，避免逐字符重复哈希字体字节和 clone Arc。
+fn measure_hmtx_run(loader: &FontLoader, font_ids: &[u32], text: &str, size: f32) -> f32 {
     HMTX_FACE_CACHE.with(|cache_cell| {
         let mut cache = cache_cell.borrow_mut();
-        if !cache.contains_key(&key) {
+        for &font_id in font_ids {
+            let Some(key) = loader.font_instance_id(font_id) else {
+                continue;
+            };
+            if cache.contains_key(&key) {
+                continue;
+            }
             if cache.len() >= HMTX_FACE_CACHE_MAX {
                 cache.clear();
             }
-            let bytes: Arc<Vec<u8>> = data.clone();
+            let Some(bytes) = loader.font_data_arc(font_id) else {
+                continue;
+            };
             // SAFETY: Face 借用 bytes；bytes 在本缓存条目内保活（Arc），条目
             // 被 LRU 清空时 Face 与 bytes 一并 drop，借用不悬垂。
             let slice: &[u8] = &bytes[..];
             let static_bytes: &'static [u8] = unsafe { std::mem::transmute(slice) };
-            let face = rustybuzz::ttf_parser::Face::parse(static_bytes, face_index).ok()?;
+            let Ok(face) = rustybuzz::ttf_parser::Face::parse(static_bytes, loader.face_index(font_id)) else {
+                continue;
+            };
             cache.insert(key, HmtxCachedFace { _bytes: bytes, face });
         }
-        let cached = cache.get(&key)?;
-        let upem = f32::from(cached.face.units_per_em());
-        if upem <= 0.0 {
-            return None;
-        }
-        let glyph_id = cached.face.glyph_index(ch)?;
-        let advance = f32::from(cached.face.glyph_hor_advance(glyph_id)?);
-        Some(advance * size / upem)
-    })
-}
 
-/// hmtx face 缓存键：前 4KiB + 长度的 FNV-1a（与 freetype_raster 的 bytes_hash 同构，
-/// 该函数在 freetype-raster feature 门内，此处独立实现保证无条件可用）。
-fn hmtx_bytes_hash(bytes: &[u8], face_index: u32) -> u64 {
-    let window = &bytes[..bytes.len().min(4096)];
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in window {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash ^= bytes.len() as u64;
-    hash ^= u64::from(face_index) << 32;
-    hash
+        text.chars()
+            .map(|ch| {
+                font_ids
+                    .iter()
+                    .filter(|&&font_id| loader.font_allows_code_point(font_id, ch))
+                    .find_map(|&font_id| {
+                        let cached = cache.get(&loader.font_instance_id(font_id)?)?;
+                        let upem = f32::from(cached.face.units_per_em());
+                        if upem <= 0.0 {
+                            return None;
+                        }
+                        let glyph_id = cached.face.glyph_index(ch)?;
+                        let advance = f32::from(cached.face.glyph_hor_advance(glyph_id)?);
+                        Some(advance * size / upem)
+                    })
+                    .unwrap_or(size * 0.5)
+            })
+            .sum()
+    })
 }
 
 /// 从 OpenType/TrueType 字体字节中解析字体族名称。
@@ -1130,6 +1124,36 @@ mod tests {
                 "hmtx({measured:.3}) 与 shaping unshaped({unshaped:.3}) 不一致: {text:?}"
             );
         }
+    }
+
+    #[test]
+    fn hmtx_face_cache_uses_font_instance_identity() {
+        const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+        HMTX_FACE_CACHE.with(|cache| cache.borrow_mut().clear());
+
+        let mut loader = FontLoader::new();
+        let font_id = loader.load_font(LATO_TTF).expect("register bundled Lato font");
+        let duplicate = loader.duplicate();
+        loader.measure_text_hmtx(&[font_id], "first run", 16.0);
+        duplicate.measure_text_hmtx(&[font_id], "duplicate run", 16.0);
+        HMTX_FACE_CACHE.with(|cache| {
+            assert_eq!(
+                cache.borrow().len(),
+                1,
+                "duplicate loader should reuse the same font instance"
+            );
+        });
+
+        let mut independent = FontLoader::new();
+        let independent_id = independent.load_font(LATO_TTF).expect("register independent Lato font");
+        independent.measure_text_hmtx(&[independent_id], "independent run", 16.0);
+        HMTX_FACE_CACHE.with(|cache| {
+            assert_eq!(
+                cache.borrow().len(),
+                2,
+                "independent loader should use a distinct font instance"
+            );
+        });
     }
 
     /// 度量路径与 shaping 同源回归（ZRG-2026-08-15）：`measure_advance` 若带 hinting

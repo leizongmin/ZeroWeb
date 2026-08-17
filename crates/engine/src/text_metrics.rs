@@ -190,11 +190,15 @@ pub(crate) fn many_to_one_source_mapping(text: &str, glyphs: &[ShapedGlyph]) -> 
 /// pipeline 从 resolver 构建传入。
 pub(crate) struct ShapedAdvanceSource {
     generic_font_ids: std::collections::HashSet<u32>,
+    hmtx_layout_enabled: bool,
 }
 
 impl ShapedAdvanceSource {
     pub(crate) fn new(generic_font_ids: std::collections::HashSet<u32>) -> Self {
-        Self { generic_font_ids }
+        Self {
+            generic_font_ids,
+            hmtx_layout_enabled: std::env::var("ZW_HMTX_LAYOUT").as_deref() != Ok("0"),
+        }
     }
 
     /// generic/系统字体 run 的 hmtx 测量（`ZW_HMTX_LAYOUT` 默认开；`"0"` 回退
@@ -203,7 +207,7 @@ impl ShapedAdvanceSource {
         if is_ahem {
             return None;
         }
-        if std::env::var("ZW_HMTX_LAYOUT").as_deref() == Ok("0") {
+        if !self.hmtx_layout_enabled {
             return None;
         }
         crate::text_metrics::measure_text_hmtx_for_layout(font_ids, text, font_size)

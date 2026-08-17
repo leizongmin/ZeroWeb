@@ -501,10 +501,6 @@ impl InlineFormattingContext {
         word_spacing: f32,
         is_ruby: bool,
     ) -> Option<u32> {
-        // ZRG-2026-08-15 修复 A：generic/系统字体 run 也解析 font_id——布局
-        // advance source 据此走 hmtx 测量（替换 estimate）；shaping 资格仍由
-        // font_ids_overrides（author-only）判定，generic run 不会落入 shaping。
-        let style_font_id = style.and_then(|style| self.font_id_for_style(Some(style)));
         if is_ahem
             || letter_spacing != 0.0
             || word_spacing != 0.0
@@ -518,19 +514,17 @@ impl InlineFormattingContext {
         {
             return None;
         }
-        if style.is_some() {
-            return style_font_id;
-        }
-        style_font_id
-            .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
-            .or_else(|| {
-                override_node.and_then(|node| {
-                    self.font_ids_overrides
-                        .get(&node)
-                        .and_then(|font_ids| font_ids.first())
-                        .copied()
-                })
+        // `collect_font_overrides` 已按相同 resolver 为每个 node 解析字体。优先复用
+        // 该结果，避免每个 TextRun 再次 clone/hash font-family 字符串。
+        override_node
+            .and_then(|node| {
+                self.font_ids_overrides
+                    .get(&node)
+                    .and_then(|font_ids| font_ids.first())
+                    .copied()
             })
+            .or_else(|| style.and_then(|style| self.font_id_for_style(Some(style))))
+            .or_else(|| override_node.and_then(|node| self.font_id_overrides.get(&node).copied()))
             // ZRG-2026-08-15 修复 A：paint Path B（空 styles + 无覆盖）的 run 回退
             // generic sans-serif / id 0——与 paint 的 resolve_font_id 空 family 语义
             // 一致，使这些 run 走 hmtx 布局而非 estimate。

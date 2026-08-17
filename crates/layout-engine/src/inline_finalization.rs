@@ -1223,25 +1223,16 @@ pub(crate) fn measure_text_content(
                     .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
             })
             .unwrap_or(false);
-        let font_id = parent_style.and_then(|style| {
-            style
-                .font_family
-                .iter()
-                .find_map(|family| {
-                    let bare = family.trim_matches('"').trim_matches('\'');
-                    font_resolver.and_then(|resolver| {
-                        resolver.get(bare).copied().or_else(|| {
-                            resolver
-                                .iter()
-                                .find(|(name, _)| name.eq_ignore_ascii_case(bare))
-                                .map(|(_, id)| *id)
-                        })
-                    })
-                })
-                .or_else(|| font_metric_provider.and_then(|provider| provider.font_id_of(&style.font_family)))
-        });
-        let ordered_font_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
-            parent_style
+        let fallback_font_ids;
+        let ordered_font_ids: &[u32] = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1") {
+            &[]
+        } else if let Some(ids) = inline_fonts
+            .font_overrides
+            .and_then(|overrides| overrides.ids.get(&dom_id))
+        {
+            ids
+        } else {
+            fallback_font_ids = parent_style
                 .zip(font_resolver)
                 .map(|(style, resolver)| {
                     crate::font_resolution::resolve_font_ids_for_style(
@@ -1252,10 +1243,28 @@ pub(crate) fn measure_text_content(
                         style.font_stretch,
                     )
                 })
-                .unwrap_or_default()
-        } else {
-            Vec::new()
+                .unwrap_or_default();
+            &fallback_font_ids
         };
+        let font_id = ordered_font_ids.first().copied().or_else(|| {
+            parent_style.and_then(|style| {
+                style
+                    .font_family
+                    .iter()
+                    .find_map(|family| {
+                        let bare = family.trim_matches('"').trim_matches('\'');
+                        font_resolver.and_then(|resolver| {
+                            resolver.get(bare).copied().or_else(|| {
+                                resolver
+                                    .iter()
+                                    .find(|(name, _)| name.eq_ignore_ascii_case(bare))
+                                    .map(|(_, id)| *id)
+                            })
+                        })
+                    })
+                    .or_else(|| font_metric_provider.and_then(|provider| provider.font_id_of(&style.font_family)))
+            })
+        });
         // ZRG-2026-08-15 修复 A：generic run 也走真实测量（hmtx，经 advance
         // source 的 generic 分支）——intrinsic sizing 与绘制宽度一致；author
         // run 维持 shaped 语义不变。
@@ -1279,7 +1288,7 @@ pub(crate) fn measure_text_content(
             } else {
                 source.measure_text_with_font_context(
                     value,
-                    &ordered_font_ids,
+                    ordered_font_ids,
                     font_size,
                     is_ahem,
                     parent_style

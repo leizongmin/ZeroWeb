@@ -493,7 +493,6 @@ impl LayoutEngine {
                 width: AvailableSpace::Definite(self.effective_root_layout_width()),
                 height: AvailableSpace::Definite(self.viewport_height),
             };
-            let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
             let inline_fonts = self.inline_font_context(&font_overrides);
             let _ = taffy_tree.compute_layout_with_measure(
                 root_id,
@@ -655,7 +654,6 @@ impl LayoutEngine {
         crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
         remeasure_text_with_float_exclusions(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts);
 
@@ -667,7 +665,6 @@ impl LayoutEngine {
         // 不需要额外后处理
 
         // 8. 后处理：对 display:table 容器执行 table grid 布局
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
         crate::table::adjust_table_layout_with_fonts(&mut root_box, doc, styles, inline_fonts);
 
@@ -676,7 +673,6 @@ impl LayoutEngine {
         // 致窄 table 堆在 float 下方扩容器。本 pass scoped（仅 float+table 同容器）：
         // A re-wrap 内层 float + B 重算 table 高 + C 手动 §9.5 push + D 重算容器高度。
         // env ZW_TABLE_FLOAT_ITER_V2=0 关闭（default-on）；ZW_TABLE_FLOAT_DBG 诊断。
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
         crate::table_float_fix::fix_table_among_floats(&mut root_box, doc, styles, inline_fonts);
 
@@ -779,7 +775,6 @@ impl LayoutEngine {
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。
         let mut paint_skip_set: HashSet<NodeId> = HashSet::new();
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
         compute_final_inline_layouts(
             &mut root_box,
@@ -794,7 +789,6 @@ impl LayoutEngine {
         // 最终 IFC 会确定多列内文本的实际行数；在它之前回写高度会被覆盖，令父块背景
         // 过早结束。故在最终行盒确定后重测并重分列，随后由下方的祖先回填/兄弟位移统一传播。
         // https://drafts.csswg.org/css-multicol/#column-height
-        let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
         if remeasure_multicol_text_blocks(&mut root_box, doc, styles, &intrinsic_for_r695, inline_fonts) {
             crate::multicol::adjust_multicol_layout(&mut root_box, styles);
