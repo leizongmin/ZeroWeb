@@ -1168,7 +1168,12 @@ fn take_probe(webview: &mut WebView) -> Result<HarnessProbe, String> {
         .execute_script(
             "if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers();\
              JSON.stringify({\
-             complete:!!globalThis.__zw_harness_complete || (function(){\
+             complete:(function(){\
+               var timers = globalThis.__zw_timers || [];\
+               for (var i = 0; i < timers.length; i++) {\
+                 if (globalThis.__zw_pending && globalThis.__zw_pending[timers[i].id]) return false;\
+               }\
+               if (globalThis.__zw_harness_complete) return true;\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
                return st && st.phase === 3;\
@@ -1395,6 +1400,49 @@ promise_test(async function() {
         assert!(html.contains("/resources/testharness.js"));
         assert!(first < second);
         assert!(second < case);
+    }
+
+    #[test]
+    fn waits_for_active_step_timeout_before_accepting_completion() {
+        let harness = r#"
+var resultCallbacks = [], completionCallbacks = [];
+globalThis.add_result_callback = function(callback) { resultCallbacks.push(callback); };
+globalThis.add_completion_callback = function(callback) { completionCallbacks.push(callback); };
+globalThis.async_test = function(callback, name) {
+  var test = {
+    name: name,
+    step_func_done: function() {
+      return function() {
+        resultCallbacks.forEach(function(resultCallback) {
+          resultCallback({name: name, status: 0, message: null});
+        });
+      };
+    }
+  };
+  callback(test);
+  completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
+};
+globalThis.step_timeout = function(callback, delay) { setTimeout(callback, delay); };
+"#;
+        let html = r#"
+<script src="/resources/testharness.js"></script>
+<script>
+async_test(function(test) {
+  step_timeout(test.step_func_done(), 4);
+}, 'delayed completion');
+</script>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "delayed-completion.html",
+            html,
+            harness,
+            Duration::from_secs(1),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "delayed completion");
+        assert_eq!(results[0].status, HarnessStatus::Pass);
     }
 
     #[test]

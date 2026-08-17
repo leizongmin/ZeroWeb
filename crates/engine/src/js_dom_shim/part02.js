@@ -2909,7 +2909,14 @@
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
     this._assertUsable(true);
     var unique = !!((opts || {}).unique);
-    this._indexes[name] = { keyPath: keyPath, unique: unique };
+    var metadata = {
+      keyPath: keyPath,
+      unique: unique,
+      multiEntry: !!((opts || {}).multiEntry),
+      deleted: false,
+      createdInUpgrade: !!(this.transaction && this.transaction.mode === 'versionchange')
+    };
+    this._indexes[name] = metadata;
     if (unique && this.transaction) {
       var seen = [];
       this._records.forEach(function (value) {
@@ -2923,12 +2930,18 @@
         }
       }, this);
     }
-    return new _zwIDBIndex(this, name, keyPath, unique);
+    return new _zwIDBIndex(this, name, metadata);
+  };
+  _zwIDBStore.prototype.deleteIndex = function (name) {
+    this._assertUsable(true);
+    var metadata = this._indexes[name];
+    if (metadata) metadata.deleted = true;
+    delete this._indexes[name];
   };
   _zwIDBStore.prototype.index = function (name) {
     this._assertUsable(false);
     var idx = this._indexes[name];
-    return idx ? new _zwIDBIndex(this, name, idx.keyPath, idx.unique) : null;
+    return idx ? new _zwIDBIndex(this, name, idx) : null;
   };
 
   function _zwIDBCursor(store, request, entries, direction) {
@@ -2977,29 +2990,73 @@
     return req;
   };
 
-  function _zwIDBIndex(store, name, keyPath, unique) {
+  function _zwIDBIndex(store, name, metadata) {
     this.objectStore = store;
     this.name = name;
-    this.keyPath = keyPath;
-    this.unique = !!unique;
+    this.keyPath = metadata.keyPath;
+    this.unique = !!metadata.unique;
+    this.multiEntry = !!metadata.multiEntry;
+    this._metadata = metadata;
   }
-  _zwIDBIndex.prototype.get = function (key) { return this.objectStore.get(key); };
-  _zwIDBIndex.prototype.count = function () { return this.objectStore.count(); };
-  _zwIDBIndex.prototype.getKey = function (key) {
+  _zwIDBIndex.prototype._assertUsable = function () {
+    if (this._metadata.deleted) {
+      throw new globalThis.DOMException('The index has been deleted.', 'InvalidStateError');
+    }
     this.objectStore._assertUsable(false);
+  };
+  _zwIDBIndex.prototype._entries = function (query, queryProvided) {
+    this._assertUsable();
+    if (queryProvided) {
+      var valid = false;
+      try {
+        valid = _zwIDBIsKeyRange(query) || !!_zwIDBKey(query, []);
+      } catch (_) {}
+      if (!valid) {
+        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+      }
+    }
+    var entries = [];
+    var index = this;
+    this.objectStore._records.forEach(function (value, primaryKey) {
+      var indexKey = index.objectStore._indexKey(value, index.keyPath);
+      var indexKeys = index.multiEntry && Array.isArray(indexKey) ? indexKey : [indexKey];
+      indexKeys.forEach(function (candidate) {
+        if (_zwIDBKey(candidate, [])
+            && (!queryProvided || _zwIDBQueryMatches(query, candidate))) {
+          entries.push({ key: candidate, primaryKey: primaryKey, value: value });
+        }
+      });
+    });
+    entries.sort(function (a, b) {
+      var compared = _zwIDBCompareValues(a.key, b.key);
+      return compared !== 0 ? compared : _zwIDBCompareValues(a.primaryKey, b.primaryKey);
+    });
+    return entries;
+  };
+  _zwIDBIndex.prototype._query = function (key, primaryKeyOnly) {
+    var entries = this._entries(key, true);
     var req = new _zwIDBRequest(this);
     req.transaction = this.objectStore.transaction;
     var result;
-    var keyPath = this.keyPath;
-    this.objectStore._records.forEach(function (value, primaryKey) {
-      if (result !== undefined) return;
-      var indexKey = value;
-      String(keyPath).split('.').forEach(function (part) {
-        indexKey = indexKey == null ? undefined : indexKey[part];
-      });
-      if (indexKey === key) result = primaryKey;
-    });
+    if (entries.length) {
+      result = globalThis.structuredClone(
+        primaryKeyOnly ? entries[0].primaryKey : entries[0].value
+      );
+    }
     _zwIDBDispatch(req, 'success', result);
+    return req;
+  };
+  _zwIDBIndex.prototype.get = function (key) {
+    return this._query(key, false);
+  };
+  _zwIDBIndex.prototype.getKey = function (key) {
+    return this._query(key, true);
+  };
+  _zwIDBIndex.prototype.count = function (query) {
+    var entries = this._entries(query, arguments.length >= 1);
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.objectStore.transaction;
+    _zwIDBDispatch(req, 'success', entries.length);
     return req;
   };
   _zwIDBIndex.prototype.openCursor = function () {
@@ -3042,7 +3099,19 @@
     return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
   };
   _zwIDBTransaction.prototype.abort = function () {
-    if (!this._finished) this._aborted = true;
+    if (!this._finished) {
+      this._aborted = true;
+      if (this.mode === 'versionchange') {
+        Object.keys(this._db._stores).forEach(function (storeName) {
+          var store = this._db._stores[storeName];
+          if (store.createdInUpgrade) store.deleted = true;
+          Object.keys(store.indexes).forEach(function (indexName) {
+            var index = store.indexes[indexName];
+            if (index.createdInUpgrade) index.deleted = true;
+          });
+        }, this);
+      }
+    }
   };
   _zwIDBTransaction.prototype.commit = function () {
     if (this._aborted || this._finished) {
@@ -3076,7 +3145,8 @@
         records: new Map(),
         indexes: {},
         nextKey: 1,
-        deleted: false
+        deleted: false,
+        createdInUpgrade: !!this._upgradeTransaction
       };
     }
     var s = this._stores[name];
@@ -3132,7 +3202,13 @@
       var indexes = {};
       Object.keys(source.indexes).forEach(function (indexName) {
         var index = source.indexes[indexName];
-        indexes[indexName] = { keyPath: index.keyPath, unique: !!index.unique };
+        indexes[indexName] = {
+          keyPath: index.keyPath,
+          unique: !!index.unique,
+          multiEntry: !!index.multiEntry,
+          deleted: false,
+          createdInUpgrade: false
+        };
       });
       cloned[name] = {
         keyPath: source.keyPath,
@@ -3140,7 +3216,8 @@
         records: records,
         indexes: indexes,
         nextKey: source.nextKey || 1,
-        deleted: false
+        deleted: false,
+        createdInUpgrade: false
       };
     });
     return cloned;
@@ -3176,6 +3253,13 @@
       _zwIDBEmit(req, 'error', errorEvent);
       return;
     }
+    Object.keys(state.stores).forEach(function (storeName) {
+      var store = state.stores[storeName];
+      store.createdInUpgrade = false;
+      Object.keys(store.indexes).forEach(function (indexName) {
+        store.indexes[indexName].createdInUpgrade = false;
+      });
+    });
     _zwIDBEmit(transaction, 'complete', new _zwIDBEvent('complete', transaction));
     req.transaction = null;
     var successEvent = new _zwIDBEvent('success', req);

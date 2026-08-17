@@ -1886,6 +1886,56 @@ fn test_indexeddb_object_store_get_all_queries() {
 }
 
 #[test]
+fn test_indexeddb_index_queries_and_lifecycle() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var indexResults = [];\
+             var request = indexedDB.open('index-queries');\
+             request.onupgradeneeded = function () {\
+               var store = request.result.createObjectStore('store', { keyPath: 'id' });\
+               store.createIndex('index', 'group');\
+               var deleted = store.createIndex('deleted', 'group');\
+               store.deleteIndex('deleted');\
+               try { deleted.get('a'); } catch (error) { indexResults.push(error.name); }\
+               store.add({ id: 4, group: 'b' });\
+               store.add({ id: 2, group: 'a' });\
+               store.add({ id: 1, group: 'a' });\
+             };\
+             request.onsuccess = function () {\
+               var index = request.result.transaction('store').objectStore('store').index('index');\
+               try { index.getKey(NaN); } catch (error) { indexResults.push(error.name); }\
+               index.get('a').onsuccess = function (event) { indexResults.push(event.target.result.id); };\
+               index.getKey(IDBKeyRange.bound('a', 'b')).onsuccess = function (event) {\
+                 indexResults.push(event.target.result);\
+               };\
+               index.count('a').onsuccess = function (event) { indexResults.push(event.target.result); };\
+             };\
+             var aborted = indexedDB.open('aborted-index');\
+             aborted.onupgradeneeded = function () {\
+               var store = aborted.result.createObjectStore('store');\
+               var index = store.createIndex('index', 'group');\
+               aborted.transaction.abort();\
+               try { index.get('a'); } catch (error) { indexResults.push(error.name); }\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("indexResults.join('|')").unwrap().value,
+        "InvalidStateError|InvalidStateError|DataError|1|1|2"
+    );
+}
+
+#[test]
 fn test_indexeddb_object_store_cursor_continuation() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 
