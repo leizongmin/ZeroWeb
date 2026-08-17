@@ -9,6 +9,8 @@
 
 > **📍 当前 rally 进度态（R3429-F·2026-08-17）=【ASCII NSM 快路·estimate 热循环约4倍】**：perf 显示 `unicode_bidi::bsearch_range_value_table` 占 medium 全帧约2.35%；根因是 `estimate_char_width` 为判断 nonspacing mark，对不可能属于 NSM 的 ASCII 字母/数字/空格/标点仍逐字符查完整 Unicode BiDi 表。现 `is_nonspacing_mark` 在 `ZW_NSM_ASCII_FAST` 默认开启时先排除 ASCII，非 ASCII 继续按原表查询，`=0` 回退旧路径。穷举 128 个 ASCII 与 Arabic U+0654/U+0670 测试守语义。**隔离 release 微基准三轮交替 A/B**：旧路径 `4.74–5.61s`，快路 `1.18–1.25s`，checksum 完全一致，函数热点约4倍；medium 首组 layout/total p95 `490/806→474/784ms`（约-3.4%/-2.7%），反序页面受共享主机 20%+ 漂移影响不作为主证据。IFC env 快照候选同期两组综合净零，已完整回退。经验见 [`ascii-before-unicode-property-lookup.md`](../../learnings/performance/ascii-before-unicode-property-lookup.md)。
 
+> **📍 当前 rally 进度态（R3430-F·2026-08-17）=【horizontal decoration 子树扫描短路·layout p95约降3%】**：`compute_final_inline_layouts` 的 `subtree_has_text_decoration` 占 medium 全帧约1.46%，但结果只服务 vertical writing-mode 的宽度兼容 gate；旧代码对所有 horizontal 文本容器也递归扫描子树，嵌套页面重复访问后代。现 `vertical_decoration_free` 在 `ZW_DECORATION_SCAN_VERTICAL_ONLY` 默认开启时先判断 writing mode：horizontal 直接跳过，vertical 完整保留原扫描，`=0` 回退。闭包计数测试锁定 horizontal 0 次、vertical 1 次。**两组反序 A/B**：medium layout p95 `411→399ms`、`417→401ms`，均改善约3%；p50/total 受共享主机 paint 波动影响不作为主证据。经验见 [`gate-expensive-scan-by-consuming-mode.md`](../../learnings/performance/gate-expensive-scan-by-consuming-mode.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >

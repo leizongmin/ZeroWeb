@@ -92,6 +92,16 @@ pub fn subtree_has_text_decoration(doc: &Document, styles: &HashMap<NodeId, Comp
     scan(doc, styles, root_id)
 }
 
+fn vertical_decoration_free(is_vertical_wm: bool, scan: impl FnOnce() -> bool) -> bool {
+    static VERTICAL_ONLY: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_DECORATION_SCAN_VERTICAL_ONLY").as_deref() != Ok("0"));
+    vertical_decoration_free_with_mode(*VERTICAL_ONLY, is_vertical_wm, scan)
+}
+
+fn vertical_decoration_free_with_mode(vertical_only: bool, vertical: bool, scan: impl FnOnce() -> bool) -> bool {
+    if vertical_only && !vertical { true } else { !scan() }
+}
+
 /// 解析 `text-indent` 为像素值（CSS §10.3.1）。
 ///
 /// 支持 Px / Em（× font_size）/ Percentage（× container_width）。其他单位回退 0。
@@ -854,9 +864,10 @@ pub(crate) fn compute_final_inline_layouts(
     );
     // decoration-gate（TBD-2）：vertical 容器子树有 text-decoration/emphasis 时
     // 保持 content_width（旧行为），回避 Layer 4 装饰坐标耦合（α-3 未实施）。
-    let vertical_decoration_free = root
-        .node_id
-        .is_some_and(|id| !subtree_has_text_decoration(doc, styles, id));
+    let vertical_decoration_free = vertical_decoration_free(is_vertical_wm, || {
+        root.node_id
+            .is_some_and(|id| subtree_has_text_decoration(doc, styles, id))
+    });
     let container_width = if is_vertical_wm && vertical_decoration_free {
         root.content_height
     } else {
@@ -1980,92 +1991,4 @@ pub(crate) fn remeasure_multicol_text_blocks(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::resolve_text_indent;
-    use super::{ComputedStyle, TextAlign, resolve_text_align, resolve_text_align_last};
-    use zero_css_parser::values::LengthValue;
-    use zero_style_system::property::{DirectionValue, TextAlignLastValue, TextAlignValue};
-
-    #[test]
-    fn test_resolve_text_align_start_end_direction_aware() {
-        // R958：start/end 是方向感知值（CSS Text 3 §6.1）。LTR 下 start=left/end=right；
-        // RTL 下 start=right/end=left。旧实现无条件 start→left 致 direction:rtl 错误左对齐。
-        let mut style = ComputedStyle::default();
-        // LTR（默认）
-        style.direction = DirectionValue::Ltr;
-        style.text_align = TextAlignValue::Start;
-        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
-        style.text_align = TextAlignValue::End;
-        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Right);
-        // 显式 Left/Right 不受 direction 影响
-        style.text_align = TextAlignValue::Left;
-        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
-        // RTL：start/end 翻转
-        style.direction = DirectionValue::Rtl;
-        style.text_align = TextAlignValue::Start;
-        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Right);
-        style.text_align = TextAlignValue::End;
-        assert_eq!(resolve_text_align(Some(&style)), TextAlign::Left);
-        // None → 默认 Start 在 LTR 下 = Left
-        assert_eq!(resolve_text_align(None), TextAlign::Left);
-    }
-
-    #[test]
-    fn test_resolve_text_align_last_mapping() {
-        // text-align-last → Option<TextAlign> 映射（compute_final 存储路径 IFC 传递用）
-        let mut style = ComputedStyle::default();
-        // Auto（默认）→ None：末行跟随 text-align（justify 末行回退 Left）
-        style.text_align_last = TextAlignLastValue::Auto;
-        assert_eq!(resolve_text_align_last(Some(&style)), None);
-        // Justify → Some(Justify)：末行也两端对齐（justify-all 语义）
-        style.text_align_last = TextAlignLastValue::Justify;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Justify));
-        // Right → Some(Right)
-        style.text_align_last = TextAlignLastValue::Right;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
-        // Center → Some(Center)
-        style.text_align_last = TextAlignLastValue::Center;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Center));
-        // Left → Some(Left)
-        style.text_align_last = TextAlignLastValue::Left;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
-        // 无 style 引用（None）→ 默认 Auto → None
-        assert_eq!(resolve_text_align_last(None), None);
-        // R958：start/end 方向感知（默认 LTR）
-        style.direction = DirectionValue::Ltr;
-        style.text_align_last = TextAlignLastValue::Start;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
-        style.text_align_last = TextAlignLastValue::End;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
-        // RTL 下翻转
-        style.direction = DirectionValue::Rtl;
-        style.text_align_last = TextAlignLastValue::Start;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Right));
-        style.text_align_last = TextAlignLastValue::End;
-        assert_eq!(resolve_text_align_last(Some(&style)), Some(TextAlign::Left));
-    }
-
-    #[test]
-    fn test_resolve_text_indent_px_em_percentage() {
-        // Px 直传
-        assert_eq!(
-            resolve_text_indent(&LengthValue::Px(40.0), &LengthValue::Px(16.0), 800.0),
-            40.0
-        );
-        // Em × font_size：5em @ 16px → 80
-        assert_eq!(
-            resolve_text_indent(&LengthValue::Em(5.0), &LengthValue::Px(16.0), 800.0),
-            80.0
-        );
-        // Percentage × container_width：50% @ 800 → 400
-        assert_eq!(
-            resolve_text_indent(&LengthValue::Percentage(50.0), &LengthValue::Px(16.0), 800.0),
-            400.0
-        );
-        // 其他单位（Auto/Rem/…）回退 0
-        assert_eq!(
-            resolve_text_indent(&LengthValue::Auto, &LengthValue::Px(16.0), 800.0),
-            0.0
-        );
-    }
-}
+mod tests;
