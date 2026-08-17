@@ -23,6 +23,7 @@ enum InflightReply {
 /// 进行中的 IPC fetch（request_id → 完成通道）。
 pub struct InflightIpcFetches {
     pending: HashMap<u64, InflightReply>,
+    document_url: Option<String>,
 }
 
 impl InflightIpcFetches {
@@ -30,12 +31,14 @@ impl InflightIpcFetches {
     pub fn new() -> Self {
         Self {
             pending: HashMap::new(),
+            document_url: None,
         }
     }
 
     /// 清空（导航取消时丢弃未完成的响应）。
     pub fn clear(&mut self) {
         self.pending.clear();
+        self.document_url = None;
     }
 
     /// 若 `msg` 为匹配的 [`FetchResponse`]，完成对应接收端并返回 `true`。
@@ -52,6 +55,16 @@ impl InflightIpcFetches {
         let Some(reply) = self.pending.remove(request_id) else {
             return false;
         };
+        if (200..300).contains(status_code)
+            && headers
+                .iter()
+                .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-resource-type") && value == "document")
+            && let Some((_, final_url)) = headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+        {
+            self.document_url = Some(final_url.clone());
+        }
         if let InflightReply::StreamBytes {
             tx,
             body: mut collected,
@@ -68,6 +81,11 @@ impl InflightIpcFetches {
         }
         deliver_reply(reply, *status_code, body);
         true
+    }
+
+    /// 取出最近完成的主文档最终 URL。
+    pub fn take_document_url(&mut self) -> Option<String> {
+        self.document_url.take()
     }
 }
 
@@ -375,12 +393,19 @@ mod tests {
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
                 request_id: 7,
                 status_code: 200,
-                headers: Vec::new(),
+                headers: vec![
+                    ("X-Zero-Resource-Type".into(), "document".into()),
+                    ("X-Zero-Final-URL".into(), "https://final.example/page".into()),
+                ],
                 body: b"hello".to_vec(),
             }),
         };
         assert!(inflight.try_complete(&msg));
         assert_eq!(rx.try_recv().unwrap().unwrap(), "hello");
+        assert_eq!(
+            inflight.take_document_url().as_deref(),
+            Some("https://final.example/page")
+        );
     }
 
     #[test]

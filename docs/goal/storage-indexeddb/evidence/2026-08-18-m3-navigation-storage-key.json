@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-18",
+  "scope": "M3 browser navigation storage-key authority",
+  "capabilities": [
+    "navigation-start origin revocation",
+    "renderer and navigation-epoch commit matching",
+    "snapshot URL independent IndexedDB origin",
+    "redirect final response URL propagation",
+    "pre-commit IndexedDB rejection",
+    "renderer lifecycle storage-key cleanup"
+  ],
+  "tests": {
+    "committed_origin_ignores_snapshot_url": "pass",
+    "redirect_commits_final_origin": "pass",
+    "mismatched_commit_rejected": "pass",
+    "navigation_revokes_old_origin_and_registry": "pass",
+    "protocol_roundtrip": "pass",
+    "make_test": {
+      "status": "pass",
+      "v8": "pass",
+      "quickjs": "pass",
+      "gpu_adapter": "pass",
+      "multiprocess": "pass"
+    },
+    "workspace_clippy": "pass",
+    "imported_wpt": {
+      "revision": "315976933870b34d6ea30e3f6643403edae678ba",
+      "files": 38,
+      "pass": 222,
+      "fail": 0
+    },
+    "bench_gate": {
+      "microbenches_pass": 16,
+      "microbenches_total": 16,
+      "absolute_page_budgets": "pass",
+      "retained_form_budget": "pass"
+    }
+  },
+  "remaining": [
+    "full cross-connection scheduling and blocked/versionchange events",
+    "database versions above u32",
+    "larger fixed-revision IndexedDB WPT coverage"
+  ]
+}

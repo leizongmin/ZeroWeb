@@ -234,6 +234,10 @@ pub enum IpcMessageKind {
     IndexedDbRequest(IndexedDbRequestParams),
     /// IndexedDB 响应（browser storage owner → renderer）。
     IndexedDbResponse(IndexedDbResponseParams),
+    /// 页面导航开始（renderer → browser storage-key authority）。
+    NavigationStarted(NavigationStartedParams),
+    /// 页面导航提交（renderer → browser storage-key authority）。
+    NavigationCommitted(NavigationCommittedParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。
@@ -551,6 +555,24 @@ pub struct IndexedDbResponseParams {
     pub response: Option<String>,
     /// 失败时的具名错误。
     pub error: Option<String>,
+}
+
+/// Renderer 页面导航开始信号。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NavigationStartedParams {
+    /// 待加载文档 URL。
+    pub url: String,
+    /// Browser 分配或 renderer 递增的导航世代。
+    pub navigation_epoch: u64,
+}
+
+/// Renderer 页面导航提交信号。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NavigationCommittedParams {
+    /// 已提交文档 URL，Browser 必须与 pending navigation 逐项匹配。
+    pub url: String,
+    /// 已提交文档的导航世代。
+    pub navigation_epoch: u64,
 }
 
 /// 存储类型。

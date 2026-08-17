@@ -31,6 +31,7 @@ struct PendingFetch {
     tab_id: TabId,
     request_id: u64,
     url: String,
+    resource_type: &'static str,
     rx: Receiver<Result<HttpResponse, String>>,
 }
 
@@ -156,6 +157,7 @@ impl TabFetchProxy {
                         tab_id,
                         request_id: params.request_id,
                         url,
+                        resource_type,
                         rx: immediate_err(format!("资源被安全策略阻止: {reason}")),
                     });
                     return;
@@ -170,6 +172,7 @@ impl TabFetchProxy {
                 tab_id,
                 request_id: params.request_id,
                 url,
+                resource_type,
                 rx,
             });
             return;
@@ -180,6 +183,7 @@ impl TabFetchProxy {
                 tab_id,
                 request_id: params.request_id,
                 url: url.clone(),
+                resource_type,
                 rx: dns_prefetch(url),
             });
             return;
@@ -204,6 +208,7 @@ impl TabFetchProxy {
                 tab_id,
                 request_id: params.request_id,
                 url,
+                resource_type,
                 rx,
             });
             return;
@@ -233,6 +238,7 @@ impl TabFetchProxy {
                     tab_id,
                     request_id: params.request_id,
                     url,
+                    resource_type,
                     rx: immediate_err(format!("unsupported HTTP method: {}", params.method)),
                 });
                 return;
@@ -261,6 +267,7 @@ impl TabFetchProxy {
             tab_id,
             request_id: params.request_id,
             url,
+            resource_type,
             rx,
         });
     }
@@ -272,7 +279,7 @@ impl TabFetchProxy {
         let drained = std::mem::take(&mut self.pending);
         for pending in drained {
             match pending.rx.try_recv() {
-                Ok(Ok(resp)) => {
+                Ok(Ok(mut resp)) => {
                     tracing::info!(
                         "fetch IPC done tab {} req_id={} {} status={} bytes={}",
                         pending.tab_id.0,
@@ -281,6 +288,9 @@ impl TabFetchProxy {
                         resp.status_code,
                         resp.body.len()
                     );
+                    resp.headers.push(("X-Zero-Final-URL".to_string(), resp.url.clone()));
+                    resp.headers
+                        .push(("X-Zero-Resource-Type".to_string(), pending.resource_type.to_string()));
                     completed.push(CompletedFetch {
                         tab_id: pending.tab_id,
                         request_id: pending.request_id,
@@ -348,6 +358,7 @@ impl TabFetchProxy {
                 tab_id,
                 request_id,
                 url,
+                resource_type: "image",
                 rx: immediate_err("image stream queue is full".to_string()),
             });
             return;
@@ -542,6 +553,18 @@ mod tests {
         assert_eq!(completed[0].request_id, 7);
         assert_eq!(completed[0].status, 200);
         assert_eq!(completed[0].body, b"<html><body>local file</body></html>");
+        assert!(
+            completed[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name == "X-Zero-Final-URL" && value == &url)
+        );
+        assert!(
+            completed[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name == "X-Zero-Resource-Type" && value == "document")
+        );
 
         let _ = std::fs::remove_file(file);
     }

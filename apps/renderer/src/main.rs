@@ -46,8 +46,8 @@ use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
     FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
     ImeEventType, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams,
-    MouseEventParams, NavigateParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
-    StorageOpParams,
+    MouseEventParams, NavigateParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -1299,6 +1299,22 @@ impl RendererRuntime {
             self.deferred_inbound.push_back(msg);
             break;
         }
+        if let Some(final_url) = self.inflight_fetches.take_document_url() {
+            if let Some(pending) = self.pending_load.as_mut() {
+                pending.page_url = final_url.clone();
+                pending.load.set_document_url(final_url.clone());
+            }
+            if self.current_url.as_deref() != Some(final_url.as_str()) {
+                self.current_url = Some(final_url.clone());
+                self.webview
+                    .as_mut()
+                    .expect("webview")
+                    .prepare_document_state(&final_url);
+                if let Err(error) = self.send_regular(IpcMessageKind::UrlChanged(final_url)) {
+                    tracing::warn!("Failed to publish redirected document URL: {error}");
+                }
+            }
+        }
     }
 
     /// 推进 pending load 一步；加载完成时发布帧、LoadComplete 与可选脚本阶段。
@@ -1582,6 +1598,10 @@ impl RendererRuntime {
         self.sync_cached_html_from_webview();
         self.try_publish_progress(true)?;
         if emit_complete {
+            self.send_regular(IpcMessageKind::NavigationCommitted(NavigationCommittedParams {
+                url: page_url.clone(),
+                navigation_epoch: self.navigation_epoch,
+            }))?;
             self.send_regular(IpcMessageKind::LoadComplete)?;
             tracing::info!("页面渲染完成: {page_url}");
         }
@@ -1734,6 +1754,10 @@ impl RendererRuntime {
         if push_history {
             self.push_history(&page_url);
         }
+        self.send_regular(IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            url: page_url.clone(),
+            navigation_epoch: self.navigation_epoch,
+        }))?;
         self.send_regular(IpcMessageKind::UrlChanged(page_url.clone()))?;
         self.current_url = Some(page_url.clone());
         self.cached_html = html.clone();
@@ -1799,6 +1823,10 @@ impl RendererRuntime {
         self.inflight_fetches.clear();
         self.js_worker.reset_document_state();
         self.push_history(&params.url);
+        self.send_regular(IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            url: params.url.clone(),
+            navigation_epoch: params.navigation_epoch,
+        }))?;
         self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
         self.current_url = Some(params.url.clone());
         self.cached_html.clear();
@@ -2323,6 +2351,8 @@ impl RendererRuntime {
             | IpcMessageKind::AutomationResponse(_)
             | IpcMessageKind::IndexedDbRequest(_)
             | IpcMessageKind::IndexedDbResponse(_)
+            | IpcMessageKind::NavigationStarted(_)
+            | IpcMessageKind::NavigationCommitted(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

@@ -1609,3 +1609,36 @@ fn test_indexed_db_request_response_roundtrip() {
         }) if error == "UnknownError: disk full"
     ));
 }
+
+#[test]
+fn test_navigation_storage_key_lifecycle_roundtrip() {
+    let started = roundtrip(IpcMessage {
+        id: 0,
+        kind: IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            url: "https://app.example/page".to_string(),
+            navigation_epoch: 7,
+        }),
+    });
+    assert!(matches!(
+        started.kind,
+        IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            ref url,
+            navigation_epoch: 7,
+        }) if url == "https://app.example/page"
+    ));
+
+    let committed = roundtrip(IpcMessage {
+        id: 0,
+        kind: IpcMessageKind::NavigationCommitted(NavigationCommittedParams {
+            url: "https://app.example/page".to_string(),
+            navigation_epoch: 7,
+        }),
+    });
+    assert!(matches!(
+        committed.kind,
+        IpcMessageKind::NavigationCommitted(NavigationCommittedParams {
+            ref url,
+            navigation_epoch: 7,
+        }) if url == "https://app.example/page"
+    ));
+}

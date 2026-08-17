@@ -14,8 +14,8 @@ use zero_protocol::ProtocolError;
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
     FramePublishMode, ImeEventParams, IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType,
-    IpcMessage, IpcMessageKind, LoadHtmlParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
-    SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    IpcMessage, IpcMessageKind, LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
+    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_storage::StorageManager;
@@ -44,6 +44,12 @@ fn browser_storage_manager() -> Result<StorageManager, zero_storage::StorageErro
     } else {
         StorageManager::with_indexed_db_persistence(zero_storage::default_indexed_db_dir())
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingIndexedDbNavigation {
+    url: String,
+    navigation_epoch: u64,
 }
 
 /// 解析 `zero-renderer` 可执行文件路径。
@@ -145,6 +151,8 @@ pub struct ProcessTabBackend {
     private_storage: Arc<Mutex<StorageManager>>,
     private_tabs: HashSet<TabId>,
     indexed_db_handlers: HashMap<u64, IndexedDbHandler>,
+    indexed_db_origins: HashMap<u64, String>,
+    pending_indexed_db_navigations: HashMap<u64, PendingIndexedDbNavigation>,
     indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
@@ -214,6 +222,8 @@ impl ProcessTabBackend {
             private_storage: Arc::new(Mutex::new(StorageManager::new())),
             private_tabs: HashSet::new(),
             indexed_db_handlers: HashMap::new(),
+            indexed_db_origins: HashMap::new(),
+            pending_indexed_db_navigations: HashMap::new(),
             indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
@@ -589,8 +599,26 @@ impl ProcessTabBackend {
         self.fetch_proxy.enqueue(tab_id, &params);
     }
 
+    fn update_pending_indexed_db_navigation_from_fetch(&mut self, tab_id: TabId, headers: &[(String, String)]) {
+        let is_document = headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("x-zero-resource-type") && value == "document");
+        let final_url = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+            .map(|(_, value)| value);
+        if is_document
+            && let Some(final_url) = final_url
+            && let Some(renderer_id) = self.tab_to_renderer.get(&tab_id)
+            && let Some(pending) = self.pending_indexed_db_navigations.get_mut(renderer_id)
+        {
+            pending.url.clone_from(final_url);
+        }
+    }
+
     fn drain_pending_fetches(&mut self) {
         for item in self.fetch_proxy.drain() {
+            self.update_pending_indexed_db_navigation_from_fetch(item.tab_id, &item.headers);
             self.send_fetch_response_now(item.tab_id, item.request_id, item.status, item.headers, item.body);
         }
     }
@@ -646,28 +674,112 @@ impl ProcessTabBackend {
         // 渲染进程当前不等待 Storage 响应；后续可扩展 StorageResponse IPC。
     }
 
-    fn handle_indexed_db_request(
+    fn remove_indexed_db_renderer_state(&mut self, renderer_id: u64) {
+        self.indexed_db_handlers.remove(&renderer_id);
+        self.indexed_db_origins.remove(&renderer_id);
+        self.pending_indexed_db_navigations.remove(&renderer_id);
+    }
+
+    fn stage_indexed_db_navigation(&mut self, renderer_id: u64, url: &str, navigation_epoch: u64) {
+        self.remove_indexed_db_renderer_state(renderer_id);
+        self.pending_indexed_db_navigations.insert(
+            renderer_id,
+            PendingIndexedDbNavigation {
+                url: url.to_string(),
+                navigation_epoch,
+            },
+        );
+    }
+
+    fn handle_navigation_started(
         &mut self,
         tab_id: TabId,
-        request_id: u64,
-        page_url: Option<&str>,
-        params: IndexedDbRequestParams,
+        renderer_id: u64,
+        snapshot: &mut TabSnapshot,
+        params: NavigationStartedParams,
     ) {
+        let candidate = PendingIndexedDbNavigation {
+            url: params.url.clone(),
+            navigation_epoch: params.navigation_epoch,
+        };
+        if let Some(pending) = self.pending_indexed_db_navigations.get(&renderer_id)
+            && pending != &candidate
+        {
+            tracing::warn!(
+                "Rejected mismatched navigation start tab {} renderer {} epoch {}",
+                tab_id.0,
+                renderer_id,
+                params.navigation_epoch
+            );
+            return;
+        }
+        if !self.pending_indexed_db_navigations.contains_key(&renderer_id) {
+            if params.navigation_epoch == snapshot.navigation_epoch.wrapping_add(1) {
+                snapshot.begin_navigation(params.url.clone());
+            } else if params.navigation_epoch != snapshot.navigation_epoch {
+                tracing::warn!(
+                    "Rejected stale navigation start tab {} renderer {} epoch {} != {}",
+                    tab_id.0,
+                    renderer_id,
+                    params.navigation_epoch,
+                    snapshot.navigation_epoch
+                );
+                return;
+            }
+            self.fetch_proxy.on_navigate(tab_id, &params.url);
+        }
+        self.stage_indexed_db_navigation(renderer_id, &params.url, params.navigation_epoch);
+    }
+
+    fn handle_navigation_committed(&mut self, tab_id: TabId, renderer_id: u64, params: NavigationCommittedParams) {
+        let Some(pending) = self.pending_indexed_db_navigations.get(&renderer_id) else {
+            tracing::warn!(
+                "Rejected navigation commit without start tab {} renderer {} epoch {}",
+                tab_id.0,
+                renderer_id,
+                params.navigation_epoch
+            );
+            return;
+        };
+        if pending.navigation_epoch != params.navigation_epoch || pending.url != params.url {
+            tracing::warn!(
+                "Rejected mismatched navigation commit tab {} renderer {} epoch {}",
+                tab_id.0,
+                renderer_id,
+                params.navigation_epoch
+            );
+            return;
+        }
+        let pending = self
+            .pending_indexed_db_navigations
+            .remove(&renderer_id)
+            .expect("pending navigation checked above");
+        // https://storage.spec.whatwg.org/#storage-keys
+        let origin = zero_engine::indexed_db_origin(&pending.url);
+        self.indexed_db_handlers.remove(&renderer_id);
+        self.indexed_db_origins.insert(renderer_id, origin);
+    }
+
+    fn handle_indexed_db_request(&mut self, tab_id: TabId, request_id: u64, params: IndexedDbRequestParams) {
         const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
         let private = self.private_tabs.contains(&tab_id);
+        let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
         let result = if params.request.len() > MAX_REQUEST_BYTES {
             Err("UnknownError: IndexedDB request exceeds 8 MiB".to_string())
+        } else if !self.indexed_db_origins.contains_key(&renderer_id) {
+            Err("SecurityError: IndexedDB is unavailable before navigation commit".to_string())
         } else if !private && let Some(error) = &self.indexed_db_init_error {
             Err(format!(
                 "UnknownError: IndexedDB storage initialization failed: {error}"
             ))
         } else {
-            let origin = page_url
-                .map(zero_engine::indexed_db_origin)
-                .unwrap_or_else(|| "null".to_string());
-            let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
-                return;
-            };
+            let origin = self
+                .indexed_db_origins
+                .get(&renderer_id)
+                .expect("origin presence checked above")
+                .clone();
             let storage = if private {
                 Arc::clone(&self.private_storage)
             } else {
@@ -722,7 +834,7 @@ impl ProcessTabBackend {
         if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
             self.tab_to_renderer.remove(&tab_id);
         }
-        self.indexed_db_handlers.remove(&rid);
+        self.remove_indexed_db_renderer_state(rid);
         self.fetch_proxy.remove_tab(tab_id);
         let _ = self.manager.shutdown_renderer(rid);
         // R3254-F10：renderer 意外退出自动重启（一次）并按快照 URL 重新导航——此前
@@ -798,7 +910,7 @@ impl ProcessTabBackend {
                 return;
             }
             self.tab_to_renderer.remove(&tab_id);
-            self.indexed_db_handlers.remove(&rid);
+            self.remove_indexed_db_renderer_state(rid);
         }
         match self.manager.spawn_renderer() {
             Ok(rid) => {
@@ -829,7 +941,7 @@ impl ProcessTabBackend {
         self.fetch_proxy.remove_tab(tab_id);
         self.private_tabs.remove(&tab_id);
         if let Some(rid) = self.tab_to_renderer.remove(&tab_id) {
-            self.indexed_db_handlers.remove(&rid);
+            self.remove_indexed_db_renderer_state(rid);
             crate::compositor_client::release_surface(rid);
             let _ = self.manager.shutdown_renderer(rid);
         }
@@ -861,6 +973,10 @@ impl ProcessTabBackend {
     /// 导航。
     pub fn navigate(&mut self, tab_id: TabId, url: &str, navigation_epoch: u64) {
         self.fetch_proxy.on_navigate(tab_id, url);
+        let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        self.stage_indexed_db_navigation(renderer_id, url, navigation_epoch);
         let Some(renderer) = self.renderer_mut(tab_id) else {
             return;
         };
@@ -893,6 +1009,11 @@ impl ProcessTabBackend {
         url: Option<&str>,
         navigation_epoch: u64,
     ) {
+        let page_url = url.unwrap_or("about:blank");
+        let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        self.stage_indexed_db_navigation(renderer_id, page_url, navigation_epoch);
         self.send_to_renderer(
             tab_id,
             IpcMessageKind::LoadHtml(LoadHtmlParams {
@@ -1033,8 +1154,14 @@ impl ProcessTabBackend {
                         self.handle_storage_op(tab_id, params);
                     }
                     IpcMessageKind::IndexedDbRequest(params) => {
-                        let page_url = snapshots.get(&tab_id).and_then(|snapshot| snapshot.url.clone());
-                        self.handle_indexed_db_request(tab_id, msg.id, page_url.as_deref(), params);
+                        self.handle_indexed_db_request(tab_id, msg.id, params);
+                    }
+                    IpcMessageKind::NavigationStarted(params) => {
+                        let snapshot = snapshots.entry(tab_id).or_default();
+                        self.handle_navigation_started(tab_id, rid, snapshot, params);
+                    }
+                    IpcMessageKind::NavigationCommitted(params) => {
+                        self.handle_navigation_committed(tab_id, rid, params);
                     }
                     IpcMessageKind::DispatchDomEventResult(result) => {
                         self.pending_dispatch_results.push((msg.id, result.default_allowed));
@@ -1583,6 +1710,12 @@ mod compositor_fallback_tests {
     use zero_protocol::message::{FramePublishMode, IpcMessageKind};
     use zero_protocol::{IpcColor, IpcFill, IpcRect, PaintSnapshotParams};
 
+    fn lock_multiprocess_tests() -> std::sync::MutexGuard<'static, ()> {
+        crate::tests::MULTIPROCESS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
     #[test]
     fn startup_failure_enters_fallback_once() {
         let mut previous = CompositorStatus::Starting;
@@ -1621,6 +1754,7 @@ mod compositor_fallback_tests {
 
     #[test]
     fn tab_remove_drops_renderer_surface_mapping() {
+        let _multiprocess_guard = lock_multiprocess_tests();
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
         let tab_id = TabId(17);
         backend.tab_to_renderer.insert(tab_id, 44);
@@ -1637,6 +1771,7 @@ mod compositor_fallback_tests {
     #[test]
     #[serial_test::serial]
     fn send_user_scroll_emits_scroll_event_ipc_r3293() {
+        let _multiprocess_guard = lock_multiprocess_tests();
         let _ = take_test_renderer_outbound(); // 清前序测试残留
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
         let tab_id = TabId(23);
@@ -1672,6 +1807,7 @@ mod compositor_fallback_tests {
 
     #[test]
     fn compositor_disconnect_switches_isolated_renderers_to_legacy_frames() {
+        let _multiprocess_guard = lock_multiprocess_tests();
         let _ = take_test_renderer_outbound();
 
         let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));

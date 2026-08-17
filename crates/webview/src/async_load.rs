@@ -234,6 +234,18 @@ impl AsyncPageLoad {
         }
     }
 
+    /// Replace the document URL with the final URL reported after redirects.
+    ///
+    /// <https://fetch.spec.whatwg.org/#concept-response-url>
+    ///
+    /// Call this while the document response is still pending, before relative
+    /// subresources are discovered from the response body.
+    pub fn set_document_url(&mut self, url: impl Into<String>) {
+        if self.stage == PageLoadStage::FetchingDocument {
+            self.url = url.into();
+        }
+    }
+
     /// 取出并清除加载失败原因（主文档抓取失败等）。
     pub fn take_error(&mut self) -> Option<String> {
         self.last_error.take()
@@ -1414,6 +1426,16 @@ mod tests {
             let (_tx, rx) = channel();
             rx
         }
+    }
+
+    #[test]
+    fn redirected_document_url_replaces_base_before_response_processing() {
+        let mut load = AsyncPageLoad::start("https://start.example/page");
+        load.set_document_url("https://final.example/page");
+        assert_eq!(load.url, "https://final.example/page");
+        load.stage = PageLoadStage::FirstPaint;
+        load.set_document_url("https://too-late.example/page");
+        assert_eq!(load.url, "https://final.example/page");
     }
 
     #[test]

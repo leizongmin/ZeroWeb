@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M3 embedded WebView storage owner）
+**最后更新**: 2026-08-18（M3 browser navigation storage-key authority）
 
 ---
 
@@ -47,6 +47,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M2 transaction：页面 transaction 已绑定 Rust begin/mutation/view/commit/abort
 - ✅ M2 structured clone：cyclic/shared-reference graph wire 与 Rust index projection 已完成
 - ✅ M3 persistence：browser/renderer 单写 owner、embedded WebView owner 注入、private 隔离和跨会话恢复已完成
+- ✅ M3 storage key：browser navigation start/commit + epoch 校验确定 origin，覆盖 redirect final URL
 
 ## 缺口清单
 
@@ -60,7 +61,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 ## 下一步计划
 
 1. **M2/M3**：扩展跨 connection transaction scheduling 与 blocked/versionchange 事件
-2. **M2**：由 browser navigation commit 独立确定 storage key，消除 snapshot URL 时序窗口
+2. **M1/M2**：扩大固定 revision 上游 IndexedDB WPT 导入范围
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
 核对 js-dom 流活跃面。
@@ -116,7 +117,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m2-continue-primary-key.{md,json}`、
   `evidence/2026-08-18-m3-persistence-engine.{md,json}`、
   `evidence/2026-08-18-m3-browser-storage-owner.{md,json}`、
-  `evidence/2026-08-18-m3-embedded-webview-owner.{md,json}`
+  `evidence/2026-08-18-m3-embedded-webview-owner.{md,json}`、
+  `evidence/2026-08-18-m3-navigation-storage-key.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过
