@@ -15,6 +15,8 @@
 
 > **📍 当前 rally 进度态（R3432-F·2026-08-17）=【构树运行开关按 layout 快照·getenv 热循环移除】**：post-R3431 perf 中 `getenv` 占 medium 全帧8.75%；`build_subtree` 每个 DOM 节点重复读取 margin-trim（两次）、BR line-height、content-visibility/replacement、Phase-A multi-inline、BR node 和 inline coherence 共七个开关。现 `BuildContext` 创建时构造 `TreeRuntimeFlags`，每次 layout 只读取一次环境，递归节点读 bool；跨 layout 动态切换仍保留，`ZW_TREE_ENV_SNAPSHOT=0` 回退逐节点查询，原子开关语义不变。helper/测试独立于 `tree/runtime_flags.rs`，`tree.rs` 1995行。**两组反序 A/B**：medium layout p95 `418→374ms`（-10.6%）、`384→376ms`（-1.9%）；total p95 `669→614ms`（-8.3%）、`632→608ms`（-3.8%）；RSS 降1.9/4.9MiB。闭包计数、构树测试、reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`snapshot-hot-runtime-flags-per-layout.md`](../../learnings/performance/snapshot-hot-runtime-flags-per-layout.md)。
 
+> **📍 当前 rally 进度态（R3433-F·2026-08-17）=【停录无消费方 node_map·layout p95再降2–7%】**：post-R3432 perf 中 NodeId SipHash + sip write 占 medium 全帧约4.2%；审计发现 `BuildContext.node_map` 只有初始化与两处 insert，全仓零读取，且不在返回值中，真实 `taffy_to_dom` 为独立字段。现默认不创建/写入 dead map，`ZW_TREE_NODE_MAP_RECORD=1` 恢复旧诊断记录。**两组反序 A/B**：medium layout p95 `407→378ms`（-7.2%）、`382→373ms`（-2.2%）；total p95 `703→626ms`（-10.9%）、`644→618ms`（-4.0%）；RSS 方向不一致不作收益证据。构树测试、reftest `687/687`、welcome `16.61%`、全 viewport/form-input PASS。经验见 [`disable-unconsumed-hot-map.md`](../../learnings/performance/disable-unconsumed-hot-map.md)。
+
 
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >

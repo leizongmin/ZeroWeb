@@ -211,8 +211,8 @@ pub(crate) struct R109Wiring {
 struct BuildContext {
     /// taffy 布局树。
     taffy: TaffyTree<NodeId>,
-    /// DOM NodeId → taffy NodeId 映射。
-    node_map: HashMap<NodeId, taffy::NodeId>,
+    /// 旧 DOM → taffy 诊断映射；无消费方，默认不记录。
+    node_map: Option<HashMap<NodeId, taffy::NodeId>>,
     /// taffy NodeId → DOM NodeId 反向映射。
     taffy_to_dom: HashMap<taffy::NodeId, NodeId>,
     /// `<img>` 元素的解码固有尺寸（DOM NodeId → (width, height)）。
@@ -236,15 +236,16 @@ struct BuildContext {
 impl BuildContext {
     /// 创建空的构建上下文。
     fn new() -> Self {
+        let flags = TreeRuntimeFlags::from_env();
         Self {
             taffy: TaffyTree::new(),
-            node_map: HashMap::new(),
+            node_map: flags.record_node_map().then(HashMap::new),
             taffy_to_dom: HashMap::new(),
             img_intrinsic_sizes: HashMap::new(),
             img_intrinsic_ratios: HashMap::new(),
             img_intrinsic_no_ratio: HashMap::new(),
             r109: R109Wiring::default(),
-            flags: TreeRuntimeFlags::from_env(),
+            flags,
         }
     }
 }
@@ -1430,7 +1431,9 @@ fn build_subtree(
                         .taffy
                         .new_leaf_with_context(anon_style, child_dom)
                         .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
-                    ctx.node_map.insert(child_dom, anon_taffy);
+                    if let Some(node_map) = &mut ctx.node_map {
+                        node_map.insert(child_dom, anon_taffy);
+                    }
                     ctx.taffy_to_dom.insert(anon_taffy, child_dom);
                     child_taffy_ids.push(anon_taffy);
                 } else {
@@ -1796,7 +1799,9 @@ fn build_subtree(
     };
 
     // 记录映射
-    ctx.node_map.insert(dom_id, taffy_id);
+    if let Some(node_map) = &mut ctx.node_map {
+        node_map.insert(dom_id, taffy_id);
+    }
     ctx.taffy_to_dom.insert(taffy_id, dom_id);
 
     taffy_id
