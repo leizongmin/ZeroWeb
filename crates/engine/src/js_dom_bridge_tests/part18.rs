@@ -1622,5 +1622,59 @@ fn r89_previous_node_accept_with_children_digs_last() {
         sandbox.execute("globalThis.__r89b").unwrap().value,
         "C1|C1",
         "R89：previousNode 的 ACCEPT 有子先 dig 子树尾（filtered 序前驱），childless 才返"
+#[test]
+fn r79_parent_element_of_document_element_is_null_but_parent_node_is_document() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations = Arc::new(Mutex::new(Vec::<DomMutation>::new()));
+    let dom_html = Arc::new(Mutex::new(
+        "<html><body><div id='host'>text</div></body></html>".to_string(),
+    ));
+    let page_url = Arc::new(Mutex::new("https://zero.test/r79-parentelement".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ZRG-2026-08-17（zeroweb-regression-guard）：R79 把 html 的 parentNode 设为 document 后，
+    // parentNode/parentElement 共用 _parentNodeFor 使 documentElement.parentElement 错误返回
+    // document——parity 采集器沿 parentElement 上行到 html 后走进 document，node.tagName 为
+    // undefined → toLowerCase 崩溃。spec：parentElement 只返元素父（html 的父是 Document 非元素
+    // → null）；parentNode 保持 document（R79 contains/compareDocumentPosition 依赖）。
+    sandbox
+        .execute(
+            "var de = document.documentElement;\n\
+             globalThis.__r1 = (de.parentElement === null);\n\
+             globalThis.__r2 = (de.parentNode === document);\n\
+             globalThis.__r3 = (document.body.parentElement === de);\n\
+             var chain = [];\n\
+             for (var node = document.body; node; node = node.parentElement) chain.push(node.tagName);\n\
+             globalThis.__r4 = chain.join('>');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "true",
+        "documentElement.parentElement 必须为 null（spec dom-node-parentelement，非元素父）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "true",
+        "documentElement.parentNode 保持 document（R79 contains/compareDocumentPosition 前提）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "true",
+        "body.parentElement === documentElement（正常元素父链不受影响）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r4").unwrap().value,
+        "BODY>HTML",
+        "parentElement 链从 body 上行止于 html（不进 document），selectorFor 类遍历不再崩溃"
     );
 }

@@ -2257,14 +2257,16 @@
     return false;
   }
 
-  function _parentNodeFor(sel, handle) {
+  function _parentNodeFor(sel, handle, elementOnly) {
     // R34xx：本地移除标记优先——remove() 后（mutation 未应用）parentNode 返 null。
     if (_zwIsRemoved(sel)) return null;
     // js-dom M4 R79：html 的 parentNode 是 document（spec Node.parentNode：documentElement
     // 的父为 Document——`__zw_parent` 只返元素父，对 html 返空）。document 进链是
     // contains/compareDocumentPosition 以 document 为 root 的前提（WPT Node-contains 的
     // `paras[0].contains(document)` oracle 沿 parentNode 上行须命中 document）。
-    if (sel === 'html') return globalThis.document || null;
+    // parentElement（elementOnly=true）例外：spec `dom-node-parentelement` 只返元素父，
+    // html 的 parentElement 恒 null（zeroweb-regression-guard 2026-08-17 发现）。
+    if (sel === 'html') return elementOnly ? null : (globalThis.document || null);
     if (sel && typeof __zw_parent === 'function') {
       try {
         var p = __zw_parent(sel);

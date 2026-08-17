@@ -436,8 +436,15 @@
           }
           return '';
         }
-        if (prop === 'parentNode' || prop === 'parentElement') {
+        if (prop === 'parentNode') {
           return _parentNodeFor(sel, handle);
+        }
+        if (prop === 'parentElement') {
+          // spec `dom-node-parentelement`：parentElement 只返元素父——documentElement 的父是
+          // Document（非元素）→ null。不能与 parentNode 共用 R79 的 html→document 分支：
+          // parity 采集器/页面脚本沿 parentElement 上行到 html 后走进 document，node.tagName
+          // 为 undefined → toLowerCase 崩溃（zeroweb-regression-guard 2026-08-17 发现）。
+          return _parentNodeFor(sel, handle, true);
         }
         // 元素遍历/导航 API（仅元素子/兄弟，跳过文本/注释）。handle（脱离 DOM，无 sel）→ null/[]。
         if (prop === 'children') {
