@@ -60,11 +60,29 @@ pub fn measure_text_hmtx_for_layout(font_ids: &[u32], text: &str, font_size: f32
         .and_then(|measure| measure(font_ids, text, font_size))
 }
 
+// OPTIMIZATION: Paint feature switches are process-lifetime policy; avoid
+// repeated environment lookups while retaining a live rollback path.
+pub(crate) fn paint_env_snapshot_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_PAINT_ENV_SNAPSHOT").as_deref() != Ok("0"))
+}
+
+pub(crate) fn paint_env_value(snapshot_enabled: bool, cache: &OnceLock<bool>, read: impl FnOnce() -> bool) -> bool {
+    if snapshot_enabled {
+        *cache.get_or_init(read)
+    } else {
+        read()
+    }
+}
+
 /// 是否启用 production variable-font axis 消费。
 ///
 /// Shaping、字形 raster 与 IPC 已携带同一坐标；默认仍关闭，等待 Chromium Oracle 裁决。
 pub fn font_variations_enabled() -> bool {
-    std::env::var("ZW_FONT_VARIATIONS").as_deref() == Ok("1")
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    paint_env_value(paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_FONT_VARIATIONS").as_deref() == Ok("1")
+    })
 }
 
 /// Paint 阶段按字形实际字体测量单个字符 advance；Ahem 字体固定为 1em 方框宽。
@@ -346,7 +364,32 @@ pub(crate) fn glyph_sizes_adjusted(font_size: f32, glyphs: &[ShapedGlyph]) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use zero_render_foundation::primitive::FontId;
+
+    #[test]
+    fn paint_env_value_snapshots_or_reads_live() {
+        let reads = AtomicUsize::new(0);
+        let cache = OnceLock::new();
+        for _ in 0..2 {
+            assert!(paint_env_value(true, &cache, || {
+                reads.fetch_add(1, Ordering::Relaxed);
+                true
+            }));
+        }
+        assert_eq!(reads.load(Ordering::Relaxed), 1);
+
+        let live_reads = AtomicUsize::new(0);
+        let live_cache = OnceLock::new();
+        for _ in 0..2 {
+            assert!(paint_env_value(false, &live_cache, || {
+                live_reads.fetch_add(1, Ordering::Relaxed);
+                true
+            }));
+        }
+        assert_eq!(live_reads.load(Ordering::Relaxed), 2);
+        assert!(live_cache.get().is_none());
+    }
 
     /// R2237：Ahem 字体的字符宽度 = font_size（1em 完美方块），非真实点宽。
     /// ellipsis 测宽须传 is_ahem=true（Ahem 容器），否则 '.' 宽度过小致 ellipsis 定位错。

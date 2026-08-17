@@ -188,8 +188,8 @@ fn preserve_font_fallback_faces(font_ids: &[u32], generic_font_ids: &HashSet<u32
     // preserve explicit author faces so missing glyphs can continue down the
     // declared family list without reopening the CJK product perf regression.
     preserve_font_fallback_faces_with_policy(
-        std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"),
-        std::env::var("ZW_AUTHOR_FONT_FALLBACK").as_deref() != Ok("0"),
+        shaped_fallback_enabled(),
+        author_font_fallback_enabled(),
         font_ids.len() > 1 && font_ids.iter().all(|font_id| !generic_font_ids.contains(font_id)),
     )
 }
@@ -214,11 +214,8 @@ pub(super) fn fragment_font_size_adjustment(
             .or(stored)
             .unwrap_or(fallback),
     );
-    if preserve_font_fallback_faces_with_policy(
-        std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1"),
-        std::env::var("ZW_AUTHOR_FONT_FALLBACK").as_deref() != Ok("0"),
-        author_face,
-    ) {
+    if preserve_font_fallback_faces_with_policy(shaped_fallback_enabled(), author_font_fallback_enabled(), author_face)
+    {
         adjustment
     } else {
         zero_render_foundation::font::FontSizeAdjustment::None
@@ -279,6 +276,41 @@ fn shaped_generic_paint_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_SHAPED_GENERIC_PAINT").as_deref() != Ok("0"))
 }
 
+fn shaped_fallback_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    crate::text_metrics::paint_env_value(crate::text_metrics::paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_SHAPED_FALLBACK").as_deref() == Ok("1")
+    })
+}
+
+fn author_font_fallback_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    crate::text_metrics::paint_env_value(crate::text_metrics::paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_AUTHOR_FONT_FALLBACK").as_deref() != Ok("0")
+    })
+}
+
+fn shaped_layout_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    crate::text_metrics::paint_env_value(crate::text_metrics::paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1")
+    })
+}
+
+fn author_shaped_layout_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    crate::text_metrics::paint_env_value(crate::text_metrics::paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0")
+    })
+}
+
+fn adjusted_generic_advance_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    crate::text_metrics::paint_env_value(crate::text_metrics::paint_env_snapshot_enabled(), &ENABLED, || {
+        std::env::var("ZW_SHAPED_ADJUSTED_GENERIC_ADVANCE").as_deref() != Ok("0")
+    })
+}
+
 fn shaped_advance_policy(generic_font: bool, size_adjusted: bool, adjusted_generic_enabled: bool) -> bool {
     !generic_font || size_adjusted && adjusted_generic_enabled
 }
@@ -290,7 +322,7 @@ pub(super) fn fragment_shaped_advance_eligible(
     shaped_advance_policy(
         generic_font,
         font_size_adjustment_active(size_adjust),
-        std::env::var("ZW_SHAPED_ADJUSTED_GENERIC_ADVANCE").as_deref() != Ok("0"),
+        adjusted_generic_advance_enabled(),
     )
 }
 
@@ -303,8 +335,8 @@ pub(super) fn configure_paint_ifc_advance(
     text_node_font_size_adjust: &HashMap<NodeId, zero_style_system::FontSizeAdjustValue>,
     generic_font_ids: &HashSet<u32>,
 ) -> InlineFormattingContext {
-    let shaped_layout = std::env::var("ZW_SHAPED_LAYOUT").as_deref() == Ok("1");
-    let author_shaped_layout = std::env::var("ZW_AUTHOR_SHAPED_LAYOUT").as_deref() != Ok("0");
+    let shaped_layout = shaped_layout_enabled();
+    let author_shaped_layout = author_shaped_layout_enabled();
     if std::env::var("ZW_SHAPED_TEXT").as_deref() == Ok("0") || !shaped_layout && !author_shaped_layout {
         return context;
     }
@@ -361,7 +393,7 @@ pub(super) fn configure_paint_ifc_advance(
     if author_only {
         primary_ids.clear();
     }
-    let mut shaping_ids = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+    let mut shaping_ids = if !shaped_fallback_enabled() {
         text_node_shaping_font_ids.clone()
     } else {
         HashMap::new()
@@ -371,7 +403,7 @@ pub(super) fn configure_paint_ifc_advance(
             !font_ids.is_empty() && font_ids.iter().all(|font_id| !generic_font_ids.contains(font_id))
         });
     }
-    let mut size_adjust = if std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1") {
+    let mut size_adjust = if !shaped_fallback_enabled() {
         text_node_font_size_adjust.clone()
     } else {
         HashMap::new()
