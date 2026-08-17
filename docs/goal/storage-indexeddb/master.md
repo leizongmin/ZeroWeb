@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-17（M1 IDBFactory.cmp 12/12）
+**最后更新**: 2026-08-17（M1 IDBRequest EventTarget）
 
 ---
 
@@ -29,8 +29,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   WPT smoke 不抛 not defined）
 - ⚠️ 页面零接线：JS 近似与 Rust 引擎零关联
 - ⚠️ 无持久化：indexed_db 无落盘路径
-- ✅ WPT 首批：factory/global/event 9 文件、50 subtest，14 Pass / 36 Fail（28.00%）
+- ✅ WPT 首批：factory/global/event 9 文件、50 subtest，19 Pass / 31 Fail（38.00%）
 - ✅ `IDBFactory.cmp`：真实 WPT 12/12（基线 4/12，净增 8）
+- ✅ `IDBRequest` EventTarget：14 个基础设施失败归零，净增 5 Pass
 
 ## 缺口清单
 
@@ -43,7 +44,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 ## 下一步计划
 
-1. **M1 轻量修复 2**：补 `IDBRequest` EventTarget 表面（当前聚类 14 Fail）
+1. **M1 轻量修复 3**：补 `indexedDB.open` version WebIDL 转换/校验（15 Fail）
 2. **M1 扩面**：导入 object store CRUD 首批 `.any.js`，补第二分类分母
 3. **M2**：JS↔Rust 接线（open/事务/store CRUD/cursor 先行）
 
@@ -61,11 +62,12 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 ## 验证基线
 
 - 测试基线：storage crate 既有单测全绿（立项时点）；clippy 零警告
-- WPT IndexedDB 首批：9 文件 / 50 subtest / 14 Pass / 36 Fail / 28.00%
-- 失败聚类：open WebIDL TypeError 15、IDBRequest EventTarget 14、升级事务 5、
-  version 转换 1、VersionChangeEvent 字段 1
+- WPT IndexedDB 首批：9 文件 / 50 subtest / 19 Pass / 31 Fail / 38.00%
+- 失败聚类：open WebIDL TypeError 15、升级事务 8、VersionChangeEvent 构造器/字段 4、
+  重复 upgradeneeded 3、version 转换 1
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
-  `evidence/2026-08-17-m1-cmp-fix.{md,json}`
+  `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
+  `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

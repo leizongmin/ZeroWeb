@@ -2577,8 +2577,14 @@
     this.currentTarget = target;
     this.bubbles = false;
     this.cancelable = false;
+    this.defaultPrevented = false;
+    this._propagationStopped = false;
     this.timestamp = 0;
   }
+  _zwIDBEvent.prototype.preventDefault = function () {
+    if (this.cancelable) this.defaultPrevented = true;
+  };
+  _zwIDBEvent.prototype.stopPropagation = function () { this._propagationStopped = true; };
 
   function _zwIDBRequest(source) {
     this.readyState = 'pending';
@@ -2590,6 +2596,44 @@
     this.onerror = null;
     this.onupgradeneeded = null;
     this.onblocked = null;
+    this._listeners = {};
+  }
+  _zwIDBRequest.prototype.addEventListener = function (type, callback) {
+    if (callback == null) return;
+    type = String(type);
+    var listeners = this._listeners[type] || (this._listeners[type] = []);
+    if (listeners.indexOf(callback) === -1) listeners.push(callback);
+  };
+  _zwIDBRequest.prototype.removeEventListener = function (type, callback) {
+    var listeners = this._listeners[String(type)];
+    if (!listeners) return;
+    var index = listeners.indexOf(callback);
+    if (index !== -1) listeners.splice(index, 1);
+  };
+  _zwIDBRequest.prototype.dispatchEvent = function (event) {
+    if (!event || typeof event.type === 'undefined') {
+      throw new TypeError('IDBRequest.dispatchEvent requires an event');
+    }
+    event.target = this;
+    event.currentTarget = this;
+    _zwIDBEmit(this, String(event.type), event);
+    return !event.defaultPrevented;
+  };
+
+  function _zwIDBEmit(target, type, event) {
+    var handler = target['on' + type];
+    if (typeof handler === 'function') {
+      try { handler.call(target, event); } catch (_) {}
+    }
+    var listeners = (target._listeners[type] || []).slice();
+    for (var i = 0; i < listeners.length; i++) {
+      if (event._propagationStopped) break;
+      var listener = listeners[i];
+      try {
+        if (typeof listener === 'function') listener.call(target, event);
+        else if (listener && typeof listener.handleEvent === 'function') listener.handleEvent(event);
+      } catch (_) {}
+    }
   }
 
   // 异步派发（经 microtask，使调用方先注册 handler 再触发——spec task 语义）。type ∈ success/error/upgradeneeded。
@@ -2597,10 +2641,8 @@
     var fire = function () {
       req.readyState = 'done';
       if (result !== undefined) req.result = result;
-      var handler = type === 'upgradeneeded' ? req.onupgradeneeded
-        : type === 'error' ? req.onerror : req.onsuccess;
       var ev = new _zwIDBEvent(type === 'error' ? 'error' : (type === 'upgradeneeded' ? 'upgradeneeded' : 'success'), req);
-      if (typeof handler === 'function') { try { handler.call(req, ev); } catch (_) {} }
+      _zwIDBEmit(req, ev.type, ev);
     };
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
     else fire();
@@ -2790,8 +2832,9 @@
       if (typeof queueMicrotask === 'function') {
         queueMicrotask(function () {
           var ev = new _zwIDBEvent('success', req);
+          req.readyState = 'done';
           req.result = db;
-          if (typeof req.onsuccess === 'function') { try { req.onsuccess.call(req, ev); } catch (_) {} }
+          _zwIDBEmit(req, 'success', ev);
         });
       }
       return req;

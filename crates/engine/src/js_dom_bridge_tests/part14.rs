@@ -1623,6 +1623,40 @@ fn test_indexeddb_cmp_key_order_and_validation() {
 }
 
 #[test]
+fn test_indexeddb_request_event_target_surface() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "var calls = [];\
+             var request = indexedDB.open('event-target-db', 1);\
+             function removed() { calls.push('removed'); }\
+             request.addEventListener('upgradeneeded', function (event) {\
+               calls.push('upgrade:' + (event.target === request));\
+             });\
+             request.addEventListener('success', {\
+               handleEvent: function (event) { calls.push('listener:' + event.type); }\
+             });\
+             request.addEventListener('success', removed);\
+             request.removeEventListener('success', removed);\
+             request.onsuccess = function (event) { calls.push('handler:' + event.type); };",
+        )
+        .unwrap();
+    sandbox.execute("1;").unwrap();
+
+    assert_eq!(
+        sandbox.execute("calls.join('|')").unwrap().value,
+        "upgrade:true|handler:success|listener:success"
+    );
+}
+
+#[test]
 fn test_document_dispatch_event_r3082() {
     // R3082：document.dispatchEvent。旧 document 对象有 addEventListener/removeEventListener（转发 html key）
     // 但缺 dispatchEvent → `document.dispatchEvent(event)` 抛 TypeError（runtime/events/custom-event 用例失败）。
