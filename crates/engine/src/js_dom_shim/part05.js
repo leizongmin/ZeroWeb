@@ -445,6 +445,16 @@
     } else {
       arr.push(child);
     }
+    // js-dom M3 R91：handle 容器 append 同步记父反链（_zwNodeParent）——shadow root /
+    // fragment / handle 宿主三种容器的子此前不记反链，isConnected 的反链上行到容器
+    // 即断（WPT Node-isConnected-shadow-dom open/closed：shadow 树随 host 连入文档
+    // 即 connected）。isConnected getter（part04 R90/R91）经容器 handle 的
+    // _shadowHandleMeta 跳 host 续链。
+    try {
+      if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+        _zwNodeParent[child.__zwHandle] = { parentSel: null, parentHandle: parentHandle, nextSibling: null };
+      }
+    } catch (_e91r) {}
   }
   // 从容器 registry 移除 child（removeChild 用）。
   function _unrecordHandleChild(parentHandle, child) {
@@ -453,6 +463,13 @@
     if (!arr) return;
     var ch = child.__zwHandle;
     _handleChildren[parentHandle] = arr.filter(function(k) { return !k || k.__zwHandle !== ch; });
+    // R91：对称清反链（removeChild 后 isConnected 反链上行正确断开）。
+    try {
+      if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent
+          && _zwNodeParent[ch] && _zwNodeParent[ch].parentHandle === parentHandle) {
+        delete _zwNodeParent[ch];
+      }
+    } catch (_e91u) {}
   }
 
   // R2928 handle 子树 querySelector/querySelectorAll——JS 端 registry 树搜索 + 客户端选择器匹配。

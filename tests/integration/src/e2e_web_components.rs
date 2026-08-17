@@ -141,38 +141,58 @@ globalThis.__wcReport = log.join('|');
         );
     }
 
-    /// 断言组 4：customElements.get/getName 反查 + whenDefined resolve。
+    /// 断言组 4：customElements.get/getName 反查 + whenDefined resolve（R91 闭环：
+    /// define 触发 pending resolve 后经 run_page_scripts 的微任务 checkpoint flush，
+    /// 第二次 execute 读回 __futureResolved）。
     #[test]
     fn wc_registry_lookup_and_when_defined() {
-        let report = run_wc_page(
-            r#"
+        let page_script = r#"
 var log = [];
 class MyWidget extends HTMLElement {}
 customElements.define('my-widget', MyWidget);
 log.push('get:' + (customElements.get('my-widget') === MyWidget));
 log.push('get-miss:' + (customElements.get('no-such') === undefined || customElements.get('no-such') === null));
 log.push('getName:' + (customElements.getName(MyWidget) === 'my-widget'));
-var resolved = false;
-customElements.whenDefined('future-el').then(function () { resolved = true; globalThis.__futureResolved = 'yes'; });
+customElements.whenDefined('future-el').then(function () { globalThis.__futureResolved = 'yes'; });
 customElements.define('future-el', class extends HTMLElement {});
 log.push('whenDefined-pending');
 globalThis.__wcReport = log.join('|');
-"#,
+"#;
+        let html = format!(
+            r#"<html><head><title>WC E2E</title></head><body><div id="host"></div><script>
+{page_script}
+</script></body></html>"#
         );
+        let mut wv = WebView::new(WebViewConfig {
+            width: 800,
+            height: 600,
+            ..Default::default()
+        });
+        wv.load_html(&html, None);
+        let _ = wv.run_page_scripts_strict();
+        let report = wv
+            .execute_script_with_dom(
+                "(typeof globalThis.__wcReport === 'string') ? globalThis.__wcReport : 'NO-REPORT'",
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
         assert!(
-            report.contains("get:true") && report.contains("getName:my-widget") || report.contains("getName:true"),
+            report.contains("get:true") && (report.contains("getName:my-widget") || report.contains("getName:true")),
             "registry get/getName 反查，got: {report}"
         );
         assert!(
             report.contains("get-miss:true"),
             "未定义 tag 的 get 须返 null/undefined，got: {report}"
         );
-        // whenDefined 的 promise 在微任务 checkpoint resolve——报告读回时再探一次。
-        let mut wv = WebView::new(WebViewConfig::default());
-        wv.load_html("<html><body></body></html>", None);
-        let _ = wv.run_page_scripts_strict();
-        let _ = wv;
-        // （whenDefined 断言在页面内完成——见下个测试的 flush 后读。）
+        // R91：whenDefined 的 promise resolve 经第二次脚本执行（微任务 checkpoint 已跑）。
+        let resolved = wv
+            .execute_script_with_dom(
+                "(typeof globalThis.__futureResolved === 'string') ? globalThis.__futureResolved : 'no'",
+            )
+            .unwrap_or_else(|_| "EXEC-ERR".to_string());
+        assert_eq!(
+            resolved, "yes",
+            "whenDefined pending 须在 define 时 resolve（flush 后读到），got: {resolved}"
+        );
     }
 
     /// 断言组 5：自定义事件 dispatchEvent + shadow 内 listener（事件面端到端）。

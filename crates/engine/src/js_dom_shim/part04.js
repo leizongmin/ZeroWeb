@@ -727,13 +727,37 @@
           // getBoundingClientRect 尚空——WC 组件 connectedCallback 内 isConnected 读
           // false 与 spec 相悖）。沿 _zwNodeParent 上行到宿主 sel 节点即 connected；
           // 无链且无 rect → false。记录形态 { parentSel, parentHandle }（part01 汇流点）。
+          // R91：shadow 边界穿越——反链到达 shadow root 容器 handle（无 parentSel 记录）
+          // 时经 _shadowHandleMeta 跳到 host 继续（spec connected：shadow 树随 host 连入
+          // 文档即 connected；WPT Node-isConnected-shadow-dom open/closed）。
           if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
             try {
               var _r90p = _zwNodeParent[handle];
+              // 反链 miss 时：本元素可能直接 append 到 shadow root（shadow 容器
+              // appendChild 的记账路径）——经 parentNode 读容器再跳 host。
+              if (!_r90p) {
+                var _r91par = target && target.parentNode;
+                if (_r91par && _r91par.__zwHandle) _r90p = { parentSel: null, parentHandle: _r91par.__zwHandle };
+              }
               var _r90hops = 0;
               while (_r90p && _r90hops++ < 64) {
                 if (_r90p.parentSel) return true; // 挂到 sel 节点（html/body/容器）→ 在档
-                _r90p = _zwNodeParent[_r90p.parentHandle];
+                var _r90ph = _r90p.parentHandle;
+                if (!_r90ph) break;
+                // shadow root 容器 → host 跳转。
+                var _r91meta = typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta[_r90ph];
+                if (_r91meta) {
+                  if (_r91meta.hostSel) return true; // host 是 sel 节点 → 在档
+                  _r90p = _zwNodeParent[_r91meta.hostHandle];
+                  if (!_r90p && _r91meta.hostHandle) {
+                    // host 是 handle 元素（未挂载或挂到 handle 容器）——回落 rect 探测 host。
+                    if (typeof __zw_getBoundingClientRect === 'function') {
+                      try { return __zw_getBoundingClientRect(_r91meta.hostHandle) !== ''; } catch (_e91) {}
+                    }
+                  }
+                  continue;
+                }
+                _r90p = _zwNodeParent[_r90ph];
               }
             } catch (_e90) {}
           }
