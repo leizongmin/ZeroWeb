@@ -143,6 +143,12 @@ pub const INDEXEDDB_CASES: &[(&str, &str)] = &[
         "resources/support.js",
     ),
     ("IndexedDB/idbversionchangeevent.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_add.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_put.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_get.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_delete.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_clear.any.js", "resources/support.js"),
+    ("IndexedDB/idbobjectstore_count.any.js", "resources/support.js"),
 ];
 
 /// WPT subtest status.

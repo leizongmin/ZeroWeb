@@ -1,0 +1,34 @@
+{
+  "date": "2026-08-17",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": "IndexedDB object store CRUD first slice",
+  "files": 6,
+  "subtests": 51,
+  "status": {
+    "pass": 15,
+    "fail": 36,
+    "timeout": 0,
+    "unsupported": 0,
+    "not_run": 0,
+    "precondition_failed": 0
+  },
+  "pass_rate_percent": 29.41,
+  "per_file": [
+    {"path": "IndexedDB/idbobjectstore_add.any.js", "pass": 3, "fail": 13},
+    {"path": "IndexedDB/idbobjectstore_put.any.js", "pass": 4, "fail": 12},
+    {"path": "IndexedDB/idbobjectstore_get.any.js", "pass": 4, "fail": 3},
+    {"path": "IndexedDB/idbobjectstore_delete.any.js", "pass": 1, "fail": 3},
+    {"path": "IndexedDB/idbobjectstore_clear.any.js", "pass": 2, "fail": 2},
+    {"path": "IndexedDB/idbobjectstore_count.any.js", "pass": 1, "fail": 3}
+  ],
+  "failure_clusters": [
+    {"name": "key and DataError validation", "count": 11},
+    {"name": "invalid index key handling", "count": 2},
+    {"name": "deleted object store InvalidStateError", "count": 5},
+    {"name": "readonly transaction ReadOnlyError", "count": 4},
+    {"name": "inactive transaction TransactionInactiveError", "count": 1},
+    {"name": "unique constraint handling", "count": 3},
+    {"name": "autoIncrement keyPath and cursor continuation", "count": 6},
+    {"name": "key range and query semantics", "count": 4}
+  ]
+}

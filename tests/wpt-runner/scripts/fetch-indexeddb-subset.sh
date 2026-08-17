@@ -23,6 +23,12 @@ FILES=(
   "IndexedDB/idbfactory-open-request-error.any.js"
   "IndexedDB/idbfactory-open-request-success.any.js"
   "IndexedDB/idbversionchangeevent.any.js"
+  "IndexedDB/idbobjectstore_add.any.js"
+  "IndexedDB/idbobjectstore_put.any.js"
+  "IndexedDB/idbobjectstore_get.any.js"
+  "IndexedDB/idbobjectstore_delete.any.js"
+  "IndexedDB/idbobjectstore_clear.any.js"
+  "IndexedDB/idbobjectstore_count.any.js"
 )
 
 fetch_raw() {
@@ -82,4 +88,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (9 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (15 cases, WPT ${WPT_REV})"
