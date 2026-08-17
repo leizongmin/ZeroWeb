@@ -1,0 +1,40 @@
+{
+  "date": "2026-08-17",
+  "round": "R95",
+  "milestone": "M3 Web Components e2e (DC-2)",
+  "commit": "(this commit)",
+  "slice": "real lit library e2e — component chain + template.content (first slice)",
+  "lit_source": {
+    "vendor": "jsdelivr CDN snapshots 2026-08-17",
+    "versions": {
+      "@lit/reactive-element": "2.1.1",
+      "lit-html": "3.3.2",
+      "lit-element": "4.2.1"
+    },
+    "license": "BSD-3-Clause (headers retained in bundle)",
+    "form": "five modules bundled to one classic script (import/export stripped, per-module IIFE + explicit binding handoff), globalThis.lit API"
+  },
+  "shim_fixes": [
+    "part03 get trap: 'constructor' top short-circuit (prototype-chain own hit, 8 levels) — lit's _$E_ reads this.constructor.elementProperties; old trap returned undefined mid-branch → ctor chain killed",
+    "part04 get trap: <template>.content fragment view (nodeType 11/childNodes/firstChild over innerHTML-parsed local tree) — lit-html Template pipeline source"
+  ],
+  "test_assets": [
+    "e2e_lit_library::lit_component_chain (bundle eval + ctor bridge + constructor identity + instanceof x2 + internals + shadow root)",
+    "e2e_lit_library::template_content_fragment_view"
+  ],
+  "verification": {
+    "integration": "777 (+2 lit)",
+    "engine_v8": "2188",
+    "engine_quickjs": "1427",
+    "webview_v8": "601",
+    "wpt_dom": "nodes 6654P/1568F, collections 48P/0F, traversal 1593P/11F byte-identical; events 190P/138F → 236P/191F net +46P (passive-by-default whole-case crash → 43P/57F executed; disabled-elements 0P→3P — execution-exposure gains from constructor fix)",
+    "fmt": "clean",
+    "clippy": "zero warnings",
+    "pre_commit_guard": "PASS"
+  },
+  "diagnosed_remaining": {
+    "async_update_chain": "this.enableUpdating (promise resolver assigned in ctor via Promise executor) reads back as prototype noop → await this._$ES never resumes → first render never lands (shadow root stays empty). Root: an unknown mid-trap branch shadows the expando read for some instance props; expando-first fix attempted and REVERTED (regressed group A — exposed that 'hasOwnProperty' lookup itself is swallowed between part03's last prop branch and part04's expando read; bisect markers 0..52 all reached, part04 counters never)",
+    "finalize_trigger": "define-time observedAttributes read (lit finalize → property accessors) attempted and REVERTED this round — elProps went 0→2 but instantly exposed the hasOwnProperty gap (this.hasOwnProperty is not a function inside _$Ei)",
+    "next_slice_plan": "1) locate the swallowing branch in the part03→part04 trap middle for names like hasOwnProperty/enableUpdating (bisect with markers inside part04 region); 2) own-property (expando) shadow semantics for instance props; 3) re-land define-time finalize; 4) reactive property round-trip + first render assertions"
+  }
+}
