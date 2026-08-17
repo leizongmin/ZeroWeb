@@ -389,6 +389,7 @@ impl StyleSystem {
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）
         let cache_safe = stylesheet_cache_safe(stylesheets);
+        let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
 
@@ -409,6 +410,7 @@ impl StyleSystem {
             has_pseudo_rules,
             cache_safe,
             &mut style_cache,
+            delay_parent_insert,
             None,
         );
 
@@ -444,6 +446,7 @@ impl StyleSystem {
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
         let cache_safe = stylesheet_cache_safe(stylesheets);
+        let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
         let rule_index = matcher::build_stylesheet_index(stylesheets);
@@ -488,6 +491,7 @@ impl StyleSystem {
                 has_pseudo_rules,
                 cache_safe,
                 &mut style_cache,
+                delay_parent_insert,
                 None,
             );
         }
@@ -508,6 +512,7 @@ impl StyleSystem {
         has_pseudo_rules: bool,
         cache_safe: bool,
         style_cache: &mut std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle>,
+        delay_parent_insert: bool,
         parent_key: Option<std::rc::Rc<StyleKey>>,
     ) {
         let node_data = match doc.get(node) {
@@ -522,6 +527,9 @@ impl StyleSystem {
         // presentational hints 属性都是键外依赖）；父无键（不安全/属性超集）时
         // 子元素禁用缓存（继承链不完整）。声明在 is_element 块外供子节点循环使用。
         let mut cache_key: Option<std::rc::Rc<StyleKey>> = None;
+        // Keep the large value off recursive stack frames; deeply nested pages
+        // otherwise overflow before the delayed insert can unwind.
+        let mut delayed_style: Option<Box<ComputedStyle>> = None;
 
         // 只为元素节点计算样式
         if is_element {
@@ -663,21 +671,32 @@ impl StyleSystem {
                     computed.after_pseudo = Some(Box::new(a));
                 }
             } // if has_pseudo_rules || is_q（S10）
-            styles.insert(node, computed);
+            if delay_parent_insert {
+                delayed_style = Some(Box::new(computed));
+            } else {
+                styles.insert(node, computed);
+            }
         }
 
         // 收集子节点列表
         let children = doc.child_nodes(node);
         if children.is_empty() {
+            if let Some(computed) = delayed_style {
+                styles.insert(node, *computed);
+            }
             return;
         }
 
         // 对于子节点：如果当前节点是元素节点且有计算样式，
         // 需要从 styles 中取出作为 parent_style。
-        // 为了避免借用冲突，先克隆当前节点的样式。
-        let current_style = if is_element { styles.get(&node).cloned() } else { None };
-
-        let parent_ref = current_style.as_ref().or(parent_style);
+        // OPTIMIZATION: keep the owned style local and lend it directly to
+        // child recursion instead of cloning it back from the result map.
+        let cloned_style = if !delay_parent_insert && is_element {
+            styles.get(&node).cloned()
+        } else {
+            None
+        };
+        let parent_ref = delayed_style.as_deref().or(cloned_style.as_ref()).or(parent_style);
 
         // 子元素继承当前元素已解析的自定义属性（自定义属性是继承属性）。
         // 非元素节点不计算样式，其子节点沿用 parent_custom（隔代继承到最近元素祖先）。
@@ -701,8 +720,12 @@ impl StyleSystem {
                 has_pseudo_rules,
                 cache_safe,
                 style_cache,
+                delay_parent_insert,
                 cache_key.clone(),
             );
+        }
+        if let Some(computed) = delayed_style {
+            styles.insert(node, *computed);
         }
     }
 
