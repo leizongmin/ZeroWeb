@@ -1,0 +1,37 @@
+{
+  "date": "2026-08-17",
+  "round": "R94",
+  "milestone": "M3 Web Components e2e (DC-2)",
+  "commit": "d26f8a29",
+  "slice": "Proxy-ctor bridge — user ctor body runs on the element",
+  "closes": "R90 known limitation 'class ctor body cannot be replayed on existing proxy (B.call throws without new; Reflect.construct builds fresh this)'",
+  "mechanism": "this-injection via base-ctor return value: polyfill HTMLElement stub returns _zwCeExisting element when set; derived ctor super() adopts it as this for the whole chain; user ctor body continues with this=element",
+  "node_probes": [
+    "inst === el (identity), prototype methods callable, instanceof true",
+    "chain set BEFORE construction (methods in body reachable)",
+    "multi-level derived chains (B extends A extends hook) inject correctly",
+    "sequential upgrades each consume their own element",
+    "new.target inside user ctor is the user ctor (getName works)",
+    "ctor throw after super(): slot already consumed, no leak",
+    "function ctor: .call(el) injects this directly (legal for non-class)"
+  ],
+  "implementation": [
+    "part03 HTMLElement stub → ctor-bridge hook (polyfill-built path only; native_dom keeps native HTMLElement + S5b upgrade slot — zero interaction)",
+    "part03 _ceRunCtor(ctor, el): setPrototypeOf first, class ctor via new + super() injection, function ctor via .call(el); class/function discriminated by Function.prototype.toString class-syntax probe (call-throw probe rejected: throwing function ctor would double-run); errors swallowed; finally clears slot",
+    "_ceUpgradeNode (customElements.upgrade / parsed subtree) now runs ctor body (spec custom-elements-upgrades upgrade step)",
+    "part06 createElement CE branch: setPrototypeOf → _ceRunCtor"
+  ],
+  "test_asset": "tests/integration/src/e2e_web_components.rs group 8 wc_ctor_body_runs_on_element (6 paths: createElement upgrade ctor-ran/instanceof, expando rw, ctor+connectedCallback ordering, function ctor, throwing ctor isolation, plain elements unaffected)",
+  "verification": {
+    "integration": "775 passed (773 + group 8)",
+    "engine_v8": "2188 passed",
+    "engine_quickjs": "1427 passed",
+    "webview_v8": "601 passed",
+    "wpt_dom_regression": "nodes 6654P/1568F/13n, events 190P/138F/6n, collections 48P/0F/1n, traversal 1593P/11F — per-case byte-identical to R93 (0 diffs beyond removed probe artifact)",
+    "fmt": "clean",
+    "clippy": "zero warnings",
+    "pre_commit_guard": "PASS"
+  },
+  "lit_implication": "lit's constructor-internal init surface (shadow root prep, property initialization) now reachable — real lit-library e2e is the next slice candidate",
+  "deferred": "real lit/stencil library e2e fixture (M3 remaining); parsed-element upgrade ctor timing vs parser ordering (upgrade currently fires on customElements.upgrade call, parser-time elements upgrade lazily)"
+}
