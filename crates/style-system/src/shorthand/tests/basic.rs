@@ -68,6 +68,22 @@ fn test_padding_2_values() {
     assert_eq!(result[3].1, "10px"); // left
 }
 
+#[test]
+fn test_padding_shorthand_rejects_invalid_tokens() {
+    assert!(expand_one("padding", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("padding", "auto", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("padding", "-1px", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("padding", "10% 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "10%");
+    assert_eq!(result[1].1, "2px");
+
+    let inherit = expand_one("padding", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 4);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
 // ── border-width/style/color 简写测试 ──
 
 #[test]

@@ -30,6 +30,8 @@ Grid placement shorthands exposed the delimiter variant: splitting at the first 
 
 Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping must validate each mapped value against the target width, style, or color grammar before emitting logical longhands.
 
+`padding` and logical padding exposed the box-edge validation variant: padding accepts neither `auto` nor negative lengths, so both 1-4 full expansion and 1-2 logical-axis expansion need property-specific token validation.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

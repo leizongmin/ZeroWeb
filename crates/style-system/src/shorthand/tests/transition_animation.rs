@@ -155,6 +155,18 @@ fn test_padding_inline_shorthand() {
 }
 
 #[test]
+fn test_logical_padding_rejects_invalid_tokens() {
+    assert!(expand_one("padding-block", "auto", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("padding-inline", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("padding-inline", "red", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("padding-inline", "10% 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "10%");
+    assert_eq!(result[1].1, "2px");
+}
+
+#[test]
 fn test_inset_block_shorthand() {
     let result = expand_one("inset-block", "100px 200px", false, (0, 0, 1));
     assert_eq!(result.len(), 2);

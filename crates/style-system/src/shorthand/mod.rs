@@ -299,7 +299,12 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             ]
         }
         "padding" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            // https://drafts.csswg.org/css-box-4/#padding-physical
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_padding_rect_value)
+            }) else {
                 return vec![];
             };
             vec![
@@ -609,17 +614,20 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             important,
             specificity,
         ),
-        "padding-block" => expand_axis_logical(
+        // https://drafts.csswg.org/css-logical-1/#propdef-padding-block
+        "padding-block" => expand_axis_logical_with(
             value,
             "padding-block-start",
             "padding-block-end",
+            is_padding_rect_value,
             important,
             specificity,
         ),
-        "padding-inline" => expand_axis_logical(
+        "padding-inline" => expand_axis_logical_with(
             value,
             "padding-inline-start",
             "padding-inline-end",
+            is_padding_rect_value,
             important,
             specificity,
         ),
@@ -879,6 +887,29 @@ fn is_border_width_rect_value(value: &str) -> bool {
 }
 
 fn is_border_radius_rect_value(value: &str) -> bool {
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v))
+        | Some(zero_css_parser::values::LengthValue::Percentage(v)) => v >= 0.0,
+        Some(zero_css_parser::values::LengthValue::Calc(_)) => true,
+        _ => zero_css_parser::values::parse_math_function(value).is_some(),
+    }
+}
+
+fn is_padding_rect_value(value: &str) -> bool {
     match zero_css_parser::values::parse_length(value) {
         Some(zero_css_parser::values::LengthValue::Px(v))
         | Some(zero_css_parser::values::LengthValue::Em(v))
