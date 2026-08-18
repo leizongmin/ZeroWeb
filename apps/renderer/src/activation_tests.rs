@@ -1,4 +1,5 @@
 use super::*;
+use crate::page_scripts;
 
 fn runtime_with_scripts(html: &str, renderer_id: u64) -> RendererRuntime {
     let url = "https://zero.test/activation";

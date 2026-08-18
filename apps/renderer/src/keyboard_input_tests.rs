@@ -1,4 +1,5 @@
 use super::*;
+use crate::page_scripts;
 
 fn runtime_with_prevented_keydown(renderer_id: u64) -> RendererRuntime {
     let html = r#"<html><body>

@@ -3,7 +3,7 @@
 #[test]
 fn renderer_crate_has_no_gpu_raster_imports() {
     // renderer 只发布 PaintSnapshot；GPU 光栅在 zero-compositor（ZW_COMPOSITOR_GPU=1）。
-    let src = include_str!("main.rs");
+    let src = include_str!("runtime.rs");
     assert!(
         !src.contains("GpuRenderer"),
         "renderer 不得直接持有 GpuRenderer（C3 隔离）"

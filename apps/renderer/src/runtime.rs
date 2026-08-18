@@ -1,0 +1,2829 @@
+//! Shared renderer role implementation.
+
+#[path = "automation.rs"]
+mod automation;
+
+use zero_page_runtime::{FormControlStateStore, FrameInvalidation, FrameTransaction, PageInteractionState};
+use zero_webview::AsyncPageLoad;
+
+use crate::ipc_fetch::{InflightIpcFetches, IpcAsyncFetchHost, StubAsyncFetchHost};
+use crate::ipc_indexed_db::IndexedDbResponseRouter;
+use crate::{compositor_publish_thread, error_page, ipc_indexed_db, page_scripts, paint_export, sandbox, text_metrics};
+
+use crate::js_worker::RendererJsWorker;
+use crate::page_scripts::{DomDispatchResult, PageScriptContext, dispatch_dom_event, run_page_scripts};
+use crate::script_prefetch::PendingScriptPrefetch;
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use std::io;
+use zero_engine::{
+    DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, selector_from_element_hit,
+    set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn,
+};
+use zero_protocol::IpcChannel;
+use zero_protocol::message::{
+    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
+    FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
+    ImeEventType, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType,
+    IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams,
+    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetViewportParams, StorageOpParams,
+};
+use zero_protocol::transport::PipeTransport;
+use zero_protocol::{ProcessRole, is_disconnected_channel_message};
+
+/// 渲染进程 → 浏览器 IPC 发送端（stdout）。
+type IpcOutbound = PipeTransport<io::Empty, Box<dyn io::Write + Send>>;
+type LoadedFontMetadata<'a> = (
+    Option<&'a [zero_render_foundation::font::OpenTypeFeature]>,
+    Option<&'a [zero_render_foundation::font::OpenTypeVariation]>,
+    &'a [(u32, u32)],
+    Option<f32>,
+);
+
+fn browser_ipc_disconnected(err: &str) -> bool {
+    is_disconnected_channel_message(err)
+}
+
+/// P1a form input：判定 key 是否为单字符可打印键（用于向 input/textarea 注入字符）。
+/// 多字符 key 名（"Enter"/"Backspace"/"ArrowLeft"/"Shift"/"Tab"…）与控制字符排除。
+fn is_printable_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if !c.is_control() => chars.next().is_none(),
+        _ => false,
+    }
+}
+
+/// P1a change-on-blur：读表单元素的「当前值」用于失焦 change 比对。textarea 的 value 是其
+/// **文本内容**（R2702 value↔内容映射，非 value 属性）；input 取 value 属性。select 不走此路径
+/// （change 在 click 派发）。host 侧 blur_focused/focus_target/focus_via_tab 共用。
+fn read_input_value_for_change(html: &str, selector: &str) -> String {
+    if zero_engine::query_tag_from_html(html, selector).eq_ignore_ascii_case("textarea") {
+        zero_engine::query_text_from_html(html, selector)
+    } else {
+        zero_engine::query_attr_from_html(html, selector, "value")
+    }
+}
+
+use zero_render_foundation::font::loader::FontLoader;
+
+/// 单帧渲染预算（ms）——与 tab_worker 对齐，每 tick 推进一小步后归还 IPC 循环。
+const RENDER_FRAME_BUDGET_MS: f64 = 16.0;
+/// 分阶段加载最长 wall-clock 时间（复杂页面如 qq.com 布局可能需数十秒）。
+const PAGE_LOAD_DEADLINE: Duration = Duration::from_secs(120);
+/// 无 IPC 消息时推进 pending load 的轮询间隔。
+const LOAD_TICK_INTERVAL: Duration = Duration::from_millis(16);
+/// renderer 的 parse/style/layout/paint 调用链在 Windows GUI 入口线程的默认栈上会溢出。
+/// 使用固定的独立运行栈，保留 multi-process/compositor 路径，不因复杂页面退化为单进程。
+/// 仅非 macOS 平台使用（macOS 上 run_on_renderer_stack 被 cfg 排除，避免 clippy 未使用告警）。
+#[cfg(not(target_os = "macos"))]
+const RENDERER_RUNTIME_STACK_SIZE: usize = 16 * 1024 * 1024;
+
+/// 单个 renderer surface 的帧发布状态。
+struct FramePublishState {
+    /// 页面绘制帧的 Browser IPC 发布模式。
+    mode: FramePublishMode,
+    /// 由 renderer id 提供的稳定 surface 标识。
+    surface_id: u64,
+    /// 下一次实际页面绘制使用的单调帧序号。
+    next_frame_id: u64,
+}
+
+impl FramePublishState {
+    /// 为指定 renderer 创建帧发布状态。
+    fn new(renderer_id: u64, mode: FramePublishMode) -> Self {
+        Self {
+            mode,
+            surface_id: renderer_id,
+            next_frame_id: 1,
+        }
+    }
+
+    /// 更新后续页面帧的发布模式。
+    fn set_mode(&mut self, mode: FramePublishMode) {
+        self.mode = mode;
+    }
+}
+
+/// 进行中的分阶段页面加载（异步 tick，不阻塞 IPC 消息循环）。
+struct PendingLoad {
+    load: AsyncPageLoad,
+    page_url: String,
+    deadline: Instant,
+    run_scripts_after: bool,
+    emit_load_complete: bool,
+}
+
+/// 渲染进程运行时状态。
+struct RendererRuntime {
+    /// 向浏览器写入 IPC（stdout）。
+    outbound: IpcOutbound,
+    /// 浏览器 → 渲染进程消息（stdin 读线程填充）。
+    inbound_rx: Receiver<IpcMessage>,
+    /// 持有 IPC reader/router 线程 JoinHandle（仅保活，不被读；drop 即分离线程）。
+    #[allow(dead_code)]
+    inbound_threads: Vec<JoinHandle<()>>,
+    /// 当前视口（CSS 逻辑像素），随 SetViewport 更新；publish 用。
+    viewport: (u32, u32),
+    /// 当前窗口设备缩放因子，仅用于 compositor 位图的光栅分辨率。
+    device_scale_factor: f32,
+    /// 页面运行时（B3：渲染/字体/脚本/hit-test 全经 WebView，与 tabworker 同一页面运行时）。
+    webview: Option<zero_webview::WebView>,
+    /// 字体加载器：为 paint 阶段提供真实字符 advance。
+    font_loader: FontLoader,
+    /// 当前主字体 id。
+    font_id: Option<u32>,
+    /// 当前 URL。
+    current_url: Option<String>,
+    /// 消息 ID 计数器。
+    next_msg_id: u64,
+    /// Fetch 请求 ID 计数器。
+    next_fetch_id: u64,
+    /// 渲染进程 ID。
+    renderer_id: u64,
+    /// 当前 renderer surface 的页面帧发布状态。
+    frame_publish: FramePublishState,
+    /// 一个外部输入消息及其同步 JS 回调共享的帧事务。
+    frame_transaction: FrameTransaction,
+    /// 事务内最后一个非空标题；在事务边界与页面帧一起提交。
+    pending_frame_title: Option<String>,
+    /// 最近一次发送给 browser 的页面标题，用于脚本 title 变更去重。
+    last_published_title: Option<String>,
+    /// 事务内发布是否允许补抓图片资源。
+    pending_frame_network_fetch: bool,
+    /// 导航历史栈。
+    history: Vec<String>,
+    /// 当前历史索引。
+    history_index: usize,
+    /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
+    deferred_inbound: VecDeque<IpcMessage>,
+    /// RFC 4.1：compositor 帧 IPC 异步发布线程（默认启用，`=0` 可诊断性禁用）。
+    compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
+    /// 当前页面 HTML（脚本执行后同步更新）。
+    cached_html: String,
+    /// 当前页面附加 CSS。
+    cached_css: String,
+    /// JS 执行 worker。
+    js_worker: RendererJsWorker,
+    /// 是否允许执行 JavaScript。
+    javascript_enabled: bool,
+    /// 最近一次交互目标选择器（键盘事件）。
+    /// 页面指针与键盘/IME 焦点的统一路由状态。
+    interaction: PageInteractionState,
+    /// 与浏览器 TabSnapshot 对齐的导航世代。
+    navigation_epoch: u64,
+    /// 当前导航内的 Document 世代；新建 Document 时递增。
+    document_generation: u64,
+    /// 已发送图片 key（S8）：browser 端 ImageCache 已存则不再重传像素；navigation 重置。
+    sent_image_keys: std::collections::HashSet<u64>,
+    /// 异步分阶段加载（与 tab_worker 相同 tick 模型）。
+    pending_load: Option<PendingLoad>,
+    /// 页面 HTML/CSS/图片加载完成后的非阻塞脚本预取。
+    pending_script_prefetch: Option<PendingScriptPrefetch>,
+    /// 本文档中已经开始执行的外链脚本绝对 URL（含解析期与动态插入脚本）。
+    executed_external_scripts: HashSet<String>,
+    /// 进行中的非阻塞 IPC fetch（request_id → Receiver 完成端）。
+    inflight_fetches: InflightIpcFetches,
+    /// in-process 测试无 browser 进程时，避免阻塞 IPC / 子资源永久 pending。
+    stub_network: bool,
+    /// P1a Slice 2b：observer host-tick 重入守卫——`publish_webview` 末尾触发 tick，tick 回调
+    /// 若改 DOM → rerender → 再次 `publish_webview`；depth>0 时跳过 tick，防 tick→rerender→tick
+    /// 链（observer 仅在 cross/size-change 时派发，本身收敛；此守卫为兜底，单次外部触发最多 2 次 publish）。
+    observer_tick_depth: u32,
+    /// 页面级 retained 文本表单控件状态（值、选区、焦点和 change 基线）。
+    form_controls: FormControlStateStore,
+    /// 子资源 fetch/decode 失败 `(kind, url)`。load 完成时从
+    /// `AsyncPageLoad.take_failed_resources` drain 并 stash，脚本阶段经 `finish_page_load` 派 window 'error'。
+    pending_resource_errors: Vec<(String, String)>,
+    /// FR-009：资源元素最终状态。load 完成时 drain，脚本阶段提交 IDL 状态与规范事件。
+    pending_resource_element_events: Vec<zero_webview::ResourceElementEvent>,
+    /// R2944 mirror：stylesheet 元素级 load/error `(绝对 URL, "load"/"error")`。load 完成时 drain 并 stash，
+    /// 脚本阶段经 `finish_page_load` 派 `__zw_dispatch_link_event`。
+    pending_link_events: Vec<(String, &'static str)>,
+    /// R2947：@font-face 加载结果 `(family, "loaded"/"error")`。load 完成时从
+    /// `AsyncPageLoad.take_font_events` drain 并 stash，脚本阶段经 `finish_page_load` 派 FontFaceSet
+    /// 'loadingdone'/'loadingerror' + 解析 `document.fonts.ready`。
+    pending_font_events: Vec<(String, &'static str)>,
+}
+
+impl RendererRuntime {
+    /// 创建新的渲染进程运行时。
+    fn new(renderer_id: u64) -> Self {
+        zero_webview::enable_isolated_image_decoder();
+        let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_browser_ipc_inbound();
+        let mut rt = Self::with_io(
+            renderer_id,
+            FramePublishMode::Compositor,
+            Box::new(io::stdout()),
+            inbound_rx,
+        );
+        rt.inbound_threads.push(inbound_thread);
+        rt
+    }
+
+    /// 用指定出站 writer + 入站通道构造（`new()` 走 stdin/stdout；本方法供 in-process 测试，
+    /// 是 B3 cutover 回归门的基础——renderer 是 bin，否则 wiring 无法单测）。
+    fn with_io(
+        renderer_id: u64,
+        frame_publish_mode: FramePublishMode,
+        outbound: Box<dyn io::Write + Send>,
+        inbound_rx: Receiver<IpcMessage>,
+    ) -> Self {
+        let indexed_db_responses = IndexedDbResponseRouter::new();
+        let (inbound_rx, inbound_thread) =
+            ipc_indexed_db::route_browser_ipc_inbound(inbound_rx, Arc::clone(&indexed_db_responses));
+        let (shared_writer, writer) = compositor_publish_thread::SharedWriter::new(outbound);
+        let compositor_publish = if compositor_publish_thread::compositor_publish_threading_enabled() {
+            Some(compositor_publish_thread::CompositorPublishThread::spawn(Arc::clone(
+                &writer,
+            )))
+        } else {
+            None
+        };
+        let outbound = PipeTransport::new(io::empty(), Box::new(shared_writer) as Box<dyn io::Write + Send>);
+        let indexed_db_handler = ipc_indexed_db::indexed_db_handler(
+            compositor_publish_thread::SharedWriter::from_arc(writer),
+            indexed_db_responses,
+        );
+        let (font_loader, font_id, font_resolver) = load_system_fonts();
+        set_char_measure_fn(text_metrics::measure_char);
+        set_text_shape_fn(text_metrics::shape_text);
+        set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
+        let js_worker = RendererJsWorker::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler);
+        // P1b S3 / R2923（镜像 browser tab_worker）：注入生产 fetch handler（经 ResourceLoader 真实 HTTP，
+        // 支持全方法/头/体）。js_worker 早于 WebView 创建；共享加载器不依赖 WebView 句柄，故可立即注入。
+        // test 构建不注入（renderer runtime 单测用合成 handler）。
+        #[cfg(not(test))]
+        js_worker.set_fetch_handler(crate::js_worker::default_fetch_handler());
+        // B3：renderer 内部持有 WebView，渲染/字体/脚本全经 WebView（与 tabworker 同一页面运行时）。
+        // external_script 委派 js_worker（避免双 V8）；font_resolver 设到 WebView（paint 字体面）。
+        let mut webview = zero_webview::WebView::new(zero_webview::WebViewConfig {
+            width: 1280,
+            height: 800,
+            external_script: Some(js_worker.executor()),
+            ..Default::default()
+        });
+        webview.set_font_resolver(font_resolver);
+        // R2202 U1b-wiring 生产接通：注入 per-family 行度量（env-gated ZW_PERFONT_LINEHEIGHT=1，
+        // 默认 dormant 零回归；激活后 line-height:normal 走真实 ascent−descent+line_gap）。
+        webview.set_font_metric_map(font_loader.build_line_metric_map());
+        Self {
+            outbound,
+            inbound_rx,
+            inbound_threads: vec![inbound_thread],
+            viewport: (1280, 800),
+            device_scale_factor: 1.0,
+            webview: Some(webview),
+            font_loader,
+            font_id,
+            current_url: None,
+            next_msg_id: 1,
+            next_fetch_id: 1,
+            renderer_id,
+            frame_publish: FramePublishState::new(renderer_id, frame_publish_mode),
+            frame_transaction: FrameTransaction::default(),
+            pending_frame_title: None,
+            last_published_title: None,
+            pending_frame_network_fetch: false,
+            history: Vec::new(),
+            history_index: 0,
+            deferred_inbound: VecDeque::new(),
+            compositor_publish,
+            cached_html: String::new(),
+            cached_css: String::new(),
+            js_worker,
+            javascript_enabled: true,
+            interaction: PageInteractionState::new(),
+            navigation_epoch: 0,
+            document_generation: 0,
+            // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
+            // 已存则不再重传像素（DOM 变更 publish 的 ViewPainted 体积大头）。navigation 重置。
+            sent_image_keys: std::collections::HashSet::new(),
+            pending_load: None,
+            pending_script_prefetch: None,
+            executed_external_scripts: HashSet::new(),
+            inflight_fetches: InflightIpcFetches::new(),
+            stub_network: false,
+            observer_tick_depth: 0,
+            form_controls: FormControlStateStore::new(),
+            pending_resource_errors: Vec::new(),
+            pending_resource_element_events: Vec::new(),
+            pending_link_events: Vec::new(),
+            pending_font_events: Vec::new(),
+        }
+    }
+
+    fn alloc_msg_id(&mut self) -> u64 {
+        let id = self.next_msg_id;
+        self.next_msg_id += 1;
+        id
+    }
+
+    fn send(&mut self, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage {
+            id: self.alloc_msg_id(),
+            kind,
+        };
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+    }
+
+    fn send_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage { id, kind };
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+    }
+
+    /// R3254-L1：regular 消息（Title/Url/LoadComplete/DispatchResult/FocusOwnerChanged）与帧
+    /// 共享发布线程 FIFO（保序）；无发布线程或 worker 死亡时回退同步发送。
+    fn send_regular(&mut self, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage {
+            id: self.alloc_msg_id(),
+            kind,
+        };
+        self.send_regular_msg(msg)
+    }
+
+    /// 同 [`Self::send_regular`]，但复用既有消息 id（DispatchDomEventResult 响应 dispatch）。
+    fn send_regular_with_id(&mut self, id: u64, kind: IpcMessageKind) -> Result<(), String> {
+        let msg = IpcMessage { id, kind };
+        self.send_regular_msg(msg)
+    }
+
+    fn send_regular_msg(&mut self, msg: IpcMessage) -> Result<(), String> {
+        if let Some(thread) = &self.compositor_publish
+            && thread.enqueue_regular(msg.clone())
+        {
+            return Ok(());
+        }
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+    }
+
+    /// R3254-H1：焦点回执——browser 同步 `event_targets`（键盘事件路由）与文本控件守卫
+    /// （滚动默认动作豁免）。`selector=None` 表示失焦。经 `send_regular` 与键盘派发结果
+    /// 保持 FIFO（焦点迁移与 keydown 回执的相对顺序对 browser 路由正确性敏感）。
+    fn send_focus_change(&mut self, selector: Option<String>) -> Result<(), String> {
+        let text_input = selector
+            .as_deref()
+            .is_some_and(|sel| zero_engine::is_text_input(&self.cached_html, sel));
+        self.send_regular(IpcMessageKind::FocusOwnerChanged(FocusChangeInfo {
+            selector,
+            text_input,
+        }))
+    }
+
+    fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<(), String> {
+        self.executed_external_scripts.extend(fetch_cache.keys().cloned());
+        let js_enabled = self.javascript_enabled;
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let skip = page_scripts::should_skip_scripts(&current_url);
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            let fetch_from_cache = |url: &str| {
+                fetch_cache
+                    .get(url)
+                    .cloned()
+                    .ok_or_else(|| format!("script fetch failed: {url}"))
+            };
+            run_page_scripts(&mut ctx, js_enabled, fetch_from_cache)
+        };
+        if changed {
+            self.execute_new_dynamic_scripts();
+            self.publish_webview(None, true)?;
+        }
+        // R2940–R2944 mirror：脚本阶段收尾——派发页面生命周期（DOMContentLoaded + load）+ 子资源 fetch 失败
+        // window 'error' + img/link 元素级 load/error。与 browser tab_scripts::PageScriptRunner::finish 对齐，
+        // 使 renderer 路径具备事件 API parity。JS 关 / view-source 跳过。
+        // 无脚本但 JS 启用的页面（仅 `<body onload>`）也派发——finish_page_load 内 lifecycle 无条件执行。
+        if js_enabled && !skip {
+            let resource_errors = std::mem::take(&mut self.pending_resource_errors);
+            let resource_events = std::mem::take(&mut self.pending_resource_element_events);
+            let link_events = std::mem::take(&mut self.pending_link_events);
+            let font_events = std::mem::take(&mut self.pending_font_events);
+            page_scripts::finish_page_load(
+                &self.js_worker,
+                resource_errors,
+                resource_events,
+                link_events,
+                font_events,
+            );
+        }
+        Ok(())
+    }
+
+    /// 非阻塞推进脚本预取；完成后执行页面脚本。
+    fn tick_script_prefetch(&mut self) -> Result<(), String> {
+        self.drain_inflight_fetch_responses();
+        let Some(mut prefetch) = self.pending_script_prefetch.take() else {
+            return Ok(());
+        };
+
+        const SCRIPT_PREFETCH_PARALLEL: usize = 4;
+        let _changed = if self.stub_network {
+            let mut host = StubAsyncFetchHost;
+            prefetch.tick(&mut host, SCRIPT_PREFETCH_PARALLEL)
+        } else {
+            let outbound = &mut self.outbound;
+            let next_fetch_id = &mut self.next_fetch_id;
+            let inflight = &mut self.inflight_fetches;
+            let mut host = IpcAsyncFetchHost::new(outbound, next_fetch_id, inflight);
+            prefetch.tick(&mut host, SCRIPT_PREFETCH_PARALLEL)
+        };
+
+        if prefetch.is_active() {
+            self.pending_script_prefetch = Some(prefetch);
+            return Ok(());
+        }
+
+        let cache = prefetch.finish();
+        self.after_page_html_loaded_with_cache(cache)?;
+        self.try_publish_progress(true)
+    }
+
+    /// 将定时器等异步页面任务产生的 DOM 变更提交到活文档。
+    fn drain_pending_script_mutations(&mut self) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::drain_pending_dom_mutations(&mut ctx)
+        };
+        if changed {
+            self.execute_new_dynamic_scripts();
+            self.try_publish_progress(true)?;
+        }
+        Ok(())
+    }
+
+    /// 启动由运行中页面插入的经典外链脚本。
+    ///
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-script-element
+    /// 脚本元素连入 document 后须取回并执行。当前多进程加载器只预取初始 HTML 中的
+    /// `<script>`，故这里复用页面 worker 已有的 fetch 宿主异步取回后在同一全局执行；其
+    /// 产生的 DOM 变更由下一轮 `drain_pending_script_mutations` 提交。
+    fn execute_new_dynamic_scripts(&mut self) {
+        let Some(base_url) = self.current_url.as_deref() else {
+            return;
+        };
+        for script in zero_engine::extract_page_scripts(&self.cached_html) {
+            let zero_engine::PageScript::External(src) = script else {
+                continue;
+            };
+            let url = zero_engine::resolve_document_url(base_url, &src);
+            if !self.executed_external_scripts.insert(url.clone()) {
+                continue;
+            }
+            let loader = format!(
+                "fetch({url:?}).then(function(response) {{ return response.text(); }}).then(function(source) {{ (0, eval)(source); }}).catch(function(error) {{ console.error('dynamic script load failed', error); }});"
+            );
+            if let Err(error) = self.js_worker.execute_script_direct(&loader) {
+                tracing::warn!(%url, "dynamic script loader setup failed: {error}");
+            }
+        }
+    }
+
+    /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
+    fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_PAINT);
+            if title.is_some() {
+                self.pending_frame_title = title;
+            }
+            self.pending_frame_network_fetch |= allow_network_fetch;
+            return Ok(());
+        }
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 把任意 DOM/style 回调标成保守的 style→layout→paint→publish 升级。
+    fn invalidate_script_render(&mut self) {
+        if self.frame_transaction.is_active() {
+            self.frame_transaction.invalidate(FrameInvalidation::NEEDS_STYLE);
+        }
+    }
+
+    /// 在一个平台输入消息边界内合并所有同步渲染和发布请求。
+    fn run_frame_transaction(&mut self, handler: impl FnOnce(&mut Self) -> Result<(), String>) -> Result<(), String> {
+        self.frame_transaction.begin();
+        let result = handler(self);
+        let work = self.frame_transaction.finish();
+        if let Err(error) = result {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Err(error);
+        }
+        let Some(work) = work else {
+            return Ok(());
+        };
+        if !work.contains(FrameInvalidation::NEEDS_PUBLISH) {
+            self.pending_frame_title = None;
+            self.pending_frame_network_fetch = false;
+            return Ok(());
+        }
+        let title = self.pending_frame_title.take();
+        let allow_network_fetch = std::mem::take(&mut self.pending_frame_network_fetch);
+        self.publish_webview_now(title, allow_network_fetch)
+    }
+
+    /// 从 WebView 当前渲染产出发布 IPC frame（ViewPainted + 可选 Title）。B3：发布源切到 WebView。
+    fn publish_webview_now(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
+        // R3254-M1：发布线程确认已写出的帧，其图片像素已在线上 → 标记 sent（不再重传）。
+        // 被 latest-wins 替换、从未写出的帧不标记——下帧重传像素（保守，正确）。
+        if let Some(thread) = &self.compositor_publish {
+            self.sent_image_keys.extend(thread.drain_sent_image_keys());
+        }
+        let html = self.cached_html.clone();
+        let current_title = title.unwrap_or_else(|| query_text_from_html(&html, "title"));
+        let title = if self.last_published_title.as_deref() == Some(current_title.as_str()) {
+            None
+        } else {
+            self.last_published_title = Some(current_title.clone());
+            Some(current_title)
+        };
+        let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
+        let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
+            let wv = self.webview.as_ref().expect("webview");
+            let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
+            (
+                self.viewport.0,
+                self.viewport.1,
+                wv.document_height().unwrap_or(self.viewport.1 as f32),
+                render.primitives.clone(),
+                render.dirty_rects.clone(),
+                wv.build_hit_test_cache(),
+                wv.snapshot_image_cache(),
+            )
+        };
+        // P1a gBCR：render 后用最新 layout 填 rect snapshot——js_worker 的 RectBridge handler
+        // 经 identity(selector)→NodeId 查此 snapshot 返真实 DOMRect（未填/未命中→零 rect，零回归）。
+        if let Some(cache) = hit_test.as_ref() {
+            cache.fill_layout_rect_snapshot(&self.js_worker.rect_snapshot());
+            // P1a elementFromPoint：render 后 swap 最新 `Arc<HitTestCache>` 进共享槽（无数据 clone，
+            // 仅引用计数）→ js_worker 的 `__zw_elementFromPoint` 读它求 `(x,y)` 命中元素。
+            *self.js_worker.element_from_point_cache().lock().unwrap() = Some(std::sync::Arc::new(cache.clone()));
+        }
+        // R3248（§transitionend）/R3252（§transitionrun/§transitionstart）：render 后取出本轮新产生的过渡
+        // 事件 → 派发进 shim。过渡跨多帧（run 创建帧 → start delay 过后 → end 完成），故每帧 render 后检查
+        // （无过渡时 take 返空 Vec，零开销）。handler 改 DOM 的 mutation 由后续 render 周期应用。
+        if self.javascript_enabled {
+            let tevents = self
+                .webview
+                .as_mut()
+                .map(|wv| wv.take_pending_transition_events())
+                .unwrap_or_default();
+            if !tevents.is_empty() {
+                page_scripts::dispatch_transition_events(&self.js_worker, &tevents);
+            }
+            // R3249（animationend）/R3250（animationiteration）/R3251（animationstart）：同模式派发动画事件
+            // （Start = 首次进入活跃间隔；End = 有限动画完成；Iteration = 迭代边界，infinite 循环回调靠此）。
+            let aevents = self
+                .webview
+                .as_mut()
+                .map(|wv| wv.take_pending_animation_events())
+                .unwrap_or_default();
+            if !aevents.is_empty() {
+                page_scripts::dispatch_animation_events(&self.js_worker, &aevents);
+            }
+        }
+        // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
+        // fetch 闭包按字段捕获（2021 edition 最小捕获）——sent_image_keys 独立借用
+        let payloads = if allow_network_fetch {
+            let mut fetch = |u: &str| {
+                if self.stub_network {
+                    None
+                } else {
+                    ipc_fetch_get(
+                        &mut self.outbound,
+                        &self.inbound_rx,
+                        &mut self.next_fetch_id,
+                        &mut self.deferred_inbound,
+                        u,
+                    )
+                    .ok()
+                }
+            };
+            paint_export::fetch_image_payloads_with_cache(
+                &html,
+                &url,
+                &mut image_cache,
+                &mut fetch,
+                &self.sent_image_keys,
+            )
+        } else {
+            let mut no_fetch = |_u: &str| None;
+            paint_export::fetch_image_payloads_with_cache(
+                &html,
+                &url,
+                &mut image_cache,
+                &mut no_fetch,
+                &self.sent_image_keys,
+            )
+        };
+        let frame = zero_page_runtime::FrameModel {
+            viewport: (vw, vh),
+            document_height,
+            primitives,
+            dirty_rects,
+            hit_test,
+        };
+        let sent_now = publish_render_with_layout(
+            &mut self.outbound,
+            self.compositor_publish.as_ref(),
+            &mut self.next_msg_id,
+            &mut self.frame_publish,
+            &frame,
+            self.device_scale_factor,
+            title,
+            payloads,
+            self.navigation_epoch,
+            self.document_generation,
+        )?;
+        // R3254-M1：legacy 同步路径写出的帧在此标记 sent（compositor 路径由发布线程回传）。
+        self.sent_image_keys.extend(sent_now);
+        // P1a Slice 2b：render 填完 rect snapshot 后触发 observer 重算——IO `_crossed`（threshold
+        // 越界）/ RO size-diff 仅在变化时派发，故 observe() 之后的真实 layout 变化能触发 observer 回调
+        // （observe 仅派发 initial）。depth 守卫防 tick→rerender→publish→tick 反馈环（observer 本身
+        // 收敛，此为兜底）；kill-switch：gBCR 关（ZW_REAL_RECT=0，rect 恒零）或 JS 关时跳过。
+        if self.observer_tick_depth == 0 && self.javascript_enabled && crate::js_worker::real_rect_enabled() {
+            self.observer_tick_depth += 1;
+            let tick_res = self.tick_observers_inner();
+            self.observer_tick_depth -= 1;
+            tick_res?;
+        }
+        Ok(())
+    }
+
+    /// P1a Slice 2b：执行 observer tick（`__zw_observers_tick()`）并 apply 回调产生的 DOM mutation。
+    /// 回调改了 DOM → 单次 rerender（rerender 再入 publish_webview，但 depth>0 跳过 tick，有界）。
+    fn tick_observers_inner(&mut self) -> Result<(), String> {
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::tick_observers(&mut ctx)
+        };
+        if changed {
+            // `apply_dom_mutations_and_render` 已在 live DOM 上完成增量渲染；这里只发布
+            // 新快照。再次 reload_html_after_script 会把每个字符重复全量解析/布局一次。
+            self.publish_webview(None, true)?;
+        }
+        Ok(())
+    }
+
+    /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
+    /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
+    fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
+        self.execute_shared_action(
+            selector,
+            zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
+        )
+        .map(|_| ())
+    }
+
+    /// P1a form input：Backspace 删焦点 input/textarea 末字符（value + input 事件）；改 DOM 则单次 rerender。
+    fn apply_text_delete_at(&mut self, selector: &str) -> Result<(), String> {
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::DeleteBackward)
+            .map(|_| ())
+    }
+
+    fn execute_shared_action(
+        &mut self,
+        selector: &str,
+        action: zero_page_runtime::HtmlUserAction,
+    ) -> Result<Option<zero_webview::WebViewUserActionResult>, String> {
+        let Some(target) = self
+            .webview
+            .as_ref()
+            .and_then(|webview| webview.page_node_ref_for_selector(selector))
+        else {
+            return Ok(None);
+        };
+        let sync_text = matches!(
+            &action,
+            zero_page_runtime::HtmlUserAction::InsertText { .. } | zero_page_runtime::HtmlUserAction::DeleteBackward
+        );
+        let sync_focused_after_reset = matches!(&action, zero_page_runtime::HtmlUserAction::Reset)
+            .then(|| self.interaction.focus_owner().map(str::to_string))
+            .flatten();
+        let request = zero_page_runtime::HtmlActionRequest {
+            target,
+            action,
+            shift: false,
+        };
+        let result = self
+            .webview
+            .as_mut()
+            .expect("webview")
+            .dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
+            .map_err(|error| error.to_string())?;
+        self.sync_cached_html_from_webview();
+        if sync_text {
+            self.sync_text_control_state_from_worker(selector);
+        }
+        if let Some(focused) = sync_focused_after_reset {
+            self.sync_text_control_state_from_worker(&focused);
+        }
+        let navigated = self.apply_webview_action_effects(&result.effects)?;
+        if !navigated && result.changed {
+            self.publish_webview(None, true)?;
+        }
+        Ok(Some(result))
+    }
+
+    fn sync_text_control_state_from_worker(&mut self, selector: &str) {
+        let Some((value, selection_start, selection_end)) = self.text_control_state_from_worker(selector) else {
+            return;
+        };
+        self.form_controls
+            .update(selector, value, selection_start, selection_end);
+    }
+
+    fn set_pointer_text_selection(&mut self, selector: &str, start: u32, end: u32) {
+        let Some(target) = self
+            .webview
+            .as_ref()
+            .and_then(|webview| webview.page_node_ref_for_selector(selector))
+        else {
+            return;
+        };
+        let _ = self
+            .webview
+            .as_mut()
+            .expect("webview")
+            .set_external_text_control_selection(&self.js_worker, target, start as usize, end as usize);
+        self.sync_text_control_state_from_worker(selector);
+    }
+
+    fn text_control_state_from_worker(&self, selector: &str) -> Option<(String, usize, usize)> {
+        self.js_worker
+            .execute_script_direct(&zero_engine::script_text_control_snapshot(selector))
+            .ok()
+            .and_then(|snapshot| serde_json::from_str::<(String, usize, usize)>(&snapshot).ok())
+    }
+
+    fn apply_webview_action_effects(&mut self, effects: &[zero_page_runtime::PageEffect]) -> Result<bool, String> {
+        let mut navigated = false;
+        for effect in effects {
+            match effect {
+                zero_page_runtime::PageEffect::Focus(next) => {
+                    let next = next.and_then(|node| {
+                        self.webview
+                            .as_ref()
+                            .and_then(|webview| webview.selector_for_page_node_handle(node.node().get()))
+                    });
+                    self.blur_focused()?;
+                    if let Some(next) = next {
+                        self.focus_via_tab(&next)?;
+                    }
+                }
+                zero_page_runtime::PageEffect::Navigate(intent) => {
+                    self.navigate_with(
+                        zero_protocol::message::NavigateParams {
+                            url: intent.url.clone(),
+                            referrer: self.current_url.clone(),
+                            navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                        },
+                        &intent.method,
+                        intent.body.as_deref(),
+                    )?;
+                    navigated = true;
+                }
+                zero_page_runtime::PageEffect::SetFragment { .. } => {}
+                zero_page_runtime::PageEffect::SubmitForm { .. } => {}
+            }
+        }
+        Ok(navigated)
+    }
+
+    /// 执行未取消 keydown 的用户代理默认动作；两条键盘 IPC 入口共用。
+    // https://w3c.github.io/uievents/#event-type-keydown
+    fn apply_keydown_default(&mut self, target: &str, key: &str, shift: bool) -> Result<(), String> {
+        if key == "Tab" {
+            self.execute_shared_action(target, zero_page_runtime::HtmlUserAction::MoveFocus { forward: !shift })?;
+        } else if is_printable_key(key) && !self.is_composing_at(target) {
+            // R3254-L5：IME 合成期间跳过可打印字符，避免与 Commit 双写。
+            self.apply_text_input_at(target, key)?;
+        } else if key == "Backspace" {
+            self.apply_text_delete_at(target)?;
+        } else if key == "Enter" {
+            if zero_engine::query_tag_from_html(&self.cached_html, target).eq_ignore_ascii_case("textarea") {
+                self.apply_text_input_at(target, "\n")?;
+            } else {
+                self.submit_form_on_enter_at(target)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// R3254-L5：焦点目标当前是否处于 IME 合成中（合成期间 keydown 可打印字符应进 IME
+    /// 而非注入控件——防平台同一次击键同时投递 KeyboardInput 与 Ime::Commit 的双写）。
+    fn is_composing_at(&self, selector: &str) -> bool {
+        self.form_controls
+            .get(selector)
+            .is_some_and(|state| state.composition_text.is_some())
+    }
+
+    /// 更新焦点文本控件的临时 IME preedit；不写入 value，只触发 paint/publish。
+    ///
+    /// R3254-L3：消费平台 preedit 光标/选区（winit UTF-8 字节偏移）——组合内移动/选择
+    /// 映射到 value 的替换区间（preedit 起点 = retained selection_start + preedit 内偏移）；
+    /// 无 cursor 或单点光标时用 retained selection（与旧行为一致）。
+    fn apply_ime_preedit_at(
+        &mut self,
+        selector: &str,
+        text: String,
+        cursor: Option<(usize, usize)>,
+    ) -> Result<bool, String> {
+        let Some(state) = self.form_controls.get(selector) else {
+            return Ok(false);
+        };
+        let (selection_start, selection_end) = match cursor {
+            Some((start, end)) if start != end => {
+                let base = state.selection_start;
+                (
+                    base + zero_engine::utf8_byte_to_utf16_offset(&text, start.min(end)),
+                    base + zero_engine::utf8_byte_to_utf16_offset(&text, start.max(end)),
+                )
+            }
+            _ => (state.selection_start, state.selection_end),
+        };
+        if !self.form_controls.update_focused_composition(text.clone()) {
+            return Ok(false);
+        }
+        let mutation = zero_engine::DomMutation::SetFormComposition {
+            selector: selector.to_string(),
+            text,
+            selection_start,
+            selection_end,
+        };
+        let Some(webview) = self.webview.as_mut() else {
+            return Ok(false);
+        };
+        let _ = webview.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))?;
+        Ok(true)
+    }
+
+    fn dispatch_composition_events_at(&mut self, selector: &str, events: &[(&str, &str)]) -> bool {
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut self.cached_html,
+            url: &url,
+            js_worker: &self.js_worker,
+            webview: self.webview.as_mut(),
+        };
+        page_scripts::dispatch_composition_events(&mut ctx, self.javascript_enabled, selector, events)
+    }
+
+    fn handle_ime_event(&mut self, params: ImeEventParams) -> Result<(), String> {
+        let Some(target) = self.interaction.focus_owner().map(str::to_string) else {
+            return Ok(());
+        };
+        if self.form_controls.get(&target).is_none() {
+            return Ok(());
+        }
+        match params.event_type {
+            ImeEventType::Enabled => Ok(()),
+            ImeEventType::Preedit => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let events = if params.text.is_empty() && was_composing {
+                    vec![("compositionupdate", ""), ("compositionend", "")]
+                } else if !params.text.is_empty() && !was_composing {
+                    vec![
+                        ("compositionstart", params.text.as_str()),
+                        ("compositionupdate", params.text.as_str()),
+                    ]
+                } else {
+                    vec![("compositionupdate", params.text.as_str())]
+                };
+                let event_changed = self.dispatch_composition_events_at(&target, &events);
+                // R3254-L3：传平台光标/选区（组合内移动/选择反映到替换区间）。
+                let paint_changed = self.apply_ime_preedit_at(
+                    &target,
+                    params.text,
+                    Some((params.cursor_start.unwrap_or(0), params.cursor_end.unwrap_or(0))),
+                )?;
+                if event_changed || paint_changed {
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
+            ImeEventType::Commit => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let event_changed = was_composing
+                    && self.dispatch_composition_events_at(&target, &[("compositionend", params.text.as_str())]);
+                if params.text.is_empty() {
+                    let paint_changed = self.apply_ime_preedit_at(&target, String::new(), None)?;
+                    if event_changed || paint_changed {
+                        self.publish_webview(None, true)?;
+                    }
+                    Ok(())
+                } else {
+                    self.apply_text_input_at(&target, &params.text)
+                }
+            }
+            ImeEventType::Disabled => {
+                let was_composing = self
+                    .form_controls
+                    .get(&target)
+                    .is_some_and(|state| state.composition_text.is_some());
+                let event_changed =
+                    was_composing && self.dispatch_composition_events_at(&target, &[("compositionend", "")]);
+                let paint_changed = self.apply_ime_preedit_at(&target, String::new(), None)?;
+                if event_changed || paint_changed {
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// P1a form submit：Enter 在单行 input → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（闭合 click 默认动作族）。
+    fn submit_form_on_enter_at(&mut self, selector: &str) -> Result<(), String> {
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#implicit-submission
+        if !zero_engine::query_tag_from_html(&self.cached_html, selector).eq_ignore_ascii_case("input") {
+            return Ok(());
+        }
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
+    }
+
+    /// P1a form submit：click 命中 submit button → 解析 enclosing `<form>` 派发 'submit' 事件。
+    /// R3054：未 preventDefault 且 method=GET → 导航到 action?query（submitter name=value 入 query）。
+    fn submit_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !zero_engine::is_submit_button(&self.cached_html, selector) {
+            return Ok(());
+        }
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Submit)
+            .map(|_| ())
+    }
+
+    /// P1a form reset（R3050）：click 命中 reset button → 解析 enclosing `<form>` 调 `form.reset()`
+    ///（dispatch 'reset' + revert 控件，复用 R3048）。改 DOM 则 rerender。
+    fn reset_form_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !zero_engine::is_reset_button(&self.cached_html, selector) {
+            return Ok(());
+        }
+        self.execute_shared_action(selector, zero_page_runtime::HtmlUserAction::Reset)
+            .map(|_| ())
+    }
+
+    /// P1a 导航（R3053，闭合 R3052 限制③）：click 命中 hash 链接（`<a href="#sec">`）→
+    /// `location.hash = hash`（R3006：更新 hash + history entry + 派 hashchange）。SPA hash 路由核心交互。
+    /// 改 DOM（SPA router listener 切视图）则 rerender。headless 无 viewport → 不滚锚。
+    fn set_hash_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::apply_set_hash_on_click(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
+    /// P1a 导航（R3057，闭合 R3052 限制②）：click 命中 `<a href="javascript:...">` → 页面全局执行 JS 体
+    ///（real browser 语义；与 onclick handler 同一 JS 执行通路，CSP 统辖）。改 DOM 则 rerender。
+    fn eval_javascript_on_click_at(&mut self, selector: &str) -> Result<(), String> {
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            page_scripts::apply_javascript_href(&mut ctx, selector)
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_checked_click(&mut self, target: String) -> Result<(DomDispatchResult, bool), String> {
+        if !zero_engine::is_checkbox(&self.cached_html, &target) && !zero_engine::is_radio(&self.cached_html, &target) {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+        }
+        self.interaction.set_pointer_target(target.clone());
+        let Some(result) = self.execute_shared_action(&target, zero_page_runtime::HtmlUserAction::Activate)? else {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), false));
+        };
+        if result.noop_reason == Some(zero_page_runtime::ActionNoopReason::AlreadySelected) {
+            return Ok((self.dispatch_dom_at(Some(target), 0.0, 0.0, "click", None), true));
+        }
+        Ok((
+            DomDispatchResult {
+                default_allowed: !result.canceled && result.noop_reason.is_none(),
+                html_changed: result.changed,
+            },
+            true,
+        ))
+    }
+
+    fn activate_form_control_at(&mut self, selector: &str) -> Result<bool, String> {
+        if zero_engine::is_submit_button(&self.cached_html, selector) {
+            self.submit_form_on_click_at(selector)?;
+        } else if zero_engine::is_reset_button(&self.cached_html, selector) {
+            self.reset_form_on_click_at(selector)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// 执行 label 的用户代理默认动作：向关联控件派发一次 click 并激活一次。
+    // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+    fn activate_label_at(&mut self, label: &str) -> Result<bool, String> {
+        let Some(control) = zero_engine::associated_label_control_selector(&self.cached_html, label) else {
+            return Ok(false);
+        };
+        if self.interaction.focus_owner() != Some(control.as_str()) {
+            self.blur_focused()?;
+            self.focus_target(&control)?;
+        }
+        let (click, checked_handled) = self.dispatch_checked_click(control.clone())?;
+        if click.default_allowed && !checked_handled {
+            self.activate_form_control_at(&control)?;
+        }
+        Ok(true)
+    }
+
+    /// P1a change-on-blur：失焦——若 retained 状态中有文本输入焦点，派发 'blur'；若 value 自获焦以来
+    /// 变化，再派发 'change'。清空 focus 状态。回调改 DOM 则单次 rerender。
+    fn blur_focused(&mut self) -> Result<(), String> {
+        let Some(old) = self.interaction.set_focus_owner(None) else {
+            return Ok(());
+        };
+        self.sync_webview_focus_owner();
+        // R3254-H1：焦点回执（仅实际失焦时）。
+        self.send_focus_change(None)?;
+        let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
+            self.form_controls
+                .blur_focused()
+                .is_some_and(|control| control.value_changed)
+        } else {
+            false
+        };
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let mut changed = false;
+        {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            // https://w3c.github.io/uievents/#events-focusevent-event-order
+            changed |= page_scripts::dispatch_dom_event(&mut ctx, true, &old, "focusout", None).html_changed;
+            changed |=
+                page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "blur", None).html_changed;
+            if value_changed {
+                changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None)
+                    .html_changed;
+            }
+        }
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
+    /// P1a change-on-blur：获焦——若 `selector` 是文本输入，建立 retained 值基线并派发 'focus'。
+    fn focus_target(&mut self, selector: &str) -> Result<(), String> {
+        if !zero_engine::is_focusable_selector(&self.cached_html, selector) {
+            return Ok(());
+        }
+        let old = self.interaction.set_focus_owner(Some(selector.to_string()));
+        self.sync_webview_focus_owner();
+        if old.as_deref() != Some(selector) {
+            // R3254-H1：焦点回执（仅焦点所有者实际变化时，避免重复聚焦刷屏）。
+            self.send_focus_change(Some(selector.to_string()))?;
+        }
+        if zero_engine::is_text_input(&self.cached_html, selector) {
+            let val = self
+                .form_controls
+                .get(selector)
+                .map(|state| state.value.clone())
+                .unwrap_or_else(|| read_input_value_for_change(&self.cached_html, selector));
+            let end = val.encode_utf16().count();
+            self.form_controls.focus(selector, val, end, end);
+            let _ = self
+                .js_worker
+                .execute_script_direct(&zero_engine::script_set_text_control_selection(selector, end, end));
+        }
+        let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        let changed = {
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            // https://w3c.github.io/uievents/#events-focusevent-event-order
+            let focus = page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focus", None);
+            let focusin =
+                page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, selector, "focusin", None);
+            focus.html_changed || focusin.html_changed
+        };
+        if changed {
+            self.rerender_publish_webview()?;
+        }
+        Ok(())
+    }
+
+    /// R3254-M7'：drain 页面 JS `focus()`/`blur()` 变更并同步 retained 焦点状态。
+    ///
+    /// shim（part04.js）已在 V8 内派发过 focus/blur 事件，这里**只**更新
+    /// `PageInteractionState` + `FormControlStateStore` 基线 + 焦点回执，不重复派发。
+    /// 采纳前过 `is_focusable_selector` 校验（shim 明言不校验可聚焦性）——不可聚焦的
+    /// JS focus 忽略（保持当前焦点，与 host 驱动路径的 focus_target 行为一致）。
+    fn sync_focus_from_js(&mut self) {
+        let changes = {
+            let queue = self.js_worker.focus_changes();
+            let mut queue = queue.lock().unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut *queue)
+        };
+        for change in changes {
+            let Some(selector) = change else {
+                self.sync_js_blur();
+                continue;
+            };
+            if !zero_engine::is_focusable_selector(&self.cached_html, &selector) {
+                continue;
+            }
+            let old = self.interaction.set_focus_owner(Some(selector.clone()));
+            if old.as_deref() == Some(selector.as_str()) {
+                continue;
+            }
+            self.sync_webview_focus_owner();
+            // 同步 form_controls 基线（同 focus_target；JS 已派发 focus 事件，无 DOM 派发）。
+            if zero_engine::is_text_input(&self.cached_html, &selector)
+                && let Some((value, selection_start, selection_end)) = self.text_control_state_from_worker(&selector)
+            {
+                self.form_controls
+                    .focus(&selector, value, selection_start, selection_end);
+            }
+            if let Err(e) = self.send_focus_change(Some(selector)) {
+                tracing::warn!("send focus change: {e}");
+            }
+        }
+    }
+
+    /// JS `blur()` 的宿主侧同步：清焦点 + change-on-blur（blur 事件 shim 已派发，只补 change）。
+    fn sync_js_blur(&mut self) {
+        let Some(old) = self.interaction.set_focus_owner(None) else {
+            return;
+        };
+        self.sync_webview_focus_owner();
+        let value_changed = if self.form_controls.focused_selector() == Some(old.as_str()) {
+            self.form_controls
+                .blur_focused()
+                .is_some_and(|control| control.value_changed)
+        } else {
+            false
+        };
+        if value_changed && self.javascript_enabled {
+            let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            if page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None).html_changed {
+                let _ = self.rerender_publish_webview();
+            }
+        }
+        if let Err(e) = self.send_focus_change(None) {
+            tracing::warn!("send focus change: {e}");
+        }
+    }
+
+    fn sync_webview_focus_owner(&mut self) {
+        let focused = self.interaction.focus_owner().map(str::to_string);
+        if let Some(webview) = self.webview.as_mut() {
+            webview.set_focused_selector(focused.as_deref());
+        }
+    }
+
+    /// P1a Tab 焦点导航：更新唯一 focus owner 并派发 'focus'。
+    fn focus_via_tab(&mut self, selector: &str) -> Result<(), String> {
+        self.focus_target(selector)
+    }
+
+    fn sync_cached_html_from_webview(&mut self) {
+        if let Some(wv) = self.webview.as_ref() {
+            let html = wv.html_content().to_string();
+            if !html.is_empty() {
+                self.cached_html = html;
+            }
+        }
+    }
+
+    fn try_publish_progress(&mut self, allow_network_fetch: bool) -> Result<(), String> {
+        let title = self.webview.as_ref().and_then(|w| w.title().map(str::to_string));
+        self.publish_webview(title, allow_network_fetch)
+    }
+
+    /// 非阻塞消化 inbound 中的 `FetchResponse`，避免 load tick 阻塞时 async 子资源无法完成。
+    fn drain_inflight_fetch_responses(&mut self) {
+        loop {
+            let msg = if let Some(m) = self.deferred_inbound.pop_front() {
+                m
+            } else {
+                match self.inbound_rx.try_recv() {
+                    Ok(m) => m,
+                    Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+                }
+            };
+            if self.inflight_fetches.try_complete(&msg) {
+                continue;
+            }
+            self.deferred_inbound.push_back(msg);
+            break;
+        }
+        if let Some(final_url) = self.inflight_fetches.take_document_url() {
+            if let Some(pending) = self.pending_load.as_mut() {
+                pending.page_url = final_url.clone();
+                pending.load.set_document_url(final_url.clone());
+            }
+            if self.current_url.as_deref() != Some(final_url.as_str()) {
+                self.current_url = Some(final_url.clone());
+                self.webview
+                    .as_mut()
+                    .expect("webview")
+                    .prepare_document_state(&final_url);
+                if let Err(error) = self.send_regular(IpcMessageKind::UrlChanged(final_url)) {
+                    tracing::warn!("Failed to publish redirected document URL: {error}");
+                }
+            }
+        }
+    }
+
+    /// 推进 pending load 一步；加载完成时发布帧、LoadComplete 与可选脚本阶段。
+    fn tick_pending_load(&mut self) -> Result<(), String> {
+        self.drain_inflight_fetch_responses();
+        self.tick_pending_load_with_budget(RENDER_FRAME_BUDGET_MS)
+    }
+
+    /// R2949 FontFace.load()：drain JS 投递的字体加载请求 → fetch_get 字节 → load_font +
+    /// register_family_alias（复用既有 @font-face 加载逻辑）→ 刷新 resolver + 请求重绘 →
+    /// async_resolver.resolve 解析 Promise。失败（fetch/load）resolve "err" 使 shim reject。
+    /// 复用既有字体加载代码路径（与 drain_loaded_fonts 一致），仅触发条件不同（@font-face 由
+    /// async_load poll_fonts 收集；FontFace.load() 由 JS __zw_load_font 投递）。
+    fn tick_font_face_loads(&mut self) {
+        if !zero_webview::live_fontface_enabled() {
+            // 与 @font-face live 加载同 kill-switch；关闭时仍 resolve 各请求为 err（font 不会加载）。
+            let pending: Vec<zero_engine::FontLoadRequest> = self
+                .js_worker
+                .pending_font_loads()
+                .lock()
+                .map(|mut q| std::mem::take(&mut *q))
+                .unwrap_or_default();
+            for req in pending {
+                self.js_worker
+                    .async_resolver()
+                    .resolve(&req.resolve_id, "err:live-fontface-disabled");
+            }
+            return;
+        }
+        let pending: Vec<zero_engine::FontLoadRequest> = self
+            .js_worker
+            .pending_font_loads()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if pending.is_empty() {
+            return;
+        }
+        let resolver = self.js_worker.async_resolver();
+        let mut updated = false;
+        for req in pending {
+            // fetch_get 阻塞 IPC 取字节（与 image payload fetch 同机制；stub_network 时 Err）。
+            let bytes = match self.fetch_get(&req.src) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(family = %req.family, src = %req.src, err = %e, "FontFace.load fetch failed");
+                    resolver.resolve(&req.resolve_id, "err:fetch");
+                    continue;
+                }
+            };
+            match self.register_loaded_font(
+                &req.family,
+                req.weight,
+                req.is_italic,
+                None,
+                (None, None, &[], None),
+                &bytes,
+            ) {
+                true => {
+                    updated = true;
+                    resolver.resolve(&req.resolve_id, "ok");
+                }
+                false => {
+                    resolver.resolve(&req.resolve_id, "err:load");
+                }
+            }
+        }
+        if updated {
+            let font_resolver = self.font_loader.build_font_resolver();
+            if let Some(wv) = self.webview.as_mut() {
+                wv.set_font_resolver(font_resolver);
+            }
+            // 请求重绘使新字体生效——经 pending_load（若有）的 request_rerender，否则直接 try_publish。
+            if let Some(pending) = self.pending_load.as_mut() {
+                pending.load.request_rerender();
+            } else {
+                let _ = self.try_publish_progress(false);
+            }
+        }
+    }
+
+    /// R3058 JS 跨文档导航 drain——`location.href=/assign/replace` 跨文档变更经 `__zw_request_navigate`
+    /// 投递的目标 URL。drain 队列取最后一条（多次导航后者覆盖前者，real browser 同）→ `handle_navigate`
+    ///（GET，fetch 新文档 + 重载）。hash-only / 同 URL 不投递（shim 端已过滤）。
+    fn tick_pending_navigation(&mut self) -> Result<(), String> {
+        let pending: Vec<String> = self
+            .js_worker
+            .pending_navigations()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if let Some(url) = pending.into_iter().last() {
+            // JS 发起的导航走 GET（fetch 新文档）。referrer = 当前页；epoch 递增（同 anchor 导航）。
+            self.handle_navigate(zero_protocol::message::NavigateParams {
+                url,
+                referrer: self.current_url.clone(),
+                navigation_epoch: self.navigation_epoch.wrapping_add(1),
+            })?;
+        }
+        Ok(())
+    }
+
+    /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
+    /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
+    fn register_loaded_font(
+        &mut self,
+        family: &str,
+        weight: Option<u16>,
+        is_italic: bool,
+        stretch: Option<f32>,
+        metadata: LoadedFontMetadata<'_>,
+        bytes: &[u8],
+    ) -> bool {
+        let Ok(id) = self.font_loader.load_font(bytes) else {
+            tracing::warn!(family = %family, "font load_font failed");
+            return false;
+        };
+        if let Some(features) = metadata.0 {
+            self.font_loader.register_font_features(id, features.to_vec());
+        }
+        if zero_engine::font_variations_enabled()
+            && let Some(variations) = metadata.1
+        {
+            self.font_loader.register_font_variations(id, variations.to_vec());
+        }
+        self.font_loader.register_unicode_ranges(id, metadata.2.to_vec());
+        if let Some(scale) = metadata.3 {
+            self.font_loader.register_font_size_adjust(id, scale);
+        }
+        for alias in zero_render_foundation::font::font_face_aliases(family, weight, is_italic, stretch) {
+            self.font_loader.register_family_alias(&alias, id);
+        }
+        true
+    }
+
+    fn tick_pending_load_with_budget(&mut self, budget_ms: f64) -> Result<(), String> {
+        let Some(mut pending) = self.pending_load.take() else {
+            return Ok(());
+        };
+
+        if Instant::now() >= pending.deadline {
+            if matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingImages) {
+                tracing::warn!(url = %pending.page_url, "非关键子资源加载超时，保留已呈现页面");
+                pending.load.abandon_pending_subresources();
+                pending.deadline = Instant::now() + PAGE_LOAD_DEADLINE;
+            } else {
+                let url = pending.page_url;
+                return self.show_error_page(&url, "页面加载超时（分阶段加载未完成）");
+            }
+        }
+
+        let publish_after = {
+            let webview = self.webview.as_mut().expect("webview");
+            let font_loader = &self.font_loader;
+            let font_id = self.font_id;
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+                if self.stub_network {
+                    let mut host = StubAsyncFetchHost;
+                    let changed = pending.load.tick(webview, &mut host, budget_ms);
+                    return changed
+                        && webview.last_render().is_some()
+                        && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument);
+                }
+                let outbound = &mut self.outbound;
+                let next_fetch_id = &mut self.next_fetch_id;
+                let inflight = &mut self.inflight_fetches;
+                let mut host = IpcAsyncFetchHost::new(outbound, next_fetch_id, inflight);
+                let changed = pending.load.tick(webview, &mut host, budget_ms);
+                changed
+                    && webview.last_render().is_some()
+                    && !matches!(pending.load.stage(), zero_webview::PageLoadStage::FetchingDocument)
+            })
+        };
+
+        // R2408+ slice 2：drain 已 fetch 的 @font-face 字节 → load_font + register_family_alias
+        // → 刷新 webview font_resolver → 请求重绘。须在 with_measure_ctx_opt 闭包外（闭包内
+        // font_loader 被不可变借做文本度量，此处可 &mut）。env `ZW_LIVE_FONTFACE` kill-switch
+        // 默认开（=0/`false` 关闭，退回 R2406 前丢弃行为）。
+        if zero_webview::live_fontface_enabled() {
+            let loaded = pending.load.drain_loaded_fonts();
+            if !loaded.is_empty() {
+                let mut updated = false;
+                for (family, weight, is_italic, stretch, size_adjust, features, variations, unicode_ranges, bytes) in
+                    loaded
+                {
+                    // R2417/R2493（weight, style）注册键规则抽入 register_loaded_font，
+                    // 与 FontFace.load()（tick_font_face_loads）共用——bold/italic face 不注册到 plain family
+                    //（否则 build_font_resolver 的「second face=bold」启发式顺序依赖错配，R2417）。
+                    if self.register_loaded_font(
+                        &family,
+                        weight,
+                        is_italic,
+                        stretch,
+                        (Some(&features), Some(&variations), &unicode_ranges, size_adjust),
+                        &bytes,
+                    ) {
+                        updated = true;
+                    } else {
+                        tracing::warn!(family = %family, "live @font-face load failed");
+                    }
+                }
+                if updated {
+                    let resolver = self.font_loader.build_font_resolver();
+                    if let Some(wv) = self.webview.as_mut() {
+                        wv.set_font_resolver(resolver);
+                    }
+                    pending.load.request_rerender();
+                }
+            }
+        }
+
+        let stage = pending.load.stage();
+        if publish_after {
+            self.sync_cached_html_from_webview();
+            tracing::info!(url = %pending.page_url, stage = ?stage, "progressive paint publish");
+            // 加载过程中仅用已解码 cache，避免同步 IPC fetch 阻塞 async 子资源。
+            self.try_publish_progress(false)?;
+        }
+
+        // 脚本可在样式和首帧可用后执行；不能因与页面功能无关的图片/字体请求而延后。
+        // https://html.spec.whatwg.org/multipage/parsing.html#the-end
+        if pending.run_scripts_after
+            && matches!(
+                stage,
+                zero_webview::PageLoadStage::StyledPaint
+                    | zero_webview::PageLoadStage::FetchingImages
+                    | zero_webview::PageLoadStage::Complete
+            )
+            && self.pending_script_prefetch.is_none()
+        {
+            pending.run_scripts_after = false;
+            if !page_scripts::should_skip_scripts(&pending.page_url) {
+                self.sync_cached_html_from_webview();
+                self.pending_script_prefetch =
+                    Some(PendingScriptPrefetch::from_html(&pending.page_url, &self.cached_html));
+            }
+        }
+
+        if stage == zero_webview::PageLoadStage::StyledPaint
+            && !pending.run_scripts_after
+            && self.pending_script_prefetch.is_none()
+        {
+            let webview = self.webview.as_mut().expect("webview");
+            if self.stub_network {
+                let mut host = StubAsyncFetchHost;
+                pending.load.begin_noncritical_fetches(webview, &mut host);
+            } else {
+                let mut host =
+                    IpcAsyncFetchHost::new(&mut self.outbound, &mut self.next_fetch_id, &mut self.inflight_fetches);
+                pending.load.begin_noncritical_fetches(webview, &mut host);
+            }
+        }
+
+        if pending.load.is_active() {
+            self.pending_load = Some(pending);
+            return Ok(());
+        }
+
+        if let Some(err) = pending.load.take_error() {
+            let url = pending.page_url;
+            return self.show_error_page(&url, &err);
+        }
+
+        let page_url = pending.page_url;
+        let run_scripts = pending.run_scripts_after;
+        let emit_complete = pending.emit_load_complete;
+
+        // R2942/R2943/R2944 mirror：load 完成（!is_active 且无 error）时 drain 子资源加载结果，
+        // stash 到 self 供后续脚本阶段 `finish_page_load` 派发（脚本阶段在 prefetch 完成后才跑，
+        // 晚于本点，故须暂存）。drain 在 take_error 之后、error 分支已 return，确保仅成功 load 才 drain。
+        self.pending_resource_errors = pending
+            .load
+            .take_failed_resources()
+            .into_iter()
+            .map(|r| (r.kind.to_string(), r.url))
+            .collect();
+        self.pending_resource_element_events = pending.load.take_resource_element_events();
+        self.pending_link_events = pending.load.take_link_element_events();
+        self.pending_font_events = pending.load.take_font_events();
+
+        self.sync_cached_html_from_webview();
+        self.try_publish_progress(true)?;
+        if emit_complete {
+            self.send_regular(IpcMessageKind::NavigationCommitted(NavigationCommittedParams {
+                url: page_url.clone(),
+                navigation_epoch: self.navigation_epoch,
+            }))?;
+            self.send_regular(IpcMessageKind::LoadComplete)?;
+            tracing::info!("页面渲染完成: {page_url}");
+        }
+        if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
+            self.pending_script_prefetch = Some(PendingScriptPrefetch::from_html(&page_url, &self.cached_html));
+        }
+        Ok(())
+    }
+
+    fn start_pending_load(&mut self, pending: PendingLoad) -> Result<(), String> {
+        self.pending_load = Some(pending);
+        self.tick_pending_load()
+    }
+
+    fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<IpcMessage>, String> {
+        if let Some(msg) = self.deferred_inbound.pop_front() {
+            return Ok(Some(msg));
+        }
+        match self.inbound_rx.recv_timeout(timeout) {
+            Ok(msg) => Ok(Some(msg)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err("IPC 通道已关闭".into()),
+        }
+    }
+
+    /// 用当前 cached_html/css 经 WebView 重绘并发布（脚本改 DOM 后的重渲染路径）。
+    fn rerender_publish_webview(&mut self) -> Result<(), String> {
+        self.invalidate_script_render();
+        let html = self.cached_html.clone();
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let wv = self.webview.as_mut().expect("webview");
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            // DOM 变更不能丢弃异步页面加载器已经加载的外链样式表。
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            wv.reload_html_after_script(&html);
+        });
+        self.publish_webview(None, true)
+    }
+
+    fn dispatch_dom_at(
+        &mut self,
+        selector: Option<String>,
+        x: f32,
+        y: f32,
+        event_type: &str,
+        detail: Option<DomEventDetail>,
+    ) -> DomDispatchResult {
+        let selector = selector.or_else(|| {
+            if matches!(event_type, "keydown" | "keyup" | "keypress") {
+                self.interaction
+                    .focus_owner()
+                    .or_else(|| {
+                        let target = self.interaction.pointer_target();
+                        if target.is_empty() { None } else { Some(target) }
+                    })
+                    .map(str::to_string)
+            } else {
+                self.webview
+                    .as_ref()
+                    .and_then(|wv| wv.hit_test_element(x, y))
+                    .map(|hit| selector_from_element_hit(&hit))
+            }
+        });
+        if let Some(sel) = selector {
+            if matches!(event_type, "mousedown" | "mouseup" | "mousemove" | "click" | "dblclick") {
+                self.interaction.set_pointer_target(sel.clone());
+            }
+            let js_enabled = self.javascript_enabled;
+            let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            let mut ctx = PageScriptContext {
+                html: &mut self.cached_html,
+                url: &current_url,
+                js_worker: &self.js_worker,
+                webview: self.webview.as_mut(),
+            };
+            let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
+            if result.html_changed {
+                // 事件回调产生的 mutation 已由 WebView 增量渲染，只需发布新帧。
+                self.invalidate_script_render();
+                let _ = self.publish_webview(None, true);
+            }
+            result
+        } else {
+            DomDispatchResult {
+                default_allowed: true,
+                html_changed: false,
+            }
+        }
+    }
+
+    /// 经浏览器 IPC 代理 GET 请求。
+    fn fetch_get(&mut self, url: &str) -> Result<Vec<u8>, String> {
+        if self.stub_network {
+            return Err(format!("stub network (no browser process): {url}"));
+        }
+        ipc_fetch_get(
+            &mut self.outbound,
+            &self.inbound_rx,
+            &mut self.next_fetch_id,
+            &mut self.deferred_inbound,
+            url,
+        )
+    }
+
+    /// 经浏览器 IPC 代理 POST 请求（R3055 form POST 导航）。body = urlencoded form data，
+    /// Content-Type=application/x-www-form-urlencoded（FetchParams 经浏览器侧 default_fetch_handler
+    /// → HttpClient::send POST，与页面 fetch() API R2923 同通路）。
+    fn fetch_post(&mut self, url: &str, body: &str) -> Result<Vec<u8>, String> {
+        if self.stub_network {
+            return Err(format!("stub network (no browser process): {url}"));
+        }
+        ipc_fetch(
+            &mut self.outbound,
+            &self.inbound_rx,
+            &mut self.next_fetch_id,
+            &mut self.deferred_inbound,
+            url,
+            "POST",
+            &[("Content-Type", "application/x-www-form-urlencoded")],
+            if body.is_empty() { None } else { Some(body) },
+        )
+    }
+
+    fn push_history(&mut self, url: &str) {
+        if self.history_index + 1 < self.history.len() {
+            self.history.truncate(self.history_index + 1);
+        }
+        if self.history.last().map(String::as_str) != Some(url) {
+            self.history.push(url.to_string());
+            self.history_index = self.history.len().saturating_sub(1);
+        }
+    }
+
+    fn history_url(&self, index: usize) -> Option<&str> {
+        self.history.get(index).map(String::as_str)
+    }
+
+    fn run_staged_load(
+        &mut self,
+        page_url: String,
+        html: String,
+        push_history: bool,
+        send_complete: bool,
+    ) -> Result<(), String> {
+        self.pending_script_prefetch = None;
+        self.executed_external_scripts.clear();
+        self.inflight_fetches.clear();
+        self.js_worker.reset_document_state();
+        if push_history {
+            self.push_history(&page_url);
+        }
+        self.send_regular(IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            url: page_url.clone(),
+            navigation_epoch: self.navigation_epoch,
+        }))?;
+        self.send_regular(IpcMessageKind::UrlChanged(page_url.clone()))?;
+        self.current_url = Some(page_url.clone());
+        self.cached_html = html.clone();
+        self.cached_css = String::new();
+
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&page_url);
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::from_html(page_url.clone(), html),
+            page_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: true,
+            emit_load_complete: send_complete,
+        })
+    }
+
+    fn show_error_page(&mut self, page_url: &str, error: &str) -> Result<(), String> {
+        tracing::error!("页面加载失败 ({page_url}): {error}");
+        self.pending_load = None;
+        self.send(IpcMessageKind::LoadFailed(error.to_string()))?;
+        let html = error_page::generate_error_page(page_url, error);
+        let error_url = format!("error://{page_url}");
+        self.send_regular(IpcMessageKind::UrlChanged(error_url.clone()))?;
+        self.current_url = Some(error_url.clone());
+        self.cached_html = html.clone();
+        self.cached_css.clear();
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&error_url);
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::from_html(error_url.clone(), html),
+            page_url: error_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: false,
+            emit_load_complete: false,
+        })?;
+        self.send(IpcMessageKind::TitleChanged("加载失败".to_string()))
+    }
+
+    fn handle_navigate(&mut self, params: NavigateParams) -> Result<(), String> {
+        self.navigate_with(params, "GET", None)
+    }
+
+    /// 导航内部核心（R3055 参数化 method+body）。共享导航态设置（history/URL/清缓存/焦点/epoch/document state），
+    /// 然后按 method 取主文档：**GET** → [`AsyncPageLoad::start`]（异步主文档，既有路径）；
+    /// **POST** → 同步 [`Self::fetch_post`] body → [`AsyncPageLoad::from_html`]（绕过异步主文档 GET 路径——
+    /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
+    /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
+    fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
+        tracing::info!("导航到: {} ({})", params.url, method);
+        // A submit/click may have dirtied the old document earlier in the same
+        // input transaction. Never publish that stale snapshot under the new epoch.
+        self.frame_transaction.discard_pending();
+        self.pending_frame_title = None;
+        self.last_published_title = None;
+        self.pending_frame_network_fetch = false;
+        self.pending_load = None;
+        self.pending_script_prefetch = None;
+        self.executed_external_scripts.clear();
+        self.inflight_fetches.clear();
+        self.js_worker.reset_document_state();
+        self.push_history(&params.url);
+        self.send_regular(IpcMessageKind::NavigationStarted(NavigationStartedParams {
+            url: params.url.clone(),
+            navigation_epoch: params.navigation_epoch,
+        }))?;
+        self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
+        self.current_url = Some(params.url.clone());
+        self.cached_html.clear();
+        self.cached_css.clear();
+        // S8：新页面图片 key 空间不同——清空已发送记录，确保新页图片像素被传输
+        self.sent_image_keys.clear();
+        // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
+        self.form_controls.clear();
+        self.interaction.clear();
+
+        self.navigation_epoch = params.navigation_epoch;
+        self.document_generation = self.document_generation.wrapping_add(1).max(1);
+        let page_url = params.url.clone();
+        self.webview
+            .as_mut()
+            .expect("webview")
+            .prepare_document_state(&page_url);
+
+        // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
+        // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
+        if method.eq_ignore_ascii_case("POST")
+            && let Ok(bytes) = self.fetch_post(&page_url, body.unwrap_or_default())
+        {
+            let html = String::from_utf8_lossy(&bytes).into_owned();
+            return self.start_pending_load(PendingLoad {
+                load: AsyncPageLoad::from_html(page_url.clone(), html),
+                page_url,
+                deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+                run_scripts_after: true,
+                emit_load_complete: true,
+            });
+        }
+        self.start_pending_load(PendingLoad {
+            load: AsyncPageLoad::start(page_url.clone()),
+            page_url,
+            deadline: Instant::now() + PAGE_LOAD_DEADLINE,
+            run_scripts_after: true,
+            emit_load_complete: true,
+        })
+    }
+
+    fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
+        self.navigation_epoch = params.navigation_epoch;
+        self.document_generation = self.document_generation.wrapping_add(1).max(1);
+        self.last_published_title = None;
+        // P1a change-on-blur：加载新 HTML 清焦点状态。
+        self.form_controls.clear();
+        self.interaction.clear();
+        let page_url = params.url.clone().unwrap_or_else(|| "about:blank".to_string());
+        tracing::info!("加载内联 HTML: {page_url}");
+        self.cached_css = params.css.clone().unwrap_or_default();
+        let css = self.cached_css.as_str();
+        let mut html = params.html;
+        if !css.is_empty() {
+            html.push_str("\n<style>\n");
+            html.push_str(css);
+            html.push_str("\n</style>\n");
+        }
+        self.run_staged_load(page_url, html, true, true)
+    }
+
+    fn try_republish_cached(&mut self) -> Result<(), String> {
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let wv = self.webview.as_mut().expect("webview");
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            wv.render();
+        });
+        self.publish_webview(None, true)
+    }
+
+    fn handle_set_viewport(&mut self, params: SetViewportParams) -> Result<(), String> {
+        self.viewport = (params.width, params.height);
+        self.device_scale_factor = if params.device_scale_factor.is_finite() && params.device_scale_factor > 0.0 {
+            params.device_scale_factor
+        } else {
+            1.0
+        };
+        if let Some(wv) = self.webview.as_mut() {
+            wv.resize(params.width, params.height);
+        }
+        // R3254（CSSOM View §resizing / UI Events §resize）：视口尺寸变化注入 `__zw_user_resize(w,h)` →
+        // 更新 innerWidth/innerHeight + 派 'resize' 到 window（响应式 JS / innerWidth watcher / matchMedia）。
+        // gate javascript_enabled + best-effort（先于 republish，使本帧派发）。
+        if self.javascript_enabled {
+            let script = zero_engine::script_user_resize(params.width as f64, params.height as f64);
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::warn!("dispatch user resize: {e}");
+            }
+        }
+        self.try_republish_cached()
+    }
+
+    fn handle_set_color_scheme(&mut self, params: SetColorSchemeParams) -> Result<(), String> {
+        if let Some(wv) = self.webview.as_mut() {
+            wv.set_prefers_color_scheme(ipc_scheme_to_engine(params.scheme));
+        }
+        self.try_republish_cached()
+    }
+
+    fn handle_set_media_type(&mut self, params: SetMediaTypeParams) -> Result<(), String> {
+        if let Some(wv) = self.webview.as_mut() {
+            wv.set_media_type(ipc_media_to_engine(params.media_type));
+        }
+        self.try_republish_cached()
+    }
+
+    fn reload_history_entry(&mut self, index: usize) -> Result<(), String> {
+        let url = self
+            .history_url(index)
+            .ok_or_else(|| "历史记录为空".to_string())?
+            .to_string();
+        self.history_index = index;
+        match self.fetch_get(&url) {
+            Ok(body) => {
+                let html = String::from_utf8_lossy(&body).into_owned();
+                self.run_staged_load(url, html, false, true)
+            }
+            Err(e) => self.show_error_page(&url, &e),
+        }
+    }
+
+    fn handle_go_back(&mut self) -> Result<(), String> {
+        if self.history_index == 0 {
+            tracing::info!("已在历史栈起点，无法后退");
+            return self.send(IpcMessageKind::Ok);
+        }
+        tracing::info!("后退导航");
+        self.reload_history_entry(self.history_index - 1)
+    }
+
+    fn handle_go_forward(&mut self) -> Result<(), String> {
+        if self.history_index + 1 >= self.history.len() {
+            tracing::info!("已在历史栈末尾，无法前进");
+            return self.send(IpcMessageKind::Ok);
+        }
+        tracing::info!("前进导航");
+        self.reload_history_entry(self.history_index + 1)
+    }
+
+    fn handle_storage_op(&mut self, params: StorageOpParams) -> Result<(), String> {
+        tracing::trace!("StorageOp 转发到浏览器: {:?}", params.operation);
+        self.send(IpcMessageKind::StorageOp(params))
+    }
+
+    fn handle_heartbeat(&mut self) -> Result<(), String> {
+        self.send(IpcMessageKind::Heartbeat)
+    }
+
+    fn handle_hit_test_link(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let href = self
+            .webview
+            .as_ref()
+            .expect("webview")
+            .hit_test_link(params.x, params.y);
+        tracing::trace!("HitTestLink({msg_id}) -> {:?}", href.as_deref());
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::HitTestLinkResult(HitTestLinkResultParams { href }),
+        )
+    }
+
+    fn handle_hit_test_image(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let src = self
+            .webview
+            .as_ref()
+            .expect("webview")
+            .hit_test_image(params.x, params.y);
+        tracing::trace!("HitTestImage({msg_id}) -> {:?}", src.as_deref());
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::HitTestImageResult(HitTestLinkResultParams { href: src }),
+        )
+    }
+
+    fn handle_hit_test_element(&mut self, msg_id: u64, params: HitTestLinkParams) -> Result<(), String> {
+        let result = self
+            .webview
+            .as_ref()
+            .expect("webview")
+            .hit_test_element(params.x, params.y)
+            .map(|hit| {
+                let selector = selector_from_element_hit(&hit);
+                HitTestElementResultParams {
+                    navigation_epoch: self.navigation_epoch,
+                    document_generation: self.document_generation,
+                    node_handle: Some(hit.node_handle),
+                    tag_name: Some(hit.tag_name),
+                    id: hit.id,
+                    class_name: hit.class_name,
+                    x: hit.x,
+                    y: hit.y,
+                    width: hit.width,
+                    height: hit.height,
+                    selector: Some(selector),
+                }
+            })
+            .unwrap_or(HitTestElementResultParams {
+                navigation_epoch: self.navigation_epoch,
+                document_generation: self.document_generation,
+                node_handle: None,
+                tag_name: None,
+                id: None,
+                class_name: None,
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+                selector: None,
+            });
+        self.send_with_id(msg_id, IpcMessageKind::HitTestElementResult(result))
+    }
+
+    fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
+        let event_type = params.event_type.clone();
+        let key = params.key.clone();
+        let detail = if params.key.is_some() || params.code.is_some() {
+            Some(DomEventDetail {
+                key: params.key,
+                code: params.code,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
+        let (result, checked_handled) = if event_type == "click" {
+            let target = params.selector.clone().or_else(|| {
+                self.webview
+                    .as_ref()
+                    .and_then(|webview| webview.hit_test_element(params.x, params.y))
+                    .map(|hit| selector_from_element_hit(&hit))
+            });
+            if let Some(target) = target {
+                self.dispatch_checked_click(target)?
+            } else {
+                (
+                    self.dispatch_dom_at(None, params.x, params.y, &event_type, detail),
+                    false,
+                )
+            }
+        } else {
+            (
+                self.dispatch_dom_at(params.selector, params.x, params.y, &event_type, detail),
+                false,
+            )
+        };
+        // 浏览器主进程通过 DispatchDomEvent 转发输入。该路径也必须执行与
+        // KeyboardEvent/MouseEvent 相同的表单默认行为，否则多进程模式下
+        // 点击输入框后无法聚焦、按键也不会更新 value。
+        // https://html.spec.whatwg.org/multipage/input.html#the-input-element
+        if result.default_allowed && event_type == "keydown" {
+            let target = self
+                .interaction
+                .focus_owner()
+                .unwrap_or_else(|| self.interaction.pointer_target())
+                .to_string();
+            self.apply_keydown_default(&target, key.as_deref().unwrap_or_default(), params.shift)?;
+        } else if result.default_allowed && event_type == "mousedown" {
+            // R3254-M8：焦点切换在 mousedown（UI Events：focus 是 mousedown 默认动作，与
+            // Chrome/Firefox 一致——mousedown preventDefault 阻止聚焦）。blur/change/focus
+            // 先于 click 执行且不受 click 的 preventDefault 影响（此前在 click 切换会被
+            // 目标 click handler 的 preventDefault 吞掉）。click 分支保留作键盘触发点击兜底。
+            let target = self.interaction.pointer_target().to_string();
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+            if let (Some(start), Some(end)) = (params.selection_start, params.selection_end) {
+                self.set_pointer_text_selection(&target, start, end);
+            }
+        } else if result.default_allowed && event_type == "click" {
+            let target = self.interaction.pointer_target().to_string();
+            // 幂等兜底：键盘触发的 click、mousedown 未命中（selector=None 路径）时仍切焦点。
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+            if !checked_handled && !self.activate_form_control_at(&target)? {
+                self.activate_label_at(&target)?;
+            }
+        }
+        self.send_regular_with_id(
+            msg_id,
+            IpcMessageKind::DispatchDomEventResult(DispatchDomEventResultParams {
+                default_allowed: result.default_allowed,
+            }),
+        )
+    }
+
+    fn handle_mouse_event(&mut self, params: MouseEventParams) -> Result<(), String> {
+        use zero_protocol::message::MouseEventType;
+        let event_type = match params.event_type {
+            MouseEventType::Down => "mousedown",
+            MouseEventType::Up => "mouseup",
+            MouseEventType::Move => "mousemove",
+            MouseEventType::Click => "click",
+            MouseEventType::DblClick => "dblclick",
+        };
+        let (dispatch_result, checked_handled) = if event_type == "click" {
+            let target = self
+                .webview
+                .as_ref()
+                .and_then(|webview| webview.hit_test_element(params.x, params.y))
+                .map(|hit| selector_from_element_hit(&hit));
+            if let Some(target) = target {
+                self.dispatch_checked_click(target)?
+            } else {
+                (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
+            }
+        } else if event_type != "mousemove" {
+            (self.dispatch_dom_at(None, params.x, params.y, event_type, None), false)
+        } else {
+            (
+                DomDispatchResult {
+                    default_allowed: true,
+                    html_changed: false,
+                },
+                false,
+            )
+        };
+        let click_default_allowed = dispatch_result.default_allowed;
+        // P1a form submit：click 命中 submit button → 提交 enclosing form（submit 事件）。
+        // P1a checkbox：click 命中 checkbox → 翻转 checked + 派发 change。
+        // dispatch_dom_at 已据命中点更新 pointer target。
+        if event_type == "mousedown" && click_default_allowed {
+            // R3254-M8：焦点切换在 mousedown（与 DispatchDomEvent 主路径对称；mousedown
+            // preventDefault 阻止聚焦，Chrome 语义）。
+            let target = self.interaction.pointer_target().to_string();
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+        }
+        if event_type == "click" {
+            let target = self.interaction.pointer_target().to_string();
+            // P1a change-on-blur：focus 变化优先（mousedown→focus→click 近似）——旧焦点失焦
+            // （blur + change 若 value 变），新焦点获焦（focus 若 text input）。幂等兜底：
+            // mousedown 已切换时此处跳过；键盘触发 click / mousedown 未命中时仍生效。
+            if self.interaction.focus_owner() != Some(target.as_str()) {
+                self.blur_focused()?;
+                self.focus_target(&target)?;
+            }
+            // P1a form submit/checkbox/radio/reset/label：仅 click 未取消时执行默认动作。
+            if checked_handled {
+                // checkedness transaction already committed or rolled back.
+            } else if click_default_allowed && self.activate_form_control_at(&target)? {
+                // 已激活。
+            } else if click_default_allowed && self.activate_label_at(&target)? {
+                // 已转发到关联控件。
+            } else if let Some(url) = zero_engine::anchor_click_target(
+                &self.cached_html,
+                &target,
+                self.current_url.as_deref().unwrap_or("about:blank"),
+            ) {
+                // R3052：anchor `<a href>` click → 导航（仅 click 未 preventDefault）。target 非 submit/
+                // checkbox/radio/reset 且 anchor_click_target 解析出可导航 URL → handle_navigate。
+                // referrer = 当前页；navigation_epoch 递增。javascript:/#/mailto:/target=_blank 等已在 helper 过滤。
+                if click_default_allowed {
+                    let _ = self.handle_navigate(zero_protocol::message::NavigateParams {
+                        url,
+                        referrer: self.current_url.clone(),
+                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                    });
+                }
+            } else if zero_engine::anchor_hash_target(&self.cached_html, &target).is_some() {
+                // R3053：anchor `<a href="#sec">` click → location.hash 更新 + hashchange（SPA hash 路由）。
+                // anchor_click_target 对 #hash 返 None（同文档锚不导航），故 hash 链接落到此分支。
+                // 仅 click 未 preventDefault 时设 hash（spec：preventDefault 阻止 hash 变更）。
+                if click_default_allowed {
+                    let _ = self.set_hash_on_click_at(&target);
+                }
+            } else if zero_engine::anchor_javascript_target(&self.cached_html, &target).is_some() {
+                // R3057：anchor `<a href="javascript:...">` click → 页面全局执行 JS 体（real browser 语义）。
+                // 与 onclick handler 同一 JS 执行通路（CSP `script-src` 统辖内联/eval）。仅 click 未 preventDefault 时执行。
+                if click_default_allowed {
+                    let _ = self.eval_javascript_on_click_at(&target);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_keyboard_event(&mut self, params: KeyboardEventParams) -> Result<(), String> {
+        use zero_protocol::message::KeyboardEventType;
+        let event_type = match params.event_type {
+            KeyboardEventType::Down => "keydown",
+            KeyboardEventType::Up => "keyup",
+            KeyboardEventType::Press => "keypress",
+        };
+        let detail = DomEventDetail {
+            key: Some(params.key.clone()),
+            code: Some(params.code.clone()),
+            ..Default::default()
+        };
+        let target = self
+            .interaction
+            .focus_owner()
+            .unwrap_or_else(|| self.interaction.pointer_target())
+            .to_string();
+        let result = self.dispatch_dom_at(Some(target.clone()), 0.0, 0.0, event_type, Some(detail));
+        if matches!(params.event_type, KeyboardEventType::Down) && result.default_allowed {
+            self.apply_keydown_default(&target, &params.key, params.shift)?;
+        }
+        Ok(())
+    }
+
+    fn handle_scroll_event(&mut self, params: ScrollEventParams) -> Result<(), String> {
+        tracing::trace!(
+            "滚动事件: delta=({}, {}) cursor=({}, {})",
+            params.delta_x,
+            params.delta_y,
+            params.cursor_x,
+            params.cursor_y
+        );
+        // R3253（UI Events §scroll via user input）：用户滚动（browser IPC ScrollEventParams）注入
+        // `__zw_user_scroll(dx,dy)` → 更新 `_winScroll`（window.scrollY 跟踪）+ 派 'scroll' 事件。
+        // 视觉滚动由 browser 侧 `TabScrollState` 独立处理；本处只补「页面 JS 可观察」半边（程序化滚动
+        // 经 R3051 `_zwFireScroll` 已派发，用户滚动此前被吞）。gate javascript_enabled + best-effort。
+        //
+        // R3298（S1/S2，元素滚动 RFC）：`params.cursor_x`/`cursor_y`（滚轮视口坐标）现经 browser
+        // 多进程链路透传至此。本处记录坐标（S2 链路验证），不改变滚动行为——元素级滚动（命中可滚动
+        // 祖先容器 + 容器内偏移 + 派元素 'scroll'）依赖 S3 layout 几何暴露（渲染流域协调点，未实现），
+        // 故当前仍走文档级 `__zw_user_scroll` 路径。cursor 默认 0.0（旧发送端）退化为既有行为。
+        if self.javascript_enabled {
+            let script = zero_engine::script_user_scroll(params.delta_x as f64, params.delta_y as f64);
+            if let Err(e) = self.js_worker.execute_script_direct(&script) {
+                tracing::warn!("dispatch user scroll: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_indexed_db_connection_event(&mut self, params: IndexedDbConnectionEventParams) -> Result<(), String> {
+        self.js_worker.dispatch_indexed_db_connection_event(
+            params.connection_id,
+            params.old_version,
+            params.new_version,
+        )?;
+        self.send_regular(IpcMessageKind::IndexedDbConnectionEventAck(
+            IndexedDbConnectionEventAckParams {
+                connection_id: params.connection_id,
+                request_id: params.request_id,
+            },
+        ))
+    }
+
+    fn dispatch_message(&mut self, msg: IpcMessage) -> Result<(), String> {
+        match msg.kind {
+            IpcMessageKind::Navigate(params) => self.handle_navigate(params),
+            IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
+            IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
+            IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
+            IpcMessageKind::SetMediaType(params) => self.handle_set_media_type(params),
+            IpcMessageKind::SetJavascriptEnabled(enabled) => {
+                self.javascript_enabled = enabled;
+                Ok(())
+            }
+            IpcMessageKind::SetFramePublishMode(mode) => {
+                self.frame_publish.set_mode(mode);
+                Ok(())
+            }
+            IpcMessageKind::RequestFrame => {
+                if self
+                    .webview
+                    .as_ref()
+                    .is_some_and(|webview| webview.last_render().is_some())
+                {
+                    self.sent_image_keys.clear();
+                    self.publish_webview(None, true)?;
+                }
+                Ok(())
+            }
+            IpcMessageKind::GoBack => self.handle_go_back(),
+            IpcMessageKind::GoForward => self.handle_go_forward(),
+            IpcMessageKind::StopLoading => {
+                tracing::info!("停止加载");
+                self.pending_load = None;
+                self.inflight_fetches.clear();
+                Ok(())
+            }
+            IpcMessageKind::Reload => {
+                if let Some(ref url) = self.current_url {
+                    self.handle_navigate(NavigateParams {
+                        url: url.clone(),
+                        referrer: None,
+                        navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            IpcMessageKind::Heartbeat => self.handle_heartbeat(),
+            IpcMessageKind::MouseEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_mouse_event(params))
+            }
+            IpcMessageKind::KeyboardEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_keyboard_event(params))
+            }
+            IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
+            IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
+            IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
+            IpcMessageKind::IndexedDbConnectionEvent(params) => self.handle_indexed_db_connection_event(params),
+            IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
+            IpcMessageKind::HitTestElement(params) => self.handle_hit_test_element(msg.id, params),
+            IpcMessageKind::HitTestImage(params) => self.handle_hit_test_image(msg.id, params),
+            IpcMessageKind::DispatchDomEvent(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_dispatch_dom_event(msg.id, params))
+            }
+            IpcMessageKind::AutomationRequest(request) => {
+                self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
+            }
+            IpcMessageKind::FetchRequest(_)
+            | IpcMessageKind::FetchResponse(_)
+            | IpcMessageKind::ImageDecodeRequest(_)
+            | IpcMessageKind::ImageDecodeResult(_)
+            | IpcMessageKind::CompositorFrame { .. }
+            | IpcMessageKind::CompositorFrameResult { .. }
+            | IpcMessageKind::GetCompositorFrame { .. }
+            | IpcMessageKind::ReleaseCompositorSurface { .. }
+            | IpcMessageKind::CompositorSetScroll { .. }
+            | IpcMessageKind::CompositorRegisterUiSurface(_)
+            | IpcMessageKind::CompositorRegisterWindowSurface(_)
+            | IpcMessageKind::CompositorUiFrame { .. }
+            | IpcMessageKind::GetCompositorUiFrame { .. }
+            | IpcMessageKind::GetCompositorPresentFrame { .. }
+            | IpcMessageKind::CompositorFrameData { .. }
+            | IpcMessageKind::TitleChanged(_)
+            | IpcMessageKind::UrlChanged(_)
+            | IpcMessageKind::LoadComplete
+            | IpcMessageKind::LoadFailed(_)
+            | IpcMessageKind::ViewPainted(_)
+            | IpcMessageKind::HitTestLinkResult(_)
+            | IpcMessageKind::HitTestElementResult(_)
+            | IpcMessageKind::HitTestImageResult(_)
+            | IpcMessageKind::DispatchDomEventResult(_)
+            | IpcMessageKind::FocusOwnerChanged(_)
+            | IpcMessageKind::AutomationResponse(_)
+            | IpcMessageKind::IndexedDbRequest(_)
+            | IpcMessageKind::IndexedDbResponse(_)
+            | IpcMessageKind::IndexedDbConnectionEventAck(_)
+            | IpcMessageKind::NavigationStarted(_)
+            | IpcMessageKind::NavigationCommitted(_)
+            | IpcMessageKind::CrashNotification(_) => {
+                tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
+                Ok(())
+            }
+            IpcMessageKind::Ok | IpcMessageKind::Error(_) => Ok(()),
+        }
+    }
+
+    fn run(&mut self) -> Result<(), String> {
+        tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
+
+        loop {
+            if self.pending_load.is_some() || self.pending_script_prefetch.is_some() {
+                self.drain_inflight_fetch_responses();
+                if self.pending_load.is_some()
+                    && let Err(e) = self.tick_pending_load()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
+                    tracing::error!("页面加载 tick 错误: {e}");
+                }
+                if self.pending_script_prefetch.is_some()
+                    && let Err(e) = self.tick_script_prefetch()
+                {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
+                    tracing::error!("脚本预取 tick 错误: {e}");
+                }
+            }
+
+            // R2949 FontFace.load()：drain JS 投递的字体加载请求（任意时刻可来，故每轮检查）。
+            // fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
+            self.tick_font_face_loads();
+
+            // 异步页面脚本（例如 HTML5test 的后台检测）可在初始脚本边界之后改 DOM；每轮
+            // 原子取出并提交，避免结果节点滞留在 JS worker。
+            self.drain_pending_script_mutations()?;
+
+            // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
+            // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
+            self.tick_pending_navigation()?;
+
+            // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
+            self.sync_focus_from_js();
+
+            match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
+                Ok(Some(msg)) => {
+                    if self.inflight_fetches.try_complete(&msg) {
+                        continue;
+                    }
+                    if let Err(e) = self.dispatch_message(msg) {
+                        if browser_ipc_disconnected(&e) {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
+                        tracing::error!("消息处理错误: {e}");
+                        if let Err(se) = self.send(IpcMessageKind::Error(e))
+                            && browser_ipc_disconnected(&se)
+                        {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(e) if browser_ipc_disconnected(&e) => {
+                    tracing::info!(
+                        "Browser IPC disconnected, renderer {} exiting (err={e})",
+                        self.renderer_id
+                    );
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+/// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。
+///
+/// R3254-M1：返回「本次**同步写出**的帧携带的图片 key 列表」——调用方据此标记 sent。
+/// compositor 异步路径（发布线程写出）不在此返回，由 `drain_sent_image_keys` 回传。
+#[allow(clippy::too_many_arguments)]
+fn publish_render_with_layout(
+    outbound: &mut IpcOutbound,
+    compositor_publish: Option<&compositor_publish_thread::CompositorPublishThread>,
+    next_msg_id: &mut u64,
+    publish_state: &mut FramePublishState,
+    frame: &zero_page_runtime::FrameModel,
+    device_scale_factor: f32,
+    title: Option<String>,
+    image_payloads: Vec<zero_protocol::IpcImagePayload>,
+    navigation_epoch: u64,
+    document_generation: u64,
+) -> Result<Vec<u64>, String> {
+    // R3254-M1：同步写出成功后才标记这些 key（sent 标记 = 实际在线上）。
+    let sync_sent_keys = image_payloads
+        .iter()
+        .map(|payload| payload.image_key)
+        .collect::<Vec<u64>>();
+    let paint = paint_export::paint_snapshot_from_primitives(
+        frame.viewport.0,
+        frame.viewport.1,
+        device_scale_factor,
+        frame.document_height,
+        &frame.primitives,
+        &frame.dirty_rects,
+        image_payloads,
+        frame.hit_test.clone(),
+        navigation_epoch,
+        document_generation,
+    );
+    let frame_id = publish_state.next_frame_id;
+    publish_state.next_frame_id += 1;
+    if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
+        let (mode, event) = match publish_state.mode {
+            FramePublishMode::Legacy => ("legacy", "ViewPainted"),
+            FramePublishMode::Compositor => ("compositor", "CompositorFrame"),
+        };
+        tracing::info!(
+            "SMOKE_EVENT component=zero-renderer event=frame_published mode={mode} kind={event} surface={} epoch={} frame={frame_id}",
+            publish_state.surface_id,
+            paint.navigation_epoch
+        );
+    }
+    let msg = IpcMessage {
+        id: {
+            let id = *next_msg_id;
+            *next_msg_id += 1;
+            id
+        },
+        kind: match publish_state.mode {
+            FramePublishMode::Legacy => IpcMessageKind::ViewPainted(Box::new(paint)),
+            FramePublishMode::Compositor => IpcMessageKind::CompositorFrame {
+                surface_id: publish_state.surface_id,
+                navigation_epoch: paint.navigation_epoch,
+                frame_id,
+                paint: Box::new(paint),
+            },
+        },
+    };
+    let compositor_async_sent = publish_state.mode == FramePublishMode::Compositor
+        && compositor_publish.is_some_and(|thread| thread.try_enqueue(msg.clone()));
+    if !compositor_async_sent {
+        // R3254-M1：同步写出成功后才标记该帧图片 key（sent 标记 = 实际在线上）。
+        outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        let sent_now = sync_sent_keys;
+        if let Some(title) = title {
+            let msg = IpcMessage {
+                id: {
+                    let id = *next_msg_id;
+                    *next_msg_id += 1;
+                    id
+                },
+                kind: IpcMessageKind::TitleChanged(title),
+            };
+            outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        }
+        return Ok(sent_now);
+    }
+    // R3254-L1：Title 与帧共享发布线程 FIFO（保序），不再主线程直发。
+    if let Some(title) = title {
+        let msg = IpcMessage {
+            id: {
+                let id = *next_msg_id;
+                *next_msg_id += 1;
+                id
+            },
+            kind: IpcMessageKind::TitleChanged(title),
+        };
+        if let Some(thread) = compositor_publish
+            && !thread.enqueue_regular(msg.clone())
+        {
+            outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        }
+    }
+    Ok(Vec::new())
+}
+
+fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {
+    if status_code == 0 {
+        let msg = String::from_utf8_lossy(body).trim().to_string();
+        if msg.is_empty() {
+            "网络请求失败（浏览器未能完成 HTTP 抓取）".to_string()
+        } else {
+            msg
+        }
+    } else {
+        format!("HTTP {status_code}")
+    }
+}
+
+/// 经浏览器 IPC 代理 HTTP 请求（R3055：从 `ipc_fetch_get` 泛化，支持 method/headers/body——供 POST form 导航）。
+/// 收发逻辑同 GET：发 `FetchRequest`，等待匹配 `request_id` 的 `FetchResponse`，非目标消息暂存局部队列后回填
+///（防单核自旋）。状态码非 2xx → Err。`ipc_fetch_get` 为 GET 便捷封装。
+#[allow(clippy::too_many_arguments)] // 8 参 = 4 IPC 通道 + url/method/headers/body，签名清晰优于打包结构体
+fn ipc_fetch(
+    outbound: &mut IpcOutbound,
+    inbound_rx: &Receiver<IpcMessage>,
+    next_fetch_id: &mut u64,
+    deferred: &mut VecDeque<IpcMessage>,
+    url: &str,
+    method: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let request_id = *next_fetch_id;
+    *next_fetch_id += 1;
+    let msg = IpcMessage {
+        id: 0,
+        kind: IpcMessageKind::FetchRequest(FetchParams {
+            request_id,
+            url: url.to_string(),
+            method: method.to_string(),
+            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            body: body.map(|b| b.as_bytes().to_vec()),
+        }),
+    };
+    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+
+    // 当前请求不消费的消息先移到局部队列。若直接放回 `deferred`，下一轮会立刻
+    // pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，导致单核自旋。
+    let mut skipped = VecDeque::new();
+    let result = (|| {
+        loop {
+            let msg = if let Some(m) = deferred.pop_front() {
+                m
+            } else {
+                inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
+            };
+            match msg.kind {
+                IpcMessageKind::FetchResponse(FetchResponseParams {
+                    request_id: rid,
+                    status_code,
+                    body,
+                    ..
+                }) if rid == request_id => {
+                    if !(200..300).contains(&status_code) {
+                        return Err(ipc_fetch_error(status_code, &body));
+                    }
+                    return Ok(body);
+                }
+                IpcMessageKind::Heartbeat => {
+                    let reply = IpcMessage {
+                        id: msg.id,
+                        kind: IpcMessageKind::Heartbeat,
+                    };
+                    outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
+                }
+                other => {
+                    skipped.push_back(IpcMessage {
+                        id: msg.id,
+                        kind: other,
+                    });
+                }
+            }
+        }
+    })();
+    deferred.append(&mut skipped);
+    result
+}
+
+/// GET 便捷封装（R3055：转发到泛化 [`ipc_fetch`]，无 headers/body）。既有调用点（字体/图片/预取）不变。
+fn ipc_fetch_get(
+    outbound: &mut IpcOutbound,
+    inbound_rx: &Receiver<IpcMessage>,
+    next_fetch_id: &mut u64,
+    deferred: &mut VecDeque<IpcMessage>,
+    url: &str,
+) -> Result<Vec<u8>, String> {
+    ipc_fetch(outbound, inbound_rx, next_fetch_id, deferred, url, "GET", &[], None)
+}
+
+fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
+    match scheme {
+        IpcColorScheme::Light => PrefersColorSchemeValue::Light,
+        IpcColorScheme::Dark => PrefersColorSchemeValue::Dark,
+    }
+}
+
+/// IPC 媒体类型 → engine MediaType（DC-12 @media print；R1993）。
+fn ipc_media_to_engine(media: IpcMediaType) -> MediaType {
+    match media {
+        IpcMediaType::Screen => MediaType::Screen,
+        IpcMediaType::Print => MediaType::Print,
+    }
+}
+
+fn load_system_fonts() -> (FontLoader, Option<u32>, HashMap<String, u32>) {
+    let platform = zero_render_foundation::font::system::load_platform_fonts();
+    let resolver = platform.loader.build_font_resolver();
+    (platform.loader, platform.primary_id, resolver)
+}
+
+/// Parses the desktop renderer process role and instance identifier.
+pub fn parse_renderer_launch() -> (ProcessRole, u64) {
+    let mut role = ProcessRole::Renderer;
+    let mut instance_id = 0u64;
+    for arg in std::env::args() {
+        if let Some(value) = arg.strip_prefix("--type=") {
+            role = match value {
+                "renderer" => ProcessRole::Renderer,
+                "browser" => ProcessRole::Browser,
+                "network" => ProcessRole::Network,
+                other => {
+                    tracing::error!("未知子进程类型: {other}");
+                    std::process::exit(2);
+                }
+            };
+        }
+        if let Some(id_str) = arg.strip_prefix("--instance-id=")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            instance_id = id;
+        }
+        // 兼容旧参数
+        if let Some(id_str) = arg.strip_prefix("--renderer-id=")
+            && let Ok(id) = id_str.parse::<u64>()
+        {
+            instance_id = id;
+        }
+    }
+    (role, instance_id)
+}
+
+// use std::thread::{self, ...}：`self` 仅本函数使用，门卫随函数走——否则 macOS
+//（本函数被剔除）上 import 变 unused，CI -D warnings 挂（2026-08-18 实修）
+#[cfg(not(target_os = "macos"))]
+use std::thread;
+
+#[cfg(not(target_os = "macos"))]
+fn run_on_renderer_stack<T: Send + 'static>(
+    renderer_id: u64,
+    task: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    thread::Builder::new()
+        .name(format!("renderer-runtime-{renderer_id}"))
+        .stack_size(RENDERER_RUNTIME_STACK_SIZE)
+        .spawn(task)
+        .map_err(|error| format!("无法启动 renderer 运行线程: {error}"))?
+        .join()
+        .map_err(|_| "renderer 运行线程异常终止".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn run_renderer_runtime(renderer_id: u64) -> Result<(), String> {
+    run_on_renderer_stack(renderer_id, move || RendererRuntime::new(renderer_id).run())?
+}
+
+/// Runs the renderer role with the desktop stdio bootstrap.
+pub fn run_desktop_role(renderer_id: u64) -> Result<(), String> {
+    sandbox::apply_early_if_enabled();
+
+    #[cfg(target_os = "macos")]
+    let result = if crate::macos_app::is_bundled_app_executable() {
+        crate::macos_app::run_renderer(renderer_id)
+    } else {
+        RendererRuntime::new(renderer_id).run()
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = run_renderer_runtime(renderer_id);
+    result
+}
+
+#[cfg(test)]
+#[path = "activation_tests.rs"]
+mod activation_tests;
+#[cfg(test)]
+#[path = "compositor_publish_tests.rs"]
+mod compositor_publish_tests;
+#[cfg(test)]
+#[path = "keyboard_input_tests.rs"]
+mod keyboard_input_tests;
+
+#[cfg(test)]
+mod runtime_smoke {
+    use super::*;
+    use std::io::Write;
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn renderer_runtime_stack_handles_deep_render_call_chain() {
+        fn consume_stack(depth: usize) -> usize {
+            let frame = [0u8; 1024];
+            if depth == 0 {
+                std::hint::black_box(frame[0] as usize)
+            } else {
+                std::hint::black_box(frame[0] as usize) + consume_stack(depth - 1)
+            }
+        }
+
+        let result = run_on_renderer_stack(0, || consume_stack(4_096));
+        assert_eq!(result.expect("renderer stack thread"), 0);
+    }
+
+    #[test]
+    fn read_input_value_for_change_textarea_uses_content() {
+        // R2703：change-on-blur 值比对——textarea 取文本内容（非 value 属性，R2702 value↔内容），
+        // input 取 value 属性。修复前 host 读 value 属性，textarea 无 value 属性 → 获焦基线/当前值
+        // 均 '' → textarea change-on-blur 永不触发。
+        let ta = "<html><body><textarea id=\"t\">hello</textarea></body></html>";
+        assert_eq!(
+            read_input_value_for_change(ta, "#t"),
+            "hello",
+            "textarea value 取文本内容"
+        );
+        let inp = "<html><body><input id=\"i\" value=\"world\"></body></html>";
+        assert_eq!(
+            read_input_value_for_change(inp, "#i"),
+            "world",
+            "input value 取 value 属性"
+        );
+        // textarea 带 value 属性（非标准但存在）仍取内容（spec：textarea value 是内容）。
+        let ta2 = "<html><body><textarea id=\"t\" value=\"ignored\">real</textarea></body></html>";
+        assert_eq!(
+            read_input_value_for_change(ta2, "#t"),
+            "real",
+            "textarea 忽略 value 属性取内容"
+        );
+    }
+
+    #[test]
+    fn ipc_fetch_get_skips_deferred_messages_without_spinning() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut next_fetch_id = 7;
+        let mut deferred = VecDeque::from([IpcMessage {
+            id: 11,
+            kind: IpcMessageKind::SetViewport(SetViewportParams {
+                width: 1024,
+                height: 768,
+                device_scale_factor: 1.0,
+            }),
+        }]);
+        tx.send(IpcMessage {
+            id: 12,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 7,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"image".to_vec(),
+            }),
+        })
+        .unwrap();
+
+        let body = ipc_fetch_get(
+            &mut outbound,
+            &rx,
+            &mut next_fetch_id,
+            &mut deferred,
+            "https://example.test/image.png",
+        )
+        .expect("target fetch response");
+
+        assert_eq!(body, b"image");
+        assert_eq!(next_fetch_id, 8);
+        assert!(matches!(
+            deferred.pop_front().map(|m| m.kind),
+            Some(IpcMessageKind::SetViewport(SetViewportParams {
+                width: 1024,
+                height: 768,
+                device_scale_factor: 1.0,
+            }))
+        ));
+        assert!(deferred.is_empty());
+    }
+}
