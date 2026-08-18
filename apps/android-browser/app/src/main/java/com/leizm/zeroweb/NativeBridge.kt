@@ -31,6 +31,9 @@ object NativeBridge {
     external fun nativeSelectTab(id: Long): Boolean
 
     @JvmStatic
+    external fun nativeGoBack(): Boolean
+
+    @JvmStatic
     external fun nativeToggleBookmark(): Boolean
 
     @JvmStatic

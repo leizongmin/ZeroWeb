@@ -9,7 +9,9 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +44,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         loadBrowserProfile()
         handleExternalIntent(intent)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (NativeBridge.nativeGoBack()) {
+                    refreshBrowserSnapshot()
+                    return
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        })
         bindBootstrapRoles()
         setContent {
             MaterialTheme {
@@ -197,6 +209,7 @@ private fun BrowserScreen(
     onClearHistory: () -> Unit,
 ) {
     var page by remember { mutableStateOf(BrowserPage.BROWSE) }
+    BackHandler(enabled = page != BrowserPage.BROWSE) { page = BrowserPage.BROWSE }
     val activeTab = snapshot.tabs.firstOrNull { it.id == snapshot.activeTabId }
     var address by remember(activeTab?.id, activeTab?.url) { mutableStateOf(activeTab?.url.orEmpty()) }
     Column(
