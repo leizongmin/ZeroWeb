@@ -328,6 +328,67 @@ fn test_indexeddb_metadata_tasks_and_utf16_name_wire() {
 }
 
 #[test]
+fn test_indexeddb_keypath_extraction_edge_cases() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__keyPathEdges = [];\
+             var setup = indexedDB.open('keypath-edges', 1);\
+             setup.onupgradeneeded = function () {\
+               var db = setup.result;\
+               var whole = db.createObjectStore('whole', {keyPath:''});\
+               whole.add('whole-key');\
+               try { whole.createIndex('invalid', 'not valid'); }\
+               catch (error) { __keyPathEdges.push('index:' + error.name); }\
+               var generated = db.createObjectStore('generated', {keyPath:'a.b', autoIncrement:true});\
+               var getterCount = 0;\
+               Object.defineProperty(Object.prototype, 'a', {\
+                 configurable:true,\
+                 get:function () { getterCount++; throw new Error('unexpected getter'); }\
+               });\
+               var generatedRequest;\
+               try { generatedRequest = generated.put({}); }\
+               finally { delete Object.prototype.a; }\
+               __keyPathEdges.push('getter:' + getterCount);\
+               __keyPathEdges.push('request:' + Object.prototype.toString.call(generatedRequest));\
+               var out = db.createObjectStore('out');\
+               try { out.add('value', new Proxy([1], {})); }\
+               catch (error) { __keyPathEdges.push('proxy:' + error.name); }\
+               var files = db.createObjectStore('files', {keyPath:'name'});\
+               files.put(new File(['x'], 'file.txt', {lastModified:123}));\
+             };\
+             setup.onsuccess = function () {\
+               var db = setup.result;\
+               db.transaction('whole').objectStore('whole').get('whole-key').onsuccess = function (event) {\
+                 __keyPathEdges.push('whole:' + event.target.result);\
+               };\
+               db.transaction('generated').objectStore('generated').get(1).onsuccess = function (event) {\
+                 __keyPathEdges.push('generated:' + event.target.result.a.b);\
+               };\
+               db.transaction('files').objectStore('files').get('file.txt').onsuccess = function (event) {\
+                 __keyPathEdges.push('file:' + event.target.result.name + ':' + event.target.result.lastModified);\
+               };\
+             };",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("__keyPathEdges.sort().join('|')").unwrap().value,
+        "file:file.txt:123|generated:1|getter:0|index:SyntaxError|proxy:DataError|request:[object IDBRequest]|whole:whole-key"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

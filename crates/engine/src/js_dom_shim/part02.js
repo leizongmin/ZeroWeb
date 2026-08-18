@@ -2959,11 +2959,21 @@
       return { type: 'binary', value: Array.prototype.slice.call(binary) };
     }
     if (Array.isArray(value)) {
+      if (_zwIDBTrackedProxies && _zwIDBTrackedProxies.has(value)) {
+        throw new globalThis.DOMException('Proxy keys are invalid.', 'DataError');
+      }
       if (seen.indexOf(value) !== -1) {
         throw new globalThis.DOMException('Cyclic IndexedDB key.', 'DataError');
       }
       seen.push(value);
-      var entries = value.map(function (entry) { return _zwIDBKeyToWire(entry, seen); });
+      var entries = [];
+      for (var i = 0; i < value.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(value, i)) {
+          seen.pop();
+          throw new globalThis.DOMException('Sparse IndexedDB keys are invalid.', 'DataError');
+        }
+        entries.push(_zwIDBKeyToWire(value[i], seen));
+      }
       seen.pop();
       return { type: 'array', value: entries };
     }
@@ -2997,6 +3007,21 @@
     return false;
   }
 
+  function _zwIDBMapOwnArray(value, mapper) {
+    var result = new Array(value.length);
+    for (var i = 0; i < value.length; i++) {
+      Object.defineProperty(result, i, {
+        configurable: true,
+        enumerable: true,
+        value: Object.prototype.hasOwnProperty.call(value, i)
+          ? mapper(value[i], i)
+          : { __zwIdbType: 'undefined' },
+        writable: true
+      });
+    }
+    return result;
+  }
+
   function _zwIDBGraphProjection(value, stack) {
     if (value === null || typeof value !== 'object') return _zwIDBValueToWire(value, []);
     if (value instanceof Date
@@ -3009,7 +3034,7 @@
     stack.push(value);
     var projection;
     if (Array.isArray(value)) {
-      projection = value.map(function (entry) {
+      projection = _zwIDBMapOwnArray(value, function (entry) {
         return _zwIDBGraphProjection(entry, stack);
       });
     } else {
@@ -3034,7 +3059,7 @@
       nodes.push(node);
       if (Array.isArray(entry)) {
         node.kind = 'array';
-        node.value = entry.map(encode);
+        node.value = _zwIDBMapOwnArray(entry, encode);
       } else if (entry instanceof Date
           || (typeof Blob !== 'undefined' && entry instanceof Blob)
           || (typeof ArrayBuffer !== 'undefined'
@@ -3070,6 +3095,15 @@
     }
     if (value instanceof Date) {
       return { __zwIdbType: 'date', value: String(value.getTime()) };
+    }
+    if (typeof File !== 'undefined' && value instanceof File) {
+      return {
+        __zwIdbType: 'file',
+        name: value.name || '',
+        lastModified: Number(value.lastModified),
+        type: value.type || '',
+        value: Array.prototype.slice.call(_zw_blobBytes(value))
+      };
     }
     if (typeof Blob !== 'undefined' && value instanceof Blob) {
       return {
@@ -3108,7 +3142,9 @@
     seen.push(value);
     var wire;
     if (Array.isArray(value)) {
-      wire = value.map(function (entry) { return _zwIDBValueToWire(entry, seen); });
+      wire = _zwIDBMapOwnArray(value, function (entry) {
+        return _zwIDBValueToWire(entry, seen);
+      });
     } else if (!Object.prototype.hasOwnProperty.call(value, '__zwIdbType')) {
       wire = {};
       Object.keys(value).forEach(function (key) {
@@ -3171,6 +3207,13 @@
     if (wire.__zwIdbType === 'undefined') return undefined;
     if (wire.__zwIdbType === 'number') return Number(wire.value);
     if (wire.__zwIdbType === 'date') return new Date(Number(wire.value));
+    if (wire.__zwIdbType === 'file') {
+      return new File(
+        [new Uint8Array(wire.value || [])],
+        wire.name || '',
+        { type: wire.type || '', lastModified: Number(wire.lastModified) }
+      );
+    }
     if (wire.__zwIdbType === 'blob') {
       return new Blob([new Uint8Array(wire.value || [])], { type: wire.type || '' });
     }
@@ -3600,6 +3643,45 @@
     return keyPath;
   }
 
+  // https://w3c.github.io/IndexedDB/#extract-key-from-value
+  function _zwIDBKeyPathProperty(value, property) {
+    if (value == null) return undefined;
+    if (property === 'length' && (typeof value === 'string' || Array.isArray(value))) {
+      return value.length;
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+      if (property === 'size') return value.size;
+      if (property === 'type') return value.type;
+    }
+    if (typeof File !== 'undefined' && value instanceof File) {
+      if (property === 'name') return value.name;
+      if (property === 'lastModified') return value.lastModified;
+    }
+    if (!Object.prototype.hasOwnProperty.call(Object(value), property)) return undefined;
+    return value[property];
+  }
+
+  function _zwIDBExtractKeyPath(value, keyPath) {
+    if (keyPath === '') return value;
+    var key = value;
+    String(keyPath).split('.').forEach(function (property) {
+      key = _zwIDBKeyPathProperty(key, property);
+    });
+    return key;
+  }
+
+  function _zwIDBCanInjectKey(value, keyPath) {
+    if (typeof keyPath !== 'string' || keyPath === '') return false;
+    var target = value;
+    var parts = keyPath.split('.');
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (target == null || (typeof target !== 'object' && typeof target !== 'function')) return false;
+      if (!Object.prototype.hasOwnProperty.call(target, parts[i])) return true;
+      target = target[parts[i]];
+    }
+    return target != null && (typeof target === 'object' || typeof target === 'function');
+  }
+
   function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction, metadata) {
     this._db = db;
     this.name = name;
@@ -3627,36 +3709,58 @@
     }
   };
   _zwIDBStore.prototype._keyOf = function (value) {
-    if (!this.keyPath) return null;
+    if (this.keyPath === null) return null;
     if (Array.isArray(this.keyPath)) {
-      return this.keyPath.map(function (path) { return this._indexKey(value, path); }, this);
+      return this.keyPath.map(function (path) { return _zwIDBExtractKeyPath(value, path); });
     }
-    var k = value;
-    String(this.keyPath).split('.').forEach(function (p) { k = k == null ? undefined : k[p]; });
-    return k;
+    return _zwIDBExtractKeyPath(value, this.keyPath);
   };
   _zwIDBStore.prototype._setKeyPath = function (value, key) {
     var parts = String(this.keyPath).split('.');
     var target = value;
     for (var i = 0; i < parts.length - 1; i++) {
-      if (target[parts[i]] == null) target[parts[i]] = {};
+      if (target == null || (typeof target !== 'object' && typeof target !== 'function')) {
+        throw new globalThis.DOMException('The generated key cannot be inserted.', 'DataError');
+      }
+      if (!Object.prototype.hasOwnProperty.call(target, parts[i])) {
+        Object.defineProperty(target, parts[i], {
+          configurable: true,
+          enumerable: true,
+          value: {},
+          writable: true
+        });
+      }
       target = target[parts[i]];
     }
-    target[parts[parts.length - 1]] = key;
+    if (target == null || (typeof target !== 'object' && typeof target !== 'function')) {
+      throw new globalThis.DOMException('The generated key cannot be inserted.', 'DataError');
+    }
+    var property = parts[parts.length - 1];
+    if (Object.prototype.hasOwnProperty.call(target, property)) {
+      target[property] = key;
+    } else {
+      Object.defineProperty(target, property, {
+        configurable: true,
+        enumerable: true,
+        value: key,
+        writable: true
+      });
+    }
   };
   _zwIDBStore.prototype._resolveKey = function (value, key, keyProvided) {
     // https://w3c.github.io/IndexedDB/#store-a-record-into-an-object-store
-    if (this.keyPath && keyProvided) {
+    var inline = this.keyPath !== null;
+    if (inline && keyProvided) {
       throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
     }
-    var resolved = this.keyPath ? this._keyOf(value) : key;
+    var resolved = inline ? this._keyOf(value) : key;
     if (resolved === undefined) {
       if (!this.autoIncrement) {
         throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
       }
       resolved = this._metadata.nextKey || 1;
       this._metadata.nextKey = resolved + 1;
-      if (this.keyPath) this._setKeyPath(value, resolved);
+      if (inline) this._setKeyPath(value, resolved);
     }
     if (!_zwIDBKey(resolved, [])) {
       throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
@@ -3675,18 +3779,13 @@
     return matched;
   };
   _zwIDBStore.prototype._indexKey = function (value, keyPath) {
-    if (keyPath === '') return value;
     if (Array.isArray(keyPath)) {
       var compound = keyPath.map(function (path) {
-        return this._indexKey(value, path);
-      }, this);
+        return _zwIDBExtractKeyPath(value, path);
+      });
       return compound.some(function (key) { return key === undefined; }) ? undefined : compound;
     }
-    var key = value;
-    String(keyPath).split('.').forEach(function (part) {
-      key = key == null ? undefined : key[part];
-    });
-    return key;
+    return _zwIDBExtractKeyPath(value, keyPath);
   };
   _zwIDBStore.prototype._hasUniqueConflict = function (value, primaryKey) {
     var store = this;
@@ -3722,12 +3821,16 @@
   _zwIDBStore.prototype._mutate = function (op, value, key, keyProvided) {
     this._assertUsable(true);
     var storedValue = globalThis.structuredClone(value);
-    if (this.keyPath && keyProvided) {
+    var inline = this.keyPath !== null;
+    if (inline && keyProvided) {
       throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
     }
-    var candidate = this.keyPath ? this._keyOf(storedValue) : key;
+    var candidate = inline ? this._keyOf(storedValue) : key;
     if (candidate === undefined && !this.autoIncrement) {
       throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
+    }
+    if (candidate === undefined && inline && !_zwIDBCanInjectKey(storedValue, this.keyPath)) {
+      throw new globalThis.DOMException('The generated key cannot be inserted.', 'DataError');
     }
     if (candidate !== undefined && !_zwIDBKey(candidate, [])) {
       throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
@@ -3772,7 +3875,7 @@
         return;
       }
       var k = _zwIDBKeyFromWire(response.key);
-      if (candidate === undefined && store.keyPath) store._setKeyPath(storedValue, k);
+      if (candidate === undefined && store.keyPath !== null) store._setKeyPath(storedValue, k);
       if (store.autoIncrement && typeof k === 'number') {
         var next = Math.floor(k) + 1;
         if (!store._metadata.nextKey || next > store._metadata.nextKey) {
@@ -4060,6 +4163,8 @@
   };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
     this._assertUsable(true);
+    name = String(name);
+    keyPath = _zwIDBNormalizeKeyPath(keyPath, true);
     var unique = !!((opts || {}).unique);
     var multiEntry = !!((opts || {}).multiEntry);
     if (Object.prototype.hasOwnProperty.call(this._indexes, name)) {
@@ -4248,7 +4353,7 @@
     this._assertCanMutate();
     var storedValue = globalThis.structuredClone(value);
     var store = this._store;
-    if (store.keyPath) {
+    if (store.keyPath !== null) {
       var inlineKey = store._keyOf(storedValue);
       if (!_zwIDBKey(inlineKey, [])
           || _zwIDBCompareValues(inlineKey, this.primaryKey) !== 0) {
@@ -5348,6 +5453,25 @@
     done();
   }
 
+  var _zwIDBTrackedProxies = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+  var _zwIDBNativeProxy = globalThis.Proxy;
+  if (_zwIDBTrackedProxies && typeof _zwIDBNativeProxy === 'function') {
+    var _zwIDBTrackingProxy = function Proxy(target, handler) {
+      if (!(this instanceof _zwIDBTrackingProxy)) {
+        throw new TypeError('Constructor Proxy requires new');
+      }
+      var proxy = new _zwIDBNativeProxy(target, handler);
+      _zwIDBTrackedProxies.add(proxy);
+      return proxy;
+    };
+    _zwIDBTrackingProxy.revocable = function (target, handler) {
+      var record = _zwIDBNativeProxy.revocable(target, handler);
+      _zwIDBTrackedProxies.add(record.proxy);
+      return record;
+    };
+    globalThis.Proxy = _zwIDBTrackingProxy;
+  }
+
   // https://w3c.github.io/IndexedDB/#compare-two-keys
   // Key type order: Number < Date < String < Binary < Array.
   function _zwIDBKey(value, seen) {
@@ -5362,10 +5486,15 @@
     var binary = _zwIDBBinaryKeyBytes(value);
     if (binary !== undefined) return binary === null ? null : { rank: 4, value: binary };
     if (Array.isArray(value)) {
+      if (_zwIDBTrackedProxies && _zwIDBTrackedProxies.has(value)) return null;
       if (seen.indexOf(value) !== -1) return null;
       seen.push(value);
       var entries = [];
       for (var i = 0; i < value.length; i++) {
+        if (!Object.prototype.hasOwnProperty.call(value, i)) {
+          seen.pop();
+          return null;
+        }
         var entry = _zwIDBKey(value[i], seen);
         if (!entry) {
           seen.pop();
@@ -5674,6 +5803,11 @@
   globalThis.IDBCursor = _zwIDBCursor;
   globalThis.IDBCursorWithValue = _zwIDBCursorWithValue;
   if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+    Object.defineProperty(
+      _zwIDBRequest.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBRequest' }
+    );
     Object.defineProperty(
       _zwIDBCursor.prototype,
       Symbol.toStringTag,

@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB key semantics",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 103,
+      "fail": 33,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 136,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 99,
+    "pass": 607,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "own-property key-path extraction",
+    "empty and compound key paths",
+    "File key-path wire round-trip",
+    "Proxy and sparse-array key rejection",
+    "large-array key ordering"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "21 pass",
+    "targeted_page_runtime": "15 pass",
+    "targeted_runner": "7 pass",
+    "manifest_counts": {
+      "fetch": 99,
+      "runner": 99,
+      "ledger": 99
+    }
+  }
+}
