@@ -51,7 +51,7 @@ fn configure_inline_fonts(
         context = context.with_font_resolver(resolver.clone());
         if use_advance
             && inline_fonts.advance_source.is_some()
-            && std::env::var("ZW_SHAPED_FALLBACK").as_deref() != Ok("1")
+            && !crate::inline::shaped_fallback_enabled()
             && let Some(overrides) = inline_fonts.font_overrides
         {
             // OPTIMIZATION: overrides 由 LayoutEngine pass 级一次收集（全文档），

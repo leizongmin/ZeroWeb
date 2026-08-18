@@ -7,6 +7,7 @@
 //! R965：从 engine.rs 抽出（2000 行规则），纯移动，零行为变化。
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use zero_css_parser::values::{
     AlignmentValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowValue, PositionValue,
@@ -22,6 +23,26 @@ use crate::types::{LayoutBox, OverflowClip};
 // R965：经 glob 引入 inline_finalization 的 resolve_text_align / store_font_sizes_from_ifc
 // 等函数（与 engine.rs 的 `use crate::inline_finalization::*;` 保持一致）。
 use crate::inline_finalization::*;
+
+// OPTIMIZATION: These feature switches are stable during one layout pass. Snapshot
+// them at each public postprocess entry while retaining a live rollback path.
+fn postprocess_env_snapshot_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_POSTPROCESS_ENV_SNAPSHOT").as_deref() != Ok("0"))
+}
+
+#[derive(Clone, Copy)]
+struct PostprocessEnvFlag(Option<bool>);
+
+impl PostprocessEnvFlag {
+    fn new(snapshot_enabled: bool, read: impl FnOnce() -> bool) -> Self {
+        Self(snapshot_enabled.then(read))
+    }
+
+    fn value(self, read: impl FnOnce() -> bool) -> bool {
+        self.0.unwrap_or_else(read)
+    }
+}
 
 /// 对 position:relative 元素应用视觉偏移。
 ///
@@ -788,6 +809,18 @@ pub(super) fn shift_siblings_after_ifc_grow(
     styles: &HashMap<NodeId, ComputedStyle>,
     inside_multicol: bool,
 ) {
+    let parent_backfill = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
+        std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0")
+    });
+    shift_siblings_after_ifc_grow_inner(box_node, styles, inside_multicol, parent_backfill);
+}
+
+fn shift_siblings_after_ifc_grow_inner(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inside_multicol: bool,
+    parent_backfill: PostprocessEnvFlag,
+) {
     use zero_css_parser::values::{DisplayValue, FloatValue};
     use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
     // 真实元素 + block-level + 非 R109-split + display 为参与垂直块流的盒型。Block/Flow/FlowRoot/
@@ -886,8 +919,9 @@ pub(super) fn shift_siblings_after_ifc_grow(
     // 但父盒（body/html/任意 Block）仍持 taffy 旧值 → 父 h=0 或仅计首子（R1654 fixture 27 谱系）。
     // 跟踪 in-flow 子盒最大底边 + 是否含负 margin（负 margin 合法重叠不应扩父，同 overlap 守卫）。
     // 末子无后续兄弟触发不了 cumulative_shift，故须单独 max-bottom 信号。
-    let parent_backfill_active =
-        shift_active && auto_parent_height && std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0");
+    let parent_backfill_active = shift_active
+        && auto_parent_height
+        && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;
     for child in &mut box_node.children {
@@ -900,7 +934,7 @@ pub(super) fn shift_siblings_after_ifc_grow(
             || !matches!(child.float, FloatValue::None);
         if skip {
             // 仍下钻（子可能是 block-flow 容器）。
-            shift_siblings_after_ifc_grow(child, styles, children_inside_multicol);
+            shift_siblings_after_ifc_grow_inner(child, styles, children_inside_multicol, parent_backfill);
             continue;
         }
         if shift_active {
@@ -936,7 +970,7 @@ pub(super) fn shift_siblings_after_ifc_grow(
                 }
             }
         }
-        shift_siblings_after_ifc_grow(child, styles, children_inside_multicol);
+        shift_siblings_after_ifc_grow_inner(child, styles, children_inside_multicol, parent_backfill);
         if shift_active {
             prev_bottom = Some(child.y + child.height);
             prev_plain = is_plain_real_block(child);
@@ -1337,13 +1371,25 @@ pub(super) fn fix_column_flex_nonstretch_replaced_main(
     styles: &HashMap<NodeId, ComputedStyle>,
     img_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
+    let enabled = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
+        std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() != Ok("0")
+    });
+    fix_column_flex_nonstretch_replaced_main_inner(box_node, styles, img_sizes, enabled);
+}
+
+fn fix_column_flex_nonstretch_replaced_main_inner(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_sizes: &HashMap<NodeId, (f32, f32)>,
+    enabled: PostprocessEnvFlag,
+) {
     use zero_style_system::WritingModeValue;
 
     for child in box_node.children.iter_mut() {
-        fix_column_flex_nonstretch_replaced_main(child, styles, img_sizes);
+        fix_column_flex_nonstretch_replaced_main_inner(child, styles, img_sizes, enabled);
     }
 
-    if std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() == Ok("0") {
+    if !enabled.value(|| std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() != Ok("0")) {
         return;
     }
     let style = match box_node.node_id.and_then(|id| styles.get(&id)) {
@@ -1693,7 +1739,13 @@ pub(super) fn apply_block_relative_percent_insets(
     viewport_height: f32,
 ) {
     use zero_css_parser::values::{DisplayValue, LengthValue};
-    fn walk(b: &mut LayoutBox, cb_h: Option<f32>, parent_is_grid: bool, styles: &HashMap<NodeId, ComputedStyle>) {
+    fn walk(
+        b: &mut LayoutBox,
+        cb_h: Option<f32>,
+        parent_is_grid: bool,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        strict_r711: PostprocessEnvFlag,
+    ) {
         // top/bottom % 的 CB 高须**明确（definite）**——css-position-3 §relpos-insets：
         // "a relative-positioned element inset doesn't resolve against an indefinite size"
         //（position-relative-006：parent 仅有 min-height 无 height → indefinite → top:-10000%
@@ -1710,9 +1762,9 @@ pub(super) fn apply_block_relative_percent_insets(
         // auto-height 普通 block 容器（position-relative-006）parent_is_grid=false → indefinite
         // → 不解析（与 chromium 一致）。inline 元素透传 cb_h（R1044 谱系）。
         // kill-switch `ZW_RELPOS_PCT_AUTO_CB=0`（default-on）回退 R711 严格 gate（仅 ==Px）。
-        let strict_r711 = std::env::var("ZW_RELPOS_PCT_AUTO_CB").as_deref() == Ok("0");
+        let strict_r711_value = strict_r711.value(|| std::env::var("ZW_RELPOS_PCT_AUTO_CB").as_deref() == Ok("0"));
         let style = b.node_id.and_then(|id| styles.get(&id));
-        let height_definite = if strict_r711 {
+        let height_definite = if strict_r711_value {
             style.is_some_and(|s| matches!(s.height, LengthValue::Px(_)))
         } else {
             style.is_some_and(|s| match s.height {
@@ -1754,11 +1806,14 @@ pub(super) fn apply_block_relative_percent_insets(
         }
 
         for child in &mut b.children {
-            walk(child, my_content_h, my_is_grid, styles);
+            walk(child, my_content_h, my_is_grid, styles, strict_r711);
         }
     }
     // 根的 CB = 视口（ICB）；根无 grid 父。
-    walk(box_node, Some(viewport_height), false, styles);
+    let strict_r711 = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
+        std::env::var("ZW_RELPOS_PCT_AUTO_CB").as_deref() == Ok("0")
+    });
+    walk(box_node, Some(viewport_height), false, styles, strict_r711);
 }
 
 /// 将 OverflowValue 转换为 OverflowClip。
@@ -1768,5 +1823,33 @@ pub(super) fn convert_overflow_to_clip(value: &OverflowValue) -> OverflowClip {
         OverflowValue::Hidden => OverflowClip::Hidden,
         OverflowValue::Clip => OverflowClip::Clip,
         OverflowValue::Scroll | OverflowValue::Auto => OverflowClip::Scroll,
+    }
+}
+
+#[cfg(test)]
+mod runtime_flag_tests {
+    use super::PostprocessEnvFlag;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn postprocess_env_flag_snapshots_or_reads_live() {
+        let snapshot_reads = AtomicUsize::new(0);
+        let snapshot = PostprocessEnvFlag::new(true, || {
+            snapshot_reads.fetch_add(1, Ordering::Relaxed);
+            true
+        });
+        assert!(snapshot.value(|| false));
+        assert!(snapshot.value(|| false));
+        assert_eq!(snapshot_reads.load(Ordering::Relaxed), 1);
+
+        let live_reads = AtomicUsize::new(0);
+        let live = PostprocessEnvFlag::new(false, || false);
+        for _ in 0..2 {
+            assert!(live.value(|| {
+                live_reads.fetch_add(1, Ordering::Relaxed);
+                true
+            }));
+        }
+        assert_eq!(live_reads.load(Ordering::Relaxed), 2);
     }
 }

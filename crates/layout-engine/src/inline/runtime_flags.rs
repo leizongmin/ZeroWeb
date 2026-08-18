@@ -3,6 +3,7 @@
 use std::sync::LazyLock;
 
 static SNAPSHOT_ENABLED: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IFC_ENV_SNAPSHOT"));
+static RESIDUAL_SNAPSHOT_ENABLED: LazyLock<bool> = LazyLock::new(|| default_on("ZW_LAYOUT_RESIDUAL_ENV_SNAPSHOT"));
 
 pub(super) fn plaintext_line_direction() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_PLAINTEXT_LINE_DIRECTION"));
@@ -59,6 +60,26 @@ pub(super) fn bidi_override() -> bool {
     selected(*VALUE, || default_on("ZW_BIDI_OVERRIDE"))
 }
 
+pub(super) fn font_size_adjust_normal_line() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FONT_SIZE_ADJUST_NORMAL_LINE"));
+    residual_selected(*VALUE, || default_on("ZW_FONT_SIZE_ADJUST_NORMAL_LINE"))
+}
+
+pub(super) fn font_face_size_adjust_normal_line() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FONT_FACE_SIZE_ADJUST_NORMAL_LINE"));
+    residual_selected(*VALUE, || default_on("ZW_FONT_FACE_SIZE_ADJUST_NORMAL_LINE"))
+}
+
+pub(super) fn shaped_advance_trace() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_SHAPED_ADVANCE_TRACE"));
+    residual_selected(*VALUE, || opt_in("ZW_SHAPED_ADVANCE_TRACE"))
+}
+
+pub(super) fn shaped_fallback() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| opt_in("ZW_SHAPED_FALLBACK"));
+    residual_selected(*VALUE, || opt_in("ZW_SHAPED_FALLBACK"))
+}
+
 fn default_on(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
 }
@@ -70,6 +91,11 @@ fn opt_in(name: &str) -> bool {
 #[inline]
 fn selected(cached: bool, live: impl FnOnce() -> bool) -> bool {
     select_value(*SNAPSHOT_ENABLED, cached, live)
+}
+
+#[inline]
+fn residual_selected(cached: bool, live: impl FnOnce() -> bool) -> bool {
+    select_value(*RESIDUAL_SNAPSHOT_ENABLED, cached, live)
 }
 
 #[inline]

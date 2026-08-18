@@ -451,7 +451,7 @@ pub fn resolve_font_metrics_with_provider(
         {
             font_size = font_size * (adj as f32) / AHEM_FONT_SIZE_ADJUST_ASPECT;
             normal_font_size = font_size;
-        } else if std::env::var("ZW_FONT_SIZE_ADJUST_NORMAL_LINE").as_deref() != Ok("0")
+        } else if super::runtime_flags::font_size_adjust_normal_line()
             && let Some(aspect) = provider.and_then(|p| p.font_metric_aspect(&s.font_family, metric))
             && aspect.is_finite()
             && aspect > 0.0
@@ -473,7 +473,7 @@ pub fn resolve_font_metrics_with_provider(
     let line_height = match style {
         Some(s) => match &s.line_height {
             LineHeightValue::Normal => {
-                let descriptor_metrics = if std::env::var("ZW_FONT_FACE_SIZE_ADJUST_NORMAL_LINE").as_deref() != Ok("0")
+                let descriptor_metrics = if super::runtime_flags::font_face_size_adjust_normal_line()
                     && matches!(s.font_size_adjust, zero_style_system::FontSizeAdjustValue::None)
                 {
                     provider.and_then(|p| p.size_adjusted_line_metrics(&s.font_family, font_size))
