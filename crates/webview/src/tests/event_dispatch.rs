@@ -38,7 +38,10 @@ fn indexed_db_factory_and_schema_route_to_host() {
         openRequest.onupgradeneeded = function () {
           openRequest.result.createObjectStore("items", {keyPath:"id", autoIncrement:true});
         };
-        openRequest.onsuccess = function () { globalThis.__idbOpened = true; };
+        openRequest.onsuccess = function () {
+          globalThis.__idbOpened = true;
+          globalThis.__idbDatabase = openRequest.result;
+        };
         </script></body></html>"#,
         None,
     );
@@ -55,7 +58,8 @@ fn indexed_db_factory_and_schema_route_to_host() {
     );
 
     wv.execute_script(
-        r#"var aborted = indexedDB.open("app", 2);
+        r#"__idbDatabase.close();
+           var aborted = indexedDB.open("app", 2);
            aborted.onupgradeneeded = function () { aborted.transaction.abort(); };"#,
     )
     .unwrap();

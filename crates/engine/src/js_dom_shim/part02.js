@@ -2569,6 +2569,35 @@
   // name → {version, stores, connections}
   var _idb_databases = {};
   var _zwIDBTransactions = [];
+  var _zwIDBConnectionQueues = {};
+
+  // https://w3c.github.io/IndexedDB/#connection-queues
+  function _zwIDBRunConnectionQueue(name) {
+    var queue = _zwIDBConnectionQueues[name];
+    if (!queue || queue.running || !queue.requests.length) return;
+    queue.running = true;
+    var finish = function () {
+      queue.requests.shift();
+      queue.running = false;
+      queue.retry = null;
+      if (queue.requests.length) {
+        queueMicrotask(function () { _zwIDBRunConnectionQueue(name); });
+      } else {
+        delete _zwIDBConnectionQueues[name];
+      }
+    };
+    queue.requests[0](finish, queue);
+  }
+
+  function _zwIDBEnqueueConnectionRequest(name, operation) {
+    var queue = _zwIDBConnectionQueues[name];
+    if (!queue) {
+      queue = { requests: [], running: false, retry: null };
+      _zwIDBConnectionQueues[name] = queue;
+    }
+    queue.requests.push(operation);
+    queueMicrotask(function () { _zwIDBRunConnectionQueue(name); });
+  }
 
   function _zwIDBDeactivateTransactions(except) {
     _zwIDBTransactions.forEach(function (transaction) {
@@ -4306,6 +4335,8 @@
     this._closed = true;
     var index = this._state.connections.indexOf(this);
     if (index !== -1) this._state.connections.splice(index, 1);
+    var queue = _zwIDBConnectionQueues[this.name];
+    if (queue && typeof queue.retry === 'function') queue.retry();
   };
 
   function _zwIDBVersionEvent(type, target, oldVersion, newVersion) {
@@ -4325,6 +4356,38 @@
       if (typeof queueMicrotask === 'function') queueMicrotask(fire);
       else fire();
     });
+  }
+
+  function _zwIDBWaitForConnections(req, state, oldVersion, newVersion, queue, proceed) {
+    var remaining = function () {
+      return state.connections.some(function (connection) { return !connection._closed; });
+    };
+    if (!remaining()) {
+      proceed();
+      return;
+    }
+    _zwIDBNotifyConnections(state, oldVersion, newVersion);
+    setTimeout(function () {
+      if (!remaining()) {
+        proceed();
+        return;
+      }
+      _zwIDBEmit(
+        req,
+        'blocked',
+        _zwIDBVersionEvent('blocked', req, oldVersion, newVersion)
+      );
+      if (!remaining()) {
+        proceed();
+        return;
+      }
+      queue.retry = function () {
+        if (!remaining()) {
+          queue.retry = null;
+          proceed();
+        }
+      };
+    }, 0);
   }
 
   function _zwIDBCloneStores(stores) {
@@ -4389,10 +4452,10 @@
     }
   }
 
-  function _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created) {
+  function _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created, done) {
     if (transaction._pending > 0) {
       var retry = function () {
-        _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created);
+        _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created, done);
       };
       if (typeof setTimeout === 'function') setTimeout(retry, 0);
       else retry();
@@ -4428,6 +4491,7 @@
       errorEvent.bubbles = true;
       errorEvent.cancelable = true;
       _zwIDBEmit(req, 'error', errorEvent);
+      done();
       return;
     }
     Object.keys(state.stores).forEach(function (storeName) {
@@ -4443,6 +4507,7 @@
     req.readyState = 'done';
     req.result = db;
     _zwIDBEmit(req, 'success', successEvent);
+    done();
   }
 
   // https://w3c.github.io/IndexedDB/#compare-two-keys
@@ -4565,112 +4630,159 @@
       name = String(name);
       version = _zwIDBOpenVersion(version, arguments.length >= 2);
       var req = new _zwIDBRequest(null);
-      var state = _idb_databases[name];
-      if (!state) {
-        try {
-          var inspected = _zwIDBHostCall({ op: 'inspect', name: name });
-          if (inspected !== undefined && inspected.database) {
-            state = _zwIDBStateFromHost(inspected.database);
-            _idb_databases[name] = state;
+      _zwIDBEnqueueConnectionRequest(name, function (done, queue) {
+        var state = _idb_databases[name];
+        if (!state) {
+          try {
+            var inspected = _zwIDBHostCall({ op: 'inspect', name: name });
+            if (inspected !== undefined && inspected.database) {
+              state = _zwIDBStateFromHost(inspected.database);
+              _idb_databases[name] = state;
+            }
+          } catch (hostError) {
+            req.error = hostError;
+            var hostErrorEvent = new _zwIDBEvent('error', req);
+            hostErrorEvent.bubbles = true;
+            hostErrorEvent.cancelable = true;
+            _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
+            setTimeout(done, 0);
+            return;
           }
-        } catch (hostError) {
-          req.error = hostError;
-          var hostErrorEvent = new _zwIDBEvent('error', req);
-          hostErrorEvent.bubbles = true;
-          hostErrorEvent.cancelable = true;
-          _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
-          return req;
         }
-      }
-      var created = !state;
-      var oldVersion = state ? state.version : 0;
-      var requestedVersion = version === undefined ? (oldVersion || 1) : version;
-      if (oldVersion > 0 && requestedVersion < oldVersion) {
-        req.error = new globalThis.DOMException('The requested version is lower than the current version.', 'VersionError');
-        var errorEvent = new _zwIDBEvent('error', req);
-        errorEvent.bubbles = true;
-        errorEvent.cancelable = true;
-        _zwIDBDispatch(req, 'error', undefined, errorEvent);
-        return req;
-      }
-      if (!state) {
-        state = { version: 0, stores: {}, connections: [], transactions: [] };
-        _idb_databases[name] = state;
-      }
-      var needsUpgrade = requestedVersion > oldVersion;
-      if (needsUpgrade && oldVersion > 0) {
-        _zwIDBNotifyConnections(state, oldVersion, requestedVersion);
-      }
-      var snapshot = needsUpgrade ? {
-        version: oldVersion,
-        stores: _zwIDBCloneStores(state.stores)
-      } : null;
-      if (needsUpgrade) state.version = requestedVersion;
-      var db = new _zwIDBDatabase(name, state);
-      state.connections.push(db);
-      if (needsUpgrade) {
-        var transaction = new _zwIDBTransaction(
-          db,
-          Object.keys(state.stores),
-          'versionchange',
-          true
-        );
-        db._upgradeTransaction = transaction;
-        req.transaction = transaction;
-        var upgrade = function () {
-          req.readyState = 'done';
-          req.result = db;
-          _zwIDBEmit(
-            req,
-            'upgradeneeded',
-            _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
+        var created = !state;
+        var oldVersion = state ? state.version : 0;
+        var requestedVersion = version === undefined ? (oldVersion || 1) : version;
+        if (oldVersion > 0 && requestedVersion < oldVersion) {
+          req.error = new globalThis.DOMException(
+            'The requested version is lower than the current version.',
+            'VersionError'
           );
-          var finish = function () {
-            _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created);
+          var errorEvent = new _zwIDBEvent('error', req);
+          errorEvent.bubbles = true;
+          errorEvent.cancelable = true;
+          _zwIDBDispatch(req, 'error', undefined, errorEvent);
+          setTimeout(done, 0);
+          return;
+        }
+        if (!state) {
+          state = { version: 0, stores: {}, connections: [], transactions: [] };
+          _idb_databases[name] = state;
+        }
+        var needsUpgrade = requestedVersion > oldVersion;
+        var openConnection = function () {
+          var snapshot = needsUpgrade ? {
+            version: oldVersion,
+            stores: _zwIDBCloneStores(state.stores)
+          } : null;
+          if (needsUpgrade) state.version = requestedVersion;
+          var db = new _zwIDBDatabase(name, state);
+          state.connections.push(db);
+          if (needsUpgrade) {
+            var transaction = new _zwIDBTransaction(
+              db,
+              Object.keys(state.stores),
+              'versionchange',
+              true
+            );
+            db._upgradeTransaction = transaction;
+            req.transaction = transaction;
+            var upgrade = function () {
+              req.readyState = 'done';
+              req.result = db;
+              _zwIDBEmit(
+                req,
+                'upgradeneeded',
+                _zwIDBVersionEvent('upgradeneeded', req, oldVersion, requestedVersion)
+              );
+              var finish = function () {
+                _zwIDBFinishUpgrade(
+                  req,
+                  db,
+                  transaction,
+                  state,
+                  snapshot,
+                  created,
+                  done
+                );
+              };
+              if (typeof queueMicrotask === 'function') queueMicrotask(finish);
+              else finish();
+            };
+            if (typeof queueMicrotask === 'function') queueMicrotask(upgrade);
+            else upgrade();
+            return;
+          }
+          var success = function () {
+            var ev = new _zwIDBEvent('success', req);
+            req.readyState = 'done';
+            req.result = db;
+            _zwIDBEmit(req, 'success', ev);
+            done();
           };
-          if (typeof queueMicrotask === 'function') queueMicrotask(finish);
-          else finish();
+          if (typeof queueMicrotask === 'function') queueMicrotask(success);
+          else success();
         };
-        if (typeof queueMicrotask === 'function') queueMicrotask(upgrade);
-        else upgrade();
-        return req;
-      }
-      var success = function () {
-        var ev = new _zwIDBEvent('success', req);
-        req.readyState = 'done';
-        req.result = db;
-        _zwIDBEmit(req, 'success', ev);
-      };
-      if (typeof queueMicrotask === 'function') queueMicrotask(success);
-      else success();
+        if (needsUpgrade && oldVersion > 0) {
+          _zwIDBWaitForConnections(
+            req,
+            state,
+            oldVersion,
+            requestedVersion,
+            queue,
+            openConnection
+          );
+        } else {
+          openConnection();
+        }
+      });
       return req;
     },
     deleteDatabase: function (name) {
       name = String(name);
       var req = new _zwIDBRequest(null);
-      var hostDeletion;
-      try {
-        hostDeletion = _zwIDBHostCall({ op: 'delete_database', name: name });
-      } catch (hostError) {
-        req.error = hostError;
-        var hostErrorEvent = new _zwIDBEvent('error', req);
-        hostErrorEvent.bubbles = true;
-        hostErrorEvent.cancelable = true;
-        _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
-        return req;
-      }
-      var state = _idb_databases[name];
-      var oldVersion = state
-        ? state.version
-        : (hostDeletion && Number(hostDeletion.oldVersion || 0));
-      if (state) _zwIDBNotifyConnections(state, oldVersion, null);
-      delete _idb_databases[name];
-      _zwIDBDispatch(
-        req,
-        'success',
-        undefined,
-        _zwIDBVersionEvent('success', req, oldVersion, null)
-      );
+      _zwIDBEnqueueConnectionRequest(name, function (done, queue) {
+        var state = _idb_databases[name];
+        var oldVersion = state ? state.version : 0;
+        var performDeletion = function () {
+          try {
+            var hostDeletion = _zwIDBHostCall({ op: 'delete_database', name: name });
+            if (!state && hostDeletion) {
+              oldVersion = Number(hostDeletion.oldVersion || 0);
+            }
+          } catch (hostError) {
+            req.error = hostError;
+            var hostErrorEvent = new _zwIDBEvent('error', req);
+            hostErrorEvent.bubbles = true;
+            hostErrorEvent.cancelable = true;
+            _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
+            setTimeout(done, 0);
+            return;
+          }
+          delete _idb_databases[name];
+          setTimeout(function () {
+            req.readyState = 'done';
+            req.result = undefined;
+            _zwIDBEmit(
+              req,
+              'success',
+              _zwIDBVersionEvent('success', req, oldVersion, null)
+            );
+            done();
+          }, 0);
+        };
+        if (state) {
+          _zwIDBWaitForConnections(
+            req,
+            state,
+            oldVersion,
+            null,
+            queue,
+            performDeletion
+          );
+        } else {
+          performDeletion();
+        }
+      });
       return req;
     },
     databases: function () {

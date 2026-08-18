@@ -1,0 +1,35 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB connection request queue",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "driving_wpt": {
+    "files": 2,
+    "subtests": 3,
+    "before": {
+      "idbdatabase_close_pass": 0,
+      "idbdatabase_close_fail": 2,
+      "open_request_queue_completed": false
+    },
+    "after": {
+      "pass": 3,
+      "fail": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 47,
+    "pass": 232,
+    "fail": 0
+  },
+  "capabilities": [
+    "database-name scoped open and delete FIFO",
+    "versionchange before blocked",
+    "blocked fires once while connections remain open",
+    "IDBDatabase.close wakes the queue",
+    "queue release on upgrade success or error and delete success"
+  ],
+  "remaining": [
+    "browser-owned cross-renderer connection registry",
+    "browser-to-renderer versionchange and blocked notification",
+    "deferred execution for all object store, index, and cursor operations"
+  ]
+}

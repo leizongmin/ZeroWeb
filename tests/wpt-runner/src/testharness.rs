@@ -243,6 +243,8 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/transaction-scheduling-within-database.any.js",
         &["resources/support.js"],
     ),
+    ("IndexedDB/idbdatabase_close.any.js", &["resources/support.js"]),
+    ("IndexedDB/open-request-queue.any.js", &["resources/support.js"]),
 ];
 
 /// WPT subtest status.

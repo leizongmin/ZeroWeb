@@ -41,3 +41,43 @@ fn test_indexeddb_transactions_schedule_across_connections() {
         "write|write-complete|read:new|read-complete"
     );
 }
+
+#[test]
+fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__connectionEvents = [];\
+             var initial = indexedDB.open('blocked-upgrade', 1);\
+             initial.onsuccess = function () {\
+               var db = initial.result;\
+               db.onversionchange = function () { __connectionEvents.push('versionchange'); };\
+               var upgrade = indexedDB.open(db.name, 2);\
+               upgrade.onblocked = function () {\
+                 __connectionEvents.push('blocked');\
+                 db.close();\
+               };\
+               upgrade.onupgradeneeded = function () {\
+                 __connectionEvents.push('upgrade');\
+               };\
+               upgrade.onsuccess = function () {\
+                 __connectionEvents.push('success');\
+                 upgrade.result.close();\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox.execute("__connectionEvents.join('|')").unwrap().value,
+        "versionchange|blocked|upgrade|success"
+    );
+}
