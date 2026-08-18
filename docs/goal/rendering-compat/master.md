@@ -110,6 +110,8 @@
 
 
 
+> **📍 当前 rally 进度态（R3478-F·2026-08-19）=【background shorthand 未知 token 与重复 color 拒绝】**：`background` 的 token classifier 原本把任何无法识别的 token 默认写入 `background-color`，并允许后续 color 覆盖前值；同时 `/size` 侧出现 position keyword 会被静默忽略。`background:sparkle`、`background:red blue`、`background:red sparkle` 与 `background:center / top` 因而会错误展开。现让 `classify_bg_token` 返回成功/失败，未知 token、重复 color 和 size 侧 position keyword 直接使整条 shorthand 无效；长度/百分比分类改复用 `parse_length` 与 math parser，避免后缀启发式把非长度 ident 误收。既有 box token 仍按 R2481 裁决保持 drop，合法 `red url(img.png) center / 10px auto no-repeat` 保持。**正确性证据**：新增 `test_background_rejects_unknown_or_duplicate_color_components`，红测先失败，修复后覆盖未知 token、重复 color、color+未知 token、非法 size-side token 与合法组合；相邻 `background` 过滤组 `95/95` 通过。**正确性/门禁**：`cargo fmt --all -- --check`、`zero-style-system` 全量 `2211/2211`、`cargo clippy -p zero-style-system --all-targets -- -D warnings`、workspace strict clippy、完整 `make test`、reftest `687/687`、product-smoke welcome `16.61%` 与全 viewport/morning 结构门通过；按当前目标指令，本轮不阻塞等待 `make bench-gate`，累积更多改动后统一执行并优化。经验见[`shorthand-component-classification.md`](../../learnings/bugs/2026-08/2026-08-18-shorthand-component-classification.md)。
+
 > **▶ 当前裁决（2026-07-29 用户两次指令：① 永不停 / 待决策记账 / 继续推进；② 主做轻量修复、调文档方向防跑偏）**
 >
 > - **主线 = 轻量修复**（用户第 2 次指令「我们主要做轻量修复」）：沿用 `rendering-compat.md` 的 `2026-07-28 方向裁决` 允许范围——(1) 有 driving test、低风险、A/B 零回归的 CSS2/parser/selector clean lever；(2) 产品/legacy smoke 可见稳定性修复；(3) **文档与代码不一致的纠偏**（本 goal 文档滞后严重，R2202 实证 `loader.rs`〔现 render-foundation/src/font/〕/ `text_metrics.rs` 等多处注释过时误导——纠偏本身是高价值轻量活）。每修一个跑 `make test` + 相关 smoke + 必要 dir oracle，net≥0 即 land。

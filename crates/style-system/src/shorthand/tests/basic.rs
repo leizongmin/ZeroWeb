@@ -706,3 +706,19 @@ fn test_background_shorthand_bare_gradient_alone() {
     assert_eq!(map.get("background-image"), Some(&"linear-gradient(green, green)"));
     assert_eq!(map.get("background-color"), Some(&"transparent"));
 }
+
+#[test]
+fn test_background_rejects_unknown_or_duplicate_color_components() {
+    assert!(expand_one("background", "sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "red blue", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "red sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("background", "center / top", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one(
+        "background",
+        "red url(img.png) center / 10px auto no-repeat",
+        false,
+        (0, 0, 1),
+    );
+    assert_eq!(result.len(), 8);
+}

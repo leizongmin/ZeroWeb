@@ -55,6 +55,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `transition` and `animation` exposed the repeated-slot/list-item variant: parsers for comma-separated shorthand items need a failure state, not just default-filled output. Duplicate component slots, overlong time lists, and empty comma items must invalidate the whole shorthand item; otherwise the later token silently overwrites the earlier one or an empty list item disappears before validation. Ambiguous keywords such as `animation-name:none` versus `animation-fill-mode:none` still need grammar-aware positive guards.
 
+`background` exposed the default-to-color variant: a classifier must not route every unknown token to a permissive fallback slot. Only tokens accepted by the real color grammar may fill `background-color`, repeated color tokens must reject the shorthand, and tokens that are valid only on the position side must not be silently ignored after the `/` size delimiter.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

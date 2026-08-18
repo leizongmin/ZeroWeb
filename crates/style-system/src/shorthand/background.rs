@@ -134,7 +134,9 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
         if token.is_empty() {
             continue;
         }
-        classify_bg_token(token, &mut slots, false);
+        if !classify_bg_token(token, &mut slots, false) {
+            return vec![];
+        }
     }
 
     // R2481：size 部分（`/` 之后）—— size-side（length/percent/auto/contain/cover→size；
@@ -144,7 +146,9 @@ pub(super) fn expand_background(value: &str, important: bool, specificity: (u32,
             if token.is_empty() {
                 continue;
             }
-            classify_bg_token(token, &mut slots, true);
+            if !classify_bg_token(token, &mut slots, true) {
+                return vec![];
+            }
         }
     }
 
@@ -248,64 +252,53 @@ fn split_bg_position_and_size(value: &str) -> (&str, Option<&str>) {
 ///
 /// `size_side=true` 时（`/` 之后的 token）长度/百分比归 background-size 而非 position
 /// （CSS Backgrounds §3.4）。分类顺序与位置无关——repeat/attachment/box/contain/cover/auto/
-/// position 关键字/长度百分比互不重叠，故无歧义；默认落 background-color。
-fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) {
+/// position 关键字/长度百分比互不重叠，故无歧义；无法分类时返回 false。
+fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) -> bool {
     // repeat 值
     if matches!(
         token,
         "repeat-x" | "repeat-y" | "repeat" | "no-repeat" | "space" | "round"
     ) {
         slots.repeat = token.to_string();
-        return;
+        return true;
     }
     // attachment 值
     if matches!(token, "scroll" | "fixed" | "local") {
         slots.attachment = token.to_string();
-        return;
+        return true;
     }
     // box 值（origin/clip）— R2479/R2481 A/B 证「累积 box 设 origin/clip」net −3（attachment-local
     // false-pass unmasks，host-layer JS-scroll deferred），故**保持 drop**（origin=padding-box、
     // clip=border-box 默认）。slots.boxes 留空 → vec 取默认。box parse 单修无 reftest ROI（paint 层）。
     if matches!(token, "border-box" | "padding-box" | "content-box") {
-        return;
+        return true;
     }
     // size 关键字 contain/cover → background-size（改前误落 bg_color）
     if matches!(token, "contain" | "cover") {
         slots.size = token.to_string();
-        return;
+        return true;
     }
     // auto → background-size（auto 在 background 简写中只作 size 关键字）
     if token == "auto" {
         bg_append(&mut slots.size, token);
-        return;
+        return true;
     }
-    // position 关键字 → position（仅 pos-side；size-side 出现=非法，忽略）
+    // position 关键字 → position（仅 pos-side；size-side 出现=非法）
     if matches!(token, "top" | "center" | "bottom" | "left" | "right") {
         if !size_side {
             bg_append(&mut slots.position, token);
+            return true;
         }
-        return;
+        return false;
     }
     // 长度/百分比 → position（pos-side）或 size（size-side）
-    if token.ends_with("px")
-        || token.ends_with('%')
-        || token.ends_with("em")
-        || token.ends_with("rem")
-        || token.ends_with("in")
-        || token.ends_with("pt")
-        || token.ends_with("pc")
-        || token.ends_with("cm")
-        || token.ends_with("mm")
-        || token.ends_with("ch")
-        || token.ends_with("vh")
-        || token.ends_with("vw")
-    {
+    if is_background_length_percentage(token) {
         if size_side {
             bg_append(&mut slots.size, token);
         } else {
             bg_append(&mut slots.position, token);
         }
-        return;
+        return true;
     }
     // R2878：裸 `0`（unitless-zero）是合法 `<length>`（CSS Values §：仅 0 允许无单位），
     // 归 position（pos-side）或 size（size-side）。修旧路径把 `/ 0 0` 的 bare-0 token 误归
@@ -318,9 +311,41 @@ fn classify_bg_token(token: &str, slots: &mut BgSlots, size_side: bool) {
             } else {
                 bg_append(&mut slots.position, token);
             }
-            return;
+            return true;
         }
     }
-    // 默认：作为 background-color（颜色值）
-    slots.color = token.to_string();
+    if zero_css_parser::values::parse_color(token).is_some() {
+        if !slots.color.is_empty() {
+            return false;
+        }
+        slots.color = token.to_string();
+        return true;
+    }
+    false
+}
+
+fn is_background_length_percentage(token: &str) -> bool {
+    use zero_css_parser::values::LengthValue;
+
+    matches!(
+        zero_css_parser::values::parse_length(token),
+        Some(
+            LengthValue::Px(_)
+                | LengthValue::Em(_)
+                | LengthValue::Ex(_)
+                | LengthValue::Rex(_)
+                | LengthValue::Cap(_)
+                | LengthValue::Rcap(_)
+                | LengthValue::Rem(_)
+                | LengthValue::Vh(_)
+                | LengthValue::Vw(_)
+                | LengthValue::Vmin(_)
+                | LengthValue::Vmax(_)
+                | LengthValue::Ch(_)
+                | LengthValue::Rch(_)
+                | LengthValue::Ic(_)
+                | LengthValue::Ric(_)
+                | LengthValue::Percentage(_)
+        )
+    ) || zero_css_parser::values::parse_math_function(token).is_some()
 }
