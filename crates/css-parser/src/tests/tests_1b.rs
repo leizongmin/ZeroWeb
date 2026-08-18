@@ -517,6 +517,8 @@ fn test_parse_font_style_all() {
         parse_font_style("Oblique(15DEG)"),
         Some(FontStyleValue::Oblique(Some(15.0)))
     );
+    assert_eq!(parse_font_style("obliquex"), None);
+    assert_eq!(parse_font_style("oblique-angle"), None);
 }
 
 #[test]

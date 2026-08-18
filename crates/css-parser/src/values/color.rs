@@ -1923,6 +1923,8 @@ mod tests {
     #[test]
     fn test_parse_font_style_unknown() {
         assert_eq!(parse_font_style("unknown"), None);
+        assert_eq!(parse_font_style("obliquex"), None);
+        assert_eq!(parse_font_style("oblique-angle"), None);
     }
 
     // ── parse_list_style_type / parse_list_style_position ───────────────

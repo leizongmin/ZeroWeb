@@ -368,7 +368,7 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
         Some(FontStyleValue::Normal)
     } else if value == "italic" {
         Some(FontStyleValue::Italic)
-    } else if value.starts_with("oblique") {
+    } else if starts_with_oblique_token(&value) {
         let angle_str = value.strip_prefix("oblique")?.trim();
         if angle_str.is_empty() {
             Some(FontStyleValue::Oblique(None))
@@ -385,6 +385,13 @@ pub fn parse_font_style(value: &str) -> Option<FontStyleValue> {
     } else {
         None
     }
+}
+
+fn starts_with_oblique_token(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("oblique") else {
+        return false;
+    };
+    rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('(')
 }
 
 // ── CSS Scroll Snap 值类型 ──────────────────────────────────────────

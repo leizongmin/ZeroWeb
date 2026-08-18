@@ -339,7 +339,7 @@ impl<'a> Parser<'a> {
             return Some(FontStyleValue::Italic);
         }
         // `oblique` 或 `oblique <angle>`：匹配视为 italic，角度当前忽略（无须精确）。
-        if v.eq_ignore_ascii_case("oblique") || v.to_ascii_lowercase().starts_with("oblique") {
+        if starts_with_oblique_token(&v.to_ascii_lowercase()) {
             return Some(FontStyleValue::Oblique(None));
         }
         None
@@ -976,4 +976,11 @@ impl<'a> Parser<'a> {
         }
         Some(text)
     }
+}
+
+fn starts_with_oblique_token(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("oblique") else {
+        return false;
+    };
+    rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('(')
 }

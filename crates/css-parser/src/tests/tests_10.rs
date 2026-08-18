@@ -502,6 +502,35 @@ fn test_font_face_weight_descriptor() {
 }
 
 #[test]
+fn test_font_face_style_oblique_requires_token_boundary() {
+    let cases = [
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-style: oblique; }"#,
+            true,
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-style: oblique 14deg; }"#,
+            true,
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-style: obliquex; }"#,
+            false,
+        ),
+        (
+            r#"@font-face { font-family: "A"; src: url(a.woff); font-style: oblique-angle; }"#,
+            false,
+        ),
+    ];
+    for (css, is_oblique) in cases {
+        let ws = Parser::parse_stylesheet(css);
+        match &ws.rules[0] {
+            Rule::FontFace(ff) => assert_eq!(ff.style.is_some(), is_oblique, "css: {css}"),
+            other => panic!("expected FontFace, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn test_font_face_stretch_descriptor() {
     let cases = [
         ("normal", Some(100.0)),
