@@ -40,8 +40,16 @@ FILES=(
   "IndexedDB/idbindex_getAll.any.js"
   "IndexedDB/idbindex_getAllKeys.any.js"
   "IndexedDB/idbobjectstore_openCursor.any.js"
+  "IndexedDB/idbobjectstore_openCursor_invalid.any.js"
+  "IndexedDB/idbobjectstore_openKeyCursor.any.js"
   "IndexedDB/idbindex_openCursor.any.js"
   "IndexedDB/idbindex_openKeyCursor.any.js"
+  "IndexedDB/idbcursor-key.any.js"
+  "IndexedDB/idbcursor-primarykey.any.js"
+  "IndexedDB/idbcursor-source.any.js"
+  "IndexedDB/idbcursor-request.any.js"
+  "IndexedDB/idbcursor-request-source.any.js"
+  "IndexedDB/idbcursor-direction.any.js"
   "IndexedDB/idbcursor-continue.any.js"
   "IndexedDB/idbcursor-advance.any.js"
   "IndexedDB/idbcursor-advance-invalid.any.js"
@@ -140,7 +148,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (59 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (67 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -157,4 +165,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (59 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (67 cases, WPT ${WPT_REV})"

@@ -31,8 +31,16 @@ IndexedDB/idbindex_count.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08
 IndexedDB/idbindex_getAll.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M1-index-cursor-expansion
 IndexedDB/idbindex_getAllKeys.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M1-index-cursor-expansion
 IndexedDB/idbobjectstore_openCursor.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M1-index-cursor-expansion
+IndexedDB/idbobjectstore_openCursor_invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbobjectstore_openKeyCursor.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
 IndexedDB/idbindex_openCursor.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M1-index-cursor-expansion
 IndexedDB/idbindex_openKeyCursor.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M1-index-cursor-expansion
+IndexedDB/idbcursor-key.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbcursor-primarykey.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbcursor-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbcursor-request.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbcursor-request-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
+IndexedDB/idbcursor-direction.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-cursor-surface
 IndexedDB/idbcursor-continue.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-getall-index-cursor
 IndexedDB/idbcursor-advance.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping
 IndexedDB/idbcursor-advance-invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-rust-cursor-stepping

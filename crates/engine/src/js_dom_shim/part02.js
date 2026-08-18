@@ -3831,8 +3831,8 @@
 
   function _zwIDBCursor(source, store, request, entries, direction, hostId, keyOnly) {
     this._isIDBCursor = true;
-    this.source = source;
-    this.direction = direction || 'next';
+    this._source = source;
+    this._direction = direction || 'next';
     this._store = store;
     this._request = request;
     this._entries = entries;
@@ -3842,16 +3842,49 @@
     this._gotValue = false;
     this._sync();
   }
+  // https://w3c.github.io/IndexedDB/#idbcursor
+  Object.defineProperties(_zwIDBCursor.prototype, {
+    source: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._source; }
+    },
+    direction: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._direction; }
+    },
+    key: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._key; }
+    },
+    primaryKey: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._primaryKey; }
+    },
+    request: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._request; }
+    }
+  });
   function _zwIDBCursorWithValue(source, store, request, entries, direction, hostId) {
     _zwIDBCursor.call(this, source, store, request, entries, direction, hostId, false);
   }
   _zwIDBCursorWithValue.prototype = Object.create(_zwIDBCursor.prototype);
   _zwIDBCursorWithValue.prototype.constructor = _zwIDBCursorWithValue;
+  Object.defineProperty(_zwIDBCursorWithValue.prototype, 'value', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._value; }
+  });
   _zwIDBCursor.prototype._sync = function () {
     var entry = this._entries[this._position];
-    this.key = entry.key;
-    this.primaryKey = entry.primaryKey;
-    this.value = entry.value;
+    this._key = entry.key;
+    this._primaryKey = entry.primaryKey;
+    this._value = entry.value;
   };
   _zwIDBCursor.prototype._applyPendingPosition = function () {
     if (this._pendingEntry) {
@@ -5266,6 +5299,16 @@
       _zwIDBCursorWithValue.prototype,
       Symbol.toStringTag,
       { configurable: true, value: 'IDBCursorWithValue' }
+    );
+    Object.defineProperty(
+      _zwIDBStore.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBObjectStore' }
+    );
+    Object.defineProperty(
+      _zwIDBIndex.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBIndex' }
     );
   }
   globalThis.IDBDatabase = _zwIDBDatabase;

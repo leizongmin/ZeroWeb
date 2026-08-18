@@ -1,0 +1,41 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB cursor surface",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 10,
+      "fail": 21
+    },
+    "after": {
+      "pass": 31,
+      "fail": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 67,
+    "pass": 360,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0
+  },
+  "capabilities": [
+    "IDBObjectStore.openKeyCursor",
+    "IDBCursor readonly attributes",
+    "IDBCursor.request",
+    "key-only cursor interface shape",
+    "IDBObjectStore and IDBIndex string tags"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "manifest_counts": {
+      "fetch": 67,
+      "runner": 67,
+      "ledger": 67
+    }
+  }
+}

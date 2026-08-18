@@ -52,6 +52,18 @@ fn test_indexeddb_deferred_operations_wait_for_transaction_start() {
     })
     .unwrap();
     sandbox.execute(generate_js_dom_shim()).unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "['source','direction','key','primaryKey','request'].every(function (name) {\
+                   var descriptor = Object.getOwnPropertyDescriptor(IDBCursor.prototype, name);\
+                   return descriptor && typeof descriptor.get === 'function' && descriptor.set === undefined;\
+                 })"
+            )
+            .unwrap()
+            .value,
+        "true"
+    );
     sandbox
         .execute(
             "globalThis.__deferred = [];\
@@ -174,7 +186,7 @@ fn test_indexeddb_get_key_and_cursor_mutations() {
                      __cursorMutations.push('deleted:' + String(event.target.result));\
                    };\
                    store.openKeyCursor().onsuccess = function (event) {\
-                     __cursorMutations.push('key-only:' + String(event.target.result.value));\
+                     __cursorMutations.push('key-only-value:' + String('value' in event.target.result));\
                    };\
                  };\
                };\
@@ -187,7 +199,7 @@ fn test_indexeddb_get_key_and_cursor_mutations() {
 
     assert_eq!(
         sandbox.execute("__cursorMutations.join('|')").unwrap().value,
-        "key:1|value:updated|deleted:undefined|key-only:undefined"
+        "key:1|value:updated|deleted:undefined|key-only-value:false"
     );
 }
 
