@@ -2580,6 +2580,9 @@
     if (globalIndex !== -1) _zwIDBTransactions.splice(globalIndex, 1);
     var databaseIndex = transaction._db._transactions.indexOf(transaction);
     if (databaseIndex !== -1) transaction._db._transactions.splice(databaseIndex, 1);
+    var stateIndex = transaction._db._state.transactions.indexOf(transaction);
+    if (stateIndex !== -1) transaction._db._state.transactions.splice(stateIndex, 1);
+    _zwIDBStartEligibleTransactions(transaction._db._state);
   }
   var _zwPreviousBeforeTimerTask = globalThis.__zwBeforeTimerTask;
   globalThis.__zwBeforeTimerTask = function () {
@@ -2920,7 +2923,8 @@
     return {
       version: Number(database.version),
       stores: stores,
-      connections: []
+      connections: [],
+      transactions: []
     };
   }
 
@@ -3321,29 +3325,45 @@
   _zwIDBStore.prototype._mutate = function (op, value, key, keyProvided) {
     this._assertUsable(true);
     var storedValue = globalThis.structuredClone(value);
-    var hostTransaction = this.transaction && this.transaction._hostId !== null;
-    if (hostTransaction) {
-      if (this.keyPath && keyProvided) {
-        throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
+    if (this.keyPath && keyProvided) {
+      throw new globalThis.DOMException('Inline key stores do not accept an explicit key.', 'DataError');
+    }
+    var candidate = this.keyPath ? this._keyOf(storedValue) : key;
+    if (candidate === undefined && !this.autoIncrement) {
+      throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
+    }
+    if (candidate !== undefined && !_zwIDBKey(candidate, [])) {
+      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
+    }
+    var req = new _zwIDBRequest(this);
+    req.transaction = this.transaction;
+    var store = this;
+    var perform = function () {
+      if (!(store.transaction && store.transaction._hostId !== null)) {
+        var fallbackKey = store._resolveKey(storedValue, key, keyProvided);
+        var fallbackExistingKey = store._recordKey(fallbackKey);
+        if ((op === 'add' && fallbackExistingKey !== undefined)
+            || store._hasUniqueConflict(storedValue, fallbackKey)) {
+          store._constraintError(req);
+          return;
+        }
+        store._records.set(
+          fallbackExistingKey === undefined ? fallbackKey : fallbackExistingKey,
+          storedValue
+        );
+        _zwIDBDispatch(req, 'success', fallbackKey);
+        return;
       }
-      var candidate = this.keyPath ? this._keyOf(storedValue) : key;
-      if (candidate === undefined && !this.autoIncrement) {
-        throw new globalThis.DOMException('A key is required for this object store.', 'DataError');
-      }
-      if (candidate !== undefined && !_zwIDBKey(candidate, [])) {
-        throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
-      }
-      var req = new _zwIDBRequest(this);
-      req.transaction = this.transaction;
-      var localKey = candidate === undefined ? undefined : this._recordKey(candidate);
+      var localKey = candidate === undefined ? undefined : store._recordKey(candidate);
       if ((op === 'add' && localKey !== undefined)
-          || this._hasUniqueConflict(storedValue, candidate)) {
-        return this._constraintError(req);
+          || store._hasUniqueConflict(storedValue, candidate)) {
+        store._constraintError(req);
+        return;
       }
       var hostRequest = {
         op: op === 'add' ? 'transaction_add' : 'transaction_put',
-        transaction: this.transaction._hostId,
-        store: this.name,
+        transaction: store.transaction._hostId,
+        store: store.name,
         value: _zwIDBValueToWire(storedValue)
       };
       if (candidate !== undefined) hostRequest.key = _zwIDBKeyToWire(candidate);
@@ -3351,29 +3371,22 @@
       try {
         response = _zwIDBHostCall(hostRequest);
       } catch (hostError) {
-        return _zwIDBRequestHostError(req, hostError);
+        _zwIDBRequestHostError(req, hostError);
+        return;
       }
       var k = _zwIDBKeyFromWire(response.key);
-      if (candidate === undefined && this.keyPath) this._setKeyPath(storedValue, k);
-      if (this.autoIncrement && typeof k === 'number') {
+      if (candidate === undefined && store.keyPath) store._setKeyPath(storedValue, k);
+      if (store.autoIncrement && typeof k === 'number') {
         var next = Math.floor(k) + 1;
-        if (!this._metadata.nextKey || next > this._metadata.nextKey) this._metadata.nextKey = next;
+        if (!store._metadata.nextKey || next > store._metadata.nextKey) {
+          store._metadata.nextKey = next;
+        }
       }
-      var existingKey = this._recordKey(k);
-      this._records.set(existingKey === undefined ? k : existingKey, storedValue);
+      var existingKey = store._recordKey(k);
+      store._records.set(existingKey === undefined ? k : existingKey, storedValue);
       _zwIDBDispatch(req, 'success', k);
-      return req;
-    }
-    var k = this._resolveKey(storedValue, key, keyProvided);
-    var req = new _zwIDBRequest(this);
-    req.transaction = this.transaction;
-    var existingKey = this._recordKey(k);
-    if ((op === 'add' && existingKey !== undefined)
-        || this._hasUniqueConflict(storedValue, k)) {
-      return this._constraintError(req);
-    }
-    this._records.set(existingKey === undefined ? k : existingKey, storedValue);
-    _zwIDBDispatch(req, 'success', k); // 异步 success（result = key）
+    };
+    _zwIDBRunTransactionOperation(this.transaction, perform);
     return req;
   };
   _zwIDBStore.prototype.add = function (value, key) {
@@ -3389,51 +3402,55 @@
     }
     var req = new _zwIDBRequest(this);
     req.transaction = this.transaction;
-    if (this.transaction && this.transaction._hostId !== null) {
-      try {
-        var response;
-        if (_zwIDBIsKeyRange(key)) {
-          response = _zwIDBHostCall({
-            op: 'transaction_get_all',
-            transaction: this.transaction._hostId,
-            store: this.name,
-            query: _zwIDBQueryToWire(key),
-            count: 1
-          });
-          var first = response.records && response.records[0];
-          _zwIDBDispatch(req, 'success', first ? _zwIDBValueFromWire(first.value) : undefined);
-        } else {
-          response = _zwIDBHostCall({
-            op: 'transaction_get',
-            transaction: this.transaction._hostId,
-            store: this.name,
-            key: _zwIDBKeyToWire(key)
-          });
-          _zwIDBDispatch(
-            req,
-            'success',
-            response.record ? _zwIDBValueFromWire(response.record.value) : undefined
-          );
+    var store = this;
+    var perform = function () {
+      if (store.transaction && store.transaction._hostId !== null) {
+        try {
+          var response;
+          if (_zwIDBIsKeyRange(key)) {
+            response = _zwIDBHostCall({
+              op: 'transaction_get_all',
+              transaction: store.transaction._hostId,
+              store: store.name,
+              query: _zwIDBQueryToWire(key),
+              count: 1
+            });
+            var first = response.records && response.records[0];
+            _zwIDBDispatch(req, 'success', first ? _zwIDBValueFromWire(first.value) : undefined);
+          } else {
+            response = _zwIDBHostCall({
+              op: 'transaction_get',
+              transaction: store.transaction._hostId,
+              store: store.name,
+              key: _zwIDBKeyToWire(key)
+            });
+            _zwIDBDispatch(
+              req,
+              'success',
+              response.record ? _zwIDBValueFromWire(response.record.value) : undefined
+            );
+          }
+        } catch (hostError) {
+          _zwIDBRequestHostError(req, hostError);
         }
-      } catch (hostError) {
-        return _zwIDBRequestHostError(req, hostError);
+        return;
       }
-      return req;
-    }
-    var result;
-    if (_zwIDBIsKeyRange(key)) {
-      var matches = [];
-      this._records.forEach(function (value, recordKey) {
-        if (key.includes(recordKey)) matches.push({ key: recordKey, value: value });
-      });
-      matches.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
-      result = matches.length ? matches[0].value : undefined;
-    } else {
-      this._records.forEach(function (value, recordKey) {
-        if (result === undefined && _zwIDBCompareValues(recordKey, key) === 0) result = value;
-      });
-    }
-    _zwIDBDispatch(req, 'success', result);
+      var result;
+      if (_zwIDBIsKeyRange(key)) {
+        var matches = [];
+        store._records.forEach(function (value, recordKey) {
+          if (key.includes(recordKey)) matches.push({ key: recordKey, value: value });
+        });
+        matches.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
+        result = matches.length ? matches[0].value : undefined;
+      } else {
+        store._records.forEach(function (value, recordKey) {
+          if (result === undefined && _zwIDBCompareValues(recordKey, key) === 0) result = value;
+        });
+      }
+      _zwIDBDispatch(req, 'success', result);
+    };
+    _zwIDBRunTransactionOperation(this.transaction, perform);
     return req;
   };
   _zwIDBStore.prototype.delete = function (key) {
@@ -4064,6 +4081,44 @@
     return first._scope.some(function (name) { return second._scope.indexOf(name) !== -1; });
   }
 
+  // https://w3c.github.io/IndexedDB/#transaction-scheduling
+  function _zwIDBStartTransaction(transaction) {
+    if (transaction._started || transaction._aborted || transaction._finished) return;
+    var begun = _zwIDBHostCall({
+      op: 'begin_transaction',
+      database: transaction._db.name,
+      stores: transaction._scope,
+      mode: transaction.mode
+    });
+    if (begun !== undefined) {
+      transaction._hostId = begun.transaction;
+      transaction._snapshot = _zwIDBCloneStores(transaction._db._stores);
+    }
+    transaction._started = true;
+    var operations = transaction._operations.splice(0);
+    operations.forEach(function (operation) { operation(); });
+  }
+
+  function _zwIDBStartEligibleTransactions(state) {
+    state.transactions.forEach(function (transaction, position) {
+      if (transaction._started || transaction._aborted || transaction._finished) return;
+      var blocked = state.transactions.slice(0, position).some(function (earlier) {
+        return !earlier._aborted
+          && !earlier._finished
+          && _zwIDBTransactionsConflict(earlier, transaction);
+      });
+      if (!blocked) _zwIDBStartTransaction(transaction);
+    });
+  }
+
+  function _zwIDBRunTransactionOperation(transaction, operation) {
+    if (!transaction || transaction._started) {
+      operation();
+      return;
+    }
+    transaction._operations.push(operation);
+  }
+
   function _zwIDBTransaction(db, names, mode, deferCompletion) {
     var storeNames = Array.isArray(names) ? names.map(String) : [String(names)];
     this._db = db;
@@ -4086,32 +4141,26 @@
     this.error = null;
     this._hostId = null;
     this._snapshot = null;
+    this._started = !!deferCompletion;
+    this._operations = [];
     _zwIDBTransactions.push(this);
     db._transactions.push(this);
+    db._state.transactions.push(this);
     if (!deferCompletion && this.mode !== 'versionchange') {
-      var begun = _zwIDBHostCall({
-        op: 'begin_transaction',
-        database: db.name,
-        stores: storeNames,
-        mode: this.mode
-      });
-      if (begun !== undefined) {
-        this._hostId = begun.transaction;
-        this._snapshot = _zwIDBCloneStores(db._stores);
-      }
+      _zwIDBStartEligibleTransactions(db._state);
     }
     var self = this;
     if (!deferCompletion) {
       var completeWhenIdle = function () {
         self._active = false;
         if (self._aborted || self._finished) return;
-        var position = self._db._transactions.indexOf(self);
-        var earlierActive = self._db._transactions.slice(0, position).some(function (transaction) {
+        var position = self._db._state.transactions.indexOf(self);
+        var earlierActive = self._db._state.transactions.slice(0, position).some(function (transaction) {
           return !transaction._aborted
             && !transaction._finished
             && _zwIDBTransactionsConflict(transaction, self);
         });
-        if (self._pending > 0 || earlierActive) {
+        if (!self._started || self._pending > 0 || earlierActive) {
           setTimeout(completeWhenIdle, 0);
           return;
         }
@@ -4545,7 +4594,7 @@
         return req;
       }
       if (!state) {
-        state = { version: 0, stores: {}, connections: [] };
+        state = { version: 0, stores: {}, connections: [], transactions: [] };
         _idb_databases[name] = state;
       }
       var needsUpgrade = requestedVersion > oldVersion;

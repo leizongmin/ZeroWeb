@@ -54,6 +54,13 @@ FILES=(
   "IndexedDB/transaction-deactivation-timing.any.js"
   "IndexedDB/event-dispatch-active-flag.any.js"
   "IndexedDB/transaction-lifetime-empty.any.js"
+  "IndexedDB/transaction-scheduling-across-connections.any.js"
+  "IndexedDB/transaction-scheduling-across-databases.any.js"
+  "IndexedDB/transaction-scheduling-mixed-scopes.any.js"
+  "IndexedDB/transaction-scheduling-ordering.any.js"
+  "IndexedDB/transaction-scheduling-ro-waits-for-rw.any.js"
+  "IndexedDB/transaction-scheduling-rw-scopes.any.js"
+  "IndexedDB/transaction-scheduling-within-database.any.js"
 )
 
 fetch_raw() {
@@ -119,7 +126,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (38 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (45 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -136,4 +143,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (38 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (45 cases, WPT ${WPT_REV})"

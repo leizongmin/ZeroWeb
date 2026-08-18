@@ -45,3 +45,10 @@ IndexedDB/idbtransaction-oncomplete.any.js 315976933870b34d6ea30e3f6643403edae67
 IndexedDB/transaction-deactivation-timing.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation
 IndexedDB/event-dispatch-active-flag.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation
 IndexedDB/transaction-lifetime-empty.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-deactivation
+IndexedDB/transaction-scheduling-across-connections.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-across-databases.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-mixed-scopes.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-ordering.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-ro-waits-for-rw.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-rw-scopes.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling
+IndexedDB/transaction-scheduling-within-database.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-transaction-scheduling

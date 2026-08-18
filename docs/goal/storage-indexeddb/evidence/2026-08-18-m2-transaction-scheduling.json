@@ -1,0 +1,34 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 cross-connection transaction scheduling core",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "driving_wpt": {
+    "files": 7,
+    "before": {
+      "pass": 3,
+      "fail": 4
+    },
+    "after": {
+      "pass": 7,
+      "fail": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 45,
+    "pass": 229,
+    "fail": 0
+  },
+  "capabilities": [
+    "shared database-state transaction ordering",
+    "cross-connection overlapping-scope exclusion",
+    "readonly visibility after preceding readwrite commit",
+    "parallel transactions across databases",
+    "parallel readonly transactions"
+  ],
+  "remaining": [
+    "deferred execution for all object store, index, and cursor operations",
+    "cross-renderer transaction scheduling",
+    "cross-connection blocked and versionchange notifications",
+    "open request queue"
+  ]
+}

@@ -2,7 +2,7 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-18（M3 JavaScript safe-integer database versions）
+**最后更新**: 2026-08-18（M2 cross-connection transaction scheduling core）
 
 ---
 
@@ -49,19 +49,20 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M3 persistence：browser/renderer 单写 owner、embedded WebView owner 注入、private 隔离和跨会话恢复已完成
 - ✅ M3 storage key：browser navigation start/commit + epoch 校验确定 origin，覆盖 redirect final URL
 - ✅ M3 database version：Rust 全链路使用 `u64`，支持并持久化 `Number.MAX_SAFE_INTEGER`
+- ✅ M2 transaction scheduling core：同 realm 跨 connection 共享 scope 顺序表，固定 WPT 7/7
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
-| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 38 文件 |
+| I1 | WPT IndexedDB 用例覆盖为零 | 🟨 M1/M2 已导入 45 文件 |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping/continuePrimaryKey 已接 |
 | I3 | 无持久化（重启即失） | ✅ browser/renderer 与 embedded WebView production paths 完成 |
-| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + per-renderer registry 完成；跨 connection scheduling 待扩面 |
+| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + 同 realm 跨 connection get/put scheduling 完成；全 operation 与跨 renderer scheduling 待扩面 |
 
 ## 下一步计划
 
-1. **M2/M3**：扩展跨 connection transaction scheduling 与 blocked/versionchange 事件
+1. **M2/M3**：扩展全 operation / 跨 renderer transaction scheduling 与 blocked/versionchange 事件
 2. **M1/M2**：扩大固定 revision 上游 IndexedDB WPT 导入范围
 
 **碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
@@ -71,9 +72,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 
 | 里程碑 | 状态 |
 |--------|------|
-| M1 — WPT IndexedDB 基线建立 | 🟨 imported 222/222 |
+| M1 — WPT IndexedDB 基线建立 | 🟨 imported 229/229 |
 | M2 — JS↔Rust 接线（核心通路） | 🟨 request task model complete；advanced scheduling pending |
-| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage ownership complete；cross-connection scheduling pending |
+| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage ownership complete；cross-renderer scheduling pending |
 
 ## 验证基线
 
@@ -86,8 +87,9 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - WPT Cursor continuePrimaryKey：3 文件 / 18 subtest / 18 Pass / 0 Fail / 100.00%
 - WPT Request/Transaction event core：8 文件 / 10 subtest / 10 Pass / 0 Fail / 100.00%
 - WPT Transaction deactivation/lifetime：3 文件 / 11 subtest / 11 Pass / 0 Fail / 100.00%
-- imported 合计：38 文件 / 222 subtest / 222 Pass / 0 Fail / 100.00%
-- 当前 100% 仅覆盖 imported 38 文件，不代表上游 IndexedDB 目录整体通过率
+- WPT Transaction scheduling：7 文件 / 7 subtest / 7 Pass / 0 Fail / 100.00%
+- imported 合计：45 文件 / 229 subtest / 229 Pass / 0 Fail / 100.00%
+- 当前 100% 仅覆盖 imported 45 文件，不代表上游 IndexedDB 目录整体通过率
 - 证据：`evidence/2026-08-17-m1-factory-baseline.{md,json}`、
   `evidence/2026-08-17-m1-cmp-fix.{md,json}`、
   `evidence/2026-08-17-m1-request-eventtarget-fix.{md,json}`、
@@ -120,7 +122,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-18-m3-browser-storage-owner.{md,json}`、
   `evidence/2026-08-18-m3-embedded-webview-owner.{md,json}`、
   `evidence/2026-08-18-m3-navigation-storage-key.{md,json}`、
-  `evidence/2026-08-18-m3-safe-integer-version.{md,json}`
+  `evidence/2026-08-18-m3-safe-integer-version.{md,json}`、
+  `evidence/2026-08-18-m2-transaction-scheduling.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

@@ -215,6 +215,34 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ),
     ("IndexedDB/event-dispatch-active-flag.any.js", &["resources/support.js"]),
     ("IndexedDB/transaction-lifetime-empty.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/transaction-scheduling-across-connections.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-across-databases.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-mixed-scopes.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-ordering.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-ro-waits-for-rw.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-rw-scopes.any.js",
+        &["resources/support.js"],
+    ),
+    (
+        "IndexedDB/transaction-scheduling-within-database.any.js",
+        &["resources/support.js"],
+    ),
 ];
 
 /// WPT subtest status.
