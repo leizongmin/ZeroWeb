@@ -17,6 +17,10 @@ use zero_style_system::ComputedStyle;
 
 use crate::types::LayoutBox;
 
+fn font_family_is_ahem(family: &[String]) -> bool {
+    family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+}
+
 /// 一个表格单元格的信息。
 #[derive(Debug, Clone)]
 pub(crate) struct TableCell {
@@ -340,7 +344,7 @@ pub(crate) fn compute_cell_intrinsic_width(
                 LengthValue::Rem(v) => *v as f32,
                 _ => 16.0,
             };
-            let ahem = s.font_family.iter().any(|family| family == "Ahem");
+            let ahem = font_family_is_ahem(&s.font_family);
             (fs, ahem)
         })
         .unwrap_or((16.0, false));
@@ -538,7 +542,7 @@ pub(crate) fn compute_col_min_content(
                         zero_css_parser::values::LengthValue::Px(v) => *v as f32,
                         _ => 16.0,
                     };
-                    (fs, s.font_family.iter().any(|f| f.trim_matches('"').contains("Ahem")))
+                    (fs, font_family_is_ahem(&s.font_family))
                 })
                 .unwrap_or((16.0, false));
             let cw = if ahem { fs } else { fs * 0.6 };

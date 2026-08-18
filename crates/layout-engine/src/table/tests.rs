@@ -1175,6 +1175,61 @@ fn test_r1131_grow_vrl_cell_block_extent() {
 }
 
 #[test]
+fn test_col_min_content_does_not_match_ahem_substring() {
+    use zero_css_parser::values::LengthValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let cell_id = doc.create_element("td");
+    let text_id = doc.create_text_node("AAAA");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, cell_id);
+    let _ = doc.append_child(cell_id, text_id);
+
+    let mut styles = HashMap::new();
+    let mut cell_style = ComputedStyle::default();
+    cell_style.display = DisplayValue::TableCell;
+    cell_style.font_family = vec!["NotAhem".to_string()];
+    cell_style.font_size = LengthValue::Px(10.0);
+    styles.insert(cell_id, cell_style);
+
+    let table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![LayoutBox {
+            node_id: Some(cell_id),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let grid = TableGrid {
+        rows: vec![TableRow {
+            child_index: 0,
+            row_group_index: None,
+            cells: vec![TableCell {
+                child_index: 0,
+                colspan: 1,
+                rowspan: 1,
+                col_start: 0,
+                col_end: 1,
+                parent_rg_idx: None,
+            }],
+            is_anonymous: true,
+        }],
+        col_count: 1,
+        collapsed_cols: vec![false],
+        collapsed_rows: vec![false],
+    };
+
+    let min_content = compute_col_min_content(&table_box, &grid, 1, &styles, &doc);
+    assert_eq!(min_content, vec![24.0]);
+
+    styles.get_mut(&cell_id).unwrap().font_family = vec!["\"Ahem\"".to_string()];
+    let min_content = compute_col_min_content(&table_box, &grid, 1, &styles, &doc);
+    assert_eq!(min_content, vec![40.0]);
+}
+
+#[test]
 fn test_top_caption_extent_sums_top_caption_heights() {
     // R1653：top_caption_extent（caption-side:top 默认）= Σ caption 子盒高度；
     // caption-side:bottom 排除（由 post-processing 移到表底）；非 caption 子盒不计。
