@@ -301,9 +301,13 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
         remaining = remaining[end + 1..].trim_start();
 
         // 跳过 "and" 连接词
-        if remaining.starts_with("and") {
-            remaining = remaining[3..].trim_start();
+        if remaining.is_empty() {
+            break;
         }
+        remaining = strip_and_prefix(remaining)?;
+    }
+    if !remaining.is_empty() {
+        return None;
     }
 
     Some(MediaQuery {
@@ -749,6 +753,19 @@ mod tests {
         let q = first_query("screen and(min-width: 600px)");
         assert_eq!(q.media_type, Some(MediaType::Screen));
         assert_eq!(q.conditions, vec![MediaCondition::MinWidth(600.0)]);
+    }
+
+    #[test]
+    fn test_media_query_rejects_trailing_tokens_after_condition() {
+        assert!(parse_media_query("(min-width: 600px) garbage").is_none());
+        assert!(parse_media_query("(min-width: 600px) andfoo (max-width: 800px)").is_none());
+        assert!(parse_media_query("screen and (min-width: 600px) garbage").is_none());
+
+        let q = first_query("(min-width: 600px) and(max-width: 800px)");
+        assert_eq!(
+            q.conditions,
+            vec![MediaCondition::MinWidth(600.0), MediaCondition::MaxWidth(800.0)]
+        );
     }
 
     #[test]
