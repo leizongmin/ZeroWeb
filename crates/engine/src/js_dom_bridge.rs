@@ -568,7 +568,60 @@ fn rewrite_pending_id_selectors(
 /// handle→NodeId 映射仅在本函数调用作用域内有效（返回 handle→selector 供 RectBridge）。
 /// R45：同批 id 重命名经 [`rewrite_pending_id_selectors`] 追链（见该函数文档）。
 pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<HashMap<String, String>, String> {
+    apply_dom_mutations_with_persistent(doc, mutations, None)
+}
+
+/// js-dom M3 R100：[`apply_dom_mutations`] 的持久 handle 解析版。
+///
+/// `persistent` 是跨 apply 存活的 handle→selector 表（生产方：webview
+/// `selector_handle_map` 的正置视图）；`persistent_nodes` 是跨 apply 存活的
+/// handle→NodeId 表（pipeline 侧维护——同一 `cached_doc` slotmap 的 NodeId 在节点
+/// 存活期间稳定，**优先于** selector 翻译：文本节点等无唯一选择器的 handle 也能解析）。
+/// ephemeral map（本批 CreateElement 建立）未命中的 handle 解析顺序：
+/// 1. `persistent_nodes`（NodeId 直达——SetTextOnHandle 等无 selector 翻译变体的
+///    mutation 在此解析，`lit` 插值文本 `__n4` 的跨 execute 更新即此形态）；
+/// 2. `persistent`（selector 翻译——见下方变体表）；
+/// 3. 都 miss → 维持原错误路径（数据完整性优先，不静默丢弃）。
+///
+/// selector 翻译表：`SetTextOnHandle`→`SetText` / `SetAttrOnHandle`→`SetAttr` /
+/// `RemoveAttrOnHandle`→`RemoveAttr` / `SetInnerHtmlOnHandle`→`SetInnerHtml` /
+/// `SetStyleOnHandle`→`SetStyle` / `RemoveStyleOnHandle`→`RemoveStyle` /
+/// `RemoveHandle`→`Remove` / `AppendChildByHandle`（父）→`AppendChild`。
+///
+/// 动机：跨 execute 引用的 handle（Vue `vm.$el` 持有的 `__n0` 在后续 execute 的点击
+/// 回调里触发 patch 写）在旧实现落 `unknown handle` 硬错——整批 mutation 中止。真实
+/// 浏览器中元素引用是对象身份，无「过期」概念；持久表把 handle 锚回当前文档位置。
+pub fn apply_dom_mutations_with_persistent(
+    doc: &mut Document,
+    mutations: &[DomMutation],
+    persistent: Option<&HashMap<String, String>>,
+) -> Result<HashMap<String, String>, String> {
+    apply_dom_mutations_full(doc, mutations, persistent, None)
+}
+
+/// [`apply_dom_mutations_with_persistent`] 的 NodeId 持久表扩展（R100——见其文档）。
+/// `persistent_nodes` 的条目在 apply 后**回填**（本批 ephemeral handles 全量 merge 返出，
+/// 调用方持有跨 apply）。节点被移除后 NodeId 可能被 slotmap 复用——调用方在结构性
+/// Remove/RemoveHandle 应用后应失效对应条目（当前批内移除的 handle 从返出 map 剔除）。
+pub fn apply_dom_mutations_full(
+    doc: &mut Document,
+    mutations: &[DomMutation],
+    persistent: Option<&HashMap<String, String>>,
+    persistent_nodes: Option<&mut HashMap<String, NodeId>>,
+) -> Result<HashMap<String, String>, String> {
     let mut handles: HashMap<String, NodeId> = HashMap::new();
+    // js-dom M3 R100：NodeId 持久表（优先解析层）——查到即**预植**进本批 ephemeral map，
+    // 使全部 `*OnHandle` 变体按常规路径解析（无 selector 翻译的 SetTextOnHandle 等
+    // 也能落地）。查不到才走 selector 翻译。
+    if let Some(pn) = persistent_nodes.as_deref() {
+        for (h, id) in pn.iter() {
+            handles.insert(h.clone(), *id);
+        }
+    }
+    // js-dom M3 R100：持久 handle→selector 翻译层——ephemeral map 未命中的 handle 变体
+    // 在进入 match 前翻译成 selector 变体（见 apply_dom_mutations_with_persistent 文档）。
+    // 惰性 helper：查持久表命中则返 selector。
+    let persistent_sel = |h: &str| -> Option<String> { persistent.and_then(|p| p.get(h).cloned()) };
     // js-dom M4 R45：同批 id 重命名追链——`el.id = "abc"; el.className = "x"` 两条 mutation 的
     // selector 都取自 proxy 建立时（`#n1000`），第一条 SetAttr(id) 应用后文档中 `#n1000` 消失，
     // 第二条失配 → 旧 `?` 硬错中止整批（WPT MutationObserver-attributes "apply mutations:
@@ -578,6 +631,97 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
     // 保持不变。
     let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
     while let Some(mutation) = pending.pop_front() {
+        // js-dom M3 R100：handle 变体在 ephemeral map 未命中时，先经持久表翻译成
+        // selector 变体（重新入队；翻译产物走 selector 分支的常规校验路径）。命中
+        // ephemeral map（本批新建节点，最高优先级）或无持久表/未命中 → 原样进入
+        // match（后者维持旧行为：本批已建的走 handles，真悬垂的报 unknown handle）。
+        let mutation = match mutation {
+            DomMutation::SetTextOnHandle { ref handle, text }
+                if !handles.contains_key(handle) && persistent_sel(handle).is_some() =>
+            {
+                pending.push_front(DomMutation::SetText {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    text,
+                });
+                continue;
+            }
+            DomMutation::SetAttrOnHandle {
+                ref handle,
+                name,
+                value,
+            } if !handles.contains_key(handle) && persistent_sel(handle).is_some() => {
+                pending.push_front(DomMutation::SetAttr {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    name,
+                    value,
+                });
+                continue;
+            }
+            DomMutation::RemoveAttrOnHandle { ref handle, name }
+                if !handles.contains_key(handle) && persistent_sel(handle).is_some() =>
+            {
+                pending.push_front(DomMutation::RemoveAttr {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    name,
+                });
+                continue;
+            }
+            DomMutation::SetInnerHtmlOnHandle { ref handle, html }
+                if !handles.contains_key(handle) && persistent_sel(handle).is_some() =>
+            {
+                pending.push_front(DomMutation::SetInnerHtml {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    html,
+                });
+                continue;
+            }
+            DomMutation::SetStyleOnHandle {
+                ref handle,
+                property,
+                value,
+            } if !handles.contains_key(handle) && persistent_sel(handle).is_some() => {
+                pending.push_front(DomMutation::SetStyle {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    property,
+                    value,
+                });
+                continue;
+            }
+            DomMutation::RemoveStyleOnHandle { ref handle, property }
+                if !handles.contains_key(handle) && persistent_sel(handle).is_some() =>
+            {
+                pending.push_front(DomMutation::RemoveStyle {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                    property,
+                });
+                continue;
+            }
+            DomMutation::RemoveHandle { ref handle }
+                if !handles.contains_key(handle) && persistent_sel(handle).is_some() =>
+            {
+                pending.push_front(DomMutation::Remove {
+                    selector: persistent_sel(handle).unwrap_or_default(),
+                });
+                continue;
+            }
+            DomMutation::AppendChildByHandle {
+                ref parent_handle,
+                child_handle,
+            } if !handles.contains_key(parent_handle)
+                && !handles.contains_key(&child_handle)
+                && persistent_sel(parent_handle).is_some() =>
+            {
+                // 父子都跨批（父持久表锚定 + 子 ephemeral 必在——子若是本批新建，
+                // contains_key 已兜住；两条件都 persistent 场景罕见，child 若也悬垂
+                // 走原 unknown child handle 错误路径）。
+                pending.push_front(DomMutation::AppendChild {
+                    parent_selector: persistent_sel(parent_handle).unwrap_or_default(),
+                    child_handle,
+                });
+                continue;
+            }
+            other => other,
+        };
         match mutation {
             DomMutation::SetFormValue { .. } | DomMutation::SetFormComposition { .. } => {
                 // 当前值由渲染管线的 retained 表单状态持有，不写回内容属性。
@@ -737,10 +881,13 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
                 doc.remove_attribute(node, &name);
             }
             DomMutation::SetTextOnHandle { handle, text } => {
-                let node = handles
-                    .get(&handle)
-                    .copied()
-                    .ok_or_else(|| format!("unknown handle {handle}"))?;
+                // R100 lenient：结构性 doc 重建后无唯一选择器的 handle（文本节点等）
+                // 无法重锚——跳过并 warn（JS 侧读经共享队列 latest-wins 兜底正确值；
+                // 宿主渲染像素为已知限制），不再硬错中止整批。
+                let Some(node) = handles.get(&handle).copied() else {
+                    tracing::warn!("SetTextOnHandle: unresolvable handle {handle} skipped");
+                    continue;
+                };
                 doc.set_text_content(node, &text);
             }
             // js-dom M4 R48：按父 selector + child 索引定位 parsed 文本/注释子并整体替换数据。
@@ -904,8 +1051,23 @@ pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Res
     // 供 RectBridge handler 解析 handle-identity（`__n{n}`）→ selector → NodeId → rect。
     let mut handle_selectors: HashMap<String, String> = HashMap::new();
     for (handle, node) in &handles {
-        if let Some(sel) = unique_selector_for_node(doc, *node) {
+        if doc.get(*node).is_some()
+            && let Some(sel) = unique_selector_for_node(doc, *node)
+        {
             handle_selectors.insert(handle.clone(), sel);
+        }
+    }
+
+    // js-dom M3 R100：回填 NodeId 持久表——本批 ephemeral handles（含从持久表预植的
+    // 存活条目）中**节点仍存活**者全量 merge（文本节点等无唯一选择器的 handle 也覆盖
+    // ——这正是 selector 翻译层解析不了它们的根因）。已移除节点剔除（防 slotmap
+    // NodeId 复用后误锚定）。
+    if let Some(pn) = persistent_nodes {
+        pn.retain(|_, id| doc.get(*id).is_some());
+        for (handle, node) in &handles {
+            if doc.get(*node).is_some() {
+                pn.insert(handle.clone(), *node);
+            }
         }
     }
 

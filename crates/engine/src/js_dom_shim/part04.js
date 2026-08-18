@@ -1856,12 +1856,32 @@
             } catch (_e) {}
             // deep：复制后代（innerHTML）。
             if (deep) {
+              var _cnd = false;
               try {
                 var ih = handle
                   ? __zw_get_inner_html_handle(handle)
                   : (sel ? __zw_get_inner_html(sel) : null);
-                if (ih) __zw_set_inner_html_handle(nh, ih);
+                if (ih) { __zw_set_inner_html_handle(nh, ih); _cnd = true; }
               } catch (_e) {}
+              // js-dom M3 R100：handle 容器（detached createElement）——host innerHTML 空，
+              // 后代在 JS registry（_handleChildren）。递归 cloneNode 复制子树（spec deep
+              // 语义：属性 + 子结构全复制）。
+              if (!_cnd && handle && _handleChildren[handle] && _handleChildren[handle].length) {
+                var _cclone = _wrapHandle(nh);
+                var _ckids = _handleChildren[handle].slice();
+                for (var _ci = 0; _ci < _ckids.length; _ci++) {
+                  var _ck = _ckids[_ci];
+                  if (!_ck) continue;
+                  if (_ck.__zwHandle) {
+                    try { _cclone.appendChild(_ck.cloneNode(true)); } catch (_e2) {}
+                  } else if (_ck.nodeType === 3) {
+                    try {
+                      var _ctn = __zw_create_text(String(_ck.data != null ? _ck.data : (_ck.nodeValue || '')));
+                      if (_ctn) { _textHandles[_ctn] = true; _cclone.appendChild(_wrapHandle(_ctn)); }
+                    } catch (_e3) {}
+                  }
+                }
+              }
             }
             return _wrapHandle(nh);
           };
@@ -2191,6 +2211,43 @@
             if (newChild && _zwIsAncestorOf(newChild, sel, handle)) {
               throw _zwDomException('A Node cannot replace its descendant.', 'HierarchyRequestError');
             }
+            // js-dom M3 R100：handle-handle 形态（parent/new/old 全部 createElement 建立，
+            // detached 容器内 replaceChild——WPT replaceChild 用例 setup 即此形态）。
+            // host 无对应 wire（无 selector ref）；JS 侧 registry 原位替换（_handleChildren
+            // 索引位 splice + 反链重接）+ childList record + 连接态传播。
+            if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwHandle && !oldChild.__zwSelector) {
+              if (handle && _handleChildren[handle]) {
+                var _r100Kids = _handleChildren[handle];
+                var _r100At = _r100Kids.indexOf(oldChild);
+                var _r100Added100 = _fragmentHandles[newChild.__zwHandle]
+                  ? (_handleChildren[newChild.__zwHandle] || []).slice()
+                  : [newChild];
+                if (_fragmentHandles[newChild.__zwHandle]) {
+                  for (var _r100f = _r100Added100.length - 1; _r100f >= 0; _r100f--) {
+                    if (_r100At >= 0) _r100Kids.splice(_r100At, 0, _r100Added100[_r100f]);
+                    else _r100Kids.push(_r100Added100[_r100f]);
+                  }
+                } else if (_r100At >= 0) {
+                  _r100Kids.splice(_r100At, 1, newChild);
+                } else {
+                  _r100Kids.push(newChild);
+                }
+                try {
+                  if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                    _zwNodeParent[newChild.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+                    if (_zwNodeParent[oldChild.__zwHandle]
+                        && _zwNodeParent[oldChild.__zwHandle].parentHandle === handle) {
+                      delete _zwNodeParent[oldChild.__zwHandle];
+                    }
+                  }
+                } catch (_e100r) {}
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: _r100Added100, removedNodes: [oldChild] });
+                var _r100Pc = _ceParentConnected(sel, handle);
+                for (var _r100c = 0; _r100c < _r100Added100.length; _r100c++) _ceApplyConn(_r100Added100[_r100c], _r100Pc);
+                _ceApplyConn(oldChild, false);
+              }
+              return oldChild;
+            }
             if (newChild && newChild.__zwHandle && oldChild && oldChild.__zwSelector) {
               // R2994：capture added/removed for connection 传播。
               var ceAdded = _fragmentHandles[newChild.__zwHandle]
@@ -2428,7 +2485,10 @@
           //   不穿透 shadow 边界：host.querySelector 查 light-DOM 子树，host.shadowRoot.querySelector 查 shadow 树。
           return function(q) {
             if (sel && typeof __zw_query_match_sub === 'function') {
-              try { var hit = __zw_query_match_sub(sel, String(q)); if (hit) return _wrapSelector(hit); } catch (_e) {}
+              // js-dom M3 R100：query 返回点 identity 反查（同 document.querySelector
+              // ——命中 createElement 建立的 handle 节点时返回原 handle proxy，事件
+              // 监听器跨 execute 可达；未命中回调 → 原 sel proxy 零回归）。
+              try { var hit = __zw_query_match_sub(sel, String(q)); if (hit) return _zwQueryWrapIdentity(hit); } catch (_e) {}
               return null;
             }
             if (handle) return _handleQueryFirst(handle, q);
@@ -2988,7 +3048,11 @@
             // Host mutations are applied asynchronously. Keep a parsed local child
             // view for created elements so childNodes/firstChild/lastChild remain
             // observable within the script that assigned innerHTML.
-            if (handle) _handleChildren[handle] = _ihAdded;
+            // R100：纯文本 innerHTML 且 handle 容器——下方 _zwRegisterTextEl 已建本地文本
+            // 视图，此处不再同时入 registry（R81 textContent getter 融合两源会双计文本，
+            // e2e 'Hello WorldHello World' 实证）。含 markup 时保持 registry（结构子树）。
+            if (handle && !(_ihVal.indexOf('<') < 0)) _handleChildren[handle] = _ihAdded;
+            else if (handle && _ihVal.indexOf('<') < 0) _handleChildren[handle] = [];
             // js-dom M4 R56：sel 路径替换后丢弃 childNodes 基底缓存条目。R55 的 identity
             // 稳定副作用 + 本行上方 _ihRemoved 读（把旧基底入缓存）→ 同回合内 `el.childNodes`
             // 缓存命中旧基底，overlay 的 pending-removed 剔除 identity 命中清空列表；而 added

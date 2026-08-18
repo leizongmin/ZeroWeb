@@ -1366,6 +1366,9 @@
   };
 
   globalThis.document = {
+    // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
+    // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。
+    __zwShimInstalled: true,
     // https://html.spec.whatwg.org/multipage/dom.html#dom-document-location
     // The final Document object is installed in this module; expose the live
     // Window Location here rather than on the bootstrap placeholder.
@@ -1381,12 +1384,12 @@
     },
     querySelector: function(sel) {
       var hit = __zw_query_match(sel);
-      if (hit) return _wrapSelector(hit);
+      if (hit) return _zwQueryWrapIdentity(hit);
       // js-dom M4 R51c：host 快照未命中 → 回落 pending added 扫描（同步 turn 内 append/insert 的
       // 节点对查询不可见是 testharness mega-case 的系统性破损源：WPT dom/common.js
       // setupRangeTests 每次开头 `querySelector('#test')` 取旧树 removeChild 重建——pending 旧树
       // 查不到 → 跳过 remove → 旧 proxy 泄漏进 pending 表 → O(n²)（Range-mutations dataChange
-      // 超时根因）。保守语义：仅 host miss 时回落；`#id` 精确形式（getElementById 同源）。
+      // 超时根因）。保守语义：仅 host miss 时回落；`#id` 粯形式（getElementById 同源）。
       var m = /^#[A-Za-z_][\w-]*$/.exec(String(sel || ''));
       if (m) {
         var want = String(sel).slice(1);

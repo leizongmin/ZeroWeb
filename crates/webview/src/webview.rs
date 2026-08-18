@@ -239,6 +239,28 @@ pub struct WebView {
     pipeline: RenderPipeline,
     /// R3268 canvas 显示链路：CanvasRegistry（JS getContext 与 painter 共享）。
     canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
+    /// js-dom M3 R100：持久 selector→handle 反查表（**倒置**的 handle→selector map）。
+    ///
+    /// 每次 mutation 应用后，把 `render_with_dom_mutations` 返回的 handle→唯一选择器
+    /// 映射 merge 进来（key 取 selector）。JS 侧 `document.querySelector`/
+    /// `getElementById` 命中后经 `__zw_handle_for_selector` 反查——命中则返回原
+    /// handle proxy（`_proxyCache['@'+handle]` 同对象 identity），使跨 execute 的
+    /// 元素引用（Vue `vm.$el` 持有的 `__n0` proxy vs 重新 query 的新 sel proxy）
+    /// 身份统一，事件监听器（注册在 handle proxy 的 `_listenerStore` key 下）可达。
+    /// 导航/load_html 换代时清空（旧页 handle 在新页无效，镜像 rect_bridge
+    /// `HandleSelectorMap` 语义）。R77 验证的反查三件套形态，反查限定在 query
+    /// 返回点（不做全局 `_wrapSelector` 前置——R77 教训 #7）。
+    selector_handle_map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+    /// js-dom M3 R100：**共享 append-only** mutations 队列（页面生命周期内单实例）。
+    ///
+    /// 所有 `register_dom_callbacks` 调用（run_page_scripts / execute_script_with_dom /
+    /// dispatch_event）都传**同一 Arc**——读回调（`__zw_get_text_handle` 等）天然看到
+    /// 全量历史（HEAD 的「未清空 Vec」语义），写回调 append。apply 按
+    /// [`Self::applied_mutations`] 游标只取**新增尾部**（旧批已应用到活 DOM，重放会
+    /// 重复建节点）。导航/load_html 换代清空 + 游标归零 + 清 engine 历史。
+    shared_mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    /// [`Self::shared_mutations`] 的已应用游标（apply 尾部的起点）。
+    applied_mutations: usize,
     /// HTTP 客户端。
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
@@ -359,6 +381,9 @@ impl WebView {
             config,
             pipeline,
             canvas_registry,
+            selector_handle_map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            applied_mutations: 0,
             http_client,
             js_sandbox,
             indexed_db_bridge,
@@ -522,6 +547,20 @@ impl WebView {
         self.focus_owner = None;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
+        // R100：文档换代——旧页 handle 在新页无效，清 selector→handle 反查表
+        //（镜像 rect_bridge HandleSelectorMap 的导航清理语义）+ engine 正置表 +
+        // 共享 mutations 队列/游标/历史。
+        self.selector_handle_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        {
+            let mut guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
+            guard.clear();
+        }
+        self.applied_mutations = 0;
+        zero_engine::js_dom_bridge::publish_forward_handle_map(None);
+        zero_engine::js_dom_bridge::clear_mutation_history();
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
@@ -1573,7 +1612,38 @@ impl WebView {
         let polyfill = zero_engine::generate_dom_api_polyfill();
         let full_script = format!("{polyfill}\n{script}");
 
+        // js-dom M3 R100：**mutation 收集 + 应用**——execute 路径此前只跑脚本不应用
+        // DOM 变更（`__zw_*` 回调未注册 → JS 侧写静默丢失，或回调仍指向
+        // run_page_scripts 已结束的旧 Arc——变更记录进不可达队列永不应用；Vue
+        // mount 后 host 侧 querySelector 全 miss 的根因）。镜像
+        // `run_page_scripts_impl` 的机制：注册回调 → 执行 → 应用变更
+        // （直接改活 DOM + 快照同步）。R100 共享队列：与 run_page_scripts 共用
+        // `shared_mutations`（append-only，读回调天然看全量历史），apply 只取新增尾部。
+        let mutations = self.shared_mutations.clone();
+        let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+            std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+        let page_url = self.page_url_wire.clone();
+        // R100：惰性沙箱先行——直接调用方（未跑过 run_page_scripts 的 WebView，如
+        // wasm_bridge 集成测试）此前经 execute_script→ensure_sandbox 建沙箱；本函数
+        // 现在先注册回调，须先 ensure_sandbox（幂等，已有则 no-op）。
+        self.ensure_sandbox()?;
+        {
+            let sandbox = self
+                .js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+            // js-dom M3 R100：selector→handle 反查回调——JS 侧 query 命中后按唯一选择器
+            // 反查「本元素是否是 createElement 建立的 handle 节点」，命中则包装回原
+            // handle proxy（identity 统一，见 WebView.selector_handle_map 文档）。
+            Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+        }
+
         let result = self.execute_script(&full_script)?;
+
+        // 应用本 execute 新增的 DOM 变更（游标尾部；与 run_page_scripts_impl 同机制：
+        // 活 DOM 直改 + cached_html 快照同步 + 重渲染）。
+        self.apply_pending_shared_mutations()?;
 
         // 检查是否有 WASM 桥接请求
         let bridge_result = self.process_wasm_bridge(&result)?;
@@ -1620,12 +1690,14 @@ impl WebView {
             .as_mut()
             .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
 
-        let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        // R100：共享 append-only 队列（读回调全量历史语义，apply 取游标尾部）+
+        // identity 反查回调。
+        let mutations = self.shared_mutations.clone();
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
         let page_url = self.page_url_wire.clone();
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+        Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
 
@@ -1944,8 +2016,11 @@ impl WebView {
             }
         }
         self.page_scripts_initialized = true;
-        let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if recorded.is_empty() {
+        let pending = {
+            let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
+            guard.len() > self.applied_mutations
+        };
+        if !pending {
             // P1b L1b（R3108）：polyfill 无变更，但 native 绑定可能已直改 live doc → 检测并重渲染
             //（helper 内部比对 live-doc vs cached_html；一致则 no-op）。返回最新 cached_html 快照。
             #[cfg(feature = "v8")]
@@ -1955,14 +2030,8 @@ impl WebView {
         // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
         //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
         // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
-        let (result, html_snapshot, _handle_selectors) = self
-            .pipeline
-            .render_with_dom_mutations(&recorded, &self.cached_css)
-            .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
-        if let Some(mutated) = html_snapshot {
-            self.cached_html = mutated;
-        }
-        self.last_render = Some(render_result_to_webview(&result));
+        // R100：共享队列游标尾部（见 apply_pending_shared_mutations 文档）。
+        self.apply_pending_shared_mutations()?;
         Ok(self.cached_html.clone())
     }
 
@@ -1985,12 +2054,13 @@ impl WebView {
             .as_mut()
             .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
 
-        let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        // R100：共享 append-only 队列（读回调全量历史语义，apply 取游标尾部）。
+        let mutations = self.shared_mutations.clone();
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
         let page_url = self.page_url_wire.clone();
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
+        Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）
         // R3295：改用共享 `ensure_js_shim` helper（与 `execute_script` 同款幂等语义）。
@@ -2006,29 +2076,118 @@ impl WebView {
             .execute(&script)
             .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
         // P1b host→page native 派发（R3121）：native_dom 开 → 经原生绑定派发到 native LISTENERS
-        //（polyfill __zw_dispatch_event 不达）。native 回调直改 live doc，下方 recorded.is_empty
+        //（polyfill __zw_dispatch_event 不达）。native 回调直改 live doc，下方 apply 空尾
         // 分支的 sync_render_after_native_dom 拾取重渲染。native_dom 关（默认）→ 跳过，零回归。
         #[cfg(feature = "v8")]
         if self.config.native_dom {
             let _ = sandbox.execute(&script_dispatch_native_event(selector, event_type));
         }
-        let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if recorded.is_empty() {
+        let pending = {
+            let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
+            guard.len() > self.applied_mutations
+        };
+        if !pending {
             // P1b L1b（R3108）：事件处理器经 native 绑定可能已直改 live doc → 检测并重渲染。
             #[cfg(feature = "v8")]
             self.sync_render_after_native_dom();
             return Ok(());
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
-        let (result, html_snapshot, _handle_selectors) = self
+        self.apply_pending_shared_mutations()?;
+        Ok(())
+    }
+
+    /// js-dom M3 R100：注册 selector→handle 反查回调（JS 侧 query 返回点 identity 统一，
+    /// 见 `selector_handle_map` 文档）。三个注册路径（run_page_scripts /
+    /// execute_script_with_dom / dispatch_event）统一调用。收 map Arc（调用方先 clone，
+    /// 避免与 js_sandbox 可变借用冲突）。
+    fn register_identity_bridge_callback(
+        sel_map: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+        sandbox: &mut dyn zero_script_sandbox::Sandbox,
+    ) {
+        let sel_map = sel_map.clone();
+        sandbox.register_callback(
+            "__zw_handle_for_selector",
+            Box::new(move |args: &[String]| -> String {
+                let sel = args.first().map(String::as_str).unwrap_or("");
+                sel_map
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(sel)
+                    .cloned()
+                    .unwrap_or_default()
+            }),
+        );
+    }
+
+    /// js-dom M3 R100：应用共享队列的**新增尾部**（`applied_mutations` 游标起）。
+    ///
+    /// 共享 append-only 队列使读回调（`__zw_get_text_handle` 等 latest-wins 查询）在
+    /// 任意后续 execute 中都能看到全量历史——HEAD 的「run_page_scripts 队列不清空」
+    /// 语义的显式化。apply 只取尾部（旧批已应用到活 DOM，重放会重复建节点/重复插入）。
+    /// 正置 handle→selector 表作为 apply 的持久翻译层（跨 execute 旧 handle 的写
+    /// mutation 锚定回 selector）。apply 后 merge handle map + 双表发布。
+    fn apply_pending_shared_mutations(&mut self) -> Result<(), WebViewError> {
+        let tail: Vec<DomMutation> = {
+            let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
+            guard[self.applied_mutations.min(guard.len())..].to_vec()
+        };
+        if tail.is_empty() {
+            return Ok(());
+        }
+        // R100：未 load_html 的直接调用方（wasm_bridge/edge 类测试）——pipeline 无
+        // cached_doc，先按当前 cached_html（空则最小空页）初始化渲染一次，使 apply
+        // 有活 DOM 可落（旧行为：execute 路径不 apply，无此需求；本函数引入 apply 后
+        // 补的等价初始化）。
+        if self.pipeline.cached_doc_shared().is_none() {
+            let html = if self.cached_html.is_empty() {
+                "<html><body></body></html>".to_string()
+            } else {
+                self.cached_html.clone()
+            };
+            let result = self.pipeline.render_html(&html, &self.cached_css);
+            self.last_render = Some(render_result_to_webview(&result));
+        }
+        let forward: std::collections::HashMap<String, String> = {
+            let sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+            sel_map.iter().map(|(s, h)| (h.clone(), s.clone())).collect()
+        };
+        let (render_result, html_snapshot, handles) = self
             .pipeline
-            .render_with_dom_mutations(&recorded, &self.cached_css)
+            .render_with_dom_mutations_persistent(&tail, &self.cached_css, Some(&forward))
             .map_err(|e| WebViewError::Script(format!("apply mutations: {e}")))?;
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }
-        self.last_render = Some(render_result_to_webview(&result));
+        self.applied_mutations += tail.len();
+        self.merge_handle_selectors(&handles);
+        self.last_render = Some(render_result_to_webview(&render_result));
         Ok(())
+    }
+
+    /// js-dom M3 R100：把 apply 返回的 handle→selector 映射 merge 进持久反查表
+    /// （`selector_handle_map`，倒置）并发布正置表到 engine thread-local
+    /// （`publish_forward_handle_map`——host 回调如 `__zw_get_tag_handle` 的跨
+    /// execute 回落查询源）。三个 apply 路径（run_page_scripts / dispatch_event /
+    /// execute_script_with_dom）统一走此 helper，保证任一路径建立的 handle 后续
+    /// 可锚定。
+    fn merge_handle_selectors(&mut self, handles: &std::collections::HashMap<String, String>) {
+        if handles.is_empty() {
+            return;
+        }
+        let forward = {
+            let mut sel_map = self.selector_handle_map.lock().unwrap_or_else(|e| e.into_inner());
+            for (handle, sel) in handles {
+                sel_map.insert(sel.clone(), handle.clone());
+            }
+            sel_map
+                .iter()
+                .map(|(s, h)| (h.clone(), s.clone()))
+                .collect::<std::collections::HashMap<String, String>>()
+        };
+        zero_engine::js_dom_bridge::publish_forward_handle_map(Some(std::sync::Arc::new(std::sync::Mutex::new(
+            forward,
+        ))));
     }
 
     /// 注入 CSS（重新渲染）。

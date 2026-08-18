@@ -200,6 +200,31 @@
     'HTMLTextAreaElement','HTMLTimeElement','HTMLTitleElement','HTMLTrackElement','HTMLUListElement',
     'HTMLUnknownElement','HTMLVideoElement',
   ];
+  // js-dom M3 R100：SVG 元素接口构造器（Vue runtime 挂载期 resolveRootNamespace 读
+  // `container instanceof SVGElement`——缺构造器 ReferenceError 使 mount 中止）。
+  // spec SVGElement 链：SVGElement → Element（非 HTMLElement）；最小可判别构造器
+  //（空 stub，供 typeof/instanceof 面），prototype 链 SVGElement → Element.prototype，
+  // SVGSVGElement → SVGElement.prototype。
+  var _zwSvgElementIfaces = ['SVGElement', 'SVGSVGElement', 'SVGGraphicsElement',
+    'SVGTitleElement', 'SVGPathElement', 'SVGTSpanElement', 'SVGTextElement',
+    'SVGCircleElement', 'SVGEllipseElement', 'SVGLineElement', 'SVGRectElement',
+    'SVGPolygonElement', 'SVGPolylineElement', 'SVGImageElement', 'SVGUseElement',
+    'SVGGElement', 'SVGDefsElement', 'SVGSymbolElement', 'SVGSwitchElement',
+    'SVGAElement', 'SVGStopElement', 'SVGGradientElement', 'SVGLinearGradientElement',
+    'SVGRadialGradientElement', 'SVGPatternElement', 'SVGLayerElement', 'SVGMaskElement',
+    'SVGMarkerElement', 'SVGClipPathElement', 'SVGFilterElement', 'SVGFEElement',
+    'SVGStyleElement', 'SVGScriptElement', 'SVGForeignObjectElement',
+    'SVGAnimateElement', 'SVGSetElement', 'SVGAnimateMotionElement',
+    'SVGAnimateTransformElement'];
+  for (var _si = 0; _si < _zwSvgElementIfaces.length; _si++) {
+    var _sn = _zwSvgElementIfaces[_si];
+    if (!globalThis[_sn]) {
+      globalThis[_sn] = new Function('return function ' + _sn + '() {}')();
+      globalThis[_sn].prototype = (_sn === 'SVGElement')
+        ? Object.create(globalThis.Element ? globalThis.Element.prototype : Object.prototype)
+        : Object.create(globalThis.SVGElement.prototype);
+    }
+  }
   for (var _zi = 0; _zi < _zwHtmlElementIfaces.length; _zi++) {
     var _zn = _zwHtmlElementIfaces[_zi];
     if (!globalThis[_zn]) {
@@ -1952,7 +1977,33 @@
     if (handle && typeof __zw_get_tag_handle === 'function') {
       try { var ht = __zw_get_tag_handle(handle); if (ht) return _zwAsciiUpper(ht); } catch (_e) {}
     }
+    // js-dom M3 R100：跨 execute 的 handle 元素（已应用入文档，当前 execute 的
+    // mutations 队列不含其 CreateElement 记录）——经持久反查表锚回 selector 再查
+    // host 快照。未注册回调/未命中 → 原 `_tagFromSel` 回落（恒 DIV，零回归）。
+    if (handle && !sel && typeof __zw_handle_for_selector === 'function') {
+      try {
+        var _r100s = _r100SelOfHandle(handle);
+        if (_r100s && typeof __zw_get_tag === 'function') {
+          var rt = __zw_get_tag(_r100s);
+          if (rt) return _zwAsciiUpper(rt);
+        }
+      } catch (_e100t) {}
+    }
     return _tagFromSel(sel);
+  }
+  // js-dom M3 R100：`__zw_handle_for_selector` 是 selector→handle 方向；这里需要
+  // 反向（handle→selector）。host 不另设回调——在 JS 侧维护正置缓存（R100 map 的
+  // 镜像：`__zw_handle_for_selector` 命中处同步登记）。空句柄返 null。
+  var _r100HandleToSel = null;
+  function _r100SelOfHandle(handle) {
+    if (_r100HandleToSel && Object.prototype.hasOwnProperty.call(_r100HandleToSel, handle)) {
+      return _r100HandleToSel[handle];
+    }
+    return null;
+  }
+  function _r100Remember(handle, sel) {
+    if (!_r100HandleToSel) _r100HandleToSel = {};
+    _r100HandleToSel[handle] = sel;
   }
   // js-dom M4 R81：ASCII-only 大写（spec ASCII-uppercase——'ı'（U+0131 dotless）等 Unicode
   // 小写不受影响；JS toUpperCase 会 'ı'→'I' 使 localName 回落错读 'input'。WPT

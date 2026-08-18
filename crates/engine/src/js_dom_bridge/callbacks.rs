@@ -94,7 +94,15 @@ pub fn register_dom_callbacks(
     page_url: &Arc<std::sync::Mutex<String>>,
     canvas_registry: &Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>,
 ) {
-    let counter = Arc::new(AtomicU64::new(0));
+    // js-dom M3 R100：handle 计数器改 thread-local 单调持久——旧版每次
+    // `register_dom_callbacks`（run_page_scripts / execute_script_with_dom / dispatch_event
+    // 各自注册）都从 0 重启，跨注册的 `__zw_create_element` 返回碰撞的 `__n0`——
+    // `_wrapHandle` 经 `_proxyCache['@__n0']` 返回**旧元素 proxy**，后续 execute 中
+    // 恢复的异步框架链（lit performUpdate 的 awaited continuation 在 execute 的
+    // microtask checkpoint 处恢复）新建的节点错挂到旧 registry 条目（lit e2e 首渲染
+    // 插值丢失实证：p-text "Hello, !" 缺 `${name}`）。单调计数保证 handle 名在页面
+    // 生命周期内唯一（导航换页由 `__zw_reset_form_state` 侧 JS 态负责，host 侧计数
+    // 复用无害——旧页 handle 不再被引用）。
     // R57（FV M3）：查询视图缓存（同一 execute 内共享——dom_html Arc + 队列同源）。
     let view_cache: QueryViewCache = Arc::new(Mutex::new(None));
 
@@ -875,24 +883,66 @@ pub fn register_dom_callbacks(
     );
 
     let m = Arc::clone(mutations);
+    // R100：跨 execute 读回落（同 `__zw_get_tag_handle`——当前批记录 miss 的旧 handle
+    // 经持久正置表锚回 selector，从查询快照读 textContent）。
+    let txt_html = Arc::clone(dom_html);
+    let txt_sel_map = sel_handle_map_snapshot();
     sandbox.register_callback(
         "__zw_get_text_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            query_text_from_mutations(&list, &handle)
+            let text = query_text_from_mutations(&list, &handle);
+            if !text.is_empty() {
+                return text;
+            }
+            // R100：当前批 miss → 线程本地已应用历史（跨注册 latest-wins 重放）。
+            let hist = query_history_text(&handle);
+            if !hist.is_empty() {
+                return hist;
+            }
+            if let Some(sel) = txt_sel_map.lock().unwrap_or_else(|e| e.into_inner()).get(&handle) {
+                let sel = sel.clone();
+                let snap = txt_html.lock().unwrap_or_else(|e| e.into_inner());
+                return with_query_doc(&snap, |doc| {
+                    find_by_selector(doc, &sel)
+                        .and_then(|id| doc.text_content(id))
+                        .unwrap_or_default()
+                });
+            }
+            text
         }),
     );
 
     // detached createElement 句柄元素的真实 tag 名（shim `tagName`/`nodeName` 对 handle-only
     // 元素原走 `_tagFromSel` 恒猜 DIV；本回调从 CreateElement 记录取真实 tag）。
+    // js-dom M3 R100：当前批记录 miss（跨 execute 引用的旧 handle——本批 mutations 不含
+    // 其 CreateElement）时，经持久 selector→handle 反查表锚回 selector，从查询快照读 tag
+    //（闭包捕获 dom_html Arc）。两处都 miss → 空串（shim fallback，原行为）。
     let m = Arc::clone(mutations);
+    let tag_html = Arc::clone(dom_html);
+    let tag_sel_map = sel_handle_map_snapshot();
     sandbox.register_callback(
         "__zw_get_tag_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            query_tag_from_mutations(&list, &handle)
+            let tag = query_tag_from_mutations(&list, &handle);
+            if !tag.is_empty() {
+                return tag;
+            }
+            // R100：当前批 miss → 线程本地已应用历史。
+            let hist = query_history_tag(&handle);
+            if !hist.is_empty() {
+                return hist;
+            }
+            // R100 持久反查：handle → selector → 快照 tag。
+            if let Some(sel) = tag_sel_map.lock().unwrap_or_else(|e| e.into_inner()).get(&handle) {
+                let sel = sel.clone();
+                let snap = tag_html.lock().unwrap_or_else(|e| e.into_inner());
+                return with_query_doc(&snap, |doc| query_tag_selector_doc(doc, &sel));
+            }
+            String::new()
         }),
     );
 
@@ -1144,7 +1194,7 @@ pub fn register_dom_callbacks(
     );
 
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_element",
         Box::new(move |args| {
@@ -1167,7 +1217,7 @@ pub fn register_dom_callbacks(
     // shim `createElementNS` 调本回调，并把句柄记入 `_nsHandles`（存原 qualified name + ns），
     // 使 `tagName`/`prefix`/`localName`/`namespaceURI` getter 返大小写敏感正确值。
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_element_ns",
         Box::new(move |args| {
@@ -1187,7 +1237,7 @@ pub fn register_dom_callbacks(
     );
 
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_text",
         Box::new(move |args| {
@@ -1206,7 +1256,7 @@ pub fn register_dom_callbacks(
 
     // `__zw_create_comment(text)`——document.createComment（R2816）。镜像 `__zw_create_text`（注释 nodeType 8）。
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_comment",
         Box::new(move |args| {
@@ -1227,7 +1277,7 @@ pub fn register_dom_callbacks(
     // spec `dom-document-createprocessinginstruction`）。PI 节点 nodeType 7。镜像 `__zw_create_comment`。
     // spec 校验（非法 target Name / data 含 `?>`）已在 JS 桥（shim）同步抛 DOMException，此处仅收合法值。
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_processing_instruction",
         Box::new(move |args| {
@@ -1247,7 +1297,7 @@ pub fn register_dom_callbacks(
     );
 
     let m = Arc::clone(mutations);
-    let c = Arc::clone(&counter);
+    let c = HANDLE_COUNTER.with(|h| h.clone());
     sandbox.register_callback(
         "__zw_create_document_fragment",
         Box::new(move |_args| {
@@ -1640,6 +1690,15 @@ pub fn register_dom_callbacks(
 }
 
 thread_local! {
+    /// js-dom M3 R100：已应用 mutation 的线程本地历史（read 回调跨注册回落源）。
+    ///
+    /// 旧架构下 `run_page_scripts` 注册的回调闭包持有**未清空**的 mutations Vec，后续
+    /// `execute_script`（无重注册）的读回调仍能从中查到历史 CreateElement/TextNode/
+    /// SetTextOnHandle 记录；`execute_script_with_dom` 引入按次重注册后，新回调绑空
+    /// Vec，旧 handle 的读（lit 插值文本 `data`、tagName 等）全空。webview 在每次
+    /// apply 前把该批 `recorded` append 进本历史，读回调在当前批 miss 时查询此处
+    /// ——语义等价 HEAD 的「未清空 Vec」，且显式、可换代清理（load_html 清）。
+    static MUTATION_HISTORY: std::cell::RefCell<Vec<DomMutation>> = const { std::cell::RefCell::new(Vec::new()) };
     /// JS 查询回调的 (html, Document) 解析缓存。
     ///
     /// JS 交互时每次 DOM 查询（__zw_query_match/__zw_get_attr 等）都 parse_html(dom_html
@@ -1650,6 +1709,68 @@ thread_local! {
     /// 缓存；回调闭包 'static 可直接访问静态）。
     static QUERY_DOC_CACHE: std::cell::RefCell<Option<(String, zero_dom::Document)>> =
         const { std::cell::RefCell::new(None) };
+    /// js-dom M3 R100：跨 `register_dom_callbacks` 持久的 handle 计数器（见注册处
+    /// 文档——防跨注册 `__n{n}` 名碰撞）。`Arc` 承载（AtomicU64 非 Clone，闭包捕获
+    /// 需 'static + 每注册共享同一实例）。
+    static HANDLE_COUNTER: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+    /// js-dom M3 R100：**正置** handle→selector 持久表（webview `selector_handle_map`
+    /// 的正置镜像——`__zw_handle_for_selector` 注册的倒置表方向相反，host 侧回调
+    /// （如 `__zw_get_tag_handle` 的跨 execute 回落）需要正置查询）。生产方
+    /// [`publish_forward_handle_map`]（webview 每次 mutation 应用 merge 后发布）。
+    /// `RefCell<Option<..>>` 承载（thread_local 值语义不可变，需换柄发布）。
+    static FORWARD_HANDLE_MAP: std::cell::RefCell<Option<Arc<Mutex<HashMap<String, String>>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// js-dom M3 R100：发布正置 handle→selector 表（webview 在 mutation 应用后调用；传
+/// `None` 清空——文档换代）。同线程（JS 执行线程）内 publish/读共享同一 Arc。
+pub fn publish_forward_handle_map(map: Option<Arc<Mutex<HashMap<String, String>>>>) {
+    FORWARD_HANDLE_MAP.with(|slot| {
+        *slot.borrow_mut() = Some(map.unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))));
+    });
+}
+
+/// js-dom M3 R100：把一批已应用的 mutations append 进线程本地历史（webview apply 前调用）。
+pub fn append_mutation_history(batch: &[DomMutation]) {
+    MUTATION_HISTORY.with(|h| h.borrow_mut().extend(batch.iter().cloned()));
+}
+
+/// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。
+pub fn clear_mutation_history() {
+    MUTATION_HISTORY.with(|h| h.borrow_mut().clear());
+}
+
+/// js-dom M3 R100：读回调的跨注册回落——当前批 miss 时查历史批（CreateElement/TextNode/
+/// SetTextOnHandle 等 latest-wins 重放语义与 HEAD 的未清空 Vec 一致）。
+fn query_history_text(handle: &str) -> String {
+    MUTATION_HISTORY.with(|h| query_text_from_mutations(&h.borrow(), handle))
+}
+
+/// [`query_history_text`] 的 tag 版。
+fn query_history_tag(handle: &str) -> String {
+    MUTATION_HISTORY.with(|h| query_tag_from_mutations(&h.borrow(), handle))
+}
+fn sel_handle_map_snapshot() -> Arc<Mutex<HashMap<String, String>>> {
+    FORWARD_HANDLE_MAP.with(|slot| {
+        slot.borrow()
+            .clone()
+            .unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new())))
+    })
+}
+
+/// js-dom M3 R100：selector → 快照文档中该元素的 tag 名（小写 local name——与
+/// `query_tag_from_mutations` 返回形态一致，shim `_zwAsciiUpper` 后呈现）。
+/// selector 失配 → 空串（调用方 fallback）。
+fn query_tag_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
+    find_by_selector(doc, selector)
+        .and_then(|id| {
+            let node = doc.get(id)?;
+            match &node.kind {
+                zero_dom::NodeKind::Element(e) => Some(e.local_name().to_string()),
+                _ => None,
+            }
+        })
+        .unwrap_or_default()
 }
 
 /// 在查询 doc（html → Document 缓存解析结果）上执行闭包。

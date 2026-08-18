@@ -1,0 +1,61 @@
+{
+  "round": "R100",
+  "milestone": "M3",
+  "date": "2026-08-18",
+  "title": "真实 Vue 3 端到端首切片：mount 落地 + 响应式 + 事件（DC-2 第一项实质达成）",
+  "fixture": {
+    "bundle": "tests/integration/fixtures/vue/vue.global.js",
+    "source": "jsdelivr CDN 快照 vue@3.5.13/dist/vue.global.js（global build，runtime-dom + runtime-core + compiler，~550KB，MIT license 头保留）",
+    "test": "tests/integration/src/e2e_vue_library.rs",
+    "load_strategy": "bundle 不 inline 进 HTML——HTML tokenizer 的 script data double-escaped 状态会把 bundle 字符串字面量中的 `<!--` + `<script` 组合解析成双转义模式吞掉真正的 `</script>` 闭合（spec 行为，Chrome 同款；真实部署一律 <script src> 外链）。装载序：onerror 捕获脚本（inline，经 run_page_scripts 完成 shim 注入）→ bundle → 页面脚本（均经 execute_script_with_dom）"
+  },
+  "assertions": {
+    "group_A_vue_mount_lands": {
+      "expect": "mount:object; html:<p class=\"msg\">Hello Vue!</p>|p:P|class:msg|text:Hello Vue!",
+      "meaning": "createApp({data(){return{msg}},template:'<p class=\"msg\">{{ msg }}</p>'}).mount('#app') 完整链：bundle 求值 + 模板编译 + 插值求值 + patch 到真实 DOM + post-flush 可查询"
+    },
+    "group_B_vue_reactive_and_event_lands": {
+      "expect": "mount:object; btn:BUTTON|t0:0|dispatch:true; text:1",
+      "meaning": "@click=\"inc\" 绑定 → dispatchEvent(click) → handler 执行 count+1 → 响应式触发重渲染 → post-drain button.textContent 0→1"
+    }
+  },
+  "root_causes_fixed": [
+    "generate_dom_api_polyfill 每次 execute_script_with_dom 覆写 globalThis.document（空 stub 桥）——execute 路径 getElementById/body 视图全空。改幂等安装：shim document 带 __zwShimInstalled 标记时不覆盖",
+    "execute_script_with_dom 不收集/不应用 DOM 变更（__zw_* 回调未注册，JS 侧写静默丢失）。镜像 run_page_scripts 机制：注册回调 → 执行 → apply。共享 append-only mutations 队列：run_page_scripts/execute_script_with_dom/dispatch_event 三注册路径同一 Arc，读回调看全量历史，apply 按 applied_mutations 游标取新增尾部",
+    "跨 execute handle 身份三重缺口：① HANDLE_COUNTER 每次注册从 0 重启 → __n0 碰撞 → _wrapHandle 返回旧元素 proxy（lit awaited continuation 错挂旧 registry，插值丢失实证）——改 thread_local 单调持久；② querySelector 返回新 sel proxy vs Vue 持有的 handle proxy 身份分裂 → @click invoker 注册在 handle proxy 的 listener key 下，dispatchEvent 找不到——selector_handle_map 持久反查表（apply 后 merge handle→selector 倒置表，__zw_handle_for_selector 回调 + _zwQueryWrapIdentity 在 query 返回点包装回原 handle proxy；R77 验证的反查三件套形态，限定 query 返回点不波及其他 sel 包装路径）；③ 读回调（__zw_get_text_handle/__zw_get_tag_handle）当前批 miss 的旧 handle 全空——MUTATION_HISTORY 线程本地已应用历史 + 正置 FORWARD_HANDLE_MAP（handle→selector→快照）双层回落",
+    "apply_dom_mutations_full 持久 handle 解析：ephemeral map miss 的 handle 变体先查 persistent_nodes（NodeId 直达预植，SetTextOnHandle 等无 selector 翻译变体靠此解析）再查 persistent selector 表（翻译成 selector 变体重入队：SetText/SetAttr/RemoveAttr/SetInnerHtml/SetStyle/RemoveStyle/Remove/AppendChild）——跨 execute 引用的 handle（Vue vm.$el 的 __n0 在后续 execute 的点击回调里触发 patch 写）不再 unknown handle 硬错中止整批。pipeline persistent_handle_nodes 跨 apply 存活，render_html 换代时按 handle_selectors 抢救重锚定（slotmap 换代旧 NodeId 全灭）；apply 失败先放回 cached_doc（旧 ? 早退把 take 出的 Rc drop，一次坏 mutation 拖死整页后续脚本）",
+    "SVG 元素接口构造器缺失 ~36 个（Vue runtime 挂载期 resolveRootNamespace 读 container instanceof SVGElement——ReferenceError 使 mount 中止）。补 SVGElement→Element.prototype 链 + 各具体接口 stub"
+  ],
+  "incidental_fixes": [
+    "cloneNode(deep) 对 handle 容器（detached createElement）递归复制 _handleChildren 子树（host innerHTML 空，后代在 JS registry）——WPT nodes Node-cloneNode 'node with children' Fail→Pass",
+    "replaceChild handle-handle 形态（parent/new/old 全 createElement 建立）：JS 侧 registry 原位替换（splice + 反链重接 + childList record + 连接态传播）",
+    "结构伪类白名单：解析（first/last/only-child、nth-child(an+b)、nth-last-child、empty、not(simple)、checked）+ 求值（nodeInfo 的 parent/prevSiblings）——detached 容器子树 pseudo 查询此前全空",
+    "纯文本 innerHTML 且 handle 容器不再同时入 _handleChildren（_zwRegisterTextEl 已建本地文本视图，R81 textContent getter 融合两源会双计——'Hello WorldHello World' 实证）"
+  ],
+  "ab_regression": {
+    "method": "clean-HEAD（eef1337f0）stash → 重建 release 二进制 → 对照（R79 教训：必须重建二进制，JS shim 嵌入产物）",
+    "nodes": "baseline 6568P/1328F vs WIP 6569P/1328F——净 +1（Node-cloneNode 'node with children' Fail→Pass）零回归。master.md 旧记 6673P 为 R99 时点基线，并行流 landing 后基线本身漂移；name-validation 输出含二进制字符（\\x0b 控制字符进 test name）致 grep 管道计数噪声，5 次复跑核实 WIP 稳定 5 Fail 与 baseline 一致",
+    "collections": "48P/0F = 48P/0F per-case 逐字节一致",
+    "traversal": "1595P/11F = 1595P/11F per-case 逐字节一致",
+    "events": "236P/192F = 236P/192F per-case 逐字节一致"
+  },
+  "unit_matrix": {
+    "engine_v8": "2205 passed",
+    "engine_quickjs": "1431 passed",
+    "integration": "783 passed（+2 Vue e2e）",
+    "webview_v8": "602 passed（含 R100 语义更新的 setTimeout/setInterval/MutationObserver 断言——shim 真异步化后旧 stub 同步语义断言按 spec 纠正）",
+    "webview_quickjs": "555 passed",
+    "quickjs_其他": "script-sandbox 76 / wpt-runner 109 / renderer 134 / webview-demo 58",
+    "fmt": "cargo fmt --all -- --check 无 diff",
+    "clippy": "v8 workspace + quickjs 矩阵均零警告"
+  },
+  "product_smoke": {
+    "result": "welcome diff 23.61%（阈值 20%）exit 2",
+    "attribution": "clean-HEAD（eef1337f0）重建二进制同跑 = 23.61% 同值同像素数（113328/480000）——WIP 零增量。ZRG-2026-08-17-01 已归因为渲染流 hmtx 提交（34df65102）的既存红灯（oracle 是 estimate 时代捕获，hmtx 改变换行点；re-capture 属用户决策，run-rules §12 禁自主 relax）。非本切片回归，struct-check PASS"
+  },
+  "bench_gate": {
+    "result": "GATE FAIL — 10 指标超预算（已检查 112，NEW=1）",
+    "attribution": "10 项 FAIL 全部落在 CI-GUARD-20260818（run 32057965115）已记录的预存漂移签名内：stroke_rect_1000 ~16×（canvas R34xx spec 改写）、worker_create_terminate ~12×（R3399 join 轮询）、csp_resource_check ~3.9×（慢性组）、fill_rect/compositing/paint/glyph_cache/ipc/cookie_parse 1.4-1.7×（8/16 起 runner 漂移）、NEW=1 为 render-foundation raster_1500_fills（非本切片域）。本切片改动面指标全 PASS：zero-webview 全部 8 项（webview_builder_create/complex_page/inject_css/load_html_simple/load_html_with_css/render/resize_and_render）+ page 系全部 13 项（welcome/medium/morning 的 parse/style/layout/paint/total/first_paint_wall + peak_rss）。非本切片回归；run-rules §12 禁自主 relax，re-capture 属 infra/用户决策"
+  },
+  "dc_progress": "DC-2 第一项（SPA 框架 React/Vue/Svelte 之一）实质达成：Vue 代表性页可真实加载、渲染、交互（事件触发、状态更新、patch），非常驻资产断言可复现"
+}

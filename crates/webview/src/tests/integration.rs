@@ -421,15 +421,23 @@ fn test_webview_clear_timers_exist() {
 }
 
 /// 测试 setTimeout 执行回调。
+///
+/// R100：execute 路径不再覆写 shim（polyfill 幂等安装）——setTimeout 是 shim 的
+/// 真异步实现（spec：宏任务延迟执行），同步读 x 得 0；回调在本 execute 的
+/// microtask/宏任务排水后生效，第二次 execute 读到 42（与 run_page_scripts 页面的
+/// 定时器语义一致）。
 #[test]
 fn test_webview_set_timeout_calls_fn() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.execute_script_with_dom("var x = 0; setTimeout(function() { x = 42; }, 0); x;");
+    let _ = wv.execute_script_with_dom(
+        "globalThis.__x = 0; setTimeout(function() { globalThis.__x = 42; }, 0); globalThis.__x;",
+    );
+    let result = wv.execute_script_with_dom("globalThis.__x;");
     assert!(result.is_ok());
     assert_eq!(
         result.unwrap(),
         "42",
-        "setTimeout callback should execute synchronously in stub"
+        "setTimeout callback should run after timer drain"
     );
 }
 
@@ -437,9 +445,13 @@ fn test_webview_set_timeout_calls_fn() {
 #[test]
 fn test_webview_set_interval_calls_fn() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.execute_script_with_dom("var count = 0; setInterval(function() { count++; }, 100); count;");
+    // R100：shim 真 setInterval（spec 异步）——首次回调经 host tick 派发后可观察。
+    let _ = wv.execute_script_with_dom(
+        "globalThis.__cnt = 0; setInterval(function() { globalThis.__cnt++; }, 10); globalThis.__cnt;",
+    );
+    let result = wv.execute_script_with_dom("globalThis.__cnt;");
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), "1", "setInterval callback should execute once in stub");
+    assert_eq!(result.unwrap(), "1", "setInterval callback should run after first tick");
 }
 
 // ── Web Storage API 集成测试（通过 V8 + DOM polyfill 端到端验证）──
@@ -606,7 +618,7 @@ fn test_webview_mutation_observer_observe() {
         var observer = new MutationObserver(callback);
         var el = document.createElement('div');
         observer.observe(el, { childList: true });
-        observer._observing ? 'observing' : 'not-observing';
+        typeof observer.takeRecords === 'function' && typeof observer.disconnect === 'function' ? 'observing' : 'not-observing';
         "#,
     );
     assert!(result.is_ok());
@@ -640,30 +652,52 @@ fn test_webview_mutation_observer_take_records() {
 }
 
 /// 测试 MutationRecord 构造函数。
+///
+/// R100：shim 的 MutationRecord 无公开构造器入参（spec——record 由 MO 回调产生）；
+/// 改为经真实 observe→mutate→drain 读 record.type（shim 语义，与 WPT MO 用例同源）。
 #[test]
 fn test_webview_mutation_record_exists() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.execute_script_with_dom("var r = new MutationRecord('childList', null); r.type;");
+    let _ = wv.execute_script_with_dom(
+        r#"
+        globalThis.__recType = 'none';
+        var obs = new MutationObserver(function (recs) {
+          if (recs && recs.length) globalThis.__recType = String(recs[0].type);
+        });
+        var el = document.createElement('div');
+        obs.observe(el, { childList: true });
+        el.appendChild(document.createElement('span'));
+        "#,
+    );
+    let result = wv.execute_script_with_dom("globalThis.__recType;");
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "childList");
 }
 
 /// 测试 MutationRecord 属性。
+///
+/// R100：同 record_exists——经真实 observe 读 spec 字段缺省值（attributes record 的
+/// addedNodes/removedNodes 空 + attributeName 为触发属性名）。
 #[test]
 fn test_webview_mutation_record_properties() {
     let mut wv = WebView::new(WebViewConfig::default());
-    let result = wv.execute_script_with_dom(
+    let _ = wv.execute_script_with_dom(
         r#"
-        var r = new MutationRecord('attributes', document.body);
-        r.addedNodes.length + ',' + r.removedNodes.length + ',' + (r.attributeName === null);
+        globalThis.__recProps = 'none';
+        var obs = new MutationObserver(function (recs) {
+          if (recs && recs.length) {
+            var r = recs[0];
+            globalThis.__recProps = r.addedNodes.length + ',' + r.removedNodes.length + ',' + String(r.attributeName);
+          }
+        });
+        var el = document.createElement('div');
+        obs.observe(el, { attributes: true });
+        el.setAttribute('data-x', '1');
         "#,
     );
+    let result = wv.execute_script_with_dom("globalThis.__recProps;");
     assert!(result.is_ok());
-    assert_eq!(
-        result.unwrap(),
-        "0,0,true",
-        "MutationRecord should have default properties"
-    );
+    assert_eq!(result.unwrap(), "0,0,data-x");
 }
 
 // ── IntersectionObserver 集成测试（通过 V8 + DOM polyfill 端到端验证）──
@@ -691,9 +725,9 @@ fn test_webview_intersection_observer_observe_unobserve() {
         var el2 = document.createElement('span');
         io.observe(el1);
         io.observe(el2);
-        var len1 = io._observing.length;
+        var len1 = Object.keys(io._targets).length;
         io.unobserve(el1);
-        var len2 = io._observing.length;
+        var len2 = Object.keys(io._targets).length;
         len1 + ',' + len2;
         "#,
     );
@@ -710,7 +744,7 @@ fn test_webview_intersection_observer_disconnect() {
         var io = new IntersectionObserver(function() {});
         io.observe(document.createElement('div'));
         io.disconnect();
-        io._observing.length;
+        Object.keys(io._targets).length;
         "#,
     );
     assert!(result.is_ok());
@@ -768,9 +802,9 @@ fn test_webview_resize_observer_observe_unobserve() {
         var ro = new ResizeObserver(function() {});
         var el = document.createElement('div');
         ro.observe(el);
-        var len1 = ro._observing.length;
+        var len1 = Object.keys(ro._targets).length;
         ro.unobserve(el);
-        var len2 = ro._observing.length;
+        var len2 = Object.keys(ro._targets).length;
         len1 + ',' + len2;
         "#,
     );
@@ -788,7 +822,7 @@ fn test_webview_resize_observer_disconnect() {
         ro.observe(document.createElement('div'));
         ro.observe(document.createElement('span'));
         ro.disconnect();
-        ro._observing.length;
+        Object.keys(ro._targets).length;
         "#,
     );
     assert!(result.is_ok());
@@ -911,7 +945,7 @@ fn test_webview_resize_observer_entry() {
     let mut wv = WebView::new(WebViewConfig::default());
     let result = wv.execute_script_with_dom(
         r#"
-        var entry = new ResizeObserverEntry(document.body, { width: 100, height: 200 });
+        var entry = new ResizeObserverEntry({ contentRect: { width: 100, height: 200 } });
         entry.contentRect.width + ',' + entry.contentRect.height;
         "#,
     );
@@ -971,7 +1005,7 @@ fn test_webview_dom_replace_child() {
         var rep = document.createElement('p');
         parent.appendChild(old);
         parent.replaceChild(rep, old);
-        parent.children[0].tagName;
+        parent.childNodes[0].tagName;
         "#,
     );
     assert!(result.is_ok());
@@ -1007,7 +1041,7 @@ fn test_webview_dom_clone_node_deep() {
         var child = document.createElement('span');
         el.appendChild(child);
         var clone = el.cloneNode(true);
-        clone.getAttribute('id') + ',' + clone.children.length;
+        clone.getAttribute('id') + ',' + clone.childNodes.length;
         "#,
     );
     assert!(result.is_ok());

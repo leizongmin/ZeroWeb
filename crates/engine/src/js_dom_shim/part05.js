@@ -352,6 +352,30 @@
     return _makeProxy(sel, null);
   }
 
+  // js-dom M3 R100：query 返回点的 identity 反查——命中的唯一选择器若属于
+  // createElement 建立的 handle 节点（mutation 应用后 host 把 handle→selector
+  // 倒置 merge 进持久表，经 `__zw_handle_for_selector` 反查），则包装回**原
+  // handle proxy**（`_proxyCache['@'+handle]` 同对象 identity）。跨 execute 的
+  // 元素引用统一身份：Vue mount 建 button（`__n0` proxy，@click invoker 注册在
+  // `_listenerStore['@__n0']`）后，后续 execute `querySelector('button')` 若返回
+  // 新 sel proxy 则 dispatchEvent 找不到 invoker（e2e 实证 sameAsQueried:false /
+  // handler 不触发）。**限定 query 返回点调用**（R77 教训 #7：全局 `_wrapSelector`
+  // 前置反查会波及 attributes 等一切 sel 包装路径）。未注册回调/未命中 → 原行为
+  // （sel proxy），零回归。
+  function _zwQueryWrapIdentity(sel) {
+    if (typeof __zw_handle_for_selector === 'function') {
+      try {
+        var h = __zw_handle_for_selector(sel);
+        if (h) {
+          // 正置缓存登记（`_realTag` 等读回路径经 `_r100SelOfHandle` 锚回 selector）。
+          _r100Remember(h, sel);
+          return _wrapHandle(h);
+        }
+      } catch (_e100) {}
+    }
+    return _wrapSelector(sel);
+  }
+
   function _wrapHandle(handle) {
     return _makeProxy(null, handle);
   }
@@ -529,11 +553,44 @@
   // 解析单个复合选择器（无空白组合器）。返 { tag, ids[], classes[], attrs[], unsupported }。
   // tag 为 null（任意 / `*`）或大写 tag。遇 `:`（伪类/伪元素）/ 空裸 token / 第二个裸 token → unsupported。
   function _parseCompoundOf(text) {
-    var c = { tag: null, ids: [], classes: [], attrs: [], unsupported: false };
+    // js-dom M3 R100：pseudos[] 增设——结构伪类白名单（first/last/only-child、
+    // nth-child(an+b)、nth-last-child、empty、not(simple)、checked）解析进 pseudos，
+    // 其余伪类仍 unsupported（matcher 静默丢组，旧行为）。detached 容器子树的
+    // pseudo 查询此前全空（R3288 的 A 代 stub 引擎支持这些，guard 后 execute 路径
+    // 走 shim 真桥，e2e_canvas_dom R3288 三测暴露缺口）。
+    var c = { tag: null, ids: [], classes: [], attrs: [], pseudos: [], unsupported: false };
     var i = 0, n = text.length, seenTag = false;
     while (i < n) {
       var ch = text[i];
-      if (ch === ':') { c.unsupported = true; break; }
+      if (ch === ':') {
+        if (text[i + 1] === ':') { c.unsupported = true; break; }
+        var j = i + 1, paren = -1;
+        while (j < n) {
+          if (text[j] === '(') { paren = j; break; }
+          if (text[j] === '.' || text[j] === '#' || text[j] === '[' || text[j] === ':' || /\s/.test(text[j])) break;
+          j++;
+        }
+        var pname = text.substring(i + 1, paren >= 0 ? paren : j);
+        var parg = null;
+        if (paren >= 0) {
+          var depthP = 1, k = paren + 1;
+          while (k < n && depthP > 0) {
+            if (text[k] === '(') depthP++;
+            else if (text[k] === ')') depthP--;
+            k++;
+          }
+          if (depthP !== 0) { c.unsupported = true; break; }
+          parg = text.substring(paren + 1, k - 1);
+          j = k;
+        }
+        var _zwPseudoOk = pname === 'first-child' || pname === 'last-child' || pname === 'only-child'
+          || pname === 'nth-child' || pname === 'nth-last-child' || pname === 'empty'
+          || pname === 'not' || pname === 'checked';
+        if (!_zwPseudoOk) { c.unsupported = true; break; }
+        c.pseudos.push({ name: pname, arg: parg });
+        i = j;
+        continue;
+      }
       if (ch === '.') {
         var cls = _readCompoundToken(text, i + 1);
         if (!cls) { c.unsupported = true; break; }
@@ -572,6 +629,73 @@
     }
     if (c.attrs.length) {
       for (var k = 0; k < c.attrs.length; k++) if (!_matchAttrOf(p, c.attrs[k])) return false;
+    }
+    return true;
+  }
+  // js-dom M3 R100：白名单结构伪类求值。`info` = _handleSubtreeNodes 的 nodeInfo
+  //（parent/prevSiblings/ancestors 已备）；无 info（异常调用面）返 false。
+  // An+B 公式：`odd`→2n+1 / `even`→2n / 纯整数 b / `an+b`（a、b 可负，n ≥ 0 整数解）。
+  function _zwNthMatches(formula, idx) {
+    var f = String(formula || '').replace(/\s+/g, '');
+    if (f === 'odd') return idx % 2 === 1;
+    if (f === 'even') return idx % 2 === 0;
+    var mAnB = /^([+-]?\d*)n([+-]\d+)?$/.exec(f) || /^([+-]?\d*)n$/.exec(f);
+    if (mAnB) {
+      var aStr = mAnB[1];
+      var a = aStr === '' || aStr === '+' ? 1 : (aStr === '-' ? -1 : parseInt(aStr, 10));
+      var b = mAnB[2] ? parseInt(mAnB[2], 10) : 0;
+      var d = idx - b;
+      if (a === 0) return d === 0;
+      var q = d / a;
+      return q >= 0 && Math.floor(q) === q;
+    }
+    var mB = /^([+-]?\d+)$/.exec(f);
+    if (mB) return idx === parseInt(f, 10);
+    return false;
+  }
+  function _zwIsLastElemChild(info) {
+    if (!info.parent || !info.parent.childNodes) return true;
+    var sibs = info.parent.childNodes;
+    for (var i = sibs.length - 1; i >= 0; i--) {
+      if (sibs[i] && sibs[i].nodeType === 1) return sibs[i] === info.proxy;
+    }
+    return false;
+  }
+  function _zwElemChildCount(info) {
+    if (!info.parent || !info.parent.childNodes) return 1;
+    var cnt = 0;
+    for (var i = 0; i < info.parent.childNodes.length; i++) {
+      if (info.parent.childNodes[i] && info.parent.childNodes[i].nodeType === 1) cnt++;
+    }
+    return cnt || 1;
+  }
+  function _matchPseudosOf(c, info) {
+    if (!c.pseudos || !c.pseudos.length) return true;
+    if (!info) return false;
+    var elemIdx = info.prevSiblings ? info.prevSiblings.length + 1 : 1;
+    for (var i = 0; i < c.pseudos.length; i++) {
+      var ps = c.pseudos[i];
+      if (ps.name === 'first-child') { if (elemIdx !== 1) return false; }
+      else if (ps.name === 'last-child') { if (!_zwIsLastElemChild(info)) return false; }
+      else if (ps.name === 'only-child') { if (elemIdx !== 1 || !_zwIsLastElemChild(info)) return false; }
+      else if (ps.name === 'nth-child') { if (!_zwNthMatches(ps.arg, elemIdx)) return false; }
+      else if (ps.name === 'nth-last-child') {
+        var total = _zwElemChildCount(info);
+        if (!_zwNthMatches(ps.arg, total - elemIdx + 1)) return false;
+      } else if (ps.name === 'empty') {
+        var kids = info.proxy && info.proxy.childNodes ? info.proxy.childNodes : [];
+        for (var ek = 0; ek < kids.length; ek++) {
+          var kn = kids[ek];
+          if (kn && (kn.nodeType === 1 || (kn.nodeType === 3 && String(kn.data != null ? kn.data : (kn.nodeValue || ''))))) return false;
+        }
+      } else if (ps.name === 'not') {
+        var nc = _parseCompoundOf(String(ps.arg || ''));
+        if (!nc || nc.unsupported || _matchCompoundOf(info.proxy, nc)) return false;
+      } else if (ps.name === 'checked') {
+        var ck = false;
+        try { ck = info.proxy.checked === true || String(info.proxy.checked) === 'true'; } catch (_e) { ck = false; }
+        if (!ck) return false;
+      }
     }
     return true;
   }
@@ -674,13 +798,15 @@
   // `nodeInfo` 由 _handleSubtreeNodes 预计算（含 ancestors / parent / prevSibling / prevSiblings）。
   function _matchComplexAgainst(p, complex, nodeInfo) {
     var compounds = complex.compounds, combs = complex.combinators;
+    // R100：最右 compound 的伪类求值（结构伪类需要 nodeInfo）。
+    if (!_matchPseudosOf(compounds[compounds.length - 1], nodeInfo)) return false;
     return _matchChainFrom(compounds, combs, compounds.length - 1, p, nodeInfo);
   }
   // 从右往左匹配 compound[ci..0]：当前节点（info.proxy）须匹配 compound[ci]，再按 combs[ci-1]
   // 回溯到 compound[ci-1] 的候选节点。ci < 0 表示全部匹配 → 成功。
   function _matchChainFrom(compounds, combs, ci, _curProxy, info) {
     if (!_matchCompoundOf(info.proxy, compounds[ci])) return false;
-    if (ci === 0) return true; // 已匹配到最左 compound
+    if (ci === 0) return _matchPseudosOf(compounds[0], info); // 最左 compound（含伪类）
     var comb = combs[ci - 1];
     var left = ci - 1;
     if (comb === ' ') {

@@ -74,6 +74,7 @@ mod e2e_web_components;
 // js-dom M3（R95）：真实 lit 库端到端验收资产（DC-2 WC 收口——lit/LitElement 全链路）。
 #[cfg(test)]
 mod e2e_lit_library;
+mod e2e_vue_library;
 
 #[cfg(test)]
 mod e2e_rendering;

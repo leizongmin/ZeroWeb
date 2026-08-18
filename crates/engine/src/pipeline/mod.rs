@@ -138,6 +138,11 @@ pub struct RenderPipeline {
     cached_styles: HashMap<NodeId, ComputedStyle>,
     /// 文本表单控件的页面级当前值，独立于 HTML 内容属性。
     form_control_values: HashMap<NodeId, String>,
+    /// js-dom M3 R100：跨 apply 的 handle→NodeId 持久表（同一 `cached_doc` 生命周期内，
+    /// JS shim 的 `__n{n}` handle 直达 NodeId——`apply_dom_mutations_full` 的优先解析层。
+    /// 文本节点等无唯一选择器的 handle 只能经此锚定）。`render_html`（全量重建 doc）
+    /// 时清空——slotmap 换代后旧 NodeId 无效。
+    pub(crate) persistent_handle_nodes: HashMap<String, NodeId>,
     /// 文本表单控件尚未提交的 IME preedit。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 宿主维护的页面焦点所有者 selector。
@@ -326,6 +331,7 @@ impl RenderPipeline {
             pending_animation_events: Vec::new(),
             cached_styles: HashMap::new(),
             form_control_values: HashMap::new(),
+            persistent_handle_nodes: HashMap::new(),
             form_control_compositions: HashMap::new(),
             focused_selector: None,
             cached_layout: None,
@@ -763,6 +769,8 @@ impl RenderPipeline {
         self.form_control_values.clear();
         self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+        // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
+        self.persistent_handle_nodes.clear();
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
 
@@ -961,6 +969,8 @@ impl RenderPipeline {
         self.form_control_values.clear();
         self.form_control_compositions.clear();
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
+        // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
+        self.persistent_handle_nodes.clear();
         self.cached_styles = styles;
         // DOM 已替换：CSS 解析缓存失效（新文档的 <style>/meta 内容可能不同）。
         self.cached_css_text = None;
@@ -1183,6 +1193,20 @@ impl RenderPipeline {
         mutations: &[crate::js_dom_bridge::DomMutation],
         css: &str,
     ) -> Result<(RenderResult, Option<String>, HashMap<String, String>), String> {
+        self.render_with_dom_mutations_persistent(mutations, css, None)
+    }
+
+    /// js-dom M3 R100：[`render_with_dom_mutations`] 的持久 handle 表版。
+    ///
+    /// `persistent`（handle→selector）传给 `apply_dom_mutations_with_persistent`——
+    /// 跨 execute 引用的 handle（后续脚本对旧 `__n{n}` 的写）翻译成 selector 应用，
+    /// 不再 `unknown handle` 硬错。生产方：webview `selector_handle_map` 的正置视图。
+    pub fn render_with_dom_mutations_persistent(
+        &mut self,
+        mutations: &[crate::js_dom_bridge::DomMutation],
+        css: &str,
+        persistent: Option<&HashMap<String, String>>,
+    ) -> Result<(RenderResult, Option<String>, HashMap<String, String>), String> {
         let doc_rc = self.cached_doc.take().ok_or("no cached document")?;
         let all_form_value_only = !mutations.is_empty()
             && mutations
@@ -1226,7 +1250,23 @@ impl RenderPipeline {
         }
         let (handle_selectors, html_snapshot) = {
             let mut doc = doc_rc.borrow_mut();
-            let hs = crate::js_dom_bridge::apply_dom_mutations(&mut doc, mutations)?;
+            let hs = match crate::js_dom_bridge::apply_dom_mutations_full(
+                &mut doc,
+                mutations,
+                persistent,
+                Some(&mut self.persistent_handle_nodes),
+            ) {
+                Ok(hs) => hs,
+                Err(e) => {
+                    // js-dom M3 R100：apply 失败（如跨 execute 引用已失效的 ephemeral handle）
+                    // 时先把 doc_rc 放回 cached_doc 再返回错误——旧 `?` 早退把 take 出的 Rc
+                    // 直接 drop，cached_doc 永久 None，后续所有 render_with_dom_mutations 报
+                    // "no cached document"（一次坏 mutation 拖死整个页面的后续脚本执行）。
+                    drop(doc);
+                    self.cached_doc = Some(doc_rc);
+                    return Err(e);
+                }
+            };
             let snapshot = (!all_form_value_only).then(|| doc.outer_html(doc.root()));
             (hs, snapshot)
         };
@@ -1281,8 +1321,24 @@ impl RenderPipeline {
             // incremental-update path.
             let snapshot = html_snapshot
                 .as_deref()
-                .expect("non-value DOM mutation must produce an HTML snapshot");
-            let result = self.render_html(snapshot, css);
+                .expect("non-value DOM mutation must produce an HTML snapshot")
+                .to_string();
+            // js-dom M3 R100：结构性重建前**抢救** handle→NodeId 持久表——render_html
+            // 重解析 snapshot 使 slotmap 换代、旧 NodeId 全灭（且尾部 clear 会把
+            // apply 刚回填的表清空）。重建后按 `handle_selectors`（handle→唯一选择器，
+            // apply 产出）在新 doc 上重新锚定；无唯一选择器的 handle（文本节点等）
+            // 无法重锚——从表剔除（后续引用该 handle 的写 mutation 走 lenient 跳过，
+            // JS 侧读仍经共享队列 latest-wins 兜底，渲染像素级正确性为已知限制）。
+            let rescued: Vec<(String, String)> = handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())).collect();
+            let result = self.render_html(&snapshot, css);
+            if let Some(doc) = self.cached_doc.as_ref() {
+                let doc = doc.borrow();
+                for (h, s) in rescued {
+                    if let Some(id) = doc.query_selector(doc.root(), s.trim()) {
+                        self.persistent_handle_nodes.insert(h, id);
+                    }
+                }
+            }
             if let Some(values) = retained_form_values {
                 self.restore_form_control_values(values);
             }
