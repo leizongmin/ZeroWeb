@@ -1770,6 +1770,7 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
     // （§2.3）。简写应把未显式给定的 longhand 重置为 initial（与 style:solid / color:currentcolor
     // 同谱），故默认 auto（initial）。R2592。driving: text-decoration-shorthands-001(auto)/002(100px)。
     let mut thickness = "auto".to_string();
+    let mut seen_none_line = false;
     let mut seen_style = false;
     let mut seen_color = false;
     let mut seen_thickness = false;
@@ -1794,6 +1795,16 @@ fn expand_text_decoration(value: &str, important: bool, specificity: (u32, u32, 
 
     for part in &parts {
         if is_line(part) {
+            if part.eq_ignore_ascii_case("none") {
+                if seen_none_line || !line_toks.is_empty() {
+                    return vec![];
+                }
+                seen_none_line = true;
+            } else {
+                if seen_none_line || line_toks.iter().any(|line| line.eq_ignore_ascii_case(part)) {
+                    return vec![];
+                }
+            }
             line_toks.push(part); // 累加多值（underline overline → "underline overline"）
         } else if is_dec_style(part) {
             if seen_style {

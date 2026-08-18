@@ -259,6 +259,17 @@ fn test_text_decoration_rejects_duplicate_non_line_components() {
 }
 
 #[test]
+fn test_text_decoration_rejects_invalid_line_combinations() {
+    assert!(expand_one("text-decoration", "none underline red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("text-decoration", "underline none red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("text-decoration", "underline underline red", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("text-decoration", "underline overline red", false, (0, 0, 1));
+    assert_eq!(result[0].1, "underline overline");
+    assert_eq!(result[2].1, "red");
+}
+
+#[test]
 /// text-decoration blink
 fn test_text_decoration_blink() {
     let result = expand_one("text-decoration", "blink", false, (0, 0, 1));
