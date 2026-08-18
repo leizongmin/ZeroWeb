@@ -120,7 +120,7 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom/ranges",
 ];
 
-/// IndexedDB goal M1 first upstream `.any.js` slice.
+/// IndexedDB goal pinned upstream `.any.js` subset.
 ///
 /// Each case is run in its window variant with the META-declared support script.
 /// https://web-platform-tests.org/writing-tests/testharness.html#multi-global-tests
@@ -173,6 +173,27 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/idbindex_get.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_getKey.any.js", &["resources/support.js"]),
     ("IndexedDB/idbindex_count.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbindex_getAll.any.js",
+        &[
+            "resources/nested-cloning-common.js",
+            "resources/support.js",
+            "resources/support-get-all.js",
+            "resources/support-promises.js",
+        ],
+    ),
+    (
+        "IndexedDB/idbindex_getAllKeys.any.js",
+        &[
+            "resources/nested-cloning-common.js",
+            "resources/support.js",
+            "resources/support-get-all.js",
+            "resources/support-promises.js",
+        ],
+    ),
+    ("IndexedDB/idbobjectstore_openCursor.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbindex_openCursor.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbindex_openKeyCursor.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-continue.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-advance.any.js", &["resources/support.js"]),
     ("IndexedDB/idbcursor-advance-invalid.any.js", &["resources/support.js"]),
@@ -585,7 +606,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
     cases
 }
 
-/// Run the first upstream IndexedDB factory/global/event `.any.js` slice.
+/// Run the pinned upstream IndexedDB `.any.js` subset.
 pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,

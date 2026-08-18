@@ -91,6 +91,42 @@ fn test_indexeddb_deferred_operations_wait_for_transaction_start() {
 }
 
 #[test]
+fn test_indexeddb_detached_binary_keys_throw_data_error() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "function detachKey() {\
+               var view = new Uint8Array([1, 2, 3, 4]);\
+               var channel = new MessageChannel();\
+               channel.port1.postMessage('', [view.buffer]);\
+               return view;\
+             }\
+             var detachedView = detachKey();\
+             var detachedBuffer = detachKey().buffer;\
+             try { indexedDB.cmp(detachedView, 1); }\
+             catch (error) { globalThis.__viewError = error.name; }\
+             try { indexedDB.cmp(detachedBuffer, 1); }\
+             catch (error) { globalThis.__bufferError = error.name; }",
+        )
+        .unwrap();
+
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__viewError) + '|' + String(globalThis.__bufferError)")
+            .unwrap()
+            .value,
+        "DataError|DataError"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

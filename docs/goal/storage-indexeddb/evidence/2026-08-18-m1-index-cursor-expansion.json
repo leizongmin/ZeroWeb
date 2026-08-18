@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-18",
+  "scope": "M1 IndexedDB index and cursor WPT expansion",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 5,
+  "driving_wpt": {
+    "before": {
+      "pass": 43,
+      "fail": 2
+    },
+    "after": {
+      "pass": 45,
+      "fail": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 52,
+    "pass": 277,
+    "fail": 0
+  },
+  "fix": "native detached binary keys map to IndexedDB DataError",
+  "workspace_clippy": "pass",
+  "make_test": {
+    "status": "pass",
+    "v8": "pass",
+    "quickjs": "pass",
+    "gpu_adapter": "pass",
+    "multiprocess": "pass"
+  },
+  "bench_gate": {
+    "microbenches_pass": 16,
+    "microbenches_total": 16,
+    "absolute_page_budgets": "pass",
+    "retained_form_budget": "pass"
+  }
+}

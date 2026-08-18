@@ -2715,6 +2715,29 @@
     throw new globalThis.DOMException('Invalid IndexedDB host response.', 'UnknownError');
   }
 
+  function _zwIDBBinaryKeyBytes(value) {
+    if (typeof ArrayBuffer === 'undefined') return undefined;
+    try {
+      var buffer;
+      var byteOffset = 0;
+      var byteLength;
+      if (value instanceof ArrayBuffer) {
+        buffer = value;
+        byteLength = value.byteLength;
+      } else if (ArrayBuffer.isView(value)) {
+        buffer = value.buffer;
+        byteOffset = value.byteOffset;
+        byteLength = value.byteLength;
+      } else {
+        return undefined;
+      }
+      if (value._detached || buffer._detached) return null;
+      return new Uint8Array(buffer, byteOffset, byteLength);
+    } catch (_) {
+      return null;
+    }
+  }
+
   function _zwIDBKeyToWire(value, seen) {
     seen = seen || [];
     if (typeof value === 'number') {
@@ -2727,22 +2750,12 @@
       return { type: 'date', value: String(time) };
     }
     if (typeof value === 'string') return { type: 'string', value: value };
-    if (typeof ArrayBuffer !== 'undefined') {
-      if (value instanceof ArrayBuffer) {
-        if (value._detached) throw new globalThis.DOMException('Detached IndexedDB key.', 'DataError');
-        return { type: 'binary', value: Array.prototype.slice.call(new Uint8Array(value)) };
+    var binary = _zwIDBBinaryKeyBytes(value);
+    if (binary !== undefined) {
+      if (binary === null) {
+        throw new globalThis.DOMException('Detached IndexedDB key.', 'DataError');
       }
-      if (ArrayBuffer.isView(value)) {
-        if (value._detached || value.buffer._detached) {
-          throw new globalThis.DOMException('Detached IndexedDB key.', 'DataError');
-        }
-        return {
-          type: 'binary',
-          value: Array.prototype.slice.call(
-            new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
-          )
-        };
-      }
+      return { type: 'binary', value: Array.prototype.slice.call(binary) };
     }
     if (Array.isArray(value)) {
       if (seen.indexOf(value) !== -1) {
@@ -4791,19 +4804,8 @@
       return time === time ? { rank: 2, value: time } : null;
     }
     if (typeof value === 'string') return { rank: 3, value: value };
-    if (typeof ArrayBuffer !== 'undefined') {
-      if (value instanceof ArrayBuffer) {
-        if (value._detached) return null;
-        return { rank: 4, value: new Uint8Array(value) };
-      }
-      if (ArrayBuffer.isView(value)) {
-        if (value._detached || value.buffer._detached) return null;
-        return {
-          rank: 4,
-          value: new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength)
-        };
-      }
-    }
+    var binary = _zwIDBBinaryKeyBytes(value);
+    if (binary !== undefined) return binary === null ? null : { rank: 4, value: binary };
     if (Array.isArray(value)) {
       if (seen.indexOf(value) !== -1) return null;
       seen.push(value);

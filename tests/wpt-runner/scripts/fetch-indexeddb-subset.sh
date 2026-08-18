@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch the pinned first IndexedDB testharness slice used by storage-indexeddb M1.
+# Fetch the pinned IndexedDB testharness subset used by storage-indexeddb.
 
 set -euo pipefail
 
@@ -36,6 +36,11 @@ FILES=(
   "IndexedDB/idbindex_get.any.js"
   "IndexedDB/idbindex_getKey.any.js"
   "IndexedDB/idbindex_count.any.js"
+  "IndexedDB/idbindex_getAll.any.js"
+  "IndexedDB/idbindex_getAllKeys.any.js"
+  "IndexedDB/idbobjectstore_openCursor.any.js"
+  "IndexedDB/idbindex_openCursor.any.js"
+  "IndexedDB/idbindex_openKeyCursor.any.js"
   "IndexedDB/idbcursor-continue.any.js"
   "IndexedDB/idbcursor-advance.any.js"
   "IndexedDB/idbcursor-advance-invalid.any.js"
@@ -128,7 +133,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (47 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (52 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -145,4 +150,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (47 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (52 cases, WPT ${WPT_REV})"
