@@ -69,6 +69,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `animation-direction`, `animation-fill-mode`, and `animation-play-state` exposed the enum-list variant of the same bug: enum-valued comma lists must reject atomically when any item is unknown. This is especially easy to miss because a `filter_map` result still looks non-empty and can overwrite the previous computed value with a shorter list.
 
+`contain-intrinsic-size` exposed the non-comma filter-map variant: whitespace-separated component lists are just as vulnerable as comma lists. Optional keywords such as `auto` may be intentionally skipped, but every remaining token must be classified; unknown tokens must reject the whole declaration instead of being dropped while valid lengths survive.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

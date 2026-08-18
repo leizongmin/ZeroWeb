@@ -1077,17 +1077,18 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 style.contain_intrinsic_height = None;
                 return true;
             }
+            // https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override
             // 收集长度 token，忽略 `auto` 关键字（静态无 remembered size，auto 按显式长度处理）。
-            let lens: Vec<LengthValue> = v
-                .split_whitespace()
-                .filter_map(|t| {
-                    if t.eq_ignore_ascii_case("auto") {
-                        None
-                    } else {
-                        values::parse_length(t)
-                    }
-                })
-                .collect();
+            let mut lens = Vec::new();
+            for token in v.split_whitespace() {
+                if token.eq_ignore_ascii_case("auto") {
+                    continue;
+                }
+                let Some(length) = values::parse_length(token) else {
+                    return false;
+                };
+                lens.push(length);
+            }
             match lens.len() {
                 1 => {
                     style.contain_intrinsic_width = Some(lens[0].clone());

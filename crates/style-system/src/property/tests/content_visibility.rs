@@ -88,6 +88,14 @@ fn test_contain_intrinsic_size_parse() {
     assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(111.0)));
     assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(222.0)));
 
+    assert!(!apply_property_value(
+        &mut style,
+        "contain-intrinsic-size",
+        "100px bogus"
+    ));
+    assert_eq!(style.contain_intrinsic_width, Some(LengthValue::Px(111.0)));
+    assert_eq!(style.contain_intrinsic_height, Some(LengthValue::Px(222.0)));
+
     // none → 清空
     assert!(apply_property_value(&mut style, "contain-intrinsic-size", "none"));
     assert!(style.contain_intrinsic_width.is_none() && style.contain_intrinsic_height.is_none());
