@@ -360,9 +360,9 @@ fn test_parse_transform_uncovered_cases() {
     let count = parse_animation_iteration_count("-1");
     assert_eq!(count, None);
 
-    // Line 248: zero iteration count
+    // Line 248: zero iteration count is a valid non-negative count.
     let count = parse_animation_iteration_count("0");
-    assert_eq!(count, None);
+    assert_eq!(count, Some(AnimationIterationCountValue::Number(0.0)));
 
     // Line 256: parse_animation_name with quotes
     let name = parse_animation_name("\"my-animation\"");

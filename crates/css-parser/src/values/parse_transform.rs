@@ -215,6 +215,7 @@ pub enum AnimationIterationCountValue {
 
 /// 解析 CSS animation-iteration-count 属性值。
 ///
+/// https://drafts.csswg.org/css-animations-1/#animation-iteration-count
 /// 支持格式如 `"infinite"`、`"3"`、`"2.5"`。
 pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIterationCountValue> {
     let v = value.trim();
@@ -222,7 +223,7 @@ pub fn parse_animation_iteration_count(value: &str) -> Option<AnimationIteration
         return Some(AnimationIterationCountValue::Infinite);
     }
     let n: f64 = v.parse().ok()?;
-    if n > 0.0 {
+    if n >= 0.0 {
         Some(AnimationIterationCountValue::Number(n))
     } else {
         None

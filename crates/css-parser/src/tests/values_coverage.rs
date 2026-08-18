@@ -130,7 +130,10 @@ fn test_animation_iteration_count_number() {
 }
 #[test]
 fn test_animation_iteration_count_zero() {
-    assert!(parse_animation_iteration_count("0").is_none());
+    assert_eq!(
+        parse_animation_iteration_count("0"),
+        Some(crate::values::AnimationIterationCountValue::Number(0.0))
+    );
 }
 #[test]
 fn test_animation_iteration_count_negative() {

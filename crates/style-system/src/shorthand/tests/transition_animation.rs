@@ -563,6 +563,15 @@ fn test_animation_rejects_invalid_name_ident_tokens() {
     assert_eq!(result[0].1, "--spin");
 }
 
+#[test]
+fn test_animation_iteration_count_zero_is_valid_and_negative_invalid() {
+    let zero = expand_one("animation", "fade 1s 0", false, (0, 0, 1));
+    assert_eq!(zero.len(), 8);
+    assert_eq!(zero[4].1, "0");
+
+    assert!(expand_one("animation", "fade 1s -1", false, (0, 0, 1)).is_empty());
+}
+
 // R2920：vendor 前缀 shorthand 别名须在简写展开前 canonical 化为标准名，否则透传后 apply
 // 阶段无简写匹配 → no-op。验证 `-webkit-` 前缀简写与标准名产生 byte-identical 展开结果。
 #[test]

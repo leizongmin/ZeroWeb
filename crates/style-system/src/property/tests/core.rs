@@ -1200,6 +1200,12 @@ fn test_apply_animation_iteration_count() {
         "2, infinite"
     ));
     assert_eq!(style.animation_iteration_count, vec![Some(2.0), None]);
+
+    assert!(apply_property_value(&mut style, "animation-iteration-count", "0"));
+    assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
+
+    assert!(!apply_property_value(&mut style, "animation-iteration-count", "-1"));
+    assert_eq!(style.animation_iteration_count, vec![Some(0.0)]);
 }
 
 #[test]

@@ -622,7 +622,10 @@ fn test_animation_iteration_count() {
         parse_animation_iteration_count("3"),
         Some(AnimationIterationCountValue::Number(3.0))
     );
-    assert!(parse_animation_iteration_count("0").is_none());
+    assert_eq!(
+        parse_animation_iteration_count("0"),
+        Some(AnimationIterationCountValue::Number(0.0))
+    );
     assert!(parse_animation_iteration_count("-1").is_none());
 }
 

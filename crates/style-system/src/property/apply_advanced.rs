@@ -256,17 +256,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "animation-iteration-count" => {
-            let counts = value
-                .split(',')
-                .map(|s| {
-                    let s = s.trim();
-                    if s.eq_ignore_ascii_case("infinite") {
-                        None
-                    } else {
-                        s.parse::<f64>().ok()
-                    }
-                })
-                .collect();
+            let mut counts = Vec::new();
+            for part in value.split(',') {
+                match values::parse_animation_iteration_count(part.trim()) {
+                    Some(zero_css_parser::values::AnimationIterationCountValue::Infinite) => counts.push(None),
+                    Some(zero_css_parser::values::AnimationIterationCountValue::Number(n)) => counts.push(Some(n)),
+                    None => return false,
+                }
+            }
             style.animation_iteration_count = counts;
             return true;
         }

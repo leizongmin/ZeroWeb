@@ -163,7 +163,11 @@ fn test_parse_animation_iteration_count() {
         parse_animation_iteration_count("1"),
         Some(AnimationIterationCountValue::Number(1.0))
     );
-    assert_eq!(parse_animation_iteration_count("0"), None, "0 应返回 None");
+    assert_eq!(
+        parse_animation_iteration_count("0"),
+        Some(AnimationIterationCountValue::Number(0.0)),
+        "0 应为合法的非负迭代次数"
+    );
     assert_eq!(parse_animation_iteration_count("-1"), None, "负数应返回 None");
     assert_eq!(
         parse_animation_iteration_count("INFINITE"),
