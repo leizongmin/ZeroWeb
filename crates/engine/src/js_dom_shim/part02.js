@@ -3684,15 +3684,48 @@
 
   function _zwIDBStore(db, name, keyPath, autoIncrement, records, indexes, transaction, metadata) {
     this._db = db;
-    this.name = name;
+    this._name = String(name);
     this.keyPath = Array.isArray(keyPath) ? keyPath.slice() : (keyPath == null ? null : keyPath);
     this.autoIncrement = !!autoIncrement;
     this._records = records; // Map<key, value>
     this._indexes = indexes; // {indexName: {keyPath, unique}}
+    this._indexInstances = {};
+    this._indexInstanceList = [];
     this.transaction = transaction || null;
     this._metadata = metadata;
-    this.indexNames = _zwIDBStringList(function () { return Object.keys(indexes); });
+    var store = this;
+    this.indexNames = _zwIDBStringList(function () { return Object.keys(store._indexes); });
   }
+  // https://w3c.github.io/IndexedDB/#dom-idbobjectstore-name
+  Object.defineProperty(_zwIDBStore.prototype, 'name', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._name; },
+    set: function (value) {
+      var name = String(value);
+      this._assertSchemaChange();
+      if (name === this._name) return;
+      if (Object.prototype.hasOwnProperty.call(this._db._stores, name)) {
+        throw new globalThis.DOMException('The object store already exists.', 'ConstraintError');
+      }
+      var oldName = this._name;
+      delete this._db._stores[oldName];
+      this._db._stores[name] = this._metadata;
+      this.transaction._scope = this.transaction._scope.map(function (entry) {
+        return entry === oldName ? name : entry;
+      }).sort();
+      delete this.transaction._storeInstances[oldName];
+      this.transaction._storeInstances[name] = this;
+      this._name = name;
+      if (!this._metadata.createdInUpgrade) {
+        this.transaction._schemaRenames.push({
+          kind: 'store',
+          instance: this,
+          oldName: oldName
+        });
+      }
+    }
+  });
   _zwIDBStore.prototype._assertUsable = function (write) {
     if (this._metadata && this._metadata.deleted) {
       throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
@@ -4229,7 +4262,10 @@
         }, 0);
       }
     }
-    return new _zwIDBIndex(this, name, metadata);
+    var index = new _zwIDBIndex(this, name, metadata);
+    this._indexInstances[name] = index;
+    this._indexInstanceList.push(index);
+    return index;
   };
   _zwIDBStore.prototype.deleteIndex = function (name) {
     // https://w3c.github.io/IndexedDB/#dom-idbobjectstore-deleteindex
@@ -4241,6 +4277,7 @@
     }
     metadata.deleted = true;
     delete this._indexes[name];
+    delete this._indexInstances[name];
   };
   _zwIDBStore.prototype.index = function (name) {
     this._assertUsable(false);
@@ -4249,7 +4286,11 @@
     if (!idx) {
       throw new globalThis.DOMException('The index does not exist.', 'NotFoundError');
     }
-    return new _zwIDBIndex(this, name, idx);
+    if (!this._indexInstances[name]) {
+      this._indexInstances[name] = new _zwIDBIndex(this, name, idx);
+      this._indexInstanceList.push(this._indexInstances[name]);
+    }
+    return this._indexInstances[name];
   };
 
   function _zwIDBCursor(source, store, request, entries, direction, hostId, keyOnly) {
@@ -4660,12 +4701,42 @@
 
   function _zwIDBIndex(store, name, metadata) {
     this.objectStore = store;
-    this.name = name;
+    this._name = String(name);
     this.keyPath = Array.isArray(metadata.keyPath) ? metadata.keyPath.slice() : metadata.keyPath;
     this.unique = !!metadata.unique;
     this.multiEntry = !!metadata.multiEntry;
     this._metadata = metadata;
   }
+  // https://w3c.github.io/IndexedDB/#dom-idbindex-name
+  Object.defineProperty(_zwIDBIndex.prototype, 'name', {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._name; },
+    set: function (value) {
+      var name = String(value);
+      if (this._metadata.deleted) {
+        throw new globalThis.DOMException('The index has been deleted.', 'InvalidStateError');
+      }
+      this.objectStore._assertSchemaChange();
+      if (name === this._name) return;
+      if (Object.prototype.hasOwnProperty.call(this.objectStore._indexes, name)) {
+        throw new globalThis.DOMException('The index already exists.', 'ConstraintError');
+      }
+      var oldName = this._name;
+      delete this.objectStore._indexes[oldName];
+      this.objectStore._indexes[name] = this._metadata;
+      delete this.objectStore._indexInstances[oldName];
+      this.objectStore._indexInstances[name] = this;
+      this._name = name;
+      if (!this._metadata.createdInUpgrade) {
+        this.objectStore.transaction._schemaRenames.push({
+          kind: 'index',
+          instance: this,
+          oldName: oldName
+        });
+      }
+    }
+  });
   _zwIDBIndex.prototype._assertUsable = function () {
     if (this._metadata.deleted) {
       throw new globalThis.DOMException('The index has been deleted.', 'InvalidStateError');
@@ -4875,6 +4946,52 @@
     transaction._db._stores = transaction._snapshot;
   }
 
+  function _zwIDBRestoreVersionchangeInstances(transaction) {
+    if (transaction.mode !== 'versionchange' || !transaction._snapshot) return;
+    var stores = [];
+    Object.keys(transaction._storeInstances).forEach(function (name) {
+      var store = transaction._storeInstances[name];
+      if (stores.indexOf(store) === -1) stores.push(store);
+    });
+    stores.forEach(function (store) {
+      if (store._metadata.createdInUpgrade) {
+        store._metadata.deleted = true;
+        store._indexInstanceList.forEach(function (index) {
+          index._metadata.deleted = true;
+        });
+        store._indexes = {};
+      }
+    });
+    for (var i = transaction._schemaRenames.length - 1; i >= 0; i--) {
+      var rename = transaction._schemaRenames[i];
+      rename.instance._name = rename.oldName;
+    }
+    var restored = {};
+    stores.forEach(function (store) {
+      if (store._metadata.createdInUpgrade) return;
+      var metadata = transaction._snapshot[store._name];
+      if (!metadata) return;
+      store._metadata = metadata;
+      store._records = metadata.records;
+      store._indexes = metadata.indexes;
+      var indexes = {};
+      store._indexInstanceList.forEach(function (index) {
+        if (index._metadata.createdInUpgrade) {
+          index._metadata.deleted = true;
+          return;
+        }
+        var restoredIndex = metadata.indexes[index._name];
+        if (!restoredIndex) return;
+        index._metadata = restoredIndex;
+        indexes[index._name] = index;
+      });
+      store._indexInstances = indexes;
+      restored[store._name] = store;
+    });
+    transaction._storeInstances = restored;
+    transaction._scope = Object.keys(transaction._snapshot).sort();
+  }
+
   function _zwIDBFailHostTransaction(transaction, error) {
     transaction._hostError = error;
     transaction._aborted = true;
@@ -5057,6 +5174,8 @@
     this._hostId = null;
     this._hostStartRequest = null;
     this._snapshot = null;
+    this._storeInstances = {};
+    this._schemaRenames = [];
     this._deferCompletion = !!deferCompletion;
     this._completionCheckScheduled = false;
     this._started = !!deferCompletion;
@@ -5084,7 +5203,11 @@
     if (!s) {
       throw new globalThis.DOMException('The object store is not in this transaction.', 'NotFoundError');
     }
-    return new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
+    if (!this._storeInstances[name]) {
+      this._storeInstances[name] =
+        new _zwIDBStore(this._db, name, s.keyPath, s.autoIncrement, s.records, s.indexes, this, s);
+    }
+    return this._storeInstances[name];
   };
   _zwIDBTransaction.prototype.abort = function () {
     if (this._aborted || this._finished || this._committing || this._autoCommitPending) {
@@ -5120,6 +5243,7 @@
       dispatch.result = undefined;
       dispatch.event = requestEvent;
     });
+    _zwIDBRestoreVersionchangeInstances(this);
     _zwIDBRestoreTransactionSnapshot(this);
     if (this.mode === 'versionchange') {
       Object.keys(this._db._stores).forEach(function (storeName) {
@@ -5217,7 +5341,7 @@
     transaction._scope = transaction._scope.filter(function (entry, index, all) {
       return all.indexOf(entry) === index;
     }).sort();
-    return new _zwIDBStore(
+    var store = new _zwIDBStore(
       this,
       name,
       s.keyPath,
@@ -5227,6 +5351,8 @@
       this._upgradeTransaction,
       s
     );
+    transaction._storeInstances[name] = store;
+    return store;
   };
   _zwIDBDatabase.prototype.deleteObjectStore = function (name) {
     // https://w3c.github.io/IndexedDB/#dom-idbdatabase-deleteobjectstore
@@ -5701,6 +5827,7 @@
               'versionchange',
               true
             );
+            transaction._snapshot = snapshot.stores;
             db._upgradeTransaction = transaction;
             req.transaction = transaction;
             var upgrade = function () {

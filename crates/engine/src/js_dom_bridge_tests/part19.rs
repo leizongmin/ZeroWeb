@@ -428,7 +428,7 @@ fn test_indexeddb_index_metadata_and_failed_upgrade_error() {
                var first = store.createIndex('compound', ['a','b']);\
                var second = store.index('compound');\
                __indexMetadata.push('keyPath:' + (first.keyPath === first.keyPath ? 'same' : 'changed'));\
-               __indexMetadata.push('keyPath:' + (first.keyPath !== second.keyPath ? 'different' : 'shared'));\
+               __indexMetadata.push('keyPath:' + (first.keyPath === second.keyPath ? 'shared' : 'different'));\
                __indexMetadata.push('store:' + (first.objectStore === first.objectStore ? 'same' : 'changed'));\
                try { store.createIndex('compound', 'not valid'); }\
                catch (error) { __indexMetadata.push('duplicate:' + error.name); }\
@@ -467,8 +467,80 @@ fn test_indexeddb_index_metadata_and_failed_upgrade_error() {
             .unwrap()
             .value,
         "abort:database|abort:transaction|create:InvalidStateError|delete:InvalidStateError|\
-         duplicate:ConstraintError|keyPath:different|keyPath:same|missing:NotFoundError|\
+         duplicate:ConstraintError|keyPath:same|keyPath:shared|missing:NotFoundError|\
          open:AbortError|store:same"
+    );
+}
+
+#[test]
+fn test_indexeddb_schema_rename_identity_and_abort_restore() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__schemaRename = [];\
+             globalThis.__schemaDeleteRollback = '';\
+             var setup = indexedDB.open('schema-rename-abort', 1);\
+             setup.onupgradeneeded = function () {\
+               setup.result.createObjectStore('old').createIndex('oldIndex', 'value');\
+             };\
+             setup.onsuccess = function () {\
+               setup.result.close();\
+               var upgrade = indexedDB.open('schema-rename-abort', 2);\
+               upgrade.onupgradeneeded = function () {\
+                 var tx = upgrade.transaction;\
+                 var store = tx.objectStore('old');\
+                 __schemaRename.push('store-same:' + (store === tx.objectStore('old')));\
+                 store.name = 'new';\
+                 __schemaRename.push('store-list:' + Array.from(upgrade.result.objectStoreNames));\
+                 var index = store.index('oldIndex');\
+                 __schemaRename.push('index-same:' + (index === store.index('oldIndex')));\
+                 index.name = 'newIndex';\
+                 __schemaRename.push('index-list:' + Array.from(store.indexNames));\
+                 tx.abort();\
+                 __schemaRename.push('restored:' + store.name + ':' + index.name);\
+                 __schemaRename.push('scope:' + Array.from(tx.objectStoreNames));\
+               };\
+               upgrade.onerror = function () {\
+                 __schemaRename.push('open:' + upgrade.error.name);\
+               };\
+             };\
+             var deleted = indexedDB.open('schema-delete-abort', 1);\
+             deleted.onupgradeneeded = function () {\
+               deleted.result.createObjectStore('store').createIndex('index', 'value');\
+             };\
+             deleted.onsuccess = function () {\
+               deleted.result.close();\
+               var upgrade = indexedDB.open('schema-delete-abort', 2);\
+               upgrade.onupgradeneeded = function () {\
+                 var store = upgrade.transaction.objectStore('store');\
+                 var index = store.index('index');\
+                 store.deleteIndex('index');\
+                 upgrade.transaction.abort();\
+                 try { index.get('value'); }\
+                 catch (error) { __schemaDeleteRollback = error.name + ':' + Array.from(store.indexNames); }\
+               };\
+             };",
+        )
+        .unwrap();
+    for _ in 0..16 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox.execute("__schemaRename.join('|')").unwrap().value,
+        "store-same:true|store-list:new|index-same:true|index-list:newIndex|\
+         restored:old:oldIndex|scope:old|open:AbortError"
+    );
+    assert_eq!(
+        sandbox.execute("__schemaDeleteRollback").unwrap().value,
+        "TransactionInactiveError:index"
     );
 }
 

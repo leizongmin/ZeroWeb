@@ -49,6 +49,14 @@ FILES=(
   "IndexedDB/idbindex-objectStore-SameObject.any.js"
   "IndexedDB/idbindex-request-source.any.js"
   "IndexedDB/idbindex-query-exception-order.any.js"
+  "IndexedDB/idbindex-rename.any.js"
+  "IndexedDB/idbindex-rename-errors.any.js"
+  "IndexedDB/idbindex-rename-abort.any.js"
+  "IndexedDB/idbobjectstore-rename-store.any.js"
+  "IndexedDB/idbobjectstore-rename-errors.any.js"
+  "IndexedDB/idbobjectstore-rename-abort.any.js"
+  "IndexedDB/name-scopes.any.js"
+  "IndexedDB/list_ordering.any.js"
   "IndexedDB/idbobjectstore_add.any.js"
   "IndexedDB/idbobjectstore_put.any.js"
   "IndexedDB/idbobjectstore_get.any.js"
@@ -188,7 +196,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (107 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (115 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -205,4 +213,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (107 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (115 cases, WPT ${WPT_REV})"

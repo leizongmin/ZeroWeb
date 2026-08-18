@@ -40,6 +40,14 @@ IndexedDB/idbindex_keyPath.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-
 IndexedDB/idbindex-objectStore-SameObject.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
 IndexedDB/idbindex-request-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
 IndexedDB/idbindex-query-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex-rename.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/idbindex-rename-errors.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/idbindex-rename-abort.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/idbobjectstore-rename-store.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/idbobjectstore-rename-errors.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/idbobjectstore-rename-abort.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/name-scopes.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
+IndexedDB/list_ordering.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-schema-rename
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud

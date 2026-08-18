@@ -1,0 +1,45 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB schema rename",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "pass": 7,
+      "fail": 34,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 41,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 115,
+    "pass": 697,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "object store and index rename",
+    "transaction-scoped SameObject caching",
+    "schema list and scope synchronization",
+    "versionchange abort wrapper rollback",
+    "rename persistence through host schema sync"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "23 pass",
+    "manifest_counts": {
+      "fetch": 115,
+      "runner": 115,
+      "ledger": 115
+    }
+  }
+}

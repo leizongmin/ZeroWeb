@@ -200,6 +200,29 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
         "IndexedDB/idbindex-query-exception-order.any.js",
         &["resources/support.js"],
     ),
+    ("IndexedDB/idbindex-rename.any.js", &["resources/support-promises.js"]),
+    (
+        "IndexedDB/idbindex-rename-errors.any.js",
+        &["resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/idbindex-rename-abort.any.js",
+        &["resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/idbobjectstore-rename-store.any.js",
+        &["resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/idbobjectstore-rename-errors.any.js",
+        &["resources/support-promises.js"],
+    ),
+    (
+        "IndexedDB/idbobjectstore-rename-abort.any.js",
+        &["resources/support-promises.js"],
+    ),
+    ("IndexedDB/name-scopes.any.js", &["resources/support-promises.js"]),
+    ("IndexedDB/list_ordering.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),
