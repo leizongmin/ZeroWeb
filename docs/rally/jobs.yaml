@@ -16,7 +16,9 @@ defaults:
   cwd: "$DIR/../.."          # docs/rally/../.. = 仓库根
   concurrency: "skip"        # 同 job 重叠时跳过
   start: "next"
-  timeout_seconds: 3600
+  # 外层超时（cron runner 杀整个 rally query 进程）。每个 job 必须显式覆盖此值；
+  # 内层 docs/rally/config.yaml 的 ralph.agent_timeout 须 >= 此处最大值，见其注释。
+  timeout_seconds: 7200
   env:
     RALLY_ENV: "cron"
 
@@ -34,9 +36,8 @@ jobs:
       - "."
       - "--agent-command"
       - "claude-dsflash"
-    cwd: "$DIR/../.."
-    concurrency: "skip"
-    timeout_seconds: 3600
+    # 轻量文档维护：历史 max 12m，7200s 裕量充足。
+    timeout_seconds: 7200
     query:
       session_reuse: false
 
@@ -56,6 +57,7 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
+    # 首次建站 + 周报撰写（含 humanizer）；历史 6.9m，首次运行可能显著更长。
     timeout_seconds: 7200
     query:
       session_reuse: true
@@ -83,6 +85,8 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
+    # 重 job：扫描全部文档 + 各 crate README 核对，历史 p50 5m / max 12m；上限给足。
+    timeout_seconds: 7200
     query:
       session_reuse: true
       max_session_uses: 7
@@ -102,6 +106,8 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
+    # 月报补充章节：读 git 历史 + goal master 提取亮点；轻量。
+    timeout_seconds: 7200
     query:
       session_reuse: false
 
@@ -120,7 +126,9 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
-    timeout_seconds: 18000
+    # 重 job：触发 CI + 轮询（一轮 40-60m）+ 失败修复（本地门禁）+ 复触发，可能两轮 CI。
+    # 历史自然完成最长 116m，多次在 2h 被内层超时掐死时仍在正常工作。
+    timeout_seconds: 14400
     query:
       session_reuse: false
 
@@ -139,6 +147,8 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
+    # 历史 p50 18m，但含「自主处理 + 提交推送」分支，可能触发完整质量门禁。
+    timeout_seconds: 7200
     query:
       session_reuse: true
       max_session_uses: 7
@@ -159,6 +169,8 @@ jobs:
     cwd: "$DIR/../.."
     concurrency: "skip"
     start: "next"
-    timeout_seconds: 18000
+    # 重 job：bench-gate + 分进程内存 + product-smoke 证据收集 + 可能的最小修复。
+    # 历史 70-81m 自然完成，一次在 2h 被内层超时掐死。
+    timeout_seconds: 14400
     query:
       session_reuse: false

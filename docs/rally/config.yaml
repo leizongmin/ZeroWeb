@@ -19,7 +19,9 @@ stages:
       model: ""
       agent_command: ""
 ralph:
-  agent_timeout: 7200
+  # 内层超时（agent-spawn 对 claude 子进程生效）。必须 >= jobs.yaml 中最大的
+  # timeout_seconds，否则外层超时形同虚设（曾为 7200，把声明 18000 的 job 掐死在 2h）。
+  agent_timeout: 18000
   kill_grace_period: 10
   session_reuse: true
   max_session_rounds: 10
