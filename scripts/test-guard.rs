@@ -15,6 +15,13 @@
 //!
 //! 跨平台：依赖 `ps -ax -o pid=,ppid=,rss=` 与 `kill`（macOS/Linux 均自带），
 //! 不引入外部 crate，单文件 `rustc -O` 编译。
+//!
+//! core 转储预防：被杀/崩溃的子进程在 Linux 上经 `prlimit64(RLIMIT_CORE=0)`
+//! 禁止产生 core 文件——OOM 尸体单个可达数百 MB（2026-08-18 实测仓库根积压
+//! 23 个/973MB），且无人调试消费，只会吃满磁盘。std-only 约束下无 setrlimit
+//! 接口，syscall 号因 arch 而异，故经 /proc/self/... 由父进程对子 pid 调
+//! `prlimit --core=0 --pid`（util-linux，主流发行版自带）。prlimit 不可用
+//! 时静默降级（转储再由 target-disk-guard.sh 兜底清理）。
 
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
@@ -358,6 +365,14 @@ fn main() -> std::process::ExitCode {
         }
     };
     let root = child.id();
+    // 对整棵进程树的根设 RLIMIT_CORE=0（子进程 fork 继承；prlimit 只动 core，
+    // 不碰内存阈值——那由本守卫轮询监管）。不可用则静默降级。
+    #[cfg(target_os = "linux")]
+    let _ = Command::new("prlimit")
+        .args(["--core=0", "--pid", &root.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
     let deadline = Instant::now() + Duration::from_secs(time_limit_s);
     let interval = Duration::from_millis(250);
 
