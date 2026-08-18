@@ -480,6 +480,10 @@ fn test_looks_like_length() {
     assert!(looks_like_length("thin"));
     assert!(!looks_like_length("solid"));
     assert!(!looks_like_length("red"));
+    assert!(!looks_like_length("begin"));
+    assert!(!looks_like_length("auto"));
+    assert!(!looks_like_length("min-content"));
+    assert!(!looks_like_length("fit-content(10px)"));
     // % 不算 length——border-width/outline-width 不接受百分比
     assert!(!looks_like_length("50%"));
 }
@@ -492,6 +496,8 @@ fn test_looks_like_color() {
     assert!(looks_like_color("transparent"));
     assert!(!looks_like_color("10px"));
     assert!(!looks_like_color("solid"));
+    assert!(!looks_like_color("begin"));
+    assert!(!looks_like_color("rgbfoo"));
 }
 
 // ── 边界条件测试 ──
@@ -515,6 +521,12 @@ fn test_border_shorthand_order_independent() {
     assert_eq!(result[0].1, "1px"); // width
     assert_eq!(result[1].1, "solid"); // style
     assert_eq!(result[2].1, "red"); // color
+}
+
+#[test]
+fn test_border_shorthand_rejects_ident_ending_with_length_unit() {
+    let result = expand_one("border", "begin solid red", false, (0, 0, 1));
+    assert!(result.is_empty());
 }
 
 #[test]

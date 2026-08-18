@@ -932,6 +932,8 @@ fn parse_border_shorthand(value: &str) -> Option<BorderShorthand> {
             }
             seen_color = true;
             color = part.to_string();
+        } else {
+            return None;
         }
     }
 
@@ -955,132 +957,34 @@ fn is_border_style_keyword(s: &str) -> bool {
 /// 不接受百分比，`border: 5%` 应判非法落回默认（与 parse_length 接受 % 但 border-width
 /// 拒绝无关）。`Q` 单位大小写敏感（CSS 规范 `Q`）。
 fn looks_like_length(s: &str) -> bool {
-    s.ends_with("px")
-        || s.ends_with("em")
-        || s.ends_with("ex")
-        || s.ends_with("rem")
-        || s.ends_with("pt")
-        || s.ends_with("pc")
-        || s.ends_with("cm")
-        || s.ends_with("mm")
-        || s.ends_with("Q")
-        || s.ends_with("in")
-        || s.ends_with("vw")
-        || s.ends_with("vh")
-        || s.ends_with("vmin")
-        || s.ends_with("vmax")
-        || s.ends_with("ch")
-        || s == "0"
-        || s.eq_ignore_ascii_case("thin")
+    use zero_css_parser::values::LengthValue;
+
+    matches!(
+        zero_css_parser::values::parse_length(s),
+        Some(
+            LengthValue::Px(_)
+                | LengthValue::Em(_)
+                | LengthValue::Ex(_)
+                | LengthValue::Rex(_)
+                | LengthValue::Cap(_)
+                | LengthValue::Rcap(_)
+                | LengthValue::Rem(_)
+                | LengthValue::Vh(_)
+                | LengthValue::Vw(_)
+                | LengthValue::Vmin(_)
+                | LengthValue::Vmax(_)
+                | LengthValue::Ch(_)
+                | LengthValue::Rch(_)
+                | LengthValue::Ic(_)
+                | LengthValue::Ric(_)
+        )
+    ) || s.eq_ignore_ascii_case("thin")
         || s.eq_ignore_ascii_case("medium")
         || s.eq_ignore_ascii_case("thick")
 }
 
-/// 检查字符串是否看起来像颜色值。
-///
-/// R2355：颜色值大小写不敏感（CSS Color §）——`#` 前缀无大小写；`rgb()`/`hsl()` 函数名前缀
-/// 与命名色（含 `currentcolor`/`transparent`）均用 `eq_ignore_ascii_case`。
 fn looks_like_color(s: &str) -> bool {
-    if s.starts_with('#') {
-        return true;
-    }
-    // rgb()/hsl()（含 rgba()/hsla()）函数名前缀，大小写不敏感
-    if s.len() >= 3 && (s[..3].eq_ignore_ascii_case("rgb") || s[..3].eq_ignore_ascii_case("hsl")) {
-        return true;
-    }
-    // CSS 命名颜色（常见子集，大小写不敏感）
-    const NAMED_COLORS: &[&str] = &[
-        "black",
-        "white",
-        "red",
-        "green",
-        "blue",
-        "yellow",
-        "orange",
-        "purple",
-        "pink",
-        "brown",
-        "gray",
-        "grey",
-        "cyan",
-        "magenta",
-        "lime",
-        "maroon",
-        "navy",
-        "olive",
-        "teal",
-        "aqua",
-        "fuchsia",
-        "silver",
-        "gold",
-        "indigo",
-        "violet",
-        "coral",
-        "salmon",
-        "tomato",
-        "skyblue",
-        "tan",
-        "wheat",
-        "khaki",
-        "beige",
-        "ivory",
-        "snow",
-        "linen",
-        "azure",
-        "lavender",
-        "whitesmoke",
-        "gainsboro",
-        "lightgray",
-        "darkgray",
-        "dimgray",
-        "darkred",
-        "darkgreen",
-        "darkblue",
-        "lightblue",
-        "lightgreen",
-        "lightcoral",
-        "deeppink",
-        "hotpink",
-        "orangered",
-        "crimson",
-        "firebrick",
-        "chocolate",
-        "sienna",
-        "peru",
-        "goldenrod",
-        "darkgoldenrod",
-        "greenyellow",
-        "chartreuse",
-        "limegreen",
-        "palegreen",
-        "seagreen",
-        "forestgreen",
-        "yellowgreen",
-        "olivedrab",
-        "darkolivegreen",
-        "darkcyan",
-        "darkseagreen",
-        "lightseagreen",
-        "mediumseagreen",
-        "turquoise",
-        "darkturquoise",
-        "paleturquoise",
-        "deepskyblue",
-        "dodgerblue",
-        "cornflowerblue",
-        "royalblue",
-        "mediumblue",
-        "midnightblue",
-        "darkviolet",
-        "blueviolet",
-        "mediumpurple",
-        "darkorchid",
-        "orchid",
-        "plum",
-        "currentcolor",
-        "transparent",
-    ];
-    NAMED_COLORS.iter().any(|c| s.eq_ignore_ascii_case(c))
+    zero_css_parser::values::parse_color(s).is_some()
 }
 
 /// 展开 border-radius 简写。
