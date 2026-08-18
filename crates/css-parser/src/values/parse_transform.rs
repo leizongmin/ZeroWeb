@@ -1600,21 +1600,22 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
     let mut inset = false;
     let mut color = ColorValue::CurrentColor;
     let mut color_found = false;
-    let lengths: Vec<&str> = owned
-        .iter()
-        .filter_map(|s| {
-            if s.eq_ignore_ascii_case("inset") {
-                inset = true;
+    let mut lengths = Vec::new();
+    for s in &owned {
+        if s.eq_ignore_ascii_case("inset") {
+            if inset {
                 return None;
             }
-            if !color_found && let Some(c) = parse_color(s) {
-                color = c;
-                color_found = true;
-                return None;
-            }
-            Some(s.as_str())
-        })
-        .collect();
+            inset = true;
+            continue;
+        }
+        if !color_found && let Some(c) = parse_color(s) {
+            color = c;
+            color_found = true;
+            continue;
+        }
+        lengths.push(s.as_str());
+    }
     if !(2..=4).contains(&lengths.len()) {
         return None;
     }

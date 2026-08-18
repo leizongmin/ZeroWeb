@@ -619,6 +619,12 @@ fn test_box_shadow_inset() {
 }
 
 #[test]
+fn test_box_shadow_duplicate_inset_is_invalid() {
+    assert!(parse_box_shadow("inset 1px 1px inset").is_none());
+    assert!(parse_box_shadow("1px 1px inset inset").is_none());
+}
+
+#[test]
 fn test_box_shadow_inset_with_spread() {
     let result = parse_box_shadow("inset 2px 2px 4px 1px red");
     assert!(result.is_some());

@@ -85,6 +85,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `text-shadow` and `box-shadow` exposed the shared-splitter variant: private comma split helpers are grammar boundaries too. A helper that silently drops empty leading, trailing, or repeated comma segments makes every caller accept partially valid CSS lists; return an explicit failure state instead.
 
+`box-shadow` exposed the optional-marker variant: optional keywords such as `inset?` are still grammar components with cardinality. Extracting them with `filter_map` or unconditional removal must track whether the component has already appeared; otherwise duplicate markers become invisible instead of invalidating the value.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
