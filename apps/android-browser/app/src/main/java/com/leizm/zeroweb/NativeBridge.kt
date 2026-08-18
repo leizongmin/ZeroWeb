@@ -34,6 +34,9 @@ object NativeBridge {
     external fun nativeGoBack(): Boolean
 
     @JvmStatic
+    external fun nativeGoForward(): Boolean
+
+    @JvmStatic
     external fun nativeToggleBookmark(): Boolean
 
     @JvmStatic

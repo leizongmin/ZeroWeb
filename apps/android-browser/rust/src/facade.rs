@@ -91,6 +91,21 @@ pub(crate) fn go_back() -> Result<bool, String> {
     Ok(did_navigate)
 }
 
+pub(crate) fn go_forward() -> Result<bool, String> {
+    let mut state = browser()
+        .lock()
+        .map_err(|_| "Android browser state lock poisoned".to_string())?;
+    let browser = state
+        .as_mut()
+        .ok_or_else(|| "Android browser profile is not initialized".to_string())?;
+    let did_navigate = browser.shell.go_forward();
+    if did_navigate {
+        browser.shell.save_profile(&browser.paths)?;
+        browser.revision = browser.revision.saturating_add(1);
+    }
+    Ok(did_navigate)
+}
+
 pub(crate) fn toggle_bookmark() -> Result<(), String> {
     mutate(|browser| {
         browser.shell.toggle_current_bookmark();

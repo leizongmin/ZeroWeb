@@ -125,6 +125,15 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeGoBack(_env: JN
     )
 }
 
+/// Moves the active tab forward in its Rust-owned navigation history.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeGoForward(_env: JNIEnv, _class: JClass) -> jboolean {
+    facade::go_forward().map_or(
+        JNI_FALSE,
+        |did_navigate| if did_navigate { JNI_TRUE } else { JNI_FALSE },
+    )
+}
+
 /// Toggles the active page bookmark and persists the browser profile.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeToggleBookmark(

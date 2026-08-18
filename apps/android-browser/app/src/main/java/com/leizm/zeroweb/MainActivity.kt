@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
                     onSelectTab = ::selectTab,
                     onCloseTab = ::closeTab,
                     onToggleBookmark = ::toggleBookmark,
+                    onGoBack = ::goBack,
+                    onGoForward = ::goForward,
                     onRemoveBookmark = ::removeBookmark,
                     onClearHistory = ::clearHistory,
                 )
@@ -140,6 +142,14 @@ class MainActivity : ComponentActivity() {
         if (NativeBridge.nativeToggleBookmark()) refreshBrowserSnapshot()
     }
 
+    private fun goBack() {
+        if (NativeBridge.nativeGoBack()) refreshBrowserSnapshot()
+    }
+
+    private fun goForward() {
+        if (NativeBridge.nativeGoForward()) refreshBrowserSnapshot()
+    }
+
     private fun removeBookmark(url: String) {
         if (NativeBridge.nativeRemoveBookmark(url)) refreshBrowserSnapshot()
     }
@@ -205,6 +215,8 @@ private fun BrowserScreen(
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
     onToggleBookmark: () -> Unit,
+    onGoBack: () -> Unit,
+    onGoForward: () -> Unit,
     onRemoveBookmark: (String) -> Unit,
     onClearHistory: () -> Unit,
 ) {
@@ -244,6 +256,8 @@ private fun BrowserScreen(
             singleLine = true,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onGoBack) { Text("后退") }
+            TextButton(onClick = onGoForward) { Text("前进") }
             Button(onClick = { onNavigate(address) }, modifier = Modifier.testTag("navigateButton")) { Text("前往") }
             TextButton(onClick = onNewTab) { Text("新建标签") }
             TextButton(onClick = onToggleBookmark) { Text(if (snapshot.bookmarked) "已收藏" else "收藏") }
