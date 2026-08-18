@@ -102,6 +102,14 @@ fn test_transition_shorthand_single_is_unchanged() {
     assert!(!result[0].1.contains(','));
 }
 
+#[test]
+fn test_transition_rejects_duplicate_or_empty_components() {
+    assert!(expand_one("transition", "opacity transform 0.3s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "opacity ease linear", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "opacity 0.1s 0.2s 0.3s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("transition", "opacity 0.3s,", false, (0, 0, 1)).is_empty());
+}
+
 // ── 逻辑属性简写测试 ──
 
 #[test]
@@ -514,6 +522,24 @@ fn test_animation_shorthand_single_is_unchanged() {
     assert_eq!(result[0].1, "fadeIn");
     assert_eq!(result[1].1, "0.5s");
     assert!(!result[0].1.contains(','));
+}
+
+#[test]
+fn test_animation_rejects_duplicate_or_empty_components() {
+    assert!(expand_one("animation", "fade slide 1s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("animation", "fade ease linear", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("animation", "fade 0.1s 0.2s 0.3s", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("animation", "fade 1s 2 3", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("animation", "fade 1s,", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
+fn test_animation_preserves_none_name_fill_mode_ambiguity() {
+    let result = expand_one("animation", "none backwards 1s", false, (0, 0, 1));
+    assert_eq!(result.len(), 8);
+    assert_eq!(result[0].1, "none");
+    assert_eq!(result[1].1, "1s");
+    assert_eq!(result[6].1, "backwards");
 }
 
 // R2920：vendor 前缀 shorthand 别名须在简写展开前 canonical 化为标准名，否则透传后 apply

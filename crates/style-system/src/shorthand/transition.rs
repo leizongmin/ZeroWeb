@@ -57,7 +57,9 @@ pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32,
     let mut timings = Vec::with_capacity(entries.len());
     let mut delays = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let (p, d, ti, de) = parse_single_transition(entry);
+        let Some((p, d, ti, de)) = parse_single_transition(entry) else {
+            return vec![];
+        };
         properties.push(p);
         durations.push(d);
         timings.push(ti);
@@ -77,14 +79,19 @@ pub(super) fn expand_transition(value: &str, important: bool, specificity: (u32,
 }
 
 /// 解析单个 transition 条目（不含顶层逗号）→ (property, duration, timing, delay)。
-/// 空白条目返回默认值（all / 0s / ease / 0s）。
-fn parse_single_transition(entry: &str) -> (String, String, String, String) {
+/// 空白条目或重复组件返回 `None`，由上层丢弃整条 shorthand。
+fn parse_single_transition(entry: &str) -> Option<(String, String, String, String)> {
     let tokens = split_outside_parens(entry);
+    if tokens.is_empty() {
+        return None;
+    }
     let mut property = "all".to_string();
     let mut duration = "0s".to_string();
     let mut timing = "ease".to_string();
     let mut delay = "0s".to_string();
-    let mut found_duration = false;
+    let mut found_time_count = 0u32;
+    let mut found_timing = false;
+    let mut found_property = false;
 
     for token in &tokens {
         let t = token.trim();
@@ -93,19 +100,29 @@ fn parse_single_transition(entry: &str) -> (String, String, String, String) {
         }
         // 判断是否为时间值（duration/delay）
         if is_time_value(t) {
-            if !found_duration {
+            found_time_count += 1;
+            if found_time_count == 1 {
                 duration = t.to_string();
-                found_duration = true;
-            } else {
+            } else if found_time_count == 2 {
                 delay = t.to_string();
+            } else {
+                return None;
             }
-        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+        } else if zero_css_parser::values::parse_timing_function(t).is_some() {
+            if found_timing {
+                return None;
+            }
             timing = t.to_string();
+            found_timing = true;
         } else {
+            if found_property {
+                return None;
+            }
             property = t.to_string();
+            found_property = true;
         }
     }
-    (property, duration, timing, delay)
+    Some((property, duration, timing, delay))
 }
 
 /// 顶层逗号分割（paren-aware：括号内逗号不分割，保留 cubic-bezier()/steps() 一体）。
@@ -124,35 +141,19 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
                 current.push(ch);
             }
             ',' if depth == 0 => {
-                let t = current.trim().to_string();
-                if !t.is_empty() {
-                    parts.push(t);
-                }
+                parts.push(current.trim().to_string());
                 current.clear();
             }
             _ => current.push(ch),
         }
     }
-    let t = current.trim().to_string();
-    if !t.is_empty() {
-        parts.push(t);
-    }
+    parts.push(current.trim().to_string());
     parts
 }
 
 /// 检查字符串是否为 CSS 时间值。
 fn is_time_value(s: &str) -> bool {
-    s.ends_with("ms")
-        || (s.ends_with('s') && !s.ends_with("ease"))
-            && s.trim_end_matches("ms").trim_end_matches('s').parse::<f64>().is_ok()
-}
-
-/// 检查字符串是否为 timing-function 关键字。
-fn is_timing_function_keyword(s: &str) -> bool {
-    matches!(
-        s,
-        "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
-    )
+    zero_css_parser::values::parse_animation_duration(s).is_some()
 }
 
 /// 展开 animation 简写。
@@ -212,7 +213,9 @@ pub(super) fn expand_animation(value: &str, important: bool, specificity: (u32, 
     let mut fill_modes = Vec::with_capacity(entries.len());
     let mut play_states = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let (n, d, ti, de, ic, di, fm, ps) = parse_single_animation(entry);
+        let Some((n, d, ti, de, ic, di, fm, ps)) = parse_single_animation(entry) else {
+            return vec![];
+        };
         names.push(n);
         durations.push(d);
         timings.push(ti);
@@ -236,9 +239,12 @@ pub(super) fn expand_animation(value: &str, important: bool, specificity: (u32, 
 }
 
 /// 解析单个 animation 条目（不含顶层逗号）→ 8 个 longhand 值。
-/// 空白条目返回默认值。
-fn parse_single_animation(entry: &str) -> (String, String, String, String, String, String, String, String) {
+/// 空白条目或重复组件返回 `None`，由上层丢弃整条 shorthand。
+fn parse_single_animation(entry: &str) -> Option<(String, String, String, String, String, String, String, String)> {
     let tokens = split_outside_parens(entry);
+    if tokens.is_empty() {
+        return None;
+    }
     let mut name = "none".to_string();
     let mut duration = "0s".to_string();
     let mut timing = "ease".to_string();
@@ -248,6 +254,12 @@ fn parse_single_animation(entry: &str) -> (String, String, String, String, Strin
     let mut fill_mode = "none".to_string();
     let mut play_state = "running".to_string();
     let mut found_time_count = 0u32;
+    let mut found_timing = false;
+    let mut found_iteration_count = false;
+    let mut found_direction = false;
+    let mut found_fill_mode = false;
+    let mut found_play_state = false;
+    let mut found_name = false;
 
     for token in &tokens {
         let t = token.trim();
@@ -262,26 +274,58 @@ fn parse_single_animation(entry: &str) -> (String, String, String, String, Strin
                 duration = t.to_string();
             } else if found_time_count == 2 {
                 delay = t.to_string();
+            } else {
+                return None;
             }
-        } else if is_timing_function_keyword(t) || t.starts_with("cubic-bezier(") || t.starts_with("steps(") {
+        } else if zero_css_parser::values::parse_timing_function(t).is_some() {
+            if found_timing {
+                return None;
+            }
             timing = t.to_string();
-        } else if t == "infinite" {
+            found_timing = true;
+        } else if zero_css_parser::values::parse_animation_iteration_count(t).is_some() {
+            if found_iteration_count {
+                return None;
+            }
             iteration_count = "infinite".to_string();
+            if !t.eq_ignore_ascii_case("infinite") {
+                iteration_count = t.to_string();
+            }
+            found_iteration_count = true;
         } else if is_animation_direction(t) {
+            if found_direction {
+                return None;
+            }
             direction = t.to_string();
+            found_direction = true;
         } else if is_animation_fill_mode(t) {
+            if found_fill_mode {
+                if !found_name && fill_mode.eq_ignore_ascii_case("none") {
+                    found_name = true;
+                } else {
+                    return None;
+                }
+            }
             fill_mode = t.to_string();
+            found_fill_mode = true;
         } else if is_animation_play_state(t) {
+            if found_play_state {
+                return None;
+            }
             play_state = t.to_string();
+            found_play_state = true;
         } else if t.parse::<f64>().is_ok() {
-            // 纯数字 → iteration-count
-            iteration_count = t.to_string();
+            return None;
         } else {
             // 其他 → animation-name
+            if found_name || zero_css_parser::values::parse_animation_name(t).is_none() {
+                return None;
+            }
             name = t.to_string();
+            found_name = true;
         }
     }
-    (
+    Some((
         name,
         duration,
         timing,
@@ -290,7 +334,7 @@ fn parse_single_animation(entry: &str) -> (String, String, String, String, Strin
         direction,
         fill_mode,
         play_state,
-    )
+    ))
 }
 
 /// 检查字符串是否为 animation-direction 关键字。
