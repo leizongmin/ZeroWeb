@@ -6,6 +6,8 @@
 //! pub use 重导出 + 祖先私有项可见）。pub register_dom_callbacks 经 `pub use callbacks::*` 重导出。
 
 use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// 查询视图缓存：(源快照串, 队列长度) → applied 视图。队列不变且快照不变 → 命中
 ///（同一脚本批内大量查询只 parse+apply 一次——FV M3 的 fresh-copy 方案每查询全量
@@ -28,13 +30,18 @@ type QueryViewCache = std::sync::Arc<std::sync::Mutex<Option<(String, usize, Str
 /// - handle 链（CreateElement/AppendChild/SetAttrOnHandle…）**不应用**——pending 元素
 ///   由 shim 侧本地 registry 回落（R51c：querySelector('#fresh') === el 须同一 proxy
 ///   身份——host 命中会包成 sel-based proxy 破坏 `===`）。
+///
+/// 返回 `(查询视图 html, live_ok)`——`live_ok` = 视图无 pending structural
+/// mutations（js-dom M1 L2 R102：live_ok 时查询可直读已发布的 live doc，见
+/// [`with_query_doc_live_aware`]）。
 fn apply_pending_query_html(
     html: &Arc<std::sync::Mutex<String>>,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
     cache: &QueryViewCache,
-) -> String {
+) -> (String, bool) {
     let count = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
     // 缓存命中：队列长度一致 + 源快照未变（host 换新 dom_html 时快照内容变）。
+    // 命中视图若为「无 structural 应用」形态（缓存第三元 == 源快照），live_ok 同样成立。
     {
         let cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((src, c, applied)) = cache_guard.as_ref()
@@ -42,7 +49,7 @@ fn apply_pending_query_html(
         {
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             if *src == *snap {
-                return applied.clone();
+                return (applied.clone(), applied == &*snap);
             }
         }
     }
@@ -51,7 +58,7 @@ fn apply_pending_query_html(
     if count == 0 {
         let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
         *cache_guard = Some((snap.clone(), 0, snap.clone()));
-        return snap;
+        return (snap, true);
     }
     // 结构级 mutation 子集（见函数文档——属性级/handle 链/Remove/SetInnerHtml 不应用）。
     // Remove 排除：被移除元素的 proxy 属性读取（old.id / removedNodes[].tagName——
@@ -69,10 +76,11 @@ fn apply_pending_query_html(
     } else {
         apply_mutations_to_html(&snap, &structural).unwrap_or_else(|_| snap.clone())
     };
+    let live_ok = structural.is_empty();
     drop(mut_guard);
     let mut cache_guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     *cache_guard = Some((snap, count, applied.clone()));
-    applied
+    (applied, live_ok)
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -210,8 +218,8 @@ pub fn register_dom_callbacks(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_match_selector_doc(doc, &sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_match_selector_doc(doc, &sel))
         }),
     );
 
@@ -222,8 +230,8 @@ pub fn register_dom_callbacks(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_all_selector_list_doc(doc, &sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_all_selector_list_doc(doc, &sel))
         }),
     );
 
@@ -398,7 +406,8 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
+            // js-dom M1 L2 R102：helper 类查询暂保快照路径（live 化 helper 签名留下一片）。
+            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
             query_match_in_subtree(&snap, &elem_sel, &sel)
         }),
     );
@@ -411,7 +420,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
+            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
             query_all_in_subtree(&snap, &elem_sel, &sel)
         }),
     );
@@ -424,7 +433,7 @@ pub fn register_dom_callbacks(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
+            let (snap, _live_ok) = apply_pending_query_html(&html, &m, &qv);
             form_control_selectors(&snap, &form).join("|")
         }),
     );
@@ -438,8 +447,8 @@ pub fn register_dom_callbacks(
         "__zw_element_children",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| element_children_selectors_doc(doc, &elem_sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -449,7 +458,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc(&snap, |doc| element_sibling_selectors_doc(doc, &elem_sel))
+            with_query_doc_live_aware(&snap, true, |doc| element_sibling_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -463,7 +472,7 @@ pub fn register_dom_callbacks(
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             // js-dom R52：DOM 遍历族回调接 `with_query_doc` 缓存（旧每次全文档 re-parse，
             // `body.firstChild` 实测 1.2ms/次——testharness mega-case per-op 主成本）。
-            with_query_doc(&snap, |doc| child_nodes_json_doc(doc, &elem_sel))
+            with_query_doc_live_aware(&snap, true, |doc| child_nodes_json_doc(doc, &elem_sel))
         }),
     );
 
@@ -473,7 +482,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc(&snap, |doc| sibling_nodes_json_doc(doc, &elem_sel))
+            with_query_doc_live_aware(&snap, true, |doc| sibling_nodes_json_doc(doc, &elem_sel))
         }),
     );
 
@@ -484,7 +493,7 @@ pub fn register_dom_callbacks(
             let container_sel = args.first().map(String::from).unwrap_or_default();
             let other_sel = args.get(1).map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            if with_query_doc(&snap, |doc| element_contains_doc(doc, &container_sel, &other_sel)) {
+            if with_query_doc_live_aware(&snap, true, |doc| element_contains_doc(doc, &container_sel, &other_sel)) {
                 "1".into()
             } else {
                 "0".into()
@@ -500,8 +509,8 @@ pub fn register_dom_callbacks(
         "__zw_parent",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| parent_selector_for_doc(doc, &elem_sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
 
@@ -513,7 +522,7 @@ pub fn register_dom_callbacks(
         "__zw_collect_ids",
         Box::new(move |_args| {
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc(&snap, collect_element_ids_doc)
+            with_query_doc_live_aware(&snap, true, collect_element_ids_doc)
         }),
     );
 
@@ -529,8 +538,8 @@ pub fn register_dom_callbacks(
             // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
             // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
             // .value= 不脏污 defaultValue 语义保持）。
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -553,8 +562,8 @@ pub fn register_dom_callbacks(
                 return ov.unwrap_or_default();
             }
             drop(list);
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -567,8 +576,8 @@ pub fn register_dom_callbacks(
         "__zw_get_tag",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_tag_from_html_doc(doc, &sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_tag_from_html_doc(doc, &sel))
         }),
     );
 
@@ -637,8 +646,12 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            if has_attribute(&snap, &args[0], &args[1]) {
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            if with_query_doc_live_aware(&snap, live_ok, |doc| {
+                find_by_selector(doc, &args[0])
+                    .map(|n| doc.get_attribute(n, &args[1]).is_some())
+                    .unwrap_or(false)
+            }) {
                 "1".into()
             } else {
                 "0".into()
@@ -664,8 +677,12 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            if has_attribute(&snap, &args[0], &args[1]) {
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            if with_query_doc_live_aware(&snap, live_ok, |doc| {
+                find_by_selector(doc, &args[0])
+                    .map(|n| doc.get_attribute(n, &args[1]).is_some())
+                    .unwrap_or(false)
+            }) {
                 "1".into()
             } else {
                 "0".into()
@@ -783,8 +800,8 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -815,8 +832,8 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            let snap = apply_pending_query_html(&html, &m, &qv);
-            with_query_doc(&snap, |doc| query_text_from_html_doc(doc, &sel))
+            let (snap, live_ok) = apply_pending_query_html(&html, &m, &qv);
+            with_query_doc_live_aware(&snap, live_ok, |doc| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -904,7 +921,7 @@ pub fn register_dom_callbacks(
             if let Some(sel) = txt_sel_map.lock().unwrap_or_else(|e| e.into_inner()).get(&handle) {
                 let sel = sel.clone();
                 let snap = txt_html.lock().unwrap_or_else(|e| e.into_inner());
-                return with_query_doc(&snap, |doc| {
+                return with_query_doc_live_aware(&snap, true, |doc| {
                     find_by_selector(doc, &sel)
                         .and_then(|id| doc.text_content(id))
                         .unwrap_or_default()
@@ -940,7 +957,7 @@ pub fn register_dom_callbacks(
             if let Some(sel) = tag_sel_map.lock().unwrap_or_else(|e| e.into_inner()).get(&handle) {
                 let sel = sel.clone();
                 let snap = tag_html.lock().unwrap_or_else(|e| e.into_inner());
-                return with_query_doc(&snap, |doc| query_tag_selector_doc(doc, &sel));
+                return with_query_doc_live_aware(&snap, true, |doc| query_tag_selector_doc(doc, &sel));
             }
             String::new()
         }),
@@ -1115,7 +1132,7 @@ pub fn register_dom_callbacks(
             // handle 变体（SetStyleOnHandle 等）key 不同，跳过。
             let mut style = {
                 let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-                with_query_doc(&snap, |doc| query_attr_from_html_doc(doc, selector, "style"))
+                with_query_doc_live_aware(&snap, true, |doc| query_attr_from_html_doc(doc, selector, "style"))
             };
             let list = m.lock().unwrap_or_else(|e| e.into_inner());
             for mt in list.iter() {
@@ -1554,7 +1571,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc(&snap, |doc| query_inner_html_from_html_doc(doc, &sel))
+            with_query_doc_live_aware(&snap, true, |doc| query_inner_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1580,7 +1597,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
-            with_query_doc(&snap, |doc| query_outer_html_from_html_doc(doc, &sel))
+            with_query_doc_live_aware(&snap, true, |doc| query_outer_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -1728,6 +1745,13 @@ thread_local! {
     /// 缓存；回调闭包 'static 可直接访问静态）。
     static QUERY_DOC_CACHE: std::cell::RefCell<Option<(String, zero_dom::Document)>> =
         const { std::cell::RefCell::new(None) };
+    /// js-dom M1 L2（R102）：查询回调的 **live Document** 源——pipeline
+    /// `cached_doc` 共享句柄（webview 每次 execute/apply 前发布最新；load_html 换代
+    /// 发布 None）。发布后无 pending structural mutation 的查询**直接读 live doc**
+    ///（只读 borrow），消 `parse_html(dom_html)` 全文档 re-parse——L2「polyfill 桥读
+    /// live Document」的查询层落点。镜像 dom_bindings gc.rs 的 DOM_SOURCE 模式。
+    static LIVE_QUERY_DOC: std::cell::RefCell<Option<Rc<RefCell<zero_dom::Document>>>> =
+        const { std::cell::RefCell::new(None) };
     /// js-dom M3 R100：跨 `register_dom_callbacks` 持久的 handle 计数器（见注册处
     /// 文档——防跨注册 `__n{n}` 名碰撞）。`Arc` 承载（AtomicU64 非 Clone，闭包捕获
     /// 需 'static + 每注册共享同一实例）。
@@ -1747,6 +1771,13 @@ pub fn publish_forward_handle_map(map: Option<Arc<Mutex<HashMap<String, String>>
     FORWARD_HANDLE_MAP.with(|slot| {
         *slot.borrow_mut() = Some(map.unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))));
     });
+}
+
+/// js-dom M1 L2（R102）：发布查询回调的 live Document 源（webview 在沙箱注册/apply
+/// 前调用——pipeline `cached_doc_shared()`；`None` = 文档换代清空）。发布后无 pending
+/// structural mutation 的查询读 live（消 re-parse），未发布/有 pending 走原快照路径。
+pub fn publish_live_query_doc(doc: Option<Rc<RefCell<zero_dom::Document>>>) {
+    LIVE_QUERY_DOC.with(|slot| *slot.borrow_mut() = doc);
 }
 
 /// js-dom M3 R100：把一批已应用的 mutations append 进线程本地历史（webview apply 前调用）。
@@ -1806,4 +1837,27 @@ fn with_query_doc<R>(html: &str, f: impl FnOnce(&zero_dom::Document) -> R) -> R 
         let doc = &guard.as_ref().expect("cache populated").1;
         f(doc)
     })
+}
+
+/// js-dom M1 L2（R102）：live 感知的查询执行——`live_ok`（= 本查询视图无 pending
+/// structural mutations，`apply_pending_query_html` 判定）且 live doc 已发布时直接读
+/// live（消 re-parse），否则原快照路径。查询语义等价前提：apply 后 webview 同步
+/// `cached_html` 与 live（`apply_pending_shared_mutations` 的 outer_html 快照），
+/// 无 pending 时两者内容一致。
+fn with_query_doc_live_aware<R>(html: &str, live_ok: bool, f: impl FnOnce(&zero_dom::Document) -> R) -> R {
+    // FnOnce 单次调用：live 命中即消费；miss 时经 Option 还回落（闭包 move 进 with，
+    // 用 Some(f) 包装 + take 保证两条路径恰用一次）。
+    let mut f = Some(f);
+    if live_ok {
+        let live_hit = LIVE_QUERY_DOC.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|rc| rc.try_borrow().ok())
+                .and_then(|doc| f.take().map(|f| f(&doc)))
+        });
+        if let Some(r) = live_hit {
+            return r;
+        }
+    }
+    with_query_doc(html, f.expect("live miss path: f not consumed"))
 }

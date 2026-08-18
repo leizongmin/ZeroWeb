@@ -561,6 +561,9 @@ impl WebView {
         self.applied_mutations = 0;
         zero_engine::js_dom_bridge::publish_forward_handle_map(None);
         zero_engine::js_dom_bridge::clear_mutation_history();
+        // js-dom M1 L2 R102：清 live 查询源（旧页 Rc 失效；render_html 后由
+        // apply/注册路径重新发布新 doc 句柄）。
+        zero_engine::js_dom_bridge::publish_live_query_doc(None);
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
@@ -1632,6 +1635,9 @@ impl WebView {
                 .js_sandbox
                 .as_mut()
                 .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
+            // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
+            zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
             register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
             // js-dom M3 R100：selector→handle 反查回调——JS 侧 query 命中后按唯一选择器
             // 反查「本元素是否是 createElement 建立的 handle 节点」，命中则包装回原
@@ -1696,6 +1702,9 @@ impl WebView {
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
         let page_url = self.page_url_wire.clone();
+        // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
+        // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
+        zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
 
@@ -2059,6 +2068,9 @@ impl WebView {
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
         let page_url = self.page_url_wire.clone();
+        // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
+        // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
+        zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
         register_dom_callbacks(&mut **sandbox, &mutations, &dom_html, &page_url, &self.canvas_registry);
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
 

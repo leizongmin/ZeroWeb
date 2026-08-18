@@ -1750,3 +1750,79 @@ globalThis.__r10 = String(td.colSpan);
         hasOwnProperty 调用语义正确，expando 与 reflected-uint 真命中不受扰"
     );
 }
+
+// ── js-dom M1 L2 R102：查询回调 live Document 读路径 ──
+//
+// 行为契约（live 读正确性——性能收益是 opportunistic，行为等价是 land 门禁）：
+// 1. publish live 后查询读 live：对 live doc 的直改（不经 mutation 队列——模拟 native
+//    绑定直改路径）查询可见；
+// 2. 未 publish（None）查询回落快照路径（引擎测试/reftest 等直接调用方零行为变化）；
+// 3. pending InsertAdjacentHtml 时（live_ok=false）查询走 pending 应用视图（R57 语义：
+//    同批 insertAdjacentHTML 后 querySelector 可见——live 读不得提前绕过）。
+#[test]
+fn test_live_query_doc_read_path_r102() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"><p id=\"snap-only\">snap</p></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // 基线：未 publish live——快照路径查询可见快照元素。
+    let out = sandbox
+        .execute("String(document.querySelector('#snap-only') !== null)")
+        .unwrap().value;
+    assert_eq!(out, "true", "R102 基线：快照路径查询可见");
+
+    // 1. publish 一个 live doc（内容 = 快照 + live 独有元素）——live 读应看到 live 独有。
+    let live = zero_dom::parse_html(
+        "<html><body><div id=\"host\"><p id=\"snap-only\">snap</p><span id=\"live-only\">live</span></div></body></html>",
+    );
+    crate::js_dom_bridge::publish_live_query_doc(Some(std::rc::Rc::new(std::cell::RefCell::new(live))));
+    let out = sandbox
+        .execute(
+            "String(document.querySelector('#live-only') !== null) + '|' \
+             + String(document.querySelector('#snap-only') !== null)",
+        )
+        .unwrap().value;
+    assert_eq!(
+        out, "true|true",
+        "R102 live 读：live 独有元素可见 + 快照元素仍在（live 是超集）"
+    );
+
+    // 2. publish None——回落快照路径：live 独有元素不再可见。
+    crate::js_dom_bridge::publish_live_query_doc(None);
+    let out = sandbox
+        .execute("String(document.querySelector('#live-only') !== null)")
+        .unwrap().value;
+    assert_eq!(out, "false", "R102 回落：None 后快照路径，live 独有不可见");
+
+    // 3. pending InsertAdjacentHtml——R57 语义保持：同批 insertAdjacentHTML 后查询可见
+    //    （走 pending 应用视图而非 live——live 未含该未应用 mutation）。
+    crate::js_dom_bridge::publish_live_query_doc(None); // 干净 live 状态
+    sandbox
+        .execute(
+            "var h = document.getElementById('host');\
+             h.insertAdjacentHTML('beforeend', '<b id=\"adj\">adj</b>');\
+             globalThis.__adjVisible = String(document.querySelector('#adj') !== null);",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__adjVisible").unwrap().value;
+    assert_eq!(
+        out, "true",
+        "R102 pending 语义：同批 insertAdjacentHTML 后查询可见（R57 回归守卫）"
+    );
+
+    crate::js_dom_bridge::publish_live_query_doc(None);
+}
