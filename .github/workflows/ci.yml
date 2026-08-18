@@ -544,7 +544,10 @@ jobs:
           bash scripts/download-rusty-v8.sh
 
       # 性能门禁（docs/specs/performance-and-resource-budget.md）：真实测量 + 门禁比较。
-      # 基线 = docs/perf/baselines/github-ubuntu-latest.json（GITHUB_ACTIONS 环境自动选择）。
+      # 基线 = docs/perf/baselines/<platform_class>.json；platform_class 含归一化 CPU 型号
+      #（2026-08-18 起，如 github-ubuntu-latest-amd-epyc-9v74-80-core）——ubuntu-latest 池
+      # 硬件换代（EPYC 7763 → 9V74）时新 CPU 自然走「无基线 → auto-tighten 首跑建基线」，
+      # 旧基线留给老实例，避免跨硬件错配比较。
       # 首次运行（无基线）→ PASS+WARN 附 capture 指引；此后每周 benchmark-trend（weekly.yml）
       # 在同一 runner 类上执行真门禁并 auto-tighten。PR 不动（runner 硬件噪声，见 policy 文档）。
       - name: Run benchmarks and gate
@@ -552,7 +555,7 @@ jobs:
           bash scripts/bench-report.sh
           bash scripts/perf-gate.sh
 
-      # 基线闭环（2026-08-08）：auto-tighten 首次运行自动建立 github-ubuntu-latest
+      # 基线闭环（2026-08-08）：auto-tighten 首次运行自动建立当前 CPU 的基线
       # 基线（record-bench-trend.sh 无基线时委托 record-bench-baseline.sh），
       # 后续 dispatch 自动收紧。CI workspace 是临时的——须提交回 main 持久化。
       - name: Record benchmark trend (auto-create baseline on first run)

@@ -85,9 +85,18 @@ if git -C "$PROJECT_ROOT" status --porcelain | grep -q .; then
 else
     GIT_DIRTY="false"
 fi
-# 平台类：CI（GitHub Actions ubuntu-latest）与本地 dev box 分基线（硬件固定，见 policy 文档）
+# 平台类：CI（GitHub Actions ubuntu-latest）与本地 dev box 分基线（硬件固定，见 policy 文档）。
+# CI 侧追加归一化 CPU 型号后缀（2026-08-18）：ubuntu-latest 池正从 EPYC 7763 换代到
+# EPYC 9V74，同 platform_class 混两种硬件——1.6x 全线偏移既非代码回归也非单实例噪声，
+# 而是「基线硬件 ≠ 测量硬件」的系统性错配（run 32118133651 WARN vs 32120225807 FAIL）。
+# CPU 入 class 后换代自然走「无基线 → auto-tighten 首跑建基线」，旧基线留给老实例，
+# 不需要人工重捕。slug 规则：小写、非字母数字折叠为 -、intel-r/xeon-r 拼接残留
+# 合并、取前 5 段（如 "AMD EPYC 9V74 80-Core Processor" → amd-epyc-9v74-80-core、
+# "Intel(R) Xeon(R) Platinum 8370C" → intel-xeon-platinum-8370c）。
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-    PLATFORM_CLASS="github-ubuntu-latest"
+    CI_CPU=$(lscpu 2>/dev/null | awk -F':' '/^Model name:/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')
+    CI_CPU_SLUG=$(echo "$CI_CPU" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\+/-/g; s/-]\+$//; s/intel-r/intel/; s/xeon-r/xeon/' | sed 's/[^a-z0-9]\+/-/g; s/^-]\+//; s/-]\+$//' | cut -d'-' -f1-5)
+    PLATFORM_CLASS="github-ubuntu-latest${CI_CPU_SLUG:+-$CI_CPU_SLUG}"
 else
     PLATFORM_CLASS="$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)"
 fi

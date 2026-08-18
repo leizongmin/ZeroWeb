@@ -68,8 +68,10 @@ record-bench-baseline.sh（基线，手动）→ docs/perf/baselines/<platform_c
 
 ### 3.3 基线（docs/perf/baselines/，提交、硬件固定）
 
-- 按 `platform_class` 分文件：本地 dev box（`linux-x86_64`）+ CI（`github-ubuntu-latest`，
-  `GITHUB_ACTIONS=true` 自动选择）。
+- 按 `platform_class` 分文件：本地 dev box（`linux-x86_64`）+ CI（`github-ubuntu-latest-<cpu-slug>`，
+  `GITHUB_ACTIONS=true` 自动选择；2026-08-18 起 CI class 追加归一化 CPU 型号——ubuntu-latest
+  池 EPYC 7763→9V74 换代期间同池混两种硬件，CPU 入 class 后换代自动走「无基线→首跑
+  建基线」，旧基线留给老实例，杜绝跨硬件错配比较）。
 - **硬件固定**：基线绑定 CPU 型号/核数。更换机器/CPU → 必须重新 capture 基线，
   旧基线只作趋势参考。
 - 基线是「收紧优先」的：`record-bench-baseline.sh` 发现新 p95 ≥ 旧值×1.005 且未显式
