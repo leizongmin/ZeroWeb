@@ -14,11 +14,13 @@ Browser owner 现统一维护 regular/private partition 内的 IndexedDB connect
 4. 全部 ack 后 requester 才观察到 `blocked`
 5. connection `close()` 回报 browser；全部关闭后 requester 进入 upgrade/delete
 
+同 scope 的 connection change 按 browser owner FIFO 串行执行。排队请求成为队首时重新读取 browser storage version，并按此 fresh `oldVersion` 选择当前 connection targets 和派发 `versionchange`。
+
 导航、renderer teardown 和 regular/private partition 切换都会撤销该 renderer 的 connection 与 pending request。
 
 ## 验证
 
-+ Browser owner 状态机：4 / 4 Pass
++ Browser owner 状态机：5 / 5 Pass，覆盖 scope FIFO 与队首 fresh `oldVersion`
 + Protocol event/ack bincode roundtrip：Pass
 + Renderer JS worker / runtime：194 / 194 Pass
 + Page-runtime embedded fallback：44 / 44 Pass

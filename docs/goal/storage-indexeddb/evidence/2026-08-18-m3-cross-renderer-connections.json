@@ -9,11 +9,13 @@
     "renderer event-dispatch acknowledgement",
     "blocked after all event acknowledgements",
     "close-driven upgrade and delete unblocking",
+    "per-scope connection change FIFO",
+    "fresh browser storage version when a queued request starts",
     "navigation, crash, and partition-change revocation"
   ],
   "tests": {
     "owner_state_machine": {
-      "pass": 4,
+      "pass": 5,
       "fail": 0
     },
     "protocol_roundtrip": "pass",

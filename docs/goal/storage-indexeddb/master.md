@@ -51,7 +51,7 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 - ✅ M3 database version：Rust 全链路使用 `u64`，支持并持久化 `Number.MAX_SAFE_INTEGER`
 - ✅ M2 transaction scheduling core：同 realm 跨 connection 共享 scope 顺序表，固定 WPT 7/7
 - ✅ M2 connection queue：同 realm open/delete FIFO、`versionchange` / `blocked` / `close()` 解阻塞
-- ✅ M3 cross-renderer connections：browser owner registry + versionchange IPC/ack + blocked/close 解阻塞
+- ✅ M3 cross-renderer connections：browser owner registry + versionchange IPC/ack + per-scope FIFO + blocked/close 解阻塞
 
 ## 缺口清单
 

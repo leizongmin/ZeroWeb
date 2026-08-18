@@ -837,21 +837,7 @@ impl ProcessTabBackend {
                     old_version,
                     new_version,
                 )?;
-                for event in events {
-                    let Some(tab_id) = self.tab_for_renderer(event.target.renderer_id) else {
-                        self.indexed_db_connections.remove_renderer(event.target.renderer_id);
-                        continue;
-                    };
-                    self.send_to_renderer(
-                        tab_id,
-                        IpcMessageKind::IndexedDbConnectionEvent(IndexedDbConnectionEventParams {
-                            connection_id: event.target.connection_id,
-                            request_id: event.request_id,
-                            old_version: event.old_version,
-                            new_version: event.new_version,
-                        }),
-                    );
-                }
+                self.send_indexed_db_connection_events(events);
                 Ok(match request_id {
                     Some(request_id) => serde_json::json!({
                         "ready": false,
@@ -866,13 +852,47 @@ impl ProcessTabBackend {
                 .to_string())
             }
             ConnectionWireRequest::PollConnectionChange { request } => {
-                let status = self.indexed_db_connections.status(renderer_id, request)?;
+                let (request_private, request_origin, request_database) =
+                    self.indexed_db_connections.request_scope(renderer_id, request)?;
+                let storage = if request_private {
+                    Arc::clone(&self.private_storage)
+                } else {
+                    Arc::clone(&self.storage)
+                };
+                let current_old_version = storage
+                    .lock()
+                    .map_err(|_| "UnknownError: IndexedDB storage lock is poisoned".to_string())?
+                    .indexed_db(&request_origin, &request_database)
+                    .map(|database| database.version)
+                    .unwrap_or(0);
+                let update = self
+                    .indexed_db_connections
+                    .status(renderer_id, request, current_old_version)?;
+                self.send_indexed_db_connection_events(update.events);
                 Ok(serde_json::json!({
-                    "ready": status == ConnectionRequestStatus::Ready,
-                    "blocked": status == ConnectionRequestStatus::Blocked,
+                    "ready": update.status == ConnectionRequestStatus::Ready,
+                    "blocked": update.status == ConnectionRequestStatus::Blocked,
                 })
                 .to_string())
             }
+        }
+    }
+
+    fn send_indexed_db_connection_events(&mut self, events: Vec<indexed_db_connections::ConnectionEvent>) {
+        for event in events {
+            let Some(tab_id) = self.tab_for_renderer(event.target.renderer_id) else {
+                self.indexed_db_connections.remove_renderer(event.target.renderer_id);
+                continue;
+            };
+            self.send_to_renderer(
+                tab_id,
+                IpcMessageKind::IndexedDbConnectionEvent(IndexedDbConnectionEventParams {
+                    connection_id: event.target.connection_id,
+                    request_id: event.request_id,
+                    old_version: event.old_version,
+                    new_version: event.new_version,
+                }),
+            );
         }
     }
 
