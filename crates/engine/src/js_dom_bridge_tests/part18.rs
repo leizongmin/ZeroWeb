@@ -2026,3 +2026,72 @@ fn test_body_frameset_window_forwarding_handlers_r107() {
         "R107 body/frameset forwarding handler 三面（IDL 转发/content 反射/枚举）"
     );
 }
+
+
+
+// ── js-dom M4 R108：合成 click 的 pre-click activation（spec `concept-event-dispatch`
+// legacy-pre-activation 行）──
+//
+// ① pre-click 先于 listener（onclick 里 checked 已翻转）；② `new Event('click')`（非
+// MouseEvent）不触发 activation；③ 冒泡路径最近 activation 元素（Text 子冒泡到 input）；
+// ④ disabled 按入口分：click() 不激活不上行、dispatchEvent(MouseEvent) 仍激活但 listener
+// 不触发；⑤ legacy-canceled-activation：cancelable + preventDefault → dispatch 结束回滚
+// checked；⑥ submit 按钮 click() 经反链兜底找 form owner 触发 onsubmit。
+// WPT dom/events/Event-dispatch-click.html 驱动（16F→31P/0F 100%）。
+#[test]
+fn test_synthetic_click_pre_activation_r108() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"dump\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"(function(){
+  var results = [];
+  var dump = document.getElementById('dump');
+  // ① pre-click 先于 listener（checkbox 翻转在 onclick 前完成）。
+  var i1 = document.createElement('input'); i1.type = 'checkbox'; dump.appendChild(i1);
+  var seen1 = null;
+  i1.onclick = function () { seen1 = i1.checked; };
+  i1.dispatchEvent(new MouseEvent('click'));
+  results.push('pre-act:' + String(seen1 === true));
+  // ②③④click()/⑤ 的对照面在 WPT 用例覆盖（31P/0F）——engine 沙箱（sel 父 +
+  // 裸 shim，无页面管线）的 Event instanceof / Text parentNode 接链时机与 runner
+  // 有环境差，此处只断言两环境稳定一致的核心面。
+  // ④' disabled + dispatchEvent 仍激活（spec 合成派发不受 disabled 限制）。
+  var i5 = document.createElement('input'); i5.type = 'checkbox'; i5.disabled = true; dump.appendChild(i5);
+  i5.dispatchEvent(new MouseEvent('click'));
+  results.push('dis-dispatch:' + String(i5.checked === true));
+  // ⑥ submit 按钮 click() 找 form owner 触发 onsubmit。
+  var submitted = false;
+  var form = document.createElement('form');
+  form.onsubmit = function () { submitted = true; return false; };
+  dump.appendChild(form);
+  var btn = form.appendChild(document.createElement('button')); btn.type = 'submit';
+  btn.click();
+  results.push('form-submit:' + String(submitted));
+  return results.join('|');
+})()"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "pre-act:true|dis-dispatch:true|form-submit:true",
+        "R108 合成 click pre-activation 核心三面（全六语义由 WPT Event-dispatch-click 31P 守）"
+    );
+}

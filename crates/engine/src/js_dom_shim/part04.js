@@ -1616,8 +1616,10 @@
         if (prop === 'click') {
           return function() {
             var ev = _makeEvent('click', { bubbles: true, cancelable: true });
+            // R108：合成 click 打标——pre-click activation 认它（非 MouseEvent 实例）。
+            ev._zwSyntheticClick = true;
             var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
-            if (notPrevented) {
+            if (notPrevented && !(globalThis.MouseEvent && ev instanceof globalThis.MouseEvent)) {
               // R57（FV M1）：click 默认动作——checkbox/radio 的 checked 切换
               //（spec §4.10.5.2.4 的 radio 组语义——radio-group-valueMissing 的
               // fourth.click()）。属性层面（shim 的 checked 读取 = 属性存在性）。
@@ -1678,6 +1680,32 @@
                 }
                 if (_subIsBtn) {
                   try { _subFrm = _makeProxy(sel, handle).form; } catch (_e8) { _subFrm = null; }
+                  // R108：handle 子的 form owner 兜底——`.form` getter 对 handle 元素返
+                  // undefined（generic 路径），经 `_zwNodeParent` 反链上行找最近 FORM
+                  //（WPT Event-dispatch-click part2：form.appendChild(button) 后
+                  // button.click() 须触发 onsubmit）。
+                  if (!_subFrm) {
+                    var _fH = handle, _fS = sel, _fHops = 0;
+                    while (_fHops < 32) {
+                      _fHops++;
+                      var _fTag = null;
+                      try { _fTag = _realTag(_fS, _fH); } catch (_eF1) { _fTag = null; }
+                      if (_fTag === 'FORM') { _subFrm = _makeProxy(_fS, _fH); break; }
+                      if (_fS && typeof __zw_parent === 'function') {
+                        var _fP = '';
+                        try { _fP = __zw_parent(_fS); } catch (_eF2) {}
+                        if (_fP) { _fS = _fP; _fH = null; continue; }
+                      }
+                      if (_fH && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                        var _fL = _zwNodeParent[_fH];
+                        if (_fL) {
+                          if (_fL.parentHandle) { _fH = _fL.parentHandle; _fS = _fL.parentSel || null; continue; }
+                          if (_fL.parentSel) { _fS = _fL.parentSel; _fH = null; continue; }
+                        }
+                      }
+                      break;
+                    }
+                  }
                 }
               }
               if (_subFrm) {

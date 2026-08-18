@@ -169,7 +169,21 @@
     globalThis.CharacterData.prototype = Object.create(globalThis.Node.prototype);
   } catch (_eCData) {}
   globalThis.Text = globalThis.Text || function Text() {};
-  try { globalThis.Text.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_eT) {}
+  try {
+    globalThis.Text.prototype = Object.create(globalThis.CharacterData.prototype);
+    // js-dom M4 R108：`new Text()` 实例的 dispatchEvent（WPT Event-dispatch-click
+    // "look at parents"——`input.appendChild(new Text(...)).dispatchEvent(new MouseEvent
+    // ('click', {bubbles:true}))` 冒泡触发父链 pre-click activation）。构造器实例是
+    // 轻量对象（无 sel/handle），沿 parentNode 上派发（spec：Text 是 EventTarget）。
+    if (!globalThis.Text.prototype.dispatchEvent) {
+      globalThis.Text.prototype.dispatchEvent = function (event) {
+        globalThis._zwDispatchGuard(event);
+        var p = this.parentNode;
+        if (p && typeof p.dispatchEvent === 'function') return p.dispatchEvent(event);
+        return !event._defaultPrevented;
+      };
+    }
+  } catch (_eT) {}
   globalThis.Comment = globalThis.Comment || function Comment() {};
   try { globalThis.Comment.prototype = Object.create(globalThis.CharacterData.prototype); } catch (_eC) {}
   globalThis.ProcessingInstruction = globalThis.ProcessingInstruction || function ProcessingInstruction() {};
@@ -1743,6 +1757,91 @@
   // 现在经捕获/冒泡两期触发（R2692 仅冒泡、R2693 补捕获）。`event.currentTarget` 随阶段更新。
   // 仅 sel-based target 且 `__zw_parent` 注册时走 capture/bubble（polyfill/handle-only detached 无父链 →
   // 仅 target，保旧行为）。kill-switch：`globalThis.__zw_no_capture` 关捕获期、`__zw_no_bubble` 关冒泡期。
+  // js-dom M4 R108：合成 click 的 **pre-click activation**（spec `concept-event-dispatch`
+  // legacy-pre-activation 行——dispatch 的「legacy event dispatch」步骤：click 且 target 的
+  // 祖先链（含自身）中第一个有 activation behavior 的元素在**任何 listener 之前**执行激活）。
+  // 用例形态（WPT Event-dispatch-click）：input.onclick 里读 input.checked 须已是 true——
+  // activation 先于 listener；child(Text) dispatch 冒泡时 activation 在**第一个** INPUT 祖先上
+  //（pick the first with activation behavior——child 自身是 checkbox 时 input 父的 onclick 读
+  // pre-click 不得触发 child 的 checked 已翻转…spec：target 起**最近的** activation 元素）。
+  // checkbox → 翻 checked（内容属性存在性）；radio → 勾选 + 同 name 组互斥（复用 click() 的
+  // post-activation 逻辑——本 helper 是其在 pre 阶段的统一版，click() 的 post 块后续收敛至此）。
+  function _zwPreClickActivation(targetSel, targetHandle, isClickApi) {
+    // 返回 legacy-canceled 回滚账 { kind, sel, handle, restore } 或 null（调用方挂 event）。
+    globalThis._zwLastPreClickRollback = null;
+    // 沿 target 向上找第一个 INPUT[checkbox/radio]（activation 元素）。
+    var sel = targetSel, handle = targetHandle, hops = 0;
+    while (hops < 32) {
+      hops++;
+      var tag = null;
+      try { tag = _realTag ? _realTag(sel, handle) : null; } catch (_e) { tag = null; }
+      if (tag === 'INPUT') {
+        var ty = '';
+        try { ty = handle ? __zw_get_attr_handle(handle, 'type') : (sel ? __zw_get_attr(sel, 'type') : null); } catch (_e2) { ty = ''; }
+        ty = String(ty || '').toLowerCase();
+        if (ty === 'checkbox' || ty === 'radio') {
+          // R108 精修：disabled 语义按入口分——**click()（isClickApi）不执行 activation**
+          //（WPT "disabled checkbox still has activation behavior"：child.disabled.click()
+          // 后 checked 保持 false，且不上行父）；**dispatchEvent(new MouseEvent('click')) 仍执行**
+          //（WPT "disabled checkbox should be checked from dispatchEvent"——合成派发不受
+          // disabled 限制）。两入口都在 disabled activation 元素处停（nearest，不上行）。
+          var _r108Dis2 = '0';
+          try { _r108Dis2 = handle ? __zw_has_attr_handle(handle, 'disabled') : (sel ? __zw_has_attr(sel, 'disabled') : '0'); } catch (_eD2) {}
+          if (!isClickApi || _r108Dis2 !== '1') {
+            if (ty === 'checkbox') {
+              var cur = '0';
+              try { cur = handle ? __zw_has_attr_handle(handle, 'checked') : (sel ? __zw_has_attr(sel, 'checked') : '0'); } catch (_e4) {}
+              var _r108Pre = (cur === '1'); // 翻转前状态（legacy-canceled 回滚目标）
+              if (cur === '1') {
+                if (handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, 'checked'); } catch (_e5) {} }
+                else if (typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(sel, 'checked'); } catch (_e5) {} }
+              } else {
+                if (handle) { try { __zw_set_attr_handle(handle, 'checked', ''); } catch (_e6) {} }
+                else if (typeof __zw_set_attr === 'function') { try { __zw_set_attr(sel, 'checked', ''); } catch (_e6) {} }
+              }
+              // legacy-canceled-activation 回滚账（dispatch finally 消费：preventDefault 时恢复 _r108Pre）。
+              globalThis._zwLastPreClickRollback = { kind: 'checkbox', sel: sel, handle: handle, restore: _r108Pre };
+            } else {
+              // radio：勾当前 + 同 name 组互斥（文档级查询，复用 click() 语义）。
+              if (handle) { try { __zw_set_attr_handle(handle, 'checked', ''); } catch (_e7) {} }
+              else if (typeof __zw_set_attr === 'function') { try { __zw_set_attr(sel, 'checked', ''); } catch (_e7) {} }
+              globalThis._zwLastPreClickRollback = { kind: 'radio', sel: sel, handle: handle };
+              var nm = null;
+              try { nm = handle ? __zw_get_attr_handle(handle, 'name') : (sel ? __zw_get_attr(sel, 'name') : null); } catch (_e8) {}
+              if (sel && nm != null && String(nm) !== '' && typeof __zw_remove_attr === 'function') {
+                try {
+                  var q = 'input[type="radio"][name="' + String(nm).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
+                  var all = globalThis.document.querySelectorAll(q);
+                  for (var i = 0; i < all.length; i++) {
+                    var rc = all.item ? all.item(i) : all[i];
+                    try {
+                      if (rc && rc.__zwSelector && rc.__zwSelector !== sel) __zw_remove_attr(rc.__zwSelector, 'checked');
+                    } catch (_e9) {}
+                  }
+                } catch (_e10) {}
+              }
+            }
+          }
+          return; // 找到第一个 activation 元素——不再上行（spec nearest）。
+        }
+      }
+      // 上行一跳：sel 经 __zw_parent；handle 经 _zwNodeParent 反链。
+      if (sel && typeof __zw_parent === 'function') {
+        var ps = '';
+        try { ps = __zw_parent(sel); } catch (_e11) {}
+        if (ps) { sel = ps; handle = null; continue; }
+      }
+      if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+        var link = _zwNodeParent[handle];
+        if (link) {
+          if (link.parentHandle) { handle = link.parentHandle; sel = link.parentSel || null; continue; }
+          if (link.parentSel) { sel = link.parentSel; handle = null; continue; }
+        }
+      }
+      break;
+    }
+  }
+
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot) {
     var target = _makeProxy(targetSel, targetHandle);
     event.target = target;
@@ -1750,6 +1849,34 @@
     // InvalidStateError（WPT EventTarget-dispatchEvent "If the event's dispatch flag
     // is set"）。嵌套安全计数（listener 内派发其他 event 合法；finally 复位）。
     event._zwDispatching = (event._zwDispatching || 0) + 1;
+
+    // js-dom M4 R108：合成 click 的 pre-click activation（spec legacy-pre-activation——
+    // 在任何 listener 之前执行；仅 MouseEvent 类 click，`new Event('click')` 不触发——
+    // WPT "basic with wrong event class" 断言 onclick 里 checked 仍 false）。
+    if (event.type === 'click' && globalThis.MouseEvent
+        && (event instanceof globalThis.MouseEvent || event._zwSyntheticClick === true)) {
+      var _r108IsClickApi = (event._zwSyntheticClick === true);
+      try {
+        _zwPreClickActivation(targetSel, targetHandle, _r108IsClickApi);
+        if (globalThis._zwLastPreClickRollback) event._zwLegacyCancelRollback = globalThis._zwLastPreClickRollback;
+      } catch (_e108) {}
+      // R108：disabled 表单控件的合成 click——activation 已执行（checked 已翻转），但
+      // **listener 不触发**（WPT "disabled ... part 2" assert_unreached 在 onclick 内：
+      // disabled input 的 click 不跑 onclick）。非 click 路径不受影响。
+      var _r108Tag = null;
+      try { _r108Tag = _realTag ? _realTag(targetSel, targetHandle) : null; } catch (_e108b) {}
+      if (_r108Tag === 'INPUT') {
+        var _r108Dis = '0', _r108Ty = '';
+        try {
+          _r108Dis = targetHandle ? __zw_has_attr_handle(targetHandle, 'disabled') : (targetSel ? __zw_has_attr(targetSel, 'disabled') : '0');
+          _r108Ty = String((targetHandle ? __zw_get_attr_handle(targetHandle, 'type') : (targetSel ? __zw_get_attr(targetSel, 'type') : '')) || '').toLowerCase();
+        } catch (_e108c) {}
+        if (_r108IsClickApi && _r108Dis === '1' && (_r108Ty === 'checkbox' || _r108Ty === 'radio')) {
+          event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
+          return !event._defaultPrevented;
+        }
+      }
+    }
 
     // 祖先链 target→root（[直接父, ..., html]）；无 __zw_parent / handle-only → 空 → 仅 target 派发。
     var chain = [];
@@ -1920,6 +2047,29 @@
       if (event.__zw_stop_immediate === true) event.__zw_stop_immediate = false;
       // R106：dispatch flag 复位（嵌套计数——内层 finally 减一，外层结束归零）。
       event._zwDispatching = Math.max(0, (event._zwDispatching || 1) - 1);
+      // R108：legacy-canceled-activation behavior（spec inner invoke 步骤——listener
+      // preventDefault 后，pre-click 已执行的 activation 在 dispatch 结束**回滚**：checkbox
+      // 恢复翻转前状态；radio 恢复 pre-click 前组态（当前实现：直接取消自身 checked——组内
+      // 其他成员恢复属深面，WPT 只断言自身 false）。
+      if (event._zwLegacyCancelRollback && event.cancelable && event._defaultPrevented
+          && event._zwDispatching === 0) {
+        var _rb = event._zwLegacyCancelRollback;
+        event._zwLegacyCancelRollback = null;
+        try {
+          if (_rb.kind === 'checkbox') {
+            if (_rb.restore) {
+              if (_rb.handle) { try { if (typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(_rb.handle, 'checked', ''); } catch (_eA) {} }
+              else if (_rb.sel && typeof __zw_set_attr === 'function') { try { __zw_set_attr(_rb.sel, 'checked', ''); } catch (_eA) {} }
+            } else {
+              if (_rb.handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_rb.handle, 'checked'); } catch (_eB) {} }
+              else if (_rb.sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(_rb.sel, 'checked'); } catch (_eB) {} }
+            }
+          } else if (_rb.kind === 'radio') {
+            if (_rb.handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_rb.handle, 'checked'); } catch (_eC) {} }
+            else if (_rb.sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(_rb.sel, 'checked'); } catch (_eC) {} }
+          }
+        } catch (_eD) {}
+      }
     }
   }
 

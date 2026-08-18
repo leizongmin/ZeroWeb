@@ -3141,6 +3141,19 @@ function _zwRegisterTextEl(el, handle, sel, text) {
     hasChildNodes: function () { return false; },
     contains: function (other) { return _zwNodeContains(node, other); },
     compareDocumentPosition: function (other) { return _zwCompareDocumentPosition(node, other); },
+    // js-dom M4 R108：文本节点 dispatchEvent（WPT Event-dispatch-click "look at parents"——
+    // `textChild.dispatchEvent(new MouseEvent('click', {bubbles:true}))` 冒泡到父元素链触发
+    // pre-click activation）。spec：文本节点是 EventTarget。guard + 经父 el 派发（自身无
+    // listener 存储；target=父 el 与「nearest activation 元素」语义一致——activation 从
+    // 派发 target 起向上找，父 el 即首站）。
+    dispatchEvent: function (event) {
+      globalThis._zwDispatchGuard(event);
+      var parent = node.parentNode;
+      if (parent && typeof parent.dispatchEvent === 'function') {
+        return parent.dispatchEvent(event);
+      }
+      return !event._defaultPrevented;
+    },
   };
   // R81：原型挂 Text.prototype（instanceof Text / CharacterData / Node——WPT Node-textContent
   // `firstChild instanceof Text` 断言；own 字段优先，原型链只补构造器身份）。
