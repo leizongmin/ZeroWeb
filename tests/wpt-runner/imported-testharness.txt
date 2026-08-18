@@ -32,6 +32,14 @@ IndexedDB/keypath_maxsize.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-0
 IndexedDB/key_valid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-key-semantics
 IndexedDB/key_invalid.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-key-semantics
 IndexedDB/keyorder.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-key-semantics
+IndexedDB/idbobjectstore_createIndex.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbobjectstore_deleteIndex.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbobjectstore-deleteIndex-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex_indexNames.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex_keyPath.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex-objectStore-SameObject.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex-request-source.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
+IndexedDB/idbindex-query-exception-order.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-18 IDB-M2-index-metadata
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud

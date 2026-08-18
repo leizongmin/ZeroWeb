@@ -183,6 +183,23 @@ pub const INDEXEDDB_CASES: &[(&str, &[&str])] = &[
     ("IndexedDB/key_valid.any.js", &["resources/support.js"]),
     ("IndexedDB/key_invalid.any.js", &["resources/support.js"]),
     ("IndexedDB/keyorder.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_createIndex.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbobjectstore_deleteIndex.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbobjectstore-deleteIndex-exception-order.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbindex_indexNames.any.js", &["resources/support.js"]),
+    ("IndexedDB/idbindex_keyPath.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbindex-objectStore-SameObject.any.js",
+        &["resources/support.js"],
+    ),
+    ("IndexedDB/idbindex-request-source.any.js", &["resources/support.js"]),
+    (
+        "IndexedDB/idbindex-query-exception-order.any.js",
+        &["resources/support.js"],
+    ),
     ("IndexedDB/idbobjectstore_add.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_put.any.js", &["resources/support.js"]),
     ("IndexedDB/idbobjectstore_get.any.js", &["resources/support.js"]),

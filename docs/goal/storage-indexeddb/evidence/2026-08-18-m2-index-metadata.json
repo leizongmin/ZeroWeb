@@ -1,0 +1,48 @@
+{
+  "date": "2026-08-18",
+  "scope": "M2 IndexedDB index metadata",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 8,
+  "driving_wpt": {
+    "before": {
+      "reported_subtests": 48,
+      "pass": 42,
+      "fail": 6,
+      "timeout": 0
+    },
+    "after": {
+      "reported_subtests": 49,
+      "pass": 49,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 107,
+    "pass": 656,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "versionchange-only index schema mutation",
+    "createIndex and deleteIndex exception ordering",
+    "IDBIndex SameObject and sequence keyPath identity",
+    "transaction abort bubbling",
+    "failed upgrade open request AbortError"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "22 pass",
+    "fixed_wpt_asset": "matches upstream checkout",
+    "manifest_counts": {
+      "fetch": 107,
+      "runner": 107,
+      "ledger": 107
+    }
+  }
+}

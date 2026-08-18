@@ -389,6 +389,90 @@ fn test_indexeddb_keypath_extraction_edge_cases() {
 }
 
 #[test]
+fn test_indexeddb_index_metadata_and_failed_upgrade_error() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.register_callback(
+        "__zw_idb",
+        Box::new(|args: &[String]| {
+            let request = &args[0];
+            if request.contains("\"op\":\"sync_schema\"")
+                && request.contains("\"name\":\"index-unique-failure\"")
+            {
+                return "__zw_idb_error:ConstraintError:duplicate index keys".to_string();
+            }
+            let response = if request.contains("\"op\":\"connection_capabilities\"") {
+                r#"{"crossRenderer":false,"transactionScheduling":false}"#
+            } else if request.contains("\"op\":\"inspect\"") {
+                r#"{"database":null}"#
+            } else if request.contains("\"op\":\"begin_transaction\"") {
+                r#"{"transaction":1}"#
+            } else {
+                "{}"
+            };
+            format!("__zw_idb_ok:{response}")
+        }),
+    );
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__indexMetadata = [];\
+             var metadata = indexedDB.open('index-metadata', 1);\
+             metadata.onupgradeneeded = function () {\
+               var store = metadata.result.createObjectStore('items');\
+               var first = store.createIndex('compound', ['a','b']);\
+               var second = store.index('compound');\
+               __indexMetadata.push('keyPath:' + (first.keyPath === first.keyPath ? 'same' : 'changed'));\
+               __indexMetadata.push('keyPath:' + (first.keyPath !== second.keyPath ? 'different' : 'shared'));\
+               __indexMetadata.push('store:' + (first.objectStore === first.objectStore ? 'same' : 'changed'));\
+               try { store.createIndex('compound', 'not valid'); }\
+               catch (error) { __indexMetadata.push('duplicate:' + error.name); }\
+               try { store.deleteIndex('missing'); }\
+               catch (error) { __indexMetadata.push('missing:' + error.name); }\
+             };\
+             metadata.onsuccess = function () {\
+               var store = metadata.result.transaction('items').objectStore('items');\
+               try { store.createIndex('late', 'value'); }\
+               catch (error) { __indexMetadata.push('create:' + error.name); }\
+               try { store.deleteIndex('compound'); }\
+               catch (error) { __indexMetadata.push('delete:' + error.name); }\
+             };\
+             var failed = indexedDB.open('index-unique-failure', 1);\
+             failed.onupgradeneeded = function () {\
+               var db = failed.result;\
+               var store = db.createObjectStore('items');\
+               store.put({name:'duplicate'}, 1);\
+               store.put({name:'duplicate'}, 2);\
+               store.createIndex('unique', 'name', {unique:true});\
+               failed.transaction.onabort = function () { __indexMetadata.push('abort:transaction'); };\
+               db.onabort = function () { __indexMetadata.push('abort:database'); };\
+             };\
+             failed.onerror = function () {\
+               __indexMetadata.push('open:' + failed.error.name);\
+             };",
+        )
+        .unwrap();
+    for _ in 0..24 {
+        sandbox.execute("0").unwrap();
+    }
+
+    assert_eq!(
+        sandbox
+            .execute("__indexMetadata.sort().join('|')")
+            .unwrap()
+            .value,
+        "abort:database|abort:transaction|create:InvalidStateError|delete:InvalidStateError|\
+         duplicate:ConstraintError|keyPath:different|keyPath:same|missing:NotFoundError|\
+         open:AbortError|store:same"
+    );
+}
+
+#[test]
 fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
     use zero_script_sandbox::{Sandbox, V8Sandbox};
 

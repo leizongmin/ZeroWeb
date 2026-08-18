@@ -4161,15 +4161,34 @@
   _zwIDBStore.prototype.getAllKeys = function (query, count) {
     return this._getAll(query, count, true, arguments.length >= 1);
   };
+  _zwIDBStore.prototype._assertSchemaChange = function () {
+    if (this._metadata && this._metadata.deleted) {
+      throw new globalThis.DOMException('The object store has been deleted.', 'InvalidStateError');
+    }
+    var transaction = this.transaction;
+    if (!transaction || transaction.mode !== 'versionchange') {
+      throw new globalThis.DOMException(
+        'Indexes can only be changed during an upgrade transaction.',
+        'InvalidStateError'
+      );
+    }
+    if (!transaction._active
+        || transaction._aborted
+        || transaction._finished
+        || transaction._committing) {
+      throw new globalThis.DOMException('The transaction is inactive.', 'TransactionInactiveError');
+    }
+  };
   _zwIDBStore.prototype.createIndex = function (name, keyPath, opts) {
-    this._assertUsable(true);
+    // https://w3c.github.io/IndexedDB/#dom-idbobjectstore-createindex
+    this._assertSchemaChange();
     name = String(name);
-    keyPath = _zwIDBNormalizeKeyPath(keyPath, true);
-    var unique = !!((opts || {}).unique);
-    var multiEntry = !!((opts || {}).multiEntry);
     if (Object.prototype.hasOwnProperty.call(this._indexes, name)) {
       throw new globalThis.DOMException('The index already exists.', 'ConstraintError');
     }
+    keyPath = _zwIDBNormalizeKeyPath(keyPath, true);
+    var unique = !!((opts || {}).unique);
+    var multiEntry = !!((opts || {}).multiEntry);
     if (multiEntry && Array.isArray(keyPath)) {
       throw new globalThis.DOMException(
         'A multiEntry index cannot use a compound key path.',
@@ -4186,6 +4205,7 @@
     this._indexes[name] = metadata;
     if (unique && this.transaction) {
       var seen = [];
+      var conflict = false;
       this._records.forEach(function (value) {
         var indexKey = this._indexKey(value, keyPath);
         var keys = multiEntry && Array.isArray(indexKey) ? indexKey : [indexKey];
@@ -4193,17 +4213,33 @@
           if (!_zwIDBKey(candidate, [])) return;
           if (seen.some(function (existing) {
             return _zwIDBCompareValues(existing, candidate) === 0;
-          })) this.transaction.abort();
+          })) conflict = true;
           seen.push(candidate);
-        }, this);
+        });
       }, this);
+      if (conflict) {
+        var transaction = this.transaction;
+        setTimeout(function () {
+          if (transaction._aborted || transaction._finished) return;
+          transaction._requestError = new globalThis.DOMException(
+            'The unique index contains duplicate values.',
+            'ConstraintError'
+          );
+          transaction.abort();
+        }, 0);
+      }
     }
     return new _zwIDBIndex(this, name, metadata);
   };
   _zwIDBStore.prototype.deleteIndex = function (name) {
-    this._assertUsable(true);
+    // https://w3c.github.io/IndexedDB/#dom-idbobjectstore-deleteindex
+    this._assertSchemaChange();
+    name = String(name);
     var metadata = this._indexes[name];
-    if (metadata) metadata.deleted = true;
+    if (!metadata) {
+      throw new globalThis.DOMException('The index does not exist.', 'NotFoundError');
+    }
+    metadata.deleted = true;
     delete this._indexes[name];
   };
   _zwIDBStore.prototype.index = function (name) {
@@ -4625,7 +4661,7 @@
   function _zwIDBIndex(store, name, metadata) {
     this.objectStore = store;
     this.name = name;
-    this.keyPath = metadata.keyPath;
+    this.keyPath = Array.isArray(metadata.keyPath) ? metadata.keyPath.slice() : metadata.keyPath;
     this.unique = !!metadata.unique;
     this.multiEntry = !!metadata.multiEntry;
     this._metadata = metadata;
@@ -5423,11 +5459,13 @@
       var connectionIndex = state.connections.indexOf(db);
       if (connectionIndex !== -1) state.connections.splice(connectionIndex, 1);
       if (created) delete _idb_databases[db.name];
-      _zwIDBEmit(transaction, 'abort', new _zwIDBEvent('abort', transaction));
-      _zwIDBEmit(db, 'abort', new _zwIDBEvent('abort', db));
+      _zwIDBEmitTransactionEvent(transaction, 'abort', true);
       req.result = undefined;
-      req.error = transaction._hostError
-        || new globalThis.DOMException('The version change transaction was aborted.', 'AbortError');
+      // https://w3c.github.io/IndexedDB/#abort-a-transaction
+      req.error = new globalThis.DOMException(
+        'The version change transaction was aborted.',
+        'AbortError'
+      );
       req.transaction = null;
       var errorEvent = new _zwIDBEvent('error', req);
       errorEvent.bubbles = true;
