@@ -1505,7 +1505,7 @@ pub fn parse_text_shadow_list(value: &str) -> Option<Vec<TextShadowValue>> {
     if v.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
     }
-    let parts = split_top_level_commas(v);
+    let parts = split_top_level_commas(v)?;
     if parts.is_empty() {
         return None;
     }
@@ -1641,8 +1641,8 @@ pub fn parse_box_shadow(value: &str) -> Option<BoxShadowValue> {
 }
 
 /// 按顶层逗号分割（paren-aware：使 `rgb(0, 0, 0)` / `hsl(...)` 等含逗号函数保持一体）。
-/// 用于 box-shadow / text-shadow 多值列表拆分。空白修剪；空段丢弃。
-fn split_top_level_commas(s: &str) -> Vec<String> {
+/// 用于 box-shadow / text-shadow 多值列表拆分；空段会使整条列表无效。
+fn split_top_level_commas(s: &str) -> Option<Vec<String>> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
     let mut current = String::new();
@@ -1657,20 +1657,22 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
                 current.push(ch);
             }
             ',' if depth == 0 => {
-                let t = current.trim().to_string();
-                if !t.is_empty() {
-                    parts.push(t);
+                let t = current.trim();
+                if t.is_empty() {
+                    return None;
                 }
+                parts.push(t.to_string());
                 current.clear();
             }
             _ => current.push(ch),
         }
     }
-    let t = current.trim().to_string();
-    if !t.is_empty() {
-        parts.push(t);
+    let t = current.trim();
+    if t.is_empty() {
+        return None;
     }
-    parts
+    parts.push(t.to_string());
+    Some(parts)
 }
 
 /// 解析 box-shadow 多阴影列表（CSS Backgrounds §7.2：<shadow>#）。
@@ -1680,7 +1682,7 @@ pub fn parse_box_shadow_list(value: &str) -> Option<Vec<BoxShadowValue>> {
     if v.eq_ignore_ascii_case("none") {
         return Some(Vec::new());
     }
-    let parts = split_top_level_commas(v);
+    let parts = split_top_level_commas(v)?;
     if parts.is_empty() {
         return None;
     }

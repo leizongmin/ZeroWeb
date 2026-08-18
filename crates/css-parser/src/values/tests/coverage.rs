@@ -577,6 +577,13 @@ fn test_text_shadow_list_empty_is_none() {
     assert!(parse_text_shadow_list("   ").is_none());
 }
 
+#[test]
+fn test_text_shadow_list_empty_comma_items_are_invalid() {
+    assert!(parse_text_shadow_list("1px 1px red,").is_none());
+    assert!(parse_text_shadow_list(", 1px 1px red").is_none());
+    assert!(parse_text_shadow_list("1px 1px red,, 2px 2px blue").is_none());
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // box-shadow — inset + spread
 // ═══════════════════════════════════════════════════════════════════════
@@ -677,6 +684,13 @@ fn test_box_shadow_list_empty_is_none() {
     // 空字符串 / 纯空白 → None（无有效阴影）
     assert!(parse_box_shadow_list("").is_none());
     assert!(parse_box_shadow_list("   ").is_none());
+}
+
+#[test]
+fn test_box_shadow_list_empty_comma_items_are_invalid() {
+    assert!(parse_box_shadow_list("1px 1px red,").is_none());
+    assert!(parse_box_shadow_list(", 1px 1px red").is_none());
+    assert!(parse_box_shadow_list("1px 1px red,, 2px 2px blue").is_none());
 }
 
 // ═══════════════════════════════════════════════════════════════════════
