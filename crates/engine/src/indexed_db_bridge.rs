@@ -3,24 +3,36 @@
 //! `zero-engine` 只定义可信 origin 推导与 wire 契约，不依赖具体存储实现。
 //! `zero-page-runtime` 提供基于 `zero-storage` 的 handler。
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(feature = "script-runtime")]
+use std::sync::Mutex;
 
+#[cfg(feature = "script-runtime")]
 use zero_script_sandbox::Sandbox;
 
 /// IndexedDB handler。
 ///
 /// 参数依次为宿主从当前页面 URL 推导的 origin、页面请求 JSON；返回响应 JSON 或错误。
+/// wire 契约不依赖脚本运行时，浏览器主进程可无 JS 引擎复用（0f42fb011 释放裁剪）。
 pub type IndexedDbHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 
+#[cfg(feature = "script-runtime")]
 const OK_PREFIX: &str = "__zw_idb_ok:";
+#[cfg(feature = "script-runtime")]
 const ERROR_PREFIX: &str = "__zw_idb_error:";
+#[cfg(feature = "script-runtime")]
 const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 
 /// IndexedDB 同步 callback bridge。
+///
+/// 需要向 sandbox 注册 `__zw_idb` 回调，仅在启用脚本运行时时可用；
+/// handler 契约（[`IndexedDbHandler`]）与 [`indexed_db_origin`] 不受该门禁限制。
+#[cfg(feature = "script-runtime")]
 pub struct IndexedDbBridge {
     handler: IndexedDbHandler,
 }
 
+#[cfg(feature = "script-runtime")]
 impl IndexedDbBridge {
     /// 使用业务 handler 构造 bridge。
     pub fn new(handler: IndexedDbHandler) -> Self {
@@ -43,6 +55,7 @@ impl IndexedDbBridge {
     }
 }
 
+#[cfg(feature = "script-runtime")]
 fn invoke_handler(handler: &IndexedDbHandler, page_url: &Mutex<String>, request: &str) -> String {
     if request.len() > MAX_REQUEST_BYTES {
         return format!("{ERROR_PREFIX}request exceeds 8 MiB");
@@ -61,6 +74,7 @@ pub fn indexed_db_origin(page_url: &str) -> String {
         .unwrap_or_else(|_| "null".to_string())
 }
 
+#[cfg(feature = "script-runtime")]
 fn serialize_result(result: Result<String, String>) -> String {
     match result {
         Ok(response) => format!("{OK_PREFIX}{response}"),
@@ -83,6 +97,7 @@ mod tests {
         assert_eq!(indexed_db_origin("not a url"), "null");
     }
 
+    #[cfg(feature = "script-runtime")]
     #[test]
     fn result_wire_distinguishes_success_and_error() {
         assert_eq!(
@@ -95,6 +110,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "script-runtime")]
     #[test]
     fn callback_uses_host_origin_and_rejects_oversized_requests() {
         let handler: IndexedDbHandler = Arc::new(|origin, request| Ok(format!("{origin}|{request}")));

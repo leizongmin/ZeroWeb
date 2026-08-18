@@ -26,9 +26,7 @@ pub use html_actions::{
     HtmlActionRequest, HtmlUserAction, InvalidationKind, OptionActionState, PageEffect, PlannedEvent, PlannedMutation,
     RadioActionState, SummaryActionState, TextActionState, plan_html_action, resolve_html_action,
 };
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub mod indexed_db_host;
-#[cfg(any(feature = "v8", feature = "quickjs"))]
 pub use indexed_db_host::indexed_db_handler;
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
