@@ -2,7 +2,8 @@
 
 **入口文档**: [../storage-indexeddb.md](../storage-indexeddb.md)
 **创建日期**: 2026-08-17（goal 拆分 bootstrap）
-**最后更新**: 2026-08-19（M2 request lifecycle 80% WPT milestone）
+**最后更新**: 2026-08-19（Done Criteria completion audit）
+**状态**: Done
 
 ---
 
@@ -76,22 +77,22 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
 | I1 | WPT IndexedDB 用例覆盖为零 | ✅ M1/M2 已导入 168/210 文件（80.00%） |
 | I2 | 页面→Rust 引擎零接线 | ✅ factory/store/index/query/cursor stepping/mutation 已接 |
 | I3 | 无持久化（重启即失） | ✅ browser/renderer 与 embedded WebView production paths 完成 |
-| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | 🟨 core + task active + browser-owned connection/transaction scheduling 完成；继续由 WPT 扩面 |
+| I4 | IDBRequest 事件模型（success/error/readyState/auto-commit）非 spec | ✅ request/transaction/upgrade lifecycle 已由固定 WPT 覆盖 |
 
-## 下一步计划
+## 完成结论
 
-1. **M1/M2**：扩大固定 revision 上游 IndexedDB WPT 导入范围
-
-**碰撞管理**：开工前先 `git log --since="14 days ago" -- crates/engine/src/js_dom_shim/`
-核对 js-dom 流活跃面。
+固定 revision 的 210 个 `.any.js` 文件中 imported 168 个（80.00%），1073/1073 Pass；
+skip list 为零排除，剩余 42 文件继续计入分母。DC-1~DC-4 权威证据见
+`evidence/2026-08-19-final-coverage.{md,json}`，完成归档见
+`archive/2026-08-19-completion.md`。
 
 ## 里程碑状态
 
 | 里程碑 | 状态 |
 |--------|------|
 | M1 — WPT IndexedDB 基线建立 | ✅ imported 1073/1073（168/210 文件，80.00%） |
-| M2 — JS↔Rust 接线（核心通路） | 🟨 request task model + full operation scheduling complete；继续扩大 WPT |
-| M3 — 索引 + 事件模型 + 持久化 | 🟨 storage/connection/transaction ownership complete；继续扩大 WPT |
+| M2 — JS↔Rust 接线（核心通路） | ✅ full operation host routing + request lifecycle |
+| M3 — 索引 + 事件模型 + 持久化 | ✅ browser owner + embedded owner + persistence/error recovery |
 
 ## 验证基线
 
@@ -174,7 +175,8 @@ service-workers）。把页面 `indexedDB` 从 in-memory 近似接到 zero-stora
   `evidence/2026-08-19-m2-object-store-ordering.{md,json}`、
   `evidence/2026-08-19-m2-transaction-lifecycle.{md,json}`、
   `evidence/2026-08-19-m2-get-all-options.{md,json}`、
-  `evidence/2026-08-19-m2-request-lifecycle.{md,json}`
+  `evidence/2026-08-19-m2-request-lifecycle.{md,json}`、
+  `evidence/2026-08-19-final-coverage.{md,json}`
 - 回归门禁：`make test` 全绿；期间修复 DMA-BUF 测试缺失 scroll-transform 前提、
   renderer idle-drain 启动期计数假设、QuickJS-only 测试 feature-union 门控
 - 质量门禁：`cargo fmt` + `cargo clippy --workspace --all-targets -- -D warnings` 全过

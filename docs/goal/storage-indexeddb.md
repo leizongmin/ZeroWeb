@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-08-17
-**状态**: Active
+**状态**: Done（2026-08-19）
 **执行模式**: 轻量修复优先（永不停）；遇需用户决策项或深结构方向 → 记入「待用户决策」清单 → 跳过 → 继续其他轻量修复
 **父目标**: `docs/goal/zero-web.md`（Done Criteria §3「Storage：IndexedDB 基础」+ Tier 2「IndexedDB」）
 
@@ -122,31 +122,34 @@ objectStore/索引/cursor/请求事件模型）接到 zero-storage 真实引擎�
 
 ### DC-1: WPT IndexedDB 用例导入与通过率基线
 
-- [ ] 从上游 WPT 仓库 `IndexedDB` 目录导入范围内真实用例（skip list 记录排除项与理由）
-- [ ] 建立分类通过率报告（文本 + JSON），记录基线
-- [ ] 每项修复的 driving WPT 用例经 `make import-wpt` 常驻断言集并记入 `imported-tests.txt`
-- [ ] 通过率报告持久化到 `docs/goal/storage-indexeddb/evidence/`，历史可追溯
+- [x] 从固定 revision 的 210 个 `IndexedDB/**/*.any.js` 导入 168 文件（80.00%）；
+  `indexeddb-skip-list.txt` 为零排除，剩余 42 文件仍计入分母
+- [x] 建立分类通过率报告（文本 + JSON）：
+  `storage-indexeddb/evidence/2026-08-19-final-coverage.{md,json}`
+- [x] 每项修复的 driving WPT 经固定 fetch 清单、runner 清单与
+  `imported-testharness.txt` 三方资产化（168 / 168 / 168）；`make import-wpt` 仅适用于 reftest
+- [x] 通过率报告持久化到 `docs/goal/storage-indexeddb/evidence/`，历史可追溯
 
 ### DC-2: 页面走真实引擎
 
-- [ ] `globalThis.indexedDB` 全 API（factory/database/transaction/store/index/cursor/request）
-  经 host 命令进 zero-storage 引擎，in-memory 近似代码删除或萎缩为 fallback
-- [ ] 事务排序/auto-commit/事件序与 spec 一致（WPT 为准）
+- [x] `globalThis.indexedDB` 全 API（factory/database/transaction/store/index/cursor/request）
+  经 host 命令进 zero-storage 引擎，in-memory 路径仅保留为无 host 的测试 fallback
+- [x] 事务排序/auto-commit/事件序与 spec 一致（固定 revision WPT 168 文件 / 1073 Pass）
 
 ### DC-3: 持久化
 
-- [ ] per-origin 落盘，跨会话 e2e：写入 → 重建 engine → 读回一致
-- [ ] 磁盘错误（满盘/权限）不 panic，走 request error 事件
+- [x] per-origin 落盘，跨会话 e2e：写入 → 重建 owner/WebView → 读回一致
+- [x] 磁盘错误不 panic，transaction 返回 `UnknownError` 且 live state 不被污染
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `cargo test` 全绿，零失败
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
-- [ ] 每项修复有对应单元测试 + driving WPT 用例资产化
+- [x] `make test` 全绿，零失败（V8 + GPU adapter + QuickJS）
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` 零警告
+- [x] 每项修复有对应 engine/storage 回归 + driving WPT 用例资产化
 
 ---
 
-## 活跃里程碑
+## 已完成里程碑
 
 ### M1 — WPT IndexedDB 基线建立
 

@@ -1,0 +1,107 @@
+{
+  "date": "2026-08-19",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "scope": {
+    "any_js_files": 210,
+    "skipped": 0,
+    "denominator": 210
+  },
+  "imported": {
+    "files": 168,
+    "percent": 80,
+    "subtests": 1073,
+    "pass": 1073,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0,
+    "phase_counts": {
+      "IDB-M1-factory": 9,
+      "IDB-M1-getall-index-cursor": 6,
+      "IDB-M1-index-cursor-expansion": 5,
+      "IDB-M1-object-store-crud": 6,
+      "IDB-M2-connection-queue": 2,
+      "IDB-M2-continue-primary-key": 3,
+      "IDB-M2-cursor-iteration": 8,
+      "IDB-M2-cursor-mutations": 7,
+      "IDB-M2-cursor-stepping-expansion": 8,
+      "IDB-M2-cursor-surface": 8,
+      "IDB-M2-get-all-options": 10,
+      "IDB-M2-index-metadata": 8,
+      "IDB-M2-key-range-binary": 8,
+      "IDB-M2-key-semantics": 8,
+      "IDB-M2-metadata-rollback": 8,
+      "IDB-M2-object-store-ordering": 8,
+      "IDB-M2-request-event-model": 8,
+      "IDB-M2-request-lifecycle": 11,
+      "IDB-M2-rust-cursor-stepping": 3,
+      "IDB-M2-schema-rename": 8,
+      "IDB-M2-store-metadata": 8,
+      "IDB-M2-transaction-deactivation": 3,
+      "IDB-M2-transaction-lifecycle": 8,
+      "IDB-M2-transaction-scheduling": 7
+    }
+  },
+  "remaining": {
+    "files": 42,
+    "counted_in_denominator": true,
+    "categories": {
+      "index_keygen_autoincrement": [
+        "IndexedDB/idbindex-multientry.any.js",
+        "IndexedDB/idbindex_reverse_cursor.any.js",
+        "IndexedDB/idbindex_tombstones.any.js",
+        "IndexedDB/idbobjectstore-put-unique-index-constraint-is-atomic.any.js",
+        "IndexedDB/index_sort_order.any.js",
+        "IndexedDB/keygenerator.any.js",
+        "IndexedDB/reading-autoincrement-indexes-cursors.any.js",
+        "IndexedDB/reading-autoincrement-indexes.any.js",
+        "IndexedDB/reading-autoincrement-store-cursors.any.js",
+        "IndexedDB/reading-autoincrement-store.any.js",
+        "IndexedDB/string-list-ordering.any.js"
+      ],
+      "introspection_platform": [
+        "IndexedDB/crashtests/create-index.any.js",
+        "IndexedDB/get-databases.any.js",
+        "IndexedDB/historical.any.js",
+        "IndexedDB/idlharness.any.js",
+        "IndexedDB/storage-buckets.https.any.js"
+      ],
+      "scale_concurrency_ordering": [
+        "IndexedDB/interleaved-cursors-large.any.js",
+        "IndexedDB/interleaved-cursors-small.any.js",
+        "IndexedDB/large-requests-abort.any.js",
+        "IndexedDB/parallel-cursors-upgrade.any.js",
+        "IndexedDB/request-event-ordering-large-mixed-with-small-values.any.js",
+        "IndexedDB/request-event-ordering-large-then-small-values.any.js",
+        "IndexedDB/request-event-ordering-large-values.any.js",
+        "IndexedDB/request-event-ordering-small-values.any.js",
+        "IndexedDB/writer-starvation.any.js"
+      ],
+      "structured_clone_blob_value": [
+        "IndexedDB/bindings-inject-keys-bypass.any.js",
+        "IndexedDB/bindings-inject-values-bypass.any.js",
+        "IndexedDB/blob-composite-blob-reads.any.js",
+        "IndexedDB/blob-contenttype.any.js",
+        "IndexedDB/blob-delete-objectstore-db.any.js",
+        "IndexedDB/blob-valid-after-abort.any.js",
+        "IndexedDB/blob-valid-after-deletion.any.js",
+        "IndexedDB/blob-valid-before-commit.any.js",
+        "IndexedDB/clone-before-keypath-eval.any.js",
+        "IndexedDB/nested-cloning-basic.any.js",
+        "IndexedDB/nested-cloning-large-multiple.any.js",
+        "IndexedDB/nested-cloning-large.any.js",
+        "IndexedDB/nested-cloning-small.any.js",
+        "IndexedDB/structured-clone-transaction-state.any.js",
+        "IndexedDB/structured-clone.any.js",
+        "IndexedDB/value.any.js",
+        "IndexedDB/value_recursive.any.js"
+      ]
+    }
+  },
+  "done_criteria": {
+    "dc1_wpt_assets_and_report": "pass",
+    "dc2_real_engine_and_spec_lifecycle": "pass",
+    "dc3_persistence_and_io_errors": "pass",
+    "dc4_tests_and_quality": "pass"
+  }
+}

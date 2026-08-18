@@ -1,0 +1,5 @@
+# IndexedDB testharness skip list
+# WPT revision: 315976933870b34d6ea30e3f6643403edae678ba
+#
+# No files are excluded. The 42 not-yet-imported .any.js files remain in the
+# 210-file denominator and are classified in the final coverage report.
