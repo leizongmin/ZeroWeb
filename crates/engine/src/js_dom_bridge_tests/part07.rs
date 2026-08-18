@@ -2504,9 +2504,11 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
         "document.getElementsByTagNameNS('xhtml','span') 命中 2 个 span"
     );
 
-    // element.getElementsByTagNameNS 子树作用域（div 内 1 个 span）。
+    // element.getElementsByTagNameNS 子树作用域（div 内 1 个 span）。R120 spec 纠正：
+    // null ns 只匹配无 ns 元素（WPT Empty lists：getElementsByTagNameNS(null,"div") === []
+    // ——HTML ns 元素不被 null 命中）——用 HTMLNS 查询命中 1，null 查询 0。
     sandbox
-        .execute("globalThis.__divSpan = document.querySelector('#d').getElementsByTagNameNS(null, 'span').length;")
+        .execute("globalThis.__divSpan = document.querySelector('#d').getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'span').length;")
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__divSpan)").unwrap().value,
@@ -2516,7 +2518,7 @@ fn test_prefix_and_get_elements_by_tag_name_ns_r12() {
 
     // '*' 通配（element 级，全后代）。
     sandbox
-        .execute("globalThis.__allCnt = document.querySelector('#d').getElementsByTagNameNS(null, '*').length;")
+        .execute("globalThis.__allCnt = document.querySelector('#d').getElementsByTagNameNS('http://www.w3.org/1999/xhtml', '*').length;")
         .unwrap();
     // div 内 span + p + 文本不计 → 2 元素后代
     assert_eq!(

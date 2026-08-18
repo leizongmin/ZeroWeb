@@ -903,7 +903,16 @@
           // 'SPAN'）；否则原值大小写敏感（XML 语义）。
           if (isNs) {
             var _nsh = _nsHandles[handle];
-            return _nsh.htmlUpper ? _nsh.qualifiedName.toUpperCase() : _nsh.qualifiedName;
+            // R120：ASCII uppercase（spec ascii-uppercase——仅 A-Z；Unicode toUpperCase
+            // 会把 'ä'→'Ä'，WPT case.js non-ASCII 名期望 tagName 保持 'ä'）。
+            var _r120q = _nsh.qualifiedName;
+            var _r120up = '';
+            for (var _u = 0; _u < _r120q.length; _u++) {
+              var _uc = _r120q.charAt(_u);
+              _r120up += (_uc >= 'A' && _uc <= 'Z') ? _uc : (_uc >= 'a' && _uc <= 'z')
+                ? String.fromCharCode(_uc.charCodeAt(0) - 32) : _uc;
+            }
+            return _nsh.htmlUpper ? _r120up : _r120q;
           }
           return (isFrag || isShadow || isComment || isText || isPI) ? undefined : _realTag(sel, handle);
         }
@@ -2903,10 +2912,13 @@
         // `el.getElementsByTagName(tag)` / `el.getElementsByClassName(cls)`（R2980）——元素**子树**作用域
         // 的标签/类名集合查询（spec 返 live HTMLCollection，headless 近似为静态 array-like，同 querySelectorAll
         // 模型）。现代代码 `table.getElementsByTagName('td')` / `form.getElementsByTagName('input')` /
-        // `wrap.getElementsByClassName('item active')` 高频。委托子树 querySelectorAll：tag→直接选择器；
-        // `'*'`→全后代；className 空格分隔多类→`.a.b` 全交集（spec 须同时含所有类）。sel-based → host
-        // `__zw_query_all_sub`；`'*'` host 不支持 → 客户端 `_descendantElements` 递归下降；handle-based
-        //（createElement/shadow/fragment，无 sel）→ R2928 JS 端 registry 子树搜索（原生支持 `*`）。
+        // `wrap.getElementsByClassName('item active')` 高频。
+        // js-dom M4 R120：getElementsByTagName 改**客户端 NS 感知匹配**（spec
+        // `concept-getelementsbytagname`：HTML ns 元素 qualName 与输入双双 ASCII 小写比较
+        // （'I' 不命中 HTML 元素）；非 HTML ns 元素大小写敏感原样比较——host 查询不区分
+        // ns/大小写，WPT Element/Document-getElementsByTagName 的 NS/prefix/non-ASCII 簇）。
+        // 全后代枚举（sel→_descendantElements / handle→_handleQueryAll('*')）+ 逐元素比较。
+        // getElementsByClassName 仍走选择器委托（类名无 ns 语义）。
         // R3033：返 HTMLCollection（item + namedItem），包 _zwMakeCollection(arr, true)。
         if (prop === 'getElementsByTagName' || prop === 'getElementsByClassName') {
           return function(arg) {
@@ -2915,18 +2927,15 @@
               q = String(arg);
               // spec：空 tagName → 空集合。
               if (q === '') return _zwMakeCollection([], true);
-              // host `__zw_query_all_sub` 不支持通用选择器 `*` → 客户端递归下降收全后代。
-              if (q === '*') {
-                if (sel) return _zwMakeCollection(_descendantElements(sel), true);
-                if (handle) return _zwMakeCollection(_handleQueryAll(handle, '*'), true);
-                return _zwMakeCollection([], true);
-              }
-            } else {
-              // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
-              var parts = String(arg).trim().split(/\s+/).filter(Boolean);
-              if (parts.length === 0) return _zwMakeCollection([], true);
-              q = '.' + parts.join('.');
+              // R120：全量客户端 NS 感知匹配（'*' 同路径——localName '*' 恒真）+ liveSpec
+              //（同步 append/remove 后集合反映，WPT live collection）。
+              return _zwMakeCollection(_zwGetByTagNameSubtree(sel, handle, q, undefined), true,
+                { matches: _zwLiveMatchesFor(q, undefined), scopeHandle: handle || null, scopeSel: sel || null });
             }
+            // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
+            var parts = String(arg).trim().split(/\s+/).filter(Boolean);
+            if (parts.length === 0) return _zwMakeCollection([], true);
+            q = '.' + parts.join('.');
             if (sel && typeof __zw_query_all_sub === 'function') {
               try {
                 var all = __zw_query_all_sub(sel, q);
@@ -2939,26 +2948,18 @@
           };
         }
         // `el.getElementsByTagNameNS(ns, localName)`（spec `dom-element-getelementsbytagnamens`，R12）——
-        // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns，按 localName 查
-        //（同 getElementsByTagName 的 tag 逻辑）。case.html 用例 + 命名空间库高频。
+        // 命名空间作用域的标签集合查询。
+        // js-dom M4 R120：客户端 NS 感知匹配（spec `concept-getelementsbytagnamens`）——
+        // ① localName '*' → 全后代（ns 也须匹配，ns '*' 任意）② ns 精确匹配（null 输入匹配
+        // 无 ns 元素）③ localName 比较：HTML ns 元素 ASCII 小写、非 HTML ns 大小写敏感
+        //（WPT Document-getElementsByTagNameNS 的 empty-ns/prefix/大小写簇）。
         if (prop === 'getElementsByTagNameNS') {
           return function(_ns, localName) {
             var ln = String(localName == null ? '' : localName);
             if (ln === '') return _zwMakeCollection([], true);
-            if (ln === '*') {
-              if (sel) return _zwMakeCollection(_descendantElements(sel), true);
-              if (handle) return _zwMakeCollection(_handleQueryAll(handle, '*'), true);
-              return _zwMakeCollection([], true);
-            }
-            if (sel && typeof __zw_query_all_sub === 'function') {
-              try {
-                var all = __zw_query_all_sub(sel, ln);
-                if (all) return _zwMakeCollection(all.split('|').filter(Boolean).map(_wrapSelector), true);
-              } catch (_e) {}
-              return _zwMakeCollection([], true);
-            }
-            if (handle) return _zwMakeCollection(_handleQueryAll(handle, ln), true);
-            return _zwMakeCollection([], true);
+            // R120：liveSpec 接线（同 getElementsByTagName——同步 append/remove 反映）。
+            return _zwMakeCollection(_zwGetByTagNameSubtree(sel, handle, ln, _ns), true,
+              { matches: _zwLiveMatchesFor(ln, _ns), scopeHandle: handle || null, scopeSel: sel || null });
           };
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /

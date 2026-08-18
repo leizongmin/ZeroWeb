@@ -154,6 +154,13 @@
   globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
   globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
   globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
+  // js-dom M4 R120：NodeList / HTMLCollection 构造器占位——WPT Document-Element-getElementsByTagName
+  // 「Interfaces」断言 `!(x instanceof NodeList) && x instanceof HTMLCollection`（构造器缺失 →
+  // ReferenceError 崩整簇）；expando 用例读 HTMLCollection.prototype.item / .namedItem（可被
+  // own property 覆盖——集合 Proxy 的 set trap 存 expando）。集合实例的 prototype 由
+  // _zwHCPrototype / _zwMakeCollection 接线到这两个 prototype（instanceof 真值）。
+  globalThis.NodeList = globalThis.NodeList || function NodeList() {};
+  globalThis.HTMLCollection = globalThis.HTMLCollection || function HTMLCollection() {};
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
   globalThis.Attr = globalThis.Attr || function Attr() {};

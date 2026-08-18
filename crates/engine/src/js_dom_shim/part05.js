@@ -4811,10 +4811,58 @@
   var _hcProto = null;
   function _zwHCPrototype() {
     if (_hcProto) return _hcProto;
-    // 原型链：HC prototype → Object.prototype（保留 hasOwnProperty/valueOf/toString 等 standard
-    // 内建——assert_array_equals 等测试设施依赖 `collection.hasOwnProperty(...)`；WPT
-    // Document-Element-getElementsByTagName.js 直接断言 list.hasOwnProperty）。
-    var p = Object.create(Object.prototype);
+    // 原型链：HC prototype → HTMLCollection.prototype → Object.prototype（保留
+    // hasOwnProperty/valueOf/toString 等 standard 内建——assert_array_equals 等测试设施依赖
+    // `collection.hasOwnProperty(...)`；WPT Document-Element-getElementsByTagName.js 直接断言
+    // list.hasOwnProperty + `x instanceof HTMLCollection`）。
+    var p = Object.create(globalThis.HTMLCollection ? globalThis.HTMLCollection.prototype : Object.prototype);
+    // R120：HTMLCollection.prototype 上的 item/namedItem 须可见（WPT「expando shadowing a
+    // proto prop」：`var fn = l.item; assert_equals(fn, HTMLCollection.prototype.item)`——
+    // 构造器占位的 prototype 原为空对象，方法只定义在 HC prototype 实例上 → 断言两侧
+    // undefined≠function。此处把同款方法同步定义到构造器 prototype（assert 两边同一函数）。
+    try {
+      var _hp = globalThis.HTMLCollection && globalThis.HTMLCollection.prototype;
+      if (_hp && !_hp.__zwHCWired) {
+        Object.defineProperty(_hp, '__zwHCWired', { value: true, enumerable: false, configurable: false });
+        Object.defineProperty(_hp, 'length', {
+          get: function () {
+            if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+            return this.__zwHC().length;
+          },
+          set: function () {}, enumerable: false, configurable: true,
+        });
+        Object.defineProperty(_hp, 'item', {
+          value: function (i) {
+            if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+            var n = this.__zwHC(), u = _zwToUint32(i);
+            return u < n.length ? n[u] : null;
+          },
+          writable: true, enumerable: false, configurable: true,
+        });
+        Object.defineProperty(_hp, 'namedItem', {
+          value: function (name) {
+            if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+            var els = this.__zwHC();
+            var s = String(name);
+            if (s === '') return null; // R38：空串非 supported name（namedFor 同款早退）
+            for (var k2 = 0; k2 < els.length; k2++) {
+              var e2 = els[k2];
+              if (!e2) continue;
+              // R120：id/name 不对称暴露（同 namedFor——name 仅 HTML ns 元素）。
+              var _h2 = _zwIsHTMLNamespace(e2);
+              try {
+                if (e2.getAttribute) {
+                  if (e2.getAttribute('id') === s) return e2;
+                  if (_h2 && e2.getAttribute('name') === s) return e2;
+                }
+              } catch (_e2n) {}
+            }
+            return null;
+          },
+          writable: true, enumerable: false, configurable: true,
+        });
+      }
+    } catch (_eHP) {}
     // spec HTMLCollection length getter——receiver 须为本集合（Proxy 归一后 this===proxy）。
     // 作 prototype 用（Object.create(collection)）时 receiver 是 base object：无 __zwHC 标记
     // → illegal invocation TypeError（WPT HTMLCollection-as-prototype）。
@@ -4828,33 +4876,17 @@
     // WebIDL §3.6.5：接口操作（method）在 prototype 上 enumerable:false（for-in 不可见），
     // regular attribute（length getter）enumerable:true。WPT own-props for-in 期望仅
     // indexed/named（+length 属 prototype 层）。
-    Object.defineProperty(p, 'item', {
-      value: function (i) {
-        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
-        var n = this.__zwHC(), u = _zwToUint32(i);
-        return u < n.length ? n[u] : null;
-      },
-      writable: true, enumerable: false, configurable: true,
-    });
-    Object.defineProperty(p, 'namedItem', {
-      value: function (name) {
-        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
-        var n = String(name), els = this.__zwHC();
-        if (n === '') return null;
-        for (var k = 0; k < els.length; k++) {
-          var el = els[k];
-          if (!el) continue;
-          var id = (typeof el.getAttribute === 'function') ? (el.getAttribute('id') || '') : (el.id || '');
-          if (id === n) return el;
-          var nm = (typeof el.getAttribute === 'function') ? (el.getAttribute('name') || '') : (el.name || '');
-          if (nm === n) return el;
-        }
-        return null;
-      },
-      writable: true, enumerable: false, configurable: true,
-    });
-    // spec HTMLCollection 无 values/entries/keys/forEach 接口成员（WPT HTMLCollection-iterator
-    // 断言不存在）；@@iterator 为 value iterator（同 for-of 消费路径）。
+    // R120：item/namedItem 直接转发构造器 prototype 的同一函数（WPT expando 断言
+    // `fn === HTMLCollection.prototype.item` 要求 identity 相同——p 层不再定义副本）。
+    try {
+      var _hp2 = globalThis.HTMLCollection && globalThis.HTMLCollection.prototype;
+      if (_hp2 && _hp2.item) {
+        Object.defineProperty(p, 'item', { value: _hp2.item, writable: true, enumerable: false, configurable: true });
+        Object.defineProperty(p, 'namedItem', { value: _hp2.namedItem, writable: true, enumerable: false, configurable: true });
+      }
+    } catch (_eHP2) {}
+    // 恢复被 R120 段误删的原有定义（@@iterator value iterator——for-of 消费路径 +
+    // WPT HTMLCollection-iterator；Symbol.toPrimitive）。
     if (typeof Symbol === 'function' && Symbol.iterator) {
       Object.defineProperty(p, Symbol.iterator, {
         value: function () {
@@ -4866,15 +4898,6 @@
       });
     }
     Object.defineProperty(p, Symbol.toPrimitive, { value: String, writable: true, enumerable: false, configurable: true });
-    Object.defineProperty(p, 'toString', {
-      value: function () {
-        if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
-        return '[object HTMLCollection]';
-      },
-      writable: true, enumerable: false, configurable: true,
-    });
-    Object.defineProperty(p, 'constructor', { value: Object, writable: true, enumerable: false, configurable: true });
-    _hcProto = p;
     return p;
   }
 
@@ -4883,6 +4906,13 @@
   //（R18 `_nsHandles` 读回 createElementNS 原值）；异常/无 getter 回落 true（HTML 主路径）。
   function _zwIsHTMLNamespace(el) {
     try {
+      // R120：createElementNS('') 产物（ns 显式空、registry 有记录）非 HTML 元素——
+      // named getter 的 supported-property-names 排除其 id/name（WPT own-props 的
+      // unexposedNames 'w'：createElementNS('','pre') 的 name 不暴露）。
+      // null/undefined 视为 HTML 仅对 parsed / createElement 产物（registry 无记录）。
+      if (el && el.__zwHandle && typeof _nsHandles !== 'undefined' && _nsHandles[el.__zwHandle]) {
+        return _nsHandles[el.__zwHandle].namespace === 'http://www.w3.org/1999/xhtml';
+      }
       var ns = el.namespaceURI;
       return ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
     } catch (_e) {
@@ -5195,7 +5225,14 @@
         }
         if (out.length !== els.length) lc.replace(out);
       }
-      if (addFlat.length && _r54InDoc) {
+      // R120：作用域集合（element 级、detached 容器上建立）——mutation 发生在集合作用域
+      // 容器上时放行（WPT Element-getElementsByTagNameNS live collection：context =
+      // createElement('div') detached 容器）；文档级集合（scopeHandle/scopeSel 空）维持
+      // R54 in-doc 门。
+      var _r120Scoped = lc.scopeHandle
+        ? (lc.scopeHandle === mutHandle)
+        : (lc.scopeSel ? (lc.scopeSel === mutSel) : false);
+      if (addFlat.length && (_r54InDoc || _r120Scoped)) {
         for (var a = 0; a < addFlat.length; a++) {
           var nd = addFlat[a];
           if (!nd) continue;
@@ -5232,16 +5269,18 @@
       for (var k = 0; k < els.length; k++) {
         var el = els[k];
         if (!el) continue;
-        // spec supported property names：仅 HTML namespace 元素的 id/name 计入（WPT
-        // supported-property-names "non-HTML namespace"：createElementNS 元素 name 不暴露）。
-        if (!_zwIsHTMLNamespace(el)) continue;
+        // spec supported property names 的不对称（R120，WPT own-props 双向期望）：
+        // **id 暴露对所有元素**（document-wide named lookup）；**name 暴露仅限 HTML ns
+        // 元素**（'z'=createElementNS('','pre') id 暴露 / 'w'=createElementNS('','pre')
+        // name 不暴露）。
+        var _isHtmlEl = _zwIsHTMLNamespace(el);
         try {
           if (el.getAttribute) {
             if (el.getAttribute('id') === name) return el;
-            if (el.getAttribute('name') === name) return el;
+            if (_isHtmlEl && el.getAttribute('name') === name) return el;
           } else {
             if (el.id === name) return el;
-            if (el.name === name) return el;
+            if (_isHtmlEl && el.name === name) return el;
           }
         } catch (_e) {}
       }
@@ -5367,15 +5406,17 @@
         for (var k = 0; k < els.length; k++) {
           var el = els[k];
           if (!el) continue;
-          if (!_zwIsHTMLNamespace(el)) continue; // spec：仅 HTML namespace（WPT non-HTML namespace）
+          // R120：id/name 不对称暴露（同 namedFor——id 全元素、name 仅 HTML ns，
+          // WPT own-props 期望 ['0','1','2','3','x','y','z']：z=createElementNS('') 的 id）。
+          var _isHtmlK = _zwIsHTMLNamespace(el);
           var names = [];
           try {
             if (el.getAttribute) {
               var id = el.getAttribute('id'); if (id) names.push(id);
-              var nm = el.getAttribute('name'); if (nm) names.push(nm);
+              if (_isHtmlK) { var nm = el.getAttribute('name'); if (nm) names.push(nm); }
             } else {
               if (el.id) names.push(el.id);
-              if (el.name) names.push(el.name);
+              if (_isHtmlK && el.name) names.push(el.name);
             }
           } catch (_e) {}
           for (var q = 0; q < names.length; q++) {
@@ -5412,6 +5453,10 @@
         matches: liveSpec.matches,
         elements: function () { return state.els; },
         replace: function (out) { state.els = out; },
+        // R120：集合作用域容器（element 级 getElementsBy* 在 detached handle 容器上建立）——
+        // add 并入判定按作用域放行（mutation 容器 === 作用域容器即入，不查 in-doc）。
+        scopeHandle: liveSpec.scopeHandle || null,
+        scopeSel: liveSpec.scopeSel || null,
       });
     }
     return proxy;
@@ -5645,6 +5690,133 @@
   //（见 _formControls 注），故 `*` 经客户端 childNodes 递归下降收全部元素后代（tree order）。
   // 单 tag / 类名仍走 host 路径（更快，单次 DOM 解析）。仅供 sel-based 元素用；handle-based
   //（createElement）`*` 由 `_handleQueryAll`（R2928，原生支持 `*`）覆盖。
+  // js-dom M4 R120：getElementsByTagName(/NS) 的客户端 NS 感知匹配（spec
+  // `concept-getelementsbytagname` / `concept-getelementsbytagnamens`）：
+  // - 枚举全后代元素（sel→_descendantElements；handle→_handleQueryAll('*')）。
+  // - qualifiedName 比较：元素 HTML ns（namespaceURI null/undefined/HTMLNS）→ 双方
+  //   ASCII 小写后比较（HTML 文档语义：'I' 输入不命中 HTML 元素 'I'——WPT「uppercase
+  //   tagName never matches」）；非 HTML ns → **大小写敏感**原样比较（WPT non-HTML
+  //   namespace 簇：'ST' 命中 'ST' 不命中 'st'）。
+  // - NS 变体（nsArg 非 undefined）：ns 匹配先行——'*' 任意 ns；null 匹配无 ns 元素
+  //   （createElementNS('') 产物——WPT「Empty string namespace」）；否则字符串相等。
+  //   localName 匹配不带 prefix（元素 localName vs 输入；HTML ns 双小写）。
+  //   非 NS 变体：输入与元素 **qualifiedName**（tagName，含 prefix）比较——'te:st' 命中
+  //   prefix 元素（WPT「prefix, lowercase name」）。
+  // https://dom.spec.whatwg.org/#concept-getelementsbytagname
+  function _zwGetByTagNameSubtree(sel, handle, input, nsArg) {
+    var els;
+    if (sel) els = _descendantElements(sel);
+    else if (handle) els = _handleQueryAll(handle, '*');
+    else return [];
+    return _zwFilterByTagNameNS(els, input, nsArg);
+  }
+
+  // js-dom M4 R120：live HTMLCollection 的 matches 闭包（R50 liveSpec 接线——同步脚本内
+  // append/remove 后 `_zwHCLiveInvalidate` 按此判定新子归属，WPT「should be a live
+  // collection」length 断言）。判定复用 `_zwFilterByTagNameNS`（单元素跑过滤器）。
+  function _zwLiveMatchesFor(input, nsArg) {
+    return function (el) {
+      return _zwFilterByTagNameNS([el], input, nsArg).length > 0;
+    };
+  }
+
+  // js-dom M4 R120：getElementsBy* 匹配核心（与 Element 级 / Document 级共用）。
+  // input = 限定名（非 NS 变体，对 tagName 含 prefix）或 localName（NS 变体）；
+  // nsArg = undefined（非 NS）/ ns（'*' 任意 / null 无 ns / 精确串）。
+  function _zwFilterByTagNameNS(els, input, nsArg) {
+    var nsMode = (typeof nsArg !== 'undefined');
+    var nsWant = nsMode ? (nsArg == null ? '' : String(nsArg)) : null;
+    var inputLower = _zwAsciiLower(String(input));
+    var out = [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el || el.nodeType !== 1) continue;
+      var ns = null;
+      try { ns = el.namespaceURI; } catch (_e) {}
+      var isHtml = ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml';
+      if (nsMode) {
+        if (nsWant !== '*') {
+          var nsActual = (ns === null || ns === undefined) ? '' : String(ns);
+          if (nsActual !== nsWant) continue;
+        }
+        // localName 匹配（'*' 恒真）——**原样精确比较**（spec getelementsbytagnamens
+        // 对 localName 无小写化：createElementNS(HTMLNS,'ABC') 的 localName 'ABC' 只被
+        // ('HTMLNS','ABC') 命中、('HTMLNS','abc') 不命中——WPT「abc/ABC element in html
+        // namespace」双向期望；'AÇ' 同例）。
+        if (input !== '*') {
+          var ln = null;
+          try { ln = el.localName; } catch (_e2) {}
+          if (ln == null) ln = '';
+          if (String(ln) !== String(input)) continue;
+        }
+      } else {
+        if (input !== '*') {
+          // qualifiedName 比较（tagName 含 prefix；非 NS 变体）。
+          // HTML 文档语义：HTML ns 元素与输入**双方** ASCII 小写比较——但 createElementNS
+          // （HTMLNS, 'I'）的元素 localName 含大写（HTML 文档里本不该存在的形态），
+          // WPT「uppercase tagName never matches」期望 ('I')/('i') 都不命中——规则：
+          // HTML ns 元素的 localName 非纯 ASCII 小写 → 永不匹配。
+          if (isHtml) {
+            var lnH = null;
+            try { lnH = el.localName; } catch (_eL) {}
+            if (lnH != null && _zwAsciiLower(String(lnH)) !== String(lnH)) continue;
+          }
+          var qn = null;
+          try { qn = el.tagName; } catch (_e3) {}
+          if (qn == null) continue;
+          var qnCmp = isHtml ? _zwAsciiLower(String(qn)) : String(qn);
+          if (qnCmp !== (isHtml ? inputLower : String(input))) continue;
+        }
+      }
+      out.push(el);
+    }
+    return out;
+  }
+
+  // js-dom M4 R120：文档级全元素枚举（document.getElementsByTagName(/NS) 的数据源）——
+  // 快照 `__zw_query_all('*')`（host 树）∪ `_zwPendingAdded` 动态子（同步脚本内 appendChild
+  // 的 handle 子不在快照——WPT「live collection」length 断言）。快照可能不支持 '*' → 回落
+  // documentElement/body 的 _descendantElements 并集。返回去重文档序数组。
+  function _zwDocAllElements() {
+    var out = [];
+    var seen = new Map();
+    var push = function (el) {
+      if (!el || el.nodeType !== 1) return;
+      var k = el.__zwSelector || el.__zwHandle;
+      if (k && seen.has(k)) return;
+      if (k) seen.set(k, true);
+      out.push(el);
+    };
+    var snapCount = 0;
+    try {
+      var all = (typeof __zw_query_all === 'function') ? String(__zw_query_all('*') || '') : '';
+      var sels = all ? all.split('|').filter(Boolean) : [];
+      snapCount = sels.length;
+      for (var i = 0; i < sels.length; i++) {
+        try { push(_wrapSelector(sels[i])); } catch (_e) {}
+      }
+    } catch (_eA) {}
+    // 快照不支持 '*'（返回空）→ 回落 documentElement + html/body 子树（与 pending 并存——
+    // 快照为空时 pending 不能独占 out，静态树仍需并入）。
+    if (snapCount === 0) {
+      try { push(globalThis.document.documentElement); } catch (_eD) {}
+      var de = _descendantElements('html');
+      for (var d = 0; d < de.length; d++) push(de[d]);
+      var be = _descendantElements('body');
+      for (var b = 0; b < be.length; b++) push(be[b]);
+    }
+    // 动态 pending 子（按文档序 append 顺序；R54 in-doc 门——detached/foreign 容器子
+    // 不进文档级枚举，WPT live-collection 的容器子经 element 级集合的作用域放行覆盖）。
+    if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) {
+      for (var p = 0; p < _zwPendingAdded.length; p++) {
+        var _pd119 = _zwPendingAdded[p];
+        if (_pd119 && _pd119.__zwHandle && !_zwMutationInDoc(null, _pd119.__zwHandle)) continue;
+        push(_pd119);
+      }
+    }
+    return out;
+  }
+
   function _descendantElements(sel) {
     var out = [];
     if (!sel) return out;

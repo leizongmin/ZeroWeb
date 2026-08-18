@@ -686,3 +686,69 @@ fn test_prepend_replace_children_handle_paths_r119() {
         "prepend/replaceChildren handle 路径：文本/null、参数序+identity、清空、移动记账（旧父剔除断链）、doc 清空/doc 元素替换/字符串 HRE"
     );
 }
+
+// js-dom M4 R120：getElementsBy* 族 NS 感知匹配 + live collection + named 暴露不对称。
+// 驱动用例 WPT dom/nodes 四文件全 100%（Element/Document-getElementsByTagName(NS)）：
+// ① `_zwFilterByTagNameNS` 统一匹配器（非 NS 变体：qualifiedName 双方 ASCII 小写 + HTML ns
+// 元素 localName 非纯小写永不匹配「uppercase never matches」；NS 变体：localName **原样
+// 精确**——createElementNS(HTMLNS,'ABC') 只被 ('HTMLNS','ABC') 命中）② document 级
+// `_zwDocAllElements` 枚举（快照 '*' ∪ pending 动态子）③ liveSpec 作用域放行（detached
+// 容器上的 element 级集合）④ named 暴露不对称（id 全元素 / name 仅 HTML ns）⑤
+// NodeList/HTMLCollection 构造器 + prototype item/namedItem（expando identity 断言）。
+// https://dom.spec.whatwg.org/#concept-getelementsbytagname
+#[test]
+fn test_get_elements_by_tag_name_family_r120() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    let out = sandbox
+        .execute(
+            r#"var parts = [];
+            var el = document.createElement('div');
+            var s1 = el.appendChild(document.createElementNS('test', 'st'));
+            parts.push('ST-orig:' + el.getElementsByTagName('ST').length);
+            parts.push('st:' + el.getElementsByTagName('st').length);
+            parts.push('st-identity:' + (el.getElementsByTagName('st')[0] === s1));
+            parts.push('ns-star:' + el.getElementsByTagNameNS('test', '*').length);
+            parts.push('ns-st:' + el.getElementsByTagNameNS('test', 'st').length);
+            parts.push('ns-null:' + el.getElementsByTagNameNS(null, 'st').length);
+            var up = el.appendChild(document.createElementNS('http://www.w3.org/1999/xhtml', 'I'));
+            parts.push('upper-I:' + el.getElementsByTagName('I').length + ':' + el.getElementsByTagName('i').length);
+            parts.push('tagName-ascii:' + el.appendChild(document.createElementNS('http://www.w3.org/1999/xhtml', 'ä')).tagName);
+            var l = el.getElementsByTagName('st');
+            var live1 = l.length;
+            el.appendChild(document.createElementNS('test', 'st'));
+            parts.push('live:' + live1 + '->' + l.length);
+            var pre = el.appendChild(document.createElement('pre'));
+            pre.id = 'px';
+            var preNs = el.appendChild(document.createElementNS('', 'pre'));
+            preNs.setAttribute('name', 'pn');
+            var coll = el.getElementsByTagName('pre');
+            parts.push('named-id:' + (coll.namedItem('px') === pre));
+            parts.push('named-name-ns:' + (coll.namedItem('pn') === null));
+            parts.push('instanceof:' + (l instanceof globalThis.HTMLCollection));
+            parts.push('proto-item:' + (globalThis.HTMLCollection.prototype.item !== undefined));
+            parts.join('|');"#,
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "ST-orig:0|st:1|st-identity:true|ns-star:1|ns-st:1|ns-null:0|upper-I:0:0|tagName-ascii:ä|live:1->2|named-id:true|named-name-ns:true|instanceof:true|proto-item:true",
+        "getElementsBy*：非 HTML ns 大小写敏感 / NS localName 原样 / uppercase-never-match / ASCII tagName / live collection / id-name 不对称暴露 / 接口构造器"
+    );
+}

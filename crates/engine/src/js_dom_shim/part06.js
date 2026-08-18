@@ -1627,35 +1627,28 @@
       // localName 已小写（createElement；createElementNS 保留大小写 → 'Abc' ≠ 'abc' 不命中，
       // WPT case.html HTML 分支 get_qualified_name === expected_case 无元素侧 lowercase）；
       // 非 HTML ns 同样精确（'a:abc' ≠ 'abc'，WPT "non-HTML namespace, prefix"）。
-      var tagLower = _zwAsciiLower(String(tag));
-      var tagRaw = String(tag);
-      return _zwMakeCollection(globalThis.document.querySelectorAll(tag), true, {
-        matches: function (el) {
-          try {
-            if (!el) return false;
-            if (tagRaw === '*') return true;
-            var q = el.localName;
-            var pfx = el.prefix;
-            if (pfx) q = pfx + ':' + q;
-            var ns = el.namespaceURI;
-            if (ns === null || ns === undefined || ns === 'http://www.w3.org/1999/xhtml') {
-              // HTML ns：查询 ascii-lowercase，元素 qualified name 精确比较（WPT case.js
-              // HTML 分支 get_qualified_name === expected_case）。
-              return q === tagLower;
-            }
-            // 非 HTML ns：查询原样精确比较（WPT case.js else 分支 === search_string——
-            // 'Abc' 命中 SVG 'Abc'，不命中 SVG 'abc'）。
-            return q === tagRaw;
-          } catch (_e) { return false; }
-        },
-      });
+      // js-dom M4 R120：统一走 _zwFilterByTagNameNS（与 Element 级 / NS 级同匹配算法）
+      // + _zwDocAllElements 枚举源（快照 '*' ∪ 动态 handle 子——querySelectorAll(tag) 快照
+      // 对 appendChild 动态子恒 miss，WPT「live collection」length 1≠2）。
+      var _r120Tag = String(tag);
+      return _zwMakeCollection(_zwFilterByTagNameNS(_zwDocAllElements(), _r120Tag, undefined), true,
+        { matches: _zwLiveMatchesFor(_r120Tag, undefined) });
     },
     // `document.getElementsByTagNameNS(ns, localName)`（spec `dom-document-getelementsbytagnamens`，R12）——
     // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns 按 localName 查
     //（同 getElementsByTagName）。case.html 用例 + 命名空间库高频。返 HTMLCollection（item + namedItem）。
-    getElementsByTagNameNS: function(_ns, localName) {
+    // js-dom M4 R120：NS 感知匹配（spec concept-getelementsbytagnamens）+ 动态子融合
+    //（WPT Document-getElementsByTagNameNS：element.appendChild(createElementNS(...)) 的
+    // handle 子不在快照——快照 '*' 查询 ∪ _zwPendingAdded 子树经 _zwDocElementsFor 函数）。
+    getElementsByTagNameNS: function(ns, localName) {
+      // R3019：honor `this`（cross-document 委托）。
+      if (this && this !== globalThis.document && typeof this.getElementsByTagNameNS === 'function') {
+        return this.getElementsByTagNameNS(ns, localName);
+      }
       var ln = String(localName == null ? '' : localName);
-      return _zwMakeCollection(globalThis.document.querySelectorAll(ln), true);
+      var els = _zwDocAllElements();
+      var out = _zwFilterByTagNameNS(els, ln, ns);
+      return _zwMakeCollection(out, true, { matches: _zwLiveMatchesFor(ln, ns) });
     },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
     // meta[name] 高频，如 `document.getElementsByName('csrf-token')`）。此前全缺 → ReferenceError
