@@ -117,7 +117,9 @@ pub fn parse_grid_line_shorthand(value: &str) -> Option<(GridLineValue, GridLine
 /// 解析逗号分隔的 transition-timing-function 列表。
 ///
 /// 需要处理 cubic-bezier() 和 steps() 内部的逗号。
-pub(crate) fn parse_comma_separated_timing_functions(value: &str) -> Vec<zero_css_parser::values::TimingFunctionValue> {
+pub(crate) fn parse_comma_separated_timing_functions(
+    value: &str,
+) -> Option<Vec<zero_css_parser::values::TimingFunctionValue>> {
     let mut result = Vec::new();
     let mut depth = 0i32;
     let mut start = 0;
@@ -128,9 +130,7 @@ pub(crate) fn parse_comma_separated_timing_functions(value: &str) -> Vec<zero_cs
             ')' => depth -= 1,
             ',' if depth == 0 => {
                 let part = value[start..i].trim();
-                if let Some(tf) = values::parse_timing_function(part) {
-                    result.push(tf);
-                }
+                result.push(values::parse_timing_function(part)?);
                 start = i + 1;
             }
             _ => {}
@@ -139,11 +139,9 @@ pub(crate) fn parse_comma_separated_timing_functions(value: &str) -> Vec<zero_cs
 
     // 处理最后一个
     let last = value[start..].trim();
-    if let Some(tf) = values::parse_timing_function(last) {
-        result.push(tf);
-    }
+    result.push(values::parse_timing_function(last)?);
 
-    result
+    Some(result)
 }
 
 /// 解析 CSS line-height 值。

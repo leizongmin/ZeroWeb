@@ -460,6 +460,29 @@ fn test_apply_transition_timing_function_variants() {
     assert!(ok);
 }
 
+#[test]
+fn test_apply_timing_function_invalid_lists_keep_old_values() {
+    let mut style = ComputedStyle::default();
+    style.transition_timing_function = vec![zero_css_parser::values::TimingFunctionValue::Linear];
+    style.animation_timing_function = vec![zero_css_parser::values::TimingFunctionValue::Linear];
+
+    assert!(!apply_property_value(
+        &mut style,
+        "transition-timing-function",
+        "ease, bogus"
+    ));
+    assert_eq!(
+        style.transition_timing_function,
+        vec![zero_css_parser::values::TimingFunctionValue::Linear]
+    );
+
+    assert!(!apply_property_value(&mut style, "animation-timing-function", "ease,"));
+    assert_eq!(
+        style.animation_timing_function,
+        vec![zero_css_parser::values::TimingFunctionValue::Linear]
+    );
+}
+
 // === animation 属性变体 ===
 
 #[test]
@@ -1164,11 +1187,11 @@ fn test_parse_writing_mode_variants() {
 
 #[test]
 fn test_parse_comma_separated_timing_functions() {
-    let funcs = parse_comma_separated_timing_functions("ease, linear, ease-in-out");
+    let funcs = parse_comma_separated_timing_functions("ease, linear, ease-in-out").unwrap();
     assert_eq!(funcs.len(), 3);
 
     // 带 cubic-bezier（内部逗号）
-    let funcs = parse_comma_separated_timing_functions("cubic-bezier(0.1, 0.7, 1.0, 0.1), ease");
+    let funcs = parse_comma_separated_timing_functions("cubic-bezier(0.1, 0.7, 1.0, 0.1), ease").unwrap();
     assert_eq!(funcs.len(), 2);
 }
 

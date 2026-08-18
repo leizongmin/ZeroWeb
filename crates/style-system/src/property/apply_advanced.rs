@@ -258,12 +258,11 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "transition-timing-function" => {
-            // 简化解析：按逗号分割，但注意 cubic-bezier() 和 steps() 内部也有逗号
-            let funcs = parse_comma_separated_timing_functions(value);
-            if !funcs.is_empty() {
-                style.transition_timing_function = funcs;
-                return true;
-            }
+            let Some(funcs) = parse_comma_separated_timing_functions(value) else {
+                return false;
+            };
+            style.transition_timing_function = funcs;
+            return true;
         }
         "transition-delay" => {
             let Some(delays) = parse_time_list(value) else {
@@ -361,11 +360,11 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             return true;
         }
         "animation-timing-function" => {
-            let funcs = parse_comma_separated_timing_functions(value);
-            if !funcs.is_empty() {
-                style.animation_timing_function = funcs;
-                return true;
-            }
+            let Some(funcs) = parse_comma_separated_timing_functions(value) else {
+                return false;
+            };
+            style.animation_timing_function = funcs;
+            return true;
         }
         "animation-delay" => {
             let Some(delays) = parse_time_list(value) else {

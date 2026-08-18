@@ -861,14 +861,17 @@ fn test_transition_known_properties() {
 
 #[test]
 fn test_parse_comma_separated_timing_functions() {
-    let result = parse_comma_separated_timing_functions("ease, linear");
+    let result = parse_comma_separated_timing_functions("ease, linear").unwrap();
     assert_eq!(result.len(), 2);
 
-    let result = parse_comma_separated_timing_functions("cubic-bezier(0.25, 0.1, 0.25, 1.0)");
+    let result = parse_comma_separated_timing_functions("cubic-bezier(0.25, 0.1, 0.25, 1.0)").unwrap();
     assert_eq!(result.len(), 1);
 
-    let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)");
+    let result = parse_comma_separated_timing_functions("ease, cubic-bezier(0.25, 0.1, 0.25, 1.0), steps(4)").unwrap();
     assert_eq!(result.len(), 3);
+
+    assert!(parse_comma_separated_timing_functions("ease, bogus").is_none());
+    assert!(parse_comma_separated_timing_functions("ease,").is_none());
 }
 
 // ── float/clear 属性测试 ──

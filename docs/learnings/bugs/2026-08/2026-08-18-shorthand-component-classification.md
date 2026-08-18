@@ -79,6 +79,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `transition-property` exposed the sibling longhand variant of the same issue: when a shorthand helper has learned a target grammar, audit the longhand apply path too. Raw comma-splitting of custom-ident lists accepts quoted strings, time-shaped tokens, and empty items unless the longhand shares the same item validator.
 
+`transition-timing-function` and `animation-timing-function` exposed the helper-return-type variant: returning a plain `Vec` from a list parser encourages callers to treat "some valid items" as success. List parsers at CSS grammar boundaries should return a failure state, not just a possibly shortened list, so callers cannot accidentally apply partially valid declarations.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
