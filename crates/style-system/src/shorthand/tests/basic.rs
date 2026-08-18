@@ -622,6 +622,28 @@ fn test_text_emphasis_shorthand_string() {
 }
 
 #[test]
+fn test_text_emphasis_rejects_invalid_or_duplicate_components() {
+    assert!(expand_one("text-emphasis", "red sparkle", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("text-emphasis", "red blue circle", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
+fn test_text_emphasis_wide_keyword_expands_all_longhands() {
+    let result = expand_one("text-emphasis", "inherit", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "text-emphasis-style" && value == "inherit")
+    );
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "text-emphasis-color" && value == "inherit")
+    );
+}
+
+#[test]
 /// R2132：简写值首尾空白守卫——值字符串首尾的空白只能来自转义（consume_declaration
 /// deferred-ws 已保证无首尾空白 token），应丢弃整个简写声明（与 chromium 一致：
 /// 含转义首尾空白的简写值非法）。driving：escapes-014 `background:\0020red` → `" red"`。

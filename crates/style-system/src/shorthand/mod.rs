@@ -2278,7 +2278,12 @@ fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u3
 
     // CSS-wide keywords：透传到 style longhand（R2354：大小写不敏感）
     if matches_css_wide_keyword(value) {
-        return vec![mk("text-emphasis-style", value)];
+        return wide_keyword_to_longhands(
+            value,
+            &["text-emphasis-style", "text-emphasis-color"],
+            important,
+            specificity,
+        );
     }
 
     let toks = zero_css_parser::values::split_paren_aware_tokens(value);
@@ -2286,18 +2291,26 @@ fn expand_text_emphasis(value: &str, important: bool, specificity: (u32, u32, u3
     let mut color_part: Option<String> = None;
     for tok in &toks {
         if looks_like_color(tok) {
+            if color_part.is_some() {
+                return vec![];
+            }
             // R2523：text-emphasis-color 现已存储，展开为独立 longhand（CSS Text Decor 3 §3）。
             color_part = Some(tok.clone());
             continue;
         }
         style_parts.push(tok.clone());
     }
+    let style_part = style_parts.join(" ");
+    if !style_part.is_empty() && zero_css_parser::values::parse_text_emphasis_style(&style_part).is_none() {
+        return vec![];
+    }
+
     let mut out: Vec<MatchingDecl> = Vec::new();
     if let Some(c) = color_part {
         out.push(mk("text-emphasis-color", &c));
     }
-    if !style_parts.is_empty() {
-        out.push(mk("text-emphasis-style", &style_parts.join(" ")));
+    if !style_part.is_empty() {
+        out.push(mk("text-emphasis-style", &style_part));
     }
     out
 }

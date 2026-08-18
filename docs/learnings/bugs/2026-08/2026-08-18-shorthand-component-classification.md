@@ -45,6 +45,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `grid-template` exposed both delimiter and CSS-wide keyword variants: slash-separated forms must reject empty sides and extra delimiters, and CSS-wide keywords must expand to every longhand in the shorthand, not just the row side.
 
+`text-emphasis` exposed the atomicity variant: if one extracted longhand component is valid and another is invalid, the shorthand must reject the whole declaration instead of letting the valid component survive.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
