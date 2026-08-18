@@ -10,6 +10,27 @@ object NativeBridge {
     external fun nativeVersion(): String
 
     @JvmStatic
+    external fun nativeLoadProfile(root: String): String
+
+    @JvmStatic
+    external fun nativeBrowserSnapshot(): String
+
+    @JvmStatic
+    external fun nativeNavigate(url: String): Boolean
+
+    @JvmStatic
+    external fun nativeNewTab(): Boolean
+
+    @JvmStatic
+    external fun nativeCloseTab(id: Long): Boolean
+
+    @JvmStatic
+    external fun nativeSelectTab(id: Long): Boolean
+
+    @JvmStatic
+    external fun nativeToggleBookmark(): Boolean
+
+    @JvmStatic
     external fun nativeStartRole(role: String): Boolean
 
     @JvmStatic

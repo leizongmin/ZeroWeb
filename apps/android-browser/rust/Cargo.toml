@@ -13,7 +13,9 @@ crate-type = ["cdylib"]
 jni = "0.21.1"
 zero-image-decoder = { path = "../../image-decoder" }
 zero-compositor = { path = "../../compositor" }
+zero-browser-shell = { path = "../../../crates/browser-shell" }
 zero-protocol = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"

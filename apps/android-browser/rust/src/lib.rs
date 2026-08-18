@@ -1,5 +1,7 @@
 //! Android JNI entry points for the ZeroWeb browser host.
 
+mod facade;
+
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jstring};
@@ -11,7 +13,7 @@ use zero_protocol::IpcChannel;
 #[cfg(target_os = "android")]
 use zero_protocol::message::{ImageDecodeParams, IpcMessage, IpcMessageKind};
 
-const NATIVE_VERSION: &str = "ZeroWeb Android M0";
+const NATIVE_VERSION: &str = "ZeroWeb Android M2";
 
 /// Satisfies winit's Android native-activity link contract.
 ///
@@ -30,6 +32,92 @@ fn is_known_role(role: &str) -> bool {
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeVersion(env: JNIEnv, _class: JClass) -> jstring {
     env.new_string(NATIVE_VERSION)
+        .map_or(std::ptr::null_mut(), |value| value.into_raw())
+}
+
+/// Loads the Android profile into the Rust-owned browser shell and returns its chrome snapshot.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeLoadProfile(
+    mut env: JNIEnv,
+    _class: JClass,
+    root: JString,
+) -> jstring {
+    let result = env
+        .get_string(&root)
+        .map_err(|error| format!("read Android profile path failed: {error}"))
+        .and_then(|root| facade::load_profile(root.to_str().map_err(|error| error.to_string())?));
+    jni_string(&mut env, result)
+}
+
+/// Returns the current Rust-owned browser chrome snapshot.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeBrowserSnapshot(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    jni_string(&mut env, facade::snapshot())
+}
+
+/// Navigates the active tab and persists the browser profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeNavigate(
+    mut env: JNIEnv,
+    _class: JClass,
+    url: JString,
+) -> jboolean {
+    env.get_string(&url)
+        .map_err(|error| error.to_string())
+        .and_then(|url| facade::navigate(url.to_str().map_err(|error| error.to_string())?))
+        .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Creates a new tab and persists the browser profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeNewTab(_env: JNIEnv, _class: JClass) -> jboolean {
+    facade::new_tab().map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Closes one tab and persists the browser profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeCloseTab(
+    _env: JNIEnv,
+    _class: JClass,
+    id: jni::sys::jlong,
+) -> jboolean {
+    u64::try_from(id)
+        .map_err(|_| "tab ID must be non-negative".to_string())
+        .and_then(facade::close_tab)
+        .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Selects the active tab and persists the browser profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeSelectTab(
+    _env: JNIEnv,
+    _class: JClass,
+    id: jni::sys::jlong,
+) -> jboolean {
+    u64::try_from(id)
+        .map_err(|_| "tab ID must be non-negative".to_string())
+        .and_then(facade::select_tab)
+        .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Toggles the active page bookmark and persists the browser profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeToggleBookmark(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    facade::toggle_bookmark().map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+fn jni_string(env: &mut JNIEnv, result: Result<String, String>) -> jstring {
+    let json = match result {
+        Ok(snapshot) => snapshot,
+        Err(error) => format!(r#"{{"error":{}}}"#, serde_json::to_string(&error).unwrap_or_default()),
+    };
+    env.new_string(json)
         .map_or(std::ptr::null_mut(), |value| value.into_raw())
 }
 
