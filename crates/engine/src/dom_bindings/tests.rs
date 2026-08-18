@@ -42,6 +42,32 @@ pub(super) fn run_script(html: &str, script: &str) -> String {
     result
 }
 
+/// 同 [`run_script`]，但额外返回**执行后** live doc 的 `outer_html`（js-dom M1 L2 R104
+/// 三方合一验证资产：A(native 写) 与 B(polyfill 写) 的 C 侧读数——两路径的写对同一
+/// live Document 的最终状态须等价）。不 reset 前先序列化（reset 清 DOM_SOURCE）。
+pub(super) fn run_script_return_doc_html(html: &str, script: &str) -> (String, String) {
+    zero_script_sandbox::ensure_v8_initialized();
+    let dom = Rc::new(RefCell::new(parse_html(html)));
+    let isolate = &mut v8::Isolate::new(Default::default());
+    let result;
+    {
+        v8::scope!(let scope, isolate);
+        let context = v8::Context::new(scope, Default::default());
+        let scope = &mut v8::ContextScope::new(scope, context);
+        install_dom_bindings(scope, context, Rc::clone(&dom));
+        let code = v8::String::new(scope, script).expect("v8 string");
+        let compiled = v8::Script::compile(scope, code, None).expect("compile");
+        let r = compiled.run(scope).expect("run");
+        result = r
+            .to_string(scope)
+            .map(|s| s.to_rust_string_lossy(scope))
+            .unwrap_or_default();
+    }
+    let doc_html = dom.borrow().outer_html(dom.borrow().root());
+    reset_for_test();
+    (result, doc_html)
+}
+
 /// 同 [`run_script`]，但解析后注入页面 URL（镜像 engine 导航层 `set_url`），验证
 /// `document.URL`/`documentURI` native getter 经 live Document 读注入值（R3169）。
 pub(super) fn run_script_with_url(html: &str, url: &str, script: &str) -> String {

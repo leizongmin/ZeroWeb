@@ -248,3 +248,83 @@ fn ab_create_element_invalid_name_throws_dom_exception() {
     assert_eq!(n, p, "createElement('foo') A/B 不一致：native=`{n}` polyfill=`{p}`");
     assert!(n.starts_with("no-throw|"), "createElement('foo') 不应抛，实际：{n}");
 }
+
+// ── js-dom M1 L2 R104：三方合一（native(A) = polyfill(B) = renderer(C)）─────────
+//
+// L2 的验收面：两条写路径对**同一 live Document** 的最终状态等价——
+// - A（native）：`install_dom_bindings` 直改 DOM_SOURCE 的 doc（default-on 后的生产路径）；
+// - B（polyfill）：`__zw_*` 回调收集 DomMutation → `apply_dom_mutations` 应用（当前生产路径）；
+// - C（renderer）：live doc 的最终 outer_html（渲染消费的权威状态）。
+// 断言 A 后与 B 后的 outer_html 一致（写路径语义等价），是 DC-1「三方合一，无独立快照」
+// 的行为资产。读路径等价已由 READ_CASES 守（R0 起）。
+
+use super::tests::run_script_return_doc_html;
+use crate::js_dom_bridge::apply_dom_mutations;
+
+/// B 路径（polyfill 写）执行 `script`（含 DOM 写调用）并返回**应用后** doc 的
+/// outer_html：注册回调 → 执行（mutations 收集进队列）→ `apply_dom_mutations` 应用到
+/// parse_html(html) 的 doc（与 webview `apply_pending_shared_mutations` 同机制）。
+fn run_polyfill_applied_html(html: &str, script: &str) -> String {
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .expect("V8 sandbox init");
+    sandbox.execute(generate_js_dom_shim()).expect("install shim");
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html = Arc::new(Mutex::new(html.to_string()));
+    let page_url = Arc::new(Mutex::new("https://zero.test/ab-compare".to_string()));
+    let canvas_registry = Arc::new(Mutex::new(CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+    let r = sandbox.execute(script).expect("polyfill execute");
+    // apply 收集到的 mutations 到独立 doc（C 侧读数）。
+    let mut doc = parse_html(html);
+    let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    apply_dom_mutations(&mut doc, &recorded).unwrap_or_else(|e| panic!("apply_dom_mutations failed: {e}"));
+    let _ = r;
+    doc.outer_html(doc.root())
+}
+
+/// 三方合一对照用例：同一写序列两路径的 C 侧（outer_html）等价。
+struct WriteCase {
+    name: &'static str,
+    html: &'static str,
+    /// 含 DOM 写调用的脚本（两路径同一份；native 侧 `document` 已桥接）。
+    script: &'static str,
+}
+
+const WRITE_CASES: &[WriteCase] = &[
+    WriteCase {
+        name: "set-attribute",
+        html: r#"<html><body><div id="d">D</div></body></html>"#,
+        script: r#"document.getElementById('d').setAttribute('data-k', 'v')"#,
+    },
+    WriteCase {
+        name: "create-append",
+        html: r#"<html><body><div id="host"></div></body></html>"#,
+        script: r#"var s = document.createElement('span'); s.textContent = 'added'; document.getElementById('host').appendChild(s)"#,
+    },
+    WriteCase {
+        name: "remove-child",
+        html: r#"<html><body><ul><li id="x">1</li><li>2</li></ul></body></html>"#,
+        script: r#"document.getElementById('x').remove()"#,
+    },
+];
+
+/// 三方合一门主测：每条写用例，A（native 后 doc）与 B（polyfill apply 后 doc）的
+/// outer_html 必须一致。失败消息带两路径 html 便于 diff 定位语义差异。
+#[test]
+fn l2_three_way_write_paths_converge_r104() {
+    for c in WRITE_CASES {
+        let (_, native_html) = run_script_return_doc_html(
+            c.html,
+            &format!("var document = __zw_native_get_document(); {}", c.script),
+        );
+        let polyfill_html = run_polyfill_applied_html(c.html, c.script);
+        assert_eq!(
+            native_html, polyfill_html,
+            "三方合一失败 [{}]：native doc 与 polyfill apply 后 doc 不一致\nnative:   `{}`\npolyfill: `{}`",
+            c.name, native_html, polyfill_html
+        );
+    }
+}
