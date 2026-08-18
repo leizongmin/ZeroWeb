@@ -123,7 +123,7 @@ struct PendingLoad {
 }
 
 /// 渲染进程运行时状态。
-struct RendererRuntime {
+pub(crate) struct RendererRuntime {
     /// 向浏览器写入 IPC（stdout）。
     outbound: IpcOutbound,
     /// 浏览器 → 渲染进程消息（stdin 读线程填充）。
@@ -216,7 +216,7 @@ struct RendererRuntime {
 
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
-    fn new(renderer_id: u64) -> Self {
+    pub(crate) fn new(renderer_id: u64) -> Self {
         zero_webview::enable_isolated_image_decoder();
         let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_browser_ipc_inbound();
         let mut rt = Self::with_io(
@@ -2364,7 +2364,7 @@ impl RendererRuntime {
         }
     }
 
-    fn run(&mut self) -> Result<(), String> {
+    pub(crate) fn run(&mut self) -> Result<(), String> {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
 
         loop {

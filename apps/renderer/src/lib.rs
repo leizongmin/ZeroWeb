@@ -17,6 +17,10 @@ mod text_metrics;
 
 pub use runtime::{parse_renderer_launch, run_desktop_role};
 
+// macos_app 经 `super::RendererRuntime` 引用；仅 macOS 编译该模块，故 cfg 门控防 linux dead_code。
+#[cfg(target_os = "macos")]
+pub(crate) use runtime::RendererRuntime;
+
 #[cfg(test)]
 #[path = "gpu_isolation_tests.rs"]
 mod gpu_isolation_tests;
