@@ -1,0 +1,45 @@
+{
+  "date": "2026-08-19",
+  "scope": "M2 IndexedDB get-all options and records",
+  "wpt_revision": "315976933870b34d6ea30e3f6643403edae678ba",
+  "files_added": 10,
+  "driving_wpt": {
+    "before": {
+      "pass": 6,
+      "fail": 158,
+      "timeout": 0
+    },
+    "after": {
+      "pass": 164,
+      "fail": 0,
+      "timeout": 0
+    }
+  },
+  "imported_wpt": {
+    "files": 157,
+    "pass": 1032,
+    "fail": 0,
+    "timeout": 0,
+    "not_run": 0,
+    "empty": 0
+  },
+  "capabilities": [
+    "IDBGetAllOptions overload conversion",
+    "unsigned long EnforceRange count conversion",
+    "get-all direction and unique filtering",
+    "IDBObjectStore and IDBIndex getAllRecords",
+    "IDBRecord readonly reflection"
+  ],
+  "gates": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_workspace": "pass",
+    "make_testharness_indexeddb": "pass",
+    "make_test": "pass",
+    "targeted_engine": "26 pass",
+    "manifest_counts": {
+      "fetch": 157,
+      "runner": 157,
+      "ledger": 157
+    }
+  }
+}

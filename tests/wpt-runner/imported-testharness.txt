@@ -80,6 +80,16 @@ IndexedDB/upgrade-transaction-lifecycle-committed.any.js 315976933870b34d6ea30e3
 IndexedDB/upgrade-transaction-lifecycle-user-aborted.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
 IndexedDB/upgrade-transaction-lifecycle-backend-aborted.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
 IndexedDB/upgrade-transaction-deactivation-timing.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-transaction-lifecycle
+IndexedDB/idbobjectstore-getAll-enforcerange.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbobjectstore-getAllKeys-enforcerange.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbobjectstore_getAll-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbobjectstore_getAllKeys-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbobjectstore_getAllRecords.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbindex-getAll-enforcerange.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbindex-getAllKeys-enforcerange.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbindex_getAll-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbindex_getAllKeys-options.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
+IndexedDB/idbindex_getAllRecords.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-19 IDB-M2-get-all-options
 IndexedDB/idbobjectstore_add.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_put.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud
 IndexedDB/idbobjectstore_get.any.js 315976933870b34d6ea30e3f6643403edae678ba 2026-08-17 IDB-M1-object-store-crud

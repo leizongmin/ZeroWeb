@@ -4144,59 +4144,161 @@
     _zwIDBRunTransactionOperation(this.transaction, perform);
     return req;
   };
-  _zwIDBStore.prototype._getAll = function (query, count, keysOnly, queryProvided) {
+  // https://w3c.github.io/IndexedDB/#dom-idbobjectstore-getall
+  function _zwIDBEnforceUnsignedLong(value) {
+    value = Number(value);
+    if (!isFinite(value) || value < 0 || value > 4294967295) {
+      throw new TypeError('The count is outside the unsigned long range.');
+    }
+    return value < 0 ? Math.ceil(value) : Math.floor(value);
+  }
+  function _zwIDBIsGetAllOptions(value) {
+    return value !== null
+      && typeof value === 'object'
+      && !_zwIDBIsKeyRange(value)
+      && !Array.isArray(value)
+      && !(value instanceof Date)
+      && !(value instanceof ArrayBuffer)
+      && !ArrayBuffer.isView(value);
+  }
+  function _zwIDBNormalizeGetAllOptions(queryOrOptions, count, argumentCount, recordsOnly) {
+    if (recordsOnly || (argumentCount >= 1 && _zwIDBIsGetAllOptions(queryOrOptions))) {
+      var dictionary = queryOrOptions === null || queryOrOptions === undefined
+        ? {}
+        : Object(queryOrOptions);
+      // Web IDL dictionary members are read in lexicographic order.
+      var countValue = dictionary.count;
+      var normalizedCount = countValue === undefined
+        ? undefined
+        : _zwIDBEnforceUnsignedLong(countValue);
+      if (normalizedCount === 0) normalizedCount = undefined;
+      var directionValue = dictionary.direction;
+      var direction = directionValue === undefined ? 'next' : String(directionValue);
+      if (direction !== 'next' && direction !== 'prev'
+          && direction !== 'nextunique' && direction !== 'prevunique') {
+        throw new TypeError('The get-all direction is invalid.');
+      }
+      var query = dictionary.query;
+      return {
+        query: query,
+        queryProvided: query !== undefined && query !== null,
+        count: normalizedCount,
+        direction: direction
+      };
+    }
+    var legacyCount = argumentCount >= 2 && count !== undefined
+      ? _zwIDBEnforceUnsignedLong(count)
+      : undefined;
+    return {
+      query: queryOrOptions,
+      queryProvided: argumentCount >= 1 && queryOrOptions !== undefined,
+      count: legacyCount,
+      direction: 'next'
+    };
+  }
+  function _zwIDBRecord(key, primaryKey, value) {
+    this._key = key;
+    this._primaryKey = primaryKey;
+    this._value = value;
+  }
+  Object.defineProperties(_zwIDBRecord.prototype, {
+    key: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._key; }
+    },
+    primaryKey: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._primaryKey; }
+    },
+    value: {
+      configurable: true,
+      enumerable: true,
+      get: function () { return this._value; }
+    }
+  });
+  function _zwIDBRecordFromEntry(entry) {
+    return new _zwIDBRecord(
+      globalThis.structuredClone(entry.key),
+      globalThis.structuredClone(entry.primaryKey),
+      globalThis.structuredClone(entry.value)
+    );
+  }
+  function _zwIDBApplyGetAllOptions(entries, options, uniqueByKey) {
+    if (uniqueByKey) {
+      entries = entries.filter(function (entry, index, all) {
+        return index === 0 || _zwIDBCompareValues(all[index - 1].key, entry.key) !== 0;
+      });
+    }
+    if (options.direction === 'prev' || options.direction === 'prevunique') {
+      entries.reverse();
+    }
+    if (options.count !== undefined) entries = entries.slice(0, options.count);
+    return entries;
+  }
+  _zwIDBStore.prototype._getAll = function (options, resultKind) {
     this._assertUsable(false);
-    if (queryProvided && query !== undefined
-        && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
+    var query = options.query;
+    if (options.queryProvided && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
       throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
     }
     var request = new _zwIDBRequest(this);
     request.transaction = this.transaction;
     var store = this;
     var perform = function () {
+      var entries = [];
       if (store.transaction && store.transaction._hostId !== null) {
         var hostRequest = {
           op: 'transaction_get_all',
           transaction: store.transaction._hostId,
           store: store.name,
-          keys_only: !!keysOnly
+          keys_only: resultKind === 'key'
         };
-        if (queryProvided && query !== undefined) hostRequest.query = _zwIDBQueryToWire(query);
-        if (count !== undefined) hostRequest.count = Math.max(0, Number(count));
+        if (options.queryProvided) hostRequest.query = _zwIDBQueryToWire(query);
         try {
           var hosted = _zwIDBHostCall(hostRequest);
-          var hostedResult = (hosted.records || []).map(function (record) {
-            return keysOnly
-              ? _zwIDBKeyFromWire(record.key)
-              : _zwIDBValueFromWire(record.value);
+          entries = (hosted.records || []).map(function (record) {
+            var key = _zwIDBKeyFromWire(record.key);
+            return {
+              key: key,
+              primaryKey: key,
+              value: resultKind === 'key' ? undefined : _zwIDBValueFromWire(record.value)
+            };
           });
-          _zwIDBDispatch(request, 'success', hostedResult);
         } catch (hostError) {
           _zwIDBRequestHostError(request, hostError);
+          return;
         }
-        return;
+      } else {
+        store._records.forEach(function (value, key) {
+          if (!options.queryProvided || _zwIDBQueryMatches(query, key)) {
+            entries.push({ key: key, primaryKey: key, value: value });
+          }
+        });
+        entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
       }
-      var entries = [];
-      store._records.forEach(function (value, key) {
-        if (!queryProvided || query === undefined || _zwIDBQueryMatches(query, key)) {
-          entries.push({ key: key, value: value });
-        }
-      });
-      entries.sort(function (a, b) { return _zwIDBCompareValues(a.key, b.key); });
-      if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
+      entries = _zwIDBApplyGetAllOptions(entries, options, false);
       var result = entries.map(function (entry) {
-        return globalThis.structuredClone(keysOnly ? entry.key : entry.value);
+        if (resultKind === 'record') return _zwIDBRecordFromEntry(entry);
+        return globalThis.structuredClone(resultKind === 'key' ? entry.key : entry.value);
       });
       _zwIDBDispatch(request, 'success', result);
     };
     _zwIDBRunTransactionOperation(this.transaction, perform);
     return request;
   };
-  _zwIDBStore.prototype.getAll = function (query, count) {
-    return this._getAll(query, count, false, arguments.length >= 1);
+  _zwIDBStore.prototype.getAll = function (queryOrOptions, count) {
+    var options = _zwIDBNormalizeGetAllOptions(queryOrOptions, count, arguments.length, false);
+    return this._getAll(options, 'value');
   };
-  _zwIDBStore.prototype.getAllKeys = function (query, count) {
-    return this._getAll(query, count, true, arguments.length >= 1);
+  _zwIDBStore.prototype.getAllKeys = function (queryOrOptions, count) {
+    var options = _zwIDBNormalizeGetAllOptions(queryOrOptions, count, arguments.length, false);
+    return this._getAll(options, 'key');
+  };
+  _zwIDBStore.prototype.getAllRecords = function (options) {
+    options = _zwIDBNormalizeGetAllOptions(options, undefined, arguments.length, true);
+    return this._getAll(options, 'record');
   };
   _zwIDBStore.prototype._assertSchemaChange = function () {
     if (this._metadata && this._metadata.deleted) {
@@ -4844,10 +4946,10 @@
     _zwIDBRunTransactionOperation(this.objectStore.transaction, perform);
     return req;
   };
-  _zwIDBIndex.prototype.getAll = function (query, count) {
+  _zwIDBIndex.prototype._getAll = function (options, resultKind) {
     this._assertUsable();
-    var queryProvided = arguments.length >= 1 && query !== undefined;
-    if (queryProvided && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
+    var query = options.query;
+    if (options.queryProvided && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
       throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
     }
     var req = new _zwIDBRequest(this);
@@ -4855,10 +4957,15 @@
     var index = this;
     var perform = function () {
       try {
-        var entries = index._entries(query, queryProvided);
-        if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
+        var entries = index._entries(query, options.queryProvided);
+        var unique = options.direction === 'nextunique'
+          || options.direction === 'prevunique';
+        entries = _zwIDBApplyGetAllOptions(entries, options, unique);
         _zwIDBDispatch(req, 'success', entries.map(function (entry) {
-          return globalThis.structuredClone(entry.value);
+          if (resultKind === 'record') return _zwIDBRecordFromEntry(entry);
+          return globalThis.structuredClone(
+            resultKind === 'key' ? entry.primaryKey : entry.value
+          );
         }));
       } catch (hostError) {
         _zwIDBRequestHostError(req, hostError);
@@ -4867,28 +4974,17 @@
     _zwIDBRunTransactionOperation(this.objectStore.transaction, perform);
     return req;
   };
-  _zwIDBIndex.prototype.getAllKeys = function (query, count) {
-    this._assertUsable();
-    var queryProvided = arguments.length >= 1 && query !== undefined;
-    if (queryProvided && !_zwIDBIsKeyRange(query) && !_zwIDBKey(query, [])) {
-      throw new globalThis.DOMException('The supplied value is not a valid key.', 'DataError');
-    }
-    var req = new _zwIDBRequest(this);
-    req.transaction = this.objectStore.transaction;
-    var index = this;
-    var perform = function () {
-      try {
-        var entries = index._entries(query, queryProvided);
-        if (count !== undefined) entries = entries.slice(0, Math.max(0, Number(count)));
-        _zwIDBDispatch(req, 'success', entries.map(function (entry) {
-          return globalThis.structuredClone(entry.primaryKey);
-        }));
-      } catch (hostError) {
-        _zwIDBRequestHostError(req, hostError);
-      }
-    };
-    _zwIDBRunTransactionOperation(this.objectStore.transaction, perform);
-    return req;
+  _zwIDBIndex.prototype.getAll = function (queryOrOptions, count) {
+    var options = _zwIDBNormalizeGetAllOptions(queryOrOptions, count, arguments.length, false);
+    return this._getAll(options, 'value');
+  };
+  _zwIDBIndex.prototype.getAllKeys = function (queryOrOptions, count) {
+    var options = _zwIDBNormalizeGetAllOptions(queryOrOptions, count, arguments.length, false);
+    return this._getAll(options, 'key');
+  };
+  _zwIDBIndex.prototype.getAllRecords = function (options) {
+    options = _zwIDBNormalizeGetAllOptions(options, undefined, arguments.length, true);
+    return this._getAll(options, 'record');
   };
   function _zwIDBOpenIndexCursor(index, query, direction, keyOnly) {
     index._assertUsable();
@@ -6013,6 +6109,7 @@
   globalThis.IDBOpenDBRequest = _zwIDBOpenRequest;
   globalThis.IDBCursor = _zwIDBCursor;
   globalThis.IDBCursorWithValue = _zwIDBCursorWithValue;
+  globalThis.IDBRecord = _zwIDBRecord;
   if (typeof Symbol !== 'undefined' && Symbol.toStringTag) {
     Object.defineProperty(
       _zwIDBRequest.prototype,
@@ -6043,6 +6140,11 @@
       _zwIDBIndex.prototype,
       Symbol.toStringTag,
       { configurable: true, value: 'IDBIndex' }
+    );
+    Object.defineProperty(
+      _zwIDBRecord.prototype,
+      Symbol.toStringTag,
+      { configurable: true, value: 'IDBRecord' }
     );
     Object.defineProperty(
       _zwIDBDatabase.prototype,

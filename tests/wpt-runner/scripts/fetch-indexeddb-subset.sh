@@ -89,6 +89,16 @@ FILES=(
   "IndexedDB/upgrade-transaction-lifecycle-user-aborted.any.js"
   "IndexedDB/upgrade-transaction-lifecycle-backend-aborted.any.js"
   "IndexedDB/upgrade-transaction-deactivation-timing.any.js"
+  "IndexedDB/idbobjectstore-getAll-enforcerange.any.js"
+  "IndexedDB/idbobjectstore-getAllKeys-enforcerange.any.js"
+  "IndexedDB/idbobjectstore_getAll-options.any.js"
+  "IndexedDB/idbobjectstore_getAllKeys-options.any.js"
+  "IndexedDB/idbobjectstore_getAllRecords.any.js"
+  "IndexedDB/idbindex-getAll-enforcerange.any.js"
+  "IndexedDB/idbindex-getAllKeys-enforcerange.any.js"
+  "IndexedDB/idbindex_getAll-options.any.js"
+  "IndexedDB/idbindex_getAllKeys-options.any.js"
+  "IndexedDB/idbindex_getAllRecords.any.js"
   "IndexedDB/idbobjectstore_add.any.js"
   "IndexedDB/idbobjectstore_put.any.js"
   "IndexedDB/idbobjectstore_get.any.js"
@@ -228,7 +238,7 @@ fetch_from_checkout() {
 
 if [[ -n "${WPT_SOURCE:-}" ]]; then
   fetch_from_checkout
-  echo "IndexedDB testharness subset ready (147 cases, WPT ${WPT_REV})"
+  echo "IndexedDB testharness subset ready (157 cases, WPT ${WPT_REV})"
   exit 0
 fi
 
@@ -245,4 +255,4 @@ if [[ "${raw_failed}" == "1" ]]; then
   fetch_from_git
 fi
 
-echo "IndexedDB testharness subset ready (147 cases, WPT ${WPT_REV})"
+echo "IndexedDB testharness subset ready (157 cases, WPT ${WPT_REV})"

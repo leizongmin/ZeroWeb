@@ -673,3 +673,64 @@ fn test_indexeddb_blocked_upgrade_waits_for_connection_close() {
         "versionchange|blocked|upgrade|success"
     );
 }
+
+#[test]
+fn test_indexeddb_get_all_options_records_and_count_conversion() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__getAllOptions = [];\
+             var request = indexedDB.open('get-all-options', 1);\
+             request.onupgradeneeded = function () {\
+               var store = request.result.createObjectStore('store');\
+               store.createIndex('group', 'group');\
+               store.put({id:'a', group:'x'}, 'a');\
+               store.put({id:'b', group:'x'}, 'b');\
+               store.put({id:'c', group:'y'}, 'c');\
+             };\
+             request.onsuccess = function () {\
+               var transaction = request.result.transaction('store');\
+               var store = transaction.objectStore('store');\
+               var index = store.index('group');\
+               try { store.getAll(null, -1); }\
+               catch (error) { __getAllOptions.push(error.name); }\
+               try { index.getAllKeys(null, NaN); }\
+               catch (error) { __getAllOptions.push(error.name); }\
+               store.getAll({direction:'prev', count:2}, 17).onsuccess = function (event) {\
+                 __getAllOptions.push(event.target.result.map(function (v) { return v.id; }).join(','));\
+               };\
+               store.getAllKeys({query:IDBKeyRange.bound('a','c'), direction:'prev', count:2})\
+                 .onsuccess = function (event) { __getAllOptions.push(event.target.result.join(',')); };\
+               store.getAll({count:0}).onsuccess = function (event) {\
+                 __getAllOptions.push(String(event.target.result.length));\
+               };\
+               store.getAllRecords({count:1}).onsuccess = function (event) {\
+                 var record = event.target.result[0];\
+                 var readonly = Object.getOwnPropertyDescriptor(IDBRecord.prototype, 'key').set === undefined;\
+                 __getAllOptions.push(\
+                   Object.prototype.toString.call(record) + ':' + record.key + ':' +\
+                   record.primaryKey + ':' + record.value.id + ':' + readonly\
+                 );\
+               };\
+               index.getAllRecords({direction:'prevunique'}).onsuccess = function (event) {\
+                 __getAllOptions.push(event.target.result.map(function (record) {\
+                   return record.key + ':' + record.primaryKey + ':' + record.value.id;\
+                 }).join(','));\
+               };\
+             };",
+        )
+        .unwrap();
+    sandbox.execute("0").unwrap();
+
+    assert_eq!(
+        sandbox.execute("__getAllOptions.join('|')").unwrap().value,
+        "TypeError|TypeError|c,b|c,b|3|[object IDBRecord]:a:a:a:true|y:c:c,x:a:a"
+    );
+}
