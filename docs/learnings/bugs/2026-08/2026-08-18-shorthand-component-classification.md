@@ -75,6 +75,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `columns` exposed the partial-write variant: even if a parser ultimately returns `false`, writing the first successfully parsed component before validating the whole declaration still corrupts computed state. Multi-component apply paths should parse into temporary values first and only commit to `ComputedStyle` after every component in the declaration has passed validation.
 
+`animation-name` exposed the longhand/parser-divergence variant: fixing shorthand parsing is not enough when the corresponding longhand apply path directly stores raw comma items. Longhand list properties must reuse the same item grammar as their parser, reject empty comma items, and commit the list only after every item validates.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.

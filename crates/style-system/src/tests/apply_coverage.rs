@@ -602,6 +602,21 @@ fn test_apply_animation_properties() {
     assert!(ok);
 }
 
+#[test]
+fn test_apply_animation_name_invalid_list_keeps_old_values() {
+    let mut style = ComputedStyle::default();
+    style.animation_name = vec!["fadeIn".to_string()];
+
+    assert!(!apply_property_value(&mut style, "animation-name", "-1s"));
+    assert_eq!(style.animation_name, vec!["fadeIn".to_string()]);
+
+    assert!(!apply_property_value(&mut style, "animation-name", "fadeOut, 123bad"));
+    assert_eq!(style.animation_name, vec!["fadeIn".to_string()]);
+
+    assert!(!apply_property_value(&mut style, "animation-name", "fadeOut,"));
+    assert_eq!(style.animation_name, vec!["fadeIn".to_string()]);
+}
+
 // === Scroll Snap 属性 ===
 
 #[test]

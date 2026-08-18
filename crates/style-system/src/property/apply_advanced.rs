@@ -298,10 +298,16 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
 
         // ── Animation 属性 ──
         "animation-name" => {
-            // 保留 "none"（不滤空）：动画管线已在 pipeline/mod.rs 过滤 `n != "none"`（不入动画
-            // 系统），故保留使 getComputedStyle 能区分 `animation: 2s`（name 省略→["none"]）等
-            // 情形的简写序列化，对齐 Chromium（R2756 修旧 filter 致省略 name 时 list 被吞）。
-            style.animation_name = value.split(',').map(|s| s.trim().to_string()).collect();
+            // https://drafts.csswg.org/css-animations-1/#animation-name
+            let mut names = Vec::new();
+            for part in value.split(',') {
+                let name = part.trim();
+                if name.is_empty() || values::parse_animation_name(name).is_none() {
+                    return false;
+                }
+                names.push(name.to_string());
+            }
+            style.animation_name = names;
             return true;
         }
         "animation-duration" => {
