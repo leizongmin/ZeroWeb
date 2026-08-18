@@ -1087,3 +1087,5 @@ make test
 | v0.5 | 2026-08-19 | 本机可用 NDK 为 r30；构建基线从 r29 更新为已验证的 r30，Release ABI/进程边界不变 |
 | v0.6 | 2026-08-19 | AGP 9 需显式启用 AIDL；render foundation 经 winit 在 Android 编译时需启用 native-activity glue feature，均为构建适配，不改变 Kotlin Activity 宿主或多进程边界 |
 | v0.7 | 2026-08-19 | winit native-activity glue 需要 `android_main` 链接符号；JNI cdylib 提供未被 manifest 调用的锚点，Kotlin Activity 仍是唯一宿主入口 |
+| v0.8 | 2026-08-19 | renderer Android 依赖图暴露 reqwest native-tls 的 OpenSSL 交叉编译缺口；workspace 网络栈改用 rustls TLS，保持同一 `zero-net` API 和平台行为 |
+| v0.9 | 2026-08-19 | 当前 rusty_v8 crate 不含 Android target binding；Android Gradle 按 variant 以 `V8_FROM_SOURCE=1` 构建单 ABI V8，避免 debug 构建同时编译 arm64 与 x86_64 |

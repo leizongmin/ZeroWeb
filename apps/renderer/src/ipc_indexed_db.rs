@@ -74,12 +74,15 @@ impl IndexedDbResponseRouter {
     }
 }
 
-pub(crate) fn spawn_browser_ipc_inbound() -> (Receiver<IpcMessage>, JoinHandle<()>) {
+pub(crate) fn spawn_ipc_inbound<R>(reader: R) -> (Receiver<IpcMessage>, JoinHandle<()>)
+where
+    R: io::Read + Send + 'static,
+{
     let (tx, rx) = mpsc::channel();
     let join = thread::Builder::new()
         .name("renderer-ipc-in".into())
         .spawn(move || {
-            let mut transport = PipeTransport::new(io::stdin(), io::empty());
+            let mut transport = PipeTransport::new(reader, io::empty());
             loop {
                 match transport.recv() {
                     Ok(message) => {

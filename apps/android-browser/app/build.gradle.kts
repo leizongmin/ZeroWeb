@@ -5,6 +5,8 @@ plugins {
 
 val repositoryRoot = rootProject.projectDir.parentFile.parentFile
 val generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
+val requestedTasks = gradle.startParameter.taskNames.joinToString(" ")
+val nativeAbis = if (requestedTasks.contains("Emulator")) listOf("x86_64") else listOf("arm64-v8a")
 
 android {
     namespace = "com.leizm.zeroweb"
@@ -68,21 +70,18 @@ val buildRustNative by tasks.registering(Exec::class) {
     doFirst {
         generatedJniLibs.get().asFile.deleteRecursively()
     }
+    environment("V8_FROM_SOURCE", "1")
     commandLine(
-        "cargo",
-        "ndk",
-        "-P",
-        "26",
-        "-t",
-        "arm64-v8a",
-        "-t",
-        "x86_64",
-        "-o",
-        generatedJniLibs.get().asFile.absolutePath,
-        "build",
-        "--release",
-        "-p",
-        "zero-android-browser",
+        listOf("cargo", "ndk", "-P", "26") +
+            nativeAbis.flatMap { listOf("-t", it) } +
+            listOf(
+                "-o",
+                generatedJniLibs.get().asFile.absolutePath,
+                "build",
+                "--release",
+                "-p",
+                "zero-android-browser",
+            ),
     )
 }
 

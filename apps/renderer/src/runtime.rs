@@ -218,7 +218,7 @@ impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     pub(crate) fn new(renderer_id: u64) -> Self {
         zero_webview::enable_isolated_image_decoder();
-        let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_browser_ipc_inbound();
+        let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_ipc_inbound(io::stdin());
         let mut rt = Self::with_io(
             renderer_id,
             FramePublishMode::Compositor,
@@ -2722,6 +2722,33 @@ pub fn run_desktop_role(renderer_id: u64) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     let result = run_renderer_runtime(renderer_id);
     result
+}
+
+/// Runs the renderer role against an Android-owned full-duplex socket FD.
+///
+/// Kotlin transfers ownership with `ParcelFileDescriptor.detachFd()`. The
+/// reader thread and the shared outbound writer then use the same runtime,
+/// message router and page pipeline as desktop stdio.
+#[cfg(target_os = "android")]
+pub fn run_android_role(renderer_id: u64, fd: std::os::unix::io::RawFd) -> Result<(), String> {
+    use std::os::unix::io::FromRawFd;
+
+    if fd < 0 {
+        return Err("Android renderer socket FD must be non-negative".to_string());
+    }
+
+    run_on_renderer_stack(renderer_id, move || {
+        // SAFETY: ownership was transferred by ParcelFileDescriptor.detachFd().
+        let reader = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+        let writer = reader
+            .try_clone()
+            .map_err(|error| format!("duplicate Android renderer socket failed: {error}"))?;
+        let (inbound_rx, inbound_thread) = ipc_indexed_db::spawn_ipc_inbound(reader);
+        let mut runtime =
+            RendererRuntime::with_io(renderer_id, FramePublishMode::Compositor, Box::new(writer), inbound_rx);
+        runtime.inbound_threads.push(inbound_thread);
+        runtime.run()
+    })?
 }
 
 #[cfg(test)]

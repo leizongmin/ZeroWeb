@@ -21,6 +21,9 @@ pub use runtime::{parse_renderer_launch, run_desktop_role};
 #[cfg(target_os = "macos")]
 pub(crate) use runtime::RendererRuntime;
 
+#[cfg(target_os = "android")]
+pub use runtime::run_android_role;
+
 #[cfg(test)]
 #[path = "gpu_isolation_tests.rs"]
 mod gpu_isolation_tests;

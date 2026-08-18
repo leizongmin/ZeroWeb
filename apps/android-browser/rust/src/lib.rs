@@ -68,19 +68,31 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRunRole(
         close_android_fd(fd);
         return JNI_FALSE;
     };
-    let Ok(mut transport) = zero_protocol::android_socket_transport_from_fd(fd) else {
-        return JNI_FALSE;
-    };
     match role.to_str().ok() {
-        Some("image-decoder") => std::thread::Builder::new()
-            .name("android-image-decoder".to_string())
-            .spawn(move || zero_image_decoder::run_role(&mut transport))
-            .map_or(JNI_FALSE, |_| JNI_TRUE),
-        Some("compositor") => std::thread::Builder::new()
-            .name("android-compositor".to_string())
-            .spawn(move || zero_compositor::run_role(&mut transport))
-            .map_or(JNI_FALSE, |_| JNI_TRUE),
-        _ => JNI_FALSE,
+        Some("image-decoder") | Some("compositor") => {
+            let Ok(mut transport) = zero_protocol::android_socket_transport_from_fd(fd) else {
+                return JNI_FALSE;
+            };
+            let name = if role.to_str().ok() == Some("image-decoder") {
+                "android-image-decoder"
+            } else {
+                "android-compositor"
+            };
+            std::thread::Builder::new()
+                .name(name.to_string())
+                .spawn(move || {
+                    if name == "android-image-decoder" {
+                        zero_image_decoder::run_role(&mut transport);
+                    } else {
+                        zero_compositor::run_role(&mut transport);
+                    }
+                })
+                .map_or(JNI_FALSE, |_| JNI_TRUE)
+        }
+        _ => {
+            close_android_fd(fd);
+            JNI_FALSE
+        }
     }
 }
 
