@@ -439,6 +439,18 @@ fn test_grid_template_no_slash() {
 }
 
 #[test]
+fn test_place_shorthands_reject_invalid_longhand_values() {
+    assert!(expand_one("place-items", "left", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("place-content", "left", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("place-self", "sparkle", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("place-self", "auto center", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].1, "auto");
+    assert_eq!(result[1].1, "center");
+}
+
+#[test]
 /// place-items 保留 important 标记
 fn test_place_items_preserves_important() {
     let result = expand_one("place-items", "center", true, (0, 1, 0));

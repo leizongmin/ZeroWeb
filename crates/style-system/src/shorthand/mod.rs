@@ -1280,6 +1280,10 @@ fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) 
 
 /// 展开 place-items / place-content / place-self 简写。
 ///
+/// https://drafts.csswg.org/css-align-3/#place-items-property
+/// https://drafts.csswg.org/css-align-3/#place-content-property
+/// https://drafts.csswg.org/css-align-3/#place-self-property
+///
 /// `place-items: center` → align-items: center; justify-items: center
 /// `place-items: start end` → align-items: start; justify-items: end
 ///
@@ -1292,11 +1296,45 @@ fn expand_place(
     specificity: (u32, u32, u32),
 ) -> Vec<MatchingDecl> {
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    if matches_css_wide_keyword(value) {
+        return vec![mk(align_prop, value), mk(justify_prop, value)];
+    }
     let parts: Vec<&str> = value.split_whitespace().collect();
     match parts.len() {
-        1 => vec![mk(align_prop, parts[0]), mk(justify_prop, parts[0])],
-        2 => vec![mk(align_prop, parts[0]), mk(justify_prop, parts[1])],
+        1 if is_place_longhand_value(align_prop, parts[0]) && is_place_longhand_value(justify_prop, parts[0]) => {
+            vec![mk(align_prop, parts[0]), mk(justify_prop, parts[0])]
+        }
+        2 if is_place_longhand_value(align_prop, parts[0]) && is_place_longhand_value(justify_prop, parts[1]) => {
+            vec![mk(align_prop, parts[0]), mk(justify_prop, parts[1])]
+        }
         _ => vec![],
+    }
+}
+
+fn is_place_longhand_value(property: &str, value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    match property {
+        "align-items" | "align-self" | "justify-content" => zero_css_parser::values::parse_alignment(value).is_some(),
+        "align-content" => matches!(
+            lower.as_str(),
+            "auto"
+                | "normal"
+                | "start"
+                | "end"
+                | "flex-start"
+                | "flex-end"
+                | "center"
+                | "stretch"
+                | "baseline"
+                | "space-between"
+                | "space-around"
+                | "space-evenly"
+        ),
+        "justify-items" | "justify-self" => matches!(
+            lower.as_str(),
+            "auto" | "normal" | "start" | "end" | "center" | "stretch" | "baseline" | "left" | "right"
+        ),
+        _ => false,
     }
 }
 
