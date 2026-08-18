@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use zero_browser_shell::{BrowserShell, ProfilePaths, TabId};
 
 const MAX_URL_BYTES: usize = 16 * 1024;
+const MAX_LIST_ITEMS: usize = 200;
 
 struct AndroidBrowser {
     shell: BrowserShell,
@@ -74,6 +75,17 @@ pub(crate) fn toggle_bookmark() -> Result<(), String> {
     })
 }
 
+pub(crate) fn remove_bookmark(url: &str) -> Result<(), String> {
+    let url = validated_url(url)?;
+    mutate(|browser| {
+        browser.shell.remove_bookmark_by_url(url);
+    })
+}
+
+pub(crate) fn clear_history() -> Result<(), String> {
+    mutate(|browser| browser.shell.history_mut().clear())
+}
+
 fn mutate(update: impl FnOnce(&mut AndroidBrowser)) -> Result<(), String> {
     let mut state = browser()
         .lock()
@@ -105,6 +117,36 @@ fn snapshot_locked(state: &Option<AndroidBrowser>) -> Result<String, String> {
             })
         })
         .collect();
+    let bookmarks: Vec<Value> = browser
+        .shell
+        .bookmarks()
+        .iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|bookmark| json!({ "title": bookmark.title(), "url": bookmark.url() }))
+        .collect();
+    let history: Vec<Value> = browser
+        .shell
+        .history()
+        .iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|entry| json!({ "title": entry.title(), "url": entry.url() }))
+        .collect();
+    let downloads: Vec<Value> = browser
+        .shell
+        .downloads()
+        .iter()
+        .take(MAX_LIST_ITEMS)
+        .map(|download| {
+            json!({
+                "id": download.id().0,
+                "url": download.url(),
+                "filename": download.filename(),
+                "downloadedBytes": download.downloaded_bytes(),
+                "totalBytes": download.total_bytes(),
+                "state": format!("{:?}", download.state()),
+            })
+        })
+        .collect();
     serde_json::to_string(&json!({
         "revision": browser.revision,
         "activeTabId": active_tab_id,
@@ -113,6 +155,9 @@ fn snapshot_locked(state: &Option<AndroidBrowser>) -> Result<String, String> {
         "bookmarkCount": browser.shell.bookmarks().len(),
         "historyCount": browser.shell.history().len(),
         "downloadCount": browser.shell.downloads().len(),
+        "bookmarks": bookmarks,
+        "history": history,
+        "downloads": downloads,
     }))
     .map_err(|error| format!("serialize Android browser snapshot failed: {error}"))
 }

@@ -31,6 +31,12 @@ object NativeBridge {
     external fun nativeToggleBookmark(): Boolean
 
     @JvmStatic
+    external fun nativeRemoveBookmark(url: String): Boolean
+
+    @JvmStatic
+    external fun nativeClearHistory(): Boolean
+
+    @JvmStatic
     external fun nativeStartRole(role: String): Boolean
 
     @JvmStatic

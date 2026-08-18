@@ -112,6 +112,28 @@ pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeToggleBookmark(
     facade::toggle_bookmark().map_or(JNI_FALSE, |_| JNI_TRUE)
 }
 
+/// Removes a bookmark identified by its HTTP(S) URL and persists the profile.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeRemoveBookmark(
+    mut env: JNIEnv,
+    _class: JClass,
+    url: JString,
+) -> jboolean {
+    env.get_string(&url)
+        .map_err(|error| error.to_string())
+        .and_then(|url| facade::remove_bookmark(url.to_str().map_err(|error| error.to_string())?))
+        .map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
+/// Clears all persisted history records.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_leizm_zeroweb_NativeBridge_nativeClearHistory(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    facade::clear_history().map_or(JNI_FALSE, |_| JNI_TRUE)
+}
+
 fn jni_string(env: &mut JNIEnv, result: Result<String, String>) -> jstring {
     let json = match result {
         Ok(snapshot) => snapshot,

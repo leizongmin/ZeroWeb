@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
                     onSelectTab = ::selectTab,
                     onCloseTab = ::closeTab,
                     onToggleBookmark = ::toggleBookmark,
+                    onRemoveBookmark = ::removeBookmark,
+                    onClearHistory = ::clearHistory,
                 )
             }
         }
@@ -103,6 +105,14 @@ class MainActivity : ComponentActivity() {
 
     private fun toggleBookmark() {
         if (NativeBridge.nativeToggleBookmark()) refreshBrowserSnapshot()
+    }
+
+    private fun removeBookmark(url: String) {
+        if (NativeBridge.nativeRemoveBookmark(url)) refreshBrowserSnapshot()
+    }
+
+    private fun clearHistory() {
+        if (NativeBridge.nativeClearHistory()) refreshBrowserSnapshot()
     }
 
     private fun applySnapshot(rawSnapshot: String) {
@@ -162,7 +172,10 @@ private fun BrowserScreen(
     onSelectTab: (Long) -> Unit,
     onCloseTab: (Long) -> Unit,
     onToggleBookmark: () -> Unit,
+    onRemoveBookmark: (String) -> Unit,
+    onClearHistory: () -> Unit,
 ) {
+    var page by remember { mutableStateOf(BrowserPage.BROWSE) }
     val activeTab = snapshot.tabs.firstOrNull { it.id == snapshot.activeTabId }
     var address by remember(activeTab?.id, activeTab?.url) { mutableStateOf(activeTab?.url.orEmpty()) }
     Column(
@@ -174,6 +187,21 @@ private fun BrowserScreen(
     ) {
         Text(text = stringResource(R.string.bootstrap_title), style = MaterialTheme.typography.headlineMedium)
         Text(text = if (readyServiceCount == 3) stringResource(R.string.bootstrap_ready) else stringResource(R.string.bootstrap_starting))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BrowserPage.entries.forEach { candidate ->
+                TextButton(onClick = { page = candidate }) { Text(candidate.label) }
+            }
+        }
+        if (page != BrowserPage.BROWSE) {
+            BrowserLibraryPage(
+                page = page,
+                snapshot = snapshot,
+                onOpenUrl = onNavigate,
+                onRemoveBookmark = onRemoveBookmark,
+                onClearHistory = onClearHistory,
+            )
+            return@Column
+        }
         OutlinedTextField(
             value = address,
             onValueChange = { address = it },
@@ -202,9 +230,63 @@ private fun BrowserScreen(
     }
 }
 
+@androidx.compose.runtime.Composable
+private fun BrowserLibraryPage(
+    page: BrowserPage,
+    snapshot: BrowserSnapshot,
+    onOpenUrl: (String) -> Unit,
+    onRemoveBookmark: (String) -> Unit,
+    onClearHistory: () -> Unit,
+) {
+    when (page) {
+        BrowserPage.BOOKMARKS -> {
+            Text(text = "书签", style = MaterialTheme.typography.titleLarge)
+            if (snapshot.bookmarks.isEmpty()) Text("暂无书签")
+            snapshot.bookmarks.forEach { entry ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onOpenUrl(entry.url) }, modifier = Modifier.weight(1f)) { Text(entry.displayTitle) }
+                    TextButton(onClick = { onRemoveBookmark(entry.url) }) { Text("删除") }
+                }
+            }
+        }
+        BrowserPage.HISTORY -> {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = "历史", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClearHistory) { Text("清除全部") }
+            }
+            if (snapshot.history.isEmpty()) Text("暂无历史记录")
+            snapshot.history.forEach { entry ->
+                TextButton(onClick = { onOpenUrl(entry.url) }, modifier = Modifier.fillMaxWidth()) { Text(entry.displayTitle) }
+            }
+        }
+        BrowserPage.DOWNLOADS -> {
+            Text(text = "下载", style = MaterialTheme.typography.titleLarge)
+            if (snapshot.downloads.isEmpty()) Text("暂无下载")
+            snapshot.downloads.forEach { entry ->
+                Text("${entry.filename} · ${entry.state}")
+                Text(entry.url, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        BrowserPage.BROWSE -> Unit
+    }
+}
+
+private enum class BrowserPage(val label: String) {
+    BROWSE("浏览"),
+    BOOKMARKS("书签"),
+    HISTORY("历史"),
+    DOWNLOADS("下载"),
+}
+
 private data class BrowserTab(val id: Long, val url: String?, val title: String?) {
     val displayTitle: String get() = title ?: url ?: "新标签"
 }
+
+private data class BrowserEntry(val title: String, val url: String) {
+    val displayTitle: String get() = if (title.isBlank()) url else title
+}
+
+private data class BrowserDownload(val filename: String, val url: String, val state: String)
 
 private data class BrowserSnapshot(
     val activeTabId: Long?,
@@ -213,9 +295,12 @@ private data class BrowserSnapshot(
     val bookmarkCount: Int,
     val historyCount: Int,
     val downloadCount: Int,
+    val bookmarks: List<BrowserEntry>,
+    val history: List<BrowserEntry>,
+    val downloads: List<BrowserDownload>,
 ) {
     companion object {
-        fun empty() = BrowserSnapshot(null, emptyList(), false, 0, 0, 0)
+        fun empty() = BrowserSnapshot(null, emptyList(), false, 0, 0, 0, emptyList(), emptyList(), emptyList())
 
         fun fromJson(raw: String): BrowserSnapshot {
             val json = JSONObject(raw)
@@ -235,7 +320,26 @@ private data class BrowserSnapshot(
                 bookmarkCount = json.getInt("bookmarkCount"),
                 historyCount = json.getInt("historyCount"),
                 downloadCount = json.getInt("downloadCount"),
+                bookmarks = parseEntries(json, "bookmarks"),
+                history = parseEntries(json, "history"),
+                downloads = parseDownloads(json),
             )
+        }
+
+        private fun parseEntries(snapshot: JSONObject, key: String): List<BrowserEntry> {
+            val entries = snapshot.getJSONArray(key)
+            return List(entries.length()) { index ->
+                val entry = entries.getJSONObject(index)
+                BrowserEntry(entry.getString("title"), entry.getString("url"))
+            }
+        }
+
+        private fun parseDownloads(snapshot: JSONObject): List<BrowserDownload> {
+            val downloads = snapshot.getJSONArray("downloads")
+            return List(downloads.length()) { index ->
+                val download = downloads.getJSONObject(index)
+                BrowserDownload(download.getString("filename"), download.getString("url"), download.getString("state"))
+            }
         }
     }
 }
