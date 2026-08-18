@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::profile::atomic_write;
+
 /// 可序列化的浏览器会话快照。
 ///
 /// 包含关闭时的所有标签页状态，用于下次启动时恢复。
@@ -94,12 +96,8 @@ impl SessionState {
     ///
     /// 自动创建父目录。
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create session dir: {e}"))?;
-        }
         let json = serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize session: {e}"))?;
-        std::fs::write(path, json).map_err(|e| format!("Failed to write session: {e}"))?;
-        Ok(())
+        atomic_write(path, &json)
     }
 
     /// 保存到默认路径。

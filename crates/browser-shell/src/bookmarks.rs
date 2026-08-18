@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+use crate::profile::atomic_write;
+
 /// 书签唯一标识符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BookmarkId(pub u64);
@@ -238,14 +240,10 @@ impl Bookmarks {
 
     /// 将书签保存到 JSON 文件。
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {e}"))?;
-        }
         let snapshot = self.to_snapshot();
         let json =
             serde_json::to_string_pretty(&snapshot).map_err(|e| format!("Failed to serialize bookmarks: {e}"))?;
-        std::fs::write(path, json).map_err(|e| format!("Failed to write bookmarks: {e}"))?;
-        Ok(())
+        atomic_write(path, &json)
     }
 
     /// 保存到默认路径。
