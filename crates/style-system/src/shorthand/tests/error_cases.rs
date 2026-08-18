@@ -607,6 +607,18 @@ fn test_font_negative_line_height_px_invalid() {
 }
 
 #[test]
+fn test_font_rejects_unknown_presize_token_and_bare_nonzero_size() {
+    assert!(expand_one("font", "sparkle 16px serif", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("font", "16 serif", false, (0, 0, 1)).is_empty());
+
+    let zero = expand_one("font", "0 serif", false, (0, 0, 1));
+    assert!(
+        zero.iter()
+            .any(|(property, value, _, _)| property == "font-size" && value == "0")
+    );
+}
+
+#[test]
 /// font size/line-height 分隔符带空格
 fn test_font_size_line_spacing_with_spaces() {
     let result = expand_one("font", "16px / 1.5", false, (0, 0, 1));

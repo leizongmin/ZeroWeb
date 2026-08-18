@@ -2067,6 +2067,26 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     let mut line_height = "normal".to_string();
     let mut family = String::new();
 
+    let system_fonts = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
+    if system_fonts.contains(&value.to_ascii_lowercase().as_str()) {
+        // 系统字体关键字：设置所有子属性为 normal
+        return vec![
+            mk("font-style", "normal"),
+            mk("font-weight", "normal"),
+            mk("font-size", "medium"),
+            mk("line-height", "normal"),
+            mk("font-family", value),
+            mk("font-variant-ligatures", "normal"),
+            mk("font-variant-caps", "normal"),
+            mk("font-variant-numeric", "normal"),
+            mk("font-variant-east-asian", "normal"),
+            mk("font-variant-position", "normal"),
+            mk("font-variant-alternates", "normal"),
+            mk("font-stretch", "normal"),
+            mk("font-kerning", "auto"),
+        ];
+    }
+
     let is_weight = |s: &str| {
         matches!(
             s.to_ascii_lowercase().as_str(),
@@ -2087,6 +2107,47 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     };
 
     let is_style = |s: &str| matches!(s.to_ascii_lowercase().as_str(), "normal" | "italic" | "oblique");
+
+    let is_font_size = |s: &str| {
+        use zero_css_parser::values::LengthValue;
+
+        if matches!(
+            s.to_ascii_lowercase().as_str(),
+            "xx-small"
+                | "x-small"
+                | "small"
+                | "medium"
+                | "large"
+                | "x-large"
+                | "xx-large"
+                | "xxx-large"
+                | "smaller"
+                | "larger"
+        ) {
+            return true;
+        }
+        matches!(
+            zero_css_parser::values::parse_length(s),
+            Some(
+                LengthValue::Px(v)
+                    | LengthValue::Em(v)
+                    | LengthValue::Ex(v)
+                    | LengthValue::Rex(v)
+                    | LengthValue::Cap(v)
+                    | LengthValue::Rcap(v)
+                    | LengthValue::Rem(v)
+                    | LengthValue::Vh(v)
+                    | LengthValue::Vw(v)
+                    | LengthValue::Vmin(v)
+                    | LengthValue::Vmax(v)
+                    | LengthValue::Ch(v)
+                    | LengthValue::Rch(v)
+                    | LengthValue::Ic(v)
+                    | LengthValue::Ric(v)
+                    | LengthValue::Percentage(v)
+                ) if v >= 0.0
+        ) || zero_css_parser::values::parse_math_function(s).is_some()
+    };
 
     // 找到 size 部分：包含数字或者带 / 的部分
     let parts: Vec<&str> = value.split_whitespace().collect();
@@ -2112,18 +2173,23 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
         } else if part.contains('/') {
             // attached size/line-height 格式
             let sub: Vec<&str> = part.splitn(2, '/').collect();
+            if !is_font_size(sub[0]) {
+                return vec![];
+            }
             size = sub[0].to_string();
             if sub.len() > 1 {
                 line_height = sub[1].to_string();
             }
             size_found = true;
-        } else if !size_found && (looks_like_length(part) || part.parse::<f64>().is_ok()) {
+        } else if !size_found && is_font_size(part) {
             size = part.to_string();
             size_found = true;
         } else if !size_found && is_weight(part) {
             weight = part.to_string();
         } else if !size_found && is_style(part) {
             style = part.to_string();
+        } else {
+            return vec![];
         }
     }
 
@@ -2134,26 +2200,6 @@ fn expand_font(value: &str, important: bool, specificity: (u32, u32, u32)) -> Ve
     // CSS 规范：font 简写必须至少包含 font-size 和 font-family
     // 如果没有找到 size 部分，声明无效（除非是系统字体关键字）
     if !size_found {
-        // 检查是否为系统字体关键字
-        let system_fonts = ["caption", "icon", "menu", "message-box", "small-caption", "status-bar"];
-        if system_fonts.contains(&value.to_ascii_lowercase().as_str()) {
-            // 系统字体关键字：设置所有子属性为 normal
-            return vec![
-                mk("font-style", "normal"),
-                mk("font-weight", "normal"),
-                mk("font-size", "medium"),
-                mk("line-height", "normal"),
-                mk("font-family", value),
-                mk("font-variant-ligatures", "normal"),
-                mk("font-variant-caps", "normal"),
-                mk("font-variant-numeric", "normal"),
-                mk("font-variant-east-asian", "normal"),
-                mk("font-variant-position", "normal"),
-                mk("font-variant-alternates", "normal"),
-                mk("font-stretch", "normal"),
-                mk("font-kerning", "auto"),
-            ];
-        }
         // 无效的 font 简写声明
         return vec![];
     }
