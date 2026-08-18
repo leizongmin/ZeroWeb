@@ -1,6 +1,6 @@
 ---
 name: "zeroweb-guidelines"
-description: "ZeroWeb 专属工程方法论。在本仓编写、审查或重构涉及样式/布局/字体/渲染/IPC/存储/测试的 Rust 代码，或排查性能问题、做兼容性修复时使用——内容是从 docs/learnings/ 147 篇踩坑记录中提炼的跨条目不变式。"
+description: "ZeroWeb 专属工程方法论。在本仓编写、审查或重构涉及样式/布局/字体/渲染/IPC/存储/测试的 Rust 代码，或排查性能问题、做兼容性修复时使用——内容是从 docs/learnings/ 140 篇踩坑记录中提炼的跨条目不变式。"
 ---
 
 # ZeroWeb 工程方法论

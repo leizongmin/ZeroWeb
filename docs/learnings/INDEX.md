@@ -5,16 +5,24 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（73）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（81）
 
+- 2026-08-19 [IndexedDB terminal state wait](bugs/2026-08/2026-08-19-indexeddb-terminal-state-wait.md) — apps/browser/src/process_backend/indexed_db_owner_tests.rs
+- 2026-08-19 [IndexedDB listener 异常必须结合 transaction 状态处理](bugs/2026-08/2026-08-19-indexeddb-listener-exception-transaction-state.md) — engine, wpt-runner
+- 2026-08-19 [IndexedDB key range canonical conversion](bugs/2026-08/2026-08-19-indexeddb-keyrange-canonical-conversion.md) — crates/engine/src/js_dom_shim/part02.js
+- 2026-08-19 [IndexedDB get-all options overload 不能复用旧 query/count 路径](bugs/2026-08/2026-08-19-indexeddb-getall-options-overload.md) — engine, wpt-runner
 - 2026-08-18 [Shorthand Component Classification](bugs/2026-08/2026-08-18-shorthand-component-classification.md)
 - 2026-08-18 [Process backend drop can race multiprocess compositor tests](bugs/2026-08/2026-08-18-process-backend-drop-compositor-test-race.md) — apps/browser/src/process_backend.rs, apps/browser/src/tests.rs
 - 2026-08-18 [Media Query Trailing Token Rejection](bugs/2026-08/2026-08-18-media-query-trailing-token-rejection.md) — crates/css-parser/src/media_query.rs
 - 2026-08-18 [Media Query Keyword Token Boundary](bugs/2026-08/2026-08-18-media-query-keyword-token-boundary.md) — crates/css-parser/src/media_query.rs
+- 2026-08-18 [IndexedDB schema rename wrapper rollback](bugs/2026-08/2026-08-18-indexeddb-schema-rename-wrapper-rollback.md) — crates/engine/src/js_dom_shim/part02.js
 - 2026-08-18 [IndexedDB native detached binary key](bugs/2026-08/2026-08-18-indexeddb-native-detached-binary-key.md) — crates/engine/src/js_dom_shim/part02.js
+- 2026-08-18 [IndexedDB metadata tasks and UTF-16 wire names](bugs/2026-08/2026-08-18-indexeddb-metadata-task-and-utf16-wire.md) — engine, page-runtime, storage
+- 2026-08-18 [IndexedDB keyPath own-property and sparse-array wire](bugs/2026-08/2026-08-18-indexeddb-keypath-own-property-wire.md) — engine, page-runtime, storage
 - 2026-08-18 [IndexedDB deferred operation active check](bugs/2026-08/2026-08-18-indexeddb-deferred-operation-active-check.md) — crates/engine/src/js_dom_shim/part02.js
 - 2026-08-18 [IndexedDB cursor transaction view](bugs/2026-08/2026-08-18-indexeddb-cursor-transaction-view.md) — crates/page-runtime/src/indexed_db_host/cursor.rs
 - 2026-08-18 [IndexedDB cross-renderer stale schema after upgrade](bugs/2026-08/2026-08-18-indexeddb-cross-renderer-stale-schema.md) — engine/js_dom_shim, browser/process_backend
+- 2026-08-18 [IndexedDB compound object-store key path schema drift](bugs/2026-08/2026-08-18-indexeddb-compound-object-store-key-path.md) — engine, page-runtime, storage
 - 2026-08-18 [Font Style Oblique Token Boundary](bugs/2026-08/2026-08-18-font-style-oblique-token-boundary.md) — crates/css-parser/src/values/parse_misc.rs, crates/css-parser/src/parser/at_rules.rs
 - 2026-08-18 [Exact Font Family Matching For Ahem](bugs/2026-08/2026-08-18-exact-font-family-matching-for-ahem.md) — crates/layout-engine/src/table_types.rs
 - 2026-08-17 [QuickJS 专属测试必须排除 V8 feature union](bugs/2026-08/2026-08-17-quickjs-tests-must-exclude-v8-feature-union.md) — zero-webview, workspace 测试矩阵

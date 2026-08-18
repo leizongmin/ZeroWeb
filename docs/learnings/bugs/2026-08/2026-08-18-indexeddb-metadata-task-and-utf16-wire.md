@@ -1,8 +1,9 @@
+---
+date: 2026-08-18
+modules: engine, page-runtime, storage
+---
+
 # IndexedDB metadata tasks and UTF-16 wire names
-
-**日期**: 2026-08-18
-
-**相关模块**: `engine`、`page-runtime`、`storage`
 
 ## 问题描述
 
