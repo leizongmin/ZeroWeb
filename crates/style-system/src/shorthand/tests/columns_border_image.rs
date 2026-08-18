@@ -116,6 +116,12 @@ fn test_column_rule_width_and_style() {
     assert_eq!(result[2].1, "currentcolor"); // 默认 color
 }
 
+#[test]
+fn test_column_rule_rejects_unknown_component() {
+    let result = expand_one("column-rule", "begin solid red", false, (0, 0, 1));
+    assert!(result.is_empty());
+}
+
 // ── gap 简写测试 ──
 
 #[test]

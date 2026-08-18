@@ -140,6 +140,12 @@ fn test_outline_shorthand_order_independent() {
 }
 
 #[test]
+fn test_outline_shorthand_rejects_unknown_component() {
+    let result = expand_one("outline", "begin solid red", false, (0, 0, 1));
+    assert!(result.is_empty());
+}
+
+#[test]
 fn test_outline_shorthand_preserves_important() {
     let result = expand_one("outline", "1px solid red", true, (0, 1, 0));
     assert_eq!(result.len(), 3);

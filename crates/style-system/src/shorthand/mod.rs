@@ -1434,6 +1434,8 @@ fn expand_outline(value: &str, important: bool, specificity: (u32, u32, u32)) ->
             width = part;
         } else if looks_like_color(part) {
             color = part;
+        } else {
+            return vec![];
         }
     }
 
@@ -1550,6 +1552,8 @@ fn expand_column_rule(value: &str, important: bool, specificity: (u32, u32, u32)
             width = part.to_string();
         } else if looks_like_color(part) {
             color = part.to_string();
+        } else {
+            return vec![];
         }
     }
 
