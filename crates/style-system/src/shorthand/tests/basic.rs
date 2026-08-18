@@ -108,6 +108,23 @@ fn test_border_color_shorthand() {
 // ── border 全写测试 ──
 
 #[test]
+fn test_border_edge_quartet_rejects_invalid_tokens() {
+    assert!(expand_one("border-width", "red", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-width", "-1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-style", "1px", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("border-color", "solid", false, (0, 0, 1)).is_empty());
+
+    let result = expand_one("border-width", "thin medium thick 2px", false, (0, 0, 1));
+    assert_eq!(result.len(), 4);
+    assert_eq!(result[0].1, "thin");
+    assert_eq!(result[3].1, "2px");
+
+    let inherit = expand_one("border-style", "inherit", false, (0, 0, 1));
+    assert_eq!(inherit.len(), 4);
+    assert!(inherit.iter().all(|(_, value, _, _)| value == "inherit"));
+}
+
+#[test]
 fn test_border_all() {
     let result = expand_one("border", "1px solid red", false, (0, 0, 1));
     assert_eq!(result.len(), 12); // 4 sides × 3 props

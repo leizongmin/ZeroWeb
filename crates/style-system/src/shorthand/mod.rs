@@ -311,8 +311,15 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
         }
 
         // ── border 边简写 ──
+        // https://drafts.csswg.org/css-backgrounds-3/#border-width
+        // https://drafts.csswg.org/css-backgrounds-3/#border-style
+        // https://drafts.csswg.org/css-backgrounds-3/#border-color
         "border-width" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_border_width_rect_value)
+            }) else {
                 return vec![];
             };
             vec![
@@ -323,7 +330,11 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             ]
         }
         "border-style" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, is_border_style_keyword)
+            }) else {
                 return vec![];
             };
             vec![
@@ -334,7 +345,11 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
             ]
         }
         "border-color" => {
-            let Some((t, r, b, l)) = parse_rect_values(value) else {
+            let Some((t, r, b, l)) = (if matches_css_wide_keyword(value) {
+                parse_rect_values(value)
+            } else {
+                parse_rect_values_with(value, looks_like_color)
+            }) else {
                 return vec![];
             };
             vec![
@@ -819,6 +834,40 @@ fn parse_rect_values(value: &str) -> Option<(&str, &str, &str, &str)> {
         3 => Some((parts[0], parts[1], parts[2], parts[1])),
         4 => Some((parts[0], parts[1], parts[2], parts[3])),
         _ => None,
+    }
+}
+
+fn parse_rect_values_with(value: &str, is_valid: fn(&str) -> bool) -> Option<(&str, &str, &str, &str)> {
+    let rect = parse_rect_values(value)?;
+    if [rect.0, rect.1, rect.2, rect.3].iter().all(|part| is_valid(part)) {
+        Some(rect)
+    } else {
+        None
+    }
+}
+
+fn is_border_width_rect_value(value: &str) -> bool {
+    if value.eq_ignore_ascii_case("thin") || value.eq_ignore_ascii_case("medium") || value.eq_ignore_ascii_case("thick")
+    {
+        return true;
+    }
+    match zero_css_parser::values::parse_length(value) {
+        Some(zero_css_parser::values::LengthValue::Px(v))
+        | Some(zero_css_parser::values::LengthValue::Em(v))
+        | Some(zero_css_parser::values::LengthValue::Ex(v))
+        | Some(zero_css_parser::values::LengthValue::Rex(v))
+        | Some(zero_css_parser::values::LengthValue::Cap(v))
+        | Some(zero_css_parser::values::LengthValue::Rcap(v))
+        | Some(zero_css_parser::values::LengthValue::Rem(v))
+        | Some(zero_css_parser::values::LengthValue::Vh(v))
+        | Some(zero_css_parser::values::LengthValue::Vw(v))
+        | Some(zero_css_parser::values::LengthValue::Vmin(v))
+        | Some(zero_css_parser::values::LengthValue::Vmax(v))
+        | Some(zero_css_parser::values::LengthValue::Ch(v))
+        | Some(zero_css_parser::values::LengthValue::Rch(v))
+        | Some(zero_css_parser::values::LengthValue::Ic(v))
+        | Some(zero_css_parser::values::LengthValue::Ric(v)) => v >= 0.0,
+        _ => false,
     }
 }
 
