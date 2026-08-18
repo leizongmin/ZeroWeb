@@ -5394,6 +5394,16 @@
   };
   if (typeof globalThis.Event.prototype.initEvent !== 'function') {
     globalThis.Event.prototype.initEvent = function (type, bubbles, cancelable) {
+      // js-dom M4 R110：spec `dom-event-initevent`「If this's dispatch flag is set, then
+      // return」——派发中 initEvent 是 no-op（WPT Event-init-while-dispatching "Calling
+      // initEvent while dispatching"）。`_zwDispatching` 由 _dispatchWithBubble 维护
+      //（R106 已建，入口/finally 计数）。
+      if (this._zwDispatching) return;
+      // R110：首参 mandatory——缺省抛 TypeError（spec legacy init 位置参数 non-optional；
+      // WPT Event-initEvent "First parameter to initEvent should be mandatory"）。
+      if (arguments.length < 1) {
+        throw new globalThis.TypeError("Failed to execute 'initEvent' on 'Event': 1 argument required, but only 0 present.");
+      }
       // js-dom M4 R106：spec `dom-eventtarget-dispatchevent` 步骤 1——event 的 initialized
       // flag 未设时 dispatchEvent 抛 InvalidStateError。createEvent 返回的事件带
       // `_zwUninitialized`（构造器路径不设——new Event() 即已初始化），initEvent 清除。
@@ -5449,6 +5459,10 @@
 
   globalThis.CustomEvent = function CustomEvent(type, options) {
     var ev = _makeEvent(type, options);
+    // js-dom M4 R110：spec CustomEventInit.detail 缺省 **null**（`detail: any = null`）——
+    // `_makeEvent` 落 undefined（Event 语义），CustomEvent 构造路径补 null（WPT
+    // Event-init-while-dispatching "detail setter should short-circuit" 期望 null）。
+    if (ev.detail === undefined) ev.detail = null;
     Object.setPrototypeOf(ev, globalThis.CustomEvent.prototype);
     return ev;
   };
@@ -5458,10 +5472,22 @@
   // 镜像 initEvent 设 type/bubbles/cancelable + 设 detail。guard 幂等（不覆盖既有定义）。
   if (typeof globalThis.CustomEvent.prototype.initCustomEvent !== 'function') {
     globalThis.CustomEvent.prototype.initCustomEvent = function (type, bubbles, cancelable, detail) {
+      // js-dom M4 R110：spec `dom-customevent-initcustomevent`「dispatch flag set → return」
+      //（WPT Event-init-while-dispatching "Calling initCustomEvent while dispatching"——
+      // detail setter 须 short-circuit）。复用 R106 `_zwDispatching` 计数。
+      if (this._zwDispatching) return;
+      // R110：spec legacy init 方法首参 mandatory——缺省抛 TypeError（WebIDL 位置参数
+      // non-optional；WPT CustomEvent "First parameter to initCustomEvent should be
+      // mandatory"）。
+      if (arguments.length < 1) {
+        throw new globalThis.TypeError("Failed to execute 'initCustomEvent' on 'CustomEvent': 1 argument required, but only 0 present.");
+      }
       this.type = type;
       this.bubbles = !!bubbles;
       this.cancelable = !!cancelable;
-      this.detail = detail;
+      // R110：detail 缺省 null（spec CustomEventInit.detail = null；WPT "default parameter
+      // values"——undefined 直设会读回 undefined）。
+      this.detail = detail == null ? null : detail;
       this.defaultPrevented = false;
       this._defaultPrevented = false;
     };
@@ -5660,6 +5686,55 @@
   WheelEventCtor.DOM_DELTA_PIXEL = 0;
   WheelEventCtor.DOM_DELTA_LINE = 1;
   WheelEventCtor.DOM_DELTA_PAGE = 2;
+  // js-dom M4 R110（WPT Event-init-while-dispatching）：legacy initXxxEvent 族补齐——
+  // initUIEvent / initMouseEvent / initKeyboardEvent。共同语义（spec 各接口 init 方法步骤 1）：
+  // ① **dispatch flag set → return**（派发中 no-op，用 R106 `_zwDispatching` 计数）；
+  // ② 否则重置 init 字段（type/bubbles/cancelable 经 initEvent 基类语义 + 自身字段）。
+  // 参数表按 spec legacy 签名（位置参数）。
+  var UIEventCtor110 = globalThis.UIEvent;
+  if (UIEventCtor110 && !UIEventCtor110.prototype.initUIEvent) {
+    UIEventCtor110.prototype.initUIEvent = function (type, bubbles, cancelable, view, detail) {
+      if (this._zwDispatching) return;
+      var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
+      if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
+      this.view = view == null ? null : view;
+      this.detail = detail == null ? 0 : detail;
+    };
+  }
+  if (MouseEventCtor && !MouseEventCtor.prototype.initMouseEvent) {
+    MouseEventCtor.prototype.initMouseEvent = function (type, bubbles, cancelable, view,
+                                                        detail, screenX, screenY, clientX, clientY,
+                                                        ctrlKey, altKey, shiftKey, metaKey,
+                                                        button, relatedTarget) {
+      if (this._zwDispatching) return;
+      var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
+      if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
+      this.view = view == null ? null : view;
+      this.detail = detail == null ? 0 : detail;
+      this.screenX = screenX || 0; this.screenY = screenY || 0;
+      this.clientX = clientX || 0; this.clientY = clientY || 0;
+      this.ctrlKey = !!ctrlKey; this.altKey = !!altKey;
+      this.shiftKey = !!shiftKey; this.metaKey = !!metaKey;
+      this.button = button || 0;
+      this.relatedTarget = relatedTarget == null ? null : relatedTarget;
+    };
+  }
+  if (KeyboardEventCtor && !KeyboardEventCtor.prototype.initKeyboardEvent) {
+    // spec legacy KeyboardEventInit 位置签名（chromium 实参序）：key/code/location/…；
+    // 本沙箱取 WPT 用例实际形态（key, location, ctrlKey, altKey, shiftKey, metaKey 后随）。
+    KeyboardEventCtor.prototype.initKeyboardEvent = function (type, bubbles, cancelable, view,
+                                                             key, location, ctrlKey, altKey,
+                                                             shiftKey, metaKey) {
+      if (this._zwDispatching) return;
+      var proto = Object.getPrototypeOf(Object.getPrototypeOf(this));
+      if (proto && typeof proto.initEvent === 'function') proto.initEvent.call(this, type, bubbles, cancelable);
+      this.view = view == null ? null : view;
+      this.key = key == null ? '' : key;
+      this.location = location || 0;
+      this.ctrlKey = !!ctrlKey; this.altKey = !!altKey;
+      this.shiftKey = !!shiftKey; this.metaKey = !!metaKey;
+    };
+  }
   // PointerEvent（MouseEvent 子类）：pointer 字段。
   _defineEventSubclass('PointerEvent', 'MouseEvent', [
     ['pointerId', 'pointerId', 0], ['width', 'width', 1], ['height', 'height', 1],

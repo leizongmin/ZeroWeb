@@ -3408,3 +3408,106 @@ fn test_event_subclass_constructors_r109() {
         "④ new Event() 基类行为不回归"
     );
 }
+
+#[test]
+fn test_init_while_dispatching_and_legacy_init_family_r110() {
+    // R110（WPT Event-init-while-dispatching + CustomEvent + Event-initEvent）：
+    // ① 派发中 initEvent/initCustomEvent/initUIEvent/initMouseEvent/initKeyboardEvent 全 no-op
+    //（spec 各 init 方法「dispatch flag set → return」，复用 R106 `_zwDispatching` 计数）；
+    // ② legacy initXxxEvent 方法族补齐（shim 此前缺 initUIEvent/initMouseEvent/initKeyboardEvent）；
+    // ③ init 首参 mandatory（缺省 TypeError）；④ CustomEvent detail 缺省 null（构造 + init 路径）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"t\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry);
+
+    // ①② 派发中五 init 全 no-op + 方法存在性（listener 内改值，派发后值不变）。
+    sandbox
+        .execute(
+            "var t110 = document.getElementById('t');\
+             var results110 = [];\
+             function checkDuring(ev, name, mutateFn, readBack) {\
+               t110.addEventListener('ty', function() { mutateFn(ev); });\
+               t110.dispatchEvent(ev);\
+               results110.push(name + '=' + readBack(ev));\
+             }\
+             var eE = new Event('ty');\
+             checkDuring(eE, 'initEvent', function(e){ e.initEvent('ty2', true, true); },\
+               function(e){ return [e.type, e.bubbles, e.cancelable].join('|'); });\
+             var eC = new CustomEvent('ty', { detail: 'keep' });\
+             checkDuring(eC, 'initCustomEvent', function(e){ e.initCustomEvent('ty2', true, true, 1); },\
+               function(e){ return [e.type, String(e.detail)].join('|'); });\
+             var eU = new UIEvent('ty');\
+             checkDuring(eU, 'initUIEvent', function(e){ e.initUIEvent('ty2', true, true, window, 7); },\
+               function(e){ return [e.type, String(e.view === window), String(e.detail)].join('|'); });\
+             var eM = new MouseEvent('ty');\
+             checkDuring(eM, 'initMouseEvent', function(e){ e.initMouseEvent('ty2', true, true, null, 5, 9, 9, 9, 9, true, true, true, true, 3, null); },\
+               function(e){ return [e.type, String(e.screenX), String(e.ctrlKey)].join('|'); });\
+             var eK = new KeyboardEvent('ty', { key: 'A' });\
+             checkDuring(eK, 'initKeyboardEvent', function(e){ e.initKeyboardEvent('ty2', true, true, null, 'a', 1, true, true, true, true); },\
+               function(e){ return [e.type, e.key, String(e.location), String(e.repeat)].join('|'); });\
+             globalThis.__r110a = results110.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r110a").unwrap().value,
+        "initEvent=ty|false|false,initCustomEvent=ty|keep,initUIEvent=ty|false|0,initMouseEvent=ty|0|false,initKeyboardEvent=ty|A|0|false",
+        "①② 派发中五 init 全 short-circuit + initUIEvent/initMouseEvent/initKeyboardEvent 方法可用"
+    );
+
+    // ③ 首参 mandatory（initEvent / initCustomEvent 缺省抛 TypeError）。
+    sandbox
+        .execute(
+            "var th110 = [];\
+             try { document.createEvent('Event').initEvent(); } catch (err) { th110.push(err instanceof TypeError ? 'TE' : String(err)); }\
+             try { document.createEvent('CustomEvent').initCustomEvent(); } catch (err) { th110.push(err instanceof TypeError ? 'TE' : String(err)); }\
+             globalThis.__r110b = th110.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r110b").unwrap().value,
+        "TE,TE",
+        "③ initEvent/initCustomEvent 无参抛 TypeError"
+    );
+
+    // ④ CustomEvent detail 缺省：构造路径 null + initCustomEvent("foo") 后仍 null（非 undefined）。
+    sandbox
+        .execute(
+            "var c110 = new CustomEvent('t');\
+             var c111 = document.createEvent('CustomEvent');\
+             c111.initCustomEvent('foo');\
+             globalThis.__r110c = [String(c110.detail), String(c111.detail), c111.type, String(c111.bubbles), String(c111.cancelable)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r110c").unwrap().value,
+        "null|null|foo|false|false",
+        "④ CustomEvent detail 缺省 null（构造 + init 路径）"
+    );
+
+    // ⑤ 非派发态 initXxxEvent 正常生效（守卫不误伤）。
+    sandbox
+        .execute(
+            "var m110 = new MouseEvent('a');\
+             m110.initMouseEvent('b', true, true, null, 2, 10, 20, 30, 40, true, false, true, false, 1, null);\
+             globalThis.__r110d = [m110.type, String(m110.bubbles), String(m110.screenX), String(m110.clientY), String(m110.ctrlKey), String(m110.shiftKey)].join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r110d").unwrap().value,
+        "b|true|10|40|true|true",
+        "⑤ 非派发态 initMouseEvent 全字段生效"
+    );
+}
