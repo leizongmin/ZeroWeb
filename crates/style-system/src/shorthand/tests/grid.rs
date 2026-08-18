@@ -439,6 +439,34 @@ fn test_grid_template_no_slash() {
 }
 
 #[test]
+fn test_grid_template_rejects_invalid_slash_forms() {
+    assert!(expand_one("grid-template", "/ 1fr", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-template", "1fr /", false, (0, 0, 1)).is_empty());
+    assert!(expand_one("grid-template", "1fr / 1fr / 1fr", false, (0, 0, 1)).is_empty());
+}
+
+#[test]
+fn test_grid_template_wide_keyword_expands_all_longhands() {
+    let result = expand_one("grid-template", "inherit", false, (0, 0, 1));
+    assert_eq!(result.len(), 3);
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "grid-template-areas" && value == "inherit")
+    );
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "grid-template-rows" && value == "inherit")
+    );
+    assert!(
+        result
+            .iter()
+            .any(|(property, value, _, _)| property == "grid-template-columns" && value == "inherit")
+    );
+}
+
+#[test]
 fn test_place_shorthands_reject_invalid_longhand_values() {
     assert!(expand_one("place-items", "left", false, (0, 0, 1)).is_empty());
     assert!(expand_one("place-content", "left", false, (0, 0, 1)).is_empty());

@@ -1613,10 +1613,22 @@ fn expand_grid_template(value: &str, important: bool, specificity: (u32, u32, u3
     let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
     let value = value.trim();
 
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(
+            value,
+            &["grid-template-areas", "grid-template-rows", "grid-template-columns"],
+            important,
+            specificity,
+        );
+    }
+
     // 按 `/` 分割为 rows 部分和 columns 部分
     if let Some(slash_pos) = value.find('/') {
         let rows_part = value[..slash_pos].trim();
         let cols_part = value[slash_pos + 1..].trim();
+        if rows_part.is_empty() || cols_part.is_empty() || cols_part.contains('/') {
+            return vec![];
+        }
 
         // 从 rows 部分提取引号字符串作为 grid-template-areas
         let (areas_str, rows_only) = extract_quoted_areas(rows_part);
