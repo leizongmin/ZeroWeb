@@ -136,16 +136,19 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "transform-origin" => {
-            // 解析 "x y" 或单个值（y 默认为 50%）
+            // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
             let parts: Vec<&str> = value.split_whitespace().collect();
-            if let Some(x) = parse_length_or_math(parts[0]) {
-                style.transform_origin_x = x;
-                style.transform_origin_y = if parts.len() > 1 {
-                    parse_length_or_math(parts[1]).unwrap_or(LengthValue::Percentage(50.0))
-                } else {
-                    LengthValue::Percentage(50.0)
-                };
-                return true;
+            if (1..=2).contains(&parts.len()) {
+                if let Some(x) = parse_length_or_math(parts[0]) {
+                    if let Some(y) = parts
+                        .get(1)
+                        .map_or(Some(LengthValue::Percentage(50.0)), |part| parse_length_or_math(part))
+                    {
+                        style.transform_origin_x = x;
+                        style.transform_origin_y = y;
+                        return true;
+                    }
+                }
             }
         }
         "perspective" => {
@@ -159,15 +162,19 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
             }
         }
         "perspective-origin" => {
+            // https://drafts.csswg.org/css-transforms-2/#perspective-origin-property
             let parts: Vec<&str> = value.split_whitespace().collect();
-            if let Some(x) = parse_length_or_math(parts[0]) {
-                style.perspective_origin_x = x;
-                style.perspective_origin_y = if parts.len() > 1 {
-                    parse_length_or_math(parts[1]).unwrap_or(LengthValue::Percentage(50.0))
-                } else {
-                    LengthValue::Percentage(50.0)
-                };
-                return true;
+            if (1..=2).contains(&parts.len()) {
+                if let Some(x) = parse_length_or_math(parts[0]) {
+                    if let Some(y) = parts
+                        .get(1)
+                        .map_or(Some(LengthValue::Percentage(50.0)), |part| parse_length_or_math(part))
+                    {
+                        style.perspective_origin_x = x;
+                        style.perspective_origin_y = y;
+                        return true;
+                    }
+                }
             }
         }
         "transform-style" => match value.trim().to_ascii_lowercase().as_str() {

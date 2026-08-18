@@ -1214,6 +1214,21 @@ fn test_transform_origin_apply() {
 }
 
 #[test]
+/// transform-origin 第二值和尾部 token 必须原子校验
+fn test_transform_origin_rejects_invalid_tail() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "transform-origin", "10px 20px"));
+
+    assert!(!apply_property_value(&mut style, "transform-origin", "30px bogus"));
+    assert_eq!(style.transform_origin_x, LengthValue::Px(10.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Px(20.0));
+
+    assert!(!apply_property_value(&mut style, "transform-origin", "30px 40px 50px"));
+    assert_eq!(style.transform_origin_x, LengthValue::Px(10.0));
+    assert_eq!(style.transform_origin_y, LengthValue::Px(20.0));
+}
+
+#[test]
 /// 测试 perspective: 500px 应用
 fn test_perspective_apply() {
     let mut style = ComputedStyle::default();
@@ -1295,6 +1310,25 @@ fn test_perspective_origin_apply() {
     assert!(apply_property_value(&mut style3, "perspective-origin", "100px"));
     assert_eq!(style3.perspective_origin_x, LengthValue::Px(100.0));
     assert_eq!(style3.perspective_origin_y, LengthValue::Percentage(50.0));
+}
+
+#[test]
+/// perspective-origin 第二值和尾部 token 必须原子校验
+fn test_perspective_origin_rejects_invalid_tail() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "perspective-origin", "10px 20px"));
+
+    assert!(!apply_property_value(&mut style, "perspective-origin", "30px bogus"));
+    assert_eq!(style.perspective_origin_x, LengthValue::Px(10.0));
+    assert_eq!(style.perspective_origin_y, LengthValue::Px(20.0));
+
+    assert!(!apply_property_value(
+        &mut style,
+        "perspective-origin",
+        "30px 40px 50px"
+    ));
+    assert_eq!(style.perspective_origin_x, LengthValue::Px(10.0));
+    assert_eq!(style.perspective_origin_y, LengthValue::Px(20.0));
 }
 
 // ═══════════════════════════════════════════════════════════════════

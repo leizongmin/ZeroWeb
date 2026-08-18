@@ -71,6 +71,8 @@ Logical border axis shorthands exposed the axis variant: 1-2 start/end mapping m
 
 `contain-intrinsic-size` exposed the non-comma filter-map variant: whitespace-separated component lists are just as vulnerable as comma lists. Optional keywords such as `auto` may be intentionally skipped, but every remaining token must be classified; unknown tokens must reject the whole declaration instead of being dropped while valid lengths survive.
 
+`transform-origin` and `perspective-origin` exposed the tail-token variant outside shorthand expansion: a parser that validates the first component and defaults or ignores the rest still violates CSS declaration atomicity. Optional defaulting such as the Y origin defaulting to `50%` is only valid when the component is omitted, not when an invalid token is present; extra tokens must also reject the whole declaration.
+
 ## Root Cause
 
 The shorthand layer used heuristic component classifiers and treated unrecognized tokens as absent optional components. That is wrong for CSS shorthands such as `border`, where every token must match one of the allowed component grammars. A shared parser can also be broader than the property grammar that consumes it: general length parsing may accept `auto`, intrinsic sizing keywords, or percentages that `border-width` must reject.
